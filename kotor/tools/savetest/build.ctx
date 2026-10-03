@@ -1,0 +1,15 @@
+// savetest: round-trips the install's save files through lib/save:
+// `kotor/tools/ctxc run kotor/tools/savetest -- --out kotor/out/savetest`.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "savetest", root = "." }
+    build::add_sources{ &b, exe, dir = "../../lib/base" }
+    build::add_sources{ &b, exe, dir = "../../lib/res" }
+    build::add_sources{ &b, exe, dir = "../../lib/formats" }
+    build::add_sources{ &b, exe, dir = "../../lib/mdl" }
+    build::add_sources{ &b, exe, dir = "../../lib/walk" }
+    build::add_sources{ &b, exe, dir = "../../lib/script" }
+    build::add_sources{ &b, exe, dir = "../../lib/engine" }
+    build::add_sources{ &b, exe, dir = "../../lib/save" }
+    build::add_sources{ &b, exe, dir = "../common" }
+    build::optimize{ &b, exe, level = 2 }
+}

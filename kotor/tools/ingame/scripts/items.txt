@@ -1,0 +1,7 @@
+# Equipment and inventory with a stocked bag: the first look at both panels.
+#   sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/items.txt 14 7:equip_a 12:inv_a
+3 ui join carth
+4 ui stock
+5 ui inv
+6 ui menu equip
+9 ui menu inventory

@@ -1,0 +1,11 @@
+# All 101 quests, each sort in turn, and the new colour fading once a quest was looked at and the menu closed.
+# sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/journal_sorts.txt 40 11:s_name 14:s_priority 17:s_planet 24:s_reopened
+5 ui journal fill 101
+6 ui menu journal
+8 ui click 572 545
+11 ui click 572 545
+14 ui click 572 545
+17 ui click 572 545
+18 ui click 515 306
+19 ui close
+21 ui menu journal

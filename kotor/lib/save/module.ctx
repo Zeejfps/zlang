@@ -1,0 +1,167 @@
+// A module's state as a save keeps it (docs/formats/gff-save.md, "The saved module";
+// party-items-saves.md 1.2): a nested ERF `<module>.sav` holding module.ifo (every IFO field
+// the engine uses, the event queue, the module's locals and, in Mod_PlayerList, the player),
+// <area>.git (every object of the area but the player and the party, whole) and <area>.are (the
+// area's ARE as it was loaded). Written into the game in progress when the module is left or a
+// game is saved; read back by modload when the module is entered from it.
+namespace save {
+    // The module being played, into the game in progress (`<module>.sav`).
+    fn save_module_state { mut w: world::World } -> ! {
+        let mo = world::object{ w = &w, id = w.module } ifnull { return }
+        let m = obj::module{ o = mo } ifnull { return }
+        let ao = world::object{ w = &w, id = w.area } ifnull { return }
+        let mut module_name = m.name
+        let mut area_name = m.area_name
+        let ifo = try write_ifo{ &w, mo, m }
+        let git = try write_git{ &w, ao }
+        let are = try world::read_scratch{ &w, name = resref::bytes{ r = &area_name }, kind = restype::Type::are } ifnull { slice::empty(u8){} }
+        let members: [3]erf::NewMember = [
+            erf::NewMember{ name = "module", kind = 2014, data = ifo },
+            erf::NewMember{ name = resref::bytes{ r = &area_name }, kind = 2012, data = are },
+            erf::NewMember{ name = resref::bytes{ r = &area_name }, kind = 2023, data = git },
+        ]
+        let nested = try erf::write(arena::Arena){ realloc = arena::alloc, heap = w.scratch, sig = erf::Sig::mod, members = members[..], year = 0, day = 0 }
+        try put{ st = &w.gip, name = resref::bytes{ r = &module_name }, kind = 2057, bytes = nested }
+    }
+
+    fn write_ifo { mut w: world::World, mo: *obj::Object, m: *obj::Module } -> ![]u8 {
+        let mut b = try gffw::new(arena::Arena){ realloc = arena::alloc, heap = w.scratch, tag = "IFO " }
+        let r = gffw::ROOT
+        try put_byte{ &b, owner = r, label = "Mod_IsSaveGame", v = 1 }
+        try put_byte{ &b, owner = r, label = "Mod_IsNWMFile", v = 0 }
+        try put_name{ &b, scratch = w.scratch, owner = r, label = "Mod_Name", name = mo.name }
+        try put_string{ &b, owner = r, label = "Mod_Tag", v = mo.tag }
+        try put_string{ &b, owner = r, label = "Mod_VO_ID", v = m.vo_id }
+        try put_resref{ &b, owner = r, label = "Mod_Entry_Area", v = m.area_name }
+        try put_float{ &b, owner = r, label = "Mod_Entry_X", v = m.entry_position.x }
+        try put_float{ &b, owner = r, label = "Mod_Entry_Y", v = m.entry_position.y }
+        try put_float{ &b, owner = r, label = "Mod_Entry_Z", v = m.entry_position.z }
+        try put_float{ &b, owner = r, label = "Mod_Entry_Dir_X", v = m.entry_direction.x }
+        try put_float{ &b, owner = r, label = "Mod_Entry_Dir_Y", v = m.entry_direction.y }
+        try put_byte{ &b, owner = r, label = "Mod_DawnHour", v = @trunc(u8, m.dawn_hour) }
+        try put_byte{ &b, owner = r, label = "Mod_DuskHour", v = @trunc(u8, m.dusk_hour) }
+        try put_byte{ &b, owner = r, label = "Mod_MinPerHour", v = @trunc(u8, m.min_per_hour) }
+        try put_byte{ &b, owner = r, label = "Mod_XPScale", v = @trunc(u8, m.xp_scale) }
+        // The calendar now, and the game day and time of day (gff-save.md, module.ifo).
+        let cal = clock::calendar_now{ c = w.clock }
+        try put_dword{ &b, owner = r, label = "Mod_StartYear", v = cal.year }
+        try put_byte{ &b, owner = r, label = "Mod_StartMonth", v = @trunc(u8, cal.month) }
+        try put_byte{ &b, owner = r, label = "Mod_StartDay", v = @trunc(u8, cal.day) }
+        try put_byte{ &b, owner = r, label = "Mod_StartHour", v = @trunc(u8, cal.hour) }
+        try put_word{ &b, owner = r, label = "Mod_StartMinute", v = cal.minute }
+        try put_word{ &b, owner = r, label = "Mod_StartSecond", v = cal.second }
+        try put_word{ &b, owner = r, label = "Mod_StartMiliSec", v = cal.millisecond }
+        let now = clock::calendar_ms{ c = w.clock } + clock::now_ms{ c = w.clock }
+        let per_day = clock::ms_per_day{ c = w.clock }
+        try put_dword{ &b, owner = r, label = "Mod_PauseDay", v = @trunc(u32, now / per_day) }
+        try put_dword{ &b, owner = r, label = "Mod_PauseTime", v = @trunc(u32, now % per_day) }
+        try put_dword{ &b, owner = r, label = "Mod_Transition", v = 0 }
+        try put_dword{ &b, owner = r, label = "Mod_NextObjId0", v = w.objects.next_low }
+        try put_dword{ &b, owner = r, label = "Mod_NextObjId1", v = 0 }
+        try put_dword{ &b, owner = r, label = "Mod_NextCharId0", v = w.objects.next_high }
+        try put_dword{ &b, owner = r, label = "Mod_NextCharId1", v = obj::FIRST_CHARACTER }
+        _ = try gffw::add_value{ &b, owner = r, label = "Mod_Effect_NxtId", value = gff::Value::dword64{ v = @as(u64, w.values.next_effect) } }
+        let scripts: [15][]u8 = ["Mod_OnHeartbeat", "Mod_OnUsrDefined", "Mod_OnClientEntr", "Mod_OnClientLeav", "Mod_OnActvtItem",
+            "Mod_OnAcquirItem", "Mod_OnUnAqreItem", "Mod_OnModLoad", "Mod_OnModStart", "Mod_OnPlrDeath", "Mod_OnPlrDying",
+            "Mod_OnSpawnBtnDn", "Mod_OnPlrRest", "Mod_OnPlrLvlUp", "Mod_OnEquipItem"]
+        let slots: [15]obj::Slot = [obj::Slot::heartbeat, obj::Slot::user_defined, obj::Slot::client_enter, obj::Slot::client_leave,
+            obj::Slot::activate_item, obj::Slot::acquire_item, obj::Slot::unacquire_item, obj::Slot::mod_load, obj::Slot::mod_start,
+            obj::Slot::player_death, obj::Slot::player_dying, obj::Slot::spawn_button, obj::Slot::player_rest,
+            obj::Slot::player_level_up, obj::Slot::equip_item]
+        let mut i: usize = 0
+        while i < 15 {
+            try put_script{ &b, owner = r, o = mo, label = scripts[i], slot = slots[i] }
+            i = i + 1
+        }
+        let areas = try gffw::put_list{ &b, owner = r, label = "Mod_Area_list" }
+        let a = try gffw::add_element{ &b, list = areas, id = 6 }
+        try put_resref{ &b, owner = a, label = "Area_Name", v = m.area_name }
+        try put_dword{ &b, owner = a, label = "ObjectId", v = w.area }
+        _ = try gffw::put_list{ &b, owner = r, label = "Mod_Expan_List" }
+        _ = try gffw::put_list{ &b, owner = r, label = "Mod_CutSceneList" }
+        _ = try gffw::put_list{ &b, owner = r, label = "Creature List" }
+        _ = try gffw::put_list{ &b, owner = r, label = "Mod_Tokens" }
+        try put_locals{ &b, owner = r, l = mo.locals }
+        try write_event_queue{ &b, &w, owner = r }
+        // The player, as a saved creature plus the Mod_* names (struct id 48813).
+        let players = try gffw::put_list{ &b, owner = r, label = "Mod_PlayerList" }
+        let pc = world::object{ w = &w, id = w.pc }
+        if pc != null {
+            let s = try write_object{ &b, &w, list = players, o = pc, id = 48813 }
+            try put_string{ &b, owner = s, label = "Mod_CommntyName", v = "Bad StrRef" }
+            try put_byte{ &b, owner = s, label = "Mod_IsPrimaryPlr", v = 1 }
+            try put_name{ &b, scratch = w.scratch, owner = s, label = "Mod_FirstName", name = pc.name }
+            try put_name{ &b, scratch = w.scratch, owner = s, label = "Mod_LastName", name = obj::Name{ strref = 0xFFFFFFFF, text = slice::empty(u8){} } }
+        }
+        return try gffw::finish{ &b, layout = gffw::ENGINE }
+    }
+
+    // Whether an object belongs in the area's saved GIT: everything in the area but the module,
+    // the area, the party (saved with the player and the party table) and carried items.
+    fn in_git { w: *world::World, o: *obj::Object } -> bool {
+        if o.destroyed or o.kind == obj::Kind::module or o.kind == obj::Kind::area { return false }
+        if o.id == w.pc or party::is_member{ w, id = o.id } { return false }
+        if obj::item{ o } is some{ value = it } { return it.possessor == obj::INVALID }
+        return true
+    }
+
+    fn write_git { mut w: world::World, ao: *obj::Object } -> ![]u8 {
+        let mut b = try gffw::new(arena::Arena){ realloc = arena::alloc, heap = w.scratch, tag = "GIT " }
+        let r = gffw::ROOT
+        try put_byte{ &b, owner = r, label = "UseTemplates", v = 0 }
+        try put_locals{ &b, owner = r, l = ao.locals }
+        try put_byte{ &b, owner = r, label = "CurrentWeather", v = 255 }
+        try put_byte{ &b, owner = r, label = "WeatherStarted", v = 0 }
+        if obj::area{ o = ao } is some{ value = a } {
+            let p = try gffw::put_struct{ &b, owner = r, label = "AreaProperties", id = 100 }
+            try put_int{ &b, owner = p, label = "AmbientSndDay", v = a.ambient_day }
+            try put_int{ &b, owner = p, label = "AmbientSndNight", v = a.ambient_night }
+            try put_int{ &b, owner = p, label = "AmbientSndDayVol", v = a.ambient_day_volume }
+            try put_int{ &b, owner = p, label = "AmbientSndNitVol", v = a.ambient_night_volume }
+            try put_int{ &b, owner = p, label = "EnvAudio", v = a.env_audio }
+            try put_int{ &b, owner = p, label = "MusicBattle", v = a.music_battle }
+            try put_int{ &b, owner = p, label = "MusicDay", v = a.music_day }
+            try put_int{ &b, owner = p, label = "MusicNight", v = a.music_night }
+            try put_int{ &b, owner = p, label = "MusicDelay", v = a.music_delay }
+            try put_bool{ &b, owner = p, label = "Unescapable", v = a.unescapable }
+            try put_dword{ &b, owner = p, label = "RestrictMode", v = a.restrict_mode }
+        }
+        let labels: [9][]u8 = ["Creature List", "List", "Door List", "TriggerList", "Encounter List", "WaypointList", "SoundList", "Placeable List", "StoreList"]
+        let kinds: [9]obj::Kind = [obj::Kind::creature, obj::Kind::item, obj::Kind::door, obj::Kind::trigger, obj::Kind::encounter,
+            obj::Kind::waypoint, obj::Kind::sound, obj::Kind::placeable, obj::Kind::store]
+        let ids: [9]u32 = [4, 0, 8, 1, 7, 5, 6, 9, 11]
+        let mut k: usize = 0
+        while k < 9 {
+            let list = try gffw::put_list{ &b, owner = r, label = labels[k] }
+            let all = list::items{ list = w.objects.all }
+            let mut i: usize = 0
+            while i < all.len {
+                let o = all[i]
+                i = i + 1
+                if o.kind != kinds[k] or not in_git{ w = &w, o } { continue }
+                _ = try write_object{ &b, &w, list, o, id = ids[k] }
+            }
+            k = k + 1
+        }
+        _ = try gffw::put_list{ &b, owner = r, label = "AreaEffectList" }
+        try copy_cameras{ &b, &w, owner = r }
+        return try gffw::finish{ &b, layout = gffw::ENGINE }
+    }
+
+    // The area's static cameras (CameraList) as the module's GIT has them (the dialogue's shots
+    // name them), copied struct by struct.
+    fn copy_cameras { mut b: Builder, mut w: world::World, owner: u32 } -> ! {
+        let list = try gffw::put_list{ &b, owner, label = "CameraList" }
+        let ao = world::object{ w = &w, id = w.area } ifnull { return }
+        let a = obj::area{ o = ao } ifnull { return }
+        let mut name = a.resref
+        let doc = try world::read_gff{ &w, name = resref::bytes{ r = &name }, kind = restype::Type::git } ifnull { return }
+        let cams = gff::get_list{ doc, s = gff::ROOT, label = "CameraList" } ifnull { return }
+        let mut i: usize = 0
+        while i < cams.len {
+            let e = try gffw::add_element{ &b, list, id = gff::struct_id{ doc, s = cams[i] } }
+            try gffw::copy_struct(arena::Arena){ &b, doc, src = cams[i], dst = e, elements_first = false }
+            i = i + 1
+        }
+    }
+}

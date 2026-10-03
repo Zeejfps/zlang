@@ -1,0 +1,10 @@
+3 ui join carth
+5 ui menu equip
+8 ui menu inventory
+11 ui menu character
+14 ui menu abilities
+17 ui menu messages
+20 ui menu journal
+23 ui menu map
+26 ui menu options
+29 ui close

@@ -1,0 +1,55 @@
+// The mouth that follows the voice (docs/re/dialogue.md 7): the LIP of the line being spoken
+// plays on the speaker's head, from how much of the voice the mixer has played.
+namespace dlgview {
+    // Loads the LIP named like the voice-over; no LIP leaves the mouth still.
+    fn load_lip { mut v: View, mut w: world::World, name: resref::ResRef } {
+        v.track_on = false
+        if v.lip_bytes.len > 0 {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = v.lip_bytes, count = 0 }
+            v.lip_bytes = slice::empty(u8){}
+        }
+        let found = dlg::load_resource{ &w, name, kind = restype::Type::lip } iferr { return }
+        let bytes = found ifnull { return }
+        let parsed = lip::parse{ data = bytes } iferr {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = bytes, count = 0 }
+            return
+        }
+        v.lip_bytes = bytes
+        v.track = lipsync::make_track{ lip = parsed }
+        v.track_on = true
+    }
+
+    fn drop_lip { mut v: View } {
+        v.track_on = false
+        if v.lip_bytes.len > 0 {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = v.lip_bytes, count = 0 }
+            v.lip_bytes = slice::empty(u8){}
+        }
+    }
+
+    // After the scene made this frame's poses: the speaker's face bones to the mouth shape of
+    // the voice's time. The head (a B body's second part) wears it; a creature without a head
+    // part wears it on its body; a model whose chain has no `talk` stays still.
+    fn apply_lips { mut v: View, mut w: world::World, mut sc: scene::Scene } {
+        if not v.track_on { return }
+        if not mix::is_playing{ m = v.m, h = v.voice } {
+            v.track_on = false
+            return
+        }
+        let played = mix::played{ m = v.m, h = v.voice } ifnull { return }
+        let mut t = @as(f32, played) - v.voice_delay
+        if t < 0.0 { t = 0.0 }
+        let vi = map::get{ m = sc.by_id, key = v.voice_speaker } ifnull { return }
+        if vi == scene::NO_VISUAL { return }
+        let vis = list::at{ list = sc.visuals, i = vi }
+        let mut part = vis.first
+        if vis.count > 1 {
+            let head = scene::part_at{ sc = &sc, i = vis.first + 1 }
+            if slice::eq_bytes{ a = head.hook, b = mdl_anim::HOOK_HEAD } { part = vis.first + 1 }
+        }
+        let p = scene::part_at{ sc = &sc, i = part }
+        let model = scene::loaded_at{ sc = &sc, i = p.loaded }.model
+        let talk = scene::binding_for{ &sc, &w, model, source = null, name = "talk" } ifnull { return }
+        lipsync::apply{ model, talk, track = &v.track, t, pose = &p.pose }
+    }
+}

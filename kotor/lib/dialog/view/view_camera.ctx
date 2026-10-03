@@ -1,0 +1,199 @@
+// The conversation camera (docs/re/dialogue.md 9.1 to 9.5): which shot a line asks for, the
+// framed shots rebuilt every frame from where the participants stand, the side of the line the
+// camera keeps to, the GIT's static cameras and the cutscene's camera model.
+namespace dlgview {
+    // Whether the segment between two points meets a wall of the area.
+    fn blocked_between { w: *world::World, stops: []bool, from: math::Vec3, to: math::Vec3 } -> bool {
+        let d = math::vec3::sub{ a = to, b = from }
+        let len = math::vec3::length{ v = d }
+        if len < 0.01 { return false }
+        let ray = math::ray::make{ origin = from, dir = math::vec3::scale{ v = d, s = 1.0 / len } }
+        let rooms = list::items{ list = w.walk.rooms }
+        let mut i: usize = 0
+        while i < rooms.len {
+            let mesh = rooms[i].mesh
+            i = i + 1
+            if mesh == null { continue }
+            let hit = bwm::cast_ray{ w = mesh, ray, max_t = len, stops } ifnull { continue }
+            if hit.t < len { return true }
+        }
+        return false
+    }
+
+    // Where a participant's eyes are (9.2): its model's `camerahook` node, else the model's
+    // position and its height: here the head hook of the pose it stands in, 0.1 m up (a body
+    // without either gets 1.5 m).
+    fn eye_point { w: *world::World, sc: *scene::Scene, id: u32 } -> ?math::Vec3 {
+        let o = world::object{ w, id } ifnull { return null }
+        let vi = map::get{ m = sc.by_id, key = id }
+        if vi != null and vi != scene::NO_VISUAL {
+            let vis = list::at{ list = sc.visuals, i = vi }
+            let part = scene::part_at{ sc, i = vis.first }
+            let model = scene::loaded_at{ sc, i = part.loaded }.model
+            let mut lift: f32 = 0.0
+            let mut node = mdl::find_node{ model, name = "camerahook" }
+            if node == null {
+                node = mdl::find_node{ model, name = mdl_anim::HOOK_HEAD }
+                lift = 0.1
+            }
+            match node {
+                some{ value } => {
+                    let m = part.pose.world[@as(usize, value)]
+                    let local = math::mat4::get_translation{ m }
+                    // Model space turned by the creature's facing about Z, as the visual draws it.
+                    let yaw = obj::model_yaw{ orientation = o.orientation }
+                    let turned = dlgcam::rotate_z{ v = local, degrees = math::degrees{ radians = yaw } }
+                    return math::Vec3{ x = o.position.x + turned.x, y = o.position.y + turned.y, z = o.position.z + local.z + lift }
+                }
+                null => {}
+            }
+        }
+        return math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + 1.6 }
+    }
+
+    // The side of the line between two creatures the camera keeps to: the pair's side if it has
+    // one, the opposite for the pair the other way round, else the side with fewer walls in the
+    // way of the wide shot and both shoulder shots (9.3). +1, or -1 for the original's side 2.
+    fn side_of { mut v: View, w: *world::World, speaker: u32, listener: u32, s: math::Vec3, l: math::Vec3 } -> f32 {
+        let mut i: usize = 0
+        while i < v.side_count {
+            let e = v.sides[i]
+            i = i + 1
+            if e.a == speaker and e.b == listener { return e.side }
+            if e.a == listener and e.b == speaker { return -e.side }
+        }
+        let mut hits: [2]u32 = [0, 0]
+        let mut k: usize = 0
+        while k < 2 {
+            let side: f32 = if k == 0 { 1.0 } else { -1.0 }
+            let rigs: [3]dlgcam::Rig = [
+                dlgcam::wide{ s, l, side, cam_height = 0.0, tar_height = 0.0, fov = dlgcam::FOV },
+                dlgcam::shoulder{ s, l, side, cam_height = 0.0, tar_height = 0.0, fov = dlgcam::FOV },
+                dlgcam::shoulder{ s = l, l = s, side, cam_height = 0.0, tar_height = 0.0, fov = dlgcam::FOV },
+            ]
+            let mut r: usize = 0
+            while r < 3 {
+                let at = math::vec3::scale{ v = math::vec3::add{ a = s, b = l }, s = 0.5 }
+                if blocked_between{ w, stops = v.stops[..], from = at, to = rigs[r].eye } { hits[k] = hits[k] + 1 }
+                r = r + 1
+            }
+            k = k + 1
+        }
+        // Fewer hits wins; a tie takes side 2.
+        let side: f32 = if hits[0] < hits[1] { 1.0 } else { -1.0 }
+        let at = if v.side_count < 4 { v.side_count } else { v.side_next }
+        v.sides[at] = SideEntry{ a = speaker, b = listener, side }
+        if v.side_count < 4 { v.side_count = v.side_count + 1 } else { v.side_next = (v.side_next + 1) % 4 }
+        return side
+    }
+
+    // The framed shot for the line as the participants stand now (angles 1 to 3); the close-up
+    // without a pull-back when the shot would sit in a wall (9.2).
+    fn framed_rig { mut v: View, mut w: world::World, sc: *scene::Scene } -> ?dlgcam::Rig {
+        let s = eye_point{ w = &w, sc, id = v.speaker } ifnull { return null }
+        let l = eye_point{ w = &w, sc, id = v.listener } ifnull { return null }
+        let side = side_of{ &v, w = &w, speaker = v.speaker, listener = v.listener, s, l }
+        let fov = if v.fov > 0.0 { v.fov } else { dlgcam::FOV }
+        let rig = if v.angle == dlg::ANGLE_SHOULDER {
+            dlgcam::shoulder{ s, l, side, cam_height = v.cam_height, tar_height = v.tar_height, fov }
+        } else if v.angle == dlg::ANGLE_WIDE {
+            dlgcam::wide{ s, l, side, cam_height = v.cam_height, tar_height = v.tar_height, fov }
+        } else {
+            dlgcam::close_up{ s, l, side, cam_height = v.cam_height, tar_height = v.tar_height, pull_back = v.pull_back, fov }
+        }
+        if v.angle == dlg::ANGLE_CLOSE and v.pull_back == 0.0 { return rig }
+        let target = math::vec3::scale{ v = math::vec3::add{ a = s, b = l }, s = 0.5 }
+        if v.blocked or blocked_between{ w = &w, stops = v.stops[..], from = target, to = rig.eye } {
+            v.blocked = true
+            return dlgcam::close_up{ s, l, side, cam_height = v.cam_height, tar_height = v.tar_height, pull_back = 0.0, fov }
+        }
+        return rig
+    }
+
+    // The pull-back of the speaker's animation (dialoganimations.2da cu_pb_range) for a close-up.
+    fn pull_back_of { w: *world::World, number: u32 } -> f32 {
+        if number < 10000 { return 0.0 }
+        return twoda::get_float{ t = w.tables.dialoganimations, row = @as(usize, number - 10000), column = "cu_pb_range" } ifnull 0.0
+    }
+
+    // What the line asks the camera for (9.1): the cutscene's camera model first, whatever the
+    // angle; else the framed shot, the GIT's camera, or the shot kept. A computer terminal only
+    // moves the camera for angle 6.
+    fn set_shot { mut v: View, mut w: world::World, mut sc: scene::Scene, node: *dlg::Node, speaker: u32, listener: u32, angle: u32, spoken_reply: bool } {
+        let computer = w.conversation.d.conversation_type == dlg::TYPE_COMPUTER
+        // Cutscene replies picked by the engine don't cut away from the camera that is running.
+        if spoken_reply and w.conversation.d.animated_cut and angle != dlg::ANGLE_STATIC and v.mode == Mode::animated { return }
+        v.speaker = speaker
+        v.listener = listener
+        v.angle = angle
+        v.cam_height = node.cam_height
+        v.tar_height = node.tar_height
+        v.fov = node.cam_fov
+        v.blocked = false
+        if v.camera_model.loaded and node.camera_anim >= 1000 and node.camera_anim < 1728 and not computer {
+            if play_camera_animation{ &v, &w, &sc, number = node.camera_anim } {
+                v.mode = Mode::animated
+                if node.cam_fov > 0.0 { v.fov = node.cam_fov }
+                return
+            }
+        }
+        if angle == dlg::ANGLE_STATIC {
+            v.static_id = node.camera_id
+            v.mode = Mode::fixed
+        } else if computer or angle == dlg::ANGLE_KEEP or angle == dlg::ANGLE_ANIMATED or angle == dlg::ANGLE_AUTO {
+            // Kept: the previous shot stays up (computer terminals show their panel instead).
+            if v.mode == Mode::none and not computer and angle == dlg::ANGLE_AUTO { v.mode = Mode::framed }
+        } else {
+            v.mode = Mode::framed
+        }
+    }
+
+    // Puts the camera over the chase camera while a shot is up. The listener follows it too.
+    fn apply_camera { mut v: View, mut w: world::World, sc: *scene::Scene, mut camera: cam::Camera } {
+        if not v.up or v.mode == Mode::none or not w.conversation.scene_ready {
+            if v.overriding {
+                camera.style.fov = v.saved_fov
+                v.overriding = false
+            }
+            return
+        }
+        let mut rig = v.rig
+        let mut have = false
+        match v.mode {
+            framed => {
+                let r = framed_rig{ &v, &w, sc }
+                if r != null { rig = r; have = true }
+            }
+            fixed => {
+                let id = v.static_id
+                let c = dlg::camera_by_id{ s = &w.conversation, id }
+                if c != null { rig = dlgcam::static_rig{ c }; have = true }
+            }
+            animated => {
+                if v.camera_model.loaded and v.have_rig { have = true }
+            }
+            keep => { have = v.have_rig }
+            none => {}
+        }
+        if v.mode == Mode::animated or v.mode == Mode::keep { rig = v.rig }
+        if not have { return }
+        v.rig = rig
+        v.have_rig = true
+        if not v.overriding {
+            v.saved_fov = camera.style.fov
+            v.overriding = true
+        }
+        camera.eye = rig.eye
+        camera.dir = rig.forward
+        camera.up = rig.up
+        camera.look = math::vec3::add{ a = rig.eye, b = rig.forward }
+        camera.style.fov = rig.fov
+    }
+
+    // The room the picture is seen from: the player's, unless a shot is up, then the room under
+    // the camera (none, which shows every room, when it hangs outside the walkmeshes).
+    fn view_room { v: *View, w: *world::World, player_room: i32 } -> i32 {
+        if not v.overriding { return player_room }
+        return walkmap::room_at{ m = &w.walk, x = v.rig.eye.x, y = v.rig.eye.y, z = v.rig.eye.z }
+    }
+}

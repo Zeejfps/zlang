@@ -1,0 +1,150 @@
+// The opponent, as the original plays it (docs/re/pazaak.md, "The opponent's AI"). It is a small
+// state machine stepped during the opponent's turn: the state is the last step's result, and a
+// turn is: draw (1), maybe play a hand card (2), end the turn (4) or stand (3), then 0.
+//
+//   let r = pazaak::ai_step{ &g, who = pazaak::Who::opponent }     // one step; g.ai[..] holds the state
+//
+// Nothing here is random: the choices depend on the totals, the hand and the player's sets.
+namespace pazaak {
+    const AI_IDLE: i32 = 0              // the turn is over
+    const AI_DREW: i32 = 1
+    const AI_PLAYED: i32 = 2            // played a hand card
+    const AI_STOOD: i32 = 3
+    const AI_ENDED: i32 = 4             // ended the turn without standing
+
+    // The outcome of trying every hand card on a table.
+    struct Pick { total: i32, index: i32, flipped: bool }
+
+    // Tries each hand card (a flip card both ways) and picks one. `down` looks for the lowest total
+    // under the current one, otherwise for the highest total that is not over 20 and beats the
+    // current one. A pick that is no better than the table as it is has index -1 and the table's own
+    // total (the BUST value when it is over 20). An equal total replaces a chosen flip card, so flip
+    // cards are kept for later. Trying a flip card leaves its flag positive, as the original does;
+    // the chosen card keeps the sign that was picked.
+    fn evaluate_hand { mut s: Side, down: bool } -> Pick {
+        let have = total_of{ s }
+        let mut best = if have > TARGET { BUST } else { have }
+        let mut index: i32 = -1
+        let mut flipped = false
+        let mut best_is_flip = false
+        let mut i: usize = 0
+        while i < HAND_SIZE {
+            let id = s.hand[i].id
+            let flips = id >= FIRST_FLIP and id < FIRST_MAIN
+            let mut variant: i32 = if flips { 2 } else { 1 }
+            while variant > 0 {
+                let mut sign = false
+                if flips {
+                    sign = variant == 2
+                    s.hand[i].flipped = sign
+                }
+                let mut next = have + card_value{ c = Card{ id, flipped = sign } }
+                if next > TARGET { next = BUST }
+                let mut take = false
+                if not down {
+                    take = next > best or (next == best and best_is_flip)
+                } else if next < best {
+                    take = next > BUST
+                } else {
+                    take = next == best and best_is_flip
+                }
+                if take {
+                    best = next
+                    index = @as(i32, i)
+                    flipped = sign
+                    best_is_flip = flips
+                }
+                variant = variant - 1
+            }
+            i = i + 1
+        }
+        if index >= 0 { s.hand[@as(usize, index)].flipped = flipped }
+        return Pick{ total = best, index, flipped }
+    }
+
+    // Moves the hand card the pick chose onto the table.
+    fn play_pick { mut s: Side, pick: Pick } {
+        let i = @as(usize, pick.index)
+        let c = s.hand[i]
+        s.hand[i] = no_card{}
+        place_card{ s = &s, c }
+    }
+
+    // Standing or ending the turn once the hand card question is settled.
+    fn decide_last { mut me: Side, them: Side, theirs: i32 } -> i32 {
+        let mut mine = total_of{ s = me }
+        if mine > TARGET { mine = BUST }
+        if them.standing and mine < theirs { return AI_ENDED }
+        if mine < 18 {
+            let low = evaluate_hand{ s = &me, down = true }
+            if low.total < 16 { return AI_ENDED }
+        }
+        me.standing = true
+        return AI_STOOD
+    }
+
+    // The first decision after the draw: stand on a win, play the hand card that makes a strong
+    // total, give up an over-20 table when the match allows, or fall through to decide_last.
+    fn decide_first { mut me: Side, them: Side, theirs: i32 } -> i32 {
+        let mine = total_of{ s = me }
+        if them.standing and theirs < mine and mine <= TARGET {
+            me.standing = true
+            return AI_STOOD
+        }
+        let can_lose_set = them.sets + 1 < SETS_TO_WIN
+        let low = evaluate_hand{ s = &me, down = true }
+        let high = evaluate_hand{ s = &me, down = false }
+        let strong = high.total >= 18 and theirs <= high.total and
+            (high.total >= 20 or (high.total >= 19 and low.total >= 12) or low.total >= 14)
+        if strong and high.index >= 0 {
+            play_pick{ s = &me, pick = high }
+            return AI_PLAYED
+        }
+        if mine > TARGET {
+            if can_lose_set and theirs >= 18 and high.total < theirs { return AI_ENDED }
+            if high.index >= 0 {
+                play_pick{ s = &me, pick = high }
+                return AI_PLAYED
+            }
+        }
+        return decide_last{ me = &me, them, theirs }
+    }
+
+    fn side_copy { g: Game, who: Who } -> Side {
+        return if who == Who::player { g.player } else { g.opponent }
+    }
+
+    fn store_side { mut g: Game, who: Who, s: Side } {
+        if who == Who::player { g.player = s } else { g.opponent = s }
+    }
+
+    // One step of `who`'s AI; returns the step's result, which is also the state for the next.
+    fn ai_step { mut g: Game, who: Who } -> i32 {
+        let mut me = side_copy{ g, who }
+        let mut them = side_copy{ g, who = other_of{ who } }
+        let mut theirs = total_of{ s = them }
+        if theirs > TARGET {
+            theirs = BUST
+            them.standing = true
+        }
+        let state = g.ai[who_index{ who }]
+        let mut result = AI_IDLE
+        if state == 0 {
+            if not me.standing {
+                let c = take_main_card{ g = &g }
+                place_card{ s = &me, c }
+                result = AI_DREW
+            }
+        } else if state == 1 {
+            result = decide_first{ me = &me, them, theirs }
+        } else if state == 2 {
+            result = decide_last{ me = &me, them, theirs }
+        } else if state > 4 or state < 0 {
+            result = AI_ENDED
+        }
+        store_side{ g = &g, who, s = me }
+        store_side{ g = &g, who = other_of{ who }, s = them }
+        g.ai[who_index{ who }] = result
+        return result
+    }
+}

@@ -15,13 +15,74 @@ namespace party {
         selectable: [12]bool,
         gold: i32,
         solo: bool,
+        // What PARTYTABLE.res says about the active party (save::read_party_table), for the loader
+        // to spawn: the NPC slots of its members, in file order, and the slot of the leader (-1:
+        // the PC leads).
+        saved_slots: [3]i32,
+        saved_count: usize,
+        saved_leader: i32,
+        // Appended by routines/party.ctx. An available slot has no creature of its own while it is
+        // out of the area (as the original, which keeps only AVAILNPC<n>.utc): this is the blueprint
+        // SpawnAvailableNPC makes it from, and the XP pool is PT_XP_POOL.
+        templates: [12]resref::ResRef,
+        xp_pool: i32,
     }
 
     fn new {} -> Party {
         return Party{
             members = [obj::INVALID; 3], count = 0, npcs = [obj::INVALID; 12], available = [false; 12],
             selectable = [false; 12], gold = 0, solo = false,
+            saved_slots = [-1; 3], saved_count = 0, saved_leader = -1,
+            templates = [resref::empty{}; 12], xp_pool = 0,
         }
+    }
+
+    // The credits cap, for the purse and a creature's own gold alike.
+    const MAX_GOLD: i64 = 999999999
+
+    // Adds `n` (negative: takes) to the shared purse, kept within 0..MAX_GOLD.
+    fn add_gold { mut w: world::World, n: i64 } {
+        let total = @as(i64, w.party.gold) + n
+        w.party.gold = @trunc(i32, if total < 0 { 0 } else if total > MAX_GOLD { MAX_GOLD } else { total })
+    }
+
+    fn valid_slot { n: i32 } -> bool { return n >= 0 and n < @as(i32, SLOTS) }
+
+    // The NPC slot whose creature is `id` (-1 for none).
+    fn slot_of { w: *world::World, id: u32 } -> i32 {
+        let mut i: usize = 0
+        while i < SLOTS {
+            if w.party.npcs[i] == id { return @as(i32, i) }
+            i = i + 1
+        }
+        return -1
+    }
+
+    // Forgets members and slot creatures that are gone: a module change destroys them, and their
+    // slots stay available for SpawnAvailableNPC to make again.
+    fn prune { mut w: world::World } {
+        let mut i: usize = 0
+        while i < SLOTS {
+            let id = w.party.npcs[i]
+            if id != obj::INVALID and not world::is_valid{ w = &w, id } { w.party.npcs[i] = obj::INVALID }
+            i = i + 1
+        }
+        let mut keep: usize = 0
+        i = 0
+        while i < w.party.count {
+            let id = w.party.members[i]
+            i = i + 1
+            if world::is_valid{ w = &w, id } {
+                w.party.members[keep] = id
+                keep = keep + 1
+            }
+        }
+        i = keep
+        while i < w.party.count {
+            w.party.members[i] = obj::INVALID
+            i = i + 1
+        }
+        w.party.count = keep
     }
 
     // The members in the area, leader first.

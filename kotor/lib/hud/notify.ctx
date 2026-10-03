@@ -1,0 +1,45 @@
+// The notification icons beside the minimap (docs/re/gui.md, "Notification icons"): journal
+// updated, credits, plot and stealth experience, an alignment shift, an item received or lost.
+// An event turns its icon on for four seconds.
+namespace hud {
+    const NOTIFY_SECONDS: f32 = 4.0
+
+    // The icons, by the original's index (6 is unused).
+    const NOTE_JOURNAL: usize = 0
+    const NOTE_CASH: usize = 1
+    const NOTE_PLOT_XP: usize = 2
+    const NOTE_STEALTH_XP: usize = 3
+    const NOTE_DARK_SHIFT: usize = 4
+    const NOTE_LIGHT_SHIFT: usize = 5
+    const NOTE_ITEM_RECEIVED: usize = 7
+    const NOTE_ITEM_LOST: usize = 8
+
+    const NOTE_TAGS: [9][]u8 = [
+        "LBL_JOURNAL", "LBL_CASH", "LBL_PLOTXP", "LBL_STEALTHXP", "LBL_DARKSHIFT", "LBL_LIGHTSHIFT", "", "LBL_ITEMRCVD", "LBL_ITEMLOST",
+    ]
+
+    // Starts icon `which`; a shift towards one side of the alignment hides the other side's icon.
+    fn flash_icon { mut h: Hud, which: usize } {
+        if which >= 9 or which == 6 { return }
+        h.notify[which] = NOTIFY_SECONDS
+        if which == NOTE_DARK_SHIFT { h.notify[NOTE_LIGHT_SHIFT] = 0.0 }
+        if which == NOTE_LIGHT_SHIFT { h.notify[NOTE_DARK_SHIFT] = 0.0 }
+    }
+
+    // Shows the icons whose time has not run out.
+    fn update_notify { mut h: Hud, mut g: gui::Gui, dt: f32 } {
+        let mut i: usize = 0
+        while i < 9 {
+            if NOTE_TAGS[i].len > 0 {
+                let was = h.notify_shown[i]
+                let now = h.notify[i] > 0.0
+                if was != now {
+                    gui::set_visible{ &g, panel = h.panel, tag = NOTE_TAGS[i], visible = now }
+                    h.notify_shown[i] = now
+                }
+                if now { h.notify[i] = h.notify[i] - dt }
+            }
+            i = i + 1
+        }
+    }
+}

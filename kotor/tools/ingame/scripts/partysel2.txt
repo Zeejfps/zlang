@@ -1,0 +1,18 @@
+# party selection, the other paths: an unavailable slot is refused, a member is put back, a short
+# party asks first (Carth leaves, Canderous joins), then Cancel keeps everything as it was
+3 ui join carth
+4 ui shove 1 -19 -138
+5 ui avail 0 1
+6 ui menu map
+8 ui click 450 536
+12 ui click 507 359
+16 ui key return
+18 ui click 598 271
+20 ui click 507 271
+22 ui click 640 544
+26 ui key return
+30 ui party
+32 ui click 450 536
+36 ui click 416 271
+38 ui click 785 544
+42 ui party

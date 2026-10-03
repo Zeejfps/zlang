@@ -12,12 +12,24 @@ namespace outbox {
         ambient{ play: bool },
         fade{ out: bool, wait: f32, length: f32, color: math::Vec3 },
         movie{ name: resref::ResRef },
-        bark{ speaker: u32, strref: u32, text: Text },
+        bark{ speaker: u32, strref: u32, text: Text, sound: resref::ResRef },
         feedback{ strref: u32, text: Text },
         post_string{ text: Text, x: i32, y: i32, life: f32 },
         no_clicks{ seconds: f32 },
         conversation{ owner: u32, speaker: u32, dialog: resref::ResRef },
         rumble{ pattern: i32 },
+        // Appended by routines/presentation.ctx and misc.ctx. The area's music rows live on the
+        // obj::Area (routines update them first); these say what the presentation should do about it.
+        //   music: the background track (kind day or night: the one for the time of day) or the
+        //   battle track starts (play) or stops; music_row: a row changed, replay if it is playing.
+        ambient_row{ night: bool },                         // the day or night ambient bed's row or volume changed
+        sound_fade{ id: u32, seconds: f32 },                // SoundObjectFadeAndStop
+        room_animation{ room: Text, animation: i32 },       // PlayRoomAnimation: loops on the LYT room of that name
+        lightsaber{ id: u32, forced: bool, powered: bool, transition: bool },   // SetLightsaberPowered
+        tutorial{ window: i32 },                            // ShowTutorialWindow
+        end_game{ show_gui: bool },                         // EndGame: the credits and the end-game panel
+        open_store{ store: u32, customer: u32, markup: i32, markdown: i32 },   // OpenStore, bonuses clamped to +-100
+        upgrade_screen{ item: u32 },                        // ShowUpgradeScreen (OBJECT_INVALID: pick one)
     }
 
     // Text copied into the outbox's buffer, valid until the outbox is drained.

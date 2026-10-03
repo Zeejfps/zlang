@@ -1,0 +1,5 @@
+# Both panels for a character who carries nothing.
+#   ... empty.txt 12 5:em_equip 8:em_inv
+3 ui menu equip
+6 ui menu inventory
+9 ui key escape

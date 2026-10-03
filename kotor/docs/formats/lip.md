@@ -151,6 +151,31 @@ confirmed by reverse engineering:
 Linear blending is our choice until RE says otherwise; the keys are about 0.1 s apart, so the
 difference between linear and smoother blending is small.
 
+## Playback (verified)
+
+Supersedes step 2 of "best known" above (steps 1, 3 and 4 hold). Read from `swkotor.exe`, not
+guessed: `CSWCCreature::PlayLipSync` (0x00616310) turns every key into a normalised time (time /
+LIP length) and a pose value `(shape + 1) / 16`; `CSWCCreatureModel::PlayLip` (0x006994a0) hands
+them to `PlayLipAnimation("talk", ...)` of the head and of the body; the lip instance's constructor
+(0x004818c0) multiplies each pose value by the `talk` animation's length; and `CAurObject::Update`
+(0x00486670, flag 0x200 branch) takes the two keys around `elapsed / duration` and samples every
+controller of `talk` at the two stored times, blended linearly by the fraction between the keys.
+
+- **Shape *s* is the `talk` pose at `(s + 1) / 16` of the animation's length**, not at *s*/30 s:
+  1/32 s for shape 0 (a hair off the bind pose: the jaw 0.4 to 1.4 degrees open on `pmha01`,
+  `pfha01`, `p_bastilah`) up to the last key (0.5 s) for shape 15. The two readings differ by
+  under one 1/30 s key and look alike in renders (`kotor/out/lipcheck/mapping_*.png`, made by
+  `kotor/tools/lipcheck`): M/P/B presses the lips and AH/OH open the jaw in both; at *s*/30 shape 0
+  is the bind pose with sealed lips and OOH purses the lips, which pictures alone would favour.
+  The exe's code is unambiguous and it is what the game ran.
+- **A model without `talk` just keeps its mouth still.** Survey of `appearance.2da`: all 106 head
+  models (heads.2da) have `talk` through their supermodel chain; of 90 whole-creature models, 45
+  have it and 45 don't: the animals and monsters (bantha, dewback, rancor, krayt dragon, kath hounds,
+  ...), every droid (including the lite ones) and the turrets, some aliens (brith, iriaz, ithorian,
+  jawa, gizka), `P_T3M3` and `N_DarthMalak`.
+- **Implemented** by `lib/dialog/lipsync` (`lipsync::apply`: the head's own pose with only the face
+  bones `talk` drives replaced; `tools/lipcheck` checks it).
+
 ## Checked
 
 `python kotor/tools/py/lip_probe.py` (about 10 s) runs over every LIP copy in the install

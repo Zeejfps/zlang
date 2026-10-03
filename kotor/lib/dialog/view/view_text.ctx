@@ -1,0 +1,50 @@
+// The strings dialogue text is made of (docs/formats/tlk.md, Tokens): the player's name and the
+// scripts' <CUSTOMn>, handed to the GUI, which expands them when a line is set.
+namespace dlgview {
+    fn set_token { mut g: gui::Gui, name: []u8, value: []u8 } {
+        gui::set_token{ g = &g, name, value } iferr {}
+    }
+
+    // Gives the GUI the tokens a line may use. The player's name splits at its first space.
+    fn sync_tokens { mut w: world::World, mut g: gui::Gui } {
+        let pc = world::object{ w = &w, id = w.conversation.other }
+        if pc != null {
+            let full = pc.name.text
+            let mut space: usize = 0
+            while space < full.len and full[space] != ' ' { space = space + 1 }
+            set_token{ &g, name = "FullName", value = full }
+            set_token{ &g, name = "FirstName", value = full[..space] }
+            let last: []u8 = if space < full.len { full[space + 1..] } else { full[..0] }
+            set_token{ &g, name = "LastName", value = last }
+        }
+        // <CUSTOMn> from SetCustomToken (the world keeps them for the whole session).
+        let all = list::items{ list = w.tokens.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let c = all[i]
+            i = i + 1
+            // "CUSTOM" and the number's digits.
+            let mut name: [16]u8
+            let prefix: []u8 = "CUSTOM"
+            let mut n: usize = 0
+            while n < prefix.len {
+                name[n] = prefix[n]
+                n = n + 1
+            }
+            let mut digits: [10]u8
+            let mut count: usize = 0
+            let mut value = if c.number < 0 { 0 } else { c.number }
+            while value > 0 or count == 0 {
+                digits[count] = @trunc(u8, '0' + value % 10)
+                count = count + 1
+                value = value / 10
+            }
+            while count > 0 {
+                count = count - 1
+                name[n] = digits[count]
+                n = n + 1
+            }
+            set_token{ &g, name = name[..n], value = c.text }
+        }
+    }
+}

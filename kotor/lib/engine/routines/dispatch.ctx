@@ -79,7 +79,9 @@ namespace routines {
         if try rt_crea::run{ &w, &vm, routine, argc } { return true }
         if try rt_item::run{ &w, &vm, routine, argc } { return true }
         if try rt_fx::run{ &w, &vm, routine, argc } { return true }
+        if try rt_dlg::run{ &w, &vm, routine, argc } { return true }
         if try rt_combat::run{ &w, &vm, routine, argc } { return true }
+        if try rt_misc::run{ &w, &vm, routine, argc } { return true }
         return false
     }
 

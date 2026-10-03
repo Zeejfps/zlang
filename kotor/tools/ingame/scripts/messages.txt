@@ -1,0 +1,11 @@
+# The messages panel: the dialogue log (shown first), the feedback log, a line added while it is open.
+# sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/messages.txt 40 5:m_dialog 9:m_feedback 14:m_live
+1 ui log Item received: Blaster Pistol
+1 ui logred Carth Onasi attacks Sith Soldier: Attack Roll: 14 + 6 = 20 vs Defense 16. Hit. Damage: 7
+1 ui dialog Trask: Look sharp, the Sith are right behind us!
+1 ui dialog Carth: Okay, we should be safe here, but we can't stay long. Take this and keep your head down while we find another way off this ship before the Sith finish their sweep of the lower decks.
+1 ui log Experience points gained: 25
+2 ui menu messages
+6 ui click 560 545
+10 ui log A line added while the panel is open
+10 ui logred Another one, in red

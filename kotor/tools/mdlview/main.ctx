@@ -70,17 +70,17 @@ fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut 
 
     let mut parts = list::new(Part, arena::Arena){ realloc = arena::alloc, heap = &heap }
     let body = mdl_cache::get{ &fs, &cache, name = opts.model } ifnull { return no_model{ name = opts.model } }
-    let body_part = try make_part{ &io, &fs, &dev, &heap, &cache, &mats, rm, plain = opts.plain, model = body, anim = opts.anim, time = opts.time, base = math::mat4::identity{} }
+    let body_part = try make_part{ &io, &fs, &dev, &heap, &cache, &mats, rm, plain = opts.plain, model = body, anim = opts.anim, time = opts.time, base = math::mat4::identity{}, parent = null, hook = "" }
     try list::push{ list = &parts, item = body_part }
     if opts.head.len > 0 {
         let head = mdl_cache::get{ &fs, &cache, name = opts.head } ifnull { return no_model{ name = opts.head } }
         let hook = mdl_anim::hook_transform{ model = body, pose = body_part.pose, name = mdl_anim::HOOK_HEAD } ifnull { return no_hook{ name = mdl_anim::HOOK_HEAD } }
-        try list::push{ list = &parts, item = try make_part{ &io, &fs, &dev, &heap, &cache, &mats, rm, plain = opts.plain, model = head, anim = opts.anim, time = opts.time, base = hook } }
+        try list::push{ list = &parts, item = try make_part{ &io, &fs, &dev, &heap, &cache, &mats, rm, plain = opts.plain, model = head, anim = opts.anim, time = opts.time, base = hook, parent = body, hook = mdl_anim::HOOK_HEAD } }
     }
     if opts.attach_model.len > 0 {
         let other = mdl_cache::get{ &fs, &cache, name = opts.attach_model } ifnull { return no_model{ name = opts.attach_model } }
         let hook = mdl_anim::hook_transform{ model = body, pose = body_part.pose, name = opts.attach_node } ifnull { return no_hook{ name = opts.attach_node } }
-        try list::push{ list = &parts, item = try make_part{ &io, &fs, &dev, &heap, &cache, &mats, rm, plain = opts.plain, model = other, anim = "", time = 0.0, base = hook } }
+        try list::push{ list = &parts, item = try make_part{ &io, &fs, &dev, &heap, &cache, &mats, rm, plain = opts.plain, model = other, anim = "", time = 0.0, base = hook, parent = body, hook = opts.attach_node } }
     }
     try draw_and_save{ &io, &fs, &dev, &frame, &heap, parts = list::items{ list = parts }, opts }
 }
@@ -151,8 +151,10 @@ fn draw_and_save { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: rend
 fn make_part {
     mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, mut cache: mdl_cache::Cache,
     mut mats: material::Cache, rm: res::Manager, plain: bool, model: *mdl::Model, anim: []u8, time: f32, base: math::Mat4,
+    parent: ?*mdl::Model, hook: []u8,
 } -> !Part {
     let pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model }
+    if parent != null { mdl_anim::hold_shared{ model, pose, parent, hook } }
     if anim.len > 0 {
         let found = mdl_anim::find{ model, name = anim, lookup = mdl_cache::get{ &fs, &cache, _ } }
         if found != null {

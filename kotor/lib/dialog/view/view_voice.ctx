@@ -1,0 +1,93 @@
+// A line's voice-over (docs/re/dialogue.md 7): one stream in the voice group, replaced only when
+// the next voiced line starts, so it plays on over the reply list and over unvoiced lines.
+namespace dlgview {
+    fn stop_voice { mut v: View, mut w: world::World, fade: f32 } {
+        mix::stop{ m = v.m, h = v.voice, fade }
+        if v.voice_bytes.len > 0 and fade <= 0.0 {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = v.voice_bytes, count = 0 }
+            v.voice_bytes = slice::empty(u8){}
+        }
+        w.conversation.vo_playing = false
+        v.lip_elapsed = 0.0
+        drop_lip{ &v }
+    }
+
+    // Starts the voice-over `name` for `speaker`; false when there is no file (the flow treats the
+    // line as unvoiced then).
+    fn play_voice { mut v: View, mut w: world::World, speaker: u32, name: resref::ResRef } -> bool {
+        mix::stop{ m = v.m, h = v.voice, fade = 0.0 }
+        if v.voice_bytes.len > 0 {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = v.voice_bytes, count = 0 }
+            v.voice_bytes = slice::empty(u8){}
+        }
+        let loaded = dlg::load_sound{ &w, name } iferr { return false }
+        let bytes = loaded ifnull { return false }
+        v.voice_bytes = bytes
+        v.voice = mix::play{ m = v.m, bytes, p = mix::sound_2d{ group = mix::Group::voice, volume = 1.0 } } iferr {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = v.voice_bytes, count = 0 }
+            v.voice_bytes = slice::empty(u8){}
+            return false
+        }
+        v.voice_speaker = speaker
+        load_lip{ &v, &w, name }
+        v.lip_elapsed = 0.0
+        if w.log.dialog {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog voice {} on {}\n", name, speaker)
+        }
+        return true
+    }
+
+    // Each frame: honour a stop request, tell the flow whether the voice still plays, and give
+    // the memory of a finished one back.
+    fn update_voice { mut v: View, mut w: world::World } {
+        if w.conversation.vo_stop {
+            w.conversation.vo_stop = false
+            stop_voice{ &v, &w, fade = 0.0 }
+        }
+        let playing = mix::is_playing{ m = v.m, h = v.voice }
+        w.conversation.vo_playing = playing and w.conversation.vo_playing
+        if not playing and v.voice_bytes.len > 0 {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = v.voice_bytes, count = 0 }
+            v.voice_bytes = slice::empty(u8){}
+        }
+    }
+
+    // The dialogue's AmbientTrack (2.7): a file of streammusic/, played in the music group for as
+    // long as the conversation lasts. The area's own music keeps playing under it (ours: the
+    // original's handling of it was not traced).
+    fn start_ambient_track { mut v: View, mut w: world::World, name: resref::ResRef } {
+        if resref::is_empty{ r = name } { return }
+        // The last conversation's track is gone by now (its fade-out was half a second).
+        mix::stop{ m = v.m, h = v.ambient, fade = 0.0 }
+        if v.ambient_bytes.len > 0 {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = v.ambient_bytes, count = 0 }
+            v.ambient_bytes = slice::empty(u8){}
+        }
+        let mut key = name
+        let text = resref::bytes{ r = &key }
+        let kept = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = text.len } iferr { return }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = kept, count = 0 }
+        slice::copy(u8){ dst = kept, src = text }
+        let path = res::music_path(heap::Heap){ rm = w.rm.*, name = kept, realloc = heap::alloc, heap = w.heap } iferr { return }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = path, count = 0 }
+        let bytes = fs::read_all(heap::Heap){ fs = &w.fs, heap = v.heap, realloc = heap::alloc, path } iferr { return }
+        let mut p = mix::sound_2d{ group = mix::Group::music, volume = 0.5 }
+        p.looping = true
+        v.ambient = mix::play{ m = v.m, bytes, p } iferr {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = bytes, count = 0 }
+            return
+        }
+        v.ambient_bytes = bytes
+        if w.log.dialog {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog ambient track {} ({} bytes)\n", name, bytes.len)
+        }
+    }
+
+    fn stop_ambient_track { mut v: View } {
+        mix::stop{ m = v.m, h = v.ambient, fade = 0.5 }
+        // The bytes stay until the next conversation's track replaces them: the sound fades out
+        // reading them.
+    }
+}

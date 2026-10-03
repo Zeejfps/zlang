@@ -1,0 +1,12 @@
+# The Powers tab for a Force user on the dark side: the cost of a light power rises (Stun, 20 base
+# -> 30 at alignment 10) and the middle caption reads Dark Side.
+#   sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/sheet_dark.txt 40 20:dark_powers 30:dark_stun
+3 ui stat class 3
+3 ui stat level 4
+3 ui stat wis 14
+3 ui stat cha 12
+3 ui stat align 10
+3 ui stat template p_bastilla
+5 ui menu abilities
+10 ui click 642 217
+18 ui click 500 500

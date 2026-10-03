@@ -1,17 +1,43 @@
-// Routines: the player and the party. Until the party table exists (HOOK(party)) the party is
-// the player alone.
+// Routines: the player and the party (docs/re/party-items-saves.md, 3): who the party is, which
+// companions exist (the NPC slots of party.ctx: available, selectable, in the party), and solo mode.
+//
+// An available slot keeps no creature while it is out of the area, as the original keeps only
+// AVAILNPC<n>.utc: the party table remembers the blueprint (w.party.templates), and
+// SpawnAvailableNPC makes the creature then, linking it to the slot (w.party.npcs). So
+// AddAvailableNPCByTemplate only checks that the UTC exists; it spawns nothing, and nothing of the
+// area is disturbed. A module change destroys the creatures; the slots stay available. When saves
+// exist, SaveNPCState and the transitions write the creature's state where the blueprint is now.
+// The purse is shared (party::add_gold): a joining NPC's own gold is merged into it.
 namespace rt_party {
     fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
-        if routine == nwscript::GetFirstPC { try nwvm::push_object{ &vm, id = if world::is_valid{ w = &w, id = w.pc } { w.pc } else { obj::INVALID } } }
-        else if routine == nwscript::GetNextPC { try nwvm::push_object{ &vm, id = obj::INVALID } }
-        else if routine == nwscript::GetIsPC { try get_is_pc{ &w, &vm, argc } }
-        else if routine == nwscript::GetPartyMemberByIndex { try get_party_member_by_index{ &w, &vm, argc } }
-        else if routine == nwscript::IsObjectPartyMember { try is_object_party_member{ &w, &vm, argc } }
-        else if routine == nwscript::GetPartyMemberCount { try nwvm::push_int{ &vm, v = @as(i32, w.party.count) } }
-        else if routine == nwscript::GetPCSpeaker { try nwvm::push_object{ &vm, id = w.pc } }
-        else { return false }
+        match routine {
+            nwscript::GetFirstPC => { try nwvm::push_object{ &vm, id = if world::is_valid{ w = &w, id = w.pc } { w.pc } else { obj::INVALID } } }
+            nwscript::GetNextPC => { try nwvm::push_object{ &vm, id = obj::INVALID } }
+            nwscript::GetIsPC => { try get_is_pc{ &w, &vm, argc } }
+            nwscript::GetPartyMemberByIndex => { try get_party_member_by_index{ &w, &vm, argc } }
+            nwscript::IsObjectPartyMember => { try is_object_party_member{ &w, &vm, argc } }
+            nwscript::GetPartyMemberCount => { try nwvm::push_int{ &vm, v = @as(i32, w.party.count) } }
+            nwscript::GetPCSpeaker => { try nwvm::push_object{ &vm, id = w.pc } }
+            // ---- the party table
+            nwscript::AddPartyMember => { try add_party_member{ &w, &vm, argc } }
+            nwscript::RemovePartyMember => { try remove_party_member{ &w, &vm, argc } }
+            nwscript::AddAvailableNPCByTemplate => { try add_available_by_template{ &w, &vm, argc } }
+            nwscript::AddAvailableNPCByObject => { try add_available_by_object{ &w, &vm, argc } }
+            nwscript::RemoveAvailableNPC => { try remove_available_npc{ &w, &vm, argc } }
+            nwscript::IsAvailableCreature => { try is_available_creature{ &w, &vm, argc } }
+            nwscript::SpawnAvailableNPC => { try spawn_available_npc{ &w, &vm, argc } }
+            nwscript::SetAvailableNPCId => { try set_available_npc_id{ &w, &vm, argc } }
+            nwscript::GetNPCSelectability => { try get_npc_selectability{ &w, &vm, argc } }
+            nwscript::SetNPCSelectability => { try set_npc_selectability{ &w, &vm, argc } }
+            nwscript::SaveNPCState => { try save_npc_state{ &w, &vm, argc } }
+            nwscript::SwitchPlayerCharacter => { try switch_player_character{ &w, &vm, argc } }
+            nwscript::SetSoloMode => { try set_solo_mode{ &w, &vm, argc } }
+            else => { return false }
+        }
         return true
     }
+
+    fn flag { b: bool } -> i32 { return if b { 1 } else { 0 } }
 
     fn get_is_pc { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetIsPC, argc, i = 0 }
@@ -27,5 +53,231 @@ namespace rt_party {
     fn is_object_party_member { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::IsObjectPartyMember, argc, i = 0 }
         try nwvm::push_int{ &vm, v = if party::is_member{ w = &w, id } and world::is_valid{ w = &w, id } { 1 } else { 0 } }
+    }
+
+    // ---- joining the party
+
+    // A creature that joins the party takes the player's side (the faction of the PC), and its
+    // own credits go to the shared purse (MergeCreatureIntoParty; its items stay with it until the
+    // party inventory is shared).
+    fn join_party_side { mut w: world::World, o: *mut obj::Object, c: *mut obj::Creature } {
+        party::add_gold{ &w, n = @as(i64, c.gold) }
+        c.gold = 0
+        let pc = world::object{ w = &w, id = w.pc } ifnull { return }
+        o.faction = pc.faction
+    }
+
+    // AddAvailableNPCByObject (0x00564300): refuses a slot that is available, a bad slot or a
+    // creature that is not there. Only the blueprint is kept; the creature is not linked.
+    fn make_available_from { mut w: world::World, n: i32, id: u32 } -> bool {
+        if not party::valid_slot{ n } { return false }
+        let s = @as(usize, n)
+        if w.party.available[s] { return false }
+        let o = world::object{ w = &w, id } ifnull { return false }
+        let c = obj::creature{ o } ifnull { return false }
+        if resref::is_empty{ r = o.template } { return false }
+        w.party.available[s] = true
+        w.party.selectable[s] = true
+        w.party.templates[s] = o.template
+        join_party_side{ &w, o, c }
+        return true
+    }
+
+    // int AddAvailableNPCByObject(int nNPC, object oCreature)
+    fn add_available_by_object { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::AddAvailableNPCByObject
+        let n = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        try nwvm::push_int{ &vm, v = flag{ b = make_available_from{ &w, n, id } } }
+    }
+
+    // int AddAvailableNPCByTemplate(int nNPC, string sTemplate): the UTC has to exist.
+    fn add_available_by_template { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::AddAvailableNPCByTemplate
+        let n = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let template = try nwarg::string{ &vm, routine = r, argc, i = 1 }
+        let mut ok = false
+        if party::valid_slot{ n } and template.len > 0 and not w.party.available[@as(usize, n)] {
+            let found = world::read_gff{ &w, name = template, kind = restype::Type::utc } iferr { null }
+            if found != null {
+                let s = @as(usize, n)
+                w.party.available[s] = true
+                w.party.selectable[s] = true
+                w.party.templates[s] = resref::truncate{ name = template }
+                ok = true
+            }
+        }
+        try nwvm::push_int{ &vm, v = flag{ b = ok } }
+    }
+
+    // int RemoveAvailableNPC(int nNPC): only the flag goes (the creature and the membership stay).
+    fn remove_available_npc { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::RemoveAvailableNPC, argc, i = 0 }
+        let mut ok = false
+        if party::valid_slot{ n } and w.party.available[@as(usize, n)] {
+            w.party.available[@as(usize, n)] = false
+            ok = true
+        }
+        try nwvm::push_int{ &vm, v = flag{ b = ok } }
+    }
+
+    // int IsAvailableCreature(int nNPC)
+    fn is_available_creature { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::IsAvailableCreature, argc, i = 0 }
+        try nwvm::push_int{ &vm, v = flag{ b = party::valid_slot{ n } and w.party.available[@as(usize, n)] } }
+    }
+
+    // int GetNPCSelectability(int nNPC): -1 for a slot that is not available (0x005637c0).
+    fn get_npc_selectability { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::GetNPCSelectability, argc, i = 0 }
+        let v = if party::valid_slot{ n } and w.party.available[@as(usize, n)] { flag{ b = w.party.selectable[@as(usize, n)] } } else { -1 }
+        try nwvm::push_int{ &vm, v }
+    }
+
+    // void SetNPCSelectability(int nNPC, int nSelectability): available slots only.
+    fn set_npc_selectability { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::SetNPCSelectability, argc, i = 0 }
+        let on = try nwarg::int{ &vm, routine = nwscript::SetNPCSelectability, argc, i = 1 }
+        if party::valid_slot{ n } and w.party.available[@as(usize, n)] { w.party.selectable[@as(usize, n)] = on != 0 }
+    }
+
+    // void SaveNPCState(int nNPC): the creature's state is written to AVAILNPC<n> when saves
+    // exist; until then the blueprint is all an available slot keeps.
+    fn save_npc_state { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        _ = try nwarg::int{ &vm, routine = nwscript::SaveNPCState, argc, i = 0 }
+    }
+
+    // int SwitchPlayerCharacter(int nNPC): playing as a companion is not here yet; logged, and
+    // answered FALSE so the script knows nothing changed.
+    fn switch_player_character { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::SwitchPlayerCharacter, argc, i = 0 }
+        world::prefix{ w = &w }
+        _ = @fmt(&w.io, "SwitchPlayerCharacter {}: not implemented\n", n)
+        try nwvm::push_int{ &vm, v = 0 }
+    }
+
+    // void SetSoloMode(int bActivate): the flag (what it changes in play is movement's and the GUI's).
+    // GetSoloMode is creature.ctx's and answers 0 for now: it should read w.party.solo.
+    fn set_solo_mode { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let on = try nwarg::int{ &vm, routine = nwscript::SetSoloMode, argc, i = 0 }
+        w.party.solo = on != 0
+    }
+
+    // ---- creatures of the slots
+
+    // void SetAvailableNPCId(int nNPC, object oidNPC): links a creature that already exists (one
+    // of the module's) to an available slot.
+    fn set_available_npc_id { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::SetAvailableNPCId
+        let n = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        if not party::valid_slot{ n } or not w.party.available[@as(usize, n)] { return }
+        let o = world::object{ w = &w, id } ifnull { return }
+        if obj::creature{ o } == null { return }
+        w.party.npcs[@as(usize, n)] = id
+    }
+
+    // The creature of an available slot, put in the area at `l` (GetNPCObject then the placing of
+    // SpawnAvailableNPC, 0x00565130): the one linked already, else made from the blueprint. Its
+    // actions are cleared, it stands on the walkmesh at the spot, and it is the player's friend.
+    // OBJECT_INVALID for a slot that is not available or has no blueprint.
+    fn spawn_available { mut w: world::World, n: i32, l: values::Location } -> u32 {
+        party::prune{ &w }
+        if not party::valid_slot{ n } { return obj::INVALID }
+        let s = @as(usize, n)
+        if not w.party.available[s] { return obj::INVALID }
+        let facing = obj::direction_of{ degrees = l.facing }
+        let mut id = w.party.npcs[s]
+        if not world::is_valid{ w = &w, id } {
+            if resref::is_empty{ r = w.party.templates[s] } { return obj::INVALID }
+            let mut blueprint = w.party.templates[s]
+            id = tmpl::spawn{ &w, kind = obj::Kind::creature, template = resref::bytes{ r = &blueprint }, position = l.position, orientation = facing } iferr err{ error } {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "SpawnAvailableNPC {}: {}\n", n, error)
+                return obj::INVALID
+            }
+            w.party.npcs[s] = id
+        }
+        let o = world::object{ w = &w, id } ifnull { return obj::INVALID }
+        let c = obj::creature{ o } ifnull { return obj::INVALID }
+        // A companion comes back as it left: its OnSpawn does not run again.
+        c.spawn_fired = true
+        o.area = w.area
+        o.commandable = true
+        actions::clear_all{ &w, id }
+        movement::place{ &w, id, at = l.position }
+        world::set_orientation{ o, v = facing }
+        if o.ai_level < 1 { o.ai_level = 1 }
+        let pc = world::object{ w = &w, id = w.pc }
+        if pc != null { o.faction = pc.faction }
+        return id
+    }
+
+    // object SpawnAvailableNPC(int nNPC, location lPosition)
+    fn spawn_available_npc { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::SpawnAvailableNPC
+        let n = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let h = try nwarg::engine{ &vm, routine = r, argc, i = 1, kind = nwvm::EngineType::location }
+        let l = values::location{ s = &w.values, handle = h }
+        try nwvm::push_object{ &vm, id = spawn_available{ &w, n, l } }
+    }
+
+    // ---- membership
+
+    // AddPartyMember (0x00565620): the slot is available, the creature is there and is not the
+    // creature of another slot, and the party (the player and two) has room. A member already in
+    // is a success. The creature is linked to the slot, becomes player-controlled (AI level 4) and
+    // joins the player's side.
+    fn join_party { mut w: world::World, n: i32, id: u32 } -> bool {
+        party::prune{ &w }
+        if not party::valid_slot{ n } { return false }
+        let s = @as(usize, n)
+        if not w.party.available[s] { return false }
+        let o = world::object{ w = &w, id } ifnull { return false }
+        let c = obj::creature{ o } ifnull { return false }
+        let other = party::slot_of{ w = &w, id }
+        if other >= 0 and other != n { return false }
+        // Whoever else the slot was linked to is let go.
+        let linked = w.party.npcs[s]
+        if linked != id and party::is_member{ w = &w, id = linked } { release_member{ &w, id = linked } }
+        if not party::is_member{ w = &w, id } {
+            if not party::add{ &w, id } { return false }
+            join_party_side{ &w, o, c }
+        }
+        w.party.npcs[s] = id
+        o.ai_level = 4
+        return true
+    }
+
+    // A creature that leaves the party stays where it is, as an ordinary creature again (AI level
+    // 2, nothing queued: it was following the leader).
+    fn release_member { mut w: world::World, id: u32 } {
+        party::remove{ &w, id }
+        let o = world::object{ w = &w, id } ifnull { return }
+        o.ai_level = 2
+        actions::clear_all{ &w, id }
+    }
+
+    // int AddPartyMember(int nNPC, object oCreature)
+    fn add_party_member { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::AddPartyMember
+        let n = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        try nwvm::push_int{ &vm, v = flag{ b = join_party{ &w, n, id } } }
+    }
+
+    // int RemovePartyMember(int nNPC): the slot's creature, if it is in the party.
+    fn remove_party_member { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::RemovePartyMember, argc, i = 0 }
+        party::prune{ &w }
+        let mut ok = false
+        if party::valid_slot{ n } and w.party.available[@as(usize, n)] {
+            let id = w.party.npcs[@as(usize, n)]
+            if party::is_member{ w = &w, id } {
+                release_member{ &w, id }
+                ok = true
+            }
+        }
+        try nwvm::push_int{ &vm, v = flag{ b = ok } }
     }
 }

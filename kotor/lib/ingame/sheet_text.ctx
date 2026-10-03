@@ -1,0 +1,112 @@
+// Putting numbers into labels: each helper formats into a builder the caller keeps for the
+// duration of one fill and sets the control's text from it (the Gui copies the bytes).
+namespace sheet {
+    // The scratch text of one fill. Make one with `new_text`, `defer utf8::free{ &b }` it.
+    fn new_text { w: *world::World } -> utf8::Builder(heap::Heap) {
+        return utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } }
+    }
+
+    // Sets the label to what is in the builder, and empties it.
+    fn flush { mut g: gui::Gui, mut b: utf8::Builder(heap::Heap), panel: u32, tag: []u8 } -> ! {
+        try gui::set_text{ &g, panel, tag, text = utf8::view{ b }.bytes }
+        utf8::clear{ &b }
+    }
+
+    fn say { mut g: gui::Gui, mut b: utf8::Builder(heap::Heap), panel: u32, tag: []u8, text: []u8 } -> ! {
+        try gui::set_text{ &g, panel, tag, text }
+        utf8::clear{ &b }
+    }
+
+    fn say_num { mut g: gui::Gui, mut b: utf8::Builder(heap::Heap), panel: u32, tag: []u8, n: i32 } -> ! {
+        try @fmt(&b, "{}", n)
+        try flush{ &g, &b, panel, tag }
+    }
+
+    // +3, +0, -2.
+    fn say_signed { mut g: gui::Gui, mut b: utf8::Builder(heap::Heap), panel: u32, tag: []u8, n: i32 } -> ! {
+        if n >= 0 { try @fmt(&b, "+{}", n) } else { try @fmt(&b, "{}", n) }
+        try flush{ &g, &b, panel, tag }
+    }
+
+    // 12/30, as the vitality and Force numbers.
+    fn say_pair { mut g: gui::Gui, mut b: utf8::Builder(heap::Heap), panel: u32, tag: []u8, a: i32, z: i32 } -> ! {
+        try @fmt(&b, "{}/{}", a, z)
+        try flush{ &g, &b, panel, tag }
+    }
+
+    // 1234567 as 1,234,567.
+    fn say_grouped { mut g: gui::Gui, mut b: utf8::Builder(heap::Heap), panel: u32, tag: []u8, n: i32 } -> ! {
+        try put_grouped{ &b, n }
+        try flush{ &g, &b, panel, tag }
+    }
+
+    fn put_grouped { mut b: utf8::Builder(heap::Heap), n: i32 } -> ! {
+        let mut digits: [20]u8
+        let mut v: u64 = 0
+        if n < 0 {
+            try utf8::push_char{ &b, c = '-' }
+            v = @as(u64, -n)
+        } else {
+            v = @as(u64, n)
+        }
+        let text = utf8::fmt_u64{ n = v, into = digits[..] }.bytes
+        let mut i: usize = 0
+        while i < text.len {
+            if i > 0 and (text.len - i) % 3 == 0 { try utf8::push_char{ &b, c = ',' } }
+            try utf8::push_char{ &b, c = @as(u32, text[i]) }
+            i = i + 1
+        }
+    }
+
+    // ---- pictures
+
+    // The portrait picture's name: portraits.2da's `baseresref` for the creature's portrait id. A
+    // creature with none (the default player, made before character creation exists) gets the
+    // portrait the table made for its appearance.
+    fn portrait_of { w: *world::World, id: u32 } -> []u8 {
+        let named = hud::portrait_of{ w, id }
+        if named.len > 0 { return named }
+        let c = hud::creature_of{ w, id } ifnull { return "" }
+        let t = w.tables.portraits
+        let mut row: usize = 0
+        while row < twoda::rows{ t } {
+            let shown = twoda::get_int{ t, row, column = "appearancenumber" } ifnull -1
+            if shown == @as(i32, c.appearance) { return twoda::get_string{ t, row, column = "baseresref" } ifnull "" }
+            row = row + 1
+        }
+        return ""
+    }
+
+    // A control's rectangle as the file has it: x, y, width, height (zeros when it has none).
+    fn home_of { mut g: gui::Gui, panel: u32, tag: []u8 } -> [4]i32 {
+        let c = gui::find_control{ &g, panel, tag } ifnull { return [0; 4] }
+        return [c.x, c.y, c.w, c.h]
+    }
+
+    // Puts the texture `name` in the label, as large as fits in `home` (its rectangle in the file)
+    // with the picture's proportions kept, centred in it. A missing picture leaves the label empty.
+    fn show_picture { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, tag: []u8, name: []u8, home: [4]i32 } -> ! {
+        let area = gui::find_control{ &g, panel, tag } ifnull { return }
+        let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name }
+        if not img.ok {
+            gui::clear_picture{ &g, panel, tag }
+            return
+        }
+        let fw = @as(f32, home[2]) / img.w
+        let fh = @as(f32, home[3]) / img.h
+        let f = if fw < fh { fw } else { fh }
+        let nw = @as(i32, img.w * f)
+        let nh = @as(i32, img.h * f)
+        area.x = home[0] + (home[2] - nw) / 2
+        area.y = home[1] + (home[3] - nh) / 2
+        area.w = nw
+        area.h = nh
+        gui::set_picture{ &g, panel, tag, texture = img.tex, w = img.w, h = img.h }
+    }
+
+    // The text of a dialog.tlk string; "" for none.
+    fn tlk_text { w: *world::World, strref: u32 } -> []u8 {
+        if strref == 0 or strref == 0xFFFFFFFF { return "" }
+        return world::string_by_strref{ w, strref }
+    }
+}

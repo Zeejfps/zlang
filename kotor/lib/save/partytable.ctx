@@ -1,0 +1,179 @@
+// PARTYTABLE.res: the party table of a save (docs/formats/gff-save.md, "PARTYTABLE.res";
+// docs/re/party-items-saves.md 1.9, 3.1, 3.2 and 3.9). What we keep of it is the purse, solo mode,
+// which of the nine NPC slots are available and selectable, and who is in the active party; the
+// rest (XP pool, galaxy map, pazaak, logs, journal) is written at the defaults a fresh game has,
+// in the engine's field order, so the file has the shape the original's loader expects.
+//
+// Reading does not spawn anyone: membership is data (`w.party.saved_*`) until the loader
+// restores the party, as in the engine ("LoadPartyTable ... does not spawn anyone").
+//
+//   let bytes = try save::write_party_table{ realloc = heap::alloc, &h, w, played_seconds }
+//   try save::read_party_table{ w, doc = &doc }
+namespace save {
+    // npc.2da's rows 0..8: the slots a save lists.
+    const PT_SLOTS: usize = 9
+    const PT_PAZAAK_CARDS: usize = 18
+    const PT_SIDE_CARDS: usize = 10
+    // The in-game menu panel a fresh install's save shows as last opened.
+    const PT_LAST_PANEL: i32 = 7
+
+    fn write_party_table(S) { realloc: alloc::Fn(S), mut heap: S, w: *world::World, played_seconds: u32 } -> !alloc::Bytes {
+        let mut b = try gffw::new{ realloc, heap = &heap, tag = "PT  " }
+        defer gffw::free{ &b }
+        let root = gffw::ROOT
+
+        // Who is in the party besides the PC: the NPC slot whose creature each member is. The
+        // leader is the first member; its slot is the table's leader slot (-1: the PC leads).
+        let mut listed: [3]i32 = [-1; 3]
+        let mut n_listed: usize = 0
+        let mut leader: i32 = -1
+        let mut m: usize = 0
+        while m < w.party.count and m < 3 {
+            let slot = npc_slot_of{ w, id = w.party.members[m] }
+            if slot >= 0 {
+                listed[n_listed] = slot
+                n_listed = n_listed + 1
+                if m == 0 { leader = slot }
+            }
+            m = m + 1
+        }
+
+        try put_gff_value{ &b, owner = root, label = "PT_GOLD", value = gff::Value::dword{ v = @trunc(u32, if w.party.gold < 0 { 0 } else { w.party.gold }) } }
+        try put_gff_value{ &b, owner = root, label = "PT_XP_POOL", value = gff::Value::int{ v = w.party.xp_pool } }
+        try put_gff_value{ &b, owner = root, label = "PT_PLAYEDSECONDS", value = gff::Value::dword{ v = played_seconds } }
+        // The engine writes PT_CONTROLLED_NPC; the GFF writer cuts labels to 16 characters.
+        try put_gff_value{ &b, owner = root, label = "PT_CONTROLLED_NP", value = gff::Value::int{ v = -1 } }
+        try put_gff_value{ &b, owner = root, label = "PT_SOLOMODE", value = gff::Value::byte{ v = if w.party.solo { 1 } else { 0 } } }
+        try put_gff_value{ &b, owner = root, label = "PT_CHEAT_USED", value = gff::Value::byte{ v = 0 } }
+        try put_gff_value{ &b, owner = root, label = "PT_NUM_MEMBERS", value = gff::Value::byte{ v = @trunc(u8, n_listed) } }
+
+        let members = try gffw::put_list{ &b, owner = root, label = "PT_MEMBERS" }
+        let mut k: usize = 0
+        while k < n_listed {
+            let e = try gffw::add_element{ &b, list = members, id = 0 }
+            try put_gff_value{ &b, owner = e, label = "PT_MEMBER_ID", value = gff::Value::int{ v = listed[k] } }
+            try put_gff_value{ &b, owner = e, label = "PT_IS_LEADER", value = gff::Value::byte{ v = if listed[k] == leader { 1 } else { 0 } } }
+            k = k + 1
+        }
+
+        let avail = try gffw::put_list{ &b, owner = root, label = "PT_AVAIL_NPCS" }
+        k = 0
+        while k < PT_SLOTS {
+            let e = try gffw::add_element{ &b, list = avail, id = 0 }
+            try put_gff_value{ &b, owner = e, label = "PT_NPC_AVAIL", value = gff::Value::byte{ v = if w.party.available[k] { 1 } else { 0 } } }
+            try put_gff_value{ &b, owner = e, label = "PT_NPC_SELECT", value = gff::Value::byte{ v = if w.party.selectable[k] { 1 } else { 0 } } }
+            k = k + 1
+        }
+
+        try put_gff_value{ &b, owner = root, label = "PT_AISTATE", value = gff::Value::int{ v = 0 } }
+        try put_gff_value{ &b, owner = root, label = "PT_FOLLOWSTATE", value = gff::Value::int{ v = 0 } }
+
+        let galaxy = try gffw::put_struct{ &b, owner = root, label = "GlxyMap", id = 0 }
+        try put_gff_value{ &b, owner = galaxy, label = "GlxyMapNumPnts", value = gff::Value::dword{ v = 16 } }
+        try put_gff_value{ &b, owner = galaxy, label = "GlxyMapPlntMsk", value = gff::Value::dword{ v = 0 } }
+        try put_gff_value{ &b, owner = galaxy, label = "GlxyMapSelPnt", value = gff::Value::int{ v = -1 } }
+
+        // Pazaak: 2 of each of the first five cards. The engine writes 18 counts as INTs and a
+        // 19th entry as a BYTE (its slip: PT_CHEAT_USED again); the file has all 19.
+        let cards = try gffw::put_list{ &b, owner = root, label = "PT_PAZAAKCARDS" }
+        k = 0
+        while k < PT_PAZAAK_CARDS {
+            let e = try gffw::add_element{ &b, list = cards, id = 0 }
+            try put_gff_value{ &b, owner = e, label = "PT_PAZAAKCOUNT", value = gff::Value::int{ v = if k < 5 { 2 } else { 0 } } }
+            k = k + 1
+        }
+        let slip = try gffw::add_element{ &b, list = cards, id = 0 }
+        try put_gff_value{ &b, owner = slip, label = "PT_PAZAAKCOUNT", value = gff::Value::byte{ v = 0 } }
+
+        let side = try gffw::put_list{ &b, owner = root, label = "PT_PAZSIDELIST" }
+        k = 0
+        while k < PT_SIDE_CARDS {
+            let e = try gffw::add_element{ &b, list = side, id = 0 }
+            try put_gff_value{ &b, owner = e, label = "PT_PAZSIDECARD", value = gff::Value::int{ v = -1 } }
+            k = k + 1
+        }
+
+        let tutorial: [6]u8 = [0; 6]
+        try put_gff_value{ &b, owner = root, label = "PT_TUT_WND_SHOWN", value = gff::Value::void{ v = tutorial[..] } }
+        try put_gff_value{ &b, owner = root, label = "PT_LAST_GUI_PNL", value = gff::Value::int{ v = PT_LAST_PANEL } }
+        _ = try gffw::put_list{ &b, owner = root, label = "PT_FB_MSG_LIST" }
+        _ = try gffw::put_list{ &b, owner = root, label = "PT_DLG_MSG_LIST" }
+
+        // One price multiplier per baseitems.2da row, all 1.0 (ChangeItemCost isn't implemented).
+        // The engine writes PT_COST_MULT_LIST and PT_COST_MULT_VALUE, cut to 16 characters.
+        let mults = try gffw::put_list{ &b, owner = root, label = "PT_COST_MULT_LIS" }
+        let n_items = twoda::rows{ t = w.tables.baseitems }
+        k = 0
+        while k < n_items {
+            let e = try gffw::add_element{ &b, list = mults, id = 0 }
+            try put_gff_value{ &b, owner = e, label = "PT_COST_MULT_VAL", value = gff::Value::float{ v = 1.0 } }
+            k = k + 1
+        }
+
+        // The journal isn't saved yet.
+        try put_gff_value{ &b, owner = root, label = "JNL_SortOrder", value = gff::Value::int{ v = 0 } }
+        _ = try gffw::put_list{ &b, owner = root, label = "JNL_Entries" }
+        return try gffw::finish{ &b, layout = gffw::ENGINE }
+    }
+
+    fn put_gff_value(S) { mut b: gffw::Builder(S), owner: u32, label: []u8, value: gff::Value } -> ! {
+        _ = try gffw::add_value{ &b, owner, label, value }
+    }
+
+    // The NPC slot (0..8) whose creature is `id`, or -1 for the PC and anyone else.
+    fn npc_slot_of { w: *world::World, id: u32 } -> i32 {
+        let mut slot: usize = 0
+        while slot < PT_SLOTS {
+            if w.party.npcs[slot] == id { return @as(i32, slot) }
+            slot = slot + 1
+        }
+        return -1
+    }
+
+    // Fills the party's purse, solo flag and slot flags from a PARTYTABLE.res, as the engine's
+    // LoadPartyTable does (it resets the table first: every slot unavailable and selectable, the
+    // purse empty), and puts its members' NPC slots in `w.party.saved_slots`.
+    fn read_party_table { mut w: world::World, doc: *gff::Doc } -> ! {
+        let none = slice::empty(u32){}
+        let gold = gff::get_number{ doc = doc.*, s = gff::ROOT, label = "PT_GOLD" } ifnull 0
+        w.party.gold = clamp_to_i32{ v = gold }
+        w.party.xp_pool = clamp_to_i32{ v = gff::get_number{ doc = doc.*, s = gff::ROOT, label = "PT_XP_POOL" } ifnull 0 }
+        w.party.solo = (gff::get_number{ doc = doc.*, s = gff::ROOT, label = "PT_SOLOMODE" } ifnull 0) != 0
+
+        let avail = gff::get_list{ doc = doc.*, s = gff::ROOT, label = "PT_AVAIL_NPCS" } ifnull none
+        let mut slot: usize = 0
+        while slot < party::SLOTS {
+            w.party.available[slot] = false
+            w.party.selectable[slot] = slot < PT_SLOTS
+            if slot < PT_SLOTS and slot < avail.len {
+                let e = avail[slot]
+                w.party.available[slot] = (gff::get_number{ doc = doc.*, s = e, label = "PT_NPC_AVAIL" } ifnull 0) != 0
+                w.party.selectable[slot] = (gff::get_number{ doc = doc.*, s = e, label = "PT_NPC_SELECT" } ifnull 1) != 0
+            }
+            slot = slot + 1
+        }
+
+        w.party.saved_slots = [-1; 3]
+        w.party.saved_count = 0
+        w.party.saved_leader = -1
+        let members = gff::get_list{ doc = doc.*, s = gff::ROOT, label = "PT_MEMBERS" } ifnull none
+        let mut k: usize = 0
+        while k < members.len and w.party.saved_count < 3 {
+            let id = gff::get_number{ doc = doc.*, s = members[k], label = "PT_MEMBER_ID" } ifnull -1
+            k = k + 1
+            if id < 0 or id >= @as(i64, PT_SLOTS) { continue }
+            let s = @as(i32, id)
+            w.party.saved_slots[w.party.saved_count] = s
+            w.party.saved_count = w.party.saved_count + 1
+            if (gff::get_number{ doc = doc.*, s = members[k - 1], label = "PT_IS_LEADER" } ifnull 0) != 0 {
+                w.party.saved_leader = s
+            }
+        }
+    }
+
+    fn clamp_to_i32 { v: i64 } -> i32 {
+        if v > 2147483647 { return 2147483647 }
+        if v < -2147483648 { return -2147483648 }
+        return @as(i32, v)
+    }
+}

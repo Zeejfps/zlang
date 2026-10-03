@@ -322,6 +322,7 @@ namespace per file**, each file owned by one agent at a time:
 | `presentation.ctx` | `rt_pres` | SetGlobalFadeIn/Out, PlayMovie, music, PlaySound, SoundObject*, SetDialogPlaceableCamera, NoClicksFor, AurPostString (through the outbox) |
 | `time.ctx` | `rt_time` | GetTimeHour..., SetTime, calendar |
 | `module.ctx` | `rt_mod` | StartNewModule, GetLoadFromSaveGame, journal, map, SetReturnStrref, XP |
+| `misc.ctx` | `rt_misc` | map pins, area unescapable and stealth XP, encounters, persistent-zone residents, custom tokens (`w.tokens`, tokens.ctx), reputation and factions, plot XP, item hand-overs, lock/unlock, GetCurrentAction, the event-script queries, CutsceneAttack and fake spells, OpenStore/ShowUpgradeScreen notes |
 | (more) | `rt_*` | combat, talents, AI styles, minigames, ... added as files by their owners |
 
 **A category file:**
