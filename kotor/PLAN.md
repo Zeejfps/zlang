@@ -113,8 +113,7 @@ Open items the leads left, by owner. Remove an item when it lands.
 - Creature stats and party members (`AVAILNPC`) written into saves.
 - The remaining routines (`--report routines`; `docs/design/routines.tsv`).
 
-**Screens/HUD** (lib/screens, lib/hud): one stock item shows as several identical rows (Antidote Kit x5) where the original
-stacks it; item property lines in descriptions; the original's hexagon item rows; the bench's 3D
+**Screens/HUD** (lib/screens, lib/hud): item property lines in descriptions; the original's hexagon item rows; the bench's 3D
 item models; arrow-key planet cycling; the level-up preview without armour and nothing for droids;
 the four self action slots on the HUD.
 

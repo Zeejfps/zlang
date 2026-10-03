@@ -55,7 +55,12 @@ a screen opens is a modal on top, whose events the screen answers first (`msgbox
 
 `tmpl::read_store` reads a UTM (and a saved store): `MarkUp`, `MarkDown`, `BuySellFlag`, and the
 `ItemList` of blueprints or whole items (the `Infinite` mark on the element), inserted in ascending value,
-the order `CSWSStore::LoadStore` leaves them in. `obj::Store.stock` is a list of item ids; an item's
+the order `CSWSStore::LoadStore` leaves them in. Identical entries stack as `AddItem` stacks them
+(`xfer::absorb`: the same template and `CompareItem`, up to the base item's `Stacking`): Dantooine's
+general store lists Antidote Kit five times, one infinite, and shows one row. An infinite entry
+swallows its finite twins and stays a single unit (its amount reads "Infinite", never a count: ours,
+the data does not say what the original does); creatures' and containers' item lists and the party
+inventory a joining member's items go into stack the same way. `obj::Store.stock` is a list of item ids; an item's
 `infinite` field is its stock mark. The save writes a store whole (`save::write_merchant`).
 
 Prices (re/party-items-saves.md 5.8), integer arithmetic, no skill enters:
