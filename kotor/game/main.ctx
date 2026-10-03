@@ -42,8 +42,10 @@ fn run {
     }
     let mut vm = try nwvm::new(heap::Heap){ realloc = heap::alloc, heap = &h, limits = nwvm::LIMITS }
     let engine = routines::call{ w, _ }
-    try modload::enter{ w, name = opts.module }
-    arena::reset{ heap = &scratch }
+    if opts.module.len > 0 or opts.no_render {
+        try modload::enter{ w, name = if opts.module.len > 0 { opts.module } else { "end_m01aa" } }
+        arena::reset{ heap = &scratch }
+    }
 
     if opts.no_render {
         let mut frame: u64 = 0

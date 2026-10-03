@@ -155,7 +155,10 @@ namespace glsl {
         "        }\n",
         "    }\n",
         "    vec4 base = tex * u_color * v_color;\n",
-        "    vec3 rgb = base.rgb * light + u_selfillum.rgb;\n",
+        // Self-illumination is the fixed-function pipeline's emission (CAurPartTriMesh::ApplyMaterial
+        // 0x00473900 sets GL_EMISSION): added to the light, the sum clamped as GL clamps the lit
+        // colour, then modulated by the texture.
+        "    vec3 rgb = base.rgb * min(light + u_selfillum.rgb, vec3(1.0));\n",
         "    float alpha = base.a;\n",
         "    if (u_maps.z != 0) {\n",
         "        vec3 r = reflect(normalize(v_world - u_eye.xyz), n);\n",

@@ -264,7 +264,7 @@ namespace render {
         bumpmap: ?Texture,          // tangent-space normal map, sampled with uv0, needs tangent_space
         blend: Blend,
         color: Color,               // multiplies the diffuse texture; a is the opacity (alpha controller, wateralpha)
-        selfillum: math::Vec3,      // added after lighting
+        selfillum: math::Vec3,      // emission: added to the light (clamped to 1), times the texture
         lit: bool,                  // ambient plus the frame's lights; false draws the colour as it is
         fog: bool,
         two_sided: bool,            // no back-face culling

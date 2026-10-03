@@ -7,7 +7,7 @@ namespace rt_party {
         else if routine == nwscript::GetIsPC { try get_is_pc{ &w, &vm, argc } }
         else if routine == nwscript::GetPartyMemberByIndex { try get_party_member_by_index{ &w, &vm, argc } }
         else if routine == nwscript::IsObjectPartyMember { try is_object_party_member{ &w, &vm, argc } }
-        else if routine == nwscript::GetPartyMemberCount { try nwvm::push_int{ &vm, v = if world::is_valid{ w = &w, id = w.pc } { 1 } else { 0 } } }
+        else if routine == nwscript::GetPartyMemberCount { try nwvm::push_int{ &vm, v = @as(i32, w.party.count) } }
         else if routine == nwscript::GetPCSpeaker { try nwvm::push_object{ &vm, id = w.pc } }
         else { return false }
         return true
@@ -20,11 +20,12 @@ namespace rt_party {
 
     fn get_party_member_by_index { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let i = try nwarg::int{ &vm, routine = nwscript::GetPartyMemberByIndex, argc, i = 0 }
-        try nwvm::push_object{ &vm, id = if i == 0 and world::is_valid{ w = &w, id = w.pc } { w.pc } else { obj::INVALID } }
+        let id = if i >= 0 and @as(usize, i) < w.party.count { w.party.members[@as(usize, i)] } else { obj::INVALID }
+        try nwvm::push_object{ &vm, id = if world::is_valid{ w = &w, id } { id } else { obj::INVALID } }
     }
 
     fn is_object_party_member { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::IsObjectPartyMember, argc, i = 0 }
-        try nwvm::push_int{ &vm, v = if id == w.pc and world::is_valid{ w = &w, id } { 1 } else { 0 } }
+        try nwvm::push_int{ &vm, v = if party::is_member{ w = &w, id } and world::is_valid{ w = &w, id } { 1 } else { 0 } }
     }
 }

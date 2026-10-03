@@ -132,7 +132,9 @@ sphere map), bumpmap (a tangent-space normal map), blend (`opaque`; `punch` = ke
 0.35, the original's cut, otherwise opaque; `alpha` = blended, no depth writes; `additive`;
 `alpha_depth` = blended but writing depth and discarding only alpha 0, the original's default for
 textures with alpha), colour (tint; its alpha is the opacity of the alpha controller or
-`wateralpha`), self-illumination, `lit`, `fog`, `two_sided`, `decal` (depth bias, no depth
+`wateralpha`), self-illumination (the original's GL_EMISSION, 0x00473900: added to the light, the
+sum clamped to 1 as the fixed-function pipeline clamps the lit colour, then modulated by the
+texture), `lit`, `fog`, `two_sided`, `decal` (depth bias, no depth
 write), `env_amount`, and `sort` (the MDL transparency hint: lower draws first among transparent
 surfaces). With an envmap on an opaque or punch surface, the diffuse alpha is the reflection
 mask (txi-render.md): reflection × (1 − alpha), the surface stays opaque.

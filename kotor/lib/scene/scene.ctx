@@ -108,7 +108,7 @@ namespace scene {
     // The model `name` on the GPU (loaded once per name, texture override and envmap); null if it
     // isn't there. `body_texture`, when not empty, replaces the diffuse texture of meshes whose
     // texture starts with its first four letters (a B-type body's tex<L>NN, models-usage.md).
-    fn load_model { mut sc: Scene, mut w: world::World, mut dev: gpu::Device, name: []u8, body_texture: []u8, envmap: []u8 } -> !?usize {
+    fn load_model { mut sc: Scene, mut w: world::World, mut dev: gpu::Device, name: []u8, body_texture: []u8, envmap: []u8, hide_null: bool } -> !?usize {
         let mut variant: [40]u8
         let mut n: usize = 0
         let mut i: usize = 0
@@ -150,8 +150,9 @@ namespace scene {
                     _ = @fmt(&w.io, "model {}: no texture {}\n", name, diffuse)
                 }
                 // A door's `trans` plane (texture NULL) is the transition marker the toolset shows;
-                // the game draws nothing there (ours: its alpha controller isn't always 0).
-                if ci::eq{ a = model.nodes[m.node].name, b = "trans" } {
+                // the game draws nothing there (ours: its alpha controller isn't always 0), nor
+                // other untextured door meshes.
+                if ci::eq{ a = model.nodes[m.node].name, b = "trans" } or (hide_null and ci::eq{ a = m.textures[0], b = "NULL" }) {
                     mat.blend = render::Blend::alpha
                     mat.color.a = 0.0
                 }
@@ -227,7 +228,7 @@ namespace scene {
             let mut key = r.model
             let name = resref::bytes{ r = &key }
             let mut part: i32 = -1
-            let loaded = try load_model{ &sc, &w, &dev, name, body_texture = "", envmap = "" }
+            let loaded = try load_model{ &sc, &w, &dev, name, body_texture = "", envmap = "", hide_null = false }
             if loaded != null {
                 let p = try add_part{ &sc, loaded, parent = -1, hook = "" }
                 part = @as(i32, p)
