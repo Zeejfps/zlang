@@ -14,13 +14,20 @@ namespace check {
         hp_wrong: i32,
         fp_wrong: i32,
         ac_wrong: i32,
+        attacks_wrong: i32,
+        attack_mod_wrong: i32,
+        crit_wrong: i32,
+        mult_wrong: i32,
+        dice_wrong: i32,
+        resist_wrong: i32,
         printed: i32,
     }
 
     fn new_saved_stats {} -> SavedStats {
         return SavedStats{
             creatures = 0, with_effects = 0, compared = 0, fort_wrong = 0, reflex_wrong = 0, will_wrong = 0,
-            hp_wrong = 0, fp_wrong = 0, ac_wrong = 0, printed = 0,
+            hp_wrong = 0, fp_wrong = 0, ac_wrong = 0, attacks_wrong = 0, attack_mod_wrong = 0, crit_wrong = 0,
+            mult_wrong = 0, dice_wrong = 0, resist_wrong = 0, printed = 0,
         }
     }
 
@@ -82,6 +89,39 @@ namespace check {
         if c.stats.max_fp != saved_fp { st.fp_wrong = st.fp_wrong + 1; mismatch{ &io, &st, copy, tag, field = "max FP", got = c.stats.max_fp, want = saved_fp } }
         let ac = rules::armor_class_sheet{ tables, c = &c }
         if ac != saved_ac { st.ac_wrong = st.ac_wrong + 1; mismatch{ &io, &st, copy, tag, field = "armour class", got = ac, want = saved_ac } }
+
+        // CombatInfo: the engine's own attack numbers (UpdateCombatInformation) for the on-hand weapon.
+        let info = gff::get_struct{ doc = doc.*, s, label = "CombatInfo" } ifnull { return }
+        let saved_attacks = rules::read_number{ doc, s = info, label = "NumAttacks", dflt = -1 }
+        let saved_atk_mod = rules::read_number{ doc, s = info, label = "OnHandAttackMod", dflt = -1000 }
+        let saved_crit = rules::read_number{ doc, s = info, label = "OnHandCritRng", dflt = -1 }
+        let saved_mult = rules::read_number{ doc, s = info, label = "OnHandCritMult", dflt = -1 }
+        let saved_dice = rules::read_number{ doc, s = info, label = "DamageDice", dflt = -1 }
+        let saved_die = rules::read_number{ doc, s = info, label = "DamageDie", dflt = -1 }
+        let saved_fr = rules::read_number{ doc, s = info, label = "ForceResistance", dflt = -1 }
+        let counts = rules::attack_counts{ tables, c = &c, combat_feat = 0 }
+        let dummy = rules::make_creature{}
+        let sit = rules::make_situation{}
+        let am = rules::attack_modifier{ tables, atk = &c, def = &dummy, sit = &sit, attack_index = 0, combat_feat = 0 }
+        let width = 21 - rules::critical_threat_roll{ tables, c = &c, off_hand = false, combat_feat = 0 }
+        let mult = rules::critical_multiplier{ tables, c = &c, off_hand = false }
+        if counts.on_hand != saved_attacks { st.attacks_wrong = st.attacks_wrong + 1; mismatch{ &io, &st, copy, tag, field = "attacks per round", got = counts.on_hand, want = saved_attacks } }
+        // The sheet number is GetMeleeAttackBonus(0, no base, ...): ability, Weapon Focus and the dual-wield terms, without BAB or effects.
+        // (the dual-wield terms only when the left slot holds something: a double weapon alone has none on the sheet)
+        let left_held = rules::equipped_item{ c = &c, mask = rules::slot::LEFT } != null
+        let sheet_mod = am.str_mod + am.dex_mod + am.focus + (if left_held { am.dual_base + am.dual_light + am.dual_feat } else { 0 })
+        if sheet_mod != saved_atk_mod { st.attack_mod_wrong = st.attack_mod_wrong + 1; mismatch{ &io, &st, copy, tag, field = "on-hand attack modifier (no BAB)", got = sheet_mod, want = saved_atk_mod } }
+        if width != saved_crit { st.crit_wrong = st.crit_wrong + 1; mismatch{ &io, &st, copy, tag, field = "critical threat width", got = width, want = saved_crit } }
+        if mult != saved_mult { st.mult_wrong = st.mult_wrong + 1; mismatch{ &io, &st, copy, tag, field = "critical multiplier", got = mult, want = saved_mult } }
+        if c.stats.force_resistance != saved_fr { st.resist_wrong = st.resist_wrong + 1; mismatch{ &io, &st, copy, tag, field = "force resistance", got = c.stats.force_resistance, want = saved_fr } }
+        let right = rules::equipped_item{ c = &c, mask = rules::slot::RIGHT }
+        if right != null {
+            let bi = rules::get_baseitem{ tables, row = right.base_item }
+            if bi != null and (bi.num_dice != saved_dice or bi.die != saved_die) {
+                st.dice_wrong = st.dice_wrong + 1
+                mismatch{ &io, &st, copy, tag, field = "weapon dice x1000 + die", got = bi.num_dice * 1000 + bi.die, want = saved_dice * 1000 + saved_die }
+            }
+        }
     }
 
     fn visit_save_doc { mut io: Io, mut st: SavedStats, tables: *rules::Tables, mut scratch: arena::Arena, copy: corpus::Copy, data: []u8 } {
@@ -121,6 +161,8 @@ namespace check {
         _ = @fmt(&io, "saved: {} creatures in saves, {} compared ({} skipped for saved effects)\n", st.creatures, st.compared, st.with_effects)
         _ = @fmt(&io, "saved: wrong: fortitude {} reflex {} will {} max HP {} max FP {} armour class {}\n",
             st.fort_wrong, st.reflex_wrong, st.will_wrong, st.hp_wrong, st.fp_wrong, st.ac_wrong)
-        expect_eq{ &io, &r, name = "saved: computed totals differing from the saved ones", got = @as(i64, st.fort_wrong + st.reflex_wrong + st.will_wrong + st.hp_wrong + st.fp_wrong + st.ac_wrong), want = 0 }
+        _ = @fmt(&io, "saved: combat info wrong: attacks {} attack modifier {} threat width {} multiplier {} weapon dice {} force resistance {}\n",
+            st.attacks_wrong, st.attack_mod_wrong, st.crit_wrong, st.mult_wrong, st.dice_wrong, st.resist_wrong)
+        expect_eq{ &io, &r, name = "saved: computed totals differing from the saved ones", got = @as(i64, st.fort_wrong + st.reflex_wrong + st.will_wrong + st.hp_wrong + st.fp_wrong + st.ac_wrong + st.attacks_wrong + st.attack_mod_wrong + st.crit_wrong + st.mult_wrong + st.dice_wrong + st.resist_wrong), want = 0 }
     }
 }

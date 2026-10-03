@@ -278,7 +278,9 @@ memory addresses.
   BAB, saves, hit points, Force points, armour class and skill ranks in range.
 - **saved**: the 20 creatures in the install's saved game (the player, companions, enemies) have
   their equipment put on with `equip`; our fortitude, reflex and will saves, armour class, maximum
-  hit points and maximum Force points equal the totals the original saved, for every one.
+  hit points and maximum Force points equal the totals the original saved, for every one, and so do
+  its CombatInfo numbers: attacks per round, the sheet attack modifier (ability, Weapon Focus and
+  dual-wield terms), critical threat width and multiplier, the weapon dice and Force resistance.
 - **items**: all 1055 UTIs through `read_item` and the property handlers (the documented counts
   are reproduced: 61 with upgrade-gated properties, Keen 47, OnHit 107, Massive Criticals 36,
   Monster damage 33), equip examples and the CanEquipItem rules for humans, droids and Wookiees.
