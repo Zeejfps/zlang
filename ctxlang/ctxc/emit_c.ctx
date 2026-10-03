@@ -1559,7 +1559,7 @@ namespace emit {
             let c = cases[i]
             ch{ &e, c = ' ' }
             if i > 0 { put{ &e, a = "else " } }
-            if c.values.len > 0 {
+            if c.values.len > 0 or c.ranges.len > 0 {
                 put{ &e, a = "if (" }
                 let mut j: usize = 0
                 while j < c.values.len {
@@ -1567,6 +1567,20 @@ namespace emit {
                     tmp{ &e, k }
                     put{ &e, a = " == " }
                     int_lit{ &e, t, n = c.values[j] }
+                    j = j + 1
+                }
+                j = 0
+                while j < c.ranges.len {
+                    if j > 0 or c.values.len > 0 { put{ &e, a = " || " } }
+                    put{ &e, a = "(" }
+                    tmp{ &e, k }
+                    put{ &e, a = " >= " }
+                    int_lit{ &e, t, n = c.ranges[j].lo }
+                    put{ &e, a = " && " }
+                    tmp{ &e, k }
+                    put{ &e, a = " <= " }
+                    int_lit{ &e, t, n = c.ranges[j].hi }
+                    put{ &e, a = ")" }
                     j = j + 1
                 }
                 put{ &e, a = ") " }

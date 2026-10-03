@@ -1033,8 +1033,8 @@ class Bodies(Base):
              'branches have different types: {integer} and bool', 2, 13),
             ('enum E: u8 { a, b }\nfn f { e: *E } {\n    match e {\n        a => {}\n        b => {}\n    }\n}',
              'match cannot go through a pointer to an enum; match on the value with `.*`', 3, 11),
-            ('fn f { n: i32 } {\n    match n {\n        a => {}\n    }\n}',
-             'match needs a union, enum or optional value, got i32', 2, 11),
+            ('fn f { n: f64 } {\n    match n {\n        a => {}\n    }\n}',
+             'match needs a union, enum, optional or integer value, got f64', 2, 11),
             (U2 + 'fn f { u: U } {\n    match u {\n        else => {}\n        a => {}\n    }\n}',
              '`else` must be the last arm', 4, 9),
             (U2 + 'fn f { u: U } {\n    match u {\n        a => {}\n        b => {}\n        else => {}\n    }\n}',
@@ -1512,6 +1512,140 @@ fn main { mut io: Io } {
              'a `let` pattern needs a union or optional value, got Kind'),
         ]:
             self.assertCompileError(src + '\nfn main {} {}', fragment)
+
+
+class IntegerMatch(Base):
+    """`match` and `is` on integers (spec §8, Match on integers): literals, folded consts, ranges."""
+
+    def test_patterns(self):
+        self.assertOutput("""
+const OP_ADD: u8 = 0x14
+const OP_SUB: u8 = OP_ADD + 1
+
+namespace gl {
+    const TRIANGLES: u32 = 4
+    const LINES: u32 = 1
+}
+
+fn op_name { op: u8 } -> utf8::String {
+    return match op {
+        0 => { "nop" }
+        OP_ADD => { "add" }
+        OP_SUB | 0x20 => { "sub" }
+        'a'..='z' => { "letter" }
+        0xf0..=0xff => { "high" }
+        else => { "?" }
+    }
+}
+
+fn sign { n: i64 } -> i32 {
+    match n {
+        -9223372036854775808..=-1 => { return -1 }
+        0 => { return 0 }
+        else => { return 1 }
+    }
+}
+
+fn prim { mode: u32 } -> u32 {
+    let mut n: u32 = 0
+    match mode {
+        gl::TRIANGLES => { n = 3 }
+        gl::LINES => { n = 2 }
+        else => { n = 1 }
+    }
+    return n
+}
+
+fn main { mut io: Io } {
+    let ops = [0, 0x14, 0x15, 0x20, 'q', 0xf7, 7]
+    let mut i = 0
+    while i < ops.len {
+        io::println{ &io, s = op_name{ op = ops[i] } }
+        i = i + 1
+    }
+    io::println_i64{ &io, n = sign{ n = -5 } }
+    io::println_i64{ &io, n = sign{ n = 0 } }
+    io::println_i64{ &io, n = sign{ n = 9 } }
+    io::println_u64{ &io, n = prim{ mode = 4 } }
+    io::println_u64{ &io, n = prim{ mode = 9 } }
+    let c: u8 = '_'
+    if c is 'a'..='z' | 'A'..='Z' | '_' { io::println{ &io, s = "ident" } }
+    if not (c is '0'..='9') { io::println{ &io, s = "not a digit" } }
+    let big: u64 = 18446744073709551615
+    match big {
+        18446744073709551615 => { io::println{ &io, s = "max" } }
+        else => {}
+    }
+}
+""", 'nop\nadd\nsub\nsub\nletter\nhigh\n?\n-1\n0\n1\n3\n1\nident\nnot a digit\nmax\n')
+
+    def match_error(self, arms, fragment, scrut='b: u8', head=''):
+        self.assertCompileError(head + """
+fn f { %s } -> i32 {
+    match %s {
+%s
+    }
+    return 0
+}
+fn main {} { _ = f{ %s } }
+""" % (scrut, scrut.split(':')[0], arms, scrut.split(':')[0] + ' = 1' if scrut != 'b: ?u8' else 'b = null'), fragment)
+
+    def test_else_is_required(self):
+        self.match_error("1 => {}\n2 => {}", "a match on an integer needs an `else` arm")
+
+    def test_values_appear_once(self):
+        self.match_error("1 | 2 => {}\n2 => {}\nelse => {}", "2 is already matched by an earlier pattern")
+        self.match_error("'a'..='z' => {}\n'q' => {}\nelse => {}", "113 is already matched by an earlier pattern")
+        self.match_error("0..=9 => {}\n5..=20 => {}\nelse => {}", "range 5..=20 overlaps an earlier pattern")
+        self.match_error("-5..=-1 => {}\n-3 => {}\nelse => {}", "-3 is already matched", scrut='b: i32')
+
+    def test_bad_patterns(self):
+        self.match_error("5..=1 => {}\nelse => {}", "range 5..=1 is empty")
+        self.match_error("300 => {}\nelse => {}", "literal 300 does not fit in u8")
+        self.match_error("K => {}\nelse => {}", "expected u8, got i32", head='const K: i32 = 3')
+        self.match_error("x => {}\nelse => {}", "unknown name `x`")
+        self.match_error("v{ a } => {}\nelse => {}", "an integer pattern is a literal, a const or a range `lo..=hi`, with no bindings")
+        self.match_error("1..5 => {}\nelse => {}", "a range pattern is `lo..=hi`, which includes hi")
+        self.match_error("1 => {}\nelse => {}", "an integer pattern needs an integer to match, got ?u8", scrut='b: ?u8')
+
+    def test_consts_must_be_folded(self):
+        self.match_error("K => {}\nelse => {}", "an integer pattern must be a literal or a const whose value is folded",
+                         head='fn three {} -> u8 { return 3 }\nconst K: u8 = three{}')
+
+    def test_not_through_pointers(self):
+        self.assertCompileError("""
+fn f { p: *u8 } -> i32 {
+    match p {
+        1 => { return 1 }
+        else => { return 0 }
+    }
+}
+fn main {} { let b: u8 = 1; _ = f{ p = &b } }
+""", "match cannot go through a pointer to an integer; match on the value with `.*`")
+        self.assertCompileError("""
+union U { a, b }
+fn main {} { let u = U::a; _ = u is 3 }
+""", "an integer pattern needs an integer to test, got U")
+
+    def test_ir_ranges(self):
+        # A switch case lists its values, then its ranges, LO..HI with both ends included.
+        import subprocess
+        import tempfile
+        from toolchain import ir_sources, native_ctxc
+        text = ir_sources([("""
+fn f { n: i32 } -> i32 {
+    return match n { 10 | -3..=7 => { 1 } else => { 0 } }
+}
+fn main {} -> i32 { return f{ n = 2 } }
+""", None)])
+        self.assertIn('[10 -3..7]', text)
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, 'p.ir')
+            with open(path, 'w', encoding='utf-8', newline='') as f:
+                f.write(text)
+            r = subprocess.run([native_ctxc(), 'roundtrip', path], capture_output=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.decode(), text)
 
 
 class ConstData(Base):

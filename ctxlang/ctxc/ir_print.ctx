@@ -370,6 +370,13 @@ namespace ir_print {
     }
 
     // [(VARIANT|_ [BIND...] BLOCK)...]
+    // `N` or `-N`
+    fn int { mut o: Out, n: ir::Int } {
+        if n.negative { char{ &o, c = '-' } }
+        num{ &o, n = n.value }
+    }
+
+    // A case's values, then its ranges `LO..HI` (both included); `_` for `else`.
     fn case_list { mut o: Out, cases: []ir::Case, depth: u32 } {
         char{ &o, c = '[' }
         let mut i: usize = 0
@@ -377,15 +384,22 @@ namespace ir_print {
             if i > 0 { char{ &o, c = ' ' } }
             let c = cases[i]
             char{ &o, c = '(' }
-            if c.values.len == 0 {
+            if c.values.len == 0 and c.ranges.len == 0 {
                 char{ &o, c = '_' }
             } else {
                 char{ &o, c = '[' }
                 let mut j: usize = 0
                 while j < c.values.len {
                     if j > 0 { char{ &o, c = ' ' } }
-                    if c.values[j].negative { char{ &o, c = '-' } }
-                    num{ &o, n = c.values[j].value }
+                    int{ &o, n = c.values[j] }
+                    j = j + 1
+                }
+                j = 0
+                while j < c.ranges.len {
+                    if j > 0 or c.values.len > 0 { char{ &o, c = ' ' } }
+                    int{ &o, n = c.ranges[j].lo }
+                    text{ &o, a = ".." }
+                    int{ &o, n = c.ranges[j].hi }
                     j = j + 1
                 }
                 char{ &o, c = ']' }

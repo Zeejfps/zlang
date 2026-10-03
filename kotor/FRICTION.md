@@ -41,10 +41,6 @@ Counts are from the spike's sources (sdl.ctx, gl.ctx, png.ctx, main.ctx, about 2
   (`u32`) and GLint (`i32`): `tex_parameteri{ ..., param = @as(i32, gl::LINEAR) }`,
   `internal_format = @as(i32, gl::RGBA8)`, 11 times. A const whose value fits the target could
   convert as a literal does.
-- **`match` takes no integers.** SDL's event types and window-event ids are open C enums
-  (`@as(E, n)` would panic on a value SDL adds later), so they are `u32`/`u8` consts and
-  `sdl::decode` is a chain of 15 `if kind == ...`. A `match` on an integer with const patterns and
-  `else` would read better.
 - **An out-pointer makes the result "derived from" the local.** `SDL_GetKeyboardState{ &sdl,
   numkeys = &n }` with `numkeys: ?*mut i32` returns SDL's static array, but the escape check
   (spec §14) takes the result as derived from every read-only argument: "returned value holds the

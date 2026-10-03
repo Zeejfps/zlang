@@ -67,8 +67,9 @@ let ok{ value = d } = r else err{ error } { return error }
 defer list::free{ list = &xs }                    // runs at block exit
 ```
 
-- `match` does **not** take integers yet: use `if` chains (or an enum via `@as(E, n)`, which
-  panics on unknown values).
+- `match` takes integers (§8, Match on integers): literals, folded consts (`gl::TRIANGLES`) and
+  ranges `'a'..='z'` (both ends included), joined with `|`; `else` is required. `c is '0'..='9'`
+  tests one.
 - Optionals narrow: after `if p == null { return }`, `p` is the payload type (`let` locals only;
   copy a `let mut` first).
 - A `{` after an expression in a condition is a call only if the line continues after its `}`.
