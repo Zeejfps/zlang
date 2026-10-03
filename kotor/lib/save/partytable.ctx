@@ -73,13 +73,13 @@ namespace save {
         try put_gff_value{ &b, owner = galaxy, label = "GlxyMapPlntMsk", value = gff::Value::dword{ v = 0 } }
         try put_gff_value{ &b, owner = galaxy, label = "GlxyMapSelPnt", value = gff::Value::int{ v = -1 } }
 
-        // Pazaak: 2 of each of the first five cards. The engine writes 18 counts as INTs and a
-        // 19th entry as a BYTE (its slip: PT_CHEAT_USED again); the file has all 19.
+        // Pazaak: the cards owned. The engine writes 18 counts as INTs and a 19th entry as a BYTE
+        // (its slip: PT_CHEAT_USED again); the file has all 19.
         let cards = try gffw::put_list{ &b, owner = root, label = "PT_PAZAAKCARDS" }
         k = 0
         while k < PT_PAZAAK_CARDS {
             let e = try gffw::add_element{ &b, list = cards, id = 0 }
-            try put_gff_value{ &b, owner = e, label = "PT_PAZAAKCOUNT", value = gff::Value::int{ v = if k < 5 { 2 } else { 0 } } }
+            try put_gff_value{ &b, owner = e, label = "PT_PAZAAKCOUNT", value = gff::Value::int{ v = w.party.pazaak_cards[k] } }
             k = k + 1
         }
         let slip = try gffw::add_element{ &b, list = cards, id = 0 }
@@ -89,7 +89,7 @@ namespace save {
         k = 0
         while k < PT_SIDE_CARDS {
             let e = try gffw::add_element{ &b, list = side, id = 0 }
-            try put_gff_value{ &b, owner = e, label = "PT_PAZSIDECARD", value = gff::Value::int{ v = -1 } }
+            try put_gff_value{ &b, owner = e, label = "PT_PAZSIDECARD", value = gff::Value::int{ v = w.party.pazaak_deck[k] } }
             k = k + 1
         }
 
@@ -163,6 +163,19 @@ namespace save {
             slot = slot + 1
         }
 
+        // Pazaak: the cards owned and the side deck chosen last.
+        let cards = gff::get_list{ doc = doc.*, s = gff::ROOT, label = "PT_PAZAAKCARDS" } ifnull none
+        let mut pc: usize = 0
+        while pc < PT_PAZAAK_CARDS {
+            w.party.pazaak_cards[pc] = if pc < cards.len { @trunc(i32, gff::get_number{ doc = doc.*, s = cards[pc], label = "PT_PAZAAKCOUNT" } ifnull 0) } else { 0 }
+            pc = pc + 1
+        }
+        let side = gff::get_list{ doc = doc.*, s = gff::ROOT, label = "PT_PAZSIDELIST" } ifnull none
+        pc = 0
+        while pc < PT_SIDE_CARDS {
+            w.party.pazaak_deck[pc] = if pc < side.len { @trunc(i32, gff::get_number{ doc = doc.*, s = side[pc], label = "PT_PAZSIDECARD" } ifnull -1) } else { -1 }
+            pc = pc + 1
+        }
         // The journal.
         w.journal = journal::new_journal{}
         w.journal_sort = @trunc(i32, gff::get_number{ doc = doc.*, s = gff::ROOT, label = "JNL_SortOrder" } ifnull 0)
