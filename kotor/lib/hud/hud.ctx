@@ -224,6 +224,9 @@ namespace hud {
         update_hover{ &h, &g, &w, blocked }
         update_block{ &h, &g, &w, &dev }
         update_combat{ &h, &g, &w, &dev, dt }
+        // Solo mode: its toggle shows once there is someone to leave behind.
+        gui::set_visible{ &g, panel = h.panel, tag = "TB_SOLO", visible = w.party.count > 1 }
+        gui::set_checked{ &g, panel = h.panel, tag = "TB_SOLO", on = w.party.solo }
         update_notify{ &h, &g, dt }
     }
 

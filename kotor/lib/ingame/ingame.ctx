@@ -266,6 +266,9 @@ namespace ingame {
             }
         } else if ev.kind == gui::EventKind::value_changed and slice::eq_bytes{ a = ev.tag, b = "TB_PAUSE" } {
             set_player_pause{ &ui, &w, &dev, on = ev.value != 0 }
+        } else if ev.kind == gui::EventKind::value_changed and slice::eq_bytes{ a = ev.tag, b = "TB_SOLO" } {
+            // The original asks first (confirm.gui); the choice is the party lead's to follow.
+            w.party.solo = ev.value != 0
         }
     }
 
