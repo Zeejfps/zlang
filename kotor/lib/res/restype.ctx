@@ -1,0 +1,249 @@
+// Resource types: every resource is named by a resref and a 16-bit type id (docs/formats/
+// resource-types.md). Archives store the id; directories store an extension, which maps to the same
+// id. This is the engine's own table (swkotor.exe 0x005e6d20): 87 types, the Aurora ids plus
+// Odyssey's 3000-3011. Variants are named by extension, except `2da` (twoda) and `4pc` (fourpc),
+// which aren't names.
+//
+//   let t = restype::of_ext{ ext = "UTC" } ifnull { ... }      // Type::utc
+//   let e = restype::ext{ t }                                   // "utc"
+//   let id = @as(u16, t)                                       // 2027
+namespace restype {
+    enum Type: u16 {
+        res = 0,
+        bmp = 1,
+        mve = 2,
+        tga = 3,
+        wav = 4,
+        plt = 6,
+        ini = 7,
+        mp3 = 8,
+        mpg = 9,
+        txt = 10,
+        wma = 11,
+        wmv = 12,
+        xmv = 13,
+        log = 14,
+        plh = 2000,
+        tex = 2001,
+        mdl = 2002,
+        thg = 2003,
+        fnt = 2005,
+        lua = 2007,
+        slt = 2008,
+        nss = 2009,
+        ncs = 2010,
+        mod = 2011,
+        are = 2012,
+        set = 2013,
+        ifo = 2014,
+        bic = 2015,
+        wok = 2016,
+        twoda = 2017,
+        tlk = 2018,
+        txi = 2022,
+        git = 2023,
+        bti = 2024,
+        uti = 2025,
+        btc = 2026,
+        utc = 2027,
+        dlg = 2029,
+        itp = 2030,
+        btt = 2031,
+        utt = 2032,
+        dds = 2033,
+        bts = 2034,
+        uts = 2035,
+        ltr = 2036,
+        gff = 2037,
+        fac = 2038,
+        bte = 2039,
+        ute = 2040,
+        btd = 2041,
+        utd = 2042,
+        btp = 2043,
+        utp = 2044,
+        dft = 2045,
+        gic = 2046,
+        gui = 2047,
+        css = 2048,
+        ccs = 2049,
+        btm = 2050,
+        utm = 2051,
+        dwk = 2052,
+        pwk = 2053,
+        btg = 2054,
+        utg = 2055,
+        jrl = 2056,
+        sav = 2057,
+        utw = 2058,
+        fourpc = 2059,
+        ssf = 2060,
+        hak = 2061,
+        nwm = 2062,
+        bik = 2063,
+        lyt = 3000,
+        vis = 3001,
+        rim = 3002,
+        pth = 3003,
+        lip = 3004,
+        bwm = 3005,
+        txb = 3006,
+        tpc = 3007,
+        mdx = 3008,
+        rsv = 3009,
+        sig = 3010,
+        xbx = 3011,
+        erf = 9997,
+        bif = 9998,
+        key = 9999,
+    }
+
+    struct Entry { id: u16, ext: []u8 }
+
+    const COUNT: usize = 87
+
+    // The engine's table, by id.
+    const TABLE: [87]Entry = [
+        Entry{ id = 0, ext = "res" },
+        Entry{ id = 1, ext = "bmp" },
+        Entry{ id = 2, ext = "mve" },
+        Entry{ id = 3, ext = "tga" },
+        Entry{ id = 4, ext = "wav" },
+        Entry{ id = 6, ext = "plt" },
+        Entry{ id = 7, ext = "ini" },
+        Entry{ id = 8, ext = "mp3" },
+        Entry{ id = 9, ext = "mpg" },
+        Entry{ id = 10, ext = "txt" },
+        Entry{ id = 11, ext = "wma" },
+        Entry{ id = 12, ext = "wmv" },
+        Entry{ id = 13, ext = "xmv" },
+        Entry{ id = 14, ext = "log" },
+        Entry{ id = 2000, ext = "plh" },
+        Entry{ id = 2001, ext = "tex" },
+        Entry{ id = 2002, ext = "mdl" },
+        Entry{ id = 2003, ext = "thg" },
+        Entry{ id = 2005, ext = "fnt" },
+        Entry{ id = 2007, ext = "lua" },
+        Entry{ id = 2008, ext = "slt" },
+        Entry{ id = 2009, ext = "nss" },
+        Entry{ id = 2010, ext = "ncs" },
+        Entry{ id = 2011, ext = "mod" },
+        Entry{ id = 2012, ext = "are" },
+        Entry{ id = 2013, ext = "set" },
+        Entry{ id = 2014, ext = "ifo" },
+        Entry{ id = 2015, ext = "bic" },
+        Entry{ id = 2016, ext = "wok" },
+        Entry{ id = 2017, ext = "2da" },
+        Entry{ id = 2018, ext = "tlk" },
+        Entry{ id = 2022, ext = "txi" },
+        Entry{ id = 2023, ext = "git" },
+        Entry{ id = 2024, ext = "bti" },
+        Entry{ id = 2025, ext = "uti" },
+        Entry{ id = 2026, ext = "btc" },
+        Entry{ id = 2027, ext = "utc" },
+        Entry{ id = 2029, ext = "dlg" },
+        Entry{ id = 2030, ext = "itp" },
+        Entry{ id = 2031, ext = "btt" },
+        Entry{ id = 2032, ext = "utt" },
+        Entry{ id = 2033, ext = "dds" },
+        Entry{ id = 2034, ext = "bts" },
+        Entry{ id = 2035, ext = "uts" },
+        Entry{ id = 2036, ext = "ltr" },
+        Entry{ id = 2037, ext = "gff" },
+        Entry{ id = 2038, ext = "fac" },
+        Entry{ id = 2039, ext = "bte" },
+        Entry{ id = 2040, ext = "ute" },
+        Entry{ id = 2041, ext = "btd" },
+        Entry{ id = 2042, ext = "utd" },
+        Entry{ id = 2043, ext = "btp" },
+        Entry{ id = 2044, ext = "utp" },
+        Entry{ id = 2045, ext = "dft" },
+        Entry{ id = 2046, ext = "gic" },
+        Entry{ id = 2047, ext = "gui" },
+        Entry{ id = 2048, ext = "css" },
+        Entry{ id = 2049, ext = "ccs" },
+        Entry{ id = 2050, ext = "btm" },
+        Entry{ id = 2051, ext = "utm" },
+        Entry{ id = 2052, ext = "dwk" },
+        Entry{ id = 2053, ext = "pwk" },
+        Entry{ id = 2054, ext = "btg" },
+        Entry{ id = 2055, ext = "utg" },
+        Entry{ id = 2056, ext = "jrl" },
+        Entry{ id = 2057, ext = "sav" },
+        Entry{ id = 2058, ext = "utw" },
+        Entry{ id = 2059, ext = "4pc" },
+        Entry{ id = 2060, ext = "ssf" },
+        Entry{ id = 2061, ext = "hak" },
+        Entry{ id = 2062, ext = "nwm" },
+        Entry{ id = 2063, ext = "bik" },
+        Entry{ id = 3000, ext = "lyt" },
+        Entry{ id = 3001, ext = "vis" },
+        Entry{ id = 3002, ext = "rim" },
+        Entry{ id = 3003, ext = "pth" },
+        Entry{ id = 3004, ext = "lip" },
+        Entry{ id = 3005, ext = "bwm" },
+        Entry{ id = 3006, ext = "txb" },
+        Entry{ id = 3007, ext = "tpc" },
+        Entry{ id = 3008, ext = "mdx" },
+        Entry{ id = 3009, ext = "rsv" },
+        Entry{ id = 3010, ext = "sig" },
+        Entry{ id = 3011, ext = "xbx" },
+        Entry{ id = 9997, ext = "erf" },
+        Entry{ id = 9998, ext = "bif" },
+        Entry{ id = 9999, ext = "key" },
+    ]
+
+    // The type with id `id`, or null for an id not in the table (the engine's "invalid", 0xFFFF).
+    fn of_id { id: u16 } -> ?Type {
+        let i = index_of_id{ id } ifnull { return null }
+        return @as(Type, TABLE[i].id)
+    }
+
+    // The type whose extension is `ext`, compared ignoring case; null if none.
+    fn of_ext { ext: []u8 } -> ?Type {
+        let table = TABLE
+        let mut i: usize = 0
+        while i < table.len {
+            if ci::eq{ a = table[i].ext, b = ext } { return @as(Type, table[i].id) }
+            i = i + 1
+        }
+        return null
+    }
+
+    // The extension of type `t`, lower case, without a dot.
+    fn ext { t: Type } -> []u8 {
+        let i = index_of_id{ id = @as(u16, t) } ifnull { @panic("restype::ext: a Type outside the table") }
+        return TABLE[i].ext
+    }
+
+    // The extension of id `id`, or null if it has none.
+    fn ext_of_id { id: u16 } -> ?[]u8 {
+        let i = index_of_id{ id } ifnull { return null }
+        return TABLE[i].ext
+    }
+
+    // Whether resources of type `t` are GFF files (bytes 4..8 `V3.2`): every blueprint and
+    // area type, dialogues, GUIs, journals, factions, paths, and the saves' `res`.
+    fn is_gff { t: Type } -> bool {
+        return match t {
+            res | are | ifo | bic | git | bti | uti | btc | utc | dlg | itp | btt | utt | bts | uts
+                | gff | fac | bte | ute | btd | utd | btp | utp | dft | gic | gui | btm | utm
+                | btg | utg | jrl | utw | pth => { true }
+            else => { false }
+        }
+    }
+
+    // The ids are sorted, so a binary search finds one.
+    fn index_of_id { id: u16 } -> ?usize {
+        let table = TABLE
+        let mut lo: usize = 0
+        let mut hi: usize = table.len
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            let v = table[mid].id
+            if v == id { return mid }
+            if v < id { lo = mid + 1 } else { hi = mid }
+        }
+        return null
+    }
+}

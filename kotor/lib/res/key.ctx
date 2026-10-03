@@ -1,0 +1,102 @@
+// KEY and BIF (docs/formats/key-bif.md): chitin.key names every resource of the game's 26 BIF
+// archives in data/, as "entry n of BIF b". A BIF holds the data by number only.
+//
+//   let k = try key::parse{ data = chitin_bytes, realloc, &heap }       // BIF names and keys
+//   let t = try key::parse_bif_table{ data = bif_head_and_table }       // one BIF's entries
+//
+// The resource manager (res.ctx) reads chitin.key whole, then each BIF's header and variable
+// table, and joins them into res::Members (name, type, BIF, offset, size). The data stays in the
+// BIFs until someone reads it.
+namespace key {
+    // Not `KEY V1  `, or a table outside the file.
+    error bad_key
+    // Not `BIFFV1  `, fixed resources (which KOTOR never has), or a table outside the file.
+    error bad_bif
+    // A key whose BIF or entry index is out of range.
+    error bad_index{ key: u32 }
+
+    const KEY_HEADER: usize = 64
+    const BIF_HEADER: usize = 20
+    const KEY_ENTRY: usize = 22
+    const BIF_ENTRY: usize = 16
+
+    // A BIF of the file table: its path relative to the install, with `\` as chitin stores it
+    // (`data\2da.bif`), a view into the KEY's bytes.
+    struct Bif { name: []u8, size: u32 }
+
+    // A key: a resource and where it is. `bif` indexes the file table, `index` that BIF's variable
+    // table.
+    struct Entry { name: resref::ResRef, kind: u16, bif: u32, index: u32 }
+
+    struct Key { bifs: []mut Bif, entries: []mut Entry, build_year: u32, build_day: u32 }
+
+    // Parses chitin.key's bytes. The Bif names are views into `data`; the arrays come from
+    // `realloc`.
+    fn parse(S) { data: []u8, realloc: alloc::Fn(S), mut heap: S } -> !Key {
+        if data.len < KEY_HEADER { return bad_key }
+        if not slice::eq_bytes{ a = data[..8], b = "KEY V1  " } { return bad_key }
+        let bif_count = try le::get_u32{ data, at = 8 }
+        let key_count = try le::get_u32{ data, at = 12 }
+        let files_at = try le::get_u32{ data, at = 16 }
+        let keys_at = try le::get_u32{ data, at = 20 }
+        let year = try le::get_u32{ data, at = 24 }
+        let day = try le::get_u32{ data, at = 28 }
+        if not le::fits{ data, at = files_at, want = @as(usize, bif_count) * 12 } { return bad_key }
+        if not le::fits{ data, at = keys_at, want = @as(usize, key_count) * KEY_ENTRY } { return bad_key }
+
+        let bifs = try alloc::resize(Bif, S){ realloc, &heap, mem = slice::empty(Bif){}, count = bif_count }
+        let mut i: usize = 0
+        while i < bifs.len {
+            let at = @as(usize, files_at) + 12 * i
+            let size = try le::get_u32{ data, at }
+            let name_at = try le::get_u32{ data, at = at + 4 }
+            let name_len = try le::get_u16{ data, at = at + 8 }
+            let raw = le::get_bytes{ data, at = name_at, len = name_len } iferr { return bad_key }
+            // FilenameSize counts the NUL; cut at the first one.
+            let n = text::find_byte{ s = raw, c = 0 } ifnull raw.len
+            bifs[i] = Bif{ name = raw[..n], size }
+            i = i + 1
+        }
+
+        let entries = try alloc::resize(Entry, S){ realloc, &heap, mem = slice::empty(Entry){}, count = key_count }
+        let mut k: usize = 0
+        while k < entries.len {
+            let at = @as(usize, keys_at) + KEY_ENTRY * k
+            let kind = try le::get_u16{ data, at = at + 16 }
+            let id = try le::get_u32{ data, at = at + 18 }
+            let bif = id >> 20
+            if bif >= bif_count { return bad_index{ key = @trunc(u32, k) } }
+            entries[k] = Entry{ name = resref::from_field{ raw = data[at..at + 16] }, kind, bif, index = id & 0xFFFFF }
+            k = k + 1
+        }
+        return Key{ bifs, entries, build_year = year, build_day = day }
+    }
+
+    // A BIF's header: how many variable entries it has and where its table starts, from the first
+    // 20 bytes.
+    struct BifHeader { count: u32, table_at: u32 }
+
+    fn parse_bif_header { data: []u8 } -> !BifHeader {
+        if data.len < BIF_HEADER { return bad_bif }
+        if not slice::eq_bytes{ a = data[..8], b = "BIFFV1  " } { return bad_bif }
+        let count = try le::get_u32{ data, at = 8 }
+        let fixed = try le::get_u32{ data, at = 12 }
+        let table_at = try le::get_u32{ data, at = 16 }
+        if fixed != 0 { return bad_bif }
+        return BifHeader{ count, table_at }
+    }
+
+    // One entry of a BIF's variable table: where its data is in the BIF.
+    struct BifEntry { offset: u32, size: u32, kind: u32 }
+
+    // Entry `index` of a variable table whose bytes are `table` (16 bytes an entry).
+    fn bif_entry { table: []u8, index: u32 } -> !BifEntry {
+        let at = @as(usize, index) * BIF_ENTRY
+        if not le::fits{ data = table, at, want = BIF_ENTRY } { return bad_bif }
+        return BifEntry{
+            offset = try le::get_u32{ data = table, at = at + 4 },
+            size = try le::get_u32{ data = table, at = at + 8 },
+            kind = try le::get_u32{ data = table, at = at + 12 },
+        }
+    }
+}
