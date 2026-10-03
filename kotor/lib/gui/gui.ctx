@@ -124,6 +124,24 @@ namespace gui {
         return "back"
     }
 
+    // The size a resolution's backdrop pictures were drawn for: the pictures of `store`, `pazaak`
+    // and `map` have the 640x480 panel's art in the middle of this rectangle (the 800x600 ones
+    // serve every size the original has no picture set for).
+    fn design_w { id: i32 } -> i32 {
+        if id == 1 { return 1024 }
+        if id == 2 or id == 3 { return 1280 }
+        if id == 4 { return 1600 }
+        return 800
+    }
+
+    fn design_h { id: i32 } -> i32 {
+        if id == 1 { return 768 }
+        if id == 2 { return 960 }
+        if id == 3 { return 1024 }
+        if id == 4 { return 1200 }
+        return 600
+    }
+
     // Loads the backdrop picture `kind` (0 back, 1 store, 2 pazaak, 3 map, 4 comp) for the
     // current resolution if it isn't yet. Panels call it when opened.
     fn ensure_backdrop { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, kind: u32 } {
@@ -341,14 +359,24 @@ namespace gui {
         draw_cursor{ &g, &frame, screen }
     }
 
-    // Black behind, the resolution's picture stretched over the whole screen.
+    // Black behind, the resolution's picture stretched over the whole screen. The original does just
+    // that, at the sizes it has pictures for, where the 640x480 panel in the middle then covers the
+    // art that the store, pazaak and map pictures hold for it (the frame, the table). On a bigger or
+    // wider window the stretched art would run past the panel as a second, larger frame, so those
+    // pictures are drawn at the size they were made for, centred, with black around them.
     fn draw_backdrop { mut g: Gui, mut frame: render::Frame, kind: u32 } {
         let screen = rect_of{ x = 0, y = 0, w = g.ui_w, h = g.ui_h }
         put_fill{ &frame, x = 0.0, y = 0.0, w = @as(f32, g.ui_w), h = @as(f32, g.ui_h), color = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 }, clip = screen }
-        if kind < 6 {
-            let img = g.backdrops[kind]
-            put_image{ &frame, img, x = 0.0, y = 0.0, w = @as(f32, g.ui_w), h = @as(f32, g.ui_h), color = white_color{}, angle = 0.0, clip = screen }
+        if kind >= 6 { return }
+        let img = g.backdrops[kind]
+        let id = resolution_id{ w = g.ui_w, h = g.ui_h }
+        let mut w = g.ui_w
+        let mut h = g.ui_h
+        if kind >= 1 and kind <= 3 {
+            if w > design_w{ id } { w = design_w{ id } }
+            if h > design_h{ id } { h = design_h{ id } }
         }
+        put_image{ &frame, img, x = @as(f32, (g.ui_w - w) / 2), y = @as(f32, (g.ui_h - h) / 2), w = @as(f32, w), h = @as(f32, h), color = white_color{}, angle = 0.0, clip = screen }
     }
 
     fn draw_panel { mut g: Gui, mut frame: render::Frame, p: *mut Panel, screen: render::Rect } {

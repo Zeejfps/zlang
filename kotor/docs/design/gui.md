@@ -103,7 +103,11 @@ else to the front-most shown panel with a control under the pointer.
 
 `gui::close{ &g, id }` removes it after the frame (events its controls made stay valid until
 `update`). `gui::set_backdrop{ ..., kind }` picks the picture (0 back, 1 store, 2 pazaak, 3 map,
-4 comp, 5 load). `gui::message_box{ &g, &fs, &dev, text, cancel } -> !u32` opens `confirm.gui`
+4 comp, 5 load). The original stretches the picture over the screen; the store, pazaak and map
+pictures hold art meant to lie under the 640x480 panel (the store's frame, the pazaak table), which
+only lines up at the sizes the original has pictures for, so on a bigger window they are drawn at
+their resolution's size (800x600 for an unlisted one), centred, with black around (`draw_backdrop`).
+`gui::message_box{ &g, &fs, &dev, text, cancel } -> !u32` opens `confirm.gui`
 sized to its text; take the `activate` events of `BTN_OK` and `BTN_CANCEL` and close it.
 
 ## Defining a screen over a .gui
