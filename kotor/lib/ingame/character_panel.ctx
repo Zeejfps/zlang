@@ -1,28 +1,165 @@
-// Character sheet (character.gui, menu 2): the leader's attributes, defence, saves, level, XP, class.
-// SKELETON: the panel opens as the file draws it; the panel's owner fills `open`, `update` and
-// `on_event` (the protocol is in menus.ctx).
+// Character sheet (character.gui, menu 2): the leader's name, class and level, vitality, Force,
+// defence, the six attributes with their modifiers, the three saves, alignment, XP and the level-up
+// buttons (docs/re/gui.md, "CSWGuiCharacter"). The numbers come from `sheet::read`
+// (sheet_data.ctx), the one place that works them out.
+//
+// What the original has that this does not yet (each marked PLACEHOLDER below): the 3D model in the
+// middle (the portrait stands in), the effect icons next to the alignment bar, the level-up flow
+// and the script-select panel.
 namespace character_panel {
-    struct State { opened: bool }
+    // The label tags of the six attributes and their modifiers, in STR DEX CON INT WIS CHA order.
+    const ABIL_TAGS: [6][]u8 = ["LBL_STR", "LBL_DEX", "LBL_CON", "LBL_INT", "LBL_WIS", "LBL_CHA"]
+    const MOD_TAGS: [6][]u8 = ["LBL_STR_MOD", "LBL_DEX_MOD", "LBL_CON_MOD", "LBL_INT_MOD", "LBL_WIS_MOD", "LBL_CHA_MOD"]
+    const SAVE_TAGS: [3][]u8 = ["LBL_FORTITUDE_STAT", "LBL_REFLEX_STAT", "LBL_WILL_STAT"]
 
-    fn new {} -> State { return State{ opened = false } }
+    struct State {
+        opened: bool,
+        who: u32,                       // the creature shown
+        box: u32,                       // the "not yet" message box, 0 when none
+        area: [4]i32,                   // LBL_3DCHAR as the file has it: x, y, w, h
+    }
+
+    fn new {} -> State { return State{ opened = false, who = obj::INVALID, box = 0, area = [0; 4] } }
 
     // The panel was just added, or the leader changed and it must be filled again.
     fn open { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> ! {
+        if not s.opened { s.area = sheet::home_of{ &g, panel, tag = "LBL_3DCHAR" } }
         s.opened = true
+        s.who = party::leader{ w = &w }
+        let known = sheet::known_of{ &w, id = s.who }
+        let v = sheet::read{ &w, id = s.who, known }
+        try fill{ &g, &w, &dev, panel, id = s.who, v, area = s.area }
     }
 
-    // Every frame while the panel is shown.
+    fn fill { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, id: u32, v: sheet::Sheet, area: [4]i32 } -> ! {
+        let mut b = sheet::new_text{ w = &w }
+        defer utf8::free{ &b }
+
+        try sheet::say{ &g, &b, panel, tag = "LBL_NAME", text = hud::name_of{ w = &w, id } }
+
+        // Class and level: one line per class slot; the second line hides for a single class.
+        let class_tags: [2][]u8 = ["LBL_CLASS1", "LBL_CLASS2"]
+        let level_tags: [2][]u8 = ["LBL_LEVEL1", "LBL_LEVEL2"]
+        let mut k: usize = 0
+        while k < 2 {
+            let has = k < v.nclasses
+            gui::set_visible{ &g, panel, tag = class_tags[k], visible = has }
+            gui::set_visible{ &g, panel, tag = level_tags[k], visible = has }
+            if has {
+                try gui::set_strref{ &g, panel, tag = class_tags[k], strref = v.class_name[k] }
+                try sheet::say_num{ &g, &b, panel, tag = level_tags[k], n = v.class_level[k] }
+            }
+            k = k + 1
+        }
+
+        try sheet::say_pair{ &g, &b, panel, tag = "LBL_VITALITY_STAT", a = v.hp, z = v.hp_max }
+        try sheet::say_pair{ &g, &b, panel, tag = "LBL_FORCE_STAT", a = v.fp, z = v.fp_max }
+        try sheet::say_num{ &g, &b, panel, tag = "LBL_DEFENSE_STAT", n = v.defense }
+
+        let mut a: usize = 0
+        while a < 6 {
+            try sheet::say_num{ &g, &b, panel, tag = ABIL_TAGS[a], n = v.abil[a] }
+            try sheet::say_signed{ &g, &b, panel, tag = MOD_TAGS[a], n = v.abil_mod[a] }
+            a = a + 1
+        }
+        let mut sv: usize = 0
+        while sv < 3 {
+            try sheet::say_num{ &g, &b, panel, tag = SAVE_TAGS[sv], n = v.save[sv] }
+            sv = sv + 1
+        }
+
+        // The attack bonus has no label in the file (labels take no tooltip either); the button over
+        // the character carries it.
+        if v.bab >= 0 {
+            try @fmt(&b, "Attack bonus +{}", v.bab)
+        } else {
+            try @fmt(&b, "Attack bonus {}", v.bab)
+        }
+        try gui::set_tooltip{ &g, panel, tag = "BTN_3DCHAR", text = utf8::view{ b }.bytes }
+        utf8::clear{ &b }
+
+        // Experience and the XP of the next level (the cap has none).
+        try sheet::say_grouped{ &g, &b, panel, tag = "LBL_EXPERIENCE_STAT", n = v.xp }
+        if v.xp_next >= 0 {
+            try sheet::say_grouped{ &g, &b, panel, tag = "LBL_NEEDED_XP", n = v.xp_next }
+        } else {
+            try sheet::say{ &g, &b, panel, tag = "LBL_NEEDED_XP", text = "-" }
+        }
+
+        // Alignment: the slider's top is the light side (re/gui.md: 100 - good/evil). It only shows.
+        gui::set_max{ &g, panel, tag = "SLD_ALIGN", max = 100 }
+        gui::set_value{ &g, panel, tag = "SLD_ALIGN", value = 100 - v.light }
+        gui::set_enabled{ &g, panel, tag = "SLD_ALIGN", enabled = false }
+
+        // The level-up buttons show only for a character whose XP allows a level.
+        gui::set_visible{ &g, panel, tag = "BTN_LEVELUP", visible = v.can_level }
+        gui::set_visible{ &g, panel, tag = "BTN_AUTO", visible = v.can_level }
+        if v.can_level {
+            try gui::set_tooltip{ &g, panel, tag = "BTN_LEVELUP", text = "PLACEHOLDER: the level-up screen is not built yet." }
+            try gui::set_tooltip{ &g, panel, tag = "BTN_AUTO", text = "PLACEHOLDER: automatic level-up is not built yet." }
+        }
+        try gui::set_tooltip{ &g, panel, tag = "BTN_SCRIPTS", text = "PLACEHOLDER: the script-select panel is not built yet." }
+
+        // The effect icons beside the alignment bar need lib/rules' effect list (PLACEHOLDER).
+        let mut n: usize = 1
+        let mut tag: [16]u8
+        while n <= 10 {
+            gui::set_visible{ &g, panel, tag = hud::tag_n{ into = tag[..], prefix = "LBL_GOOD", n }, visible = false }
+            n = n + 1
+        }
+        gui::set_visible{ &g, panel, tag = "LBL_MORE", visible = false }
+
+        // PLACEHOLDER: the original shows a rotating 3D model of the character here (a gui3d scene
+        // drawn into the control's rectangle by the session); until that is wired the portrait
+        // takes its place, in proportion and centred in the model's area.
+        try sheet::show_picture{ &g, &w, &dev, panel, tag = "LBL_3DCHAR", name = sheet::portrait_of{ w = &w, id }, home = area }
+    }
+
+    // Every frame while the panel is shown: the "not yet" box closes with its OK.
     fn update { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, dt: f32 } {
+        if s.box == 0 { return }
+        let events = gui::take_events{ &g }
+        let mut i: usize = 0
+        while i < events.len {
+            let ev = events[i]
+            i = i + 1
+            if ev.panel == s.box and (ev.kind == gui::EventKind::activate or ev.kind == gui::EventKind::cancel) {
+                gui::close{ &g, id = s.box }
+                s.box = 0
+                return
+            }
+        }
     }
 
     // One of the panel's GUI events (BTN_EXIT, Escape and the BTN_CHANGE buttons are the
     // framework's). True when it used the event.
     fn on_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, ev: gui::Event } -> bool {
+        if ev.kind != gui::EventKind::activate { return false }
+        if slice::eq_bytes{ a = ev.tag, b = "BTN_CHARLEFT" } or slice::eq_bytes{ a = ev.tag, b = "BTN_CHARRIGHT" } {
+            // The previous or the next party member becomes the leader and the sheet shows them.
+            let count = party::members{ w = &w }.len
+            if count < 2 { return true }
+            ingame::change_leader{ &w, step = if slice::eq_bytes{ a = ev.tag, b = "BTN_CHARRIGHT" } { 1 } else { count - 1 } }
+            ingame::fill_change_buttons{ &g, &w, &dev, panel }
+            open{ &s, &g, &w, &dev, panel } iferr err{ error } { _ = @fmt(&w.io, "kotor: character sheet: {}\n", error) }
+            return true
+        }
+        let level_up = slice::eq_bytes{ a = ev.tag, b = "BTN_LEVELUP" } or slice::eq_bytes{ a = ev.tag, b = "BTN_AUTO" }
+        let scripts = slice::eq_bytes{ a = ev.tag, b = "BTN_SCRIPTS" }
+        if (level_up or scripts) and s.box == 0 {
+            // PLACEHOLDER: the level-up flow and the script-select panel belong to other owners.
+            s.box = gui::message_box{ &g, fs = &w.fs, &dev, text = "This part of the game is not built yet.", cancel = false } iferr { 0 }
+            return true
+        }
         return false
     }
 
     // The panel is going away.
     fn close { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } {
+        if s.box != 0 {
+            gui::close{ &g, id = s.box }
+            s.box = 0
+        }
         s.opened = false
     }
 }

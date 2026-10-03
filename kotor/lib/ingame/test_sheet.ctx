@@ -1,9 +1,73 @@
-// Headless test commands for the character sheet and abilities panels: `FRAME ui COMMAND ARGS` lines the input script
-// does not know (lib/ingame/script.ctx) come here. Give a panel something to show that the game
-// does not have yet (items in the inventory, a journal entry, a second party member's data) and
-// document each command in a comment. Returns true when it handled the command.
+// Headless test commands for the character sheet and abilities panels: `FRAME ui COMMAND ARGS` lines
+// the input script does not know (lib/ingame/script.ctx) come here. The default player has no
+// attributes, no XP and no feats, so these give a creature numbers worth looking at:
+//
+//   FRAME ui leader TAG        the party member with TAG leads (it joins first if it is not in the party)
+//   FRAME ui stat NAME VALUE   set one number on the leader; NAME is one of
+//                                str dex con int wis cha     the attribute scores
+//                                xp  align  hp  hpmax        experience, alignment (0 dark .. 100 light), hit points
+//                                class level                 the first class slot (classes.2da row, class level)
+//                                class2 level2               the second class slot (level2 0 removes it)
+//                                template RESREF             the UTC the skill ranks, feats and powers are read from
+//
+// An open menu is filled again after each command, so the screenshot shows the result.
 namespace test_sheet {
     fn run { mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device, cmd: []u8, args: []u8 } -> bool {
+        if ci::eq{ a = cmd, b = "leader" } {
+            let mut words = text::words{ s = args }
+            let tag = text::next_word{ &words } ifnull { return true }
+            let id = world::object_by_tag{ w = &w, tag, nth = 0 }
+            if id == obj::INVALID {
+                _ = @fmt(&w.io, "ui leader: no object tagged {}\n", tag)
+                return true
+            }
+            party::set_leader{ &w, id }
+            w.pc = id
+            refill{ &ui, &w, &dev }
+            return true
+        }
+        if ci::eq{ a = cmd, b = "stat" } {
+            let mut words = text::words{ s = args }
+            let key = text::next_word{ &words } ifnull { return true }
+            let value = text::next_word{ &words } ifnull { return true }
+            if not set_stat{ &w, key, value } { _ = @fmt(&w.io, "ui stat: unknown or unusable {} {}\n", key, value) }
+            refill{ &ui, &w, &dev }
+            return true
+        }
         return false
+    }
+
+    // Sets one number on the leader; false when the name is unknown or there is no leader.
+    fn set_stat { mut w: world::World, key: []u8, value: []u8 } -> bool {
+        let o = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return false }
+        let c = obj::creature{ o } ifnull { return false }
+        let n = @as(i32, text::scan_decimal{ s = value })
+        let names: [6][]u8 = ["str", "dex", "con", "int", "wis", "cha"]
+        let mut k: usize = 0
+        while k < 6 {
+            if ci::eq{ a = key, b = names[k] } {
+                c.abilities[k] = @trunc(u8, n)
+                return true
+            }
+            k = k + 1
+        }
+        if ci::eq{ a = key, b = "xp" } { c.xp = @as(u32, n) }
+        else if ci::eq{ a = key, b = "align" } { c.good_evil = @as(u32, n) }
+        else if ci::eq{ a = key, b = "hp" } { o.hp = n }
+        else if ci::eq{ a = key, b = "hpmax" } { o.hp_max = n }
+        else if ci::eq{ a = key, b = "class" } { c.classes[0] = @as(u32, n) }
+        else if ci::eq{ a = key, b = "level" } { c.class_levels[0] = @as(u32, n) }
+        else if ci::eq{ a = key, b = "class2" } { c.classes[1] = @as(u32, n) }
+        else if ci::eq{ a = key, b = "level2" } { c.class_levels[1] = @as(u32, n) }
+        else if ci::eq{ a = key, b = "template" } { o.template = resref::truncate{ name = value } }
+        else { return false }
+        c.hit_dice = c.class_levels[0] + c.class_levels[1] + c.class_levels[2]
+        return true
+    }
+
+    // Fills the open menu again from the world.
+    fn refill { mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device } {
+        if ui.menu == ingame::NO_MENU { return }
+        ingame::fill_panel{ &ui, &w, &dev, n = ui.menu, panel = ui.menu_panel }
     }
 }
