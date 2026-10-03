@@ -94,7 +94,11 @@ namespace movement {
             let p = list::items{ list = c.path }[c.path_next]
             let d = distance_2d{ a = here, b = p }
             let last = c.path_next + 1 == c.path.len
-            let stop_at = if last { math::max{ a = d - range + 0.05, b = 0.0 } } else { d }
+            // The range counts from the goal only: a path that ends short of it (the planner's
+            // farthest clear point) is walked to its end, so the next plan fails instead of
+            // stopping `range` short of the same point again and again.
+            let ends_at_goal = distance_2d{ a = p, b = goal } < 0.05
+            let stop_at = if last and ends_at_goal { math::max{ a = d - range + 0.05, b = 0.0 } } else { d }
             let step = math::min{ a = s, b = stop_at }
             if d < 0.0001 {
                 c.path_next = c.path_next + 1
