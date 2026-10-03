@@ -223,6 +223,8 @@ namespace save {
         defer obj::free_bytes{ heap = w.heap, s = module }
         // Leave what is running, the player too (the save brings its own).
         if w.module != obj::INVALID { modload::leave_keeping{ &w, &vm, engine, keep = false } }
+        if w.player != obj::INVALID { world::destroy{ &w, id = w.player } }
+        w.player = obj::INVALID
         if w.pc != obj::INVALID {
             world::destroy{ &w, id = w.pc }
             world::sweep{ &w }

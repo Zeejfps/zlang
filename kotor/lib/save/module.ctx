@@ -110,7 +110,7 @@ namespace save {
         try write_event_queue{ &b, &w, owner = r }
         // The player, as a saved creature plus the Mod_* names (struct id 48813).
         let players = try gffw::put_list{ &b, owner = r, label = "Mod_PlayerList" }
-        let pc = world::object{ w = &w, id = w.pc }
+        let pc = world::object{ w = &w, id = w.player }
         if pc != null {
             let s = try write_object{ &b, &w, list = players, o = pc, id = 48813 }
             try put_string{ &b, owner = s, label = "Mod_CommntyName", v = "Bad StrRef" }
@@ -125,7 +125,7 @@ namespace save {
     // the area, the party (saved with the player and the party table) and carried items.
     fn in_git { w: *world::World, o: *obj::Object } -> bool {
         if o.destroyed or o.kind == obj::Kind::module or o.kind == obj::Kind::area { return false }
-        if o.id == w.pc or party::is_member{ w, id = o.id } { return false }
+        if o.id == w.pc or o.id == w.player or party::is_member{ w, id = o.id } { return false }
         if obj::item{ o } is some{ value = it } { return it.possessor == obj::INVALID }
         return true
     }

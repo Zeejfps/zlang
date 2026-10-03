@@ -125,7 +125,10 @@ namespace save {
         }
         if w.party.saved_leader >= 0 {
             let lead = w.party.npcs[@as(usize, w.party.saved_leader)]
-            if world::is_valid{ w = &w, id = lead } { party::set_leader{ &w, id = lead } }
+            if world::is_valid{ w = &w, id = lead } {
+                party::set_leader{ &w, id = lead }
+                w.pc = lead
+            }
         }
         w.party.saved_count = 0
     }

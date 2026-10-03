@@ -336,13 +336,16 @@ namespace modload {
     // at the transition waypoint or the IFO's entry point on the walkmesh, OnClientEnter queued
     // to the module, and the area's OnEnter for the PC.
     fn place_player { mut w: world::World } {
-        if not world::is_valid{ w = &w, id = w.pc } {
-            w.pc = make_default_player{ &w } iferr err{ error } {
+        if not world::is_valid{ w = &w, id = w.player } {
+            w.player = make_default_player{ &w } iferr err{ error } {
                 world::prefix{ w = &w }
                 _ = @fmt(&w.io, "no player: {}\n", error)
                 return
             }
         }
+        // A module is entered under the player character's control (the leader comes back with
+        // the party, save::restore_party).
+        w.pc = w.player
         let mo = world::object{ w = &w, id = w.module } ifnull { return }
         let m = obj::module{ o = mo } ifnull { return }
         let mut at = m.entry_position
@@ -392,7 +395,7 @@ namespace modload {
         if players.len == 0 { return }
         let s = players[0]
         let saved_id = @trunc(u32, gff::get_number{ doc = doc.*, s, label = "ObjectId" } ifnull 0)
-        if world::object{ w = &w, id = w.pc } != null { world::destroy{ &w, id = w.pc } ; world::sweep{ &w } }
+        if world::object{ w = &w, id = w.player } != null { world::destroy{ &w, id = w.player } ; world::sweep{ &w } }
         let fresh = saved_id != 0 and world::object{ w = &w, id = saved_id } == null
         let o = try world::add_object{ &w, kind = obj::Kind::creature, id = if fresh { saved_id } else { 0 }, character = not fresh }
         o.area = w.area
@@ -407,6 +410,7 @@ namespace modload {
         }
         o.ai_level = 4
         w.pc = o.id
+        w.player = o.id
         save::read_actions{ &w, doc, s, id = o.id }
     }
 
@@ -574,6 +578,8 @@ namespace modload {
             ao.ctx.exiting = w.pc
             _ = scripts::run_slot{ &w, &vm, engine, id = w.area, slot = obj::Slot::exit }
         }
+        // Control returns to the player character; a companion leading goes with the others.
+        if world::is_valid{ w = &w, id = w.player } { w.pc = w.player }
         actions::clear_queue{ &w, o = world::object{ w = &w, id = w.pc } ifnull { return } }
         let all = list::items{ list = w.objects.all }
         let mut i: usize = 0

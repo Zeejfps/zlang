@@ -103,7 +103,7 @@ namespace fight {
     fn sync_flags { w: *world::World, o: *obj::Object, f: *mut Fighter } {
         let c = obj::creature{ o } ifnull { return }
         f.c.is_pc = c.is_pc
-        f.c.pc_rules = o.id == w.pc
+        f.c.pc_rules = o.id == w.player
         f.c.plot = o.plot
         f.c.min1hp = o.min_one_hp
         f.c.party = party::is_member{ w, id = o.id }
@@ -400,8 +400,8 @@ namespace fight {
     fn award_kill_xp { mut w: world::World, victim: u32, killer: u32 } {
         let o = world::object{ w = &w, id = victim } ifnull { return }
         let f = of{ o } ifnull { return }
-        if victim == w.pc or f.c.party { return }
-        let pc = world::object{ w = &w, id = w.pc } ifnull { return }
+        if victim == w.player or f.c.party { return }
+        let pc = world::object{ w = &w, id = w.player } ifnull { return }
         let rep = world::standing{ w = &w, from = pc.faction, toward = o.faction }
         if not rules::awards_kill_xp{ victim_in_party = false, victim_dying = false, reputation = rep } { return }
         let members = party::members{ w = &w }
