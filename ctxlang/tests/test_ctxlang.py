@@ -3448,6 +3448,56 @@ fn pick { n: i32 } -> ! {
         ]:
             self.assertError(src + '\nfn main {} {}', msg, line, col)
 
+    def test_program_writers_come_before_std(self):
+        # std's utf8::push writes a String into a Builder; the program's own writer of one wins.
+        self.assertOutput("""
+namespace quoted {
+    #write
+    fn push_quoted(S) { mut b: utf8::Builder(S), s: utf8::String } -> ! {
+        try utf8::push{ &b, s = "'" }
+        try utf8::push{ &b, s }
+        try utf8::push{ &b, s = "'" }
+    }
+}
+fn main { mut io: Io } {
+    let mut mem: [256]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    let name: utf8::String = "x"
+    try! @fmt(&b, "{} and {}", name, 3)
+    io::println{ &io, s = utf8::view{ b } }
+}
+""", "'x' and 3\n")
+
+    def test_mut_slice_takes_the_slice_writer(self):
+        # A []mut T hole with no writer of its own is written by the []T one.
+        self.assertOutput("""
+struct Out { n: usize }
+#write
+fn text { mut o: Out, s: strlit } { o.n = o.n + s.bytes.len }
+#write
+fn bytes { mut o: Out, b: []u8 } { o.n = o.n + 100 * b.len }
+fn main { mut io: Io } {
+    let mut o = Out{ n = 0 }
+    let mut buf: [3]u8 = [1, 2, 3]
+    let m: []mut u8 = buf[..]
+    _ = @fmt(&o, "ab{}", m)
+    io::println_u64{ &io, n = o.n }
+}
+""", "302\n")
+        self.assertCompileError("""
+struct Out { n: usize }
+#write
+fn text { mut o: Out, s: strlit } {}
+fn main {} {
+    let mut o = Out{ n = 0 }
+    let mut buf: [3]u8 = [1, 2, 3]
+    let m: []mut u8 = buf[..]
+    _ = @fmt(&o, "{}", m)
+}
+""", "@fmt has no writer of []mut u8 to Out")
+
+
 
 WRITER_SETUP = """
 error bad{ code: i32, why: utf8::String }

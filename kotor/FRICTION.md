@@ -19,11 +19,7 @@ Counts are from the spike's sources (sdl.ctx, gl.ctx, png.ctx, main.ctx, about 2
 - **An `if` of literals as an `@fmt` hole** (ctxlang FRICTION #11): `@fmt(&io, "{}", if on {
   "on" } else { "absent" })` is "branches have different types: [2]u8 and [6]u8". Each needed a
   typed `let s: []u8 = if ...` first: 5 times in main.ctx.
-- **An `@fmt` hole doesn't widen `[]mut u8` to `[]u8`.** Writers are found by exact type, so
-  printing part of a mutable buffer (`log[..log_len]`, the GL debug log's `text[..used]` through
-  a `*mut`) found no writer until a second one for `[]mut u8` was added. Every writer of a slice
-  type needs a twin. Taking the `[]T` writer for a `[]mut T` hole (the one widening with no
-  ambiguity) would fix it.
+
 - **No `@fmt` straight to standard output.** std's only writers are for `utf8::Builder`, so a
   formatted line takes an arena, a builder and `io::println`. The spike defines 15 one-line
   `#write` fns over `Io` (`namespace out` in main.ctx) and then writes
