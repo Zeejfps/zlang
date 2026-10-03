@@ -163,7 +163,7 @@ namespace tmpl {
         script{ doc, s, o, label = "ScriptUserDefine", slot = obj::Slot::user_defined }
         script{ doc, s, o, label = "ScriptOnBlocked", slot = obj::Slot::blocked }
         script{ doc, s, o, label = "ScriptEndDialogu", slot = obj::Slot::end_dialogue }
-        // HOOK(rules): c.stats = try rules::read_creature{ tables, doc, s }
+        fight::read_creature{ &w, o, c, doc, s }
         set_movement{ &w, c }
         // Items: equipped (struct id = 1 << slot) and carried.
         let equipped = gff::get_list{ doc = doc.*, s, label = "Equip_ItemList" } ifnull slice::empty(u32){}
@@ -185,11 +185,27 @@ namespace tmpl {
         while k < carried.len {
             let e = carried[k]
             k = k + 1
-            let name = gff::get_resref{ doc = doc.*, s = e, label = "InventoryRes" } ifnull { continue }
-            if name.len == 0 { continue }
-            let item = spawn_item{ &w, template = name, possessor = o.id } iferr { continue }
+            let item = item_of{ &w, doc, s = e, label = "InventoryRes", possessor = o.id } ifnull { continue }
             list::push{ list = &c.inventory, item } iferr {}
         }
+        fight::equip_loaded{ &w, o, c }
+    }
+
+    // An item from an ItemList/Equip_ItemList element: a blueprint named by `label`, or a saved
+    // item whole (it has a BaseItem) with its runtime id.
+    fn item_of { mut w: world::World, doc: *gff::Doc, s: u32, label: []u8, possessor: u32 } -> ?u32 {
+        if gff::get_number{ doc = doc.*, s, label = "BaseItem" } != null {
+            let saved_id = @trunc(u32, gff::get_number{ doc = doc.*, s, label = "ObjectId" } ifnull 0)
+            let fresh = saved_id != 0 and saved_id != obj::INVALID and world::object{ w = &w, id = saved_id } == null
+            let o = world::add_object{ &w, kind = obj::Kind::item, id = if fresh { saved_id } else { 0 }, character = false } iferr { return null }
+            o.ai_level = -1
+            read{ &w, o, doc, s } iferr { return null }
+            if obj::item{ o } is some{ value = it } { it.possessor = possessor }
+            return o.id
+        }
+        let name = gff::get_resref{ doc = doc.*, s, label } ifnull { return null }
+        if name.len == 0 { return null }
+        return spawn_item{ &w, template = name, possessor } iferr { null }
     }
 
     fn slot_of_bit { bits: u32 } -> i32 {
@@ -243,7 +259,7 @@ namespace tmpl {
         i.stack = @trunc(u32, number{ doc, s, label = "StackSize", default = @as(i64, i.stack) })
         i.charges = @trunc(u32, number{ doc, s, label = "Charges", default = @as(i64, i.charges) })
         i.identified = flag{ doc, s, label = "Identified", default = i.identified }
-        // HOOK(rules): rules::read_item{ tables, doc, s }
+        try fight::read_item{ &w, i, doc, s }
     }
 
     // ---- doors (UTD) and the GIT door entry

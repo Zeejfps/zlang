@@ -68,7 +68,8 @@ namespace modload {
             _ = @fmt(&w.io, "module {}: {} objects, {} rooms with walkmeshes\n", name, w.objects.all.len, w.walk.rooms.len)
         }
 
-        // The arrival (gameloop.md 5.5): the area's OnEnter for each GIT creature, then OnModLoad.
+        // The arrival (gameloop.md 5.5): the area's OnEnter for each GIT creature (a fresh module
+        // only), then OnModLoad.
         let all = list::items{ list = w.objects.all }
         let mut i: usize = 0
         while i < all.len {
@@ -469,6 +470,8 @@ namespace modload {
         // The PC runs at PC_Movement (creaturespeed row 0).
         c.walk_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "walkrate" } ifnull 3.2
         c.run_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "runrate" } ifnull 5.4
+        c.abilities = [14, 14, 14, 12, 12, 12]
+        fight::default_stats{ &w, o, c }
         o.area = w.area
         o.ai_level = 4
         return o.id
