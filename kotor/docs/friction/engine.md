@@ -62,3 +62,24 @@ Where ctxlang got in the way while writing the world, the routines, the scene an
 - **One flat namespace across a directory's files.** lib/save's files written by two agents at
   once (`put_*` helpers) had to coordinate names by message; per-file private functions would
   avoid it.
+
+## 2026-10-03: effect routines
+
+- **`if` branches that are string literals of different lengths don't unify.**
+  `@fmt(&io, "{}", if kept { "kept" } else { "refused" })` is "branches have different types:
+  [4]u8 and [7]u8" and then "@fmt has no writer of [4]u8"; it needs `let word: []u8 = if ...`
+  first. String literals could coerce to `[]u8` in a conditional's branches.
+- **A pun is the parameter's name, whatever the local is called.** `push_group{ &w, &vm, linked }`
+  is "`push_group` has no field `linked`" (the parameter is `g`); the error is clear but the
+  missing-`g` second error is noise.
+- **No way to run a hand-assembled script in the game without writing into the install.** To
+  exercise GetFirstEffect/RemoveEffect/DelayCommand-with-an-effect/save-and-load I generated NCS
+  with tools/py/ncsasm.py and had to build a fake game directory (directory junctions to
+  data/, modules/, ... and a private Override/) because Override/ is searched under `--game` only.
+  An `--override DIR` option on kotor/enginetest would make script-level tests a one-liner. The
+  scripts also ran once per creature (the guard through Get/SetGlobalNumber did not hold: an
+  undeclared global doesn't persist), so each test output repeated 26 times.
+- **`kotor/tools/savetest` no longer builds**: its build.ctx lacks lib/rules (and lib/dialog),
+  which lib/engine now needs (`unknown type or namespace rules`). Not touched here.
+- A heredoc-fed `python` edit again turned `\n` inside an `@fmt` string into a real newline
+  (twice); the Edit tool was the only safe way to write it.

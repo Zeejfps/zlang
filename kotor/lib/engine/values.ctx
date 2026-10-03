@@ -6,6 +6,10 @@
 //   ends (end_run). Handle 0 is each type's default value (RSADD pushes it).
 // - kept (bit 31 set): a copy owned by whoever kept it (a situation's cell, ...) until released.
 //
+// An effect value is a rules::EffectGroup: one effect, or the leaves of EffectLinkEffects, all
+// stamped with one id (rules::fx::assign_id from w.fx_ids). The effects a creature carries are
+// the rules' own (rules::Creature.fx), not these.
+//
 //   let h = values::add{ s = &w.values, v = values::Value::location{ l } }     // push_engine(h)
 //   let l = values::location{ s = &w.values, handle = h }                   // default if unknown
 namespace values {
@@ -18,23 +22,9 @@ namespace values {
 
     struct Talent { kind: i32, id: i32, sub: i32, item: u32 }
 
-    // An effect until lib/rules is in (HOOK(rules): rules::Effect). Type ids are nwscript's
-    // EFFECT_TYPE_* where one fits.
-    struct Effect {
-        kind: i32,
-        subtype: i32,
-        duration_type: i32,     // DURATION_TYPE_INSTANT 0, TEMPORARY 1, PERMANENT 2
-        duration: f32,
-        ints: [8]i32,
-        floats: [4]f32,
-        objects: [2]u32,
-        creator: u32,
-        id: u32,
-    }
-
     union Value {
         none,
-        effect{ e: Effect },
+        effect{ g: rules::EffectGroup },     // an effect and the effects linked to it (one id)
         event{ e: ScriptEvent },
         location{ l: Location },
         talent{ t: Talent },
@@ -44,7 +34,6 @@ namespace values {
         transient: list::List(Value, heap::Heap),
         kept: list::List(Value, heap::Heap),
         free: list::List(u32, heap::Heap),
-        next_effect: u32,
     }
 
     fn new { heap: *mut heap::Heap } -> Store {
@@ -52,7 +41,6 @@ namespace values {
             transient = list::new(Value, heap::Heap){ realloc = heap::alloc, heap },
             kept = list::new(Value, heap::Heap){ realloc = heap::alloc, heap },
             free = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
-            next_effect = 1,
         }
     }
 
@@ -125,8 +113,11 @@ namespace values {
     fn no_event {} -> ScriptEvent { return ScriptEvent{ kind = 0, ints = [0; 4], floats = [0.0; 2], objects = [obj::INVALID; 4] } }
     fn no_location {} -> Location { return Location{ position = math::vec3::zero{}, facing = 0.0, area = obj::INVALID } }
     fn no_talent {} -> Talent { return Talent{ kind = -1, id = -1, sub = -1, item = obj::INVALID } }
-    fn no_effect {} -> Effect {
-        return Effect{ kind = 0, subtype = 0, duration_type = 0, duration = 0.0, ints = [0; 8], floats = [0.0; 4], objects = [obj::INVALID; 2], creator = obj::INVALID, id = 0 }
+    // No effect: a group of no leaves (GetIsEffectValid is false for it).
+    fn no_effect {} -> rules::EffectGroup {
+        let mut g: rules::EffectGroup
+        g.len = 0
+        return g
     }
 
     fn event { s: *Store, handle: u32 } -> ScriptEvent {
@@ -141,8 +132,8 @@ namespace values {
         if get{ s, handle } is talent{ t } { return t }
         return no_talent{}
     }
-    fn effect { s: *Store, handle: u32 } -> Effect {
-        if get{ s, handle } is effect{ e } { return e }
+    fn effect { s: *Store, handle: u32 } -> rules::EffectGroup {
+        if get{ s, handle } is effect{ g } { return g }
         return no_effect{}
     }
 
@@ -153,8 +144,13 @@ namespace values {
         let vb = get{ s, handle = b }
         match va {
             none => { return vb is none }
-            effect{ e = x } => {
-                if vb is effect{ e = y } { return x.id == y.id }
+            effect{ g = x } => {
+                // By id: the leaves of a link share one, and a leaf found on a creature carries
+                // the id of the effect that was applied.
+                if vb is effect{ g = y } {
+                    if x.len < 1 or y.len < 1 { return x.len < 1 and y.len < 1 }
+                    return x.items[0].id == y.items[0].id
+                }
                 return false
             }
             event{ e = x } => {

@@ -1,152 +1,618 @@
-// Routines: effects, as a stopgap until lib/rules keeps them (HOOK(rules)). The Effect*
-// constructors make values::Effect handles; ApplyEffectToObject carries out the instant ones
-// (heal, damage, death, resurrection) on the object's header and drops the rest after saying so
-// once. Nothing lasts: GetFirstEffect finds none and RemoveEffect has nothing to remove.
-//
-// An effect's `kind` is the script's EFFECT_TYPE_* where there is one, else one of ours below.
-// `ints` hold the constructor's arguments in order; EffectLinkEffects keeps its two effects'
-// handles and ids in ints[0..4].
+// Routines: effects (docs/design/rules.md, "Effects"). A script's effect is a rules::EffectGroup
+// (values::Value::effect): the Effect* constructors are rules::fx::make_*, EffectLinkEffects
+// joins groups, and every new group is stamped with one id from w.fx_ids. ApplyEffectToObject
+// sets the duration and creator on the leaves and hands the group to fight::apply_group, which
+// applies it to the creature's rules state and carries out what the rules say (hit points,
+// death, crowd control). The effects a creature carries are the rules' own list
+// (fight::Fighter.c.fx); GetFirstEffect/GetNextEffect walk it, RemoveEffect and ClearAllEffects
+// edit it. Doors and placeables, which have no rules creature, take only the instant kinds
+// (heal, damage, death), on their hit points.
 namespace rt_fx {
     fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
         match routine {
-            nwscript::EffectHeal => { try construct{ &w, &vm, argc, routine, kind = FX_HEAL } }
-            nwscript::EffectDamage => { try construct{ &w, &vm, argc, routine, kind = FX_DAMAGE } }
-            nwscript::EffectDeath => { try construct{ &w, &vm, argc, routine, kind = FX_DEATH } }
-            nwscript::EffectCutSceneParalyze => { try construct{ &w, &vm, argc, routine, kind = FX_CUTSCENE_PARALYZE } }
-            nwscript::EffectResurrection => { try construct{ &w, &vm, argc, routine, kind = nwconst::EFFECT_TYPE_RESURRECTION } }
-            nwscript::EffectVisualEffect => { try construct{ &w, &vm, argc, routine, kind = nwconst::EFFECT_TYPE_VISUAL } }
-            nwscript::EffectAssuredHit => { try construct{ &w, &vm, argc, routine, kind = nwconst::EFFECT_TYPE_ASSUREDHIT } }
-            nwscript::EffectMovementSpeedIncrease => { try construct{ &w, &vm, argc, routine, kind = nwconst::EFFECT_TYPE_MOVEMENT_SPEED_INCREASE } }
-            nwscript::EffectMovementSpeedDecrease => { try construct{ &w, &vm, argc, routine, kind = nwconst::EFFECT_TYPE_MOVEMENT_SPEED_DECREASE } }
-            nwscript::EffectParalyze => { try construct{ &w, &vm, argc, routine, kind = nwconst::EFFECT_TYPE_PARALYZE } }
-            nwscript::EffectStunned => { try construct{ &w, &vm, argc, routine, kind = nwconst::EFFECT_TYPE_STUNNED } }
-            nwscript::EffectSleep => { try construct{ &w, &vm, argc, routine, kind = nwconst::EFFECT_TYPE_SLEEP } }
-            nwscript::EffectHaste => { try construct{ &w, &vm, argc, routine, kind = nwconst::EFFECT_TYPE_HASTE } }
-            nwscript::EffectAbilityIncrease => { try construct{ &w, &vm, argc, routine, kind = nwconst::EFFECT_TYPE_ABILITY_INCREASE } }
-            nwscript::EffectTemporaryHitpoints => { try construct{ &w, &vm, argc, routine, kind = nwconst::EFFECT_TYPE_TEMPORARY_HITPOINTS } }
+            // ---- constructors without arguments
+            nwscript::EffectAssuredHit => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectResurrection => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectEntangle => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectKnockdown => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectParalyze => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectSleep => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectConfused => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectFrightened => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectChoke => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectStunned => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectHaste => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectBodyFuel => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectDroidStun => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectForcePushed => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectForceFizzle => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectTrueSeeing => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectSeeInvisible => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectTimeStop => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectHorrified => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectPsychicStatic => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectWhirlWind => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectCutSceneHorrified => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectCutSceneParalyze => { try construct0{ &w, &vm, routine } }
+            nwscript::EffectCutSceneStunned => { try construct0{ &w, &vm, routine } }
+            // ---- one integer
+            nwscript::EffectHeal => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectTemporaryForcePoints => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectDamageForcePoints => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectHealForcePoints => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectForceDrain => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectMovementSpeedIncrease => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectMovementSpeedDecrease => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectForceResistanceIncrease => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectForceResistanceDecrease => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectBlasterDeflectionIncrease => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectBlasterDeflectionDecrease => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectPoison => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectModifyAttacks => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectDisguise => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectForceShield => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectTemporaryHitpoints => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectConcealment => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectMissChance => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectInvisibility => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectSpellImmunity => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectImmunity => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectDispelMagicAll => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectDispelMagicBest => { try construct1{ &w, &vm, argc, routine } }
+            nwscript::EffectAssuredDeflection => { try construct1{ &w, &vm, argc, routine } }
+            // ---- two integers
+            nwscript::EffectAbilityIncrease => { try construct2{ &w, &vm, argc, routine } }
+            nwscript::EffectAbilityDecrease => { try construct2{ &w, &vm, argc, routine } }
+            nwscript::EffectAttackIncrease => { try construct2{ &w, &vm, argc, routine } }
+            nwscript::EffectAttackDecrease => { try construct2{ &w, &vm, argc, routine } }
+            nwscript::EffectDamageIncrease => { try construct2{ &w, &vm, argc, routine } }
+            nwscript::EffectDamageDecrease => { try construct2{ &w, &vm, argc, routine } }
+            nwscript::EffectDamageImmunityIncrease => { try construct2{ &w, &vm, argc, routine } }
+            nwscript::EffectDamageImmunityDecrease => { try construct2{ &w, &vm, argc, routine } }
+            nwscript::EffectSkillIncrease => { try construct2{ &w, &vm, argc, routine } }
+            nwscript::EffectSkillDecrease => { try construct2{ &w, &vm, argc, routine } }
+            nwscript::EffectDeath => { try construct2{ &w, &vm, argc, routine } }
+            nwscript::EffectVisualEffect => { try construct2{ &w, &vm, argc, routine } }
+            // ---- three integers
+            nwscript::EffectDamage => { try construct3{ &w, &vm, argc, routine } }
+            nwscript::EffectDamageResistance => { try construct3{ &w, &vm, argc, routine } }
+            nwscript::EffectDamageReduction => { try construct3{ &w, &vm, argc, routine } }
+            nwscript::EffectACIncrease => { try construct3{ &w, &vm, argc, routine } }
+            nwscript::EffectACDecrease => { try construct3{ &w, &vm, argc, routine } }
+            nwscript::EffectSavingThrowIncrease => { try construct3{ &w, &vm, argc, routine } }
+            nwscript::EffectSavingThrowDecrease => { try construct3{ &w, &vm, argc, routine } }
+            nwscript::EffectDamageShield => { try construct3{ &w, &vm, argc, routine } }
+            nwscript::EffectSpellLevelAbsorption => { try construct3{ &w, &vm, argc, routine } }
+            // ---- the others
+            nwscript::EffectRegenerate => { try effect_regenerate{ &w, &vm, argc } }
+            nwscript::EffectHitPointChangeWhenDying => { try effect_hp_when_dying{ &w, &vm, argc } }
             nwscript::EffectBeam => { try effect_beam{ &w, &vm, argc } }
+            nwscript::EffectAreaOfEffect => { try effect_area{ &w, &vm, argc } }
+            nwscript::EffectForceJump => { try effect_force_jump{ &w, &vm, argc } }
+            nwscript::EffectForcePushTargeted => { try effect_force_push_targeted{ &w, &vm, argc } }
+            nwscript::EffectLightsaberThrow => { try effect_lightsaber_throw{ &w, &vm, argc } }
+            nwscript::EffectForceResisted => { try effect_force_resisted{ &w, &vm, argc } }
             nwscript::EffectLinkEffects => { try link_effects{ &w, &vm, argc } }
             nwscript::MagicalEffect => { try tag_effect{ &w, &vm, argc, routine, subtype = nwconst::SUBTYPE_MAGICAL } }
             nwscript::SupernaturalEffect => { try tag_effect{ &w, &vm, argc, routine, subtype = nwconst::SUBTYPE_SUPERNATURAL } }
             nwscript::ExtraordinaryEffect => { try tag_effect{ &w, &vm, argc, routine, subtype = nwconst::SUBTYPE_EXTRAORDINARY } }
+            nwscript::VersusAlignmentEffect => { try versus_effect{ &w, &vm, argc, routine } }
+            nwscript::VersusRacialTypeEffect => { try versus_effect{ &w, &vm, argc, routine } }
+            nwscript::VersusTrapEffect => { try versus_effect{ &w, &vm, argc, routine } }
+            nwscript::SetEffectIcon => { try set_effect_icon{ &w, &vm, argc } }
+            // ---- applying
             nwscript::ApplyEffectToObject => { try apply_effect_to_object{ &w, &vm, argc } }
             nwscript::ApplyEffectAtLocation => { try apply_effect_at_location{ &w, &vm, argc } }
-            nwscript::GetFirstEffect => { try find_effect{ &w, &vm, argc, routine } }
-            nwscript::GetNextEffect => { try find_effect{ &w, &vm, argc, routine } }
+            // ---- asking about effects
+            nwscript::GetFirstEffect => { try find_effect{ &w, &vm, argc, routine, first = true } }
+            nwscript::GetNextEffect => { try find_effect{ &w, &vm, argc, routine, first = false } }
             nwscript::GetIsEffectValid => { try get_is_effect_valid{ &w, &vm, argc } }
             nwscript::GetEffectType => { try get_effect_type{ &w, &vm, argc } }
+            nwscript::GetEffectDurationType => { try get_effect_field{ &w, &vm, argc, routine } }
+            nwscript::GetEffectSubType => { try get_effect_field{ &w, &vm, argc, routine } }
+            nwscript::GetEffectSpellId => { try get_effect_field{ &w, &vm, argc, routine } }
+            nwscript::GetEffectCreator => { try get_effect_creator{ &w, &vm, argc } }
             nwscript::RemoveEffect => { try remove_effect{ &w, &vm, argc } }
-            nwscript::ClearAllEffects => {}
+            nwscript::ClearAllEffects => { try clear_all_effects{ &w, &vm } }
+            nwscript::GetHasSpellEffect => { try get_has_spell_effect{ &w, &vm, argc } }
+            nwscript::GetHasFeatEffect => { try get_has_feat_effect{ &w, &vm, argc } }
+            nwscript::GetIsPoisoned => { try get_is_poisoned{ &w, &vm, argc } }
+            nwscript::GetIsImmune => { try get_is_immune{ &w, &vm, argc } }
+            nwscript::GetIsLinkImmune => { try get_is_link_immune{ &w, &vm, argc } }
             else => { return false }
         }
         return true
     }
 
-    // Kinds the script's EFFECT_TYPE_* list lacks (GetEffectType reports 0 for them).
-    const FX_HEAL: i32 = 1001
-    const FX_DAMAGE: i32 = 1002
-    const FX_DEATH: i32 = 1003
-    const FX_LINK: i32 = 1004
-    const FX_CUTSCENE_PARALYZE: i32 = 1005
-    const FIRST_OURS: i32 = 1000
+    // The spell a script's effects are made for (GetSpellId): there is no cast context yet, so
+    // none (-1, as GetSpellId answers).
+    const NO_SPELL: i32 = -1
 
     // ---- making effects
 
-    // Adds `e` to the store as a new effect (its own id, made by the running script's object)
-    // and pushes its handle.
-    fn push_effect { mut w: world::World, mut vm: nwvm::Vm, e: values::Effect } -> ! {
-        let mut ef = e
-        ef.id = w.values.next_effect
-        w.values.next_effect = w.values.next_effect + 1
-        ef.creator = nwvm::self_object{ vm }
-        let h = values::add{ s = &w.values, v = values::Value::effect{ e = ef } }
+    // Pushes an effect value (a group) as a handle.
+    fn push_group { mut w: world::World, mut vm: nwvm::Vm, g: rules::EffectGroup } -> ! {
+        let h = values::add{ s = &w.values, v = values::Value::effect{ g } }
         try nwvm::push_engine{ &vm, kind = nwvm::EngineType::effect, handle = h }
     }
 
-    // `effect EffectX(int, int, ...)`: the constructors whose parameters are all integers keep
-    // them in order (at most eight).
-    fn construct { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, kind: i32 } -> ! {
-        let n = @as(usize, nwscript::ROUTINES[@as(usize, routine)].count)
-        let mut e = values::no_effect{}
-        e.kind = kind
-        let mut i: usize = 0
-        while i < n and i < 8 {
-            e.ints[i] = try nwarg::int{ &vm, routine, argc, i }
-            i = i + 1
+    fn push_no_effect { mut vm: nwvm::Vm } -> ! {
+        try nwvm::push_engine{ &vm, kind = nwvm::EngineType::effect, handle = 0 }
+    }
+
+    // A script constructor's effect: made by the running script's object, with an id of its own.
+    fn push_new { mut w: world::World, mut vm: nwvm::Vm, e: rules::Effect } -> ! {
+        let mut leaf = e
+        rules::fx::set_creator{ e = &leaf, creator = nwvm::self_object{ vm }, spell_id = NO_SPELL }
+        let mut g = rules::fx::make_group{ e = leaf }
+        rules::fx::assign_id{ ids = &w.fx_ids, g = &g }
+        try push_group{ &w, &vm, g }
+    }
+
+    fn invalid_effect {} -> rules::Effect { return rules::fx::make_effect{ kind = rules::fx::INVALID } }
+
+    fn construct0 { mut w: world::World, mut vm: nwvm::Vm, routine: u16 } -> ! {
+        let e = match routine {
+            nwscript::EffectAssuredHit => { rules::fx::make_assured_hit{} }
+            nwscript::EffectResurrection => { rules::fx::make_resurrection{} }
+            nwscript::EffectEntangle => { rules::fx::make_entangle{} }
+            nwscript::EffectKnockdown => { rules::fx::make_knockdown{} }
+            nwscript::EffectParalyze => { rules::fx::make_paralyze{} }
+            nwscript::EffectSleep => { rules::fx::make_sleep{} }
+            nwscript::EffectConfused => { rules::fx::make_confused{} }
+            nwscript::EffectFrightened => { rules::fx::make_frightened{} }
+            nwscript::EffectChoke => { rules::fx::make_choke{} }
+            nwscript::EffectStunned => { rules::fx::make_stunned{} }
+            nwscript::EffectHaste => { rules::fx::make_haste{} }
+            nwscript::EffectBodyFuel => { rules::fx::make_body_fuel{} }
+            nwscript::EffectDroidStun => { rules::fx::make_droid_stun{} }
+            nwscript::EffectForcePushed => { rules::fx::make_force_pushed{} }
+            nwscript::EffectForceFizzle => { rules::fx::make_force_fizzle{} }
+            nwscript::EffectTrueSeeing => { rules::fx::make_true_seeing{} }
+            nwscript::EffectSeeInvisible => { rules::fx::make_see_invisible{} }
+            nwscript::EffectTimeStop => { rules::fx::make_timestop{} }
+            nwscript::EffectHorrified => { rules::fx::make_horrified{} }
+            nwscript::EffectPsychicStatic => { rules::fx::make_psychic_static{} }
+            nwscript::EffectWhirlWind => { rules::fx::make_whirlwind{} }
+            nwscript::EffectCutSceneHorrified => { rules::fx::make_cutscene_horrified{} }
+            nwscript::EffectCutSceneParalyze => { rules::fx::make_cutscene_paralyze{} }
+            nwscript::EffectCutSceneStunned => { rules::fx::make_cutscene_stunned{} }
+            else => { invalid_effect{} }
         }
-        try push_effect{ &w, &vm, e }
+        try push_new{ &w, &vm, e }
     }
 
-    // effect EffectLinkEffects(effect eChildEffect, effect eParentEffect): the two handles live
-    // only as long as the script run that made them, so their ids are kept to tell a stale
-    // handle when the link is applied.
-    fn link_effects { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
-        let r = nwscript::EffectLinkEffects
-        let child = try nwarg::engine{ &vm, routine = r, argc, i = 0, kind = nwvm::EngineType::effect }
-        let parent = try nwarg::engine{ &vm, routine = r, argc, i = 1, kind = nwvm::EngineType::effect }
-        let mut e = values::no_effect{}
-        e.kind = FX_LINK
-        e.ints[0] = @trunc(i32, child)
-        e.ints[1] = @trunc(i32, parent)
-        e.ints[2] = @trunc(i32, values::effect{ s = &w.values, handle = child }.id)
-        e.ints[3] = @trunc(i32, values::effect{ s = &w.values, handle = parent }.id)
-        try push_effect{ &w, &vm, e }
+    // `effect EffectX(int a)`
+    fn construct1 { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let a = try nwarg::int{ &vm, routine, argc, i = 0 }
+        let e = match routine {
+            nwscript::EffectHeal => { rules::fx::make_heal{ amount = a } }
+            nwscript::EffectTemporaryForcePoints => { rules::fx::make_temporary_force_points{ amount = a } }
+            nwscript::EffectDamageForcePoints => { rules::fx::make_damage_force_points{ amount = a } }
+            nwscript::EffectHealForcePoints => { rules::fx::make_heal_force_points{ amount = a } }
+            nwscript::EffectForceDrain => { rules::fx::make_force_drain{ amount = a } }
+            nwscript::EffectMovementSpeedIncrease => { rules::fx::make_movement_speed_increase{ percent = a } }
+            nwscript::EffectMovementSpeedDecrease => { rules::fx::make_movement_speed_decrease{ percent = a } }
+            nwscript::EffectForceResistanceIncrease => { rules::fx::make_force_resistance_increase{ amount = a } }
+            nwscript::EffectForceResistanceDecrease => { rules::fx::make_force_resistance_decrease{ amount = a } }
+            nwscript::EffectBlasterDeflectionIncrease => { rules::fx::make_blaster_deflection_increase{ amount = a } }
+            nwscript::EffectBlasterDeflectionDecrease => { rules::fx::make_blaster_deflection_decrease{ amount = a } }
+            nwscript::EffectPoison => { rules::fx::make_poison{ poison_row = a } }
+            nwscript::EffectModifyAttacks => { rules::fx::make_modify_attacks{ attacks = a } }
+            nwscript::EffectDisguise => { rules::fx::make_disguise{ appearance = a } }
+            nwscript::EffectForceShield => { rules::fx::make_force_shield{ shield = a } }
+            nwscript::EffectTemporaryHitpoints => { rules::fx::make_temporary_hitpoints{ amount = a } }
+            nwscript::EffectConcealment => { rules::fx::make_concealment{ percent = a } }
+            nwscript::EffectMissChance => { rules::fx::make_miss_chance{ percent = a } }
+            nwscript::EffectInvisibility => { rules::fx::make_invisibility{ invisibility_type = a } }
+            nwscript::EffectSpellImmunity => { rules::fx::make_spell_immunity{ spell = a } }
+            nwscript::EffectImmunity => { rules::fx::make_immunity{ immunity = a } }
+            nwscript::EffectDispelMagicAll => { rules::fx::make_dispel_magic_all{ caster_level = a } }
+            nwscript::EffectDispelMagicBest => { rules::fx::make_dispel_magic_best{ caster_level = a } }
+            nwscript::EffectAssuredDeflection => { rules::fx::make_assured_deflection{ returns = a != 0 } }
+            else => { invalid_effect{} }
+        }
+        try push_new{ &w, &vm, e }
     }
 
-    // effect EffectBeam(int nBeamVisualEffect, object oEffector, int nBodyPart, int bMissEffect = FALSE):
-    // ints are the beam's visual effect, the body part and the miss flag, the object the effector
-    // (rules.md, 207).
+    // `effect EffectX(int a, int b)`
+    fn construct2 { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let a = try nwarg::int{ &vm, routine, argc, i = 0 }
+        let b = try nwarg::int{ &vm, routine, argc, i = 1 }
+        let e = match routine {
+            nwscript::EffectAbilityIncrease => { rules::fx::make_ability_increase{ ability = a, amount = b } }
+            nwscript::EffectAbilityDecrease => { rules::fx::make_ability_decrease{ ability = a, amount = b } }
+            nwscript::EffectAttackIncrease => { rules::fx::make_attack_increase{ amount = a, hand = b } }
+            nwscript::EffectAttackDecrease => { rules::fx::make_attack_decrease{ amount = a, hand = b } }
+            nwscript::EffectDamageIncrease => { rules::fx::make_damage_increase{ amount = a, types = b } }
+            nwscript::EffectDamageDecrease => { rules::fx::make_damage_decrease{ amount = a, types = b } }
+            nwscript::EffectDamageImmunityIncrease => { rules::fx::make_damage_immunity_increase{ types = a, percent = b } }
+            nwscript::EffectDamageImmunityDecrease => { rules::fx::make_damage_immunity_decrease{ types = a, percent = b } }
+            nwscript::EffectSkillIncrease => { rules::fx::make_skill_increase{ skill = a, amount = b } }
+            nwscript::EffectSkillDecrease => { rules::fx::make_skill_decrease{ skill = a, amount = b } }
+            nwscript::EffectDeath => { rules::fx::make_death{ spectacular = a != 0, feedback = b != 0 } }
+            nwscript::EffectVisualEffect => { rules::fx::make_visual_effect{ vfx = a, miss = b != 0 } }
+            else => { invalid_effect{} }
+        }
+        try push_new{ &w, &vm, e }
+    }
+
+    // `effect EffectX(int a, int b, int c)`
+    fn construct3 { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let a = try nwarg::int{ &vm, routine, argc, i = 0 }
+        let b = try nwarg::int{ &vm, routine, argc, i = 1 }
+        let c = try nwarg::int{ &vm, routine, argc, i = 2 }
+        let e = match routine {
+            nwscript::EffectDamage => { rules::fx::make_damage{ amount = a, types = b, power = c } }
+            nwscript::EffectDamageResistance => { rules::fx::make_damage_resistance{ types = a, amount = b, limit = c } }
+            nwscript::EffectDamageReduction => { rules::fx::make_damage_reduction{ amount = a, power = b, limit = c } }
+            nwscript::EffectACIncrease => { rules::fx::make_ac{ kind = rules::fx::AC_INCREASE, amount = a, mod_type = b, types = c } }
+            nwscript::EffectACDecrease => { rules::fx::make_ac{ kind = rules::fx::AC_DECREASE, amount = a, mod_type = b, types = c } }
+            nwscript::EffectSavingThrowIncrease => { rules::fx::make_save_increase{ amount = b, which = a, save_type = c } }
+            nwscript::EffectSavingThrowDecrease => { rules::fx::make_save_decrease{ amount = b, which = a, save_type = c } }
+            nwscript::EffectDamageShield => { rules::fx::make_damage_shield{ amount = a, random = b, types = c } }
+            nwscript::EffectSpellLevelAbsorption => { rules::fx::make_spell_level_absorption{ max_level = a, total = b, school = c } }
+            else => { invalid_effect{} }
+        }
+        try push_new{ &w, &vm, e }
+    }
+
+    // effect EffectRegenerate(int nAmount, float fIntervalSeconds)
+    fn effect_regenerate { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::EffectRegenerate
+        let amount = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let seconds = try nwarg::float{ &vm, routine = r, argc, i = 1 }
+        try push_new{ &w, &vm, e = rules::fx::make_regenerate{ amount, seconds } }
+    }
+
+    // effect EffectHitPointChangeWhenDying(float fHitPointChangePerRound)
+    fn effect_hp_when_dying { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let per_round = try nwarg::float{ &vm, routine = nwscript::EffectHitPointChangeWhenDying, argc, i = 0 }
+        try push_new{ &w, &vm, e = rules::fx::make_hitpoint_change_when_dying{ per_round } }
+    }
+
+    // effect EffectBeam(int nBeamVisualEffect, object oEffector, int nBodyPart, int bMissEffect = FALSE)
     fn effect_beam { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let r = nwscript::EffectBeam
         let beam = try nwarg::int{ &vm, routine = r, argc, i = 0 }
         let effector = try nwarg::object{ &vm, routine = r, argc, i = 1 }
         let part = try nwarg::int{ &vm, routine = r, argc, i = 2 }
         let miss = try nwarg::int{ &vm, routine = r, argc, i = 3 }
-        let mut e = values::no_effect{}
-        e.kind = nwconst::EFFECT_TYPE_BEAM
-        e.ints[0] = beam
-        e.ints[1] = part
-        e.ints[2] = miss
-        e.objects[0] = effector
-        try push_effect{ &w, &vm, e }
+        try push_new{ &w, &vm, e = rules::fx::make_beam{ beam_vfx = beam, effector, body_part = part, miss = miss != 0 } }
+    }
+
+    // effect EffectAreaOfEffect(int nAreaEffectId, string sOnEnterScript = "", string sHeartbeatScript = "",
+    // string sOnExitScript = ""): the area-effect objects are not made, so the scripts' names are
+    // not kept (the rules hold script handles as opaque numbers).
+    fn effect_area { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::EffectAreaOfEffect
+        let id = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        _ = try nwarg::string{ &vm, routine = r, argc, i = 1 }
+        _ = try nwarg::string{ &vm, routine = r, argc, i = 2 }
+        _ = try nwarg::string{ &vm, routine = r, argc, i = 3 }
+        try push_new{ &w, &vm, e = rules::fx::make_area_of_effect{ vfx_persistent = id, on_enter = 0, heartbeat = 0, on_exit = 0 } }
+    }
+
+    // effect EffectForceJump(object oTarget, int nAdvanced = 0)
+    fn effect_force_jump { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::EffectForceJump
+        let target = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let advanced = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        try push_new{ &w, &vm, e = rules::fx::make_force_jump{ target, advanced = advanced != 0 } }
+    }
+
+    // effect EffectForcePushTargeted(location lCentre, int nIgnoreTestDirectLine = 0)
+    fn effect_force_push_targeted { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::EffectForcePushTargeted
+        let h = try nwarg::engine{ &vm, routine = r, argc, i = 0, kind = nwvm::EngineType::location }
+        let ignore = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let l = values::location{ s = &w.values, handle = h }
+        try push_new{ &w, &vm, e = rules::fx::make_force_push_targeted{ x = l.position.x, y = l.position.y, z = l.position.z, ignore_line_test = ignore != 0 } }
+    }
+
+    // effect EffectLightsaberThrow(object oTarget1, object oTarget2 = OBJECT_INVALID,
+    // object oTarget3 = OBJECT_INVALID, int nAdvancedDamage = 0)
+    fn effect_lightsaber_throw { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::EffectLightsaberThrow
+        let t1 = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let t2 = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        let t3 = try nwarg::object{ &vm, routine = r, argc, i = 2 }
+        let advanced = try nwarg::int{ &vm, routine = r, argc, i = 3 }
+        try push_new{ &w, &vm, e = rules::fx::make_lightsaber_throw{ target1 = t1, target2 = t2, target3 = t3, advanced = advanced != 0 } }
+    }
+
+    // effect EffectForceResisted(object oSource)
+    fn effect_force_resisted { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let source = try nwarg::object{ &vm, routine = nwscript::EffectForceResisted, argc, i = 0 }
+        try push_new{ &w, &vm, e = rules::fx::make_force_resisted{ source } }
+    }
+
+    // effect EffectLinkEffects(effect eChildEffect, effect eParentEffect): the leaves of both
+    // under one new id.
+    fn link_effects { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::EffectLinkEffects
+        let child = try nwarg::engine{ &vm, routine = r, argc, i = 0, kind = nwvm::EngineType::effect }
+        let parent = try nwarg::engine{ &vm, routine = r, argc, i = 1, kind = nwvm::EngineType::effect }
+        let mut g = rules::fx::link_groups{
+            child = values::effect{ s = &w.values, handle = child },
+            parent = values::effect{ s = &w.values, handle = parent },
+        }
+        rules::fx::assign_id{ ids = &w.fx_ids, g = &g }
+        try push_group{ &w, &vm, g }
     }
 
     // effect MagicalEffect / SupernaturalEffect / ExtraordinaryEffect(effect eEffect): the same
-    // effect marked with its subtype.
+    // effect (same id) with every leaf marked with the subtype.
     fn tag_effect { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, subtype: i32 } -> ! {
         let h = try nwarg::engine{ &vm, routine, argc, i = 0, kind = nwvm::EngineType::effect }
-        let mut e = values::effect{ s = &w.values, handle = h }
-        e.subtype = subtype
-        let made = values::add{ s = &w.values, v = values::Value::effect{ e } }
-        try nwvm::push_engine{ &vm, kind = nwvm::EngineType::effect, handle = made }
+        let mut g = values::effect{ s = &w.values, handle = h }
+        let mut i: usize = 0
+        while i < @as(usize, g.len) {
+            rules::fx::set_subtype{ e = &g.items[i], sub = subtype }
+            i = i + 1
+        }
+        try push_group{ &w, &vm, g }
+    }
+
+    // Where a kind keeps the race and the alignment group it applies against (query.ctx): -1
+    // for a kind that has none.
+    fn race_slot { kind: i32 } -> i32 {
+        if kind == rules::fx::ATTACK_INCREASE or kind == rules::fx::ATTACK_DECREASE { return 2 }
+        if kind == rules::fx::SAVING_THROW_INCREASE or kind == rules::fx::SAVING_THROW_DECREASE { return 3 }
+        if kind == rules::fx::SKILL_INCREASE or kind == rules::fx::SKILL_DECREASE { return 2 }
+        if kind == rules::fx::AC_INCREASE or kind == rules::fx::AC_DECREASE { return 2 }
+        if kind == rules::fx::DAMAGE_INCREASE or kind == rules::fx::DAMAGE_DECREASE { return 2 }
+        if kind == rules::fx::IMMUNITY { return 1 }
+        return -1
+    }
+
+    fn align_slot { kind: i32 } -> i32 {
+        if kind == rules::fx::SAVING_THROW_INCREASE or kind == rules::fx::SAVING_THROW_DECREASE { return 5 }
+        if kind == rules::fx::IMMUNITY { return 2 }
+        if race_slot{ kind } < 0 { return -1 }
+        return 4
+    }
+
+    // effect VersusAlignmentEffect(effect, int nLawChaos = ALIGNMENT_ALL, int nGoodEvil = ALIGNMENT_ALL),
+    // VersusRacialTypeEffect(effect, int nRacialType), VersusTrapEffect(effect): the kinds that
+    // can be conditional get the race or alignment group in their own parameter; a trap
+    // condition has no place in the rules, so VersusTrapEffect leaves the effect as it is.
+    fn versus_effect { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let h = try nwarg::engine{ &vm, routine, argc, i = 0, kind = nwvm::EngineType::effect }
+        let mut want_race = -1
+        let mut want_align = 0
+        if routine == nwscript::VersusAlignmentEffect {
+            _ = try nwarg::int{ &vm, routine, argc, i = 1 }
+            want_align = try nwarg::int{ &vm, routine, argc, i = 2 }
+        } else if routine == nwscript::VersusRacialTypeEffect {
+            want_race = try nwarg::int{ &vm, routine, argc, i = 1 }
+        }
+        let mut g = values::effect{ s = &w.values, handle = h }
+        let mut i: usize = 0
+        while i < @as(usize, g.len) {
+            let kind = g.items[i].kind
+            let rs = race_slot{ kind }
+            let als = align_slot{ kind }
+            if want_race >= 0 and rs >= 0 { g.items[i].ints[@as(usize, rs)] = want_race }
+            if want_align != 0 and als >= 0 { g.items[i].ints[@as(usize, als)] = want_align }
+            i = i + 1
+        }
+        try push_group{ &w, &vm, g }
+    }
+
+    // effect SetEffectIcon(effect eEffect, int nIcon): the same effect with an icon leaf linked
+    // to it (the rules show an ICON effect's row while the effect lasts).
+    fn set_effect_icon { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::SetEffectIcon
+        let h = try nwarg::engine{ &vm, routine = r, argc, i = 0, kind = nwvm::EngineType::effect }
+        let icon = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let g = values::effect{ s = &w.values, handle = h }
+        if g.len < 1 {
+            try push_group{ &w, &vm, g }
+            return
+        }
+        let mut linked = rules::fx::link_groups{ child = rules::fx::make_group{ e = rules::fx::make_icon{ icon } }, parent = g }
+        let id = g.items[0].id
+        let mut i: usize = 0
+        while i < @as(usize, linked.len) {
+            linked.items[i].id = id
+            i = i + 1
+        }
+        try push_group{ &w, &vm, g = linked }
     }
 
     // ---- asking about effects
 
-    // effect GetFirstEffect(object) / GetNextEffect(object): no effect is kept, so none is found.
-    fn find_effect { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
-        _ = try nwarg::object{ &vm, routine, argc, i = 0 }
-        try nwvm::push_engine{ &vm, kind = nwvm::EngineType::effect, handle = 0 }
+    // effect GetFirstEffect(object oCreature) / GetNextEffect(object oCreature): the creature's
+    // effects the scripts may see, one leaf at a time, from the rules' list. The cursor is on the
+    // creature; RemoveEffect keeps it in place when it takes an earlier entry out.
+    fn find_effect { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, first: bool } -> ! {
+        let id = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try push_no_effect{ &vm }
+            return
+        }
+        let c = obj::creature{ o } ifnull {
+            try push_no_effect{ &vm }
+            return
+        }
+        let f = c.fighter ifnull {
+            try push_no_effect{ &vm }
+            return
+        }
+        let mut i: usize = if first { 0 } else { c.fx_cursor }
+        while i < @as(usize, f.c.nfx) {
+            let at = i
+            i = i + 1
+            if not f.c.fx[at].exposed { continue }
+            c.fx_cursor = i
+            try push_group{ &w, &vm, g = rules::fx::make_group{ e = f.c.fx[at] } }
+            return
+        }
+        c.fx_cursor = i
+        try push_no_effect{ &vm }
     }
 
     // int GetIsEffectValid(effect eEffect)
     fn get_is_effect_valid { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let h = try nwarg::engine{ &vm, routine = nwscript::GetIsEffectValid, argc, i = 0, kind = nwvm::EngineType::effect }
-        let e = values::effect{ s = &w.values, handle = h }
-        try nwvm::push_int{ &vm, v = if e.kind != 0 { 1 } else { 0 } }
+        let g = values::effect{ s = &w.values, handle = h }
+        try nwvm::push_int{ &vm, v = if g.len > 0 and g.items[0].kind != rules::fx::INVALID { 1 } else { 0 } }
     }
 
-    // int GetEffectType(effect eEffect): EFFECT_TYPE_*, 0 for ours and for no effect.
+    // int GetEffectType(effect eEffect): EFFECT_TYPE_*, 0 for the kinds the script list lacks.
     fn get_effect_type { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let h = try nwarg::engine{ &vm, routine = nwscript::GetEffectType, argc, i = 0, kind = nwvm::EngineType::effect }
-        let e = values::effect{ s = &w.values, handle = h }
-        try nwvm::push_int{ &vm, v = if e.kind > FIRST_OURS { 0 } else { e.kind } }
+        let g = values::effect{ s = &w.values, handle = h }
+        if g.len < 1 {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        if g.items[0].kind == rules::fx::RESURRECTION {
+            try nwvm::push_int{ &vm, v = nwconst::EFFECT_TYPE_RESURRECTION }
+            return
+        }
+        try nwvm::push_int{ &vm, v = rules::fx::script_type{ e = &g.items[0] } }
     }
 
-    // void RemoveEffect(object oCreature, effect eEffect): nothing is kept to remove.
+    // int GetEffectDurationType(effect) (DURATION_TYPE_*), int GetEffectSubType(effect)
+    // (SUBTYPE_*), int GetEffectSpellId(effect) (-1 for none): of the effect's first leaf.
+    fn get_effect_field { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let h = try nwarg::engine{ &vm, routine, argc, i = 0, kind = nwvm::EngineType::effect }
+        let g = values::effect{ s = &w.values, handle = h }
+        let mut v: i32 = if routine == nwscript::GetEffectSpellId { NO_SPELL } else { 0 }
+        if g.len > 0 {
+            if routine == nwscript::GetEffectDurationType { v = g.items[0].dur }
+            else if routine == nwscript::GetEffectSubType { v = g.items[0].sub }
+            else { v = g.items[0].spell_id }
+        }
+        try nwvm::push_int{ &vm, v }
+    }
+
+    // object GetEffectCreator(effect eEffect)
+    fn get_effect_creator { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let h = try nwarg::engine{ &vm, routine = nwscript::GetEffectCreator, argc, i = 0, kind = nwvm::EngineType::effect }
+        let g = values::effect{ s = &w.values, handle = h }
+        try nwvm::push_object{ &vm, id = if g.len > 0 { g.items[0].creator } else { obj::INVALID } }
+    }
+
+    // The rules creature of an object that has one.
+    fn fighter_of { mut w: world::World, id: u32 } -> ?*mut fight::Fighter {
+        let o = world::object{ w = &w, id } ifnull { return null }
+        return fight::of{ o }
+    }
+
+    // int GetHasSpellEffect(int nSpell, object oObject = OBJECT_SELF): an effect made by the
+    // spell, among the creature's.
+    fn get_has_spell_effect { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::GetHasSpellEffect
+        let spell = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        let mut found = 0
+        if spell >= 0 {
+            if fighter_of{ &w, id } is some{ value = f } {
+                let mut i: usize = 0
+                while i < @as(usize, f.c.nfx) {
+                    if f.c.fx[i].spell_id == spell { found = 1 }
+                    i = i + 1
+                }
+            }
+        }
+        try nwvm::push_int{ &vm, v = found }
+    }
+
+    // int GetHasFeatEffect(int nFeat, object oObject = OBJECT_SELF): the rules do not tag an
+    // effect with the feat that made it (feat.2da's spellid is not read), and no script asks.
+    fn get_has_feat_effect { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        _ = try nwarg::int{ &vm, routine = nwscript::GetHasFeatEffect, argc, i = 0 }
+        _ = try nwarg::object{ &vm, routine = nwscript::GetHasFeatEffect, argc, i = 1 }
+        try nwvm::push_int{ &vm, v = 0 }
+    }
+
+    // int GetIsPoisoned(object oObject)
+    fn get_is_poisoned { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetIsPoisoned, argc, i = 0 }
+        let mut poisoned = 0
+        if fighter_of{ &w, id } is some{ value = f } {
+            if rules::has_effect_kind{ c = &f.c, kind = rules::fx::POISON } { poisoned = 1 }
+        }
+        try nwvm::push_int{ &vm, v = poisoned }
+    }
+
+    // int GetIsImmune(object oCreature, int nImmunityType, object oVersus = OBJECT_INVALID): an
+    // immunity effect for the type (or for all), against that party.
+    fn get_is_immune { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::GetIsImmune
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let kind = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let versus = try nwarg::object{ &vm, routine = r, argc, i = 2 }
+        let mut immune = 0
+        if fighter_of{ &w, id } is some{ value = f } {
+            let mut vs = rules::no_versus{}
+            if fighter_of{ &w, id = versus } is some{ value = other } { vs = rules::versus_creature{ c = &other.c } }
+            if rules::has_immunity{ c = &f.c, kind, vs } { immune = 1 }
+        }
+        try nwvm::push_int{ &vm, v = immune }
+    }
+
+    // int GetIsLinkImmune(object oTarget, effect eEffect): the target is immune to some leaf of
+    // the effect (the gameeffects.2da rows and the immunity effects).
+    fn get_is_link_immune { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::GetIsLinkImmune
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let h = try nwarg::engine{ &vm, routine = r, argc, i = 1, kind = nwvm::EngineType::effect }
+        let g = values::effect{ s = &w.values, handle = h }
+        let mut immune = 0
+        if fighter_of{ &w, id } is some{ value = f } {
+            let mut i: usize = 0
+            while i < @as(usize, g.len) {
+                if rules::immune_to_effect{ tables = w.rules, c = &f.c, e = &g.items[i], vs = rules::no_versus{} } != 0 { immune = 1 }
+                i = i + 1
+            }
+        }
+        try nwvm::push_int{ &vm, v = immune }
+    }
+
+    // void RemoveEffect(object oCreature, effect eEffect): the effect and the effects linked to
+    // it (they share the id) leave the creature. An effect without an id (the engine's own)
+    // can't be named, so it stays.
     fn remove_effect { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
-        _ = try nwarg::object{ &vm, routine = nwscript::RemoveEffect, argc, i = 0 }
-        _ = try nwarg::engine{ &vm, routine = nwscript::RemoveEffect, argc, i = 1, kind = nwvm::EngineType::effect }
+        let r = nwscript::RemoveEffect
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let h = try nwarg::engine{ &vm, routine = r, argc, i = 1, kind = nwvm::EngineType::effect }
+        let g = values::effect{ s = &w.values, handle = h }
+        if g.len < 1 or g.items[0].id == 0 { return }
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        let f = c.fighter ifnull { return }
+        let eid = g.items[0].id
+        // A GetFirstEffect/GetNextEffect loop goes on where it was: the entries gone before its
+        // cursor move it back.
+        let mut before: usize = 0
+        let mut i: usize = 0
+        while i < c.fx_cursor and i < @as(usize, f.c.nfx) {
+            if f.c.fx[i].id == eid { before = before + 1 }
+            i = i + 1
+        }
+        fight::sync_flags{ w = &w, o, f }
+        rules::clear_events{ ev = &w.rev }
+        let gone = rules::remove_effect_id{ tables = w.rules, c = &f.c, id = eid, ev = &w.rev }
+        fight::drain{ &w, id }
+        _ = gone
+        c.fx_cursor = if c.fx_cursor > before { c.fx_cursor - before } else { 0 }
+    }
+
+    // void ClearAllEffects(): every effect of OBJECT_SELF but the equipped and innate ones.
+    fn clear_all_effects { mut w: world::World, mut vm: nwvm::Vm } -> ! {
+        let id = nwvm::self_object{ vm }
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        let f = c.fighter ifnull { return }
+        fight::sync_flags{ w = &w, o, f }
+        rules::clear_events{ ev = &w.rev }
+        rules::clear_effects{ tables = w.rules, c = &f.c, ev = &w.rev }
+        fight::drain{ &w, id }
+        c.fx_cursor = 0
     }
 
     // ---- applying effects
@@ -154,16 +620,36 @@ namespace rt_fx {
     // void ApplyEffectToObject(int nDurationType, effect eEffect, object oTarget, float fDuration = 0.0)
     fn apply_effect_to_object { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let r = nwscript::ApplyEffectToObject
-        _ = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let duration_type = try nwarg::int{ &vm, routine = r, argc, i = 0 }
         let h = try nwarg::engine{ &vm, routine = r, argc, i = 1, kind = nwvm::EngineType::effect }
         let target = try nwarg::object{ &vm, routine = r, argc, i = 2 }
-        _ = try nwarg::float{ &vm, routine = r, argc, i = 3 }
+        let seconds = try nwarg::float{ &vm, routine = r, argc, i = 3 }
+        let mut g = values::effect{ s = &w.values, handle = h }
+        if g.len < 1 { return }
         let o = world::object{ w = &w, id = target } ifnull { return }
-        apply{ &w, e = values::effect{ s = &w.values, handle = h }, o, creator = nwvm::self_object{ vm } }
+        let creator = nwvm::self_object{ vm }
+        let kind = if duration_type == rules::dur::TEMPORARY or duration_type == rules::dur::PERMANENT { duration_type } else { rules::dur::INSTANT }
+        rules::fx::set_group_timing{ g = &g, dur = kind, seconds }
+        rules::fx::set_group_creator{ g = &g, creator, spell_id = NO_SPELL }
+        if obj::creature{ o } is some {
+            let res = fight::apply_group{ &w, target, g = &g }
+            if w.log.combat {
+                world::prefix{ w = &w }
+                let outcome: []u8 = if res.kept { "kept" } else if res.refused { "refused" } else { "done" }
+                _ = @fmt(&w.io, "effect {} ({} leaves, id {}, duration {}) on {}: {}\n", g.items[0].kind, g.len, g.items[0].id, kind, target, outcome)
+            }
+        } else {
+            if w.log.combat {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "effect {} ({} leaves, id {}, duration {}) on {} without a rules creature (plot {}, hp {}/{})\n", g.items[0].kind, g.len, g.items[0].id, kind, target, o.plot, o.hp, o.hp_max)
+            }
+            apply_plain{ &w, o, g = &g, creator }
+        }
     }
 
     // void ApplyEffectAtLocation(int nDurationType, effect eEffect, location lLocation, float fDuration = 0.0):
-    // area effects (explosions, beams) have no target to change.
+    // the effects that happen at a place (explosions, beams, area effects) are presentation or
+    // area objects, neither of which is kept; nothing is applied.
     fn apply_effect_at_location { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let r = nwscript::ApplyEffectAtLocation
         _ = try nwarg::int{ &vm, routine = r, argc, i = 0 }
@@ -172,45 +658,29 @@ namespace rt_fx {
         _ = try nwarg::float{ &vm, routine = r, argc, i = 3 }
     }
 
-    fn apply { mut w: world::World, e: values::Effect, o: *mut obj::Object, creator: u32 } {
-        if e.kind == 0 { return }
-        if e.kind == FX_HEAL { heal{ o, amount = e.ints[0] } }
-        else if e.kind == FX_DAMAGE { damage{ &w, o, amount = e.ints[0], creator } }
-        else if e.kind == FX_DEATH { kill{ &w, o, killer = creator } }
-        else if e.kind == nwconst::EFFECT_TYPE_RESURRECTION { resurrect{ &w, o } }
-        else if e.kind == FX_LINK {
-            let child = values::effect{ s = &w.values, handle = @trunc(u32, e.ints[0]) }
-            let parent = values::effect{ s = &w.values, handle = @trunc(u32, e.ints[1]) }
-            if child.id == @trunc(u32, e.ints[2]) { apply{ &w, e = child, o, creator } }
-            if parent.id == @trunc(u32, e.ints[3]) { apply{ &w, e = parent, o, creator } }
-        } else { log_once{ &w, e } }
+    // An object without a rules creature (a door, a placeable) takes the instant kinds on its
+    // hit points; everything else about the effect has nothing to hold on to.
+    fn apply_plain { mut w: world::World, o: *mut obj::Object, g: *rules::EffectGroup, creator: u32 } {
+        if o.kind != obj::Kind::door and o.kind != obj::Kind::placeable { return }
+        let mut i: usize = 0
+        while i < @as(usize, g.len) {
+            let e = &g.items[i]
+            i = i + 1
+            if e.kind == rules::fx::HEAL and e.ints[1] == 0 { heal{ o, amount = e.ints[0] } }
+            else if e.kind == rules::fx::DAMAGE { damage{ &w, o, amount = e.ints[0], creator } }
+            else if e.kind == rules::fx::DEATH { kill{ &w, o, killer = creator } }
+        }
     }
 
-    // Says once per kind that effects of it are not kept yet. The record of what was said is
-    // World's heartbeat map under a key no object has (the world has no field for it).
-    const LOGGED_KEY: u32 = 0x7E000000
-
-    fn log_once { mut w: world::World, e: values::Effect } {
-        let key = LOGGED_KEY | @trunc(u32, e.kind)
-        let seen = map::get{ m = w.heartbeats, key }
-        if seen != null { return }
-        map::put{ m = &w.heartbeats, key, value = 1 } iferr { return }
-        world::prefix{ w = &w }
-        _ = @fmt(&w.io, "effect type {} applied: not kept yet (no lib/rules)\n", e.kind)
-    }
-
-    // HEAL: not for the dead; up to the maximum (rules.md, 1.7).
     fn heal { o: *mut obj::Object, amount: i32 } {
-        if amount < 1 or o.hp >= o.hp_max { return }
-        if obj::creature{ o } is some{ value = c } and c.dead { return }
+        if amount < 1 or o.hp < 0 or o.hp >= o.hp_max { return }
         let room = o.hp_max - o.hp
         o.hp = o.hp + (if amount < room { amount } else { room })
     }
 
-    // DAMAGE: plot objects take none, temporary points go first, and a Min1HP object stops at 1.
+    // Plot objects take no damage; temporary points go first; a Min1HP object stops at 1.
     fn damage { mut w: world::World, o: *mut obj::Object, amount: i32, creator: u32 } {
-        if amount < 1 or o.plot { return }
-        if obj::creature{ o } is some{ value = c } and c.dead { return }
+        if amount < 1 or o.plot or o.hp < 0 { return }
         o.ctx.last_damager = creator
         let mut left = amount
         if o.hp_temp > 0 {
@@ -218,7 +688,9 @@ namespace rt_fx {
             o.hp_temp = o.hp_temp - absorbed
             left = left - absorbed
         }
-        o.hp = o.hp - left
+        o.hp = if left < o.hp { o.hp - left } else { 0 }
+        events::post{ &w, delay_ms = 0, caller = creator, target = o.id, payload = events::Payload::script{
+            e = events::script_event{ kind = events::DAMAGED, object = creator } } }
         if o.hp >= 1 { return }
         if o.min_one_hp {
             o.hp = 1
@@ -227,37 +699,23 @@ namespace rt_fx {
         }
     }
 
-    // DEATH (combat.md 8.2): nothing for plot objects, a Min1HP object goes to 1. A creature
-    // is dead at once: its actions go, it lies down and its OnDeath is posted. Doors and
-    // placeables only lose their points here (their breaking is the rules'). The body is not
-    // removed.
+    // Death of a door or a placeable: nothing for a plot object, one point for Min1HP. A door
+    // is broken open, a placeable is destroyed a moment after its OnDeath is posted. Its hit
+    // points go to -1 to say so (a dead one dies once; damage stops at 0).
     fn kill { mut w: world::World, o: *mut obj::Object, killer: u32 } {
         if o.plot { return }
         if o.min_one_hp {
             o.hp = 1
             return
         }
-        let c = obj::creature{ o } ifnull {
-            o.hp = 0
-            return
+        if o.hp < 0 { return }
+        o.hp = -1
+        if o.kind == obj::Kind::door {
+            doors::set_door_state{ &w, id = o.id, state = obj::DoorState::open1 }
+        } else if o.kind == obj::Kind::placeable {
+            events::post{ &w, delay_ms = 0, caller = killer, target = o.id, payload = events::Payload::script{
+                e = events::script_event{ kind = events::DEATH, object = killer } } }
+            events::post{ &w, delay_ms = 500, caller = o.id, target = o.id, payload = events::Payload::destroy }
         }
-        if c.dead { return }
-        c.dead = true
-        c.in_combat = false
-        if o.hp > -11 { o.hp = -11 }
-        actions::clear_all{ &w, id = o.id }
-        world::set_animation{ o, id = obj::ANIM_DEAD, speed = 1.0 }
-        events::post{ &w, delay_ms = 0, caller = killer, target = o.id, payload = events::Payload::script{
-            e = events::script_event{ kind = events::DEATH, object = killer } } }
-    }
-
-    // RESURRECTION (rules.md): only a dead creature; one hit point, standing.
-    fn resurrect { mut w: world::World, o: *mut obj::Object } {
-        let c = obj::creature{ o } ifnull { return }
-        if not c.dead { return }
-        c.dead = false
-        if o.hp < 1 { o.hp = 1 }
-        actions::clear_all{ &w, id = o.id }
-        world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
     }
 }
