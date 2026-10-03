@@ -1,0 +1,207 @@
+// Models through the render seam: a parsed model's meshes uploaded once, and each frame a pose
+// turned into draws. Textures and materials are the caller's (the render lead's `material`
+// library maps a mesh's texture names and TXI to a render::Material); this file adds what the
+// model and its pose say: the mesh, its transform, opacity, self-illumination, scrolling UVs,
+// the bone palette and the bounding sphere.
+//
+//   let g = try mdl_render::upload{ &dev, realloc, &heap, model = &m }
+//   let mats = ...one render::Material per Model.meshes entry (mdl_render::base_material{ mesh } plus textures)
+//   each frame, after mdl_anim::evaluate:
+//   _ = mdl_render::add_draws{ &frame, view, model = &m, pose, g, transform = instance, materials = mats, time }
+//
+// Which meshes draw (models.md): those with `render` set, except AABB meshes (the walkmesh's
+// copy) and lightsaber blades (built from Saber's arrays, not drawn as meshes).
+//
+// A program that adds this directory adds lib/render and a backend (lib/render_gl).
+namespace mdl_render {
+    // A model's meshes on the GPU, by Model.meshes index: null for meshes that don't draw.
+    struct Gpu { meshes: []?render::Mesh }
+
+    // The most bone slots a palette here holds; render's limit is 32, KOTOR's skins use 17.
+    const MAX_BONES: usize = 32
+
+    fn draws { mesh: mdl::Mesh } -> bool {
+        return mesh.render and mesh.aabb == null and mesh.saber == null and mesh.indices.len > 0 and mesh.vertex_count > 0
+    }
+
+    // Uploads every mesh that draws. Vertex rows are built in memory from `realloc` and given
+    // back once uploaded; the Gpu's array stays, in the same allocator.
+    fn upload(S) { mut dev: gpu::Device, realloc: alloc::Fn(S), mut heap: S, model: *mdl::Model } -> !Gpu {
+        let out = try alloc::resize(?render::Mesh, S){ realloc, &heap, mem = slice::empty(?render::Mesh){}, count = model.meshes.len }
+        let mut i: usize = 0
+        while i < out.len {
+            out[i] = null
+            let m = model.meshes[i]
+            if draws{ mesh = m } {
+                let layout = layout_for{ mesh = m }
+                let rows = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = @as(usize, layout.stride) * @as(usize, m.vertex_count) }
+                write_rows{ mesh = m, layout, out = rows }
+                let desc = render::MeshDesc{
+                    layout, vertex_count = m.vertex_count, index_count = @as(u32, m.indices.len),
+                    primitive = render::Primitive::triangles, dynamic = false,
+                }
+                let made = gpu::create_mesh{ &dev, desc, vertices = rows, indices = m.indices }
+                _ = alloc::resize(u8, S){ realloc, &heap, mem = rows, count = 0 }
+                out[i] = try made
+            }
+            i = i + 1
+        }
+        return Gpu{ meshes = out }
+    }
+
+    fn release { mut dev: gpu::Device, g: Gpu } {
+        let mut i: usize = 0
+        while i < g.meshes.len {
+            let m = g.meshes[i]
+            if m != null { gpu::free_mesh{ &dev, m } }
+            i = i + 1
+        }
+    }
+
+    // One interleaved row per vertex: position, then whichever of normal, uv0, uv1, tangent
+    // space, skin weights and bone slots, dangly constraint the mesh has.
+    fn layout_for { mesh: mdl::Mesh } -> render::VertexLayout {
+        let mut l = render::make_layout{ stride = 0 }
+        let mut at: i32 = 0
+        l.position = at
+        at = at + 12
+        if mesh.normals.len > 0 {
+            l.normal = at
+            at = at + 12
+        }
+        if mesh.uv0.len > 0 {
+            l.uv0 = at
+            at = at + 8
+        }
+        if mesh.uv1.len > 0 {
+            l.uv1 = at
+            at = at + 8
+        }
+        if mesh.tangents.len > 0 {
+            l.tangent_space = at
+            at = at + 36
+        }
+        let skin = mesh.skin
+        if skin != null and skin.weights.len > 0 {
+            l.weights = at
+            l.bones = at + 16
+            at = at + 32
+        }
+        let dangly = mesh.dangly
+        if dangly != null and dangly.constraints.len == @as(usize, mesh.vertex_count) {
+            l.constraint = at
+            at = at + 4
+        }
+        l.stride = @as(u32, at)
+        return l
+    }
+
+    fn write_rows { mesh: mdl::Mesh, layout: render::VertexLayout, out: []mut u8 } {
+        let n: usize = mesh.vertex_count
+        let stride: usize = layout.stride
+        put_stream{ out, stride, at = layout.position, src = mesh.positions, width = 3, n }
+        put_stream{ out, stride, at = layout.normal, src = mesh.normals, width = 3, n }
+        put_stream{ out, stride, at = layout.uv0, src = mesh.uv0, width = 2, n }
+        put_stream{ out, stride, at = layout.uv1, src = mesh.uv1, width = 2, n }
+        put_stream{ out, stride, at = layout.tangent_space, src = mesh.tangents, width = 9, n }
+        let skin = mesh.skin
+        if skin != null and layout.weights >= 0 {
+            put_stream{ out, stride, at = layout.weights, src = skin.weights, width = 4, n }
+            // Bone slots go as floats, as MDX keeps them; a zero weight's slot is harmless.
+            let mut v: usize = 0
+            while v < n {
+                let mut k: usize = 0
+                while k < 4 {
+                    put_f32{ out, at = v * stride + @as(usize, layout.bones) + 4 * k, x = @as(f32, skin.bones[4 * v + k]) }
+                    k = k + 1
+                }
+                v = v + 1
+            }
+        }
+        let dangly = mesh.dangly
+        if dangly != null and layout.constraint >= 0 {
+            put_stream{ out, stride, at = layout.constraint, src = dangly.constraints, width = 1, n }
+        }
+    }
+
+    fn put_stream { out: []mut u8, stride: usize, at: i32, src: []f32, width: usize, n: usize } {
+        if at < 0 or src.len < width * n { return }
+        let base = @as(usize, at)
+        let mut v: usize = 0
+        while v < n {
+            let mut c: usize = 0
+            while c < width {
+                put_f32{ out, at = v * stride + base + 4 * c, x = src[width * v + c] }
+                c = c + 1
+            }
+            v = v + 1
+        }
+    }
+
+    fn put_f32 { out: []mut u8, at: usize, x: f32 } {
+        let bits = le::bits_of_f32{ v = x }
+        out[at] = @trunc(u8, bits)
+        out[at + 1] = @trunc(u8, bits >> 8)
+        out[at + 2] = @trunc(u8, bits >> 16)
+        out[at + 3] = @trunc(u8, bits >> 24)
+    }
+
+    // What a mesh's own data says of its material, before textures: lit and fogged, sorted by
+    // the transparency hint among transparent surfaces. The caller adds textures and what their
+    // TXI says (blending, environment and bump maps).
+    fn base_material { mesh: mdl::Mesh } -> render::Material {
+        let mut m = render::make_material{}
+        m.sort = if mesh.transparency_hint < 1000 { @as(i32, mesh.transparency_hint) } else { 1000 }
+        return m
+    }
+
+    // Adds a draw for every mesh of `model` that draws, posed by `pose` and placed by
+    // `transform` (the model's world matrix), with `materials[i]` for Model.meshes[i]. The pose
+    // adds opacity (its accumulated alpha: below 1 an opaque or punch-through surface blends),
+    // self-illumination, UV scrolling at `time` (seconds) and skin palettes. Returns how many
+    // draws the frame took.
+    fn add_draws {
+        mut frame: render::Frame, view: u32, model: *mdl::Model, pose: mdl_anim::Pose, g: Gpu,
+        transform: math::Mat4, materials: []render::Material, time: f32,
+    } -> u32 {
+        let mut palette: [32]math::Mat4
+        let mut added: u32 = 0
+        let mut i: usize = 0
+        while i < model.meshes.len and i < g.meshes.len and i < materials.len {
+            let handle = g.meshes[i]
+            let mesh = &model.meshes[i]
+            i = i + 1
+            if handle == null { continue }
+            let node: usize = mesh.node
+            let mut mat = materials[i - 1]
+            let alpha = pose.alpha[node]
+            if alpha < 0.999 {
+                mat.color.a = mat.color.a * math::max{ a = alpha, b = 0.0 }
+                if mat.blend == render::Blend::opaque or mat.blend == render::Blend::punch { mat.blend = render::Blend::alpha }
+            }
+            let si = pose.nodes[node].self_illum
+            mat.selfillum = math::vec3::add{ a = mat.selfillum, b = si }
+            if mesh.animate_uv {
+                mat.uv_offset = math::Vec2{
+                    x = mat.uv_offset.x + fract{ x = mesh.uv_direction.x * time },
+                    y = mat.uv_offset.y + fract{ x = mesh.uv_direction.y * time },
+                }
+            }
+            let mut d = render::make_draw{ view, mesh = handle, transform = math::mat4::mul{ a = transform, b = pose.world[node] }, material = mat }
+            let skin = mesh.skin
+            if skin != null {
+                let n = mdl_anim::skin_palette{ model, mesh, pose, out = palette[..] }
+                let first = render::add_bones{ &frame, palette = palette[..n] } ifnull { continue }
+                d.bones = first
+                d.bone_count = @as(u32, n)
+            } else {
+                d.center = mesh.average
+                d.radius = mesh.radius
+            }
+            if render::add_draw{ &frame, draw = d } != null { added = added + 1 }
+        }
+        return added
+    }
+
+    fn fract { x: f32 } -> f32 { return x - math::floorf{ x } }
+}

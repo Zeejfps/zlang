@@ -1,0 +1,80 @@
+// Models by resref through the resource manager, each parsed once and kept: what supermodel
+// chains need (mdl_anim::find's lookup), since a few skeletons (S_Female01..03, S_Male01..02)
+// serve hundreds of models.
+//
+//   let mut models = mdl_cache::new{ rm, keep = &arena }
+//   let found = mdl_anim::find{ model, name = "run", lookup = mdl_cache::get{ &fs, cache = &models, _ } }
+//
+// Kept models live in `keep`, an arena that must outlive the cache and everything bound to the
+// models' animations. A model's file bytes are read into the same arena (they go with it).
+namespace mdl_cache {
+    error not_found
+
+    struct Cache {
+        rm: res::Manager,
+        loaded: map::Map([]u8, usize, arena::Arena),     // lower-case resref -> index in models
+        models: list::List(*mdl::Model, arena::Arena),
+        keep: *mut arena::Arena,
+        missing: u32,                                    // lookups of models that aren't there
+        failed: u32,                                     // models that didn't parse
+    }
+
+    fn new { rm: res::Manager, keep: *mut arena::Arena } -> Cache {
+        return Cache{
+            rm,
+            loaded = map::new([]u8, usize, arena::Arena){ realloc = arena::alloc, heap = keep, hash = map::hash_bytes, eq = slice::eq_bytes },
+            models = list::new(*mdl::Model, arena::Arena){ realloc = arena::alloc, heap = keep },
+            keep,
+            missing = 0,
+            failed = 0,
+        }
+    }
+
+    // The model called `name`, loaded and kept the first time; null if there is none or it
+    // doesn't parse. Has the type of mdl_anim::find's lookup once `fs` and `cache` are bound.
+    fn get { mut fs: Fs, mut cache: Cache, name: []u8 } -> ?*mdl::Model {
+        let mut lower: [64]u8
+        let key = to_lower{ into = lower[..], s = name }
+        // The index, not the pointer, goes through the map: a value found with a key in a local
+        // buffer counts as derived from it (docs/friction/models.md).
+        let have = map::get{ m = cache.loaded, key }
+        if have != null { return list::items{ list = cache.models }[have] }
+        let model = load{ &fs, rm = cache.rm, heap = cache.keep, name } iferr err{ error } {
+            match error {
+                not_found => { cache.missing = cache.missing + 1 }
+                else => { cache.failed = cache.failed + 1 }
+            }
+            return null
+        }
+        let kept = copy{ heap = cache.keep, s = key } iferr { return null }
+        let p = alloc::new(mdl::Model, arena::Arena){ realloc = arena::alloc, heap = cache.keep, value = model } iferr { return null }
+        map::put{ m = &cache.loaded, key = kept, value = cache.models.len } iferr { return null }
+        list::push{ list = &cache.models, item = p } iferr { return null }
+        return p
+    }
+
+    // A model and its MDX (empty if there is none) through the resource manager, parsed into
+    // `heap`, which also holds the file bytes.
+    fn load { mut fs: Fs, rm: res::Manager, mut heap: arena::Arena, name: []u8 } -> !mdl::Model {
+        let mdl_bytes = try res::load{ &fs, rm, name, kind = restype::Type::mdl, realloc = arena::alloc, &heap } ifnull { return not_found }
+        let mdx_found = try res::load{ &fs, rm, name, kind = restype::Type::mdx, realloc = arena::alloc, &heap }
+        let mdx_bytes: []u8 = mdx_found ifnull { slice::empty(u8){} }
+        return mdl::parse{ realloc = arena::alloc, &heap, mdl = mdl_bytes, mdx = mdx_bytes }
+    }
+
+    fn to_lower { into: []mut u8, s: []u8 } -> []u8 {
+        let n = if s.len < into.len { s.len } else { into.len }
+        let mut i: usize = 0
+        while i < n {
+            into[i] = ascii::to_lower{ c = s[i] }
+            i = i + 1
+        }
+        return into[..n]
+    }
+
+    fn copy { mut heap: arena::Arena, s: []u8 } -> ![]u8 {
+        let out = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = s.len }
+        slice::copy(u8){ dst = out, src = s }
+        return out
+    }
+}

@@ -1,0 +1,318 @@
+// mdlview: draws a model offscreen through the render seam and writes a PNG, posed by an
+// animation from its supermodel chain, with a head or another model attached at a hook.
+//
+//   kotor/tools/ctxc run kotor/tools/mdlview -- c_rancor --view side --anim cwalk --time 0.4
+//   kotor/tools/ctxc run kotor/tools/mdlview -- p_bastilabb --head p_bastilah --anim pause1 --time 0.5
+//   kotor/tools/ctxc run kotor/tools/mdlview -- p_bastilabb --attach w_lghtsbr_001:rhand
+//
+// Options: --view front|back|side|top|iso (front: the camera on +Y, where creatures face),
+// --anim NAME, --time T (seconds), --head MODEL (at `headhook`, playing the same animation from
+// its own chain if it has it), --attach MODEL:NODE, --size N (pixels, square; 512), --out DIR
+// (kotor/out/mdlview), --game DIR.
+//
+// It writes DIR/MODEL_VIEW[_ANIM T].png, named as kotor/tools/py/mdlrender.py names its renders
+// in kotor/out/mdl, to compare with them. The camera is orthographic, fitted to the posed
+// geometry. Until textures come through lib/material the surfaces are untextured and lit by one
+// light from the camera's side.
+
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+
+struct Options {
+    game: []u8, model: []u8, view: []u8, anim: []u8, time: f32,
+    head: []u8, attach_model: []u8, attach_node: []u8, size: i32, out: []u8,
+}
+
+// One model in the picture: its pose, its meshes on the GPU, and where its root goes.
+struct Part { model: *mdl::Model, pose: mdl_anim::Pose, gpu: mdl_render::Gpu, base: math::Mat4, materials: []render::Material }
+
+error no_model{ name: []u8 }
+error no_hook{ name: []u8 }
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } -> i32 {
+    let opts = parse_args{ &io, args } ifnull { return 2 }
+    let pages = mem::pages{ &mem, size = 1073741824 } ifnull {
+        io::eprintln{ &io, s = "mdlview: out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf = pages }
+    let mut h = heap::new{ &mem }
+    run{ &io, &fs, &sdl, &heap, &h, opts } iferr err{ error } {
+        _ = @fmt(&io, "mdlview: failed: {}\n", error)
+        match error {
+            gpu::shader_failed{ log } => { _ = @fmt(&io, "{}\n", log) }
+            sdl::failed => { _ = @fmt(&io, "SDL: {}\n", c::bytes{ s = sdl::last_error{ &sdl } }) }
+            else => {}
+        }
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return 0
+}
+
+fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut h: heap::Heap, opts: Options } -> ! {
+    let mut rm = try res::open{ &fs, heap = &h, game = opts.game }
+    defer res::close{ &fs, &rm }
+    let mut cache = mdl_cache::new{ rm, keep = &heap }
+
+    try sdl::init{ &sdl, flags = sdl::INIT_VIDEO | sdl::INIT_EVENTS }
+    defer sdl::quit{ &sdl }
+    let config = render::make_config{ title = "mdlview", width = opts.size, height = opts.size, hidden = true }
+    let mut dev = try gpu::open{ &sdl, realloc = arena::alloc, &heap, config }
+    defer gpu::close{ &dev, &sdl }
+    let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, &heap, cap = render::default_capacity{} }
+
+    let mut parts = list::new(Part, arena::Arena){ realloc = arena::alloc, heap = &heap }
+    let body = mdl_cache::get{ &fs, &cache, name = opts.model } ifnull { return no_model{ name = opts.model } }
+    let body_part = try make_part{ &io, &fs, &dev, &heap, &cache, model = body, anim = opts.anim, time = opts.time, base = math::mat4::identity{} }
+    try list::push{ list = &parts, item = body_part }
+    if opts.head.len > 0 {
+        let head = mdl_cache::get{ &fs, &cache, name = opts.head } ifnull { return no_model{ name = opts.head } }
+        let hook = mdl_anim::hook_transform{ model = body, pose = body_part.pose, name = mdl_anim::HOOK_HEAD } ifnull { return no_hook{ name = mdl_anim::HOOK_HEAD } }
+        try list::push{ list = &parts, item = try make_part{ &io, &fs, &dev, &heap, &cache, model = head, anim = opts.anim, time = opts.time, base = hook } }
+    }
+    if opts.attach_model.len > 0 {
+        let other = mdl_cache::get{ &fs, &cache, name = opts.attach_model } ifnull { return no_model{ name = opts.attach_model } }
+        let hook = mdl_anim::hook_transform{ model = body, pose = body_part.pose, name = opts.attach_node } ifnull { return no_hook{ name = opts.attach_node } }
+        try list::push{ list = &parts, item = try make_part{ &io, &fs, &dev, &heap, &cache, model = other, anim = "", time = 0.0, base = hook } }
+    }
+    try draw_and_save{ &io, &fs, &dev, &frame, &heap, parts = list::items{ list = parts }, opts }
+}
+
+// Draws the parts through an orthographic camera fitted to their posed geometry, seen from the
+// view's side, and saves the picture.
+fn draw_and_save { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena, parts: []Part, opts: Options } -> ! {
+    let mut box = math::aabb::empty{}
+    let mut i: usize = 0
+    while i < parts.len {
+        extend_posed{ &box, part = parts[i] }
+        i = i + 1
+    }
+    if math::aabb::is_empty{ b = box } { box = math::Aabb{ min = math::vec3::splat{ s = -1.0 }, max = math::vec3::splat{ s = 1.0 } } }
+    let center = math::aabb::center{ b = box }
+    let radius = math::max{ a = math::vec3::length{ v = math::aabb::extents{ b = box } }, b = 0.01 }
+    let dir = view_dir{ view = opts.view }
+    let up = if slice::eq_bytes{ a = opts.view, b = "top" } { math::Vec3{ x = 0.0, y = 1.0, z = 0.0 } } else { math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } }
+    let eye = math::vec3::add_scaled{ a = center, b = dir, s = 3.0 * radius }
+    let view_m = math::mat4::look_at{ eye, at = center, up }
+    let mut lo = math::vec3::splat{ s = 1.0e30 }
+    let mut hi = math::vec3::splat{ s = -1.0e30 }
+    let mut c: u32 = 0
+    while c < 8 {
+        let corner = math::Vec3{
+            x = if (c & 1) != 0 { box.max.x } else { box.min.x },
+            y = if (c & 2) != 0 { box.max.y } else { box.min.y },
+            z = if (c & 4) != 0 { box.max.z } else { box.min.z },
+        }
+        let p = math::mat4::transform_point{ m = view_m, p = corner }
+        lo = math::vec3::min{ a = lo, b = p }
+        hi = math::vec3::max{ a = hi, b = p }
+        c = c + 1
+    }
+    let half = math::max{ a = hi.x - lo.x, b = hi.y - lo.y } / 2.0 / 0.92
+    let cx = (lo.x + hi.x) / 2.0
+    let cy = (lo.y + hi.y) / 2.0
+    let proj = math::mat4::ortho{ left = cx - half, right = cx + half, bottom = cy - half, top = cy + half, near = 0.01, far = 6.0 * radius }
+
+    render::begin_frame{ &frame, time = opts.time }
+    let mut view = render::make_view{ camera = render::Camera{ view = view_m, proj, eye } }
+    view.clear_color = render::rgba{ r = 0.15, g = 0.15, b = 0.18, a = 1.0 }
+    view.ambient = math::vec3::splat{ s = 0.3 }
+    let vi = render::add_view{ &frame, view } ifnull { return }
+    // One light far off on the camera's side, so it falls off hardly at all across the model.
+    let light_dir = math::vec3::normalize{ v = math::vec3::add{ a = dir, b = math::Vec3{ x = 0.3, y = 0.2, z = 0.6 } } }
+    render::add_light{ &frame, light = render::Light{ position = math::vec3::add_scaled{ a = center, b = light_dir, s = 100.0 * radius }, color = math::vec3::splat{ s = 0.6 }, radius = 10000.0 * radius } }
+    i = 0
+    while i < parts.len {
+        let p = parts[i]
+        _ = mdl_render::add_draws{ &frame, view = vi, model = p.model, pose = p.pose, g = p.gpu, transform = p.base, materials = p.materials, time = opts.time }
+        i = i + 1
+    }
+    try gpu::submit{ &dev, frame = &frame }
+    let s = gpu::get_stats{ dev }
+    _ = @fmt(&io, "{} draws, {} triangles, {} culled\n", s.draws, s.triangles, s.culled)
+    let m = gpu::messages{ dev }
+    if m.len > 0 { _ = @fmt(&io, "{}", m) }
+
+    make_dir{ &fs, path = opts.out }
+    let mut name_buf: [256]u8
+    let name = file_name{ into = name_buf[..], opts }
+    try save_screen{ &io, &fs, &dev, &heap, dir = opts.out, name }
+}
+
+// Loads a part: its pose (bind, or `anim` at `time` from its chain when it has it), its meshes
+// on the GPU, and untextured materials.
+fn make_part {
+    mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, mut cache: mdl_cache::Cache,
+    model: *mdl::Model, anim: []u8, time: f32, base: math::Mat4,
+} -> !Part {
+    let pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model }
+    if anim.len > 0 {
+        let found = mdl_anim::find{ model, name = anim, lookup = mdl_cache::get{ &fs, &cache, _ } }
+        if found != null {
+            let b = try mdl_anim::bind{ realloc = arena::alloc, &heap, model, animation = found.animation }
+            mdl_anim::pose_at{ model, binding = b, time, pose }
+            _ = @fmt(&io, "{}: {} from {} ({} s)\n", model.name, anim, found.owner.name, found.animation.length)
+        } else {
+            _ = @fmt(&io, "{}: no animation {} along its chain; bind pose\n", model.name, anim)
+        }
+    }
+    let g = try mdl_render::upload{ &dev, realloc = arena::alloc, &heap, model }
+    let materials = try alloc::resize(render::Material, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(render::Material){}, count = model.meshes.len }
+    let mut i: usize = 0
+    while i < materials.len {
+        materials[i] = mdl_render::base_material{ mesh = model.meshes[i] }
+        i = i + 1
+    }
+    return Part{ model, pose, gpu = g, base, materials }
+}
+
+// Grows `box` by every drawn vertex of the part where its pose puts it (skinned vertices
+// through their palettes, as the GPU will).
+fn extend_posed { mut box: math::Aabb, part: Part } {
+    let mut palette: [32]math::Mat4
+    let model = part.model
+    let mut i: usize = 0
+    while i < model.meshes.len {
+        let mesh = &model.meshes[i]
+        i = i + 1
+        if not mdl_render::draws{ mesh = mesh.* } { continue }
+        let world = math::mat4::mul{ a = part.base, b = part.pose.world[mesh.node] }
+        let skin = mesh.skin
+        let slots = mdl_anim::skin_palette{ model, mesh, pose = part.pose, out = palette[..] }
+        let mut v: usize = 0
+        while v < @as(usize, mesh.vertex_count) {
+            let p = math::Vec3{ x = mesh.positions[3 * v], y = mesh.positions[3 * v + 1], z = mesh.positions[3 * v + 2] }
+            let mut q = p
+            if skin != null and slots > 0 and skin.weights.len > 0 {
+                q = math::vec3::zero{}
+                let mut k: usize = 0
+                while k < 4 {
+                    let w = skin.weights[4 * v + k]
+                    let s: usize = skin.bones[4 * v + k]
+                    if w > 0.0 and s < slots {
+                        q = math::vec3::add_scaled{ a = q, b = math::mat4::transform_point{ m = palette[s], p }, s = w }
+                    }
+                    k = k + 1
+                }
+            }
+            box = math::aabb::extend{ b = box, p = math::mat4::transform_point{ m = world, p = q } }
+            v = v + 1
+        }
+    }
+}
+
+// Toward the camera from the model.
+fn view_dir { view: []u8 } -> math::Vec3 {
+    if slice::eq_bytes{ a = view, b = "back" } { return math::Vec3{ x = 0.0, y = -1.0, z = 0.0 } }
+    if slice::eq_bytes{ a = view, b = "side" } { return math::Vec3{ x = 1.0, y = 0.0, z = 0.0 } }
+    if slice::eq_bytes{ a = view, b = "top" } { return math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } }
+    // mdlrender.py's iso: from +X, -Y, above.
+    if slice::eq_bytes{ a = view, b = "iso" } { return math::vec3::normalize{ v = math::Vec3{ x = 0.497, y = -0.709, z = 0.5 } } }
+    return math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }
+}
+
+// MODEL_VIEW[_ANIMTIME].png
+fn file_name { into: []mut u8, opts: Options } -> []u8 {
+    let mut n = put{ into, at = 0, s = opts.model }
+    n = put{ into, at = n, s = "_" }
+    n = put{ into, at = n, s = opts.view }
+    if opts.anim.len > 0 {
+        n = put{ into, at = n, s = "_" }
+        n = put{ into, at = n, s = opts.anim }
+        let mut digits: [32]u8
+        let t = utf8::fmt_f32{ n = opts.time, into = digits[..] }
+        let mut tb = t.bytes
+        // 10.0 is "10" in mdlrender.py's names (Python's %g).
+        if tb.len > 2 and tb[tb.len - 2] == '.' and tb[tb.len - 1] == '0' { tb = tb[..tb.len - 2] }
+        n = put{ into, at = n, s = tb }
+    }
+    n = put{ into, at = n, s = ".png" }
+    return into[..n]
+}
+
+fn put { into: []mut u8, at: usize, s: []u8 } -> usize {
+    let n = if at + s.len <= into.len { s.len } else { into.len - at }
+    slice::copy(u8){ dst = into[at..at + n], src = s[..n] }
+    return at + n
+}
+
+fn save_screen { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, dir: []u8, name: []u8 } -> ! {
+    let size = gpu::screen_size{ dev }
+    let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
+    _ = try gpu::read_screen{ &dev, into = pixels }
+    let mut path_buf: [512]u8
+    let mut n = put{ into = path_buf[..], at = 0, s = dir }
+    n = put{ into = path_buf[..], at = n, s = "/" }
+    n = put{ into = path_buf[..], at = n, s = name }
+    let image = png::Image{ width = size.width, height = size.height, rgba = pixels }
+    try png::save{ &fs, realloc = arena::alloc, &heap, path = path_buf[..n], image, alpha = false, bottom_up = false }
+    _ = @fmt(&io, "wrote {} ({}x{})\n", path_buf[..n], size.width, size.height)
+}
+
+// Makes `path` and the directories above it that are missing.
+fn make_dir { mut fs: Fs, path: []u8 } {
+    let mut i: usize = 1
+    while i <= path.len {
+        if i == path.len or path[i] == '/' {
+            fs::make_dir{ &fs, path = path[..i] } iferr {}
+        }
+        i = i + 1
+    }
+}
+
+fn parse_args { mut io: Io, args: Args } -> ?Options {
+    let mut o = Options{
+        game = DEFAULT_GAME, model = "", view = "front", anim = "", time = 0.0,
+        head = "", attach_model = "", attach_node = "", size = 512, out = "kotor/out/mdlview",
+    }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        let has = i + 1 < args.len
+        if has and slice::eq_bytes{ a, b = "--view" } {
+            o.view = args[i + 1]
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--anim" } {
+            o.anim = args[i + 1]
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--time" } {
+            o.time = utf8::parse_f32{ s = utf8::of{ chars = args[i + 1] } } ifnull { return usage{ &io } }
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--head" } {
+            o.head = args[i + 1]
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--attach" } {
+            let s = args[i + 1]
+            let mut k: usize = 0
+            while k < s.len and s[k] != ':' { k = k + 1 }
+            if k == s.len { return usage{ &io } }
+            o.attach_model = s[..k]
+            o.attach_node = s[k + 1..]
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--size" } {
+            let n = utf8::parse_u64{ s = utf8::of{ chars = args[i + 1] } } ifnull { return usage{ &io } }
+            if n < 16 or n > 4096 { return usage{ &io } }
+            o.size = @as(i32, n)
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--out" } {
+            o.out = args[i + 1]
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--game" } {
+            o.game = args[i + 1]
+            i = i + 2
+        } else if a.len > 0 and a[0] != '-' and o.model.len == 0 {
+            o.model = a
+            i = i + 1
+        } else {
+            return usage{ &io }
+        }
+    }
+    if o.model.len == 0 { return usage{ &io } }
+    return o
+}
+
+fn usage { mut io: Io } -> ?Options {
+    io::eprintln{ &io, s = "usage: mdlview MODEL [--view front|back|side|top|iso] [--anim NAME --time T] [--head MODEL] [--attach MODEL:NODE] [--size N] [--out DIR] [--game DIR]" }
+    return null
+}
