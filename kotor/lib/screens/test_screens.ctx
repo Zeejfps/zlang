@@ -1,0 +1,80 @@
+// Headless test commands for the screens: `FRAME ui COMMAND ARGS` lines the input script does not
+// know (lib/ingame/script.ctx) come here.
+//
+//   FRAME ui gold N                  the party's credits
+//   FRAME ui store RESREF [UP DOWN]  a merchant made from a UTM blueprint and opened (OpenStore's
+//                                    bonuses UP and DOWN, percent)
+//   FRAME ui loot TAG                the container with that tag opened as if the leader used it
+//   FRAME ui bag                     prints the party's inventory and credits
+//   FRAME ui xp N                    gives the party N experience points
+namespace test_screens {
+    fn run { mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device, cmd: []u8, args: []u8 } -> bool {
+        let mut words = text::words{ s = args }
+        if ci::eq{ a = cmd, b = "gold" } {
+            w.party.gold = @trunc(i32, text::scan_decimal{ s = args })
+        } else if ci::eq{ a = cmd, b = "store" } {
+            let name = text::next_word{ &words } ifnull { return true }
+            let up = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+            let down = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+            let id = tmpl::spawn{ &w, kind = obj::Kind::store, template = name, position = math::vec3::zero{}, orientation = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 } } iferr err{ error } {
+                _ = @fmt(&w.io, "store {}: {}\n", name, error)
+                return true
+            }
+            outbox::post{ out = &w.out, note = outbox::Note::open_store{ store = id, customer = w.pc, markup = up, markdown = down } }
+            if store::data_of{ w = &w, store = id } is some{ value = st } {
+                _ = @fmt(&w.io, "store {} markup {} markdown {} flag {}\n", name, st.markup, st.markdown, st.buy_sell)
+                let stock = list::items{ list = st.stock }
+                let mut k: usize = 0
+                while k < stock.len {
+                    let it = items::item_of{ w = &w, id = stock[k] }
+                    let tail: []u8 = if it != null and it.infinite { " infinite" } else { "" }
+                    _ = @fmt(&w.io, "  {} {} value {} buy {} sell {}{}\n", stock[k], items::name_of{ w = &w, id = stock[k] },
+                        store::value_of{ w = &w, item = stock[k] }, store::buy_price{ w = &w, store = id, item = stock[k] },
+                        store::sell_price{ w = &w, store = id, item = stock[k] }, tail)
+                    k = k + 1
+                }
+            }
+        } else if ci::eq{ a = cmd, b = "loot" } {
+            let tag = text::next_word{ &words } ifnull { return true }
+            // The first object with the tag that holds items (a tag can be shared with a waypoint).
+            let mut id = world::object_by_tag{ w = &w, tag, nth = 0 }
+            let mut nth: i32 = 0
+            while nth < 8 {
+                let found = world::object_by_tag{ w = &w, tag, nth }
+                nth = nth + 1
+                if found == obj::INVALID { break }
+                if world::object{ w = &w, id = found } is some{ value = fo } {
+                    if obj::placeable{ o = fo } is some{ value = fp } {
+                        if fp.has_inventory { id = found; break }
+                    }
+                }
+            }
+            if not container::open{ &w, placeable = id, user = w.pc } { _ = @fmt(&w.io, "loot {} ({}): does not open\n", tag, id) }
+        } else if ci::eq{ a = cmd, b = "containers" } {
+            let all = list::items{ list = w.objects.all }
+            let mut k: usize = 0
+            while k < all.len {
+                let o = all[k]
+                k = k + 1
+                if obj::placeable{ o } is some{ value = p } {
+                    if p.has_inventory {
+                        _ = @fmt(&w.io, "container {} tag {} items {} locked {} useable {} at {} {} {}\n", o.id, o.tag, p.inventory.len, p.locked, p.useable, o.position.x, o.position.y, o.position.z)
+                    }
+                }
+            }
+        } else if ci::eq{ a = cmd, b = "bag" } {
+            _ = @fmt(&w.io, "credits {}\n", w.party.gold)
+            let ids = list::items{ list = w.bag }
+            let mut k: usize = 0
+            while k < ids.len {
+                _ = @fmt(&w.io, "  {} {} x{}\n", ids[k], items::name_of{ w = &w, id = ids[k] }, items::stack_of{ w = &w, id = ids[k] })
+                k = k + 1
+            }
+        } else if ci::eq{ a = cmd, b = "xp" } {
+            rt_crea::give_party_xp{ &w, amount = @as(i32, text::scan_decimal{ s = args }) }
+        } else {
+            return false
+        }
+        return true
+    }
+}

@@ -1,0 +1,135 @@
+// Merchants (docs/re/party-items-saves.md 5.8): what an item is worth, what a store charges and
+// pays, and the two transactions the store panel makes. The panel (lib/screens) asks the player
+// the confirmations; the functions here only do the arithmetic and the moving.
+//
+//   store::open{ &w, store, markup = 0, markdown = 0 }       // OpenStore's bonuses
+//   let price = store::buy_price{ w = &w, store, item }
+//   match store::buy{ &w, store, item } { ... }
+namespace store {
+    // The credits item's base item row is never stocked or priced, but a store may hold one.
+    enum Sale: u8 { done, no_credits, gone }
+
+    // CSWSItem::GetCost: 0 for a plot item, else AddCost times the base item's multiplier (1.0
+    // unless ChangeItemCost set it), at least 1. Per unit: a stack is bought and sold one at a time.
+    fn value_of { w: *world::World, item: u32 } -> i32 {
+        let o = world::object{ w, id = item } ifnull { return 0 }
+        if o.plot { return 0 }
+        let it = obj::item{ o } ifnull { return 0 }
+        let ri = it.rules ifnull { return 1 }
+        let v = @as(f64, ri.add_cost) * cost_multiplier{ w, base = it.base }
+        let n = @as(i32, v)
+        return if n < 1 { 1 } else { n }
+    }
+
+    // The multiplier ChangeItemCost left on a base item row. PLACEHOLDER: always 1.0, the routine
+    // is not implemented and no shipped script is known to rely on it.
+    fn cost_multiplier { w: *world::World, base: u32 } -> f64 { return 1.0 }
+
+    fn data_of { w: *world::World, store: u32 } -> ?*mut obj::Store {
+        let o = world::object{ w, id = store } ifnull { return null }
+        return obj::store{ o }
+    }
+
+    // OpenStore's bonus percentages, kept until the next OpenStore.
+    fn open { mut w: world::World, store: u32, markup: i32, markdown: i32 } {
+        let st = data_of{ w = &w, store } ifnull { return }
+        st.bonus_markup = markup
+        st.bonus_markdown = markdown
+    }
+
+    // What the player pays for one unit (GetBuyPrice): value x (MarkUp + bonus) / 100.
+    fn buy_price { w: *world::World, store: u32, item: u32 } -> i32 {
+        let st = data_of{ w, store } ifnull { return 0 }
+        return percent_of{ value = value_of{ w, item }, percent = st.markup + st.bonus_markup }
+    }
+
+    // What the player gets for one unit (GetSellPrice): value x (MarkDown + bonus) / 100.
+    fn sell_price { w: *world::World, store: u32, item: u32 } -> i32 {
+        let st = data_of{ w, store } ifnull { return 0 }
+        return percent_of{ value = value_of{ w, item }, percent = st.markdown + st.bonus_markdown }
+    }
+
+    fn percent_of { value: i32, percent: i32 } -> i32 {
+        if percent <= 0 or value <= 0 { return 0 }
+        return @trunc(i32, (@as(i64, value) * @as(i64, percent)) / 100)
+    }
+
+    // Whether the store sells (buy page) and buys (sell page): BuySellFlag bits 0 and 1.
+    fn sells { w: *world::World, store: u32 } -> bool {
+        let st = data_of{ w, store } ifnull { return false }
+        return (st.buy_sell & 1) != 0
+    }
+
+    fn buys { w: *world::World, store: u32 } -> bool {
+        let st = data_of{ w, store } ifnull { return false }
+        return (st.buy_sell & 2) != 0
+    }
+
+    // DoBuy: the price comes off the purse and one unit of the stock goes to the player
+    // (CSWSStore::SellItemTo): an infinite item is copied, a stack is split by one, a single
+    // leaves the stock; the unit joins the party's inventory. `gone` when the item is not in stock.
+    fn buy { mut w: world::World, store: u32, item: u32 } -> Sale {
+        let st = data_of{ w = &w, store } ifnull { return Sale::gone }
+        let o = world::object{ w = &w, id = item } ifnull { return Sale::gone }
+        let it = obj::item{ o } ifnull { return Sale::gone }
+        let stock = list::items{ list = st.stock }
+        let mut at: usize = 0
+        while at < stock.len and stock[at] != item { at = at + 1 }
+        if at == stock.len { return Sale::gone }
+        let price = buy_price{ w = &w, store, item }
+        if w.party.gold < price { return Sale::no_credits }
+        party::add_gold{ &w, n = -@as(i64, price) }
+        let unit = if it.infinite { xfer::copy_item{ &w, item, stack = 1 } } else { xfer::take_one{ &w, item } }
+        if unit == obj::INVALID { return Sale::gone }
+        _ = xfer::to_party{ &w, item = unit }
+        return Sale::done
+    }
+
+    // Whether the store would take `item`: plot items are refused (CSWSStore::AcquireItem).
+    fn accepts { w: *world::World, item: u32 } -> bool {
+        let o = world::object{ w, id = item } ifnull { return false }
+        return not o.plot and obj::item{ o } != null
+    }
+
+    // DoSell: one unit leaves the party's inventory, the player is paid, and the store takes the
+    // unit as stock: it joins an item of the stock that stacks with it (an infinite one swallows
+    // it, a finite one grows by one whatever the stack limit), else it is inserted by value.
+    // Returns the credits paid, -1 when the store refused or the item is not the party's.
+    fn sell { mut w: world::World, store: u32, item: u32 } -> i32 {
+        let st = data_of{ w = &w, store } ifnull { return -1 }
+        if not accepts{ w = &w, item } or not party::holds{ w = &w, item } { return -1 }
+        let price = sell_price{ w = &w, store, item }
+        let unit = xfer::take_one{ &w, item }
+        if unit == obj::INVALID { return -1 }
+        party::add_gold{ &w, n = @as(i64, price) }
+        // The unit leaves the party's list now: the store keeps it by id.
+        let pc = world::object{ w = &w, id = w.player } ifnull { return price }
+        _ = rt_item::remove_from_inventory{ &w, o = pc, item = unit }
+        let uo = world::object{ w = &w, id = unit } ifnull { return price }
+        let ui = obj::item{ o = uo } ifnull { return price }
+        ui.identified = true
+        ui.equipped_slot = -1
+        let stock = list::items{ list = st.stock }
+        let mut k: usize = 0
+        while k < stock.len {
+            if xfer::stacks_together{ w = &w, a = stock[k], b = unit } {
+                if world::object{ w = &w, id = stock[k] } is some{ value = so } {
+                    if obj::item{ o = so } is some{ value = si } {
+                        if not si.infinite {
+                            si.stack = si.stack + 1
+                            if si.rules is some{ value = ri } { ri.stack = @as(i32, si.stack) }
+                        }
+                        world::destroy{ &w, id = unit }
+                        return price
+                    }
+                }
+            }
+            k = k + 1
+        }
+        ui.stack = 1
+        ui.possessor = store
+        ui.infinite = false
+        tmpl::insert_by_value{ &w, l = &st.stock, item = unit }
+        return price
+    }
+}

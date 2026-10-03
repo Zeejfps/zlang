@@ -1,0 +1,11 @@
+# A container's panel (Dantooine's footlocker): one item taken with a second click, the rest with
+# Get Items, and the credits that were in it go to the purse.
+#   MODULE=danm13 sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/loot.txt 40 12:loot_open 20:loot_one 30:loot_all
+3 warp footlker
+10 ui bag
+11 ui loot footlker
+14 ui click 560 280
+15 ui click 560 280
+24 ui bag
+26 ui click 640 452
+34 ui bag

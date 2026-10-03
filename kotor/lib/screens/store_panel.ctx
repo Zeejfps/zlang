@@ -1,0 +1,272 @@
+// The merchant's panel (store.gui, docs/re/gui.md "CSWGuiStore"): the stock to buy from, the
+// party's inventory to sell from, the price of the selected item, the party's credits. The
+// arithmetic and the moving are lib/engine/store.ctx's; this is the lists, the confirmations the
+// original asks and the sounds.
+namespace store_panel {
+    const ICON: f32 = 36.0
+
+    // What a confirmation box is for.
+    const ASK_BUY: i32 = 1
+    const ASK_SELL: i32 = 2
+
+    // dialog.tlk
+    const STR_SELL: u32 = 32130
+    const STR_BUY: u32 = 32132
+    const STR_SHOW_SELL_LIST: u32 = 41938
+    const STR_SHOW_BUY_LIST: u32 = 41937
+    const STR_INFINITE: u32 = 41951
+    const STR_NO_CREDITS: u32 = 41950
+    const STR_BUY_COSTLY: u32 = 42020
+    const STR_SELL_COSTLY: u32 = 41985
+
+    struct State {
+        open: bool,
+        panel: u32,
+        store: u32,
+        selling: bool,          // the sell page is up
+        picked: u32,            // the selected item, INVALID none
+        notice: msgbox::Box,    // a refusal
+        confirm: msgbox::Box,   // "this costs more than ..."
+        shown_gold: i32,        // the credits the label shows
+    }
+
+    fn new {} -> State {
+        return State{ open = false, panel = 0, store = obj::INVALID, selling = false, picked = obj::INVALID, notice = msgbox::blank{}, confirm = msgbox::blank{}, shown_gold = -1 }
+    }
+
+    // CGuiInGame::OpenStore: the panel over the world, on the page the store's BuySellFlag allows.
+    fn begin { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, merchant: u32 } -> ! {
+        if s.open { return }
+        s.panel = try gui::open{ &g, fs = &w.fs, &dev, name = "store", mode = gui::Mode::full_screen, modal = true }
+        gui::set_backdrop{ &g, fs = &w.fs, &dev, panel = s.panel, kind = 1 }
+        s.store = merchant
+        s.picked = obj::INVALID
+        s.notice = msgbox::blank{}
+        s.confirm = msgbox::blank{}
+        s.open = true
+        let sells = store::sells{ w = &w, store = merchant }
+        let buys = store::buys{ w = &w, store = merchant }
+        s.selling = buys and not sells
+        gui::set_visible{ &g, panel = s.panel, tag = "BTN_Examine", visible = sells and buys }
+        gui::play_sound{ &g, n = 4 }
+        try fill_page{ &s, &g, &w, &dev }
+    }
+
+    fn close_panel { mut s: State, mut g: gui::Gui } {
+        if not s.open { return }
+        msgbox::close{ &g, b = &s.notice }
+        msgbox::close{ &g, b = &s.confirm }
+        gui::close{ &g, id = s.panel }
+        gui::play_sound{ &g, n = 5 }
+        s.open = false
+        s.panel = 0
+    }
+
+    // Every frame: the credits label follows the purse (a script can change it while the panel is up).
+    fn tick { mut s: State, mut g: gui::Gui, mut w: world::World } {
+        if not s.open or s.shown_gold == w.party.gold { return }
+        fill_credits{ &s, &g, &w } iferr {}
+    }
+
+    // One of the GUI events of this frame. True when it was the panel's or one of its boxes'.
+    fn on_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> bool {
+        if not s.open { return false }
+        // The boxes first: the panel is modal under them.
+        let a = msgbox::answer{ b = s.confirm, ev }
+        if a != msgbox::Answer::none {
+            let ask = s.confirm.what
+            let item = s.confirm.item
+            msgbox::close{ &g, b = &s.confirm }
+            if a == msgbox::Answer::ok { run{ &s, &g, &w, &dev, ask, item } iferr err{ error } { _ = @fmt(&w.io, "kotor: store panel: {}\n", error) } }
+            return true
+        }
+        if msgbox::answer{ b = s.notice, ev } != msgbox::Answer::none {
+            msgbox::close{ &g, b = &s.notice }
+            return true
+        }
+        if ev.panel != s.panel or msgbox::is_open{ b = s.confirm } or msgbox::is_open{ b = s.notice } { return false }
+        if ev.kind == gui::EventKind::cancel {
+            close_panel{ &s, &g }
+            return true
+        }
+        if ev.kind == gui::EventKind::activate {
+            if slice::eq_bytes{ a = ev.tag, b = "BTN_Cancel" } {
+                close_panel{ &s, &g }
+            } else if slice::eq_bytes{ a = ev.tag, b = "BTN_Accept" } {
+                accept{ &s, &g, &w, &dev } iferr err{ error } { _ = @fmt(&w.io, "kotor: store panel: {}\n", error) }
+            } else if slice::eq_bytes{ a = ev.tag, b = "BTN_Examine" } {
+                s.selling = not s.selling
+                s.picked = obj::INVALID
+                fill_page{ &s, &g, &w, &dev } iferr err{ error } { _ = @fmt(&w.io, "kotor: store panel: {}\n", error) }
+            }
+            return true
+        }
+        if ev.kind == gui::EventKind::row_selected and (slice::eq_bytes{ a = ev.tag, b = "LB_SHOPITEMS" } or slice::eq_bytes{ a = ev.tag, b = "LB_INVITEMS" }) {
+            pick{ &s, &g, &w, user = ev.user } iferr err{ error } { _ = @fmt(&w.io, "kotor: store panel: {}\n", error) }
+            return true
+        }
+        if ev.kind == gui::EventKind::row_activated and (slice::eq_bytes{ a = ev.tag, b = "LB_SHOPITEMS" } or slice::eq_bytes{ a = ev.tag, b = "LB_INVITEMS" }) {
+            pick{ &s, &g, &w, user = ev.user } iferr err{ error } { _ = @fmt(&w.io, "kotor: store panel: {}\n", error) }
+            accept{ &s, &g, &w, &dev } iferr err{ error } { _ = @fmt(&w.io, "kotor: store panel: {}\n", error) }
+            return true
+        }
+        return true
+    }
+
+    // ---- the page
+
+    // Everything that depends on the page: titles, which list shows, the rows.
+    fn fill_page { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+        let p = s.panel
+        try gui::set_strref{ &g, panel = p, tag = "LBL_BUYSELL", strref = if s.selling { STR_SELL } else { STR_BUY } }
+        try gui::set_strref{ &g, panel = p, tag = "BTN_Accept", strref = if s.selling { STR_SELL } else { STR_BUY } }
+        try gui::set_strref{ &g, panel = p, tag = "BTN_Examine", strref = if s.selling { STR_SHOW_BUY_LIST } else { STR_SHOW_SELL_LIST } }
+        gui::set_visible{ &g, panel = p, tag = "LB_SHOPITEMS", visible = not s.selling }
+        gui::set_visible{ &g, panel = p, tag = "LB_INVITEMS", visible = s.selling }
+        try fill_credits{ &s, &g, &w }
+        try fill_list{ &s, &g, &w, &dev }
+    }
+
+    fn fill_credits { mut s: State, mut g: gui::Gui, mut w: world::World } -> ! {
+        s.shown_gold = w.party.gold
+        let panel = s.panel
+        let mut b = items::new_text{ w = &w }
+        defer list::free{ list = &b.bytes }
+        try @fmt(&b, "{}", w.party.gold)
+        try gui::set_text{ &g, panel, tag = "LBL_CREDITS_VALUE", text = utf8::view{ b }.bytes }
+    }
+
+    fn list_tag { selling: bool } -> []u8 { return if selling { "LB_INVITEMS" } else { "LB_SHOPITEMS" } }
+
+    // The rows: the stock (or the party's bag), grouped by the base item's StorePanelSort and in
+    // list order inside a group, plot items left out (FillStoreItems / FillPlayerItems).
+    fn fill_list { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+        let p = s.panel
+        let tag = list_tag{ selling = s.selling }
+        gui::list_clear{ &g, panel = p, tag }
+        let mut order: [512]u32
+        let n = collect{ &s, &w, into = order[..] }
+        let mut select: i32 = 0
+        let mut k: usize = 0
+        while k < n {
+            let row = try items::add_row{ &g, &w, &dev, panel = p, tag, id = order[k], equipped = false, icon_size = ICON }
+            if order[k] == s.picked { select = row }
+            k = k + 1
+        }
+        if n == 0 {
+            try pick{ &s, &g, &w, user = 0 }
+            return
+        }
+        gui::list_select{ &g, panel = p, tag, row = select }
+        try pick{ &s, &g, &w, user = @as(i64, order[@as(usize, select)]) }
+    }
+
+    // The ids the page lists, sorted; how many.
+    fn collect { s: *State, w: *world::World, into: []mut u32 } -> usize {
+        let mut n: usize = 0
+        let source: []u32 = if s.selling {
+            list::items{ list = w.bag }
+        } else {
+            match store::data_of{ w, store = s.store } {
+                some{ value = st } => { list::items{ list = st.stock } }
+                null => { slice::empty(u32){} }
+            }
+        }
+        let mut k: usize = 0
+        while k < source.len and n < into.len {
+            let id = source[k]
+            k = k + 1
+            if not world::is_valid{ w, id } or not store::accepts{ w, item = id } { continue }
+            // Insertion by sort key keeps list order inside a group.
+            let key = sort_key{ w, id }
+            let mut at = n
+            while at > 0 and sort_key{ w, id = into[at - 1] } > key {
+                into[at] = into[at - 1]
+                at = at - 1
+            }
+            into[at] = id
+            n = n + 1
+        }
+        return n
+    }
+
+    fn sort_key { w: *world::World, id: u32 } -> i32 {
+        return items::base_int{ w, id, column = "storepanelsort", fallback = 0 }
+    }
+
+    // ---- the selected item
+
+    // A row was chosen: its description, its price for this page and how many there are.
+    fn pick { mut s: State, mut g: gui::Gui, mut w: world::World, user: i64 } -> ! {
+        let p = s.panel
+        let id = if user > 0 { @as(u32, user) } else { obj::INVALID }
+        s.picked = id
+        try items::show_description{ &g, &w, panel = p, tag = "LB_DESCRIPTION", id = if id == obj::INVALID { 0 } else { id } }
+        if id == obj::INVALID {
+            try gui::set_text{ &g, panel = p, tag = "LBL_COST_VALUE", text = "" }
+            try gui::set_text{ &g, panel = p, tag = "LBL_STOCK_VALUE", text = "" }
+            return
+        }
+        let mut b = items::new_text{ w = &w }
+        defer list::free{ list = &b.bytes }
+        let price = if s.selling { store::sell_price{ w = &w, store = s.store, item = id } } else { store::buy_price{ w = &w, store = s.store, item = id } }
+        try @fmt(&b, "{}", price)
+        try gui::set_text{ &g, panel = p, tag = "LBL_COST_VALUE", text = utf8::view{ b }.bytes }
+        list::clear{ list = &b.bytes }
+        let it = items::item_of{ w = &w, id } ifnull { return }
+        if not s.selling and it.infinite {
+            try gui::set_strref{ &g, panel = p, tag = "LBL_STOCK_VALUE", strref = STR_INFINITE }
+        } else {
+            try @fmt(&b, "{}", it.stack)
+            try gui::set_text{ &g, panel = p, tag = "LBL_STOCK_VALUE", text = utf8::view{ b }.bytes }
+        }
+    }
+
+    // ---- buying and selling
+
+    // The Buy or Sell button: the refusals and confirmations of OnBuy / OnSell, then the deal.
+    fn accept { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+        let item = s.picked
+        if item == obj::INVALID or not world::is_valid{ w = &w, id = item } { return }
+        let level = hud::level_of{ w = &w, id = w.player }
+        if not s.selling {
+            let price = store::buy_price{ w = &w, store = s.store, item }
+            if price > w.party.gold {
+                s.notice = msgbox::show_strref{ &g, &w, &dev, strref = STR_NO_CREDITS, cancel = false, what = 0, item }
+                return
+            }
+            if price > 50 * level {
+                s.confirm = msgbox::show_number{ &g, &w, &dev, strref = STR_BUY_COSTLY, n = 50 * level, cancel = true, what = ASK_BUY, item }
+                if msgbox::is_open{ b = s.confirm } { return }
+            }
+            try run{ &s, &g, &w, &dev, ask = ASK_BUY, item }
+        } else {
+            let price = store::sell_price{ w = &w, store = s.store, item }
+            let limit = if 50 * level < 250 { 50 * level } else { 250 }
+            if price > limit {
+                s.confirm = msgbox::show_number{ &g, &w, &dev, strref = STR_SELL_COSTLY, n = limit, cancel = true, what = ASK_SELL, item }
+                if msgbox::is_open{ b = s.confirm } { return }
+            }
+            try run{ &s, &g, &w, &dev, ask = ASK_SELL, item }
+        }
+    }
+
+    // The deal itself, after the confirmation.
+    fn run { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ask: i32, item: u32 } -> ! {
+        if ask == ASK_BUY {
+            let r = store::buy{ &w, store = s.store, item }
+            if r == store::Sale::no_credits {
+                s.notice = msgbox::show_strref{ &g, &w, &dev, strref = STR_NO_CREDITS, cancel = false, what = 0, item }
+                return
+            }
+            if r == store::Sale::done { gui::play_sound{ &g, n = 9 } }
+        } else {
+            let paid = store::sell{ &w, store = s.store, item }
+            if paid >= 0 { gui::play_sound{ &g, n = 11 } }
+        }
+        // The item just moved: pick the neighbour, not a vanished id.
+        if not world::is_valid{ w = &w, id = s.picked } or ask == ASK_SELL { s.picked = obj::INVALID }
+        try fill_credits{ &s, &g, &w }
+        try fill_list{ &s, &g, &w, &dev }
+    }
+}

@@ -1,0 +1,52 @@
+// Taking a level (docs/re/rules.md 4.3, 4.4): the world's side of lib/rules' level-up. The panels
+// (lib/screens/levelup*.ctx) build a LevelRecord from the player's choices and call `apply`;
+// the auto-level option and ShowLevelUpGUI ask `can_level`.
+namespace levelup {
+    fn fighter_of { w: *world::World, id: u32 } -> ?*mut fight::Fighter {
+        let o = world::object{ w, id } ifnull { return null }
+        return fight::of{ o }
+    }
+
+    // CanLevelUp: below the cap, enough XP, alive.
+    fn can_level { w: *world::World, id: u32 } -> bool {
+        let o = world::object{ w, id } ifnull { return false }
+        let f = fight::of{ o } ifnull { return false }
+        return rules::can_level_up{ tables = w.rules, c = &f.c, alive = o.hp > 0 }
+    }
+
+    // ApplyLevelUp: the record goes into the creature, its maxima follow and it heals fully; the
+    // module hears OnPlayerLevelUp for the player. False when the rules refused (nothing changed).
+    fn apply { mut w: world::World, id: u32, rec: rules::LevelRecord } -> bool {
+        let o = world::object{ w = &w, id } ifnull { return false }
+        let f = fight::of{ o } ifnull { return false }
+        fight::sync_flags{ w = &w, o, f }
+        let res = rules::apply_level_up{ tables = w.rules, c = &f.c, rec, alive = o.hp > 0 }
+        if not res.ok { return false }
+        settle{ &w, o, f, heal = res.heal_to_full }
+        if id == w.player {
+            events::post{ &w, delay_ms = 0, caller = id, target = w.module, payload = events::Payload::script{ e = events::script_event{ kind = events::PLAYER_LEVEL_UP, object = id } } }
+        }
+        return true
+    }
+
+    // AutoLevelUp: every level the creature's XP allows, along the class's priority lists. How
+    // many levels were taken.
+    fn auto_level { mut w: world::World, id: u32 } -> i32 {
+        let o = world::object{ w = &w, id } ifnull { return 0 }
+        let f = fight::of{ o } ifnull { return 0 }
+        fight::sync_flags{ w = &w, o, f }
+        let res = rules::auto_level_up{ tables = w.rules, c = &f.c, alive = o.hp > 0 }
+        if res.levels > 0 { settle{ &w, o, f, heal = true } }
+        return res.levels
+    }
+
+    // After the rules changed the creature: the object's maximum hit points, a full heal, the
+    // alignment bonuses for the new level.
+    fn settle { mut w: world::World, o: *mut obj::Object, f: *mut fight::Fighter, heal: bool } {
+        o.hp_max = f.c.stats.max_hp
+        if heal or o.hp > o.hp_max { o.hp = o.hp_max }
+        rules::clear_events{ ev = &w.rev }
+        rules::update_alignment_mastery{ env = fight::env_of{ w = &w, o }, c = &f.c, ids = &w.fx_ids, rng = &w.dice, ev = &w.rev }
+        fight::drain{ &w, id = o.id }
+    }
+}

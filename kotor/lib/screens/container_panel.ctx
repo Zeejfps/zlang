@@ -1,0 +1,104 @@
+// The loot panel (container.gui, docs/re/gui.md "CSWGuiContainer"): what a chest, a footlocker or
+// a body holds. A row takes that item; Get Items takes everything and closes; Switch To lists the
+// party's items to put in; Close leaves the rest. The moves are lib/engine/container.ctx's.
+namespace container_panel {
+    const ICON: f32 = 36.0
+    const STR_PLACE_ITEMS: u32 = 392         // the file's own title: items available to place in the container
+
+    struct State {
+        open: bool,
+        panel: u32,
+        placeable: u32,
+        giving: bool,           // the party's items are listed, to put in
+    }
+
+    fn new {} -> State {
+        return State{ open = false, panel = 0, placeable = obj::INVALID, giving = false }
+    }
+
+    // CGuiInGame::OpenContainer: the panel in the middle of the screen, over the world.
+    fn begin { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, placeable: u32 } -> ! {
+        if s.open { return }
+        s.panel = try gui::open{ &g, fs = &w.fs, &dev, name = "container", mode = gui::Mode::dialog, modal = true }
+        s.placeable = placeable
+        s.giving = false
+        s.open = true
+        gui::play_sound{ &g, n = 4 }
+        try fill{ &s, &g, &w, &dev }
+    }
+
+    // Closes the panel and tells the container (its OnClose, its animation, a bag that empties
+    // itself); `take_all` is Get Items.
+    fn finish { mut s: State, mut g: gui::Gui, mut w: world::World, take_all: bool } {
+        if not s.open { return }
+        container::close{ &w, placeable = s.placeable, take_all }
+        gui::close{ &g, id = s.panel }
+        gui::play_sound{ &g, n = 5 }
+        s.open = false
+        s.panel = 0
+    }
+
+    // Drops the panel without telling the container (the world is being torn down).
+    fn abandon { mut s: State, mut g: gui::Gui } {
+        if not s.open { return }
+        gui::close{ &g, id = s.panel }
+        s.open = false
+        s.panel = 0
+    }
+
+    fn on_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> bool {
+        if not s.open or ev.panel != s.panel { return false }
+        if ev.kind == gui::EventKind::cancel {
+            finish{ &s, &g, &w, take_all = false }
+            return true
+        }
+        if ev.kind == gui::EventKind::activate {
+            if slice::eq_bytes{ a = ev.tag, b = "BTN_CANCEL" } {
+                finish{ &s, &g, &w, take_all = false }
+            } else if slice::eq_bytes{ a = ev.tag, b = "BTN_OK" } {
+                // Get Items works on the container's own list only.
+                if not s.giving { finish{ &s, &g, &w, take_all = true } }
+            } else if slice::eq_bytes{ a = ev.tag, b = "BTN_GIVEITEMS" } {
+                s.giving = not s.giving
+                fill{ &s, &g, &w, &dev } iferr err{ error } { _ = @fmt(&w.io, "kotor: container panel: {}\n", error) }
+            }
+            return true
+        }
+        if ev.kind == gui::EventKind::row_activated and slice::eq_bytes{ a = ev.tag, b = "LB_ITEMS" } and ev.user > 0 {
+            let item = @as(u32, ev.user)
+            let moved = if s.giving { container::give{ &w, placeable = s.placeable, item } } else { container::take{ &w, placeable = s.placeable, item } }
+            if moved { gui::play_sound{ &g, n = 9 } }
+            fill{ &s, &g, &w, &dev } iferr err{ error } { _ = @fmt(&w.io, "kotor: container panel: {}\n", error) }
+            return true
+        }
+        return true
+    }
+
+    // The title and the rows of the list on show.
+    fn fill { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+        let p = s.panel
+        if s.giving {
+            try gui::set_strref{ &g, panel = p, tag = "LBL_MESSAGE", strref = STR_PLACE_ITEMS }
+        } else {
+            try gui::set_text{ &g, panel = p, tag = "LBL_MESSAGE", text = hud::name_of{ w = &w, id = s.placeable } }
+        }
+        gui::set_enabled{ &g, panel = p, tag = "BTN_OK", enabled = not s.giving }
+        gui::set_text_color{ &g, panel = p, tag = "BTN_OK", color = if s.giving { gui::color_disabled{} } else { gui::color_menu{} } }
+        gui::list_clear{ &g, panel = p, tag = "LB_ITEMS" }
+        let source: []u32 = if s.giving { list::items{ list = w.bag } } else { held{ w = &w, placeable = s.placeable } }
+        let mut k: usize = 0
+        while k < source.len {
+            let id = source[k]
+            k = k + 1
+            if not world::is_valid{ w = &w, id } { continue }
+            _ = try items::add_row{ &g, &w, &dev, panel = p, tag = "LB_ITEMS", id, equipped = false, icon_size = ICON }
+        }
+        if gui::list_count{ &g, panel = p, tag = "LB_ITEMS" } > 0 { gui::list_select{ &g, panel = p, tag = "LB_ITEMS", row = 0 } }
+    }
+
+    fn held { w: *world::World, placeable: u32 } -> []u32 {
+        let o = world::object{ w, id = placeable } ifnull { return slice::empty(u32){} }
+        let p = obj::placeable{ o } ifnull { return slice::empty(u32){} }
+        return list::items{ list = p.inventory }
+    }
+}

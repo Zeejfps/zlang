@@ -99,6 +99,11 @@ namespace doors {
         let p = obj::placeable{ o } ifnull { return actions::Status::failed }
         if not p.useable { return actions::Status::failed }
         if approach{ &w, id, target, a } { return actions::Status::done }
+        // A container the party opens shows its contents (actions.md 3.5): OnOpen, not OnUsed.
+        if p.has_inventory and not p.locked and (id == w.pc or id == w.player or party::is_member{ w = &w, id }) {
+            _ = container::open{ &w, placeable = target, user = id }
+            return actions::Status::done
+        }
         events::post{ &w, delay_ms = 0, caller = id, target, payload = events::Payload::script{ e = events::script_event{ kind = events::USED, object = id } } }
         return actions::Status::done
     }

@@ -84,6 +84,7 @@ namespace obj {
         last_damager: u32,
         last_speaker: u32,
         last_disturbed: u32,
+        disturb_type: i32,        // GetInventoryDisturbType: 0 added, 1 removed, 2 stolen (last_disturbed is the item)
         run_script_var: i32,      // ExecuteScript's nScriptVar, read by GetRunScriptVar
         clicked_by: u32,
         blocker: u32,             // OnBlocked: GetBlockingDoor
@@ -110,7 +111,7 @@ namespace obj {
             last_unlocked_by = INVALID, last_perceived = INVALID, perceived_seen = false,
             perceived_heard = false, perceived_vanished = false, perceived_inaudible = false,
             last_attacker = INVALID, last_damager = INVALID, last_speaker = INVALID,
-            last_disturbed = INVALID, run_script_var = 0, clicked_by = INVALID, blocker = INVALID,
+            last_disturbed = INVALID, disturb_type = 0, run_script_var = 0, clicked_by = INVALID, blocker = INVALID,
             listen_pattern = -1, spell_id = -1, spell_target = INVALID, spell_location = math::vec3::zero{},
             last_spell = -1, last_spell_caster = INVALID, last_spell_harmful = false,
             found_enemy = INVALID, last_player_died = INVALID, trap_type = -1,
@@ -272,6 +273,7 @@ namespace obj {
         non_equippable: bool,               // SetItemNonEquippable: the equip checks refuse it
         rules: ?*mut rules::Item,           // the item as the rules see it (heap; fight::read_item)
         droppable: bool,                    // Dropable: it goes into the body bag when its owner dies
+        infinite: bool,                     // a store's stock that never runs out (item flag bit 2)
     }
 
     enum DoorState: u8 { closed, open1, open2, destroyed }
@@ -307,6 +309,8 @@ namespace obj {
         walk: i32,
         model: resref::ResRef,              // placeables modelname
         anim: u32,                          // the placeable's own animation state (10073..)
+        die_when_empty: bool,               // DieWhenEmpty: a body bag vanishes once it is emptied
+        user: u32,                          // who has the container open (OBJECT_INVALID: nobody)
     }
 
     struct Trigger {
@@ -356,7 +360,17 @@ namespace obj {
         spawned: bool,
     }
 
-    struct Store { markup: i32, markdown: i32 }
+    // A merchant (UTM; docs/re/party-items-saves.md 5.8): the percentages of an item's value it
+    // charges (markup) and pays (markdown), the bonuses its last OpenStore gave, which pages it
+    // offers (BuySellFlag bit 0: sells, bit 1: buys) and its stock.
+    struct Store {
+        markup: i32,
+        markdown: i32,
+        bonus_markup: i32,
+        bonus_markdown: i32,
+        buy_sell: u8,
+        stock: list::List(u32, heap::Heap), // item ids, ascending by value as the original loads them
+    }
 
     struct Aoe { creator: u32, radius: f32 }
 
@@ -428,6 +442,10 @@ namespace obj {
     }
     fn item { o: *Object } -> ?*mut Item {
         if o.ext is item{ i } { return i }
+        return null
+    }
+    fn store { o: *Object } -> ?*mut Store {
+        if o.ext is store{ st } { return st }
         return null
     }
     fn waypoint { o: *Object } -> ?*mut Waypoint {
