@@ -112,9 +112,11 @@ namespace chargen {
         }
     }
 
-    // The colour of a row: the dim menu blue for what cannot be changed.
+    // The colour of a row: the dim menu blue for what cannot be changed, yellow for a pick (ours:
+    // the original marks it some other way, which the data does not show).
     fn feat_row_color { state: u8 } -> render::Color {
-        if state == FS_SELECTABLE or state == FS_CHOSEN { return gui::color_menu{} }
+        if state == FS_CHOSEN { return gui::color_hilight{} }
+        if state == FS_SELECTABLE { return gui::color_menu{} }
         return gui::color_disabled{}
     }
 

@@ -99,6 +99,7 @@ else to the front-most shown panel with a control under the pointer.
 | `full_screen` | centred, with its file's offset, over the resolution's backdrop; hides every panel under it | menus: inventory, options, the main menu, loading screen |
 | `dialog` | centred, the file's position ignored | message boxes, resolution list, save name |
 | `placed` | where the file puts it | the HUD, tooltips |
+| `framed` | the file's place inside a centred 640x480 frame, nothing hidden | character generation's quick/custom lists over the summary |
 
 `gui::close{ &g, id }` removes it after the frame (events its controls made stay valid until
 `update`). `gui::set_backdrop{ ..., kind }` picks the picture (0 back, 1 store, 2 pazaak, 3 map,
@@ -220,9 +221,13 @@ if frontend::take_display_change{ &fe } { apply fe.settings (resolution, full sc
   between the backdrop and the panel (`gui3d`, re/gui3d.md). The still picture in the file
   (`loadscreen3`) is what the original shows without GUI 3D; we show it only if the scene fails.
   `mus_theme_cult` plays in a loop in the music group.
-- **New Game** returns `new_game` with the start module `end_m01aa`. The original goes through
-  character generation (class selection) first; those panels are a later task, and when they exist
-  the outcome will carry the chosen creature (appearance, class, gender, portrait, name).
+- **New Game** opens character generation ([chargen.md](chargen.md), `lib/chargen`): class selection
+  with its six 3D models, quick or custom character and the five steps, then returns `new_game` with
+  the start module `end_m01aa` and `player`, the created character as the bytes of a UTC-shaped GFF
+  (empty if chargen could not start: the engine then makes its default soldier). While it runs
+  `Front.cg` is set, `frontend::step` hands the GUI events to `chargen::on_event`, `frontend::draw`
+  adds its 3D views after the panels, and Cancel returns to the main menu. A program that links
+  `lib/frontend` also links `lib/rules` and `lib/chargen`.
 - **Load Game** (`saveload.gui`): lists the install's `Saves/` read-only (folder `NNNNNN - Name`;
   0 quick save, 1 autosave, 2+ manual), each row's `savenfo.res` (name, area as "Planet - Place",
   play time, up to three party portraits) and `Screen.tga` for the picture. A click selects and
@@ -262,5 +267,5 @@ if frontend::take_display_change{ &fe } { apply fe.settings (resolution, full sc
 - The HUD on wide windows (above), and HUD controls the engine must hide per state.
 - Gamepad events (0x2d..0x38), key remapping (`optkeymapping`), the dragged inventory item.
 - The tooltip is a plain box with the dialog font, not `tooltipWxH.gui`.
-- Character generation and level-up panels, the credits scroll, pazaak: not started.
+- The level-up panels (`leveluppnl`, `pwrlvlup` and the shared `maincg`), the credits scroll: not started. Character generation is done (chargen.md).
 - Text colour per list row exists (`list_set_color`); per-row fonts do not.

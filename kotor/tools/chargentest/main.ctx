@@ -99,7 +99,8 @@ fn run {
     try frontend::begin{ &fe, &g, &fs, &dev, &sdl, mixer }
 
     let mut k = o.first
-    let mut again: i32 = 0                          // runs of the current command still to come (NAME:ARG*N repeats it N times)
+    let mut failed: i32 = 0                         // checks of verify commands that did not hold
+    let mut again: i32 = 0                         // runs of the current command still to come (NAME:ARG*N repeats it N times)
     while k < args.len {
         let full = args[k]
         let mut star = full.len
@@ -125,6 +126,8 @@ fn run {
             let mut c4: usize = 0
             while c4 < arg.len and arg[c4] != ':' { c4 = c4 + 1 }
             if c4 < arg.len { try gui::set_tooltip{ &g, panel = current_panel{ &fe }, tag = arg[..c4], text = arg[c4 + 1..] } }
+        } else if slice::eq_bytes{ a = name, b = "verify" } or slice::eq_bytes{ a = name, b = "verifyquick" } {
+            failed = failed + (try verify_player{ &io, &fs, h = &h, rm, path = arg, quick = name.len > 6 })
         } else if slice::eq_bytes{ a = name, b = "slots" } {
             // Prints what class selection built for each slot: class, gender, portrait, body and head.
             let cg = fe.cg
@@ -232,6 +235,7 @@ fn run {
     _ = @fmt(&io, "settings: {}x{} music {} gamma {} difficulty {}\n", fe.settings.width, fe.settings.height, fe.settings.music, fe.settings.gamma, fe.settings.difficulty)
     let mx2 = mixer
     if mx2 != null { _ = @fmt(&io, "mixer errors: {}\n", mx2.errors) }
+    if failed > 0 { return verify_failed{ bad = failed } }
 }
 
 fn number { s: []u8 } -> i32 {
