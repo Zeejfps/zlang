@@ -310,6 +310,8 @@ namespace ingame {
         if ui.menu == NO_MENU and not ui.hud_hidden { hud::draw{ h = &ui.hud, g = &ui.gui, &w, &dev, &frame, log = &ui.log } }
         // A menu that draws into a render target before the panels (the map's picture with its arrows).
         if ui.menu == MENU_MAP { map_panel::draw{ s = &ui.menus.map, g = &ui.gui, &w, &dev, &frame, panel = ui.menu_panel } }
-        gui::draw{ g = &ui.gui, &frame }
+        gui::draw_backdrop_pass{ g = &ui.gui, &frame }
+        screens::draw_views{ s = &ui.screens, g = &ui.gui, &frame, target = gpu::screen_size{ dev } }
+        gui::draw_panels{ g = &ui.gui, &frame }
     }
 }

@@ -52,6 +52,7 @@ namespace events {
         script{ e: values::ScriptEvent },           // 10 SIGNAL_EVENT: run the matching slot
         destroy,                                    // 11 DESTROY_OBJECT
         transition{ token: u8 },                    // 26 AREA_TRANSITION, phase 2 (gameloop.md 5.2)
+        run_script{ name: resref::ResRef },         // a screen's script (the galaxy map's Travel), run as the target; not saved
     }
 
     struct Event { due: u64, caller: u32, target: u32, payload: Payload }
@@ -164,6 +165,7 @@ namespace events {
                 world::destroy{ &w, id = ev.target }
             }
             transition{ token } => { modload::transition_arrived{ &w, id = ev.target, token } }
+            run_script{ name } => { _ = scripts::run{ &w, &vm, engine, name, self = ev.target } }
         }
     }
 

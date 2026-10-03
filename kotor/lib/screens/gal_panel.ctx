@@ -1,0 +1,167 @@
+// The galaxy map (galaxymap.gui, docs/re/gui.md "CSWGuiGalaxyMap"): the planets of planetary.2da as
+// buttons over the 3D galaxy, the selected planet's name, description and model, and Travel, which
+// runs the script k_sup_galaxymap, which reads GetSelectedPlanet and does the travel. Whether a
+// planet shows and whether it can be chosen are the party table's flags, set by scripts
+// (SetPlanetAvailable, SetPlanetSelectable).
+namespace galaxy {
+    const SCRIPT: []u8 = "k_sup_galaxymap"
+
+    struct State {
+        open: bool,
+        panel: u32,
+        selected: i32,                  // planetary.2da row, -1 none
+        table: twoda::Table,
+        loaded: bool,
+        view: ?*mut galview::View,
+    }
+
+    fn new {} -> State {
+        let mut s: State
+        s.open = false
+        s.selected = -1
+        s.view = null
+        return s
+    }
+
+    // planetary.2da's guitag of a row, "" when it has none (the Ebon Hawk).
+    fn tag_of { s: *State, row: i32 } -> []u8 {
+        let t = twoda::get_string{ t = s.table, row = @as(usize, row), column = "guitag" } ifnull ""
+        return if slice::eq_bytes{ a = t, b = "****" } { "" } else { t }
+    }
+
+    // CGuiInGame::ShowGalaxyMap: the panel with `planet` selected when it can be.
+    fn begin { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, planet: i32 } -> ! {
+        if s.open { return }
+        if not s.loaded {
+            s.table = try world::load_table{ fs = &w.fs, heap = w.heap, rm = w.rm.*, name = "planetary" }
+            s.loaded = true
+        }
+        s.panel = try gui::open{ &g, fs = &w.fs, &dev, name = "galaxymap", mode = gui::Mode::full_screen, modal = true }
+        gui::set_backdrop{ &g, fs = &w.fs, &dev, panel = s.panel, kind = 3 }
+        // The 3D views are drawn under the panel: its own fill must not cover them.
+        gui::set_background{ &g, panel = s.panel, on = false }
+        s.open = true
+        s.view = galview::make{ &w, &g, &dev }
+        gui::play_sound{ &g, n = 4 }
+        // Planets show when available and can be clicked when selectable.
+        let mut row: i32 = 0
+        while row < party::PLANETS and @as(usize, row) < twoda::rows{ t = s.table } {
+            let tag = tag_of{ s = &s, row }
+            if tag.len > 0 {
+                gui::set_visible{ &g, panel = s.panel, tag, visible = party::planet_flag{ w = &w, planet = row, bit = party::PLANET_AVAILABLE_SHIFT } }
+                gui::set_enabled{ &g, panel = s.panel, tag, enabled = party::planet_flag{ w = &w, planet = row, bit = party::PLANET_SELECTABLE_SHIFT } }
+            }
+            row = row + 1
+        }
+        // The Xbox Live planets have no art in the install: their buttons never show.
+        let mut live: usize = 0
+        let live_tags: [5][]u8 = ["LBL_Live01", "LBL_Live02", "LBL_Live03", "LBL_Live04", "LBL_Live05"]
+        while live < 5 {
+            gui::set_visible{ &g, panel = s.panel, tag = live_tags[live], visible = false }
+            live = live + 1
+        }
+        s.selected = -1
+        if planet >= 0 and selectable{ s = &s, w = &w, row = planet } { s.selected = planet }
+        else if selectable{ s = &s, w = &w, row = w.party.planet_selected } { s.selected = w.party.planet_selected }
+        else {
+            let mut r: i32 = 0
+            while r < party::PLANETS and s.selected < 0 {
+                if selectable{ s = &s, w = &w, row = r } { s.selected = r }
+                r = r + 1
+            }
+        }
+        try show_planet{ &s, &g, &w, &dev }
+    }
+
+    // Whether the row is a planet with a button that can be chosen.
+    fn selectable { s: *State, w: *world::World, row: i32 } -> bool {
+        if row < 0 or row >= party::PLANETS or @as(usize, row) >= twoda::rows{ t = s.table } { return false }
+        if tag_of{ s, row }.len == 0 { return false }
+        return party::planet_flag{ w, planet = row, bit = party::PLANET_AVAILABLE_SHIFT } and party::planet_flag{ w, planet = row, bit = party::PLANET_SELECTABLE_SHIFT }
+    }
+
+    fn close_panel { mut s: State, mut g: gui::Gui, mut dev: gpu::Device } {
+        if not s.open { return }
+        if s.view is some{ value = v } { galview::free{ v, &dev } }
+        s.view = null
+        gui::close{ &g, id = s.panel }
+        gui::play_sound{ &g, n = 5 }
+        s.open = false
+    }
+
+    // The selected planet's name, description and model, and Travel.
+    fn show_planet { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+        let p = s.panel
+        gui::set_text{ &g, panel = p, tag = "3D_PlanetModel", text = "" } iferr {}
+        gui::set_enabled{ &g, panel = p, tag = "BTN_ACCEPT", enabled = s.selected >= 0 }
+        gui::set_text_color{ &g, panel = p, tag = "BTN_ACCEPT", color = if s.selected >= 0 { gui::color_menu{} } else { gui::color_disabled{} } }
+        if s.selected < 0 {
+            try gui::set_text{ &g, panel = p, tag = "LBL_PLANETNAME", text = "" }
+            try gui::set_text{ &g, panel = p, tag = "LBL_DESC", text = "" }
+            return
+        }
+        let row = @as(usize, s.selected)
+        let name = twoda::get_int{ t = s.table, row, column = "name" } ifnull 0
+        let desc = twoda::get_int{ t = s.table, row, column = "description" } ifnull 0
+        try gui::set_strref{ &g, panel = p, tag = "LBL_PLANETNAME", strref = @as(u32, name) }
+        if desc > 0 {
+            try gui::set_strref{ &g, panel = p, tag = "LBL_DESC", strref = @as(u32, desc) }
+        } else {
+            try gui::set_text{ &g, panel = p, tag = "LBL_DESC", text = "" }
+        }
+        gui::set_focus{ &g, panel = p, tag = tag_of{ s = &s, row = s.selected } }
+        if s.view is some{ value = v } {
+            let model = twoda::get_string{ t = s.table, row, column = "model" } ifnull ""
+            galview::set_planet{ v, &w, &g, &dev, model = if slice::eq_bytes{ a = model, b = "****" } { "" } else { model } }
+        }
+    }
+
+    fn on_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> bool {
+        if not s.open or ev.panel != s.panel { return false }
+        if ev.kind == gui::EventKind::cancel {
+            close_panel{ &s, &g, &dev }
+            return true
+        }
+        if ev.kind != gui::EventKind::activate { return true }
+        if slice::eq_bytes{ a = ev.tag, b = "BTN_BACK" } {
+            close_panel{ &s, &g, &dev }
+            return true
+        }
+        if slice::eq_bytes{ a = ev.tag, b = "BTN_ACCEPT" } {
+            travel{ &s, &g, &w, &dev }
+            return true
+        }
+        // A planet button.
+        let mut row: i32 = 0
+        while row < party::PLANETS and @as(usize, row) < twoda::rows{ t = s.table } {
+            if slice::eq_bytes{ a = ev.tag, b = tag_of{ s = &s, row } } and selectable{ s = &s, w = &w, row } {
+                s.selected = row
+                gui::play_sound{ &g, n = 1 }
+                show_planet{ &s, &g, &w, &dev } iferr err{ error } { _ = @fmt(&w.io, "kotor: galaxy map: {}\n", error) }
+                break
+            }
+            row = row + 1
+        }
+        return true
+    }
+
+    // Travel: the selection is the party table's, and k_sup_galaxymap does the rest. The script
+    // runs as the module (the original's owner is OBJECT_INVALID) after the panel has gone.
+    fn travel { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } {
+        if s.selected < 0 { return }
+        w.party.planet_selected = s.selected
+        close_panel{ &s, &g, &dev }
+        events::post{ &w, delay_ms = 0, caller = w.module, target = w.module, payload = events::Payload::run_script{ name = resref::truncate{ name = SCRIPT } } }
+    }
+
+    fn update { mut s: State, mut w: world::World, dt: f32 } {
+        if not s.open { return }
+        if s.view is some{ value = v } { galview::update{ v, &w, dt } }
+    }
+
+    // Between the backdrop and the panel: the 3D views.
+    fn draw_views { mut s: State, mut g: gui::Gui, mut frame: render::Frame, target: render::Size } {
+        if not s.open { return }
+        if s.view is some{ value = v } { galview::draw{ v, &g, &frame, panel = s.panel, target } }
+    }
+}

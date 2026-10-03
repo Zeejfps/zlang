@@ -1,0 +1,8 @@
+# The galaxy map: Taris, Dantooine, Tatooine and Kashyyyk can be chosen, Manaan shows but cannot,
+# the rest are hidden; Dantooine is selected, then Tatooine by a click, then Travel (the script
+# k_sup_galaxymap reads the selection: run with --log scripts,routines to see it).
+#   MODULE=danm13 sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/galaxy.txt 70 14:gx_open 26:gx_click 40:gx_travel
+3 ui planets 1 3 4 5
+3 ui galaxy 3
+20 ui click 800 267
+34 ui click 504 543
