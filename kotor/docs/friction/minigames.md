@@ -29,3 +29,10 @@ Where ctxlang got in the way. Each entry: what we wanted, what we wrote instead,
 - **Integer arithmetic that wraps on purpose is verbose.** The C runtime's `rand()` (the original's
   shuffles) is `state * 214013 + 2531011` mod 2^32: `@wrap_add(@wrap_mul(state, 214013), 2531011)`, and
   every seed derivation in the tools (`seed + k * 2654435`) panicked on overflow until wrapped.
+- **A bound function's result counts as derived from its arguments.** `lookup{ name = resref::bytes{ r = &pname } }`
+  (a `&fn` giving a model by name) with `pname` a local copy, then storing what `sample_rail` made from
+  the model into heap memory: "cannot store the address of local `pname` through a pointer". Named the
+  models from the area's own (heap) resrefs instead (`&area.player.track`). Three sites in run.ctx; the
+  same family as the friction/models.md entry on caches.
+- **Narrowing does not reach fields.** `if w.minigame != null { w.minigame.input.fire = ... }` fails
+  ("?*mut mg::Run has no field `input`"); `let mr = w.minigame` first. Twice.
