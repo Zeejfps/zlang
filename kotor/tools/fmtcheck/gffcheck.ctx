@@ -1,9 +1,34 @@
-// The GFF corpus check (stub until lib/formats/gff.ctx lands).
+// The GFF corpus check, as kotor/tools/py/gff_probe.py does it: every copy whose header says
+// `V3.2` is parsed; written back in the engine's layout and parsed again, the tree must be the
+// same; and some writer setting must give back the original bytes. Settings are tried in the
+// probe's order (orders dfs, elements, keep; field indices second, by_struct, move; list indices
+// by_field, move), then "keep with the last k fields appended later".
 namespace gff_check {
-    struct Stats { copies: u64 }
+    // A setting: order * 6 + fi * 2 + li, or 18 + the same for "appended later", or UNEXPLAINED.
+    const SETTINGS: usize = 37
+    const UNEXPLAINED: usize = 36
+    const TAGS: usize = 32
+
+    struct TagCount { tag: [4]u8, n: u32 }
+
+    struct Class { n: u32, ntags: u32, tags: [32]TagCount }
+
+    struct Stats {
+        copies: u64,
+        parse_failed: u64,
+        semantic_failed: u64,
+        engine_identical: u64,
+        explained: u64,
+        types: [18]u64,                 // fields by type
+        classes: [2][37]Class,          // shipped, save
+    }
 
     fn new_stats {} -> Stats {
-        return Stats{ copies = 0 }
+        let empty = Class{ n = 0, ntags = 0, tags = [TagCount{ tag = [0, 0, 0, 0], n = 0 }; 32] }
+        return Stats{
+            copies = 0, parse_failed = 0, semantic_failed = 0, engine_identical = 0, explained = 0,
+            types = [0; 18], classes = [[empty; 37]; 2],
+        }
     }
 
     fn wants { kind: u16 } -> bool {
@@ -12,11 +37,236 @@ namespace gff_check {
     }
 
     fn check { mut io: Io, mut st: Stats, mut scratch: arena::Arena, copy: corpus::Copy, data: []u8, verbose: bool } {
+        if data.len < 8 or not slice::eq_bytes{ a = data[4..8], b = "V3.2" } { return }
         st.copies = st.copies + 1
+        let doc = gff::parse{ data, realloc = arena::alloc, heap = &scratch } iferr err{ error } {
+            st.parse_failed = st.parse_failed + 1
+            _ = @fmt(&io, "gff FAIL parse {}: {}\n", copy, error)
+            return
+        }
+        count_types{ st = &st, doc }
+        let save = ci::find{ s = copy.path, needle = "/saves/" } != null or ci::find{ s = copy.path, needle = "\\saves\\" } != null
+        let source: usize = if save { 1 } else { 0 }
+        let tag = doc.tag
+
+        // The engine's layout, and the semantic round trip through it.
+        let mark = scratch.used
+        let engine = write{ &scratch, doc, order = gffw::Order::dfs, layout = gffw::ENGINE } iferr err{ error } {
+            st.semantic_failed = st.semantic_failed + 1
+            _ = @fmt(&io, "gff FAIL write {}: {}\n", copy, error)
+            return
+        }
+        let again = gff::parse{ data = engine, realloc = arena::alloc, heap = &scratch } iferr err{ error } {
+            st.semantic_failed = st.semantic_failed + 1
+            _ = @fmt(&io, "gff FAIL reparse {}: {}\n", copy, error)
+            return
+        }
+        if not same_struct{ a = doc, sa = gff::ROOT, b = again, sb = gff::ROOT } {
+            st.semantic_failed = st.semantic_failed + 1
+            _ = @fmt(&io, "gff FAIL round trip {}: the tree changed\n", copy)
+        }
+        if slice::eq_bytes{ a = engine, b = data } {
+            st.engine_identical = st.engine_identical + 1
+            note{ st = &st, source, setting = 0, tag }
+            return
+        }
+        scratch.used = mark
+
+        let setting = classify{ &scratch, doc, data } ifnull UNEXPLAINED
+        if setting == UNEXPLAINED {
+            _ = @fmt(&io, "gff FAIL bytes {}: no writer setting reproduces it\n", copy)
+        } else if verbose {
+            _ = @fmt(&io, "gff {}: {}\n", copy, setting_name{ i = setting })
+        }
+        note{ st = &st, source, setting, tag }
+    }
+
+    // The first setting whose output is `data`, or null.
+    fn classify { mut scratch: arena::Arena, doc: gff::Doc, data: []u8 } -> ?usize {
+        let orders: [3]gffw::Order = [gffw::Order::dfs, gffw::Order::elements, gffw::Order::keep]
+        let fis: [3]gffw::Fi = [gffw::Fi::second, gffw::Fi::by_struct, gffw::Fi::move]
+        let lis: [2]gffw::Li = [gffw::Li::by_field, gffw::Li::move]
+        let mark = scratch.used
+        let mut o: usize = 0
+        while o < 3 {
+            let mut b = gffw::new{ realloc = arena::alloc, heap = &scratch, tag = doc.tag[..] } iferr { return null }
+            gffw::copy_doc{ &b, doc, order = orders[o] } iferr { return null }
+            let mut i: usize = 0
+            while i < 3 {
+                let mut j: usize = 0
+                while j < 2 {
+                    let inner = scratch.used
+                    let out = gffw::finish{ &b, layout = gffw::Layout{ fi = fis[i], li = lis[j], late = 0 } } iferr { return null }
+                    if slice::eq_bytes{ a = out, b = data } { return o * 6 + i * 2 + j }
+                    scratch.used = inner
+                    j = j + 1
+                }
+                i = i + 1
+            }
+            scratch.used = mark
+            o = o + 1
+        }
+        // Built, then fields appended in place: the last k fields are late, none a struct or list.
+        let mut b = gffw::new{ realloc = arena::alloc, heap = &scratch, tag = doc.tag[..] } iferr { return null }
+        gffw::copy_doc{ &b, doc, order = gffw::Order::keep } iferr { return null }
+        let fields = list::items{ list = b.fields }
+        let mut k: usize = 1
+        while k <= 64 and k <= fields.len {
+            let last = fields[fields.len - k].kind
+            if last == @as(u32, gff::Kind::structure) or last == @as(u32, gff::Kind::list) { break }
+            let mut i: usize = 0
+            while i < 3 {
+                let mut j: usize = 0
+                while j < 2 {
+                    let inner = scratch.used
+                    let out = gffw::finish{ &b, layout = gffw::Layout{ fi = fis[i], li = lis[j], late = @trunc(u32, k) } } iferr { return null }
+                    if slice::eq_bytes{ a = out, b = data } { return 18 + 12 + i * 2 + j }
+                    scratch.used = inner
+                    j = j + 1
+                }
+                i = i + 1
+            }
+            k = k + 1
+        }
+        return null
+    }
+
+    fn write { mut scratch: arena::Arena, doc: gff::Doc, order: gffw::Order, layout: gffw::Layout } -> !alloc::Bytes {
+        let mut b = try gffw::new{ realloc = arena::alloc, heap = &scratch, tag = doc.tag[..] }
+        try gffw::copy_doc{ &b, doc, order }
+        return try gffw::finish{ &b, layout }
+    }
+
+    fn note { mut st: Stats, source: usize, setting: usize, tag: [4]u8 } {
+        if setting != UNEXPLAINED { st.explained = st.explained + 1 }
+        let c = &st.classes[source][setting]
+        c.n = c.n + 1
+        let mut i: u32 = 0
+        while i < c.ntags {
+            if slice::eq_bytes{ a = c.tags[i].tag[..], b = tag[..] } {
+                c.tags[i].n = c.tags[i].n + 1
+                return
+            }
+            i = i + 1
+        }
+        if c.ntags < 32 {
+            c.tags[c.ntags] = TagCount{ tag, n = 1 }
+            c.ntags = c.ntags + 1
+        }
+    }
+
+    fn count_types { mut st: Stats, doc: gff::Doc } {
+        let mut f: usize = 0
+        while f < doc.fields.len {
+            if doc.fields[f].label != gff::NONE {
+                let k = @as(usize, doc.fields[f].kind)
+                st.types[k] = st.types[k] + 1
+            }
+            f = f + 1
+        }
+    }
+
+    // Whether two parsed trees hold the same structs, labels, types and values (floats by bits).
+    fn same_struct { a: gff::Doc, sa: u32, b: gff::Doc, sb: u32 } -> bool {
+        if a.structs[sa].id != b.structs[sb].id { return false }
+        let fa = gff::fields_of{ doc = a, s = sa }
+        let fb = gff::fields_of{ doc = b, s = sb }
+        if fa.len != fb.len { return false }
+        let mut i: usize = 0
+        while i < fa.len {
+            if a.fields[fa[i]].kind != b.fields[fb[i]].kind { return false }
+            if not slice::eq_bytes{ a = gff::label_of{ doc = a, f = fa[i] }, b = gff::label_of{ doc = b, f = fb[i] } } { return false }
+            if not same_value{ a, fa = fa[i], b, fb = fb[i] } { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    fn same_value { a: gff::Doc, fa: u32, b: gff::Doc, fb: u32 } -> bool {
+        let va = gff::value{ doc = a, f = fa }
+        let vb = gff::value{ doc = b, f = fb }
+        match va {
+            structure{ index } => {
+                let other = if vb is structure{ index = j } { j } else { return false }
+                return same_struct{ a, sa = index, b, sb = other }
+            }
+            list{ items } => {
+                let other = if vb is list{ items = j } { j } else { return false }
+                if items.len != other.len { return false }
+                let mut k: usize = 0
+                while k < items.len {
+                    if not same_struct{ a, sa = items[k], b, sb = other[k] } { return false }
+                    k = k + 1
+                }
+                return true
+            }
+            else => {
+                if gff::is_inline{ kind = a.fields[fa].kind } { return a.fields[fa].raw == b.fields[fb].raw }
+                return slice::eq_bytes{ a = complex_bytes{ doc = a, f = fa }, b = complex_bytes{ doc = b, f = fb } }
+            }
+        }
+    }
+
+    // A complex value's stored bytes.
+    fn complex_bytes { doc: gff::Doc, f: u32 } -> []u8 {
+        let d = @as(usize, doc.fields[f].raw)
+        let fd = doc.data
+        let n: usize = match doc.fields[f].kind {
+            dword64 | int64 | double => { 8 }
+            orientation => { 16 }
+            vector => { 12 }
+            exostring | void => { 4 + @as(usize, le::get_u32{ data = fd, at = d } iferr 0) }
+            resref => { 1 + @as(usize, le::get_u8{ data = fd, at = d } iferr 0) }
+            locstring => { 4 + @as(usize, le::get_u32{ data = fd, at = d } iferr 0) }
+            else => { 0 }
+        }
+        return fd[d..d + n]
+    }
+
+    fn setting_name { i: usize } -> []u8 {
+        if i == UNEXPLAINED { return "unexplained" }
+        let names: [18][]u8 = [
+            "dfs/second/field", "dfs/second/move", "dfs/struct/field", "dfs/struct/move", "dfs/move/field", "dfs/move/move",
+            "elements/second/field", "elements/second/move", "elements/struct/field", "elements/struct/move", "elements/move/field", "elements/move/move",
+            "keep/second/field", "keep/second/move", "keep/struct/field", "keep/struct/move", "keep/move/field", "keep/move/move",
+        ]
+        if i < 18 { return names[i] }
+        return names[i - 18]
     }
 
     fn report { mut io: Io, st: Stats, verbose: bool } -> u64 {
-        _ = @fmt(&io, "gff: {} copies\n", st.copies)
-        return 0
+        _ = @fmt(&io, "gff: {} files checked, {} parse failures, {} semantic round-trip failures\n", st.copies, st.parse_failed, st.semantic_failed)
+        _ = @fmt(&io, "gff: byte-identical in the engine save layout (dfs/second/field): {}\n", st.engine_identical)
+        _ = @fmt(&io, "gff: byte-identical with some setting: {}, reproduced by none: {}\n", st.explained, st.copies - st.parse_failed - st.explained)
+        _ = @fmt(&io, "gff: by setting (order/fi/li):\n")
+        let sources: [2][]u8 = ["shipped", "save"]
+        let mut src: usize = 0
+        while src < 2 {
+            let mut i: usize = 0
+            while i < SETTINGS {
+                let c = st.classes[src][i]
+                if c.n > 0 {
+                    let late: []u8 = if i >= 18 and i != UNEXPLAINED { " + fields appended later" } else { "" }
+                    _ = @fmt(&io, "  {} {}{} {}:", sources[src], setting_name{ i }, late, c.n)
+                    let mut k: u32 = 0
+                    while k < c.ntags {
+                        _ = @fmt(&io, " {} {}", text::trim{ s = c.tags[k].tag[..] }, c.tags[k].n)
+                        k = k + 1
+                    }
+                    _ = @fmt(&io, "\n")
+                }
+                i = i + 1
+            }
+            src = src + 1
+        }
+        if verbose {
+            _ = @fmt(&io, "gff: fields by type:\n")
+            let mut t: usize = 0
+            while t < 18 {
+                _ = @fmt(&io, "  {} {} {}\n", t, gff::kind_name{ kind = @as(gff::Kind, @trunc(u32, t)) }, st.types[t])
+                t = t + 1
+            }
+        }
+        return st.parse_failed + st.semantic_failed + (st.copies - st.parse_failed - st.explained)
     }
 }

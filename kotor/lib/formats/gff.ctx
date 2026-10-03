@@ -1,0 +1,561 @@
+// GFF V3.2, BioWare's Generic File Format (docs/formats/gff.md): a tree of structs whose fields
+// have a label and a type, with lists of structs. Blueprints, areas, dialogues, GUIs, journals,
+// paths and every save record are GFFs.
+//
+//   let doc = try gff::parse{ data, realloc, &heap }
+//   let tag = gff::get_string{ doc, s = gff::ROOT, label = "Tag" } ifnull { ... }
+//   let items = gff::get_list{ doc, s = gff::ROOT, label = "ItemList" } ifnull { ... }   // []u32
+//   let mut i: usize = 0
+//   while i < items.len {
+//       let res = gff::get_resref{ doc, s = items[i], label = "InventoryRes" } ifnull ""
+//       ...
+//   }
+//
+// Structs and fields are numbered as in the file; ROOT is struct 0. Labels compare exactly
+// (case-sensitive: `SubType` and `Subtype` are different fields). A struct may hold a label twice
+// (29 shipped dialogues do); lookups take the first.
+//
+// `parse` checks everything once (gff.md, "Validating while reading"): sections inside the file,
+// every index in range, every value inside the field data, each struct and field reached once from
+// the root. After that no accessor can fail or read outside the data, so they return values, not
+// errors. A Doc holds views into `data`, which must outlive it; its arrays come from `realloc`
+// (`free` gives them back).
+//
+// Writing is lib/formats/gffw.ctx.
+namespace gff {
+    // Shorter than the 56-byte header, or not `V3.2`.
+    error bad_header
+    // A section outside the file: 0 structs, 1 fields, 2 labels, 3 field data, 4 field indices,
+    // 5 list indices.
+    error bad_section{ section: u32 }
+    // No struct 0.
+    error no_root
+    // A struct's field indices, or a list, outside its array or misaligned.
+    error bad_offset{ at: u32 }
+    // A field, label or struct index out of range.
+    error bad_index{ index: u32 }
+    // A complex value outside the field data (or a LocString whose sizes disagree).
+    error bad_value{ field: u32 }
+    // A struct or field reached twice: shared, or a cycle.
+    error shared{ index: u32 }
+    // A field type above 17.
+    error bad_type{ field: u32, kind: u32 }
+    // Structs nested deeper than MAX_DEPTH.
+    error too_deep
+
+    const HEADER: usize = 56
+    const ROOT: u32 = 0
+    const NONE: u32 = 4294967295            // a struct with no fields; the top struct's id
+    const MAX_DEPTH: u32 = 512
+
+    enum Kind: u32 {
+        byte, char, word, short, dword, int, dword64, int64, float, double,
+        exostring, resref, locstring, void, structure, list, orientation, vector,
+    }
+
+    // A struct: its id (chosen by the writer, NONE for the top one) and its fields, which are
+    // members[first .. first + count].
+    struct Struct { id: u32, first: u32, count: u32 }
+
+    // A field: type, label (index into labels), the file's 4-byte value (inline value, field data
+    // offset, struct index or list offset) and, for a list, where its count and elements start in
+    // `elements`.
+    struct Field { kind: Kind, label: u32, raw: u32, aux: u32 }
+
+    struct Doc {
+        tag: [4]u8,
+        structs: []mut Struct,
+        fields: []mut Field,
+        labels: []mut []u8,
+        members: []mut u32,         // each struct's field indices, in struct order of reaching
+        elements: []mut u32,        // each list: its count, then its struct indices
+        data: []u8,                 // the field data block
+    }
+
+    // A CExoLocString: a dialog.tlk StrRef (-1 for none) and embedded strings, each with an id of
+    // language * 2 + gender. `body` holds the strings as stored: id u32, length u32, bytes.
+    struct LocString { strref: i32, count: u32, body: []u8 }
+
+    struct Substring { id: u32, text: []u8 }
+
+    // A field's value. Text and bytes are views into the file.
+    union Value {
+        byte{ v: u8 },
+        char{ v: i8 },
+        word{ v: u16 },
+        short{ v: i16 },
+        dword{ v: u32 },
+        int{ v: i32 },
+        dword64{ v: u64 },
+        int64{ v: i64 },
+        float{ v: f32 },
+        double{ v: f64 },
+        exostring{ v: []u8 },
+        resref{ v: []u8 },
+        locstring{ v: LocString },
+        void{ v: []u8 },
+        structure{ index: u32 },
+        list{ items: []u32 },
+        orientation{ v: [4]f32 },
+        vector{ v: [3]f32 },
+    }
+
+    // ---- reading
+
+    fn parse(S) { data: []u8, realloc: alloc::Fn(S), mut heap: S } -> !Doc {
+        if data.len < HEADER or not slice::eq_bytes{ a = data[4..8], b = "V3.2" } { return bad_header }
+        let mut h: [12]u32
+        let mut k: usize = 0
+        while k < 12 {
+            h[k] = try le::get_u32{ data, at = 8 + 4 * k }
+            k = k + 1
+        }
+        let sizes: [6]u64 = [12 * @as(u64, h[1]), 12 * @as(u64, h[3]), 16 * @as(u64, h[5]), h[7], h[9], h[11]]
+        k = 0
+        while k < 6 {
+            if @as(u64, h[2 * k]) + sizes[k] > @as(u64, data.len) { return bad_section{ section = @trunc(u32, k) } }
+            k = k + 1
+        }
+        if h[1] < 1 { return no_root }
+        if h[9] % 4 != 0 { return bad_section{ section = 4 } }
+        if h[11] % 4 != 0 { return bad_section{ section = 5 } }
+
+        let mut r = Reader{
+            data,
+            structs_at = h[0], nstructs = h[1], fields_at = h[2], nfields = h[3],
+            labels_at = h[4], nlabels = h[5],
+            fdata = data[h[6]..h[6] + h[7]],
+            findices = data[h[8]..h[8] + h[9]],
+            lindices = data[h[10]..h[10] + h[11]],
+            nmembers = 0, nelements = 0,
+        }
+        let mut doc = Doc{
+            tag = [data[0], data[1], data[2], data[3]],
+            structs = slice::empty(Struct){}, fields = slice::empty(Field){}, labels = slice::empty([]u8){},
+            members = slice::empty(u32){}, elements = slice::empty(u32){}, data = r.fdata,
+        }
+        let mut ok = false
+        defer { if not ok { free{ doc, realloc, &heap } } }
+        doc.structs = try alloc::resize(Struct, S){ realloc, &heap, mem = slice::empty(Struct){}, count = h[1] }
+        doc.fields = try alloc::resize(Field, S){ realloc, &heap, mem = slice::empty(Field){}, count = h[3] }
+        doc.labels = try alloc::resize([]u8, S){ realloc, &heap, mem = slice::empty([]u8){}, count = h[5] }
+        doc.members = try alloc::resize(u32, S){ realloc, &heap, mem = slice::empty(u32){}, count = h[3] }
+        doc.elements = try alloc::resize(u32, S){ realloc, &heap, mem = slice::empty(u32){}, count = @as(usize, h[11]) / 4 }
+
+        // Mark everything unreached: a struct's count NONE, a field's label NONE.
+        let mut i: usize = 0
+        while i < doc.structs.len {
+            doc.structs[i] = Struct{ id = 0, first = 0, count = NONE }
+            i = i + 1
+        }
+        i = 0
+        while i < doc.fields.len {
+            doc.fields[i] = Field{ kind = Kind::byte, label = NONE, raw = 0, aux = 0 }
+            i = i + 1
+        }
+        i = 0
+        while i < doc.labels.len {
+            let raw = data[@as(usize, h[4]) + 16 * i..@as(usize, h[4]) + 16 * i + 16]
+            let n = text::find_byte{ s = raw, c = 0 } ifnull 16
+            doc.labels[i] = raw[..n]
+            i = i + 1
+        }
+        try read_struct{ &r, &doc, s = ROOT, depth = 0 }
+        ok = true
+        return doc
+    }
+
+    // Gives back the arrays `parse` allocated.
+    fn free(S) { doc: Doc, realloc: alloc::Fn(S), mut heap: S } {
+        _ = alloc::resize(Struct, S){ realloc, &heap, mem = doc.structs, count = 0 }
+        _ = alloc::resize(Field, S){ realloc, &heap, mem = doc.fields, count = 0 }
+        _ = alloc::resize([]u8, S){ realloc, &heap, mem = doc.labels, count = 0 }
+        _ = alloc::resize(u32, S){ realloc, &heap, mem = doc.members, count = 0 }
+        _ = alloc::resize(u32, S){ realloc, &heap, mem = doc.elements, count = 0 }
+    }
+
+    // The parse's position in the file's sections.
+    struct Reader {
+        data: []u8,
+        structs_at: u32, nstructs: u32,
+        fields_at: u32, nfields: u32,
+        labels_at: u32, nlabels: u32,
+        fdata: []u8,
+        findices: []u8,
+        lindices: []u8,
+        nmembers: u32,
+        nelements: u32,
+    }
+
+    fn read_struct { mut r: Reader, mut doc: Doc, s: u32, depth: u32 } -> ! {
+        if depth > MAX_DEPTH { return too_deep }
+        if s >= r.nstructs { return bad_index{ index = s } }
+        if doc.structs[s].count != NONE { return shared{ index = s } }
+        let at = @as(usize, r.structs_at) + 12 * @as(usize, s)
+        let id = try le::get_u32{ data = r.data, at }
+        let dd = try le::get_u32{ data = r.data, at = at + 4 }
+        let n = try le::get_u32{ data = r.data, at = at + 8 }
+        if n > r.nfields - r.nmembers { return bad_index{ index = n } }
+        let first = r.nmembers
+        doc.structs[s] = Struct{ id, first, count = n }
+        r.nmembers = r.nmembers + n
+        if n == 1 {
+            doc.members[first] = dd
+        } else if n > 1 {
+            if dd % 4 != 0 or not le::fits{ data = r.findices, at = dd, want = 4 * @as(usize, n) } { return bad_offset{ at = dd } }
+            let mut k: u32 = 0
+            while k < n {
+                doc.members[first + k] = le::get_u32{ data = r.findices, at = @as(usize, dd) + 4 * @as(usize, k) } iferr 0
+                k = k + 1
+            }
+        }
+        let mut k: u32 = 0
+        while k < n {
+            try read_field{ &r, &doc, f = doc.members[first + k], depth }
+            k = k + 1
+        }
+    }
+
+    fn read_field { mut r: Reader, mut doc: Doc, f: u32, depth: u32 } -> ! {
+        if f >= r.nfields { return bad_index{ index = f } }
+        if doc.fields[f].label != NONE { return shared{ index = f } }
+        let at = @as(usize, r.fields_at) + 12 * @as(usize, f)
+        let t = try le::get_u32{ data = r.data, at }
+        let label = try le::get_u32{ data = r.data, at = at + 4 }
+        let dd = try le::get_u32{ data = r.data, at = at + 8 }
+        if t > 17 { return bad_type{ field = f, kind = t } }
+        if label >= r.nlabels { return bad_index{ index = label } }
+        let kind = @as(Kind, t)
+        doc.fields[f] = Field{ kind, label, raw = dd, aux = 0 }
+        let fd = r.fdata
+        let size: usize = match kind {
+            dword64 | int64 | double => { 8 }
+            orientation => { 16 }
+            vector => { 12 }
+            exostring | void => {
+                let n = le::get_u32{ data = fd, at = dd } iferr { return bad_value{ field = f } }
+                4 + @as(usize, n)
+            }
+            resref => {
+                let n = le::get_u8{ data = fd, at = dd } iferr { return bad_value{ field = f } }
+                1 + @as(usize, n)
+            }
+            locstring => {
+                if not locstring_fits{ fd, at = dd } { return bad_value{ field = f } }
+                0
+            }
+            structure => {
+                doc.fields[f].aux = dd
+                try read_struct{ &r, &doc, s = dd, depth = depth + 1 }
+                0
+            }
+            list => {
+                try read_list{ &r, &doc, f, offset = dd, depth }
+                0
+            }
+            else => { 0 }
+        }
+        if size > 0 and not le::fits{ data = fd, at = dd, want = size } { return bad_value{ field = f } }
+    }
+
+    fn read_list { mut r: Reader, mut doc: Doc, f: u32, offset: u32, depth: u32 } -> ! {
+        if offset % 4 != 0 { return bad_offset{ at = offset } }
+        let n = le::get_u32{ data = r.lindices, at = offset } iferr { return bad_offset{ at = offset } }
+        if not le::fits{ data = r.lindices, at = @as(usize, offset) + 4, want = 4 * @as(usize, n) } { return bad_offset{ at = offset } }
+        if @as(u64, r.nelements) + 1 + @as(u64, n) > @as(u64, doc.elements.len) { return bad_offset{ at = offset } }
+        let start = r.nelements
+        doc.fields[f].aux = start
+        doc.elements[start] = n
+        r.nelements = r.nelements + 1 + n
+        let mut k: u32 = 0
+        while k < n {
+            doc.elements[start + 1 + k] = le::get_u32{ data = r.lindices, at = @as(usize, offset) + 4 + 4 * @as(usize, k) } iferr 0
+            k = k + 1
+        }
+        k = 0
+        while k < n {
+            try read_struct{ &r, &doc, s = doc.elements[start + 1 + k], depth = depth + 1 }
+            k = k + 1
+        }
+    }
+
+    // Whether the LocString at `at` lies in the field data with sizes that agree: TotalSize,
+    // then StrRef, count, and count substrings ending exactly at TotalSize.
+    fn locstring_fits { fd: []u8, at: u32 } -> bool {
+        let total = le::get_u32{ data = fd, at } iferr { return false }
+        if total < 8 or not le::fits{ data = fd, at = @as(usize, at) + 4, want = total } { return false }
+        let body = fd[@as(usize, at) + 4..@as(usize, at) + 4 + @as(usize, total)]
+        let count = le::get_u32{ data = body, at = 4 } iferr { return false }
+        let mut p: usize = 8
+        let mut i: u32 = 0
+        while i < count {
+            if p + 8 > body.len { return false }
+            let n = le::get_u32{ data = body, at = p + 4 } iferr { return false }
+            if @as(usize, n) > body.len - p - 8 { return false }
+            p = p + 8 + n
+            i = i + 1
+        }
+        return p == body.len
+    }
+
+    // ---- the tree
+
+    // The fields of struct `s`, as field indices.
+    fn fields_of { doc: Doc, s: u32 } -> []u32 {
+        let st = doc.structs[s]
+        return doc.members[st.first..st.first + st.count]
+    }
+
+    fn struct_id { doc: Doc, s: u32 } -> u32 {
+        return doc.structs[s].id
+    }
+
+    fn label_of { doc: Doc, f: u32 } -> []u8 {
+        return doc.labels[doc.fields[f].label]
+    }
+
+    fn kind_of { doc: Doc, f: u32 } -> Kind {
+        return doc.fields[f].kind
+    }
+
+    // The first field of struct `s` labelled `label`, or null.
+    fn find { doc: Doc, s: u32, label: []u8 } -> ?u32 {
+        let st = doc.structs[s]
+        let mut i = st.first
+        while i < st.first + st.count {
+            let f = doc.members[i]
+            if slice::eq_bytes{ a = doc.labels[doc.fields[f].label], b = label } { return f }
+            i = i + 1
+        }
+        return null
+    }
+
+    // Field `f`'s value.
+    fn value { doc: Doc, f: u32 } -> Value {
+        let fl = doc.fields[f]
+        let d = fl.raw
+        let fd = doc.data
+        return match fl.kind {
+            byte => { Value::byte{ v = @trunc(u8, d) } }
+            char => { Value::char{ v = i8_of{ b = @trunc(u8, d) } } }
+            word => { Value::word{ v = @trunc(u16, d) } }
+            short => { Value::short{ v = le::i16_of_bits{ bits = @trunc(u16, d) } } }
+            dword => { Value::dword{ v = d } }
+            int => { Value::int{ v = le::i32_of_bits{ bits = d } } }
+            dword64 => { Value::dword64{ v = le::get_u64{ data = fd, at = d } iferr 0 } }
+            int64 => { Value::int64{ v = le::get_i64{ data = fd, at = d } iferr 0 } }
+            float => { Value::float{ v = le::f32_of_bits{ bits = d } } }
+            double => { Value::double{ v = le::get_f64{ data = fd, at = d } iferr 0.0 } }
+            exostring => { Value::exostring{ v = sized{ fd, at = d } } }
+            void => { Value::void{ v = sized{ fd, at = d } } }
+            resref => {
+                let n = le::get_u8{ data = fd, at = d } iferr 0
+                Value::resref{ v = fd[@as(usize, d) + 1..@as(usize, d) + 1 + @as(usize, n)] }
+            }
+            locstring => { Value::locstring{ v = locstring_at{ fd, at = d } } }
+            structure => { Value::structure{ index = fl.aux } }
+            list => { Value::list{ items = list_items{ doc, start = fl.aux } } }
+            orientation => {
+                Value::orientation{ v = [
+                    le::get_f32{ data = fd, at = d } iferr 0.0, le::get_f32{ data = fd, at = d + 4 } iferr 0.0,
+                    le::get_f32{ data = fd, at = d + 8 } iferr 0.0, le::get_f32{ data = fd, at = d + 12 } iferr 0.0,
+                ] }
+            }
+            vector => {
+                Value::vector{ v = [
+                    le::get_f32{ data = fd, at = d } iferr 0.0, le::get_f32{ data = fd, at = d + 4 } iferr 0.0,
+                    le::get_f32{ data = fd, at = d + 8 } iferr 0.0,
+                ] }
+            }
+        }
+    }
+
+    // A byte as a signed one: CHAR is stored sign-extended, its low byte is the value.
+    fn i8_of { b: u8 } -> i8 {
+        if b < 128 { return @as(i8, b) }
+        return @as(i8, @as(i16, b) - 256)
+    }
+
+    // A CExoString or VOID: length, then the bytes (checked by parse).
+    fn sized { fd: []u8, at: u32 } -> []u8 {
+        let n = le::get_u32{ data = fd, at } iferr 0
+        return fd[@as(usize, at) + 4..@as(usize, at) + 4 + @as(usize, n)]
+    }
+
+    fn locstring_at { fd: []u8, at: u32 } -> LocString {
+        let total = le::get_u32{ data = fd, at } iferr 0
+        let body = fd[@as(usize, at) + 4..@as(usize, at) + 4 + @as(usize, total)]
+        return LocString{
+            strref = le::get_i32{ data = body, at = 0 } iferr -1,
+            count = le::get_u32{ data = body, at = 4 } iferr 0,
+            body = body[8..],
+        }
+    }
+
+    fn list_items { doc: Doc, start: u32 } -> []u32 {
+        let n = doc.elements[start]
+        return doc.elements[start + 1..start + 1 + n]
+    }
+
+    // ---- typed lookups: null when the struct has no field of that label, or it has another type
+
+    fn get_byte { doc: Doc, s: u32, label: []u8 } -> ?u8 {
+        let f = find{ doc, s, label } ifnull { return null }
+        return if value{ doc, f } is byte{ v } { v } else { null }
+    }
+
+    fn get_char { doc: Doc, s: u32, label: []u8 } -> ?i8 {
+        let f = find{ doc, s, label } ifnull { return null }
+        return if value{ doc, f } is char{ v } { v } else { null }
+    }
+
+    fn get_word { doc: Doc, s: u32, label: []u8 } -> ?u16 {
+        let f = find{ doc, s, label } ifnull { return null }
+        return if value{ doc, f } is word{ v } { v } else { null }
+    }
+
+    fn get_short { doc: Doc, s: u32, label: []u8 } -> ?i16 {
+        let f = find{ doc, s, label } ifnull { return null }
+        return if value{ doc, f } is short{ v } { v } else { null }
+    }
+
+    fn get_dword { doc: Doc, s: u32, label: []u8 } -> ?u32 {
+        let f = find{ doc, s, label } ifnull { return null }
+        return if value{ doc, f } is dword{ v } { v } else { null }
+    }
+
+    fn get_int { doc: Doc, s: u32, label: []u8 } -> ?i32 {
+        let f = find{ doc, s, label } ifnull { return null }
+        return if value{ doc, f } is int{ v } { v } else { null }
+    }
+
+    fn get_dword64 { doc: Doc, s: u32, label: []u8 } -> ?u64 {
+        let f = find{ doc, s, label } ifnull { return null }
+        return if value{ doc, f } is dword64{ v } { v } else { null }
+    }
+
+    fn get_int64 { doc: Doc, s: u32, label: []u8 } -> ?i64 {
+        let f = find{ doc, s, label } ifnull { return null }
+        return if value{ doc, f } is int64{ v } { v } else { null }
+    }
+
+    fn get_float { doc: Doc, s: u32, label: []u8 } -> ?f32 {
+        let f = find{ doc, s, label } ifnull { return null }
+        return if value{ doc, f } is float{ v } { v } else { null }
+    }
+
+    fn get_double { doc: Doc, s: u32, label: []u8 } -> ?f64 {
+        let f = find{ doc, s, label } ifnull { return null }
+        return if value{ doc, f } is double{ v } { v } else { null }
+    }
+
+    // Any of the integer types (BYTE to INT, DWORD64 and INT64), as an i64: for fields whose
+    // type the files don't agree on. A DWORD64 above i64's range is null.
+    fn get_number { doc: Doc, s: u32, label: []u8 } -> ?i64 {
+        let f = find{ doc, s, label } ifnull { return null }
+        return match value{ doc, f } {
+            byte{ v } => { @as(i64, v) }
+            char{ v } => { @as(i64, v) }
+            word{ v } => { @as(i64, v) }
+            short{ v } => { @as(i64, v) }
+            dword{ v } => { @as(i64, v) }
+            int{ v } => { @as(i64, v) }
+            int64{ v } => { v }
+            dword64{ v } => { if v > 9223372036854775807 { null } else { @as(i64, v) } }
+            else => { null }
+        }
+    }
+
+    // A CExoString's bytes (Windows-1252 text).
+    fn get_string { doc: Doc, s: u32, label: []u8 } -> ?[]u8 {
+        let f = find{ doc, s, label } ifnull { return null }
+        return if value{ doc, f } is exostring{ v } { v } else { null }
+    }
+
+    // A CResRef's bytes, as stored (any case; at most 255 bytes in the file, 16 in practice).
+    fn get_resref { doc: Doc, s: u32, label: []u8 } -> ?[]u8 {
+        let f = find{ doc, s, label } ifnull { return null }
+        return if value{ doc, f } is resref{ v } { v } else { null }
+    }
+
+    fn get_locstring { doc: Doc, s: u32, label: []u8 } -> ?LocString {
+        let f = find{ doc, s, label } ifnull { return null }
+        return if value{ doc, f } is locstring{ v } { v } else { null }
+    }
+
+    fn get_void { doc: Doc, s: u32, label: []u8 } -> ?[]u8 {
+        let f = find{ doc, s, label } ifnull { return null }
+        return if value{ doc, f } is void{ v } { v } else { null }
+    }
+
+    // A Struct field's child struct.
+    fn get_struct { doc: Doc, s: u32, label: []u8 } -> ?u32 {
+        let f = find{ doc, s, label } ifnull { return null }
+        return if value{ doc, f } is structure{ index } { index } else { null }
+    }
+
+    // A List field's element structs.
+    fn get_list { doc: Doc, s: u32, label: []u8 } -> ?[]u32 {
+        let f = find{ doc, s, label } ifnull { return null }
+        return if value{ doc, f } is list{ items } { items } else { null }
+    }
+
+    // A quaternion, w, x, y, z.
+    fn get_orientation { doc: Doc, s: u32, label: []u8 } -> ?[4]f32 {
+        let f = find{ doc, s, label } ifnull { return null }
+        return if value{ doc, f } is orientation{ v } { v } else { null }
+    }
+
+    fn get_vector { doc: Doc, s: u32, label: []u8 } -> ?[3]f32 {
+        let f = find{ doc, s, label } ifnull { return null }
+        return if value{ doc, f } is vector{ v } { v } else { null }
+    }
+
+    // ---- LocStrings
+
+    // Embedded string `i` (0 .. count - 1), or null.
+    fn loc_substring { ls: LocString, i: u32 } -> ?Substring {
+        let mut p: usize = 0
+        let mut k: u32 = 0
+        while k < ls.count {
+            let id = le::get_u32{ data = ls.body, at = p } iferr { return null }
+            let n = le::get_u32{ data = ls.body, at = p + 4 } iferr { return null }
+            if k == i {
+                let text = le::get_bytes{ data = ls.body, at = p + 8, len = n } iferr { return null }
+                return Substring{ id, text }
+            }
+            p = p + 8 + n
+            k = k + 1
+        }
+        return null
+    }
+
+    // The embedded string for `language` and `gender` (0 masculine or neutral, 1 feminine), or
+    // null. BioWare's rule: prefer it, then the StrRef from the talk table (the caller's).
+    fn loc_text { ls: LocString, language: u32, gender: u32 } -> ?[]u8 {
+        let want = language * 2 + gender
+        let mut i: u32 = 0
+        while i < ls.count {
+            let sub = loc_substring{ ls, i } ifnull { return null }
+            if sub.id == want { return sub.text }
+            i = i + 1
+        }
+        return null
+    }
+
+    // ---- names
+
+    fn kind_name { kind: Kind } -> []u8 {
+        return match kind {
+            byte => { "BYTE" } char => { "CHAR" } word => { "WORD" } short => { "SHORT" } dword => { "DWORD" }
+            int => { "INT" } dword64 => { "DWORD64" } int64 => { "INT64" } float => { "FLOAT" } double => { "DOUBLE" }
+            exostring => { "CExoString" } resref => { "CResRef" } locstring => { "CExoLocString" } void => { "VOID" }
+            structure => { "Struct" } list => { "List" } orientation => { "Orientation" } vector => { "Vector" }
+        }
+    }
+
+    // Whether a field of this type keeps its value in the field record (no field data).
+    fn is_inline { kind: Kind } -> bool {
+        return kind is byte | char | word | short | dword | int | float
+    }
+}

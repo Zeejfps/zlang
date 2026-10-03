@@ -22,6 +22,18 @@ namespace ci {
         return s.len >= suffix.len and eq{ a = s[s.len - suffix.len..], b = suffix }
     }
 
+    // The offset of the first occurrence of `needle` in `s`, ignoring case, or null. An empty
+    // needle is found at 0.
+    fn find { s: []u8, needle: []u8 } -> ?usize {
+        if needle.len > s.len { return null }
+        let mut i: usize = 0
+        while i + needle.len <= s.len {
+            if eq{ a = s[i..i + needle.len], b = needle } { return i }
+            i = i + 1
+        }
+        return null
+    }
+
     // -1, 0 or 1 as `a` sorts before, with or after `b` with both lower-cased, bytes as unsigned
     // numbers, a prefix first.
     fn compare { a: []u8, b: []u8 } -> i32 {
