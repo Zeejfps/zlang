@@ -121,6 +121,17 @@ namespace dlgview {
         if w.log.dialog {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "dialog view: line {} camera mode {}\n", line.serial, @as(u32, v.mode))
+            // The staging of the line: how far apart the two stand and in which rooms (a speaker behind a wall or
+            // a door, or across the area, is a script's staging that did not happen).
+            let so = world::object{ w = &w, id = line.speaker }
+            let lo = world::object{ w = &w, id = line.listener }
+            if so != null and lo != null {
+                let d = math::vec3::distance{ a = so.position, b = lo.position }
+                let sr = walkmap::room_at{ m = &w.walk, x = so.position.x, y = so.position.y, z = so.position.z + 0.5 }
+                let lr = walkmap::room_at{ m = &w.walk, x = lo.position.x, y = lo.position.y, z = lo.position.z + 0.5 }
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "dialog stage: {} and {} stand {} m apart (rooms {} and {})\n", so.tag, lo.tag, d, sr, lr)
+            }
         }
     }
 

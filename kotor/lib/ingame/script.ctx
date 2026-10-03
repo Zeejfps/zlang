@@ -95,7 +95,7 @@ namespace ingame {
                 if o.destroyed { continue }
                 let tag: []u8 = o.tag
                 if not has_part{ s = tag, part } { continue }
-                _ = @fmt(&w.io, "where {} k{} {} at {} {} {} hp {}\n", o.id, @as(u32, o.kind), tag, o.position.x, o.position.y, o.position.z, o.hp)
+                _ = @fmt(&w.io, "where {} k{} {} at {} {} {} hp {} facing {} {}\n", o.id, @as(u32, o.kind), tag, o.position.x, o.position.y, o.position.z, o.hp, o.orientation.x, o.orientation.y)
             }
         } else if ci::eq{ a = cmd, b = "goto" } {
             // Test helper: the leader walks (runs) to the object with the tag, as a click on the floor there would.
@@ -112,7 +112,7 @@ namespace ingame {
         } else if ci::eq{ a = cmd, b = "pos" } {
             // Test helper: where the leader is, its hit points, its action and whether a conversation runs.
             let o = world::object{ w = &w, id = w.pc } ifnull { return }
-            _ = @fmt(&w.io, "pos {} {} {} hp {}/{} talking {} pc {} leader {} player {}\n", o.position.x, o.position.y, o.position.z, o.hp, o.hp_max, w.conversation.active, w.pc, party::leader{ w = &w }, w.player)
+            _ = @fmt(&w.io, "pos {} {} {} hp {}/{} talking {} pc {} leader {} player {} facing {} {}\n", o.position.x, o.position.y, o.position.z, o.hp, o.hp_max, w.conversation.active, w.pc, party::leader{ w = &w }, w.player, o.orientation.x, o.orientation.y)
         } else if ci::eq{ a = cmd, b = "locals" } {
             // Test helper: the local variables that are set on the object with the tag.
             let tag = text::next_word{ &words } ifnull { return }

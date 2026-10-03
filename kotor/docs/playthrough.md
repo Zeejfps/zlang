@@ -25,7 +25,7 @@ The input script knows (play.ctx, lib/ingame/script.ctx, lib/dialog/view/view_no
 | `FRAME use TAG`, `attack TAG`, `warp TAG`, `warpxy X,Y`, `talk RESREF [TAG]`, `hush` | the leader's default action on an object, attack, test teleports, start a conversation, end it |
 | `FRAME ui click X Y`, `move X Y`, `key NAME`, `menu NAME`, `close` | the pointer and keys as the player has them (the panel is 640x480 centred in the 1280x720 window) |
 | `FRAME ui target TAG` then `ui key 1` | select an object and run the first action of the target block |
-| `FRAME ui goto TAG`, `where [PART]`, `pos`, `party`, `inv`, `locals TAG` | walk the leader to an object; print objects by tag part, the leader's place and health, the party, the bag, an object's local variables |
+| `FRAME ui goto TAG`, `where [PART]` (with each object's facing), `pos` (with the leader's facing), `party`, `inv`, `locals TAG` | walk the leader to an object; print objects by tag part, the leader's place and health, the party, the bag, an object's local variables |
 | `FRAME ui bot route TAG... / on / off / god / unlock / status` | the test player (`lib/ingame/bot.ctx`): fights what is hostile in sight, walks the route of tagged stops, opens its doors; `god` keeps the leader at 1 hit point, `unlock` opens locked doors on the route. Never on in a real game. |
 | `FRAME save NAME`, `load FOLDER` | saves go to `kotor/out/saves/00000N - GameK`; `load 000002 - Game1` |
 | `FRAME ui giveitem RESREF [N] [equip]`, `unlock TAG`, `global NAME N` | cheats for tests (not used by the real-flow scripts) |
@@ -63,6 +63,16 @@ engine lead, merged), **open**.
 | 20 | `tar_m02aa` to `tar_m02ac` (the exit door), Carth's "something seems to be bothering Carth" banter, the cantina door to `tar_m02ae` | works | `10_endar_spire.txt` |
 | 21 | Arrival in the cantina: black screen (no fade-in after the door transition) | reported to engine (fade-in after a transition) | `10_endar_spire.txt` |
 | 22 | The cantina on its own (`--module tar_m02ae`): the duel announcement conversation, the NPCs, the arena door | works | `20_cantina.txt` |
+| 23 | A character made by chargentest (a female scoundrel) through the opening: head and body in the cutscene, footlocker contents by class (blaster pistol), 9 hit points, party screen | works | `11_created.txt` |
+| 24 | A computer panel (`end_comp02` in end_m01ab): the computer skin, replies as terminal lines, `<CUSTOM32>` spike count substituted, the skill and spike counters | works | `--module end_m01ab`, `warp end_comp02`, `use end_comp02` |
+| 25 | After the engine's fade-in fix: the cantina renders, the bot walks it with Carth; save (QUICKSAVE) and load in the cantina keep position, party and bag, and the picture fades in after the load | engine (fade-in after a transition or a load) | `10_endar_spire.txt` |
+| 26 | Upper City: the bounty hunters fight (dialogue, Carth and the player kill both, the bullied merchant's conversation), journal: "Rapid Transit System", "The Search for Bastila" (end: investigate the Undercity) | works | `10_endar_spire.txt` |
+| 27 | Upper City North (`tar_m02ab`): the Sith guard's conversation at the lower city door; Lower City (`tar_m03aa`): the Black Vulkar fight, Canderous's conversation `tar03_cand032`, a Sith patrol; the door to the Undercity | works | `10_endar_spire.txt` |
+| 28 | The Undercity (`tar_m04aa`, 466 objects): arrival at the elevator, the outcast woman's gate conversation | works up to the panic below | `10_endar_spire.txt` |
+| 29 | About 30 minutes in: `actions.ctx:102 panic: integer overflow` (a u16 action group wrapped by a polling script) | reported to engine | `10_endar_spire.txt` |
+| 30 | Every Taris module loads headless with 0 script faults (`smoke.sh tar_m02aa ... tar_m11ab`) | works | `smoke.sh` |
+| 31 | Trask's entry: after the dream cutscene he opens the bunk room door himself, runs in and stops 1 m from the player, facing him, before "We've been ambushed..." (the user found him speaking through the closed door: `GetObjectByTag("")` is the player, k_pend_traskdl40) | engine (7ab46dc); checked by `13_trask_entry.txt` + `kotor/tools/py/check_trask_entry.py` | `13_trask_entry.txt` |
+| 32 | Staging audit of every conversation of the route (`dialog stage:` log lines per line, `kotor/tools/py/stage_audit.py LOG`): who stands how far from whom, in which rooms; remote comm conversations (Carth) and cutscene scene objects are far by design | works (nothing else far or behind walls in the ordinary conversations) | `10_endar_spire.txt` with LOG=dialog |
 
 
 The whole Endar Spire plays from New Game to the Taris apartment with `10_endar_spire.txt` (34000 frames,

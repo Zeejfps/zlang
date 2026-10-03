@@ -11,7 +11,7 @@
 # Lines must be in frame order. The frames are those of the 1/30 s headless run and shift if the engine's
 # timing of a cutscene or a voice changes: check the log's `dialog end` lines when a click misses.
 3 newgame
-4 ui replies 1 1 1 2 1 1 1 1 1 1 1 1 1 1 1 1 1 3 1 1 1 1 1 1 1 1 3 4 1 9 9 9 9 9 9 9 9 9 9
+4 ui replies 1 1 1 2 1 1 1 1 1 1 1 1 1 1 1 1 1 3 1 1 1 1 1 1 1 1 3 4 1 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9
 2900 use end_locker01
 2980 ui click 560 413
 3020 ui click 640 452
@@ -44,11 +44,55 @@
 40500 ui bot route bp_jump0_wp wp_01_01 wp_02_01 wp_02_04 ptar_stnddr p_exit k_exit
 40501 ui bot on
 50320 ui click 783 545
-53100 ui bot route tar02_cantdoor
+53100 ui bot route tar02_cantdoor ptar_spcander tar02_candtlk
 53101 ui bot on
 56000 ui bot status
 56000 ui pos
-56400 ui bot off
-56410 down a
-56470 up a
-56480 ui pos
+58000 ui bot off
+58001 ui party
+58001 ui pos
+58001 ui inv
+58003 ui menu journal
+58006 ui click 515 302
+58020 ui close
+58002 save QUICKSAVE
+58100 warpxy 125,108
+58300 ui pos
+58400 load 000000 - QUICKSAVE
+58500 ui party
+58500 ui pos
+58500 ui inv
+58600 ui bot route ptar_stnddr tar02_bhtstr uppernorth tar02_lowdoor tar03_underdoor tar04_elevdoor tar04_reptlk tar04_goto05aa10
+58601 ui bot on
+61000 ui bot status
+61000 ui pos
+66000 ui bot status
+66000 ui pos
+71000 ui bot status
+71000 ui pos
+76000 ui bot status
+76000 ui pos
+81000 ui bot status
+81000 ui pos
+86000 ui bot status
+86000 ui pos
+91000 ui bot status
+91000 ui pos
+96000 ui bot status
+96000 ui pos
+101000 ui bot status
+101000 ui pos
+106000 ui bot status
+106000 ui pos
+111000 ui bot status
+111000 ui pos
+116000 ui bot status
+116000 ui pos
+121000 ui bot status
+121000 ui pos
+126000 ui bot status
+126000 ui pos
+131000 ui bot status
+131000 ui pos
+136000 ui bot status
+136000 ui pos
