@@ -123,6 +123,11 @@ namespace world {
         rev: rules::Events,
         conversation: dlg::State,           // the running conversation (lib/dialog)
         minigame: ?*mut mg::Run,              // the swoop race or turret in progress, set up by the game loop (game/minigame.ctx); the SWMG_ routines' state
+        // Appended by routines/presentation.ctx: state of the screens the presentation owns, which the
+        // routines answer from until it takes over (it writes `subscreen` and clears `credits_running`).
+        credits_running: bool,              // StartCreditSequence ran and the credits are not over (IsCreditSequenceInProgress)
+        button_mash: bool,                  // SetButtonMashCheck / GetButtonMashCheck (the combat tutorial)
+        subscreen: i32,                     // GetSubScreenID: SUBSCREEN_ID_* of the in-game screen showing (0: none)
         // HOOK(party): the party table
     }
 
@@ -164,6 +169,7 @@ namespace world {
             cursor_inside = 0, tokens = tokens::new{ heap }, last_acquired = obj::INVALID, last_acquired_from = obj::INVALID,
             rules = try alloc::new(rules::Tables, heap::Heap){ realloc = heap::alloc, heap, value = blank_rules },
             dice = rules::seed_rng{ seed }, fx_ids = rules::EffectIds{ next = 1 }, rev = blank_events,
+            credits_running = false, button_mash = false, subscreen = 0,
         }
         let p = try alloc::new(World, heap::Heap){ realloc = heap::alloc, heap, value = w }
         try rules::load_tables{ fs = &f, rm = rm.*, heap = heap, out = p.rules }

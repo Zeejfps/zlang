@@ -33,6 +33,19 @@ namespace outbox {
         // PlayPazaak: the opponent's pazaakdecks.2da row (negative: random), the script to run after, the
         // wager limit (already clamped to the gold), the tutorial, the opponent creature
         pazaak{ deck: i32, end_script: resref::ResRef, max_wager: i32, tutorial: bool, opponent: u32 },
+        // Appended by routines/presentation.ctx. None of these screens exists yet; the routines keep
+        // the state their getters answer from (World.credits_running, ...) and say what to show.
+        //   area_effect: PlayVisualAreaEffect: visualeffects.2da row `effect` plays at a point of the area
+        //   credits: StartCreditSequence (the world's credits_running is true until the credits end: the
+        //     presentation clears it, and IsCreditSequenceInProgress then answers false)
+        //   queue_movie / play_movie_queue: QueueMovie adds to the queue, PlayMovieQueue plays it in order
+        //     (with separate_skips, Escape skips only the movie on screen)
+        //   music_volume: SetMusicVolume, 0.0 to 1.0, for the music channel
+        area_effect{ effect: i32, position: math::Vec3, area: u32 },
+        credits{ transparent: bool },
+        queue_movie{ name: resref::ResRef, skippable: bool },
+        play_movie_queue{ separate_skips: bool },
+        music_volume{ volume: f32 },
     }
 
     // Text copied into the outbox's buffer, valid until the outbox is drained.

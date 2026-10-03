@@ -146,6 +146,9 @@ handlers. (med)
 creature's body and head as two parts drawn into the same view that `gui3d::add_to_frame` returns.
 The camera offset is applied by moving the camera node's world matrix for the call and putting it
 back. The creature starts yawed -90 degrees (facing the camera); `turn` adds to that.
+The head is drawn at the body's `headhook` transform and its copies of the hook's ancestors are held at bind
+(`mdl_anim::hold_shared`, models.md, Attachments): without that the head's own idle moves them again and it
+floats off the neck by the body's root offset, worst on the female bodies.
 
 Not done: the idle's random start and fidgets (we loop `pause1`, the main panel's `evil` /
 `neutral` / `good`), the dark side's head textures (heads.2da `headtexe` and friends, which depend

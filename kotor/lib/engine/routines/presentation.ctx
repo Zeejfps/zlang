@@ -44,6 +44,17 @@ namespace rt_pres {
             nwscript::ShowTutorialWindow => { try show_tutorial_window{ &w, &vm, argc } }
             nwscript::PauseGame => { try pause_game{ &w, &vm, argc } }
             nwscript::EndGame => { try end_game{ &w, &vm, argc } }
+            // ---- screens that are not built yet: a note for the presentation, state for the getters
+            nwscript::PlayVisualAreaEffect => { try play_visual_area_effect{ &w, &vm, argc } }
+            nwscript::StartCreditSequence => { try start_credit_sequence{ &w, &vm, argc } }
+            nwscript::IsCreditSequenceInProgress => { try nwvm::push_int{ &vm, v = if w.credits_running { 1 } else { 0 } } }
+            nwscript::QueueMovie => { try queue_movie{ &w, &vm, argc } }
+            nwscript::PlayMovieQueue => { try play_movie_queue{ &w, &vm, argc } }
+            nwscript::SetMusicVolume => { try set_music_volume{ &w, &vm, argc } }
+            nwscript::DisplayFeedBackText => { try display_feedback_text{ &w, &vm, argc } }
+            nwscript::GetSubScreenID => { try nwvm::push_int{ &vm, v = w.subscreen } }
+            nwscript::SetButtonMashCheck => { try set_button_mash_check{ &w, &vm, argc } }
+            nwscript::GetButtonMashCheck => { try nwvm::push_int{ &vm, v = if w.button_mash { 1 } else { 0 } } }
             else => { return false }
         }
         return true
@@ -275,5 +286,63 @@ namespace rt_pres {
         outbox::post{ out = &w.out, note = outbox::Note::end_game{ show_gui = show != 0 } }
         world::prefix{ w = &w }
         _ = @fmt(&w.io, "EndGame {}\n", show)
+    }
+
+    // void PlayVisualAreaEffect(int nEffectID, location lTarget): a visualeffects.2da row plays at the
+    // point; the presentation does it (the effect list on objects covers only effects on objects).
+    fn play_visual_area_effect { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::PlayVisualAreaEffect
+        let effect = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let h = try nwarg::engine{ &vm, routine = r, argc, i = 1, kind = nwvm::EngineType::location }
+        let l = values::location{ s = &w.values, handle = h }
+        outbox::post{ out = &w.out, note = outbox::Note::area_effect{ effect, position = l.position, area = l.area } }
+    }
+
+    // void StartCreditSequence(int bTransparentBackground). The credits are the presentation's:
+    // credits_running stays true until it clears it when they end, which is what k_endgame waits for
+    // before it calls EndGame. (k_creditsplay passes a second argument, a string, that the
+    // prototype lacks: the int is on top, so the call reads it and leaves the string.)
+    fn start_credit_sequence { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let transparent = try nwarg::int{ &vm, routine = nwscript::StartCreditSequence, argc, i = 0 }
+        w.credits_running = true
+        outbox::post{ out = &w.out, note = outbox::Note::credits{ transparent = transparent != 0 } }
+    }
+
+    // void QueueMovie(string sMovie, int bSkippable): the queue is the presentation's; the note says
+    // what to add to it, PlayMovieQueue's that it should play.
+    fn queue_movie { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::QueueMovie
+        let name = try nwarg::string{ &vm, routine = r, argc, i = 0 }
+        let skippable = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        outbox::post{ out = &w.out, note = outbox::Note::queue_movie{ name = resref::truncate{ name }, skippable = skippable != 0 } }
+    }
+
+    // void PlayMovieQueue(int bAllowSeparateSkips = FALSE)
+    fn play_movie_queue { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let separate = try nwarg::int{ &vm, routine = nwscript::PlayMovieQueue, argc, i = 0 }
+        outbox::post{ out = &w.out, note = outbox::Note::play_movie_queue{ separate_skips = separate != 0 } }
+    }
+
+    // void SetMusicVolume(float fVolume = 1.0f): "NEVER USE THIS!" in nwscript.nss; k_psta_egg puts it back to 1.0.
+    fn set_music_volume { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let volume = try nwarg::float{ &vm, routine = nwscript::SetMusicVolume, argc, i = 0 }
+        outbox::post{ out = &w.out, note = outbox::Note::music_volume{ volume } }
+    }
+
+    // void DisplayFeedBackText(object oCreature, int nTextConstant): feedbacktext.2da, 0 Resisted
+    // (36847), 1 Immune (36848), 2 Saved (36849), as a feedback line (the HUD's log).
+    fn display_feedback_text { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::DisplayFeedBackText
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let row = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        if not world::is_valid{ w = &w, id } or row < 0 or row > 2 { return }
+        let strref = @as(u32, 36847 + row)
+        outbox::post{ out = &w.out, note = outbox::Note::feedback{ strref, text = outbox::keep_text{ out = &w.out, s = "" } } }
+    }
+
+    // void SetButtonMashCheck(int nCheck): whether the combat tutorial's button-mash check is on.
+    fn set_button_mash_check { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let on = try nwarg::int{ &vm, routine = nwscript::SetButtonMashCheck, argc, i = 0 }
+        w.button_mash = on != 0
     }
 }

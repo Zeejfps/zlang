@@ -113,7 +113,7 @@ Open items the leads left, by owner. Remove an item when it lands.
 - Creature stats and party members (`AVAILNPC`) written into saves.
 - The remaining routines (`--report routines`; `docs/design/routines.tsv`).
 
-**Render/models:** the engine's real dangly spring and bezier curves, the saber swing trail,
+**Render/models:** one shared character-assembly function (body, head, equipment, held shared nodes) used by lib/scene, lib/chargen's previews, mdlview and rendertest: the head fix had to be made twice because each had its own. the engine's real dangly spring and bezier curves, the saber swing trail,
 particle simulation, stencil shadows, light falloff and env-map strength checked against the
 original.
 
