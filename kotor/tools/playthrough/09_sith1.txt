@@ -1,0 +1,20 @@
+# Survey (cheats: door unlocks, gear): the first Sith soldiers beyond the second door.
+3 newgame
+4 ui replies 1 1 1 1 1 1 1 1
+2400 ui unlock end_door01
+2400 ui giveitem g_w_shortswrd01 equip
+2400 ui giveitem g_a_clothes01 equip
+2401 use end_door01
+2450 ui goto end_door02
+2700 ui goto end_door02
+2900 ui goto end_door02
+3100 ui goto end_door02
+3600 ui unlock end_door02
+3601 use end_door02
+3700 ui goto end_sith2
+3800 ui pos
+3850 attack end_sith2
+3900 ui pos
+4000 attack end_sith3
+4100 ui pos
+4200 ui pos

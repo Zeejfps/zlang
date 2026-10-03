@@ -638,6 +638,15 @@ namespace dlg {
             finish{ &w, &vm, engine, normal = false }
             return
         }
+        // A test script's queued replies (`ui replies 1 2`) answer each list as it opens.
+        if w.conversation.pick < 0 and w.conversation.choices.open and w.conversation.scripted_pos < w.conversation.scripted_count {
+            w.conversation.pick = @as(i32, w.conversation.scripted[w.conversation.scripted_pos]) - 1
+            w.conversation.scripted_pos = w.conversation.scripted_pos + 1
+            if w.log.dialog {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "dialog scripted reply {}\n", w.conversation.pick + 1)
+            }
+        }
         // The player's pick, made in the panels since the last pump.
         if w.conversation.pick >= 0 {
             let choice = @as(usize, w.conversation.pick)

@@ -1,0 +1,5 @@
+# Trask's conversation, then the footlocker with the player's gear.
+3 newgame
+4 ui replies 1 1 1 1 1 1
+2400 warp end_locker01
+2405 use end_locker01
