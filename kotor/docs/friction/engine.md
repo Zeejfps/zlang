@@ -115,3 +115,28 @@ Where ctxlang got in the way while writing the world, the routines, the scene an
   way to see stats, saves, talents and equipment on the module's creatures; a `--call
   Routine(args)` option on enginetest would do it with no new code. As ever, a `\n` in an `@fmt`
   string written through a bash heredoc or python became a real newline (three times).
+
+## 2026-10-03: the last 32 routines
+
+- **"Which scripts call this routine?" has no tool.** docs/formats/nwscript-routines.tsv has the
+  number of scripts per routine, not their names, so deciding what each of the 32 should do meant
+  extracting the 8666 unique NCS files (ncsextract.py), disassembling all of them (ncsdis_corpus.py,
+  48 s) and grepping the text for `ACTION <id>`. A `routine_users.py NAME` that prints the
+  scripts and a few instructions around each call would have saved most of the reading; so would a
+  decompiler-ish view, since the arguments are `CPTOPSP -12` copies and the pushed order is the
+  reverse of the prototype's (the AddToParty arguments read backwards the first time).
+- **Pushing a routine's arguments by hand is last-parameter-first.** Three of the calls in the
+  test program were wrong for that reason alone (GetLevelByClass, DuplicateHeadAppearance, the
+  two-argument StartCreditSequence); a wrong order fails at pop time with `wrong_type`, far from the
+  line that pushed it. A `routines::call_with{ name, args }` for tests that takes arguments in
+  prototype order would remove the trap (the `--call Routine(args)` idea above).
+- **A stale build.ctx in a scratch tool gives thirty errors for one missing source directory.**
+  kotor/out/routinetest lacked `lib/minigame` after World gained a field of type `mg::Run`, and
+  the compiler reported `unknown type or namespace mg` at every use in swmg.ctx instead of one
+  line saying no source file in the build declares `namespace mg`. Copying enginetest's build.ctx
+  is the fix; the message could list the first use only.
+- **Fields appended to a struct with one literal are cheap; the same on a struct with many are not
+  attempted.** obj::Context, obj::Creature, party::Party and world::World each have a single
+  literal, so five appended fields cost five edits. A routine that wants per-object state on
+  Door/Placeable/Trigger (the trap row) would need three literals, so it went on the shared
+  Context instead, which says "what event scripts ask about" and isn't quite right for it.

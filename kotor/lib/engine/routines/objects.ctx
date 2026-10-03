@@ -28,6 +28,7 @@ namespace rt_obj {
         else if routine == nwscript::GetNextObjectInShape { try get_in_shape{ &w, &vm, argc, routine, first = false } }
         else if routine == nwscript::GetNearestObject { try get_nearest_object{ &w, &vm, argc } }
         else if routine == nwscript::GetNearestObjectToLocation { try get_nearest_object_to_location{ &w, &vm, argc } }
+        else if routine == nwscript::GetTrapBaseType { try get_trap_base_type{ &w, &vm, argc } }
         else { return false }
         return true
     }
@@ -433,5 +434,17 @@ namespace rt_obj {
         let l = values::location{ s = &w.values, handle = h }
         let area = if world::is_valid{ w = &w, id = l.area } { l.area } else { w.area }
         try nwvm::push_object{ &vm, id = nth_nearest{ w = &w, area, at = l.position, skip = obj::INVALID, filter, nth } }
+    }
+
+    // int GetTrapBaseType(object oTrapObject): TRAP_BASE_TYPE_*, the traps.2da row of the trap on a
+    // door, placeable or trigger. Traps are not loaded yet: the row sits in the object's context
+    // (trap_type, -1 for none) for whoever reads TrapType from the blueprint to set.
+    fn get_trap_base_type { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetTrapBaseType, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = -1 }
+            return
+        }
+        try nwvm::push_int{ &vm, v = o.ctx.trap_type }
     }
 }
