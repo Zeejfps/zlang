@@ -1,0 +1,9 @@
+// Headless test commands for the map, party selection and options panels: `FRAME ui COMMAND ARGS` lines the input script
+// does not know (lib/ingame/script.ctx) come here. Give a panel something to show that the game
+// does not have yet (items in the inventory, a journal entry, a second party member's data) and
+// document each command in a comment. Returns true when it handled the command.
+namespace test_map {
+    fn run { mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device, cmd: []u8, args: []u8 } -> bool {
+        return false
+    }
+}

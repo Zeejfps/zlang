@@ -140,6 +140,7 @@ namespace play {
             let room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
             scene::update_visibility{ &sc, w = &w, room }
             ingame::update{ ui, &w, &dev, sc, camera, dt }    // HOOK(ingame)
+            if ingame::wants_quit{ ui } { quit = true }    // HOOK(ingame)
             // 11. Sound at the camera.
             ambience::update{ a = &amb, &w, eye = camera.eye, forward = camera.dir, dt }
             match adev {

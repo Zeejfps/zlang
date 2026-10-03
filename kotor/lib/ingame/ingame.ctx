@@ -69,6 +69,11 @@ namespace ingame {
         return ui.menu != NO_MENU or ui.hud_hidden or gui::is_modal_open{ g = &ui.gui }
     }
 
+    // Whether the player confirmed Exit Game in the options menu: the loop should end.
+    fn wants_quit { ui: *Ingame } -> bool {
+        return ui.menus.options.quit
+    }
+
     // ---- events
 
     // Offers a platform event to the interface; true when it used it, so the game does not also

@@ -2,9 +2,9 @@
 // SKELETON: the panel opens as the file draws it; the panel's owner fills `open`, `update` and
 // `on_event` (the protocol is in menus.ctx).
 namespace options_panel {
-    struct State { opened: bool }
+    struct State { opened: bool, quit: bool }   // quit: the Exit Game button was confirmed
 
-    fn new {} -> State { return State{ opened = false } }
+    fn new {} -> State { return State{ opened = false, quit = false } }
 
     // The panel was just added, or the leader changed and it must be filled again.
     fn open { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> ! {
