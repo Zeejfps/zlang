@@ -226,6 +226,9 @@ namespace world {
 
     // The `nth` (from 0) live object whose tag is `tag` (ignoring case), in creation order.
     fn object_by_tag { w: *World, tag: []u8, nth: i32 } -> u32 {
+        // An empty tag names nothing (ours: k_pend_traskdl40 moves Trask to GetObjectByTag(""),
+        // which only makes sense as OBJECT_INVALID, a move that fails at once).
+        if tag.len == 0 { return obj::INVALID }
         let all = list::items{ list = w.objects.all }
         let mut left = nth
         let mut i: usize = 0
