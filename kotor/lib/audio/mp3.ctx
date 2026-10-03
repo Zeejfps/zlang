@@ -538,23 +538,32 @@ namespace mp3 {
     // with `prev` into `out`, the second half kept in `prev`.
     fn transform_long { x: []f32, block_type: u32, prev: []mut f32, out: []mut f32 } {
         let win = @as(usize, block_type) * 36
+        // Only 18 of the 36 outputs are distinct: y[17 - i] = -y[i] for i = 0..8, and
+        // y[53 - i] = y[i] for i = 18..26 (the cosines' arguments add to pi and 2 pi times odd).
         let mut y: [36]f32
+        let xs = x[..18].ptr
         let mut i: usize = 0
-        while i < 36 {
-            let row = i * 18
+        while i < 9 {
+            let a = i * 18
+            let b = (i + 18) * 18
             let mut s: f32 = 0.0
+            let mut t: f32 = 0.0
             let mut k: usize = 0
             while k < 18 {
-                s = s + x[k] * COS36[row + k]
+                s = s + xs[k] * COS36[a + k]
+                t = t + xs[k] * COS36[b + k]
                 k = k + 1
             }
-            y[i] = s * WINDOWS[win + i]
+            y[i] = s
+            y[17 - i] = -s
+            y[18 + i] = t
+            y[35 - i] = t
             i = i + 1
         }
         i = 0
         while i < 18 {
-            out[i] = y[i] + prev[i]
-            prev[i] = y[18 + i]
+            out[i] = y[i] * WINDOWS[win + i] + prev[i]
+            prev[i] = y[18 + i] * WINDOWS[win + 18 + i]
             i = i + 1
         }
     }
@@ -587,6 +596,56 @@ namespace mp3 {
         }
     }
 
+    // The DCT-II of x, in place: x[j] = sum over k of x[k] cos(pi j (2k + 1) / (2n)), for n a
+    // power of two from 8 up, by Lee's split: the even outputs are the half-size DCT of
+    // x[k] + x[n-1-k], the odd ones sums of neighbours of the half-size DCT of
+    // (x[k] - x[n-1-k]) / (2 cos(pi (2k + 1) / (2n))). 8 points are a matrix product.
+    fn transform_dct { x: []mut f32, tmp: []mut f32 } {
+        let n = x.len
+        if n == 8 {
+            let mut i: usize = 0
+            while i < 8 {
+                tmp[i] = x[i]
+                i = i + 1
+            }
+            let mut j: usize = 0
+            while j < 8 {
+                let row = j * 8
+                let mut s: f32 = 0.0
+                let mut k: usize = 0
+                while k < 8 {
+                    s = s + tmp[k] * DCT8[row + k]
+                    k = k + 1
+                }
+                x[j] = s
+                j = j + 1
+            }
+            return
+        }
+        let h = n / 2
+        let mut k: usize = 0
+        while k < h {
+            let a = x[k]
+            let b = x[n - 1 - k]
+            tmp[k] = a + b
+            tmp[h + k] = (a - b) * LEE[h + k]
+            k = k + 1
+        }
+        transform_dct{ x = tmp[..h], tmp = x[..h] }
+        transform_dct{ x = tmp[h..n], tmp = x[h..n] }
+        let mut m: usize = 0
+        while m < h {
+            x[2 * m] = tmp[m]
+            m = m + 1
+        }
+        m = 0
+        while m + 1 < h {
+            x[2 * m + 1] = tmp[h + m] + tmp[h + m + 1]
+            m = m + 1
+        }
+        x[n - 1] = tmp[n - 1]
+    }
+
     // ---- polyphase synthesis
 
     // 18 slots of 32 subband samples (in[sb * 18 + slot]) into 18 * 32 output samples, written
@@ -595,22 +654,17 @@ namespace mp3 {
     fn synthesize { input: []f32, v: []mut f32, at: usize, out: []mut i16, stride: usize } -> usize {
         let mut off = at
         let mut c: [33]f32
+        let mut tmp: [32]f32
         let mut slot: usize = 0
         while slot < 18 {
             off = (off + 960) & 1023                       // back by 64
-            // c[j] = sum over k of S[k] cos(j (2k + 1) pi / 64): V is these, by symmetry.
-            let mut j: usize = 0
-            while j < 32 {
-                let row = j * 32
-                let mut s: f32 = 0.0
-                let mut k: usize = 0
-                while k < 32 {
-                    s = s + input[k * 18 + slot] * SYNTH_COS[row + k]
-                    k = k + 1
-                }
-                c[j] = s
-                j = j + 1
+            // c[j] = sum over k of S[k] cos(j (2k + 1) pi / 64), a DCT-II: V is these, by symmetry.
+            let mut k: usize = 0
+            while k < 32 {
+                c[k] = input[k * 18 + slot]
+                k = k + 1
             }
+            transform_dct{ x = c[..32], tmp = tmp[..32] }
             c[32] = 0.0
             // V[i] = c[i + 16] for i = 0..16, -c[48 - i] for 17..47, -c[i - 48] for 48..63.
             let mut i: usize = 0
@@ -627,7 +681,7 @@ namespace mp3 {
                 i = i + 1
             }
             // Window the 512 samples U (from V) and add each 32nd.
-            j = 0
+            let mut j: usize = 0
             while j < 32 {
                 let mut s: f32 = 0.0
                 let mut m: usize = 0
@@ -801,8 +855,10 @@ namespace mp3 {
     const WINDOWS: [144]f32 = make_windows{}
     // sin(pi / 12 (i + 1/2)): a short window.
     const SHORT_WINDOW: [12]f32 = make_short_window{}
-    // cos(j (2k + 1) pi / 64), [j * 32 + k]: the synthesis matrix's 32 distinct rows.
-    const SYNTH_COS: [1024]f32 = make_synth_cos{}
+    // The 8-point DCT-II, cos(pi j (2k + 1) / 16) at [j * 8 + k], and Lee's factors
+    // 1 / (2 cos(pi (2k + 1) / (2n))) for n = 2h at LEE[h + k], h = 4, 8, 16.
+    const DCT8: [64]f32 = make_dct8{}
+    const LEE: [32]f32 = make_lee{}
     // The synthesis window D, scaled by 32,768 for 16-bit output: D * 65536 / 2, exact.
     const SYNTH_WINDOW: [512]f32 = make_synth_window{}
 
@@ -903,16 +959,30 @@ namespace mp3 {
         return t
     }
 
-    fn make_synth_cos {} -> [1024]f32 {
-        let mut t: [1024]f32
+    fn make_dct8 {} -> [64]f32 {
+        let mut t: [64]f32
         let mut j: i64 = 0
-        while j < 32 {
+        while j < 8 {
             let mut k: i64 = 0
-            while k < 32 {
-                t[@as(usize, j * 32 + k)] = @as(f32, compute_cos{ n = j * (2 * k + 1), d = 64 })
+            while k < 8 {
+                t[@as(usize, j * 8 + k)] = @as(f32, compute_cos{ n = j * (2 * k + 1), d = 16 })
                 k = k + 1
             }
             j = j + 1
+        }
+        return t
+    }
+
+    fn make_lee {} -> [32]f32 {
+        let mut t: [32]f32
+        let mut h: i64 = 4
+        while h <= 16 {
+            let mut k: i64 = 0
+            while k < h {
+                t[@as(usize, h + k)] = @as(f32, 0.5 / compute_cos{ n = 2 * k + 1, d = 4 * h })
+                k = k + 1
+            }
+            h = h * 2
         }
         return t
     }
