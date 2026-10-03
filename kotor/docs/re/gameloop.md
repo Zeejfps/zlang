@@ -41,7 +41,8 @@ Related pages, and where the boundary is:
   `AIUpdate` calls round-robin within a 10 ms budget**, highest AI level first. Events queued with
   zero delay during the frame are delivered later in the same frame. (high)
 - A creature's `AIUpdate` (`0x004fe210`) runs OnSpawn once, OnHeartbeat every 3.0–4.2 s,
-  perception every 0.2–4 s, the combat round, effect expiry, then its action queue; doors,
+  perception (a party check every update, a full pass every 0.2–4 s), the combat round, effect
+  expiry, then its action queue; doors,
   placeables, triggers, AoEs, the area and the module run OnHeartbeat every 6 s. (high)
 - A module transition is a request (module name, waypoint tag) stored on the server and executed
   at the start of a later server frame: save the module being left into `GAMEINPROGRESS:`, optionally
@@ -80,7 +81,7 @@ In order (high for the order, med for the roles of the smaller steps):
 
 | # | Step | Where | Notes |
 |---|---|---|---|
-| 1 | Finish a load | client `+0x288` set and the player's client creature exists | When the client area is loaded: hide the load-screen panel (`+0x2a0`), restore the in-game GUI, leave movie mode, then **resynchronise and unpause every clock** (the four client timers and the server world timer), and unless an autosave is pending (`0x004aed20`) start the 1 s fade-in after 0.5 s and re-enable input. The loading flag `+0x288` is cleared at the end of this frame. See 5.5. |
+| 1 | Finish a load | client `+0x288` set and the player's client creature exists | When the client area is loaded: hide the load-screen panel (`+0x2a0`), restore the in-game GUI, leave movie mode, then **resynchronise and unpause every clock** (the four client timers and the server world timer), and unless an autosave is pending (`0x004aed20`) start the 1 s fade-in after 0.5 s (or, during a conversation, mark it for the conversation's end, `+0xb98`) and re-enable input. The loading flag `+0x288` is cleared at the end of this frame. See 5.5. |
 | 2 | Advance the client clocks | `CWorldTimer::Update` | `+0x24` unless any pause bit is set, `+0x28` unless the player-pause bit is set, `+0x2c` always (section 1.6). |
 | 3 | Module transition in progress? | transition block `g_pAppManager+0x14`, word 0 = 1 | read server messages; `UpdateModuleTransition` (`0x00602c90`); if still loading (mode 1 or 3): set `+0x288`, draw one `RenderLoadingFrame(1/30 s, no server tick, no 3D)`, and **return**: the rest of the frame is skipped. |
 | 4 | Frame delta | `GetFrameDelta(+0x24) × 1e-6` → `g_fFrameDelta` (`0x0078e574`) | seconds; 0 while paused. |
@@ -99,7 +100,7 @@ In order (high for the order, med for the roles of the smaller steps):
 | 17 | Area sound environment | `0x005ee860` | EAX room at the listener |
 | 18 | Selection highlight | GUI `+0x188` → server object | |
 | 19 | In-game GUI per-frame | `0x006339c0`, `0x00632180` | |
-| 20 | **Enemy / mine sighting** | `CheckEnemyAndMineSighting` (`0x005fa5a0`), `0x005f3ad0` | only with no modal panel; auto-pause triggers (6.4) |
+| 20 | **Enemy / mine sighting** | `UpdateSelectableObjects` (`0x005fa5a0`), `0x005f3ad0` | only with no modal panel; auto-pause triggers (6.4) |
 | 21 | Timed client-creature effects | `0x005f7640(real dt)` | |
 | 22 | Tooltip / hover delay | `+0x370`, 0.25 s | |
 | 23 | **GUI** | `CSWGuiManager::Update(world dt)`, then `Render(interface dt)` | the global delta is swapped to the `+0x2c` delta for the GUI pass and restored after |
@@ -133,7 +134,7 @@ In order (high for the order, med for the roles of the smaller steps):
 
 **Party death and stragglers** (`0x004b6da0`, med; the death rules themselves are combat.md's):
 using real milliseconds, if *every* party member is dead the client's party-wipe sequence starts
-(`StartPartyWipeSequence` `0x005f7200`); if *some* are dead, once a second it looks for a hostile
+(`StartDeathCamera` `0x005f7200`); if *some* are dead, once a second it looks for a hostile
 creature in the area (reputation below 11) that perceives a party member; after 5 s in a row with
 none, each dead member is moved to a free spot within 5 m and gets an effect of type 4 (revival),
 and each member farther than 40 m from the leader is teleported next to its party-table position
@@ -165,8 +166,8 @@ unless solo mode is on. This timer uses the real clock, so it also runs during a
    GuiCharacterSheet 0x15, QuickChat 0x16, GuiContainer 0x19, Journal 0x1c, LevelUp 0x1d,
    GuiQuickbar 0x1e, MapPin 0x20, Death 0x25, Character_Download 0x2b, ShutDownServer 0x2f,
    PlayModuleCharacterList 0x31), and `'s'` text commands to the admin handler
-   `HandleServerAdminMessage` (`0x00528380`: `ServerStatus`, `Module Load <name>`, `Module Run`,
-   `Module Save …`). (high)
+   `HandleServerAdminMessage` (`0x00528380`: `ServerStatus`, `Module` + `Load <name>`, `Run`,
+   `Save …`, written `Module.Run` etc.). (high)
 5. The Input handler (`HandlePlayerToServerInputMessage` `0x005254c0`) works on the creature the
    player controls and adds actions to its queue (actions.md). Those actions run in the same
    frame's `UpdateState`, when that creature's turn comes (the player and party are on AI level 4,
@@ -278,33 +279,35 @@ now = GetWorldTime(world timer)                     // once; the clock does not 
 remaining = 10,000 µs
 for level = 4 down to 0:
     budget = (level > 0) ? remaining × 60 / 100 : remaining
-    start = clock(); first = true
+    start = clock(); elapsed = 0
     loop:
         // movement pre-pass, outside the budget
-        for each creature on this level whose first queued action is MOVETOPOINT (1) or
-            FOLLOWLEADER (0x3d), or whose movement state +0xa8c is 4, 5 or 6:
+        for each creature on this level with the flag +0x1f8 set whose first queued action
+            is MOVETOPOINT (1) or FOLLOWLEADER (0x3d), or whose movement state +0xa8c is 4, 5, 6:
                 UpdateMovement(creature)            // 0x0051d9c0; result 2 sets +0xa8c = 1
         // events
         while the queue head's (day, ms) <= now:
             pop it and deliver it (4.4)
-        // one AIUpdate
-        if clock() − start <= budget:
+        // one AIUpdate; "elapsed" is measured after the previous AIUpdate (0 on the first pass,
+        // so the pre-pass and event time of this pass are only counted after the next update)
+        if elapsed <= budget:
             cursor = (cursor + 1) mod count          // the cursor persists across frames
             obj = list[cursor]
             if obj is missing, or is not an object type (< 5), or obj == the first object
                updated at this level this frame:  stop this level
             else obj.AIUpdate()                      // vtable slot 28; > 75 ms logs a warning
+            elapsed = clock() − start
         if the queue head is now due: stop this level
-        if clock() − start > budget: stop this level
-    remaining −= min(clock() − start, budget)
-for each object on every level (4 → 0) with a client twin:
+        if elapsed > budget: stop this level
+    remaining −= min(elapsed, budget)
+for each object on every level (4 → 0) with the flag +0x1f8 set and a client twin:
     push dirty animation / position / orientation to it (1.5)
 module.UpdateModuleAndArea()                          // 0x004c6dc0, section 2.6
 ```
 
 Consequences an implementer must keep:
 
-- **Each level gets at least one `AIUpdate` per frame** (the budget is checked after one call), and
+- **Each level gets at least one `AIUpdate` per frame** (elapsed is 0 on the first pass), and
   a level's round-robin resumes where it stopped last frame. Under load, low levels update less
   often; with KOTOR's object counts usually every object is updated every frame. (high/med)
 - **A due event ends the current level.** An `AIUpdate` that queues a zero-delay event (a
@@ -330,7 +333,7 @@ In order (high for the order; the named sub-systems belong to the pages in brack
    (combat.md).
 6. `0x004ed110`: a countdown at `+0x384` that pokes the area's client sound object when it ends
    (low).
-7. **`UpdateEffects(now)`** (`CSWSObject::UpdateEffects` `0x004d1730`): periodic effects tick
+7. **`UpdateEffectList(now)`** (`CSWSObject::UpdateEffectList` `0x004d1730`): periodic effects tick
    (regeneration-type 7, poison/disease-type 0x23 via event 14 REMOVE_EFFECT, type 5), then every
    temporary effect whose expiry time has passed is removed and the scan restarts (rules.md).
 8. **`RunActions(now, start)`** (`0x0057f4a0`, about 1 ms of work per call) (actions.md).
@@ -338,8 +341,9 @@ In order (high for the order; the named sub-systems belong to the pages in brack
 10. Ground snap: z = walkmesh height at (x, y) (`0x004bc380`); a non-leader party member off the
     walkmesh is moved to a free spot within 5 m of its party-table position; jumping states 4/5
     add `+0xa94`; `SetPosition` (movement.md).
-11. `0x004f1460` (rebuild the queued-action icon state `+0x9f2/+0x9f4`, low) and, in an area,
-    trap and mine detection with the Awareness skill (`UpdateTrapDetection` `0x004fa390`, low;
+11. `UpdateActivityFromQueue` (`0x004f1460`: recomputes `+0x9f2/+0x9f4` from the queued actions,
+    low) and, in an area,
+    trap and mine detection with the Awareness skill (`DoTrapDetection` `0x004fa390`, low;
     rules.md).
 12. Combat-mode timers: stealth (`+0x4e4`), a 3000 ms tick at `+0x52c`, cooldowns `+0xab0`,
     `+0x538`, `+0x530` (1500 ms while playing animation 10004/10086/10087), eight countdowns at
@@ -363,7 +367,7 @@ At the end of the first call the flag is set, so OnSpawn runs exactly once, **on
 first `AIUpdate`** — not when it is created. (high)
 
 **OnHeartbeat**: due when `now − lastHeartbeat (+0x350/+0x354) ≥ interval (+0x358)`, or on the
-first call. Then:
+first call — so a creature's first `AIUpdate` runs OnSpawn and then OnHeartbeat at once. Then:
 
 - a counter `+0x394` is incremented; the heartbeat really fires only if the creature is not on
   level 0, or the counter reached `interval / 64` (≈ 47–65 due checks), or it is the first call.
@@ -379,13 +383,19 @@ first call. Then:
 
 | Timer | Who | Out of combat | In combat (`+0x9d4` set) | Mode |
 |---|---|---|---|---|
-| A (`+0x360`, period `+0x35c`) | non-party creatures | every 4000 ms | every `300 + rand() % 400` ms | 1: check only the party members |
-| B (`+0x388`) | everyone | every 4000 ms | every 200 ms | 2 (non-party: everyone but player-controlled creatures) or 0 (party member: everyone) |
+| A (last run `+0x360/+0x364`, period `+0x35c`) | non-party creatures | meant: every 4000 ms | meant: every `300 + rand() % 400` ms | 1: check only the party members |
+| B (last run `+0x388/+0x38c`) | everyone | every 4000 ms | every 200 ms | 2 (non-party: everyone but player-controlled creatures) or 0 (party member: everyone) |
+
+**Timer A never stores its last run**: `+0x360/+0x364` are zeroed by the constructor and written
+nowhere else (checked in the disassembly of `0x004eb6e0`), so "time since the last run" is the
+time of day, and mode 1 runs on **every `AIUpdate`** except during the first 4 s (in combat the
+first 0.3–0.7 s) of each game day. A faithful port checks the party every update; mode 1 is cheap
+(it only looks at the party members). (high)
 
 Timer B, like the heartbeat, is throttled on level 0 (a counter `+0x390` must exceed 149,
-randomised to `rand() % 50` after each run). The first call does both. A perception pass also
-removes vanished creatures from the perception list and skips a dead creature that is not in
-combat. (high)
+randomised to `rand() % 50` after each run). The first call does both, right after OnSpawn and the
+first OnHeartbeat. A perception pass also removes vanished creatures from the perception list and
+skips a dead creature that is not in combat. (high)
 
 Ranges (`GetSightRange` `0x004efc70` → `+0x914`, `GetHearingRange` `0x004efd20` → `+0x918`; the
 pass uses the larger as a radius, scanning the area's x-sorted creature list `+0x190`):
@@ -403,12 +413,12 @@ rules.md's/combat.md's.
 
 | Type | `AIUpdate` | Per update, in order | Conf. |
 |---|---|---|---|
-| placeable | `0x005849d0` | OnHeartbeat (`+0x2b4`) every ≥ 6000 ms of world time (last at `+0x348/+0x34c`; the first due check only records the time; skipped when dead); `UpdateEffects`; `RunActions` | high |
+| placeable | `0x005849d0` | OnHeartbeat (`+0x2b4`) every ≥ 6000 ms of world time (last at `+0x348/+0x34c`; the first due check only records the time; skipped when dead); `UpdateEffectList`; `RunActions` | high |
 | door | `0x005889c0` | same, OnHeartbeat `+0x250`, last at `+0x30c/+0x310` | high |
-| trigger | `0x0058d760` | OnHeartbeat (`+0x244`) every 6000 ms (no first-time skip, no death check); trap visibility animation (10143 hidden / 10144 shown) for a trap the player has not detected; `RunActions`. No effects | high |
+| trigger | `0x0058d760` | OnHeartbeat (`+0x244`) every 6000 ms (no first-time skip, no death check); trap visibility (animation 10143 hidden / 10144 shown: shown once detected, or for a non-hostile trap; med); `RunActions`. No effects | high |
 | area of effect | `0x00595d10` | `dt` at `+0xcc`; OnHeartbeat (`+0x260`) every 6000 ms; follows its creator (`+0x24c`) unless stationary (`+0x230`), destroying itself (event 11) when the creator is gone; duration countdown `+0x288` (when `+0x28c` = 1) → destroy; `RunActions` | high |
 | encounter | `0x00593fb0` | spawn pending creatures (`0x00591ca0`, which sets their AI level by the area's player count); respawn when `Reset` and `ResetTime` s passed since exhaustion and the count `+0x2c8` is under `Respawns` (−1 = always); while active (`+0x238`): heartbeat **as a SIGNAL_EVENT** (script event 0) every 6000 ms, and `RunActions` | high |
-| item | `0x0055cb60` | recharges single-use properties: property type 10 with cost value 14–18 becomes usable again 60/120/180/240/300 s after use. No actions | med |
+| item | `0x0055cb60` | recharges timed properties: a property of type 10 whose sub-value (+6) is 14–18 and that is marked used is made usable again 60/120/180/240/300 s after its use time. No actions, no heartbeat | med |
 | store, waypoint, sound | empty | — | high |
 
 Doors and placeables run their heartbeat script directly, not through the event queue; only the
@@ -443,8 +453,8 @@ its heartbeat timer. (high)
 | `RunActions` budget | about 1 ms per call | `0x0057f4a0` (actions.md) | high |
 | creature heartbeat | 3000 + rand() % 1200 ms (3.0–4.2 s) | `0x004eb6e0` | high |
 | placeable, door, trigger, AoE, encounter, area, module heartbeat | 6000 ms (≥) | their `AIUpdate`s | high |
-| perception, out of combat | 4000 ms | `0x004eb6e0` | high |
-| perception, in combat | 200 ms (all), 300–699 ms (party check) | `0x004eb6e0` | high |
+| perception (full pass), out of / in combat | 4000 ms / 200 ms | `0x004eb6e0` | high |
+| perception (party check) | every `AIUpdate` in practice (meant 4000 ms / 300–699 ms; last-run time never stored) | `0x004eb6e0` | high |
 | combat round | 3000 ms | `StartCombatRound` `0x004d5f70` (combat.md) | high |
 | `RoundsToSeconds(n)` / `TurnsToSeconds(n)` / `HoursToSeconds(n)` | 3 n / 30 n / `MinPerHour` × 60 n seconds | `0x00544e50` | high |
 | client object update messages | every 200 ms | `0x004b3ec0` | high |
@@ -502,18 +512,19 @@ Event 1 is run by every object type's `EventHandler` (and the area's and module'
 The target id decides (high, `0x004b0b70`):
 
 - an object (type ≥ 5): virtual slot 30 `EventHandler(id, caller, payload, day, time)`;
-- the area (type 4): `CSWSArea::EventHandler` (`0x0050d6c0`): 1 (situation), 5 (an effect
-  applied to the area: a persistent AoE), 0x11, 10 with script events 0 (OnHeartbeat, also resets
-  its heartbeat timer), 0xb (OnUserDefined), 0xc (OnEnter, sets the entering object), 0xd (OnExit),
-  and 26 AREA_TRANSITION (5.2);
+- the area (type 4): `CSWSArea::EventHandler` (`0x0050d6c0`): 1 (situation), 5 APPLY_EFFECT
+  (only effect type 0x1e, placed at a location), 17 SPAWN_BODY_BAG (creates the body-bag
+  placeable), 10 with script events 0 (OnHeartbeat, also resets its heartbeat timer), 0xb
+  (OnUserDefined), 0xc (OnEnter, sets the entering object), 0xd (OnExit), and 26
+  AREA_TRANSITION (5.2);
 - the module (type 3): `CSWSModule::EventHandler` (`0x004c5120`): 1, and 10 with script events
   0 OnHeartbeat (`+0xb0`, resets the heartbeat timer), 0xb OnUserDefined (`+0xb8`), 0x11
   OnModLoad (`+0xc0`), 0x10 OnModStart (`+0xc8`), 0xe OnClientEnter (`+0xd0`), 0xf OnClientLeave
   (`+0xd8`), 0x12 OnActivateItem (`+0xe0`), 0x13 OnAcquireItem (`+0xe8`), 0x14 OnUnacquireItem
   (`+0xf0`), 10 OnPlayerDeath (`+0xf8`), 0x20 OnPlayerDying (`+0x100`), 0x21 OnSpawnButtonDown
   (`+0x108`), 0x23 OnPlayerRest (`+0x110`), 0x25 OnPlayerLevelUp (`+0x118`), 0x26 OnEquipItem
-  (`+0x120`), and 0x24 (delete an object). The 15 module script names are stored in this order
-  from `+0xb0`, 8 bytes apart;
+  (`+0x120`), and 0x24 DESTROYPLAYERCREATURE (deletes the object). The 15 module script names
+  are stored in this order from `+0xb0`, 8 bytes apart;
 - an id that no longer exists: the payload is freed (`ClearEventData` `0x004b0ab0`).
 
 ### 4.5 Pause, transitions and saves
@@ -544,9 +555,9 @@ All roads end in three server fields, the **transition request**: flag `+0x10080
 
 | Source | How | Conf. |
 |---|---|---|
-| door click | script event 0x1e (CLICKED) on a door whose `LinkedToFlags` (`+0x384`) is 1 or 2 (`IsAreaTransition` `0x005890d0`) and whose `LinkedToModule` (`+0x390`) is set: the two-phase handshake below with module = `LinkedToModule`, waypoint = `LinkedTo` (`+0x388`). A door that is not a transition runs its OnClick instead. | high |
+| door click | script event 0x1e (CLICKED) on a door whose `LinkedToFlags` (`+0x384`) is 1 or 2 (`GetIsAreaTransition` `0x005890d0`) and whose `LinkedToModule` (`+0x390`) is set: the two-phase handshake below with module = `LinkedToModule`, waypoint = `LinkedTo` (`+0x388`). A door that is not a transition runs its OnClick instead. | high |
 | trigger enter | script event 0xc (OBJECT_ENTER) on a transition trigger (`+0x2b4`) with a link: same handshake | high |
-| `StartNewModule(module, waypoint, movie1..6)` (routine 509, `0x00544390`) | sets the request directly, queues the six movies on the client (`AddQueuedMovie` `0x005edb50`), and blacks the screen at once if a fade or a conversation is up | high |
+| `StartNewModule(module, waypoint, movie1..6)` (routine 509, `0x00544390`) | sets the request directly, queues the six movies on the client (`AddQueuedMovie` `0x005edb50`), and blacks the screen at once while a conversation is running (in-game GUI `+0xb4`, or `+0xc04`) | high |
 | area event 26 | `CSWSArea::EventHandler`: same handshake on the area, payload = 8 strings (module, waypoint, 6 movies). No code queuing the first event 26 was found | med |
 | cheats and menus | console warp `0x0060af50`, a GUI path `0x006cf9d0`, loading a save (`0x006ca250`) | med |
 
@@ -554,7 +565,9 @@ All roads end in three server fields, the **transition request**: flag `+0x10080
 
 Phase 1, on the click/enter event (high):
 
-1. Only for the player's creature or a party member; ignored while a fade is already running.
+1. Only for the player's creature or a party member; refused (pending flag cleared) while a
+   conversation is running (in-game GUI `+0xb4`, set by the conversation code through
+   `CGuiInGame::SetDialogPending` `0x0062ec60`).
 2. **All party members must be within 30 m of the leader** (`AreMembersNearLeader` `0x00635350`);
    otherwise run `k_trg_transfail` on the creature and stop.
 3. Take a fresh token from the area (`NextTransitionToken` `0x00506ac0`: a byte counter at area
@@ -598,11 +611,11 @@ marked):
    9. `BeginLoadModule` (`0x004ba820`): reset input, **pause the client and server world
       timers**, then `LoadModule(name)` ([modules.md](modules.md)).
 
-`LoadModule` first unloads the current module (`UnloadModule` `0x004b9240`): both pause types off,
-exempt lists emptied, player creatures removed from their area and destroyed, the party table and
-the custom tokens cleared, the module and with it the area and every object deleted, the object
-array and the event queue emptied, `CURRENTGAME:` removed. Then it fills the transition block and
-sets load mode 1 (3 for a module coming from a save). (high)
+`LoadModule` first unloads the current module (`UnloadModule` `0x004b9240`; med for when): both
+pause types off, exempt lists emptied, player creatures removed from their area and destroyed,
+the party table and the custom tokens cleared, the module and with it the area and every object
+deleted, the object array and the event queue emptied, `CURRENTGAME:` removed. Then it fills the
+transition block and sets load mode 1 (3 for a module coming from a save). (high)
 
 ### 5.4 Loading: the transition block and the ticks
 
@@ -629,43 +642,43 @@ step 8). The next client frame after "done" clears the busy flag (`UpdateModuleT
 
 ### 5.5 Arrival: the order of events
 
-After the load, the client answers the server's "ModuleLoaded" status with the admin command
-`Module Run` (`0x00675710` → `0x00675690`); the server handles it in its message step (1.3 step 3)
-with `StartModuleRunning` (`0x004b6270`). Putting the pieces together, the order is (high for each
-step's content, med for the cross-frame order of the handshake):
+After tick 3 the client and server finish with NWN's login handshake, over the message rings
+(client → server messages are handled in the same frame, server → client ones in the next client
+frame, so each round trip costs about one frame). The steps are read in the code; the stitching
+of the round trips is med:
 
-1. **GIT objects are created** during tick 2, in the GIT list order of [modules.md](modules.md)
-   (creatures, items, doors, triggers, encounters, waypoints, sounds, placeables, stores, AoEs).
-   They are added to the area and the AI master (level 0: no player in the area yet). No script
-   runs: creatures are added without the area's OnEnter.
-2. Tick 3 queues **OnModLoad** (script event 17 to the module). It cannot run yet: the AI master
-   only runs in state 2.
-3. `StartModuleRunning`: server state 1 → 2, then for each player
-   (`PlacePlayerInModule` `0x004b3d10`): if a waypoint tag is pending, the player's start position
-   and facing become the waypoint's (looked up by tag among the module's objects, `0x004c6e00`) and
-   the tag is cleared; otherwise the stored start position stays (the IFO's `Mod_Entry_*` for a new
-   game, the saved position for a save); find a free spot within 20 m on the walkmesh
-   (`0x004be860`); add the creature to the area (`AddToArea` `0x004fa100` → `AddObjectToArea`,
-   which **queues the area's OnEnter (script event 0xc) for the player** and, being the first
-   player, raises the area's objects to AI level 1); a perception pass; place the party around the
-   player (`0x00565b00`). For a module loaded from a save (not a transition) the player is restored
-   from the save and **OnClientEnter** (script event 0xe, plus OnPlayerDeath if the player is dead)
-   is queued (`SignalPlayerEnterModule` `0x004b5c50`, via `0x004b5f50`); the client is told the
-   module runs (3/0xc).
-4. The next `UpdateState` (the same server frame or the next) delivers, in queue order:
-   **OnModLoad**, then the **area OnEnter** for the player (and the party members as they are
-   added), then OnClientEnter where it was queued. They all carry the same time, so it is
-   queue order. (med: the relative order of step 3's events is code order, read; that `Module
-   Run` arrives after tick 3 is inferred from the handshake)
-5. In the same `UpdateState`, level 4 first: the PC's and party's first `AIUpdate`s (their
-   OnSpawn if not yet fired, first perception), then level 1: **every creature's OnSpawn on its
-   first `AIUpdate`**, spread over frames by the budget. So creatures spawn *after* OnModLoad and
-   the area's OnEnter. (high for the mechanism)
-6. The client's step 1 sees the area loaded and the player's creature present: the load screen goes
-   away, all clocks are unpaused (world time resumes from the stored snapshot, 7.2), and unless an
-   autosave is pending the 1 s fade-in starts after 0.5 s and input comes back. **Control returns
-   to the player then**; scripts that ran in step 4 may already have started a cutscene or a
-   conversation, which takes over. (med)
+| # | Who | Message / call | What happens |
+|---|---|---|---|
+| 1 | server tick 2 | — | **GIT objects are created** in the GIT list order of [modules.md](modules.md) (creatures, items, doors, triggers, encounters, waypoints, sounds, placeables, stores, AoEs) and join the AI master on level 0 (no player in the area yet). Each creature is added with `AddToArea(…, fromSave)` (`0x004fa100`): on a fresh module this **queues the area's OnEnter (script event 0xc) for every GIT creature**, in GIT order; from a saved module state it does not. Nothing runs yet. |
+| 2 | server tick 3 | `LoadModuleFinish` | **OnModLoad** queued (script event 17 to the module); server state 1; "ModuleLoaded" status to the client |
+| 3 | client | `'S'` status → `HandleServerStatusMessage` (`0x00675710`) | replies with the admin text `Module.Run` (`SendAdminCommand` `0x00675690`, format `%s.%s`) |
+| 4 | server | `Module.Run` → `StartModuleRunning` (`0x004b6270`) | state 2: **the AI master starts**. Players already in the module are placed (none after a transition: `UnloadModule` cleared their flag). For a module loaded from a save the first player is restored from it and **OnClientEnter** queued (`0x004b5f50` → `SignalPlayerEnterModule` `0x004b5c50`). Sends "module running" (3/0xc). |
+| 5 | server, same frame | `UpdateState` | delivers the queued events in order: the creatures' area OnEnter (or the restored queue), then **OnModLoad**; then the AIUpdates begin: every GIT creature's **OnSpawn** fires on its first `AIUpdate` (level 0, leftover budget, possibly over several frames) |
+| 6 | client | 3/0xc → `0x00652860` | replies Login 2/0xf (`0x00678030`) |
+| 7 | server | Login 0xf → `PlayerLoginToModule` (`0x004b7470`) | after a transition: the PC is re-created from `TEMP:pifo` (`0x00561e30`) and the party table restored (`0x00565760`); `SignalPlayerEnterModule` queues **OnClientEnter** (script event 0xe; also OnPlayerDeath when the PC is dead) and sends the module info (3/1). The PC is not in the area yet. |
+| 8 | client | 3/1 | builds the client module and camera (`0x0063f660`), replies 3/2 |
+| 9 | server | Module 3/2 → `PrepareAreaForPlayer` (`0x004b3a90`) | gives a new player the IFO's `Mod_Entry_*` start, keeps a known player's stored position; sends the area (10/2, 10/1) |
+| 10 | client | area message (`HandleServerToPlayerAreaLoad` `0x0064bab0`, `0x0064dcf0`) | loads the client area synchronously, drawing loading frames; replies Area 4/3 (`0x006778f0`) |
+| 11 | server | Area 4/3 (`0x00524b80`) → `PlacePlayerInModule` (`0x004b3d10`) | if a waypoint tag is pending, the start position and facing become the waypoint's (tag lookup `0x004c6e00`) and the tag is cleared; snap to a free walkmesh spot within 20 m (`0x004be860`); `AddToArea` (`0x004fa100`) → `AddObjectToArea`, which **queues the area's OnEnter (script event 0xc) for the PC** and, as the first player, raises the area's objects to AI level 1; a perception pass; the party is placed (`0x00565b00`); pause states re-sent |
+| 12 | client | step 1 of its frame | the area is loaded and the PC's client creature exists: **the load screen goes away**, all clocks unpause (world time resumes from the stored snapshot, 7.2), and unless an autosave is pending the 1 s fade-in starts after 0.5 s and input returns |
+
+So the script order on arrival is (med for the overall order; high for each step):
+
+1. on a fresh module, the area's **OnEnter once per GIT creature** (entering object = that
+   creature); on a module re-entered from `GAMEINPROGRESS:` instead the **restored event queue**
+   (4.5), and no creature OnEnter;
+2. **OnModLoad** — on every entry, fresh or re-entered;
+3. each creature's **OnSpawn** on its first `AIUpdate` (immediately followed by its first
+   OnHeartbeat); creatures restored from a saved state keep their "spawn fired" flag and don't
+   spawn again;
+4. **OnClientEnter** for the PC;
+5. the area's **OnEnter for the PC**, then for party members as they are placed;
+6. the load screen goes away and control returns to the player.
+
+All of it happens with the world clock still paused, so every event carries the same time and
+the queue order is the insertion order. A conversation or cutscene started by any of these
+scripts takes over as soon as the load screen is gone. An area OnEnter script that should react
+only to the PC has to test `GetEnteringObject()`.
 
 `Mod_OnModStart` (script event 16) is never queued by the engine: no code creates that event (high,
 searched; KOTOR's IFOs leave it empty). `Mod_StartMovie` is read into `+0x7c` and saved, but no
@@ -732,17 +745,18 @@ The player pause is changed through the client, which applies requests at the en
 
 - `RequestPause(bPause, reason, bForce)` (`0x005f2e10`, forwarder `0x005edc20`): records the
   request (bit 2 of `+0x37c`, desired state `+0x380`, reason `+0x388`), sets sound mode 2 or 0 and
-  blocks or unblocks game input; ignored while a fade is running unless forced or unpausing.
+  blocks or unblocks game input; during a conversation (in-game GUI `+0xb4`) only unpause or
+  forced requests are taken.
 - Step 28: if the server's player pause differs from the request, `TogglePlayerPause` (`0x00677800`
   → server `TogglePauseState(2)`), then the HUD's pause label (`0x0062def0`, reason). A request
-  made while an area transition is pending is dropped.
+  made while an area transition is pending is dropped (med).
 - Sources: the pause key and the HUD `TB_PAUSE` button (reason 4), `PauseGame(b)` (routine 57,
   `0x00546590`, reason 0), opening the in-game menus (`0x0062c9b0` runs `k_sup_guiopen` and toggles
   the pause; gui.md), the conversation and other GUI paths (`0x0062d040`, `0x0062e310`, …),
   window deactivation (`OnAppDeactivate` `0x00401d90` sets the player pause and remembers whether
   it was already on; `OnAppActivate` `0x00401e00` restores it), the server Input messages 0x18
-  (toggle, only with an area and when the game options allow, `+0xc4` of the party table) and 0x19
-  (set).
+  (toggle, only with an area and when a flag of the server options block allows it, `+0xc4` of
+  internal `+0x10004`) and 0x19 (set).
 - Transitions force the pause off (5.2); `UnloadModule` clears both types.
 
 ### 6.4 Auto-pause
@@ -753,14 +767,15 @@ The player pause is changed through the client, which applies requests at the en
 
 | Trigger | Where | Reason |
 |---|---|---|
-| a hostile creature becomes visible | `CheckEnemyAndMineSighting` (`0x005fa5a0`), also plays the "enemy sighted" feedback 0x15 | 1 |
+| a hostile creature becomes visible | `UpdateSelectableObjects` (`0x005fa5a0`), also plays the "enemy sighted" feedback 0x15 | 1 |
 | a mine becomes visible | same function | 0xb |
 | a party member dies while others live | death handling (`0x004e0ac0`), with a 2 s cooldown (`+0x39c`) | 9 |
 | action menu / target selection | HUD handlers `0x006884b0`, `0x00688520`, `0x0068af70`, `0x0068afe0` (option bit 0x8000) | 7 |
 | end of a combat round | `CSWSCombatRound::EndCombatRound` (`0x004d4620`) | not traced |
 
 `RequestAutoPause(bOn, reason)` (`0x005f3f10`, forwarder `0x005edee0`) pauses only if the game is
-not already paused and no fade runs, and remembers that the pause is automatic (`+0x384` bit 0);
+not already paused and no conversation runs, and remembers that the pause is automatic
+(`+0x384` bit 0);
 during the one-second window `+0x38c` after an unpause it defers the request (`+0x390` = 1 s,
 `+0x398` = reason) and client step 27 retries it. Unpausing (the pause key) clears the automatic
 flag. (med)
@@ -778,7 +793,7 @@ it alone keeps acting. No KOTOR power uses it as far as found (med).
 
 `SetGameSpeed` (6 clocks, 1.6) is driven every client frame by `UpdateSlowMotion` (`0x005f7330`)
 while client `+0x2c0` is set: the speed follows a logarithmic curve of real time down to a floor
-of 0.2, then returns to 1.0 and clears the flag. `StartPartyWipeSequence` (`0x005f7200`) sets it
+of 0.2, then returns to 1.0 and clears the flag. `StartDeathCamera` (`0x005f7200`) sets it
 when the whole party is down: closes panels, shows the death panel, focuses the camera on the dead
 leader and fades to black after 12 s. Combat.md owns the death rules. (med)
 
@@ -818,15 +833,16 @@ module "last update" := now, and the initial day phase (7.4). Since the world ti
 throughout the load and unpausing resumes from the snapshot, **after a transition the time
 continues exactly where it was**; the start fields only matter for a new game. (high for the code,
 med for the consequence) Shipped IFOs: start year 1372 (or 0), month 6, day 1, hour 13, no
-minute/second/pause fields; `Mod_MinPerHour` 2 in 113 of 117 modules (a 48-minute day), 0/1 in four
-Dantooine and other modules; dawn 6 / dusk 18 (0/0 in four).
+minute/second/pause fields; `Mod_MinPerHour` 2 in 113 of 117 modules (a 48-minute day), 0 or 1 in
+the four Dantooine modules `danm14aa`–`danm14ad`, which also have dawn = dusk = 0; elsewhere dawn 6,
+dusk 18.
 
 ### 7.3 Script routines
 
 | Routine | Handler | Behaviour | Conf. |
 |---|---|---|---|
 | 16 `GetTimeHour` / 17 minute / 18 second / 19 millisecond | `0x0053e020`… → `GetCurrentHour` `0x004ae090` etc. | from the world timer: hour = `ms / 60,000 / MinPerHour`, minute = `(ms / 60,000) mod MinPerHour`, second = `(ms / 1000) mod 60` | high |
-| 12 `SetTime(h, m, s, ms)` | `0x00543670` → `CWorldTimer::SetTime` `0x004ae260` | normalises (1000 ms, 60 s, 60 min, 24 h carry upward), and **only moves forward**: a time earlier than now (or carried past midnight) advances the date by a day (28-day months, 12-month years); negative arguments are ignored | high |
+| 12 `SetTime(h, m, s, ms)` | `0x00543670` → `CWorldTimer::SetTime` `0x004ae260` | normalises (1000 ms, 60 s, 60 min carry upward; hours past 24 advance the date by whole days), and **only moves forward**: without such a carry, a time earlier than now advances the date by one day (28-day months, 12-month years); negative arguments are ignored | high |
 | 405–408 `GetIsDay/Night/Dawn/Dusk` | `0x00539900`, `0x00539de0`, `0x005398c0`, `0x00539bd0` | the module's day phase `+0x1bc` = 1, 2, 3, 4 | high |
 | 121–123 `RoundsToSeconds` etc. | `0x00544e50` | section 3 | high |
 
@@ -871,16 +887,14 @@ formats are party-items-saves.md's. (med)
 
 - **Who queues the first AREA_TRANSITION event (26)?** Only the area's own phase-2 re-queue was
   found; the initial one may come through a payload built elsewhere (galaxy map, `0x006cf9d0`?).
-- **The `Module Run` handshake timing**: whether `StartModuleRunning` happens in the same frame as
-  tick 3 or one or two frames later (it depends on when the client processes "ModuleLoaded" and
-  replies); this only shifts when OnModLoad and the area OnEnter run relative to the end of the
-  load screen, not their order.
+- **The arrival handshake (5.5)** was stitched from the message handlers on both sides; the exact
+  frame of each step (and so how many frames OnSpawn has before OnClientEnter) should be confirmed
+  in a running game or by tracing the client handlers of 3/1, 10/1, 10/2 in full. The order of the
+  scripts is what matters for a reimplementation, which needs no handshake.
 - **Party members on arrival**: `0x00565b00` places them; whether each gets the area's OnEnter and
   in which order relative to the PC was not traced (party-items-saves.md / movement.md).
-- **OnClientEnter on a plain transition**: queued for loads from a save (`0x004b5f50`) and logins
-  (`0x004b7470`); on a door/trigger transition the player is not logged in again, and no call that
-  queues event 14 on that path was found. Check in a running game which of the 7 modules that use
-  `Mod_OnClientEntr` see it fire after a transition.
+- New game and save-load paths through `PlayerLoginToModule` (`0x004b7470`, Login minors 1, 2,
+  0xe, 0x11, 0x13) were only skimmed.
 - The end-of-round auto-pause call site in `EndCombatRound` is hidden in a tail the decompiler did
   not show; the reason code is unknown. Auto-pause reasons 6 (`0x0062ef90`) and 0xb details.
 - `+0x9d4` on creatures (in-combat vs. "busy"): perception and the 300 ms tick treat it as "in
@@ -889,6 +903,8 @@ formats are party-items-saves.md's. (med)
   `LinkedTo` tag) was not identified.
 - The meaning of `+0x10054` (an 0x28-byte object recreated at unload, `0x0052b8e0`), and the
   `+0x100bc`/`+0x100c0` server flags.
+- The object flag `+0x1f8` that gates both the movement pre-pass and the dirty-state push in
+  `UpdateState` (cleared by the `CSWSObject` constructor; probably "active in an area", low).
 - The client `+0x30` timer's purpose.
 - Whether any rendering subsystem uses `CSWCModule::Render`'s interface-clock argument for effects
   that should keep animating during a pause (most read the global world delta).

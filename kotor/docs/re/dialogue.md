@@ -173,15 +173,18 @@ int 1 is the pattern number instead of −1.
 4. Open the DLG (resource type 2029, `"DLG "`); create `CSWSDialog` and load it
    (`LoadDialog` `0x005a2ae0`, §3). Failure → fail. Dialogue `+0x90` = private.
 5. Set the pending flag. (If the client camera mode is 5, leave that mode first, low.)
-6. Register the player: a 12-byte record {player, PC id, PC gender} in the dialogue's player
-   list (`+0x64`); dialogue `+0x7c` = PC, `+0x78` = gender (used to pick the male/female text
-   variants). The PC's `+0x54` = owner; owner's `+0x54` = owner; `CGuiInGame+0x188` = owner.
-   Both sides (if creatures) drop activity modes and set activity bit 4.
+6. Register the player: a 12-byte record {player, other side's id, gender of the player's
+   creature} in the dialogue's player list (`+0x64`); dialogue `+0x7c` = the other side (called
+   "the PC" below: it normally is), `+0x78` = gender (picks the male/female text variants). The
+   other side's `+0x54` = owner; owner's `+0x54` = owner; `CGuiInGame+0x188` = owner. Both sides
+   (if creatures) drop activity modes and set activity bit 4. The local player is always
+   registered, so even a conversation a script starts between two NPCs shows its replies to the
+   player (med).
 7. `SetOwner` (`0x0059f430`): dialogue `+0x80` = owner, save the owner's AI level and raise it
    to at least 3 for the conversation.
 8. Pick the starting entry (§4.1) and run it (`RunDialogEntry` `0x004cd460`). If that fails
-   (−1: no entry, or a one-liner played as a bark), undo the hold-fade, clear the pending flag and
-   return 0; else return 1.
+   (−1: no entry, or a one-liner played as a bark): if the world fade-in was being held, fade
+   back in over 1 s now; clear the pending flag; return 0. Else return 1.
 
 The panel is chosen while loading: `ConversationType` 1 → the **computer** panel
 (`computer.gui`, `ComputerType` passed for the Rakatan skin); anything else → the **letterbox**
@@ -338,7 +341,7 @@ Client side, `ShowDialogEntry` (high unless noted):
 ### 4.5 The pump: `UpdateDialog` (`0x004cd580`) and the node-running test (`0x004cd2d0`)
 
 Every frame, for the owner: start a pending lip-sync once its VO is playing (§7); freeze hostiles
-(§4.6); then, if not paused and the node is over and a step is pending: if this is not an
+(§4.9); then, if not paused and the node is over and a step is pending: if this is not an
 animated cutscene and the VO was cut while the stream still plays, wait; else run the pending
 step (an entry, or the replies). If no step is pending and the dialogue's "ending" flag (`+0x60`)
 is set and the VO has stopped, leave the conversation. (high)
@@ -377,7 +380,8 @@ For the current entry (high):
    contain such an entry.
 3. No passing reply, or exactly one that links to no entries → set the dialogue's **end flag**
    (`+0x6c`) (the conversation will end normally after this).
-4. With no player registered (NPC-only conversation) the first passing reply is picked at once.
+4. With no player registered the first passing reply is picked at once (a multiplayer leftover:
+   StartConversation always registers the local player).
 5. Otherwise each reply's text (gendered), listener, AnimList, camera and fade fields go to the
    client (`CameraAngle` 0 resolved, §9.1), unequip lists applied, and `CGuiInGame::
    SetDialogReplies` (`0x006340e0`) shows them. With **zero** passing replies the client gets a
@@ -388,8 +392,8 @@ Client (`SetDialogReplies`, high):
 
 - **A single empty reply** (the "[continue]" link, and the placeholder above) is selected
   automatically without input: the conversation flows on as soon as the entry is over.
-- Otherwise the list is shown and input enabled. Reply hot keys 1–9 (events 0xfe..0x106),
-  up/down and accept select one (`0x006a7230`).
+- Otherwise the list is shown and input enabled. Events 0xfe..0x106 pick reply n − 0xfe
+  directly (presumably the number keys 1–9, med); up/down and accept select one (`0x006a7230`).
 - While the list is up the shot shows the PC (or the party leader with `bUseLeader`, or when the
   player is not controlling the PC) speaking to the last speaker, using **reply 0's** camera
   fields.
@@ -559,8 +563,8 @@ inferred from the data)
   text in the PC's language, before token substitution. Shipped no-VO entries give 1..23 s,
   median 5 s.
 - The 0.01 s minimum is skipped for replies and in `AnimatedCut` DLGs.
-- With no player registered (NPC-only), a node with links uses the TLK sound length of its text,
-  or 0.1125 s per character when that is under 0.15 s.
+- With no player registered (never in single player), a node with links uses the TLK sound
+  length of its text, or 0.1125 s per character when that is under 0.15 s.
 - End time = world time now + duration × 1000 ms; world time is the server's (it stops when the
   world timer is paused, gameloop.md).
 
@@ -680,8 +684,9 @@ constants, med for the exact roles of the two eye points where the decompile los
 
 - FOV is set to **55°**. Angle 6, and angle 3 following angle 3, leave the camera alone.
 - Eye points: the speaker's and listener's `CAMERAHOOK` model node (fallback: model position +
-  0.1 m up + the model's height); with `OldHitCheck` = 1 the model position + 0.1 + height is
-  used directly. S = speaker eye, L = listener eye.
+  0.1 m up + the model's height). With `OldHitCheck` = 1 the model root positions are used and
+  each model's height is added inside the shot computation instead. S = speaker eye, L =
+  listener eye.
 - Side: ±1 picks the sign of the yaw offset (side 2 = negative), §9.3.
 
 Constants per angle:
@@ -708,9 +713,12 @@ where d = |S − L|.
 - Orientation: yaw = heading of v (`atan2(−x, y)`), pitch = elevation of (target − camera) +
   90°, roll 0, built as Rz(yaw)·Rx(pitch) (`Quaternion_FromEulerDegrees` `0x004acac0`; the camera
   looks down its −z at pitch 0).
-- Obstruction: for angle 3 (and the fallback) the shot is ray-tested against the scene (ignoring
-  both participants' models and heads); a hit marks the shot "blocked" and pulls a blocked camera
-  0.1 m toward the target (med).
+- **Obstruction**: after computing a new shot, `SetShot` ray-tests it against the scene, ignoring
+  both participants' models and heads (angle 3: three rays; other angles: one). Any hit marks the
+  shot blocked (`+0x34`), and a blocked shot is computed with the **close-up formula without
+  pull-back** for the rest of the line. With `OldHitCheck` = 1 the close-up uses a fixed 0.5 m and
+  no pull-back, and a blocked camera is moved to 0.1 m in front of whatever the ray from the
+  target hit. (high for the flag and the fallback, med for the ray end points)
 - The camera **re-frames every frame** from the participants' current positions (`Update`
   `0x006bcf50`), so it follows moving speakers. Changes between shots are **cuts**; there is no
   interpolation. (high)
@@ -911,8 +919,8 @@ Counted over the 1146 distinct DLGs in the install (`kotor/re/scratch/dlgstats.p
   combat byte at `+0xac0`) are med/low.
 - Which key/panel action sends the abort code −3 to `SpeakDialogReply`, and whether Escape
   aborts a conversation (gui.md's 0x28 handling in the dialogue panels was not traced).
-- The 0.1 m obstruction pull and which shots are ray-tested in `SetShot` (the decompile lost
-  the arguments).
+- The ray end points of the obstruction tests in `SetShot` and `ComputeShot` (the decompile lost
+  the arguments); the tie rule of `ChooseSide`.
 - How the dialogue fade panel (`+0x68`) times `FadeDelay`/`FadeLength` (gui.md's fade widget).
 - `MicRange` of static cameras: stored, but its use by the sound listener was not traced.
 - `Mod_CutSceneList` and `AmbientTrack` stop/restore of the area music (the music stop fades

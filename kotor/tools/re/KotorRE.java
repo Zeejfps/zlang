@@ -23,7 +23,9 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.regex.*;
 
+import ghidra.app.cmd.disassemble.DisassembleCommand;
 import ghidra.app.cmd.function.ApplyFunctionSignatureCmd;
+import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.cmd.function.FunctionRenameOption;
 import ghidra.app.decompiler.*;
 import ghidra.app.decompiler.parallel.*;
@@ -1421,10 +1423,70 @@ public class KotorRE extends GhidraScript {
         }
     }
 
+    // Ghidra's analysis sometimes decides that a function never returns (one path ends in a
+    // non-returning call, say) and then stops disassembling after every call to it, which cuts
+    // its callers short. names.tsv corrects that with our own prototype keywords: `__returns`
+    // clears the flag and re-disassembles the code after each call site, `__noreturn` sets it.
+    Set<Function> setNoReturn(Function f, boolean noReturn) {
+        Set<Function> touched = new LinkedHashSet<>();
+        if (f.hasNoReturn() == noReturn) {
+            return touched;
+        }
+        f.setNoReturn(noReturn);
+        if (noReturn) {
+            return touched;
+        }
+        for (Reference ref : rm.getReferencesTo(f.getEntryPoint())) {
+            if (!ref.getReferenceType().isCall()) {
+                continue;
+            }
+            Instruction ins = listing.getInstructionAt(ref.getFromAddress());
+            if (ins == null) {
+                continue;
+            }
+            if (ins.getFlowOverride() == FlowOverride.CALL_RETURN) {
+                ins.setFlowOverride(FlowOverride.NONE);
+            }
+            if (ins.isFallThroughOverridden()) {
+                ins.clearFallThroughOverride();
+            }
+            Address next = ins.getMaxAddress().next();
+            if (next != null && textSet.contains(next) && listing.getInstructionAt(next) == null
+                && listing.getDefinedDataAt(next) == null) {
+                new DisassembleCommand(next, null, true).applyTo(currentProgram, monitor);
+            }
+            Function g = fm.getFunctionContaining(ins.getAddress());
+            if (g != null) {
+                touched.add(g);
+            }
+        }
+        for (Function g : touched) {
+            try {
+                CreateFunctionCmd.fixupFunctionBody(currentProgram, g, monitor);
+            }
+            catch (Exception e) {
+                println("KOTOR: could not fix the body of " + g.getName(true) + ": " + e);
+            }
+        }
+        println("KOTOR: " + f.getName(true) + " returns; re-disassembled after " + touched.size()
+            + " calling functions");
+        return touched;
+    }
+
     boolean applyPrototype(Function f, String qualified, String proto) {
         try {
             // The parser wants a plain identifier where the name goes.
             String p = proto;
+            Boolean noReturn = null;
+            if (Pattern.compile("\\b__noreturn\\b").matcher(p).find()) {
+                noReturn = true;
+                p = p.replaceAll("\\b__noreturn\\b", " ");
+            }
+            else if (Pattern.compile("\\b__returns\\b").matcher(p).find()) {
+                noReturn = false;
+                p = p.replaceAll("\\b__returns\\b", " ");
+            }
+            boolean wasNoReturn = f.hasNoReturn();
             if (p.contains(qualified)) {
                 p = p.replace(qualified, "kotor_fn");
             }
@@ -1470,6 +1532,13 @@ public class KotorRE extends GhidraScript {
                 println("KOTOR: prototype not applied to " + qualified + ": "
                     + cmd.getStatusMsg());
                 return false;
+            }
+            // Applying a signature must not change "no return" unless the row asks for it.
+            if (noReturn != null) {
+                setNoReturn(f, noReturn);
+            }
+            else if (f.hasNoReturn() != wasNoReturn) {
+                f.setNoReturn(wasNoReturn);
             }
             return true;
         }

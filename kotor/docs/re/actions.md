@@ -17,18 +17,18 @@ Related pages and the boundary with each:
   action table) and the AI master that calls `AIUpdate`.
 - [vm.md](vm.md), "Script situations": how `ActionDoCommand`/`AssignCommand`/`DelayCommand`
   capture the `action` argument; here only the queue side.
-- `gameloop.md`: the frame, the world timer, events, `DelayCommand`, pause. Actions measure time
+- [gameloop.md](gameloop.md): the frame, the world timer, events, `DelayCommand`, pause. Actions measure time
   with the world timer.
-- `movement.md`: path planning, locomotion, walkmesh queries, party following, triggers. Here only
+- [movement.md](movement.md): path planning, locomotion, walkmesh queries, party following, triggers. Here only
   what the move actions put in the queue, read back and decide.
-- `combat.md`: combat rounds, attack resolution. Here only how ATTACKOBJECT approaches and when
+- [combat.md](combat.md): combat rounds, attack resolution. Here only how ATTACKOBJECT approaches and when
   it starts and ends rounds.
-- `rules.md`: effects, saves, Force powers, skills (Security, Demolitions checks). Here only where
+- [rules.md](rules.md): effects, saves, Force powers, skills (Security, Demolitions checks). Here only where
   the checks are called.
-- `dialogue.md`: conversation flow, cameras, barks. Here only DIALOGOBJECT's approach and hand-off.
-- `party-items-saves.md`: inventory, equipping rules, containers, save games. Here only the item
+- [dialogue.md](dialogue.md): conversation flow, cameras, barks. Here only DIALOGOBJECT's approach and hand-off.
+- [party-items-saves.md](party-items-saves.md): inventory, equipping rules, containers, save games. Here only the item
   actions' timing and the `ActionList` GFF.
-- `gui.md`: the HUD action-queue icons and the container panel.
+- [gui.md](gui.md): the HUD action-queue icons and the container panel.
 
 **Warning for anyone reading the exports.** Ghidra marks `CSWSCreature::GetUseRange`
 (`0x004ee440`) as a function that does not return. It does return, but every decompiled caller
@@ -88,8 +88,9 @@ groups (high):
   group's first run that has a script id, `0x004cc530`). The GUI draws these as the action icons and
   lets the player cancel one. (med)
 - `CSWSObject::RemoveActionGroup` (`0x004cc6f0`) frees every node of a group **without** asking
-  `ClearAction`; used when attack/cast groups against a target are cancelled (the target died,
-  surrendered or was cancelled by `CancelCombat`, `0x004f61d0`, see combat.md). (high)
+  `ClearAction`; `RemoveCombatActionsOnTarget` (`0x004f61d0`) uses it to drop every attack, cast
+  and item-cast group aimed at an object (or all of them) when the target surrenders or changes
+  side, on `CancelCombat`, and for the attackers of a creature that disappears (3.13). (high)
 - `CSWSObject::SetActionGroupClearable` (`0x004cc790`) sets the `+0x70` flag of a whole group.
   (high)
 
@@ -120,7 +121,9 @@ loop:
     status = 3 (failed)
     switch node id: call the handler (creature-only handlers are skipped for other types,
                     leaving status 3; see the table in 1.9)
-    ATTACKOBJECT: while it runs, +0x84 = its target; reset to INVALID afterwards
+    ATTACKOBJECT: while it runs, +0x84 = the node's param 0, reset to INVALID afterwards
+                  (param 0 is the cutscene flag in KOTOR's layout, the target is param 1: the
+                  write looks like a leftover from a layout with the target first; med)
     CASTSPELL: on status 2 or 3 the combat round is told the cast ended (0x004d35c0)
     ITEMCASTSPELL: on any status but 1 the creature's +0x524/+0x528 are reset
     FOLLOWLEADER: status 1 when the client has no party leader yet
@@ -158,7 +161,7 @@ Consequences an implementer must keep (high):
 `+0xa8/+0xac` (last AI update time) and `+0xcc` (milliseconds since the previous AI update,
 computed by `AIUpdate` before `RunActions`) give handlers frame deltas. `AIUpdate` order for a
 creature: heartbeat → combat update → effects/perception step → `RunActions` → snap to walkmesh.
-(high; the frame itself is gameloop.md's)
+(high; the frame itself is [gameloop.md](gameloop.md)'s)
 
 ### 1.4 The common handler skeleton
 
@@ -180,8 +183,8 @@ this order of execution (high for UseObject, same shape elsewhere):
 
 ```
 MoveToPoint(use point, target, range)   (AddMoveToPointActionToFront 0x004f8a50, the node's group)
-CHECKMOVETOOBJECT 0x11 (target ...)      (UseObject; doors push FACE 0x13 + WAIT 0.5 only for
-FACEOBJECT 0x13 (target)                  transition doors, see 3.6)
+CHECKINRANGEOFOBJECT 0x11 (target ...)   (UseObject; doors push FACE 0x13 + WAIT 0.5 only for
+FACEOBJECT 0x13 (target)                  locked PreciseUse doors, see 3.6)
 WAIT 0.5 s
 <a fresh copy of the action>
 ```
@@ -194,8 +197,8 @@ and return 2. The copy runs once the move finished and, now in range, does the w
 |---|---|---|
 | creature | its position | own radius (path state `+8`, or `+0xc` when the target is the current path target) + target's radius (`+8`) + 0.3 |
 | trigger | its position if `+0x2b4` is set, else the nearest point of its outline (`0x0058c8a0`) | own personal radius (path state `+4`) + 0.5 |
-| placeable | nearest use node (`0x00584c20`) | 0.1 if it has use nodes (`+0x33c`) and the point is reachable (`0x004be5e0`) and the flag is 0; else radius + 0.75; then + 5.0 when `+0x44c` is set |
-| door | nearest of its two sides (`0x00589240`), z snapped to the walkmesh | radius + path state `+0xc` when it is the current path target; 0.1 for a door with `+0x3c4` and `+0x2c4` and a reachable point; else radius + 0.75 |
+| placeable | nearest use node (`0x00584c20`) | 0.1 if `placeables.2da` PreciseUse (`+0x33c`) is set, the point is reachable (`0x004be5e0`) and the flag argument is 0; else radius + 0.75; then + 5.0 for corpses (`IsCorpse`, `+0x44c`) |
+| door | nearest of its two sides (`0x00589240`), z snapped to the walkmesh | radius + path state `+0xc` when it is the current path target; 0.1 for a **locked** door (`+0x2c4`) whose `genericdoors.2da` PreciseUse (`+0x3c4`, med) is set, when the point is reachable; else radius + 0.75 |
 | anything else | its position | own radius |
 
 `GetIsInUseRange(target, extra)` (`0x004f6000`): different area → false; otherwise compares the
@@ -213,7 +216,7 @@ Ghidra lost)
    to the head).
 3. Creatures: stop the path (`0x005d0ec0` on the path state at `+0x340`), `+0xa8c = 1`, move
    target `+0x508` = INVALID, path state `+0x254` = INVALID and `+0x258..+0x260` = 0; if
-   `bClearCombat`, clear the combat round's queued attacks (`0x004d37e0`, combat.md); for a party
+   `bClearCombat`, clear the combat round's queued attacks (`0x004d37e0`, [combat.md](combat.md)); for a party
    member, reset the client party slot's follow state (`+0x28` of its 0x88-byte slot) to -1.
 
 The script routine `ClearAllActions()` (9, `0x0052f4a0`) always passes `bClearCombat = TRUE`.
@@ -262,7 +265,7 @@ the queue after a clear can still hold an unclearable head. (high)
   in each routine handler or in the `Add*Action` helper it calls; table in section 2).
   Exceptions that queue anyway: ActionMoveToLocation / ActionForceMoveToLocation,
   ActionForceFollowObject and ActionBarkString. (high)
-- `ActionDoCommand` on a non-commandable object deletes the situation instead (vm.md). (high)
+- `ActionDoCommand` on a non-commandable object deletes the situation instead ([vm.md](vm.md)). (high)
 - Action 0x2f (`0x0057c7b0`) would set the flag from a queued int, but nothing queues it. (high)
 
 ### 1.7 Player commands
@@ -279,17 +282,17 @@ names)
 | Minor | Order | What it does |
 |---|---|---|
 | 1 | move (`0x005235b0`) | if the new destination equals the current one within 0.1 m only the path priority byte is updated; else (commandable only): stealth off, combat round notified, `PrepareForPlayerCommand(8)`, `AddMoveToPointAction(group 0xffff, or 0xfffe when +0x9f2 == 1, point, area, target, run flag, ...)` |
-| 2 | attack | `AddAttackActions(target, ..., player = 1)` (combat.md); remembers the target at `+0x510` |
+| 2 | attack | `AddAttackActions(target, ..., player = 1)` ([combat.md](combat.md)); remembers the target at `+0x510` |
 | 3 | door | `PrepareForPlayerCommand(2)`, then `AddOpenDoorAction` when the message's word is 10021, else `AddCloseDoorAction` |
 | 4 | emote | play an animation: on self → PLAYANIMATION in front; on another object → FACEOBJECT (0x13) or, with no object, FACEPOINT (0x31), then PLAYANIMATION (speed 1, duration 0) in the same group; clears the queue first when mode bit 8 is on |
 | 5 | examine | per type (creature, item, trigger → a skill use 0x66, placeable, door) |
-| 7 | use skill | `0x004fbe40` (rules.md, trap actions) |
+| 7 | use skill | `0x004fbe40` ([rules.md](rules.md), trap actions) |
 | 8 | talk | `PrepareForPlayerCommand(8)`; queue DIALOGOBJECT (0x18) on the player with param 2 = 0, param 3 = 1, param 4 = 0 (walk up to the target) |
 | 9 | use item / talent | `0x004fc210`; feedback 0x17 when it fails |
 | 0xb | use object | `PrepareForPlayerCommand(2)`, `AddUseObjectAction` |
 | 0xc / 0xe | unlock / lock | `PrepareForPlayerCommand(2)`, `AddUnlockObjectAction` / `AddLockObjectAction` when the door (`+0x2c4`) or placeable (`+0x260`) is locked / unlocked |
 | 0xd | rest | REST action 0x2a (`0x004fd1e0`) unless the creature is in a state that forbids it; feedback 0xd5 when not commandable |
-| 0x12 / 0x23 | cast a power / use a talent | `PrepareForPlayerCommand(1)` then `AddCastSpellActions` / talent helpers (combat.md, rules.md) |
+| 0x12 / 0x23 | cast a power / use a talent | `PrepareForPlayerCommand(1)` then `AddCastSpellActions` / talent helpers ([combat.md](combat.md), [rules.md](rules.md)) |
 | 0x1c | turn | `SetOrientation` directly (no action) when commandable, alive and not down |
 | 0x1d | drive (keyboard / stick) | `0x00523450`: stealth off, `ClearAllActions(TRUE)`, `PrepareForPlayerCommand(8)`, queue 0x33 |
 | 0x24 | put an item into a container | `AddGiveItemAction` (0x22) with the placeable as recipient |
@@ -314,7 +317,7 @@ ActionList            list, one struct per node, in queue order
   Paramaters          list (sic), one struct per parameter (struct id 1)
     Type              DWORD   1..5
     Value             INT (1) | FLOAT (2) | DWORD object id (3) | CExoString (4) |
-                      struct id 2 holding a saved script situation (5, vm.md)
+                      struct id 2 holding a saved script situation (5, [vm.md](vm.md))
 ```
 
 `LoadActionQueue` (`0x004cecb0`) re-adds each node with `AddAction` and the saved group id, so the
@@ -336,7 +339,7 @@ The full table. "C" = creature-only handler (for other object types the node fai
 | Id | Script id | Name (ours) | Handler | Queued by | Conf. |
 |---|---|---|---|---|---|
 | 1 | 0 MOVETOPOINT | MoveToPoint | C `0x0051f4f0` | move routines, player move, every approach | high |
-| 2 | — | CheckMoveToObject | C `0x005101a0` | some call site (objdump scan); queuer not identified | low |
+| 2 | — | CheckMoveToObject | C `0x005101a0` | no constant-id call site found | low |
 | 3 | — | MoveAwayFromObject | C `0x005155b0` | ActionMoveAwayFromObject | high |
 | 4 | — | ContinuePath (after a jump) | C `0x0050ff20` | JumpToPoint | low |
 | 5 | — | JumpToPoint | C `0x0051d600` | (Action)JumpToLocation, cheat handler | high |
@@ -344,7 +347,7 @@ The full table. "C" = creature-only handler (for other object types the node fai
 | 7 | 1 PICKUPITEM | PickUpItem | C `0x00517410` | ActionPickUpItem, inventory orders | high |
 | 8 | — | EquipItem | C `0x00510fd0` | ActionEquipItem, ActionEquipMost*, inventory orders | high |
 | 9 | 2 DROPITEM | DropItem | C `0x00513830` | ActionPutDownItem, inventory orders | high |
-| 0xa | — | CheckMoveToPoint | C `0x00510670` | some call site (objdump scan); queuer not identified | med |
+| 0xa | — | CheckMoveToPoint | C `0x00510670` | only itself (re-queue); no first queuer found | med |
 | 0xb | — | UnequipItem | C `0x00513ec0` | ActionUnequipItem, inventory orders | high |
 | 0xc | 3 ATTACKOBJECT | AttackObject | C `0x005bbbf0` | ActionAttack, player attack, AI | high |
 | 0xe | — | Speak | `0x0057b430` | ActionSpeakString | high |
@@ -394,7 +397,7 @@ The full table. "C" = creature-only handler (for other object types the node fai
 | 0x3d | 38 FOLLOWLEADER | FollowLeader | C `0x00511130` (party members only) | ActionFollowLeader, party join | high |
 | 0x3e | — | BarkString | `0x0057ce00` | ActionBarkString | high |
 | 0x3f | 39 (no constant) | Combat (dispatcher of scheduled combat orders) | C `0x005b6210` | every scheduled attack, cast, item use, cutscene attack/move | high |
-| 0x40 | — | CheckFormationPoint | C `0x00510ab0` (party members only) | some call site (objdump scan); queuer not identified | low |
+| 0x40 | — | CheckFormationPoint | C `0x00510ab0` (party members only) | `0x0051ac10` (party formation moves, [movement.md](movement.md)) | low |
 | 0x41 | — | SurrenderToEnemies | C `0x0051b420` | ActionSurrenderToEnemies | high |
 
 Ids 0, 0xd, 0x39 and 0x3b have no case in `RunActions` and fail at once. `ACTION_SIT` (37) is
@@ -412,7 +415,7 @@ Param lists give value slots in order. (high unless marked)
 | 20 ActionRandomWalk() | `0x0052d440` | 0x2d, Cmd | home point (self's position now) x,y,z; area id |
 | 21 ActionMoveToLocation(l, bRun) | `0x0053fe00` | 1 (not Cmd) | point of `l`; **the creature's own area**, not `l`'s; no target; run; range 0; no timeout |
 | 382 ActionForceMoveToLocation(l, bRun, fTimeout = 30) | same | 1 (not Cmd) | as 21 with the timeout |
-| 22 ActionMoveToObject(o, bRun, fRange = 1.0) | `0x0053fb00` | 1 + 0x11 (group 0xfffe) (+ 0x13 for placeables with use nodes), Cmd | point = o's position; range = max(fRange, GetUseRange); target o; no timeout |
+| 22 ActionMoveToObject(o, bRun, fRange = 1.0) | `0x0053fb00` | 1 + 0x11 (group 0xfffe) (+ 0x13 for PreciseUse placeables), Cmd | point = o's position; range = max(fRange, GetUseRange); target o; no timeout |
 | 383 ActionForceMoveToObject(o, bRun, fRange, fTimeout = 30) | same | same | with the timeout |
 | 23 ActionMoveAwayFromObject(o, bRun, fRange = 40) | `0x0053f990` | 3, **group 0xfffe**, Cmd | o, run, range, retries = 10 |
 | 360 ActionMoveAwayFromLocation(l, bRun, fRange = 40) | `0x0052d090` | 1 then 0x2c (0xfffe), Cmd = 1 | flee point at `fRange` from `l`; 0x2c gets point, run, range, retries 10 |
@@ -456,15 +459,15 @@ Param lists give value slots in order. (high unless marked)
 | 730 ActionFollowLeader() | `0x0052cbe0` | 0x3d | party members (`+0xa88`), Cmd = 1 |
 | 45 SetCameraFacing(f) | `0x00542530` | 0x16, Cmd | int 1, degrees, 0, 0, int 0 |
 | 10 / 143 SetFacing, SetFacingPoint | `0x00542830` | — | turns at once |
-| 255 BeginConversation, 417 SpeakOneLinerConversation | `0x0052e9f0`, `0x00543f70` | — | act at once (dialogue.md) |
-| 514 GetUserActionsPending() | `0x0053e1b0` | — | true if the combat round's scheduled list (`+0x9b0`, 3.13) holds an entry flagged as a user order (`+0x84`) whose objects are alive |
-| 6 AssignCommand / 7 DelayCommand | vm.md | — | event 1 to the target; the closure then usually calls `Action*` on that object |
+| 255 BeginConversation, 417 SpeakOneLinerConversation | `0x0052e9f0`, `0x00543f70` | — | act at once ([dialogue.md](dialogue.md)) |
+| 514 GetUserActionsPending() | `0x0053e1b0` | — | true if the combat round's scheduled list (`+0x9b0`, 3.13) holds an entry whose `+0x84` field is set and whose two objects (`+0x14`, `+0x44`) are alive |
+| 6 AssignCommand / 7 DelayCommand | [vm.md](vm.md) | — | event 1 to the target; the closure then usually calls `Action*` on that object |
 
 ## 3. The actions
 
 ### 3.1 Moving (ids 1, 2, 0xa, 3, 0x2c, 0x2d, 0x33)
 
-The planner and the walking itself are movement.md's; this is what the actions store and decide.
+The planner and the walking itself are [movement.md](movement.md)'s; this is what the actions store and decide.
 
 **MOVETOPOINT (1), `CSWSCreature::AIActionMoveToPoint` `0x0051f4f0`.** Parameters, as
 `AddMoveToPointAction` (`0x004f8b60`) and its in-front twin `0x004f8a50` pack them (high for the
@@ -485,7 +488,8 @@ layout, med where marked):
 Queuing sets creature `+0xa8c = 2` and clears path state `+0x26c..+0x274`. Per frame (med; the
 decompilation is damaged by the noreturn bug):
 
-1. Common preconditions; no path state → fail. Run is forced off when `+0x8e8 == 1`.
+1. Common preconditions; no path state → fail; a creature whose can-move bit (`+0x9f0 & 2`) is
+   clear (rooted / paralysed by effects, [rules.md](rules.md)) fails. Run is forced off when `+0x8e8 == 1`.
 2. With a range > 0 and the creature already within it of the destination (and a straight walk
    available, `0x0050c330`): treated as arrived.
 3. Deadline set and reached ⇒ the creature is placed at the destination ("Force Timeout,
@@ -501,12 +505,14 @@ decompilation is damaged by the noreturn bug):
    per-frame locomotion step (`0x0051bb10`, or `0x0051d9c0` for client-driven creatures) — status
    1 while walking. Failed (3): animation 10000; a forced move teleports to the destination and
    succeeds; otherwise the action fails ("The Path find has Failed... Why?").
-6. Very short distances (< 0.1 m) end at once with animation 10001.
+6. Already within 0.1 m of the destination in the same area: placed exactly on it when that spot
+   is walkable, animation 10001, done.
 
 **CHECKMOVETOPOINT (0xa, `0x00510670`)**: point, area, target, run. If the creature is in another
 area or farther than twice its personal radius from the point, it re-queues itself, a move and a
 short wait in front; else done. (med) **CHECKMOVETOOBJECT (2, `0x005101a0`)** is the object
-version; nothing queues id 2 directly (low).
+version (its tail is lost to the noreturn bug); no call site pushing id 2 as a constant was found
+(low).
 
 **AddShortWaitToFront** (`0x004eb5a0`): the movement retries are separated by a WAIT of 0.3 s
 (0.1 s for creatures with a client twin). (high)
@@ -527,7 +533,7 @@ walker stays near where it was when the action was queued, until cleared. (high)
 
 **DRIVEDIRECT (0x33, `0x0051e6a0`)**: keyboard/stick movement of the controlled character,
 queued by input minor 0x1d after clearing the queue: direction x,y, a heading word, two bytes,
-flags (bit 1 run, cleared when `+0x8e8` forces walking). movement.md. (med)
+flags (bit 1 run, cleared when `+0x8e8` forces walking). [movement.md](movement.md). (med)
 
 **CONTINUEPATH (4, `0x0050ff20`)**: pushed by JumpToPoint; if the path state holds a multi-point
 path, drops its first point, queues a move along the rest and a short wait; then waits 0.75 s.
@@ -559,21 +565,22 @@ point relative to the party leader's position and facing; when not there, it pus
 a WAIT (0.25 s; 0.1 s for party members) and a move to the point, and returns done; when farther
 than the client's follow distance (`0x00634a70`) it does the same. FOLLOWREPEAT pushes itself and a
 FOLLOW again, so the pair never ends by itself: following lasts until the queue is cleared. (med:
-the point arithmetic is movement.md's)
+the point arithmetic is [movement.md](movement.md)'s)
 
 **FOLLOWLEADER (0x3d, `0x00511130`)**: party members only (`+0xa88`), with `+0x4c0` set, able to
 move (`+0x9f0 & 2`), in an area: sets `+0xa8c = 3` (the locomotion code then follows the leader,
-movement.md) and returns 1 — it runs for ever. `RunActions` also keeps it (status 1) while the
+[movement.md](movement.md)) and returns 1 — it runs for ever. `RunActions` also keeps it (status 1) while the
 client has no leader. (high)
 
-**CHECKFORMATIONPOINT (0x40, `0x00510ab0`)**: party members: if not within range + 0.01 of a point
-or in another area, sets the client party slot state to 5. (low)
+**CHECKFORMATIONPOINT (0x40, `0x00510ab0`)**, pushed with a move by `0x0051ac10` (party
+formation movement): party members: if not within range + 0.01 of a point or in another area, sets
+the client party slot state to 5. (low)
 
 ### 3.4 Facing and camera (0x13, 0x31, 0x16)
 
 FACEOBJECT (0x13, `0x0050fb60`) turns to face an object in the same area (no turn when closer than
 ~0.003 m) and is done; another area fails. FACEPOINT (0x31, `0x0050fc90`) faces a point.
-SETCAMERAFACING (0x16, `0x005137c0`) sends the facing to the client twin (camera, movement.md).
+SETCAMERAFACING (0x16, `0x005137c0`) sends the facing to the client twin (camera, [movement.md](movement.md)).
 All instant. (high)
 
 ### 3.5 USEOBJECT (0x28, `CSWSObject::AIActionUseObject` `0x0057e8c0`)
@@ -612,8 +619,8 @@ Creature (high, from the disassembly):
    set by `CSWSDoor::SetOpenState` `0x00589600`) shows as its animation: 0 closed = 10022,
    1 open one way = 10050, 2 open the other way = 10051, 3 (forced when `+0x308` is 0, likely
    destroyed) = 10072; the action tests the animation for 10022. (high)
-2. Not in the same area or not in use range ⇒ push a fresh OPENDOOR (new group); for a door with
-   `+0x3c4` and `+0x2c4` (a locked transition door) also a WAIT 0.5 s and a FACEOBJECT; then a
+2. Not in the same area or not in use range ⇒ push a fresh OPENDOOR (new group); for a locked
+   PreciseUse door (`+0x2c4` and `+0x3c4`) also a WAIT 0.5 s and a FACEOBJECT; then a
    move to the door's use point (`AddMoveToPointActionToFront`, target INVALID); `+0x1f0 = 1`;
    done.
 3. In range: trapped (`+0x2e8`), reputation < 90 and a different faction (`+0x2b8`) ⇒ script
@@ -623,8 +630,23 @@ Creature (high, from the disassembly):
    once). Second pass (`+0x1f0` = 1): `+0x1f0 = 0`, send event 7 OPEN_OBJECT to the door (caller
    = actor), push WAIT 0.5 s in the same group, done.
 
-The door's reaction to OPEN_OBJECT (state change, animation, OnOpen, transition) is in its event
-handler (`0x0058b850`, movement.md / party-items-saves.md). (high)
+The door's side (`CSWSDoor::EventHandler` `0x0058b850`, high):
+
+- event 7 OPEN_OBJECT ⇒ `CSWSDoor::Open(opener)` (`0x00589c70`): open state 1 when the opener
+  stands in front of the door (positive dot product of opener − door with the door's facing),
+  else 2, so the door swings away from the opener; the opener is remembered at `+0x31c`
+  (`GetLastOpenedBy`); `SetOpenState(state, 1)` on the door and on its linked door
+  (`0x00589580`); then the OnOpen script (`+0x228`) runs at once.
+- event 6 CLOSE_OBJECT ⇒ closer at `+0x320`, state 0 on the door and its linked door, OnClosed
+  (`+0x230`).
+- script event 34 FAIL_TO_OPEN ⇒ `+0x324` = the actor, OnFailToOpen (`+0x298`); when the door is
+  locked, feedback 13 ("locked") to the actor.
+- script event 26 (trap triggered) ⇒ when trapped (`+0x2e8`) and the actor is not immune, feedback
+  0x52, OnTrapTriggered (`+0x270`), one-shot traps (`+0x304`) are removed. Event 15 ON_MELEE_ATTACKED
+  runs OnMeleeAttacked and also springs the trap when the attacker is within 4 m.
+- script event 30 CLICKED (a transition door reached by MOVETOPOINT) runs OnClick (default
+  `NW_G0_Transition` for transition doors) and starts the area transition ([movement.md](movement.md) /
+  [gameloop.md](gameloop.md)).
 
 **CLOSEDOOR (0x15, `0x0057bbf0`)**: target door or placeable (anything else fails). Creature not
 in range ⇒ push a fresh CLOSEDOOR (new group, int 1) and a move (node's group), done. In range (or
@@ -634,7 +656,7 @@ in the action. (high)
 ### 3.7 Locks (0x26, 0x27)
 
 **OPENLOCK (0x26, `0x0057d9d0`)**: params target, item used (INVALID or a security tunnel), int.
-(high for structure, med for the check details, which are rules.md's)
+(high for structure, med for the check details, which are [rules.md](rules.md)'s)
 
 1. Approach (use range + 0); flag `+0x9a4` marks the approach issued.
 2. First arrival (`+0x980` = 0): `+0x980 = 1`; push a fresh OPENLOCK and, before it, PLAYANIMATION
@@ -642,9 +664,9 @@ in the action. (high)
    (`StartActionProgress` `0x004ef480`, type 7); done. For the player the animation action plays
    `gui_lockpick` 250 ms in (3.9).
 3. Second pass: trap check as for doors (event 26). `UseKeyOnObject(target, 0)` succeeds ⇒ door:
-   `CSWSDoor::OpenByUser` (`0x00589c70`); placeable: push USEOBJECT; done.
+   `CSWSDoor::Open` (`0x00589c70`, the door opens away from the user); placeable: push USEOBJECT; done.
 4. KeyRequired (placeable `+0x26c`) ⇒ event 34 FAIL_TO_OPEN, feedback 15, done.
-5. Security check (rules.md): skill roll + item bonus against the OpenLockDC (placeable `+0x274`,
+5. Security check ([rules.md](rules.md)): skill roll + item bonus against the OpenLockDC (placeable `+0x274`,
    door `+0x2bf`). Success: Locked = 0, door opened by the user and event 12 UNLOCK_OBJECT; a
    placeable then gets USEOBJECT pushed; the item's charges (`+0x28c`) drop by one, the item is
    destroyed (event 11) at the last charge; a sound-set entry (0x19 / 0x18) is played. A combat
@@ -672,7 +694,7 @@ leaves the inventory onto the ground. (med)
 
 **EQUIPITEM (8, `0x00510fd0`)** and **UNEQUIPITEM (0xb, `0x00513ec0`)**: params item, slot mask,
 instant flag. No range, no animation, no delay at the action level: modes off, preconditions, then
-the creature's equip/unequip routine (`0x00501de0` / `0x005023a0`, party-items-saves.md), the
+the creature's equip/unequip routine (`0x00501de0` / `0x005023a0`, [party-items-saves.md](party-items-saves.md)), the
 client's pending icon removed, done. Queuing (`AddEquipItemActions` `0x004f0420`,
 `AddUnequipActions` `0x004f06d0`): non-commandable ⇒ only the icon cleanup; in combat (`+0x4e0`)
 with `+0xac0 == 1`, a weapon-slot equip gives feedback 0xc1 (0xc2 for unequip); an EQUIP for the
@@ -773,7 +795,9 @@ Completion is purely time-based on the server; the client just plays what `SetAn
 **WAIT (`0x0057b5b0`)**: param seconds. Preconditions; elapsed = now − the action's start time
 (`+0xbc/+0xc0`, set by `RunActions` when the action first ran); status 1 while elapsed (ms) <
 seconds × 1000, else done. Only the millisecond part of the difference is compared. World time, so
-waits stop while the world timer stops (gameloop.md). (high)
+waits stop while the world timer stops ([gameloop.md](gameloop.md)). The start time is cleared only when an
+action ends with 2 or 3, so a WAIT that runs right after an action that returned 4 (re-queued)
+inherits that older start and ends early. (high)
 
 **DOCOMMAND (`0x0057b530`)**: preconditions (fail ⇒ the node destructor deletes the situation);
 otherwise `RunScriptSituation(situation, self, TRUE)`, the slot is zeroed, done. The script runs
@@ -809,11 +833,11 @@ flow, which is long and partly lost)
   busy the action re-queues itself in front and waits. Approach unless param 4: param 3 = 0 ⇒
   walk only if farther than 10 m; param 3 = 1 ⇒ walk into use range + 1.0 m. When the player's
   party starts a conversation away from the leader, party members are cleared and those farther
-  than 30 m from the leader are placed near him (search radius 10 m). Then the actual start: script
+  than 30 m from the leader are placed near him (search radius 10 m) (low). Then the actual start: script
   event 7 DIALOGUE sent to the target (caller = actor) with ints (-1, -1, private, ignore-range)
-  and the resref as string 0 — the target's OnDialog / conversation start (dialogue.md). Done.
+  and the resref as string 0 — the target's OnDialog / conversation start ([dialogue.md](dialogue.md)). Done.
   A second phase (param 5 set) positions the two speakers face to face and hands control to the
-  dialogue GUI. A knocked-out party member target first gets a resurrect-type effect (type 4).
+  dialogue GUI. A knocked-out party member target first gets an effect of type 4 (low).
 - CLEARING a DIALOGOBJECT clears the GUI pending flag (1.5).
 
 **PAUSECONVERSATION (0x1f, `0x0057b290`)** sets `+0x50 = 1` (and creature `+0xa00 |= 4`);
@@ -824,8 +848,8 @@ and that bit, drops modes and stealth. A failed precondition calls virtual slot 
 
 ### 3.13 Combat, casting and status actions (0xc, 0x3f, 0xf, 0x2e, 0x32, 0x38, 0x11, 0x12, 0x10, 0x24, 0x34, 0x35, 0x41)
 
-The round itself, attack rolls and damage are combat.md's; spell effects, Force point costs and
-skill checks are rules.md's. (high unless marked)
+The round itself, attack rolls and damage are [combat.md](combat.md)'s; spell effects, Force point costs and
+skill checks are [rules.md](rules.md)'s. (high unless marked)
 
 **Scheduled versus direct.** Combat orders are not queued as ATTACKOBJECT / CASTSPELL /
 ITEMCASTSPELL straight away. Their helpers (`AddAttackActions` `0x004fde40`, `AddCastSpellActions`
@@ -888,7 +912,7 @@ Per frame:
 1. Reset the path state's approach range; `+0x52c = 3000`.
 2. Fail (3), cleaning up the interact target, animation and pending attack animations, when the
    attacker is dead or knocked out, lacks the ability bits 0x80 or 0x04 in `+0x9f0` (cleared by
-   stun-type effects, rules.md), or targets itself.
+   stun-type effects, [rules.md](rules.md)), or targets itself.
 3. Done (2) quietly when the target is gone, dead, knocked out or not attackable
    (`GetCanAttack` `0x005b48f0`: doors and placeables always; creatures need a valid perception
    entry unless the attacker is party-controlled).
@@ -908,7 +932,7 @@ Per frame:
    rounds when the two can pair (`0x004d2c30`), animation 10109 if either side has a simple model
    (appearance MODELTYPE S or L), else a solo round with 10009 — and wait (1) until it has started;
    then set the animation, `+0x50c` = target, round busy, round timer = the node's duration,
-   attack counter + 1, start the attack (`0x005bba80`, combat.md) ⇒ 2.
+   attack counter + 1, start the attack (`0x005bba80`, [combat.md](combat.md)) ⇒ 2.
 
 **CASTSPELL (0xf, creature `0x00514af0`, placeable `0x00584ec0`).** The routine
 (`0x0052ee50`, 48/234/501/502) pops spell, target object or location, metamagic, cheat, domain
@@ -1010,7 +1034,7 @@ constants):
 3. First arrival (`+0x97c` = 0): `+0x97c = 1`; push a fresh copy, PLAYANIMATION (10134 for a mine,
    10135 for a placeable trap, 10132 otherwise, speed 1.0, **4.5 s**) and FACEOBJECT; show a 4500
    ms action timer (type 3); done.
-4. Second pass: the Demolitions check (rules.md): out of combat the roll is a 20 (take 20), in
+4. Second pass: the Demolitions check ([rules.md](rules.md)): out of combat the roll is a 20 (take 20), in
    combat d20 (`rank % 20 + 1` style roll from `rand`); a trap set by the actor himself is handled
    apart; success disarms (OnDisarm), failure may trigger it.
 
@@ -1025,7 +1049,7 @@ follow the same approach-then-animate shape with their own flags and checks. (me
 | queue warnings / trims | 75, 500, 1000 nodes | RunActions | high |
 | interaction range, creature target | own radius + target radius + 0.3 | `0x004ee440` | high |
 | interaction range, trigger | radius + 0.5 | `0x004ee440` | high |
-| interaction range, door / placeable | radius + 0.75, or 0.1 at a reachable use node; +5.0 placeable flag `+0x44c` | `0x004ee440` | high |
+| interaction range, door / placeable | radius + 0.75, or 0.1 at a reachable PreciseUse node (doors: only when locked); +5.0 for corpse placeables | `0x004ee440` | high |
 | in-range slack | +0.1 m | `0x004f6000` | high |
 | dialog start distance (scripted, approach mode 0) | 10 m | `0x0057a470` | med |
 | dialog approach (player click) | use range + 1.0 m | `0x0057a470` | med |
@@ -1054,14 +1078,21 @@ follow the same approach-then-animate shape with their own flags and checks. (me
 - The noreturn flag on `0x004ee440` hides the tail of about 20 handlers from the decompiled
   export; after it is fixed, re-read MOVETOPOINT (step 2–6 above are reconstructed from a damaged
   decompilation), CHECKMOVETOOBJECT (2), DIALOGOBJECT's second phase, HEAL and the trap handlers.
-- MOVETOPOINT flag bits 1, 3–9 and param 7: what each one changes in the planner (movement.md).
-- Who queues ids 2, 0xa, 0x1f, 0x2f, 0x3c and 0x40 directly (callers that pass the id in a
-  register: `AddCastSpellActions`, `0x004f9da0`, `0x00520bf0`).
+- MOVETOPOINT flag bits 1, 3–9 and param 7: what each one changes in the planner ([movement.md](movement.md)).
+- Who first queues ids 2 and 0xa (a scan of every `AddAction`/`AddActionToFront` call site finds
+  no constant push of 2, and 0xa only in its own handler).
 - The camera reset at the start of `RunActions` (client option byte `+0x6d == 5`).
 - The creature fields named here only by use: `+0x9f2` (a state below 10 lets player commands keep
   the queue), `+0x4c0`, `+0x9f0` bit 2, `+0x8e8` (forces walking), `+0xac0`, `+0x9dc`.
-- The exact effect of the door/placeable OPEN_OBJECT / CLOSE_OBJECT / LOCK / UNLOCK events (door
-  event handler `0x0058b850`, placeable `0x00587ba0`): not read here.
+- The placeable's side of OPEN_OBJECT / CLOSE_OBJECT (event handler `0x00587ba0`) was not read;
+  the door's is in 3.6.
 - DROPITEM and TAKEITEM details (the second-phase calls) and the item USEOBJECT branch.
 - The approach "mode" param 3 of DIALOGOBJECT is set to 1 by both known queuers; mode 0 (10 m) may
   be dead.
+- OPENLOCK sends AI event 12 UNLOCK_OBJECT and LOCK sends 13, but the door event handler
+  (`0x0058b850`) has no case for them; who fires OnUnlock / OnLock (script events 29 / 28, which
+  the door handles by running `+0x278` / `+0x258`) was not found.
+- Scheduled combat entry types 2 and 3 (no creator found); COUNTERSPELL's final status and HEAL's
+  approach (truncated exports); which effects clear the `+0x9f0` ability bits 0x80 / 0x04 / 0x02.
+- Ids 0x10 and 0x24 have working handlers but no queuer; 0x1f and 0x2f neither (the routines act
+  directly).
