@@ -19,3 +19,11 @@ what I had to write instead, how often).
 - **Shell tool restrictions (not the compiler).** In a worktree-isolated agent the shell refuses
   compound commands that mix `cd`, `&&`, globs and heredocs ("too complex to verify"); every
   repeated build or run needs its own small script file (`tools/ingame/go.sh`).
+- **`if` with string-literal branches of different lengths** fails ("branches have different types:
+  [4]u8 and [0]u8"): `let s = if x { "none" } else { "" }` needs a `[]u8` annotation
+  (`let s: []u8 = ...`). Hit twice in the journal panel.
+- **Events of other panels are not routed to a menu's `on_event`.** Message boxes and sub-panels
+  that a menu opens are separate panels, so their events never reach it; three panels poll
+  `gui::take_events` themselves. Not a compiler problem, a framework limit to revisit.
+- **No way to hide a panel without closing it** in lib/gui; the HUD is moved out of reach
+  (`Panel.sx`) while a conversation runs. A `hidden` flag on `Panel` would be clearer.
