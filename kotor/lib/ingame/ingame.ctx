@@ -129,6 +129,8 @@ namespace ingame {
     fn handle_key { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, keycode: i32 } -> bool {
         if ui.hud_hidden or gui::is_modal_open{ g = &ui.gui } { return false }
         if keycode == sdl::key::ESCAPE {
+            // A panel in a sub-mode (the equipment's slot selection) takes Escape as its Cancel.
+            if ui.menu != NO_MENU and panel_escape{ &ui, &w, &dev } { return true }
             if ui.menu != NO_MENU { close_menu{ &ui, &w } } else { open_menu{ &ui, &w, &dev, n = MENU_OPTIONS } }
             return true
         }
@@ -221,6 +223,12 @@ namespace ingame {
     fn update { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, sc: scene::Scene, camera: cam::Camera, dt: f32 } {
         gui::update{ g = &ui.gui, dt }
         hud::log_tick{ log = &ui.log, dt }
+        // A conversation or cutscene takes the screen: the HUD and any menu go away for it
+        // (re/gui.md, "SetHudMode"), and the world is not picked.
+        if w.conversation.active != ui.hud_hidden {
+            if w.conversation.active and ui.menu != NO_MENU { close_menu{ &ui, &w } }
+            set_hud_hidden{ &ui, hidden = w.conversation.active }
+        }
         let aspect = @as(f32, ui.width) / @as(f32, ui.height)
         // A conversation covers the screen with its own panels.
         hud::update{ h = &ui.hud, g = &ui.gui, &w, &dev, text = &ui.text, camera, aspect, blocked = is_blocked{ &ui }, dt }
@@ -275,6 +283,8 @@ namespace ingame {
     // Adds the interface to the frame: the HUD's own render targets, then the panels.
     fn draw { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame } {
         if ui.menu == NO_MENU and not ui.hud_hidden { hud::draw{ h = &ui.hud, g = &ui.gui, &w, &dev, &frame, log = &ui.log } }
+        // A menu that draws into a render target before the panels (the map's picture with its arrows).
+        if ui.menu == MENU_MAP { map_panel::draw{ s = &ui.menus.map, g = &ui.gui, &w, &dev, &frame, panel = ui.menu_panel } }
         gui::draw{ g = &ui.gui, &frame }
     }
 }

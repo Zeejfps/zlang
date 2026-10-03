@@ -190,6 +190,16 @@ namespace ingame {
         else { options_panel::close{ s = &ui.menus.options, g = &ui.gui, &w, panel } }
     }
 
+    // Escape offered to the open panel first: true when it was a Cancel inside the panel (the
+    // equipment's slot selection) and the menu stays.
+    fn panel_escape { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device } -> bool {
+        if ui.menu == MENU_EQUIP and ui.menus.equip.selecting {
+            let ev = gui::Event{ kind = gui::EventKind::activate, panel = ui.menu_panel, control = -1, tag = "BTN_BACK", value = 0, row = 0, user = 0 }
+            return panel_event{ &ui, &w, &dev, n = ui.menu, panel = ui.menu_panel, ev }
+        }
+        return false
+    }
+
     // ---- the buttons every menu shares
 
     // BTN_CHANGE1 and BTN_CHANGE2 show the portraits of the other two party members; pressing one
