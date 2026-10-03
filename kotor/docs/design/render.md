@@ -188,7 +188,10 @@ game; the frame gets the live particles. Emitters sort with transparent draws.
 **Text**: `render::Font` is a texture and a glyph box per byte (a font TXI's `upperleftcoords` and
 `lowerrightcoords`; v of the upper corner is the larger), with `fontheight`, `baselineheight` and
 `spacingR` × 100 in texels. `draw_text` lays out one line into quads, `measure_text` says how
-wide it is. Wrapping and alignment are the GUI's.
+wide it is. Wrapping and alignment are the GUI's. `font::load` (lib/material/font.ctx) makes a
+`render::Font` from a game font through `res`: the TPC's top level, nearest filtering, and the
+glyph table from its TXI; with `variant` it takes `NAMEb` when that exists (txi-render.md: GUI
+files name `fnt_d16x16`, whose table doesn't fit its pixels, and `fnt_d16x16b`'s does).
 
 **Video**: a movie's Y, U and V planes as three `grey8` textures updated each frame, drawn with
 `Image::yuv`; the backend converts BT.601 limited range (bink.md) in the shader.

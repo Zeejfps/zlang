@@ -64,10 +64,10 @@ fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut 
         return
     }
     defer res::close{ &fs, &rm }
-    let names: [3][]u8 = ["fnt_d16x16b", "dialogfont16x16", "fnt_galahad14"]
+    let names: [3][]u8 = ["fnt_d16x16", "dialogfont16x16", "fnt_galahad14"]
     let mut k: usize = 0
     while k < 3 {
-        let found = load_font{ &fs, &dev, &h, rm, name = names[k], glyphs = glyphs[k * 256..(k + 1) * 256] } iferr err{ error } {
+        let found = font::load{ &fs, &dev, &h, rm, name = names[k], variant = true, glyphs = glyphs[k * 256..(k + 1) * 256] } iferr err{ error } {
             _ = @fmt(&io, "font {}: {}\n", names[k], error)
             null
         }
@@ -459,24 +459,6 @@ namespace rt_out {
 
 // ---- the UI scene
 
-// A game font: its TPC's top level as a texture, its TXI's glyph boxes in `glyphs`.
-fn load_font { mut fs: Fs, mut dev: gpu::Device, mut h: heap::Heap, rm: res::Manager, name: []u8, glyphs: []mut render::Glyph } -> !?render::Font {
-    let bytes = try res::load{ &fs, rm, name, kind = restype::Type::tpc, realloc = heap::alloc, heap = &h } ifnull { return null }
-    defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &h, mem = bytes, count = 0 }
-    let t = try tex::read_tpc{ realloc = heap::alloc, heap = &h, bytes }
-    let m = try fonttxi::read{ text = t.txi, glyphs }
-    let mut desc = render::make_texture_desc{ format = material::pixel_format{ f = t.format }, width = t.width, height = t.height, levels = 1 }
-    desc.mipmap = false
-    desc.filter = render::Filter::nearest          // the fonts' TXI says `filter 0`
-    desc.wrap_u = render::Wrap::clamp
-    desc.wrap_v = render::Wrap::clamp
-    let texture = try gpu::create_texture{ &dev, desc, data = tex::level{ t, image = 0, level = 0 } }
-    return render::Font{
-        texture, texture_width = @as(f32, t.width), texture_height = @as(f32, t.height),
-        glyphs = glyphs[..@as(usize, m.count)], height = m.height, baseline = m.baseline, spacing = m.spacing,
-    }
-}
-
 fn draw_ui_and_save { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena, a: Assets, fonts: []render::Font, dir: []u8 } -> ! {
     let target = try gpu::create_target{ &dev, width = 256, height = 192 }
     defer gpu::free_target{ &dev, t = target }
@@ -569,7 +551,7 @@ fn draw_ui { mut dev: gpu::Device, mut frame: render::Frame, a: Assets, fonts: [
     // Text in each font, then larger, then a line cut off by its clipping box.
     let mut y: f32 = 28.0
     let lines: [3][]u8 = [
-        "fnt_d16x16b: The quick brown fox jumps over the lazy dog. 0123456789",
+        "fnt_d16x16(b): The quick brown fox jumps over the lazy dog. 0123456789",
         "dialogfont16x16: Taris, Dantooine, Kashyyyk, Manaan, Korriban!",
         "fnt_galahad14: KNIGHTS OF THE OLD REPUBLIC (ctxlang)",
     ]
@@ -853,19 +835,19 @@ fn draw_area {
     let vi = render::add_view{ &frame, view } ifnull { return }
     let mut box = math::aabb::empty{}
     let mut rooms: u32 = 0
-    let mut lines = fonttxi::Lines{ text, at = 0 }
+    let mut lines = font::Lines{ text, at = 0 }
     let mut left: u32 = 0
     while true {
-        let line = fonttxi::next_line{ cur = &lines } ifnull { break }
-        let key = fonttxi::word{ line, n = 0 }
-        if fonttxi::same_word{ a = key, b = "roomcount" } {
-            left = @as(u32, fonttxi::number{ line })
+        let line = font::next_line{ cur = &lines } ifnull { break }
+        let key = font::word{ line, n = 0 }
+        if ci::eq{ a = key, b = "roomcount" } {
+            left = @as(u32, font::number{ line })
             continue
         }
         if left == 0 { continue }
         left = left - 1
-        let name = fonttxi::word{ line, n = 0 }
-        let at = v3{ x = fonttxi::parse{ w = fonttxi::word{ line, n = 1 } }, y = fonttxi::parse{ w = fonttxi::word{ line, n = 2 } }, z = fonttxi::parse{ w = fonttxi::word{ line, n = 3 } } }
+        let name = font::word{ line, n = 0 }
+        let at = v3{ x = font::parse{ w = font::word{ line, n = 1 } }, y = font::parse{ w = font::word{ line, n = 2 } }, z = font::parse{ w = font::word{ line, n = 3 } } }
         let model = try kmodels::load{ &lib, &fs, rm, &heap, name } ifnull { continue }
         let parts = try kmodels::upload{ &dev, &cache, &fs, rm, &heap, model, envmap = "" }
         let pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model }
