@@ -224,7 +224,23 @@ namespace save {
         defer obj::free_bytes{ heap = w.heap, s = module }
         // Leave what is running, the player too (the save brings its own).
         if w.module != obj::INVALID { modload::leave_keeping{ &w, &vm, engine, keep = false } }
+        let old_player = w.player
         if w.player != obj::INVALID { world::destroy{ &w, id = w.player } }
+        // What the old player carried or wore goes with it (the module change kept those items).
+        let all = list::items{ list = w.objects.all }
+        let mut oi: usize = 0
+        while oi < all.len {
+            let o = all[oi]
+            oi = oi + 1
+            if o.destroyed or o.kind != obj::Kind::item { continue }
+            if obj::item{ o } is some{ value = it } {
+                if old_player != obj::INVALID and (it.possessor == old_player or it.possessor == w.pc) {
+                    o.destroyed = true
+                    list::push{ list = &w.doomed, item = o.id } iferr {}
+                }
+            }
+        }
+        list::clear{ list = &w.bag }
         w.player = obj::INVALID
         if w.pc != obj::INVALID {
             world::destroy{ &w, id = w.pc }
