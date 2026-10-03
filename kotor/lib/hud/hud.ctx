@@ -16,6 +16,7 @@ namespace hud {
         hp: i32, hp_max: i32,
         fp: i32, fp_max: i32,
         level: i32,
+        xp: u32,
         down: bool,
     }
 
@@ -69,7 +70,7 @@ namespace hud {
         fit_to_screen{ &g, p }
         let mut h = Hud{
             panel, file_w, file_h,
-            widgets = [Widget{ id = obj::INVALID, portrait = 0, hp = -1, hp_max = -1, fp = -1, fp_max = -1, level = -1, down = false }; 3],
+            widgets = [Widget{ id = obj::INVALID, portrait = 0, hp = -1, hp_max = -1, fp = -1, fp_max = -1, level = -1, xp = 0, down = false }; 3],
             block = [BlockPart{ index = -1, x = 0, y = 0 }; 16],
             minimap = open_minimap{ &g, &w, &dev, panel },
             font = gui::font_slot{ &g, fs = &w.fs, &dev, name = "dialogfont10x10" }, combat = false, combat_message = 0.0,
@@ -280,9 +281,17 @@ namespace hud {
             wd.fp = f.fp
             wd.fp_max = f.fp_max
         }
-        if fresh or wd.level != level or wd.down != down {
+        let xp = c.xp
+        if fresh or wd.level != level or wd.down != down or wd.xp != xp {
             wd.level = level
             wd.down = down
+            wd.xp = xp
+            // A mark over the portrait when the member is down, and the level-up badge when the
+            // experience allows another level.
+            let up = can_level_up{ w = &w, id }
+            gui::set_visible{ &g, panel, tag = tag_n{ into = buf[..], prefix = "LBL_DEBILATATED", n = n + 1 }, visible = down }
+            gui::set_visible{ &g, panel, tag = tag_n{ into = buf[..], prefix = "LBL_LEVELUP", n = n + 1 }, visible = up }
+            gui::set_visible{ &g, panel, tag = tag_n{ into = buf[..], prefix = "LBL_LVLUPBG", n = n + 1 }, visible = up }
             set_member_tooltip{ &h, &g, &w, &text, n, id, v, f, level }
         }
         _ = c
