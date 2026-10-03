@@ -1,0 +1,263 @@
+// The eight in-game menus and the tab bar over them (docs/re/gui.md, "Menus: opening, switching,
+// closing"). A menu is a full-screen panel with a panel module of its own (equip_panel.ctx ...):
+// the framework here opens and closes them, keeps the bar, pauses the world and routes events;
+// each panel module fills its controls from the game and turns its events into game actions.
+//
+// A panel module has the same five functions (see equip_panel.ctx):
+//   new {} -> State                                  its state, kept in `Menus`
+//   open { s, g, w, dev, panel } -> !                the panel was just added (or must be refilled)
+//   update { s, g, w, dev, panel, dt }               every frame while it is shown
+//   on_event { s, g, w, dev, panel, ev } -> bool     one of its events; true when it used it
+//   close { s, g, w, panel }                         it is going away
+// The framework handles the buttons every menu shares: BTN_EXIT and Escape close, BTN_CHANGE1 and
+// 2 change the leader (the panel is then opened again to refill), the tab bar switches menus.
+namespace ingame {
+    const MENU_EQUIP: i32 = 0
+    const MENU_INVENTORY: i32 = 1
+    const MENU_CHARACTER: i32 = 2
+    const MENU_ABILITIES: i32 = 3
+    const MENU_MESSAGES: i32 = 4
+    const MENU_JOURNAL: i32 = 5
+    const MENU_MAP: i32 = 6
+    const MENU_OPTIONS: i32 = 7
+    const MENU_COUNT: i32 = 8
+    const NO_MENU: i32 = -1
+
+    // The state of each panel module.
+    struct Menus {
+        equip: equip_panel::State,
+        inventory: inventory_panel::State,
+        character: character_panel::State,
+        abilities: abilities_panel::State,
+        messages: messages_panel::State,
+        journal: journal_panel::State,
+        map: map_panel::State,
+        options: options_panel::State,
+        partysel: partysel_panel::State,
+    }
+
+    fn new_menus {} -> Menus {
+        return Menus{
+            equip = equip_panel::new{}, inventory = inventory_panel::new{}, character = character_panel::new{},
+            abilities = abilities_panel::new{}, messages = messages_panel::new{}, journal = journal_panel::new{},
+            map = map_panel::new{}, options = options_panel::new{}, partysel = partysel_panel::new{},
+        }
+    }
+
+    // The menu's .gui file.
+    fn menu_file { n: i32 } -> []u8 {
+        if n == MENU_EQUIP { return "equip" }
+        if n == MENU_INVENTORY { return "inventory" }
+        if n == MENU_CHARACTER { return "character" }
+        if n == MENU_ABILITIES { return "abilities" }
+        if n == MENU_MESSAGES { return "messages" }
+        if n == MENU_JOURNAL { return "journal" }
+        if n == MENU_MAP { return "map" }
+        return "optionsingame"
+    }
+
+    // The tab buttons of the bar and the HUD's buttons, in menu order.
+    const TAB_TAGS: [8][]u8 = ["BTN_EQU", "BTN_INV", "BTN_CHAR", "BTN_ABI", "BTN_MSG", "BTN_JOU", "BTN_MAP", "BTN_OPT"]
+
+    // Which menu a button tag opens (-1: none). The HUD's minimap button opens the map.
+    fn menu_of_tag { tag: []u8 } -> i32 {
+        let mut i: usize = 0
+        while i < 8 {
+            if slice::eq_bytes{ a = tag, b = TAB_TAGS[i] } { return @as(i32, i) }
+            i = i + 1
+        }
+        if slice::eq_bytes{ a = tag, b = "BTN_MINIMAP" } { return MENU_MAP }
+        return -1
+    }
+
+    // The menu key of the original's keymap.2da: U equipment, I inventory, P character, K abilities,
+    // J messages, L journal, M map, O options. -1 for any other key.
+    fn menu_of_key { keycode: i32 } -> i32 {
+        if keycode == 'u' { return MENU_EQUIP }
+        if keycode == 'i' { return MENU_INVENTORY }
+        if keycode == 'p' { return MENU_CHARACTER }
+        if keycode == 'k' { return MENU_ABILITIES }
+        if keycode == 'j' { return MENU_MESSAGES }
+        if keycode == 'l' { return MENU_JOURNAL }
+        if keycode == 'm' { return MENU_MAP }
+        if keycode == 'o' { return MENU_OPTIONS }
+        return -1
+    }
+
+    // ---- opening and closing
+
+    // Puts menu `n` on the screen with the tab bar over it, or switches to it when another is open.
+    // Refused during a conversation or while a modal panel is up.
+    fn open_menu { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, n: i32 } {
+        if n < 0 or n >= MENU_COUNT or gui::is_modal_open{ g = &ui.gui } { return }
+        if ui.menu == n { return }
+        if ui.menu != NO_MENU {
+            close_panels{ &ui, &w }
+        } else {
+            gui::play_sound{ g = &ui.gui, n = 4 }
+        }
+        let panel = gui::open{ g = &ui.gui, fs = &w.fs, &dev, name = menu_file{ n }, mode = gui::Mode::full_screen, modal = false } iferr err{ error } {
+            _ = @fmt(&w.io, "kotor: menu {}: {}\n", menu_file{ n }, error)
+            return
+        }
+        gui::set_backdrop{ g = &ui.gui, fs = &w.fs, &dev, panel, kind = if n == MENU_MAP { 3 } else { 0 } }
+        let bar = gui::open{ g = &ui.gui, fs = &w.fs, &dev, name = "top", mode = gui::Mode::placed, modal = false } iferr { 0 }
+        ui.menu = n
+        ui.menu_panel = panel
+        ui.top_panel = bar
+        place_bar{ &ui, panel = bar }
+        gui::set_focus{ g = &ui.gui, panel = bar, tag = TAB_TAGS[@as(usize, n)] }
+        fill_panel{ &ui, &w, &dev, n, panel }
+        // Menus pause the game (gameloop.md 6): the clock stops, the world still ticks.
+        clock::set_pause{ c = &w.clock, bit = clock::PAUSE_MENU, on = true }
+    }
+
+    // Centres the tab bar at the top of the screen.
+    fn place_bar { mut ui: Ingame, panel: u32 } {
+        let p = gui::find_panel{ g = &ui.gui, id = panel } ifnull { return }
+        p.x = (ui.gui.ui_w - p.w) / 2
+        p.y = 0
+        gui::place{ g = &ui.gui, p }
+    }
+
+    // Closes the open menu and its bar and gives the game back its clock.
+    fn close_menu { mut ui: Ingame, mut w: world::World } {
+        if ui.menu == NO_MENU { return }
+        close_panels{ &ui, &w }
+        ui.menu = NO_MENU
+        clock::set_pause{ c = &w.clock, bit = clock::PAUSE_MENU, on = false }
+        gui::play_sound{ g = &ui.gui, n = 5 }
+    }
+
+    fn close_panels { mut ui: Ingame, mut w: world::World } {
+        panel_close{ &ui, &w, n = ui.menu, panel = ui.menu_panel }
+        gui::close{ g = &ui.gui, id = ui.menu_panel }
+        gui::close{ g = &ui.gui, id = ui.top_panel }
+        ui.menu_panel = 0
+        ui.top_panel = 0
+    }
+
+    // ---- the panel modules
+
+    fn fill_panel { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, n: i32, panel: u32 } {
+        fill_change_buttons{ g = &ui.gui, &w, &dev, panel }
+        panel_open{ &ui, &w, &dev, n, panel } iferr err{ error } {
+            _ = @fmt(&w.io, "kotor: opening menu {}: {}\n", n, error)
+        }
+    }
+
+    fn panel_open { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, n: i32, panel: u32 } -> ! {
+        if n == MENU_EQUIP { try equip_panel::open{ s = &ui.menus.equip, g = &ui.gui, &w, &dev, panel } }
+        else if n == MENU_INVENTORY { try inventory_panel::open{ s = &ui.menus.inventory, g = &ui.gui, &w, &dev, panel } }
+        else if n == MENU_CHARACTER { try character_panel::open{ s = &ui.menus.character, g = &ui.gui, &w, &dev, panel } }
+        else if n == MENU_ABILITIES { try abilities_panel::open{ s = &ui.menus.abilities, g = &ui.gui, &w, &dev, panel } }
+        else if n == MENU_MESSAGES { try messages_panel::open{ s = &ui.menus.messages, g = &ui.gui, &w, &dev, panel, log = &ui.log } }
+        else if n == MENU_JOURNAL { try journal_panel::open{ s = &ui.menus.journal, g = &ui.gui, &w, &dev, panel } }
+        else if n == MENU_MAP { try map_panel::open{ s = &ui.menus.map, g = &ui.gui, &w, &dev, panel } }
+        else { try options_panel::open{ s = &ui.menus.options, g = &ui.gui, &w, &dev, panel } }
+    }
+
+    fn panel_update { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, n: i32, panel: u32, dt: f32 } {
+        if n == MENU_EQUIP { equip_panel::update{ s = &ui.menus.equip, g = &ui.gui, &w, &dev, panel, dt } }
+        else if n == MENU_INVENTORY { inventory_panel::update{ s = &ui.menus.inventory, g = &ui.gui, &w, &dev, panel, dt } }
+        else if n == MENU_CHARACTER { character_panel::update{ s = &ui.menus.character, g = &ui.gui, &w, &dev, panel, dt } }
+        else if n == MENU_ABILITIES { abilities_panel::update{ s = &ui.menus.abilities, g = &ui.gui, &w, &dev, panel, dt } }
+        else if n == MENU_MESSAGES { messages_panel::update{ s = &ui.menus.messages, g = &ui.gui, &w, &dev, panel, dt, log = &ui.log } }
+        else if n == MENU_JOURNAL { journal_panel::update{ s = &ui.menus.journal, g = &ui.gui, &w, &dev, panel, dt } }
+        else if n == MENU_MAP { map_panel::update{ s = &ui.menus.map, g = &ui.gui, &w, &dev, panel, dt } }
+        else { options_panel::update{ s = &ui.menus.options, g = &ui.gui, &w, &dev, panel, dt } }
+    }
+
+    fn panel_event { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, n: i32, panel: u32, ev: gui::Event } -> bool {
+        if n == MENU_EQUIP { return equip_panel::on_event{ s = &ui.menus.equip, g = &ui.gui, &w, &dev, panel, ev } }
+        if n == MENU_INVENTORY { return inventory_panel::on_event{ s = &ui.menus.inventory, g = &ui.gui, &w, &dev, panel, ev } }
+        if n == MENU_CHARACTER { return character_panel::on_event{ s = &ui.menus.character, g = &ui.gui, &w, &dev, panel, ev } }
+        if n == MENU_ABILITIES { return abilities_panel::on_event{ s = &ui.menus.abilities, g = &ui.gui, &w, &dev, panel, ev } }
+        if n == MENU_MESSAGES { return messages_panel::on_event{ s = &ui.menus.messages, g = &ui.gui, &w, &dev, panel, ev, log = &ui.log } }
+        if n == MENU_JOURNAL { return journal_panel::on_event{ s = &ui.menus.journal, g = &ui.gui, &w, &dev, panel, ev } }
+        if n == MENU_MAP { return map_panel::on_event{ s = &ui.menus.map, g = &ui.gui, &w, &dev, panel, ev } }
+        return options_panel::on_event{ s = &ui.menus.options, g = &ui.gui, &w, &dev, panel, ev }
+    }
+
+    fn panel_close { mut ui: Ingame, mut w: world::World, n: i32, panel: u32 } {
+        if n == MENU_EQUIP { equip_panel::close{ s = &ui.menus.equip, g = &ui.gui, &w, panel } }
+        else if n == MENU_INVENTORY { inventory_panel::close{ s = &ui.menus.inventory, g = &ui.gui, &w, panel } }
+        else if n == MENU_CHARACTER { character_panel::close{ s = &ui.menus.character, g = &ui.gui, &w, panel } }
+        else if n == MENU_ABILITIES { abilities_panel::close{ s = &ui.menus.abilities, g = &ui.gui, &w, panel } }
+        else if n == MENU_MESSAGES { messages_panel::close{ s = &ui.menus.messages, g = &ui.gui, &w, panel } }
+        else if n == MENU_JOURNAL { journal_panel::close{ s = &ui.menus.journal, g = &ui.gui, &w, panel } }
+        else if n == MENU_MAP { map_panel::close{ s = &ui.menus.map, g = &ui.gui, &w, panel } }
+        else { options_panel::close{ s = &ui.menus.options, g = &ui.gui, &w, panel } }
+    }
+
+    // Escape offered to the open panel first: true when it was a Cancel inside the panel (the
+    // equipment's slot selection) and the menu stays.
+    fn panel_escape { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device } -> bool {
+        if ui.menu == MENU_EQUIP and ui.menus.equip.selecting {
+            let ev = gui::Event{ kind = gui::EventKind::activate, panel = ui.menu_panel, control = -1, tag = "BTN_BACK", value = 0, row = 0, user = 0 }
+            return panel_event{ &ui, &w, &dev, n = ui.menu, panel = ui.menu_panel, ev }
+        }
+        return false
+    }
+
+    // ---- the buttons every menu shares
+
+    // BTN_CHANGE1 and BTN_CHANGE2 show the portraits of the other two party members; pressing one
+    // makes that member the leader (the panels show the leader). A button with no member hides.
+    fn fill_change_buttons { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } {
+        let ids = party_ids_of{ w = &w }
+        let tags: [2][]u8 = ["BTN_CHANGE1", "BTN_CHANGE2"]
+        let mut k: usize = 0
+        while k < 2 {
+            let has = k + 1 < ids.len
+            gui::set_visible{ &g, panel, tag = tags[k], visible = has }
+            if has {
+                let resref = hud::portrait_of{ w = &w, id = ids[k + 1] }
+                let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name = resref }
+                if img.ok { gui::set_picture{ &g, panel, tag = tags[k], texture = img.tex, w = img.w, h = img.h } }
+            }
+            k = k + 1
+        }
+    }
+
+    fn party_ids_of { w: *world::World } -> []u32 { return party::members{ w } }
+
+    // Makes the party member `step` places down the list the leader (1 or 2 from the leader).
+    fn change_leader { mut w: world::World, step: usize } {
+        let ids = party::members{ w = &w }
+        if step >= ids.len { return }
+        let id = ids[step]
+        if hud::is_down{ w = &w, id } { return }
+        party::set_leader{ &w, id }
+        w.pc = id
+    }
+
+    // The events of an open menu and its bar. Returns after handling them all.
+    fn menu_events { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, events: []gui::Event } {
+        let mut i: usize = 0
+        while i < events.len {
+            let ev = events[i]
+            i = i + 1
+            if ui.menu == NO_MENU { return }
+            if ev.panel == ui.top_panel {
+                if ev.kind == gui::EventKind::activate {
+                    let n = menu_of_tag{ tag = ev.tag }
+                    if n >= 0 { open_menu{ &ui, &w, &dev, n } }
+                } else if ev.kind == gui::EventKind::cancel {
+                    close_menu{ &ui, &w }
+                }
+            } else if ev.panel == ui.menu_panel {
+                if ev.kind == gui::EventKind::cancel {
+                    close_menu{ &ui, &w }
+                } else if ev.kind == gui::EventKind::activate and slice::eq_bytes{ a = ev.tag, b = "BTN_EXIT" } {
+                    close_menu{ &ui, &w }
+                } else if ev.kind == gui::EventKind::activate and (slice::eq_bytes{ a = ev.tag, b = "BTN_CHANGE1" } or slice::eq_bytes{ a = ev.tag, b = "BTN_CHANGE2" }) {
+                    change_leader{ &w, step = if slice::eq_bytes{ a = ev.tag, b = "BTN_CHANGE1" } { 1 } else { 2 } }
+                    fill_panel{ &ui, &w, &dev, n = ui.menu, panel = ui.menu_panel }
+                } else {
+                    _ = panel_event{ &ui, &w, &dev, n = ui.menu, panel = ui.menu_panel, ev }
+                }
+            }
+        }
+    }
+}

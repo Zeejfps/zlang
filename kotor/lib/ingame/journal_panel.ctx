@@ -1,0 +1,316 @@
+// Journal (journal.gui, menu 5): the quests the player has, active or completed, and the text of the
+// selected one (docs/re/gui.md, "CSWGuiJournal"). The quests and their texts are global.jrl
+// (journal_jrl.ctx); which quests were started and their states are the journal (journal_model.ctx).
+//
+// What the original does, which this follows:
+//  - BTN_SWAPTEXT switches between the active and the completed list; the button always offers the
+//    other one. A quest is completed when the entry its state names has the End flag.
+//  - BTN_SORT steps the list's sort: by order received (newest first), by name, by priority (0
+//    first) or by planet (highest planet row first, none last); the button offers the next one and the
+//    title reads "<list> - <sort>". Each list keeps its own sort for the session.
+//  - Selecting a quest shows its current entry's text, headed by the planet's name when the quest has
+//    one. Quests the player has not looked at yet ("new") are drawn in the new-item colour until the
+//    list is left (swapped or closed).
+//  - BTN_QUESTITEMS opens the plot items the leader carries (journal_items.ctx).
+namespace journal_panel {
+    const COMPLETED_STRREF: u32 = 32177     // "Completed Quests"
+    const ACTIVE_STRREF: u32 = 32178        // "Active Quests"
+    const SORT_STRREF: u32 = 42566          // "Sort"
+    const SORT_ORDER: u32 = 0
+    const SORT_NAME: u32 = 1
+    const SORT_PRIORITY: u32 = 2
+    const SORT_PLANET: u32 = 3
+    const SORT_COUNT: u32 = 4
+    const SORT_NAMES: [4]u32 = [32173, 32174, 32175, 32176]     // "by Order Received" ...
+    const NO_ENTRY: i32 = -1
+
+    // One quest of the list on screen, with what the sorts compare (a copy: sorting never reads the
+    // journal or the JRL again).
+    struct Row {
+        quest: usize,           // index into the journal's quests
+        cat: usize,             // its category in the JRL
+        entry: i32,             // the entry its state names (index into Jrl.entries), NO_ENTRY
+        name: u32,              // title strref
+        priority: u32,
+        planet: i32,
+        day: u32,
+        time: u32,
+        seq: u32,
+        new: bool,
+    }
+
+    struct View { rows: [128]Row, count: usize }
+
+    struct State {
+        opened: bool,
+        jrl: ?*mut journal::Jrl,        // global.jrl, read on the first open
+        planets: [32]u32,               // planetary.2da's Name strref by row
+        planet_count: usize,
+        journal: journal::Journal,      // PLACEHOLDER store, see journal_of
+        completed: bool,                // the completed list is shown
+        sort: [2]u32,                   // the sort of the active (0) and the completed (1) list
+        view: View,
+        seen: [128]bool,                // quests selected since the list was built: no longer new
+        shown_version: u32,             // the journal's version the list was built from
+        items_panel: u32,               // the quest items panel on top, 0 when closed (journal_items.ctx)
+        items: [64]u32,                 // its rows: item ids
+        item_count: usize,
+    }
+
+    fn new {} -> State {
+        let mut s: State
+        s.journal = journal::new_journal{}
+        return s
+    }
+
+    // PLACEHOLDER: the engine keeps no journal yet (AddJournalQuestEntry only logs). This is the one
+    // place the panel gets it from. The engine should hold a `journal::Journal` (journal_model.ctx:
+    // tag, state, day, time per quest) in `world::World`, call `journal::set_state{ &w.journal, tag,
+    // state, allow_lower = bAllowOverrideHigher, day, time }` from AddJournalQuestEntry,
+    // `journal::remove` from RemoveJournalQuestEntry and answer GetJournalEntry with
+    // `journal::state_of`; the party table saves and loads the same quests (JNL_Entries). Then this
+    // returns `&w.journal` and State.journal goes away. A module change makes a new Ingame, so until
+    // then the quests added by the test commands do not survive one.
+    fn journal_of { mut s: State, w: *world::World } -> *mut journal::Journal {
+        return &s.journal
+    }
+
+    // The panel was just added, or the leader changed and it must be filled again.
+    fn open { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> ! {
+        s.opened = true
+        try ensure_loaded{ &s, &w }
+        try refill{ &s, &g, &w, panel }
+    }
+
+    // Every frame while the panel is shown.
+    fn update { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, dt: f32 } {
+        items_events{ &s, &g, &w }
+        let jn = journal_of{ &s, w = &w }
+        if jn.version == s.shown_version { return }
+        refill{ &s, &g, &w, panel } iferr err{ error } {
+            _ = @fmt(&w.io, "kotor: journal: {}\n", error)
+        }
+    }
+
+    // One of the panel's GUI events (BTN_EXIT, Escape and the BTN_CHANGE buttons are the
+    // framework's). True when it used the event.
+    fn on_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, ev: gui::Event } -> bool {
+        if ev.kind == gui::EventKind::row_selected and slice::eq_bytes{ a = ev.tag, b = "LB_ITEMS" } {
+            show_quest{ &s, &g, &w, panel, row = ev.row } iferr err{ error } {
+                _ = @fmt(&w.io, "kotor: journal: {}\n", error)
+            }
+            return true
+        }
+        if ev.kind != gui::EventKind::activate { return false }
+        if slice::eq_bytes{ a = ev.tag, b = "BTN_SWAPTEXT" } {
+            clear_seen{ &s, w = &w }
+            s.completed = not s.completed
+            gui::play_sound{ &g, n = 0 }
+            refill{ &s, &g, &w, panel } iferr err{ error } {
+                _ = @fmt(&w.io, "kotor: journal: {}\n", error)
+            }
+            return true
+        }
+        if slice::eq_bytes{ a = ev.tag, b = "BTN_QUESTITEMS" } {
+            open_items{ &s, &g, &w, &dev } iferr err{ error } {
+                _ = @fmt(&w.io, "kotor: quest items: {}\n", error)
+            }
+            return true
+        }
+        if slice::eq_bytes{ a = ev.tag, b = "BTN_SORT" } {
+            let list: usize = if s.completed { 1 } else { 0 }
+            s.sort[list] = (s.sort[list] + 1) % SORT_COUNT
+            gui::play_sound{ &g, n = 1 }
+            refill{ &s, &g, &w, panel } iferr err{ error } {
+                _ = @fmt(&w.io, "kotor: journal: {}\n", error)
+            }
+            return true
+        }
+        return false
+    }
+
+    // The panel is going away.
+    fn close { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } {
+        close_items{ &s, &g }
+        clear_seen{ &s, w = &w }
+        s.opened = false
+    }
+
+    // ---- the quests
+
+    // Reads global.jrl and planetary.2da once.
+    fn ensure_loaded { mut s: State, mut w: world::World } -> ! {
+        if s.jrl != null { return }
+        let blank: journal::Jrl = zeroed_jrl{}
+        let p = try alloc::new(journal::Jrl, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = blank }
+        s.jrl = p
+        try journal::load{ &w, jrl = p }
+        try load_planets{ &s, &w }
+    }
+
+    fn zeroed_jrl {} -> journal::Jrl {
+        let mut j: journal::Jrl
+        return j
+    }
+
+    // The strref of each planet's name: the JRL files a quest under a planetary.2da row.
+    fn load_planets { mut s: State, mut w: world::World } -> ! {
+        let bytes = try world::read_scratch{ &w, name = "planetary", kind = restype::Type::twoda } ifnull { return }
+        let t = try twoda::parse{ data = bytes, realloc = arena::alloc, heap = w.scratch }
+        let n = twoda::rows{ t }
+        s.planet_count = if n > 32 { 32 } else { n }
+        let mut i: usize = 0
+        while i < s.planet_count {
+            s.planets[i] = @trunc(u32, twoda::get_int{ t, row = i, column = "Name" } ifnull -1)
+            i = i + 1
+        }
+    }
+
+    // The quests of the list on show, sorted, into `s.view`: those the JRL knows whose state's
+    // entry does (completed list) or does not (active list) end the quest.
+    fn collect_rows { mut s: State, w: *world::World } {
+        s.view.count = 0
+        let jrl = s.jrl ifnull { return }
+        let jn = journal_of{ &s, w }
+        let mut i: usize = 0
+        while i < jn.count {
+            let q = i
+            i = i + 1
+            let cat = journal::find_category{ jrl, tag = journal::tag_at{ j = jn, i = q } } ifnull { continue }
+            let state = jn.quests[q].state
+            let found = if state < 0 { null } else { journal::find_entry{ jrl, cat, id = @trunc(u32, state) } }
+            let mut entry = NO_ENTRY
+            let mut ends = false
+            if found != null {
+                entry = @as(i32, found)
+                ends = jrl.entries[found].end
+            }
+            if ends != s.completed { continue }
+            s.view.rows[s.view.count] = Row{
+                quest = q, cat, entry, name = jrl.categories[cat].name, priority = jrl.categories[cat].priority,
+                planet = jrl.categories[cat].planet, day = jn.quests[q].day, time = jn.quests[q].time,
+                seq = jn.quests[q].seq, new = jn.quests[q].new,
+            }
+            s.view.count = s.view.count + 1
+        }
+        sort_rows{ v = &s.view, w, mode = s.sort[if s.completed { 1 } else { 0 }] }
+    }
+
+    // Insertion sort (stable) of the rows by `mode`.
+    fn sort_rows { mut v: View, w: *world::World, mode: u32 } {
+        let mut i: usize = 1
+        while i < v.count {
+            let r = v.rows[i]
+            let mut k = i
+            while k > 0 and comes_before{ a = r, b = v.rows[k - 1], w, mode } {
+                v.rows[k] = v.rows[k - 1]
+                k = k - 1
+            }
+            v.rows[k] = r
+            i = i + 1
+        }
+    }
+
+    // Whether quest `a` is listed above `b`. Ties fall back to the order received.
+    fn comes_before { a: Row, b: Row, w: *world::World, mode: u32 } -> bool {
+        if mode == SORT_NAME {
+            let c = ci::compare{ a = world::string_by_strref{ w, strref = a.name }, b = world::string_by_strref{ w, strref = b.name } }
+            if c != 0 { return c < 0 }
+        } else if mode == SORT_PRIORITY {
+            if a.priority != b.priority { return a.priority < b.priority }
+        } else if mode == SORT_PLANET {
+            if a.planet != b.planet { return a.planet > b.planet }
+        }
+        if a.day != b.day { return a.day > b.day }
+        if a.time != b.time { return a.time > b.time }
+        return a.seq > b.seq
+    }
+
+    // Fills the list, the title and the buttons from the journal. Safe to repeat.
+    fn refill { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } -> ! {
+        collect_rows{ &s, w = &w }
+        s.shown_version = journal_of{ &s, w = &w }.version
+        try set_titles{ &s, &g, &w, panel }
+        gui::list_clear{ &g, panel, tag = "LB_ITEMS" }
+        let mut i: usize = 0
+        while i < s.view.count {
+            let r = s.view.rows[i]
+            try add_row{ &g, panel, strref = r.name, user = @as(i64, r.quest), new = r.new }
+            i = i + 1
+        }
+        // A rebuilt list selects its first quest, as the original does.
+        if s.view.count > 0 { gui::list_select{ &g, panel, tag = "LB_ITEMS", row = 0 } }
+        try show_quest{ &s, &g, &w, panel, row = if s.view.count > 0 { 0 } else { -1 } }
+    }
+
+    fn add_row { mut g: gui::Gui, panel: u32, strref: u32, user: i64, new: bool } -> ! {
+        let t = try text_of{ &g, strref }
+        defer gui::free_string{ &g, s = t }
+        let row = try gui::list_add{ &g, panel, tag = "LB_ITEMS", text = t, user }
+        if new { gui::list_set_color{ &g, panel, tag = "LB_ITEMS", row, color = new_color{} } }
+    }
+
+    // The colour of a quest the player has not looked at yet (the original's new-item colour).
+    fn new_color {} -> render::Color { return render::Color{ r = 0.95, g = 0.0, b = 0.85, a = 1.0 } }
+
+    // dialog.tlk's text with its tokens expanded (the Gui's memory: gui::free_string); empty for no strref.
+    fn text_of { mut g: gui::Gui, strref: u32 } -> ![]mut u8 {
+        if strref == journal::NO_STRREF { return slice::empty(u8){} }
+        return try gui::tlk_text{ &g, strref }
+    }
+
+    // The title "<list> - <sort>" and the two buttons that offer the other list and the next sort.
+    fn set_titles { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } -> ! {
+        let list: usize = if s.completed { 1 } else { 0 }
+        let sort = s.sort[list]
+        let here = world::string_by_strref{ w = &w, strref = if s.completed { COMPLETED_STRREF } else { ACTIVE_STRREF } }
+        let there = if s.completed { ACTIVE_STRREF } else { COMPLETED_STRREF }
+        let sort_name = world::string_by_strref{ w = &w, strref = SORT_NAMES[@as(usize, sort)] }
+        let next_name = world::string_by_strref{ w = &w, strref = SORT_NAMES[@as(usize, (sort + 1) % SORT_COUNT)] }
+        let sort_word = world::string_by_strref{ w = &w, strref = SORT_STRREF }
+        let mut b = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } }
+        defer list::free{ list = &b.bytes }
+        try @fmt(&b, "{} - {}", here, sort_name)
+        try gui::set_text{ &g, panel, tag = "LBL_TITLE", text = utf8::view{ b }.bytes }
+        try gui::set_strref{ &g, panel, tag = "BTN_SWAPTEXT", strref = there }
+        list::clear{ list = &b.bytes }
+        try @fmt(&b, "{} {}", sort_word, next_name)
+        try gui::set_text{ &g, panel, tag = "BTN_SORT", text = utf8::view{ b }.bytes }
+    }
+
+    // Shows the text of the quest on list row `row`: the planet it is filed under, then the text of the
+    // entry its state names. Looking at a quest ends its being new.
+    fn show_quest { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32, row: i32 } -> ! {
+        let jrl = s.jrl ifnull { return }
+        if row < 0 or @as(usize, row) >= s.view.count {
+            try journal::show_text{ &g, panel, tag = "LBL_ITEM_DESCRIPTION", text = "" }
+            return
+        }
+        let r = s.view.rows[@as(usize, row)]
+        s.seen[r.quest] = true
+        let mut b = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } }
+        defer list::free{ list = &b.bytes }
+        if r.planet >= 0 and @as(usize, r.planet) < s.planet_count {
+            let p = try text_of{ &g, strref = s.planets[@as(usize, r.planet)] }
+            defer gui::free_string{ &g, s = p }
+            if p.len > 0 { try @fmt(&b, "{}:\n", p) }
+        }
+        if r.entry != NO_ENTRY {
+            let t = try text_of{ &g, strref = jrl.entries[@as(usize, r.entry)].text }
+            defer gui::free_string{ &g, s = t }
+            try @fmt(&b, "{}", t)
+        }
+        try journal::show_text{ &g, panel, tag = "LBL_ITEM_DESCRIPTION", text = utf8::view{ b }.bytes }
+    }
+
+    // The quests looked at stop being new (the original clears them when the list is left).
+    fn clear_seen { mut s: State, w: *world::World } {
+        let jn = journal_of{ &s, w }
+        let mut i: usize = 0
+        while i < jn.count {
+            if s.seen[i] { journal::clear_new{ j = jn, i } }
+            s.seen[i] = false
+            i = i + 1
+        }
+    }
+}

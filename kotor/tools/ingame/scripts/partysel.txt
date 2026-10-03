@@ -1,0 +1,14 @@
+# party selection from the map: Carth is in the party, Bastila, Canderous, HK-47 and Mission are
+# available; pick Bastila (the party is then full), try a third (nothing), press Done, confirm
+3 ui join carth
+4 ui shove 1 -19 -138
+5 ui avail 0 1 3 6
+6 ui menu map
+8 ui click 450 536
+12 ui move 416 271
+14 ui click 416 271
+18 ui click 507 271
+20 ui move 575 271
+22 ui click 640 544
+26 ui key return
+30 ui party

@@ -1,0 +1,362 @@
+// What the equipment and inventory panels know about items: the nine slots of the equip screen,
+// an item's icon, name, description and base-item facts, the checks that decide whether a creature
+// can put it on, and the numbers the equip screen shows (docs/re/gui.md "CSWGuiEquip",
+// docs/re/party-items-saves.md sections 4 and 5). Everything here only reads the world, except the
+// description, which re-reads the item's blueprint (the world keeps no text for it).
+//
+// The rules lead's stats (feats, class tables, effects) are not in the engine yet, so a few
+// answers are stand-ins, each marked `PLACEHOLDER:` where the real system replaces it.
+namespace items {
+    // ---- the slots of the equip screen, in the order of the original's table (g_aEquipSlots)
+
+    const SLOTS: usize = 9
+    const SLOT_TAGS: [9][]u8 = ["WEAP_L", "WEAP_R", "HEAD", "ARM_L", "ARM_R", "BODY", "HANDS", "IMPLANT", "BELT"]
+    // The creature's equipment index (obj::SLOT_*) of each.
+    const SLOT_OF: [9]usize = [5, 4, 0, 7, 8, 1, 3, 9, 10]
+    // The empty-slot picture: `i` + this, or `id` + this for a droid.
+    const SLOT_ICONS: [9][]u8 = ["weap_l", "weap_r", "head", "forearm_l", "forearm_r", "armor", "hands", "implant", "belt"]
+    const SLOT_NAMES: [9]u32 = [31378, 31379, 31375, 31376, 31377, 31380, 31383, 31388, 31382]
+    const SLOT_NAMES_DROID: [9]u32 = [31378, 31379, 41810, 41814, 41814, 41813, 41811, 41811, 41812]
+
+    const RACE_DROID: u32 = 5
+    const RACE_HUMAN: u32 = 6
+
+    // The mask (`1 << index`) of an equipment index; baseitems.2da's EquipableSlots uses it.
+    fn mask_of { index: usize } -> u32 { return @as(u32, 1) << @as(u32, index) }
+
+    // The slot button (0..8) for an equipment index, or SLOTS when the equip screen has none.
+    fn slot_button { index: usize } -> usize {
+        let mut s: usize = 0
+        while s < SLOTS {
+            if SLOT_OF[s] == index { return s }
+            s = s + 1
+        }
+        return SLOTS
+    }
+
+    // `a` then `b` in `into`: BTN_INV_ + HEAD.
+    fn join_tag { into: []mut u8, a: []u8, b: []u8 } -> []u8 {
+        slice::copy(u8){ dst = into[..a.len], src = a }
+        slice::copy(u8){ dst = into[a.len..a.len + b.len], src = b }
+        return into[..a.len + b.len]
+    }
+
+    // ---- facts about an item
+
+    fn item_of { w: *world::World, id: u32 } -> ?*mut obj::Item {
+        let o = world::object{ w, id } ifnull { return null }
+        return obj::item{ o }
+    }
+
+    // A baseitems.2da number of the item's base item; `fallback` for anything else.
+    fn base_int { w: *world::World, id: u32, column: []u8, fallback: i32 } -> i32 {
+        let it = item_of{ w, id } ifnull { return fallback }
+        return twoda::get_int{ t = w.tables.baseitems, row = @as(usize, it.base), column } ifnull fallback
+    }
+
+    // The slots (as masks) the item can be worn in; 0 for anything that is not equipable.
+    fn equipable_slots { w: *world::World, id: u32 } -> u32 {
+        return @trunc(u32, base_int{ w, id, column = "equipableslots", fallback = 0 })
+    }
+
+    // Two-handed by the server's test: WeaponWield 3, 5 or 6 (party-items-saves.md 4.3).
+    fn is_two_handed { w: *world::World, id: u32 } -> bool {
+        let wield = base_int{ w, id, column = "weaponwield", fallback = 0 }
+        return wield == 3 or wield == 5 or wield == 6
+    }
+
+    fn is_ranged { w: *world::World, id: u32 } -> bool {
+        return base_int{ w, id, column = "rangedweapon", fallback = 0 } > 0
+    }
+
+    // How many the stack holds (1 for anything that is not an item).
+    fn stack_of { w: *world::World, id: u32 } -> u32 {
+        let it = item_of{ w, id } ifnull { return 1 }
+        return if it.stack < 1 { 1 } else { it.stack }
+    }
+
+    // The item's name as the lists show it: the object's own.
+    fn name_of { w: *world::World, id: u32 } -> []u8 { return hud::name_of{ w, id } }
+
+    // ---- icons
+
+    // The item's icon texture name: `i` + baseitems ItemClass + `_` + the model variation as
+    // three digits (checked against every UTI of the install: 1012 of 1055 resolve, the rest are
+    // creature weapons and hides, which are never shown). `defaulticon` is the fallback.
+    fn icon_name { w: *world::World, id: u32, into: []mut u8 } -> []u8 {
+        let it = item_of{ w, id } ifnull { return into[..0] }
+        let class = twoda::get_string{ t = w.tables.baseitems, row = @as(usize, it.base), column = "itemclass" } ifnull { return into[..0] }
+        if class.len + 6 > into.len { return into[..0] }
+        let mut n: usize = 0
+        into[n] = 'i'
+        n = n + 1
+        slice::copy(u8){ dst = into[n..n + class.len], src = class }
+        let mut k: usize = 0
+        while k < class.len {
+            into[n + k] = ascii::to_lower{ c = into[n + k] }
+            k = k + 1
+        }
+        n = n + class.len
+        into[n] = '_'
+        n = n + 1
+        let v = if it.model_variation == 0 { 1 } else { it.model_variation }
+        into[n] = @trunc(u8, 48 + (v / 100) % 10)
+        into[n + 1] = @trunc(u8, 48 + (v / 10) % 10)
+        into[n + 2] = @trunc(u8, 48 + v % 10)
+        return into[..n + 3]
+    }
+
+    // The item's icon, with its size; not ok when the install has neither the variation's nor the
+    // base item's default picture.
+    fn icon_of { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, id: u32 } -> gui::Img {
+        let mut buf: [40]u8
+        let name = icon_name{ w = &w, id, into = buf[..] }
+        if name.len > 0 {
+            let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name }
+            if img.ok { return img }
+        }
+        let it = item_of{ w = &w, id } ifnull { return gui::no_img{} }
+        let fallback = twoda::get_string{ t = w.tables.baseitems, row = @as(usize, it.base), column = "defaulticon" } ifnull { return gui::no_img{} }
+        return gui::resolve_img{ &g, fs = &w.fs, &dev, name = fallback }
+    }
+
+    // The picture of an empty slot button (droids have their own set; a slot without one shows
+    // the human picture).
+    fn empty_slot_icon { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, slot: usize, droid: bool } -> gui::Img {
+        let mut buf: [24]u8
+        let suffix = SLOT_ICONS[slot]
+        buf[0] = 'i'
+        if droid {
+            buf[1] = 'd'
+            slice::copy(u8){ dst = buf[2..2 + suffix.len], src = suffix }
+            let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name = buf[..2 + suffix.len] }
+            if img.ok { return img }
+        }
+        slice::copy(u8){ dst = buf[1..1 + suffix.len], src = suffix }
+        return gui::resolve_img{ &g, fs = &w.fs, &dev, name = buf[..1 + suffix.len] }
+    }
+
+    // ---- the creature
+
+    fn is_droid { w: *world::World, who: u32 } -> bool {
+        let c = hud::creature_of{ w, id = who } ifnull { return false }
+        return c.race == RACE_DROID
+    }
+
+    // The ability modifier of score index `k` (0 Str, 1 Dex ...): (score - 10) / 2, rounded down.
+    fn ability_mod { w: *world::World, who: u32, k: usize } -> i32 {
+        let c = hud::creature_of{ w, id = who } ifnull { return 0 }
+        let score = @as(i32, c.abilities[k])
+        let d = score - 10
+        return if d >= 0 { d / 2 } else { -((1 - d) / 2) }
+    }
+
+    // ---- the party's inventory
+    //
+    // PLACEHOLDER: the original has one inventory and one purse for the whole party
+    // (party-items-saves.md 3.6, kept sorted); party::Party has neither yet. Until it does, the
+    // player character's own list and gold stand in for them: `bag_holder` names it, so the
+    // items stay the same when another member is the leader. A companion's own list (what its
+    // blueprint gave it) is shown with them, as the original does once it joins.
+
+    // The creature whose list and gold are the party's: the player character, else `who`.
+    fn bag_holder { w: *world::World, who: u32 } -> u32 {
+        let ids = party::members{ w }
+        let mut k: usize = 0
+        while k < ids.len {
+            if ids[k] > obj::FIRST_CHARACTER - 16 { return ids[k] }
+            k = k + 1
+        }
+        return who
+    }
+
+    // A creature's own list of carried items.
+    fn bag_of { w: *world::World, id: u32 } -> []u32 {
+        let c = hud::creature_of{ w, id } ifnull { return slice::empty(u32){} }
+        return list::items{ list = c.inventory }
+    }
+
+    // Whether item `a` sorts before `b` in the party inventory: by base item, then by name
+    // (party-items-saves.md 5.2, the shared list is kept in this order).
+    fn sorts_before { w: *world::World, a: u32, b: u32 } -> bool {
+        let ia = item_of{ w, id = a } ifnull { return false }
+        let ib = item_of{ w, id = b } ifnull { return false }
+        if ia.base != ib.base { return ia.base < ib.base }
+        return ci::compare{ a = name_of{ w, id = a }, b = name_of{ w, id = b } } < 0
+    }
+
+    // Adds the ids of `src` that are items still in the world to `into[n..]`, in order; the new n.
+    fn merge_sorted { w: *world::World, src: []u32, into: []mut u32, n: usize } -> usize {
+        let mut count = n
+        let mut i: usize = 0
+        while i < src.len and count < into.len {
+            let id = src[i]
+            i = i + 1
+            if not world::is_valid{ w, id } { continue }
+            let mut at = count
+            while at > 0 and sorts_before{ w, a = id, b = into[at - 1] } {
+                into[at] = into[at - 1]
+                at = at - 1
+            }
+            into[at] = id
+            count = count + 1
+        }
+        return count
+    }
+
+    // What the party carries, as `who` sees it, in the inventory's order, copied into `into`
+    // (the first `into.len`).
+    fn carried { w: *world::World, who: u32, into: []mut u32 } -> []u32 {
+        let holder = bag_holder{ w, who }
+        let mut n = merge_sorted{ w, src = bag_of{ w, id = holder }, into, n = 0 }
+        if who != holder { n = merge_sorted{ w, src = bag_of{ w, id = who }, into, n } }
+        return into[..n]
+    }
+
+    // The party's credits.
+    fn credits { w: *world::World, who: u32 } -> u32 {
+        let c = hud::creature_of{ w, id = bag_holder{ w, who } } ifnull { return 0 }
+        return c.gold
+    }
+
+    // ---- equipping rules
+
+    // Whether the creature's kind may use the item at all: baseitems DroidOrHuman is 1 for
+    // humanoid gear and 2 for droid parts (0: anyone). The equip lists leave out what fails it.
+    fn race_ok { w: *world::World, who: u32, item: u32 } -> bool {
+        let c = hud::creature_of{ w, id = who } ifnull { return false }
+        let kind = base_int{ w, id = item, column = "droidorhuman", fallback = 0 }
+        if kind == 1 and c.race != RACE_HUMAN { return false }
+        if kind == 2 and c.race != RACE_DROID { return false }
+        return true
+    }
+
+    // Why an item cannot go in an equipment index, or null when it can: the strref of the
+    // refusal (0 when the original gives no text).
+    // PLACEHOLDER: the proficiency feats (baseitems ReqFeat0..4), the use-limitation properties and
+    // the item-level check need the creature's feats and the item's properties from lib/rules;
+    // until then only the slot, the droid/human restriction and the weapon-hand rules are tested.
+    fn fit_refusal { w: *world::World, who: u32, item: u32, index: usize } -> ?u32 {
+        let c = hud::creature_of{ w, id = who } ifnull { return 0 }
+        if (equipable_slots{ w, id = item } & mask_of{ index }) == 0 { return 0 }
+        if not race_ok{ w, who, item } { return 1514 }
+        if index == obj::SLOT_LEFT_WEAPON {
+            // Dual wielding needs a one-handed right weapon of the same family (melee or ranged).
+            let right = c.equipped[obj::SLOT_RIGHT_WEAPON]
+            if right == obj::INVALID or is_two_handed{ w, id = item } or is_two_handed{ w, id = right } { return 0 }
+            if is_ranged{ w, id = right } != is_ranged{ w, id = item } { return 0 }
+        }
+        return null
+    }
+
+    fn can_equip { w: *world::World, who: u32, item: u32, index: usize } -> bool {
+        return fit_refusal{ w, who, item, index } == null
+    }
+
+    // ---- stats the equip screen shows
+
+    // Defense: 10 + the body armour's BaseAC + the Dexterity modifier, which armour caps at its
+    // DexBonus. PLACEHOLDER: the class bonus (acbonus.2da), natural and dodge bonuses and the
+    // armour properties' effects are lib/rules' (combat.md 5).
+    fn defense_of { w: *world::World, who: u32 } -> i32 {
+        let c = hud::creature_of{ w, id = who } ifnull { return 10 }
+        let body = c.equipped[obj::SLOT_BODY]
+        let mut dex = ability_mod{ w, who, k = 1 }
+        let mut armour: i32 = 0
+        if body != obj::INVALID {
+            armour = base_int{ w, id = body, column = "baseac", fallback = 0 }
+            let cap = base_int{ w, id = body, column = "dexbonus", fallback = -1 }
+            if armour > 0 and cap >= 0 and dex > cap { dex = cap }
+        }
+        return 10 + armour + dex
+    }
+
+    // The attack bonus with the weapon in `item`: the base attack bonus plus Strength (Dexterity
+    // for a ranged weapon). PLACEHOLDER: the base attack bonus should come from the class tables
+    // (cls_atk_*.2da) and feats from lib/rules; the character level stands in for it.
+    fn attack_bonus_of { w: *world::World, who: u32, item: u32 } -> i32 {
+        let level = hud::level_of{ w, id = who }
+        let k: usize = if is_ranged{ w, id = item } { 1 } else { 0 }
+        return level + ability_mod{ w, who, k }
+    }
+
+    // A weapon's damage dice as text ("2d6"); empty when it has none.
+    fn damage_text { mut b: utf8::Builder(heap::Heap), w: *world::World, item: u32 } -> ! {
+        let dice = base_int{ w, id = item, column = "numdice", fallback = 0 }
+        let die = base_int{ w, id = item, column = "dietoroll", fallback = 0 }
+        if dice > 0 and die > 0 { try @fmt(&b, "{}d{}", dice, die) }
+    }
+
+    // ---- text
+
+    // A fresh text builder on the session heap; free its `bytes` with list::free.
+    fn new_text { w: *world::World } -> utf8::Builder(heap::Heap) {
+        return utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } }
+    }
+
+    // The text of a CExoLocString field: the dialog.tlk string when it has a strref, else its own
+    // first substring; empty when it has neither.
+    fn loc_text { w: *world::World, doc: *gff::Doc, s: u32, label: []u8 } -> []u8 {
+        let ls = gff::get_locstring{ doc = doc.*, s, label } ifnull { return "" }
+        if ls.strref >= 0 {
+            let text = world::string_by_strref{ w, strref = @as(u32, ls.strref) }
+            if text.len > 0 { return text }
+        }
+        if ls.count > 0 {
+            let sub = gff::loc_substring{ ls, i = 0 }
+            if sub != null { return sub.text }
+        }
+        return ""
+    }
+
+    // The item's description, read from its blueprint: the identified description, else the plain
+    // one. PLACEHOLDER: the original adds a line for each item property (itempropdef.2da and the
+    // cost tables); only the base item's own numbers follow the text here.
+    fn describe { mut w: world::World, mut b: utf8::Builder(heap::Heap), id: u32 } -> ! {
+        let o = world::object{ w = &w, id } ifnull { return }
+        if o.template.len > 0 {
+            let doc = try world::read_gff{ &w, name = resref::bytes{ r = &o.template }, kind = restype::Type::uti } ifnull { return }
+            let mut text = loc_text{ w = &w, doc = &doc, s = gff::ROOT, label = "DescIdentified" }
+            if text.len == 0 { text = loc_text{ w = &w, doc = &doc, s = gff::ROOT, label = "Description" } }
+            if text.len > 0 { try utf8::push{ &b, s = utf8::String{ bytes = text } } }
+        }
+        let dice = base_int{ w = &w, id, column = "numdice", fallback = 0 }
+        let die = base_int{ w = &w, id, column = "dietoroll", fallback = 0 }
+        if dice > 0 and die > 0 {
+            try @fmt(&b, "\n\nDamage: {}d{}", dice, die)
+        }
+        let ac = base_int{ w = &w, id, column = "baseac", fallback = 0 }
+        if ac > 0 and base_int{ w = &w, id, column = "modeltype", fallback = 0 } == 1 {
+            try @fmt(&b, "\n\nArmor bonus: +{}", ac)
+        }
+    }
+
+    // Whether the item was picked up since the player last looked at it (the inventory's "New
+    // Items" filter). PLACEHOLDER: the engine's items have no "new" flag (party-items-saves.md
+    // 5.1, flag bit 7) and nothing sets it, so none is new.
+    fn is_new { w: *world::World, id: u32 } -> bool { return false }
+
+    // Whether the item has a use of its own: a CastSpell property (10) in its blueprint, the
+    // "Useable" of the inventory screen's filter and button.
+    fn is_usable { mut w: world::World, id: u32 } -> bool {
+        let o = world::object{ w = &w, id } ifnull { return false }
+        if o.template.len == 0 { return false }
+        let doc = world::read_gff{ &w, name = resref::bytes{ r = &o.template }, kind = restype::Type::uti } iferr { return false }
+        let d = doc ifnull { return false }
+        let props = gff::get_list{ doc = d, s = gff::ROOT, label = "PropertiesList" } ifnull { return false }
+        let mut k: usize = 0
+        while k < props.len {
+            let name = gff::get_number{ doc = d, s = props[k], label = "PropertyName" } ifnull -1
+            if name == 10 { return true }
+            k = k + 1
+        }
+        return false
+    }
+
+    // Whether `who` can use the item now: it has a use and the creature's kind may use it.
+    // PLACEHOLDER: the original's CanUseItem also tests proficiency and the use-limitation
+    // properties (party-items-saves.md 4.3), which need lib/rules.
+    fn can_use { mut w: world::World, who: u32, id: u32 } -> bool {
+        return race_ok{ w = &w, who, item = id } and is_usable{ &w, id }
+    }
+}

@@ -62,6 +62,7 @@ namespace play {
         ambience::start_area{ a = &amb, &w }
         // HOOK(ingame): the HUD and the in-game menus (docs/design/hud.md).
         let ui = try ingame::make{ &w, &dev, mixer, scratch = texture_scratch, width = @as(i32, opts.width), height = @as(i32, opts.height) }
+        if not opts.headless { _ = sdl::SDL_ShowCursor{ &sdl, toggle = 0 } }    // HOOK(ingame): the GUI draws the pointer
         let silent = try alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(i16){}, count = 44100 }
         let mut keys = ctl::no_keys{}
         let freq = sdl::counter_frequency{ &sdl }
@@ -76,18 +77,18 @@ namespace play {
             frame_no = frame_no + 1
             if opts.frames > 0 and frame_no > opts.frames { break }
             keys.action = false
+            ingame::begin_frame{ ui }    // HOOK(ingame)
             // 1. Input: the window's events, or the script's lines for this frame.
             while true {
                 let e = sdl::poll{ &sdl } ifnull { break }
                 if dlgview::handle_event{ v = &dview, g = &ui.gui, ev = e, scale_x = 1.0, scale_y = 1.0 } { continue }
-                if ingame::handle_event{ ui, ev = e, scale_x = 1.0, scale_y = 1.0 } { continue }    // HOOK(ingame)
+                if ingame::handle_event{ ui, &w, &dev, ev = e, scale_x = 1.0, scale_y = 1.0 } { continue }    // HOOK(ingame)
                 match e {
                     quit | close => { quit = true }
                     key{ down, repeat, keycode } => {
                         if down and not repeat and keycode == sdl::key::F1 + 3 { want_save = "QUICKSAVE" }
                         if down and not repeat and keycode == sdl::key::F1 + 4 { want_load = "000000 - QUICKSAVE" }
                         if not repeat { apply_key{ keys = &keys, keycode, down } }
-                        if down and keycode == sdl::key::ESCAPE { quit = true }
                     }
                     else => {}
                 }
@@ -188,6 +189,7 @@ namespace play {
             let mut n: usize = 0
             while n < notes.len {
                 ambience::take{ a = &amb, &w, note = notes[n] }
+                ingame::take{ ui, &w, note = notes[n] }    // HOOK(ingame)
                 dlgview::take_note{ v = &dview, w = &w, g = &ui.gui, dev = &dev, note = notes[n] }
                 n = n + 1
             }
@@ -204,7 +206,8 @@ namespace play {
             let player_room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
             let room = dlgview::view_room{ v = &dview, w = &w, player_room }
             scene::update_visibility{ &sc, w = &w, room }
-            ingame::update{ ui, &w, &dev, camera, dt }    // HOOK(ingame)
+            ingame::update{ ui, &w, &dev, sc, camera, dt }    // HOOK(ingame)
+            if ingame::wants_quit{ ui } { quit = true }    // HOOK(ingame)
             // 11. Sound at the camera.
             ambience::update{ a = &amb, &w, eye = camera.eye, forward = camera.dir, dt }
             match adev {

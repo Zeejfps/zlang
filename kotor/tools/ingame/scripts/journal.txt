@@ -1,0 +1,10 @@
+# The journal and messages panels (lib/ingame/journal_panel.ctx, messages_panel.ctx, test_journal.ctx).
+# sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/journal.txt 60 5:j_empty 10:j_selected 14:j_completed 18:j_sorted
+3 ui menu journal
+6 ui journal fill 14
+7 ui journal complete tat18ac_dragonhunt
+7 ui journal complete k_swg_canderous
+8 ui click 515 390
+12 ui click 749 512
+16 ui click 749 512
+17 ui click 572 545

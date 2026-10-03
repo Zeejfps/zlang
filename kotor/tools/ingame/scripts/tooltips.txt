@@ -1,0 +1,5 @@
+# a menu button's tooltip after the hover delay, then the leader's portrait tooltip
+3 ui join carth
+5 ui move 1167 20
+50 ui move 30 560
+100 ui move 1167 20

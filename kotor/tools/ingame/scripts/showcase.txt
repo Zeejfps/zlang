@@ -1,0 +1,8 @@
+# The HUD in a quiet module (the Endar Spire opens with a cutscene that hides it):
+#   MODULE=tar_m02aa sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/showcase.txt 40 35:showcase
+3 ui flash 0
+3 ui flash 1
+3 ui flash 7
+4 ui say You have received 25 credits.
+5 ui say Journal updated: Escape the Endar Spire.
+6 ui combat

@@ -1,0 +1,362 @@
+// Map (map.gui, menu 6): the area's map with the party and the map notes (docs/re/gui.md,
+// "CSWGuiMap").
+//
+// The map picture, the party's arrows and the notes' markers are drawn into a render target the
+// size of LBL_Map, which is shown as that control's picture. Drawing needs a frame, which the
+// panel protocol's `update` does not have, so the owner calls `map_panel::draw` every frame while
+// the map menu is open, before gui::draw (the same split as hud::draw_minimap). The picture is
+// placed with the ARE's `Map` struct through hud::load_map / hud::map_point / hud::arrow_angle,
+// the same maths as the minimap, and fitted whole into the control (aspect kept, centred).
+//
+// Party Selection opens as a modal panel of its own on top of the menu; this panel polls its
+// events in `update` (partysel_panel::update), so it needs nothing from the framework.
+namespace map_panel {
+    const MAX_NOTES: usize = 32
+    const NO_NOTE: i32 = -1
+    const ARROW_SCALE: f32 = 0.6        // mm_barrow is 32x32; on this map that is too big
+
+    // Party Selection is refused when a creature the party can see is this close and hostile
+    // (PLACEHOLDER: the original asks the party's perception lists, which do not exist yet).
+    const ENEMY_RANGE: f32 = 20.0
+    // "The party is together": every member within this distance of the leader (gameloop.md).
+    const TOGETHER_RANGE: f32 = 30.0
+
+    struct State {
+        opened: bool,
+        info: hud::MapInfo,                 // the picture and where the world falls in it
+        info_area: u32,                     // the area `info` is for
+        target: ?render::Target,            // LBL_Map's contents, drawn by `draw`
+        shown: ?render::Texture,
+        width: i32, height: i32,            // the target's size
+        arrow: gui::Img,                    // a party member
+        marker: gui::Img,                   // a map note (the ring; the selected one is bigger and yellow)
+        notes: [32]u32,                     // waypoint ids with an enabled note, in object order
+        note_count: usize,
+        note_at: i32,                       // the selected note's index, NO_NOTE
+        box: u32,                           // the message box on screen, 0 when none
+        pending: u32,                       // what the box asks: 1 the Return question, 0 a notice
+        sel: partysel_panel::State,         // Party Selection, opened from this panel
+    }
+
+    fn new {} -> State {
+        return State{
+            opened = false, info = hud::no_map{}, info_area = obj::INVALID, target = null, shown = null,
+            width = 0, height = 0, arrow = gui::no_img{}, marker = gui::no_img{},
+            notes = [obj::INVALID; 32], note_count = 0, note_at = NO_NOTE, box = 0, pending = 0, sel = partysel_panel::new{},
+        }
+    }
+
+    // ---- what the panel shows
+
+    // The area's name for the title: its ARE Name (a dialog.tlk string, else its own text).
+    fn area_name { w: *world::World } -> []u8 {
+        let ao = world::object{ w, id = w.area } ifnull { return "" }
+        let a = obj::area{ o = ao } ifnull { return "" }
+        if a.name.strref != 0xFFFFFFFF {
+            let t = world::string_by_strref{ w, strref = a.name.strref }
+            if t.len > 0 { return t }
+        }
+        return a.name.text
+    }
+
+    // A waypoint's map note text: its strref in dialog.tlk, else the text it carries.
+    fn note_text { w: *world::World, wp: *obj::Waypoint } -> []u8 {
+        if wp.map_note.strref != 0xFFFFFFFF {
+            let t = world::string_by_strref{ w, strref = wp.map_note.strref }
+            if t.len > 0 { return t }
+        }
+        return wp.map_note.text
+    }
+
+    // The waypoints of the area that carry an enabled, non-empty note.
+    fn collect_notes { mut s: State, w: *world::World } {
+        s.note_count = 0
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len and s.note_count < MAX_NOTES {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed or o.kind != obj::Kind::waypoint { continue }
+            let wp = obj::waypoint{ o } ifnull { continue }
+            if not wp.has_map_note or not wp.map_note_enabled { continue }
+            if note_text{ w, wp }.len == 0 { continue }
+            s.notes[s.note_count] = o.id
+            s.note_count = s.note_count + 1
+        }
+        if s.note_at >= @as(i32, s.note_count) { s.note_at = NO_NOTE }
+        if s.note_at == NO_NOTE and s.note_count > 0 { s.note_at = 0 }
+    }
+
+    // The selected note's text in LBL_MapNote (empty with no notes).
+    fn show_note { mut s: State, mut g: gui::Gui, w: *world::World, panel: u32 } {
+        let mut text: []u8 = ""
+        if s.note_at >= 0 and @as(usize, s.note_at) < s.note_count {
+            let o = world::object{ w, id = s.notes[@as(usize, s.note_at)] }
+            if o != null {
+                let wp = obj::waypoint{ o }
+                if wp != null { text = note_text{ w, wp } }
+            }
+        }
+        gui::set_text{ &g, panel, tag = "LBL_MapNote", text } iferr {}
+        let both = s.note_count > 1
+        gui::set_visible{ &g, panel, tag = "BTN_UP", visible = both }
+        gui::set_visible{ &g, panel, tag = "BTN_DOWN", visible = both }
+    }
+
+    // Steps to the previous (-1) or next (+1) note, wrapping.
+    fn step_note { mut s: State, mut g: gui::Gui, w: *world::World, panel: u32, step: i32 } {
+        if s.note_count == 0 { return }
+        let n = @as(i32, s.note_count)
+        s.note_at = (s.note_at + step + n) % n
+        show_note{ &s, &g, w, panel }
+    }
+
+    // ---- the two buttons' rules (re/gui.md: Party Select and Return)
+
+    // Why Party Selection cannot be used now: the strref of the refusal, 0 when it can.
+    fn party_select_refusal { w: *world::World } -> u32 {
+        let ao = world::object{ w, id = w.area }
+        if ao != null {
+            let a = obj::area{ o = ao }
+            if a != null and a.restrict_mode != 0 { return 38451 }
+        }
+        if not party_together{ w } { return 38452 }
+        if enemy_nearby{ w } { return 38462 }
+        return 0
+    }
+
+    // Every member in the area is close to the leader (AreMembersNearLeader).
+    fn party_together { w: *world::World } -> bool {
+        let ids = party::members{ w }
+        if ids.len < 2 { return true }
+        let lo = world::object{ w, id = ids[0] } ifnull { return true }
+        let mut i: usize = 1
+        while i < ids.len {
+            let o = world::object{ w, id = ids[i] }
+            i = i + 1
+            if o == null { continue }
+            let dx = o.position.x - lo.position.x
+            let dy = o.position.y - lo.position.y
+            let dz = o.position.z - lo.position.z
+            if dx * dx + dy * dy + dz * dz > TOGETHER_RANGE * TOGETHER_RANGE { return false }
+        }
+        return true
+    }
+
+    // A living creature hostile to the leader is near the party (PLACEHOLDER: "near" stands in
+    // for "seen by the party", which needs the perception system).
+    fn enemy_nearby { w: *world::World } -> bool {
+        let lo = world::object{ w, id = party::leader{ w } } ifnull { return false }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed or o.kind != obj::Kind::creature or o.hp <= 0 { continue }
+            let c = obj::creature{ o } ifnull { continue }
+            if c.dead or not hud::is_hostile{ w, id = o.id } { continue }
+            let dx = o.position.x - lo.position.x
+            let dy = o.position.y - lo.position.y
+            let dz = o.position.z - lo.position.z
+            if dx * dx + dy * dy + dz * dz < ENEMY_RANGE * ENEMY_RANGE { return true }
+        }
+        return false
+    }
+
+    // Whether the Return button is shown and the strref of its label.
+    // PLACEHOLDER: the party table's return flag and strref (SetReturnStrref, +0x100/+0x104) have
+    // no home in lib/engine's party yet; until a script can set them the button is hidden, since
+    // there is no spaceport to return to.
+    fn return_label { w: *world::World } -> u32 {
+        return 0
+    }
+
+    // What Return does once confirmed.
+    // PLACEHOLDER: the original's action (CSWGuiMap::OnReturnToBase 0x00692bc0) was not traced;
+    // it should take the party to the Ebon Hawk.
+    fn return_to_base { mut w: world::World } {
+        _ = @fmt(&w.io, "map: return to base (not available yet)\n")
+    }
+
+    // ---- opening
+
+    // The map menu was just added, or the leader changed and it must be filled again.
+    fn open { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> ! {
+        s.opened = true
+        if s.info_area != w.area {
+            s.info = hud::load_map{ &g, &w, &dev, area = w.area }
+            s.info_area = w.area
+        }
+        if not s.arrow.ok { s.arrow = gui::resolve_img{ &g, fs = &w.fs, &dev, name = "mm_barrow" } }
+        if not s.marker.ok { s.marker = gui::resolve_img{ &g, fs = &w.fs, &dev, name = "lbl_mapcircle" } }
+        // The target is made once and kept: the panel has no device when it closes.
+        if s.target == null {
+            let r = gui::control_rect{ &g, panel, tag = "LBL_Map" } ifnull { return }
+            let t = try gpu::create_target{ &dev, width = @as(u32, r.w), height = @as(u32, r.h) }
+            s.target = t
+            s.shown = gpu::target_texture{ dev, t }
+            s.width = @as(i32, r.w)
+            s.height = @as(i32, r.h)
+        }
+        try gui::set_text{ &g, panel, tag = "LBL_Area", text = area_name{ w = &w } }
+        collect_notes{ &s, w = &w }
+        show_note{ &s, &g, w = &w, panel }
+        let ret = return_label{ w = &w }
+        gui::set_visible{ &g, panel, tag = "BTN_RETURN", visible = ret != 0 }
+        if ret != 0 { try gui::set_strref{ &g, panel, tag = "BTN_RETURN", strref = ret } }
+        gui::set_focus{ &g, panel, tag = "BTN_EXIT" }
+        dim_buttons{ &g, w = &w, panel }
+    }
+
+    // A refused button is drawn dim but still answers a click with the reason (the original dims
+    // it in Render and shows the stored message when it is pressed).
+    fn dim_buttons { mut g: gui::Gui, w: *world::World, panel: u32 } {
+        let c = gui::find_control{ &g, panel, tag = "BTN_PRTYSLCT" } ifnull { return }
+        c.text.color = if party_select_refusal{ w } != 0 { gui::color_disabled{} } else { c.text.file_color }
+    }
+
+    // ---- the frame
+
+    // Every frame while the panel is shown.
+    fn update { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, dt: f32 } {
+        dim_buttons{ &g, w = &w, panel }
+        // Party Selection is a panel of its own over this one.
+        partysel_panel::update{ s = &s.sel, g = &g, w = &w, dev = &dev, dt }
+        if partysel_panel::take_finished{ s = &s.sel } {
+            ingame::fill_change_buttons{ &g, &w, &dev, panel }
+        }
+        if s.box == 0 { return }
+        let mut i: usize = 0
+        let n = gui::take_events{ g = &g }.len
+        while i < n {
+            let evs = gui::take_events{ g = &g }
+            let ev = evs[i]
+            i = i + 1
+            if ev.panel != s.box { continue }
+            if ev.kind == gui::EventKind::cancel or ev.kind == gui::EventKind::activate {
+                let ok = ev.kind == gui::EventKind::activate and slice::eq_bytes{ a = ev.tag, b = "BTN_OK" }
+                gui::close{ &g, id = s.box }
+                s.box = 0
+                if ok and s.pending == 1 { return_to_base{ &w } }
+                s.pending = 0
+                break
+            }
+        }
+    }
+
+    // A message of the game's in a box: a refusal or the Return question.
+    fn say { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, strref: u32, ask: bool } {
+        if s.box != 0 { return }
+        let text = world::string_by_strref{ w = &w, strref }
+        s.box = gui::message_box{ g = &g, fs = &w.fs, &dev, text, cancel = ask } iferr { 0 }
+    }
+
+    // One of the panel's GUI events (BTN_EXIT, Escape and the BTN_CHANGE buttons are the
+    // framework's). True when it used the event.
+    fn on_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, ev: gui::Event } -> bool {
+        if ev.kind != gui::EventKind::activate { return false }
+        if slice::eq_bytes{ a = ev.tag, b = "BTN_UP" } {
+            step_note{ &s, &g, w = &w, panel, step = -1 }
+        } else if slice::eq_bytes{ a = ev.tag, b = "BTN_DOWN" } {
+            step_note{ &s, &g, w = &w, panel, step = 1 }
+        } else if slice::eq_bytes{ a = ev.tag, b = "BTN_PRTYSLCT" } {
+            let why = party_select_refusal{ w = &w }
+            if why != 0 {
+                say{ &s, &g, &w, &dev, strref = why, ask = false }
+            } else {
+                partysel_panel::open_modal{ s = &s.sel, g = &g, w = &w, dev = &dev, force1 = -1, force2 = -1 } iferr {}
+            }
+        } else if slice::eq_bytes{ a = ev.tag, b = "BTN_RETURN" } {
+            // The question is the party table's second strref (42120 by default).
+            say{ &s, &g, &w, &dev, strref = 42120, ask = true }
+            s.pending = 1
+        } else {
+            return false
+        }
+        return true
+    }
+
+    // The panel is going away.
+    fn close { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } {
+        s.opened = false
+        if s.box != 0 {
+            gui::close{ &g, id = s.box }
+            s.box = 0
+        }
+        partysel_panel::close{ s = &s.sel, g = &g, w = &w }
+    }
+
+    // ---- drawing
+
+    // Where the whole picture sits in a width x height target: aspect kept, centred.
+    struct View { x: f32, y: f32, k: f32 }
+
+    fn fit { pw: f32, ph: f32, width: f32, height: f32 } -> View {
+        let kx = width / pw
+        let ky = height / ph
+        let k = if kx < ky { kx } else { ky }
+        return View{ x = (width - pw * k) / 2.0, y = (height - ph * k) / 2.0, k }
+    }
+
+    // An image centred on (x, y), `scale` times its size, turned by `angle`.
+    fn put_image { mut frame: render::Frame, img: gui::Img, x: f32, y: f32, scale: f32, angle: f32, color: render::Color } {
+        if not img.ok { return }
+        let hw = img.w * scale / 2.0
+        let hh = img.h * scale / 2.0
+        let mut q = render::make_quad{
+            rect = render::Rect{ x = x - hw, y = y - hh, w = hw * 2.0, h = hh * 2.0 }, color,
+        }
+        q.image = render::Image::texture{ t = img.tex }
+        q.angle = angle
+        render::add_quad{ &frame, quad = q }
+    }
+
+    // Draws the map into its target and hands it to LBL_Map. Called every frame while the map
+    // menu is open, before gui::draw, with the menu's panel id.
+    fn draw { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame, panel: u32 } {
+        if not s.opened { return }
+        let target = s.target ifnull { return }
+        let shown = s.shown ifnull { return }
+        let width = @as(f32, s.width)
+        let height = @as(f32, s.height)
+        render::begin_ui{ &frame, width, height, target }
+        render::fill_rect{ &frame, rect = render::Rect{ x = 0.0, y = 0.0, w = width, h = height }, color = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 } }
+        if s.info.present {
+            let pic = s.info.picture
+            let v = fit{ pw = pic.w, ph = pic.h, width, height }
+            let mut q = render::make_quad{ rect = render::Rect{ x = v.x, y = v.y, w = pic.w * v.k, h = pic.h * v.k }, color = render::white{} }
+            q.image = render::Image::texture{ t = pic.tex }
+            render::add_quad{ &frame, quad = q }
+            // Notes under the arrows; the selected one has a ring.
+            let mut i: usize = 0
+            while i < s.note_count {
+                let o = world::object{ w = &w, id = s.notes[i] }
+                let selected = @as(i32, i) == s.note_at
+                i = i + 1
+                if o == null { continue }
+                let at = hud::map_point{ info = s.info, x = o.position.x, y = o.position.y }
+                if at.x < 0.0 or at.y < 0.0 or at.x > pic.w or at.y > pic.h { continue }
+                let x = v.x + at.x * v.k
+                let y = v.y + at.y * v.k
+                // The selected note is bigger and in the menu's yellow (hilight colour).
+                if selected {
+                    put_image{ &frame, img = s.marker, x, y, scale = 1.5, angle = 0.0, color = render::Color{ r = 0.98, g = 1.0, b = 0.0, a = 1.0 } }
+                } else {
+                    put_image{ &frame, img = s.marker, x, y, scale = 1.0, angle = 0.0, color = render::white{} }
+                }
+            }
+            // The party: every member in the area, turned by its facing.
+            let ids = party::members{ w = &w }
+            let mut k: usize = ids.len
+            while k > 0 {
+                k = k - 1
+                let m = world::object{ w = &w, id = ids[k] }
+                if m == null { continue }
+                let at = hud::map_point{ info = s.info, x = m.position.x, y = m.position.y }
+                let turn = hud::arrow_angle{ info = s.info, fx = m.orientation.x, fy = m.orientation.y }
+                put_image{ &frame, img = s.arrow, x = v.x + at.x * v.k, y = v.y + at.y * v.k, scale = ARROW_SCALE, angle = turn, color = render::white{} }
+            }
+        }
+        gui::set_picture{ &g, panel, tag = "LBL_Map", texture = shown, w = width, h = height }
+    }
+}
