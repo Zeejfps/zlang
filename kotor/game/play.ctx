@@ -182,6 +182,8 @@ namespace play {
                         }
                     }
                     ambience::start_area{ a = &amb, &w }
+                    // The new area fades in after 0.5 s over 1 s, unless its OnEnter script fades itself (gameloop.md 5.5 step 1).
+                    outbox::post{ out = &w.out, note = outbox::Note::fade{ out = false, wait = 0.5, length = 1.0, color = math::vec3::zero{} } }
                 }
             }
             w.played_seconds = w.played_seconds + @as(f64, real)
@@ -240,6 +242,8 @@ namespace play {
                         }
                     }
                     ambience::start_area{ a = &amb, &w }
+                    // The new area fades in after 0.5 s over 1 s, unless its OnEnter script fades itself (gameloop.md 5.5 step 1).
+                    outbox::post{ out = &w.out, note = outbox::Note::fade{ out = false, wait = 0.5, length = 1.0, color = math::vec3::zero{} } }
                     mg_stage = mg_game::make_stage{}
                     _ = try mg_game::enter{ &w, models = &mg_models }
                 }

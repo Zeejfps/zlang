@@ -1,0 +1,11 @@
+# Survey of the Upper City cantina (run with --module tar_m02ae: the default player, no companion): the bot walks
+# up to Canderous's trigger and answers what is asked with the first reply.
+#   sh kotor/tools/playthrough/run.sh cant kotor/tools/playthrough/20_cantina.txt 12000 -- --module tar_m02ae
+3 ui replies 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+4 ui bot god on
+4 ui bot unlock on
+4 ui bot route bp_pc_wp ptar_spcander tar02_candtlk
+5 ui bot on
+3000 ui bot status
+6000 ui bot status
+9000 ui bot status

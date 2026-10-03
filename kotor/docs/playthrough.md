@@ -57,6 +57,13 @@ engine lead, merged), **open**.
 | 14 | The escape pod: `end_pod` dialogue, `stunt_00` cutscene module, `cut00_convers`, module change to `tar_m02af` | works | `10_endar_spire.txt` |
 | 15 | Taris apartment: Carth's conversation `tar02_carth022` ("Good to see you up...") | works (reached; see Taris below) | `10_endar_spire.txt` |
 | 16 | Save and load with Trask in the party and a stocked bag: place, party, worn and carried items back | engine (a load dropped the bag's stacks: stale ids) | `12_saveload.txt` |
+| 17 | Carth's conversation in the apartment (56 nodes; the wide shots frame the player on the bed once the stunt body returns to the creature's place), journal entry `tar_bastsearch` | fixed (dialogue cameras follow a stunt body only while a scene animation runs on it, 319006f) | `10_endar_spire.txt` |
+| 18 | Leaving the apartment: `tar02_doordlg` ("you will have to take Carth"), the party screen with Carth forced, OK spawns him; module change to `tar_m02aa` (Upper City South: Sith troopers, civilians, shop droids) | works | `10_endar_spire.txt` |
+| 19 | Larrim's conversation and shop: a store panel with buy list, prices, descriptions | works (the screens lead's panel) | `10_endar_spire.txt` |
+| 20 | `tar_m02aa` to `tar_m02ac` (the exit door), Carth's "something seems to be bothering Carth" banter, the cantina door to `tar_m02ae` | works | `10_endar_spire.txt` |
+| 21 | Arrival in the cantina: black screen (no fade-in after the door transition) | reported to engine (fade-in after a transition) | `10_endar_spire.txt` |
+| 22 | The cantina on its own (`--module tar_m02ae`): the duel announcement conversation, the NPCs, the arena door | works | `20_cantina.txt` |
+
 
 The whole Endar Spire plays from New Game to the Taris apartment with `10_endar_spire.txt` (34000 frames,
 about 5 minutes of wall time), with 0 script faults.

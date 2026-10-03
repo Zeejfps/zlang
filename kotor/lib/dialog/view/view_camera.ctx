@@ -40,6 +40,10 @@ namespace dlgview {
                 some{ value } => {
                     let m = part.pose.world[@as(usize, value)]
                     let local = math::mat4::get_translation{ m }
+                    // A cutscene's stunt body is drawn at the origin and its animation carries it through the
+                    // area: the head hook is already where the eyes are (the object's place is where the
+                    // creature will stand afterwards, the other side of the room in the Taris apartment).
+                    if vis.stunt { return math::Vec3{ x = local.x, y = local.y, z = local.z + lift } }
                     // Model space turned by the creature's facing about Z, as the visual draws it.
                     let yaw = obj::model_yaw{ orientation = o.orientation }
                     let turned = dlgcam::rotate_z{ v = local, degrees = math::degrees{ radians = yaw } }
