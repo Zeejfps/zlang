@@ -53,7 +53,8 @@ message carries a "has minigame" byte (`FUN_0050aaa0` writes area `+0x234`, the 
   strref 37107 "Incoming fighters!". When all six fighters are dead (or the Hawk is "critically damaged") the
   script `ST_PlayPostTurret` logic (inlined in `k_pebo_sthdeath2..7`, also script `k_ren_turret`) picks the next
   module by `K_FUTURE_PLANET` / `K_CURRENT_PLANET`: `StartNewModule("ebo_m12aa", movie "11b")`, `ebo_m40ad`, ...
-  The turret can not be lost: damage only moves the HUD and the script continues the story.
+  The Hawk can be lost: `k_pebo_hawkhit` ends the real sequence with `EndGame(TRUE)` when its HP falls below 2000
+  (it starts at 3000, so 100 fighter bullets of 10); in the HK-47 simulation the same event only runs `k_ren_turret`.
 
 ### 1.3 Leftovers that exist in the data but nothing starts (high)
 
@@ -135,7 +136,7 @@ calls `SWMG_OnDamage/OnDeath/OnBulletHit/OnObstacleHit()` to get the default as 
 | 6 OnDeath `0x0066e2a0` | | play the death sound (`mgs_accelpad` at volume 127, others 100), play `die` on every model, free them on the `donedie` event, remove the object |
 | 1 OnHitBullet `0x0066c190` | bullet hit | apply `-bullet damage` if the bullet's target mask matches the object's class bit, play the collision sound |
 | 8 OnHitObstacle `0x0066e5c0` | obstacle hit | play `damage`-like effects, mark dead if flagged |
-| 2 OnHitFollower `0x0066c2d0`, 4 OnHeartbeat `0x0066c0a0`, 0 OnCreate, 3, 9 | | script only |
+| 2 OnHitFollower `0x0066c2d0`, 4 OnHeartbeat `0x0066c0a0`, 0 OnCreate, 3, 9 | | script only; **OnHeartbeat runs every rendered frame** (it is called from the follower's per-frame update `0x0066e130`, which also counts down the invulnerability timer and moves the engine sound) |
 
 `OnFire` (7) is not run on the key press: pressing fire starts the gun model's `fire` animation (rate-limited by
 `Rate_Of_Fire`), and the animation system's automatic **`startfire`** event runs the script (`FireGunCallback` `0x00673a40`,
@@ -151,14 +152,15 @@ globals and the exit; `ggg`, `reflux` are stubs that play a sound):
 
 - `oncreate`: `MIN_RACE_GEAR` = 5 (the "countdown" state), `SoundObjectPlay("Wind")`, `SetPlayerSpeed(0)`, plays `camshake1`
   (looping, overlay) and `gear0` on the player.
-- `heartbeat` (every 1 s tick of the script engine): a start sequence driven by `MIN_RACE_GEAR` 5..2 (plays HUD animations
-  `S3`, `S2`, `S1`, `SGo`, sounds `PowerUp`, `Idle`, `S1`, `Go`), then at `Go` sets speed limits and releases the player.
-  While racing: measures the race time (game clock: `GetTimeHour*120 + Minute*60 + Second + Millisecond/1000`, minute is a real
-  minute in our clock, see `lib/engine/routines/time.ctx`) and writes `MIN_TIME_*`; shows it on the HUD with
-  `MilSecOne/Ten`, `SecOne/Ten`, `MinOne/Ten` + digit (animation `SecOne7`); shows speed as `meter0..9`; sets engine
-  loops `Engine01..05` by gear and `SoundObjectSetVolume` from speed/4; sets `SetLateralAccelerationPerSecond` from speed
-  (clamped between 50 and 300; low speed = sluggish steering, med) and `SetSpeedBlurEffect(speed > 149, ratio about
-  (speed-149)/300)` (med); plays `camshake<n>`; reads `SWMG_GetPosition(player)` and plays `cDistL5..0` (distance left);
+- `heartbeat` (**every frame**): `MIN_RACE_GEAR` is the state: 5 = waiting (records the start time, becomes 4), then on elapsed
+  time > 0.1 / 3 / 4 / 5 s it plays the HUD lights `S3`, `S2`, `S1`, `SGo` with sounds `PowerUp`+`Idle`, `S1`, `S1`, `Go` and steps
+  4, 3, 2, 1; after the last the gear is 0 and the player may shift (`onfire`). It measures the race time (game clock:
+  `GetTimeHour*120 + Minute*60 + Second + Millisecond/1000`, valid because our minute is a real minute, see
+  `lib/engine/routines/time.ctx`), writes `MIN_TIME_*` and shows it on the HUD with `MilSecOne/Ten`, `SecOne/Ten`,
+  `MinOne/Ten` + digit (animation names like `SecOne7`); shows speed as `meter0..9`; sets the `Wind` volume to speed/4 and the
+  `Engine01..05` loops by gear; calls `SetLateralAccelerationPerSecond` with a value between 50 and 300 derived from speed
+  (formula not decoded, low speed = sluggish steering) and `SetSpeedBlurEffect` on/off around speed 149 (med); plays `camshake<n>`;
+  reads `SWMG_GetPosition(player)` and plays `cDistL5..0` (distance left);
   when the position passes 3800 it starts the finish: `PowerDown01` sound, min=max=0, accel 3, tunnel pos/neg opened to
   (100,0,0), HUD `downthrust` + `endloop`, engines faded, then `SetGlobalFadeOut`, time to `*_SWOOP_*` globals and
   `StartNewModule` back (3 s `DelayCommand`). Gear thresholds 35 / 60 / 100 / 150 / 210 appear as constants.
@@ -173,10 +175,12 @@ globals and the exit; `ggg`, `reflux` are stubs that play a sound):
 Turret (`M12ab_s`): `k_heartbeat` (player OnHeartbeat) turns `GetPlayerOffset` into a 0..360 index and plays the HUD
 compass animation `HudRot_NNN` on the player; on the first beat starts the six `SithLoopNN` radar animations;
 `k_pebo_sthcreate` increments `ebo_num_fighters`; `k_pebo_sthdeathN` calls `SWMG_OnDeath()`, plays `SithLoopNNd` (blip off), decrements the
-counter and at 0 sets `ebo_turret_done`, delays 2 s and leaves (1.2); `k_pebo_hawkhit` (OnDamage) calls `SWMG_OnDamage()`, maps HP
-to HUD animation `Health00..12` (every 250 HP), sets alarm `Alarm01` below one third, applies visual effect 3003 at the
-`Invisible` anchors, and when the Hawk is "dead" (HP <= 1000 and `M12AB_END_SYNC` unset) fades out and runs `k_ren_turret`;
-`k_pebo_mgheart` (module heartbeat) re-checks `ebo_turret_done` and leaves too.
+counter and at 0 sets `ebo_turret_done`, delays 2 s and leaves (1.2); `k_pebo_hawkhit` (OnDamage, high): while
+`M12AB_END_SYNC` is unset and HP >= 2000 it calls `SWMG_OnDamage()` (applies the damage), plays HUD animation `Health<n>`
+(`n = (HP-2000)*12/1000 + 1`, `Health0n` below 10) and starts sound `Alarm01` when n is 3; below 2000 it sets `M12AB_END_SYNC`, sets every
+fighter's HP to 2000, stops the alarm, plays `Health00`, applies visual effect 3003 at the `Invisible` anchor and at the Hawk, fades out
+(`SetGlobalFadeOut`), `DisableVideoEffect`, then barks strref 38465 and calls `EndGame(TRUE)` after 4 s, or in the HK-47 simulation runs
+`k_ren_turret`; `k_pebo_mgheart` (module heartbeat) re-checks `ebo_turret_done` and runs the same leave logic.
 
 ## 3. Data the engine needs
 
@@ -185,9 +189,9 @@ to HUD animation `Health00..12` (every 250 HP), sets alarm `Alarm01` below one t
   253, `Pause` 224, `ToolTips` 225, `MGActionUp/Down` W/S = event 282, `MGActionLeft/Right` A/D = 283, arrows = 285/286).
 - **Models** (all in `models.bif`; high): tracks `<mod>_tr01`/`_mgt01` (3 dummy nodes + `modelhook`, one `track` animation:
   **a straight 2-key translation of the node along +Y** from 0 to 4980 (m03) or 4699.8 (m17, m26) over 48 s, identity
-  rotation) and pad tracks `_mgt02..31` (static `modelhook` only); the turret fighters' tracks `m12ab_mgt02..07` are 54-key
-  Bezier splines, 43.0 / 51.3 / 61.7 / 84.1 / 54.5 s (the `mgt03` and `07` lengths in the HUD blip animations `SithLoop02..07`
-  match: 43.03, 48.8, 51.3, 61.7, 84.1, 54.53). Obstacles `m03mg_mgo01..22`: dummy + `aabb` + trimesh, animations `Ready` (4 s) and
+  rotation) and pad tracks `_mgt02..31` (static `modelhook` only); the turret fighters' tracks `m12ab_mgt02..07` are Bezier splines
+  (54 keys in `mgt02`) of 43.03 / 48.80 / 51.30 / 61.70 / 84.10 / 54.60 s; the HUD radar animations `SithLoop02..07` of `mgf_hud01` have the same
+  lengths, so the blips replay the fighters' paths. Obstacles `m03mg_mgo01..22`: dummy + `aabb` + trimesh, animations `Ready` (4 s) and
   `hit`. Pad `mgf_accelpad01`: aabb + 2 meshes, animations `Ready_01`, `hit`, `die` (7.63 s).
 - **Node and animation names the engine or scripts look up** (high): `modelhook` (anchor of every rail, attach point of the
   vehicle models), `camerahook` (the camera is attached to this node of the player's camera/HUD model), `gunbankN` (where gun
@@ -236,7 +240,7 @@ Class tree (all objects take a slot in the 255-slot registry; vtable, constructo
 
 `CClientExoAppInternal::ProcessInput` `0x006227e0` (only when the client has no controlled creature and the area has a minigame): reads the
 input events, calls `0x00670fb0` (steering integrator), for the turret `0x00671020` (mouse), then `0x006710e0` (player step + bank level). The 3D
-frame (`CSWCModule::Render` -> `FUN_006097f0` -> `0x006735d0`) updates every follower and obstacle through vtable slot 9, frees dead objects, then runs the
+frame (`CSWCModule::Render` -> `FUN_006097f0` -> `0x006735d0`) updates every follower and obstacle through vtable slot 9 (which runs OnHeartbeat), frees dead objects, then runs the
 collision step `0x006732f0` once with up to **3 iterations** of player-vs-follower resolution. Time step = frame `dt` (no fixed step).
 `SetInputClass(1)` (minigame) attaches the camera (`0x00671670`), starts the music (`0x006714e0`, looping streaming source) and switches HUD mode 2.
 

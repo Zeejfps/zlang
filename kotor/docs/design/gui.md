@@ -262,5 +262,5 @@ if frontend::take_display_change{ &fe } { apply fe.settings (resolution, full sc
 - The HUD on wide windows (above), and HUD controls the engine must hide per state.
 - Gamepad events (0x2d..0x38), key remapping (`optkeymapping`), the dragged inventory item.
 - The tooltip is a plain box with the dialog font, not `tooltipWxH.gui`.
-- Character generation and level-up panels, the credits scroll, pazaak: not started.
+- Character generation and level-up panels and the credits scroll: not started. Pazaak: see minigames.md.
 - Text colour per list row exists (`list_set_color`); per-row fonts do not.
