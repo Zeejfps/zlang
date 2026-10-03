@@ -71,6 +71,7 @@ namespace world {
         layout: ?lyt::Layout,
         vis: ?vis::Vis,
         tables: Tables,
+        tlk: ?tlk::Table,                   // dialog.tlk (game/main loads it)
         globals: globals::Globals,
         out: outbox::Outbox,
         transition: ?Transition,
@@ -104,7 +105,7 @@ namespace world {
             values = values::new{ heap },
             walk = walkmap::empty{ heap },
             layout = null, vis = null,
-            tables, globals,
+            tables, tlk = null, globals,
             out = outbox::new{ heap },
             transition = null,
             rng = Rng{ state = seed },
@@ -451,6 +452,12 @@ namespace world {
         if v.n < 100 { io::write{ &io, to = io::Stream::out, bytes = "0" } }
         if v.n < 10 { io::write{ &io, to = io::Stream::out, bytes = "0" } }
         io::print_u64{ &io, n = v.n }
+    }
+
+    // A dialog.tlk string ("" for none or no table).
+    fn string_by_strref { w: *World, strref: u32 } -> []u8 {
+        let t = w.tlk ifnull { return "" }
+        return tlk::get_text{ t, strref } iferr ""
     }
 
     // MSVC rand() on the world's generator.

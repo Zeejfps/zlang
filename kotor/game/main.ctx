@@ -35,6 +35,11 @@ fn run {
     let w = try world::make{ fs, io, heap = &h, rm = &rm, module_arena = &module_arena, scratch = &scratch, seed = opts.seed }
     try walkmap::load_materials{ m = &w.walk, heap = &h, table = w.tables.surfacemat }
     elog::enable{ l = &w.log, list = opts.log }
+    let tlk_path = try path::join(heap::Heap){ realloc = heap::alloc, heap = &h, dir = opts.game, name = "dialog.tlk" }
+    w.tlk = tlk::load(heap::Heap){ &fs, realloc = heap::alloc, heap = &h, path = tlk_path } iferr err{ error } {
+        _ = @fmt(&io, "kotor: dialog.tlk: {}\n", error)
+        null
+    }
     let mut vm = try nwvm::new(heap::Heap){ realloc = heap::alloc, heap = &h, limits = nwvm::LIMITS }
     let engine = routines::call{ w, _ }
     try modload::enter{ w, name = opts.module }

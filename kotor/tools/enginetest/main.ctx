@@ -1,0 +1,71 @@
+// enginetest: enters a module and runs the world for N frames at a fixed step, with the
+// engine's logs and the end-of-run report (game/main's --no-render, without the presentation).
+//
+//   enginetest [--module M] [--game DIR] [--frames N] [--dt S] [--log LIST] [--report] [--seed N]
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let mut module: []u8 = "end_m01aa"
+    let mut game: []u8 = "F:/Steam/steamapps/common/swkotor"
+    let mut frames: u64 = 300
+    let mut dt: f32 = 1.0 / 30.0
+    let mut log: []u8 = ""
+    let mut report = false
+    let mut seed: u32 = 1
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        let has = i + 1 < args.len
+        if slice::eq_bytes{ a, b = "--module" } and has { i = i + 1; module = args[i] }
+        else if slice::eq_bytes{ a, b = "--game" } and has { i = i + 1; game = args[i] }
+        else if slice::eq_bytes{ a, b = "--frames" } and has { i = i + 1; frames = @as(u64, text::scan_decimal{ s = args[i] }) }
+        else if slice::eq_bytes{ a, b = "--dt" } and has { i = i + 1; dt = text::scan_f32{ s = args[i] } ifnull dt }
+        else if slice::eq_bytes{ a, b = "--log" } and has { i = i + 1; log = args[i] }
+        else if slice::eq_bytes{ a, b = "--seed" } and has { i = i + 1; seed = @trunc(u32, text::scan_decimal{ s = args[i] }) }
+        else if slice::eq_bytes{ a, b = "--report" } { report = true }
+        else {
+            io::eprintln{ &io, s = "usage: enginetest [--module M] [--game DIR] [--frames N] [--dt S] [--log LIST] [--report] [--seed N]" }
+            return 2
+        }
+        i = i + 1
+    }
+    let mut h = heap::new{ &mem }
+    let module_pages = mem::pages{ &mem, size = 268435456 } ifnull { return 1 }
+    let scratch_pages = mem::pages{ &mem, size = 134217728 } ifnull { return 1 }
+    let mut module_arena = arena::new{ buf = module_pages }
+    let mut scratch = arena::new{ buf = scratch_pages }
+    let mut rm = res::open{ &fs, heap = &h, game } iferr err{ error } {
+        _ = @fmt(&io, "enginetest: no game data at {}: {}\n", game, error)
+        io::flush{ &io }
+        return 1
+    }
+    run{ &io, &fs, &h, &rm, &module_arena, &scratch, module, game, frames, dt, log, report, seed } iferr err{ error } {
+        _ = @fmt(&io, "enginetest: failed: {}\n", error)
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return 0
+}
+
+fn run {
+    mut io: Io, mut fs: Fs, mut h: heap::Heap, mut rm: res::Manager, mut module_arena: arena::Arena,
+    mut scratch: arena::Arena, module: []u8, game: []u8, frames: u64, dt: f32, log: []u8, report: bool, seed: u32,
+} -> ! {
+    let w = try world::make{ fs, io, heap = &h, rm = &rm, module_arena = &module_arena, scratch = &scratch, seed }
+    try walkmap::load_materials{ m = &w.walk, heap = &h, table = w.tables.surfacemat }
+    elog::enable{ l = &w.log, list = log }
+    let tlk_path = try path::join(heap::Heap){ realloc = heap::alloc, heap = &h, dir = game, name = "dialog.tlk" }
+    w.tlk = tlk::load(heap::Heap){ &fs, realloc = heap::alloc, heap = &h, path = tlk_path } iferr null
+    let mut vm = try nwvm::new(heap::Heap){ realloc = heap::alloc, heap = &h, limits = nwvm::LIMITS }
+    let engine = routines::call{ w, _ }
+    try modload::enter{ w, name = module }
+    arena::reset{ heap = &scratch }
+    let mut frame: u64 = 0
+    while frame < frames {
+        clock::advance{ c = &w.clock, seconds = dt }
+        world::tick{ w, &vm, engine }
+        outbox::clear{ out = &w.out }
+        arena::reset{ heap = &scratch }
+        frame = frame + 1
+    }
+    report::summary{ w, routines = report }
+}
