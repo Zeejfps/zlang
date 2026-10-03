@@ -28,20 +28,23 @@ namespace mg_game {
         emitting: []mut gui3d::Emitting,
     }
 
-    struct Stage { ready: bool, items: []mut Item, count: usize, anims: []mut Anim, music_started: bool, relative_mouse: bool }
+    // `ended`: a script called EndGame (the Hawk was lost); the loop stops, there being no end-game
+    // screen or start screen to go back to yet.
+    struct Stage { ready: bool, items: []mut Item, count: usize, anims: []mut Anim, music_started: bool, relative_mouse: bool, ended: bool, paused: bool }
 
     fn make_stage {} -> Stage {
-        return Stage{ ready = false, items = slice::empty(Item){}, count = 0, anims = slice::empty(Anim){}, music_started = false, relative_mouse = false }
+        return Stage{ ready = false, items = slice::empty(Item){}, count = 0, anims = slice::empty(Anim){}, music_started = false, relative_mouse = false, ended = false, paused = false }
     }
 
     // Whether the world is in a minigame area with a run.
     fn active { w: *world::World } -> bool { return w.minigame != null }
 
-    // What the player does with the mouse and the fire keys between frames, and whether a gunner
-    // bot plays (headless tests: `FRAME gunner` in the input script).
-    struct Mouse { dx: i32, dy: i32, fire_key: bool, fire_button: bool, auto: bool }
+    // What the player does with the mouse and the fire keys between frames, whether Escape has
+    // paused the game, and whether a gunner bot plays (headless tests: `FRAME gunner` in the input
+    // script).
+    struct Mouse { dx: i32, dy: i32, fire_key: bool, fire_button: bool, auto: bool, paused: bool }
 
-    fn make_mouse {} -> Mouse { return Mouse{ dx = 0, dy = 0, fire_key = false, fire_button = false, auto = false } }
+    fn make_mouse {} -> Mouse { return Mouse{ dx = 0, dy = 0, fire_key = false, fire_button = false, auto = false, paused = false } }
 
     // Takes the events that are the turret's: relative mouse motion, the left button and the fire
     // key held. True if it used the event.
@@ -58,9 +61,14 @@ namespace mg_game {
                     return true
                 }
             }
-            key{ down, keycode } => {
+            key{ down, repeat, keycode } => {
                 // the key still goes to the game's keys; this only remembers it is held
                 if keycode == sdl::key::SPACE { m.fire_key = down }
+                // Escape pauses and resumes (the original's PauseMinigame; its pause menu is not built)
+                if keycode == sdl::key::ESCAPE {
+                    if down and not repeat { m.paused = not m.paused }
+                    return true
+                }
             }
             else => {}
         }
@@ -417,6 +425,7 @@ namespace mg_game {
                 mix::sound_2d{ group = mix::Group::sfx, volume = s.volume }
             }
             _ = mix::play{ m = mixer, bytes, p } iferr { mix::Handle{ slot = 0, id = 0 } }
+            amb.started = amb.started + 1
         }
     }
 
@@ -431,6 +440,7 @@ namespace mg_game {
         let mut p = mix::sound_2d{ group = mix::Group::music, volume = 0.5 }
         p.looping = true
         _ = mix::play{ m = mixer, bytes, p } iferr { mix::Handle{ slot = 0, id = 0 } }
+        amb.started = amb.started + 1
     }
 
     // One whole frame of a minigame, in place of the ordinary frame (game/play.ctx calls it where
@@ -440,7 +450,15 @@ namespace mg_game {
         mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut dev: gpu::Device, mut frame: render::Frame,
         mut sc: scene::Scene, mut stage: Stage, mut amb: ambience::Ambience, mixer: *mut mix::Mixer, adev: ?*mut audio::Device,
         silent: []mut i16, rate: u32, opts: options::Options, keys: ctl::Keys, mut mouse: Mouse, dt: f32, frame_no: u64, shot_heap: *mut arena::Arena,
+        mut dview: dlgview::View, mut g: gui::Gui,
     } -> !bool {
+        // paused: time stands still, the picture stays, the sounds hold
+        let dt = if mouse.paused { 0.0 } else { dt }
+        if mouse.paused != stage.paused {
+            stage.paused = mouse.paused
+            mix::set_group_paused{ m = mixer, group = mix::Group::sfx, paused = mouse.paused }
+            mix::set_group_paused{ m = mixer, group = mix::Group::music, paused = mouse.paused }
+        }
         clock::advance{ c = &w.clock, seconds = dt }
         world::tick{ &w, &vm, engine }
         let run = w.minigame ifnull { return true }
@@ -454,6 +472,7 @@ namespace mg_game {
             start_music{ &stage, run, &amb, &w, mixer }
         }
         run.input = read_input{ keys, &mouse, run }
+        if mouse.paused { run.input = mg::Input{ x = 0.0, y = 0.0, fire = false, aim_x = 0.0, aim_y = 0.0 } }
         step{ &w, &vm, engine, dt }
         if w.transition != null {
             if stage.relative_mouse {
@@ -466,11 +485,14 @@ namespace mg_game {
         let mut n: usize = 0
         while n < notes.len {
             ambience::take{ a = &amb, &w, note = notes[n] }
+            dlgview::take_note{ v = &dview, w = &w, g = &g, dev = &dev, note = notes[n] }    // fades
+            if notes[n] is end_game{ show_gui } { stage.ended = true }
             n = n + 1
         }
         outbox::clear{ out = &w.out }
         play_sounds{ run, &amb, &w, mixer }
         scene::sync{ &sc, &w, &dev, dt }
+        dlgview::pre_sync{ v = &dview, w = &w, sc = &sc, dev = &dev, g = &g, dt }    // steps the fade
         // The stage shows the run's objects only: no creature stands in a turret or on a bike's
         // track (the engine still has a player character in the area, the original has none).
         let visuals = list::items{ list = sc.visuals }
@@ -500,6 +522,7 @@ namespace mg_game {
         let vi = render::add_view{ &frame, view } ifnull { 0 }
         scene::draw{ &sc, w = &w, &frame, view = vi }
         draw_stage{ sc = &sc, &stage, &frame, view = vi }
+        dlgview::draw{ v = &dview, frame = &frame }
         gpu::submit{ &dev, frame = &frame } iferr err{ error } {
             _ = @fmt(&w.io, "kotor: submit failed: {}\n", error)
             return true

@@ -128,11 +128,17 @@ namespace rt_swmg {
             }
             // ---- events and the defaults a script can ask for
             nwscript::SWMG_GetLastEvent | nwscript::SWMG_GetLastEventModelName => { try nwvm::push_string{ &vm, s = "" } }
-            nwscript::SWMG_GetLastBulletHitDamage | nwscript::SWMG_GetLastBulletHitTarget | nwscript::SWMG_GetLastBulletFiredDamage |
-            nwscript::SWMG_GetLastBulletFiredTarget => { try nwvm::push_int{ &vm, v = 0 } }
-            nwscript::SWMG_GetLastBulletHitShooter => { try nwvm::push_object{ &vm, id = obj::INVALID } }
-            nwscript::SWMG_GetLastBulletHitPart => { try nwvm::push_string{ &vm, s = "" } }
-            nwscript::SWMG_OnBulletHit | nwscript::SWMG_OnObstacleHit => {}
+            nwscript::SWMG_GetLastBulletHitDamage => { try nwvm::push_int{ &vm, v = run.last_bullet_damage } }
+            nwscript::SWMG_GetLastBulletHitTarget => { try nwvm::push_object{ &vm, id = if run.last_bullet_target == 0 { obj::INVALID } else { run.last_bullet_target } } }
+            nwscript::SWMG_GetLastBulletHitShooter => { try nwvm::push_object{ &vm, id = if run.last_bullet_shooter == 0 { obj::INVALID } else { run.last_bullet_shooter } } }
+            nwscript::SWMG_GetLastBulletFiredDamage | nwscript::SWMG_GetLastBulletFiredTarget => { try nwvm::push_int{ &vm, v = 0 } }
+            nwscript::SWMG_GetLastBulletHitPart => { try nwvm::push_string{ &vm, s = "hitbullet" } }
+            // the engine's OnHitBullet: the shot's damage off the object whose script asks
+            nwscript::SWMG_OnBulletHit => {
+                let me = slot{ run = &run, id = nwvm::self_object{ vm } }
+                if me != null { mg::default_bullet_hit{ &run, n = me } }
+            }
+            nwscript::SWMG_OnObstacleHit => {}
             nwscript::SWMG_GetLastFollowerHit => { try nwvm::push_object{ &vm, id = if run.last_follower_hit == 0 { obj::INVALID } else { run.last_follower_hit } } }
             nwscript::SWMG_GetLastObstacleHit => { try nwvm::push_object{ &vm, id = if run.last_obstacle_hit == 0 { obj::INVALID } else { run.last_obstacle_hit } } }
             nwscript::SWMG_GetLastHPChange => { try nwvm::push_int{ &vm, v = run.last_hp_change } }

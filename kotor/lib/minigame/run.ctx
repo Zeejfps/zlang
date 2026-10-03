@@ -79,6 +79,9 @@ namespace mg {
 
     fn id_of { n: usize } -> u32 { return ID_BASE + @as(u32, n) }
 
+    // Whether an id is in the range minigame objects use (not that the object exists).
+    fn is_object_id { id: u32 } -> bool { return id >= ID_BASE and id < ID_BASE + @as(u32, MAX_OBJECTS) }
+
     // The registry slot an id names, if it is one of ours.
     fn slot_of { run: *Run, id: u32 } -> ?usize {
         if id < ID_BASE or id >= ID_BASE + @as(u32, MAX_OBJECTS) { return null }

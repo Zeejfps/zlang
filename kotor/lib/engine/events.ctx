@@ -146,6 +146,11 @@ namespace events {
     fn deliver { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, ev: Event } {
         w.stats.events = w.stats.events + 1
         let o = world::object{ w = &w, id = ev.target } ifnull {
+            // HOOK(minigames): a minigame object (not a world object) can delay a command too: the
+            // turret's player object does when the Hawk falls, and its situation still runs.
+            if ev.payload is situation{ s } and mg::is_object_id{ id = ev.target } {
+                scripts::resume{ &w, &vm, engine, situation = s, self = ev.target }
+            }
             free_payload{ &w, payload = ev.payload }
             return
         }

@@ -48,7 +48,8 @@ namespace rt_cmd {
         let s = try scripts::take_situation{ &w, &vm }
         let me = nwvm::self_object{ vm }
         let ms_f = seconds * 1000.0
-        if not world::is_valid{ w = &w, id = me } or not (ms_f >= 0.0) or ms_f >= @as(f32, clock::ms_per_day{ c = w.clock }) {
+        // HOOK(minigames): a minigame object can delay a command too (events::deliver runs it)
+        if not (world::is_valid{ w = &w, id = me } or mg::is_object_id{ id = me }) or not (ms_f >= 0.0) or ms_f >= @as(f32, clock::ms_per_day{ c = w.clock }) {
             scripts::free_situation{ &w, s }
             return
         }
