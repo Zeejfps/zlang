@@ -1,0 +1,206 @@
+// The picture of a minigame (game/minigame.ctx is the logic): the models of the run's objects as
+// scene parts, the camera on the player's `camerahook`, and a whole frame in place of the
+// ordinary one.
+namespace mg_game {
+    const MAX_ITEMS: usize = 96
+
+    // A model instance of a run object: a scene part, and the object it belongs to.
+    struct Item { part: usize, object: u32, camera: bool }
+
+    struct Stage { ready: bool, items: [96]Item, count: usize, anims: []mut Anim }
+
+    fn make_stage {} -> Stage {
+        return Stage{ ready = false, items = [Item{ part = 0, object = 0, camera = false }; 96], count = 0, anims = slice::empty(Anim){} }
+    }
+
+    // Whether the world is in a minigame area with a run.
+    fn active { w: *world::World } -> bool { return w.minigame != null }
+
+    // Loads the models of every object of the run into the scene as parts.
+    fn build_stage { mut stage: Stage, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device } -> ! {
+        let run = w.minigame ifnull { return }
+        stage.count = 0
+        stage.anims = try alloc::resize(Anim, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, mem = slice::empty(Anim){}, count = MAX_ITEMS }
+        let mut n: usize = 0
+        while n < run.count {
+            let o = run.objs[n]
+            let mut names: [8]resref::ResRef = [resref::empty{}; 8]
+            let mut count: usize = 0
+            if o.kind == mg::ObjKind::obstacle {
+                names[0] = o.name
+                count = 1
+            } else {
+                let f = if o.kind == mg::ObjKind::player { run.area.player } else { run.area.enemies[o.index] }
+                let mut k: usize = 0
+                while k < f.model_count {
+                    names[k] = f.models[k].name
+                    k = k + 1
+                }
+                count = f.model_count
+            }
+            let mut k: usize = 0
+            while k < count and stage.count < MAX_ITEMS {
+                let loaded = try scene::load_model{ &sc, &w, &dev, name = resref::bytes{ r = &names[k] }, body_texture = "", envmap = "", hide_null = false }
+                if loaded != null {
+                    let part = try scene::add_part{ &sc, loaded, parent = -1, hook = "" }
+                    let model = scene::loaded_at{ sc = &sc, i = loaded }.model
+                    stage.anims[stage.count] = make_anim{}
+                    if scene::binding_for{ &sc, &w, model, name = "ready" } is some{ value = b } {
+                        start_layer{ a = &stage.anims[stage.count], layer = make_layer{ name = "ready", binding = b, looping = true }, queue = false, overlay = false }
+                    }
+                    let has_camera = mdl::find_node{ model, name = "camerahook" } != null and o.kind == mg::ObjKind::player
+                    stage.items[stage.count] = Item{ part, object = mg::id_of{ n }, camera = has_camera }
+                    stage.count = stage.count + 1
+                }
+                k = k + 1
+            }
+            n = n + 1
+        }
+        stage.ready = true
+    }
+
+    // The transform of an object's models this frame.
+    fn instance_of { run: *mg::Run, n: usize } -> math::Mat4 {
+        let o = &run.objs[n]
+        if o.kind == mg::ObjKind::player { return mg::player_matrix{ run } }
+        if o.kind == mg::ObjKind::enemy { return mg::follower_matrix{ run, o } }
+        return math::mat4::translation{ t = o.origin }
+    }
+
+    // The camera of the run: the player's camera model's `camerahook`, through the ARE's lens.
+    fn camera_of { run: *mg::Run, sc: *scene::Scene, stage: *Stage, aspect: f32 } -> render::Camera {
+        let area = run.area
+        let mut world_view = math::mat4::identity{}
+        let mut i: usize = 0
+        while i < stage.count {
+            if stage.items[i].camera {
+                let p = scene::part_at{ sc, i = stage.items[i].part }
+                let model = scene::loaded_at{ sc, i = p.loaded }.model
+                let hook = mdl::find_node{ model, name = "camerahook" } ifnull { 0 }
+                world_view = math::mat4::mul{ a = mg::player_matrix{ run }, b = p.pose.world[hook] }
+                break
+            }
+            i = i + 1
+        }
+        let eye = math::mat4::get_translation{ m = world_view }
+        let view = math::mat4::inverse_affine{ m = world_view }
+        return render::Camera{
+            view,
+            proj = math::mat4::perspective{ fovy = math::radians{ degrees = area.fov }, aspect, near = area.near_clip, far = area.far_clip },
+            eye,
+        }
+    }
+
+    // Adds the draws of every item.
+    fn draw_stage { run: *mg::Run, sc: *scene::Scene, stage: *Stage, mut frame: render::Frame, view: u32 } {
+        let mut i: usize = 0
+        while i < stage.count {
+            let it = stage.items[i]
+            i = i + 1
+            let n = mg::slot_of{ run, id = it.object } ifnull { continue }
+            if run.objs[n].removed { continue }
+            let p = scene::part_at{ sc, i = it.part }
+            let l = scene::loaded_at{ sc, i = p.loaded }
+            let instance = instance_of{ run, n }
+            scene::add_lights{ &frame, model = l.model, pose = p.pose, instance }
+            _ = mdl_render::add_draws{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = instance, materials = l.materials, time = sc.time }
+        }
+    }
+
+    // The player's controls from the game's keys.
+    fn read_input { keys: ctl::Keys } -> mg::Input {
+        let left = keys.turn_left or keys.strafe_left
+        let right = keys.turn_right or keys.strafe_right
+        return mg::Input{
+            x = (if right { 1.0 } else { 0.0 }) - (if left { 1.0 } else { 0.0 }),
+            y = (if keys.forward { 1.0 } else { 0.0 }) - (if keys.back { 1.0 } else { 0.0 }),
+            fire = keys.action,
+        }
+    }
+
+    // Starts and stops the animations the scripts asked for, then advances every item's.
+    fn advance_stage { mut stage: Stage, mut sc: scene::Scene, mut w: world::World, run: *mut mg::Run, dt: f32 } {
+        while true {
+            let r = mg::take_request{ run } ifnull { break }
+            let mut i: usize = 0
+            while i < stage.count {
+                if stage.items[i].object == r.object {
+                    if r.remove {
+                        remove_layer{ a = &stage.anims[i], name = r.name[..r.name_len] }
+                    } else {
+                        let p = scene::part_at{ sc = &sc, i = stage.items[i].part }
+                        let model = scene::loaded_at{ sc = &sc, i = p.loaded }.model
+                        if scene::binding_for{ &sc, &w, model, name = r.name[..r.name_len] } is some{ value = b } {
+                            start_layer{ a = &stage.anims[i], layer = make_layer{ name = r.name[..r.name_len], binding = b, looping = r.looping }, queue = r.queue, overlay = r.overlay }
+                        }
+                    }
+                }
+                i = i + 1
+            }
+        }
+        let mut i: usize = 0
+        while i < stage.count {
+            let p = scene::part_at{ sc = &sc, i = stage.items[i].part }
+            let model = scene::loaded_at{ sc = &sc, i = p.loaded }.model
+            pose_anim{ a = &stage.anims[i], model, pose = p.pose, dt }
+            i = i + 1
+        }
+    }
+
+    // One whole frame of a minigame, in place of the ordinary frame (game/play.ctx calls it where
+    // the step begins): the world, the run and its scripts, the sound, the picture. Returns true
+    // when a module change is pending: nothing was drawn and the ordinary frame must go on.
+    fn frame {
+        mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut dev: gpu::Device, mut frame: render::Frame,
+        mut sc: scene::Scene, mut stage: Stage, mut amb: ambience::Ambience, mixer: *mut mix::Mixer, adev: ?*mut audio::Device,
+        silent: []mut i16, rate: u32, opts: options::Options, keys: ctl::Keys, dt: f32, frame_no: u64, shot_heap: *mut arena::Arena,
+    } -> !bool {
+        if not stage.ready { try build_stage{ &stage, &sc, &w, &dev } }
+        clock::advance{ c = &w.clock, seconds = dt }
+        world::tick{ &w, &vm, engine }
+        let run = w.minigame ifnull { return true }
+        run.input = read_input{ keys }
+        step{ &w, &vm, engine, dt }
+        if w.transition != null { return true }
+        let notes = outbox::notes{ out = &w.out }
+        let mut n: usize = 0
+        while n < notes.len {
+            ambience::take{ a = &amb, &w, note = notes[n] }
+            n = n + 1
+        }
+        outbox::clear{ out = &w.out }
+        scene::sync{ &sc, &w, &dev, dt }
+        advance_stage{ &stage, &sc, &w, run, dt }
+        let size = gpu::screen_size{ dev }
+        let aspect = @as(f32, size.width) / @as(f32, size.height)
+        let cam = camera_of{ run, sc = &sc, stage = &stage, aspect }
+        let facing = math::mat4::transform_dir{ m = math::mat4::inverse_affine{ m = cam.view }, v = math::Vec3{ x = 0.0, y = 0.0, z = -1.0 } }
+        ambience::update{ a = &amb, &w, eye = cam.eye, forward = math::vec3::normalize{ v = facing }, dt }
+        match adev {
+            some{ value } => { audio::update{ &sdl, dev = value, m = mixer } iferr {} }
+            null => {
+                let frames = math::min{ a = @as(f32, rate) * dt, b = 22050.0 }
+                mix::render{ m = mixer, into = silent[..@as(usize, frames) * 2] }
+            }
+        }
+        render::begin_frame{ &frame, time = sc.time }
+        let mut view = render::make_view{ camera = cam }
+        view.ambient = sc.ambient
+        view.fog = sc.fog
+        let vi = render::add_view{ &frame, view } ifnull { 0 }
+        scene::draw{ &sc, w = &w, &frame, view = vi }
+        draw_stage{ run, sc = &sc, stage = &stage, &frame, view = vi }
+        gpu::submit{ &dev, frame = &frame } iferr err{ error } {
+            _ = @fmt(&w.io, "kotor: submit failed: {}\n", error)
+            return true
+        }
+        let mut s: usize = 0
+        while s < opts.shot_count {
+            if opts.shots[s].frame == frame_no { try play::screenshot{ &w, &dev, heap = shot_heap, path = opts.shots[s].path, frame_no } }
+            s = s + 1
+        }
+        if not opts.headless { gpu::present{ &dev, &sdl } }
+        arena::reset{ heap = w.scratch }
+        return false
+    }
+}

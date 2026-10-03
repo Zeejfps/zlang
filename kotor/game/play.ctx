@@ -53,6 +53,10 @@ namespace play {
         }
         let mut amb = ambience::make{ heap = w.heap, m = mixer }
         ambience::start_area{ a = &amb, &w }
+        // HOOK(minigames): a minigame area has a run, its own stage and its own frames (game/minigame*.ctx).
+        let mut mg_models = mdl_cache::new{ rm = w.rm.*, keep = w.mod_arena }
+        _ = try mg_game::enter{ &w, models = &mg_models }
+        let mut mg_stage = mg_game::make_stage{}
         // HOOK(ingame): the HUD and the in-game menus (docs/design/hud.md).
         let ui = try ingame::make{ &w, &dev, mixer, scratch = texture_scratch, width = @as(i32, opts.width), height = @as(i32, opts.height) }
         let silent = try alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(i16){}, count = 44100 }
@@ -103,6 +107,11 @@ namespace play {
             }
             timed = timed + 1
             let dt = if opts.dt > 0.0 { opts.dt } else { math::min{ a = real, b = 0.25 } }
+            // HOOK(minigames): in a minigame area the frame is the minigame's, until a module change is pending.
+            if mg_game::active{ w = &w } {
+                let leaving = try mg_game::frame{ &sdl, &w, &vm, engine, &dev, &frame, &sc, stage = &mg_stage, &amb, mixer, adev, silent, rate, opts, keys, dt, frame_no, shot_heap = &scene_arena }
+                if not leaving { continue }
+            }
             // 3-6. The world.
             clock::advance{ c = &w.clock, seconds = dt }
             ctl::update{ ctl = &control, &w, keys, yaw = camera.yaw, dt = w.clock.dt }
@@ -128,6 +137,8 @@ namespace play {
                         }
                     }
                     ambience::start_area{ a = &amb, &w }
+                    mg_stage = mg_game::make_stage{}
+                    _ = try mg_game::enter{ &w, models = &mg_models }
                 }
             }
             // 8. The outbox: sounds to the ambience (HOOK(gui): fades, movies, text).
