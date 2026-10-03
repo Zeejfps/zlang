@@ -1,0 +1,12 @@
+// Helpers for std's list::List.
+namespace lists {
+    // The list's items in an allocation of exactly their size, so the slice can later be freed
+    // as one (`alloc::resize(T, S){ ..., mem = items, count = 0 }`): list::items is the first len
+    // of a larger allocation. The list is left empty, owning nothing.
+    fn take(T, S) { mut list: list::List(T, S) } -> ![]mut T {
+        let out = try alloc::resize(T, S){ realloc = list.realloc, heap = list.heap, mem = list.items, count = list.len }
+        list.items = slice::empty(T){}
+        list.len = 0
+        return out
+    }
+}

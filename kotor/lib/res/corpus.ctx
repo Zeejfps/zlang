@@ -243,7 +243,7 @@ namespace corpus {
             try list::push{ list = &spans, item = res::Span{ start = @trunc(u32, pool.len), len = @trunc(u32, n.len) } }
             try le::put_bytes{ out = &pool, bytes = n }
         }
-        let names = Names{ pool = try res::exact(u8){ h, l = &pool }, spans = try res::exact(res::Span){ h, l = &spans } }
+        let names = Names{ pool = try lists::take{ list = &pool }, spans = try lists::take{ list = &spans } }
         ok = true
         // Insertion sort: directories here hold at most a few hundred entries.
         let mut i: usize = 1
