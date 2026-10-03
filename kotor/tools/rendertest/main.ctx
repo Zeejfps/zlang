@@ -462,16 +462,16 @@ namespace rt_out {
 fn load_font { mut fs: Fs, mut dev: gpu::Device, mut h: heap::Heap, rm: res::Manager, name: []u8, glyphs: []mut render::Glyph } -> !?render::Font {
     let bytes = try res::load{ &fs, rm, name, kind = restype::Type::tpc, realloc = heap::alloc, heap = &h } ifnull { return null }
     defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &h, mem = bytes, count = 0 }
-    let img = try tpcfont::read{ bytes }
-    let m = try fonttxi::read{ text = img.txi, glyphs }
-    let mut desc = render::make_texture_desc{ format = img.format, width = img.width, height = img.height, levels = 1 }
+    let t = try tex::read_tpc{ realloc = heap::alloc, heap = &h, bytes }
+    let m = try fonttxi::read{ text = t.txi, glyphs }
+    let mut desc = render::make_texture_desc{ format = material::pixel_format{ f = t.format }, width = t.width, height = t.height, levels = 1 }
     desc.mipmap = false
     desc.filter = render::Filter::nearest          // the fonts' TXI says `filter 0`
     desc.wrap_u = render::Wrap::clamp
     desc.wrap_v = render::Wrap::clamp
-    let texture = try gpu::create_texture{ &dev, desc, data = img.pixels }
+    let texture = try gpu::create_texture{ &dev, desc, data = tex::level{ t, image = 0, level = 0 } }
     return render::Font{
-        texture, texture_width = @as(f32, img.width), texture_height = @as(f32, img.height),
+        texture, texture_width = @as(f32, t.width), texture_height = @as(f32, t.height),
         glyphs = glyphs[..@as(usize, m.count)], height = m.height, baseline = m.baseline, spacing = m.spacing,
     }
 }
