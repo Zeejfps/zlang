@@ -1,0 +1,258 @@
+// Text in the GUI: token expansion, word wrap and alignment as the engine does them
+// (docs/re/gui.md section 5), and drawing a block of lines with a game font.
+namespace gui {
+    // ---- strings the Gui owns
+
+    fn copy_string { mut g: Gui, s: []u8 } -> ![]mut u8 {
+        if s.len == 0 { return slice::empty(u8){} }
+        let out = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = slice::empty(u8){}, count = s.len }
+        slice::copy(u8){ dst = out, src = s }
+        return out
+    }
+
+    fn free_string { mut g: Gui, s: []mut u8 } {
+        if s.len == 0 { return }
+        _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = s, count = 0 }
+    }
+
+    // Gives `c` the text `s` (copied).
+    fn assign_text { mut g: Gui, c: *mut Control, s: []u8 } -> ! {
+        let copy = try copy_string{ &g, s }
+        free_string{ &g, s = c.text.buf }
+        c.text.buf = copy
+        c.text.text = copy
+    }
+
+    // ---- tokens (<FullName>, <CUSTOM3>, <<): docs/formats/tlk.md, Text
+
+    // Sets what `<name>` expands to (case-insensitive); `<CUSTOMn>` is the name "CUSTOMn".
+    fn set_token { mut g: Gui, name: []u8, value: []u8 } -> ! {
+        let items = list::items{ list = g.tokens }
+        let mut i: usize = 0
+        while i < items.len {
+            if ci::eq{ a = items[i].name, b = name } {
+                let v = try copy_string{ &g, s = value }
+                free_string{ &g, s = items[i].value }
+                items[i].value = v
+                return
+            }
+            i = i + 1
+        }
+        let n = try copy_string{ &g, s = name }
+        let v = try copy_string{ &g, s = value }
+        try list::push{ list = &g.tokens, item = Token{ name = n, value = v } }
+    }
+
+    fn find_token { mut g: Gui, name: []u8 } -> ?[]u8 {
+        let items = list::items{ list = g.tokens }
+        let mut i: usize = 0
+        while i < items.len {
+            if ci::eq{ a = items[i].name, b = name } { return items[i].value }
+            i = i + 1
+        }
+        return null
+    }
+
+    const UNKNOWN_TOKEN: []u8 = "<UNRECOGNIZED TOKEN>"
+
+    // `src` with its tokens replaced: `<<` is a `<`, a known token its value, any other
+    // `<...>` the text "<UNRECOGNIZED TOKEN>" as the engine writes it. Unterminated `<` stays.
+    // The result is the Gui's (free_string).
+    fn expand_tokens { mut g: Gui, src: []u8 } -> ![]mut u8 {
+        let mut has = false
+        let mut k: usize = 0
+        while k < src.len {
+            if src[k] == '<' { has = true }
+            k = k + 1
+        }
+        if not has { return try copy_string{ &g, s = src } }
+        // Two passes: the length, then the bytes.
+        let mut pass: u32 = 0
+        let mut out: []mut u8 = slice::empty(u8){}
+        while pass < 2 {
+            let mut n: usize = 0
+            let mut i: usize = 0
+            while i < src.len {
+                let c = src[i]
+                if c == '<' {
+                    if i + 1 < src.len and src[i + 1] == '<' {
+                        if pass == 1 { out[n] = '<' }
+                        n = n + 1
+                        i = i + 2
+                        continue
+                    }
+                    let mut j = i + 1
+                    while j < src.len and src[j] != '>' and j - i < 48 { j = j + 1 }
+                    if j < src.len and src[j] == '>' {
+                        let rep: []u8 = find_token{ &g, name = src[i + 1..j] } ifnull { UNKNOWN_TOKEN }
+                        if pass == 1 { slice::copy(u8){ dst = out[n..n + rep.len], src = rep } }
+                        n = n + rep.len
+                        i = j + 1
+                        continue
+                    }
+                }
+                if pass == 1 { out[n] = c }
+                n = n + 1
+                i = i + 1
+            }
+            if pass == 0 {
+                if n == 0 { return slice::empty(u8){} }
+                out = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = slice::empty(u8){}, count = n }
+            }
+            pass = pass + 1
+        }
+        return out
+    }
+
+    // StrRef `strref` as the dialog.tlk gives it, tokens expanded; empty without a table.
+    fn tlk_text { mut g: Gui, strref: u32 } -> ![]mut u8 {
+        let t = g.tlk ifnull { return slice::empty(u8){} }
+        let raw = try tlk::get_text{ t = t.*, strref }
+        return try expand_tokens{ &g, src = raw }
+    }
+
+    // ---- layout
+
+    fn glyph_width { f: render::Font, c: u8 } -> i32 {
+        let i = @as(usize, c)
+        if i >= f.glyphs.len { return 0 }
+        let gl = f.glyphs[i]
+        let w = (gl.u1 - gl.u0) * f.texture_width + f.spacing + 0.25
+        if w <= 0.0 { return 0 }
+        return @as(i32, w)
+    }
+
+    fn is_letter { c: u8 } -> bool {
+        return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z')
+    }
+
+    fn push_line { lines: []mut Line, n: usize, start: usize, len: usize, width: i32, hyphen: bool } -> usize {
+        if n >= lines.len { return n }
+        lines[n] = Line{ start = @as(u32, start), len = @as(u32, len), width, hyphen }
+        return n + 1
+    }
+
+    // Breaks `text` into lines no wider than `width` pixels (0x0045a2f0): each `\n` ends a
+    // line; a space (dropped at the break) or a hyphen between two letters is where a long line
+    // may break; a word with no break is split with a hyphen. Returns the line count.
+    fn layout { font: render::Font, text: []u8, width: i32, lines: []mut Line } -> usize {
+        let mut n: usize = 0
+        let mut start: usize = 0
+        let mut i: usize = 0
+        let mut w: i32 = 0
+        let mut have_brk = false
+        let mut brk: usize = 0                  // the line ends before this index
+        let mut brk_w: i32 = 0
+        let mut brk_next: usize = 0             // the next line starts here
+        let hyphen_w = glyph_width{ f = font, c = '-' }
+        while i < text.len {
+            let c = text[i]
+            if c == '\n' {
+                n = push_line{ lines, n, start, len = i - start, width = w, hyphen = false }
+                i = i + 1
+                start = i
+                w = 0
+                have_brk = false
+                continue
+            }
+            let cw = glyph_width{ f = font, c }
+            if w + cw > width and i > start {
+                if c == ' ' {
+                    n = push_line{ lines, n, start, len = i - start, width = w, hyphen = false }
+                    i = i + 1
+                    start = i
+                    w = 0
+                    have_brk = false
+                } else if have_brk {
+                    n = push_line{ lines, n, start, len = brk - start, width = brk_w, hyphen = false }
+                    start = brk_next
+                    i = start
+                    w = 0
+                    have_brk = false
+                } else {
+                    n = push_line{ lines, n, start, len = i - start, width = w + hyphen_w, hyphen = true }
+                    start = i
+                    w = 0
+                }
+                continue
+            }
+            w = w + cw
+            i = i + 1
+            if c == ' ' {
+                have_brk = true
+                brk = i - 1
+                brk_w = w - cw
+                brk_next = i
+            } else if c == '-' and i - 1 > start and is_letter{ c = text[i - 2] } and i < text.len and is_letter{ c = text[i] } {
+                have_brk = true
+                brk = i
+                brk_w = w
+                brk_next = i
+            }
+        }
+        if start < text.len { n = push_line{ lines, n, start, len = text.len - start, width = w, hyphen = false } }
+        return n
+    }
+
+    // The height of `count` lines of `font`.
+    fn lines_height { font: render::Font, count: usize } -> i32 {
+        return @as(i32, font.height) * @as(i32, count)
+    }
+
+    // The widest line.
+    fn lines_width { lines: []mut Line, count: usize } -> i32 {
+        let mut m: i32 = 0
+        let mut i: usize = 0
+        while i < count and i < lines.len {
+            if lines[i].width > m { m = lines[i].width }
+            i = i + 1
+        }
+        return m
+    }
+
+    // ---- drawing
+
+    // Draws the laid-out lines in the rectangle (x, y, w, h) by `align` (the bits of A_*), the
+    // text colour `color`. Glyphs advance by their own width only (the engine's drawn advance
+    // adds a fraction of a pixel, docs/re/gui.md section 5), and nothing is drawn outside `clip`.
+    fn draw_lines {
+        mut frame: render::Frame, font: render::Font, text: []u8, lines: []mut Line, count: usize,
+        x: i32, y: i32, w: i32, h: i32, align: u32, color: render::Color, clip: render::Rect,
+    } {
+        if count == 0 { return }
+        let line_h = @as(i32, font.height)
+        if line_h <= 0 { return }
+        let mut first: usize = 0
+        let mut shown = count
+        let vertical = align & 56
+        let mut oy: i32 = 0
+        if vertical == A_MIDDLE or vertical == A_BOTTOM {
+            // Overflowing text drops its leading lines, so the end shows.
+            while shown > 1 and @as(i32, shown) * line_h > h {
+                shown = shown - 1
+                first = first + 1
+            }
+            let block = @as(i32, shown) * line_h
+            oy = if vertical == A_MIDDLE { (h - block) / 2 } else { h - block }
+        }
+        let mut fc = font
+        fc.spacing = 0.0
+        let mut hy: [1]u8 = ['-']
+        let mut k: usize = 0
+        while k < shown {
+            let ln = lines[first + k]
+            let ly = y + oy + @as(i32, k) * line_h
+            // A line is drawn while its top is above the rectangle's bottom.
+            if ly >= y + h and k > 0 and vertical != A_MIDDLE and vertical != A_BOTTOM { break }
+            let horizontal = align & 7
+            let mut lx = x
+            if horizontal == A_CENTRE { lx = x + (w - ln.width) / 2 } else if horizontal == A_RIGHT { lx = x + w - ln.width }
+            let seg = text[@as(usize, ln.start)..@as(usize, ln.start) + @as(usize, ln.len)]
+            let adv = render::draw_text{ &frame, font = fc, x = @as(f32, lx), y = @as(f32, ly), text = seg, color, scale = 1.0, clip = clip }
+            if ln.hyphen {
+                _ = render::draw_text{ &frame, font = fc, x = @as(f32, lx) + adv, y = @as(f32, ly), text = hy[..], color, scale = 1.0, clip = clip }
+            }
+            k = k + 1
+        }
+    }
+}

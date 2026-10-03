@@ -1,0 +1,255 @@
+// The GUI system's data (docs/design/gui.md): a Gui holds panels, a panel holds controls, a
+// control is whatever its .gui struct said plus the state it has while shown.
+//
+// Controls are plain data with no zero-less field (no enums, pointers or functions), so
+// `let mut c: Control` starts as all zeros and the loader fills it; the kind is one of the K_*
+// constants (the CONTROLTYPE numbers of the files). Texture handles are resolved when a panel is
+// loaded, so drawing needs no file system and no device.
+namespace gui {
+    // ---- control kinds (CONTROLTYPE in the files, docs/re/render-gui.md "Loading a .gui")
+    const K_PANEL: u8 = 2
+    const K_LABEL: u8 = 4
+    const K_PROTO: u8 = 5               // a list box's row prototype / a label that hilights
+    const K_BUTTON: u8 = 6
+    const K_CHECK: u8 = 7
+    const K_SLIDER: u8 = 8
+    const K_SCROLL: u8 = 9
+    const K_PROGRESS: u8 = 10
+    const K_LIST: u8 = 11
+    const K_EDIT: u8 = 12               // created by code only (save name, character name)
+
+    // ---- control flags
+    const F_VISIBLE: u32 = 1
+    const F_ENABLED: u32 = 2
+    const F_HILIGHT: u32 = 4            // the pointer is over it, or it has the keyboard focus
+    const F_CHECKED: u32 = 8            // check boxes and toggle buttons
+    const F_INTERNAL: u32 = 16          // a list box's prototype and scroll bar: its own, never in the panel's flow
+    const F_NO_HIT: u32 = 32            // pointer events pass through it
+    const F_PULSE_TEXT: u32 = 64        // the text pulses (hilighted buttons, PULSING in the file)
+    const F_FOCUS_ONLY: u32 = 128       // never takes the pointer's hover as focus
+
+    // ---- border fill styles (CSWGuiBorder::Draw; the .gui schema doc has 0 and 1 the other way round)
+    const FILL_TILED: i32 = 0
+    const FILL_CENTRED: i32 = 1
+    const FILL_STRETCHED: i32 = 2
+
+    // ---- text alignment bits
+    const A_LEFT: u32 = 1
+    const A_CENTRE: u32 = 2
+    const A_RIGHT: u32 = 4
+    const A_TOP: u32 = 8
+    const A_MIDDLE: u32 = 16
+    const A_BOTTOM: u32 = 32
+
+    fn clear_bits { f: u32, bits: u32 } -> u32 { return f & (4294967295 ^ bits) }
+
+    // A texture and its size in pixels. ok is false for a name the install doesn't have (the
+    // engine draws nothing for those).
+    struct Img { tex: render::Texture, w: f32, h: f32, ok: bool }
+
+    // CSWGuiBorder: corners and edges around the extent, a fill inside.
+    struct Border {
+        present: bool,
+        corner: Img, edge: Img, fill: Img,
+        fill_style: i32,
+        dimension: i32,
+        inner_offset: i32,
+        color: render::Color,           // a tint; untinted when `tinted` is false
+        tinted: bool,
+        pulsing: u32,                   // bit 0 the frame, bit 1 the fill
+    }
+
+    // CSWGuiText: a string, a font, a colour and where in its rectangle it goes.
+    struct Text {
+        present: bool,
+        font: i32,                      // index into Gui.fonts, -1 when the font is missing
+        color: render::Color,           // as drawn now
+        file_color: render::Color,      // as the file says (hilight and disable change `color`)
+        text: []u8,                     // token-expanded: a view of `buf`, or of the file
+        buf: []mut u8,                  // the Gui's copy, when code set the text
+        strref: u32,                    // 0xFFFFFFFF: the literal
+        align: u32,
+        pulsing: bool,
+        file_pulsing: bool,
+    }
+
+    // One row of a list box.
+    struct Row {
+        text: []mut u8,                 // owned
+        user: i64,                      // the owner's value for it (an item id, a save index)
+        color: render::Color,           // text colour, when has_color
+        has_color: bool,
+        icon: Img,                      // drawn at the row's left, when ok
+        enabled: bool,
+    }
+
+    struct Control {
+        kind: u8,
+        id: i32,
+        tag: []u8,                      // a view into the panel's file bytes
+        parent: i32,                    // control id of Obj_ParentID, -1 for the panel
+        x: i32, y: i32, w: i32, h: i32, // relative to the panel
+        flags: u32,
+        border: Border,                 // BORDER
+        hilight: Border,                // HILIGHT
+        selected: Border,               // SELECTED (check boxes, selected rows)
+        hilight_selected: Border,       // HILIGHTSELECTED
+        progress: Border,               // PROGRESS: a progress bar's fill
+        text: Text,
+        thumb: Img,                     // THUMB.IMAGE: slider and scroll bar thumbs
+        arrow: Img,                     // DIR.IMAGE: a scroll bar's arrow
+        moveto: [4]i32,                 // control ids for up, down, left, right; -1 none
+        value: i32,                     // slider, progress bar, scroll bar: CURVALUE
+        max: i32,
+        visible_value: i32,             // scroll bar: rows visible
+        draw_mode: i32,                 // scroll bar: DRAWMODE
+        from_left: bool,                // progress bar: STARTFROMLEFT
+        // list box
+        proto: i32,                     // index in the panel of the prototype control, -1 none
+        scrollbar: i32,                 // index of its scroll bar control, -1 none
+        padding: i32,
+        looping: bool,
+        scroll_left: bool,              // the scroll bar sits on the left
+        list_color: render::Color,
+        list_tinted: bool,
+        rows: []mut Row,
+        row_count: u32,
+        first_row: i32,                 // the top visible row
+        selected_row: i32,              // -1 none
+        hover_row: i32,                 // -1 none
+        // sounds (indices into guisounds.2da)
+        click_sound: i32,
+        hover_sound: i32,
+        // text for the tooltip
+        tooltip: []u8,
+        tooltip_buf: []mut u8,
+        // edit box
+        max_chars: i32,
+        // a texture given by code that replaces the border's fill (portraits, screenshots)
+        override_fill: Img,
+    }
+
+    enum Mode: u8 {
+        full_screen,                    // centred on the screen over the resolution's backdrop; hides panels below it
+        dialog,                         // centred on the screen
+        placed,                         // where its file puts it (the HUD, the main menu)
+    }
+
+    struct Panel {
+        id: u32,
+        name: resref::ResRef,
+        mode: Mode,
+        modal: bool,
+        removing: bool,
+        x: i32, y: i32, w: i32, h: i32,
+        border: Border,
+        color: render::Color,
+        has_color: bool,
+        alpha: f32,
+        controls: list::List(Control, heap::Heap),
+        bytes: alloc::Bytes,            // the file; tags are views into it
+        doc: gff::Doc,
+        focus: i32,                     // index of the control with the keyboard focus, -1 none
+        open_sound: i32,                // -1 none
+        // where the panel is on the screen (recomputed by place)
+        sx: i32, sy: i32,
+        shown: bool,                    // not hidden by a full-screen panel above it
+        backdrop: u32,                  // 0 back, 1 store, 2 pazaak, 3 map, 4 comp
+    }
+
+    // What a panel tells its owner (take_events).
+    enum EventKind: u8 {
+        activate,                       // a click released on a control, or Enter on the focused one (0x27)
+        cancel,                         // Escape (0x28); `control` is -1
+        hilight,                        // the control gained hover or focus (0)
+        unhilight,                      // and lost it (1)
+        row_selected,                   // a list row was clicked or chosen with the keys (0x1f8); `row`, `user`
+        row_activated,                  // and activated (0x27 on the list)
+        value_changed,                  // slider moved, check box toggled (`value`)
+        text_accepted,                  // Enter in an edit box
+        right_click,                    // 0x44
+        scrolled,                       // a list scrolled (wheel, scroll bar)
+    }
+
+    struct Event {
+        kind: EventKind,
+        panel: u32,
+        control: i32,                   // the control's ID in the file; -1 for the panel
+        tag: []u8,                      // its TAG (valid while the panel is open)
+        value: i32,
+        row: i32,
+        user: i64,
+    }
+
+    // A control named by panel id and index.
+    struct Ref { panel: u32, control: i32 }
+
+    // A loaded font: the render font and its glyph table, in memory the Gui owns.
+    struct FontSlot { name: resref::ResRef, font: render::Font, glyphs: []mut render::Glyph, ok: bool }
+
+    struct Token { name: []mut u8, value: []mut u8 }
+
+    // A text line after layout: bytes text[start .. start + len], `width` pixels wide, followed
+    // by a hyphen when the word was split.
+    struct Line { start: u32, len: u32, width: i32, hyphen: bool }
+
+    // One of guisounds.2da's sounds, kept in memory.
+    struct Sound { bytes: []u8, ok: bool }
+
+    // The cursor textures by id (docs/re/gui.md "The software cursor").
+    struct CursorSlot { tex: Img }
+
+    const MAX_EVENTS: usize = 128
+    const MAX_LINES: usize = 1024
+    const CURSORS: usize = 24
+    const SOUNDS: usize = 17
+
+    struct Gui {
+        heap: *mut heap::Heap,
+        rm: res::Manager,
+        cache: *mut material::Cache,
+        tlk: ?*tlk::Table,
+        mixer: ?*mut mix::Mixer,
+        fonts: list::List(FontSlot, heap::Heap),
+        panels: list::List(*mut Panel, heap::Heap),
+        tokens: list::List(Token, heap::Heap),
+        next_panel: u32,
+        // the window and the GUI's pixel space (the window divided by scale)
+        win_w: i32, win_h: i32,
+        scale: f32,
+        ui_w: i32, ui_h: i32,
+        small_fonts: bool,
+        // the pointer
+        mouse_x: i32, mouse_y: i32,
+        buttons: u32,
+        hover: Ref,
+        capture: Ref,
+        capture_button: i32,
+        capture_part: i32,
+        cursor: u32,
+        cursor_visible: bool,
+        cursors: [CURSORS]CursorSlot,
+        // clocks
+        time: f32,
+        pulse_border: f32,
+        pulse_list: f32,
+        hover_time: f32,                // how long the pointer has rested on the hovered control, -1 stopped
+        tooltip_delay: f32,
+        tooltips: bool,
+        tooltip_ref: Ref,
+        key_repeat: f32,
+        // backdrop textures by resolution tag and kind, loaded when first needed
+        backdrops: [5]Img,
+        backdrop_for: [5]i32,
+        // sounds
+        sounds: [SOUNDS]Sound,
+        sound_volume: f32,
+        // events for the owner
+        events: list::List(Event, heap::Heap),
+        dropped_events: u32,
+        // scratch for text layout
+        lines: []mut Line,
+        // numbers for the tools
+        quads_drawn: u32,
+    }
+}

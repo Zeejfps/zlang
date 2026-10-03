@@ -1,0 +1,578 @@
+// Input: the pointer's hover, clicks, capture, the wheel, the keyboard, focus and the events
+// they make for the panel's owner (docs/re/gui.md sections 7 and 8). Hover and keyboard focus
+// are one thing, as in the engine: the control under the pointer becomes its panel's focus.
+namespace gui {
+    const KEY_KP_ENTER: i32 = 0x40000058
+    const DIR_UP: usize = 0
+    const DIR_DOWN: usize = 1
+    const DIR_LEFT: usize = 2
+    const DIR_RIGHT: usize = 3
+
+    // Parts of a list box's scroll bar a press can land on.
+    const PART_BODY: i32 = 0
+    const PART_UP: i32 = 1
+    const PART_DOWN: i32 = 2
+    const PART_THUMB: i32 = 3
+    const PART_TRACK: i32 = 4
+
+    // ---- events for the owner
+
+    fn push_event { mut g: Gui, kind: EventKind, p: *Panel, ci: i32, value: i32, row: i32, user: i64 } {
+        if g.events.len >= MAX_EVENTS {
+            g.dropped_events = g.dropped_events + 1
+            return
+        }
+        let mut id: i32 = -1
+        let mut tag: []u8 = ""
+        if ci >= 0 and @as(usize, ci) < p.controls.len {
+            let c = list::at{ list = p.controls, i = @as(usize, ci) }
+            id = c.id
+            tag = c.tag
+        }
+        list::push{ list = &g.events, item = Event{ kind, panel = p.id, control = id, tag, value, row, user } } iferr {}
+    }
+
+    // The events since the last call, oldest first; the slice is valid until the next call to
+    // take_events, update or handle_event. Their tags are valid while their panel is open.
+    fn take_events { mut g: Gui } -> []Event {
+        return list::items{ list = g.events }
+    }
+
+    // Forgets the events (call after dispatching them, before the next handle_event).
+    fn clear_events { mut g: Gui } {
+        list::clear{ list = &g.events }
+    }
+
+    // ---- sounds (guisounds.2da row indices)
+
+    fn play_sound { mut g: Gui, n: i32 } {
+        if n < 0 or n >= @as(i32, SOUNDS) { return }
+        let s = g.sounds[@as(usize, n)]
+        if not s.ok { return }
+        let m = g.mixer ifnull { return }
+        _ = mix::play{ m, bytes = s.bytes, p = mix::sound_2d{ group = mix::Group::sfx, volume = g.sound_volume } } iferr { mix::Handle{ slot = 0, id = 0 } }
+    }
+
+    // ---- hit testing
+
+    fn is_interactive { c: *Control } -> bool {
+        if (c.flags & (F_VISIBLE | F_ENABLED)) != (F_VISIBLE | F_ENABLED) { return false }
+        if (c.flags & (F_INTERNAL | F_NO_HIT)) != 0 { return false }
+        return c.kind == K_BUTTON or c.kind == K_CHECK or c.kind == K_SLIDER or c.kind == K_LIST or c.kind == K_EDIT or c.kind == K_PROTO
+    }
+
+    // The topmost control of the panel under the GUI point (x, y), or -1. Labels, progress bars
+    // and disabled controls let the pointer through.
+    fn hit_control { p: *mut Panel, x: i32, y: i32 } -> i32 {
+        let lx = x - p.sx
+        let ly = y - p.sy
+        let cs = list::items{ list = p.controls }
+        let mut i = cs.len
+        while i > 0 {
+            i = i - 1
+            let c = &cs[i]
+            if is_interactive{ c } and lx >= c.x and lx <= c.x + c.w and ly >= c.y and ly <= c.y + c.h { return @as(i32, i) }
+        }
+        return -1
+    }
+
+    // The panel and control under the point: the top modal panel only, or else the front-most
+    // shown panel that has a control there.
+    fn hit_test { mut g: Gui, x: i32, y: i32 } -> Ref {
+        let m = top_modal{ &g }
+        if m != null {
+            return Ref{ panel = m.id, control = hit_control{ p = m, x, y } }
+        }
+        let ps = list::items{ list = g.panels }
+        let mut i = ps.len
+        while i > 0 {
+            i = i - 1
+            let p = ps[i]
+            if not p.shown or p.removing { continue }
+            let ci = hit_control{ p, x, y }
+            if ci >= 0 { return Ref{ panel = p.id, control = ci } }
+            if p.mode == Mode::full_screen { break }
+        }
+        return Ref{ panel = 0, control = -1 }
+    }
+
+    fn panel_of { mut g: Gui, r: Ref } -> ?*mut Panel {
+        if r.panel == 0 { return null }
+        return find_panel{ &g, id = r.panel }
+    }
+
+    // ---- hover and focus
+
+    // Colours and flags of a hilighted/un-hilighted control. A button's text turns yellow and
+    // pulses while hilighted; the file's colour comes back after (0x00418e00).
+    fn apply_hilight { c: *mut Control, on: bool } {
+        if on {
+            c.flags = c.flags | F_HILIGHT
+            if c.kind == K_BUTTON and c.text.present and (c.flags & F_ENABLED) != 0 {
+                c.text.color = color_hilight{}
+                c.flags = c.flags | F_PULSE_TEXT
+            }
+        } else {
+            c.flags = clear_bits{ f = c.flags, bits = F_HILIGHT }
+            if c.kind == K_BUTTON and c.text.present and (c.flags & F_ENABLED) != 0 {
+                c.text.color = c.text.file_color
+                if not c.text.file_pulsing { c.flags = clear_bits{ f = c.flags, bits = F_PULSE_TEXT } }
+            }
+        }
+    }
+
+    // Gives `ci` the panel's focus (hilights it, un-hilights the old one).
+    fn set_focus_index { mut g: Gui, p: *mut Panel, ci: i32, sound: bool } {
+        if p.focus == ci { return }
+        if p.focus >= 0 and @as(usize, p.focus) < p.controls.len {
+            let old = list::at{ list = p.controls, i = @as(usize, p.focus) }
+            apply_hilight{ c = old, on = false }
+            old.hover_row = -1
+            push_event{ &g, kind = EventKind::unhilight, p, ci = p.focus, value = 0, row = -1, user = 0 }
+        }
+        p.focus = ci
+        if ci >= 0 and @as(usize, ci) < p.controls.len {
+            let c = list::at{ list = p.controls, i = @as(usize, ci) }
+            apply_hilight{ c, on = true }
+            if sound { play_sound{ &g, n = c.hover_sound } }
+            push_event{ &g, kind = EventKind::hilight, p, ci, value = 0, row = -1, user = 0 }
+        }
+    }
+
+    // Takes the focus off every control of a panel (the pointer left them all).
+    fn drop_hilight { mut g: Gui, p: *mut Panel } {
+        if p.focus >= 0 and @as(usize, p.focus) < p.controls.len {
+            let old = list::at{ list = p.controls, i = @as(usize, p.focus) }
+            if (old.flags & F_HILIGHT) != 0 {
+                apply_hilight{ c = old, on = false }
+                old.hover_row = -1
+                push_event{ &g, kind = EventKind::unhilight, p, ci = p.focus, value = 0, row = -1, user = 0 }
+            }
+        }
+    }
+
+    // The row of list `c` under the panel-relative point, or -1.
+    fn row_at { p: *mut Panel, c: *Control, lx: i32, ly: i32 } -> i32 {
+        let l = list_layout{ p, c }
+        if lx < l.ax or lx > l.ax + l.aw or ly < l.ay or ly > l.ay + l.ah { return -1 }
+        let ry = ly - l.ay
+        let mut k: i32 = 0
+        while k < l.visible {
+            let s = row_slot{ l, padding = c.padding, k }
+            if ry >= s.y and ry < s.y + s.h {
+                let idx = c.first_row + k
+                if idx < @as(i32, c.row_count) { return idx }
+                return -1
+            }
+            k = k + 1
+        }
+        return -1
+    }
+
+    fn on_motion { mut g: Gui, x: i32, y: i32 } {
+        g.mouse_x = x
+        g.mouse_y = y
+        if g.capture.panel != 0 {
+            drag_capture{ &g, x, y }
+            return
+        }
+        let h = hit_test{ &g, x, y }
+        if h.panel != g.hover.panel or h.control != g.hover.control {
+            let old = panel_of{ &g, r = g.hover }
+            if old != null and (h.panel != g.hover.panel) { drop_hilight{ &g, p = old } }
+            g.hover = h
+            g.hover_time = 0.0
+            g.tooltip_ref = Ref{ panel = 0, control = -1 }
+            let np = panel_of{ &g, r = h }
+            if np != null {
+                if h.control >= 0 { set_focus_index{ &g, p = np, ci = h.control, sound = true } } else { drop_hilight{ &g, p = np } }
+            }
+        }
+        // A list's rows hilight under the pointer.
+        let hp = panel_of{ &g, r = g.hover }
+        if hp != null and g.hover.control >= 0 {
+            let c = list::at{ list = hp.controls, i = @as(usize, g.hover.control) }
+            if c.kind == K_LIST {
+                let r = row_at{ p = hp, c, lx = x - hp.sx, ly = y - hp.sy }
+                if r != c.hover_row {
+                    c.hover_row = r
+                    if r >= 0 { play_sound{ &g, n = c.hover_sound } }
+                }
+            }
+        }
+    }
+
+    // ---- presses
+
+    fn set_selected_row { mut g: Gui, p: *mut Panel, ci: i32, row: i32 } {
+        let c = list::at{ list = p.controls, i = @as(usize, ci) }
+        if row < 0 or row >= @as(i32, c.row_count) { return }
+        c.selected_row = row
+        ensure_row_visible{ p, c }
+        push_event{ &g, kind = EventKind::row_selected, p, ci, value = row, row, user = c.rows[@as(usize, row)].user }
+    }
+
+    fn visible_rows { p: *mut Panel, c: *Control } -> i32 {
+        return list_layout{ p, c }.visible
+    }
+
+    fn clamp_first { p: *mut Panel, c: *mut Control } {
+        let vis = visible_rows{ p, c }
+        let mut top = @as(i32, c.row_count) - vis
+        if top < 0 { top = 0 }
+        if c.first_row > top { c.first_row = top }
+        if c.first_row < 0 { c.first_row = 0 }
+    }
+
+    fn ensure_row_visible { p: *mut Panel, c: *mut Control } {
+        let vis = visible_rows{ p, c }
+        if c.selected_row < c.first_row { c.first_row = c.selected_row }
+        if c.selected_row >= c.first_row + vis { c.first_row = c.selected_row - vis + 1 }
+        clamp_first{ p, c }
+    }
+
+    fn scroll_list { mut g: Gui, p: *mut Panel, ci: i32, delta: i32 } {
+        let c = list::at{ list = p.controls, i = @as(usize, ci) }
+        let before = c.first_row
+        c.first_row = c.first_row + delta
+        clamp_first{ p, c }
+        if c.first_row != before { push_event{ &g, kind = EventKind::scrolled, p, ci, value = c.first_row, row = -1, user = 0 } }
+    }
+
+    // Which part of a list's scroll bar the panel-relative point is on.
+    fn bar_part { p: *mut Panel, c: *Control, lx: i32, ly: i32 } -> i32 {
+        let l = list_layout{ p, c }
+        if not l.has_bar or @as(i32, c.row_count) <= l.visible { return PART_BODY }
+        if lx < l.sx or lx > l.sx + l.sw or ly < l.sy or ly > l.sy + l.sh { return PART_BODY }
+        if ly < l.sy + l.sw { return PART_UP }
+        if ly > l.sy + l.sh - l.sw { return PART_DOWN }
+        let track_h = l.sh - 2 * l.sw
+        let count = @as(i32, c.row_count)
+        let mut len = track_h * l.visible / count
+        if len < 12 { len = 12 }
+        if len > track_h { len = track_h }
+        let pos = (track_h - len) * c.first_row / (count - l.visible)
+        let ty = l.sy + l.sw + pos
+        if ly >= ty and ly <= ty + len { return PART_THUMB }
+        return PART_TRACK
+    }
+
+    fn set_slider { mut g: Gui, p: *mut Panel, ci: i32, v: i32 } {
+        let c = list::at{ list = p.controls, i = @as(usize, ci) }
+        let mx = if c.max > 0 { c.max } else { 1 }
+        let nv = if v < 0 { 0 } else if v > mx { mx } else { v }
+        if nv == c.value { return }
+        c.value = nv
+        play_sound{ &g, n = 0 }
+        push_event{ &g, kind = EventKind::value_changed, p, ci, value = nv, row = -1, user = 0 }
+    }
+
+    fn slider_from_point { c: *Control, lx: i32, ly: i32 } -> i32 {
+        let mx = if c.max > 0 { c.max } else { 1 }
+        let horizontal = c.w >= c.h
+        let tw = if horizontal { @as(i32, c.thumb.w) } else { @as(i32, c.thumb.h) }
+        let len = (if horizontal { c.w } else { c.h }) - tw
+        if len <= 0 { return 0 }
+        let pos = (if horizontal { lx - c.x } else { ly - c.y }) - tw / 2
+        return (mx * pos + len / 2) / len
+    }
+
+    fn on_press { mut g: Gui, x: i32, y: i32, button: i32 } -> bool {
+        g.mouse_x = x
+        g.mouse_y = y
+        let h = hit_test{ &g, x, y }
+        let m = top_modal{ &g }
+        let p = panel_of{ &g, r = h } ifnull { return m != null }
+        g.buttons = g.buttons | @as(u32, button)
+        if h.control < 0 { return m != null }
+        let c = list::at{ list = p.controls, i = @as(usize, h.control) }
+        g.hover = h
+        if p.focus != h.control { set_focus_index{ &g, p, ci = h.control, sound = false } }
+        g.capture = h
+        g.capture_button = button
+        g.hover_time = -1.0
+        g.tooltip_ref = Ref{ panel = 0, control = -1 }
+        let lx = x - p.sx
+        let ly = y - p.sy
+        if button == 1 {
+            if c.kind == K_SLIDER {
+                set_slider{ &g, p, ci = h.control, v = slider_from_point{ c, lx, ly } }
+            } else if c.kind == K_LIST {
+                let part = bar_part{ p, c, lx, ly }
+                g.capture_part = part
+                if part == PART_UP { scroll_list{ &g, p, ci = h.control, delta = -1 } }
+                else if part == PART_DOWN { scroll_list{ &g, p, ci = h.control, delta = 1 } }
+                else if part == PART_TRACK {
+                    let l = list_layout{ p, c }
+                    let mid = l.sy + l.sw + (l.sh - 2 * l.sw) * c.first_row / (if @as(i32, c.row_count) > 0 { @as(i32, c.row_count) } else { 1 })
+                    scroll_list{ &g, p, ci = h.control, delta = if ly < mid { -l.visible } else { l.visible } }
+                } else if part == PART_BODY {
+                    let r = row_at{ p, c, lx, ly }
+                    if r >= 0 and c.rows[@as(usize, r)].enabled { set_selected_row{ &g, p, ci = h.control, row = r } }
+                }
+            }
+        }
+        return true
+    }
+
+    // Moves a captured slider or scroll thumb with the pointer.
+    fn drag_capture { mut g: Gui, x: i32, y: i32 } {
+        let p = panel_of{ &g, r = g.capture } ifnull { return }
+        let c = list::at{ list = p.controls, i = @as(usize, g.capture.control) }
+        let lx = x - p.sx
+        let ly = y - p.sy
+        if c.kind == K_SLIDER {
+            set_slider{ &g, p, ci = g.capture.control, v = slider_from_point{ c, lx, ly } }
+        } else if c.kind == K_LIST and g.capture_part == PART_THUMB {
+            let l = list_layout{ p, c }
+            let count = @as(i32, c.row_count)
+            let track_h = l.sh - 2 * l.sw
+            let mut len = track_h * l.visible / (if count > 0 { count } else { 1 })
+            if len < 12 { len = 12 }
+            let room = track_h - len
+            if room > 0 and count > l.visible {
+                let rel = ly - (l.sy + l.sw) - len / 2
+                let want = (count - l.visible) * rel / room
+                scroll_list{ &g, p, ci = g.capture.control, delta = want - c.first_row }
+            }
+        }
+    }
+
+    fn toggle_check { mut g: Gui, p: *mut Panel, ci: i32 } {
+        let c = list::at{ list = p.controls, i = @as(usize, ci) }
+        c.flags = c.flags ^ F_CHECKED
+        push_event{ &g, kind = EventKind::value_changed, p, ci, value = if (c.flags & F_CHECKED) != 0 { 1 } else { 0 }, row = -1, user = 0 }
+    }
+
+    // Activates control `ci` (a click released on it, or Enter): its click sound, a check box's
+    // toggle, and the event.
+    fn activate { mut g: Gui, p: *mut Panel, ci: i32 } {
+        let c = list::at{ list = p.controls, i = @as(usize, ci) }
+        if (c.flags & F_ENABLED) == 0 { return }
+        if c.kind == K_BUTTON or c.kind == K_CHECK {
+            play_sound{ &g, n = c.click_sound }
+            if c.kind == K_CHECK { toggle_check{ &g, p, ci } }
+        }
+        if c.kind == K_LIST {
+            if c.selected_row >= 0 and c.selected_row < @as(i32, c.row_count) {
+                play_sound{ &g, n = c.click_sound }
+                push_event{ &g, kind = EventKind::row_activated, p, ci, value = c.selected_row, row = c.selected_row, user = c.rows[@as(usize, c.selected_row)].user }
+            }
+            return
+        }
+        if c.kind == K_EDIT {
+            push_event{ &g, kind = EventKind::text_accepted, p, ci, value = 0, row = -1, user = 0 }
+            return
+        }
+        push_event{ &g, kind = EventKind::activate, p, ci, value = 0, row = -1, user = 0 }
+    }
+
+    fn on_release { mut g: Gui, x: i32, y: i32, button: i32 } -> bool {
+        g.mouse_x = x
+        g.mouse_y = y
+        g.buttons = clear_bits{ f = g.buttons, bits = @as(u32, button) }
+        if g.capture.panel == 0 { return top_modal{ &g } != null }
+        let cap = g.capture
+        g.capture = Ref{ panel = 0, control = -1 }
+        g.capture_part = 0
+        let p = panel_of{ &g, r = cap } ifnull { return true }
+        let h = hit_test{ &g, x, y }
+        let same = h.panel == cap.panel and h.control == cap.control
+        if button == 3 {
+            if same { push_event{ &g, kind = EventKind::right_click, p, ci = cap.control, value = 0, row = -1, user = 0 } }
+            return true
+        }
+        if not same { return true }
+        let c = list::at{ list = p.controls, i = @as(usize, cap.control) }
+        if c.kind == K_LIST {
+            // Releasing on the row that was pressed activates it (the press selected it).
+            let r = row_at{ p, c, lx = x - p.sx, ly = y - p.sy }
+            if r >= 0 and r == c.selected_row and bar_part{ p, c, lx = x - p.sx, ly = y - p.sy } == PART_BODY { activate{ &g, p, ci = cap.control } }
+        } else if c.kind != K_SLIDER and c.kind != K_EDIT {
+            activate{ &g, p, ci = cap.control }
+        } else if c.kind == K_EDIT {
+            // Focus only.
+        }
+        return true
+    }
+
+    fn on_wheel { mut g: Gui, dy: f32 } -> bool {
+        let h = hit_test{ &g, x = g.mouse_x, y = g.mouse_y }
+        let p = panel_of{ &g, r = h } ifnull { return top_modal{ &g } != null }
+        if h.control < 0 { return top_modal{ &g } != null }
+        let c = list::at{ list = p.controls, i = @as(usize, h.control) }
+        let step: i32 = if dy > 0.0 { -1 } else { 1 }
+        if c.kind == K_LIST { scroll_list{ &g, p, ci = h.control, delta = step } }
+        else if c.kind == K_SLIDER { set_slider{ &g, p, ci = h.control, v = c.value - step } }
+        return true
+    }
+
+    // ---- keys
+
+    // Whether the GUI wants keys: a panel is up that takes them. The owner routes keyboard
+    // events to handle_event only then (the HUD does not take keys).
+    fn wants_keys { mut g: Gui } -> bool {
+        let ps = list::items{ list = g.panels }
+        let mut i: usize = 0
+        while i < ps.len {
+            if (ps[i].modal or ps[i].mode == Mode::full_screen) and not ps[i].removing { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // The panel that takes keys: the top modal one, else the top full-screen one.
+    fn key_panel { mut g: Gui } -> ?*mut Panel {
+        let m = top_modal{ &g }
+        if m != null { return m }
+        let ps = list::items{ list = g.panels }
+        let mut i = ps.len
+        while i > 0 {
+            i = i - 1
+            if ps[i].mode == Mode::full_screen and not ps[i].removing { return ps[i] }
+        }
+        return null
+    }
+
+    // Moves the focus along MOVETO in direction `dir`, skipping disabled controls.
+    fn move_focus { mut g: Gui, p: *mut Panel, dir: usize } {
+        if p.focus < 0 {
+            // No focus yet: the first control that can take it.
+            let cs = list::items{ list = p.controls }
+            let mut i: usize = 0
+            while i < cs.len {
+                if is_interactive{ c = &cs[i] } {
+                    set_focus_index{ &g, p, ci = @as(i32, i), sound = true }
+                    return
+                }
+                i = i + 1
+            }
+            return
+        }
+        let start = p.focus
+        let mut cur = start
+        let mut steps: usize = 0
+        while steps < p.controls.len {
+            let c = list::at{ list = p.controls, i = @as(usize, cur) }
+            let want = c.moveto[dir]
+            if want < 0 { return }
+            let idx = find_by_id{ p, id = want }
+            if idx < 0 { return }
+            if idx == start { return }
+            let t = list::at{ list = p.controls, i = @as(usize, idx) }
+            if is_interactive{ c = t } {
+                set_focus_index{ &g, p, ci = idx, sound = true }
+                return
+            }
+            cur = idx
+            steps = steps + 1
+        }
+    }
+
+    // Up and down on a focused list box move its selection; left and right on a slider move it.
+    fn key_in_control { mut g: Gui, p: *mut Panel, ci: i32, dir: usize } -> bool {
+        let c = list::at{ list = p.controls, i = @as(usize, ci) }
+        if c.kind == K_LIST and (dir == DIR_UP or dir == DIR_DOWN) and c.row_count > 0 {
+            let n = @as(i32, c.row_count)
+            let mut r = c.selected_row
+            if dir == DIR_UP {
+                if r <= 0 { if c.looping { r = n - 1 } else { r = 0 } } else { r = r - 1 }
+            } else {
+                if r < 0 { r = 0 } else if r >= n - 1 { if c.looping { r = 0 } else { r = n - 1 } } else { r = r + 1 }
+            }
+            if r != c.selected_row {
+                set_selected_row{ &g, p, ci, row = r }
+                play_sound{ &g, n = c.hover_sound }
+            }
+            return true
+        }
+        if c.kind == K_SLIDER and (dir == DIR_LEFT or dir == DIR_RIGHT) {
+            set_slider{ &g, p, ci, v = c.value + (if dir == DIR_RIGHT { 1 } else { -1 }) }
+            return true
+        }
+        return false
+    }
+
+    fn on_key { mut g: Gui, keycode: i32 } -> bool {
+        let p = key_panel{ &g } ifnull { return false }
+        let editing = p.focus >= 0 and list::at{ list = p.controls, i = @as(usize, p.focus) }.kind == K_EDIT
+        if keycode == sdl::key::ESCAPE {
+            push_event{ &g, kind = EventKind::cancel, p, ci = -1, value = 0, row = -1, user = 0 }
+            return true
+        }
+        if keycode == sdl::key::RETURN or keycode == KEY_KP_ENTER {
+            if p.focus >= 0 { activate{ &g, p, ci = p.focus } }
+            return true
+        }
+        if editing and (keycode == sdl::key::BACKSPACE or keycode == sdl::key::DELETE) {
+            let c = list::at{ list = p.controls, i = @as(usize, p.focus) }
+            if c.text.text.len > 0 { assign_text{ &g, c, s = c.text.text[..c.text.text.len - 1] } iferr {} }
+            return true
+        }
+        let mut dir: usize = 9
+        if keycode == sdl::key::UP { dir = DIR_UP } else if keycode == sdl::key::DOWN { dir = DIR_DOWN }
+        else if keycode == sdl::key::LEFT { dir = DIR_LEFT } else if keycode == sdl::key::RIGHT { dir = DIR_RIGHT }
+        if dir == 9 { return false }
+        if p.focus >= 0 and key_in_control{ &g, p, ci = p.focus, dir } { return true }
+        move_focus{ &g, p, dir }
+        return true
+    }
+
+    // Typed text goes to a focused edit box.
+    fn on_text { mut g: Gui, bytes: []u8 } -> bool {
+        let p = key_panel{ &g } ifnull { return false }
+        if p.focus < 0 { return false }
+        let c = list::at{ list = p.controls, i = @as(usize, p.focus) }
+        if c.kind != K_EDIT { return false }
+        let mut k: usize = 0
+        while k < bytes.len {
+            let ch = bytes[k]
+            // The engine refuses control characters and _ / \ in names.
+            if ch >= 32 and ch != '_' and ch != '/' and ch != '\\' and (c.max_chars < 0 or @as(i32, c.text.text.len) < c.max_chars) {
+                let n = c.text.text.len
+                let mut buf: [256]u8
+                if n < 250 {
+                    slice::copy(u8){ dst = buf[..n], src = c.text.text }
+                    buf[n] = ch
+                    assign_text{ &g, c, s = buf[..n + 1] } iferr {}
+                }
+            }
+            k = k + 1
+        }
+        return true
+    }
+
+    // ---- the entry point
+
+    // Offers a platform event to the GUI. Mouse positions are in window units; `scale_x` and
+    // `scale_y` are drawable pixels over window units (HiDPI). Returns true when the GUI used
+    // the event: a press on a control (or any press while a modal panel is up), a wheel over a
+    // control, a key while a panel that takes keys is up. The owner then must not act on it.
+    fn handle_event { mut g: Gui, ev: sdl::Event, scale_x: f32, scale_y: f32 } -> bool {
+        match ev {
+            mouse_motion{ x, y } => {
+                on_motion{ &g, x = to_ui{ v = x, s = scale_x, scale = g.scale }, y = to_ui{ v = y, s = scale_y, scale = g.scale } }
+                return false
+            }
+            mouse_button{ down, button, x, y } => {
+                let ux = to_ui{ v = x, s = scale_x, scale = g.scale }
+                let uy = to_ui{ v = y, s = scale_y, scale = g.scale }
+                let b: i32 = if button == sdl::BUTTON_LEFT { 1 } else if button == sdl::BUTTON_RIGHT { 3 } else { 0 }
+                if b == 0 { return false }
+                if down { return on_press{ &g, x = ux, y = uy, button = b } }
+                return on_release{ &g, x = ux, y = uy, button = b }
+            }
+            mouse_wheel{ dy } => { return on_wheel{ &g, dy } }
+            key{ down, keycode } => {
+                if not down { return wants_keys{ &g } }
+                return on_key{ &g, keycode }
+            }
+            text{ bytes, len } => { return on_text{ &g, bytes = bytes[..len] } }
+            else => { return false }
+        }
+    }
+
+    fn to_ui { v: i32, s: f32, scale: f32 } -> i32 {
+        return @as(i32, @as(f32, v) * s / scale)
+    }
+}
