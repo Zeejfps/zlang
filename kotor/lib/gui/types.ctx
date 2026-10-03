@@ -81,6 +81,7 @@ namespace gui {
         has_color: bool,
         icon: Img,                      // drawn at the row's left, when ok
         enabled: bool,
+        checked: bool,                  // rows of check-box prototypes
     }
 
     struct Control {
@@ -154,6 +155,7 @@ namespace gui {
         // where the panel is on the screen (recomputed by place)
         sx: i32, sy: i32,
         shown: bool,                    // not hidden by a full-screen panel above it
+        background: bool,               // draw the panel's own COLOR and BORDER (a 3D view behind needs it off)
         backdrop: u32,                  // 0 back, 1 store, 2 pazaak, 3 map, 4 comp
     }
 
@@ -226,8 +228,10 @@ namespace gui {
         capture: Ref,
         capture_button: i32,
         capture_part: i32,
+        press_on_selected: bool,        // the press that began this capture landed on the already selected row
         cursor: u32,
         cursor_visible: bool,
+        hidden: bool,                   // draws and takes nothing (a movie plays over everything)
         cursors: [CURSORS]CursorSlot,
         // clocks
         time: f32,

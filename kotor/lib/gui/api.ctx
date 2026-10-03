@@ -195,6 +195,13 @@ namespace gui {
         ensure_backdrop{ &g, &fs, &dev, kind }
     }
 
+    // Whether the panel draws its own colour and border fill (off lets a 3D view drawn under the
+    // GUI show through).
+    fn set_background { mut g: Gui, panel: u32, on: bool } {
+        let p = find_panel{ &g, id = panel } ifnull { return }
+        p.background = on
+    }
+
     fn set_max_chars { mut g: Gui, panel: u32, tag: []u8, max: i32 } {
         let c = find_control{ &g, panel, tag } ifnull { return }
         c.max_chars = max
@@ -210,6 +217,19 @@ namespace gui {
     }
 
     // ---- list boxes
+
+    // Where row `row` of the list is on the screen (GUI pixels), or null when it isn't visible.
+    fn row_rect { mut g: Gui, panel: u32, tag: []u8, row: i32 } -> ?render::Rect {
+        let p = find_panel{ &g, id = panel } ifnull { return null }
+        let i = find_by_tag{ p, tag }
+        if i < 0 { return null }
+        let c = list::at{ list = p.controls, i = @as(usize, i) }
+        let l = list_layout{ p, c }
+        let k = row - c.first_row
+        if k < 0 or k >= l.visible or row >= @as(i32, c.row_count) { return null }
+        let s = row_slot{ l, padding = c.padding, k }
+        return rect_of{ x = p.sx + l.ax + c.padding, y = p.sy + l.ay + s.y, w = l.aw - 2 * c.padding, h = s.h }
+    }
 
     fn list_clear { mut g: Gui, panel: u32, tag: []u8 } {
         let c = find_control{ &g, panel, tag } ifnull { return }
@@ -232,7 +252,7 @@ namespace gui {
             c.rows = try alloc::resize(Row, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = c.rows, count = n }
         }
         let copy = try copy_string{ &g, s = text }
-        c.rows[@as(usize, c.row_count)] = Row{ text = copy, user, color = white_color{}, has_color = false, icon = no_img{}, enabled = true }
+        c.rows[@as(usize, c.row_count)] = Row{ text = copy, user, color = white_color{}, has_color = false, icon = no_img{}, enabled = true, checked = false }
         c.row_count = c.row_count + 1
         return @as(i32, c.row_count) - 1
     }
@@ -248,6 +268,18 @@ namespace gui {
         let c = find_control{ &g, panel, tag } ifnull { return }
         if row < 0 or row >= @as(i32, c.row_count) { return }
         c.rows[@as(usize, row)].icon = Img{ tex = texture, w, h, ok = true }
+    }
+
+    fn list_set_checked { mut g: Gui, panel: u32, tag: []u8, row: i32, checked: bool } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        if row < 0 or row >= @as(i32, c.row_count) { return }
+        c.rows[@as(usize, row)].checked = checked
+    }
+
+    fn list_is_checked { mut g: Gui, panel: u32, tag: []u8, row: i32 } -> bool {
+        let c = find_control{ &g, panel, tag } ifnull { return false }
+        if row < 0 or row >= @as(i32, c.row_count) { return false }
+        return c.rows[@as(usize, row)].checked
     }
 
     fn list_set_enabled { mut g: Gui, panel: u32, tag: []u8, row: i32, enabled: bool } {

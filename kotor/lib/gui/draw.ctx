@@ -405,7 +405,13 @@ namespace gui {
         let lit = selected or hover
         // Hilighted rows swap borders; a row that is selected and hovered uses the combined one.
         let mut b = pc.border
-        if selected and hover and pc.hilight_selected.present { b = pc.hilight_selected } else if selected and pc.selected.present { b = pc.selected } else if lit and pc.hilight.present { b = pc.hilight }
+        if pc.kind == K_CHECK {
+            if row.checked {
+                b = if hover and pc.hilight_selected.present { pc.hilight_selected } else if pc.selected.present { pc.selected } else { pc.border }
+            } else {
+                b = if hover and pc.hilight.present { pc.hilight } else { pc.border }
+            }
+        } else if selected and hover and pc.hilight_selected.present { b = pc.hilight_selected } else if selected and pc.selected.present { b = pc.selected } else if lit and pc.hilight.present { b = pc.hilight }
         draw_border{ &g, &frame, b, x, y, w, h, alpha, clip, override = no_img{} }
         let a = text_area{ b = pc.border, x, y, w, h }
         let mut ax = a.x

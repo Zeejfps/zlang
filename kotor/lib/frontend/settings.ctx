@@ -1,0 +1,230 @@
+// The player's options, kept in our own file (never the install's swkotor.ini). The keys and
+// sections are swkotor.ini's, so the file reads familiarly; the values the options screens change
+// are Settings, which the front end hands the engine (docs/design/gui.md, "Options").
+//
+//   let s = frontend::load_settings{ &fs, &h, path = "kotor-settings.ini" }     // defaults when absent
+//   frontend::save_settings{ &fs, &h, path, s }
+namespace frontend {
+    struct Settings {
+        // [Graphics Options]
+        width: i32, height: i32, fullscreen: bool, vsync: bool,
+        gamma: i32,                 // 0..100, the brightness slider
+        shadows: bool, soft_shadows: bool, grass: bool, frame_buffer: bool,
+        anisotropy: i32,            // 0 off .. 3
+        antialias: i32,             // 0 off .. 3
+        texture_quality: i32,       // 0 low .. 2 high
+        gui_scale: f32,             // 1: the original's pixel-for-pixel GUI
+        // [Sound Options]
+        music: i32, voice: i32, effects: i32, movie: i32,       // 0..100
+        eax: bool, force_software: bool,
+        // [Game Options]
+        difficulty: i32,            // 0 easy, 1 normal, 2 hard
+        mouse_sensitivity: i32,     // 0..100
+        reverse_buttons: bool,
+        mouse_look: bool, auto_level_up: bool, autosave: bool, reverse_minigame_y: bool, combat_movement: bool,
+        tooltips: bool, tutorial_popups: bool, subtitles: bool, minimap: bool, floating_numbers: bool,
+        status_summary: bool, hide_ingame_gui: bool, small_fonts: bool, hide_unequippable: bool,
+        // [Autopause Options]
+        pause_end_round: bool, pause_enemy_sighted: bool, pause_mine_sighted: bool, pause_party_killed: bool,
+        pause_action_menu: bool, pause_triggers: bool,
+        // [Movies]
+        disable_movies: bool,
+        movies_seen: [64]bool,      // [Movies Shown]: rows of movies.2da the player has seen
+    }
+
+    // The original's defaults (swkotor.ini as the install ships it).
+    fn default_settings {} -> Settings {
+        return Settings{
+            width = 1280, height = 960, fullscreen = false, vsync = true, gamma = 50,
+            shadows = true, soft_shadows = false, grass = true, frame_buffer = true,
+            anisotropy = 0, antialias = 0, texture_quality = 2, gui_scale = 1.0,
+            music = 85, voice = 85, effects = 85, movie = 100, eax = false, force_software = false,
+            difficulty = 1, mouse_sensitivity = 33, reverse_buttons = false,
+            mouse_look = false, auto_level_up = false, autosave = true, reverse_minigame_y = false, combat_movement = true,
+            tooltips = true, tutorial_popups = true, subtitles = true, minimap = true, floating_numbers = true,
+            status_summary = true, hide_ingame_gui = false, small_fonts = false, hide_unequippable = false,
+            pause_end_round = false, pause_enemy_sighted = true, pause_mine_sighted = true, pause_party_killed = true,
+            pause_action_menu = false, pause_triggers = false,
+            disable_movies = false, movies_seen = [false; 64],
+        }
+    }
+
+    fn get_int { data: []u8, section: []u8, key: []u8, fallback: i32 } -> i32 {
+        let v = ini::get{ data, section, key } ifnull { return fallback }
+        let s = utf8::from{ bytes = v } iferr { return fallback }
+        let n = utf8::parse_i64{ s } ifnull { return fallback }
+        return @as(i32, n)
+    }
+
+    fn get_bool { data: []u8, section: []u8, key: []u8, fallback: bool } -> bool {
+        return get_int{ data, section, key, fallback = if fallback { 1 } else { 0 } } != 0
+    }
+
+    fn get_float { data: []u8, section: []u8, key: []u8, fallback: f32 } -> f32 {
+        let v = ini::get{ data, section, key } ifnull { return fallback }
+        let s = utf8::from{ bytes = v } iferr { return fallback }
+        let n = utf8::parse_f64{ s } ifnull { return fallback }
+        return @as(f32, n)
+    }
+
+    fn clamp_i { v: i32, lo: i32, hi: i32 } -> i32 {
+        return if v < lo { lo } else if v > hi { hi } else { v }
+    }
+
+    // The settings in the text of an options file; anything missing keeps its default.
+    fn parse_settings { data: []u8 } -> Settings {
+        let d = default_settings{}
+        let g: []u8 = "Graphics Options"
+        let s: []u8 = "Sound Options"
+        let o: []u8 = "Game Options"
+        let a: []u8 = "Autopause Options"
+        return Settings{
+            width = clamp_i{ v = get_int{ data, section = g, key = "Width", fallback = d.width }, lo = 640, hi = 16384 },
+            height = clamp_i{ v = get_int{ data, section = g, key = "Height", fallback = d.height }, lo = 480, hi = 16384 },
+            fullscreen = get_bool{ data, section = g, key = "FullScreen", fallback = d.fullscreen },
+            vsync = get_bool{ data, section = g, key = "V-Sync", fallback = d.vsync },
+            gamma = clamp_i{ v = get_int{ data, section = g, key = "Gamma", fallback = d.gamma }, lo = 0, hi = 100 },
+            shadows = get_bool{ data, section = g, key = "Shadows", fallback = d.shadows },
+            soft_shadows = get_bool{ data, section = g, key = "Soft Shadows", fallback = d.soft_shadows },
+            grass = get_bool{ data, section = g, key = "Grass", fallback = d.grass },
+            frame_buffer = get_bool{ data, section = g, key = "Frame Buffer Effects", fallback = d.frame_buffer },
+            anisotropy = clamp_i{ v = get_int{ data, section = g, key = "Anisotropy", fallback = d.anisotropy }, lo = 0, hi = 3 },
+            antialias = clamp_i{ v = get_int{ data, section = g, key = "Anti Aliasing", fallback = d.antialias }, lo = 0, hi = 3 },
+            texture_quality = clamp_i{ v = get_int{ data, section = g, key = "Texture Quality", fallback = d.texture_quality }, lo = 0, hi = 2 },
+            gui_scale = get_float{ data, section = g, key = "GUI Scale", fallback = d.gui_scale },
+            music = clamp_i{ v = get_int{ data, section = s, key = "Music Volume", fallback = d.music }, lo = 0, hi = 100 },
+            voice = clamp_i{ v = get_int{ data, section = s, key = "Voiceover Volume", fallback = d.voice }, lo = 0, hi = 100 },
+            effects = clamp_i{ v = get_int{ data, section = s, key = "Sound Effects Volume", fallback = d.effects }, lo = 0, hi = 100 },
+            movie = clamp_i{ v = get_int{ data, section = s, key = "Movie Volume", fallback = d.movie }, lo = 0, hi = 100 },
+            eax = get_bool{ data, section = s, key = "EAX", fallback = d.eax },
+            force_software = get_bool{ data, section = s, key = "Force Software", fallback = d.force_software },
+            difficulty = clamp_i{ v = get_int{ data, section = o, key = "Difficulty Level", fallback = d.difficulty }, lo = 0, hi = 2 },
+            mouse_sensitivity = clamp_i{ v = get_int{ data, section = o, key = "Mouse Sensitivity", fallback = d.mouse_sensitivity }, lo = 0, hi = 100 },
+            reverse_buttons = get_bool{ data, section = o, key = "Reverse Mouse Buttons", fallback = d.reverse_buttons },
+            mouse_look = get_bool{ data, section = o, key = "Mouse Look", fallback = d.mouse_look },
+            auto_level_up = get_bool{ data, section = o, key = "Auto Level Up NPCs", fallback = d.auto_level_up },
+            autosave = get_bool{ data, section = o, key = "AutoSave", fallback = d.autosave },
+            reverse_minigame_y = get_bool{ data, section = o, key = "Reverse Minigame YAxis", fallback = d.reverse_minigame_y },
+            combat_movement = get_bool{ data, section = o, key = "Combat Movement", fallback = d.combat_movement },
+            tooltips = get_bool{ data, section = o, key = "Enable Tooltips", fallback = d.tooltips },
+            tutorial_popups = get_bool{ data, section = o, key = "Tutorial Popups", fallback = d.tutorial_popups },
+            subtitles = get_bool{ data, section = o, key = "Subtitles", fallback = d.subtitles },
+            minimap = get_bool{ data, section = o, key = "Mini Map", fallback = d.minimap },
+            floating_numbers = get_bool{ data, section = o, key = "Floating Numbers", fallback = d.floating_numbers },
+            status_summary = get_bool{ data, section = o, key = "Status Summary", fallback = d.status_summary },
+            hide_ingame_gui = get_bool{ data, section = o, key = "Hide InGame GUI", fallback = d.hide_ingame_gui },
+            small_fonts = get_bool{ data, section = o, key = "Use Small Fonts", fallback = d.small_fonts },
+            hide_unequippable = get_bool{ data, section = o, key = "Hide Unequippable", fallback = d.hide_unequippable },
+            pause_end_round = get_bool{ data, section = a, key = "End Of Round", fallback = d.pause_end_round },
+            pause_enemy_sighted = get_bool{ data, section = a, key = "Enemy Sighted", fallback = d.pause_enemy_sighted },
+            pause_mine_sighted = get_bool{ data, section = a, key = "Mine Sighted", fallback = d.pause_mine_sighted },
+            pause_party_killed = get_bool{ data, section = a, key = "Party Killed", fallback = d.pause_party_killed },
+            pause_action_menu = get_bool{ data, section = a, key = "Action Menu", fallback = d.pause_action_menu },
+            pause_triggers = get_bool{ data, section = a, key = "Triggers", fallback = d.pause_triggers },
+            disable_movies = get_bool{ data, section = "Movies", key = "Disable Movies", fallback = d.disable_movies },
+            movies_seen = read_seen{ data },
+        }
+    }
+
+    fn read_seen { data: []u8 } -> [64]bool {
+        let mut seen = [false; 64]
+        let mut i: usize = 0
+        while i < 64 {
+            let mut key: [12]u8
+            let pre: []u8 = "Movie "
+            slice::copy(u8){ dst = key[..pre.len], src = pre }
+            let mut n = pre.len
+            if i >= 10 {
+                key[n] = '0' + @trunc(u8, i / 10)
+                n = n + 1
+            }
+            key[n] = '0' + @trunc(u8, i % 10)
+            n = n + 1
+            seen[i] = get_bool{ data, section = "Movies Shown", key = key[..n], fallback = false }
+            i = i + 1
+        }
+        return seen
+    }
+
+    // Reads the options file at `path`; the defaults when there is none or it can't be read.
+    fn load_settings { mut fs: Fs, heap: *mut heap::Heap, path: []u8 } -> Settings {
+        let bytes = fs::read_all(heap::Heap){ &fs, heap, realloc = heap::alloc, path } iferr { return default_settings{} }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = bytes, count = 0 }
+        return parse_settings{ data = bytes }
+    }
+
+    fn put_i { mut b: utf8::Builder(heap::Heap), key: strlit, v: i32 } -> ! {
+        try @fmt(&b, "{}={}\n", key, v)
+    }
+
+    fn put_b { mut b: utf8::Builder(heap::Heap), key: strlit, v: bool } -> ! {
+        try @fmt(&b, "{}={}\n", key, if v { 1 } else { 0 })
+    }
+
+    // The options file's text.
+    fn write_settings { mut b: utf8::Builder(heap::Heap), s: Settings } -> ! {
+        try @fmt(&b, "; kotor options: written by the game's options screens\n[Graphics Options]\n")
+        try put_i{ &b, key = "Width", v = s.width }
+        try put_i{ &b, key = "Height", v = s.height }
+        try put_b{ &b, key = "FullScreen", v = s.fullscreen }
+        try put_b{ &b, key = "V-Sync", v = s.vsync }
+        try put_i{ &b, key = "Gamma", v = s.gamma }
+        try put_b{ &b, key = "Shadows", v = s.shadows }
+        try put_b{ &b, key = "Soft Shadows", v = s.soft_shadows }
+        try put_b{ &b, key = "Grass", v = s.grass }
+        try put_b{ &b, key = "Frame Buffer Effects", v = s.frame_buffer }
+        try put_i{ &b, key = "Anisotropy", v = s.anisotropy }
+        try put_i{ &b, key = "Anti Aliasing", v = s.antialias }
+        try put_i{ &b, key = "Texture Quality", v = s.texture_quality }
+        try @fmt(&b, "GUI Scale={}\n", s.gui_scale)
+        try @fmt(&b, "\n[Sound Options]\n")
+        try put_i{ &b, key = "Music Volume", v = s.music }
+        try put_i{ &b, key = "Voiceover Volume", v = s.voice }
+        try put_i{ &b, key = "Sound Effects Volume", v = s.effects }
+        try put_i{ &b, key = "Movie Volume", v = s.movie }
+        try put_b{ &b, key = "EAX", v = s.eax }
+        try put_b{ &b, key = "Force Software", v = s.force_software }
+        try @fmt(&b, "\n[Game Options]\n")
+        try put_i{ &b, key = "Difficulty Level", v = s.difficulty }
+        try put_i{ &b, key = "Mouse Sensitivity", v = s.mouse_sensitivity }
+        try put_b{ &b, key = "Reverse Mouse Buttons", v = s.reverse_buttons }
+        try put_b{ &b, key = "Mouse Look", v = s.mouse_look }
+        try put_b{ &b, key = "Auto Level Up NPCs", v = s.auto_level_up }
+        try put_b{ &b, key = "AutoSave", v = s.autosave }
+        try put_b{ &b, key = "Reverse Minigame YAxis", v = s.reverse_minigame_y }
+        try put_b{ &b, key = "Combat Movement", v = s.combat_movement }
+        try put_b{ &b, key = "Enable Tooltips", v = s.tooltips }
+        try put_b{ &b, key = "Tutorial Popups", v = s.tutorial_popups }
+        try put_b{ &b, key = "Subtitles", v = s.subtitles }
+        try put_b{ &b, key = "Mini Map", v = s.minimap }
+        try put_b{ &b, key = "Floating Numbers", v = s.floating_numbers }
+        try put_b{ &b, key = "Status Summary", v = s.status_summary }
+        try put_b{ &b, key = "Hide InGame GUI", v = s.hide_ingame_gui }
+        try put_b{ &b, key = "Use Small Fonts", v = s.small_fonts }
+        try put_b{ &b, key = "Hide Unequippable", v = s.hide_unequippable }
+        try @fmt(&b, "\n[Autopause Options]\n")
+        try put_b{ &b, key = "End Of Round", v = s.pause_end_round }
+        try put_b{ &b, key = "Enemy Sighted", v = s.pause_enemy_sighted }
+        try put_b{ &b, key = "Mine Sighted", v = s.pause_mine_sighted }
+        try put_b{ &b, key = "Party Killed", v = s.pause_party_killed }
+        try put_b{ &b, key = "Action Menu", v = s.pause_action_menu }
+        try put_b{ &b, key = "Triggers", v = s.pause_triggers }
+        try @fmt(&b, "\n[Movies]\n")
+        try put_b{ &b, key = "Disable Movies", v = s.disable_movies }
+        try @fmt(&b, "\n[Movies Shown]\n")
+        let mut i: usize = 0
+        while i < 64 {
+            if s.movies_seen[i] { try @fmt(&b, "Movie {}=1\n", i) }
+            i = i + 1
+        }
+    }
+
+    // Writes the options to `path`.
+    fn save_settings { mut fs: Fs, heap: *mut heap::Heap, path: []u8, s: Settings } -> ! {
+        let mut b = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap } }
+        defer list::free{ list = &b.bytes }
+        try write_settings{ &b, s }
+        let v = utf8::view{ b }
+        _ = try fs::write_all{ &fs, path, bytes = v.bytes }
+    }
+}

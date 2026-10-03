@@ -1,0 +1,311 @@
+// The front end's screens: the main menu, the options panels, Load Game and the movie list,
+// driven by the events lib/gui makes (docs/design/gui.md, "The front end"). Each screen is a
+// .gui file; a stack of them mirrors the GUI's panel stack, and `step` turns events into
+// changes of the options or an Outcome for the engine.
+namespace frontend {
+    const SCR_MAIN: u32 = 1
+    const SCR_OPTIONS: u32 = 2
+    const SCR_GAMEPLAY: u32 = 3
+    const SCR_FEEDBACK: u32 = 4
+    const SCR_AUTOPAUSE: u32 = 5
+    const SCR_GRAPHICS: u32 = 6
+    const SCR_GRAPHICS_ADV: u32 = 7
+    const SCR_RESOLUTION: u32 = 8
+    const SCR_SOUND: u32 = 9
+    const SCR_SOUND_ADV: u32 = 10
+    const SCR_MOUSE: u32 = 11
+    const SCR_LOAD: u32 = 12
+    const SCR_MOVIES: u32 = 13
+
+    // What the engine does next.
+    union Outcome {
+        running,                                            // keep stepping
+        new_game{ module: resref::ResRef },                 // start this module as a new game
+        load_game{ folder: [64]u8, folder_len: usize },     // load the save in this folder of Saves/
+        quit,
+    }
+
+    struct Entry { screen: u32, panel: u32 }
+
+    // The display modes the resolution list offers (the platform layer cannot list them yet).
+    const MODES: [15][2]i32 = [
+        [800, 600], [1024, 768], [1280, 720], [1280, 800], [1280, 960], [1280, 1024], [1366, 768], [1440, 900],
+        [1600, 900], [1600, 1200], [1680, 1050], [1920, 1080], [1920, 1200], [2560, 1440], [3840, 2160],
+    ]
+
+    struct Front {
+        heap: *mut heap::Heap,
+        game: []u8,                         // the install, for Saves/
+        settings: Settings,
+        config_path: [256]u8, config_len: usize,
+        stack: [10]Entry, depth: usize,
+        saves: SaveList, saves_loaded: bool,
+        shot: ?render::Texture,             // the selected save's screenshot
+        display_pending: bool,              // resolution, fullscreen or vsync changed: the engine applies it
+        sound_pending: bool,
+        play_request: [24]u8, play_len: usize,      // a movie the player picked in the movie list
+        start_module: [16]u8, start_len: usize,
+        saves_dir: [300]u8, saves_dir_len: usize,
+        snapshot: Settings,                 // the options when an Advanced panel opened, for its Cancel
+        // the start-up movies and the movie list
+        stage: u32,
+        queue: [4][24]u8, queue_lens: [4]usize, queue_count: usize, queue_at: usize,
+        player: ?*mut movie::Player,
+        tables: ?*bink_tables::Tables,
+        audio_clock: bool,
+        from_menu: bool,                    // the movie playing was picked from the movie list
+        // the 3D background of the main menu
+        scene: ?*mut MenuScene,
+        scene_failed: bool,
+    }
+
+    // A front end with the options from `config_path` (the defaults if there is no such file).
+    fn make { mut fs: Fs, heap: *mut heap::Heap, game: []u8, config_path: []u8 } -> Front {
+        let mut fe = Front{
+            heap, game, settings = load_settings{ &fs, heap, path = config_path },
+            config_path = [0; 256], config_len = 0, stack = [Entry{ screen = 0, panel = 0 }; 10], depth = 0,
+            saves = SaveList{ entries = slice::empty(SaveEntry){}, count = 0 }, saves_loaded = false, shot = null,
+            display_pending = false, sound_pending = true,
+            play_request = [0; 24], play_len = 0, start_module = [0; 16], start_len = 0,
+            saves_dir = [0; 300], saves_dir_len = 0,
+            snapshot = default_settings{},
+            stage = 0, queue = [[0; 24]; 4], queue_lens = [0; 4], queue_count = 0, queue_at = 0,
+            player = null, tables = null, audio_clock = true, from_menu = false,
+            scene = null, scene_failed = false,
+        }
+        fe.config_len = copy_into{ dst = fe.config_path[..], src = config_path }
+        fe.start_len = copy_into{ dst = fe.start_module[..], src = "end_m01aa" }
+        let dir = join_path{ into = fe.saves_dir[..], a = game, b = "Saves", c = "" }
+        fe.saves_dir_len = dir.len
+        return fe
+    }
+
+    fn screen_gui { screen: u32 } -> []u8 {
+        if screen == SCR_MAIN { return "mainmenu" }
+        if screen == SCR_OPTIONS { return "optionsmain" }
+        if screen == SCR_GAMEPLAY { return "optgameplay" }
+        if screen == SCR_FEEDBACK { return "optfeedback" }
+        if screen == SCR_AUTOPAUSE { return "optautopause" }
+        if screen == SCR_GRAPHICS { return "optgraphics" }
+        if screen == SCR_GRAPHICS_ADV { return "optgraphicsadv" }
+        if screen == SCR_RESOLUTION { return "optresolution" }
+        if screen == SCR_SOUND { return "optsound" }
+        if screen == SCR_SOUND_ADV { return "optsoundadv" }
+        if screen == SCR_MOUSE { return "optmouse" }
+        if screen == SCR_LOAD { return "saveload" }
+        return "titlemovie"
+    }
+
+    fn tag_is { ev: gui::Event, tag: []u8 } -> bool {
+        return slice::eq_bytes{ a = ev.tag, b = tag }
+    }
+
+    fn top_screen { fe: *Front } -> u32 {
+        if fe.depth == 0 { return 0 }
+        return fe.stack[fe.depth - 1].screen
+    }
+
+    fn top_panel { fe: *Front } -> u32 {
+        if fe.depth == 0 { return 0 }
+        return fe.stack[fe.depth - 1].panel
+    }
+
+    fn screen_of { fe: *Front, panel: u32 } -> u32 {
+        let mut i: usize = 0
+        while i < fe.depth {
+            if fe.stack[i].panel == panel { return fe.stack[i].screen }
+            i = i + 1
+        }
+        return 0
+    }
+
+    // ---- opening and closing
+
+    // Opens `screen` on top. Panels past the main menu are modal full-screen menus.
+    fn open_screen { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, screen: u32 } -> ! {
+        if fe.depth >= 10 { return }
+        let mode = if screen == SCR_RESOLUTION { gui::Mode::dialog } else { gui::Mode::full_screen }
+        if screen == SCR_GRAPHICS_ADV or screen == SCR_SOUND_ADV { fe.snapshot = fe.settings }
+        let id = try gui::open{ &g, &fs, &dev, name = screen_gui{ screen }, mode, modal = screen != SCR_MAIN }
+        gui::ensure_backdrop{ &g, &fs, &dev, kind = 0 }
+        fe.stack[fe.depth] = Entry{ screen, panel = id }
+        fe.depth = fe.depth + 1
+        try bind_screen{ &fe, &g, &fs, &dev, screen, p = id }
+    }
+
+    // Closes the top screen; the options are written out when an options screen closes.
+    fn close_top { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } {
+        if fe.depth <= 1 { return }
+        let top = fe.stack[fe.depth - 1]
+        gui::close{ &g, id = top.panel }
+        fe.depth = fe.depth - 1
+        if top.screen == SCR_LOAD { release_shot{ &fe, &dev } }
+        if top.screen >= SCR_OPTIONS and top.screen <= SCR_MOUSE and top.screen != SCR_RESOLUTION { persist{ &fe, &fs } }
+        gui::play_sound{ &g, n = 5 }
+    }
+
+    // Writes the options file. A failure is not fatal: the options still hold for this run.
+    fn persist { mut fe: Front, mut fs: Fs } {
+        save_settings{ &fs, heap = fe.heap, path = fe.config_path[..fe.config_len], s = fe.settings } iferr {}
+    }
+
+    fn release_shot { mut fe: Front, mut dev: gpu::Device } {
+        let t = fe.shot ifnull { return }
+        gpu::free_texture{ &dev, t }
+        fe.shot = null
+    }
+
+    // ---- binding the options to the controls
+
+    fn bind_screen { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, screen: u32, p: u32 } -> ! {
+        let s = fe.settings
+        if screen == SCR_MAIN {
+            // The debug warp list and button are for the original's developers; the logos in the
+            // file are not bound by its code. A 3D scene, if there is one, covers the picture.
+            gui::set_visible{ &g, panel = p, tag = "LB_MODULES", visible = false }
+            gui::set_visible{ &g, panel = p, tag = "BTN_WARP", visible = false }
+            gui::set_visible{ &g, panel = p, tag = "LBL_NEWCONTENT", visible = false }
+            gui::set_visible{ &g, panel = p, tag = "LBL_BW", visible = false }
+            gui::set_visible{ &g, panel = p, tag = "LBL_LUCAS", visible = false }
+            gui::set_focus{ &g, panel = p, tag = "BTN_NEWGAME" }
+        } else if screen == SCR_OPTIONS {
+            gui::set_focus{ &g, panel = p, tag = "BTN_GAMEPLAY" }
+        } else if screen == SCR_GAMEPLAY {
+            gui::set_checked{ &g, panel = p, tag = "CB_INVERTCAM", on = s.mouse_look }
+            gui::set_checked{ &g, panel = p, tag = "CB_LEVELUP", on = s.auto_level_up }
+            gui::set_checked{ &g, panel = p, tag = "CB_AUTOSAVE", on = s.autosave }
+            gui::set_checked{ &g, panel = p, tag = "CB_REVERSE", on = s.reverse_minigame_y }
+            gui::set_checked{ &g, panel = p, tag = "CB_DISABLEMOVE", on = s.combat_movement }
+            try show_difficulty{ &g, p, d = s.difficulty }
+            gui::set_enabled{ &g, panel = p, tag = "BTN_KEYMAP", enabled = false }
+            gui::set_focus{ &g, panel = p, tag = "BTN_DIFFICULTY" }
+        } else if screen == SCR_FEEDBACK {
+            try fill_feedback{ &fe, &g, p }
+        } else if screen == SCR_AUTOPAUSE {
+            gui::set_checked{ &g, panel = p, tag = "CB_ENDROUND", on = s.pause_end_round }
+            gui::set_checked{ &g, panel = p, tag = "CB_ENEMYSIGHTED", on = s.pause_enemy_sighted }
+            gui::set_checked{ &g, panel = p, tag = "CB_MINESIGHTED", on = s.pause_mine_sighted }
+            gui::set_checked{ &g, panel = p, tag = "CB_PARTYKILLED", on = s.pause_party_killed }
+            gui::set_checked{ &g, panel = p, tag = "CB_ACTIONMENU", on = s.pause_action_menu }
+            gui::set_checked{ &g, panel = p, tag = "CB_TRIGGERS", on = s.pause_triggers }
+        } else if screen == SCR_GRAPHICS {
+            gui::set_value{ &g, panel = p, tag = "SLI_GAMMA", value = s.gamma }
+            gui::set_checked{ &g, panel = p, tag = "CB_SHADOWS", on = s.shadows }
+            gui::set_checked{ &g, panel = p, tag = "CB_GRASS", on = s.grass }
+        } else if screen == SCR_GRAPHICS_ADV {
+            gui::set_checked{ &g, panel = p, tag = "CB_FRAMEBUFF", on = s.frame_buffer }
+            gui::set_checked{ &g, panel = p, tag = "CB_SOFTSHADOWS", on = s.soft_shadows }
+            gui::set_checked{ &g, panel = p, tag = "CB_VSYNC", on = s.vsync }
+            try show_choice{ &g, p, tag = "BTN_ANTIALIAS", which = CH_AA, v = s.antialias }
+            try show_choice{ &g, p, tag = "BTN_TEXQUAL", which = CH_TEX, v = s.texture_quality }
+            try show_choice{ &g, p, tag = "BTN_ANISOTROPY", which = CH_AF, v = s.anisotropy }
+        } else if screen == SCR_RESOLUTION {
+            try fill_resolutions{ &fe, &g, p }
+        } else if screen == SCR_SOUND {
+            gui::set_value{ &g, panel = p, tag = "SLI_MUSIC", value = s.music }
+            gui::set_value{ &g, panel = p, tag = "SLI_VO", value = s.voice }
+            gui::set_value{ &g, panel = p, tag = "SLI_FX", value = s.effects }
+            gui::set_value{ &g, panel = p, tag = "SLI_MOVIE", value = s.movie }
+        } else if screen == SCR_SOUND_ADV {
+            gui::set_checked{ &g, panel = p, tag = "CB_FORCESOFTWARE", on = s.force_software }
+            try show_choice{ &g, p, tag = "BTN_EAX", which = CH_EAX, v = if s.eax { 1 } else { 0 } }
+        } else if screen == SCR_MOUSE {
+            gui::set_value{ &g, panel = p, tag = "SLI_MOUSESEN", value = s.mouse_sensitivity }
+            gui::set_checked{ &g, panel = p, tag = "CB_REVBUTTONS", on = s.reverse_buttons }
+        } else if screen == SCR_LOAD {
+            try open_load{ &fe, &g, &fs, &dev, p }
+        } else if screen == SCR_MOVIES {
+            try fill_movies{ &fe, &g, &fs, p }
+        }
+    }
+
+    const CH_AA: u32 = 0
+    const CH_TEX: u32 = 1
+    const CH_AF: u32 = 2
+    const CH_EAX: u32 = 3
+    const CH_DIFF: u32 = 4
+
+    // The names a button cycles through (left and right arrows).
+    fn choice_count { which: u32 } -> i32 {
+        if which == CH_AA or which == CH_AF { return 4 }
+        if which == CH_TEX or which == CH_DIFF { return 3 }
+        return 2
+    }
+
+    fn choice_text { which: u32, v: i32 } -> []u8 {
+        if which == CH_AA or which == CH_AF {
+            return if v == 1 { "2x" } else if v == 2 { "4x" } else if v == 3 { "8x" } else { "Off" }
+        }
+        if which == CH_TEX { return if v == 0 { "Low" } else if v == 1 { "Medium" } else { "High" } }
+        if which == CH_DIFF { return if v == 0 { "Easy" } else if v == 1 { "Normal" } else { "Hard" } }
+        return if v == 0 { "Off" } else { "On" }
+    }
+
+    fn show_difficulty { mut g: gui::Gui, p: u32, d: i32 } -> ! {
+        try show_choice{ &g, p, tag = "BTN_DIFFICULTY", which = CH_DIFF, v = d }
+    }
+
+    // A button whose text is the current choice of a short list.
+    fn show_choice { mut g: gui::Gui, p: u32, tag: []u8, which: u32, v: i32 } -> ! {
+        try gui::set_text{ &g, panel = p, tag, text = choice_text{ which, v } }
+    }
+
+    fn fill_feedback { mut fe: Front, mut g: gui::Gui, p: u32 } -> ! {
+        gui::list_clear{ &g, panel = p, tag = "LB_OPTIONS" }
+        let s = fe.settings
+        let names: [6][]u8 = ["Floating Numbers", "Tutorial Popups", "Status Summary", "Subtitles", "Mini Map", "Tooltips"]
+        let vals: [6]bool = [s.floating_numbers, s.tutorial_popups, s.status_summary, s.subtitles, s.minimap, s.tooltips]
+        let mut i: usize = 0
+        while i < 6 {
+            let row = try gui::list_add{ &g, panel = p, tag = "LB_OPTIONS", text = names[i], user = @as(i64, i) }
+            gui::list_set_checked{ &g, panel = p, tag = "LB_OPTIONS", row, checked = vals[i] }
+            i = i + 1
+        }
+    }
+
+    fn fill_resolutions { mut fe: Front, mut g: gui::Gui, p: u32 } -> ! {
+        gui::list_clear{ &g, panel = p, tag = "LB_RESOLUTIONS" }
+        let mut i: usize = 0
+        while i < 15 {
+            let mut buf: [24]u8
+            let n = format_mode{ into = buf[..], w = MODES[i][0], h = MODES[i][1] }
+            let row = try gui::list_add{ &g, panel = p, tag = "LB_RESOLUTIONS", text = buf[..n], user = @as(i64, i) }
+            if MODES[i][0] == fe.settings.width and MODES[i][1] == fe.settings.height {
+                gui::list_select{ &g, panel = p, tag = "LB_RESOLUTIONS", row }
+            }
+            i = i + 1
+        }
+    }
+
+    fn put_int { into: []mut u8, at: usize, n: i32 } -> usize {
+        let mut digits: [12]u8
+        let mut k: usize = 0
+        let mut v = if n < 0 { -n } else { n }
+        if v == 0 {
+            digits[0] = '0'
+            k = 1
+        }
+        while v > 0 {
+            digits[k] = '0' + @trunc(u8, v % 10)
+            v = v / 10
+            k = k + 1
+        }
+        let mut at2 = at
+        if n < 0 and at2 < into.len {
+            into[at2] = '-'
+            at2 = at2 + 1
+        }
+        while k > 0 and at2 < into.len {
+            k = k - 1
+            into[at2] = digits[k]
+            at2 = at2 + 1
+        }
+        return at2
+    }
+
+    fn format_mode { into: []mut u8, w: i32, h: i32 } -> usize {
+        let mut n = put_int{ into, at = 0, n = w }
+        n = n + copy_into{ dst = into[n..], src = " x " }
+        return put_int{ into, at = n, n = h }
+    }
+}

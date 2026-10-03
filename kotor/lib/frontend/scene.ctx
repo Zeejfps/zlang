@@ -1,0 +1,57 @@
+// The main menu's animated background: the model `mainmenu` in a gui3d::Scene, drawn into the
+// rectangle of the panel's LBL_3DVIEW control before the GUI over it (docs/re/gui3d.md).
+namespace frontend {
+    const SCENE_MEMORY: usize = 67108864        // the scene's arena: the model, its pose, particles
+
+    // The scene and what it needs to live: an arena for it and the models cache that keeps the
+    // model in that arena. Heap-allocated so the pointers between them stay put.
+    struct MenuScene {
+        mem: alloc::Bytes,
+        arena: *mut arena::Arena,
+        models: *mut mdl_cache::Cache,
+        scene: gui3d::Scene,
+    }
+
+    // Builds the scene; null when the install lacks the model or anything fails (the menu then
+    // shows the panel's still picture).
+    fn make_scene { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } -> ?*mut MenuScene {
+        let mem = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = fe.heap, mem = slice::empty(u8){}, count = SCENE_MEMORY } iferr { return null }
+        let ar = alloc::new(arena::Arena, heap::Heap){ realloc = heap::alloc, heap = fe.heap, value = arena::new{ buf = mem } } iferr { return null }
+        let models = alloc::new(mdl_cache::Cache, heap::Heap){ realloc = heap::alloc, heap = fe.heap, value = mdl_cache::new{ rm = g.rm, keep = ar } } iferr { return null }
+        let scene = gui3d::load{
+            &fs, &dev, heap = ar, rm = g.rm, models, mats = g.cache, model = "mainmenu", camera_node = "camerahook",
+            fov_degrees = gui3d::MAIN_MENU_FOV, animation = "default", warm_up = 1.0,
+        } iferr { return null }
+        let ms = alloc::new(MenuScene, heap::Heap){ realloc = heap::alloc, heap = fe.heap, value = MenuScene{ mem, arena = ar, models, scene } } iferr { return null }
+        return ms
+    }
+
+    fn free_scene { mut fe: Front, mut dev: gpu::Device } {
+        let ms = fe.scene ifnull { return }
+        gui3d::free{ scene = &ms.scene, &dev }
+        alloc::free(mdl_cache::Cache, heap::Heap){ realloc = heap::alloc, heap = fe.heap, p = ms.models }
+        alloc::free(arena::Arena, heap::Heap){ realloc = heap::alloc, heap = fe.heap, p = ms.arena }
+        _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = fe.heap, mem = ms.mem, count = 0 }
+        alloc::free(MenuScene, heap::Heap){ realloc = heap::alloc, heap = fe.heap, p = ms }
+        fe.scene = null
+    }
+
+    fn update_scene { mut fe: Front, dt: f32 } {
+        if top_screen{ &fe } != SCR_MAIN { return }
+        let ms = fe.scene ifnull { return }
+        gui3d::update{ scene = &ms.scene, dt }
+    }
+
+    // Adds the scene as a view over the main panel's LBL_3DVIEW rectangle (GUI pixels scaled to
+    // the target's pixels) and hides the still picture that stands in for it.
+    fn draw_scene { mut fe: Front, mut g: gui::Gui, mut frame: render::Frame, target: render::Size } {
+        if top_screen{ &fe } != SCR_MAIN { return }
+        let ms = fe.scene ifnull { return }
+        let panel = top_panel{ &fe }
+        let r = gui::control_rect{ &g, panel, tag = "LBL_3DVIEW" } ifnull { return }
+        let sx = @as(f32, target.width) / @as(f32, g.ui_w)
+        let sy = @as(f32, target.height) / @as(f32, g.ui_h)
+        let viewport = render::Rect{ x = r.x * sx, y = r.y * sy, w = r.w * sx, h = r.h * sy }
+        _ = gui3d::add_to_frame{ scene = &ms.scene, &frame, viewport }
+    }
+}
