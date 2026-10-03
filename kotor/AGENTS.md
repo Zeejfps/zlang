@@ -19,9 +19,10 @@ saves, minigames, music and movies.
 
 ## Rules
 
-1. **Language.** Everything the game runs is ctxlang. Read `ctxlang/spec.md` in full before
-   writing ctxlang, then `ctxlang/std/*.ctx` and the examples (`ctxlang/examples/sdl`, `glfw`,
-   `json`). The compiler is young: when it gets in your way, log it in [FRICTION.md](FRICTION.md)
+1. **Language.** Everything the game runs is ctxlang. Start with
+   [docs/ctxlang-quickref.md](docs/ctxlang-quickref.md) and the existing code in `kotor/lib/`;
+   read `ctxlang/spec.md` sections when you need the exact rule (the quick reference names
+   them), and `ctxlang/std/*.ctx` for std's APIs. The compiler is young: when it gets in your way, log it in [FRICTION.md](FRICTION.md)
    (what you wrote, what you had to write instead, how often). Changing the language (ctxc, std,
    runtime) is allowed when it is a must or greatly helps; follow `ctxlang/PLAN.md`, "Changing the
    language" (new feature first, used only after `python tools/fixpoint.py --update` refreshes the
@@ -54,6 +55,9 @@ saves, minigames, music and movies.
    orchestrator merges.
 8. **Python** is for throwaway exploration and dev tooling only (`kotor/tools/py/`). Nothing the
    game needs at run time.
+9. **Spend tokens carefully.** Usage is limited. Read the parts of files you need (grep first),
+   keep command output short (`| tail -20`, `| grep`), don't re-read files you've already read,
+   and don't paste large outputs into reports. Prefer one decisive verification over many.
 
 ## Building
 
