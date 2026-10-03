@@ -58,6 +58,8 @@ namespace fight {
         killer: u32,                    // GetLastKiller
         last_damage: i32,               // GetTotalDamageDealt
         damage_types: [15]i32,          // GetDamageDealtByType: the last hit's damage by type slot
+        file_hp: i32,                   // the GFF's CurrentHitPoints, adopted by equip_loaded
+        has_file_hp: bool,
         dying_ms: i32,                  // > 0: the die animation plays, then dead
     }
 
@@ -74,7 +76,7 @@ namespace fight {
     fn new_fighter { heap: *mut heap::Heap } -> !*mut Fighter {
         let mut c: rules::Creature
         c.loaded_hp = -1
-        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], dying_ms = 0 }
+        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0 }
         return try alloc::new(Fighter, heap::Heap){ realloc = heap::alloc, heap, value = f }
     }
 
@@ -119,6 +121,9 @@ namespace fight {
         if gff::get_list{ doc = doc.*, s, label = "ClassList" } == null { return }
         let f = c.fighter ifnull { return }
         rules::read_creature{ tables = w.rules, doc, s, out = &f.c }
+        let cur = gff::get_number{ doc = doc.*, s, label = "CurrentHitPoints" }
+        f.has_file_hp = cur != null
+        f.file_hp = @trunc(i32, cur ifnull 0)
         // A saved creature's effects (rules::read_creature leaves them to the engine).
         save::read_effect_list{ doc, s, c = &f.c }
         f.loaded = true
@@ -197,6 +202,14 @@ namespace fight {
         rules::recompute{ tables = w.rules, c = &f.c }
         if f.c.stats.max_hp > 0 {
             o.hp_max = f.c.stats.max_hp
+            // The files keep CurrentHitPoints relative to the base hit points (HitPoints): the
+            // level and CON bonus on top is not in it (ours, from the install's save: Bandon
+            // 10/40/10 at full health, the player 0/10/-6 at 4). So the current hit points are
+            // CurrentHitPoints + (max - base); save::put_rules_creature writes them back that way.
+            if f.has_file_hp {
+                o.hp = f.file_hp + (o.hp_max - f.c.hp_base)
+                f.has_file_hp = false
+            }
             if o.hp > o.hp_max { o.hp = o.hp_max }
         }
         // A saved corpse is dead again (GetDead: hit points below 1, 8.1); its destroy event

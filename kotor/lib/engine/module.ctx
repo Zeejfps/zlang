@@ -406,6 +406,8 @@ namespace modload {
         if world::object{ w = &w, id = w.player } != null { world::destroy{ &w, id = w.player } ; world::sweep{ &w } }
         let fresh = saved_id != 0 and world::object{ w = &w, id = saved_id } == null
         let o = try world::add_object{ &w, kind = obj::Kind::creature, id = if fresh { saved_id } else { 0 }, character = not fresh }
+        // The player character before it is read: its rules use the level history (pc_rules).
+        w.player = o.id
         o.area = w.area
         o.position = math::Vec3{ x = tmpl::real{ doc, s, label = "XPosition", default = 0.0 }, y = tmpl::real{ doc, s, label = "YPosition", default = 0.0 }, z = tmpl::real{ doc, s, label = "ZPosition", default = 0.0 } }
         world::set_orientation{ o, v = math::Vec3{ x = tmpl::real{ doc, s, label = "XOrientation", default = 0.0 }, y = tmpl::real{ doc, s, label = "YOrientation", default = 1.0 }, z = 0.0 } }
@@ -462,6 +464,7 @@ namespace modload {
             defer obj::free_bytes{ heap = w.heap, s = bytes }
             let doc = try gff::parse{ data = bytes, realloc = arena::alloc, heap = w.scratch }
             let o = try world::add_object{ &w, kind = obj::Kind::creature, id = 0, character = true }
+            w.player = o.id
             try tmpl::read{ &w, o, doc = &doc, s = gff::ROOT }
             try world::set_tag{ &w, o, tag = "" }
             if obj::creature{ o } is some{ value = c } {
@@ -475,6 +478,7 @@ namespace modload {
             return o.id
         }
         let o = try world::add_object{ &w, kind = obj::Kind::creature, id = 0, character = true }
+        w.player = o.id
         try world::set_tag{ &w, o, tag = "" }
         try world::set_name{ &w, name = &o.name, strref = 0xFFFFFFFF, text = "Player" }
         let c = obj::creature{ o } ifnull { return o.id }

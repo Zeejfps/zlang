@@ -23,7 +23,8 @@ namespace save {
         try put_byte{ &b, owner = s, label = "NaturalAC", v = @trunc(u8, bits{ v = c.natural_ac }) }
         try put_short{ &b, owner = s, label = "HitPoints", v = c.hp_base }
         try put_short{ &b, owner = s, label = "MaxHitPoints", v = o.hp_max }
-        try put_short{ &b, owner = s, label = "CurrentHitPoints", v = o.hp }
+        // Relative to the base hit points, as the original keeps them (fight::equip_loaded).
+        try put_short{ &b, owner = s, label = "CurrentHitPoints", v = o.hp - (o.hp_max - c.hp_base) }
         try put_short{ &b, owner = s, label = "ForcePoints", v = c.fp_base }
         try put_short{ &b, owner = s, label = "MaxForcePoints", v = c.stats.max_fp }
         try put_short{ &b, owner = s, label = "CurrentForce", v = c.fp }

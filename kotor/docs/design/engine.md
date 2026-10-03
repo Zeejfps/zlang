@@ -580,6 +580,10 @@ each frame:
 - Body bags: a dead creature's droppable items (the Dropable flag of its UTC list entries,
   carried or worn) go into a placeable of its bodybag.2da row when it is destroyed. The whole
   party fallen stops the world (the death camera and panel are not built; Load Game goes on).
+- Hit points in GFFs: `CurrentHitPoints` is relative to the base `HitPoints` (the level and CON
+  bonus is not in it): current = CurrentHitPoints + (max - HitPoints). Read from the install's
+  save (Bandon 10/40/10 at full health, the player 0/10/-6 at 4 HP; not yet confirmed in the
+  code); blueprints agree (Cur = HitPoints at full health).
 - Saves (ours): the effects of a saved creature are restored into its rules list without being
   applied again; equipped and innate effects are not saved (equip while loading remakes them);
   companions arrive 1.5 m behind the player, one to each side.

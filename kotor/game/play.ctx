@@ -172,7 +172,7 @@ namespace play {
             world::tick{ &w, &vm, engine }
             // The whole party fallen: the game is over (ours: the world stops, the options menu's
             // Load Game is the way on; the original's death camera and panel are not built).
-            if not game_over and fight::party_fallen{ w = &w } {
+            if not game_over and w.arrival == 0 and w.transition == null and fight::party_fallen{ w = &w } {
                 game_over = true
                 clock::set_pause{ c = &w.clock, bit = clock::PAUSE_ENGINE, on = true }
                 world::prefix{ w = &w }
