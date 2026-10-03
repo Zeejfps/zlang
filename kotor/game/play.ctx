@@ -129,7 +129,7 @@ namespace play {
             if w.arrival > 0 { camera.started = false }
             scene::sync{ &sc, &w, &dev, dt = w.clock.dt }
             let look_height = leader_height{ w = &w }
-            cam::update{ c = &camera, w = &w, target = w.pc, look_height, turn = ctl::turn_input{ keys }, dt }
+            cam::update{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height, turn = ctl::turn_input{ keys }, dt }
             let pc = world::object{ w = &w, id = w.pc }
             let room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
             scene::update_visibility{ &sc, w = &w, room }
@@ -156,7 +156,14 @@ namespace play {
             }
             let mut s: usize = 0
             while s < opts.shot_count {
-                if opts.shots[s].frame == frame_no { try screenshot{ &w, &dev, heap = &scene_arena, path = opts.shots[s].path, frame_no } }
+                if opts.shots[s].frame == frame_no {
+                    try screenshot{ &w, &dev, heap = &scene_arena, path = opts.shots[s].path, frame_no }
+                    let p = world::object{ w = &w, id = w.pc }
+                    if p != null {
+                        _ = @fmt(&w.io, "  leader at {} {} {} (room {}), camera at {} {} {} looking at {} {} {}\n", p.position.x, p.position.y, p.position.z,
+                            room, camera.eye.x, camera.eye.y, camera.eye.z, camera.look.x, camera.look.y, camera.look.z)
+                    }
+                }
                 s = s + 1
             }
             if not opts.headless { gpu::present{ &dev, &sdl } }

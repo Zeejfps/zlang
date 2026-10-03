@@ -376,6 +376,88 @@ namespace scene {
         }
     }
 
+    // Where a ray first meets the visible rooms' drawn geometry (the camera's collision; ours: the
+    // original's ray test, movement.md 2.3, meets geometry the walkmeshes lack, such as building
+    // fronts above the floor). Meshes are culled by their bounding spheres first.
+    fn ray_hit { sc: *Scene, w: *world::World, origin: math::Vec3, dir: math::Vec3, max_t: f32 } -> ?f32 {
+        let rooms = list::items{ list = sc.rooms }
+        let mut best = max_t
+        let mut found = false
+        let mut i: usize = 0
+        while i < rooms.len {
+            let r = rooms[i]
+            i = i + 1
+            if not r.visible or r.part < 0 { continue }
+            let t = part_hit{ sc, part = @as(usize, r.part), instance = math::mat4::translation{ t = r.position }, origin, dir, max_t = best }
+            if t != null {
+                best = t
+                found = true
+            }
+        }
+        // Doors and placeables block the camera too (the original's scene objects).
+        let visuals = list::items{ list = sc.visuals }
+        i = 0
+        while i < visuals.len {
+            let v = visuals[i]
+            i = i + 1
+            if not v.alive or v.count == 0 { continue }
+            let o = world::object{ w, id = v.id } ifnull { continue }
+            if o.kind != obj::Kind::door and o.kind != obj::Kind::placeable { continue }
+            if math::vec3::distance{ a = o.position, b = origin } > best + 10.0 { continue }
+            let instance = math::mat4::from_rotation_translation{
+                r = math::quat::from_axis_angle{ axis = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, angle = obj::model_yaw{ orientation = o.orientation } }, t = o.position,
+            }
+            let t = part_hit{ sc, part = v.first, instance, origin, dir, max_t = best }
+            if t != null {
+                best = t
+                found = true
+            }
+        }
+        if not found { return null }
+        return best
+    }
+
+    // The nearest hit of a ray on one part's drawn, rigid meshes, within max_t.
+    fn part_hit { sc: *Scene, part: usize, instance: math::Mat4, origin: math::Vec3, dir: math::Vec3, max_t: f32 } -> ?f32 {
+        let p = part_at{ sc, i = part }
+        let model = loaded_at{ sc, i = p.loaded }.model
+        let mut best = max_t
+        let mut found = false
+        let mut m: usize = 0
+        while m < model.meshes.len {
+                let mesh = &model.meshes[m]
+                m = m + 1
+                if not mdl_render::draws{ mesh = mesh.* } or mesh.skin != null { continue }
+                if p.pose.alpha[mesh.node] < 0.5 { continue }
+                let world_m = math::mat4::mul{ a = instance, b = p.pose.world[mesh.node] }
+                let center = math::mat4::transform_point{ m = world_m, p = mesh.average }
+                // Sphere against the segment.
+                let oc = math::vec3::sub{ a = center, b = origin }
+                let along = math::clamp{ x = math::vec3::dot{ a = oc, b = dir }, lo = 0.0, hi = best }
+                let closest = math::vec3::add_scaled{ a = origin, b = dir, s = along }
+                if math::vec3::distance{ a = closest, b = center } > mesh.radius + 0.01 { continue }
+                let mut k: usize = 0
+                while k + 2 < mesh.indices.len {
+                    let a = corner{ mesh, m = world_m, i = mesh.indices[k] }
+                    let b = corner{ mesh, m = world_m, i = mesh.indices[k + 1] }
+                    let c = corner{ mesh, m = world_m, i = mesh.indices[k + 2] }
+                    k = k + 3
+                    let hit = math::ray::intersect_triangle{ ray = math::Ray{ origin, dir }, a, b, c, max_t = best }
+                    if hit != null and hit.t < best {
+                        best = hit.t
+                        found = true
+                    }
+                }
+            }
+        if not found { return null }
+        return best
+    }
+
+    fn corner { mesh: *mdl::Mesh, m: math::Mat4, i: u16 } -> math::Vec3 {
+        let k = @as(usize, i) * 3
+        return math::mat4::transform_point{ m, p = math::Vec3{ x = mesh.positions[k], y = mesh.positions[k + 1], z = mesh.positions[k + 2] } }
+    }
+
     // A model's lights as frame lights (the room's light nodes light dynamic objects).
     fn add_lights { mut frame: render::Frame, model: *mdl::Model, pose: mdl_anim::Pose, instance: math::Mat4 } {
         let mut i: usize = 0
