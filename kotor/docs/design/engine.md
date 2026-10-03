@@ -284,8 +284,8 @@ handles (script.md, Engine values). Two spaces (*ours*):
 
 Values: `ScriptEvent { type, ints, floats, strings, objects }` (EventUserDefined, EventSpellCastAt,
 ...), `Location { position, facing, area }`, `Talent { type, id, ... }`, and effects
-(`rules::Effect` once lib/rules is in; HOOK(rules)). `Call::equal` compares by the rules in
-script.md.
+(a `rules::EffectGroup`: one effect or an EffectLinkEffects' leaves under one id, made by
+routines/effects.ctx with `rules::fx::make_*`). `Call::equal` compares by the rules in script.md.
 
 ### Actions
 

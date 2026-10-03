@@ -90,7 +90,7 @@ namespace save {
         let mut buf: [16]u8 = ['G', 'a', 'm', 'e', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         let mut digits: [8]u8
         let mut d: usize = 0
-        let mut v = slot
+        let mut v = slot - 1          // the install's "000002 - Game1": the game number is one less
         while v > 0 and d < 8 {
             digits[d] = @trunc(u8, '0' + v % 10)
             v = v / 10
@@ -114,6 +114,7 @@ namespace save {
     fn save_game { mut w: world::World, slot: u32, folder_name: []u8, save_name: []u8, screen: []u8, width: u32, height: u32 } -> ! {
         try save_module_state{ &w }
         try keep_party{ &w }
+        try keep_inventory{ &w }
         w.party.saved_count = 0
         w.autosave_ms = 0.0
         let mut buf: [512]u8

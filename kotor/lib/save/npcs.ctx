@@ -132,4 +132,50 @@ namespace save {
         }
         w.party.saved_count = 0
     }
+
+    // ---- the party's inventory (INVENTORY.res, GFF "INV ": ItemList of whole items)
+
+    const KIND_RES: u16 = 0
+
+    // SaveInventory: the party's inventory into the game in progress.
+    fn keep_inventory { mut w: world::World } -> ! {
+        let mut b = try gffw::new(arena::Arena){ realloc = arena::alloc, heap = w.scratch, tag = "INV " }
+        let list = try gffw::put_list{ &b, owner = gffw::ROOT, label = "ItemList" }
+        let items = list::items{ list = w.bag }
+        let mut k: usize = 0
+        while k < items.len {
+            let io = world::object{ w = &w, id = items[k] }
+            k = k + 1
+            if io is some{ value = o } {
+                if obj::item{ o } is some{ value = it } {
+                    let e = try gffw::add_element{ &b, list, id = 0 }
+                    try write_item{ &b, &w, s = e, o, i = it }
+                }
+            }
+        }
+        let bytes = try gffw::finish{ &b, layout = gffw::ENGINE }
+        try put{ st = &w.gip, name = "inventory", kind = KIND_RES, bytes }
+    }
+
+    // The party's inventory from the game in progress (a loaded save): its items made whole, in
+    // the bag, the player's (an inventory already there is replaced).
+    fn restore_inventory { mut w: world::World } -> ! {
+        let bytes = get{ st = &w.gip, name = "inventory", kind = KIND_RES } ifnull { return }
+        let doc = try gff::parse{ data = bytes, realloc = arena::alloc, heap = w.scratch }
+        let old = list::items{ list = w.bag }
+        let mut k: usize = 0
+        while k < old.len {
+            world::destroy{ &w, id = old[k] }
+            k = k + 1
+        }
+        list::clear{ list = &w.bag }
+        let list = gff::get_list{ doc, s = gff::ROOT, label = "ItemList" } ifnull { return }
+        k = 0
+        while k < list.len {
+            let e = list[k]
+            k = k + 1
+            let id = tmpl::item_of{ &w, doc = &doc, s = e, label = "TemplateResRef", possessor = w.player } ifnull { continue }
+            list::push{ list = &w.bag, item = id } iferr {}
+        }
+    }
 }

@@ -346,6 +346,7 @@ namespace modload {
         // A module is entered under the player character's control (the leader comes back with
         // the party, save::restore_party).
         w.pc = w.player
+        party::merge_into_party{ &w, id = w.player }
         let mo = world::object{ w = &w, id = w.module } ifnull { return }
         let m = obj::module{ o = mo } ifnull { return }
         let mut at = m.entry_position
@@ -372,6 +373,13 @@ namespace modload {
         }
         world::set_orientation{ o = pc, v = facing }
         movement::place{ &w, id = w.pc, at }
+        // A loaded save's party inventory (INVENTORY.res, RestoreParty step 3).
+        if from_save {
+            save::restore_inventory{ &w } iferr err{ error } {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "restoring the inventory: {}\n", error)
+            }
+        }
         // The companions come back next to the player (RestoreParty, 3.3).
         save::restore_party{ &w, at_saved = from_save } iferr err{ error } {
             world::prefix{ w = &w }
@@ -580,6 +588,15 @@ namespace modload {
         }
         // Control returns to the player character; a companion leading goes with the others.
         if world::is_valid{ w = &w, id = w.player } { w.pc = w.player }
+        // The party's inventory travels with the player character.
+        let bag = list::items{ list = w.bag }
+        let mut b: usize = 0
+        while b < bag.len {
+            if world::object{ w = &w, id = bag[b] } is some{ value = bo } {
+                if obj::item{ o = bo } is some{ value = bi } { bi.possessor = w.player }
+            }
+            b = b + 1
+        }
         actions::clear_queue{ &w, o = world::object{ w = &w, id = w.pc } ifnull { return } }
         let all = list::items{ list = w.objects.all }
         let mut i: usize = 0
@@ -588,7 +605,7 @@ namespace modload {
             i = i + 1
             if o.id == w.pc or o.destroyed { continue }
             if obj::item{ o } is some{ value = it } {
-                if it.possessor == w.pc { continue }
+                if it.possessor == w.pc or it.possessor == w.player { continue }
             }
             o.destroyed = true
             list::push{ list = &w.doomed, item = o.id } iferr {}

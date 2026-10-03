@@ -630,7 +630,10 @@ namespace rt_fx {
         let creator = nwvm::self_object{ vm }
         let kind = if duration_type == rules::dur::TEMPORARY or duration_type == rules::dur::PERMANENT { duration_type } else { rules::dur::INSTANT }
         rules::fx::set_group_timing{ g = &g, dur = kind, seconds }
-        rules::fx::set_group_creator{ g = &g, creator, spell_id = NO_SPELL }
+        // A Force power's impact script applies its effects with the power's id (fight::impact).
+        let mut spell = NO_SPELL
+        if world::object{ w = &w, id = creator } is some{ value = co } { spell = co.ctx.spell_id }
+        rules::fx::set_group_creator{ g = &g, creator, spell_id = spell }
         if obj::creature{ o } is some {
             let res = fight::apply_group{ &w, target, g = &g }
             if w.log.combat {

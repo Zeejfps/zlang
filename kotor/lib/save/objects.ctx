@@ -215,7 +215,30 @@ namespace save {
         try put_word{ &b, owner = s, label = "StackSize", v = i.stack }
         try put_byte{ &b, owner = s, label = "Charges", v = @trunc(u8, i.charges) }
         try put_bool{ &b, owner = s, label = "Identified", v = i.identified }
-        // HOOK(rules): PropertiesList from rules::Item.
+        try put_bool{ &b, owner = s, label = "NonEquippable", v = i.non_equippable }
+        // The rules' view of it: cost, flags, installed upgrades and every property.
+        if i.rules is some{ value = ri } {
+            try put_dword{ &b, owner = s, label = "Cost", v = bits{ v = ri.cost } }
+            try put_dword{ &b, owner = s, label = "AddCost", v = bits{ v = ri.add_cost } }
+            try put_bool{ &b, owner = s, label = "Stolen", v = ri.stolen }
+            try put_dword{ &b, owner = s, label = "Upgrades", v = ri.upgrades }
+            let props = try gffw::put_list{ &b, owner = s, label = "PropertiesList" }
+            let mut k: usize = 0
+            while k < @as(usize, ri.nprops) and k < rules::MAX_PROPS {
+                let p = ri.props[k]
+                k = k + 1
+                let e = try gffw::add_element{ &b, list = props, id = 0 }
+                try put_word{ &b, owner = e, label = "PropertyName", v = @as(u32, p.name) }
+                try put_word{ &b, owner = e, label = "Subtype", v = @as(u32, p.subtype) }
+                try put_byte{ &b, owner = e, label = "CostTable", v = @trunc(u8, p.cost_table) }
+                try put_word{ &b, owner = e, label = "CostValue", v = @as(u32, p.cost_value) }
+                try put_byte{ &b, owner = e, label = "Param1", v = @trunc(u8, p.param1) }
+                try put_byte{ &b, owner = e, label = "Param1Value", v = @trunc(u8, p.param1_value) }
+                try put_byte{ &b, owner = e, label = "UpgradeType", v = @trunc(u8, p.upgrade) }
+                try put_byte{ &b, owner = e, label = "UsesPerDay", v = @trunc(u8, p.uses_per_day) }
+                try put_byte{ &b, owner = e, label = "ChanceAppear", v = 100 }
+            }
+        }
     }
 
     fn write_door { mut b: Builder, mut w: world::World, s: u32, o: *obj::Object, d: *obj::Door } -> ! {
