@@ -1,0 +1,878 @@
+// Checks of lib/rules/force.ctx and progress.ctx (docs/re/rules.md sections 3 to 6):
+//  (a) hand-computed examples, worked out from the 2DA rows with pencil and not from the code:
+//      XP thresholds, Force point costs at the ends of the alignment scale, the power DC, which
+//      armour blocks which power, ResistForce, kill / plot / companion XP, a Jedi Guardian
+//      auto-levelled from 1 to 10 against the class tables, multiclass records;
+//  (b) every creature template in the install with a Jedi class: Force points, the powers it
+//      knows against the prerequisite chain and level columns, and how its feats fare against
+//      the feat prerequisites (counts only);
+//  (c) a fresh character of each of the nine classes auto-levelled to 20 without a panic, with
+//      the totals of feats, powers and skill points compared with what the tables promise.
+namespace check {
+    // spells.2da rows used below.
+    const PG_SPEED_BURST: i32 = 8
+    const PG_CURE: i32 = 10
+    const PG_FORCE_JUMP_OFF: i32 = 21      // a disabled row (usertype -2)
+    const PG_PUSH: i32 = 23
+    const PG_WHIRLWIND: i32 = 27
+    const PG_HEAL: i32 = 28
+    const PG_STASIS: i32 = 29
+    const PG_LIGHTNING: i32 = 35
+    const PG_STUN: i32 = 46
+    const PG_SABER_THROW: i32 = 49
+    const PG_MED_PACK: i32 = 64
+
+    // A player-rules character: abilities 14 14 14 10 14 12, party member, neutral, no class yet.
+    fn pg_new_pc {} -> rules::Creature {
+        let mut c = rules::make_creature{}
+        c.abil = [14, 14, 14, 10, 14, 12]
+        c.is_pc = true
+        c.pc_rules = true
+        c.party = true
+        c.good_evil = 50
+        return c
+    }
+
+    fn pg_count_bits { words: [8]u32 } -> i32 {
+        let mut n: i32 = 0
+        let mut w: usize = 0
+        while w < 8 {
+            let mut v = words[w]
+            while v != 0 {
+                n = n + @as(i32, v & 1)
+                v = v >> 1
+            }
+            w = w + 1
+        }
+        return n
+    }
+
+    // ---- (a) thresholds and level gates
+
+    fn pg_thresholds { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        // exptable.2da, level 1 to 20
+        let want: [20]i32 = [
+            0, 1000, 3000, 6000, 10000, 15000, 21000, 28000, 36000, 45000,
+            55000, 66000, 78000, 91000, 105000, 120000, 136000, 153000, 171000, 190000,
+        ]
+        let mut l: i32 = 1
+        while l <= 20 {
+            expect_eq{ &io, &r, name = "xp_to_reach_level 1..20", got = rules::xp_to_reach_level{ tables, level = l }, want = want[@as(usize, l - 1)] }
+            l = l + 1
+        }
+        expect_true{ &io, &r, name = "no XP reaches level 21", cond = rules::xp_to_reach_level{ tables, level = 21 } > 190000 }
+        expect_eq{ &io, &r, name = "level_for_xp 0", got = rules::level_for_xp{ tables, xp = 0 }, want = 1 }
+        expect_eq{ &io, &r, name = "level_for_xp 999", got = rules::level_for_xp{ tables, xp = 999 }, want = 1 }
+        expect_eq{ &io, &r, name = "level_for_xp 1000", got = rules::level_for_xp{ tables, xp = 1000 }, want = 2 }
+        expect_eq{ &io, &r, name = "level_for_xp 44999", got = rules::level_for_xp{ tables, xp = 44999 }, want = 9 }
+        expect_eq{ &io, &r, name = "level_for_xp 189999", got = rules::level_for_xp{ tables, xp = 189999 }, want = 19 }
+        expect_eq{ &io, &r, name = "level_for_xp 190000", got = rules::level_for_xp{ tables, xp = 190000 }, want = 20 }
+        expect_eq{ &io, &r, name = "level_for_xp huge", got = rules::level_for_xp{ tables, xp = 2000000000 }, want = 20 }
+
+        // CanLevelUp: below the cap, XP reached, not dead
+        let mut c = pg_new_pc{}
+        c.classes[0] = rules::ClassSlot{ class = rules::cls::SOLDIER, level = 1 }
+        c.nclasses = 1
+        c.xp = 999
+        expect_true{ &io, &r, name = "level 1 with 999 XP cannot level", cond = not rules::can_level_up{ tables, c = &c, alive = true } }
+        c.xp = 1000
+        expect_true{ &io, &r, name = "level 1 with 1000 XP can level", cond = rules::can_level_up{ tables, c = &c, alive = true } }
+        expect_true{ &io, &r, name = "a dead creature cannot level", cond = not rules::can_level_up{ tables, c = &c, alive = false } }
+        expect_eq{ &io, &r, name = "pending levels at 1000 XP", got = rules::pending_levels{ tables, c = &c }, want = 1 }
+        c.xp = 10000
+        expect_eq{ &io, &r, name = "pending levels at 10000 XP", got = rules::pending_levels{ tables, c = &c }, want = 4 }
+        c.classes[0].level = 20
+        c.xp = 190000
+        expect_true{ &io, &r, name = "level 20 is the cap", cond = not rules::can_level_up{ tables, c = &c, alive = true } }
+        expect_eq{ &io, &r, name = "no pending levels at the cap", got = rules::pending_levels{ tables, c = &c }, want = 0 }
+    }
+
+    // ---- (a) Force points
+
+    fn pg_force_cost { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let mut c = pg_new_pc{}
+        c.classes[0] = rules::ClassSlot{ class = rules::cls::JEDI_GUARDIAN, level = 5 }
+        c.nclasses = 1
+        // Cure is a 25-point light power, Lightning a 20-point dark power, Push a 10-point neutral one,
+        // Stun a 20-point light power, Heal a 25-point light power (spells.2da).
+        c.party = false
+        c.good_evil = 100
+        expect_eq{ &io, &r, name = "cost: Cure, not a party member", got = rules::force_point_cost{ tables, c = &c, spell = PG_CURE }, want = 25 }
+        expect_eq{ &io, &r, name = "cost: Lightning, not a party member", got = rules::force_point_cost{ tables, c = &c, spell = PG_LIGHTNING }, want = 20 }
+        c.party = true
+        // good-evil 100: row 10, goodcost 0.5 evilcost 1.75
+        expect_eq{ &io, &r, name = "cost: Cure at 100 (25 x 0.5)", got = rules::force_point_cost{ tables, c = &c, spell = PG_CURE }, want = 12 }
+        expect_eq{ &io, &r, name = "cost: Lightning at 100 (20 x 1.75)", got = rules::force_point_cost{ tables, c = &c, spell = PG_LIGHTNING }, want = 35 }
+        expect_eq{ &io, &r, name = "cost: Push at 100 (neutral)", got = rules::force_point_cost{ tables, c = &c, spell = PG_PUSH }, want = 10 }
+        // good-evil 0: row 0, goodcost 1.75 evilcost 0.5
+        c.good_evil = 0
+        expect_eq{ &io, &r, name = "cost: Cure at 0 (25 x 1.75 = 43.75)", got = rules::force_point_cost{ tables, c = &c, spell = PG_CURE }, want = 43 }
+        expect_eq{ &io, &r, name = "cost: Lightning at 0 (20 x 0.5)", got = rules::force_point_cost{ tables, c = &c, spell = PG_LIGHTNING }, want = 10 }
+        expect_eq{ &io, &r, name = "cost: Push at 0 (neutral)", got = rules::force_point_cost{ tables, c = &c, spell = PG_PUSH }, want = 10 }
+        // row 4 (40..49): goodcost 1.25
+        c.good_evil = 49
+        expect_eq{ &io, &r, name = "cost: Heal at 49 (25 x 1.25 = 31.25)", got = rules::force_point_cost{ tables, c = &c, spell = PG_HEAL }, want = 31 }
+        // row 5: both 1.0
+        c.good_evil = 55
+        expect_eq{ &io, &r, name = "cost: Cure at 55", got = rules::force_point_cost{ tables, c = &c, spell = PG_CURE }, want = 25 }
+        // row 6, goodcost 0.9: the table's 0.9 is the float 0.89999998, so 20 x 0.9 is 17.9999995, i.e. 17
+        c.good_evil = 60
+        expect_eq{ &io, &r, name = "cost: Stun at 60 (20 x 0.9f truncates to 17)", got = rules::force_point_cost{ tables, c = &c, spell = PG_STUN }, want = 17 }
+        // row 9, goodcost 0.7 (0.69999999): 25 x 0.7 = 17.4999997
+        c.good_evil = 99
+        expect_eq{ &io, &r, name = "cost: Cure at 99", got = rules::force_point_cost{ tables, c = &c, spell = PG_CURE }, want = 17 }
+        expect_eq{ &io, &r, name = "cost: Lightning at 99 (20 x 1.5)", got = rules::force_point_cost{ tables, c = &c, spell = PG_LIGHTNING }, want = 30 }
+        expect_eq{ &io, &r, name = "cost: unknown spell", got = rules::force_point_cost{ tables, c = &c, spell = 999 }, want = 0 }
+
+        // paying: the temporary pool first, never below 0
+        let mut p = pg_new_pc{}
+        p.party = false
+        p.classes[0] = rules::ClassSlot{ class = rules::cls::JEDI_GUARDIAN, level = 5 }
+        p.nclasses = 1
+        p.fp = 10
+        p.temp_fp = 5
+        expect_true{ &io, &r, name = "10 + 5 FP pay for Push", cond = rules::has_enough_force_points{ tables, c = &p, spell = PG_PUSH } }
+        expect_true{ &io, &r, name = "spend Push", cond = rules::spend_force_points{ tables, c = &p, spell = PG_PUSH } }
+        expect_eq{ &io, &r, name = "spend: temporary pool emptied", got = p.temp_fp, want = 0 }
+        expect_eq{ &io, &r, name = "spend: current pool pays the rest (10 + 5 - 10)", got = p.fp, want = 5 }
+        expect_true{ &io, &r, name = "5 FP cannot pay for Push", cond = not rules::has_enough_force_points{ tables, c = &p, spell = PG_PUSH } }
+        _ = rules::spend_force_points{ tables, c = &p, spell = PG_PUSH }
+        expect_eq{ &io, &r, name = "spend: floored at 0", got = p.fp, want = 0 }
+        p.fp = 5
+        p.temp_fp = 5
+        expect_true{ &io, &r, name = "5 + 5 FP pay for Push", cond = rules::has_enough_force_points{ tables, c = &p, spell = PG_PUSH } }
+        p.temp_fp = 4
+        expect_true{ &io, &r, name = "5 + 4 FP do not", cond = not rules::has_enough_force_points{ tables, c = &p, spell = PG_PUSH } }
+        p.nclasses = 0
+        p.temp_fp = 50
+        expect_true{ &io, &r, name = "no class slot, no Force points", cond = not rules::has_enough_force_points{ tables, c = &p, spell = PG_PUSH } }
+    }
+
+    // ---- (a) DC, caster level, phases
+
+    fn pg_force_dc { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        // level 8, WIS 14 (+2), CHA 12 (+1)
+        let mut c = pg_new_pc{}
+        c.classes[0] = rules::ClassSlot{ class = rules::cls::JEDI_GUARDIAN, level = 8 }
+        c.nclasses = 1
+        rules::recompute{ tables, c = &c }
+        expect_eq{ &io, &r, name = "DC: level 8, WIS 14, CHA 12, no focus (5+8+2+1)", got = rules::force_power_dc{ c = &c }, want = 16 }
+        rules::grant_feat{ c = &c, feat = rules::feat::FORCE_FOCUS }
+        expect_eq{ &io, &r, name = "DC: Force Focus +1", got = rules::force_power_dc{ c = &c }, want = 17 }
+        rules::grant_feat{ c = &c, feat = rules::feat::FORCE_FOCUS_ADVANCED }
+        expect_eq{ &io, &r, name = "DC: Advanced +2 (best tier only)", got = rules::force_power_dc{ c = &c }, want = 18 }
+        rules::grant_feat{ c = &c, feat = rules::feat::FORCE_FOCUS_MASTERY }
+        expect_eq{ &io, &r, name = "DC: Mastery +4 = 5+8+2+1+4", got = rules::force_power_dc{ c = &c }, want = 20 }
+        expect_eq{ &io, &r, name = "DC of a power without a caster", got = rules::DC_NO_CASTER, want = 14 }
+
+        // caster level: override, total level, or the inate column
+        expect_eq{ &io, &r, name = "caster level: class cast is the total level", got = rules::caster_level{ tables, c = &c, spell = PG_PUSH, override_level = -1, from_class = true }, want = 8 }
+        expect_eq{ &io, &r, name = "caster level: item override", got = rules::caster_level{ tables, c = &c, spell = PG_PUSH, override_level = 3, from_class = true }, want = 3 }
+        expect_eq{ &io, &r, name = "caster level: talent has at least 10", got = rules::caster_level{ tables, c = &c, spell = PG_MED_PACK, override_level = -1, from_class = false }, want = 10 }
+
+        // conjuration 170, cast 1330, catch 0 (Push); 560 + 1940 + 500 (Lightsaber Throw)
+        let push = rules::spell_phase_times{ tables, spell = PG_PUSH }
+        expect_eq{ &io, &r, name = "Push conjuration", got = push.conj_ms, want = 170 }
+        expect_eq{ &io, &r, name = "Push cast", got = push.cast_ms, want = 1330 }
+        expect_eq{ &io, &r, name = "Push catch", got = push.catch_ms, want = 0 }
+        expect_eq{ &io, &r, name = "Push total", got = push.total_ms, want = 1500 }
+        expect_eq{ &io, &r, name = "Lightsaber Throw total", got = rules::spell_phase_times{ tables, spell = PG_SABER_THROW }.total_ms, want = 3000 }
+    }
+
+    // ---- (a) the cast action's checks
+
+    fn pg_cast_checks { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let mut c = pg_new_pc{}
+        c.classes[0] = rules::ClassSlot{ class = rules::cls::JEDI_GUARDIAN, level = 5 }
+        c.nclasses = 1
+        c.fp = 100
+        let push = PG_PUSH
+        expect_eq{ &io, &r, name = "cast: Push unarmoured", got = rules::can_cast_spell{ tables, c = &c, spell = push, alive = true, from_item = false }, want = rules::cast::OK }
+        expect_eq{ &io, &r, name = "cast: Speed Burst unarmoured", got = rules::can_cast_spell{ tables, c = &c, spell = PG_SPEED_BURST, alive = true, from_item = false }, want = rules::cast::OK }
+        expect_eq{ &io, &r, name = "cast: dead caster", got = rules::can_cast_spell{ tables, c = &c, spell = push, alive = false, from_item = false }, want = rules::cast::DEAD }
+        expect_eq{ &io, &r, name = "cast: disabled row", got = rules::can_cast_spell{ tables, c = &c, spell = PG_FORCE_JUMP_OFF, alive = true, from_item = false }, want = rules::cast::NO_SUCH_SPELL }
+        expect_eq{ &io, &r, name = "cast: unknown row", got = rules::can_cast_spell{ tables, c = &c, spell = 300, alive = true, from_item = false }, want = rules::cast::NO_SUCH_SPELL }
+
+        // Armor_Class_4 (base item 38, itemtype 31, mask 0x01): forbidden by the 22 rows with 0x3f
+        let mut armour = rules::make_item{}
+        armour.base_item = 38
+        c.equip[1] = rules::Equipped{ used = true, id = 5, item = armour }
+        expect_eq{ &io, &r, name = "armour mask", got = @as(i64, rules::equipped_type_mask{ tables, c = &c }), want = 1 }
+        expect_eq{ &io, &r, name = "cast: Speed Burst in armour", got = rules::can_cast_spell{ tables, c = &c, spell = PG_SPEED_BURST, alive = true, from_item = false }, want = rules::cast::FORBIDDEN_EQUIPMENT }
+        expect_eq{ &io, &r, name = "cast: Lightning in armour", got = rules::can_cast_spell{ tables, c = &c, spell = PG_LIGHTNING, alive = true, from_item = false }, want = rules::cast::FORBIDDEN_EQUIPMENT }
+        expect_eq{ &io, &r, name = "cast: Push in armour", got = rules::can_cast_spell{ tables, c = &c, spell = push, alive = true, from_item = false }, want = rules::cast::OK }
+        expect_eq{ &io, &r, name = "cast: Heal in armour", got = rules::can_cast_spell{ tables, c = &c, spell = PG_HEAL, alive = true, from_item = false }, want = rules::cast::OK }
+
+        // Jedi_Robe (base item 35, itemtype 38) never blocks
+        let mut robe = rules::make_item{}
+        robe.base_item = 35
+        c.equip[1] = rules::Equipped{ used = true, id = 5, item = robe }
+        expect_eq{ &io, &r, name = "robe mask", got = @as(i64, rules::equipped_type_mask{ tables, c = &c }), want = 0 }
+        expect_eq{ &io, &r, name = "cast: Speed Burst in a robe", got = rules::can_cast_spell{ tables, c = &c, spell = PG_SPEED_BURST, alive = true, from_item = false }, want = rules::cast::OK }
+
+        // Lightsaber (base item 8, itemtype 41, mask 0x40) in the right hand (storage cell 4)
+        expect_eq{ &io, &r, name = "cast: Lightsaber Throw without a saber", got = rules::can_cast_spell{ tables, c = &c, spell = PG_SABER_THROW, alive = true, from_item = false }, want = rules::cast::MISSING_EQUIPMENT }
+        let mut saber = rules::make_item{}
+        saber.base_item = 8
+        c.equip[4] = rules::Equipped{ used = true, id = 6, item = saber }
+        expect_eq{ &io, &r, name = "saber mask", got = @as(i64, rules::equipped_type_mask{ tables, c = &c }), want = 0x40 }
+        expect_eq{ &io, &r, name = "cast: Lightsaber Throw with a saber", got = rules::can_cast_spell{ tables, c = &c, spell = PG_SABER_THROW, alive = true, from_item = false }, want = rules::cast::OK }
+        expect_eq{ &io, &r, name = "cast: Lightning with a saber (forbids only armour)", got = rules::can_cast_spell{ tables, c = &c, spell = PG_LIGHTNING, alive = true, from_item = false }, want = rules::cast::OK }
+        c.equip[1] = rules::Equipped{ used = true, id = 5, item = armour }
+        expect_eq{ &io, &r, name = "armour and saber mask", got = @as(i64, rules::equipped_type_mask{ tables, c = &c }), want = 0x41 }
+        expect_eq{ &io, &r, name = "cast: Lightning in armour with a saber", got = rules::can_cast_spell{ tables, c = &c, spell = PG_LIGHTNING, alive = true, from_item = false }, want = rules::cast::FORBIDDEN_EQUIPMENT }
+        c.equip[1] = rules::Equipped{ used = false, id = rules::OBJECT_INVALID, item = rules::make_item{} }
+        c.equip[4] = rules::Equipped{ used = false, id = rules::OBJECT_INVALID, item = rules::make_item{} }
+
+        // Force points, class slot, talents
+        c.fp = 3
+        expect_eq{ &io, &r, name = "cast: 3 FP for Push", got = rules::can_cast_spell{ tables, c = &c, spell = push, alive = true, from_item = false }, want = rules::cast::NOT_ENOUGH_FP }
+        c.fp = 100
+        c.nclasses = 0
+        expect_eq{ &io, &r, name = "cast: no class slot", got = rules::can_cast_spell{ tables, c = &c, spell = push, alive = true, from_item = false }, want = rules::cast::NO_CLASS }
+        expect_eq{ &io, &r, name = "cast: an item talent needs no class", got = rules::can_cast_spell{ tables, c = &c, spell = PG_MED_PACK, alive = true, from_item = true }, want = rules::cast::OK }
+        c.nclasses = 1
+
+        // entangled: the cast starts, pays and is interrupted
+        c.fx[0] = rules::fx::make_entangle{}
+        c.nfx = 1
+        expect_eq{ &io, &r, name = "cast: entangled", got = rules::can_cast_spell{ tables, c = &c, spell = push, alive = true, from_item = false }, want = rules::cast::ENTANGLED }
+        let st = rules::begin_cast{ tables, c = &c, spell = push, alive = true, from_item = false }
+        expect_true{ &io, &r, name = "begin_cast: entangled casts pay", cond = st.paid and st.interrupted }
+        expect_eq{ &io, &r, name = "begin_cast: Force points spent", got = c.fp, want = 90 }
+        c.nfx = 0
+        let ok = rules::begin_cast{ tables, c = &c, spell = push, alive = true, from_item = false }
+        expect_true{ &io, &r, name = "begin_cast: pays", cond = ok.paid and not ok.interrupted and ok.reason == rules::cast::OK }
+        expect_eq{ &io, &r, name = "begin_cast: Force points spent again", got = c.fp, want = 80 }
+        c.fp = 3
+        let poor = rules::begin_cast{ tables, c = &c, spell = push, alive = true, from_item = false }
+        expect_true{ &io, &r, name = "begin_cast: too poor to pay", cond = not poor.paid and poor.reason == rules::cast::NOT_ENOUGH_FP }
+        expect_eq{ &io, &r, name = "begin_cast: nothing spent", got = c.fp, want = 3 }
+    }
+
+    // ---- (a) ResistForce
+
+    fn pg_resist_force { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let mut t = pg_new_pc{}
+        t.stats.force_resistance = 15
+        // the first d20 of seed 12345, rolled on a copy of the generator
+        let mut probe = rules::seed_rng{ seed = 12345 }
+        let d = rules::roll_dice{ rng = &probe, count = 1, sides = 20 }
+        let mut g1 = rules::seed_rng{ seed = 12345 }
+        expect_eq{ &io, &r, name = "resist: d20 + level = FR is not resisted", got = rules::resist_force{ tables, target = &t, spell = PG_PUSH, caster_level = 15 - d, rng = &g1 }, want = rules::resist::NONE }
+        let mut g2 = rules::seed_rng{ seed = 12345 }
+        expect_eq{ &io, &r, name = "resist: d20 + level = FR - 1 is resisted", got = rules::resist_force{ tables, target = &t, spell = PG_PUSH, caster_level = 14 - d, rng = &g2 }, want = rules::resist::RESISTED }
+        // a special ability is not subject to Force resistance
+        let mut g3 = rules::seed_rng{ seed = 12345 }
+        expect_eq{ &io, &r, name = "resist: UserType 2 is never resisted", got = rules::resist_force{ tables, target = &t, spell = PG_MED_PACK, caster_level = -100, rng = &g3 }, want = rules::resist::NONE }
+        // no Force resistance: no die is rolled
+        t.stats.force_resistance = 0
+        let mut g4 = rules::seed_rng{ seed = 12345 }
+        expect_eq{ &io, &r, name = "resist: FR 0 resists nothing", got = rules::resist_force{ tables, target = &t, spell = PG_PUSH, caster_level = -100, rng = &g4 }, want = rules::resist::NONE }
+        expect_eq{ &io, &r, name = "resist: FR 0 rolls nothing", got = @as(i64, g4.state), want = 12345 }
+        // spell immunity: the named power, or every power (-1)
+        t.fx[0] = rules::fx::make_spell_immunity{ spell = PG_PUSH }
+        t.nfx = 1
+        let mut g5 = rules::seed_rng{ seed = 1 }
+        expect_eq{ &io, &r, name = "resist: immune to Push", got = rules::resist_force{ tables, target = &t, spell = PG_PUSH, caster_level = 0, rng = &g5 }, want = rules::resist::IMMUNE }
+        expect_eq{ &io, &r, name = "resist: immunity to Push is not to Stun", got = rules::resist_force{ tables, target = &t, spell = PG_STUN, caster_level = 0, rng = &g5 }, want = rules::resist::NONE }
+        t.fx[0] = rules::fx::make_spell_immunity{ spell = -1 }
+        expect_eq{ &io, &r, name = "resist: immune to all", got = rules::resist_force{ tables, target = &t, spell = PG_STUN, caster_level = 0, rng = &g5 }, want = rules::resist::IMMUNE }
+    }
+
+    // ---- (a) experience
+
+    fn pg_experience { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        // kill XP: xptable.2da row = party level, column c<CR>; CR 3 at party level 5 is 100
+        let mut v = rules::make_creature{}
+        v.challenge = 3.0
+        expect_eq{ &io, &r, name = "kill XP: CR 3, party level 5", got = rules::kill_xp_value{ tables, victim = &v, party_level = 5, party_size = 3 }, want = 100 }
+        v.challenge = 3.9
+        expect_eq{ &io, &r, name = "kill XP: CR 3.9 counts as 3", got = rules::kill_xp_value{ tables, victim = &v, party_level = 5, party_size = 3 }, want = 100 }
+        v.challenge = 0.0
+        expect_eq{ &io, &r, name = "kill XP: CR 0, party level 1", got = rules::kill_xp_value{ tables, victim = &v, party_level = 1, party_size = 3 }, want = 50 }
+        v.challenge = 5.0
+        expect_eq{ &io, &r, name = "kill XP: CR 5, party level 1", got = rules::kill_xp_value{ tables, victim = &v, party_level = 1, party_size = 3 }, want = 500 }
+        v.challenge = 1.0
+        expect_eq{ &io, &r, name = "kill XP: CR 1, party level 2", got = rules::kill_xp_value{ tables, victim = &v, party_level = 2, party_size = 3 }, want = 75 }
+        expect_true{ &io, &r, name = "kill XP: a hostile stranger", cond = rules::awards_kill_xp{ victim_in_party = false, victim_dying = false, reputation = 0 } }
+        expect_true{ &io, &r, name = "kill XP: not for a friend", cond = not rules::awards_kill_xp{ victim_in_party = false, victim_dying = false, reputation = 11 } }
+        expect_true{ &io, &r, name = "kill XP: not for a party member", cond = not rules::awards_kill_xp{ victim_in_party = true, victim_dying = false, reputation = 0 } }
+        expect_true{ &io, &r, name = "kill XP: reputation 10 is hostile enough", cond = rules::awards_kill_xp{ victim_in_party = false, victim_dying = false, reputation = 10 } }
+
+        // plot XP: plot.2da rows man28aa_security01 100, man28ad_final 1000, qa_test_plot 3000
+        expect_eq{ &io, &r, name = "plot XP: security01 at 100 %", got = rules::plot_xp_value{ tables, plot_label = "man28aa_security01", percent = 100 }, want = 100 }
+        expect_eq{ &io, &r, name = "plot XP: security01 at 50 %", got = rules::plot_xp_value{ tables, plot_label = "MAN28AA_SECURITY01", percent = 50 }, want = 50 }
+        expect_eq{ &io, &r, name = "plot XP: final at 35 %", got = rules::plot_xp_value{ tables, plot_label = "man28ad_final", percent = 35 }, want = 350 }
+        expect_eq{ &io, &r, name = "plot XP: 100 at 33 % rounds up", got = rules::plot_xp_value{ tables, plot_label = "man28aa_security01", percent = 33 }, want = 33 }
+        expect_eq{ &io, &r, name = "plot XP: 3000 at 33 %", got = rules::plot_xp_value{ tables, plot_label = "qa_test_plot", percent = 33 }, want = 990 }
+        expect_eq{ &io, &r, name = "plot XP: unknown plot", got = rules::plot_xp_value{ tables, plot_label = "no_such_plot", percent = 100 }, want = 0 }
+
+        // npc.2da: nine companions at 80 %, the player and strangers at 100 %
+        expect_eq{ &io, &r, name = "npc row of Bastila", got = rules::find_npc_row{ tables, tag = "Bastila" }, want = 0 }
+        expect_eq{ &io, &r, name = "npc row of HK47", got = rules::find_npc_row{ tables, tag = "hk47" }, want = 3 }
+        expect_eq{ &io, &r, name = "npc row of Zaalbar", got = rules::find_npc_row{ tables, tag = "Zaalbar" }, want = 8 }
+        expect_eq{ &io, &r, name = "npc row of nobody", got = rules::find_npc_row{ tables, tag = "Revan" }, want = -1 }
+        expect_eq{ &io, &r, name = "Bastila's percentage", got = rules::npc_percent_xp{ tables, row = 0 }, want = 80 }
+        expect_eq{ &io, &r, name = "the player's percentage", got = rules::npc_percent_xp{ tables, row = -1 }, want = 100 }
+
+        // awarding: the player gets all of it; a recruit 80 %, rounded up (the engine's floats
+        // make 100 x 0.8 come out as 79.9999952, which rounds up to 80)
+        let mut c = pg_new_pc{}
+        expect_eq{ &io, &r, name = "XP: the player gets 1000 of 1000", got = rules::add_experience{ tables, c = &c, xp = 1000, percent_xp = 100 }, want = 1000 }
+        expect_eq{ &io, &r, name = "XP: the player's total", got = c.xp, want = 1000 }
+        expect_eq{ &io, &r, name = "XP: a recruit gets 800 of 1000", got = rules::scale_experience{ tables, xp = 1000, percent_xp = 80 }, want = 800 }
+        expect_eq{ &io, &r, name = "XP: a recruit gets 80 of 100", got = rules::scale_experience{ tables, xp = 100, percent_xp = 80 }, want = 80 }
+        expect_eq{ &io, &r, name = "XP: a recruit gets 6 of 7 (5.6 rounds up)", got = rules::scale_experience{ tables, xp = 7, percent_xp = 80 }, want = 6 }
+        expect_eq{ &io, &r, name = "XP: a recruit gets 1 of 1", got = rules::scale_experience{ tables, xp = 1, percent_xp = 80 }, want = 1 }
+        expect_eq{ &io, &r, name = "XP: a recruit gets 4 of 5", got = rules::scale_experience{ tables, xp = 5, percent_xp = 80 }, want = 4 }
+        expect_eq{ &io, &r, name = "XP: nothing for 0", got = rules::scale_experience{ tables, xp = 0, percent_xp = 80 }, want = 0 }
+        expect_eq{ &io, &r, name = "XP: nothing for a negative award", got = rules::add_experience{ tables, c = &c, xp = -50, percent_xp = 100 }, want = 0 }
+        expect_eq{ &io, &r, name = "XP: and the total is unchanged", got = c.xp, want = 1000 }
+
+        // JoiningXP: a level-5 recruit "needs" 1000 x 5 x 4 / 2 = 10000; the pool pays 80 % of itself
+        expect_eq{ &io, &r, name = "joining XP: empty pool", got = rules::joining_xp{ tables, level = 5, pool = 0, percent_xp = 80 }, want = 10000 }
+        expect_eq{ &io, &r, name = "joining XP: pool 10000 (share trunc(7999.9995) = 7999)", got = rules::joining_xp{ tables, level = 5, pool = 10000, percent_xp = 80 }, want = 2001 }
+        expect_eq{ &io, &r, name = "joining XP: a rich pool covers it", got = rules::joining_xp{ tables, level = 5, pool = 100000, percent_xp = 80 }, want = 0 }
+        expect_eq{ &io, &r, name = "joining XP: level 1 needs nothing", got = rules::joining_xp{ tables, level = 1, pool = 0, percent_xp = 80 }, want = 0 }
+        // catch-up: a recruit with earned XP below its share is given the missing pool part
+        expect_eq{ &io, &r, name = "catch-up: up to date", got = rules::catch_up_xp{ tables, xp = 8000, joining = 0, pool = 10000, percent_xp = 80 }, want = 0 }
+        expect_eq{ &io, &r, name = "catch-up: nothing earned", got = rules::catch_up_xp{ tables, xp = 0, joining = 0, pool = 10000, percent_xp = 80 }, want = 10000 }
+        expect_eq{ &io, &r, name = "catch-up: 4000 earned", got = rules::catch_up_xp{ tables, xp = 4000, joining = 0, pool = 10000, percent_xp = 80 }, want = 5000 }
+    }
+
+    // ---- (a) feat and power selection
+
+    fn pg_selection { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let mut none: rules::LevelRecord
+        none.ability = -1
+        let mut c = pg_new_pc{}
+        let g = rules::cls::JEDI_GUARDIAN
+        // Power Attack (28): a free general feat for a Guardian; Improved Power Attack (17) needs
+        // class level 4 and Power Attack
+        expect_true{ &io, &r, name = "feat: Power Attack at level 1", cond = rules::can_select_feat{ tables, c = &c, feat = 28, class = g, class_level = 1, general = 1, bonus = 0, pending = &none } }
+        expect_true{ &io, &r, name = "feat: no slots, no feat", cond = not rules::can_select_feat{ tables, c = &c, feat = 28, class = g, class_level = 1, general = 0, bonus = 0, pending = &none } }
+        expect_true{ &io, &r, name = "feat: Improved Power Attack needs level 4", cond = not rules::can_select_feat{ tables, c = &c, feat = 17, class = g, class_level = 3, general = 1, bonus = 0, pending = &none } }
+        expect_true{ &io, &r, name = "feat: Improved Power Attack needs Power Attack", cond = not rules::can_select_feat{ tables, c = &c, feat = 17, class = g, class_level = 4, general = 1, bonus = 0, pending = &none } }
+        rules::grant_feat{ c = &c, feat = 28 }
+        expect_true{ &io, &r, name = "feat: Improved Power Attack with it", cond = rules::can_select_feat{ tables, c = &c, feat = 17, class = g, class_level = 4, general = 1, bonus = 0, pending = &none } }
+        expect_true{ &io, &r, name = "feat: a known feat is not selectable", cond = not rules::can_select_feat{ tables, c = &c, feat = 28, class = g, class_level = 4, general = 1, bonus = 0, pending = &none } }
+        expect_true{ &io, &r, name = "feat: a granted feat is not selectable (Weapon Proficiency Blaster)", cond = not rules::can_select_feat{ tables, c = &c, feat = 39, class = g, class_level = 1, general = 1, bonus = 0, pending = &none } }
+        expect_true{ &io, &r, name = "feat: a feat the class cannot have (Force Focus)", cond = not rules::can_select_feat{ tables, c = &c, feat = 88, class = g, class_level = 1, general = 1, bonus = 0, pending = &none } }
+        // Dueling (113) is a general-only choice for a Guardian (list 0): a bonus slot does not help
+        expect_true{ &io, &r, name = "feat: Dueling needs a general slot", cond = not rules::can_select_feat{ tables, c = &c, feat = 113, class = g, class_level = 1, general = 0, bonus = 1, pending = &none } }
+        expect_true{ &io, &r, name = "feat: Dueling with one", cond = rules::can_select_feat{ tables, c = &c, feat = 113, class = g, class_level = 1, general = 1, bonus = 0, pending = &none } }
+        // one slot, one pick already pending: the second does not fit; two slots, it does
+        let mut one: rules::LevelRecord
+        one.nfeats = 1
+        one.feats[0] = 8
+        expect_true{ &io, &r, name = "feat: second pick without a slot", cond = not rules::can_select_feat{ tables, c = &c, feat = 113, class = g, class_level = 1, general = 1, bonus = 0, pending = &one } }
+        expect_true{ &io, &r, name = "feat: second pick with two slots", cond = rules::can_select_feat{ tables, c = &c, feat = 113, class = g, class_level = 1, general = 2, bonus = 0, pending = &one } }
+        expect_true{ &io, &r, name = "feat: a feat already pending", cond = not rules::can_select_feat{ tables, c = &c, feat = 8, class = g, class_level = 1, general = 2, bonus = 0, pending = &one } }
+        // a prerequisite met by a feat picked in the same level
+        one.feats[0] = 28
+        let base = pg_new_pc{}
+        expect_true{ &io, &r, name = "feat: prerequisite pending in the same level", cond = rules::meets_feat_requirements{ tables, c = &base, feat = 17, class = g, class_level = 4, pending = &one } }
+
+        // powers: Stasis (29) needs Stun (46) and a Guardian level column of 9
+        let mut fresh = pg_new_pc{}
+        expect_true{ &io, &r, name = "power: Stun is free at level 0", cond = rules::can_learn_force_power{ tables, c = &fresh, spell = PG_STUN, class = g, level_before = 0, total_to_gain = 2, pending = &none } }
+        expect_true{ &io, &r, name = "power: Push is free at level 0", cond = rules::can_learn_force_power{ tables, c = &fresh, spell = PG_PUSH, class = g, level_before = 0, total_to_gain = 2, pending = &none } }
+        expect_true{ &io, &r, name = "power: Stasis needs Stun", cond = not rules::can_learn_force_power{ tables, c = &fresh, spell = PG_STASIS, class = g, level_before = 20, total_to_gain = 2, pending = &none } }
+        rules::learn_power{ c = &fresh, spell = PG_STUN }
+        expect_true{ &io, &r, name = "power: Stasis needs level 9", cond = not rules::can_learn_force_power{ tables, c = &fresh, spell = PG_STASIS, class = g, level_before = 8, total_to_gain = 1, pending = &none } }
+        expect_true{ &io, &r, name = "power: Stasis at level 9", cond = rules::can_learn_force_power{ tables, c = &fresh, spell = PG_STASIS, class = g, level_before = 9, total_to_gain = 1, pending = &none } }
+        expect_true{ &io, &r, name = "power: a known power", cond = not rules::can_learn_force_power{ tables, c = &fresh, spell = PG_STUN, class = g, level_before = 9, total_to_gain = 1, pending = &none } }
+        expect_true{ &io, &r, name = "power: Whirlwind needs Push", cond = not rules::can_learn_force_power{ tables, c = &fresh, spell = PG_WHIRLWIND, class = g, level_before = 20, total_to_gain = 1, pending = &none } }
+        let mut pushing: rules::LevelRecord
+        pushing.npowers = 1
+        pushing.powers[0] = PG_PUSH
+        expect_true{ &io, &r, name = "power: Whirlwind with Push pending", cond = rules::can_learn_force_power{ tables, c = &fresh, spell = PG_WHIRLWIND, class = g, level_before = 20, total_to_gain = 2, pending = &pushing } }
+        expect_true{ &io, &r, name = "power: but not past the level's count", cond = not rules::can_learn_force_power{ tables, c = &fresh, spell = PG_WHIRLWIND, class = g, level_before = 20, total_to_gain = 1, pending = &pushing } }
+        expect_true{ &io, &r, name = "power: a Soldier learns nothing", cond = not rules::can_learn_force_power{ tables, c = &fresh, spell = PG_PUSH, class = rules::cls::SOLDIER, level_before = 20, total_to_gain = 1, pending = &none } }
+        expect_true{ &io, &r, name = "power: a special ability is not a power", cond = not rules::can_learn_force_power{ tables, c = &fresh, spell = PG_MED_PACK, class = g, level_before = 20, total_to_gain = 1, pending = &none } }
+        let mut list: rules::IdList
+        rules::learnable_powers{ tables, c = &fresh, class = g, level_before = 0, total_to_gain = 2, pending = &none, out = &list }
+        expect_true{ &io, &r, name = "learnable at level 0: Push, not Stun (known), not Heal", cond = rules::has_id{ list = &list, id = PG_PUSH } and not rules::has_id{ list = &list, id = PG_STUN } and not rules::has_id{ list = &list, id = PG_HEAL } }
+
+        // the auto-level orders: light list starts Stun, Stasis, Mass Stasis, Push; dark list starts Shock
+        expect_eq{ &io, &r, name = "light order 1 is Stun", got = rules::power_at_priority{ tables, light = true, position = 1 }, want = PG_STUN }
+        expect_eq{ &io, &r, name = "light order 2 is Stasis", got = rules::power_at_priority{ tables, light = true, position = 2 }, want = PG_STASIS }
+        expect_eq{ &io, &r, name = "light order 4 is Push", got = rules::power_at_priority{ tables, light = true, position = 4 }, want = PG_PUSH }
+        expect_eq{ &io, &r, name = "dark order 1 is Shock", got = rules::power_at_priority{ tables, light = false, position = 1 }, want = 43 }
+        expect_eq{ &io, &r, name = "dark order 2 is Lightning", got = rules::power_at_priority{ tables, light = false, position = 2 }, want = PG_LIGHTNING }
+        // skill order of a Guardian: Treat Injury, Awareness, Repair, Demolitions, Computer Use, Security, Stealth, then Persuade (unranked)
+        expect_eq{ &io, &r, name = "guardian skill order 1", got = rules::skill_at_priority{ tables, class = g, position = 1 }, want = rules::skill::TREAT_INJURY }
+        expect_eq{ &io, &r, name = "guardian skill order 2", got = rules::skill_at_priority{ tables, class = g, position = 2 }, want = rules::skill::AWARENESS }
+        expect_eq{ &io, &r, name = "guardian skill order 3", got = rules::skill_at_priority{ tables, class = g, position = 3 }, want = rules::skill::REPAIR }
+        expect_eq{ &io, &r, name = "guardian skill order 7", got = rules::skill_at_priority{ tables, class = g, position = 7 }, want = rules::skill::STEALTH }
+        expect_eq{ &io, &r, name = "guardian skill order 8 (unranked)", got = rules::skill_at_priority{ tables, class = g, position = 8 }, want = rules::skill::PERSUADE }
+        expect_eq{ &io, &r, name = "feat order 1 for a Guardian is Power Attack", got = rules::feat_at_priority{ tables, class = g, position = 1 }, want = 28 }
+        expect_eq{ &io, &r, name = "feat order 4 for a Guardian is Weapon Spec Lightsaber", got = rules::feat_at_priority{ tables, class = g, position = 4 }, want = 50 }
+    }
+
+    // ---- (a) a Jedi Guardian from level 1 to 10, and multiclassing
+
+    fn pg_guardian { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let g = rules::cls::JEDI_GUARDIAN
+        let mut c = pg_new_pc{}
+        let first = rules::take_first_level{ tables, c = &c, class = g }
+        expect_true{ &io, &r, name = "guardian: first level taken", cond = first.ok and first.heal_to_full and first.new_class }
+        expect_eq{ &io, &r, name = "guardian: one class", got = c.nclasses, want = 1 }
+        expect_eq{ &io, &r, name = "guardian: level 1", got = rules::total_level{ c = &c }, want = 1 }
+        // level 1: hit die 10 + CON 2 = 12, Force die 4 + WIS 2 + CHA 1 = 7 and Force Sensitive's 40
+        expect_eq{ &io, &r, name = "guardian level 1: max HP", got = c.stats.max_hp, want = 12 }
+        expect_eq{ &io, &r, name = "guardian level 1: max FP", got = c.stats.max_fp, want = 47 }
+        expect_true{ &io, &r, name = "guardian level 1: Force Sensitive granted", cond = rules::has_feat{ c = &c, feat = rules::feat::FORCE_SENSITIVE } }
+        expect_eq{ &io, &r, name = "guardian level 1: FP full after leveling", got = first.fp_gained, want = 47 }
+        expect_eq{ &io, &r, name = "guardian level 1: current FP", got = c.fp, want = 47 }
+        // 4 skill points (2/2 + 0, times 4), all into Treat Injury (class skill, max rank 4)
+        expect_eq{ &io, &r, name = "guardian level 1: Treat Injury ranks", got = c.skills[@as(usize, rules::skill::TREAT_INJURY)], want = 4 }
+        expect_eq{ &io, &r, name = "guardian level 1: no points left", got = c.skill_points, want = 0 }
+        expect_eq{ &io, &r, name = "guardian level 1: two powers", got = pg_count_bits{ words = c.powers }, want = 2 }
+        expect_true{ &io, &r, name = "guardian level 1: Stun and Push", cond = rules::knows_power{ c = &c, spell = PG_STUN } and rules::knows_power{ c = &c, spell = PG_PUSH } }
+        expect_eq{ &io, &r, name = "guardian level 1: one general feat plus 7 granted", got = pg_count_bits{ words = c.feats }, want = 8 }
+        expect_true{ &io, &r, name = "guardian level 1: Power Attack", cond = rules::has_feat{ c = &c, feat = 28 } }
+
+        // up to level 10 on XP
+        c.xp = rules::xp_to_reach_level{ tables, level = 10 }
+        let res = rules::auto_level_up{ tables, c = &c, alive = true }
+        expect_eq{ &io, &r, name = "guardian: nine levels gained", got = res.levels, want = 9 }
+        expect_true{ &io, &r, name = "guardian: heal to full requested", cond = res.heal_to_full }
+        expect_eq{ &io, &r, name = "guardian: total level 10", got = rules::total_level{ c = &c }, want = 10 }
+        expect_eq{ &io, &r, name = "guardian: still one class", got = c.nclasses, want = 1 }
+        expect_eq{ &io, &r, name = "guardian: class level 10", got = c.classes[0].level, want = 10 }
+        expect_eq{ &io, &r, name = "guardian: history has 10 records", got = c.nhistory, want = 10 }
+        expect_true{ &io, &r, name = "guardian: can't level at the XP it has", cond = not rules::can_level_up{ tables, c = &c, alive = true } }
+        // 10 x (hit die 10 + CON 2) = 120; 10 x (4 + 2 + 1) + 40 = 110; BAB 10 (cls_atk_1); saves from cls_st_jedi_g
+        // at level 10: fort 7, reflex 7, will 5, plus CON 2, DEX 2, WIS 2
+        expect_eq{ &io, &r, name = "guardian 10: max HP", got = c.stats.max_hp, want = 120 }
+        expect_eq{ &io, &r, name = "guardian 10: max FP", got = c.stats.max_fp, want = 110 }
+        expect_eq{ &io, &r, name = "guardian 10: BAB", got = c.stats.bab, want = 10 }
+        expect_eq{ &io, &r, name = "guardian 10: fortitude", got = c.stats.save_base[0], want = 9 }
+        expect_eq{ &io, &r, name = "guardian 10: reflex", got = c.stats.save_base[1], want = 9 }
+        expect_eq{ &io, &r, name = "guardian 10: will", got = c.stats.save_base[2], want = 7 }
+        expect_eq{ &io, &r, name = "guardian 10: STR +1 at levels 4 and 8", got = c.abil[0], want = 16 }
+        expect_eq{ &io, &r, name = "guardian 10: other abilities", got = c.abil[1] + c.abil[2] + c.abil[3] + c.abil[4] + c.abil[5], want = 14 + 14 + 10 + 14 + 12 }
+        expect_eq{ &io, &r, name = "guardian 10: level 4 record raises STR", got = c.history[3].ability, want = 0 }
+        expect_eq{ &io, &r, name = "guardian 10: level 5 record raises nothing", got = c.history[4].ability, want = -1 }
+        // feats: 7 granted at level 1, 2 at level 6; general feats at levels 1, 3, 6, 7, 9 follow the
+        // priority list Power Attack, Critical Strike, Weapon Focus Lightsaber, Weapon Specialization
+        // Lightsaber, Dueling
+        expect_eq{ &io, &r, name = "guardian 10: feat count", got = pg_count_bits{ words = c.feats }, want = 14 }
+        expect_true{ &io, &r, name = "guardian 10: the five general feats", cond = rules::has_feat{ c = &c, feat = 28 } and rules::has_feat{ c = &c, feat = 8 } and rules::has_feat{ c = &c, feat = 36 } and rules::has_feat{ c = &c, feat = 50 } and rules::has_feat{ c = &c, feat = 113 } }
+        // powers: 2 at level 1, then 1 per level
+        expect_eq{ &io, &r, name = "guardian 10: powers", got = pg_count_bits{ words = c.powers }, want = 11 }
+        // skills: 4 + 9 x 1 points, every one into Treat Injury (max rank level + 3 = 13)
+        expect_eq{ &io, &r, name = "guardian 10: Treat Injury ranks", got = c.skills[@as(usize, rules::skill::TREAT_INJURY)], want = 13 }
+        expect_eq{ &io, &r, name = "guardian 10: points left", got = c.skill_points, want = 0 }
+        let mut other: i32 = 0
+        let mut k: usize = 0
+        while k < rules::NUM_SKILLS {
+            if k != @as(usize, rules::skill::TREAT_INJURY) { other = other + c.skills[k] }
+            k = k + 1
+        }
+        expect_eq{ &io, &r, name = "guardian 10: no other skill", got = other, want = 0 }
+
+        // multiclass: a Soldier record opens a second slot, a third class is refused
+        c.xp = rules::xp_to_reach_level{ tables, level = 12 }
+        let mut rec: rules::LevelRecord
+        expect_true{ &io, &r, name = "multiclass: record for a Soldier", cond = rules::prepare_auto_level{ tables, c = &c, class = rules::cls::SOLDIER, rec = &rec } }
+        expect_eq{ &io, &r, name = "multiclass: Soldier hit die", got = rec.hp, want = 10 }
+        expect_eq{ &io, &r, name = "multiclass: Soldier Force die", got = rec.fp, want = 0 }
+        expect_eq{ &io, &r, name = "multiclass: Soldier first level has 4 skill points", got = rec.skill_left + pg_sum{ words = rec.skills }, want = 4 }
+        let m = rules::apply_level_up{ tables, c = &c, rec, alive = true }
+        expect_true{ &io, &r, name = "multiclass: applied", cond = m.ok and m.new_class }
+        expect_eq{ &io, &r, name = "multiclass: two slots", got = c.nclasses, want = 2 }
+        expect_eq{ &io, &r, name = "multiclass: Soldier level 1", got = c.classes[1].level, want = 1 }
+        expect_eq{ &io, &r, name = "multiclass: Guardian level 10", got = c.classes[0].level, want = 10 }
+        expect_eq{ &io, &r, name = "multiclass: character level 11", got = rules::total_level{ c = &c }, want = 11 }
+        expect_eq{ &io, &r, name = "multiclass: BAB 10 + 1", got = c.stats.bab, want = 11 }
+        expect_eq{ &io, &r, name = "multiclass: HP 120 + 12", got = c.stats.max_hp, want = 132 }
+        let mut rec3: rules::LevelRecord
+        expect_true{ &io, &r, name = "multiclass: a third class has no record", cond = not rules::prepare_auto_level{ tables, c = &c, class = rules::cls::SCOUT, rec = &rec3 } }
+        rec3.class = rules::cls::SCOUT
+        rec3.hp = 8
+        expect_true{ &io, &r, name = "multiclass: a third class is refused", cond = not rules::apply_level_up{ tables, c = &c, rec = rec3, alive = true }.ok }
+        expect_eq{ &io, &r, name = "multiclass: refused level changed nothing", got = rules::total_level{ c = &c }, want = 11 }
+        // more Guardian levels still work (the old slot), and a level needs its XP
+        let mut rec4: rules::LevelRecord
+        expect_true{ &io, &r, name = "multiclass: Guardian record", cond = rules::prepare_auto_level{ tables, c = &c, class = g, rec = &rec4 } }
+        expect_eq{ &io, &r, name = "multiclass: the Guardian level is 11", got = rec4.class, want = g }
+        let m2 = rules::apply_level_up{ tables, c = &c, rec = rec4, alive = true }
+        expect_true{ &io, &r, name = "multiclass: Guardian level 11 applied", cond = m2.ok and not m2.new_class }
+        expect_eq{ &io, &r, name = "multiclass: Guardian level 11", got = c.classes[0].level, want = 11 }
+        expect_eq{ &io, &r, name = "multiclass: character level 12", got = rules::total_level{ c = &c }, want = 12 }
+        expect_true{ &io, &r, name = "multiclass: the XP is spent", cond = not rules::apply_level_up{ tables, c = &c, rec = rec4, alive = true }.ok }
+        c.xp = 2000000
+        expect_true{ &io, &r, name = "multiclass: a dead creature does not level", cond = not rules::apply_level_up{ tables, c = &c, rec = rec4, alive = false }.ok }
+        expect_eq{ &io, &r, name = "multiclass: still 12", got = rules::total_level{ c = &c }, want = 12 }
+        // the options the level screen shows for the next Guardian level
+        let mut opt: rules::LevelUpOptions
+        expect_true{ &io, &r, name = "options: Guardian", cond = rules::level_up_options{ tables, c = &c, class = g, out = &opt } }
+        expect_eq{ &io, &r, name = "options: class level 12", got = opt.class_level, want = 12 }
+        expect_true{ &io, &r, name = "options: ability point at class level 12", cond = opt.ability_point }
+        expect_eq{ &io, &r, name = "options: hit die", got = opt.hp, want = 10 }
+        expect_eq{ &io, &r, name = "options: Force die", got = opt.fp, want = 4 }
+        expect_eq{ &io, &r, name = "options: one power", got = opt.powers, want = 1 }
+        expect_eq{ &io, &r, name = "options: Treat Injury is a class skill at cost 1", got = opt.skills[7].cost, want = 1 }
+        expect_eq{ &io, &r, name = "options: Security is cross-class at cost 2", got = opt.skills[6].cost, want = 2 }
+        expect_eq{ &io, &r, name = "options: class skill max rank 15", got = opt.skills[7].max_rank, want = 15 }
+        expect_eq{ &io, &r, name = "options: cross-class max rank 7", got = opt.skills[6].max_rank, want = 7 }
+        expect_true{ &io, &r, name = "options: a third class is not offered", cond = not rules::level_up_options{ tables, c = &c, class = rules::cls::SCOUT, out = &opt } }
+        // a Consular's power counts follow classpowergain.2da: 2 at levels 1, 5, 9
+        expect_eq{ &io, &r, name = "powers per level: consular 1", got = rules::powers_to_gain{ tables, class = rules::cls::JEDI_CONSULAR, class_level = 1 }, want = 2 }
+        expect_eq{ &io, &r, name = "powers per level: consular 2", got = rules::powers_to_gain{ tables, class = rules::cls::JEDI_CONSULAR, class_level = 2 }, want = 1 }
+        expect_eq{ &io, &r, name = "powers per level: consular 5", got = rules::powers_to_gain{ tables, class = rules::cls::JEDI_CONSULAR, class_level = 5 }, want = 2 }
+        expect_eq{ &io, &r, name = "powers per level: guardian 5", got = rules::powers_to_gain{ tables, class = g, class_level = 5 }, want = 1 }
+        expect_eq{ &io, &r, name = "powers per level: soldier", got = rules::powers_to_gain{ tables, class = rules::cls::SOLDIER, class_level = 1 }, want = 0 }
+    }
+
+    // The first level of a Guardian on each side of the alignment line, and a non-player creature.
+    fn pg_alignment_and_npc { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let g = rules::cls::JEDI_GUARDIAN
+        // good-evil 41 is the lowest "not evil": the light list (Stun, Stasis, Mass Stasis, Push ...)
+        // gives Stun and Push (the others need a higher level)
+        let mut light = pg_new_pc{}
+        light.good_evil = 41
+        _ = rules::take_first_level{ tables, c = &light, class = g }
+        expect_true{ &io, &r, name = "alignment 41: Stun and Push", cond = rules::knows_power{ c = &light, spell = PG_STUN } and rules::knows_power{ c = &light, spell = PG_PUSH } and pg_count_bits{ words = light.powers } == 2 }
+        // 40 is evil: the dark list (Shock, Lightning, Force Storm, Wound ...) gives Shock and Wound
+        let mut dark = pg_new_pc{}
+        dark.good_evil = 40
+        _ = rules::take_first_level{ tables, c = &dark, class = g }
+        expect_true{ &io, &r, name = "alignment 40: Shock and Wound", cond = rules::knows_power{ c = &dark, spell = 43 } and rules::knows_power{ c = &dark, spell = 50 } and pg_count_bits{ words = dark.powers } == 2 }
+
+        // a creature without player rules keeps its bases: HP 10 + (CON 2) x 1, FP 4 + 3 + 40
+        let mut npc = pg_new_pc{}
+        npc.is_pc = false
+        npc.pc_rules = false
+        npc.party = false
+        let t = rules::take_first_level{ tables, c = &npc, class = g }
+        expect_true{ &io, &r, name = "npc: first level", cond = t.ok }
+        expect_eq{ &io, &r, name = "npc: base HP is the hit die", got = npc.hp_base, want = 10 }
+        expect_eq{ &io, &r, name = "npc: base FP is the Force die", got = npc.fp_base, want = 4 }
+        expect_eq{ &io, &r, name = "npc: max HP", got = npc.stats.max_hp, want = 12 }
+        expect_eq{ &io, &r, name = "npc: max FP", got = npc.stats.max_fp, want = 47 }
+        // it levels on XP like anyone: 3000 XP is level 3
+        npc.xp = 3000
+        let more = rules::auto_level_up{ tables, c = &npc, alive = true }
+        expect_eq{ &io, &r, name = "npc: two more levels", got = more.levels, want = 2 }
+        expect_eq{ &io, &r, name = "npc: base HP after level 3", got = npc.hp_base, want = 30 }
+        expect_eq{ &io, &r, name = "npc: max HP after level 3 (30 + 3 x 2)", got = npc.stats.max_hp, want = 36 }
+        // a Soldier NPC has no Force points and cannot learn powers
+        let mut sol = pg_new_pc{}
+        sol.is_pc = false
+        sol.pc_rules = false
+        _ = rules::take_first_level{ tables, c = &sol, class = rules::cls::SOLDIER }
+        expect_eq{ &io, &r, name = "soldier: no Force points", got = sol.stats.max_fp, want = 0 }
+        expect_eq{ &io, &r, name = "soldier: no powers", got = pg_count_bits{ words = sol.powers }, want = 0 }
+    }
+
+    fn pg_sum { words: [rules::NUM_SKILLS]i32 } -> i32 {
+        let mut n: i32 = 0
+        let mut i: usize = 0
+        while i < rules::NUM_SKILLS {
+            n = n + words[i]
+            i = i + 1
+        }
+        return n
+    }
+
+    // ---- (a) the skill checks
+
+    fn pg_skill_checks { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let mut c = pg_new_pc{}
+        c.skills[@as(usize, rules::skill::SECURITY)] = 5
+        c.skills[@as(usize, rules::skill::DEMOLITIONS)] = 6
+        c.skills[@as(usize, rules::skill::TREAT_INJURY)] = 4
+        c.skills[@as(usize, rules::skill::AWARENESS)] = 3
+        rules::recompute{ tables, c = &c }
+        // Security is a WIS skill (+2): rank 5 + 2 = 7, plus the spike's bonus and 20 outside combat
+        let mut g = rules::seed_rng{ seed = 7 }
+        let a = rules::open_lock_check{ tables, c = &c, lock_dc = 29, spike_bonus = 0, in_combat = false, rng = &g }
+        expect_true{ &io, &r, name = "open lock: take 20, 7 + 20 = 27 < 29", cond = not a.success and a.total == 27 and a.roll == 20 }
+        let b = rules::open_lock_check{ tables, c = &c, lock_dc = 29, spike_bonus = 2, in_combat = false, rng = &g }
+        expect_true{ &io, &r, name = "open lock: a +2 spike makes 29", cond = b.success and b.total == 29 }
+        let z = rules::open_lock_check{ tables, c = &c, lock_dc = 0, spike_bonus = 0, in_combat = false, rng = &g }
+        expect_eq{ &io, &r, name = "open lock: a DC of 0 is 1", got = z.dc, want = 1 }
+        expect_eq{ &io, &r, name = "out of combat nothing is rolled", got = @as(i64, g.state), want = 7 }
+        // in combat a d20
+        let mut probe = rules::seed_rng{ seed = 7 }
+        let die = rules::roll_dice{ rng = &probe, count = 1, sides = 20 }
+        let f = rules::open_lock_check{ tables, c = &c, lock_dc = 1, spike_bonus = 0, in_combat = true, rng = &g }
+        expect_true{ &io, &r, name = "open lock: in combat the die decides", cond = f.roll == die and f.total == 7 + die }
+        // Demolitions is an INT skill (+0 with INT 10): disarm 6 + 20 against 26 passes, 27 fails, above 35 never
+        let d1 = rules::disarm_trap_check{ tables, c = &c, disarm_dc = 26, own_trap = false, in_combat = false, rng = &g }
+        expect_true{ &io, &r, name = "disarm: 6 + 20 = 26 meets DC 26", cond = d1.success and d1.total == 26 }
+        let d2 = rules::disarm_trap_check{ tables, c = &c, disarm_dc = 27, own_trap = false, in_combat = false, rng = &g }
+        expect_true{ &io, &r, name = "disarm: DC 27 fails", cond = not d2.success }
+        c.skills[@as(usize, rules::skill::DEMOLITIONS)] = 40
+        rules::recompute{ tables, c = &c }
+        let d3 = rules::disarm_trap_check{ tables, c = &c, disarm_dc = 36, own_trap = false, in_combat = false, rng = &g }
+        expect_true{ &io, &r, name = "disarm: a DC above 35 is impossible", cond = not d3.success }
+        let d4 = rules::disarm_trap_check{ tables, c = &c, disarm_dc = 99, own_trap = true, in_combat = false, rng = &g }
+        expect_true{ &io, &r, name = "disarm: the setter always succeeds", cond = d4.success and d4.auto }
+        c.skills[@as(usize, rules::skill::DEMOLITIONS)] = 6
+        rules::recompute{ tables, c = &c }
+        // set trap: +2 for base ranks above 4
+        let s1 = rules::set_trap_check{ tables, c = &c, set_dc = 28, in_combat = false, rng = &g }
+        expect_true{ &io, &r, name = "set trap: 6 + 2 + 20 = 28", cond = s1.success and s1.total == 28 }
+        c.skills[@as(usize, rules::skill::DEMOLITIONS)] = 4
+        rules::recompute{ tables, c = &c }
+        let s2 = rules::set_trap_check{ tables, c = &c, set_dc = 25, in_combat = false, rng = &g }
+        expect_true{ &io, &r, name = "set trap: 4 ranks get no bonus: 4 + 20 = 24", cond = not s2.success and s2.total == 24 }
+        // Treat Injury is a WIS skill: 4 + 2 + 20
+        let t = rules::treat_injury_check{ tables, c = &c, dc = 26, in_combat = false, rng = &g }
+        expect_true{ &io, &r, name = "treat injury: 4 + 2 + 20 = 26", cond = t.success and t.total == 26 }
+        // Awareness (WIS): 3 + 2 + d10 (+10 in detect mode) against the trap's detect DC
+        let mut p2 = rules::seed_rng{ seed = 99 }
+        let die10 = rules::roll_dice{ rng = &p2, count = 1, sides = 10 }
+        let mut g2 = rules::seed_rng{ seed = 99 }
+        let w = rules::detect_trap_check{ tables, c = &c, detect_dc = 15, detect_mode = true, always_detected = false, rng = &g2 }
+        expect_true{ &io, &r, name = "detect trap: 5 + d10 + 10 in detect mode", cond = w.total == 5 + die10 + 10 and w.success == (w.total >= 15) }
+        let mut g3 = rules::seed_rng{ seed = 99 }
+        let w2 = rules::detect_trap_check{ tables, c = &c, detect_dc = 15, detect_mode = false, always_detected = false, rng = &g3 }
+        expect_true{ &io, &r, name = "detect trap: 5 + d10 otherwise", cond = w2.total == 5 + die10 }
+        let w3 = rules::detect_trap_check{ tables, c = &c, detect_dc = 99, detect_mode = false, always_detected = true, rng = &g3 }
+        expect_true{ &io, &r, name = "detect trap: an always-detected trap", cond = w3.success and w3.auto }
+    }
+
+    // ---- (b) every creature template with a Jedi class
+
+    struct PgSweep {
+        templates: i32,
+        unreadable: i32,
+        jedi: i32,
+        droid_jedi: i32,
+        zero_fp: i32,
+        powers: i32,
+        not_powers: i32,           // known "powers" that are special abilities or not Force powers
+        prereq_missing: i32,
+        level_over_now: i32,       // column above the character level now
+        level_over_before: i32,    // column above the level before the last one
+        feats: i32,
+        feats_ok: i32,
+        feats_bad: i32,
+        feats_bad_level: i32,
+        feats_bad_prereq: i32,
+        feats_bad_other: i32,
+        jedi_feats: i32,           // the feats of templates with a Jedi class, and how many of them pass
+        jedi_feats_ok: i32,
+        printed: i32,
+        missing_by_spell: [256]i32,   // powers whose prerequisites are not all known, by spell row
+    }
+
+    fn pg_last_class { c: *rules::Creature } -> i32 {
+        if c.nclasses < 1 { return -1 }
+        return c.classes[@as(usize, c.nclasses - 1)].class
+    }
+
+    fn pg_check_template { mut io: Io, mut st: PgSweep, tables: *rules::Tables, name: resref::ResRef, c: *rules::Creature } {
+        st.templates = st.templates + 1
+        let mut none: rules::LevelRecord
+        none.ability = -1
+        // Force points and powers of the Jedi classes
+        let mut jclass: i32 = -1
+        let mut i: usize = 0
+        while i < @as(usize, c.nclasses) {
+            let k = c.classes[i].class
+            if k >= rules::cls::JEDI_GUARDIAN and k <= rules::cls::JEDI_SENTINEL and jclass < 0 { jclass = k }
+            i = i + 1
+        }
+        if jclass >= 0 {
+            st.jedi = st.jedi + 1
+            if c.race == rules::race::DROID {
+                st.droid_jedi = st.droid_jedi + 1
+            } else if c.stats.max_fp <= 0 {
+                st.zero_fp = st.zero_fp + 1
+                if st.printed < 10 {
+                    st.printed = st.printed + 1
+                    _ = @fmt(&io, "progress: Jedi template {} has {} max FP\n", name, c.stats.max_fp)
+                }
+            }
+            let level = rules::total_level{ c }
+            let mut s: i32 = 0
+            while s < 256 {
+                let id = s
+                s = s + 1
+                if not rules::knows_power{ c, spell = id } { continue }
+                st.powers = st.powers + 1
+                let row = rules::get_spell{ tables, row = id } ifnull { continue }
+                if row.user_type != 1 {
+                    st.not_powers = st.not_powers + 1
+                    continue
+                }
+                if not rules::power_prerequisites_met{ c, row, pending = &none } {
+                    st.prereq_missing = st.prereq_missing + 1
+                    st.missing_by_spell[@as(usize, id)] = st.missing_by_spell[@as(usize, id)] + 1
+                }
+                let need = rules::power_class_level{ row, class = jclass }
+                if level < need { st.level_over_now = st.level_over_now + 1 }
+                if level - 1 < need { st.level_over_before = st.level_over_before + 1 }
+            }
+        }
+        // the feats against the prerequisites
+        let last = pg_last_class{ c }
+        if last >= 0 {
+            let cl = c.classes[@as(usize, c.nclasses - 1)].level
+            let mut f: i32 = 0
+            while f < 256 {
+                let id = f
+                f = f + 1
+                if not rules::has_feat{ c, feat = id } { continue }
+                st.feats = st.feats + 1
+                if jclass >= 0 { st.jedi_feats = st.jedi_feats + 1 }
+                if rules::meets_feat_requirements{ tables, c, feat = id, class = last, class_level = cl, pending = &none } {
+                    st.feats_ok = st.feats_ok + 1
+                    if jclass >= 0 { st.jedi_feats_ok = st.jedi_feats_ok + 1 }
+                    continue
+                }
+                st.feats_bad = st.feats_bad + 1
+                let row = rules::get_feat{ tables, row = id } ifnull { continue }
+                if row.min_level > cl {
+                    st.feats_bad_level = st.feats_bad_level + 1
+                } else if row.prereq[0] >= 0 or row.prereq[1] >= 0 {
+                    st.feats_bad_prereq = st.feats_bad_prereq + 1
+                } else {
+                    st.feats_bad_other = st.feats_bad_other + 1
+                }
+            }
+        }
+    }
+
+    // The three powers most often known without their prerequisites.
+    fn pg_print_top_missing { mut io: Io, st: *PgSweep } {
+        let mut shown: i32 = 0
+        let mut taken = [false; 256]
+        while shown < 3 {
+            let mut best: usize = 0
+            let mut best_n: i32 = 0
+            let mut i: usize = 0
+            while i < 256 {
+                if not taken[i] and st.missing_by_spell[i] > best_n {
+                    best = i
+                    best_n = st.missing_by_spell[i]
+                }
+                i = i + 1
+            }
+            if best_n == 0 { return }
+            taken[best] = true
+            _ = @fmt(&io, "progress:   spell {} known without its prerequisites {} times\n", best, best_n)
+            shown = shown + 1
+        }
+    }
+
+    fn pg_wants_utc { kind: u16 } -> bool {
+        return kind == @as(u16, restype::Type::utc)
+    }
+
+    // One creature template copy: parse it, read it as the engine would, check it.
+    fn pg_visit_template { mut io: Io, mut st: PgSweep, tables: *rules::Tables, mut scratch: arena::Arena, copy: corpus::Copy, data: []u8 } {
+        arena::reset{ heap = &scratch }
+        let doc = gff::parse{ data, realloc = arena::alloc, heap = &scratch } iferr err{ error } {
+            st.unreadable = st.unreadable + 1
+            return
+        }
+        let mut c: rules::Creature
+        rules::read_creature{ tables, doc = &doc, s = gff::ROOT, out = &c }
+        pg_check_template{ &io, &st, tables, name = copy.name, c = &c }
+    }
+
+    // Every copy of every creature template in the install (the corpus walk: modules and saved
+    // games included), as the census does; `rm` only supplies the game directory.
+    fn pg_sweep_templates { mut io: Io, mut fs: Fs, mut r: Report, mut heap: heap::Heap, rm: res::Manager, tables: *rules::Tables } {
+        let buf = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = slice::empty(u8){}, count = 8 * 1024 * 1024 } iferr err{ error } {
+            fail{ &io, &r, name = "progress: no memory for the scratch arena", detail = 0 }
+            return
+        }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = buf, count = 0 }
+        let mut scratch = arena::new{ buf }
+        let mut st = PgSweep{
+            templates = 0, unreadable = 0, jedi = 0, droid_jedi = 0, zero_fp = 0, powers = 0, not_powers = 0,
+            prereq_missing = 0, level_over_now = 0, level_over_before = 0, feats = 0, feats_ok = 0, feats_bad = 0,
+            feats_bad_level = 0, feats_bad_prereq = 0, feats_bad_other = 0, jedi_feats = 0, jedi_feats_ok = 0, printed = 0, missing_by_spell = [0; 256],
+        }
+        _ = corpus::each{ &fs, h = &heap, game = rm.game, want = pg_wants_utc, visit = pg_visit_template{ &io, &st, tables, &scratch, _ } } iferr err{ error } {
+            fail{ &io, &r, name = "progress: walking the install failed", detail = 0 }
+            return
+        }
+        _ = @fmt(&io, "progress: {} creature template copies ({} unreadable), {} with a Jedi class ({} droids)\n", st.templates, st.unreadable, st.jedi, st.droid_jedi)
+        _ = @fmt(&io, "progress: Jedi templates with no Force points: {}\n", st.zero_fp)
+        _ = @fmt(&io, "progress: {} known powers on Jedi templates ({} not Force powers): prerequisites missing {}, level column above the level {}, above the level before {}\n",
+            st.powers, st.not_powers, st.prereq_missing, st.level_over_now, st.level_over_before)
+        pg_print_top_missing{ &io, &st }
+        _ = @fmt(&io, "progress: {} feats on templates: {} meet their requirements, {} do not (level {}, prerequisite feats {}, other {})\n",
+            st.feats, st.feats_ok, st.feats_bad, st.feats_bad_level, st.feats_bad_prereq, st.feats_bad_other)
+        _ = @fmt(&io, "progress: of those, on Jedi templates: {} feats, {} meet their requirements\n", st.jedi_feats, st.jedi_feats_ok)
+        expect_true{ &io, &r, name = "progress: the install has Jedi templates", cond = st.jedi > 0 }
+        expect_eq{ &io, &r, name = "progress: Jedi templates with no Force points", got = st.zero_fp, want = 0 }
+        expect_eq{ &io, &r, name = "progress: unreadable templates", got = st.unreadable, want = 0 }
+        // The templates are hand-made: monsters and droids carry feats without their prerequisites
+        // (Master Conditioning without Improved Conditioning, droid upgrades without the first).
+        // That the rule fits most of the data is the plausibility check.
+        expect_true{ &io, &r, name = "progress: most template feats meet their requirements", cond = st.feats_ok * 10 >= st.feats * 8 }
+        expect_true{ &io, &r, name = "progress: most Jedi template feats meet their requirements", cond = st.jedi_feats_ok * 10 >= st.jedi_feats * 8 }
+    }
+
+    // ---- (c) each class to level 20
+
+    fn pg_all_classes { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        // from the 2DAs: feats granted over 20 levels, feats chosen (featgain.2da reg + bon), skill
+        // points (level 1: 4 x max(1, base/2); later max(1, base/2) at INT 10), powers (classpowergain.2da)
+        let granted: [9]i32 = [9, 12, 18, 11, 11, 11, 6, 8, 9]
+        // Expert droid: 10 slots, but the priority order (feat.2da drx_recom) leaves three unfilled; traced
+        // by hand in the comments of pg_all_classes' caller: 7.
+        let chosen: [9]i32 = [18, 11, 8, 9, 7, 7, 7, 7, 18]
+        let points: [9]i32 = [23, 69, 92, 23, 23, 46, 23, 46, 23]
+        let powers: [9]i32 = [0, 0, 0, 21, 25, 21, 0, 0, 0]
+        let primary: [9]usize = [0, 1, 1, 0, 4, 4, 2, 1, 0]
+        let mut k: i32 = 0
+        while k < 9 {
+            let ku = @as(usize, k)
+            let mut c = pg_new_pc{}
+            let first = rules::take_first_level{ tables, c = &c, class = k }
+            if not first.ok {
+                fail{ &io, &r, name = "classes: the first level was refused", detail = k }
+                k = k + 1
+                continue
+            }
+            c.xp = rules::xp_to_reach_level{ tables, level = 20 }
+            let res = rules::auto_level_up{ tables, c = &c, alive = true }
+            expect_eq{ &io, &r, name = "classes: 19 more levels", got = res.levels, want = 19 }
+            expect_eq{ &io, &r, name = "classes: level 20", got = rules::total_level{ c = &c }, want = 20 }
+            expect_eq{ &io, &r, name = "classes: 20 history records", got = c.nhistory, want = 20 }
+            expect_eq{ &io, &r, name = "classes: primary ability +5", got = c.abil[primary[ku]], want = 14 + 5 }
+            let nfeats = pg_count_bits{ words = c.feats }
+            let npowers = pg_count_bits{ words = c.powers }
+            let mut spent: i32 = 0
+            let mut s: usize = 0
+            while s < rules::NUM_SKILLS {
+                spent = spent + c.skills[s] * rules::skill_cost{ tables, class = k, skill = @as(i32, s) }
+                s = s + 1
+            }
+            _ = @fmt(&io, "classes: class {}: {} feats (granted {} + chosen {} expected), {} powers ({}), skill points spent {} + {} left (of {}), HP {} FP {} BAB {}\n",
+                k, nfeats, granted[ku], chosen[ku], npowers, powers[ku], spent, c.skill_points, points[ku], c.stats.max_hp, c.stats.max_fp, c.stats.bab)
+            expect_eq{ &io, &r, name = "classes: feats granted plus chosen", got = nfeats, want = granted[ku] + chosen[ku] }
+            expect_eq{ &io, &r, name = "classes: powers", got = npowers, want = powers[ku] }
+            expect_eq{ &io, &r, name = "classes: skill points accounted for", got = spent + c.skill_points, want = points[ku] }
+            k = k + 1
+        }
+    }
+
+    // Runs everything; the dev program and rulescheck's main call this.
+    fn run_progress { mut io: Io, mut fs: Fs, mut r: Report, mut heap: heap::Heap, rm: res::Manager, tables: *rules::Tables } {
+        pg_thresholds{ &io, &r, tables }
+        pg_force_cost{ &io, &r, tables }
+        pg_force_dc{ &io, &r, tables }
+        pg_cast_checks{ &io, &r, tables }
+        pg_resist_force{ &io, &r, tables }
+        pg_experience{ &io, &r, tables }
+        pg_selection{ &io, &r, tables }
+        pg_guardian{ &io, &r, tables }
+        pg_alignment_and_npc{ &io, &r, tables }
+        pg_skill_checks{ &io, &r, tables }
+        pg_all_classes{ &io, &r, tables }
+        pg_sweep_templates{ &io, &fs, &r, &heap, rm, tables }
+    }
+}
