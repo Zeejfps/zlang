@@ -7397,9 +7397,30 @@ class CtxcDriver(Base):
     def ctxc(self, *args, cwd=None, env=None):
         import subprocess
         from toolchain import native_ctxc
+        if args[:1] in (('run',), ('exe',)) and len(args) > 1:
+            self.work_dir(args[1], cwd)
         env = dict(os.environ, CTX_HOME=ROOT, **(env or {}))
         r = subprocess.run([native_ctxc(), *args], capture_output=True, env=env, cwd=cwd)
         return r.returncode, r.stdout.decode().replace('\r\n', '\n'), r.stderr.decode().replace('\r\n', '\n')
+
+    def work_dir(self, path, cwd=None):
+        """The directory ctxc builds the program at path in, removed when the test ends: in
+        build/run, named after the program and the FNV-1a hash of its absolute path, normalized
+        (and in lower case on Windows)."""
+        import posixpath
+        if cwd is not None:
+            # ctxc joins a relative path to the working directory as the OS reports it.
+            path = os.path.join(cwd if os.name == 'nt' else os.path.realpath(cwd), path)
+        full = posixpath.normpath(path.replace('\\', '/'))
+        key = full.lower() if os.name == 'nt' else full
+        h = 0xcbf29ce484222325
+        for b in key.encode():
+            h = ((h ^ b) * 0x100000001b3) & 0xffffffffffffffff
+        name = posixpath.basename(full)
+        name = name[:-4] if name.endswith('.ctx') and len(name) > 4 else name
+        work = os.path.join(ROOT, 'build', 'run', f'{name}-{h:016x}')
+        self.addCleanup(shutil.rmtree, work, True)
+        return work
 
     def logging_cc(self, d):
         """CTX_CC for a C compiler that appends each command line to d/cc.log before running the
@@ -7426,13 +7447,6 @@ sys.exit(subprocess.run(cc + sys.argv[1:], env=env).returncode)
             return new
         open(log, 'w').close()
         return f'{sys.executable} {script}', logged
-
-    def work_dir(self, path):
-        """The directory ctxc builds the program at path in: one named after it."""
-        import glob
-        [work] = glob.glob(os.path.join(ROOT, 'build', 'run', os.path.splitext(os.path.basename(path))[0] + '-' + '?' * 16))
-        self.addCleanup(shutil.rmtree, work, True)
-        return work
 
     def test_run_a_file_with_arguments(self):
         d = self.project({'hello.ctx': """
@@ -7504,7 +7518,6 @@ fn build { mut b: Build } {
 }
 """)
         self.assertEqual(self.ctxc('run', os.path.join(d, tool))[:2], (0, '321\n'))
-        self.work_dir(tool)
         # Errors name files by their paths from the working directory, without `..`.
         with open(os.path.join(d, 'lib', 'a', 'deeper', 'y.ctx'), 'w') as f:
             f.write('namespace y { fn n {} -> i64 { return true } }\n')
@@ -7516,7 +7529,6 @@ fn build { mut b: Build } {
         d, tool = self.tool_project('fn build { mut b: Build } { build::add_sources{ &b, exe = build::exe{ &b, name = "t", root = "." }, dir = "../../lib/missing" } }\n')
         code, _, err = self.ctxc('run', tool, cwd=d)
         self.assertEqual((code, err), (1, 'lib/missing: cannot list\n'))
-        self.work_dir(tool)
         with open(os.path.join(d, tool, 'build.ctx'), 'w') as f:
             f.write('fn build { mut b: Build } { build::add_sources{ &b, exe = build::exe{ &b, name = "t", root = "." }, dir = "../../lib/empty" } }\n')
         code, _, err = self.ctxc('run', tool, cwd=d)
@@ -7530,6 +7542,7 @@ fn build { mut b: Build } {
         env = {'CTX_CC': cc}
         self.assertEqual(self.ctxc('run', d, env=env)[:2], (0, 'one\n'))
         work = self.work_dir(d)
+        self.assertTrue(os.path.isdir(os.path.join(work, 'build')))
         first = logged()
         self.assertTrue(any(' -c ' in line and 'CTX_PROGRAM_NAME="build"' in line for line in first), first)
         # Nothing changed: the C compiler doesn't run.
@@ -7563,7 +7576,6 @@ fn build { mut b: Build } {
                           'src/main.ctx': 'fn main { mut io: Io } { io::println_i64{ &io, n = @as(i64, 6) * 7 } }\n'})
         cc, logged = self.logging_cc(d)
         self.assertEqual(self.ctxc('run', d, env={'CTX_CC': cc})[:2], (0, '42\n'))
-        self.work_dir(d)
         program = [line for line in logged() if 'CTX_PROGRAM_NAME="t"' in line]
         self.assertTrue(program and all('-O2' in line and '-fwrapv' in line and '-O1' not in line for line in program), program)
 
@@ -7579,7 +7591,9 @@ fn build { mut b: Build } {
                    for p in projects]
         got = [(r.returncode, out.decode().strip()) for r in running for out, _ in [r.communicate()]]
         self.assertEqual(got, [(0, str(k)) for k in range(4)])
-        self.assertEqual(len({self.work_dir(p) for p in projects}), 4)
+        works = {self.work_dir('.', cwd=p) for p in projects}
+        self.assertEqual(len(works), 4)
+        self.assertTrue(all(os.path.isdir(w) for w in works), works)
 
 
 class Interp(Base):
@@ -7589,6 +7603,7 @@ class Interp(Base):
 
     project = CtxcDriver.project
     ctxc = CtxcDriver.ctxc
+    work_dir = CtxcDriver.work_dir
 
     def both(self, path, *args):
         """`ctxc interp` and `ctxc run` of path: each one's exit code, stdout and stderr."""
