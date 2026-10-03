@@ -99,7 +99,7 @@ namespace actions {
             return false
         }
         let mut a = action
-        o.action_group = o.action_group + 1
+        o.action_group = @wrap_add(o.action_group, 1)         // a WORD in the original: it wraps (only compared within one queue)
         a.group = o.action_group
         a.serial = next_serial{ &w }
         list::push{ list = &o.actions, item = a } iferr {
