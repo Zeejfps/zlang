@@ -1,0 +1,205 @@
+// dlgcheck: every DLG of the install through dlg::load, with the checks the conversation flow
+// relies on. It mounts each module in turn (modules/*.rim and *.mod) and reads the dialogues the
+// search finds that it has not seen yet, so a dialogue that several modules carry counts once.
+//
+//   dlgcheck [--game DIR] [--module NAME]      (a module alone, for a quick look)
+//
+// Reports: dialogues read and failures; counts by ConversationType and AnimatedCut; nodes, links
+// and starting entries; entries that are barks (the one-liner rule); entries whose offered replies
+// would mix empty and non-empty texts (the engine aborts those); and what is missing: scripts,
+// sounds, texts. The numbers can be set against re/dialogue.md section 12.
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+
+struct Totals {
+    dialogs: u32,
+    failed: u32,
+    types: [3]u32,
+    animated: u32,
+    entries: u32,
+    replies: u32,
+    links: u32,
+    starting: u32,
+    one_liners: u32,
+    mixed: u32,
+    scripts: u32,
+    scripts_missing: u32,
+    sounds: u32,
+    sounds_missing: u32,
+    texts: u32,
+    texts_missing: u32,
+    voiced: u32,
+    explicit_delay: u32,
+    angles: [8]u32,
+}
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let mut game: []u8 = DEFAULT_GAME
+    let mut only: []u8 = ""
+    let mut i: usize = 0
+    while i < args.len {
+        let has = i + 1 < args.len
+        if slice::eq_bytes{ a = args[i], b = "--game" } and has { i = i + 1; game = args[i] }
+        else if slice::eq_bytes{ a = args[i], b = "--module" } and has { i = i + 1; only = args[i] }
+        else {
+            io::eprintln{ &io, s = "usage: dlgcheck [--game DIR] [--module NAME]" }
+            return 2
+        }
+        i = i + 1
+    }
+    let mut h = heap::new{ &mem }
+    let module_pages = mem::pages{ &mem, size = 268435456 } ifnull { return 1 }
+    let scratch_pages = mem::pages{ &mem, size = 134217728 } ifnull { return 1 }
+    let mut module_arena = arena::new{ buf = module_pages }
+    let mut scratch = arena::new{ buf = scratch_pages }
+    let mut rm = res::open{ &fs, heap = &h, game } iferr err{ error } {
+        _ = @fmt(&io, "dlgcheck: no game data at {}: {}\n", game, error)
+        io::flush{ &io }
+        return 1
+    }
+    run{ &io, &fs, &h, &rm, &module_arena, &scratch, game, only } iferr err{ error } {
+        _ = @fmt(&io, "dlgcheck: failed: {}\n", error)
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return 0
+}
+
+fn run { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut rm: res::Manager, mut module_arena: arena::Arena, mut scratch: arena::Arena, game: []u8, only: []u8 } -> ! {
+    let w = try world::make{ fs, io, heap = &h, rm = &rm, module_arena = &module_arena, scratch = &scratch, seed = 1, saves = "kotor/out/saves-test" }
+    let tlk_path = try path::join(heap::Heap){ realloc = heap::alloc, heap = &h, dir = game, name = "dialog.tlk" }
+    w.tlk = tlk::load(heap::Heap){ &fs, realloc = heap::alloc, heap = &h, path = tlk_path } iferr null
+    let mut seen = map::new(u64, u8, heap::Heap){ realloc = heap::alloc, heap = &h, hash = map::hash_u64, eq = map::eq_u64 }
+    let mut t = Totals{
+        dialogs = 0, failed = 0, types = [0; 3], animated = 0, entries = 0, replies = 0, links = 0, starting = 0, one_liners = 0, mixed = 0,
+        scripts = 0, scripts_missing = 0, sounds = 0, sounds_missing = 0, texts = 0, texts_missing = 0, voiced = 0, explicit_delay = 0, angles = [0; 8],
+    }
+    if only.len == 0 {
+        try check_all{ w, &seen, &t }
+        let dir = try path::join(heap::Heap){ realloc = heap::alloc, heap = &h, dir = game, name = "modules" }
+        let names = try fs::list{ &fs, heap = &h, realloc = heap::alloc, path = dir }
+        let mut i: usize = 0
+        while i < names.len {
+            let n = names[i]
+            i = i + 1
+            if n.len > 4 and ci::eq{ a = n[n.len - 4..], b = ".rim" } and not ci::ends_with{ s = n, suffix = "_s.rim" } {
+                try mount_and_check{ w, &fs, &rm, name = n[..n.len - 4], &seen, &t }
+            } else if n.len > 4 and ci::eq{ a = n[n.len - 4..], b = ".mod" } {
+                try mount_and_check{ w, &fs, &rm, name = n[..n.len - 4], &seen, &t }
+            }
+        }
+    } else {
+        try mount_and_check{ w, &fs, &rm, name = only, &seen, &t }
+    }
+    _ = @fmt(&w.io, "dialogues read: {} ({} failed)\n", t.dialogs, t.failed)
+    _ = @fmt(&w.io, "ConversationType 0: {}, 1 (computer): {}, 2 (always a conversation): {}; AnimatedCut: {}\n", t.types[0], t.types[1], t.types[2], t.animated)
+    _ = @fmt(&w.io, "entries {}, replies {}, links {}, starting links {}\n", t.entries, t.replies, t.links, t.starting)
+    _ = @fmt(&w.io, "starting entries that play as barks: {}; entries offering empty and non-empty replies together: {}\n", t.one_liners, t.mixed)
+    _ = @fmt(&w.io, "entry camera angles 0..6: {} {} {} {} {} {} {}\n", t.angles[0], t.angles[1], t.angles[2], t.angles[3], t.angles[4], t.angles[5], t.angles[6])
+    _ = @fmt(&w.io, "scripts named {} (missing {}); sounds named {} (missing {}); texts {} (absent from dialog.tlk {}); entries with explicit Delay {}\n",
+        t.scripts, t.scripts_missing, t.sounds, t.sounds_missing, t.texts, t.texts_missing, t.explicit_delay)
+}
+
+fn mount_and_check { mut w: world::World, mut fs: Fs, mut rm: res::Manager, name: []u8, seen: *mut map::Map(u64, u8, heap::Heap), t: *mut Totals } -> ! {
+    try res::mount_module{ &fs, &rm, name, save = "" }
+    try check_all{ &w, seen, t }
+}
+
+// Every DLG the search finds now that has not been read yet.
+fn check_all { mut w: world::World, seen: *mut map::Map(u64, u8, heap::Heap), t: *mut Totals } -> ! {
+    let found = try res::list_type(arena::Arena){ rm = w.rm.*, kind = restype::Type::dlg, realloc = arena::alloc, heap = w.scratch }
+    let mut i: usize = 0
+    while i < found.len {
+        let name = found[i].name
+        i = i + 1
+        // The same name with another size is another dialogue (modules carry their own versions).
+        let key = @wrap_add(@wrap_mul(resref::hash{ key = name }, 31), @as(u64, found[i - 1].loc.size))
+        if map::get{ m = seen.*, key } != null { continue }
+        try map::put{ m = seen, key, value = 1 }
+        t.dialogs = t.dialogs + 1
+        let mut d = dlg::load{ &w, name } iferr err{ error } {
+            t.failed = t.failed + 1
+            _ = @fmt(&w.io, "{}: {}\n", name, error)
+            continue
+        }
+        check_one{ &w, d = &d, name, t }
+        dlg::free{ &w, d = &d }
+    }
+    arena::reset{ heap = w.scratch }
+}
+
+fn script_ok { mut w: world::World, name: resref::ResRef, t: *mut Totals } {
+    if resref::is_empty{ r = name } { return }
+    t.scripts = t.scripts + 1
+    if res::find_ref{ rm = w.rm.*, name, kind = restype::Type::ncs } == null { t.scripts_missing = t.scripts_missing + 1 }
+}
+
+fn check_node { mut w: world::World, n: *dlg::Node, t: *mut Totals } {
+    script_ok{ &w, name = n.script, t }
+    if not resref::is_empty{ r = n.sound } {
+        t.sounds = t.sounds + 1
+        if not dlg::sound_exists{ &w, name = n.sound } { t.sounds_missing = t.sounds_missing + 1 }
+    }
+    if n.text.strref >= 0 {
+        t.texts = t.texts + 1
+        let present = match w.tlk {
+            some{ value } => { (tlk::get{ t = value, strref = @trunc(u32, n.text.strref) } iferr null) != null }
+            null => { false }
+        }
+        if not present { t.texts_missing = t.texts_missing + 1 }
+    }
+    let mut k: usize = 0
+    while k < n.links.len {
+        script_ok{ &w, name = n.links[k].active, t }
+        k = k + 1
+    }
+    t.links = t.links + @trunc(u32, n.links.len)
+}
+
+fn check_one { mut w: world::World, d: *dlg::Dialog, name: resref::ResRef, t: *mut Totals } {
+    let ct = d.conversation_type
+    if ct >= 0 and ct <= 2 { t.types[@as(usize, ct)] = t.types[@as(usize, ct)] + 1 }
+    if d.animated_cut { t.animated = t.animated + 1 }
+    script_ok{ &w, name = d.end_script, t }
+    script_ok{ &w, name = d.abort_script, t }
+    t.entries = t.entries + @trunc(u32, d.entries.len)
+    t.replies = t.replies + @trunc(u32, d.replies.len)
+    t.starting = t.starting + @trunc(u32, d.starting.len)
+    let mut i: usize = 0
+    while i < d.starting.len {
+        script_ok{ &w, name = d.starting[i].active, t }
+        i = i + 1
+    }
+    i = 0
+    while i < d.entries.len {
+        let n = &d.entries[i]
+        check_node{ &w, n, t }
+        if n.camera_angle < 8 { t.angles[@as(usize, n.camera_angle)] = t.angles[@as(usize, n.camera_angle)] + 1 }
+        if n.wait_flags & dlg::WAIT_EXPLICIT_DELAY != 0 { t.explicit_delay = t.explicit_delay + 1 }
+        // Empty and non-empty replies together (the engine aborts when both pass).
+        let mut empty: usize = 0
+        let mut full: usize = 0
+        let mut k: usize = 0
+        while k < n.links.len {
+            let r = @as(usize, n.links[k].index)
+            k = k + 1
+            if r >= d.replies.len { continue }
+            let text = dlg::text_of{ w = &w, n = &d.replies[r], gender = 0 }
+            if text.len == 0 { empty = empty + 1 } else { full = full + 1 }
+        }
+        if empty > 0 and full > 0 { t.mixed = t.mixed + 1 }
+        i = i + 1
+    }
+    i = 0
+    while i < d.replies.len {
+        check_node{ &w, n = &d.replies[i], t }
+        i = i + 1
+    }
+    // Starting entries that would play as barks.
+    i = 0
+    while i < d.starting.len {
+        let e = @as(usize, d.starting[i].index)
+        i = i + 1
+        if e < d.entries.len and ct != dlg::TYPE_ALWAYS and dlg::is_one_liner{ d, entry = e } { t.one_liners = t.one_liners + 1 }
+    }
+}

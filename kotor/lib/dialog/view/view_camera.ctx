@@ -189,4 +189,11 @@ namespace dlgview {
         camera.look = math::vec3::add{ a = rig.eye, b = rig.forward }
         camera.style.fov = rig.fov
     }
+
+    // The room the picture is seen from: the player's, unless a shot is up, then the room under
+    // the camera (none, which shows every room, when it hangs outside the walkmeshes).
+    fn view_room { v: *View, w: *world::World, player_room: i32 } -> i32 {
+        if not v.overriding { return player_room }
+        return walkmap::room_at{ m = &w.walk, x = v.rig.eye.x, y = v.rig.eye.y, z = v.rig.eye.z }
+    }
 }
