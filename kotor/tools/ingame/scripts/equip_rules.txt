@@ -1,3 +1,6 @@
+# Equipment refusals: a two-handed weapon (left slot refused), armour in combat, a droid with
+# nothing to wear in its sensor slot.
+#   ... equip_rules.txt 54 18:e3_staff 22:e3_twohand 30:e3_armor 40:e3_droid 43:e3_droidhead 46:e3_none
 3 ui join carth
 4 ui stock
 6 ui menu equip

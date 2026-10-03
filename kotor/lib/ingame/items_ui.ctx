@@ -48,8 +48,8 @@ namespace items {
         try gui::set_list_text{ &g, panel, tag, text = utf8::view{ b }.bytes }
     }
 
-    // "current/max", or just "current" when that is too wide for the 56-pixel label (the original
-    // shortens it the same way).
+    // "current/max", or just "current" when that is too wide for the 56-pixel label (re/gui.md:
+    // the original shortens the text when it does not fit; how is not known).
     fn push_vitality { mut b: utf8::Builder(heap::Heap), hp: i32, hp_max: i32 } -> ! {
         if hp_max >= 1000 or hp >= 1000 or (hp_max >= 100 and hp >= 100) { try @fmt(&b, "{}", hp) } else { try @fmt(&b, "{}/{}", hp, hp_max) }
     }

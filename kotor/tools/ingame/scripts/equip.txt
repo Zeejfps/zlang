@@ -1,3 +1,6 @@
+# Equipment: point at the right weapon slot, click it (selection mode), click a weapon, click it
+# again to equip it. Window pixels: the panel is 640x480 centred in 1280x720.
+#   ... equip.txt 28 10:eq_hover 14:eq_select 18:eq_pick 22:eq_done
 3 ui join carth
 4 ui stock
 5 ui inv

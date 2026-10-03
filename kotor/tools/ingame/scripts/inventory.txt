@@ -1,3 +1,6 @@
+# Inventory: select a row, Use Item on armour (refusal box), dismiss it, cycle the six filters,
+# use an item.
+#   ... inventory.txt 44 11:iv_sel 14:iv_refuse 18:iv_back 21:iv_f1 24:iv_f2 27:iv_f3 30:iv_f4 33:iv_f5 36:iv_use
 3 ui join carth
 4 ui stock
 5 ui credits 1250
