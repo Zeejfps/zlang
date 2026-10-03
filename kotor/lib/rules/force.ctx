@@ -1,0 +1,361 @@
+// Force powers: what a cast costs, whether it can start, how it is resisted, and which powers a
+// character may learn (docs/re/rules.md section 3 and the prerequisites of section 6). Nothing
+// here changes the world: the casting action, the impact script and the effects they apply belong
+// to the engine and to fx/effects; this file answers the rule questions around them.
+//
+// API (all in namespace rules; `tables` is *Tables, `c` a *Creature whose stats are current):
+//
+//   force_point_cost{ tables, c, spell } -> i32            forceadjust.2da for party casters (3.2)
+//   has_enough_force_points{ tables, c, spell } -> bool    current + temporary FP >= cost
+//   spend_force_points{ tables, mut c, spell } -> bool     temporary pool first, never below 0
+//   force_power_dc{ c } -> i32 / DC_NO_CASTER              5 + level + WIS + CHA + Force Focus (3.5)
+//   caster_level{ tables, c, spell, override_level, from_class } -> i32
+//   equipped_type_mask{ tables, c } -> u32                 armour classes 0x01-0x20, lightsabers 0x40
+//   can_cast_spell{ tables, c, spell, alive, from_item } -> i32   a cast::* reason code (3.3)
+//   begin_cast{ tables, mut c, spell, alive, from_item } -> CastStart   the check, then the payment
+//   resist_force{ tables, target, spell, caster_level, mut rng } -> i32  resist::* (3.6)
+//   spell_phase_times{ tables, spell } -> PhaseTimes       conjuration, cast and catch lengths (ms)
+//   can_learn_force_power{ tables, c, spell, class, level_before, total_to_gain, pending } -> bool
+//   learnable_powers{ ..., mut out: IdList }               every power can_learn_force_power allows
+//   power_at_priority{ tables, light, position } -> i32    the auto-level order of powers
+//   power_class_level{ row, class } -> i32                 the level column of spells.2da for a class
+//
+// Decision: Force Push is goodevil '-' in spells.2da, so the forceadjust multiplier never touches
+//   it; the multiplied powers are the 'G' and 'E' ones (Cure, Heal, Stun ... / Lightning, Choke ...).
+// Decision: insufficient FP does not make SpendForcePoints fail in the engine (it floors at 0); the
+//   precondition is HasEnoughForcePoints, so can_cast_spell reports NOT_ENOUGH_FP and
+//   spend_force_points never refuses.
+// Decision: a power's prerequisites are "known or picked this level"; the exe's helper also asks
+//   for the Force points to cast the prerequisite right now, which I take for a decompiler
+//   accident (see can_learn_force_power).
+// Decision: the level column is compared with the character level BEFORE the level-up (the exe
+//   asks GetLevel before ApplyLevelUp), so a column of 9 is first offered going from 9 to 10.
+// Decision: ResistForce rolls its d20 only when the target's resistance is above 0, as the exe.
+//   The shipped creature templates cannot settle the level-column convention: 224 of 1539
+//   powers are above the character level, 267 above the level before, designers ignoring both.
+namespace rules {
+    // ---- a list of table rows (feat.2da or spells.2da), for the level-up lists
+
+    const ID_LIST_MAX: usize = 256
+
+    struct IdList { len: i32, ids: [ID_LIST_MAX]i32 }
+
+    fn push_id { mut list: IdList, id: i32 } {
+        if list.len >= @as(i32, ID_LIST_MAX) { return }
+        list.ids[@as(usize, list.len)] = id
+        list.len = list.len + 1
+    }
+
+    fn has_id { list: *IdList, id: i32 } -> bool {
+        let mut i: i32 = 0
+        while i < list.len {
+            if list.ids[@as(usize, i)] == id { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // ---- constants
+
+    // spells.2da goodevil as the engine tests it: 'G' (0x47) light power, 'E' (0x45) dark power.
+    const POWER_LIGHT: i32 = 71
+    const POWER_DARK: i32 = 69
+
+    // The DC of a power whose caster is gone (3.5).
+    const DC_NO_CASTER: i32 = 14
+
+    // Reasons can_cast_spell gives.
+    namespace cast {
+        const OK: i32 = 0
+        const DEAD: i32 = 1                 // the caster is dead or dying
+        const NO_SUCH_SPELL: i32 = 2        // not a spells.2da row, or a disabled one (usertype -2)
+        const FORBIDDEN_EQUIPMENT: i32 = 3  // armour (or a lightsaber) the power forbids
+        const MISSING_EQUIPMENT: i32 = 4    // a power that needs a lightsaber
+        const NOT_ENOUGH_FP: i32 = 5
+        const NO_CLASS: i32 = 6             // no class slot to cast from (not for item/feat talents)
+        const ENTANGLED: i32 = 7            // the cast starts, pays and is interrupted (feedback 0x41)
+    }
+
+    // ---- Force points (3.2)
+
+    // CSWSpell::GetForcePointCost (0x0059b8a0). Party-controlled casters pay forcepoints times the
+    // forceadjust.2da multiplier of row good-evil/10 (goodcost for a 'G' power, evilcost for an 'E'
+    // one), truncated; everybody else pays the base cost. The engine multiplies in the x87 unit: a
+    // float cell widened to 64 bits times the integer, then truncates, so 20 x 0.9 is 17 (0.9 is
+    // really 0.89999998), not the 18 that single-precision rounding would give. We do the product
+    // in f64 for the same reason.
+    fn force_point_cost { tables: *Tables, c: *Creature, spell: i32 } -> i32 {
+        let row = get_spell{ tables, row = spell } ifnull { return 0 }
+        let base = row.fp_cost
+        if not c.party { return base }
+        let mut idx = c.good_evil / 10
+        if idx < 0 { idx = 0 }
+        if idx > 10 { idx = 10 }
+        let t = raw_table{ tables, which = Tab::forceadjust }
+        let r = @as(usize, idx)
+        let mut mult: f32 = 1.0
+        if row.good_evil == POWER_LIGHT {
+            mult = twoda::get_float{ t, row = r, column = "goodcost" } ifnull 1.0
+        } else if row.good_evil == POWER_DARK {
+            mult = twoda::get_float{ t, row = r, column = "evilcost" } ifnull 1.0
+        }
+        let product: f64 = @as(f64, mult) * @as(f64, base)
+        return @as(i32, product)
+    }
+
+    // CSWSCreatureStats::HasEnoughForcePoints (0x005a5550): the class slot must exist and the
+    // current plus temporary pool must cover the cost.
+    fn has_enough_force_points { tables: *Tables, c: *Creature, spell: i32 } -> bool {
+        if c.nclasses < 1 { return false }
+        if get_spell{ tables, row = spell } == null { return false }
+        return c.fp + c.temp_fp >= force_point_cost{ tables, c, spell }
+    }
+
+    // CSWSCreatureStats::SpendForcePoints (0x005a55c0): the temporary pool pays first, the rest
+    // comes off the current pool, floored at 0. Returns false only for an unknown spell.
+    fn spend_force_points { tables: *Tables, mut c: Creature, spell: i32 } -> bool {
+        if get_spell{ tables, row = spell } == null { return false }
+        let cost = force_point_cost{ tables, c = &c, spell }
+        if cost <= c.temp_fp {
+            c.temp_fp = c.temp_fp - cost
+            return true
+        }
+        c.fp = c.fp + (c.temp_fp - cost)
+        c.temp_fp = 0
+        if c.fp < 0 { c.fp = 0 }
+        return true
+    }
+
+    // ---- DC and caster level (3.5)
+
+    // The best tier of the Force Focus line (88 +1, 89 +2, 90 +4).
+    fn force_focus_bonus { c: *Creature } -> i32 {
+        if has_feat{ c, feat = feat::FORCE_FOCUS_MASTERY } { return 4 }
+        if has_feat{ c, feat = feat::FORCE_FOCUS_ADVANCED } { return 2 }
+        if has_feat{ c, feat = feat::FORCE_FOCUS } { return 1 }
+        return 0
+    }
+
+    // GetForcePowerDC (0x004ef6e0): 5 + total level + WIS modifier + CHA modifier + Force Focus.
+    // The modifiers are the stats' (with effects); call recompute after changing abilities. A
+    // power with no caster uses DC_NO_CASTER; an area of effect uses its creator's DC.
+    fn force_power_dc { c: *Creature } -> i32 {
+        return 5 + total_level{ c } + c.stats.abil_mod[4] + c.stats.abil_mod[5] + force_focus_bonus{ c }
+    }
+
+    // GetCasterLevel / the level ResistForce uses (0x00536ad0, 0x00541cc0): an override (an item's
+    // spell) when set (>= 0); a creature casting from a class slot uses its total level; talents
+    // of item or feat origin (`from_class` false) and non-creatures use 2 x inate - 1, at least
+    // 10. Decision: the "at least 10" is the docs' (3.5), applied to every non-class cast.
+    fn caster_level { tables: *Tables, c: *Creature, spell: i32, override_level: i32, from_class: bool } -> i32 {
+        if override_level >= 0 { return override_level }
+        if from_class { return total_level{ c } }
+        let row = get_spell{ tables, row = spell } ifnull { return 10 }
+        let lvl = 2 * row.innate - 1
+        return if lvl < 10 { 10 } else { lvl }
+    }
+
+    // ---- the cast action (3.3)
+
+    // GetEquippedItemTypeMask (0x004efa80): over every equipment cell, baseitems.2da itemtype
+    // 31..36 (the six armour classes) set bits 0x01..0x20, 39..41 (the lightsabers) set 0x40.
+    // Jedi robes and clothing (37, 38) set nothing.
+    fn equipped_type_mask { tables: *Tables, c: *Creature } -> u32 {
+        let mut mask: u32 = 0
+        let mut i: usize = 0
+        while i < NUM_SLOTS {
+            let cell = &c.equip[i]
+            i = i + 1
+            if not cell.used { continue }
+            let bi = get_baseitem{ tables, row = cell.item.base_item } ifnull { continue }
+            let t = bi.item_type
+            if t >= 31 and t <= 36 {
+                mask = mask | (@as(u32, 1) << @as(u32, t - 31))
+            } else if t >= 39 and t <= 41 {
+                mask = mask | 0x40
+            }
+        }
+        return mask
+    }
+
+    // The checks of AIActionCastSpell (0x00514af0) in the order the action makes them, then the
+    // two the payment step adds. `alive` is false for a dead or dying caster; `from_item` is a
+    // talent cast from class slot 0xfe (an item property or a feat), which pays nothing and needs
+    // no class. A power the caster does not know is the action queue's concern, not checked here.
+    // ENTANGLED comes last: the cast begins, pays, and is then interrupted (begin_cast does this).
+    fn can_cast_spell { tables: *Tables, c: *Creature, spell: i32, alive: bool, from_item: bool } -> i32 {
+        if not alive { return cast::DEAD }
+        let row = get_spell{ tables, row = spell } ifnull { return cast::NO_SUCH_SPELL }
+        if not row.valid or row.user_type == -2 { return cast::NO_SUCH_SPELL }
+        let mask = equipped_type_mask{ tables, c }
+        let forbid = @trunc(u32, row.forbid_items)
+        let require = @trunc(u32, row.require_items)
+        if (mask & forbid) != 0 { return cast::FORBIDDEN_EQUIPMENT }
+        if (mask & require) != require { return cast::MISSING_EQUIPMENT }
+        if not from_item {
+            if c.nclasses < 1 { return cast::NO_CLASS }
+            if not has_enough_force_points{ tables, c, spell } { return cast::NOT_ENOUGH_FP }
+        }
+        if has_effect_kind{ c, kind = fx::ENTANGLE } { return cast::ENTANGLED }
+        return cast::OK
+    }
+
+    struct CastStart {
+        reason: i32,            // cast::OK, or why the cast did not go on (ENTANGLED: it started and broke)
+        paid: bool,             // Force points were spent
+        interrupted: bool,      // entangled: no impact follows (feedback 0x41)
+    }
+
+    // PayForcePowerCost (0x004eddd0) at the first frame of the action: the checks, then the Force
+    // points are spent (not for item or feat talents), and an entangled caster loses them anyway.
+    fn begin_cast { tables: *Tables, mut c: Creature, spell: i32, alive: bool, from_item: bool } -> CastStart {
+        let reason = can_cast_spell{ tables, c = &c, spell, alive, from_item }
+        if reason != cast::OK and reason != cast::ENTANGLED {
+            return CastStart{ reason, paid = false, interrupted = false }
+        }
+        let mut paid = false
+        if not from_item { paid = spend_force_points{ tables, c = &c, spell } }
+        return CastStart{ reason, paid, interrupted = reason == cast::ENTANGLED }
+    }
+
+    // CSWSpell phase lengths: conjuration, cast and catch time in milliseconds (the combat round
+    // the action opens is their sum).
+    struct PhaseTimes { conj_ms: i32, cast_ms: i32, catch_ms: i32, total_ms: i32 }
+
+    fn spell_phase_times { tables: *Tables, spell: i32 } -> PhaseTimes {
+        let row = get_spell{ tables, row = spell } ifnull {
+            return PhaseTimes{ conj_ms = 0, cast_ms = 0, catch_ms = 0, total_ms = 0 }
+        }
+        return PhaseTimes{
+            conj_ms = row.conj_time, cast_ms = row.cast_time, catch_ms = row.catch_time,
+            total_ms = row.conj_time + row.cast_time + row.catch_time,
+        }
+    }
+
+    // ---- ResistForce (3.6)
+
+    namespace resist {
+        const NONE: i32 = 0
+        const RESISTED: i32 = 1     // d20 + caster level fell short of the target's Force resistance
+        const IMMUNE: i32 = 2       // a SPELL_IMMUNITY effect names this power (or -1: every power)
+    }
+
+    // ResistForce (0x00541cc0). Spell immunity first (0x004ccfc0: an effect of type 0x32 whose
+    // first integer is the spell or -1), then, only for UserType 1 powers, a d20 roll plus the
+    // caster's level against the target's Force resistance; the die is rolled only when the
+    // resistance is above 0, as the engine does, so a target without it consumes no random number.
+    fn resist_force { tables: *Tables, target: *Creature, spell: i32, caster_level: i32, mut rng: Rng } -> i32 {
+        let row = get_spell{ tables, row = spell } ifnull { return resist::NONE }
+        let mut i: usize = 0
+        while i < @as(usize, target.nfx) {
+            let e = &target.fx[i]
+            i = i + 1
+            if e.kind == fx::SPELL_IMMUNITY and (e.ints[0] == spell or e.ints[0] == -1) {
+                return resist::IMMUNE
+            }
+        }
+        if row.user_type != 1 { return resist::NONE }
+        let fr = target.stats.force_resistance
+        if fr > 0 {
+            let roll = roll_dice{ &rng, count = 1, sides = 20 }
+            if roll + caster_level < fr { return resist::RESISTED }
+        }
+        return resist::NONE
+    }
+
+    // ---- learning powers (3.7, 4.4, 6)
+
+    // The level a class needs before it may take a power: the guardian, consular and sentinel
+    // columns, 255 (never) for the three non-Jedi player classes, `inate` for the rest
+    // (FUN_0059b650 at 0x0059b650).
+    fn power_class_level { row: *SpellRow, class: i32 } -> i32 {
+        if class >= 0 and class <= 2 { return 255 }
+        if class >= 3 and class <= 5 { return row.learn[@as(usize, class)] }
+        return row.innate
+    }
+
+    // CanLearnForcePower (0x005ac8f0) and the prerequisite walk it calls (0x005a7110):
+    //  - the spell is a Force power (UserType 1; 5 is accepted as the engine does) and the class a
+    //    Force class;
+    //  - it is neither known nor already picked in `pending` (the record being built);
+    //  - every prerequisite spell is known or picked ("Knowing the higher power does not remove
+    //    the lower one", 3.7);
+    //  - the character level before this level-up reaches the class column: the engine compares
+    //    GetLevel before it applies the record, so a power with column 9 is first offered when
+    //    going from level 9 to 10. That matches the game's published level requirements.
+    //  - at most `total_to_gain` powers per level: pending.npowers must still be below it.
+    // Decision: the engine's prerequisite helper also demands the Force points to cast the
+    // prerequisite right now (FUN_005a6e70, third argument 1); I take that for a decompiler or
+    // naming accident (it would stop upgrades whenever the pool is low) and test knowledge only.
+    // Decision: classpowergain.2da, not AutoLevelUp's 2-then-1, says how many powers a level
+    // gives (progress.ctx powers_to_gain); this function only enforces the count it is given.
+    fn can_learn_force_power { tables: *Tables, c: *Creature, spell: i32, class: i32, level_before: i32, total_to_gain: i32, pending: *LevelRecord } -> bool {
+        if total_to_gain <= pending.npowers { return false }
+        if not is_force_class{ tables, class } { return false }
+        let row = get_spell{ tables, row = spell } ifnull { return false }
+        if not row.valid or (row.user_type != 1 and row.user_type != 5) { return false }
+        if knows_power{ c, spell } { return false }
+        let mut i: usize = 0
+        while i < @as(usize, pending.npowers) {
+            if pending.powers[i] == spell { return false }
+            i = i + 1
+        }
+        if not power_prerequisites_met{ c, row, pending } { return false }
+        return level_before >= power_class_level{ row, class }
+    }
+
+    // Every prerequisite spell known or picked in the pending record.
+    fn power_prerequisites_met { c: *Creature, row: *SpellRow, pending: *LevelRecord } -> bool {
+        let mut p: usize = 0
+        while p < @as(usize, row.nprereq) and p < 4 {
+            let need = row.prereq[p]
+            p = p + 1
+            if knows_power{ c, spell = need } { continue }
+            let mut found = false
+            let mut i: usize = 0
+            while i < @as(usize, pending.npowers) {
+                if pending.powers[i] == need { found = true }
+                i = i + 1
+            }
+            if not found { return false }
+        }
+        return true
+    }
+
+    // Every power the level-up screen could offer now, in spells.2da order.
+    fn learnable_powers { tables: *Tables, c: *Creature, class: i32, level_before: i32, total_to_gain: i32, pending: *LevelRecord, mut out: IdList } {
+        out.len = 0
+        let mut s: usize = 0
+        while s < tables.spells.len {
+            let id = @as(i32, s)
+            s = s + 1
+            if can_learn_force_power{ tables, c, spell = id, class, level_before, total_to_gain, pending } {
+                push_id{ list = &out, id }
+            }
+        }
+    }
+
+    // The power at 1-based `position` of the auto-level order for a light-side (`light`) or
+    // dark-side character, -1 for none (FUN_005be6d0 at 0x005be6d0): a power whose
+    // light_recom / dark_recom column equals the position wins; failing that, the
+    // (position+1)-th power with no rank, in table order (the last one if there are fewer).
+    // Only Force powers (UserType 1 or 5) take part.
+    fn power_at_priority { tables: *Tables, light: bool, position: i32 } -> i32 {
+        let mut fallback: i32 = -1
+        let mut counted: i32 = -1
+        let mut i: usize = 0
+        while i < tables.spells.len {
+            let id = @as(i32, i)
+            let s = &tables.spells[i]
+            i = i + 1
+            if not s.valid or (s.user_type != 1 and s.user_type != 5) { continue }
+            let rank = if light { s.light_recom } else { s.dark_recom }
+            if rank == position { return id }
+            if rank <= 0 and counted != position {
+                fallback = id
+                counted = counted + 1
+            }
+        }
+        return fallback
+    }
+}

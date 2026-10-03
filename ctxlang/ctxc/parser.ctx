@@ -1240,9 +1240,10 @@ namespace parser {
 
     const ANY: u32 = 4294967295
 
-    const BUILTINS: [12]Builtin = [
+    const BUILTINS: [13]Builtin = [
         Builtin{ name = "size_of",  types = 1, lo = 0, hi = 0, usage = "@size_of(T)" },
         Builtin{ name = "align_of", types = 1, lo = 0, hi = 0, usage = "@align_of(T)" },
+        Builtin{ name = "offset_of", types = 1, lo = 1, hi = 1, usage = "@offset_of(T, field)" },
         Builtin{ name = "as",       types = 1, lo = 1, hi = 1, usage = "@as(T, x)" },
         Builtin{ name = "trunc",    types = 1, lo = 1, hi = 1, usage = "@trunc(T, x)" },
         Builtin{ name = "cast",     types = 1, lo = 1, hi = 1, usage = "@cast(*U, q)" },

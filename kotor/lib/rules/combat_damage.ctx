@@ -1,0 +1,668 @@
+// The damage roll (combat.md 6.1-6.4), the effects a hit puts on its target and resolve_attack,
+// which does the roll, the special-attack step, the damage and the on-hit properties in one call.
+// See combat.ctx for the overview and the decisions.
+//
+// API
+//   apply_difficulty_to_damage_roll{ &rng, roll, max, pc_attacker, npc_vs_pc, percent } -> i32
+//   roll_damage{ tables, &rng, atk, &def, &ev, sit, attack_index, combat_feat, critical, sneak, simulate } -> DamageRoll
+//   resolve_attack{ tables, &rng, atk, &def, &ev, sit, attack_index, combat_feat, simulate } -> AttackResolution
+//   make_damage_effects{ roll, creator } -> DamageEffects  the DAMAGE effects of a roll, one per type
+// Types: DamageRoll (dice and every bonus, the slots, the mitigation steps), CombatEffects (the
+// Effects a hit makes and whom they go to), AttackResolution.
+// `def` is `mut` because the defender's limited resistances and reductions are spent by a real
+// roll (`simulate` = false); `ev` takes the events of a spent effect's removal.
+// Private helpers are named combat_*.
+namespace rules {
+    // ---- difficulty scaling (6.1)
+
+    // diffsettings.2da by the configured difficulty. Decision: difficulty 0 (easy), 1 (normal) and 2
+    // (difficult) read the columns easy, normal and hardcore. The exe stores the file's five
+    // columns by a server value that counts from 0 at the first one (dmeasy), and the
+    // shipped numbers only make sense with easy = the second: row 3 MinPCDamagePercent is 50 on easy
+    // and empty on normal, row 4 MaxNPCDamagePercent is 50, 100, 100. An empty cell reads as 0.
+    fn combat_get_difficulty_setting { tables: *Tables, row: usize } -> i32 {
+        let t = raw_table{ tables, which = Tab::diffsettings }
+        let d = tables.settings.difficulty
+        let col: []u8 = if d <= 0 { "easy" } else if d == 1 { "normal" } else { "hardcore" }
+        return cell_int{ t, row, col, dflt = 0 }
+    }
+
+    // ApplyDifficultyToDamageRoll (0x00550d10). A PC attacker with percent p (MinPCDamagePercent):
+    // the roll is raised by (p + rand % (100 - p)) % of the maximum, capped at the maximum; when
+    // p % of the maximum is the maximum, the result is the maximum. An NPC against the PC with
+    // percent p (MaxNPCDamagePercent): below 100 the roll loses (100 - p) % of the maximum (at
+    // least 1 is left); above 100 it gains rand % (p - 100) % of the maximum. Zero changes nothing.
+    fn apply_difficulty_to_damage_roll { mut rng: Rng, roll: i32, max: i32, pc_attacker: bool, npc_vs_pc: bool, percent: i32 } -> i32 {
+        if pc_attacker {
+            if percent != 0 {
+                if max * percent / 100 != max {
+                    let r = next_rand{ &rng }
+                    let v = ((r % (100 - percent) + percent) * max) / 100 + roll
+                    if v < max { return v }
+                }
+                return max
+            }
+        } else if npc_vs_pc and percent != 0 {
+            if percent < 100 {
+                let v = roll - ((100 - percent) * max) / 100
+                return if v < 1 { 1 } else { v }
+            }
+            if percent != 100 {
+                let r = next_rand{ &rng }
+                return ((r % (percent - 100)) * max) / 100 + roll
+            }
+        }
+        return roll
+    }
+
+    // ---- effect damage bonuses (rules.md 1.7, GetTotalEffectBonus category 2)
+
+    const MAX_DAMAGE_GROUPS: usize = 36
+
+    // Two bonuses of one spell for the same damage types do not add: the better one (by the
+    // damagecost row's Rank) counts.
+    struct DamageGroup { spell: i32, flags: i32, row: i32 }
+
+    struct EffectDamage {
+        plus: i32,                  // increases, capped at 36
+        minus: i32,                 // decreases, capped at 36
+        slots: [15]i32,             // the increases by damage slot
+        minus_slots: [15]i32,
+    }
+
+    fn combat_get_row_rank { tables: *Tables, row: i32 } -> i32 {
+        if row < 0 { return 0 }
+        let t = raw_table{ tables, which = Tab::iprp_damagecost }
+        return cell_int{ t, row = @as(usize, row), col = "rank", dflt = 0 }
+    }
+
+    // The amount of an iprp_damagecost row: rows 1..5 are that flat amount, higher rows roll
+    // NumDice d Die, `times` times (a critical hit re-rolls them once per multiplier step).
+    fn combat_roll_row_amount { tables: *Tables, mut rng: Rng, row: i32, times: i32 } -> i32 {
+        if row < 6 { return if row > 0 { row * times } else { 0 } }
+        let d = damage_row_dice{ tables, row }
+        let mut sum = 0
+        let mut k = 0
+        while k < times {
+            sum = sum + roll_dice{ &rng, count = d.count, sides = d.die }
+            k = k + 1
+        }
+        return sum
+    }
+
+    fn combat_get_damage_slot { flags: i32 } -> usize {
+        let s = damage_slot{ flags }
+        return if s > 14 { 14 } else { s }
+    }
+
+    // Does an effect's attack-type filter admit this weapon attack type? 0 admits all; types 6 and
+    // 8 also admit effects made for 1 and 3, and 7 (GetTotalEffectBonus).
+    fn combat_hand_admits { hand: i32, wtype: i32 } -> bool {
+        if hand == 0 or hand == wtype { return true }
+        if wtype == watk::EXTRA and (hand == 1 or hand == 3) { return true }
+        if wtype == watk::UNARMED_EXTRA and hand == 7 { return true }
+        return false
+    }
+
+    // The extra damage of the attacker's DAMAGE_INCREASE and DAMAGE_DECREASE effects against this
+    // defender. Effects made for a hand (the equipped weapon's enhancement and damage properties)
+    // are added directly and each damage slot's increase passes through the defender's immunity and
+    // resistance; effects made for no hand (spells and scripts) are grouped by spell and
+    // damage types, the better of a group counting, and added as they are. Dice are rolled
+    // `mult` times on a critical hit; increases and decreases are each capped at 36. Decreases
+    // made for a hand do not roll dice (their amount is a plain number).
+    fn combat_sum_effect_damage { tables: *Tables, mut rng: Rng, atk: *Creature, mut def: Creature, mut ev: Events, vs: Versus, wtype: i32, mult: i32, mitigate: bool, simulate: bool } -> EffectDamage {
+        let mut out: EffectDamage
+        let mut acc: [15]i32
+        let mut dec: [15]i32
+        let mut up: [MAX_DAMAGE_GROUPS]DamageGroup
+        let mut dn: [MAX_DAMAGE_GROUPS]DamageGroup
+        let mut nup: usize = 0
+        let mut ndn: usize = 0
+        let mut i: usize = 0
+        while i < @as(usize, atk.nfx) {
+            let e = &atk.fx[i]
+            i = i + 1
+            let is_up = e.kind == fx::DAMAGE_INCREASE
+            if not is_up and e.kind != fx::DAMAGE_DECREASE { continue }
+            let flags = e.ints[1]
+            if flags == 0 or not combat_hand_admits{ hand = e.ints[5], wtype } { continue }
+            if not admits{ race_param = e.ints[2], align_param = e.ints[4], vs } { continue }
+            let row = e.ints[0]
+            let ds = combat_get_damage_slot{ flags }
+            if e.ints[5] != 0 {
+                if is_up {
+                    acc[ds] = acc[ds] + combat_roll_row_amount{ tables, &rng, row, times = mult }
+                } else if row > dec[ds] {
+                    dec[ds] = row
+                }
+                continue
+            }
+            // no hand: one entry per spell and set of damage types, the higher rank wins
+            let mut found = false
+            let mut g: usize = 0
+            let n = if is_up { nup } else { ndn }
+            while g < n and e.spell_id != -1 {
+                let cur = if is_up { up[g] } else { dn[g] }
+                if cur.spell == e.spell_id and cur.flags == flags {
+                    found = true
+                    if combat_get_row_rank{ tables, row } > combat_get_row_rank{ tables, row = cur.row } {
+                        if is_up { up[g].row = row } else { dn[g].row = row }
+                    }
+                    break
+                }
+                g = g + 1
+            }
+            if not found {
+                if is_up and nup < MAX_DAMAGE_GROUPS {
+                    up[nup] = DamageGroup{ spell = e.spell_id, flags, row }
+                    nup = nup + 1
+                } else if not is_up and ndn < MAX_DAMAGE_GROUPS {
+                    dn[ndn] = DamageGroup{ spell = e.spell_id, flags, row }
+                    ndn = ndn + 1
+                }
+            }
+        }
+        // the hand-specific increases by slot, through the defender's immunity and resistance
+        let mut s: usize = 0
+        while s < 15 {
+            let mut v = acc[s]
+            if v > 0 {
+                let flags = @as(i32, 1) << @as(u32, s)
+                if mitigate {
+                    v = apply_damage_immunity{ c = &def, amount = v, flags }
+                    v = apply_damage_resistance{ c = &def, amount = v, flags, simulate, ev = &ev }
+                    if v < 0 { v = 0 }
+                }
+                out.slots[s] = v
+                out.plus = out.plus + v
+            }
+            if dec[s] > 0 {
+                out.minus_slots[s] = dec[s]
+                out.minus = out.minus + dec[s]
+            }
+            s = s + 1
+        }
+        // the grouped ones, alternating increase and decrease as the exe walks its table
+        let mut k: usize = 0
+        while k < nup or k < ndn {
+            if k < nup {
+                let v = combat_roll_row_amount{ tables, &rng, row = up[k].row, times = mult }
+                let sl = combat_get_damage_slot{ flags = up[k].flags }
+                out.slots[sl] = out.slots[sl] + v
+                out.plus = out.plus + v
+            }
+            if k < ndn {
+                let v = combat_roll_row_amount{ tables, &rng, row = dn[k].row, times = mult }
+                let sl = combat_get_damage_slot{ flags = dn[k].flags }
+                out.minus_slots[sl] = out.minus_slots[sl] + v
+                out.minus = out.minus + v
+            }
+            k = k + 1
+        }
+        if out.plus > 36 { out.plus = 36 }
+        if out.minus > 36 { out.minus = 36 }
+        return out
+    }
+
+    // ---- the damage roll (6.1)
+
+    struct DamageRoll {
+        total: i32,                 // the damage the hit does after mitigation: what the log shows
+        slots: [15]i32,             // by damage-type slot (rules::dmg bits, slot = log2); they sum to total
+        weapon_slot: i32,
+        weapon_flags: i32,
+        weapon_type: i32,
+        off_hand: bool,
+        unarmed: bool,
+        critical: bool,
+        multiplier: i32,            // 1 when not critical
+        dice_count: i32,            // the weapon's dice
+        dice_sides: i32,
+        dice: i32,                  // what they rolled (all re-rolls of a critical), after difficulty scaling
+        sneak_dice: i32,
+        sneak: i32,                 // never multiplied
+        str_bonus: i32,             // melee only
+        spec_bonus: i32,            // Weapon Specialization +2
+        special_bonus: i32,         // Power Attack and the like
+        massive: i32,               // Massive Criticals, once
+        weapon_raw: i32,            // the weapon's damage before the defender's mitigation (at least 1)
+        absorbed_immunity: i32,     // taken off by immunity
+        weapon_damage: i32,         // after immunity, resistance and reduction
+        power: i32,                 // the attack's power against damage reduction
+        effect_plus: i32,           // effect bonuses (capped 36)
+        effect_minus: i32,
+        pc_percent: i32,            // the difficulty percentages applied (100: none)
+        forced: bool,
+        killing_blow: bool,         // total >= the defender's hit points
+    }
+
+    // The weapon an attack deals its damage with: an off-hand attack's left weapon, else the weapon
+    // of the attack's type.
+    fn combat_find_damage_weapon { tables: *Tables, c: *Creature, wtype: i32, off_hand: bool } -> ?*Item {
+        if off_hand {
+            let left = equipped_item{ c, mask = slot::LEFT }
+            if left != null { return left }
+        }
+        return combat_find_weapon{ tables, c, wtype }
+    }
+
+    // GetUnarmedDamageRoll: 1d2 for tiny and small creatures, 1d1 for medium and larger.
+    fn combat_get_unarmed_sides { size: i32 } -> i32 {
+        return if size < 3 { 2 } else { 1 }
+    }
+
+    // GetDamageRoll (0x005a9050) for attack `attack_index`. `critical` is result 2 and `sneak` the
+    // roll's sneak flag. Order of draws: the weapon dice (once per critical multiplier step, each
+    // followed by its difficulty draw), the sneak dice, Massive Criticals, the effect dice. The
+    // defender's mitigation is immunity, resistance, reduction on the weapon's damage; with
+    // `simulate` no limited resistance or reduction is spent (a preview).
+    // Decisions: the power against DAMAGE_REDUCTION is the weapon's enhancement bonus 0..5, 0
+    // unarmed; the effect damage bonus is added to the total (the exe keeps it apart in the
+    // record, which makes no sense for what the player sees); a Massive Criticals row below 6
+    // adds that flat amount (the exe rolls nothing there and adds a leftover register).
+    fn roll_damage { tables: *Tables, mut rng: Rng, atk: *Creature, mut def: Creature, mut ev: Events, sit: *AttackSituation, attack_index: i32, combat_feat: i32, critical: bool, sneak: bool, simulate: bool } -> DamageRoll {
+        let v = combat_look_up_attack{ tables, atk, attack_index, combat_feat }
+        let mut r: DamageRoll
+        r.critical = critical
+        r.off_hand = v.off_hand
+        r.weapon_type = v.wtype
+        r.pc_percent = 100
+        r.multiplier = 1
+
+        // the weapon: the off-hand attack's left weapon, else the attack type's
+        let weapon = combat_find_damage_weapon{ tables, c = atk, wtype = v.wtype, off_hand = v.off_hand }
+        r.weapon_flags = 1
+        if weapon != null { r.weapon_flags = damage_flags_of{ tables, item = weapon } }
+        let wslot = combat_get_damage_slot{ flags = r.weapon_flags }
+        r.weapon_slot = @as(i32, wslot)
+
+        // a plot target takes nothing; a cutscene attack deals what it says
+        let plot = if sit.target_object { sit.target_plot } else { def.plot }
+        if plot or (sit.forced and sit.forced_damage >= 0) {
+            let amount = if sit.forced and sit.forced_damage >= 0 and not plot { sit.forced_damage } else { 0 }
+            r.forced = true
+            r.total = amount
+            r.weapon_damage = amount
+            r.slots[wslot] = amount
+            r.killing_blow = amount >= sit.defender_hp
+            return r
+        }
+
+        let mult = if critical { critical_multiplier{ tables, c = atk, off_hand = v.off_hand } } else { 1 }
+        r.multiplier = mult
+
+        // difficulty setup: the PC against a non-PC, or an NPC against the PC
+        let mut pc_attacker = false
+        let mut npc_vs_pc = false
+        let mut pct = 100
+        if not sit.target_object {
+            if atk.is_pc and not def.is_pc {
+                pc_attacker = true
+                pct = combat_get_difficulty_setting{ tables, row = 3 }
+            } else if not atk.is_pc and def.is_pc {
+                npc_vs_pc = true
+                pct = combat_get_difficulty_setting{ tables, row = 4 }
+            }
+        }
+        r.pc_percent = pct
+
+        // 3: the dice
+        let mut count = 0
+        let mut sides = 0
+        let mut armed = false
+        let mut damage_none = false
+        if weapon != null {
+            damage_none = weapon_damage_none{ item = weapon }
+            let bi = get_baseitem{ tables, row = weapon.base_item }
+            if bi != null {
+                armed = bi.item_type != 19 and bi.item_type != 20
+                if armed {
+                    if v.wtype >= 3 and v.wtype <= 5 {
+                        let md = weapon_monster_damage{ tables, item = weapon }
+                        count = md.count
+                        sides = md.die
+                    } else {
+                        count = bi.num_dice
+                        sides = bi.die
+                    }
+                }
+            }
+        }
+        r.unarmed = not armed
+        let mut dice = 0
+        if armed {
+            let max = count * sides
+            let mut k = 0
+            while k < mult {
+                let roll = roll_dice{ &rng, count, sides }
+                dice = dice + apply_difficulty_to_damage_roll{ &rng, roll, max, pc_attacker, npc_vs_pc, percent = pct }
+                k = k + 1
+            }
+            if damage_none { dice = 0 }
+        } else {
+            count = 1
+            sides = combat_get_unarmed_sides{ size = atk.stats.size }
+            let mut k = 0
+            while k < mult {
+                let roll = roll_dice{ &rng, count = 1, sides }
+                dice = dice + apply_difficulty_to_damage_roll{ &rng, roll, max = sides, pc_attacker, npc_vs_pc, percent = pct }
+                k = k + 1
+            }
+        }
+        r.dice_count = count
+        r.dice_sides = sides
+        r.dice = dice
+
+        // 6: sneak attack dice, added once
+        if sneak {
+            let f = combat_find_sneak_feat{ c = atk }
+            if f >= feat::SNEAK_ATTACK_1 {
+                r.sneak_dice = f - feat::SNEAK_ATTACK_1 + 1
+                r.sneak = roll_dice{ &rng, count = r.sneak_dice, sides = 6 }
+            }
+        }
+
+        // 7: STR (melee only), Weapon Specialization, the combat feat's bonus
+        if not v.ranged { r.str_bonus = atk.stats.abil_mod[0] }
+        if weapon != null {
+            let wb = get_baseitem{ tables, row = weapon.base_item }
+            if wb != null {
+                if wb.spec_feat > 0 and has_feat{ c = atk, feat = wb.spec_feat } { r.spec_bonus = 2 }
+            }
+        }
+        r.special_bonus = combat_get_special_damage{ feat = v.feat }
+        let bonus = r.str_bonus + r.spec_bonus + r.special_bonus
+        let mut weapon_dmg = dice + r.sneak + bonus * mult
+        if critical and weapon != null {
+            let row = weapon_massive_criticals_row{ item = weapon }
+            if row > 0 {
+                let md = damage_row_dice{ tables, row }
+                r.massive = if md.count > 0 { roll_dice{ &rng, count = md.count, sides = md.die } } else { row }
+                weapon_dmg = weapon_dmg + r.massive
+            }
+        }
+
+        // 8: the effect bonuses (pushed through the defender's immunity and resistance per slot)
+        let vs = if sit.target_object { no_versus{} } else { versus_creature{ c = &def } }
+        let fxd = combat_sum_effect_damage{ tables, &rng, atk, &def, &ev, vs, wtype = v.wtype, mult, mitigate = not sit.target_object, simulate }
+        r.effect_plus = fxd.plus
+        r.effect_minus = fxd.minus
+
+        // 9, 10: at least 1, then the defender's immunity, resistance and reduction
+        if weapon_dmg < 1 { weapon_dmg = 1 }
+        r.weapon_raw = weapon_dmg
+        r.power = if weapon != null and armed { weapon_enhancement{ tables, item = weapon } } else { 0 }
+        let mut after = weapon_dmg
+        if not sit.target_object {
+            r.absorbed_immunity = weapon_dmg - apply_damage_immunity{ c = &def, amount = weapon_dmg, flags = r.weapon_flags }
+            after = mitigate_damage{ c = &def, amount = weapon_dmg, flags = r.weapon_flags, power = r.power, simulate, ev = &ev }
+        }
+        r.weapon_damage = after
+
+        // the record: the weapon's damage in its slot and the effect increases in theirs (trimmed
+        // to the cap of 36); each decrease comes off its own slot first, then the weapon's, then the
+        // others, and all of them together by at most the capped 36
+        r.slots[wslot] = after
+        let mut s: usize = 0
+        let mut raw_plus = 0
+        while s < 15 {
+            r.slots[s] = r.slots[s] + fxd.slots[s]
+            raw_plus = raw_plus + fxd.slots[s]
+            s = s + 1
+        }
+        if raw_plus > fxd.plus { combat_remove_damage{ slots = &r.slots, first = 14, weapon = wslot, amount = raw_plus - fxd.plus } }
+        let mut budget = fxd.minus
+        s = 0
+        while s < 15 {
+            let want = if fxd.minus_slots[s] < budget { fxd.minus_slots[s] } else { budget }
+            if want > 0 {
+                combat_remove_damage{ slots = &r.slots, first = s, weapon = wslot, amount = want }
+                budget = budget - want
+            }
+            s = s + 1
+        }
+        let mut total = 0
+        s = 0
+        while s < 15 {
+            total = total + r.slots[s]
+            s = s + 1
+        }
+        r.total = total
+        r.killing_blow = total >= sit.defender_hp
+        return r
+    }
+
+    // Takes `amount` off the damage slots: `first` first, then the weapon's slot, then the rest in order.
+    fn combat_remove_damage { mut slots: [15]i32, first: usize, weapon: usize, amount: i32 } {
+        let mut left = amount
+        let take1 = if slots[first] < left { slots[first] } else { left }
+        slots[first] = slots[first] - take1
+        left = left - take1
+        let take2 = if slots[weapon] < left { slots[weapon] } else { left }
+        slots[weapon] = slots[weapon] - take2
+        left = left - take2
+        let mut s: usize = 0
+        while s < 15 and left > 0 {
+            let take = if slots[s] < left { slots[s] } else { left }
+            slots[s] = slots[s] - take
+            left = left - take
+            s = s + 1
+        }
+    }
+
+    // ---- what a hit puts on the creatures
+
+    const MAX_COMBAT_FX: usize = 8
+
+    // An effect the engine applies after the attack: to the defender, or to the attacker itself
+    // (the 3-second armour class penalty of a combat feat).
+    struct CombatEffect { to_attacker: bool, effect: Effect }
+
+    struct CombatEffects { len: i32, items: [MAX_COMBAT_FX]CombatEffect }
+
+    fn combat_push_effect { mut out: CombatEffects, to_attacker: bool, e: Effect } {
+        if @as(usize, out.len) >= MAX_COMBAT_FX { return }
+        out.items[@as(usize, out.len)] = CombatEffect{ to_attacker, effect = e }
+        out.len = out.len + 1
+    }
+
+    struct DamageEffects { len: i32, items: [15]Effect }
+
+    // The damage of a roll as DAMAGE effects (fx::make_damage), one for each damage type that did
+    // any: amount = the slot, types = the slot's bit, power = the attack's power. They are marked
+    // "combat damage" (ints[3] = 1: the roll already applied immunity, resistance and reduction, the
+    // effect handler must not) and "no feedback" (ints[4] = 1: the attack summary reports it).
+    // The engine applies them to the defender, in this order, before the other effects.
+    fn make_damage_effects { roll: *DamageRoll, creator: u32 } -> DamageEffects {
+        let mut out: DamageEffects
+        let mut s: usize = 0
+        while s < 15 {
+            if roll.slots[s] > 0 {
+                let mut e = fx::make_damage{ amount = roll.slots[s], types = @as(i32, 1) << @as(u32, s), power = roll.power }
+                e.ints[3] = 1
+                e.ints[4] = 1
+                fx::set_creator{ e = &e, creator, spell_id = -1 }
+                out.items[@as(usize, out.len)] = e
+                out.len = out.len + 1
+            }
+            s = s + 1
+        }
+        return out
+    }
+
+    // The AC penalty the attacker takes for 3 seconds with a combat feat (4.5): Critical Strike
+    // and Sniper Shot lines 5, Flurry and Rapid Shot 4, the improved ones 2, the master ones 1.
+    // Melee feats work in melee, ranged feats in ranged attacks; 0 for any other combination.
+    fn combat_get_self_penalty { feat: i32, ranged: bool } -> i32 {
+        if not ranged {
+            if feat == 8 or feat == 19 or feat == 81 { return 5 }
+            if feat == 11 { return 4 }
+            if feat == 91 { return 2 }
+            if feat == 53 { return 1 }
+        } else {
+            if feat == 31 or feat == 20 or feat == 77 { return 5 }
+            if feat == 30 { return 4 }
+            if feat == 92 { return 2 }
+            if feat == 26 { return 1 }
+        }
+        return 0
+    }
+
+    // One OnHit (32) property of the attack's weapon (ResolveOnHitEffect 0x005bafa0). Subtypes
+    // 0..5 (sleep, stun, paralysis, confusion, fear, slow) take their chance and duration in
+    // rounds of 6 s from iprp_onhitdur at Param1Value and roll the chance, then the defender's
+    // save (Will against mind or fear, Fortitude for paralysis) against the DC from iprp_onhitdc at
+    // CostValue (20 when missing); 6 drains one point of the ability in Param1Value for 30 s (Reflex
+    // save), 7 poisons (poison.2da row Param1Value), 8 kills a race (Param1Value, Fortitude vs death), 10
+    // kills outright; 9 (alignment slayer) does nothing in the exe. The save outcomes need the
+    // defender; `immune` effects are the engine's to refuse when it applies them.
+    fn combat_roll_on_hit_property { tables: *Tables, mut rng: Rng, def: *Creature, creator: u32, p: Prop, vs: Versus, mut out: CombatEffects } {
+        let sub = @as(i32, p.subtype)
+        if sub < 0 or sub > 10 { return }
+        let t_onhit = raw_table{ tables, which = Tab::iprp_onhit }
+        let param1 = cell_int{ t = t_onhit, row = @as(usize, sub), col = "param1resref", dflt = 0 }
+        let mut chance = if sub == 6 or sub == 7 or sub == 10 { 100 } else { 0 }
+        let mut rounds = 0
+        if param1 == 1 {
+            let t_dur = raw_table{ tables, which = Tab::iprp_onhitdur }
+            chance = cell_int{ t = t_dur, row = @as(usize, p.param1_value), col = "effectchance", dflt = 0 }
+            rounds = cell_int{ t = t_dur, row = @as(usize, p.param1_value), col = "durationrounds", dflt = 0 }
+        }
+        let t_dc = raw_table{ tables, which = Tab::iprp_onhitdc }
+        let dc = cell_int{ t = t_dc, row = @as(usize, p.cost_value), col = "value", dflt = 20 }
+        // which save, and against what
+        let mut save_which = 0
+        let mut save_type = 0
+        if sub == 0 or sub == 1 or sub == 3 { save_which = save::WILL; save_type = save::TYPE_MIND }
+        if sub == 2 { save_which = save::FORT; save_type = 18 }
+        if sub == 4 { save_which = save::WILL; save_type = save::TYPE_FEAR }
+        if sub == 5 { save_which = save::WILL }
+        if sub == 6 { save_which = save::REFLEX }
+        if sub == 8 { save_which = save::FORT; save_type = save::TYPE_DEATH }
+        if sub == 9 { return }
+        // the chance
+        if sub <= 5 {
+            if chance <= 0 or rounds <= 0 { return }
+            if not roll_percent{ &rng, percent = chance } { return }
+        } else if chance != 100 and not roll_percent{ &rng, percent = chance } {
+            return
+        }
+        if save_which != 0 {
+            let sv = saving_throw{ c = def, which = save_which, dc, save_type, vs, force_power = false, rng = &rng }
+            if sv.result != 0 { return }
+        }
+        let mut e: Effect
+        if sub == 0 {
+            e = fx::make_sleep{}
+        } else if sub == 1 {
+            e = fx::make_stunned{}
+        } else if sub == 2 {
+            e = fx::make_paralyze{}
+        } else if sub == 3 {
+            e = fx::make_confused{}
+        } else if sub == 4 {
+            e = fx::make_frightened{}
+        } else if sub == 5 {
+            e = fx::make_slow{}
+        } else if sub == 6 {
+            e = fx::make_ability_decrease{ ability = @as(i32, p.param1_value), amount = 1 }
+        } else if sub == 7 {
+            e = fx::make_poison{ poison_row = @as(i32, p.param1_value) }
+        } else {
+            if sub == 8 and (not vs.valid or vs.race != @as(i32, p.param1_value)) { return }
+            e = fx::make_death{ spectacular = false, feedback = true }
+        }
+        if sub <= 5 {
+            fx::set_timing{ e = &e, dur = dur::TEMPORARY, seconds = @as(f32, rounds) * 6.0 }
+        } else if sub == 6 {
+            fx::set_timing{ e = &e, dur = dur::TEMPORARY, seconds = 30.0 }
+            fx::set_subtype{ e = &e, sub = sub::SUPERNATURAL }
+        } else if sub == 7 {
+            fx::set_timing{ e = &e, dur = dur::PERMANENT, seconds = 0.0 }
+        }
+        fx::set_creator{ e = &e, creator, spell_id = -1 }
+        combat_push_effect{ out = &out, to_attacker = false, e }
+    }
+
+    // ---- resolve_attack
+
+    // Everything one attack of a round does, ready for the engine to apply.
+    struct AttackResolution {
+        roll: AttackRoll,
+        damage: DamageRoll,         // all zero when the attack missed
+        hit: bool,                  // results 1..3 (a deflected bolt is not one)
+        killing_blow: bool,
+        effects: CombatEffects,
+        stun_tried: bool,           // Critical Strike or Sniper Shot hit a creature: the stun save was rolled
+        stun_save: SaveResult,
+    }
+
+    // The attack roll, then (first attack of the round only) the combat feat's self penalty and the
+    // stun of Critical Strike and Sniper Shot after the defender's Fortitude save against the
+    // attacker's level plus STR (melee) or INT (ranged) modifier, then the damage of a hit, the
+    // coup de grace's death effect and the weapon's on-hit properties. Draws in that order.
+    // The defender is `mut` because mitigation spends limited resistances; `simulate` leaves them
+    // alone (a preview for the AI), and the effects returned are the same either way.
+    fn resolve_attack { tables: *Tables, mut rng: Rng, atk: *Creature, mut def: Creature, mut ev: Events, sit: *AttackSituation, attack_index: i32, combat_feat: i32, simulate: bool } -> AttackResolution {
+        let mut out: AttackResolution
+        out.roll = roll_attack{ tables, &rng, atk, def = &def, sit, attack_index, combat_feat }
+        let roll = out.roll
+        out.hit = is_hit_result{ result = roll.result }
+        let vs = versus_creature{ c = atk }
+        let feat = roll.combat_feat
+
+        // the special-attack step: the first attack of the round, with a combat feat
+        if attack_index == 0 and feat != 0 and not sit.forced {
+            let penalty = combat_get_self_penalty{ feat, ranged = roll.ranged }
+            if penalty > 0 {
+                let mut e = fx::make_ac{ kind = fx::AC_DECREASE, amount = penalty, mod_type = 0, types = fx::AC_ALL_A }
+                fx::set_timing{ e = &e, dur = dur::TEMPORARY, seconds = 3.0 }
+                fx::set_creator{ e = &e, creator = sit.attacker_id, spell_id = -1 }
+                combat_push_effect{ out = &out.effects, to_attacker = true, e }
+            }
+            let ability = combat_get_stun_ability{ feat }
+            if ability >= 0 and out.hit and not sit.target_object and penalty > 0 {
+                let mut s = fx::make_stunned{}
+                fx::set_timing{ e = &s, dur = dur::TEMPORARY, seconds = 6.0 }
+                fx::set_creator{ e = &s, creator = sit.attacker_id, spell_id = -1 }
+                if immune_to_effect{ tables, c = &def, e = &s, vs } == 0 {
+                    out.stun_tried = true
+                    let dc = atk.stats.level + atk.stats.abil_mod[@as(usize, ability)]
+                    out.stun_save = saving_throw{ c = &def, which = save::FORT, dc, save_type = 0, vs, force_power = false, rng = &rng }
+                    if out.stun_save.result == 0 { combat_push_effect{ out = &out.effects, to_attacker = false, e = s } }
+                }
+            }
+        }
+
+        if not out.hit { return out }
+        out.damage = roll_damage{ tables, &rng, atk, def = &def, ev = &ev, sit, attack_index, combat_feat,
+            critical = roll.result == outcome::CRITICAL, sneak = roll.sneak, simulate }
+        out.killing_blow = out.damage.killing_blow
+        if roll.coup_de_grace {
+            combat_add_coup_death{ out = &out.effects, creator = sit.attacker_id }
+        }
+
+        // the weapon's on-hit properties (a creature target that takes the damage)
+        let plot = def.plot
+        if not sit.target_object and not plot and not sit.forced {
+            let weapon = combat_find_damage_weapon{ tables, c = atk, wtype = roll.weapon_type, off_hand = roll.off_hand }
+            if weapon != null {
+                let list = weapon_on_hit_properties{ item = weapon }
+                let mut k: usize = 0
+                while k < @as(usize, list.len) {
+                    combat_roll_on_hit_property{ tables, &rng, def = &def, creator = sit.attacker_id, p = list.items[k], vs, out = &out.effects }
+                    k = k + 1
+                }
+            }
+        }
+        return out
+    }
+
+    // ResolvePostMeleeDamage: a coup de grace adds a death effect to what the hit applies.
+    fn combat_add_coup_death { mut out: CombatEffects, creator: u32 } {
+        let mut e = fx::make_death{ spectacular = false, feedback = true }
+        fx::set_creator{ e = &e, creator, spell_id = -1 }
+        combat_push_effect{ out = &out, to_attacker = false, e }
+    }
+}

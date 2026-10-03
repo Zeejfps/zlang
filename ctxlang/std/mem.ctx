@@ -1,11 +1,11 @@
 // std: mem. Memory beyond the stack.
 //
-// `pages` takes `mut mem: Mem`. Only `main` receives a `Mem`, from the runtime, so a function
-// can get memory this way only if its caller passes it down. Everything else allocates from
-// buffers it is given (§14), usually an arena over pages:
+// `pages` and `reserve` take `mut mem: Mem`. Only `main` receives a `Mem`, from the runtime, so
+// a function can get memory this way only if its caller passes it down. Everything else
+// allocates from buffers it is given (§14), usually an arena over reserved memory:
 //
 //   fn main { mut io: Io, mut mem: Mem } -> i32 {
-//       let buf = mem::pages{ &mem, size = 67108864 } ifnull { return 1 }   // 64 MiB
+//       let buf = mem::reserve{ &mem, size = 1073741824 } ifnull { return 1 }   // 1 GiB, used as reached
 //       let mut heap = arena::new{ buf }
 //       let mut xs = list::new(i32){ realloc = arena::alloc, &heap }
 //       ...
@@ -27,4 +27,20 @@ namespace mem {
         let p = os::pages{ &mem, size = n } ifnull { return null }
         return @slice(p, n)
     }
+
+    // Memory for an arena (arena::new) that may need much less than its size: zeroed and
+    // page-aligned, as `pages` is, but made usable as the arena reaches it. On Windows only that
+    // part is committed, so a generous size costs address space rather than memory; elsewhere
+    // the OS supplies untouched pages on first use anyway. Anything but an arena over it must
+    // use `pages`: a byte no arena has handed out may not be there.
+    fn reserve { mut mem: Mem, size: usize } -> ?alloc::Bytes {
+        if size == 0 { return slice::empty(u8){} }
+        if size > 18446744073709551615 - (PAGE - 1) { return null }
+        let n = (size + PAGE - 1) / PAGE * PAGE
+        let p = reserve_os{ &mem, size = n } ifnull { return null }
+        return @slice(p, n)
+    }
+
+    #c::symbol{ name = "ctx_reserve" }
+    extern fn reserve_os { mut mem: Mem, size: usize } -> ?*mut u8
 }

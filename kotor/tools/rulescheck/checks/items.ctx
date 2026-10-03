@@ -1,0 +1,1119 @@
+// Checks for lib/rules equip.ctx and itemprops.ctx (docs/re/party-items-saves.md 4.1-4.6):
+//
+//   check::run_items{ &io, &fs, &r, &heap, rm, tables }
+//
+// (a) every UTI of the install is read and its properties run through the effect builders: no
+//     handler may fail or build an invalid effect, and the counts per property type are printed;
+//     the CanEquipItem rules are run over the same items for three creatures;
+// (b) hand-computed equip / unequip examples;
+// (c) the CanEquipItem cases of the doc's data notes (4.3).
+// A clean run prints the per-property table and one summary line; a failure prints a line.
+namespace check {
+    const IT_TYPES: usize = 64
+    const IT_ID: u32 = 0x7f000123              // the object id the corpus gives every item
+
+    struct ItemStats {
+        uti: i32,
+        parse_failed: i32,
+        bad_base: i32,                          // BaseItem not a row of baseitems.2da
+        over_cap: i32,                          // more properties listed than MAX_PROPS
+        max_props: i32,
+        with_gated: i32,                        // UTIs with a property that needs an upgrade
+        max_effects: i32,
+        lost: i32,
+        bad_effects: i32,
+        printed: i32,
+        cost0: i32,                             // effects with a zero amount because CostValue is 0
+        bad_cost_table: i32,                    // DamageImmunity properties whose CostTable is not iprp_immuncost
+        feats9: [256]i32,                       // BonusFeats subtypes
+        items: [IT_TYPES]i32,                  // UTIs carrying the type
+        props: [IT_TYPES]i32,                   // properties of the type
+        gated: [IT_TYPES]i32,                   // ... that need an upgrade
+        inactive: [IT_TYPES]i32,                // ... and the upgrade is not installed
+        built: [IT_TYPES]i32,                   // effects built
+        silent: [IT_TYPES]i32,                  // active properties of a handled type that built nothing
+        zero: [IT_TYPES]i32,                    // built effects whose amount is not positive
+        hist: [IT_TYPES][16]i32,                // CostValue histogram (0..15) of the types in items_histogram
+    }
+
+    // The equip survey of the corpus: outcomes of can_equip_item for three creatures.
+    struct EquipSurvey {
+        tried: i32,
+        human_ok: i32,
+        human_no: [4]i32,                       // class 0xd0, alignment 0xcf, race 0xd1, feat 0x6b
+        human_silent: i32,                      // refused without a message (non_equippable, bad slot ...)
+        droid_ok: i32,
+        droid_no_race: i32,
+        wookiee_ok: i32,
+        wookiee_no_race: i32,
+        humans_only_droid_ok: i32,              // DroidOrHuman 1 items a droid may wear: must be 0
+        denied_wookiee_ok: i32,                 // DenySubrace bit 1 items a Wookiee may wear: must be 0
+    }
+
+    // ---- builders for the hand-made examples
+
+    fn items_new_item { base: i32 } -> rules::Item {
+        let mut it = rules::make_item{}
+        it.base_item = base
+        return it
+    }
+
+    fn items_add_prop { mut it: rules::Item, name: i32, subtype: i32, cost_value: i32 } {
+        it.props[@as(usize, it.nprops)] = rules::Prop{
+            name = @as(u16, name), subtype = @as(u16, subtype), cost_table = 0, cost_value = @as(u16, cost_value),
+            param1 = 255, param1_value = 0, upgrade = 255, uses_per_day = 255,
+        }
+        it.nprops = it.nprops + 1
+    }
+
+    // An item with one property.
+    fn items_prop_item { base: i32, name: i32, subtype: i32, cost_value: i32 } -> rules::Item {
+        let mut it = items_new_item{ base }
+        items_add_prop{ it = &it, name, subtype, cost_value }
+        return it
+    }
+
+    // A level 1 soldier of the race with 12 in every ability and 20 hit points.
+    fn items_new_creature { tables: *rules::Tables, race: i32, subrace: i32 } -> rules::Creature {
+        let mut c = rules::make_creature{}
+        c.race = race
+        c.subrace = subrace
+        c.abil = [12; 6]
+        c.nclasses = 1
+        c.classes[0] = rules::ClassSlot{ class = rules::cls::SOLDIER, level = 1 }
+        c.hp_base = 20
+        rules::recompute{ tables, c = &c }
+        return c
+    }
+
+    fn items_env { tables: *rules::Tables } -> rules::Env {
+        return rules::Env{ tables, now = rules::Time{ day = 0, ms = 0 }, hp = 100 }
+    }
+
+    fn items_mix { d: i64, v: i64 } -> i64 { return @wrap_add(@wrap_mul(d, 31), v) }
+
+    // A number that changes when anything the equipment can touch changes: the derived stats, the
+    // effect count and which cells are in use. Used to show equip + unequip leaves a creature as it was.
+    fn items_digest { c: *rules::Creature } -> i64 {
+        let s = &c.stats
+        let mut d: i64 = 7
+        d = items_mix{ d, v = @as(i64, c.nfx) }
+        d = items_mix{ d, v = @as(i64, s.level) }
+        let mut i: usize = 0
+        while i < 6 {
+            d = items_mix{ d, v = @as(i64, s.abil[i]) }
+            d = items_mix{ d, v = @as(i64, s.abil_mod[i]) }
+            i = i + 1
+        }
+        d = items_mix{ d, v = @as(i64, s.bab) }
+        i = 0
+        while i < 3 {
+            d = items_mix{ d, v = @as(i64, s.save_base[i]) }
+            d = items_mix{ d, v = @as(i64, s.save_effect[i]) }
+            i = i + 1
+        }
+        d = items_mix{ d, v = @as(i64, s.max_hp) }
+        d = items_mix{ d, v = @as(i64, s.max_fp) }
+        i = 0
+        while i < rules::NUM_SKILLS {
+            d = items_mix{ d, v = @as(i64, s.skill[i]) }
+            i = i + 1
+        }
+        d = items_mix{ d, v = @as(i64, s.ac_natural) }
+        d = items_mix{ d, v = @as(i64, s.ac_armour) }
+        d = items_mix{ d, v = @as(i64, s.ac_shield) }
+        d = items_mix{ d, v = @as(i64, s.ac_deflection) }
+        d = items_mix{ d, v = @as(i64, s.ac_dodge) }
+        d = items_mix{ d, v = @as(i64, s.force_resistance) }
+        d = items_mix{ d, v = @as(i64, s.state) }
+        i = 0
+        while i < rules::NUM_SLOTS {
+            d = items_mix{ d, v = if c.equip[i].used { 1 } else { 0 } }
+            i = i + 1
+        }
+        return d
+    }
+
+    // The n-th effect of a kind on a creature, or null.
+    fn items_nth_effect { c: *rules::Creature, kind: i32, n: i32 } -> ?*rules::Effect {
+        let mut seen = 0
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) {
+            if c.fx[i].kind == kind {
+                if seen == n { return &c.fx[i] }
+                seen = seen + 1
+            }
+            i = i + 1
+        }
+        return null
+    }
+
+    // How many effects on the creature have this creator.
+    fn items_count_creator { c: *rules::Creature, creator: u32 } -> i32 {
+        let mut n = 0
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) {
+            if c.fx[i].creator == creator { n = n + 1 }
+            i = i + 1
+        }
+        return n
+    }
+
+    fn items_count_events { ev: *rules::Events, kind: i32 } -> i32 {
+        let mut n = 0
+        let mut i: usize = 0
+        while i < @as(usize, ev.len) {
+            if ev.items[i].kind == kind { n = n + 1 }
+            i = i + 1
+        }
+        return n
+    }
+
+    // An effect's kind and first two integers.
+    fn items_expect_fx { mut io: Io, mut r: Report, name: []u8, e: *rules::Effect, kind: i32, i0: i32, i1: i32 } {
+        if e.kind == kind and e.ints[0] == i0 and e.ints[1] == i1 {
+            r.passed = r.passed + 1
+            return
+        }
+        r.failed = r.failed + 1
+        _ = @fmt(&io, "FAIL {}: kind {} ints {} {} (want {} {} {})\n", name, e.kind, e.ints[0], e.ints[1], kind, i0, i1)
+    }
+
+    // The effects of the item's first property, as the builder makes them.
+    fn items_one { tables: *rules::Tables, item: *rules::Item, slot: u32 } -> rules::PropFx {
+        let mut out: rules::PropFx
+        rules::build_property_effects{ tables, item, p = &item.props[0], slot, creator = 77, out = &out }
+        return out
+    }
+
+    // ---- (a) the corpus
+
+    // Properties that have an apply handler (4.6): a handled property that builds nothing is a bug.
+    fn items_has_handler { name: i32 } -> bool {
+        if name >= 0 and name <= 9 { return true }
+        if name >= 11 and name <= 21 { return true }
+        if name >= 24 and name <= 27 { return true }
+        if name == 29 or (name >= 33 and name <= 36) or (name >= 38 and name <= 40) { return true }
+        return name == 47 or name == 50 or name == 52 or name == 54 or name == 55 or name == 56 or name == 59
+    }
+
+    // Which integer holds the amount of an effect kind (-1: the kind carries no amount).
+    fn items_amount_index { kind: i32 } -> i32 {
+        if kind == rules::fx::ATTACK_INCREASE or kind == rules::fx::ATTACK_DECREASE { return 0 }
+        if kind == rules::fx::DAMAGE_INCREASE or kind == rules::fx::DAMAGE_DECREASE { return 0 }
+        if kind == rules::fx::SAVING_THROW_INCREASE or kind == rules::fx::SAVING_THROW_DECREASE { return 0 }
+        if kind == rules::fx::DAMAGE_REDUCTION or kind == rules::fx::FORCE_RESISTANCE_INCREASE { return 0 }
+        if kind == rules::fx::REGENERATE { return 0 }
+        if kind == rules::fx::ABILITY_INCREASE or kind == rules::fx::ABILITY_DECREASE { return 1 }
+        if kind == rules::fx::AC_INCREASE or kind == rules::fx::AC_DECREASE { return 1 }
+        if kind == rules::fx::SKILL_INCREASE or kind == rules::fx::SKILL_DECREASE { return 1 }
+        if kind == rules::fx::DAMAGE_IMMUNITY_INCREASE or kind == rules::fx::DAMAGE_IMMUNITY_DECREASE { return 1 }
+        if kind == rules::fx::DAMAGE_RESISTANCE { return 1 }
+        return -1
+    }
+
+    fn items_in_histogram { name: i32 } -> bool {
+        return name == 14 or name == 16 or name == 17 or name == 18 or name == 25 or name == 5 or name == 35
+    }
+
+    // The slot to ask for: the right hand for anything that can go there, else the lowest slot bit;
+    // the right hand when the base item fits no slot (so a hand is still known).
+    fn items_pick_slot { tables: *rules::Tables, item: *rules::Item } -> u32 {
+        let bi = rules::get_baseitem{ tables, row = item.base_item } ifnull { return rules::slot::RIGHT }
+        if (bi.equip_slots & rules::slot::RIGHT) != 0 { return rules::slot::RIGHT }
+        let mut bit: u32 = 1
+        let mut n = 0
+        while n < 32 {
+            if (bi.equip_slots & bit) != 0 { return bit }
+            bit = bit << 1
+            n = n + 1
+        }
+        return rules::slot::RIGHT
+    }
+
+    // One UTI: counts per property type and the invariants of what the builders make.
+    fn items_scan_item { mut io: Io, mut st: ItemStats, tables: *rules::Tables, item: *rules::Item, listed: usize, label: resref::ResRef } {
+        st.uti = st.uti + 1
+        let bi = rules::get_baseitem{ tables, row = item.base_item }
+        if bi == null {
+            st.bad_base = st.bad_base + 1
+            if st.printed < 12 {
+                st.printed = st.printed + 1
+                _ = @fmt(&io, "  uti {}: base item {} is not in baseitems.2da\n", label, item.base_item)
+            }
+        }
+        if listed > rules::MAX_PROPS { st.over_cap = st.over_cap + 1 }
+        if item.nprops > st.max_props { st.max_props = item.nprops }
+        let slot = items_pick_slot{ tables, item }
+        let mut seen: [IT_TYPES]bool
+        let mut one: rules::PropFx
+        let mut any_gated = false
+        let mut sum_built = 0
+        let mut i: usize = 0
+        while i < @as(usize, item.nprops) {
+            let p = &item.props[i]
+            i = i + 1
+            let name = @as(i32, p.name)
+            if name < 0 or @as(usize, name) >= IT_TYPES {
+                st.bad_effects = st.bad_effects + 1
+                _ = @fmt(&io, "  uti {}: property type {} out of range\n", label, name)
+                continue
+            }
+            let t = @as(usize, name)
+            st.props[t] = st.props[t] + 1
+            if not seen[t] {
+                seen[t] = true
+                st.items[t] = st.items[t] + 1
+            }
+            if items_in_histogram{ name } {
+                let cv = @as(usize, p.cost_value)
+                if cv < 16 { st.hist[t][cv] = st.hist[t][cv] + 1 }
+            }
+            if name == rules::ip::DAMAGE_IMMUNITY and p.cost_table != 5 { st.bad_cost_table = st.bad_cost_table + 1 }
+            if name == rules::ip::BONUS_FEATS and p.subtype < 256 { st.feats9[@as(usize, p.subtype)] = st.feats9[@as(usize, p.subtype)] + 1 }
+            if p.upgrade != rules::ip::NATIVE {
+                st.gated[t] = st.gated[t] + 1
+                any_gated = true
+            }
+            if not rules::prop_active{ item, p } {
+                st.inactive[t] = st.inactive[t] + 1
+                continue
+            }
+            if rules::is_usable_property{ name } { continue }
+            rules::build_property_effects{ tables, item, p, slot, creator = IT_ID, out = &one }
+            st.built[t] = st.built[t] + one.len
+            sum_built = sum_built + one.len
+            if one.len == 0 and items_has_handler{ name } {
+                st.silent[t] = st.silent[t] + 1
+                if st.printed < 12 {
+                    st.printed = st.printed + 1
+                    _ = @fmt(&io, "  uti {}: property {} subtype {} cost {} built nothing\n", label, name, p.subtype, p.cost_value)
+                }
+            }
+            let mut k: usize = 0
+            while k < @as(usize, one.len) {
+                let e = &one.items[k]
+                k = k + 1
+                if e.kind <= 0 or e.kind >= rules::fx::TYPE_COUNT or e.dur != rules::dur::EQUIPPED or e.creator != IT_ID {
+                    st.bad_effects = st.bad_effects + 1
+                    _ = @fmt(&io, "  uti {}: property {} built a bad effect (kind {} dur {})\n", label, name, e.kind, e.dur)
+                }
+                let ai = items_amount_index{ kind = e.kind }
+                if ai >= 0 and e.ints[@as(usize, ai)] <= 0 {
+                    // CostValue 0 is row 0 of every cost table ("Random", value 0): the data itself
+                    // asks for nothing, and the apply handler drops the effect. Any other row that
+                    // yields nothing is a lookup that failed.
+                    if p.cost_value == 0 {
+                        st.cost0 = st.cost0 + 1
+                    } else {
+                        st.zero[t] = st.zero[t] + 1
+                        if st.printed < 12 {
+                            st.printed = st.printed + 1
+                            _ = @fmt(&io, "  uti {}: property {} subtype {} cost {} gives amount {}\n", label, name, p.subtype, p.cost_value, e.ints[@as(usize, ai)])
+                        }
+                    }
+                }
+            }
+        }
+        if any_gated { st.with_gated = st.with_gated + 1 }
+
+        // the whole-item builder agrees with the sum of its parts
+        let mut all: rules::ItemFx
+        rules::item_effects{ tables, item, slot, creator = IT_ID, out = &all }
+        if all.len + all.lost != sum_built {
+            st.bad_effects = st.bad_effects + 1
+            _ = @fmt(&io, "  uti {}: item_effects made {} (+{} lost), the parts {}\n", label, all.len, all.lost, sum_built)
+        }
+        if all.len > st.max_effects { st.max_effects = all.len }
+        st.lost = st.lost + all.lost
+        let mut k: usize = 0
+        while k < @as(usize, all.len) {
+            let e = &all.items[k]
+            k = k + 1
+            if e.id < rules::ITEM_FX_ID_BASE or e.exposed or e.sub != 0 {
+                st.bad_effects = st.bad_effects + 1
+                _ = @fmt(&io, "  uti {}: effect {} has id {} exposed {} sub {}\n", label, k, e.id, e.exposed, e.sub)
+            }
+        }
+    }
+
+    // can_equip_item for the creature: counts the outcome by feedback number.
+    fn items_survey_one { tables: *rules::Tables, c: *rules::Creature, item: *rules::Item, slot: u32 } -> rules::EquipCheck {
+        return rules::can_equip_item{ tables, c, item, slot, from_player = true, in_combat_attacked = false }
+    }
+
+    fn items_survey_item { mut sv: EquipSurvey, tables: *rules::Tables, human: *rules::Creature, droid: *rules::Creature, wookiee: *rules::Creature, item: *rules::Item } {
+        let bi = rules::get_baseitem{ tables, row = item.base_item } ifnull { return }
+        if bi.equip_slots == 0 { return }
+        sv.tried = sv.tried + 1
+        let slot = items_pick_slot{ tables, item }
+        let h = items_survey_one{ tables, c = human, item, slot }
+        if h.ok {
+            sv.human_ok = sv.human_ok + 1
+        } else if h.feedback == rules::eqmsg::CLASS {
+            sv.human_no[0] = sv.human_no[0] + 1
+        } else if h.feedback == rules::eqmsg::ALIGNMENT {
+            sv.human_no[1] = sv.human_no[1] + 1
+        } else if h.feedback == rules::eqmsg::RACE {
+            sv.human_no[2] = sv.human_no[2] + 1
+        } else if h.feedback == rules::eqmsg::FEAT {
+            sv.human_no[3] = sv.human_no[3] + 1
+        } else {
+            sv.human_silent = sv.human_silent + 1
+        }
+        let d = items_survey_one{ tables, c = droid, item, slot }
+        if d.ok { sv.droid_ok = sv.droid_ok + 1 }
+        if not d.ok and d.feedback == rules::eqmsg::RACE { sv.droid_no_race = sv.droid_no_race + 1 }
+        // humans-only items (DroidOrHuman 1) must refuse a droid, unless the item is the stim exception
+        let stim = rules::has_property_subtype{ item, name = rules::ip::CAST_SPELL, subtype = 129 }
+        if d.ok and bi.droid_or_human == 1 and not stim { sv.humans_only_droid_ok = sv.humans_only_droid_ok + 1 }
+        let w = items_survey_one{ tables, c = wookiee, item, slot }
+        if w.ok { sv.wookiee_ok = sv.wookiee_ok + 1 }
+        if not w.ok and w.feedback == rules::eqmsg::RACE { sv.wookiee_no_race = sv.wookiee_no_race + 1 }
+        if w.ok and (bi.deny_subrace & 2) != 0 { sv.denied_wookiee_ok = sv.denied_wookiee_ok + 1 }
+    }
+
+    fn items_print_table { mut io: Io, st: *ItemStats, tables: *rules::Tables } {
+        _ = @fmt(&io, "  type name                      UTIs props gated off built silent zero\n")
+        let t = rules::raw_table{ tables, which = rules::Tab::itempropdef }
+        let mut k: usize = 0
+        while k < IT_TYPES {
+            if st.props[k] > 0 {
+                let label = rules::cell_text{ t, row = k, col = "label" }
+                _ = @fmt(&io, "  {} {} items {} props {} gated {} off {} built {} silent {} zero {}\n", k, label, st.items[k], st.props[k], st.gated[k], st.inactive[k], st.built[k], st.silent[k], st.zero[k])
+            }
+            k = k + 1
+        }
+    }
+
+    fn items_print_histogram { mut io: Io, st: *ItemStats } {
+        let mut k: usize = 0
+        while k < IT_TYPES {
+            if st.props[k] > 0 and items_in_histogram{ name = @as(i32, k) } {
+                _ = @fmt(&io, "  cost values of type {}:", k)
+                let mut v: usize = 0
+                while v < 16 {
+                    if st.hist[k][v] > 0 { _ = @fmt(&io, " {}x{}", v, st.hist[k][v]) }
+                    v = v + 1
+                }
+                _ = @fmt(&io, "\n")
+            }
+            k = k + 1
+        }
+    }
+
+    fn items_wants_uti { kind: u16 } -> bool {
+        return kind == @as(u16, restype::Type::uti)
+    }
+
+    // One copy of one UTI: parse it, read it as an Item, count and check it, survey who may wear it.
+    fn items_visit { mut io: Io, mut st: ItemStats, mut sv: EquipSurvey, tables: *rules::Tables, human: *rules::Creature, droid: *rules::Creature, wookiee: *rules::Creature, mut scratch: arena::Arena, copy: corpus::Copy, data: []u8 } {
+        arena::reset{ heap = &scratch }
+        let doc = gff::parse{ data, realloc = arena::alloc, heap = &scratch } iferr err{ error } {
+            st.parse_failed = st.parse_failed + 1
+            return
+        }
+        let mut item: rules::Item
+        rules::read_item{ tables, doc = &doc, s = gff::ROOT, out = &item }
+        let listed = gff::get_list{ doc, s = gff::ROOT, label = "PropertiesList" } ifnull slice::empty(u32){}
+        items_scan_item{ &io, &st, tables, item = &item, listed = listed.len, label = copy.name }
+        items_survey_item{ &sv, tables, human, droid, wookiee, item = &item }
+    }
+
+    // Every copy of every UTI the install has (modules and saves included), as corpus::each walks them.
+    fn items_scan_install { mut io: Io, mut fs: Fs, mut r: Report, mut heap: heap::Heap, rm: res::Manager, tables: *rules::Tables } {
+        let buf = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = slice::empty(u8){}, count = 4 * 1024 * 1024 } iferr err{ error } {
+            fail{ &io, &r, name = "items: no memory for the scratch arena", detail = 0 }
+            return
+        }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = buf, count = 0 }
+        let mut scratch = arena::new{ buf }
+        let mut st: ItemStats
+        let mut sv: EquipSurvey
+        // PROFICIENCY_ALL: the survey asks about the limits and the race rules, not the feats
+        let mut human = items_new_creature{ tables, race = rules::race::HUMAN, subrace = 0 }
+        let mut droid = items_new_creature{ tables, race = rules::race::DROID, subrace = 0 }
+        let mut wookiee = items_new_creature{ tables, race = rules::race::HUMAN, subrace = 1 }
+        rules::grant_feat{ c = &human, feat = rules::feat::PROFICIENCY_ALL }
+        rules::grant_feat{ c = &droid, feat = rules::feat::PROFICIENCY_ALL }
+        rules::grant_feat{ c = &wookiee, feat = rules::feat::PROFICIENCY_ALL }
+        _ = corpus::each{ &fs, h = &heap, game = rm.game, want = items_wants_uti, visit = items_visit{ &io, &st, &sv, tables, &human, &droid, &wookiee, &scratch, _ } } iferr err{ error } {
+            fail{ &io, &r, name = "items: walking the install failed", detail = 0 }
+            return
+        }
+
+        _ = @fmt(&io, "items: {} UTIs, {} with an upgrade-gated property, most properties on one {}, most effects from one {}\n", st.uti, st.with_gated, st.max_props, st.max_effects)
+        items_print_table{ &io, st = &st, tables }
+        items_print_histogram{ &io, st = &st }
+        _ = @fmt(&io, "  BonusFeats grant feats:")
+        let mut fk: usize = 0
+        while fk < 256 {
+            if st.feats9[fk] > 0 { _ = @fmt(&io, " {}x{}", fk, st.feats9[fk]) }
+            fk = fk + 1
+        }
+        _ = @fmt(&io, "\n  {} effects have a zero amount because the property's CostValue is 0 (the data's own; the apply handler drops them)\n", st.cost0)
+        _ = @fmt(&io, "equip survey ({} equippable): human with PROFICIENCY_ALL ok {} refused: class {} alignment {} race {} feat {} silent {}; droid ok {} (race refusals {}); wookiee ok {} (race refusals {})\n", sv.tried, sv.human_ok, sv.human_no[0], sv.human_no[1], sv.human_no[2], sv.human_no[3], sv.human_silent, sv.droid_ok, sv.droid_no_race, sv.wookiee_ok, sv.wookiee_no_race)
+
+        expect_eq{ &io, &r, name = "items: UTIs that do not parse", got = st.parse_failed, want = 0 }
+        expect_eq{ &io, &r, name = "items: UTIs with a base item missing from baseitems.2da", got = st.bad_base, want = 0 }
+        expect_eq{ &io, &r, name = "items: UTIs listing more than MAX_PROPS properties", got = st.over_cap, want = 0 }
+        expect_eq{ &io, &r, name = "items: effects dropped for lack of room", got = st.lost, want = 0 }
+        expect_eq{ &io, &r, name = "items: effects that break an invariant", got = st.bad_effects, want = 0 }
+        let mut silent = 0
+        let mut zero = 0
+        let mut k: usize = 0
+        while k < IT_TYPES {
+            silent = silent + st.silent[k]
+            zero = zero + st.zero[k]
+            k = k + 1
+        }
+        expect_eq{ &io, &r, name = "items: handled properties that built no effect", got = silent, want = 0 }
+        expect_eq{ &io, &r, name = "items: built effects with an amount of 0 or less", got = zero, want = 0 }
+        expect_eq{ &io, &r, name = "items: DamageImmunity properties with a CostTable other than iprp_immuncost", got = st.bad_cost_table, want = 0 }
+        expect_eq{ &io, &r, name = "items: equippable items a droid wears though DroidOrHuman says humans only", got = sv.humans_only_droid_ok, want = 0 }
+        expect_eq{ &io, &r, name = "items: items with DenySubrace 2 a Wookiee wears", got = sv.denied_wookiee_ok, want = 0 }
+        expect_eq{ &io, &r, name = "items: equippable items refused with no message for a human with PROFICIENCY_ALL", got = sv.human_silent, want = 0 }
+        // numbers the doc quotes from its own probe of the shipped UTIs (4.6)
+        expect_eq{ &io, &r, name = "items: UTIs (doc: 1,055)", got = st.uti, want = 1055 }
+        expect_eq{ &io, &r, name = "items: UTIs with gated properties (doc: 61)", got = st.with_gated, want = 61 }
+        expect_eq{ &io, &r, name = "items: Keen properties (doc: 47)", got = st.props[28], want = 47 }
+        expect_eq{ &io, &r, name = "items: OnHit properties (doc: 107)", got = st.props[32], want = 107 }
+        expect_eq{ &io, &r, name = "items: Massive_Criticals properties (doc: 36)", got = st.props[49], want = 36 }
+        expect_eq{ &io, &r, name = "items: Monster_damage properties (doc: 33)", got = st.props[51], want = 33 }
+        expect_eq{ &io, &r, name = "items: DamageMelee properties (doc: 1)", got = st.props[22], want = 1 }
+        expect_eq{ &io, &r, name = "items: DamageNone properties (doc: 5)", got = st.props[31], want = 5 }
+        expect_eq{ &io, &r, name = "items: ToHitPenalty properties (doc: never)", got = st.props[41], want = 0 }
+    }
+
+    // ---- (b) and (c): hand-computed examples
+
+    // build_property_effects, one property at a time, against the tables' numbers.
+    fn items_test_properties { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let right = rules::slot::RIGHT
+
+        // Enhancement +3 on a blaster pistol in the right hand: attack 3 (hand 1) and damage 3 of
+        // the blaster's damage type (flags 4096), hand 1; equipped duration, creator the item.
+        let it = items_prop_item{ base = 12, name = rules::ip::ENHANCEMENT, subtype = 0, cost_value = 3 }
+        let f = items_one{ tables, item = &it, slot = right }
+        expect_eq{ &io, &r, name = "enhancement: effects", got = f.len, want = 2 }
+        items_expect_fx{ &io, &r, name = "enhancement: attack", e = &f.items[0], kind = rules::fx::ATTACK_INCREASE, i0 = 3, i1 = 1 }
+        items_expect_fx{ &io, &r, name = "enhancement: damage", e = &f.items[1], kind = rules::fx::DAMAGE_INCREASE, i0 = 3, i1 = 4096 }
+        expect_eq{ &io, &r, name = "enhancement: damage hand", got = f.items[1].ints[5], want = 1 }
+        expect_eq{ &io, &r, name = "enhancement: race any", got = f.items[0].ints[2], want = rules::race::ANY }
+        expect_eq{ &io, &r, name = "enhancement: duration", got = f.items[0].dur, want = rules::dur::EQUIPPED }
+        expect_eq{ &io, &r, name = "enhancement: creator", got = f.items[0].creator, want = 77 }
+        expect_eq{ &io, &r, name = "enhancement: subtype bits", got = f.items[0].sub, want = 0 }
+        expect_true{ &io, &r, name = "enhancement: hidden from scripts", cond = not f.items[0].exposed }
+
+        // the same in the left hand is hand 2; in no hand (a belt) hand 0
+        let f2 = items_one{ tables, item = &it, slot = rules::slot::LEFT }
+        expect_eq{ &io, &r, name = "enhancement: left hand", got = f2.items[0].ints[1], want = 2 }
+        let f3 = items_one{ tables, item = &it, slot = rules::slot::BELT }
+        expect_eq{ &io, &r, name = "enhancement: no hand", got = f3.items[1].ints[5], want = 0 }
+
+        // a base item with no DamageFlags gets universal (8) damage
+        let belt = items_prop_item{ base = 47, name = rules::ip::ENHANCEMENT, subtype = 0, cost_value = 1 }
+        let fb = items_one{ tables, item = &belt, slot = rules::slot::BELT }
+        expect_eq{ &io, &r, name = "enhancement: default damage type", got = fb.items[1].ints[1], want = 8 }
+
+        // versus alignment: neutral lands in int3 (the original's quirk), light and dark in int4
+        let neu = items_prop_item{ base = 12, name = rules::ip::ENHANCEMENT_ALIGN, subtype = 1, cost_value = 1 }
+        let fn1 = items_one{ tables, item = &neu, slot = right }
+        expect_eq{ &io, &r, name = "vs neutral: int3", got = fn1.items[0].ints[3], want = 1 }
+        expect_eq{ &io, &r, name = "vs neutral: int4", got = fn1.items[0].ints[4], want = 0 }
+        let lite = items_prop_item{ base = 12, name = rules::ip::ENHANCEMENT_ALIGN, subtype = 2, cost_value = 1 }
+        let fl = items_one{ tables, item = &lite, slot = right }
+        expect_eq{ &io, &r, name = "vs light: int4 (attack)", got = fl.items[0].ints[4], want = 2 }
+        expect_eq{ &io, &r, name = "vs light: int4 (damage)", got = fl.items[1].ints[4], want = 2 }
+        let dark = items_prop_item{ base = 12, name = rules::ip::ATTACK_BONUS_ALIGN, subtype = 3, cost_value = 4 }
+        let fd = items_one{ tables, item = &dark, slot = right }
+        expect_eq{ &io, &r, name = "attack bonus vs dark: effects", got = fd.len, want = 1 }
+        items_expect_fx{ &io, &r, name = "attack bonus vs dark", e = &fd.items[0], kind = rules::fx::ATTACK_INCREASE, i0 = 4, i1 = 1 }
+        expect_eq{ &io, &r, name = "attack bonus vs dark: int4", got = fd.items[0].ints[4], want = 3 }
+        let rac = items_prop_item{ base = 12, name = rules::ip::ENHANCEMENT_RACE, subtype = 5, cost_value = 2 }
+        let fr = items_one{ tables, item = &rac, slot = right }
+        expect_eq{ &io, &r, name = "vs race: int2", got = fr.items[0].ints[2], want = 5 }
+        expect_eq{ &io, &r, name = "vs race: int2 (damage)", got = fr.items[1].ints[2], want = 5 }
+
+        // attack penalty -neg5: cost 2 gives a decrease of 2, attack only
+        let pen = items_prop_item{ base = 12, name = rules::ip::ATTACK_PENALTY, subtype = 0, cost_value = 2 }
+        let fp = items_one{ tables, item = &pen, slot = right }
+        expect_eq{ &io, &r, name = "attack penalty: effects", got = fp.len, want = 1 }
+        items_expect_fx{ &io, &r, name = "attack penalty", e = &fp.items[0], kind = rules::fx::ATTACK_DECREASE, i0 = 2, i1 = 1 }
+        let dpen = items_prop_item{ base = 12, name = rules::ip::DAMAGE_PENALTY, subtype = 0, cost_value = 3 }
+        let fdp = items_one{ tables, item = &dpen, slot = right }
+        items_expect_fx{ &io, &r, name = "damage penalty", e = &fdp.items[0], kind = rules::fx::DAMAGE_DECREASE, i0 = 3, i1 = 4096 }
+
+        // Damage: CostValue passes straight through (a row of iprp_damagecost), the type is 1 << subtype
+        let dm = items_prop_item{ base = 12, name = rules::ip::DAMAGE, subtype = 7, cost_value = 8 }
+        let fdm = items_one{ tables, item = &dm, slot = right }
+        items_expect_fx{ &io, &r, name = "damage 1d8 of type 128", e = &fdm.items[0], kind = rules::fx::DAMAGE_INCREASE, i0 = 8, i1 = 128 }
+        expect_eq{ &io, &r, name = "damage: only the damage effect", got = fdm.len, want = 1 }
+        let mut dma = items_prop_item{ base = 12, name = rules::ip::DAMAGE_ALIGN, subtype = 2, cost_value = 6 }
+        dma.props[0].param1_value = 6
+        let fda = items_one{ tables, item = &dma, slot = right }
+        items_expect_fx{ &io, &r, name = "damage vs light: type from Param1Value", e = &fda.items[0], kind = rules::fx::DAMAGE_INCREASE, i0 = 6, i1 = 64 }
+        expect_eq{ &io, &r, name = "damage vs light: int4", got = fda.items[0].ints[4], want = 2 }
+
+        // abilities
+        let ab = items_prop_item{ base = 47, name = rules::ip::ABILITY, subtype = 4, cost_value = 3 }
+        let fab = items_one{ tables, item = &ab, slot = rules::slot::BELT }
+        items_expect_fx{ &io, &r, name = "ability +3 WIS", e = &fab.items[0], kind = rules::fx::ABILITY_INCREASE, i0 = 4, i1 = 3 }
+        let dab = items_prop_item{ base = 47, name = rules::ip::DECREASE_ABILITY, subtype = 1, cost_value = 4 }
+        let fdab = items_one{ tables, item = &dab, slot = rules::slot::BELT }
+        items_expect_fx{ &io, &r, name = "ability -4 DEX", e = &fdab.items[0], kind = rules::fx::ABILITY_DECREASE, i0 = 1, i1 = 4 }
+
+        // armour class: dodge (the base item's AC_Enchant is 0), the bonus table, every damage type
+        let ac = items_prop_item{ base = 42, name = rules::ip::ARMOR, subtype = 0, cost_value = 2 }
+        let fac = items_one{ tables, item = &ac, slot = rules::slot::BODY }
+        items_expect_fx{ &io, &r, name = "armour +2", e = &fac.items[0], kind = rules::fx::AC_INCREASE, i0 = 0, i1 = 2 }
+        expect_eq{ &io, &r, name = "armour: all damage", got = fac.items[0].ints[5], want = 0x4007 }
+        expect_eq{ &io, &r, name = "armour: race any", got = fac.items[0].ints[2], want = rules::race::ANY }
+        let aca = items_prop_item{ base = 42, name = rules::ip::ARMOR_ALIGN, subtype = 1, cost_value = 1 }
+        let faca = items_one{ tables, item = &aca, slot = rules::slot::BODY }
+        expect_eq{ &io, &r, name = "armour vs neutral uses int4", got = faca.items[0].ints[4], want = 1 }
+        let acd = items_prop_item{ base = 42, name = rules::ip::ARMOR_DAMAGE, subtype = 2, cost_value = 1 }
+        let facd = items_one{ tables, item = &acd, slot = rules::slot::BODY }
+        expect_eq{ &io, &r, name = "armour vs damage type: int5", got = facd.items[0].ints[5], want = 2 }
+        let acr = items_prop_item{ base = 42, name = rules::ip::ARMOR_RACE, subtype = 5, cost_value = 1 }
+        let facr = items_one{ tables, item = &acr, slot = rules::slot::BODY }
+        expect_eq{ &io, &r, name = "armour vs race: int2", got = facr.items[0].ints[2], want = 5 }
+        let dac = items_prop_item{ base = 42, name = rules::ip::DECREASE_AC, subtype = 2, cost_value = 1 }
+        let fdac = items_one{ tables, item = &dac, slot = rules::slot::BODY }
+        items_expect_fx{ &io, &r, name = "decrease AC", e = &fdac.items[0], kind = rules::fx::AC_DECREASE, i0 = 2, i1 = 1 }
+
+        // damage immunity, resistance, reduction, vulnerability (row 3 of their tables)
+        let di = items_prop_item{ base = 47, name = rules::ip::DAMAGE_IMMUNITY, subtype = 5, cost_value = 3 }
+        let fdi = items_one{ tables, item = &di, slot = rules::slot::BELT }
+        items_expect_fx{ &io, &r, name = "damage immunity 25% fire-ish", e = &fdi.items[0], kind = rules::fx::DAMAGE_IMMUNITY_INCREASE, i0 = 32, i1 = 25 }
+        let dr = items_prop_item{ base = 47, name = rules::ip::DAMAGE_REDUCED, subtype = 2, cost_value = 3 }
+        let fdr = items_one{ tables, item = &dr, slot = rules::slot::BELT }
+        items_expect_fx{ &io, &r, name = "damage reduced 15/+3", e = &fdr.items[0], kind = rules::fx::DAMAGE_REDUCTION, i0 = 15, i1 = 3 }
+        let rs = items_prop_item{ base = 47, name = rules::ip::DAMAGE_RESIST, subtype = 4, cost_value = 2 }
+        let frs = items_one{ tables, item = &rs, slot = rules::slot::BELT }
+        items_expect_fx{ &io, &r, name = "damage resist 10", e = &frs.items[0], kind = rules::fx::DAMAGE_RESISTANCE, i0 = 16, i1 = 10 }
+        let vu = items_prop_item{ base = 47, name = rules::ip::DAMAGE_VULNERABILITY, subtype = 4, cost_value = 3 }
+        let fvu = items_one{ tables, item = &vu, slot = rules::slot::BELT }
+        items_expect_fx{ &io, &r, name = "vulnerability 25%", e = &fvu.items[0], kind = rules::fx::DAMAGE_IMMUNITY_DECREASE, i0 = 16, i1 = 25 }
+
+        // skills, saves, Force resistance
+        let sk = items_prop_item{ base = 47, name = rules::ip::SKILL, subtype = 6, cost_value = 4 }
+        let fsk = items_one{ tables, item = &sk, slot = rules::slot::BELT }
+        items_expect_fx{ &io, &r, name = "skill +4 security", e = &fsk.items[0], kind = rules::fx::SKILL_INCREASE, i0 = 6, i1 = 4 }
+        let dsk = items_prop_item{ base = 47, name = rules::ip::DECREASE_SKILL, subtype = 2, cost_value = 5 }
+        let fdsk = items_one{ tables, item = &dsk, slot = rules::slot::BELT }
+        items_expect_fx{ &io, &r, name = "skill -5 stealth", e = &fdsk.items[0], kind = rules::fx::SKILL_DECREASE, i0 = 2, i1 = 5 }
+        let sv1 = items_prop_item{ base = 47, name = rules::ip::SAVE_ELEMENT, subtype = 15, cost_value = 2 }
+        let fsv1 = items_one{ tables, item = &sv1, slot = rules::slot::BELT }
+        items_expect_fx{ &io, &r, name = "save +2 (element 15: all)", e = &fsv1.items[0], kind = rules::fx::SAVING_THROW_INCREASE, i0 = 2, i1 = 0 }
+        let sv2 = items_prop_item{ base = 47, name = rules::ip::SAVE_SPECIFIC, subtype = 3, cost_value = 1 }
+        let fsv2 = items_one{ tables, item = &sv2, slot = rules::slot::BELT }
+        items_expect_fx{ &io, &r, name = "save +1 will", e = &fsv2.items[0], kind = rules::fx::SAVING_THROW_INCREASE, i0 = 1, i1 = 3 }
+        expect_eq{ &io, &r, name = "save: race any", got = fsv2.items[0].ints[3], want = rules::race::ANY }
+        let sv3 = items_prop_item{ base = 47, name = rules::ip::REDUCED_SAVE, subtype = 2, cost_value = 3 }
+        let fsv3 = items_one{ tables, item = &sv3, slot = rules::slot::BELT }
+        items_expect_fx{ &io, &r, name = "save -3 reflex", e = &fsv3.items[0], kind = rules::fx::SAVING_THROW_DECREASE, i0 = 3, i1 = 2 }
+        let mr = items_prop_item{ base = 47, name = rules::ip::MAGIC_RESIST, subtype = 0, cost_value = 4 }
+        let fmr = items_one{ tables, item = &mr, slot = rules::slot::BELT }
+        items_expect_fx{ &io, &r, name = "Force resistance row 4", e = &fmr.items[0], kind = rules::fx::FORCE_RESISTANCE_INCREASE, i0 = 18, i1 = 0 }
+
+        // immunities: the subtype maps to IMMUNITY_TYPE_*; subtype 1 is two immunities
+        let im1 = items_prop_item{ base = 47, name = rules::ip::IMMUNITY, subtype = 1, cost_value = 0 }
+        let fim1 = items_one{ tables, item = &im1, slot = rules::slot::BELT }
+        expect_eq{ &io, &r, name = "immunity drain: effects", got = fim1.len, want = 2 }
+        items_expect_fx{ &io, &r, name = "immunity drain: negative level", e = &fim1.items[0], kind = rules::fx::IMMUNITY, i0 = rules::imm::NEGATIVE_LEVEL, i1 = rules::race::ANY }
+        expect_eq{ &io, &r, name = "immunity drain: ability decrease", got = fim1.items[1].ints[0], want = rules::imm::ABILITY_DECREASE }
+        let im2 = items_prop_item{ base = 47, name = rules::ip::IMMUNITY, subtype = 9, cost_value = 0 }
+        let fim2 = items_one{ tables, item = &im2, slot = rules::slot::BELT }
+        expect_eq{ &io, &r, name = "immunity death: type", got = fim2.items[0].ints[0], want = rules::imm::DEATH }
+        let im3 = items_prop_item{ base = 47, name = rules::ip::IMMUNITY, subtype = 0, cost_value = 0 }
+        let fim3 = items_one{ tables, item = &im3, slot = rules::slot::BELT }
+        expect_eq{ &io, &r, name = "immunity backstab: type", got = fim3.items[0].ints[0], want = rules::imm::SNEAK_ATTACK }
+        let fom = items_prop_item{ base = 47, name = rules::ip::FREEDOM_OF_MOVEMENT, subtype = 0, cost_value = 0 }
+        let ffom = items_one{ tables, item = &fom, slot = rules::slot::BELT }
+        expect_eq{ &io, &r, name = "freedom of movement: effects", got = ffom.len, want = 4 }
+        expect_eq{ &io, &r, name = "freedom of movement: last", got = ffom.items[3].ints[0], want = rules::imm::SPEED_DECREASE }
+
+        // regeneration, light, true seeing, walk, deflection, disguise, bonus feat
+        let rg = items_prop_item{ base = 47, name = rules::ip::REGENERATION, subtype = 0, cost_value = 5 }
+        let frg = items_one{ tables, item = &rg, slot = rules::slot::BELT }
+        items_expect_fx{ &io, &r, name = "regeneration 5 per 6 s", e = &frg.items[0], kind = rules::fx::REGENERATE, i0 = 5, i1 = 6000 }
+        expect_eq{ &io, &r, name = "regeneration: pool", got = frg.items[0].ints[4], want = 35 }
+        let rf = items_prop_item{ base = 47, name = rules::ip::REGENERATION_FORCE, subtype = 0, cost_value = 3 }
+        let frf = items_one{ tables, item = &rf, slot = rules::slot::BELT }
+        expect_eq{ &io, &r, name = "Force regeneration: pool", got = frf.items[0].ints[4], want = 54 }
+        let lt = items_prop_item{ base = 47, name = rules::ip::LIGHT, subtype = 0, cost_value = 0 }
+        let flt = items_one{ tables, item = &lt, slot = rules::slot::BELT }
+        items_expect_fx{ &io, &r, name = "light", e = &flt.items[0], kind = rules::fx::LIGHT, i0 = 5000, i1 = 0 }
+        let ts = items_prop_item{ base = 44, name = rules::ip::TRUE_SEEING, subtype = 0, cost_value = 0 }
+        let fts = items_one{ tables, item = &ts, slot = rules::slot::HEAD }
+        expect_eq{ &io, &r, name = "true seeing", got = fts.items[0].kind, want = rules::fx::TRUE_SEEING }
+        let sw = items_prop_item{ base = 47, name = rules::ip::SPECIAL_WALK, subtype = 2, cost_value = 0 }
+        let fsw = items_one{ tables, item = &sw, slot = rules::slot::BELT }
+        expect_eq{ &io, &r, name = "special walk: effects", got = fsw.len, want = 2 }
+        items_expect_fx{ &io, &r, name = "special walk animation", e = &fsw.items[0], kind = rules::fx::SET_WALK_ANIMATION, i0 = 2, i1 = 0 }
+        expect_eq{ &io, &r, name = "special walk: limits speed", got = fsw.items[1].kind, want = rules::fx::LIMIT_MOVEMENT_SPEED }
+        let df = items_prop_item{ base = 47, name = rules::ip::DEFLECT_INCREASE, subtype = 0, cost_value = 3 }
+        let fdf = items_one{ tables, item = &df, slot = rules::slot::BELT }
+        items_expect_fx{ &io, &r, name = "deflection +3", e = &fdf.items[0], kind = rules::fx::BLASTER_DEFLECTION_INCREASE, i0 = 0, i1 = 3 }
+        let dg = items_prop_item{ base = 85, name = rules::ip::DISGUISE, subtype = 123, cost_value = 0 }
+        let fdg = items_one{ tables, item = &dg, slot = rules::slot::BODY }
+        items_expect_fx{ &io, &r, name = "disguise", e = &fdg.items[0], kind = rules::fx::DISGUISE, i0 = 123, i1 = 0 }
+        let bf = items_prop_item{ base = 47, name = rules::ip::BONUS_FEATS, subtype = 55, cost_value = 0 }
+        let fbf = items_one{ tables, item = &bf, slot = rules::slot::BELT }
+        items_expect_fx{ &io, &r, name = "bonus feat", e = &fbf.items[0], kind = rules::fx::BONUS_FEAT, i0 = 55, i1 = 0 }
+
+        // properties with no handler or the usable ones make nothing
+        let kn = items_prop_item{ base = 12, name = rules::ip::KEEN, subtype = 0, cost_value = 0 }
+        expect_eq{ &io, &r, name = "keen builds nothing", got = items_one{ tables, item = &kn, slot = right }.len, want = 0 }
+        let cs = items_prop_item{ base = 47, name = rules::ip::CAST_SPELL, subtype = 5, cost_value = 1 }
+        expect_eq{ &io, &r, name = "cast spell builds nothing", got = items_one{ tables, item = &cs, slot = right }.len, want = 0 }
+
+        // a double-bladed weapon (WeaponWield 3): a second copy of attack and damage for hand 2
+        let dbl = items_prop_item{ base = 9, name = rules::ip::ENHANCEMENT, subtype = 0, cost_value = 1 }
+        let fdb = items_one{ tables, item = &dbl, slot = right }
+        expect_eq{ &io, &r, name = "double saber: effects", got = fdb.len, want = 4 }
+        expect_eq{ &io, &r, name = "double saber: hand of the first attack", got = fdb.items[0].ints[1], want = 1 }
+        expect_eq{ &io, &r, name = "double saber: damage hand 1", got = fdb.items[1].ints[5], want = 1 }
+        expect_eq{ &io, &r, name = "double saber: hand of the second attack", got = fdb.items[2].ints[1], want = 2 }
+        expect_eq{ &io, &r, name = "double saber: damage hand 2", got = fdb.items[3].ints[5], want = 2 }
+        let single = items_prop_item{ base = 8, name = rules::ip::ENHANCEMENT, subtype = 0, cost_value = 1 }
+        expect_eq{ &io, &r, name = "single saber: effects", got = items_one{ tables, item = &single, slot = right }.len, want = 2 }
+    }
+
+    // find_property, the upgrade rule, item_effects and the weapon questions of combat.
+    fn items_test_queries { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let mut w = items_new_item{ base = 12 }
+        items_add_prop{ it = &w, name = rules::ip::KEEN, subtype = 0, cost_value = 0 }
+        items_add_prop{ it = &w, name = rules::ip::MASSIVE_CRITICALS, subtype = 0, cost_value = 8 }
+        items_add_prop{ it = &w, name = rules::ip::ON_HIT, subtype = 1, cost_value = 2 }
+        items_add_prop{ it = &w, name = rules::ip::ON_HIT, subtype = 3, cost_value = 4 }
+        items_add_prop{ it = &w, name = rules::ip::ENHANCEMENT, subtype = 0, cost_value = 1 }
+        items_add_prop{ it = &w, name = rules::ip::ENHANCEMENT_ALIGN, subtype = 3, cost_value = 3 }
+        items_add_prop{ it = &w, name = rules::ip::ATTACK_BONUS, subtype = 0, cost_value = 5 }
+        items_add_prop{ it = &w, name = rules::ip::CAST_SPELL, subtype = 9, cost_value = 1 }
+        expect_true{ &io, &r, name = "keen found", cond = rules::weapon_keen{ item = &w } }
+        expect_true{ &io, &r, name = "damage none absent", cond = not rules::weapon_damage_none{ item = &w } }
+        expect_eq{ &io, &r, name = "massive criticals row", got = rules::weapon_massive_criticals_row{ item = &w }, want = 8 }
+        let dice = rules::damage_row_dice{ tables, row = 8 }
+        expect_eq{ &io, &r, name = "damagecost row 8 is 1d8: count", got = dice.count, want = 1 }
+        expect_eq{ &io, &r, name = "damagecost row 8 is 1d8: die", got = dice.die, want = 8 }
+        expect_eq{ &io, &r, name = "damagecost row 3 is flat", got = rules::damage_row_dice{ tables, row = 3 }.count, want = 0 }
+        let oh = rules::weapon_on_hit_properties{ item = &w }
+        expect_eq{ &io, &r, name = "on-hit list", got = oh.len, want = 2 }
+        expect_eq{ &io, &r, name = "on-hit second subtype", got = oh.items[1].subtype, want = 3 }
+        expect_eq{ &io, &r, name = "enhancement is the largest of 5, 6, 7 (not 38)", got = rules::weapon_enhancement{ tables, item = &w }, want = 3 }
+        expect_true{ &io, &r, name = "cast spell is found by find_property", cond = rules::has_property{ item = &w, name = rules::ip::CAST_SPELL } }
+        expect_true{ &io, &r, name = "cast spell 9 by subtype", cond = rules::has_property_subtype{ item = &w, name = rules::ip::CAST_SPELL, subtype = 9 } }
+        expect_true{ &io, &r, name = "cast spell 129 absent", cond = not rules::has_property_subtype{ item = &w, name = rules::ip::CAST_SPELL, subtype = 129 } }
+        let none = rules::weapon_monster_damage{ tables, item = &w }
+        expect_eq{ &io, &r, name = "no monster damage", got = none.count, want = 0 }
+        let mut claw = items_new_item{ base = 81 }
+        items_add_prop{ it = &claw, name = rules::ip::MONSTER_DAMAGE, subtype = 0, cost_value = 8 }
+        let md = rules::weapon_monster_damage{ tables, item = &claw }
+        expect_eq{ &io, &r, name = "monster damage row 8 (1d6): count", got = md.count, want = 1 }
+        expect_eq{ &io, &r, name = "monster damage row 8 (1d6): die", got = md.die, want = 6 }
+
+        // the upgrade rule: a gated property counts only with its bit set
+        let mut g = items_new_item{ base = 12 }
+        items_add_prop{ it = &g, name = rules::ip::KEEN, subtype = 0, cost_value = 0 }
+        items_add_prop{ it = &g, name = rules::ip::ENHANCEMENT, subtype = 0, cost_value = 2 }
+        g.props[0].upgrade = 3
+        g.props[1].upgrade = 5
+        expect_true{ &io, &r, name = "gated keen off", cond = not rules::weapon_keen{ item = &g } }
+        expect_eq{ &io, &r, name = "gated enhancement off", got = rules::weapon_enhancement{ tables, item = &g }, want = 0 }
+        let mut fxs: rules::ItemFx
+        rules::item_effects{ tables, item = &g, slot = rules::slot::RIGHT, creator = 5, out = &fxs }
+        expect_eq{ &io, &r, name = "gated: no effects", got = fxs.len, want = 0 }
+        g.upgrades = 1 << 5
+        rules::item_effects{ tables, item = &g, slot = rules::slot::RIGHT, creator = 5, out = &fxs }
+        expect_eq{ &io, &r, name = "gated: bit 5 turns the enhancement on", got = fxs.len, want = 2 }
+        expect_true{ &io, &r, name = "gated: keen (bit 3) still off", cond = not rules::weapon_keen{ item = &g } }
+        g.upgrades = (1 << 5) | (1 << 3)
+        expect_true{ &io, &r, name = "gated: keen on with bit 3", cond = rules::weapon_keen{ item = &g } }
+
+        // item_effects: ids are distinct, high-bit, derived from the creator
+        expect_true{ &io, &r, name = "ids: high bit", cond = fxs.items[0].id >= rules::ITEM_FX_ID_BASE }
+        expect_true{ &io, &r, name = "ids: distinct", cond = fxs.items[0].id != fxs.items[1].id }
+    }
+
+    // CanEquipItem (4.3) with hand-made creatures and items.
+    fn items_test_can_equip { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let mut human = items_new_creature{ tables, race = rules::race::HUMAN, subrace = 0 }
+        let sword = items_new_item{ base = 2 }
+        let saber = items_new_item{ base = 8 }
+        let pistol = items_new_item{ base = 12 }
+        let right = rules::slot::RIGHT
+
+        // proficiency: melee weapons need feat 44, lightsabers 43, pistols 39
+        expect_true{ &io, &r, name = "sword without melee proficiency", cond = not rules::can_equip_item{ tables, c = &human, item = &sword, slot = right, from_player = true, in_combat_attacked = false }.ok }
+        rules::grant_feat{ c = &human, feat = 44 }
+        expect_true{ &io, &r, name = "sword with melee proficiency", cond = rules::can_equip_item{ tables, c = &human, item = &sword, slot = right, from_player = true, in_combat_attacked = false }.ok }
+        expect_true{ &io, &r, name = "lightsaber needs 43, not 44", cond = not rules::can_equip_item{ tables, c = &human, item = &saber, slot = right, from_player = true, in_combat_attacked = false }.ok }
+        rules::grant_feat{ c = &human, feat = 43 }
+        expect_true{ &io, &r, name = "lightsaber with 43", cond = rules::can_equip_item{ tables, c = &human, item = &saber, slot = right, from_player = true, in_combat_attacked = false }.ok }
+        expect_true{ &io, &r, name = "pistol without 39", cond = not rules::can_equip_item{ tables, c = &human, item = &pistol, slot = right, from_player = true, in_combat_attacked = false }.ok }
+        let mut all = human
+        rules::grant_feat{ c = &all, feat = rules::feat::PROFICIENCY_ALL }
+        expect_true{ &io, &r, name = "PROFICIENCY_ALL wears a pistol", cond = rules::can_equip_item{ tables, c = &all, item = &pistol, slot = right, from_player = true, in_combat_attacked = false }.ok }
+        let grenade = items_new_item{ base = 25 }
+        expect_true{ &io, &r, name = "a grenade fits no slot, even with PROFICIENCY_ALL", cond = not rules::can_equip_item{ tables, c = &all, item = &grenade, slot = right, from_player = true, in_combat_attacked = false }.ok }
+        let mut ne = pistol
+        ne.non_equippable = true
+        expect_true{ &io, &r, name = "NonEquippable", cond = not rules::can_equip_item{ tables, c = &all, item = &ne, slot = right, from_player = true, in_combat_attacked = false }.ok }
+
+        // droids use blasters but no melee weapons; their own items only
+        let mut droid = items_new_creature{ tables, race = rules::race::DROID, subrace = 0 }
+        rules::grant_feat{ c = &droid, feat = 39 }
+        rules::grant_feat{ c = &droid, feat = 44 }
+        expect_true{ &io, &r, name = "droid with a blaster", cond = rules::can_equip_item{ tables, c = &droid, item = &pistol, slot = right, from_player = true, in_combat_attacked = false }.ok }
+        let dsw = rules::can_equip_item{ tables, c = &droid, item = &sword, slot = right, from_player = true, in_combat_attacked = false }
+        expect_true{ &io, &r, name = "droid with a sword", cond = not dsw.ok }
+        expect_eq{ &io, &r, name = "droid with a sword: message", got = dsw.feedback, want = rules::eqmsg::RACE }
+        let plating = items_new_item{ base = 66 }
+        expect_true{ &io, &r, name = "droid plating on a droid", cond = rules::can_equip_item{ tables, c = &droid, item = &plating, slot = rules::slot::BODY, from_player = true, in_combat_attacked = false }.ok }
+        expect_true{ &io, &r, name = "droid plating on a human", cond = not rules::can_equip_item{ tables, c = &human, item = &plating, slot = rules::slot::BODY, from_player = true, in_combat_attacked = false }.ok }
+
+        // a Wookiee (human, subrace 1) wears no armour, even with every proficiency
+        let mut wook = items_new_creature{ tables, race = rules::race::HUMAN, subrace = 1 }
+        rules::grant_feat{ c = &wook, feat = rules::feat::PROFICIENCY_ALL }
+        let armour = items_new_item{ base = 38 }
+        let wa = rules::can_equip_item{ tables, c = &wook, item = &armour, slot = rules::slot::BODY, from_player = true, in_combat_attacked = false }
+        expect_true{ &io, &r, name = "wookiee armour", cond = not wa.ok }
+        expect_eq{ &io, &r, name = "wookiee armour: message", got = wa.feedback, want = rules::eqmsg::RACE }
+        let mut hum2 = items_new_creature{ tables, race = rules::race::HUMAN, subrace = 0 }
+        expect_true{ &io, &r, name = "human armour class 4 needs feat 5", cond = not rules::can_equip_item{ tables, c = &hum2, item = &armour, slot = rules::slot::BODY, from_player = true, in_combat_attacked = false }.ok }
+        rules::grant_feat{ c = &hum2, feat = 5 }
+        expect_true{ &io, &r, name = "human armour class 4 with feat 5", cond = rules::can_equip_item{ tables, c = &hum2, item = &armour, slot = rules::slot::BODY, from_player = true, in_combat_attacked = false }.ok }
+        let robe = items_new_item{ base = 35 }
+        expect_true{ &io, &r, name = "robe needs Jedi Defense", cond = not rules::can_equip_item{ tables, c = &hum2, item = &robe, slot = rules::slot::BODY, from_player = true, in_combat_attacked = false }.ok }
+        rules::grant_feat{ c = &hum2, feat = rules::feat::JEDI_DEFENSE }
+        expect_true{ &io, &r, name = "robe with Jedi Defense", cond = rules::can_equip_item{ tables, c = &hum2, item = &robe, slot = rules::slot::BODY, from_player = true, in_combat_attacked = false }.ok }
+
+        // armour in combat: the refusal the action layer makes, as a flag
+        let ac = rules::can_equip_item{ tables, c = &hum2, item = &armour, slot = rules::slot::BODY, from_player = true, in_combat_attacked = true }
+        expect_true{ &io, &r, name = "armour while attacked", cond = not ac.ok }
+        expect_eq{ &io, &r, name = "armour while attacked: message", got = ac.feedback, want = rules::eqmsg::ARMOUR_EQUIP }
+        expect_true{ &io, &r, name = "a weapon while attacked", cond = rules::can_equip_item{ tables, c = &all, item = &pistol, slot = right, from_player = true, in_combat_attacked = true }.ok }
+        expect_eq{ &io, &r, name = "unequip armour while attacked", got = rules::armour_change_refused{ slot = rules::slot::BODY, in_combat_attacked = true, equipping = false }, want = rules::eqmsg::ARMOUR_UNEQUIP }
+        expect_eq{ &io, &r, name = "unequip a weapon while attacked", got = rules::armour_change_refused{ slot = right, in_combat_attacked = true, equipping = false }, want = 0 }
+
+        // use limitations: alignment 43, class 44, race 45, feat 57 (belt: needs nothing itself)
+        let mut lim = items_new_item{ base = 47 }
+        items_add_prop{ it = &lim, name = rules::ip::LIMIT_ALIGNMENT, subtype = 3, cost_value = 0 }
+        let la = rules::can_equip_item{ tables, c = &hum2, item = &lim, slot = rules::slot::BELT, from_player = true, in_combat_attacked = false }
+        expect_true{ &io, &r, name = "dark-only belt on a neutral creature", cond = not la.ok }
+        expect_eq{ &io, &r, name = "dark-only belt: message", got = la.feedback, want = rules::eqmsg::ALIGNMENT }
+        let mut dark = hum2
+        dark.good_evil = 10
+        expect_true{ &io, &r, name = "dark-only belt on a dark creature", cond = rules::can_equip_item{ tables, c = &dark, item = &lim, slot = rules::slot::BELT, from_player = true, in_combat_attacked = false }.ok }
+        let mut light = hum2
+        light.good_evil = 90
+        expect_true{ &io, &r, name = "dark-only belt on a light creature", cond = not rules::can_equip_item{ tables, c = &light, item = &lim, slot = rules::slot::BELT, from_player = true, in_combat_attacked = false }.ok }
+        let mut bypass = light
+        rules::grant_feat{ c = &bypass, feat = rules::feat::PROFICIENCY_ALL }
+        expect_true{ &io, &r, name = "feat 93 bypasses the alignment limit", cond = rules::can_equip_item{ tables, c = &bypass, item = &lim, slot = rules::slot::BELT, from_player = true, in_combat_attacked = false }.ok }
+        lim.props[0].upgrade = 3
+        expect_true{ &io, &r, name = "a gated limit that is not installed does not apply", cond = rules::can_equip_item{ tables, c = &light, item = &lim, slot = rules::slot::BELT, from_player = true, in_combat_attacked = false }.ok }
+        lim.upgrades = 1 << 3
+        expect_true{ &io, &r, name = "the gated limit applies once installed", cond = not rules::can_equip_item{ tables, c = &light, item = &lim, slot = rules::slot::BELT, from_player = true, in_combat_attacked = false }.ok }
+
+        let mut cl = items_new_item{ base = 47 }
+        items_add_prop{ it = &cl, name = rules::ip::LIMIT_CLASS, subtype = rules::cls::JEDI_GUARDIAN, cost_value = 0 }
+        items_add_prop{ it = &cl, name = rules::ip::LIMIT_CLASS, subtype = rules::cls::JEDI_SENTINEL, cost_value = 0 }
+        let lc = rules::can_equip_item{ tables, c = &hum2, item = &cl, slot = rules::slot::BELT, from_player = true, in_combat_attacked = false }
+        expect_true{ &io, &r, name = "Jedi-only belt on a soldier", cond = not lc.ok }
+        expect_eq{ &io, &r, name = "Jedi-only belt: message", got = lc.feedback, want = rules::eqmsg::CLASS }
+        let mut sent = hum2
+        sent.classes[0].class = rules::cls::JEDI_SENTINEL
+        expect_true{ &io, &r, name = "Jedi-only belt on a sentinel (second listed class)", cond = rules::can_equip_item{ tables, c = &sent, item = &cl, slot = rules::slot::BELT, from_player = true, in_combat_attacked = false }.ok }
+        let mut multi = hum2
+        multi.nclasses = 2
+        multi.classes[1] = rules::ClassSlot{ class = rules::cls::JEDI_GUARDIAN, level = 2 }
+        expect_true{ &io, &r, name = "Jedi-only belt for a multiclass creature", cond = rules::can_equip_item{ tables, c = &multi, item = &cl, slot = rules::slot::BELT, from_player = true, in_combat_attacked = false }.ok }
+
+        let mut rl = items_new_item{ base = 47 }
+        items_add_prop{ it = &rl, name = rules::ip::LIMIT_RACE, subtype = rules::race::HUMAN, cost_value = 0 }
+        expect_true{ &io, &r, name = "human-only belt on a human", cond = rules::can_equip_item{ tables, c = &hum2, item = &rl, slot = rules::slot::BELT, from_player = true, in_combat_attacked = false }.ok }
+        let lr = rules::can_equip_item{ tables, c = &droid, item = &rl, slot = rules::slot::BELT, from_player = true, in_combat_attacked = false }
+        expect_true{ &io, &r, name = "human-only belt on a droid", cond = not lr.ok }
+        expect_eq{ &io, &r, name = "human-only belt: message", got = lr.feedback, want = rules::eqmsg::RACE }
+
+        let mut fl = items_new_item{ base = 47 }
+        items_add_prop{ it = &fl, name = rules::ip::LIMIT_FEAT, subtype = 60, cost_value = 0 }
+        items_add_prop{ it = &fl, name = rules::ip::LIMIT_FEAT, subtype = 61, cost_value = 0 }
+        let lf = rules::can_equip_item{ tables, c = &hum2, item = &fl, slot = rules::slot::BELT, from_player = true, in_combat_attacked = false }
+        expect_true{ &io, &r, name = "feat-limited belt without the feats", cond = not lf.ok }
+        expect_eq{ &io, &r, name = "feat-limited belt: message", got = lf.feedback, want = rules::eqmsg::FEAT }
+        rules::grant_feat{ c = &hum2, feat = 60 }
+        expect_true{ &io, &r, name = "feat-limited belt with one of two feats", cond = not rules::can_equip_item{ tables, c = &hum2, item = &fl, slot = rules::slot::BELT, from_player = true, in_combat_attacked = false }.ok }
+        rules::grant_feat{ c = &hum2, feat = 61 }
+        expect_true{ &io, &r, name = "feat-limited belt with both feats", cond = rules::can_equip_item{ tables, c = &hum2, item = &fl, slot = rules::slot::BELT, from_player = true, in_combat_attacked = false }.ok }
+
+        // the stim exception: an item that casts spell 129 skips DroidOrHuman (Adrenaline is humans only)
+        let mut stim = items_new_item{ base = 53 }
+        items_add_prop{ it = &stim, name = rules::ip::CAST_SPELL, subtype = 129, cost_value = 1 }
+        let plain_stim = items_new_item{ base = 53 }
+        let bi = rules::get_baseitem{ tables, row = 53 } ifnull { return }
+        expect_true{ &io, &r, name = "stim: droid passes the race check", cond = rules::check_limit_race{ c = &droid, item = &stim, bi } }
+        expect_true{ &io, &r, name = "no stim: droid fails the race check", cond = not rules::check_limit_race{ c = &droid, item = &plain_stim, bi } }
+
+        // a slot the item does not fit
+        expect_true{ &io, &r, name = "a belt in the head slot", cond = not rules::can_equip_item{ tables, c = &all, item = &lim, slot = rules::slot::HEAD, from_player = true, in_combat_attacked = false }.ok }
+        expect_true{ &io, &r, name = "a slot with no storage", cond = not rules::can_equip_item{ tables, c = &all, item = &pistol, slot = 0x800, from_player = true, in_combat_attacked = false }.ok }
+    }
+
+    fn items_check_hand { mut io: Io, mut r: Report, name: []u8, chk: rules::EquipCheck, ok: bool, how: i32, slot: u32 } {
+        if chk.ok == ok and chk.how == how and chk.slot == slot {
+            r.passed = r.passed + 1
+            return
+        }
+        r.failed = r.failed + 1
+        _ = @fmt(&io, "FAIL {}: ok {} how {} slot {} (want {} {} {})\n", name, chk.ok, chk.how, chk.slot, ok, how, slot)
+    }
+
+    // The weapon-hand table of 4.3 (CanEquipWeapon).
+    fn items_test_hands { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let right = rules::slot::RIGHT
+        let left = rules::slot::LEFT
+        let mut c = items_new_creature{ tables, race = rules::race::HUMAN, subrace = 0 }
+        rules::grant_feat{ c = &c, feat = rules::feat::PROFICIENCY_ALL }
+        let pistol = items_new_item{ base = 12 }
+        let pistol2 = items_new_item{ base = 13 }
+        let rifle = items_new_item{ base = 20 }
+        let saber = items_new_item{ base = 8 }
+        let dsaber = items_new_item{ base = 9 }
+        let staff = items_new_item{ base = 0 }
+        let baton = items_new_item{ base = 1 }
+        let env = items_env{ tables }
+        let mut rng = rules::seed_rng{ seed = 3 }
+        let mut ev: rules::Events
+
+        // both hands empty: a left request goes to the right hand
+        items_check_hand{ &io, &r, name = "empty hands, pistol for the left", chk = rules::can_equip_item{ tables, c = &c, item = &pistol, slot = left, from_player = true, in_combat_attacked = false }, ok = true, how = rules::place::PLAIN, slot = right }
+        items_check_hand{ &io, &r, name = "empty hands, rifle", chk = rules::can_equip_item{ tables, c = &c, item = &rifle, slot = right, from_player = true, in_combat_attacked = false }, ok = true, how = rules::place::PLAIN, slot = right }
+
+        // a one-handed ranged weapon on the right, a left hand empty
+        _ = rules::equip{ env, c = &c, slot = right, id = 11, item = &pistol, loading = false, rng = &rng, ev = &ev }
+        items_check_hand{ &io, &r, name = "pistol right, pistol for the right: swap", chk = rules::can_equip_item{ tables, c = &c, item = &pistol2, slot = right, from_player = true, in_combat_attacked = false }, ok = true, how = rules::place::SWAP, slot = right }
+        items_check_hand{ &io, &r, name = "pistol right, pistol for the left: dual wield", chk = rules::can_equip_item{ tables, c = &c, item = &pistol2, slot = left, from_player = true, in_combat_attacked = false }, ok = true, how = rules::place::PLAIN, slot = left }
+        items_check_hand{ &io, &r, name = "pistol right, saber for the left: other family, swap right", chk = rules::can_equip_item{ tables, c = &c, item = &saber, slot = left, from_player = true, in_combat_attacked = false }, ok = true, how = rules::place::SWAP, slot = right }
+        items_check_hand{ &io, &r, name = "pistol right, rifle (two-handed): both hands", chk = rules::can_equip_item{ tables, c = &c, item = &rifle, slot = left, from_player = true, in_combat_attacked = false }, ok = true, how = rules::place::BOTH_HANDS, slot = right }
+        items_check_hand{ &io, &r, name = "pistol right, double saber: both hands", chk = rules::can_equip_item{ tables, c = &c, item = &dsaber, slot = right, from_player = true, in_combat_attacked = false }, ok = true, how = rules::place::BOTH_HANDS, slot = right }
+        items_check_hand{ &io, &r, name = "pistol right, quarter staff: both hands", chk = rules::can_equip_item{ tables, c = &c, item = &staff, slot = right, from_player = true, in_combat_attacked = false }, ok = true, how = rules::place::BOTH_HANDS, slot = right }
+
+        // both hands held: the left pistol is the dual wield
+        let er = rules::equip{ env, c = &c, slot = left, id = 12, item = &pistol2, loading = false, rng = &rng, ev = &ev }
+        expect_true{ &io, &r, name = "dual wield equips", cond = er.ok and er.ndisplaced == 0 and er.slot == left }
+        items_check_hand{ &io, &r, name = "two pistols, a third for the right", chk = rules::can_equip_item{ tables, c = &c, item = &pistol, slot = right, from_player = true, in_combat_attacked = false }, ok = true, how = rules::place::SWAP, slot = right }
+        items_check_hand{ &io, &r, name = "two pistols, a third for the left", chk = rules::can_equip_item{ tables, c = &c, item = &pistol, slot = left, from_player = true, in_combat_attacked = false }, ok = true, how = rules::place::SWAP, slot = left }
+        items_check_hand{ &io, &r, name = "two pistols, a saber for the left: both hands", chk = rules::can_equip_item{ tables, c = &c, item = &saber, slot = left, from_player = true, in_combat_attacked = false }, ok = true, how = rules::place::BOTH_HANDS, slot = right }
+        items_check_hand{ &io, &r, name = "two pistols, a rifle: both hands", chk = rules::can_equip_item{ tables, c = &c, item = &rifle, slot = right, from_player = true, in_combat_attacked = false }, ok = true, how = rules::place::BOTH_HANDS, slot = right }
+
+        // the rifle replaces both: both pistols come out, right first
+        let eb = rules::equip{ env, c = &c, slot = right, id = 13, item = &rifle, loading = false, rng = &rng, ev = &ev }
+        expect_true{ &io, &r, name = "rifle clears both hands", cond = eb.ok and eb.ndisplaced == 2 and eb.displaced[0].id == 11 and eb.displaced[1].id == 12 }
+        expect_true{ &io, &r, name = "rifle is in the right hand, the left is empty", cond = c.equip[4].id == 13 and not c.equip[5].used and c.equip[4].used }
+
+        // a two-handed weapon on the right and nothing on the left: anything else swaps the right
+        items_check_hand{ &io, &r, name = "rifle right, pistol for the left: swap right", chk = rules::can_equip_item{ tables, c = &c, item = &pistol, slot = left, from_player = true, in_combat_attacked = false }, ok = true, how = rules::place::SWAP, slot = right }
+
+        // a left weapon without a right one: refused
+        let mut odd = items_new_creature{ tables, race = rules::race::HUMAN, subrace = 0 }
+        rules::grant_feat{ c = &odd, feat = rules::feat::PROFICIENCY_ALL }
+        odd.equip[5] = rules::Equipped{ used = true, id = 5, item = baton }
+        items_check_hand{ &io, &r, name = "left weapon alone", chk = rules::can_equip_item{ tables, c = &odd, item = &pistol, slot = right, from_player = true, in_combat_attacked = false }, ok = false, how = rules::place::NONE, slot = right }
+    }
+
+    // equip and unequip on a creature, with the effects and the stats checked by hand.
+    fn items_test_equip { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let right = rules::slot::RIGHT
+        let env = items_env{ tables }
+        let mut rng = rules::seed_rng{ seed = 9 }
+        let none = rules::no_versus{}
+
+        // (1) a blaster with Enhancement +2: attack +2 on the on-hand, damage 2, gone again on unequip
+        let mut c = items_new_creature{ tables, race = rules::race::HUMAN, subrace = 0 }
+        rules::grant_feat{ c = &c, feat = 39 }
+        let before = items_digest{ c = &c }
+        let mut gun = items_prop_item{ base = 12, name = rules::ip::ENHANCEMENT, subtype = 0, cost_value = 2 }
+        gun.stack = 3
+        let mut ev: rules::Events
+        let e1 = rules::equip{ env, c = &c, slot = right, id = 1000, item = &gun, loading = false, rng = &rng, ev = &ev }
+        expect_true{ &io, &r, name = "blaster equips", cond = e1.ok }
+        expect_eq{ &io, &r, name = "blaster: effects applied", got = e1.applied, want = 2 }
+        expect_eq{ &io, &r, name = "blaster: effects on the creature", got = c.nfx, want = 2 }
+        expect_true{ &io, &r, name = "blaster: cell", cond = c.equip[4].used and c.equip[4].id == 1000 and c.equip[4].item.base_item == 12 }
+        expect_eq{ &io, &r, name = "blaster: one of the stack is worn", got = c.equip[4].item.stack, want = 1 }
+        let q_on = rules::BonusQuery{ category = rules::cat::ATTACK, a = 0, b = 0, hand = 1, vs = none }
+        let q_off = rules::BonusQuery{ category = rules::cat::ATTACK, a = 0, b = 0, hand = 2, vs = none }
+        expect_eq{ &io, &r, name = "blaster: attack bonus on-hand", got = rules::net{ b = rules::effect_bonus{ c = &c, q = q_on } }, want = 2 }
+        expect_eq{ &io, &r, name = "blaster: attack bonus off-hand", got = rules::net{ b = rules::effect_bonus{ c = &c, q = q_off } }, want = 0 }
+        let u1 = rules::unequip{ env, c = &c, slot = right, ev = &ev }
+        expect_true{ &io, &r, name = "blaster unequips", cond = u1.ok and u1.id == 1000 and not u1.moved_left }
+        expect_eq{ &io, &r, name = "blaster: effects after unequip", got = c.nfx, want = 0 }
+        expect_eq{ &io, &r, name = "blaster: creature as it was", got = items_digest{ c = &c }, want = before }
+        expect_true{ &io, &r, name = "blaster: cell empty", cond = not c.equip[4].used }
+        let u1b = rules::unequip{ env, c = &c, slot = right, ev = &ev }
+        expect_true{ &io, &r, name = "unequip of an empty hand", cond = not u1b.ok }
+
+        // (2) a refused equip changes nothing
+        let mut c2 = items_new_creature{ tables, race = rules::race::HUMAN, subrace = 0 }
+        let d2 = items_digest{ c = &c2 }
+        let e2 = rules::equip{ env, c = &c2, slot = right, id = 1001, item = &gun, loading = false, rng = &rng, ev = &ev }
+        expect_true{ &io, &r, name = "blaster without the feat is refused", cond = not e2.ok }
+        expect_true{ &io, &r, name = "refusal changes nothing", cond = items_digest{ c = &c2 } == d2 and c2.nfx == 0 }
+
+        // (3) a belt with an Ability property: CON +3 raises the score, the modifier and the hit points
+        let mut belt = items_prop_item{ base = 47, name = rules::ip::ABILITY, subtype = 2, cost_value = 3 }
+        let hp0 = c.stats.max_hp
+        let d3 = items_digest{ c = &c }
+        let mut ev3: rules::Events
+        let e3 = rules::equip{ env, c = &c, slot = rules::slot::BELT, id = 2000, item = &belt, loading = false, rng = &rng, ev = &ev3 }
+        expect_true{ &io, &r, name = "belt equips", cond = e3.ok and e3.how == rules::place::PLAIN and e3.feedback == 0 }
+        expect_eq{ &io, &r, name = "belt: CON 12 + 3", got = c.stats.abil[2], want = 15 }
+        expect_eq{ &io, &r, name = "belt: CON modifier 1 -> 2", got = c.stats.abil_mod[2], want = 2 }
+        expect_true{ &io, &r, name = "belt: more hit points", cond = c.stats.max_hp > hp0 }
+        expect_eq{ &io, &r, name = "belt: a MAX_HP_CHANGED event", got = items_count_events{ ev = &ev3, kind = rules::ev::MAX_HP_CHANGED }, want = 1 }
+        // two ability properties of one item: only the larger counts (rules.md 1.7)
+        items_add_prop{ it = &belt, name = rules::ip::ABILITY, subtype = 2, cost_value = 1 }
+        let mut c3 = items_new_creature{ tables, race = rules::race::HUMAN, subrace = 0 }
+        _ = rules::equip{ env, c = &c3, slot = rules::slot::BELT, id = 2001, item = &belt, loading = false, rng = &rng, ev = &ev3 }
+        expect_eq{ &io, &r, name = "belt with +3 and +1 CON: the largest of one item", got = c3.stats.abil[2], want = 15 }
+        // the same two properties on two items add up
+        let mut band = items_prop_item{ base = 46, name = rules::ip::ABILITY, subtype = 2, cost_value = 1 }
+        _ = rules::equip{ env, c = &c3, slot = rules::slot::LEFT_ARM, id = 2002, item = &band, loading = false, rng = &rng, ev = &ev3 }
+        expect_eq{ &io, &r, name = "belt +3 and a band +1: two items add", got = c3.stats.abil[2], want = 16 }
+        _ = rules::unequip{ env, c = &c3, slot = rules::slot::LEFT_ARM, ev = &ev3 }
+        _ = rules::unequip{ env, c = &c3, slot = rules::slot::BELT, ev = &ev3 }
+        expect_eq{ &io, &r, name = "both removed: CON back to 12", got = c3.stats.abil[2], want = 12 }
+        let u3 = rules::unequip{ env, c = &c, slot = rules::slot::BELT, ev = &ev3 }
+        expect_true{ &io, &r, name = "belt unequips", cond = u3.ok }
+        expect_eq{ &io, &r, name = "belt: creature as it was", got = items_digest{ c = &c }, want = d3 }
+
+        // (4) a Jedi robe: refused without Jedi Defense, then worn; armour base 0
+        let mut jedi = items_new_creature{ tables, race = rules::race::HUMAN, subrace = 0 }
+        let robe = items_prop_item{ base = 35, name = rules::ip::ABILITY, subtype = 4, cost_value = 2 }
+        let er0 = rules::equip{ env, c = &jedi, slot = rules::slot::BODY, id = 3000, item = &robe, loading = false, rng = &rng, ev = &ev }
+        expect_true{ &io, &r, name = "robe without Jedi Defense", cond = not er0.ok }
+        rules::grant_feat{ c = &jedi, feat = rules::feat::JEDI_DEFENSE }
+        let d4 = items_digest{ c = &jedi }
+        let er1 = rules::equip{ env, c = &jedi, slot = rules::slot::BODY, id = 3000, item = &robe, loading = false, rng = &rng, ev = &ev }
+        expect_true{ &io, &r, name = "robe with Jedi Defense", cond = er1.ok }
+        expect_eq{ &io, &r, name = "robe: WIS 12 + 2", got = jedi.stats.abil[4], want = 14 }
+        expect_eq{ &io, &r, name = "robe: armour base 0", got = jedi.stats.ac_armour, want = 0 }
+        _ = rules::unequip{ env, c = &jedi, slot = rules::slot::BODY, ev = &ev }
+        expect_eq{ &io, &r, name = "robe: creature as it was", got = items_digest{ c = &jedi }, want = d4 }
+
+        // (5) armour: base AC of the body item, a dodge bonus from its Armor property, a swap
+        let mut sold = items_new_creature{ tables, race = rules::race::HUMAN, subrace = 0 }
+        rules::grant_feat{ c = &sold, feat = 4 }
+        rules::grant_feat{ c = &sold, feat = 5 }
+        rules::grant_feat{ c = &sold, feat = 6 }
+        let d5 = items_digest{ c = &sold }
+        let arm8 = items_prop_item{ base = 42, name = rules::ip::ARMOR, subtype = 0, cost_value = 1 }
+        let arm4 = items_new_item{ base = 38 }
+        let ea = rules::equip{ env, c = &sold, slot = rules::slot::BODY, id = 4000, item = &arm8, loading = false, rng = &rng, ev = &ev }
+        expect_true{ &io, &r, name = "class 8 armour equips", cond = ea.ok }
+        expect_eq{ &io, &r, name = "class 8 armour: base AC", got = sold.stats.ac_armour, want = 8 }
+        expect_eq{ &io, &r, name = "class 8 armour +1: dodge", got = sold.stats.ac_dodge, want = 1 }
+        let eb = rules::equip{ env, c = &sold, slot = rules::slot::BODY, id = 4001, item = &arm4, loading = false, rng = &rng, ev = &ev }
+        expect_true{ &io, &r, name = "swapping armour", cond = eb.ok and eb.how == rules::place::SWAP and eb.ndisplaced == 1 and eb.displaced[0].id == 4000 }
+        expect_eq{ &io, &r, name = "swap: swapped-out feedback", got = eb.feedback, want = rules::eqmsg::SWAPPED }
+        expect_eq{ &io, &r, name = "swap: the old armour's effects are gone", got = items_count_creator{ c = &sold, creator = 4000 }, want = 0 }
+        expect_eq{ &io, &r, name = "swap: base AC of class 4", got = sold.stats.ac_armour, want = 4 }
+        expect_eq{ &io, &r, name = "swap: no dodge any more", got = sold.stats.ac_dodge, want = 0 }
+        // asking for the slot an item is in, or swapping with an identical item, changes nothing
+        let ed = items_digest{ c = &sold }
+        let same = rules::equip{ env, c = &sold, slot = rules::slot::BODY, id = 4001, item = &arm4, loading = false, rng = &rng, ev = &ev }
+        expect_true{ &io, &r, name = "equipping what is already worn", cond = not same.ok and items_digest{ c = &sold } == ed }
+        let twin = rules::equip{ env, c = &sold, slot = rules::slot::BODY, id = 4002, item = &arm4, loading = false, rng = &rng, ev = &ev }
+        expect_true{ &io, &r, name = "an identical item for the worn one", cond = not twin.ok and items_digest{ c = &sold } == ed and sold.equip[1].id == 4001 }
+        _ = rules::unequip{ env, c = &sold, slot = rules::slot::BODY, ev = &ev }
+        expect_eq{ &io, &r, name = "armour: creature as it was", got = items_digest{ c = &sold }, want = d5 }
+
+        // (6) a double-bladed lightsaber: both ends carry the bonus
+        let mut sab = items_new_creature{ tables, race = rules::race::HUMAN, subrace = 0 }
+        rules::grant_feat{ c = &sab, feat = 43 }
+        let d6 = items_digest{ c = &sab }
+        let dsab = items_prop_item{ base = 9, name = rules::ip::ENHANCEMENT, subtype = 0, cost_value = 1 }
+        let es = rules::equip{ env, c = &sab, slot = right, id = 5000, item = &dsab, loading = false, rng = &rng, ev = &ev }
+        expect_true{ &io, &r, name = "double saber equips", cond = es.ok and es.applied == 4 and sab.nfx == 4 }
+        expect_eq{ &io, &r, name = "double saber: attack bonus on-hand", got = rules::net{ b = rules::effect_bonus{ c = &sab, q = q_on } }, want = 1 }
+        expect_eq{ &io, &r, name = "double saber: attack bonus off-hand", got = rules::net{ b = rules::effect_bonus{ c = &sab, q = q_off } }, want = 1 }
+        expect_eq{ &io, &r, name = "double saber: attack effects", got = rules::count_effects{ c = &sab, kind = rules::fx::ATTACK_INCREASE }, want = 2 }
+        expect_eq{ &io, &r, name = "double saber: damage effects", got = rules::count_effects{ c = &sab, kind = rules::fx::DAMAGE_INCREASE }, want = 2 }
+        _ = rules::unequip{ env, c = &sab, slot = right, ev = &ev }
+        expect_eq{ &io, &r, name = "double saber: creature as it was", got = items_digest{ c = &sab }, want = d6 }
+
+        // (7) the left weapon moves to the right hand when the right one comes off
+        let mut duel = items_new_creature{ tables, race = rules::race::HUMAN, subrace = 0 }
+        rules::grant_feat{ c = &duel, feat = 39 }
+        let g1 = items_prop_item{ base = 12, name = rules::ip::ENHANCEMENT, subtype = 0, cost_value = 1 }
+        let g2 = items_prop_item{ base = 13, name = rules::ip::ENHANCEMENT, subtype = 0, cost_value = 3 }
+        _ = rules::equip{ env, c = &duel, slot = right, id = 6001, item = &g1, loading = false, rng = &rng, ev = &ev }
+        _ = rules::equip{ env, c = &duel, slot = rules::slot::LEFT, id = 6002, item = &g2, loading = false, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "dual wield: four effects", got = duel.nfx, want = 4 }
+        expect_eq{ &io, &r, name = "dual wield: attack bonus on-hand", got = rules::net{ b = rules::effect_bonus{ c = &duel, q = q_on } }, want = 1 }
+        expect_eq{ &io, &r, name = "dual wield: attack bonus off-hand", got = rules::net{ b = rules::effect_bonus{ c = &duel, q = q_off } }, want = 3 }
+        let ur = rules::unequip{ env, c = &duel, slot = right, ev = &ev }
+        expect_true{ &io, &r, name = "taking the right pistol", cond = ur.ok and ur.id == 6001 and ur.moved_left }
+        expect_true{ &io, &r, name = "the left pistol is now in the right hand", cond = duel.equip[4].used and duel.equip[4].id == 6002 and not duel.equip[5].used }
+        expect_eq{ &io, &r, name = "moved pistol: two effects", got = duel.nfx, want = 2 }
+        expect_eq{ &io, &r, name = "moved pistol: on-hand bonus 3", got = rules::net{ b = rules::effect_bonus{ c = &duel, q = q_on } }, want = 3 }
+        expect_eq{ &io, &r, name = "moved pistol: no off-hand bonus", got = rules::net{ b = rules::effect_bonus{ c = &duel, q = q_off } }, want = 0 }
+        expect_eq{ &io, &r, name = "moved pistol: creator", got = items_count_creator{ c = &duel, creator = 6002 }, want = 2 }
+        // taking the left weapon alone moves nothing
+        _ = rules::equip{ env, c = &duel, slot = rules::slot::LEFT, id = 6003, item = &g1, loading = false, rng = &rng, ev = &ev }
+        let ul = rules::unequip{ env, c = &duel, slot = rules::slot::LEFT, ev = &ev }
+        expect_true{ &io, &r, name = "taking the left pistol", cond = ul.ok and ul.id == 6003 and not ul.moved_left and duel.equip[4].id == 6002 }
+
+        // (8) re-equipping a worn item into another slot takes it off the first one (EquipItem step 1)
+        let mut mv = items_new_creature{ tables, race = rules::race::HUMAN, subrace = 0 }
+        rules::grant_feat{ c = &mv, feat = 39 }
+        _ = rules::equip{ env, c = &mv, slot = right, id = 7000, item = &g1, loading = false, rng = &rng, ev = &ev }
+        let em = rules::equip{ env, c = &mv, slot = rules::slot::LEFT, id = 7000, item = &g1, loading = false, rng = &rng, ev = &ev }
+        expect_true{ &io, &r, name = "the same pistol for the left hand", cond = em.ok }
+        expect_eq{ &io, &r, name = "one pistol, two effects", got = mv.nfx, want = 2 }
+        // equip never leaves two cells with one id
+        let mut count = 0
+        let mut s: usize = 0
+        while s < rules::NUM_SLOTS {
+            if mv.equip[s].used and mv.equip[s].id == 7000 { count = count + 1 }
+            s = s + 1
+        }
+        expect_eq{ &io, &r, name = "an item is in one cell only", got = count, want = 1 }
+
+        // (9) a bonus feat granted by a worn item satisfies another item's proficiency
+        let mut bf = items_new_creature{ tables, race = rules::race::HUMAN, subrace = 0 }
+        let sword = items_new_item{ base = 2 }
+        let amulet = items_prop_item{ base = 47, name = rules::ip::BONUS_FEATS, subtype = 44, cost_value = 0 }
+        expect_true{ &io, &r, name = "sword before the bonus feat", cond = not rules::equip{ env, c = &bf, slot = right, id = 8000, item = &sword, loading = false, rng = &rng, ev = &ev }.ok }
+        expect_true{ &io, &r, name = "belt with a bonus feat", cond = rules::equip{ env, c = &bf, slot = rules::slot::BELT, id = 8001, item = &amulet, loading = false, rng = &rng, ev = &ev }.ok }
+        expect_true{ &io, &r, name = "sword with the bonus feat", cond = rules::equip{ env, c = &bf, slot = right, id = 8000, item = &sword, loading = false, rng = &rng, ev = &ev }.ok }
+        _ = rules::unequip{ env, c = &bf, slot = rules::slot::BELT, ev = &ev }
+        expect_true{ &io, &r, name = "the sword stays worn when the feat goes (the engine does not recheck)", cond = bf.equip[4].used }
+
+        // (10) feedback: a refusal emits its message number, unless the equip is a load
+        let mut lim = items_new_item{ base = 47 }
+        items_add_prop{ it = &lim, name = rules::ip::LIMIT_ALIGNMENT, subtype = 3, cost_value = 0 }
+        let mut fc = items_new_creature{ tables, race = rules::race::HUMAN, subrace = 0 }
+        let mut evf: rules::Events
+        let rf = rules::equip{ env, c = &fc, slot = rules::slot::BELT, id = 9000, item = &lim, loading = false, rng = &rng, ev = &evf }
+        expect_true{ &io, &r, name = "limited belt refused", cond = not rf.ok and rf.feedback == rules::eqmsg::ALIGNMENT }
+        expect_eq{ &io, &r, name = "refusal emits one feedback event", got = items_count_events{ ev = &evf, kind = rules::ev::FEEDBACK }, want = 1 }
+        let mut evl: rules::Events
+        _ = rules::equip{ env, c = &fc, slot = rules::slot::BELT, id = 9000, item = &lim, loading = true, rng = &rng, ev = &evl }
+        expect_eq{ &io, &r, name = "a load emits no feedback", got = evl.len, want = 0 }
+    }
+
+    // The entry point: the examples first (they need only the tables), then the whole install.
+    fn run_items { mut io: Io, mut fs: Fs, mut r: Report, mut heap: heap::Heap, rm: res::Manager, tables: *rules::Tables } {
+        items_test_properties{ &io, &r, tables }
+        items_test_queries{ &io, &r, tables }
+        items_test_can_equip{ &io, &r, tables }
+        items_test_hands{ &io, &r, tables }
+        items_test_equip{ &io, &r, tables }
+        items_scan_install{ &io, &fs, &r, &heap, rm, tables }
+    }
+}

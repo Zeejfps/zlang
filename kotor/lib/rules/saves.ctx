@@ -1,0 +1,56 @@
+// Saving throws (rules.md 2). The value of a save is the creature's class table, ability and
+// bonus (Stats.save_base) plus the effects; the roll is d20 + that against a DC, with no
+// automatic success or failure.
+namespace rules {
+    // The penalties the crowd-control states and slowness carry as child effects in the engine
+    // (rules.md 1.10, 1.3): frightened and droid-stunned -2 to every save, slow -2 to reflex.
+    // `which` is 0 fortitude, 1 reflex, 2 will.
+    fn state_save_penalty { c: *Creature, which: usize } -> i32 {
+        let mut p = 0
+        if c.stats.state == fx::STATE_FRIGHTENED or c.stats.state == fx::STATE_DROID_STUN { p = p - 2 }
+        if which == 1 and count_effects{ c, kind = fx::SLOW } > count_effects{ c, kind = fx::HASTE } { p = p - 2 }
+        return p
+    }
+
+    // The save with every effect that applies versus nobody (the character sheet's number).
+    fn save_value { c: *Creature, which: i32 } -> i32 {
+        let w = @as(usize, which - 1)
+        return c.stats.save_base[w] + c.stats.save_effect[w]
+    }
+
+    struct SaveResult {
+        result: i32,            // 0 failed, 1 passed, 2 immune
+        roll: i32,              // the d20
+        bonus: i32,             // effects, capped at +20
+        base: i32,              // class + ability + template bonus (+ feats)
+        dc: i32,
+    }
+
+    // The immunity a save type is blocked by, 0 if none (rules.md 2.2).
+    fn save_type_immunity { save_type: i32, force_power: bool } -> i32 {
+        if save_type == save::TYPE_MIND { return imm::MIND }
+        if save_type == save::TYPE_POISON { return imm::POISON }
+        if save_type == save::TYPE_DISEASE { return imm::DISEASE }
+        if save_type == save::TYPE_FEAR { return imm::FEAR }
+        if save_type == save::TYPE_TRAP { return imm::TRAP }
+        if save_type == save::TYPE_DEATH and force_power { return imm::DEATH }
+        return 0
+    }
+
+    // CSWSCreature::SavingThrowRoll (0x005b92b0). `which` is save::FORT, REFLEX or WILL; `vs` the
+    // creature that causes the save (race and alignment filters of the bonuses), `force_power`
+    // whether the current spell is a Force power (death saves are then blocked by death immunity).
+    fn saving_throw { c: *Creature, which: i32, dc: i32, save_type: i32, vs: Versus, force_power: bool, mut rng: Rng } -> SaveResult {
+        let w = @as(usize, which - 1)
+        let base = c.stats.save_base[w]
+        let b = effect_bonus{ c, q = BonusQuery{ category = cat::SAVE, a = which, b = save_type, hand = -1, vs } }
+        let mut bonus = net{ b } + state_save_penalty{ c, which = w }
+        if bonus > 20 { bonus = 20 }
+        let roll = roll_dice{ &rng, count = 1, sides = 20 }
+        let total = roll + bonus + base
+        let mut result = if total >= dc { 1 } else { 0 }
+        let im = save_type_immunity{ save_type, force_power }
+        if im != 0 and has_immunity{ c, kind = im, vs } { result = 2 }
+        return SaveResult{ result, roll, bonus, base, dc }
+    }
+}

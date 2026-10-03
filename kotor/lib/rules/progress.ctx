@@ -1,0 +1,848 @@
+// Experience, levels and skills in play (docs/re/rules.md sections 4, 5 and 6): the XP thresholds,
+// how XP is awarded, the level-up record and what applying it does, the automatic level-up, the
+// numbers the level-up screen needs, feat prerequisites, and the skill checks the engine rolls.
+//
+// API (namespace rules; `tables` is *Tables):
+//
+//   thresholds   xp_to_reach_level{ tables, level } -> i32       level_for_xp{ tables, xp } -> i32
+//                can_level_up{ tables, c, alive } -> bool        pending_levels{ tables, c } -> i32
+//   awarding     add_experience{ tables, mut c, xp, percent_xp } -> awarded
+//                scale_experience{ tables, xp, percent_xp } -> i32
+//                plot_xp_value{ tables, plot_label, percent } -> i32
+//                kill_xp_value{ tables, victim, party_level, party_size } -> i32
+//                awards_kill_xp{ victim_in_party, victim_dying, reputation } -> bool
+//                npc_percent_xp{ tables, row } -> i32           find_npc_row{ tables, tag } -> i32
+//                joining_xp{ tables, level, pool, percent_xp } -> i32
+//                catch_up_xp{ tables, xp, joining, pool, percent_xp } -> i32
+//   level screen level_up_options{ tables, c, class, mut out: LevelUpOptions } -> bool
+//                selectable_feats{ tables, c, class, class_level, general, bonus, pending, mut out }
+//                meets_feat_requirements / can_select_feat  (section 6)
+//                learnable_powers (force.ctx), powers_to_gain{ tables, class, class_level } -> i32
+//   applying     apply_level_up{ tables, mut c, rec, alive } -> LevelUpResult   (LevelUp steps 1-7)
+//                take_first_level{ tables, mut c, class } -> LevelUpResult   (a blank creature's level 1)
+//   automatic    prepare_auto_level{ tables, mut c, class, mut rec } -> bool   (AutoLevelUp's record)
+//                auto_level_up{ tables, mut c, alive } -> AutoLevelResult
+//   skills       skill_cost / skill_max_rank, and the engine's skill checks:
+//                open_lock_check, disarm_trap_check, set_trap_check, treat_injury_check,
+//                detect_trap_check; each takes `in_combat` (take 20 outside combat, d20 inside).
+//
+// Decision: powers per level come from classpowergain.2da (ClassRow.power_gain), in the level
+//   screen's options and in the automatic level-up alike. The exe's AutoLevelUp counts "2 when the
+//   class slot is at level 1, else 1" (GetNumForcePowersToGain 0x005a59d0), and CanLearnForcePower
+//   then refuses a second pick in the same level (it compares the count still to gain, already
+//   decremented, with the number picked), so the original auto-leveller grants one power per
+//   level whatever the count. The table (Guardian and Sentinel 2 at level 1 and 1 after; Consular
+//   2 at levels 1, 5, 9, 13, 17) is what the game's character screens promise, so both paths use it.
+// Decision: the class feats of a level (feat.2da <class>_list 3, <class>_granted = the class
+//   level) are added by apply_level_up itself, not carried in the record: a level may grant more
+//   feats than the record's eight slots (Soldier level 1 grants nine). AutoLevelUp adds them to
+//   the creature before it chooses, as the exe does, and apply_level_up adds them again (a set).
+// Decision: ability points come at class levels 4, 8, ... of the class being taken (AutoLevelUp
+//   tests the new class level, not the character level).
+// Decision: mincharlevel is compared with the class level the feat is taken at (AutoLevelUp
+//   compares the new class level); `class` is passed to the feat functions instead of read from the
+//   creature's last slot, which is the same in the auto path and right for a first level of a
+//   second class in the screen.
+// Decision: the order lists (skills, feats, powers) are walked exactly as the exe walks them,
+//   including its rule for entries without a rank: position p with no entry ranked p gets the
+//   (p+1)-th unranked entry, and the last one past the end. That leaves a few feat slots unfilled
+//   (Expert Droid fills 7 of its 10) where a tidy "ranked first, then the rest" order would not.
+// Decision: kill_xp_value takes the party size for PER_NPC_Bonus (0 in the shipped table), and
+//   apply_level_up takes `alive` for CanLevelUp, which ApplyLevelUp tests itself.
+// Decision: at most two class slots (MAX_LEVEL_CLASSES): LevelUp itself has no limit, the
+//   screens do.
+namespace rules {
+    const LEVEL_CAP: i32 = 20
+    const MAX_LEVEL_CLASSES: i32 = 2         // class slots a level-up opens (LevelUp has no check; the screens allow two)
+
+    // ---- float helpers (the engine does this arithmetic on the x87 unit, see add_experience)
+
+    // 0.01 as the engine stores it: a single-precision constant (DAT_0073dfec), widened.
+    fn hundredth {} -> f64 {
+        let h: f32 = 0.01
+        return @as(f64, h)
+    }
+
+    // ceil() of a positive double as an i32, 0 for anything not above 0.
+    fn ceil_to_i32 { x: f64 } -> i32 {
+        if x <= 0.0 { return 0 }
+        if x >= 2147483647.0 { return 2147483647 }
+        let t = @as(i64, x)
+        let r = if @as(f64, t) < x { t + 1 } else { t }
+        return @as(i32, r)
+    }
+
+    // ---- thresholds (4.1)
+
+    // exptable.2da: the XP at which `level` (1..20) is reached; 0 for level 1, beyond the cap
+    // the largest number (the table's 0xFFFFFFFF).
+    fn xp_to_reach_level { tables: *Tables, level: i32 } -> i32 {
+        if level <= 1 { return 0 }
+        if level > LEVEL_CAP { return 2147483647 }
+        return tables.xp_level[@as(usize, level - 1)]
+    }
+
+    // The highest level the XP pays for (1..20): the party level of GetKillXPValue and the
+    // level-up screen's count of pending levels.
+    fn level_for_xp { tables: *Tables, xp: i32 } -> i32 {
+        let mut l = LEVEL_CAP
+        while l > 1 {
+            if xp >= xp_to_reach_level{ tables, level = l } { return l }
+            l = l - 1
+        }
+        return 1
+    }
+
+    // CanLevelUp (0x005a6810): below the cap, the XP has reached the next entry, not dead or dying.
+    fn can_level_up { tables: *Tables, c: *Creature, alive: bool } -> bool {
+        if not alive { return false }
+        let lvl = total_level{ c }
+        if lvl >= LEVEL_CAP { return false }
+        return c.xp >= xp_to_reach_level{ tables, level = lvl + 1 }
+    }
+
+    // Levels the creature's XP pays for beyond the ones it has (the HUD's level-up badge, 0x005a6610).
+    fn pending_levels { tables: *Tables, c: *Creature } -> i32 {
+        let n = level_for_xp{ tables, xp = c.xp } - total_level{ c }
+        return if n < 0 { 0 } else { n }
+    }
+
+    // ---- awarding XP (4.2)
+
+    // npc.2da PercentXP of the party NPC row `row` (0..8), 100 for the player and for anyone
+    // without a row (-1). Row 9 (GAME_XP_General) and 10 (PER_NPC_Bonus) are read by name below.
+    fn npc_percent_xp { tables: *Tables, row: i32 } -> i32 {
+        if row < 0 { return 100 }
+        let t = raw_table{ tables, which = Tab::npc }
+        return cell_int{ t, row = @as(usize, row), col = "percentxp", dflt = 100 }
+    }
+
+    // The npc.2da row whose tag is `tag` (Bastila, HK47, ...), -1 for none.
+    fn find_npc_row { tables: *Tables, tag: []u8 } -> i32 {
+        let t = raw_table{ tables, which = Tab::npc }
+        let mut r: usize = 0
+        while r < twoda::rows{ t } and r < 9 {
+            if ci::eq{ a = cell_text{ t, row = r, col = "tag" }, b = tag } { return @as(i32, r) }
+            r = r + 1
+        }
+        return -1
+    }
+
+    fn general_xp_percent { tables: *Tables } -> i32 {
+        return cell_int{ t = raw_table{ tables, which = Tab::npc }, row = 9, col = "percentxp", dflt = 100 }
+    }
+
+    // The multiplier CSWSCreature::AddExperience (0x004ef930) builds, as the exe builds it: each
+    // percentage times the single-precision 0.01 (not 1/100), the NPC factor stored as a float,
+    // the product with row 9 stored as a float again, then XP x factor in double precision and
+    // rounded up. For a companion at 80 % that makes 100 XP into ceil(79.9999952) = 80; for the
+    // player the factor is exactly 1.
+    fn xp_factor { tables: *Tables, percent_xp: i32 } -> f32 {
+        let h = hundredth{}
+        let npc: f32 = @as(f32, @as(f64, percent_xp) * h)
+        return @as(f32, @as(f64, general_xp_percent{ tables }) * h * @as(f64, npc))
+    }
+
+    // The XP a creature with this npc.2da percentage is credited for `xp` given.
+    fn scale_experience { tables: *Tables, xp: i32, percent_xp: i32 } -> i32 {
+        if xp <= 0 { return 0 }
+        let f = xp_factor{ tables, percent_xp }
+        return ceil_to_i32{ x = @as(f64, xp) * @as(f64, f) }
+    }
+
+    // CSWSCreature::AddExperience: credits the creature and says how much (SetExperience refuses
+    // to lower XP, so nothing happens for xp <= 0). Levelling is a separate step (auto_level_up or
+    // the level-up screen), as in the engine.
+    fn add_experience { tables: *Tables, mut c: Creature, xp: i32, percent_xp: i32 } -> i32 {
+        let awarded = scale_experience{ tables, xp, percent_xp }
+        if awarded <= 0 { return 0 }
+        if c.xp > 2147483647 - awarded {
+            c.xp = 2147483647
+        } else {
+            c.xp = c.xp + awarded
+        }
+        return awarded
+    }
+
+    // GivePlotXP (0x00566600): plot.2da's XP of the row labelled `plot_label` times `percent` / 100,
+    // rounded up. 0 for an unknown plot. (The exe multiplies by the single-precision 0.01; the
+    // result is the same as an exact division except for values far above any XP in the table.)
+    fn plot_xp_value { tables: *Tables, plot_label: []u8, percent: i32 } -> i32 {
+        let t = raw_table{ tables, which = Tab::plot }
+        let row = twoda::find_row{ t, label = plot_label } ifnull { return 0 }
+        let base = cell_int{ t, row, col = "xp", dflt = 0 }
+        return ceil_to_i32{ x = @as(f64, base * percent) * hundredth{} }
+    }
+
+    // GetKillXPValue (0x004f19e0) and the party-size bonus of AwardKillXP (0x004fb1e0):
+    // xptable.2da[party level - 1][column c<CR>] (CR truncated) x GAME_XP_General / 100, times
+    // (1 + PER_NPC_Bonus / 100 x party size) when that bonus is above 0 (it is 0 in the shipped
+    // table), rounded up. The party level is the player's (level_for_xp of the player's XP).
+    fn kill_xp_value { tables: *Tables, victim: *Creature, party_level: i32, party_size: i32 } -> i32 {
+        if party_level < 1 { return 0 }
+        let t = raw_table{ tables, which = Tab::xptable }
+        let row = @as(usize, if party_level > LEVEL_CAP { LEVEL_CAP - 1 } else { party_level - 1 })
+        let cr = @as(i32, victim.challenge)
+        if cr < 0 { return 0 }
+        let base = twoda::get_float_at{ t, row, col = @as(usize, cr) + 1 } ifnull 0.0
+        let general = twoda::get_float{ t = raw_table{ tables, which = Tab::npc }, row = 9, column = "percentxp" } ifnull 100.0
+        let h = hundredth{}
+        let mut value: f32 = @as(f32, @as(f64, general) * h * @as(f64, base))
+        let bonus = cell_int{ t = raw_table{ tables, which = Tab::npc }, row = 10, col = "percentxp", dflt = 0 }
+        if bonus > 0 {
+            let m = @as(f32, @as(f64, bonus) * h * @as(f64, party_size) + 1.0)
+            value = @as(f32, @as(f64, value) * @as(f64, m))
+        }
+        return ceil_to_i32{ x = @as(f64, value) }
+    }
+
+    // AwardKillXP's gate: nothing for a party member, a victim that is already dying, or one the
+    // player's faction does not consider hostile (reputation above 10; the reading of the faction
+    // test is medium confidence in the docs).
+    fn awards_kill_xp { victim_in_party: bool, victim_dying: bool, reputation: i32 } -> bool {
+        return not victim_in_party and not victim_dying and reputation <= 10
+    }
+
+    // The factor of an NPC row as the party code builds it (1.0 for a missing or zero percentage).
+    fn npc_share_factor { percent_xp: i32 } -> f32 {
+        if percent_xp <= 0 { return 1.0 }
+        return @as(f32, @as(f64, percent_xp) * hundredth{})
+    }
+
+    // JoiningXP (0x00564300, party-items-saves.md 3.4): the d20 XP of the recruit's level,
+    // 1000 x L x (L-1) / 2, less its share of the party pool; 0 if the pool already covers it.
+    fn joining_xp { tables: *Tables, level: i32, pool: i32, percent_xp: i32 } -> i32 {
+        let need = 1000 * level * (level - 1) / 2
+        let share = @as(i32, @as(f64, pool) * @as(f64, npc_share_factor{ percent_xp }))
+        let d = need - share
+        return if d > 0 { d } else { 0 }
+    }
+
+    // The catch-up SpawnAvailableNPC (0x00565130) gives a recruit that has earned less than its
+    // share of the pool: the amount to pass to add_experience (which scales it by the percentage
+    // again), 0 when the NPC is up to date. `xp` is the creature's XP now.
+    fn catch_up_xp { tables: *Tables, xp: i32, joining: i32, pool: i32, percent_xp: i32 } -> i32 {
+        let earned = xp - joining
+        let share = @as(i32, @as(f64, pool) * @as(f64, npc_share_factor{ percent_xp }))
+        if earned >= share { return 0 }
+        let pct = if percent_xp > 0 { percent_xp } else { 100 }
+        return pool - earned * 100 / pct
+    }
+
+    // ---- class tables the level-up reads
+
+    // Order lists (FUN_005be430, FUN_005be3c0, FUN_005be6d0 share one shape): the entry whose rank
+    // equals `position`, else the (position+1)-th entry without a rank (the last such if fewer),
+    // else none. A blank rank reads as 0 in the exe.
+
+    // The skill the class's priority list puts at 1-based `position` (skills.2da <class>_reco).
+    fn skill_at_priority { tables: *Tables, class: i32, position: i32 } -> i32 {
+        if class < 0 or class >= @as(i32, NUM_CLASS_ROWS) { return -1 }
+        let cx = @as(usize, class)
+        let mut fallback: i32 = -1
+        let mut counted: i32 = -1
+        let mut s: usize = 0
+        while s < NUM_SKILLS {
+            let id = @as(i32, s)
+            let row = &tables.skills[s]
+            s = s + 1
+            if not row.valid { continue }
+            let rank = row.reco[cx]
+            if rank == position { return id }
+            if rank <= 0 and counted != position {
+                fallback = id
+                counted = counted + 1
+            }
+        }
+        return fallback
+    }
+
+    // The feat the class's priority list puts at `position` (feat.2da <class>_recom), over the
+    // feats that have an entry in the class table (valid and not "not available", list != 4).
+    fn feat_at_priority { tables: *Tables, class: i32, position: i32 } -> i32 {
+        if class < 0 or class >= @as(i32, NUM_CLASS_ROWS) { return -1 }
+        let cx = @as(usize, class)
+        let mut fallback: i32 = -1
+        let mut counted: i32 = -1
+        let mut i: usize = 0
+        while i < tables.feats.len {
+            let id = @as(i32, i)
+            let row = &tables.feats[i]
+            i = i + 1
+            if not row.valid or row.list[cx] == 4 { continue }
+            let rank = row.recom[cx]
+            if rank == position { return id }
+            if rank <= 0 and counted != position {
+                fallback = id
+                counted = counted + 1
+            }
+        }
+        return fallback
+    }
+
+    // Skill points per rank: 1 for a class skill, 2 across classes.
+    fn skill_cost { tables: *Tables, class: i32, skill: i32 } -> i32 {
+        if class < 0 or class >= @as(i32, NUM_CLASS_ROWS) or skill < 0 or skill >= @as(i32, NUM_SKILLS) { return 2 }
+        return if tables.skills[@as(usize, skill)].class_skill[@as(usize, class)] { 1 } else { 2 }
+    }
+
+    // The highest rank a skill may have at `class_level` (the level being taken): level + 3 for a
+    // class skill, half of that otherwise (AutoLevelUp, 0x005b27e0).
+    fn skill_max_rank { tables: *Tables, class: i32, skill: i32, class_level: i32 } -> i32 {
+        let full = class_level + 3
+        return if skill_cost{ tables, class, skill } == 1 { full } else { full >> 1 }
+    }
+
+    // Skill points to spend at this level: the unspent ones, plus (class level 1) four times
+    // max(1, skillpointbase/2 + INT modifier) or (later) max(1, (INT modifier + skillpointbase)/2),
+    // from the BASE INT. Class level 1 means the first level in that class, also for a second class.
+    fn skill_points_for_level { tables: *Tables, c: *Creature, class: i32, class_level: i32 } -> i32 {
+        let row = get_class{ tables, row = class } ifnull { return c.skill_points }
+        let int_mod = ability_modifier{ score = c.abil[3] }
+        if class_level == 1 {
+            let x = row.skill_base / 2 + int_mod
+            return c.skill_points + (if x < 2 { 4 } else { x * 4 })
+        }
+        let y = (int_mod + row.skill_base) / 2
+        return c.skill_points + (if y < 2 { 1 } else { y })
+    }
+
+    // featgain.2da: general and bonus feats the class gives at `class_level`.
+    struct FeatCounts { general: i32, bonus: i32 }
+
+    fn feat_counts_for_level { tables: *Tables, class: i32, class_level: i32 } -> FeatCounts {
+        let row = get_class{ tables, row = class } ifnull { return FeatCounts{ general = 0, bonus = 0 } }
+        if class_level < 1 or class_level > @as(i32, MAX_LEVEL) { return FeatCounts{ general = 0, bonus = 0 } }
+        let l = @as(usize, class_level - 1)
+        return FeatCounts{ general = row.feat_reg[l], bonus = row.feat_bon[l] }
+    }
+
+    // classpowergain.2da: Force powers the class gives at `class_level` (0 for non-Force classes).
+    fn powers_to_gain { tables: *Tables, class: i32, class_level: i32 } -> i32 {
+        let row = get_class{ tables, row = class } ifnull { return 0 }
+        if not row.caster or class_level < 1 or class_level > @as(i32, MAX_LEVEL) { return 0 }
+        return row.power_gain[@as(usize, class_level - 1)]
+    }
+
+    // ---- feats (6)
+
+    // Which pools a feat may be taken from in a class: feat.2da <class>_list 0 general only,
+    // 1 general or bonus, 2 bonus only; 3 (granted by the class) and 4 (not available) neither.
+    struct SelectableAs { general: bool, bonus: bool }
+
+    fn feat_selectable_as { tables: *Tables, class: i32, feat: i32 } -> SelectableAs {
+        let none = SelectableAs{ general = false, bonus = false }
+        let row = get_feat{ tables, row = feat } ifnull { return none }
+        if not row.valid or class < 0 or class >= @as(i32, NUM_CLASS_ROWS) { return none }
+        let l = row.list[@as(usize, class)]
+        if l == 0 { return SelectableAs{ general = true, bonus = false } }
+        if l == 1 { return SelectableAs{ general = true, bonus = true } }
+        if l == 2 { return SelectableAs{ general = false, bonus = true } }
+        return none
+    }
+
+    // Known, or picked in the record being built (FUN_005a7080).
+    fn knows_or_picks_feat { c: *Creature, pending: *LevelRecord, feat: i32 } -> bool {
+        if has_feat{ c, feat } { return true }
+        let mut i: usize = 0
+        while i < @as(usize, pending.nfeats) and i < 8 {
+            if pending.feats[i] == feat { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // MeetsFeatRequirements (0x005afb00), with `class_level` the class level the feat is taken at:
+    //  - a feat the class grants outright needs the character to have reached the granted level;
+    //  - mincharlevel <= class_level (AutoLevelUp's test);
+    //  - minspelllvl: some Force class must offer that power level. cls_spgn_jedi.2da gives each
+    //    class level exactly one spell level (index 0), so FUN_005bcd60 can answer only for 0 and a
+    //    nonzero minspelllvl never passes. No shipped feat has one.
+    //  - minattackbonus <= the base attack bonus now (before this level-up is applied, as the
+    //    exe's CanSelectFeat sees it); minstr, mindex, minint, minwis <= the BASE ability scores;
+    //  - prerequisite feats (both) and, when any orreqfeat is named, at least one of them, each
+    //    known or picked in `pending` (FUN_005a7230: the OR list needs one of the named feats);
+    //  - a required skill needs ranks, or, if the skill is usable untrained, nothing (FUN_005af880).
+    fn meets_feat_requirements { tables: *Tables, c: *Creature, feat: i32, class: i32, class_level: i32, pending: *LevelRecord } -> bool {
+        let row = get_feat{ tables, row = feat } ifnull { return false }
+        if not row.valid { return false }
+        if class >= 0 and class < @as(i32, NUM_CLASS_ROWS) {
+            let cx = @as(usize, class)
+            if row.list[cx] == 3 and row.granted[cx] > total_level{ c } { return false }
+        }
+        if row.min_level > class_level { return false }
+        if row.min_spell_level > 0 { return false }
+        if row.min_attack > base_attack_bonus{ tables, c } { return false }
+        if row.min_str > c.abil[0] or row.min_dex > c.abil[1] or row.min_int > c.abil[3] or row.min_wis > c.abil[4] {
+            return false
+        }
+        let mut p: usize = 0
+        while p < 2 {
+            let need = row.prereq[p]
+            p = p + 1
+            if need >= 0 and not knows_or_picks_feat{ c, pending, feat = need } { return false }
+        }
+        let mut named = false
+        let mut met = false
+        let mut o: usize = 0
+        while o < 5 {
+            let need = row.or_req[o]
+            o = o + 1
+            if need < 0 { continue }
+            named = true
+            if knows_or_picks_feat{ c, pending, feat = need } { met = true }
+        }
+        if named and not met { return false }
+        if row.req_skill >= 0 and row.req_skill < @as(i32, NUM_SKILLS) {
+            let sk = &tables.skills[@as(usize, row.req_skill)]
+            if not sk.untrained and c.skills[@as(usize, row.req_skill)] <= 0 { return false }
+        }
+        return true
+    }
+
+    // CanSelectFeat (0x005b2530): the feat exists, is neither known nor picked, meets its
+    // requirements, is selectable in this class, and a slot is left once the feats already picked
+    // in `pending` have taken theirs. `general` and `bonus` are the level's totals (featgain.2da),
+    // not what remains. The slot matching is the exe's: picked feats that fit one pool take it,
+    // the flexible ones take whatever remains (general first), and a candidate that fits one pool
+    // only needs it free.
+    fn can_select_feat { tables: *Tables, c: *Creature, feat: i32, class: i32, class_level: i32, general: i32, bonus: i32, pending: *LevelRecord } -> bool {
+        if general == 0 and bonus == 0 { return false }
+        let row = get_feat{ tables, row = feat } ifnull { return false }
+        if not row.valid { return false }
+        if knows_or_picks_feat{ c, pending, feat } { return false }
+        if not meets_feat_requirements{ tables, c, feat, class, class_level, pending } { return false }
+        let sel = feat_selectable_as{ tables, class, feat }
+        if not sel.general and not sel.bonus { return false }
+        let mut g = general
+        let mut b = bonus
+        let mut used = [false; 8]
+        let n = if pending.nfeats > 8 { 8 } else { @as(usize, pending.nfeats) }
+        let mut i: usize = 0
+        while i < n {
+            let s = feat_selectable_as{ tables, class, feat = pending.feats[i] }
+            if not s.general {
+                if s.bonus and b > 0 {
+                    b = b - 1
+                    used[i] = true
+                }
+            } else if not s.bonus {
+                if g == 0 { return false }
+                g = g - 1
+                used[i] = true
+            }
+            i = i + 1
+        }
+        let mut placed = false
+        if not sel.general {
+            if b == 0 { return false }
+            b = b - 1
+            placed = true
+        } else if not sel.bonus {
+            if g == 0 { return false }
+            g = g - 1
+            placed = true
+        }
+        i = 0
+        while i < n {
+            if not used[i] {
+                if g != 0 {
+                    g = g - 1
+                } else {
+                    if b == 0 { return false }
+                    b = b - 1
+                }
+            }
+            i = i + 1
+        }
+        return placed or g != 0 or b != 0
+    }
+
+    // The feats the level-up screen can list now, in feat.2da order.
+    fn selectable_feats { tables: *Tables, c: *Creature, class: i32, class_level: i32, general: i32, bonus: i32, pending: *LevelRecord, mut out: IdList } {
+        out.len = 0
+        let mut f: usize = 0
+        while f < tables.feats.len {
+            let id = @as(i32, f)
+            f = f + 1
+            if can_select_feat{ tables, c, feat = id, class, class_level, general, bonus, pending } {
+                push_id{ list = &out, id }
+            }
+        }
+    }
+
+    // Adds the feats the class grants at `class_level` (feat.2da <class>_list 3, <class>_granted
+    // equal to the level) straight to the creature, as AutoLevelUp does before it chooses.
+    // Returns how many were new.
+    fn grant_class_feats { tables: *Tables, mut c: Creature, class: i32, class_level: i32 } -> i32 {
+        if class < 0 or class >= @as(i32, NUM_CLASS_ROWS) { return 0 }
+        let cx = @as(usize, class)
+        let mut added = 0
+        let mut f: usize = 0
+        while f < tables.feats.len {
+            let id = @as(i32, f)
+            let row = &tables.feats[f]
+            f = f + 1
+            if not row.valid or row.list[cx] != 3 or row.granted[cx] != class_level { continue }
+            if not has_feat{ c = &c, feat = id } {
+                grant_feat{ c = &c, feat = id }
+                added = added + 1
+            }
+        }
+        return added
+    }
+
+    // ---- the level screen's numbers
+
+    struct SkillOption {
+        usable: bool,           // listed at all (skills.2da allclassescanuse, or the class has it)
+        class_skill: bool,
+        cost: i32,              // skill points per rank
+        max_rank: i32,
+        rank: i32,              // ranks now
+    }
+
+    struct LevelUpOptions {
+        class: i32,
+        class_level: i32,       // the class level after this level
+        char_level: i32,        // the character level after it
+        hp: i32,                // hit die gained (before the CON modifier, no roll)
+        fp: i32,                // Force die gained
+        ability_point: bool,    // an ability may be raised by one
+        skill_points: i32,      // unspent plus this level's
+        skills: [NUM_SKILLS]SkillOption,
+        general_feats: i32,
+        bonus_feats: i32,
+        powers: i32,            // Force powers to choose
+        ngranted: i32,          // feats the class grants outright at this level (added by apply_level_up)
+        granted: [16]i32,
+    }
+
+    // What taking a level of `class` offers: false when the class does not exist or the creature
+    // has no slot for it. Everything follows the same rules as AutoLevelUp, whose record the GUI
+    // builds too.
+    fn level_up_options { tables: *Tables, c: *Creature, class: i32, mut out: LevelUpOptions } -> bool {
+        let row = get_class{ tables, row = class } ifnull { return false }
+        if not has_class{ c, class } and c.nclasses >= MAX_LEVEL_CLASSES { return false }
+        let n = class_level{ c, class } + 1
+        out.class = class
+        out.class_level = n
+        out.char_level = total_level{ c } + 1
+        out.hp = row.hit_die
+        out.fp = row.force_die
+        out.ability_point = n % 4 == 0
+        out.skill_points = skill_points_for_level{ tables, c, class, class_level = n }
+        let mut s: usize = 0
+        while s < NUM_SKILLS {
+            let sk = &tables.skills[s]
+            let id = @as(i32, s)
+            out.skills[s] = SkillOption{
+                usable = sk.valid and (sk.all_classes or class_has_skill{ tables, class, skill = id }),
+                class_skill = skill_cost{ tables, class, skill = id } == 1,
+                cost = skill_cost{ tables, class, skill = id },
+                max_rank = skill_max_rank{ tables, class, skill = id, class_level = n },
+                rank = c.skills[s],
+            }
+            s = s + 1
+        }
+        let fc = feat_counts_for_level{ tables, class, class_level = n }
+        out.general_feats = fc.general
+        out.bonus_feats = fc.bonus
+        out.powers = powers_to_gain{ tables, class, class_level = n }
+        out.ngranted = 0
+        let cx = @as(usize, class)
+        let mut f: usize = 0
+        while f < tables.feats.len and out.ngranted < 16 {
+            let fr = &tables.feats[f]
+            if fr.valid and fr.list[cx] == 3 and fr.granted[cx] == n {
+                out.granted[@as(usize, out.ngranted)] = @as(i32, f)
+                out.ngranted = out.ngranted + 1
+            }
+            f = f + 1
+        }
+        return true
+    }
+
+    // Whether the class's skill table lists the skill (FUN_005be070's second test): every class
+    // lists all eight.
+    fn class_has_skill { tables: *Tables, class: i32, skill: i32 } -> bool {
+        if class < 0 or class >= @as(i32, NUM_CLASS_ROWS) or skill < 0 or skill >= @as(i32, NUM_SKILLS) { return false }
+        return tables.classes[@as(usize, class)].valid and tables.skills[@as(usize, skill)].valid
+    }
+
+    // ---- applying a level (4.3)
+
+    struct LevelUpResult {
+        ok: bool,
+        heal_to_full: bool,     // the engine sets current HP to the new maximum (step 7)
+        fp_gained: i32,         // the change in maximum Force points, already added to Creature.fp
+        new_class: bool,        // the level opened a class slot
+    }
+
+    fn class_slot_of { c: *Creature, class: i32 } -> i32 {
+        let mut i: usize = 0
+        while i < @as(usize, c.nclasses) {
+            if c.classes[i].class == class { return @as(i32, i) }
+            i = i + 1
+        }
+        return -1
+    }
+
+    // CSWSCreatureStats::ApplyLevelUp / LevelUp (0x005af950, 0x005aabf0), steps 1 to 7 of 4.3, and
+    // the grant of the class's feats for the new level (see the top of this file). Refuses (ok =
+    // false, nothing changed) when CanLevelUp says no, when the class is unknown, or when the
+    // record would open a third class slot. Current hit points are the engine's: the result says to
+    // heal them to the new maximum (`stats.max_hp` is already current).
+    fn apply_level_up { tables: *Tables, mut c: Creature, rec: LevelRecord, alive: bool } -> LevelUpResult {
+        let refused = LevelUpResult{ ok = false, heal_to_full = false, fp_gained = 0, new_class = false }
+        if not can_level_up{ tables, c = &c, alive } { return refused }
+        if get_class{ tables, row = rec.class } == null { return refused }
+        let slot = class_slot_of{ c = &c, class = rec.class }
+        if slot < 0 and c.nclasses >= MAX_LEVEL_CLASSES { return refused }
+        recompute{ tables, c = &c }
+        let old_max_fp = c.stats.max_fp
+
+        // 1 history
+        if c.nhistory < @as(i32, MAX_LEVELS) {
+            c.history[@as(usize, c.nhistory)] = rec
+            c.nhistory = c.nhistory + 1
+        }
+        // 2 the class slot
+        let mut opened = false
+        let mut at = slot
+        if at < 0 {
+            at = c.nclasses
+            c.classes[@as(usize, at)] = ClassSlot{ class = rec.class, level = 1 }
+            c.nclasses = c.nclasses + 1
+            opened = true
+        } else {
+            c.classes[@as(usize, at)].level = c.classes[@as(usize, at)].level + 1
+        }
+        let new_level = c.classes[@as(usize, at)].level
+        // 3 hit points and Force points (the bases; a player character's maxima come from the history)
+        c.hp_base = c.hp_base + rec.hp
+        c.fp_base = c.fp_base + rec.fp
+        // 4 ability point
+        if rec.ability >= 0 and rec.ability < 6 {
+            c.abil[@as(usize, rec.ability)] = c.abil[@as(usize, rec.ability)] + 1
+        }
+        // 5 skill ranks, unspent points
+        let mut s: usize = 0
+        while s < NUM_SKILLS {
+            if rec.skills[s] != 0 { c.skills[s] = c.skills[s] + rec.skills[s] }
+            s = s + 1
+        }
+        c.skill_points = rec.skill_left
+        // 6 feats and powers (a player character learns powers only in a Force class)
+        let nf = if rec.nfeats > 8 { 8 } else { @as(usize, rec.nfeats) }
+        let mut f: usize = 0
+        while f < nf {
+            grant_feat{ c = &c, feat = rec.feats[f] }
+            f = f + 1
+        }
+        _ = grant_class_feats{ tables, c = &c, class = rec.class, class_level = new_level }
+        if not c.is_pc or is_force_class{ tables, class = rec.class } {
+            let np = if rec.npowers > 8 { 8 } else { @as(usize, rec.npowers) }
+            let mut p: usize = 0
+            while p < np {
+                if get_spell{ tables, row = rec.powers[p] } != null { learn_power{ c = &c, spell = rec.powers[p] } }
+                p = p + 1
+            }
+        }
+        // 7 the maxima follow; current Force points rise by the change
+        recompute{ tables, c = &c }
+        let gained = c.stats.max_fp - old_max_fp
+        c.fp = c.fp + gained
+        if c.fp > c.stats.max_fp { c.fp = c.stats.max_fp }
+        if c.fp < 0 { c.fp = 0 }
+        return LevelUpResult{ ok = true, heal_to_full = true, fp_gained = gained, new_class = opened }
+    }
+
+    // ---- automatic level-up (4.4)
+
+    // AutoLevelUp's record for the next level of `class` (0x005b27e0): ability point on every 4th
+    // class level, the hit and Force dice at full value, skill points spent along the class's
+    // priority list, the class's granted feats added to the creature (as the exe does, before it
+    // chooses), feats chosen along the class's feat order among those CanSelectFeat accepts, and
+    // Force powers along the light or dark order (evil = good-evil of 40 or less) among those
+    // can_learn_force_power accepts. `rec` is overwritten. False when the class does not exist or
+    // would be a third slot.
+    fn prepare_auto_level { tables: *Tables, mut c: Creature, class: i32, mut rec: LevelRecord } -> bool {
+        let row = get_class{ tables, row = class } ifnull { return false }
+        if not has_class{ c = &c, class } and c.nclasses >= MAX_LEVEL_CLASSES { return false }
+        let n = class_level{ c = &c, class } + 1
+        if n > @as(i32, MAX_LEVEL) { return false }
+        let level_before = total_level{ c = &c }
+        let mut r: LevelRecord
+        r.class = class
+        r.hp = row.hit_die
+        r.fp = row.force_die
+        r.ability = if n % 4 == 0 { row.primary } else { -1 }
+
+        // skills, along the priority list
+        let mut left = skill_points_for_level{ tables, c = &c, class, class_level = n }
+        let mut pos: i32 = 1
+        while left > 0 and pos <= @as(i32, NUM_SKILLS) {
+            let sk = skill_at_priority{ tables, class, position = pos }
+            pos = pos + 1
+            if sk < 0 { continue }
+            let su = @as(usize, sk)
+            if r.skills[su] != 0 { continue }
+            let srow = &tables.skills[su]
+            if not (srow.all_classes or class_has_skill{ tables, class, skill = sk }) { continue }
+            let cost = skill_cost{ tables, class, skill = sk }
+            let room = skill_max_rank{ tables, class, skill = sk, class_level = n } - c.skills[su]
+            let allowed = c.pc_rules or (srow.npc_can_use and (c.race != race::DROID or srow.droid_can_use))
+            if not allowed or room <= 0 { continue }
+            let mut pts = if cost == 1 { left } else { left / 2 }
+            if pts > room { pts = room }
+            if pts <= 0 { continue }
+            left = left - pts * cost
+            r.skills[su] = pts
+        }
+        r.skill_left = left
+
+        // feats: the class's grants first, then the chosen ones
+        _ = grant_class_feats{ tables, c = &c, class, class_level = n }
+        let fc = feat_counts_for_level{ tables, class, class_level = n }
+        let mut to_pick = fc.general + fc.bonus
+        pos = 1
+        while to_pick > 0 and pos <= @as(i32, tables.feats.len) and r.nfeats < 8 {
+            let ft = feat_at_priority{ tables, class, position = pos }
+            pos = pos + 1
+            if ft < 0 { continue }
+            if can_select_feat{ tables, c = &c, feat = ft, class, class_level = n, general = fc.general, bonus = fc.bonus, pending = &r } {
+                r.feats[@as(usize, r.nfeats)] = ft
+                r.nfeats = r.nfeats + 1
+                to_pick = to_pick - 1
+            }
+        }
+
+        // powers
+        if row.caster {
+            let want = powers_to_gain{ tables, class, class_level = n }
+            let light = c.good_evil > 40
+            pos = 1
+            while r.npowers < want and r.npowers < 8 and pos <= @as(i32, tables.spells.len) {
+                let sp = power_at_priority{ tables, light, position = pos }
+                pos = pos + 1
+                if sp < 0 { continue }
+                if can_learn_force_power{ tables, c = &c, spell = sp, class, level_before, total_to_gain = want, pending = &r } {
+                    r.powers[@as(usize, r.npowers)] = sp
+                    r.npowers = r.npowers + 1
+                }
+            }
+        }
+        rec = r
+        return true
+    }
+
+    struct AutoLevelResult {
+        levels: i32,            // levels gained
+        heal_to_full: bool,     // at least one level: set current HP to the maximum
+        fp_gained: i32,         // total change of the maximum Force points
+    }
+
+    // AutoLevelUp: while the XP pays for the next level, in the LAST class slot, build the record
+    // and apply it. A creature with no class slot does nothing.
+    fn auto_level_up { tables: *Tables, mut c: Creature, alive: bool } -> AutoLevelResult {
+        let mut out = AutoLevelResult{ levels = 0, heal_to_full = false, fp_gained = 0 }
+        while c.nclasses >= 1 and can_level_up{ tables, c = &c, alive } {
+            let class = c.classes[@as(usize, c.nclasses - 1)].class
+            let mut rec: LevelRecord
+            if not prepare_auto_level{ tables, c = &c, class, rec = &rec } { break }
+            let lr = apply_level_up{ tables, c = &c, rec, alive }
+            if not lr.ok { break }
+            out.levels = out.levels + 1
+            out.heal_to_full = true
+            out.fp_gained = out.fp_gained + lr.fp_gained
+        }
+        return out
+    }
+
+    // A blank creature's first level in `class` (character generation ends in the same record):
+    // the same record AutoLevelUp would build, applied. The creature needs no XP.
+    fn take_first_level { tables: *Tables, mut c: Creature, class: i32 } -> LevelUpResult {
+        let mut rec: LevelRecord
+        if not prepare_auto_level{ tables, c = &c, class, rec = &rec } {
+            return LevelUpResult{ ok = false, heal_to_full = false, fp_gained = 0, new_class = false }
+        }
+        return apply_level_up{ tables, c = &c, rec, alive = true }
+    }
+
+    // ---- skill checks (5.2)
+
+    // The roll the engine adds: a fixed 20 outside combat ("take 20"), a d20 in combat.
+    // Decision: one `in_combat` flag chooses, as the docs describe for every skill roll below.
+    fn skill_roll { in_combat: bool, mut rng: Rng } -> i32 {
+        if in_combat { return roll_dice{ &rng, count = 1, sides = 20 } }
+        return 20
+    }
+
+    struct SkillCheck {
+        success: bool,
+        roll: i32,              // the 20 or the die
+        total: i32,             // rank + bonus + roll
+        dc: i32,                // the DC that was compared (after the minimum of 1)
+        auto: bool,             // succeeded without a roll
+    }
+
+    fn make_check { total: i32, roll: i32, dc: i32 } -> SkillCheck {
+        return SkillCheck{ success = total >= dc, roll, total, dc, auto = false }
+    }
+
+    // OPENLOCK (0x0057d9d0): Security + the security spike's bonus + (20 or d20) against the
+    // lock's OpenLockDC, at least 1. Success unlocks; the engine then queues the use action.
+    fn open_lock_check { tables: *Tables, c: *Creature, lock_dc: i32, spike_bonus: i32, in_combat: bool, mut rng: Rng } -> SkillCheck {
+        let rank = skill_rank{ tables, c, skill = skill::SECURITY, vs = no_versus{}, base_only = false }
+        let roll = skill_roll{ in_combat, rng = &rng }
+        let dc = if lock_dc < 1 { 1 } else { lock_dc }
+        return make_check{ total = rank + spike_bonus + roll, roll, dc }
+    }
+
+    // DISABLETRAP, RECOVERTRAP, FLAGTRAP, EXAMINETRAP (0x00519570 and kin): Demolitions + (20 or
+    // d20) against the trap's DisarmDC, at least 1; a DC above 35 cannot be beaten; the setter of
+    // the trap, or a party member disarming a party trap, succeeds without a roll.
+    fn disarm_trap_check { tables: *Tables, c: *Creature, disarm_dc: i32, own_trap: bool, in_combat: bool, mut rng: Rng } -> SkillCheck {
+        let dc = if disarm_dc < 1 { 1 } else { disarm_dc }
+        if own_trap {
+            return SkillCheck{ success = true, roll = 0, total = 0, dc, auto = true }
+        }
+        let rank = skill_rank{ tables, c, skill = skill::DEMOLITIONS, vs = no_versus{}, base_only = false }
+        let roll = skill_roll{ in_combat, rng = &rng }
+        let mut r = make_check{ total = rank + roll, roll, dc }
+        if dc > 35 { r.success = false }
+        return r
+    }
+
+    // SETTRAP (0x00519e30): Demolitions (+2 when the base ranks are above 4) + (20 or d20) against
+    // traps.2da's SetDC, at least 1.
+    fn set_trap_check { tables: *Tables, c: *Creature, set_dc: i32, in_combat: bool, mut rng: Rng } -> SkillCheck {
+        let rank = skill_rank{ tables, c, skill = skill::DEMOLITIONS, vs = no_versus{}, base_only = false }
+        let bonus = if c.skills[@as(usize, skill::DEMOLITIONS)] > 4 { 2 } else { 0 }
+        let roll = skill_roll{ in_combat, rng = &rng }
+        let dc = if set_dc < 1 { 1 } else { set_dc }
+        return make_check{ total = rank + bonus + roll, roll, dc }
+    }
+
+    // HEAL (0x00517a60) with a medpac or antidote: Treat Injury + (20 or d20); the engine compares
+    // it with the DC of the poison or disease being treated (medium confidence: a plain heal has
+    // no DC, pass 0).
+    fn treat_injury_check { tables: *Tables, c: *Creature, dc: i32, in_combat: bool, mut rng: Rng } -> SkillCheck {
+        let rank = skill_rank{ tables, c, skill = skill::TREAT_INJURY, vs = no_versus{}, base_only = false }
+        let roll = skill_roll{ in_combat, rng = &rng }
+        return make_check{ total = rank + roll, roll, dc }
+    }
+
+    // DoTrapDetection (0x004fa390, medium confidence): Awareness + d10 (d10 + 10 in detect mode)
+    // against the trap's TrapDetectDC. A d10 whatever the combat state: it is rolled, not taken.
+    fn detect_trap_check { tables: *Tables, c: *Creature, detect_dc: i32, detect_mode: bool, always_detected: bool, mut rng: Rng } -> SkillCheck {
+        if always_detected {
+            return SkillCheck{ success = true, roll = 0, total = 0, dc = detect_dc, auto = true }
+        }
+        let rank = skill_rank{ tables, c, skill = skill::AWARENESS, vs = no_versus{}, base_only = false }
+        let die = roll_dice{ &rng, count = 1, sides = 10 }
+        let roll = die + (if detect_mode { 10 } else { 0 })
+        return make_check{ total = rank + roll, roll, dc = detect_dc }
+    }
+}

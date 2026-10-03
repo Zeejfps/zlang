@@ -1,0 +1,278 @@
+// What a creature's effects add up to: the engine's getters that walk the effect list
+// (rules.md 1.7, 1.8). Nothing here changes the list.
+//
+// Most numeric effects are not written into fields when they arrive; getters sum the list when
+// asked. Bonuses of one source count once (the largest), the sources are added, and the sum is
+// capped.
+namespace rules {
+    // Who the effects are being compared against. `valid` is false when nobody is (a character
+    // sheet): conditional effects (versus a race or an alignment group) are then skipped.
+    struct Versus { valid: bool, race: i32, align: i32 }
+
+    fn no_versus {} -> Versus {
+        return Versus{ valid = false, race = race::ANY, align = 0 }
+    }
+
+    // GetAlignmentGroup: 1 neutral, 2 light, 3 dark, from the good-evil axis (0 dark .. 100 light).
+    fn alignment_group { good_evil: i32 } -> i32 {
+        if good_evil <= 40 { return 3 }
+        if good_evil >= 60 { return 2 }
+        return 1
+    }
+
+    fn versus_creature { c: *Creature } -> Versus {
+        return Versus{ valid = true, race = c.race, align = alignment_group{ good_evil = c.good_evil } }
+    }
+
+    // GetTotalEffectBonus categories.
+    namespace cat {
+        const ATTACK: i32 = 1
+        const DAMAGE: i32 = 2
+        const SAVE: i32 = 3
+        const ABILITY: i32 = 4
+        const SKILL: i32 = 5
+    }
+
+    // What to sum: `a` is the ability or skill row or the save (0 all .. 3), `b` the save type,
+    // `hand` the attack's hand (0 misc, 1 on-hand, 2 off-hand; -1 for any).
+    struct BonusQuery { category: i32, a: i32, b: i32, hand: i32, vs: Versus }
+
+    // The capped sums: bonuses and penalties apart, both as positive numbers.
+    struct Bonus { plus: i32, minus: i32 }
+
+    fn net { b: Bonus } -> i32 { return b.plus - b.minus }
+
+    const MAX_GROUPS: usize = 36
+
+    // One source's bonus so far: kind 1 = a spell's, 2 = an item's; the id tells which.
+    struct Group { kind: i32, key: i64, value: i32 }
+
+    struct Sum { n: usize, groups: [MAX_GROUPS]Group, direct: i32 }
+
+    fn add_to_sum { mut s: Sum, kind: i32, key: i64, value: i32, add_same: bool } {
+        if kind == 0 {
+            s.direct = s.direct + value
+            return
+        }
+        let mut i: usize = 0
+        while i < s.n {
+            if s.groups[i].kind == kind and s.groups[i].key == key {
+                if add_same {
+                    s.groups[i].value = s.groups[i].value + value
+                } else if value > s.groups[i].value {
+                    s.groups[i].value = value
+                }
+                return
+            }
+            i = i + 1
+        }
+        if s.n < MAX_GROUPS {
+            s.groups[s.n] = Group{ kind, key, value }
+            s.n = s.n + 1
+        }
+    }
+
+    fn sum_total { s: Sum } -> i32 {
+        let mut t = s.direct
+        let mut i: usize = 0
+        while i < s.n {
+            t = t + s.groups[i].value
+            i = i + 1
+        }
+        return t
+    }
+
+    // Does an effect's race and alignment filter admit the other party?
+    fn admits { race_param: i32, align_param: i32, vs: Versus } -> bool {
+        if race_param != race::ANY and not (vs.valid and vs.race == race_param) { return false }
+        if align_param != 0 and not (vs.valid and vs.align == align_param) { return false }
+        return true
+    }
+
+    // The grouping key of an effect for a category (rules.md 1.7, "same-source rule"). Returns the
+    // kind (0 = counts alone) and sets the key.
+    fn source_of { e: *Effect, category: i32 } -> i32 {
+        if category != cat::ATTACK and category != cat::DAMAGE and e.dur == dur::EQUIPPED { return 2 }
+        if e.spell_id != -1 { return 1 }
+        return 0
+    }
+
+    fn source_key { e: *Effect, kind: i32 } -> i64 {
+        if kind == 2 { return @as(i64, e.creator) }
+        return @as(i64, e.spell_id)
+    }
+
+    // GetTotalEffectBonus for attack, saves, abilities and skills (damage bonuses are dice and
+    // are summed by the damage roll). The caps are +20/-20, +20/-30, +20/-20, +30/-30.
+    fn effect_bonus { c: *Creature, q: BonusQuery } -> Bonus {
+        let mut plus: Sum
+        let mut minus: Sum
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) {
+            let e = &c.fx[i]
+            i = i + 1
+            let mut sign = 0
+            let mut amount = 0
+            let mut hand_ok = true
+            if q.category == cat::ATTACK {
+                if e.kind == fx::ATTACK_INCREASE { sign = 1 } else if e.kind == fx::ATTACK_DECREASE { sign = -1 }
+                if sign == 0 { continue }
+                amount = e.ints[0]
+                hand_ok = e.ints[1] == 0 or q.hand < 0 or e.ints[1] == q.hand
+                if not (hand_ok and admits{ race_param = e.ints[2], align_param = e.ints[4], vs = q.vs }) { continue }
+            } else if q.category == cat::SAVE {
+                if e.kind == fx::SAVING_THROW_INCREASE { sign = 1 } else if e.kind == fx::SAVING_THROW_DECREASE { sign = -1 }
+                if sign == 0 { continue }
+                amount = e.ints[0]
+                if e.ints[1] != 0 and e.ints[1] != q.a { continue }
+                if e.ints[2] != 0 and e.ints[2] != q.b { continue }
+                if not admits{ race_param = e.ints[3], align_param = e.ints[5], vs = q.vs } { continue }
+            } else if q.category == cat::ABILITY {
+                if e.kind == fx::ABILITY_INCREASE { sign = 1 } else if e.kind == fx::ABILITY_DECREASE { sign = -1 }
+                if sign == 0 { continue }
+                amount = e.ints[1]
+                if e.ints[0] != q.a { continue }
+            } else if q.category == cat::SKILL {
+                if e.kind == fx::SKILL_INCREASE { sign = 1 } else if e.kind == fx::SKILL_DECREASE { sign = -1 }
+                if sign == 0 { continue }
+                amount = e.ints[1]
+                if e.ints[0] != skill::ALL and e.ints[0] != q.a { continue }
+                if not admits{ race_param = e.ints[2], align_param = e.ints[4], vs = q.vs } { continue }
+            } else {
+                continue
+            }
+            if amount <= 0 { continue }
+            let mut kind = source_of{ e, category = q.category }
+            let key = source_key{ e, kind }
+            // Attack bonuses tied to a hand are added directly.
+            if q.category == cat::ATTACK and e.ints[1] != 0 { kind = 0 }
+            if sign > 0 {
+                add_to_sum{ s = &plus, kind, key, value = amount, add_same = false }
+            } else {
+                // Ability penalties of one spell or item add up instead of taking the largest.
+                add_to_sum{ s = &minus, kind, key, value = amount, add_same = q.category == cat::ABILITY }
+            }
+        }
+        let mut cap_plus = 20
+        let mut cap_minus = 20
+        if q.category == cat::ABILITY { cap_minus = 30 }
+        if q.category == cat::SKILL { cap_plus = 30; cap_minus = 30 }
+        let mut p = sum_total{ s = plus }
+        let mut m = sum_total{ s = minus }
+        if p > cap_plus { p = cap_plus }
+        if m > cap_minus { m = cap_minus }
+        return Bonus{ plus = p, minus = m }
+    }
+
+    // ---- immunity (1.8)
+
+    // GetEffectImmunity: an IMMUNITY effect for all types (0) or this one, against this party.
+    fn has_immunity { c: *Creature, kind: i32, vs: Versus } -> bool {
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) {
+            let e = &c.fx[i]
+            i = i + 1
+            if e.kind != fx::IMMUNITY { continue }
+            if e.ints[0] != 0 and e.ints[0] != kind { continue }
+            if e.ints[1] != race::ANY and not (vs.valid and vs.race == e.ints[1]) { continue }
+            if e.ints[2] != 0 and not (vs.valid and vs.align == e.ints[2]) { continue }
+            return true
+        }
+        return false
+    }
+
+    // ---- armour class pieces (1.7, "AC is not summed this way")
+
+    struct AcPieces {
+        dodge: i32,                 // dodge bonuses minus penalties
+        natural: i32,
+        armour: i32,
+        shield: i32,
+        deflection: i32,
+    }
+
+    // Whether an AC effect carries no condition (any race, no alignment group, all damage types).
+    fn ac_unconditional { e: *Effect } -> bool {
+        if e.ints[2] != race::ANY or e.ints[4] != 0 { return false }
+        let f = e.ints[5]
+        return f == 0 or f == fx::AC_ALL_A or f == fx::AC_ALL_B
+    }
+
+    // Dodge adds up; natural, armour, shield and deflection keep only the highest bonus and the
+    // highest penalty. Conditional effects are left to the attack (ac_versus).
+    fn ac_effects { c: *Creature } -> AcPieces {
+        let mut best_up: [5]i32
+        let mut best_down: [5]i32
+        let mut dodge = 0
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) {
+            let e = &c.fx[i]
+            i = i + 1
+            let up = e.kind == fx::AC_INCREASE
+            if not up and e.kind != fx::AC_DECREASE { continue }
+            if not ac_unconditional{ e } { continue }
+            let t = e.ints[0]
+            let amount = e.ints[1]
+            if t < 0 or t > 4 or amount <= 0 { continue }
+            if t == 0 {
+                dodge = if up { dodge + amount } else { dodge - amount }
+            } else if up {
+                if amount > best_up[@as(usize, t)] { best_up[@as(usize, t)] = amount }
+            } else {
+                if amount > best_down[@as(usize, t)] { best_down[@as(usize, t)] = amount }
+            }
+        }
+        return AcPieces{
+            dodge,
+            natural = best_up[1] - best_down[1],
+            armour = best_up[2] - best_down[2],
+            shield = best_up[3] - best_down[3],
+            deflection = best_up[4] - best_down[4],
+        }
+    }
+
+    // ---- crowd control state (1.10)
+
+    // The active crowd-control state: the highest-numbered SETSTATE on the creature, 0 if none.
+    fn active_state { c: *Creature } -> i32 {
+        let mut s = 0
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) {
+            let e = &c.fx[i]
+            i = i + 1
+            if e.kind == fx::SETSTATE and e.ints[0] > s { s = e.ints[0] }
+        }
+        return s
+    }
+
+    // The AI state mask a state leaves: 0xffff free; bit 0x2 may move, 0x84 may attack.
+    fn state_mask { state: i32 } -> i32 {
+        if state == 0 { return 0xffff }
+        let mut mask = 0xfeff                           // every SETSTATE clears bit 0x100
+        let moves_blocked = state == fx::STATE_STUNNED or state == fx::STATE_DROID_STUN or
+            state == fx::STATE_CHOKE or state == fx::STATE_HORRIFIED or state == fx::STATE_WHIRLWIND
+        if moves_blocked { mask = mask & 0xfffd }
+        if state == fx::STATE_PARALYZED { mask = mask & 0xfff1 }
+        if state == fx::STATE_SLEEP { mask = mask & 0xfea1 }
+        return mask
+    }
+
+    fn can_move { c: *Creature } -> bool { return (c.stats.ai_mask & 2) != 0 }
+    fn can_attack { c: *Creature } -> bool { return (c.stats.ai_mask & 0x84) == 0x84 }
+
+    // Helpless (GetIsHelpless/GetIsDebilitated): any crowd-control state, or a party member down.
+    fn is_debilitated { c: *Creature } -> bool { return c.stats.state != 0 or c.down }
+
+    // How many effects of a kind the creature carries.
+    fn count_effects { c: *Creature, kind: i32 } -> i32 {
+        let mut n = 0
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) {
+            if c.fx[i].kind == kind { n = n + 1 }
+            i = i + 1
+        }
+        return n
+    }
+
+    fn has_effect_kind { c: *Creature, kind: i32 } -> bool { return count_effects{ c, kind } > 0 }
+}

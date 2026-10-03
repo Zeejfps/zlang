@@ -1,0 +1,195 @@
+// Creatures and items from their GFF blueprints (UTC, UTI) and from the full structs a save
+// holds (docs/formats/gff-templates.md, gff-save.md). The caller parses the file and names the
+// struct: a blueprint's root, or an element of a GIT's "Creature List", or a "Mod_PlayerList"
+// entry. A missing field takes the engine's default; reading never fails.
+//
+//   let mut c: rules::Creature
+//   rules::read_creature{ tables = &tables, doc = &doc, s = gff::ROOT, out = &c }
+//
+// The equipped and carried items of a creature are the engine's to instantiate: read the UTC's
+// Equip_ItemList and ItemList yourself, make each a rules::Item with read_item and give it to
+// rules::equip.
+namespace rules {
+    // An integer field of any width, signed as stored; `dflt` when the struct lacks it.
+    fn read_number { doc: *gff::Doc, s: u32, label: []u8, dflt: i32 } -> i32 {
+        let v = gff::get_number{ doc = doc.*, s, label } ifnull { return dflt }
+        return @trunc(i32, v)
+    }
+
+    // ---- items
+
+    // A blank item: no base item, nothing stacked, native properties only.
+    fn make_item {} -> Item {
+        let mut it: Item
+        it.base_item = -1
+        it.stack = 1
+        return it
+    }
+
+    // A UTI (or a saved item struct): base item, stack, charges, cost, flags, properties.
+    fn read_item { tables: *Tables, doc: *gff::Doc, s: u32, mut out: Item } {
+        out = make_item{}
+        out.base_item = read_number{ doc, s, label = "BaseItem", dflt = -1 }
+        out.stack = read_number{ doc, s, label = "StackSize", dflt = 1 }
+        if out.stack < 1 { out.stack = 1 }
+        out.charges = read_number{ doc, s, label = "Charges", dflt = 0 }
+        out.cost = read_number{ doc, s, label = "Cost", dflt = 0 }
+        out.add_cost = read_number{ doc, s, label = "AddCost", dflt = 0 }
+        out.plot = read_number{ doc, s, label = "Plot", dflt = 0 } != 0
+        out.identified = read_number{ doc, s, label = "Identified", dflt = 0 } != 0
+        out.stolen = read_number{ doc, s, label = "Stolen", dflt = 0 } != 0
+        out.non_equippable = read_number{ doc, s, label = "NonEquippable", dflt = 0 } != 0
+        out.upgrades = @trunc(u32, read_number{ doc, s, label = "Upgrades", dflt = 0 })
+        out.model_variation = read_number{ doc, s, label = "ModelVariation", dflt = 0 }
+        out.body_variation = read_number{ doc, s, label = "BodyVariation", dflt = 0 }
+        out.texture_var = read_number{ doc, s, label = "TextureVar", dflt = 0 }
+        let res_name = gff::get_resref{ doc = doc.*, s, label = "TemplateResRef" } ifnull ""
+        out.resref = resref::truncate{ name = res_name }
+        let props = gff::get_list{ doc = doc.*, s, label = "PropertiesList" } ifnull slice::empty(u32){}
+        let mut i: usize = 0
+        while i < props.len and i < MAX_PROPS {
+            let p = props[i]
+            out.props[i] = Prop{
+                name = @trunc(u16, read_number{ doc, s = p, label = "PropertyName", dflt = 0 }),
+                subtype = @trunc(u16, read_number{ doc, s = p, label = "Subtype", dflt = 0 }),
+                cost_table = @trunc(u16, read_number{ doc, s = p, label = "CostTable", dflt = 0 }),
+                cost_value = @trunc(u16, read_number{ doc, s = p, label = "CostValue", dflt = 0 }),
+                param1 = @trunc(u16, read_number{ doc, s = p, label = "Param1", dflt = 255 }),
+                param1_value = @trunc(u16, read_number{ doc, s = p, label = "Param1Value", dflt = 0 }),
+                upgrade = @trunc(u16, read_number{ doc, s = p, label = "UpgradeType", dflt = 255 }),
+                uses_per_day = @trunc(u16, read_number{ doc, s = p, label = "UsesPerDay", dflt = 255 }),
+            }
+            i = i + 1
+        }
+        out.nprops = @as(i32, i)
+    }
+
+    // ---- creatures
+
+    // A creature with the engine's defaults for a template that says nothing.
+    fn make_creature {} -> Creature {
+        let mut c: Creature
+        c.race = race::HUMAN
+        c.good_evil = 50
+        c.loaded_hp = -1
+        c.abil = [10; 6]
+        c.nclasses = 0
+        let mut i: usize = 0
+        while i < MAX_CLASSES {
+            c.classes[i].class = -1
+            i = i + 1
+        }
+        i = 0
+        while i < NUM_SLOTS {
+            c.equip[i].id = OBJECT_INVALID
+            i = i + 1
+        }
+        return c
+    }
+
+    // One of the three save bonuses, which the toolset wrote with two spellings.
+    fn read_save_bonus { doc: *gff::Doc, s: u32, lower: []u8, upper: []u8 } -> i32 {
+        let v = gff::get_number{ doc = doc.*, s, label = lower } ifnull (gff::get_number{ doc = doc.*, s, label = upper } ifnull 0)
+        return @trunc(i32, v)
+    }
+
+    // A UTC blueprint, or the saved struct of a creature or of the player (Mod_PlayerList),
+    // which adds the level history and the experience.
+    fn read_creature { tables: *Tables, doc: *gff::Doc, s: u32, mut out: Creature } {
+        out = make_creature{}
+        out.race = read_number{ doc, s, label = "Race", dflt = race::HUMAN }
+        out.subrace = read_number{ doc, s, label = "SubraceIndex", dflt = 0 }
+        out.gender = read_number{ doc, s, label = "Gender", dflt = 0 }
+        out.appearance = read_number{ doc, s, label = "Appearance_Type", dflt = 0 }
+        out.faction = read_number{ doc, s, label = "FactionID", dflt = 0 }
+        out.abil[0] = read_number{ doc, s, label = "Str", dflt = 10 }
+        out.abil[1] = read_number{ doc, s, label = "Dex", dflt = 10 }
+        out.abil[2] = read_number{ doc, s, label = "Con", dflt = 10 }
+        out.abil[3] = read_number{ doc, s, label = "Int", dflt = 10 }
+        out.abil[4] = read_number{ doc, s, label = "Wis", dflt = 10 }
+        out.abil[5] = read_number{ doc, s, label = "Cha", dflt = 10 }
+        out.natural_ac = read_number{ doc, s, label = "NaturalAC", dflt = 0 }
+        out.hp_base = read_number{ doc, s, label = "HitPoints", dflt = 1 }
+        out.loaded_hp = read_number{ doc, s, label = "CurrentHitPoints", dflt = -1 }
+        out.fp_base = read_number{ doc, s, label = "ForcePoints", dflt = 0 }
+        out.save_bonus[0] = read_save_bonus{ doc, s, lower = "fortbonus", upper = "FortBonus" }
+        out.save_bonus[1] = read_save_bonus{ doc, s, lower = "refbonus", upper = "RefBonus" }
+        out.save_bonus[2] = read_save_bonus{ doc, s, lower = "willbonus", upper = "WillBonus" }
+        out.good_evil = read_number{ doc, s, label = "GoodEvil", dflt = 50 }
+        out.challenge = gff::get_float{ doc = doc.*, s, label = "ChallengeRating" } ifnull 0.0
+        out.xp = read_number{ doc, s, label = "Experience", dflt = 0 }
+        out.skill_points = read_number{ doc, s, label = "SkillPoints", dflt = 0 }
+        out.is_pc = read_number{ doc, s, label = "IsPC", dflt = 0 } != 0
+        out.pc_rules = out.is_pc
+        out.plot = read_number{ doc, s, label = "Plot", dflt = 0 } != 0
+        out.min1hp = read_number{ doc, s, label = "Min1HP", dflt = 0 } != 0
+
+        let classes = gff::get_list{ doc = doc.*, s, label = "ClassList" } ifnull slice::empty(u32){}
+        let mut i: usize = 0
+        while i < classes.len and i < MAX_CLASSES {
+            out.classes[i] = ClassSlot{
+                class = read_number{ doc, s = classes[i], label = "Class", dflt = 0 },
+                level = read_number{ doc, s = classes[i], label = "ClassLevel", dflt = 1 },
+            }
+            let known = gff::get_list{ doc = doc.*, s = classes[i], label = "KnownList0" } ifnull slice::empty(u32){}
+            let mut k: usize = 0
+            while k < known.len {
+                learn_power{ c = &out, spell = read_number{ doc, s = known[k], label = "Spell", dflt = -1 } }
+                k = k + 1
+            }
+            i = i + 1
+        }
+        out.nclasses = @as(i32, i)
+
+        let skills = gff::get_list{ doc = doc.*, s, label = "SkillList" } ifnull slice::empty(u32){}
+        i = 0
+        while i < skills.len and i < NUM_SKILLS {
+            out.skills[i] = read_number{ doc, s = skills[i], label = "Rank", dflt = 0 }
+            i = i + 1
+        }
+        let feats = gff::get_list{ doc = doc.*, s, label = "FeatList" } ifnull slice::empty(u32){}
+        i = 0
+        while i < feats.len {
+            grant_feat{ c = &out, feat = read_number{ doc, s = feats[i], label = "Feat", dflt = -1 } }
+            i = i + 1
+        }
+        let abilities = gff::get_list{ doc = doc.*, s, label = "SpecAbilityList" } ifnull slice::empty(u32){}
+        i = 0
+        while i < abilities.len {
+            learn_power{ c = &out, spell = read_number{ doc, s = abilities[i], label = "Spell", dflt = -1 } }
+            i = i + 1
+        }
+
+        // The player's history of level-ups; templates have none.
+        let levels = gff::get_list{ doc = doc.*, s, label = "LvlStatList" } ifnull slice::empty(u32){}
+        i = 0
+        while i < levels.len and i < MAX_LEVELS {
+            let r = &out.history[i]
+            r.class = read_number{ doc, s = levels[i], label = "LvlStatClass", dflt = 0 }
+            r.hp = read_number{ doc, s = levels[i], label = "LvlStatHitDie", dflt = 0 }
+            r.fp = read_number{ doc, s = levels[i], label = "LvlStatForce", dflt = 0 }
+            r.ability = read_number{ doc, s = levels[i], label = "LvlStatAbility", dflt = -1 }
+            r.skill_left = read_number{ doc, s = levels[i], label = "SkillPoints", dflt = 0 }
+            let ranks = gff::get_list{ doc = doc.*, s = levels[i], label = "SkillList" } ifnull slice::empty(u32){}
+            let mut k: usize = 0
+            while k < ranks.len and k < NUM_SKILLS {
+                r.skills[k] = read_number{ doc, s = ranks[k], label = "Rank", dflt = 0 }
+                k = k + 1
+            }
+            let hf = gff::get_list{ doc = doc.*, s = levels[i], label = "FeatList" } ifnull slice::empty(u32){}
+            k = 0
+            while k < hf.len and k < 8 {
+                r.feats[k] = read_number{ doc, s = hf[k], label = "Feat", dflt = -1 }
+                k = k + 1
+            }
+            r.nfeats = @as(i32, k)
+            i = i + 1
+        }
+        out.nhistory = @as(i32, i)
+
+        recompute{ tables, c = &out }
+        let cur = read_number{ doc, s, label = "CurrentForce", dflt = -1 }
+        out.fp = if cur < 0 { out.stats.max_fp } else { cur }
+        if out.fp > out.stats.max_fp { out.fp = out.stats.max_fp }
+    }
+}

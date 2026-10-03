@@ -1,0 +1,40 @@
+// The rules' random numbers. The engine rolls with the C runtime's rand() and RollDice(n, sides)
+// = the sum of n times (1 + rand() % sides) (combat.md 4.1); this is the same generator, MSVC's
+// linear congruential one, so a seed reproduces a fight exactly and the state is one u32 that a
+// save can keep.
+//
+//   let mut rng = rules::seed_rng{ seed = 1234 }
+//   let d20 = rules::roll_dice{ &rng, count = 1, sides = 20 }
+namespace rules {
+    fn seed_rng { seed: u32 } -> Rng {
+        return Rng{ state = seed }
+    }
+
+    // rand(): 15 bits from the high half of the next state.
+    fn next_rand { mut rng: Rng } -> i32 {
+        rng.state = @wrap_add(@wrap_mul(rng.state, 214013), 2531011)
+        return @as(i32, (rng.state >> 16) & 0x7fff)
+    }
+
+    // 0..n-1 the way the engine writes it: rand() % n (so with the modulo bias). n <= 0 gives 0.
+    fn roll_below { mut rng: Rng, n: i32 } -> i32 {
+        if n <= 0 { return 0 }
+        return next_rand{ &rng } % n
+    }
+
+    // RollDice: count dice of `sides` sides summed. Zero dice or sides gives 0.
+    fn roll_dice { mut rng: Rng, count: i32, sides: i32 } -> i32 {
+        let mut sum = 0
+        let mut i = 0
+        while i < count {
+            if sides > 0 { sum = sum + 1 + next_rand{ &rng } % sides }
+            i = i + 1
+        }
+        return sum
+    }
+
+    // A percentage roll: true when a roll of 0..99 is below `percent`.
+    fn roll_percent { mut rng: Rng, percent: i32 } -> bool {
+        return roll_below{ &rng, n = 100 } < percent
+    }
+}
