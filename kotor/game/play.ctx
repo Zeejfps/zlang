@@ -58,6 +58,9 @@ namespace play {
         let freq = sdl::counter_frequency{ &sdl }
         let mut last = sdl::counter{ &sdl }
         let mut quit = false
+        let mut real_total: f64 = 0.0
+        let mut real_worst: f32 = 0.0
+        let mut timed: u64 = 0
         while not quit {
             frame_no = frame_no + 1
             if opts.frames > 0 and frame_no > opts.frames { break }
@@ -89,6 +92,11 @@ namespace play {
             let now = sdl::counter{ &sdl }
             let real = @as(f32, @as(f64, now - last) / @as(f64, freq))
             last = now
+            if timed > 0 {
+                real_total = real_total + @as(f64, real)
+                if real > real_worst { real_worst = real }
+            }
+            timed = timed + 1
             let dt = if opts.dt > 0.0 { opts.dt } else { math::min{ a = real, b = 0.25 } }
             // 3-6. The world.
             clock::advance{ c = &w.clock, seconds = dt }
@@ -172,6 +180,9 @@ namespace play {
         _ = @fmt(&w.io, "scene: {} rooms drawn of {}, {} objects drawn, {} visuals; textures {} loaded, {} missing\n",
             sc.drawn_rooms, sc.rooms.len, sc.drawn_objects, sc.visuals.len, sc.materials.loaded, sc.materials.missing)
         _ = @fmt(&w.io, "sound: {} sounds started\n", amb.started)
+        if timed > 1 {
+            _ = @fmt(&w.io, "frames: {}, {} ms each on average, {} ms the slowest\n", timed, @as(f32, real_total * 1000.0 / @as(f64, timed - 1)), real_worst * 1000.0)
+        }
         report::summary{ &w, routines = opts.report }
         return 0
     }
