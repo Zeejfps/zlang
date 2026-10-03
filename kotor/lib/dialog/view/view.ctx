@@ -71,6 +71,10 @@ namespace dlgview {
         voice_delay: f32,           // seconds the device buffers beyond what the mixer has played
         lip_bytes: []mut u8,
         lip_elapsed: f32,
+        track: lipsync::Track,      // the mouth of the line that speaks
+        track_on: bool,
+        // The panels.
+        panels: dlgpanel::Panels,
     }
 
     fn make { heap: *mut heap::Heap, m: *mut mix::Mixer } -> View {
@@ -89,6 +93,8 @@ namespace dlgview {
             cast = [obj::INVALID; 16], cast_count = 0,
             voice = none, voice_bytes = slice::empty(u8){}, voice_speaker = obj::INVALID, voice_delay = 0.0,
             lip_bytes = slice::empty(u8){}, lip_elapsed = 0.0,
+            track = lipsync::make_track{ lip = lip::Lip{ length = 0.0, count = 0, keys = slice::empty(u8){} } }, track_on = false,
+            panels = dlgpanel::make{},
         }
     }
 
@@ -99,12 +105,13 @@ namespace dlgview {
 
     // ---- once a frame, before the scene's sync
 
-    fn pre_sync { mut v: View, mut w: world::World, mut sc: scene::Scene, mut dev: gpu::Device, dt: f32 } {
+    fn pre_sync { mut v: View, mut w: world::World, mut sc: scene::Scene, mut dev: gpu::Device, mut g: gui::Gui, dt: f32 } {
         // A conversation that ended, or one that replaced it.
         if v.up and (not w.conversation.active or w.conversation.started_serial != v.seen_started) {
-            finish{ &v, &w, &sc }
+            finish{ &v, &w, &sc, &g }
         }
-        if not v.up and w.conversation.active { begin{ &v, &w } }
+        if not v.up and w.conversation.active { begin{ &v, &w, &dev, &g } }
+        dlgpanel::update{ p = &v.panels, g = &g, dt }
         if not v.up { return }
         if not w.conversation.scene_ready {
             v.wait = v.wait + dt
@@ -112,23 +119,34 @@ namespace dlgview {
         }
         if w.conversation.line.serial != v.seen_line {
             v.seen_line = w.conversation.line.serial
-            show_line{ &v, &w, &sc }
+            show_line{ &v, &w, &sc, &g }
         }
         if w.conversation.choices.serial != v.seen_choices {
             v.seen_choices = w.conversation.choices.serial
-            show_choices{ &v, &w, &sc }
+            show_choices{ &v, &w, &sc, &g }
         }
+        take_picks{ &v, &w, &g }
         update_voice{ &v, &w }
         update_camera_model{ &v, &w, &sc, dt }
+        w.conversation.fade_busy = w.conversation.fade_busy and dlgpanel::fade_running{ p = v.panels }
+    }
+
+    // What the player did in the panels, as requests the flow acts on at its next pump.
+    fn take_picks { mut v: View, mut w: world::World, mut g: gui::Gui } {
+        match dlgpanel::poll{ p = &v.panels, g = &g } {
+            reply{ index } => { w.conversation.pick = @as(i32, @trunc(i32, index)) }
+            skip => { w.conversation.skip = true }
+            none => {}
+        }
     }
 
     // After the scene's sync has made this frame's poses: the mouth of whoever is speaking.
     fn post_sync { mut v: View, mut w: world::World, mut sc: scene::Scene, dt: f32 } {
-        if not v.up { return }
+        apply_lips{ &v, &w, &sc }
     }
 
     // A conversation starts being presented.
-    fn begin { mut v: View, mut w: world::World } {
+    fn begin { mut v: View, mut w: world::World, mut dev: gpu::Device, mut g: gui::Gui } {
         v.up = true
         v.seen_started = w.conversation.started_serial
         v.seen_line = 0
@@ -144,6 +162,17 @@ namespace dlgview {
         v.blocked = false
         v.camera_model.loaded = false
         w.conversation.scene_ready = false
+        let computer = w.conversation.d.conversation_type == dlg::TYPE_COMPUTER
+        dlgpanel::open{ p = &v.panels, g = &g, fs = &w.fs, dev = &dev, computer, computer_type = w.conversation.d.computer_type } iferr err{ error } {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog panels: {}\n", error)
+        }
+        sync_tokens{ &w, &g }
+        // A conversation that follows a fade to black fades the world in on its first line.
+        if w.conversation.hold_fade_in {
+            w.conversation.hold_fade_in = false
+            dlgpanel::start_fade{ p = &v.panels, out = false, delay = 0.0, length = 1.0, color = math::vec3::zero{} }
+        }
         if w.log.dialog {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "dialog view: begin\n")
@@ -152,7 +181,7 @@ namespace dlgview {
 
     // The conversation is over: stunt models back, animations back to standing, the voice and
     // the camera released.
-    fn finish { mut v: View, mut w: world::World, mut sc: scene::Scene } {
+    fn finish { mut v: View, mut w: world::World, mut sc: scene::Scene, mut g: gui::Gui } {
         restore_stunts{ &v, &w, &sc }
         let mut i: usize = 0
         while i < v.cast_count {
@@ -162,6 +191,7 @@ namespace dlgview {
         }
         v.cast_count = 0
         stop_voice{ &v, &w, fade = 0.3 }
+        dlgpanel::close{ p = &v.panels, g = &g }
         v.mode = Mode::none
         v.have_rig = false
         v.up = false
@@ -170,5 +200,10 @@ namespace dlgview {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "dialog view: finish\n")
         }
+    }
+
+    // The fade and bars are drawn after the 3D view and before the GUI's own panels.
+    fn draw { v: *View, mut frame: render::Frame } {
+        dlgpanel::draw_overlays{ p = v.panels, &frame }
     }
 }

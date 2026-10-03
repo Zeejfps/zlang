@@ -20,15 +20,35 @@ namespace dlgview {
         return false
     }
 
-    // Where a participant's eyes are (9.2): its camera hook is not modelled yet, so the model's
-    // position, 0.1 m up and its height (appearance.2da).
-    fn eye_point { w: *world::World, id: u32 } -> ?math::Vec3 {
+    // Where a participant's eyes are (9.2): its model's `camerahook` node, else the model's
+    // position and its height: here the head hook of the pose it stands in, 0.1 m up (a body
+    // without either gets 1.5 m).
+    fn eye_point { w: *world::World, sc: *scene::Scene, id: u32 } -> ?math::Vec3 {
         let o = world::object{ w, id } ifnull { return null }
-        let mut height: f32 = 1.5
-        if obj::creature{ o } is some{ value = c } {
-            height = twoda::get_float{ t = w.tables.appearance, row = @as(usize, c.appearance), column = "height" } ifnull 1.5
+        let vi = map::get{ m = sc.by_id, key = id }
+        if vi != null and vi != scene::NO_VISUAL {
+            let vis = list::at{ list = sc.visuals, i = vi }
+            let part = scene::part_at{ sc, i = vis.first }
+            let model = scene::loaded_at{ sc, i = part.loaded }.model
+            let mut lift: f32 = 0.0
+            let mut node = mdl::find_node{ model, name = "camerahook" }
+            if node == null {
+                node = mdl::find_node{ model, name = mdl_anim::HOOK_HEAD }
+                lift = 0.1
+            }
+            match node {
+                some{ value } => {
+                    let m = part.pose.world[@as(usize, value)]
+                    let local = math::mat4::get_translation{ m }
+                    // Model space turned by the creature's facing about Z, as the visual draws it.
+                    let yaw = obj::model_yaw{ orientation = o.orientation }
+                    let turned = dlgcam::rotate_z{ v = local, degrees = math::degrees{ radians = yaw } }
+                    return math::Vec3{ x = o.position.x + turned.x, y = o.position.y + turned.y, z = o.position.z + local.z + lift }
+                }
+                null => {}
+            }
         }
-        return math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + 0.1 + height }
+        return math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + 1.6 }
     }
 
     // The side of the line between two creatures the camera keeps to: the pair's side if it has
@@ -69,10 +89,10 @@ namespace dlgview {
 
     // The framed shot for the line as the participants stand now (angles 1 to 3); the close-up
     // without a pull-back when the shot would sit in a wall (9.2).
-    fn framed_rig { mut v: View, w: *world::World } -> ?dlgcam::Rig {
-        let s = eye_point{ w, id = v.speaker } ifnull { return null }
-        let l = eye_point{ w, id = v.listener } ifnull { return null }
-        let side = side_of{ &v, w, speaker = v.speaker, listener = v.listener, s, l }
+    fn framed_rig { mut v: View, mut w: world::World, sc: *scene::Scene } -> ?dlgcam::Rig {
+        let s = eye_point{ w = &w, sc, id = v.speaker } ifnull { return null }
+        let l = eye_point{ w = &w, sc, id = v.listener } ifnull { return null }
+        let side = side_of{ &v, w = &w, speaker = v.speaker, listener = v.listener, s, l }
         let fov = if v.fov > 0.0 { v.fov } else { dlgcam::FOV }
         let rig = if v.angle == dlg::ANGLE_SHOULDER {
             dlgcam::shoulder{ s, l, side, cam_height = v.cam_height, tar_height = v.tar_height, fov }
@@ -83,7 +103,7 @@ namespace dlgview {
         }
         if v.angle == dlg::ANGLE_CLOSE and v.pull_back == 0.0 { return rig }
         let target = math::vec3::scale{ v = math::vec3::add{ a = s, b = l }, s = 0.5 }
-        if v.blocked or blocked_between{ w, stops = v.stops[..], from = target, to = rig.eye } {
+        if v.blocked or blocked_between{ w = &w, stops = v.stops[..], from = target, to = rig.eye } {
             v.blocked = true
             return dlgcam::close_up{ s, l, side, cam_height = v.cam_height, tar_height = v.tar_height, pull_back = 0.0, fov }
         }
@@ -129,7 +149,7 @@ namespace dlgview {
     }
 
     // Puts the camera over the chase camera while a shot is up. The listener follows it too.
-    fn apply_camera { mut v: View, w: *world::World, mut camera: cam::Camera } {
+    fn apply_camera { mut v: View, mut w: world::World, sc: *scene::Scene, mut camera: cam::Camera } {
         if not v.up or v.mode == Mode::none or not w.conversation.scene_ready {
             if v.overriding {
                 camera.style.fov = v.saved_fov
@@ -141,7 +161,7 @@ namespace dlgview {
         let mut have = false
         match v.mode {
             framed => {
-                let r = framed_rig{ &v, w }
+                let r = framed_rig{ &v, &w, sc }
                 if r != null { rig = r; have = true }
             }
             fixed => {

@@ -139,6 +139,7 @@ namespace dlg {
         w.conversation.ending = false
         w.conversation.end_ran = false
         w.conversation.skip = false
+        w.conversation.pick = -1
         w.conversation.vo_cut = false
         w.conversation.vo_playing = false
         w.conversation.vo_stop = false
@@ -621,6 +622,12 @@ namespace dlg {
     // when the conversation is finished.
     fn update { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } {
         if not w.conversation.active { return }
+        // The player's pick, made in the panels since the last pump.
+        if w.conversation.pick >= 0 {
+            let choice = @as(usize, w.conversation.pick)
+            w.conversation.pick = -1
+            choose{ &w, &vm, engine, choice }
+        }
         if w.conversation.paused { return }
         if node_running{ &w } { return }
         // A cut voice that still plays holds an ordinary conversation (not a cutscene) back.

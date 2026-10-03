@@ -26,6 +26,7 @@ namespace rt_dlg {
         else if routine == nwscript::HoldWorldFadeInForDialog { w.conversation.hold_fade_in = true }
         else if routine == nwscript::CancelPostDialogCharacterSwitch { }
         else if routine == nwscript::EnableVideoEffect { try enable_video_effect{ &w, &vm, argc } }
+        else if routine == nwscript::SetCustomToken { try set_custom_token{ &w, &vm, argc } }
         else if routine == nwscript::DisableVideoEffect { w.conversation.video_effect = -2 }
         else { return false }
         return true
@@ -140,6 +141,14 @@ namespace rt_dlg {
         let value = try nwarg::int{ &vm, routine, argc, i = 1 }
         if head { dlg::set_lock{ ids = &w.conversation.locked_head, count = &w.conversation.locked_head_count, id, lock = value != 0 } }
         else { dlg::set_lock{ ids = &w.conversation.locked_orientation, count = &w.conversation.locked_orientation_count, id, lock = value != 0 } }
+    }
+
+    // void SetCustomToken(int nCustomTokenNumber, string sTokenValue): the text of <CUSTOMn> in
+    // dialogue and GUI strings (tlk.md); the first 80 bytes are kept.
+    fn set_custom_token { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::SetCustomToken, argc, i = 0 }
+        let text = try nwarg::string{ &vm, routine = nwscript::SetCustomToken, argc, i = 1 }
+        dlg::set_custom_token{ &w, number = n, text }
     }
 
     // void EnableVideoEffect(int nEffectType): a videoeffects.2da row for the 3D view (9.6).

@@ -9,6 +9,7 @@ namespace dlgview {
         }
         w.conversation.vo_playing = false
         v.lip_elapsed = 0.0
+        drop_lip{ &v }
     }
 
     // Starts the voice-over `name` for `speaker`; false when there is no file (the flow treats the
@@ -28,6 +29,7 @@ namespace dlgview {
             return false
         }
         v.voice_speaker = speaker
+        load_lip{ &v, &w, name }
         v.lip_elapsed = 0.0
         if w.log.dialog {
             world::prefix{ w = &w }

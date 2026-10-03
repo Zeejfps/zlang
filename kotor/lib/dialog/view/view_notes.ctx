@@ -1,0 +1,81 @@
+// What the view takes from the world besides a conversation (docs/re/dialogue.md 9.6, 10.1): the
+// outbox's global fades and barks, and the input that belongs to the panels.
+namespace dlgview {
+    // One outbox note, if it is a fade or a bark.
+    fn take_note { mut v: View, mut w: world::World, mut g: gui::Gui, mut dev: gpu::Device, note: outbox::Note } {
+        match note {
+            fade{ out, wait, length, color } => {
+                dlgpanel::start_fade{ p = &v.panels, out, delay = wait, length, color }
+            }
+            bark{ speaker, text, sound } => {
+                let t = outbox::text_of{ out = &w.out, t = text }
+                if t.len > 0 {
+                    dlgpanel::show_bark{ p = &v.panels, g = &g, fs = &w.fs, dev = &dev, text = t } iferr {}
+                }
+                if not resref::is_empty{ r = sound } { play_bark_voice{ &v, &w, speaker, name = sound } }
+            }
+            else => {}
+        }
+    }
+
+    // A bark's sound, from the speaker's place (10.1), with its mouth.
+    fn play_bark_voice { mut v: View, mut w: world::World, speaker: u32, name: resref::ResRef } {
+        let o = world::object{ w = &w, id = speaker } ifnull { return }
+        let at = math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + 1.6 }
+        let loaded = dlg::load_sound{ &w, name } iferr { return }
+        let bytes = loaded ifnull { return }
+        mix::stop{ m = v.m, h = v.voice, fade = 0.0 }
+        if v.voice_bytes.len > 0 {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = v.voice_bytes, count = 0 }
+        }
+        v.voice_bytes = bytes
+        let p = mix::sound_3d{ group = mix::Group::voice, volume = 1.0, position = at, min_distance = 3.0, max_distance = 30.0 }
+        v.voice = mix::play{ m = v.m, bytes, p } iferr {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = bytes, count = 0 }
+            v.voice_bytes = slice::empty(u8){}
+            return
+        }
+        v.voice_speaker = speaker
+        load_lip{ &v, &w, name }
+    }
+
+    // Offers a platform event to the conversation panels first; true when they used it.
+    fn handle_event { mut v: View, mut g: gui::Gui, ev: sdl::Event, scale_x: f32, scale_y: f32 } -> bool {
+        if not dlgpanel::is_open{ p = v.panels } { return false }
+        return dlgpanel::handle_event{ p = &v.panels, g = &g, ev, scale_x, scale_y }
+    }
+
+    // The headless input script's lines for the panels (play.ctx `ui` commands): `reply N` picks
+    // reply N (from 1) at once; `key NAME`, `move X Y` and `click X Y` go through the panels
+    // while they are up. False if the line is not for them.
+    fn run_command { mut v: View, mut w: world::World, mut g: gui::Gui, text: []u8 } -> bool {
+        let mut words = text::words{ s = text }
+        let cmd = text::next_word{ &words } ifnull { return false }
+        if ci::eq{ a = cmd, b = "reply" } {
+            let n = text::scan_decimal{ s = text::next_word{ &words } ifnull "1" }
+            if n >= 1 { w.conversation.pick = @as(i32, @trunc(i32, n - 1)) }
+            return true
+        }
+        if not dlgpanel::is_open{ p = v.panels } { return false }
+        if ci::eq{ a = cmd, b = "key" } {
+            let name = text::next_word{ &words } ifnull { return false }
+            let code = ingame::key_code{ name }
+            if code == 0 { return false }
+            let used = handle_event{ &v, &g, ev = sdl::Event::key{ down = true, repeat = false, scancode = 0, keycode = code, mods = 0 }, scale_x = 1.0, scale_y = 1.0 }
+            _ = handle_event{ &v, &g, ev = sdl::Event::key{ down = false, repeat = false, scancode = 0, keycode = code, mods = 0 }, scale_x = 1.0, scale_y = 1.0 }
+            return used
+        }
+        if ci::eq{ a = cmd, b = "move" } or ci::eq{ a = cmd, b = "click" } {
+            let x = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+            let y = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+            _ = handle_event{ &v, &g, ev = sdl::Event::mouse_motion{ x, y, dx = 0, dy = 0, buttons = 0 }, scale_x = 1.0, scale_y = 1.0 }
+            if ci::eq{ a = cmd, b = "click" } {
+                let used = handle_event{ &v, &g, ev = sdl::Event::mouse_button{ down = true, button = sdl::BUTTON_LEFT, clicks = 1, x, y }, scale_x = 1.0, scale_y = 1.0 }
+                _ = handle_event{ &v, &g, ev = sdl::Event::mouse_button{ down = false, button = sdl::BUTTON_LEFT, clicks = 1, x, y }, scale_x = 1.0, scale_y = 1.0 }
+                return used
+            }
+            return true
+        }
+        return false
+    }
+}

@@ -49,4 +49,16 @@ namespace dlg {
         defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = path, count = 0 }
         return try fs::read_all(heap::Heap){ fs = &w.fs, heap = w.heap, realloc = heap::alloc, path }
     }
+
+    // A resource's bytes of `kind` in the session heap (the caller frees them), or null. The name
+    // is copied first so the result isn't tied to the caller's local.
+    fn load_resource { mut w: world::World, name: resref::ResRef, kind: restype::Type } -> !?alloc::Bytes {
+        if resref::is_empty{ r = name } { return null }
+        let mut key = name
+        let text = resref::bytes{ r = &key }
+        let kept = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = text.len }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = kept, count = 0 }
+        slice::copy(u8){ dst = kept, src = text }
+        return try res::load{ fs = &w.fs, rm = w.rm.*, name = kept, kind, realloc = heap::alloc, heap = w.heap }
+    }
 }

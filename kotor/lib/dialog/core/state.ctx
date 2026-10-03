@@ -43,6 +43,9 @@ namespace dlg {
         open: bool,                 // offered and not yet chosen
     }
 
+    // A custom token's number and text (the first 80 bytes).
+    struct CustomToken { number: i32, text: [80]u8, len: usize }
+
     struct TagEntry { tag: [32]u8, len: usize, id: u32 }
 
     struct State {
@@ -73,6 +76,7 @@ namespace dlg {
         ending: bool,               // leave once nothing is pending and the voice is done (+0x60)
         end_ran: bool,              // the normal end's scripts have run
         skip: bool,                 // the player asked to skip the line (+0x1f4)
+        pick: i32,                  // the reply the player picked, for the next pump; -1 none
         vo_cut: bool,
         // The presentation's side.
         client: bool,               // a view is attached and answers the flags below
@@ -112,6 +116,8 @@ namespace dlg {
         camera_count: usize,
         hold_fade_in: bool,         // HoldWorldFadeInForDialog
         video_effect: i32,          // EnableVideoEffect's row; -2 off, -1 leave
+        custom: [32]CustomToken,    // SetCustomToken's texts, for the GUI's <CUSTOMn>
+        custom_count: usize,
         outcome: Outcome,
         ended_serial: u32,          // counts finished conversations, for the view
         started_serial: u32,
@@ -126,7 +132,7 @@ namespace dlg {
             event_pending = false, event_resref = resref::empty{}, event_private = false, pending = false,
             last_resref = resref::empty{},
             entry = -1, chosen = -1, step = Step::none, step_entry = 0, node_end_ms = 0, wait_flags = 0,
-            paused = false, end_flag = false, ending = false, end_ran = false, skip = false, vo_cut = false,
+            paused = false, end_flag = false, ending = false, end_ran = false, skip = false, pick = -1, vo_cut = false,
             client = false, scene_ready = false, vo_playing = false, vo_stop = false, vo_virtual_end = 0,
             anim_busy = false, camera_busy = false, fade_busy = false,
             line = no_line{}, choices = no_choices{},
@@ -139,7 +145,8 @@ namespace dlg {
             locked_orientation_count = 0, locked_head_count = 0,
             static_camera = -1,
             cameras = [dlgcam::Static{ id = -1, position = math::vec3::zero{}, orientation = math::quat::identity{}, pitch = 0.0, height = 0.0, fov = 55.0, mic_range = 0.0 }; 50],
-            camera_count = 0, hold_fade_in = false, video_effect = -2, outcome = Outcome::normal, ended_serial = 0, started_serial = 0,
+            camera_count = 0, hold_fade_in = false, video_effect = -2,
+            custom = [CustomToken{ number = 0, text = [0; 80], len = 0 }; 32], custom_count = 0, outcome = Outcome::normal, ended_serial = 0, started_serial = 0,
             nodes_shown = 0, scripts_run = 0,
         }
     }

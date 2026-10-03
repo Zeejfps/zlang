@@ -56,10 +56,12 @@ namespace dlgview {
             play_animation{ &v, &w, id, number = a.animation, mark = &mark, marked = &marked }
         }
         if not speaker_named and speaker != obj::INVALID {
-            play_animation{ &v, &w, id = speaker, number = if injured{ w = &w, id = speaker } { TALK_INJURED } else { TALK }, mark = &mark, marked = &marked }
+            let n = if injured{ w = &w, id = speaker } { TALK_INJURED } else { TALK }
+            play_animation{ &v, &w, id = speaker, number = n, mark = &mark, marked = &marked }
         }
         if not listener_named and listener != obj::INVALID and listener != speaker {
-            play_animation{ &v, &w, id = listener, number = if injured{ w = &w, id = listener } { LISTEN_INJURED } else { LISTEN }, mark = &mark, marked = &marked }
+            let n = if injured{ w = &w, id = listener } { LISTEN_INJURED } else { LISTEN }
+            play_animation{ &v, &w, id = listener, number = n, mark = &mark, marked = &marked }
         }
         // Back to standing for those the last line animated and this one doesn't.
         let mut k: usize = 0
@@ -78,10 +80,25 @@ namespace dlgview {
         }
     }
 
+    // The name the panel would head a line with: the speaker's own (the original draws none).
+    fn name_of { w: *world::World, id: u32 } -> []u8 {
+        let o = world::object{ w, id } ifnull { return "" }
+        return o.name.text
+    }
+
+    // A node's fade (9.6): 3 in and 4 out over FadeLength after FadeDelay; 1 and 2 the same at
+    // once, in a colour.
+    fn start_node_fade { mut v: View, node: *dlg::Node } {
+        if node.fade_type == 0 { return }
+        let out = node.fade_type == 4 or node.fade_type == 1
+        dlgpanel::start_fade{ p = &v.panels, out, delay = node.fade_delay, length = node.fade_length, color = node.fade_color }
+    }
+
     // A new entry, or a reply the player's creature speaks.
-    fn show_line { mut v: View, mut w: world::World, mut sc: scene::Scene } {
+    fn show_line { mut v: View, mut w: world::World, mut sc: scene::Scene, mut g: gui::Gui } {
         let line = w.conversation.line
         let node = dlg::current_node{ s = &w.conversation } ifnull { return }
+        sync_tokens{ &w, &g }
         update_animations{ &v, &w, node, speaker = line.speaker, listener = line.listener }
         v.pull_back = 0.0
         if node.anims.len > 0 {
@@ -92,8 +109,14 @@ namespace dlgview {
             }
         }
         set_shot{ &v, &w, &sc, node, speaker = line.speaker, listener = line.listener, angle = line.angle, spoken_reply = line.reply }
+        start_node_fade{ &v, node }
+        w.conversation.fade_busy = node.wait_flags & dlg::WAIT_FADE != 0 and dlgpanel::fade_running{ p = v.panels }
+        let text = dlg::text_of{ w = &w, n = node, gender = w.conversation.gender }
         if line.has_voice and not line.reply {
             if not play_voice{ &v, &w, speaker = line.speaker, name = node.sound } { w.conversation.vo_playing = false }
+        }
+        if text.len > 0 or not line.reply {
+            dlgpanel::set_line{ p = &v.panels, g = &g, speaker = name_of{ w = &w, id = line.speaker }, text } iferr {}
         }
         if w.log.dialog {
             world::prefix{ w = &w }
@@ -102,7 +125,7 @@ namespace dlgview {
     }
 
     // The list of replies goes up (or the engine's empty one is about to be chosen).
-    fn show_choices { mut v: View, mut w: world::World, mut sc: scene::Scene } {
+    fn show_choices { mut v: View, mut w: world::World, mut sc: scene::Scene, mut g: gui::Gui } {
         let ch = w.conversation.choices
         if ch.auto { return }
         // The shot shows the player's creature speaking to the last speaker, with the first
@@ -111,5 +134,15 @@ namespace dlgview {
         update_animations{ &v, &w, node = first, speaker = ch.speaker, listener = ch.listener }
         v.pull_back = 0.0
         set_shot{ &v, &w, &sc, node = first, speaker = ch.speaker, listener = ch.listener, angle = ch.angle, spoken_reply = false }
+        let mut texts: [32][]u8
+        let mut enabled: [32]bool
+        let mut i: usize = 0
+        while i < ch.count {
+            let n = dlg::choice_node{ s = &w.conversation, i }
+            texts[i] = if n != null { dlg::text_of{ w = &w, n, gender = w.conversation.gender } } else { "" }
+            enabled[i] = ch.enabled[i]
+            i = i + 1
+        }
+        dlgpanel::set_replies{ p = &v.panels, g = &g, texts = texts[..ch.count], enabled = enabled[..ch.count] } iferr {}
     }
 }

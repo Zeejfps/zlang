@@ -23,6 +23,8 @@ fn build { mut b: Build } {
     build::add_sources{ &b, exe, dir = "lib/scene" }
     build::add_sources{ &b, exe, dir = "lib/dialog/core" }
     build::add_sources{ &b, exe, dir = "lib/dialog/view" }
+    build::add_sources{ &b, exe, dir = "lib/dialog/panels" }
+    build::add_sources{ &b, exe, dir = "lib/dialog/lipsync" }
     build::add_sources{ &b, exe, dir = "lib/hud" }
     build::add_sources{ &b, exe, dir = "lib/ingame" }
     build::add_sources{ &b, exe, dir = "tools/common" }
