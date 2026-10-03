@@ -1,0 +1,577 @@
+// Routines: the shims the AI and combat scripts (k_ai_master, k_inc_generic and their users) need
+// until the rules lead's lib/rules brings the combat round (HOOK(rules)). Attacking queues the
+// action (its handler comes with the rules), the "last attack" queries read fields on the
+// creature that the rules will set, talents are values that nothing can use yet, and the weapon
+// choice, lock queries, AI styles and party order are carried out for real. Each routine pops
+// its arguments in declaration order; a missing object answers with nwscript.nss's default.
+namespace rt_combat {
+    fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
+        match routine {
+            // ---- fighting
+            nwscript::CancelCombat => { try cancel_combat{ &w, &vm, argc } }
+            nwscript::ActionAttack => { try action_attack{ &w, &vm, argc } }
+            nwscript::GetAttackTarget => { try get_creature_object{ &w, &vm, argc, routine } }
+            nwscript::GetAttemptedAttackTarget => { try get_creature_object{ &w, &vm, argc, routine } }
+            nwscript::GetLastHostileTarget => { try get_creature_object{ &w, &vm, argc, routine } }
+            nwscript::GetLastHostileActor => { try get_last_hostile_actor{ &w, &vm, argc } }
+            nwscript::GetLastAttackAction => { try get_last_attack_info{ &w, &vm, argc, routine } }
+            nwscript::GetLastForcePowerUsed => { try get_last_attack_info{ &w, &vm, argc, routine } }
+            nwscript::GetLastCombatFeatUsed => { try get_last_attack_info{ &w, &vm, argc, routine } }
+            nwscript::GetLastAttackResult => { try get_last_attack_info{ &w, &vm, argc, routine } }
+            nwscript::GetWasForcePowerSuccessful => { try get_last_attack_info{ &w, &vm, argc, routine } }
+            nwscript::GetUserActionsPending => { try nwvm::push_int{ &vm, v = 0 } }
+            nwscript::GetHasSpellEffect => { try get_has_spell_effect{ &w, &vm, argc } }
+            nwscript::GetIsDebilitated => { try get_is_debilitated{ &w, &vm, argc } }
+            nwscript::ActionEquipMostDamagingMelee => { try action_equip_melee{ &w, &vm, argc } }
+            nwscript::ActionEquipMostDamagingRanged => { try action_equip_ranged{ &w, &vm, argc } }
+            // ---- talents
+            nwscript::TalentSpell => { try make_talent{ &w, &vm, argc, routine, kind = nwconst::TALENT_TYPE_SPELL } }
+            nwscript::TalentFeat => { try make_talent{ &w, &vm, argc, routine, kind = nwconst::TALENT_TYPE_FEAT } }
+            nwscript::TalentSkill => { try make_talent{ &w, &vm, argc, routine, kind = nwconst::TALENT_TYPE_SKILL } }
+            nwscript::GetCreatureTalentRandom => { try get_creature_talent{ &w, &vm, argc, routine } }
+            nwscript::GetCreatureTalentBest => { try get_creature_talent{ &w, &vm, argc, routine } }
+            nwscript::GetIsTalentValid => { try get_talent_field{ &w, &vm, argc, routine } }
+            nwscript::GetIdFromTalent => { try get_talent_field{ &w, &vm, argc, routine } }
+            nwscript::GetTypeFromTalent => { try get_talent_field{ &w, &vm, argc, routine } }
+            nwscript::GetCategoryFromTalent => { try get_talent_field{ &w, &vm, argc, routine } }
+            nwscript::GetCreatureHasTalent => { try get_creature_has_talent{ &w, &vm, argc } }
+            nwscript::ActionUseTalentOnObject => { try action_use_talent{ &w, &vm, argc, routine } }
+            nwscript::ActionUseTalentAtLocation => { try action_use_talent{ &w, &vm, argc, routine } }
+            // ---- AI styles and restrict mode
+            nwscript::GetPartyAIStyle => { try get_party_ai_style{ &w, &vm } }
+            nwscript::SetPartyAIStyle => { try set_party_ai_style{ &w, &vm, argc } }
+            nwscript::GetNPCAIStyle => { try get_npc_ai_style{ &w, &vm, argc } }
+            nwscript::SetNPCAIStyle => { try set_npc_ai_style{ &w, &vm, argc } }
+            nwscript::GetPlayerRestrictMode => { try get_player_restrict_mode{ &w, &vm, argc } }
+            nwscript::SetPlayerRestrictMode => { try set_player_restrict_mode{ &w, &vm, argc } }
+            nwscript::ShipBuild => { try nwvm::push_int{ &vm, v = 1 } }       // the binary sets a flag and answers TRUE
+            // ---- locks, doors and placeables
+            nwscript::SetLocked => { try set_locked{ &w, &vm, argc } }
+            nwscript::GetLocked => { try get_lock_flag{ &w, &vm, argc, routine } }
+            nwscript::GetIsOpen => { try get_lock_flag{ &w, &vm, argc, routine } }
+            nwscript::GetLockKeyRequired => { try get_lock_flag{ &w, &vm, argc, routine } }
+            nwscript::GetLockLockable => { try get_lock_flag{ &w, &vm, argc, routine } }
+            nwscript::GetLockUnlockDC => { try get_lock_flag{ &w, &vm, argc, routine } }
+            nwscript::GetLockKeyTag => { try get_lock_key_tag{ &w, &vm, argc } }
+            // ---- the party
+            nwscript::SetPartyLeader => { try set_party_leader{ &w, &vm, argc } }
+            nwscript::IsNPCPartyMember => { try is_npc_party_member{ &w, &vm, argc } }
+            nwscript::ActionFollowLeader => { try action_follow_leader{ &w, &vm } }
+            nwscript::ActionMoveAwayFromObject => { try action_move_away_from_object{ &w, &vm, argc } }
+            else => { return false }
+        }
+        return true
+    }
+
+    fn creature_of { w: *world::World, id: u32 } -> ?*mut obj::Creature {
+        let o = world::object{ w, id } ifnull { return null }
+        return obj::creature{ o }
+    }
+
+    fn flag { b: bool } -> i32 { return if b { 1 } else { 0 } }
+
+    // `id` if it is an object that is there, else OBJECT_INVALID.
+    fn live_or_invalid { w: *world::World, id: u32 } -> u32 {
+        return if world::is_valid{ w, id } { id } else { obj::INVALID }
+    }
+
+    // ---- fighting
+
+    // void CancelCombat(object oidCreature): the creature stops fighting (CancelCombat,
+    // 0x004fdaa0: its queue goes and the round ends).
+    fn cancel_combat { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::CancelCombat, argc, i = 0 }
+        let c = creature_of{ w = &w, id } ifnull { return }
+        c.attack_target = obj::INVALID
+        c.attempted_target = obj::INVALID
+        c.in_combat = false
+        actions::clear_all{ &w, id }
+    }
+
+    // void ActionAttack(object oAttackee, int bPassive = FALSE): the attack action is queued;
+    // the rules' handler does the fighting.
+    fn action_attack { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::ActionAttack
+        let target = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let passive = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        if not world::is_valid{ w = &w, id = target } { return }
+        let mut a = actions::make{ kind = actions::Kind::attack_object }
+        a.params[0] = actions::Param::object{ id = target }
+        a.params[1] = actions::Param::int{ v = passive }
+        _ = actions::add{ &w, id = nwvm::self_object{ vm }, action = a, force = false }
+    }
+
+    // GetAttackTarget(object oCreature = OBJECT_SELF), GetAttemptedAttackTarget() (no argument:
+    // the caller), GetLastHostileTarget(object oAttacker = OBJECT_SELF): an object the creature's
+    // record names, OBJECT_INVALID once it is gone.
+    fn get_creature_object { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let id = if routine == nwscript::GetAttemptedAttackTarget { nwvm::self_object{ vm } }
+            else { try nwarg::object{ &vm, routine, argc, i = 0 } }
+        let c = creature_of{ w = &w, id } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        let target = match routine {
+            nwscript::GetAttackTarget => { c.attack_target }
+            nwscript::GetAttemptedAttackTarget => { c.attempted_target }
+            else => { c.last_hostile_target }
+        }
+        try nwvm::push_object{ &vm, id = live_or_invalid{ w = &w, id = target } }
+    }
+
+    // object GetLastHostileActor(object oVictim = OBJECT_SELF): never a dead creature (the
+    // binary forgets such an actor). The creature's own record wins; before the rules set it, the
+    // last attacker or damager the event delivery noted stands in.
+    fn get_last_hostile_actor { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetLastHostileActor, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        let mut actor = obj::INVALID
+        if obj::creature{ o } is some{ value = c } { actor = c.last_hostile_actor }
+        if not world::is_valid{ w = &w, id = actor } { actor = o.ctx.last_attacker }
+        if not world::is_valid{ w = &w, id = actor } { actor = o.ctx.last_damager }
+        let a = world::object{ w = &w, id = actor } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        if obj::creature{ o = a } is some{ value = ac } and ac.dead {
+            if obj::creature{ o } is some{ value = c } { c.last_hostile_actor = obj::INVALID }
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        try nwvm::push_object{ &vm, id = actor }
+    }
+
+    // The `int GetLastX(object oAttacker = OBJECT_SELF)` routines: what the creature's record says,
+    // 0 for something that is not a creature.
+    fn get_last_attack_info { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let id = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let c = creature_of{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        let v: i32 = match routine {
+            nwscript::GetLastAttackAction => { c.last_attack_action }
+            nwscript::GetLastForcePowerUsed => { c.last_force_power }
+            nwscript::GetLastCombatFeatUsed => { c.last_combat_feat }
+            nwscript::GetLastAttackResult => { c.last_attack_result }
+            else => { flag{ b = c.force_power_ok } }          // GetWasForcePowerSuccessful
+        }
+        try nwvm::push_int{ &vm, v }
+    }
+
+    // int GetHasSpellEffect(int nSpell, object oObject = OBJECT_SELF): effects are not kept yet.
+    fn get_has_spell_effect { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        _ = try nwarg::int{ &vm, routine = nwscript::GetHasSpellEffect, argc, i = 0 }
+        _ = try nwarg::object{ &vm, routine = nwscript::GetHasSpellEffect, argc, i = 1 }
+        try nwvm::push_int{ &vm, v = 0 }
+    }
+
+    // int GetIsDebilitated(object oCreature = OBJECT_SELF): nothing debilitates until the rules do.
+    fn get_is_debilitated { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        _ = try nwarg::object{ &vm, routine = nwscript::GetIsDebilitated, argc, i = 0 }
+        try nwvm::push_int{ &vm, v = 0 }
+    }
+
+    // ---- choosing a weapon (baseitems.2da)
+
+    const NOT_WEAPON: i32 = 0
+    const MELEE: i32 = 1
+    const RANGED: i32 = 2
+    // EquipableSlots bits: the right and left hand, and the three natural-weapon slots that
+    // creatures' claws and bites use.
+    const RIGHT_HAND: i32 = 0x10
+    const LEFT_HAND: i32 = 0x20
+    const NATURAL: i32 = 0x1C000
+
+    fn base_slots { w: *world::World, base: u32 } -> i32 {
+        return twoda::get_int{ t = w.tables.baseitems, row = @as(usize, base), column = "equipableslots" } ifnull 0
+    }
+
+    // What kind of weapon a base item is: held in a hand, WeaponType set, and RangedWeapon for
+    // blasters and bows.
+    fn weapon_class { w: *world::World, base: u32 } -> i32 {
+        let slots = base_slots{ w, base }
+        if (slots & (RIGHT_HAND | LEFT_HAND)) == 0 or (slots & NATURAL) != 0 { return NOT_WEAPON }
+        let row = @as(usize, base)
+        let ranged = twoda::get_int{ t = w.tables.baseitems, row, column = "rangedweapon" } ifnull 0
+        let kind = twoda::get_int{ t = w.tables.baseitems, row, column = "weapontype" } ifnull 0
+        if ranged == 1 { return RANGED }
+        if kind != 0 { return MELEE }
+        return NOT_WEAPON
+    }
+
+    // Twice the average damage of one hit: dice times (sides + 1).
+    fn damage_score { w: *world::World, base: u32 } -> i32 {
+        let row = @as(usize, base)
+        let dice = twoda::get_int{ t = w.tables.baseitems, row, column = "numdice" } ifnull 1
+        let sides = twoda::get_int{ t = w.tables.baseitems, row, column = "dietoroll" } ifnull 1
+        return dice * (sides + 1)
+    }
+
+    // The carried weapon of the wanted kind that fits `hand` and hits hardest; OBJECT_INVALID
+    // when there is none.
+    fn best_weapon { w: *world::World, o: *obj::Object, want: i32, hand: i32 } -> u32 {
+        let ids = rt_item::inventory_of{ o }
+        let mut best = obj::INVALID
+        let mut best_score: i32 = -1
+        let mut k: usize = 0
+        while k < ids.len {
+            let io = world::object{ w, id = ids[k] }
+            k = k + 1
+            if io == null { continue }
+            let it = obj::item{ o = io } ifnull { continue }
+            if weapon_class{ w, base = it.base } != want or (base_slots{ w, base = it.base } & hand) == 0 { continue }
+            let s = damage_score{ w, base = it.base }
+            if s > best_score {
+                best = io.id
+                best_score = s
+            }
+        }
+        return best
+    }
+
+    // How hard the weapon in `slot` hits if it is of the wanted kind, else -1.
+    fn held_score { w: *world::World, c: *obj::Creature, want: i32, slot: usize } -> i32 {
+        let held = world::object{ w, id = c.equipped[slot] } ifnull { return -1 }
+        let it = obj::item{ o = held } ifnull { return -1 }
+        if weapon_class{ w, base = it.base } != want { return -1 }
+        return damage_score{ w, base = it.base }
+    }
+
+    // Puts a carried item into an equipment slot at once, the occupant back in the inventory
+    // (as ActionEquipItem does it).
+    fn equip_into {
+        mut w: world::World, o: *mut obj::Object, c: *mut obj::Creature, io: *mut obj::Object,
+        it: *mut obj::Item, slot: usize,
+    } {
+        if c.equipped[slot] == io.id { return }
+        rt_item::unequip_slot{ &w, o, c, slot }
+        _ = rt_item::remove_from_inventory{ o, item = io.id }
+        c.equipped[slot] = io.id
+        it.equipped_slot = @as(i32, slot)
+        it.possessor = o.id
+    }
+
+    // Whether the right hand holds a weapon that takes both hands (EquipableSlots has no
+    // left-hand bit).
+    fn holds_two_handed { w: *world::World, c: *obj::Creature } -> bool {
+        let held = world::object{ w, id = c.equipped[obj::SLOT_RIGHT_WEAPON] } ifnull { return false }
+        let it = obj::item{ o = held } ifnull { return false }
+        return (base_slots{ w, base = it.base } & LEFT_HAND) == 0
+    }
+
+    // Equips the carried weapon of kind `want` that hits hardest into a hand, unless the one held
+    // is as good. Returns whether the creature has a weapon of that kind at all. A weapon that
+    // needs both hands empties the off hand, and leaves no room to equip into it.
+    fn equip_most_damaging { mut w: world::World, me: u32, want: i32, off_hand: bool } -> bool {
+        let o = world::object{ w = &w, id = me } ifnull { return false }
+        let c = obj::creature{ o } ifnull { return false }
+        if off_hand and holds_two_handed{ w = &w, c } { return false }
+        let slot = if off_hand { obj::SLOT_LEFT_WEAPON } else { obj::SLOT_RIGHT_WEAPON }
+        let hand = if off_hand { LEFT_HAND } else { RIGHT_HAND }
+        let held = held_score{ w = &w, c, want, slot }
+        let best = best_weapon{ w = &w, o, want, hand }
+        let bo = world::object{ w = &w, id = best } ifnull { return held >= 0 }
+        let bi = obj::item{ o = bo } ifnull { return held >= 0 }
+        if damage_score{ w = &w, base = bi.base } <= held { return true }
+        if (base_slots{ w = &w, base = bi.base } & LEFT_HAND) == 0 {
+            rt_item::unequip_slot{ &w, o, c, slot = obj::SLOT_LEFT_WEAPON }
+        }
+        equip_into{ &w, o, c, io = bo, it = bi, slot }
+        return true
+    }
+
+    // void ActionEquipMostDamagingMelee(object oVersus = OBJECT_INVALID, int bOffHand = FALSE):
+    // at once; the opponent does not change the choice here.
+    fn action_equip_melee { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::ActionEquipMostDamagingMelee
+        _ = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let off_hand = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        _ = equip_most_damaging{ &w, me = nwvm::self_object{ vm }, want = MELEE, off_hand = off_hand != 0 }
+    }
+
+    // void ActionEquipMostDamagingRanged(object oVersus = OBJECT_INVALID): the most damaging
+    // melee weapon when there is no ranged one (nwscript.nss).
+    fn action_equip_ranged { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        _ = try nwarg::object{ &vm, routine = nwscript::ActionEquipMostDamagingRanged, argc, i = 0 }
+        let me = nwvm::self_object{ vm }
+        if not equip_most_damaging{ &w, me, want = RANGED, off_hand = false } {
+            _ = equip_most_damaging{ &w, me, want = MELEE, off_hand = false }
+        }
+    }
+
+    // ---- talents (values::Talent: kind = TALENT_TYPE_*, id = SPELL_*/FEAT_*/SKILL_*)
+
+    // talent TalentSpell(int nSpell), TalentFeat(int nFeat), TalentSkill(int nSkill)
+    fn make_talent { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, kind: i32 } -> ! {
+        let id = try nwarg::int{ &vm, routine, argc, i = 0 }
+        let mut t = values::no_talent{}
+        t.kind = kind
+        t.id = id
+        let h = values::add{ s = &w.values, v = values::Value::talent{ t } }
+        try nwvm::push_engine{ &vm, kind = nwvm::EngineType::talent, handle = h }
+    }
+
+    // talent GetCreatureTalentRandom(int nCategory, object oCreature = OBJECT_SELF, int nInclusion = 0)
+    // talent GetCreatureTalentBest(int nCategory, int nCRMax, object oCreature = OBJECT_SELF,
+    //     int nInclusion = 0, int nExcludeType = -1, int nExcludeId = -1)
+    // Which talents a creature knows is the rules' (HOOK(rules)): until then it has none, and the
+    // answer is the invalid talent (handle 0), so the AI falls back to plain attacks.
+    fn get_creature_talent { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let n = @as(usize, nwscript::ROUTINES[@as(usize, routine)].count)
+        let mut i: usize = 0
+        while i < n {
+            match nwscript::PARAMS[@as(usize, nwscript::ROUTINES[@as(usize, routine)].first) + i].kind {
+                object => { _ = try nwarg::object{ &vm, routine, argc, i } }
+                else => { _ = try nwarg::int{ &vm, routine, argc, i } }
+            }
+            i = i + 1
+        }
+        try nwvm::push_engine{ &vm, kind = nwvm::EngineType::talent, handle = 0 }
+    }
+
+    // The Category column of spells.2da (for a spell talent) or feat.2da (for a feat), 0 for
+    // anything else. The table is read each time: this is rare.
+    fn talent_category { mut w: world::World, t: values::Talent } -> i32 {
+        if t.id < 0 { return 0 }
+        let mut name: []u8 = "spells"
+        if t.kind == nwconst::TALENT_TYPE_FEAT { name = "feat" }
+        else if t.kind != nwconst::TALENT_TYPE_SPELL { return 0 }
+        let found = world::read_scratch{ &w, name, kind = restype::Type::twoda } iferr { return 0 }
+        let bytes = found ifnull { return 0 }
+        let table = twoda::parse{ data = bytes, realloc = arena::alloc, heap = w.scratch } iferr { return 0 }
+        return twoda::get_int{ t = table, row = @as(usize, t.id), column = "category" } ifnull 0
+    }
+
+    // int GetIsTalentValid / GetIdFromTalent / GetTypeFromTalent / GetCategoryFromTalent(talent tTalent)
+    fn get_talent_field { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let h = try nwarg::engine{ &vm, routine, argc, i = 0, kind = nwvm::EngineType::talent }
+        let t = values::talent{ s = &w.values, handle = h }
+        let v: i32 = match routine {
+            nwscript::GetIsTalentValid => { flag{ b = t.kind != -1 } }
+            nwscript::GetIdFromTalent => { t.id }
+            nwscript::GetTypeFromTalent => { t.kind }
+            else => { talent_category{ &w, t } }            // GetCategoryFromTalent
+        }
+        try nwvm::push_int{ &vm, v }
+    }
+
+    // int GetCreatureHasTalent(talent tTalent, object oCreature = OBJECT_SELF): a creature's
+    // spells, feats and skills are the rules' (HOOK(rules)); none yet.
+    fn get_creature_has_talent { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::GetCreatureHasTalent
+        _ = try nwarg::engine{ &vm, routine = r, argc, i = 0, kind = nwvm::EngineType::talent }
+        _ = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        try nwvm::push_int{ &vm, v = 0 }
+    }
+
+    // void ActionUseTalentOnObject(talent tChosenTalent, object oTarget)
+    // void ActionUseTalentAtLocation(talent tChosenTalent, location lTargetLocation)
+    // Using a talent is the rules' (HOOK(rules)): noted in the action log, and nothing happens.
+    fn action_use_talent { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let h = try nwarg::engine{ &vm, routine, argc, i = 0, kind = nwvm::EngineType::talent }
+        let mut target = obj::INVALID
+        if routine == nwscript::ActionUseTalentOnObject {
+            target = try nwarg::object{ &vm, routine, argc, i = 1 }
+        } else {
+            _ = try nwarg::engine{ &vm, routine, argc, i = 1, kind = nwvm::EngineType::location }
+        }
+        if not w.log.actions { return }
+        let t = values::talent{ s = &w.values, handle = h }
+        world::prefix{ w = &w }
+        _ = @fmt(&w.io, "talent type {} id {} used by {} on {}: not implemented (no lib/rules)\n",
+            t.kind, t.id, nwvm::self_object{ vm }, target)
+    }
+
+    // ---- AI styles and restrict mode
+
+    // The party's style lives on the player's character, which outlasts every module (the party
+    // table, party.ctx, has no field for it: HOOK(party)).
+    // int GetPartyAIStyle()
+    fn get_party_ai_style { mut w: world::World, mut vm: nwvm::Vm } -> ! {
+        let c = creature_of{ w = &w, id = w.pc } ifnull {
+            try nwvm::push_int{ &vm, v = nwconst::PARTY_AISTYLE_AGGRESSIVE }
+            return
+        }
+        try nwvm::push_int{ &vm, v = c.party_ai_style }
+    }
+
+    // void SetPartyAIStyle(int nStyle)
+    fn set_party_ai_style { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let style = try nwarg::int{ &vm, routine = nwscript::SetPartyAIStyle, argc, i = 0 }
+        let c = creature_of{ w = &w, id = w.pc } ifnull { return }
+        c.party_ai_style = style
+    }
+
+    // int GetNPCAIStyle(object oCreature)
+    fn get_npc_ai_style { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetNPCAIStyle, argc, i = 0 }
+        let c = creature_of{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = nwconst::NPC_AISTYLE_DEFAULT_ATTACK }
+            return
+        }
+        try nwvm::push_int{ &vm, v = c.ai_style }
+    }
+
+    // void SetNPCAIStyle(object oCreature, int nStyle)
+    fn set_npc_ai_style { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::SetNPCAIStyle, argc, i = 0 }
+        let style = try nwarg::int{ &vm, routine = nwscript::SetNPCAIStyle, argc, i = 1 }
+        let c = creature_of{ w = &w, id } ifnull { return }
+        c.ai_style = style
+    }
+
+    // int GetPlayerRestrictMode(object oObject = OBJECT_SELF): the current area's restrict mode,
+    // asked about a player-controlled creature (0x0053cf70: anyone else gets 0).
+    fn get_player_restrict_mode { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetPlayerRestrictMode, argc, i = 0 }
+        let mut mode: u32 = 0
+        let c = creature_of{ w = &w, id }
+        if c != null and (c.is_pc or id == w.pc) {
+            if world::object{ w = &w, id = w.area } is some{ value = ao } {
+                if obj::area{ o = ao } is some{ value = a } { mode = a.restrict_mode }
+            }
+        }
+        try nwvm::push_int{ &vm, v = @as(i32, mode) }
+    }
+
+    // void SetPlayerRestrictMode(int bRestrict): on the current area.
+    fn set_player_restrict_mode { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let restrict = try nwarg::int{ &vm, routine = nwscript::SetPlayerRestrictMode, argc, i = 0 }
+        let ao = world::object{ w = &w, id = w.area } ifnull { return }
+        let a = obj::area{ o = ao } ifnull { return }
+        a.restrict_mode = if restrict != 0 { 1 } else { 0 }
+    }
+
+    // ---- locks (doors and placeables)
+
+    // void SetLocked(object oTarget, int bLocked): the flag only; nothing is announced.
+    fn set_locked { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::SetLocked, argc, i = 0 }
+        let locked = try nwarg::int{ &vm, routine = nwscript::SetLocked, argc, i = 1 }
+        let o = world::object{ w = &w, id } ifnull { return }
+        if o.ext is door{ d } { d.locked = locked != 0 }
+        else if o.ext is placeable{ p } { p.locked = locked != 0 }
+    }
+
+    // The `int GetX(object oObject)` routines on a door's or placeable's lock; 0 for anything
+    // else. A placeable has no lock record of its own yet, so it is lockable when it is locked,
+    // needs a key when it names one, and has no difficulty class.
+    fn get_lock_flag { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let id = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        let mut v: i32 = 0
+        if o.ext is door{ d } {
+            v = match routine {
+                nwscript::GetLocked => { flag{ b = d.locked } }
+                nwscript::GetIsOpen => { flag{ b = d.state == obj::DoorState::open1 or d.state == obj::DoorState::open2 } }
+                nwscript::GetLockKeyRequired => { flag{ b = d.key_required } }
+                nwscript::GetLockLockable => { flag{ b = d.lockable } }
+                else => { @as(i32, d.open_dc) }                // GetLockUnlockDC
+            }
+        } else if o.ext is placeable{ p } {
+            v = match routine {
+                nwscript::GetLocked => { flag{ b = p.locked } }
+                nwscript::GetIsOpen => { flag{ b = p.open } }
+                nwscript::GetLockKeyRequired => { flag{ b = p.key.len > 0 } }
+                nwscript::GetLockLockable => { flag{ b = p.locked } }
+                else => { 0 }
+            }
+        }
+        try nwvm::push_int{ &vm, v }
+    }
+
+    // GetLockKeyTag(object oObject): nwscript.nss declares an int, but the binary pushes the key
+    // item's tag as a string (0x0053ba10), "" for anything without a lock. Scripts take it as the
+    // binary gives it.
+    fn get_lock_key_tag { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let id = try nwarg::object{ &vm, routine = nwscript::GetLockKeyTag, argc, i = 0 }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_string{ &vm, s = "" }
+            return
+        }
+        if o.ext is door{ d } {
+            try nwvm::push_string{ &vm, s = d.key }
+        } else if o.ext is placeable{ p } {
+            try nwvm::push_string{ &vm, s = p.key }
+        } else {
+            try nwvm::push_string{ &vm, s = "" }
+        }
+    }
+
+    // ---- the party and its actions
+
+    // int SetPartyLeader(int nNPC): NPC_PLAYER or a companion's slot. The party's order changes,
+    // not w.pc (which stays the player's character). TRUE when the leader was set; a companion
+    // who is not in the party answers FALSE.
+    fn set_party_leader { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::SetPartyLeader, argc, i = 0 }
+        if n == nwconst::NPC_PLAYER {
+            if party::is_member{ w = &w, id = w.pc } { party::set_leader{ &w, id = w.pc } }
+            try nwvm::push_int{ &vm, v = 1 }
+            return
+        }
+        if n < 0 or n >= @as(i32, party::SLOTS) {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        let id = w.party.npcs[@as(usize, n)]
+        if not (world::is_valid{ w = &w, id } and party::is_member{ w = &w, id }) {
+            try nwvm::push_int{ &vm, v = 0 }
+            return
+        }
+        party::set_leader{ &w, id }
+        try nwvm::push_int{ &vm, v = 1 }
+    }
+
+    // int IsNPCPartyMember(int nNPC): the companion's slot holds a creature that is in the party.
+    fn is_npc_party_member { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let n = try nwarg::int{ &vm, routine = nwscript::IsNPCPartyMember, argc, i = 0 }
+        let mut yes = false
+        if n >= 0 and n < @as(i32, party::SLOTS) {
+            let id = w.party.npcs[@as(usize, n)]
+            yes = world::is_valid{ w = &w, id } and party::is_member{ w = &w, id }
+        }
+        try nwvm::push_int{ &vm, v = flag{ b = yes } }
+    }
+
+    // void ActionFollowLeader(): for party members only (actions.md 2); the follow handler comes
+    // with the party lead.
+    fn action_follow_leader { mut w: world::World, mut vm: nwvm::Vm } -> ! {
+        let me = nwvm::self_object{ vm }
+        let c = creature_of{ w = &w, id = me } ifnull { return }
+        if not (c.is_pc or party::is_member{ w = &w, id = me }) { return }
+        _ = actions::add{ &w, id = me, action = actions::make{ kind = actions::Kind::follow_leader }, force = false }
+    }
+
+    // void ActionMoveAwayFromObject(object oFleeFrom, int bRun = FALSE, float fMoveAwayRange = 40.0):
+    // a walk to the point fMoveAwayRange from the object on the far side from the caller (the
+    // original re-picks the point while the threat stays closer than the range; here it is one
+    // walk).
+    fn action_move_away_from_object { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::ActionMoveAwayFromObject
+        let from = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let run = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let range = try nwarg::float{ &vm, routine = r, argc, i = 2 }
+        let me = nwvm::self_object{ vm }
+        let t = world::object{ w = &w, id = from } ifnull { return }
+        let o = world::object{ w = &w, id = me } ifnull { return }
+        let dx = o.position.x - t.position.x
+        let dy = o.position.y - t.position.y
+        let len = math::sqrtf{ x = dx * dx + dy * dy }
+        // Standing on the threat: away is where the caller faces.
+        let ux = if len < 0.001 { o.orientation.x } else { dx / len }
+        let uy = if len < 0.001 { o.orientation.y } else { dy / len }
+        let mut a = actions::make{ kind = actions::Kind::move_to_point }
+        a.params[0] = actions::Param::vector{ v = math::Vec3{ x = t.position.x + ux * range, y = t.position.y + uy * range, z = o.position.z } }
+        a.params[1] = actions::Param::int{ v = run }
+        a.params[2] = actions::Param::float{ v = 0.1 }
+        _ = actions::add{ &w, id = me, action = a, force = false }
+    }
+}

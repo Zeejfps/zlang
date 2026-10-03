@@ -3,7 +3,7 @@
 namespace play {
     // One scripted input line: `FRAME down KEY`, `FRAME up KEY`, and for tests `FRAME warp TAG`
     // (the leader jumps next to the object) and `FRAME use TAG` (the leader's default action on it).
-    enum Command: u8 { down, up, warp, use, newgame }
+    enum Command: u8 { down, up, warp, warpxy, use, newgame }
     struct Scripted { frame: u64, command: Command, key: []u8 }
 
     fn run { mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut mem: Mem, opts: options::Options } -> !i32 {
@@ -84,6 +84,7 @@ namespace play {
                     down => { apply_key{ keys = &keys, keycode = keycode_of{ name = s.key }, down = true } }
                     up => { apply_key{ keys = &keys, keycode = keycode_of{ name = s.key }, down = false } }
                     warp => { warp_to{ &w, tag = s.key } }
+                    warpxy => { warp_xy{ &w, at = s.key } }
                     use => { use_tagged{ &w, tag = s.key } }
                     newgame => {}
                 }
@@ -311,7 +312,7 @@ namespace play {
             let f = text::next_word{ &words } ifnull { continue }
             if f.len == 0 or f[0] == '#' { continue }
             let what = text::next_word{ &words } ifnull { continue }
-            let command = if ci::eq{ a = what, b = "down" } { Command::down } else if ci::eq{ a = what, b = "warp" } { Command::warp }
+            let command = if ci::eq{ a = what, b = "down" } { Command::down } else if ci::eq{ a = what, b = "warp" } { Command::warp } else if ci::eq{ a = what, b = "warpxy" } { Command::warpxy }
                 else if ci::eq{ a = what, b = "use" } { Command::use } else if ci::eq{ a = what, b = "newgame" } { Command::newgame } else { Command::up }
             let key = text::next_word{ &words } ifnull ""
             try list::push{ list = &out, item = Scripted{ frame = @as(u64, text::scan_decimal{ s = f }), command, key } }
@@ -333,6 +334,16 @@ namespace play {
         let pc = world::object{ w = &w, id = w.pc } ifnull { return }
         world::set_orientation{ o = pc, v = face }
         _ = @fmt(&w.io, "warp: to {} ({} {} {})\n", tag, pc.position.x, pc.position.y, pc.position.z)
+    }
+
+    // `FRAME warpxy X,Y`: the leader onto the walkmesh at (X, Y).
+    fn warp_xy { mut w: world::World, at: []u8 } {
+        let comma = text::find_byte{ s = at, c = ',' } ifnull { return }
+        let x = text::scan_f32{ s = at[..comma] } ifnull { return }
+        let y = text::scan_f32{ s = at[comma + 1..] } ifnull { return }
+        let f = walkmap::floor_anywhere{ m = &w.walk, x, y }
+        let z = if f != null { f.z } else { 0.0 }
+        movement::place{ &w, id = w.pc, at = math::Vec3{ x, y, z } }
     }
 
     fn use_tagged { mut w: world::World, tag: []u8 } {

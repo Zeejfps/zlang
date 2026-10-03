@@ -24,6 +24,7 @@ namespace rt_fx {
             nwscript::EffectHaste => { try construct{ &w, &vm, argc, routine, kind = nwconst::EFFECT_TYPE_HASTE } }
             nwscript::EffectAbilityIncrease => { try construct{ &w, &vm, argc, routine, kind = nwconst::EFFECT_TYPE_ABILITY_INCREASE } }
             nwscript::EffectTemporaryHitpoints => { try construct{ &w, &vm, argc, routine, kind = nwconst::EFFECT_TYPE_TEMPORARY_HITPOINTS } }
+            nwscript::EffectBeam => { try effect_beam{ &w, &vm, argc } }
             nwscript::EffectLinkEffects => { try link_effects{ &w, &vm, argc } }
             nwscript::MagicalEffect => { try tag_effect{ &w, &vm, argc, routine, subtype = nwconst::SUBTYPE_MAGICAL } }
             nwscript::SupernaturalEffect => { try tag_effect{ &w, &vm, argc, routine, subtype = nwconst::SUBTYPE_SUPERNATURAL } }
@@ -89,6 +90,24 @@ namespace rt_fx {
         e.ints[1] = @trunc(i32, parent)
         e.ints[2] = @trunc(i32, values::effect{ s = &w.values, handle = child }.id)
         e.ints[3] = @trunc(i32, values::effect{ s = &w.values, handle = parent }.id)
+        try push_effect{ &w, &vm, e }
+    }
+
+    // effect EffectBeam(int nBeamVisualEffect, object oEffector, int nBodyPart, int bMissEffect = FALSE):
+    // ints are the beam's visual effect, the body part and the miss flag, the object the effector
+    // (rules.md, 207).
+    fn effect_beam { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::EffectBeam
+        let beam = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let effector = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        let part = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let miss = try nwarg::int{ &vm, routine = r, argc, i = 3 }
+        let mut e = values::no_effect{}
+        e.kind = nwconst::EFFECT_TYPE_BEAM
+        e.ints[0] = beam
+        e.ints[1] = part
+        e.ints[2] = miss
+        e.objects[0] = effector
         try push_effect{ &w, &vm, e }
     }
 

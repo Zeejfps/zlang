@@ -218,6 +218,19 @@ namespace obj {
         destroyable: bool,                  // SetIsDestroyable (the caller's corpse fades or stays)
         raiseable: bool,
         selectable_dead: bool,
+        // Appended by routines/combat.ctx: what the combat queries answer until the combat rules
+        // (lib/rules) keep them (HOOK(rules)).
+        attack_target: u32,                 // GetAttackTarget (CSWSCreature +0x504)
+        attempted_target: u32,              // GetAttemptedAttackTarget (+0x50c)
+        last_hostile_actor: u32,            // GetLastHostileActor
+        last_hostile_target: u32,           // GetLastHostileTarget
+        last_attack_action: i32,            // GetLastAttackAction (ACTION_*; +0x544)
+        last_force_power: i32,              // GetLastForcePowerUsed (spells.2da row, -1 none)
+        last_combat_feat: i32,              // GetLastCombatFeatUsed (feat.2da row, -1 none)
+        last_attack_result: i32,            // GetLastAttackResult (ATTACK_RESULT_*)
+        force_power_ok: bool,               // GetWasForcePowerSuccessful
+        ai_style: i32,                      // GetNPCAIStyle (NPC_AISTYLE_*)
+        party_ai_style: i32,                // GetPartyAIStyle, kept on the player's character (the party table is HOOK(party))
     }
 
     // One creature another perceives (gameloop.md 2.4).
@@ -303,7 +316,18 @@ namespace obj {
         sounds: []mut resref::ResRef,           // heap
     }
 
-    struct Encounter { active: bool, polygon: []mut math::Vec3 }
+    // An encounter (UTE + the GIT's polygon and spawn points): creatures it spawns when the party
+    // walks in (ours, simplified: once, RecCreatures of them, at the spawn points in turn).
+    struct Encounter {
+        active: bool,
+        polygon: []mut math::Vec3,          // area space; heap
+        spawn_points: []mut math::Vec4,     // x, y, z, facing (radians); heap
+        creatures: []mut resref::ResRef,    // what it spawns; heap
+        max_creatures: u32,
+        rec_creatures: u32,
+        player_only: bool,
+        spawned: bool,
+    }
 
     struct Store { markup: i32, markdown: i32 }
 
@@ -374,6 +398,10 @@ namespace obj {
     }
     fn waypoint { o: *Object } -> ?*mut Waypoint {
         if o.ext is waypoint{ wp } { return wp }
+        return null
+    }
+    fn encounter { o: *Object } -> ?*mut Encounter {
+        if o.ext is encounter{ e } { return e }
         return null
     }
     fn sound { o: *Object } -> ?*mut Sound {
@@ -525,6 +553,10 @@ namespace obj {
             xp = 0, gold = 0, inv_cursor = 0, listening = false, listen_text = [[0; 32]; 4],
             listen_len = [0; 4], listen_number = [0; 4], listen_count = 0,
             destroyable = true, raiseable = true, selectable_dead = false,
+            attack_target = INVALID, attempted_target = INVALID, last_hostile_actor = INVALID,
+            last_hostile_target = INVALID, last_attack_action = 65535, last_force_power = -1,
+            last_combat_feat = -1, last_attack_result = 0, force_power_ok = false, ai_style = 0,
+            party_ai_style = 0,
         }
     }
 }
