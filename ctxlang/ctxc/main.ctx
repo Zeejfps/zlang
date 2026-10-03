@@ -71,7 +71,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> 
         cannot{ &io, path, what = "cannot read" }
         return 1
     }
-    let pages = mem::pages{ &mem, size = 16777216 + @as(usize, size) * 32 } ifnull {
+    let pages = mem::reserve{ &mem, size = 16777216 + @as(usize, size) * 32 } ifnull {
         cannot{ &io, path, what = "out of memory reading" }
         return 1
     }
@@ -123,7 +123,7 @@ fn dumps { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args, trees: bool } -> i3
         if size > largest { largest = size }
         i = i + 1
     }
-    let pages = mem::pages{ &mem, size = 16777216 + @as(usize, largest) * 128 } ifnull {
+    let pages = mem::reserve{ &mem, size = 16777216 + @as(usize, largest) * 128 } ifnull {
         io::eprintln{ &io, s = "out of memory" }
         return 1
     }
@@ -202,7 +202,7 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
         total = total + size
         i = i + 1
     }
-    let pages = mem::pages{ &mem, size = 67108864 + @as(usize, total) * 512 } ifnull {
+    let pages = mem::reserve{ &mem, size = 67108864 + @as(usize, total) * 512 } ifnull {
         io::eprintln{ &io, s = "out of memory" }
         return 1
     }
@@ -340,7 +340,7 @@ fn recovery { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
         cannot{ &io, path, what = "cannot read" }
         return 1
     }
-    let pages = mem::pages{ &mem, size = 67108864 + @as(usize, size) * 256 } ifnull {
+    let pages = mem::reserve{ &mem, size = 67108864 + @as(usize, size) * 256 } ifnull {
         io::eprintln{ &io, s = "out of memory" }
         return 1
     }

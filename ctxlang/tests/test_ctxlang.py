@@ -6629,6 +6629,47 @@ fn main { mut mem: Mem } { }
 """)
         self.assertEqual(out, '0.1 0.1 1e+100\n-2.53.0\n')
 
+    def test_reserve_for_arenas(self):
+        # mem::reserve's memory is made usable as an arena reaches it (on Windows, committed a
+        # MiB at a time): allocations that end in other MiBs, a big one, and two arenas over
+        # the halves of one reservation, the upper one first. A 1-byte block reads 2 twice.
+        out, code = self.run_mem("""
+    let some{ value = buf } = mem::reserve{ &mem, size = 1073741824 } else { return 1 }
+    io::println_u64{ &io, n = @addr(&buf[0]) % 4096 }
+    let mut low = arena::new{ buf = buf[..536870912] }
+    let mut high = arena::new{ buf = buf[536870912..] }
+    let mut total: u64 = 0
+    let sizes = [100, 1048576, 3, 300000000, 5000000, 1]
+    let mut i: usize = 0
+    while i < sizes.len {
+        let h = if i % 2 == 0 { &high } else { &low }
+        let some{ value = b } = arena::alloc{ heap = h, mem = slice::empty(u8){}, new = sizes[i], align = 8 } else { return 2 }
+        total = total + b[0] + b[b.len - 1]
+        b[0] = 1
+        b[b.len - 1] = 2
+        total = total + b[0] + b[b.len - 1]
+        i = i + 1
+    }
+    io::println_u64{ &io, n = total }
+    return 0""")
+        self.assertEqual((out, code), ('0\n19\n', 0))
+
+    def test_arena_in_a_const(self):
+        # arena::alloc's call into the runtime runs while compiling too.
+        self.assertOutput("""
+fn squares {} -> [3]i32 {
+    let mut mem: [64]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut xs = list::new(i32){ realloc = arena::alloc, &heap }
+    let mut i = 1
+    while i <= 3 { try! list::push{ list = &xs, item = i * i }; i = i + 1 }
+    return [list::items{ list = xs }[0], list::items{ list = xs }[1], list::items{ list = xs }[2]]
+}
+const SQUARES: [3]i32 = squares{}
+fn main { mut io: Io } { io::println_i64{ &io, n = SQUARES[2] } }
+""", '9\n')
+
+
 
 class PlatformLayers(Base):
     """std's platform layers (std/os/PLATFORM, spec §17), and standard output's buffer, which std
