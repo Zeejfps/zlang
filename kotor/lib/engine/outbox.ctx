@@ -35,6 +35,9 @@ namespace outbox {
         galaxy_map{ planet: i32 },                          // ShowGalaxyMap: the map with that planet selected
         // PlayPazaak: the opponent's pazaakdecks.2da row (negative: random), the script to run after, the
         // wager limit (already clamped to the gold), the tutorial, the opponent creature
+        // ShowPartySelectionGUI: the script to run when the screen closes (empty: none) and the NPC
+        // slots forced into the party (-1 none); the available slots are in w.party.
+        party_selection{ exit_script: resref::ResRef, force1: i32, force2: i32 },
         pazaak{ deck: i32, end_script: resref::ResRef, max_wager: i32, tutorial: bool, opponent: u32 },
         // Appended by routines/presentation.ctx. None of these screens exists yet; the routines keep
         // the state their getters answer from (World.credits_running, ...) and say what to show.

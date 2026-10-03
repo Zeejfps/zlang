@@ -47,7 +47,7 @@ namespace visual {
     // What a visual's models depend on: a creature's appearance and its armour and weapons.
     fn signature_of { o: *obj::Object } -> u64 {
         let c = obj::creature{ o } ifnull { return 0 }
-        let mut h: u64 = @as(u64, c.appearance)
+        let mut h: u64 = @as(u64, c.appearance) + @as(u64, c.head + 1) * 4096
         h = @wrap_add(@wrap_mul(h, 1000003), @as(u64, c.equipped[obj::SLOT_BODY]))
         h = @wrap_add(@wrap_mul(h, 1000003), @as(u64, c.equipped[obj::SLOT_RIGHT_WEAPON]))
         h = @wrap_add(@wrap_mul(h, 1000003), @as(u64, c.equipped[obj::SLOT_LEFT_WEAPON]))
@@ -121,8 +121,9 @@ namespace visual {
         }
         let body = try scene::add_part{ &sc, loaded = body_loaded, parent = -1, hook = "" }
         if is_b {
-            let head_row = twoda::get_int{ t, row, column = "normalhead" }
-            if head_row != null and head_row >= 0 {
+            // DuplicateHeadAppearance's head, else the appearance's own.
+            let head_row = if c.head >= 0 { c.head } else { twoda::get_int{ t, row, column = "normalhead" } ifnull -1 }
+            if head_row >= 0 {
                 let head = cell{ t = w.tables.heads, row = @as(usize, head_row), column = "head" }
                 if head.len > 0 {
                     let hl = try scene::load_model{ &sc, &w, &dev, name = head, body_texture = "", envmap, hide_null = false }
