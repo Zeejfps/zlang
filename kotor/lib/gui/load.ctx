@@ -271,7 +271,7 @@ namespace gui {
             id = g.next_panel, name = resref::truncate{ name }, mode, modal, removing = false,
             x = 0, y = 0, w = 0, h = 0, border = no_border{}, color = white_color{}, has_color = false, alpha = 1.0,
             controls = list::new(Control, heap::Heap){ realloc = heap::alloc, heap = g.heap },
-            bytes, doc, focus = -1, open_sound = -1, sx = 0, sy = 0, shown = true, background = true, backdrop = 0,
+            bytes, doc, focus = -1, open_sound = -1, sx = 0, sy = 0, shown = true, background = true, backdrop = 0, key_events = false, overlay_from = -1,
         } }
         g.next_panel = g.next_panel + 1
         read_panel{ &g, &fs, &dev, p } iferr err{ error } {
@@ -337,6 +337,17 @@ namespace gui {
             i = i + 1
         }
         sort_controls{ items = list::items{ list = p.controls } }
+        // A frame label that other controls name as their parent (a tab of the top menu bar, under its
+        // button) is not under the pointer itself, so it lights and clicks exactly where its button does.
+        let all = list::items{ list = p.controls }
+        let mut m: usize = 0
+        while m < all.len {
+            if all[m].parent >= 0 {
+                let up = find_by_id{ p, id = all[m].parent }
+                if up >= 0 and all[@as(usize, up)].kind == K_PROTO { all[@as(usize, up)].flags = all[@as(usize, up)].flags | F_NO_HIT }
+            }
+            m = m + 1
+        }
         // Internals go after the sorted controls; each list box then points at its own.
         let ins = list::items{ list = internals }
         let mut k: usize = 0

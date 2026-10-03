@@ -91,6 +91,22 @@ The random draw is `rand() % remaining` over the list of eligible rows of that g
 the list**, so the three models of one gender always show three different portraits (high). The
 draw happens every time the panel is built, so the line-up differs per run.
 
+### The hilighted button is the large one
+
+`classsel.gui` gives `BTN_SEL1` the extent (55, 118, 95x213) and the other five (x, 128, 75x193): the
+large size is 10 pixels more on every side, and each `3D_MODELn` label is its button inset by 3 and
+moves with it. The panel's per-frame render (vtable slot 13, `0x006dc030`, then `CSWGuiPanel::Render`)
+animates this for all six slots from the button's hilight flag (control `+0x44` bit 0, which hover and
+the keyboard focus set): hilighted buttons go to TOP 118 (0x76), the others to TOP 128 (0x80). Each
+step moves left and top by the TOP change and shrinks or grows width and height by twice it, on the
+button and on its 3D label alike (the scene's viewport is the label's rectangle, so the model scales
+with it). The animation: when TOP is off its target and the slot's timer (`+0x258` of the slot record,
+-1.0 = idle) is idle, the timer is set to `(distance / 10) * 0.25` s (integer division, so a distance
+under 10 snaps on the next frame) and that frame does not move; each later frame subtracts the frame
+time, and while the timer is positive TOP is `128 - trunc((0.25 - timer) * 40)` growing (`118 +
+trunc(...)` shrinking), until it reaches the target; when the timer runs out it snaps and goes idle.
+So 10 pixels take a quarter of a second. At start slot 0 is the active control, hence large. (high)
+
 ### Hover and select
 
 | Event | Handler | Behaviour |
@@ -278,6 +294,7 @@ Controls: `LBL_HEAD` (532x190 3D view, light `cghead_light`, camera hook `camera
 | Class dependence | none on the list; the class build only picks which appearance column is used for each row (`Appearance_L` Soldier, `AppearanceNumber` Scout, `Appearance_S` Scoundrel) | high |
 | Initial portrait | the creature's current portrait id (the random one from class selection) if it is in the list, else index 0 | high |
 | Left / right | `BTN_ARRL`/0x2f/0x35/0x3f = previous, `BTN_ARRR`/0x30/0x36/0x40 = next; both **wrap** (`0x006f8fc0`, `0x006f8ff0`). Each press re-applies the appearance at once | high |
+| Draw order | `LBL_HEAD` is the file's first control, so the 3D head is drawn first and the portrait picture (`LBL_PORTRAIT`, left), the bevels and the two arrow buttons (`BTN_ARRL` at 259, `BTN_ARRR` at 527) are drawn over it; the 3D control fills no colour, the panel's `lbl_cg_portbk` picture shows around the scene | high |
 | Head and body | the portrait row's appearance row (`appearance.2da`) drives both: `NormalHead` -> `heads.2da` row (appearance 91 -> row 26 `PFHA01`, 136 -> row 41 `PMHA01`, one head per portrait A1..C5) and the body model `PFBAS`/`PMBAS` with the A/B/C skin texture. `BackUpHead` is empty for all 90 player appearances (rows 91-180), so it never matters here | med (head rule read from data and call chain; the head code in the visual builder was not read) |
 | Per change | `0x006f8ad0`: SetPortrait(row), write the appearance into the visual info, re-apply (`0x006134c0`), play idle animation "pause1" on both animation slots; the panel plays "pause2" or "listen" at random every 1-4 s | med |
 | Accept (0x27, 0x2d) | `0x006f8a20`: SetPortrait(row), S `+0x8c` = the list's appearance, a SetX call with an empty resref (vtable `+0xec`, purpose unknown), pop and delete the panel; then quick: refresh the main model and counter 1 (`0x006eff60`); custom: refresh the main model and counter 1 (`0x006ef4c0`) | high |

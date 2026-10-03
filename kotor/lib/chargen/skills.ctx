@@ -58,6 +58,7 @@ namespace chargen {
         st.sk_focus = 0
         try refresh_skills{ st, &g, p }
         gui::set_focus{ &g, panel = p, tag = SK_POINTS_TAG[0] }
+        gui::set_key_events{ &g, panel = p, on = true }
     }
 
     fn refresh_skills { st: *mut State, mut g: gui::Gui, p: u32 } -> ! {

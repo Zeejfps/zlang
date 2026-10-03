@@ -71,7 +71,11 @@ namespace chargen {
         st.portrait_before = st.ch.portrait
         st.appearance_before = st.ch.appearance
         show_portrait_picture{ st, &g, &fs, &dev, p, tag = "LBL_PORTRAIT", row = st.ch.portrait }
+        // LBL_HEAD is the file's first control and the 3D head is drawn over the panel: the portrait
+        // picture, the bevels, the arrows and the buttons come after it and must cover it.
+        gui::set_overlay_after{ &g, panel = p, tag = "LBL_HEAD" }
         gui::set_focus{ &g, panel = p, tag = "BTN_ARRR" }
+        gui::set_key_events{ &g, panel = p, on = true }      // left and right arrows: the previous and next portrait
     }
 
     // Left or right, wrapping; the body follows at once.
