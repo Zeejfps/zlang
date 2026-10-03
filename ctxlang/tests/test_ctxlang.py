@@ -6004,6 +6004,31 @@ class Fs(Base):
 """, [p])
         self.assertEqual(out, 'true\nabcde\n5\n')
 
+    def test_seek_and_read_at(self):
+        p = self.path('f.bin')
+        with open(p, 'wb') as f:
+            f.write(b'0123456789')
+        out, code = self.run_fs("""
+    let f = fs::open{ &fs, path = args[0], mode = fs::Mode::read } iferr { return 1 }
+    defer _ = fs::close{ &fs, file = f }
+    let mut buf: [4]u8
+    // Inside the file, at its end (a short read), past it, and back to the start.
+    io::println_u64{ &io, n = fs::read_at{ &fs, file = f, offset = 3, into = buf[..] } iferr { return 2 } }
+    io::println{ &io, s = utf8::of{ chars = buf[..] } }
+    io::println_u64{ &io, n = fs::read_at{ &fs, file = f, offset = 8, into = buf[..] } iferr { return 3 } }
+    io::println{ &io, s = utf8::of{ chars = buf[..2] } }
+    io::println_u64{ &io, n = fs::read_at{ &fs, file = f, offset = 100, into = buf[..] } iferr { return 4 } }
+    fs::seek{ &fs, file = f, offset = 0 } iferr { return 5 }
+    let n = fs::read{ &fs, file = f, into = buf[..1] } iferr { return 6 }
+    io::println{ &io, s = utf8::of{ chars = buf[..n] } }
+    // The position is after what read_at read.
+    _ = fs::read_at{ &fs, file = f, offset = 5, into = buf[..2] } iferr { return 7 }
+    let m = fs::read{ &fs, file = f, into = buf[..] } iferr { return 8 }
+    io::println{ &io, s = utf8::of{ chars = buf[..m] } }
+    return 0
+""", [p])
+        self.assertEqual((out, code), ('4\n3456\n2\n89\n0\n0\n789\n', 0))
+
     def test_errors(self):
         existing, missing = self.path('there.txt'), self.path('missing.txt')
         open(existing, 'wb').close()
