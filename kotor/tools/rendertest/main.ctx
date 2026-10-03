@@ -88,6 +88,7 @@ fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut 
     try draw_bastila{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, dir = opts.out_dir }
     try draw_gallery{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, a = assets, dir = opts.out_dir }
     try draw_area{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, area = "m01aa", dir = opts.out_dir }
+    try draw_ingame{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, dir = opts.out_dir }
 
     if opts.show > 0.0 {
         let freq = sdl::counter_frequency{ &sdl }
@@ -885,4 +886,122 @@ fn draw_area {
     try save_screen{ &io, &fs, &dev, &heap, dir, name = "area_top.png" }
     report{ &io, &dev }
     try gpu::resize{ &dev, width = @as(u32, WIDTH), height = @as(u32, HEIGHT) }
+}
+
+// Where a ray straight down from (x, y, high) first meets a model's walkmesh copy (its AABB
+// meshes), in the model's space; null if it misses.
+fn floor_height { model: *mdl::Model, pose: mdl_anim::Pose, x: f32, y: f32 } -> ?f32 {
+    let ray = math::ray::make{ origin = v3{ x, y, z = 100.0 }, dir = v3{ x = 0.0, y = 0.0, z = -1.0 } }
+    let mut best: f32 = 1000.0
+    let mut found = false
+    let mut i: usize = 0
+    while i < model.meshes.len {
+        let mesh = &model.meshes[i]
+        i = i + 1
+        if mesh.aabb == null { continue }
+        let w = pose.world[mesh.node]
+        let mut f: usize = 0
+        while f + 2 < mesh.indices.len {
+            let a = corner{ mesh, w, i = mesh.indices[f] }
+            let b = corner{ mesh, w, i = mesh.indices[f + 1] }
+            let c = corner{ mesh, w, i = mesh.indices[f + 2] }
+            let hit = math::ray::intersect_triangle{ ray, a, b, c, max_t = best }
+            if hit != null {
+                best = hit.t
+                found = true
+            }
+            f = f + 3
+        }
+    }
+    if not found { return null }
+    return 100.0 - best
+}
+
+fn corner { mesh: *mdl::Mesh, w: math::Mat4, i: u16 } -> math::Vec3 {
+    let k = @as(usize, i) * 3
+    return math::mat4::transform_point{ m = w, p = v3{ x = mesh.positions[k], y = mesh.positions[k + 1], z = mesh.positions[k + 2] } }
+}
+
+// Bastila standing in m01aa_02a on its walkmesh, lit by the room's lights, casting a planar
+// shadow on the floor from the light nearest her, seen at eye height: the room, a creature, a
+// shadow and dynamic lights together, as the game will draw them.
+fn draw_ingame {
+    mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena,
+    mut lib: kmodels::Library, mut cache: material::Cache, rm: res::Manager, dir: []u8,
+} -> ! {
+    let room = try kmodels::load{ &lib, &fs, rm, &heap, name = "m01aa_02a" } ifnull { return kmodels::no_model{ name = "m01aa_02a" } }
+    let body = try kmodels::load{ &lib, &fs, rm, &heap, name = "p_bastilabb" } ifnull { return kmodels::no_model{ name = "p_bastilabb" } }
+    let head = try kmodels::load{ &lib, &fs, rm, &heap, name = "p_bastilah" } ifnull { return kmodels::no_model{ name = "p_bastilah" } }
+    let room_parts = try kmodels::upload{ &dev, &cache, &fs, rm, &heap, model = room, envmap = "" }
+    let body_parts = try kmodels::upload{ &dev, &cache, &fs, rm, &heap, model = body, envmap = "" }
+    let head_parts = try kmodels::upload{ &dev, &cache, &fs, rm, &heap, model = head, envmap = "" }
+    let room_pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model = room }
+    let body_pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model = body }
+    let head_pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model = head }
+    let palette = try alloc::resize(math::Mat4, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(math::Mat4){}, count = 64 }
+    let lookup = kmodels::find{ lib = &lib, _ }
+    let found = mdl_anim::find{ model = body, name = "pause1", lookup }
+    if found != null {
+        let binding = try mdl_anim::bind{ realloc = arena::alloc, &heap, model = body, animation = found.animation }
+        mdl_anim::pose_at{ model = body, binding, time = 0.5, pose = body_pose }
+    }
+
+    // Her spot: the middle of the room, on the walkmesh.
+    let box = kmodels::bounds{ model = room, pose = room_pose, parts = room_parts, instance = math::mat4::identity{}, box = math::aabb::empty{}, palette }
+    let centre = math::aabb::center{ b = box }
+    let x = centre.x
+    let y = centre.y
+    let z = floor_height{ model = room, pose = room_pose, x, y } ifnull { box.min.z }
+    _ = @fmt(&io, "ingame: floor at {} under ({}, {})\n", z, x, y)
+    // Facing the camera, which stands to her south-west: creatures face +Y, and turning by
+    // angle a about Z takes +Y to (-sin a, cos a).
+    let feet = v3{ x, y, z }
+    let eye = v3{ x = x - 2.2, y = y - 3.4, z = z + 1.7 }
+    let facing = math::quat::from_axis_angle{ axis = v3{ x = 0.0, y = 0.0, z = 1.0 }, angle = math::atan2f{ y = -(eye.x - x), x = eye.y - y } }
+    let instance = math::mat4::from_rotation_translation{ r = facing, t = feet }
+
+    render::begin_frame{ &frame, time = 0.0 }
+    let mut view = render::make_view{ camera = render::Camera{
+        view = math::mat4::look_at{ eye, at = v3{ x, y, z = z + 1.0 }, up = v3{ x = 0.0, y = 0.0, z = 1.0 } },
+        proj = math::mat4::perspective{ fovy = 1.0, aspect = @as(f32, WIDTH) / @as(f32, HEIGHT), near = 0.1, far = 200.0 },
+        eye,
+    } }
+    view.clear_color = render::rgba{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 }
+    view.ambient = v3{ x = 0.35, y = 0.35, z = 0.38 }
+    let vi = render::add_view{ &frame, view } ifnull { return }
+    kmodels::add_lights{ &frame, model = room, pose = room_pose, instance = math::mat4::identity{} }
+    _ = kmodels::draw{ &frame, view = vi, model = room, pose = room_pose, parts = room_parts, instance = math::mat4::identity{}, palette }
+    let first = kmodels::draw{ &frame, view = vi, model = body, pose = body_pose, parts = body_parts, instance, palette }
+    let body_end = frame.draw_count
+    let hook = mdl_anim::hook_transform{ model = body, pose = body_pose, name = mdl_anim::HOOK_HEAD } ifnull { math::mat4::identity{} }
+    let head_first = kmodels::draw{ &frame, view = vi, model = head, pose = head_pose, parts = head_parts, instance = math::mat4::mul{ a = instance, b = hook }, palette }
+    let head_end = frame.draw_count
+
+    // The light nearest her casts her shadow onto the floor plane under her feet.
+    let mut light = v3{ x = x + 1.0, y = y + 1.0, z = z + 4.0 }
+    let mut nearest: f32 = 1000000.0
+    let mut l: u32 = 0
+    while l < frame.light_count {
+        let d = math::vec3::distance{ a = frame.lights[l].position, b = feet }
+        if d < nearest and frame.lights[l].position.z > z + 1.0 {
+            nearest = d
+            light = frame.lights[l].position
+        }
+        l = l + 1
+    }
+    let floor = math::plane::from_normal_point{ n = v3{ x = 0.0, y = 0.0, z = 1.0 }, p = feet }
+    let mut d = first
+    while d < body_end {
+        render::add_shadow{ &frame, shadow = render::Shadow{ draw = d, light, directional = false, plane = floor, strength = 0.5 } }
+        d = d + 1
+    }
+    d = head_first
+    while d < head_end {
+        render::add_shadow{ &frame, shadow = render::Shadow{ draw = d, light, directional = false, plane = floor, strength = 0.5 } }
+        d = d + 1
+    }
+    try gpu::submit{ &dev, frame = &frame }
+    _ = @fmt(&io, "ingame: {} lights; shadow from ({}, {}, {})\n", frame.light_count, light.x, light.y, light.z)
+    try save_screen{ &io, &fs, &dev, &heap, dir, name = "ingame.png" }
+    report{ &io, &dev }
 }

@@ -217,7 +217,12 @@ viewport), `ui.png` (game fonts loaded through `res`, clipping, rotation, additi
 target, a YUV frame, alpha steps), `m01aa_02a_iso.png` (the lightmapped room, as
 `tools/py/mdlrender.py`'s `out/mdl/m01aa_02a_iso.png`) and `bastila.png` (`p_bastilabb` with
 `p_bastilah` at the headhook: bind pose, `pause1` at 0.5 s, `run` at 0.2 s from the side, GPU
-skinned; as `out/mdl/bastila_skinned.png`). `kotor/tools/texcheck` decodes every TPC and TGA of
+skinned; as `out/mdl/bastila_skinned.png`), `gallery.png` (HK-47 and an astromech with their
+TXI environment maps, a lightsaber hilt, a chrome ball reflecting the real `cm_tat` cube map:
+sky above, sand below), `area_top.png` (every room of `m01aa.lyt` from above, as
+`out/mdl/lyt_m01aa_top.png`) and `ingame.png` (Bastila standing on the room's walkmesh, found by
+casting a ray at its AABB mesh, lit by the room's lights and shadowed onto the floor from the
+nearest one, at eye height). `kotor/tools/texcheck` decodes every TPC and TGA of
 the install (11,536 + 5,602, 0 failures) and writes a contact sheet and single textures to
 `kotor/out/tex/`; `kotor/tools/mathcheck` checks the math identities.
 
