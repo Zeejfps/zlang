@@ -96,6 +96,8 @@ namespace preview3d {
             kind, female, alignment, appearance_2da, heads_2da, light, fixed, creature,
             body = null, head = null, camera_height = 0.0, yaw = 0.0,
         }
+        // The original's 3D controls fill no colour (docs/re/gui3d.md): the panel shows around the scene.
+        p.light.clear = null
         build_creature{ preview = &p, &fs, &dev, rm, &models, &mats, appearance, head } iferr err{ error } {
             free{ preview = &p, &dev }
             return error

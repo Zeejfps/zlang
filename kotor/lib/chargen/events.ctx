@@ -7,6 +7,10 @@ namespace chargen {
     const SLOT_GENDER: [SLOTS]i32 = [0, 0, 0, 1, 1, 1]
     const SLOT_DESC: [SLOTS]u32 = [32109, 32110, 32111, 32111, 32110, 32109]
 
+    // gui::EventKind::arrow's values (gui's DIR_LEFT and DIR_RIGHT).
+    const ARROW_LEFT: i32 = 2
+    const ARROW_RIGHT: i32 = 3
+
     fn tag_is { ev: gui::Event, tag: []u8 } -> bool {
         return slice::eq_bytes{ a = ev.tag, b = tag }
     }
@@ -224,6 +228,9 @@ namespace chargen {
     fn portrait_event { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> Outcome {
         let p = ev.panel
         if ev.kind == gui::EventKind::cancel { leave_portrait{ st, &g, &fs, &dev }; return Outcome::running }
+        if ev.kind == gui::EventKind::arrow and (ev.value == ARROW_LEFT or ev.value == ARROW_RIGHT) {
+            step_portrait{ st, &g, &fs, &dev, p, delta = if ev.value == ARROW_LEFT { -1 } else { 1 } }
+        }
         if ev.kind != gui::EventKind::activate { return Outcome::running }
         if tag_is{ ev, tag = "BTN_ARRL" } { step_portrait{ st, &g, &fs, &dev, p, delta = -1 } }
         if tag_is{ ev, tag = "BTN_ARRR" } { step_portrait{ st, &g, &fs, &dev, p, delta = 1 } }
@@ -268,6 +275,10 @@ namespace chargen {
         let p = ev.panel
         if ev.kind == gui::EventKind::cancel { leave_abilities{ st, &g }; return Outcome::running }
         let row = ability_row_of{ tag = ev.tag }
+        if ev.kind == gui::EventKind::arrow and (ev.value == ARROW_LEFT or ev.value == ARROW_RIGHT) {
+            // the arrow keys are the focused row's minus and plus (0x3f, 0x40)
+            if ev.value == ARROW_LEFT { lower_ability{ st, &g, &fs, &dev, p, row = st.ab_focus } iferr {} } else { raise_ability{ st, &g, &fs, &dev, p, row = st.ab_focus } iferr {} }
+        }
         if ev.kind == gui::EventKind::hilight and row >= 0 {
             focus_ability{ st, &g, p, row = @as(usize, row) }
         } else if ev.kind == gui::EventKind::activate {
@@ -301,6 +312,9 @@ namespace chargen {
         let p = ev.panel
         if ev.kind == gui::EventKind::cancel { close_top{ st, &g }; return Outcome::running }
         let row = skill_row_of{ tag = ev.tag }
+        if ev.kind == gui::EventKind::arrow and (ev.value == ARROW_LEFT or ev.value == ARROW_RIGHT) {
+            if ev.value == ARROW_LEFT { lower_skill{ st, &g, p, row = st.sk_focus } iferr {} } else { raise_skill{ st, &g, &fs, &dev, p, row = st.sk_focus } iferr {} }
+        }
         if ev.kind == gui::EventKind::hilight and row >= 0 {
             focus_skill{ st, &g, p, row = @as(usize, row) }
         } else if ev.kind == gui::EventKind::activate {
