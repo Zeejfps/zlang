@@ -6,10 +6,15 @@ and audio bitstreams in enough detail to know exactly what to implement and wher
 
 Status markers used below:
 
-- **[verified]**: checked against the install by `tools/py/bikprobe.py`, or by comparing with
-  FFmpeg's decoder run as a black-box oracle (see [Checking a decoder](#checking-a-decoder)).
+- **[verified]**: checked against the install by `tools/py/bikprobe.py`, by comparing with
+  FFmpeg's decoder run as a black-box oracle (see [Checking a decoder](#checking-a-decoder)), or
+  by our ctxlang decoder (`lib/video`), which matches FFmpeg on every frame and sample of the 61
+  movies.
 - **[docs]**: taken from public descriptions (listed in [Sources](#sources)) and from reading
-  FFmpeg's decoder; not checked bit-for-bit by us yet. The ctxlang decoder will check these.
+  FFmpeg's decoder; not checked by us (only revisions other than `i` now).
+
+The decoder's design, API and the game's playback are in
+[docs/design/video.md](../design/video.md).
 
 ## What KOTOR uses (and what to skip)
 
@@ -101,10 +106,11 @@ Audio packing in KOTOR **[verified]**:
 
 ## Video bitstream (Bink 1)
 
-This section summarizes how a `BIKi` video packet decodes, in our words. It is **[docs]** unless
-marked otherwise: the summary follows the public write-ups and our reading of FFmpeg's decoder
-(LGPL, read only). The implementer should read the sources listed per topic, then write the
-decoder fresh and compare it with the oracle.
+This section summarizes how a `BIKi` video packet decodes, in our words. It follows the public
+write-ups and our reading of FFmpeg's decoder (LGPL, read only), and is now **[verified]**
+throughout: `lib/video/bink_video.ctx`, written from this description, decodes every frame of
+all 61 movies byte for byte as FFmpeg does (`binkcheck --ref`, see [Checked](#checked)). Only the
+[revision differences](#revision-differences) other than `i` remain **[docs]**.
 
 ### Bits, planes, buffers
 
@@ -227,8 +233,11 @@ run-block pattern indices and flags, residue masks, DCT coefficients and quantiz
 
 A block-type 1 met at a position where the column or the row is odd is a placeholder for the area
 of a 16x16 block decoded earlier: skip it and the next column. Motion vectors are whole pixels in
-the plane being decoded (chroma vectors are not halved); a source block outside the plane is an
-error in FFmpeg.
+the plane being decoded (chroma vectors are not halved). The source block's top-left pixel, taken
+as an offset into the plane's rows laid end to end (`(y0 + dy) * stride + x0 + dx`), must lie
+between the first block's (0) and the last block's; anything else is an error, in FFmpeg and in
+ours. So a vector may reach left of column 0 into the previous row's end; KOTOR's movies
+never trip the check.
 
 Kostya's 2009 posts "pattern-run blocks" and "a bunch of peculiarities" describe the block types;
 MultimediaWiki's "Bink Video" lists them.
@@ -380,10 +389,14 @@ the intra and inter quantizer matrices. Their only public text form is FFmpeg's
 not copy. The same tables ship with the game in `binkw32.dll`, and the install is the project's
 data source.
 
-**Decision:** the ctxlang decoder reads them from `<install>/binkw32.dll` at startup, checks each
-region's CRC-32, and refuses to play movies (skipping them, not crashing the game) when they don't
-match. `bikprobe.py --dll` runs the same check. Offsets are file offsets into binkw32.dll 1.5v
-(they sit in its `.rdata` and `BINKDATA` sections):
+**Decision:** the ctxlang decoder reads them from `<install>/binkw32.dll` at startup
+(`lib/video/bink_tables.ctx`). It doesn't rely on the offsets below: it looks for each table by
+its shape (sixteen 4s for the code lengths, 0..15 for the codes, a permutation of 0..63 starting
+at 0 for the scan, ...) and accepts a region only if its CRC-32 is the one below, so any DLL build
+holding the tables works; without them the game skips its movies rather than crash
+([docs/design/video.md](../design/video.md#the-tables-read-from-the-installs-binkw32dll)).
+`bikprobe.py --dll` checks the same CRCs at the fixed offsets. Offsets are file offsets into
+binkw32.dll 1.5v (they sit in its `.rdata` and `BINKDATA` sections):
 
 | Table | File offset | Bytes | Layout | CRC-32 |
 |---|---|---|---|---|
@@ -481,6 +494,17 @@ python kotor/tools/py/bikprobe.py --decode-audio F:/.../movies/01c.bik kotor/ext
 ```
 
 Results (2026-10-03, Steam install): **61 files, 0 failures**; `--dll`: all 9 tables match.
+
+The ctxlang decoder, against FFmpeg 7.1 as the oracle (needs `ffmpeg` on PATH):
+
+```
+kotor/tools/ctxc run kotor/tools/binkcheck -- --ref              # every movie, video and audio
+kotor/tools/ctxc run kotor/tools/bink2png -- 02 --from 120 --to 120   # kotor/out/bink/02_0120.png
+```
+
+Results (2026-10-03): **61 movies, 0 failures; 48752 of 48752 frames byte for byte FFmpeg's**;
+143378834 audio samples compared, 113172 (0.08%) differ, all by 1 (float32 against float64
+rounding); 0.93 ms per frame on average, 3.7 ms at most (Ryzen 9 5900X, -O2).
 
 - All `BIKi`; 640 x 272 (53), 640 x 360 (5), 640 x 480 (3); all 2997/100 fps; video flags 0.
 - 48752 frames, 1626.7 s (27.1 min); 61 keyframes (frame 0 of each file); 584 MB video,

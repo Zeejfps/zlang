@@ -1,0 +1,446 @@
+// Bink audio, DCT variant: a movie's audio track decoded to interleaved signed 16-bit PCM
+// (docs/formats/bink.md, "Audio bitstream"). KOTOR's 60 tracks all use it, stereo at 44.1 or
+// 48 kHz; the RDFT variant isn't implemented.
+//
+//   let mut dec = try bink_audio::new{ realloc, &heap, rate = track.rate, flags = track.flags }
+//   defer bink_audio::free{ realloc, &heap, d = &dec }
+//   // for each frame's non-empty packet of the track, the bytes after its u32 size; `pcm` holds
+//   // count_output{ d = dec, packet } values, at most the track table's largest packet / 2:
+//   let n = try bink_audio::decode_packet{ d = &dec, packet, out = pcm }      // pcm[..n] is new
+//
+// A packet is a u32, the bytes of PCM it decodes to, then blocks, each starting on a 32-bit
+// boundary of the packet. A block holds, per channel, N frequency coefficients, which a DCT-III
+// turns into N samples; the last N/16 are kept to cross-fade into the start of the next block,
+// so each block gives N - N/16 samples per channel (1920 for N = 2048).
+//
+// The transform runs through one complex FFT of N points, both channels at once: for real
+// coefficients X (X[N] = 0), V[k] = e^(i pi k / 2N) (X[k] - i X[N-k]) has a real inverse DFT v
+// with v[n] + X[0] = 2 c(2n) and v[N-1-n] + X[0] = 2 c(2n+1), where c(t) is the cosine sum
+// over X at t; as v is real, the right channel's V goes into the imaginary part and comes out as
+// the imaginary part of the result.
+namespace bink_audio {
+    // The track isn't the DCT variant, or its rate is 0.
+    error unsupported{ rate: u32, flags: u32 }
+    // The packet is shorter than its u32 header, or a block runs past its end.
+    error bad_packet
+    // `out` can't hold what the packet's decoded field says it decodes to.
+    error short_output{ need: usize, have: usize }
+
+    // A track's flags (the track table's u16 after the rate).
+    const FLAG_DCT: u32 = 0x1000
+    const FLAG_STEREO: u32 = 0x2000
+
+    const PI: f64 = 3.14159265358979323846
+
+    // Upper edges, in Hz, of the critical bands the spectrum is split into (MultimediaWiki,
+    // "Bink Audio"). A 25th, 24500, is never consulted: there are at most 25 bands.
+    const CRITICAL: [24]u32 = [
+        100, 200, 300, 400, 510, 630, 770, 920, 1080, 1270, 1480, 1720,
+        2000, 2320, 2700, 3150, 3700, 4400, 5300, 6400, 7700, 9500, 12000, 15500,
+    ]
+    const MAX_BANDS: usize = 25
+
+    // Coefficient group lengths, in 8s, that a group's escape bit selects.
+    const RUNS: [16]usize = [2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 32, 64]
+
+    extern fn cos { x: f64 } -> f64
+    extern fn sin { x: f64 } -> f64
+    extern fn sqrt { x: f64 } -> f64
+    extern fn pow { x: f64, y: f64 } -> f64
+
+    struct Decoder {
+        channels: usize,
+        n: usize,                  // coefficients per channel in a block (N)
+        overlap: usize,            // samples per channel cross-faded between blocks: N / 16
+        bands: usize,
+        starts: [26]usize,         // first coefficient of each band, then N
+        quant: [96]f64,            // a band's scale for quantizer index q: 10^(0.0664 q)
+        scale: f64,                // 1 / sqrt(N)
+        first: bool,               // no block decoded yet: nothing to cross-fade with
+        work: []mut f64,           // the f64 memory, cut into the slices below
+        coefs: []mut f64,          // channels x N: a block's coefficients
+        re: []mut f64,             // N each: the FFT's buffer
+        im: []mut f64,
+        pre_cos: []mut f64,        // N each: cos and sin of pi k / 2N, times `scale`
+        pre_sin: []mut f64,
+        tw_cos: []mut f64,         // N each: the FFT's twiddles, a stage's after another's:
+        tw_sin: []mut f64,         // cos and sin of 2 pi j / 2h at h + j, for j < h
+        tail: []mut f64,           // channels x N/16: the last block's end, to cross-fade
+        rev: []mut u32,            // N / 2: k with its log2(N) bits reversed
+    }
+
+    // A decoder for one track, from the track table's sample rate and flags. Its memory (about
+    // 135 KB for 44.1 kHz stereo) comes from `realloc`; `free` gives it back.
+    fn new(S) { realloc: alloc::Fn(S), mut heap: S, rate: u32, flags: u32 } -> !Decoder {
+        if (flags & FLAG_DCT) == 0 or rate == 0 { return unsupported{ rate, flags } }
+        let channels: usize = if (flags & FLAG_STEREO) != 0 { 2 } else { 1 }
+        let n: usize = if rate >= 44100 { 2048 } else if rate >= 22050 { 1024 } else { 512 }
+        let log_n: u32 = if n == 2048 { 11 } else if n == 1024 { 10 } else { 9 }
+        let overlap = n / 16
+
+        // Bands: 1 plus the critical frequencies below half the rate, each starting at the
+        // coefficient of its lower edge rounded down to even. Starts never go down, nor below 2:
+        // X[0] and X[1] aren't scaled.
+        let rate_wide: usize = rate
+        let half = (rate_wide + 1) / 2
+        let critical = CRITICAL
+        let mut bands: usize = 1
+        while bands < MAX_BANDS and half > critical[bands - 1] { bands = bands + 1 }
+        let mut starts: [26]usize
+        starts[0] = 2
+        let mut i: usize = 1
+        while i < bands {
+            let edge: usize = critical[i - 1]
+            let s = edge * n / half / 2 * 2
+            starts[i] = if s < starts[i - 1] { starts[i - 1] } else { s }
+            i = i + 1
+        }
+        starts[bands] = n
+
+        let mut quant: [96]f64
+        let mut q: usize = 0
+        while q < 96 {
+            quant[q] = pow{ x = 10.0, y = 0.0664 * @as(f64, q) }
+            q = q + 1
+        }
+
+        let tail_len = channels * overlap
+        let total = channels * n + 6 * n + tail_len
+        let work = try alloc::resize(f64, S){ realloc, &heap, mem = slice::empty(f64){}, count = total }
+        let rev = alloc::resize(u32, S){ realloc, &heap, mem = slice::empty(u32){}, count = n / 2 } iferr err{ error } {
+            _ = alloc::resize(f64, S){ realloc, &heap, mem = work, count = 0 }
+            return error
+        }
+        let mut at: usize = 0
+        let coefs = work[at..at + channels * n]
+        at = at + channels * n
+        let re = work[at..at + n]
+        at = at + n
+        let im = work[at..at + n]
+        at = at + n
+        let pre_cos = work[at..at + n]
+        at = at + n
+        let pre_sin = work[at..at + n]
+        at = at + n
+        let tw_cos = work[at..at + n]
+        at = at + n
+        let tw_sin = work[at..at + n]
+        at = at + n
+        let tail = work[at..at + tail_len]
+
+        let scale = 1.0 / sqrt{ x = @as(f64, n) }
+        let mut k: usize = 0
+        while k < n {
+            let angle = PI * @as(f64, k) / @as(f64, 2 * n)
+            pre_cos[k] = cos{ x = angle } * scale
+            pre_sin[k] = sin{ x = angle } * scale
+            k = k + 1
+        }
+        k = 0
+        while k < n / 2 {
+            let mut r: u32 = 0
+            let mut b: u32 = 0
+            while b < log_n {
+                r = (r << 1) | (@trunc(u32, k >> b) & 1)
+                b = b + 1
+            }
+            rev[k] = r
+            k = k + 1
+        }
+        tw_cos[0] = 1.0
+        tw_cos[1] = 1.0
+        let mut h: usize = 2
+        while h < n {
+            let mut j: usize = 0
+            while j < h {
+                let angle = PI * @as(f64, j) / @as(f64, h)
+                tw_cos[h + j] = cos{ x = angle }
+                tw_sin[h + j] = sin{ x = angle }
+                j = j + 1
+            }
+            h = h * 2
+        }
+        slice::fill(f64){ s = coefs, v = 0.0 }
+        slice::fill(f64){ s = tail, v = 0.0 }
+
+        return Decoder{
+            channels, n, overlap, bands, starts, quant, scale, first = true,
+            work, coefs, re, im, pre_cos, pre_sin, tw_cos, tw_sin, tail, rev,
+        }
+    }
+
+    // Gives the decoder's memory back to `realloc`, which must be the one `new` took it from.
+    fn free(S) { realloc: alloc::Fn(S), mut heap: S, mut d: Decoder } {
+        _ = alloc::resize(f64, S){ realloc, &heap, mem = d.work, count = 0 }
+        _ = alloc::resize(u32, S){ realloc, &heap, mem = d.rev, count = 0 }
+        // Empty slices: decoding with a freed decoder panics instead of using freed memory.
+        let none = slice::empty(f64){}
+        d.work = none
+        d.coefs = none
+        d.re = none
+        d.im = none
+        d.pre_cos = none
+        d.pre_sin = none
+        d.tw_cos = none
+        d.tw_sin = none
+        d.tail = none
+        d.rev = slice::empty(u32){}
+    }
+
+    fn channels { d: Decoder } -> u32 {
+        return @trunc(u32, d.channels)
+    }
+
+    // Frames (samples per channel) a block decodes to: 1920 at 44.1 kHz.
+    fn block_frames { d: Decoder } -> usize {
+        return d.n - d.overlap
+    }
+
+    // How many i16 values decode_packet writes at most for `packet`: its decoded field, in
+    // whole frames. 0 if it is too short to have one.
+    fn count_output { d: Decoder, packet: []u8 } -> usize {
+        if packet.len < 4 { return 0 }
+        let b0: usize = packet[0]
+        let b1: usize = packet[1]
+        let b2: usize = packet[2]
+        let b3: usize = packet[3]
+        let decoded = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+        return decoded / 2 / d.channels * d.channels
+    }
+
+    // Starts the track over: the next block isn't cross-faded with the one before it.
+    fn reset { mut d: Decoder } {
+        d.first = true
+    }
+
+    // Decodes one audio packet: the bytes that follow a track's u32 size in a frame, starting
+    // with the u32 count of bytes it decodes to. Writes interleaved samples to the start of `out`
+    // and returns how many i16 values: the blocks' output, cut to the decoded field (which trims
+    // a track's last block). Fails with short_output, before decoding anything, if `out` is
+    // shorter than the decoded field asks for (count_output), and with bad_packet if the blocks
+    // don't fit in the packet; the blocks before a bad one have been decoded into the overlap
+    // state then, so the next packet still decodes.
+    fn decode_packet { mut d: Decoder, packet: []u8, out: []mut i16 } -> !usize {
+        if packet.len < 4 { return bad_packet }
+        let limit = count_output{ d, packet }
+        if limit > out.len { return short_output{ need = limit, have = out.len } }
+        let mut r = bink_bits::new{ data = packet }
+        _ = bink_bits::read{ &r, n = 32 }
+        let end = packet.len / 4 * 32
+        let mut written: usize = 0
+        while bink_bits::position{ r } < end {
+            _ = bink_bits::read{ &r, n = 2 }         // unknown: 0 in every KOTOR block
+            let mut c: usize = 0
+            while c < d.channels {
+                read_channel{ &r, &d, c }
+                c = c + 1
+            }
+            bink_bits::align32{ &r }
+            if bink_bits::overrun{ r } { return bad_packet }
+            transform{ &d }
+            written = written + put_block{ &d, out = out[written..limit] }
+        }
+        return written
+    }
+
+    // One channel's coefficients into d.coefs, dequantized. Past the end of the packet the
+    // reader gives zero bits, which the caller reports once the block is read.
+    fn read_channel { mut r: bink_bits::Reader, mut d: Decoder, c: usize } {
+        // The reader is copied to a local and back: through `r`, C must assume every store to
+        // the coefficients may change it, and reloads it after each one.
+        let mut rd = r
+        defer r = rd
+        let n = d.n
+        let x = d.coefs[c * n..(c + 1) * n]
+        x[0] = read_float{ r = &rd }
+        x[1] = read_float{ r = &rd }
+        let mut q: [25]u8
+        let mut b: usize = 0
+        while b < d.bands {
+            q[b] = @trunc(u8, bink_bits::read{ r = &rd, n = 8 })
+            b = b + 1
+        }
+        // Groups of 8 coefficients, or of a length from RUNS after an escape bit, each with
+        // one bit width (0: all zero); a value that isn't zero is followed by its sign.
+        let runs = RUNS
+        let mut i: usize = 2
+        while i < n {
+            let mut j = i + 8
+            if bink_bits::bit{ r = &rd } != 0 { j = i + 8 * runs[bink_bits::read{ r = &rd, n = 4 }] }
+            if j > n { j = n }
+            let width = bink_bits::read{ r = &rd, n = 4 }
+            if width == 0 {
+                while i < j {
+                    x.ptr[i] = 0.0
+                    i = i + 1
+                }
+            } else {
+                while i < j {
+                    let v = bink_bits::read{ r = &rd, n = width }
+                    if v == 0 {
+                        x.ptr[i] = 0.0
+                    } else if bink_bits::bit{ r = &rd } != 0 {
+                        x.ptr[i] = -@as(f64, v)
+                    } else {
+                        x.ptr[i] = @as(f64, v)
+                    }
+                    i = i + 1
+                }
+            }
+        }
+        b = 0
+        while b < d.bands {
+            let qi: usize = if q[b] > 95 { 95 } else { q[b] }
+            let s = d.quant[qi]
+            let mut k = d.starts[b]
+            let stop = d.starts[b + 1]
+            while k < stop {
+                x.ptr[k] = x.ptr[k] * s
+                k = k + 1
+            }
+            b = b + 1
+        }
+    }
+
+    // A 29-bit float: 5 bits exponent e, 23 bits mantissa m, a sign bit; m * 2^(e - 23).
+    fn read_float { mut r: bink_bits::Reader } -> f64 {
+        let e = bink_bits::read{ &r, n = 5 }
+        let m = @as(f64, bink_bits::read{ &r, n = 23 })
+        let one: u64 = 1
+        let f = if e >= 23 { m * @as(f64, one << (e - 23)) } else { m / @as(f64, one << (23 - e)) }
+        return if bink_bits::bit{ &r } != 0 { -f } else { f }
+    }
+
+    struct Complex { re: f64, im: f64 }
+
+    // Both channels' DCT-III through one inverse FFT (see the top of the file): the result's
+    // real part is the left channel's v, its imaginary part the right's.
+    fn transform { mut d: Decoder } {
+        let n = d.n
+        let re = d.re
+        let im = d.im
+        let pc = d.pre_cos
+        let ps = d.pre_sin
+        let rev = d.rev
+        let left = d.coefs[0..n]
+        let stereo = d.channels == 2
+        let right = if stereo { d.coefs[n..2 * n] } else { left }
+
+        // V[k] and V[k + N/2] go to the neighbours rev(k) and rev(k) + 1 of the bit-reversed
+        // order, which the FFT's first stage adds and subtracts: that stage is done here.
+        let h = n / 2
+        let mut k: usize = 0
+        while k < h {
+            let u = pack{ left, right, stereo, c = pc.ptr[k], s = ps.ptr[k], k, n }
+            let k2 = k + h
+            let t = pack{ left, right, stereo, c = pc.ptr[k2], s = ps.ptr[k2], k = k2, n }
+            let p: usize = rev.ptr[k]
+            re.ptr[p] = u.re + t.re
+            im.ptr[p] = u.im + t.im
+            re.ptr[p + 1] = u.re - t.re
+            im.ptr[p + 1] = u.im - t.im
+            k = k + 1
+        }
+
+        // The other stages of a radix-2 inverse FFT, in place: v[t] = sum V[k] e^(2 pi i k t / N).
+        let mut half: usize = 2
+        while half < n {
+            fft_stage{ re, im, tc = d.tw_cos, ts = d.tw_sin, n, half }
+            half = half * 2
+        }
+    }
+
+    // One radix-2 stage: butterflies `half` apart, twiddles e^(2 pi i j / 2 half).
+    // Indices stay below N, so they wrap rather than check.
+    fn fft_stage { re: []mut f64, im: []mut f64, tc: []f64, ts: []f64, n: usize, half: usize } {
+        let size = half * 2
+        let mut start: usize = 0
+        while start < n {
+            let mut j: usize = 0
+            while j < half {
+                let w = @wrap_add(half, j)
+                let wr = tc.ptr[w]
+                let wi = ts.ptr[w]
+                let p = @wrap_add(start, j)
+                let q = @wrap_add(p, half)
+                let xr = re.ptr[q]
+                let xi = im.ptr[q]
+                let tr = xr * wr - xi * wi
+                let ti = xr * wi + xi * wr
+                let ur = re.ptr[p]
+                let ui = im.ptr[p]
+                re.ptr[p] = ur + tr
+                im.ptr[p] = ui + ti
+                re.ptr[q] = ur - tr
+                im.ptr[q] = ui - ti
+                j = @wrap_add(j, 1)
+            }
+            start = @wrap_add(start, size)
+        }
+    }
+
+    // V[k] = e^(i pi k / 2N) (X[k] - i X[N-k]) for the left channel, plus i times the right's
+    // (the 1 / sqrt(N) of the output is in the cosine and sine).
+    fn pack { left: []f64, right: []f64, stereo: bool, c: f64, s: f64, k: usize, n: usize } -> Complex {
+        let a = left.ptr[k]
+        let b = if k == 0 { 0.0 } else { left.ptr[n - k] }
+        let lr = a * c + b * s
+        let li = a * s - b * c
+        if not stereo { return Complex{ re = lr, im = li } }
+        let a2 = right.ptr[k]
+        let b2 = if k == 0 { 0.0 } else { right.ptr[n - k] }
+        return Complex{ re = lr - (a2 * s - b2 * c), im = li + (a2 * c + b2 * s) }
+    }
+
+    // Writes the block's samples into `out` (interleaved, at most out.len values, so a trimmed
+    // block keeps its start), cross-faded with the last block's tail, and keeps this block's
+    // tail. Returns how many values it wrote.
+    fn put_block { mut d: Decoder, out: []mut i16 } -> usize {
+        let n = d.n
+        let l = d.overlap
+        let ch = d.channels
+        let frames = n - l
+        let mut count = frames * ch
+        if count > out.len { count = out.len }
+        let out_frames = count / ch
+        let fade_frames = if d.first { 0 } else { l }
+        // The fade runs over the interleaved index: channel c of frame t weighs (t ch + c) / (l ch).
+        let fade_div = @as(f64, l * ch)
+        let mut c: usize = 0
+        while c < ch {
+            let v = if c == 0 { d.re } else { d.im }
+            let x0 = d.coefs[c * n] * d.scale
+            let tail = d.tail[c * l..(c + 1) * l]
+            let mut t: usize = 0
+            while t < out_frames {
+                let half = t / 2
+                let y = (if t % 2 == 0 { v.ptr[half] } else { v.ptr[n - 1 - half] }) + x0
+                let mut s = y
+                if t < fade_frames {
+                    let w = @as(f64, t * ch + c) / fade_div
+                    s = tail.ptr[t] * (1.0 - w) + y * w
+                }
+                out.ptr[t * ch + c] = to_i16{ y = s }
+                t = t + 1
+            }
+            t = frames
+            while t < n {
+                let half = t / 2
+                tail.ptr[t - frames] = (if t % 2 == 0 { v.ptr[half] } else { v.ptr[n - 1 - half] }) + x0
+                t = t + 1
+            }
+            c = c + 1
+        }
+        d.first = false
+        return count
+    }
+
+    // Rounded to the nearest integer, halves to even (as FFmpeg's conversion does), and clamped:
+    // blocks do overshoot int16. Adding 1.5 * 2^52 leaves the rounded value in the low bits of
+    // the double, which is much cheaper than @as(i32, f), a checked call.
+    fn to_i16 { y: f64 } -> i16 {
+        let mut f = if y >= 32767.0 { 32767.0 } else if y >= -32768.0 { y } else { -32768.0 }  // NaN too
+        f = f + 6755399441055744.0
+        return @trunc(i16, @cast(*u64, &f).*)
+    }
+}

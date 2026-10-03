@@ -85,9 +85,10 @@ fn build { mut b: Build } {
 - **A namespace must live in one file** for now ("already declared" otherwise). Keep each
   namespace to one file and split big subsystems into several namespaces (`mdl` and
   `mdl_anim`, say). A language change to let a namespace span files is planned.
-- gcc on one big C file is slow (~60 s at -O1 for ~100K lines). Splitting the C into several
-  files compiled in parallel is planned (`ctxlang/PLAN.md`, 2.3). Until then, tools that include
-  only the libraries they need build much faster than the whole game.
+- A big program's C is split into units of about 256 KiB, grouped by source file and compiled in
+  parallel, each cached by its hash: ~100K lines build in ~8 s from scratch (63 s as one C file),
+  and an edit to one function rebuilds in ~3 s. Inserting lines recompiles every unit of that
+  file. Tools that include only the libraries they need still build faster than the whole game.
 - `@size_of` checks are your friend for C structs; there's no `@offset_of` yet.
 
 ## Layout

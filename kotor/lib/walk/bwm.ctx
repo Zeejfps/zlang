@@ -1,0 +1,822 @@
+// bwm: BWM V1.0 walkmeshes (WOK, PWK, DWK): load one, then ask where the floor is under a point
+// and what a ray hits. The format, and why the recipes below are what they are, is in
+// kotor/docs/formats/bwm.md; section numbers here are that file's.
+//
+//   parse(S){ realloc, &heap, bytes } -> !Walkmesh
+//       Checks a file and copies it into a Walkmesh. Every table is bounds-checked and every index
+//       range-checked; a malformed file is one of the errors below, never a panic. On the way it
+//       marks zero-area faces, computes the plane of every face whose stored one is unusable (all
+//       PWK faces: their normals are zero and their distances junk), refits the AABB tree's boxes
+//       from the faces, rebuilds the tree when the stored one isn't a tree over every face exactly
+//       once (m02af_01a.wok), and indexes the perimeter table by edge.
+//   find_face_under{ w, x, y, z, step, walkable } -> ?Floor
+//       The walkable face under (x, y) whose height there is the highest at or below z + step:
+//       the floor a creature at height z stands on, if it may step up by `step`.
+//   cast_ray{ w, ray, max_t, stops } -> ?RayHit
+//       The nearest face the ray meets within max_t whose material is in `stops`.
+//   is_walkable{ w, face, walkable } -> bool
+//   transform_placed(S){ realloc, &heap, w, at } -> !Walkmesh
+//       A placeable's or door's walkmesh placed in an area by a GIT instance: the same queries
+//       then work on it in area space.
+//   place_point{ at, p } -> math::Vec3              a model-space point placed by a GIT instance
+//   hook_point{ w, hook } -> ?math::Vec3            use hook 0 or 1 in model space, if it is set
+//   edge_vertices{ w, edge } -> [2]u32              an edge's two vertex indices, in its direction
+//   perimeter_of{ w, edge } -> ?usize               an edge's row in w.perimeter
+//   face_corners{ w, face } -> [3]math::Vec3
+//   centroid{ w, face } -> math::Vec3
+//
+// Material sets (`walkable`, `stops`) are a []bool indexed by surface material id: a column of
+// surfacemat.2da, which the engine reads and this file doesn't. `walk` gives the walkable set;
+// `lineofsight` the faces that block sight. Ids past the end of the slice count as false.
+//
+// Ownership: a Walkmesh is self-contained (nothing points into the file's bytes) and lives
+// wholly in the allocator passed to parse or transform_placed. Nothing is freed piece by piece:
+// the intended use is an arena per module, reset when the module goes.
+//
+// Frames (section 3): a WOK's vertices are in area space. A PWK's or DWK's are kept as stored,
+// in the walkmesh node's space; vertex + `position` is model space, and transform_placed takes
+// them on to area space.
+namespace bwm {
+    const HEADER_SIZE: usize = 136
+
+    // Leaf boxes are their face's bounds grown by this on every side, as the game's trees are
+    // (5.4); the margin also keeps every point the face tests accept inside its box.
+    const LEAF_PAD: f32 = 0.01
+    // Twice a face's area (the length of its corners' cross product, in m^2) below which the
+    // face has no area: its plane means nothing and every query skips it (5.2).
+    const ZERO_AREA: f32 = 0.000001
+    // A stored plane is kept when its normal is unit length to within UNIT_SLACK and every
+    // corner lies within PLANE_SLACK of it; otherwise the plane is computed from the corners.
+    const UNIT_SLACK: f32 = 0.001
+    const PLANE_SLACK: f32 = 0.01
+    // A face whose normal's z is below this (steeper than about 87 degrees, vertical, or facing
+    // down) is no floor: the height on it is ill-defined (5.2). Our choice, not the engine's.
+    const FLOOR_MIN_NZ: f32 = 0.05
+    // How far outside a face's edges (metres) a point still counts as over or on it, so that a
+    // point or ray on an edge two faces share meets both, despite rounding: an f32 coordinate near
+    // 1,500 m (the swoop tracks) is only good to about 0.1 mm.
+    const EDGE_SLACK: f32 = 0.001
+    // How far a floor's height at a point EDGE_SLACK outside it can leave the face's own z range,
+    // more than LEAF_PAD covers: the tree's height tests allow for it, or it could miss a floor.
+    const HEIGHT_SLACK: f32 = EDGE_SLACK / FLOOR_MIN_NZ
+    // Queries walk a tree with a stack of STACK entries, which a tree no deeper than MAX_DEPTH
+    // never outgrows; a deeper stored tree is rebuilt.
+    const STACK: usize = 64
+    const MAX_DEPTH: u32 = 60
+    // No count in a real file comes near this; it keeps every index and product far from
+    // overflowing a u32 or an i32.
+    const MAX_COUNT: usize = 16777216
+
+    enum Kind: u32 {
+        placed = 0,     // a placeable's (PWK) or a door's (DWK)
+        area = 1,       // a room's (WOK)
+    }
+
+    // Which part of the file an error is about.
+    enum Table: u32 { header, vertices, faces, materials, normals, distances, nodes, adjacency, perimeter, loops }
+
+    error bad_magic
+    error bad_kind{ value: u32 }                // the header's walkmesh type is neither 0 nor 1
+    error truncated{ table: Table }             // the table doesn't fit between the header and the file's end
+    error bad_count{ table: Table }             // a count the others contradict, or absurdly large
+    error bad_index{ table: Table, row: u32 }   // an index out of range, in that row of the table
+    error bad_number{ table: Table, row: u32 }  // a coordinate that is infinite or not a number
+
+    // An AABB tree node. The root is node 0 and children follow their parent (pre-order).
+    struct Node {
+        box: math::Aabb,
+        face: i32,      // a leaf's face; -1 in an interior node
+        plane: u32,     // the split: 1, 2, 4 = +x, +y, +z, 8, 16, 32 = -x, -y, -z (the right
+                        // child's side); 0 in leaves. Only orders a ray's visit.
+        left: i32,      // children, in interior nodes
+        right: i32,
+    }
+
+    // A perimeter edge (5.6): `edge` is 3 * face + k, `transition` the LYT index of the room
+    // across it, or -1.
+    struct Perimeter { edge: u32, transition: i32 }
+
+    struct Walkmesh {
+        kind: Kind,
+        position: math::Vec3,           // the walkmesh node's offset in its model; zero once placed
+        rel_hooks: [2]math::Vec3,       // use hooks relative to the node; zero: no hook
+        abs_hooks: [2]math::Vec3,       // the hooks in model space as stored (zero in most PWKs, 7)
+        vertices: []math::Vec3,
+        faces: [][3]u32,                // corner vertex indices, counter-clockwise seen from the front
+        materials: []u32,               // surface material ids
+        planes: []math::Plane,          // n . p + d = 0 for the face's points
+        flat: []bool,                   // zero-area faces, which every query skips
+        nodes: []Node,                  // empty: queries test every face (PWK, DWK as stored)
+        adjacency: [][3]i32,            // one row per walkable face: a WOK's faces 0 .. adjacency.len
+                                        // are its walkable ones (5.5); edge k: 3 * g + j, or -1
+        perimeter: []Perimeter,
+        loop_ends: []u32,               // each perimeter loop's end, exclusive (5.7)
+        edge_perimeter: []i32,          // for every edge 3 * face + k, its perimeter row, or -1
+        tree_rebuilt: bool,             // nodes were built here, not refit from the file's tree
+        planes_computed: u32,           // faces with area whose stored plane was unusable
+    }
+
+    // The floor under a point: the face, and the height of its plane there.
+    struct Floor { face: u32, z: f32 }
+
+    // Where a ray stopped: the face, the ray's t (distance in units of |dir|), the point.
+    struct RayHit { face: u32, t: f32, point: math::Vec3 }
+
+    // A GIT instance's placement: a model point p goes to position + p turned by `bearing`
+    // radians counter-clockwise about +z, seen from above (3).
+    struct Placement { position: math::Vec3, bearing: f32 }
+
+    // ---- loading
+
+    fn parse(S) { realloc: alloc::Fn(S), mut heap: S, bytes: []u8 } -> !Walkmesh {
+        if bytes.len < HEADER_SIZE { return truncated{ table = Table::header } }
+        if not slice::eq_bytes{ a = bytes[..8], b = "BWM V1.0" } { return bad_magic }
+        let type_value = u32_at{ bytes, at = 8 }
+        let kind = if type_value == 0 { Kind::placed } else if type_value == 1 { Kind::area } else {
+            return bad_kind{ value = type_value }
+        }
+        // Use hooks 1 and 2 relative, then absolute, then the position.
+        let mut hv: [5]math::Vec3
+        let mut i: usize = 0
+        while i < 5 {
+            hv[i] = vec3_at{ bytes, at = 12 + i * 12 }
+            if not is_finite3{ v = hv[i] } { return bad_number{ table = Table::header, row = @as(u32, i) } }
+            i = i + 1
+        }
+
+        let nv: usize = u32_at{ bytes, at = 72 }
+        let vertex_off: usize = u32_at{ bytes, at = 76 }
+        let nf: usize = u32_at{ bytes, at = 80 }
+        let face_off: usize = u32_at{ bytes, at = 84 }
+        let material_off: usize = u32_at{ bytes, at = 88 }
+        let normal_off: usize = u32_at{ bytes, at = 92 }
+        let distance_off: usize = u32_at{ bytes, at = 96 }
+        let nn: usize = u32_at{ bytes, at = 100 }
+        let node_off: usize = u32_at{ bytes, at = 104 }
+        // +108 is unused, and holds junk in some WOKs (4).
+        let nw: usize = u32_at{ bytes, at = 112 }
+        let adjacency_off: usize = u32_at{ bytes, at = 116 }
+        let ne: usize = u32_at{ bytes, at = 120 }
+        let perimeter_off: usize = u32_at{ bytes, at = 124 }
+        let nl: usize = u32_at{ bytes, at = 128 }
+        let loop_off: usize = u32_at{ bytes, at = 132 }
+
+        let size = bytes.len
+        try check_table{ size, off = vertex_off, count = nv, width = 12, table = Table::vertices }
+        try check_table{ size, off = face_off, count = nf, width = 12, table = Table::faces }
+        try check_table{ size, off = material_off, count = nf, width = 4, table = Table::materials }
+        try check_table{ size, off = normal_off, count = nf, width = 12, table = Table::normals }
+        try check_table{ size, off = distance_off, count = nf, width = 4, table = Table::distances }
+        try check_table{ size, off = node_off, count = nn, width = 44, table = Table::nodes }
+        try check_table{ size, off = adjacency_off, count = nw, width = 12, table = Table::adjacency }
+        try check_table{ size, off = perimeter_off, count = ne, width = 8, table = Table::perimeter }
+        try check_table{ size, off = loop_off, count = nl, width = 4, table = Table::loops }
+        // Adjacency rows are faces 0 .. nw, so there can't be more of them than faces.
+        if nw > nf { return bad_count{ table = Table::adjacency } }
+
+        let vertices = try make(math::Vec3, S){ realloc, &heap, count = nv }
+        i = 0
+        while i < nv {
+            vertices[i] = vec3_at{ bytes, at = vertex_off + i * 12 }
+            if not is_finite3{ v = vertices[i] } { return bad_number{ table = Table::vertices, row = @as(u32, i) } }
+            i = i + 1
+        }
+
+        let faces = try make([3]u32, S){ realloc, &heap, count = nf }
+        let materials = try make(u32, S){ realloc, &heap, count = nf }
+        i = 0
+        while i < nf {
+            let at = face_off + i * 12
+            let tri: [3]u32 = [u32_at{ bytes, at }, u32_at{ bytes, at = at + 4 }, u32_at{ bytes, at = at + 8 }]
+            if tri[0] >= nv or tri[1] >= nv or tri[2] >= nv { return bad_index{ table = Table::faces, row = @as(u32, i) } }
+            faces[i] = tri
+            materials[i] = u32_at{ bytes, at = material_off + i * 4 }
+            i = i + 1
+        }
+
+        let flat = try make(bool, S){ realloc, &heap, count = nf }
+        let planes = try make(math::Plane, S){ realloc, &heap, count = nf }
+        let mut computed: u32 = 0
+        i = 0
+        while i < nf {
+            let c = corners_of{ vertices, tri = faces[i] }
+            let cross = math::vec3::cross{ a = math::vec3::sub{ a = c[1], b = c[0] }, b = math::vec3::sub{ a = c[2], b = c[0] } }
+            let len = math::vec3::length{ v = cross }
+            let stored = math::Plane{ n = vec3_at{ bytes, at = normal_off + i * 12 }, d = f32_at{ bytes, at = distance_off + i * 4 } }
+            if not (len >= ZERO_AREA) {
+                // No plane to compute; keep whatever was stored, unless it isn't even a number.
+                flat[i] = true
+                planes[i] = if is_finite3{ v = stored.n } and is_finite{ x = stored.d } { stored } else { zero_plane{} }
+            } else {
+                flat[i] = false
+                if fits_corners{ p = stored, c } {
+                    planes[i] = stored
+                } else {
+                    let n = math::vec3::scale{ v = cross, s = 1.0 / len }
+                    planes[i] = math::Plane{ n, d = -math::vec3::dot{ a = n, b = c[0] } }
+                    computed = computed + 1
+                }
+            }
+            i = i + 1
+        }
+
+        if nn > MAX_COUNT { return bad_count{ table = Table::nodes } }
+        let mut nodes = try make(Node, S){ realloc, &heap, count = nn }
+        i = 0
+        while i < nn {
+            let at = node_off + i * 44
+            let face = i32_at{ bytes, at = at + 24 }
+            let left = i32_at{ bytes, at = at + 36 }
+            let right = i32_at{ bytes, at = at + 40 }
+            let leaf_ok = face >= 0 and @as(usize, face) < nf
+            let interior_ok = face == -1 and left >= 0 and @as(usize, left) < nn and right >= 0 and @as(usize, right) < nn
+            if not leaf_ok and not interior_ok { return bad_index{ table = Table::nodes, row = @as(u32, i) } }
+            // The stored boxes are replaced below, by refitting or rebuilding.
+            nodes[i] = Node{
+                box = math::Aabb{ min = vec3_at{ bytes, at }, max = vec3_at{ bytes, at = at + 12 } },
+                face, plane = u32_at{ bytes, at = at + 32 }, left, right,
+            }
+            i = i + 1
+        }
+        let mut rebuilt = false
+        if nn > 0 and try is_proper_tree(S){ realloc, &heap, nodes, face_count = nf } {
+            refit{ nodes, vertices, faces }
+        } else if nn > 0 or (kind == Kind::area and nf > 0) {
+            nodes = try build_tree(S){ realloc, &heap, vertices, faces }
+            rebuilt = true
+        }
+
+        let adjacency = try make([3]i32, S){ realloc, &heap, count = nw }
+        i = 0
+        while i < nw {
+            let mut k: usize = 0
+            while k < 3 {
+                let a = i32_at{ bytes, at = adjacency_off + i * 12 + k * 4 }
+                if a < -1 or (a >= 0 and @as(usize, a) >= 3 * nw) { return bad_index{ table = Table::adjacency, row = @as(u32, i) } }
+                adjacency[i][k] = a
+                k = k + 1
+            }
+            i = i + 1
+        }
+
+        if ne > MAX_COUNT { return bad_count{ table = Table::perimeter } }
+        let perimeter = try make(Perimeter, S){ realloc, &heap, count = ne }
+        let edge_perimeter = try make(i32, S){ realloc, &heap, count = 3 * nf }
+        slice::fill{ s = edge_perimeter, v = -1 }
+        i = 0
+        while i < ne {
+            let edge = i32_at{ bytes, at = perimeter_off + i * 8 }
+            let transition = i32_at{ bytes, at = perimeter_off + i * 8 + 4 }
+            if edge < 0 or @as(usize, edge) >= 3 * nf or transition < -1 { return bad_index{ table = Table::perimeter, row = @as(u32, i) } }
+            perimeter[i] = Perimeter{ edge = @as(u32, edge), transition }
+            // An edge listed twice keeps its first row.
+            if edge_perimeter[@as(usize, edge)] == -1 { edge_perimeter[@as(usize, edge)] = @as(i32, i) }
+            i = i + 1
+        }
+
+        let loop_ends = try make(u32, S){ realloc, &heap, count = nl }
+        let mut prev: usize = 0
+        i = 0
+        while i < nl {
+            let end: usize = u32_at{ bytes, at = loop_off + i * 4 }
+            if end <= prev or end > ne { return bad_index{ table = Table::loops, row = @as(u32, i) } }
+            loop_ends[i] = @as(u32, end)
+            prev = end
+            i = i + 1
+        }
+        if prev != ne { return bad_count{ table = Table::loops } }
+
+        return Walkmesh{
+            kind, position = hv[4], rel_hooks = [hv[0], hv[1]], abs_hooks = [hv[2], hv[3]],
+            vertices, faces, materials, planes, flat, nodes, adjacency, perimeter, loop_ends, edge_perimeter,
+            tree_rebuilt = rebuilt, planes_computed = computed,
+        }
+    }
+
+    // A nonzero table must lie after the header and inside the file. An empty one's offset
+    // means nothing (4).
+    fn check_table { size: usize, off: usize, count: usize, width: usize, table: Table } -> ! {
+        if count == 0 { return }
+        if count > MAX_COUNT { return bad_count{ table } }
+        if off < HEADER_SIZE or off > size or count * width > size - off { return truncated{ table } }
+    }
+
+    // Whether the nodes are one tree from node 0, children after their parent, no deeper than
+    // MAX_DEPTH, with every face in exactly one leaf. The indices are already in range.
+    fn is_proper_tree(S) { realloc: alloc::Fn(S), mut heap: S, nodes: []Node, face_count: usize } -> !bool {
+        let n = nodes.len
+        // depth[i] is node i's depth once its parent is seen; 0 until then, and for the root.
+        let depth = try make(u32, S){ realloc, &heap, count = n }
+        defer _ = alloc::resize(u32, S){ realloc, &heap, mem = depth, count = 0 }
+        let seen = try make(bool, S){ realloc, &heap, count = face_count }
+        defer _ = alloc::resize(bool, S){ realloc, &heap, mem = seen, count = 0 }
+        slice::fill{ s = depth, v = 0 }
+        slice::fill{ s = seen, v = false }
+        let mut leaves: usize = 0
+        let mut i: usize = 0
+        while i < n {
+            let node = nodes[i]
+            if node.face >= 0 {
+                let f = @as(usize, node.face)
+                if seen[f] { return false }
+                seen[f] = true
+                leaves = leaves + 1
+            } else {
+                // Children after their parent can't make a cycle, so a child seen twice is
+                // shared and one never seen is unreachable.
+                let l = @as(usize, node.left)
+                let r = @as(usize, node.right)
+                if l <= i or r <= i or l == r or depth[l] != 0 or depth[r] != 0 { return false }
+                let d = depth[i] + 1
+                if d > MAX_DEPTH { return false }
+                depth[l] = d
+                depth[r] = d
+            }
+            i = i + 1
+        }
+        i = 1
+        while i < n {
+            if depth[i] == 0 { return false }
+            i = i + 1
+        }
+        return leaves == face_count
+    }
+
+    // Leaves to their face's bounds, then each interior node to the union of its children,
+    // which come after it.
+    fn refit { nodes: []mut Node, vertices: []math::Vec3, faces: [][3]u32 } {
+        let mut i = nodes.len
+        while i > 0 {
+            i = i - 1
+            let node = nodes[i]
+            if node.face >= 0 {
+                nodes[i].box = face_box{ vertices, tri = faces[@as(usize, node.face)] }
+            } else {
+                nodes[i].box = math::aabb::merge{ a = nodes[@as(usize, node.left)].box, b = nodes[@as(usize, node.right)].box }
+            }
+        }
+    }
+
+    // A tree over every face, in pre-order: each node splits its faces in half at the median
+    // centroid along the axis they spread most, so it is about log2(faces) deep.
+    fn build_tree(S) { realloc: alloc::Fn(S), mut heap: S, vertices: []math::Vec3, faces: [][3]u32 } -> ![]mut Node {
+        let nf = faces.len
+        if nf == 0 { return slice::empty(Node){} }
+        let nodes = try make(Node, S){ realloc, &heap, count = 2 * nf - 1 }
+        let order = try make(u32, S){ realloc, &heap, count = nf }
+        defer _ = alloc::resize(u32, S){ realloc, &heap, mem = order, count = 0 }
+        let centers = try make(math::Vec3, S){ realloc, &heap, count = nf }
+        defer _ = alloc::resize(math::Vec3, S){ realloc, &heap, mem = centers, count = 0 }
+        let mut i: usize = 0
+        while i < nf {
+            order[i] = @as(u32, i)
+            let c = corners_of{ vertices, tri = faces[i] }
+            centers[i] = math::vec3::scale{ v = math::vec3::add{ a = math::vec3::add{ a = c[0], b = c[1] }, b = c[2] }, s = 1.0 / 3.0 }
+            i = i + 1
+        }
+        let mut next: usize = 0
+        _ = build_node{ nodes, &next, items = order, centers, vertices, faces }
+        return nodes
+    }
+
+    // Builds the subtree over `items` at nodes[next], and the nodes after it. Returns its index.
+    fn build_node { nodes: []mut Node, mut next: usize, items: []mut u32, centers: []math::Vec3, vertices: []math::Vec3, faces: [][3]u32 } -> i32 {
+        let at = next
+        next = next + 1
+        if items.len == 1 {
+            let f = items[0]
+            nodes[at] = Node{ box = face_box{ vertices, tri = faces[f] }, face = @as(i32, f), plane = 0, left = -1, right = -1 }
+            return @as(i32, at)
+        }
+        let mut lo = centers[items[0]]
+        let mut hi = lo
+        let mut i: usize = 1
+        while i < items.len {
+            lo = math::vec3::min{ a = lo, b = centers[items[i]] }
+            hi = math::vec3::max{ a = hi, b = centers[items[i]] }
+            i = i + 1
+        }
+        let spread = math::vec3::sub{ a = hi, b = lo }
+        let mut axis: u32 = 0
+        if spread.y > spread.x and spread.y >= spread.z {
+            axis = 1
+        } else if spread.z > spread.x and spread.z > spread.y {
+            axis = 2
+        }
+        let mid = items.len / 2
+        select{ items, centers, axis, k = mid }
+        let left = build_node{ nodes, &next, items = items[..mid], centers, vertices, faces }
+        let right = build_node{ nodes, &next, items = items[mid..], centers, vertices, faces }
+        // The right half has the larger centres: the split's + side.
+        let plane: u32 = if axis == 0 { 1 } else if axis == 1 { 2 } else { 4 }
+        nodes[at] = Node{
+            box = math::aabb::merge{ a = nodes[@as(usize, left)].box, b = nodes[@as(usize, right)].box },
+            face = -1, plane, left, right,
+        }
+        return @as(i32, at)
+    }
+
+    // Reorders items so that items[k] has the k-th smallest centre along the axis, the ones
+    // before it none larger and the ones after none smaller (Hoare's selection).
+    fn select { items: []mut u32, centers: []math::Vec3, axis: u32, k: usize } {
+        let want = @as(i64, k)
+        let mut lo: i64 = 0
+        let mut hi = @as(i64, items.len) - 1
+        while lo < hi {
+            let pivot = along{ v = centers[items[@as(usize, (lo + hi) / 2)]], axis }
+            let mut i = lo
+            let mut j = hi
+            while i <= j {
+                while along{ v = centers[items[@as(usize, i)]], axis } < pivot { i = i + 1 }
+                while along{ v = centers[items[@as(usize, j)]], axis } > pivot { j = j - 1 }
+                if i <= j {
+                    let t = items[@as(usize, i)]
+                    items[@as(usize, i)] = items[@as(usize, j)]
+                    items[@as(usize, j)] = t
+                    i = i + 1
+                    j = j - 1
+                }
+            }
+            if want <= j {
+                hi = j
+            } else if want >= i {
+                lo = i
+            } else {
+                break
+            }
+        }
+    }
+
+    fn along { v: math::Vec3, axis: u32 } -> f32 {
+        return if axis == 0 { v.x } else if axis == 1 { v.y } else { v.z }
+    }
+
+    // ---- queries
+
+    fn find_face_under { w: Walkmesh, x: f32, y: f32, z: f32, step: f32, walkable: []bool } -> ?Floor {
+        let top = z + step
+        let mut found = false
+        let mut best = Floor{ face = 0, z = 0.0 }
+        if w.nodes.len == 0 {
+            let mut f: usize = 0
+            while f < w.faces.len {
+                let h = floor_height{ w, face = f, x, y, walkable }
+                if h != null and h <= top and beats_floor{ found, best, face = @as(u32, f), z = h } {
+                    best = Floor{ face = @as(u32, f), z = h }
+                    found = true
+                }
+                f = f + 1
+            }
+        } else {
+            let mut stack: [STACK]u32
+            let mut sp: usize = 1               // the root, node 0, which stack[0] holds
+            while sp > 0 {
+                sp = sp - 1
+                let node = w.nodes[stack[sp]]
+                let b = node.box
+                if x < b.min.x or x > b.max.x or y < b.min.y or y > b.max.y or b.min.z > top + HEIGHT_SLACK { continue }
+                // Every height in the box is below the best floor so far.
+                if found and b.max.z + HEIGHT_SLACK < best.z { continue }
+                if node.face >= 0 {
+                    let f = @as(u32, node.face)
+                    let h = floor_height{ w, face = f, x, y, walkable }
+                    if h != null and h <= top and beats_floor{ found, best, face = f, z = h } {
+                        best = Floor{ face = f, z = h }
+                        found = true
+                    }
+                    continue
+                }
+                if sp + 2 > STACK { continue }      // deeper than any tree parse keeps
+                stack[sp] = @as(u32, node.right)
+                stack[sp + 1] = @as(u32, node.left)
+                sp = sp + 2
+            }
+        }
+        if not found { return null }
+        return best
+    }
+
+    // Ties go to the lower face, so the tree and a search of every face agree exactly.
+    fn beats_floor { found: bool, best: Floor, face: u32, z: f32 } -> bool {
+        return not found or z > best.z or (z == best.z and face < best.face)
+    }
+
+    // The height of the face's plane at (x, y), if the face is a walkable floor over that point.
+    fn floor_height { w: Walkmesh, face: usize, x: f32, y: f32, walkable: []bool } -> ?f32 {
+        if w.flat[face] { return null }
+        let m = w.materials[face]
+        if m >= walkable.len or not walkable[m] { return null }
+        let p = w.planes[face]
+        if not (p.n.z >= FLOOR_MIN_NZ) { return null }
+        let c = face_corners{ w, face }
+        if not is_over_triangle{ c, x, y } { return null }
+        return -(p.d + p.n.x * x + p.n.y * y) / p.n.z
+    }
+
+    // Whether (x, y) is within EDGE_SLACK of the triangle seen from above. The point must also
+    // be within EDGE_SLACK of the corners' bounds, so it is always inside the face's leaf box:
+    // near a sliver's sharp corner the three edge tests alone reach further than that.
+    fn is_over_triangle { c: [3]math::Vec3, x: f32, y: f32 } -> bool {
+        let lo_x = math::min{ a = math::min{ a = c[0].x, b = c[1].x }, b = c[2].x }
+        let hi_x = math::max{ a = math::max{ a = c[0].x, b = c[1].x }, b = c[2].x }
+        let lo_y = math::min{ a = math::min{ a = c[0].y, b = c[1].y }, b = c[2].y }
+        let hi_y = math::max{ a = math::max{ a = c[0].y, b = c[1].y }, b = c[2].y }
+        if x < lo_x - EDGE_SLACK or x > hi_x + EDGE_SLACK or y < lo_y - EDGE_SLACK or y > hi_y + EDGE_SLACK { return false }
+        let d0 = edge_side{ a = c[0], b = c[1], x, y }
+        let d1 = edge_side{ a = c[1], b = c[2], x, y }
+        let d2 = edge_side{ a = c[2], b = c[0], x, y }
+        // Counter-clockwise from above (a floor), or clockwise.
+        return (d0 >= -EDGE_SLACK and d1 >= -EDGE_SLACK and d2 >= -EDGE_SLACK) or (d0 <= EDGE_SLACK and d1 <= EDGE_SLACK and d2 <= EDGE_SLACK)
+    }
+
+    // The distance of (x, y) from the line a -> b in the xy plane: positive on its left.
+    fn edge_side { a: math::Vec3, b: math::Vec3, x: f32, y: f32 } -> f32 {
+        let ex = b.x - a.x
+        let ey = b.y - a.y
+        let len = math::sqrtf{ x = ex * ex + ey * ey }
+        if len < math::EPSILON { return 0.0 }
+        return (ex * (y - a.y) - ey * (x - a.x)) / len
+    }
+
+    fn cast_ray { w: Walkmesh, ray: math::Ray, max_t: f32, stops: []bool } -> ?RayHit {
+        let mut found = false
+        let mut best_face: u32 = 0
+        let mut best_t = max_t
+        if w.nodes.len == 0 {
+            let mut f: usize = 0
+            while f < w.faces.len {
+                let t = hit_face{ w, face = f, ray, max_t = best_t, stops }
+                if t != null and (not found or t < best_t or @as(u32, f) < best_face) {
+                    best_face = @as(u32, f)
+                    best_t = t
+                    found = true
+                }
+                f = f + 1
+            }
+        } else {
+            let mut stack: [STACK]u32
+            let mut sp: usize = 1               // the root, node 0, which stack[0] holds
+            while sp > 0 {
+                sp = sp - 1
+                let node = w.nodes[stack[sp]]
+                if math::ray::intersect_aabb{ ray, box = node.box, max_t = best_t } == null { continue }
+                if node.face >= 0 {
+                    let f = @as(u32, node.face)
+                    // hit_face only returns t <= best_t, so a tie goes to the lower face.
+                    let t = hit_face{ w, face = f, ray, max_t = best_t, stops }
+                    if t != null and (not found or t < best_t or f < best_face) {
+                        best_face = f
+                        best_t = t
+                        found = true
+                    }
+                    continue
+                }
+                if sp + 2 > STACK { continue }
+                // The child popped first, pushed last, is the one the ray reaches first.
+                if is_left_nearer{ plane = node.plane, dir = ray.dir } {
+                    stack[sp] = @as(u32, node.right)
+                    stack[sp + 1] = @as(u32, node.left)
+                } else {
+                    stack[sp] = @as(u32, node.left)
+                    stack[sp + 1] = @as(u32, node.right)
+                }
+                sp = sp + 2
+            }
+        }
+        if not found { return null }
+        return RayHit{ face = best_face, t = best_t, point = math::ray::at{ ray, t = best_t } }
+    }
+
+    // The t at which the ray meets the face, from either side, if the face can stop it.
+    fn hit_face { w: Walkmesh, face: usize, ray: math::Ray, max_t: f32, stops: []bool } -> ?f32 {
+        if w.flat[face] { return null }
+        let m = w.materials[face]
+        if m >= stops.len or not stops[m] { return null }
+        return meet_triangle{ ray, c = face_corners{ w, face }, max_t }
+    }
+
+    // Where the ray meets the triangle from either side, as its t <= max_t: Moller and
+    // Trumbore's test, as math::ray::intersect_triangle, but taking points within EDGE_SLACK of
+    // the edges, as find_face_under does. The exact test can let a ray straight down an edge two
+    // faces share (the riser of a step, seen from above) through both of them by rounding. The
+    // point must also be within EDGE_SLACK of the corners' bounds, which keeps every hit inside
+    // the face's leaf box.
+    fn meet_triangle { ray: math::Ray, c: [3]math::Vec3, max_t: f32 } -> ?f32 {
+        let e1 = math::vec3::sub{ a = c[1], b = c[0] }
+        let e2 = math::vec3::sub{ a = c[2], b = c[0] }
+        let p = math::vec3::cross{ a = ray.dir, b = e2 }
+        let det = math::vec3::dot{ a = e1, b = p }
+        if math::abs{ x = det } < math::EPSILON * math::EPSILON { return null }
+        let inv = 1.0 / det
+        let s = math::vec3::sub{ a = ray.origin, b = c[0] }
+        let q = math::vec3::cross{ a = s, b = e1 }
+        let t = math::vec3::dot{ a = e2, b = q } * inv
+        if not (t >= 0.0 and t <= max_t) { return null }
+        // u weighs corner 1 and v corner 2: each is the distance from the opposite edge over the
+        // height there, so EDGE_SLACK there is EDGE_SLACK * that edge's length / twice the area.
+        let u = math::vec3::dot{ a = s, b = p } * inv
+        let v = math::vec3::dot{ a = ray.dir, b = q } * inv
+        let area2 = math::vec3::length{ v = math::vec3::cross{ a = e1, b = e2 } }
+        let k = EDGE_SLACK / area2
+        let e3 = math::vec3::sub{ a = c[2], b = c[1] }
+        if u < -k * math::vec3::length{ v = e2 } or v < -k * math::vec3::length{ v = e1 } or 1.0 - u - v < -k * math::vec3::length{ v = e3 } {
+            return null
+        }
+        let at = math::ray::at{ ray, t }
+        let lo = math::vec3::min{ a = math::vec3::min{ a = c[0], b = c[1] }, b = c[2] }
+        let hi = math::vec3::max{ a = math::vec3::max{ a = c[0], b = c[1] }, b = c[2] }
+        if at.x < lo.x - EDGE_SLACK or at.y < lo.y - EDGE_SLACK or at.z < lo.z - EDGE_SLACK or
+            at.x > hi.x + EDGE_SLACK or at.y > hi.y + EDGE_SLACK or at.z > hi.z + EDGE_SLACK {
+            return null
+        }
+        return t
+    }
+
+    // The split plane names the side the right child is on (5.4): a ray heading that way meets
+    // the left child first. A plane of 0 or one not in the format says nothing.
+    fn is_left_nearer { plane: u32, dir: math::Vec3 } -> bool {
+        if plane == 1 { return dir.x >= 0.0 }
+        if plane == 2 { return dir.y >= 0.0 }
+        if plane == 4 { return dir.z >= 0.0 }
+        if plane == 8 { return dir.x <= 0.0 }
+        if plane == 16 { return dir.y <= 0.0 }
+        if plane == 32 { return dir.z <= 0.0 }
+        return true
+    }
+
+    fn is_walkable { w: Walkmesh, face: usize, walkable: []bool } -> bool {
+        if face >= w.materials.len { return false }
+        let m = w.materials[face]
+        return m < walkable.len and walkable[m]
+    }
+
+    // ---- placing a placeable's or door's walkmesh
+
+    fn place_point { at: Placement, p: math::Vec3 } -> math::Vec3 {
+        return turn{ at, c = math::cosf{ x = at.bearing }, s = math::sinf{ x = at.bearing }, p }
+    }
+
+    fn turn { at: Placement, c: f32, s: f32, p: math::Vec3 } -> math::Vec3 {
+        return math::Vec3{
+            x = at.position.x + p.x * c - p.y * s,
+            y = at.position.y + p.x * s + p.y * c,
+            z = at.position.z + p.z,
+        }
+    }
+
+    // The walkmesh in area space: every vertex + position, placed; planes computed from the
+    // placed corners; a new tree over every face. The hooks are placed too: a set relative hook
+    // as hook_point gives it (so hook_point works on the result), and the absolute ones as
+    // stored. The result's position is zero. Every table is copied: w may go first.
+    fn transform_placed(S) { realloc: alloc::Fn(S), mut heap: S, w: Walkmesh, at: Placement } -> !Walkmesh {
+        let c = math::cosf{ x = at.bearing }
+        let s = math::sinf{ x = at.bearing }
+        let vertices = try make(math::Vec3, S){ realloc, &heap, count = w.vertices.len }
+        let mut i: usize = 0
+        while i < vertices.len {
+            vertices[i] = turn{ at, c, s, p = math::vec3::add{ a = w.vertices[i], b = w.position } }
+            i = i + 1
+        }
+        let nf = w.faces.len
+        let faces = try copy_of([3]u32, S){ realloc, &heap, items = w.faces }
+        let flat = try make(bool, S){ realloc, &heap, count = nf }
+        let planes = try make(math::Plane, S){ realloc, &heap, count = nf }
+        let mut computed: u32 = 0
+        i = 0
+        while i < nf {
+            let k = corners_of{ vertices, tri = faces[i] }
+            let cross = math::vec3::cross{ a = math::vec3::sub{ a = k[1], b = k[0] }, b = math::vec3::sub{ a = k[2], b = k[0] } }
+            let len = math::vec3::length{ v = cross }
+            flat[i] = not (len >= ZERO_AREA)
+            if flat[i] {
+                planes[i] = zero_plane{}
+            } else {
+                let n = math::vec3::scale{ v = cross, s = 1.0 / len }
+                planes[i] = math::Plane{ n, d = -math::vec3::dot{ a = n, b = k[0] } }
+                computed = computed + 1
+            }
+            i = i + 1
+        }
+        let mut rel = w.rel_hooks
+        let mut abs = w.abs_hooks
+        i = 0
+        while i < 2 {
+            let p = hook_point{ w, hook = i }
+            if p != null { rel[i] = turn{ at, c, s, p } }
+            abs[i] = turn{ at, c, s, p = w.abs_hooks[i] }
+            i = i + 1
+        }
+        return Walkmesh{
+            kind = w.kind, position = math::vec3::zero{}, rel_hooks = rel, abs_hooks = abs,
+            vertices, faces,
+            materials = try copy_of(u32, S){ realloc, &heap, items = w.materials },
+            planes, flat,
+            nodes = try build_tree(S){ realloc, &heap, vertices, faces },
+            adjacency = try copy_of([3]i32, S){ realloc, &heap, items = w.adjacency },
+            perimeter = try copy_of(Perimeter, S){ realloc, &heap, items = w.perimeter },
+            loop_ends = try copy_of(u32, S){ realloc, &heap, items = w.loop_ends },
+            edge_perimeter = try copy_of(i32, S){ realloc, &heap, items = w.edge_perimeter },
+            tree_rebuilt = true, planes_computed = computed,
+        }
+    }
+
+    // Use hook 0 or 1 in the walkmesh's model space: relative hook + position. That is the
+    // absolute hook in every DWK, and the reading bwm.md recommends for PWKs, whose absolute
+    // hooks are mostly left zero (7). Null if the relative hook is zero (unset).
+    fn hook_point { w: Walkmesh, hook: usize } -> ?math::Vec3 {
+        if hook >= 2 { return null }
+        let r = w.rel_hooks[hook]
+        if r.x == 0.0 and r.y == 0.0 and r.z == 0.0 { return null }
+        return math::vec3::add{ a = r, b = w.position }
+    }
+
+    // ---- faces and edges
+
+    // Edge 3 * face + k runs from corner k to corner k + 1 (5.1). The edge must be a face's.
+    fn edge_vertices { w: Walkmesh, edge: usize } -> [2]u32 {
+        let tri = w.faces[edge / 3]
+        let k = edge % 3
+        return [tri[k], tri[(k + 1) % 3]]
+    }
+
+    fn perimeter_of { w: Walkmesh, edge: usize } -> ?usize {
+        if edge >= w.edge_perimeter.len { return null }
+        let p = w.edge_perimeter[edge]
+        if p < 0 { return null }
+        return @as(usize, p)
+    }
+
+    fn face_corners { w: Walkmesh, face: usize } -> [3]math::Vec3 {
+        return corners_of{ vertices = w.vertices, tri = w.faces[face] }
+    }
+
+    fn centroid { w: Walkmesh, face: usize } -> math::Vec3 {
+        let c = face_corners{ w, face }
+        return math::vec3::scale{ v = math::vec3::add{ a = math::vec3::add{ a = c[0], b = c[1] }, b = c[2] }, s = 1.0 / 3.0 }
+    }
+
+    fn corners_of { vertices: []math::Vec3, tri: [3]u32 } -> [3]math::Vec3 {
+        return [vertices[tri[0]], vertices[tri[1]], vertices[tri[2]]]
+    }
+
+    fn face_box { vertices: []math::Vec3, tri: [3]u32 } -> math::Aabb {
+        let c = corners_of{ vertices, tri }
+        let pad = math::vec3::splat{ s = LEAF_PAD }
+        let lo = math::vec3::min{ a = math::vec3::min{ a = c[0], b = c[1] }, b = c[2] }
+        let hi = math::vec3::max{ a = math::vec3::max{ a = c[0], b = c[1] }, b = c[2] }
+        return math::Aabb{ min = math::vec3::sub{ a = lo, b = pad }, max = math::vec3::add{ a = hi, b = pad } }
+    }
+
+    // ---- little helpers
+
+    // Little-endian numbers at a byte offset. The caller has checked the offset is in range.
+    fn u32_at { bytes: []u8, at: usize } -> u32 {
+        let b0: u32 = bytes[at]
+        let b1: u32 = bytes[at + 1]
+        let b2: u32 = bytes[at + 2]
+        let b3: u32 = bytes[at + 3]
+        return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+    }
+
+    fn i32_at { bytes: []u8, at: usize } -> i32 {
+        let u = u32_at{ bytes, at }
+        return @cast(*i32, &u).*
+    }
+
+    fn f32_at { bytes: []u8, at: usize } -> f32 {
+        let u = u32_at{ bytes, at }
+        return @cast(*f32, &u).*
+    }
+
+    fn vec3_at { bytes: []u8, at: usize } -> math::Vec3 {
+        return math::Vec3{ x = f32_at{ bytes, at }, y = f32_at{ bytes, at = at + 4 }, z = f32_at{ bytes, at = at + 8 } }
+    }
+
+    // Infinity and NaN minus themselves are NaN, which equals nothing.
+    fn is_finite { x: f32 } -> bool { return x - x == 0.0 }
+
+    fn is_finite3 { v: math::Vec3 } -> bool { return is_finite{ x = v.x } and is_finite{ x = v.y } and is_finite{ x = v.z } }
+
+    // Whether p is a usable plane for the corners. Written so that NaN fails every test.
+    fn fits_corners { p: math::Plane, c: [3]math::Vec3 } -> bool {
+        if not (math::abs{ x = math::vec3::length{ v = p.n } - 1.0 } <= UNIT_SLACK) { return false }
+        let mut k: usize = 0
+        while k < 3 {
+            if not (math::abs{ x = math::vec3::dot{ a = p.n, b = c[k] } + p.d } <= PLANE_SLACK) { return false }
+            k = k + 1
+        }
+        return true
+    }
+
+    fn zero_plane {} -> math::Plane { return math::Plane{ n = math::vec3::zero{}, d = 0.0 } }
+
+    fn make(T, S) { realloc: alloc::Fn(S), mut heap: S, count: usize } -> ![]mut T {
+        return alloc::resize(T, S){ realloc, &heap, mem = slice::empty(T){}, count }
+    }
+
+    fn copy_of(T, S) { realloc: alloc::Fn(S), mut heap: S, items: []T } -> ![]mut T {
+        let out = try make(T, S){ realloc, &heap, count = items.len }
+        slice::copy(T){ dst = out, src = items }
+        return out
+    }
+}

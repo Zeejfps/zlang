@@ -1,0 +1,1555 @@
+// The OpenGL 4.1 core backend of the rendering seam: namespace `gpu`, which every backend
+// declares with the same functions (lib/render/contract.ctx; docs/design/render.md). Only this
+// namespace holds the GL capability: the game holds a `gpu::Device` and hands it `render::`
+// data.
+//
+// Resources live in fixed tables sized by render::Config. A handle's id is the slot index + 1 in
+// its low 20 bits and the slot's generation above, so a stale handle is caught, not misused.
+//
+// Each frame draws into an offscreen target, `screen`, the size of the window's drawable;
+// `present` blits it to the window, and `read_screen` reads it back for screenshots. A hidden
+// window works the same, which is how every check renders headless.
+namespace gpu {
+    error full{ what: c::String }                   // a resource table is full
+    error bad_handle{ what: c::String }             // freed, never made, or another device's
+    error bad_data{ need: usize, got: usize }       // too few bytes for what the description says
+    error unsupported{ what: c::String }
+    error shader_failed{ log: []u8 }                // a program didn't compile or link: the driver's log
+
+    const NO_SLOT: u32 = 0xFFFFFFFF
+    const MAX_BONES: u32 = 32
+    const MAX_LIGHTS: u32 = 8
+    // Bytes of streamed vertex data (quads, particles, debug geometry) sent in one draw call.
+    const STREAM_FLOATS: usize = 262144
+    const SORT_ITEMS: usize = 65536
+    const FRAME_FLOATS: usize = 48
+
+    struct TexSlot { name: u32, target: u32, width: u32, height: u32, cube: bool, gen: u32, live: bool }
+    struct MeshSlot { vao: u32, vbo: u32, ibo: u32, vertex_count: u32, index_count: u32, mode: u32, gen: u32, live: bool }
+    struct TargetSlot { fbo: u32, depth: u32, color: u32, width: i32, height: i32, gen: u32, live: bool }
+
+    struct ScenePrograms {
+        id: u32,
+        model: i32, post: i32, normal: i32, bone_count: i32, bones: i32, dangle: i32,
+        maps: i32, mode: i32, color: i32, selfillum: i32, uv: i32, uv_cell: i32,
+        light_count: i32, light_pos: i32, light_color: i32,
+    }
+    struct UiProgram { id: u32, screen: i32, image: i32 }
+    struct ParticleProgram { id: u32, model: i32, emit: i32, axis: i32, mode: i32 }
+    struct DebugProgram { id: u32 }
+
+    // What GL has bound now, so a draw changes only what differs. -1: unknown.
+    struct State {
+        program: u32,
+        blend: i32,             // render::Blend's value, or -1 for none
+        depth_test: i32, depth_write: i32, cull: i32, offset: i32, stencil: i32,
+        units: [5]u32,          // the texture bound to units 0..4
+        vao: u32,
+    }
+
+    // An item to sort: its key and which draw (or, with the top bit, which emitter) it is.
+    struct SortItem { key: u64, index: u32 }
+
+    struct Device {
+        gl: gl::Gl,
+        win: sdl::GlWindow,
+        config: render::Config,
+        info: render::Info,
+        debug_on: bool,
+        debug_log: *mut gl::DebugLog,
+        textures: []mut TexSlot,
+        meshes: []mut MeshSlot,
+        targets: []mut TargetSlot,
+        screen: gl::Target,
+        scene: ScenePrograms,
+        ui: UiProgram,
+        particle: ParticleProgram,
+        debug: DebugProgram,
+        frame_ubo: u32,
+        white: u32,                 // a 1x1 white 2D texture and a black cube, bound where a material
+        black_cube: u32,            //   has no map, so every sampler has something complete
+        stream: u32,                // the vertex buffer streamed data goes through
+        ui_vao: u32,
+        particle_vao: u32,
+        debug_vao: u32,
+        scratch: []mut f32,         // STREAM_FLOATS, where streamed data is assembled
+        sort: []mut SortItem,       // SORT_ITEMS, and as many again to merge through
+        sort_tmp: []mut SortItem,
+        state: State,
+        stats: render::Stats,
+        anisotropy: f32,
+        log: []mut u8,              // for the driver's shader logs
+    }
+
+    // ---- opening and closing
+
+    // Opens a window of config's size (hidden for offscreen runs) with an OpenGL 4.1 core
+    // context, and the device drawing into it. Its tables come from `heap`, which must outlive it.
+    fn open(S) { mut sdl: sdl::Sdl, realloc: alloc::Fn(S), mut heap: S, config: render::Config } -> !Device {
+        let win = try sdl::open_gl_window{
+            &sdl, title = config.title, width = config.width, height = config.height, major = 4, minor = 1,
+            hidden = config.hidden, resizable = not config.hidden, debug = config.debug,
+        }
+        let mut gl = gl::load{ get_proc = sdl::gl_proc{ &sdl, _ } } iferr err{ error } {
+            sdl::close_gl_window{ &sdl, w = win }
+            return error
+        }
+        if config.vsync and not config.hidden { sdl::set_swap_interval{ &sdl, interval = 1 } iferr {} }
+
+        let debug_log = try alloc::new(gl::DebugLog, S){ realloc, &heap, value = empty_log{} }
+        let mut debug_on = false
+        if config.debug {
+            let found = gl::load_debug{ get_proc = sdl::gl_proc{ &sdl, _ }, &gl }
+            if found != null {
+                let mut debug = found
+                gl::start_debug{ &gl, &debug, log = debug_log }
+                debug_on = true
+            }
+        }
+
+        let size = sdl::drawable_size{ &sdl, w = win }
+        let screen = try gl::make_target{ &gl, width = size.width, height = size.height }
+        let aniso = gl::has_extension{ &gl, name = "GL_EXT_texture_filter_anisotropic" }
+            or gl::has_extension{ &gl, name = "GL_ARB_texture_filter_anisotropic" }
+        let info = render::Info{
+            api = "OpenGL 4.1 core",
+            device = gl::string{ &gl, name = gl::RENDERER },
+            max_texture_size = @as(u32, gl::get_int{ &gl, pname = gl::MAX_TEXTURE_SIZE }),
+            dxt = gl::has_extension{ &gl, name = "GL_EXT_texture_compression_s3tc" },
+        }
+        let mut dev = Device{
+            gl, win, config, info, debug_on, debug_log,
+            textures = try alloc::resize(TexSlot, S){ realloc, &heap, mem = slice::empty(TexSlot){}, count = config.max_textures },
+            meshes = try alloc::resize(MeshSlot, S){ realloc, &heap, mem = slice::empty(MeshSlot){}, count = config.max_meshes },
+            targets = try alloc::resize(TargetSlot, S){ realloc, &heap, mem = slice::empty(TargetSlot){}, count = config.max_targets },
+            screen,
+            scene = ScenePrograms{
+                id = 0, model = -1, post = -1, normal = -1, bone_count = -1, bones = -1, dangle = -1, maps = -1, mode = -1,
+                color = -1, selfillum = -1, uv = -1, uv_cell = -1, light_count = -1, light_pos = -1, light_color = -1,
+            },
+            ui = UiProgram{ id = 0, screen = -1, image = -1 },
+            particle = ParticleProgram{ id = 0, model = -1, emit = -1, axis = -1, mode = -1 },
+            debug = DebugProgram{ id = 0 },
+            frame_ubo = 0, white = 0, black_cube = 0, stream = 0, ui_vao = 0, particle_vao = 0, debug_vao = 0,
+            scratch = try alloc::resize(f32, S){ realloc, &heap, mem = slice::empty(f32){}, count = STREAM_FLOATS },
+            sort = try alloc::resize(SortItem, S){ realloc, &heap, mem = slice::empty(SortItem){}, count = SORT_ITEMS },
+            sort_tmp = try alloc::resize(SortItem, S){ realloc, &heap, mem = slice::empty(SortItem){}, count = SORT_ITEMS },
+            state = unknown_state{},
+            stats = render::Stats{ draws = 0, triangles = 0, culled = 0, state_changes = 0, quads = 0, particles = 0 },
+            anisotropy = if aniso { 8.0 } else { 0.0 },
+            log = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = 8192 },
+        }
+        clear_tables{ &dev }
+        try make_programs{ &dev }
+        make_buffers{ &dev }
+        try gl::check{ gl = &dev.gl, what = "gpu::open" }
+        return dev
+    }
+
+    fn empty_log {} -> gl::DebugLog {
+        let mut log: gl::DebugLog
+        return log
+    }
+
+    fn unknown_state {} -> State {
+        return State{ program = 0, blend = -2, depth_test = -1, depth_write = -1, cull = -1, offset = -1, stencil = -1, units = [0; 5], vao = 0 }
+    }
+
+    fn clear_tables { mut dev: Device } {
+        let mut i: usize = 0
+        while i < dev.textures.len {
+            dev.textures[i] = TexSlot{ name = 0, target = 0, width = 0, height = 0, cube = false, gen = 1, live = false }
+            i = i + 1
+        }
+        i = 0
+        while i < dev.meshes.len {
+            dev.meshes[i] = MeshSlot{ vao = 0, vbo = 0, ibo = 0, vertex_count = 0, index_count = 0, mode = 0, gen = 1, live = false }
+            i = i + 1
+        }
+        i = 0
+        while i < dev.targets.len {
+            dev.targets[i] = TargetSlot{ fbo = 0, depth = 0, color = 0, width = 0, height = 0, gen = 1, live = false }
+            i = i + 1
+        }
+    }
+
+    // Frees every resource and closes the window.
+    fn close { mut dev: Device, mut sdl: sdl::Sdl } {
+        let mut i: usize = 0
+        while i < dev.meshes.len {
+            if dev.meshes[i].live { free_mesh_slot{ &dev, index = @as(u32, i) } }
+            i = i + 1
+        }
+        i = 0
+        while i < dev.targets.len {
+            if dev.targets[i].live { free_target_slot{ &dev, index = @as(u32, i) } }
+            i = i + 1
+        }
+        i = 0
+        while i < dev.textures.len {
+            if dev.textures[i].live { free_texture_slot{ &dev, index = @as(u32, i) } }
+            i = i + 1
+        }
+        dev.gl.delete_program{ program = dev.scene.id }
+        dev.gl.delete_program{ program = dev.ui.id }
+        dev.gl.delete_program{ program = dev.particle.id }
+        dev.gl.delete_program{ program = dev.debug.id }
+        gl::delete_buffer{ gl = &dev.gl, id = dev.frame_ubo }
+        gl::delete_texture{ gl = &dev.gl, id = dev.white }
+        gl::delete_texture{ gl = &dev.gl, id = dev.black_cube }
+        gl::delete_buffer{ gl = &dev.gl, id = dev.stream }
+        gl::delete_vertex_array{ gl = &dev.gl, id = dev.ui_vao }
+        gl::delete_vertex_array{ gl = &dev.gl, id = dev.particle_vao }
+        gl::delete_vertex_array{ gl = &dev.gl, id = dev.debug_vao }
+        gl::free_target{ gl = &dev.gl, t = dev.screen }
+        sdl::close_gl_window{ &sdl, w = dev.win }
+    }
+
+    fn describe { dev: Device } -> render::Info { return dev.info }
+    fn get_stats { dev: Device } -> render::Stats { return dev.stats }
+    fn screen_size { dev: Device } -> render::Size {
+        return render::Size{ width = @as(u32, dev.screen.width), height = @as(u32, dev.screen.height) }
+    }
+
+    // The driver's messages since the last clear_messages (empty without Config.debug).
+    fn messages { dev: Device } -> []u8 { return dev.debug_log.text[..dev.debug_log.used] }
+    fn clear_messages { mut dev: Device } {
+        dev.debug_log.used = 0
+        dev.debug_log.dropped = 0
+    }
+
+    // Remakes the screen target at a new size: call it when the window's drawable size changes.
+    fn resize { mut dev: Device, width: u32, height: u32 } -> ! {
+        if @as(i32, width) == dev.screen.width and @as(i32, height) == dev.screen.height { return }
+        gl::free_target{ gl = &dev.gl, t = dev.screen }
+        dev.screen = try gl::make_target{ gl = &dev.gl, width = @as(i32, width), height = @as(i32, height) }
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = 0 }
+    }
+
+    // ---- programs and buffers
+
+    fn make_programs { mut dev: Device } -> ! {
+        let scene_vs = glsl::SCENE_VS
+        let scene_fs = glsl::SCENE_FS
+        let ui_vs = glsl::UI_VS
+        let ui_fs = glsl::UI_FS
+        let particle_vs = glsl::PARTICLE_VS
+        let particle_fs = glsl::PARTICLE_FS
+        let debug_vs = glsl::DEBUG_VS
+        let debug_fs = glsl::DEBUG_FS
+        let mut n: usize = 0
+        let scene = try_link{ gl = &dev.gl, vertex = &scene_vs, fragment = &scene_fs, log = dev.log, log_len = &n }
+        if scene == 0 { return shader_failed{ log = dev.log[..n] } }
+        let ui = try_link{ gl = &dev.gl, vertex = &ui_vs, fragment = &ui_fs, log = dev.log, log_len = &n }
+        if ui == 0 { return shader_failed{ log = dev.log[..n] } }
+        let particle = try_link{ gl = &dev.gl, vertex = &particle_vs, fragment = &particle_fs, log = dev.log, log_len = &n }
+        if particle == 0 { return shader_failed{ log = dev.log[..n] } }
+        let debug = try_link{ gl = &dev.gl, vertex = &debug_vs, fragment = &debug_fs, log = dev.log, log_len = &n }
+        if debug == 0 { return shader_failed{ log = dev.log[..n] } }
+
+        bind_frame_block{ &dev, program = scene }
+        bind_frame_block{ &dev, program = particle }
+        bind_frame_block{ &dev, program = debug }
+        dev.gl.use_program{ program = scene }
+        set_unit{ &dev, program = scene, name = "u_diffuse", unit = 0 }
+        set_unit{ &dev, program = scene, name = "u_lightmap", unit = 1 }
+        set_unit{ &dev, program = scene, name = "u_envcube", unit = 2 }
+        set_unit{ &dev, program = scene, name = "u_envsphere", unit = 3 }
+        set_unit{ &dev, program = scene, name = "u_bump", unit = 4 }
+        dev.gl.use_program{ program = ui }
+        set_unit{ &dev, program = ui, name = "u_tex", unit = 0 }
+        set_unit{ &dev, program = ui, name = "u_tex_u", unit = 1 }
+        set_unit{ &dev, program = ui, name = "u_tex_v", unit = 2 }
+        dev.gl.use_program{ program = particle }
+        set_unit{ &dev, program = particle, name = "u_tex", unit = 0 }
+        dev.gl.use_program{ program = 0 }
+
+        dev.scene = ScenePrograms{
+            id = scene,
+            model = dev.gl.get_uniform_location{ program = scene, name = "u_model" },
+            post = dev.gl.get_uniform_location{ program = scene, name = "u_post" },
+            normal = dev.gl.get_uniform_location{ program = scene, name = "u_normal" },
+            bone_count = dev.gl.get_uniform_location{ program = scene, name = "u_bone_count" },
+            bones = dev.gl.get_uniform_location{ program = scene, name = "u_bones" },
+            dangle = dev.gl.get_uniform_location{ program = scene, name = "u_dangle" },
+            maps = dev.gl.get_uniform_location{ program = scene, name = "u_maps" },
+            mode = dev.gl.get_uniform_location{ program = scene, name = "u_mode" },
+            color = dev.gl.get_uniform_location{ program = scene, name = "u_color" },
+            selfillum = dev.gl.get_uniform_location{ program = scene, name = "u_selfillum" },
+            uv = dev.gl.get_uniform_location{ program = scene, name = "u_uv" },
+            uv_cell = dev.gl.get_uniform_location{ program = scene, name = "u_uv_cell" },
+            light_count = dev.gl.get_uniform_location{ program = scene, name = "u_light_count" },
+            light_pos = dev.gl.get_uniform_location{ program = scene, name = "u_light_pos" },
+            light_color = dev.gl.get_uniform_location{ program = scene, name = "u_light_color" },
+        }
+        dev.ui = UiProgram{
+            id = ui,
+            screen = dev.gl.get_uniform_location{ program = ui, name = "u_screen" },
+            image = dev.gl.get_uniform_location{ program = ui, name = "u_image" },
+        }
+        dev.particle = ParticleProgram{
+            id = particle,
+            model = dev.gl.get_uniform_location{ program = particle, name = "u_model" },
+            emit = dev.gl.get_uniform_location{ program = particle, name = "u_emit" },
+            axis = dev.gl.get_uniform_location{ program = particle, name = "u_axis" },
+            mode = dev.gl.get_uniform_location{ program = particle, name = "u_mode" },
+        }
+        dev.debug = DebugProgram{ id = debug }
+    }
+
+    // gl::link's program, or 0 with the length of the driver's log in `log`. (Its error would be
+    // taken to hold the sources' address, which are the caller's locals.)
+    fn try_link { mut gl: gl::Gl, vertex: []c::String, fragment: []c::String, log: []mut u8, mut log_len: usize } -> u32 {
+        return gl::link{ &gl, vertex, fragment, log } iferr err{ error } {
+            let n = match error {
+                gl::compile_failed{ log_len = k } | gl::link_failed{ log_len = k } => { k }
+            }
+            log_len = if n < log.len { n } else { log.len }
+            0
+        }
+    }
+
+    fn bind_frame_block { mut dev: Device, program: u32 } {
+        let block = dev.gl.get_uniform_block_index{ program, name = "Frame" }
+        if block != gl::INVALID_INDEX { dev.gl.uniform_block_binding{ program, block_index = block, binding = 0 } }
+    }
+
+    fn set_unit { mut dev: Device, program: u32, name: c::String, unit: i32 } {
+        dev.gl.uniform1i{ location = dev.gl.get_uniform_location{ program, name }, v0 = unit }
+    }
+
+    fn make_buffers { mut dev: Device } {
+        let frame: [48]f32 = [0.0; 48]
+        dev.frame_ubo = gl::make_buffer{ gl = &dev.gl, target = gl::UNIFORM_BUFFER, bytes = gl::bytes_of(f32){ s = frame[..] }, usage = gl::DYNAMIC_DRAW }
+        dev.stream = gl::gen_buffer{ gl = &dev.gl }
+        dev.gl.bind_buffer{ target = gl::ARRAY_BUFFER, buffer = dev.stream }
+        dev.gl.buffer_data{ target = gl::ARRAY_BUFFER, size = @as(i64, STREAM_FLOATS * 4), data = null, usage = gl::STREAM_DRAW }
+
+        // Quads: rect 4, uv 4, colour 4, angle 1 = 13 floats per instance.
+        dev.ui_vao = gl::gen_vertex_array{ gl = &dev.gl }
+        dev.gl.bind_vertex_array{ array = dev.ui_vao }
+        instance_attrib{ &dev, index = 0, size = 4, stride = 52, offset = 0 }
+        instance_attrib{ &dev, index = 1, size = 4, stride = 52, offset = 16 }
+        instance_attrib{ &dev, index = 2, size = 4, stride = 52, offset = 32 }
+        instance_attrib{ &dev, index = 3, size = 1, stride = 52, offset = 48 }
+
+        // Particles: position 3, size 2, angle 1, colour 4, frame 1, dir 3 = 14 floats.
+        dev.particle_vao = gl::gen_vertex_array{ gl = &dev.gl }
+        dev.gl.bind_vertex_array{ array = dev.particle_vao }
+        instance_attrib{ &dev, index = 0, size = 3, stride = 56, offset = 0 }
+        instance_attrib{ &dev, index = 1, size = 2, stride = 56, offset = 12 }
+        instance_attrib{ &dev, index = 2, size = 1, stride = 56, offset = 20 }
+        instance_attrib{ &dev, index = 3, size = 4, stride = 56, offset = 24 }
+        instance_attrib{ &dev, index = 4, size = 1, stride = 56, offset = 40 }
+        instance_attrib{ &dev, index = 5, size = 3, stride = 56, offset = 44 }
+
+        // Debug vertices: position 3, colour 4 = 7 floats.
+        dev.debug_vao = gl::gen_vertex_array{ gl = &dev.gl }
+        dev.gl.bind_vertex_array{ array = dev.debug_vao }
+        dev.gl.enable_vertex_attrib_array{ index = 0 }
+        dev.gl.vertex_attrib_pointer{ index = 0, size = 3, kind = gl::FLOAT, normalized = gl::FALSE, stride = 28, offset = 0 }
+        dev.gl.enable_vertex_attrib_array{ index = 1 }
+        dev.gl.vertex_attrib_pointer{ index = 1, size = 4, kind = gl::FLOAT, normalized = gl::FALSE, stride = 28, offset = 12 }
+        dev.gl.bind_vertex_array{ array = 0 }
+
+        // What a mesh without colours or a dangly constraint reads: white, and pinned. These are
+        // context state, not a vertex array's, so they hold for every mesh.
+        dev.gl.vertex_attrib4f{ index = 8, x = 1.0, y = 1.0, z = 1.0, w = 1.0 }
+        dev.gl.vertex_attrib4f{ index = 9, x = 0.0, y = 0.0, z = 0.0, w = 1.0 }
+        dev.gl.enable{ cap = gl::TEXTURE_CUBE_MAP_SEAMLESS }
+        dev.gl.pixel_storei{ pname = gl::UNPACK_ALIGNMENT, param = 1 }
+        dev.gl.pixel_storei{ pname = gl::PACK_ALIGNMENT, param = 1 }
+
+        let white: [4]u8 = [255, 255, 255, 255]
+        let black: [4]u8 = [0, 0, 0, 255]
+        dev.white = gl::gen_texture{ gl = &dev.gl }
+        dev.gl.bind_texture{ target = gl::TEXTURE_2D, texture = dev.white }
+        dev.gl.tex_image_2d{ target = gl::TEXTURE_2D, level = 0, internal_format = @as(i32, gl::RGBA8), width = 1, height = 1, border = 0, format = gl::RGBA, kind = gl::UNSIGNED_BYTE, pixels = &white[0] }
+        dev.gl.tex_parameteri{ target = gl::TEXTURE_2D, pname = gl::TEXTURE_MAX_LEVEL, param = 0 }
+        dev.black_cube = gl::gen_texture{ gl = &dev.gl }
+        dev.gl.bind_texture{ target = gl::TEXTURE_CUBE_MAP, texture = dev.black_cube }
+        let mut face: u32 = 0
+        while face < 6 {
+            dev.gl.tex_image_2d{ target = gl::TEXTURE_CUBE_MAP_POSITIVE_X + face, level = 0, internal_format = @as(i32, gl::RGBA8), width = 1, height = 1, border = 0, format = gl::RGBA, kind = gl::UNSIGNED_BYTE, pixels = &black[0] }
+            face = face + 1
+        }
+        dev.gl.tex_parameteri{ target = gl::TEXTURE_CUBE_MAP, pname = gl::TEXTURE_MAX_LEVEL, param = 0 }
+        dev.gl.bind_texture{ target = gl::TEXTURE_2D, texture = 0 }
+        dev.gl.bind_texture{ target = gl::TEXTURE_CUBE_MAP, texture = 0 }
+    }
+
+    fn instance_attrib { mut dev: Device, index: u32, size: i32, stride: i32, offset: usize } {
+        dev.gl.enable_vertex_attrib_array{ index }
+        dev.gl.vertex_attrib_pointer{ index, size, kind = gl::FLOAT, normalized = gl::FALSE, stride, offset }
+        dev.gl.vertex_attrib_divisor{ index, divisor = 1 }
+    }
+
+    // ---- handles
+
+    fn make_id { index: u32, gen: u32 } -> u32 { return (gen << 20) | (index + 1) }
+
+    // The slot a handle names if it is live with the same generation, or NO_SLOT.
+    fn slot_of { id: u32, len: usize } -> u32 {
+        let low = id & 0xFFFFF
+        if low == 0 or @as(usize, low) > len { return NO_SLOT }
+        return low - 1
+    }
+
+    fn texture_slot { dev: Device, t: render::Texture } -> u32 {
+        let i = slot_of{ id = t.id, len = dev.textures.len }
+        if i == NO_SLOT or not dev.textures[i].live or dev.textures[i].gen != t.id >> 20 { return NO_SLOT }
+        return i
+    }
+
+    fn mesh_slot { dev: Device, m: render::Mesh } -> u32 {
+        let i = slot_of{ id = m.id, len = dev.meshes.len }
+        if i == NO_SLOT or not dev.meshes[i].live or dev.meshes[i].gen != m.id >> 20 { return NO_SLOT }
+        return i
+    }
+
+    fn target_slot { dev: Device, t: render::Target } -> u32 {
+        let i = slot_of{ id = t.id, len = dev.targets.len }
+        if i == NO_SLOT or not dev.targets[i].live or dev.targets[i].gen != t.id >> 20 { return NO_SLOT }
+        return i
+    }
+
+    fn next_gen { gen: u32 } -> u32 {
+        let g = (gen + 1) & 0xFFF
+        return if g == 0 { 1 } else { g }
+    }
+
+    fn free_texture_index { dev: Device } -> u32 {
+        let mut i: usize = 0
+        while i < dev.textures.len {
+            if not dev.textures[i].live { return @as(u32, i) }
+            i = i + 1
+        }
+        return NO_SLOT
+    }
+
+    // ---- textures
+
+    // A texture from `data`, laid out as render::TextureDesc says. Fails with bad_data if data is
+    // short, unsupported for DXT where the driver lacks S3TC.
+    fn create_texture { mut dev: Device, desc: render::TextureDesc, data: []u8 } -> !render::Texture {
+        let need = render::texture_size{ desc }
+        if data.len < need { return bad_data{ need, got = data.len } }
+        if (desc.format == render::PixelFormat::dxt1 or desc.format == render::PixelFormat::dxt5) and not dev.info.dxt {
+            return unsupported{ what = "DXT textures (no S3TC)" }
+        }
+        let index = free_texture_index{ dev }
+        if index == NO_SLOT { return full{ what = "textures" } }
+        let cube = desc.kind == render::TextureKind::cube
+        let target = if cube { gl::TEXTURE_CUBE_MAP } else { gl::TEXTURE_2D }
+        let name = gl::gen_texture{ gl = &dev.gl }
+        bind_unit{ &dev, unit = 0, target, name }
+        let faces: u32 = if cube { 6 } else { 1 }
+        let mut at: usize = 0
+        let mut face: u32 = 0
+        while face < faces {
+            let face_target = if cube { gl::TEXTURE_CUBE_MAP_POSITIVE_X + face } else { gl::TEXTURE_2D }
+            let mut k: u32 = 0
+            while k < desc.levels {
+                let w = if (desc.width >> k) > 0 { desc.width >> k } else { 1 }
+                let h = if (desc.height >> k) > 0 { desc.height >> k } else { 1 }
+                let size = render::level_size{ format = desc.format, width = w, height = h }
+                upload_level{ &dev, target = face_target, level = @as(i32, k), format = desc.format, width = w, height = h, bytes = data[at..at + size] }
+                at = at + size
+                k = k + 1
+            }
+            face = face + 1
+        }
+        set_sampling{ &dev, target, desc }
+        let slot = &dev.textures[index]
+        slot.name = name
+        slot.target = target
+        slot.width = desc.width
+        slot.height = desc.height
+        slot.cube = cube
+        slot.live = true
+        return render::Texture{ id = make_id{ index, gen = slot.gen } }
+    }
+
+    fn upload_level { mut dev: Device, target: u32, level: i32, format: render::PixelFormat, width: u32, height: u32, bytes: []u8 } {
+        let w = @as(i32, width)
+        let h = @as(i32, height)
+        match format {
+            dxt1 => {
+                dev.gl.compressed_tex_image_2d{ target, level, internal_format = gl::COMPRESSED_RGB_S3TC_DXT1, width = w, height = h, border = 0, image_size = @as(i32, bytes.len), data = bytes.ptr }
+            }
+            dxt5 => {
+                dev.gl.compressed_tex_image_2d{ target, level, internal_format = gl::COMPRESSED_RGBA_S3TC_DXT5, width = w, height = h, border = 0, image_size = @as(i32, bytes.len), data = bytes.ptr }
+            }
+            grey8 => {
+                dev.gl.tex_image_2d{ target, level, internal_format = @as(i32, gl::R8), width = w, height = h, border = 0, format = gl::RED, kind = gl::UNSIGNED_BYTE, pixels = bytes.ptr }
+            }
+            rgb8 => {
+                dev.gl.tex_image_2d{ target, level, internal_format = @as(i32, gl::RGB8), width = w, height = h, border = 0, format = gl::RGB, kind = gl::UNSIGNED_BYTE, pixels = bytes.ptr }
+            }
+            rgba8 => {
+                dev.gl.tex_image_2d{ target, level, internal_format = @as(i32, gl::RGBA8), width = w, height = h, border = 0, format = gl::RGBA, kind = gl::UNSIGNED_BYTE, pixels = bytes.ptr }
+            }
+        }
+    }
+
+    fn set_sampling { mut dev: Device, target: u32, desc: render::TextureDesc } {
+        let linear = desc.filter == render::Filter::linear
+        let mut min = if linear { gl::LINEAR } else { gl::NEAREST }
+        if desc.mipmap {
+            min = if linear { gl::LINEAR_MIPMAP_LINEAR } else { gl::NEAREST_MIPMAP_NEAREST }
+            if desc.levels == 1 {
+                dev.gl.generate_mipmap{ target }
+            } else {
+                dev.gl.tex_parameteri{ target, pname = gl::TEXTURE_MAX_LEVEL, param = @as(i32, desc.levels - 1) }
+            }
+        } else {
+            dev.gl.tex_parameteri{ target, pname = gl::TEXTURE_MAX_LEVEL, param = 0 }
+        }
+        dev.gl.tex_parameteri{ target, pname = gl::TEXTURE_MIN_FILTER, param = @as(i32, min) }
+        dev.gl.tex_parameteri{ target, pname = gl::TEXTURE_MAG_FILTER, param = @as(i32, if linear { gl::LINEAR } else { gl::NEAREST }) }
+        let cube = desc.kind == render::TextureKind::cube
+        let wrap_u = if cube or desc.wrap_u == render::Wrap::clamp { gl::CLAMP_TO_EDGE } else { gl::REPEAT }
+        let wrap_v = if cube or desc.wrap_v == render::Wrap::clamp { gl::CLAMP_TO_EDGE } else { gl::REPEAT }
+        dev.gl.tex_parameteri{ target, pname = gl::TEXTURE_WRAP_S, param = @as(i32, wrap_u) }
+        dev.gl.tex_parameteri{ target, pname = gl::TEXTURE_WRAP_T, param = @as(i32, wrap_v) }
+        if cube { dev.gl.tex_parameteri{ target, pname = gl::TEXTURE_WRAP_R, param = @as(i32, gl::CLAMP_TO_EDGE) } }
+        if desc.format == render::PixelFormat::grey8 {
+            // Grey reads as (g, g, g, 1).
+            dev.gl.tex_parameteri{ target, pname = gl::TEXTURE_SWIZZLE_G, param = @as(i32, gl::RED) }
+            dev.gl.tex_parameteri{ target, pname = gl::TEXTURE_SWIZZLE_B, param = @as(i32, gl::RED) }
+        }
+        if desc.mipmap and linear and dev.anisotropy > 0.0 {
+            dev.gl.tex_parameterf{ target, pname = gl::TEXTURE_MAX_ANISOTROPY, param = dev.anisotropy }
+        }
+    }
+
+    // Replaces a w by h rectangle of level `level` of a flat, uncompressed texture: video frames,
+    // generated textures. Rows bottom first, tightly packed.
+    fn update_texture { mut dev: Device, t: render::Texture, level: u32, x: u32, y: u32, width: u32, height: u32, format: render::PixelFormat, data: []u8 } -> ! {
+        let i = texture_slot{ dev, t }
+        if i == NO_SLOT { return bad_handle{ what = "texture" } }
+        let need = render::level_size{ format, width, height }
+        if data.len < need { return bad_data{ need, got = data.len } }
+        let gl_format = match format {
+            grey8 => { gl::RED }
+            rgb8 => { gl::RGB }
+            rgba8 => { gl::RGBA }
+            dxt1 | dxt5 => { return unsupported{ what = "updating a compressed texture" } }
+        }
+        bind_unit{ &dev, unit = 0, target = dev.textures[i].target, name = dev.textures[i].name }
+        dev.gl.tex_sub_image_2d{
+            target = dev.textures[i].target, level = @as(i32, level), xoffset = @as(i32, x), yoffset = @as(i32, y),
+            width = @as(i32, width), height = @as(i32, height), format = gl_format, kind = gl::UNSIGNED_BYTE, pixels = data.ptr,
+        }
+    }
+
+    fn free_texture { mut dev: Device, t: render::Texture } {
+        let i = texture_slot{ dev, t }
+        if i == NO_SLOT { return }
+        free_texture_slot{ &dev, index = i }
+    }
+
+    fn free_texture_slot { mut dev: Device, index: u32 } {
+        let slot = &dev.textures[index]
+        gl::delete_texture{ gl = &dev.gl, id = slot.name }
+        let mut u: usize = 0
+        while u < 5 {
+            if dev.state.units[u] == slot.name { dev.state.units[u] = 0 }
+            u = u + 1
+        }
+        slot.live = false
+        slot.name = 0
+        slot.gen = next_gen{ gen = slot.gen }
+    }
+
+    // A texture's size, or 0 by 0 for a bad handle.
+    fn texture_size { dev: Device, t: render::Texture } -> render::Size {
+        let i = texture_slot{ dev, t }
+        if i == NO_SLOT { return render::Size{ width = 0, height = 0 } }
+        return render::Size{ width = dev.textures[i].width, height = dev.textures[i].height }
+    }
+
+    // ---- meshes
+
+    // A mesh from `vertices` (laid out as desc.layout says: render::layout_size bytes) and
+    // `indices`.
+    fn create_mesh { mut dev: Device, desc: render::MeshDesc, vertices: []u8, indices: []u16 } -> !render::Mesh {
+        let vbytes = render::layout_size{ layout = desc.layout, vertex_count = desc.vertex_count }
+        if vertices.len < vbytes { return bad_data{ need = vbytes, got = vertices.len } }
+        if indices.len < @as(usize, desc.index_count) { return bad_data{ need = @as(usize, desc.index_count), got = indices.len } }
+        let mut index = NO_SLOT
+        let mut s: usize = 0
+        while s < dev.meshes.len {
+            if not dev.meshes[s].live {
+                index = @as(u32, s)
+                break
+            }
+            s = s + 1
+        }
+        if index == NO_SLOT { return full{ what = "meshes" } }
+        let usage = if desc.dynamic { gl::DYNAMIC_DRAW } else { gl::STATIC_DRAW }
+        let vao = gl::gen_vertex_array{ gl = &dev.gl }
+        dev.gl.bind_vertex_array{ array = vao }
+        dev.state.vao = vao
+        let vbo = gl::make_buffer{ gl = &dev.gl, target = gl::ARRAY_BUFFER, bytes = vertices[..vbytes], usage }
+        let ibo = gl::make_buffer{ gl = &dev.gl, target = gl::ELEMENT_ARRAY_BUFFER, bytes = gl::bytes_of(u16){ s = indices[..@as(usize, desc.index_count)] }, usage }
+        let l = desc.layout
+        // Interleaved rows share one stride; planar arrays are each as wide as one element.
+        let row = @as(i32, l.stride)
+        float_attrib{ &dev, index = 0, size = 3, stride = if l.planar { 12 } else { row }, offset = l.position }
+        float_attrib{ &dev, index = 1, size = 3, stride = if l.planar { 12 } else { row }, offset = l.normal }
+        float_attrib{ &dev, index = 2, size = 2, stride = if l.planar { 8 } else { row }, offset = l.uv0 }
+        float_attrib{ &dev, index = 3, size = 2, stride = if l.planar { 8 } else { row }, offset = l.uv1 }
+        float_attrib{ &dev, index = 4, size = 3, stride = if l.planar { 36 } else { row }, offset = l.tangent_space }
+        float_attrib{ &dev, index = 5, size = 3, stride = if l.planar { 36 } else { row }, offset = if l.tangent_space >= 0 { l.tangent_space + 12 } else { -1 } }
+        float_attrib{ &dev, index = 6, size = 4, stride = if l.planar { 16 } else { row }, offset = l.weights }
+        if l.bones_u8 {
+            // Slot numbers as they are (0..255), read as floats.
+            byte_attrib{ &dev, index = 7, stride = if l.planar { 4 } else { row }, offset = l.bones, normalized = false }
+        } else {
+            float_attrib{ &dev, index = 7, size = 4, stride = if l.planar { 16 } else { row }, offset = l.bones }
+        }
+        byte_attrib{ &dev, index = 8, stride = if l.planar { 4 } else { row }, offset = l.color, normalized = true }
+        float_attrib{ &dev, index = 9, size = 1, stride = if l.planar { 4 } else { row }, offset = l.constraint }
+        dev.gl.bind_vertex_array{ array = 0 }
+        dev.state.vao = 0
+        let slot = &dev.meshes[index]
+        slot.vao = vao
+        slot.vbo = vbo
+        slot.ibo = ibo
+        slot.vertex_count = desc.vertex_count
+        slot.index_count = desc.index_count
+        slot.mode = if desc.primitive == render::Primitive::lines { gl::LINES } else { gl::TRIANGLES }
+        slot.live = true
+        return render::Mesh{ id = make_id{ index, gen = slot.gen } }
+    }
+
+    fn float_attrib { mut dev: Device, index: u32, size: i32, stride: i32, offset: i32 } {
+        if offset < 0 { return }
+        dev.gl.enable_vertex_attrib_array{ index }
+        dev.gl.vertex_attrib_pointer{ index, size, kind = gl::FLOAT, normalized = gl::FALSE, stride, offset = @as(usize, offset) }
+    }
+
+    // Four u8 per vertex, as 0..1 when normalized, else 0..255.
+    fn byte_attrib { mut dev: Device, index: u32, stride: i32, offset: i32, normalized: bool } {
+        if offset < 0 { return }
+        dev.gl.enable_vertex_attrib_array{ index }
+        dev.gl.vertex_attrib_pointer{ index, size = 4, kind = gl::UNSIGNED_BYTE, normalized = if normalized { gl::TRUE } else { gl::FALSE }, stride, offset = @as(usize, offset) }
+    }
+
+    // Replaces vertex bytes from `offset` on (a dynamic mesh's, say a lightsaber blade's).
+    fn update_mesh { mut dev: Device, m: render::Mesh, offset: usize, vertices: []u8 } -> ! {
+        let i = mesh_slot{ dev, m }
+        if i == NO_SLOT { return bad_handle{ what = "mesh" } }
+        if vertices.len == 0 { return }
+        dev.gl.bind_buffer{ target = gl::ARRAY_BUFFER, buffer = dev.meshes[i].vbo }
+        dev.gl.buffer_sub_data{ target = gl::ARRAY_BUFFER, offset = @as(i64, offset), size = @as(i64, vertices.len), data = vertices.ptr }
+    }
+
+    fn free_mesh { mut dev: Device, m: render::Mesh } {
+        let i = mesh_slot{ dev, m }
+        if i == NO_SLOT { return }
+        free_mesh_slot{ &dev, index = i }
+    }
+
+    fn free_mesh_slot { mut dev: Device, index: u32 } {
+        let slot = &dev.meshes[index]
+        if dev.state.vao == slot.vao {
+            dev.gl.bind_vertex_array{ array = 0 }
+            dev.state.vao = 0
+        }
+        gl::delete_vertex_array{ gl = &dev.gl, id = slot.vao }
+        gl::delete_buffer{ gl = &dev.gl, id = slot.vbo }
+        gl::delete_buffer{ gl = &dev.gl, id = slot.ibo }
+        slot.live = false
+        slot.gen = next_gen{ gen = slot.gen }
+    }
+
+    // ---- render targets
+
+    // An offscreen target of width by height: an RGBA8 colour texture (target_texture), with a
+    // depth and stencil buffer of its own.
+    fn create_target { mut dev: Device, width: u32, height: u32 } -> !render::Target {
+        let mut index = NO_SLOT
+        let mut s: usize = 0
+        while s < dev.targets.len {
+            if not dev.targets[s].live {
+                index = @as(u32, s)
+                break
+            }
+            s = s + 1
+        }
+        if index == NO_SLOT { return full{ what = "targets" } }
+        let mut desc = render::make_texture_desc{ format = render::PixelFormat::rgba8, width, height, levels = 1 }
+        desc.mipmap = false
+        desc.wrap_u = render::Wrap::clamp
+        desc.wrap_v = render::Wrap::clamp
+        let tex_index = free_texture_index{ dev }
+        if tex_index == NO_SLOT { return full{ what = "textures" } }
+        let w = @as(i32, width)
+        let h = @as(i32, height)
+        let color = gl::gen_texture{ gl = &dev.gl }
+        bind_unit{ &dev, unit = 0, target = gl::TEXTURE_2D, name = color }
+        dev.gl.tex_image_2d{ target = gl::TEXTURE_2D, level = 0, internal_format = @as(i32, gl::RGBA8), width = w, height = h, border = 0, format = gl::RGBA, kind = gl::UNSIGNED_BYTE, pixels = null }
+        set_sampling{ &dev, target = gl::TEXTURE_2D, desc }
+        let depth = gl::gen_renderbuffer{ gl = &dev.gl }
+        dev.gl.bind_renderbuffer{ target = gl::RENDERBUFFER, renderbuffer = depth }
+        dev.gl.renderbuffer_storage{ target = gl::RENDERBUFFER, internal_format = gl::DEPTH24_STENCIL8, width = w, height = h }
+        let fbo = gl::gen_framebuffer{ gl = &dev.gl }
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = fbo }
+        dev.gl.framebuffer_texture_2d{ target = gl::FRAMEBUFFER, attachment = gl::COLOR_ATTACHMENT0, textarget = gl::TEXTURE_2D, texture = color, level = 0 }
+        dev.gl.framebuffer_renderbuffer{ target = gl::FRAMEBUFFER, attachment = gl::DEPTH_STENCIL_ATTACHMENT, renderbuffer_target = gl::RENDERBUFFER, renderbuffer = depth }
+        let status = dev.gl.check_framebuffer_status{ target = gl::FRAMEBUFFER }
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = 0 }
+        if status != gl::FRAMEBUFFER_COMPLETE {
+            gl::delete_framebuffer{ gl = &dev.gl, id = fbo }
+            gl::delete_renderbuffer{ gl = &dev.gl, id = depth }
+            gl::delete_texture{ gl = &dev.gl, id = color }
+            return gl::incomplete{ status }
+        }
+        let tslot = &dev.textures[tex_index]
+        tslot.name = color
+        tslot.target = gl::TEXTURE_2D
+        tslot.width = width
+        tslot.height = height
+        tslot.cube = false
+        tslot.live = true
+        let slot = &dev.targets[index]
+        slot.fbo = fbo
+        slot.depth = depth
+        slot.color = make_id{ index = tex_index, gen = tslot.gen }
+        slot.width = w
+        slot.height = h
+        slot.live = true
+        return render::Target{ id = make_id{ index, gen = slot.gen } }
+    }
+
+    // The target's colour as a texture, to draw it on a quad or a mesh. v = 0 is its bottom row.
+    fn target_texture { dev: Device, t: render::Target } -> ?render::Texture {
+        let i = target_slot{ dev, t }
+        if i == NO_SLOT { return null }
+        return render::Texture{ id = dev.targets[i].color }
+    }
+
+    fn free_target { mut dev: Device, t: render::Target } {
+        let i = target_slot{ dev, t }
+        if i == NO_SLOT { return }
+        free_target_slot{ &dev, index = i }
+    }
+
+    fn free_target_slot { mut dev: Device, index: u32 } {
+        let slot = &dev.targets[index]
+        gl::delete_framebuffer{ gl = &dev.gl, id = slot.fbo }
+        gl::delete_renderbuffer{ gl = &dev.gl, id = slot.depth }
+        free_texture{ &dev, t = render::Texture{ id = slot.color } }
+        slot.live = false
+        slot.gen = next_gen{ gen = slot.gen }
+    }
+
+    // ---- reading back
+
+    // The screen's pixels as RGBA8, top row first, into `into` (width * height * 4 bytes).
+    fn read_screen { mut dev: Device, into: []mut u8 } -> !render::Size {
+        let size = screen_size{ dev }
+        try read_framebuffer{ &dev, fbo = dev.screen.framebuffer, width = dev.screen.width, height = dev.screen.height, into }
+        return size
+    }
+
+    fn read_target { mut dev: Device, t: render::Target, into: []mut u8 } -> !render::Size {
+        let i = target_slot{ dev, t }
+        if i == NO_SLOT { return bad_handle{ what = "target" } }
+        let w = dev.targets[i].width
+        let h = dev.targets[i].height
+        try read_framebuffer{ &dev, fbo = dev.targets[i].fbo, width = w, height = h, into }
+        return render::Size{ width = @as(u32, w), height = @as(u32, h) }
+    }
+
+    fn read_framebuffer { mut dev: Device, fbo: u32, width: i32, height: i32, into: []mut u8 } -> ! {
+        let row = @as(usize, width) * 4
+        let need = row * @as(usize, height)
+        if into.len < need { return bad_data{ need, got = into.len } }
+        dev.gl.bind_framebuffer{ target = gl::READ_FRAMEBUFFER, framebuffer = fbo }
+        dev.gl.read_buffer{ src = gl::COLOR_ATTACHMENT0 }
+        dev.gl.read_pixels{ x = 0, y = 0, width, height, format = gl::RGBA, kind = gl::UNSIGNED_BYTE, pixels = into.ptr }
+        dev.gl.bind_framebuffer{ target = gl::READ_FRAMEBUFFER, framebuffer = 0 }
+        // GL's rows run bottom to top; the seam's run top to bottom.
+        let mut top: usize = 0
+        let mut bottom = @as(usize, height)
+        while top + 1 < bottom {
+            bottom = bottom - 1
+            let a = top * row
+            let b = bottom * row
+            let mut k: usize = 0
+            while k < row {
+                let t = into[a + k]
+                into[a + k] = into[b + k]
+                into[b + k] = t
+                k = k + 1
+            }
+            top = top + 1
+        }
+    }
+
+    // Shows the screen in the window.
+    fn present { mut dev: Device, mut sdl: sdl::Sdl } {
+        let size = sdl::drawable_size{ &sdl, w = dev.win }
+        gl::present{ gl = &dev.gl, t = dev.screen, width = size.width, height = size.height }
+        sdl::swap{ &sdl, w = dev.win }
+    }
+
+    // ---- state
+
+    fn use_program { mut dev: Device, program: u32 } {
+        if dev.state.program == program { return }
+        dev.gl.use_program{ program }
+        dev.state.program = program
+        dev.stats.state_changes = dev.stats.state_changes + 1
+    }
+
+    fn bind_vao { mut dev: Device, vao: u32 } {
+        if dev.state.vao == vao { return }
+        dev.gl.bind_vertex_array{ array = vao }
+        dev.state.vao = vao
+    }
+
+    fn bind_unit { mut dev: Device, unit: u32, target: u32, name: u32 } {
+        if dev.state.units[unit] == name and name != 0 { return }
+        dev.gl.active_texture{ texture = gl::TEXTURE0 + unit }
+        dev.gl.bind_texture{ target, texture = name }
+        dev.state.units[unit] = name
+        dev.stats.state_changes = dev.stats.state_changes + 1
+    }
+
+    fn set_flag { mut dev: Device, cap: u32, on: bool, mut cached: i32 } {
+        let want: i32 = if on { 1 } else { 0 }
+        if cached == want { return }
+        if on { dev.gl.enable{ cap } } else { dev.gl.disable{ cap } }
+        cached = want
+    }
+
+    fn set_blend { mut dev: Device, blend: render::Blend } {
+        let want = @as(i32, blend)
+        if dev.state.blend == want { return }
+        dev.state.blend = want
+        match blend {
+            opaque | punch => { dev.gl.disable{ cap = gl::BLEND } }
+            alpha => {
+                dev.gl.enable{ cap = gl::BLEND }
+                dev.gl.blend_func_separate{ sfactor_rgb = gl::SRC_ALPHA, dfactor_rgb = gl::ONE_MINUS_SRC_ALPHA, sfactor_alpha = gl::ONE, dfactor_alpha = gl::ONE_MINUS_SRC_ALPHA }
+            }
+            additive => {
+                dev.gl.enable{ cap = gl::BLEND }
+                dev.gl.blend_func_separate{ sfactor_rgb = gl::SRC_ALPHA, dfactor_rgb = gl::ONE, sfactor_alpha = gl::ZERO, dfactor_alpha = gl::ONE }
+            }
+        }
+    }
+
+    fn set_depth { mut dev: Device, test: bool, write: bool } {
+        let mut cached = dev.state.depth_test
+        set_flag{ &dev, cap = gl::DEPTH_TEST, on = test, &cached }
+        dev.state.depth_test = cached
+        let want: i32 = if write { 1 } else { 0 }
+        if dev.state.depth_write != want {
+            dev.gl.depth_mask{ flag = if write { gl::TRUE } else { gl::FALSE } }
+            dev.state.depth_write = want
+        }
+    }
+
+    fn set_cull { mut dev: Device, on: bool } {
+        let mut cached = dev.state.cull
+        set_flag{ &dev, cap = gl::CULL_FACE, on, &cached }
+        dev.state.cull = cached
+    }
+
+    fn set_offset { mut dev: Device, on: bool } {
+        let mut cached = dev.state.offset
+        set_flag{ &dev, cap = gl::POLYGON_OFFSET_FILL, on, &cached }
+        dev.state.offset = cached
+    }
+
+    fn set_stencil { mut dev: Device, on: bool } {
+        let mut cached = dev.state.stencil
+        set_flag{ &dev, cap = gl::STENCIL_TEST, on, &cached }
+        dev.state.stencil = cached
+    }
+
+    // ---- submitting a frame
+
+    // Draws the frame: its passes in order, each view's opaque surfaces sorted by state, then
+    // shadows, then transparent surfaces and particles back to front, then debug geometry; and
+    // the UI runs over them.
+    fn submit { mut dev: Device, frame: *render::Frame } -> ! {
+        dev.stats = render::Stats{ draws = 0, triangles = 0, culled = 0, state_changes = 0, quads = 0, particles = 0 }
+        dev.state = unknown_state{}
+        dev.gl.front_face{ mode = gl::CCW }
+        dev.gl.cull_face{ mode = gl::BACK }
+        dev.gl.depth_func{ func = gl::LEQUAL }
+        dev.gl.disable{ cap = gl::SCISSOR_TEST }
+        let mut s: u32 = 0
+        while s < frame.step_count {
+            let step = frame.steps[s]
+            match step.kind {
+                view => { try draw_view{ &dev, frame, index = step.view } }
+                ui => { try draw_ui{ &dev, frame, step } }
+            }
+            s = s + 1
+        }
+        dev.gl.bind_vertex_array{ array = 0 }
+        dev.gl.use_program{ program = 0 }
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = 0 }
+        dev.gl.disable{ cap = gl::SCISSOR_TEST }
+        dev.gl.disable{ cap = gl::STENCIL_TEST }
+        dev.gl.depth_mask{ flag = gl::TRUE }
+        dev.state = unknown_state{}
+        try gl::check{ gl = &dev.gl, what = "gpu::submit" }
+    }
+
+    // A framebuffer to draw into, and its size.
+    struct Bound { fbo: u32, width: i32, height: i32 }
+
+    fn bind_target { mut dev: Device, target: ?render::Target } -> !Bound {
+        let mut b = Bound{ fbo = dev.screen.framebuffer, width = dev.screen.width, height = dev.screen.height }
+        if target != null {
+            let i = target_slot{ dev, t = target }
+            if i == NO_SLOT { return bad_handle{ what = "target" } }
+            b = Bound{ fbo = dev.targets[i].fbo, width = dev.targets[i].width, height = dev.targets[i].height }
+        }
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = b.fbo }
+        return b
+    }
+
+    // A rect in top-left pixels as GL's bottom-left x, y, w, h.
+    struct GlRect { x: i32, y: i32, w: i32, h: i32 }
+
+    fn gl_rect { r: render::Rect, height: i32, sx: f32, sy: f32 } -> GlRect {
+        let x = @as(i32, math::floorf{ x = r.x * sx + 0.5 })
+        let y0 = @as(i32, math::floorf{ x = r.y * sy + 0.5 })
+        let w = @as(i32, math::floorf{ x = r.w * sx + 0.5 })
+        let h = @as(i32, math::floorf{ x = r.h * sy + 0.5 })
+        return GlRect{ x, y = height - (y0 + h), w = if w > 0 { w } else { 0 }, h = if h > 0 { h } else { 0 } }
+    }
+
+    fn draw_view { mut dev: Device, frame: *render::Frame, index: u32 } -> ! {
+        let v = frame.views[index]
+        let b = try bind_target{ &dev, target = v.target }
+        let mut area = GlRect{ x = 0, y = 0, w = b.width, h = b.height }
+        if v.viewport != null { area = gl_rect{ r = v.viewport, height = b.height, sx = 1.0, sy = 1.0 } }
+        dev.gl.viewport{ x = area.x, y = area.y, width = area.w, height = area.h }
+        // glClear ignores the viewport: limit it with the scissor.
+        dev.gl.enable{ cap = gl::SCISSOR_TEST }
+        dev.gl.scissor{ x = area.x, y = area.y, width = area.w, height = area.h }
+        let mut mask: u32 = 0
+        if v.clear_color != null {
+            let c = v.clear_color
+            dev.gl.clear_color{ red = c.r, green = c.g, blue = c.b, alpha = c.a }
+            dev.gl.color_mask{ red = gl::TRUE, green = gl::TRUE, blue = gl::TRUE, alpha = gl::TRUE }
+            mask = mask | gl::COLOR_BUFFER_BIT
+        }
+        if v.clear_depth {
+            set_depth{ &dev, test = true, write = true }
+            dev.gl.stencil_mask{ mask = 0xFF }
+            dev.gl.clear_depth{ depth = 1.0 }
+            dev.gl.clear_stencil{ s = 0 }
+            mask = mask | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT
+        }
+        if mask != 0 { dev.gl.clear{ mask } }
+        dev.gl.disable{ cap = gl::SCISSOR_TEST }
+
+        let view_proj = math::mat4::mul{ a = v.camera.proj, b = v.camera.view }
+        upload_frame_block{ &dev, v, view_proj, time = frame.time }
+        let frustum = math::frustum::from_matrix{ m = view_proj }
+
+        // Opaque and punch-through surfaces, sorted by state.
+        let mut n: usize = 0
+        let mut transparent: usize = 0
+        let mut d: u32 = 0
+        while d < frame.draw_count {
+            let draw = frame.draws[d]
+            if draw.view == index {
+                if draw.radius > 0.0 and not visible{ draw, frustum } {
+                    dev.stats.culled = dev.stats.culled + 1
+                } else if draw.material.blend == render::Blend::opaque or draw.material.blend == render::Blend::punch {
+                    if n < dev.sort.len {
+                        dev.sort[n] = SortItem{ key = opaque_key{ dev, draw }, index = d }
+                        n = n + 1
+                    }
+                } else {
+                    transparent = transparent + 1
+                }
+            }
+            d = d + 1
+        }
+        sort_items{ items = dev.sort[..n], tmp = dev.sort_tmp[..n] }
+        use_program{ &dev, program = dev.scene.id }
+        set_identity_post{ &dev }
+        let mut i: usize = 0
+        while i < n {
+            draw_mesh{ &dev, frame, draw = frame.draws[dev.sort[i].index] }
+            i = i + 1
+        }
+
+        try draw_shadows{ &dev, frame, index }
+
+        // Transparent surfaces and particles, far to near within each sort group.
+        n = 0
+        d = 0
+        while d < frame.draw_count {
+            let draw = frame.draws[d]
+            let blended = draw.material.blend == render::Blend::alpha or draw.material.blend == render::Blend::additive
+            if draw.view == index and blended and (draw.radius <= 0.0 or visible{ draw, frustum }) and n < dev.sort.len {
+                let world = math::mat4::transform_point{ m = draw.transform, p = draw.center }
+                dev.sort[n] = SortItem{ key = depth_key{ sort = draw.material.sort, eye = v.camera.eye, at = world }, index = d }
+                n = n + 1
+            }
+            d = d + 1
+        }
+        let mut e: u32 = 0
+        while e < frame.emitter_count {
+            let em = frame.emitters[e]
+            if em.view == index and em.count > 0 and n < dev.sort.len {
+                let world = math::mat4::get_translation{ m = em.transform }
+                dev.sort[n] = SortItem{ key = depth_key{ sort = em.sort, eye = v.camera.eye, at = world }, index = e | 0x80000000 }
+                n = n + 1
+            }
+            e = e + 1
+        }
+        sort_items{ items = dev.sort[..n], tmp = dev.sort_tmp[..n] }
+        i = 0
+        while i < n {
+            let item = dev.sort[i]
+            if (item.index & 0x80000000) != 0 {
+                try draw_emitter{ &dev, frame, em = frame.emitters[item.index & 0x7FFFFFFF] }
+            } else {
+                use_program{ &dev, program = dev.scene.id }
+                draw_mesh{ &dev, frame, draw = frame.draws[item.index] }
+            }
+            i = i + 1
+        }
+
+        try draw_debug{ &dev, frame, index }
+        set_offset{ &dev, on = false }
+        set_stencil{ &dev, on = false }
+    }
+
+    fn visible { draw: render::Draw, frustum: math::Frustum } -> bool {
+        let center = math::mat4::transform_point{ m = draw.transform, p = draw.center }
+        // The largest axis scale of the transform bounds how far the sphere grew.
+        let sx = math::vec3::length{ v = math::Vec3{ x = draw.transform.m[0], y = draw.transform.m[1], z = draw.transform.m[2] } }
+        let sy = math::vec3::length{ v = math::Vec3{ x = draw.transform.m[4], y = draw.transform.m[5], z = draw.transform.m[6] } }
+        let sz = math::vec3::length{ v = math::Vec3{ x = draw.transform.m[8], y = draw.transform.m[9], z = draw.transform.m[10] } }
+        let scale = math::max{ a = sx, b = math::max{ a = sy, b = sz } }
+        return math::frustum::intersects_sphere{ f = frustum, center, radius = draw.radius * scale }
+    }
+
+    // Punch-through after opaque, then by diffuse texture, lightmap and mesh.
+    fn opaque_key { dev: Device, draw: render::Draw } -> u64 {
+        let m = draw.material
+        let punch: u64 = if m.blend == render::Blend::punch { 1 } else { 0 }
+        let diffuse: u64 = if m.diffuse != null { @as(u64, m.diffuse.id & 0xFFFFF) } else { 0 }
+        let lightmap: u64 = if m.lightmap != null { @as(u64, m.lightmap.id & 0xFFFFF) } else { 0 }
+        let mesh = @as(u64, draw.mesh.id & 0xFFFFF)
+        return (punch << 62) | ((diffuse & 0xFFFF) << 44) | ((lightmap & 0xFFFF) << 28) | (mesh & 0xFFFFF)
+    }
+
+    // By sort group, lowest first, then farthest first.
+    fn depth_key { sort: i32, eye: math::Vec3, at: math::Vec3 } -> u64 {
+        let clamped = if sort < -32768 { -32768 } else if sort > 32767 { 32767 } else { sort }
+        let group = @as(u64, clamped + 32768)
+        // A non-negative f32's bits order as its value does.
+        let dist = math::vec3::length_sq{ v = math::vec3::sub{ a = at, b = eye } }
+        let bits = @as(u64, @cast(*u32, &dist).*)
+        return (group << 48) | ((0xFFFFFFFF - bits) << 16)
+    }
+
+    // Sorts by key, keeping equal keys in their order: a bottom-up merge through `tmp`.
+    fn sort_items { items: []mut SortItem, tmp: []mut SortItem } {
+        let n = items.len
+        let mut width: usize = 1
+        let mut from = items
+        let mut to = tmp
+        while width < n {
+            let mut lo: usize = 0
+            while lo < n {
+                let mid = if lo + width < n { lo + width } else { n }
+                let hi = if lo + 2 * width < n { lo + 2 * width } else { n }
+                let mut a = lo
+                let mut b = mid
+                let mut k = lo
+                while k < hi {
+                    if a < mid and (b >= hi or from[a].key <= from[b].key) {
+                        to[k] = from[a]
+                        a = a + 1
+                    } else {
+                        to[k] = from[b]
+                        b = b + 1
+                    }
+                    k = k + 1
+                }
+                lo = hi
+            }
+            let swap = from
+            from = to
+            to = swap
+            width = width * 2
+        }
+        if from.ptr != items.ptr { slice::copy(SortItem){ dst = items, src = from } }
+    }
+
+    fn set_identity_post { mut dev: Device } {
+        let id = math::mat4::identity{}
+        dev.gl.uniform_matrix4fv{ location = dev.scene.post, count = 1, transpose = gl::FALSE, value = &id.m[0] }
+    }
+
+    // Binds a material's texture to `unit` and returns 1, or binds the default (white, or a black
+    // cube) and returns 0 when it is absent, stale or of the other kind.
+    fn material_map { mut dev: Device, t: ?render::Texture, unit: u32, cube: bool } -> i32 {
+        if t != null {
+            let i = texture_slot{ dev, t }
+            if i != NO_SLOT and dev.textures[i].cube == cube {
+                bind_unit{ &dev, unit, target = dev.textures[i].target, name = dev.textures[i].name }
+                return 1
+            }
+        }
+        if cube {
+            bind_unit{ &dev, unit, target = gl::TEXTURE_CUBE_MAP, name = dev.black_cube }
+        } else {
+            bind_unit{ &dev, unit, target = gl::TEXTURE_2D, name = dev.white }
+        }
+        return 0
+    }
+
+    fn draw_mesh { mut dev: Device, frame: *render::Frame, draw: render::Draw } {
+        let mi = mesh_slot{ dev, m = draw.mesh }
+        if mi == NO_SLOT { return }
+        let mesh = dev.meshes[mi]
+        let m = draw.material
+        let blended = m.blend == render::Blend::alpha or m.blend == render::Blend::additive
+        set_blend{ &dev, blend = m.blend }
+        set_depth{ &dev, test = true, write = not blended and not m.decal }
+        set_cull{ &dev, on = not m.two_sided }
+        set_offset{ &dev, on = m.decal }
+        if m.decal { dev.gl.polygon_offset{ factor = -1.0, units = -2.0 } }
+        set_stencil{ &dev, on = false }
+        bind_vao{ &dev, vao = mesh.vao }
+
+        dev.gl.uniform_matrix4fv{ location = dev.scene.model, count = 1, transpose = gl::FALSE, value = &draw.transform.m[0] }
+        let nm = math::mat3::normal_matrix{ m = draw.transform }
+        dev.gl.uniform_matrix3fv{ location = dev.scene.normal, count = 1, transpose = gl::FALSE, value = &nm.m[0] }
+        let bones = if draw.bone_count > MAX_BONES { MAX_BONES } else { draw.bone_count }
+        let palette_ok = bones > 0 and draw.bones + bones <= frame.bone_count
+        dev.gl.uniform1i{ location = dev.scene.bone_count, v0 = if palette_ok { @as(i32, bones) } else { 0 } }
+        if palette_ok {
+            dev.gl.uniform_matrix4fv{ location = dev.scene.bones, count = @as(i32, bones), transpose = gl::FALSE, value = &frame.bones[draw.bones].m[0] }
+        }
+        dev.gl.uniform4f{ location = dev.scene.dangle, v0 = draw.dangle.x, v1 = draw.dangle.y, v2 = draw.dangle.z, v3 = 0.0 }
+
+        let has_diffuse = material_map{ &dev, t = m.diffuse, unit = 0, cube = false }
+        let has_lightmap = material_map{ &dev, t = m.lightmap, unit = 1, cube = false }
+        let env_cube = material_map{ &dev, t = m.envmap, unit = 2, cube = true }
+        let env_flat = material_map{ &dev, t = m.envmap, unit = 3, cube = false }
+        let env = if env_cube == 1 { 1 } else if env_flat == 1 { 2 } else { 0 }
+        let has_bump = material_map{ &dev, t = m.bumpmap, unit = 4, cube = false }
+        dev.gl.uniform4i{ location = dev.scene.maps, v0 = has_diffuse, v1 = has_lightmap, v2 = env, v3 = has_bump }
+        dev.gl.uniform4i{ location = dev.scene.mode, v0 = @as(i32, m.blend), v1 = if m.lit { 1 } else { 0 }, v2 = if m.fog { 1 } else { 0 }, v3 = 0 }
+        dev.gl.uniform4f{ location = dev.scene.color, v0 = m.color.r, v1 = m.color.g, v2 = m.color.b, v3 = m.color.a }
+        dev.gl.uniform4f{ location = dev.scene.selfillum, v0 = m.selfillum.x, v1 = m.selfillum.y, v2 = m.selfillum.z, v3 = m.env_amount }
+        dev.gl.uniform4f{ location = dev.scene.uv, v0 = m.uv_scale.x, v1 = m.uv_scale.y, v2 = m.uv_offset.x, v3 = m.uv_offset.y }
+        dev.gl.uniform1i{ location = dev.scene.uv_cell, v0 = if m.uv_cell { 1 } else { 0 } }
+        if m.lit and has_lightmap == 0 {
+            set_lights{ &dev, frame, at = math::mat4::transform_point{ m = draw.transform, p = draw.center }, reach = draw.radius }
+        } else {
+            dev.gl.uniform1i{ location = dev.scene.light_count, v0 = 0 }
+        }
+
+        let first = if draw.first < mesh.index_count { draw.first } else { mesh.index_count }
+        let count = if draw.count == 0 or first + draw.count > mesh.index_count { mesh.index_count - first } else { draw.count }
+        if count == 0 { return }
+        dev.gl.draw_elements{ mode = mesh.mode, count = @as(i32, count), kind = gl::UNSIGNED_SHORT, offset = @as(usize, first) * 2 }
+        dev.stats.draws = dev.stats.draws + 1
+        if mesh.mode == gl::TRIANGLES { dev.stats.triangles = dev.stats.triangles + count / 3 }
+    }
+
+    // The frame's lights that reach a sphere at `at`, strongest first, at most MAX_LIGHTS.
+    fn set_lights { mut dev: Device, frame: *render::Frame, at: math::Vec3, reach: f32 } {
+        let mut chosen: [8]u32
+        let mut score: [8]f32
+        let mut n: usize = 0
+        let mut l: u32 = 0
+        while l < frame.light_count {
+            let light = frame.lights[l]
+            let dist = math::vec3::distance{ a = light.position, b = at }
+            let range = light.radius + reach
+            if dist < range {
+                let s = (1.0 - dist / range) * (light.color.x + light.color.y + light.color.z)
+                // Insert by score, dropping the weakest when full.
+                let mut k = if n < 8 { n } else { 8 }
+                while k > 0 and score[k - 1] < s {
+                    if k < 8 {
+                        score[k] = score[k - 1]
+                        chosen[k] = chosen[k - 1]
+                    }
+                    k = k - 1
+                }
+                if k < 8 {
+                    score[k] = s
+                    chosen[k] = l
+                    if n < 8 { n = n + 1 }
+                }
+            }
+            l = l + 1
+        }
+        let mut pos: [32]f32
+        let mut color: [32]f32
+        let mut i: usize = 0
+        while i < n {
+            let light = frame.lights[chosen[i]]
+            pos[i * 4] = light.position.x
+            pos[i * 4 + 1] = light.position.y
+            pos[i * 4 + 2] = light.position.z
+            pos[i * 4 + 3] = if light.radius > 0.0001 { light.radius } else { 0.0001 }
+            color[i * 4] = light.color.x
+            color[i * 4 + 1] = light.color.y
+            color[i * 4 + 2] = light.color.z
+            i = i + 1
+        }
+        dev.gl.uniform1i{ location = dev.scene.light_count, v0 = @as(i32, n) }
+        if n > 0 {
+            dev.gl.uniform4fv{ location = dev.scene.light_pos, count = @as(i32, n), value = &pos[0] }
+            dev.gl.uniform4fv{ location = dev.scene.light_color, count = @as(i32, n), value = &color[0] }
+        }
+    }
+
+    // Each shadow: its draw's mesh through the planar projection from its light, darkening each
+    // pixel at most once (the stencil counts).
+    fn draw_shadows { mut dev: Device, frame: *render::Frame, index: u32 } -> ! {
+        let mut any = false
+        let mut s: u32 = 0
+        while s < frame.shadow_count {
+            let sh = frame.shadows[s]
+            s = s + 1
+            if sh.draw >= frame.draw_count { continue }
+            let draw = frame.draws[sh.draw]
+            if draw.view != index { continue }
+            if not any {
+                any = true
+                use_program{ &dev, program = dev.scene.id }
+                set_blend{ &dev, blend = render::Blend::alpha }
+                set_depth{ &dev, test = true, write = false }
+                set_cull{ &dev, on = false }
+                set_offset{ &dev, on = true }
+                dev.gl.polygon_offset{ factor = -1.0, units = -4.0 }
+                set_stencil{ &dev, on = true }
+                dev.gl.stencil_mask{ mask = 0xFF }
+                dev.gl.stencil_func{ func = gl::EQUAL, ref = 0, mask = 0xFF }
+                dev.gl.stencil_op{ fail = gl::KEEP, zfail = gl::KEEP, zpass = gl::INCR }
+            }
+            let post = shadow_matrix{ plane = sh.plane, light = sh.light, directional = sh.directional }
+            dev.gl.uniform_matrix4fv{ location = dev.scene.post, count = 1, transpose = gl::FALSE, value = &post.m[0] }
+            let mut d = draw
+            d.material.blend = render::Blend::alpha
+            d.material.color = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = sh.strength }
+            d.material.decal = false
+            d.material.two_sided = true
+            draw_shadow_mesh{ &dev, frame, draw = d }
+        }
+        if any {
+            set_identity_post{ &dev }
+            set_stencil{ &dev, on = false }
+            set_offset{ &dev, on = false }
+        }
+    }
+
+    // draw_mesh's work for a shadow: the same vertices, the shadow flag, no textures.
+    fn draw_shadow_mesh { mut dev: Device, frame: *render::Frame, draw: render::Draw } {
+        let mi = mesh_slot{ dev, m = draw.mesh }
+        if mi == NO_SLOT { return }
+        let mesh = dev.meshes[mi]
+        bind_vao{ &dev, vao = mesh.vao }
+        dev.gl.uniform_matrix4fv{ location = dev.scene.model, count = 1, transpose = gl::FALSE, value = &draw.transform.m[0] }
+        let bones = if draw.bone_count > MAX_BONES { MAX_BONES } else { draw.bone_count }
+        let palette_ok = bones > 0 and draw.bones + bones <= frame.bone_count
+        dev.gl.uniform1i{ location = dev.scene.bone_count, v0 = if palette_ok { @as(i32, bones) } else { 0 } }
+        if palette_ok {
+            dev.gl.uniform_matrix4fv{ location = dev.scene.bones, count = @as(i32, bones), transpose = gl::FALSE, value = &frame.bones[draw.bones].m[0] }
+        }
+        dev.gl.uniform4f{ location = dev.scene.dangle, v0 = draw.dangle.x, v1 = draw.dangle.y, v2 = draw.dangle.z, v3 = 0.0 }
+        dev.gl.uniform4i{ location = dev.scene.mode, v0 = 2, v1 = 0, v2 = 0, v3 = 1 }
+        dev.gl.uniform4f{ location = dev.scene.color, v0 = 0.0, v1 = 0.0, v2 = 0.0, v3 = draw.material.color.a }
+        let first = if draw.first < mesh.index_count { draw.first } else { mesh.index_count }
+        let count = if draw.count == 0 or first + draw.count > mesh.index_count { mesh.index_count - first } else { draw.count }
+        if count == 0 or mesh.mode != gl::TRIANGLES { return }
+        dev.gl.draw_elements{ mode = mesh.mode, count = @as(i32, count), kind = gl::UNSIGNED_SHORT, offset = @as(usize, first) * 2 }
+        dev.stats.draws = dev.stats.draws + 1
+    }
+
+    // The projection of points onto `plane` along the light: dot(P, L) I - L P^T, with L the
+    // light's position (w 1) or, for a directional light, the way back toward it (w 0).
+    fn shadow_matrix { plane: math::Plane, light: math::Vec3, directional: bool } -> math::Mat4 {
+        let p: [4]f32 = [plane.n.x, plane.n.y, plane.n.z, plane.d]
+        let l: [4]f32 = if directional { [-light.x, -light.y, -light.z, 0.0] } else { [light.x, light.y, light.z, 1.0] }
+        let d = p[0] * l[0] + p[1] * l[1] + p[2] * l[2] + p[3] * l[3]
+        let mut m: math::Mat4
+        let mut col: usize = 0
+        while col < 4 {
+            let mut row: usize = 0
+            while row < 4 {
+                let diag: f32 = if row == col { d } else { 0.0 }
+                m.m[col * 4 + row] = diag - l[row] * p[col]
+                row = row + 1
+            }
+            col = col + 1
+        }
+        return m
+    }
+
+    fn draw_emitter { mut dev: Device, frame: *render::Frame, em: render::Emitter } -> ! {
+        if em.first + em.count > frame.particle_count { return }
+        use_program{ &dev, program = dev.particle.id }
+        set_blend{ &dev, blend = em.blend }
+        let blended = em.blend == render::Blend::alpha or em.blend == render::Blend::additive
+        set_depth{ &dev, test = true, write = not blended }
+        set_cull{ &dev, on = false }
+        set_offset{ &dev, on = false }
+        set_stencil{ &dev, on = false }
+        bind_vao{ &dev, vao = dev.particle_vao }
+        let textured = material_map{ &dev, t = em.texture, unit = 0, cube = false }
+        dev.gl.uniform_matrix4fv{ location = dev.particle.model, count = 1, transpose = gl::FALSE, value = &em.transform.m[0] }
+        let facing: i32 = match em.facing {
+            camera => { 0 }
+            axis => { 1 }
+            plane => { 2 }
+            velocity => { 3 }
+        }
+        dev.gl.uniform4i{ location = dev.particle.emit, v0 = facing, v1 = @as(i32, em.grid_x), v2 = @as(i32, em.grid_y), v3 = 0 }
+        dev.gl.uniform4f{ location = dev.particle.axis, v0 = em.axis.x, v1 = em.axis.y, v2 = em.axis.z, v3 = 0.0 }
+        dev.gl.uniform4i{ location = dev.particle.mode, v0 = @as(i32, em.blend), v1 = if em.fog { 1 } else { 0 }, v2 = textured, v3 = 0 }
+        let per: usize = 14
+        let room = dev.scratch.len / per
+        let mut done: u32 = 0
+        while done < em.count {
+            let left = @as(usize, em.count - done)
+            let n = if left < room { left } else { room }
+            let mut i: usize = 0
+            while i < n {
+                let p = frame.particles[em.first + done + @as(u32, i)]
+                let f = dev.scratch[i * per..(i + 1) * per]
+                f[0] = p.position.x
+                f[1] = p.position.y
+                f[2] = p.position.z
+                f[3] = p.size.x
+                f[4] = p.size.y
+                f[5] = p.angle
+                f[6] = p.color.r
+                f[7] = p.color.g
+                f[8] = p.color.b
+                f[9] = p.color.a
+                f[10] = @as(f32, p.frame)
+                f[11] = p.dir.x
+                f[12] = p.dir.y
+                f[13] = p.dir.z
+                i = i + 1
+            }
+            stream{ &dev, floats = n * per }
+            dev.gl.draw_arrays_instanced{ mode = gl::TRIANGLE_STRIP, first = 0, count = 4, instance_count = @as(i32, n) }
+            dev.stats.draws = dev.stats.draws + 1
+            dev.stats.particles = dev.stats.particles + @as(u32, n)
+            done = done + @as(u32, n)
+        }
+    }
+
+    // Sends scratch[..floats] to the stream buffer, for the next streamed draw.
+    fn stream { mut dev: Device, floats: usize } {
+        dev.gl.bind_buffer{ target = gl::ARRAY_BUFFER, buffer = dev.stream }
+        // A fresh store each time, so the driver needn't wait for the draw before.
+        dev.gl.buffer_data{ target = gl::ARRAY_BUFFER, size = @as(i64, STREAM_FLOATS * 4), data = null, usage = gl::STREAM_DRAW }
+        dev.gl.buffer_sub_data{ target = gl::ARRAY_BUFFER, offset = 0, size = @as(i64, floats * 4), data = @cast(*u8, dev.scratch.ptr) }
+    }
+
+    // Debug triangles, then lines; depth-tested ones first.
+    fn draw_debug { mut dev: Device, frame: *render::Frame, index: u32 } -> ! {
+        if frame.tri_count == 0 and frame.line_count == 0 { return }
+        use_program{ &dev, program = dev.debug.id }
+        bind_vao{ &dev, vao = dev.debug_vao }
+        set_blend{ &dev, blend = render::Blend::alpha }
+        set_cull{ &dev, on = false }
+        set_offset{ &dev, on = false }
+        set_stencil{ &dev, on = false }
+        let mut pass: u32 = 0
+        while pass < 2 {
+            let depth = pass == 0
+            set_depth{ &dev, test = depth, write = false }
+            // Triangles, three vertices of 7 floats each.
+            let mut n: usize = 0
+            let mut t: u32 = 0
+            while t < frame.tri_count {
+                let tri = frame.tris[t]
+                if tri.view == index and tri.depth_test == depth {
+                    if (n + 3) * 7 > dev.scratch.len { flush_debug{ &dev, mode = gl::TRIANGLES, vertices = n }; n = 0 }
+                    put_debug_vertex{ &dev, at = n, p = tri.a, c = tri.color }
+                    put_debug_vertex{ &dev, at = n + 1, p = tri.b, c = tri.color }
+                    put_debug_vertex{ &dev, at = n + 2, p = tri.c, c = tri.color }
+                    n = n + 3
+                }
+                t = t + 1
+            }
+            flush_debug{ &dev, mode = gl::TRIANGLES, vertices = n }
+            n = 0
+            let mut l: u32 = 0
+            while l < frame.line_count {
+                let line = frame.lines[l]
+                if line.view == index and line.depth_test == depth {
+                    if (n + 2) * 7 > dev.scratch.len { flush_debug{ &dev, mode = gl::LINES, vertices = n }; n = 0 }
+                    put_debug_vertex{ &dev, at = n, p = line.a, c = line.color }
+                    put_debug_vertex{ &dev, at = n + 1, p = line.b, c = line.color }
+                    n = n + 2
+                }
+                l = l + 1
+            }
+            flush_debug{ &dev, mode = gl::LINES, vertices = n }
+            pass = pass + 1
+        }
+    }
+
+    fn put_debug_vertex { mut dev: Device, at: usize, p: math::Vec3, c: render::Color } {
+        let f = dev.scratch[at * 7..at * 7 + 7]
+        f[0] = p.x
+        f[1] = p.y
+        f[2] = p.z
+        f[3] = c.r
+        f[4] = c.g
+        f[5] = c.b
+        f[6] = c.a
+    }
+
+    fn flush_debug { mut dev: Device, mode: u32, vertices: usize } {
+        if vertices == 0 { return }
+        stream{ &dev, floats = vertices * 7 }
+        dev.gl.draw_arrays{ mode, first = 0, count = @as(i32, vertices) }
+        dev.stats.draws = dev.stats.draws + 1
+    }
+
+    // ---- 2D
+
+    fn draw_ui { mut dev: Device, frame: *render::Frame, step: render::Step } -> ! {
+        if step.count == 0 { return }
+        let b = try bind_target{ &dev, target = step.target }
+        dev.gl.viewport{ x = 0, y = 0, width = b.width, height = b.height }
+        let ui_w = if step.width > 0.0 { step.width } else { @as(f32, b.width) }
+        let ui_h = if step.height > 0.0 { step.height } else { @as(f32, b.height) }
+        use_program{ &dev, program = dev.ui.id }
+        dev.gl.uniform2f{ location = dev.ui.screen, v0 = ui_w, v1 = ui_h }
+        bind_vao{ &dev, vao = dev.ui_vao }
+        set_depth{ &dev, test = false, write = false }
+        set_cull{ &dev, on = false }
+        set_offset{ &dev, on = false }
+        set_stencil{ &dev, on = false }
+        let sx = @as(f32, b.width) / ui_w
+        let sy = @as(f32, b.height) / ui_h
+        let per: usize = 13
+        let room = dev.scratch.len / per
+        let end = step.first + step.count
+        let mut q = step.first
+        while q < end {
+            // A run of quads that share an image, a blend and a clip goes in one draw.
+            let head = frame.quads[q]
+            let mut n: usize = 0
+            while q < end and n < room and same_batch{ a = head, b = frame.quads[q] } {
+                let quad = frame.quads[q]
+                let f = dev.scratch[n * per..(n + 1) * per]
+                f[0] = quad.rect.x
+                f[1] = quad.rect.y
+                f[2] = quad.rect.w
+                f[3] = quad.rect.h
+                f[4] = quad.uv.u0
+                f[5] = quad.uv.v0
+                f[6] = quad.uv.u1
+                f[7] = quad.uv.v1
+                f[8] = quad.color.r
+                f[9] = quad.color.g
+                f[10] = quad.color.b
+                f[11] = quad.color.a
+                f[12] = quad.angle
+                n = n + 1
+                q = q + 1
+            }
+            let blend = if head.blend == render::Blend::additive { render::Blend::additive } else { render::Blend::alpha }
+            set_blend{ &dev, blend }
+            let image: i32 = match head.image {
+                none => {
+                    _ = material_map{ &dev, t = null, unit = 0, cube = false }
+                    _ = material_map{ &dev, t = null, unit = 1, cube = false }
+                    _ = material_map{ &dev, t = null, unit = 2, cube = false }
+                    0
+                }
+                texture{ t } => {
+                    _ = material_map{ &dev, t = null, unit = 1, cube = false }
+                    _ = material_map{ &dev, t = null, unit = 2, cube = false }
+                    material_map{ &dev, t, unit = 0, cube = false }
+                }
+                yuv{ y, u, v } => {
+                    let ok = material_map{ &dev, t = y, unit = 0, cube = false } + material_map{ &dev, t = u, unit = 1, cube = false } + material_map{ &dev, t = v, unit = 2, cube = false }
+                    if ok == 3 { 2 } else { 0 }
+                }
+            }
+            dev.gl.uniform1i{ location = dev.ui.image, v0 = image }
+            if head.clip != null {
+                let r = gl_rect{ r = head.clip, height = b.height, sx, sy }
+                dev.gl.enable{ cap = gl::SCISSOR_TEST }
+                dev.gl.scissor{ x = r.x, y = r.y, width = r.w, height = r.h }
+            } else {
+                dev.gl.disable{ cap = gl::SCISSOR_TEST }
+            }
+            stream{ &dev, floats = n * per }
+            dev.gl.draw_arrays_instanced{ mode = gl::TRIANGLE_STRIP, first = 0, count = 4, instance_count = @as(i32, n) }
+            dev.stats.draws = dev.stats.draws + 1
+            dev.stats.quads = dev.stats.quads + @as(u32, n)
+        }
+        dev.gl.disable{ cap = gl::SCISSOR_TEST }
+    }
+
+    fn same_batch { a: render::Quad, b: render::Quad } -> bool {
+        let blend_a = a.blend == render::Blend::additive
+        let blend_b = b.blend == render::Blend::additive
+        if blend_a != blend_b { return false }
+        if not same_image{ a = a.image, b = b.image } { return false }
+        if a.clip == null { return b.clip == null }
+        if b.clip == null { return false }
+        let ca = a.clip
+        let cb = b.clip
+        return ca.x == cb.x and ca.y == cb.y and ca.w == cb.w and ca.h == cb.h
+    }
+
+    fn same_image { a: render::Image, b: render::Image } -> bool {
+        return match a {
+            none => { b is none }
+            texture{ t } => { if b is texture{ t = other } { t.id == other.id } else { false } }
+            yuv{ y, u, v } => { if b is yuv{ y = y2, u = u2, v = v2 } { y.id == y2.id and u.id == u2.id and v.id == v2.id } else { false } }
+        }
+    }
+
+    fn upload_frame_block { mut dev: Device, v: render::View, view_proj: math::Mat4, time: f32 } {
+        let mut f: [48]f32
+        let mut i: usize = 0
+        while i < 16 {
+            f[i] = view_proj.m[i]
+            f[16 + i] = v.camera.view.m[i]
+            i = i + 1
+        }
+        f[32] = v.camera.eye.x
+        f[33] = v.camera.eye.y
+        f[34] = v.camera.eye.z
+        f[36] = v.ambient.x
+        f[37] = v.ambient.y
+        f[38] = v.ambient.z
+        f[40] = v.fog.color.x
+        f[41] = v.fog.color.y
+        f[42] = v.fog.color.z
+        f[44] = v.fog.near
+        f[45] = v.fog.far
+        f[46] = if v.fog.on { 1.0 } else { 0.0 }
+        f[47] = time
+        dev.gl.bind_buffer{ target = gl::UNIFORM_BUFFER, buffer = dev.frame_ubo }
+        dev.gl.buffer_sub_data{ target = gl::UNIFORM_BUFFER, offset = 0, size = 192, data = @cast(*u8, &f) }
+        dev.gl.bind_buffer_base{ target = gl::UNIFORM_BUFFER, index = 0, buffer = dev.frame_ubo }
+    }
+}

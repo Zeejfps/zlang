@@ -1,0 +1,506 @@
+// binkcheck: decodes every Bink movie of the install, video and audio, and reports failures and
+// speed; with --ref, compares every frame and sample with FFmpeg's decode.
+//
+//   kotor/tools/ctxc run kotor/tools/binkcheck -- [--game DIR] [--ref] [--keep] [--frames N] [--fuzz SEED] [MOVIE...]
+//
+// MOVIEs are names in GAME/movies (`01a`, `legal.bik`) or paths; without any, every *.bik there.
+// GAME defaults to F:/Steam/steamapps/common/swkotor. Time per frame is bink::next's: reading the
+// frame from the file and decoding its video and audio.
+//
+// --ref runs `ffmpeg` (a dev-only reference decoder, which must be on PATH) to decode each movie
+// to kotor/out/bink/ref/NAME.yuv (raw yuv420p) and NAME.s16 (16-bit PCM), then compares: frames
+// that are byte for byte the same, the PSNR of those that aren't, and how many samples differ
+// and by how much (FFmpeg decodes audio as float and rounds half to even, so 1 is expected now
+// and then). The files are deleted after each movie unless --keep. FFmpeg keeps the whole last
+// audio block where the file says to cut it short, so samples are compared up to our count.
+//
+// --fuzz SEED decodes, next to each movie, a corrupted copy of every packet (bits flipped, cut
+// short, bytes overwritten; a different damage per packet from the seed) with a second pair of
+// decoders that never see a clean packet, and counts the errors. Corrupt data must give errors,
+// never a panic or a crash: getting to the summary is the test.
+//
+// Exit status 1 if a movie fails to decode, or with --ref if a frame isn't exact or a sample is
+// off by more than 1.
+
+struct Options { game: []u8, reference: bool, keep: bool, frames: u32, fuzz: bool, seed: u64, first_movie: usize }
+
+// What checking one movie found.
+struct Report {
+    frames: u32,
+    ticks: u64,                 // performance-counter ticks in bink::next
+    max_ticks: u64,             // the slowest frame's
+    samples: u64,               // i16 values of audio
+    compared: u32,              // frames compared with the reference
+    exact: u32,
+    min_psnr: f64,              // over frames that differ
+    sum_psnr: f64,
+    audio_compared: u64,
+    audio_differ: u64,
+    audio_max: i32,
+    fuzzed: u32,                // corrupted packets decoded (--fuzz), and how many gave an error
+    fuzz_errors: u32,
+}
+
+extern fn log10 { x: f64 } -> f64
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut sdl: sdl::Sdl, args: Args } -> i32 {
+    let o = parse_args{ &io, args } ifnull { return 2 }
+    let pages = mem::pages{ &mem, size = 268435456 } ifnull {
+        io::eprintln{ &io, s = "binkcheck: out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf = pages }
+    let failed = run{ &io, &fs, &proc, &sdl, &heap, o, args } iferr err{ error } {
+        _ = @fmt(&io, "binkcheck: {}\n", error)
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return if failed { 1 } else { 0 }
+}
+
+fn run { mut io: Io, mut fs: Fs, mut proc: Proc, mut sdl: sdl::Sdl, mut heap: arena::Arena, o: Options, args: Args } -> !bool {
+    let mut dll_buf: [512]u8
+    let mut dll = Text{ buf = dll_buf[..], len = 0 }
+    add{ t = &dll, s = o.game }
+    add{ t = &dll, s = "/binkw32.dll" }
+    let tables = try bink_tables::load{ &fs, realloc = arena::alloc, &heap, path = text{ t = dll } }
+
+    // The movies: those named, or every *.bik in GAME/movies.
+    let mut dir_buf: [512]u8
+    let mut dir = Text{ buf = dir_buf[..], len = 0 }
+    add{ t = &dir, s = o.game }
+    add{ t = &dir, s = "/movies" }
+    let names = if o.first_movie < args.len { args[o.first_movie..] } else {
+        try fs::list{ &fs, &heap, realloc = arena::alloc, path = text{ t = dir } }
+    }
+    if o.reference {
+        fs::make_dir{ &fs, path = "kotor/out/bink" } iferr { }
+        fs::make_dir{ &fs, path = "kotor/out/bink/ref" } iferr { }
+    }
+    let freq = sdl::counter_frequency{ &sdl }
+    let mark = heap.used
+    let mut failures: u32 = 0
+    let mut checked: u32 = 0
+    let mut total = Report{ frames = 0, ticks = 0, max_ticks = 0, samples = 0, compared = 0, exact = 0, min_psnr = 1000.0, sum_psnr = 0.0, audio_compared = 0, audio_differ = 0, audio_max = 0, fuzzed = 0, fuzz_errors = 0 }
+    let mut worst_480: u64 = 0                   // the slowest frame of a 640x480 movie
+    let mut i: usize = 0
+    while i < names.len {
+        let name = names[i]
+        i = i + 1
+        if o.first_movie >= args.len and not ends_with_bik{ s = name } { continue }
+        heap.used = mark
+        let mut path_buf: [512]u8
+        let mut path = Text{ buf = path_buf[..], len = 0 }
+        if is_path{ s = name } {
+            add{ t = &path, s = name }
+        } else {
+            add{ t = &path, s = text{ t = dir } }
+            add{ t = &path, s = "/" }
+            add{ t = &path, s = name }
+            if not ends_with_bik{ s = name } { add{ t = &path, s = ".bik" } }
+        }
+        let stem = movie_name{ movie = name }
+        checked = checked + 1
+        let mut r = Report{ frames = 0, ticks = 0, max_ticks = 0, samples = 0, compared = 0, exact = 0, min_psnr = 1000.0, sum_psnr = 0.0, audio_compared = 0, audio_differ = 0, audio_max = 0, fuzzed = 0, fuzz_errors = 0 }
+        let mut size = [0, 0]
+        let mut rng = o.seed + i
+        let ok = check{ &io, &fs, &proc, &sdl, &heap, tables = &tables, path = text{ t = path }, stem, o, &r, &size, &rng } iferr err{ error } {
+            _ = @fmt(&io, "{}: FAIL after {} frames: {}\n", stem, r.frames, error)
+            failures = failures + 1
+            continue
+        }
+        if not ok { failures = failures + 1 }
+        let ms = ticks_ms{ t = r.ticks, freq } / @as(f64, if r.frames > 0 { r.frames } else { 1 })
+        let max_ms = ticks_ms{ t = r.max_ticks, freq }
+        _ = @fmt(&io, "{}: {}x{}, {} frames, {} ms/frame (max {}), {} samples", stem, size[0], size[1], r.frames,
+            fixed{ v = ms, _ }, fixed{ v = max_ms, _ }, r.samples)
+        if o.reference {
+            _ = @fmt(&io, "; video {}/{} exact", r.exact, r.compared)
+            if r.exact < r.compared {
+                _ = @fmt(&io, " (PSNR min {} mean {})", fixed{ v = r.min_psnr, _ }, fixed{ v = r.sum_psnr / @as(f64, r.compared - r.exact), _ })
+            }
+            _ = @fmt(&io, "; audio {} compared, {} differ, max {}", r.audio_compared, r.audio_differ, r.audio_max)
+        }
+        if o.fuzz { _ = @fmt(&io, "; fuzz: {} corrupted packets, {} errors", r.fuzzed, r.fuzz_errors) }
+        if not ok { _ = @fmt(&io, "  FAIL") }
+        _ = @fmt(&io, "\n")
+        io::flush{ &io }
+        total.frames = total.frames + r.frames
+        total.ticks = total.ticks + r.ticks
+        if r.max_ticks > total.max_ticks { total.max_ticks = r.max_ticks }
+        if size[0] == 640 and size[1] == 480 and r.max_ticks > worst_480 { worst_480 = r.max_ticks }
+        total.samples = total.samples + r.samples
+        total.compared = total.compared + r.compared
+        total.exact = total.exact + r.exact
+        if r.min_psnr < total.min_psnr { total.min_psnr = r.min_psnr }
+        total.audio_compared = total.audio_compared + r.audio_compared
+        total.audio_differ = total.audio_differ + r.audio_differ
+        if r.audio_max > total.audio_max { total.audio_max = r.audio_max }
+        total.fuzzed = total.fuzzed + r.fuzzed
+        total.fuzz_errors = total.fuzz_errors + r.fuzz_errors
+    }
+    let mean = ticks_ms{ t = total.ticks, freq } / @as(f64, if total.frames > 0 { total.frames } else { 1 })
+    _ = @fmt(&io, "\n{} movies, {} failed; {} frames, {} samples; {} s decoding, {} ms/frame on average, slowest frame {} ms (640x480: {} ms)\n",
+        checked, failures, total.frames, total.samples, fixed{ v = ticks_ms{ t = total.ticks, freq } / 1000.0, _ },
+        fixed{ v = mean, _ }, fixed{ v = ticks_ms{ t = total.max_ticks, freq }, _ }, fixed{ v = ticks_ms{ t = worst_480, freq }, _ })
+    if o.reference {
+        _ = @fmt(&io, "reference: {}/{} frames exact", total.exact, total.compared)
+        if total.exact < total.compared { _ = @fmt(&io, " (min PSNR {})", fixed{ v = total.min_psnr, _ }) }
+        _ = @fmt(&io, "; audio: {} samples compared, {} differ, max difference {}\n", total.audio_compared, total.audio_differ, total.audio_max)
+    }
+    if o.fuzz {
+        _ = @fmt(&io, "fuzz: {} corrupted packets decoded, {} gave errors, no panics\n", total.fuzzed, total.fuzz_errors)
+    }
+    return failures > 0
+}
+
+// Decodes one movie, timing each frame, and with --ref compares it with FFmpeg's decode. False
+// if the comparison failed.
+fn check { mut io: Io, mut fs: Fs, mut proc: Proc, mut sdl: sdl::Sdl, mut heap: arena::Arena, tables: *bink_tables::Tables,
+           path: []u8, stem: []u8, o: Options, mut r: Report, mut size: [2]u32, mut rng: u64 } -> !bool {
+    let mut movie = try bink::open{ &fs, realloc = arena::alloc, &heap, path, tables }
+    defer bink::close{ &fs, realloc = arena::alloc, &heap, m = &movie }
+    size[0] = movie.header.width
+    size[1] = movie.header.height
+
+    let mut yuv_buf: [512]u8
+    let mut yuv_path = Text{ buf = yuv_buf[..], len = 0 }
+    add{ t = &yuv_path, s = "kotor/out/bink/ref/" }
+    add{ t = &yuv_path, s = stem }
+    add{ t = &yuv_path, s = ".yuv" }
+    let mut pcm_buf: [512]u8
+    let mut pcm_path = Text{ buf = pcm_buf[..], len = 0 }
+    add{ t = &pcm_path, s = "kotor/out/bink/ref/" }
+    add{ t = &pcm_path, s = stem }
+    add{ t = &pcm_path, s = ".s16" }
+    let has_audio = movie.audio_rate != 0
+    let mut yuv = Stream{ file = fs::File{ id = 0 }, open = false }
+    let mut pcm = Stream{ file = fs::File{ id = 0 }, open = false }
+    if o.reference {
+        try reference{ &proc, path, yuv = text{ t = yuv_path }, pcm = text{ t = pcm_path }, audio = has_audio }
+        yuv = Stream{ file = try fs::open{ &fs, path = text{ t = yuv_path }, mode = fs::Mode::read }, open = true }
+        if has_audio {
+            pcm = Stream{ file = try fs::open{ &fs, path = text{ t = pcm_path }, mode = fs::Mode::read }, open = true }
+        }
+    }
+    defer close_ref{ &fs, s = &yuv, path = text{ t = yuv_path }, keep = o.keep }
+    defer close_ref{ &fs, s = &pcm, path = text{ t = pcm_path }, keep = o.keep }
+
+    let w: usize = movie.header.width
+    let h: usize = movie.header.height
+    let frame_size = w * h + 2 * ((w + 1) / 2) * ((h + 1) / 2)
+    let ref_frame = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = frame_size }
+    let ref_pcm = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = 2 * movie.pcm.len + 8 }
+    let mut yuv_done = false
+    let mut pcm_done = false
+    // --fuzz: decoders fed only corrupted packets, and room for a packet's copy.
+    let mut bad_video = try bink_video::new{ realloc = arena::alloc, &heap, width = movie.header.width, height = movie.header.height, tables }
+    let mut bad_audio: bink_audio::Decoder
+    if o.fuzz and has_audio {
+        let track = movie.header.tracks[0]
+        bad_audio = try bink_audio::new{ realloc = arena::alloc, &heap, rate = track.rate, flags = track.flags }
+    }
+    let scratch = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = movie.buffer.len }
+    let bad_pcm = try alloc::resize(i16, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(i16){}, count = movie.pcm.len }
+    while o.frames == 0 or r.frames < o.frames {
+        let t0 = sdl::counter{ &sdl }
+        let bytes = try bink::read_frame{ &fs, m = &movie } ifnull { break }
+        let t1 = sdl::counter{ &sdl }
+        if o.fuzz {
+            let p = try bink::split{ header = movie.header, bytes, frame = movie.frame }
+            let v = corrupt{ &rng, src = p.video, into = scratch }
+            r.fuzzed = r.fuzzed + 1
+            bink_video::decode{ d = &bad_video, packet = v } iferr { r.fuzz_errors = r.fuzz_errors + 1 }
+            if has_audio and p.audio.len > 0 {
+                let a = corrupt{ &rng, src = p.audio, into = scratch }
+                r.fuzzed = r.fuzzed + 1
+                _ = bink_audio::decode_packet{ d = &bad_audio, packet = a, out = bad_pcm } iferr {
+                    r.fuzz_errors = r.fuzz_errors + 1
+                    0
+                }
+            }
+        }
+        let t2 = sdl::counter{ &sdl }
+        let frame = try bink::decode_frame{ m = &movie, bytes }
+        let dt = (t1 - t0) + (sdl::counter{ &sdl } - t2)          // the fuzzing isn't timed
+        r.ticks = r.ticks + dt
+        if dt > r.max_ticks { r.max_ticks = dt }
+        r.frames = r.frames + 1
+        r.samples = r.samples + frame.audio.len
+        if yuv.open and not yuv_done {
+            let got = try read_full{ &fs, file = yuv.file, into = ref_frame }
+            if got < frame_size {
+                yuv_done = true
+            } else {
+                let mut sse: u64 = 0
+                let mut at: usize = 0
+                sse = sse + plane_sse{ p = frame.y, reference = ref_frame, &at }
+                sse = sse + plane_sse{ p = frame.u, reference = ref_frame, &at }
+                sse = sse + plane_sse{ p = frame.v, reference = ref_frame, &at }
+                r.compared = r.compared + 1
+                if sse == 0 {
+                    r.exact = r.exact + 1
+                } else {
+                    let mse = @as(f64, sse) / @as(f64, frame_size)
+                    let psnr = 10.0 * log10{ x = 65025.0 / mse }
+                    if psnr < r.min_psnr { r.min_psnr = psnr }
+                    r.sum_psnr = r.sum_psnr + psnr
+                    if r.compared - r.exact <= 3 {
+                        _ = @fmt(&io, "  frame {} differs: PSNR {}\n", frame.number, fixed{ v = psnr, _ })
+                    }
+                }
+            }
+        }
+        if pcm.open and not pcm_done and frame.audio.len > 0 {
+            let want = 2 * frame.audio.len
+            let got = try read_full{ &fs, file = pcm.file, into = ref_pcm[..want] }
+            let n = got / 2
+            if n < frame.audio.len { pcm_done = true }
+            let mut k: usize = 0
+            while k < n {
+                let lo: u16 = ref_pcm[2 * k]
+                let hi: u16 = ref_pcm[2 * k + 1]
+                let theirs: i32 = @trunc(i16, lo | (hi << 8))
+                let ours: i32 = frame.audio[k]
+                let d = if ours > theirs { ours - theirs } else { theirs - ours }
+                if d != 0 {
+                    r.audio_differ = r.audio_differ + 1
+                    if d > r.audio_max { r.audio_max = d }
+                }
+                k = k + 1
+            }
+            r.audio_compared = r.audio_compared + n
+        }
+    }
+    if not o.reference { return true }
+    if r.compared < r.frames and o.frames == 0 { _ = @fmt(&io, "  the reference has only {} frames\n", r.compared) }
+    return r.exact == r.compared and r.compared > 0 and r.audio_max <= 1
+}
+
+// A copy of `src` in `into`, damaged one of four ways: 1 to 8 bits flipped; cut short; a span of
+// up to 64 bytes overwritten with random ones; or bits flipped and cut short.
+fn corrupt { mut rng: u64, src: []u8, into: []mut u8 } -> []u8 {
+    let n = src.len
+    slice::copy(u8){ dst = into[..n], src }
+    if n == 0 { return into[..0] }
+    let mode = random{ s = &rng } % 4
+    let mut len = n
+    if mode == 0 or mode == 3 {
+        let flips = 1 + random{ s = &rng } % 8
+        let mut k: u64 = 0
+        while k < flips {
+            let bit: usize = @trunc(usize, random{ s = &rng } % (8 * n))
+            into[bit / 8] = into[bit / 8] ^ @trunc(u8, 1 << (bit % 8))
+            k = k + 1
+        }
+    }
+    if mode == 1 or mode == 3 { len = @trunc(usize, random{ s = &rng } % n) }
+    if mode == 2 {
+        let start: usize = @trunc(usize, random{ s = &rng } % n)
+        let mut count: usize = 1 + @trunc(usize, random{ s = &rng } % 64)
+        if count > n - start { count = n - start }
+        let mut k: usize = 0
+        while k < count {
+            into[start + k] = @trunc(u8, random{ s = &rng })
+            k = k + 1
+        }
+    }
+    return into[..len]
+}
+
+// xorshift64: the next of a sequence that never reaches 0.
+fn random { mut s: u64 } -> u64 {
+    if s == 0 { s = 0x9E3779B97F4A7C15 }
+    s = s ^ (s << 13)
+    s = s ^ (s >> 7)
+    s = s ^ (s << 17)
+    return s
+}
+
+// Runs FFmpeg to decode the movie to raw yuv420p frames and 16-bit PCM.
+fn reference { mut proc: Proc, path: []u8, yuv: []u8, pcm: []u8, audio: bool } -> ! {
+    let with_audio: [20][]u8 = [
+        "ffmpeg", "-v", "error", "-y", "-i", path,
+        "-map", "0:v", "-f", "rawvideo", "-pix_fmt", "yuv420p", yuv,
+        "-map", "0:a", "-f", "s16le", "-c:a", "pcm_s16le", pcm,
+    ]
+    let video_only: [13][]u8 = [
+        "ffmpeg", "-v", "error", "-y", "-i", path,
+        "-map", "0:v", "-f", "rawvideo", "-pix_fmt", "yuv420p", yuv,
+    ]
+    let code = if audio {
+        try proc::run{ &proc, argv = with_audio[..], env = slice::empty([]u8){} }
+    } else {
+        try proc::run{ &proc, argv = video_only[..], env = slice::empty([]u8){} }
+    }
+    if code != 0 { return ffmpeg_failed{ code } }
+}
+
+error ffmpeg_failed{ code: i32 }
+
+struct Stream { file: fs::File, open: bool }
+
+fn close_ref { mut fs: Fs, mut s: Stream, path: []u8, keep: bool } {
+    if not s.open { return }
+    fs::close{ &fs, file = s.file } iferr { }
+    s.open = false
+    if not keep { fs::remove{ &fs, path } iferr { } }
+}
+
+// Fills `into` as far as the file goes; returns how much.
+fn read_full { mut fs: Fs, file: fs::File, into: []mut u8 } -> !usize {
+    let mut done: usize = 0
+    while done < into.len {
+        let n = try fs::read{ &fs, file, into = into[done..] }
+        if n == 0 { break }
+        done = done + n
+    }
+    return done
+}
+
+// The squared differences between a plane and its part of a reference frame at `at`, which moves
+// past it.
+fn plane_sse { p: bink_video::Plane, reference: []u8, mut at: usize } -> u64 {
+    let w: usize = p.width
+    let h: usize = p.height
+    let mut sum: u64 = 0
+    let mut row: usize = 0
+    while row < h {
+        let ours = p.pixels[row * p.stride..row * p.stride + w]
+        let theirs = reference[at + row * w..at + row * w + w]
+        let mut i: usize = 0
+        while i < w {
+            let a: i32 = ours[i]
+            let b: i32 = theirs[i]
+            if a != b {
+                let d: u64 = @trunc(u64, (a - b) * (a - b))
+                sum = sum + d
+            }
+            i = i + 1
+        }
+        row = row + 1
+    }
+    at = at + w * h
+    return sum
+}
+
+fn ticks_ms { t: u64, freq: u64 } -> f64 {
+    return @as(f64, t) * 1000.0 / @as(f64, freq)
+}
+
+// ---- small things
+
+struct Text { buf: []mut u8, len: usize }
+
+fn add { mut t: Text, s: []u8 } {
+    slice::copy(u8){ dst = t.buf[t.len..t.len + s.len], src = s }
+    t.len = t.len + s.len
+}
+
+fn text { t: Text } -> []u8 {
+    return t.buf[..t.len]
+}
+
+fn is_path { s: []u8 } -> bool {
+    let mut i: usize = 0
+    while i < s.len {
+        if s[i] == '/' or s[i] == '\\' { return true }
+        i = i + 1
+    }
+    return false
+}
+
+fn ends_with_bik { s: []u8 } -> bool {
+    if s.len < 4 { return false }
+    let e = s[s.len - 4..]
+    return e[0] == '.' and ascii::to_lower{ c = e[1] } == 'b' and ascii::to_lower{ c = e[2] } == 'i' and ascii::to_lower{ c = e[3] } == 'k'
+}
+
+// The file name without directory or extension.
+fn movie_name { movie: []u8 } -> []u8 {
+    let mut start: usize = 0
+    let mut end = movie.len
+    let mut i: usize = 0
+    while i < movie.len {
+        if movie[i] == '/' or movie[i] == '\\' { start = i + 1 }
+        i = i + 1
+    }
+    i = movie.len
+    while i > start {
+        i = i - 1
+        if movie[i] == '.' {
+            end = i
+            break
+        }
+    }
+    return movie[start..end]
+}
+
+fn parse_args { mut io: Io, args: Args } -> ?Options {
+    let mut o = Options{ game = "F:/Steam/steamapps/common/swkotor", reference = false, keep = false, frames = 0, fuzz = false, seed = 1, first_movie = args.len }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        if slice::eq_bytes{ a, b = "--game" } and i + 1 < args.len {
+            i = i + 1
+            o.game = args[i]
+        } else if slice::eq_bytes{ a, b = "--ref" } {
+            o.reference = true
+        } else if slice::eq_bytes{ a, b = "--fuzz" } and i + 1 < args.len {
+            i = i + 1
+            let text = utf8::from{ bytes = args[i] } iferr { return usage{ &io } }
+            o.seed = utf8::parse_u64{ s = text } ifnull { return usage{ &io } }
+            o.fuzz = true
+        } else if slice::eq_bytes{ a, b = "--keep" } {
+            o.keep = true
+        } else if slice::eq_bytes{ a, b = "--frames" } and i + 1 < args.len {
+            i = i + 1
+            let text = utf8::from{ bytes = args[i] } iferr { return usage{ &io } }
+            let n = utf8::parse_u64{ s = text } ifnull { return usage{ &io } }
+            if n > 4294967295 { return usage{ &io } }
+            o.frames = @trunc(u32, n)
+        } else if a.len > 0 and a[0] != '-' {
+            o.first_movie = i
+            break
+        } else {
+            return usage{ &io }
+        }
+        i = i + 1
+    }
+    return o
+}
+
+fn usage { mut io: Io } -> ?Options {
+    io::eprintln{ &io, s = "usage: binkcheck [--game DIR] [--ref] [--keep] [--frames N] [--fuzz SEED] [MOVIE...]" }
+    return null
+}
+
+// A number with two decimals.
+fn fixed { mut io: Io, v: f64 } -> ! {
+    let hundredths = @as(i64, v * 100.0 + if v < 0.0 { -0.5 } else { 0.5 })
+    let whole = hundredths / 100
+    let mut frac = hundredths % 100
+    if frac < 0 { frac = -frac }
+    if hundredths < 0 and whole == 0 { io::write{ &io, to = io::Stream::out, bytes = "-" } }
+    io::print_i64{ &io, n = whole }
+    io::write{ &io, to = io::Stream::out, bytes = if frac < 10 { ".0" } else { "." } }
+    io::print_i64{ &io, n = frac }
+}
+
+// ---- @fmt into standard output
+
+namespace out {
+    #write
+    fn put_text { mut io: Io, s: strlit } { io::write{ &io, to = io::Stream::out, bytes = s.bytes } }
+    #write
+    fn put_bytes { mut io: Io, b: []u8 } { io::write{ &io, to = io::Stream::out, bytes = b } }
+    #write
+    fn put_u32 { mut io: Io, n: u32 } { io::print_u64{ &io, n } }
+    #write
+    fn put_i32 { mut io: Io, n: i32 } { io::print_i64{ &io, n } }
+    #write
+    fn put_u64 { mut io: Io, n: u64 } { io::print_u64{ &io, n } }
+    #write
+    fn put_usize { mut io: Io, n: usize } { io::print_u64{ &io, n } }
+}
