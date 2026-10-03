@@ -168,3 +168,8 @@ pointer, click, press keys, open menus and select targets:
 ```
 sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/menus.txt 32 7:equip 10:inventory
 ```
+
+The Endar Spire (`end_m01aa`) opens with a cutscene conversation (about 25 s of world time) that
+hides the HUD, as the original does; the scripts that need it visible without waiting use
+`MODULE=tar_m02aa` (`scripts/showcase.txt`, `notify.txt`), or open menus with `ui menu` (menus work
+whatever the module does, except during a conversation, which closes them).
