@@ -162,7 +162,23 @@ namespace dlgview {
 
     // After the scene's sync has made this frame's poses: the mouth of whoever is speaking.
     fn post_sync { mut v: View, mut w: world::World, mut sc: scene::Scene, dt: f32 } {
+        follow_stunts{ &v, &sc }
         apply_lips{ &v, &w, &sc }
+    }
+
+    // A stunt participant is drawn at the area's origin only while a scene animation (`cutNNNw`, authored
+    // in area space) runs on it; a body animation the dialogue plays after that (getting up, standing) is
+    // the creature's own and belongs where the creature is.
+    fn follow_stunts { mut v: View, mut sc: scene::Scene } {
+        let mut i: usize = 0
+        while i < v.swap_count {
+            let s = v.swaps[i]
+            i = i + 1
+            if not s.active { continue }
+            let vis = list::at{ list = sc.visuals, i = s.visual }
+            let part = scene::part_at{ sc = &sc, i = vis.first }
+            vis.stunt = part.anim_len >= 3 and part.anim[0] == 'c' and part.anim[1] == 'u' and part.anim[2] == 't'
+        }
     }
 
     // A conversation starts being presented.
