@@ -6,7 +6,7 @@ library directories, in dependency order:
 
 | Directory | Namespaces | What |
 |---|---|---|
-| `lib/base` | `heap`, `le`, `resref`, `ci`, `text`, `path` (and the render agent's `math`, `png`) | a general allocator, bounds-checked little-endian reads and writes, resource names, case-insensitive compares, the C-style text scanning the formats need, paths |
+| `lib/base` | `heap`, `le`, `resref`, `ci`, `text`, `path`, `lists` (and the render agent's `math`, `png`) | a general allocator, bounds-checked little-endian reads and writes, resource names, case-insensitive compares, the C-style text scanning the formats need, paths |
 | `lib/formats` | `gff`, `gffw`, `twoda`, `tlk`, `ssf`, `lip`, `ltr`, `lyt`, `vis`, `txi`, `pth`, `ini` | parsers of bytes, and the GFF writer; no IO |
 | `lib/res` | `restype`, `key`, `erf`, `rim`, `res`, `corpus` | resource types, the archive formats, the resource manager, the corpus walk for tests |
 
@@ -66,6 +66,7 @@ The rules every reader here follows:
 | `ci` | ASCII case-insensitive: `eq`, `starts_with`, `ends_with`, `find`, `compare`, `hash`, `lower` |
 | `text` | `Lines`/`next_line` (CR LF, LF or CR), `Words`/`next_word`/`rest`/`count_words` (spaces and tabs), `trim`, `find_byte`; numbers as the engine's C reads them: `scan_int` (sscanf `%i`: `0x` hex, leading-0 octal, stops at the first bad character, wraps), `scan_decimal` (atol), `scan_f32`/`scan_f64` (`%f`, `.5`, `1e-007`), `float_prefix`, `is_float`, `is_integer` |
 | `path` | `join(S)` (into memory from an allocator), `join_into` (into a buffer), `base_name`, `stem` and `extension` (by the first `.`, as the engine names directory files) |
+| `lists` | `take{ list = &l }`: a list's items at their exact size, so the slice can be freed, the list left empty |
 
 ## lib/res: the resource manager
 
