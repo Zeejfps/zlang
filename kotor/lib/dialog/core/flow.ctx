@@ -374,17 +374,29 @@ namespace dlg {
         }
     }
 
-    // The journal and plot XP a node carries (4.8): a hook until those systems exist.
+    // The journal and plot XP a node carries (4.8): the quest moves up to QuestEntry (never back
+    // down), and a plot index with a percentage gives the party that part of plot.2da's XP.
     fn apply_quest { mut w: world::World, n: *Node } {
-        if n.quest.len > 0 and w.log.dialog {
-            world::prefix{ w = &w }
-            _ = @fmt(&w.io, "dialog journal {} entry {}\n", n.quest, n.quest_entry)
+        if n.quest.len > 0 {
+            let now = fight::time_now{ w = &w }
+            let changed = journal::set_state{ j = &w.journal, tag = n.quest, state = @as(i32, n.quest_entry), allow_lower = false, day = now.day, time = now.ms }
+            let how: []u8 = if changed { "changed" } else { "kept" }
+            if w.log.dialog {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "dialog journal {} entry {} ({})\n", n.quest, n.quest_entry, how)
+            }
         }
-        if n.plot_index != -1 and n.plot_xp > 0.0 and w.log.dialog {
-            world::prefix{ w = &w }
-            _ = @fmt(&w.io, "dialog plot xp {} x {}\n", n.plot_index, n.plot_xp)
+        if n.plot_index >= 0 and n.plot_xp > 0.0 {
+            let table = rt_misc::scratch_table{ &w, name = "plot" } ifnull { return }
+            let xp = twoda::get_int{ t = table, row = @as(usize, n.plot_index), column = "xp" } ifnull { return }
+            let percent = @as(i32, n.plot_xp * 100.0 + 0.5)
+            let amount = (@as(i64, xp) * @as(i64, percent) + 99) / 100
+            if w.log.dialog {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "dialog plot xp {} x {}: {}\n", n.plot_index, n.plot_xp, amount)
+            }
+            if amount > 0 { rt_misc::award_party_xp{ &w, amount = @trunc(i32, amount) } }
         }
-        // HOOK(journal): journal::update{ quest, entry }; HOOK(rules): rules::award_plot_xp.
     }
 
     // ---- replies
