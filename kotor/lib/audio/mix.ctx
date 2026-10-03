@@ -64,11 +64,11 @@ namespace mix {
     const BLOCK: usize = 1024           // output frames mixed at a time
     const WINDOW: usize = 1024          // source frames a voice keeps for interpolation
     const FEEDS: usize = 2
-    const FEED_RING: usize = 65536      // samples in a feed's ring: 0.74 s of 44.1 kHz stereo
+    const FEED_RING: usize = 196608     // samples in a feed's ring: 2 s of 48 kHz stereo, a Bink pre-roll and more
     const PAN_3D: f32 = 0.7             // how far a 3D sound can pan: never wholly out of one ear
 
     // A feed's samples: a ring the caller writes and the voice reads.
-    struct Feed { used: bool, ring: [65536]i16, read: usize, count: usize, ended: bool }
+    struct Feed { used: bool, ring: [196608]i16, read: usize, count: usize, ended: bool }
 
     struct Voice {
         active: bool,
@@ -111,7 +111,7 @@ namespace mix {
         feeds: [2]Feed,
     }
 
-    // A mixer for output at `rate` Hz, in memory from `realloc` (it is about 2 MB with its
+    // A mixer for output at `rate` Hz, in memory from `realloc` (it is about 3 MB with its
     // voices), with every group at full volume.
     fn make(S) { realloc: alloc::Fn(S), mut heap: S, rate: u32, voices_2d: u32, voices_3d: u32 } -> !*mut Mixer {
         let one = try alloc::resize(Mixer, S){ realloc, &heap, mem = slice::empty(Mixer){}, count = 1 }

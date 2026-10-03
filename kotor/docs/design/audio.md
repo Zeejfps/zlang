@@ -130,13 +130,17 @@ A new voice starts at its target gain; `stop` fades over the time given.
 ```
 let h = try mix::play_feed{ m, rate = 22050, channels = 2, p = mix::sound_2d{ group = mix::Group::movie, volume = 1.0 } }
 let took = mix::feed{ m, h, samples }         // whole frames taken; keep the rest for later
-mix::feed_room{ m, h }                        // frames of room in its 0.74 s ring
+mix::feed_room{ m, h }                        // frames of room in its 2 s (at 48 kHz) ring
 mix::end_feed{ m, h }                         // it ends once it has played what it has
 ```
 
-A feed that runs dry plays silence and keeps its voice; there are two feeds.
+A feed that runs dry plays silence and keeps its voice; there are two feeds. The ring holds 2 s
+at 48 kHz stereo, so a Bink movie's first packet (a 0.78 s pre-roll, docs/design/video.md) goes
+in whole, and later frames (one 1,920-sample block each) always fit. For the movie's clock,
+`audio::heard` on the feed's handle is how much of its sound has been heard; `mix::stop{ m, h,
+fade = 0.0 }` drops what is left when the movie is skipped.
 
-**Memory.** `mix::make` allocates the mixer and its voices (about 2 MB for 40 voices: each holds
+**Memory.** `mix::make` allocates the mixer and its voices (about 3 MB for 40 voices: each holds
 its own stream and decoder) from the allocator it is given; `mix::free` gives it back. A voice
 doesn't own its file's bytes: the caller keeps them until `is_playing` is false. Streams and
 the mixer are big, so they are only ever passed by pointer.
