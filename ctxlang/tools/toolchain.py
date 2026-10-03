@@ -190,13 +190,14 @@ def native_ctxc():
 
 # ---- building programs
 
-def link(tmp_c, c, exe, name, flags=()):
-    """Compiles tmp_c with the runtime into exe, with linker flags, and moves tmp_c to c."""
+def link(tmp_c, c, exe, name, flags=(), cflags=CFLAGS):
+    """Compiles tmp_c with cflags, with the runtime, into exe, with linker flags, and moves tmp_c
+    to c. The runtime is compiled with CFLAGS."""
     tmp_exe = exe + f'.{os.getpid()}.tmp'
     cc, env = compiler()
     rt_obj = runtime_object(cc, env)
     name_def = '-DCTX_PROGRAM_NAME="' + name.replace('\\', '\\\\').replace('"', '\\"') + '"'
-    cmd = cc + CFLAGS + ['-I', RT, name_def, tmp_c, rt_obj, '-o', tmp_exe, *flags, '-lm']
+    cmd = cc + list(cflags) + ['-I', RT, name_def, tmp_c, rt_obj, '-o', tmp_exe, *flags, '-lm']
     cmd += stack_flags()
     r = subprocess.run(cmd, capture_output=True, text=True, env=env)
     replace(tmp_c, c)
@@ -273,9 +274,9 @@ def ir_sources(sources):
     return text
 
 
-def build_files(files, cwd=ROOT, name='program', given=None, flags=()):
-    """The path of an executable for the program of files, relative to cwd, linked with flags.
-    Raises CompileError, with its file renamed by given."""
+def build_files(files, cwd=ROOT, name='program', given=None, flags=(), cflags=CFLAGS):
+    """The path of an executable for the program of files, relative to cwd, compiled with cflags
+    and linked with flags. Raises CompileError, with its file renamed by given."""
     ctxc = native_ctxc()
     os.makedirs(CACHE, exist_ok=True)
     tmp_c = os.path.join(CACHE, f'tmp-{os.getpid()}-{threading.get_ident()}.c')
@@ -285,12 +286,12 @@ def build_files(files, cwd=ROOT, name='program', given=None, flags=()):
     if code != 0:
         raise RuntimeError(f'ctxc build exited with {code}:\n{err[:4000]}')
     with open(tmp_c, 'rb') as f:
-        key = hashlib.sha256((runtime_hash() + '\0' + name + '\0' + '\0'.join(flags) + '\0').encode() + f.read()).hexdigest()[:24]
+        key = hashlib.sha256((runtime_hash() + '\0' + name + '\0' + '\0'.join(flags) + '\0' + '\0'.join(cflags) + '\0').encode() + f.read()).hexdigest()[:24]
     exe = os.path.join(CACHE, key + EXE)
     if os.path.exists(exe):
         os.remove(tmp_c)
     else:
-        link(tmp_c, os.path.join(CACHE, key + '.c'), exe, name, flags)
+        link(tmp_c, os.path.join(CACHE, key + '.c'), exe, name, flags, cflags)
     return exe
 
 
@@ -514,24 +515,41 @@ def build_project(directory, out=None, err=None):
     finally:
         if os.path.exists(graph):
             os.remove(graph)
-    exes = {}                       # id -> [name, root, paths, libs]
+    exes = {}                       # id -> [name, root, dirs, level, paths, libs]
     for r in records:
         kind, i = r[0], int(r[1])
         if kind == 'exe':
-            exes[i] = [r[2], r[3], [], []]
+            exes[i] = [r[2], r[3], [], 1, [], []]
+        elif kind == 'sources':
+            exes[i][2].append(r[2])
+        elif kind == 'optimize':
+            exes[i][3] = int(r[2])
         elif kind == 'libpath':
-            exes[i][2] += ['-L', os.path.join(d, r[2])]
+            exes[i][4] += ['-L', os.path.join(d, r[2])]
         elif kind == 'link':
-            exes[i][3].append('-l' + r[2])
+            exes[i][5].append('-l' + r[2])
         elif kind == 'framework':
-            exes[i][3] += ['-framework', r[2]]
+            exes[i][5] += ['-framework', r[2]]
     built = []
-    for name, root, paths, libs in exes.values():
-        top = os.path.join(d, root)
-        files = sorted(os.path.relpath(p, d).replace(os.sep, '/') for p in glob.glob(os.path.join(top, '*.ctx'))
-                       if os.path.normcase(os.path.abspath(p)) != os.path.normcase(os.path.join(d, 'build.ctx')))
-        if not files:
+    for name, root, dirs, level, paths, libs in exes.values():
+        # As ctxc's driver finds them (ctxc/drive.ctx): the root's .ctx files, then those under
+        # each added directory, at any depth, each file once and none named build.ctx.
+        files, seen = [], set()
+
+        def add(paths):
+            for p in paths:
+                key = os.path.normcase(os.path.abspath(p))
+                if os.path.basename(p) != 'build.ctx' and key not in seen:
+                    seen.add(key)
+                    files.append(os.path.relpath(p, d).replace(os.sep, '/'))
+            return paths
+
+        if not add(sorted(glob.glob(os.path.join(d, root, '*.ctx')))):
             raise CompileError('no .ctx files in directory', (0, 0, root))
-        built.append((name, build_files(files, cwd=d, name=name, flags=paths + libs)))
+        for sub in dirs:
+            if not add(sorted(glob.glob(os.path.join(d, sub, '**', '*.ctx'), recursive=True))):
+                raise CompileError('no .ctx files in directory or below', (0, 0, sub))
+        cflags = [f'-O{level}' if f == '-O1' else f for f in CFLAGS]
+        built.append((name, build_files(files, cwd=d, name=name, flags=paths + libs, cflags=cflags)))
     return built
 

@@ -67,10 +67,16 @@ The goal is real programs over C libraries: OpenGL or Vulkan rendering, windowin
      in the signatures: `run`, `env` and `exe_path` take an allocator, as `fs::list` does, and
      `run` takes `Io` for the flush. *To settle.*
 2. **`const OS` in each layer**, so that `proc::os` and `build::os` stop calling `ctx_build_os`.
-3. **Driver caching.** `ctxc run` compiles the runtime and the program again every time (about
-   0.5 s).
-4. **`#c::export{ name }`**, for a public symbol, over the callback thunk.
-5. **Loading a library at run time**, where the capability means "it loaded".
+3. **`#c::export{ name }`**, for a public symbol, over the callback thunk.
+4. **Loading a library at run time**, where the capability means "it loaded".
+
+*Later, for the driver* (ctxc/drive.ctx), if they get in the way:
+- The front end runs on every `ctxc run`, changed or not: 1.7 s for 96K lines. A hash of the
+  sources and of ctxc itself could skip it too.
+- A file reached twice is found by its absolute path, without looking at links, so a file
+  reached through a symbolic link or a junction and directly is compiled twice.
+- A C compiler replaced in place by another version isn't noticed: removing build/run starts
+  afresh. Nor are the files a killed build leaves, `NAME.N.c` and the like, ever removed.
 
 *Later,* each waiting for a target that needs it:
 - macOS on x86_64: its `readdir` returns the old `struct dirent` unless it is called as
@@ -293,7 +299,10 @@ cc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -Ictxc/rt bootstrap/ctx
 ```
 
 - On macOS the bootstrap is `bootstrap/ctxc.macos.c`, and on Windows `bootstrap/ctxc.windows.c`. ctxc finds std/ and ctxc/rt/ through
-  CTX_HOME, or above its executable or the working directory, and builds in HOME/build/run.
+  CTX_HOME, or above its executable or the working directory, and builds in HOME/build/run, in a
+  directory for each program. An executable whose C, runtime, compiler and flags haven't
+  changed isn't compiled again: `ctxc run` of an unchanged small program takes about 40 ms, the
+  front end included (drive.ctx).
 - That ctxc is the bootstrap's; `tools/toolchain.py` builds the current source's into
   `build/ctxc` (about 7 s the first time, cached after).
 - `python tools/ctxc.py PROGRAM --run [args...]` compiles and runs a program with it.
@@ -333,7 +342,8 @@ in one step; `fixpoint.py` says when one is out of date.
 
 C11 with GNU extensions (overflow builtins, empty structs, statement expressions), built with gcc
 (MinGW on Windows), Apple clang on macOS, or `zig cc` (`CTX_CC=zig`). Flags: `-std=gnu11 -O1 -w
--fwrapv -fno-optimize-sibling-calls -fno-strict-aliasing`.
+-fwrapv -fno-optimize-sibling-calls -fno-strict-aliasing`, with another `-O` level where a build
+program asks for one (spec §19).
 
 | ctxlang | C | Notes |
 |---|---|---|

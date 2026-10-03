@@ -593,7 +593,8 @@ ctx_slice ctx_args(void) {
 
 // ---- build: a build program's graph (std/build.ctx), one record per line, its fields separated
 // by tabs, to the file CTX_BUILD_OUT names, or to standard output without it:
-//   exe ID NAME ROOT    link ID LIB    framework ID NAME    libpath ID PATH
+//   exe ID NAME ROOT    sources ID DIR    optimize ID LEVEL
+//   link ID LIB    framework ID NAME    libpath ID PATH
 
 static FILE *build_out;
 static uint32_t build_exes;
@@ -649,9 +650,32 @@ static void build_check(uint32_t exe) {
 ctx_build_exe ctx_build_exe_new(ctx_slice name, ctx_slice root) {
     build_field(name, "name");
     build_field(root, "root");
+    // A name names the executable's files, and is the C string its panics print.
+    for (uint64_t i = 0; i < name.len; i++) {
+        char c = ((const char *)name.ptr)[i];
+        if (c == '/' || c == '\\' || c == '"')
+            ctx_panic_nopos("build: a name cannot hold a slash, a backslash or a double quote");
+    }
     ctx_build_exe exe = { build_exes++ };
     build_record("exe", exe.id, name, root);
     return exe;
+}
+
+void ctx_build_add_sources(ctx_build_exe exe, ctx_slice dir) {
+    build_check(exe.id);
+    build_field(dir, "directory");
+    build_record("sources", exe.id, dir, (ctx_slice){ NULL, 0 });
+}
+
+void ctx_build_optimize(ctx_build_exe exe, uint32_t level) {
+    build_check(exe.id);
+    if (level > 3) {
+        char msg[96];
+        snprintf(msg, sizeof msg, "build: optimization level %u is not 0, 1, 2 or 3", (unsigned)level);
+        ctx_panic_nopos(msg);
+    }
+    char digit = (char)('0' + level);
+    build_record("optimize", exe.id, (ctx_slice){ &digit, 1 }, (ctx_slice){ NULL, 0 });
 }
 
 void ctx_build_link(ctx_build_exe exe, ctx_slice lib) {

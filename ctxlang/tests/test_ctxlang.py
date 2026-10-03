@@ -7394,12 +7394,45 @@ class CtxcDriver(Base):
                 f.write(text)
         return d
 
-    def ctxc(self, *args):
+    def ctxc(self, *args, cwd=None, env=None):
         import subprocess
         from toolchain import native_ctxc
-        env = dict(os.environ, CTX_HOME=ROOT)
-        r = subprocess.run([native_ctxc(), *args], capture_output=True, env=env)
-        return r.returncode, r.stdout.decode().replace('\r\n', '\n'), r.stderr.decode()
+        env = dict(os.environ, CTX_HOME=ROOT, **(env or {}))
+        r = subprocess.run([native_ctxc(), *args], capture_output=True, env=env, cwd=cwd)
+        return r.returncode, r.stdout.decode().replace('\r\n', '\n'), r.stderr.decode().replace('\r\n', '\n')
+
+    def logging_cc(self, d):
+        """CTX_CC for a C compiler that appends each command line to d/cc.log before running the
+        test's compiler, and a function that returns the lines logged since it last did."""
+        import sys
+        script, log = os.path.join(d, 'cc.py'), os.path.join(d, 'cc.log')
+        if ' ' in sys.executable + script:
+            self.skipTest('CTX_CC is split at spaces')
+        with open(script, 'w', encoding='utf-8') as f:
+            f.write(f"""import subprocess, sys
+sys.path.insert(0, {os.path.join(ROOT, 'tools')!r})
+from toolchain import compiler
+with open({log!r}, 'a') as f:
+    f.write(' '.join(sys.argv[1:]) + '\\n')
+cc, env = compiler()
+sys.exit(subprocess.run(cc + sys.argv[1:], env=env).returncode)
+""")
+        seen = [0]
+
+        def logged():
+            with open(log, encoding='utf-8') as f:
+                lines = f.read().splitlines() if os.path.exists(log) else []
+            new, seen[0] = lines[seen[0]:], len(lines)
+            return new
+        open(log, 'w').close()
+        return f'{sys.executable} {script}', logged
+
+    def work_dir(self, path):
+        """The directory ctxc builds the program at path in: one named after it."""
+        import glob
+        [work] = glob.glob(os.path.join(ROOT, 'build', 'run', os.path.splitext(os.path.basename(path))[0] + '-' + '?' * 16))
+        self.addCleanup(shutil.rmtree, work, True)
+        return work
 
     def test_run_a_file_with_arguments(self):
         d = self.project({'hello.ctx': """
@@ -7438,6 +7471,115 @@ fn build { mut b: Build } {
         self.assertEqual(code, 1)
         self.assertIn('missing.ctx: cannot read', err)
         self.assertEqual(self.ctxc('run')[0], 2)
+
+    def tool_project(self, build, more=None):
+        """A project of libraries in lib/ and a tool that uses them, in tools/NAME with build
+        program build, NAME being the project's own, unique name. Returns the project and the
+        tool's path in it."""
+        d = self.project({
+            'lib/a/x.ctx': 'namespace x { fn n {} -> i64 { return 1 } }\n',
+            'lib/a/deeper/y.ctx': 'namespace y { fn n {} -> i64 { return 20 } }\n',
+            'lib/a/deeper/build.ctx': 'not ctxlang: a file named build.ctx is never a source\n',
+            'lib/b/z.ctx': 'namespace z { fn n {} -> i64 { return 300 } }\n',
+            'lib/empty/notes.txt': '',
+            **(more or {}),
+        })
+        tool = 'tools/' + os.path.basename(d)
+        for name, text in [('main.ctx', 'fn main { mut io: Io } { io::println_i64{ &io, n = x::n{} + y::n{} + z::n{} } }\n'),
+                           ('build.ctx', build), ('sub/main.ctx', 'fn main {} {}\n')]:
+            os.makedirs(os.path.join(d, tool, os.path.dirname(name)), exist_ok=True)
+            with open(os.path.join(d, tool, name), 'w', encoding='utf-8') as f:
+                f.write(text)
+        return d, tool
+
+    def test_sources_from_other_directories(self):
+        # An added directory brings its subdirectories' files, and a file reached twice is
+        # compiled once. The root's subdirectories are not its.
+        d, tool = self.tool_project("""
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "t", root = "." }
+    build::add_sources{ &b, exe, dir = "../../lib/a" }
+    build::add_sources{ &b, exe, dir = "../../lib/a/deeper/" }
+    build::add_sources{ &b, exe, dir = "../..//lib/./b" }
+}
+""")
+        self.assertEqual(self.ctxc('run', os.path.join(d, tool))[:2], (0, '321\n'))
+        self.work_dir(tool)
+        # Errors name files by their paths from the working directory, without `..`.
+        with open(os.path.join(d, 'lib', 'a', 'deeper', 'y.ctx'), 'w') as f:
+            f.write('namespace y { fn n {} -> i64 { return true } }\n')
+        code, _, err = self.ctxc('run', tool, cwd=d)
+        self.assertEqual(code, 1)
+        self.assertTrue(err.startswith('lib/a/deeper/y.ctx:1:39: error: expected i64, got bool'), err)
+
+    def test_source_errors(self):
+        d, tool = self.tool_project('fn build { mut b: Build } { build::add_sources{ &b, exe = build::exe{ &b, name = "t", root = "." }, dir = "../../lib/missing" } }\n')
+        code, _, err = self.ctxc('run', tool, cwd=d)
+        self.assertEqual((code, err), (1, 'lib/missing: cannot list\n'))
+        self.work_dir(tool)
+        with open(os.path.join(d, tool, 'build.ctx'), 'w') as f:
+            f.write('fn build { mut b: Build } { build::add_sources{ &b, exe = build::exe{ &b, name = "t", root = "." }, dir = "../../lib/empty" } }\n')
+        code, _, err = self.ctxc('run', tool, cwd=d)
+        self.assertEqual((code, err), (1, 'lib/empty: no .ctx files in directory or below\n'))
+
+    def test_skips_unchanged_builds(self):
+        import re
+        d = self.project({'build.ctx': 'fn build { mut b: Build } { _ = build::exe{ &b, name = "t", root = "src" } }\n',
+                          'src/main.ctx': 'fn main { mut io: Io } { io::println{ &io, s = "one" } }\n'})
+        cc, logged = self.logging_cc(d)
+        env = {'CTX_CC': cc}
+        self.assertEqual(self.ctxc('run', d, env=env)[:2], (0, 'one\n'))
+        work = self.work_dir(d)
+        first = logged()
+        self.assertTrue(any(' -c ' in line and 'CTX_PROGRAM_NAME="build"' in line for line in first), first)
+        # Nothing changed: the C compiler doesn't run.
+        self.assertEqual(self.ctxc('run', d, env=env)[:2], (0, 'one\n'))
+        self.assertEqual(logged(), [])
+        # The program changed: only its C is compiled, and the executable linked. The older one
+        # is removed.
+        with open(os.path.join(d, 'src', 'main.ctx'), 'w') as f:
+            f.write('fn main { mut io: Io } { io::println{ &io, s = "two" } }\n')
+        self.assertEqual(self.ctxc('run', d, env=env)[:2], (0, 'two\n'))
+        compiled, linked = logged()
+        self.assertIn(' -c ', compiled)
+        self.assertNotIn('ctxrt.c', compiled)
+        self.assertNotIn(' -c ', linked)
+        exe = '.exe' if os.name == 'nt' else ''
+        self.assertEqual(len([n for n in os.listdir(work) if re.fullmatch(r't-[0-9a-f]{16}' + re.escape(exe), n)]), 1)
+        self.assertEqual(len([n for n in os.listdir(work) if re.fullmatch(r't-[0-9a-f]{16}\.o', n)]), 1)
+        self.assertTrue(os.path.exists(os.path.join(work, 't.c')))
+        # `exe` links its object into OUT.
+        out = os.path.join(d, 'prog' + exe)
+        self.assertEqual(self.ctxc('exe', d, '-o', out, env=env)[0], 0)
+        [line] = logged()
+        self.assertNotIn(' -c ', line)
+        from toolchain import run_exe
+        got = io.StringIO()
+        run_exe(out, out=got)
+        self.assertEqual(got.getvalue(), 'two\n')
+
+    def test_optimization_level(self):
+        d = self.project({'build.ctx': 'fn build { mut b: Build } { build::optimize{ &b, exe = build::exe{ &b, name = "t", root = "src" }, level = 2 } }\n',
+                          'src/main.ctx': 'fn main { mut io: Io } { io::println_i64{ &io, n = @as(i64, 6) * 7 } }\n'})
+        cc, logged = self.logging_cc(d)
+        self.assertEqual(self.ctxc('run', d, env={'CTX_CC': cc})[:2], (0, '42\n'))
+        self.work_dir(d)
+        program = [line for line in logged() if 'CTX_PROGRAM_NAME="t"' in line]
+        self.assertTrue(program and all('-O2' in line and '-fwrapv' in line and '-O1' not in line for line in program), program)
+
+    def test_programs_build_apart(self):
+        # Programs at the same relative path from different directories, built at once.
+        import subprocess
+        from toolchain import native_ctxc
+        projects = [self.project({'build.ctx': 'fn build { mut b: Build } { _ = build::exe{ &b, name = "p", root = "." } }\n',
+                                  'main.ctx': f'fn main {{ mut io: Io }} {{ io::println_i64{{ &io, n = {k} }} }}\n'})
+                    for k in range(4)]
+        env = dict(os.environ, CTX_HOME=ROOT)
+        running = [subprocess.Popen([native_ctxc(), 'run', '.'], cwd=p, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                   for p in projects]
+        got = [(r.returncode, out.decode().strip()) for r in running for out, _ in [r.communicate()]]
+        self.assertEqual(got, [(0, str(k)) for k in range(4)])
+        self.assertEqual(len({self.work_dir(p) for p in projects}), 4)
 
 
 class Interp(Base):
@@ -7602,11 +7744,32 @@ fn build { mut b: Build } {
         self.assertOutput("""
 fn build { mut b: Build } {
     let exe = build::exe{ &b, name = "demo", root = "src" }
+    build::add_sources{ &b, exe, dir = "../lib" }
+    build::optimize{ &b, exe, level = 2 }
     build::link{ &b, exe, lib = "m" }
     build::framework{ &b, exe, name = "Cocoa" }
     build::lib_path{ &b, exe, path = "/opt/lib" }
 }
-""", "exe\t0\tdemo\tsrc\nlink\t0\tm\nframework\t0\tCocoa\nlibpath\t0\t/opt/lib\n")
+""", "exe\t0\tdemo\tsrc\nsources\t0\t../lib\noptimize\t0\t2\nlink\t0\tm\nframework\t0\tCocoa\nlibpath\t0\t/opt/lib\n")
+
+    def test_sources_and_optimization(self):
+        # toolchain.build_project reads the records as ctxc's driver does (CtxcDriver).
+        from toolchain import build_project
+        d = self.project({
+            'build.ctx': """
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "t", root = "." }
+    build::add_sources{ &b, exe, dir = "lib" }
+    build::add_sources{ &b, exe, dir = "lib/deeper" }
+    build::optimize{ &b, exe, level = 3 }
+}
+""",
+            'main.ctx': 'fn main { mut io: Io } { io::println_i64{ &io, n = x::n{} + y::n{} } }\n',
+            'lib/x.ctx': 'namespace x { fn n {} -> i64 { return 1 } }\n',
+            'lib/deeper/y.ctx': 'namespace y { fn n {} -> i64 { return 20 } }\n',
+        })
+        [(_, exe)] = build_project(d)
+        self.assertEqual(self.run_exe(exe), '21\n')
 
     def test_errors(self):
         from toolchain import build_project
@@ -7624,6 +7787,12 @@ fn build { mut b: Build } {
         self.assertEqual((cm.exception.msg, cm.exception.pos), ('no .ctx files in directory', (0, 0, 'nothing')))
         self.assertPanic('fn build { mut b: Build } { build::link{ &b, exe = build::Exe{ id = 3 }, lib = "m" } }',
                          'build: no executable 3')
+        self.assertPanic('fn build { mut b: Build } { _ = build::exe{ &b, name = "a/b", root = "." } }',
+                         'build: a name cannot hold a slash, a backslash or a double quote')
+        self.assertPanic('fn build { mut b: Build } { build::optimize{ &b, exe = build::exe{ &b, name = "a", root = "." }, level = 4 } }',
+                         'build: optimization level 4 is not 0, 1, 2 or 3')
+        self.assertPanic('fn build { mut b: Build } { build::add_sources{ &b, exe = build::exe{ &b, name = "a", root = "." }, dir = "" } }',
+                         'build: empty directory')
 
     def test_entry_errors(self):
         self.assertCompileError('fn main { mut b: Build } {}',

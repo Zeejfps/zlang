@@ -715,7 +715,7 @@ Settled questions are removed, and the rest keep their numbers.
 | `Args` | Declared at the top level: `type Args = [][]u8`, the type of `main`'s `args` (§15). |
 | `Io`, `Fs`, `Mem`, `Proc`, `Build` | Declared at the top level: `capability Io` and so on (§15), in `io.ctx`, `fs.ctx`, `mem.ctx`, `proc.ctx` and `build.ctx`. |
 | `proc` | `Proc` includes the layer's `os::Proc` (rule 4). The errors `not_found`, `permission_denied` and `other{ code }`; `run` (starts a program found on PATH, with extra `KEY=VALUE` environment entries, sharing standard input and output, and returns its exit code, a `!i32`: 128 + N if signal N killed it), `env` (an environment variable, or null), `exe_path` (this program's executable), `os` (the operating system, a `build::Os`). Every function takes `mut proc: Proc`. |
-| `build` | Build programs (§19): `Exe`, `Os` (`windows`, `macos`, `linux`); `exe`, `link`, `framework`, `lib_path`, `os`. Every function takes `mut b: Build`. |
+| `build` | Build programs (§19): `Exe`, `Os` (`windows`, `macos`, `linux`); `exe`, `add_sources`, `optimize`, `link`, `framework`, `lib_path`, `os`. Every function takes `mut b: Build`. |
 | `fs` | `File`, `Mode` (`read`, `write`, `append`, `create`); the errors `not_found`, `permission_denied`, `is_directory`, `exists`, `not_directory`, `bad_file` and `other{ code }` (the OS's number); `open`, `read`, `write`, `close`, `size`, `remove`, `make_dir`, `rename` (replacing any file at the new path), and `read_all` (into memory from an allocator), `write_all`, `list` (a directory's entry names, sorted, into memory from an allocator) and `make_absolute` (a path joined to the working directory unless it is absolute, into memory from an allocator); `is_absolute`. Every function but `is_absolute` takes `mut fs: Fs` and returns a `!T`, or a bare `!` (`close`, `remove`, `make_dir`, `rename`), that fails with the errors its body can produce (§8, Errors), and `read_all`, `list` and `make_absolute` with `alloc::out_of_memory`. A `File`'s `id` is the OS's handle: a file descriptor, or a Windows HANDLE. The platform layer does the work (`os`, below). |
 | `alloc` | `Bytes` (`[]mut u8`), the allocator type `Fn(S)`, the error `out_of_memory`, typed `resize(T, S)`, and `new(T, S)` and `free(T, S)` for one `T`: `new` returns a `!*mut T` holding the given `value`. `resize` and `new` fail with `out_of_memory`; resizing to 0 frees and doesn't fail. |
 | `mem` | `PAGE` (4096); `pages`: at least `size` bytes of zeroed, page-aligned memory (`size` rounded up to a multiple of `PAGE`), as a `?alloc::Bytes`, valid until the program ends, or null. Takes `mut mem: Mem`. |
@@ -812,10 +812,13 @@ _ = glfwSetKeyCallback{ &glfw, window, cb = on_key }
 ## 19. Build programs
 
 ```
-// build.ctx, at the top of a program's directory
+// tools/viewer/build.ctx: a tool, made of its own directory and of libraries other programs share
 fn build { mut b: Build } {
-    let exe = build::exe{ &b, name = "demo", root = "src" }
-    build::link{ &b, exe, lib = "glfw" }
+    let exe = build::exe{ &b, name = "viewer", root = "." }
+    build::add_sources{ &b, exe, dir = "../../lib/formats" }
+    build::add_sources{ &b, exe, dir = "../../lib/platform" }
+    build::optimize{ &b, exe, level = 2 }
+    build::link{ &b, exe, lib = "SDL2" }
     match build::os{ &b } {
         macos   => { build::lib_path{ &b, exe, path = "/opt/homebrew/lib" } }
         windows => { build::link{ &b, exe, lib = "gdi32" } }
@@ -824,9 +827,14 @@ fn build { mut b: Build } {
 }
 ```
 
-1. A program that is a directory may have a `build.ctx` at its top: its **build program**, compiled and run before anything else is built. It describes the executables to build and what each links with. Platform choices are ordinary code.
+1. A program that is a directory may have a `build.ctx` at its top: its **build program**, compiled and run before anything else is built. It describes the executables to build, which files each is made of, and how each is compiled and linked. Platform choices are ordinary code.
 2. A build program is a program whose entry point is `fn build` instead of `fn main`: §15's rules for `main` apply to it. A program with a `main` has no other entry point, and a `fn build` in it is an ordinary function.
 3. Only `build` may take a `Build` (§15): `main` can't.
-4. `build::exe{ &b, name, root }` names an executable built from the `.ctx` files of directory `root`, and returns a `build::Exe` for the calls that add to it: `link` (a library, `-l`), `framework` (a macOS framework) and `lib_path` (a directory to find libraries in, `-L`). `build::os` is the operating system the build is for. Paths are relative to the directory `build.ctx` is in, and `build.ctx` is never one of an executable's files.
-5. Names, roots, libraries and paths can't be empty or hold a tab or a line break: the build panics.
-6. `ctxc run PATH [-- ARGS...]` builds the program at PATH (a `.ctx` file, or a directory, with or without a `build.ctx`) and runs its first executable; `ctxc exe PATH -o OUT` writes that executable to OUT. Only ctxc and a C compiler are needed (PLAN.md, "Working on ctxc").
+4. `build::exe{ &b, name, root }` names an executable built from the `.ctx` files of directory `root`, not of its subdirectories, and returns a `build::Exe` for the calls that add to it. `build::os` is the operating system the build is for.
+5. `build::add_sources{ &b, exe, dir }` adds the `.ctx` files under directory `dir`: those in it and in its subdirectories, at any depth. So libraries can live in directories of their own, which several programs add. A file that two directories reach, or one directory twice, is compiled once.
+6. `build::optimize{ &b, exe, level }` compiles the executable's C at optimization level 0 to 3 (`-O0` to `-O3`) instead of 1. The other flags stay (PLAN.md, How ctxlang maps to C).
+7. `link` adds a library (`-l`), `framework` a macOS framework, and `lib_path` a directory to find libraries in (`-L`).
+8. Paths are relative to the directory `build.ctx` is in, and may leave it through `..`. Errors name an executable's files by their paths from the working directory, without `.` or `..` (`lib/formats/gff.ctx`). A file named `build.ctx` is never one of an executable's files.
+9. Names, roots, directories, libraries and paths can't be empty or hold a tab or a line break, a name can't hold `/`, `\` or `"`, and a level is 0 to 3: the build panics.
+10. `ctxc run PATH [-- ARGS...]` builds the program at PATH (a `.ctx` file, or a directory, with or without a `build.ctx`) and runs its first executable; `ctxc exe PATH -o OUT` writes that executable to OUT. Only ctxc and a C compiler are needed (PLAN.md, "Working on ctxc").
+11. A build writes only under ctxc's home, in `build/run`, in a directory of the program's own, which its absolute path names: ctxcs building different programs at once don't meet. An executable whose C, runtime, C compiler and flags are the same as when it was last built isn't compiled again (ctxc/drive.ctx).
