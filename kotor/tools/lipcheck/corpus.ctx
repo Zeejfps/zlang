@@ -1,0 +1,179 @@
+// lipcheck's corpus parts: every LIP in the install through the parser and through lipsync::apply,
+// and which models of appearance.2da can talk at all.
+
+struct CorpusStats {
+    copies: u64,
+    parse_failed: u64,
+    not_rest: u64,              // first key isn't (0, shape 0) or last isn't (length, shape 0)
+    applies: u64,
+    nan: u64,
+    first_bad: [3]resref::ResRef,
+    bad_count: usize,
+}
+
+fn wants_lip { kind: u16 } -> bool {
+    return kind == @as(u16, restype::Type::lip)
+}
+
+// Every LIP copy in the install (lips/*.mod, 18,206 of them) must parse, begin and end at rest,
+// and give a finite pose at a few times on every head that can talk, first head at every key.
+fn corpus_check { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut rep: Report, opts: Options, hs: []Head } -> ! {
+    let st = try alloc::new(CorpusStats, heap::Heap){ realloc = heap::alloc, heap = &h, value = CorpusStats{
+        copies = 0, parse_failed = 0, not_rest = 0, applies = 0, nan = 0, first_bad = [resref::empty{}, resref::empty{}, resref::empty{}], bad_count = 0,
+    } }
+    let totals = try corpus::each{ &fs, h = &h, game = opts.game, want = wants_lip, visit = visit_lip{ st, hs, _ } }
+    _ = @fmt(&io, "corpus: {} archives, {} LIP copies, {} applies on {} heads\n", totals.archives, st.copies, st.applies, hs.len)
+    expect{ &io, &rep, ok = st.parse_failed == 0, head = "all", what = "every LIP copy parses (failures)", value = @as(f32, st.parse_failed) }
+    expect{ &io, &rep, ok = st.not_rest == 0, head = "all", what = "every LIP starts and ends at (0, rest) / (length, rest) (violations)", value = @as(f32, st.not_rest) }
+    expect{ &io, &rep, ok = st.nan == 0, head = "all", what = "apply never makes a NaN (bad poses)", value = @as(f32, st.nan) }
+    let mut i: usize = 0
+    while i < st.bad_count and i < 3 {
+        _ = @fmt(&io, "  first offender {}: {}\n", i, st.first_bad[i])
+        i = i + 1
+    }
+}
+
+fn note_bad { st: *mut CorpusStats, name: resref::ResRef } {
+    if st.bad_count < 3 { st.first_bad[st.bad_count] = name }
+    st.bad_count = st.bad_count + 1
+}
+
+fn visit_lip { st: *mut CorpusStats, hs: []Head, copy: corpus::Copy, data: []u8 } {
+    st.copies = st.copies + 1
+    let l = lip::parse{ data } iferr err{ error } {
+        st.parse_failed = st.parse_failed + 1
+        note_bad{ st, name = copy.name }
+        return
+    }
+    if l.count > 0 {
+        let first = lip::get_key{ l, i = 0 }
+        let last = lip::get_key{ l, i = @as(usize, l.count) - 1 }
+        if first.time != 0.0 or first.shape != lip::Shape::ee or last.time != l.length or last.shape != lip::Shape::ee {
+            st.not_rest = st.not_rest + 1
+            note_bad{ st, name = copy.name }
+        }
+    } else {
+        st.not_rest = st.not_rest + 1
+    }
+    let track = lipsync::make_track{ lip = l }
+    let nan = le::f32_of_bits{ bits = 0x7FC00000 }
+    let mut n: usize = 0
+    while n < hs.len {
+        let head = hs[n]
+        n = n + 1
+        let talk = head.talk ifnull { continue }
+        let mut pose = head.work
+        // A few fixed times, odd ones included.
+        let fixed_times: [8]f32 = [0.0, 0.137 * l.length, 0.5 * l.length, 0.911 * l.length, l.length, l.length + 0.5, -0.25, nan]
+        let mut k: usize = 0
+        while k < 8 {
+            copy_pose{ from = head.base, to = pose }
+            lipsync::apply{ model = head.model, talk, track = &track, t = fixed_times[k], &pose }
+            st.applies = st.applies + 1
+            if not is_clean{ pose } {
+                st.nan = st.nan + 1
+                note_bad{ st, name = copy.name }
+            }
+            k = k + 1
+        }
+        // The first head at every key time and the middle of every stretch.
+        if n == 1 {
+            let mut i: usize = 0
+            while i < @as(usize, l.count) {
+                let key = lip::get_key{ l, i }
+                let next = if i + 1 < @as(usize, l.count) { lip::get_key{ l, i = i + 1 }.time } else { key.time }
+                let mut j: u32 = 0
+                while j < 2 {
+                    let t = if j == 0 { key.time } else { (key.time + next) / 2.0 }
+                    copy_pose{ from = head.base, to = pose }
+                    lipsync::apply{ model = head.model, talk, track = &track, t, &pose }
+                    st.applies = st.applies + 1
+                    if not is_clean{ pose } {
+                        st.nan = st.nan + 1
+                        note_bad{ st, name = copy.name }
+                    }
+                    j = j + 1
+                }
+                i = i + 1
+            }
+        }
+    }
+}
+
+// ---- which models can talk
+
+fn load_table { mut fs: Fs, mut h: heap::Heap, rm: res::Manager, name: []u8 } -> !twoda::Table {
+    let loaded = try res::load{ &fs, rm, name, kind = restype::Type::twoda, realloc = heap::alloc, heap = &h }
+    let data = loaded ifnull { return no_table{ name } }
+    return try twoda::parse{ data, realloc = heap::alloc, heap = &h }
+}
+
+fn cell { t: twoda::Table, row: usize, column: []u8 } -> []u8 {
+    return twoda::get_string{ t, row, column } ifnull ""
+}
+
+struct Survey {
+    heads_with: u32, heads_without: u32, bodies_with: u32, bodies_without: u32,
+    missing: u32,
+}
+
+// Every model appearance.2da shows a creature with: the head of each B-type body (from
+// heads.2da's `normalhead` row) and the single model of the other types (`modela` for F, else
+// `race`), each looked up for a `talk` animation along its supermodel chain.
+fn survey { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut cache: mdl_cache::Cache, rm: res::Manager } -> ! {
+    let app = try load_table{ &fs, &h, rm, name = "appearance" }
+    let heads = try load_table{ &fs, &h, rm, name = "heads" }
+    let mut seen = list::new([]u8, heap::Heap){ realloc = heap::alloc, heap = &h }
+    let mut st = Survey{ heads_with = 0, heads_without = 0, bodies_with = 0, bodies_without = 0, missing = 0 }
+    let mut lines: u32 = 0
+    _ = @fmt(&io, "survey: models without a talk animation along their chain (label of the first appearance row using them)\n")
+    let mut row: usize = 0
+    while row < twoda::rows{ t = app } {
+        let kind = cell{ t = app, row, column = "modeltype" }
+        let label = cell{ t = app, row, column = "label" }
+        let r = row
+        row = row + 1
+        let mut name: []u8 = ""
+        let is_head = ci::eq{ a = kind, b = "b" }
+        if is_head {
+            let hr = twoda::get_int{ t = app, row = r, column = "normalhead" } ifnull { continue }
+            if hr < 0 or @as(usize, hr) >= twoda::rows{ t = heads } { continue }
+            name = cell{ t = heads, row = @as(usize, hr), column = "head" }
+        } else if ci::eq{ a = kind, b = "f" } {
+            name = cell{ t = app, row = r, column = "modela" }
+            if name.len == 0 { name = cell{ t = app, row = r, column = "race" } }
+        } else {
+            name = cell{ t = app, row = r, column = "race" }
+        }
+        if name.len == 0 { continue }
+        let mut dup = false
+        let have = list::items{ list = seen }
+        let mut s: usize = 0
+        while s < have.len {
+            if ci::eq{ a = have[s], b = name } { dup = true }
+            s = s + 1
+        }
+        if dup { continue }
+        try list::push{ list = &seen, item = name }
+        let model = mdl_cache::get{ &fs, &cache, name } ifnull {
+            st.missing = st.missing + 1
+            _ = @fmt(&io, "  not found: {} ({})\n", name, label)
+            continue
+        }
+        let found = mdl_anim::find{ model, name = "talk", lookup = mdl_cache::get{ &fs, &cache, _ } }
+        if found != null {
+            if is_head { st.heads_with = st.heads_with + 1 } else { st.bodies_with = st.bodies_with + 1 }
+        } else {
+            if is_head { st.heads_without = st.heads_without + 1 } else { st.bodies_without = st.bodies_without + 1 }
+            if lines < 400 {
+                let what: []u8 = if is_head { "head" } else { "body" }
+                // Four to a line, to keep the output short.
+                let sep: []u8 = if lines % 4 == 0 { "\n  " } else { "  " }
+                _ = @fmt(&io, "{}{} {}({})", sep, what, name, label)
+                lines = lines + 1
+            }
+        }
+    }
+    _ = @fmt(&io, "\nsurvey: heads {} with talk, {} without; whole-creature models {} with, {} without; {} models not found\n",
+        st.heads_with, st.heads_without, st.bodies_with, st.bodies_without, st.missing)
+}

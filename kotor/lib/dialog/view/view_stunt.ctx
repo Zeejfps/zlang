@@ -1,0 +1,114 @@
+// A cutscene's own models (docs/re/dialogue.md 2.7, 9.4): the camera model the game camera rides
+// on, and the stunt models that stand in for participants while the conversation runs.
+namespace dlgview {
+    // Loads the camera model as a scene part of its own (not an object's visual) and finds its
+    // `camerahook`.
+    fn load_camera_model { mut v: View, mut w: world::World, mut sc: scene::Scene, mut dev: gpu::Device, name: resref::ResRef } {
+        let mut key = name
+        let made = scene::load_model{ &sc, &w, &dev, name = resref::bytes{ r = &key }, body_texture = "", envmap = "", hide_null = false } iferr { return }
+        let index = made ifnull { return }
+        let model = scene::loaded_at{ sc = &sc, i = index }.model
+        let node = mdl::find_node{ model, name = "camerahook" } ifnull { return }
+        let part = scene::add_part{ &sc, loaded = index, parent = -1, hook = "" } iferr { return }
+        v.camera_model = CameraModel{ loaded = true, part, node, model }
+        if w.log.dialog {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog camera model {} (hook node {})\n", name, node)
+        }
+    }
+
+    // Starts the camera model's animation for a node's CameraAnimation number (9.4); false if
+    // the model doesn't have it.
+    fn play_camera_animation { mut v: View, mut w: world::World, mut sc: scene::Scene, number: u32 } -> bool {
+        let mut buf: [34]u8
+        let name = animname::name_in{ w = &w, id = number, into = buf[..] }
+        if name.len == 0 { return false }
+        let p = scene::part_at{ sc = &sc, i = v.camera_model.part }
+        // The same animation again starts over.
+        p.anim_len = 0
+        let ok = scene::play{ &sc, &w, part = v.camera_model.part, name, looping = animname::loops_in{ w = &w, id = number }, speed = 1.0, transition = 0.0 }
+        if ok and w.log.dialog {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog camera animation {} ({})\n", number, name)
+        }
+        return ok
+    }
+
+    // Advances the camera model and, while it drives the camera, takes the camera from its hook.
+    fn update_camera_model { mut v: View, mut w: world::World, mut sc: scene::Scene, dt: f32 } {
+        if not v.camera_model.loaded {
+            w.conversation.camera_busy = false
+            return
+        }
+        scene::advance_part{ &sc, &w, part = v.camera_model.part, dt }
+        if v.mode != Mode::animated {
+            w.conversation.camera_busy = false
+            return
+        }
+        let p = scene::part_at{ sc = &sc, i = v.camera_model.part }
+        let world_m = p.pose.world[@as(usize, v.camera_model.node)]
+        let fov = if v.fov > 0.0 { v.fov } else { dlgcam::FOV }
+        v.rig = dlgcam::node_rig{ world = world_m, fov }
+        v.have_rig = true
+        w.conversation.camera_busy = not mdl_anim::is_done{ player = p.player }
+    }
+
+    // A participant's stunt model (2.7): its meshes aren't drawn (the model is only a skeleton with
+    // the scene's own `cutNNNw` animations), so the body stays and plays the stunt model's
+    // animations, which are authored in area space: the visual draws at the origin. False if the
+    // participant's visual isn't there yet.
+    fn swap_stunt { mut v: View, mut w: world::World, mut sc: scene::Scene, mut dev: gpu::Device, participant: []u8, model: resref::ResRef } -> bool {
+        let mut id = w.conversation.owner
+        if participant.len > 0 and not ci::eq{ a = participant, b = "OWNER" } {
+            id = if ci::eq{ a = participant, b = "PLAYER" } { w.conversation.other } else { dlg::resolve_tag{ &w, tag = participant } }
+        }
+        if id == obj::INVALID or v.swap_count >= 8 { return true }
+        let vi = map::get{ m = sc.by_id, key = id } ifnull { return false }
+        if vi == scene::NO_VISUAL { return true }
+        let vis = list::at{ list = sc.visuals, i = vi }
+        let part = scene::part_at{ sc = &sc, i = vis.first }
+        let mut key = model
+        let made = scene::load_model{ &sc, &w, &dev, name = resref::bytes{ r = &key }, body_texture = "", envmap = "", hide_null = false } iferr { return true }
+        let index = made ifnull { return true }
+        part.source = scene::loaded_at{ sc = &sc, i = index }.model
+        part.anim_len = 0
+        vis.stunt = true
+        vis.animation = 0xFFFFFFFF
+        v.swaps[v.swap_count] = Swap{ id, visual = vi, original = 0, active = true }
+        v.swap_count = v.swap_count + 1
+        if w.log.dialog {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog stunt model {} on {}\n", model, id)
+        }
+        return true
+    }
+
+    // The participants back as they were.
+    fn restore_stunts { mut v: View, mut w: world::World, mut sc: scene::Scene } {
+        let mut i: usize = 0
+        while i < v.swap_count {
+            let s = v.swaps[i]
+            i = i + 1
+            if not s.active { continue }
+            let vis = list::at{ list = sc.visuals, i = s.visual }
+            let part = scene::part_at{ sc = &sc, i = vis.first }
+            part.source = null
+            part.anim_len = 0
+            vis.stunt = false
+            vis.animation = 0xFFFFFFFF
+        }
+        v.swap_count = 0
+    }
+
+    // The scene setup of 2.7: the camera model, then the stunt models. True when it is all there.
+    fn prepare { mut v: View, mut w: world::World, mut sc: scene::Scene, mut dev: gpu::Device } -> bool {
+        let model = w.conversation.d.camera_model
+        if not v.camera_model.loaded and not resref::is_empty{ r = model } { load_camera_model{ &v, &w, &sc, &dev, name = model } }
+        while v.stunt_next < w.conversation.d.stunts.len {
+            let s = w.conversation.d.stunts[v.stunt_next]
+            if not swap_stunt{ &v, &w, &sc, &dev, participant = s.participant, model = s.model } { return false }
+            v.stunt_next = v.stunt_next + 1
+        }
+        return true
+    }
+}

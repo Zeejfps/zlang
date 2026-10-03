@@ -36,6 +36,7 @@ id	name	file	ncs_files
 36	GetLastAttacker	misc.ctx	9
 37	ActionAttack	combat.ctx	301
 38	GetNearestCreature	creature.ctx	304
+39	ActionSpeakString	dialog.ctx	0
 40	ActionPlayAnimation	actions.ctx	1156
 41	GetDistanceToObject	objects.ctx	45
 42	GetIsObjectValid	objects.ctx	3045
@@ -147,6 +148,8 @@ id	name	file	ncs_files
 201	AdjustAlignment	creature.ctx	55
 202	ActionWait	actions.ctx	1242
 204	ActionStartConversation	actions.ctx	787
+205	ActionPauseConversation	dialog.ctx	947
+206	ActionResumeConversation	dialog.ctx	926
 207	EffectBeam	effects.ctx	127
 209	AdjustReputation	misc.ctx	19
 210	GetModuleFileName	module.ctx	8
@@ -158,6 +161,7 @@ id	name	file	ncs_files
 218	FeetToMeters	core.ctx	0
 219	YardsToMeters	core.ctx	0
 220	ApplyEffectToObject	effects.ctx	757
+221	SpeakString	dialog.ctx	8
 222	GetSpellTargetLocation	misc.ctx	3
 223	GetPositionFromLocation	objects.ctx	1
 225	GetFacingFromLocation	objects.ctx	0
@@ -173,6 +177,7 @@ id	name	file	ncs_files
 237	GetIsNeutral	creature.ctx	18
 238	GetPCSpeaker	party.ctx	492
 239	GetStringByStrRef	core.ctx	815
+240	ActionSpeakStringByStrRef	dialog.ctx	0
 241	DestroyObject	objects.ctx	785
 242	GetModule	objects.ctx	40
 243	CreateObject	objects.ctx	319
@@ -183,6 +188,7 @@ id	name	file	ncs_files
 251	GetLoadFromSaveGame	module.ctx	24
 253	GetName	creature.ctx	229
 254	GetLastSpeaker	misc.ctx	9
+255	BeginConversation	dialog.ctx	11
 256	GetLastPerceived	perception.ctx	8
 257	GetLastPerceptionHeard	perception.ctx	0
 258	GetLastPerceptionInaudible	perception.ctx	0
@@ -205,6 +211,7 @@ id	name	file	ncs_files
 289	GetObjectSeen	perception.ctx	209
 290	GetObjectHeard	perception.ctx	0
 294	ActionDoCommand	actions.ctx	1358
+295	EventConversation	dialog.ctx	0
 300	PlayAnimation	actions.ctx	121
 301	TalentSpell	combat.ctx	221
 302	TalentFeat	combat.ctx	215
@@ -270,6 +277,7 @@ id	name	file	ncs_files
 413	SoundObjectPlay	presentation.ctx	108
 414	SoundObjectStop	presentation.ctx	42
 415	SoundObjectSetVolume	presentation.ctx	3
+417	SpeakOneLinerConversation	dialog.ctx	0
 418	GetGold	items.ctx	72
 421	SetLightsaberPowered	presentation.ctx	16
 425	MusicBackgroundPlay	presentation.ctx	16
@@ -287,9 +295,11 @@ id	name	file	ncs_files
 440	GetItemActivator	misc.ctx	1
 443	GetIsOpen	combat.ctx	12
 444	TakeGoldFromCreature	items.ctx	69
+445	GetIsInConversation	dialog.ctx	62
 451	EffectMovementSpeedDecrease	effects.ctx	2
 455	GetPlotFlag	creature.ctx	4
 456	SetPlotFlag	creature.ctx	59
+461	SetDialogPlaceableCamera	dialog.ctx	85
 462	GetSoloMode	creature.ctx	209
 464	GetMaxStealthXP	misc.ctx	0
 468	SetMaxStealthXP	misc.ctx	2
@@ -309,7 +319,11 @@ id	name	file	ncs_files
 501	ActionCastFakeSpellAtObject	misc.ctx	36
 502	ActionCastFakeSpellAtLocation	misc.ctx	4
 503	CutsceneAttack	misc.ctx	34
+505	SetLockOrientationInDialog	dialog.ctx	44
+506	SetLockHeadFollowInDialog	dialog.ctx	18
+508	EnableVideoEffect	dialog.ctx	1
 509	StartNewModule	module.ctx	187
+510	DisableVideoEffect	dialog.ctx	2
 512	DoSinglePlayerAutoSave	module.ctx	1
 514	GetUserActionsPending	combat.ctx	204
 515	RevealMap	module.ctx	104
@@ -339,6 +353,7 @@ id	name	file	ncs_files
 580	GetGlobalNumber	vars.ctx	2386
 581	SetGlobalNumber	vars.ctx	1322
 582	AurPostString	module.ctx	540
+671	BarkString	dialog.ctx	59
 679	GetLocalBoolean	vars.ctx	1721
 680	SetLocalBoolean	vars.ctx	1759
 681	GetLocalNumber	vars.ctx	716
@@ -354,6 +369,8 @@ id	name	file	ncs_files
 697	AddAvailableNPCByTemplate	party.ctx	43
 698	SpawnAvailableNPC	party.ctx	24
 699	IsNPCPartyMember	combat.ctx	131
+700	ActionBarkString	dialog.ctx	1
+701	GetIsConversationActive	dialog.ctx	27
 704	GetPartyAIStyle	combat.ctx	206
 705	GetNPCAIStyle	combat.ctx	206
 706	SetPartyAIStyle	combat.ctx	0
@@ -361,6 +378,7 @@ id	name	file	ncs_files
 708	SetNPCSelectability	party.ctx	10
 709	GetNPCSelectability	party.ctx	4
 710	ClearAllEffects	effects.ctx	64
+711	GetLastConversation	dialog.ctx	0
 712	ShowPartySelectionGUI	module.ctx	49
 713	GetStandardFaction	creature.ctx	688
 714	GivePlotXP	misc.ctx	25
@@ -386,11 +404,14 @@ id	name	file	ncs_files
 742	SetPlanetAvailable	module.ctx	2
 743	GetPlanetAvailable	module.ctx	0
 745	SoundObjectFadeAndStop	presentation.ctx	6
+749	ResetDialogState	dialog.ctx	2
 752	GetSpellTarget	misc.ctx	8
 753	SetSoloMode	party.ctx	2
 755	EffectCutSceneParalyze	effects.ctx	7
+757	CancelPostDialogCharacterSwitch	dialog.ctx	3
 758	SetMaxHitPoints	creature.ctx	1
 759	NoClicksFor	presentation.ctx	259
+760	HoldWorldFadeInForDialog	dialog.ctx	7
 761	ShipBuild	combat.ctx	593
 766	CreateItemOnFloor	misc.ctx	4
 767	SetAvailableNPCId	party.ctx	1

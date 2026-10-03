@@ -27,6 +27,7 @@ namespace scene {
         next_len: usize,
         parent: i32,                    // the part it hangs from (index in Scene.parts), -1 none
         hook: []u8,                     // the parent's node it hangs at
+        source: ?*mdl::Model,           // a stunt model whose animations this part plays besides its own (lib/dialog)
     }
 
     struct Room {
@@ -45,6 +46,7 @@ namespace scene {
         room: i32,                      // the room under it, -1 unknown
         creature_prefix: bool,          // S and L models name their animations with a `c` prefix
         alive: bool,
+        stunt: bool,                    // a cutscene stunt model: drawn at the origin, its animation places it (lib/dialog)
         signature: u64,                 // what the models were made from (visual::signature_of)
     }
 
@@ -179,7 +181,7 @@ namespace scene {
             mdl_anim::hold_shared{ model, pose, parent = parent_model, hook }
         }
         try list::push{ list = &sc.parts, item = Part{
-            loaded, pose, player = mdl_anim::new_player{}, anim = [0; 32], anim_len = 0, next = [0; 32], next_len = 0, parent, hook,
+            loaded, pose, player = mdl_anim::new_player{}, anim = [0; 32], anim_len = 0, next = [0; 32], next_len = 0, parent, hook, source = null,
         } }
         return sc.parts.len - 1
     }
@@ -187,18 +189,27 @@ namespace scene {
     fn part_at { sc: *Scene, i: usize } -> *mut Part { return list::at{ list = sc.parts, i } }
 
     // The binding of animation `name` to the part's model, found along its supermodel chain and
-    // kept; null if the chain has no such animation.
-    fn binding_for { mut sc: Scene, mut w: world::World, model: *mdl::Model, name: []u8 } -> ?mdl_anim::Binding {
-        let key = key_of{ &sc, a = model.name, b = name } iferr { return null }
+    // kept; null if the chain has no such animation. With a `source` (a cutscene's stunt model)
+    // its animations come first, bound to this model's nodes by name.
+    fn binding_for { mut sc: Scene, mut w: world::World, model: *mdl::Model, source: ?*mdl::Model, name: []u8 } -> ?mdl_anim::Binding {
+        let mut owner = model.name
+        if source != null {
+            let both = key_of{ &sc, a = model.name, b = source.name } iferr { return null }
+            owner = both
+        }
+        let key = key_of{ &sc, a = owner, b = name } iferr { return null }
         let have = map::get{ m = sc.bindings, key }
         if have != null { return have }
         if map::get{ m = sc.missing_anims, key } != null { return null }
         // One bind record per (model, animation) the scene ever binds (friction/engine.md).
-        let found = mdl_anim::find{ model, name, lookup = mdl_cache::get{ fs = &w.fs, cache = &sc.models, _ } } ifnull {
+        let mut found: ?mdl_anim::Found = null
+        if source != null { found = mdl_anim::find{ model = source, name, lookup = mdl_cache::get{ fs = &w.fs, cache = &sc.models, _ } } }
+        if found == null { found = mdl_anim::find{ model, name, lookup = mdl_cache::get{ fs = &w.fs, cache = &sc.models, _ } } }
+        let hit = found ifnull {
             map::put{ m = &sc.missing_anims, key, value = 1 } iferr {}
             return null
         }
-        let b = mdl_anim::bind(arena::Arena){ realloc = arena::alloc, heap = sc.arena, model, animation = found.animation } iferr { return null }
+        let b = mdl_anim::bind(arena::Arena){ realloc = arena::alloc, heap = sc.arena, model, animation = hit.animation } iferr { return null }
         map::put{ m = &sc.bindings, key, value = b } iferr {}
         return b
     }
@@ -209,7 +220,7 @@ namespace scene {
         let p = part_at{ sc = &sc, i = part }
         if p.anim_len == name.len and ci::eq{ a = p.anim[..p.anim_len], b = name } { return true }
         let model = loaded_at{ sc = &sc, i = p.loaded }.model
-        let b = binding_for{ &sc, &w, model, name } ifnull { return false }
+        let b = binding_for{ &sc, &w, model, source = p.source, name } ifnull { return false }
         mdl_anim::play{ player = &p.player, binding = b, looping, speed, transition }
         let n = if name.len < 32 { name.len } else { 32 }
         let mut i: usize = 0

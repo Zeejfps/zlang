@@ -1,0 +1,397 @@
+// lipcheck: checks lib/dialog/lipsync (a talking head's mouth, driven by a LIP) against the
+// game's data, headless, and draws contact sheets of it.
+//
+//   kotor/tools/ctxc run kotor/tools/lipcheck -- [HEAD...] [OPTIONS]
+//
+// HEAD is a head model (default pmha01 pfha01 p_bastilah; at most 4). Options:
+//   --module M    mount module M first (end_m01aa), where the line's LIP lives
+//   --lip NAME    the line whose mouth the sheets and checks follow (nm01aatras02000_, Trask's)
+//   --only WHAT   run one part: talk | mapping | sheet | checks | corpus | survey (default: all)
+//   --size N      pixels per tile (192)      --out DIR  (kotor/out/lipcheck)      --game DIR
+//   --zoom Z, --shift S   the sheets' camera: closer by Z, moved up by S of its half size
+//
+// What it does, and what comes out of it:
+//   talk     each head's `talk` animation (which model of the chain holds it, how many of its
+//            nodes drive the head) and the jaw's opening for every shape id under both mappings
+//   mapping  OUT/mapping_HEAD.png: the 16 shapes, rows 0-1 sampled at (s+1)/16 of the talk
+//            animation (the exe), rows 2-3 at s/30 s (lip.md's first guess); 8 tiles a row
+//   sheet    OUT/line_LIP_HEAD.png: the head at 8 times across the line, with the LIP's shapes
+//   checks   PASS/FAIL per head: the mouth is at rest at t = 0 and t = length, only the face
+//            bones `talk` drives are touched, the blend between keys is linear, repeated key
+//            times and odd times (NaN, negative, huge) give a finite pose
+//   corpus   every LIP copy in the install parses, and applying it to each head at sample times
+//            never makes a NaN
+//   survey   which appearance.2da models (heads of B bodies, whole creatures) have a `talk`
+//            animation along their supermodel chain
+//
+// VERDICT on the LIP pose mapping (lip.md said s/30 s, docs/re/dialogue.md section 7 said
+// (s+1)/16 of the length). The exe says (s+1)/16, and its code is clear once the right functions
+// are read (the earlier garbled decompile was only the call into the model).
+// CSWCCreature::PlayLipSync (0x00616310) turns each key into a normalised time (time / LIP
+// length) and a pose value (shape + 1) * 0.0625; CSWCCreatureModel::PlayLip (0x006994a0) hands
+// both to PlayLipAnimation("talk", times, values, count, duration) of the head and of the body;
+// the CAurLipAnimInstance constructor (0x004818c0) multiplies each value by the talk animation's
+// length (animation +0x50, the same field Update compares the clock with), and
+// CAurObject::Update (0x00486670, the 0x200 branch) finds the two keys around elapsed / duration
+// and calls FUN_00483d80(previous value, next value, fraction), which samples every controller
+// at both times and blends them by the fraction (positions linearly, orientations through a
+// quaternion blend, FUN_00481aa0, read as slerp). So shape s is the talk
+// pose at (s + 1) / 16 of its length, linearly blended between keys: 1/32 s for shape 0, the last
+// key (0.5 s) for shape 15. lipsync::apply does that; `Mapping::frame` (s/30 s) stays for this tool.
+// What the renders (mapping_HEAD.png, rows 0-1 the exe's reading, rows 2-3 s/30 s) add: both read
+// as speech, because the two differ by under one talk key (1/30 s) and the poses move smoothly,
+// and in both M/P/B (11) has the lips pressed and AH/OH (3, 4) the jaw open (pmha01: 5.1 and 4.0
+// degrees under the exe, 5.6 and 4.9 under s/30). The visible differences are small: at s/30 shape
+// 0 is (all but) the bind pose with the lips sealed, at (s+1)/16 it is the face 1/32 s in, jaw 0.4 to 1.4
+// degrees open and the lips a hair apart (the tongue tip of the female heads is further off,
+// out of sight), and OOH (5) is a flat near-closed mouth on pmha01 where s/30 purses it. Pictures
+// alone would lean to s/30 (the art was likely authored for it); the code is unambiguous, and
+// it is what the game ran, so the exe wins. To switch, change Mapping::ratio in lipsync::apply.
+//
+// Exit status 1 if any check failed.
+
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+
+struct Options {
+    game: []u8, module: []u8, lip: []u8, only: []u8, out: []u8,
+    heads: [4][]u8, head_count: usize, size: i32, zoom: f32, shift: f32,
+}
+
+struct Report { checks: u32, failed: u32 }
+
+error no_model{ name: []u8 }
+error no_lip{ name: []u8 }
+error no_table{ name: []u8 }
+
+// A head model, its `talk` animation (null when its chain has none), and its poses: `bind` is
+// the model's own, `base` is what the head already shows (its idle animation, else the bind
+// pose), the others are scratch.
+struct Head {
+    name: []u8,
+    model: *mdl::Model,
+    talk: ?mdl_anim::Binding,
+    owner: []u8,
+    jaw: ?u32,
+    bind: mdl_anim::Pose,
+    base: mdl_anim::Pose,
+    work: mdl_anim::Pose,
+    other: mdl_anim::Pose,
+    third: mdl_anim::Pose,
+}
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } -> i32 {
+    let opts = parse_args{ &io, args } ifnull { return 2 }
+    let pages = mem::pages{ &mem, size = 1073741824 } ifnull {
+        io::eprintln{ &io, s = "lipcheck: out of memory" }
+        return 1
+    }
+    let tex_scratch = mem::pages{ &mem, size = 134217728 } ifnull {
+        io::eprintln{ &io, s = "lipcheck: out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf = pages }
+    let mut h = heap::new{ &mem }
+    let mut rep = Report{ checks = 0, failed = 0 }
+    run{ &io, &fs, &sdl, &heap, &h, tex_scratch, &rep, opts } iferr err{ error } {
+        _ = @fmt(&io, "lipcheck: failed: {}\n", error)
+        io::flush{ &io }
+        return 1
+    }
+    _ = @fmt(&io, "{} checks, {} failed\n", rep.checks, rep.failed)
+    io::flush{ &io }
+    return if rep.failed > 0 { 1 } else { 0 }
+}
+
+fn wants { opts: Options, what: []u8 } -> bool {
+    return opts.only.len == 0 or slice::eq_bytes{ a = opts.only, b = what }
+}
+
+fn run {
+    mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut h: heap::Heap, tex_scratch: alloc::Bytes,
+    mut rep: Report, opts: Options,
+} -> ! {
+    let mut rm = try res::open{ &fs, heap = &h, game = opts.game }
+    defer res::close{ &fs, &rm }
+    if opts.module.len > 0 { try res::mount_module{ &fs, &rm, name = opts.module, save = "" } }
+    let mut cache = mdl_cache::new{ rm, keep = &heap }
+
+    let mut heads = list::new(Head, arena::Arena){ realloc = arena::alloc, heap = &heap }
+    let mut i: usize = 0
+    while i < opts.head_count {
+        let head = try load_head{ &fs, &cache, &heap, name = opts.heads[i] } ifnull { return no_model{ name = opts.heads[i] } }
+        try list::push{ list = &heads, item = head }
+        i = i + 1
+    }
+    let hs = list::items{ list = heads }
+
+    // The line: its LIP bytes must outlive the track.
+    let loaded = try res::load{ &fs, rm, name = opts.lip, kind = restype::Type::lip, realloc = heap::alloc, heap = &h }
+    let bytes = loaded ifnull { return no_lip{ name = opts.lip } }
+    defer _ = heap::alloc{ heap = &h, mem = bytes, new = 0, align = 1 }
+    let line = try lip::parse{ data = bytes }
+    let track = lipsync::make_track{ lip = line }
+
+    if wants{ opts, what = "talk" } {
+        i = 0
+        while i < hs.len {
+            describe{ &io, h = hs[i] }
+            i = i + 1
+        }
+    }
+    if wants{ opts, what = "checks" } {
+        i = 0
+        while i < hs.len {
+            check_head{ &io, &rep, h = hs[i], track = &track }
+            i = i + 1
+        }
+        check_synthetic{ &io, &rep, hs }
+    }
+    if wants{ opts, what = "sheet" } { print_keys{ &io, track = &track } }
+    if wants{ opts, what = "survey" } { try survey{ &io, &fs, &h, &cache, rm } }
+    if wants{ opts, what = "mapping" } or wants{ opts, what = "sheet" } {
+        // Not `try`: the error could hold addresses of locals here (track), which the escape check refuses.
+        render_all{ &io, &fs, &sdl, &heap, &h, tex_scratch, rm, opts, hs, track = &track } iferr err{ error } {
+            _ = @fmt(&io, "lipcheck: drawing failed: {}\n", error)
+            match error {
+                gpu::shader_failed{ log } => { _ = @fmt(&io, "{}\n", log) }
+                sdl::failed => { _ = @fmt(&io, "SDL: {}\n", c::bytes{ s = sdl::last_error{ &sdl } }) }
+                else => {}
+            }
+            rep.failed = rep.failed + 1
+        }
+    }
+    if wants{ opts, what = "corpus" } { try corpus_check{ &io, &fs, &h, &rep, opts, hs } }
+}
+
+// Loads a head and finds `talk` along its supermodel chain.
+fn load_head { mut fs: Fs, mut cache: mdl_cache::Cache, mut heap: arena::Arena, name: []u8 } -> !?Head {
+    let model = mdl_cache::get{ &fs, &cache, name } ifnull { return null }
+    let mut talk: ?mdl_anim::Binding = null
+    let mut owner: []u8 = ""
+    let found = mdl_anim::find{ model, name = "talk", lookup = mdl_cache::get{ &fs, &cache, _ } }
+    if found != null {
+        talk = try mdl_anim::bind{ realloc = arena::alloc, &heap, model, animation = found.animation }
+        owner = found.owner.name
+    }
+    let bind = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model }
+    let base = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model }
+    // What a head shows while it talks: its idle animation (pause1, as the scene plays), here
+    // frozen at 0.3 s.
+    let idle = mdl_anim::find{ model, name = "pause1", lookup = mdl_cache::get{ &fs, &cache, _ } }
+    if idle != null {
+        let b = try mdl_anim::bind{ realloc = arena::alloc, &heap, model, animation = idle.animation }
+        mdl_anim::pose_at{ model, binding = b, time = 0.3, pose = base }
+    }
+    let work = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model }
+    let other = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model }
+    let third = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model }
+    let mut jaw = mdl::find_node{ model, name = "f_jaw_g" }
+    if jaw == null { jaw = mdl::find_node{ model, name = "jaw_g" } }
+    return Head{ name, model, talk, owner, jaw, bind, base, work, other, third }
+}
+
+// The line's keys, as shape@milliseconds.
+fn print_keys { mut io: Io, track: *lipsync::Track } {
+    _ = @fmt(&io, "line: {} keys, {} s:", track.lip.count, track.lip.length)
+    let mut i: usize = 0
+    while i < @as(usize, track.lip.count) {
+        let k = lip::get_key{ l = track.lip, i }
+        _ = @fmt(&io, " {}@{}", @as(u32, k.shape), @as(u32, k.time * 1000.0 + 0.5))
+        i = i + 1
+    }
+    _ = @fmt(&io, "\n")
+}
+
+fn describe { mut io: Io, h: Head } {
+    let talk = h.talk ifnull {
+        _ = @fmt(&io, "{}: no talk animation along its chain\n", h.name)
+        return
+    }
+    let mut driven: usize = 0
+    let mut k: usize = 0
+    while k < talk.targets.len {
+        if talk.targets[k] >= 0 { driven = driven + 1 }
+        k = k + 1
+    }
+    _ = @fmt(&io, "{}: talk from {}, {} s, {} of {} animation nodes drive this model\n", h.name, h.owner, talk.animation.length, driven, talk.targets.len)
+    jaw_table{ &io, h, talk }
+    rest_table{ &io, h, talk }
+}
+
+// How far the rest face (shape 0) is from the model's own, per mapping: the driven node that
+// moves most, and by how much (largest position, scale or orientation component).
+fn rest_table { mut io: Io, h: Head, talk: mdl_anim::Binding } {
+    let mut m: u32 = 0
+    while m < 2 {
+        let mapping = if m == 0 { lipsync::Mapping::ratio } else { lipsync::Mapping::frame }
+        let label: []u8 = if m == 0 { "(s+1)/16" } else { "s/30    " }
+        show_shape{ h, talk, shape = lip::Shape::ee, mapping }
+        let mut worst: f32 = 0.0
+        let mut at: usize = 0
+        let mut i: usize = 0
+        while i < h.work.nodes.len {
+            if is_driven{ talk, node = i } {
+                let d = node_distance{ x = h.work.nodes[i], y = h.bind.nodes[i] }
+                if d > worst {
+                    worst = d
+                    at = i
+                }
+            }
+            i = i + 1
+        }
+        _ = @fmt(&io, "  rest face {}: farthest from bind {} by {}\n", label, h.model.nodes[at].name, fixed{ x = worst, places = 4, _ })
+        m = m + 1
+    }
+}
+
+// The jaw's opening in degrees from the bind pose for each shape id under both mappings, and
+// how far the rest face (shape 0) is from the bind pose.
+fn jaw_table { mut io: Io, h: Head, talk: mdl_anim::Binding } {
+    let jaw = h.jaw ifnull { return }
+    let rest = h.bind.nodes[jaw].orientation
+    let mut m: u32 = 0
+    while m < 2 {
+        let mapping = if m == 0 { lipsync::Mapping::ratio } else { lipsync::Mapping::frame }
+        let label: []u8 = if m == 0 { "(s+1)/16" } else { "s/30    " }
+        _ = @fmt(&io, "  jaw {}:", label)
+        let mut s: u32 = 0
+        while s < 16 {
+            show_shape{ h, talk, shape = @as(lip::Shape, @trunc(u8, s)), mapping }
+            let a = angle_deg{ a = rest, b = h.work.nodes[jaw].orientation }
+            _ = @fmt(&io, " {}", fixed{ x = a, places = 1, _ })
+            s = s + 1
+        }
+        _ = @fmt(&io, "\n")
+        m = m + 1
+    }
+}
+
+// The head's own pose with `shape`'s talk pose over it, into h.work.
+fn show_shape { h: Head, talk: mdl_anim::Binding, shape: lip::Shape, mapping: lipsync::Mapping } {
+    copy_pose{ from = h.base, to = h.work }
+    let t = lipsync::pose_time{ shape, mapping, length = talk.animation.length }
+    mdl_anim::apply{ model = h.model, binding = talk, time = t, weight = 1.0, pose = h.work }
+    mdl_anim::finish{ model = h.model, pose = h.work }
+}
+
+fn copy_pose { from: mdl_anim::Pose, to: mdl_anim::Pose } {
+    slice::copy(mdl_anim::NodeState){ dst = to.nodes, src = from.nodes }
+    slice::copy(math::Mat4){ dst = to.world, src = from.world }
+    slice::copy(f32){ dst = to.alpha, src = from.alpha }
+}
+
+fn angle_deg { a: math::Quat, b: math::Quat } -> f32 {
+    let d = math::min{ a = math::abs{ x = math::quat::dot{ a, b } }, b = 1.0 }
+    return 2.0 * math::acosf{ x = d } * 57.29578
+}
+
+// A number with `places` decimals ("-0.123"), "nan" if it isn't finite.
+fn fixed { mut io: Io, x: f32, places: u32 } -> ! {
+    if not (x - x == 0.0) {
+        io::write{ &io, to = io::Stream::out, bytes = "nan" }
+        return
+    }
+    let mut scale: f32 = 1.0
+    let mut p: u32 = 0
+    while p < places {
+        scale = scale * 10.0
+        p = p + 1
+    }
+    let a = if x < 0.0 { -x } else { x }
+    let n = @as(u64, math::min{ a = a * scale + 0.5, b = 1.0e18 })
+    let whole = n / @as(u64, scale)
+    let mut frac = n % @as(u64, scale)
+    if x < 0.0 and n > 0 { io::write{ &io, to = io::Stream::out, bytes = "-" } }
+    io::print_u64{ &io, n = whole }
+    if places > 0 {
+        io::write{ &io, to = io::Stream::out, bytes = "." }
+        let mut digits: [8]u8
+        let mut d: usize = @as(usize, places)
+        while d > 0 {
+            d = d - 1
+            digits[d] = @trunc(u8, '0' + frac % 10)
+            frac = frac / 10
+        }
+        io::write{ &io, to = io::Stream::out, bytes = digits[..@as(usize, places)] }
+    }
+}
+
+// Opens the window and draws the sheets that were asked for.
+fn render_all {
+    mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut h: heap::Heap, tex_scratch: alloc::Bytes,
+    rm: res::Manager, opts: Options, hs: []Head, track: *lipsync::Track,
+} -> ! {
+    try sdl::init{ &sdl, flags = sdl::INIT_VIDEO | sdl::INIT_EVENTS }
+    defer sdl::quit{ &sdl }
+    let config = render::make_config{ title = "lipcheck", width = opts.size, height = opts.size, hidden = true }
+    let mut dev = try gpu::open{ &sdl, realloc = arena::alloc, &heap, config }
+    defer gpu::close{ &dev, &sdl }
+    let mut mats = material::new_cache{ heap = &h, scratch = tex_scratch }
+    defer material::free_cache{ cache = &mats, &dev }
+    let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, &heap, cap = render::default_capacity{} }
+    let mut i: usize = 0
+    while i < hs.len {
+        let head = hs[i]
+        i = i + 1
+        if head.talk == null { continue }
+        let g = try upload_head{ &fs, &dev, &heap, &mats, rm, model = head.model }
+        let cam = fit_camera{ h = head, zoom = opts.zoom, shift = opts.shift }
+        if wants{ opts, what = "mapping" } { try render_mapping{ &io, &fs, &dev, &frame, &heap, opts, h = head, g, cam } }
+        if wants{ opts, what = "sheet" } { try render_line{ &io, &fs, &dev, &frame, &heap, opts, h = head, g, cam, track } }
+    }
+}
+
+fn parse_args { mut io: Io, args: Args } -> ?Options {
+    let mut o = Options{
+        game = DEFAULT_GAME, module = "end_m01aa", lip = "nm01aatras02000_", only = "", out = "kotor/out/lipcheck",
+        heads = ["", "", "", ""], head_count = 0, size = 192, zoom = 1.0, shift = 0.0,
+    }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        let has = i + 1 < args.len
+        if has and slice::eq_bytes{ a, b = "--module" } {
+            o.module = args[i + 1]
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--lip" } {
+            o.lip = args[i + 1]
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--only" } {
+            o.only = args[i + 1]
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--out" } {
+            o.out = args[i + 1]
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--game" } {
+            o.game = args[i + 1]
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--size" } {
+            let n = utf8::parse_u64{ s = utf8::of{ chars = args[i + 1] } } ifnull { return usage{ &io } }
+            if n < 16 or n > 1024 { return usage{ &io } }
+            o.size = @as(i32, n)
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--zoom" } {
+            o.zoom = utf8::parse_f32{ s = utf8::of{ chars = args[i + 1] } } ifnull { return usage{ &io } }
+            i = i + 2
+        } else if has and slice::eq_bytes{ a, b = "--shift" } {
+            o.shift = utf8::parse_f32{ s = utf8::of{ chars = args[i + 1] } } ifnull { return usage{ &io } }
+            i = i + 2
+        } else if a.len > 0 and a[0] != '-' and o.head_count < 4 {
+            o.heads[o.head_count] = a
+            o.head_count = o.head_count + 1
+            i = i + 1
+        } else {
+            return usage{ &io }
+        }
+    }
+    if o.head_count == 0 {
+        o.heads = ["pmha01", "pfha01", "p_bastilah", ""]
+        o.head_count = 3
+    }
+    return o
+}
+
+fn usage { mut io: Io } -> ?Options {
+    io::eprintln{ &io, s = "usage: lipcheck [HEAD...] [--module M] [--lip NAME] [--only talk|mapping|sheet|checks|corpus|survey] [--size N] [--zoom Z] [--shift S] [--out DIR] [--game DIR]" }
+    return null
+}

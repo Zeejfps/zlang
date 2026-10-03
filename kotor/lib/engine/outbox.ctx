@@ -12,7 +12,7 @@ namespace outbox {
         ambient{ play: bool },
         fade{ out: bool, wait: f32, length: f32, color: math::Vec3 },
         movie{ name: resref::ResRef },
-        bark{ speaker: u32, strref: u32, text: Text },
+        bark{ speaker: u32, strref: u32, text: Text, sound: resref::ResRef },
         feedback{ strref: u32, text: Text },
         post_string{ text: Text, x: i32, y: i32, life: f32 },
         no_clicks{ seconds: f32 },
