@@ -517,11 +517,15 @@ data, placeholder faces; the blade geometry is in three model-offset arrays of 1
 Vertex layout (observed in every saber): 44 groups of 4 vertices; each group is 4 points along
 the blade (z ≈ −0.04, 0.005, 0.93, 0.98: base cap, base, tip, tip cap). Group 0 lies on the blade
 axis (u = 0.5), group 1 on one edge (x ≈ +0.1, u = 1), groups 2..21 repeat group 0; group 22 the
-axis again, group 23 the other edge (x ≈ −0.1, u = 0), groups 24..43 repeat the axis. Inferred:
-the engine builds two flat quads strips axis→edge from groups 0/1 and 22/23 and uses the repeated
-groups for the swing trail; blade length follows the lightsaber's `powerup`/`powerdown`
-animations. Each saber model also has two ordinary trimesh planes (34 vertices) crossing the blade
-at ±45° that draw the glow; the texture is additive (`w_lsabre*01`).
+axis again, group 23 the other edge (x ≈ −0.1, u = 0), groups 24..43 repeat the axis. The blade
+is the strip across groups 23, 22, 0, 1 (edge, axis, axis, edge), 3 quads along each half: 12
+triangles, the count of the mesh's placeholder faces (confirmed by render:
+`kotor/out/mdlview/w_lghtsbr_001_side_powered0.png`). Each saber model has two saber meshes at
+right angles (`plane242`, `plane239`). Inferred: the repeated groups are for the swing trail.
+Blade length is the saber nodes' `scale` controller: 0 in the geometry (the blade is off), keyed
+0→1 over `powerup` (0.8 s), 1→0 over `powerdown`, 1 in `powered`. Each saber model also has two
+ordinary trimesh planes (34 vertices) crossing the blade at ±45° that draw the glow; the texture
+is additive (`w_lsabre*01`).
 
 ## Animations
 
@@ -610,8 +614,14 @@ bone indices, inverse binds (tree order); dangly counts; AABB coverage and nesti
 arrays; references resolve; events within length; animation nodes name model nodes.
 
 Result: **0 parse failures**. Remaining failure classes are data quirks, all described above:
-7,069 faces with a stale plane distance, 77 AABB leaf boxes that miss their face, 1 AABB tree that
-omits 30 faces (`m02af_01a`), 6 animation controllers aimed at a node type without that property.
+7,069 faces with a stale plane distance, 77 AABB meshes with leaf boxes that miss their face (by
+more than 1 mm), 1 AABB tree that omits 30 faces (`m02af_01a`), 6 animation controllers aimed at
+a node type without that property.
+
+The game's own parser, `lib/mdl` (`tools/mdlcheck`, 7 s for the whole corpus with `--extract`, or
+the 2,832 models lib/res finds), reproduces every total and failure class above, and
+`tools/animcheck` plays every animation of every model's chain; see
+[../design/models.md](../design/models.md).
 
 Renders (`kotor/tools/py/mdlrender.py`, a numpy rasterizer; PNGs in `kotor/out/mdl/`, looked at):
 `pmhc01` head front/side (UV orientation, facing +Y), `c_rancor` bind/walk/pause (compressed
