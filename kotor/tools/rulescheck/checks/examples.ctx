@@ -282,6 +282,34 @@ namespace check {
         let res2 = rules::saving_throw{ c = &sv, which = rules::save::FORT, dc = d20 + 6, save_type = 0, vs = none, force_power = false, rng = &real2 }
         expect_eq{ &io, &r, name = "one point short fails", got = @as(i64, res2.result), want = 0 }
 
+        // Alignment mastery: +3 to the class's ability at the light extreme, +50 Force points for a
+        // dark Consular, one copy only, gone again in the middle.
+        let mut mids = rules::EffectIds{ next = 1000 }
+        let mut gm = build_creature{ tables, class = rules::cls::JEDI_GUARDIAN, level = 6, str = 14, dex = 14, con = 14, wis = 14, cha = 10 }
+        gm.good_evil = 100
+        rules::update_alignment_mastery{ env, c = &gm, ids = &mids, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "light mastery: guardian STR 14 -> 17", got = @as(i64, gm.stats.abil[0]), want = 17 }
+        rules::update_alignment_mastery{ env, c = &gm, ids = &mids, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "light mastery applied twice is still +3", got = @as(i64, gm.stats.abil[0]), want = 17 }
+        gm.good_evil = 50
+        rules::update_alignment_mastery{ env, c = &gm, ids = &mids, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "no mastery in the middle", got = @as(i64, gm.stats.abil[0]), want = 14 }
+        expect_eq{ &io, &r, name = "no mastery effects left", got = @as(i64, gm.nfx), want = 0 }
+        let mut cm = build_creature{ tables, class = rules::cls::JEDI_CONSULAR, level = 3, str = 10, dex = 10, con = 10, wis = 14, cha = 10 }
+        cm.fp_base = 10
+        rules::recompute{ tables, c = &cm }
+        expect_eq{ &io, &r, name = "consular 3 max FP: 10 + 3 x 2", got = @as(i64, cm.stats.max_fp), want = 16 }
+        cm.good_evil = 0
+        rules::update_alignment_mastery{ env, c = &cm, ids = &mids, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "dark mastery: consular +50 FP", got = @as(i64, cm.stats.max_fp), want = 66 }
+        cm.good_evil = 100
+        rules::update_alignment_mastery{ env, c = &cm, ids = &mids, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "light mastery: consular CHA +3 -> 13 gives +3 x 1 FP", got = @as(i64, cm.stats.max_fp), want = 19 }
+        let mut sm = build_creature{ tables, class = rules::cls::JEDI_SENTINEL, level = 4, str = 10, dex = 10, con = 10, wis = 10, cha = 10 }
+        sm.good_evil = 0
+        rules::update_alignment_mastery{ env, c = &sm, ids = &mids, rng = &rng, ev = &ev }
+        expect_true{ &io, &r, name = "dark mastery: sentinel is poison immune", cond = rules::has_immunity{ c = &sm, kind = rules::imm::POISON, vs = none } }
+
         // The rng: the same seed, the same dice; MSVC's rand() first values for seed 1: 41, 18467, 6334
         let mut m = rules::seed_rng{ seed = 1 }
         expect_eq{ &io, &r, name = "rand() #1 for seed 1", got = @as(i64, rules::next_rand{ rng = &m }), want = 41 }

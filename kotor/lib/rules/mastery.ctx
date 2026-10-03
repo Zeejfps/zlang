@@ -1,0 +1,87 @@
+// Alignment mastery (rules.md 1.11, CSWSCreature::UpdateAlignmentMastery 0x00501d90): a Jedi at the
+// extreme of the good-evil axis gets a permanent bonus. At good-evil 100 the light side's
+// mastery (internal effect 0x6c), at 0 the dark side's (0x6d); anywhere between, neither. The
+// bonuses are children of the mastery effect, with the same id and the innate duration, so they
+// survive ClearAllEffects and go together when it is removed:
+//   light  Guardian +3 STR, Consular +3 CHA (and the Force pool follows), Sentinel +3 CON (and the HP)
+//   dark   Consular +50 Force points (counted in max_force_points), Guardian +1d8 damage on each hand
+//          (iprp_damagecost row 8, damage types 1|2), Sentinel poison immunity
+//   both   an effect icon (rows 60 and 61)
+// The engine calls update_alignment_mastery when the creature's good-evil value changes and when it
+// levels up (the two callers of the original), as it does for the player and companions.
+namespace rules {
+    // Removes the mastery effects of one kind (a group goes by its id); returns whether any went.
+    fn remove_mastery { tables: *Tables, mut c: Creature, kind: i32, mut ev: Events } -> bool {
+        let mut found = false
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) {
+            if c.fx[i].kind == kind {
+                found = true
+                _ = remove_effect_id{ tables, c = &c, id = c.fx[i].id, ev = &ev }
+                i = 0
+                continue
+            }
+            i = i + 1
+        }
+        return found
+    }
+
+    // The group of effects a mastery brings for a creature's classes.
+    fn build_mastery { c: *Creature, light: bool, id: u64 } -> EffectGroup {
+        let mut g: EffectGroup
+        let marker_kind = if light { fx::LIGHT_SIDE_MASTERY } else { fx::DARK_SIDE_MASTERY }
+        g.items[0] = fx::make_effect{ kind = marker_kind }
+        g.len = 1
+        let mut i: usize = 0
+        while i < @as(usize, c.nclasses) and @as(usize, g.len) < GROUP_MAX - 2 {
+            let class = c.classes[i].class
+            i = i + 1
+            if light {
+                let mut a = -1
+                if class == cls::JEDI_GUARDIAN { a = abil::STR }
+                if class == cls::JEDI_CONSULAR { a = abil::CHA }
+                if class == cls::JEDI_SENTINEL { a = abil::CON }
+                if a >= 0 {
+                    g.items[@as(usize, g.len)] = fx::make_ability_increase{ ability = a, amount = 3 }
+                    g.len = g.len + 1
+                }
+            } else if class == cls::JEDI_GUARDIAN {
+                g.items[@as(usize, g.len)] = fx::make_damage_change{ kind = fx::DAMAGE_INCREASE, amount = 8, types = dmg::BLUDGEONING | dmg::PIERCING }
+                g.items[@as(usize, g.len)].ints[5] = 1
+                g.items[@as(usize, g.len) + 1] = fx::make_damage_change{ kind = fx::DAMAGE_INCREASE, amount = 8, types = dmg::BLUDGEONING | dmg::PIERCING }
+                g.items[@as(usize, g.len) + 1].ints[5] = 2
+                g.len = g.len + 2
+            } else if class == cls::JEDI_SENTINEL {
+                g.items[@as(usize, g.len)] = fx::make_immunity{ immunity = imm::POISON }
+                g.len = g.len + 1
+            }
+        }
+        g.items[@as(usize, g.len)] = fx::make_icon{ icon = if light { 60 } else { 61 } }
+        g.len = g.len + 1
+        let mut k: usize = 0
+        while k < @as(usize, g.len) {
+            g.items[k].id = id
+            g.items[k].dur = dur::INNATE
+            g.items[k].sub = 0
+            k = k + 1
+        }
+        return g
+    }
+
+    // Brings the creature's mastery in line with its good-evil value (0 dark, 100 light).
+    fn update_alignment_mastery { env: Env, mut c: Creature, mut ids: EffectIds, mut rng: Rng, mut ev: Events } {
+        let tables = env.tables
+        if c.good_evil == 0 or c.good_evil == 100 {
+            let light = c.good_evil == 100
+            // one copy only: take the old one off before the new one goes on
+            _ = remove_mastery{ tables, c = &c, kind = if light { fx::LIGHT_SIDE_MASTERY } else { fx::DARK_SIDE_MASTERY }, ev = &ev }
+            _ = remove_mastery{ tables, c = &c, kind = if light { fx::DARK_SIDE_MASTERY } else { fx::LIGHT_SIDE_MASTERY }, ev = &ev }
+            ids.next = ids.next + 1
+            let g = build_mastery{ c = &c, light, id = ids.next }
+            _ = apply_group{ env, c = &c, g, rng = &rng, ev = &ev }
+            return
+        }
+        _ = remove_mastery{ tables, c = &c, kind = fx::LIGHT_SIDE_MASTERY, ev = &ev }
+        _ = remove_mastery{ tables, c = &c, kind = fx::DARK_SIDE_MASTERY, ev = &ev }
+    }
+}
