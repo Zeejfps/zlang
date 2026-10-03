@@ -131,7 +131,8 @@ namespace chargen {
     fn refresh_views_after_leave { st: *mut State } {
     }
 
-    fn update { st: *mut State, dt: f32 } {
+    fn update { st: *mut State, mut g: gui::Gui, dt: f32 } {
+        if top_screen{ st } == SCR_CLASS { animate_slots{ st, &g, p = top_panel{ st }, dt } }
         let mut i: usize = 0
         while i < VIEWS {
             let p = st.views.pv[i]

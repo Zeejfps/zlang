@@ -76,6 +76,67 @@ namespace chargen {
         return Outcome::running
     }
 
+    // The hilighted button is the large one. The exe's per-frame render of the panel
+    // (CSWGuiClassSelection, 0x006dc030; docs/re/chargen.md A) moves each button's TOP between 128
+    // (small) and 118 (large) and its 3D label with it, every edge by the same amount: left and top
+    // by the step, width and height by twice that.
+    const SLOT_LARGE_TOP: i32 = 118
+    const SLOT_SMALL_TOP: i32 = 128
+    const SLOT_TAG: [SLOTS][]u8 = ["BTN_SEL1", "BTN_SEL2", "BTN_SEL3", "BTN_SEL4", "BTN_SEL5", "BTN_SEL6"]
+
+    fn animate_slots { st: *mut State, mut g: gui::Gui, p: u32, dt: f32 } {
+        let mut i: usize = 0
+        while i < SLOTS {
+            animate_slot{ st, &g, p, slot = i, dt }
+            i = i + 1
+        }
+    }
+
+    // A change of hilight starts a timer of a quarter second for every whole ten pixels to go
+    // (none when less is left, so the next frame snaps); then the button is at 40 pixels a second
+    // from the end it left until the time is out, when it snaps to the target.
+    fn animate_slot { st: *mut State, mut g: gui::Gui, p: u32, slot: usize, dt: f32 } {
+        let e = gui::control_extent{ &g, panel = p, tag = SLOT_TAG[slot] } ifnull { return }
+        let top = @as(i32, e.y)
+        let large = gui::is_hilighted{ &g, panel = p, tag = SLOT_TAG[slot] }
+        let target = if large { SLOT_LARGE_TOP } else { SLOT_SMALL_TOP }
+        let to_go = if large { top - target } else { target - top }
+        if to_go <= 0 {
+            st.slot_timer[slot] = -1.0
+            return
+        }
+        if st.slot_timer[slot] == -1.0 {
+            st.slot_timer[slot] = @as(f32, to_go / 10) * 0.25
+            return
+        }
+        let left = st.slot_timer[slot] - dt
+        st.slot_timer[slot] = left
+        let mut next = target
+        if left > 0.0 {
+            let moved = @as(i32, (0.25 - left) * 40.0)
+            next = if large { SLOT_SMALL_TOP - moved } else { SLOT_LARGE_TOP + moved }
+            if (large and next <= SLOT_LARGE_TOP) or (not large and next >= SLOT_SMALL_TOP) {
+                next = target
+                st.slot_timer[slot] = -1.0
+            }
+        } else {
+            st.slot_timer[slot] = -1.0
+        }
+        let step = next - top
+        if step == 0 { return }
+        move_edges{ &g, panel = p, tag = SLOT_TAG[slot], step }
+        move_edges{ &g, panel = p, tag = MODEL_TAG[slot], step }
+    }
+
+    // `step` > 0 shrinks the control, < 0 grows it, about its centre.
+    fn move_edges { mut g: gui::Gui, panel: u32, tag: []u8, step: i32 } {
+        let e = gui::control_extent{ &g, panel, tag } ifnull { return }
+        gui::set_extent{
+            &g, panel, tag, x = @as(i32, e.x) + step, y = @as(i32, e.y) + step,
+            w = @as(i32, e.w) - 2 * step, h = @as(i32, e.h) - 2 * step,
+        }
+    }
+
     // The slot's creature becomes the character; the summary opens with the quick-or-custom list.
     fn choose_slot { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, slot: i32 } -> ! {
         let s = @as(usize, slot)

@@ -124,6 +124,28 @@ namespace gui {
         c.flags = if visible { c.flags | F_VISIBLE } else { clear_bits{ f = c.flags, bits = F_VISIBLE } }
     }
 
+    // Moves and resizes a control, in the panel's pixels as the file gives them. Hit tests and
+    // drawing follow at once.
+    fn set_extent { mut g: Gui, panel: u32, tag: []u8, x: i32, y: i32, w: i32, h: i32 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.x = x
+        c.y = y
+        c.w = w
+        c.h = h
+    }
+
+    // Where a control is in its panel's pixels (the file's LEFT, TOP, WIDTH, HEIGHT unless moved).
+    fn control_extent { mut g: Gui, panel: u32, tag: []u8 } -> ?render::Rect {
+        let c = find_control{ &g, panel, tag } ifnull { return null }
+        return rect_of{ x = c.x, y = c.y, w = c.w, h = c.h }
+    }
+
+    // Whether the pointer is over the control or it has the keyboard focus.
+    fn is_hilighted { mut g: Gui, panel: u32, tag: []u8 } -> bool {
+        let c = find_control{ &g, panel, tag } ifnull { return false }
+        return (c.flags & F_HILIGHT) != 0
+    }
+
     // A disabled control draws its text dim, ignores the pointer and the keys.
     fn set_enabled { mut g: Gui, panel: u32, tag: []u8, enabled: bool } {
         let c = find_control{ &g, panel, tag } ifnull { return }
