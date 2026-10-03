@@ -8,18 +8,18 @@
 // Options: --view front|back|side|top|iso (front: the camera on +Y, where creatures face),
 // --anim NAME, --time T (seconds), --head MODEL (at `headhook`, playing the same animation from
 // its own chain if it has it), --attach MODEL:NODE, --size N (pixels, square; 512), --out DIR
-// (kotor/out/mdlview), --game DIR.
+// (kotor/out/mdlview), --game DIR, --plain (no textures).
 //
 // It writes DIR/MODEL_VIEW[_ANIM T].png, named as kotor/tools/py/mdlrender.py names its renders
 // in kotor/out/mdl, to compare with them. The camera is orthographic, fitted to the posed
-// geometry. Until textures come through lib/material the surfaces are untextured and lit by one
-// light from the camera's side.
+// geometry, and lit by ambient light and one light from the camera's side. Textures, lightmaps
+// and TXI materials come through lib/material, as the game's will; --plain draws untextured.
 
 const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
 
 struct Options {
     game: []u8, model: []u8, view: []u8, anim: []u8, time: f32,
-    head: []u8, attach_model: []u8, attach_node: []u8, size: i32, out: []u8,
+    head: []u8, attach_model: []u8, attach_node: []u8, size: i32, out: []u8, plain: bool,
 }
 
 // One model in the picture: its pose, its meshes on the GPU, and where its root goes.
@@ -35,8 +35,12 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } 
         return 1
     }
     let mut heap = arena::new{ buf = pages }
+    let tex_scratch = mem::pages{ &mem, size = 134217728 } ifnull {
+        io::eprintln{ &io, s = "mdlview: out of memory" }
+        return 1
+    }
     let mut h = heap::new{ &mem }
-    run{ &io, &fs, &sdl, &heap, &h, opts } iferr err{ error } {
+    run{ &io, &fs, &sdl, &heap, &h, tex_scratch, opts } iferr err{ error } {
         _ = @fmt(&io, "mdlview: failed: {}\n", error)
         match error {
             gpu::shader_failed{ log } => { _ = @fmt(&io, "{}\n", log) }
@@ -50,7 +54,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } 
     return 0
 }
 
-fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut h: heap::Heap, opts: Options } -> ! {
+fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut h: heap::Heap, tex_scratch: alloc::Bytes, opts: Options } -> ! {
     let mut rm = try res::open{ &fs, heap = &h, game = opts.game }
     defer res::close{ &fs, &rm }
     let mut cache = mdl_cache::new{ rm, keep = &heap }
@@ -60,21 +64,23 @@ fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut 
     let config = render::make_config{ title = "mdlview", width = opts.size, height = opts.size, hidden = true }
     let mut dev = try gpu::open{ &sdl, realloc = arena::alloc, &heap, config }
     defer gpu::close{ &dev, &sdl }
+    let mut mats = material::new_cache{ heap = &h, scratch = tex_scratch }
+    defer material::free_cache{ cache = &mats, &dev }
     let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, &heap, cap = render::default_capacity{} }
 
     let mut parts = list::new(Part, arena::Arena){ realloc = arena::alloc, heap = &heap }
     let body = mdl_cache::get{ &fs, &cache, name = opts.model } ifnull { return no_model{ name = opts.model } }
-    let body_part = try make_part{ &io, &fs, &dev, &heap, &cache, model = body, anim = opts.anim, time = opts.time, base = math::mat4::identity{} }
+    let body_part = try make_part{ &io, &fs, &dev, &heap, &cache, &mats, rm, plain = opts.plain, model = body, anim = opts.anim, time = opts.time, base = math::mat4::identity{} }
     try list::push{ list = &parts, item = body_part }
     if opts.head.len > 0 {
         let head = mdl_cache::get{ &fs, &cache, name = opts.head } ifnull { return no_model{ name = opts.head } }
         let hook = mdl_anim::hook_transform{ model = body, pose = body_part.pose, name = mdl_anim::HOOK_HEAD } ifnull { return no_hook{ name = mdl_anim::HOOK_HEAD } }
-        try list::push{ list = &parts, item = try make_part{ &io, &fs, &dev, &heap, &cache, model = head, anim = opts.anim, time = opts.time, base = hook } }
+        try list::push{ list = &parts, item = try make_part{ &io, &fs, &dev, &heap, &cache, &mats, rm, plain = opts.plain, model = head, anim = opts.anim, time = opts.time, base = hook } }
     }
     if opts.attach_model.len > 0 {
         let other = mdl_cache::get{ &fs, &cache, name = opts.attach_model } ifnull { return no_model{ name = opts.attach_model } }
         let hook = mdl_anim::hook_transform{ model = body, pose = body_part.pose, name = opts.attach_node } ifnull { return no_hook{ name = opts.attach_node } }
-        try list::push{ list = &parts, item = try make_part{ &io, &fs, &dev, &heap, &cache, model = other, anim = "", time = 0.0, base = hook } }
+        try list::push{ list = &parts, item = try make_part{ &io, &fs, &dev, &heap, &cache, &mats, rm, plain = opts.plain, model = other, anim = "", time = 0.0, base = hook } }
     }
     try draw_and_save{ &io, &fs, &dev, &frame, &heap, parts = list::items{ list = parts }, opts }
 }
@@ -144,7 +150,7 @@ fn draw_and_save { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: rend
 // on the GPU, and untextured materials.
 fn make_part {
     mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, mut cache: mdl_cache::Cache,
-    model: *mdl::Model, anim: []u8, time: f32, base: math::Mat4,
+    mut mats: material::Cache, rm: res::Manager, plain: bool, model: *mdl::Model, anim: []u8, time: f32, base: math::Mat4,
 } -> !Part {
     let pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model }
     if anim.len > 0 {
@@ -161,7 +167,13 @@ fn make_part {
     let materials = try alloc::resize(render::Material, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(render::Material){}, count = model.meshes.len }
     let mut i: usize = 0
     while i < materials.len {
-        materials[i] = mdl_render::base_material{ mesh = model.meshes[i] }
+        let m = model.meshes[i]
+        materials[i] = if plain or not mdl_render::draws{ mesh = m } { mdl_render::base_material{ mesh = m } } else {
+            material::for_mesh{ cache = &mats, &fs, &dev, rm, desc = material::MeshDesc{
+                diffuse = m.textures[0], lightmap = m.textures[1], lightmapped = m.lightmapped,
+                transparency_hint = m.transparency_hint, alpha = 1.0, self_illum = math::vec3::zero{}, envmap = "",
+            } }
+        }
         i = i + 1
     }
     return Part{ model, pose, gpu = g, base, materials }
@@ -264,7 +276,7 @@ fn make_dir { mut fs: Fs, path: []u8 } {
 fn parse_args { mut io: Io, args: Args } -> ?Options {
     let mut o = Options{
         game = DEFAULT_GAME, model = "", view = "front", anim = "", time = 0.0,
-        head = "", attach_model = "", attach_node = "", size = 512, out = "kotor/out/mdlview",
+        head = "", attach_model = "", attach_node = "", size = 512, out = "kotor/out/mdlview", plain = false,
     }
     let mut i: usize = 0
     while i < args.len {
@@ -298,6 +310,9 @@ fn parse_args { mut io: Io, args: Args } -> ?Options {
         } else if has and slice::eq_bytes{ a, b = "--out" } {
             o.out = args[i + 1]
             i = i + 2
+        } else if slice::eq_bytes{ a, b = "--plain" } {
+            o.plain = true
+            i = i + 1
         } else if has and slice::eq_bytes{ a, b = "--game" } {
             o.game = args[i + 1]
             i = i + 2
@@ -313,6 +328,6 @@ fn parse_args { mut io: Io, args: Args } -> ?Options {
 }
 
 fn usage { mut io: Io } -> ?Options {
-    io::eprintln{ &io, s = "usage: mdlview MODEL [--view front|back|side|top|iso] [--anim NAME --time T] [--head MODEL] [--attach MODEL:NODE] [--size N] [--out DIR] [--game DIR]" }
+    io::eprintln{ &io, s = "usage: mdlview MODEL [--view front|back|side|top|iso] [--anim NAME --time T] [--head MODEL] [--attach MODEL:NODE] [--size N] [--out DIR] [--game DIR] [--plain]" }
     return null
 }
