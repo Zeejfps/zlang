@@ -576,7 +576,7 @@ each frame:
   the round timer); no master/slave pairing yet; the leader re-attacks its live target each
   round; downed party members get up with 1 HP when no enemy is in combat; cast animations
   hand/self → castout1, dark → castout2, up → castout3, throw → throwsab; spell ranges from the
-  range letter's ranges.2da row; GetObjectByTag("") is OBJECT_INVALID.
+  range letter's ranges.2da row; GetObjectByTag("") is the player character (its tag is empty).
 - Party selection, containers and pickups: `ShowPartySelectionGUI` posts `Note::party_selection`;
   the screen's Done calls `rt_party::bring_member` (spawn at the formation point behind the
   leader, join, take control) and `dismiss_member`, then runs the exit script
