@@ -45,6 +45,7 @@ namespace world {
     struct Stats {
         calls: [772]u32,            // routine calls by id
         missing: [772]u32,          // calls no category implements (fell back to nwstub)
+        unbalanced: [772]bool,      // routines found leaving the stack wrong (reported once)
         script_runs: u32,
         faults: u32,
         events: u32,
@@ -121,7 +122,7 @@ namespace world {
             transition = null,
             arrival_waypoint = [0; 64], arrival_waypoint_len = 0,
             rng = Rng{ state = seed },
-            stats = Stats{ calls = [0; 772], missing = [0; 772], script_runs = 0, faults = 0, events = 0, objects_made = 0 },
+            stats = Stats{ calls = [0; 772], missing = [0; 772], unbalanced = [false; 772], script_runs = 0, faults = 0, events = 0, objects_made = 0 },
             log = elog::quiet{},
             doomed = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
             module_frame = false,
