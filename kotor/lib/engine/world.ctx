@@ -380,7 +380,11 @@ namespace world {
     // Marks an object destroyed: invalid from now on, removed by sweep at the end of the frame.
     fn destroy { mut w: World, id: u32 } {
         let o = object{ w = &w, id } ifnull { return }
-        o.destroyed = true
+        if o.destroyed { return }
+        // An item leaves the inventory or equipment it is in.
+        if o.kind == obj::Kind::item { rt_item::forget_item{ &w, item = id } }
+        let back = object{ w = &w, id } ifnull { return }
+        back.destroyed = true
         list::push{ list = &w.doomed, item = id } iferr {}
         if w.log.objects {
             prefix{ w = &w }

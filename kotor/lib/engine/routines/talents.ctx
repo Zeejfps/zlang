@@ -1,0 +1,538 @@
+// Routines: talents. A talent is a spell (a known Force power, a special ability, an item's
+// cast-spell property), a feat or a skill, with a category mask from spells.2da / feat.2da that the
+// AI scripts (k_inc_gensupport, k_inc_generic) ask for: GetCreatureTalentBest(0x1104, 20) is "the
+// best melee combat feat", GetCreatureTalentRandom(0xf8ff) "any buff". The search follows the
+// original's (0x005b23a0 and the five helpers under it): a coin flip says whether the spells
+// (special abilities, then Force powers, then item properties) or the feats are tried first, the
+// other group when the first has nothing; within a group every candidate that matches the category,
+// has an empty Exclusion cell and can be used now is collected, for "best" only those with the
+// highest MaxCR, and one is picked at random.
+//
+// A category matches when each of its four nibbles is 0xf (any) or equals the talent's nibble
+// (0x005a5d70). Using a talent queues an action for the fight code: a combat feat is an
+// attack_object (params: 0 target, 1 passive, 2 the feat), a power or item ability a cast_spell
+// (params: 0 spell, 1 target, 2 location, 3 cheat, 4 instant, 5 feat talent, 6 item).
+namespace rt_talent {
+    fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
+        match routine {
+            nwscript::TalentSpell => { try make_talent{ &w, &vm, argc, routine, kind = nwconst::TALENT_TYPE_SPELL } }
+            nwscript::TalentFeat => { try make_talent{ &w, &vm, argc, routine, kind = nwconst::TALENT_TYPE_FEAT } }
+            nwscript::TalentSkill => { try make_talent{ &w, &vm, argc, routine, kind = nwconst::TALENT_TYPE_SKILL } }
+            nwscript::GetCreatureTalentRandom => { try get_creature_talent{ &w, &vm, argc, routine } }
+            nwscript::GetCreatureTalentBest => { try get_creature_talent{ &w, &vm, argc, routine } }
+            nwscript::GetIsTalentValid => { try get_talent_field{ &w, &vm, argc, routine } }
+            nwscript::GetIdFromTalent => { try get_talent_field{ &w, &vm, argc, routine } }
+            nwscript::GetTypeFromTalent => { try get_talent_field{ &w, &vm, argc, routine } }
+            nwscript::GetCategoryFromTalent => { try get_talent_field{ &w, &vm, argc, routine } }
+            nwscript::GetCreatureHasTalent => { try get_creature_has_talent{ &w, &vm, argc } }
+            nwscript::ActionUseTalentOnObject => { try action_use_talent{ &w, &vm, argc, routine } }
+            nwscript::ActionUseTalentAtLocation => { try action_use_talent{ &w, &vm, argc, routine } }
+            nwscript::ActionUseFeat => { try action_use_feat{ &w, &vm, argc } }
+            nwscript::ActionCastSpellAtObject => { try action_cast_spell{ &w, &vm, argc, routine } }
+            nwscript::ActionCastSpellAtLocation => { try action_cast_spell{ &w, &vm, argc, routine } }
+            else => { return false }
+        }
+        return true
+    }
+
+    fn flag { b: bool } -> i32 { return if b { 1 } else { 0 } }
+
+    // ---- the values
+
+    // talent TalentSpell(int nSpell), TalentFeat(int nFeat), TalentSkill(int nSkill)
+    fn make_talent { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, kind: i32 } -> ! {
+        let id = try nwarg::int{ &vm, routine, argc, i = 0 }
+        let mut t = values::no_talent{}
+        t.kind = kind
+        t.id = id
+        let h = values::add{ s = &w.values, v = values::Value::talent{ t } }
+        try nwvm::push_engine{ &vm, kind = nwvm::EngineType::talent, handle = h }
+    }
+
+    // A 2DA parsed into the frame's scratch memory; null when it cannot be read.
+    fn scratch_table { mut w: world::World, name: []u8 } -> ?twoda::Table {
+        let found = world::read_scratch{ &w, name, kind = restype::Type::twoda } iferr { return null }
+        let bytes = found ifnull { return null }
+        let table = twoda::parse{ data = bytes, realloc = arena::alloc, heap = w.scratch } iferr { return null }
+        return table
+    }
+
+    fn cell { t: ?twoda::Table, row: i32, column: []u8 } -> i32 {
+        let table = t ifnull { return 0 }
+        if row < 0 { return 0 }
+        return twoda::get_int{ t = table, row = @as(usize, row), column } ifnull 0
+    }
+
+    // The Category column of spells.2da (a spell talent) or feat.2da (a feat), 0 for the rest.
+    fn category_of { mut w: world::World, t: values::Talent } -> i32 {
+        if t.id < 0 { return 0 }
+        if t.kind == nwconst::TALENT_TYPE_SPELL { return cell{ t = scratch_table{ &w, name = "spells" }, row = t.id, column = "category" } }
+        if t.kind == nwconst::TALENT_TYPE_FEAT { return cell{ t = scratch_table{ &w, name = "feat" }, row = t.id, column = "category" } }
+        return 0
+    }
+
+    // int GetIsTalentValid / GetIdFromTalent / GetTypeFromTalent / GetCategoryFromTalent(talent tTalent)
+    fn get_talent_field { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let h = try nwarg::engine{ &vm, routine, argc, i = 0, kind = nwvm::EngineType::talent }
+        let t = values::talent{ s = &w.values, handle = h }
+        let v: i32 = match routine {
+            nwscript::GetIsTalentValid => { flag{ b = t.kind != -1 } }
+            nwscript::GetIdFromTalent => { t.id }
+            nwscript::GetTypeFromTalent => { t.kind }
+            else => { category_of{ &w, t } }            // GetCategoryFromTalent
+        }
+        try nwvm::push_int{ &vm, v }
+    }
+
+    // ---- who has what
+
+    // The creature's rules state once it has been read; null for anything that is not a creature
+    // with stats (such a creature has no talents).
+    fn fighter_of { w: *world::World, id: u32 } -> ?*mut fight::Fighter {
+        let o = world::object{ w, id } ifnull { return null }
+        let c = obj::creature{ o } ifnull { return null }
+        let f = c.fighter ifnull { return null }
+        if not f.loaded { return null }
+        return f
+    }
+
+    // May the creature use anything at all now (the original refuses a dying creature).
+    fn able { c: *obj::Creature, f: *fight::Fighter } -> bool {
+        return not c.dead and f.dying_ms <= 0
+    }
+
+    // A spell the creature could cast now: the equipment masks, the Force points for a power, the
+    // ability bit a silence clears. `from_item`: special abilities and item abilities pay nothing.
+    fn castable { w: *world::World, c: *obj::Creature, f: *fight::Fighter, spell: i32, from_item: bool } -> bool {
+        if not able{ c, f } or (f.c.stats.ai_mask & 8) == 0 { return false }
+        let r = rules::can_cast_spell{ tables = w.rules, c = &f.c, spell, alive = true, from_item }
+        return r == rules::cast::OK or r == rules::cast::ENTANGLED
+    }
+
+    // Whether a spell is a Force power (UserType 1) the creature pays Force points for.
+    fn is_force_power { w: *world::World, spell: i32 } -> bool {
+        let row = rules::get_spell{ tables = w.rules, row = spell } ifnull { return false }
+        return row.user_type == 1
+    }
+
+    fn has_force_class { w: *world::World, f: *fight::Fighter } -> bool {
+        let mut k: usize = 0
+        while k < @as(usize, f.c.nclasses) and k < rules::MAX_CLASSES {
+            if f.c.classes[k].level > 0 and rules::is_force_class{ tables = w.rules, class = f.c.classes[k].class } { return true }
+            k = k + 1
+        }
+        return false
+    }
+
+    // A skill is had when it has ranks or may be used untrained.
+    fn has_skill { w: *world::World, f: *fight::Fighter, skill: i32 } -> bool {
+        if skill < 0 or skill >= @as(i32, rules::NUM_SKILLS) { return false }
+        let rank = rules::skill_rank{ tables = w.rules, c = &f.c, skill, vs = rules::no_versus{}, base_only = false }
+        return rank > 0 or w.rules.skills[@as(usize, skill)].untrained
+    }
+
+    // ---- items that cast
+
+    const MAX_PICK: usize = 256
+
+    // The candidates of one search: ids (spell or feat rows), the item and property index of an
+    // item's spell, and the highest MaxCR seen (for "best").
+    struct Pick {
+        n: usize,
+        top: i32,
+        id: [MAX_PICK]i32,
+        item: [MAX_PICK]u32,
+        sub: [MAX_PICK]i32,
+    }
+
+    fn new_pick {} -> Pick {
+        return Pick{ n = 0, top = -100, id = [0; MAX_PICK], item = [obj::INVALID; MAX_PICK], sub = [-1; MAX_PICK] }
+    }
+
+    // Adds a candidate; for "best" only the highest MaxCR is kept.
+    fn offer { mut p: Pick, best: bool, id: i32, cr: i32, item: u32, sub: i32 } {
+        if best {
+            if cr < p.top { return }
+            if cr > p.top {
+                p.n = 0
+                p.top = cr
+            }
+        }
+        if p.n >= MAX_PICK { return }
+        p.id[p.n] = id
+        p.item[p.n] = item
+        p.sub[p.n] = sub
+        p.n = p.n + 1
+    }
+
+    // Whether a usable cast-spell property still has a use (party-items-saves.md 5.10): a single-use
+    // item has its stack, 2..6 charges per use take `charges`, 8..12 are uses per day, the rest do
+    // not run out.
+    fn uses_left { it: *obj::Item, pr: *rules::Prop } -> bool {
+        let cost = @as(i32, pr.cost_value)
+        if cost == 1 { return it.stack >= 1 }
+        if cost >= 2 and cost <= 6 { return @as(i32, it.charges) / (7 - cost) >= 1 }
+        if cost >= 8 and cost <= 12 {
+            let u = @as(i32, pr.uses_per_day)
+            return (if u == 255 { cost - 7 } else { u }) > 0
+        }
+        return true
+    }
+
+    // The cast-spell properties of one item that match: `spell` (>= 0) exactly, else the category.
+    fn scan_item {
+        w: *world::World, item: u32, spells: ?twoda::Table, category: i32, spell: i32, best: bool, mut p: Pick,
+    } {
+        let io = world::object{ w, id = item } ifnull { return }
+        let it = obj::item{ o = io } ifnull { return }
+        let ri = it.rules ifnull { return }
+        let mut k: usize = 0
+        while k < @as(usize, ri.nprops) {
+            let index = k
+            let pr = &ri.props[k]
+            k = k + 1
+            if @as(i32, pr.name) != rules::ip::CAST_SPELL or not rules::prop_active{ item = ri, p = pr } { continue }
+            if not uses_left{ it, pr } { continue }
+            let s = @as(i32, pr.subtype)
+            let row = rules::get_spell{ tables = w.rules, row = s } ifnull { continue }
+            if spell >= 0 and s != spell { continue }
+            if spell < 0 and not category_matches{ have = row.category, want = category } { continue }
+            offer{ &p, best, id = s, cr = cell{ t = spells, row = s, column = "maxcr" }, item, sub = @as(i32, index) }
+        }
+    }
+
+    // Every item the creature wears or carries, through scan_item.
+    fn scan_items {
+        mut w: world::World, id: u32, c: *obj::Creature, spells: ?twoda::Table, category: i32, spell: i32, best: bool, mut p: Pick,
+    } {
+        let mut k: usize = 0
+        while k < obj::EQUIP_SLOTS {
+            if c.equipped[k] != obj::INVALID { scan_item{ w = &w, item = c.equipped[k], spells, category, spell, best, p = &p } }
+            k = k + 1
+        }
+        // What it carries: the party's shared inventory for a party member.
+        let l = party::inventory_of{ &w, id } ifnull { return }
+        let ids = list::items{ list = l.* }
+        k = 0
+        while k < ids.len {
+            scan_item{ w = &w, item = ids[k], spells, category, spell, best, p = &p }
+            k = k + 1
+        }
+    }
+
+    // ---- searching
+
+    // 0x005a5d70: each nibble of `want` is 0xf (any) or the same as `have`'s.
+    fn category_matches { have: i32, want: i32 } -> bool {
+        let h = @as(u32, have)
+        let q = @as(u32, want)
+        let mut shift: u32 = 0
+        while shift < 16 {
+            let n = (q >> shift) & 0xf
+            if n != 0xf and n != ((h >> shift) & 0xf) { return false }
+            shift = shift + 4
+        }
+        return true
+    }
+
+    // Is the spell or feat left out by the caller (nExcludeType/nExcludeId; -1 as the id leaves
+    // out the whole type)?
+    fn excluded { ex_type: i32, ex_id: i32, kind: i32, id: i32 } -> bool {
+        if ex_type != kind { return false }
+        return ex_id == -1 or ex_id == id
+    }
+
+    fn pick_one { mut w: world::World, p: Pick, kind: i32 } -> values::Talent {
+        if p.n == 0 { return values::no_talent{} }
+        let k = @as(usize, rules::roll_below{ rng = &w.dice, n = @as(i32, p.n) })
+        return values::Talent{ kind, id = p.id[k], sub = p.sub[k], item = p.item[k] }
+    }
+
+    // Special abilities, then Force powers, then item properties (0x005ab9e0, 0x005afa30, 0x005abd00).
+    fn spell_talent {
+        mut w: world::World, owner: u32, c: *obj::Creature, f: *fight::Fighter, spells: ?twoda::Table, category: i32, best: bool,
+        ex_type: i32, ex_id: i32,
+    } -> values::Talent {
+        let n = w.rules.spells.len
+        let mut p = new_pick{}
+        // 1. Special abilities: known spells that are not Force powers (their Exclusion cell empty).
+        let mut s: usize = 0
+        while s < n {
+            let id = @as(i32, s)
+            s = s + 1
+            let row = rules::get_spell{ tables = w.rules, row = id } ifnull { continue }
+            if not row.valid or row.user_type == 1 or not rules::knows_power{ c = &f.c, spell = id } { continue }
+            if excluded{ ex_type, ex_id, kind = nwconst::TALENT_TYPE_SPELL, id } { continue }
+            if not category_matches{ have = row.category, want = category } or cell{ t = spells, row = id, column = "exclusion" } != 0 { continue }
+            if not castable{ w = &w, c, f, spell = id, from_item = true } { continue }
+            offer{ &p, best, id, cr = cell{ t = spells, row = id, column = "maxcr" }, item = obj::INVALID, sub = -1 }
+        }
+        if p.n > 0 { return pick_one{ &w, p, kind = nwconst::TALENT_TYPE_SPELL } }
+        // 2. Force powers, for a creature with a Force-using class: the ones it can pay for.
+        if has_force_class{ w = &w, f } {
+            s = 0
+            while s < n {
+                let id = @as(i32, s)
+                s = s + 1
+                let row = rules::get_spell{ tables = w.rules, row = id } ifnull { continue }
+                if not row.valid or row.user_type != 1 or not rules::knows_power{ c = &f.c, spell = id } { continue }
+                if excluded{ ex_type, ex_id, kind = nwconst::TALENT_TYPE_SPELL, id } { continue }
+                if not category_matches{ have = row.category, want = category } { continue }
+                if not castable{ w = &w, c, f, spell = id, from_item = false } { continue }
+                offer{ &p, best, id, cr = cell{ t = spells, row = id, column = "maxcr" }, item = obj::INVALID, sub = -1 }
+            }
+            if p.n > 0 { return pick_one{ &w, p, kind = nwconst::TALENT_TYPE_SPELL } }
+        }
+        // 3. Item properties of what it wears and carries.
+        if able{ c, f } {
+            scan_items{ &w, id = owner, c, spells, category, spell = -1, best, p = &p }
+            if p.n > 0 { return pick_one{ &w, p, kind = nwconst::TALENT_TYPE_SPELL } }
+        }
+        return values::no_talent{}
+    }
+
+    // The feats it has (0x005ac370).
+    fn feat_talent {
+        mut w: world::World, c: *obj::Creature, f: *fight::Fighter, feats: ?twoda::Table, category: i32, best: bool,
+        ex_type: i32, ex_id: i32,
+    } -> values::Talent {
+        if not able{ c, f } { return values::no_talent{} }
+        let n = w.rules.feats.len
+        let mut p = new_pick{}
+        let mut s: usize = 0
+        while s < n {
+            let id = @as(i32, s)
+            s = s + 1
+            if not rules::has_feat{ c = &f.c, feat = id } { continue }
+            if excluded{ ex_type, ex_id, kind = nwconst::TALENT_TYPE_FEAT, id } { continue }
+            if not category_matches{ have = cell{ t = feats, row = id, column = "category" }, want = category } { continue }
+            if cell{ t = feats, row = id, column = "exclusion" } != 0 { continue }
+            offer{ &p, best, id, cr = cell{ t = feats, row = id, column = "maxcr" }, item = obj::INVALID, sub = -1 }
+        }
+        return pick_one{ &w, p, kind = nwconst::TALENT_TYPE_FEAT }
+    }
+
+    // talent GetCreatureTalentRandom(int nCategory, object oCreature = OBJECT_SELF, int nInclusion = 0)
+    // talent GetCreatureTalentBest(int nCategory, int nCRMax, object oCreature = OBJECT_SELF,
+    //     int nInclusion = 0, int nExcludeType = -1, int nExcludeId = -1)
+    // Best is "the highest MaxCR" (nCRMax only says that it is best, as in the original); the
+    // invalid talent (handle 0) when there is none.
+    fn get_creature_talent { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let best = routine == nwscript::GetCreatureTalentBest
+        let category = try nwarg::int{ &vm, routine, argc, i = 0 }
+        if best { _ = try nwarg::int{ &vm, routine, argc, i = 1 } }
+        let id = try nwarg::object{ &vm, routine, argc, i = if best { 2 } else { 1 } }
+        let inclusion = try nwarg::int{ &vm, routine, argc, i = if best { 3 } else { 2 } }
+        _ = inclusion
+        let mut ex_type: i32 = -2
+        let mut ex_id: i32 = -1
+        if best {
+            ex_type = try nwarg::int{ &vm, routine, argc, i = 4 }
+            ex_id = try nwarg::int{ &vm, routine, argc, i = 5 }
+        }
+        let t = find_talent{ &w, id, category, best, ex_type, ex_id }
+        if t.kind == -1 {
+            try nwvm::push_engine{ &vm, kind = nwvm::EngineType::talent, handle = 0 }
+            return
+        }
+        let h = values::add{ s = &w.values, v = values::Value::talent{ t } }
+        try nwvm::push_engine{ &vm, kind = nwvm::EngineType::talent, handle = h }
+    }
+
+    fn find_talent { mut w: world::World, id: u32, category: i32, best: bool, ex_type: i32, ex_id: i32 } -> values::Talent {
+        let o = world::object{ w = &w, id } ifnull { return values::no_talent{} }
+        let c = obj::creature{ o } ifnull { return values::no_talent{} }
+        let f = c.fighter ifnull { return values::no_talent{} }
+        if not f.loaded or not able{ c, f } { return values::no_talent{} }
+        fight::sync_flags{ w = &w, o, f }
+        let spells = scratch_table{ &w, name = "spells" }
+        let feats = scratch_table{ &w, name = "feat" }
+        // A coin flip says which group goes first (rand() & 1); the other is the fallback.
+        let spells_first = rules::roll_below{ rng = &w.dice, n = 2 } == 0
+        if spells_first {
+            let t = spell_talent{ &w, owner = id, c, f, spells, category, best, ex_type, ex_id }
+            if t.kind != -1 { return t }
+            return feat_talent{ &w, c, f, feats, category, best, ex_type, ex_id }
+        }
+        let t = feat_talent{ &w, c, f, feats, category, best, ex_type, ex_id }
+        if t.kind != -1 { return t }
+        return spell_talent{ &w, owner = id, c, f, spells, category, best, ex_type, ex_id }
+    }
+
+    // The item that carries a spell as a cast-spell property (OBJECT_INVALID and -1 when none).
+    struct ItemSpell { item: u32, sub: i32 }
+
+    fn item_spell_of { mut w: world::World, id: u32, c: *obj::Creature, spell: i32 } -> ItemSpell {
+        let mut p = new_pick{}
+        scan_items{ &w, id, c, spells = null, category = 0xffff, spell, best = false, p = &p }
+        if p.n == 0 { return ItemSpell{ item = obj::INVALID, sub = -1 } }
+        return ItemSpell{ item = p.item[0], sub = p.sub[0] }
+    }
+
+    // int GetCreatureHasTalent(talent tTalent, object oCreature = OBJECT_SELF) (0x005aaa30): a
+    // spell is known (or carried by an item) and payable, a feat is had, a skill has ranks or may
+    // be used untrained; not by a dying creature.
+    fn get_creature_has_talent { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::GetCreatureHasTalent
+        let h = try nwarg::engine{ &vm, routine = r, argc, i = 0, kind = nwvm::EngineType::talent }
+        let id = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        let t = values::talent{ s = &w.values, handle = h }
+        try nwvm::push_int{ &vm, v = flag{ b = has_talent{ &w, id, t } } }
+    }
+
+    fn has_talent { mut w: world::World, id: u32, t: values::Talent } -> bool {
+        if t.kind == -1 or t.id < 0 { return false }
+        let o = world::object{ w = &w, id } ifnull { return false }
+        let c = obj::creature{ o } ifnull { return false }
+        let f = c.fighter ifnull { return false }
+        if not f.loaded or not able{ c, f } { return false }
+        fight::sync_flags{ w = &w, o, f }
+        if t.kind == nwconst::TALENT_TYPE_FEAT { return rules::has_feat{ c = &f.c, feat = t.id } }
+        if t.kind == nwconst::TALENT_TYPE_SKILL { return has_skill{ w = &w, f, skill = t.id } }
+        if t.kind != nwconst::TALENT_TYPE_SPELL { return false }
+        // An item's spell needs the item (the talent names it) or any item that carries the spell.
+        let carried = item_spell_of{ &w, id, c, spell = t.id }
+        if carried.item != obj::INVALID { return castable{ w = &w, c, f, spell = t.id, from_item = true } }
+        if not rules::knows_power{ c = &f.c, spell = t.id } { return false }
+        return castable{ w = &w, c, f, spell = t.id, from_item = not is_force_power{ w = &w, spell = t.id } }
+    }
+
+    // ---- using them
+
+    // The combat feats the attack carries (combat.md 4.5): the special attacks.
+    fn is_combat_feat { feat: i32 } -> bool {
+        return feat == 8 or feat == 11 or feat == 17 or feat == 18 or feat == 19 or feat == 20 or feat == 26
+            or feat == 28 or feat == 29 or feat == 30 or feat == 31 or feat == 53 or feat == 77 or feat == 81
+            or feat == 82 or feat == 83 or feat == 91 or feat == 92 or feat == 101 or feat == 102 or feat == 103
+    }
+
+    // UseFeat upgrades a feat to the best one of its chain that the creature owns (feat.2da
+    // Successor: Power Attack, Improved, Master).
+    fn best_of_chain { w: *world::World, f: *fight::Fighter, feat: i32 } -> i32 {
+        let mut best = feat
+        let mut steps = 0
+        while steps < 4 {
+            steps = steps + 1
+            let row = rules::get_feat{ tables = w.rules, row = best } ifnull { return best }
+            if row.successor < 0 or not rules::has_feat{ c = &f.c, feat = row.successor } { return best }
+            best = row.successor
+        }
+        return best
+    }
+
+    // Queues an attack that uses a combat feat.
+    fn queue_feat_attack { mut w: world::World, me: u32, feat: i32, target: u32 } {
+        if not world::is_valid{ w = &w, id = target } { return }
+        let mut a = actions::make{ kind = actions::Kind::attack_object }
+        a.params[0] = actions::Param::object{ id = target }
+        a.params[1] = actions::Param::int{ v = 0 }
+        a.params[2] = actions::Param::int{ v = feat }
+        _ = actions::add{ &w, id = me, action = a, force = false }
+    }
+
+    // Queues a cast of a power or an item's ability. `item` is the item whose property it is
+    // (OBJECT_INVALID for a power); the cast action pays Force points for neither an item's nor a
+    // special ability's spell.
+    fn queue_cast {
+        mut w: world::World, me: u32, spell: i32, target: u32, location: math::Vec3, cheat: i32, instant: i32, item: u32,
+    } {
+        let mut a = actions::make{ kind = actions::Kind::cast_spell }
+        a.params[0] = actions::Param::int{ v = spell }
+        a.params[1] = actions::Param::object{ id = target }
+        a.params[2] = actions::Param::vector{ v = location }
+        a.params[3] = actions::Param::int{ v = cheat }
+        a.params[4] = actions::Param::int{ v = instant }
+        a.params[5] = actions::Param::int{ v = flag{ b = item == obj::INVALID and not is_force_power{ w = &w, spell } } }
+        a.params[6] = actions::Param::object{ id = item }
+        _ = actions::add{ &w, id = me, action = a, force = false }
+    }
+
+    // What using a talent does for the caller `me`.
+    fn use_talent { mut w: world::World, me: u32, t: values::Talent, target: u32, location: math::Vec3 } {
+        if t.kind == -1 { return }
+        let f = fighter_of{ w = &w, id = me }
+        if t.kind == nwconst::TALENT_TYPE_SPELL {
+            let mut item = t.item
+            if item == obj::INVALID {
+                if world::object{ w = &w, id = me } is some{ value = o } {
+                    if obj::creature{ o } is some{ value = c } {
+                        // A spell that is not a known power comes from a carried item.
+                        if f is some{ value = rf } {
+                            if not rules::knows_power{ c = &rf.c, spell = t.id } {
+                                let carried = item_spell_of{ &w, id = me, c, spell = t.id }
+                                item = carried.item
+                            }
+                        }
+                    }
+                }
+            }
+            queue_cast{ &w, me, spell = t.id, target, location, cheat = 0, instant = 0, item }
+        } else if t.kind == nwconst::TALENT_TYPE_FEAT {
+            let mut feat = t.id
+            if f is some{ value = rf } { feat = best_of_chain{ w = &w, f = rf, feat } }
+            if is_combat_feat{ feat } {
+                queue_feat_attack{ &w, me, feat, target }
+            } else if w.log.actions {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "feat {} used by {}: only the combat feats do anything yet\n", feat, me)
+            }
+        } else if w.log.actions {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "skill {} used by {}: skill use is not implemented\n", t.id, me)
+        }
+    }
+
+    // void ActionUseTalentOnObject(talent tChosenTalent, object oTarget)
+    // void ActionUseTalentAtLocation(talent tChosenTalent, location lTargetLocation)
+    fn action_use_talent { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let h = try nwarg::engine{ &vm, routine, argc, i = 0, kind = nwvm::EngineType::talent }
+        let mut target = obj::INVALID
+        let mut at = math::vec3::zero{}
+        if routine == nwscript::ActionUseTalentOnObject {
+            target = try nwarg::object{ &vm, routine, argc, i = 1 }
+        } else {
+            let lh = try nwarg::engine{ &vm, routine, argc, i = 1, kind = nwvm::EngineType::location }
+            at = values::location{ s = &w.values, handle = lh }.position
+        }
+        let t = values::talent{ s = &w.values, handle = h }
+        use_talent{ &w, me = nwvm::self_object{ vm }, t, target, location = at }
+    }
+
+    // void ActionUseFeat(int nFeat, object oTarget)
+    fn action_use_feat { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::ActionUseFeat
+        let feat = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let target = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        let mut t = values::no_talent{}
+        t.kind = nwconst::TALENT_TYPE_FEAT
+        t.id = feat
+        use_talent{ &w, me = nwvm::self_object{ vm }, t, target, location = math::vec3::zero{} }
+    }
+
+    // void ActionCastSpellAtObject(int nSpell, object oTarget, int nMetaMagic = 0, int bCheat = FALSE,
+    //     int nDomainLevel = 0, int nProjectilePathType = 0, int bInstantSpell = FALSE)
+    // void ActionCastSpellAtLocation(int nSpell, location lTargetLocation, int nMetaMagic = 0,
+    //     int bCheat = FALSE, int nProjectilePathType = 0, int bInstantSpell = FALSE)
+    fn action_cast_spell { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let at_object = routine == nwscript::ActionCastSpellAtObject
+        let spell = try nwarg::int{ &vm, routine, argc, i = 0 }
+        let mut target = obj::INVALID
+        let mut at = math::vec3::zero{}
+        if at_object {
+            target = try nwarg::object{ &vm, routine, argc, i = 1 }
+        } else {
+            let lh = try nwarg::engine{ &vm, routine, argc, i = 1, kind = nwvm::EngineType::location }
+            at = values::location{ s = &w.values, handle = lh }.position
+        }
+        _ = try nwarg::int{ &vm, routine, argc, i = 2 }
+        let cheat = try nwarg::int{ &vm, routine, argc, i = 3 }
+        if at_object {
+            _ = try nwarg::int{ &vm, routine, argc, i = 4 }
+            _ = try nwarg::int{ &vm, routine, argc, i = 5 }
+        } else {
+            _ = try nwarg::int{ &vm, routine, argc, i = 4 }
+        }
+        let instant = try nwarg::int{ &vm, routine, argc, i = if at_object { 6 } else { 5 } }
+        queue_cast{ &w, me = nwvm::self_object{ vm }, spell, target, location = at, cheat, instant, item = obj::INVALID }
+    }
+}

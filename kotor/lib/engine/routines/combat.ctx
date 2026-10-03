@@ -1,8 +1,8 @@
 // Routines: the shims the AI and combat scripts (k_ai_master, k_inc_generic and their users) need
 // until the rules lead's lib/rules brings the combat round (HOOK(rules)). Attacking queues the
 // action (its handler comes with the rules), the "last attack" queries read fields on the
-// creature that the rules will set, talents are values that nothing can use yet, and the weapon
-// choice, lock queries, AI styles and party order are carried out for real. Each routine pops
+// creature that the rules will set, and the weapon choice (through equip.ctx), lock queries, AI
+// styles and party order are carried out for real. Talents are talents.ctx's. Each routine pops
 // its arguments in declaration order; a missing object answers with nwscript.nss's default.
 namespace rt_combat {
     fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
@@ -20,23 +20,9 @@ namespace rt_combat {
             nwscript::GetLastAttackResult => { try get_last_attack_info{ &w, &vm, argc, routine } }
             nwscript::GetWasForcePowerSuccessful => { try get_last_attack_info{ &w, &vm, argc, routine } }
             nwscript::GetUserActionsPending => { try nwvm::push_int{ &vm, v = 0 } }
-            nwscript::GetHasSpellEffect => { try get_has_spell_effect{ &w, &vm, argc } }
             nwscript::GetIsDebilitated => { try get_is_debilitated{ &w, &vm, argc } }
             nwscript::ActionEquipMostDamagingMelee => { try action_equip_melee{ &w, &vm, argc } }
             nwscript::ActionEquipMostDamagingRanged => { try action_equip_ranged{ &w, &vm, argc } }
-            // ---- talents
-            nwscript::TalentSpell => { try make_talent{ &w, &vm, argc, routine, kind = nwconst::TALENT_TYPE_SPELL } }
-            nwscript::TalentFeat => { try make_talent{ &w, &vm, argc, routine, kind = nwconst::TALENT_TYPE_FEAT } }
-            nwscript::TalentSkill => { try make_talent{ &w, &vm, argc, routine, kind = nwconst::TALENT_TYPE_SKILL } }
-            nwscript::GetCreatureTalentRandom => { try get_creature_talent{ &w, &vm, argc, routine } }
-            nwscript::GetCreatureTalentBest => { try get_creature_talent{ &w, &vm, argc, routine } }
-            nwscript::GetIsTalentValid => { try get_talent_field{ &w, &vm, argc, routine } }
-            nwscript::GetIdFromTalent => { try get_talent_field{ &w, &vm, argc, routine } }
-            nwscript::GetTypeFromTalent => { try get_talent_field{ &w, &vm, argc, routine } }
-            nwscript::GetCategoryFromTalent => { try get_talent_field{ &w, &vm, argc, routine } }
-            nwscript::GetCreatureHasTalent => { try get_creature_has_talent{ &w, &vm, argc } }
-            nwscript::ActionUseTalentOnObject => { try action_use_talent{ &w, &vm, argc, routine } }
-            nwscript::ActionUseTalentAtLocation => { try action_use_talent{ &w, &vm, argc, routine } }
             // ---- AI styles and restrict mode
             nwscript::GetPartyAIStyle => { try get_party_ai_style{ &w, &vm } }
             nwscript::SetPartyAIStyle => { try set_party_ai_style{ &w, &vm, argc } }
@@ -162,17 +148,18 @@ namespace rt_combat {
         try nwvm::push_int{ &vm, v }
     }
 
-    // int GetHasSpellEffect(int nSpell, object oObject = OBJECT_SELF): effects are not kept yet.
-    fn get_has_spell_effect { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
-        _ = try nwarg::int{ &vm, routine = nwscript::GetHasSpellEffect, argc, i = 0 }
-        _ = try nwarg::object{ &vm, routine = nwscript::GetHasSpellEffect, argc, i = 1 }
-        try nwvm::push_int{ &vm, v = 0 }
-    }
-
-    // int GetIsDebilitated(object oCreature = OBJECT_SELF): nothing debilitates until the rules do.
+    // int GetIsDebilitated(object oCreature = OBJECT_SELF): a crowd-control state holds it (or it
+    // is a downed party member), from the rules' effects.
     fn get_is_debilitated { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
-        _ = try nwarg::object{ &vm, routine = nwscript::GetIsDebilitated, argc, i = 0 }
-        try nwvm::push_int{ &vm, v = 0 }
+        let id = try nwarg::object{ &vm, routine = nwscript::GetIsDebilitated, argc, i = 0 }
+        let mut debilitated = 0
+        if world::object{ w = &w, id } is some{ value = o } {
+            if fight::of{ o } is some{ value = f } {
+                fight::sync_flags{ w = &w, o, f }
+                if rules::is_debilitated{ c = &f.c } { debilitated = 1 }
+            }
+        }
+        try nwvm::push_int{ &vm, v = debilitated }
     }
 
     // ---- choosing a weapon (baseitems.2da)
@@ -213,18 +200,19 @@ namespace rt_combat {
 
     // The carried weapon of the wanted kind that fits `hand` and hits hardest; OBJECT_INVALID
     // when there is none.
-    fn best_weapon { w: *world::World, o: *obj::Object, want: i32, hand: i32 } -> u32 {
-        let ids = rt_item::inventory_of{ o }
+    fn best_weapon { mut w: world::World, o: *obj::Object, want: i32, hand: i32 } -> u32 {
+        let ids = rt_item::inventory_of{ &w, o }
         let mut best = obj::INVALID
         let mut best_score: i32 = -1
         let mut k: usize = 0
         while k < ids.len {
-            let io = world::object{ w, id = ids[k] }
+            let io = world::object{ w = &w, id = ids[k] }
             k = k + 1
             if io == null { continue }
             let it = obj::item{ o = io } ifnull { continue }
-            if weapon_class{ w, base = it.base } != want or (base_slots{ w, base = it.base } & hand) == 0 { continue }
-            let s = damage_score{ w, base = it.base }
+            if weapon_class{ w = &w, base = it.base } != want or (base_slots{ w = &w, base = it.base } & hand) == 0 { continue }
+            if not equip::may_equip{ w = &w, id = o.id, item = io.id, mask = @as(u32, hand) } { continue }
+            let s = damage_score{ w = &w, base = it.base }
             if s > best_score {
                 best = io.id
                 best_score = s
@@ -241,20 +229,6 @@ namespace rt_combat {
         return damage_score{ w, base = it.base }
     }
 
-    // Puts a carried item into an equipment slot at once, the occupant back in the inventory
-    // (as ActionEquipItem does it).
-    fn equip_into {
-        mut w: world::World, o: *mut obj::Object, c: *mut obj::Creature, io: *mut obj::Object,
-        it: *mut obj::Item, slot: usize,
-    } {
-        if c.equipped[slot] == io.id { return }
-        rt_item::unequip_slot{ &w, o, c, slot }
-        _ = rt_item::remove_from_inventory{ o, item = io.id }
-        c.equipped[slot] = io.id
-        it.equipped_slot = @as(i32, slot)
-        it.possessor = o.id
-    }
-
     // Whether the right hand holds a weapon that takes both hands (EquipableSlots has no
     // left-hand bit).
     fn holds_two_handed { w: *world::World, c: *obj::Creature } -> bool {
@@ -265,7 +239,8 @@ namespace rt_combat {
 
     // Equips the carried weapon of kind `want` that hits hardest into a hand, unless the one held
     // is as good. Returns whether the creature has a weapon of that kind at all. A weapon that
-    // needs both hands empties the off hand, and leaves no room to equip into it.
+    // needs both hands empties the off hand, and leaves no room to equip into it. The equip is
+    // equip::equip_item's (the rules' checks, the displaced weapon back in the inventory).
     fn equip_most_damaging { mut w: world::World, me: u32, want: i32, off_hand: bool } -> bool {
         let o = world::object{ w = &w, id = me } ifnull { return false }
         let c = obj::creature{ o } ifnull { return false }
@@ -277,11 +252,8 @@ namespace rt_combat {
         let bo = world::object{ w = &w, id = best } ifnull { return held >= 0 }
         let bi = obj::item{ o = bo } ifnull { return held >= 0 }
         if damage_score{ w = &w, base = bi.base } <= held { return true }
-        if (base_slots{ w = &w, base = bi.base } & LEFT_HAND) == 0 {
-            rt_item::unequip_slot{ &w, o, c, slot = obj::SLOT_LEFT_WEAPON }
-        }
-        equip_into{ &w, o, c, io = bo, it = bi, slot }
-        return true
+        if equip::equip_item{ &w, id = me, item = best, slot } { return true }
+        return held >= 0
     }
 
     // void ActionEquipMostDamagingMelee(object oVersus = OBJECT_INVALID, int bOffHand = FALSE):
@@ -301,89 +273,6 @@ namespace rt_combat {
         if not equip_most_damaging{ &w, me, want = RANGED, off_hand = false } {
             _ = equip_most_damaging{ &w, me, want = MELEE, off_hand = false }
         }
-    }
-
-    // ---- talents (values::Talent: kind = TALENT_TYPE_*, id = SPELL_*/FEAT_*/SKILL_*)
-
-    // talent TalentSpell(int nSpell), TalentFeat(int nFeat), TalentSkill(int nSkill)
-    fn make_talent { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, kind: i32 } -> ! {
-        let id = try nwarg::int{ &vm, routine, argc, i = 0 }
-        let mut t = values::no_talent{}
-        t.kind = kind
-        t.id = id
-        let h = values::add{ s = &w.values, v = values::Value::talent{ t } }
-        try nwvm::push_engine{ &vm, kind = nwvm::EngineType::talent, handle = h }
-    }
-
-    // talent GetCreatureTalentRandom(int nCategory, object oCreature = OBJECT_SELF, int nInclusion = 0)
-    // talent GetCreatureTalentBest(int nCategory, int nCRMax, object oCreature = OBJECT_SELF,
-    //     int nInclusion = 0, int nExcludeType = -1, int nExcludeId = -1)
-    // Which talents a creature knows is the rules' (HOOK(rules)): until then it has none, and the
-    // answer is the invalid talent (handle 0), so the AI falls back to plain attacks.
-    fn get_creature_talent { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
-        let n = @as(usize, nwscript::ROUTINES[@as(usize, routine)].count)
-        let mut i: usize = 0
-        while i < n {
-            match nwscript::PARAMS[@as(usize, nwscript::ROUTINES[@as(usize, routine)].first) + i].kind {
-                object => { _ = try nwarg::object{ &vm, routine, argc, i } }
-                else => { _ = try nwarg::int{ &vm, routine, argc, i } }
-            }
-            i = i + 1
-        }
-        try nwvm::push_engine{ &vm, kind = nwvm::EngineType::talent, handle = 0 }
-    }
-
-    // The Category column of spells.2da (for a spell talent) or feat.2da (for a feat), 0 for
-    // anything else. The table is read each time: this is rare.
-    fn talent_category { mut w: world::World, t: values::Talent } -> i32 {
-        if t.id < 0 { return 0 }
-        let mut name: []u8 = "spells"
-        if t.kind == nwconst::TALENT_TYPE_FEAT { name = "feat" }
-        else if t.kind != nwconst::TALENT_TYPE_SPELL { return 0 }
-        let found = world::read_scratch{ &w, name, kind = restype::Type::twoda } iferr { return 0 }
-        let bytes = found ifnull { return 0 }
-        let table = twoda::parse{ data = bytes, realloc = arena::alloc, heap = w.scratch } iferr { return 0 }
-        return twoda::get_int{ t = table, row = @as(usize, t.id), column = "category" } ifnull 0
-    }
-
-    // int GetIsTalentValid / GetIdFromTalent / GetTypeFromTalent / GetCategoryFromTalent(talent tTalent)
-    fn get_talent_field { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
-        let h = try nwarg::engine{ &vm, routine, argc, i = 0, kind = nwvm::EngineType::talent }
-        let t = values::talent{ s = &w.values, handle = h }
-        let v: i32 = match routine {
-            nwscript::GetIsTalentValid => { flag{ b = t.kind != -1 } }
-            nwscript::GetIdFromTalent => { t.id }
-            nwscript::GetTypeFromTalent => { t.kind }
-            else => { talent_category{ &w, t } }            // GetCategoryFromTalent
-        }
-        try nwvm::push_int{ &vm, v }
-    }
-
-    // int GetCreatureHasTalent(talent tTalent, object oCreature = OBJECT_SELF): a creature's
-    // spells, feats and skills are the rules' (HOOK(rules)); none yet.
-    fn get_creature_has_talent { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
-        let r = nwscript::GetCreatureHasTalent
-        _ = try nwarg::engine{ &vm, routine = r, argc, i = 0, kind = nwvm::EngineType::talent }
-        _ = try nwarg::object{ &vm, routine = r, argc, i = 1 }
-        try nwvm::push_int{ &vm, v = 0 }
-    }
-
-    // void ActionUseTalentOnObject(talent tChosenTalent, object oTarget)
-    // void ActionUseTalentAtLocation(talent tChosenTalent, location lTargetLocation)
-    // Using a talent is the rules' (HOOK(rules)): noted in the action log, and nothing happens.
-    fn action_use_talent { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
-        let h = try nwarg::engine{ &vm, routine, argc, i = 0, kind = nwvm::EngineType::talent }
-        let mut target = obj::INVALID
-        if routine == nwscript::ActionUseTalentOnObject {
-            target = try nwarg::object{ &vm, routine, argc, i = 1 }
-        } else {
-            _ = try nwarg::engine{ &vm, routine, argc, i = 1, kind = nwvm::EngineType::location }
-        }
-        if not w.log.actions { return }
-        let t = values::talent{ s = &w.values, handle = h }
-        world::prefix{ w = &w }
-        _ = @fmt(&w.io, "talent type {} id {} used by {} on {}: not implemented (no lib/rules)\n",
-            t.kind, t.id, nwvm::self_object{ vm }, target)
     }
 
     // ---- AI styles and restrict mode

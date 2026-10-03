@@ -1,0 +1,284 @@
+// Equipping (docs/re/party-items-saves.md 4, actions.md 3.8): the inventory side of lib/rules'
+// equip and unequip. A creature's equipment lives twice: the engine's cells (obj::Creature.equipped,
+// obj::Item.equipped_slot / possessor, the item out of the inventory list) and the rules creature's
+// (fight::Fighter.c.equip, with the item's properties applied as effects). These functions keep
+// the two together:
+//
+//   equip::equip_item{ &w, id, item, slot }      // slot: INVENTORY_SLOT_* (obj::SLOT_*)
+//   equip::unequip_item{ &w, id, slot }
+//
+// equip_item asks the rules (CanEquipItem: proficiency, use limits, the weapon hands), takes the
+// item out of the inventory (or off the cell it was in), puts what the rules displaced back in the
+// inventory and drains the rules' events (feedback, a changed maximum of hit points). A creature
+// whose rules state was never read (no fighter) equips plainly. The scene needs no nudge: it
+// rebuilds a creature's models when its armour or weapon ids change (scene/visual.ctx
+// signature_of).
+//
+// Not done: the mid-combat equip that costs a combat round slot (actions.md 3.13), the module's
+// OnEquipItem event, splitting one item off an equipped stack.
+namespace equip {
+    // The mask the rules use for an engine slot (1 << slot).
+    fn mask_of { slot: usize } -> u32 { return @as(u32, 1) << @trunc(u32, slot) }
+
+    // The engine slot of a rules mask (a single bit); null for none.
+    fn slot_of_mask { mask: u32 } -> ?usize {
+        let mut k: usize = 0
+        while k < obj::EQUIP_SLOTS {
+            if mask_of{ slot = k } == mask { return k }
+            k = k + 1
+        }
+        return null
+    }
+
+    // Whether someone is attacking `id` (the "in combat because it is being attacked" of the
+    // armour rule, party-items-saves.md 4.3).
+    fn under_attack { w: *world::World, id: u32 } -> bool {
+        let o = world::object{ w, id } ifnull { return false }
+        let c = obj::creature{ o } ifnull { return false }
+        if not c.in_combat { return false }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let other = all[i]
+            i = i + 1
+            if other.destroyed or other.id == id { continue }
+            let oc = obj::creature{ o = other } ifnull { continue }
+            if not oc.dead and (oc.attack_target == id or oc.attempted_target == id) { return true }
+        }
+        return false
+    }
+
+    // Whether creature `id` can put the item on: it is in its inventory (the party's shared one
+    // for a member), worn by it, or lies about (nobody has it).
+    fn available_to { mut w: world::World, id: u32, item: u32, it: *obj::Item } -> bool {
+        if it.possessor == id or not world::is_valid{ w = &w, id = it.possessor } { return true }
+        let l = party::inventory_of{ &w, id } ifnull { return false }
+        let ids = list::items{ list = l.* }
+        let mut k: usize = 0
+        while k < ids.len {
+            if ids[k] == item { return true }
+            k = k + 1
+        }
+        return false
+    }
+
+    // An item that came off: out of its cell, back in the inventory.
+    fn put_back { mut w: world::World, o: *mut obj::Object, c: *mut obj::Creature, id: u32 } {
+        let mut k: usize = 0
+        while k < obj::EQUIP_SLOTS {
+            if c.equipped[k] == id { c.equipped[k] = obj::INVALID }
+            k = k + 1
+        }
+        let io = world::object{ w = &w, id } ifnull { return }
+        if obj::item{ o = io } is some{ value = it } { it.equipped_slot = -1 }
+        _ = rt_item::add_to_inventory{ &w, o, item = id }
+    }
+
+    // After the rules recomputed: the maximum hit points follow (the deficit stays).
+    fn follow_max_hp { o: *mut obj::Object, f: *fight::Fighter, before: i32 } {
+        let after = f.c.stats.max_hp
+        if after > 0 and after != before and o.hp_max == before {
+            o.hp = o.hp + (after - before)
+            o.hp_max = after
+        }
+    }
+
+    fn log_refusal { mut w: world::World, id: u32, item: u32, why: []u8 } {
+        if not w.log.actions { return }
+        world::prefix{ w = &w }
+        _ = @fmt(&w.io, "equip: {} cannot use item {}: {}\n", id, item, why)
+    }
+
+    // Whether the rules would let the creature put the item in the slot with this mask: a pure
+    // check (the AI picks only from what it may wear). Without rules state anything goes.
+    fn may_equip { w: *world::World, id: u32, item: u32, mask: u32 } -> bool {
+        let o = world::object{ w, id } ifnull { return false }
+        let c = obj::creature{ o } ifnull { return false }
+        let io = world::object{ w, id = item } ifnull { return false }
+        let it = obj::item{ o = io } ifnull { return false }
+        if it.non_equippable { return false }
+        let f = c.fighter ifnull { return true }
+        if not f.loaded { return true }
+        let ri = it.rules ifnull { return true }
+        let check = rules::can_equip_item{ tables = w.rules, c = &f.c, item = ri, slot = mask, from_player = true, in_combat_attacked = false }
+        return check.ok
+    }
+
+    // ---- equipping
+
+    // Puts `item` (carried by creature `id`, or lying about) into `slot`. False when it is
+    // refused (not equippable, the rules' checks, the armour rule in combat, not carried here).
+    fn equip_item { mut w: world::World, id: u32, item: u32, slot: usize } -> bool {
+        if slot >= obj::EQUIP_SLOTS { return false }
+        let o = world::object{ w = &w, id } ifnull { return false }
+        let c = obj::creature{ o } ifnull { return false }
+        let io = world::object{ w = &w, id = item } ifnull { return false }
+        let it = obj::item{ o = io } ifnull { return false }
+        if it.non_equippable {
+            log_refusal{ &w, id, item, why = "not equippable" }
+            return false
+        }
+        if not available_to{ &w, id, item, it } { return false }
+        if c.equipped[slot] == item { return true }
+        if c.fighter is some{ value = f } {
+            if f.loaded {
+                if it.rules is some{ value = ri } { return equip_ruled{ &w, o, c, f, io, it, ri, slot } }
+            }
+        }
+        return equip_plain{ &w, o, c, io, it, slot }
+    }
+
+    fn equip_ruled {
+        mut w: world::World, o: *mut obj::Object, c: *mut obj::Creature, f: *mut fight::Fighter, io: *mut obj::Object,
+        it: *mut obj::Item, ri: *mut rules::Item, slot: usize,
+    } -> bool {
+        let mask = mask_of{ slot }
+        fight::sync_flags{ w = &w, o, f }
+        let attacked = under_attack{ w = &w, id = o.id }
+        let refused = rules::armour_change_refused{ slot = mask, in_combat_attacked = attacked, equipping = true }
+        if refused != 0 {
+            log_refusal{ &w, id = o.id, item = io.id, why = "no armour changes while attacked" }
+            return false
+        }
+        let before = f.c.stats.max_hp
+        rules::clear_events{ ev = &w.rev }
+        let res = rules::equip{ env = fight::env_of{ w = &w, o }, c = &f.c, slot = mask, id = io.id, item = ri, loading = false, rng = &w.dice, ev = &w.rev }
+        if not res.ok {
+            log_refusal{ &w, id = o.id, item = io.id, why = "the rules refuse it" }
+            fight::drain{ &w, id = o.id }
+            return false
+        }
+        let placed = slot_of_mask{ mask = res.slot } ifnull { slot }
+        // Whatever the rules took out of the way, and wherever the item was before.
+        let mut d: usize = 0
+        while d < @as(usize, res.ndisplaced) {
+            put_back{ &w, o, c, id = res.displaced[d].id }
+            d = d + 1
+        }
+        let mut k: usize = 0
+        while k < obj::EQUIP_SLOTS {
+            if c.equipped[k] == io.id { c.equipped[k] = obj::INVALID }
+            k = k + 1
+        }
+        _ = rt_item::remove_from_inventory{ &w, o, item = io.id }
+        // The engine's cell may hold something the rules never knew (a refused load).
+        let prev = c.equipped[placed]
+        if prev != obj::INVALID and prev != io.id { put_back{ &w, o, c, id = prev } }
+        c.equipped[placed] = io.id
+        it.equipped_slot = @as(i32, placed)
+        it.possessor = o.id
+        fight::drain{ &w, id = o.id }
+        follow_max_hp{ o, f, before }
+        return true
+    }
+
+    // A creature without rules state: the item takes the slot, the occupant goes back in the
+    // inventory, and a weapon that needs both hands empties the left one.
+    fn equip_plain {
+        mut w: world::World, o: *mut obj::Object, c: *mut obj::Creature, io: *mut obj::Object, it: *mut obj::Item, slot: usize,
+    } -> bool {
+        let two_handed = slot == obj::SLOT_RIGHT_WEAPON and (base_slots{ w = &w, base = it.base } & 0x20) == 0
+        if two_handed and c.equipped[obj::SLOT_LEFT_WEAPON] != obj::INVALID {
+            put_back{ &w, o, c, id = c.equipped[obj::SLOT_LEFT_WEAPON] }
+        }
+        let mut k: usize = 0
+        while k < obj::EQUIP_SLOTS {
+            if c.equipped[k] == io.id { c.equipped[k] = obj::INVALID }
+            k = k + 1
+        }
+        let prev = c.equipped[slot]
+        if prev != obj::INVALID { put_back{ &w, o, c, id = prev } }
+        _ = rt_item::remove_from_inventory{ &w, o, item = io.id }
+        c.equipped[slot] = io.id
+        it.equipped_slot = @as(i32, slot)
+        it.possessor = o.id
+        return true
+    }
+
+    fn base_slots { w: *world::World, base: u32 } -> i32 {
+        return twoda::get_int{ t = w.tables.baseitems, row = @as(usize, base), column = "equipableslots" } ifnull 0
+    }
+
+    // ---- unequipping
+
+    // Takes whatever is in `slot` off, into the inventory. False when the slot is empty or the
+    // armour rule forbids it.
+    fn unequip_item { mut w: world::World, id: u32, slot: usize } -> bool {
+        if slot >= obj::EQUIP_SLOTS { return false }
+        let o = world::object{ w = &w, id } ifnull { return false }
+        let c = obj::creature{ o } ifnull { return false }
+        let item = c.equipped[slot]
+        if item == obj::INVALID { return false }
+        let mut moved_left = false
+        let mut before: i32 = 0
+        let mut ruled: ?*mut fight::Fighter = null
+        if c.fighter is some{ value = f } {
+            if f.loaded {
+                let mask = mask_of{ slot }
+                fight::sync_flags{ w = &w, o, f }
+                let attacked = under_attack{ w = &w, id }
+                let refused = rules::armour_change_refused{ slot = mask, in_combat_attacked = attacked, equipping = false }
+                if refused != 0 {
+                    log_refusal{ &w, id, item, why = "no armour changes while attacked" }
+                    return false
+                }
+                before = f.c.stats.max_hp
+                rules::clear_events{ ev = &w.rev }
+                let res = rules::unequip{ env = fight::env_of{ w = &w, o }, c = &f.c, slot = mask, ev = &w.rev }
+                moved_left = res.ok and res.moved_left
+                ruled = f
+            }
+        }
+        put_back{ &w, o, c, id = item }
+        if moved_left {
+            // The off-hand weapon is now in the right hand.
+            let left = c.equipped[obj::SLOT_LEFT_WEAPON]
+            c.equipped[obj::SLOT_RIGHT_WEAPON] = left
+            c.equipped[obj::SLOT_LEFT_WEAPON] = obj::INVALID
+            if world::object{ w = &w, id = left } is some{ value = lo } {
+                if obj::item{ o = lo } is some{ value = li } { li.equipped_slot = @as(i32, obj::SLOT_RIGHT_WEAPON) }
+            }
+        }
+        if ruled is some{ value = rf } {
+            fight::drain{ &w, id }
+            follow_max_hp{ o, f = rf, before }
+        }
+        return true
+    }
+
+    // The slot an item is worn in by creature `id`, -1 if none.
+    fn slot_of_item { w: *world::World, id: u32, item: u32 } -> i32 {
+        let o = world::object{ w, id } ifnull { return -1 }
+        let c = obj::creature{ o } ifnull { return -1 }
+        let mut k: usize = 0
+        while k < obj::EQUIP_SLOTS {
+            if c.equipped[k] == item { return @as(i32, k) }
+            k = k + 1
+        }
+        return -1
+    }
+
+    // ---- the actions (actions.md 3.8): EQUIPITEM params item, slot, instant; UNEQUIPITEM item, instant
+
+    // A helpless creature (a crowd-control state) cannot change what it wears (AIActionEquipItem).
+    fn helpless { w: *world::World, id: u32 } -> bool {
+        let o = world::object{ w, id } ifnull { return false }
+        let f = fight::of{ o } ifnull { return false }
+        return rules::is_debilitated{ c = &f.c }
+    }
+
+    fn equip_action { mut w: world::World, id: u32, a: *actions::Action } -> actions::Status {
+        let slot = actions::int_param{ a, i = 1 }
+        if slot < 0 or helpless{ w = &w, id } { return actions::Status::failed }
+        if equip_item{ &w, id, item = actions::object_param{ a, i = 0 }, slot = @as(usize, slot) } { return actions::Status::done }
+        return actions::Status::failed
+    }
+
+    fn unequip_action { mut w: world::World, id: u32, a: *actions::Action } -> actions::Status {
+        if helpless{ w = &w, id } { return actions::Status::failed }
+        let slot = slot_of_item{ w = &w, id, item = actions::object_param{ a, i = 0 } }
+        if slot < 0 { return actions::Status::done }
+        if unequip_item{ &w, id, slot = @as(usize, slot) } { return actions::Status::done }
+        return actions::Status::failed
+    }
+}

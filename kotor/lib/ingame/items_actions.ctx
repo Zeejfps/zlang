@@ -61,7 +61,7 @@ namespace items {
                 return other.id
             }
         }
-        _ = rt_item::add_to_inventory{ o, item }
+        _ = rt_item::add_to_inventory{ &w, o, item }
         return item
     }
 
@@ -81,10 +81,10 @@ namespace items {
     fn take_from_bags { mut w: world::World, who: u32, item: u32 } {
         let holder = bag_holder{ w = &w, who }
         let ho = world::object{ w = &w, id = holder } ifnull { return }
-        if rt_item::remove_from_inventory{ o = ho, item } { return }
+        if rt_item::remove_from_inventory{ &w, o = ho, item } { return }
         if holder == who { return }
         let wo = world::object{ w = &w, id = who } ifnull { return }
-        _ = rt_item::remove_from_inventory{ o = wo, item }
+        _ = rt_item::remove_from_inventory{ &w, o = wo, item }
     }
 
     // Puts the carried item `item` on in equipment index `index`: one of a stack, the former
