@@ -1,0 +1,773 @@
+index	return	name	params	ncs_files	ncs_sites
+0	int	Random	int nMaxInteger	972	9636
+1	void	PrintString	string sString	271	495
+2	void	PrintFloat	float fFloat, int nWidth=18, int nDecimals=9	0	0
+3	string	FloatToString	float fFloat, int nWidth=18, int nDecimals=9	216	428
+4	void	PrintInteger	int nInteger	0	0
+5	void	PrintObject	object oObject	0	0
+6	void	AssignCommand	object oActionSubject, action aActionToAssign	1853	6481
+7	void	DelayCommand	float fSeconds, action aActionToDelay	1638	5563
+8	void	ExecuteScript	string sScript, object oTarget, int nScriptVar=-1	169	195
+9	void	ClearAllActions		1002	5807
+10	void	SetFacing	float fDirection	96	220
+11	int	SwitchPlayerCharacter	int nNPC	4	4
+12	void	SetTime	int nHour, int nMinute, int nSecond, int nMillisecond	0	0
+13	int	SetPartyLeader	int nNPC	281	293
+14	void	SetAreaUnescapable	int bUnescapable	23	27
+15	int	GetAreaUnescapable		1	1
+16	int	GetTimeHour		3	12
+17	int	GetTimeMinute		3	9
+18	int	GetTimeSecond		3	9
+19	int	GetTimeMillisecond		3	9
+20	void	ActionRandomWalk		51	88
+21	void	ActionMoveToLocation	location lDestination, int bRun=FALSE	92	196
+22	void	ActionMoveToObject	object oMoveTo, int bRun=FALSE, float fRange=1.0f	699	1144
+23	void	ActionMoveAwayFromObject	object oFleeFrom, int bRun=FALSE, float fMoveAwayRange=40.0f	213	425
+24	object	GetArea	object oTarget	238	361
+25	object	GetEnteringObject		646	662
+26	object	GetExitingObject		34	35
+27	vector	GetPosition	object oTarget	471	778
+28	float	GetFacing	object oTarget	94	217
+29	object	GetItemPossessor	object oItem	1	1
+30	object	GetItemPossessedBy	object oCreature, string sItemTag	463	597
+31	object	CreateItemOnObject	string sItemTemplate, object oTarget=OBJECT_SELF, int nStackSize=1	663	2254
+32	void	ActionEquipItem	object oItem, int nInventorySlot, int bInstant=FALSE	48	65
+33	void	ActionUnequipItem	object oItem, int bInstant=FALSE	33	64
+34	void	ActionPickUpItem	object oItem	0	0
+35	void	ActionPutDownItem	object oItem	0	0
+36	object	GetLastAttacker	object oAttackee=OBJECT_SELF	9	11
+37	void	ActionAttack	object oAttackee, int bPassive=FALSE	301	957
+38	object	GetNearestCreature	int nFirstCriteriaType, int nFirstCriteriaValue, object oTarget=OBJECT_SELF, int nNth=1, int nSecondCriteriaType=-1, int nSecondCriteriaValue=-1, int nThirdCriteriaType=-1, int nThirdCriteriaValue=-1	304	3256
+39	void	ActionSpeakString	string sStringToSpeak, int nTalkVolume=TALKVOLUME_TALK	0	0
+40	void	ActionPlayAnimation	int nAnimation, float fSpeed=1.0, float fDurationSeconds=0.0	1156	6696
+41	float	GetDistanceToObject	object oObject	45	91
+42	int	GetIsObjectValid	object oObject	3045	22530
+43	void	ActionOpenDoor	object oDoor	144	153
+44	void	ActionCloseDoor	object oDoor	97	114
+45	void	SetCameraFacing	float fDirection	0	0
+46	void	PlaySound	string sSoundName	132	171
+47	object	GetSpellTargetObject		5	10
+48	void	ActionCastSpellAtObject	int nSpell, object oTarget, int nMetaMagic=0, int bCheat=FALSE, int nDomainLevel=0, int nProjectilePathType=PROJECTILE_PATH_TYPE_DEFAULT, int bInstantSpell=FALSE	2	7
+49	int	GetCurrentHitPoints	object oObject=OBJECT_SELF	517	2488
+50	int	GetMaxHitPoints	object oObject=OBJECT_SELF	258	1111
+51	effect	EffectAssuredHit		17	20
+52	object	GetLastItemEquipped		0	0
+53	int	GetSubScreenID		1	1
+54	void	CancelCombat	object oidCreature	608	951
+55	int	GetCurrentForcePoints	object oObject=OBJECT_SELF	26	38
+56	int	GetMaxForcePoints	object oObject=OBJECT_SELF	21	27
+57	void	PauseGame	int bPause	2	2
+58	void	SetPlayerRestrictMode	int bRestrict	7	7
+59	int	GetStringLength	string sString	701	718
+60	string	GetStringUpperCase	string sString	0	0
+61	string	GetStringLowerCase	string sString	0	0
+62	string	GetStringRight	string sString, int nCount	464	469
+63	string	GetStringLeft	string sString, int nCount	687	688
+64	string	InsertString	string sDestination, string sString, int nPosition	0	0
+65	string	GetSubString	string sString, int nStart, int nCount	21	67
+66	int	FindSubString	string sString, string sSubString	21	37
+67	float	fabs	float fValue	0	0
+68	float	cos	float fValue	0	0
+69	float	sin	float fValue	0	0
+70	float	tan	float fValue	0	0
+71	float	acos	float fValue	0	0
+72	float	asin	float fValue	0	0
+73	float	atan	float fValue	0	0
+74	float	log	float fValue	0	0
+75	float	pow	float fValue, float fExponent	0	0
+76	float	sqrt	float fValue	0	0
+77	int	abs	int nValue	9	27
+78	effect	EffectHeal	int nDamageToHeal	286	358
+79	effect	EffectDamage	int nDamageAmount, int nDamageType=DAMAGE_TYPE_UNIVERSAL, int nDamagePower=DAMAGE_POWER_NORMAL	97	170
+80	effect	EffectAbilityIncrease	int nAbilityToIncrease, int nModifyBy	4	40
+81	effect	EffectDamageResistance	int nDamageType, int nAmount, int nLimit=0	10	20
+82	effect	EffectResurrection		251	305
+83	int	GetPlayerRestrictMode	object oObject=OBJECT_SELF	206	432
+84	int	GetCasterLevel	object oCreature	1	1
+85	effect	GetFirstEffect	object oCreature	230	448
+86	effect	GetNextEffect	object oCreature	230	448
+87	void	RemoveEffect	object oCreature, effect eEffect	26	36
+88	int	GetIsEffectValid	effect eEffect	230	450
+89	int	GetEffectDurationType	effect eEffect	0	0
+90	int	GetEffectSubType	effect eEffect	0	0
+91	object	GetEffectCreator	effect eEffect	2	2
+92	string	IntToString	int nInteger	1023	10380
+93	object	GetFirstObjectInArea	object oArea=OBJECT_INVALID, int nObjectFilter=OBJECT_TYPE_CREATURE	107	122
+94	object	GetNextObjectInArea	object oArea=OBJECT_INVALID, int nObjectFilter=OBJECT_TYPE_CREATURE	106	121
+95	int	d2	int nNumDice=1	4	4
+96	int	d3	int nNumDice=1	680	884
+97	int	d4	int nNumDice=1	214	216
+98	int	d6	int nNumDice=1	680	1714
+99	int	d8	int nNumDice=1	736	738
+100	int	d10	int nNumDice=1	18	18
+101	int	d12	int nNumDice=1	674	674
+102	int	d20	int nNumDice=1	21	21
+103	int	d100	int nNumDice=1	244	1065
+104	float	VectorMagnitude	vector vVector	0	0
+105	int	GetMetaMagicFeat		1	1
+106	int	GetObjectType	object oTarget	7	9
+107	int	GetRacialType	object oCreature	715	5432
+108	int	FortitudeSave	object oCreature, int nDC, int nSaveType=SAVING_THROW_TYPE_NONE, object oSaveVersus=OBJECT_SELF	2	4
+109	int	ReflexSave	object oCreature, int nDC, int nSaveType=SAVING_THROW_TYPE_NONE, object oSaveVersus=OBJECT_SELF	3	12
+110	int	WillSave	object oCreature, int nDC, int nSaveType=SAVING_THROW_TYPE_NONE, object oSaveVersus=OBJECT_SELF	4	7
+111	int	GetSpellSaveDC		2	2
+112	effect	MagicalEffect	effect eEffect	0	0
+113	effect	SupernaturalEffect	effect eEffect	0	0
+114	effect	ExtraordinaryEffect	effect eEffect	0	0
+115	effect	EffectACIncrease	int nValue, int nModifyType=AC_DODGE_BONUS, int nDamageType=AC_VS_DAMAGE_TYPE_ALL	1	6
+116	int	GetAC	object oObject, int nForFutureUse=0	0	0
+117	effect	EffectSavingThrowIncrease	int nSave, int nValue, int nSaveType=SAVING_THROW_TYPE_ALL	1	12
+118	effect	EffectAttackIncrease	int nBonus, int nModifierType=ATTACK_BONUS_MISC	6	8
+119	effect	EffectDamageReduction	int nAmount, int nDamagePower, int nLimit=0	0	0
+120	effect	EffectDamageIncrease	int nBonus, int nDamageType=DAMAGE_TYPE_UNIVERSAL	7	10
+121	float	RoundsToSeconds	int nRounds	3	3
+122	float	HoursToSeconds	int nHours	1	1
+123	float	TurnsToSeconds	int nTurns	0	0
+124	void	SoundObjectSetFixedVariance	object oSound, float fFixedVariance	3	3
+125	int	GetGoodEvilValue	object oCreature	54	74
+126	int	GetPartyMemberCount		84	95
+127	int	GetAlignmentGoodEvil	object oCreature	0	0
+128	object	GetFirstObjectInShape	int nShape, float fSize, location lTarget, int bLineOfSight=FALSE, int nObjectFilter=OBJECT_TYPE_CREATURE, vector vOrigin=[0.0,0.0,0.0]	213	846
+129	object	GetNextObjectInShape	int nShape, float fSize, location lTarget, int bLineOfSight=FALSE, int nObjectFilter=OBJECT_TYPE_CREATURE, vector vOrigin=[0.0,0.0,0.0]	212	845
+130	effect	EffectEntangle		2	6
+131	void	SignalEvent	object oObject, event evToRun	339	494
+132	event	EventUserDefined	int nUserDefinedEventNumber	340	429
+133	effect	EffectDeath	int nSpectacularDeath=FALSE, int nDisplayFeedback=TRUE	146	168
+134	effect	EffectKnockdown		0	0
+135	void	ActionGiveItem	object oItem, object oGiveTo	16	17
+136	void	ActionTakeItem	object oItem, object oTakeFrom	25	27
+137	vector	VectorNormalize	vector vVector	36	72
+138	int	GetItemStackSize	object oItem	119	127
+139	int	GetAbilityScore	object oCreature, int nAbilityType	19	21
+140	int	GetIsDead	object oCreature	268	2160
+141	void	PrintVector	vector vVector, int bPrepend	0	0
+142	vector	Vector	float x=0.0f, float y=0.0f, float z=0.0f	46	160
+143	void	SetFacingPoint	vector vTarget	382	576
+144	vector	AngleToVector	float fAngle	0	0
+145	float	VectorToAngle	vector vVector	0	0
+146	int	TouchAttackMelee	object oTarget, int bDisplayFeedback=TRUE	0	0
+147	int	TouchAttackRanged	object oTarget, int bDisplayFeedback=TRUE	0	0
+148	effect	EffectParalyze		8	10
+149	effect	EffectSpellImmunity	int nImmunityToSpell=FORCE_POWER_ALL_FORCE_POWERS	0	0
+150	void	SetItemStackSize	object oItem, int nStackSize	119	141
+151	float	GetDistanceBetween	object oObjectA, object oObjectB	805	2158
+152	void	SetReturnStrref	int bShow, int srStringRef=0, int srReturnQueryStrRef=0	5	9
+153	effect	EffectForceJump	object oTarget, int nAdvanced=0	0	0
+154	effect	EffectSleep		15	15
+155	object	GetItemInSlot	int nInventorySlot, object oCreature=OBJECT_SELF	300	928
+156	effect	EffectTemporaryForcePoints	int nTempForce	1	2
+157	effect	EffectConfused		0	0
+158	effect	EffectFrightened		0	0
+159	effect	EffectChoke		23	40
+160	void	SetGlobalString	string sIdentifier, string sValue	4	5
+161	effect	EffectStunned		6	11
+162	void	SetCommandable	int bCommandable, object oTarget=OBJECT_SELF	515	904
+163	int	GetCommandable	object oTarget=OBJECT_SELF	214	224
+164	effect	EffectRegenerate	int nAmount, float fIntervalSeconds	1	1
+165	effect	EffectMovementSpeedIncrease	int nNewSpeedPercent	3	6
+166	int	GetHitDice	object oCreature	1515	1797
+167	void	ActionForceFollowObject	object oFollow, float fFollowDistance=0.0f	0	0
+168	string	GetTag	object oObject	1009	4145
+169	int	ResistForce	object oSource, object oTarget	2	5
+170	int	GetEffectType	effect eEffect	226	436
+171	effect	EffectAreaOfEffect	int nAreaEffectId, string sOnEnterScript="", string sHeartbeatScript="", string sOnExitScript=""	0	0
+172	int	GetFactionEqual	object oFirstObject, object oSecondObject=OBJECT_SELF	9	9
+173	void	ChangeFaction	object oObjectToChangeFaction, object oMemberOfFactionToJoin	0	0
+174	int	GetIsListening	object oObject	0	0
+175	void	SetListening	object oObject, int bValue	462	462
+176	void	SetListenPattern	object oObject, string sPattern, int nNumber=0	462	3224
+177	int	TestStringAgainstPattern	string sPattern, string sStringToTest	0	0
+178	string	GetMatchedSubstring	int nString	0	0
+179	int	GetMatchedSubstringsCount		0	0
+180	effect	EffectVisualEffect	int nVisualEffectId, int nMissEffect=FALSE	251	541
+181	object	GetFactionWeakestMember	object oFactionMember=OBJECT_SELF, int bMustBeVisible=TRUE	0	0
+182	object	GetFactionStrongestMember	object oFactionMember=OBJECT_SELF, int bMustBeVisible=TRUE	0	0
+183	object	GetFactionMostDamagedMember	object oFactionMember=OBJECT_SELF, int bMustBeVisible=TRUE	0	0
+184	object	GetFactionLeastDamagedMember	object oFactionMember=OBJECT_SELF, int bMustBeVisible=TRUE	0	0
+185	int	GetFactionGold	object oFactionMember	0	0
+186	int	GetFactionAverageReputation	object oSourceFactionMember, object oTarget	1	1
+187	int	GetFactionAverageGoodEvilAlignment	object oFactionMember	0	0
+188	float	SoundObjectGetFixedVariance	object oSound	0	0
+189	int	GetFactionAverageLevel	object oFactionMember	0	0
+190	int	GetFactionAverageXP	object oFactionMember	0	0
+191	int	GetFactionMostFrequentClass	object oFactionMember	0	0
+192	object	GetFactionWorstAC	object oFactionMember=OBJECT_SELF, int bMustBeVisible=TRUE	0	0
+193	object	GetFactionBestAC	object oFactionMember=OBJECT_SELF, int bMustBeVisible=TRUE	0	0
+194	string	GetGlobalString	string sIdentifier	3	3
+195	int	GetListenPatternNumber		10	11
+196	void	ActionJumpToObject	object oToJumpTo, int bWalkStraightLineToPoint=TRUE	97	164
+197	object	GetWaypointByTag	string sWaypointTag	934	5399
+198	object	GetTransitionTarget	object oTransition	0	0
+199	effect	EffectLinkEffects	effect eChildEffect, effect eParentEffect	10	98
+200	object	GetObjectByTag	string sTag, int nNth=0	3387	9005
+201	void	AdjustAlignment	object oSubject, int nAlignment, int nShift	55	66
+202	void	ActionWait	float fSeconds	1242	1418
+203	void	SetAreaTransitionBMP	int nPredefinedAreaTransition, string sCustomAreaTransitionBMP=""	0	0
+204	void	ActionStartConversation	object oObjectToConverse, string sDialogResRef="", int bPrivateConversation=FALSE, int nConversationType=CONVERSATION_TYPE_CINEMATIC, int bIgnoreStartRange=FALSE, string sNameObjectToIgnore1="", string sNameObjectToIgnore2="", string sNameObjectToIgnore3="", string sNameObjectToIgnore4="", string sNameObjectToIgnore5="", string sNameObjectToIgnore6="", int bUseLeader=FALSE	787	1139
+205	void	ActionPauseConversation		947	949
+206	void	ActionResumeConversation		926	928
+207	effect	EffectBeam	int nBeamVisualEffect, object oEffector, int nBodyPart, int bMissEffect=FALSE	127	246
+208	int	GetReputation	object oSource, object oTarget	0	0
+209	void	AdjustReputation	object oTarget, object oSourceFactionMember, int nAdjustment	19	29
+210	string	GetModuleFileName		8	9
+211	object	GetGoingToBeAttackedBy	object oTarget	0	0
+212	effect	EffectForceResistanceIncrease	int nValue	1	2
+213	location	GetLocation	object oObject	885	3314
+214	void	ActionJumpToLocation	location lLocation	120	146
+215	location	Location	vector vPosition, float fOrientation	13	20
+216	void	ApplyEffectAtLocation	int nDurationType, effect eEffect, location lLocation, float fDuration=0.0f	141	224
+217	int	GetIsPC	object oCreature	796	804
+218	float	FeetToMeters	float fFeet	0	0
+219	float	YardsToMeters	float fYards	0	0
+220	void	ApplyEffectToObject	int nDurationType, effect eEffect, object oTarget, float fDuration=0.0f	757	1938
+221	void	SpeakString	string sStringToSpeak, int nTalkVolume=TALKVOLUME_TALK	8	29
+222	location	GetSpellTargetLocation		3	28
+223	vector	GetPositionFromLocation	location lLocation	1	1
+224	effect	EffectBodyFuel		1	1
+225	float	GetFacingFromLocation	location lLocation	0	0
+226	object	GetNearestCreatureToLocation	int nFirstCriteriaType, int nFirstCriteriaValue, location lLocation, int nNth=1, int nSecondCriteriaType=-1, int nSecondCriteriaValue=-1, int nThirdCriteriaType=-1, int nThirdCriteriaValue=-1	0	0
+227	object	GetNearestObject	int nObjectType=OBJECT_TYPE_ALL, object oTarget=OBJECT_SELF, int nNth=1	47	87
+228	object	GetNearestObjectToLocation	int nObjectType, location lLocation, int nNth=1	0	0
+229	object	GetNearestObjectByTag	string sTag, object oTarget=OBJECT_SELF, int nNth=1	545	1077
+230	float	IntToFloat	int nInteger	837	2531
+231	int	FloatToInt	float fFloat	133	157
+232	int	StringToInt	string sNumber	473	473
+233	float	StringToFloat	string sNumber	0	0
+234	void	ActionCastSpellAtLocation	int nSpell, location lTargetLocation, int nMetaMagic=0, int bCheat=FALSE, int nProjectilePathType=PROJECTILE_PATH_TYPE_DEFAULT, int bInstantSpell=FALSE	0	0
+235	int	GetIsEnemy	object oTarget, object oSource=OBJECT_SELF	302	1353
+236	int	GetIsFriend	object oTarget, object oSource=OBJECT_SELF	220	244
+237	int	GetIsNeutral	object oTarget, object oSource=OBJECT_SELF	18	29
+238	object	GetPCSpeaker		492	631
+239	string	GetStringByStrRef	int nStrRef	815	815
+240	void	ActionSpeakStringByStrRef	int nStrRef, int nTalkVolume=TALKVOLUME_TALK	0	0
+241	void	DestroyObject	object oDestroy, float fDelay=0.0f, int bNoFade=FALSE, float fDelayUntilFade=0.0f	785	1308
+242	object	GetModule		40	65
+243	object	CreateObject	int nObjectType, string sTemplate, location lLocation, int bUseAppearAnimation=FALSE	319	818
+244	event	EventSpellCastAt	object oCaster, int nSpell, int bHarmful=TRUE	3	40
+245	object	GetLastSpellCaster		3	3
+246	int	GetLastSpell		4	4
+247	int	GetUserDefinedEventNumber		452	452
+248	int	GetSpellId		6	46
+249	string	RandomName		0	0
+250	effect	EffectPoison	int nPoisonType	18	21
+251	int	GetLoadFromSaveGame		24	24
+252	effect	EffectAssuredDeflection	int nReturn=0	0	0
+253	string	GetName	object oObject	229	444
+254	object	GetLastSpeaker		9	10
+255	int	BeginConversation	string sResRef="", object oObjectToDialog=OBJECT_INVALID	11	16
+256	object	GetLastPerceived		8	16
+257	int	GetLastPerceptionHeard		0	0
+258	int	GetLastPerceptionInaudible		0	0
+259	int	GetLastPerceptionSeen		2	6
+260	object	GetLastClosedBy		0	0
+261	int	GetLastPerceptionVanished		1	2
+262	object	GetFirstInPersistentObject	object oPersistentObject=OBJECT_SELF, int nResidentObjectType=OBJECT_TYPE_CREATURE, int nPersistentZone=PERSISTENT_ZONE_ACTIVE	22	22
+263	object	GetNextInPersistentObject	object oPersistentObject=OBJECT_SELF, int nResidentObjectType=OBJECT_TYPE_CREATURE, int nPersistentZone=PERSISTENT_ZONE_ACTIVE	14	14
+264	object	GetAreaOfEffectCreator	object oAreaOfEffectObject=OBJECT_SELF	0	0
+265	int	ShowLevelUpGUI		1	1
+266	void	SetItemNonEquippable	object oItem, int bNonEquippable	13	25
+267	int	GetButtonMashCheck		0	0
+268	void	SetButtonMashCheck	int nCheck	1	1
+269	effect	EffectForcePushTargeted	location lCentre, int nIgnoreTestDirectLine=0	16	32
+270	effect	EffectHaste		0	0
+271	void	GiveItem	object oItem, object oGiveTo	8	65
+272	string	ObjectToString	object oObject	230	643
+273	effect	EffectImmunity	int nImmunityType	1	3
+274	int	GetIsImmune	object oCreature, int nImmunityType, object oVersus=OBJECT_INVALID	1	1
+275	effect	EffectDamageImmunityIncrease	int nDamageType, int nPercentImmunity	3	9
+276	int	GetEncounterActive	object oEncounter=OBJECT_SELF	4	4
+277	void	SetEncounterActive	int nNewValue, object oEncounter=OBJECT_SELF	22	36
+278	int	GetEncounterSpawnsMax	object oEncounter=OBJECT_SELF	0	0
+279	void	SetEncounterSpawnsMax	int nNewValue, object oEncounter=OBJECT_SELF	0	0
+280	int	GetEncounterSpawnsCurrent	object oEncounter=OBJECT_SELF	0	0
+281	void	SetEncounterSpawnsCurrent	int nNewValue, object oEncounter=OBJECT_SELF	0	0
+282	object	GetModuleItemAcquired		14	14
+283	object	GetModuleItemAcquiredFrom		0	0
+284	void	SetCustomToken	int nCustomTokenNumber, string sTokenValue	20	66
+285	int	GetHasFeat	int nFeat, object oCreature=OBJECT_SELF	207	1859
+286	int	GetHasSkill	int nSkill, object oCreature=OBJECT_SELF	1	1
+287	void	ActionUseFeat	int nFeat, object oTarget	0	0
+288	void	ActionUseSkill	int nSkill, object oTarget, int nSubSkill=0, object oItemUsed=OBJECT_INVALID	2	2
+289	int	GetObjectSeen	object oTarget, object oSource=OBJECT_SELF	209	1467
+290	int	GetObjectHeard	object oTarget, object oSource=OBJECT_SELF	0	0
+291	object	GetLastPlayerDied		1	1
+292	object	GetModuleItemLost		0	0
+293	object	GetModuleItemLostBy		0	0
+294	void	ActionDoCommand	action aActionToDo	1358	4848
+295	event	EventConversation		0	0
+296	void	SetEncounterDifficulty	int nEncounterDifficulty, object oEncounter=OBJECT_SELF	0	0
+297	int	GetEncounterDifficulty	object oEncounter=OBJECT_SELF	0	0
+298	float	GetDistanceBetweenLocations	location lLocationA, location lLocationB	0	0
+299	int	GetReflexAdjustedDamage	int nDamage, object oTarget, int nDC, int nSaveType=SAVING_THROW_TYPE_NONE, object oSaveVersus=OBJECT_SELF	2	3
+300	void	PlayAnimation	int nAnimation, float fSpeed=1.0, float fSeconds=0.0	121	252
+301	talent	TalentSpell	int nSpell	221	10831
+302	talent	TalentFeat	int nFeat	215	421
+303	talent	TalentSkill	int nSkill	0	0
+304	int	GetHasSpellEffect	int nSpell, object oObject=OBJECT_SELF	209	4560
+305	int	GetEffectSpellId	effect eSpellEffect	1	26
+306	int	GetCreatureHasTalent	talent tTalent, object oCreature=OBJECT_SELF	204	7140
+307	talent	GetCreatureTalentRandom	int nCategory, object oCreature=OBJECT_SELF, int nInclusion=0	206	7406
+308	talent	GetCreatureTalentBest	int nCategory, int nCRMax, object oCreature=OBJECT_SELF, int nInclusion=0, int nExcludeType=-1, int nExcludeId=-1	206	1434
+309	void	ActionUseTalentOnObject	talent tChosenTalent, object oTarget	225	2675
+310	void	ActionUseTalentAtLocation	talent tChosenTalent, location lTargetLocation	0	0
+311	int	GetGoldPieceValue	object oItem	0	0
+312	int	GetIsPlayableRacialType	object oCreature	0	0
+313	void	JumpToLocation	location lDestination	48	106
+314	effect	EffectTemporaryHitpoints	int nHitPoints	1	3
+315	int	GetSkillRank	int nSkill, object oTarget=OBJECT_SELF	144	170
+316	object	GetAttackTarget	object oCreature=OBJECT_SELF	227	467
+317	int	GetLastAttackType	object oCreature=OBJECT_SELF	0	0
+318	int	GetLastAttackMode	object oCreature=OBJECT_SELF	0	0
+319	float	GetDistanceBetween2D	object oObjectA, object oObjectB	672	672
+320	int	GetIsInCombat	object oCreature=OBJECT_SELF	36	50
+321	int	GetLastAssociateCommand	object oAssociate=OBJECT_SELF	0	0
+322	void	GiveGoldToCreature	object oCreature, int nGP	75	87
+323	void	SetIsDestroyable	int bDestroyable, int bRaiseable=TRUE, int bSelectableWhenDead=FALSE	14	18
+324	void	SetLocked	object oTarget, int bLocked	231	313
+325	int	GetLocked	object oTarget	22	82
+326	object	GetClickingObject		0	0
+327	void	SetAssociateListenPatterns	object oTarget=OBJECT_SELF	0	0
+328	object	GetLastWeaponUsed	object oCreature	0	0
+329	void	ActionInteractObject	object oPlaceable	3	3
+330	object	GetLastUsedBy		60	67
+331	int	GetAbilityModifier	int nAbility, object oCreature=OBJECT_SELF	3	11
+332	int	GetIdentified	object oItem	0	0
+333	void	SetIdentified	object oItem, int bIdentified	0	0
+334	float	GetDistanceBetweenLocations2D	location lLocationA, location lLocationB	0	0
+335	float	GetDistanceToObject2D	object oObject	672	672
+336	object	GetBlockingDoor		1	2
+337	int	GetIsDoorActionPossible	object oTargetDoor, int nDoorAction	1	4
+338	void	DoDoorAction	object oTargetDoor, int nDoorAction	1	4
+339	object	GetFirstItemInInventory	object oTarget=OBJECT_SELF	248	469
+340	object	GetNextItemInInventory	object oTarget=OBJECT_SELF	240	449
+341	int	GetClassByPosition	int nClassPosition, object oCreature=OBJECT_SELF	5	9
+342	int	GetLevelByPosition	int nClassPosition, object oCreature=OBJECT_SELF	15	51
+343	int	GetLevelByClass	int nClassType, object oCreature=OBJECT_SELF	228	1680
+344	int	GetDamageDealtByType	int nDamageType	1	1
+345	int	GetTotalDamageDealt		1	2
+346	object	GetLastDamager		1	5
+347	object	GetLastDisarmed		0	0
+348	object	GetLastDisturbed		0	0
+349	object	GetLastLocked		0	0
+350	object	GetLastUnlocked		0	0
+351	effect	EffectSkillIncrease	int nSkill, int nValue	2	2
+352	int	GetInventoryDisturbType		2	2
+353	object	GetInventoryDisturbItem		1	2
+354	void	ShowUpgradeScreen	object oItem=OBJECT_INVALID	6	6
+355	effect	VersusAlignmentEffect	effect eEffect, int nLawChaos=ALIGNMENT_ALL, int nGoodEvil=ALIGNMENT_ALL	0	0
+356	effect	VersusRacialTypeEffect	effect eEffect, int nRacialType	0	0
+357	effect	VersusTrapEffect	effect eEffect	0	0
+358	int	GetGender	object oCreature	726	1406
+359	int	GetIsTalentValid	talent tTalent	206	9428
+360	void	ActionMoveAwayFromLocation	location lMoveAwayFrom, int bRun=FALSE, float fMoveAwayRange=40.0f	0	0
+361	object	GetAttemptedAttackTarget		223	257
+362	int	GetTypeFromTalent	talent tTalent	204	1020
+363	int	GetIdFromTalent	talent tTalent	206	5720
+364	void	PlayPazaak	int nOpponentPazaakDeck, string sEndScript, int nMaxWager, int bShowTutorial=FALSE, object oOpponent=OBJECT_INVALID	32	33
+365	int	GetLastPazaakResult		29	31
+366	void	DisplayFeedBackText	object oCreature, int nTextConstant	1	7
+367	void	AddJournalQuestEntry	string szPlotID, int nState, int bAllowOverrideHigher=FALSE	104	242
+368	void	RemoveJournalQuestEntry	string szPlotID	13	103
+369	int	GetJournalEntry	string szPlotID	21	30
+370	int	PlayRumblePattern	int nPattern	26	26
+371	int	StopRumblePattern	int nPattern	0	0
+372	effect	EffectDamageForcePoints	int nDamage	6	7
+373	effect	EffectHealForcePoints	int nHeal	25	33
+374	void	SendMessageToPC	object oPlayer, string szMessage	0	0
+375	object	GetAttemptedSpellTarget		25	49
+376	object	GetLastOpenedBy		14	14
+377	int	GetHasSpell	int nSpell, object oCreature=OBJECT_SELF	682	20086
+378	void	OpenStore	object oStore, object oPC, int nBonusMarkUp=0, int nBonusMarkDown=0	31	43
+379	void	ActionSurrenderToEnemies		11	30
+380	object	GetFirstFactionMember	object oMemberOfFaction, int bPCOnly=TRUE	0	0
+381	object	GetNextFactionMember	object oMemberOfFaction, int bPCOnly=TRUE	0	0
+382	void	ActionForceMoveToLocation	location lDestination, int bRun=FALSE, float fTimeout=30.0f	6	6
+383	void	ActionForceMoveToObject	object oMoveTo, int bRun=FALSE, float fRange=1.0f, float fTimeout=30.0f	822	869
+384	int	GetJournalQuestExperience	string szPlotID	0	0
+385	void	JumpToObject	object oToJumpTo, int nWalkStraightLineToPoint=1	213	749
+386	void	SetMapPinEnabled	object oMapPin, int nEnabled	35	38
+387	effect	EffectHitPointChangeWhenDying	float fHitPointChangePerRound	0	0
+388	void	PopUpGUIPanel	object oPC, int nGUIPanel	0	0
+389	void	AddMultiClass	int nClassType, object oSource	2	4
+390	int	GetIsLinkImmune	object oTarget, effect eEffect	2	6
+391	effect	EffectDroidStun		20	22
+392	effect	EffectForcePushed		14	18
+393	void	GiveXPToCreature	object oCreature, int nXpAmount	807	2403
+394	void	SetXP	object oCreature, int nXpAmount	4	4
+395	int	GetXP	object oCreature	7	8
+396	string	IntToHexString	int nInteger	0	0
+397	int	GetBaseItemType	object oItem	230	12129
+398	int	GetItemHasItemProperty	object oItem, int nProperty	0	0
+399	void	ActionEquipMostDamagingMelee	object oVersus=OBJECT_INVALID, int bOffHand=FALSE	218	230
+400	void	ActionEquipMostDamagingRanged	object oVersus=OBJECT_INVALID	217	224
+401	int	GetItemACValue	object oItem	0	0
+402	effect	EffectForceResisted	object oSource	1	4
+403	void	ExploreAreaForPlayer	object oArea, object oPlayer	0	0
+404	void	ActionEquipMostEffectiveArmor		0	0
+405	int	GetIsDay		0	0
+406	int	GetIsNight		0	0
+407	int	GetIsDawn		0	0
+408	int	GetIsDusk		0	0
+409	int	GetIsEncounterCreature	object oCreature=OBJECT_SELF	450	450
+410	object	GetLastPlayerDying		0	0
+411	location	GetStartingLocation		0	0
+412	void	ChangeToStandardFaction	object oCreatureToChange, int nStandardFaction	429	795
+413	void	SoundObjectPlay	object oSound	108	171
+414	void	SoundObjectStop	object oSound	42	50
+415	void	SoundObjectSetVolume	object oSound, int nVolume	3	6
+416	void	SoundObjectSetPosition	object oSound, vector vPosition	0	0
+417	void	SpeakOneLinerConversation	string sDialogResRef="", object oTokenTarget=OBJECT_TYPE_INVALID	0	0
+418	int	GetGold	object oTarget=OBJECT_SELF	72	73
+419	object	GetLastRespawnButtonPresser		0	0
+420	effect	EffectForceFizzle		1	14
+421	void	SetLightsaberPowered	object oCreature, int bOverride, int bPowered=TRUE, int bShowTransition=FALSE	16	23
+422	int	GetIsWeaponEffective	object oVersus=OBJECT_INVALID, int bOffHand=FALSE	0	0
+423	int	GetLastSpellHarmful		1	1
+424	event	EventActivateItem	object oItem, location lTarget, object oTarget=OBJECT_INVALID	0	0
+425	void	MusicBackgroundPlay	object oArea	16	16
+426	void	MusicBackgroundStop	object oArea	25	26
+427	void	MusicBackgroundSetDelay	object oArea, int nDelay	0	0
+428	void	MusicBackgroundChangeDay	object oArea, int nTrack	5	5
+429	void	MusicBackgroundChangeNight	object oArea, int nTrack	5	5
+430	void	MusicBattlePlay	object oArea	15	15
+431	void	MusicBattleStop	object oArea	8	8
+432	void	MusicBattleChange	object oArea, int nTrack	0	0
+433	void	AmbientSoundPlay	object oArea	2	2
+434	void	AmbientSoundStop	object oArea	2	2
+435	void	AmbientSoundChangeDay	object oArea, int nTrack	0	0
+436	void	AmbientSoundChangeNight	object oArea, int nTrack	0	0
+437	object	GetLastKiller		1	1
+438	object	GetSpellCastItem		0	0
+439	object	GetItemActivated		2	2
+440	object	GetItemActivator		1	1
+441	location	GetItemActivatedTargetLocation		0	0
+442	object	GetItemActivatedTarget		0	0
+443	int	GetIsOpen	object oObject	12	12
+444	void	TakeGoldFromCreature	int nAmount, object oCreatureToTakeFrom, int bDestroy=FALSE	69	71
+445	int	GetIsInConversation	object oObject	62	80
+446	effect	EffectAbilityDecrease	int nAbility, int nModifyBy	3	6
+447	effect	EffectAttackDecrease	int nPenalty, int nModifierType=ATTACK_BONUS_MISC	1	1
+448	effect	EffectDamageDecrease	int nPenalty, int nDamageType=DAMAGE_TYPE_UNIVERSAL	0	0
+449	effect	EffectDamageImmunityDecrease	int nDamageType, int nPercentImmunity	0	0
+450	effect	EffectACDecrease	int nValue, int nModifyType=AC_DODGE_BONUS, int nDamageType=AC_VS_DAMAGE_TYPE_ALL	2	7
+451	effect	EffectMovementSpeedDecrease	int nPercentChange	2	7
+452	effect	EffectSavingThrowDecrease	int nSave, int nValue, int nSaveType=SAVING_THROW_TYPE_ALL	1	1
+453	effect	EffectSkillDecrease	int nSkill, int nValue	0	0
+454	effect	EffectForceResistanceDecrease	int nValue	0	0
+455	int	GetPlotFlag	object oTarget=OBJECT_SELF	4	4
+456	void	SetPlotFlag	object oTarget, int nPlotFlag	59	86
+457	effect	EffectInvisibility	int nInvisibilityType	1	1
+458	effect	EffectConcealment	int nPercentage	0	0
+459	effect	EffectForceShield	int nShield	5	5
+460	effect	EffectDispelMagicAll	int nCasterLevel	0	0
+461	void	SetDialogPlaceableCamera	int nCameraId	85	153
+462	int	GetSoloMode		209	221
+463	effect	EffectDisguise	int nDisguiseAppearance	15	17
+464	int	GetMaxStealthXP		0	0
+465	effect	EffectTrueSeeing		1	1
+466	effect	EffectSeeInvisible		0	0
+467	effect	EffectTimeStop		0	0
+468	void	SetMaxStealthXP	int nMax	2	2
+469	effect	EffectBlasterDeflectionIncrease	int nChange	1	1
+470	effect	EffectBlasterDeflectionDecrease	int nChange	0	0
+471	effect	EffectHorrified		14	21
+472	effect	EffectSpellLevelAbsorption	int nMaxSpellLevelAbsorbed, int nTotalSpellLevelsAbsorbed=0, int nSpellSchool=0	0	0
+473	effect	EffectDispelMagicBest	int nCasterLevel	0	0
+474	int	GetCurrentStealthXP		2	2
+475	int	GetNumStackedItems	object oItem	30	37
+476	void	SurrenderToEnemies		19	30
+477	effect	EffectMissChance	int nPercentage	0	0
+478	void	SetCurrentStealthXP	int nCurrent	2	2
+479	int	GetCreatureSize	object oCreature	1	2
+480	void	AwardStealthXP	object oTarget	9	9
+481	int	GetStealthXPEnabled		0	0
+482	void	SetStealthXPEnabled	int bEnabled	2	2
+483	void	ActionUnlockObject	object oTarget	12	15
+484	void	ActionLockObject	object oTarget	6	6
+485	effect	EffectModifyAttacks	int nAttacks	1	2
+486	object	GetLastTrapDetected	object oTarget=OBJECT_SELF	0	0
+487	effect	EffectDamageShield	int nDamageAmount, int nRandomAmount, int nDamageType	0	0
+488	object	GetNearestTrapToObject	object oTarget=OBJECT_SELF, int nTrapDetected=TRUE	0	0
+489	object	GetAttemptedMovementTarget		16	16
+490	object	GetBlockingCreature	object oTarget=OBJECT_SELF	1	1
+491	int	GetFortitudeSavingThrow	object oTarget	0	0
+492	int	GetWillSavingThrow	object oTarget	0	0
+493	int	GetReflexSavingThrow	object oTarget	0	0
+494	float	GetChallengeRating	object oCreature	0	0
+495	object	GetFoundEnemyCreature	object oTarget=OBJECT_SELF	1	1
+496	int	GetMovementRate	object oCreature	0	0
+497	int	GetSubRace	object oCreature	460	460
+498	int	GetStealthXPDecrement		0	0
+499	void	SetStealthXPDecrement	int nDecrement	0	0
+500	void	DuplicateHeadAppearance	object oidCreatureToChange, object oidCreatureToMatch	1	1
+501	void	ActionCastFakeSpellAtObject	int nSpell, object oTarget, int nProjectilePathType=PROJECTILE_PATH_TYPE_DEFAULT	36	47
+502	void	ActionCastFakeSpellAtLocation	int nSpell, location lTarget, int nProjectilePathType=PROJECTILE_PATH_TYPE_DEFAULT	4	6
+503	void	CutsceneAttack	object oTarget, int nAnimation, int nAttackResult, int nDamage	34	55
+504	void	SetCameraMode	object oPlayer, int nCameraMode	0	0
+505	void	SetLockOrientationInDialog	object oObject, int nValue	44	61
+506	void	SetLockHeadFollowInDialog	object oObject, int nValue	18	28
+507	void	CutsceneMove	object oObject, vector vPosition, int nRun	0	0
+508	void	EnableVideoEffect	int nEffectType	1	1
+509	void	StartNewModule	string sModuleName, string sWayPoint="", string sMovie1="", string sMovie2="", string sMovie3="", string sMovie4="", string sMovie5="", string sMovie6=""	187	344
+510	void	DisableVideoEffect		2	2
+511	int	GetWeaponRanged	object oItem	0	0
+512	void	DoSinglePlayerAutoSave		1	1
+513	int	GetGameDifficulty		0	0
+514	int	GetUserActionsPending		204	212
+515	void	RevealMap	vector vPoint=[0.0,0.0,0.0], int nRadius=-1	104	139
+516	void	SetTutorialWindowsEnabled	int bEnabled	0	0
+517	void	ShowTutorialWindow	int nWindow	4	4
+518	void	StartCreditSequence	int bTransparentBackground	2	2
+519	int	IsCreditSequenceInProgress		1	1
+520	void	SWMG_SetLateralAccelerationPerSecond	float fLAPS	3	6
+521	float	SWMG_GetLateralAccelerationPerSecond		0	0
+522	int	GetCurrentAction	object oObject=OBJECT_SELF	11	18
+523	float	GetDifficultyModifier		0	0
+524	int	GetAppearanceType	object oCreature	1	7
+525	void	FloatingTextStrRefOnCreature	int nStrRefToDisplay, object oCreatureToFloatAbove, int bBroadcastToFaction=TRUE	0	0
+526	void	FloatingTextStringOnCreature	string sStringToDisplay, object oCreatureToFloatAbove, int bBroadcastToFaction=TRUE	0	0
+527	int	GetTrapDisarmable	object oTrapObject	0	0
+528	int	GetTrapDetectable	object oTrapObject	0	0
+529	int	GetTrapDetectedBy	object oTrapObject, object oCreature	0	0
+530	int	GetTrapFlagged	object oTrapObject	0	0
+531	int	GetTrapBaseType	object oTrapObject	1	1
+532	int	GetTrapOneShot	object oTrapObject	0	0
+533	object	GetTrapCreator	object oTrapObject	0	0
+534	string	GetTrapKeyTag	object oTrapObject	0	0
+535	int	GetTrapDisarmDC	object oTrapObject	0	0
+536	int	GetTrapDetectDC	object oTrapObject	0	0
+537	int	GetLockKeyRequired	object oObject	0	0
+538	int	GetLockKeyTag	object oObject	0	0
+539	int	GetLockLockable	object oObject	0	0
+540	int	GetLockUnlockDC	object oObject	0	0
+541	int	GetLockLockDC	object oObject	0	0
+542	object	GetPCLevellingUp		0	0
+543	int	GetHasFeatEffect	int nFeat, object oObject=OBJECT_SELF	0	0
+544	void	SetPlaceableIllumination	object oPlaceable=OBJECT_SELF, int bIlluminate=TRUE	0	0
+545	int	GetPlaceableIllumination	object oPlaceable=OBJECT_SELF	0	0
+546	int	GetIsPlaceableObjectActionPossible	object oPlaceable, int nPlaceableAction	0	0
+547	void	DoPlaceableObjectAction	object oPlaceable, int nPlaceableAction	0	0
+548	object	GetFirstPC		2358	5780
+549	object	GetNextPC		2	2
+550	int	SetTrapDetectedBy	object oTrap, object oDetector	0	0
+551	int	GetIsTrapped	object oObject	0	0
+552	effect	SetEffectIcon	effect eEffect, int nIcon	5	46
+553	void	FaceObjectAwayFromObject	object oFacer, object oObjectToFaceAwayFrom	0	0
+554	void	PopUpDeathGUIPanel	object oPC, int bRespawnButtonEnabled=TRUE, int bWaitForHelpButtonEnabled=TRUE, int nHelpStringReference=0, string sHelpString=""	0	0
+555	void	SetTrapDisabled	object oTrap	0	0
+556	object	GetLastHostileActor	object oVictim=OBJECT_SELF	210	228
+557	void	ExportAllCharacters		0	0
+558	int	MusicBackgroundGetDayTrack	object oArea	0	0
+559	int	MusicBackgroundGetNightTrack	object oArea	0	0
+560	void	WriteTimestampedLogEntry	string sLogEntry	0	0
+561	string	GetModuleName		0	0
+562	object	GetFactionLeader	object oMemberOfFaction	0	0
+563	void	SWMG_SetSpeedBlurEffect	int bEnabled, float fRatio=0.75f	3	6
+564	void	EndGame	int nShowEndGameGui=TRUE	12	12
+565	int	GetRunScriptVar		14	14
+566	int	GetCreatureMovmentType	object oidCreature	1	1
+567	void	AmbientSoundSetDayVolume	object oArea, int nVolume	0	0
+568	void	AmbientSoundSetNightVolume	object oArea, int nVolume	0	0
+569	int	MusicBackgroundGetBattleTrack	object oArea	1	1
+570	int	GetHasInventory	object oObject	9	9
+571	float	GetStrRefSoundDuration	int nStrRef	0	0
+572	void	AddToParty	object oPC, object oPartyLeader	2	2
+573	void	RemoveFromParty	object oPC	2	2
+574	int	AddPartyMember	int nNPC, object oCreature	27	40
+575	int	RemovePartyMember	int nNPC	42	81
+576	int	IsObjectPartyMember	object oCreature	333	3690
+577	object	GetPartyMemberByIndex	int nIndex	993	5295
+578	int	GetGlobalBoolean	string sIdentifier	1457	2275
+579	void	SetGlobalBoolean	string sIdentifier, int nValue	1125	1584
+580	int	GetGlobalNumber	string sIdentifier	2386	3871
+581	void	SetGlobalNumber	string sIdentifier, int nValue	1322	1900
+582	void	AurPostString	string sString, int nX, int nY, float fLife	540	676
+583	string	SWMG_GetLastEvent		0	0
+584	string	SWMG_GetLastEventModelName		0	0
+585	object	SWMG_GetObjectByName	string sName	0	0
+586	void	SWMG_PlayAnimation	object oObject, string sAnimName, int bLooping=1, int bQueue=0, int bOverlay=0	18	96
+587	int	SWMG_GetLastBulletHitDamage		0	0
+588	int	SWMG_GetLastBulletHitTarget		0	0
+589	object	SWMG_GetLastBulletHitShooter		0	0
+590	int	SWMG_AdjustFollowerHitPoints	object oFollower, int nHP, int nAbsolute=0	2	2
+591	void	SWMG_OnBulletHit		0	0
+592	void	SWMG_OnObstacleHit		0	0
+593	object	SWMG_GetLastFollowerHit		2	2
+594	object	SWMG_GetLastObstacleHit		0	0
+595	int	SWMG_GetLastBulletFiredDamage		0	0
+596	int	SWMG_GetLastBulletFiredTarget		0	0
+597	string	SWMG_GetObjectName	object oid=OBJECT_SELF	0	0
+598	void	SWMG_OnDeath		6	6
+599	int	SWMG_IsFollower	object oid=OBJECT_SELF	0	0
+600	int	SWMG_IsPlayer	object oid=OBJECT_SELF	0	0
+601	int	SWMG_IsEnemy	object oid=OBJECT_SELF	0	0
+602	int	SWMG_IsTrigger	object oid=OBJECT_SELF	0	0
+603	int	SWMG_IsObstacle	object oid=OBJECT_SELF	0	0
+604	void	SWMG_SetFollowerHitPoints	object oFollower, int nHP	1	1
+605	void	SWMG_OnDamage		1	1
+606	int	SWMG_GetLastHPChange		0	0
+607	void	SWMG_RemoveAnimation	object oObject, string sAnimName	3	15
+608	float	SWMG_GetCameraNearClip		0	0
+609	float	SWMG_GetCameraFarClip		0	0
+610	void	SWMG_SetCameraClip	float fNear, float fFar	0	0
+611	object	SWMG_GetPlayer		9	15
+612	int	SWMG_GetEnemyCount		1	1
+613	object	SWMG_GetEnemy	int nEntry	2	2
+614	int	SWMG_GetObstacleCount		0	0
+615	object	SWMG_GetObstacle	int nEntry	0	0
+616	int	SWMG_GetHitPoints	object oFollower	1	2
+617	int	SWMG_GetMaxHitPoints	object oFollower	0	0
+618	void	SWMG_SetMaxHitPoints	object oFollower, int nMaxHP	0	0
+619	float	SWMG_GetSphereRadius	object oFollower	0	0
+620	void	SWMG_SetSphereRadius	object oFollower, float fRadius	0	0
+621	int	SWMG_GetNumLoops	object oFollower	0	0
+622	void	SWMG_SetNumLoops	object oFollower, int nNumLoops	0	0
+623	vector	SWMG_GetPosition	object oFollower	4	7
+624	int	SWMG_GetGunBankCount	object oFollower	0	0
+625	string	SWMG_GetGunBankBulletModel	object oFollower, int nGunBank	0	0
+626	string	SWMG_GetGunBankGunModel	object oFollower, int nGunBank	0	0
+627	int	SWMG_GetGunBankDamage	object oFollower, int nGunBank	0	0
+628	float	SWMG_GetGunBankTimeBetweenShots	object oFollower, int nGunBank	0	0
+629	float	SWMG_GetGunBankLifespan	object oFollower, int nGunBank	0	0
+630	float	SWMG_GetGunBankSpeed	object oFollower, int nGunBank	0	0
+631	int	SWMG_GetGunBankTarget	object oFollower, int nGunBank	0	0
+632	void	SWMG_SetGunBankBulletModel	object oFollower, int nGunBank, string sBulletModel	0	0
+633	void	SWMG_SetGunBankGunModel	object oFollower, int nGunBank, string sGunModel	0	0
+634	void	SWMG_SetGunBankDamage	object oFollower, int nGunBank, int nDamage	0	0
+635	void	SWMG_SetGunBankTimeBetweenShots	object oFollower, int nGunBank, float fTBS	0	0
+636	void	SWMG_SetGunBankLifespan	object oFollower, int nGunBank, float fLifespan	0	0
+637	void	SWMG_SetGunBankSpeed	object oFollower, int nGunBank, float fSpeed	0	0
+638	void	SWMG_SetGunBankTarget	object oFollower, int nGunBank, int nTarget	0	0
+639	string	SWMG_GetLastBulletHitPart		0	0
+640	int	SWMG_IsGunBankTargetting	object oFollower, int nGunBank	0	0
+641	vector	SWMG_GetPlayerOffset		1	1
+642	float	SWMG_GetPlayerInvincibility		0	0
+643	float	SWMG_GetPlayerSpeed		8	8
+644	float	SWMG_GetPlayerMinSpeed		0	0
+645	float	SWMG_GetPlayerAccelerationPerSecond		2	2
+646	vector	SWMG_GetPlayerTunnelPos		0	0
+647	void	SWMG_SetPlayerOffset	vector vOffset	0	0
+648	void	SWMG_SetPlayerInvincibility	float fInvincibility	0	0
+649	void	SWMG_SetPlayerSpeed	float fSpeed	5	5
+650	void	SWMG_SetPlayerMinSpeed	float fMinSpeed	5	13
+651	void	SWMG_SetPlayerAccelerationPerSecond	float fAPS	7	15
+652	void	SWMG_SetPlayerTunnelPos	vector vTunnel	5	5
+653	vector	SWMG_GetPlayerTunnelNeg		0	0
+654	void	SWMG_SetPlayerTunnelNeg	vector vTunnel	5	5
+655	vector	SWMG_GetPlayerOrigin		0	0
+656	void	SWMG_SetPlayerOrigin	vector vOrigin	0	0
+657	float	SWMG_GetGunBankHorizontalSpread	object oEnemy, int nGunBank	0	0
+658	float	SWMG_GetGunBankVerticalSpread	object oEnemy, int nGunBank	0	0
+659	float	SWMG_GetGunBankSensingRadius	object oEnemy, int nGunBank	0	0
+660	float	SWMG_GetGunBankInaccuracy	object oEnemy, int nGunBank	0	0
+661	void	SWMG_SetGunBankHorizontalSpread	object oEnemy, int nGunBank, float fHorizontalSpread	0	0
+662	void	SWMG_SetGunBankVerticalSpread	object oEnemy, int nGunBank, float fVerticalSpread	0	0
+663	void	SWMG_SetGunBankSensingRadius	object oEnemy, int nGunBank, float fSensingRadius	0	0
+664	void	SWMG_SetGunBankInaccuracy	object oEnemy, int nGunBank, float fInaccuracy	0	0
+665	int	SWMG_GetIsInvulnerable	object oFollower	2	2
+666	void	SWMG_StartInvulnerability	object oFollower	2	2
+667	float	SWMG_GetPlayerMaxSpeed		0	0
+668	void	SWMG_SetPlayerMaxSpeed	float fMaxSpeed	5	13
+669	void	AddJournalWorldEntry	int nIndex, string szEntry, string szTitle="World Entry"	0	0
+670	void	AddJournalWorldEntryStrref	int strref, int strrefTitle	0	0
+671	void	BarkString	object oCreature, int strRef	59	66
+672	void	DeleteJournalWorldAllEntries		0	0
+673	void	DeleteJournalWorldEntry	int nIndex	0	0
+674	void	DeleteJournalWorldEntryStrref	int strref	0	0
+675	effect	EffectForceDrain	int nDamage	0	0
+676	effect	EffectPsychicStatic		1	1
+677	void	PlayVisualAreaEffect	int nEffectID, location lTarget	2	2
+678	void	SetJournalQuestEntryPicture	string szPlotID, object oObject, int nPictureIndex, int bAllPartyMemebers=TRUE, int bAllPlayers=FALSE	0	0
+679	int	GetLocalBoolean	object oObject, int nIndex	1721	1970
+680	void	SetLocalBoolean	object oObject, int nIndex, int nValue	1759	2031
+681	int	GetLocalNumber	object oObject, int nIndex	716	3348
+682	void	SetLocalNumber	object oObject, int nIndex, int nValue	713	3486
+683	int	SWMG_GetSoundFrequency	object oFollower, int nSound	0	0
+684	void	SWMG_SetSoundFrequency	object oFollower, int nSound, int nFrequency	0	0
+685	int	SWMG_GetSoundFrequencyIsRandom	object oFollower, int nSound	0	0
+686	void	SWMG_SetSoundFrequencyIsRandom	object oFollower, int nSound, int bIsRandom	0	0
+687	int	SWMG_GetSoundVolume	object oFollower, int nSound	0	0
+688	void	SWMG_SetSoundVolume	object oFollower, int nSound, int nVolume	0	0
+689	float	SoundObjectGetPitchVariance	object oSound	1	1
+690	void	SoundObjectSetPitchVariance	object oSound, float fVariance	0	0
+691	int	SoundObjectGetVolume	object oSound	0	0
+692	location	GetGlobalLocation	string sIdentifier	5	6
+693	void	SetGlobalLocation	string sIdentifier, location lValue	5	6
+694	int	AddAvailableNPCByObject	int nNPC, object oCreature	8	8
+695	int	RemoveAvailableNPC	int nNPC	12	15
+696	int	IsAvailableCreature	int nNPC	46	117
+697	int	AddAvailableNPCByTemplate	int nNPC, string sTemplate	43	146
+698	object	SpawnAvailableNPC	int nNPC, location lPosition	24	44
+699	int	IsNPCPartyMember	int nNPC	131	298
+700	void	ActionBarkString	int strRef	1	1
+701	int	GetIsConversationActive		27	29
+702	effect	EffectLightsaberThrow	object oTarget1, object oTarget2=OBJECT_INVALID, object oTarget3=OBJECT_INVALID, int nAdvancedDamage=0	1	4
+703	effect	EffectWhirlWind		3	3
+704	int	GetPartyAIStyle		206	418
+705	int	GetNPCAIStyle	object oCreature	206	2053
+706	void	SetPartyAIStyle	int nStyle	0	0
+707	void	SetNPCAIStyle	object oCreature, int nStyle	35	47
+708	void	SetNPCSelectability	int nNPC, int nSelectability	10	15
+709	int	GetNPCSelectability	int nNPC	4	4
+710	void	ClearAllEffects		64	107
+711	string	GetLastConversation		0	0
+712	void	ShowPartySelectionGUI	string sExitScript="", int nForceNPC1=-1, int nForceNPC2=-1	49	51
+713	int	GetStandardFaction	object oObject	688	1124
+714	void	GivePlotXP	string sPlotName, int nPercentage	25	26
+715	int	GetMinOneHP	object oObject	1	1
+716	void	SetMinOneHP	object oObject, int nMinOneHP	64	80
+717	vector	SWMG_GetPlayerTunnelInfinite		0	0
+718	void	SWMG_SetPlayerTunnelInfinite	vector vInfinite	0	0
+719	void	SetGlobalFadeIn	float fWait=0.0f, float fLength=0.0f, float fR=0.0f, float fG=0.0f, float fB=0.0f	340	360
+720	void	SetGlobalFadeOut	float fWait=0.0f, float fLength=0.0f, float fR=0.0f, float fG=0.0f, float fB=0.0f	376	408
+721	object	GetLastHostileTarget	object oAttacker=OBJECT_SELF	206	614
+722	int	GetLastAttackAction	object oAttacker=OBJECT_SELF	206	206
+723	int	GetLastForcePowerUsed	object oAttacker=OBJECT_SELF	206	410
+724	int	GetLastCombatFeatUsed	object oAttacker=OBJECT_SELF	206	206
+725	int	GetLastAttackResult	object oAttacker=OBJECT_SELF	206	206
+726	int	GetWasForcePowerSuccessful	object oAttacker=OBJECT_SELF	206	206
+727	object	GetFirstAttacker	object oCreature=OBJECT_SELF	0	0
+728	object	GetNextAttacker	object oCreature=OBJECT_SELF	0	0
+729	void	SetFormation	object oAnchor, object oCreature, int nFormationPattern, int nPosition	0	0
+730	void	ActionFollowLeader		208	210
+731	void	SetForcePowerUnsuccessful	int nResult, object oCreature=OBJECT_SELF	0	0
+732	int	GetIsDebilitated	object oCreature=OBJECT_SELF	209	833
+733	void	PlayMovie	string sMovie	12	54
+734	void	SaveNPCState	int nNPC	6	35
+735	int	GetCategoryFromTalent	talent tTalent	206	412
+736	void	SurrenderByFaction	int nFactionFrom, int nFactionTo	2	2
+737	void	ChangeFactionByFaction	int nFactionFrom, int nFactionTo	9	10
+738	void	PlayRoomAnimation	string sRoom, int nAnimation	17	74
+739	void	ShowGalaxyMap	int nPlanet	2	2
+740	void	SetPlanetSelectable	int nPlanet, int bSelectable	3	53
+741	int	GetPlanetSelectable	int nPlanet	0	0
+742	void	SetPlanetAvailable	int nPlanet, int bAvailable	2	26
+743	int	GetPlanetAvailable	int nPlanet	0	0
+744	int	GetSelectedPlanet		2	2
+745	void	SoundObjectFadeAndStop	object oSound, float fSeconds	6	23
+746	void	SetAreaFogColor	object oArea, float fRed, float fGreen, float fBlue	0	0
+747	void	ChangeItemCost	string sItem, float fCostMultiplier	1	6
+748	int	GetIsLiveContentAvailable	int nPkg	2	18
+749	void	ResetDialogState		2	4
+750	void	SetGoodEvilValue	object oCreature, int nAlignment	0	0
+751	int	GetIsPoisoned	object oObject	3	4
+752	object	GetSpellTarget	object oCreature=OBJECT_SELF	8	10
+753	void	SetSoloMode	int bActivate	2	2
+754	effect	EffectCutSceneHorrified		0	0
+755	effect	EffectCutSceneParalyze		7	8
+756	effect	EffectCutSceneStunned		0	0
+757	void	CancelPostDialogCharacterSwitch		3	3
+758	void	SetMaxHitPoints	object oObject, int nMaxHP	1	1
+759	void	NoClicksFor	float fDuration	259	379
+760	void	HoldWorldFadeInForDialog		7	7
+761	int	ShipBuild		593	846
+762	void	SurrenderRetainBuffs		5	8
+763	void	SuppressStatusSummaryEntry	int nNumEntries=1	0	0
+764	int	GetCheatCode	int nCode	1	1
+765	void	SetMusicVolume	float fVolume=1.0f	1	1
+766	object	CreateItemOnFloor	string sTemplate, location lLocation, int bUseAppearAnimation=FALSE	4	4
+767	void	SetAvailableNPCId	INT nNPC, OBJECT_ID oidNPC	1	2
+768	int	IsMoviePlaying		0	0
+769	void	QueueMovie	string sMovie, int bSkippable	1	1
+770	void	PlayMovieQueue	int bAllowSeparateSkips	1	1
+771	void	YavinHackCloseDoor	object oidDoor	1	4
