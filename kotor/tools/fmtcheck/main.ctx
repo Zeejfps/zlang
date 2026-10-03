@@ -19,7 +19,9 @@ struct Stats {
     small: fmt_small::Stats,
 }
 
-struct Twoda { copies: u32, failed: u32, cells: u64, nul_separated: u32, empty: u32 }
+// `sum`: the sum over copies of the CRC-32 of each table's columns, row labels and cells, each with
+// a NUL after it, in order; tools/py/rescheck.py --2da computes the same with twodapy.py.
+struct Twoda { copies: u32, failed: u32, cells: u64, nul_separated: u32, empty: u32, sum: u64 }
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let opts = parse_args{ &io, args }
@@ -32,7 +34,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let mut scratch = arena::new{ buf = pages }
     let st = alloc::new(Stats, heap::Heap){ realloc = heap::alloc, heap = &h, value = Stats{
         census = [0; 65536],
-        twoda = Twoda{ copies = 0, failed = 0, cells = 0, nul_separated = 0, empty = 0 },
+        twoda = Twoda{ copies = 0, failed = 0, cells = 0, nul_separated = 0, empty = 0, sum = 0 },
         gff = gff_check::new_stats{},
         small = fmt_small::new_stats{},
     } } iferr {
@@ -57,8 +59,8 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     if opts.census { report_census{ &io, st } }
     if opts.twoda {
         let t = st.twoda
-        _ = @fmt(&io, "2da: {} copies, {} parsed, {} failures; {} cells; {} with NUL separators; {} with no rows\n",
-            t.copies, t.copies - t.failed, t.failed, t.cells, t.nul_separated, t.empty)
+        _ = @fmt(&io, "2da: {} copies, {} parsed, {} failures; {} cells; {} with NUL separators; {} with no rows; content sum {}\n",
+            t.copies, t.copies - t.failed, t.failed, t.cells, t.nul_separated, t.empty, out::hex{ n = t.sum, _ })
         failures = failures + t.failed
     }
     if opts.gff { failures = failures + gff_check::report{ &io, st = st.gff, verbose = opts.verbose } }
@@ -173,16 +175,31 @@ fn check_twoda { mut io: Io, t: *mut Twoda, mut scratch: arena::Arena, copy: cor
     let mut p: usize = 9
     while p < data.len and data[p] != '\t' and data[p] != 0 { p = p + 1 }
     if p < data.len and data[p] == 0 and p > 9 { t.nul_separated = t.nul_separated + 1 }
-    // Every cell must read back: the getters never fail on a parsed table.
+    // Every cell must read back (the getters never fail on a parsed table), and the content goes
+    // into the sum the Python model checks.
+    let nul: []u8 = "\x00"
+    let mut crc: u32 = 0
+    let mut c: usize = 0
+    while c < table.columns.len {
+        crc = png::crc32{ crc = png::crc32{ crc, bytes = table.columns[c] }, bytes = nul }
+        c = c + 1
+    }
     let mut r: usize = 0
     while r < table.labels.len {
-        let mut c: usize = 0
+        crc = png::crc32{ crc = png::crc32{ crc, bytes = table.labels[r] }, bytes = nul }
+        r = r + 1
+    }
+    r = 0
+    while r < table.labels.len {
+        c = 0
         while c < table.columns.len {
             _ = twoda::get_int_at{ t = table, row = r, col = c }
+            crc = png::crc32{ crc = png::crc32{ crc, bytes = twoda::cell{ t = table, row = r, col = c } }, bytes = nul }
             c = c + 1
         }
         r = r + 1
     }
+    t.sum = @wrap_add(t.sum, @as(u64, crc))
 }
 
 // Mounts and unmounts every module in modules/, checking that each mount finds the module's
