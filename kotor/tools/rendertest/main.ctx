@@ -83,22 +83,22 @@ fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut 
     let scratch = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = 100663296 }
     let mut cache = material::new_cache{ heap = &h, scratch }
     defer material::free_cache{ &cache, &dev }
-    let mut lib = kmodels::new_library{}
-    try draw_room{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, dir = opts.out_dir }
-    try draw_bastila{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, dir = opts.out_dir }
+    let mut models = mdl_cache::new{ rm, keep = &heap }
+    try draw_room{ &io, &fs, &dev, &frame, &heap, &models, &cache, rm, dir = opts.out_dir }
+    try draw_bastila{ &io, &fs, &dev, &frame, &heap, &models, &cache, rm, dir = opts.out_dir }
     let first: [4][]u8 = ["p_hk47", "c_drdastro", "w_lghtsbr_001", ""]
     let first_views: [4]u32 = [0, 0, 1, 0]
-    try draw_gallery{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, a = assets, dir = opts.out_dir, names = first, views = first_views, name = "gallery.png" }
+    try draw_gallery{ &io, &fs, &dev, &frame, &heap, &models, &cache, rm, a = assets, dir = opts.out_dir, names = first, views = first_views, name = "gallery.png" }
     // Alpha on real data: a bump-mapped skin that must stay solid (c_rancor), punch-through fur
     // (p_zaalbar), a body whose texture alpha blends at its edges (p_bastilabb), an astromech
     // whose alpha is its reflection mask (c_drdastro); then Dantooine's bushes and leaves, blended
     // by alpha without a keyword, from inside m14aa_01a.
     let second: [4][]u8 = ["c_rancor", "p_zaalbar", "p_bastilabb", "c_drdastro"]
     let second_views: [4]u32 = [1, 0, 0, 1]
-    try draw_gallery{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, a = assets, dir = opts.out_dir, names = second, views = second_views, name = "alpha.png" }
-    try draw_inside{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, dir = opts.out_dir, room_name = "m14aa_01a", yaw = 0.0, name = "foliage.png" }
-    try draw_area{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, area = "m01aa", dir = opts.out_dir }
-    try draw_ingame{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, dir = opts.out_dir }
+    try draw_gallery{ &io, &fs, &dev, &frame, &heap, &models, &cache, rm, a = assets, dir = opts.out_dir, names = second, views = second_views, name = "alpha.png" }
+    try draw_inside{ &io, &fs, &dev, &frame, &heap, &models, &cache, rm, dir = opts.out_dir, room_name = "m14aa_01a", yaw = 0.0, name = "foliage.png" }
+    try draw_area{ &io, &fs, &dev, &frame, &heap, &models, &cache, rm, area = "m01aa", dir = opts.out_dir }
+    try draw_ingame{ &io, &fs, &dev, &frame, &heap, &models, &cache, rm, dir = opts.out_dir }
 
     if opts.show > 0.0 {
         let freq = sdl::counter_frequency{ &sdl }
@@ -700,9 +700,9 @@ fn mat3_rows { a: math::Vec3, b: math::Vec3, c: math::Vec3 } -> math::Mat3 {
 // The m01aa_02a room (lightmapped) from above at an angle, as mdlrender.py's m01aa_02a_iso.png.
 fn draw_room {
     mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena,
-    mut lib: kmodels::Library, mut cache: material::Cache, rm: res::Manager, dir: []u8,
+    mut models: mdl_cache::Cache, mut cache: material::Cache, rm: res::Manager, dir: []u8,
 } -> ! {
-    let room = try kmodels::load{ &lib, &fs, rm, &heap, name = "m01aa_02a" } ifnull { return kmodels::no_model{ name = "m01aa_02a" } }
+    let room = mdl_cache::get{ &fs, cache = &models, name = "m01aa_02a" } ifnull { return kmodels::no_model{ name = "m01aa_02a" } }
     let parts = try kmodels::upload{ &dev, &cache, &fs, rm, &heap, model = room, envmap = "" }
     let pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model = room }
     let palette = try alloc::resize(math::Mat4, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(math::Mat4){}, count = 64 }
@@ -715,7 +715,7 @@ fn draw_room {
     kmodels::add_lights{ &frame, model = room, pose, instance = math::mat4::identity{} }
     _ = kmodels::draw{ &frame, view = vi, model = room, pose, parts, instance = math::mat4::identity{}, palette }
     try gpu::submit{ &dev, frame = &frame }
-    _ = @fmt(&io, "m01aa_02a: {} meshes drawn of {}; textures {} loaded, {} missing\n", parts.len, room.meshes.len, cache.loaded, cache.missing)
+    _ = @fmt(&io, "m01aa_02a: {} meshes drawn of {}; textures {} loaded, {} missing\n", parts.count, room.meshes.len, cache.loaded, cache.missing)
     try save_screen{ &io, &fs, &dev, &heap, dir, name = "m01aa_02a_iso.png" }
     report{ &io, &dev }
 }
@@ -724,16 +724,16 @@ fn draw_room {
 // the last from the side, as mdlrender.py's bastila_skinned.png.
 fn draw_bastila {
     mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena,
-    mut lib: kmodels::Library, mut cache: material::Cache, rm: res::Manager, dir: []u8,
+    mut models: mdl_cache::Cache, mut cache: material::Cache, rm: res::Manager, dir: []u8,
 } -> ! {
-    let body = try kmodels::load{ &lib, &fs, rm, &heap, name = "p_bastilabb" } ifnull { return kmodels::no_model{ name = "p_bastilabb" } }
-    let head = try kmodels::load{ &lib, &fs, rm, &heap, name = "p_bastilah" } ifnull { return kmodels::no_model{ name = "p_bastilah" } }
+    let body = mdl_cache::get{ &fs, cache = &models, name = "p_bastilabb" } ifnull { return kmodels::no_model{ name = "p_bastilabb" } }
+    let head = mdl_cache::get{ &fs, cache = &models, name = "p_bastilah" } ifnull { return kmodels::no_model{ name = "p_bastilah" } }
     let body_parts = try kmodels::upload{ &dev, &cache, &fs, rm, &heap, model = body, envmap = "" }
     let head_parts = try kmodels::upload{ &dev, &cache, &fs, rm, &heap, model = head, envmap = "" }
     let body_pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model = body }
     let head_pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model = head }
     let palette = try alloc::resize(math::Mat4, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(math::Mat4){}, count = 64 }
-    let lookup = kmodels::find{ lib = &lib, _ }
+    let lookup = mdl_cache::get{ &fs, cache = &models, _ }
 
     render::begin_frame{ &frame, time = 0.0 }
     let names: [3][]u8 = ["", "pause1", "run"]
@@ -776,7 +776,7 @@ fn draw_bastila {
         render::begin_frame{ &frame, time = 0.0 }
         // Keep the previous views' pixels: later views clear only their own viewport.
     }
-    _ = @fmt(&io, "bastila: body {} meshes, head {} meshes; textures {} loaded, {} missing\n", body_parts.len, head_parts.len, cache.loaded, cache.missing)
+    _ = @fmt(&io, "bastila: body {} meshes, head {} meshes; textures {} loaded, {} missing\n", body_parts.count, head_parts.count, cache.loaded, cache.missing)
     try save_screen{ &io, &fs, &dev, &heap, dir, name = "bastila.png" }
     report{ &io, &dev }
 }
@@ -786,7 +786,7 @@ fn draw_bastila {
 // chrome ball reflecting a real cube map (cm_tat, Tatooine: sky above, sand below).
 fn draw_gallery {
     mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena,
-    mut lib: kmodels::Library, mut cache: material::Cache, rm: res::Manager, a: Assets, dir: []u8,
+    mut models: mdl_cache::Cache, mut cache: material::Cache, rm: res::Manager, a: Assets, dir: []u8,
     names: [4][]u8, views: [4]u32, name: []u8,
 } -> ! {
     let palette = try alloc::resize(math::Mat4, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(math::Mat4){}, count = 64 }
@@ -796,7 +796,7 @@ fn draw_gallery {
         render::begin_frame{ &frame, time = 0.0 }
         let viewport = render::rect{ x = @as(f32, k) * w, y = 0.0, w, h = @as(f32, HEIGHT) }
         if names[k].len > 0 {
-            let model = try kmodels::load{ &lib, &fs, rm, &heap, name = names[k] } ifnull { return kmodels::no_model{ name = names[k] } }
+            let model = mdl_cache::get{ &fs, cache = &models, name = names[k] } ifnull { return kmodels::no_model{ name = names[k] } }
             let parts = try kmodels::upload{ &dev, &cache, &fs, rm, &heap, model, envmap = "" }
             let pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model }
             let box = kmodels::bounds{ model, pose, parts, instance = math::mat4::identity{}, box = math::aabb::empty{}, palette }
@@ -807,7 +807,7 @@ fn draw_gallery {
             let vi = render::add_view{ &frame, view } ifnull { return }
             render::add_light{ &frame, light = render::Light{ position = v3{ x = 3.0, y = 6.0, z = 5.0 }, color = v3{ x = 0.9, y = 0.88, z = 0.85 }, radius = 40.0 } }
             _ = kmodels::draw{ &frame, view = vi, model, pose, parts, instance = math::mat4::identity{}, palette }
-            _ = @fmt(&io, "{}: {} meshes drawn of {}\n", names[k], parts.len, model.meshes.len)
+            _ = @fmt(&io, "{}: {} meshes drawn of {}\n", names[k], parts.count, model.meshes.len)
         } else {
             let sky = material::get{ &cache, &fs, &dev, rm, name = "cm_tat" }
             let box = math::aabb::make{ min = v3{ x = -0.7, y = -0.7, z = -0.7 }, max = v3{ x = 0.7, y = 0.7, z = 0.7 } }
@@ -833,7 +833,7 @@ fn draw_gallery {
 // ceilings vanish from above.
 fn draw_area {
     mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena,
-    mut lib: kmodels::Library, mut cache: material::Cache, rm: res::Manager, area: []u8, dir: []u8,
+    mut models: mdl_cache::Cache, mut cache: material::Cache, rm: res::Manager, area: []u8, dir: []u8,
 } -> ! {
     let text = try res::load{ &fs, rm, name = area, kind = restype::Type::lyt, realloc = arena::alloc, &heap } ifnull { return kmodels::no_model{ name = area } }
     let palette = try alloc::resize(math::Mat4, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(math::Mat4){}, count = 64 }
@@ -858,7 +858,7 @@ fn draw_area {
         left = left - 1
         let name = font::word{ line, n = 0 }
         let at = v3{ x = font::parse{ w = font::word{ line, n = 1 } }, y = font::parse{ w = font::word{ line, n = 2 } }, z = font::parse{ w = font::word{ line, n = 3 } } }
-        let model = try kmodels::load{ &lib, &fs, rm, &heap, name } ifnull { continue }
+        let model = mdl_cache::get{ &fs, cache = &models, name } ifnull { continue }
         let parts = try kmodels::upload{ &dev, &cache, &fs, rm, &heap, model, envmap = "" }
         let pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model }
         let instance = math::mat4::translation{ t = at }
@@ -919,11 +919,11 @@ fn corner { mesh: *mdl::Mesh, w: math::Mat4, i: u16 } -> math::Vec3 {
 // shadow and dynamic lights together, as the game will draw them.
 fn draw_ingame {
     mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena,
-    mut lib: kmodels::Library, mut cache: material::Cache, rm: res::Manager, dir: []u8,
+    mut models: mdl_cache::Cache, mut cache: material::Cache, rm: res::Manager, dir: []u8,
 } -> ! {
-    let room = try kmodels::load{ &lib, &fs, rm, &heap, name = "m01aa_02a" } ifnull { return kmodels::no_model{ name = "m01aa_02a" } }
-    let body = try kmodels::load{ &lib, &fs, rm, &heap, name = "p_bastilabb" } ifnull { return kmodels::no_model{ name = "p_bastilabb" } }
-    let head = try kmodels::load{ &lib, &fs, rm, &heap, name = "p_bastilah" } ifnull { return kmodels::no_model{ name = "p_bastilah" } }
+    let room = mdl_cache::get{ &fs, cache = &models, name = "m01aa_02a" } ifnull { return kmodels::no_model{ name = "m01aa_02a" } }
+    let body = mdl_cache::get{ &fs, cache = &models, name = "p_bastilabb" } ifnull { return kmodels::no_model{ name = "p_bastilabb" } }
+    let head = mdl_cache::get{ &fs, cache = &models, name = "p_bastilah" } ifnull { return kmodels::no_model{ name = "p_bastilah" } }
     let room_parts = try kmodels::upload{ &dev, &cache, &fs, rm, &heap, model = room, envmap = "" }
     let body_parts = try kmodels::upload{ &dev, &cache, &fs, rm, &heap, model = body, envmap = "" }
     let head_parts = try kmodels::upload{ &dev, &cache, &fs, rm, &heap, model = head, envmap = "" }
@@ -931,7 +931,7 @@ fn draw_ingame {
     let body_pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model = body }
     let head_pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model = head }
     let palette = try alloc::resize(math::Mat4, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(math::Mat4){}, count = 64 }
-    let lookup = kmodels::find{ lib = &lib, _ }
+    let lookup = mdl_cache::get{ &fs, cache = &models, _ }
     let found = mdl_anim::find{ model = body, name = "pause1", lookup }
     if found != null {
         let binding = try mdl_anim::bind{ realloc = arena::alloc, &heap, model = body, animation = found.animation }
@@ -1003,10 +1003,10 @@ fn draw_ingame {
 // (Dantooine's courtyard, its bushes and trees blended by their alpha).
 fn draw_inside {
     mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena,
-    mut lib: kmodels::Library, mut cache: material::Cache, rm: res::Manager, dir: []u8,
+    mut models: mdl_cache::Cache, mut cache: material::Cache, rm: res::Manager, dir: []u8,
     room_name: []u8, yaw: f32, name: []u8,
 } -> ! {
-    let room = try kmodels::load{ &lib, &fs, rm, &heap, name = room_name } ifnull { return kmodels::no_model{ name = room_name } }
+    let room = mdl_cache::get{ &fs, cache = &models, name = room_name } ifnull { return kmodels::no_model{ name = room_name } }
     let parts = try kmodels::upload{ &dev, &cache, &fs, rm, &heap, model = room, envmap = "" }
     let pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model = room }
     let palette = try alloc::resize(math::Mat4, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(math::Mat4){}, count = 64 }
@@ -1040,7 +1040,7 @@ fn draw_inside {
     kmodels::add_lights{ &frame, model = room, pose, instance = math::mat4::identity{} }
     _ = kmodels::draw{ &frame, view = vi, model = room, pose, parts, instance = math::mat4::identity{}, palette }
     try gpu::submit{ &dev, frame = &frame }
-    _ = @fmt(&io, "{}: {} meshes drawn, walkmesh {} x {} m, eye at ({}, {}, {})\n", room_name, parts.len, walk.max.x - walk.min.x, walk.max.y - walk.min.y, eye.x, eye.y, eye.z)
+    _ = @fmt(&io, "{}: {} meshes drawn, walkmesh {} x {} m, eye at ({}, {}, {})\n", room_name, parts.count, walk.max.x - walk.min.x, walk.max.y - walk.min.y, eye.x, eye.y, eye.z)
     try save_screen{ &io, &fs, &dev, &heap, dir, name }
     report{ &io, &dev }
 }
