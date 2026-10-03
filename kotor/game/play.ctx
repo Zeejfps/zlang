@@ -69,6 +69,7 @@ namespace play {
         let freq = sdl::counter_frequency{ &sdl }
         let mut last = sdl::counter{ &sdl }
         let mut quit = false
+        let mut game_over = false
         let mut want_save: []u8 = ""            // a save asked for this frame: its folder name
         let mut want_load: []u8 = ""            // a load asked for: a folder (ours, then the install's)
         let mut real_total: f64 = 0.0
@@ -137,6 +138,8 @@ namespace play {
                     ambience::stop_area{ a = &amb }
                     scene::release{ &sc, &dev }
                     arena::reset{ heap = &scene_arena }
+                    game_over = false
+                    clock::set_pause{ c = &w.clock, bit = clock::PAUSE_ENGINE, on = false }
                     save::load_game{ &w, &vm, engine, folder } iferr err{ error } {
                         _ = @fmt(&w.io, "kotor: load failed: {}\n", error)
                         return 1
@@ -167,6 +170,14 @@ namespace play {
             if w.conversation.active { keys = ctl::no_keys{} }
             ctl::update{ ctl = &control, &w, keys, yaw = camera.yaw, dt = w.clock.dt }
             world::tick{ &w, &vm, engine }
+            // The whole party fallen: the game is over (ours: the world stops, the options menu's
+            // Load Game is the way on; the original's death camera and panel are not built).
+            if not game_over and fight::party_fallen{ w = &w } {
+                game_over = true
+                clock::set_pause{ c = &w.clock, bit = clock::PAUSE_ENGINE, on = true }
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "kotor: {}\n", world::string_by_strref{ w = &w, strref = 42351 })
+            }
             // 7. The conversation's pump: the next line, the replies, the end.
             dlg::update{ &w, &vm, engine }
             // 6. A transition: the next module, and a new scene and sound for it.

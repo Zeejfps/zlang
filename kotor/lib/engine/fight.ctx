@@ -1093,4 +1093,23 @@ namespace fight {
             back.ctx.spell_target = obj::INVALID
         }
     }
+
+    // ---- the end
+
+    // Whether the whole party is down or dead (the original's death camera and "Your entire party
+    // has been killed", strref 42351; combat.md 12 leaves the code unread).
+    fn party_fallen { w: *world::World } -> bool {
+        let members = party::members{ w }
+        if members.len == 0 { return false }
+        let mut k: usize = 0
+        while k < members.len {
+            let o = world::object{ w, id = members[k] } ifnull { return false }
+            k = k + 1
+            let c = obj::creature{ o } ifnull { return false }
+            if c.dead { continue }
+            let f = c.fighter ifnull { return false }
+            if not f.c.down and o.hp >= 1 { return false }
+        }
+        return true
+    }
 }
