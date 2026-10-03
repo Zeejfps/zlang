@@ -1,0 +1,40 @@
+// The functions every backend's namespace `gpu` declares, written as calls so the compiler checks
+// them against whichever backend the build added. Nothing calls `check`; compiling it is the test.
+// A backend that changes a signature breaks the build here, not in game code.
+//
+// ctxlang can't name a function whose error set is inferred as a value of a function type (spec
+// §8, Errors, rule 12), so the contract is calls with the argument and result types spelled out.
+namespace render_contract {
+    fn check {
+        mut sdl: sdl::Sdl, realloc: alloc::Fn(arena::Arena), mut heap: arena::Arena, config: render::Config,
+        texture_desc: render::TextureDesc, mesh_desc: render::MeshDesc, data: []u8, indices: []u16,
+        frame: *render::Frame, pixels: []mut u8,
+    } -> ! {
+        let mut dev: gpu::Device = try gpu::open{ &sdl, realloc, &heap, config }
+        let info: render::Info = gpu::describe{ dev }
+        let stats: render::Stats = gpu::get_stats{ dev }
+        let screen: render::Size = gpu::screen_size{ dev }
+        let messages: []u8 = gpu::messages{ dev }
+        gpu::clear_messages{ &dev }
+        try gpu::resize{ &dev, width = screen.width, height = screen.height }
+
+        let t: render::Texture = try gpu::create_texture{ &dev, desc = texture_desc, data }
+        try gpu::update_texture{ &dev, t, level = 0, x = 0, y = 0, width = 1, height = 1, format = render::PixelFormat::rgba8, data }
+        let size: render::Size = gpu::texture_size{ dev, t }
+        gpu::free_texture{ &dev, t }
+
+        let m: render::Mesh = try gpu::create_mesh{ &dev, desc = mesh_desc, vertices = data, indices }
+        try gpu::update_mesh{ &dev, m, offset = 0, vertices = data }
+        gpu::free_mesh{ &dev, m }
+
+        let target: render::Target = try gpu::create_target{ &dev, width = 64, height = 64 }
+        let colour: ?render::Texture = gpu::target_texture{ dev, t = target }
+        let read: render::Size = try gpu::read_target{ &dev, t = target, into = pixels }
+        gpu::free_target{ &dev, t = target }
+
+        try gpu::submit{ &dev, frame }
+        gpu::present{ &dev, &sdl }
+        let shot: render::Size = try gpu::read_screen{ &dev, into = pixels }
+        gpu::close{ &dev, &sdl }
+    }
+}

@@ -71,7 +71,9 @@ namespace ir {
 
     // Params are in declaration order and take the first slots; a `mut` param's slot holds a
     // pointer. An extern fn has a symbol, the C function it calls, and no locals and an empty
-    // body; any other function has an empty symbol.
+    // body; any other function has an empty symbol. unit is the file that declares it and at its
+    // offset there, which the C backend groups functions by; neither is in the text form, whose
+    // reader leaves them empty.
     struct Func {
         id:     u32,
         name:   Bytes,
@@ -80,6 +82,8 @@ namespace ir {
         ret:    TypeId,
         locals: []Local,
         body:   Block,
+        unit:   Bytes,
+        at:     u32,
     }
 
     // A value block (a branch of an `if` or `match` expression) has a result unless every path

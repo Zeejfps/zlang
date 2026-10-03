@@ -178,7 +178,13 @@ namespace lower {
         return ir::Func{
             id, name = x.qual, symbol = x.symbol, params, ret,
             locals = slice::empty(ir::Local){}, body = ir::Block{ stmts = none, result = null },
+            unit = unit_of{ l, x }, at = x.syn.span.start,
         }
+    }
+
+    // The file that declares x.
+    fn unit_of { l: Lower, x: check::Decl } -> []u8 {
+        return l.c.files[x.syn.span.file].name
     }
 
     fn params_of { mut l: Lower, fields: []types::Field } -> []ir::Param {
@@ -210,6 +216,7 @@ namespace lower {
         return ir::Func{
             id, name = x.qual, symbol = "", params = slice::empty(ir::Param){}, ret,
             locals = list::items{ list = l.locals }, body = ir::Block{ stmts = list::items{ list = xs }, result = null },
+            unit = unit_of{ l, x }, at = x.syn.span.start,
         }
     }
 
@@ -220,19 +227,6 @@ namespace lower {
         map::clear{ m = &l.slots }
         l.locals = list::new(ir::Local){ realloc = arena::alloc, heap = l.heap }
         l.ret = T{ &l, t = x.ret }
-        let mut name = x.qual
-        if inst.targs.len > 0 {
-            let mut b = message{ l }
-            try! @fmt(&b, "{}(", str{ s = x.qual })
-            let mut i: usize = 0
-            while i < inst.targs.len {
-                if i > 0 { try! utf8::push{ &b, s = ", " } }
-                try! utf8::push{ &b, s = check::tstr{ c = l.c.*, t = inst.targs[i] } }
-                i = i + 1
-            }
-            try! utf8::push{ &b, s = ")" }
-            name = utf8::view{ b }.bytes
-        }
         let first = map::get{ m = l.c.first_var, key = inst.decl }
         let mut params = list::new(ir::Param){ realloc = arena::alloc, heap = l.heap }
         let mut i: usize = 0
@@ -258,9 +252,24 @@ namespace lower {
         }
         let ret = tid{ &l, t = l.ret }
         return ir::Func{
-            id, name, symbol = "", params = list::items{ list = params }, ret,
-            locals = list::items{ list = l.locals }, body,
+            id, name = inst_name{ l, x, targs = inst.targs }, symbol = "", params = list::items{ list = params }, ret,
+            locals = list::items{ list = l.locals }, body, unit = unit_of{ l, x }, at = x.syn.span.start,
         }
+    }
+
+    // An instance's name: its declaration's, with its generic arguments.
+    fn inst_name { l: Lower, x: check::Decl, targs: []Id } -> []u8 {
+        if targs.len == 0 { return x.qual }
+        let mut b = message{ l }
+        try! @fmt(&b, "{}(", str{ s = x.qual })
+        let mut i: usize = 0
+        while i < targs.len {
+            if i > 0 { try! utf8::push{ &b, s = ", " } }
+            try! utf8::push{ &b, s = check::tstr{ c = l.c.*, t = targs[i] } }
+            i = i + 1
+        }
+        try! utf8::push{ &b, s = ")" }
+        return utf8::view{ b }.bytes
     }
 
     // ---- types
@@ -2366,11 +2375,14 @@ namespace lower {
         let r = lift{ &l, x = pieces{ &l, w, ps = st.pieces }, frm = rt, to = ret }
         let mut xs = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
         try! list::push{ list = &xs, item = ir::Stmt::ret{ value = r } }
+        // Named after its instance, so that the C backend can tell apart those of instances of
+        // one generic fn.
         let mut name = message{ l }
-        try! @fmt(&name, "{}@fmt", str{ s = x.qual })
+        try! @fmt(&name, "{}@fmt", str{ s = inst_name{ l, x, targs = inst.targs } })
         return ir::Func{
             id, name = utf8::view{ b = name }.bytes, symbol = "", params = list::items{ list = params }, ret = tid{ &l, t = ret },
             locals = list::items{ list = l.locals }, body = ir::Block{ stmts = list::items{ list = xs }, result = null },
+            unit = unit_of{ l, x }, at = x.syn.span.start,
         }
     }
 

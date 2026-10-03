@@ -89,6 +89,8 @@ namespace gl {
         uniform2f: extern fn{ location: i32, v0: f32, v1: f32 },
         uniform3f: extern fn{ location: i32, v0: f32, v1: f32, v2: f32 },
         uniform4f: extern fn{ location: i32, v0: f32, v1: f32, v2: f32, v3: f32 },
+        uniform2i: extern fn{ location: i32, v0: i32, v1: i32 },
+        uniform4i: extern fn{ location: i32, v0: i32, v1: i32, v2: i32, v3: i32 },
         uniform1iv: extern fn{ location: i32, count: i32, value: *i32 },
         uniform1fv: extern fn{ location: i32, count: i32, value: *f32 },
         uniform2fv: extern fn{ location: i32, count: i32, value: *f32 },
@@ -245,6 +247,8 @@ namespace gl {
             uniform2f = @cast(_, try proc{ get_proc, name = "glUniform2f" }),
             uniform3f = @cast(_, try proc{ get_proc, name = "glUniform3f" }),
             uniform4f = @cast(_, try proc{ get_proc, name = "glUniform4f" }),
+            uniform2i = @cast(_, try proc{ get_proc, name = "glUniform2i" }),
+            uniform4i = @cast(_, try proc{ get_proc, name = "glUniform4i" }),
             uniform1iv = @cast(_, try proc{ get_proc, name = "glUniform1iv" }),
             uniform1fv = @cast(_, try proc{ get_proc, name = "glUniform1fv" }),
             uniform2fv = @cast(_, try proc{ get_proc, name = "glUniform2fv" }),
@@ -735,6 +739,8 @@ namespace gl {
     const TEXTURE_COMPARE_MODE: u32 = 0x884C
     const TEXTURE_COMPARE_FUNC: u32 = 0x884D
     const TEXTURE_SWIZZLE_R: u32 = 0x8E42
+    const TEXTURE_SWIZZLE_G: u32 = 0x8E43
+    const TEXTURE_SWIZZLE_B: u32 = 0x8E44
     const TEXTURE_SWIZZLE_A: u32 = 0x8E45
     const TEXTURE_SWIZZLE_RGBA: u32 = 0x8E46
     const TEXTURE_MAX_ANISOTROPY: u32 = 0x84FE          // EXT_texture_filter_anisotropic

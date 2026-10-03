@@ -214,7 +214,7 @@ namespace ir_read {
         let symbol = try string{ &r }
         let params = try params{ &r }
         let ret = id32{ &r }
-        return ir::Func{ id, name, symbol, params, ret, locals = slice::empty(ir::Local){}, body = empty_block{} }
+        return ir::Func{ id, name, symbol, params, ret, locals = slice::empty(ir::Local){}, body = empty_block{}, unit = "", at = 0 }
     }
 
     // After `(fn `, up to the closing parenthesis.
@@ -234,7 +234,7 @@ namespace ir_read {
         }
         expect{ &r, c = ']' }
         let body = try block{ &r }
-        return ir::Func{ id, name, symbol = "", params, ret, locals = list::items{ list = locals }, body }
+        return ir::Func{ id, name, symbol = "", params, ret, locals = list::items{ list = locals }, body, unit = "", at = 0 }
     }
 
     fn empty_block {} -> ir::Block {

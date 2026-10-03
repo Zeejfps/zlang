@@ -1,0 +1,707 @@
+// The rendering seam: what the game says it wants drawn, in data no backend's API shows through.
+//
+// Two namespaces make the seam (docs/design/render.md):
+//
+// - `render` (this file): handles, resource descriptions, materials, and the `Frame`, a list of
+//   everything one frame draws, which the game fills and hands over once. Plain data and pure
+//   functions: it calls no GPU and holds no capability.
+// - `gpu`: the device. Every backend directory (lib/render_gl, one day a Metal or Vulkan one)
+//   declares namespace `gpu` with the same functions (contract.ctx lists them), and a program's
+//   build.ctx picks the backend by which directory it adds. Game code names `gpu::` and `render::`
+//   and never the backend's API; only the backend holds that capability (gl::Gl).
+//
+// Conventions (shared with lib/base/math.ctx): world space is Z up; matrices are column-major;
+// GL-style clip space (depth -1..1) comes from math::mat4::perspective, and backends with another
+// convention adjust inside. Texture data is stored **bottom row first**: texture coordinate v = 0
+// is the first stored row, the bottom of the picture, as TPC, TGA and the MDL UVs have it. 2D is
+// in pixels with the origin at the top left and y down.
+namespace render {
+    // ---- handles to GPU resources, made by the gpu namespace. An id is never 0.
+    struct Texture { id: u32 }
+    struct Mesh { id: u32 }
+    struct Target { id: u32 }
+
+    struct Color { r: f32, g: f32, b: f32, a: f32 }
+    struct Rect { x: f32, y: f32, w: f32, h: f32 }
+    struct Size { width: u32, height: u32 }
+    // Texture coordinates of a quad's corners: (u0, v0) at its top left, (u1, v1) at its bottom
+    // right. `upright{}` shows a whole texture the right way up.
+    struct UvRect { u0: f32, v0: f32, u1: f32, v1: f32 }
+
+    fn rgba { r: f32, g: f32, b: f32, a: f32 } -> Color { return Color{ r, g, b, a } }
+    fn white {} -> Color { return Color{ r = 1.0, g = 1.0, b = 1.0, a = 1.0 } }
+    fn rect { x: f32, y: f32, w: f32, h: f32 } -> Rect { return Rect{ x, y, w, h } }
+    fn upright {} -> UvRect { return UvRect{ u0 = 0.0, v0 = 1.0, u1 = 1.0, v1 = 0.0 } }
+
+    // ---- device
+
+    // What gpu::open makes: a window (hidden for offscreen runs) of width by height and the
+    // device drawing into it. The `max_*` bound the backend's resource tables.
+    struct Config {
+        title: c::String,
+        width: i32, height: i32,
+        hidden: bool,           // offscreen: nothing is shown, read_screen still works
+        vsync: bool,
+        debug: bool,            // the API's own validation and messages, where it has them
+        max_textures: u32, max_meshes: u32, max_targets: u32,
+    }
+
+    fn make_config { title: c::String, width: i32, height: i32, hidden: bool } -> Config {
+        return Config{ title, width, height, hidden, vsync = true, debug = false, max_textures = 16384, max_meshes = 65536, max_targets = 64 }
+    }
+
+    struct Info {
+        api: []u8,              // e.g. "OpenGL 4.1"
+        device: []u8,           // the driver's name for the GPU
+        max_texture_size: u32,
+        dxt: bool,              // DXT1/DXT5 upload as they are (else decode to rgba8 first)
+    }
+
+    // What the last submit drew.
+    struct Stats { draws: u32, triangles: u32, culled: u32, state_changes: u32, quads: u32, particles: u32 }
+
+    // ---- textures
+
+    enum PixelFormat: u8 { grey8, rgb8, rgba8, dxt1, dxt5 }
+    enum TextureKind: u8 { flat, cube }
+    enum Filter: u8 { nearest, linear }
+    enum Wrap: u8 { repeat, clamp }
+
+    // A texture's data, as `gpu::create_texture` takes it: each face (one, or six for a cube, in
+    // GL's order +X -X +Y -Y +Z -Z), each face's `levels` largest first, each level's rows bottom
+    // first. grey8 is sampled as (g, g, g, 1). DXT levels are whole 4x4 blocks.
+    struct TextureDesc {
+        kind: TextureKind,
+        format: PixelFormat,
+        width: u32, height: u32,    // one face's top level
+        levels: u32,                // levels in the data, at least 1
+        mipmap: bool,               // sample through mips; with levels == 1 the backend builds them
+        filter: Filter,
+        wrap_u: Wrap, wrap_v: Wrap,
+    }
+
+    fn make_texture_desc { format: PixelFormat, width: u32, height: u32, levels: u32 } -> TextureDesc {
+        return TextureDesc{
+            kind = TextureKind::flat, format, width, height, levels, mipmap = levels > 1,
+            filter = Filter::linear, wrap_u = Wrap::repeat, wrap_v = Wrap::repeat,
+        }
+    }
+
+    // Bytes of one level of w by h.
+    fn level_size { format: PixelFormat, width: u32, height: u32 } -> usize {
+        let w = @as(usize, width)
+        let h = @as(usize, height)
+        return match format {
+            grey8 => { w * h }
+            rgb8 => { w * h * 3 }
+            rgba8 => { w * h * 4 }
+            dxt1 => { ((w + 3) / 4) * ((h + 3) / 4) * 8 }
+            dxt5 => { ((w + 3) / 4) * ((h + 3) / 4) * 16 }
+        }
+    }
+
+    // Bytes of the whole texture `desc` describes: what create_texture's data must hold.
+    fn texture_size { desc: TextureDesc } -> usize {
+        let mut chain: usize = 0
+        let mut k: u32 = 0
+        while k < desc.levels {
+            let w = if (desc.width >> k) > 0 { desc.width >> k } else { 1 }
+            let h = if (desc.height >> k) > 0 { desc.height >> k } else { 1 }
+            chain = chain + level_size{ format = desc.format, width = w, height = h }
+            k = k + 1
+        }
+        let faces: usize = if desc.kind == TextureKind::cube { 6 } else { 1 }
+        return chain * faces
+    }
+
+    // ---- meshes
+
+    // Where each attribute sits: a byte offset, or -1 when the mesh hasn't it. Interleaved, the
+    // offset is into each `stride`-byte row, whose shapes follow MDX rows, so an MDX block uploads
+    // as it is. `planar`, each attribute is a tightly packed array of its own starting at its
+    // offset, as pack_streams lays out lib/mdl's per-attribute arrays.
+    struct VertexLayout {
+        stride: u32,            // bytes per row, interleaved; unused when planar
+        planar: bool,
+        position: i32,          // 3 f32
+        normal: i32,            // 3 f32
+        uv0: i32,               // 2 f32: the diffuse (and bump) texture
+        uv1: i32,               // 2 f32: the lightmap
+        tangent_space: i32,     // 9 f32, as MDX keeps them: +dP/dv, -dP/du, the normal
+        weights: i32,           // 4 f32: skin weights
+        bones: i32,             // 4 bone slots: f32 numbers with -1 for none (MDX), or u8 (bones_u8)
+        bones_u8: bool,
+        color: i32,             // 4 u8: RGBA, 0..255
+        constraint: i32,        // 1 f32: how freely a dangly vertex moves, 0 (pinned) .. 255
+    }
+
+    fn make_layout { stride: u32 } -> VertexLayout {
+        return VertexLayout{
+            stride, planar = false, position = -1, normal = -1, uv0 = -1, uv1 = -1, tangent_space = -1,
+            weights = -1, bones = -1, bones_u8 = false, color = -1, constraint = -1,
+        }
+    }
+
+    // Bytes the vertices of a layout take: what create_mesh's vertex data must hold.
+    fn layout_size { layout: VertexLayout, vertex_count: u32 } -> usize {
+        let n = @as(usize, vertex_count)
+        if not layout.planar { return n * @as(usize, layout.stride) }
+        let mut end: usize = 0
+        end = attribute_end{ end, offset = layout.position, bytes = n * 12 }
+        end = attribute_end{ end, offset = layout.normal, bytes = n * 12 }
+        end = attribute_end{ end, offset = layout.uv0, bytes = n * 8 }
+        end = attribute_end{ end, offset = layout.uv1, bytes = n * 8 }
+        end = attribute_end{ end, offset = layout.tangent_space, bytes = n * 36 }
+        end = attribute_end{ end, offset = layout.weights, bytes = n * 16 }
+        end = attribute_end{ end, offset = layout.bones, bytes = n * (if layout.bones_u8 { 4 } else { 16 }) }
+        end = attribute_end{ end, offset = layout.color, bytes = n * 4 }
+        end = attribute_end{ end, offset = layout.constraint, bytes = n * 4 }
+        return end
+    }
+
+    fn attribute_end { end: usize, offset: i32, bytes: usize } -> usize {
+        if offset < 0 { return end }
+        let e = @as(usize, offset) + bytes
+        return if e > end { e } else { end }
+    }
+
+    // A mesh's vertices as separate arrays, as lib/mdl holds them. An array shorter than
+    // vertex_count times its width counts as absent.
+    struct Streams {
+        vertex_count: u32,
+        positions: []f32,       // 3 per vertex
+        normals: []f32,         // 3
+        uv0: []f32,             // 2
+        uv1: []f32,             // 2
+        tangents: []f32,        // 9, as MDX keeps them
+        weights: []f32,         // 4
+        bones: []u8,            // 4 palette slots
+        colors: []u8,           // 4, RGBA
+        constraints: []f32,     // 1
+    }
+
+    // Bytes pack_streams needs for `s`.
+    fn streams_size { s: Streams } -> usize {
+        let n = @as(usize, s.vertex_count)
+        let mut size: usize = 0
+        if s.positions.len >= n * 3 { size = size + n * 12 }
+        if s.normals.len >= n * 3 { size = size + n * 12 }
+        if s.uv0.len >= n * 2 { size = size + n * 8 }
+        if s.uv1.len >= n * 2 { size = size + n * 8 }
+        if s.tangents.len >= n * 9 { size = size + n * 36 }
+        if s.weights.len >= n * 4 { size = size + n * 16 }
+        if s.constraints.len >= n { size = size + n * 4 }
+        if s.bones.len >= n * 4 { size = size + n * 4 }
+        if s.colors.len >= n * 4 { size = size + n * 4 }
+        return size
+    }
+
+    // Copies the arrays one after another into `into` (streams_size bytes) and returns their
+    // planar layout, or null if `into` is too small. The f32 arrays come first, so each starts on
+    // a 4-byte boundary of the buffer.
+    fn pack_streams { s: Streams, into: []mut u8 } -> ?VertexLayout {
+        if into.len < streams_size{ s } { return null }
+        let n = @as(usize, s.vertex_count)
+        let mut l = make_layout{ stride = 0 }
+        l.planar = true
+        let mut at: usize = 0
+        if s.positions.len >= n * 3 { l.position = put_floats{ into, at = &at, src = s.positions[..n * 3] } }
+        if s.normals.len >= n * 3 { l.normal = put_floats{ into, at = &at, src = s.normals[..n * 3] } }
+        if s.uv0.len >= n * 2 { l.uv0 = put_floats{ into, at = &at, src = s.uv0[..n * 2] } }
+        if s.uv1.len >= n * 2 { l.uv1 = put_floats{ into, at = &at, src = s.uv1[..n * 2] } }
+        if s.tangents.len >= n * 9 { l.tangent_space = put_floats{ into, at = &at, src = s.tangents[..n * 9] } }
+        if s.weights.len >= n * 4 { l.weights = put_floats{ into, at = &at, src = s.weights[..n * 4] } }
+        if s.constraints.len >= n { l.constraint = put_floats{ into, at = &at, src = s.constraints[..n] } }
+        if s.bones.len >= n * 4 {
+            l.bones = @as(i32, at)
+            l.bones_u8 = true
+            slice::copy(u8){ dst = into[at..at + n * 4], src = s.bones[..n * 4] }
+            at = at + n * 4
+        }
+        if s.colors.len >= n * 4 {
+            l.color = @as(i32, at)
+            slice::copy(u8){ dst = into[at..at + n * 4], src = s.colors[..n * 4] }
+            at = at + n * 4
+        }
+        return l
+    }
+
+    fn put_floats { into: []mut u8, mut at: usize, src: []f32 } -> i32 {
+        let start = at
+        let bytes = @slice(@cast(*u8, src.ptr), src.len * 4)
+        slice::copy(u8){ dst = into[start..start + bytes.len], src = bytes }
+        at = start + bytes.len
+        return @as(i32, start)
+    }
+
+    enum Primitive: u8 { triangles, lines }
+
+    struct MeshDesc {
+        layout: VertexLayout,
+        vertex_count: u32,
+        index_count: u32,       // u16 indices; triangles wind counterclockwise seen from the front
+        primitive: Primitive,
+        dynamic: bool,          // its vertices will be replaced often (gpu::update_mesh)
+    }
+
+    // ---- materials
+
+    // How a surface meets what is behind it.
+    enum Blend: u8 {
+        opaque,                 // writes depth; alpha is no transparency (with an envmap, it masks the reflection)
+        punch,                  // alpha-tested at 0.5 and otherwise opaque: grass, leaves, grates, hair
+        alpha,                  // blended by alpha, no depth writes, drawn back to front after opaque
+        additive,               // added (weighted by alpha), no depth writes, sorted with alpha
+    }
+
+    struct Material {
+        diffuse: ?Texture,          // sampled with uv0; none is white
+        lightmap: ?Texture,         // sampled with uv1 and multiplied in, instead of lighting
+        envmap: ?Texture,           // a cube (world-space reflection, Z up) or a flat sphere map
+        bumpmap: ?Texture,          // tangent-space normal map, sampled with uv0, needs tangent_space
+        blend: Blend,
+        color: Color,               // multiplies the diffuse texture; a is the opacity (alpha controller, wateralpha)
+        selfillum: math::Vec3,      // added after lighting
+        lit: bool,                  // ambient plus the frame's lights; false draws the colour as it is
+        fog: bool,
+        two_sided: bool,            // no back-face culling
+        decal: bool,                // pulled toward the camera in depth, to sit on coplanar surfaces
+        env_amount: f32,            // the reflection's strength: 1 normally
+        uv_scale: math::Vec2,       // uv0' = uv0 * scale + offset (scrolling UVs, flipbook cells)
+        uv_offset: math::Vec2,
+        uv_cell: bool,              // wrap uv0 into 0..1 first (a flipbook cell of an atlas)
+        sort: i32,                  // among transparent surfaces, lower draws first (the MDL transparency hint)
+    }
+
+    fn make_material {} -> Material {
+        return Material{
+            diffuse = null, lightmap = null, envmap = null, bumpmap = null,
+            blend = Blend::opaque, color = white{}, selfillum = math::vec3::zero{},
+            lit = true, fog = true, two_sided = false, decal = false, env_amount = 1.0,
+            uv_scale = math::Vec2{ x = 1.0, y = 1.0 }, uv_offset = math::Vec2{ x = 0.0, y = 0.0 }, uv_cell = false,
+            sort = 0,
+        }
+    }
+
+    // The atlas cell of flipbook frame `frame` of a cols by rows grid: cell i at column i mod
+    // cols, row i div cols counted from v = 0 (the first stored row), as tex::to_atlas and TGA
+    // flipbooks lay them out.
+    fn set_flipbook_frame { mut m: Material, cols: u32, rows: u32, frame: u32 } {
+        let n = if cols * rows > 0 { cols * rows } else { 1 }
+        let i = frame % n
+        let c = if cols > 0 { cols } else { 1 }
+        let r = if rows > 0 { rows } else { 1 }
+        m.uv_scale = math::Vec2{ x = 1.0 / @as(f32, c), y = 1.0 / @as(f32, r) }
+        m.uv_offset = math::Vec2{ x = @as(f32, i % c) / @as(f32, c), y = @as(f32, i / c) / @as(f32, r) }
+        m.uv_cell = true
+    }
+
+    // ---- frame contents
+
+    struct Camera {
+        view: math::Mat4,           // world to eye; the eye looks down its -Z
+        proj: math::Mat4,           // eye to clip, GL's convention
+        eye: math::Vec3,            // the camera's world position
+    }
+
+    // Linear fog by distance from the eye: none before `near`, all `color` at `far`.
+    struct Fog { on: bool, color: math::Vec3, near: f32, far: f32 }
+
+    fn no_fog {} -> Fog { return Fog{ on = false, color = math::vec3::zero{}, near = 0.0, far = 1.0 } }
+
+    // One rendering of the world through a camera, into the screen or a target.
+    struct View {
+        target: ?Target,            // null: the screen
+        viewport: ?Rect,            // pixels, top-left origin; null: the whole target
+        clear_color: ?Color,        // null: keep what is there
+        clear_depth: bool,
+        camera: Camera,
+        ambient: math::Vec3,        // light every lit surface gets
+        fog: Fog,
+    }
+
+    fn make_view { camera: Camera } -> View {
+        return View{
+            target = null, viewport = null, clear_color = Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 }, clear_depth = true,
+            camera, ambient = math::Vec3{ x = 0.3, y = 0.3, z = 0.3 }, fog = no_fog{},
+        }
+    }
+
+    // A point light. Its light falls off smoothly to nothing at `radius`. The backend lights each
+    // surface with the strongest few that reach it.
+    struct Light { position: math::Vec3, color: math::Vec3, radius: f32 }
+
+    // One mesh drawn once.
+    struct Draw {
+        view: u32,                  // index of the frame's view it belongs to
+        mesh: Mesh,
+        first: u32,                 // the index range drawn; count 0 means all of them
+        count: u32,
+        transform: math::Mat4,      // mesh space (or, with bones, the space the palette gives) to world
+        material: Material,
+        bones: u32,                 // the bone palette: frame.bones[bones .. bones + bone_count]; slot k
+        bone_count: u32,            //   takes a mesh-space vertex to transform's space (Bone_k now * InvBind_k)
+        dangle: math::Vec3,         // how far a constraint-255 vertex is displaced now, in mesh space
+        center: math::Vec3,         // bounding sphere in mesh space: lights, sorting, and culling when
+        radius: f32,                //   radius > 0
+    }
+
+    fn make_draw { view: u32, mesh: Mesh, transform: math::Mat4, material: Material } -> Draw {
+        return Draw{
+            view, mesh, first = 0, count = 0, transform, material, bones = 0, bone_count = 0,
+            dangle = math::vec3::zero{}, center = math::vec3::zero{}, radius = 0.0,
+        }
+    }
+
+    // A creature's shadow: draw `draw`'s mesh squashed onto `plane` along the light from
+    // `light` (a position, or with `directional` a direction the light travels), darkening what
+    // is there by `strength`, each pixel once.
+    struct Shadow { draw: u32, light: math::Vec3, directional: bool, plane: math::Plane, strength: f32 }
+
+    // How an emitter's particles face.
+    enum Facing: u8 {
+        camera,                     // square to the view (`Normal`)
+        axis,                       // turn about `axis` toward the eye (`Billboard_to_World_Z`, `..._Local_Z`)
+        plane,                      // lie in the plane whose normal is `axis` (`Aligned_to_World_Z`)
+        velocity,                   // stretched along each particle's `dir` (`Motion_Blur`, `Aligned_to_Particle_Dir`)
+    }
+
+    // One particle: a quad of `size` at `position` (in the emitter's space), turned by `angle`,
+    // showing cell `frame` of its emitter's sprite grid.
+    struct Particle { position: math::Vec3, size: math::Vec2, angle: f32, color: Color, frame: u32, dir: math::Vec3 }
+
+    // A batch of particles sharing a texture and a way of drawing: frame.particles[first .. first
+    // + count]. Cells of the grid are numbered as flipbook frames are (set_flipbook_frame).
+    struct Emitter {
+        view: u32,
+        texture: ?Texture,
+        blend: Blend,
+        grid_x: u32, grid_y: u32,
+        facing: Facing,
+        axis: math::Vec3,           // in the emitter's space
+        transform: math::Mat4,      // the emitter's space to world
+        first: u32, count: u32,
+        fog: bool,
+        sort: i32,
+    }
+
+    // Debug geometry in world space: walkmesh edges and faces, boxes, paths.
+    struct Line { view: u32, a: math::Vec3, b: math::Vec3, color: Color, depth_test: bool }
+    struct Tri { view: u32, a: math::Vec3, b: math::Vec3, c: math::Vec3, color: Color, depth_test: bool }
+
+    // What a 2D quad shows.
+    union Image {
+        none,                                           // its colour
+        texture{ t: Texture },
+        yuv{ y: Texture, u: Texture, v: Texture },      // a video frame's planes (grey8, BT.601 limited range)
+    }
+
+    // A rectangle in a UI pass's pixels.
+    struct Quad {
+        rect: Rect,
+        uv: UvRect,
+        color: Color,               // multiplies the image
+        image: Image,
+        blend: Blend,               // opaque and punch draw as alpha
+        clip: ?Rect,                // pixels outside it aren't drawn
+        angle: f32,                 // radians, counterclockwise on screen about the rect's centre
+    }
+
+    enum StepKind: u8 { view, ui }
+
+    // The frame's passes, in order: a view's 3D drawing, or a run of 2D quads.
+    struct Step {
+        kind: StepKind,
+        view: u32,                  // view: its index
+        target: ?Target,            // ui: null for the screen
+        width: f32, height: f32,    // ui: the pixel size the quads are laid out in, stretched over the target
+        first: u32, count: u32,     // ui: frame.quads[first .. first + count]
+    }
+
+    // How many of each thing a frame can hold. What doesn't fit is dropped and counted.
+    struct Capacity {
+        views: u32, steps: u32, draws: u32, bones: u32, lights: u32, shadows: u32,
+        emitters: u32, particles: u32, lines: u32, tris: u32, quads: u32,
+    }
+
+    fn default_capacity {} -> Capacity {
+        return Capacity{
+            views = 16, steps = 64, draws = 16384, bones = 16384, lights = 128, shadows = 64,
+            emitters = 1024, particles = 32768, lines = 65536, tris = 65536, quads = 16384,
+        }
+    }
+
+    // Everything one frame draws. Made once with make_frame, emptied by begin_frame, filled by
+    // the add_* functions, and drawn by gpu::submit.
+    struct Frame {
+        time: f32,                  // seconds, for the backend's own animation (none yet)
+        views: []mut View, view_count: u32,
+        steps: []mut Step, step_count: u32,
+        draws: []mut Draw, draw_count: u32,
+        bones: []mut math::Mat4, bone_count: u32,
+        lights: []mut Light, light_count: u32,
+        shadows: []mut Shadow, shadow_count: u32,
+        emitters: []mut Emitter, emitter_count: u32,
+        particles: []mut Particle, particle_count: u32,
+        lines: []mut Line, line_count: u32,
+        tris: []mut Tri, tri_count: u32,
+        quads: []mut Quad, quad_count: u32,
+        dropped: u32,               // items that didn't fit since begin_frame
+    }
+
+    // A frame with room for `cap`, in memory from `realloc` that must outlive it.
+    fn make_frame(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !Frame {
+        return Frame{
+            time = 0.0,
+            views = try alloc::resize(View, S){ realloc, &heap, mem = slice::empty(View){}, count = cap.views }, view_count = 0,
+            steps = try alloc::resize(Step, S){ realloc, &heap, mem = slice::empty(Step){}, count = cap.steps }, step_count = 0,
+            draws = try alloc::resize(Draw, S){ realloc, &heap, mem = slice::empty(Draw){}, count = cap.draws }, draw_count = 0,
+            bones = try alloc::resize(math::Mat4, S){ realloc, &heap, mem = slice::empty(math::Mat4){}, count = cap.bones }, bone_count = 0,
+            lights = try alloc::resize(Light, S){ realloc, &heap, mem = slice::empty(Light){}, count = cap.lights }, light_count = 0,
+            shadows = try alloc::resize(Shadow, S){ realloc, &heap, mem = slice::empty(Shadow){}, count = cap.shadows }, shadow_count = 0,
+            emitters = try alloc::resize(Emitter, S){ realloc, &heap, mem = slice::empty(Emitter){}, count = cap.emitters }, emitter_count = 0,
+            particles = try alloc::resize(Particle, S){ realloc, &heap, mem = slice::empty(Particle){}, count = cap.particles }, particle_count = 0,
+            lines = try alloc::resize(Line, S){ realloc, &heap, mem = slice::empty(Line){}, count = cap.lines }, line_count = 0,
+            tris = try alloc::resize(Tri, S){ realloc, &heap, mem = slice::empty(Tri){}, count = cap.tris }, tri_count = 0,
+            quads = try alloc::resize(Quad, S){ realloc, &heap, mem = slice::empty(Quad){}, count = cap.quads }, quad_count = 0,
+            dropped = 0,
+        }
+    }
+
+    // Empties the frame for the next one.
+    fn begin_frame { mut frame: Frame, time: f32 } {
+        frame.time = time
+        frame.view_count = 0
+        frame.step_count = 0
+        frame.draw_count = 0
+        frame.bone_count = 0
+        frame.light_count = 0
+        frame.shadow_count = 0
+        frame.emitter_count = 0
+        frame.particle_count = 0
+        frame.line_count = 0
+        frame.tri_count = 0
+        frame.quad_count = 0
+        frame.dropped = 0
+    }
+
+    // Adds a view and the pass that draws it, after the passes before it. Returns its index for
+    // the draws that belong to it, or null if the frame has no room.
+    fn add_view { mut frame: Frame, view: View } -> ?u32 {
+        if frame.view_count >= frame.views.len or frame.step_count >= frame.steps.len {
+            frame.dropped = frame.dropped + 1
+            return null
+        }
+        let index = frame.view_count
+        frame.views[index] = view
+        frame.view_count = index + 1
+        frame.steps[frame.step_count] = Step{
+            kind = StepKind::view, view = index, target = view.target, width = 0.0, height = 0.0, first = 0, count = 0,
+        }
+        frame.step_count = frame.step_count + 1
+        return index
+    }
+
+    // Returns the draw's index (for add_shadow), or null if it was dropped.
+    fn add_draw { mut frame: Frame, draw: Draw } -> ?u32 {
+        if frame.draw_count >= frame.draws.len {
+            frame.dropped = frame.dropped + 1
+            return null
+        }
+        let index = frame.draw_count
+        frame.draws[index] = draw
+        frame.draw_count = index + 1
+        return index
+    }
+
+    // Copies a bone palette into the frame. Returns where it starts, for Draw.bones, or null.
+    fn add_bones { mut frame: Frame, palette: []math::Mat4 } -> ?u32 {
+        if @as(usize, frame.bone_count) + palette.len > frame.bones.len {
+            frame.dropped = frame.dropped + 1
+            return null
+        }
+        let first = frame.bone_count
+        slice::copy(math::Mat4){ dst = frame.bones[@as(usize, first)..], src = palette }
+        frame.bone_count = first + @as(u32, palette.len)
+        return first
+    }
+
+    fn add_light { mut frame: Frame, light: Light } {
+        if frame.light_count >= frame.lights.len {
+            frame.dropped = frame.dropped + 1
+            return
+        }
+        frame.lights[frame.light_count] = light
+        frame.light_count = frame.light_count + 1
+    }
+
+    fn add_shadow { mut frame: Frame, shadow: Shadow } {
+        if frame.shadow_count >= frame.shadows.len {
+            frame.dropped = frame.dropped + 1
+            return
+        }
+        frame.shadows[frame.shadow_count] = shadow
+        frame.shadow_count = frame.shadow_count + 1
+    }
+
+    // Adds an emitter and its particles; `emitter.first` and `count` are set here.
+    fn add_emitter { mut frame: Frame, emitter: Emitter, particles: []Particle } {
+        if frame.emitter_count >= frame.emitters.len or @as(usize, frame.particle_count) + particles.len > frame.particles.len {
+            frame.dropped = frame.dropped + 1
+            return
+        }
+        let first = frame.particle_count
+        slice::copy(Particle){ dst = frame.particles[@as(usize, first)..], src = particles }
+        frame.particle_count = first + @as(u32, particles.len)
+        let mut e = emitter
+        e.first = first
+        e.count = @as(u32, particles.len)
+        frame.emitters[frame.emitter_count] = e
+        frame.emitter_count = frame.emitter_count + 1
+    }
+
+    fn add_line { mut frame: Frame, line: Line } {
+        if frame.line_count >= frame.lines.len {
+            frame.dropped = frame.dropped + 1
+            return
+        }
+        frame.lines[frame.line_count] = line
+        frame.line_count = frame.line_count + 1
+    }
+
+    fn add_tri { mut frame: Frame, tri: Tri } {
+        if frame.tri_count >= frame.tris.len {
+            frame.dropped = frame.dropped + 1
+            return
+        }
+        frame.tris[frame.tri_count] = tri
+        frame.tri_count = frame.tri_count + 1
+    }
+
+    // The twelve edges of a box, for debugging.
+    fn add_box_lines { mut frame: Frame, view: u32, box: math::Aabb, color: Color, depth_test: bool } {
+        let lo = box.min
+        let hi = box.max
+        let mut i: u32 = 0
+        while i < 12 {
+            // Edge i runs along axis i / 4; the other two axes take corner bits (i % 4).
+            let axis = i / 4
+            let s0 = (i & 1) != 0
+            let s1 = (i & 2) != 0
+            let a = box_corner{ lo, hi, axis, s0, s1, end = false }
+            let b = box_corner{ lo, hi, axis, s0, s1, end = true }
+            add_line{ &frame, line = Line{ view, a, b, color, depth_test } }
+            i = i + 1
+        }
+    }
+
+    fn box_corner { lo: math::Vec3, hi: math::Vec3, axis: u32, s0: bool, s1: bool, end: bool } -> math::Vec3 {
+        if axis == 0 {
+            return math::Vec3{ x = if end { hi.x } else { lo.x }, y = if s0 { hi.y } else { lo.y }, z = if s1 { hi.z } else { lo.z } }
+        }
+        if axis == 1 {
+            return math::Vec3{ x = if s0 { hi.x } else { lo.x }, y = if end { hi.y } else { lo.y }, z = if s1 { hi.z } else { lo.z } }
+        }
+        return math::Vec3{ x = if s0 { hi.x } else { lo.x }, y = if s1 { hi.y } else { lo.y }, z = if end { hi.z } else { lo.z } }
+    }
+
+    // ---- 2D
+
+    // Starts a run of 2D quads drawn over what came before, laid out in a width by height pixel
+    // space stretched over `target` (null: the screen). Quads added from here go into it.
+    fn begin_ui { mut frame: Frame, width: f32, height: f32, target: ?Target } {
+        if frame.step_count >= frame.steps.len {
+            frame.dropped = frame.dropped + 1
+            return
+        }
+        frame.steps[frame.step_count] = Step{
+            kind = StepKind::ui, view = 0, target, width, height, first = frame.quad_count, count = 0,
+        }
+        frame.step_count = frame.step_count + 1
+    }
+
+    // Adds a quad to the current UI run (begin_ui), or drops it if there is none.
+    fn add_quad { mut frame: Frame, quad: Quad } {
+        if frame.step_count == 0 or frame.steps[frame.step_count - 1].kind != StepKind::ui or frame.quad_count >= frame.quads.len {
+            frame.dropped = frame.dropped + 1
+            return
+        }
+        frame.quads[frame.quad_count] = quad
+        frame.quad_count = frame.quad_count + 1
+        let step = &frame.steps[frame.step_count - 1]
+        step.count = step.count + 1
+    }
+
+    fn make_quad { rect: Rect, color: Color } -> Quad {
+        return Quad{ rect, uv = upright{}, color, image = Image::none, blend = Blend::alpha, clip = null, angle = 0.0 }
+    }
+
+    fn fill_rect { mut frame: Frame, rect: Rect, color: Color } {
+        add_quad{ &frame, quad = make_quad{ rect, color } }
+    }
+
+    // A whole texture, upright, in `rect`.
+    fn draw_image { mut frame: Frame, rect: Rect, texture: Texture, color: Color } {
+        let mut q = make_quad{ rect, color }
+        q.image = Image::texture{ t = texture }
+        add_quad{ &frame, quad = q }
+    }
+
+    // ---- text
+
+    // A glyph's box in its font texture: the upper-left corner (u0, v0) and lower-right (u1, v1),
+    // as a font TXI's upperleftcoords and lowerrightcoords give them (v0 > v1, since v counts up
+    // from the bottom of the picture).
+    struct Glyph { u0: f32, v0: f32, u1: f32, v1: f32 }
+
+    // A bitmap font: a texture and the glyph for each byte of text below glyphs.len. Metrics are
+    // in texels, which draw as pixels at scale 1 (TXI values times 100).
+    struct Font {
+        texture: Texture,
+        texture_width: f32, texture_height: f32,
+        glyphs: []Glyph,
+        height: f32,                // fontheight: a line's height
+        baseline: f32,              // baselineheight: from a line's top down to its baseline
+        spacing: f32,               // spacingR: added after each glyph
+    }
+
+    // How far `text` advances at `scale`.
+    fn measure_text { font: Font, text: []u8, scale: f32 } -> f32 {
+        let mut w: f32 = 0.0
+        let mut i: usize = 0
+        while i < text.len {
+            let c = @as(usize, text[i])
+            if c < font.glyphs.len {
+                let g = font.glyphs[c]
+                w = w + ((g.u1 - g.u0) * font.texture_width + font.spacing) * scale
+            }
+            i = i + 1
+        }
+        return w
+    }
+
+    // Draws `text` on one line with its top left at x, y; returns how far it advanced. Bytes
+    // without a glyph are skipped.
+    fn draw_text { mut frame: Frame, font: Font, x: f32, y: f32, text: []u8, color: Color, scale: f32, clip: ?Rect } -> f32 {
+        let mut pen = x
+        let mut i: usize = 0
+        while i < text.len {
+            let c = @as(usize, text[i])
+            if c < font.glyphs.len {
+                let g = font.glyphs[c]
+                let w = (g.u1 - g.u0) * font.texture_width * scale
+                let h = (g.v0 - g.v1) * font.texture_height * scale
+                if w > 0.0 and h > 0.0 {
+                    add_quad{ &frame, quad = Quad{
+                        rect = Rect{ x = pen, y, w, h },
+                        uv = UvRect{ u0 = g.u0, v0 = g.v0, u1 = g.u1, v1 = g.v1 },
+                        color, image = Image::texture{ t = font.texture }, blend = Blend::alpha, clip, angle = 0.0,
+                    } }
+                }
+                pen = pen + w + font.spacing * scale
+            }
+            i = i + 1
+        }
+        return pen - x
+    }
+}

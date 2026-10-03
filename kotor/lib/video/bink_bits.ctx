@@ -1,0 +1,94 @@
+// The bit reader Bink's video bitstream is read with: bits come least significant first out of
+// 32-bit little-endian words (docs/formats/bink.md, "Bits, planes, buffers").
+//
+//   let mut r = bink_bits::new{ data = packet }
+//   let kind = bink_bits::read{ &r, n = 4 }
+//   if bink_bits::overrun{ r } { ... }        // the stream asked for more than the packet holds
+//
+// Reading past the end of `data` gives zero bits and never touches memory outside it, so a
+// corrupt packet can't make a decoder read out of bounds; the decoder checks `overrun` at points
+// where stopping is cheap (after each row of blocks) and reports the packet as bad.
+namespace bink_bits {
+    struct Reader {
+        data: []u8,
+        next: usize,         // byte offset of the next word to load into the cache
+        cache: u64,          // bits not taken yet; the next one is bit 0
+        avail: u32,          // how many bits of `cache` are valid, 0..63
+    }
+
+    fn new { data: []u8 } -> Reader {
+        return Reader{ data, next = 0, cache = 0, avail = 0 }
+    }
+
+    // Loads the next 32-bit word above the bits already cached. Past the end of the data the
+    // word is zero (a partial last word keeps the bytes it has).
+    fn refill { mut r: Reader } {
+        let i = r.next
+        let mut w: u64 = 0
+        if i + 4 <= r.data.len {
+            let b0: u64 = r.data.ptr[i]
+            let b1: u64 = r.data.ptr[i + 1]
+            let b2: u64 = r.data.ptr[i + 2]
+            let b3: u64 = r.data.ptr[i + 3]
+            w = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+        } else {
+            let mut k: usize = 0
+            while i + k < r.data.len and k < 4 {
+                let b: u64 = r.data.ptr[i + k]
+                w = w | (b << (8 * k))
+                k = k + 1
+            }
+        }
+        r.cache = r.cache | (w << r.avail)
+        r.avail = r.avail + 32
+        r.next = i + 4
+    }
+
+    // The next n bits (0..32) as a number, the first one read in bit 0.
+    fn read { mut r: Reader, n: u32 } -> u32 {
+        if r.avail < n { refill{ &r } }
+        let one: u64 = 1
+        let v = @trunc(u32, r.cache & ((one << n) - 1))
+        r.cache = r.cache >> n
+        r.avail = r.avail - n
+        return v
+    }
+
+    fn bit { mut r: Reader } -> u32 {
+        if r.avail == 0 { refill{ &r } }
+        let v = @trunc(u32, r.cache & 1)
+        r.cache = r.cache >> 1
+        r.avail = r.avail - 1
+        return v
+    }
+
+    // The next n bits (n <= 32) without taking them, for prefix-code lookups.
+    fn peek { mut r: Reader, n: u32 } -> u32 {
+        if r.avail < n { refill{ &r } }
+        let one: u64 = 1
+        return @trunc(u32, r.cache & ((one << n) - 1))
+    }
+
+    // Takes n bits that `peek` has made available.
+    fn skip { mut r: Reader, n: u32 } {
+        r.cache = r.cache >> n
+        r.avail = r.avail - n
+    }
+
+    // How many bits have been taken.
+    fn position { r: Reader } -> usize {
+        return r.next * 8 - r.avail
+    }
+
+    // Moves on to the next multiple of 32 bits: planes and audio blocks start on word boundaries.
+    fn align32 { mut r: Reader } {
+        let drop = r.avail % 32
+        r.cache = r.cache >> drop
+        r.avail = r.avail - drop
+    }
+
+    // Whether more bits have been taken than the data holds.
+    fn overrun { r: Reader } -> bool {
+        return position{ r } > r.data.len * 8
+    }
+}

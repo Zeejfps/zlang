@@ -11,6 +11,9 @@
 //       list::push{ list = &argv, item = "--version" } iferr { return 1 }
 //       return proc::run{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} } iferr { 127 }
 //   }
+//
+// `spawn` starts a program without waiting for it, so that several run at once, and `wait` waits
+// for one.
 
 // Permission to start programs and to read this program's environment. It includes what its
 // platform's layer needs for that, os::Proc (std/os), such as C's environ.
@@ -25,6 +28,16 @@ namespace proc {
 
     #c::symbol{ name = "ctx_proc_run" }
     extern fn sys_run { mut proc: Proc, argv: [][]u8, env: [][]u8, mut code: i32 } -> i64
+
+    #c::symbol{ name = "ctx_proc_spawn" }
+    extern fn sys_spawn { mut proc: Proc, argv: [][]u8, env: [][]u8, mut id: u64 } -> i64
+
+    #c::symbol{ name = "ctx_proc_wait" }
+    extern fn sys_wait { mut proc: Proc, id: u64, mut code: i32 } -> i64
+
+    // How many processors this program may run on: at least 1.
+    #c::symbol{ name = "ctx_proc_processors" }
+    extern fn processors { mut proc: Proc } -> u32
 
     // The absolute path of this program's executable; empty if the OS won't say.
     #c::symbol{ name = "ctx_proc_exe_path" }
@@ -44,6 +57,27 @@ namespace proc {
     fn run { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> !i32 {
         let mut code: i32 = 0
         let r = sys_run{ &proc, argv, env, code = &code }
+        if r < 0 { return failed{ code = r } }
+        return code
+    }
+
+    // A program that `spawn` started, to `wait` for once: its process handle on Windows, its
+    // process id elsewhere.
+    struct Child { id: u64 }
+
+    // Starts a program as `run` does, without waiting for it: several may run at once. Every
+    // child must be waited for, once.
+    fn spawn { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> !Child {
+        let mut id: u64 = 0
+        let r = sys_spawn{ &proc, argv, env, id = &id }
+        if r < 0 { return failed{ code = r } }
+        return Child{ id }
+    }
+
+    // Waits for a child to end, and returns its exit code as `run` does.
+    fn wait { mut proc: Proc, child: Child } -> !i32 {
+        let mut code: i32 = 0
+        let r = sys_wait{ &proc, id = child.id, code = &code }
         if r < 0 { return failed{ code = r } }
         return code
     }

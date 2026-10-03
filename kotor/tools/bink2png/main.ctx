@@ -1,0 +1,253 @@
+// bink2png: decodes frames of a Bink movie and writes them as PNGs (or raw YUV), to look at.
+//
+//   kotor/tools/ctxc run kotor/tools/bink2png -- MOVIE [--from N] [--to M] [--out DIR] [--game DIR] [--yuv FILE]
+//
+// MOVIE is a path to a .bik, or a name in the install's movies/ (`02`, `biologo`). Frames N..M
+// (default 0..0) are written to DIR (default kotor/out/bink) as NAME_FFFF.png, converted from
+// YUV with BT.601's limited-range matrix. `--yuv FILE` writes them instead as raw yuv420p planes
+// (Y, then U, then V, each cropped to the picture), the layout `ffmpeg -f rawvideo -pix_fmt
+// yuv420p` gives, for comparing byte for byte. The codec tables come from GAME/binkw32.dll
+// (default F:/Steam/steamapps/common/swkotor).
+
+struct Options { movie: []u8, from: u32, to: u32, out: []u8, game: []u8, yuv: []u8 }
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let o = parse_args{ &io, args } ifnull { return 2 }
+    let pages = mem::pages{ &mem, size = 268435456 } ifnull {
+        io::eprintln{ &io, s = "bink2png: out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf = pages }
+    run{ &io, &fs, &heap, o } iferr err{ error } {
+        _ = @fmt(&io, "bink2png: {}\n", error)
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return 0
+}
+
+fn run { mut io: Io, mut fs: Fs, mut heap: arena::Arena, o: Options } -> ! {
+    let mut dll_buf: [512]u8
+    let mut dll = Text{ buf = dll_buf[..], len = 0 }
+    add{ t = &dll, s = o.game }
+    add{ t = &dll, s = "/binkw32.dll" }
+    let tables = try bink_tables::load{ &fs, realloc = arena::alloc, &heap, path = text{ t = dll } }
+    let name = movie_name{ movie = o.movie }
+    let mut path_buf: [512]u8
+    let mut pb = Text{ buf = path_buf[..], len = 0 }
+    if is_path{ s = o.movie } {
+        add{ t = &pb, s = o.movie }
+    } else {
+        add{ t = &pb, s = o.game }
+        add{ t = &pb, s = "/movies/" }
+        add{ t = &pb, s = o.movie }
+        add{ t = &pb, s = ".bik" }
+    }
+    let path = text{ t = pb }
+    let mut movie = try bink::open{ &fs, realloc = arena::alloc, &heap, path, tables = &tables }
+    let h = movie.header
+    let revision = [h.revision]
+    _ = @fmt(&io, "{}: BIK{} {}x{}, {} frames at {}/{} fps, audio {} Hz x {}\n",
+        path, revision[..], h.width, h.height, h.frames, h.rate_num, h.rate_den, movie.audio_rate, movie.audio_channels)
+    let rgba = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = 4 * @as(usize, h.width) * @as(usize, h.height) }
+    let mut yuv_file: ?fs::File = null
+    if o.yuv.len > 0 { yuv_file = try fs::open{ &fs, path = o.yuv, mode = fs::Mode::write } }
+    let mut written: u32 = 0
+    while true {
+        let frame = try bink::next{ &fs, m = &movie } ifnull { break }
+        if frame.number < o.from { continue }
+        if frame.number > o.to { break }
+        let yf = yuv_file
+        if yf != null {
+            try write_plane{ &fs, file = yf, p = frame.y }
+            try write_plane{ &fs, file = yf, p = frame.u }
+            try write_plane{ &fs, file = yf, p = frame.v }
+        } else {
+            to_rgba{ frame, into = rgba }
+            let mut name_buf: [1024]u8
+            let mut num: [4]u8
+            let mut pp = Text{ buf = name_buf[..], len = 0 }
+            add{ t = &pp, s = o.out }
+            add{ t = &pp, s = "/" }
+            add{ t = &pp, s = name }
+            add{ t = &pp, s = "_" }
+            add{ t = &pp, s = pad4{ n = frame.number, into = &num } }
+            add{ t = &pp, s = ".png" }
+            let png_path = text{ t = pp }
+            try png::save{ &fs, realloc = arena::alloc, &heap, path = png_path,
+                image = png::Image{ width = h.width, height = h.height, rgba }, alpha = false, bottom_up = false }
+            _ = @fmt(&io, "{}\n", png_path)
+        }
+        written = written + 1
+    }
+    let yf = yuv_file
+    if yf != null {
+        try fs::close{ &fs, file = yf }
+        _ = @fmt(&io, "{}: {} frames\n", o.yuv, written)
+    }
+    bink::close{ &fs, realloc = arena::alloc, &heap, m = &movie }
+}
+
+fn write_plane { mut fs: Fs, file: fs::File, p: bink_video::Plane } -> ! {
+    let mut row: usize = 0
+    while row < p.height {
+        let at = row * p.stride
+        _ = try fs::write{ &fs, file, bytes = p.pixels[at..at + p.width] }
+        row = row + 1
+    }
+}
+
+// BT.601, limited range (Y 16..235, U and V 16..240 around 128), chroma repeated 2x2.
+fn to_rgba { frame: bink::Frame, into: []mut u8 } {
+    let w: usize = frame.y.width
+    let h: usize = frame.y.height
+    let mut y: usize = 0
+    while y < h {
+        let mut x: usize = 0
+        while x < w {
+            let yy: i32 = frame.y.pixels[y * frame.y.stride + x]
+            let uu: i32 = frame.u.pixels[(y / 2) * frame.u.stride + x / 2]
+            let vv: i32 = frame.v.pixels[(y / 2) * frame.v.stride + x / 2]
+            let c = 298 * (yy - 16)
+            let d = uu - 128
+            let e = vv - 128
+            let o = 4 * (y * w + x)
+            into[o] = clamp{ v = (c + 409 * e + 128) >> 8 }
+            into[o + 1] = clamp{ v = (c - 100 * d - 208 * e + 128) >> 8 }
+            into[o + 2] = clamp{ v = (c + 516 * d + 128) >> 8 }
+            into[o + 3] = 255
+            x = x + 1
+        }
+        y = y + 1
+    }
+}
+
+fn clamp { v: i32 } -> u8 {
+    if v < 0 { return 0 }
+    if v > 255 { return 255 }
+    return @trunc(u8, v)
+}
+
+// Bytes appended into a fixed buffer, for paths.
+struct Text { buf: []mut u8, len: usize }
+
+fn add { mut t: Text, s: []u8 } {
+    slice::copy(u8){ dst = t.buf[t.len..t.len + s.len], src = s }
+    t.len = t.len + s.len
+}
+
+fn text { t: Text } -> []u8 {
+    return t.buf[..t.len]
+}
+
+fn pad4 { n: u32, mut into: [4]u8 } -> []u8 {
+    let mut v = n
+    let mut i: usize = 4
+    while i > 0 {
+        i = i - 1
+        into[i] = @trunc(u8, 48 + v % 10)
+        v = v / 10
+    }
+    return into[..]
+}
+
+fn is_path { s: []u8 } -> bool {
+    let mut i: usize = 0
+    while i < s.len {
+        if s[i] == '/' or s[i] == '\\' or s[i] == '.' { return true }
+        i = i + 1
+    }
+    return false
+}
+
+// The file name without directory or extension.
+fn movie_name { movie: []u8 } -> []u8 {
+    let mut start: usize = 0
+    let mut end = movie.len
+    let mut i: usize = 0
+    while i < movie.len {
+        if movie[i] == '/' or movie[i] == '\\' { start = i + 1 }
+        i = i + 1
+    }
+    i = movie.len
+    while i > start {
+        i = i - 1
+        if movie[i] == '.' {
+            end = i
+            break
+        }
+    }
+    return movie[start..end]
+}
+
+fn parse_args { mut io: Io, args: Args } -> ?Options {
+    let mut o = Options{ movie = "", from = 0, to = 0, out = "kotor/out/bink", game = "F:/Steam/steamapps/common/swkotor", yuv = "" }
+    let mut to_given = false
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        let has_value = i + 1 < args.len
+        if slice::eq_bytes{ a, b = "--from" } and has_value {
+            i = i + 1
+            o.from = number{ s = args[i] } ifnull { return usage{ &io } }
+        } else if slice::eq_bytes{ a, b = "--to" } and has_value {
+            i = i + 1
+            o.to = number{ s = args[i] } ifnull { return usage{ &io } }
+            to_given = true
+        } else if slice::eq_bytes{ a, b = "--out" } and has_value {
+            i = i + 1
+            o.out = args[i]
+        } else if slice::eq_bytes{ a, b = "--game" } and has_value {
+            i = i + 1
+            o.game = args[i]
+        } else if slice::eq_bytes{ a, b = "--yuv" } and has_value {
+            i = i + 1
+            o.yuv = args[i]
+        } else if a.len > 0 and a[0] != '-' and o.movie.len == 0 {
+            o.movie = a
+        } else {
+            return usage{ &io }
+        }
+        i = i + 1
+    }
+    if o.movie.len == 0 { return usage{ &io } }
+    if not to_given { o.to = o.from }
+    if o.to < o.from { return usage{ &io } }
+    return o
+}
+
+fn number { s: []u8 } -> ?u32 {
+    let text = utf8::from{ bytes = s } iferr { return null }
+    let v = utf8::parse_u64{ s = text } ifnull { return null }
+    if v > 4294967295 { return null }
+    return @trunc(u32, v)
+}
+
+fn usage { mut io: Io } -> ?Options {
+    io::eprintln{ &io, s = "usage: bink2png MOVIE [--from N] [--to M] [--out DIR] [--game DIR] [--yuv FILE]" }
+    return null
+}
+
+// ---- @fmt into standard output
+
+namespace out {
+    #write
+    fn put_text { mut io: Io, s: strlit } { io::write{ &io, to = io::Stream::out, bytes = s.bytes } }
+    #write
+    fn put_bytes { mut io: Io, b: []u8 } { io::write{ &io, to = io::Stream::out, bytes = b } }
+    #write
+    fn put_mut_bytes { mut io: Io, b: []mut u8 } { io::write{ &io, to = io::Stream::out, bytes = b } }
+    #write
+    fn put_u8 { mut io: Io, n: u8 } { io::print_u64{ &io, n } }
+    #write
+    fn put_char { mut io: Io, n: i32 } { io::print_i64{ &io, n } }
+    #write
+    fn put_u32 { mut io: Io, n: u32 } { io::print_u64{ &io, n } }
+    #write
+    fn put_u64 { mut io: Io, n: u64 } { io::print_u64{ &io, n } }
+    #write
+    fn put_usize { mut io: Io, n: usize } { io::print_u64{ &io, n } }
+    #write
+    fn put_i64 { mut io: Io, n: i64 } { io::print_i64{ &io, n } }
+}

@@ -1,0 +1,350 @@
+// Procedural meshes and textures for rendertest, in one vertex format that has every attribute
+// the seam knows, laid out as an MDX row could be.
+namespace shapes {
+    // position 3, normal 3, uv0 2, uv1 2, tangent space 9 (dP/dv, -dP/du, normal), weights 4,
+    // bones 4, constraint 1: 28 floats.
+    const FLOATS: usize = 28
+
+    fn layout {} -> render::VertexLayout {
+        let mut l = render::make_layout{ stride = 112 }
+        l.position = 0
+        l.normal = 12
+        l.uv0 = 24
+        l.uv1 = 32
+        l.tangent_space = 40
+        l.weights = 76
+        l.bones = 92
+        l.constraint = 108
+        return l
+    }
+
+    // A mesh being built: vertex floats and u16 indices, in caller memory.
+    struct Builder { verts: []mut f32, indices: []mut u16, vertex_count: usize, index_count: usize }
+
+    fn builder { verts: []mut f32, indices: []mut u16 } -> Builder {
+        return Builder{ verts, indices, vertex_count = 0, index_count = 0 }
+    }
+
+    struct Vertex { p: math::Vec3, n: math::Vec3, uv: math::Vec2, uv1: math::Vec2, du: math::Vec3, dv: math::Vec3, weights: math::Vec4, bones: math::Vec4, constraint: f32 }
+
+    fn vertex { p: math::Vec3, n: math::Vec3, uv: math::Vec2, du: math::Vec3, dv: math::Vec3 } -> Vertex {
+        return Vertex{
+            p, n, uv, uv1 = uv, du, dv,
+            weights = math::Vec4{ x = 1.0, y = 0.0, z = 0.0, w = 0.0 },
+            bones = math::Vec4{ x = 0.0, y = -1.0, z = -1.0, w = -1.0 },
+            constraint = 0.0,
+        }
+    }
+
+    fn put { mut b: Builder, v: Vertex } -> u16 {
+        let at = b.vertex_count * FLOATS
+        let f = b.verts[at..at + FLOATS]
+        f[0] = v.p.x
+        f[1] = v.p.y
+        f[2] = v.p.z
+        f[3] = v.n.x
+        f[4] = v.n.y
+        f[5] = v.n.z
+        f[6] = v.uv.x
+        f[7] = v.uv.y
+        f[8] = v.uv1.x
+        f[9] = v.uv1.y
+        // MDX order: +dP/dv, -dP/du, normal.
+        f[10] = v.dv.x
+        f[11] = v.dv.y
+        f[12] = v.dv.z
+        f[13] = -v.du.x
+        f[14] = -v.du.y
+        f[15] = -v.du.z
+        f[16] = v.n.x
+        f[17] = v.n.y
+        f[18] = v.n.z
+        f[19] = v.weights.x
+        f[20] = v.weights.y
+        f[21] = v.weights.z
+        f[22] = v.weights.w
+        f[23] = v.bones.x
+        f[24] = v.bones.y
+        f[25] = v.bones.z
+        f[26] = v.bones.w
+        f[27] = v.constraint
+        let index = @as(u16, b.vertex_count)
+        b.vertex_count = b.vertex_count + 1
+        return index
+    }
+
+    fn tri { mut b: Builder, a: u16, c: u16, d: u16 } {
+        b.indices[b.index_count] = a
+        b.indices[b.index_count + 1] = c
+        b.indices[b.index_count + 2] = d
+        b.index_count = b.index_count + 3
+    }
+
+    // A grid of (nu + 1) x (nv + 1) vertices from `origin` along `u` and `v` (counterclockwise
+    // seen from u x v), uv 0..1.
+    fn grid { mut b: Builder, origin: math::Vec3, u: math::Vec3, v: math::Vec3, nu: u32, nv: u32 } {
+        let n = math::vec3::normalize{ v = math::vec3::cross{ a = u, b = v } }
+        let first = @as(u16, b.vertex_count)
+        let mut j: u32 = 0
+        while j <= nv {
+            let mut i: u32 = 0
+            while i <= nu {
+                let s = @as(f32, i) / @as(f32, nu)
+                let t = @as(f32, j) / @as(f32, nv)
+                let p = math::vec3::add{ a = math::vec3::add_scaled{ a = origin, b = u, s }, b = math::vec3::scale{ v, s = t } }
+                _ = put{ &b, v = vertex{ p, n, uv = math::Vec2{ x = s, y = t }, du = u, dv = v } }
+                i = i + 1
+            }
+            j = j + 1
+        }
+        let row = @as(u16, nu + 1)
+        j = 0
+        while j < nv {
+            let mut i: u32 = 0
+            while i < nu {
+                let a = first + @as(u16, j) * row + @as(u16, i)
+                tri{ &b, a, c = a + 1, d = a + row + 1 }
+                tri{ &b, a, c = a + row + 1, d = a + row }
+                i = i + 1
+            }
+            j = j + 1
+        }
+    }
+
+    // A cube of half-size h centred on the origin, each face a uv square.
+    fn cube { mut b: Builder, h: f32 } {
+        let x = math::Vec3{ x = 2.0 * h, y = 0.0, z = 0.0 }
+        let y = math::Vec3{ x = 0.0, y = 2.0 * h, z = 0.0 }
+        let z = math::Vec3{ x = 0.0, y = 0.0, z = 2.0 * h }
+        let nx = math::vec3::negate{ v = x }
+        let ny = math::vec3::negate{ v = y }
+        grid{ &b, origin = math::Vec3{ x = h, y = -h, z = -h }, u = y, v = z, nu = 1, nv = 1 }           // +X
+        grid{ &b, origin = math::Vec3{ x = -h, y = h, z = -h }, u = ny, v = z, nu = 1, nv = 1 }          // -X
+        grid{ &b, origin = math::Vec3{ x = h, y = h, z = -h }, u = nx, v = z, nu = 1, nv = 1 }           // +Y
+        grid{ &b, origin = math::Vec3{ x = -h, y = -h, z = -h }, u = x, v = z, nu = 1, nv = 1 }          // -Y
+        grid{ &b, origin = math::Vec3{ x = -h, y = -h, z = h }, u = x, v = y, nu = 1, nv = 1 }           // +Z
+        grid{ &b, origin = math::Vec3{ x = -h, y = h, z = -h }, u = x, v = ny, nu = 1, nv = 1 }          // -Z
+    }
+
+    // A sphere of radius r: `rings` bands from the south pole up, `segments` around.
+    fn sphere { mut b: Builder, r: f32, rings: u32, segments: u32 } {
+        let first = @as(u16, b.vertex_count)
+        let mut j: u32 = 0
+        while j <= rings {
+            let t = @as(f32, j) / @as(f32, rings)
+            let lat = (t - 0.5) * math::PI
+            let mut i: u32 = 0
+            while i <= segments {
+                let s = @as(f32, i) / @as(f32, segments)
+                let lon = s * math::TAU
+                let n = math::Vec3{ x = math::cosf{ x = lat } * math::cosf{ x = lon }, y = math::cosf{ x = lat } * math::sinf{ x = lon }, z = math::sinf{ x = lat } }
+                let du = math::Vec3{ x = -math::sinf{ x = lon }, y = math::cosf{ x = lon }, z = 0.0 }
+                let dv = math::vec3::cross{ a = n, b = du }
+                _ = put{ &b, v = vertex{ p = math::vec3::scale{ v = n, s = r }, n, uv = math::Vec2{ x = s * 2.0, y = t }, du, dv } }
+                i = i + 1
+            }
+            j = j + 1
+        }
+        let row = @as(u16, segments + 1)
+        j = 0
+        while j < rings {
+            let mut i: u32 = 0
+            while i < segments {
+                let a = first + @as(u16, j) * row + @as(u16, i)
+                tri{ &b, a, c = a + 1, d = a + row + 1 }
+                tri{ &b, a, c = a + row + 1, d = a + row }
+                i = i + 1
+            }
+            j = j + 1
+        }
+    }
+
+    // An upright tube of radius r from z 0 to `height`, skinned to two bones: slot 0 holds the
+    // bottom half, slot 1 the top, blended across the middle.
+    fn tube { mut b: Builder, r: f32, height: f32, rings: u32, segments: u32 } {
+        let first = @as(u16, b.vertex_count)
+        let mut j: u32 = 0
+        while j <= rings {
+            let t = @as(f32, j) / @as(f32, rings)
+            let mut i: u32 = 0
+            while i <= segments {
+                let s = @as(f32, i) / @as(f32, segments)
+                let lon = s * math::TAU
+                let n = math::Vec3{ x = math::cosf{ x = lon }, y = math::sinf{ x = lon }, z = 0.0 }
+                let p = math::Vec3{ x = n.x * r, y = n.y * r, z = t * height }
+                let du = math::Vec3{ x = -n.y, y = n.x, z = 0.0 }
+                let mut v = vertex{ p, n, uv = math::Vec2{ x = s, y = t * 2.0 }, du, dv = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } }
+                let top = math::clamp{ x = (t - 0.35) / 0.3, lo = 0.0, hi = 1.0 }
+                v.weights = math::Vec4{ x = 1.0 - top, y = top, z = 0.0, w = 0.0 }
+                v.bones = math::Vec4{ x = 0.0, y = 1.0, z = -1.0, w = -1.0 }
+                _ = put{ &b, v }
+                i = i + 1
+            }
+            j = j + 1
+        }
+        let row = @as(u16, segments + 1)
+        j = 0
+        while j < rings {
+            let mut i: u32 = 0
+            while i < segments {
+                let a = first + @as(u16, j) * row + @as(u16, i)
+                tri{ &b, a, c = a + 1, d = a + row + 1 }
+                tri{ &b, a, c = a + row + 1, d = a + row }
+                i = i + 1
+            }
+            j = j + 1
+        }
+    }
+
+    // A hanging cloth: a grid in the XZ plane hanging down from z 0, its constraint 0 along the top
+    // edge growing to 255 at the bottom.
+    fn cloth { mut b: Builder, w: f32, h: f32, n: u32 } {
+        let first = b.vertex_count
+        grid{ &b, origin = math::Vec3{ x = -w * 0.5, y = 0.0, z = -h }, u = math::Vec3{ x = w, y = 0.0, z = 0.0 }, v = math::Vec3{ x = 0.0, y = 0.0, z = h }, nu = n, nv = n }
+        let mut k = first
+        while k < b.vertex_count {
+            let z = b.verts[k * FLOATS + 2]
+            b.verts[k * FLOATS + 27] = 255.0 * math::clamp{ x = -z / h, lo = 0.0, hi = 1.0 }
+            k = k + 1
+        }
+    }
+
+    // ---- textures: RGBA8, rows bottom first
+
+    fn put_px { px: []mut u8, w: u32, x: u32, y: u32, r: f32, g: f32, b: f32, a: f32 } {
+        let at = @as(usize, (y * w + x) * 4)
+        px[at] = to_byte{ v = r }
+        px[at + 1] = to_byte{ v = g }
+        px[at + 2] = to_byte{ v = b }
+        px[at + 3] = to_byte{ v = a }
+    }
+
+    fn to_byte { v: f32 } -> u8 { return @as(u8, math::clamp{ x = v, lo = 0.0, hi = 1.0 } * 255.0 + 0.5) }
+
+    // Gold and blue squares, with transparent holes in the blue ones when `holes`, and an arrow
+    // pointing up the picture (toward v = 1) in the corner square so orientation shows.
+    fn checker { px: []mut u8, size: u32, holes: bool } {
+        let cell = size / 8
+        let mut y: u32 = 0
+        while y < size {
+            let mut x: u32 = 0
+            while x < size {
+                let gold = ((x / cell) + (y / cell)) % 2 == 0
+                let shade = 1.0 - 0.3 * (@as(f32, x % cell) + @as(f32, y % cell)) / @as(f32, 2 * cell)
+                let cx = @as(f32, x % cell) / @as(f32, cell) - 0.5
+                let cy = @as(f32, y % cell) / @as(f32, cell) - 0.5
+                let hole = holes and not gold and cx * cx + cy * cy < 0.12
+                // An arrow in the top-left cell of the picture (the last stored rows).
+                let in_corner = x < cell and y >= size - cell
+                let ay = if in_corner { @as(f32, y - (size - cell)) / @as(f32, cell) } else { 0.0 }
+                let arrow = in_corner and math::abs{ x = cx } < (1.0 - ay) * 0.45 and ay > 0.15
+                if arrow {
+                    put_px{ px, w = size, x, y, r = 0.9, g = 0.1, b = 0.1, a = 1.0 }
+                } else if gold {
+                    put_px{ px, w = size, x, y, r = 0.92 * shade, g = 0.75 * shade, b = 0.25 * shade, a = 1.0 }
+                } else {
+                    put_px{ px, w = size, x, y, r = 0.15 * shade, g = 0.3 * shade, b = 0.8 * shade, a = if hole { 0.0 } else if holes { 1.0 } else { 0.35 } }
+                }
+                x = x + 1
+            }
+            y = y + 1
+        }
+    }
+
+    // A lightmap: warm light pooling in two spots, dark elsewhere.
+    fn lightmap { px: []mut u8, size: u32 } {
+        let mut y: u32 = 0
+        while y < size {
+            let mut x: u32 = 0
+            while x < size {
+                let u = (@as(f32, x) + 0.5) / @as(f32, size)
+                let v = (@as(f32, y) + 0.5) / @as(f32, size)
+                let d1 = (u - 0.3) * (u - 0.3) + (v - 0.7) * (v - 0.7)
+                let d2 = (u - 0.75) * (u - 0.75) + (v - 0.3) * (v - 0.3)
+                let a = math::expf{ x = -d1 * 18.0 }
+                let b = math::expf{ x = -d2 * 30.0 }
+                put_px{ px, w = size, x, y, r = 0.12 + 1.1 * a + 0.2 * b, g = 0.12 + 0.8 * a + 0.5 * b, b = 0.18 + 0.4 * a + 1.0 * b, a = 1.0 }
+                x = x + 1
+            }
+            y = y + 1
+        }
+    }
+
+    // A tangent-space normal map of round bumps.
+    fn bumps { px: []mut u8, size: u32 } {
+        let cell = size / 4
+        let mut y: u32 = 0
+        while y < size {
+            let mut x: u32 = 0
+            while x < size {
+                let cx = (@as(f32, x % cell) + 0.5) / @as(f32, cell) * 2.0 - 1.0
+                let cy = (@as(f32, y % cell) + 0.5) / @as(f32, cell) * 2.0 - 1.0
+                let r2 = cx * cx + cy * cy
+                let mut n = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }
+                if r2 < 0.64 {
+                    n = math::vec3::normalize{ v = math::Vec3{ x = cx, y = cy, z = math::sqrtf{ x = 0.64 - r2 } + 0.15 } }
+                }
+                put_px{ px, w = size, x, y, r = n.x * 0.5 + 0.5, g = n.y * 0.5 + 0.5, b = n.z * 0.5 + 0.5, a = 1.0 }
+                x = x + 1
+            }
+            y = y + 1
+        }
+    }
+
+    // The world direction GL samples at texel (s, t) of cube face `face` (GL's face table, read
+    // backwards), so a sky can be painted by direction.
+    fn cube_direction { face: u32, s: f32, t: f32 } -> math::Vec3 {
+        let sc = 2.0 * s - 1.0
+        let tc = 2.0 * t - 1.0
+        if face == 0 { return math::Vec3{ x = 1.0, y = -tc, z = -sc } }
+        if face == 1 { return math::Vec3{ x = -1.0, y = -tc, z = sc } }
+        if face == 2 { return math::Vec3{ x = sc, y = 1.0, z = tc } }
+        if face == 3 { return math::Vec3{ x = sc, y = -1.0, z = -tc } }
+        if face == 4 { return math::Vec3{ x = sc, y = -tc, z = 1.0 } }
+        return math::Vec3{ x = -sc, y = -tc, z = -1.0 }
+    }
+
+    // One face of a sky painted by direction, Z up: blue above, brown below, a bright horizon,
+    // and a coloured marker toward +X (red) and +Y (green).
+    fn sky_face { px: []mut u8, size: u32, face: u32 } {
+        let mut y: u32 = 0
+        while y < size {
+            let mut x: u32 = 0
+            while x < size {
+                let d = math::vec3::normalize{ v = cube_direction{ face, s = (@as(f32, x) + 0.5) / @as(f32, size), t = (@as(f32, y) + 0.5) / @as(f32, size) } }
+                let sky = math::clamp{ x = d.z * 2.0, lo = 0.0, hi = 1.0 }
+                let ground = math::clamp{ x = -d.z * 2.0, lo = 0.0, hi = 1.0 }
+                let band = math::expf{ x = -d.z * d.z * 60.0 }
+                let red = if d.x > 0.9 and math::abs{ x = d.z } < 0.3 { 0.8 } else { 0.0 }
+                let green = if d.y > 0.9 and math::abs{ x = d.z } < 0.3 { 0.8 } else { 0.0 }
+                put_px{ px, w = size, x, y,
+                    r = 0.25 * sky + 0.35 * ground + 0.9 * band + red,
+                    g = 0.45 * sky + 0.22 * ground + 0.8 * band + green,
+                    b = 0.95 * sky + 0.1 * ground + 0.6 * band, a = 1.0 }
+                x = x + 1
+            }
+            y = y + 1
+        }
+    }
+
+    // A 2x2 sprite sheet of soft dots in four colours: cell i at column i % 2, row i / 2 from v = 0.
+    fn sprites { px: []mut u8, size: u32 } {
+        let cell = size / 2
+        let mut y: u32 = 0
+        while y < size {
+            let mut x: u32 = 0
+            while x < size {
+                let i = (y / cell) * 2 + x / cell
+                let cx = (@as(f32, x % cell) + 0.5) / @as(f32, cell) * 2.0 - 1.0
+                let cy = (@as(f32, y % cell) + 0.5) / @as(f32, cell) * 2.0 - 1.0
+                let a = math::clamp{ x = 1.0 - math::sqrtf{ x = cx * cx + cy * cy }, lo = 0.0, hi = 1.0 }
+                let r: f32 = if i == 0 or i == 3 { 1.0 } else { 0.3 }
+                let g: f32 = if i == 1 or i == 3 { 1.0 } else { 0.4 }
+                let b: f32 = if i == 2 { 1.0 } else { 0.2 }
+                put_px{ px, w = size, x, y, r, g, b, a = a * a }
+                x = x + 1
+            }
+            y = y + 1
+        }
+    }
+}
