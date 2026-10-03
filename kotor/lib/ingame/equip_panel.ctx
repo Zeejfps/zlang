@@ -1,28 +1,363 @@
-// Equipment (equip.gui, menu 0): the leader's equipped items by slot, the inventory list for the selected slot, item description and stats.
-// SKELETON: the panel opens as the file draws it; the panel's owner fills `open`, `update` and
-// `on_event` (the protocol is in menus.ctx).
+// Equipment (equip.gui, menu 0): the leader's nine equipment slots with their items' pictures, the
+// list of what could go in the slot under the pointer, and a selection mode for choosing (docs/re/
+// gui.md "CSWGuiEquip"; the rules it applies are in items_data.ctx and items_actions.ctx).
+//
+// Slot view: pointing at a slot button lists, on the right, "None", the item worn there and every
+// carried item that fits; clicking the slot (or a row) enters selection mode. Selection mode hides
+// the portrait, the slots and the numbers and shows the list with the selected item's
+// description on the left; clicking a row selects it, clicking it again or OK equips it, Cancel
+// leaves the mode. (The original equips the pointed-at item at once to show the numbers change
+// and takes it back on Cancel; here nothing changes until OK, so there is nothing to undo when
+// the menu closes.)
+//
+// BTN_BACK is this file's exit button but the framework only knows BTN_EXIT, so the control is
+// renamed: BTN_EXIT ("Close") in the slot view, BTN_BACK ("Cancel") in selection mode.
 namespace equip_panel {
-    struct State { opened: bool }
+    // The size item pictures get in the list rows.
+    const ICON: f32 = 36.0
+    const NO_PICK: i64 = -1
 
-    fn new {} -> State { return State{ opened = false } }
+    struct State {
+        opened: bool,
+        who: u32,               // the creature shown: the leader
+        slot: usize,            // the slot whose candidates the list shows (items::SLOTS: none)
+        selecting: bool,
+        picked: i64,            // the selected row's item id; 0 is "None", NO_PICK nothing
+        box: u32,               // the refusal message box, 0 when none
+    }
+
+    fn new {} -> State {
+        return State{ opened = false, who = obj::INVALID, slot = items::SLOTS, selecting = false, picked = NO_PICK, box = 0 }
+    }
+
+    // Controls of the slot view that selection mode hides.
+    const SLOT_VIEW: [14][]u8 = [
+        "LBL_PORT_BORD", "LBL_PORTRAIT", "LBL_TXTBAR", "LBL_SLOTNAME", "LBL_DEF_INFO", "LBL_ATTACK_INFO",
+        "LBL_VITALITY", "LBL_DEF", "LBL_ATKL", "LBL_ATKR", "LBL_TOHITL", "LBL_TOHITR", "LBL_DAMAGE", "LBL_TOHIT",
+    ]
 
     // The panel was just added, or the leader changed and it must be filled again.
     fn open { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> ! {
+        s.who = party::leader{ w = &w }
+        s.selecting = false
+        s.picked = NO_PICK
+        s.box = 0
+        if s.slot >= items::SLOTS { s.slot = items::slot_button{ index = obj::SLOT_BODY } }
+        try set_back_role{ &g, panel, cancel = false }
+        show_mode{ &g, panel, selecting = false }
+        try fill_all{ &s, &g, &w, &dev, panel }
         s.opened = true
     }
 
     // Every frame while the panel is shown.
     fn update { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, dt: f32 } {
+        if items::notice_done{ &g, box = s.box } { s.box = 0 }
     }
 
     // One of the panel's GUI events (BTN_EXIT, Escape and the BTN_CHANGE buttons are the
     // framework's). True when it used the event.
     fn on_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, ev: gui::Event } -> bool {
+        if ev.panel != panel or s.box != 0 { return false }
+        let slot = slot_of_tag{ tag = ev.tag }
+        if ev.kind == gui::EventKind::hilight and slot < items::SLOTS and not s.selecting {
+            // Pointing at a slot lists what could go there.
+            if slot != s.slot {
+                s.slot = slot
+                let r = fill_slot_list{ &s, &g, &w, &dev, panel }
+                report{ &w, what = r }
+            }
+            return true
+        }
+        if ev.kind == gui::EventKind::activate and slot < items::SLOTS and not s.selecting {
+            s.slot = slot
+            let r = begin_selection{ &s, &g, &w, &dev, panel, row = -1 }
+            report{ &w, what = r }
+            return true
+        }
+        if slot_name_is{ tag = ev.tag, name = "LB_ITEMS" } {
+            if ev.kind == gui::EventKind::row_selected {
+                if s.selecting {
+                    let r = pick_row{ &s, &g, &w, panel, user = ev.user }
+                    report{ &w, what = r }
+                } else if s.slot < items::SLOTS {
+                    // A click on a row of the slot view: choose from the list for that slot.
+                    let r = begin_selection{ &s, &g, &w, &dev, panel, row = ev.row }
+                    report{ &w, what = r }
+                }
+                return true
+            }
+            if ev.kind == gui::EventKind::row_activated and s.selecting {
+                let r = commit{ &s, &g, &w, &dev, panel }
+                report{ &w, what = r }
+                return true
+            }
+        }
+        if ev.kind == gui::EventKind::activate and slot_name_is{ tag = ev.tag, name = "BTN_EQUIP" } and s.selecting {
+            let r = commit{ &s, &g, &w, &dev, panel }
+            report{ &w, what = r }
+            return true
+        }
+        if ev.kind == gui::EventKind::activate and slot_name_is{ tag = ev.tag, name = "BTN_BACK" } and s.selecting {
+            let r = end_selection{ &s, &g, &w, &dev, panel }
+            report{ &w, what = r }
+            return true
+        }
         return false
     }
 
     // The panel is going away.
     fn close { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } {
+        if s.box != 0 { gui::close{ &g, id = s.box } }
+        s.box = 0
+        s.selecting = false
         s.opened = false
+    }
+
+    // ---- small helpers
+
+    fn slot_name_is { tag: []u8, name: []u8 } -> bool { return slice::eq_bytes{ a = tag, b = name } }
+
+    // Which slot button a BTN_INV_<slot> or LBL_INV_<slot> tag is: 0..8, or items::SLOTS.
+    fn slot_of_tag { tag: []u8 } -> usize {
+        let prefix: []u8 = "BTN_INV_"
+        if tag.len <= prefix.len or not slice::eq_bytes{ a = tag[..prefix.len], b = prefix } { return items::SLOTS }
+        let mut s: usize = 0
+        while s < items::SLOTS {
+            if slice::eq_bytes{ a = tag[prefix.len..], b = items::SLOT_TAGS[s] } { return s }
+            s = s + 1
+        }
+        return items::SLOTS
+    }
+
+    // A failure of the work an event started is not the player's business: say it on the log.
+    fn report { mut w: world::World, what: !bool } {
+        match what {
+            ok{ value } => {}
+            err{ error } => { _ = @fmt(&w.io, "kotor: equip panel: {}\n", error) }
+        }
+    }
+
+    // ---- the controls
+
+    // The exit button of equip.gui is BTN_BACK; see the file comment.
+    fn set_back_role { mut g: gui::Gui, panel: u32, cancel: bool } -> ! {
+        let c = gui::find_control{ &g, panel, tag = "BTN_EXIT" } ifnull {
+            gui::find_control{ &g, panel, tag = "BTN_BACK" } ifnull { return }
+        }
+        c.tag = if cancel { "BTN_BACK" } else { "BTN_EXIT" }
+        let strref: u32 = if cancel { 1581 } else { 1582 }
+        try gui::set_strref{ &g, panel, tag = if cancel { "BTN_BACK" } else { "BTN_EXIT" }, strref }
+    }
+
+    // Shows the controls of the slot view or of selection mode; what the original's code clears
+    // is hidden in both (the "cannot equip" text shows only for a chosen row that does not fit).
+    fn show_mode { mut g: gui::Gui, panel: u32, selecting: bool } {
+        let mut k: usize = 0
+        while k < SLOT_VIEW.len {
+            gui::set_visible{ &g, panel, tag = SLOT_VIEW[k], visible = not selecting }
+            k = k + 1
+        }
+        let mut buf: [24]u8
+        let mut s: usize = 0
+        while s < items::SLOTS {
+            gui::set_visible{ &g, panel, tag = items::join_tag{ into = buf[..], a = "BTN_INV_", b = items::SLOT_TAGS[s] }, visible = not selecting }
+            gui::set_visible{ &g, panel, tag = items::join_tag{ into = buf[..], a = "LBL_INV_", b = items::SLOT_TAGS[s] }, visible = not selecting }
+            s = s + 1
+        }
+        gui::set_visible{ &g, panel, tag = "LB_DESC", visible = selecting }
+        gui::set_visible{ &g, panel, tag = "LBL_SELECTTITLE", visible = selecting }
+        gui::set_visible{ &g, panel, tag = "BTN_EQUIP", visible = selecting }
+        gui::set_visible{ &g, panel, tag = "LBL_CANTEQUIP", visible = false }
+        gui::set_visible{ &g, panel, tag = "BTN_CHARLEFT", visible = false }
+        gui::set_visible{ &g, panel, tag = "BTN_CHARRIGHT", visible = false }
+    }
+
+    // Everything that shows the creature: portrait, slot pictures, numbers, the slot's list.
+    fn fill_all { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> ! {
+        items::show_portrait{ &g, &w, &dev, panel, tag = "LBL_PORTRAIT", who = s.who }
+        try fill_slots{ &s, &g, &w, &dev, panel }
+        try fill_stats{ &s, &g, &w, panel }
+        _ = try fill_slot_list{ &s, &g, &w, &dev, panel }
+    }
+
+    // The nine slot buttons' pictures: the worn item's icon, or the empty-slot picture. A
+    // two-handed right weapon shows in the left hand too.
+    fn fill_slots { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> ! {
+        let c = hud::creature_of{ w = &w, id = s.who } ifnull { return }
+        let droid = items::is_droid{ w = &w, who = s.who }
+        let mut buf: [24]u8
+        let mut slot: usize = 0
+        while slot < items::SLOTS {
+            let index = items::SLOT_OF[slot]
+            let mut item = c.equipped[index]
+            if index == obj::SLOT_LEFT_WEAPON and item == obj::INVALID {
+                let right = c.equipped[obj::SLOT_RIGHT_WEAPON]
+                if right != obj::INVALID and items::is_two_handed{ w = &w, id = right } { item = right }
+            }
+            let tag = items::join_tag{ into = buf[..], a = "LBL_INV_", b = items::SLOT_TAGS[slot] }
+            let mut img = gui::no_img{}
+            if item != obj::INVALID and world::is_valid{ w = &w, id = item } { img = items::icon_of{ &g, &w, &dev, id = item } }
+            if not img.ok { img = items::empty_slot_icon{ &g, &w, &dev, slot, droid } }
+            if img.ok { gui::set_picture{ &g, panel, tag, texture = img.tex, w = img.w, h = img.h } } else { gui::clear_picture{ &g, panel, tag } }
+            slot = slot + 1
+        }
+    }
+
+    // Vitality, defense and, per hand, damage and attack bonus. A hand with no weapon shows
+    // nothing.
+    fn fill_stats { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } -> ! {
+        let c = hud::creature_of{ w = &w, id = s.who } ifnull { return }
+        let v = hud::vitality_of{ w = &w, id = s.who }
+        let mut b = items::new_text{ w = &w }
+        defer list::free{ list = &b.bytes }
+        try items::push_vitality{ &b, hp = v.hp, hp_max = v.hp_max }
+        try gui::set_text{ &g, panel, tag = "LBL_VITALITY", text = utf8::view{ b }.bytes }
+        list::clear{ list = &b.bytes }
+        try @fmt(&b, "{}", items::defense_of{ w = &w, who = s.who })
+        try gui::set_text{ &g, panel, tag = "LBL_DEF", text = utf8::view{ b }.bytes }
+        // The tags name the numbers the other way round from the captions between them: the
+        // ATK labels sit above "Damage", the TOHIT labels below "To Hit".
+        let hands: [2]usize = [obj::SLOT_LEFT_WEAPON, obj::SLOT_RIGHT_WEAPON]
+        let damage_tags: [2][]u8 = ["LBL_ATKL", "LBL_ATKR"]
+        let hit_tags: [2][]u8 = ["LBL_TOHITL", "LBL_TOHITR"]
+        let mut k: usize = 0
+        while k < 2 {
+            let item = c.equipped[hands[k]]
+            list::clear{ list = &b.bytes }
+            if item != obj::INVALID { try items::damage_text{ &b, w = &w, item } }
+            try gui::set_text{ &g, panel, tag = damage_tags[k], text = utf8::view{ b }.bytes }
+            list::clear{ list = &b.bytes }
+            if item != obj::INVALID { try items::push_signed{ &b, n = items::attack_bonus_of{ w = &w, who = s.who, item } } }
+            try gui::set_text{ &g, panel, tag = hit_tags[k], text = utf8::view{ b }.bytes }
+            k = k + 1
+        }
+    }
+
+    // The list of what could go in the slot: "None", the worn item, then every carried item that
+    // fits the creature's kind. Items it cannot wear now are red. Selects the worn item's row.
+    fn fill_slot_list { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> !bool {
+        gui::list_clear{ &g, panel, tag = "LB_ITEMS" }
+        if s.slot >= items::SLOTS {
+            try gui::set_strref{ &g, panel, tag = "LBL_SLOTNAME", strref = 363 }
+            return false
+        }
+        let index = items::SLOT_OF[s.slot]
+        let droid = items::is_droid{ w = &w, who = s.who }
+        let name: u32 = if droid { items::SLOT_NAMES_DROID[s.slot] } else { items::SLOT_NAMES[s.slot] }
+        try gui::set_strref{ &g, panel, tag = "LBL_SLOTNAME", strref = name }
+        let c = hud::creature_of{ w = &w, id = s.who } ifnull { return false }
+        _ = try items::add_none_row{ &g, &w, &dev, panel, tag = "LB_ITEMS", icon_size = ICON }
+        let worn = c.equipped[index]
+        let mut select: i32 = 0
+        if worn != obj::INVALID and world::is_valid{ w = &w, id = worn } {
+            select = try items::add_row{ &g, &w, &dev, panel, tag = "LB_ITEMS", id = worn, equipped = true, icon_size = ICON }
+        }
+        let mut order: [512]u32
+        let carried = items::carried{ w = &w, who = s.who, into = order[..] }
+        let mut k: usize = 0
+        while k < carried.len {
+            let id = carried[k]
+            k = k + 1
+            if (items::equipable_slots{ w = &w, id } & items::mask_of{ index }) == 0 or not items::race_ok{ w = &w, who = s.who, item = id } { continue }
+            let row = try items::add_row{ &g, &w, &dev, panel, tag = "LB_ITEMS", id, equipped = false, icon_size = ICON }
+            if not items::can_equip{ w = &w, who = s.who, item = id, index } {
+                gui::list_set_color{ &g, panel, tag = "LB_ITEMS", row, color = render::Color{ r = 0.85, g = 0.15, b = 0.15, a = 1.0 } }
+            }
+        }
+        if s.selecting { gui::list_select{ &g, panel, tag = "LB_ITEMS", row = select } }
+        return true
+    }
+
+    // ---- selection mode
+
+    // Clicking a slot: say why not (armour in combat, a two-handed weapon in the right hand, no
+    // item that fits), else show the list with the worn item (or `row`) selected.
+    fn begin_selection {
+        mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, row: i32,
+    } -> !bool {
+        if s.slot >= items::SLOTS { return false }
+        let index = items::SLOT_OF[s.slot]
+        let c = hud::creature_of{ w = &w, id = s.who } ifnull { return false }
+        if index == obj::SLOT_BODY and c.in_combat {
+            s.box = items::notice{ &g, &w, &dev, strref = 1506 }
+            return false
+        }
+        let right = c.equipped[obj::SLOT_RIGHT_WEAPON]
+        if index == obj::SLOT_LEFT_WEAPON and right != obj::INVALID and items::base_int{ w = &w, id = right, column = "weaponsize", fallback = 0 } == 4 {
+            s.box = items::notice{ &g, &w, &dev, strref = 42344 }
+            return false
+        }
+        // Anything to choose from? The worn item alone is not a choice, "None" is one only for a
+        // worn slot.
+        let mut order: [512]u32
+        let carried = items::carried{ w = &w, who = s.who, into = order[..] }
+        let mut fits = c.equipped[index] != obj::INVALID
+        let mut k: usize = 0
+        while k < carried.len and not fits {
+            let id = carried[k]
+            k = k + 1
+            if (items::equipable_slots{ w = &w, id } & items::mask_of{ index }) != 0 and items::race_ok{ w = &w, who = s.who, item = id } { fits = true }
+        }
+        if not fits {
+            s.box = items::notice{ &g, &w, &dev, strref = 42345 }
+            return false
+        }
+        s.selecting = true
+        s.picked = NO_PICK
+        show_mode{ &g, panel, selecting = true }
+        try set_back_role{ &g, panel, cancel = true }
+        try gui::set_strref{ &g, panel, tag = "LBL_SELECTTITLE", strref = 38154 }
+        _ = try fill_slot_list{ &s, &g, &w, &dev, panel }
+        let chosen = if row >= 0 { row } else { gui::list_selected{ &g, panel, tag = "LB_ITEMS" } }
+        gui::list_select{ &g, panel, tag = "LB_ITEMS", row = chosen }
+        let user = row_user{ &g, panel, row = chosen }
+        _ = try pick_row{ &s, &g, &w, panel, user }
+        return true
+    }
+
+    // The item id (or 0, "None") a list row stands for.
+    fn row_user { mut g: gui::Gui, panel: u32, row: i32 } -> i64 {
+        let c = gui::find_control{ &g, panel, tag = "LB_ITEMS" } ifnull { return NO_PICK }
+        if row < 0 or row >= @as(i32, c.row_count) { return NO_PICK }
+        return c.rows[@as(usize, row)].user
+    }
+
+    // A row was chosen: its description, and the "cannot equip" text if the creature cannot.
+    fn pick_row { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32, user: i64 } -> !bool {
+        s.picked = user
+        let id = if user > 0 { @as(u32, user) } else { 0 }
+        try items::show_description{ &g, &w, panel, tag = "LB_DESC", id }
+        let fits = id == 0 or items::can_equip{ w = &w, who = s.who, item = id, index = items::SLOT_OF[s.slot] }
+        gui::set_visible{ &g, panel, tag = "LBL_CANTEQUIP", visible = not fits }
+        gui::set_enabled{ &g, panel, tag = "BTN_EQUIP", enabled = fits and user != NO_PICK }
+        return true
+    }
+
+    // OK: put the chosen item on (or take the slot's off for "None") and go back to the slot view.
+    fn commit { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> !bool {
+        if s.picked == NO_PICK or s.slot >= items::SLOTS { return false }
+        let index = items::SLOT_OF[s.slot]
+        if s.picked == 0 {
+            let c = hud::creature_of{ w = &w, id = s.who } ifnull { return false }
+            if c.equipped[index] != obj::INVALID {
+                _ = items::unequip{ &w, who = s.who, index }
+                gui::play_sound{ &g, n = 10 }
+            }
+        } else {
+            let swap = items::equip{ &w, who = s.who, item = @as(u32, s.picked), index }
+            if swap.equipped == obj::INVALID { return false }
+            gui::play_sound{ &g, n = 11 }
+        }
+        return try end_selection{ &s, &g, &w, &dev, panel }
+    }
+
+    // Back to the slot view, refilled (the worn items changed).
+    fn end_selection { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> !bool {
+        s.selecting = false
+        s.picked = NO_PICK
+        show_mode{ &g, panel, selecting = false }
+        try set_back_role{ &g, panel, cancel = false }
+        try fill_all{ &s, &g, &w, &dev, panel }
+        return true
     }
 }
