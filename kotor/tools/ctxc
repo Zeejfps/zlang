@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# The ctxlang compiler for this checkout, built from its platform bootstrap on first use and
+# whenever the bootstrap or runtime changes. Use it as ctxc itself:
+#
+#   kotor/tools/ctxc run kotor/tools/gffdump -- ARGS...
+#   kotor/tools/ctxc exe kotor -o kotor/out/kotor.exe
+#
+# It puts MSYS2's mingw64 first on PATH: Git Bash's own /mingw64/bin shadows gcc's DLLs, and gcc
+# then fails without a message.
+set -e
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$HERE/../.." && pwd)"
+CTX="$ROOT/ctxlang"
+export PATH="/g/Dev/msys64/mingw64/bin:$PATH"
+export CTX_HOME="$CTX"
+EXE="$CTX/build/ctxc-boot.exe"
+if [ ! -f "$EXE" ] || [ "$CTX/bootstrap/ctxc.windows.c" -nt "$EXE" ] || [ "$CTX/ctxc/rt/ctxrt.c" -nt "$EXE" ] || [ "$CTX/ctxc/rt/ctxrt.h" -nt "$EXE" ]; then
+  mkdir -p "$CTX/build"
+  echo "kotor/tools/ctxc: building ctxc from bootstrap/ctxc.windows.c ..." >&2
+  gcc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -fno-strict-aliasing -I"$CTX/ctxc/rt" \
+    "$CTX/bootstrap/ctxc.windows.c" "$CTX/ctxc/rt/ctxrt.c" -lm -Wl,--stack,268435456 -o "$EXE.$$.tmp"
+  mv -f "$EXE.$$.tmp" "$EXE"
+fi
+exec "$EXE" "$@"
