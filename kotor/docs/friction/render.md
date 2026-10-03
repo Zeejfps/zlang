@@ -8,16 +8,18 @@ this extends).
   escape check takes a call's result, its error included, as derived from every read-only
   argument; once any error in the program carries a slice (`gpu::shader_failed{ log: []u8 }`),
   `try f{ vertex = &local_array }` is "try would return an error that may hold the address of
-  local". Hit twice: linking shaders from const arrays copied to locals (rewritten as
-  `try_link`, which returns 0 and a log length through a `mut` field instead of an error), and
-  passing a stack array of fonts down (moved to arena memory). The error never held that
-  address; a per-error-set analysis of which payloads can come from which arguments would let
-  these through.
+  local". Hit three times: linking shaders from const arrays copied to locals (rewritten as
+  `try_link`, which returns 0 and a log length through a `mut` field instead of an error),
+  passing a stack array of fonts down (moved to arena memory), and lib/material's loader, where
+  a texture's name came from `resref::bytes{ r = &key }` of a local key (the caller's own name
+  slice is passed down beside the key instead). The errors never held those addresses; a
+  per-error-set analysis of which payloads can come from which arguments would let these
+  through.
 - **GLSL without multi-line literals** (as in the spike): 8 shaders, about 320 lines of
   `"...\n",` elements, with array lengths kept right by a throwaway script after each edit.
 - **No float bit cast.** Sorting transparent draws by depth wants an f32's bits as a u32:
-  written `@cast(*u32, &dist).*` through a local. A `@bits(u32, x)` builtin (and back) would say
-  it.
+  written `@cast(*u32, &dist).*` through a local; lib/tex reads the TPC header's float the same
+  way (`@cast(*f32, &bits).*`). A `@bits(u32, x)` builtin (and back) would say it.
 - **A function with an inferred error set can't be a function value** (spec §8 rule 12), so the
   backend contract (lib/render/contract.ctx) can't be a table of function types; it is a never
   called function that calls each `gpu` function with typed `let`s. It works, but it checks
@@ -32,3 +34,16 @@ this extends).
   as `mut dev` everywhere, which is a pointer, fine; read-only `dev: Device` fields copy or not
   at the compiler's choice. No friction yet, noted because a `[4096]u8` log inside it was moved
   to a slice to be safe.
+- **`try f{}.x`** parses as `try (f{}.x)`, against the spec's own example; lib/tex wrote
+  `(try f{}).x` (once).
+- **No integer min/max in std**: written as `if a < b { a } else { b }` about six times in
+  lib/tex alone (math has f32 ones).
+- **Array literals of slices need their type**: `let names: [3][]u8 = ["a", "bb", "ccc"]`
+  (literals of different lengths are otherwise arrays of different types): about five times.
+- **No arena mark/restore**: lib/tex's corpus tool sets `work.used` back by hand (once);
+  lib/material resets its scratch arena per texture, which works because nothing outlives one.
+- **`defer if c { ... }`** is a parse error: `defer` takes a call, an assignment, a discard or a
+  block, so it is `defer { if c { ... } }` (once).
+- **`@fmt` to standard output** still needs a writer namespace per tool for types
+  tools/common/out.ctx lacks (`c::String`); the texture sub-agent copied glspike's 14 writers
+  before tools/common existed.
