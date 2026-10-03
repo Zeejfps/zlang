@@ -18,6 +18,9 @@ namespace outbox {
         no_clicks{ seconds: f32 },
         conversation{ owner: u32, speaker: u32, dialog: resref::ResRef },
         rumble{ pattern: i32 },
+        // PlayPazaak: the opponent's pazaakdecks.2da row (negative: random), the script to run after, the
+        // wager limit (already clamped to the gold), the tutorial, the opponent creature
+        pazaak{ deck: i32, end_script: resref::ResRef, max_wager: i32, tutorial: bool, opponent: u32 },
     }
 
     // Text copied into the outbox's buffer, valid until the outbox is drained.

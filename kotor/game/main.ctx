@@ -45,6 +45,7 @@ fn run {
     if opts.module.len > 0 or opts.no_render {
         try modload::enter{ w, name = if opts.module.len > 0 { opts.module } else { "end_m01aa" } }
         arena::reset{ heap = &scratch }
+        if opts.run_script.len > 0 { _ = scripts::run{ w, &vm, engine, name = resref::truncate{ name = opts.run_script }, self = w.area } }
     }
 
     if opts.no_render {
@@ -53,7 +54,16 @@ fn run {
         while opts.frames == 0 or frame < opts.frames {
             clock::advance{ c = &w.clock, seconds = dt }
             world::tick{ w, &vm, engine }
+            // HOOK(minigames): headless, the AI plays a pazaak game the script asked for (game/pazaak.ctx).
+            let notes = outbox::notes{ out = &w.out }
+            let mut asked: ?pz_game::Request = null
+            let mut n: usize = 0
+            while n < notes.len {
+                if pz_game::request_of{ note = notes[n] } is some{ value = r } { asked = r }
+                n = n + 1
+            }
             outbox::clear{ out = &w.out }
+            if asked is some{ value = r } { try pz_game::visit_auto{ w, &vm, engine, r } }
             arena::reset{ heap = &scratch }
             frame = frame + 1
         }

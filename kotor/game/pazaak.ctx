@@ -1,0 +1,132 @@
+// The game's side of pazaak (docs/design/minigames.md): PlayPazaak posts an outbox note, and a visit
+// to the table takes over the frame until the match is done. The screens and rules are lib/pazaak;
+// this file fills them from the world (cards owned, gold, names) and writes the outcome back
+// (gold, the side deck, GetLastPazaakResult) before the script that asked for the game continues.
+namespace pz_game {
+    // The cards a script gave: PlayPazaak's arguments, as the routine posted them.
+    struct Request { deck: i32, end_script: resref::ResRef, max_wager: i32, tutorial: bool, opponent: u32 }
+
+    fn request_of { note: outbox::Note } -> ?Request {
+        return match note {
+            pazaak{ deck, end_script, max_wager, tutorial, opponent } => { Request{ deck, end_script, max_wager, tutorial, opponent } }
+            else => { null }
+        }
+    }
+
+    // A creature's name as text, in `into`.
+    fn name_into { w: *world::World, id: u32, into: []mut u8 } -> usize {
+        let o = world::object{ w, id } ifnull { return 0 }
+        if o.name.strref != 0xFFFFFFFF {
+            let text = world::string_by_strref{ w, strref = o.name.strref }
+            if text.len > 0 { return pazaak::copy_text{ dst = into, src = text } }
+        }
+        return pazaak::copy_text{ dst = into, src = o.name.text }
+    }
+
+    fn make_params { mut w: world::World, r: Request } -> !pazaak::Params {
+        let mut p = pazaak::make_params{}
+        p.max_wager = r.max_wager
+        p.tutorial = r.tutorial
+        p.seed = world::random{ &w }
+        p.opponent_deck = try pazaak::load_opponent_deck{ fs = &w.fs, heap = w.heap, rm = w.rm.*, row = r.deck, seed = world::random{ &w } }
+        p.player_name_len = name_into{ w = &w, id = w.pc, into = p.player_name[..] }
+        p.opponent_name_len = name_into{ w = &w, id = r.opponent, into = p.opponent_name[..] }
+        return p
+    }
+
+    // The ten cards a player with no preference would pick: the lowest ids first.
+    fn default_deck { owned: [18]i32 } -> [10]i32 {
+        let mut left = owned
+        let mut deck: [10]i32 = [-1; 10]
+        let mut n: usize = 0
+        let mut c: usize = 0
+        while c < 18 and n < 10 {
+            if left[c] > 0 {
+                deck[n] = @as(i32, c)
+                left[c] = left[c] - 1
+                n = n + 1
+            } else {
+                c = c + 1
+            }
+        }
+        return deck
+    }
+
+    // The outcome in the party: the wager changes hands, the deck is kept, the result is what
+    // GetLastPazaakResult tells; then the script that asked for the game goes on.
+    fn conclude {
+        mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, r: Request, result: pazaak::Result,
+    } {
+        if result.wager > 0 {
+            let before = w.party.gold
+            w.party.gold = if result.won { before + result.wager } else if before > result.wager { before - result.wager } else { 0 }
+        }
+        let verb: []u8 = if result.won { "won" } else { "lost" }
+        world::prefix{ w = &w }
+        _ = @fmt(&w.io, "pazaak: {}, wager {}, gold now {}\n", verb, result.wager, w.party.gold)
+        let mut full = true
+        let mut i: usize = 0
+        while i < 10 {
+            if result.side_deck[i] < 0 { full = false }
+            i = i + 1
+        }
+        if full { w.party.pazaak_deck = result.side_deck }
+        w.party.pazaak_won = result.won
+        let name = resref::bytes{ r = &r.end_script }
+        if name.len > 0 { _ = scripts::run{ &w, &vm, engine, name = r.end_script, self = obj::INVALID } }
+    }
+
+    // Without a screen (headless runs): the AI plays the player's side too, with the default deck.
+    fn visit_auto { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, r: Request } -> ! {
+        let p = try make_params{ &w, r }
+        let deck = default_deck{ owned = w.party.pazaak_cards }
+        let stake = if r.max_wager > 0 { r.max_wager } else { 0 }
+        let mut m = pazaak::new_match{ seed = p.seed, wager = stake, player_deck = deck, opponent_deck = p.opponent_deck, tutorial = false, auto_player = true }
+        let mut guard: i32 = 0
+        while not m.finished and guard < 100000 {
+            pazaak::step_match{ m = &m, dt = 1.0 }
+            if pazaak::has_prompt{ m = m } { pazaak::answer_prompt{ m = &m, yes = true } }
+            guard = guard + 1
+        }
+        conclude{ &w, &vm, engine, r, result = pazaak::Result{ won = m.won, forfeited = false, wager = stake, side_deck = deck } }
+    }
+
+    // A visit with the player at the table: the screens over `ui.gui` until the match is done.
+    // True if the window was closed meanwhile (the game should end).
+    fn visit {
+        mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut dev: gpu::Device, mut frame: render::Frame,
+        ui: *mut ingame::Ingame, mixer: *mut mix::Mixer, adev: ?*mut audio::Device, r: Request,
+    } -> !bool {
+        let p = try make_params{ &w, r }
+        let mut s = try pazaak::begin{ g = &ui.gui, fs = &w.fs, dev = &dev, mixer, params = p, owned = w.party.pazaak_cards, side_deck = w.party.pazaak_deck }
+        let freq = sdl::counter_frequency{ &sdl }
+        let start = sdl::counter{ &sdl }
+        let mut last = start
+        let mut closed = false
+        let silent = try alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(i16){}, count = 2048 }
+        defer _ = alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = silent, count = 0 }
+        while not s.done and not closed {
+            while true {
+                let e = sdl::poll{ &sdl } ifnull { break }
+                if e is quit | close { closed = true }
+                _ = gui::handle_event{ g = &ui.gui, ev = e, scale_x = 1.0, scale_y = 1.0 }
+            }
+            let now = sdl::counter{ &sdl }
+            let dt = math::min{ a = @as(f32, @as(f64, now - last) / @as(f64, freq)), b = 0.25 }
+            last = now
+            match adev {
+                some{ value } => { audio::update{ &sdl, dev = value, m = mixer } iferr {} }
+                null => { mix::render{ m = mixer, into = silent[..1470] } }
+            }
+            gui::update{ g = &ui.gui, dt }
+            try pazaak::update{ s = &s, g = &ui.gui, fs = &w.fs, dev = &dev, dt }
+            render::begin_frame{ &frame, time = @as(f32, @as(f64, now - start) / @as(f64, freq)) }
+            gui::draw{ g = &ui.gui, &frame }
+            gpu::submit{ &dev, frame = &frame } iferr { closed = true }
+            gpu::present{ &dev, &sdl }
+        }
+        pazaak::end_session{ s = &s, g = &ui.gui }
+        if s.done { conclude{ &w, &vm, engine, r, result = s.result } }
+        return closed
+    }
+}

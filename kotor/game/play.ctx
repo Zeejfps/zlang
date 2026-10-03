@@ -133,11 +133,22 @@ namespace play {
             // 8. The outbox: sounds to the ambience (HOOK(gui): fades, movies, text).
             let notes = outbox::notes{ out = &w.out }
             let mut n: usize = 0
+            let mut pazaak_asked: ?pz_game::Request = null    // HOOK(minigames)
             while n < notes.len {
                 ambience::take{ a = &amb, &w, note = notes[n] }
+                if pz_game::request_of{ note = notes[n] } is some{ value = asked } { pazaak_asked = asked }
                 n = n + 1
             }
             outbox::clear{ out = &w.out }
+            // HOOK(minigames): a script asked for a game of pazaak; the visit takes over the frame (game/pazaak.ctx).
+            if pazaak_asked is some{ value = asked } {
+                if opts.headless {
+                    try pz_game::visit_auto{ &w, &vm, engine, r = asked }
+                } else if try pz_game::visit{ &sdl, &w, &vm, engine, &dev, &frame, ui, mixer, adev, r = asked } {
+                    quit = true
+                }
+                last = sdl::counter{ &sdl }
+            }
             // 9-10. Scene and camera (which snaps behind the leader again once it is placed).
             if w.arrival > 0 { camera.started = false }
             scene::sync{ &sc, &w, &dev, dt = w.clock.dt }

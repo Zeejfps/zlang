@@ -15,12 +15,17 @@ namespace party {
         selectable: [12]bool,
         gold: i32,
         solo: bool,
+        // pazaak (docs/re/pazaak.md): the cards owned by id, the side deck chosen last, the last result
+        pazaak_cards: [18]i32,
+        pazaak_deck: [10]i32,
+        pazaak_won: bool,
     }
 
     fn new {} -> Party {
         return Party{
             members = [obj::INVALID; 3], count = 0, npcs = [obj::INVALID; 12], available = [false; 12],
             selectable = [false; 12], gold = 0, solo = false,
+            pazaak_cards = [2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], pazaak_deck = [-1; 10], pazaak_won = false,
         }
     }
 
