@@ -106,7 +106,7 @@ namespace save {
         k = 0
         while k < n_items {
             let e = try gffw::add_element{ &b, list = mults, id = 0 }
-            try put_gff_value{ &b, owner = e, label = "PT_COST_MULT_VAL", value = gff::Value::float{ v = 1.0 } }
+            try put_gff_value{ &b, owner = e, label = "PT_COST_MULT_VAL", value = gff::Value::float{ v = if k < 160 { w.party.cost_mult[k] } else { 1.0 } } }
             k = k + 1
         }
 
@@ -173,6 +173,14 @@ namespace save {
             w.party.planet_selected = @trunc(i32, gff::get_number{ doc = doc.*, s = galaxy, label = "GlxyMapSelPnt" } ifnull -1)
         }
 
+        // ChangeItemCost's multipliers.
+        w.party.cost_mult = [1.0; 160]
+        let mults = gff::get_list{ doc = doc.*, s = gff::ROOT, label = "PT_COST_MULT_LIS" } ifnull none
+        let mut mi: usize = 0
+        while mi < mults.len and mi < 160 {
+            w.party.cost_mult[mi] = gff::get_float{ doc = doc.*, s = mults[mi], label = "PT_COST_MULT_VAL" } ifnull 1.0
+            mi = mi + 1
+        }
         // Pazaak: the cards owned and the side deck chosen last.
         let cards = gff::get_list{ doc = doc.*, s = gff::ROOT, label = "PT_PAZAAKCARDS" } ifnull none
         let mut pc: usize = 0
