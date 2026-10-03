@@ -131,6 +131,14 @@ namespace dlgview {
         w.conversation.fade_busy = w.conversation.fade_busy and dlgpanel::fade_running{ p = v.panels }
     }
 
+    // The module is about to change: the presentation of a running conversation ends here, while
+    // the scene it touched still exists.
+    fn leave { mut v: View, mut w: world::World, mut sc: scene::Scene, mut g: gui::Gui } {
+        if v.up { finish{ &v, &w, &sc, &g } }
+        v.camera_model.loaded = false
+        v.swap_count = 0
+    }
+
     // What the player did in the panels, as requests the flow acts on at its next pump.
     fn take_picks { mut v: View, mut w: world::World, mut g: gui::Gui } {
         match dlgpanel::poll{ p = &v.panels, g = &g } {

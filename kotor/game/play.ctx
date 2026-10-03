@@ -119,6 +119,9 @@ namespace play {
             dlg::update{ &w, &vm, engine }
             // 6. A transition: the next module, and a new scene and sound for it.
             if w.transition != null {
+                // A conversation doesn't cross a module change (its objects go).
+                dlg::abort{ &w, &vm, engine }
+                dlgview::leave{ v = &dview, w = &w, sc = &sc, g = &ui.gui }
                 ambience::stop_area{ a = &amb }
                 scene::release{ &sc, &dev }
                 arena::reset{ heap = &scene_arena }
