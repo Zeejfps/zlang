@@ -107,12 +107,57 @@ the tab bar. A panel handles the rest in `on_event`: `activate` for buttons, `ro
 `row_activated` for list boxes, `value_changed` for check boxes. Menu panels use the leader as
 "the character". `messages_panel` also gets `log: *hud::MessageLog`.
 
+### The panels
+
+| Menu | Files | Reads / does | Stand-ins (grep `PLACEHOLDER`) |
+|---|---|---|---|
+| Equipment | `equip_panel`, `items_*` | slots, candidate lists, descriptions, defence/damage/to-hit; equip and unequip apply on OK, refusals open the original's message boxes | no EQUIPITEM/UNEQUIPITEM action handlers (applied to the creature directly); item-property text; proficiency checks; base attack bonus is the level |
+| Inventory | `inventory_panel`, `items_*` | worn items first, then the bag by base item and name; six filters kept between openings; Use Item | the party's shared inventory and purse (the leader's own bag stands in); using an item only posts its activate event |
+| Character | `character_panel`, `sheet_*` | name, classes, vitality, Force, defence, attributes with modifiers, saves, alignment bar, XP and next level; Level Up / Auto show when the XP allows | all numbers come from `sheet::read` / `known_of` / `skill_total` (d20 formulas over the creature's data) until lib/rules is wired into the creature; level-up, scripts and the 3D model are not built |
+| Abilities | `abilities_panel`, `sheet_*` | skills, feats and Force powers from the creature's blueprint with icons and descriptions | as above |
+| Messages | `messages_panel` | the dialogue and feedback logs (`hud::MessageLog`), switched with BTN_SHOW | dialogue lines are added by whoever speaks them (`hud::log_add` with `LOG_DIALOG`) |
+| Journal | `journal_panel`, `journal_*` | `global.jrl` quests with their text from dialog.tlk, active and completed lists, four sorts, quest items; see [re/journal.md](../re/journal.md) | the engine keeps no journal: `journal::Journal` lives in the panel (move it to `World`, `AddJournalQuestEntry` calls `journal::set_state`) |
+| Map | `map_panel` | the area picture fitted into LBL_Map in a render target (`map_panel::draw`, called by `ingame::draw`), party arrows, the area's waypoint notes stepped with the arrows, the Party Selection rules (area, together, no enemies) | the Return button (no flag in the party table); "enemy near" is a distance test |
+| Party selection | `partysel_panel` | a modal over the map: the available companions, pick two, put back, Done | spawning a companion beside the leader |
+| Options | `options_panel` | the front end's Gameplay, Feedback, Auto-Pause, Graphics and Sound screens over the menu (a `frontend::Front` kept in the panel, the same settings file), sound sliders to the mixer, Exit Game asks and ends the loop via `ingame::wants_quit` | Load and Save show "unavailable"; display changes are not applied (`options_panel::take_display_change` is not read by the loop) |
+
+The panels were written by four agents against the protocol above; each has headless scripts in
+`tools/ingame/scripts/` with the `go.sh` line in its header and test commands in `test_*.ctx`
+(`ui giveitem`, `ui stock`, `ui journal add`, `ui note`, `ui leader`, ...).
+
 ### Reading the game
 
 `hud::` functions in `state.ctx` are the only way panels read the game: `party_ids`, `name_of`,
 `vitality_of`, `force_of`, `level_of`, `portrait_of`, `is_down`, `creature_of`. A panel that needs
 more adds its reader to its own file and, if the data is a stand-in, says so in a `PLACEHOLDER`
 comment so the rules lead's merge finds it.
+
+## Decisions (ours)
+
+- The HUD file is chosen by the GUI's pixel space and **anchored** on windows it was not made for;
+  the original shows nothing on sizes it has no file for (a bug, not a feature).
+- Menus are **non-modal** full-screen panels so the tab bar over them takes clicks; a modal panel
+  (message box, party selection, option screens) opened by a menu takes input and Escape itself.
+- Models carry no usable bounds, so picking boxes and the reticle are built from `PERSPACE` and
+  typical sizes; picks are by projected box, not triangles.
+- The leader is "the character" of every menu; BTN_CHANGE1/2 and Tab change the leader (`w.pc`
+  follows), and a dead member cannot become leader.
+- Space pauses (keymap.2da action 241); Escape closes a menu or opens the options; the engine
+  loop no longer quits on Escape.
+- The conversation system hides the HUD and closes any menu (`w.conversation.active`); the world
+  is not picked then.
+- The Force bar, level and several panel numbers read stand-ins until lib/rules is attached to the
+  creature; the stand-ins are in `hud/state.ctx`, `sheet_data.ctx` and `items_data.ctx`.
+
+## Open
+
+- Self action slots (Force powers, medical items, other items, mines), the leader-swap
+  animation, effect-count icons, the stealth toggle, bark bubbles (dialogue lead's).
+- Item drag-and-drop; variable-height list rows (the journal splits long texts into rows);
+  a scrolling description box.
+- The journal in `World`; the party's shared inventory and purse; equip actions in the engine.
+- Applying display options from the in-game options (needs the window handle and fullscreen).
+- Per-creature heights from the models' head nodes instead of the `PERSPACE` heuristic.
 
 ## Headless testing
 
