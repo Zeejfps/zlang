@@ -9,7 +9,7 @@ namespace rt_mod {
         else if routine == nwscript::SetReturnStrref { try set_return_strref{ &vm, argc } }
         else if routine == nwscript::AddJournalQuestEntry { try add_journal_quest_entry{ &w, &vm, argc } }
         else if routine == nwscript::RemoveJournalQuestEntry { try remove_journal_quest_entry{ &w, &vm, argc } }
-        else if routine == nwscript::GetJournalEntry { try get_journal_entry{ &vm, argc } }
+        else if routine == nwscript::GetJournalEntry { try get_journal_entry{ &w, &vm, argc } }
         else if routine == nwscript::RevealMap { try reveal_map{ &vm, argc } }
         else if routine == nwscript::DoSinglePlayerAutoSave { w.autosave_due = true }
         else if routine == nwscript::SetPlanetAvailable { try set_planet{ &w, &vm, argc, routine } }
@@ -84,26 +84,30 @@ namespace rt_mod {
         let r = nwscript::AddJournalQuestEntry
         let plot = try nwarg::string{ &vm, routine = r, argc, i = 0 }
         let state = try nwarg::int{ &vm, routine = r, argc, i = 1 }
-        _ = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let allow_lower = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let now = fight::time_now{ w = &w }
+        let changed = journal::set_state{ j = &w.journal, tag = plot, state, allow_lower = allow_lower != 0, day = now.day, time = now.ms }
         if w.log.scripts {
             world::prefix{ w = &w }
-            _ = @fmt(&w.io, "journal: {} -> state {}\n", plot, state)
+            _ = @fmt(&w.io, "journal: {} -> state {} ({})\n", plot, state, changed)
         }
     }
 
     // void RemoveJournalQuestEntry(string szPlotID)
     fn remove_journal_quest_entry { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let plot = try nwarg::string{ &vm, routine = nwscript::RemoveJournalQuestEntry, argc, i = 0 }
+        journal::remove{ j = &w.journal, tag = plot }
         if w.log.scripts {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "journal: {} removed\n", plot)
         }
     }
 
-    // int GetJournalEntry(string szPlotID): 0, no entry.
-    fn get_journal_entry { mut vm: nwvm::Vm, argc: u8 } -> ! {
-        _ = try nwarg::string{ &vm, routine = nwscript::GetJournalEntry, argc, i = 0 }
-        try nwvm::push_int{ &vm, v = 0 }
+    // int GetJournalEntry(string szPlotID): the quest's state, 0 when it has none.
+    fn get_journal_entry { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let plot = try nwarg::string{ &vm, routine = nwscript::GetJournalEntry, argc, i = 0 }
+        let state = journal::state_of{ j = w.journal, tag = plot }
+        try nwvm::push_int{ &vm, v = if state < 0 { 0 } else { state } }
     }
 
     // void RevealMap(vector vPoint = [0,0,0], int nRadius = -1)

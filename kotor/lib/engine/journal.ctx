@@ -1,8 +1,8 @@
 // The player's journal: which quests were started and the state each one is in. This is what
 // AddJournalQuestEntry / RemoveJournalQuestEntry / GetJournalEntry act on and what the party table
 // saves (JNL_Entries: JNL_PlotID, JNL_State, JNL_Date, JNL_Time). It knows nothing of the quests'
-// texts (those are global.jrl: journal_jrl.ctx) and nothing of the GUI, so the engine can hold one in
-// the world: see the PLACEHOLDER in journal_panel.ctx.
+// texts (those are global.jrl: lib/ingame/journal_jrl.ctx) and nothing of the GUI; the world holds
+// it (`w.journal`), the journal routines change it, the party table saves it.
 //
 // A quest is named by its tag (the JRL category's Tag, compared ignoring case, like script strings).
 // The state is the ID of one of the category's entries; the entry's End flag decides whether the

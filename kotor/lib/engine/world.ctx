@@ -91,6 +91,8 @@ namespace world {
         played_seconds: f64,                // time played (real time in game; PT_PLAYEDSECONDS)
         player_blueprint: []mut u8,         // character creation's player (UTC GFF bytes, heap); empty: the default
         autosave_due: bool,                 // an AUTOSAVE is wanted (a transition or DoSinglePlayerAutoSave)
+        journal: journal::Journal,          // the player's quests (AddJournalQuestEntry; JNL_Entries)
+        journal_sort: i32,                  // JNL_SortOrder
         autosave_ms: f64,                   // real ms since the last save (the 15 min timer, gameloop.md 5.7)
         out: outbox::Outbox,
         transition: ?Transition,
@@ -142,7 +144,7 @@ namespace world {
             values = values::new{ heap },
             walk = walkmap::empty{ heap },
             layout = null, paths = null, vis = null,
-            tables, tlk = null, globals, gip = try save::new_store{ heap, root = saves }, calendar_set = false, restoring = false, played_seconds = 0.0, player_blueprint = slice::empty(u8){}, autosave_due = false, autosave_ms = 0.0,
+            tables, tlk = null, globals, gip = try save::new_store{ heap, root = saves }, calendar_set = false, restoring = false, played_seconds = 0.0, player_blueprint = slice::empty(u8){}, autosave_due = false, journal = journal::new_journal{}, journal_sort = 0, autosave_ms = 0.0,
             out = outbox::new{ heap },
             transition = null,
             arrival_waypoint = [0; 64], arrival_waypoint_len = 0,

@@ -110,9 +110,19 @@ namespace save {
             k = k + 1
         }
 
-        // The journal isn't saved yet.
-        try put_gff_value{ &b, owner = root, label = "JNL_SortOrder", value = gff::Value::int{ v = 0 } }
-        _ = try gffw::put_list{ &b, owner = root, label = "JNL_Entries" }
+        // The journal (JNL_Entries: JNL_PlotID, JNL_State, JNL_Date, JNL_Time).
+        try put_gff_value{ &b, owner = root, label = "JNL_SortOrder", value = gff::Value::int{ v = w.journal_sort } }
+        let entries = try gffw::put_list{ &b, owner = root, label = "JNL_Entries" }
+        k = 0
+        while k < w.journal.count {
+            let q = w.journal.quests[k]
+            let e = try gffw::add_element{ &b, list = entries, id = 0 }
+            try put_gff_value{ &b, owner = e, label = "JNL_PlotID", value = gff::Value::exostring{ v = journal::tag_at{ j = &w.journal, i = k } } }
+            try put_gff_value{ &b, owner = e, label = "JNL_State", value = gff::Value::int{ v = q.state } }
+            try put_gff_value{ &b, owner = e, label = "JNL_Date", value = gff::Value::dword{ v = q.day } }
+            try put_gff_value{ &b, owner = e, label = "JNL_Time", value = gff::Value::dword{ v = q.time } }
+            k = k + 1
+        }
         return try gffw::finish{ &b, layout = gffw::ENGINE }
     }
 
@@ -153,6 +163,26 @@ namespace save {
             slot = slot + 1
         }
 
+        // The journal.
+        w.journal = journal::new_journal{}
+        w.journal_sort = @trunc(i32, gff::get_number{ doc = doc.*, s = gff::ROOT, label = "JNL_SortOrder" } ifnull 0)
+        let entries = gff::get_list{ doc = doc.*, s = gff::ROOT, label = "JNL_Entries" } ifnull none
+        let mut q: usize = 0
+        while q < entries.len {
+            let e = entries[q]
+            q = q + 1
+            let tag = gff::get_string{ doc = doc.*, s = e, label = "JNL_PlotID" } ifnull { continue }
+            let state = @trunc(i32, gff::get_number{ doc = doc.*, s = e, label = "JNL_State" } ifnull 0)
+            let day = @trunc(u32, gff::get_number{ doc = doc.*, s = e, label = "JNL_Date" } ifnull 0)
+            let time = @trunc(u32, gff::get_number{ doc = doc.*, s = e, label = "JNL_Time" } ifnull 0)
+            _ = journal::set_state{ j = &w.journal, tag, state, allow_lower = true, day, time }
+        }
+        // Loaded quests are not news.
+        q = 0
+        while q < w.journal.count {
+            journal::clear_new{ j = &w.journal, i = q }
+            q = q + 1
+        }
         w.party.saved_slots = [-1; 3]
         w.party.saved_count = 0
         w.party.saved_leader = -1

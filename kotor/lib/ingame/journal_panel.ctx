@@ -1,6 +1,7 @@
 // Journal (journal.gui, menu 5): the quests the player has, active or completed, and the text of the
 // selected one (docs/re/gui.md, "CSWGuiJournal"). The quests and their texts are global.jrl
-// (journal_jrl.ctx); which quests were started and their states are the journal (journal_model.ctx).
+// (journal_jrl.ctx); which quests were started and their states are the journal (`w.journal`,
+// lib/engine/journal.ctx).
 //
 // What the original does, which this follows:
 //  - BTN_SWAPTEXT switches between the active and the completed list; the button always offers the
@@ -46,7 +47,6 @@ namespace journal_panel {
         jrl: ?*mut journal::Jrl,        // global.jrl, read on the first open
         planets: [32]u32,               // planetary.2da's Name strref by row
         planet_count: usize,
-        journal: journal::Journal,      // PLACEHOLDER store, see journal_of
         completed: bool,                // the completed list is shown
         sort: [2]u32,                   // the sort of the active (0) and the completed (1) list
         view: View,
@@ -59,20 +59,12 @@ namespace journal_panel {
 
     fn new {} -> State {
         let mut s: State
-        s.journal = journal::new_journal{}
         return s
     }
 
-    // PLACEHOLDER: the engine keeps no journal yet (AddJournalQuestEntry only logs). This is the one
-    // place the panel gets it from. The engine should hold a `journal::Journal` (journal_model.ctx:
-    // tag, state, day, time per quest) in `world::World`, call `journal::set_state{ &w.journal, tag,
-    // state, allow_lower = bAllowOverrideHigher, day, time }` from AddJournalQuestEntry,
-    // `journal::remove` from RemoveJournalQuestEntry and answer GetJournalEntry with
-    // `journal::state_of`; the party table saves and loads the same quests (JNL_Entries). Then this
-    // returns `&w.journal` and State.journal goes away. A module change makes a new Ingame, so until
-    // then the quests added by the test commands do not survive one.
-    fn journal_of { mut s: State, w: *world::World } -> *mut journal::Journal {
-        return &s.journal
+    // The world's journal (AddJournalQuestEntry and friends keep it; the party table saves it).
+    fn journal_of { mut s: State, mut w: world::World } -> *mut journal::Journal {
+        return &w.journal
     }
 
     // The panel was just added, or the leader changed and it must be filled again.
@@ -168,10 +160,10 @@ namespace journal_panel {
 
     // The quests of the list on show, sorted, into `s.view`: those the JRL knows whose state's
     // entry does (completed list) or does not (active list) end the quest.
-    fn collect_rows { mut s: State, w: *world::World } {
+    fn collect_rows { mut s: State, mut w: world::World } {
         s.view.count = 0
         let jrl = s.jrl ifnull { return }
-        let jn = journal_of{ &s, w }
+        let jn = journal_of{ &s, &w }
         let mut i: usize = 0
         while i < jn.count {
             let q = i
@@ -193,7 +185,7 @@ namespace journal_panel {
             }
             s.view.count = s.view.count + 1
         }
-        sort_rows{ v = &s.view, w, mode = s.sort[if s.completed { 1 } else { 0 }] }
+        sort_rows{ v = &s.view, w = &w, mode = s.sort[if s.completed { 1 } else { 0 }] }
     }
 
     // Insertion sort (stable) of the rows by `mode`.
@@ -304,8 +296,8 @@ namespace journal_panel {
     }
 
     // The quests looked at stop being new (the original clears them when the list is left).
-    fn clear_seen { mut s: State, w: *world::World } {
-        let jn = journal_of{ &s, w }
+    fn clear_seen { mut s: State, mut w: world::World } {
+        let jn = journal_of{ &s, &w }
         let mut i: usize = 0
         while i < jn.count {
             if s.seen[i] { journal::clear_new{ j = jn, i } }

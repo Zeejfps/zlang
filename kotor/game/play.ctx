@@ -131,6 +131,9 @@ namespace play {
                 if folder == null {
                     _ = @fmt(&w.io, "kotor: no such save\n")
                 } else {
+                    // As a transition: no conversation survives the world it ran in.
+                    dlg::abort{ &w, &vm, engine }
+                    dlgview::leave{ v = &dview, w = &w, sc = &sc, g = &ui.gui }
                     ambience::stop_area{ a = &amb }
                     scene::release{ &sc, &dev }
                     arena::reset{ heap = &scene_arena }
@@ -259,11 +262,10 @@ namespace play {
                 s = s + 1
             }
             if want_save.len > 0 {
-                let slot: u32 = if ci::eq{ a = want_save, b = "QUICKSAVE" } { 0 } else if ci::eq{ a = want_save, b = "AUTOSAVE" } { 1 } else { 2 }
                 let size = gpu::screen_size{ dev }
                 let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &scene_arena, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
                 _ = gpu::read_screen{ &dev, into = pixels } iferr { size }
-                save::save_game{ &w, slot, folder_name = want_save, save_name = want_save, screen = pixels, width = size.width, height = size.height } iferr err{ error } {
+                save::save_named{ &w, name = want_save, screen = pixels, width = size.width, height = size.height } iferr err{ error } {
                     _ = @fmt(&w.io, "kotor: save failed: {}\n", error)
                 }
                 _ = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &scene_arena, mem = pixels, count = 0 }

@@ -52,6 +52,59 @@ namespace save {
         return into[..n]
     }
 
+    // The slot a new manual save takes: one past the highest number in our saves directory, at
+    // least 2 (0 and 1 are the quick and auto saves).
+    fn next_slot { mut w: world::World } -> u32 {
+        let names = fs::list(arena::Arena){ fs = &w.fs, heap = w.scratch, realloc = arena::alloc, path = w.gip.root } iferr { return 2 }
+        let mut best: u32 = 1
+        let mut i: usize = 0
+        while i < names.len {
+            let n = names[i]
+            i = i + 1
+            if n.len < 6 { continue }
+            let mut v: u32 = 0
+            let mut k: usize = 0
+            let mut digits = true
+            while k < 6 {
+                if n[k] < '0' or n[k] > '9' { digits = false }
+                v = v * 10 + @as(u32, n[k] - '0')
+                k = k + 1
+            }
+            if digits and v > best and v < 999999 { best = v }
+        }
+        return best + 1
+    }
+
+    // A save asked for by name: QUICKSAVE (slot 0), AUTOSAVE (slot 1), anything else a new manual
+    // save in the next slot, its folder `Game<slot>` and `name` what the player typed.
+    fn save_named { mut w: world::World, name: []u8, screen: []u8, width: u32, height: u32 } -> ! {
+        if ci::eq{ a = name, b = "QUICKSAVE" } {
+            try save_game{ &w, slot = 0, folder_name = "QUICKSAVE", save_name = "Quick Save", screen, width, height }
+            return
+        }
+        if ci::eq{ a = name, b = "AUTOSAVE" } {
+            try save_game{ &w, slot = 1, folder_name = "AUTOSAVE", save_name = "Auto Save", screen, width, height }
+            return
+        }
+        let slot = next_slot{ &w }
+        let mut buf: [16]u8 = ['G', 'a', 'm', 'e', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        let mut digits: [8]u8
+        let mut d: usize = 0
+        let mut v = slot
+        while v > 0 and d < 8 {
+            digits[d] = @trunc(u8, '0' + v % 10)
+            v = v / 10
+            d = d + 1
+        }
+        let mut n: usize = 4
+        while d > 0 {
+            d = d - 1
+            buf[n] = digits[d]
+            n = n + 1
+        }
+        try save_game{ &w, slot, folder_name = buf[..n], save_name = name, screen, width, height }
+    }
+
     fn file_in { mut w: world::World, folder: []u8, name: []u8 } -> ![]mut u8 {
         return try path::join(arena::Arena){ realloc = arena::alloc, heap = w.scratch, dir = folder, name }
     }
