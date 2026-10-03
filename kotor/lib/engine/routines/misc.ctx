@@ -612,8 +612,8 @@ namespace rt_misc {
     }
 
     // void CutsceneAttack(object oTarget, int nAnimation, int nAttackResult, int nDamage): the
-    // designer's own combat round: the caller turns to the target and plays the attack animation.
-    // Who is hit, and for how much, is the rules' (HOOK(rules)): logged, nothing is rolled.
+    // designer's own combat round: the caller turns to the target, plays the attack animation row
+    // and, at its hit time, the target takes the given result and damage (a forced attack roll).
     fn cutscene_attack { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let r = nwscript::CutsceneAttack
         let target = try nwarg::object{ &vm, routine = r, argc, i = 0 }
@@ -623,9 +623,18 @@ namespace rt_misc {
         let me = nwvm::self_object{ vm }
         if w.log.actions {
             world::prefix{ w = &w }
-            _ = @fmt(&w.io, "CutsceneAttack {} -> {} animation {} result {} damage {}: animation only (no lib/rules)\n", me, target, animation, result, damage)
+            _ = @fmt(&w.io, "CutsceneAttack {} -> {} animation {} result {} damage {}\n", me, target, animation, result, damage)
         }
-        queue_cutscene_animation{ &w, me, target, at = null, animation }
+        // The caster's round with the designer's result and damage (fight::attack_object).
+        let mut a = actions::make{ kind = actions::Kind::attack_object }
+        a.params[0] = actions::Param::object{ id = target }
+        a.params[1] = actions::Param::int{ v = 1 }
+        a.params[2] = actions::Param::int{ v = 0 }
+        a.params[3] = actions::Param::int{ v = 1 }
+        a.params[4] = actions::Param::int{ v = animation }
+        a.params[5] = actions::Param::int{ v = result }
+        a.params[6] = actions::Param::int{ v = damage }
+        _ = actions::add{ &w, id = me, action = a, force = false }
     }
 
     // void ActionCastFakeSpellAtObject(int nSpell, object oTarget, int nProjectilePathType = ...) and

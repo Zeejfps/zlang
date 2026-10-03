@@ -30,6 +30,7 @@ namespace fight {
         killing: bool,
         ranged: bool,
         reaction: i32,                  // the target's animations.2da reaction row, NO_ROW none
+        cutscene: bool,
         damage: rules::DamageRoll,      // a hit's damage (the DAMAGE effects are made at impact)
         nfx: i32,
         fx: [rules::MAX_COMBAT_FX]rules::CombatEffect,
@@ -44,8 +45,15 @@ namespace fight {
         anim_ms: i32,                   // until then the attack animation plays
         count: usize,
         fired: usize,
+        cutscene: bool,                 // a designer's round (CutsceneAttack): no OnEndRound, no combat
         impacts: [MAX_IMPACTS]Impact,
     }
+
+    // CutsceneAttack's orders (combat.md 3.1 bCutscene, 4.1 step 5): the animation row, the result
+    // and the damage the designer fixed.
+    struct Forced { on: bool, animation: i32, result: i32, damage: i32 }
+
+    fn not_forced {} -> Forced { return Forced{ on = false, animation = NO_ROW, result = 0, damage = -1 } }
 
     // A creature's fighting state: the rules creature, its round, how long it stays in combat.
     struct Fighter {
@@ -66,11 +74,11 @@ namespace fight {
     fn no_impact {} -> Impact {
         let mut fx: [rules::MAX_COMBAT_FX]rules::CombatEffect
         let mut damage: rules::DamageRoll
-        return Impact{ at_ms = 0, target = obj::INVALID, attack = false, hit = false, result = 0, killing = false, ranged = false, reaction = NO_ROW, damage, nfx = 0, fx }
+        return Impact{ at_ms = 0, target = obj::INVALID, attack = false, hit = false, result = 0, killing = false, ranged = false, reaction = NO_ROW, cutscene = false, damage, nfx = 0, fx }
     }
 
     fn no_round {} -> Round {
-        return Round{ started = false, timer_ms = 0, length_ms = 0, target = obj::INVALID, anim_row = NO_ROW, anim_ms = 0, count = 0, fired = 0, impacts = [no_impact{}; MAX_IMPACTS] }
+        return Round{ started = false, timer_ms = 0, length_ms = 0, target = obj::INVALID, anim_row = NO_ROW, anim_ms = 0, count = 0, fired = 0, cutscene = false, impacts = [no_impact{}; MAX_IMPACTS] }
     }
 
     fn new_fighter { heap: *mut heap::Heap } -> !*mut Fighter {
@@ -618,6 +626,14 @@ namespace fight {
             if tf.c.down { return actions::Status::done }
         }
         let f = c.fighter ifnull { return actions::Status::failed }
+        if actions::int_param{ a, i = 3 } != 0 {
+            // A cutscene attack (params 3 flag, 4 animation row, 5 result, 6 damage): the round
+            // starts at once with the designer's numbers.
+            f.round = no_round{}
+            let forced = Forced{ on = true, animation = actions::int_param{ a, i = 4 }, result = actions::int_param{ a, i = 5 }, damage = actions::int_param{ a, i = 6 } }
+            start_round{ &w, id, target, s = stance{ w = &w, c }, ranged_in = false, feat = 0, forced }
+            return actions::Status::done
+        }
         if not rules::can_attack{ c = &f.c } { return actions::Status::failed }
         c.attempted_target = target
         if f.round.started { return actions::Status::running }
@@ -641,13 +657,13 @@ namespace fight {
             a.params = [actions::Param::none; 8]
             return actions::Status::done
         }
-        start_round{ &w, id, target, s, ranged, feat = actions::int_param{ a, i = 2 } }
+        start_round{ &w, id, target, s, ranged_in = ranged, feat = actions::int_param{ a, i = 2 }, forced = not_forced{} }
         return actions::Status::done
     }
 
     // StartCombatRound and the attacks of the round resolved at once (3.1, 3.3): the impacts
     // land later, at their hit times.
-    fn start_round { mut w: world::World, id: u32, target: u32, s: i32, ranged: bool, feat: i32 } {
+    fn start_round { mut w: world::World, id: u32, target: u32, s: i32, ranged_in: bool, feat: i32, forced: Forced } {
         let o = world::object{ w = &w, id } ifnull { return }
         let c = obj::creature{ o } ifnull { return }
         let f = c.fighter ifnull { return }
@@ -674,9 +690,16 @@ namespace fight {
         // Face the target.
         let dir = math::vec3::sub{ a = t.position, b = o.position }
         if dir.x * dir.x + dir.y * dir.y > 0.0001 { world::set_orientation{ o, v = math::Vec3{ x = dir.x, y = dir.y, z = 0.0 } } }
+        // A cutscene attack names its animation: it is ranged when weapondischarge.2da times it.
+        let mut ranged = ranged_in
+        if forced.on {
+            let mut probe: [12]u8
+            ranged = discharge_row{ w = &w, appearance = c.appearance, row = forced.animation, into = probe[..] } != null
+        }
         let duel = not ranged and not is_ranged_stance{ s = ts } and s != 8 and ts != 8
-        let row = attack_row{ &w, s, duel, ranged_beast = ranged and s == 0 }
+        let row = if forced.on { forced.animation } else { attack_row{ &w, s, duel, ranged_beast = ranged and s == 0 } }
         f.round = no_round{}
+        f.round.cutscene = forced.on
         f.round.started = true
         f.round.length_ms = ROUND_MS
         f.round.target = target
@@ -684,8 +707,10 @@ namespace fight {
         c.attack_target = target
         c.last_hostile_target = target
         c.last_attack_action = 3
-        enter_combat{ &w, id, other = target }
-        enter_combat{ &w, id = target, other = id }
+        if not forced.on {
+            enter_combat{ &w, id, other = target }
+            enter_combat{ &w, id = target, other = id }
+        }
         // The situation the rules need (combat.ctx AttackSituation).
         let mut sit = rules::make_situation{}
         let dx = t.position.x - o.position.x
@@ -700,6 +725,11 @@ namespace fight {
         sit.attacker_id = id
         sit.target_object = is_object
         sit.target_plot = is_object and t.plot
+        if forced.on {
+            sit.forced = true
+            sit.forced_result = forced.result
+            sit.forced_damage = if forced.damage < 0 { 0 } else { forced.damage }
+        }
         let counts = rules::attack_counts{ tables = w.rules, c = &f.c, combat_feat = feat }
         c.last_combat_feat = if feat > 0 { feat } else { -1 }
         let total = @as(usize, if counts.total > 0 { counts.total } else { 1 })
@@ -723,6 +753,7 @@ namespace fight {
                 times[n] = if lr != null { twoda::get_int{ t = w.tables.weapondischarge, row = lrow, column = col[..cl] } ifnull 500 } else { 500 }
                 let remaining = @as(u32, shots - u)
                 carries[n] = left > 0 and (world::random{ &w } % remaining) < @as(u32, left)
+                if forced.on { carries[n] = u + 1 == shots }            // the designer's one hit: on the last shot
                 if carries[n] { left = left - 1 }
                 n = n + 1
                 u = u + 1
@@ -748,6 +779,7 @@ namespace fight {
             imp.at_ms = times[k]
             imp.target = target
             imp.ranged = ranged
+            imp.cutscene = forced.on
             imp.attack = carries[k]
             if carries[k] {
                 rules::clear_events{ ev = &w.rev }
@@ -819,7 +851,7 @@ namespace fight {
         if not imp.attack { return }
         t.ctx.last_attacker = id
         tc.last_hostile_actor = id
-        enter_combat{ &w, id = imp.target, other = id }
+        if not imp.cutscene { enter_combat{ &w, id = imp.target, other = id } }
         if imp.target != w.pc {
             events::post{ &w, delay_ms = 0, caller = id, target = imp.target, payload = events::Payload::script{ e = events::script_event{ kind = events::MELEE_ATTACKED, object = id } } }
         }
@@ -858,6 +890,7 @@ namespace fight {
         let f = c.fighter ifnull { return }
         if not f.round.started { return }
         let target = f.round.target
+        let cutscene_round = f.round.cutscene
         f.round.started = false
         f.round.count = 0
         if c.dead or f.c.down { return }
@@ -873,7 +906,7 @@ namespace fight {
             c.attack_target = obj::INVALID
             if c.attempted_target == target { c.attempted_target = obj::INVALID }
         }
-        if not script { return }
+        if not script or cutscene_round { return }
         if w.log.combat {
             world::prefix{ w = &w }
             let state: []u8 = if target_alive { "alive" } else { "gone" }
