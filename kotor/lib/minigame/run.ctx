@@ -33,16 +33,20 @@ namespace mg {
         origin: math::Vec3,             // where the layout puts the track or obstacle model
         position: math::Vec3,           // in the area, as of the last step
         bounds: math::Aabb,             // obstacles: in the area
+        guns: [4]GunState,              // the trigger of each gun bank (turret)
     }
 
-    // A script to run: slot (ON_*) of the object's scripts.
-    struct Event { slot: usize, object: u32 }
+    // A script to run: slot (ON_*) of the object's scripts. `value` is the hit points an OnDamage
+    // script is about to lose or gain (GetLastHPChange).
+    struct Event { slot: usize, object: u32, value: i32 }
 
     // An animation for the host to play on an object's models (SWMG_PlayAnimation / RemoveAnimation).
-    struct Request { object: u32, name: [28]u8, name_len: usize, looping: bool, queue: bool, overlay: bool, remove: bool }
+    // `gun` is -1 for the object's own models, or the bank whose gun model should play it.
+    struct Request { object: u32, name: [28]u8, name_len: usize, looping: bool, queue: bool, overlay: bool, remove: bool, gun: i32 }
 
-    // The player's controls this step: axes in [-1, 1] and the fire key.
-    struct Input { x: f32, y: f32, fire: bool }
+    // The player's controls this step: axes in [-1, 1] (right, up), the fire key, and the mouse's
+    // counts since the last step (the turret's aim).
+    struct Input { x: f32, y: f32, fire: bool, aim_x: f32, aim_y: f32 }
 
     struct Run {
         area: *mut Area,
@@ -63,8 +67,14 @@ namespace mg {
         events: [64]Event, event_count: usize,
         requests: [64]Request, request_count: usize,
         last_follower_hit: u32, last_obstacle_hit: u32, last_hp_change: i32,
+        last_bullet_damage: i32, last_bullet_target: u32, last_bullet_shooter: u32,
         blur_on: bool, blur_ratio: f32,
         started: bool,
+        // the turret (turret.ctx)
+        gears: []mut Gear,              // by object slot: the player's and each enemy's models' gun mounts and hit meshes
+        bullets: [96]Bullet, bullet_serial: u32,
+        sounds: [32]Sound, sound_count: usize,
+        rng: u32,
     }
 
     fn id_of { n: usize } -> u32 { return ID_BASE + @as(u32, n) }
@@ -82,6 +92,7 @@ namespace mg {
             kind = ObjKind::none, index = 0, name = resref::empty{}, hit_points = 1, max_hit_points = 1, sphere = 1.0, num_loops = -1,
             invincible = 0.0, dead = false, removed = false, remove_at = 0.0, trigger = false, rail = -1, t = 0.0,
             origin = math::vec3::zero{}, position = math::vec3::zero{}, bounds = math::aabb::empty{},
+            guns = [no_gun{}; 4],
         }
     }
 
@@ -148,11 +159,18 @@ namespace mg {
             offset = math::vec3::zero{}, velocity = math::vec3::zero{}, origin = math::vec3::zero{},
             tunnel_pos = area.player.tunnel_pos, tunnel_neg = area.player.tunnel_neg, tunnel_infinite = area.player.tunnel_infinite,
             lateral_accel = area.lateral_accel, invincibility = area.player.invincibility,
-            input = Input{ x = 0.0, y = 0.0, fire = false }, fire_cooldown = 0.0,
-            events = [Event{ slot = 0, object = 0 }; 64], event_count = 0,
-            requests = [Request{ object = 0, name = [0; 28], name_len = 0, looping = false, queue = false, overlay = false, remove = false }; 64], request_count = 0,
-            last_follower_hit = 0, last_obstacle_hit = 0, last_hp_change = 0, blur_on = false, blur_ratio = 0.75, started = false,
+            input = Input{ x = 0.0, y = 0.0, fire = false, aim_x = 0.0, aim_y = 0.0 }, fire_cooldown = 0.0,
+            events = [Event{ slot = 0, object = 0, value = 0 }; 64], event_count = 0,
+            requests = [Request{ object = 0, name = [0; 28], name_len = 0, looping = false, queue = false, overlay = false, remove = false, gun = -1 }; 64], request_count = 0,
+            last_follower_hit = 0, last_obstacle_hit = 0, last_hp_change = 0,
+            last_bullet_damage = 0, last_bullet_target = 0, last_bullet_shooter = 0, blur_on = false, blur_ratio = 0.75, started = false,
+            gears = slice::empty(Gear){}, bullets = [no_bullet{}; 96], bullet_serial = 0,
+            sounds = [Sound{ name = resref::empty{}, volume = 0.0, positional = false, position = math::vec3::zero{} }; 32], sound_count = 0,
+            rng = 0x2545F491,
         }
+        let gears = try alloc::resize(Gear, S){ realloc, &heap, mem = slice::empty(Gear){}, count = 1 + area.enemies.len }
+        run.gears = gears
+        gears[0] = try make_gear(S){ realloc, &heap, f = &area.player, lookup }
         let mut nrails: usize = 0
         // the player on its track
         let pf = area.player
@@ -193,6 +211,7 @@ namespace mg {
                 }
             }
             run.objs[run.count] = follower_obj{ kind = ObjKind::enemy, index = i, f, origin, rail }
+            gears[run.count] = try make_gear(S){ realloc, &heap, f = &area.enemies[i], lookup }
             run.count = run.count + 1
             i = i + 1
         }
@@ -247,7 +266,7 @@ namespace mg {
         while i < run.count {
             let o = &run.objs[i]
             if o.kind == ObjKind::player {
-                o.position = math::mat4::get_translation{ m = player_matrix{ run = &run } }
+                o.position = math::mat4::get_translation{ m = if run.area.kind == TURRET { follower_matrix{ run = &run, o } } else { player_matrix{ run = &run } } }
             } else if o.kind == ObjKind::enemy {
                 o.position = math::mat4::get_translation{ m = follower_matrix{ run = &run, o } }
             }
@@ -258,8 +277,12 @@ namespace mg {
     // ---- events and requests
 
     fn push_event { mut run: Run, slot: usize, object: u32 } {
+        push_event_value{ &run, slot, object, value = 0 }
+    }
+
+    fn push_event_value { mut run: Run, slot: usize, object: u32, value: i32 } {
         if run.event_count >= MAX_EVENTS { return }
-        run.events[run.event_count] = Event{ slot, object }
+        run.events[run.event_count] = Event{ slot, object, value }
         run.event_count = run.event_count + 1
     }
 
@@ -278,7 +301,7 @@ namespace mg {
 
     fn push_request { mut run: Run, object: u32, name: []u8, looping: bool, queue: bool, overlay: bool, remove: bool } {
         if run.request_count >= MAX_REQUESTS { return }
-        let mut r = Request{ object, name = [0; 28], name_len = 0, looping, queue, overlay, remove }
+        let mut r = Request{ object, name = [0; 28], name_len = 0, looping, queue, overlay, remove, gun = -1 }
         let n = if name.len < 28 { name.len } else { 28 }
         let mut i: usize = 0
         while i < n {
@@ -288,6 +311,13 @@ namespace mg {
         r.name_len = n
         run.requests[run.request_count] = r
         run.request_count = run.request_count + 1
+    }
+
+    // An animation for the gun model of one of the object's banks (`fire`, `ready`).
+    fn push_gun_request { mut run: Run, object: u32, bank: usize, name: []u8, queue: bool } {
+        let before = run.request_count
+        push_request{ &run, object, name, looping = false, queue, overlay = false, remove = false }
+        if run.request_count > before { run.requests[before].gun = @as(i32, bank) }
     }
 
     fn take_request { mut run: Run } -> ?Request {
@@ -322,23 +352,39 @@ namespace mg {
         if o.hit_points <= 0 and not o.dead {
             o.dead = true
             push_event{ &run, slot = ON_DEATH, object = id_of{ n } }
+        } else if run.last_hp_change < 0 and o.hit_points > 0 {
+            // a hit that doesn't kill shows: `damage`, then back to `Ready_01`
+            push_request{ &run, object = id_of{ n }, name = "damage", looping = false, queue = false, overlay = false, remove = false }
+            push_request{ &run, object = id_of{ n }, name = "Ready_01", looping = false, queue = true, overlay = false, remove = false }
         }
     }
 
-    // Plays `die` on the object's models and takes it away a little later.
+    // Plays the death sound and `die` on the object's models and takes it away when the
+    // animation has run (a turret's fighters: as long as their models' `die`; a race's pads go
+    // sooner, being passed).
     fn default_death { mut run: Run, n: usize } {
         let o = &run.objs[n]
         o.dead = true
-        o.remove_at = run.time + 1.0
+        let length = if run.area.kind == TURRET and n < run.gears.len and run.gears[n].die_length > 0.0 { run.gears[n].die_length } else { 1.0 }
+        o.remove_at = run.time + length
         push_request{ &run, object = id_of{ n }, name = "die", looping = false, queue = false, overlay = false, remove = false }
+        if o.kind == ObjKind::enemy or o.kind == ObjKind::player {
+            let f = follower_of{ run = &run, n }
+            push_sound{ &run, name = f.death_sound, volume = 1.0, positional = o.kind == ObjKind::enemy, position = o.position }
+        }
     }
 
     // A change of hit points from outside (a bullet, a script): the OnDamage script decides, or the default.
     fn damage_object { mut run: Run, n: usize, delta: i32 } {
-        run.last_hp_change = delta
         let mut object = id_of{ n }
         let script = script_of{ run = &run, slot = ON_DAMAGE, object }
-        if resref::is_empty{ r = script } { default_damage{ &run, n } } else { push_event{ &run, slot = ON_DAMAGE, object } }
+        if resref::is_empty{ r = script } {
+            run.last_hp_change = delta
+            default_damage{ &run, n }
+        } else {
+            run.last_hp_change = delta
+            push_event_value{ &run, slot = ON_DAMAGE, object, value = delta }
+        }
     }
 
     // ---- stepping
@@ -380,18 +426,15 @@ namespace mg {
         let a = run.area
         let movement = a.movement_per_sec
         if movement <= 0.0 { return }
+        if a.kind == TURRET {
+            step_aim{ &run, dt }
+            return
+        }
         let ux = math::clamp{ x = run.input.x, lo = -1.0, hi = 1.0 }
-        let uy = math::clamp{ x = run.input.y, lo = -1.0, hi = 1.0 }
         let sx = step_axis{ x = run.offset.x, v = run.velocity.x, u = ux, lateral = run.lateral_accel, movement, inertia = a.use_inertia, dt }
         let cx = clamp_axis{ x = sx[0], v = sx[1], pos = run.tunnel_pos.x, neg = run.tunnel_neg.x, origin = run.origin.x, infinite = run.tunnel_infinite[0] }
         run.offset.x = cx[0]
         run.velocity.x = cx[1]
-        if a.kind == TURRET {
-            let sz = step_axis{ x = run.offset.z, v = run.velocity.z, u = uy, lateral = run.lateral_accel, movement, inertia = a.use_inertia, dt }
-            let cz = clamp_axis{ x = sz[0], v = sz[1], pos = run.tunnel_pos.z, neg = run.tunnel_neg.z, origin = run.origin.z, infinite = run.tunnel_infinite[2] }
-            run.offset.z = cz[0]
-            run.velocity.z = cz[1]
-        }
     }
 
     // Starts a run: the scripts' OnCreate.
@@ -431,12 +474,17 @@ namespace mg {
             i = i + 1
         }
         if run.fire_cooldown > 0.0 { run.fire_cooldown = run.fire_cooldown - dt }
-        collide{ &run }
-        // the player's fire key: OnFire, at the first bank's rate
-        if run.input.fire and run.fire_cooldown <= 0.0 {
-            let rate = if run.area.player.bank_count > 0 { run.area.player.banks[0].rate_of_fire } else { 0.0 }
-            run.fire_cooldown = rate
-            push_event{ &run, slot = ON_FIRE, object = id_of{ n = PLAYER } }
+        if run.area.kind == TURRET {
+            // guns, bullets and hits instead of pads and obstacles
+            step_turret{ &run, dt }
+        } else {
+            collide{ &run }
+            // the player's fire key: OnFire, at the first bank's rate
+            if run.input.fire and run.fire_cooldown <= 0.0 {
+                let rate = if run.area.player.bank_count > 0 { run.area.player.banks[0].rate_of_fire } else { 0.0 }
+                run.fire_cooldown = rate
+                push_event{ &run, slot = ON_FIRE, object = id_of{ n = PLAYER } }
+            }
         }
         // heartbeats: every object with the script
         i = 0

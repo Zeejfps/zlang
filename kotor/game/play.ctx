@@ -2,8 +2,9 @@
 // camera, the frame drawn; live, or headless with a fixed step, scripted input and screenshots.
 namespace play {
     // One scripted input line: `FRAME down KEY`, `FRAME up KEY`, and for tests `FRAME warp TAG`
-    // (the leader jumps next to the object) and `FRAME use TAG` (the leader's default action on it).
-    enum Command: u8 { down, up, warp, warpxy, use, newgame, ui, save, load, attack, talk, hush, drop }
+    // (the leader jumps next to the object), `FRAME use TAG` (the leader's default action on it) and
+    // `FRAME gunner` (a bot aims and fires the turret, game/minigame_scene.ctx).
+    enum Command: u8 { down, up, warp, warpxy, use, newgame, ui, save, load, attack, talk, hush, drop, gunner }
     struct Scripted { frame: u64, command: Command, key: []u8 }
 
     fn run { mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut mem: Mem, opts: options::Options } -> !i32 {
@@ -65,6 +66,7 @@ namespace play {
         let mut mg_models = mdl_cache::new{ rm = w.rm.*, keep = w.mod_arena }
         _ = try mg_game::enter{ &w, models = &mg_models }
         let mut mg_stage = mg_game::make_stage{}
+        let mut mg_mouse = mg_game::make_mouse{}
         // HOOK(ingame): the HUD and the in-game menus (docs/design/hud.md).
         let ui = try ingame::make{ &w, &dev, mixer, scratch = texture_scratch, width = @as(i32, opts.width), height = @as(i32, opts.height) }
         if not opts.headless { _ = sdl::SDL_ShowCursor{ &sdl, toggle = 0 } }    // HOOK(ingame): the GUI draws the pointer
@@ -87,6 +89,7 @@ namespace play {
             // 1. Input: the window's events, or the script's lines for this frame.
             while true {
                 let e = sdl::poll{ &sdl } ifnull { break }
+                if mg_game::active{ w = &w } and mg_game::handle_event{ m = &mg_mouse, ev = e } { continue }    // HOOK(minigames)
                 if dlgview::handle_event{ v = &dview, g = &ui.gui, ev = e, scale_x = 1.0, scale_y = 1.0 } { continue }
                 if ingame::handle_event{ ui, &w, &dev, ev = e, scale_x = 1.0, scale_y = 1.0 } { continue }    // HOOK(ingame)
                 match e {
@@ -110,6 +113,7 @@ namespace play {
                     use => { use_tagged{ &w, tag = s.key } }
                     attack => { attack_tagged{ &w, tag = s.key } }
                     newgame => {}
+                    gunner => { mg_mouse.auto = true }
                     talk => { talk_to{ &w, &vm, engine, text = s.key } }
                     hush => { dlg::abort{ &w, &vm, engine } }
                     drop => { drop_item{ &w, template = s.key } }
@@ -174,7 +178,7 @@ namespace play {
                 // No saving in a minigame (modulesave.2da keeps none of them).
                 want_save = ""
                 w.autosave_due = false
-                let leaving = try mg_game::frame{ &sdl, &w, &vm, engine, &dev, &frame, &sc, stage = &mg_stage, &amb, mixer, adev, silent, rate, opts, keys, dt, frame_no, shot_heap = &scene_arena }
+                let leaving = try mg_game::frame{ &sdl, &w, &vm, engine, &dev, &frame, &sc, stage = &mg_stage, &amb, mixer, adev, silent, rate, opts, keys, mouse = &mg_mouse, dt, frame_no, shot_heap = &scene_arena }
                 if not leaving { continue }
             }
             // 3-6. The world.
@@ -474,7 +478,8 @@ namespace play {
                 else if ci::eq{ a = what, b = "use" } { Command::use } else if ci::eq{ a = what, b = "newgame" } { Command::newgame }
                 else if ci::eq{ a = what, b = "ui" } { Command::ui } else if ci::eq{ a = what, b = "save" } { Command::save } else if ci::eq{ a = what, b = "talk" } { Command::talk }
                 else if ci::eq{ a = what, b = "load" } { Command::load } else if ci::eq{ a = what, b = "attack" } { Command::attack }
-                else if ci::eq{ a = what, b = "hush" } { Command::hush } else if ci::eq{ a = what, b = "drop" } { Command::drop } else { Command::up }
+                else if ci::eq{ a = what, b = "hush" } { Command::hush } else if ci::eq{ a = what, b = "drop" } { Command::drop }
+                else if ci::eq{ a = what, b = "gunner" } { Command::gunner } else { Command::up }
             // `ui`, `talk`, `load` and `save` take the rest of the line; the others one word.
             let key = if command == Command::ui or command == Command::load or command == Command::save or command == Command::talk { text::rest{ words } } else { text::next_word{ &words } ifnull "" }
             try list::push{ list = &out, item = Scripted{ frame = @as(u64, text::scan_decimal{ s = f }), command, key } }
