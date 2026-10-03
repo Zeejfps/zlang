@@ -309,7 +309,11 @@ namespace ambience {
         let s = obj::sound{ o } ifnull { return }
         if not s.active or s.sounds.len == 0 { return }
         if s.continuous {
-            if p.playing and mix::is_playing{ m = a.m, h = p.handle } { return }
+            if p.playing and mix::is_playing{ m = a.m, h = p.handle } {
+                // A script changing the pitch of a running loop (the swoop engine sounds follow the gears).
+                if s.fixed_variance > 0.0 { mix::set_pitch{ m = a.m, h = p.handle, pitch = s.fixed_variance } }
+                return
+            }
             if s.positional and math::vec3::distance{ a = o.position, b = a.listener } > s.max_distance + 2.0 { return }
             p.handle = start_one{ &a, &w, s, o, index = 0, looping = true }
             p.playing = mix::is_playing{ m = a.m, h = p.handle }

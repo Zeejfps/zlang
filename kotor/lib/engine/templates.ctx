@@ -100,6 +100,10 @@ namespace tmpl {
         o.min_one_hp = flag{ doc, s, label = "Min1HP", default = o.min_one_hp }
         o.faction = @trunc(u32, number{ doc, s, label = "Faction", default = number{ doc, s, label = "FactionID", default = @as(i64, o.faction) } })
         o.commandable = flag{ doc, s, label = "Commandable", default = o.commandable }
+        // GetTrapBaseType: the traps.2da row of a trap the blueprint sets (TrapFlag).
+        if gff::get_number{ doc = doc.*, s, label = "TrapFlag" } != null {
+            o.ctx.trap_type = if flag{ doc, s, label = "TrapFlag", default = false } { @trunc(i32, number{ doc, s, label = "TrapType", default = -1 }) } else { -1 }
+        }
         read_locals{ doc, s, o }
     }
 
