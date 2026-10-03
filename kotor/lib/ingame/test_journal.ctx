@@ -1,9 +1,98 @@
-// Headless test commands for the journal and messages panels: `FRAME ui COMMAND ARGS` lines the input script
-// does not know (lib/ingame/script.ctx) come here. Give a panel something to show that the game
-// does not have yet (items in the inventory, a journal entry, a second party member's data) and
-// document each command in a comment. Returns true when it handled the command.
+// Headless test commands for the journal and messages panels: `FRAME ui COMMAND ARGS` lines the
+// input script does not know (lib/ingame/script.ctx) come here. The game keeps no journal yet and
+// nothing writes the message log from a script, so these give the panels something to show:
+//
+//   FRAME ui journal add TAG ID       the quest TAG moves to the entry with this ID (any direction)
+//   FRAME ui journal complete TAG     ... to the first entry that ends the quest (it turns completed)
+//   FRAME ui journal remove TAG       RemoveJournalQuestEntry
+//   FRAME ui journal fill N           the first N quests of global.jrl, each at its first entry
+//   FRAME ui journal list             print every quest with its state
+//   FRAME ui log TEXT...              a feedback line in the message log
+//   FRAME ui dialog TEXT...           a dialogue line ("Speaker: text" as the original shows it)
+//   FRAME ui logred TEXT...           a feedback line of the red kind (combat results)
+//
+// A quest added or moved while its list is open shows at once; one added is "new" until looked at.
 namespace test_journal {
     fn run { mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device, cmd: []u8, args: []u8 } -> bool {
-        return false
+        if ci::eq{ a = cmd, b = "log" } {
+            hud::log_add{ log = &ui.log, text = args, kind = hud::LOG_FEEDBACK }
+            return true
+        }
+        if ci::eq{ a = cmd, b = "logred" } {
+            hud::log_add{ log = &ui.log, text = args, kind = messages_panel::KIND_FEEDBACK_RED }
+            return true
+        }
+        if ci::eq{ a = cmd, b = "dialog" } {
+            hud::log_add{ log = &ui.log, text = args, kind = hud::LOG_DIALOG }
+            return true
+        }
+        if not ci::eq{ a = cmd, b = "journal" } { return false }
+        run_journal{ &ui, &w, args }
+        return true
+    }
+
+    fn run_journal { mut ui: ingame::Ingame, mut w: world::World, args: []u8 } {
+        ensure_loaded{ &ui, &w } iferr err{ error } {
+            _ = @fmt(&w.io, "journal: global.jrl: {}\n", error)
+            return
+        }
+        let jrl = ui.menus.journal.jrl ifnull { return }
+        let jn = journal_panel::journal_of{ s = &ui.menus.journal, w = &w }
+        let mut words = text::words{ s = args }
+        let sub = text::next_word{ &words } ifnull { return }
+        let day = game_day{ c = w.clock }
+        let time = game_time{ c = w.clock }
+        if ci::eq{ a = sub, b = "add" } {
+            let tag = text::next_word{ &words } ifnull { return }
+            let id = text::scan_decimal{ s = text::next_word{ &words } ifnull "0" }
+            _ = journal::set_state{ j = jn, tag, state = @trunc(i32, id), allow_lower = true, day, time }
+        } else if ci::eq{ a = sub, b = "complete" } {
+            let tag = text::next_word{ &words } ifnull { return }
+            let cat = journal::find_category{ jrl, tag } ifnull {
+                _ = @fmt(&w.io, "journal: no quest {}\n", tag)
+                return
+            }
+            let mut k: usize = 0
+            while k < jrl.categories[cat].count {
+                let e = jrl.entries[jrl.categories[cat].first + k]
+                k = k + 1
+                if e.end {
+                    _ = journal::set_state{ j = jn, tag, state = @as(i32, e.id), allow_lower = true, day, time }
+                    break
+                }
+            }
+        } else if ci::eq{ a = sub, b = "remove" } {
+            let tag = text::next_word{ &words } ifnull { return }
+            journal::remove{ j = jn, tag }
+        } else if ci::eq{ a = sub, b = "fill" } {
+            let n = @as(usize, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+            let mut i: usize = 0
+            while i < n and i < jrl.category_count {
+                let c = jrl.categories[i]
+                i = i + 1
+                if c.count == 0 { continue }
+                _ = journal::set_state{ j = jn, tag = c.tag[..c.tag_len], state = @as(i32, jrl.entries[c.first].id), allow_lower = true, day, time }
+            }
+        } else if ci::eq{ a = sub, b = "list" } {
+            let mut i: usize = 0
+            while i < jn.count {
+                _ = @fmt(&w.io, "journal: {} state {} new {}\n", journal::tag_at{ j = jn, i }, jn.quests[i].state, jn.quests[i].new)
+                i = i + 1
+            }
+        }
+    }
+
+    // global.jrl and planetary.2da, read when a command first needs them (the panel does the same).
+    fn ensure_loaded { mut ui: ingame::Ingame, mut w: world::World } -> ! {
+        try journal_panel::ensure_loaded{ s = &ui.menus.journal, &w }
+    }
+
+    // The game clock as the journal stamps changes: a day number and the milliseconds into the day.
+    fn game_day { c: clock::Clock } -> u32 {
+        return ((c.year * 12 + c.month - 1) * 28) + c.day - 1
+    }
+
+    fn game_time { c: clock::Clock } -> u32 {
+        return @trunc(u32, clock::now_ms{ c }) + (c.hour * 60 + c.minute) * 60000
     }
 }
