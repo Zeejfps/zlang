@@ -27,9 +27,12 @@ namespace hud {
         panel: u32,
         file_w: i32, file_h: i32,           // the HUD file's design size
         widgets: [3]Widget,
-        block: [16]BlockPart,
-        block_count: usize,
+        block: [16]BlockPart,               // by BLOCK_TAGS
         minimap: MiniMap,
+        shown_target: u32,                  // the target the block was built for
+        lists: [3]ActionList,               // the block's slots
+        pressed: u32,                       // the object under the pointer when the button went down
+        projector: Projector,               // this frame's, for picking and the reticle
     }
 
     // The HUD controls of the floating target block.
@@ -64,8 +67,10 @@ namespace hud {
         let mut h = Hud{
             panel, file_w, file_h,
             widgets = [Widget{ id = obj::INVALID, portrait = 0, hp = -1, hp_max = -1, fp = -1, fp_max = -1, level = -1, down = false }; 3],
-            block = [BlockPart{ index = -1, x = 0, y = 0 }; 16], block_count = 0,
+            block = [BlockPart{ index = -1, x = 0, y = 0 }; 16],
             minimap = open_minimap{ &g, &w, &dev, panel },
+            shown_target = obj::INVALID, lists = [empty_list{}; 3], pressed = obj::INVALID,
+            projector = Projector{ vp = math::mat4::identity{}, eye = math::vec3::zero{}, w = 1.0, h = 1.0 },
         }
         let mut i: usize = 0
         while i < STARTS_HIDDEN.len {
@@ -84,8 +89,7 @@ namespace hud {
             let ci = gui::find_by_tag{ p, tag = BLOCK_TAGS[i] }
             if ci >= 0 {
                 let c = list::at{ list = p.controls, i = @as(usize, ci) }
-                h.block[h.block_count] = BlockPart{ index = ci, x = c.x, y = c.y }
-                h.block_count = h.block_count + 1
+                h.block[i] = BlockPart{ index = ci, x = c.x, y = c.y }
             }
             i = i + 1
         }
@@ -166,11 +170,19 @@ namespace hud {
     // Adds the HUD's own passes to the frame, before the panels (the minimap's target).
     fn draw { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame } {
         draw_minimap{ mm = &h.minimap, &g, &w, &dev, &frame, panel = h.panel }
+        draw_reticle{ &h, &g, &w, &dev, &frame }
     }
 
-    // One frame: everything the HUD shows that the world decides.
-    fn update { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, mut text: utf8::Builder(heap::Heap), dt: f32 } {
+    // One frame: everything the HUD shows that the world decides. `blocked` says a menu or
+    // modal panel is up, so the world under it is not picked.
+    fn update {
+        mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, mut text: utf8::Builder(heap::Heap),
+        camera: cam::Camera, aspect: f32, blocked: bool, dt: f32,
+    } {
+        h.projector = make_projector{ camera, ui_w = g.ui_w, ui_h = g.ui_h, aspect }
         update_party{ &h, &g, &w, &dev, &text }
+        update_hover{ &h, &g, &w, blocked }
+        update_block{ &h, &g, &w, &dev }
     }
 
     // Portraits, vitality and Force bars, level-up and down marks of the party members.

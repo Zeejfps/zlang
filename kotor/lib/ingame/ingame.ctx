@@ -49,16 +49,51 @@ namespace ingame {
 
     // Offers a platform event to the interface; true when it used it, so the game does not also
     // treat it as a key or a world click.
-    fn handle_event { mut ui: Ingame, ev: sdl::Event, scale_x: f32, scale_y: f32 } -> bool {
-        return gui::handle_event{ g = &ui.gui, ev, scale_x, scale_y }
+    fn handle_event { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, ev: sdl::Event, scale_x: f32, scale_y: f32 } -> bool {
+        if gui::handle_event{ g = &ui.gui, ev, scale_x, scale_y } { return true }
+        if is_blocked{ &ui } { return false }
+        // Past the GUI: the pointer and the keys that act on the world's objects.
+        match ev {
+            mouse_button{ down, button, x, y } => {
+                if button != sdl::BUTTON_LEFT { return false }
+                let ux = gui::to_ui{ v = x, s = scale_x, scale = ui.gui.scale }
+                let uy = gui::to_ui{ v = y, s = scale_y, scale = ui.gui.scale }
+                return hud::world_click{ h = &ui.hud, g = &ui.gui, &w, x = ux, y = uy, down }
+            }
+            key{ down, repeat, keycode } => {
+                if not down or repeat { return false }
+                if keycode == 'q' or keycode == 'e' {
+                    hud::cycle_target{ &w, forward = keycode == 'e' }
+                    return true
+                }
+                return false
+            }
+            else => { return false }
+        }
+    }
+
+    // Whether the world should not be picked or clicked: a menu or modal panel is up.
+    fn is_blocked { ui: *Ingame } -> bool {
+        return false
+    }
+
+    // The start of a frame: what the panels said last frame has been seen by now.
+    fn begin_frame { mut ui: Ingame } {
+        gui::clear_events{ g = &ui.gui }
     }
 
     // One frame after the world's: the GUI's clocks, the HUD from the world, then what the panels
     // said.
-    fn update { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, camera: cam::Camera, dt: f32 } {
+    fn update { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, sc: scene::Scene, camera: cam::Camera, dt: f32 } {
         gui::update{ g = &ui.gui, dt }
-        hud::update{ h = &ui.hud, g = &ui.gui, &w, &dev, text = &ui.text, dt }
-        gui::clear_events{ g = &ui.gui }
+        let aspect = @as(f32, ui.width) / @as(f32, ui.height)
+        hud::update{ h = &ui.hud, g = &ui.gui, &w, &dev, text = &ui.text, camera, aspect, blocked = is_blocked{ &ui }, dt }
+        let events = gui::take_events{ g = &ui.gui }
+        let mut i: usize = 0
+        while i < events.len {
+            _ = hud::block_event{ h = &ui.hud, g = &ui.gui, &w, &dev, ev = events[i] }
+            i = i + 1
+        }
     }
 
     // A line of the headless input script after `ui` (play.ctx): `move X Y` puts the pointer
@@ -70,19 +105,56 @@ namespace ingame {
         if ci::eq{ a = cmd, b = "move" } or ci::eq{ a = cmd, b = "click" } {
             let x = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
             let y = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
-            _ = handle_event{ &ui, ev = sdl::Event::mouse_motion{ x, y, dx = 0, dy = 0, buttons = 0 }, scale_x = 1.0, scale_y = 1.0 }
+            send{ &ui, &w, &dev, ev = sdl::Event::mouse_motion{ x, y, dx = 0, dy = 0, buttons = 0 } }
             if ci::eq{ a = cmd, b = "click" } {
-                _ = handle_event{ &ui, ev = sdl::Event::mouse_button{ down = true, button = sdl::BUTTON_LEFT, clicks = 1, x, y }, scale_x = 1.0, scale_y = 1.0 }
-                _ = handle_event{ &ui, ev = sdl::Event::mouse_button{ down = false, button = sdl::BUTTON_LEFT, clicks = 1, x, y }, scale_x = 1.0, scale_y = 1.0 }
+                send{ &ui, &w, &dev, ev = sdl::Event::mouse_button{ down = true, button = sdl::BUTTON_LEFT, clicks = 1, x, y } }
+                send{ &ui, &w, &dev, ev = sdl::Event::mouse_button{ down = false, button = sdl::BUTTON_LEFT, clicks = 1, x, y } }
             }
+        } else if ci::eq{ a = cmd, b = "target" } {
+            // Test helpers: `target TAG` selects the object, `pick` says what is under the pointer.
+            let tag = text::next_word{ &words } ifnull { return }
+            w.target = world::object_by_tag{ w = &w, tag, nth = 0 }
+        } else if ci::eq{ a = cmd, b = "join" } {
+            // Test helper: the object joins the party (the party lead's routines do this in play).
+            let tag = text::next_word{ &words } ifnull { return }
+            _ = party::add{ &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } }
+        } else if ci::eq{ a = cmd, b = "list" } {
+            // Test helper: the selectable objects and where they are on the screen.
+            let all = list::items{ list = w.objects.all }
+            let mut i: usize = 0
+            while i < all.len {
+                let o = all[i]
+                i = i + 1
+                if not hud::is_selectable{ w = &w, id = o.id } { continue }
+                let b = hud::box_on_screen{ p = ui.hud.projector, o }
+                if b != null {
+                    _ = @fmt(&w.io, "  {} {} box {} {} {} {}\n", o.id, o.tag, b.x0, b.y0, b.x1, b.y1)
+                }
+            }
+        } else if ci::eq{ a = cmd, b = "info" } {
+            let o = world::object{ w = &w, id = w.target } ifnull { return }
+            let s = hud::shape_of{ o }
+            _ = @fmt(&w.io, "target {} at {} {} {} shape {} {} {}\n", w.target, o.position.x, o.position.y, o.position.z, s.half_x, s.half_y, s.height)
+            let b = hud::box_on_screen{ p = ui.hud.projector, o }
+            if b != null {
+                _ = @fmt(&w.io, "box {} {} {} {} top {} {}\n", b.x0, b.y0, b.x1, b.y1, b.top.x, b.top.y)
+            }
+        } else if ci::eq{ a = cmd, b = "pick" } {
+            let id = hud::pick_at{ p = ui.hud.projector, w = &w, x = ui.gui.mouse_x, y = ui.gui.mouse_y }
+            _ = @fmt(&w.io, "pick at {} {}: {} {}\n", ui.gui.mouse_x, ui.gui.mouse_y, id, hud::name_of{ w = &w, id })
         } else if ci::eq{ a = cmd, b = "key" } {
             let name = text::next_word{ &words } ifnull { return }
             let code = key_code{ name }
             if code != 0 {
-                _ = handle_event{ &ui, ev = sdl::Event::key{ down = true, repeat = false, scancode = 0, keycode = code, mods = 0 }, scale_x = 1.0, scale_y = 1.0 }
-                _ = handle_event{ &ui, ev = sdl::Event::key{ down = false, repeat = false, scancode = 0, keycode = code, mods = 0 }, scale_x = 1.0, scale_y = 1.0 }
+                send{ &ui, &w, &dev, ev = sdl::Event::key{ down = true, repeat = false, scancode = 0, keycode = code, mods = 0 } }
+                send{ &ui, &w, &dev, ev = sdl::Event::key{ down = false, repeat = false, scancode = 0, keycode = code, mods = 0 } }
             }
         }
+    }
+
+    // A synthetic event, as if the window had delivered it.
+    fn send { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, ev: sdl::Event } {
+        _ = handle_event{ &ui, &w, &dev, ev, scale_x = 1.0, scale_y = 1.0 }
     }
 
     // An SDL keycode by the name scripts use; 0 for an unknown one.

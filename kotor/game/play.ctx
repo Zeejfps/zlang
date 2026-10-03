@@ -64,10 +64,11 @@ namespace play {
             frame_no = frame_no + 1
             if opts.frames > 0 and frame_no > opts.frames { break }
             keys.action = false
+            ingame::begin_frame{ ui }    // HOOK(ingame)
             // 1. Input: the window's events, or the script's lines for this frame.
             while true {
                 let e = sdl::poll{ &sdl } ifnull { break }
-                if ingame::handle_event{ ui, ev = e, scale_x = 1.0, scale_y = 1.0 } { continue }    // HOOK(ingame)
+                if ingame::handle_event{ ui, &w, &dev, ev = e, scale_x = 1.0, scale_y = 1.0 } { continue }    // HOOK(ingame)
                 match e {
                     quit | close => { quit = true }
                     key{ down, repeat, keycode } => {
@@ -137,7 +138,7 @@ namespace play {
             let pc = world::object{ w = &w, id = w.pc }
             let room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
             scene::update_visibility{ &sc, w = &w, room }
-            ingame::update{ ui, &w, &dev, camera, dt }    // HOOK(ingame)
+            ingame::update{ ui, &w, &dev, sc, camera, dt }    // HOOK(ingame)
             // 11. Sound at the camera.
             ambience::update{ a = &amb, &w, eye = camera.eye, forward = camera.dir, dt }
             match adev {
