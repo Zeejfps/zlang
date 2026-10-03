@@ -1,0 +1,60 @@
+// What the panels' events do (docs/re/chargen.md).
+namespace chargen {
+    // Class selection's six slots, left to right: class (classes.2da row), gender, the description's
+    // strref (0x007a2684).
+    const SLOT_CLASS: [SLOTS]i32 = [2, 1, 0, 0, 1, 2]
+    const SLOT_GENDER: [SLOTS]i32 = [0, 0, 0, 1, 1, 1]
+    const SLOT_DESC: [SLOTS]u32 = [32109, 32110, 32111, 32111, 32110, 32109]
+
+    fn tag_is { ev: gui::Event, tag: []u8 } -> bool {
+        return slice::eq_bytes{ a = ev.tag, b = tag }
+    }
+
+    // The slot a BTN_SELn tag names (0 based), -1 for another tag.
+    fn slot_of { tag: []u8 } -> i32 {
+        if tag.len != 8 or not slice::eq_bytes{ a = tag[..7], b = "BTN_SEL" } { return -1 }
+        let d = tag[7]
+        if d < '1' or d > '6' { return -1 }
+        return @as(i32, d - '1')
+    }
+
+    // "Male Scout": the gender word and the class name, joined.
+    fn show_class_name { st: *mut State, mut g: gui::Gui, p: u32, slot: i32 } -> ! {
+        let s = @as(usize, slot)
+        let gender = try gui::tlk_text{ &g, strref = if SLOT_GENDER[s] == 1 { 647 } else { 646 } }
+        defer gui::free_string{ &g, s = gender }
+        let class = try gui::tlk_text{ &g, strref = @as(u32, st.tables.classes[@as(usize, SLOT_CLASS[s])].name) }
+        defer gui::free_string{ &g, s = class }
+        let mut buf: [96]u8
+        let mut n = frontend::copy_into{ dst = buf[..], src = gender }
+        n = n + frontend::copy_into{ dst = buf[n..], src = " " }
+        n = n + frontend::copy_into{ dst = buf[n..], src = class }
+        try gui::set_text{ &g, panel = p, tag = "LBL_CLASS", text = buf[..n] }
+        try gui::set_strref{ &g, panel = p, tag = "LBL_DESC", strref = SLOT_DESC[s] }
+    }
+
+    // One event from the GUI.
+    fn on_event { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> Outcome {
+        let screen = screen_of{ st, panel = ev.panel }
+        if screen == 0 { return Outcome::running }
+        if screen == SCR_CLASS { return class_event{ st, &g, &fs, &dev, ev } }
+        return Outcome::running
+    }
+
+    fn class_event { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> Outcome {
+        let p = ev.panel
+        if ev.kind == gui::EventKind::cancel { return Outcome::cancelled }
+        let slot = slot_of{ tag = ev.tag }
+        if ev.kind == gui::EventKind::hilight and slot >= 0 {
+            show_class_name{ st, &g, p, slot } iferr {}
+        } else if ev.kind == gui::EventKind::activate {
+            if tag_is{ ev, tag = "BTN_BACK" } { return Outcome::cancelled }
+            if slot >= 0 {
+                st.ch.slot = slot
+                st.ch.class = SLOT_CLASS[@as(usize, slot)]
+                st.ch.gender = SLOT_GENDER[@as(usize, slot)]
+            }
+        }
+        return Outcome::running
+    }
+}

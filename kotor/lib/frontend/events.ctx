@@ -271,8 +271,40 @@ namespace frontend {
         try bind_screen{ &fe, &g, &fs, &dev, screen, p }
     }
 
+    // ---- character generation (lib/chargen)
+
+    fn new_game_outcome { fe: *Front, player: []u8 } -> Outcome {
+        return Outcome::new_game{ module = resref::truncate{ name = fe.start_module[..fe.start_len] }, player }
+    }
+
+    // New Game: the original makes the player before it loads the first module. Without the data
+    // for it (or when it fails) the game starts at once with the engine's default player.
+    fn begin_chargen { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } -> Outcome {
+        let seed = @as(u32, g.time * 1000.0)
+        let st = chargen::begin{ &fs, &g, &dev, heap = fe.heap, seed } iferr { return new_game_outcome{ &fe, player = slice::empty(u8){} } }
+        fe.cg = st
+        return Outcome::running
+    }
+
+    fn end_chargen { mut fe: Front, mut g: gui::Gui, mut dev: gpu::Device } {
+        let st = fe.cg ifnull { return }
+        chargen::free{ st, &g, &dev }
+        fe.cg = null
+    }
+
+    // An event while the character generation panels are up. Finished hands the character on;
+    // cancelled leaves the main menu as it was.
+    fn chargen_event { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> Outcome {
+        let st = fe.cg ifnull { return Outcome::running }
+        let o = chargen::on_event{ st, &g, &fs, &dev, ev }
+        if o is finished { return new_game_outcome{ &fe, player = st.player } }
+        if o is cancelled { end_chargen{ &fe, &g, &dev } }
+        return Outcome::running
+    }
+
     // One event from the GUI. Returns what the engine should do next.
     fn on_event { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> Outcome {
+        if fe.cg != null { return chargen_event{ &fe, &g, &fs, &dev, ev } }
         let screen = screen_of{ &fe, panel = ev.panel }
         if screen == 0 { return Outcome::running }
         let p = ev.panel
@@ -282,9 +314,7 @@ namespace frontend {
         }
         if screen == SCR_MAIN {
             if ev.kind != gui::EventKind::activate { return Outcome::running }
-            if tag_is{ ev, tag = "BTN_NEWGAME" } {
-                return Outcome::new_game{ module = resref::truncate{ name = fe.start_module[..fe.start_len] } }
-            }
+            if tag_is{ ev, tag = "BTN_NEWGAME" } { return begin_chargen{ &fe, &g, &fs, &dev } }
             if tag_is{ ev, tag = "BTN_LOADGAME" } { open_screen{ &fe, &g, &fs, &dev, screen = SCR_LOAD } iferr {} }
             if tag_is{ ev, tag = "BTN_MOVIES" } { open_screen{ &fe, &g, &fs, &dev, screen = SCR_MOVIES } iferr {} }
             if tag_is{ ev, tag = "BTN_OPTIONS" } { open_screen{ &fe, &g, &fs, &dev, screen = SCR_OPTIONS } iferr {} }

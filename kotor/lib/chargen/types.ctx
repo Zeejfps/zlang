@@ -1,0 +1,50 @@
+// Character generation: the state of one run through the panels (docs/design/chargen.md).
+namespace chargen {
+    // The screens, each a .gui file (docs/re/chargen.md).
+    const SCR_CLASS: u32 = 1            // classsel
+    const SCR_MAIN: u32 = 2             // maincg: the running summary under the step panels
+    const SCR_CHOICE: u32 = 3           // qorcpnl: quick or custom
+    const SCR_QUICK: u32 = 4            // quickpnl: the quick character's three steps
+    const SCR_CUSTOM: u32 = 5           // custpnl: the custom character's six steps
+    const SCR_PORTRAIT: u32 = 6         // portcust
+    const SCR_NAME: u32 = 7             // name
+    const SCR_ABILITIES: u32 = 8        // abchrgen
+    const SCR_SKILLS: u32 = 9           // skchrgen
+    const SCR_FEATS: u32 = 10           // ftchrgen
+    const SCR_CONFIRM: u32 = 11         // a message box over the stack ("Are you sure you want to cancel?")
+
+    const MAX_NAME: usize = 64
+    const SLOTS: usize = 6              // class selection's class and gender choices
+
+    // What the player has chosen so far.
+    struct Choices {
+        slot: i32,                      // class selection's slot (0..5), -1 none yet
+        class: i32,                     // classes.2da row: 0 soldier, 1 scout, 2 scoundrel
+        gender: i32,                    // 0 male, 1 female
+        portrait: i32,                  // portraits.2da row
+        appearance: i32,                // appearance.2da row of the body
+        abil: [6]i32,                   // base scores STR DEX CON INT WIS CHA
+        ability_points: i32,            // point-buy points left
+        skills: [8]i32,                 // ranks bought
+        skill_points: i32,              // skill points left
+        nfeats: i32,
+        feats: [8]i32,                  // feat.2da rows chosen
+        name: [MAX_NAME]u8,
+        name_len: usize,
+        // which steps were completed
+        portrait_done: bool,
+        abilities_done: bool,
+        skills_done: bool,
+        feats_done: bool,
+        name_done: bool,
+    }
+
+    struct Entry { screen: u32, panel: u32 }
+
+    // What the front end does next.
+    union Outcome {
+        running,
+        finished,                       // the player is made: `State.player` holds it
+        cancelled,                      // back to the main menu
+    }
+}

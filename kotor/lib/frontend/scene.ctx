@@ -37,7 +37,7 @@ namespace frontend {
     }
 
     fn update_scene { mut fe: Front, dt: f32 } {
-        if top_screen{ &fe } != SCR_MAIN { return }
+        if fe.cg != null or top_screen{ &fe } != SCR_MAIN { return }
         let ms = fe.scene ifnull { return }
         gui3d::update{ scene = &ms.scene, dt }
     }
@@ -45,7 +45,7 @@ namespace frontend {
     // Adds the scene as a view over the main panel's LBL_3DVIEW rectangle (GUI pixels scaled to
     // the target's pixels) and hides the still picture that stands in for it.
     fn draw_scene { mut fe: Front, mut g: gui::Gui, mut frame: render::Frame, target: render::Size } {
-        if top_screen{ &fe } != SCR_MAIN { return }
+        if fe.cg != null or top_screen{ &fe } != SCR_MAIN { return }
         let ms = fe.scene ifnull { return }
         let panel = top_panel{ &fe }
         let r = gui::control_rect{ &g, panel, tag = "LBL_3DVIEW" } ifnull { return }

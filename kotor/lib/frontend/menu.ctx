@@ -20,7 +20,7 @@ namespace frontend {
     // What the engine does next.
     union Outcome {
         running,                                            // keep stepping
-        new_game{ module: resref::ResRef },                 // start this module as a new game
+        new_game{ module: resref::ResRef, player: []u8 },   // start this module as a new game; `player` is the created character (a UTC-shaped GFF, empty: none)
         load_game{ folder: [64]u8, folder_len: usize },     // load the save in this folder of Saves/
         quit,
     }
@@ -57,6 +57,8 @@ namespace frontend {
         // the 3D background of the main menu
         scene: ?*mut MenuScene,
         scene_failed: bool,
+        // character generation, while the player is making a character
+        cg: ?*mut chargen::State,
         // the menu's music
         music: mix::Handle,
         music_bytes: []mut u8,
@@ -76,7 +78,7 @@ namespace frontend {
             snapshot = default_settings{},
             stage = 0, queue = [[0; 24]; 4], queue_lens = [0; 4], queue_count = 0, queue_at = 0,
             player = null, tables = null, audio_clock = true, from_menu = false,
-            scene = null, scene_failed = false,
+            scene = null, scene_failed = false, cg = null,
             music = mix::Handle{ slot = 0, id = 0 }, music_bytes = slice::empty(u8){}, music_started = false,
             hint_game = 0, hint_story = 0,
         }

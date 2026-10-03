@@ -1,0 +1,65 @@
+// Character generation as the front end drives it (docs/design/chargen.md):
+//
+//   let st = try chargen::begin{ &fs, &g, &dev, heap = fe.heap }          // loads the rules tables, opens classsel
+//   each frame: for each GUI event: match chargen::on_event{ st, &g, &fs, &dev, ev } { running => {}, finished => ..., cancelled => ... }
+//               chargen::update{ st, dt }
+//               chargen::draw_views{ st, &g, &frame, target }              // the 3D creatures, after the panels
+//   chargen::free{ st, &g, &dev }                                           // frees everything, closes the panels
+//
+// `State.player` holds the finished player creature as the bytes of a UTC-shaped GFF once the
+// outcome is `finished`.
+namespace chargen {
+    struct State {
+        heap: *mut heap::Heap,
+        tables: *mut rules::Tables,
+        stack: [10]Entry,
+        depth: usize,
+        ch: Choices,
+        rng: ltr::Rng,
+        player: alloc::Bytes,               // the finished creature's GFF bytes (heap)
+    }
+
+    // Starts character generation: reads the rules tables and opens the class selection.
+    fn begin { mut fs: Fs, mut g: gui::Gui, mut dev: gpu::Device, heap: *mut heap::Heap, seed: u32 } -> !*mut State {
+        let mut blank: rules::Tables
+        let tables = try alloc::new(rules::Tables, heap::Heap){ realloc = heap::alloc, heap, value = blank }
+        rules::load_tables{ &fs, rm = g.rm, heap = &heap.*, out = &tables.* } iferr err{ error } {
+            alloc::free(rules::Tables, heap::Heap){ realloc = heap::alloc, heap, p = tables }
+            return error
+        }
+        let st = try alloc::new(State, heap::Heap){ realloc = heap::alloc, heap, value = State{
+            heap, tables, stack = [Entry{ screen = 0, panel = 0 }; 10], depth = 0, ch = fresh_choices{},
+            rng = ltr::seed_rng{ seed }, player = slice::empty(u8){},
+        } }
+        try open_screen{ st, &g, &fs, &dev, screen = SCR_CLASS }
+        return st
+    }
+
+    fn update { st: *mut State, dt: f32 } {
+    }
+
+    // The 3D creatures belong over the panels' rectangles; the front end calls it after the GUI.
+    fn draw_views { st: *mut State, mut g: gui::Gui, mut frame: render::Frame, target: render::Size } {
+    }
+
+    // Closes the panels and gives back everything.
+    fn free { st: *mut State, mut g: gui::Gui, mut dev: gpu::Device } {
+        while st.depth > 0 {
+            gui::close{ &g, id = st.stack[st.depth - 1].panel }
+            st.depth = st.depth - 1
+        }
+        free_bytes{ b = st.player, heap = st.heap }
+        rules::free_tables{ out = &st.tables.*, heap = &st.heap.* }
+        alloc::free(rules::Tables, heap::Heap){ realloc = heap::alloc, heap = st.heap, p = st.tables }
+        alloc::free(State, heap::Heap){ realloc = heap::alloc, heap = st.heap, p = st }
+    }
+
+    fn fresh_choices {} -> Choices {
+        let mut c: Choices
+        c.slot = -1
+        c.class = -1
+        c.portrait = -1
+        c.abil = [8; 6]
+        return c
+    }
+}
