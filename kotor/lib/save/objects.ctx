@@ -136,24 +136,34 @@ namespace save {
         try put_byte{ &b, owner = s, label = "PerceptionRange", v = @trunc(u8, c.perception_range) }
         try put_bool{ &b, owner = s, label = "IsPC", v = c.is_pc }
         try put_bool{ &b, owner = s, label = "CreatnScrptFird", v = c.spawn_fired }
-        let labels: [6][]u8 = ["Str", "Dex", "Con", "Int", "Wis", "Cha"]
         let mut k: usize = 0
-        while k < 6 {
-            try put_byte{ &b, owner = s, label = labels[k], v = c.abilities[k] }
-            k = k + 1
-        }
-        try put_short{ &b, owner = s, label = "HitPoints", v = o.hp_max }
-        try put_short{ &b, owner = s, label = "MaxHitPoints", v = o.hp_max }
-        try put_short{ &b, owner = s, label = "CurrentHitPoints", v = o.hp }
-        let classes = try gffw::put_list{ &b, owner = s, label = "ClassList" }
-        k = 0
-        while k < 3 {
-            if c.class_levels[k] > 0 {
-                let e = try gffw::add_element{ &b, list = classes, id = 2 }
-                try put_int{ &b, owner = e, label = "Class", v = @as(i32, c.classes[k]) }
-                try put_short{ &b, owner = e, label = "ClassLevel", v = @as(i32, c.class_levels[k]) }
+        let mut ruled = false
+        if c.fighter is some{ value = f } {
+            if f.loaded {
+                // The rules creature: stats, classes and powers, skills, feats, history, effects.
+                try put_rules_creature{ &b, owner = s, o, c = &f.c }
+                ruled = true
             }
-            k = k + 1
+        }
+        if not ruled {
+            let labels: [6][]u8 = ["Str", "Dex", "Con", "Int", "Wis", "Cha"]
+            while k < 6 {
+                try put_byte{ &b, owner = s, label = labels[k], v = c.abilities[k] }
+                k = k + 1
+            }
+            try put_short{ &b, owner = s, label = "HitPoints", v = o.hp_max }
+            try put_short{ &b, owner = s, label = "MaxHitPoints", v = o.hp_max }
+            try put_short{ &b, owner = s, label = "CurrentHitPoints", v = o.hp }
+            let classes = try gffw::put_list{ &b, owner = s, label = "ClassList" }
+            k = 0
+            while k < 3 {
+                if c.class_levels[k] > 0 {
+                    let e = try gffw::add_element{ &b, list = classes, id = 2 }
+                    try put_int{ &b, owner = e, label = "Class", v = @as(i32, c.classes[k]) }
+                    try put_short{ &b, owner = e, label = "ClassLevel", v = @as(i32, c.class_levels[k]) }
+                }
+                k = k + 1
+            }
         }
         try put_script{ &b, owner = s, o, label = "ScriptHeartbeat", slot = obj::Slot::heartbeat }
         try put_script{ &b, owner = s, o, label = "ScriptOnNotice", slot = obj::Slot::notice }

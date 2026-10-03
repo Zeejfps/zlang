@@ -118,6 +118,8 @@ namespace fight {
         if gff::get_list{ doc = doc.*, s, label = "ClassList" } == null { return }
         let f = c.fighter ifnull { return }
         rules::read_creature{ tables = w.rules, doc, s, out = &f.c }
+        // A saved creature's effects (rules::read_creature leaves them to the engine).
+        save::read_effect_list{ doc, s, c = &f.c }
         f.loaded = true
     }
 
@@ -195,6 +197,12 @@ namespace fight {
         if f.c.stats.max_hp > 0 {
             o.hp_max = f.c.stats.max_hp
             if o.hp > o.hp_max { o.hp = o.hp_max }
+        }
+        // A saved corpse is dead again (GetDead: hit points below 1, 8.1); its destroy event
+        // comes back with the module's event queue.
+        if o.hp < 1 and not c.is_pc and not c.dead {
+            c.dead = true
+            o.animation = animname::ROW_BASE + @as(u32, if is_beast{ w = &w, c } { ROW_CDEAD } else { ROW_DEAD })
         }
     }
 

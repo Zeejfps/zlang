@@ -60,7 +60,7 @@ namespace save {
         try put_dword{ &b, owner = r, label = "Mod_NextObjId1", v = 0 }
         try put_dword{ &b, owner = r, label = "Mod_NextCharId0", v = w.objects.next_high }
         try put_dword{ &b, owner = r, label = "Mod_NextCharId1", v = obj::FIRST_CHARACTER }
-        _ = try gffw::add_value{ &b, owner = r, label = "Mod_Effect_NxtId", value = gff::Value::dword64{ v = @as(u64, w.values.next_effect) } }
+        _ = try gffw::add_value{ &b, owner = r, label = "Mod_Effect_NxtId", value = gff::Value::dword64{ v = w.fx_ids.next } }
         let scripts: [15][]u8 = ["Mod_OnHeartbeat", "Mod_OnUsrDefined", "Mod_OnClientEntr", "Mod_OnClientLeav", "Mod_OnActvtItem",
             "Mod_OnAcquirItem", "Mod_OnUnAqreItem", "Mod_OnModLoad", "Mod_OnModStart", "Mod_OnPlrDeath", "Mod_OnPlrDying",
             "Mod_OnSpawnBtnDn", "Mod_OnPlrRest", "Mod_OnPlrLvlUp", "Mod_OnEquipItem"]

@@ -125,6 +125,8 @@ namespace modload {
             w.calendar_set = true
         }
         if saved {
+            let next_fx = @as(u64, tmpl::number{ doc, s, label = "Mod_Effect_NxtId", default = 0 })
+            if next_fx > w.fx_ids.next { w.fx_ids.next = next_fx }
             let next = @trunc(u32, tmpl::number{ doc, s, label = "Mod_NextObjId0", default = 0 })
             if next > w.objects.next_low { w.objects.next_low = next }
         }
