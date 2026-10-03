@@ -1,0 +1,131 @@
+// The game in progress (docs/re/party-items-saves.md 1.1-1.2): the state of every module visited
+// in the current game (`<module>.sav`, each a nested ERF of module.ifo, <area>.are, <area>.git),
+// the stored party NPCs (AVAILNPCn.utc), the party inventory and the faction standings. The
+// original keeps these as files in GAMEINPROGRESS:; ours are members in memory, written whole as
+// one ERF, `<saves>/gameinprogress.sav`, which is exactly a save's SAVEGAME.sav: res mounts a
+// module's state from it (res::mount_module's `save`), a save copies it, a load replaces it.
+//
+//   try save::put{ st = &w.gip, name = "end_m01aa", kind = restype::Type::sav, bytes }
+//   try save::write_store{ fs = &w.fs, st = &w.gip }
+namespace save {
+    struct Member { name: resref::ResRef, kind: u16, bytes: []mut u8 }     // bytes: heap
+
+    struct Store {
+        heap: *mut heap::Heap,
+        members: list::List(Member, heap::Heap),
+        root: []mut u8,             // our saves directory (heap)
+        path: []mut u8,             // root + "/gameinprogress.sav" (heap)
+        written: bool,              // the file holds the members as they are
+    }
+
+    fn new_store { heap: *mut heap::Heap, root: []u8 } -> !Store {
+        let r = try obj::copy_bytes{ heap, s = root }
+        let p = try path::join(heap::Heap){ realloc = heap::alloc, heap, dir = root, name = "gameinprogress.sav" }
+        return Store{ heap, members = list::new(Member, heap::Heap){ realloc = heap::alloc, heap }, root = r, path = p, written = false }
+    }
+
+    fn find { st: *Store, name: []u8, kind: u16 } -> ?usize {
+        let items = list::items{ list = st.members }
+        let mut i: usize = 0
+        while i < items.len {
+            if items[i].kind == kind and resref::matches{ r = items[i].name, name } { return i }
+            i = i + 1
+        }
+        return null
+    }
+
+    fn get { st: *Store, name: []u8, kind: u16 } -> ?[]u8 {
+        let i = find{ st, name, kind } ifnull { return null }
+        return list::items{ list = st.members }[i].bytes
+    }
+
+    // Puts a copy of `bytes` under (name, kind), replacing what was there.
+    fn put { mut st: Store, name: []u8, kind: u16, bytes: []u8 } -> ! {
+        let copy = try obj::copy_bytes{ heap = st.heap, s = bytes }
+        let key = resref::truncate{ name }
+        let at = find{ st = &st, name, kind }
+        if at != null {
+            let m = list::at{ list = st.members, i = at }
+            obj::free_bytes{ heap = st.heap, s = m.bytes }
+            m.bytes = copy
+        } else {
+            try list::push{ list = &st.members, item = Member{ name = key, kind, bytes = copy } }
+        }
+        st.written = false
+    }
+
+    fn remove { mut st: Store, name: []u8, kind: u16 } {
+        let at = find{ st = &st, name, kind } ifnull { return }
+        let items = list::items{ list = st.members }
+        obj::free_bytes{ heap = st.heap, s = items[at].bytes }
+        let mut i = at + 1
+        while i < items.len {
+            items[i - 1] = items[i]
+            i = i + 1
+        }
+        st.members.len = st.members.len - 1
+        st.written = false
+    }
+
+    // Forgets everything (a new game; before a load fills it again).
+    fn clear_store { mut st: Store } {
+        let items = list::items{ list = st.members }
+        let mut i: usize = 0
+        while i < items.len {
+            obj::free_bytes{ heap = st.heap, s = items[i].bytes }
+            i = i + 1
+        }
+        list::clear{ list = &st.members }
+        st.written = false
+    }
+
+    // The store as one ERF (`MOD V1.0`, as SAVEGAME.sav), in the heap; the caller frees it.
+    fn store_image { st: *Store } -> !alloc::Bytes {
+        let items = list::items{ list = st.members }
+        let members = try alloc::resize(erf::NewMember, heap::Heap){ realloc = heap::alloc, heap = st.heap, mem = slice::empty(erf::NewMember){}, count = items.len }
+        defer _ = alloc::resize(erf::NewMember, heap::Heap){ realloc = heap::alloc, heap = st.heap, mem = members, count = 0 }
+        let mut i: usize = 0
+        while i < items.len {
+            members[i] = erf::NewMember{ name = resref::bytes{ r = &items[i].name }, kind = items[i].kind, data = items[i].bytes }
+            i = i + 1
+        }
+        return try erf::write(heap::Heap){ realloc = heap::alloc, heap = st.heap, sig = erf::Sig::mod, members, year = 0, day = 0 }
+    }
+
+    // Writes the store to its file (for res to mount module states from), if it changed.
+    fn write_store { mut fs: Fs, mut st: Store } -> ! {
+        if st.written { return }
+        make_dirs{ &fs, path = st.root }
+        let image = try store_image{ st = &st }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = st.heap, mem = image, count = 0 }
+        _ = try fs::write_all{ &fs, path = st.path, bytes = image }
+        st.written = true
+    }
+
+    // Replaces the store's members with a SAVEGAME.sav image's.
+    fn read_store { mut st: Store, image: []u8 } -> ! {
+        clear_store{ &st }
+        let members = try erf::parse(heap::Heap){ data = image, realloc = heap::alloc, heap = st.heap }
+        defer _ = alloc::resize(res::Member, heap::Heap){ realloc = heap::alloc, heap = st.heap, mem = members, count = 0 }
+        let mut i: usize = 0
+        while i < members.len {
+            let m = members[i]
+            i = i + 1
+            let end = @as(usize, m.offset) + @as(usize, m.size)
+            if end > image.len { continue }
+            let mut name = m.name
+            try put{ &st, name = resref::bytes{ r = &name }, kind = m.kind, bytes = image[@as(usize, m.offset)..end] }
+        }
+    }
+
+    // Makes `path` and the directories above it that are missing.
+    fn make_dirs { mut fs: Fs, path: []u8 } {
+        let mut i: usize = 1
+        while i <= path.len {
+            if i == path.len or path[i] == '/' or path[i] == '\\' {
+                fs::make_dir{ &fs, path = path[..i] } iferr {}
+            }
+            i = i + 1
+        }
+    }
+}

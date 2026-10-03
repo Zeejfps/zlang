@@ -14,7 +14,11 @@ namespace modload {
     const ARRIVAL_FRAMES: u32 = 2
 
     fn enter { mut w: world::World, name: []u8 } -> ! {
-        try res::mount_module{ fs = &w.fs, rm = w.rm, name, save = "" }
+        // A module visited before (or loaded from a save) comes back from the game in progress
+        // (party-items-saves.md 1.2): its <module>.sav, mounted from the store's file.
+        let saved = save::find{ st = &w.gip, name, kind = 2057 } != null
+        if saved { try save::write_store{ fs = &w.fs, st = &w.gip } }
+        try res::mount_module{ fs = &w.fs, rm = w.rm, name, save = if saved { w.gip.path } else { "" } }
         let ifo = try world::read_gff{ &w, name = "module", kind = restype::Type::ifo } ifnull { return no_ifo{ module = name } }
         let mo = try world::add_object{ &w, kind = obj::Kind::module, id = 0, character = false }
         w.module = mo.id
@@ -33,7 +37,14 @@ namespace modload {
         }
 
         let are = try world::read_gff{ &w, name = area_text, kind = restype::Type::are } ifnull { return no_area{ area = name } }
-        let ao = try world::add_object{ &w, kind = obj::Kind::area, id = 0, character = false }
+        let from_save = (gff::get_number{ doc = ifo, s = gff::ROOT, label = "Mod_IsSaveGame" } ifnull 0) != 0
+        let mut area_id: u32 = 0
+        if from_save {
+            let areas = gff::get_list{ doc = ifo, s = gff::ROOT, label = "Mod_Area_list" } ifnull slice::empty(u32){}
+            if areas.len > 0 { area_id = @trunc(u32, gff::get_number{ doc = ifo, s = areas[0], label = "ObjectId" } ifnull 0) }
+            if world::object{ w = &w, id = area_id } != null { area_id = 0 }
+        }
+        let ao = try world::add_object{ &w, kind = obj::Kind::area, id = area_id, character = false }
         w.area = ao.id
         ao.area = ao.id
         mo.area = ao.id
@@ -45,6 +56,13 @@ namespace modload {
 
         let git = try world::read_gff{ &w, name = area_text, kind = restype::Type::git }
         if git != null { try read_git{ &w, doc = &git } }
+        if from_save {
+            // The module's own saved state: its locals, the player (when a save is loaded), the
+            // event queue (after the objects it names exist).
+            tmpl::read_locals{ doc = &ifo, s = gff::ROOT, o = mo }
+            if w.restoring { try restore_player{ &w, doc = &ifo } }
+            save::read_event_queue{ &w, doc = &ifo, s = gff::ROOT }
+        }
         if w.log.module {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "module {}: {} objects, {} rooms with walkmeshes\n", name, w.objects.all.len, w.walk.rooms.len)
@@ -56,7 +74,7 @@ namespace modload {
         while i < all.len {
             let o = all[i]
             i = i + 1
-            if o.kind != obj::Kind::creature { continue }
+            if o.kind != obj::Kind::creature or from_save or o.id == w.pc { continue }
             events::post{ &w, delay_ms = 0, caller = o.id, target = w.area, payload = events::Payload::script{ e = events::script_event{ kind = events::OBJECT_ENTER, object = o.id } } }
         }
         events::post{ &w, delay_ms = 0, caller = w.module, target = w.module, payload = events::Payload::script{ e = events::script_event{ kind = events::MODULE_LOAD, object = obj::INVALID } } }
@@ -89,10 +107,26 @@ namespace modload {
         let vo = gff::get_string{ doc = doc.*, s, label = "Mod_VO_ID" }
         if vo != null { m.vo_id = try obj::copy_bytes{ heap = w.heap, s = vo } }
         w.clock.min_per_hour = m.min_per_hour
-        w.clock.year = @trunc(u32, tmpl::number{ doc, s, label = "Mod_StartYear", default = 1340 })
-        w.clock.month = @trunc(u32, tmpl::number{ doc, s, label = "Mod_StartMonth", default = 6 })
-        w.clock.day = @trunc(u32, tmpl::number{ doc, s, label = "Mod_StartDay", default = 1 })
-        w.clock.hour = @trunc(u32, tmpl::number{ doc, s, label = "Mod_StartHour", default = 13 })
+        // The calendar: a new game starts it from the first module's IFO; a loaded save from the
+        // time it was saved (Mod_PauseDay, Mod_PauseTime); otherwise the running game time goes
+        // on through transitions (modules.md, the IFO's bResetTime).
+        let saved = tmpl::number{ doc, s, label = "Mod_IsSaveGame", default = 0 } != 0
+        if saved and w.restoring {
+            let day = @as(u64, @trunc(u32, tmpl::number{ doc, s, label = "Mod_PauseDay", default = 0 }))
+            let time = @as(u64, @trunc(u32, tmpl::number{ doc, s, label = "Mod_PauseTime", default = 0 }))
+            clock::set_calendar{ c = &w.clock, at = day * clock::ms_per_day{ c = w.clock } + time }
+            w.calendar_set = true
+        } else if not w.calendar_set {
+            w.clock.year = @trunc(u32, tmpl::number{ doc, s, label = "Mod_StartYear", default = 1340 })
+            w.clock.month = @trunc(u32, tmpl::number{ doc, s, label = "Mod_StartMonth", default = 6 })
+            w.clock.day = @trunc(u32, tmpl::number{ doc, s, label = "Mod_StartDay", default = 1 })
+            w.clock.hour = @trunc(u32, tmpl::number{ doc, s, label = "Mod_StartHour", default = 13 })
+            w.calendar_set = true
+        }
+        if saved {
+            let next = @trunc(u32, tmpl::number{ doc, s, label = "Mod_NextObjId0", default = 0 })
+            if next > w.objects.next_low { w.objects.next_low = next }
+        }
         tmpl::script{ doc, s, o, label = "Mod_OnHeartbeat", slot = obj::Slot::heartbeat }
         tmpl::script{ doc, s, o, label = "Mod_OnUsrDefined", slot = obj::Slot::user_defined }
         tmpl::script{ doc, s, o, label = "Mod_OnClientEntr", slot = obj::Slot::client_enter }
@@ -165,6 +199,8 @@ namespace modload {
     // Makes the GIT's objects, in the original's list order (modules.md, LoadGIT).
     fn read_git { mut w: world::World, doc: *gff::Doc } -> ! {
         let s = gff::ROOT
+        let ao_locals = world::object{ w = &w, id = w.area }
+        if ao_locals != null { tmpl::read_locals{ doc, s, o = ao_locals } }
         let props = gff::get_struct{ doc = doc.*, s, label = "AreaProperties" }
         let ao = world::object{ w = &w, id = w.area }
         if props != null and ao != null {
@@ -220,7 +256,18 @@ namespace modload {
         let field: []u8 = if kind == obj::Kind::store { "ResRef" } else { "TemplateResRef" }
         let template = gff::get_resref{ doc = doc.*, s, label = field } ifnull ""
         let mut id: u32 = 0
-        if template.len > 0 and kind != obj::Kind::waypoint {
+        // A saved GIT holds every object whole with its runtime id (gff-save.md): no blueprint.
+        let saved_id = @trunc(u32, gff::get_number{ doc = doc.*, s, label = "ObjectId" } ifnull 0)
+        let whole = saved_id != 0 and (gff::get_number{ doc = doc.*, s = gff::ROOT, label = "UseTemplates" } ifnull 1) == 0
+        if whole {
+            let fresh = world::object{ w = &w, id = saved_id } == null and saved_id != obj::INVALID
+            let o = try world::add_object{ &w, kind, id = if fresh { saved_id } else { 0 }, character = false }
+            o.template = resref::truncate{ name = template }
+            o.area = w.area
+            o.position = position
+            world::set_orientation{ o, v = orientation }
+            id = o.id
+        } else if template.len > 0 and kind != obj::Kind::waypoint {
             id = try tmpl::spawn{ &w, kind, template, position, orientation }
         } else {
             // Waypoints (and blueprint-less entries) carry every field in the GIT.
@@ -239,6 +286,7 @@ namespace modload {
             if obj::trigger{ o } is some{ value = t } { try tmpl::read_geometry{ &w, t, doc, s, origin = position } }
         }
         if kind == obj::Kind::door or kind == obj::Kind::placeable { try place_walkmesh{ &w, id, bearing } }
+        if whole { save::read_actions{ &w, doc, s, id } }
         if kind == obj::Kind::creature {
             // Snap to the floor (GIT creatures stand on the walkmesh).
             let f = walkmap::floor{ m = &w.walk, x = position.x, y = position.y, z = position.z + 0.5 }
@@ -307,6 +355,12 @@ namespace modload {
         if not party::is_member{ w = &w, id = w.pc } { party::set_leader{ &w, id = w.pc } }
         let pc = world::object{ w = &w, id = w.pc } ifnull { return }
         pc.area = w.area
+        if w.restoring {
+            // A loaded save's player stands where it was saved (party-items-saves.md 1.6, step 7).
+            at = pc.position
+            facing = pc.orientation
+            w.restoring = false
+        }
         world::set_orientation{ o = pc, v = facing }
         movement::place{ &w, id = w.pc, at }
         let ao = world::object{ w = &w, id = w.area }
@@ -318,6 +372,31 @@ namespace modload {
             let p = world::object{ w = &w, id = w.pc }
             if p != null { _ = @fmt(&w.io, "player {} placed at {} {} {}\n", w.pc, p.position.x, p.position.y, p.position.z) }
         }
+    }
+
+    // A loaded save's player: Mod_PlayerList's creature, with its saved character id
+    // (party-items-saves.md 1.6, step 6).
+    fn restore_player { mut w: world::World, doc: *gff::Doc } -> ! {
+        let players = gff::get_list{ doc = doc.*, s = gff::ROOT, label = "Mod_PlayerList" } ifnull { return }
+        if players.len == 0 { return }
+        let s = players[0]
+        let saved_id = @trunc(u32, gff::get_number{ doc = doc.*, s, label = "ObjectId" } ifnull 0)
+        if world::object{ w = &w, id = w.pc } != null { world::destroy{ &w, id = w.pc } ; world::sweep{ &w } }
+        let fresh = saved_id != 0 and world::object{ w = &w, id = saved_id } == null
+        let o = try world::add_object{ &w, kind = obj::Kind::creature, id = if fresh { saved_id } else { 0 }, character = not fresh }
+        o.area = w.area
+        o.position = math::Vec3{ x = tmpl::real{ doc, s, label = "XPosition", default = 0.0 }, y = tmpl::real{ doc, s, label = "YPosition", default = 0.0 }, z = tmpl::real{ doc, s, label = "ZPosition", default = 0.0 } }
+        world::set_orientation{ o, v = math::Vec3{ x = tmpl::real{ doc, s, label = "XOrientation", default = 0.0 }, y = tmpl::real{ doc, s, label = "YOrientation", default = 1.0 }, z = 0.0 } }
+        try tmpl::read{ &w, o, doc, s }
+        if obj::creature{ o } is some{ value = c } {
+            c.is_pc = true
+            c.spawn_fired = true
+            c.walk_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "walkrate" } ifnull 3.2
+            c.run_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "runrate" } ifnull 5.4
+        }
+        o.ai_level = 4
+        w.pc = o.id
+        save::read_actions{ &w, doc, s, id = o.id }
     }
 
     // The first player in the area lifts its active objects to AI level 1 (gameloop.md 2.1).
@@ -340,7 +419,38 @@ namespace modload {
 
     // The player character until character creation exists: a soldier (appearance 137,
     // P_MAL_A_MED_01: body PMBAM, head PMHA01), named by `w`'s player template if one is set.
+    // Character creation's player for the next new game: a UTC-shaped GFF (copied; the PC is
+    // made from it when the first module places the player).
+    fn set_player_blueprint { mut w: world::World, bytes: []u8 } -> ! {
+        obj::free_bytes{ heap = w.heap, s = w.player_blueprint }
+        w.player_blueprint = slice::empty(u8){}
+        if bytes.len == 0 { return }
+        let copy = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = bytes.len }
+        slice::copy(u8){ dst = copy, src = bytes }
+        w.player_blueprint = copy
+    }
+
+    // The player character for a new game: character creation's (set_player_blueprint), else a
+    // default soldier.
     fn make_default_player { mut w: world::World } -> !u32 {
+        if w.player_blueprint.len > 0 {
+            let bytes = w.player_blueprint
+            w.player_blueprint = slice::empty(u8){}
+            defer obj::free_bytes{ heap = w.heap, s = bytes }
+            let doc = try gff::parse{ data = bytes, realloc = arena::alloc, heap = w.scratch }
+            let o = try world::add_object{ &w, kind = obj::Kind::creature, id = 0, character = true }
+            try tmpl::read{ &w, o, doc = &doc, s = gff::ROOT }
+            try world::set_tag{ &w, o, tag = "" }
+            if obj::creature{ o } is some{ value = c } {
+                c.is_pc = true
+                c.spawn_fired = true
+                c.walk_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "walkrate" } ifnull 3.2
+                c.run_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "runrate" } ifnull 5.4
+            }
+            o.area = w.area
+            o.ai_level = 4
+            return o.id
+        }
         let o = try world::add_object{ &w, kind = obj::Kind::creature, id = 0, character = true }
         try world::set_tag{ &w, o, tag = "" }
         try world::set_name{ &w, name = &o.name, strref = 0xFFFFFFFF, text = "Player" }
@@ -429,6 +539,18 @@ namespace modload {
     // walkmeshes and module memory let go. The module's state isn't kept yet (HOOK(save):
     // GAMEINPROGRESS).
     fn leave { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } {
+        leave_keeping{ &w, &vm, engine, keep = true }
+    }
+
+    // Leaves the module; with `keep` its state goes into the game in progress first (a
+    // transition), without (a load replacing the game) it is dropped.
+    fn leave_keeping { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, keep: bool } {
+        if keep {
+            save::save_module_state{ &w } iferr err{ error } {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "saving the module's state: {}\n", error)
+            }
+        }
         let ao = world::object{ w = &w, id = w.area }
         if ao != null {
             ao.ctx.exiting = w.pc

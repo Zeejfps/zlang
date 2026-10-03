@@ -1,0 +1,379 @@
+// Script situations and the event queue in a save (docs/formats/gff-save.md, "Script situation",
+// "EventQueue"; docs/design/script.md, "Saving and loading situations"): the suspended code of
+// DelayCommand, AssignCommand and ActionDoCommand, with its stack, written as the original writes
+// it and read back (the install's save holds two: k_pend_area02 with an effect, k_pend_weld01).
+// The saved code is what runs after a load, not the resource's (script.md).
+namespace save {
+    // The cell types a save uses (the VM's).
+    const CELL_INT: i32 = 3
+    const CELL_FLOAT: i32 = 4
+    const CELL_STRING: i32 = 5
+    const CELL_OBJECT: i32 = 6
+
+    fn write_situation { mut b: Builder, mut w: world::World, owner: u32, s: *mut nwvm::Situation } -> ! {
+        let code = s.program.code
+        let body = if code.len >= 13 { code[13..] } else { code }
+        try put_int{ &b, owner, label = "CodeSize", v = @as(i32, body.len) }
+        _ = try gffw::add_value{ &b, owner, label = "Code", value = gff::Value::void{ v = body } }
+        try put_dword{ &b, owner, label = "CRC", v = 0 }
+        try put_int{ &b, owner, label = "InstructionPtr", v = @as(i32, nwvm::instruction_ptr{ situation = s.* }) }
+        try put_int{ &b, owner, label = "SecondaryPtr", v = 0 }
+        try put_string{ &b, owner, label = "Name", v = s.program.name }
+        try put_int{ &b, owner, label = "StackSize", v = @as(i32, s.stack_size) }
+        let stack = try gffw::put_struct{ &b, owner, label = "Stack", id = 0 }
+        let n = s.types.len
+        try put_int{ &b, owner = stack, label = "BasePointer", v = @as(i32, s.bp) }
+        try put_int{ &b, owner = stack, label = "StackPointer", v = @as(i32, n) }
+        try put_int{ &b, owner = stack, label = "TotalSize", v = @as(i32, n + 16) }
+        let cells = try gffw::put_list{ &b, owner = stack, label = "Stack" }
+        let mut i: usize = 0
+        while i < n {
+            let e = try gffw::add_element{ &b, list = cells, id = @trunc(u32, i) }
+            match nwvm::saved_cell{ situation = s.*, i } {
+                int{ v } => {
+                    try put_char{ &b, owner = e, label = "Type", v = CELL_INT }
+                    try put_int{ &b, owner = e, label = "Value", v }
+                }
+                float{ v } => {
+                    try put_char{ &b, owner = e, label = "Type", v = CELL_FLOAT }
+                    try put_float{ &b, owner = e, label = "Value", v }
+                }
+                string{ s = text } => {
+                    try put_char{ &b, owner = e, label = "Type", v = CELL_STRING }
+                    try put_string{ &b, owner = e, label = "Value", v = text }
+                }
+                object{ id } => {
+                    try put_char{ &b, owner = e, label = "Type", v = CELL_OBJECT }
+                    try put_dword{ &b, owner = e, label = "Value", v = id }
+                }
+                engine{ kind, handle } => {
+                    try put_char{ &b, owner = e, label = "Type", v = 16 + @as(i32, @as(u8, kind)) }
+                    try put_dword{ &b, owner = e, label = "Value", v = 0 }
+                    let g = try gffw::put_struct{ &b, owner = e, label = "GameDefinedStrct", id = 0 }
+                    try write_engine_value{ &b, owner = g, v = values::get{ s = &w.values, handle } }
+                }
+            }
+            i = i + 1
+        }
+    }
+
+    fn put_char { mut b: Builder, owner: u32, label: []u8, v: i32 } -> ! { _ = try gffw::add_value{ &b, owner, label, value = gff::Value::char{ v = @trunc(i8, v) } } }
+
+    // An engine value's game-defined struct: an effect as the EffectList has it (gff-save.md);
+    // locations, events and talents in fields of our own (the original's labels are unknown).
+    fn write_engine_value { mut b: Builder, owner: u32, v: values::Value } -> ! {
+        match v {
+            effect{ e } => {
+                _ = try gffw::add_value{ &b, owner, label = "Id", value = gff::Value::dword64{ v = @as(u64, e.id) } }
+                try put_word{ &b, owner, label = "Type", v = @trunc(u32, e.kind) }
+                try put_word{ &b, owner, label = "SubType", v = @trunc(u32, e.subtype) }
+                try put_float{ &b, owner, label = "Duration", v = e.duration }
+                try put_byte{ &b, owner, label = "SkipOnLoad", v = 0 }
+                try put_dword{ &b, owner, label = "ExpireDay", v = 0 }
+                try put_dword{ &b, owner, label = "ExpireTime", v = 0 }
+                try put_dword{ &b, owner, label = "CreatorId", v = e.creator }
+                try put_dword{ &b, owner, label = "SpellId", v = 0xFFFFFFFF }
+                try put_int{ &b, owner, label = "IsExposed", v = 1 }
+                try put_int{ &b, owner, label = "NumIntegers", v = 8 }
+                let ints = try gffw::put_list{ &b, owner, label = "IntList" }
+                let mut i: usize = 0
+                while i < 8 {
+                    let el = try gffw::add_element{ &b, list = ints, id = 3 }
+                    try put_int{ &b, owner = el, label = "Value", v = e.ints[i] }
+                    i = i + 1
+                }
+                let floats = try gffw::put_list{ &b, owner, label = "FloatList" }
+                i = 0
+                while i < 4 {
+                    let el = try gffw::add_element{ &b, list = floats, id = 4 }
+                    try put_float{ &b, owner = el, label = "Value", v = e.floats[i] }
+                    i = i + 1
+                }
+                let strings = try gffw::put_list{ &b, owner, label = "StringList" }
+                i = 0
+                while i < 6 {
+                    let el = try gffw::add_element{ &b, list = strings, id = 5 }
+                    try put_string{ &b, owner = el, label = "Value", v = "" }
+                    i = i + 1
+                }
+                let objects = try gffw::put_list{ &b, owner, label = "ObjectList" }
+                i = 0
+                while i < 4 {
+                    let el = try gffw::add_element{ &b, list = objects, id = 6 }
+                    try put_dword{ &b, owner = el, label = "Value", v = if i < 2 { e.objects[i] } else { obj::INVALID } }
+                    i = i + 1
+                }
+            }
+            location{ l } => {
+                try put_float{ &b, owner, label = "PositionX", v = l.position.x }
+                try put_float{ &b, owner, label = "PositionY", v = l.position.y }
+                try put_float{ &b, owner, label = "PositionZ", v = l.position.z }
+                try put_float{ &b, owner, label = "Facing", v = l.facing }
+                try put_dword{ &b, owner, label = "AreaId", v = l.area }
+            }
+            event{ e } => {
+                try put_int{ &b, owner, label = "EventType", v = e.kind }
+                let mut i: usize = 0
+                while i < 4 {
+                    let mut lab: [7]u8 = ['I', 'n', 't', '0', 0, 0, 0]
+                    lab[3] = @trunc(u8, '0' + i)
+                    try put_int{ &b, owner, label = lab[..4], v = e.ints[i] }
+                    lab[0] = 'O'
+                    lab[1] = 'b'
+                    lab[2] = 'j'
+                    try put_dword{ &b, owner, label = lab[..4], v = e.objects[i] }
+                    i = i + 1
+                }
+            }
+            talent{ t } => {
+                try put_int{ &b, owner, label = "TalentType", v = t.kind }
+                try put_int{ &b, owner, label = "TalentId", v = t.id }
+                try put_int{ &b, owner, label = "TalentSub", v = t.sub }
+                try put_dword{ &b, owner, label = "TalentItem", v = t.item }
+            }
+            none => {}
+        }
+    }
+
+    // ---- reading
+
+    fn number_at { doc: *gff::Doc, s: u32, label: []u8, default: i64 } -> i64 { return gff::get_number{ doc = doc.*, s, label } ifnull default }
+
+    fn float_at { doc: *gff::Doc, s: u32, label: []u8 } -> f32 { return gff::get_float{ doc = doc.*, s, label } ifnull 0.0 }
+
+    // A saved situation, in the heap, its engine values kept; null if its code doesn't load or
+    // it isn't one the VM can resume (CRC not 0, as the game skips them).
+    fn read_situation { mut w: world::World, doc: *gff::Doc, s: u32 } -> ?*mut nwvm::Situation {
+        if number_at{ doc, s, label = "CRC", default = 0 } != 0 { return null }
+        let code = gff::get_void{ doc = doc.*, s, label = "Code" } ifnull { return null }
+        let name = gff::get_string{ doc = doc.*, s, label = "Name" } ifnull ""
+        // The program: the saved code behind an NCS header, in module memory.
+        let file = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, mem = slice::empty(u8){}, count = code.len + 13 } iferr { return null }
+        let header: [8]u8 = ['N', 'C', 'S', ' ', 'V', '1', '.', '0']
+        slice::copy(u8){ dst = file[..8], src = header[..] }
+        file[8] = 'B'
+        let total = code.len + 13
+        file[9] = @trunc(u8, total >> 24)
+        file[10] = @trunc(u8, total >> 16)
+        file[11] = @trunc(u8, total >> 8)
+        file[12] = @trunc(u8, total)
+        slice::copy(u8){ dst = file[13..], src = code }
+        let kept_name = obj::copy_bytes{ heap = w.heap, s = name } iferr { return null }
+        let program = nwvm::load(arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, name = kept_name, bytes = file } iferr { return null }
+        let p = alloc::new(nwvm::Program, arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, value = program } iferr { return null }
+        let stack = gff::get_struct{ doc = doc.*, s, label = "Stack" } ifnull { return null }
+        let bp = @trunc(u32, number_at{ doc, s = stack, label = "BasePointer", default = 0 })
+        let list = gff::get_list{ doc = doc.*, s = stack, label = "Stack" } ifnull slice::empty(u32){}
+        let cells = alloc::resize(nwvm::SavedCell, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(nwvm::SavedCell){}, count = list.len } iferr { return null }
+        let mut i: usize = 0
+        while i < list.len {
+            let c = list[i]
+            let t = @trunc(i32, number_at{ doc, s = c, label = "Type", default = 3 })
+            if t == CELL_FLOAT { cells[i] = nwvm::SavedCell::float{ v = float_at{ doc, s = c, label = "Value" } } }
+            else if t == CELL_STRING { cells[i] = nwvm::SavedCell::string{ s = gff::get_string{ doc = doc.*, s = c, label = "Value" } ifnull "" } }
+            else if t == CELL_OBJECT { cells[i] = nwvm::SavedCell::object{ id = @trunc(u32, number_at{ doc, s = c, label = "Value", default = 0x7F000000 }) } }
+            else if t >= 16 and t <= 19 {
+                let kind = @as(nwvm::EngineType, @trunc(u8, t - 16))
+                let g = gff::get_struct{ doc = doc.*, s = c, label = "GameDefinedStrct" }
+                let v = if g != null { read_engine_value{ doc, s = g, kind } } else { values::Value::none }
+                let h = values::keep{ s = &w.values, handle = values::add{ s = &w.values, v } }
+                cells[i] = nwvm::SavedCell::engine{ kind, handle = h }
+            }
+            else { cells[i] = nwvm::SavedCell::int{ v = @trunc(i32, number_at{ doc, s = c, label = "Value", default = 0 }) } }
+            i = i + 1
+        }
+        let ptr = @trunc(u32, number_at{ doc, s, label = "InstructionPtr", default = 0 })
+        let size = @trunc(u32, number_at{ doc, s, label = "StackSize", default = @as(i64, list.len) })
+        let sit = nwvm::make_situation(heap::Heap){ realloc = heap::alloc, heap = w.heap, program = p, instruction_ptr = ptr, base_pointer = bp, stack_size = size, cells } iferr { return null }
+        return alloc::new(nwvm::Situation, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = sit } iferr { return null }
+    }
+
+    fn read_engine_value { doc: *gff::Doc, s: u32, kind: nwvm::EngineType } -> values::Value {
+        match kind {
+            effect => {
+                let mut e = values::no_effect{}
+                e.id = @trunc(u32, number_at{ doc, s, label = "Id", default = 0 })
+                e.kind = @trunc(i32, number_at{ doc, s, label = "Type", default = 0 })
+                e.subtype = @trunc(i32, number_at{ doc, s, label = "SubType", default = 0 })
+                e.duration = float_at{ doc, s, label = "Duration" }
+                e.creator = @trunc(u32, number_at{ doc, s, label = "CreatorId", default = 0x7F000000 })
+                let ints = gff::get_list{ doc = doc.*, s, label = "IntList" } ifnull slice::empty(u32){}
+                let mut i: usize = 0
+                while i < ints.len and i < 8 {
+                    e.ints[i] = @trunc(i32, number_at{ doc, s = ints[i], label = "Value", default = 0 })
+                    i = i + 1
+                }
+                let floats = gff::get_list{ doc = doc.*, s, label = "FloatList" } ifnull slice::empty(u32){}
+                i = 0
+                while i < floats.len and i < 4 {
+                    e.floats[i] = float_at{ doc, s = floats[i], label = "Value" }
+                    i = i + 1
+                }
+                let objects = gff::get_list{ doc = doc.*, s, label = "ObjectList" } ifnull slice::empty(u32){}
+                i = 0
+                while i < objects.len and i < 2 {
+                    e.objects[i] = @trunc(u32, number_at{ doc, s = objects[i], label = "Value", default = 0x7F000000 })
+                    i = i + 1
+                }
+                return values::Value::effect{ e }
+            }
+            location => {
+                return values::Value::location{ l = values::Location{
+                    position = math::Vec3{ x = float_at{ doc, s, label = "PositionX" }, y = float_at{ doc, s, label = "PositionY" }, z = float_at{ doc, s, label = "PositionZ" } },
+                    facing = float_at{ doc, s, label = "Facing" },
+                    area = @trunc(u32, number_at{ doc, s, label = "AreaId", default = 0x7F000000 }),
+                } }
+            }
+            event => {
+                let mut e = values::no_event{}
+                e.kind = @trunc(i32, number_at{ doc, s, label = "EventType", default = 0 })
+                let names: [4][]u8 = ["Int0", "Int1", "Int2", "Int3"]
+                let objs: [4][]u8 = ["Obj0", "Obj1", "Obj2", "Obj3"]
+                let mut i: usize = 0
+                while i < 4 {
+                    e.ints[i] = @trunc(i32, number_at{ doc, s, label = names[i], default = 0 })
+                    e.objects[i] = @trunc(u32, number_at{ doc, s, label = objs[i], default = 0x7F000000 })
+                    i = i + 1
+                }
+                return values::Value::event{ e }
+            }
+            talent => {
+                return values::Value::talent{ t = values::Talent{
+                    kind = @trunc(i32, number_at{ doc, s, label = "TalentType", default = -1 }),
+                    id = @trunc(i32, number_at{ doc, s, label = "TalentId", default = -1 }),
+                    sub = @trunc(i32, number_at{ doc, s, label = "TalentSub", default = -1 }),
+                    item = @trunc(u32, number_at{ doc, s, label = "TalentItem", default = 0x7F000000 }),
+                } }
+            }
+        }
+    }
+
+    // ---- the event queue (module IFO)
+
+    // Pending events as EventQueue entries (struct id 0xABCD): due (Day, Time) of the game
+    // calendar, target, caller, event id; situations as EventData 0x7777. Other kinds are
+    // delivered within the frame they are posted, so a save between frames has few (ours: only
+    // situations and destroys are kept).
+    fn write_event_queue { mut b: Builder, mut w: world::World, owner: u32 } -> ! {
+        let list = try gffw::put_list{ &b, owner, label = "EventQueue" }
+        let all = list::items{ list = w.queue.events }
+        let per_day = clock::ms_per_day{ c = w.clock }
+        let origin = clock::calendar_ms{ c = w.clock }
+        let mut i: usize = 0
+        while i < all.len {
+            let ev = all[i]
+            i = i + 1
+            let id: u32 = match ev.payload { situation => { 1 } destroy => { 11 } else => { 0 } }
+            if id == 0 { continue }
+            let at = origin + ev.due
+            let e = try gffw::add_element{ &b, list, id = 0xABCD }
+            try put_dword{ &b, owner = e, label = "Day", v = @trunc(u32, at / per_day) }
+            try put_dword{ &b, owner = e, label = "Time", v = @trunc(u32, at % per_day) }
+            try put_dword{ &b, owner = e, label = "ObjectId", v = ev.target }
+            try put_dword{ &b, owner = e, label = "CallerId", v = ev.caller }
+            try put_dword{ &b, owner = e, label = "EventId", v = id }
+            if ev.payload is situation{ s } {
+                let data = try gffw::put_struct{ &b, owner = e, label = "EventData", id = 0x7777 }
+                try write_situation{ &b, &w, owner = data, s }
+            }
+        }
+    }
+
+    // The saved queue back into the world, due times relative to the restored clock (events that
+    // came due while away fire at once, gameloop.md 4.5).
+    fn read_event_queue { mut w: world::World, doc: *gff::Doc, s: u32 } {
+        let list = gff::get_list{ doc = doc.*, s, label = "EventQueue" } ifnull { return }
+        let per_day = clock::ms_per_day{ c = w.clock }
+        let origin = clock::calendar_ms{ c = w.clock }
+        let mut i: usize = 0
+        while i < list.len {
+            let e = list[i]
+            i = i + 1
+            let day = @as(u64, @trunc(u32, number_at{ doc, s = e, label = "Day", default = 0 }))
+            let time = @as(u64, @trunc(u32, number_at{ doc, s = e, label = "Time", default = 0 }))
+            let at = day * per_day + time
+            let due = if at > origin { at - origin } else { 0 }
+            let target = @trunc(u32, number_at{ doc, s = e, label = "ObjectId", default = 0x7F000000 })
+            let caller = @trunc(u32, number_at{ doc, s = e, label = "CallerId", default = 0x7F000000 })
+            let id = number_at{ doc, s = e, label = "EventId", default = 0 }
+            if id == 1 {
+                let data = gff::get_struct{ doc = doc.*, s = e, label = "EventData" } ifnull { continue }
+                let sit = read_situation{ &w, doc, s = data } ifnull { continue }
+                events::post{ &w, delay_ms = due, caller, target, payload = events::Payload::situation{ s = sit } }
+            } else if id == 11 {
+                events::post{ &w, delay_ms = due, caller, target, payload = events::Payload::destroy }
+            }
+        }
+    }
+
+    // A saved object's ActionList back onto its queue (the action ids are the original's, which
+    // actions::Kind numbers as the original does).
+    fn read_actions { mut w: world::World, doc: *gff::Doc, s: u32, id: u32 } {
+        let list = gff::get_list{ doc = doc.*, s, label = "ActionList" } ifnull { return }
+        let mut i: usize = 0
+        while i < list.len {
+            let e = list[i]
+            i = i + 1
+            let raw = number_at{ doc, s = e, label = "ActionId", default = 0 }
+            let kind = action_kind{ id = raw } ifnull { continue }
+            let mut a = actions::make{ kind }
+            let params = gff::get_list{ doc = doc.*, s = e, label = "Paramaters" } ifnull slice::empty(u32){}
+            let mut k: usize = 0
+            let mut n: usize = 0
+            while k < params.len and n < 8 {
+                let p = params[k]
+                k = k + 1
+                let t = number_at{ doc, s = p, label = "Type", default = 0 }
+                if t == 1 { a.params[n] = actions::Param::int{ v = @trunc(i32, number_at{ doc, s = p, label = "Value", default = 0 }) } }
+                else if t == 2 { a.params[n] = actions::Param::float{ v = float_at{ doc, s = p, label = "Value" } } }
+                else if t == 3 { a.params[n] = actions::Param::object{ id = @trunc(u32, number_at{ doc, s = p, label = "Value", default = 0x7F000000 }) } }
+                else if t == 4 {
+                    let text = gff::get_string{ doc = doc.*, s = p, label = "Value" } ifnull ""
+                    a.params[n] = actions::Param::string{ s = obj::copy_bytes{ heap = w.heap, s = text } iferr slice::empty(u8){} }
+                }
+                else if t == 5 {
+                    let v = gff::get_struct{ doc = doc.*, s = p, label = "Value" } ifnull { continue }
+                    let sit = read_situation{ &w, doc, s = v } ifnull { continue }
+                    a.params[n] = actions::Param::situation{ s = sit }
+                }
+                n = n + 1
+            }
+            // Our moves keep their point as a vector: three floats back into one (ours).
+            if kind == actions::Kind::move_to_point and a.params[0] is float {
+                let x = actions::float_param{ a = &a, i = 0 }
+                let y = actions::float_param{ a = &a, i = 1 }
+                let z = actions::float_param{ a = &a, i = 2 }
+                let mut j: usize = 0
+                while j + 3 < 8 {
+                    a.params[j + 1] = a.params[j + 3]
+                    j = j + 1
+                }
+                a.params[0] = actions::Param::vector{ v = math::Vec3{ x, y, z } }
+            }
+            _ = actions::add{ &w, id, action = a, force = true }
+        }
+    }
+
+    fn action_kind { id: i64 } -> ?actions::Kind {
+        if id < 0 or id > 255 { return null }
+        let k = @trunc(u8, id)
+        match k {
+            1 => { return actions::Kind::move_to_point }
+            5 => { return actions::Kind::jump_to_point }
+            6 => { return actions::Kind::play_animation }
+            0x13 => { return actions::Kind::face_object }
+            0x14 => { return actions::Kind::open_door }
+            0x15 => { return actions::Kind::close_door }
+            0x18 => { return actions::Kind::dialog_object }
+            0x1e => { return actions::Kind::wait }
+            0x25 => { return actions::Kind::do_command }
+            0x28 => { return actions::Kind::use_object }
+            0x2d => { return actions::Kind::random_walk }
+            0x30 => { return actions::Kind::jump_to_object }
+            0x31 => { return actions::Kind::face_point }
+            0x37 => { return actions::Kind::follow }
+            0x3d => { return actions::Kind::follow_leader }
+            else => { return null }
+        }
+    }
+}

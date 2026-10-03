@@ -1,0 +1,442 @@
+// savetest: reads the install's save (savenfo.res, PARTYTABLE.res, GLOBALVARS.res, Screen.tga)
+// through lib/save into a fresh world, writes each back, re-parses what it wrote and checks the
+// round trip. Output files go to --out (default kotor/out/savetest).
+//
+//   savetest [--game DIR] [--save DIR] [--out DIR]
+const DEFAULT_SAVE: []u8 = "F:/Steam/steamapps/common/swkotor/saves/000002 - Game1"
+
+struct Report { checks: u32, failures: u32 }
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let mut game: []u8 = "F:/Steam/steamapps/common/swkotor"
+    let mut save_dir: []u8 = DEFAULT_SAVE
+    let mut out_dir: []u8 = "kotor/out/savetest"
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        let has = i + 1 < args.len
+        if slice::eq_bytes{ a, b = "--game" } and has { i = i + 1; game = args[i] }
+        else if slice::eq_bytes{ a, b = "--save" } and has { i = i + 1; save_dir = args[i] }
+        else if slice::eq_bytes{ a, b = "--out" } and has { i = i + 1; out_dir = args[i] }
+        else {
+            io::eprintln{ &io, s = "usage: savetest [--game DIR] [--save DIR] [--out DIR]" }
+            return 2
+        }
+        i = i + 1
+    }
+    let mut h = heap::new{ &mem }
+    let module_pages = mem::pages{ &mem, size = 67108864 } ifnull { return 1 }
+    let scratch_pages = mem::pages{ &mem, size = 33554432 } ifnull { return 1 }
+    let mut module_arena = arena::new{ buf = module_pages }
+    let mut scratch = arena::new{ buf = scratch_pages }
+    let mut rm = res::open{ &fs, heap = &h, game } iferr err{ error } {
+        _ = @fmt(&io, "savetest: no game data at {}: {}\n", game, error)
+        io::flush{ &io }
+        return 1
+    }
+    let failures = run{ &io, &fs, &h, &rm, &module_arena, &scratch, save_dir, out_dir } iferr err{ error } {
+        _ = @fmt(&io, "savetest: failed: {}\n", error)
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return if failures == 0 { 0 } else { 1 }
+}
+
+fn run {
+    mut io: Io, mut fs: Fs, mut h: heap::Heap, mut rm: res::Manager, mut module_arena: arena::Arena,
+    mut scratch: arena::Arena, save_dir: []u8, out_dir: []u8,
+} -> !u32 {
+    let w = try world::make{ fs, io, heap = &h, rm = &rm, module_arena = &module_arena, scratch = &scratch, seed = 1, saves = out_dir }
+    fs::make_dir{ &fs, path = out_dir } iferr {}
+    let mut r = Report{ checks = 0, failures = 0 }
+    try test_info{ &io, &fs, &h, &r, save_dir, out_dir }
+    try test_globals{ &io, &fs, &h, &r, w, save_dir, out_dir }
+    try test_party{ &io, &fs, &h, &r, w, save_dir, out_dir }
+    try test_screenshot{ &io, &fs, &h, &r, save_dir, out_dir }
+    _ = @fmt(&io, "savetest: {} checks, {} failed\n", r.checks, r.failures)
+    return r.failures
+}
+
+fn check { mut io: Io, mut r: Report, ok: bool, what: []u8 } {
+    r.checks = r.checks + 1
+    if not ok {
+        r.failures = r.failures + 1
+        _ = @fmt(&io, "FAIL: {}\n", what)
+    }
+}
+
+fn read_file { mut fs: Fs, mut h: heap::Heap, dir: []u8, name: []u8 } -> !alloc::Bytes {
+    let path = try path::join(heap::Heap){ realloc = heap::alloc, heap = &h, dir, name }
+    return try fs::read_all{ &fs, heap = &h, realloc = heap::alloc, path }
+}
+
+fn write_file { mut fs: Fs, mut h: heap::Heap, dir: []u8, name: []u8, bytes: []u8 } -> ! {
+    let path = try path::join(heap::Heap){ realloc = heap::alloc, heap = &h, dir, name }
+    _ = try fs::write_all{ &fs, path, bytes }
+}
+
+// Whether two files have the same top-level fields, in the same order, with the same types.
+fn same_shape { a: *gff::Doc, b: *gff::Doc } -> bool {
+    let fa = gff::fields_of{ doc = a.*, s = gff::ROOT }
+    let fb = gff::fields_of{ doc = b.*, s = gff::ROOT }
+    if fa.len != fb.len { return false }
+    let mut i: usize = 0
+    while i < fa.len {
+        if not slice::eq_bytes{ a = gff::label_of{ doc = a.*, f = fa[i] }, b = gff::label_of{ doc = b.*, f = fb[i] } } { return false }
+        if gff::kind_of{ doc = a.*, f = fa[i] } != gff::kind_of{ doc = b.*, f = fb[i] } { return false }
+        i = i + 1
+    }
+    return true
+}
+
+fn list_len { doc: *gff::Doc, s: u32, label: []u8 } -> usize {
+    return (gff::get_list{ doc = doc.*, s, label } ifnull slice::empty(u32){}).len
+}
+
+// ---- savenfo.res
+
+fn same_info { a: save::Info, b: save::Info } -> bool {
+    if not slice::eq_bytes{ a = a.area_name, b = b.area_name } { return false }
+    if not slice::eq_bytes{ a = a.last_module, b = b.last_module } { return false }
+    if not slice::eq_bytes{ a = a.save_name, b = b.save_name } { return false }
+    if a.time_played != b.time_played or a.cheat_used != b.cheat_used or a.autosave != b.autosave { return false }
+    if a.portrait_count != b.portrait_count { return false }
+    let mut i: usize = 0
+    while i < a.portrait_count {
+        if not resref::eq{ a = a.portraits[i], b = b.portraits[i] } { return false }
+        i = i + 1
+    }
+    return true
+}
+
+fn test_info { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, save_dir: []u8, out_dir: []u8 } -> ! {
+    let data = try read_file{ &fs, &h, dir = save_dir, name = "savenfo.res" }
+    let doc = try gff::parse{ data, realloc = heap::alloc, heap = &h }
+    let info = save::read_info{ doc = &doc }
+    _ = @fmt(&io, "savenfo: \"{}\" module {} played {}s name \"{}\" portraits {}\n", info.area_name, info.last_module, info.time_played, info.save_name, info.portrait_count)
+    check{ &io, &r, ok = slice::eq_bytes{ a = info.area_name, b = "Endar Spire - Command Module" }, what = "info: area name" }
+    check{ &io, &r, ok = slice::eq_bytes{ a = info.last_module, b = "END_M01AA" }, what = "info: last module" }
+    check{ &io, &r, ok = info.time_played == 883, what = "info: time played" }
+    check{ &io, &r, ok = slice::eq_bytes{ a = info.save_name, b = "wadsd" }, what = "info: save name" }
+    check{ &io, &r, ok = info.portrait_count == 2 and resref::matches{ r = info.portraits[0], name = "po_pmhc4" } and resref::matches{ r = info.portraits[1], name = "po_ptrask" }, what = "info: portraits" }
+    check{ &io, &r, ok = not info.cheat_used and not info.autosave, what = "info: flags" }
+
+    let bytes = try save::write_info{ realloc = heap::alloc, heap = &h, info }
+    try write_file{ &fs, &h, dir = out_dir, name = "savenfo.res", bytes }
+    let doc2 = try gff::parse{ data = bytes, realloc = heap::alloc, heap = &h }
+    check{ &io, &r, ok = same_info{ a = info, b = save::read_info{ doc = &doc2 } }, what = "info: round trip" }
+    check{ &io, &r, ok = same_shape{ a = &doc, b = &doc2 }, what = "info: same fields as the install's, in order" }
+
+    // A transition autosave: PCAUTOSAVE, no SAVEGAMENAME.
+    let mut auto = info
+    auto.autosave = true
+    auto.save_name = ""
+    auto.cheat_used = true
+    let bytes3 = try save::write_info{ realloc = heap::alloc, heap = &h, info = auto }
+    let doc3 = try gff::parse{ data = bytes3, realloc = heap::alloc, heap = &h }
+    check{ &io, &r, ok = same_info{ a = auto, b = save::read_info{ doc = &doc3 } }, what = "info: autosave round trip" }
+    check{ &io, &r, ok = gff::get_string{ doc = doc3, s = gff::ROOT, label = "SAVEGAMENAME" } == null, what = "info: autosave has no SAVEGAMENAME" }
+}
+
+// ---- GLOBALVARS.res
+
+fn nth_global { g: *globals::Globals, kind: globals::Type, n: usize } -> ?*mut globals::Global {
+    let mut seen: usize = 0
+    let mut i: usize = 0
+    while i < g.all.len {
+        let p = list::at{ list = g.all, i }
+        if p.kind == kind {
+            if seen == n { return p }
+            seen = seen + 1
+        }
+        i = i + 1
+    }
+    return null
+}
+
+fn near { a: f32, b: f32 } -> bool { return math::abs{ x = a - b } < 0.01 }
+
+// How many globals differ between two catalogues.
+fn globals_differing { a: *globals::Globals, b: *globals::Globals } -> usize {
+    if a.all.len != b.all.len { return a.all.len + b.all.len + 1 }
+    let mut bad: usize = 0
+    let mut i: usize = 0
+    while i < a.all.len {
+        let x = list::at{ list = a.all, i }
+        let y = list::at{ list = b.all, i }
+        let same = x.kind == y.kind and slice::eq_bytes{ a = x.name, b = y.name } and match x.kind {
+            string => { slice::eq_bytes{ a = x.text, b = y.text } }
+            location => {
+                near{ a = x.location.position.x, b = y.location.position.x } and near{ a = x.location.position.y, b = y.location.position.y }
+                    and near{ a = x.location.position.z, b = y.location.position.z } and near{ a = x.location.facing, b = y.location.facing }
+            }
+            else => { x.number == y.number }
+        }
+        if not same { bad = bad + 1 }
+        i = i + 1
+    }
+    return bad
+}
+
+fn names_missing { g: *globals::Globals, doc: *gff::Doc, label: []u8 } -> usize {
+    let names = gff::get_list{ doc = doc.*, s = gff::ROOT, label } ifnull slice::empty(u32){}
+    let mut missing: usize = 0
+    let mut i: usize = 0
+    while i < names.len {
+        let name = gff::get_string{ doc = doc.*, s = names[i], label = "Name" } ifnull ""
+        if map::get{ m = g.by_name, key = name } == null { missing = missing + 1 }
+        i = i + 1
+    }
+    return missing
+}
+
+fn count_set { g: *globals::Globals } -> usize {
+    let mut n: usize = 0
+    let mut i: usize = 0
+    while i < g.all.len {
+        let p = list::at{ list = g.all, i }
+        let set = match p.kind {
+            string => { p.text.len != 0 }
+            location => { p.location.facing != 0.0 or p.location.position.x != 0.0 }
+            else => { p.number != 0 }
+        }
+        if set { n = n + 1 }
+        i = i + 1
+    }
+    return n
+}
+
+fn test_globals { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, w: *mut world::World, save_dir: []u8, out_dir: []u8 } -> ! {
+    let data = try read_file{ &fs, &h, dir = save_dir, name = "GLOBALVARS.res" }
+    let doc = try gff::parse{ data, realloc = heap::alloc, heap = &h }
+    let g = &w.globals
+    let all = list::items{ list = g.all }
+    let n_bool = save::count_globals{ all, kind = globals::Type::boolean }
+    let n_number = save::count_globals{ all, kind = globals::Type::number }
+    let n_loc = save::count_globals{ all, kind = globals::Type::location }
+    let n_str = save::count_globals{ all, kind = globals::Type::string }
+    _ = @fmt(&io, "globals: catalogue {} booleans, {} numbers, {} locations, {} strings; file has {} / {} / {} / {}\n", n_bool, n_number, n_loc, n_str, list_len{ doc = &doc, s = gff::ROOT, label = "CatBoolean" }, list_len{ doc = &doc, s = gff::ROOT, label = "CatNumber" }, list_len{ doc = &doc, s = gff::ROOT, label = "CatLocation" }, list_len{ doc = &doc, s = gff::ROOT, label = "CatString" })
+    let unknown = names_missing{ g, doc = &doc, label = "CatBoolean" } + names_missing{ g, doc = &doc, label = "CatNumber" }
+        + names_missing{ g, doc = &doc, label = "CatLocation" } + names_missing{ g, doc = &doc, label = "CatString" }
+    check{ &io, &r, ok = unknown == 0, what = "globals: every saved name is in the catalogue" }
+
+    try save::read_globals{ g, doc = &doc }
+    // The install's save has its booleans false but some numbers set (signed bytes); the file's
+    // own packed values say how many of each, which the catalogue has to match.
+    let file_bools = gff::get_void{ doc = doc, s = gff::ROOT, label = "ValBoolean" } ifnull ""
+    let file_numbers = gff::get_void{ doc = doc, s = gff::ROOT, label = "ValNumber" } ifnull ""
+    let mut expected: usize = 0
+    let mut k: usize = 0
+    while k < file_bools.len {
+        let mut bit: u8 = 0x80
+        while bit != 0 {
+            if (file_bools[k] & bit) != 0 { expected = expected + 1 }
+            bit = bit >> 1
+        }
+        k = k + 1
+    }
+    k = 0
+    while k < file_numbers.len {
+        if file_numbers[k] != 0 { expected = expected + 1 }
+        k = k + 1
+    }
+    _ = @fmt(&io, "globals: after loading the install's save {} are non-default (the file's packed values set {})\n", count_set{ g }, expected)
+    check{ &io, &r, ok = count_set{ g } == expected, what = "globals: the install's save loads with as many globals set as its packed values say" }
+
+    // Give the round trip something to carry: a boolean in the first byte, one in the second, the
+    // last one, signed numbers, a string, locations.
+    let b0 = nth_global{ g, kind = globals::Type::boolean, n = 0 } ifnull { return }
+    let b12 = nth_global{ g, kind = globals::Type::boolean, n = 12 } ifnull { return }
+    let blast = nth_global{ g, kind = globals::Type::boolean, n = n_bool - 1 } ifnull { return }
+    b0.number = 1
+    b12.number = 1
+    blast.number = 1
+    let n0 = nth_global{ g, kind = globals::Type::number, n = 0 } ifnull { return }
+    let n1 = nth_global{ g, kind = globals::Type::number, n = 1 } ifnull { return }
+    let n2 = nth_global{ g, kind = globals::Type::number, n = 2 } ifnull { return }
+    n0.number = -5
+    n1.number = 127
+    n2.number = -128
+    let s0 = nth_global{ g, kind = globals::Type::string, n = 0 } ifnull { return }
+    try globals::set_string{ g, name = s0.name, value = "hello, save" }
+    let l0 = nth_global{ g, kind = globals::Type::location, n = 0 } ifnull { return }
+    let l1 = nth_global{ g, kind = globals::Type::location, n = 1 } ifnull { return }
+    l0.location = values::Location{ position = math::Vec3{ x = 1.0, y = 2.0, z = 3.0 }, facing = 90.0, area = obj::INVALID }
+    l1.location = values::Location{ position = math::Vec3{ x = 4.5, y = -6.0, z = 7.25 }, facing = 270.0, area = obj::INVALID }
+
+    let bytes = try save::write_globals{ realloc = heap::alloc, heap = &h, g }
+    try write_file{ &fs, &h, dir = out_dir, name = "GLOBALVARS.res", bytes }
+    let doc2 = try gff::parse{ data = bytes, realloc = heap::alloc, heap = &h }
+    _ = @fmt(&io, "globals: wrote {} bytes (the install's file is {})\n", bytes.len, data.len)
+    check{ &io, &r, ok = same_shape{ a = &doc, b = &doc2 }, what = "globals: same fields as the install's, in order" }
+    check{ &io, &r, ok = list_len{ doc = &doc2, s = gff::ROOT, label = "CatBoolean" } == n_bool and list_len{ doc = &doc2, s = gff::ROOT, label = "CatNumber" } == n_number
+        and list_len{ doc = &doc2, s = gff::ROOT, label = "CatLocation" } == n_loc and list_len{ doc = &doc2, s = gff::ROOT, label = "ValString" } == n_str, what = "globals: list sizes" }
+
+    // The packed layout.
+    let vb = gff::get_void{ doc = doc2, s = gff::ROOT, label = "ValBoolean" } ifnull ""
+    let vn = gff::get_void{ doc = doc2, s = gff::ROOT, label = "ValNumber" } ifnull ""
+    let vl = gff::get_void{ doc = doc2, s = gff::ROOT, label = "ValLocation" } ifnull ""
+    check{ &io, &r, ok = vb.len == n_bool / 8 + 1 and vn.len == n_number and vl.len == 2400, what = "globals: packed sizes (count / 8 + 1, count, 2400)" }
+    if vb.len > 1 and vn.len > 2 and vl.len == 2400 {
+        let top: u8 = 0x80
+        check{ &io, &r, ok = vb[0] == 0x80 and vb[1] == 0x08 and (vb[(n_bool - 1) >> 3] & (top >> ((n_bool - 1) & 7))) != 0, what = "globals: booleans are most significant bit first" }
+        check{ &io, &r, ok = vn[0] == 0xFB and vn[1] == 127 and vn[2] == 0x80, what = "globals: numbers are signed bytes" }
+        let x = le::get_f32{ data = vl, at = 0 } iferr 0.0
+        let oy = le::get_f32{ data = vl, at = 16 } iferr 0.0
+        let x1 = le::get_f32{ data = vl, at = 24 } iferr 0.0
+        check{ &io, &r, ok = near{ a = x, b = 1.0 } and near{ a = oy, b = 1.0 } and near{ a = x1, b = 4.5 }, what = "globals: location slots hold position and orientation" }
+        let mut rest_zero = true
+        let mut k: usize = 24 * n_loc
+        while k < vl.len {
+            if vl[k] != 0 { rest_zero = false }
+            k = k + 1
+        }
+        check{ &io, &r, ok = rest_zero, what = "globals: the unused location slots are zero" }
+    }
+
+    // Back into a fresh catalogue: every value as it was.
+    let mut g2 = try globals::make{ heap = &h, table = w.tables.globalcat }
+    try save::read_globals{ g = &g2, doc = &doc2 }
+    let bad = globals_differing{ a = g, b = &g2 }
+    check{ &io, &r, ok = bad == 0, what = "globals: round trip" }
+    check{ &io, &r, ok = globals::number{ g = &g2, name = n0.name } == -5 and globals::number{ g = &g2, name = n2.name } == -128 and globals::boolean{ g = &g2, name = blast.name }
+        and slice::eq_bytes{ a = globals::string{ g = &g2, name = s0.name }, b = "hello, save" }, what = "globals: values by name" }
+    _ = @fmt(&io, "globals: round trip differs in {} of {}\n", bad, g.all.len)
+}
+
+// ---- PARTYTABLE.res
+
+fn party_is_install { w: *world::World } -> bool {
+    return w.party.gold == 63 and w.party.xp_pool == 450 and not w.party.solo and w.party.available[0] and not w.party.available[1] and not w.party.available[8]
+        and w.party.selectable[0] and w.party.selectable[8] and w.party.saved_count == 1 and w.party.saved_slots[0] == 0 and w.party.saved_leader == -1
+}
+
+fn test_party { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, w: *mut world::World, save_dir: []u8, out_dir: []u8 } -> ! {
+    let data = try read_file{ &fs, &h, dir = save_dir, name = "PARTYTABLE.res" }
+    let doc = try gff::parse{ data, realloc = heap::alloc, heap = &h }
+    try save::read_party_table{ w, doc = &doc }
+    _ = @fmt(&io, "party: gold {} solo {} member slots {} leader slot {}\n", w.party.gold, w.party.solo, w.party.saved_count, w.party.saved_leader)
+    check{ &io, &r, ok = party_is_install{ w }, what = "party: read the install's table" }
+
+    // The loader would spawn slot 0's creature and put it behind the PC; here, made-up ids.
+    let pc: u32 = 0x7FFFFFFF
+    let npc0: u32 = 0x7F000100
+    w.party.npcs[0] = npc0
+    _ = party::add{ w, id = pc }
+    _ = party::add{ w, id = npc0 }
+    let bytes = try save::write_party_table{ realloc = heap::alloc, heap = &h, w, played_seconds = 883 }
+    try write_file{ &fs, &h, dir = out_dir, name = "PARTYTABLE.res", bytes }
+    let doc2 = try gff::parse{ data = bytes, realloc = heap::alloc, heap = &h }
+    _ = @fmt(&io, "party: wrote {} bytes (the install's file is {}, with its message logs)\n", bytes.len, data.len)
+    check{ &io, &r, ok = same_shape{ a = &doc, b = &doc2 }, what = "party: same fields as the install's, in order" }
+    let items = twoda::rows{ t = w.tables.baseitems }
+    check{ &io, &r, ok = list_len{ doc = &doc2, s = gff::ROOT, label = "PT_COST_MULT_LIS" } == items and items == list_len{ doc = &doc, s = gff::ROOT, label = "PT_COST_MULT_LIS" }, what = "party: one cost multiplier per baseitems row, as the install's" }
+    check{ &io, &r, ok = list_len{ doc = &doc2, s = gff::ROOT, label = "PT_AVAIL_NPCS" } == 9 and list_len{ doc = &doc2, s = gff::ROOT, label = "PT_PAZSIDELIST" } == 10 and list_len{ doc = &doc2, s = gff::ROOT, label = "PT_MEMBERS" } == 1, what = "party: list sizes" }
+    let cards = gff::get_list{ doc = doc2, s = gff::ROOT, label = "PT_PAZAAKCARDS" } ifnull slice::empty(u32){}
+    check{ &io, &r, ok = cards.len == 19 and (gff::get_int{ doc = doc2, s = cards[0], label = "PT_PAZAAKCOUNT" } ifnull 99999) == 2 and (gff::get_byte{ doc = doc2, s = cards[18], label = "PT_PAZAAKCOUNT" } ifnull 255) == 0, what = "party: pazaak is 18 INTs and a BYTE" }
+    check{ &io, &r, ok = (gff::get_dword{ doc = doc2, s = gff::ROOT, label = "PT_PLAYEDSECONDS" } ifnull 99999) == 883 and (gff::get_byte{ doc = doc2, s = gff::ROOT, label = "PT_NUM_MEMBERS" } ifnull 255) == 1, what = "party: seconds and member count" }
+    let listed = gff::get_list{ doc = doc2, s = gff::ROOT, label = "PT_MEMBERS" } ifnull slice::empty(u32){}
+    check{ &io, &r, ok = listed.len == 1 and (gff::get_int{ doc = doc2, s = listed[0], label = "PT_MEMBER_ID" } ifnull 99999) == 0 and (gff::get_byte{ doc = doc2, s = listed[0], label = "PT_IS_LEADER" } ifnull 255) == 0, what = "party: the PC leads, slot 0 is listed" }
+
+    w.party = party::new{}
+    try save::read_party_table{ w, doc = &doc2 }
+    check{ &io, &r, ok = party_is_install{ w }, what = "party: round trip" }
+
+    // Another party: an NPC leads and a second follows; solo, a bigger purse, other slots open.
+    w.party = party::new{}
+    w.party.gold = 12345
+    w.party.xp_pool = -3
+    w.party.solo = true
+    w.party.available[3] = true
+    w.party.available[5] = true
+    w.party.selectable[0] = true
+    w.party.selectable[3] = true
+    w.party.selectable[5] = false
+    w.party.npcs[3] = 0x7F000103
+    w.party.npcs[5] = 0x7F000105
+    _ = party::add{ w, id = 0x7F000103 }
+    _ = party::add{ w, id = 0x7F000105 }
+    _ = party::add{ w, id = pc }
+    let bytes2 = try save::write_party_table{ realloc = heap::alloc, heap = &h, w, played_seconds = 7 }
+    let doc3 = try gff::parse{ data = bytes2, realloc = heap::alloc, heap = &h }
+    w.party = party::new{}
+    try save::read_party_table{ w, doc = &doc3 }
+    check{ &io, &r, ok = w.party.gold == 12345 and w.party.xp_pool == -3 and w.party.solo and w.party.available[3] and w.party.available[5] and not w.party.available[0], what = "party: second table, purse and availability" }
+    check{ &io, &r, ok = w.party.selectable[3] and not w.party.selectable[5] and w.party.selectable[0], what = "party: second table, selectable" }
+    check{ &io, &r, ok = w.party.saved_count == 2 and w.party.saved_slots[0] == 3 and w.party.saved_slots[1] == 5 and w.party.saved_leader == 3, what = "party: second table, members and leader" }
+}
+
+// ---- Screen.tga
+
+fn test_screenshot { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, save_dir: []u8, out_dir: []u8 } -> ! {
+    // The install's own thumbnail, as the screen the game would have read: thumbnailing it at its
+    // own size has to give it back.
+    let orig = try read_file{ &fs, &h, dir = save_dir, name = "Screen.tga" }
+    check{ &io, &r, ok = orig.len == 18 + 256 * 256 * 3, what = "screenshot: the install's Screen.tga is 18 + 256 * 256 * 3 bytes" }
+    if orig.len == 18 + 256 * 256 * 3 {
+        let rgba = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &h, mem = slice::empty(u8){}, count = 256 * 256 * 4 }
+        let mut row: usize = 0
+        while row < 256 {
+            let mut x: usize = 0
+            while x < 256 {
+                let from = 18 + (row * 256 + x) * 3
+                let to = ((255 - row) * 256 + x) * 4
+                rgba[to] = orig[from + 2]
+                rgba[to + 1] = orig[from + 1]
+                rgba[to + 2] = orig[from]
+                rgba[to + 3] = 255
+                x = x + 1
+            }
+            row = row + 1
+        }
+        let tga = try save::write_screenshot{ realloc = heap::alloc, heap = &h, rgba, width = 256, height = 256 }
+        try write_file{ &fs, &h, dir = out_dir, name = "Screen.tga", bytes = tga }
+        check{ &io, &r, ok = tga.len == orig.len and slice::eq_bytes{ a = tga[..18], b = orig[..18] }, what = "screenshot: header is the install's" }
+        check{ &io, &r, ok = slice::eq_bytes{ a = tga, b = orig }, what = "screenshot: 256 x 256 in, the install's file out, byte for byte" }
+    }
+
+    // A wide screen in four colours: red top left, green top right, blue bottom left, white
+    // bottom right; the file runs bottom up.
+    let sw: u32 = 1280
+    let sh: u32 = 720
+    let screen = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &h, mem = slice::empty(u8){}, count = 1280 * 720 * 4 }
+    let mut y: usize = 0
+    while y < 720 {
+        let mut x: usize = 0
+        while x < 1280 {
+            let p = (y * 1280 + x) * 4
+            let right = x >= 640
+            let bottom = y >= 360
+            screen[p] = if bottom and not right { 0 } else if not bottom and right { 0 } else { 255 }
+            screen[p + 1] = if bottom and not right { 0 } else if not bottom and not right { 0 } else { 255 }
+            screen[p + 2] = if bottom { 255 } else { 0 }
+            screen[p + 3] = 255
+            x = x + 1
+        }
+        y = y + 1
+    }
+    let tga = try save::write_screenshot{ realloc = heap::alloc, heap = &h, rgba = screen, width = sw, height = sh }
+    // Pixel (x, y) of the thumbnail, from the top, as blue, green, red.
+    let top_left = 18 + ((255 - 10) * 256 + 10) * 3
+    let top_right = 18 + ((255 - 10) * 256 + 245) * 3
+    let bottom_left = 18 + ((255 - 245) * 256 + 10) * 3
+    let bottom_right = 18 + ((255 - 245) * 256 + 245) * 3
+    check{ &io, &r, ok = tga.len == 18 + 256 * 256 * 3 and tga[0] == 0 and tga[2] == 2 and tga[13] == 1 and tga[15] == 1 and tga[16] == 24, what = "screenshot: header of a 256 x 256, 24-bit, type 2 TGA" }
+    check{ &io, &r, ok = tga[top_left] == 0 and tga[top_left + 1] == 0 and tga[top_left + 2] == 255, what = "screenshot: top left is red" }
+    check{ &io, &r, ok = tga[top_right] == 0 and tga[top_right + 1] == 255 and tga[top_right + 2] == 0, what = "screenshot: top right is green" }
+    check{ &io, &r, ok = tga[bottom_left] == 255 and tga[bottom_left + 1] == 0 and tga[bottom_left + 2] == 0, what = "screenshot: bottom left is blue" }
+    check{ &io, &r, ok = tga[bottom_right] == 255 and tga[bottom_right + 1] == 255 and tga[bottom_right + 2] == 255, what = "screenshot: bottom right is white" }
+    try write_file{ &fs, &h, dir = out_dir, name = "Screen_wide.tga", bytes = tga }
+
+    // A screen smaller than the thumbnail is stretched, and nothing is read out of range.
+    let tiny = [10, 20, 30, 255, 40, 50, 60, 255]
+    let up = try save::write_screenshot{ realloc = heap::alloc, heap = &h, rgba = tiny[..], width = 2, height = 1 }
+    check{ &io, &r, ok = up.len == 18 + 256 * 256 * 3 and up[18] == 30 and up[18 + 255 * 3] == 60, what = "screenshot: a 2 x 1 screen is stretched" }
+    let bad = match save::write_screenshot{ realloc = heap::alloc, heap = &h, rgba = tiny[..], width = 4, height = 4 } {
+        ok => { false }
+        save::bad_screenshot => { true }
+        else => { false }
+    }
+    check{ &io, &r, ok = bad, what = "screenshot: too few pixels is an error" }
+}

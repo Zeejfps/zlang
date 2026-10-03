@@ -37,7 +37,12 @@ namespace play {
         if w.module == obj::INVALID {
             let chosen = try front_end{ &sdl, &w, &dev, &frame, mixer, adev, scratch = texture_scratch, opts, script, &next_line, &frame_no }
             if chosen.len == 0 { return 0 }
-            try modload::enter{ &w, name = chosen }
+            if chosen.len > 5 and slice::eq_bytes{ a = chosen[..5], b = "load:" } {
+                try save::load_game{ &w, &vm, engine, folder = chosen[5..] }
+            } else {
+                save::clear_store{ st = &w.gip }
+                try modload::enter{ &w, name = chosen }
+            }
             arena::reset{ heap = w.scratch }
         }
         let mut sc = scene::make{ arena = &scene_arena, heap = w.heap, scratch = texture_scratch, rm = w.rm.* }
@@ -60,6 +65,8 @@ namespace play {
         let freq = sdl::counter_frequency{ &sdl }
         let mut last = sdl::counter{ &sdl }
         let mut quit = false
+        let mut want_save: []u8 = ""            // a save asked for this frame: its folder name
+        let mut want_load: []u8 = ""            // a load asked for: a folder (ours, then the install's)
         let mut real_total: f64 = 0.0
         let mut real_worst: f32 = 0.0
         let mut timed: u64 = 0
@@ -74,6 +81,8 @@ namespace play {
                 match e {
                     quit | close => { quit = true }
                     key{ down, repeat, keycode } => {
+                        if down and not repeat and keycode == sdl::key::F1 + 3 { want_save = "QUICKSAVE" }
+                        if down and not repeat and keycode == sdl::key::F1 + 4 { want_load = "000000 - QUICKSAVE" }
                         if not repeat { apply_key{ keys = &keys, keycode, down } }
                         if down and keycode == sdl::key::ESCAPE { quit = true }
                     }
@@ -103,6 +112,34 @@ namespace play {
             }
             timed = timed + 1
             let dt = if opts.dt > 0.0 { opts.dt } else { math::min{ a = real, b = 0.25 } }
+            // A load replaces the world's game, then the presentation starts over (as a transition).
+            if want_load.len > 0 {
+                let folder = save::find_save{ &w, game = opts.game, name = want_load }
+                want_load = ""
+                if folder == null {
+                    _ = @fmt(&w.io, "kotor: no such save\n")
+                } else {
+                    ambience::stop_area{ a = &amb }
+                    scene::release{ &sc, &dev }
+                    arena::reset{ heap = &scene_arena }
+                    save::load_game{ &w, &vm, engine, folder } iferr err{ error } {
+                        _ = @fmt(&w.io, "kotor: load failed: {}\n", error)
+                        return 1
+                    }
+                    sc = scene::make{ arena = &scene_arena, heap = w.heap, scratch = texture_scratch, rm = w.rm.* }
+                    try scene::load_area{ &sc, &w, &dev }
+                    camera = cam::new{}
+                    let loaded_area = world::object{ w = &w, id = w.area }
+                    if loaded_area != null {
+                        if obj::area{ o = loaded_area } is some{ value = a } {
+                            cam::set_style{ c = &camera, t = w.tables.camerastyle, row = a.camera_style }
+                            ctl::set_style{ ctl = &control, t = w.tables.camerastyle, row = a.camera_style }
+                        }
+                    }
+                    ambience::start_area{ a = &amb, &w }
+                }
+            }
+            w.played_seconds = w.played_seconds + @as(f64, real)
             // 3-6. The world.
             clock::advance{ c = &w.clock, seconds = dt }
             ctl::update{ ctl = &control, &w, keys, yaw = camera.yaw, dt = w.clock.dt }
@@ -181,6 +218,17 @@ namespace play {
                 }
                 s = s + 1
             }
+            if want_save.len > 0 {
+                let slot: u32 = if ci::eq{ a = want_save, b = "QUICKSAVE" } { 0 } else if ci::eq{ a = want_save, b = "AUTOSAVE" } { 1 } else { 2 }
+                let size = gpu::screen_size{ dev }
+                let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &scene_arena, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
+                _ = gpu::read_screen{ &dev, into = pixels } iferr { size }
+                save::save_game{ &w, slot, folder_name = want_save, save_name = want_save, screen = pixels, width = size.width, height = size.height } iferr err{ error } {
+                    _ = @fmt(&w.io, "kotor: save failed: {}\n", error)
+                }
+                _ = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &scene_arena, mem = pixels, count = 0 }
+                want_save = ""
+            }
             if not opts.headless { gpu::present{ &dev, &sdl } }
             arena::reset{ heap = w.scratch }
         }
@@ -254,9 +302,18 @@ namespace play {
                     done = true
                 }
                 load_game{ folder, folder_len } => {
-                    // HOOK(save): loading a game. Until then, a new game.
-                    _ = @fmt(&w.io, "kotor: load game {}: not yet, starting a new game\n", folder[..folder_len])
-                    chosen = "end_m01aa"
+                    let name = folder
+                    let found = save::find_save{ &w, game = opts.game, name = name[..folder_len] }
+                    if found != null {
+                        // "load:" + the folder, for run to load instead of entering a module.
+                        let tagged = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = found.len + 5 }
+                        slice::copy(u8){ dst = tagged[..5], src = "load:" }
+                        slice::copy(u8){ dst = tagged[5..], src = found }
+                        chosen = tagged
+                    } else {
+                        _ = @fmt(&w.io, "kotor: no save {}\n", name[..folder_len])
+                        chosen = "end_m01aa"
+                    }
                     done = true
                 }
                 quit => { done = true }
