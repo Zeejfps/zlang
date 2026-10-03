@@ -79,6 +79,7 @@ namespace os {
 
     const O_RDONLY: i32 = 0
     const O_WRONLY: i32 = 1
+    const SEEK_SET: i32 = 0
     const SEEK_END: i32 = 2
     const PATH_MAX: usize = 4096
 
@@ -119,6 +120,13 @@ namespace os {
     fn file_close { mut fs: Fs, file: u64 } -> ! {
         let fd = descriptor{ file } ifnull { return fs::bad_file }
         if fd_close{ &fs, fd } < 0 { return failed{ code = sys::errno{ &fs }.* } }
+    }
+
+    // Moves the position to `offset` from the start (SEEK_SET).
+    fn file_seek { mut fs: Fs, file: u64, offset: u64 } -> ! {
+        let fd = descriptor{ file } ifnull { return fs::bad_file }
+        if offset > 9223372036854775807 { return failed{ code = 22 } }       // EINVAL
+        if lseek{ &fs, fd, offset = @as(i64, offset), whence = SEEK_SET } < 0 { return failed{ code = sys::errno{ &fs }.* } }
     }
 
     // The size of the file at `path`: where its end is, which needs no layout of struct stat.

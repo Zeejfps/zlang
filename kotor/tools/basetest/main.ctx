@@ -1,0 +1,134 @@
+// basetest: checks of lib/base's data helpers (le, text, resref, ci, path, heap) on hand-made
+// inputs. Prints each failure and a count; exits 1 if any failed.
+
+struct Tally { run: u32, failed: u32 }
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+    let mut t = Tally{ run = 0, failed = 0 }
+    check_le{ &io, &t }
+    check_text{ &io, &t }
+    check_resref{ &io, &t }
+    check_heap{ &io, &mem, &t }
+    _ = @fmt(&io, "basetest: {} checks, {} failed\n", t.run, t.failed)
+    io::flush{ &io }
+    return if t.failed == 0 { 0 } else { 1 }
+}
+
+fn expect { mut io: Io, mut t: Tally, ok: bool, what: strlit } {
+    t.run = t.run + 1
+    if not ok {
+        t.failed = t.failed + 1
+        _ = @fmt(&io, "FAIL: {}\n", what)
+    }
+}
+
+fn check_le { mut io: Io, mut t: Tally } {
+    let data: []u8 = "\x01\x02\x03\x04\xff\xff\xff\xff\x00\x00\x80\x3f"
+    expect{ &io, &t, ok = (le::get_u16{ data, at = 0 } iferr 0) == 0x0201, what = "get_u16" }
+    expect{ &io, &t, ok = (le::get_u32{ data, at = 0 } iferr 0) == 0x04030201, what = "get_u32" }
+    expect{ &io, &t, ok = (le::get_i32{ data, at = 4 } iferr 0) == -1, what = "get_i32 -1" }
+    expect{ &io, &t, ok = (le::get_f32{ data, at = 8 } iferr 0.0) == 1.0, what = "get_f32 1.0" }
+    expect{ &io, &t, ok = (le::get_u64{ data, at = 0 } iferr 0) == 0xffffffff04030201, what = "get_u64" }
+    // Reads that run past the end are errors, never panics.
+    let past = match le::get_u32{ data, at = 10 } { ok => { false } le::truncated{ at, want } => { at == 10 and want == 4 } }
+    expect{ &io, &t, ok = past, what = "get_u32 past the end" }
+    let huge = match le::get_u32{ data, at = 18446744073709551614 } { ok => { false } err => { true } }
+    expect{ &io, &t, ok = huge, what = "get_u32 at a huge offset" }
+    let mut r = le::reader{ data }
+    let a = le::read_u16{ &r } iferr 0
+    let b = le::read_u8{ &r } iferr 0
+    expect{ &io, &t, ok = a == 0x0201 and b == 3 and r.pos == 3, what = "reader sequence" }
+    let short = match le::read_bytes{ &r, len = 10 } { ok => { false } err => { true } }
+    expect{ &io, &t, ok = short and r.pos == 3, what = "reader leaves pos on failure" }
+
+    let mut buf: [64]u8
+    let mut arena_ = arena::new{ buf = buf[..] }
+    let mut out = list::new(u8){ realloc = arena::alloc, heap = &arena_ }
+    le::put_u32{ &out, v = 0xdeadbeef } iferr {}
+    le::put_f32{ &out, v = -2.5 } iferr {}
+    le::put_padded{ &out, bytes = "abc", width = 5 } iferr {}
+    let w = list::items{ list = out }
+    expect{ &io, &t, ok = w.len == 13 and (le::get_u32{ data = w, at = 0 } iferr 0) == 0xdeadbeef, what = "put_u32" }
+    expect{ &io, &t, ok = (le::get_f32{ data = w, at = 4 } iferr 0.0) == -2.5, what = "put_f32" }
+    expect{ &io, &t, ok = w[8] == 'a' and w[11] == 0 and w[12] == 0, what = "put_padded" }
+}
+
+fn check_text { mut io: Io, mut t: Tally } {
+    expect{ &io, &t, ok = (text::scan_int{ s = "42" } ifnull 0) == 42, what = "%i decimal" }
+    expect{ &io, &t, ok = (text::scan_int{ s = "010" } ifnull 0) == 8, what = "%i octal" }
+    expect{ &io, &t, ok = (text::scan_int{ s = "0x1f" } ifnull 0) == 31, what = "%i hex" }
+    expect{ &io, &t, ok = @trunc(i32, text::scan_int{ s = "0xFFFFFFFF" } ifnull 0) == -1, what = "%i 0xFFFFFFFF as i32" }
+    expect{ &io, &t, ok = (text::scan_int{ s = " -12abc" } ifnull 0) == -12, what = "%i stops at a letter" }
+    expect{ &io, &t, ok = text::scan_int{ s = "abc" } == null, what = "%i no digits" }
+    expect{ &io, &t, ok = (text::scan_int{ s = "0" } ifnull 9) == 0, what = "%i zero" }
+    expect{ &io, &t, ok = (text::scan_int{ s = "0x" } ifnull 9) == 0, what = "%i 0x without digits" }
+    expect{ &io, &t, ok = (text::scan_int{ s = "09" } ifnull 9) == 0, what = "%i octal stops at 9" }
+    expect{ &io, &t, ok = text::scan_decimal{ s = "010" } == 10, what = "atol is decimal" }
+    expect{ &io, &t, ok = (text::scan_f32{ s = ".5" } ifnull 0.0) == 0.5, what = "%f .5" }
+    expect{ &io, &t, ok = (text::scan_f64{ s = "-1.26441e-007" } ifnull 0.0) == -1.26441e-7, what = "%f exponent" }
+    expect{ &io, &t, ok = (text::scan_f32{ s = "14.0x" } ifnull 0.0) == 14.0, what = "%f stops" }
+    expect{ &io, &t, ok = (text::scan_f32{ s = "3e" } ifnull 0.0) == 3.0, what = "%f bare e" }
+    expect{ &io, &t, ok = text::scan_f32{ s = "-." } == null, what = "%f no digits" }
+    expect{ &io, &t, ok = text::is_float{ s = "39.4685" } and not text::is_float{ s = "1.2.3" }, what = "is_float" }
+
+    let mut lines = text::lines{ data = "a b\r\n\r\n  c\td  \nlast" }
+    let l1 = text::next_line{ &lines } ifnull "?"
+    let l2 = text::next_line{ &lines } ifnull "?"
+    let l3 = text::next_line{ &lines } ifnull "?"
+    let l4 = text::next_line{ &lines } ifnull "?"
+    let l5 = text::next_line{ &lines }
+    expect{ &io, &t, ok = slice::eq_bytes{ a = l1, b = "a b" } and l2.len == 0 and slice::eq_bytes{ a = l4, b = "last" } and l5 == null, what = "lines" }
+    let mut words = text::words{ s = l3 }
+    let w1 = text::next_word{ &words } ifnull "?"
+    let w2 = text::next_word{ &words } ifnull "?"
+    expect{ &io, &t, ok = slice::eq_bytes{ a = w1, b = "c" } and slice::eq_bytes{ a = w2, b = "d" } and text::next_word{ &words } == null, what = "words" }
+    expect{ &io, &t, ok = text::count_words{ s = " x  y\tz " } == 3, what = "count_words" }
+
+    expect{ &io, &t, ok = ci::eq{ a = "Imp_HeadCon_Node", b = "imp_headcon_node" }, what = "ci::eq" }
+    expect{ &io, &t, ok = not ci::eq{ a = "abc", b = "abd" }, what = "ci::eq differs" }
+    expect{ &io, &t, ok = ci::hash{ key = "ABC" } == ci::hash{ key = "abc" }, what = "ci::hash folds" }
+    expect{ &io, &t, ok = ci::compare{ a = "B", b = "a" } > 0 and ci::compare{ a = "a", b = "ab" } < 0, what = "ci::compare" }
+    expect{ &io, &t, ok = slice::eq_bytes{ a = path::stem{ name = "foo.tga.bak" }, b = "foo" }, what = "path::stem" }
+    expect{ &io, &t, ok = slice::eq_bytes{ a = path::extension{ name = "a.b.tpc" }, b = "b.tpc" }, what = "path::extension" }
+    let mut pb: [32]u8
+    let joined = path::join_into{ dir = "F:/game", name = "chitin.key", into = pb[..] } ifnull pb[..0]
+    expect{ &io, &t, ok = slice::eq_bytes{ a = joined, b = "F:/game/chitin.key" }, what = "path::join_into" }
+}
+
+fn check_resref { mut io: Io, mut t: Tally } {
+    let r = resref::from{ name = "P_Bastila" } iferr resref::empty{}
+    expect{ &io, &t, ok = slice::eq_bytes{ a = resref::bytes{ r = &r }, b = "p_bastila" }, what = "resref folds case" }
+    expect{ &io, &t, ok = resref::matches{ r, name = "p_BASTILA" }, what = "resref::matches" }
+    let long = match resref::from{ name = "seventeen_chars_x" } { ok => { false } resref::too_long{ len } => { len == 17 } }
+    expect{ &io, &t, ok = long, what = "resref too long" }
+    let f = resref::from_field{ raw = "nm13aabast01059_" }
+    expect{ &io, &t, ok = f.len == 16, what = "16-byte field without NUL" }
+    let g = resref::from_field{ raw = "abc\x00\x00junk" }
+    expect{ &io, &t, ok = slice::eq_bytes{ a = resref::bytes{ r = &g }, b = "abc" }, what = "field cut at NUL" }
+    let tr = resref::truncate{ name = "a_very_long_file_stem" }
+    expect{ &io, &t, ok = tr.len == 16, what = "truncate" }
+    let x = resref::from{ name = "ABC" } iferr resref::empty{}
+    let y = resref::from{ name = "abc" } iferr resref::empty{}
+    expect{ &io, &t, ok = resref::eq{ a = x, b = y } and resref::hash{ key = x } == resref::hash{ key = y }, what = "resref eq and hash" }
+}
+
+fn check_heap { mut io: Io, mut mem: Mem, mut t: Tally } {
+    let mut h = heap::new{ &mem }
+    let mut xs = list::new(u64){ realloc = heap::alloc, heap = &h }
+    let mut i: u64 = 0
+    while i < 100000 {
+        list::push{ list = &xs, item = i } iferr { break }
+        i = i + 1
+    }
+    let items = list::items{ list = xs }
+    expect{ &io, &t, ok = items.len == 100000 and items[99999] == 99999 and h.blocks == 1, what = "heap list growth" }
+    list::free{ list = &xs }
+    expect{ &io, &t, ok = h.live == 0 and h.blocks == 0 and h.peak >= 800000, what = "heap frees" }
+    let mut m = map::new(resref::ResRef, u32){ realloc = heap::alloc, heap = &h, hash = resref::hash, eq = resref::eq }
+    map::put{ m = &m, key = resref::truncate{ name = "Module" }, value = 7 } iferr {}
+    let got = map::get{ m, key = resref::truncate{ name = "module" } } ifnull 0
+    expect{ &io, &t, ok = got == 7, what = "map with resref keys" }
+    map::free{ m = &m }
+    let big = heap::alloc{ heap = &h, mem = slice::empty(u8){}, new = 64, align = 32 }
+    expect{ &io, &t, ok = big == null and h.live == 0, what = "alignment over 16 fails" }
+}

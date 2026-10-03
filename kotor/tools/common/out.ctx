@@ -1,0 +1,77 @@
+// @fmt writers to standard output for the data tools (resls, gffdump, fmtcheck, basetest):
+//
+//   _ = @fmt(&io, "{} entries in {}\n", n, path)
+//
+// std has writers only into a utf8::Builder (kotor/FRICTION.md, "No @fmt straight to standard
+// output"). These go away when std's io gets its own; glspike keeps its own copy, so a program
+// must not add both directories.
+namespace out {
+    #write
+    fn put_text { mut io: Io, s: strlit } { io::write{ &io, to = io::Stream::out, bytes = s.bytes } }
+    #write
+    fn put_string { mut io: Io, s: utf8::String } { io::print{ &io, s } }
+    #write
+    fn put_bytes { mut io: Io, b: []u8 } { io::write{ &io, to = io::Stream::out, bytes = b } }
+    #write
+    fn put_mut_bytes { mut io: Io, b: []mut u8 } { io::write{ &io, to = io::Stream::out, bytes = b } }
+    #write
+    fn put_resref { mut io: Io, r: resref::ResRef } { io::write{ &io, to = io::Stream::out, bytes = resref::bytes{ r = &r } } }
+    #write
+    fn put_bool { mut io: Io, b: bool } { io::print_bool{ &io, n = b } }
+    #write
+    fn put_i8 { mut io: Io, n: i8 } { io::print_i64{ &io, n } }
+    #write
+    fn put_i16 { mut io: Io, n: i16 } { io::print_i64{ &io, n } }
+    #write
+    fn put_i32 { mut io: Io, n: i32 } { io::print_i64{ &io, n } }
+    #write
+    fn put_i64 { mut io: Io, n: i64 } { io::print_i64{ &io, n } }
+    #write
+    fn put_u8 { mut io: Io, n: u8 } { io::print_u64{ &io, n } }
+    #write
+    fn put_u16 { mut io: Io, n: u16 } { io::print_u64{ &io, n } }
+    #write
+    fn put_u32 { mut io: Io, n: u32 } { io::print_u64{ &io, n } }
+    #write
+    fn put_u64 { mut io: Io, n: u64 } { io::print_u64{ &io, n } }
+    #write
+    fn put_usize { mut io: Io, n: usize } { io::print_u64{ &io, n } }
+    #write
+    fn put_f32 { mut io: Io, n: f32 } { io::print_f32{ &io, n } }
+    #write
+    fn put_f64 { mut io: Io, n: f64 } { io::print_f64{ &io, n } }
+
+    // Writers to name in a hole: `@fmt(&io, "{}", out::hex{ n, _ })`.
+    fn hex { mut io: Io, n: u64 } -> ! {
+        let mut buf: [16]u8
+        io::print{ &io, s = utf8::fmt_hex{ n, into = buf[..] } }
+    }
+
+    // An unsigned number right-aligned in `width` columns.
+    fn padded { mut io: Io, n: u64, width: usize } -> ! {
+        let mut buf: [20]u8
+        let s = utf8::fmt_u64{ n, into = buf[..] }
+        let mut k = s.bytes.len
+        while k < width {
+            io::write{ &io, to = io::Stream::out, bytes = " " }
+            k = k + 1
+        }
+        io::print{ &io, s }
+    }
+
+    // Bytes right-padded with spaces to `width` columns.
+    fn left { mut io: Io, b: []u8, width: usize } -> ! {
+        io::write{ &io, to = io::Stream::out, bytes = b }
+        let mut k = b.len
+        while k < width {
+            io::write{ &io, to = io::Stream::out, bytes = " " }
+            k = k + 1
+        }
+    }
+
+    // To standard error, a line.
+    fn error_line { mut io: Io, b: []u8 } {
+        io::write{ &io, to = io::Stream::err, bytes = b }
+        io::write{ &io, to = io::Stream::err, bytes = "\n" }
+    }
+}
