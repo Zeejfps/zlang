@@ -5,11 +5,18 @@
 namespace rules {
     // ---- feat and power sets
 
+    // HasFeat: the creature's own feats, or one a BONUS_FEAT effect (an item's property) grants.
     fn has_feat { c: *Creature, feat: i32 } -> bool {
         if feat < 0 or feat >= 256 { return false }
         let w = @as(usize, feat) >> 5
         let b = @as(u32, feat) & 31
-        return ((c.feats[w] >> b) & 1) != 0
+        if ((c.feats[w] >> b) & 1) != 0 { return true }
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) {
+            if c.fx[i].kind == fx::BONUS_FEAT and c.fx[i].ints[0] == feat { return true }
+            i = i + 1
+        }
+        return false
     }
 
     fn grant_feat { mut c: Creature, feat: i32 } {

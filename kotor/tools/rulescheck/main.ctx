@@ -15,6 +15,7 @@ struct Options {
     game: []u8,
     examples: bool,
     census: bool,
+    saved: bool,
     items: bool,
     combat: bool,
     progress: bool,
@@ -41,11 +42,13 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let mut r = check::new_report{}
     if opts.examples { check::run_examples{ &io, &r, tables = &tables } }
     if opts.census { check::run_census{ &io, &fs, heap = &h, &r, tables = &tables, game = opts.game } }
+    if opts.saved { check::run_saved{ &io, &fs, heap = &h, &r, tables = &tables, game = opts.game } }
+    if opts.items { check::run_items{ &io, &fs, &r, heap = &h, rm, tables = &tables } }
     return check::summarize{ &io, title = "rulescheck", r }
 }
 
 fn parse_args { mut io: Io, args: Args } -> Options {
-    let mut o = Options{ game = DEFAULT_GAME, examples = false, census = false, items = false, combat = false, progress = false, bad = false }
+    let mut o = Options{ game = DEFAULT_GAME, examples = false, census = false, saved = false, items = false, combat = false, progress = false, bad = false }
     let mut any = false
     let mut i: usize = 0
     while i < args.len {
@@ -60,6 +63,7 @@ fn parse_args { mut io: Io, args: Args } -> Options {
             any = true
             if slice::eq_bytes{ a = f, b = "examples" } { o.examples = true }
             else if slice::eq_bytes{ a = f, b = "census" } { o.census = true }
+            else if slice::eq_bytes{ a = f, b = "saved" } { o.saved = true }
             else if slice::eq_bytes{ a = f, b = "items" } { o.items = true }
             else if slice::eq_bytes{ a = f, b = "combat" } { o.combat = true }
             else if slice::eq_bytes{ a = f, b = "progress" } { o.progress = true }
@@ -77,6 +81,7 @@ fn parse_args { mut io: Io, args: Args } -> Options {
     if not any {
         o.examples = true
         o.census = true
+        o.saved = true
         o.items = true
         o.combat = true
         o.progress = true
