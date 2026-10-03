@@ -1,0 +1,755 @@
+// mdlcheck: parses every MDL/MDX of the install with lib/mdl and checks what comes out, as
+// kotor/tools/py/mdlprobe.py does with the Python parser, so the numbers can be compared with
+// kotor/docs/formats/mdl.md.
+//
+//   python kotor/tools/py/extract_models.py                       once: the models as files
+//   kotor/tools/ctxc run kotor/tools/mdlcheck                     every model in the manifest
+//   kotor/tools/ctxc run kotor/tools/mdlcheck -- --limit 100      the first 100
+//   kotor/tools/ctxc run kotor/tools/mdlcheck -- --model c_rancor one model, with a node listing
+//   kotor/tools/ctxc run kotor/tools/mdlcheck -- --dir DIR        another extraction
+//
+// Until lib/res reads the install, the models come from the extraction's manifest
+// (DIR/models.txt: `container<TAB>resref` per line, the files at DIR/container/resref.mdl and
+// .mdx). It prints totals, then every failure class with a count and the first example. A
+// failure class is something the data does that a check didn't expect: parse errors, bytes no
+// structure claims, structures that overlap, notes the parser makes (data that disagrees with
+// itself) and the probe's own checks. Exits 1 if a model fails to parse.
+
+type Heap = arena::Arena
+
+struct Options { dir: []u8, limit: usize, only: []u8 }
+
+struct Class { count: u64, example: []u8 }
+
+struct Report {
+    failures: map::Map([]u8, Class, Heap),     // keys are string literals: they live forever
+    notes: map::Map([]u8, Class, Heap),
+    tallies: map::Map([]u8, Class, Heap),
+    keep: *mut Heap,                           // examples
+}
+
+struct Totals {
+    models: u64,
+    parsed: u64,
+    nodes: u64,
+    animations: u64,
+    anim_nodes: u64,
+    controllers: u64,
+    compressed: u64,
+    bezier: u64,
+    faces: u64,
+    meshes: u64,
+    skins: u64,
+    danglies: u64,
+    aabbs: u64,
+    sabers: u64,
+    lights: u64,
+    emitters: u64,
+    references: u64,
+    events: u64,
+}
+
+// What the cross-model checks need of each model.
+struct Summary { name: []u8, supermodel: []u8, header_nodes: u32, nodes: u32 }
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let opts = parse_args{ &io, args } ifnull { return 2 }
+    let keep_mem = mem::pages{ &mem, size = 268435456 } ifnull { return out_of_memory{ &io } }
+    let scratch_mem = mem::pages{ &mem, size = 1073741824 } ifnull { return out_of_memory{ &io } }
+    let mut keep = arena::new{ buf = keep_mem }
+    let mut scratch = arena::new{ buf = scratch_mem }
+    let ok = run{ &io, &fs, &keep, &scratch, opts } iferr err{ error } {
+        _ = @fmt(&io, "mdlcheck: {}\n", error)
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return if ok { 0 } else { 1 }
+}
+
+fn out_of_memory { mut io: Io } -> i32 {
+    io::eprintln{ &io, s = "mdlcheck: out of memory" }
+    return 1
+}
+
+fn run { mut io: Io, mut fs: Fs, mut keep: Heap, mut scratch: Heap, opts: Options } -> !bool {
+    let mut path: [1024]u8
+    let manifest_path = join{ into = path[..], parts = [opts.dir, "/models.txt", "", "", ""] }
+    let manifest = try fs::read_all{ &fs, heap = &keep, realloc = arena::alloc, path = manifest_path }
+    let mut r = Report{
+        failures = map::new([]u8, Class, Heap){ realloc = arena::alloc, heap = &keep, hash = map::hash_bytes, eq = slice::eq_bytes },
+        notes = map::new([]u8, Class, Heap){ realloc = arena::alloc, heap = &keep, hash = map::hash_bytes, eq = slice::eq_bytes },
+        tallies = map::new([]u8, Class, Heap){ realloc = arena::alloc, heap = &keep, hash = map::hash_bytes, eq = slice::eq_bytes },
+        keep = &keep,
+    }
+    let mut t: Totals
+    let mut summaries = list::new(Summary, Heap){ realloc = arena::alloc, heap = &keep }
+    let mut referenced = list::new([]u8, Heap){ realloc = arena::alloc, heap = &keep }
+    let mut all_parsed = true
+
+    let mut line_start: usize = 0
+    let mut i: usize = 0
+    while i < manifest.len {
+        if manifest[i] != '\n' {
+            i = i + 1
+            continue
+        }
+        let line = manifest[line_start..i]
+        i = i + 1
+        line_start = i
+        let tab = find_byte{ s = line, b = '\t' } ifnull { continue }
+        let container = line[..tab]
+        let resref = line[tab + 1..]
+        if opts.only.len > 0 and not mdl::same_name{ a = resref, b = opts.only } { continue }
+        if opts.limit > 0 and t.models >= opts.limit { break }
+        t.models = t.models + 1
+
+        arena::reset{ heap = &scratch }
+        let mut mdl_path: [1024]u8
+        let mut mdx_path: [1024]u8
+        let mdl_file = join{ into = mdl_path[..], parts = [opts.dir, "/", container, "/", resref] }
+        let mdl_name = append{ into = mdl_path[..], len = mdl_file.len, s = ".mdl" }
+        let mdx_file = join{ into = mdx_path[..], parts = [opts.dir, "/", container, "/", resref] }
+        let mdx_name = append{ into = mdx_path[..], len = mdx_file.len, s = ".mdx" }
+        let mdl_bytes = try fs::read_all{ &fs, heap = &scratch, realloc = arena::alloc, path = mdl_name }
+        let mdx_bytes = try fs::read_all{ &fs, heap = &scratch, realloc = arena::alloc, path = mdx_name }
+
+        let mut label_buf: [256]u8
+        let label = join{ into = label_buf[..], parts = [resref, " (", container, ")", ""] }
+        let mut trace = mdl::Trace(Heap){
+            claims = list::new(mdl::Claim, Heap){ realloc = arena::alloc, heap = &scratch },
+            notes = list::new(mdl::Note, Heap){ realloc = arena::alloc, heap = &scratch },
+        }
+        let parsed = mdl::parse_traced{ realloc = arena::alloc, heap = &scratch, mdl = mdl_bytes, mdx = mdx_bytes, &trace }
+        let model = parsed iferr err{ error } {
+            all_parsed = false
+            match error {
+                mdl::malformed{ what, at } => { fail{ &r, kind = what, model = label, detail = @fmt("at {} (parse error)", at) } }
+                else => { fail{ &r, kind = "parse: out of memory", model = label, detail = @fmt("") } }
+            }
+            continue
+        }
+        t.parsed = t.parsed + 1
+        if opts.only.len > 0 { describe{ &io, model = &model } }
+
+        check_claims{ &r, label, claims = list::items{ list = trace.claims }, size = mdl_bytes.len - 12 }
+        let notes = list::items{ list = trace.notes }
+        let mut k: usize = 0
+        while k < notes.len {
+            count{ &r, which = 1, kind = notes[k].what, model = label, detail = @fmt("at {}", notes[k].at) }
+            k = k + 1
+        }
+        check_mdx{ &r, &scratch, label, model = &model, size = mdx_bytes.len }
+        check_model{ &r, &t, &scratch, label, model = &model }
+
+        try list::push{ list = &summaries, item = Summary{
+            name = try copy_lower{ heap = &keep, s = resref }, supermodel = try copy_lower{ heap = &keep, s = model.supermodel },
+            header_nodes = model.header_node_count, nodes = @as(u32, model.nodes.len),
+        } }
+        k = 0
+        while k < model.references.len {
+            try list::push{ list = &referenced, item = try copy_lower{ heap = &keep, s = model.references[k].model } }
+            k = k + 1
+        }
+    }
+
+    check_links{ &r, summaries = list::items{ list = summaries }, referenced = list::items{ list = referenced } }
+
+    _ = @fmt(&io, "mdlcheck: {} models, {} parsed\n", t.models, t.parsed)
+    _ = @fmt(&io, "  {} geometry nodes, {} meshes ({} skin, {} dangly, {} aabb, {} saber), {} faces\n",
+        t.nodes, t.meshes, t.skins, t.danglies, t.aabbs, t.sabers, t.faces)
+    _ = @fmt(&io, "  {} lights, {} emitters, {} references\n", t.lights, t.emitters, t.references)
+    _ = @fmt(&io, "  {} animations, {} animation nodes, {} events\n", t.animations, t.anim_nodes, t.events)
+    _ = @fmt(&io, "  {} controllers ({} compressed orientations, {} bezier)\n", t.controllers, t.compressed, t.bezier)
+    print_classes{ &io, title = "failures", m = r.failures }
+    print_classes{ &io, title = "parser notes", m = r.notes }
+    print_classes{ &io, title = "tallies", m = r.tallies }
+    return all_parsed
+}
+
+// ---- checks
+
+// Every byte of the model data is claimed by exactly one structure.
+fn check_claims { mut r: Report, label: []u8, claims: []mut mdl::Claim, size: usize } {
+    sort_claims{ c = claims }
+    let mut pos: usize = 0
+    let mut i: usize = 0
+    while i < claims.len {
+        let c = claims[i]
+        if c.at < pos {
+            fail{ &r, kind = "mdl-overlap", model = label, detail = @fmt("{} at {} overlaps up to {}", c.what, c.at, pos) }
+        } else if c.at > pos {
+            fail{ &r, kind = "mdl-gap", model = label, detail = @fmt("{} bytes before {} at {}", c.at - pos, c.what, c.at) }
+        }
+        if c.at + c.size > pos { pos = c.at + c.size }
+        i = i + 1
+    }
+    if pos != size { fail{ &r, kind = "mdl-tail", model = label, detail = @fmt("structures end at {}, data at {}", pos, size) } }
+}
+
+struct Block { at: usize, end: usize, stride: usize }
+
+// The meshes' MDX rows tile the file: each block is followed by one sentinel row, then the
+// compiler's (end % 16) bytes of padding.
+fn check_mdx { mut r: Report, mut scratch: Heap, label: []u8, model: *mdl::Model, size: usize } {
+    let mut blocks = list::new(Block, Heap){ realloc = arena::alloc, heap = &scratch }
+    let mut i: usize = 0
+    while i < model.meshes.len {
+        let m = model.meshes[i]
+        if m.vertex_count > 0 and m.mdx_stride != 0 and m.mdx_stride != 0xFFFFFFFF {
+            list::push{ list = &blocks, item = Block{ at = m.mdx_offset, end = m.mdx_offset + m.vertex_count * m.mdx_stride, stride = m.mdx_stride } } iferr {}
+        }
+        i = i + 1
+    }
+    let b = list::items{ list = blocks }
+    // Insertion sort: a model has at most a few hundred meshes.
+    i = 1
+    while i < b.len {
+        let x = b[i]
+        let mut j = i
+        while j > 0 and b[j - 1].at > x.at {
+            b[j] = b[j - 1]
+            j = j - 1
+        }
+        b[j] = x
+        i = i + 1
+    }
+    let mut pos: usize = 0
+    i = 0
+    while i < b.len {
+        pos = pos + pos % 16
+        if b[i].at != pos { fail{ &r, kind = "mdx-gap", model = label, detail = @fmt("block at {}, expected {}", b[i].at, pos) } }
+        pos = b[i].end + b[i].stride
+        if pos > size { fail{ &r, kind = "mdx-no-sentinel", model = label, detail = @fmt("block at {}", b[i].at) } }
+        i = i + 1
+    }
+    if b.len > 0 and pos != size { fail{ &r, kind = "mdx-tail", model = label, detail = @fmt("blocks end at {}, mdx is {}", pos, size) } }
+}
+
+fn check_model { mut r: Report, mut t: Totals, mut scratch: Heap, label: []u8, model: *mdl::Model } {
+    t.nodes = t.nodes + model.nodes.len
+    t.meshes = t.meshes + model.meshes.len
+    t.lights = t.lights + model.lights.len
+    t.emitters = t.emitters + model.emitters.len
+    t.references = t.references + model.references.len
+    t.animations = t.animations + model.animations.len
+
+    // Bind transforms from the node headers, for the skins' inverse binds.
+    let bind = alloc::resize(math::Mat4, Heap){ realloc = arena::alloc, heap = &scratch, mem = slice::empty(math::Mat4){}, count = model.nodes.len } iferr {
+        fail{ &r, kind = "check: out of memory", model = label, detail = @fmt("") }
+        return
+    }
+    let mut i: usize = 0
+    while i < model.nodes.len {
+        let n = model.nodes[i]
+        let local = math::mat4::from_rotation_translation{ r = n.orientation, t = n.position }
+        bind[i] = if n.parent >= 0 { math::mat4::mul{ a = bind[@as(usize, n.parent)], b = local } } else { local }
+        count_controllers{ &r, &t, label, cs = n.controllers, flags = n.flags, length = -1.0 }
+        i = i + 1
+    }
+
+    i = 0
+    while i < model.meshes.len {
+        let m = model.meshes[i]
+        let node = model.nodes[m.node]
+        t.faces = t.faces + m.faces.len
+        check_streams{ &r, label, m }
+        if m.saber != null {
+            t.sabers = t.sabers + 1
+        } else {
+            check_faces{ &r, label, name = node.name, m }
+        }
+        let skin = m.skin
+        if skin != null {
+            t.skins = t.skins + 1
+            check_skin{ &r, label, name = node.name, m, skin, bind, mesh_node = m.node }
+        }
+        if m.dangly != null { t.danglies = t.danglies + 1 }
+        let aabb = m.aabb
+        if aabb != null {
+            t.aabbs = t.aabbs + 1
+            check_aabb{ &r, &scratch, label, name = node.name, m, tree = aabb }
+        }
+        i = i + 1
+    }
+
+    i = 0
+    while i < model.animations.len {
+        let a = model.animations[i]
+        t.events = t.events + a.events.len
+        let mut k: usize = 0
+        while k < a.events.len {
+            let time = a.events[k].time
+            if time < -0.0001 or time > a.length + 0.001 {
+                fail{ &r, kind = "event-outside-length", model = label, detail = @fmt("{} {} at {}, length {}", a.name, a.events[k].name, time, a.length) }
+            }
+            k = k + 1
+        }
+        t.anim_nodes = t.anim_nodes + a.nodes.len
+        k = 0
+        while k < a.nodes.len {
+            let an = a.nodes[k]
+            // An animation controller means what it means for the model node of the same name.
+            let target = mdl::find_node{ model, name = an.name }
+            let flags: u16 = match target {
+                some{ value } => { model.nodes[value].flags }
+                null => {
+                    count{ &r, which = 2, kind = "animation node that names no geometry node", model = label, detail = @fmt("{}/{}", a.name, an.name) }
+                    mdl::NODE_HEADER
+                }
+            }
+            count_controllers{ &r, &t, label, cs = an.controllers, flags, length = a.length }
+            k = k + 1
+        }
+        i = i + 1
+    }
+}
+
+// Counts controllers and checks their keys; `length` is the animation's, or negative for a
+// node's geometry controllers.
+fn count_controllers { mut r: Report, mut t: Totals, label: []u8, cs: []mdl::Controller, flags: u16, length: f32 } {
+    t.controllers = t.controllers + cs.len
+    let mut i: usize = 0
+    while i < cs.len {
+        let c = cs[i]
+        if c.compressed { t.compressed = t.compressed + 1 }
+        if c.bezier { t.bezier = t.bezier + 1 }
+        if not known_id{ flags, id = c.id } {
+            fail{ &r, kind = "ctrl-unknown-id", model = label, detail = @fmt("id {} on a node with flags {}", c.id, flags) }
+        }
+        if length >= 0.0 and c.times.len > 0 {
+            let mut k: usize = 1
+            while k < c.times.len {
+                if c.times[k] < c.times[k - 1] - 0.000001 {
+                    fail{ &r, kind = "ctrl-time-decreasing", model = label, detail = @fmt("id {}", c.id) }
+                    break
+                }
+                k = k + 1
+            }
+            if c.times[0] < -0.0001 or c.times[c.times.len - 1] > length + 0.001 {
+                fail{ &r, kind = "ctrl-time-outside-length", model = label, detail = @fmt("id {}: {}..{} of {}", c.id, c.times[0], c.times[c.times.len - 1], length) }
+            }
+        }
+        if c.id == mdl::CTRL_ORIENTATION and c.columns == 4 and not c.bezier {
+            let mut k: usize = 0
+            while k < c.times.len {
+                let q = c.values[4 * k..4 * k + 4]
+                let len = math::sqrtf{ x = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3] }
+                if math::abs{ x = len - 1.0 } > 0.01 {
+                    fail{ &r, kind = "quat-not-unit", model = label, detail = @fmt("|q| = {}", len) }
+                    break
+                }
+                k = k + 1
+            }
+        }
+        i = i + 1
+    }
+}
+
+// The controller ids mdl.md lists for a node kind (as the Python probe names them).
+fn known_id { flags: u16, id: u32 } -> bool {
+    if id == 8 or id == 20 or id == 36 { return true }
+    if (flags & mdl::NODE_MESH) != 0 and (id == 100 or id == 132) { return true }
+    if (flags & mdl::NODE_LIGHT) != 0 and (id == 76 or id == 88 or id == 96 or id == 100 or id == 140) { return true }
+    if (flags & mdl::NODE_EMITTER) != 0 {
+        if id >= 80 and id <= 200 and id % 4 == 0 { return true }
+        if id >= 216 and id <= 240 and id % 4 == 0 { return true }
+        if id >= 252 and id <= 272 and id % 4 == 0 { return true }
+        if id == 284 or id == 380 or id == 392 or id == 502 { return true }
+    }
+    return false
+}
+
+// MDX attribute flags agree with the streams found, and the row is their sum (plus 32 bytes of
+// skin weights and bone slots).
+fn check_streams { mut r: Report, label: []u8, m: mdl::Mesh } {
+    let mut size: u32 = 0
+    check_stream{ &r, label, &size, flags = m.mdx_flags, bit = 0x001, have = m.positions.len > 0 and m.mdx_stride != 0, floats = 3 }
+    check_stream{ &r, label, &size, flags = m.mdx_flags, bit = 0x002, have = m.uv0.len > 0, floats = 2 }
+    check_stream{ &r, label, &size, flags = m.mdx_flags, bit = 0x004, have = m.uv1.len > 0, floats = 2 }
+    check_stream{ &r, label, &size, flags = m.mdx_flags, bit = 0x008, have = m.uv2.len > 0, floats = 2 }
+    check_stream{ &r, label, &size, flags = m.mdx_flags, bit = 0x010, have = m.uv3.len > 0, floats = 2 }
+    check_stream{ &r, label, &size, flags = m.mdx_flags, bit = 0x020, have = m.normals.len > 0, floats = 3 }
+    check_stream{ &r, label, &size, flags = m.mdx_flags, bit = 0x040, have = m.colors.len > 0, floats = 3 }
+    check_stream{ &r, label, &size, flags = m.mdx_flags, bit = 0x080, have = m.tangents.len > 0, floats = 9 }
+    if m.skin != null { size = size + 32 }
+    if m.vertex_count > 0 and m.mdx_stride != 0xFFFFFFFF and size != m.mdx_stride {
+        fail{ &r, kind = "mdx-stride-not-sum", model = label, detail = @fmt("stride {} vs {} flags {}", m.mdx_stride, size, m.mdx_flags) }
+    }
+}
+
+fn check_stream { mut r: Report, label: []u8, mut size: u32, flags: u32, bit: u32, have: bool, floats: u32 } {
+    let flagged = (flags & bit) != 0
+    if flagged { size = size + 4 * floats }
+    if flagged != have and not (bit == 0x001 and not flagged) {
+        fail{ &r, kind = "mdx-flag-stream-mismatch", model = label, detail = @fmt("bit {} flagged {}", bit, flagged) }
+    }
+}
+
+fn near { a: f32, b: f32, eps: f32 } -> bool {
+    let scale = math::max{ a = 1.0, b = math::max{ a = math::abs{ x = a }, b = math::abs{ x = b } } }
+    return math::abs{ x = a - b } <= eps * scale
+}
+
+fn vertex { m: mdl::Mesh, i: u16 } -> math::Vec3 {
+    let k: usize = 3 * @as(usize, i)
+    return math::Vec3{ x = m.positions[k], y = m.positions[k + 1], z = m.positions[k + 2] }
+}
+
+// Face normals follow the winding and are unit; plane distances are -n . v0 (7,069 aren't).
+fn check_faces { mut r: Report, label: []u8, name: []u8, m: mdl::Mesh } {
+    if m.positions.len == 0 { return }
+    let mut i: usize = 0
+    while i < m.faces.len {
+        let f = m.faces[i]
+        let a = vertex{ m, i = f.vertices[0] }
+        let b = vertex{ m, i = f.vertices[1] }
+        let c = vertex{ m, i = f.vertices[2] }
+        let cr = math::vec3::cross{ a = math::vec3::sub{ a = b, b = a }, b = math::vec3::sub{ a = c, b = a } }
+        let len = math::vec3::length{ v = cr }
+        if len > 0.00000001 {
+            let d = math::vec3::dot{ a = math::vec3::scale{ v = cr, s = 1.0 / len }, b = f.normal }
+            let which: []u8 = if d > 0.99 { "face normal along (v1-v0)x(v2-v0)" } else if d < -0.99 { "face normal opposite (v1-v0)x(v2-v0)" } else { "face normal other" }
+            count{ &r, which = 2, kind = which, model = label, detail = @fmt("{} face {}", name, i) }
+            if math::abs{ x = math::vec3::length{ v = f.normal } - 1.0 } > 0.01 {
+                fail{ &r, kind = "face-normal-not-unit", model = label, detail = @fmt("{} face {}", name, i) }
+            }
+            let pd = -math::vec3::dot{ a = f.normal, b = a }
+            if not near{ a = pd, b = f.distance, eps = 0.01 } {
+                fail{ &r, kind = "face-plane-distance", model = label, detail = @fmt("{} face {}: {} vs {}", name, i, f.distance, pd) }
+            }
+        } else {
+            count{ &r, which = 2, kind = "degenerate faces", model = label, detail = @fmt("{} face {}", name, i) }
+        }
+        i = i + 1
+    }
+}
+
+// Weights sum to 1 on valid slots, and each slot's inverse bind undoes its bone's bind
+// transform relative to the mesh, with the per-node arrays read in tree order.
+fn check_skin { mut r: Report, label: []u8, name: []u8, m: mdl::Mesh, skin: mdl::Skin, bind: []math::Mat4, mesh_node: u32 } {
+    let slots = skin.bone_nodes.len
+    let mut bad_sum: u32 = 0
+    let mut bad_slot: u32 = 0
+    let mut v: usize = 0
+    while 4 * v < skin.weights.len {
+        let w = skin.weights[4 * v..4 * v + 4]
+        if math::abs{ x = w[0] + w[1] + w[2] + w[3] - 1.0 } > 0.01 { bad_sum = bad_sum + 1 }
+        let mut k: usize = 0
+        while k < 4 {
+            if w[k] > 0.0 and @as(usize, skin.bones[4 * v + k]) >= slots { bad_slot = bad_slot + 1 }
+            k = k + 1
+        }
+        v = v + 1
+    }
+    if bad_sum > 0 { fail{ &r, kind = "skin-weights-not-1", model = label, detail = @fmt("{}: {}", name, bad_sum) } }
+    if bad_slot > 0 { fail{ &r, kind = "skin-bone-slot-bad", model = label, detail = @fmt("{}: {}", name, bad_slot) } }
+    if slots > 16 { count{ &r, which = 2, kind = "skins with more than 16 bone slots", model = label, detail = @fmt("{}: {}", name, slots) } }
+    let mesh_inv = math::mat4::inverse_affine{ m = bind[mesh_node] }
+    let mut bad: u32 = 0
+    let mut s: usize = 0
+    while s < slots {
+        let rel = math::mat4::mul{ a = mesh_inv, b = bind[skin.bone_nodes[s]] }
+        let c = math::mat4::mul{ a = skin.inverse_bind[s], b = rel }
+        let trace = c.m[0] + c.m[5] + c.m[10]
+        let off = math::vec3::length{ v = math::Vec3{ x = c.m[12], y = c.m[13], z = c.m[14] } }
+        if not (trace > 2.92 and off < 0.01) { bad = bad + 1 }
+        s = s + 1
+    }
+    if bad > 0 { fail{ &r, kind = "skin-inverse-bind", model = label, detail = @fmt("{}: {} of {} bones", name, bad, slots) } }
+}
+
+// The tree holds each face in one leaf, children sit in their parents, leaf boxes hold their
+// faces (77 meshes have leaves that don't, and m02af_01a's tree leaves out 30 faces).
+fn check_aabb { mut r: Report, mut scratch: Heap, label: []u8, name: []u8, m: mdl::Mesh, tree: mdl::Aabb } {
+    let seen = alloc::resize(u32, Heap){ realloc = arena::alloc, heap = &scratch, mem = slice::empty(u32){}, count = m.faces.len } iferr { return }
+    slice::fill(u32){ s = seen, v = 0 }
+    let mut leaves: usize = 0
+    let mut outside: u32 = 0
+    let mut misses: u32 = 0
+    let mut i: usize = 0
+    while i < tree.nodes.len {
+        let n = tree.nodes[i]
+        if n.face >= 0 {
+            leaves = leaves + 1
+            let f = m.faces[@as(usize, n.face)]
+            seen[@as(usize, n.face)] = seen[@as(usize, n.face)] + 1
+            let mut k: usize = 0
+            let mut missed = false
+            while k < 3 and m.positions.len > 0 {
+                let p = vertex{ m, i = f.vertices[k] }
+                if p.x < n.min.x - 0.001 or p.y < n.min.y - 0.001 or p.z < n.min.z - 0.001 or
+                    p.x > n.max.x + 0.001 or p.y > n.max.y + 0.001 or p.z > n.max.z + 0.001 {
+                    missed = true
+                }
+                k = k + 1
+            }
+            if missed { misses = misses + 1 }
+        } else {
+            if n.left < 0 or n.right < 0 { count{ &r, which = 0, kind = "aabb-inner-node-without-two-children", model = label, detail = @fmt("{}", name) } }
+            let mut side: usize = 0
+            while side < 2 {
+                let ci = if side == 0 { n.left } else { n.right }
+                if ci >= 0 {
+                    let c = tree.nodes[@as(usize, ci)]
+                    if c.min.x < n.min.x - 0.001 or c.min.y < n.min.y - 0.001 or c.min.z < n.min.z - 0.001 or
+                        c.max.x > n.max.x + 0.001 or c.max.y > n.max.y + 0.001 or c.max.z > n.max.z + 0.001 {
+                        outside = outside + 1
+                    }
+                }
+                side = side + 1
+            }
+        }
+        i = i + 1
+    }
+    let mut once = leaves == m.faces.len
+    i = 0
+    while i < seen.len {
+        if seen[i] != 1 { once = false }
+        i = i + 1
+    }
+    if not once { fail{ &r, kind = "aabb-leaves-not-each-face-once", model = label, detail = @fmt("{}: {} leaves, {} faces", name, leaves, m.faces.len) } }
+    if outside > 0 { fail{ &r, kind = "aabb-child-outside-parent", model = label, detail = @fmt("{}: {}", name, outside) } }
+    if misses > 0 {
+        fail{ &r, kind = "aabb-leaf-box-misses-face", model = label, detail = @fmt("{}: {} leaves", name, misses) }
+        count{ &r, which = 2, kind = "aabb leaf boxes that miss their face", model = label, detail = @fmt("{}", name) }
+        let c = map::at{ m = r.tallies, key = "aabb leaf boxes that miss their face" }
+        if c != null { c.count = c.count + misses - 1 }
+    }
+}
+
+// Supermodels and referenced models exist; the geometry header's node count is the model's
+// plus its supermodel's count and one.
+fn check_links { mut r: Report, summaries: []Summary, referenced: [][]u8 } {
+    let mut i: usize = 0
+    while i < summaries.len {
+        let s = summaries[i]
+        let mut expect = s.nodes
+        if s.supermodel.len > 0 {
+            let sm = find_summary{ summaries, name = s.supermodel }
+            match sm {
+                some{ value } => {
+                    count{ &r, which = 2, kind = "supermodel exists", model = s.name, detail = @fmt("{}", s.supermodel) }
+                    expect = expect + summaries[value].header_nodes + 1
+                }
+                null => { count{ &r, which = 2, kind = "supermodel missing", model = s.name, detail = @fmt("{}", s.supermodel) } }
+            }
+        }
+        if s.header_nodes == expect {
+            count{ &r, which = 2, kind = "header node count = nodes (+ supermodel's count + 1)", model = s.name, detail = @fmt("") }
+        } else {
+            count{ &r, which = 2, kind = "header node count is something else", model = s.name, detail = @fmt("{} vs {}", s.header_nodes, expect) }
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < referenced.len {
+        if find_summary{ summaries, name = referenced[i] } == null {
+            fail{ &r, kind = "reference to a missing model", model = referenced[i], detail = @fmt("") }
+        } else {
+            count{ &r, which = 2, kind = "references that resolve", model = referenced[i], detail = @fmt("") }
+        }
+        i = i + 1
+    }
+}
+
+fn find_summary { summaries: []Summary, name: []u8 } -> ?usize {
+    let mut i: usize = 0
+    while i < summaries.len {
+        if slice::eq_bytes{ a = summaries[i].name, b = name } { return i }
+        i = i + 1
+    }
+    return null
+}
+
+// ---- one model, for --model
+
+fn describe { mut io: Io, model: *mdl::Model } {
+    _ = @fmt(&io, "{}: class {}, supermodel '{}', anim scale {}, {} names, {} nodes, {} meshes, {} animations\n",
+        model.name, model.classification, model.supermodel, model.anim_scale, model.names.len, model.nodes.len,
+        model.meshes.len, model.animations.len)
+    let mut i: usize = 0
+    while i < model.nodes.len {
+        let n = model.nodes[i]
+        _ = @fmt(&io, "  {} {} flags {} parent {} pos {} {} {} quat {} {} {} {}\n", i, n.name, n.flags, n.parent,
+            n.position.x, n.position.y, n.position.z, n.orientation.w, n.orientation.x, n.orientation.y, n.orientation.z)
+        i = i + 1
+    }
+    i = 0
+    while i < model.animations.len {
+        let a = model.animations[i]
+        _ = @fmt(&io, "  anim {} length {} transition {} root {} nodes {} events {}\n", a.name, a.length, a.transition, a.root, a.nodes.len, a.events.len)
+        i = i + 1
+    }
+}
+
+// ---- the report
+
+// Records one instance of failure class `kind`; the first one's example is kept.
+fn fail { mut r: Report, kind: []u8, model: []u8, detail: utf8::Fmt(Heap) } {
+    add{ m = &r.failures, keep = r.keep, kind, model, detail }
+}
+
+// As fail, into the notes (which = 1) or the tallies (2).
+fn count { mut r: Report, which: u32, kind: []u8, model: []u8, detail: utf8::Fmt(Heap) } {
+    if which == 1 {
+        add{ m = &r.notes, keep = r.keep, kind, model, detail }
+    } else if which == 2 {
+        add{ m = &r.tallies, keep = r.keep, kind, model, detail }
+    } else {
+        add{ m = &r.failures, keep = r.keep, kind, model, detail }
+    }
+}
+
+fn add { mut m: map::Map([]u8, Class, Heap), keep: *mut Heap, kind: []u8, model: []u8, detail: utf8::Fmt(Heap) } {
+    let c = map::at{ m, key = kind }
+    if c != null {
+        c.count = c.count + 1
+        return
+    }
+    let mut b = utf8::builder(Heap){ realloc = arena::alloc, heap = keep }
+    _ = @fmt(&b, "{}: ", model)
+    _ = detail{ &b }
+    map::put{ m = &m, key = kind, value = Class{ count = 1, example = utf8::view{ b }.bytes } } iferr {}
+}
+
+fn print_classes { mut io: Io, title: strlit, m: map::Map([]u8, Class, Heap) } {
+    _ = @fmt(&io, "\n## {} ({} classes)\n", title, map::len{ m })
+    let mut cursor: usize = 0
+    while true {
+        let e = map::next{ m, &cursor } ifnull { break }
+        _ = @fmt(&io, "  {}: {}   e.g. {}\n", e.key, e.value.count, e.value.example)
+    }
+}
+
+// ---- helpers
+
+// Sorts claims by offset: heapsort, since a big room makes tens of thousands.
+fn sort_claims { c: []mut mdl::Claim } {
+    let n = c.len
+    if n < 2 { return }
+    let mut start = n / 2
+    while start > 0 {
+        start = start - 1
+        sift{ c, root = start, end = n }
+    }
+    let mut end = n
+    while end > 1 {
+        end = end - 1
+        let t = c[0]
+        c[0] = c[end]
+        c[end] = t
+        sift{ c, root = 0, end }
+    }
+}
+
+fn sift { c: []mut mdl::Claim, root: usize, end: usize } {
+    let mut r = root
+    while 2 * r + 1 < end {
+        let mut child = 2 * r + 1
+        if child + 1 < end and c[child].at < c[child + 1].at { child = child + 1 }
+        if c[r].at >= c[child].at { return }
+        let t = c[r]
+        c[r] = c[child]
+        c[child] = t
+        r = child
+    }
+}
+
+fn find_byte { s: []u8, b: u8 } -> ?usize {
+    let mut i: usize = 0
+    while i < s.len {
+        if s[i] == b { return i }
+        i = i + 1
+    }
+    return null
+}
+
+// The parts one after another in `into`, as a view of it.
+fn join { into: []mut u8, parts: [5][]u8 } -> []u8 {
+    let mut n: usize = 0
+    let mut k: usize = 0
+    while k < 5 {
+        n = append{ into, len = n, s = parts[k] }.len
+        k = k + 1
+    }
+    return into[..n]
+}
+
+// `s` written after the first `len` bytes of `into`; the whole as a view.
+fn append { into: []mut u8, len: usize, s: []u8 } -> []u8 {
+    slice::copy(u8){ dst = into[len..len + s.len], src = s }
+    return into[..len + s.len]
+}
+
+fn copy_lower { mut heap: Heap, s: []u8 } -> ![]u8 {
+    let out = try alloc::resize(u8, Heap){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = s.len }
+    let mut i: usize = 0
+    while i < s.len {
+        out[i] = ascii::to_lower{ c = s[i] }
+        i = i + 1
+    }
+    return out
+}
+
+fn parse_args { mut io: Io, args: Args } -> ?Options {
+    let mut o = Options{ dir = "kotor/extract/models", limit = 0, only = "" }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        if i + 1 < args.len and slice::eq_bytes{ a, b = "--dir" } {
+            o.dir = args[i + 1]
+            i = i + 1
+        } else if i + 1 < args.len and slice::eq_bytes{ a, b = "--limit" } {
+            let n = utf8::parse_u64{ s = utf8::of{ chars = args[i + 1] } } ifnull { return usage{ &io } }
+            o.limit = @as(usize, n)
+            i = i + 1
+        } else if i + 1 < args.len and slice::eq_bytes{ a, b = "--model" } {
+            o.only = args[i + 1]
+            i = i + 1
+        } else {
+            return usage{ &io }
+        }
+        i = i + 1
+    }
+    return o
+}
+
+fn usage { mut io: Io } -> ?Options {
+    io::eprintln{ &io, s = "usage: mdlcheck [--dir DIR] [--limit N] [--model NAME]" }
+    return null
+}
+
+// ---- @fmt writers: to standard output, and bytes into a Builder
+
+namespace out {
+    #write
+    fn put_text { mut io: Io, s: strlit } { io::write{ &io, to = io::Stream::out, bytes = s.bytes } }
+    #write
+    fn put_bytes { mut io: Io, b: []u8 } { io::write{ &io, to = io::Stream::out, bytes = b } }
+    #write
+    fn put_bool { mut io: Io, b: bool } { io::print_bool{ &io, n = b } }
+    #write
+    fn put_i32 { mut io: Io, n: i32 } { io::print_i64{ &io, n } }
+    #write
+    fn put_u8 { mut io: Io, n: u8 } { io::print_u64{ &io, n } }
+    #write
+    fn put_u16 { mut io: Io, n: u16 } { io::print_u64{ &io, n } }
+    #write
+    fn put_u32 { mut io: Io, n: u32 } { io::print_u64{ &io, n } }
+    #write
+    fn put_u64 { mut io: Io, n: u64 } { io::print_u64{ &io, n } }
+    #write
+    fn put_usize { mut io: Io, n: usize } { io::print_u64{ &io, n } }
+    #write
+    fn put_f32 { mut io: Io, n: f32 } { io::print_f32{ &io, n } }
+
+    #write
+    fn push_bytes { mut b: utf8::Builder(arena::Arena), s: []u8 } -> ! {
+        let mut i: usize = 0
+        while i < s.len {
+            try list::push{ list = &b.bytes, item = s[i] }
+            i = i + 1
+        }
+    }
+}

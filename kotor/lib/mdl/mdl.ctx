@@ -1,0 +1,1547 @@
+// MDL/MDX binary models (KOTOR 1) parsed into a CPU-side model: the node tree with local
+// transforms, meshes with their vertex streams and faces, skins, dangly meshes, AABB trees,
+// lightsaber blades, lights, emitters, references, controllers and animations. The format is in
+// kotor/docs/formats/mdl.md; how the pieces are used is in kotor/docs/design/models.md.
+//
+//   let model = try mdl::parse{ realloc = arena::alloc, &heap, mdl = mdl_bytes, mdx = mdx_bytes }
+//
+// Ownership: everything the model holds is allocated from the caller's allocator while parsing
+// and is never freed piece by piece, so an arena whose lifetime is the model's is the intended
+// use. The model holds no pointer into `mdl` or `mdx`: the file buffers can go once it is parsed.
+//
+// Conventions (lib/base's `math`): Z up, creatures face +Y; positions are math::Vec3,
+// orientations math::Quat (unit, w first), matrices column-major. A node's transform relative to
+// its parent is T(position) R(orientation) S(scale).
+//
+// Mesh vertex data is one contiguous f32 array per attribute (positions 3 floats per vertex,
+// normals 3, each UV set 2, tangent space 9, skin weights 4 with 4 u8 palette slots), plus u16
+// triangle indices, 3 per face: what a renderer uploads as it is.
+//
+// Animations stay keyed: lib/mdl's `mdl_anim` samples them into a pose.
+namespace mdl {
+    // A structure in the file is out of range or inconsistent: `what` names it, `at` is its
+    // offset in the model data (file offset - 12), or in the MDX for MDX data.
+    error malformed{ what: []u8, at: usize }
+
+    // ---- node flags (node header +0)
+    const NODE_HEADER: u16 = 0x0001
+    const NODE_LIGHT: u16 = 0x0002
+    const NODE_EMITTER: u16 = 0x0004
+    const NODE_CAMERA: u16 = 0x0008
+    const NODE_REFERENCE: u16 = 0x0010
+    const NODE_MESH: u16 = 0x0020
+    const NODE_SKIN: u16 = 0x0040
+    const NODE_ANIM: u16 = 0x0080
+    const NODE_DANGLY: u16 = 0x0100
+    const NODE_AABB: u16 = 0x0200
+    const NODE_SABER: u16 = 0x0800
+
+    // ---- controller ids: byte offsets of the property in the engine's node class, so the same
+    // id means different things on different node kinds (mdl.md, Controller ids).
+    const CTRL_POSITION: u32 = 8
+    const CTRL_ORIENTATION: u32 = 20
+    const CTRL_SCALE: u32 = 36
+    const CTRL_SELF_ILLUM: u32 = 100           // meshes
+    const CTRL_ALPHA: u32 = 132                // meshes (and dummies, which fade their subtree)
+    const CTRL_LIGHT_COLOR: u32 = 76           // lights
+    const CTRL_LIGHT_RADIUS: u32 = 88
+    const CTRL_LIGHT_SHADOW_RADIUS: u32 = 96
+    const CTRL_LIGHT_VERTICAL_DISPLACEMENT: u32 = 100
+    const CTRL_LIGHT_MULTIPLIER: u32 = 140
+
+    // ---- model classification (model header +80)
+    const CLASS_OTHER: u8 = 0x00
+    const CLASS_EFFECT: u8 = 0x01
+    const CLASS_TILE: u8 = 0x02
+    const CLASS_CHARACTER: u8 = 0x04
+    const CLASS_DOOR: u8 = 0x08
+    const CLASS_LIGHTSABER: u8 = 0x10
+    const CLASS_PLACEABLE: u8 = 0x20
+    const CLASS_FLYER: u8 = 0x40
+
+    // ---- emitter flags (emitter header +220), named after the ASCII model's keywords
+    const EMIT_P2P: u32 = 0x0001
+    const EMIT_P2P_SEL: u32 = 0x0002
+    const EMIT_AFFECTED_BY_WIND: u32 = 0x0004
+    const EMIT_TINTED: u32 = 0x0008
+    const EMIT_BOUNCE: u32 = 0x0010
+    const EMIT_RANDOM: u32 = 0x0020
+    const EMIT_INHERIT: u32 = 0x0040
+    const EMIT_INHERIT_VEL: u32 = 0x0080
+    const EMIT_INHERIT_LOCAL: u32 = 0x0100
+    const EMIT_SPLAT: u32 = 0x0200
+    const EMIT_INHERIT_PART: u32 = 0x0400
+    const EMIT_DEPTH_TEXTURE: u32 = 0x0800
+    const EMIT_RANDOM2: u32 = 0x1000
+
+    // ---- the model
+
+    struct Model {
+        name: []u8,
+        supermodel: []u8,              // resref of the supermodel; empty when it has none
+        classification: u8,            // CLASS_*
+        subclassification: u8,
+        affected_by_fog: bool,
+        bounds_min: math::Vec3,        // coarse: the compiler's default box in most models
+        bounds_max: math::Vec3,
+        radius: f32,
+        anim_scale: f32,               // scales animation position offsets (1 in most models)
+        head_root: u32,                // tree index of the head's root (`neck_g` in full bodies)
+        header_node_count: u32,        // the geometry header's count; don't size anything by it
+        names: [][]u8,                 // the name table; node and animation-node name indices
+        nodes: []Node,                 // depth-first tree order: a parent comes before its children
+        meshes: []Mesh,
+        lights: []Light,
+        emitters: []Emitter,
+        references: []Reference,
+        animations: []Animation,
+    }
+
+    struct Node {
+        name: []u8,
+        name_index: u16,
+        part: u16,                     // part number (mdl.md, Supermodels and part numbers)
+        flags: u16,                    // NODE_*
+        parent: i32,                   // tree index; -1 for the root
+        children: []u32,               // tree indices, in the file's order
+        position: math::Vec3,          // relative to the parent
+        orientation: math::Quat,
+        scale: f32,                    // the scale controller, 1 without one
+        alpha: f32,                    // the alpha controller, 1 without one
+        self_illum: math::Vec3,        // the selfillumcolor controller, black without one
+        controllers: []Controller,     // the geometry controllers, which hold the values above
+        mesh: ?u32,                    // index into Model.meshes, lights, emitters, references
+        light: ?u32,
+        emitter: ?u32,
+        reference: ?u32,
+    }
+
+    // A keyed property. Key k is at times[k]; its value is `columns` floats from
+    // values[k * stride{ c }]: one for scalars, 3 for positions and colours, 4 for orientations
+    // (x, y, z, w as stored; build a math::Quat from them). Bezier keys hold the value, then the
+    // in and out tangents, `columns` floats each.
+    struct Controller {
+        id: u32,                       // CTRL_*, read by the kind of the node it drives
+        columns: u32,
+        bezier: bool,
+        compressed: bool,              // orientation keys packed in a u32 each (expanded here)
+        times: []f32,
+        values: []f32,
+    }
+
+    struct Face {
+        normal: math::Vec3,            // unit, along (v1 - v0) x (v2 - v0)
+        distance: f32,                 // n . p + distance = 0 on the face (stale on some faces)
+        material: u32,                 // surfacemat.2da row: meaningful on AABB meshes
+        adjacent: [3]i16,              // face across each edge, -1 none
+        vertices: [3]u16,
+    }
+
+    struct Mesh {
+        node: u32,                     // tree index of the node it belongs to
+        flags: u16,                    // the node's flags: NODE_SKIN, NODE_DANGLY, NODE_AABB, NODE_SABER
+        vertex_count: u32,
+        positions: []f32,              // 3 per vertex, in the node's space
+        normals: []f32,                // 3 per vertex, or empty
+        colors: []f32,                 // 3 per vertex, or empty
+        uv0: []f32,                    // 2 per vertex, or empty: texture 0
+        uv1: []f32,                    // lightmap
+        uv2: []f32,
+        uv3: []f32,
+        tangents: []f32,               // 9 per vertex, or empty: tangent space 0 (mdl.md, MDX)
+        indices: []u16,                // 3 per face, front faces counter-clockwise
+        faces: []Face,
+        bounds_min: math::Vec3,
+        bounds_max: math::Vec3,
+        radius: f32,
+        average: math::Vec3,
+        diffuse: math::Vec3,
+        ambient: math::Vec3,
+        transparency_hint: u32,
+        textures: [4][]u8,             // 0 diffuse, 1 lightmap; empty for none
+        lightmapped: bool,
+        rotate_texture: bool,
+        background: bool,
+        shadow: bool,                  // casts a shadow
+        beaming: bool,
+        render: bool,                  // drawn at all
+        animate_uv: bool,
+        uv_direction: math::Vec2,
+        uv_jitter: f32,
+        uv_jitter_speed: f32,
+        total_area: f32,
+        mdx_offset: u32,               // where the rows were in the MDX, for checking tools
+        mdx_stride: u32,
+        mdx_flags: u32,
+        skin: ?Skin,
+        dangly: ?Dangly,
+        aabb: ?Aabb,
+        saber: ?Saber,
+    }
+
+    // Skinning, in model space: p' = sum over k of weight_k * BoneWorld(slot_k) *
+    // inverse_bind(slot_k) * p, with p the mesh-local position (mdl.md, Skin).
+    struct Skin {
+        weights: []f32,                // 4 per vertex
+        bones: []u8,                   // 4 per vertex: the palette slot of each weight
+        bone_map: []i16,               // per model node, in tree order: its slot, or -1
+        bone_nodes: []u32,             // per slot: the bone's tree index
+        inverse_bind: []math::Mat4,    // per slot: mesh space to the bone's space, at bind
+    }
+
+    struct Dangly {
+        constraints: []f32,            // per vertex, 0 (pinned) to 255 (free)
+        displacement: f32,
+        tightness: f32,
+        period: f32,
+    }
+
+    struct AabbNode {
+        min: math::Vec3,
+        max: math::Vec3,
+        left: i32,                     // node index, -1 on a leaf
+        right: i32,
+        face: i32,                     // face index on a leaf, -1 inside
+        plane: u32,                    // split plane: 1 +X, 2 +Y, 4 +Z, 8 -X, 16 -Y, 32 -Z
+    }
+
+    struct Aabb { nodes: []AabbNode }  // node 0 is the root; empty when the mesh has no tree
+
+    // A lightsaber blade's own vertex arrays (176 vertices; mdl.md, Saber).
+    struct Saber {
+        positions: []f32,              // 3 per vertex
+        uvs: []f32,                    // 2 per vertex
+        normals: []f32,                // 3 per vertex
+    }
+
+    struct Flare { size: f32, position: f32, color_shift: math::Vec3, texture: []u8 }
+
+    // A light's animatable properties: the controllers' values.
+    struct LightProps {
+        color: math::Vec3,
+        radius: f32,
+        multiplier: f32,
+        shadow_radius: f32,
+        vertical_displacement: f32,
+    }
+
+    struct Light {
+        node: u32,
+        flare_radius: f32,
+        flares: []Flare,
+        priority: u32,
+        ambient_only: bool,
+        dynamic_type: u32,
+        affect_dynamic: bool,
+        shadow: bool,
+        generate_flare: bool,
+        fading: bool,
+        props: LightProps,
+    }
+
+    enum EmitterUpdate: u8 { unknown, single, fountain, explosion, lightning }
+    enum EmitterRender: u8 { unknown, normal, billboard_to_local_z, billboard_to_world_z, aligned_to_world_z, aligned_to_particle_dir, motion_blur, linked }
+    enum EmitterBlend: u8 { unknown, normal, lighten, punch_through }
+
+    // An emitter's animatable properties, named after the ASCII model's keywords.
+    struct EmitterProps {
+        alpha_start: f32,
+        alpha_mid: f32,
+        alpha_end: f32,
+        birthrate: f32,
+        random_birthrate: f32,
+        bounce_co: f32,
+        combine_time: f32,
+        drag: f32,
+        fps: f32,
+        frame_start: f32,
+        frame_end: f32,
+        grav: f32,
+        life_exp: f32,
+        mass: f32,
+        p2p_bezier2: f32,
+        p2p_bezier3: f32,
+        particle_rot: f32,
+        rand_vel: f32,
+        size_start: f32,
+        size_mid: f32,
+        size_end: f32,
+        size_start_y: f32,
+        size_mid_y: f32,
+        size_end_y: f32,
+        spread: f32,
+        threshold: f32,
+        velocity: f32,
+        x_size: f32,
+        y_size: f32,
+        blur_length: f32,
+        lightning_delay: f32,
+        lightning_radius: f32,
+        lightning_scale: f32,
+        lightning_sub_div: f32,
+        lightning_zigzag: f32,
+        percent_start: f32,
+        percent_mid: f32,
+        percent_end: f32,
+        target_size: f32,
+        num_control_pts: f32,
+        control_pt_radius: f32,
+        control_pt_delay: f32,
+        tangent_spread: f32,
+        tangent_length: f32,
+        color_start: math::Vec3,
+        color_mid: math::Vec3,
+        color_end: math::Vec3,
+        detonate: f32,
+    }
+
+    struct Emitter {
+        node: u32,
+        dead_space: f32,
+        blast_radius: f32,
+        blast_length: f32,
+        branch_count: u32,
+        control_point_smoothing: f32,
+        x_grid: u32,                   // texture frames across and down
+        y_grid: u32,
+        spawn_type: u32,
+        update: EmitterUpdate,
+        render: EmitterRender,
+        blend: EmitterBlend,
+        update_name: []u8,
+        render_name: []u8,
+        blend_name: []u8,
+        texture: []u8,
+        chunk: []u8,                   // a model spawned instead of quads; empty for none
+        two_sided: bool,
+        loop: bool,
+        render_order: u16,
+        frame_blending: bool,
+        depth_texture: []u8,
+        flags: u32,                    // EMIT_*
+        props: EmitterProps,
+    }
+
+    struct Reference { node: u32, model: []u8, reattachable: bool }
+
+    struct Event { time: f32, name: []u8 }
+
+    struct AnimNode {
+        name: []u8,
+        name_index: u16,               // into the owning model's name table
+        part: u16,
+        parent: i32,
+        controllers: []Controller,
+    }
+
+    struct Animation {
+        name: []u8,
+        length: f32,                   // seconds
+        transition: f32,               // blend-in time, seconds
+        root: []u8,                    // the animation root: the model's name or a node's
+        events: []Event,
+        nodes: []AnimNode,             // tree order
+    }
+
+    // ---- lookups
+
+    // Names compare without case: the data mixes it freely.
+    fn same_name { a: []u8, b: []u8 } -> bool {
+        if a.len != b.len { return false }
+        let mut i: usize = 0
+        while i < a.len {
+            if ascii::to_lower{ c = a[i] } != ascii::to_lower{ c = b[i] } { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    // The tree index of the node called `name`.
+    fn find_node { model: *Model, name: []u8 } -> ?u32 {
+        let mut i: usize = 0
+        while i < model.nodes.len {
+            if same_name{ a = model.nodes[i].name, b = name } { return @as(u32, i) }
+            i = i + 1
+        }
+        return null
+    }
+
+    // The index of the model's own animation called `name` (not its supermodels': see
+    // mdl_anim::find_animation).
+    fn find_animation { model: *Model, name: []u8 } -> ?u32 {
+        let mut i: usize = 0
+        while i < model.animations.len {
+            if same_name{ a = model.animations[i].name, b = name } { return @as(u32, i) }
+            i = i + 1
+        }
+        return null
+    }
+
+    // Floats a key takes in `values`.
+    fn stride { c: Controller } -> u32 {
+        return if c.bezier { 3 * c.columns } else { c.columns }
+    }
+
+    fn has_supermodel { model: *Model } -> bool {
+        return model.supermodel.len > 0
+    }
+
+    // ---- parsing
+
+    // Parses a model from its MDL and MDX files (an MDX may be empty: 538 models have no mesh
+    // data). Fails with `malformed` when a structure is out of range or can't be what it says,
+    // and alloc::out_of_memory.
+    fn parse(S) { realloc: alloc::Fn(S), mut heap: S, mdl: []u8, mdx: []u8 } -> !Model {
+        let mut p = Parser(S){ d = slice::empty(u8){}, x = mdx, realloc, heap = &heap, trace = null }
+        return run{ &p, mdl }
+    }
+
+    // A byte range of the model data that a structure accounts for, and what claimed it: a
+    // checking tool sorts them to find bytes nothing reads and structures that overlap.
+    struct Claim { at: usize, size: usize, what: []u8 }
+
+    // Data that parses but disagrees with itself (a parent pointer, a copy of the positions).
+    struct Note { what: []u8, at: usize }
+
+    struct Trace(S) { claims: list::List(Claim, S), notes: list::List(Note, S) }
+
+    // As parse, recording what every structure claims, and notes, into `trace`: for checking
+    // tools (tools/mdlcheck).
+    fn parse_traced(S) { realloc: alloc::Fn(S), mut heap: S, mdl: []u8, mdx: []u8, mut trace: Trace(S) } -> !Model {
+        let mut p = Parser(S){ d = slice::empty(u8){}, x = mdx, realloc, heap = &heap, trace = &trace }
+        return run{ &p, mdl }
+    }
+
+    // ---- internals
+
+    struct Parser(S) {
+        d: []u8,                       // the model data: the MDL after its 12-byte header
+        x: []u8,                       // the MDX
+        realloc: alloc::Fn(S),
+        heap: *mut S,
+        trace: ?*mut Trace(S),
+    }
+
+    // A node found while walking a tree: its offset and its parent's tree index.
+    struct Pending { at: usize, parent: i32 }
+
+    const MAX_DEPTH: u32 = 256
+    const MAX_NODES: usize = 65536
+
+    fn run(S) { mut p: Parser(S), mdl: []u8 } -> !Model {
+        if mdl.len < 12 { return malformed{ what = "file header", at = 0 } }
+        if u32_at{ d = mdl, at = 0 } != 0 { return malformed{ what = "not a binary model", at = 0 } }
+        p.d = mdl[12..]
+        let d = p.d
+        try need{ d, at = 0, size = 196, what = "model header" }
+        claim{ &p, at = 0, size = 196, what = "model header" }
+        if u32_at{ d = mdl, at = 4 } != d.len { note{ &p, what = "file header model size", at = 0 } }
+        if u32_at{ d = mdl, at = 8 } != p.x.len { note{ &p, what = "file header mdx size", at = 0 } }
+        if d[76] != 2 { note{ &p, what = "geometry type is not 2", at = 76 } }
+
+        let mut m: Model
+        m.name = try copy_fixed{ &p, at = 8, max = 32 }
+        m.classification = d[80]
+        m.subclassification = d[81]
+        m.affected_by_fog = d[83] != 0
+        m.bounds_min = vec3_at{ d, at = 104 }
+        m.bounds_max = vec3_at{ d, at = 116 }
+        m.radius = f32_at{ d, at = 128 }
+        m.anim_scale = f32_at{ d, at = 132 }
+        m.supermodel = none_if_null{ s = try copy_fixed{ &p, at = 136, max = 32 } }
+        m.header_node_count = u32_at{ d, at = 44 }
+
+        // The name table.
+        let names_at = usize_at{ d, at = 184 }
+        let names_n = usize_at{ d, at = 188 }
+        try need{ d, at = names_at, size = 4 * names_n, what = "name table" }
+        claim{ &p, at = names_at, size = 4 * names_n, what = "name table" }
+        let names = try make([]u8){ &p, count = names_n }
+        let mut i: usize = 0
+        while i < names.len {
+            let at = usize_at{ d, at = names_at + 4 * i }
+            names[i] = try copy_zstr{ &p, at, what = "node name" }
+            claim{ &p, at, size = names[i].len + 1, what = "node name" }
+            i = i + 1
+        }
+        m.names = names
+
+        // The node tree, flattened depth first.
+        let root_at = usize_at{ d, at = 40 }
+        let pending = try walk_tree{ &p, root = root_at }
+        let mut meshes = list::new(Mesh, S){ realloc = p.realloc, heap = p.heap }
+        let mut lights = list::new(Light, S){ realloc = p.realloc, heap = p.heap }
+        let mut emitters = list::new(Emitter, S){ realloc = p.realloc, heap = p.heap }
+        let mut references = list::new(Reference, S){ realloc = p.realloc, heap = p.heap }
+        let nodes = try make(Node){ &p, count = pending.len }
+        i = 0
+        while i < pending.len {
+            nodes[i] = try read_node{
+                &p, at = pending[i].at, parent = pending[i].parent, pending, names, index = @as(u32, i),
+                &meshes, &lights, &emitters, &references,
+            }
+            i = i + 1
+        }
+        try link_children{ &p, nodes }
+        m.nodes = nodes
+        m.meshes = list::items{ list = meshes }
+        m.lights = list::items{ list = lights }
+        m.emitters = list::items{ list = emitters }
+        m.references = list::items{ list = references }
+
+        // Skins index the whole tree, so they are finished once every node is in place.
+        i = 0
+        while i < m.meshes.len {
+            try finish_skin{ &p, mesh = m.meshes[i], nodes }
+            i = i + 1
+        }
+
+        let head_at = usize_at{ d, at = 168 }
+        m.head_root = 0
+        let mut found = false
+        i = 0
+        while i < pending.len {
+            if pending[i].at == head_at {
+                m.head_root = @as(u32, i)
+                found = true
+            }
+            i = i + 1
+        }
+        if not found { note{ &p, what = "head root is not a node", at = 168 } }
+
+        // Animations.
+        let anims_at = usize_at{ d, at = 88 }
+        let anims_n = usize_at{ d, at = 92 }
+        if u32_at{ d, at = 96 } != anims_n { note{ &p, what = "animation array allocated size", at = 96 } }
+        try need{ d, at = anims_at, size = 4 * anims_n, what = "animation offsets" }
+        claim{ &p, at = anims_at, size = 4 * anims_n, what = "animation offsets" }
+        let anims = try make(Animation){ &p, count = anims_n }
+        i = 0
+        while i < anims.len {
+            anims[i] = try read_animation{ &p, at = usize_at{ d, at = anims_at + 4 * i }, names }
+            i = i + 1
+        }
+        m.animations = anims
+        return m
+    }
+
+    // Offsets of every node of the tree at `root`, depth first, parent before children, with
+    // their parents' tree indices. A node reached twice (a cycle, or a child shared by two
+    // parents) is malformed.
+    fn walk_tree(S) { mut p: Parser(S), root: usize } -> ![]Pending {
+        let mut out = list::new(Pending, S){ realloc = p.realloc, heap = p.heap }
+        let mut seen = map::new(usize, bool, S){ realloc = p.realloc, heap = p.heap, hash = map::hash_usize, eq = map::eq_usize }
+        try visit{ &p, at = root, parent = -1, depth = 0, &out, &seen }
+        return list::items{ list = out }
+    }
+
+    fn visit(S) {
+        mut p: Parser(S), at: usize, parent: i32, depth: u32,
+        mut out: list::List(Pending, S), mut seen: map::Map(usize, bool, S),
+    } -> ! {
+        if depth > MAX_DEPTH { return malformed{ what = "node tree too deep", at } }
+        if out.len >= MAX_NODES { return malformed{ what = "too many nodes", at } }
+        if map::has{ m = seen, key = at } { return malformed{ what = "node reached twice", at } }
+        try map::put{ m = &seen, key = at, value = true }
+        try need{ d = p.d, at, size = 80, what = "node header" }
+        let me = @as(i32, out.len)
+        try list::push{ list = &out, item = Pending{ at, parent } }
+        let kids_at = usize_at{ d = p.d, at = at + 44 }
+        let kids_n = usize_at{ d = p.d, at = at + 48 }
+        try need{ d = p.d, at = kids_at, size = 4 * kids_n, what = "children" }
+        let mut i: usize = 0
+        while i < kids_n {
+            try visit{ &p, at = usize_at{ d = p.d, at = kids_at + 4 * i }, parent = me, depth = depth + 1, &out, &seen }
+            i = i + 1
+        }
+    }
+
+    // Each node's children, as tree indices in one shared array.
+    fn link_children(S) { mut p: Parser(S), nodes: []mut Node } -> ! {
+        let counts = try make(u32){ &p, count = nodes.len }
+        let mut i: usize = 0
+        while i < nodes.len {
+            if nodes[i].parent >= 0 {
+                let pi = @as(usize, nodes[i].parent)
+                counts[pi] = counts[pi] + 1
+            }
+            i = i + 1
+        }
+        let starts = try make(u32){ &p, count = nodes.len }
+        let mut start: u32 = 0
+        i = 0
+        while i < nodes.len {
+            starts[i] = start
+            start = start + counts[i]
+            i = i + 1
+        }
+        // Tree order visits a parent's children in the file's order, so filling in tree order
+        // keeps it.
+        let all = try make(u32){ &p, count = start }
+        let filled = try make(u32){ &p, count = nodes.len }
+        i = 0
+        while i < nodes.len {
+            if nodes[i].parent >= 0 {
+                let pi = @as(usize, nodes[i].parent)
+                all[starts[pi] + filled[pi]] = @as(u32, i)
+                filled[pi] = filled[pi] + 1
+            }
+            i = i + 1
+        }
+        i = 0
+        while i < nodes.len {
+            nodes[i].children = all[starts[i]..starts[i] + counts[i]]
+            i = i + 1
+        }
+    }
+
+    fn read_node(S) {
+        mut p: Parser(S), at: usize, parent: i32, pending: []Pending, names: [][]u8, index: u32,
+        mut meshes: list::List(Mesh, S), mut lights: list::List(Light, S),
+        mut emitters: list::List(Emitter, S), mut references: list::List(Reference, S),
+    } -> !Node {
+        let d = p.d
+        let mut n: Node
+        n.flags = u16_at{ d, at }
+        n.part = u16_at{ d, at = at + 2 }
+        n.name_index = u16_at{ d, at = at + 4 }
+        if n.name_index >= names.len { return malformed{ what = "node name index", at } }
+        n.name = names[n.name_index]
+        n.parent = parent
+        let parent_at: usize = if parent >= 0 { pending[@as(usize, parent)].at } else { 0 }
+        if u32_at{ d, at = at + 12 } != parent_at { note{ &p, what = "parent pointer", at = at + 12 } }
+        n.position = vec3_at{ d, at = at + 16 }
+        n.orientation = quat_wxyz_at{ d, at = at + 28 }
+        n.scale = 1.0
+        n.alpha = 1.0
+        n.self_illum = math::vec3::zero{}
+        n.mesh = null
+        n.light = null
+        n.emitter = null
+        n.reference = null
+        claim{ &p, at = usize_at{ d, at = at + 44 }, size = 4 * usize_at{ d, at = at + 48 }, what = "children" }
+        n.controllers = try read_controllers{ &p, at }
+
+        let mut sub = at + 80
+        let mut light_props = LightProps{ color = math::vec3::splat{ s = 1.0 }, radius = 0.0, multiplier = 1.0, shadow_radius = 0.0, vertical_displacement = 0.0 }
+        let mut emitter_props: EmitterProps
+        let mut light: ?Light = null
+        let mut emitter: ?Emitter = null
+        if (n.flags & NODE_LIGHT) != 0 {
+            light = try read_light{ &p, at = sub, node = index }
+            sub = sub + 92
+        }
+        if (n.flags & NODE_EMITTER) != 0 {
+            emitter = try read_emitter{ &p, at = sub, node = index }
+            sub = sub + 224
+        }
+        if (n.flags & NODE_REFERENCE) != 0 {
+            try need{ d, at = sub, size = 36, what = "reference header" }
+            n.reference = @as(u32, references.len)
+            try list::push{ list = &references, item = Reference{
+                node = index, model = try copy_fixed{ &p, at = sub, max = 32 }, reattachable = u32_at{ d, at = sub + 32 } != 0,
+            } }
+            sub = sub + 36
+        }
+        let mut mesh: ?Mesh = null
+        let mut mesh_at: usize = 0
+        if (n.flags & NODE_MESH) != 0 {
+            mesh_at = sub
+            mesh = try read_mesh{ &p, at = sub, node = index, flags = n.flags }
+            sub = sub + 332
+        }
+        let mut skin_at: usize = 0
+        if (n.flags & NODE_SKIN) != 0 {
+            skin_at = sub
+            try need{ d, at = sub, size = 100, what = "skin header" }
+            sub = sub + 100
+        }
+        if (n.flags & NODE_ANIM) != 0 {
+            try need{ d, at = sub, size = 56, what = "animated mesh header" }
+            note{ &p, what = "animated mesh (no model has one)", at = sub }
+            sub = sub + 56
+        }
+        let mut dangly_at: usize = 0
+        if (n.flags & NODE_DANGLY) != 0 {
+            dangly_at = sub
+            try need{ d, at = sub, size = 28, what = "dangly header" }
+            sub = sub + 28
+        }
+        let mut aabb_at: usize = 0
+        if (n.flags & NODE_AABB) != 0 {
+            aabb_at = sub
+            try need{ d, at = sub, size = 4, what = "aabb header" }
+            sub = sub + 4
+        }
+        let mut saber_at: usize = 0
+        if (n.flags & NODE_SABER) != 0 {
+            saber_at = sub
+            try need{ d, at = sub, size = 20, what = "saber header" }
+            sub = sub + 20
+        }
+        claim{ &p, at, size = sub - at, what = "node" }
+
+        // The sub-headers after the mesh's need its vertex count, so they are read once the mesh is.
+        let mut has_mesh = false
+        let mut me: Mesh
+        match mesh {
+            some{ value } => {
+                me = value
+                has_mesh = true
+            }
+            null => {}
+        }
+        if has_mesh {
+            if skin_at != 0 { me.skin = try read_skin{ &p, at = skin_at, mesh = me } }
+            if dangly_at != 0 { me.dangly = try read_dangly{ &p, at = dangly_at, count = me.vertex_count } }
+            if aabb_at != 0 { me.aabb = try read_aabb{ &p, at = aabb_at, faces = me.faces.len } }
+            if saber_at != 0 { me.saber = try read_saber{ &p, at = saber_at, count = me.vertex_count } }
+        } else if skin_at != 0 or dangly_at != 0 or aabb_at != 0 or saber_at != 0 {
+            return malformed{ what = "mesh sub-header without a mesh", at }
+        }
+
+        // The geometry controllers hold the static values of the animatable properties.
+        let mut ci: usize = 0
+        while ci < n.controllers.len {
+            let c = n.controllers[ci]
+            if c.times.len > 0 {
+                let v = c.values[..c.columns]
+                if c.id == CTRL_POSITION and c.columns == 3 {
+                    let cp = math::Vec3{ x = v[0], y = v[1], z = v[2] }
+                    if math::vec3::distance{ a = cp, b = n.position } > 0.001 { note{ &p, what = "header position differs from its controller", at } }
+                } else if c.id == CTRL_ORIENTATION and c.columns == 4 {
+                    let cq = math::quat::make{ w = v[3], x = v[0], y = v[1], z = v[2] }
+                    if math::abs{ x = math::quat::dot{ a = cq, b = n.orientation } } < 0.999 { note{ &p, what = "header orientation differs from its controller", at } }
+                } else if c.id == CTRL_SCALE {
+                    n.scale = v[0]
+                } else if not set_prop{ flags = n.flags, id = c.id, v, alpha = &n.alpha, self_illum = &n.self_illum, light = &light_props, emitter = &emitter_props } {
+                    note{ &p, what = "controller id unknown for the node kind", at }
+                }
+            }
+            ci = ci + 1
+        }
+
+        if has_mesh {
+            n.mesh = @as(u32, meshes.len)
+            try list::push{ list = &meshes, item = me }
+        }
+        match light {
+            some{ value } => {
+                let mut l = value
+                l.props = light_props
+                n.light = @as(u32, lights.len)
+                try list::push{ list = &lights, item = l }
+            }
+            null => {}
+        }
+        match emitter {
+            some{ value } => {
+                let mut e = value
+                e.props = emitter_props
+                n.emitter = @as(u32, emitters.len)
+                try list::push{ list = &emitters, item = e }
+            }
+            null => {}
+        }
+        return n
+    }
+
+    // Sets the property that controller `id` drives on a node of kind `flags` to `v`, for every
+    // property but position, orientation and scale; false for an id that kind doesn't have. An
+    // emitter's or a light's ids are its own; alpha works on any other node (on a dummy it fades
+    // the subtree, inferred).
+    fn set_prop {
+        flags: u16, id: u32, v: []f32,
+        mut alpha: f32, mut self_illum: math::Vec3, mut light: LightProps, mut emitter: EmitterProps,
+    } -> bool {
+        if v.len == 0 { return false }
+        if (flags & NODE_LIGHT) != 0 { return set_light_prop{ props = &light, id, v } }
+        if (flags & NODE_EMITTER) != 0 { return set_emitter_prop{ props = &emitter, id, v } }
+        if id == CTRL_SELF_ILLUM and (flags & NODE_MESH) != 0 and v.len >= 3 {
+            self_illum = math::Vec3{ x = v[0], y = v[1], z = v[2] }
+            return true
+        }
+        if id == CTRL_ALPHA {
+            alpha = v[0]
+            return true
+        }
+        return false
+    }
+
+    // Sets the light property controller `id` drives to `v`; false for an id lights don't have.
+    fn set_light_prop { mut props: LightProps, id: u32, v: []f32 } -> bool {
+        if id == CTRL_LIGHT_COLOR and v.len >= 3 {
+            props.color = math::Vec3{ x = v[0], y = v[1], z = v[2] }
+        } else if v.len == 0 {
+            return false
+        } else if id == CTRL_LIGHT_RADIUS {
+            props.radius = v[0]
+        } else if id == CTRL_LIGHT_SHADOW_RADIUS {
+            props.shadow_radius = v[0]
+        } else if id == CTRL_LIGHT_VERTICAL_DISPLACEMENT {
+            props.vertical_displacement = v[0]
+        } else if id == CTRL_LIGHT_MULTIPLIER {
+            props.multiplier = v[0]
+        } else {
+            return false
+        }
+        return true
+    }
+
+    // Sets the emitter property controller `id` drives to `v`; false for an id emitters don't
+    // have. The ids are offsets in the engine's emitter class (mdl.md, Controller ids).
+    fn set_emitter_prop { mut props: EmitterProps, id: u32, v: []f32 } -> bool {
+        if v.len == 0 { return false }
+        if v.len >= 3 {
+            let c = math::Vec3{ x = v[0], y = v[1], z = v[2] }
+            if id == 392 { props.color_start = c; return true }
+            if id == 284 { props.color_mid = c; return true }
+            if id == 380 { props.color_end = c; return true }
+        }
+        let x = v[0]
+        if id == 80 { props.alpha_end = x; return true }
+        if id == 84 { props.alpha_start = x; return true }
+        if id == 88 { props.birthrate = x; return true }
+        if id == 92 { props.bounce_co = x; return true }
+        if id == 96 { props.combine_time = x; return true }
+        if id == 100 { props.drag = x; return true }
+        if id == 104 { props.fps = x; return true }
+        if id == 108 { props.frame_end = x; return true }
+        if id == 112 { props.frame_start = x; return true }
+        if id == 116 { props.grav = x; return true }
+        if id == 120 { props.life_exp = x; return true }
+        if id == 124 { props.mass = x; return true }
+        if id == 128 { props.p2p_bezier2 = x; return true }
+        if id == 132 { props.p2p_bezier3 = x; return true }
+        if id == 136 { props.particle_rot = x; return true }
+        if id == 140 { props.rand_vel = x; return true }
+        if id == 144 { props.size_start = x; return true }
+        if id == 148 { props.size_end = x; return true }
+        if id == 152 { props.size_start_y = x; return true }
+        if id == 156 { props.size_end_y = x; return true }
+        if id == 160 { props.spread = x; return true }
+        if id == 164 { props.threshold = x; return true }
+        if id == 168 { props.velocity = x; return true }
+        if id == 172 { props.x_size = x; return true }
+        if id == 176 { props.y_size = x; return true }
+        if id == 180 { props.blur_length = x; return true }
+        if id == 184 { props.lightning_delay = x; return true }
+        if id == 188 { props.lightning_radius = x; return true }
+        if id == 192 { props.lightning_scale = x; return true }
+        if id == 196 { props.lightning_sub_div = x; return true }
+        if id == 200 { props.lightning_zigzag = x; return true }
+        if id == 216 { props.alpha_mid = x; return true }
+        if id == 220 { props.percent_start = x; return true }
+        if id == 224 { props.percent_mid = x; return true }
+        if id == 228 { props.percent_end = x; return true }
+        if id == 232 { props.size_mid = x; return true }
+        if id == 236 { props.size_mid_y = x; return true }
+        if id == 240 { props.random_birthrate = x; return true }
+        if id == 252 { props.target_size = x; return true }
+        if id == 256 { props.num_control_pts = x; return true }
+        if id == 260 { props.control_pt_radius = x; return true }
+        if id == 264 { props.control_pt_delay = x; return true }
+        if id == 268 { props.tangent_spread = x; return true }
+        if id == 272 { props.tangent_length = x; return true }
+        if id == 502 { props.detonate = x; return true }
+        return false
+    }
+
+    // A node's controllers: 16-byte keys, and one float array that their times and values share.
+    fn read_controllers(S) { mut p: Parser(S), at: usize } -> ![]Controller {
+        let d = p.d
+        let keys_at = usize_at{ d, at = at + 56 }
+        let keys_n = usize_at{ d, at = at + 60 }
+        let data_at = usize_at{ d, at = at + 68 }
+        let data_n = usize_at{ d, at = at + 72 }
+        if u32_at{ d, at = at + 64 } != keys_n or u32_at{ d, at = at + 76 } != data_n {
+            note{ &p, what = "controller array allocated size", at }
+        }
+        try need{ d, at = keys_at, size = 16 * keys_n, what = "controller keys" }
+        try need{ d, at = data_at, size = 4 * data_n, what = "controller data" }
+        claim{ &p, at = keys_at, size = 16 * keys_n, what = "controller keys" }
+        claim{ &p, at = data_at, size = 4 * data_n, what = "controller data" }
+        let out = try make(Controller){ &p, count = keys_n }
+        let mut i: usize = 0
+        while i < keys_n {
+            let k = keys_at + 16 * i
+            let id = u32_at{ d, at = k }
+            let rows: usize = u16_at{ d, at = k + 6 }
+            let time_index: usize = u16_at{ d, at = k + 8 }
+            let value_index: usize = u16_at{ d, at = k + 10 }
+            let cols_byte = d[k + 12]
+            let bezier = (cols_byte & 0x10) != 0
+            let cols: u32 = cols_byte & 0x0F
+            let compressed = id == CTRL_ORIENTATION and cols == 2
+            let per_row: usize = if compressed { 1 } else if bezier { 3 * cols } else { cols }
+            if time_index + rows > data_n or value_index + rows * per_row > data_n {
+                return malformed{ what = "controller rows beyond its data", at = k }
+            }
+            let times = try make(f32){ &p, count = rows }
+            let mut r: usize = 0
+            while r < rows {
+                times[r] = f32_at{ d, at = data_at + 4 * (time_index + r) }
+                r = r + 1
+            }
+            let columns: u32 = if compressed { 4 } else { cols }
+            let values = try make(f32){ &p, count = rows * (if compressed { 4 } else { per_row }) }
+            r = 0
+            if compressed {
+                while r < rows {
+                    let q = decompress_quaternion{ v = u32_at{ d, at = data_at + 4 * (value_index + r) } }
+                    values[4 * r] = q.x
+                    values[4 * r + 1] = q.y
+                    values[4 * r + 2] = q.z
+                    values[4 * r + 3] = q.w
+                    r = r + 1
+                }
+            } else {
+                while r < rows * per_row {
+                    values[r] = f32_at{ d, at = data_at + 4 * (value_index + r) }
+                    r = r + 1
+                }
+            }
+            out[i] = Controller{ id, columns, bezier, compressed, times, values }
+            i = i + 1
+        }
+        return out
+    }
+
+    // KOTOR's packed orientation key: 11 bits x, 11 bits y, 10 bits z, and w from unit length.
+    fn decompress_quaternion { v: u32 } -> math::Quat {
+        let x = @as(f32, v & 0x7FF) / 1023.0 - 1.0
+        let y = @as(f32, (v >> 11) & 0x7FF) / 1023.0 - 1.0
+        let z = @as(f32, v >> 22) / 511.0 - 1.0
+        let m = x * x + y * y + z * z
+        if m < 1.0 {
+            return math::quat::make{ w = math::sqrtf{ x = 1.0 - m }, x, y, z }
+        }
+        let n = math::sqrtf{ x = m }
+        return math::quat::make{ w = 0.0, x = x / n, y = y / n, z = z / n }
+    }
+
+    fn read_light(S) { mut p: Parser(S), at: usize, node: u32 } -> !Light {
+        let d = p.d
+        try need{ d, at, size = 92, what = "light header" }
+        let sizes_at = usize_at{ d, at = at + 16 }
+        let sizes_n = usize_at{ d, at = at + 20 }
+        let pos_at = usize_at{ d, at = at + 28 }
+        let pos_n = usize_at{ d, at = at + 32 }
+        let shift_at = usize_at{ d, at = at + 40 }
+        let shift_n = usize_at{ d, at = at + 44 }
+        let tex_at = usize_at{ d, at = at + 52 }
+        let tex_n = usize_at{ d, at = at + 56 }
+        try need{ d, at = sizes_at, size = 4 * sizes_n, what = "flare sizes" }
+        try need{ d, at = pos_at, size = 4 * pos_n, what = "flare positions" }
+        try need{ d, at = shift_at, size = 12 * shift_n, what = "flare colour shifts" }
+        try need{ d, at = tex_at, size = 4 * tex_n, what = "flare textures" }
+        claim{ &p, at = sizes_at, size = 4 * sizes_n, what = "flare sizes" }
+        claim{ &p, at = pos_at, size = 4 * pos_n, what = "flare positions" }
+        claim{ &p, at = shift_at, size = 12 * shift_n, what = "flare colour shifts" }
+        claim{ &p, at = tex_at, size = 4 * tex_n, what = "flare textures" }
+        let mut count = sizes_n
+        if pos_n != count or shift_n != count or tex_n != count {
+            note{ &p, what = "flare arrays of different lengths", at }
+            count = min_usize{ a = min_usize{ a = sizes_n, b = pos_n }, b = min_usize{ a = shift_n, b = tex_n } }
+        }
+        let flares = try make(Flare){ &p, count }
+        let mut i: usize = 0
+        while i < tex_n {
+            let name_at = usize_at{ d, at = tex_at + 4 * i }
+            let name = try copy_zstr{ &p, at = name_at, what = "flare texture name" }
+            claim{ &p, at = name_at, size = name.len + 1, what = "flare texture name" }
+            if i < count {
+                flares[i] = Flare{
+                    size = f32_at{ d, at = sizes_at + 4 * i },
+                    position = f32_at{ d, at = pos_at + 4 * i },
+                    color_shift = vec3_at{ d, at = shift_at + 12 * i },
+                    texture = name,
+                }
+            }
+            i = i + 1
+        }
+        return Light{
+            node,
+            flare_radius = f32_at{ d, at },
+            flares,
+            priority = u32_at{ d, at = at + 64 },
+            ambient_only = u32_at{ d, at = at + 68 } != 0,
+            dynamic_type = u32_at{ d, at = at + 72 },
+            affect_dynamic = u32_at{ d, at = at + 76 } != 0,
+            shadow = u32_at{ d, at = at + 80 } != 0,
+            generate_flare = u32_at{ d, at = at + 84 } != 0,
+            fading = u32_at{ d, at = at + 88 } != 0,
+            props = LightProps{ color = math::vec3::splat{ s = 1.0 }, radius = 0.0, multiplier = 1.0, shadow_radius = 0.0, vertical_displacement = 0.0 },
+        }
+    }
+
+    fn read_emitter(S) { mut p: Parser(S), at: usize, node: u32 } -> !Emitter {
+        let d = p.d
+        try need{ d, at, size = 224, what = "emitter header" }
+        let update_name = try copy_fixed{ &p, at = at + 32, max = 32 }
+        let render_name = try copy_fixed{ &p, at = at + 64, max = 32 }
+        let blend_name = try copy_fixed{ &p, at = at + 96, max = 32 }
+        let mut props: EmitterProps
+        return Emitter{
+            node,
+            dead_space = f32_at{ d, at },
+            blast_radius = f32_at{ d, at = at + 4 },
+            blast_length = f32_at{ d, at = at + 8 },
+            branch_count = u32_at{ d, at = at + 12 },
+            control_point_smoothing = f32_at{ d, at = at + 16 },
+            x_grid = u32_at{ d, at = at + 20 },
+            y_grid = u32_at{ d, at = at + 24 },
+            spawn_type = u32_at{ d, at = at + 28 },
+            update = classify_update{ s = update_name },
+            render = classify_render{ s = render_name },
+            blend = classify_blend{ s = blend_name },
+            update_name,
+            render_name,
+            blend_name,
+            texture = none_if_null{ s = try copy_fixed{ &p, at = at + 128, max = 32 } },
+            chunk = none_if_null{ s = try copy_fixed{ &p, at = at + 160, max = 16 } },
+            two_sided = u32_at{ d, at = at + 176 } != 0,
+            loop = u32_at{ d, at = at + 180 } != 0,
+            render_order = u16_at{ d, at = at + 184 },
+            frame_blending = d[at + 186] != 0,
+            depth_texture = none_if_null{ s = try copy_fixed{ &p, at = at + 187, max = 32 } },
+            flags = u32_at{ d, at = at + 220 },
+            props,
+        }
+    }
+
+    fn classify_update { s: []u8 } -> EmitterUpdate {
+        if same_name{ a = s, b = "Single" } { return EmitterUpdate::single }
+        if same_name{ a = s, b = "Fountain" } { return EmitterUpdate::fountain }
+        if same_name{ a = s, b = "Explosion" } { return EmitterUpdate::explosion }
+        if same_name{ a = s, b = "Lightning" } { return EmitterUpdate::lightning }
+        return EmitterUpdate::unknown
+    }
+
+    fn classify_render { s: []u8 } -> EmitterRender {
+        if same_name{ a = s, b = "Normal" } { return EmitterRender::normal }
+        if same_name{ a = s, b = "Billboard_to_Local_Z" } { return EmitterRender::billboard_to_local_z }
+        if same_name{ a = s, b = "Billboard_to_World_Z" } { return EmitterRender::billboard_to_world_z }
+        if same_name{ a = s, b = "Aligned_to_World_Z" } { return EmitterRender::aligned_to_world_z }
+        if same_name{ a = s, b = "Aligned_to_Particle_Dir" } { return EmitterRender::aligned_to_particle_dir }
+        if same_name{ a = s, b = "Motion_Blur" } { return EmitterRender::motion_blur }
+        if same_name{ a = s, b = "Linked" } { return EmitterRender::linked }
+        return EmitterRender::unknown
+    }
+
+    fn classify_blend { s: []u8 } -> EmitterBlend {
+        if same_name{ a = s, b = "Normal" } { return EmitterBlend::normal }
+        if same_name{ a = s, b = "Lighten" } { return EmitterBlend::lighten }
+        if same_name{ a = s, b = "Punch-Through" } or same_name{ a = s, b = "PunchThrough" } { return EmitterBlend::punch_through }
+        return EmitterBlend::unknown
+    }
+
+    // Where each MDX attribute's offset sits among the 11 at mesh +260, and its float count.
+    const SLOT_POSITION: usize = 0
+    const SLOT_NORMAL: usize = 1
+    const SLOT_COLOR: usize = 2
+    const SLOT_UV0: usize = 3
+    const SLOT_UV1: usize = 4
+    const SLOT_UV2: usize = 5
+    const SLOT_UV3: usize = 6
+    const SLOT_TANGENT0: usize = 7
+
+    fn read_mesh(S) { mut p: Parser(S), at: usize, node: u32, flags: u16 } -> !Mesh {
+        let d = p.d
+        try need{ d, at, size = 332, what = "mesh header" }
+        let mut m: Mesh
+        m.node = node
+        m.flags = flags
+        let nv: usize = u16_at{ d, at = at + 304 }
+        m.vertex_count = @as(u32, nv)
+        m.bounds_min = vec3_at{ d, at = at + 20 }
+        m.bounds_max = vec3_at{ d, at = at + 32 }
+        m.radius = f32_at{ d, at = at + 44 }
+        m.average = vec3_at{ d, at = at + 48 }
+        m.diffuse = vec3_at{ d, at = at + 60 }
+        m.ambient = vec3_at{ d, at = at + 72 }
+        m.transparency_hint = u32_at{ d, at = at + 84 }
+        m.textures[0] = none_if_null{ s = try copy_fixed{ &p, at = at + 88, max = 32 } }
+        m.textures[1] = none_if_null{ s = try copy_fixed{ &p, at = at + 120, max = 32 } }
+        m.textures[2] = none_if_null{ s = try copy_fixed{ &p, at = at + 152, max = 12 } }
+        m.textures[3] = none_if_null{ s = try copy_fixed{ &p, at = at + 164, max = 12 } }
+        m.animate_uv = u32_at{ d, at = at + 232 } != 0
+        m.uv_direction = math::Vec2{ x = f32_at{ d, at = at + 236 }, y = f32_at{ d, at = at + 240 } }
+        m.uv_jitter = f32_at{ d, at = at + 244 }
+        m.uv_jitter_speed = f32_at{ d, at = at + 248 }
+        m.mdx_stride = u32_at{ d, at = at + 252 }
+        m.mdx_flags = u32_at{ d, at = at + 256 }
+        m.lightmapped = d[at + 308] != 0
+        m.rotate_texture = d[at + 309] != 0
+        m.background = d[at + 310] != 0
+        m.shadow = d[at + 311] != 0
+        m.beaming = d[at + 312] != 0
+        m.render = d[at + 313] != 0
+        m.total_area = f32_at{ d, at = at + 316 }
+        m.mdx_offset = u32_at{ d, at = at + 324 }
+
+        // Faces, and the triangle list from their corners. The file's own index list repeats
+        // them; it is only compared, when tracing.
+        let faces_at = usize_at{ d, at = at + 8 }
+        let faces_n = usize_at{ d, at = at + 12 }
+        if u32_at{ d, at = at + 16 } != faces_n { note{ &p, what = "face array allocated size", at = at + 8 } }
+        try need{ d, at = faces_at, size = 32 * faces_n, what = "faces" }
+        claim{ &p, at = faces_at, size = 32 * faces_n, what = "faces" }
+        let faces = try make(Face){ &p, count = faces_n }
+        let indices = try make(u16){ &p, count = 3 * faces_n }
+        let mut i: usize = 0
+        while i < faces_n {
+            let f = faces_at + 32 * i
+            let mut face = Face{
+                normal = vec3_at{ d, at = f },
+                distance = f32_at{ d, at = f + 12 },
+                material = u32_at{ d, at = f + 16 },
+                adjacent = [i16_at{ d, at = f + 20 }, i16_at{ d, at = f + 22 }, i16_at{ d, at = f + 24 }],
+                vertices = [u16_at{ d, at = f + 26 }, u16_at{ d, at = f + 28 }, u16_at{ d, at = f + 30 }],
+            }
+            let mut k: usize = 0
+            while k < 3 {
+                // Saber meshes keep placeholder faces over their 176 vertices; anything past the
+                // vertices is malformed.
+                if face.vertices[k] >= nv { return malformed{ what = "face vertex index", at = f + 26 + 2 * k } }
+                indices[3 * i + k] = face.vertices[k]
+                k = k + 1
+            }
+            faces[i] = face
+            i = i + 1
+        }
+        m.faces = faces
+        m.indices = indices
+        try read_index_lists{ &p, at, faces, saber = (flags & NODE_SABER) != 0 }
+
+        // The inverted counter: one number per mesh, unused, claimed so a check sees the bytes.
+        let counter_at = usize_at{ d, at = at + 200 }
+        let counter_n = usize_at{ d, at = at + 204 }
+        try need{ d, at = counter_at, size = 4 * counter_n, what = "inverted counter" }
+        claim{ &p, at = counter_at, size = 4 * counter_n, what = "inverted counter" }
+
+        // MDL positions: a copy of the MDX ones, and the only ones saber meshes have.
+        let mut mdl_positions: []f32 = slice::empty(f32){}
+        let vert_at = usize_at{ d, at = at + 328 }
+        if nv > 0 and vert_at != 0 and vert_at != 0xFFFFFFFF {
+            try need{ d, at = vert_at, size = 12 * nv, what = "mesh positions" }
+            claim{ &p, at = vert_at, size = 12 * nv, what = "mesh positions" }
+            mdl_positions = try read_floats{ &p, at = vert_at, count = 3 * nv }
+        }
+
+        // MDX rows.
+        let stride: usize = m.mdx_stride
+        if nv > 0 and stride != 0 and m.mdx_stride != 0xFFFFFFFF {
+            let base: usize = m.mdx_offset
+            try need{ d = p.x, at = base, size = stride * nv, what = "mdx rows" }
+            let mut offs: [11]i32
+            let mut s: usize = 0
+            while s < 11 {
+                offs[s] = i32_at{ d, at = at + 260 + 4 * s }
+                s = s + 1
+            }
+            m.positions = try read_attribute{ &p, base, stride, count = nv, off = offs[SLOT_POSITION], width = 3 }
+            m.normals = try read_attribute{ &p, base, stride, count = nv, off = offs[SLOT_NORMAL], width = 3 }
+            m.colors = try read_attribute{ &p, base, stride, count = nv, off = offs[SLOT_COLOR], width = 3 }
+            m.uv0 = try read_attribute{ &p, base, stride, count = nv, off = offs[SLOT_UV0], width = 2 }
+            m.uv1 = try read_attribute{ &p, base, stride, count = nv, off = offs[SLOT_UV1], width = 2 }
+            m.uv2 = try read_attribute{ &p, base, stride, count = nv, off = offs[SLOT_UV2], width = 2 }
+            m.uv3 = try read_attribute{ &p, base, stride, count = nv, off = offs[SLOT_UV3], width = 2 }
+            m.tangents = try read_attribute{ &p, base, stride, count = nv, off = offs[SLOT_TANGENT0], width = 9 }
+            if mdl_positions.len == m.positions.len {
+                let mut k: usize = 0
+                while k < mdl_positions.len {
+                    if math::abs{ x = mdl_positions[k] - m.positions[k] } > 0.0001 * math::max{ a = 1.0, b = math::abs{ x = m.positions[k] } } {
+                        note{ &p, what = "mdx positions differ from mdl positions", at = vert_at }
+                        break
+                    }
+                    k = k + 1
+                }
+            }
+        }
+        if m.positions.len == 0 { m.positions = mdl_positions }
+        if m.positions.len != 3 * nv and nv > 0 and (flags & NODE_SABER) == 0 {
+            return malformed{ what = "mesh without vertex positions", at }
+        }
+        return m
+    }
+
+    // The faces' index list (one, in every mesh but sabers'), compared with the faces.
+    fn read_index_lists(S) { mut p: Parser(S), at: usize, faces: []Face, saber: bool } -> ! {
+        let d = p.d
+        let counts_at = usize_at{ d, at = at + 176 }
+        let counts_n = usize_at{ d, at = at + 180 }
+        let offs_at = usize_at{ d, at = at + 188 }
+        let offs_n = usize_at{ d, at = at + 192 }
+        try need{ d, at = counts_at, size = 4 * counts_n, what = "index counts" }
+        try need{ d, at = offs_at, size = 4 * offs_n, what = "index offsets" }
+        claim{ &p, at = counts_at, size = 4 * counts_n, what = "index counts" }
+        claim{ &p, at = offs_at, size = 4 * offs_n, what = "index offsets" }
+        if counts_n != offs_n { note{ &p, what = "index count and offset arrays differ in length", at = at + 176 } }
+        let n = min_usize{ a = counts_n, b = offs_n }
+        let mut k: usize = 0
+        while k < n {
+            let count: usize = u32_at{ d, at = counts_at + 4 * k }
+            let list_at: usize = u32_at{ d, at = offs_at + 4 * k }
+            if count > 0 {
+                try need{ d, at = list_at, size = 2 * count, what = "index list" }
+                claim{ &p, at = list_at, size = 2 * count, what = "index list" }
+                let mut same = count == 3 * faces.len and n == 1
+                let mut i: usize = 0
+                while same and i < count {
+                    if u16_at{ d, at = list_at + 2 * i } != faces[i / 3].vertices[i % 3] { same = false }
+                    i = i + 1
+                }
+                if not same { note{ &p, what = "index list differs from the faces", at = list_at } }
+            }
+            k = k + 1
+        }
+        // Saber meshes keep placeholder faces and no list.
+        if n == 0 and faces.len > 0 and not saber { note{ &p, what = "faces without an index list", at = at + 176 } }
+    }
+
+    // `width` floats per vertex at byte `off` of each MDX row; empty when the attribute is absent
+    // (offset -1).
+    fn read_attribute(S) { mut p: Parser(S), base: usize, stride: usize, count: usize, off: i32, width: usize } -> ![]f32 {
+        if off < 0 { return slice::empty(f32){} }
+        let o = @as(usize, off)
+        if o + 4 * width > stride { return malformed{ what = "mdx attribute outside its row", at = base } }
+        let out = try make(f32){ &p, count = width * count }
+        let x = p.x
+        let mut v: usize = 0
+        while v < count {
+            let row = base + stride * v + o
+            let mut c: usize = 0
+            while c < width {
+                out[width * v + c] = f32_at{ d = x, at = row + 4 * c }
+                c = c + 1
+            }
+            v = v + 1
+        }
+        return out
+    }
+
+    fn read_skin(S) { mut p: Parser(S), at: usize, mesh: Mesh } -> !Skin {
+        let d = p.d
+        let mut s: Skin
+        let nv: usize = mesh.vertex_count
+        let weights_off = i32_at{ d, at = at + 12 }
+        let bones_off = i32_at{ d, at = at + 16 }
+        let stride: usize = mesh.mdx_stride
+        if nv > 0 and stride != 0 and mesh.mdx_stride != 0xFFFFFFFF {
+            let base: usize = mesh.mdx_offset
+            s.weights = try read_attribute{ &p, base, stride, count = nv, off = weights_off, width = 4 }
+            let slots = try read_attribute{ &p, base, stride, count = nv, off = bones_off, width = 4 }
+            let bones = try make(u8){ &p, count = slots.len }
+            let mut i: usize = 0
+            while i < slots.len {
+                // A slot stored as a float; -1 (with weight 0) for an unused influence.
+                let f = slots[i]
+                bones[i] = if f >= 0.0 and f < 255.5 { @as(u8, f + 0.5) } else { 0 }
+                i = i + 1
+            }
+            s.bones = bones
+            if s.weights.len != s.bones.len { return malformed{ what = "skin weights without bone slots", at = at + 12 } }
+        }
+
+        // The per-node arrays, in tree order; kept raw until finish_skin knows the tree.
+        let map_at = usize_at{ d, at = at + 20 }
+        let map_n = usize_at{ d, at = at + 24 }
+        let q_at = usize_at{ d, at = at + 28 }
+        let q_n = usize_at{ d, at = at + 32 }
+        let t_at = usize_at{ d, at = at + 40 }
+        let t_n = usize_at{ d, at = at + 44 }
+        let c_at = usize_at{ d, at = at + 52 }
+        let c_n = usize_at{ d, at = at + 56 }
+        try need{ d, at = map_at, size = 4 * map_n, what = "bone map" }
+        try need{ d, at = q_at, size = 16 * q_n, what = "qbones" }
+        try need{ d, at = t_at, size = 12 * t_n, what = "tbones" }
+        try need{ d, at = c_at, size = 4 * c_n, what = "bone constants" }
+        claim{ &p, at = map_at, size = 4 * map_n, what = "bone map" }
+        claim{ &p, at = q_at, size = 16 * q_n, what = "qbones" }
+        claim{ &p, at = t_at, size = 12 * t_n, what = "tbones" }
+        claim{ &p, at = c_at, size = 4 * c_n, what = "bone constants" }
+        let bone_map = try make(i16){ &p, count = map_n }
+        let mut i: usize = 0
+        let mut slots: usize = 0
+        while i < map_n {
+            let f = f32_at{ d, at = map_at + 4 * i }
+            bone_map[i] = if f >= 0.0 and f < 1000.0 { @as(i16, f + 0.5) } else { -1 }
+            if bone_map[i] >= 0 and @as(usize, bone_map[i]) + 1 > slots { slots = @as(usize, bone_map[i]) + 1 }
+            i = i + 1
+        }
+        s.bone_map = bone_map
+        // Inverse binds by slot, from the node-indexed qbones and tbones.
+        let bone_nodes = try make(u32){ &p, count = slots }
+        let inverse_bind = try make(math::Mat4){ &p, count = slots }
+        i = 0
+        while i < slots {
+            inverse_bind[i] = math::mat4::identity{}
+            i = i + 1
+        }
+        i = 0
+        while i < map_n {
+            if bone_map[i] >= 0 {
+                let slot = @as(usize, bone_map[i])
+                bone_nodes[slot] = @as(u32, i)
+                if i < q_n and i < t_n {
+                    let q = math::quat::normalize{ q = quat_wxyz_at{ d, at = q_at + 16 * i } }
+                    inverse_bind[slot] = math::mat4::from_rotation_translation{ r = q, t = vec3_at{ d, at = t_at + 12 * i } }
+                } else {
+                    note{ &p, what = "bone without qbone or tbone", at = q_at }
+                }
+            }
+            i = i + 1
+        }
+        s.bone_nodes = bone_nodes
+        s.inverse_bind = inverse_bind
+        i = 0
+        while i < s.bones.len {
+            if @as(usize, s.bones[i]) >= slots and s.weights[i] > 0.0 {
+                return malformed{ what = "skin weight on a bone slot the bone map lacks", at = at + 16 }
+            }
+            i = i + 1
+        }
+        return s
+    }
+
+    // Checks a skin's bone map against the finished tree.
+    fn finish_skin(S) { mut p: Parser(S), mesh: Mesh, nodes: []Node } -> ! {
+        let s = mesh.skin ifnull { return }
+        if s.bone_map.len != nodes.len { note{ &p, what = "bone map length is not the node count", at = 0 } }
+        let mut i: usize = 0
+        while i < s.bone_nodes.len {
+            if @as(usize, s.bone_nodes[i]) >= nodes.len { return malformed{ what = "bone beyond the tree", at = 0 } }
+            i = i + 1
+        }
+    }
+
+    fn read_dangly(S) { mut p: Parser(S), at: usize, count: u32 } -> !Dangly {
+        let d = p.d
+        let c_at = usize_at{ d, at }
+        let c_n = usize_at{ d, at = at + 4 }
+        try need{ d, at = c_at, size = 4 * c_n, what = "dangly constraints" }
+        claim{ &p, at = c_at, size = 4 * c_n, what = "dangly constraints" }
+        if c_n != count { note{ &p, what = "dangly constraints are not one per vertex", at } }
+        let v_at = usize_at{ d, at = at + 24 }
+        if v_at != 0 and count > 0 {
+            try need{ d, at = v_at, size = 12 * count, what = "dangly positions" }
+            claim{ &p, at = v_at, size = 12 * count, what = "dangly positions" }
+        }
+        return Dangly{
+            constraints = try read_floats{ &p, at = c_at, count = c_n },
+            displacement = f32_at{ d, at = at + 12 },
+            tightness = f32_at{ d, at = at + 16 },
+            period = f32_at{ d, at = at + 20 },
+        }
+    }
+
+    fn read_aabb(S) { mut p: Parser(S), at: usize, faces: usize } -> !Aabb {
+        let root = usize_at{ d = p.d, at }
+        if root == 0 { return Aabb{ nodes = slice::empty(AabbNode){} } }
+        let mut out = list::new(AabbNode, S){ realloc = p.realloc, heap = p.heap }
+        _ = try visit_aabb{ &p, at = root, depth = 0, faces, &out }
+        return Aabb{ nodes = list::items{ list = out } }
+    }
+
+    // Appends the tree node at `at` and its subtree in pre-order; returns its index.
+    fn visit_aabb(S) { mut p: Parser(S), at: usize, depth: u32, faces: usize, mut out: list::List(AabbNode, S) } -> !i32 {
+        let d = p.d
+        if depth > 128 { return malformed{ what = "aabb tree too deep", at } }
+        if out.len > 4 * faces + 16 { return malformed{ what = "aabb tree larger than its faces allow", at } }
+        try need{ d, at, size = 40, what = "aabb node" }
+        claim{ &p, at, size = 40, what = "aabb node" }
+        let me = out.len
+        let face = i32_at{ d, at = at + 32 }
+        if face >= 0 and @as(usize, face) >= faces { return malformed{ what = "aabb face index", at = at + 32 } }
+        try list::push{ list = &out, item = AabbNode{
+            min = vec3_at{ d, at }, max = vec3_at{ d, at = at + 12 }, left = -1, right = -1, face, plane = u32_at{ d, at = at + 36 },
+        } }
+        let left_at = usize_at{ d, at = at + 24 }
+        let right_at = usize_at{ d, at = at + 28 }
+        if left_at != 0 {
+            let l = try visit_aabb{ &p, at = left_at, depth = depth + 1, faces, &out }
+            list::at{ list = out, i = me }.left = l
+        }
+        if right_at != 0 {
+            let r = try visit_aabb{ &p, at = right_at, depth = depth + 1, faces, &out }
+            list::at{ list = out, i = me }.right = r
+        }
+        return @as(i32, me)
+    }
+
+    fn read_saber(S) { mut p: Parser(S), at: usize, count: u32 } -> !Saber {
+        let d = p.d
+        let n: usize = count
+        let v_at = usize_at{ d, at }
+        let uv_at = usize_at{ d, at = at + 4 }
+        let n_at = usize_at{ d, at = at + 8 }
+        let mut s: Saber
+        if v_at != 0 {
+            try need{ d, at = v_at, size = 12 * n, what = "saber positions" }
+            claim{ &p, at = v_at, size = 12 * n, what = "saber positions" }
+            s.positions = try read_floats{ &p, at = v_at, count = 3 * n }
+        }
+        if uv_at != 0 {
+            try need{ d, at = uv_at, size = 8 * n, what = "saber uvs" }
+            claim{ &p, at = uv_at, size = 8 * n, what = "saber uvs" }
+            s.uvs = try read_floats{ &p, at = uv_at, count = 2 * n }
+        }
+        if n_at != 0 {
+            try need{ d, at = n_at, size = 12 * n, what = "saber normals" }
+            claim{ &p, at = n_at, size = 12 * n, what = "saber normals" }
+            s.normals = try read_floats{ &p, at = n_at, count = 3 * n }
+        }
+        return s
+    }
+
+    fn read_animation(S) { mut p: Parser(S), at: usize, names: [][]u8 } -> !Animation {
+        let d = p.d
+        try need{ d, at, size = 136, what = "animation header" }
+        claim{ &p, at, size = 136, what = "animation header" }
+        if d[at + 76] != 5 { note{ &p, what = "animation geometry type is not 5", at = at + 76 } }
+        let mut a: Animation
+        a.name = try copy_fixed{ &p, at = at + 8, max = 32 }
+        a.length = f32_at{ d, at = at + 80 }
+        a.transition = f32_at{ d, at = at + 84 }
+        a.root = try copy_fixed{ &p, at = at + 88, max = 32 }
+        let ev_at = usize_at{ d, at = at + 120 }
+        let ev_n = usize_at{ d, at = at + 124 }
+        try need{ d, at = ev_at, size = 36 * ev_n, what = "animation events" }
+        claim{ &p, at = ev_at, size = 36 * ev_n, what = "animation events" }
+        let events = try make(Event){ &p, count = ev_n }
+        let mut i: usize = 0
+        while i < ev_n {
+            events[i] = Event{ time = f32_at{ d, at = ev_at + 36 * i }, name = try copy_fixed{ &p, at = ev_at + 36 * i + 4, max = 32 } }
+            i = i + 1
+        }
+        a.events = events
+        let pending = try walk_tree{ &p, root = usize_at{ d, at = at + 40 } }
+        let nodes = try make(AnimNode){ &p, count = pending.len }
+        i = 0
+        while i < pending.len {
+            let n_at = pending[i].at
+            let name_index = u16_at{ d, at = n_at + 4 }
+            if name_index >= names.len { return malformed{ what = "animation node name index", at = n_at } }
+            let flags = u16_at{ d, at = n_at }
+            if flags != NODE_HEADER { note{ &p, what = "animation node that is not a dummy", at = n_at } }
+            claim{ &p, at = n_at, size = 80, what = "animation node" }
+            claim{ &p, at = usize_at{ d, at = n_at + 44 }, size = 4 * usize_at{ d, at = n_at + 48 }, what = "children" }
+            nodes[i] = AnimNode{
+                name = names[name_index],
+                name_index,
+                part = u16_at{ d, at = n_at + 2 },
+                parent = pending[i].parent,
+                controllers = try read_controllers{ &p, at = n_at },
+            }
+            i = i + 1
+        }
+        a.nodes = nodes
+        return a
+    }
+
+    // ---- small helpers
+
+    // `count` zeroed T's: an allocator may hand out memory it used before (an arena after a
+    // reset does), and counters and optional fields start from zero.
+    fn make(T, S) { mut p: Parser(S), count: usize } -> ![]mut T {
+        let out = try alloc::resize(T, S){ realloc = p.realloc, heap = p.heap, mem = slice::empty(T){}, count }
+        slice::fill(u8){ s = slice::cast(T, u8){ s = out }, v = 0 }
+        return out
+    }
+
+    fn read_floats(S) { mut p: Parser(S), at: usize, count: usize } -> ![]f32 {
+        let out = try make(f32){ &p, count }
+        let mut i: usize = 0
+        while i < count {
+            out[i] = f32_at{ d = p.d, at = at + 4 * i }
+            i = i + 1
+        }
+        return out
+    }
+
+    // A NUL-padded char[max] field, copied (up to its first NUL).
+    fn copy_fixed(S) { mut p: Parser(S), at: usize, max: usize } -> ![]u8 {
+        try need{ d = p.d, at, size = max, what = "name" }
+        let mut n: usize = 0
+        while n < max and p.d[at + n] != 0 { n = n + 1 }
+        let out = try make(u8){ &p, count = n }
+        slice::copy(u8){ dst = out, src = p.d[at..at + n] }
+        return out
+    }
+
+    // A NUL-terminated string, copied without its NUL.
+    fn copy_zstr(S) { mut p: Parser(S), at: usize, what: []u8 } -> ![]u8 {
+        let d = p.d
+        if at >= d.len { return malformed{ what, at } }
+        let mut n: usize = 0
+        while true {
+            if at + n >= d.len or n > 255 { return malformed{ what, at } }
+            if d[at + n] == 0 { break }
+            n = n + 1
+        }
+        let out = try make(u8){ &p, count = n }
+        slice::copy(u8){ dst = out, src = d[at..at + n] }
+        return out
+    }
+
+    // "NULL" is how the compiler writes an absent name.
+    fn none_if_null { s: []u8 } -> []u8 {
+        if same_name{ a = s, b = "null" } { return s[0..0] }
+        return s
+    }
+
+    fn need { d: []u8, at: usize, size: usize, what: []u8 } -> ! {
+        if at > d.len or size > d.len - at { return malformed{ what, at } }
+    }
+
+    fn claim(S) { mut p: Parser(S), at: usize, size: usize, what: []u8 } {
+        let t = p.trace ifnull { return }
+        if size == 0 { return }
+        list::push{ list = &t.claims, item = Claim{ at, size, what } } iferr { }
+    }
+
+    fn note(S) { mut p: Parser(S), what: []u8, at: usize } {
+        let t = p.trace ifnull { return }
+        list::push{ list = &t.notes, item = Note{ what, at } } iferr { }
+    }
+
+    fn min_usize { a: usize, b: usize } -> usize { return if a < b { a } else { b } }
+
+    fn u16_at { d: []u8, at: usize } -> u16 {
+        return @as(u16, d[at]) | (@as(u16, d[at + 1]) << 8)
+    }
+
+    fn i16_at { d: []u8, at: usize } -> i16 {
+        let mut u = u16_at{ d, at }
+        return @cast(*i16, &u).*
+    }
+
+    fn u32_at { d: []u8, at: usize } -> u32 {
+        return @as(u32, d[at]) | (@as(u32, d[at + 1]) << 8) | (@as(u32, d[at + 2]) << 16) | (@as(u32, d[at + 3]) << 24)
+    }
+
+    // An offset or a count: as a usize, so that sizes made from it can't overflow.
+    fn usize_at { d: []u8, at: usize } -> usize {
+        return u32_at{ d, at }
+    }
+
+    fn i32_at { d: []u8, at: usize } -> i32 {
+        let mut u = u32_at{ d, at }
+        return @cast(*i32, &u).*
+    }
+
+    fn f32_at { d: []u8, at: usize } -> f32 {
+        let mut u = u32_at{ d, at }
+        return @cast(*f32, &u).*
+    }
+
+    fn vec3_at { d: []u8, at: usize } -> math::Vec3 {
+        return math::Vec3{ x = f32_at{ d, at }, y = f32_at{ d, at = at + 4 }, z = f32_at{ d, at = at + 8 } }
+    }
+
+    // A quaternion stored w, x, y, z (node headers, qbones).
+    fn quat_wxyz_at { d: []u8, at: usize } -> math::Quat {
+        return math::Quat{ w = f32_at{ d, at }, x = f32_at{ d, at = at + 4 }, y = f32_at{ d, at = at + 8 }, z = f32_at{ d, at = at + 12 } }
+    }
+}

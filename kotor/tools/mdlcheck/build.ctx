@@ -1,0 +1,7 @@
+// The build program for mdlcheck: `kotor/tools/ctxc run kotor/tools/mdlcheck -- [DIR]`.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "mdlcheck", root = "." }
+    build::add_sources{ &b, exe, dir = "../../lib/base" }
+    build::add_sources{ &b, exe, dir = "../../lib/mdl" }
+    build::optimize{ &b, exe, level = 2 }
+}
