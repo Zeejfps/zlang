@@ -126,6 +126,10 @@ namespace ingame {
             hud::cycle_target{ &w, forward = keycode == 'e' }
             return true
         }
+        if keycode >= '1' and keycode <= '3' {
+            // The target block's three slots (keymap.2da: TargetLeft/Middle/RightAct).
+            return hud::run_slot{ h = &ui.hud, &w, k = @as(usize, keycode - '1') }
+        }
         if keycode == sdl::key::SPACE {
             set_player_pause{ &ui, &w, &dev, on = not clock_paused_by_player{ w = &w } }
             return true
@@ -153,6 +157,14 @@ namespace ingame {
             }
             else => {}
         }
+    }
+
+    // An event the player should notice: turns on one of the HUD's notification icons for four
+    // seconds (hud::NOTE_*: journal updated, credits, experience, alignment shift, item received
+    // or lost). The engine's routines that cause them call this through the outbox once it carries
+    // them; until then `ui flash N` shows each.
+    fn notify { mut ui: Ingame, which: usize } {
+        hud::flash_icon{ h = &ui.hud, which }
     }
 
     // ---- pause

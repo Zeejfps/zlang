@@ -106,6 +106,15 @@ namespace hud {
         render::draw_image{ &frame, rect = render::Rect{ x = cx - side / 2.0, y = cy - side / 2.0, w = side, h = side }, texture = img.tex, color = render::white{} }
     }
 
+    // Does slot `k`'s selected choice on the target (the keys 1, 2, 3). True when a choice was run.
+    fn run_slot { mut h: Hud, mut w: world::World, k: usize } -> bool {
+        if k >= 3 or w.target == obj::INVALID { return false }
+        let l = h.lists[k]
+        if l.count == 0 { return false }
+        run_act{ &w, act = l.entries[l.selected].act, target = w.target }
+        return true
+    }
+
     // What the block's buttons do. True when the event was one of theirs.
     fn block_event { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> bool {
         if ev.kind != gui::EventKind::activate { return false }

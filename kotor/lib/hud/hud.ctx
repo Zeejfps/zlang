@@ -33,6 +33,8 @@ namespace hud {
         font: i32,                          // the feedback lines' font slot, -1 none
         combat: bool,                       // the combat controls are up
         combat_message: f32,                // seconds left of the combat-mode message
+        notify: [9]f32,                     // seconds left of each notification icon
+        notify_shown: [9]bool,
         shown_target: u32,                  // the target the block was built for
         lists: [3]ActionList,               // the block's slots
         pressed: u32,                       // the object under the pointer when the button went down
@@ -73,7 +75,7 @@ namespace hud {
             widgets = [Widget{ id = obj::INVALID, portrait = 0, hp = -1, hp_max = -1, fp = -1, fp_max = -1, level = -1, xp = 0, down = false }; 3],
             block = [BlockPart{ index = -1, x = 0, y = 0 }; 16],
             minimap = open_minimap{ &g, &w, &dev, panel },
-            font = gui::font_slot{ &g, fs = &w.fs, &dev, name = "dialogfont10x10" }, combat = false, combat_message = 0.0,
+            font = gui::font_slot{ &g, fs = &w.fs, &dev, name = "dialogfont10x10" }, combat = false, combat_message = 0.0, notify = [0.0; 9], notify_shown = [false; 9],
             shown_target = obj::INVALID, lists = [empty_list{}; 3], pressed = obj::INVALID,
             projector = Projector{ vp = math::mat4::identity{}, eye = math::vec3::zero{}, w = 1.0, h = 1.0 },
         }
@@ -214,6 +216,7 @@ namespace hud {
         update_hover{ &h, &g, &w, blocked }
         update_block{ &h, &g, &w, &dev }
         update_combat{ &h, &g, &w, &dev, dt }
+        update_notify{ &h, &g, dt }
     }
 
     // Portraits, vitality and Force bars, level-up and down marks of the party members.
