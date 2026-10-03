@@ -10,7 +10,7 @@ namespace glsl {
 
     // Meshes: rigid, skinned (a bone palette of up to 32) and dangly, and the planar shadows,
     // which run the same vertices through `u_post`.
-    const SCENE_VS: [70]c::String = [
+    const SCENE_VS: [67]c::String = [
         "#version 410 core\n",
         "layout(std140) uniform Frame {\n",
         "    mat4 u_view_proj;\n",
@@ -79,9 +79,6 @@ namespace glsl {
         "    v_color = a_color;\n",
         "    gl_Position = u_view_proj * world;\n",
         "}\n",
-        "\n",
-        "\n",
-        "\n",
     ]
 
     // u_maps: diffuse, lightmap, envmap (1 cube, 2 sphere), bumpmap.
@@ -192,7 +189,7 @@ namespace glsl {
     ]
 
     // 2D quads, one instance each: rect (x, y, w, h), uv (u0, v0, u1, v1), colour, angle.
-    const UI_VS: [24]c::String = [
+    const UI_VS: [19]c::String = [
         "#version 410 core\n",
         "uniform vec2 u_screen;\n",
         "layout(location = 0) in vec4 a_rect;\n",
@@ -214,15 +211,10 @@ namespace glsl {
         "    v_uv = vec2(mix(a_uv.x, a_uv.z, corner.x), mix(a_uv.y, a_uv.w, corner.y));\n",
         "    v_color = a_color;\n",
         "}\n",
-        "\n",
-        "\n",
-        "\n",
-        "\n",
-        "\n",
     ]
 
     // u_image: 0 colour only, 1 a texture, 2 a video frame's Y, U and V planes (BT.601, limited range).
-    const UI_FS: [27]c::String = [
+    const UI_FS: [20]c::String = [
         "#version 410 core\n",
         "uniform sampler2D u_tex;\n",
         "uniform sampler2D u_tex_u;\n",
@@ -243,18 +235,11 @@ namespace glsl {
         "    }\n",
         "    o_color = c * v_color;\n",
         "}\n",
-        "\n",
-        "\n",
-        "\n",
-        "\n",
-        "\n",
-        "\n",
-        "\n",
     ]
 
     // Particles, one instance each: position, size, angle, colour, frame, direction.
     // u_emit: facing (0 camera, 1 axis, 2 plane, 3 velocity), grid x, grid y.
-    const PARTICLE_VS: [60]c::String = [
+    const PARTICLE_VS: [55]c::String = [
         "#version 410 core\n",
         "layout(std140) uniform Frame {\n",
         "    mat4 u_view_proj;\n",
@@ -311,15 +296,10 @@ namespace glsl {
         "    v_color = a_color;\n",
         "    v_world = world;\n",
         "}\n",
-        "\n",
-        "\n",
-        "\n",
-        "\n",
-        "\n",
     ]
 
     // u_mode: blend, fog, textured.
-    const PARTICLE_FS: [36]c::String = [
+    const PARTICLE_FS: [33]c::String = [
         "#version 410 core\n",
         "layout(std140) uniform Frame {\n",
         "    mat4 u_view_proj;\n",
@@ -353,13 +333,10 @@ namespace glsl {
         "    }\n",
         "    o_color = c;\n",
         "}\n",
-        "\n",
-        "\n",
-        "\n",
     ]
 
     // Debug lines and triangles: a world position and a colour per vertex.
-    const DEBUG_VS: [18]c::String = [
+    const DEBUG_VS: [16]c::String = [
         "#version 410 core\n",
         "layout(std140) uniform Frame {\n",
         "    mat4 u_view_proj;\n",
@@ -376,18 +353,14 @@ namespace glsl {
         "    v_color = a_color;\n",
         "    gl_Position = u_view_proj * vec4(a_position, 1.0);\n",
         "}\n",
-        "\n",
-        "\n",
     ]
 
-    const DEBUG_FS: [8]c::String = [
+    const DEBUG_FS: [6]c::String = [
         "#version 410 core\n",
         "in vec4 v_color;\n",
         "layout(location = 0) out vec4 o_color;\n",
         "void main() {\n",
         "    o_color = v_color;\n",
         "}\n",
-        "\n",
-        "\n",
     ]
 }

@@ -9,7 +9,7 @@
 // `ui` (quads, clipping, rotation, colour, a render target, a YUV video frame, text in a game
 // font when kotor/extract/tex has it).
 
-struct Options { show: f64, out_dir: []u8, font_dir: []u8 }
+struct Options { show: f64, out_dir: []u8, game: []u8 }
 
 const WIDTH: i32 = 960
 const HEIGHT: i32 = 600
@@ -21,7 +21,8 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } 
         return 1
     }
     let mut heap = arena::new{ buf = pages }
-    run{ &io, &fs, &sdl, &heap, opts } iferr err{ error } {
+    let mut h = heap::new{ &mem }
+    run{ &io, &fs, &sdl, &heap, &h, opts } iferr err{ error } {
         _ = @fmt(&io, "rendertest: failed: {}\n", error)
         match error {
             gpu::shader_failed{ log } => { _ = @fmt(&io, "{}\n", log) }
@@ -35,7 +36,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } 
     return 0
 }
 
-fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, opts: Options } -> ! {
+fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut h: heap::Heap, opts: Options } -> ! {
     try sdl::init{ &sdl, flags = sdl::INIT_VIDEO | sdl::INIT_EVENTS }
     defer sdl::quit{ &sdl }
     let mut config = render::make_config{ title = "rendertest", width = WIDTH, height = HEIGHT, hidden = opts.show <= 0.0 }
@@ -51,6 +52,32 @@ fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, opts
     try draw_materials{ &dev, &frame, a = assets, t = 0.7 }
     try save_screen{ &io, &fs, &dev, &heap, dir = opts.out_dir, name = "materials.png" }
     report{ &io, &dev }
+
+    // The game's fonts, through the resource manager; the UI scene draws without them if the
+    // install isn't there.
+    let glyphs = try alloc::resize(render::Glyph, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(render::Glyph){}, count = 3 * 256 }
+    let fonts = try alloc::resize(render::Font, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(render::Font){}, count = 3 }
+    let mut font_count: usize = 0
+    let mut rm = res::open{ &fs, heap = &h, game = opts.game } iferr err{ error } {
+        _ = @fmt(&io, "no game data at {} ({}): text skipped\n", opts.game, error)
+        try draw_ui_and_save{ &io, &fs, &dev, &frame, &heap, a = assets, fonts = fonts[..0], dir = opts.out_dir }
+        return
+    }
+    defer res::close{ &fs, &rm }
+    let names: [3][]u8 = ["fnt_d16x16b", "dialogfont16x16", "fnt_galahad14"]
+    let mut k: usize = 0
+    while k < 3 {
+        let found = load_font{ &fs, &dev, &h, rm, name = names[k], glyphs = glyphs[k * 256..(k + 1) * 256] } iferr err{ error } {
+            _ = @fmt(&io, "font {}: {}\n", names[k], error)
+            null
+        }
+        if found != null {
+            fonts[font_count] = found
+            font_count = font_count + 1
+        }
+        k = k + 1
+    }
+    try draw_ui_and_save{ &io, &fs, &dev, &frame, &heap, a = assets, fonts = fonts[..font_count], dir = opts.out_dir }
 
     if opts.show > 0.0 {
         let freq = sdl::counter_frequency{ &sdl }
@@ -385,7 +412,7 @@ fn make_dir { mut fs: Fs, path: []u8 } {
 // ---- options
 
 fn parse_args { mut io: Io, args: Args } -> ?Options {
-    let mut o = Options{ show = 0.0, out_dir = "kotor/out/render", font_dir = "G:/Dev/zlang/kotor/extract/tex" }
+    let mut o = Options{ show = 0.0, out_dir = "kotor/out/render", game = "F:/Steam/steamapps/common/swkotor" }
     let mut i: usize = 0
     while i < args.len {
         let a = args[i]
@@ -393,6 +420,9 @@ fn parse_args { mut io: Io, args: Args } -> ?Options {
             i = i + 1
             let text = utf8::from{ bytes = args[i] } iferr { return usage{ &io } }
             o.show = utf8::parse_f64{ s = text } ifnull { return usage{ &io } }
+        } else if slice::eq_bytes{ a, b = "--game" } and i + 1 < args.len {
+            i = i + 1
+            o.game = args[i]
         } else if slice::eq_bytes{ a, b = "--out" } and i + 1 < args.len {
             i = i + 1
             o.out_dir = args[i]
@@ -405,23 +435,188 @@ fn parse_args { mut io: Io, args: Args } -> ?Options {
 }
 
 fn usage { mut io: Io } -> ?Options {
-    io::eprintln{ &io, s = "usage: rendertest [--show SECONDS] [--out DIR]" }
+    io::eprintln{ &io, s = "usage: rendertest [--show SECONDS] [--out DIR] [--game DIR]" }
     return null
 }
 
-// ---- @fmt into standard output
+// ---- @fmt of C strings into standard output (tools/common/out.ctx has the rest)
 
-namespace out {
-    #write
-    fn put_text { mut io: Io, s: strlit } { io::write{ &io, to = io::Stream::out, bytes = s.bytes } }
-    #write
-    fn put_bytes { mut io: Io, b: []u8 } { io::write{ &io, to = io::Stream::out, bytes = b } }
+namespace rt_out {
     #write
     fn put_cstring { mut io: Io, s: c::String } { io::write{ &io, to = io::Stream::out, bytes = c::bytes{ s } } }
-    #write
-    fn put_bool { mut io: Io, b: bool } { io::print_bool{ &io, n = b } }
-    #write
-    fn put_u32 { mut io: Io, n: u32 } { io::print_u64{ &io, n } }
-    #write
-    fn put_usize { mut io: Io, n: usize } { io::print_u64{ &io, n } }
+}
+
+// ---- the UI scene
+
+// A game font: its TPC's top level as a texture, its TXI's glyph boxes in `glyphs`.
+fn load_font { mut fs: Fs, mut dev: gpu::Device, mut h: heap::Heap, rm: res::Manager, name: []u8, glyphs: []mut render::Glyph } -> !?render::Font {
+    let bytes = try res::load{ &fs, rm, name, kind = restype::Type::tpc, realloc = heap::alloc, heap = &h } ifnull { return null }
+    defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &h, mem = bytes, count = 0 }
+    let img = try tpcfont::read{ bytes }
+    let m = try fonttxi::read{ text = img.txi, glyphs }
+    let mut desc = render::make_texture_desc{ format = img.format, width = img.width, height = img.height, levels = 1 }
+    desc.mipmap = false
+    desc.filter = render::Filter::nearest          // the fonts' TXI says `filter 0`
+    desc.wrap_u = render::Wrap::clamp
+    desc.wrap_v = render::Wrap::clamp
+    let texture = try gpu::create_texture{ &dev, desc, data = img.pixels }
+    return render::Font{
+        texture, texture_width = @as(f32, img.width), texture_height = @as(f32, img.height),
+        glyphs = glyphs[..@as(usize, m.count)], height = m.height, baseline = m.baseline, spacing = m.spacing,
+    }
+}
+
+fn draw_ui_and_save { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena, a: Assets, fonts: []render::Font, dir: []u8 } -> ! {
+    let target = try gpu::create_target{ &dev, width = 256, height = 192 }
+    defer gpu::free_target{ &dev, t = target }
+    let video = try make_video{ &dev, &heap }
+    try draw_ui{ &dev, &frame, a, fonts, target, video, t = 0.7 }
+    try save_screen{ &io, &fs, &dev, &heap, dir, name = "ui.png" }
+    report{ &io, &dev }
+}
+
+struct Video { y: render::Texture, u: render::Texture, v: render::Texture }
+
+// A video frame as Bink gives one: Y at 128x96 and U, V at half size, colour bars (BT.601,
+// limited range) above a grey ramp along the bottom rows (the first stored).
+fn make_video { mut dev: gpu::Device, mut heap: arena::Arena } -> !Video {
+    let ys = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = 128 * 96 }
+    let us = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = 64 * 48 }
+    let vs = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = 64 * 48 }
+    // White, yellow, cyan, green, magenta, red, blue, black.
+    let rs: [8]f32 = [1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0]
+    let gs: [8]f32 = [1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0]
+    let bs: [8]f32 = [1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0]
+    let mut row: u32 = 0
+    while row < 96 {
+        let mut x: u32 = 0
+        while x < 128 {
+            let bar = x / 16
+            let ramp = row < 24
+            let r = if ramp { @as(f32, x) / 127.0 } else { rs[bar] * 0.75 }
+            let g = if ramp { @as(f32, x) / 127.0 } else { gs[bar] * 0.75 }
+            let b = if ramp { @as(f32, x) / 127.0 } else { bs[bar] * 0.75 }
+            ys[row * 128 + x] = @as(u8, 16.0 + 65.481 * r + 128.553 * g + 24.966 * b + 0.5)
+            if row % 2 == 0 and x % 2 == 0 {
+                us[(row / 2) * 64 + x / 2] = @as(u8, 128.0 - 37.797 * r - 74.203 * g + 112.0 * b + 0.5)
+                vs[(row / 2) * 64 + x / 2] = @as(u8, 128.0 + 112.0 * r - 93.786 * g - 18.214 * b + 0.5)
+            }
+            x = x + 1
+        }
+        row = row + 1
+    }
+    let mut yd = render::make_texture_desc{ format = render::PixelFormat::grey8, width = 128, height = 96, levels = 1 }
+    yd.mipmap = false
+    yd.wrap_u = render::Wrap::clamp
+    yd.wrap_v = render::Wrap::clamp
+    let mut cd = yd
+    cd.width = 64
+    cd.height = 48
+    let y = try gpu::create_texture{ &dev, desc = yd, data = ys }
+    let u = try gpu::create_texture{ &dev, desc = cd, data = us }
+    let v = try gpu::create_texture{ &dev, desc = cd, data = vs }
+    // A movie player replaces the planes each frame.
+    try gpu::update_texture{ &dev, t = y, level = 0, x = 0, y = 0, width = 128, height = 96, format = render::PixelFormat::grey8, data = ys }
+    return Video{ y, u, v }
+}
+
+fn draw_ui { mut dev: gpu::Device, mut frame: render::Frame, a: Assets, fonts: []render::Font, target: render::Target, video: Video, t: f32 } -> ! {
+    render::begin_frame{ &frame, time = t }
+    let up = v3{ x = 0.0, y = 0.0, z = 1.0 }
+
+    // A small 3D view into the target: the env-mapped sphere and a cube, on teal.
+    let eye = v3{ x = 0.0, y = -3.2, z = 1.4 }
+    let mut tv = render::make_view{ camera = render::Camera{
+        view = math::mat4::look_at{ eye, at = v3{ x = 0.0, y = 0.0, z = 0.3 }, up },
+        proj = math::mat4::perspective{ fovy = 0.9, aspect = 256.0 / 192.0, near = 0.1, far = 50.0 },
+        eye,
+    } }
+    tv.target = target
+    tv.clear_color = render::rgba{ r = 0.1, g = 0.35, b = 0.38, a = 1.0 }
+    let ti = render::add_view{ &frame, view = tv } ifnull { return }
+    let mut env = render::make_material{}
+    env.diffuse = a.shiny
+    env.envmap = a.sky
+    _ = render::add_draw{ &frame, draw = render::make_draw{ view = ti, mesh = a.sphere, transform = at{ x = -0.5, y = 0.0, z = 0.3 }, material = env } }
+    let mut boxm = render::make_material{}
+    boxm.diffuse = a.checker
+    let box_at = math::mat4::compose{ t = v3{ x = 0.7, y = 0.2, z = 0.3 }, r = math::quat::from_axis_angle{ axis = up, angle = 0.6 }, s = v3{ x = 0.8, y = 0.8, z = 0.8 } }
+    _ = render::add_draw{ &frame, draw = render::make_draw{ view = ti, mesh = a.cube, transform = box_at, material = boxm } }
+
+    // The screen: cleared, no 3D.
+    let mut sv = render::make_view{ camera = tv.camera }
+    sv.target = null
+    sv.clear_color = render::rgba{ r = 0.06, g = 0.07, b = 0.1, a = 1.0 }
+    _ = render::add_view{ &frame, view = sv } ifnull { return }
+
+    render::begin_ui{ &frame, width = @as(f32, WIDTH), height = @as(f32, HEIGHT), target = null }
+    // A panel: translucent fill and a border.
+    let panel = render::rect{ x = 16.0, y = 16.0, w = 600.0, h = 330.0 }
+    render::fill_rect{ &frame, rect = panel, color = render::rgba{ r = 0.15, g = 0.2, b = 0.35, a = 0.85 } }
+    frame_rect{ &frame, r = panel, color = render::rgba{ r = 0.55, g = 0.7, b = 1.0, a = 1.0 } }
+
+    // Text in each font, then larger, then a line cut off by its clipping box.
+    let mut y: f32 = 28.0
+    let lines: [3][]u8 = [
+        "fnt_d16x16b: The quick brown fox jumps over the lazy dog. 0123456789",
+        "dialogfont16x16: Taris, Dantooine, Kashyyyk, Manaan, Korriban!",
+        "fnt_galahad14: KNIGHTS OF THE OLD REPUBLIC (ctxlang)",
+    ]
+    let ink = render::rgba{ r = 1.0, g = 0.95, b = 0.8, a = 1.0 }
+    let mut f: usize = 0
+    while f < fonts.len {
+        let font = fonts[f]
+        _ = render::draw_text{ &frame, font, x = 28.0, y, text = lines[f], color = ink, scale = 1.0, clip = null }
+        y = y + font.height + 6.0
+        f = f + 1
+    }
+    if fonts.len > 0 {
+        let font = fonts[0]
+        _ = render::draw_text{ &frame, font, x = 28.0, y = y + 4.0, text = "Twice the size, in green.", color = render::rgba{ r = 0.4, g = 1.0, b = 0.5, a = 1.0 }, scale = 2.0, clip = null }
+        y = y + font.height * 2.0 + 14.0
+        let clip = render::rect{ x = 28.0, y, w = 200.0, h = font.height }
+        render::fill_rect{ &frame, rect = clip, color = render::rgba{ r = 0.0, g = 0.0, b = 0.0, a = 0.6 } }
+        _ = render::draw_text{ &frame, font, x = 28.0, y, text = "This line runs past its clipping box and is cut off.", color = render::white{}, scale = 1.0, clip }
+        // The glyph sheet itself, upright.
+        render::draw_image{ &frame, rect = render::rect{ x = 360.0, y = 150.0, w = 240.0, h = 180.0 }, texture = font.texture, color = render::white{} }
+    }
+
+    // A textured quad with its orientation arrow, the same turned and tinted, and an additive one.
+    render::draw_image{ &frame, rect = render::rect{ x = 640.0, y = 24.0, w = 128.0, h = 128.0 }, texture = a.checker, color = render::white{} }
+    let mut turned = render::make_quad{ rect = render::rect{ x = 800.0, y = 24.0, w = 128.0, h = 128.0 }, color = render::rgba{ r = 1.0, g = 0.6, b = 0.6, a = 1.0 } }
+    turned.image = render::Image::texture{ t = a.checker }
+    turned.angle = 0.4
+    render::add_quad{ &frame, quad = turned }
+    let mut glow = render::make_quad{ rect = render::rect{ x = 680.0, y = 100.0, w = 200.0, h = 60.0 }, color = render::rgba{ r = 0.3, g = 0.6, b = 1.0, a = 1.0 } }
+    glow.blend = render::Blend::additive
+    glow.image = render::Image::texture{ t = a.sprites }
+    render::add_quad{ &frame, quad = glow }
+
+    // The render target's picture, and the video frame.
+    let target_tex = gpu::target_texture{ dev, t = target } ifnull { return }
+    let shown = render::rect{ x = 640.0, y = 190.0, w = 256.0, h = 192.0 }
+    render::draw_image{ &frame, rect = shown, texture = target_tex, color = render::white{} }
+    frame_rect{ &frame, r = shown, color = render::white{} }
+    let screen = render::rect{ x = 16.0, y = 370.0, w = 256.0, h = 192.0 }
+    let mut movie = render::make_quad{ rect = screen, color = render::white{} }
+    movie.image = render::Image::yuv{ y = video.y, u = video.u, v = video.v }
+    render::add_quad{ &frame, quad = movie }
+    frame_rect{ &frame, r = screen, color = render::white{} }
+
+    // Alpha steps over a red stripe, to check blending.
+    let mut i: u32 = 0
+    while i < 16 {
+        render::fill_rect{ &frame, rect = render::rect{ x = 300.0 + @as(f32, i) * 20.0, y = 400.0, w = 20.0, h = 60.0 }, color = render::rgba{ r = 1.0, g = 1.0, b = 1.0, a = @as(f32, i) / 15.0 } }
+        i = i + 1
+    }
+    render::fill_rect{ &frame, rect = render::rect{ x = 300.0, y = 420.0, w = 320.0, h = 20.0 }, color = render::rgba{ r = 0.9, g = 0.2, b = 0.2, a = 0.5 } }
+
+    try gpu::submit{ &dev, frame = &frame }
+}
+
+fn frame_rect { mut frame: render::Frame, r: render::Rect, color: render::Color } {
+    render::fill_rect{ &frame, rect = render::rect{ x = r.x, y = r.y, w = r.w, h = 1.0 }, color }
+    render::fill_rect{ &frame, rect = render::rect{ x = r.x, y = r.y + r.h - 1.0, w = r.w, h = 1.0 }, color }
+    render::fill_rect{ &frame, rect = render::rect{ x = r.x, y = r.y, w = 1.0, h = r.h }, color }
+    render::fill_rect{ &frame, rect = render::rect{ x = r.x + r.w - 1.0, y = r.y, w = 1.0, h = r.h }, color }
 }

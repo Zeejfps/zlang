@@ -1464,8 +1464,17 @@ namespace gpu {
             let blend = if head.blend == render::Blend::additive { render::Blend::additive } else { render::Blend::alpha }
             set_blend{ &dev, blend }
             let image: i32 = match head.image {
-                none => { 0 }
-                texture{ t } => { material_map{ &dev, t, unit = 0, cube = false } }
+                none => {
+                    _ = material_map{ &dev, t = null, unit = 0, cube = false }
+                    _ = material_map{ &dev, t = null, unit = 1, cube = false }
+                    _ = material_map{ &dev, t = null, unit = 2, cube = false }
+                    0
+                }
+                texture{ t } => {
+                    _ = material_map{ &dev, t = null, unit = 1, cube = false }
+                    _ = material_map{ &dev, t = null, unit = 2, cube = false }
+                    material_map{ &dev, t, unit = 0, cube = false }
+                }
                 yuv{ y, u, v } => {
                     let ok = material_map{ &dev, t = y, unit = 0, cube = false } + material_map{ &dev, t = u, unit = 1, cube = false } + material_map{ &dev, t = v, unit = 2, cube = false }
                     if ok == 3 { 2 } else { 0 }
