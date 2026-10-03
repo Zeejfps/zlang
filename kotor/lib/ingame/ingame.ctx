@@ -4,8 +4,10 @@
 // (dialogue) use `ui.gui` and its stack.
 //
 //   let ui = try ingame::make{ &w, &dev, mixer, scratch, width, height }       // after the module is entered
-//   used = ingame::handle_event{ ui, ev, scale_x, scale_y }                    // per SDL event: true, the GUI took it
-//   ingame::update{ ui, &w, &dev, dt }                                         // after the world's tick
+//   ingame::begin_frame{ ui }                                                  // top of the frame
+//   used = ingame::handle_event{ ui, &w, &dev, ev, scale_x, scale_y }          // per SDL event: true, the GUI took it
+//   ingame::take{ ui, &w, note }                                               // per outbox note (feedback text)
+//   ingame::update{ ui, &w, &dev, sc, camera, dt }                             // after the scene is synced
 //   ingame::draw{ ui, &w, &dev, &frame }                                       // after the scene, before submit
 namespace ingame {
     struct Ingame {
@@ -15,6 +17,13 @@ namespace ingame {
         hud: hud::Hud,
         text: utf8::Builder(heap::Heap),    // scratch for formatted text
         width: i32, height: i32,
+        menu: i32,                          // the open menu (MENU_*), NO_MENU
+        menu_panel: u32,                    // its panel and the tab bar's, 0 when none
+        top_panel: u32,
+        menus: Menus,
+        log: hud::MessageLog,
+        pause_panel: u32,                   // the "PAUSED" banner, 0 when not shown
+        hud_hidden: bool,
     }
 
     // Opens the interface for a window of `width` x `height`. `scratch` is the texture decoder's
@@ -35,7 +44,8 @@ namespace ingame {
         let ui = Ingame{
             heap = w.heap, cache, gui = g, hud = h,
             text = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } },
-            width, height,
+            width, height, menu = NO_MENU, menu_panel = 0, top_panel = 0, menus = new_menus{}, log = hud::new_log{},
+            pause_panel = 0, hud_hidden = false,
         }
         return try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
     }
@@ -47,33 +57,76 @@ namespace ingame {
         material::free_cache{ cache = ui.cache, &dev }
     }
 
+    // Hides or shows the HUD (a conversation covers the screen with its own panels).
+    fn set_hud_hidden { mut ui: Ingame, hidden: bool } {
+        ui.hud_hidden = hidden
+        hud::set_hidden{ h = &ui.hud, g = &ui.gui, hidden }
+    }
+
+    // Whether the world should not be picked or clicked: a menu or modal panel is up, or the HUD
+    // is hidden.
+    fn is_blocked { mut ui: Ingame } -> bool {
+        return ui.menu != NO_MENU or ui.hud_hidden or gui::is_modal_open{ g = &ui.gui }
+    }
+
+    // ---- events
+
     // Offers a platform event to the interface; true when it used it, so the game does not also
     // treat it as a key or a world click.
     fn handle_event { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, ev: sdl::Event, scale_x: f32, scale_y: f32 } -> bool {
+        // Keys first: the menu keys, Escape and pause work with or without a menu open, and a menu
+        // (a full-screen panel) would otherwise take every key.
+        if ev is key{ down, repeat, keycode } {
+            if down and not repeat {
+                if handle_key{ &ui, &w, &dev, keycode } { return true }
+            }
+        }
         if gui::handle_event{ g = &ui.gui, ev, scale_x, scale_y } { return true }
         if is_blocked{ &ui } { return false }
-        // Past the GUI: the pointer and the keys that act on the world's objects.
-        match ev {
-            mouse_button{ down, button, x, y } => {
-                if button != sdl::BUTTON_LEFT { return false }
-                let ux = gui::to_ui{ v = x, s = scale_x, scale = ui.gui.scale }
-                let uy = gui::to_ui{ v = y, s = scale_y, scale = ui.gui.scale }
-                return hud::world_click{ h = &ui.hud, g = &ui.gui, &w, x = ux, y = uy, down }
-            }
-            key{ down, repeat, keycode } => {
-                if not down or repeat { return false }
-                if keycode == 'q' or keycode == 'e' {
-                    hud::cycle_target{ &w, forward = keycode == 'e' }
-                    return true
-                }
-                return false
-            }
-            else => { return false }
+        // Past the GUI: the pointer on the world's objects.
+        if ev is mouse_button{ down, button, x, y } {
+            if button != sdl::BUTTON_LEFT { return false }
+            let ux = gui::to_ui{ v = x, s = scale_x, scale = ui.gui.scale }
+            let uy = gui::to_ui{ v = y, s = scale_y, scale = ui.gui.scale }
+            return hud::world_click{ h = &ui.hud, g = &ui.gui, &w, x = ux, y = uy, down }
         }
+        return false
     }
 
-    // Whether the world should not be picked or clicked: a menu or modal panel is up.
-    fn is_blocked { ui: *Ingame } -> bool {
+    // The game's keys (keymap.2da's defaults): menus on U I P K J L M O, Escape closes the open
+    // menu or opens the options, Q and E step through the menus or the targets, Space pauses, Tab
+    // changes the leader.
+    fn handle_key { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, keycode: i32 } -> bool {
+        if ui.hud_hidden or gui::is_modal_open{ g = &ui.gui } { return false }
+        if keycode == sdl::key::ESCAPE {
+            if ui.menu != NO_MENU { close_menu{ &ui, &w } } else { open_menu{ &ui, &w, &dev, n = MENU_OPTIONS } }
+            return true
+        }
+        let n = menu_of_key{ keycode }
+        if n >= 0 {
+            if ui.menu == n { close_menu{ &ui, &w } } else { open_menu{ &ui, &w, &dev, n } }
+            return true
+        }
+        if ui.menu != NO_MENU {
+            if keycode == 'q' or keycode == 'e' {
+                let step = if keycode == 'e' { 1 } else { MENU_COUNT - 1 }
+                open_menu{ &ui, &w, &dev, n = (ui.menu + step) % MENU_COUNT }
+                return true
+            }
+            return false
+        }
+        if keycode == 'q' or keycode == 'e' {
+            hud::cycle_target{ &w, forward = keycode == 'e' }
+            return true
+        }
+        if keycode == sdl::key::SPACE {
+            set_player_pause{ &ui, &w, &dev, on = not clock_paused_by_player{ w = &w } }
+            return true
+        }
+        if keycode == sdl::key::TAB {
+            change_leader{ &w, step = 1 }
+            return true
+        }
         return false
     }
 
@@ -82,97 +135,100 @@ namespace ingame {
         gui::clear_events{ g = &ui.gui }
     }
 
+    // Text the game wants shown (docs/design/engine.md, the outbox): feedback goes to the log and
+    // the lines on the HUD.
+    fn take { mut ui: Ingame, mut w: world::World, note: outbox::Note } {
+        match note {
+            feedback{ strref, text } => {
+                let sent = outbox::text_of{ out = &w.out, t = text }
+                let said = if sent.len > 0 { sent } else { world::string_by_strref{ w = &w, strref } }
+                if said.len > 0 { hud::log_add{ log = &ui.log, text = said, kind = hud::LOG_FEEDBACK } }
+            }
+            else => {}
+        }
+    }
+
+    // ---- pause
+
+    fn clock_paused_by_player { w: *world::World } -> bool {
+        return (w.clock.pause_bits & clock::PAUSE_PLAYER) != 0
+    }
+
+    // The player's pause (Space, the HUD's toggle): the clock stops and a banner says so.
+    fn set_player_pause { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, on: bool } {
+        clock::set_pause{ c = &w.clock, bit = clock::PAUSE_PLAYER, on }
+        gui::set_checked{ g = &ui.gui, panel = ui.hud.panel, tag = "TB_PAUSE", on }
+        if on and ui.pause_panel == 0 and ui.menu == NO_MENU {
+            let p = gui::open{ g = &ui.gui, fs = &w.fs, &dev, name = "pause", mode = gui::Mode::placed, modal = false } iferr { 0 }
+            ui.pause_panel = p
+            let pp = gui::find_panel{ g = &ui.gui, id = p } ifnull { return }
+            pp.x = (ui.gui.ui_w - pp.w) / 2
+            pp.y = ui.gui.ui_h / 6
+            gui::place{ g = &ui.gui, p = pp }
+            gui::set_strref{ g = &ui.gui, panel = p, tag = "LBL_PAUSEREASON", strref = 1508 } iferr {}
+        } else if not on and ui.pause_panel != 0 {
+            gui::close{ g = &ui.gui, id = ui.pause_panel }
+            ui.pause_panel = 0
+        }
+    }
+
+    // ---- the frame
+
     // One frame after the world's: the GUI's clocks, the HUD from the world, then what the panels
     // said.
     fn update { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, sc: scene::Scene, camera: cam::Camera, dt: f32 } {
         gui::update{ g = &ui.gui, dt }
+        hud::log_tick{ log = &ui.log, dt }
         let aspect = @as(f32, ui.width) / @as(f32, ui.height)
+        // A conversation covers the screen with its own panels.
         hud::update{ h = &ui.hud, g = &ui.gui, &w, &dev, text = &ui.text, camera, aspect, blocked = is_blocked{ &ui }, dt }
         let events = gui::take_events{ g = &ui.gui }
         let mut i: usize = 0
         while i < events.len {
-            _ = hud::block_event{ h = &ui.hud, g = &ui.gui, &w, &dev, ev = events[i] }
+            let ev = events[i]
             i = i + 1
+            if ev.panel == ui.hud.panel { hud_event{ &ui, &w, &dev, ev } }
+            else if ev.panel == ui.pause_panel and ev.kind == gui::EventKind::activate { set_player_pause{ &ui, &w, &dev, on = false } }
+        }
+        // The pause banner follows the clock (a script or the toggle can change it).
+        if ui.pause_panel != 0 and not clock_paused_by_player{ w = &w } {
+            gui::close{ g = &ui.gui, id = ui.pause_panel }
+            ui.pause_panel = 0
+        }
+        // A menu: its events (the list was taken above; the bar and panel ids tell which are its).
+        if ui.menu != NO_MENU {
+            menu_events{ &ui, &w, &dev, events }
+            if ui.menu != NO_MENU { panel_update{ &ui, &w, &dev, n = ui.menu, panel = ui.menu_panel, dt } }
         }
     }
 
-    // A line of the headless input script after `ui` (play.ctx): `move X Y` puts the pointer
-    // there, `click X Y` presses and releases the left button, `key NAME` a key (escape, return,
-    // space, a letter). Pixels are the window's.
-    fn run_command { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, text: []u8 } {
-        let mut words = text::words{ s = text }
-        let cmd = text::next_word{ &words } ifnull { return }
-        if ci::eq{ a = cmd, b = "move" } or ci::eq{ a = cmd, b = "click" } {
-            let x = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
-            let y = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
-            send{ &ui, &w, &dev, ev = sdl::Event::mouse_motion{ x, y, dx = 0, dy = 0, buttons = 0 } }
-            if ci::eq{ a = cmd, b = "click" } {
-                send{ &ui, &w, &dev, ev = sdl::Event::mouse_button{ down = true, button = sdl::BUTTON_LEFT, clicks = 1, x, y } }
-                send{ &ui, &w, &dev, ev = sdl::Event::mouse_button{ down = false, button = sdl::BUTTON_LEFT, clicks = 1, x, y } }
+    // What the HUD's own controls ask for: a menu, the pause toggle, a party portrait, the target
+    // block's slots.
+    fn hud_event { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } {
+        if hud::block_event{ h = &ui.hud, g = &ui.gui, &w, &dev, ev } { return }
+        if ev.kind == gui::EventKind::activate {
+            let n = menu_of_tag{ tag = ev.tag }
+            if n >= 0 {
+                open_menu{ &ui, &w, &dev, n }
+                return
             }
-        } else if ci::eq{ a = cmd, b = "target" } {
-            // Test helpers: `target TAG` selects the object, `pick` says what is under the pointer.
-            let tag = text::next_word{ &words } ifnull { return }
-            w.target = world::object_by_tag{ w = &w, tag, nth = 0 }
-        } else if ci::eq{ a = cmd, b = "join" } {
-            // Test helper: the object joins the party (the party lead's routines do this in play).
-            let tag = text::next_word{ &words } ifnull { return }
-            _ = party::add{ &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } }
-        } else if ci::eq{ a = cmd, b = "list" } {
-            // Test helper: the selectable objects and where they are on the screen.
-            let all = list::items{ list = w.objects.all }
-            let mut i: usize = 0
-            while i < all.len {
-                let o = all[i]
-                i = i + 1
-                if not hud::is_selectable{ w = &w, id = o.id } { continue }
-                let b = hud::box_on_screen{ p = ui.hud.projector, o }
-                if b != null {
-                    _ = @fmt(&w.io, "  {} {} box {} {} {} {}\n", o.id, o.tag, b.x0, b.y0, b.x1, b.y1)
-                }
+            let who = hud::portrait_button{ tag = ev.tag }
+            if who >= 0 {
+                // A portrait: the leader's opens the equipment (or the character sheet), a
+                // companion's makes it the leader.
+                let ids = party::members{ w = &w }
+                let member = hud::member_of_widget{ count = ids.len, widget = @as(usize, who) }
+                if member == 0 { open_menu{ &ui, &w, &dev, n = MENU_EQUIP } }
+                else if member > 0 { change_leader{ &w, step = @as(usize, member) } }
             }
-        } else if ci::eq{ a = cmd, b = "info" } {
-            let o = world::object{ w = &w, id = w.target } ifnull { return }
-            let s = hud::shape_of{ o }
-            _ = @fmt(&w.io, "target {} at {} {} {} shape {} {} {}\n", w.target, o.position.x, o.position.y, o.position.z, s.half_x, s.half_y, s.height)
-            let b = hud::box_on_screen{ p = ui.hud.projector, o }
-            if b != null {
-                _ = @fmt(&w.io, "box {} {} {} {} top {} {}\n", b.x0, b.y0, b.x1, b.y1, b.top.x, b.top.y)
-            }
-        } else if ci::eq{ a = cmd, b = "pick" } {
-            let id = hud::pick_at{ p = ui.hud.projector, w = &w, x = ui.gui.mouse_x, y = ui.gui.mouse_y }
-            _ = @fmt(&w.io, "pick at {} {}: {} {}\n", ui.gui.mouse_x, ui.gui.mouse_y, id, hud::name_of{ w = &w, id })
-        } else if ci::eq{ a = cmd, b = "key" } {
-            let name = text::next_word{ &words } ifnull { return }
-            let code = key_code{ name }
-            if code != 0 {
-                send{ &ui, &w, &dev, ev = sdl::Event::key{ down = true, repeat = false, scancode = 0, keycode = code, mods = 0 } }
-                send{ &ui, &w, &dev, ev = sdl::Event::key{ down = false, repeat = false, scancode = 0, keycode = code, mods = 0 } }
-            }
+        } else if ev.kind == gui::EventKind::value_changed and slice::eq_bytes{ a = ev.tag, b = "TB_PAUSE" } {
+            set_player_pause{ &ui, &w, &dev, on = ev.value != 0 }
         }
-    }
-
-    // A synthetic event, as if the window had delivered it.
-    fn send { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, ev: sdl::Event } {
-        _ = handle_event{ &ui, &w, &dev, ev, scale_x = 1.0, scale_y = 1.0 }
-    }
-
-    // An SDL keycode by the name scripts use; 0 for an unknown one.
-    fn key_code { name: []u8 } -> i32 {
-        if name.len == 1 { return @as(i32, ascii::to_lower{ c = name[0] }) }
-        if ci::eq{ a = name, b = "escape" } { return sdl::key::ESCAPE }
-        if ci::eq{ a = name, b = "return" } { return sdl::key::RETURN }
-        if ci::eq{ a = name, b = "space" } { return sdl::key::SPACE }
-        if ci::eq{ a = name, b = "up" } { return sdl::key::UP }
-        if ci::eq{ a = name, b = "down" } { return sdl::key::DOWN }
-        if ci::eq{ a = name, b = "left" } { return sdl::key::LEFT }
-        if ci::eq{ a = name, b = "right" } { return sdl::key::RIGHT }
-        return 0
     }
 
     // Adds the interface to the frame: the HUD's own render targets, then the panels.
     fn draw { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame } {
-        hud::draw{ h = &ui.hud, g = &ui.gui, &w, &dev, &frame }
+        if ui.menu == NO_MENU and not ui.hud_hidden { hud::draw{ h = &ui.hud, g = &ui.gui, &w, &dev, &frame } }
         gui::draw{ g = &ui.gui, &frame }
     }
 }

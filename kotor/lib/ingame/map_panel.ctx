@@ -1,0 +1,28 @@
+// Map (map.gui, menu 6): the area map with the party and the map notes.
+// SKELETON: the panel opens as the file draws it; the panel's owner fills `open`, `update` and
+// `on_event` (the protocol is in menus.ctx).
+namespace map_panel {
+    struct State { opened: bool }
+
+    fn new {} -> State { return State{ opened = false } }
+
+    // The panel was just added, or the leader changed and it must be filled again.
+    fn open { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> ! {
+        s.opened = true
+    }
+
+    // Every frame while the panel is shown.
+    fn update { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, dt: f32 } {
+    }
+
+    // One of the panel's GUI events (BTN_EXIT, Escape and the BTN_CHANGE buttons are the
+    // framework's). True when it used the event.
+    fn on_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, ev: gui::Event } -> bool {
+        return false
+    }
+
+    // The panel is going away.
+    fn close { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } {
+        s.opened = false
+    }
+}

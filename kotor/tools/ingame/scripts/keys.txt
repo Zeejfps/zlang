@@ -1,0 +1,7 @@
+3 ui key space
+10 ui key i
+14 ui key e
+18 ui key escape
+22 ui key escape
+24 ui key space
+26 ui click 1043 20

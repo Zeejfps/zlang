@@ -158,6 +158,30 @@ namespace hud {
         return member
     }
 
+    // The member a widget shows, the inverse of widget_for; -1 for an empty widget.
+    fn member_of_widget { count: usize, widget: usize } -> i32 {
+        if count == 2 { return if widget == 0 { 0 } else if widget == 2 { 1 } else { -1 } }
+        return if widget < count { @as(i32, widget) } else { -1 }
+    }
+
+    // Which party widget a button tag belongs to (BTN_CHAR1 .. BTN_CHAR3 -> 0 .. 2); -1 for any other.
+    fn portrait_button { tag: []u8 } -> i32 {
+        let mut buf: [16]u8
+        let mut n: usize = 0
+        while n < WIDGETS {
+            if slice::eq_bytes{ a = tag, b = tag_n{ into = buf[..], prefix = "BTN_CHAR", n = n + 1 } } { return @as(i32, n) }
+            n = n + 1
+        }
+        return -1
+    }
+
+    // Takes the HUD off the screen (or puts it back): a conversation covers the screen with its
+    // own panels. The panel is moved out of reach rather than closed, so its state stays.
+    fn set_hidden { mut h: Hud, mut g: gui::Gui, hidden: bool } {
+        let p = gui::find_panel{ &g, id = h.panel } ifnull { return }
+        p.sx = if hidden { 100000 } else { p.x }
+    }
+
     // Shows or hides every control of the floating target block.
     fn hide_block { mut h: Hud, mut g: gui::Gui } {
         let mut i: usize = 0

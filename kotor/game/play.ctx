@@ -127,6 +127,7 @@ namespace play {
             let mut n: usize = 0
             while n < notes.len {
                 ambience::take{ a = &amb, &w, note = notes[n] }
+                ingame::take{ ui, &w, note = notes[n] }    // HOOK(ingame)
                 n = n + 1
             }
             outbox::clear{ out = &w.out }
