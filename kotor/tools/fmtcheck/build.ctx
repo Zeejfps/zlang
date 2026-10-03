@@ -1,0 +1,11 @@
+// fmtcheck: the data formats' corpus test.
+//   kotor/tools/ctxc run kotor/tools/fmtcheck -- [--game DIR] [--only FORMAT] [-v]
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "fmtcheck", root = "." }
+    build::add_sources{ &b, exe, dir = "small" }
+    build::add_sources{ &b, exe, dir = "../../lib/base" }
+    build::add_sources{ &b, exe, dir = "../../lib/res" }
+    build::add_sources{ &b, exe, dir = "../../lib/formats" }
+    build::add_sources{ &b, exe, dir = "../common" }
+    build::optimize{ &b, exe, level = 2 }
+}

@@ -1,0 +1,29 @@
+// The corpus checks of the small formats (TLK, SSF, LIP, LTR, LYT, VIS, TXI). A stub: fmtcheck's
+// driver (../main.ctx) calls these.
+namespace fmt_small {
+    struct Stats { copies: u64 }
+
+    fn new_stats {} -> Stats {
+        return Stats{ copies = 0 }
+    }
+
+    // Whether this file checks resources of type `kind`.
+    fn wants { kind: u16 } -> bool {
+        return false
+    }
+
+    // One copy of a wanted type. `scratch` is reset after each copy.
+    fn check { mut io: Io, mut st: Stats, mut scratch: arena::Arena, copy: corpus::Copy, data: []u8, verbose: bool } {
+        st.copies = st.copies + 1
+    }
+
+    // Prints the results; returns how many copies failed.
+    fn report { mut io: Io, st: Stats } -> u64 {
+        return 0
+    }
+
+    // dialog.tlk, which is a file, not a resource. Returns how many failures.
+    fn check_tlk { mut io: Io, mut fs: Fs, mut h: heap::Heap, game: []u8, verbose: bool } -> u64 {
+        return 0
+    }
+}

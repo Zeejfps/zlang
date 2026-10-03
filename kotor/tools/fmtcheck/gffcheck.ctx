@@ -1,0 +1,22 @@
+// The GFF corpus check (stub until lib/formats/gff.ctx lands).
+namespace gff_check {
+    struct Stats { copies: u64 }
+
+    fn new_stats {} -> Stats {
+        return Stats{ copies = 0 }
+    }
+
+    fn wants { kind: u16 } -> bool {
+        let t = restype::of_id{ id = kind } ifnull { return false }
+        return restype::is_gff{ t }
+    }
+
+    fn check { mut io: Io, mut st: Stats, mut scratch: arena::Arena, copy: corpus::Copy, data: []u8, verbose: bool } {
+        st.copies = st.copies + 1
+    }
+
+    fn report { mut io: Io, st: Stats, verbose: bool } -> u64 {
+        _ = @fmt(&io, "gff: {} copies\n", st.copies)
+        return 0
+    }
+}

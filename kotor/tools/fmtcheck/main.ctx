@@ -1,0 +1,235 @@
+// fmtcheck: runs lib/formats' readers over every copy of every resource in the install (the
+// corpus lib/res/corpus.ctx walks), writes every GFF back and compares it byte for byte, and
+// reports counts and failures, to compare with the Python probes' numbers in docs/formats/*.md.
+//
+//   fmtcheck [--game DIR] [--only FORMAT]... [-v]
+//
+// FORMAT: census (copies by type), 2da, gff, small (TLK, SSF, LIP, LTR, LYT, VIS, TXI), res
+// (mount and unmount every module, checking the heap returns to where it was). Without --only,
+// all of them. -v prints a line for every failure and more detail. Exits 1 if anything failed.
+
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+
+struct Options { game: []u8, census: bool, twoda: bool, gff: bool, small: bool, res: bool, verbose: bool, bad: bool }
+
+struct Stats {
+    census: [65536]u32,                 // copies by type id
+    twoda: Twoda,
+    gff: gff_check::Stats,
+    small: fmt_small::Stats,
+}
+
+struct Twoda { copies: u32, failed: u32, cells: u64, nul_separated: u32, empty: u32 }
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let opts = parse_args{ &io, args }
+    if opts.bad { return 2 }
+    let mut h = heap::new{ &mem }
+    let pages = mem::pages{ &mem, size = 268435456 } ifnull {
+        io::eprintln{ &io, s = "fmtcheck: out of memory" }
+        return 1
+    }
+    let mut scratch = arena::new{ buf = pages }
+    let st = alloc::new(Stats, heap::Heap){ realloc = heap::alloc, heap = &h, value = Stats{
+        census = [0; 65536],
+        twoda = Twoda{ copies = 0, failed = 0, cells = 0, nul_separated = 0, empty = 0 },
+        gff = gff_check::new_stats{},
+        small = fmt_small::new_stats{},
+    } } iferr {
+        io::eprintln{ &io, s = "fmtcheck: out of memory" }
+        return 1
+    }
+    let mut failures: u64 = 0
+
+    if opts.census or opts.twoda or opts.gff or opts.small {
+        let totals = corpus::each{
+            &fs, h = &h, game = opts.game,
+            want = wanted{ opts, st, _ },
+            visit = visit{ &io, st, &scratch, opts, _ },
+        } iferr err{ error } {
+            _ = @fmt(&io, "fmtcheck: walking the install failed: {}\n", error)
+            io::flush{ &io }
+            return 1
+        }
+        _ = @fmt(&io, "corpus: {} archives, {} resource copies, {} read ({} bytes)\n",
+            totals.archives, totals.copies, totals.visited, totals.bytes)
+    }
+    if opts.census { report_census{ &io, st } }
+    if opts.twoda {
+        let t = st.twoda
+        _ = @fmt(&io, "2da: {} copies, {} parsed, {} failures; {} cells; {} with NUL separators; {} with no rows\n",
+            t.copies, t.copies - t.failed, t.failed, t.cells, t.nul_separated, t.empty)
+        failures = failures + t.failed
+    }
+    if opts.gff { failures = failures + gff_check::report{ &io, st = st.gff, verbose = opts.verbose } }
+    if opts.small {
+        failures = failures + fmt_small::report{ &io, st = st.small }
+        failures = failures + fmt_small::check_tlk{ &io, &fs, &h, game = opts.game, verbose = opts.verbose }
+    }
+    if opts.res { failures = failures + check_modules{ &io, &fs, &h, game = opts.game, verbose = opts.verbose } }
+    _ = @fmt(&io, "fmtcheck: {} failures\n", failures)
+    io::flush{ &io }
+    return if failures == 0 { 0 } else { 1 }
+}
+
+fn parse_args { mut io: Io, args: Args } -> Options {
+    let mut o = Options{ game = DEFAULT_GAME, census = false, twoda = false, gff = false, small = false, res = false, verbose = false, bad = false }
+    let mut any = false
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        if slice::eq_bytes{ a, b = "--game" } and i + 1 < args.len {
+            o.game = args[i + 1]
+            i = i + 2
+            continue
+        }
+        if slice::eq_bytes{ a, b = "--only" } and i + 1 < args.len {
+            let f = args[i + 1]
+            any = true
+            if slice::eq_bytes{ a = f, b = "census" } { o.census = true }
+            else if slice::eq_bytes{ a = f, b = "2da" } { o.twoda = true }
+            else if slice::eq_bytes{ a = f, b = "gff" } { o.gff = true }
+            else if slice::eq_bytes{ a = f, b = "small" } { o.small = true }
+            else if slice::eq_bytes{ a = f, b = "res" } { o.res = true }
+            else {
+                _ = @fmt(&io, "fmtcheck: unknown format {}\n", f)
+                o.bad = true
+            }
+            i = i + 2
+            continue
+        }
+        if slice::eq_bytes{ a, b = "-v" } {
+            o.verbose = true
+            i = i + 1
+            continue
+        }
+        _ = @fmt(&io, "fmtcheck: unknown option {}\n", a)
+        o.bad = true
+        i = i + 1
+    }
+    if not any {
+        o.census = true
+        o.twoda = true
+        o.gff = true
+        o.small = true
+        o.res = true
+    }
+    return o
+}
+
+// Which types the walk reads: the ones some check wants. The census counts every copy here, as
+// it needs no bytes.
+fn wanted { opts: Options, st: *mut Stats, kind: u16 } -> bool {
+    st.census[kind] = st.census[kind] + 1
+    if opts.twoda and kind == @as(u16, restype::Type::twoda) { return true }
+    if opts.gff and gff_check::wants{ kind } { return true }
+    if opts.small and fmt_small::wants{ kind } { return true }
+    return false
+}
+
+fn visit { mut io: Io, st: *mut Stats, mut scratch: arena::Arena, opts: Options, copy: corpus::Copy, data: []u8 } {
+    arena::reset{ heap = &scratch }
+    if opts.twoda and copy.kind == @as(u16, restype::Type::twoda) { check_twoda{ &io, t = &st.twoda, &scratch, copy, data, verbose = opts.verbose } }
+    if opts.gff and gff_check::wants{ kind = copy.kind } {
+        gff_check::check{ &io, st = &st.gff, &scratch, copy, data, verbose = opts.verbose }
+        arena::reset{ heap = &scratch }
+    }
+    if opts.small and fmt_small::wants{ kind = copy.kind } {
+        fmt_small::check{ &io, st = &st.small, &scratch, copy, data, verbose = opts.verbose }
+    }
+}
+
+fn report_census { mut io: Io, st: *Stats } {
+    _ = @fmt(&io, "census: copies by type\n")
+    let mut total: u64 = 0
+    let mut types: u32 = 0
+    let mut id: usize = 0
+    while id < 65536 {
+        let n = st.census[id]
+        if n > 0 {
+            let ext = restype::ext_of_id{ id = @trunc(u16, id) } ifnull "?"
+            _ = @fmt(&io, "  {} {}\t{}\n", id, ext, n)
+            total = total + n
+            types = types + 1
+        }
+        id = id + 1
+    }
+    _ = @fmt(&io, "census: {} types, {} copies\n", types, total)
+}
+
+fn check_twoda { mut io: Io, t: *mut Twoda, mut scratch: arena::Arena, copy: corpus::Copy, data: []u8, verbose: bool } {
+    t.copies = t.copies + 1
+    let table = twoda::parse{ data, realloc = arena::alloc, heap = &scratch } iferr err{ error } {
+        t.failed = t.failed + 1
+        _ = @fmt(&io, "2da FAIL {}: {}\n", copy, error)
+        return
+    }
+    t.cells = t.cells + table.cells.len
+    if table.labels.len == 0 { t.empty = t.empty + 1 }
+    // The rims/ copies with NULs where the TABs were: the first name ends at a NUL.
+    let mut p: usize = 9
+    while p < data.len and data[p] != '\t' and data[p] != 0 { p = p + 1 }
+    if p < data.len and data[p] == 0 and p > 9 { t.nul_separated = t.nul_separated + 1 }
+    // Every cell must read back: the getters never fail on a parsed table.
+    let mut r: usize = 0
+    while r < table.labels.len {
+        let mut c: usize = 0
+        while c < table.columns.len {
+            _ = twoda::get_int_at{ t = table, row = r, col = c }
+            c = c + 1
+        }
+        r = r + 1
+    }
+}
+
+// Mounts and unmounts every module in modules/, checking that each mount finds the module's
+// .ifo and that the heap returns to the same live bytes afterwards (no leak across hours of
+// module changes).
+fn check_modules { mut io: Io, mut fs: Fs, mut h: heap::Heap, game: []u8, verbose: bool } -> u64 {
+    let mut rm = res::open{ &fs, heap = &h, game } iferr err{ error } {
+        _ = @fmt(&io, "res FAIL: open: {}\n", error)
+        return 1
+    }
+    defer res::close{ &fs, &rm }
+    let names = corpus::list_dir{ &fs, h = &h, dir = rm.dirs.modules } iferr err{ error } {
+        _ = @fmt(&io, "res FAIL: listing modules: {}\n", error)
+        return 1
+    }
+    defer corpus::free_names{ h = &h, names }
+    let base = h.live
+    let mut failed: u64 = 0
+    let mut mounted: u32 = 0
+    let mut i: usize = 0
+    while i < names.spans.len {
+        let n = corpus::name_at{ names, i }
+        i = i + 1
+        if not ci::ends_with{ s = n, suffix = ".rim" } or ci::ends_with{ s = n, suffix = "_s.rim" } { continue }
+        let name = n[..n.len - 4]
+        res::mount_module{ &fs, &rm, name, save = "" } iferr err{ error } {
+            _ = @fmt(&io, "res FAIL: mount {}: {}\n", name, error)
+            failed = failed + 1
+            continue
+        }
+        mounted = mounted + 1
+        if res::find{ rm, name = "module", kind = restype::Type::ifo } == null {
+            _ = @fmt(&io, "res FAIL: {} has no module.ifo\n", name)
+            failed = failed + 1
+        }
+        res::unmount_module{ &fs, &rm }
+        if h.live != base {
+            _ = @fmt(&io, "res FAIL: {} left {} bytes live\n", name, h.live - base)
+            failed = failed + 1
+        }
+    }
+    _ = @fmt(&io, "res: {} modules mounted and unmounted, {} failures; heap {} bytes live, peak {}\n", mounted, failed, h.live, h.peak)
+    return failed
+}
+
+namespace fmtout {
+    // A copy, for messages: name.ext in path[:inner].
+    #write
+    fn put_copy { mut io: Io, c: corpus::Copy } {
+        _ = @fmt(&io, "{}.{} in {}", c.name, restype::ext_of_id{ id = c.kind } ifnull "?", c.path)
+        if c.inner.len > 0 { _ = @fmt(&io, ":{}", c.inner) }
+    }
+}
