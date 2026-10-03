@@ -1,0 +1,25 @@
+# The character sheet and abilities for a rich player (a level-6 Jedi Sentinel who can level up),
+# then for Carth (a level-4 soldier from his blueprint) and the default level-1 soldier.
+#   sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/sheet.txt 60 12:sheet_pc 18:abil_skills 24:abil_powers 30:abil_feats 38:abil_feat2 44:sheet_carth 50:abil_carth
+3 ui join carth
+3 ui stat class 5
+3 ui stat level 6
+3 ui stat str 12
+3 ui stat dex 16
+3 ui stat con 14
+3 ui stat int 12
+3 ui stat wis 16
+3 ui stat cha 14
+3 ui stat xp 22000
+3 ui stat align 85
+3 ui stat hp 40
+3 ui stat hpmax 52
+3 ui stat template p_bastilla
+5 ui menu character
+14 ui menu abilities
+20 ui click 642 217
+26 ui click 778 217
+34 ui click 420 420
+40 ui leader carth
+42 ui menu character
+46 ui menu abilities

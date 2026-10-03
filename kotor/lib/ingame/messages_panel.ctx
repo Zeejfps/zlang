@@ -1,0 +1,95 @@
+// Messages (messages.gui, menu 4): the feedback log and the dialogue log (docs/re/gui.md,
+// "CSWGuiMessages"). The file holds two list boxes in the same place, LB_MESSAGES (feedback) and
+// LB_DIALOG (what was said in conversations); BTN_SHOW switches between them and the title and the
+// button's text name the view. The view is remembered for the session; the original starts on the
+// dialogue log. Both lists are filled from the framework's `hud::MessageLog` and refilled whenever its
+// `total` has moved, and show the newest line (the last row) first.
+namespace messages_panel {
+    // A feedback line the original draws in the combat colour (its saved message colour byte is 1):
+    // the log's kind is LOG_FEEDBACK (0) or LOG_DIALOG (1); this is a feedback line with the red.
+    const KIND_FEEDBACK_RED: u8 = 2
+
+    const TITLE_STRREF: u32 = 1563              // "Messages"
+    const DIALOG_STRREF: u32 = 371              // "Dialog"
+    const FEEDBACK_STRREF: u32 = 42167          // "Feedback"
+    const SHOW_DIALOG_STRREF: u32 = 42143       // the button while the feedback log shows
+    const SHOW_FEEDBACK_STRREF: u32 = 42142     // and while the dialogue log does
+
+    struct State {
+        opened: bool,
+        feedback: bool,         // the feedback log is the one shown (remembered across opens)
+        seen_total: usize,      // the log's total when the lists were last filled
+    }
+
+    fn new {} -> State {
+        return State{ opened = false, feedback = false, seen_total = 0 }
+    }
+
+    // The panel was just added, or the leader changed and it must be filled again.
+    fn open { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, log: *hud::MessageLog } -> ! {
+        s.opened = true
+        try fill_lists{ &s, &g, panel, log }
+        try show_view{ &s, &g, &w, panel }
+    }
+
+    // Every frame while the panel is shown.
+    fn update { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, dt: f32, log: *hud::MessageLog } {
+        if log.total == s.seen_total { return }
+        fill_lists{ &s, &g, panel, log } iferr err{ error } {
+            _ = @fmt(&w.io, "kotor: messages: {}\n", error)
+        }
+    }
+
+    // One of the panel's GUI events (BTN_EXIT, Escape and the BTN_CHANGE buttons are the
+    // framework's). True when it used the event.
+    fn on_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, ev: gui::Event, log: *hud::MessageLog } -> bool {
+        if ev.kind != gui::EventKind::activate or not slice::eq_bytes{ a = ev.tag, b = "BTN_SHOW" } { return false }
+        s.feedback = not s.feedback
+        show_view{ &s, &g, &w, panel } iferr err{ error } {
+            _ = @fmt(&w.io, "kotor: messages: {}\n", error)
+        }
+        return true
+    }
+
+    // The panel is going away.
+    fn close { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } {
+        s.opened = false
+    }
+
+    // Shows one of the two lists and names it in the title and on the button.
+    fn show_view { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } -> ! {
+        gui::set_visible{ &g, panel, tag = "LB_MESSAGES", visible = s.feedback }
+        gui::set_visible{ &g, panel, tag = "LB_DIALOG", visible = not s.feedback }
+        try gui::set_strref{ &g, panel, tag = "BTN_SHOW", strref = if s.feedback { SHOW_DIALOG_STRREF } else { SHOW_FEEDBACK_STRREF } }
+        let title = world::string_by_strref{ w = &w, strref = TITLE_STRREF }
+        let view = world::string_by_strref{ w = &w, strref = if s.feedback { FEEDBACK_STRREF } else { DIALOG_STRREF } }
+        let mut b = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } }
+        defer list::free{ list = &b.bytes }
+        try @fmt(&b, "{} - {}", title, view)
+        try gui::set_text{ &g, panel, tag = "LBL_MESSAGES", text = utf8::view{ b }.bytes }
+    }
+
+    // Both lists from the log, oldest first, each scrolled to its last line.
+    fn fill_lists { mut s: State, mut g: gui::Gui, panel: u32, log: *hud::MessageLog } -> ! {
+        gui::list_clear{ &g, panel, tag = "LB_MESSAGES" }
+        gui::list_clear{ &g, panel, tag = "LB_DIALOG" }
+        let n = hud::log_count{ log }
+        let mut i: usize = 0
+        while i < n {
+            let kind = hud::log_kind{ log, i }
+            let text = hud::log_text{ log, i }
+            i = i + 1
+            if kind == hud::LOG_DIALOG {
+                try journal::add_wrapped{ &g, panel, tag = "LB_DIALOG", text, colored = false, color = red_color{} }
+            } else {
+                try journal::add_wrapped{ &g, panel, tag = "LB_MESSAGES", text, colored = kind == KIND_FEEDBACK_RED, color = red_color{} }
+            }
+        }
+        gui::list_select{ &g, panel, tag = "LB_MESSAGES", row = gui::list_count{ &g, panel, tag = "LB_MESSAGES" } - 1 }
+        gui::list_select{ &g, panel, tag = "LB_DIALOG", row = gui::list_count{ &g, panel, tag = "LB_DIALOG" } - 1 }
+        s.seen_total = log.total
+    }
+
+    // The combat feedback colour of the original's message list.
+    fn red_color {} -> render::Color { return render::Color{ r = 0.74, g = 0.11, b = 0.0, a = 1.0 } }
+}

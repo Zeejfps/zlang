@@ -1,0 +1,402 @@
+// Party selection (partyselection.gui): the nine companions of the party table, three to a row,
+// of which the player picks up to two to travel with (docs/re/gui.md, "CSWGuiPartySelection";
+// docs/re/party-items-saves.md 3.8).
+//
+// It is not one of the eight menus. It is a full-screen modal panel opened on top of whatever is
+// up: by the map's Party Selection button (map_panel opens its own `State` and calls `update`
+// itself, so that path needs nothing from the framework) and, later, by the script routine
+// ShowPartySelectionGUI (ingame keeps a `State` in `Menus.partysel` for it and calls `update`
+// every frame while `is_open`).
+//
+//   open_modal{ s, g, w, dev, force1, force2 }   put it on the screen (force1/2: an NPC slot that
+//                                                must stay in the party, -1 for none)
+//   update{ s, g, w, dev, dt }                   every frame: takes the panel's events from the GUI
+//   take_finished{ s } -> bool                   true once after it closed (Done or Cancel)
+//
+// A slot is a row of the party table: `w.party.available`, `selectable`, the creature in `npcs`
+// once it exists in the area. Pressing Done adds the picked creatures to `w.party.members` and
+// removes the ones that were put back.
+namespace partysel_panel {
+    const SLOTS: usize = 9
+    const MAX_COMPANIONS: i32 = 2
+
+    // npc.2da's rows: the creature tag of each companion, and the blueprint the game spawns one
+    // from. (The tag column of npc.2da is the tag the creature carries, "Cand" for Canderous.)
+    const TAGS: [9][]u8 = ["Bastila", "Cand", "Carth", "HK47", "Jolee", "Juhani", "Mission", "T3M3", "Zaalbar"]
+    const TEMPLATES: [9][]u8 = ["p_bastilla", "p_cand", "p_carth", "p_hk47", "p_jolee", "p_juhani", "p_mission", "p_t3m4", "p_zaalbar"]
+
+    // Where a companion that has to be spawned stands, as (right, back) metres from the leader:
+    // the first free one. PLACEHOLDER for the party's formation (re/party-items-saves.md 3.8
+    // computes a point next to the leader and snaps it to a free spot within 5 m).
+    const SPOTS: [6][2]f32 = [[1.5, 0.0], [-1.5, 0.0], [0.0, 1.5], [1.5, 1.5], [-1.5, 1.5], [0.0, -1.5]]
+
+    struct State {
+        opened: bool,
+        panel: u32,
+        selected: [9]bool,                  // slots picked (the party's companions on opening)
+        forced: [9]bool,                    // slots a script says must be in the party
+        hilit: i32,                         // the slot under the pointer, -1 for none
+        box: u32,                           // the message box on screen, 0 for none
+        confirming: bool,                   // that box asks whether to apply the party
+        finished: bool,                     // closed since the last take_finished
+    }
+
+    fn new {} -> State {
+        return State{
+            opened = false, panel = 0, selected = [false; 9], forced = [false; 9], hilit = -1, box = 0,
+            confirming = false, finished = false,
+        }
+    }
+
+    fn is_open { s: *State } -> bool { return s.opened }
+
+    // True once after the panel closed.
+    fn take_finished { mut s: State } -> bool {
+        let f = s.finished
+        s.finished = false
+        return f
+    }
+
+    // ---- the party table's slots
+
+    // The creature of slot `n` if it is in the area: the party table's link, else (PLACEHOLDER
+    // until the party lead fills `npcs` when it spawns a companion) a creature with its tag.
+    fn slot_creature { w: *world::World, n: usize } -> u32 {
+        let id = w.party.npcs[n]
+        if world::is_valid{ w, id } { return id }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed or o.kind != obj::Kind::creature { continue }
+            if ci::eq{ a = o.tag, b = TAGS[n] } { return o.id }
+        }
+        return obj::INVALID
+    }
+
+    fn in_party { w: *world::World, n: usize } -> bool {
+        let id = slot_creature{ w, n }
+        return id != obj::INVALID and party::is_member{ w, id }
+    }
+
+    // Known to the party: the table says so, or the companion is with the party already.
+    fn slot_available { w: *world::World, n: usize } -> bool {
+        return w.party.available[n] or in_party{ w, n }
+    }
+
+    // The player can pick it (the table's "selectable", on for a member).
+    fn slot_pickable { w: *world::World, n: usize } -> bool {
+        return slot_available{ w, n } and (w.party.selectable[n] or in_party{ w, n })
+    }
+
+    struct Slot { name: []u8, portrait: []u8, level: i32 }
+
+    // What the panel shows of a slot: from its creature when there is one, else from the blueprint
+    // (PLACEHOLDER: the party table should keep the template AddAvailableNPCByTemplate was given,
+    // the original reads the saved AVAILNPC<n> creature).
+    fn slot_info { mut w: world::World, n: usize } -> Slot {
+        let id = slot_creature{ w = &w, n }
+        if id != obj::INVALID {
+            return Slot{ name = hud::name_of{ w = &w, id }, portrait = hud::portrait_of{ w = &w, id }, level = hud::level_of{ w = &w, id } }
+        }
+        let none = Slot{ name = "", portrait = "", level = 1 }
+        let doc = world::read_gff{ &w, name = TEMPLATES[n], kind = restype::Type::utc } iferr { return none }
+        let d = doc ifnull { return none }
+        let mut name: []u8 = ""
+        let ls = gff::get_locstring{ doc = d, s = gff::ROOT, label = "FirstName" }
+        if ls != null { name = world::string_by_strref{ w = &w, strref = @trunc(u32, ls.strref) } }
+        let pid = gff::get_number{ doc = d, s = gff::ROOT, label = "PortraitId" } ifnull 0
+        let portrait = twoda::get_string{ t = w.tables.portraits, row = @as(usize, if pid < 0 { 0 } else { pid }), column = "baseresref" } ifnull ""
+        let mut level: i64 = 0
+        let classes = gff::get_list{ doc = d, s = gff::ROOT, label = "ClassList" } ifnull { slice::empty(u32){} }
+        let mut k: usize = 0
+        while k < classes.len {
+            level = level + (gff::get_number{ doc = d, s = classes[k], label = "ClassLevel" } ifnull 0)
+            k = k + 1
+        }
+        return Slot{ name, portrait, level = if level < 1 { 1 } else { @as(i32, level) } }
+    }
+
+    // The slot a control tag names ("BTN_NPC3" is 3), -1 for any other tag.
+    fn slot_of_tag { tag: []u8 } -> i32 {
+        if tag.len != 8 or not slice::eq_bytes{ a = tag[..7], b = "BTN_NPC" } { return -1 }
+        let d = tag[7]
+        if d < '0' or d > '8' { return -1 }
+        return @as(i32, d - '0')
+    }
+
+    fn picked_count { s: *State } -> i32 {
+        let mut c: i32 = 0
+        let mut n: usize = 0
+        while n < SLOTS {
+            if s.selected[n] { c = c + 1 }
+            n = n + 1
+        }
+        return c
+    }
+
+    // ---- filling the panel
+
+    // Sets every slot's portrait, "not available" cover and check box, and the labels.
+    fn fill { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } {
+        let p = s.panel
+        let mut buf: [24]u8
+        let mut n: usize = 0
+        while n < SLOTS {
+            let avail = slot_available{ w = &w, n }
+            let tag_char = hud::tag_n{ into = buf[..], prefix = "LBL_CHAR", n }
+            if avail {
+                let info = slot_info{ &w, n }
+                let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name = info.portrait }
+                if img.ok { gui::set_picture{ &g, panel = p, tag = tag_char, texture = img.tex, w = img.w, h = img.h } }
+                else { gui::clear_picture{ &g, panel = p, tag = tag_char } }
+            } else {
+                gui::clear_picture{ &g, panel = p, tag = tag_char }
+            }
+            gui::set_visible{ &g, panel = p, tag = hud::tag_n{ into = buf[..], prefix = "LBL_NA", n }, visible = not avail }
+            // The file gives a picked slot the same white frame as the others (the original marks
+            // it in code, not traced): ours turns yellow, the menus' highlight colour.
+            let c = gui::find_control{ &g, panel = p, tag = hud::tag_n{ into = buf[..], prefix = "BTN_NPC", n } }
+            if c != null {
+                c.selected.color = gui::color_hilight{}
+                c.selected.tinted = true
+                c.hilight_selected.color = gui::color_hilight{}
+                c.hilight_selected.tinted = true
+            }
+            gui::set_checked{ &g, panel = p, tag = hud::tag_n{ into = buf[..], prefix = "BTN_NPC", n }, on = s.selected[n] }
+            n = n + 1
+        }
+        show_counts{ &s, &g }
+        show_hilit{ &s, &g, &w }
+    }
+
+    // Slots still free, and what the Add/Remove button will do to the slot under the pointer.
+    fn show_counts { mut s: State, mut g: gui::Gui } {
+        let mut buf: [8]u8
+        let left = MAX_COMPANIONS - picked_count{ &s }
+        gui::set_text{ &g, panel = s.panel, tag = "LBL_COUNT", text = hud::tag_n{ into = buf[..], prefix = "", n = @as(usize, if left < 0 { 0 } else { left }) } } iferr {}
+        let remove = s.hilit >= 0 and s.selected[@as(usize, s.hilit)]
+        gui::set_strref{ &g, panel = s.panel, tag = "BTN_ACCEPT", strref = if remove { 38456 } else { 38455 } } iferr {}
+    }
+
+    // The name and level of the slot under the pointer.
+    fn show_hilit { mut s: State, mut g: gui::Gui, mut w: world::World } {
+        let p = s.panel
+        if s.hilit < 0 or not slot_available{ w = &w, n = @as(usize, s.hilit) } {
+            gui::set_text{ &g, panel = p, tag = "LBL_NPC_NAME", text = "" } iferr {}
+            gui::set_text{ &g, panel = p, tag = "LBL_NPC_LEVEL", text = "" } iferr {}
+            return
+        }
+        let info = slot_info{ &w, n = @as(usize, s.hilit) }
+        let mut buf: [24]u8
+        gui::set_text{ &g, panel = p, tag = "LBL_NPC_NAME", text = info.name } iferr {}
+        // PLACEHOLDER: the original's label text for the level is not known; "Level N".
+        gui::set_text{ &g, panel = p, tag = "LBL_NPC_LEVEL", text = hud::tag_n{ into = buf[..], prefix = "Level ", n = @as(usize, info.level) } } iferr {}
+    }
+
+    // Puts the panel on the screen. `force1` and `force2` are NPC slots (or -1) that must be in
+    // the party (ShowPartySelectionGUI's nForce arguments).
+    fn open_modal { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, force1: i32, force2: i32 } -> ! {
+        if s.opened { return }
+        let id = try gui::open{ g = &g, fs = &w.fs, &dev, name = "partyselection", mode = gui::Mode::full_screen, modal = true }
+        gui::set_backdrop{ g = &g, fs = &w.fs, &dev, panel = id, kind = 0 }
+        s.opened = true
+        s.panel = id
+        s.hilit = -1
+        s.box = 0
+        s.confirming = false
+        s.finished = false
+        let mut n: usize = 0
+        while n < SLOTS {
+            s.forced[n] = (force1 >= 0 and @as(usize, force1) == n) or (force2 >= 0 and @as(usize, force2) == n)
+            s.selected[n] = in_party{ w = &w, n } or s.forced[n]
+            n = n + 1
+        }
+        fill{ &s, &g, &w, &dev }
+        gui::set_focus{ &g, panel = id, tag = "BTN_DONE" }
+    }
+
+    // Closes the panel; `finished` says so to whoever opened it.
+    fn close { mut s: State, mut g: gui::Gui, mut w: world::World } {
+        if not s.opened { return }
+        if s.box != 0 { gui::close{ &g, id = s.box } }
+        gui::close{ &g, id = s.panel }
+        s.opened = false
+        s.panel = 0
+        s.box = 0
+        s.confirming = false
+        s.finished = true
+    }
+
+    // ---- events
+
+    fn say { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, strref: u32, ask: bool } {
+        if s.box != 0 { return }
+        let text = world::string_by_strref{ w = &w, strref }
+        s.box = gui::message_box{ g = &g, fs = &w.fs, &dev, text, cancel = ask } iferr { 0 }
+    }
+
+    // Every frame while the panel is open: its events (and its message box's) are in the GUI's list
+    // until the next frame begins.
+    fn update { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, dt: f32 } {
+        if not s.opened { return }
+        let n = gui::take_events{ g = &g }.len
+        let mut i: usize = 0
+        while i < n and s.opened {
+            let evs = gui::take_events{ g = &g }
+            if i >= evs.len { break }
+            let ev = evs[i]
+            i = i + 1
+            if s.box != 0 and ev.panel == s.box {
+                box_event{ &s, &g, &w, &dev, ev }
+            } else if ev.panel == s.panel and s.box == 0 {
+                panel_event{ &s, &g, &w, &dev, ev }
+            }
+        }
+    }
+
+    // The box was answered: close it, and apply the party if it was the question.
+    fn box_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } {
+        let ok = ev.kind == gui::EventKind::activate and slice::eq_bytes{ a = ev.tag, b = "BTN_OK" }
+        if not ok and ev.kind != gui::EventKind::cancel and not (ev.kind == gui::EventKind::activate and slice::eq_bytes{ a = ev.tag, b = "BTN_CANCEL" }) { return }
+        gui::close{ &g, id = s.box }
+        s.box = 0
+        let ask = s.confirming
+        s.confirming = false
+        if ok and ask { apply{ &s, &g, &w, &dev } }
+    }
+
+    fn panel_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } {
+        if ev.kind == gui::EventKind::cancel {
+            close{ &s, &g, &w }
+            return
+        }
+        let slot = slot_of_tag{ tag = ev.tag }
+        if ev.kind == gui::EventKind::hilight {
+            if slot >= 0 {
+                s.hilit = slot
+                show_hilit{ &s, &g, &w }
+                show_counts{ &s, &g }
+            }
+            return
+        }
+        if ev.kind != gui::EventKind::activate { return }
+        if slot >= 0 {
+            toggle{ &s, &g, &w, &dev, n = @as(usize, slot) }
+        } else if slice::eq_bytes{ a = ev.tag, b = "BTN_ACCEPT" } {
+            if s.hilit >= 0 { toggle{ &s, &g, &w, &dev, n = @as(usize, s.hilit) } }
+        } else if slice::eq_bytes{ a = ev.tag, b = "BTN_DONE" } {
+            done{ &s, &g, &w, &dev }
+        } else if slice::eq_bytes{ a = ev.tag, b = "BTN_BACK" } {
+            close{ &s, &g, &w }
+        }
+    }
+
+    // Picks or puts back a companion, or says why not.
+    fn toggle { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, n: usize } {
+        if not slot_pickable{ w = &w, n } {
+            say{ &s, &g, &w, &dev, strref = 42376, ask = false }
+        } else if s.forced[n] {
+            say{ &s, &g, &w, &dev, strref = 42406, ask = false }
+        } else if s.selected[n] {
+            s.selected[n] = false
+        } else if picked_count{ &s } < MAX_COMPANIONS {
+            s.selected[n] = true
+        }
+        // The check box flipped itself on the click; the party's truth goes back in.
+        let mut buf: [24]u8
+        let mut k: usize = 0
+        while k < SLOTS {
+            gui::set_checked{ &g, panel = s.panel, tag = hud::tag_n{ into = buf[..], prefix = "BTN_NPC", n = k }, on = s.selected[k] }
+            k = k + 1
+        }
+        show_counts{ &s, &g }
+    }
+
+    // Done: with no companion, or both forced, the party applies at once; otherwise the player is
+    // asked first (a short party gets the longer warning).
+    fn done { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } {
+        let count = picked_count{ &s }
+        let mut forced: i32 = 0
+        let mut n: usize = 0
+        while n < SLOTS {
+            if s.forced[n] { forced = forced + 1 }
+            n = n + 1
+        }
+        if count == 0 or (count == MAX_COMPANIONS and forced == MAX_COMPANIONS) {
+            apply{ &s, &g, &w, &dev }
+            return
+        }
+        say{ &s, &g, &w, &dev, strref = if count == 1 { 38329 } else { 38328 }, ask = true }
+        s.confirming = s.box != 0
+    }
+
+    // ---- applying
+
+    // Rebuilds the party: companions put back leave it (and stay where they stand), newly picked
+    // ones join, spawned next to the leader if they are not in the area.
+    fn apply { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } {
+        let mut n: usize = 0
+        while n < SLOTS {
+            let id = slot_creature{ w = &w, n }
+            if id != obj::INVALID and party::is_member{ w = &w, id } and not s.selected[n] { party::remove{ &w, id } }
+            n = n + 1
+        }
+        n = 0
+        while n < SLOTS {
+            if s.selected[n] and not in_party{ w = &w, n } {
+                let mut id = slot_creature{ w = &w, n }
+                if id == obj::INVALID { id = spawn_companion{ &w, n } }
+                if id != obj::INVALID {
+                    w.party.npcs[n] = id
+                    _ = party::add{ &w, id }
+                }
+            }
+            n = n + 1
+        }
+        // The player character leads the party; if the leader was put back, the first member does.
+        if party::leader{ w = &w } != obj::INVALID and not party::is_member{ w = &w, id = w.pc } {
+            w.pc = party::leader{ w = &w }
+        }
+        close{ &s, &g, &w }
+    }
+
+    // A creature of slot `n`'s blueprint beside the leader. PLACEHOLDER: the party lead's spawn
+    // (SpawnAvailableNPC: formation point, a free spot within 5 m, fade-in, player control with
+    // follow AI). This one picks the first of a few points near the leader that the walkmesh has
+    // floor for, and returns obj::INVALID when it cannot spawn.
+    fn spawn_companion { mut w: world::World, n: usize } -> u32 {
+        let lo = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return obj::INVALID }
+        let fx = lo.orientation.x
+        let fy = lo.orientation.y
+        let mut at = lo.position
+        let mut k: usize = 0
+        while k < 6 {
+            // (right, back) in metres: right of facing (fx, fy) is (fy, -fx).
+            let x = lo.position.x + fy * SPOTS[k][0] - fx * SPOTS[k][1]
+            let y = lo.position.y - fx * SPOTS[k][0] - fy * SPOTS[k][1]
+            k = k + 1
+            let z = walkmap::height{ m = &w.walk, x, y, z = lo.position.z } ifnull { continue }
+            if walkmap::blocked{ m = &w.walk, x, y, z } or spot_taken{ w = &w, x, y } { continue }
+            at = math::Vec3{ x, y, z }
+            break
+        }
+        return tmpl::spawn{ &w, kind = obj::Kind::creature, template = TEMPLATES[n], position = at, orientation = lo.orientation } iferr { obj::INVALID }
+    }
+
+    // Whether a party member already stands within a metre of (x, y).
+    fn spot_taken { w: *world::World, x: f32, y: f32 } -> bool {
+        let ids = party::members{ w }
+        let mut i: usize = 0
+        while i < ids.len {
+            let o = world::object{ w, id = ids[i] }
+            i = i + 1
+            if o == null { continue }
+            let dx = o.position.x - x
+            let dy = o.position.y - y
+            if dx * dx + dy * dy < 1.0 { return true }
+        }
+        return false
+    }
+}

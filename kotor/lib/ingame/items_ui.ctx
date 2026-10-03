@@ -1,0 +1,88 @@
+// Pieces of the equipment and inventory screens that both use: item rows in a list box, the
+// portrait, the description pane and the refusal message box.
+namespace items {
+    // Appends a row for item `id` to the list `tag`: "Name", " (Equipped)" when it is worn, " xN"
+    // for a stack; the item's icon at `icon_size`; `user` is the item id. Returns the row.
+    fn add_row {
+        mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, tag: []u8, id: u32, equipped: bool, icon_size: f32,
+    } -> !i32 {
+        let mut b = new_text{ w = &w }
+        defer list::free{ list = &b.bytes }
+        try utf8::push{ &b, s = utf8::String{ bytes = name_of{ w = &w, id } } }
+        if equipped {
+            try @fmt(&b, " ({})", world::string_by_strref{ w = &w, strref = 32346 })
+        }
+        let n = stack_of{ w = &w, id }
+        if n > 1 { try @fmt(&b, " x{}", n) }
+        let row = try gui::list_add{ &g, panel, tag, text = utf8::view{ b }.bytes, user = @as(i64, id) }
+        let img = icon_of{ &g, &w, &dev, id }
+        if img.ok { gui::list_set_icon{ &g, panel, tag, row, texture = img.tex, w = icon_size, h = icon_size } }
+        return row
+    }
+
+    // The row that stands for "nothing": "None" with the empty picture (id 0 as `user`).
+    fn add_none_row { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, tag: []u8, icon_size: f32 } -> !i32 {
+        let text = world::string_by_strref{ w = &w, strref = 363 }
+        let row = try gui::list_add{ &g, panel, tag, text, user = 0 }
+        let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name = "inone" }
+        if img.ok { gui::list_set_icon{ &g, panel, tag, row, texture = img.tex, w = icon_size, h = icon_size } }
+        return row
+    }
+
+    // The creature's portrait on a label.
+    fn show_portrait { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, tag: []u8, who: u32 } {
+        let name = hud::portrait_of{ w = &w, id = who }
+        let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name }
+        if img.ok {
+            gui::set_picture{ &g, panel, tag, texture = img.tex, w = img.w, h = img.h }
+        } else {
+            gui::clear_picture{ &g, panel, tag }
+        }
+    }
+
+    // The item's description in a list box that shows one text; `id` 0 (or any non-item) empties it.
+    fn show_description { mut g: gui::Gui, mut w: world::World, panel: u32, tag: []u8, id: u32 } -> ! {
+        let mut b = new_text{ w = &w }
+        defer list::free{ list = &b.bytes }
+        if id != 0 { try describe{ &w, &b, id } }
+        try gui::set_list_text{ &g, panel, tag, text = utf8::view{ b }.bytes }
+    }
+
+    // "current/max", or just "current" when that is too wide for the 56-pixel label (re/gui.md:
+    // the original shortens the text when it does not fit; how is not known).
+    fn push_vitality { mut b: utf8::Builder(heap::Heap), hp: i32, hp_max: i32 } -> ! {
+        if hp_max >= 1000 or hp >= 1000 or (hp_max >= 100 and hp >= 100) { try @fmt(&b, "{}", hp) } else { try @fmt(&b, "{}/{}", hp, hp_max) }
+    }
+
+    // "+3" or "-1".
+    fn push_signed { mut b: utf8::Builder(heap::Heap), n: i32 } -> ! {
+        if n >= 0 { try @fmt(&b, "+{}", n) } else { try @fmt(&b, "{}", n) }
+    }
+
+    // ---- refusals
+
+    // Opens the message box the original shows for a refusal ("You cannot equip ..."): modal,
+    // one OK button. Returns its panel id, 0 when the string is missing. The owner calls
+    // `notice_done` each frame to close it.
+    fn notice { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, strref: u32 } -> u32 {
+        let text = world::string_by_strref{ w = &w, strref }
+        if text.len == 0 { return 0 }
+        return gui::message_box{ &g, fs = &w.fs, &dev, text, cancel = false } iferr { 0 }
+    }
+
+    // Closes the message box `box` once OK or Escape was pressed on it; true when it did. The
+    // framework passes a panel only its own events, so the owner reads the box's from the GUI.
+    fn notice_done { mut g: gui::Gui, box: u32 } -> bool {
+        if box == 0 { return false }
+        let events = gui::take_events{ &g }
+        let mut i: usize = 0
+        let mut done = false
+        while i < events.len {
+            let ev = events[i]
+            i = i + 1
+            if ev.panel == box and (ev.kind == gui::EventKind::activate or ev.kind == gui::EventKind::cancel) { done = true }
+        }
+        if done { gui::close{ &g, id = box } }
+        return done
+    }
+}

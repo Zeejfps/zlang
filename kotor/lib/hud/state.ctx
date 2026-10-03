@@ -54,6 +54,27 @@ namespace hud {
         return if n == 0 { 1 } else { @as(i32, n) }
     }
 
+    // The experience a character needs for level `level` + 1 (exptable.2da), 0 when the table is
+    // missing or the level is at its end.
+    fn xp_for_next { mut w: world::World, level: i32 } -> u32 {
+        if level < 1 { return 0 }
+        let loaded = res::load{ fs = &w.fs, rm = w.rm.*, name = "exptable", kind = restype::Type::twoda, realloc = arena::alloc, heap = w.scratch } iferr { return 0 }
+        let bytes = loaded ifnull { return 0 }
+        let t = twoda::parse{ data = bytes, realloc = arena::alloc, heap = w.scratch } iferr { return 0 }
+        if @as(usize, level) >= twoda::rows{ t } { return 0 }
+        return @as(u32, twoda::get_int{ t, row = @as(usize, level), column = "xp" } ifnull 0)
+    }
+
+    // Whether the creature has the experience for a level it has not taken (the HUD shows the
+    // level-up mark). PLACEHOLDER: the module's level cap (20) and rules' own test come with lib/rules.
+    fn can_level_up { mut w: world::World, id: u32 } -> bool {
+        let c = creature_of{ w = &w, id } ifnull { return false }
+        let level = level_of{ w = &w, id }
+        if level >= 20 { return false }
+        let need = xp_for_next{ &w, level }
+        return need > 0 and c.xp >= need
+    }
+
     // Whether the creature is down: dead, or out of hit points.
     fn is_down { w: *world::World, id: u32 } -> bool {
         let c = creature_of{ w, id } ifnull { return true }

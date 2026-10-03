@@ -1,0 +1,6 @@
+# the HUD with a companion and the door targeted
+3 ui join carth
+3 down d
+18 up d
+30 ui move 900 350
+34 ui click 900 350
