@@ -39,6 +39,11 @@ namespace rt_combat {
             nwscript::GetLockLockable => { try get_lock_flag{ &w, &vm, argc, routine } }
             nwscript::GetLockUnlockDC => { try get_lock_flag{ &w, &vm, argc, routine } }
             nwscript::GetLockKeyTag => { try get_lock_key_tag{ &w, &vm, argc } }
+            // ---- what stopped a creature on its way (OnBlocked, k_def_pathfail01) and the module's player death
+            nwscript::GetBlockingDoor => { try get_blocker{ &w, &vm, argc, routine } }
+            nwscript::GetBlockingCreature => { try get_blocker{ &w, &vm, argc, routine } }
+            nwscript::GetFoundEnemyCreature => { try get_blocker{ &w, &vm, argc, routine } }
+            nwscript::GetLastPlayerDied => { try get_last_player_died{ &w, &vm } }
             // ---- the party
             nwscript::SetPartyLeader => { try set_party_leader{ &w, &vm, argc } }
             nwscript::IsNPCPartyMember => { try is_npc_party_member{ &w, &vm, argc } }
@@ -333,6 +338,43 @@ namespace rt_combat {
         let ao = world::object{ w = &w, id = w.area } ifnull { return }
         let a = obj::area{ o = ao } ifnull { return }
         a.restrict_mode = if restrict != 0 { 1 } else { 0 }
+    }
+
+    // ---- what blocked a creature
+
+    // object GetBlockingDoor(), GetBlockingCreature(object oTarget = OBJECT_SELF),
+    // GetFoundEnemyCreature(object oTarget = OBJECT_SELF): the PATH_BLOCKED event leaves the blocker in
+    // the creature's context (events.ctx; movement.md 4.9): GetBlockingDoor answers it when it is a door
+    // (k_ai_master then opens or bashes it), GetBlockingCreature when it is a creature. The hostile a
+    // pathfind found is the context's found_enemy, set by whoever runs k_def_pathfail01 (nothing does
+    // yet, so OBJECT_INVALID). An object that has gone answers OBJECT_INVALID.
+    fn get_blocker { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
+        let id = if routine == nwscript::GetBlockingDoor { nwvm::self_object{ vm } } else { try nwarg::object{ &vm, routine, argc, i = 0 } }
+        let o = world::object{ w = &w, id } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        let mut found = obj::INVALID
+        if routine == nwscript::GetFoundEnemyCreature {
+            found = o.ctx.found_enemy
+        } else if obj::creature{ o } != null {
+            let b = world::object{ w = &w, id = o.ctx.blocker }
+            if b != null {
+                let want = if routine == nwscript::GetBlockingDoor { obj::Kind::door } else { obj::Kind::creature }
+                if b.kind == want { found = b.id }
+            }
+        }
+        try nwvm::push_object{ &vm, id = live_or_invalid{ w = &w, id = found } }
+    }
+
+    // object GetLastPlayerDied(): in the module's OnPlrDeath script, the party member whose fall ran it
+    // (the module's context; fight.ctx does not post that event yet, as a downed member is never dead).
+    fn get_last_player_died { mut w: world::World, mut vm: nwvm::Vm } -> ! {
+        let m = world::object{ w = &w, id = w.module } ifnull {
+            try nwvm::push_object{ &vm, id = obj::INVALID }
+            return
+        }
+        try nwvm::push_object{ &vm, id = live_or_invalid{ w = &w, id = m.ctx.last_player_died } }
     }
 
     // ---- locks (doors and placeables)

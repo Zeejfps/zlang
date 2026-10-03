@@ -4,8 +4,8 @@
 // (sheet_data.ctx), the one place that works them out.
 //
 // What the original has that this does not yet (each marked PLACEHOLDER below): the 3D model in the
-// middle (the portrait stands in), the effect icons next to the alignment bar, the level-up flow
-// and the script-select panel.
+// middle (the portrait stands in), the level-up flow and the script-select panel. The effect icons
+// next to the alignment bar are the creature's ICON effects.
 namespace character_panel {
     // The label tags of the six attributes and their modifiers, in STR DEX CON INT WIS CHA order.
     const ABIL_TAGS: [6][]u8 = ["LBL_STR", "LBL_DEX", "LBL_CON", "LBL_INT", "LBL_WIS", "LBL_CHA"]
@@ -70,10 +70,10 @@ namespace character_panel {
 
         // The attack bonus has no label in the file (labels take no tooltip either); the button over
         // the character carries it.
-        if v.bab >= 0 {
-            try @fmt(&b, "Attack bonus +{}", v.bab)
+        if v.attack >= 0 {
+            try @fmt(&b, "Attack bonus +{}", v.attack)
         } else {
-            try @fmt(&b, "Attack bonus {}", v.bab)
+            try @fmt(&b, "Attack bonus {}", v.attack)
         }
         try gui::set_tooltip{ &g, panel, tag = "BTN_3DCHAR", text = utf8::view{ b }.bytes }
         utf8::clear{ &b }
@@ -100,19 +100,58 @@ namespace character_panel {
         }
         try gui::set_tooltip{ &g, panel, tag = "BTN_SCRIPTS", text = "PLACEHOLDER: the script-select panel is not built yet." }
 
-        // The effect icons beside the alignment bar need lib/rules' effect list (PLACEHOLDER).
-        let mut n: usize = 1
-        let mut tag: [16]u8
-        while n <= 10 {
-            gui::set_visible{ &g, panel, tag = hud::tag_n{ into = tag[..], prefix = "LBL_GOOD", n }, visible = false }
-            n = n + 1
-        }
-        gui::set_visible{ &g, panel, tag = "LBL_MORE", visible = false }
+        try show_effects{ &g, &w, &dev, panel, id }
 
         // PLACEHOLDER: the original shows a rotating 3D model of the character here (a gui3d scene
         // drawn into the control's rectangle by the session); until that is wired the portrait
         // takes its place, in proportion and centred in the model's area.
         try sheet::show_picture{ &g, &w, &dev, panel, tag = "LBL_3DCHAR", name = sheet::portrait_of{ w = &w, id }, home = area }
+    }
+
+    // The icons beside the alignment bar: the creature's ICON effects (rules effect kind 0x43;
+    // int 0 is the effecticon.2da row, whose IconResRef is the texture), each icon once, up to ten
+    // with "more" lit for the rest. A creature with no rules state shows none.
+    fn show_effects { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, id: u32 } -> ! {
+        let mut rows: [10]i32 = [0; 10]
+        let mut shown: usize = 0
+        let mut more = false
+        if hud::ruled_of{ w = &w, id } is some{ value = f } {
+            let mut i: usize = 0
+            while i < @as(usize, f.c.nfx) {
+                let e = &f.c.fx[i]
+                i = i + 1
+                if e.kind != rules::fx::ICON { continue }
+                let row = e.ints[0]
+                let mut dup = false
+                let mut j: usize = 0
+                while j < shown {
+                    if rows[j] == row { dup = true }
+                    j = j + 1
+                }
+                if dup { continue }
+                if shown >= 10 {
+                    more = true
+                    continue
+                }
+                rows[shown] = row
+                shown = shown + 1
+            }
+        }
+        let t = rules::raw_table{ tables = w.rules, which = rules::Tab::effecticon }
+        let mut n: usize = 1
+        let mut tag: [16]u8
+        while n <= 10 {
+            let at = hud::tag_n{ into = tag[..], prefix = "LBL_GOOD", n }
+            let mut img = gui::no_img{}
+            if n <= shown and rows[n - 1] >= 0 and @as(usize, rows[n - 1]) < twoda::rows{ t } {
+                let name = rules::cell_text{ t, row = @as(usize, rows[n - 1]), col = "iconresref" }
+                if name.len > 0 { img = gui::resolve_img{ &g, fs = &w.fs, &dev, name } }
+            }
+            gui::set_visible{ &g, panel, tag = at, visible = img.ok }
+            if img.ok { gui::set_picture{ &g, panel, tag = at, texture = img.tex, w = img.w, h = img.h } }
+            n = n + 1
+        }
+        gui::set_visible{ &g, panel, tag = "LBL_MORE", visible = more }
     }
 
     // Every frame while the panel is shown: the "not yet" box closes with its OK.

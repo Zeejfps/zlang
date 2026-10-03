@@ -1,7 +1,8 @@
 // What the HUD and the in-game panels read from the game (docs/design/hud.md, "Reading the
 // game"). Every question the interface asks of the world is one function here, so the places
-// where a system is still a stand-in (Force points and levels wait for lib/rules, the party
-// purse and the journal for their owners) change in one file.
+// where a system is still a stand-in (the party purse and the journal wait for their owners)
+// change in one file. Force points, the level and the level-up test come from the creature's
+// rules state (fight::Fighter.c) when it has one.
 namespace hud {
     // The creature behind an id, or null for anything else (an item, a door, a stale id).
     fn creature_of { w: *world::World, id: u32 } -> ?*mut obj::Creature {
@@ -32,17 +33,33 @@ namespace hud {
         return Vitality{ hp, hp_max = max }
     }
 
-    // Force points: current and maximum. Stand-in until lib/rules' stats are on the creature
-    // (PLACEHOLDER: a creature with no Force has max 1, value 0, as the original's bar does).
+    // The rules state of a creature that was read from a GFF, or null (then the fallbacks below
+    // answer).
+    fn ruled_of { w: *world::World, id: u32 } -> ?*mut fight::Fighter {
+        let o = world::object{ w, id } ifnull { return null }
+        let f = fight::of{ o } ifnull { return null }
+        if not f.loaded { return null }
+        return f
+    }
+
+    // Force points: current and maximum, from the rules creature (a creature with no Force has
+    // max 1, value 0, as the original's bar does).
     struct Force { fp: i32, fp_max: i32 }
 
     fn force_of { w: *world::World, id: u32 } -> Force {
-        return Force{ fp = 0, fp_max = 1 }
+        let f = ruled_of{ w, id } ifnull { return Force{ fp = 0, fp_max = 1 } }
+        let max = f.c.stats.max_fp
+        if max < 1 { return Force{ fp = 0, fp_max = 1 } }
+        let fp = if f.c.fp < 0 { 0 } else if f.c.fp > max { max } else { f.c.fp }
+        return Force{ fp, fp_max = max }
     }
 
-    // The character level: the sum of the class levels (PLACEHOLDER: the engine keeps them on
-    // the creature until lib/rules' stats arrive).
+    // The character level: the rules' total over the class slots. Without a rules creature the
+    // fallback sums the engine's class levels.
     fn level_of { w: *world::World, id: u32 } -> i32 {
+        if ruled_of{ w, id } is some{ value = f } {
+            if f.c.stats.level > 0 { return f.c.stats.level }
+        }
         let c = creature_of{ w, id } ifnull { return 1 }
         let mut n: u32 = 0
         let mut i: usize = 0
@@ -54,24 +71,21 @@ namespace hud {
         return if n == 0 { 1 } else { @as(i32, n) }
     }
 
-    // The experience a character needs for level `level` + 1 (exptable.2da), 0 when the table is
-    // missing or the level is at its end.
-    fn xp_for_next { mut w: world::World, level: i32 } -> u32 {
-        if level < 1 { return 0 }
-        let loaded = res::load{ fs = &w.fs, rm = w.rm.*, name = "exptable", kind = restype::Type::twoda, realloc = arena::alloc, heap = w.scratch } iferr { return 0 }
-        let bytes = loaded ifnull { return 0 }
-        let t = twoda::parse{ data = bytes, realloc = arena::alloc, heap = w.scratch } iferr { return 0 }
-        if @as(usize, level) >= twoda::rows{ t } { return 0 }
-        return @as(u32, twoda::get_int{ t, row = @as(usize, level), column = "xp" } ifnull 0)
+    // The experience a character needs for level `level` + 1 (exptable.2da through the rules), 0
+    // at the level cap.
+    fn xp_for_next { w: *world::World, level: i32 } -> u32 {
+        if level < 1 or level >= 20 { return 0 }
+        return @as(u32, rules::xp_to_reach_level{ tables = w.rules, level = level + 1 })
     }
 
     // Whether the creature has the experience for a level it has not taken (the HUD shows the
-    // level-up mark). PLACEHOLDER: the module's level cap (20) and rules' own test come with lib/rules.
-    fn can_level_up { mut w: world::World, id: u32 } -> bool {
-        let c = creature_of{ w = &w, id } ifnull { return false }
-        let level = level_of{ w = &w, id }
-        if level >= 20 { return false }
-        let need = xp_for_next{ &w, level }
+    // level-up mark): the rules' CanLevelUp, or the XP test alone for a creature without rules.
+    fn can_level_up { w: *world::World, id: u32 } -> bool {
+        if ruled_of{ w, id } is some{ value = f } {
+            return rules::can_level_up{ tables = w.rules, c = &f.c, alive = not is_down{ w, id } }
+        }
+        let c = creature_of{ w, id } ifnull { return false }
+        let need = xp_for_next{ w, level = level_of{ w, id } }
         return need > 0 and c.xp >= need
     }
 

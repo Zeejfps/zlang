@@ -22,6 +22,10 @@ namespace rt_act {
         else if routine == nwscript::ActionStartConversation { try action_start_conversation{ &w, &vm, argc } }
         else if routine == nwscript::ActionRandomWalk { _ = actions::add{ &w, id = self_of{ vm = &vm }, action = actions::make{ kind = actions::Kind::random_walk }, force = false } }
         else if routine == nwscript::ActionForceFollowObject { try force_follow{ &w, &vm, argc } }
+        else if routine == nwscript::ActionInteractObject { try door_action{ &w, &vm, argc, routine, kind = actions::Kind::use_object } }
+        else if routine == nwscript::ActionUseSkill { try action_use_skill{ &w, &vm, argc } }
+        else if routine == nwscript::DoDoorAction { try do_door_action{ &w, &vm, argc } }
+        else if routine == nwscript::GetIsDoorActionPossible { try get_is_door_action_possible{ &w, &vm, argc } }
         else { return false }
         return true
     }
@@ -204,5 +208,110 @@ namespace rt_act {
         a.params[0] = actions::Param::object{ id = with }
         if dialog.len > 0 { a.params[1] = actions::Param::string{ s = try obj::copy_bytes{ heap = w.heap, s = dialog } } }
         _ = actions::add{ &w, id = self_of{ vm = &vm }, action = a, force = false }
+    }
+
+    // ---- skills and doors
+
+    // DOOR_ACTION_*.
+    const DOOR_OPEN: i32 = 0
+    const DOOR_UNLOCK: i32 = 1
+    const DOOR_BASH: i32 = 2
+    const DOOR_IGNORE: i32 = 3
+    const DOOR_KNOCK: i32 = 4
+
+    // Whether `who` can do `action` to the door now (actions.md 2: open, unlock with Security, bash
+    // as an attack, knock as a cast): open needs it closed and not locked; unlock a locked door that
+    // wants no key and a creature that has the Security skill; bash a closed door that is not plot
+    // and still has hit points. Knock has no power to cast it with here, so it is never possible.
+    fn door_possible { mut w: world::World, who: u32, door: u32, action: i32 } -> bool {
+        let o = world::object{ w = &w, id = door } ifnull { return false }
+        let d = obj::door{ o } ifnull { return false }
+        if action == DOOR_OPEN { return d.state == obj::DoorState::closed and not d.locked }
+        if action == DOOR_IGNORE { return true }
+        if action == DOOR_BASH { return d.state == obj::DoorState::closed and not o.plot and o.hp > 0 and not d.static }
+        if action == DOOR_UNLOCK {
+            if not d.locked or d.key_required { return false }
+            let me = world::object{ w = &w, id = who } ifnull { return false }
+            let f = fight::of{ o = me } ifnull { return false }
+            return rt_talent::has_skill{ w = &w, f, skill = rules::skill::SECURITY }
+        }
+        return false
+    }
+
+    // int GetIsDoorActionPossible(object oTargetDoor, int nDoorAction), by the caller.
+    fn get_is_door_action_possible { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::GetIsDoorActionPossible
+        let door = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let action = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let yes = door_possible{ &w, who = self_of{ vm = &vm }, door, action }
+        try nwvm::push_int{ &vm, v = if yes { 1 } else { 0 } }
+    }
+
+    // void DoDoorAction(object oTargetDoor, int nDoorAction): open queues OPENDOOR, bash an attack on
+    // the door (combat.md 6.6 breaks it open), unlock is a Security check at once (as ActionUnlockObject
+    // is here: the original walks there first); what is not possible does nothing.
+    fn do_door_action { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::DoDoorAction
+        let door = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+        let action = try nwarg::int{ &vm, routine = r, argc, i = 1 }
+        let me = self_of{ vm = &vm }
+        if not door_possible{ &w, who = me, door, action } { return }
+        if action == DOOR_UNLOCK {
+            _ = unlock_with_security{ &w, who = me, target = door }
+            return
+        }
+        if action != DOOR_OPEN and action != DOOR_BASH { return }        // ignore does nothing, knock cannot be possible
+        let mut a = actions::make{ kind = if action == DOOR_BASH { actions::Kind::attack_object } else { actions::Kind::open_door } }
+        a.params[0] = actions::Param::object{ id = door }
+        if action == DOOR_BASH { a.params[1] = actions::Param::int{ v = 0 } }
+        _ = actions::add{ &w, id = me, action = a, force = false }
+    }
+
+    // The Security skill on a locked door or placeable: the skill roll against the lock's DC
+    // (rules::open_lock_check; no key, no spike). Success unlocks it and tells it UNLOCKED from `who`.
+    fn unlock_with_security { mut w: world::World, who: u32, target: u32 } -> bool {
+        let t = world::object{ w = &w, id = target } ifnull { return false }
+        let me = world::object{ w = &w, id = who } ifnull { return false }
+        let c = obj::creature{ o = me } ifnull { return false }
+        let f = c.fighter ifnull { return false }
+        let mut dc: i32 = 0
+        if t.ext is door{ d } {
+            if not d.locked or d.key_required { return false }
+            dc = @as(i32, d.open_dc)
+        } else if t.ext is placeable{ p } {
+            if not p.locked or p.key.len > 0 { return false }
+        } else { return false }
+        let check = rules::open_lock_check{ tables = w.rules, c = &f.c, lock_dc = dc, spike_bonus = 0, in_combat = c.in_combat, rng = &w.dice }
+        if not check.success { return false }
+        if t.ext is door{ d } { d.locked = false } else if t.ext is placeable{ p } { p.locked = false }
+        events::post{ &w, delay_ms = 0, caller = who, target, payload = events::Payload::script{ e = events::script_event{ kind = events::UNLOCKED, object = who } } }
+        return true
+    }
+
+    // void ActionUseSkill(int nSkill, object oTarget, int nSubSkill = 0, object oItemUsed = OBJECT_INVALID)
+    // (actions.md 3.13, UseSkill 0x004fbe40): a skill the creature does not have does nothing. Stealth
+    // toggles stealth mode (kept on the creature; perception does not read it yet), Security opens the
+    // target's lock (unlock_with_security). Demolitions (traps: no trap system) and Treat Injury (HEAL:
+    // medpacs and poisons are not modelled) are not done; the rest are not usable on a target.
+    fn action_use_skill { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let r = nwscript::ActionUseSkill
+        let skill = try nwarg::int{ &vm, routine = r, argc, i = 0 }
+        let target = try nwarg::object{ &vm, routine = r, argc, i = 1 }
+        _ = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        _ = try nwarg::object{ &vm, routine = r, argc, i = 3 }
+        let me = self_of{ vm = &vm }
+        let o = world::object{ w = &w, id = me } ifnull { return }
+        if not o.commandable { return }
+        let c = obj::creature{ o } ifnull { return }
+        let f = c.fighter ifnull { return }
+        if not rt_talent::has_skill{ w = &w, f, skill } { return }
+        if skill == rules::skill::STEALTH {
+            c.stealth = not c.stealth
+        } else if skill == rules::skill::SECURITY {
+            _ = unlock_with_security{ &w, who = me, target }
+        } else if w.log.actions {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "ActionUseSkill {} on {}: not implemented\n", skill, target)
+        }
     }
 }
