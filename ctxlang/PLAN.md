@@ -67,8 +67,26 @@ The goal is real programs over C libraries: OpenGL or Vulkan rendering, windowin
      in the signatures: `run`, `env` and `exe_path` take an allocator, as `fs::list` does, and
      `run` takes `Io` for the flush. *To settle.*
 2. **`const OS` in each layer**, so that `proc::os` and `build::os` stop calling `ctx_build_os`.
-3. **`#c::export{ name }`**, for a public symbol, over the callback thunk.
-4. **Loading a library at run time**, where the capability means "it loaded".
+3. **Several C files, compiled at once.** The driver writes a program's C as one file, and for a
+   big program the C compiler is the bottleneck. 96K lines (four copies of ctxc's source, each
+   a namespace in a file of its own, and std) take 1.7 s in the front end, which writes 13.8 MB
+   of C; gcc compiles that in 25 s at -O0, 61 s at -O1 and 108 s at -O2 (gcc 15 on Windows), and
+   links it in 0.1 s. Split by hand into a header (types, prototypes, and the bind records and
+   thunks, `static`) and 16 files of bodies, with the fns made extern, compiled 16 at a time it
+   took 5.8 s at -O1 (85 s of CPU time), and ran. gcc's own `-flto=auto` doesn't help on Windows,
+   where lto-wrapper runs its 92 jobs one after another (20 s, then 53 s).
+   - emit_c writes the header once and the bodies into N buffers. A fn loses `static`, and takes
+     a prefix (`ctx_f12`) so that no library's symbol meets it; consts and the file table stay
+     `static` in the header, one copy per file. Bind records and thunks, made while bodies are
+     emitted, go in the header. `ctxc build OUT.c` keeps writing one file, for the bootstraps.
+   - The driver compiles the files at once, which needs `proc::spawn` and `wait` (6.4 wants
+     them too), caches each file's object by its hash, and links them.
+   - An edit recompiles only the files whose text changed, and so only if names don't move: fns
+     are numbered across the whole program, so a new one renumbers every fn after it. Names
+     numbered within their namespace, say, would keep the other files the same.
+   - N follows the size of the C and the number of processors; a small program stays one file.
+4. **`#c::export{ name }`**, for a public symbol, over the callback thunk.
+5. **Loading a library at run time**, where the capability means "it loaded".
 
 *Later, for the driver* (ctxc/drive.ctx), if they get in the way:
 - The front end runs on every `ctxc run`, changed or not: 1.7 s for 96K lines. A hash of the
