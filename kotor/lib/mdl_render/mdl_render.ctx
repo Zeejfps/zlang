@@ -10,21 +10,20 @@
 //   _ = mdl_render::add_draws{ &frame, view, model = &m, pose, g, transform = instance, materials = mats, time }
 //
 // Which meshes draw (models.md): those with `render` set, except AABB meshes (the walkmesh's
-// copy) and lightsaber blades (built from Saber's arrays, not drawn as meshes).
+// copy). A lightsaber blade draws from geometry built out of its Saber arrays, two-sided.
 //
 // A program that adds this directory adds lib/render and a backend (lib/render_gl).
 namespace mdl_render {
     // A model's meshes on the GPU, by Model.meshes index: null for meshes that don't draw.
     struct Gpu { meshes: []?render::Mesh }
 
-    // The most bone slots a palette here holds; render's limit is 32, KOTOR's skins use 17.
-    const MAX_BONES: usize = 32
-
     fn draws { mesh: mdl::Mesh } -> bool {
-        return mesh.render and mesh.aabb == null and mesh.saber == null and mesh.indices.len > 0 and mesh.vertex_count > 0
+        if not mesh.render or mesh.aabb != null { return false }
+        if mesh.saber != null { return has_blade{ mesh } }
+        return mesh.indices.len > 0 and mesh.vertex_count > 0
     }
 
-    // Uploads every mesh that draws. Vertex rows are built in memory from `realloc` and given
+    // Uploads every mesh that draws. Vertex arrays are packed in memory from `realloc` and given
     // back once uploaded; the Gpu's array stays, in the same allocator.
     fn upload(S) { mut dev: gpu::Device, realloc: alloc::Fn(S), mut heap: S, model: *mdl::Model } -> !Gpu {
         let out = try alloc::resize(?render::Mesh, S){ realloc, &heap, mem = slice::empty(?render::Mesh){}, count = model.meshes.len }
@@ -33,20 +32,106 @@ namespace mdl_render {
             out[i] = null
             let m = model.meshes[i]
             if draws{ mesh = m } {
-                let layout = layout_for{ mesh = m }
-                let rows = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = @as(usize, layout.stride) * @as(usize, m.vertex_count) }
-                write_rows{ mesh = m, layout, out = rows }
-                let desc = render::MeshDesc{
-                    layout, vertex_count = m.vertex_count, index_count = @as(u32, m.indices.len),
-                    primitive = render::Primitive::triangles, dynamic = false,
+                if m.saber != null {
+                    out[i] = try upload_blade{ &dev, realloc, &heap, mesh = m }
+                } else {
+                    let s = streams{ mesh = m }
+                    let bytes = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = render::streams_size{ s } }
+                    let made = upload_streams{ &dev, s, bytes, indices = m.indices }
+                    _ = alloc::resize(u8, S){ realloc, &heap, mem = bytes, count = 0 }
+                    out[i] = try made
                 }
-                let made = gpu::create_mesh{ &dev, desc, vertices = rows, indices = m.indices }
-                _ = alloc::resize(u8, S){ realloc, &heap, mem = rows, count = 0 }
-                out[i] = try made
             }
             i = i + 1
         }
         return Gpu{ meshes = out }
+    }
+
+    // ---- lightsaber blades
+    //
+    // A saber mesh's 176 vertices are 44 columns of 4 along the blade (base cap, base, tip, tip
+    // cap). Columns 23, 22, 0 and 1 cross the blade: one edge (u = 0), the axis twice (u = 0.5),
+    // the other edge (u = 1); the rest repeat the axis (for the swing trail, inferred). The blade
+    // is the strip edge to axis to edge, 3 quads along each half: 12 triangles, as many as the
+    // mesh's placeholder faces. Each saber model crosses two such meshes at right angles, and
+    // its `powerup` and `powerdown` animations scale them out and in. mdl.md, Saber.
+    const BLADE_COLUMNS: [4]usize = [23, 22, 0, 1]
+    const SABER_VERTICES: usize = 176
+
+    fn has_blade { mesh: mdl::Mesh } -> bool {
+        let s = mesh.saber ifnull { return false }
+        return s.positions.len >= 3 * SABER_VERTICES and s.uvs.len >= 2 * SABER_VERTICES
+    }
+
+    fn upload_blade(S) { mut dev: gpu::Device, realloc: alloc::Fn(S), mut heap: S, mesh: mdl::Mesh } -> !render::Mesh {
+        let saber = mesh.saber ifnull { @panic("mdl_render: upload_blade without a saber") }
+        let floats = try alloc::resize(f32, S){ realloc, &heap, mem = slice::empty(f32){}, count = 16 * 8 }
+        let positions = floats[..48]
+        let normals = floats[48..96]
+        let uvs = floats[96..128]
+        let has_normals = saber.normals.len >= 3 * SABER_VERTICES
+        let columns = BLADE_COLUMNS
+        let mut c: usize = 0
+        while c < 4 {
+            let mut r: usize = 0
+            while r < 4 {
+                let from = 4 * columns[c] + r
+                let to = 4 * c + r
+                let mut k: usize = 0
+                while k < 3 {
+                    positions[3 * to + k] = saber.positions[3 * from + k]
+                    normals[3 * to + k] = if has_normals { saber.normals[3 * from + k] } else if k == 1 { 1.0 } else { 0.0 }
+                    k = k + 1
+                }
+                uvs[2 * to] = saber.uvs[2 * from]
+                uvs[2 * to + 1] = saber.uvs[2 * from + 1]
+                r = r + 1
+            }
+            c = c + 1
+        }
+        // From the allocator, not the stack: what create_mesh fails with may be taken to hold
+        // its arguments' addresses (docs/friction/models.md).
+        let indices = try alloc::resize(u16, S){ realloc, &heap, mem = slice::empty(u16){}, count = 36 }
+        let mut n: usize = 0
+        let halves: [2]u16 = [0, 2]
+        let mut h: usize = 0
+        while h < 2 {
+            let a = halves[h]
+            let mut r: u16 = 0
+            while r < 3 {
+                let p = 4 * a + r
+                let q = 4 * (a + 1) + r
+                indices[n] = p
+                indices[n + 1] = q
+                indices[n + 2] = q + 1
+                indices[n + 3] = p
+                indices[n + 4] = q + 1
+                indices[n + 5] = p + 1
+                n = n + 6
+                r = r + 1
+            }
+            h = h + 1
+        }
+        let s = render::Streams{
+            vertex_count = 16, positions, normals, uv0 = uvs, uv1 = slice::empty(f32){}, tangents = slice::empty(f32){},
+            weights = slice::empty(f32){}, bones = slice::empty(u8){}, colors = slice::empty(u8){}, constraints = slice::empty(f32){},
+        }
+        let bytes = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = render::streams_size{ s } }
+        let made = upload_streams{ &dev, s, bytes, indices }
+        _ = alloc::resize(u8, S){ realloc, &heap, mem = bytes, count = 0 }
+        _ = alloc::resize(u16, S){ realloc, &heap, mem = indices, count = 0 }
+        _ = alloc::resize(f32, S){ realloc, &heap, mem = floats, count = 0 }
+        return try made
+    }
+
+    fn upload_streams { mut dev: gpu::Device, s: render::Streams, bytes: []mut u8, indices: []u16 } -> !render::Mesh {
+        // pack_streams fails only for a buffer smaller than streams_size, which `bytes` isn't.
+        let layout = render::pack_streams{ s, into = bytes } ifnull { @panic("mdl_render: pack_streams refused its own size") }
+        let desc = render::MeshDesc{
+            layout, vertex_count = s.vertex_count, index_count = @as(u32, indices.len),
+            primitive = render::Primitive::triangles, dynamic = false,
+        }
+        return try gpu::create_mesh{ &dev, desc, vertices = bytes, indices }
     }
 
     fn release { mut dev: gpu::Device, g: Gpu } {
@@ -58,92 +143,22 @@ namespace mdl_render {
         }
     }
 
-    // One interleaved row per vertex: position, then whichever of normal, uv0, uv1, tangent
-    // space, skin weights and bone slots, dangly constraint the mesh has.
-    fn layout_for { mesh: mdl::Mesh } -> render::VertexLayout {
-        let mut l = render::make_layout{ stride = 0 }
-        let mut at: i32 = 0
-        l.position = at
-        at = at + 12
-        if mesh.normals.len > 0 {
-            l.normal = at
-            at = at + 12
-        }
-        if mesh.uv0.len > 0 {
-            l.uv0 = at
-            at = at + 8
-        }
-        if mesh.uv1.len > 0 {
-            l.uv1 = at
-            at = at + 8
-        }
-        if mesh.tangents.len > 0 {
-            l.tangent_space = at
-            at = at + 36
+    // The mesh's vertex arrays as render takes them: lib/mdl's streams as they are, skin weights
+    // and palette slots, and a dangly mesh's constraints.
+    fn streams { mesh: mdl::Mesh } -> render::Streams {
+        let mut s = render::Streams{
+            vertex_count = mesh.vertex_count,
+            positions = mesh.positions, normals = mesh.normals, uv0 = mesh.uv0, uv1 = mesh.uv1, tangents = mesh.tangents,
+            weights = slice::empty(f32){}, bones = slice::empty(u8){}, colors = slice::empty(u8){}, constraints = slice::empty(f32){},
         }
         let skin = mesh.skin
-        if skin != null and skin.weights.len > 0 {
-            l.weights = at
-            l.bones = at + 16
-            at = at + 32
+        if skin != null {
+            s.weights = skin.weights
+            s.bones = skin.bones
         }
         let dangly = mesh.dangly
-        if dangly != null and dangly.constraints.len == @as(usize, mesh.vertex_count) {
-            l.constraint = at
-            at = at + 4
-        }
-        l.stride = @as(u32, at)
-        return l
-    }
-
-    fn write_rows { mesh: mdl::Mesh, layout: render::VertexLayout, out: []mut u8 } {
-        let n: usize = mesh.vertex_count
-        let stride: usize = layout.stride
-        put_stream{ out, stride, at = layout.position, src = mesh.positions, width = 3, n }
-        put_stream{ out, stride, at = layout.normal, src = mesh.normals, width = 3, n }
-        put_stream{ out, stride, at = layout.uv0, src = mesh.uv0, width = 2, n }
-        put_stream{ out, stride, at = layout.uv1, src = mesh.uv1, width = 2, n }
-        put_stream{ out, stride, at = layout.tangent_space, src = mesh.tangents, width = 9, n }
-        let skin = mesh.skin
-        if skin != null and layout.weights >= 0 {
-            put_stream{ out, stride, at = layout.weights, src = skin.weights, width = 4, n }
-            // Bone slots go as floats, as MDX keeps them; a zero weight's slot is harmless.
-            let mut v: usize = 0
-            while v < n {
-                let mut k: usize = 0
-                while k < 4 {
-                    put_f32{ out, at = v * stride + @as(usize, layout.bones) + 4 * k, x = @as(f32, skin.bones[4 * v + k]) }
-                    k = k + 1
-                }
-                v = v + 1
-            }
-        }
-        let dangly = mesh.dangly
-        if dangly != null and layout.constraint >= 0 {
-            put_stream{ out, stride, at = layout.constraint, src = dangly.constraints, width = 1, n }
-        }
-    }
-
-    fn put_stream { out: []mut u8, stride: usize, at: i32, src: []f32, width: usize, n: usize } {
-        if at < 0 or src.len < width * n { return }
-        let base = @as(usize, at)
-        let mut v: usize = 0
-        while v < n {
-            let mut c: usize = 0
-            while c < width {
-                put_f32{ out, at = v * stride + base + 4 * c, x = src[width * v + c] }
-                c = c + 1
-            }
-            v = v + 1
-        }
-    }
-
-    fn put_f32 { out: []mut u8, at: usize, x: f32 } {
-        let bits = le::bits_of_f32{ v = x }
-        out[at] = @trunc(u8, bits)
-        out[at + 1] = @trunc(u8, bits >> 8)
-        out[at + 2] = @trunc(u8, bits >> 16)
-        out[at + 3] = @trunc(u8, bits >> 24)
+        if dangly != null and dangly.constraints.len == @as(usize, mesh.vertex_count) { s.constraints = dangly.constraints }
+        return s
     }
 
     // What a mesh's own data says of its material, before textures: lit and fogged, sorted by
@@ -158,8 +173,8 @@ namespace mdl_render {
     // Adds a draw for every mesh of `model` that draws, posed by `pose` and placed by
     // `transform` (the model's world matrix), with `materials[i]` for Model.meshes[i]. The pose
     // adds opacity (its accumulated alpha: below 1 an opaque or punch-through surface blends),
-    // self-illumination, UV scrolling at `time` (seconds) and skin palettes. Returns how many
-    // draws the frame took.
+    // self-illumination, UV scrolling at `time` (seconds), skin palettes and dangly meshes' swing
+    // (mdl_anim::swing). Returns how many draws the frame took.
     fn add_draws {
         mut frame: render::Frame, view: u32, model: *mdl::Model, pose: mdl_anim::Pose, g: Gpu,
         transform: math::Mat4, materials: []render::Material, time: f32,
@@ -187,6 +202,7 @@ namespace mdl_render {
                     y = mat.uv_offset.y + fract{ x = mesh.uv_direction.y * time },
                 }
             }
+            if mesh.saber != null { mat.two_sided = true }
             let mut d = render::make_draw{ view, mesh = handle, transform = math::mat4::mul{ a = transform, b = pose.world[node] }, material = mat }
             let skin = mesh.skin
             if skin != null {
@@ -194,10 +210,11 @@ namespace mdl_render {
                 let first = render::add_bones{ &frame, palette = palette[..n] } ifnull { continue }
                 d.bones = first
                 d.bone_count = @as(u32, n)
-            } else {
+            } else if mesh.saber == null {
                 d.center = mesh.average
                 d.radius = mesh.radius
             }
+            if mesh.dangly != null and i - 1 < pose.swings.len { d.dangle = pose.swings[i - 1].offset }
             if render::add_draw{ &frame, draw = d } != null { added = added + 1 }
         }
         return added

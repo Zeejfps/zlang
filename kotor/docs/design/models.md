@@ -174,16 +174,28 @@ materials (TXI, environment maps) are the render lead's `material` library.
 
 ```
 let g = try mdl_render::upload{ &dev, realloc, &heap, model = &m }          // once per model
-let mats = one render::Material per Model.meshes entry                       // once: textures, TXI, mdl_render::base_material
-each frame, after mdl_anim::evaluate:
+let mats[i] = material::for_mesh{ &cache, &fs, &dev, rm, desc = material::MeshDesc{ diffuse = mesh.textures[0], ... } }
+                                                                             // once per mesh that draws (mdl_render::draws)
+each frame:
+mdl_anim::evaluate{ model = &m, player, pose }
+mdl_anim::swing{ model = &m, pose, transform = instance, dt }                // dangly meshes
 _ = mdl_render::add_draws{ &frame, view, model = &m, pose, g, transform = instance, materials = mats, time }
 ```
 
-`add_draws` fills each draw's mesh, `transform = instance * pose.world[mesh.node]`, the material
-patched by the pose (opacity from `pose.alpha`: below 1 an opaque or punch surface blends;
-self-illumination; scrolling UVs at `time`), the skin palette through `render::add_bones`, and
+`upload` hands each mesh's streams to `render::pack_streams` (planar arrays, u8 bone slots) and
+builds lightsaber blades from their saber arrays (mdl.md, Saber: the strip across columns 23,
+22, 0, 1). `add_draws` fills each draw's mesh, `transform = instance * pose.world[mesh.node]`,
+the material patched by the pose (opacity from `pose.alpha`: below 1 an opaque or punch surface
+blends; self-illumination; scrolling UVs at `time`, added to the material's own offset), the
+skin palette through `render::add_bones`, `dangle` from the pose's swing, two-sided blades, and
 for rigid meshes the bounding sphere (`mesh.average`, `mesh.radius`, in node space) for culling
-and light choice. It doesn't yet fill `dangle` (the dangly spring) or build saber blades.
+and light choice.
+
+**Dangly meshes** (`mdl_anim::swing`, inferred: the engine's spring isn't read yet): per dangly
+mesh the pose keeps how far its free vertices trail the node, in node space. Each frame the
+node's movement pushes them back, a spring ringing at the mesh's `period` with `tightness` as its
+damping ratio pulls them home, and they never go past `displacement`; render moves a vertex by
+that times its constraint / 255.
 
 `mdl_cache::get{ &fs, &cache, name }` is the lookup `mdl_anim::find` takes, bound over a cache:
 each model is parsed once into the cache's arena, which must outlive every binding.
@@ -222,15 +234,22 @@ and the perimeter's room transitions are there for walking and pathfinding.
 - `tools/walkcheck` (and mdlcheck's whole runs): all 1,554 walkmeshes; every count and failure
   class equals bwm.md's; the refitted trees find the brute-force floor at all 22,794 sampled
   centroids; damaged copies never panic.
-- `tools/mdlview`: renders in `kotor/out/mdlview/` (`c_rancor_side_cwalk0.4`,
-  `p_bastilabb_front_pause10.5` with `p_bastilah`, `p_bastilabb_side_run0.2`,
-  `dor_lda03_front_opening10.5`, `m01aa_02a_iso`, the saber hilt at `rhand`) have the shapes and
-  poses of the Python renders in `kotor/out/mdl/`. The door's `trans` plane, which the Python
-  render draws grey, is hidden: its alpha controller is 0.
+- `animcheck` also moves every model for three seconds: all 2,619 dangly meshes' swings stay
+  finite and within their displacement.
+- `tools/mdlview`: textured renders in `kotor/out/mdlview/` (`pmhc01_front`,
+  `c_rancor_side_cwalk0.4`, `p_bastilabb_front_pause10.5` and `p_bastilabb_side_run0.2` with
+  `p_bastilah`, `dor_lda03_front_opening10.5`, `m01aa_02a_iso`) look as the Python renders in
+  `kotor/out/mdl/` do (the head nearly pixel for pixel). Differences are ours to keep: the door's
+  `trans` plane, which the Python render draws grey, is hidden (its alpha controller is 0), and
+  `w_lghtsbr_001` shows its blade only when an animation powers it (`..._powered0`,
+  `..._powerup0.4`), since the bind pose scales it to 0.
 
 ## Open
 
-- Textures in mdlview, through the render lead's `material` library when it lands.
-- The dangly spring (`Draw.dangle`), saber blade geometry, the particle simulation; the bezier
+- The engine's own dangly spring and saber swing trail (RE: the dangly part is constructed at
+  0x00447980 under vtable 0x00740d78, which the RTTI export names `CAurPartAABB`, while 0x00741048
+  `CAurPartDanglyMesh` is built for flags 0x221, the AABB meshes: the export's names, or
+  re/render-gui.md's table, have dangly and AABB swapped).
+- The particle simulation (emitters' data and animated properties are all here), the bezier
   curve's exact form (mdl.md).
 - Whether the engine scales supermodel position keys by `anim_scale` (models-usage.md).

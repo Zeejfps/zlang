@@ -29,6 +29,7 @@ struct Counts {
     palettes: u64,
     events: u64,
     unbound: u64,
+    swings: u64,
     failures: u64,
 }
 
@@ -85,6 +86,7 @@ fn run { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut keep: Heap, mut scratch:
     _ = @fmt(&io, "  {} supermodels loaded, {} lookups of missing models, {} models that failed to load\n",
         map::len{ m = cache.loaded }, cache.missing, cache.failed)
     _ = @fmt(&io, "  {} animation nodes drive no node of their model\n", c.unbound)
+    _ = @fmt(&io, "  {} dangly meshes swung through 3 s of movement\n", c.swings)
     _ = @fmt(&io, "  {} failures\n", c.failures)
     return c
 }
@@ -94,6 +96,7 @@ fn check_model { mut io: Io, mut fs: Fs, mut scratch: Heap, mut cache: mdl_cache
     let pose = mdl_anim::make_pose{ realloc = arena::alloc, heap = &scratch, model } iferr { return }
     let mut palette: [64]math::Mat4
     check_pose{ &io, &c, name, anim = "(bind pose)", model, pose, bind = true, palette = palette[..] }
+    check_swings{ &io, &c, name, model, pose }
 
     // Every animation name the chain offers, nearest first.
     let mut seen = map::new([]u8, bool, Heap){ realloc = arena::alloc, heap = &scratch, hash = map::hash_bytes, eq = slice::eq_bytes }
@@ -184,6 +187,35 @@ fn dump { mut io: Io, mut fs: Fs, mut scratch: Heap, mut cache: mdl_cache::Cache
     while i < model.nodes.len {
         let w = pose.world[i]
         _ = @fmt(&io, "{} {} {} {}\n", model.nodes[i].name, w.m[12], w.m[13], w.m[14])
+        i = i + 1
+    }
+}
+
+// Moved about for three seconds (sliding, bobbing and turning), every dangly mesh's swing stays
+// finite and within its displacement.
+fn check_swings { mut io: Io, mut c: Counts, name: []u8, model: *mdl::Model, pose: mdl_anim::Pose } {
+    let mut f: u32 = 0
+    while f < 90 {
+        let t = @as(f32, f) / 30.0
+        let place = math::mat4::compose{
+            t = math::Vec3{ x = 2.0 * math::sinf{ x = 3.0 * t }, y = 0.5 * t, z = 0.3 * math::sinf{ x = 5.0 * t } },
+            r = math::quat::from_axis_angle{ axis = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, angle = t },
+            s = math::vec3::splat{ s = 1.0 },
+        }
+        mdl_anim::swing{ model, pose, transform = place, dt = 1.0 / 30.0 }
+        f = f + 1
+    }
+    let mut i: usize = 0
+    while i < model.meshes.len {
+        let d = model.meshes[i].dangly
+        if d != null {
+            c.swings = c.swings + 1
+            let o = pose.swings[i].offset
+            let len = math::vec3::length{ v = o }
+            if not finite{ x = len } or len > math::max{ a = d.displacement, b = 0.0 } + 0.0001 {
+                report{ &io, &c, what = "dangly swing out of reach", name, detail = @fmt("{}: {} of {}", model.nodes[model.meshes[i].node].name, len, d.displacement) }
+            }
+        }
         i = i + 1
     }
 }
