@@ -212,6 +212,10 @@ test('void_script', ('ok', 'none'), ('RETN',))
 test('one_string_left', ('ok', 'none'), ('CONSTS', 'x'), ('RETN',))
 test('unbalanced', ('fault', 'unbalanced'), ('CONSTI', 1), ('CONSTI', 2), ('RETN',))
 test('routine_wrong_argument', ('fault', 'wrong_type'), ('CONSTF', 1.0), ('ACTION', routine('Random'), 1), ('RETN',))
+# Fewer arguments than the prototype has: the rest are its defaults (nwarg); a required one
+# missing fails the routine.
+test('defaults_fill_missing', ('ok', 'none'), ('CONSTO', 0), ('ACTION', routine('ActionMoveToObject'), 1), ('RETN',))
+test('required_argument_missing', ('fault', 'routine_failed'), ('ACTION', routine('GetIsObjectValid'), 0), ('RETN',))
 test('action_without_store_state', ('fault', 'no_state'), ('CONSTF', 1.0), ('ACTION', routine('DelayCommand'), 2), ('RETN',))
 
 # ---- actions: STORE_STATE, then DelayCommand takes the code after it

@@ -1,0 +1,78 @@
+// Routine arguments with their defaults, for the engine's routine handlers. A handler pops its
+// parameters in declaration order; scripts compiled against an older nwscript.nss pass fewer
+// than the prototype has (docs/formats/nwscript.md), and the missing trailing ones take the
+// prototype's defaults (nwscript::PARAMS), as the game fills them:
+//
+//   fn action_move_to_object { mut world: World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+//       let r = nwscript::ActionMoveToObject
+//       let target = try nwarg::object{ &vm, routine = r, argc, i = 0 }
+//       let run = try nwarg::int{ &vm, routine = r, argc, i = 1 }        // bRun=FALSE if not passed
+//       let range = try nwarg::float{ &vm, routine = r, argc, i = 2 }    // fRange=1.0f
+//       ...
+//   }
+//
+// Each pops argument `i` if the script passed it (i < argc), and otherwise gives the default,
+// failing with no_default for a required parameter (the two AddPartyMember calls written for an
+// older prototype). The object defaults are the bytecode's constants: OBJECT_SELF is the running
+// script's OBJECT_SELF, anything else OBJECT_INVALID.
+namespace nwarg {
+    error no_default{ routine: u16, i: usize }
+
+    fn param { routine: u16, i: usize } -> nwscript::Param {
+        let r = nwscript::ROUTINES[routine]
+        if i >= @as(usize, r.count) { @panic("nwarg: the routine has no such parameter") }
+        return nwscript::PARAMS[@as(usize, r.first) + i]
+    }
+
+    fn missing { mut vm: nwvm::Vm } {
+        nwvm::fail{ &vm, why = "a required argument is missing" }
+    }
+
+    fn int { mut vm: nwvm::Vm, routine: u16, argc: u8, i: usize } -> !i32 {
+        if i < @as(usize, argc) { return try nwvm::pop_int{ &vm } }
+        return match param{ routine, i }.default {
+            int{ v } => { v }
+            else => { missing{ &vm }; return no_default{ routine, i } }
+        }
+    }
+
+    fn float { mut vm: nwvm::Vm, routine: u16, argc: u8, i: usize } -> !f32 {
+        if i < @as(usize, argc) { return try nwvm::pop_float{ &vm } }
+        return match param{ routine, i }.default {
+            float{ v } => { v }
+            else => { missing{ &vm }; return no_default{ routine, i } }
+        }
+    }
+
+    // A view valid until the outermost run ends, as nwvm::pop_string's.
+    fn string { mut vm: nwvm::Vm, routine: u16, argc: u8, i: usize } -> ![]u8 {
+        if i < @as(usize, argc) { return try nwvm::pop_string{ &vm } }
+        return match param{ routine, i }.default {
+            string{ s } => { s }
+            else => { missing{ &vm }; return no_default{ routine, i } }
+        }
+    }
+
+    fn object { mut vm: nwvm::Vm, routine: u16, argc: u8, i: usize } -> !u32 {
+        if i < @as(usize, argc) { return try nwvm::pop_object{ &vm } }
+        return match param{ routine, i }.default {
+            object{ constant } => { if constant == 0 { nwvm::self_object{ vm } } else { nwvm::OBJECT_INVALID } }
+            else => { missing{ &vm }; return no_default{ routine, i } }
+        }
+    }
+
+    fn vector { mut vm: nwvm::Vm, routine: u16, argc: u8, i: usize } -> !nwvm::Vector {
+        if i < @as(usize, argc) { return try nwvm::pop_vector{ &vm } }
+        return match param{ routine, i }.default {
+            vector{ x, y, z } => { nwvm::Vector{ x, y, z } }
+            else => { missing{ &vm }; return no_default{ routine, i } }
+        }
+    }
+
+    // An engine value has no default in nwscript.nss: it must have been passed.
+    fn engine { mut vm: nwvm::Vm, routine: u16, argc: u8, i: usize, kind: nwvm::EngineType } -> !u32 {
+        if i < @as(usize, argc) { return try nwvm::pop_engine{ &vm, kind } }
+        missing{ &vm }
+        return no_default{ routine, i }
+    }
+}

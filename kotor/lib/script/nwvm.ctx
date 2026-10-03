@@ -1466,7 +1466,7 @@ namespace nwvm {
         if base > bp { base = bp }
         if frame < 0 { frame = 0 }
         if frame > STATE_CELLS { frame = STATE_CELLS }
-        if frame > sp or bp > sp {
+        if frame > sp or (base > 0 and bp > sp) {
             note{ &vm, kind = FaultKind::bad_state, want = 0, found = 0 }
             return bad_state
         }

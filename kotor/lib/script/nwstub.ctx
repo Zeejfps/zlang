@@ -108,14 +108,14 @@ namespace nwstub {
         stub.calls = stub.calls + 1
         let r = nwscript::ROUTINES[routine]
         // The script passed `argc` arguments, the first on top. Older scripts pass fewer than the
-        // prototype has (the rest are defaults) or, in four places, more: those stay on the
-        // stack, as the game's handlers leave them.
-        let n = if @as(usize, argc) < @as(usize, r.count) { @as(usize, argc) } else { @as(usize, r.count) }
+        // prototype has, and the rest take their defaults (nwarg), or, in four places, more:
+        // those stay on the stack, as the game's handlers leave them.
+        let n = @as(usize, r.count)
         let mut args = [Arg::none; 16]
         let mut i: usize = 0
         while i < n {
             let p = nwscript::PARAMS[@as(usize, r.first) + i]
-            args[i] = try pop_arg{ &stub, &vm, kind = p.kind }
+            args[i] = try pop_arg{ &stub, &vm, kind = p.kind, routine, argc, i }
             i = i + 1
         }
         if stub.log.buf.len > 0 { log{ log = &stub.log, routine, r, args = &args, n } }
@@ -138,18 +138,63 @@ namespace nwstub {
         }
     }
 
-    fn pop_arg { mut stub: Stub, mut vm: nwvm::Vm, kind: nwscript::Type } -> !Arg {
+    // For an engine that writes its routines one at a time: what a routine not written yet does.
+    // It pops the arguments the script passed (an action argument stays the VM's, untaken) and
+    // pushes the zero value of the result type: 0, 0.0, "", OBJECT_INVALID, a zero vector, or
+    // engine handle 0, the type's default value. No state, no plausibility.
+    fn fallback { mut vm: nwvm::Vm, routine: u16, argc: u8 } -> ! {
+        if routine >= nwscript::COUNT {
+            nwvm::fail{ &vm, why = "no such routine" }
+            return no_routine{ routine }
+        }
+        let r = nwscript::ROUTINES[routine]
+        let n = if @as(usize, argc) < @as(usize, r.count) { @as(usize, argc) } else { @as(usize, r.count) }
+        let mut i: usize = 0
+        while i < n {
+            match nwscript::PARAMS[@as(usize, r.first) + i].kind {
+                int => { _ = try nwvm::pop_int{ &vm } }
+                float => { _ = try nwvm::pop_float{ &vm } }
+                string => { _ = try nwvm::pop_string{ &vm } }
+                object => { _ = try nwvm::pop_object{ &vm } }
+                vector => { _ = try nwvm::pop_vector{ &vm } }
+                effect => { _ = try nwvm::pop_engine{ &vm, kind = nwvm::EngineType::effect } }
+                event => { _ = try nwvm::pop_engine{ &vm, kind = nwvm::EngineType::event } }
+                location => { _ = try nwvm::pop_engine{ &vm, kind = nwvm::EngineType::location } }
+                talent => { _ = try nwvm::pop_engine{ &vm, kind = nwvm::EngineType::talent } }
+                action => {}
+                void => {}
+            }
+            i = i + 1
+        }
+        match r.ret {
+            int => { try nwvm::push_int{ &vm, v = 0 } }
+            float => { try nwvm::push_float{ &vm, v = 0.0 } }
+            string => { try nwvm::push_string{ &vm, s = "" } }
+            object => { try nwvm::push_object{ &vm, id = nwvm::OBJECT_INVALID } }
+            vector => { try nwvm::push_vector{ &vm, v = nwvm::Vector{ x = 0.0, y = 0.0, z = 0.0 } } }
+            effect => { try nwvm::push_engine{ &vm, kind = nwvm::EngineType::effect, handle = 0 } }
+            event => { try nwvm::push_engine{ &vm, kind = nwvm::EngineType::event, handle = 0 } }
+            location => { try nwvm::push_engine{ &vm, kind = nwvm::EngineType::location, handle = 0 } }
+            talent => { try nwvm::push_engine{ &vm, kind = nwvm::EngineType::talent, handle = 0 } }
+            void => {}
+            action => {}
+        }
+    }
+
+    // Argument i of `routine`, of type `kind`: popped if the script passed it, else its default.
+    fn pop_arg { mut stub: Stub, mut vm: nwvm::Vm, kind: nwscript::Type, routine: u16, argc: u8, i: usize } -> !Arg {
         return match kind {
-            int => { Arg::int{ v = try nwvm::pop_int{ &vm } } }
-            float => { Arg::float{ v = try nwvm::pop_float{ &vm } } }
-            string => { Arg::string{ s = try nwvm::pop_string{ &vm } } }
-            object => { Arg::object{ id = try nwvm::pop_object{ &vm } } }
-            vector => { Arg::vector{ v = try nwvm::pop_vector{ &vm } } }
-            effect => { Arg::engine{ handle = try nwvm::pop_engine{ &vm, kind = nwvm::EngineType::effect } } }
-            event => { Arg::engine{ handle = try nwvm::pop_engine{ &vm, kind = nwvm::EngineType::event } } }
-            location => { Arg::engine{ handle = try nwvm::pop_engine{ &vm, kind = nwvm::EngineType::location } } }
-            talent => { Arg::engine{ handle = try nwvm::pop_engine{ &vm, kind = nwvm::EngineType::talent } } }
+            int => { Arg::int{ v = try nwarg::int{ &vm, routine, argc, i } } }
+            float => { Arg::float{ v = try nwarg::float{ &vm, routine, argc, i } } }
+            string => { Arg::string{ s = try nwarg::string{ &vm, routine, argc, i } } }
+            object => { Arg::object{ id = try nwarg::object{ &vm, routine, argc, i } } }
+            vector => { Arg::vector{ v = try nwarg::vector{ &vm, routine, argc, i } } }
+            effect => { Arg::engine{ handle = try nwarg::engine{ &vm, routine, argc, i, kind = nwvm::EngineType::effect } } }
+            event => { Arg::engine{ handle = try nwarg::engine{ &vm, routine, argc, i, kind = nwvm::EngineType::event } } }
+            location => { Arg::engine{ handle = try nwarg::engine{ &vm, routine, argc, i, kind = nwvm::EngineType::location } } }
+            talent => { Arg::engine{ handle = try nwarg::engine{ &vm, routine, argc, i, kind = nwvm::EngineType::talent } } }
             action => {
+                if i >= @as(usize, argc) { return nwarg::no_default{ routine, i } }
                 let s = try nwvm::pop_situation(arena::Arena){ &vm, realloc = arena::alloc, heap = stub.heap }
                 if stub.actions.len < stub.limit {
                     try list::push{ list = &stub.actions, item = s }
