@@ -355,10 +355,15 @@ namespace fight {
         play_row{ &w, o = back, row = if is_beast{ w = &w, c = bc } { ROW_CDIE } else { ROW_DIE } }
         f.dying_ms = 1800
         if f.c.party {
-            // A party member goes down: never dead (8.1); it gets up when the fight is over.
+            // A party member goes down: never dead (8.1); it gets up when the fight is over. The
+            // module's OnPlayerDeath runs (GetLastPlayerDied, 8.2).
             if w.log.combat {
                 world::prefix{ w = &w }
                 _ = @fmt(&w.io, "{} is down\n", id)
+            }
+            if world::object{ w = &w, id = w.module } is some{ value = mo } {
+                mo.ctx.last_player_died = id
+                events::post{ &w, delay_ms = 0, caller = id, target = w.module, payload = events::Payload::script{ e = events::script_event{ kind = events::DEATH, object = killer } } }
             }
             return
         }
