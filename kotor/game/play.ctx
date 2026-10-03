@@ -315,10 +315,12 @@ namespace play {
             }
             gui::update{ &g, dt }
             let mut out = frontend::step{ &fe, &g, fs = &w.fs, &dev, &sdl, output = adev, mixer, dt }
-            if forced { out = frontend::Outcome::new_game{ module = resref::truncate{ name = "end_m01aa" } } }
+            if forced { out = frontend::Outcome::new_game{ module = resref::truncate{ name = "end_m01aa" }, player = slice::empty(u8){} } }
             match out {
                 running => {}
-                new_game{ module } => {
+                new_game{ module, player } => {
+                    // The character the player made (empty: the engine's default soldier).
+                    try modload::set_player_blueprint{ &w, bytes = player }
                     let mut m = module
                     let name = resref::bytes{ r = &m }
                     let kept = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = name.len }

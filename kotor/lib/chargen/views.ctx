@@ -1,22 +1,174 @@
-// The 3D creatures of the panels (placeholder until preview3d is wired in).
+// The 3D creatures of the panels (lib/chargen/preview.ctx): the six class previews of classsel, the
+// character on the summary (maincg) and the head of the portrait step. They are drawn over the GUI,
+// each inside its label's rectangle; the labels have no fill of their own.
 namespace chargen {
-    struct Views { none: u8 }
+    const VIEW_MEMORY: usize = 33554432         // the models cache's arena: bodies and heads
+    const PREVIEW_MEMORY: usize = 4194304       // one preview's own memory
+    const VIEW_MAIN: usize = 6                  // after the six class previews: the summary's and the portrait step's
+    const VIEW_HEAD: usize = 7
+    const VIEWS: usize = 8
 
-    fn no_views {} -> Views { return Views{ none = 0 } }
+    struct Views {
+        mem: alloc::Bytes,
+        keep: ?*mut arena::Arena,
+        models: ?*mut mdl_cache::Cache,
+        failed: bool,
+        pv: [VIEWS]?*mut preview3d::Preview,
+        pmem: [VIEWS]alloc::Bytes,
+    }
+
+    fn no_views {} -> Views {
+        return Views{
+            mem = slice::empty(u8){}, keep = null, models = null, failed = false,
+            pv = [null; VIEWS], pmem = [slice::empty(u8){}; VIEWS],
+        }
+    }
+
+    // The cache models are read into, made on first use. False if it can't be had.
+    fn ensure_models { st: *mut State, rm: res::Manager } -> bool {
+        if st.views.failed { return false }
+        if st.views.models != null { return true }
+        let mem = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = st.heap, mem = slice::empty(u8){}, count = VIEW_MEMORY } iferr {
+            st.views.failed = true
+            return false
+        }
+        let keep = alloc::new(arena::Arena, heap::Heap){ realloc = heap::alloc, heap = st.heap, value = arena::new{ buf = mem } } iferr {
+            free_bytes{ b = mem, heap = st.heap }
+            st.views.failed = true
+            return false
+        }
+        let models = alloc::new(mdl_cache::Cache, heap::Heap){ realloc = heap::alloc, heap = st.heap, value = mdl_cache::new{ rm, keep } } iferr {
+            st.views.failed = true
+            return false
+        }
+        st.views.mem = mem
+        st.views.keep = keep
+        st.views.models = models
+        return true
+    }
+
+    // Makes the preview `which`, or changes the body of the one there is.
+    fn make_preview {
+        st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, which: usize,
+        kind: preview3d::Kind, appearance: i32, female: bool,
+    } {
+        if not ensure_models{ st, rm = g.rm } { return }
+        let models = st.views.models ifnull { return }
+        let existing = st.views.pv[which]
+        if existing != null {
+            preview3d::set_appearance{ preview = existing, &fs, &dev, rm = g.rm, models, mats = g.cache, appearance, head = -1 } iferr {}
+            return
+        }
+        let mem = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = st.heap, mem = slice::empty(u8){}, count = PREVIEW_MEMORY } iferr { return }
+        let p = preview3d::make{
+            &fs, &dev, buf = mem, rm = g.rm, models, mats = g.cache,
+            appearance_2da = st.data.appearance.t, heads_2da = st.data.heads.t, appearance, head = -1, female, kind, alignment = 50,
+        } iferr {
+            free_bytes{ b = mem, heap = st.heap }
+            return
+        }
+        let slot = alloc::new(preview3d::Preview, heap::Heap){ realloc = heap::alloc, heap = st.heap, value = p } iferr {
+            free_bytes{ b = mem, heap = st.heap }
+            return
+        }
+        st.views.pv[which] = slot
+        st.views.pmem[which] = mem
+    }
+
+    fn free_preview { st: *mut State, mut dev: gpu::Device, which: usize } {
+        let p = st.views.pv[which] ifnull { return }
+        preview3d::free{ preview = p, &dev }
+        alloc::free(preview3d::Preview, heap::Heap){ realloc = heap::alloc, heap = st.heap, p }
+        st.views.pv[which] = null
+        free_bytes{ b = st.views.pmem[which], heap = st.heap }
+        st.views.pmem[which] = slice::empty(u8){}
+    }
 
     fn free_views { st: *mut State, mut dev: gpu::Device } {
+        let mut i: usize = 0
+        while i < VIEWS {
+            free_preview{ st, &dev, which = i }
+            i = i + 1
+        }
+        let m = st.views.models
+        if m != null {
+            alloc::free(mdl_cache::Cache, heap::Heap){ realloc = heap::alloc, heap = st.heap, p = m }
+            st.views.models = null
+        }
+        let k = st.views.keep
+        if k != null {
+            alloc::free(arena::Arena, heap::Heap){ realloc = heap::alloc, heap = st.heap, p = k }
+            st.views.keep = null
+        }
+        free_bytes{ b = st.views.mem, heap = st.heap }
+        st.views.mem = slice::empty(u8){}
     }
 
+    // Brings the previews up to date with the screen that is up and the choices made.
     fn refresh_views { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } {
+        let top = top_screen{ st }
+        if top == SCR_CLASS {
+            let mut i: usize = 0
+            while i < SLOTS {
+                if st.views.pv[i] == null {
+                    make_preview{
+                        st, &g, &fs, &dev, which = i, kind = preview3d::Kind::body,
+                        appearance = portrait_appearance{ d = &st.data, row = st.slot_portrait[i], class = SLOT_CLASS[i] },
+                        female = SLOT_GENDER[i] == 1,
+                    }
+                }
+                i = i + 1
+            }
+        } else if top == SCR_PORTRAIT {
+            make_preview{ st, &g, &fs, &dev, which = VIEW_HEAD, kind = preview3d::Kind::head, appearance = st.ch.appearance, female = st.ch.gender == 1 }
+        }
+        if panel_of_screen{ st, screen = SCR_MAIN } != 0 and st.ch.appearance > 0 {
+            make_preview{ st, &g, &fs, &dev, which = VIEW_MAIN, kind = preview3d::Kind::main, appearance = st.ch.appearance, female = st.ch.gender == 1 }
+        }
     }
 
+    // After the summary closes the main preview is not needed; the class previews stay.
     fn refresh_views_after_leave { st: *mut State } {
     }
 
     fn update { st: *mut State, dt: f32 } {
+        let mut i: usize = 0
+        while i < VIEWS {
+            let p = st.views.pv[i]
+            if p != null { preview3d::update{ preview = p, dt } }
+            i = i + 1
+        }
     }
 
-    // The 3D creatures belong over the panels' rectangles; the front end calls it after the GUI.
+    // One preview over the rectangle of the control `tag` of panel `panel`.
+    fn draw_preview {
+        st: *State, mut g: gui::Gui, mut frame: render::Frame, target: render::Size, which: usize, panel: u32, tag: []u8,
+    } {
+        let pv = st.views.pv[which] ifnull { return }
+        let r = gui::control_rect{ &g, panel, tag } ifnull { return }
+        let sx = @as(f32, target.width) / @as(f32, g.ui_w)
+        let sy = @as(f32, target.height) / @as(f32, g.ui_h)
+        _ = preview3d::add_to_frame{ preview = pv, &frame, viewport = render::Rect{ x = r.x * sx, y = r.y * sy, w = r.w * sx, h = r.h * sy } }
+    }
+
+    const MODEL_TAG: [SLOTS][]u8 = ["3D_MODEL1", "3D_MODEL2", "3D_MODEL3", "3D_MODEL4", "3D_MODEL5", "3D_MODEL6"]
+
+    // The creatures of the screen that is up, over the GUI. A message box over a screen hides
+    // them (they would draw over it).
     fn draw_views { st: *mut State, mut g: gui::Gui, mut frame: render::Frame, target: render::Size } {
+        if st.msg_panel != 0 { return }
+        let top = top_screen{ st }
+        if top == SCR_CLASS {
+            let p = top_panel{ st }
+            let mut i: usize = 0
+            while i < SLOTS {
+                draw_preview{ st, &g, &frame, target, which = i, panel = p, tag = MODEL_TAG[i] }
+                i = i + 1
+            }
+        } else if top == SCR_PORTRAIT {
+            draw_preview{ st, &g, &frame, target, which = VIEW_HEAD, panel = top_panel{ st }, tag = "LBL_HEAD" }
+        } else if top == SCR_CHOICE or top == SCR_QUICK or top == SCR_CUSTOM {
+            draw_preview{ st, &g, &frame, target, which = VIEW_MAIN, panel = panel_of_screen{ st, screen = SCR_MAIN }, tag = "MODEL_LBL" }
+        }
     }
 }
