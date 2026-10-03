@@ -110,6 +110,18 @@ namespace ingame {
             // Test helper: where the leader is, its hit points, its action and whether a conversation runs.
             let o = world::object{ w = &w, id = w.pc } ifnull { return }
             _ = @fmt(&w.io, "pos {} {} {} hp {}/{} talking {}\n", o.position.x, o.position.y, o.position.z, o.hp, o.hp_max, w.conversation.active)
+        } else if ci::eq{ a = cmd, b = "locals" } {
+            // Test helper: the local variables that are set on the object with the tag.
+            let tag = text::next_word{ &words } ifnull { return }
+            let o = world::object{ w = &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } } ifnull { return }
+            _ = @fmt(&w.io, "locals {} bools:", tag)
+            let mut k: i32 = 0
+            while k < 96 {
+                if obj::local_bool{ l = o.locals, index = k } { _ = @fmt(&w.io, " {}", k) }
+                k = k + 1
+            }
+            _ = @fmt(&w.io, " numbers: {} {} {} {} {} {} {} {}", o.locals.numbers[0], o.locals.numbers[1], o.locals.numbers[2], o.locals.numbers[3], o.locals.numbers[4], o.locals.numbers[5], o.locals.numbers[6], o.locals.numbers[7])
+            _ = @fmt(&w.io, "\n")
         } else if ci::eq{ a = cmd, b = "bot" } {
             bot::run_command{ b = &ui.bot, &w, args = text::rest{ words } }
         } else if ci::eq{ a = cmd, b = "party" } {

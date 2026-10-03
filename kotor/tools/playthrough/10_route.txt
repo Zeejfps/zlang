@@ -1,24 +1,23 @@
-# Survey route (cheats: door unlocks, gear): the ship from the first door on. Edited as the route grows.
+# The ship from the first door on, driven by the bot (lib/ingame/bot.ctx). The start is the real flow
+# (Trask's talk, the footlocker, the equipment screen); `ui join` stands in for the party selection
+# screen until ShowPartySelectionGUI is built. Lines must be in frame order.
 3 newgame
-4 ui replies 1 1 1 1 1 1 1 1
-2400 ui unlock end_door01
-2400 ui giveitem g_w_shortswrd01 equip
-2400 ui giveitem g_a_clothes01 equip
-2401 use end_door01
-2450 ui goto end_door02
-2700 ui goto end_door02
-2900 ui goto end_door02
-3100 ui goto end_door02
-3600 ui unlock end_door02
-3601 use end_door02
-3700 ui goto end_sith2
-3850 attack end_sith2
-3950 attack end_sith2
-4050 attack end_sith3
-4150 attack end_sith3
-4250 attack end_sith2
-4350 attack end_sith2
-4400 ui pos
-4400 ui where end_sith
-4400 ui where end_weld
-4400 ui where end_soldier2
+4 ui replies 1 1 1 2 1 1 1 1
+2900 use end_locker01
+2980 ui click 560 413
+3020 ui click 640 452
+3100 ui menu equip
+3105 ui click 760 321
+3110 ui click 760 321
+3120 ui click 609 384
+3125 ui click 760 321
+3130 ui click 760 321
+3160 ui close
+3920 ui bot god on
+3920 ui bot unlock on
+3920 ui bot route end_door01 end_door02 end_door05
+3921 ui bot on
+4500 ui bot status
+5500 ui bot status
+6500 ui bot status
+6500 ui pos
