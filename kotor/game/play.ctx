@@ -90,7 +90,15 @@ namespace play {
             // 1. Input: the window's events, or the script's lines for this frame.
             while true {
                 let e = sdl::poll{ &sdl } ifnull { break }
-                if mg_game::active{ w = &w } and mg_game::handle_event{ m = &mg_mouse, ev = e } { continue }    // HOOK(minigames)
+                // HOOK(minigames): a minigame has no HUD, menus or quick saves: the mouse and Escape are
+                // its own, the other keys go straight to the game's keys.
+                if mg_game::active{ w = &w } {
+                    if mg_game::handle_event{ m = &mg_mouse, ev = e } { continue }
+                    if e is key{ down, repeat, keycode } {
+                        if not repeat { apply_key{ keys = &keys, keycode, down } }
+                        continue
+                    }
+                }
                 if dlgview::handle_event{ v = &dview, g = &ui.gui, ev = e, scale_x = 1.0, scale_y = 1.0 } { continue }
                 if ingame::handle_event{ ui, &w, &dev, ev = e, scale_x = 1.0, scale_y = 1.0 } { continue }    // HOOK(ingame)
                 match e {
