@@ -121,19 +121,39 @@ namespace gui {
         }
     }
 
-    // Gives `ci` the panel's focus (hilights it, un-hilights the old one).
+    // Hilights or un-hilights the ancestors of control `ci`, up the Obj_Parent chain (docs/re/gui.md,
+    // "Moving the mouse"): a tab button of the top menu bar sits on its LBLH_* frame label, which
+    // shows its lit picture while the pointer is anywhere on the button.
+    fn hilight_ancestors { p: *mut Panel, ci: i32, on: bool } {
+        let mut at = ci
+        let mut depth: i32 = 0
+        while depth < 8 {
+            let up = find_by_id{ p, id = list::at{ list = p.controls, i = @as(usize, at) }.parent }
+            if up < 0 or up == at { return }
+            apply_hilight{ c = list::at{ list = p.controls, i = @as(usize, up) }, on }
+            at = up
+            depth = depth + 1
+        }
+    }
+
+    // Gives `ci` the panel's focus (hilights it and its ancestors, un-hilights the old one). A
+    // control that lost its hilight when the pointer left the panel gets it back.
     fn set_focus_index { mut g: Gui, p: *mut Panel, ci: i32, sound: bool } {
-        if p.focus == ci { return }
-        if p.focus >= 0 and @as(usize, p.focus) < p.controls.len {
+        let valid = ci >= 0 and @as(usize, ci) < p.controls.len
+        if p.focus == ci and valid and (list::at{ list = p.controls, i = @as(usize, ci) }.flags & F_HILIGHT) != 0 { return }
+        if p.focus == ci and not valid { return }
+        if p.focus != ci and p.focus >= 0 and @as(usize, p.focus) < p.controls.len {
             let old = list::at{ list = p.controls, i = @as(usize, p.focus) }
             apply_hilight{ c = old, on = false }
+            hilight_ancestors{ p, ci = p.focus, on = false }
             old.hover_row = -1
             push_event{ &g, kind = EventKind::unhilight, p, ci = p.focus, value = 0, row = -1, user = 0 }
         }
         p.focus = ci
-        if ci >= 0 and @as(usize, ci) < p.controls.len {
+        if valid {
             let c = list::at{ list = p.controls, i = @as(usize, ci) }
             apply_hilight{ c, on = true }
+            hilight_ancestors{ p, ci, on = true }
             if sound { play_sound{ &g, n = c.hover_sound } }
             push_event{ &g, kind = EventKind::hilight, p, ci, value = 0, row = -1, user = 0 }
         }
@@ -145,6 +165,7 @@ namespace gui {
             let old = list::at{ list = p.controls, i = @as(usize, p.focus) }
             if (old.flags & F_HILIGHT) != 0 {
                 apply_hilight{ c = old, on = false }
+                hilight_ancestors{ p, ci = p.focus, on = false }
                 old.hover_row = -1
                 push_event{ &g, kind = EventKind::unhilight, p, ci = p.focus, value = 0, row = -1, user = 0 }
             }
