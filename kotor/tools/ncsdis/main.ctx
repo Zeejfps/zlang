@@ -1,0 +1,559 @@
+// ncsdis: the NCS disassembler (docs/formats/ncs.md). It writes the same text as
+// tools/py/ncsdis.py, byte for byte, so the two check each other.
+//
+//   kotor/tools/ctxc run kotor/tools/ncsdis -- FILE.ncs [-x] [--no-names]
+//   kotor/tools/ctxc run kotor/tools/ncsdis -- --corpus [DIR] [-o OUT]
+//
+// One file: its listing to standard output, in UTF-8 with \n line ends. -x shows each
+// instruction's bytes, --no-names leaves ACTION's routine names out. Exits 1 if a jump target or a
+// STORE_STATE resume point isn't an instruction start (the `; ERROR` lines at the end), or if the
+// file doesn't decode: then `PATH: MESSAGE` goes to standard error, in ncsdis.py's words. Unlike
+// ncsdis.py it takes only a path, not a resref to look up in the install.
+//
+// --corpus: every *.ncs in DIR (kotor/extract/ncs), in the byte order of their names, into OUT
+// (kotor/out/ncsdis-ctx.txt): for each, a line `=== NAME`, then its listing, or `NAME: MESSAGE`
+// if it doesn't decode. tools/py/ncsdis_corpus.py writes the same through ncsdis.py, so the two
+// files compare with cmp.
+
+type Text = utf8::Builder(arena::Arena)
+type Instrs = list::List(ncs::Raw, arena::Arena)
+
+struct Options { path: []u8, raw: bool, names: bool, corpus: bool, dir: []u8, out: []u8 }
+
+// One file's work: its bytes, instructions, marks and listing. Reset for each file of a corpus.
+const WORK_SIZE: usize = 268435456         // 256 MiB
+// What a corpus run keeps throughout: the directory's names.
+const KEEP_SIZE: usize = 16777216          // 16 MiB
+
+// The label an offset gets, as ncsdis.py names them: a JSR target is a subroutine (`sub_`) whatever
+// else reaches it; any other offset is named by the first JMP, JZ or JNZ (`loc_`) or STORE_STATE
+// resume point (`deferred_`) to reach it, in file order.
+const NO_LABEL: u8 = 0
+const SUB: u8 = 1
+const LOC: u8 = 2
+const DEFERRED: u8 = 3
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    if args.len == 0 or slice::eq_bytes{ a = args[0], b = "-h" } or slice::eq_bytes{ a = args[0], b = "--help" } {
+        io::println{ &io, s = USAGE }
+        return 0
+    }
+    let opts = parse_args{ &io, args } ifnull { return 2 }
+    let work_pages = mem::pages{ &mem, size = WORK_SIZE } ifnull { return no_memory{ &io } }
+    let mut work = arena::new{ buf = work_pages }
+    if not opts.corpus { return one{ &io, &fs, &work, opts } }
+    let keep_pages = mem::pages{ &mem, size = KEEP_SIZE } ifnull { return no_memory{ &io } }
+    let mut keep = arena::new{ buf = keep_pages }
+    return corpus{ &io, &fs, &keep, &work, opts }
+}
+
+const USAGE: utf8::String = "usage: ncsdis FILE.ncs [-x] [--no-names]\n       ncsdis --corpus [DIR] [-o OUT]"
+
+fn parse_args { mut io: Io, args: Args } -> ?Options {
+    let mut o = Options{
+        path = "", raw = false, names = true, corpus = false,
+        dir = "kotor/extract/ncs", out = "kotor/out/ncsdis-ctx.txt",
+    }
+    let mut have_path = false
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        if slice::eq_bytes{ a, b = "-x" } {
+            o.raw = true
+        } else if slice::eq_bytes{ a, b = "--no-names" } {
+            o.names = false
+        } else if slice::eq_bytes{ a, b = "--corpus" } {
+            o.corpus = true
+        } else if slice::eq_bytes{ a, b = "-o" } and i + 1 < args.len {
+            i = i + 1
+            o.out = args[i]
+        } else if a.len > 0 and a[0] == '-' {
+            io::eprintln{ &io, s = USAGE }
+            return null
+        } else if not have_path {
+            o.path = a
+            have_path = true
+        }
+        i = i + 1
+    }
+    if o.corpus {
+        if have_path { o.dir = o.path }
+    } else if not have_path {
+        io::eprintln{ &io, s = USAGE }
+        return null
+    }
+    return o
+}
+
+fn no_memory { mut io: Io } -> i32 {
+    io::eprintln{ &io, s = "ncsdis: out of memory" }
+    return 1
+}
+
+// ---- one file
+
+fn one { mut io: Io, mut fs: Fs, mut work: arena::Arena, opts: Options } -> i32 {
+    let mut t = utf8::builder{ realloc = arena::alloc, heap = &work }
+    let mut why = utf8::builder{ realloc = arena::alloc, heap = &work }
+    let data = fs::read_all{ &fs, heap = &work, realloc = arena::alloc, path = opts.path } iferr {
+        return complain{ &io, path = opts.path, what = "no such file or NCS resource" }
+    }
+    let got = disassemble{ &t, &why, heap = &work, data, names = opts.names, raw = opts.raw } iferr {
+        return no_memory{ &io }
+    }
+    if got == null { return complain{ &io, path = opts.path, what = text{ t = why } } }
+    io::write{ &io, to = io::Stream::out, bytes = text{ t } }
+    io::flush{ &io }
+    if got > 0 { return 1 }
+    return 0
+}
+
+// `PATH: WHAT` to standard error, as ncsdis.py reports a file that doesn't decode.
+fn complain { mut io: Io, path: []u8, what: []u8 } -> i32 {
+    io::write{ &io, to = io::Stream::err, bytes = path }
+    io::write{ &io, to = io::Stream::err, bytes = ": " }
+    io::write{ &io, to = io::Stream::err, bytes = what }
+    io::write{ &io, to = io::Stream::err, bytes = "\n" }
+    return 1
+}
+
+// ---- a corpus
+
+fn corpus { mut io: Io, mut fs: Fs, mut keep: arena::Arena, mut work: arena::Arena, opts: Options } -> i32 {
+    let names = fs::list{ &fs, heap = &keep, realloc = arena::alloc, path = opts.dir } iferr err{ error } {
+        _ = @fmt(&io, "ncsdis: {}: {}\n", opts.dir, error)
+        return 1
+    }
+    let file = fs::open{ &fs, path = opts.out, mode = fs::Mode::write } iferr err{ error } {
+        _ = @fmt(&io, "ncsdis: {}: {}\n", opts.out, error)
+        return 1
+    }
+    defer _ = fs::close{ &fs, file }
+    let mut files: u32 = 0
+    let mut bad: u32 = 0
+    let mut flagged: u32 = 0
+    let mut k: usize = 0
+    while k < names.len {
+        let name = names[k]
+        k = k + 1
+        if name.len < 4 or not slice::eq_bytes{ a = name[name.len - 4..], b = ".ncs" } { continue }
+        arena::reset{ heap = &work }
+        let mut t = utf8::builder{ realloc = arena::alloc, heap = &work }
+        let got = entry{ &fs, &work, &t, dir = opts.dir, name } iferr err{ error } {
+            _ = @fmt(&io, "ncsdis: {}: {}\n", name, error)
+            return 1
+        }
+        files = files + 1
+        if got == null {
+            bad = bad + 1
+        } else if got > 0 {
+            flagged = flagged + 1
+        }
+        _ = fs::write{ &fs, file, bytes = text{ t } } iferr err{ error } {
+            _ = @fmt(&io, "ncsdis: {}: {}\n", opts.out, error)
+            return 1
+        }
+    }
+    _ = @fmt(&io, "ncsdis: {} files, {} didn't decode, {} with target errors; written to {}\n",
+        files, bad, flagged, opts.out)
+    if bad > 0 or flagged > 0 { return 1 }
+    return 0
+}
+
+// One file's part of the corpus listing, into `t`: what disassemble returns, null meaning the file
+// didn't decode.
+fn entry { mut fs: Fs, mut work: arena::Arena, mut t: Text, dir: []u8, name: []u8 } -> !?u32 {
+    let mut path = utf8::builder{ realloc = arena::alloc, heap = &work }
+    try @fmt(&path, "{}/{}", dir, name)
+    let data = try fs::read_all{ &fs, heap = &work, realloc = arena::alloc, path = text{ t = path } }
+    try @fmt(&t, "=== {}\n", name)
+    let mut why = utf8::builder{ realloc = arena::alloc, heap = &work }
+    let got = try disassemble{ &t, &why, heap = &work, data, names = true, raw = false }
+    if got == null { try @fmt(&t, "{}: {}\n", name, text{ t = why }) }
+    return got
+}
+
+// ---- the listing
+
+// `data`'s listing into `t`, as ncsdis.py's disassemble writes it, each line ending in \n.
+// Returns the number of `; ERROR` lines at its end. If `data` doesn't decode, it writes nothing to
+// `t`, says why in `why`, as ncsdis.py's NcsError does, and returns null.
+fn disassemble { mut t: Text, mut why: Text, mut heap: arena::Arena, data: []u8, names: bool, raw: bool } -> !?u32 {
+    let mut instrs = list::new(ncs::Raw){ realloc = arena::alloc, heap = &heap }
+    let mut at: u32 = 0
+    decode_all{ data, &instrs, &at } iferr err{ error } {
+        match error {
+            alloc::out_of_memory => { return alloc::out_of_memory }
+            else => {
+                try write_problem{ t = &why, error, data, at }
+                return null
+            }
+        }
+    }
+    let items: []ncs::Raw = list::items{ list = instrs }
+
+    // Which offsets start an instruction, and the label each offset gets.
+    let starts = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = data.len }
+    let kinds = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = data.len }
+    slice::fill(u8){ s = starts, v = 0 }
+    slice::fill(u8){ s = kinds, v = NO_LABEL }
+    let mut k: usize = 0
+    while k < items.len {
+        starts[items[k].at] = 1
+        if items[k].op == ncs::JSR { mark{ kinds, target = jump_target{ i = items[k] }, kind = SUB } }
+        k = k + 1
+    }
+    k = 0
+    while k < items.len {
+        let i = items[k]
+        if i.op == ncs::JMP or i.op == ncs::JZ or i.op == ncs::JNZ {
+            mark{ kinds, target = jump_target{ i }, kind = LOC }
+        } else if i.op == ncs::STORE_STATE {
+            mark{ kinds, target = resume_point{ i }, kind = DEFERRED }
+        }
+        k = k + 1
+    }
+
+    try @fmt(&t, "; NCS V1.0, {} bytes, {} instructions\n", data.len, items.len)
+    k = 0
+    while k < items.len {
+        let i = items[k]
+        let kind = kinds[i.at]
+        if kind != NO_LABEL {
+            try write_label{ &t, kind, target = i.at }
+            try put{ &t, b = ":\n" }
+        }
+        try write_instr{ &t, data, i, items, kinds, names, raw }
+        k = k + 1
+    }
+    return try write_target_errors{ &t, items, starts }
+}
+
+// Decodes every instruction after the header into `instrs`. On an instruction that doesn't
+// decode, `at` is where it starts.
+fn decode_all { data: []u8, mut instrs: Instrs, mut at: u32 } -> ! {
+    try ncs::check_header{ bytes = data, check_size = true }
+    at = ncs::HEADER_SIZE
+    while @as(usize, at) < data.len {
+        let raw = try ncs::decode{ code = data, at, store_stateall = false }
+        try list::push{ list = &instrs, item = raw }
+        at = at + raw.size
+    }
+}
+
+// ncsdis.py's NcsError text for a decode error.
+fn write_problem { mut t: Text, error: error, data: []u8, at: u32 } -> ! {
+    match error {
+        ncs::too_short{ size } => { try @fmt(&t, "file is {} bytes, shorter than the 13-byte header", size) }
+        ncs::bad_magic => {
+            try put{ &t, b = "bad magic " }
+            try write_repr{ &t, s = data[..8], bytes = true }
+        }
+        ncs::bad_marker{ byte } => {
+            try put{ &t, b = "byte 8 is 0x" }
+            try put_hex{ &t, n = byte, digits = 2 }
+            try put{ &t, b = ", not 0x42" }
+        }
+        ncs::bad_size{ said, size } => { try @fmt(&t, "header says {} bytes, file is {}", said, size) }
+        ncs::no_header => {
+            try put_hex{ &t, n = at, digits = 8 }
+            try put{ &t, b = ": instruction header runs off the end" }
+        }
+        ncs::unknown_opcode{ op } => {
+            try put_hex{ &t, n = at, digits = 8 }
+            try put{ &t, b = ": unknown opcode 0x" }
+            try put_hex{ &t, n = op, digits = 2 }
+        }
+        ncs::bad_type{ op, ty } => {
+            try put_hex{ &t, n = at, digits = 8 }
+            try @fmt(&t, ": {} with unexpected type byte 0x", ncs::op_name{ op })
+            try put_hex{ &t, n = ty, digits = 2 }
+        }
+        ncs::truncated{ op } => {
+            try put_hex{ &t, n = at, digits = 8 }
+            try @fmt(&t, ": {} operands run off the end", ncs::op_name{ op })
+        }
+        else => { try @fmt(&t, "{}", error) }
+    }
+}
+
+// One instruction's line: `{offset:08x}  {mnemonic:<16} {args}` without trailing spaces, after
+// its bytes with -x.
+fn write_instr { mut t: Text, data: []u8, i: ncs::Raw, items: []ncs::Raw, kinds: []u8, names: bool, raw: bool } -> ! {
+    try put{ &t, b = "    " }
+    if raw {
+        let start = t.bytes.len
+        let mut k: u32 = 0
+        while k < i.size {
+            if k > 0 { try put{ &t, b = " " } }
+            try put_hex{ &t, n = data[i.at + k], digits = 2 }
+            k = k + 1
+        }
+        try pad{ &t, to = start + 30 }
+        try put{ &t, b = " " }
+    }
+    let line = t.bytes.len
+    try put_hex{ &t, n = i.at, digits = 8 }
+    try put{ &t, b = "  " }
+    let m = t.bytes.len
+    try put{ &t, b = ncs::op_name{ op = i.op } }
+    if i.op != ncs::STORE_STATE {                   // its type byte is the resume offset
+        let suffix = ncs::type_suffix{ ty = i.ty }
+        if suffix == null {
+            try put{ &t, b = "?" }
+            try put_hex{ &t, n = i.ty, digits = 2 }
+        } else {
+            try put{ &t, b = suffix }
+        }
+    }
+    try pad{ &t, to = m + 16 }
+    try put{ &t, b = " " }
+    try write_args{ &t, i, items, kinds, names }
+    while t.bytes.len > line and t.bytes.items[t.bytes.len - 1] == ' ' {
+        t.bytes.len = t.bytes.len - 1
+    }
+    try put{ &t, b = "\n" }
+}
+
+fn write_args { mut t: Text, i: ncs::Raw, items: []ncs::Raw, kinds: []u8, names: bool } -> ! {
+    let op = i.op
+    let start = t.bytes.len
+    if ncs::is_jump{ op } {
+        if i.a >= 0 { try put{ &t, b = "+" } }
+        try @fmt(&t, "{}", i.a)
+        try pad{ &t, to = start + 10 }
+        try put{ &t, b = "; -> " }
+        let target = jump_target{ i }
+        return write_label{ &t, kind = label_of{ kinds, items, target }, target }
+    }
+    if op == ncs::CONST and i.ty == ncs::T_STRING { return write_repr{ &t, s = i.text, bytes = false } }
+    if op == ncs::CONST and i.ty == ncs::T_FLOAT { return utf8::push_f64{ b = &t, n = i.f } }
+    if op == ncs::ACTION {
+        try @fmt(&t, "{} {}", i.a, i.b)
+        if not names or i.a >= @as(i32, nwscript::COUNT) { return }
+        try pad{ &t, to = start + 10 }
+        try put{ &t, b = "; " }
+        return put{ &t, b = nwscript::ROUTINES[@as(usize, i.a)].name }
+    }
+    if op == ncs::STORE_STATE {
+        try @fmt(&t, "{} {}", i.a, i.b)
+        try pad{ &t, to = start + 10 }
+        try put{ &t, b = "; resume at " }
+        return write_hex8{ &t, v = resume_point{ i } }
+    }
+    let n = arg_count{ op, ty = i.ty }
+    if n >= 1 { try @fmt(&t, "{}", i.a) }
+    if n >= 2 { try @fmt(&t, " {}", i.b) }
+    if n >= 3 { try @fmt(&t, " {}", i.c) }
+}
+
+// How many of a, b and c an instruction other than a jump, ACTION, STORE_STATE, CONSTF or CONSTS
+// has.
+fn arg_count { op: u8, ty: u8 } -> u32 {
+    if op == ncs::CPDOWNSP or op == ncs::CPTOPSP or op == ncs::CPDOWNBP or op == ncs::CPTOPBP { return 2 }
+    if op == ncs::DESTRUCT { return 3 }
+    if op == ncs::CONST { return 1 }                                        // CONSTI, CONSTO
+    if (op == ncs::EQUAL or op == ncs::NEQUAL) and ty == ncs::T_TT { return 1 }
+    if op == ncs::MOVSP or op == ncs::DECISP or op == ncs::INCISP or op == ncs::DECIBP or op == ncs::INCIBP { return 1 }
+    return 0
+}
+
+// `; ERROR` lines for jump targets and resume points that aren't instruction starts, and for a
+// STORE_STATE without its JMP. Returns how many.
+fn write_target_errors { mut t: Text, items: []ncs::Raw, starts: []u8 } -> !u32 {
+    let mut n: u32 = 0
+    let mut k: usize = 0
+    while k < items.len {
+        let i = items[k]
+        if ncs::is_jump{ op = i.op } {
+            let target = jump_target{ i }
+            if not is_start{ starts, target } {
+                try put{ &t, b = "; ERROR " }
+                try put_hex{ &t, n = i.at, digits = 8 }
+                try @fmt(&t, ": {} target ", ncs::op_name{ op = i.op })
+                try write_hex8{ &t, v = target }
+                try put{ &t, b = " is not an instruction start\n" }
+                n = n + 1
+            }
+        } else if i.op == ncs::STORE_STATE {
+            let target = resume_point{ i }
+            if not is_start{ starts, target } {
+                try put{ &t, b = "; ERROR " }
+                try put_hex{ &t, n = i.at, digits = 8 }
+                try put{ &t, b = ": STORE_STATE resume point " }
+                try write_hex8{ &t, v = target }
+                try put{ &t, b = " is not an instruction start\n" }
+                n = n + 1
+            }
+            if k + 1 >= items.len or items[k + 1].op != ncs::JMP {
+                try put{ &t, b = "; ERROR " }
+                try put_hex{ &t, n = i.at, digits = 8 }
+                try put{ &t, b = ": STORE_STATE not followed by JMP\n" }
+                n = n + 1
+            }
+        }
+        k = k + 1
+    }
+    return n
+}
+
+// ---- targets and labels
+
+// Where a jump goes: an offset from the jump, which may land outside the file.
+fn jump_target { i: ncs::Raw } -> i64 {
+    let at: i64 = i.at
+    return at + i.a
+}
+
+// Where a STORE_STATE's deferred code starts: its type byte is the distance.
+fn resume_point { i: ncs::Raw } -> i64 {
+    let at: i64 = i.at
+    return at + i.ty
+}
+
+fn in_file { marks: []u8, target: i64 } -> bool {
+    return target >= 0 and target < @as(i64, marks.len)
+}
+
+fn is_start { starts: []u8, target: i64 } -> bool {
+    return in_file{ marks = starts, target } and starts[@as(usize, target)] != 0
+}
+
+// Gives `target` the label `kind` unless it has one.
+fn mark { kinds: []mut u8, target: i64, kind: u8 } {
+    if not in_file{ marks = kinds, target } { return }
+    let p = @as(usize, target)
+    if kinds[p] == NO_LABEL { kinds[p] = kind }
+}
+
+// The label of `target`. Outside the file there is no mark, so it is found again the way the marks
+// were made.
+fn label_of { kinds: []u8, items: []ncs::Raw, target: i64 } -> u8 {
+    if in_file{ marks = kinds, target } { return kinds[@as(usize, target)] }
+    let mut k: usize = 0
+    while k < items.len {
+        if items[k].op == ncs::JSR and jump_target{ i = items[k] } == target { return SUB }
+        k = k + 1
+    }
+    k = 0
+    while k < items.len {
+        let i = items[k]
+        if (i.op == ncs::JMP or i.op == ncs::JZ or i.op == ncs::JNZ) and jump_target{ i } == target { return LOC }
+        if i.op == ncs::STORE_STATE and resume_point{ i } == target { return DEFERRED }
+        k = k + 1
+    }
+    return NO_LABEL
+}
+
+fn write_label { mut t: Text, kind: u8, target: i64 } -> ! {
+    if kind == SUB {
+        try put{ &t, b = "sub_" }
+    } else if kind == DEFERRED {
+        try put{ &t, b = "deferred_" }
+    } else {
+        try put{ &t, b = "loc_" }
+    }
+    try write_hex8{ &t, v = target }
+}
+
+// ---- text as Python writes it
+
+// `{v:08x}`: at least 8 characters, a negative number's `-` among them.
+fn write_hex8 { mut t: Text, v: i64 } -> ! {
+    if v < 0 {
+        try put{ &t, b = "-" }
+        return put_hex{ &t, n = @as(u64, -v), digits = 7 }
+    }
+    try put_hex{ &t, n = @as(u64, v), digits = 8 }
+}
+
+// n in lowercase hexadecimal, zero-padded to `digits`.
+fn put_hex { mut t: Text, n: u64, digits: usize } -> ! {
+    let mut buf: [16]u8
+    let s = utf8::fmt_hex{ n, into = buf[..] }
+    let mut k = s.bytes.len
+    while k < digits {
+        try put{ &t, b = "0" }
+        k = k + 1
+    }
+    try put{ &t, b = s.bytes }
+}
+
+// Python's repr() of `s`: of the bytes if `bytes` (b'...'), or else of the text they are as
+// latin-1, written in UTF-8. The quotes are '...' unless the text has a ' and no ".
+fn write_repr { mut t: Text, s: []u8, bytes: bool } -> ! {
+    let mut q: u8 = '\''
+    if has{ s, c = '\'' } and not has{ s, c = '"' } { q = '"' }
+    if bytes { try put{ &t, b = "b" } }
+    try put_byte{ &t, c = q }
+    let mut k: usize = 0
+    while k < s.len {
+        let c = s[k]
+        k = k + 1
+        if c == q or c == '\\' {
+            try put_byte{ &t, c = '\\' }
+            try put_byte{ &t, c }
+        } else if c == '\t' {
+            try put{ &t, b = "\\t" }
+        } else if c == '\n' {
+            try put{ &t, b = "\\n" }
+        } else if c == '\r' {
+            try put{ &t, b = "\\r" }
+        } else if c < 0x20 or c == 0x7f or (c >= 0x80 and (bytes or c <= 0xa0 or c == 0xad)) {
+            // Unprintable: C0 and C1 controls, and as text no-break space and soft hyphen too.
+            try put{ &t, b = "\\x" }
+            try put_hex{ &t, n = c, digits = 2 }
+        } else if c >= 0x80 {
+            try put_byte{ &t, c = 0xc0 | (c >> 6) }
+            try put_byte{ &t, c = 0x80 | (c & 0x3f) }
+        } else {
+            try put_byte{ &t, c }
+        }
+    }
+    try put_byte{ &t, c = q }
+}
+
+fn has { s: []u8, c: u8 } -> bool {
+    let mut k: usize = 0
+    while k < s.len {
+        if s[k] == c { return true }
+        k = k + 1
+    }
+    return false
+}
+
+// Spaces up to length `to`, as Python's ljust; nothing if the text is already that long.
+fn pad { mut t: Text, to: usize } -> ! {
+    while t.bytes.len < to { try put_byte{ &t, c = ' ' } }
+}
+
+// ---- the listing's buffer
+
+fn text { t: Text } -> []u8 {
+    return list::items{ list = t.bytes }
+}
+
+// Bytes as they are, for @fmt holes of type []u8 (std has writers only for String and strlit).
+#write
+fn put { mut t: Text, b: []u8 } -> ! {
+    try list::reserve{ list = &t.bytes, extra = b.len }
+    slice::copy(u8){ dst = t.bytes.items[t.bytes.len..t.bytes.len + b.len], src = b }
+    t.bytes.len = t.bytes.len + b.len
+}
+
+fn put_byte { mut t: Text, c: u8 } -> ! {
+    try list::push{ list = &t.bytes, item = c }
+}
+
+// ---- @fmt into standard output, for the corpus run's messages
+
+#write
+fn out_text { mut io: Io, s: strlit } { io::write{ &io, to = io::Stream::out, bytes = s.bytes } }
+#write
+fn out_bytes { mut io: Io, b: []u8 } { io::write{ &io, to = io::Stream::out, bytes = b } }
+#write
+fn out_u32 { mut io: Io, n: u32 } { io::print_u64{ &io, n } }
+#write
+fn out_i64 { mut io: Io, n: i64 } { io::print_i64{ &io, n } }
+#write
+fn out_usize { mut io: Io, n: usize } { io::print_u64{ &io, n } }

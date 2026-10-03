@@ -1,0 +1,6 @@
+// The build program for ncsdis: `kotor/tools/ctxc run kotor/tools/ncsdis -- FILE.ncs`.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "ncsdis", root = "." }
+    build::add_sources{ &b, exe, dir = "../../lib/script" }
+    build::optimize{ &b, exe, level = 2 }
+}
