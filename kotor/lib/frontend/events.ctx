@@ -1,0 +1,377 @@
+// Turning GUI events into the front end's actions: the options, the save list, the movie list
+// and the main menu's buttons (docs/re/gui.md section 10.1).
+namespace frontend {
+    // The text of a movies.2da row's name is dialog.tlk string `strrefname`; the row label is the
+    // file in movies/. The list shows a movie when `alwaysshow` is 1 or the player has seen it.
+    fn fill_movies { mut fe: Front, mut g: gui::Gui, mut fs: Fs, p: u32 } -> ! {
+        gui::list_clear{ &g, panel = p, tag = "LB_MOVIES" }
+        let rm = g.rm
+        let bytes = try res::load{ &fs, rm, name = "movies", kind = restype::Type::twoda, realloc = heap::alloc, heap = fe.heap } ifnull { return }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = fe.heap, mem = bytes, count = 0 }
+        let t = try twoda::parse{ data = bytes, realloc = heap::alloc, heap = fe.heap }
+        defer twoda::free{ t, realloc = heap::alloc, heap = fe.heap }
+        // By the table's `order` column.
+        let mut taken = [false; 128]
+        let mut shown: usize = 0
+        while shown < twoda::rows{ t } and shown < 128 {
+            let mut best: i32 = -1
+            let mut best_order: i32 = 2147483647
+            let mut r: usize = 0
+            while r < twoda::rows{ t } and r < 128 {
+                if not taken[r] {
+                    let seen = r < 64 and fe.settings.movies_seen[r]
+                    let always = (twoda::get_int{ t, row = r, column = "alwaysshow" } ifnull 0) != 0
+                    let order = twoda::get_int{ t, row = r, column = "order" } ifnull 0
+                    if (seen or always) and order < best_order {
+                        best = @as(i32, r)
+                        best_order = order
+                    }
+                }
+                r = r + 1
+            }
+            if best < 0 { break }
+            taken[@as(usize, best)] = true
+            let row = @as(usize, best)
+            let strref = @as(u32, twoda::get_int{ t, row, column = "strrefname" } ifnull 0)
+            let title = try gui::tlk_text{ &g, strref }
+            defer gui::free_string{ &g, s = title }
+            let label = twoda::get_string_at{ t, row, col = 0 } ifnull ""
+            _ = try gui::list_add{ &g, panel = p, tag = "LB_MOVIES", text = title, user = best_row_user{ row = best, label } }
+            shown = shown + 1
+        }
+    }
+
+    // A list row's user value for a movie: the table row (the label is read again from it).
+    fn best_row_user { row: i32, label: []u8 } -> i64 {
+        return @as(i64, row)
+    }
+
+    // The label (file name) of row `row` of movies.2da, copied into `into`.
+    fn movie_label { mut fe: Front, mut fs: Fs, rm: res::Manager, row: i64, into: []mut u8 } -> usize {
+        let loaded = res::load{ &fs, rm, name = "movies", kind = restype::Type::twoda, realloc = heap::alloc, heap = fe.heap } iferr { return 0 }
+        let bytes = loaded ifnull { return 0 }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = fe.heap, mem = bytes, count = 0 }
+        let t = twoda::parse{ data = bytes, realloc = heap::alloc, heap = fe.heap } iferr { return 0 }
+        defer twoda::free{ t, realloc = heap::alloc, heap = fe.heap }
+        if row < 0 or @as(usize, row) >= twoda::rows{ t } { return 0 }
+        return copy_into{ dst = into, src = t.labels[@as(usize, row)] }
+    }
+
+    // ---- Load Game
+
+    fn open_load { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, p: u32 } -> ! {
+        if fe.saves_loaded {
+            free_saves{ heap = fe.heap, list = fe.saves }
+            fe.saves_loaded = false
+        }
+        fe.saves = list_saves{ &fs, heap = fe.heap, dir = fe.saves_dir[..fe.saves_dir_len] } iferr { SaveList{ entries = slice::empty(SaveEntry){}, count = 0 } }
+        fe.saves_loaded = true
+        try gui::set_strref{ &g, panel = p, tag = "LBL_PANELNAME", strref = 1585 }
+        try gui::set_strref{ &g, panel = p, tag = "BTN_SAVELOAD", strref = 1589 }
+        // The install's saves are read-only here: nothing deletes them.
+        gui::set_visible{ &g, panel = p, tag = "BTN_DELETE", visible = false }
+        gui::set_enabled{ &g, panel = p, tag = "BTN_SAVELOAD", enabled = false }
+        gui::list_clear{ &g, panel = p, tag = "LB_GAMES" }
+        let mut i: usize = 0
+        while i < fe.saves.count {
+            let e = fe.saves.entries[i]
+            _ = try gui::list_add{ &g, panel = p, tag = "LB_GAMES", text = e.label[..e.label_len], user = @as(i64, i) }
+            gui::list_set_color{ &g, panel = p, tag = "LB_GAMES", row = @as(i32, i), color = gui::color_menu{} }
+            i = i + 1
+        }
+        try gui::set_text{ &g, panel = p, tag = "LBL_PLANETNAME", text = "" }
+        try gui::set_text{ &g, panel = p, tag = "LBL_AREANAME", text = "" }
+    }
+
+    // Shows the details of the highlighted save: area, time, party and the screenshot.
+    fn show_save { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, p: u32, row: i32 } -> ! {
+        if row < 0 or @as(usize, row) >= fe.saves.count { return }
+        let e = fe.saves.entries[@as(usize, row)]
+        // The area is saved as "Planet - Place"; the panel has a label for each half.
+        let area = e.area[..e.area_len]
+        let dash = ci::find{ s = area, needle = " - " }
+        if dash != null {
+            try gui::set_text{ &g, panel = p, tag = "LBL_PLANETNAME", text = area[..dash] }
+            try gui::set_text{ &g, panel = p, tag = "LBL_AREANAME", text = area[dash + 3..] }
+        } else {
+            try gui::set_text{ &g, panel = p, tag = "LBL_PLANETNAME", text = "" }
+            try gui::set_text{ &g, panel = p, tag = "LBL_AREANAME", text = area }
+        }
+        gui::set_enabled{ &g, panel = p, tag = "BTN_SAVELOAD", enabled = not e.corrupt }
+        release_shot{ &fe, &dev }
+        let shot = load_screenshot{ &fs, &dev, heap = fe.heap, scratch = &g.cache.scratch, dir = fe.saves_dir[..fe.saves_dir_len], folder = e.folder[..e.folder_len] } iferr { null }
+        fe.shot = shot
+        if shot != null {
+            gui::set_picture{ &g, panel = p, tag = "LBL_SCREENSHOT", texture = shot, w = 256.0, h = 256.0 }
+        } else {
+            gui::clear_picture{ &g, panel = p, tag = "LBL_SCREENSHOT" }
+        }
+        let tags: [3][]u8 = ["LBL_PM1", "LBL_PM2", "LBL_PM3"]
+        let mut k: usize = 0
+        while k < 3 {
+            if k < e.portrait_count {
+                let img = gui::resolve_img{ &g, &fs, &dev, name = resref::bytes{ r = &e.portraits[k] } }
+                if img.ok { gui::set_picture{ &g, panel = p, tag = tags[k], texture = img.tex, w = img.w, h = img.h } } else { gui::clear_picture{ &g, panel = p, tag = tags[k] } }
+            } else {
+                gui::clear_picture{ &g, panel = p, tag = tags[k] }
+            }
+            k = k + 1
+        }
+    }
+
+    fn load_outcome { fe: *Front, row: i32 } -> Outcome {
+        if row < 0 or @as(usize, row) >= fe.saves.count { return Outcome::running }
+        let e = fe.saves.entries[@as(usize, row)]
+        if e.corrupt { return Outcome::running }
+        return Outcome::load_game{ folder = e.folder, folder_len = e.folder_len }
+    }
+
+    // ---- the options
+
+    fn defaults_for { mut fe: Front, screen: u32 } {
+        let d = default_settings{}
+        if screen == SCR_GAMEPLAY {
+            fe.settings.difficulty = d.difficulty
+            fe.settings.mouse_look = d.mouse_look
+            fe.settings.auto_level_up = d.auto_level_up
+            fe.settings.autosave = d.autosave
+            fe.settings.reverse_minigame_y = d.reverse_minigame_y
+            fe.settings.combat_movement = d.combat_movement
+        } else if screen == SCR_FEEDBACK {
+            fe.settings.floating_numbers = d.floating_numbers
+            fe.settings.tutorial_popups = d.tutorial_popups
+            fe.settings.status_summary = d.status_summary
+            fe.settings.subtitles = d.subtitles
+            fe.settings.minimap = d.minimap
+            fe.settings.tooltips = d.tooltips
+        } else if screen == SCR_AUTOPAUSE {
+            fe.settings.pause_end_round = d.pause_end_round
+            fe.settings.pause_enemy_sighted = d.pause_enemy_sighted
+            fe.settings.pause_mine_sighted = d.pause_mine_sighted
+            fe.settings.pause_party_killed = d.pause_party_killed
+            fe.settings.pause_action_menu = d.pause_action_menu
+            fe.settings.pause_triggers = d.pause_triggers
+        } else if screen == SCR_GRAPHICS {
+            fe.settings.gamma = d.gamma
+            fe.settings.shadows = d.shadows
+            fe.settings.grass = d.grass
+            fe.display_pending = true
+        } else if screen == SCR_GRAPHICS_ADV {
+            fe.settings.antialias = d.antialias
+            fe.settings.texture_quality = d.texture_quality
+            fe.settings.anisotropy = d.anisotropy
+            fe.settings.frame_buffer = d.frame_buffer
+            fe.settings.soft_shadows = d.soft_shadows
+            fe.settings.vsync = d.vsync
+            fe.display_pending = true
+        } else if screen == SCR_SOUND {
+            fe.settings.music = d.music
+            fe.settings.voice = d.voice
+            fe.settings.effects = d.effects
+            fe.settings.movie = d.movie
+            fe.sound_pending = true
+        } else if screen == SCR_SOUND_ADV {
+            fe.settings.eax = d.eax
+            fe.settings.force_software = d.force_software
+        } else if screen == SCR_MOUSE {
+            fe.settings.mouse_sensitivity = d.mouse_sensitivity
+            fe.settings.reverse_buttons = d.reverse_buttons
+        }
+    }
+
+    // A check box or slider of an options panel changed to `v`.
+    fn apply_value { mut fe: Front, screen: u32, tag: []u8, v: i32 } {
+        let on = v != 0
+        let s = &fe.settings
+        if screen == SCR_GAMEPLAY {
+            if slice::eq_bytes{ a = tag, b = "CB_INVERTCAM" } { s.mouse_look = on }
+            else if slice::eq_bytes{ a = tag, b = "CB_LEVELUP" } { s.auto_level_up = on }
+            else if slice::eq_bytes{ a = tag, b = "CB_AUTOSAVE" } { s.autosave = on }
+            else if slice::eq_bytes{ a = tag, b = "CB_REVERSE" } { s.reverse_minigame_y = on }
+            else if slice::eq_bytes{ a = tag, b = "CB_DISABLEMOVE" } { s.combat_movement = on }
+        } else if screen == SCR_AUTOPAUSE {
+            if slice::eq_bytes{ a = tag, b = "CB_ENDROUND" } { s.pause_end_round = on }
+            else if slice::eq_bytes{ a = tag, b = "CB_ENEMYSIGHTED" } { s.pause_enemy_sighted = on }
+            else if slice::eq_bytes{ a = tag, b = "CB_MINESIGHTED" } { s.pause_mine_sighted = on }
+            else if slice::eq_bytes{ a = tag, b = "CB_PARTYKILLED" } { s.pause_party_killed = on }
+            else if slice::eq_bytes{ a = tag, b = "CB_ACTIONMENU" } { s.pause_action_menu = on }
+            else if slice::eq_bytes{ a = tag, b = "CB_TRIGGERS" } { s.pause_triggers = on }
+        } else if screen == SCR_GRAPHICS {
+            if slice::eq_bytes{ a = tag, b = "SLI_GAMMA" } { s.gamma = v; fe.display_pending = true }
+            else if slice::eq_bytes{ a = tag, b = "CB_SHADOWS" } { s.shadows = on; fe.display_pending = true }
+            else if slice::eq_bytes{ a = tag, b = "CB_GRASS" } { s.grass = on; fe.display_pending = true }
+        } else if screen == SCR_GRAPHICS_ADV {
+            if slice::eq_bytes{ a = tag, b = "CB_FRAMEBUFF" } { s.frame_buffer = on }
+            else if slice::eq_bytes{ a = tag, b = "CB_SOFTSHADOWS" } { s.soft_shadows = on }
+            else if slice::eq_bytes{ a = tag, b = "CB_VSYNC" } { s.vsync = on }
+            fe.display_pending = true
+        } else if screen == SCR_SOUND {
+            if slice::eq_bytes{ a = tag, b = "SLI_MUSIC" } { s.music = v }
+            else if slice::eq_bytes{ a = tag, b = "SLI_VO" } { s.voice = v }
+            else if slice::eq_bytes{ a = tag, b = "SLI_FX" } { s.effects = v }
+            else if slice::eq_bytes{ a = tag, b = "SLI_MOVIE" } { s.movie = v }
+            fe.sound_pending = true
+        } else if screen == SCR_SOUND_ADV {
+            if slice::eq_bytes{ a = tag, b = "CB_FORCESOFTWARE" } { s.force_software = on }
+        } else if screen == SCR_MOUSE {
+            if slice::eq_bytes{ a = tag, b = "SLI_MOUSESEN" } { s.mouse_sensitivity = v }
+            else if slice::eq_bytes{ a = tag, b = "CB_REVBUTTONS" } { s.reverse_buttons = on }
+        }
+    }
+
+    // The arrows beside a choice button (difficulty, anti-aliasing, ...): the new value.
+    fn cycle { v: i32, count: i32, step: i32 } -> i32 {
+        let n = v + step
+        if n < 0 { return count - 1 }
+        if n >= count { return 0 }
+        return n
+    }
+
+    // Applies the volumes to the mixer's groups.
+    fn apply_sound { mut fe: Front, mixer: ?*mut mix::Mixer } {
+        fe.sound_pending = false
+        let m = mixer ifnull { return }
+        mix::set_group_volume{ m, group = mix::Group::music, volume = @as(f32, fe.settings.music) / 100.0 }
+        mix::set_group_volume{ m, group = mix::Group::voice, volume = @as(f32, fe.settings.voice) / 100.0 }
+        mix::set_group_volume{ m, group = mix::Group::sfx, volume = @as(f32, fe.settings.effects) / 100.0 }
+        mix::set_group_volume{ m, group = mix::Group::movie, volume = @as(f32, fe.settings.movie) / 100.0 }
+    }
+
+    // Choice buttons: which setting a left/right button pair edits.
+    fn change_choice { mut fe: Front, mut g: gui::Gui, p: u32, screen: u32, tag: []u8 } -> ! {
+        let left = tag.len > 5 and slice::eq_bytes{ a = tag[tag.len - 4..], b = "LEFT" }
+        let right = tag.len > 5 and tag.len >= 5 and slice::eq_bytes{ a = tag[tag.len - 5..], b = "RIGHT" }
+        if not left and not right { return }
+        let step: i32 = if left { -1 } else { 1 }
+        let base = if left { tag[..tag.len - 4] } else { tag[..tag.len - 5] }
+        let s = &fe.settings
+        if slice::eq_bytes{ a = base, b = "BTN_DIFF" } {
+            s.difficulty = cycle{ v = s.difficulty, count = 3, step }
+            try show_difficulty{ &g, p, d = s.difficulty }
+        } else if slice::eq_bytes{ a = base, b = "BTN_ANTIALIAS_" } or slice::eq_bytes{ a = base, b = "BTN_ANTIALIAS" } {
+            s.antialias = cycle{ v = s.antialias, count = 4, step }
+            try show_choice{ &g, p, tag = "BTN_ANTIALIAS", which = CH_AA, v = s.antialias }
+            fe.display_pending = true
+        } else if slice::eq_bytes{ a = base, b = "BTN_TEXQUAL" } {
+            s.texture_quality = cycle{ v = s.texture_quality, count = 3, step }
+            try show_choice{ &g, p, tag = "BTN_TEXQUAL", which = CH_TEX, v = s.texture_quality }
+            fe.display_pending = true
+        } else if slice::eq_bytes{ a = base, b = "BTN_ANISOTROPY" } {
+            s.anisotropy = cycle{ v = s.anisotropy, count = 4, step }
+            try show_choice{ &g, p, tag = "BTN_ANISOTROPY", which = CH_AF, v = s.anisotropy }
+            fe.display_pending = true
+        } else if slice::eq_bytes{ a = base, b = "BTN_EAX" } {
+            s.eax = not s.eax
+            try show_choice{ &g, p, tag = "BTN_EAX", which = CH_EAX, v = if s.eax { 1 } else { 0 } }
+        }
+    }
+
+    // Rebinds the controls of the top screen after its settings were reset.
+    fn rebind { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, screen: u32, p: u32 } -> ! {
+        try bind_screen{ &fe, &g, &fs, &dev, screen, p }
+    }
+
+    // One event from the GUI. Returns what the engine should do next.
+    fn on_event { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> Outcome {
+        let screen = screen_of{ &fe, panel = ev.panel }
+        if screen == 0 { return Outcome::running }
+        let p = ev.panel
+        if ev.kind == gui::EventKind::cancel {
+            if screen != SCR_MAIN { close_top{ &fe, &g, &fs, &dev } }
+            return Outcome::running
+        }
+        if screen == SCR_MAIN {
+            if ev.kind != gui::EventKind::activate { return Outcome::running }
+            if tag_is{ ev, tag = "BTN_NEWGAME" } {
+                return Outcome::new_game{ module = resref::truncate{ name = fe.start_module[..fe.start_len] } }
+            }
+            if tag_is{ ev, tag = "BTN_LOADGAME" } { open_screen{ &fe, &g, &fs, &dev, screen = SCR_LOAD } iferr {} }
+            if tag_is{ ev, tag = "BTN_MOVIES" } { open_screen{ &fe, &g, &fs, &dev, screen = SCR_MOVIES } iferr {} }
+            if tag_is{ ev, tag = "BTN_OPTIONS" } { open_screen{ &fe, &g, &fs, &dev, screen = SCR_OPTIONS } iferr {} }
+            if tag_is{ ev, tag = "BTN_EXIT" } { return Outcome::quit }
+            return Outcome::running
+        }
+        if screen == SCR_LOAD {
+            if ev.kind == gui::EventKind::row_selected {
+                show_save{ &fe, &g, &fs, &dev, p, row = ev.row } iferr {}
+            } else if ev.kind == gui::EventKind::row_activated {
+                return load_outcome{ &fe, row = ev.row }
+            } else if ev.kind == gui::EventKind::activate {
+                if tag_is{ ev, tag = "BTN_SAVELOAD" } { return load_outcome{ &fe, row = gui::list_selected{ &g, panel = p, tag = "LB_GAMES" } } }
+                if tag_is{ ev, tag = "BTN_BACK" } { close_top{ &fe, &g, &fs, &dev } }
+            }
+            return Outcome::running
+        }
+        if screen == SCR_MOVIES {
+            if ev.kind == gui::EventKind::row_activated {
+                fe.play_len = movie_label{ &fe, &fs, rm = g.rm, row = ev.user, into = fe.play_request[..] }
+            } else if ev.kind == gui::EventKind::activate and tag_is{ ev, tag = "BTN_BACK" } {
+                close_top{ &fe, &g, &fs, &dev }
+            }
+            return Outcome::running
+        }
+        // The options panels.
+        if ev.kind == gui::EventKind::value_changed and ev.control >= 0 {
+            // A row of the feedback list is a check box too.
+            apply_value{ &fe, screen, tag = ev.tag, v = ev.value }
+            return Outcome::running
+        }
+        if screen == SCR_FEEDBACK and ev.kind == gui::EventKind::row_selected {
+            let on = not gui::list_is_checked{ &g, panel = p, tag = "LB_OPTIONS", row = ev.row }
+            gui::list_set_checked{ &g, panel = p, tag = "LB_OPTIONS", row = ev.row, checked = on }
+            let s = &fe.settings
+            if ev.row == 0 { s.floating_numbers = on } else if ev.row == 1 { s.tutorial_popups = on } else if ev.row == 2 { s.status_summary = on }
+            else if ev.row == 3 { s.subtitles = on } else if ev.row == 4 { s.minimap = on } else if ev.row == 5 { s.tooltips = on }
+            return Outcome::running
+        }
+        if screen == SCR_RESOLUTION {
+            if ev.kind == gui::EventKind::row_activated or (ev.kind == gui::EventKind::activate and tag_is{ ev, tag = "BTN_OK" }) {
+                let row = gui::list_selected{ &g, panel = p, tag = "LB_RESOLUTIONS" }
+                if row >= 0 and row < 15 {
+                    fe.settings.width = MODES[@as(usize, row)][0]
+                    fe.settings.height = MODES[@as(usize, row)][1]
+                    fe.display_pending = true
+                }
+                close_top{ &fe, &g, &fs, &dev }
+            } else if ev.kind == gui::EventKind::activate and tag_is{ ev, tag = "BTN_CANCEL" } {
+                close_top{ &fe, &g, &fs, &dev }
+            }
+            return Outcome::running
+        }
+        if ev.kind != gui::EventKind::activate { return Outcome::running }
+        if tag_is{ ev, tag = "BTN_CANCEL" } and (screen == SCR_GRAPHICS_ADV or screen == SCR_SOUND_ADV) {
+            fe.settings = fe.snapshot
+            fe.display_pending = true
+            fe.sound_pending = true
+        }
+        if tag_is{ ev, tag = "BTN_BACK" } or tag_is{ ev, tag = "BTN_CANCEL" } or tag_is{ ev, tag = "BTN_EXIT" } {
+            close_top{ &fe, &g, &fs, &dev }
+            return Outcome::running
+        }
+        if tag_is{ ev, tag = "BTN_DEFAULT" } {
+            defaults_for{ &fe, screen }
+            rebind{ &fe, &g, &fs, &dev, screen, p } iferr {}
+            return Outcome::running
+        }
+        if screen == SCR_OPTIONS {
+            let next: u32 = if tag_is{ ev, tag = "BTN_GAMEPLAY" } { SCR_GAMEPLAY }
+                else if tag_is{ ev, tag = "BTN_FEEDBACK" } { SCR_FEEDBACK }
+                else if tag_is{ ev, tag = "BTN_AUTOPAUSE" } { SCR_AUTOPAUSE }
+                else if tag_is{ ev, tag = "BTN_GRAPHICS" } { SCR_GRAPHICS }
+                else if tag_is{ ev, tag = "BTN_SOUND" } { SCR_SOUND }
+                else { 0 }
+            if next != 0 { open_screen{ &fe, &g, &fs, &dev, screen = next } iferr {} }
+        } else if screen == SCR_GAMEPLAY {
+            if tag_is{ ev, tag = "BTN_MOUSE" } { open_screen{ &fe, &g, &fs, &dev, screen = SCR_MOUSE } iferr {} }
+            else { change_choice{ &fe, &g, p, screen, tag = ev.tag } iferr {} }
+        } else if screen == SCR_GRAPHICS {
+            if tag_is{ ev, tag = "BTN_RESOLUTION" } { open_screen{ &fe, &g, &fs, &dev, screen = SCR_RESOLUTION } iferr {} }
+            else if tag_is{ ev, tag = "BTN_ADVANCED" } { open_screen{ &fe, &g, &fs, &dev, screen = SCR_GRAPHICS_ADV } iferr {} }
+        } else if screen == SCR_SOUND {
+            if tag_is{ ev, tag = "BTN_ADVANCED" } { open_screen{ &fe, &g, &fs, &dev, screen = SCR_SOUND_ADV } iferr {} }
+        } else if screen == SCR_GRAPHICS_ADV or screen == SCR_SOUND_ADV {
+            change_choice{ &fe, &g, p, screen, tag = ev.tag } iferr {}
+        }
+        return Outcome::running
+    }
+}

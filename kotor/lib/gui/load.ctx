@@ -204,6 +204,7 @@ namespace gui {
         c.rows = slice::empty(Row){}
         c.selected_row = -1
         c.hover_row = -1
+        c.text_mode = false
         c.click_sound = 0
         c.hover_sound = 1
         c.tooltip = ""
@@ -221,6 +222,10 @@ namespace gui {
         if p.mode == Mode::placed {
             p.sx = p.x
             p.sy = p.y
+        } else if p.mode == Mode::dialog {
+            // A dialog ignores its file's position (CenterOnScreen).
+            p.sx = (g.ui_w - p.w) / 2
+            p.sy = (g.ui_h - p.h) / 2
         } else {
             p.sx = p.x + (g.ui_w - p.w) / 2
             p.sy = p.y + (g.ui_h - p.h) / 2
@@ -262,7 +267,7 @@ namespace gui {
             id = g.next_panel, name = resref::truncate{ name }, mode, modal, removing = false,
             x = 0, y = 0, w = 0, h = 0, border = no_border{}, color = white_color{}, has_color = false, alpha = 1.0,
             controls = list::new(Control, heap::Heap){ realloc = heap::alloc, heap = g.heap },
-            bytes, doc, focus = -1, open_sound = -1, sx = 0, sy = 0, shown = true, backdrop = 0,
+            bytes, doc, focus = -1, open_sound = -1, sx = 0, sy = 0, shown = true, background = true, backdrop = 0,
         } }
         g.next_panel = g.next_panel + 1
         read_panel{ &g, &fs, &dev, p } iferr err{ error } {

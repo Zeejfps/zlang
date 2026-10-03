@@ -1,0 +1,185 @@
+// menurun: the front end in a real window with real input, sound and time: the start-up movies,
+// then the main menu, the options, Load Game. A reference for how an engine loop drives
+// lib/frontend (docs/design/gui.md, "The front end"); game/main does the same plus a game.
+//
+//   kotor/tools/ctxc run kotor/tools/menurun                       until you quit
+//   kotor/tools/ctxc run kotor/tools/menurun -- --seconds 10       and leave after 10 s (a smoke test)
+//   kotor/tools/ctxc run kotor/tools/menurun -- --no-movies --size 1280x720 --scale 0
+//
+// Options: --game DIR, --size WxH, --scale S (0 auto), --no-movies, --no-audio, --seconds N.
+// New Game, Load Game and Quit print what the engine would do and, for Quit, leave.
+
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+
+struct Options { game: []u8, width: i32, height: i32, scale: f32, movies: bool, audio: bool, seconds: f64 }
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } -> i32 {
+    let o = parse_args{ &io, args } ifnull { return 2 }
+    let pages = mem::pages{ &mem, size = 536870912 } ifnull { return 1 }
+    let scratch = mem::pages{ &mem, size = 134217728 } ifnull { return 1 }
+    let mut heap = arena::new{ buf = pages }
+    let mut h = heap::new{ &mem }
+    run{ &io, &fs, &sdl, &heap, &h, scratch, o } iferr err{ error } {
+        _ = @fmt(&io, "menurun: failed: {}\n", error)
+        match error {
+            gpu::shader_failed{ log } => { _ = @fmt(&io, "{}\n", log) }
+            sdl::failed => { _ = @fmt(&io, "SDL: {}\n", sdl::last_error{ &sdl }) }
+            else => {}
+        }
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return 0
+}
+
+fn run {
+    mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut h: heap::Heap, scratch: alloc::Bytes, o: Options,
+} -> ! {
+    try sdl::init{ &sdl, flags = sdl::INIT_VIDEO | sdl::INIT_EVENTS }
+    defer sdl::quit{ &sdl }
+    let mut config = render::make_config{ title = "kotor", width = o.width, height = o.height, hidden = false }
+    let mut dev = try gpu::open{ &sdl, realloc = arena::alloc, &heap, config }
+    defer gpu::close{ &dev, &sdl }
+    let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, &heap, cap = render::default_capacity{} }
+    let mut rm = try res::open{ &fs, heap = &h, game = o.game }
+    defer res::close{ &fs, &rm }
+    let mut cache = material::new_cache{ heap = &h, scratch }
+    defer material::free_cache{ &cache, &dev }
+    let mut path_buf: [512]u8
+    let tlk_path = frontend::join_path{ into = path_buf[..], a = o.game, b = "dialog.tlk", c = "" }
+    let table = try tlk::load{ &fs, realloc = heap::alloc, heap = &h, path = tlk_path }
+    defer tlk::free{ t = table, realloc = heap::alloc, heap = &h }
+    let mut g = try gui::make{ heap = &h, rm, cache = &cache, width = o.width, height = o.height }
+    defer gui::free{ &g }
+    gui::set_tlk{ &g, table = &table }
+    try gui::load_defaults{ &g, &fs, &dev }
+    gui::set_cursor_visible{ &g, visible = true }
+    _ = sdl::SDL_ShowCursor{ &sdl, toggle = 0 }
+
+    // Sound: a device the mixer is topped up on every frame.
+    let mut mixer: ?*mut mix::Mixer = null
+    let mut adev: ?*mut audio::Device = null
+    if o.audio {
+        let opened = audio::open{ &sdl, rate = 44100, latency_ms = 80 } iferr { null }
+        if opened != null {
+            let slot = try alloc::new(audio::Device, heap::Heap){ realloc = heap::alloc, heap = &h, value = opened }
+            adev = slot
+            let m = try mix::make(heap::Heap){ realloc = heap::alloc, heap = &h, rate = slot.rate, voices_2d = 24, voices_3d = 16 }
+            mixer = m
+            gui::set_mixer{ &g, mixer = m }
+        }
+    }
+
+    let mut fe = frontend::make{ &fs, heap = &h, game = o.game, config_path = "kotor/out/kotor-settings.ini" }
+    fe.settings.disable_movies = fe.settings.disable_movies or not o.movies
+    fe.settings.gui_scale = o.scale
+    gui::set_screen{ &g, &fs, &dev, width = o.width, height = o.height, scale = fe.settings.gui_scale }
+    try frontend::begin{ &fe, &g, &fs, &dev, &sdl, mixer }
+
+    let freq = sdl::counter_frequency{ &sdl }
+    let start = sdl::counter{ &sdl }
+    let mut last = start
+    let mut running = true
+    while running {
+        let mut width = o.width
+        let mut height = o.height
+        while true {
+            let ev = sdl::poll{ &sdl } ifnull { break }
+            if ev is quit | close { running = false }
+            if ev is resized{ width = w, height = hh } {
+                width = w
+                height = hh
+                try gpu::resize{ &dev, width = @as(u32, w), height = @as(u32, hh) }
+                gui::set_screen{ &g, &fs, &dev, width = w, height = hh, scale = fe.settings.gui_scale }
+            }
+            _ = frontend::handle_event{ &fe, &g, ev, scale_x = 1.0, scale_y = 1.0 }
+        }
+        let now = sdl::counter{ &sdl }
+        let dt = @as(f32, @as(f64, now - last) / @as(f64, freq))
+        last = now
+        if o.seconds > 0.0 and @as(f64, now - start) / @as(f64, freq) > o.seconds { running = false }
+        let ad = adev
+        let mx = mixer
+        if ad != null and mx != null { try audio::update{ &sdl, dev = ad, m = mx } }
+        gui::update{ &g, dt }
+        let out = frontend::step{ &fe, &g, &fs, &dev, &sdl, output = adev, mixer, dt }
+        match out {
+            running => {}
+            new_game{ module } => { _ = @fmt(&io, "new game in {}\n", resref::bytes{ r = &module }) }
+            load_game{ folder, folder_len } => { _ = @fmt(&io, "load game {}\n", folder[..folder_len]) }
+            quit => { running = false }
+        }
+        if frontend::take_display_change{ &fe } {
+            _ = @fmt(&io, "display: {}x{} gamma {}\n", fe.settings.width, fe.settings.height, fe.settings.gamma)
+        }
+        render::begin_frame{ &frame, time = @as(f32, @as(f64, now - start) / @as(f64, freq)) }
+        frontend::draw{ &fe, &g, &frame, target = gpu::screen_size{ dev } }
+        gpu::submit{ &dev, frame = &frame } iferr { running = false }
+        gpu::present{ &dev, &sdl }
+    }
+    let a = adev
+    if a != null { _ = @fmt(&io, "audio underruns: {}\n", a.underruns) }
+    let m = mixer
+    if m != null { _ = @fmt(&io, "mixer errors: {}\n", m.errors) }
+    frontend::leave{ &fe, &g, &dev, mixer }
+    if a != null { audio::close{ &sdl, dev = a } }
+}
+
+fn parse_args { mut io: Io, args: Args } -> ?Options {
+    let mut o = Options{ game = DEFAULT_GAME, width = 1024, height = 768, scale = 1.0, movies = true, audio = true, seconds = 0.0 }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        if slice::eq_bytes{ a, b = "--no-movies" } {
+            o.movies = false
+        } else if slice::eq_bytes{ a, b = "--no-audio" } {
+            o.audio = false
+        } else if slice::eq_bytes{ a, b = "--game" } and i + 1 < args.len {
+            i = i + 1
+            o.game = args[i]
+        } else if slice::eq_bytes{ a, b = "--seconds" } and i + 1 < args.len {
+            i = i + 1
+            let text = utf8::from{ bytes = args[i] } iferr { return usage{ &io } }
+            o.seconds = utf8::parse_f64{ s = text } ifnull { return usage{ &io } }
+        } else if slice::eq_bytes{ a, b = "--scale" } and i + 1 < args.len {
+            i = i + 1
+            let text = utf8::from{ bytes = args[i] } iferr { return usage{ &io } }
+            o.scale = @as(f32, utf8::parse_f64{ s = text } ifnull { return usage{ &io } })
+        } else if slice::eq_bytes{ a, b = "--size" } and i + 1 < args.len {
+            i = i + 1
+            let s = args[i]
+            let mut x: usize = 0
+            while x < s.len and s[x] != 'x' { x = x + 1 }
+            if x >= s.len { return usage{ &io } }
+            let mut w: i32 = 0
+            let mut k: usize = 0
+            while k < x {
+                w = w * 10 + @as(i32, s[k] - '0')
+                k = k + 1
+            }
+            let mut hh: i32 = 0
+            k = x + 1
+            while k < s.len {
+                hh = hh * 10 + @as(i32, s[k] - '0')
+                k = k + 1
+            }
+            o.width = w
+            o.height = hh
+        } else {
+            return usage{ &io }
+        }
+        i = i + 1
+    }
+    return o
+}
+
+fn usage { mut io: Io } -> ?Options {
+    io::eprintln{ &io, s = "usage: menurun [--game DIR] [--size WxH] [--scale S] [--no-movies] [--no-audio] [--seconds N]" }
+    return null
+}
+
+namespace mr_out {
+    #write
+    fn put_cstring { mut io: Io, s: c::String } { io::write{ &io, to = io::Stream::out, bytes = c::bytes{ s } } }
+}

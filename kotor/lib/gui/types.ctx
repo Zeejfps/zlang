@@ -81,6 +81,7 @@ namespace gui {
         has_color: bool,
         icon: Img,                      // drawn at the row's left, when ok
         enabled: bool,
+        checked: bool,                  // rows of check-box prototypes
     }
 
     struct Control {
@@ -116,6 +117,7 @@ namespace gui {
         row_count: u32,
         first_row: i32,                 // the top visible row
         selected_row: i32,              // -1 none
+        text_mode: bool,                // a list box showing one wrapped text (message boxes) instead of rows
         hover_row: i32,                 // -1 none
         // sounds (indices into guisounds.2da)
         click_sound: i32,
@@ -154,6 +156,7 @@ namespace gui {
         // where the panel is on the screen (recomputed by place)
         sx: i32, sy: i32,
         shown: bool,                    // not hidden by a full-screen panel above it
+        background: bool,               // draw the panel's own COLOR and BORDER (a 3D view behind needs it off)
         backdrop: u32,                  // 0 back, 1 store, 2 pazaak, 3 map, 4 comp
     }
 
@@ -226,8 +229,10 @@ namespace gui {
         capture: Ref,
         capture_button: i32,
         capture_part: i32,
+        press_on_selected: bool,        // the press that began this capture landed on the already selected row
         cursor: u32,
         cursor_visible: bool,
+        hidden: bool,                   // draws and takes nothing (a movie plays over everything)
         cursors: [CURSORS]CursorSlot,
         // clocks
         time: f32,
@@ -239,8 +244,8 @@ namespace gui {
         tooltip_ref: Ref,
         key_repeat: f32,
         // backdrop textures by resolution tag and kind, loaded when first needed
-        backdrops: [5]Img,
-        backdrop_for: [5]i32,
+        backdrops: [6]Img,
+        backdrop_for: [6]i32,
         // sounds
         sounds: [SOUNDS]Sound,
         sound_volume: f32,

@@ -1,0 +1,225 @@
+// The front end as the engine drives it (docs/design/gui.md, "The front end"):
+//
+//   let mut fe = frontend::make{ &fs, heap = &h, game, config_path = "kotor-settings.ini" }
+//   try frontend::begin{ &fe, &g, &fs, &dev, &sdl, mixer }          // the start-up movies, then the menu
+//   // each frame, while the engine has no module running:
+//   for each event: used = frontend::handle_event{ &fe, &g, ev, sx, sy }
+//   match frontend::step{ &fe, &g, &fs, &dev, &sdl, output, mixer, dt } { running => {}, new_game{ module } => ..., ... }
+//   render::begin_frame{ &frame, time }
+//   frontend::draw{ &fe, &g, &fs, &dev, &frame }                    // the movie or the 3D background, then the GUI
+//   gpu::submit{ &dev, &frame }
+namespace frontend {
+    const STAGE_MOVIES: u32 = 0
+    const STAGE_MENU: u32 = 1
+
+    // The movies the original plays before the menu (docs/re/app.md, PlayLegalMovies).
+    fn queue_startup { mut fe: Front } {
+        fe.queue_count = 0
+        fe.queue_at = 0
+        let names: [3][]u8 = ["leclogo", "biologo", "legal"]
+        let mut i: usize = 0
+        while i < 3 {
+            fe.queue_lens[i] = copy_into{ dst = fe.queue[i][..], src = names[i] }
+            i = i + 1
+        }
+        fe.queue_count = 3
+    }
+
+    // Starts the front end: the start-up movies (unless the options or the install say no), then
+    // the main menu.
+    fn begin { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, mut sdl: sdl::Sdl, mixer: ?*mut mix::Mixer } -> ! {
+        let loaded = movie::load_tables(heap::Heap){ &fs, realloc = heap::alloc, heap = fe.heap, game = fe.game } iferr { null }
+        if loaded != null {
+            let t = try alloc::new(bink_tables::Tables, heap::Heap){ realloc = heap::alloc, heap = fe.heap, value = loaded }
+            fe.tables = t
+        }
+        fe.audio_clock = mixer != null
+        gui::set_small_fonts{ &g, on = fe.settings.small_fonts }
+        if not fe.settings.disable_movies and fe.tables != null {
+            queue_startup{ &fe }
+            fe.stage = STAGE_MOVIES
+            start_queued{ &fe, &g, &fs, &dev, mixer }
+            if fe.player != null { return }
+        }
+        try open_menu{ &fe, &g, &fs, &dev }
+    }
+
+    fn open_menu { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } -> ! {
+        fe.stage = STAGE_MENU
+        gui::set_hidden{ &g, hidden = false }
+        try open_screen{ &fe, &g, &fs, &dev, screen = SCR_MAIN }
+        if fe.scene == null and not fe.scene_failed {
+            fe.scene = make_scene{ &fe, &g, &fs, &dev }
+            fe.scene_failed = fe.scene == null
+        }
+        if fe.scene != null {
+            // The 3D scene stands in for the panel's still picture and its backdrop fill.
+            let p = top_panel{ &fe }
+            gui::set_visible{ &g, panel = p, tag = "LBL_3DVIEW", visible = false }
+            gui::set_background{ &g, panel = p, on = false }
+        }
+    }
+
+    // Opens the next movie of the queue, skipping ones that don't open; leaves `player` null when
+    // the queue runs out.
+    fn start_queued { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, mixer: ?*mut mix::Mixer } {
+        while fe.queue_at < fe.queue_count {
+            let i = fe.queue_at
+            fe.queue_at = fe.queue_at + 1
+            if start_movie{ &fe, &g, &fs, &dev, mixer, name = fe.queue[i][..fe.queue_lens[i]] } { return }
+        }
+    }
+
+    fn start_movie { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, mixer: ?*mut mix::Mixer, name: []u8 } -> bool {
+        let tables = fe.tables ifnull { return false }
+        let p = movie::open(heap::Heap){ &fs, &dev, realloc = heap::alloc, heap = fe.heap, tables, mixer, game = fe.game, name } iferr { return false }
+        let slot = alloc::new(movie::Player, heap::Heap){ realloc = heap::alloc, heap = fe.heap, value = p } iferr { return false }
+        fe.player = slot
+        gui::set_hidden{ &g, hidden = true }
+        return true
+    }
+
+    fn end_movie { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } {
+        let p = fe.player ifnull { return }
+        movie::close(heap::Heap){ &fs, &dev, realloc = heap::alloc, heap = fe.heap, p }
+        alloc::free(movie::Player, heap::Heap){ realloc = heap::alloc, heap = fe.heap, p }
+        fe.player = null
+    }
+
+    // Plays movie `name` (from movies/) over the menu, as the movie list does.
+    fn play_movie { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, mixer: ?*mut mix::Mixer, name: []u8 } -> bool {
+        if fe.player != null { return false }
+        fe.from_menu = true
+        return start_movie{ &fe, &g, &fs, &dev, mixer, name }
+    }
+
+    // Whether a movie is playing (the engine draws nothing else then).
+    fn is_playing { fe: *Front } -> bool {
+        return fe.player != null
+    }
+
+    // True once while there are options to apply to the display (resolution, full screen, v-sync,
+    // brightness, shadows ...): read `fe.settings` then.
+    fn take_display_change { mut fe: Front } -> bool {
+        let r = fe.display_pending
+        fe.display_pending = false
+        return r
+    }
+
+    // ---- input
+
+    // Offers a platform event to the front end: it ends a skippable movie (Escape, Enter, Space or
+    // a click), and otherwise goes to the GUI. Returns true when the event was used.
+    fn handle_event { mut fe: Front, mut g: gui::Gui, ev: sdl::Event, scale_x: f32, scale_y: f32 } -> bool {
+        if fe.player != null {
+            let mut skip = false
+            if ev is key{ down, keycode } and down and (keycode == sdl::key::ESCAPE or keycode == sdl::key::RETURN or keycode == sdl::key::SPACE) { skip = true }
+            if ev is mouse_button{ down } and down { skip = true }
+            if skip {
+                let p = fe.player ifnull { return true }
+                movie::skip{ p }
+            }
+            return true
+        }
+        return gui::handle_event{ &g, ev, scale_x, scale_y }
+    }
+
+    // ---- the frame
+
+    // One frame of the front end. `output` and `mixer` are the audio device and mixer the engine
+    // renders each frame (null for none).
+    fn step {
+        mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, mut sdl: sdl::Sdl,
+        output: ?*audio::Device, mixer: ?*mut mix::Mixer, dt: f32,
+    } -> Outcome {
+        if fe.sound_pending { apply_sound{ &fe, mixer } }
+        let pl = fe.player
+        if pl != null {
+            let state = movie::update{ &fs, &sdl, &dev, p = pl, output, dt = @as(f64, dt), audio_clock = fe.audio_clock }
+            if state == movie::State::finished {
+                end_movie{ &fe, &g, &fs, &dev }
+                if fe.from_menu {
+                    fe.from_menu = false
+                    gui::set_hidden{ &g, hidden = false }
+                } else if fe.stage == STAGE_MOVIES {
+                    start_queued{ &fe, &g, &fs, &dev, mixer }
+                    if fe.player == null { open_menu{ &fe, &g, &fs, &dev } iferr {} }
+                }
+            }
+            return Outcome::running
+        }
+        if fe.stage == STAGE_MOVIES {
+            open_menu{ &fe, &g, &fs, &dev } iferr {}
+            return Outcome::running
+        }
+        update_scene{ &fe, dt }
+        start_music{ &fe, &g, &fs, mixer }
+        let n = g.events.len
+        let mut i: usize = 0
+        let mut out = Outcome::running
+        while i < n and i < g.events.len {
+            let ev = list::items{ list = g.events }[i]
+            let o = on_event{ &fe, &g, &fs, &dev, ev }
+            if not (o is running) {
+                out = o
+                break
+            }
+            i = i + 1
+        }
+        gui::clear_events{ &g }
+        if fe.play_len > 0 {
+            let mut name: [24]u8
+            let len = copy_into{ dst = name[..], src = fe.play_request[..fe.play_len] }
+            fe.play_len = 0
+            _ = play_movie{ &fe, &g, &fs, &dev, mixer, name = name[..len] }
+        }
+        return out
+    }
+
+    // What goes in the frame before the GUI: the movie, or the main menu's 3D background.
+    fn draw { mut fe: Front, mut g: gui::Gui, mut frame: render::Frame, target: render::Size } {
+        let pl = fe.player
+        if pl != null {
+            movie::draw{ p = pl, &frame, width = @as(f32, g.win_w), height = @as(f32, g.win_h) }
+            return
+        }
+        gui::draw_backdrop_pass{ &g, &frame }
+        draw_scene{ &fe, &g, &frame, target }
+        gui::draw_panels{ &g, &frame }
+    }
+
+    // ---- music
+
+    // The main menu's theme, mus_theme_cult from streammusic/, looping in the music group
+    // (docs/re/gui.md: ShowMainMenu starts it at full volume). Once, when the menu is up.
+    fn start_music { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mixer: ?*mut mix::Mixer } {
+        if fe.music_started { return }
+        let m = mixer ifnull { return }
+        fe.music_started = true
+        let loaded = res::load{ &fs, rm = g.rm, name = "mus_theme_cult", kind = restype::Type::wav, realloc = heap::alloc, heap = fe.heap } iferr { return }
+        let bytes = loaded ifnull { return }
+        let mut p = mix::sound_2d{ group = mix::Group::music, volume = 1.0 }
+        p.looping = true
+        let h = mix::play{ m, bytes, p } iferr {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = fe.heap, mem = bytes, count = 0 }
+            return
+        }
+        fe.music = h
+        fe.music_bytes = bytes
+    }
+
+    // Leaves the front end for the game: closes its panels, stops the music, frees the 3D scene.
+    // The engine calls it on new_game and load_game, before it loads the module.
+    fn leave { mut fe: Front, mut g: gui::Gui, mut dev: gpu::Device, mixer: ?*mut mix::Mixer } {
+        let mut i: usize = 0
+        while i < fe.depth {
+            gui::close{ &g, id = fe.stack[i].panel }
+            i = i + 1
+        }
+        fe.depth = 0
+        let m = mixer
+        if m != null { mix::stop{ m, h = fe.music, fade = 1.0 } }
+        free_scene{ &fe, &dev }
+        release_shot{ &fe, &dev }
+    }
+}

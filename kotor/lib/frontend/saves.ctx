@@ -1,0 +1,157 @@
+// The save list: the folders of the install's Saves/ (read-only), each with its savenfo.res
+// (docs/re/party-items-saves.md, "Save folder"): the name the player gave, the area, the play
+// time, the party's portraits, and Screen.tga for the picture. Folders are `NNNNNN - Name`: 0 is
+// the quick save, 1 the autosave, manual saves are 2 and up.
+namespace frontend {
+    struct SaveEntry {
+        number: i32,
+        folder: [64]u8, folder_len: usize,
+        label: [64]u8, label_len: usize,        // what the list shows
+        area: [64]u8, area_len: usize,
+        module: [24]u8, module_len: usize,
+        seconds: u32,
+        portraits: [3]resref::ResRef, portrait_count: usize,
+        corrupt: bool,
+    }
+
+    struct SaveList {
+        entries: []mut SaveEntry,
+        count: usize,
+    }
+
+    fn copy_into { dst: []mut u8, src: []u8 } -> usize {
+        let n = if src.len < dst.len { src.len } else { dst.len }
+        slice::copy(u8){ dst = dst[..n], src = src[..n] }
+        return n
+    }
+
+    // The leading number of a folder name like "000002 - Game1", or -1.
+    fn folder_number { name: []u8 } -> i32 {
+        if name.len < 6 { return -1 }
+        let mut n: i32 = 0
+        let mut i: usize = 0
+        while i < 6 {
+            if name[i] < '0' or name[i] > '9' { return -1 }
+            n = n * 10 + @as(i32, name[i] - '0')
+            i = i + 1
+        }
+        return n
+    }
+
+    fn join_path { into: []mut u8, a: []u8, b: []u8, c: []u8 } -> []u8 {
+        let mut n: usize = 0
+        n = n + copy_into{ dst = into[n..], src = a }
+        n = n + copy_into{ dst = into[n..], src = "/" }
+        n = n + copy_into{ dst = into[n..], src = b }
+        if c.len > 0 {
+            n = n + copy_into{ dst = into[n..], src = "/" }
+            n = n + copy_into{ dst = into[n..], src = c }
+        }
+        return into[..n]
+    }
+
+    // Lists the saves under `dir` (the install's Saves/): newest numbers last, quick and auto
+    // saves first. Folders without a readable savenfo.res are listed as corrupt.
+    fn list_saves { mut fs: Fs, heap: *mut heap::Heap, dir: []u8 } -> !SaveList {
+        let names = try fs::list(heap::Heap){ &fs, heap, realloc = heap::alloc, path = dir }
+        let entries = try alloc::resize(SaveEntry, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(SaveEntry){}, count = if names.len == 0 { 1 } else { names.len } }
+        let mut list = SaveList{ entries, count = 0 }
+        let mut i: usize = 0
+        while i < names.len {
+            let number = folder_number{ name = names[i] }
+            if number >= 0 and names[i].len < 64 {
+                let mut e = read_save{ &fs, heap, dir, folder = names[i], number }
+                list.entries[list.count] = e
+                list.count = list.count + 1
+            }
+            i = i + 1
+        }
+        sort_saves{ list = list.entries[..list.count] }
+        return list
+    }
+
+    fn sort_saves { list: []mut SaveEntry } {
+        let mut i: usize = 1
+        while i < list.len {
+            let tmp = list[i]
+            let mut j = i
+            while j > 0 and list[j - 1].number > tmp.number {
+                list[j] = list[j - 1]
+                j = j - 1
+            }
+            list[j] = tmp
+            i = i + 1
+        }
+    }
+
+    fn read_save { mut fs: Fs, heap: *mut heap::Heap, dir: []u8, folder: []u8, number: i32 } -> SaveEntry {
+        let mut e: SaveEntry
+        e.number = number
+        e.folder_len = copy_into{ dst = e.folder[..], src = folder }
+        let mut pb: [300]u8
+        let path = join_path{ into = pb[..], a = dir, b = folder, c = "savenfo.res" }
+        let bytes = fs::read_all(heap::Heap){ &fs, heap, realloc = heap::alloc, path } iferr {
+            e.corrupt = true
+            e.label_len = copy_into{ dst = e.label[..], src = folder }
+            return e
+        }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = bytes, count = 0 }
+        let doc = gff::parse{ data = bytes, realloc = heap::alloc, heap } iferr {
+            e.corrupt = true
+            e.label_len = copy_into{ dst = e.label[..], src = folder }
+            return e
+        }
+        defer gff::free(heap::Heap){ doc, realloc = heap::alloc, heap }
+        let root = gff::ROOT
+        let name = gff::get_string{ doc, s = root, label = "SAVEGAMENAME" } ifnull ""
+        e.area_len = copy_into{ dst = e.area[..], src = gff::get_string{ doc, s = root, label = "AREANAME" } ifnull "" }
+        e.module_len = copy_into{ dst = e.module[..], src = gff::get_string{ doc, s = root, label = "LASTMODULE" } ifnull "" }
+        e.seconds = gff::get_dword{ doc, s = root, label = "TIMEPLAYED" } ifnull 0
+        if number == 0 {
+            e.label_len = copy_into{ dst = e.label[..], src = "Quick Save" }
+        } else if number == 1 {
+            e.label_len = copy_into{ dst = e.label[..], src = "Auto Save" }
+        } else if name.len > 0 {
+            e.label_len = copy_into{ dst = e.label[..], src = name }
+        } else {
+            e.label_len = copy_into{ dst = e.label[..], src = folder }
+        }
+        let keys: [3][]u8 = ["PORTRAIT0", "PORTRAIT1", "PORTRAIT2"]
+        let mut k: usize = 0
+        while k < 3 {
+            let pr = gff::get_resref{ doc, s = root, label = keys[k] } ifnull ""
+            if pr.len > 0 {
+                e.portraits[e.portrait_count] = resref::truncate{ name = pr }
+                e.portrait_count = e.portrait_count + 1
+            }
+            k = k + 1
+        }
+        return e
+    }
+
+    fn free_saves { heap: *mut heap::Heap, list: SaveList } {
+        _ = alloc::resize(SaveEntry, heap::Heap){ realloc = heap::alloc, heap, mem = list.entries, count = 0 }
+    }
+
+    // Loads a save's Screen.tga as a texture (null when it has none); `scratch` is decoding space
+    // (the shared cache's) and is reset after.
+    fn load_screenshot {
+        mut fs: Fs, mut dev: gpu::Device, heap: *mut heap::Heap, mut scratch: arena::Arena, dir: []u8, folder: []u8,
+    } -> !?render::Texture {
+        let mut pb: [300]u8
+        let path = join_path{ into = pb[..], a = dir, b = folder, c = "Screen.tga" }
+        let bytes = fs::read_all(heap::Heap){ &fs, heap, realloc = heap::alloc, path } iferr { return null }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = bytes, count = 0 }
+        let t = tex::read_tga{ realloc = arena::alloc, heap = &scratch, bytes } iferr { return null }
+        let texture = material::upload{ &dev, &scratch, t, props = material::no_props{} } iferr { return null }
+        arena::reset{ heap = &scratch }
+        return texture
+    }
+
+    // "1h 23m" style play time.
+    fn play_time { mut b: utf8::Builder(heap::Heap), seconds: u32 } -> ! {
+        let h = seconds / 3600
+        let m = (seconds / 60) % 60
+        try @fmt(&b, "{}h {}m", h, m)
+    }
+}

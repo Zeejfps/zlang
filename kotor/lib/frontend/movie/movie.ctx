@@ -1,0 +1,366 @@
+// The movie player: a Bink movie (lib/video) decoded a few frames at a time, its picture shown
+// through the render seam and its sound heard through the mixer. ctxlang has no threads, so nothing
+// runs behind the caller's back: the game loop calls `update` and `draw` once a frame while a movie
+// plays, and `close` when it is done.
+//
+//   let tables = try movie::load_tables{ &fs, realloc = heap::alloc, heap = &h, game }          // once
+//   let mut p = try movie::open{ &fs, &dev, realloc = heap::alloc, heap = &h, tables = &tables, mixer = m, game, name = "legal" }
+//   while true {
+//       let state = movie::update{ &fs, &sdl, &dev, &p, output = &audio_dev, dt, audio_clock = true }
+//       if state == movie::State::finished { break }
+//       render::begin_frame{ &frame, time }
+//       movie::draw{ &p, &frame, width, height }
+//       try gpu::submit{ &dev, frame = &frame }
+//       gpu::present{ &dev, &sdl }
+//       try audio::update{ &sdl, dev = &audio_dev, m }              // the caller keeps the mixer running
+//   }
+//   movie::close{ &fs, &dev, realloc = heap::alloc, heap = &h, &p }
+//
+// The clock. Frame n is due when the clock reaches n / frame rate. With sound the clock is the
+// sound: `audio::heard` on the movie's feed (or `mix::played` when the caller has no device, as in
+// a headless run that renders the mixer itself), so a late picture is dropped and the sound never
+// is; without sound (legal.bik) or with `audio_clock = false` it is the sum of the `dt`s given,
+// so a run with a fixed `dt` is reproducible. The player never reads the time itself.
+//
+// Each update decodes the frames that are due (at most MAX_PER_UPDATE, so a stall is caught up
+// over several updates, not in one long frame), feeds each one's sound to the mixer, and uploads
+// only the last picture. A movie that fails in the middle (a bad frame, a lost texture) is
+// reported `finished`, never a panic: the player is closed in the same way as after the last frame.
+namespace movie {
+    const MAX_PER_UPDATE: u32 = 6       // frames decoded by one update, about 1 ms each
+
+    enum State: u8 { playing, finished }
+
+    // What a movie did, for logs and tests.
+    struct Stats {
+        decoded: u32,                   // frames decoded
+        shown: u32,                     // pictures uploaded
+        dropped: u32,                   // frames decoded but not shown: a later one was due as well
+        audio_fed: u64,                 // sound frames (one sample per channel) the mixer took
+        audio_dropped: u64,             // sound frames it had no room for
+    }
+
+    struct Player {
+        movie: bink::Movie,
+        y: render::Texture,             // grey8 planes: Y at the picture's size, U and V at half
+        u: render::Texture,
+        v: render::Texture,
+        mixer: ?*mut mix::Mixer,
+        feed: mix::Handle,              // the movie's sound in the mixer (has_audio)
+        has_audio: bool,                // the feed was made and is not yet stopped
+        feed_ended: bool,               // end_feed was called: no more sound comes
+        channels: usize,
+        packet_frames: usize,           // the most sound frames one video frame carries
+        time: f64,                      // the clock, in seconds from the start
+        updates: u32,
+        failed: bool,                   // a frame couldn't be decoded or shown
+        failed_at: u32,                 // the frame it happened at
+        finished: bool,                 // update says so from now on
+        closed: bool,
+        stats: Stats,
+    }
+
+    // ---- start and stop
+
+    // The codec's tables, from GAME/binkw32.dll: once at start-up, kept by the caller for as long as
+    // any movie plays. An error means no movies can play.
+    fn load_tables(S) { mut fs: Fs, realloc: alloc::Fn(S), mut heap: S, game: []u8 } -> !bink_tables::Tables {
+        let file = try path::join{ realloc, &heap, dir = game, name = "binkw32.dll" }
+        defer _ = alloc::resize(u8, S){ realloc, &heap, mem = file, count = 0 }
+        return try bink_tables::load{ &fs, realloc, &heap, path = file }
+    }
+
+    // Opens GAME/movies/NAME.bik (NAME without extension, or with one) and makes the three plane
+    // textures, black until the first picture. With a `mixer` and a movie that has sound, the sound
+    // starts a feed in the `movie` group; without either the movie plays silent. Fails if the file
+    // can't be read as a Bink movie or a texture can't be made.
+    fn open(S) { mut fs: Fs, mut dev: gpu::Device, realloc: alloc::Fn(S), mut heap: S, tables: *bink_tables::Tables,
+                 mixer: ?*mut mix::Mixer, game: []u8, name: []u8 } -> !Player {
+        let file = try movie_path{ realloc, &heap, game, name }
+        defer _ = alloc::resize(u8, S){ realloc, &heap, mem = file, count = 0 }
+        let mut m = try bink::open{ &fs, realloc, &heap, path = file, tables }
+        let planes = create_planes{ &dev, &m } iferr err{ error } {
+            bink::close{ &fs, realloc, &heap, m = &m }
+            return error
+        }
+        let channels: usize = m.audio_channels
+        let feed = start_feed{ mixer, rate = m.audio_rate, channels = m.audio_channels }
+        let zero = mix::Handle{ slot = 0, id = 0 }
+        return Player{
+            movie = m, y = planes.y, u = planes.u, v = planes.v,
+            mixer, feed = feed ifnull zero, has_audio = feed != null, feed_ended = false,
+            channels, packet_frames = if channels == 0 { 0 } else { m.pcm.len / channels },
+            time = 0.0, updates = 0, failed = false, failed_at = 0, finished = false, closed = false,
+            stats = Stats{ decoded = 0, shown = 0, dropped = 0, audio_fed = 0, audio_dropped = 0 },
+        }
+    }
+
+    // Stops the sound, frees the textures and the decoder. Safe to call twice.
+    fn close(S) { mut fs: Fs, mut dev: gpu::Device, realloc: alloc::Fn(S), mut heap: S, mut p: Player } {
+        if p.closed { return }
+        stop_audio{ &p }
+        gpu::free_texture{ &dev, t = p.y }
+        gpu::free_texture{ &dev, t = p.u }
+        gpu::free_texture{ &dev, t = p.v }
+        bink::close{ &fs, realloc, &heap, m = &p.movie }
+        p.closed = true
+        p.finished = true
+    }
+
+    // Ends the movie at once (Esc, a click): its unplayed sound is dropped. `update` reports
+    // `finished` from now on; the caller still closes it.
+    fn skip { mut p: Player } {
+        stop_audio{ &p }
+        p.finished = true
+    }
+
+    // ---- per frame
+
+    // Moves the movie forward to the clock. `dt` is the seconds since the last call (the first
+    // call's is ignored: the movie starts when it is first updated, not when it was opened);
+    // `audio_clock` takes the time from the sound's playing instead (`output` is the audio device
+    // for `audio::heard`, or null to count what the mixer has rendered). `finished` once the last
+    // frame has had its time, or after a mid-stream error.
+    fn update { mut fs: Fs, mut sdl: sdl::Sdl, mut dev: gpu::Device, mut p: Player, output: ?*audio::Device, dt: f64, audio_clock: bool } -> State {
+        if p.finished { return State::finished }
+        let step = if p.updates == 0 { 0.0 } else { dt }
+        let from_sound: ?f64 = if audio_clock and p.has_audio { sound_time{ &sdl, output, m = p.mixer, h = p.feed } } else { null }
+        let mut t = p.time + step
+        if from_sound != null {
+            // A mixer with nothing left to play stops the sound's clock, though the last of it is
+            // still on its way to the speakers (and the last frames, which carry no sound of their
+            // own, are still to come): from then on the clock is the steps again.
+            let heard = from_sound
+            if not sound_drained{ p = &p } or heard > t { t = heard }
+        }
+        if t < p.time { t = p.time }               // the clock never runs back
+        p.time = t
+        p.updates = p.updates + 1
+
+        let mut n: u32 = 0
+        while n < MAX_PER_UPDATE {
+            let ready = next_ready{ p = &p, t, wait_for_room = audio_clock }
+            if not ready { break }
+            let got = bink::next{ &fs, m = &p.movie } iferr {
+                p.failed = true
+                p.failed_at = p.movie.frame
+                break
+            }
+            let frame = got ifnull {
+                p.failed = true
+                p.failed_at = p.movie.frame
+                break
+            }
+            n = n + 1
+            p.stats.decoded = p.stats.decoded + 1
+            feed_sound{ &p, samples = frame.audio }
+            // Only the last picture due is worth the upload.
+            let more = next_ready{ p = &p, t, wait_for_room = audio_clock }
+            if more and n < MAX_PER_UPDATE {
+                p.stats.dropped = p.stats.dropped + 1
+            } else {
+                upload_picture{ &dev, p = &p, frame } iferr {
+                    p.failed = true
+                    p.failed_at = frame.number
+                    break
+                }
+                p.stats.shown = p.stats.shown + 1
+            }
+        }
+
+        // After the last frame the picture stays for its own duration; the sound has been ended so
+        // that its voice finishes by itself.
+        if p.failed or p.movie.frame >= p.movie.header.frames {
+            end_audio{ &p }
+            let over = t >= duration_seconds{ header = p.movie.header }
+            if p.failed or over { p.finished = true }
+        }
+        return if p.finished { State::finished } else { State::playing }
+    }
+
+    // True if the next frame is due at time `t` and, when the clock is the sound (so waiting for
+    // room can't stall it), the mixer has room for the sound it will bring.
+    fn next_ready { p: *Player, t: f64, wait_for_room: bool } -> bool {
+        if p.failed or p.movie.frame >= p.movie.header.frames { return false }
+        let due = frame_seconds{ header = p.movie.header, frame = p.movie.frame }
+        if due > t { return false }
+        if wait_for_room and p.has_audio {
+            let mx = p.mixer ifnull { return true }
+            if mix::feed_room{ m = mx, h = p.feed } < p.packet_frames { return false }
+        }
+        return true
+    }
+
+    fn frame_seconds { header: bink::Header, frame: u32 } -> f64 {
+        return @as(f64, bink::frame_time_us{ header, frame }) / 1000000.0
+    }
+
+    fn duration_seconds { header: bink::Header } -> f64 {
+        return @as(f64, bink::duration_us{ header }) / 1000000.0
+    }
+
+    // How far the sound has been heard, or null if the movie has none playing (the feed ended and
+    // its voice finished: the clock goes on by `dt` from where it was).
+    fn sound_time { mut sdl: sdl::Sdl, output: ?*audio::Device, m: ?*mut mix::Mixer, h: mix::Handle } -> ?f64 {
+        let mx = m ifnull { return null }
+        let d = output ifnull { return mix::played{ m = mx, h } }
+        return audio::heard{ &sdl, dev = d.*, m = mx, h }
+    }
+
+    // True if the mixer has played everything the movie fed it (up to the 1024 frames its voice
+    // holds on to), so its clock no longer moves.
+    fn sound_drained { p: *Player } -> bool {
+        let mx = p.mixer ifnull { return false }
+        return mix::feed_room{ m = mx, h = p.feed } * p.channels >= mix::FEED_RING
+    }
+
+    // Gives the mixer a frame's sound; what it has no room for is dropped (and counted): a player
+    // whose caller doesn't render the mixer shouldn't hang on it.
+    fn feed_sound { mut p: Player, samples: []i16 } {
+        if not p.has_audio or samples.len == 0 or p.channels == 0 { return }
+        let mx = p.mixer ifnull { return }
+        let frames = samples.len / p.channels
+        let took = mix::feed{ m = mx, h = p.feed, samples }
+        p.stats.audio_fed = p.stats.audio_fed + @as(u64, took)
+        p.stats.audio_dropped = p.stats.audio_dropped + @as(u64, frames - took)
+    }
+
+    // No more sound comes: the voice ends when it has played what the mixer holds.
+    fn end_audio { mut p: Player } {
+        if not p.has_audio or p.feed_ended { return }
+        let mx = p.mixer ifnull { return }
+        mix::end_feed{ m = mx, h = p.feed }
+        p.feed_ended = true
+    }
+
+    fn stop_audio { mut p: Player } {
+        if not p.has_audio { return }
+        p.has_audio = false
+        let mx = p.mixer ifnull { return }
+        mix::stop{ m = mx, h = p.feed, fade = 0.0 }
+    }
+
+    // ---- pictures
+
+    struct Planes { y: render::Texture, u: render::Texture, v: render::Texture }
+
+    // The three textures, from the decoder's first (black) picture, so that a movie that has not
+    // been updated yet draws black.
+    fn create_planes { mut dev: gpu::Device, mut m: bink::Movie } -> !Planes {
+        let y = try create_plane{ &dev, d = m.video, p = 0 }
+        let u = create_plane{ &dev, d = m.video, p = 1 } iferr err{ error } {
+            gpu::free_texture{ &dev, t = y }
+            return error
+        }
+        let v = create_plane{ &dev, d = m.video, p = 2 } iferr err{ error } {
+            gpu::free_texture{ &dev, t = y }
+            gpu::free_texture{ &dev, t = u }
+            return error
+        }
+        return Planes{ y, u, v }
+    }
+
+    fn create_plane { mut dev: gpu::Device, d: bink_video::Decoder, p: u32 } -> !render::Texture {
+        let pl = bink_video::plane{ d, p }
+        let w: usize = pl.width
+        let h: usize = pl.height
+        let mut desc = render::make_texture_desc{ format = render::PixelFormat::grey8, width = pl.width, height = pl.height, levels = 1 }
+        desc.wrap_u = render::Wrap::clamp
+        desc.wrap_v = render::Wrap::clamp
+        return try gpu::create_texture{ &dev, desc, data = pl.pixels[..w * h] }
+    }
+
+    fn upload_picture { mut dev: gpu::Device, p: *Player, frame: bink::Frame } -> ! {
+        try upload_plane{ &dev, t = p.y, plane = frame.y }
+        try upload_plane{ &dev, t = p.u, plane = frame.u }
+        try upload_plane{ &dev, t = p.v, plane = frame.v }
+    }
+
+    // A plane's rows are `stride` apart (a multiple of 16: every KOTOR movie is 640 wide, so the
+    // rows are packed and it goes up in one piece); otherwise row by row.
+    fn upload_plane { mut dev: gpu::Device, t: render::Texture, plane: bink_video::Plane } -> ! {
+        let w: usize = plane.width
+        let h: usize = plane.height
+        let grey = render::PixelFormat::grey8
+        if plane.stride == w {
+            try gpu::update_texture{ &dev, t, level = 0, x = 0, y = 0, width = plane.width, height = plane.height, format = grey, data = plane.pixels[..w * h] }
+            return
+        }
+        let mut row: usize = 0
+        while row < h {
+            let at = row * plane.stride
+            try gpu::update_texture{ &dev, t, level = 0, x = 0, y = @trunc(u32, row), width = plane.width, height = 1, format = grey, data = plane.pixels[at..at + w] }
+            row = row + 1
+        }
+    }
+
+    // ---- drawing
+
+    // Black over the whole window and the picture on it, its aspect kept: as wide as the window,
+    // or as high if that is too tall, centred. A UI pass of its own (render::begin_ui), `width`
+    // by `height` in the pixels the caller lays out in.
+    fn draw { p: *Player, mut frame: render::Frame, width: f32, height: f32 } {
+        render::begin_ui{ &frame, width, height, target = null }
+        render::fill_rect{ &frame, rect = render::rect{ x = 0.0, y = 0.0, w = width, h = height }, color = render::rgba{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 } }
+        let mut q = render::make_quad{ rect = fit_picture{ p, width, height }, color = render::white{} }
+        q.image = render::Image::yuv{ y = p.y, u = p.u, v = p.v }
+        // The planes are stored top row first, as the decoder makes them: v runs down.
+        q.uv = render::UvRect{ u0 = 0.0, v0 = 0.0, u1 = 1.0, v1 = 1.0 }
+        render::add_quad{ &frame, quad = q }
+    }
+
+    // Where `draw` puts the picture in a window of width by height, on whole pixels.
+    fn fit_picture { p: *Player, width: f32, height: f32 } -> render::Rect {
+        let aspect = @as(f32, p.movie.header.width) / @as(f32, p.movie.header.height)
+        let mut w = width
+        let mut h = width / aspect
+        if h > height {
+            h = height
+            w = height * aspect
+        }
+        w = round_pixel{ v = w }
+        h = round_pixel{ v = h }
+        return render::rect{ x = round_pixel{ v = (width - w) * 0.5 }, y = round_pixel{ v = (height - h) * 0.5 }, w, h }
+    }
+
+    fn round_pixel { v: f32 } -> f32 {
+        if v <= 0.0 { return 0.0 }
+        return @as(f32, @as(i32, v + 0.5))
+    }
+
+    // ---- the files
+
+    // GAME/movies/NAME.bik in memory from `realloc`, which the caller frees. A NAME that has an
+    // extension keeps it. (Memory from the allocator, not a buffer on the stack: the movie
+    // would count as derived from a local, and `open` couldn't return it.)
+    fn movie_path(S) { realloc: alloc::Fn(S), mut heap: S, game: []u8, name: []u8 } -> !alloc::Bytes {
+        let dir: []u8 = "movies/"
+        let ext: []u8 = if text::find_byte{ s = name, c = '.' } == null { ".bik" } else { "" }
+        let sep: usize = if game.len > 0 and game[game.len - 1] != '/' and game[game.len - 1] != '\\' { 1 } else { 0 }
+        let n = game.len + sep + dir.len + name.len + ext.len
+        let out = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = n }
+        let mut at: usize = 0
+        slice::copy(u8){ dst = out[at..at + game.len], src = game }
+        at = at + game.len
+        if sep == 1 {
+            out[at] = '/'
+            at = at + 1
+        }
+        slice::copy(u8){ dst = out[at..at + dir.len], src = dir }
+        at = at + dir.len
+        slice::copy(u8){ dst = out[at..at + name.len], src = name }
+        at = at + name.len
+        slice::copy(u8){ dst = out[at..at + ext.len], src = ext }
+        return out
+    }
+
+    // The movie's sound as a feed in the mixer, at its own rate (the mixer resamples), or null if
+    // there is no mixer, no sound or no voice: the movie then plays silent.
+    fn start_feed { mixer: ?*mut mix::Mixer, rate: u32, channels: u32 } -> ?mix::Handle {
+        let mx = mixer ifnull { return null }
+        if rate == 0 { return null }
+        let mut prm = mix::sound_2d{ group = mix::Group::movie, volume = 1.0 }
+        prm.priority = 255                 // nothing takes a movie's voice
+        return mix::play_feed{ m = mx, rate, channels, p = prm } iferr { return null }
+    }
+}

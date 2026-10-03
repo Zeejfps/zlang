@@ -14,7 +14,8 @@
 const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
 
 struct Options {
-    game: []u8, out: []u8, width: i32, height: i32, all: bool, hover: []u8, select: []u8, fill: []u8,
+    game: []u8, out: []u8, width: i32, height: i32, all: bool, hover: []u8, select: []u8, fill: []u8, click: []u8,
+    keys: []u8, cursor: bool, list: bool,
     scale: f32, first_name: usize,
 }
 
@@ -108,6 +109,16 @@ fn render_one {
     }
     scan{ &io, &fs, &g, &tally, name }
     let p = gui::find_panel{ &g, id } ifnull { return }
+    if o.list {
+        _ = @fmt(&io, "{} {}x{}\n", name, p.w, p.h)
+        let cs = list::items{ list = p.controls }
+        let mut ci: usize = 0
+        while ci < cs.len {
+            let c = &cs[ci]
+            _ = @fmt(&io, "  id {} type {} {} at {},{} {}x{} strref {} text {}\n", c.id, c.kind, c.tag, c.x, c.y, c.w, c.h, c.text.strref, c.text.text)
+            ci = ci + 1
+        }
+    }
     // The window: 800x600, or the file's own size when it is bigger.
     let mut w = o.width
     let mut hgt = o.height
@@ -116,6 +127,7 @@ fn render_one {
     gpu::resize{ &dev, width = @as(u32, w), height = @as(u32, hgt) } iferr {}
     gui::set_screen{ &g, &fs, &dev, width = w, height = hgt, scale = o.scale }
     gui::ensure_backdrop{ &g, &fs, &dev, kind = 0 }
+    gui::set_cursor_visible{ &g, visible = o.cursor }
     if o.fill.len > 0 { fake_rows{ &g, id, spec = o.fill } }
     if o.select.len > 0 { select_row{ &g, id, spec = o.select } }
     if o.hover.len > 0 {
@@ -124,6 +136,31 @@ fn render_one {
             _ = gui::handle_event{ &g, ev = sdl::Event::mouse_motion{ x = @as(i32, r.x + r.w / 2.0), y = @as(i32, r.y + r.h / 2.0), dx = 0, dy = 0, buttons = 0 }, scale_x = 1.0, scale_y = 1.0 }
         }
     }
+    if o.click.len > 0 {
+        let r = gui::control_rect{ &g, panel = id, tag = o.click }
+        if r != null {
+            let cx = @as(i32, r.x + r.w / 2.0)
+            let cy = @as(i32, r.y + r.h / 2.0)
+            _ = gui::handle_event{ &g, ev = sdl::Event::mouse_motion{ x = cx, y = cy, dx = 0, dy = 0, buttons = 0 }, scale_x = 1.0, scale_y = 1.0 }
+            let used = gui::handle_event{ &g, ev = sdl::Event::mouse_button{ down = true, button = sdl::BUTTON_LEFT, clicks = 1, x = cx, y = cy }, scale_x = 1.0, scale_y = 1.0 }
+            _ = @fmt(&io, "press used: {}\n", used)
+            _ = gui::handle_event{ &g, ev = sdl::Event::mouse_button{ down = false, button = sdl::BUTTON_LEFT, clicks = 1, x = cx, y = cy }, scale_x = 1.0, scale_y = 1.0 }
+        }
+    }
+    // --keys: d u l r e x for down up left right enter escape
+    let mut ki: usize = 0
+    while ki < o.keys.len {
+        let kc: i32 = if o.keys[ki] == 'd' { sdl::key::DOWN } else if o.keys[ki] == 'u' { sdl::key::UP } else if o.keys[ki] == 'l' { sdl::key::LEFT } else if o.keys[ki] == 'r' { sdl::key::RIGHT } else if o.keys[ki] == 'e' { sdl::key::RETURN } else { sdl::key::ESCAPE }
+        _ = gui::handle_event{ &g, ev = sdl::Event::key{ down = true, repeat = false, scancode = 0, keycode = kc, mods = 0 }, scale_x = 1.0, scale_y = 1.0 }
+        ki = ki + 1
+    }
+    let evs = gui::take_events{ &g }
+    let mut ei: usize = 0
+    while ei < evs.len {
+        _ = @fmt(&io, "event {} control {} tag {} value {} row {}\n", @as(u32, evs[ei].kind), evs[ei].control, evs[ei].tag, evs[ei].value, evs[ei].row)
+        ei = ei + 1
+    }
+    gui::clear_events{ &g }
     gui::update{ &g, dt = 0.5 }
     render::begin_frame{ &frame, time = 0.0 }
     gui::draw{ &g, &frame }
@@ -146,7 +183,7 @@ fn render_one {
 // Full-screen menus (the 640x480 files) are centred over the backdrop; the HUD and tooltips
 // stay where their files put them; the rest are dialogs.
 fn pick_mode { name: []u8 } -> gui::Mode {
-    if ci::starts_with{ s = name, prefix = "mipc" } or ci::starts_with{ s = name, prefix = "tooltip" } or ci::starts_with{ s = name, prefix = "mainmenu" } or ci::starts_with{ s = name, prefix = "mi8" } or ci::eq{ a = name, b = "maininterface" } {
+    if ci::starts_with{ s = name, prefix = "mipc" } or ci::starts_with{ s = name, prefix = "tooltip" } or ci::starts_with{ s = name, prefix = "mi8" } or ci::eq{ a = name, b = "maininterface" } {
         return gui::Mode::placed
     }
     return gui::Mode::full_screen
@@ -313,7 +350,7 @@ fn make_dir { mut fs: Fs, path: []u8 } {
 fn parse_args { mut io: Io, args: Args } -> ?Options {
     let mut o = Options{
         game = DEFAULT_GAME, out = "kotor/out/gui", width = 800, height = 600, all = false,
-        hover = "", select = "", fill = "", scale = 1.0, first_name = 0,
+        hover = "", select = "", fill = "", click = "", keys = "", cursor = false, list = false, scale = 1.0, first_name = 0,
     }
     let mut i: usize = 0
     while i < args.len {
@@ -332,6 +369,16 @@ fn parse_args { mut io: Io, args: Args } -> ?Options {
         } else if slice::eq_bytes{ a, b = "--select" } and i + 1 < args.len {
             i = i + 1
             o.select = args[i]
+        } else if slice::eq_bytes{ a, b = "--click" } and i + 1 < args.len {
+            i = i + 1
+            o.click = args[i]
+        } else if slice::eq_bytes{ a, b = "--keys" } and i + 1 < args.len {
+            i = i + 1
+            o.keys = args[i]
+        } else if slice::eq_bytes{ a, b = "--list" } {
+            o.list = true
+        } else if slice::eq_bytes{ a, b = "--cursor" } {
+            o.cursor = true
         } else if slice::eq_bytes{ a, b = "--fill" } and i + 1 < args.len {
             i = i + 1
             o.fill = args[i]

@@ -1,0 +1,303 @@
+// movietest: plays a movie through lib/frontend/movie and checks what it does.
+//
+//   kotor/tools/ctxc run kotor/tools/movietest -- NAME [--game DIR] [--at SECONDS ...] [--out DIR]
+//                                                       [--headless] [--show] [--dt SECONDS] [--wall-clock]
+//
+// Headless (the default): a hidden 800x600 window, a fixed step (--dt, 1/30 s) and no sound device.
+// The mixer is rendered here in step with the movie's clock, so the movie follows what the mixer
+// has played (movie::update's audio clock, with no device) and a run is reproducible. At each time
+// given by --at the composed frame (black bars and picture, as movie::draw makes it) is written to
+// OUT/NAME_<t>.png (default kotor/out/movie/); at the end it prints the frames decoded, shown and
+// dropped, the sound frames fed against the movie's length, the clock, and whether the movie ended
+// by itself. --wall-clock takes the movie's time from the steps even when it has sound.
+//
+// --show plays it in a real window with real time and the sound device until it ends, Escape or a
+// click. If no sound device opens the movie plays silent.
+//
+// NAME is a file in GAME/movies (`legal`, `01a`). Exit status 1 if it can't be opened.
+
+const WIDTH: i32 = 800
+const HEIGHT: i32 = 600
+const MAX_TIMES: usize = 16
+
+struct Options {
+    name: []u8,
+    game: []u8,
+    out_dir: []u8,
+    at: [16]f64,                    // seconds into the movie to save the picture at
+    at_text: [16][]u8,              // as given, for the file names
+    at_count: usize,
+    show: bool,
+    dt: f64,
+    wall_clock: bool,
+}
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } -> i32 {
+    let o = parse_args{ &io, args } ifnull { return 2 }
+    let pages = mem::pages{ &mem, size = 268435456 } ifnull {
+        io::eprintln{ &io, s = "movietest: out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf = pages }
+    let mut h = heap::new{ &mem }
+    run{ &io, &fs, &sdl, &heap, &h, o } iferr err{ error } {
+        _ = @fmt(&io, "movietest: failed: {}\n", error)
+        match error {
+            gpu::shader_failed{ log } => { _ = @fmt(&io, "{}\n", log) }
+            sdl::failed => { _ = @fmt(&io, "SDL: {}\n", sdl::last_error{ &sdl }) }
+            else => {}
+        }
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return 0
+}
+
+fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut h: heap::Heap, o: Options } -> ! {
+    try sdl::init{ &sdl, flags = sdl::INIT_VIDEO | sdl::INIT_EVENTS }
+    defer sdl::quit{ &sdl }
+    let config = render::make_config{ title = "movietest", width = WIDTH, height = HEIGHT, hidden = not o.show }
+    let mut dev = try gpu::open{ &sdl, realloc = arena::alloc, &heap, config }
+    defer gpu::close{ &dev, &sdl }
+    let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, &heap, cap = render::default_capacity{} }
+    make_dir{ &fs, path = o.out_dir }
+
+    let mut tables = try movie::load_tables{ &fs, realloc = heap::alloc, heap = &h, game = o.game }
+    let size = gpu::screen_size{ dev }
+    let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
+
+    if o.show {
+        let opened = audio::open{ &sdl, rate = 44100, latency_ms = 60 } iferr err{ error } {
+            _ = @fmt(&io, "no sound device ({}): playing silent\n", error)
+            null
+        }
+        if opened != null {
+            let adev = try alloc::new(audio::Device, arena::Arena){ realloc = arena::alloc, &heap, value = opened }
+            defer audio::close{ &sdl, dev = adev }
+            let m = try mix::make{ realloc = arena::alloc, &heap, rate = adev.rate, voices_2d = 24, voices_3d = 16 }
+            try play{ &io, &fs, &sdl, &dev, &frame, &h, &tables, mixer = m, adev, rate = adev.rate, pixels, o }
+            return
+        }
+        try play{ &io, &fs, &sdl, &dev, &frame, &h, &tables, mixer = null, adev = null, rate = 44100, pixels, o }
+        return
+    }
+    let m = try mix::make{ realloc = arena::alloc, &heap, rate = 44100, voices_2d = 24, voices_3d = 16 }
+    try play{ &io, &fs, &sdl, &dev, &frame, &h, &tables, mixer = m, adev = null, rate = 44100, pixels, o }
+}
+
+// Opens the movie, runs it to its end (or a skip), and prints what happened.
+fn play { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut dev: gpu::Device, mut frame: render::Frame, mut h: heap::Heap,
+          mut tables: bink_tables::Tables, mixer: ?*mut mix::Mixer, adev: ?*mut audio::Device, rate: u32, pixels: []mut u8, o: Options } -> ! {
+    let baseline = h.live
+    let mut p = try movie::open{ &fs, &dev, realloc = heap::alloc, heap = &h, tables = &tables, mixer, game = o.game, name = o.name }
+    let head = p.movie.header
+    let sound_rate = p.movie.audio_rate
+    let sound_channels = p.movie.audio_channels
+    let duration = @as(f64, bink::duration_us{ header = head }) / 1000000.0
+    _ = @fmt(&io, "{}: {}x{}, {} frames at {}/{} fps = {} s, sound {} Hz x {}\n", o.name, head.width, head.height, head.frames, head.rate_num, head.rate_den, duration, sound_rate, sound_channels)
+
+    let freq = sdl::counter_frequency{ &sdl }
+    let mut last = sdl::counter{ &sdl }
+    let mut progress = last
+    let mut owed: f64 = 0.0
+    let mut scratch: [4096]i16
+    let mut shot: usize = 0
+    let mut updates: u32 = 0
+    let mut skipped = false
+    let mut ended = false
+    let limit = @as(u32, duration / o.dt) * 2 + 600
+    while true {
+        if o.show {
+            while true {
+                let e = sdl::poll{ &sdl } ifnull { break }
+                if e is quit | close { skipped = true }
+                if e is key{ down, keycode } and down and keycode == sdl::key::ESCAPE { skipped = true }
+                if e is mouse_button{ down } and down { skipped = true }
+            }
+            if skipped { movie::skip{ &p } }
+        }
+        let now = sdl::counter{ &sdl }
+        let dt = if o.show { @as(f64, now - last) / @as(f64, freq) } else { o.dt }
+        last = now
+        let state = movie::update{ &fs, &sdl, &dev, &p, output = adev, dt, audio_clock = not o.wall_clock }
+        updates = updates + 1
+        pump_sound{ &sdl, mixer, adev, show = o.show, seconds = dt, rate, &owed, scratch = scratch[..] } iferr {
+            _ = @fmt(&io, "sound device failed at {} s\n", p.time)
+        }
+        // A line a second while it plays for real, to see a stuck clock.
+        if o.show and now - progress >= freq {
+            progress = now
+            _ = @fmt(&io, "  clock {} s, {} updates, {} frames shown\n", p.time, updates, p.stats.shown)
+            io::flush{ &io }
+        }
+
+        let wanted = shot < o.at_count and p.time >= o.at[shot]
+        if o.show or wanted {
+            render::begin_frame{ &frame, time = @as(f32, p.time) }
+            let screen = gpu::screen_size{ dev }
+            movie::draw{ &p, &frame, width = @as(f32, screen.width), height = @as(f32, screen.height) }
+            try gpu::submit{ &dev, frame = &frame }
+            while shot < o.at_count and p.time >= o.at[shot] {
+                try save_screen{ &io, &fs, &dev, &h, pixels, dir = o.out_dir, name = o.name, tag = o.at_text[shot] }
+                shot = shot + 1
+            }
+            if o.show { gpu::present{ &dev, &sdl } }
+        }
+        if state == movie::State::finished {
+            ended = not skipped
+            break
+        }
+        if not o.show and updates > limit { break }
+    }
+
+    // What it did, before close empties the movie.
+    let stats = p.stats
+    let clock = p.time
+    let failed = p.failed
+    let failed_at = p.failed_at
+    movie::close{ &fs, &dev, realloc = heap::alloc, heap = &h, &p }
+    _ = @fmt(&io, "frames: {} decoded, {} shown, {} dropped\n", stats.decoded, stats.shown, stats.dropped)
+    if sound_rate != 0 {
+        _ = @fmt(&io, "sound: {} frames fed = {} s of {} s, {} dropped\n", stats.audio_fed, @as(f64, stats.audio_fed) / @as(f64, sound_rate), duration, stats.audio_dropped)
+    } else {
+        _ = @fmt(&io, "sound: none\n")
+    }
+    _ = @fmt(&io, "time: clock {} s in {} updates ({} s each); ended by itself: {}; skipped: {}; failed: {} at frame {}\n",
+        clock, updates, o.dt, ended, skipped, failed, failed_at)
+    _ = @fmt(&io, "memory: {} bytes live before open, {} after close\n", baseline, h.live)
+}
+
+// Keeps the sound going: the device's queue topped up (--show), or, headless, the mixer rendered
+// for the `seconds` that passed (a whole number of frames, the rest carried in `owed`) and thrown away.
+fn pump_sound { mut sdl: sdl::Sdl, mixer: ?*mut mix::Mixer, adev: ?*mut audio::Device, show: bool, seconds: f64, rate: u32, mut owed: f64, scratch: []mut i16 } -> ! {
+    let m = mixer ifnull { return }
+    if show {
+        if adev != null { try audio::update{ &sdl, dev = adev, m } }
+        return
+    }
+    owed = owed + seconds * @as(f64, rate)
+    let mut n = @as(usize, owed)
+    owed = owed - @as(f64, n)
+    while n > 0 {
+        let k = if n < scratch.len / 2 { n } else { scratch.len / 2 }
+        mix::render{ m, into = scratch[..2 * k] }
+        n = n - k
+    }
+}
+
+// The screen as a PNG, OUT/NAME_TAG.png.
+fn save_screen { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut h: heap::Heap, pixels: []mut u8, dir: []u8, name: []u8, tag: []u8 } -> ! {
+    let size = gpu::screen_size{ dev }
+    _ = try gpu::read_screen{ &dev, into = pixels }
+    let mut buf: [512]u8
+    let mut at: usize = 0
+    at = append{ into = buf[..], at, s = dir }
+    at = append{ into = buf[..], at, s = "/" }
+    at = append{ into = buf[..], at, s = name }
+    at = append{ into = buf[..], at, s = "_" }
+    at = append{ into = buf[..], at, s = tag }
+    at = append{ into = buf[..], at, s = ".png" }
+    let path = buf[..at]
+    let image = png::Image{ width = size.width, height = size.height, rgba = pixels }
+    try png::save{ &fs, realloc = heap::alloc, heap = &h, path, image, alpha = false, bottom_up = false }
+    _ = @fmt(&io, "wrote {}\n", path)
+}
+
+fn append { into: []mut u8, at: usize, s: []u8 } -> usize {
+    let mut n = at
+    let mut i: usize = 0
+    while i < s.len and n < into.len {
+        into[n] = s[i]
+        n = n + 1
+        i = i + 1
+    }
+    return n
+}
+
+fn make_dir { mut fs: Fs, path: []u8 } {
+    let mut i: usize = 1
+    while i <= path.len {
+        if i == path.len or path[i] == '/' {
+            fs::make_dir{ &fs, path = path[..i] } iferr {}
+        }
+        i = i + 1
+    }
+}
+
+// ---- arguments
+
+fn parse_args { mut io: Io, args: Args } -> ?Options {
+    let mut o = Options{
+        name = "", game = "F:/Steam/steamapps/common/swkotor", out_dir = "kotor/out/movie",
+        at = [0.0; 16], at_text = ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], at_count = 0,
+        show = false, dt = 1.0 / 30.0, wall_clock = false,
+    }
+    let mut after_at = false
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        let was_at = after_at
+        after_at = false
+        if slice::eq_bytes{ a, b = "--game" } and i + 1 < args.len {
+            i = i + 1
+            o.game = args[i]
+        } else if slice::eq_bytes{ a, b = "--out" } and i + 1 < args.len {
+            i = i + 1
+            o.out_dir = args[i]
+        } else if slice::eq_bytes{ a, b = "--at" } and i + 1 < args.len {
+            i = i + 1
+            if not add_time{ o = &o, text = args[i] } { return usage{ &io } }
+            after_at = true
+        } else if slice::eq_bytes{ a, b = "--dt" } and i + 1 < args.len {
+            i = i + 1
+            let text = utf8::from{ bytes = args[i] } iferr { return usage{ &io } }
+            o.dt = utf8::parse_f64{ s = text } ifnull { return usage{ &io } }
+            if o.dt <= 0.0 or o.dt > 10.0 { return usage{ &io } }
+        } else if slice::eq_bytes{ a, b = "--show" } {
+            o.show = true
+        } else if slice::eq_bytes{ a, b = "--headless" } {
+            o.show = false
+        } else if slice::eq_bytes{ a, b = "--wall-clock" } {
+            o.wall_clock = true
+        } else if a.len > 0 and a[0] != '-' {
+            // More numbers after --at S are more times; anything else is the movie's name.
+            if was_at and add_time{ o = &o, text = a } {
+                after_at = true
+            } else if o.name.len == 0 {
+                o.name = a
+            } else {
+                return usage{ &io }
+            }
+        } else {
+            return usage{ &io }
+        }
+        i = i + 1
+    }
+    if o.name.len == 0 { return usage{ &io } }
+    return o
+}
+
+// Adds a time from `text`; false if it isn't a number or there are too many.
+fn add_time { mut o: Options, text: []u8 } -> bool {
+    if o.at_count >= MAX_TIMES { return false }
+    let s = utf8::from{ bytes = text } iferr { return false }
+    let t = utf8::parse_f64{ s } ifnull { return false }
+    if t < 0.0 { return false }
+    o.at[o.at_count] = t
+    o.at_text[o.at_count] = text
+    o.at_count = o.at_count + 1
+    return true
+}
+
+// ---- @fmt of C strings into standard output (the error message from SDL)
+
+namespace mt_out {
+    #write
+    fn put_cstring { mut io: Io, s: c::String } { io::write{ &io, to = io::Stream::out, bytes = c::bytes{ s } } }
+}
+
+fn usage { mut io: Io } -> ?Options {
+    io::eprintln{ &io, s = "usage: movietest NAME [--game DIR] [--at SECONDS ...] [--out DIR] [--headless] [--show] [--dt SECONDS] [--wall-clock]" }
+    return null
+}
