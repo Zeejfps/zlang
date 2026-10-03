@@ -347,13 +347,7 @@ namespace mdl {
 
     // Names compare without case: the data mixes it freely.
     fn same_name { a: []u8, b: []u8 } -> bool {
-        if a.len != b.len { return false }
-        let mut i: usize = 0
-        while i < a.len {
-            if ascii::to_lower{ c = a[i] } != ascii::to_lower{ c = b[i] } { return false }
-            i = i + 1
-        }
-        return true
+        return ci::eq{ a, b }
     }
 
     // The tree index of the node called `name`.
@@ -1513,8 +1507,7 @@ namespace mdl {
     }
 
     fn i16_at { d: []u8, at: usize } -> i16 {
-        let mut u = u16_at{ d, at }
-        return @cast(*i16, &u).*
+        return le::i16_of_bits{ bits = u16_at{ d, at } }
     }
 
     fn u32_at { d: []u8, at: usize } -> u32 {
@@ -1527,13 +1520,11 @@ namespace mdl {
     }
 
     fn i32_at { d: []u8, at: usize } -> i32 {
-        let mut u = u32_at{ d, at }
-        return @cast(*i32, &u).*
+        return le::i32_of_bits{ bits = u32_at{ d, at } }
     }
 
     fn f32_at { d: []u8, at: usize } -> f32 {
-        let mut u = u32_at{ d, at }
-        return @cast(*f32, &u).*
+        return le::f32_of_bits{ bits = u32_at{ d, at } }
     }
 
     fn vec3_at { d: []u8, at: usize } -> math::Vec3 {

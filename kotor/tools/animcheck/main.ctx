@@ -3,27 +3,27 @@
 //   kotor/tools/ctxc run kotor/tools/animcheck                      every model
 //   kotor/tools/ctxc run kotor/tools/animcheck -- --every 10        every tenth model
 //   kotor/tools/ctxc run kotor/tools/animcheck -- --model p_bastilabb
-//   kotor/tools/ctxc run kotor/tools/animcheck -- --dir DIR         another extraction
+//   kotor/tools/ctxc run kotor/tools/animcheck -- --model p_bastilabb --dump run 0.2
+//   kotor/tools/ctxc run kotor/tools/animcheck -- --game DIR        another install
 //
-// The models come from the extraction (python kotor/tools/py/extract_models.py; see mdlcheck).
-// For each model it takes every animation its supermodel chain offers (the nearest of each
-// name, as the engine looks them up), binds it, and samples it at five times; every node
-// transform, alpha and skin palette matrix must be finite, every orientation unit, and in the
-// bind pose every palette matrix the identity. It plays each animation once through a player
-// (each event must fire once) and blends each into the next mid-transition. Supermodels are
-// loaded on demand, through the same lookup the engine will pass. Exits 1 on a failure.
+// The models come through lib/res, as the engine finds them. For each model it takes every
+// animation its supermodel chain offers (the nearest of each name, as the engine looks them up),
+// binds it, and samples it at five times; every node transform, alpha and skin palette matrix
+// must be finite, every orientation unit, and in the bind pose every palette matrix the
+// identity. It plays each animation once through a player (each event must fire once) and blends
+// each into the next mid-transition. Supermodels are loaded on demand, through the same lookup
+// the engine will pass. --dump prints each node's model-space position in one animation at one
+// time, to compare with kotor/tools/py/mdlrender.py. Exits 1 on a failure.
 
 type Heap = arena::Arena
 
-struct Options { dir: []u8, every: usize, only: []u8, dump: []u8, time: f32 }
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
 
-struct Entry { container: []u8, resref: []u8 }
+struct Options { game: []u8, every: usize, only: []u8, dump: []u8, time: f32 }
 
 // Models by resref, loaded once: supermodels, which many models share.
 struct Cache {
-    dir: []u8,
-    entries: []Entry,
-    index: map::Map([]u8, usize, Heap),              // resref -> its last entry, as kres resolves
+    rm: res::Manager,
     loaded: map::Map([]u8, usize, Heap),             // resref -> index in models
     models: list::List(*mdl::Model, Heap),
     keep: *mut Heap,
@@ -44,11 +44,12 @@ struct Counts {
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let opts = parse_args{ &io, args } ifnull { return 2 }
-    let keep_mem = mem::pages{ &mem, size = 2147483648 } ifnull { return out_of_memory{ &io } }
+    let keep_mem = mem::pages{ &mem, size = 1073741824 } ifnull { return out_of_memory{ &io } }
     let scratch_mem = mem::pages{ &mem, size = 536870912 } ifnull { return out_of_memory{ &io } }
     let mut keep = arena::new{ buf = keep_mem }
     let mut scratch = arena::new{ buf = scratch_mem }
-    let c = run{ &io, &fs, &keep, &scratch, opts } iferr err{ error } {
+    let mut h = heap::new{ &mem }
+    let c = run{ &io, &fs, &h, &keep, &scratch, opts } iferr err{ error } {
         _ = @fmt(&io, "animcheck: {}\n", error)
         io::flush{ &io }
         return 1
@@ -62,56 +63,38 @@ fn out_of_memory { mut io: Io } -> i32 {
     return 1
 }
 
-fn run { mut io: Io, mut fs: Fs, mut keep: Heap, mut scratch: Heap, opts: Options } -> !Counts {
-    let mut path: [1024]u8
-    let manifest = try fs::read_all{ &fs, heap = &keep, realloc = arena::alloc, path = append{ into = path[..], len = 0, s = opts.dir, more = "/models.txt" } }
-    let mut entries = list::new(Entry, Heap){ realloc = arena::alloc, heap = &keep }
-    let mut start: usize = 0
-    let mut i: usize = 0
-    while i < manifest.len {
-        if manifest[i] == '\n' {
-            let line = manifest[start..i]
-            let mut tab: usize = 0
-            while tab < line.len and line[tab] != '\t' { tab = tab + 1 }
-            if tab < line.len { try list::push{ list = &entries, item = Entry{ container = line[..tab], resref = line[tab + 1..] } } }
-            start = i + 1
-        }
-        i = i + 1
-    }
+fn run { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut keep: Heap, mut scratch: Heap, opts: Options } -> !Counts {
+    let rm = try res::open{ &fs, heap = &h, game = opts.game }
     let mut cache = Cache{
-        dir = opts.dir,
-        entries = list::items{ list = entries },
-        index = map::new([]u8, usize, Heap){ realloc = arena::alloc, heap = &keep, hash = map::hash_bytes, eq = slice::eq_bytes },
+        rm,
         loaded = map::new([]u8, usize, Heap){ realloc = arena::alloc, heap = &keep, hash = map::hash_bytes, eq = slice::eq_bytes },
         models = list::new(*mdl::Model, Heap){ realloc = arena::alloc, heap = &keep },
         keep = &keep,
         missing = 0,
         failed = 0,
     }
-    i = 0
-    while i < cache.entries.len {
-        try map::put{ m = &cache.index, key = cache.entries[i].resref, value = i }
-        i = i + 1
-    }
+    defer res::close{ &fs, rm = &cache.rm }
+    let found = try res::list_type{ rm = cache.rm, kind = restype::Type::mdl, realloc = arena::alloc, heap = &keep }
 
     let mut c: Counts
-    i = 0
-    while i < cache.entries.len {
-        let e = cache.entries[i]
-        let pick = if opts.only.len > 0 { mdl::same_name{ a = e.resref, b = opts.only } } else { i % opts.every == 0 }
+    let mut i: usize = 0
+    while i < found.len {
+        let f = found[i]
+        let name = resref::bytes{ r = &f.name }
+        let pick = if opts.only.len > 0 { mdl::same_name{ a = name, b = opts.only } } else { i % opts.every == 0 }
         i = i + 1
         if not pick { continue }
         c.models = c.models + 1
         arena::reset{ heap = &scratch }
-        let model = load{ &fs, heap = &scratch, dir = opts.dir, e } iferr err{ error } {
-            report{ &io, &c, what = "model doesn't load", name = e.resref, detail = @fmt("{}", error) }
+        let model = load{ &fs, rm = cache.rm, heap = &scratch, name } iferr err{ error } {
+            report{ &io, &c, what = "model doesn't load", name, detail = @fmt("{}", error) }
             continue
         }
         if opts.dump.len > 0 {
             dump{ &io, &fs, &scratch, &cache, model = &model, anim = opts.dump, time = opts.time }
             continue
         }
-        check_model{ &io, &fs, &scratch, &cache, &c, name = e.resref, model = &model }
+        check_model{ &io, &fs, &scratch, &cache, &c, name, model = &model }
     }
 
     _ = @fmt(&io, "animcheck: {} models, {} with animations; {} animations, {} poses, {} skin palettes, {} events fired\n",
@@ -315,48 +298,33 @@ fn lookup_model { mut fs: Fs, mut cache: Cache, name: []u8 } -> ?*mdl::Model {
     // buffer counts as derived from it (docs/friction/models.md).
     let have = map::get{ m = cache.loaded, key }
     if have != null { return list::items{ list = cache.models }[have] }
-    let at = map::get{ m = cache.index, key } ifnull {
-        cache.missing = cache.missing + 1
+    let model = load{ &fs, rm = cache.rm, heap = cache.keep, name } iferr err{ error } {
+        match error {
+            not_found => { cache.missing = cache.missing + 1 }
+            else => { cache.failed = cache.failed + 1 }
+        }
         return null
     }
-    let e = cache.entries[at]
-    let model = load{ &fs, heap = cache.keep, dir = cache.dir, e } iferr {
-        cache.failed = cache.failed + 1
-        return null
-    }
+    let kept = copy{ heap = cache.keep, s = key } iferr { return null }
     let p = alloc::new(mdl::Model, Heap){ realloc = arena::alloc, heap = cache.keep, value = model } iferr { return null }
-    map::put{ m = &cache.loaded, key = e.resref, value = cache.models.len } iferr { return null }
+    map::put{ m = &cache.loaded, key = kept, value = cache.models.len } iferr { return null }
     list::push{ list = &cache.models, item = p } iferr { return null }
     return p
 }
 
-fn load { mut fs: Fs, mut heap: Heap, dir: []u8, e: Entry } -> !mdl::Model {
-    // The paths are built in the arena, not on the stack: a result read through a path in a
-    // local buffer counts as derived from that buffer, and the model is returned
-    // (docs/friction/models.md).
-    let a = try alloc::resize(u8, Heap){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = 1024 }
-    let b = try alloc::resize(u8, Heap){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = 1024 }
-    let base_a = append{ into = a, len = 0, s = dir, more = "/" }
-    let base_b = append{ into = b, len = 0, s = dir, more = "/" }
-    let mid_a = append{ into = a, len = base_a.len, s = e.container, more = "/" }
-    let mid_b = append{ into = b, len = base_b.len, s = e.container, more = "/" }
-    let mdl_path = append{ into = a, len = mid_a.len, s = e.resref, more = ".mdl" }
-    let mdx_path = append{ into = b, len = mid_b.len, s = e.resref, more = ".mdx" }
-    // The file buffers go in the same arena as the model: a scratch arena is reset per model,
-    // and a supermodel's few megabytes of file stay with it.
-    let mdl_bytes = try fs::read_all{ &fs, &heap, realloc = arena::alloc, path = mdl_path }
-    let mdx_bytes = try fs::read_all{ &fs, &heap, realloc = arena::alloc, path = mdx_path }
+error not_found
+
+// A model and its MDX (empty if there is none) through the resource manager. The file buffers
+// go in the same arena as the model: a scratch arena is reset per model, and a supermodel's few
+// megabytes of file stay with it.
+fn load { mut fs: Fs, rm: res::Manager, mut heap: Heap, name: []u8 } -> !mdl::Model {
+    let mdl_bytes = try res::load{ &fs, rm, name, kind = restype::Type::mdl, realloc = arena::alloc, &heap } ifnull { return not_found }
+    let mdx_found = try res::load{ &fs, rm, name, kind = restype::Type::mdx, realloc = arena::alloc, &heap }
+    let mdx_bytes: []u8 = mdx_found ifnull { slice::empty(u8){} }
     return mdl::parse{ realloc = arena::alloc, &heap, mdl = mdl_bytes, mdx = mdx_bytes }
 }
 
 // ---- helpers
-
-// `s` then `more` after the first `len` bytes of `into`; the whole as a view.
-fn append { into: []mut u8, len: usize, s: []u8, more: []u8 } -> []u8 {
-    slice::copy(u8){ dst = into[len..len + s.len], src = s }
-    slice::copy(u8){ dst = into[len + s.len..len + s.len + more.len], src = more }
-    return into[..len + s.len + more.len]
-}
 
 fn to_lower { into: []mut u8, s: []u8 } -> []u8 {
     let n = if s.len < into.len { s.len } else { into.len }
@@ -375,12 +343,12 @@ fn copy { mut heap: Heap, s: []u8 } -> ![]u8 {
 }
 
 fn parse_args { mut io: Io, args: Args } -> ?Options {
-    let mut o = Options{ dir = "kotor/extract/models", every = 1, only = "", dump = "", time = 0.0 }
+    let mut o = Options{ game = DEFAULT_GAME, every = 1, only = "", dump = "", time = 0.0 }
     let mut i: usize = 0
     while i < args.len {
         let a = args[i]
-        if i + 1 < args.len and slice::eq_bytes{ a, b = "--dir" } {
-            o.dir = args[i + 1]
+        if i + 1 < args.len and slice::eq_bytes{ a, b = "--game" } {
+            o.game = args[i + 1]
             i = i + 1
         } else if i + 1 < args.len and slice::eq_bytes{ a, b = "--every" } {
             let n = utf8::parse_u64{ s = utf8::of{ chars = args[i + 1] } } ifnull { return usage{ &io } }
@@ -403,26 +371,13 @@ fn parse_args { mut io: Io, args: Args } -> ?Options {
 }
 
 fn usage { mut io: Io } -> ?Options {
-    io::eprintln{ &io, s = "usage: animcheck [--dir DIR] [--every N] [--model NAME [--dump ANIM TIME]]" }
+    io::eprintln{ &io, s = "usage: animcheck [--game DIR] [--every N] [--model NAME [--dump ANIM TIME]]" }
     return null
 }
 
-// ---- @fmt writers: to standard output, and bytes into a Builder
+// ---- @fmt: bytes into a Builder (tools/common's `out` writes to standard output)
 
-namespace out {
-    #write
-    fn put_text { mut io: Io, s: strlit } { io::write{ &io, to = io::Stream::out, bytes = s.bytes } }
-    #write
-    fn put_bytes { mut io: Io, b: []u8 } { io::write{ &io, to = io::Stream::out, bytes = b } }
-    #write
-    fn put_u32 { mut io: Io, n: u32 } { io::print_u64{ &io, n } }
-    #write
-    fn put_u64 { mut io: Io, n: u64 } { io::print_u64{ &io, n } }
-    #write
-    fn put_usize { mut io: Io, n: usize } { io::print_u64{ &io, n } }
-    #write
-    fn put_f32 { mut io: Io, n: f32 } { io::print_f32{ &io, n } }
-
+namespace bytes_fmt {
     #write
     fn push_bytes { mut b: utf8::Builder(arena::Arena), s: []u8 } -> ! {
         let mut i: usize = 0
