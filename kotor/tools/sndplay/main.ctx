@@ -5,7 +5,10 @@
 //   kotor/tools/ctxc run kotor/tools/sndplay -- FILE --mixed OUT      what the mixer makes of it
 //
 // FILE is any sound the game has (streamwaves/, streamsounds/, streammusic/, a WAV extracted from
-// a BIF): PCM, IMA ADPCM, or MP3 behind KOTOR's wrappers. --wav writes the decoded samples at the
+// a BIF): PCM, IMA ADPCM, or MP3 behind KOTOR's wrappers. A FILE that isn't a file and has no
+// `/` or `.` is a resref: a WAV resource as lib/res's search finds it (BIFs, Override, ...), or
+// else the voice-over, sound or music file of that name in the stream folders (--game DIR, default
+// F:/Steam/steamapps/common/swkotor). --wav writes the decoded samples at the
 // file's own rate and channels, untouched by the mixer. --mixed renders the mixer's stereo output
 // at --rate offline, as the device would get it.
 //
@@ -24,6 +27,7 @@
 //                    mixing took
 
 error bad_args
+error no_such_sound
 
 struct Options {
     path: []u8,
@@ -39,6 +43,7 @@ struct Options {
     latency: u32,
     feed: bool,
     voices: u32,
+    game: []u8,
 }
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } -> i32 {
@@ -48,7 +53,8 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } 
         return 1
     }
     let mut heap = arena::new{ buf = pages }
-    run{ &io, &fs, &sdl, &heap, opts } iferr err{ error } {
+    let mut h = heap::new{ &mem }
+    run{ &io, &fs, &sdl, &heap, &h, opts } iferr err{ error } {
         _ = @fmt(&io, "sndplay: {}: {}\n", opts.path, error)
         match error {
             sdl::failed => { _ = @fmt(&io, "SDL: {}\n", sdl::last_error{ &sdl }) }
@@ -61,8 +67,14 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } 
     return 0
 }
 
-fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, opts: Options } -> ! {
-    let bytes = try fs::read_all{ &fs, &heap, realloc = arena::alloc, path = opts.path }
+fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut h: heap::Heap, opts: Options } -> ! {
+    let bytes = match fs::read_all{ &fs, &heap, realloc = arena::alloc, path = opts.path } {
+        ok{ value } => { value }
+        err{ error } => {
+            if has_path_chars{ s = opts.path } { return error }
+            try load_by_name{ &io, &fs, &h, &heap, game = opts.game, name = opts.path }
+        }
+    }
     let s = try snd::make{ realloc = arena::alloc, &heap }
     try snd::open{ s, bytes }
     let total = snd::count_frames{ s }
@@ -232,6 +244,46 @@ fn play { mut io: Io, mut sdl: sdl::Sdl, mut heap: arena::Arena, bytes: []u8, op
     _ = @fmt(&io, "done; underruns {}, stream errors {}\n", dev.underruns, m.errors)
 }
 
+fn has_path_chars { s: []u8 } -> bool {
+    let mut i: usize = 0
+    while i < s.len {
+        if s[i] == '/' or s[i] == '\\' or s[i] == '.' { return true }
+        i = i + 1
+    }
+    return false
+}
+
+// Sound `name`, where the engine would find it: a WAV resource through the resource manager's
+// search, else voice-over, a sound or music in the stream folders, by path.
+fn load_by_name { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut heap: arena::Arena, game: []u8, name: []u8 } -> !alloc::Bytes {
+    let mut rm = try res::open{ &fs, heap = &h, game }
+    defer res::close{ &fs, &rm }
+    let loc = res::find{ rm, name, kind = restype::Type::wav }
+    if loc != null {
+        _ = @fmt(&io, "{}: {} {}\n", name, res::source_path{ rm, loc }, res::member_file{ rm, loc })
+        return try res::read{ &fs, rm, loc, realloc = arena::alloc, &heap }
+    }
+    let mut k = 0
+    while k < 3 {
+        let path = if k == 0 {
+            try res::voice_path{ rm, name, realloc = arena::alloc, &heap }
+        } else if k == 1 {
+            try res::sound_path{ rm, name, realloc = arena::alloc, &heap }
+        } else {
+            try res::music_path{ rm, name, realloc = arena::alloc, &heap }
+        }
+        match fs::read_all{ &fs, &heap, realloc = arena::alloc, path } {
+            ok{ value } => {
+                _ = @fmt(&io, "{}: {}\n", name, path)
+                return value
+            }
+            err => {}
+        }
+        k = k + 1
+    }
+    return no_such_sound
+}
+
 fn codec_name { c: wav::Codec } -> []u8 {
     return match c {
         pcm => { "PCM" }
@@ -243,7 +295,7 @@ fn codec_name { c: wav::Codec } -> []u8 {
 fn parse_args { mut io: Io, args: Args } -> ?Options {
     let mut o = Options{
         path = "", wav = null, mixed = null, rate = 44100, volume = 1.0, pan = 0.0, pitch = 1.0,
-        looping = false, orbit = 0.0, seconds = 0.0, latency = 60, feed = false, voices = 1,
+        looping = false, orbit = 0.0, seconds = 0.0, latency = 60, feed = false, voices = 1, game = "F:/Steam/steamapps/common/swkotor",
     }
     let mut i: usize = 0
     while i < args.len {
@@ -279,6 +331,9 @@ fn parse_args { mut io: Io, args: Args } -> ?Options {
         } else if slice::eq_bytes{ a, b = "--voices" } and more {
             i = i + 1
             o.voices = @as(u32, number{ a = args[i] } ifnull { return usage{ &io } })
+        } else if slice::eq_bytes{ a, b = "--game" } and more {
+            i = i + 1
+            o.game = args[i]
         } else if slice::eq_bytes{ a, b = "--feed" } {
             o.feed = true
         } else if slice::eq_bytes{ a, b = "--loop" } {
@@ -300,7 +355,7 @@ fn number { a: []u8 } -> ?f64 {
 }
 
 fn usage { mut io: Io } -> ?Options {
-    io::eprintln{ &io, s = "usage: sndplay FILE [--wav OUT | --mixed OUT] [--rate HZ] [--volume V] [--pan P] [--pitch P] [--loop] [--orbit R] [--seconds S] [--latency MS] [--feed] [--voices N]" }
+    io::eprintln{ &io, s = "usage: sndplay FILE [--wav OUT | --mixed OUT] [--rate HZ] [--volume V] [--pan P] [--pitch P] [--loop] [--orbit R] [--seconds S] [--latency MS] [--feed] [--voices N] [--game DIR]" }
     return null
 }
 
