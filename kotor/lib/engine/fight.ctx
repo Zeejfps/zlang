@@ -161,6 +161,8 @@ namespace fight {
         f.c.loaded_hp = o.hp
         f.loaded = true
         sync_flags{ w = &w, o, f }
+        // Its class's first-level feats (weapon proficiencies: without them it can equip nothing).
+        _ = rules::grant_class_feats{ tables = w.rules, c = &f.c, class = f.c.classes[0].class, class_level = 1 }
         rules::recompute{ tables = w.rules, c = &f.c }
         if f.c.stats.max_hp > 0 {
             o.hp_max = f.c.stats.max_hp

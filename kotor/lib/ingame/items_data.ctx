@@ -4,8 +4,9 @@
 // docs/re/party-items-saves.md sections 4 and 5). Everything here only reads the world, except the
 // description, which re-reads the item's blueprint (the world keeps no text for it).
 //
-// The rules lead's stats (feats, class tables, effects) are not in the engine yet, so a few
-// answers are stand-ins, each marked `PLACEHOLDER:` where the real system replaces it.
+// The creature questions (defence, attack bonus, damage bonus, what it may equip or use) are the
+// rules creature's (fight::Fighter.c, through lib/rules); a creature without one gets the plain
+// d20 fallbacks. What is still a stand-in is marked `PLACEHOLDER:`.
 namespace items {
     // ---- the slots of the equip screen, in the order of the original's table (g_aEquipSlots)
 
@@ -143,8 +144,10 @@ namespace items {
         return c.race == RACE_DROID
     }
 
-    // The ability modifier of score index `k` (0 Str, 1 Dex ...): (score - 10) / 2, rounded down.
+    // The ability modifier of score index `k` (0 Str, 1 Dex ...): the rules creature's (effects
+    // included); the fallback is (score - 10) / 2, rounded down, on the engine's score.
     fn ability_mod { w: *world::World, who: u32, k: usize } -> i32 {
+        if hud::ruled_of{ w, id = who } is some{ value = f } { return f.c.stats.abil_mod[k] }
         let c = hud::creature_of{ w, id = who } ifnull { return 0 }
         let score = @as(i32, c.abilities[k])
         let d = score - 10
@@ -221,9 +224,23 @@ namespace items {
 
     // ---- equipping rules
 
-    // Whether the creature's kind may use the item at all: baseitems DroidOrHuman is 1 for
-    // humanoid gear and 2 for droid parts (0: anyone). The equip lists leave out what fails it.
+    // The rules item behind an item object, with its base item row; null for anything else.
+    fn rules_item_of { w: *world::World, id: u32 } -> ?*mut rules::Item {
+        let it = item_of{ w, id } ifnull { return null }
+        return it.rules
+    }
+
+    // Whether the creature's kind may use the item at all: the rules' race limit (baseitems
+    // DroidOrHuman: 1 for humanoid gear, 2 for droid parts, 0 anyone; DenySubrace; a race-limit
+    // property). The equip lists leave out what fails it. Without rules state only DroidOrHuman.
     fn race_ok { w: *world::World, who: u32, item: u32 } -> bool {
+        if hud::ruled_of{ w, id = who } is some{ value = f } {
+            if rules_item_of{ w, id = item } is some{ value = ri } {
+                if rules::get_baseitem{ tables = w.rules, row = ri.base_item } is some{ value = bi } {
+                    return rules::check_limit_race{ c = &f.c, item = ri, bi }
+                }
+            }
+        }
         let c = hud::creature_of{ w, id = who } ifnull { return false }
         let kind = base_int{ w, id = item, column = "droidorhuman", fallback = 0 }
         if kind == 1 and c.race != RACE_HUMAN { return false }
@@ -231,14 +248,29 @@ namespace items {
         return true
     }
 
+    // The strref of the refusal text behind a rules feedback number (0: the original says nothing).
+    fn refusal_strref { feedback: i32 } -> u32 {
+        if feedback == rules::eqmsg::ALIGNMENT { return 1512 }
+        if feedback == rules::eqmsg::CLASS { return 1513 }
+        if feedback == rules::eqmsg::RACE { return 1514 }
+        return 0
+    }
+
     // Why an item cannot go in an equipment index, or null when it can: the strref of the
-    // refusal (0 when the original gives no text).
-    // PLACEHOLDER: the proficiency feats (baseitems ReqFeat0..4), the use-limitation properties and
-    // the item-level check need the creature's feats and the item's properties from lib/rules;
-    // until then only the slot, the droid/human restriction and the weapon-hand rules are tested.
+    // refusal (0 when the original gives no text). With rules state this is CanEquipItem
+    // (rules::can_equip_item: proficiency feats, use limitations, race, weapon hands, slot); the
+    // armour-in-combat refusal belongs to the equip action. Without it only the slot, the
+    // droid/human restriction and the weapon-hand rule are tested.
     fn fit_refusal { w: *world::World, who: u32, item: u32, index: usize } -> ?u32 {
         let c = hud::creature_of{ w, id = who } ifnull { return 0 }
         if (equipable_slots{ w, id = item } & mask_of{ index }) == 0 { return 0 }
+        if hud::ruled_of{ w, id = who } is some{ value = f } {
+            if rules_item_of{ w, id = item } is some{ value = ri } {
+                let check = rules::can_equip_item{ tables = w.rules, c = &f.c, item = ri, slot = mask_of{ index }, from_player = true, in_combat_attacked = false }
+                if check.ok { return null }
+                return refusal_strref{ feedback = check.feedback }
+            }
+        }
         if not race_ok{ w, who, item } { return 1514 }
         if index == obj::SLOT_LEFT_WEAPON {
             // Dual wielding needs a one-handed right weapon of the same family (melee or ranged).
@@ -255,10 +287,11 @@ namespace items {
 
     // ---- stats the equip screen shows
 
-    // Defense: 10 + the body armour's BaseAC + the Dexterity modifier, which armour caps at its
-    // DexBonus. PLACEHOLDER: the class bonus (acbonus.2da), natural and dodge bonuses and the
-    // armour properties' effects are lib/rules' (combat.md 5).
+    // Defense: the rules' sheet armour class (class bonus, natural, armour, shield, deflection,
+    // dodge and the capped Dexterity modifier; combat.md 5). The fallback is 10 + the body armour's
+    // BaseAC + the Dexterity modifier, which armour caps at its DexBonus.
     fn defense_of { w: *world::World, who: u32 } -> i32 {
+        if hud::ruled_of{ w, id = who } is some{ value = f } { return rules::armor_class_sheet{ tables = w.rules, c = &f.c } }
         let c = hud::creature_of{ w, id = who } ifnull { return 10 }
         let body = c.equipped[obj::SLOT_BODY]
         let mut dex = ability_mod{ w, who, k = 1 }
@@ -271,20 +304,47 @@ namespace items {
         return 10 + armour + dex
     }
 
-    // The attack bonus with the weapon in `item`: the base attack bonus plus Strength (Dexterity
-    // for a ranged weapon). PLACEHOLDER: the base attack bonus should come from the class tables
-    // (cls_atk_*.2da) and feats from lib/rules; the character level stands in for it.
+    // The attack modifier of one hand against nobody (the sheet's number): rules::attack_modifier
+    // for the first on-hand attack, or the first off-hand attack of a dual wielder, with the base
+    // attack bonus, the dual-wield penalties and feats, STR or DEX, Weapon Focus and the effects.
+    fn attack_with { w: *world::World, f: *mut fight::Fighter, off_hand: bool } -> i32 {
+        let mut sit = rules::make_situation{}
+        sit.target_object = true
+        let counts = rules::attack_counts{ tables = w.rules, c = &f.c, combat_feat = 0 }
+        let index: i32 = if off_hand { counts.on_hand } else { 0 }
+        let m = rules::attack_modifier{ tables = w.rules, atk = &f.c, def = &f.c, sit = &sit, attack_index = index, combat_feat = 0 }
+        return m.total
+    }
+
+    // The attack bonus with the weapon in `item` (the left hand's, when it is in the left slot).
+    // The fallback is the character level plus Strength (Dexterity for a ranged weapon).
     fn attack_bonus_of { w: *world::World, who: u32, item: u32 } -> i32 {
+        if hud::ruled_of{ w, id = who } is some{ value = f } {
+            let c = hud::creature_of{ w, id = who } ifnull { return 0 }
+            return attack_with{ w, f, off_hand = c.equipped[obj::SLOT_LEFT_WEAPON] == item }
+        }
         let level = hud::level_of{ w, id = who }
         let k: usize = if is_ranged{ w, id = item } { 1 } else { 0 }
         return level + ability_mod{ w, who, k }
     }
 
-    // A weapon's damage dice as text ("2d6"); empty when it has none.
-    fn damage_text { mut b: utf8::Builder(heap::Heap), w: *world::World, item: u32 } -> ! {
+    // A weapon's damage as text: its dice ("2d6") and the wielder's flat bonus ("+2": Strength for a
+    // melee weapon, Weapon Specialization) from the rules creature; empty when it has no dice.
+    fn damage_text { mut b: utf8::Builder(heap::Heap), w: *world::World, who: u32, item: u32 } -> ! {
         let dice = base_int{ w, id = item, column = "numdice", fallback = 0 }
         let die = base_int{ w, id = item, column = "dietoroll", fallback = 0 }
-        if dice > 0 and die > 0 { try @fmt(&b, "{}d{}", dice, die) }
+        if dice <= 0 or die <= 0 { return }
+        let mut bonus: i32 = 0
+        if hud::ruled_of{ w, id = who } is some{ value = f } {
+            if not is_ranged{ w, id = item } { bonus = f.c.stats.abil_mod[0] }
+            let it = item_of{ w, id = item } ifnull { return }
+            if rules::get_baseitem{ tables = w.rules, row = @as(i32, it.base) } is some{ value = bi } {
+                if bi.spec_feat > 0 and rules::has_feat{ c = &f.c, feat = bi.spec_feat } { bonus = bonus + 2 }
+            }
+        }
+        try @fmt(&b, "{}d{}", dice, die)
+        if bonus > 0 { try @fmt(&b, "+{}", bonus) }
+        if bonus < 0 { try @fmt(&b, "{}", bonus) }
     }
 
     // ---- text
@@ -353,10 +413,20 @@ namespace items {
         return false
     }
 
-    // Whether `who` can use the item now: it has a use and the creature's kind may use it.
-    // PLACEHOLDER: the original's CanUseItem also tests proficiency and the use-limitation
-    // properties (party-items-saves.md 4.3), which need lib/rules.
+    // Whether `who` can use the item now: it has a use and CanUseItem passes (party-items-saves.md
+    // 4.3): the alignment, class, race and feat limits, proficiency for an item that fits a slot,
+    // and the weapon-size rule. Without rules state only the creature's kind is tested.
     fn can_use { mut w: world::World, who: u32, id: u32 } -> bool {
+        if hud::ruled_of{ w = &w, id = who } is some{ value = f } {
+            if rules_item_of{ w = &w, id } is some{ value = ri } {
+                if not rules::has_property{ item = ri, name = rules::ip::CAST_SPELL } { return false }
+                let bi = rules::get_baseitem{ tables = w.rules, row = ri.base_item } ifnull { return false }
+                if not rules::check_limit_alignment{ c = &f.c, item = ri } or not rules::check_limit_class{ c = &f.c, item = ri } { return false }
+                if not rules::check_limit_race{ c = &f.c, item = ri, bi } or not rules::check_limit_feat{ c = &f.c, item = ri } { return false }
+                if bi.equip_slots != 0 and not rules::check_proficiency{ c = &f.c, bi } { return false }
+                return not (bi.weapon_type != 0 and bi.weapon_size - f.c.stats.size > 1)
+            }
+        }
         return race_ok{ w = &w, who, item = id } and is_usable{ &w, id }
     }
 }
