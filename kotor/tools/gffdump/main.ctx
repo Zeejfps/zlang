@@ -1,0 +1,226 @@
+// gffdump: prints GFF files as indented trees, one field a line:
+//
+//   gffdump [--game DIR] [--module NAME] [--save PATH] NAME.EXT|FILE...
+//
+// An argument that names a file is read from disk; any other is a resource, NAME.EXT, found by the
+// resource manager (with --module mounted first, and --save for its saved state). Output:
+//
+//   'UTC ' V3.2 (struct 0 id 0xffffffff)
+//     TemplateResRef: CResRef = "p_bastila"
+//     FirstName: CExoLocString = strref 31252, 0 strings
+//     ClassList: List[2]
+//       [0] id 2
+//         Class: INT = 4
+//
+// Strings print in double quotes with \r, \n, \t, \", \\ and \xNN for other bytes outside ASCII's
+// printable range. Floats print as their shortest round-trip text.
+
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let mut game: []u8 = DEFAULT_GAME
+    let mut module: []u8 = ""
+    let mut save: []u8 = ""
+    let mut i: usize = 0
+    let mut names: [64][]u8
+    let mut n: usize = 0
+    while i < args.len {
+        let a = args[i]
+        if slice::eq_bytes{ a, b = "--game" } and i + 1 < args.len {
+            game = args[i + 1]
+            i = i + 2
+        } else if slice::eq_bytes{ a, b = "--module" } and i + 1 < args.len {
+            module = args[i + 1]
+            i = i + 2
+        } else if slice::eq_bytes{ a, b = "--save" } and i + 1 < args.len {
+            save = args[i + 1]
+            i = i + 2
+        } else if n < names.len {
+            names[n] = a
+            n = n + 1
+            i = i + 1
+        } else {
+            i = i + 1
+        }
+    }
+    if n == 0 {
+        io::eprintln{ &io, s = "usage: gffdump [--game DIR] [--module NAME] [--save PATH] NAME.EXT|FILE..." }
+        return 2
+    }
+    let mut h = heap::new{ &mem }
+    let mut rm_opened = false
+    let mut rm: ?res::Manager = null
+    let mut failed: i32 = 0
+    let mut k: usize = 0
+    while k < n {
+        let name = names[k]
+        k = k + 1
+        let from_disk = match fs::size{ &fs, path = name } { ok => { true } err => { false } }
+        let data = if from_disk {
+            fs::read_all{ &fs, heap = &h, realloc = heap::alloc, path = name } iferr err{ error } {
+                _ = @fmt(&io, "gffdump: {}: {}\n", name, error)
+                failed = 1
+                continue
+            }
+        } else {
+            if not rm_opened {
+                rm_opened = true
+                let mut m = res::open{ &fs, heap = &h, game } iferr err{ error } {
+                    _ = @fmt(&io, "gffdump: can't open the game at {}: {}\n", game, error)
+                    io::flush{ &io }
+                    return 1
+                }
+                if module.len > 0 {
+                    res::mount_module{ &fs, rm = &m, name = module, save } iferr err{ error } {
+                        _ = @fmt(&io, "gffdump: can't mount {}: {}\n", module, error)
+                        io::flush{ &io }
+                        return 1
+                    }
+                }
+                rm = m
+            }
+            let r = rm ifnull { return 1 }
+            let dot = text::find_byte{ s = name, c = '.' } ifnull {
+                _ = @fmt(&io, "gffdump: {}: no such file, and not NAME.EXT\n", name)
+                failed = 1
+                continue
+            }
+            let kind = restype::of_ext{ ext = name[dot + 1..] } ifnull {
+                _ = @fmt(&io, "gffdump: {}: unknown type\n", name)
+                failed = 1
+                continue
+            }
+            let found = res::load{ &fs, rm = r, name = name[..dot], kind, realloc = heap::alloc, heap = &h } iferr err{ error } {
+                _ = @fmt(&io, "gffdump: {}: {}\n", name, error)
+                failed = 1
+                continue
+            }
+            found ifnull {
+                _ = @fmt(&io, "gffdump: {}: not found\n", name)
+                failed = 1
+                continue
+            }
+        }
+        defer res::free_bytes{ h = &h, b = data }
+        let doc = gff::parse{ data, realloc = heap::alloc, heap = &h } iferr err{ error } {
+            _ = @fmt(&io, "gffdump: {}: not a GFF: {}\n", name, error)
+            failed = 1
+            continue
+        }
+        defer gff::free{ doc, realloc = heap::alloc, heap = &h }
+        if n > 1 { _ = @fmt(&io, "== {}\n", name) }
+        _ = @fmt(&io, "'{}' V3.2 (struct 0 id 0x{})\n", doc.tag[..], out::hex{ n = gff::struct_id{ doc, s = gff::ROOT }, _ })
+        dump_struct{ &io, doc, s = gff::ROOT, depth = 1 }
+    }
+    match rm {
+        some{ value } => {
+            let mut m = value
+            res::close{ &fs, rm = &m }
+        }
+        null => {}
+    }
+    io::flush{ &io }
+    return failed
+}
+
+fn dump_struct { mut io: Io, doc: gff::Doc, s: u32, depth: u32 } {
+    let fields = gff::fields_of{ doc, s }
+    let mut i: usize = 0
+    while i < fields.len {
+        let f = fields[i]
+        i = i + 1
+        indent{ &io, depth }
+        _ = @fmt(&io, "{}: ", gff::label_of{ doc, f })
+        match gff::value{ doc, f } {
+            structure{ index } => {
+                _ = @fmt(&io, "Struct id {}\n", gff::struct_id{ doc, s = index })
+                dump_struct{ &io, doc, s = index, depth = depth + 1 }
+            }
+            list{ items } => {
+                _ = @fmt(&io, "List[{}]\n", items.len)
+                let mut k: usize = 0
+                while k < items.len {
+                    indent{ &io, depth = depth + 1 }
+                    _ = @fmt(&io, "[{}] id {}\n", k, gff::struct_id{ doc, s = items[k] })
+                    dump_struct{ &io, doc, s = items[k], depth = depth + 2 }
+                    k = k + 1
+                }
+            }
+            byte{ v } => { _ = @fmt(&io, "BYTE = {}\n", v) }
+            char{ v } => { _ = @fmt(&io, "CHAR = {}\n", v) }
+            word{ v } => { _ = @fmt(&io, "WORD = {}\n", v) }
+            short{ v } => { _ = @fmt(&io, "SHORT = {}\n", v) }
+            dword{ v } => { _ = @fmt(&io, "DWORD = {}\n", v) }
+            int{ v } => { _ = @fmt(&io, "INT = {}\n", v) }
+            dword64{ v } => { _ = @fmt(&io, "DWORD64 = {}\n", v) }
+            int64{ v } => { _ = @fmt(&io, "INT64 = {}\n", v) }
+            float{ v } => { _ = @fmt(&io, "FLOAT = {}\n", v) }
+            double{ v } => { _ = @fmt(&io, "DOUBLE = {}\n", v) }
+            exostring{ v } => { _ = @fmt(&io, "CExoString = {}\n", quoted{ b = v, _ }) }
+            resref{ v } => { _ = @fmt(&io, "CResRef = {}\n", quoted{ b = v, _ }) }
+            void{ v } => {
+                let shown: []u8 = if v.len > 32 { v[..32] } else { v }
+                let more: []u8 = if v.len > 32 { "..." } else { "" }
+                _ = @fmt(&io, "VOID = <{} bytes> {}{}\n", v.len, hex_bytes{ b = shown, _ }, more)
+            }
+            locstring{ v } => {
+                _ = @fmt(&io, "CExoLocString = strref {}, {} strings", v.strref, v.count)
+                let mut k: u32 = 0
+                while k < v.count {
+                    let sub = gff::loc_substring{ ls = v, i = k } ifnull { break }
+                    _ = @fmt(&io, " [{}] {}", sub.id, quoted{ b = sub.text, _ })
+                    k = k + 1
+                }
+                _ = @fmt(&io, "\n")
+            }
+            orientation{ v } => { _ = @fmt(&io, "Orientation = ({}, {}, {}, {})\n", v[0], v[1], v[2], v[3]) }
+            vector{ v } => { _ = @fmt(&io, "Vector = ({}, {}, {})\n", v[0], v[1], v[2]) }
+        }
+    }
+}
+
+fn indent { mut io: Io, depth: u32 } {
+    let mut i: u32 = 0
+    while i < depth {
+        io::write{ &io, to = io::Stream::out, bytes = "  " }
+        i = i + 1
+    }
+}
+
+// Bytes in double quotes, escaped where they aren't printable ASCII.
+fn quoted { mut io: Io, b: []u8 } -> ! {
+    io::write{ &io, to = io::Stream::out, bytes = "\"" }
+    let mut i: usize = 0
+    let mut start: usize = 0
+    while i < b.len {
+        let c = b[i]
+        let plain = c >= 32 and c < 127 and c != '"' and c != '\\'
+        if not plain {
+            io::write{ &io, to = io::Stream::out, bytes = b[start..i] }
+            if c == '\n' { io::write{ &io, to = io::Stream::out, bytes = "\\n" } }
+            else if c == '\r' { io::write{ &io, to = io::Stream::out, bytes = "\\r" } }
+            else if c == '\t' { io::write{ &io, to = io::Stream::out, bytes = "\\t" } }
+            else if c == '"' { io::write{ &io, to = io::Stream::out, bytes = "\\\"" } }
+            else if c == '\\' { io::write{ &io, to = io::Stream::out, bytes = "\\\\" } }
+            else {
+                let digits: []u8 = "0123456789abcdef"
+                let esc: [4]u8 = ['\\', 'x', digits[c >> 4], digits[c & 15]]
+                io::write{ &io, to = io::Stream::out, bytes = esc[..] }
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    io::write{ &io, to = io::Stream::out, bytes = b[start..] }
+    io::write{ &io, to = io::Stream::out, bytes = "\"" }
+}
+
+fn hex_bytes { mut io: Io, b: []u8 } -> ! {
+    let digits: []u8 = "0123456789abcdef"
+    let mut i: usize = 0
+    while i < b.len {
+        let pair: [2]u8 = [digits[b[i] >> 4], digits[b[i] & 15]]
+        io::write{ &io, to = io::Stream::out, bytes = pair[..] }
+        i = i + 1
+    }
+}

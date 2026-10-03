@@ -1,0 +1,720 @@
+// Writing GFF V3.2 (docs/formats/gff.md, "Writing files the way the game does"). Every file in
+// the install is what an incremental builder makes: creating a struct appends a struct record,
+// adding a field appends a field record (its label to the labels on first use, its complex value to
+// the field data). What varies between writers is the order things are created in and where the
+// field-indices and list-indices blocks go. This builder records the creation order as it is
+// called and lays out the blocks at `finish`, by a Layout:
+//
+//   let mut b = try gffw::new{ realloc, heap = &heap, tag = "UTC " }      // struct 0 exists
+//   _ = try gffw::add_value{ &b, owner = gffw::ROOT, label = "Race", value = gff::Value::byte{ v = 6 } }
+//   let items = try gffw::put_list{ &b, owner = gffw::ROOT, label = "ItemList" }
+//   let e = try gffw::add_element{ &b, list = items, id = 0 }
+//   _ = try gffw::add_value{ &b, owner = e, label = "InventoryRes", value = gff::Value::resref{ v = "g_w_blstrpstl01" } }
+//   let bytes = try gffw::finish{ &b, layout = gffw::ENGINE }
+//
+// Called depth-first, each struct's fields in the engine's order, with the ENGINE layout, this is
+// the engine's own save layout. `copy_doc` replays a parsed file in one of the orders the shipped
+// files were built in; with the right Layout that reproduces every GFF in the install byte for
+// byte (fmtcheck checks all 11,152).
+namespace gffw {
+    // The file type isn't 4 bytes.
+    error bad_tag
+    // A label or resref longer than 16 bytes.
+    error too_long{ len: usize }
+    // add_element on a field that isn't a list.
+    error not_a_list{ field: u32 }
+    // A file too big for the format's 32-bit offsets.
+    error too_big
+
+    const ROOT: u32 = 0
+    const NONE: u32 = 4294967295
+    const STRUCT_EVENT: u32 = 2147483648        // an event is a field index, or a struct's with this bit
+
+    // Where a struct's field-indices block goes (gff.md, "Field-indices strategies"):
+    //   second     placed when the struct gets its second field, grown in place (the engine's)
+    //   by_struct  in struct order
+    //   move       placed at the second field, moved to the end when it must grow and isn't last,
+    //              the old copy left as dead bytes
+    enum Fi: u8 { second, by_struct, move }
+
+    // Where a list's block goes: by_field, in the order of the List fields (the engine's), or move,
+    // as above.
+    enum Li: u8 { by_field, move }
+
+    // `late`: the last `late` fields were appended to the finished file by an in-place editor, each
+    // copying its struct's field-indices block to the end (two shipped dialogues).
+    struct Layout { fi: Fi, li: Li, late: u32 }
+
+    const ENGINE: Layout = Layout{ fi = Fi::second, li = Li::by_field, late = 0 }
+
+    // The orders copy_doc replays a parsed file in:
+    //   dfs       depth first: a Struct field's child right after it, a list's elements one after
+    //             another, each filled before the next is created
+    //   elements  as dfs, but all of a list's elements created before the first is filled (ITP)
+    //   keep      the order of the file's own struct and field arrays (toolset quirks)
+    enum Order: u8 { dfs, elements, keep }
+
+    struct SRec { id: u32, list: u32, pos: u32 }        // list: the List field it is an element of
+    struct FRec { kind: u32, label: u32, owner: u32, raw: u32 }
+    struct Label { len: u8, chars: [16]u8 }
+
+    struct Builder(S) {
+        tag: [4]u8,
+        structs: list::List(SRec, S),
+        fields: list::List(FRec, S),
+        labels: list::List(Label, S),
+        index: map::Map(Label, u32, S),
+        data: list::List(u8, S),
+        events: list::List(u32, S),
+        realloc: alloc::Fn(S),
+        heap: *mut S,
+    }
+
+    fn new(S) { realloc: alloc::Fn(S), heap: *mut S, tag: []u8 } -> !Builder(S) {
+        if tag.len != 4 { return bad_tag }
+        let mut b = Builder{
+            tag = [tag[0], tag[1], tag[2], tag[3]],
+            structs = list::new(SRec, S){ realloc, heap },
+            fields = list::new(FRec, S){ realloc, heap },
+            labels = list::new(Label, S){ realloc, heap },
+            index = map::new(Label, u32, S){ realloc, heap, hash = hash_label, eq = eq_label },
+            data = list::new(u8, S){ realloc, heap },
+            events = list::new(u32, S){ realloc, heap },
+            realloc, heap,
+        }
+        _ = add_struct_raw{ &b, id = NONE, list = NONE, pos = 0 } iferr err{ error } {
+            free{ &b }
+            return error
+        }
+        return b
+    }
+
+    fn free(S) { mut b: Builder(S) } {
+        list::free{ list = &b.structs }
+        list::free{ list = &b.fields }
+        list::free{ list = &b.labels }
+        map::free{ m = &b.index }
+        list::free{ list = &b.data }
+        list::free{ list = &b.events }
+    }
+
+    // ---- building
+
+    // Creates a struct: an element of List field `list` at position `pos` in it, or (list NONE)
+    // the child of a Struct field. Returns its index.
+    fn add_struct_raw(S) { mut b: Builder(S), id: u32, list: u32, pos: u32 } -> !u32 {
+        let s = @trunc(u32, b.structs.len)
+        try list::reserve{ list = &b.events, extra = 1 }
+        try list::push{ list = &b.structs, item = SRec{ id, list, pos } }
+        try list::push{ list = &b.events, item = s | STRUCT_EVENT }
+        return s
+    }
+
+    // Adds a field record to struct `owner` with `raw` as its value: the inline value, the field
+    // data offset, or a Struct field's child. Returns its index.
+    fn add_field_raw(S) { mut b: Builder(S), owner: u32, kind: gff::Kind, label: []u8, raw: u32 } -> !u32 {
+        let l = try label_index{ &b, label }
+        let f = @trunc(u32, b.fields.len)
+        try list::reserve{ list = &b.events, extra = 1 }
+        try list::push{ list = &b.fields, item = FRec{ kind = @as(u32, kind), label = l, owner, raw } }
+        try list::push{ list = &b.events, item = f }
+        return f
+    }
+
+    // Adds a field with a value. A structure value's index is the child struct (which may be
+    // created later); a list value's items are ignored: add the elements with add_element.
+    fn add_value(S) { mut b: Builder(S), owner: u32, label: []u8, value: gff::Value } -> !u32 {
+        let at = b.data.len
+        if at > 4294967295 { return too_big }
+        let off = @trunc(u32, at)
+        match value {
+            byte{ v } => { return try add_field_raw{ &b, owner, kind = gff::Kind::byte, label, raw = v } }
+            char{ v } => { return try add_field_raw{ &b, owner, kind = gff::Kind::char, label, raw = le::bits_of_i32{ v } } }
+            word{ v } => { return try add_field_raw{ &b, owner, kind = gff::Kind::word, label, raw = v } }
+            short{ v } => { return try add_field_raw{ &b, owner, kind = gff::Kind::short, label, raw = le::bits_of_i32{ v } } }
+            dword{ v } => { return try add_field_raw{ &b, owner, kind = gff::Kind::dword, label, raw = v } }
+            int{ v } => { return try add_field_raw{ &b, owner, kind = gff::Kind::int, label, raw = le::bits_of_i32{ v } } }
+            float{ v } => { return try add_field_raw{ &b, owner, kind = gff::Kind::float, label, raw = le::bits_of_f32{ v } } }
+            structure{ index } => { return try add_field_raw{ &b, owner, kind = gff::Kind::structure, label, raw = index } }
+            list => { return try add_field_raw{ &b, owner, kind = gff::Kind::list, label, raw = 0 } }
+            dword64{ v } => {
+                try le::put_u64{ out = &b.data, v }
+                return try add_data_field{ &b, owner, kind = gff::Kind::dword64, label, off }
+            }
+            int64{ v } => {
+                try le::put_u64{ out = &b.data, v = le::bits_of_i64{ v } }
+                return try add_data_field{ &b, owner, kind = gff::Kind::int64, label, off }
+            }
+            double{ v } => {
+                try le::put_u64{ out = &b.data, v = le::bits_of_f64{ v } }
+                return try add_data_field{ &b, owner, kind = gff::Kind::double, label, off }
+            }
+            exostring{ v } => {
+                try put_sized{ &b, bytes = v }
+                return try add_data_field{ &b, owner, kind = gff::Kind::exostring, label, off }
+            }
+            void{ v } => {
+                try put_sized{ &b, bytes = v }
+                return try add_data_field{ &b, owner, kind = gff::Kind::void, label, off }
+            }
+            resref{ v } => {
+                if v.len > resref::MAX { return too_long{ len = v.len } }
+                try le::put_u8{ out = &b.data, v = @trunc(u8, v.len) }
+                try le::put_bytes{ out = &b.data, bytes = v }
+                return try add_data_field{ &b, owner, kind = gff::Kind::resref, label, off }
+            }
+            locstring{ v } => {
+                try le::put_u32{ out = &b.data, v = @trunc(u32, 8 + v.body.len) }
+                try le::put_i32{ out = &b.data, v = v.strref }
+                try le::put_u32{ out = &b.data, v = v.count }
+                try le::put_bytes{ out = &b.data, bytes = v.body }
+                return try add_data_field{ &b, owner, kind = gff::Kind::locstring, label, off }
+            }
+            orientation{ v } => {
+                let mut i: usize = 0
+                while i < 4 {
+                    try le::put_f32{ out = &b.data, v = v[i] }
+                    i = i + 1
+                }
+                return try add_data_field{ &b, owner, kind = gff::Kind::orientation, label, off }
+            }
+            vector{ v } => {
+                let mut i: usize = 0
+                while i < 3 {
+                    try le::put_f32{ out = &b.data, v = v[i] }
+                    i = i + 1
+                }
+                return try add_data_field{ &b, owner, kind = gff::Kind::vector, label, off }
+            }
+        }
+    }
+
+    // A field whose value was just appended to the field data at `off`. If the record can't be
+    // added, the value is taken back off the data.
+    fn add_data_field(S) { mut b: Builder(S), owner: u32, kind: gff::Kind, label: []u8, off: u32 } -> !u32 {
+        let f = add_field_raw{ &b, owner, kind, label, raw = off } iferr err{ error } {
+            b.data.len = @as(usize, off)
+            return error
+        }
+        return f
+    }
+
+    fn put_sized(S) { mut b: Builder(S), bytes: []u8 } -> ! {
+        if bytes.len > 4294967295 { return too_big }
+        try le::put_u32{ out = &b.data, v = @trunc(u32, bytes.len) }
+        try le::put_bytes{ out = &b.data, bytes }
+    }
+
+    // A Struct field and its child struct, created right after it. Returns the child.
+    fn put_struct(S) { mut b: Builder(S), owner: u32, label: []u8, id: u32 } -> !u32 {
+        let f = try add_field_raw{ &b, owner, kind = gff::Kind::structure, label, raw = 0 }
+        let s = try add_struct_raw{ &b, id, list = NONE, pos = 0 }
+        b.fields.items[f].raw = s
+        return s
+    }
+
+    // A List field, empty. Returns the field, which add_element takes.
+    fn put_list(S) { mut b: Builder(S), owner: u32, label: []u8 } -> !u32 {
+        return try add_field_raw{ &b, owner, kind = gff::Kind::list, label, raw = 0 }
+    }
+
+    // A new struct at the end of List field `list`. Returns the struct.
+    fn add_element(S) { mut b: Builder(S), list: u32, id: u32 } -> !u32 {
+        if list >= @trunc(u32, b.fields.len) or b.fields.items[list].kind != @as(u32, gff::Kind::list) { return not_a_list{ field = list } }
+        return try add_struct_raw{ &b, id, list, pos = @trunc(u32, b.structs.len) }
+    }
+
+    fn label_index(S) { mut b: Builder(S), label: []u8 } -> !u32 {
+        if label.len > 16 { return too_long{ len = label.len } }
+        let mut key = Label{ len = @trunc(u8, label.len), chars = [0; 16] }
+        slice::copy(u8){ dst = key.chars[..label.len], src = label }
+        let found = map::get{ m = b.index, key }
+        if found != null { return found }
+        let i = @trunc(u32, b.labels.len)
+        try list::push{ list = &b.labels, item = key }
+        map::put{ m = &b.index, key, value = i } iferr err{ error } {
+            b.labels.len = b.labels.len - 1
+            return error
+        }
+        return i
+    }
+
+    fn hash_label { key: Label } -> u64 {
+        let mut h: u64 = 14695981039346656037
+        let mut i: usize = 0
+        while i < @as(usize, key.len) {
+            h = @wrap_mul(h ^ @as(u64, key.chars[i]), 1099511628211)
+            i = i + 1
+        }
+        return h
+    }
+
+    fn eq_label { a: Label, b: Label } -> bool {
+        if a.len != b.len { return false }
+        let mut i: usize = 0
+        while i < @as(usize, a.len) {
+            if a.chars[i] != b.chars[i] { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    // ---- replaying a parsed file
+
+    fn copy_doc(S) { mut b: Builder(S), doc: gff::Doc, order: Order } -> ! {
+        b.structs.items[0].id = doc.structs[gff::ROOT].id
+        if order == Order::keep {
+            try copy_keep{ &b, doc }
+            return
+        }
+        try copy_struct{ &b, doc, src = gff::ROOT, dst = ROOT, elements_first = order == Order::elements }
+    }
+
+    fn copy_struct(S) { mut b: Builder(S), doc: gff::Doc, src: u32, dst: u32, elements_first: bool } -> ! {
+        let fields = gff::fields_of{ doc, s = src }
+        let mut i: usize = 0
+        while i < fields.len {
+            let f = fields[i]
+            i = i + 1
+            let label = gff::label_of{ doc, f }
+            let v = gff::value{ doc, f }
+            match v {
+                structure{ index } => {
+                    let c = try put_struct{ &b, owner = dst, label, id = doc.structs[index].id }
+                    try copy_struct{ &b, doc, src = index, dst = c, elements_first }
+                }
+                list{ items } => {
+                    let l = try put_list{ &b, owner = dst, label }
+                    if elements_first {
+                        let first = @trunc(u32, b.structs.len)
+                        let mut k: usize = 0
+                        while k < items.len {
+                            _ = try add_element{ &b, list = l, id = doc.structs[items[k]].id }
+                            k = k + 1
+                        }
+                        k = 0
+                        while k < items.len {
+                            try copy_struct{ &b, doc, src = items[k], dst = first + @trunc(u32, k), elements_first }
+                            k = k + 1
+                        }
+                    } else {
+                        let mut k: usize = 0
+                        while k < items.len {
+                            let c = try add_element{ &b, list = l, id = doc.structs[items[k]].id }
+                            try copy_struct{ &b, doc, src = items[k], dst = c, elements_first }
+                            k = k + 1
+                        }
+                    }
+                }
+                else => { _ = try add_value{ &b, owner = dst, label, value = v } }
+            }
+        }
+    }
+
+    // The file's own order: structs and fields keep their relative order (renumbered if some were
+    // unreachable), each struct created just before its first field, and no later than the struct
+    // after it.
+    fn copy_keep(S) { mut b: Builder(S), doc: gff::Doc } -> ! {
+        let ns = doc.structs.len
+        let nf = doc.fields.len
+        let mut t = Temp(S){ realloc = b.realloc, heap = b.heap, blocks = list::new(alloc::Bytes, S){ realloc = b.realloc, heap = b.heap } }
+        defer free_temp{ &t }
+        let s_new = try temp_u32{ &t, n = ns, fill = NONE }
+        let f_new = try temp_u32{ &t, n = nf, fill = NONE }
+        let owner = try temp_u32{ &t, n = nf, fill = NONE }
+        let parent = try temp_u32{ &t, n = ns, fill = NONE }
+        let pos = try temp_u32{ &t, n = ns, fill = 0 }
+        // Who holds what, from the tree.
+        let mut s: usize = 0
+        while s < ns {
+            if doc.structs[s].count != gff::NONE {
+                let fields = gff::fields_of{ doc, s = @trunc(u32, s) }
+                let mut k: usize = 0
+                while k < fields.len {
+                    owner[fields[k]] = @trunc(u32, s)
+                    if doc.fields[fields[k]].kind == gff::Kind::list {
+                        let items = gff::list_items{ doc, start = doc.fields[fields[k]].aux }
+                        let mut e: usize = 0
+                        while e < items.len {
+                            parent[items[e]] = fields[k]
+                            pos[items[e]] = @trunc(u32, e)
+                            e = e + 1
+                        }
+                    }
+                    k = k + 1
+                }
+            }
+            s = s + 1
+        }
+        let mut n_s: u32 = 0
+        s = 0
+        while s < ns {
+            if doc.structs[s].count != gff::NONE {
+                s_new[s] = n_s
+                n_s = n_s + 1
+            }
+            s = s + 1
+        }
+        let mut n_f: u32 = 0
+        let mut f: usize = 0
+        while f < nf {
+            if doc.fields[f].label != gff::NONE {
+                f_new[f] = n_f
+                n_f = n_f + 1
+            }
+            f = f + 1
+        }
+        let s_old = try temp_u32{ &t, n = n_s, fill = 0 }
+        let f_old = try temp_u32{ &t, n = n_f, fill = 0 }
+        s = 0
+        while s < ns {
+            if s_new[s] != NONE { s_old[s_new[s]] = @trunc(u32, s) }
+            s = s + 1
+        }
+        f = 0
+        while f < nf {
+            if f_new[f] != NONE { f_old[f_new[f]] = @trunc(u32, f) }
+            f = f + 1
+        }
+        // When each struct is created: before its first field, and no later than the next one.
+        let created = try temp_u32{ &t, n = n_s, fill = n_f }
+        f = 0
+        while f < @as(usize, n_f) {
+            let o = s_new[owner[f_old[f]]]
+            if @trunc(u32, f) < created[o] { created[o] = @trunc(u32, f) }
+            f = f + 1
+        }
+        if n_s > 1 {
+            let mut i = @as(usize, n_s) - 2
+            while i > 0 {
+                if created[i + 1] < created[i] { created[i] = created[i + 1] }
+                i = i - 1
+            }
+        }
+        // Struct 0 exists already.
+        let mut next: u32 = 1
+        f = 0
+        while f <= @as(usize, n_f) {
+            while next < n_s and (f == @as(usize, n_f) or created[next] <= @trunc(u32, f)) {
+                let old = s_old[next]
+                let l = if parent[old] == NONE { NONE } else { f_new[parent[old]] }
+                _ = try add_struct_raw{ &b, id = doc.structs[old].id, list = l, pos = pos[old] }
+                next = next + 1
+            }
+            if f == @as(usize, n_f) { break }
+            let old = f_old[f]
+            let o = s_new[owner[old]]
+            let label = gff::label_of{ doc, f = old }
+            let v = gff::value{ doc, f = old }
+            match v {
+                structure{ index } => { _ = try add_field_raw{ &b, owner = o, kind = gff::Kind::structure, label, raw = s_new[index] } }
+                else => { _ = try add_value{ &b, owner = o, label, value = v } }
+            }
+            f = f + 1
+        }
+    }
+
+    // ---- laying out the file
+
+    // The file, in memory from the builder's allocator.
+    fn finish(S) { mut b: Builder(S), layout: Layout } -> !alloc::Bytes {
+        let ns = b.structs.len
+        let nf = b.fields.len
+        if @as(usize, layout.late) > nf { return too_big }
+        let nb = nf - @as(usize, layout.late)
+        let structs = list::items{ list = b.structs }
+        let fields = list::items{ list = b.fields }
+        let mut t = Temp(S){ realloc = b.realloc, heap = b.heap, blocks = list::new(alloc::Bytes, S){ realloc = b.realloc, heap = b.heap } }
+        defer free_temp{ &t }
+
+        // Each struct's base fields, in field order: members[start[s] .. start[s] + count[s]].
+        let count = try temp_u32{ &t, n = ns, fill = 0 }
+        let second = try temp_u32{ &t, n = ns, fill = NONE }
+        let start = try temp_u32{ &t, n = ns + 1, fill = 0 }
+        let members = try temp_u32{ &t, n = nb, fill = 0 }
+        let mut f: usize = 0
+        while f < nb {
+            let o = fields[f].owner
+            if count[o] == 1 { second[o] = @trunc(u32, f) }
+            count[o] = count[o] + 1
+            f = f + 1
+        }
+        let mut s: usize = 0
+        while s < ns {
+            start[s + 1] = start[s] + count[s]
+            s = s + 1
+        }
+        let fill = try temp_u32{ &t, n = ns, fill = 0 }
+        f = 0
+        while f < nb {
+            let o = fields[f].owner
+            members[start[o] + fill[o]] = @trunc(u32, f)
+            fill[o] = fill[o] + 1
+            f = f + 1
+        }
+
+        // Field indices.
+        let mut fi = list::new(u32, S){ realloc = b.realloc, heap = b.heap }
+        defer list::free{ list = &fi }
+        let fi_at = try temp_u32{ &t, n = ns, fill = NONE }         // in entries, not bytes
+        match layout.fi {
+            second => {
+                f = 0
+                while f < nb {
+                    let o = fields[f].owner
+                    if second[o] == @trunc(u32, f) { try append_block{ out = &fi, at = &fi_at[o], src = members[start[o]..start[o] + count[o]] } }
+                    f = f + 1
+                }
+            }
+            by_struct => {
+                s = 0
+                while s < ns {
+                    if count[s] >= 2 { try append_block{ out = &fi, at = &fi_at[s], src = members[start[s]..start[s] + count[s]] } }
+                    s = s + 1
+                }
+            }
+            move => {
+                let seen = try temp_u32{ &t, n = ns, fill = 0 }
+                f = 0
+                while f < nb {
+                    let o = fields[f].owner
+                    seen[o] = seen[o] + 1
+                    if seen[o] == 2 {
+                        fi_at[o] = @trunc(u32, fi.len)
+                        try list::push{ list = &fi, item = members[start[o]] }
+                        try list::push{ list = &fi, item = @trunc(u32, f) }
+                    } else if seen[o] > 2 {
+                        try grow_block{ out = &fi, at = &fi_at[o], n = seen[o] - 1, item = @trunc(u32, f) }
+                    }
+                    f = f + 1
+                }
+            }
+        }
+        // Late fields: appended one by one, each struct's block copied to the end unless it is last.
+        let final_count = try temp_u32{ &t, n = ns, fill = 0 }
+        let single = try temp_u32{ &t, n = ns, fill = NONE }
+        s = 0
+        while s < ns {
+            final_count[s] = count[s]
+            if count[s] >= 1 { single[s] = members[start[s]] }
+            s = s + 1
+        }
+        f = nb
+        while f < nf {
+            let o = fields[f].owner
+            let n = final_count[o]
+            if n == 0 {
+                single[o] = @trunc(u32, f)
+            } else if n == 1 {
+                fi_at[o] = @trunc(u32, fi.len)
+                try list::push{ list = &fi, item = single[o] }
+                try list::push{ list = &fi, item = @trunc(u32, f) }
+            } else {
+                try grow_block{ out = &fi, at = &fi_at[o], n, item = @trunc(u32, f) }
+            }
+            final_count[o] = n + 1
+            f = f + 1
+        }
+
+        // List indices.
+        let mut li = list::new(u32, S){ realloc = b.realloc, heap = b.heap }
+        defer list::free{ list = &li }
+        let li_at = try temp_u32{ &t, n = nf, fill = NONE }         // in entries
+        match layout.li {
+            by_field => {
+                // Each list's elements, ordered by position.
+                let ecount = try temp_u32{ &t, n = nf, fill = 0 }
+                let estart = try temp_u32{ &t, n = nf + 1, fill = 0 }
+                s = 0
+                while s < ns {
+                    if structs[s].list != NONE { ecount[structs[s].list] = ecount[structs[s].list] + 1 }
+                    s = s + 1
+                }
+                f = 0
+                while f < nf {
+                    estart[f + 1] = estart[f] + ecount[f]
+                    f = f + 1
+                }
+                let elems = try temp_u32{ &t, n = estart[nf], fill = 0 }
+                let efill = try temp_u32{ &t, n = nf, fill = 0 }
+                s = 0
+                while s < ns {
+                    let l = structs[s].list
+                    if l != NONE {
+                        // Insertion by position: lists come in order, so this rarely moves anything.
+                        let base = estart[l]
+                        let mut j = efill[l]
+                        while j > 0 and structs[elems[base + j - 1]].pos > structs[s].pos {
+                            elems[base + j] = elems[base + j - 1]
+                            j = j - 1
+                        }
+                        elems[base + j] = @trunc(u32, s)
+                        efill[l] = efill[l] + 1
+                    }
+                    s = s + 1
+                }
+                f = 0
+                while f < nf {
+                    if fields[f].kind == @as(u32, gff::Kind::list) {
+                        li_at[f] = @trunc(u32, li.len)
+                        try list::push{ list = &li, item = ecount[f] }
+                        try append_block{ out = &li, at = &efill[f], src = elems[estart[f]..estart[f + 1]] }
+                    }
+                    f = f + 1
+                }
+            }
+            move => {
+                let events = list::items{ list = b.events }
+                let mut e: usize = 0
+                while e < events.len {
+                    let ev = events[e]
+                    e = e + 1
+                    if ev & STRUCT_EVENT != 0 {
+                        let st = ev & (STRUCT_EVENT - 1)
+                        let l = structs[st].list
+                        if l == NONE { continue }
+                        if li_at[l] == NONE {
+                            li_at[l] = @trunc(u32, li.len)
+                            try list::push{ list = &li, item = 0 }
+                        }
+                        let at = li_at[l]
+                        let n = list::items{ list = li }[at]
+                        if @as(usize, at) + 1 + @as(usize, n) == li.len {
+                            try list::push{ list = &li, item = st }
+                            li.items[at] = n + 1
+                        } else {
+                            try list::reserve{ list = &li, extra = @as(usize, n) + 2 }
+                            let fresh = @trunc(u32, li.len)
+                            li.items[li.len] = n + 1
+                            li.len = li.len + 1
+                            let mut k: u32 = 0
+                            while k < n {
+                                li.items[li.len] = li.items[at + 1 + k]
+                                li.len = li.len + 1
+                                k = k + 1
+                            }
+                            li.items[li.len] = st
+                            li.len = li.len + 1
+                            li_at[l] = fresh
+                        }
+                    } else if fields[ev].kind == @as(u32, gff::Kind::list) and li_at[ev] == NONE {
+                        li_at[ev] = @trunc(u32, li.len)
+                        try list::push{ list = &li, item = 0 }
+                    }
+                }
+            }
+        }
+
+        // The file: header, then structs, fields, labels, field data, field indices, list indices.
+        let nl = b.labels.len
+        let so: u64 = 56
+        let fo = so + 12 * @as(u64, ns)
+        let lo = fo + 12 * @as(u64, nf)
+        let dof = lo + 16 * @as(u64, nl)
+        let fio = dof + @as(u64, b.data.len)
+        let lio = fio + 4 * @as(u64, fi.len)
+        let total = lio + 4 * @as(u64, li.len)
+        if total > 4294967295 { return too_big }
+        let mut out = list::new(u8, S){ realloc = b.realloc, heap = b.heap }
+        let mut ok = false
+        defer { if not ok { list::free{ list = &out } } }
+        try list::reserve{ list = &out, extra = @as(usize, total) }
+        try le::put_bytes{ &out, bytes = b.tag[..] }
+        try le::put_bytes{ &out, bytes = "V3.2" }
+        let heads: [12]u64 = [so, @as(u64, ns), fo, @as(u64, nf), lo, @as(u64, nl), dof, @as(u64, b.data.len), fio, 4 * @as(u64, fi.len), lio, 4 * @as(u64, li.len)]
+        let mut k: usize = 0
+        while k < 12 {
+            try le::put_u32{ &out, v = @trunc(u32, heads[k]) }
+            k = k + 1
+        }
+        s = 0
+        while s < ns {
+            let n = final_count[s]
+            let dd = if n == 0 { NONE } else if n == 1 { single[s] } else { 4 * fi_at[s] }
+            try le::put_u32{ &out, v = structs[s].id }
+            try le::put_u32{ &out, v = dd }
+            try le::put_u32{ &out, v = n }
+            s = s + 1
+        }
+        f = 0
+        while f < nf {
+            let fr = fields[f]
+            let dd = if fr.kind == @as(u32, gff::Kind::list) { 4 * li_at[f] } else { fr.raw }
+            try le::put_u32{ &out, v = fr.kind }
+            try le::put_u32{ &out, v = fr.label }
+            try le::put_u32{ &out, v = dd }
+            f = f + 1
+        }
+        let labels = list::items{ list = b.labels }
+        k = 0
+        while k < nl {
+            try le::put_bytes{ &out, bytes = labels[k].chars[..] }
+            k = k + 1
+        }
+        try le::put_bytes{ &out, bytes = list::items{ list = b.data } }
+        let fis = list::items{ list = fi }
+        k = 0
+        while k < fis.len {
+            try le::put_u32{ &out, v = fis[k] }
+            k = k + 1
+        }
+        let lis = list::items{ list = li }
+        k = 0
+        while k < lis.len {
+            try le::put_u32{ &out, v = lis[k] }
+            k = k + 1
+        }
+        let bytes = try alloc::resize(u8, S){ realloc = b.realloc, heap = b.heap, mem = out.items, count = out.len }
+        ok = true
+        return bytes
+    }
+
+    // Appends `src` as a new block, recording where (in entries) in `at`.
+    fn append_block(S) { mut out: list::List(u32, S), at: *mut u32, src: []u32 } -> ! {
+        at.* = @trunc(u32, out.len)
+        try list::reserve{ list = &out, extra = src.len }
+        slice::copy(u32){ dst = out.items[out.len..out.len + src.len], src }
+        out.len = out.len + src.len
+    }
+
+    // Adds `item` to the `n`-entry block at `at`: in place if it is the last block, else as a copy
+    // at the end with the old one left behind.
+    fn grow_block(S) { mut out: list::List(u32, S), at: *mut u32, n: u32, item: u32 } -> ! {
+        let a = @as(usize, at.*)
+        if a + @as(usize, n) == out.len {
+            try list::push{ list = &out, item }
+            return
+        }
+        try list::reserve{ list = &out, extra = @as(usize, n) + 1 }
+        at.* = @trunc(u32, out.len)
+        let mut k: usize = 0
+        while k < @as(usize, n) {
+            out.items[out.len] = out.items[a + k]
+            out.len = out.len + 1
+            k = k + 1
+        }
+        out.items[out.len] = item
+        out.len = out.len + 1
+    }
+
+    // Temporary u32 arrays, given back together.
+    struct Temp(S) { realloc: alloc::Fn(S), heap: *mut S, blocks: list::List(alloc::Bytes, S) }
+
+    fn temp_u32(S) { mut t: Temp(S), n: usize, fill: u32 } -> ![]mut u32 {
+        try list::reserve{ list = &t.blocks, extra = 1 }
+        let a = try alloc::resize(u32, S){ realloc = t.realloc, heap = t.heap, mem = slice::empty(u32){}, count = n }
+        slice::fill(u32){ s = a, v = fill }
+        try list::push{ list = &t.blocks, item = slice::cast(u32, u8){ s = a } }
+        return a
+    }
+
+    fn free_temp(S) { mut t: Temp(S) } {
+        let bs = list::items{ list = t.blocks }
+        let mut i: usize = 0
+        while i < bs.len {
+            _ = t.realloc{ heap = t.heap, mem = bs[i], new = 0, align = 4 }
+            i = i + 1
+        }
+        list::free{ list = &t.blocks }
+    }
+}

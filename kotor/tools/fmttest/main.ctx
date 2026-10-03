@@ -1,0 +1,230 @@
+// fmttest: checks of lib/formats and lib/res that the corpus can't make: the text 2DA form (no
+// shipped table uses it), building a GFF from scratch through gffw's API, writing and reading back
+// an ERF, malformed input that must fail cleanly, and a few values of real tables against what
+// docs/formats/2da.md says they hold.
+
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+
+struct Tally { run: u32, failed: u32 }
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let game: []u8 = if args.len >= 2 and slice::eq_bytes{ a = args[0], b = "--game" } { args[1] } else { DEFAULT_GAME }
+    let mut t = Tally{ run = 0, failed = 0 }
+    let mut h = heap::new{ &mem }
+    let pages = mem::pages{ &mem, size = 16777216 } ifnull { return 1 }
+    let mut scratch = arena::new{ buf = pages }
+    check_text_2da{ &io, &t, &scratch }
+    arena::reset{ heap = &scratch }
+    check_gff_builder{ &io, &t, &scratch }
+    arena::reset{ heap = &scratch }
+    check_erf{ &io, &t, &scratch }
+    arena::reset{ heap = &scratch }
+    check_malformed{ &io, &t, &scratch }
+    arena::reset{ heap = &scratch }
+    check_real_tables{ &io, &fs, &t, &h, &scratch, game }
+    _ = @fmt(&io, "fmttest: {} checks, {} failed; heap {} bytes live\n", t.run, t.failed, h.live)
+    io::flush{ &io }
+    return if t.failed == 0 and h.live == 0 { 0 } else { 1 }
+}
+
+fn expect { mut io: Io, mut t: Tally, ok: bool, what: strlit } {
+    t.run = t.run + 1
+    if not ok {
+        t.failed = t.failed + 1
+        _ = @fmt(&io, "FAIL: {}\n", what)
+    }
+}
+
+fn str_is { s: ?[]u8, want: []u8 } -> bool {
+    if s == null { return false }
+    return slice::eq_bytes{ a = s, b = want }
+}
+
+fn check_text_2da { mut io: Io, mut t: Tally, mut scratch: arena::Arena } {
+    // The column line names the columns after the row labels' own.
+    let src: []u8 = "2DA V2.0\r\n\r\nDEFAULT: 7\r\n   Name  \"Value\"\tHex\r\n0 first \"two words\" 0x10\r\n1 ****  ****  010\r\nRow2 short\r\n\r\n"
+    let tb = twoda::parse{ data = src, realloc = arena::alloc, heap = &scratch } iferr err{ error } {
+        _ = @fmt(&io, "FAIL: text 2da parse: {}\n", error)
+        t.failed = t.failed + 1
+        return
+    }
+    expect{ &io, &t, ok = tb.columns.len == 3 and twoda::rows{ t = tb } == 3, what = "text 2da shape" }
+    expect{ &io, &t, ok = (twoda::find_column{ t = tb, name = "VALUE" } ifnull 9) == 1, what = "text 2da columns lowered, found ignoring case" }
+    expect{ &io, &t, ok = str_is{ s = twoda::get_string{ t = tb, row = 2, column = "hex" }, want = "7" }, what = "text 2da short row takes the default" }
+    expect{ &io, &t, ok = str_is{ s = twoda::get_string{ t = tb, row = 0, column = "value" }, want = "two words" }, what = "text 2da quoted cell" }
+    expect{ &io, &t, ok = twoda::get_string{ t = tb, row = 1, column = "name" } == null, what = "text 2da **** is blank" }
+    expect{ &io, &t, ok = (twoda::get_int{ t = tb, row = 0, column = "hex" } ifnull 0) == 16, what = "text 2da 0x hex" }
+    expect{ &io, &t, ok = (twoda::get_int{ t = tb, row = 1, column = "hex" } ifnull 0) == 10, what = "text 2da integers are decimal (atol)" }
+    expect{ &io, &t, ok = str_is{ s = twoda::get_string{ t = tb, row = 2, column = "value" }, want = "7" }, what = "text 2da missing cell takes the default" }
+    expect{ &io, &t, ok = (twoda::find_row{ t = tb, label = "ROW2" } ifnull 9) == 2, what = "text 2da label lookup" }
+    expect{ &io, &t, ok = twoda::get_string{ t = tb, row = 9, column = "label" } == null, what = "row out of range" }
+
+    // Binary: the engine's octal %i; NUL separators accepted.
+    // Columns a, b ended by NULs; rows 0, 1; cells "", "010", "x", "0x1F".
+    let bin: []u8 = "2DA V2.b\na\x00b\x00\x00\x02\x00\x00\x000\x001\x00\x00\x00\x01\x00\x05\x00\x07\x00\x0c\x00\x00010\x00x\x000x1F\x00"
+    let tb2 = twoda::parse{ data = bin, realloc = arena::alloc, heap = &scratch } iferr err{ error } {
+        _ = @fmt(&io, "FAIL: binary 2da parse: {}\n", error)
+        t.failed = t.failed + 1
+        return
+    }
+    expect{ &io, &t, ok = tb2.columns.len == 2 and twoda::rows{ t = tb2 } == 2, what = "binary 2da with NUL separators" }
+    expect{ &io, &t, ok = (twoda::get_int{ t = tb2, row = 0, column = "b" } ifnull 0) == 8, what = "binary 2da %i octal" }
+    expect{ &io, &t, ok = (twoda::get_int{ t = tb2, row = 1, column = "a" } ifnull 9) == 0, what = "binary 2da non-number is 0, found" }
+    expect{ &io, &t, ok = (twoda::get_int{ t = tb2, row = 1, column = "b" } ifnull 0) == 31, what = "binary 2da %i hex" }
+    expect{ &io, &t, ok = twoda::get_string{ t = tb2, row = 0, column = "a" } == null, what = "binary 2da empty cell is blank" }
+}
+
+fn check_gff_builder { mut io: Io, mut t: Tally, mut scratch: arena::Arena } {
+    let mut b = gffw::new{ realloc = arena::alloc, heap = &scratch, tag = "UTC " } iferr { return }
+    let root = gffw::ROOT
+    _ = gffw::add_value{ &b, owner = root, label = "Race", value = gff::Value::byte{ v = 6 } } iferr { return }
+    _ = gffw::add_value{ &b, owner = root, label = "Tag", value = gff::Value::exostring{ v = "bastila" } } iferr { return }
+    _ = gffw::add_value{ &b, owner = root, label = "Save", value = gff::Value::char{ v = -2 } } iferr { return }
+    _ = gffw::add_value{ &b, owner = root, label = "Pos", value = gff::Value::vector{ v = [1.0, -2.5, 0.0] } } iferr { return }
+    let items = gffw::put_list{ &b, owner = root, label = "ItemList" } iferr { return }
+    let e0 = gffw::add_element{ &b, list = items, id = 0 } iferr { return }
+    _ = gffw::add_value{ &b, owner = e0, label = "InventoryRes", value = gff::Value::resref{ v = "g_w_blstrpstl01" } } iferr { return }
+    let e1 = gffw::add_element{ &b, list = items, id = 1 } iferr { return }
+    _ = gffw::add_value{ &b, owner = e1, label = "InventoryRes", value = gff::Value::resref{ v = "g_a_class4001" } } iferr { return }
+    _ = gffw::add_value{ &b, owner = e1, label = "Dropable", value = gff::Value::byte{ v = 1 } } iferr { return }
+    let sub = gffw::put_struct{ &b, owner = root, label = "Combat", id = 51882 } iferr { return }
+    _ = gffw::add_value{ &b, owner = sub, label = "Round", value = gff::Value::dword64{ v = 18446744073709551615 } } iferr { return }
+    let bytes = gffw::finish{ &b, layout = gffw::ENGINE } iferr err{ error } {
+        _ = @fmt(&io, "FAIL: gffw finish: {}\n", error)
+        t.failed = t.failed + 1
+        return
+    }
+    let doc = gff::parse{ data = bytes, realloc = arena::alloc, heap = &scratch } iferr err{ error } {
+        _ = @fmt(&io, "FAIL: parse of a built GFF: {}\n", error)
+        t.failed = t.failed + 1
+        return
+    }
+    expect{ &io, &t, ok = slice::eq_bytes{ a = doc.tag[..], b = "UTC " }, what = "built gff tag" }
+    expect{ &io, &t, ok = (gff::get_byte{ doc, s = gff::ROOT, label = "Race" } ifnull 0) == 6, what = "built gff byte" }
+    expect{ &io, &t, ok = str_is{ s = gff::get_string{ doc, s = gff::ROOT, label = "Tag" }, want = "bastila" }, what = "built gff string" }
+    expect{ &io, &t, ok = (gff::get_char{ doc, s = gff::ROOT, label = "Save" } ifnull 0) == -2, what = "built gff negative CHAR" }
+    expect{ &io, &t, ok = gff::get_byte{ doc, s = gff::ROOT, label = "Tag" } == null, what = "wrong type is null" }
+    expect{ &io, &t, ok = gff::get_byte{ doc, s = gff::ROOT, label = "race" } == null, what = "labels are case-sensitive" }
+    let v = gff::get_vector{ doc, s = gff::ROOT, label = "Pos" } ifnull [0.0, 0.0, 0.0]
+    expect{ &io, &t, ok = v[1] == -2.5, what = "built gff vector" }
+    let list = gff::get_list{ doc, s = gff::ROOT, label = "ItemList" } ifnull slice::empty(u32){}
+    expect{ &io, &t, ok = list.len == 2 and gff::struct_id{ doc, s = list[1] } == 1, what = "built gff list" }
+    if list.len == 2 {
+        expect{ &io, &t, ok = str_is{ s = gff::get_resref{ doc, s = list[1], label = "InventoryRes" }, want = "g_a_class4001" }, what = "built gff list element" }
+    }
+    let c = gff::get_struct{ doc, s = gff::ROOT, label = "Combat" } ifnull 0
+    expect{ &io, &t, ok = c != 0 and gff::struct_id{ doc, s = c } == 51882 and (gff::get_dword64{ doc, s = c, label = "Round" } ifnull 0) == 18446744073709551615, what = "built gff struct and DWORD64" }
+    // Written again from the parse, in the engine's layout, the bytes are the same.
+    let mut b2 = gffw::new{ realloc = arena::alloc, heap = &scratch, tag = "UTC " } iferr { return }
+    gffw::copy_doc{ b = &b2, doc, order = gffw::Order::dfs } iferr { return }
+    let again = gffw::finish{ b = &b2, layout = gffw::ENGINE } iferr { return }
+    expect{ &io, &t, ok = slice::eq_bytes{ a = again, b = bytes }, what = "built gff rewritten identically" }
+    // A label over 16 bytes is refused.
+    let long = match gffw::add_value{ &b, owner = root, label = "SeventeenLetters_", value = gff::Value::byte{ v = 0 } } { ok => { false } gffw::too_long => { true } else => { false } }
+    expect{ &io, &t, ok = long, what = "17-byte label refused" }
+}
+
+fn check_erf { mut io: Io, mut t: Tally, mut scratch: arena::Arena } {
+    let members: [3]erf::NewMember = [
+        erf::NewMember{ name = "END_M01AA", kind = 2057, data = "nested" },
+        erf::NewMember{ name = "INVENTORY", kind = 0, data = "" },
+        erf::NewMember{ name = "nm13aabast01059_", kind = 3004, data = "LIP V1.0" },
+    ]
+    let bytes = erf::write{ realloc = arena::alloc, heap = &scratch, sig = erf::Sig::mod, members = members[..], year = 123, day = 344 } iferr err{ error } {
+        _ = @fmt(&io, "FAIL: erf write: {}\n", error)
+        t.failed = t.failed + 1
+        return
+    }
+    expect{ &io, &t, ok = bytes.len == 160 + 3 * 32 + 14 and slice::eq_bytes{ a = bytes[..8], b = "MOD V1.0" }, what = "erf size and signature" }
+    let ms = erf::parse{ data = bytes, realloc = arena::alloc, heap = &scratch } iferr { return }
+    expect{ &io, &t, ok = ms.len == 3 and resref::matches{ r = ms[0].name, name = "end_m01aa" } and ms[2].kind == 3004, what = "erf read back" }
+    if ms.len == 3 {
+        expect{ &io, &t, ok = slice::eq_bytes{ a = bytes[ms[2].offset..ms[2].offset + ms[2].size], b = "LIP V1.0" }, what = "erf member data" }
+        expect{ &io, &t, ok = ms[1].size == 0 and ms[2].name.len == 16, what = "erf empty member and 16-byte name" }
+    }
+    let long: [1]erf::NewMember = [erf::NewMember{ name = "seventeen_chars_x", kind = 0, data = "" }]
+    let bad = match erf::write{ realloc = arena::alloc, heap = &scratch, sig = erf::Sig::erf, members = long[..], year = 0, day = 0 } {
+        ok => { false } erf::name_too_long => { true } else => { false }
+    }
+    expect{ &io, &t, ok = bad, what = "erf name over 16 refused" }
+}
+
+// Cut and corrupted files are errors, never panics.
+fn check_malformed { mut io: Io, mut t: Tally, mut scratch: arena::Arena } {
+    let mut b = gffw::new{ realloc = arena::alloc, heap = &scratch, tag = "PTH " } iferr { return }
+    let pts = gffw::put_list{ &b, owner = gffw::ROOT, label = "Path_Points" } iferr { return }
+    let p = gffw::add_element{ &b, list = pts, id = 2 } iferr { return }
+    _ = gffw::add_value{ &b, owner = p, label = "X", value = gff::Value::float{ v = 1.0 } } iferr { return }
+    _ = gffw::add_value{ &b, owner = p, label = "Name", value = gff::Value::exostring{ v = "abc" } } iferr { return }
+    let good = gffw::finish{ &b, layout = gffw::ENGINE } iferr { return }
+    // Every truncation fails to parse.
+    let mut n: usize = 0
+    let mut all_failed = true
+    while n < good.len {
+        let parsed = match gff::parse{ data = good[..n], realloc = arena::alloc, heap = &scratch } { ok => { true } err => { false } }
+        if parsed { all_failed = false }
+        n = n + 1
+    }
+    expect{ &io, &t, ok = all_failed, what = "every truncated GFF is an error" }
+    // Every single-byte change either parses or is an error (no panic, no read outside).
+    let copy = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &scratch, mem = slice::empty(u8){}, count = good.len } iferr { return }
+    let mark = scratch.used
+    let mut i: usize = 0
+    while i < good.len {
+        slice::copy(u8){ dst = copy, src = good }
+        copy[i] = copy[i] ^ 0xFF
+        _ = match gff::parse{ data = copy, realloc = arena::alloc, heap = &scratch } { ok => { true } err => { false } }
+        scratch.used = mark
+        i = i + 1
+    }
+    expect{ &io, &t, ok = true, what = "corrupted GFFs don't panic" }
+    let cut_2da = match twoda::parse{ data = "2DA V2.b\nlabel\t\x00\x05\x00\x00\x00", realloc = arena::alloc, heap = &scratch } { ok => { false } err => { true } }
+    expect{ &io, &t, ok = cut_2da, what = "truncated 2DA is an error" }
+    let cut_erf = match erf::parse{ data = "MOD V1.0\x00\x00", realloc = arena::alloc, heap = &scratch } { ok => { false } err => { true } }
+    expect{ &io, &t, ok = cut_erf, what = "truncated ERF is an error" }
+    let cut_key = match key::parse{ data = "KEY V1  ", realloc = arena::alloc, heap = &scratch } { ok => { false } err => { true } }
+    expect{ &io, &t, ok = cut_key, what = "truncated KEY is an error" }
+}
+
+// Values docs/formats/2da.md and resources.md give for the shipped tables.
+fn check_real_tables { mut io: Io, mut fs: Fs, mut t: Tally, mut h: heap::Heap, mut scratch: arena::Arena, game: []u8 } {
+    let mut rm = res::open{ &fs, heap = &h, game } iferr err{ error } {
+        _ = @fmt(&io, "FAIL: res::open: {}\n", error)
+        t.failed = t.failed + 1
+        return
+    }
+    defer res::close{ &fs, &rm }
+    let exp = load_table{ &fs, rm, &scratch, name = "exptable" } ifnull {
+        expect{ &io, &t, ok = false, what = "exptable.2da found" }
+        return
+    }
+    let mut minus_one = false
+    let mut r: usize = 0
+    while r < twoda::rows{ t = exp } {
+        let mut c: usize = 0
+        while c < exp.columns.len {
+            if slice::eq_bytes{ a = twoda::cell{ t = exp, row = r, col = c }, b = "0xFFFFFFFF" } {
+                minus_one = (twoda::get_int_at{ t = exp, row = r, col = c } ifnull 0) == -1
+            }
+            c = c + 1
+        }
+        r = r + 1
+    }
+    expect{ &io, &t, ok = minus_one, what = "exptable's 0xFFFFFFFF reads as -1" }
+    let packs = load_table{ &fs, rm, &scratch, name = "texpacks" } ifnull { return }
+    expect{ &io, &t, ok = str_is{ s = twoda::get_string{ t = packs, row = 2, column = "Texture" }, want = "swpc_tex_tpa" }, what = "texpacks row 2" }
+    expect{ &io, &t, ok = (twoda::get_float{ t = packs, row = 0, column = "DynMemRatio" } ifnull 0.0) == 0.75, what = "texpacks float" }
+    let wd = load_table{ &fs, rm, &scratch, name = "weapondischarge" } ifnull { return }
+    let row = twoda::find_row{ t = wd, label = "217" }
+    expect{ &io, &t, ok = row != null, what = "weapondischarge row by label" }
+    let vfx = load_table{ &fs, rm, &scratch, name = "visualeffects" } ifnull { return }
+    expect{ &io, &t, ok = twoda::find_column{ t = vfx, name = "Imp_HeadCon_Node" } != null, what = "visualeffects column in the engine's case" }
+    let skills = res::find{ rm, name = "skills", kind = restype::Type::twoda }
+    expect{ &io, &t, ok = skills != null and skills.class == res::Class::erf1, what = "skills.2da comes from patch.erf" }
+}
+
+fn load_table { mut fs: Fs, rm: res::Manager, mut scratch: arena::Arena, name: []u8 } -> ?twoda::Table {
+    let data = res::load{ &fs, rm, name, kind = restype::Type::twoda, realloc = arena::alloc, heap = &scratch } iferr { return null }
+    let d = data ifnull { return null }
+    return twoda::parse{ data = d, realloc = arena::alloc, heap = &scratch } iferr { null }
+}

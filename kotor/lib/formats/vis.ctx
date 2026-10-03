@@ -1,0 +1,119 @@
+// VIS room visibility (docs/formats/vis.md): for each room of an area, the rooms that can be
+// seen from it. While the camera is in room R the engine draws R and the rooms R's entry lists.
+//
+//   let v = try vis::parse{ data, realloc, &heap }
+//   defer vis::free{ v, realloc, &heap }
+//   if vis::sees{ v, from = camera_room, to = room } { draw room }
+//
+// Indentation decides, not the counts (four of which are wrong in the shipped files): an
+// unindented line starts an entry, `room [count]`; an indented line adds one visible room to it.
+// A count that disagrees with the lines after it, or is missing, is only counted (`mismatches`).
+// Names are resrefs, so they compare ignoring case, as the files spell rooms both ways.
+//
+// The arrays are in memory from `realloc`; the result keeps nothing of `data`.
+namespace vis {
+    // An indented line before the first entry. Lines count from 1.
+    error orphan_name{ line: u32 }
+    // An entry line with more than two words, or a count that isn't a non-negative number.
+    error bad_entry{ line: u32 }
+    // An indented line with more than one word, or a name longer than a resref.
+    error bad_name{ line: u32 }
+
+    struct Entry {
+        room: resref::ResRef,
+        first: u32,                 // its visible rooms are names[first..first + count]
+        count: u32,
+        declared: ?u32,             // the count the file gives, if any
+    }
+
+    struct Vis {
+        entries: []mut Entry,
+        names: []mut resref::ResRef,
+        mismatches: u32,            // entries whose declared count is missing or wrong
+    }
+
+    fn parse(S) { data: []u8, realloc: alloc::Fn(S), mut heap: S } -> !Vis {
+        let mut entries = list::new(Entry, S){ realloc, heap = &heap }
+        let mut names = list::new(resref::ResRef, S){ realloc, heap = &heap }
+        // On success the lists are empty by then, so these free only on an error.
+        defer list::free{ list = &entries }
+        defer list::free{ list = &names }
+
+        let mut lines = text::lines{ data }
+        let mut line: u32 = 0
+        while true {
+            let raw = text::next_line{ &lines } ifnull { break }
+            line = line + 1
+            let mut ws = text::words{ s = raw }
+            let first = text::next_word{ words = &ws } ifnull { continue }
+            let second = text::next_word{ words = &ws }
+            let third = text::next_word{ words = &ws }
+            if raw[0] == ' ' or raw[0] == '\t' {
+                if entries.len == 0 { return orphan_name{ line } }
+                if second != null { return bad_name{ line } }
+                try list::push{ list = &names, item = resref::from{ name = first } iferr { return bad_name{ line } } }
+                let e = list::at{ list = entries, i = entries.len - 1 }
+                e.count = e.count + 1
+                continue
+            }
+            if third != null { return bad_entry{ line } }
+            let mut declared: ?u32 = null
+            if second != null {
+                if not text::is_integer{ s = second } or second[0] == '-' { return bad_entry{ line } }
+                declared = @trunc(u32, text::scan_decimal{ s = second })
+            }
+            try list::push{ list = &entries, item = Entry{
+                room = resref::from{ name = first } iferr { return bad_entry{ line } },
+                first = @trunc(u32, names.len),
+                count = 0,
+                declared,
+            } }
+        }
+        let mut mismatches: u32 = 0
+        let mut i: usize = 0
+        while i < entries.len {
+            let e = list::items{ list = entries }[i]
+            let d = e.declared
+            if d == null or d != e.count { mismatches = mismatches + 1 }
+            i = i + 1
+        }
+        return Vis{ entries = try lists::take{ list = &entries }, names = try lists::take{ list = &names }, mismatches }
+    }
+
+    // Gives back what `parse` took from `realloc`.
+    fn free(S) { v: Vis, realloc: alloc::Fn(S), mut heap: S } {
+        _ = alloc::resize(Entry, S){ realloc, &heap, mem = v.entries, count = 0 }
+        _ = alloc::resize(resref::ResRef, S){ realloc, &heap, mem = v.names, count = 0 }
+    }
+
+    // The entry of room `name`, ignoring case; the first if a room had two (never in the data).
+    fn find { v: Vis, name: []u8 } -> ?Entry {
+        let mut i: usize = 0
+        while i < v.entries.len {
+            if resref::matches{ r = v.entries[i].room, name } { return v.entries[i] }
+            i = i + 1
+        }
+        return null
+    }
+
+    // The rooms entry `e` lists, in file order, duplicates and all (six entries name a room
+    // twice), and names that are no room of the area (ignore those).
+    fn get_names { v: Vis, e: Entry } -> []resref::ResRef {
+        return v.names[@as(usize, e.first)..@as(usize, e.first) + @as(usize, e.count)]
+    }
+
+    // Whether room `to` is drawn while the camera is in room `from`. A room always sees itself,
+    // and a room with no entry sees everything (vis.md's decision: drawing too much only costs
+    // time, drawing too little makes the world vanish).
+    fn sees { v: Vis, from: []u8, to: []u8 } -> bool {
+        if ci::eq{ a = from, b = to } { return true }
+        let e = find{ v, name = from } ifnull { return true }
+        let ns = get_names{ v, e }
+        let mut i: usize = 0
+        while i < ns.len {
+            if resref::matches{ r = ns[i], name = to } { return true }
+            i = i + 1
+        }
+        return false
+    }
+}

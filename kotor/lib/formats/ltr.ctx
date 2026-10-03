@@ -1,0 +1,164 @@
+// LTR letter tables (docs/formats/ltr.md): a third-order Markov model of names, which character
+// creation's random-name button draws from (humanm, humanf: first names; humanl: last names).
+//
+//   let t = try ltr::parse{ data }
+//   let mut rng = ltr::seed_rng{ seed = 1 }
+//   let mut buf: [32]u8
+//   let name = ltr::generate{ t, &rng, max_len = 0, into = buf[..] }    // empty: gave up
+//
+// For each context (none, one letter, two letters) a block holds three arrays of N cumulative
+// probabilities of the next letter: at the start, in the middle and at the end of a name. The
+// floats are packed from byte 9, so unaligned: a Table is a view of the file's bytes, which must
+// outlive it, and values are read when asked for.
+namespace ltr {
+    error bad_magic
+    // The size isn't 9 + 12 N (1 + N + N^2) for the file's N.
+    error bad_size{ size: usize, letters: u8 }
+
+    // Letter index to character for KOTOR's 28-letter tables. The engine sizes its arrays from N,
+    // so another N is legal; letters past this alphabet have no known character.
+    const ALPHABET: []u8 = "abcdefghijklmnopqrstuvwxyz'-"
+
+    enum Part: u8 { start, middle, end }
+
+    struct Table { letters: usize, data: []u8 }
+
+    // One context's three arrays of `letters` f32: start, middle, end.
+    struct Block { letters: usize, data: []u8 }
+
+    fn parse { data: []u8 } -> !Table {
+        if data.len < 9 or not slice::eq_bytes{ a = data[..8], b = "LTR V1.0" } { return bad_magic }
+        let n = @as(u64, data[8])
+        if @as(u64, data.len) != 9 + 12 * n * (1 + n + n * n) { return bad_size{ size = data.len, letters = data[8] } }
+        return Table{ letters = @as(usize, n), data = data[9..] }
+    }
+
+    // The block with no context: which letter starts a name.
+    fn get_singles { t: Table } -> Block {
+        return block_at{ t, k = 0 }
+    }
+
+    // The block after letter a.
+    fn get_doubles { t: Table, a: usize } -> Block {
+        if a >= t.letters { @panic("ltr::get_doubles: letter out of range") }
+        return block_at{ t, k = 1 + a }
+    }
+
+    // The block after letters a, b.
+    fn get_triples { t: Table, a: usize, b: usize } -> Block {
+        if a >= t.letters or b >= t.letters { @panic("ltr::get_triples: letter out of range") }
+        return block_at{ t, k = 1 + t.letters + a * t.letters + b }
+    }
+
+    // Entry i of one of the block's arrays: the running total of letters 0..i, or 0.0 for a letter
+    // that never occurs there.
+    fn get_value { b: Block, part: Part, i: usize } -> f32 {
+        if i >= b.letters { @panic("ltr::get_value: letter out of range") }
+        let at = 4 * (@as(usize, part) * b.letters + i)
+        return le::get_f32{ data = b.data, at } iferr 0.0
+    }
+
+    // The letter a roll in [0, 1] draws: the first i with roll < value[i]. Zeros never match, so
+    // this is an inverse-CDF draw; null when nothing matches (a context never seen in training).
+    fn pick { b: Block, part: Part, roll: f64 } -> ?usize {
+        let mut i: usize = 0
+        while i < b.letters {
+            if roll < @as(f64, get_value{ b, part, i }) { return i }
+            i = i + 1
+        }
+        return null
+    }
+
+    // The character of letter i: '?' past the alphabet.
+    fn char_of { i: usize } -> u8 {
+        if i < ALPHABET.len { return ALPHABET[i] }
+        return '?'
+    }
+
+    // ---- the name generator (swkotor.exe 0x711390)
+
+    // MSVC's rand(): what the engine rolls with. A caller that wants the engine's sequence seeds it
+    // as the engine's srand did; any seed gives plausible names.
+    struct Rng { state: u32 }
+
+    fn seed_rng { seed: u32 } -> Rng {
+        return Rng{ state = seed }
+    }
+
+    // 0 to 32767.
+    fn roll_rand { mut rng: Rng } -> u32 {
+        rng.state = @wrap_add(@wrap_mul(rng.state, 214013), 2531011)
+        return (rng.state >> 16) & 0x7FFF
+    }
+
+    // A name drawn as the engine draws one, written into `into` and returned (a view of it), with
+    // its first letter upper-cased. At most `max_len` letters (0: no limit but `into`'s length).
+    // Empty when the engine would give up (five dead ends), or when the table never yields a
+    // start: the engine retries that without limit, which data from a file mustn't be able to make
+    // us do. The caller checks the name against namefilter.2da and draws again on a match.
+    fn generate { t: Table, mut rng: Rng, max_len: usize, into: []mut u8 } -> []mut u8 {
+        let limit = if max_len == 0 or max_len > into.len { into.len } else { max_len }
+        if limit < 4 or t.letters == 0 { return into[..0] }
+        // Letters are kept as indexes while the name grows, and turned into characters at the end.
+        let mut fails = 0
+        let mut starts = 0
+        while fails < 5 {
+            starts = starts + 1
+            if starts > 10000 { break }
+            let a = pick{ b = get_singles{ t }, part = Part::start, roll = roll{ &rng } } ifnull { continue }
+            let b = pick{ b = get_doubles{ t, a }, part = Part::start, roll = roll{ &rng } } ifnull { continue }
+            let c = pick{ b = get_triples{ t, a, b }, part = Part::start, roll = roll{ &rng } } ifnull { continue }
+            into[0] = @trunc(u8, a)
+            into[1] = @trunc(u8, b)
+            into[2] = @trunc(u8, c)
+            let mut len: usize = 3
+            while true {
+                let ctx = get_triples{ t, a = @as(usize, into[len - 2]), b = @as(usize, into[len - 1]) }
+                let p = roll{ &rng }
+                let r = roll_rand{ &rng } % 12
+                if @as(usize, r) <= len or len == limit - 1 {
+                    // Try to end the name here.
+                    let k = pick{ b = ctx, part = Part::end, roll = p } ifnull {
+                        fails = fails + 1
+                        break
+                    }
+                    into[len] = @trunc(u8, k)
+                    len = len + 1
+                    let mut i: usize = 0
+                    while i < len {
+                        into[i] = char_of{ i = @as(usize, into[i]) }
+                        i = i + 1
+                    }
+                    into[0] = ascii::to_upper{ c = into[0] }
+                    return into[..len]
+                }
+                match pick{ b = ctx, part = Part::middle, roll = p } {
+                    some{ value } => {
+                        into[len] = @trunc(u8, value)
+                        len = len + 1
+                    }
+                    null => {
+                        if len <= 3 {
+                            fails = fails + 1
+                            break
+                        }
+                        len = len - 1
+                    }
+                }
+            }
+        }
+        return into[..0]
+    }
+
+    // ---- internals
+
+    fn block_at { t: Table, k: usize } -> Block {
+        let size = 12 * t.letters
+        return Block{ letters = t.letters, data = t.data[k * size..(k + 1) * size] }
+    }
+
+    // A uniform roll in [0, 1], as the engine makes one: rand() / 32767.0.
+    fn roll { mut rng: Rng } -> f64 {
+        return @as(f64, roll_rand{ &rng }) / 32767.0
+    }
+}

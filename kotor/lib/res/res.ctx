@@ -573,9 +573,9 @@ namespace res {
                 file = @trunc(u32, names.len - 1), offset = 0, size = @trunc(u32, size),
             } }
         }
-        src.pool = try exact(u8){ h, l = &pool }
-        src.names = try exact(Span){ h, l = &names }
-        src.members = try exact(Member){ h, l = &members }
+        src.pool = try lists::take{ list = &pool }
+        src.names = try lists::take{ list = &names }
+        src.members = try lists::take{ list = &members }
         ok = true
         try add_source{ &fs, &rm, src }
     }
@@ -676,7 +676,7 @@ namespace res {
             try le::put_bytes{ out = &pool, bytes = k.bifs[i].name }
             i = i + 1
         }
-        src.pool = try exact(u8){ h, l = &pool }
+        src.pool = try lists::take{ list = &pool }
 
         // Open each BIF and read its variable table. The files array grows as BIFs open, so a
         // failure part way closes only those.
@@ -739,8 +739,8 @@ namespace res {
             if @as(u64, be.offset) + @as(u64, be.size) > ss[ke.bif] { continue }
             try list::push{ list = &members, item = Member{ name = ke.name, kind = ke.kind, file = ke.bif, offset = be.offset, size = be.size } }
         }
-        src.members = try exact(Member){ h, l = &members }
-        src.files = try exact(fs::File){ h, l = &files }
+        src.members = try lists::take{ list = &members }
+        src.files = try lists::take{ list = &files }
         ok = true
         try add_source{ &fs, &rm, src }
     }
@@ -930,14 +930,5 @@ namespace res {
     fn free_bytes { h: *mut heap::Heap, b: alloc::Bytes } {
         if b.len == 0 { return }
         _ = heap::alloc{ heap = h, mem = b, new = 0, align = 1 }
-    }
-
-    // A list's items in an allocation of exactly their size, which can then be freed as a slice.
-    // The list is left empty, owning nothing.
-    fn exact(T) { h: *mut heap::Heap, mut l: list::List(T, heap::Heap) } -> ![]mut T {
-        let out = try alloc::resize(T, heap::Heap){ realloc = heap::alloc, heap = h, mem = l.items, count = l.len }
-        l.items = slice::empty(T){}
-        l.len = 0
-        return out
     }
 }

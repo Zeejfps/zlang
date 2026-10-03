@@ -1,0 +1,84 @@
+// LIP lip-sync keyframes (docs/formats/lip.md): for one line of voice-over, a list of times, each
+// with one of 16 mouth shapes. Shape s is frame s/30 s of the head's `talk` animation.
+//
+//   let l = try lip::parse{ data }
+//   let k = lip::get_key{ l, i = 0 }          // l.count keys, by time
+//
+// Keys are 5 bytes, packed: key i's float sits at the unaligned offset 16 + 5i, so a Lip is a
+// view of the file's bytes, which must outlive it, and keys are read one at a time.
+namespace lip {
+    // Shorter than the 16-byte header.
+    error truncated{ size: usize }
+    error bad_magic
+    // The size isn't 16 + 5 * count.
+    error bad_size{ size: usize, count: u32 }
+    // The line's length is negative or NaN.
+    error bad_length
+    // A shape id above 15.
+    error bad_shape{ key: u32, shape: u8 }
+    // A time that is NaN, decreases, or lies outside [0, length].
+    error bad_time{ key: u32 }
+
+    const HEADER_SIZE: usize = 16
+    const KEY_SIZE: usize = 5
+
+    // The mouth shapes, by the modding community's names for them. 0 is also the rest pose: every
+    // shipped file starts and ends on it.
+    enum Shape: u8 {
+        ee,             // also rest
+        eh,
+        schwa,
+        ah,
+        oh,
+        ooh,
+        y,
+        s_ts,
+        f_v,
+        n_ng,
+        th,
+        m_p_b,
+        t_d,
+        j_sh,
+        l_r,
+        k_g,
+    }
+
+    struct Key { time: f32, shape: Shape }
+
+    struct Lip {
+        length: f32,            // seconds; the last key's time in every shipped file
+        count: u32,
+        keys: []u8,             // count x 5 bytes
+    }
+
+    // Checks everything lip.md lists for a reader to reject, so `get_key` can't meet bad data.
+    // Repeated times are allowed: the data has them (an instant change to the later key).
+    fn parse { data: []u8 } -> !Lip {
+        if data.len < HEADER_SIZE { return truncated{ size = data.len } }
+        if not slice::eq_bytes{ a = data[..8], b = "LIP V1.0" } { return bad_magic }
+        let length = try le::get_f32{ data, at = 8 }
+        let count = try le::get_u32{ data, at = 12 }
+        if @as(u64, data.len) != @as(u64, HEADER_SIZE) + @as(u64, count) * @as(u64, KEY_SIZE) {
+            return bad_size{ size = data.len, count }
+        }
+        if not (length >= 0.0) { return bad_length }               // NaN fails every comparison
+        let keys = data[HEADER_SIZE..]
+        let mut prev: f32 = 0.0
+        let mut i: usize = 0
+        while i < @as(usize, count) {
+            let t = try le::get_f32{ data = keys, at = KEY_SIZE * i }
+            let shape = keys[KEY_SIZE * i + 4]
+            if shape > 15 { return bad_shape{ key = @trunc(u32, i), shape } }
+            if not (t >= prev and t <= length) { return bad_time{ key = @trunc(u32, i) } }
+            prev = t
+            i = i + 1
+        }
+        return Lip{ length, count, keys }
+    }
+
+    // Key i (below l.count).
+    fn get_key { l: Lip, i: usize } -> Key {
+        let t = le::get_f32{ data = l.keys, at = KEY_SIZE * i } iferr 0.0
+        return Key{ time = t, shape = @as(Shape, l.keys[KEY_SIZE * i + 4]) }
+    }
+}

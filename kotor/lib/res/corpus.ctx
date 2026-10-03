@@ -1,0 +1,275 @@
+// Every copy of every resource in the install, for corpus tests: chitin.key's BIFs, all four
+// texture packs, modules/, lips/, rims/, patch.erf, Override/, and each saved game (its
+// SAVEGAME.sav, the module states nested in it, and its loose files). No search order and no
+// deduplication: a name in three archives is visited three times. This is what the Python probes
+// call kres.Game().every_entry().
+//
+//   let totals = try corpus::each{ &fs, h = &heap, game, want = is_gff, visit = check{ &io, &stats, _ } }
+//
+// `want` picks the types to read; `visit` gets each wanted copy with its bytes, which are valid
+// only during the call.
+namespace corpus {
+    // Where a copy is: the file, and inside it a BIF's name (for chitin.key) or a nested
+    // archive's member name (a module state in a save), else empty.
+    struct Copy { name: resref::ResRef, kind: u16, path: []u8, inner: []u8, offset: u32, size: u32 }
+
+    struct Totals { archives: u32, copies: u64, visited: u64, bytes: u64 }
+
+    fn each { mut fs: Fs, h: *mut heap::Heap, game: []u8, want: &fn{ kind: u16 } -> bool, visit: &fn{ copy: Copy, data: []u8 } } -> !Totals {
+        let mut w = Walk{ h, buf = slice::empty(u8){}, totals = Totals{ archives = 0, copies = 0, visited = 0, bytes = 0 } }
+        defer res::free_bytes{ h, b = w.buf }
+
+        let chitin = try res::find_in{ &fs, h, dir = game, name = "chitin.key" }
+        if chitin != null {
+            defer res::free_bytes{ h, b = chitin }
+            try walk_key{ &fs, &w, game, path = chitin, want, visit }
+        }
+        let subdirs: [4][]u8 = ["texturepacks", "modules", "lips", "rims"]
+        let mut d: usize = 0
+        while d < subdirs.len {
+            let dir = try res::find_in{ &fs, h, dir = game, name = subdirs[d] }
+            d = d + 1
+            if dir == null { continue }
+            defer res::free_bytes{ h, b = dir }
+            let names = try list_dir{ &fs, h, dir }
+            defer free_names{ h, names }
+            let mut i: usize = 0
+            while i < names.spans.len {
+                let n = name_at{ names, i }
+                i = i + 1
+                if ci::ends_with{ s = n, suffix = ".erf" } or ci::ends_with{ s = n, suffix = ".mod" } or
+                    ci::ends_with{ s = n, suffix = ".rim" } or ci::ends_with{ s = n, suffix = ".sav" } {
+                    let p = try path::join{ realloc = heap::alloc, heap = h, dir, name = n }
+                    defer res::free_bytes{ h, b = p }
+                    try walk_archive{ &fs, &w, path = p, want, visit, nested = false }
+                }
+            }
+        }
+        let patch = try res::find_in{ &fs, h, dir = game, name = "patch.erf" }
+        if patch != null {
+            defer res::free_bytes{ h, b = patch }
+            try walk_archive{ &fs, &w, path = patch, want, visit, nested = false }
+        }
+        let override_ = try res::find_in{ &fs, h, dir = game, name = "override" }
+        if override_ != null {
+            defer res::free_bytes{ h, b = override_ }
+            try walk_loose{ &fs, &w, dir = override_, want, visit }
+        }
+        let saves = try res::find_in{ &fs, h, dir = game, name = "saves" }
+        if saves != null {
+            defer res::free_bytes{ h, b = saves }
+            let names = try list_dir{ &fs, h, dir = saves }
+            defer free_names{ h, names }
+            let mut i: usize = 0
+            while i < names.spans.len {
+                let n = name_at{ names, i }
+                i = i + 1
+                let slot = try path::join{ realloc = heap::alloc, heap = h, dir = saves, name = n }
+                defer res::free_bytes{ h, b = slot }
+                let is_file = match fs::size{ &fs, path = slot } { ok => { true } err => { false } }
+                if is_file { continue }                                    // not a save slot
+                let files = list_dir{ &fs, h, dir = slot } iferr { continue }
+                defer free_names{ h, names = files }
+                let mut k: usize = 0
+                while k < files.spans.len {
+                    let f = name_at{ names = files, i = k }
+                    k = k + 1
+                    let p = try path::join{ realloc = heap::alloc, heap = h, dir = slot, name = f }
+                    defer res::free_bytes{ h, b = p }
+                    if ci::ends_with{ s = f, suffix = ".sav" } {
+                        try walk_archive{ &fs, &w, path = p, want, visit, nested = true }
+                    } else {
+                        try walk_file{ &fs, &w, path = p, name = f, want, visit }
+                    }
+                }
+            }
+        }
+        return w.totals
+    }
+
+    // The walk's state: the heap, a read buffer reused from copy to copy, and the counts.
+    struct Walk { h: *mut heap::Heap, buf: alloc::Bytes, totals: Totals }
+
+    fn walk_key { mut fs: Fs, mut w: Walk, game: []u8, path: []u8, want: &fn{ kind: u16 } -> bool, visit: &fn{ copy: Copy, data: []u8 } } -> ! {
+        let h = w.h
+        let data = try fs::read_all{ &fs, heap = h, realloc = heap::alloc, path }
+        defer res::free_bytes{ h, b = data }
+        let k = try key::parse{ data, realloc = heap::alloc, heap = h }
+        defer _ = alloc::resize(key::Bif, heap::Heap){ realloc = heap::alloc, heap = h, mem = k.bifs, count = 0 }
+        defer _ = alloc::resize(key::Entry, heap::Heap){ realloc = heap::alloc, heap = h, mem = k.entries, count = 0 }
+        let mut b: usize = 0
+        while b < k.bifs.len {
+            let bif = k.bifs[b]
+            let full = try res::find_path{ &fs, h, dir = game, rel = bif.name } ifnull { return key::bad_bif }
+            defer res::free_bytes{ h, b = full }
+            let file = try fs::open{ &fs, path = full, mode = fs::Mode::read }
+            defer _ = fs::close{ &fs, file }
+            let mut head: [20]u8
+            let got = try fs::read_at{ &fs, file, offset = 0, into = head[..] }
+            let bh = try key::parse_bif_header{ data = head[..got] }
+            let table = try res::read_block{ &fs, h, file, offset = bh.table_at, len = @as(usize, bh.count) * key::BIF_ENTRY }
+            defer res::free_bytes{ h, b = table }
+            w.totals.archives = w.totals.archives + 1
+            let mut i: usize = 0
+            while i < k.entries.len {
+                let e = k.entries[i]
+                i = i + 1
+                if e.bif != @trunc(u32, b) { continue }
+                w.totals.copies = w.totals.copies + 1
+                if not want{ kind = e.kind } { continue }
+                let be = try key::bif_entry{ table, index = e.index }
+                let bytes = try read_into{ &fs, &w, file, offset = be.offset, size = be.size }
+                visit{ copy = Copy{ name = e.name, kind = e.kind, path = full, inner = bif.name, offset = be.offset, size = be.size }, data = bytes }
+            }
+            b = b + 1
+        }
+    }
+
+    // An ERF or a RIM, told apart by its magic. A save's nested module states (`nested`) are
+    // walked too.
+    fn walk_archive { mut fs: Fs, mut w: Walk, path: []u8, want: &fn{ kind: u16 } -> bool, visit: &fn{ copy: Copy, data: []u8 }, nested: bool } -> ! {
+        let h = w.h
+        let file = try fs::open{ &fs, path, mode = fs::Mode::read }
+        defer _ = fs::close{ &fs, file }
+        let size = try res::file_size32{ &fs, path }
+        let members = try read_members{ &fs, h, file, base = 0, size }
+        defer _ = alloc::resize(res::Member, heap::Heap){ realloc = heap::alloc, heap = h, mem = members, count = 0 }
+        w.totals.archives = w.totals.archives + 1
+        try walk_members{ &fs, &w, file, path, inner = "", members, want, visit }
+        if not nested { return }
+        let mut i: usize = 0
+        while i < members.len {
+            let m = members[i]
+            i = i + 1
+            if m.kind != @as(u16, restype::Type::sav) { continue }
+            let inner = try read_members{ &fs, h, file, base = m.offset, size = m.size }
+            defer _ = alloc::resize(res::Member, heap::Heap){ realloc = heap::alloc, heap = h, mem = inner, count = 0 }
+            w.totals.archives = w.totals.archives + 1
+            try walk_members{ &fs, &w, file, path, inner = resref::bytes{ r = &m.name }, members = inner, want, visit }
+        }
+    }
+
+    fn read_members { mut fs: Fs, h: *mut heap::Heap, file: fs::File, base: u32, size: u32 } -> ![]mut res::Member {
+        let mut magic: [8]u8
+        let got = try fs::read_at{ &fs, file, offset = base, into = magic[..] }
+        if got == 8 and slice::eq_bytes{ a = magic[..], b = "RIM V1.0" } {
+            if base != 0 { return rim::bad_header }
+            let mut head: [120]u8
+            let n = try fs::read_at{ &fs, file, offset = 0, into = head[..] }
+            let hd = try rim::parse_header{ data = head[..n] }
+            if @as(u64, hd.count) * 32 > @as(u64, size) { return rim::bad_table }
+            let keys = try res::read_block{ &fs, h, file, offset = hd.keys_at, len = @as(usize, hd.count) * rim::KEY }
+            defer res::free_bytes{ h, b = keys }
+            return try rim::parse_members{ h = hd, keys, base = 0, size, realloc = heap::alloc, heap = h }
+        }
+        return try res::read_erf_members{ &fs, h, file, base, size }
+    }
+
+    fn walk_members { mut fs: Fs, mut w: Walk, file: fs::File, path: []u8, inner: []u8, members: []res::Member, want: &fn{ kind: u16 } -> bool, visit: &fn{ copy: Copy, data: []u8 } } -> ! {
+        let mut i: usize = 0
+        while i < members.len {
+            let m = members[i]
+            i = i + 1
+            w.totals.copies = w.totals.copies + 1
+            if not want{ kind = m.kind } { continue }
+            let bytes = try read_into{ &fs, &w, file, offset = m.offset, size = m.size }
+            visit{ copy = Copy{ name = m.name, kind = m.kind, path, inner, offset = m.offset, size = m.size }, data = bytes }
+        }
+    }
+
+    // A directory's files, as resources the way the engine names them (res::mount_dir).
+    fn walk_loose { mut fs: Fs, mut w: Walk, dir: []u8, want: &fn{ kind: u16 } -> bool, visit: &fn{ copy: Copy, data: []u8 } } -> ! {
+        let h = w.h
+        let names = try list_dir{ &fs, h, dir }
+        defer free_names{ h, names }
+        let mut i: usize = 0
+        while i < names.spans.len {
+            let n = name_at{ names, i }
+            i = i + 1
+            let p = try path::join{ realloc = heap::alloc, heap = h, dir, name = n }
+            defer res::free_bytes{ h, b = p }
+            try walk_file{ &fs, &w, path = p, name = n, want, visit }
+        }
+    }
+
+    fn walk_file { mut fs: Fs, mut w: Walk, path: []u8, name: []u8, want: &fn{ kind: u16 } -> bool, visit: &fn{ copy: Copy, data: []u8 } } -> ! {
+        let dot = text::find_byte{ s = name, c = '.' } ifnull { return }
+        if dot == 0 { return }
+        let end = if name.len - dot - 1 > 3 { dot + 4 } else { name.len }
+        let kind = restype::of_ext{ ext = name[dot + 1..end] } ifnull { return }
+        let size = fs::size{ &fs, path } iferr { return }
+        if size > 4294967295 { return }
+        w.totals.copies = w.totals.copies + 1
+        if not want{ kind = @as(u16, kind) } { return }
+        let file = try fs::open{ &fs, path, mode = fs::Mode::read }
+        defer _ = fs::close{ &fs, file }
+        let bytes = try read_into{ &fs, &w, file, offset = 0, size = @trunc(u32, size) }
+        visit{ copy = Copy{ name = resref::truncate{ name = name[..dot] }, kind = @as(u16, kind), path, inner = "", offset = 0, size = @trunc(u32, size) }, data = bytes }
+    }
+
+    // Reads `size` bytes at `offset` into the walk's buffer, growing it as needed.
+    fn read_into { mut fs: Fs, mut w: Walk, file: fs::File, offset: u32, size: u32 } -> ![]u8 {
+        let n = @as(usize, size)
+        if n > w.buf.len {
+            let cap = if n > w.buf.len * 2 { n } else { w.buf.len * 2 }
+            w.buf = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.h, mem = w.buf, count = cap }
+        }
+        let got = try fs::read_at{ &fs, file, offset, into = w.buf[..n] }
+        if got < n { return res::short_read }
+        w.totals.visited = w.totals.visited + 1
+        w.totals.bytes = w.totals.bytes + size
+        return w.buf[..n]
+    }
+
+    // ---- directory listings, sorted by name ignoring case
+
+    struct Names { pool: alloc::Bytes, spans: []mut res::Span }
+
+    fn list_dir { mut fs: Fs, h: *mut heap::Heap, dir: []u8 } -> !Names {
+        let mut pool = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = h }
+        let mut spans = list::new(res::Span, heap::Heap){ realloc = heap::alloc, heap = h }
+        let mut ok = false
+        defer {
+            if not ok {
+                list::free{ list = &pool }
+                list::free{ list = &spans }
+            }
+        }
+        let mut d = try os::dir_open{ &fs, path = dir }
+        defer os::dir_close{ &fs, dir = &d }
+        while true {
+            let n = os::dir_next{ &fs, dir = &d } ifnull { break }
+            if slice::eq_bytes{ a = n, b = "." } or slice::eq_bytes{ a = n, b = ".." } { continue }
+            try list::push{ list = &spans, item = res::Span{ start = @trunc(u32, pool.len), len = @trunc(u32, n.len) } }
+            try le::put_bytes{ out = &pool, bytes = n }
+        }
+        let names = Names{ pool = try lists::take{ list = &pool }, spans = try lists::take{ list = &spans } }
+        ok = true
+        // Insertion sort: directories here hold at most a few hundred entries.
+        let mut i: usize = 1
+        while i < names.spans.len {
+            let x = names.spans[i]
+            let mut j = i
+            while j > 0 and ci::compare{ a = span_bytes{ pool = names.pool, s = x }, b = span_bytes{ pool = names.pool, s = names.spans[j - 1] } } < 0 {
+                names.spans[j] = names.spans[j - 1]
+                j = j - 1
+            }
+            names.spans[j] = x
+            i = i + 1
+        }
+        return names
+    }
+
+    fn span_bytes { pool: []u8, s: res::Span } -> []u8 {
+        return pool[s.start..s.start + s.len]
+    }
+
+    fn name_at { names: Names, i: usize } -> []u8 {
+        return span_bytes{ pool = names.pool, s = names.spans[i] }
+    }
+
+    fn free_names { h: *mut heap::Heap, names: Names } {
+        res::free_bytes{ h, b = names.pool }
+        _ = alloc::resize(res::Span, heap::Heap){ realloc = heap::alloc, heap = h, mem = names.spans, count = 0 }
+    }
+}
