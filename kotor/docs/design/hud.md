@@ -121,6 +121,23 @@ the tab bar. A panel handles the rest in `on_event`: `activate` for buttons, `ro
 | Party selection | `partysel_panel` | a modal over the map: the available companions, pick two, put back, Done | spawning a companion beside the leader |
 | Options | `options_panel` | the front end's Gameplay, Feedback, Auto-Pause, Graphics and Sound screens over the menu (a `frontend::Front` kept in the panel, the same settings file), sound sliders to the mixer, Exit Game asks and ends the loop via `ingame::wants_quit` | Load and Save show "unavailable"; display changes are not applied (`options_panel::take_display_change` is not read by the loop) |
 
+### Item descriptions
+
+`items::describe` (`items_data.ctx`) builds the text every list box of an item shows (inventory,
+equipment, store, container, bench): the blueprint's identified description (else the plain one), then
+`items_props.ctx`'s property lines, then the base item's own numbers (`Damage: 2d6`, `Armor bonus: +4`;
+these two are ours). A property line is `Name: Subtype Cost (Parameter: Value)` for each active
+property of the item's rules record (the upgrade rule: native, or its upgrade installed, so the bench
+shows the result), every part from the data in the way docs/formats/2da-catalog.md describes:
+`itempropdef.name` is the name, its `subtyperesref` names the 2DA the subtype indexes, the UTI's
+`CostTable` row of `iprp_costtable` names the cost 2DA, `Param1` a row of `iprp_paramtable` the
+parameter's name and 2DA; each row's text is its `name` strref, else its `label`. Two of ours, for
+reading: the melee cost table's plain numbers show as `+1` (it serves the attack, damage, defense
+and enhancement bonuses), and the charge table's text goes in brackets (`Activate Item: Medpac I
+(Single Use)`). The original's own wording was not traced (no Ghidra project was at hand), so the
+format follows the shipped descriptions, which embed lines of the same shape (`Attribute Bonus:
+Strength +4`). Checked over every base-game UTI (`ui describe`, 557 blueprints) and in the store.
+
 The panels were written by four agents against the protocol above; each has headless scripts in
 `tools/ingame/scripts/` with the `go.sh` line in its header and test commands in `test_*.ctx`
 (`ui giveitem`, `ui stock`, `ui journal add`, `ui note`, `ui leader`, ...).

@@ -374,8 +374,7 @@ namespace items {
     }
 
     // The item's description, read from its blueprint: the identified description, else the plain
-    // one. PLACEHOLDER: the original adds a line for each item property (itempropdef.2da and the
-    // cost tables); only the base item's own numbers follow the text here.
+    // one; then a line for each of its properties (items_props.ctx) and the base item's own numbers.
     fn describe { mut w: world::World, mut b: utf8::Builder(heap::Heap), id: u32 } -> ! {
         let o = world::object{ w = &w, id } ifnull { return }
         if o.template.len > 0 {
@@ -384,6 +383,7 @@ namespace items {
             if text.len == 0 { text = loc_text{ w = &w, doc = &doc, s = gff::ROOT, label = "Description" } }
             if text.len > 0 { try utf8::push{ &b, s = utf8::String{ bytes = text } } }
         }
+        try push_properties{ &b, &w, id }
         let dice = base_int{ w = &w, id, column = "numdice", fallback = 0 }
         let die = base_int{ w = &w, id, column = "dietoroll", fallback = 0 }
         if dice > 0 and die > 0 {
