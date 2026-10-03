@@ -125,7 +125,8 @@ namespace play {
                 n = n + 1
             }
             outbox::clear{ out = &w.out }
-            // 9-10. Scene and camera.
+            // 9-10. Scene and camera (which snaps behind the leader again once it is placed).
+            if w.arrival > 0 { camera.started = false }
             scene::sync{ &sc, &w, &dev, dt = w.clock.dt }
             let look_height = leader_height{ w = &w }
             cam::update{ c = &camera, w = &w, target = w.pc, look_height, turn = ctl::turn_input{ keys }, dt }
