@@ -1,6 +1,8 @@
-// The C backend: an ir::Program as one C file, for GNU C with ctxc/rt/ctxrt.h.
+// The C backend: an ir::Program as C for GNU C with ctxc/rt/ctxrt.h, as one file or as units
+// to compile apart and link.
 //
-//   let text = emit::program{ heap = &heap, p = prog }       // the C source
+//   let text = emit::program{ heap = &heap, p = prog }                  // one C file
+//   let units = emit::units{ &heap, p = prog, size = 262144 }            // several
 //
 // Mapping (the plan's table):
 //   types        each TypeId is a typedef tN. [N]T is struct { T a[N]; }, so arrays copy as values;
@@ -8,20 +10,21 @@
 //                struct { uint32_t tag; union { struct {...} vI; ... } p; }, except a ?*T, which
 //                is the pointer itself, null being 0. Layouts are checked against the IR's with
 //                _Static_assert.
-//   functions    fN. Slot i is lI; a `mut` param's slot is a pointer.
-//   extern fns   fN calls xN, a prototype whose assembler name is the C symbol, so that no
+//   functions    f_NAME, after the function's name (below). Slot i is lI; a `mut` param's slot
+//                is a pointer.
+//   extern fns   eN calls xN, a prototype whose assembler name is the C symbol, so that no
 //                header's declaration of the symbol can clash with it. Capabilities aren't
 //                passed; a `mut` field's pointer is.
 //   C fn types   an extern fn{...} type is a C function pointer typedef, called directly, with
 //                the same rules for capabilities and `mut` fields; a named extern fn as its
-//                value is xN. A `#c::callback` fn as one is kK, a C function with the type's
-//                params that calls fN, supplying the capabilities C doesn't pass.
-//   consts       static const qvN, initialized with the literals of its value.
-//   C variables  xvN, declared with the C symbol as its assembler name, as an extern fn is.
+//                value is xN. A `#c::callback` fn as one is k_NAME, a C function with the type's
+//                params that calls f_NAME, supplying the capabilities C doesn't pass.
+//   consts       static const qN, initialized with the literals of its value.
+//   C variables  vN, declared with the C symbol as its assembler name, as an extern fn is.
 //   fn values    ctx_fn*: a record whose first member is the code, called with the record and
-//                the function type's fields in name order. fnref gives a static record per
-//                function (gN, code hN); a bind allocates one (struct bK); a conversion to a
-//                type with more fields wraps the value in an adapter (aK).
+//                the function type's fields in name order (code type cN). A function's value
+//                is a static record gN, code hN; a bind allocates one (struct bN); a conversion
+//                to a type with more fields wraps the value in an adapter (aN).
 //   expressions  C expressions. Where C's order of evaluation would differ from ctxi's (left to
 //                right), operands go into temporaries _tK inside GNU statement expressions.
 //                `if` and `match` expressions are statement expressions too; a branch that
@@ -31,54 +34,173 @@
 //                block with local labels: `{ __label__ _contL, _brkL; _contL: while (...) {...}
 //                _brkL:; }`, so copies of it made by defer don't clash. `continue L` jumps to
 //                _contL, which checks the condition again.
-//   panics       ctx_panic and checked helpers in ctxrt.h, with the IR's positions.
+//   panics       ctx_panic and checked helpers in ctxrt.h, with the IR's positions. A position
+//                names its file by a hash of the file's name, which the runtime looks up in the
+//                file table that main passes it.
+//
+// Units. Each function is emitted once, into text in which the names of types, consts, C
+// variables, extern fns, records, thunks and adapters are markers (MARK, a kind, the IR's id,
+// END). A unit is a list of functions: its C is their text with each marker replaced by a name
+// numbered in the order the unit first uses it (`rewrite`), after the declarations and
+// definitions those names need. So a unit's C depends only on its own functions and what they
+// use, not on what else the program has: an edit elsewhere leaves it as it was, and a build
+// can keep its object. Only a function with a body and a callback have names that other units
+// see, made from the function's name (`prepare`), which don't move when other code changes.
+// `units` groups the functions by the file that declares them (`group`).
 
 namespace emit {
     type Out = ir_print::Out
 
+    const NONE: u32 = 4294967295
+
+    // A marker: MARK, a kind (a letter), the IR's id in decimal, END. The C never holds these
+    // bytes otherwise: strings escape them.
+    const MARK: u8 = 1
+    const END: u8 = 2
+
     union Scope { block, loop{ label: ?u32 }, deferred{ body: ir::Block } }
     union Stop { block, loop, label{ id: u32 }, function }
 
-    // An adapter from function type `from` to `to`, emitted as aK.
+    // An adapter from function type `from` to `to`, emitted as aN.
     struct Pair { from: ir::TypeId, to: ir::TypeId }
 
-    // A C function kK calling function callee, of C function type ty.
+    // A C function k_NAME calling function callee, of C function type ty.
     struct Callback { callee: u32, ty: ir::TypeId }
+
+    // A function's C, with markers: its body, the bind records it makes, which go before it, and
+    // the types of its expressions, whose definitions it needs whether or not it names them.
+    struct Body { text: ir::Bytes, aux: ir::Bytes, uses: []u32 }
+
+    // Names numbered within a unit, in the order it first uses them: ids[i], for the IR's id i,
+    // is the unit's number + 1, or 0 if the unit hasn't used it; order holds the IR's ids by
+    // the unit's numbers.
+    struct Locals { ids: list::List(u32, ir::Heap), order: list::List(u32, ir::Heap) }
 
     struct E {
         p:        ir::Program,
+        heap:     *mut ir::Heap,
         o:        Out,                              // where text goes now
-        aux:      Out,                              // records and thunks, placed before the bodies
+        aux:      Out,                              // records, placed before the function
         f:        ir::Func,                         // the function being emitted
         temp:     u32,                              // the next _tK
-        sites:    u32,                              // the next bind record bK
+        sites:    u32,                              // the next bind record
         depth:    u32,                              // indentation
         scopes:   list::List(Scope, ir::Heap),
-        thunks:   list::List(bool, ir::Heap),       // by function id: hN and gN emitted
+        static_init: bool,                          // writing a const's static initializer
+        split:    bool,                             // several units: functions are global
+        direct:   bool,                             // writing types with their unit's names
+        assembling: bool,                           // writing a unit, not a function
+        names:    list::List([]u8, ir::Heap),       // by function id: the C name of one with a body
+        files:    list::List(u32, ir::Heap),        // by IR file: its id in positions
+        thunks:   list::List(u32, ir::Heap),        // by function id: its value's type, or NONE
         adapters: list::List(Pair, ir::Heap),
         callbacks: list::List(Callback, ir::Heap),
-        marks:    list::List(u8, ir::Heap),         // by type id: 1 typedef'd, 2 defined
-        static_init: bool,                          // writing a const's static initializer
+        knames:   list::List([]u8, ir::Heap),       // by callback: its C name
+        uses:     list::List(u32, ir::Heap),        // the types of the function being emitted
+        used:     list::List(u32, ir::Heap),        // by type id: 1 + the last function using it
+        bodies:   list::List(Body, ir::Heap),       // by function id
+        entry_text: ir::Bytes,                      // int main, with the file table
+        unit_of:  list::List(u32, ir::Heap),        // by function id: its unit
+        unit:     u32,                              // the unit being written
+        marks:    list::List(u8, ir::Heap),         // by type id, in the unit: 1 typedef'd, 2 defined
+        lt: Locals, lc: Locals, lq: Locals, lv: Locals, lf: Locals,     // types, code types,
+        lg: Locals, la: Locals, lk: Locals, lb: Locals,                 // consts, C variables,
+                                                    // functions, thunks, adapters, callbacks, records
     }
 
-    // The whole C file.
+    // The whole program as one C file.
     fn program { heap: *mut ir::Heap, p: ir::Program } -> ir::Bytes {
+        let mut e = start{ heap, p }
+        return whole{ &e }
+    }
+
+    // Every function, in the IR's order, and main, as one unit.
+    fn whole { mut e: E } -> ir::Bytes {
+        let mut fs = list::new(u32){ realloc = arena::alloc, heap = e.heap }
+        let mut i: usize = 0
+        while i < e.p.fns.len {
+            if e.p.fns[i].symbol.len == 0 { try! list::push{ list = &fs, item = @as(u32, i) } }
+            i = i + 1
+        }
+        return unit_text{ &e, fns = list::items{ list = fs }, entry = true, unit = 0, title = false }
+    }
+
+    // The program as units to compile apart and link, of about `size` bytes of function bodies
+    // each, and a last one with `int main`. A program of less than twice that is one unit, as
+    // `program` writes it.
+    fn units { mut heap: ir::Heap, p: ir::Program, size: usize } -> [][]u8 {
+        let mut e = start{ heap = &heap, p }
+        let mut out = list::new([]u8){ realloc = arena::alloc, &heap }
+        let mut total: usize = 0
+        let mut i: usize = 0
+        while i < e.bodies.len {
+            let b = list::items{ list = e.bodies }[i]
+            total = total + b.text.len + b.aux.len
+            i = i + 1
+        }
+        if total < size * 2 {
+            try! list::push{ list = &out, item = whole{ &e } }
+            return list::items{ list = out }
+        }
+        e.split = true
+        let g = group{ &e, size }
+        let mut k: usize = 0
+        let mut from: usize = 0
+        while k < g.ends.len {
+            let to = list::items{ list = g.ends }[k]
+            let fs = list::items{ list = g.fns }[from..to]
+            let mut j: usize = 0
+            while j < fs.len {
+                list::items{ list = e.unit_of }[fs[j]] = @as(u32, k)
+                j = j + 1
+            }
+            from = to
+            k = k + 1
+        }
+        from = 0
+        k = 0
+        while k < g.ends.len {
+            let to = list::items{ list = g.ends }[k]
+            let text = unit_text{ &e, fns = list::items{ list = g.fns }[from..to], entry = false, unit = @as(u32, k), title = true }
+            try! list::push{ list = &out, item = text }
+            from = to
+            k = k + 1
+        }
+        let none = slice::empty(u32){}
+        try! list::push{ list = &out, item = unit_text{ &e, fns = none, entry = true, unit = @as(u32, k), title = true } }
+        return list::items{ list = out }
+    }
+
+    // Emits every function's text, and main's, and names what other units see.
+    fn start { heap: *mut ir::Heap, p: ir::Program } -> E {
         let mut e = E{
-            p,
+            p, heap,
             o = ir_print::out{ heap, types = p.types },
             aux = ir_print::out{ heap, types = p.types },
             f = p.fns[p.main],
             temp = 0, sites = 0, depth = 0,
             scopes = list::new(Scope){ realloc = arena::alloc, heap },
-            thunks = list::new(bool){ realloc = arena::alloc, heap },
+            static_init = false, split = false, direct = false, assembling = false,
+            names = list::new([]u8){ realloc = arena::alloc, heap },
+            files = list::new(u32){ realloc = arena::alloc, heap },
+            thunks = zeros{ heap, n = p.fns.len, value = NONE },
             adapters = list::new(Pair){ realloc = arena::alloc, heap },
             callbacks = list::new(Callback){ realloc = arena::alloc, heap },
+            knames = list::new([]u8){ realloc = arena::alloc, heap },
+            uses = list::new(u32){ realloc = arena::alloc, heap },
+            used = zeros{ heap, n = p.types.len, value = 0 },
+            bodies = list::new(Body){ realloc = arena::alloc, heap },
+            entry_text = "",
+            unit_of = zeros{ heap, n = p.fns.len, value = 0 },
+            unit = 0,
             marks = list::new(u8){ realloc = arena::alloc, heap },
-            static_init = false,
+            lt = locals{ heap, n = 0 }, lc = locals{ heap, n = 0 }, lq = locals{ heap, n = 0 },
+            lv = locals{ heap, n = 0 }, lf = locals{ heap, n = 0 }, lg = locals{ heap, n = 0 },
+            la = locals{ heap, n = 0 }, lk = locals{ heap, n = 0 }, lb = locals{ heap, n = 0 },
         }
-        let mut i = 0
-        while i < p.fns.len {
-            try! list::push{ list = &e.thunks, item = false }
+        let mut i: usize = 0
+        while i < p.files.len {
+            try! list::push{ list = &e.files, item = fnv32{ bytes = p.files[i] } | 2147483648 }
             i = i + 1
         }
         i = 0
@@ -86,73 +208,550 @@ namespace emit {
             try! list::push{ list = &e.marks, item = 0 }
             i = i + 1
         }
-
-        put{ &e, a = "// Generated by ctxc. Compile with ctxc/rt/ctxrt.c.\n#include \"ctxrt.h\"\n\n" }
-        put{ &e, a = "static const char *const ctx_file_table[] = {" }
-        i = 0
-        while i < p.files.len {
-            cstr{ &e, b = p.files[i] }
-            put{ &e, a = ", " }
-            i = i + 1
-        }
-        put{ &e, a = "\"\" };\n\n" }
-        types{ &e }
-        prototypes{ &e }
-
-        // Bodies go to a second buffer, so that the records and thunks they need can go first.
-        let head = e.o
-        e.o = ir_print::out{ heap, types = p.types }
-        i = 0
-        while i < p.consts.len {
-            const_def{ &e, id = @as(u32, i) }
-            i = i + 1
-        }
         i = 0
         while i < p.fns.len {
             let f = p.fns[i]
-            if f.symbol.len > 0 { external{ &e, f } } else { function{ &e, f } }
+            e.o = ir_print::out{ heap, types = p.types }
+            e.aux = ir_print::out{ heap, types = p.types }
+            if f.symbol.len == 0 { function{ &e, f } }
+            try! list::push{ list = &e.bodies, item = Body{ text = list::items{ list = e.o.bytes }, aux = list::items{ list = e.aux.bytes }, uses = list::items{ list = e.uses } } }
+            e.uses = list::new(u32){ realloc = arena::alloc, heap }
             i = i + 1
         }
+        e.o = ir_print::out{ heap, types = p.types }
         entry{ &e }
-
-        let mut all = head
-        ir_print::bytes{ o = &all, b = list::items{ list = e.aux.bytes } }
-        ir_print::bytes{ o = &all, b = list::items{ list = e.o.bytes } }
-        return list::items{ list = all.bytes }
+        e.entry_text = list::items{ list = e.o.bytes }
+        e.o = ir_print::out{ heap, types = p.types }
+        prepare{ &e }
+        return e
     }
 
-    // ---- types
+    fn zeros { heap: *mut ir::Heap, n: usize, value: u32 } -> list::List(u32, ir::Heap) {
+        let mut xs = list::new(u32){ realloc = arena::alloc, heap }
+        let mut i: usize = 0
+        while i < n {
+            try! list::push{ list = &xs, item = value }
+            i = i + 1
+        }
+        return xs
+    }
 
-    fn types { mut e: E } {
-        let n = e.p.types.len
-        let mut i = 0
-        while i < n { typedef{ &e, id = @as(u32, i) }; i = i + 1 }
-        ch{ &e, c = '\n' }
+    fn locals { heap: *mut ir::Heap, n: usize } -> Locals {
+        return Locals{ ids = zeros{ heap, n, value = 0 }, order = list::new(u32){ realloc = arena::alloc, heap } }
+    }
+
+    // The unit's number for IR id `id`, which it gets the first time it is asked for.
+    fn number { mut l: Locals, id: u32 } -> u32 {
+        let k = list::items{ list = l.ids }[id]
+        if k > 0 { return k - 1 }
+        try! list::push{ list = &l.order, item = id }
+        list::items{ list = l.ids }[id] = @as(u32, l.order.len)
+        return @as(u32, l.order.len) - 1
+    }
+
+    fn clear_locals { mut l: Locals } {
+        let ids = list::items{ list = l.ids }
+        let order = list::items{ list = l.order }
+        let mut i: usize = 0
+        while i < order.len {
+            ids[order[i]] = 0
+            i = i + 1
+        }
+        list::clear{ list = &l.order }
+    }
+
+    // Names what other units see: a function with a body is f_ and its name, where a name of
+    // letters, digits, `_` and `::` (as `__`) is kept as it is, and any other, or a long one, is
+    // cut and followed by a hash of the whole; a second function of the same name gets _1, and
+    // so on. A callback is k_ and its function's name. Sizes the units' tables.
+    fn prepare { mut e: E } {
+        let heap = e.heap
+        let mut taken = map::new([]u8, u32){ realloc = arena::alloc, heap, hash = map::hash_bytes, eq = slice::eq_bytes }
+        let mut i: usize = 0
+        while i < e.p.fns.len {
+            let f = e.p.fns[i]
+            let mut name: []u8 = ""
+            if f.symbol.len == 0 { name = unique{ heap, &taken, base = mangle{ heap, prefix = "f_", name = f.name } } }
+            try! list::push{ list = &e.names, item = name }
+            i = i + 1
+        }
         i = 0
-        while i < n { define{ &e, id = @as(u32, i) }; i = i + 1 }
+        while i < e.callbacks.len {
+            let c = list::items{ list = e.callbacks }[i]
+            let fname = list::items{ list = e.names }[c.callee]
+            let base = cat{ heap, a = "k_", b = fname[2..] }
+            try! list::push{ list = &e.knames, item = unique{ heap, &taken, base } }
+            i = i + 1
+        }
+        e.lt = locals{ heap, n = e.p.types.len }
+        e.lc = locals{ heap, n = e.p.types.len }
+        e.lq = locals{ heap, n = e.p.consts.len }
+        e.lv = locals{ heap, n = e.p.vars.len }
+        e.lf = locals{ heap, n = e.p.fns.len }
+        e.lg = locals{ heap, n = e.p.fns.len }
+        e.la = locals{ heap, n = e.adapters.len }
+        e.lk = locals{ heap, n = e.callbacks.len }
+        e.lb = locals{ heap, n = @as(usize, e.sites) }
+    }
+
+    // base, or base_N for the first N from 1 that no other name has taken.
+    fn unique { heap: *mut ir::Heap, mut taken: map::Map([]u8, u32, ir::Heap), base: []u8 } -> []u8 {
+        let mut name = base
+        let mut n: u64 = 0
+        let digits = try! alloc::resize(u8, ir::Heap){ realloc = arena::alloc, heap, mem = slice::empty(u8){}, count = 20 }
+        while map::has{ m = taken, key = name } {
+            n = n + 1
+            name = cat{ heap, a = cat{ heap, a = base, b = "_" }, b = utf8::fmt_u64{ n, into = digits }.bytes }
+        }
+        try! map::put{ m = &taken, key = name, value = 0 }
+        return name
+    }
+
+    fn mangle { heap: *mut ir::Heap, prefix: []u8, name: ir::Bytes } -> []u8 {
+        let mut b = list::new(u8){ realloc = arena::alloc, heap }
+        let mut i: usize = 0
+        while i < prefix.len {
+            try! list::push{ list = &b, item = prefix[i] }
+            i = i + 1
+        }
+        let mut lossy = false
+        i = 0
+        while i < name.len {
+            let c = name[i]
+            if ascii::is_alnum{ c } or c == '_' {
+                try! list::push{ list = &b, item = c }
+            } else if c == ':' {
+                try! list::push{ list = &b, item = '_' }
+            } else {
+                lossy = true
+            }
+            i = i + 1
+        }
+        if b.len > 64 {
+            b.len = 64
+            lossy = true
+        }
+        if lossy {
+            try! list::push{ list = &b, item = '_' }
+            let h = fnv32{ bytes = name }
+            let mut k: u32 = 8
+            while k > 0 {
+                k = k - 1
+                let d = @trunc(u8, (h >> (k * 4)) & 15)
+                try! list::push{ list = &b, item = if d < 10 { '0' + d } else { 'a' + d - 10 } }
+            }
+        }
+        return list::items{ list = b }
+    }
+
+    // FNV-1a, 32 bits: what names a file in positions (the runtime's file_id), and what tells
+    // apart functions whose names `mangle` cut.
+    fn fnv32 { bytes: []u8 } -> u32 {
+        let mut h: u32 = 2166136261
+        let mut i: usize = 0
+        while i < bytes.len {
+            h = @wrap_mul(h ^ @as(u32, bytes[i]), 16777619)
+            i = i + 1
+        }
+        return h
+    }
+
+    fn cat { heap: *mut ir::Heap, a: []u8, b: []u8 } -> []u8 {
+        let out = try! alloc::resize(u8, ir::Heap){ realloc = arena::alloc, heap, mem = slice::empty(u8){}, count = a.len + b.len }
+        slice::copy{ dst = out[..a.len], src = a }
+        slice::copy{ dst = out[a.len..], src = b }
+        return out
+    }
+
+    // ---- units
+
+    // The functions of each unit, one after another: unit k is fns[ends[k - 1]..ends[k]].
+    struct Groups { fns: list::List(u32, ir::Heap), ends: list::List(usize, ir::Heap) }
+
+    // The functions with bodies, in units of about `size` bytes: by the file that declares them,
+    // in order of their files' names and then of where they are. A file of at least `size` is
+    // as many units as it takes, a function going to one by a hash of its name; smaller files of
+    // one directory share units, in order, as long as they stay within `size`. So an edit to one
+    // file changes its own units, and only moves the files of its directory after it into other
+    // units if its size crosses a boundary.
+    fn group { mut e: E, size: usize } -> Groups {
+        let heap = e.heap
+        let mut g = Groups{ fns = list::new(u32){ realloc = arena::alloc, heap }, ends = list::new(usize){ realloc = arena::alloc, heap } }
+        let mut all = list::new(u32){ realloc = arena::alloc, heap }
+        let mut i: usize = 0
+        while i < e.p.fns.len {
+            if e.p.fns[i].symbol.len == 0 { try! list::push{ list = &all, item = @as(u32, i) } }
+            i = i + 1
+        }
+        let fs = list::items{ list = all }
+        sort{ e, xs = fs }
+        let mut pack: usize = 0                     // bytes since the last unit ended
+        let mut dir: []u8 = ""
+        i = 0
+        while i < fs.len {
+            let unit = e.p.fns[fs[i]].unit
+            let mut j = i
+            let mut bytes: usize = 0
+            while j < fs.len and slice::eq_bytes{ a = e.p.fns[fs[j]].unit, b = unit } {
+                bytes = bytes + body_size{ e, f = fs[j] }
+                j = j + 1
+            }
+            let here = parent{ path = unit }
+            if pack > 0 and not slice::eq_bytes{ a = here, b = dir } { pack = end_unit{ &g } }
+            dir = here
+            if bytes >= size {
+                if pack > 0 { pack = end_unit{ &g } }
+                let parts = @as(u32, (bytes + size - 1) / size)
+                let mut part: u32 = 0
+                while part < parts {
+                    let mut any = false
+                    let mut k = i
+                    while k < j {
+                        if fnv32{ bytes = list::items{ list = e.names }[fs[k]] } % parts == part {
+                            try! list::push{ list = &g.fns, item = fs[k] }
+                            any = true
+                        }
+                        k = k + 1
+                    }
+                    if any { pack = end_unit{ &g } }
+                    part = part + 1
+                }
+            } else {
+                if pack > 0 and pack + bytes > size { pack = end_unit{ &g } }
+                let mut k = i
+                while k < j {
+                    try! list::push{ list = &g.fns, item = fs[k] }
+                    k = k + 1
+                }
+                pack = pack + bytes
+            }
+            i = j
+        }
+        if pack > 0 { pack = end_unit{ &g } }
+        return g
+    }
+
+    fn end_unit { mut g: Groups } -> usize {
+        try! list::push{ list = &g.ends, item = g.fns.len }
+        return 0
+    }
+
+    fn body_size { e: E, f: u32 } -> usize {
+        let b = list::items{ list = e.bodies }[f]
+        return b.text.len + b.aux.len
+    }
+
+    // The directory part of a file's path: "" for a bare name.
+    fn parent { path: []u8 } -> []u8 {
+        let mut k = path.len
+        while k > 0 {
+            k = k - 1
+            if path[k] == '/' or path[k] == '\\' { return path[..k] }
+        }
+        return path[..0]
+    }
+
+    // Sorts functions by file, then position, then C name: a merge sort, since a big program has
+    // tens of thousands.
+    fn sort { e: E, xs: []mut u32 } {
+        let tmp = try! alloc::resize(u32, ir::Heap){ realloc = arena::alloc, heap = e.heap, mem = slice::empty(u32){}, count = xs.len }
+        let mut width: usize = 1
+        while width < xs.len {
+            let mut lo: usize = 0
+            while lo < xs.len {
+                let mid = if lo + width < xs.len { lo + width } else { xs.len }
+                let hi = if mid + width < xs.len { mid + width } else { xs.len }
+                let mut a = lo
+                let mut b = mid
+                let mut k = lo
+                while k < hi {
+                    if a < mid and (b >= hi or not before{ e, x = xs[b], y = xs[a] }) {
+                        tmp[k] = xs[a]
+                        a = a + 1
+                    } else {
+                        tmp[k] = xs[b]
+                        b = b + 1
+                    }
+                    k = k + 1
+                }
+                lo = hi
+            }
+            slice::copy{ dst = xs, src = tmp }
+            width = width * 2
+        }
+    }
+
+    fn before { e: E, x: u32, y: u32 } -> bool {
+        let f = e.p.fns[x]
+        let g = e.p.fns[y]
+        if not slice::eq_bytes{ a = f.unit, b = g.unit } { return less{ a = f.unit, b = g.unit } }
+        if f.at != g.at { return f.at < g.at }
+        return less{ a = list::items{ list = e.names }[x], b = list::items{ list = e.names }[y] }
+    }
+
+    fn less { a: []u8, b: []u8 } -> bool {
+        let mut i: usize = 0
+        while i < a.len and i < b.len {
+            if a[i] != b[i] { return a[i] < b[i] }
+            i = i + 1
+        }
+        return a.len < b.len
+    }
+
+    // A unit's C: functions fns, and main if entry. With a title, its first line names the files
+    // its functions are in.
+    fn unit_text { mut e: E, fns: []u32, entry: bool, unit: u32, title: bool } -> ir::Bytes {
+        let heap = e.heap
+        let types = e.p.types
+        clear_unit{ &e }
+        e.unit = unit
+        e.assembling = true
+        let mut body = ir_print::out{ heap, types }
+        let mut i: usize = 0
+        while i < fns.len {
+            let b = list::items{ list = e.bodies }[fns[i]]
+            rewrite{ &e, src = b.aux, into = &body }
+            rewrite{ &e, src = b.text, into = &body }
+            let mut k: usize = 0
+            while k < b.uses.len {
+                _ = number{ l = &e.lt, id = b.uses[k] }
+                k = k + 1
+            }
+            i = i + 1
+        }
+        if entry { rewrite{ &e, src = e.entry_text, into = &body } }
+        // A callback is defined in its function's unit, whether that uses it or not.
+        i = 0
+        while e.split and i < e.callbacks.len {
+            if list::items{ list = e.unit_of }[list::items{ list = e.callbacks }[i].callee] == unit {
+                _ = number{ l = &e.lk, id = @as(u32, i) }
+            }
+            i = i + 1
+        }
+
+        // What the text uses, declared or defined, until that uses nothing new.
+        let mut proto = ir_print::out{ heap, types }
+        let mut defs = ir_print::out{ heap, types }
+        let mut nf: usize = 0
+        let mut nv: usize = 0
+        let mut nq: usize = 0
+        let mut ng: usize = 0
+        let mut na: usize = 0
+        let mut nk: usize = 0
+        while true {
+            list::clear{ list = &e.o.bytes }
+            if nf < e.lf.order.len {
+                let f = e.p.fns[list::items{ list = e.lf.order }[nf]]
+                nf = nf + 1
+                if f.symbol.len > 0 {
+                    c_prototype{ &e, f }
+                    signature{ &e, f }
+                    put{ &e, a = ";\n" }
+                    rewrite{ &e, src = list::items{ list = e.o.bytes }, into = &proto }
+                    list::clear{ list = &e.o.bytes }
+                    external{ &e, f }
+                    rewrite{ &e, src = list::items{ list = e.o.bytes }, into = &defs }
+                } else {
+                    signature{ &e, f }
+                    put{ &e, a = ";\n" }
+                    rewrite{ &e, src = list::items{ list = e.o.bytes }, into = &proto }
+                }
+            } else if nv < e.lv.order.len {
+                c_variable{ &e, id = list::items{ list = e.lv.order }[nv] }
+                nv = nv + 1
+                rewrite{ &e, src = list::items{ list = e.o.bytes }, into = &proto }
+            } else if nq < e.lq.order.len {
+                const_def{ &e, id = list::items{ list = e.lq.order }[nq] }
+                nq = nq + 1
+                rewrite{ &e, src = list::items{ list = e.o.bytes }, into = &defs }
+            } else if ng < e.lg.order.len {
+                thunk_def{ &e, callee = list::items{ list = e.lg.order }[ng] }
+                ng = ng + 1
+                rewrite{ &e, src = list::items{ list = e.o.bytes }, into = &defs }
+            } else if na < e.la.order.len {
+                adapter_def{ &e, k = list::items{ list = e.la.order }[na] }
+                na = na + 1
+                rewrite{ &e, src = list::items{ list = e.o.bytes }, into = &defs }
+            } else if nk < e.lk.order.len {
+                let k = list::items{ list = e.lk.order }[nk]
+                nk = nk + 1
+                callback_head{ &e, k }
+                put{ &e, a = ";\n" }
+                rewrite{ &e, src = list::items{ list = e.o.bytes }, into = &proto }
+                let c = list::items{ list = e.callbacks }[k]
+                if not e.split or list::items{ list = e.unit_of }[c.callee] == e.unit {
+                    list::clear{ list = &e.o.bytes }
+                    callback_def{ &e, k }
+                    rewrite{ &e, src = list::items{ list = e.o.bytes }, into = &defs }
+                }
+            } else {
+                break
+            }
+        }
+
+        // The types all that uses, with their unit's names: typedefs, then definitions of those
+        // it uses (and of what they hold by value), then function code types, then layout
+        // checks. A type only pointed to is only typedef'd. The layouts are checked once: in the
+        // only unit, or in main's, which defines every type to check it.
+        let checks = not e.split or entry
+        if checks {
+            i = 0
+            while i < e.p.types.len {
+                _ = number{ l = &e.lt, id = @as(u32, i) }
+                i = i + 1
+            }
+        }
+        list::clear{ list = &e.o.bytes }
+        e.direct = true
+        let n = e.lt.order.len
+        i = 0
+        while i < n {
+            typedef{ &e, id = list::items{ list = e.lt.order }[i] }
+            i = i + 1
+        }
         ch{ &e, c = '\n' }
         i = 0
         while i < n {
-            let func{ params, ret } = e.p.types[i] else { i = i + 1; continue }
-            put{ &e, a = "typedef " }
-            tn{ &e, t = ret }
-            put{ &e, a = " (*c" }
-            num{ &e, n = i }
-            put{ &e, a = ")(ctx_fn *" }
-            let mut j = 0
-            while j < params.len {
-                put{ &e, a = ", " }
-                param_type{ &e, q = params[j] }
-                j = j + 1
-            }
-            put{ &e, a = ");\n" }
+            define{ &e, id = list::items{ list = e.lt.order }[i] }
             i = i + 1
         }
         ch{ &e, c = '\n' }
         i = 0
-        while i < n { asserts{ &e, id = @as(u32, i) }; i = i + 1 }
+        while i < e.lc.order.len {
+            code_type{ &e, id = list::items{ list = e.lc.order }[i] }
+            i = i + 1
+        }
         ch{ &e, c = '\n' }
+        i = 0
+        while checks and i < e.lt.order.len {
+            let id = list::items{ list = e.lt.order }[i]
+            if mark{ e, id } == 2 { asserts{ &e, id } }
+            i = i + 1
+        }
+        ch{ &e, c = '\n' }
+        e.direct = false
+        e.assembling = false
+        let typed = e.o
+
+        let mut all = ir_print::out{ heap, types }
+        ir_print::text{ o = &all, a = "// Generated by ctxc" }
+        if title {
+            if fns.len == 0 { ir_print::text{ o = &all, a = ": the entry point" } }
+            let mut last: []u8 = ""
+            i = 0
+            while i < fns.len {
+                let u = e.p.fns[fns[i]].unit
+                if i == 0 or not slice::eq_bytes{ a = u, b = last } {
+                    ir_print::text{ o = &all, a = if i == 0 { " from " } else { ", " } }
+                    ir_print::bytes{ o = &all, b = u }
+                    last = u
+                }
+                i = i + 1
+            }
+        }
+        ir_print::text{ o = &all, a = ". Compile with ctxc/rt/ctxrt.c.\n#include \"ctxrt.h\"\n\n" }
+        ir_print::bytes{ o = &all, b = list::items{ list = typed.bytes } }
+        ir_print::bytes{ o = &all, b = list::items{ list = proto.bytes } }
+        ir_print::char{ o = &all, c = '\n' }
+        ir_print::bytes{ o = &all, b = list::items{ list = defs.bytes } }
+        ir_print::bytes{ o = &all, b = list::items{ list = body.bytes } }
+        list::clear{ list = &e.o.bytes }
+        return list::items{ list = all.bytes }
     }
+
+    fn clear_unit { mut e: E } {
+        let ts = list::items{ list = e.lt.order }
+        let mut i: usize = 0
+        while i < ts.len {
+            list::items{ list = e.marks }[ts[i]] = 0
+            i = i + 1
+        }
+        clear_locals{ l = &e.lt }
+        clear_locals{ l = &e.lc }
+        clear_locals{ l = &e.lq }
+        clear_locals{ l = &e.lv }
+        clear_locals{ l = &e.lf }
+        clear_locals{ l = &e.lg }
+        clear_locals{ l = &e.la }
+        clear_locals{ l = &e.lk }
+        clear_locals{ l = &e.lb }
+    }
+
+    // src, with each marker replaced by its name in the unit, onto `into`.
+    fn rewrite { mut e: E, src: ir::Bytes, mut into: Out } {
+        let mut start: usize = 0
+        let mut i: usize = 0
+        while i < src.len {
+            if src[i] != MARK {
+                i = i + 1
+                continue
+            }
+            ir_print::bytes{ o = &into, b = src[start..i] }
+            let kind = src[i + 1]
+            let mut j = i + 2
+            let mut id: u32 = 0
+            while src[j] != END {
+                id = id * 10 + @as(u32, src[j] - '0')
+                j = j + 1
+            }
+            resolve{ &e, kind, id, &into }
+            i = j + 1
+            start = i
+        }
+        ir_print::bytes{ o = &into, b = src[start..] }
+    }
+
+    fn resolve { mut e: E, kind: u8, id: u32, mut into: Out } {
+        if kind == 't' {
+            local_name{ &into, c = 't', n = number{ l = &e.lt, id } }
+        } else if kind == 'c' {
+            _ = number{ l = &e.lc, id }
+            local_name{ &into, c = 'c', n = number{ l = &e.lt, id } }
+        } else if kind == 'q' {
+            local_name{ &into, c = 'q', n = number{ l = &e.lq, id } }
+        } else if kind == 'v' {
+            local_name{ &into, c = 'v', n = number{ l = &e.lv, id } }
+        } else if kind == 'f' {
+            let n = number{ l = &e.lf, id }
+            if e.p.fns[id].symbol.len > 0 {
+                local_name{ &into, c = 'e', n }
+            } else {
+                ir_print::bytes{ o = &into, b = list::items{ list = e.names }[id] }
+            }
+        } else if kind == 'x' {
+            local_name{ &into, c = 'x', n = number{ l = &e.lf, id } }
+        } else if kind == 'g' {
+            local_name{ &into, c = 'g', n = number{ l = &e.lg, id } }
+        } else if kind == 'h' {
+            local_name{ &into, c = 'h', n = number{ l = &e.lg, id } }
+        } else if kind == 'a' {
+            local_name{ &into, c = 'a', n = number{ l = &e.la, id } }
+        } else if kind == 'k' {
+            _ = number{ l = &e.lk, id }
+            ir_print::bytes{ o = &into, b = list::items{ list = e.knames }[id] }
+        } else if kind == 'b' {
+            local_name{ &into, c = 'b', n = number{ l = &e.lb, id } }
+        } else if kind == 's' {
+            if not e.split { ir_print::text{ o = &into, a = "static " } }
+        } else {
+            @panic("emit: an unknown marker")
+        }
+    }
+
+    fn local_name { mut into: Out, c: u8, n: u32 } {
+        ir_print::char{ o = &into, c }
+        ir_print::num{ o = &into, n }
+    }
+
+    // A marker for kind's IR id `id`.
+    fn mark_id { mut e: E, kind: u8, id: u64 } {
+        ch{ &e, c = MARK }
+        ch{ &e, c = kind }
+        num{ &e, n = id }
+        ch{ &e, c = END }
+    }
+
+    // ---- types
 
     fn mark { e: E, id: ir::TypeId } -> u8 {
         return list::items{ list = e.marks }[id]
@@ -231,10 +830,11 @@ namespace emit {
         }
     }
 
-    // `struct tN { ... };` for arrays, structs, unions and capabilities, after the structs it
-    // holds by value.
+    // `struct tN { ... };` for arrays, structs, unions and capabilities, after its typedef and
+    // the structs it holds by value.
     fn define { mut e: E, id: ir::TypeId } {
         if mark{ e, id } >= 2 { return }
+        typedef{ &e, id }
         set_mark{ &e, id, m = 2 }
         match ty{ e, id } {
             arr{ n, elem } => {
@@ -305,6 +905,8 @@ namespace emit {
         }
     }
 
+    // What fields of these types need: a definition of each type held by value, and a typedef
+    // of each.
     fn define_fields { mut e: E, fields: []ir::Field } {
         let mut i = 0
         while i < fields.len {
@@ -329,6 +931,29 @@ namespace emit {
             put{ &e, a = "; " }
             i = i + 1
         }
+    }
+
+    // `typedef R (*cN)(ctx_fn *, P...);`: the code of a value of function type N.
+    fn code_type { mut e: E, id: ir::TypeId } {
+        let func{ params, ret } = ty{ e, id } else { @panic("emit: code of a non-function type") }
+        typedef{ &e, id = ret }
+        let mut j = 0
+        while j < params.len {
+            if not params[j].mutable { typedef{ &e, id = params[j].ty } }
+            j = j + 1
+        }
+        put{ &e, a = "typedef " }
+        tn{ &e, t = ret }
+        put{ &e, a = " (*c" }
+        num{ &e, n = number{ l = &e.lt, id } }
+        put{ &e, a = ")(ctx_fn *" }
+        j = 0
+        while j < params.len {
+            put{ &e, a = ", " }
+            param_type{ &e, q = params[j] }
+            j = j + 1
+        }
+        put{ &e, a = ");\n" }
     }
 
     // Checks the C layout against the IR's.
@@ -409,29 +1034,12 @@ namespace emit {
 
     // ---- functions
 
-    fn prototypes { mut e: E } {
-        let mut i = 0
-        while i < e.p.vars.len {
-            c_variable{ &e, id = @as(u32, i) }
-            i = i + 1
-        }
-        i = 0
-        while i < e.p.fns.len {
-            let f = e.p.fns[i]
-            if f.symbol.len > 0 { c_prototype{ &e, f } }
-            signature{ &e, f }
-            put{ &e, a = ";\n" }
-            i = i + 1
-        }
-        ch{ &e, c = '\n' }
-    }
-
     //   extern R xN(P...) __asm__(CTX_SYMBOL("symbol"));
     fn c_prototype { mut e: E, f: ir::Func } {
         put{ &e, a = "extern " }
         tn{ &e, t = f.ret }
-        put{ &e, a = " x" }
-        num{ &e, n = f.id }
+        ch{ &e, c = ' ' }
+        mark_id{ &e, kind = 'x', id = f.id }
         ch{ &e, c = '(' }
         c_params{ &e, params = f.params }
         put{ &e, a = ") __asm__(CTX_SYMBOL(" }
@@ -439,13 +1047,13 @@ namespace emit {
         put{ &e, a = "));\n" }
     }
 
-    //   extern T xvN __asm__(CTX_SYMBOL("symbol"));
+    //   extern T vN __asm__(CTX_SYMBOL("symbol"));
     fn c_variable { mut e: E, id: u32 } {
         let v = e.p.vars[id]
         put{ &e, a = "extern " }
         tn{ &e, t = v.ty }
-        put{ &e, a = " xv" }
-        num{ &e, n = id }
+        ch{ &e, c = ' ' }
+        mark_id{ &e, kind = 'v', id }
         put{ &e, a = " __asm__(CTX_SYMBOL(" }
         cstr{ &e, b = v.symbol }
         put{ &e, a = "));\n" }
@@ -468,7 +1076,7 @@ namespace emit {
 
     // Const N, in read-only data: its value is literals only (the checker computed it), which
     // GNU C takes as a static initializer, compound literals included.
-    //   static const tT qvN = VALUE;
+    //   static const tT qN = VALUE;
     fn const_def { mut e: E, id: u32 } {
         let c = e.p.consts[id]
         e.temp = 0
@@ -476,8 +1084,8 @@ namespace emit {
         raw{ &e, b = c.name }
         put{ &e, a = "\nstatic const " }
         tn{ &e, t = c.ty }
-        put{ &e, a = " qv" }
-        num{ &e, n = id }
+        ch{ &e, c = ' ' }
+        mark_id{ &e, kind = 'q', id }
         put{ &e, a = " = " }
         e.static_init = true
         expr{ &e, x = c.value }
@@ -485,12 +1093,12 @@ namespace emit {
         put{ &e, a = ";\n\n" }
     }
 
-    // `static R fN(P l0, ...)`
+    // `R f_NAME(P l0, ...)`, static in a program of one unit; an extern fn's `static R eN(...)`.
     fn signature { mut e: E, f: ir::Func } {
-        put{ &e, a = "static " }
+        if f.symbol.len > 0 { put{ &e, a = "static " } } else { mark_id{ &e, kind = 's', id = 0 } }
         tn{ &e, t = f.ret }
-        put{ &e, a = " f" }
-        num{ &e, n = f.id }
+        ch{ &e, c = ' ' }
+        mark_id{ &e, kind = 'f', id = f.id }
         ch{ &e, c = '(' }
         if f.params.len == 0 { put{ &e, a = "void" } }
         let mut i = 0
@@ -508,7 +1116,7 @@ namespace emit {
         ch{ &e, c = ')' }
     }
 
-    //   static R fN(...) { return xN(l0, l2); }
+    //   static R eN(...) { return xN(l0, l2); }
     // after xN's prototype (c_prototype).
     fn external { mut e: E, f: ir::Func } {
         put{ &e, a = "// " }
@@ -517,8 +1125,7 @@ namespace emit {
         signature{ &e, f }
         put{ &e, a = " {\n    " }
         if not is_void{ e, t = f.ret } { put{ &e, a = "return " } }
-        ch{ &e, c = 'x' }
-        num{ &e, n = f.id }
+        mark_id{ &e, kind = 'x', id = f.id }
         ch{ &e, c = '(' }
         let mut first = true
         let mut i = 0
@@ -603,18 +1210,26 @@ namespace emit {
         put{ &e, a = "\n}\n\n" }
     }
 
-    // `int main`: supplies main's capabilities and args, and returns its exit code.
+    // The file table, and `int main`, which supplies main's capabilities and args and returns
+    // its exit code.
     fn entry { mut e: E } {
         let f = e.p.fns[e.p.main]
+        put{ &e, a = "static const char *const ctx_file_table[] = {" }
+        let mut i = 0
+        while i < e.p.files.len {
+            cstr{ &e, b = e.p.files[i] }
+            put{ &e, a = ", " }
+            i = i + 1
+        }
+        put{ &e, a = "\"\" };\n\n" }
         put{ &e, a = "int main(int argc, char **argv) {\n    static char cap[1];\n    ctx_init(ctx_file_table, " }
         num{ &e, n = e.p.files.len }
         put{ &e, a = ", CTX_PROGRAM_NAME, argc, argv);\n    " }
         let void_ret = is_void{ e, t = f.ret }
         if not void_ret { put{ &e, a = "int32_t code = " } }
-        ch{ &e, c = 'f' }
-        num{ &e, n = f.id }
+        mark_id{ &e, kind = 'f', id = f.id }
         ch{ &e, c = '(' }
-        let mut i = 0
+        i = 0
         while i < f.params.len {
             if i > 0 { put{ &e, a = ", " } }
             let q = f.params[i]
@@ -832,11 +1447,13 @@ namespace emit {
             }
             choose{ scrut, through, arms } => {
                 let k = fresh{ &e }
+                let union_t = union_type{ e, t = scrut.ty, through }
+                use{ &e, t = union_t }
                 put{ &e, a = "{ " }
                 declare{ &e, t = scrut.ty, k }
                 expr{ &e, x = scrut }
                 put{ &e, a = ";" }
-                arm_chain{ &e, arms, k, through, union_t = union_type{ e, t = scrut.ty, through }, res = null }
+                arm_chain{ &e, arms, k, through, union_t, res = null }
                 put{ &e, a = " }" }
             }
             switch{ scrut, cases } => {
@@ -1070,6 +1687,7 @@ namespace emit {
     // ---- expressions
 
     fn expr { mut e: E, x: ir::Expr } {
+        use{ &e, t = x.ty }
         match x.k {
             int{ negative, value } => { int_lit{ &e, t = x.ty, n = ir::Int{ negative, value } } }
             float{ value } => {
@@ -1124,14 +1742,8 @@ namespace emit {
                 }
             }
             local{ slot } => { local{ &e, slot } }
-            constref{ id } => {
-                put{ &e, a = "qv" }
-                num{ &e, n = id }
-            }
-            cvar{ id } => {
-                put{ &e, a = "xv" }
-                num{ &e, n = id }
-            }
+            constref{ id } => { mark_id{ &e, kind = 'q', id } }
+            cvar{ id } => { mark_id{ &e, kind = 'v', id } }
             deref{ ptr } => {
                 put{ &e, a = "(*" }
                 expr{ &e, x = ptr.* }
@@ -1223,7 +1835,11 @@ namespace emit {
                 if text == 4 { infix{ &e, a = a.*, op = " > ", b = b.* } }
                 if text == 5 { infix{ &e, a = a.*, op = " >= ", b = b.* } }
             }
-            ptradd{ p, n } => { infix{ &e, a = p.*, op = " + ", b = n.* } }
+            ptradd{ p, n } => {
+                // C's pointer arithmetic needs the type pointed to.
+                if ty{ e, id = x.ty } is ptr{ elem } { use{ &e, t = elem } }
+                infix{ &e, a = p.*, op = " + ", b = n.* }
+            }
             isnull{ e = a } => {
                 put{ &e, a = "((" }
                 expr{ &e, x = a.* }
@@ -1266,18 +1882,16 @@ namespace emit {
             fnref{ callee } => {
                 if is_cfn{ e, t = x.ty } {
                     if e.p.fns[callee].symbol.len > 0 {
-                        ch{ &e, c = 'x' }               // a named extern fn as a C function pointer
-                        num{ &e, n = callee }
+                        mark_id{ &e, kind = 'x', id = callee }      // a named extern fn as a C function pointer
                     } else {
                         let k = callback{ &e, callee, t = x.ty }
-                        ch{ &e, c = 'k' }               // a callback: the C function calling it
-                        num{ &e, n = k }
+                        mark_id{ &e, kind = 'k', id = k }           // a callback: the C function calling it
                     }
                     return
                 }
                 thunk{ &e, callee, t = x.ty }
-                put{ &e, a = "(&g" }
-                num{ &e, n = callee }
+                put{ &e, a = "(&" }
+                mark_id{ &e, kind = 'g', id = callee }
                 ch{ &e, c = ')' }
             }
             record{ items } => { literal{ &e, t = x.ty, variant = null, items } }
@@ -1301,12 +1915,14 @@ namespace emit {
             matchx{ scrut, through, arms } => {
                 let res = fresh{ &e }
                 let k = fresh{ &e }
+                let union_t = union_type{ e, t = scrut.ty, through }
+                use{ &e, t = union_t }
                 put{ &e, a = "({ " }
                 result_var{ &e, t = x.ty, k = res }
                 declare{ &e, t = scrut.ty, k }
                 expr{ &e, x = scrut.* }
                 ch{ &e, c = ';' }
-                arm_chain{ &e, arms, k, through, union_t = union_type{ e, t = scrut.ty, through }, res }
+                arm_chain{ &e, arms, k, through, union_t, res }
                 ch{ &e, c = ' ' }
                 tmp{ &e, k = res }
                 put{ &e, a = "; })" }
@@ -1479,6 +2095,8 @@ namespace emit {
     // `({ S s = (B); uint64_t lo = LO; uint64_t hi = HI; ctx_range(lo, hi, s.m_len, pos);
     // (S){ .m_ptr = s.m_ptr + lo, .m_len = hi - lo }; })`, where HI defaults to s.m_len.
     fn ssub { mut e: E, t: ir::TypeId, base: ir::Expr, lo: ir::Expr, hi: ?*ir::Expr, pos: ir::Pos } {
+        // C's pointer arithmetic needs the elements' type.
+        if ty{ e, id = struct_members{ e, t }[0].ty } is ptr{ elem } { use{ &e, t = elem } }
         let ks = fresh{ &e }
         let kl = fresh{ &e }
         let kh = fresh{ &e }
@@ -1773,12 +2391,11 @@ namespace emit {
 
     // ---- calls and function values
 
-    // fN(args in parameter order), evaluated in the IR's order.
+    // f_NAME(args in parameter order), evaluated in the IR's order.
     fn call { mut e: E, callee: u32, args: []ir::Arg } {
         let f = e.p.fns[callee]
         let tt = temps_args{ &e, args }
-        ch{ &e, c = 'f' }
-        num{ &e, n = callee }
+        mark_id{ &e, kind = 'f', id = callee }
         ch{ &e, c = '(' }
         in_order{ &e, args, n = f.params.len, tt }
         ch{ &e, c = ')' }
@@ -1814,8 +2431,8 @@ namespace emit {
         expr{ &e, x = callee }
         put{ &e, a = "; " }
         let tt = temps_args{ &e, args }
-        put{ &e, a = "((c" }
-        num{ &e, n = callee.ty }
+        put{ &e, a = "((" }
+        mark_id{ &e, kind = 'c', id = callee.ty }
         put{ &e, a = ")" }
         tmp{ &e, k = kf }
         put{ &e, a = "->code)(" }
@@ -1827,7 +2444,8 @@ namespace emit {
         put{ &e, a = "; })" }
     }
 
-    // A bound function: a record holding the code and the given args, allocated each time.
+    // A bound function: a record holding the code and the given args, allocated each time. The
+    // record's type and code go before the function (aux).
     fn bind { mut e: E, t: ir::TypeId, callee: u32, args: []ir::Arg } {
         let f = e.p.fns[callee]
         let k = e.sites
@@ -1835,15 +2453,10 @@ namespace emit {
         record{ &e, k, inner = false, args }
         let func{ params, ret } = ty{ e, id = t } else { @panic("emit: bind to a non-function type") }
         to_aux{ &e }
-        code_head{ &e, prefix = "b", k, ret, params }
-        put{ &e, a = "    struct b" }
-        num{ &e, n = k }
-        put{ &e, a = " *s = (struct b" }
-        num{ &e, n = k }
-        put{ &e, a = " *)self;\n    " }
+        code_head{ &e, kind = 'b', id = k, ret, params }
+        record_self{ &e, k }
         if not is_void{ e, t = ret } { put{ &e, a = "return " } }
-        ch{ &e, c = 'f' }
-        num{ &e, n = callee }
+        mark_id{ &e, kind = 'f', id = callee }
         ch{ &e, c = '(' }
         forward{ &e, target = f.params, args, given = params }
         put{ &e, a = ");\n}\n\n" }
@@ -1859,15 +2472,11 @@ namespace emit {
         record{ &e, k, inner = true, args }
         let func{ params, ret } = ty{ e, id = t } else { @panic("emit: bind to a non-function type") }
         to_aux{ &e }
-        code_head{ &e, prefix = "b", k, ret, params }
-        put{ &e, a = "    struct b" }
-        num{ &e, n = k }
-        put{ &e, a = " *s = (struct b" }
-        num{ &e, n = k }
-        put{ &e, a = " *)self;\n    " }
+        code_head{ &e, kind = 'b', id = k, ret, params }
+        record_self{ &e, k }
         if not is_void{ e, t = ret } { put{ &e, a = "return " } }
-        put{ &e, a = "((c" }
-        num{ &e, n = callee.ty }
+        put{ &e, a = "((" }
+        mark_id{ &e, kind = 'c', id = callee.ty }
         put{ &e, a = ")s->inner->code)(s->inner" }
         if target.len > 0 { put{ &e, a = ", " } }
         forward{ &e, target, args, given = params }
@@ -1876,11 +2485,20 @@ namespace emit {
         new_record{ &e, k, inner = callee, args }
     }
 
+    //   struct bK *s = (struct bK *)self;
+    fn record_self { mut e: E, k: u32 } {
+        put{ &e, a = "    struct " }
+        mark_id{ &e, kind = 'b', id = k }
+        put{ &e, a = " *s = (struct " }
+        mark_id{ &e, kind = 'b', id = k }
+        put{ &e, a = " *)self;\n    " }
+    }
+
     // `struct bK { ctx_fn base; [ctx_fn *inner;] T cI; ... };` for the args it captures.
     fn record { mut e: E, k: u32, inner: bool, args: []ir::Arg } {
         to_aux{ &e }
-        put{ &e, a = "struct b" }
-        num{ &e, n = k }
+        put{ &e, a = "struct " }
+        mark_id{ &e, kind = 'b', id = k }
         put{ &e, a = " { ctx_fn base; " }
         if inner { put{ &e, a = "ctx_fn *inner; " } }
         let mut i = 0
@@ -1899,16 +2517,16 @@ namespace emit {
     // Allocates record bK and fills it, in the IR's order: the callee value, then the args.
     fn new_record { mut e: E, k: u32, inner: ?ir::Expr, args: []ir::Arg } {
         let kr = fresh{ &e }
-        put{ &e, a = "({ struct b" }
-        num{ &e, n = k }
+        put{ &e, a = "({ struct " }
+        mark_id{ &e, kind = 'b', id = k }
         put{ &e, a = " *" }
         tmp{ &e, k = kr }
-        put{ &e, a = " = ctx_alloc(sizeof(struct b" }
-        num{ &e, n = k }
+        put{ &e, a = " = ctx_alloc(sizeof(struct " }
+        mark_id{ &e, kind = 'b', id = k }
         put{ &e, a = ")); " }
         tmp{ &e, k = kr }
-        put{ &e, a = "->base.code = (void (*)(void))b" }
-        num{ &e, n = k }
+        put{ &e, a = "->base.code = (void (*)(void))" }
+        mark_id{ &e, kind = 'b', id = k }
         put{ &e, a = "_code; " }
         match inner {
             some{ value } => {
@@ -1935,13 +2553,12 @@ namespace emit {
         put{ &e, a = "; })" }
     }
 
-    // `static R PREFIXK_code(ctx_fn *self, P a0, ...) {`
-    fn code_head { mut e: E, prefix: []u8, k: u32, ret: ir::TypeId, params: []ir::Param } {
+    // `static R NAME_code(ctx_fn *self, P a0, ...) {`, NAME being the marker's.
+    fn code_head { mut e: E, kind: u8, id: u32, ret: ir::TypeId, params: []ir::Param } {
         put{ &e, a = "static " }
         tn{ &e, t = ret }
         ch{ &e, c = ' ' }
-        put{ &e, a = prefix }
-        num{ &e, n = k }
+        mark_id{ &e, kind, id }
         put{ &e, a = "_code(ctx_fn *self" }
         let mut i = 0
         while i < params.len {
@@ -1989,31 +2606,32 @@ namespace emit {
         @panic("emit: a function value's param is missing")
     }
 
-    // gN, the value of function N: a static record whose code hN calls fN.
+    // Function callee's value is gN, a static record whose code hN calls it, of type t: each
+    // unit that uses it has its own (thunk_def).
     fn thunk { mut e: E, callee: u32, t: ir::TypeId } {
-        if list::items{ list = e.thunks }[callee] { return }
-        list::items{ list = e.thunks }[callee] = true
-        let f = e.p.fns[callee]
-        let func{ params, ret } = ty{ e, id = t } else { @panic("emit: fnref of a non-function type") }
-        to_aux{ &e }
-        code_head{ &e, prefix = "h", k = callee, ret, params }
-        put{ &e, a = "    (void)self;\n    " }
-        if not is_void{ e, t = ret } { put{ &e, a = "return " } }
-        ch{ &e, c = 'f' }
-        num{ &e, n = callee }
-        ch{ &e, c = '(' }
-        forward{ &e, target = f.params, args = slice::empty(ir::Arg){}, given = params }
-        put{ &e, a = ");\n}\nstatic ctx_fn g" }
-        num{ &e, n = callee }
-        put{ &e, a = " = { (void (*)(void))h" }
-        num{ &e, n = callee }
-        put{ &e, a = "_code };\n\n" }
-        to_aux{ &e }
+        if list::items{ list = e.thunks }[callee] == NONE { list::items{ list = e.thunks }[callee] = t }
     }
 
-    // kK, a C function of C function type t that calls function callee: C's params, without
-    // capabilities, by name to fN's, which supplies the capabilities itself (§18). Returns K.
-    //   static R kK(P a1, ...) { static char cap[1]; return fN((void *)cap, a1, (tC){}); }
+    //   static R hN_code(ctx_fn *self, P a0, ...) { (void)self; return f_NAME(...); }
+    //   static ctx_fn gN = { (void (*)(void))hN_code };
+    fn thunk_def { mut e: E, callee: u32 } {
+        let f = e.p.fns[callee]
+        let func{ params, ret } = ty{ e, id = list::items{ list = e.thunks }[callee] } else { @panic("emit: fnref of a non-function type") }
+        code_head{ &e, kind = 'h', id = callee, ret, params }
+        put{ &e, a = "    (void)self;\n    " }
+        if not is_void{ e, t = ret } { put{ &e, a = "return " } }
+        mark_id{ &e, kind = 'f', id = callee }
+        ch{ &e, c = '(' }
+        forward{ &e, target = f.params, args = slice::empty(ir::Arg){}, given = params }
+        put{ &e, a = ");\n}\nstatic ctx_fn " }
+        mark_id{ &e, kind = 'g', id = callee }
+        put{ &e, a = " = { (void (*)(void))" }
+        mark_id{ &e, kind = 'h', id = callee }
+        put{ &e, a = "_code };\n\n" }
+    }
+
+    // A C function of C function type t that calls function callee (callback_def). Returns its
+    // number.
     fn callback { mut e: E, callee: u32, t: ir::TypeId } -> u32 {
         let mut k = 0
         while k < e.callbacks.len {
@@ -2022,15 +2640,19 @@ namespace emit {
             k = k + 1
         }
         try! list::push{ list = &e.callbacks, item = Callback{ callee, ty = t } }
-        let f = e.p.fns[callee]
-        let cfn{ params, ret } = ty{ e, id = t } else { @panic("emit: a callback of a non-C function type") }
-        to_aux{ &e }
-        put{ &e, a = "// callback " }
-        raw{ &e, b = f.name }
-        put{ &e, a = "\nstatic " }
+        return @as(u32, k)
+    }
+
+    //   R k_NAME(P a1, ...)
+    // static unless there are several units: C may compare its address, so it is one function,
+    // in its callee's unit.
+    fn callback_head { mut e: E, k: u32 } {
+        let c = list::items{ list = e.callbacks }[k]
+        let cfn{ params, ret } = ty{ e, id = c.ty } else { @panic("emit: a callback of a non-C function type") }
+        mark_id{ &e, kind = 's', id = 0 }
         tn{ &e, t = ret }
-        put{ &e, a = " k" }
-        num{ &e, n = k }
+        ch{ &e, c = ' ' }
+        mark_id{ &e, kind = 'k', id = k }
         ch{ &e, c = '(' }
         let mut first = true
         let mut i = 0
@@ -2045,8 +2667,22 @@ namespace emit {
             i = i + 1
         }
         if first { put{ &e, a = "void" } }
-        put{ &e, a = ") {\n    " }
-        i = 0
+        ch{ &e, c = ')' }
+    }
+
+    // Callback k: C's params, without capabilities, by name to its function's, which supplies
+    // the capabilities itself (§18).
+    //   R k_NAME(P a1, ...) { static char cap[1]; return f_NAME((void *)cap, a1, (tC){}); }
+    fn callback_def { mut e: E, k: u32 } {
+        let c = list::items{ list = e.callbacks }[k]
+        let f = e.p.fns[c.callee]
+        let cfn{ params, ret } = ty{ e, id = c.ty } else { @panic("emit: a callback of a non-C function type") }
+        put{ &e, a = "// callback " }
+        raw{ &e, b = f.name }
+        ch{ &e, c = '\n' }
+        callback_head{ &e, k }
+        put{ &e, a = " {\n    " }
+        let mut i = 0
         while i < f.params.len {
             if f.params[i].mutable and is_cap{ e, t = f.params[i].ty } {
                 put{ &e, a = "static char cap[1];\n    " }
@@ -2055,8 +2691,7 @@ namespace emit {
             i = i + 1
         }
         if not is_void{ e, t = ret } { put{ &e, a = "return " } }
-        ch{ &e, c = 'f' }
-        num{ &e, n = callee }
+        mark_id{ &e, kind = 'f', id = c.callee }
         ch{ &e, c = '(' }
         let mut j = 0
         while j < f.params.len {
@@ -2076,14 +2711,12 @@ namespace emit {
             j = j + 1
         }
         put{ &e, a = ");\n}\n\n" }
-        to_aux{ &e }
-        return @as(u32, k)
     }
 
     // A function value of type `from` as type `to`. The same fields need nothing; more fields
-    // need an adapter that drops them.
+    // need an adapter that drops them (adapter_def).
     fn fnconv { mut e: E, to: ir::TypeId, a: ir::Expr } {
-        let func{ params = src, ret } = ty{ e, id = a.ty } else { @panic("emit: fnconv of a non-function") }
+        let func{ params = src } = ty{ e, id = a.ty } else { @panic("emit: fnconv of a non-function") }
         let func{ params = dst } = ty{ e, id = to } else { @panic("emit: fnconv to a non-function") }
         if same_params{ a = src, b = dst } {
             expr{ &e, x = a }
@@ -2095,25 +2728,28 @@ namespace emit {
             if q.from == a.ty and q.to == to { break }
             k = k + 1
         }
-        if k == e.adapters.len {
-            try! list::push{ list = &e.adapters, item = Pair{ from = a.ty, to } }
-            to_aux{ &e }
-            code_head{ &e, prefix = "a", k = @as(u32, k), ret, params = dst }
-            put{ &e, a = "    ctx_fn *in = ((ctx_adapter *)self)->inner;\n    " }
-            if not is_void{ e, t = ret } { put{ &e, a = "return " } }
-            put{ &e, a = "((c" }
-            num{ &e, n = a.ty }
-            put{ &e, a = ")in->code)(in" }
-            if src.len > 0 { put{ &e, a = ", " } }
-            forward{ &e, target = src, args = slice::empty(ir::Arg){}, given = dst }
-            put{ &e, a = ");\n}\n\n" }
-            to_aux{ &e }
-        }
+        if k == e.adapters.len { try! list::push{ list = &e.adapters, item = Pair{ from = a.ty, to } } }
         put{ &e, a = "ctx_adapt(" }
         expr{ &e, x = a }
-        put{ &e, a = ", (void (*)(void))a" }
-        num{ &e, n = k }
+        put{ &e, a = ", (void (*)(void))" }
+        mark_id{ &e, kind = 'a', id = k }
         put{ &e, a = "_code)" }
+    }
+
+    //   static R aN_code(ctx_fn *self, P a0, ...) { ctx_fn *in = ...; return ((cT)in->code)(in, ...); }
+    fn adapter_def { mut e: E, k: u32 } {
+        let q = list::items{ list = e.adapters }[k]
+        let func{ params = src, ret } = ty{ e, id = q.from } else { @panic("emit: fnconv of a non-function") }
+        let func{ params = dst } = ty{ e, id = q.to } else { @panic("emit: fnconv to a non-function") }
+        code_head{ &e, kind = 'a', id = k, ret, params = dst }
+        put{ &e, a = "    ctx_fn *in = ((ctx_adapter *)self)->inner;\n    " }
+        if not is_void{ e, t = ret } { put{ &e, a = "return " } }
+        put{ &e, a = "((" }
+        mark_id{ &e, kind = 'c', id = q.from }
+        put{ &e, a = ")in->code)(in" }
+        if src.len > 0 { put{ &e, a = ", " } }
+        forward{ &e, target = src, args = slice::empty(ir::Arg){}, given = dst }
+        put{ &e, a = ");\n}\n\n" }
     }
 
     fn same_params { a: []ir::Param, b: []ir::Param } -> bool {
@@ -2381,18 +3017,37 @@ namespace emit {
         num{ &e, n = slot }
     }
 
+    // Type t's name: a marker, or in the types of a unit (unit_text), its name there.
     fn tn { mut e: E, t: ir::TypeId } {
+        if not e.direct {
+            mark_id{ &e, kind = 't', id = t }
+            return
+        }
         ch{ &e, c = 't' }
-        num{ &e, n = t }
+        num{ &e, n = number{ l = &e.lt, id = t } }
     }
 
-    // `LINE, COL, FILE`
+    // Type t, whose definition the function needs whether or not its text names it: the type of
+    // an expression, or one its C reaches through a pointer.
+    fn use { mut e: E, t: ir::TypeId } {
+        if e.direct { return }
+        if e.assembling {
+            _ = number{ l = &e.lt, id = t }
+            return
+        }
+        let mark = e.f.id + 1
+        if list::items{ list = e.used }[t] == mark { return }
+        list::items{ list = e.used }[t] = mark
+        try! list::push{ list = &e.uses, item = t }
+    }
+
+    // `LINE, COL, FILE`: the file by its id (start), not the IR's index.
     fn position { mut e: E, p: ir::Pos } {
         num{ &e, n = p.line }
         put{ &e, a = ", " }
         num{ &e, n = p.col }
         put{ &e, a = ", " }
-        num{ &e, n = p.file }
+        num{ &e, n = list::items{ list = e.files }[p.file] }
     }
 
     // A C string literal: printable ASCII as is, except `"`, `\` and `?`; other bytes as octal.

@@ -70,8 +70,24 @@ static void put_err(const char *s) {
 
 // ---- panics
 
+// How a position names its file (ctxc/emit_c.ctx): FNV-1a of the name, with the top bit set, so
+// that a file's id doesn't depend on which other files the program has. An id below the table's
+// length is an index into it, as C from an older ctxc has it.
+static uint32_t file_id(const char *name) {
+    uint32_t h = 2166136261u;
+    for (; *name; name++) h = (h ^ (uint8_t)*name) * 16777619u;
+    return h | 0x80000000u;
+}
+
 static const char *file_name(uint32_t file) {
-    if (file < ctx_nfiles && ctx_files[file][0]) return ctx_files[file];
+    const char *name = NULL;
+    if (file < ctx_nfiles) {
+        name = ctx_files[file];
+    } else {
+        for (uint32_t i = 0; i < ctx_nfiles && !name; i++)
+            if (file_id(ctx_files[i]) == file) name = ctx_files[i];
+    }
+    if (name && name[0]) return name;
     return program_name;
 }
 
