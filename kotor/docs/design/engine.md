@@ -547,12 +547,26 @@ each frame:
 
 ## Headless and logs
 
-`kotor [--module end_m01aa] [--game DIR] [--headless] [--no-render] [--frames N] [--dt S]
-[--input FILE] [--screenshot-at FRAME:PATH]... [--log scripts,routines,events,actions,objects]
-[--report routines] [--seed N] [--size WxH]` (no `--module`: the front end first):
+`kotor [--module end_m01aa] [--game DIR] [--headless] [--no-render] [--speed N] [--mute]
+[--engine-only] [--frames N] [--dt S] [--input FILE] [--screenshot-at FRAME:PATH]...
+[--log scripts,routines,events,actions,objects] [--report routines] [--seed N] [--size WxH] [--saves DIR]`
+(no `--module`: the front end first):
 
 - `--headless`: a hidden window (the GL backend renders the same pixels offscreen), a fixed time
   step (`--dt`, default 1/30 s), the rng seeded (`--seed`, default 1), so a run is reproducible.
+- `--no-render` (implies `--headless`): the whole loop, scene and UI and conversations included, but a
+  frame is drawn only when a `--screenshot-at` is due at it or a save needs its picture. The log is
+  byte for byte the `--headless` run's (checked on the Endar Spire replay) and the run takes half the time.
+- `--speed N` (with `--no-render`): N world ticks per loop iteration. The world, the conversation pump, the
+  test bot and the outbox run every tick; the scene's sync, the camera, the UI and the mixer catch up once
+  per N ticks with the time they owe, unless something reads them sooner (a conversation is shown, a menu or
+  screen is open, an input line was applied, a module is arriving, a picture is due: `game/speed.ctx`).
+  Same log as `--speed 1` (checked at N = 4, 8, 16; only the `sounds started` count and a heap-bytes figure
+  differ). A picture taken between catch-ups shows a camera that has stepped N ticks at once.
+- `--mute` (with `--no-render`): the mixer skips the music and the effects. Faster still, but not the same
+  log: a voice-over mixed alone ends up to two ticks sooner than one mixed beside another stream.
+- `--engine-only`: just lib/engine's world loop (the old `--no-render`): no scene, no conversation view,
+  no input script. The fastest way to run scripts; `tools/enginetest` is the same without the presentation.
 - `--input FILE`: one command per line, applied at the start of that frame: `FRAME down KEY` /
   `FRAME up KEY` (a letter, `up`, `down`, `left`, `right`, `space`, `escape`), and for tests
   `FRAME warp TAG` (the leader 1.5 m in front of the object), `FRAME use TAG` (the leader's default
