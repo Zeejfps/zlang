@@ -1,0 +1,615 @@
+// The mixer: the sounds playing now, each a voice, mixed into 16-bit stereo at the output rate.
+// It knows nothing of SDL; `audio` (audio.ctx) hands what it renders to the device.
+//
+//   let m = try mix::make{ realloc, &heap, rate = 44100, voices_2d = 24, voices_3d = 16 }
+//   let music = try mix::play{ m, bytes, p = mix::sound_2d{ group = mix::Group::music, volume = 1.0 } }
+//   let door = try mix::play{ m, bytes, p = mix::sound_3d{ group = mix::Group::sfx, volume = 1.0,
+//       position, min_distance = 2.0, max_distance = 20.0 } }
+//   mix::set_listener{ m, position, forward, up }
+//   mix::render{ m, into }                        // what audio::update does each frame
+//
+// A voice plays a snd::Stream over a file's bytes, which the caller keeps until the voice is
+// done (`is_playing` says false), or a feed: samples the caller pushes as it makes them (a
+// movie's sound). Each voice is resampled to the output rate (cubic Hermite interpolation, with
+// `pitch` scaling the rate), given gains from its volume, its group's volume and the master
+// volume, and its pan or, for a 3D voice, its distance and direction from the listener. Gains
+// change smoothly across each render, so volume changes and moving sounds don't click.
+//
+// Voices are limited as swkotor.ini's "Number 2D Voices" (24) and "Number 3D Voices" (16) limit
+// them: when a kind runs out, a new sound takes the voice of the lowest-priority one playing,
+// if that priority isn't higher than its own.
+namespace mix {
+    error no_voice              // every voice of the kind is busy with a higher priority
+    error bad_feed              // feed rate or channels out of range
+
+    // swkotor.ini's volume groups: [Sound Options] Music, Voiceover, Sound Effects, Movie Volume.
+    enum Group: u8 { music, voice, sfx, movie }
+
+    // How a sound plays.
+    struct Params {
+        group: Group,
+        volume: f32,            // linear amplitude, 0..1 (more boosts)
+        pan: f32,               // 2D: -1 left, 0 centre, 1 right
+        pitch: f32,             // playback rate times this
+        looping: bool,          // back to the start at the end, until stopped
+        priority: u8,           // a higher one keeps its voice when voices run out
+        positional: bool,       // a 3D sound at `position`, heard from the listener
+        position: math::Vec3,
+        min_distance: f32,      // 3D: full volume up to this distance
+        max_distance: f32,      // 3D: silent from this distance
+    }
+
+    // A sound heard the same wherever the listener is: music, voice-over, the GUI.
+    fn sound_2d { group: Group, volume: f32 } -> Params {
+        return Params{
+            group, volume, pan = 0.0, pitch = 1.0, looping = false, priority = 128, positional = false,
+            position = math::vec3::zero{}, min_distance = 1.0, max_distance = 100.0,
+        }
+    }
+
+    // A sound at a place in the area.
+    fn sound_3d { group: Group, volume: f32, position: math::Vec3, min_distance: f32, max_distance: f32 } -> Params {
+        return Params{
+            group, volume, pan = 0.0, pitch = 1.0, looping = false, priority = 128, positional = true,
+            position, min_distance, max_distance,
+        }
+    }
+
+    // A playing sound. Zero is no sound: a handle whose sound has ended, or was never played, is
+    // ignored by everything that takes one.
+    struct Handle { slot: u32, id: u32 }
+
+    struct Listener { position: math::Vec3, forward: math::Vec3, up: math::Vec3 }
+
+    const BLOCK: usize = 1024           // output frames mixed at a time
+    const WINDOW: usize = 1024          // source frames a voice keeps for interpolation
+    const FEEDS: usize = 2
+    const FEED_RING: usize = 65536      // samples in a feed's ring: 0.74 s of 44.1 kHz stereo
+    const PAN_3D: f32 = 0.7             // how far a 3D sound can pan: never wholly out of one ear
+
+    // A feed's samples: a ring the caller writes and the voice reads.
+    struct Feed { used: bool, ring: [65536]i16, read: usize, count: usize, ended: bool }
+
+    struct Voice {
+        active: bool,
+        id: u32,
+        p: Params,
+        feed: ?usize,           // the Feed it reads, or null for `stream`
+        stream: snd::Stream,
+        rate: u32,              // the source's
+        channels: usize,        // the source's, 1 or 2
+        window: [2056]f32,      // WINDOW + 4 source frames, interleaved by channels: frames [0, have)
+        have: usize,
+        pos: u64,               // where in `window` the next output frame is, in source frames, 32.32
+        pulled: u64,            // what `pull` moved pos back by during this render
+        ended: bool,            // nothing more comes from the source: `have` is all there is
+        stop_at: usize,         // with `ended`, frames past this are the silence padded on
+        played: f64,            // source frames played since the start, loops included
+        gain_l: f32,            // the gains the last render ended with
+        gain_r: f32,
+        fresh: bool,            // not yet rendered: start at the target gains
+        fading: bool,           // stopping: `fade` falls by fade_step a frame, and at 0 the voice ends
+        fade: f32,
+        fade_step: f32,
+        paused: bool,
+        failed: bool,           // the stream failed mid-way (counted in Mixer.errors)
+    }
+
+    struct Mixer {
+        rate: u32,
+        voices: []mut Voice,
+        max_2d: u32,
+        max_3d: u32,
+        group_volume: [4]f32,
+        group_paused: [4]bool,
+        master: f32,
+        listener: Listener,
+        next_id: u32,
+        errors: u32,            // streams that failed while playing
+        acc: [2048]f32,         // BLOCK stereo frames being mixed
+        scratch: [4096]i16,     // samples read from a stream
+        feeds: [2]Feed,
+    }
+
+    // A mixer for output at `rate` Hz, in memory from `realloc` (it is about 2 MB with its
+    // voices), with every group at full volume.
+    fn make(S) { realloc: alloc::Fn(S), mut heap: S, rate: u32, voices_2d: u32, voices_3d: u32 } -> !*mut Mixer {
+        let one = try alloc::resize(Mixer, S){ realloc, &heap, mem = slice::empty(Mixer){}, count = 1 }
+        let m = &one[0]
+        let n: usize = voices_2d + voices_3d + FEEDS
+        let voices = alloc::resize(Voice, S){ realloc, &heap, mem = slice::empty(Voice){}, count = n } iferr err{ error } {
+            _ = alloc::resize(Mixer, S){ realloc, &heap, mem = one, count = 0 }
+            return error
+        }
+        m.rate = rate
+        m.voices = voices
+        m.max_2d = voices_2d
+        m.max_3d = voices_3d
+        m.group_volume = [1.0, 1.0, 1.0, 1.0]
+        m.group_paused = [false, false, false, false]
+        m.master = 1.0
+        m.listener = Listener{ position = math::vec3::zero{}, forward = math::vec3::make{ x = 0.0, y = 1.0, z = 0.0 }, up = math::vec3::make{ x = 0.0, y = 0.0, z = 1.0 } }
+        m.next_id = 1
+        m.errors = 0
+        let mut i: usize = 0
+        while i < n {
+            m.voices[i].active = false
+            m.voices[i].id = 0
+            i = i + 1
+        }
+        i = 0
+        while i < FEEDS {
+            m.feeds[i].used = false
+            i = i + 1
+        }
+        return m
+    }
+
+    // Gives the mixer's memory back.
+    fn free(S) { realloc: alloc::Fn(S), mut heap: S, m: *mut Mixer } {
+        _ = alloc::resize(Voice, S){ realloc, &heap, mem = m.voices, count = 0 }
+        _ = alloc::resize(Mixer, S){ realloc, &heap, mem = @slice(m, 1), count = 0 }
+    }
+
+    // ---- starting and stopping
+
+    // Plays the sound file `bytes` (any kind wav::probe knows), which must stay in memory until
+    // the voice is done. Fails with the file's error if it isn't a sound, or no_voice.
+    fn play { mut m: Mixer, bytes: []u8, p: Params } -> !Handle {
+        let slot = try take_voice{ &m, p }
+        let v = &m.voices[slot]
+        snd::open{ s = &v.stream, bytes } iferr err{ error } {
+            v.active = false
+            return error
+        }
+        start{ &m, slot, p, rate = v.stream.info.rate, channels = v.stream.info.channels, feed = null }
+        return Handle{ slot = @trunc(u32, slot), id = v.id }
+    }
+
+    // A voice the caller feeds with samples (`feed`) as it makes them, at `rate` Hz with
+    // `channels` channels (1 or 2): a movie's sound. Fails with no_voice if both feeds are busy.
+    fn play_feed { mut m: Mixer, rate: u32, channels: u32, p: Params } -> !Handle {
+        if channels == 0 or channels > 2 or rate < 1000 or rate > 192000 { return bad_feed }
+        let mut k: usize = 0
+        while k < FEEDS and m.feeds[k].used { k = k + 1 }
+        if k == FEEDS { return no_voice }
+        let slot = try take_voice{ &m, p }
+        let f = &m.feeds[k]
+        f.used = true
+        f.read = 0
+        f.count = 0
+        f.ended = false
+        start{ &m, slot, p, rate, channels, feed = k }
+        return Handle{ slot = @trunc(u32, slot), id = m.voices[slot].id }
+    }
+
+    // Appends interleaved samples to a feed voice's ring, as many whole frames as fit. Returns
+    // how many frames it took; the caller keeps the rest for later.
+    fn feed { mut m: Mixer, h: Handle, samples: []i16 } -> usize {
+        let v = voice_of{ m = &m, h } ifnull { return 0 }
+        let k = v.feed ifnull { return 0 }
+        let f = &m.feeds[k]
+        let ch = v.channels
+        let room = (FEED_RING - f.count) / ch
+        let frames = if samples.len / ch < room { samples.len / ch } else { room }
+        let n = frames * ch
+        let mut i: usize = 0
+        let mut w = (f.read + f.count) % FEED_RING
+        while i < n {
+            f.ring[w] = samples[i]
+            w = w + 1
+            if w == FEED_RING { w = 0 }
+            i = i + 1
+        }
+        f.count = f.count + n
+        return frames
+    }
+
+    // Frames a feed voice's ring has room for.
+    fn feed_room { m: *Mixer, h: Handle } -> usize {
+        let v = voice_of{ m, h } ifnull { return 0 }
+        let k = v.feed ifnull { return 0 }
+        return (FEED_RING - m.feeds[k].count) / v.channels
+    }
+
+    // No more samples come: the voice ends when it has played what it has.
+    fn end_feed { mut m: Mixer, h: Handle } {
+        let v = voice_of{ m = &m, h } ifnull { return }
+        let k = v.feed ifnull { return }
+        m.feeds[k].ended = true
+    }
+
+    // A free voice of p's kind, or the one to take over; marks it active.
+    fn take_voice { mut m: Mixer, p: Params } -> !usize {
+        let mut busy: u32 = 0
+        let mut free_slot: ?usize = null
+        let mut victim: ?usize = null
+        let mut i: usize = 0
+        while i < m.voices.len {
+            let v = &m.voices[i]
+            if v.active {
+                if v.p.positional == p.positional {
+                    busy = busy + 1
+                    let lowest = victim
+                    if v.feed == null and (lowest == null or v.p.priority < m.voices[lowest].p.priority) { victim = i }
+                }
+            } else if free_slot == null {
+                free_slot = i
+            }
+            i = i + 1
+        }
+        let limit = if p.positional { m.max_3d } else { m.max_2d }
+        let mut slot: usize = 0
+        let free_now = free_slot
+        if busy < limit and free_now != null {
+            slot = free_now
+        } else {
+            let lowest = victim ifnull { return no_voice }
+            if m.voices[lowest].p.priority > p.priority { return no_voice }
+            end_voice{ &m, slot = lowest }
+            slot = lowest
+        }
+        let v = &m.voices[slot]
+        v.active = true
+        v.id = m.next_id
+        m.next_id = if m.next_id == 0xFFFFFFFF { 1 } else { m.next_id + 1 }
+        return slot
+    }
+
+    fn start { mut m: Mixer, slot: usize, p: Params, rate: u32, channels: u32, feed: ?usize } {
+        let v = &m.voices[slot]
+        v.p = p
+        if v.p.pitch <= 0.0 { v.p.pitch = 1.0 }
+        v.feed = feed
+        v.rate = rate
+        v.channels = channels
+        // One frame of silence before the sound, for the interpolation's first point.
+        v.window[0] = 0.0
+        v.window[1] = 0.0
+        v.have = 1
+        v.pos = 1 << 32
+        v.pulled = 0
+        v.ended = false
+        v.stop_at = 0
+        v.played = 0.0
+        v.gain_l = 0.0
+        v.gain_r = 0.0
+        v.fresh = true
+        v.fading = false
+        v.fade = 1.0
+        v.fade_step = 0.0
+        v.paused = false
+        v.failed = false
+    }
+
+    fn end_voice { mut m: Mixer, slot: usize } {
+        let v = &m.voices[slot]
+        let k = v.feed
+        if k != null { m.feeds[k].used = false }
+        v.active = false
+        v.id = 0
+    }
+
+    // The voice a handle names, if its sound still plays.
+    fn voice_of { m: *Mixer, h: Handle } -> ?*mut Voice {
+        if h.id == 0 or @as(usize, h.slot) >= m.voices.len { return null }
+        let v = &m.voices[h.slot]
+        if not v.active or v.id != h.id { return null }
+        return v
+    }
+
+    // Stops a sound, fading it out over `fade` seconds (0: at once).
+    fn stop { mut m: Mixer, h: Handle, fade: f32 } {
+        let v = voice_of{ m = &m, h } ifnull { return }
+        // A paused voice renders nothing, so it would never finish a fade.
+        if fade <= 0.0 or v.paused or m.group_paused[@as(usize, v.p.group)] {
+            end_voice{ &m, slot = h.slot }
+            return
+        }
+        v.fading = true
+        v.fade_step = 1.0 / (fade * @as(f32, m.rate))
+    }
+
+    // Stops every sound of a group (all, for null), fading over `fade` seconds.
+    fn stop_all { mut m: Mixer, group: ?Group, fade: f32 } {
+        let mut i: usize = 0
+        while i < m.voices.len {
+            let v = &m.voices[i]
+            if v.active and (group == null or v.p.group == group) {
+                stop{ &m, h = Handle{ slot = @trunc(u32, i), id = v.id }, fade }
+            }
+            i = i + 1
+        }
+    }
+
+    fn is_playing { m: *Mixer, h: Handle } -> bool {
+        return voice_of{ m, h } != null
+    }
+
+    // How far into its sound a voice has played, in seconds (counting every loop), as mixed:
+    // what is heard lags by what the device has queued (audio::heard).
+    fn played { m: *Mixer, h: Handle } -> ?f64 {
+        let v = voice_of{ m, h } ifnull { return null }
+        return v.played / @as(f64, v.rate)
+    }
+
+    // ---- changing a playing sound
+
+    fn set_volume { mut m: Mixer, h: Handle, volume: f32 } {
+        let v = voice_of{ m = &m, h } ifnull { return }
+        v.p.volume = volume
+    }
+
+    fn set_pan { mut m: Mixer, h: Handle, pan: f32 } {
+        let v = voice_of{ m = &m, h } ifnull { return }
+        v.p.pan = if pan < -1.0 { -1.0 } else if pan > 1.0 { 1.0 } else { pan }
+    }
+
+    fn set_pitch { mut m: Mixer, h: Handle, pitch: f32 } {
+        let v = voice_of{ m = &m, h } ifnull { return }
+        if pitch > 0.0 { v.p.pitch = pitch }
+    }
+
+    fn set_position { mut m: Mixer, h: Handle, position: math::Vec3 } {
+        let v = voice_of{ m = &m, h } ifnull { return }
+        v.p.position = position
+    }
+
+    fn set_looping { mut m: Mixer, h: Handle, looping: bool } {
+        let v = voice_of{ m = &m, h } ifnull { return }
+        v.p.looping = looping
+    }
+
+    fn set_paused { mut m: Mixer, h: Handle, paused: bool } {
+        let v = voice_of{ m = &m, h } ifnull { return }
+        v.paused = paused
+    }
+
+    // A group's volume (swkotor.ini's 0..100, divided by 100) and whether it is paused.
+    fn set_group_volume { mut m: Mixer, group: Group, volume: f32 } {
+        m.group_volume[@as(usize, group)] = if volume < 0.0 { 0.0 } else { volume }
+    }
+
+    fn set_group_paused { mut m: Mixer, group: Group, paused: bool } {
+        m.group_paused[@as(usize, group)] = paused
+    }
+
+    fn set_master { mut m: Mixer, volume: f32 } {
+        m.master = if volume < 0.0 { 0.0 } else { volume }
+    }
+
+    // Where the listener is (the camera, in KOTOR), which way it faces, and which way is up.
+    fn set_listener { mut m: Mixer, position: math::Vec3, forward: math::Vec3, up: math::Vec3 } {
+        m.listener = Listener{ position, forward = math::vec3::normalize{ v = forward }, up = math::vec3::normalize{ v = up } }
+    }
+
+    // ---- mixing
+
+    // Mixes the next into.len / 2 stereo frames into `into`.
+    fn render { mut m: Mixer, into: []mut i16 } {
+        let mut done: usize = 0
+        let total = into.len / 2
+        while done < total {
+            let n = if total - done < BLOCK { total - done } else { BLOCK }
+            let mut i: usize = 0
+            while i < 2 * n {
+                m.acc[i] = 0.0
+                i = i + 1
+            }
+            let mut k: usize = 0
+            while k < m.voices.len {
+                let v = &m.voices[k]
+                if v.active {
+                    mix_voice{ &m, v, frames = n }
+                    if v.active and v.ended and (v.pos >> 32) >= @as(u64, v.stop_at) { end_voice{ &m, slot = k } }
+                    if v.active and v.fading and v.fade <= 0.0 { end_voice{ &m, slot = k } }
+                }
+                k = k + 1
+            }
+            i = 0
+            while i < 2 * n {
+                let x = m.acc[i] * 32768.0
+                into[2 * done + i] = mp3::round_to_i16{ x }
+                i = i + 1
+            }
+            done = done + n
+        }
+    }
+
+    struct Gains { l: f32, r: f32, mono: bool }
+
+    // The left and right gains a voice should have now.
+    fn target_gains { m: *Mixer, v: *Voice } -> Gains {
+        let g = v.p.volume * m.group_volume[@as(usize, v.p.group)] * m.master
+        let mut pan = v.p.pan
+        let mut gain = g
+        let mut mono = false
+        if v.p.positional {
+            mono = true
+            let d = math::vec3::sub{ a = v.p.position, b = m.listener.position }
+            let dist = math::vec3::length{ v = d }
+            gain = g * attenuate{ dist, min = v.p.min_distance, max = v.p.max_distance }
+            pan = 0.0
+            if dist > 0.001 {
+                let right = math::vec3::normalize{ v = math::vec3::cross{ a = m.listener.forward, b = m.listener.up } }
+                pan = PAN_3D * math::vec3::dot{ a = d, b = right } / dist
+            }
+        }
+        let l = if pan > 0.0 { 1.0 - pan } else { 1.0 }
+        let r = if pan < 0.0 { 1.0 + pan } else { 1.0 }
+        return Gains{ l = gain * l, r = gain * r, mono }
+    }
+
+    // Distance attenuation: full within `min`, nothing from `max`, between them the inverse of
+    // the distance faded linearly to 0 at `max`.
+    fn attenuate { dist: f32, min: f32, max: f32 } -> f32 {
+        if dist <= min { return 1.0 }
+        if dist >= max or max <= min { return 0.0 }
+        let inverse = if min > 0.0 { min / dist } else { 1.0 }
+        return inverse * (max - dist) / (max - min)
+    }
+
+    // Adds `frames` output frames of voice v into m.acc.
+    fn mix_voice { mut m: Mixer, v: *mut Voice, frames: usize } {
+        if v.paused or m.group_paused[@as(usize, v.p.group)] { return }
+        let target = target_gains{ m = &m, v }
+        if v.fresh {
+            v.gain_l = target.l
+            v.gain_r = target.r
+            v.fresh = false
+        }
+        // The step through the source per output frame, in 32.32 fixed point.
+        let ratio = @as(f64, v.rate) * @as(f64, v.p.pitch) / @as(f64, m.rate)
+        let step: u64 = if ratio > 64.0 { @as(u64, 64.0 * ONE) } else { @as(u64, ratio * ONE) }
+        let inv = 1.0 / @as(f32, frames)
+        let dl = (target.l - v.gain_l) * inv
+        let dr = (target.r - v.gain_r) * inv
+        let mut gl = v.gain_l
+        let mut gr = v.gain_r
+        let ch = v.channels
+        let start = v.pos
+        let acc = m.acc[..2 * frames].ptr
+        let mut i: usize = 0
+        while i < frames {
+            if not v.ended and (v.pos >> 32) + 2 >= @as(u64, v.have) {
+                pull{ &m, v }
+                if not v.ended and (v.pos >> 32) + 2 >= @as(u64, v.have) { break }      // a feed ran dry
+            }
+            // Frames until the window runs out (base + 2 must stay inside), or the sound ends.
+            let limit: u64 = if v.ended { v.stop_at } else { v.have - 2 }
+            let base_now = v.pos >> 32
+            if base_now >= limit { break }
+            let left = ((limit << 32) - v.pos + step - 1) / step
+            let run: usize = if left < @as(u64, frames - i) { @as(usize, left) } else { frames - i }
+            let w = v.window[..].ptr
+            let mut pos = v.pos
+            let end = i + run
+            while i < end {
+                let base = @as(usize, pos >> 32)
+                let t = @as(f32, pos & 0xFFFFFFFF) * (1.0 / 4294967296.0)
+                let mut fade: f32 = 1.0
+                if v.fading {
+                    fade = v.fade
+                    v.fade = v.fade - v.fade_step
+                    if v.fade < 0.0 { v.fade = 0.0 }
+                }
+                gl = gl + dl
+                gr = gr + dr
+                let out = acc + 2 * i
+                if ch == 1 {
+                    let p = w + (base - 1)
+                    let s = interpolate{ p0 = p[0], p1 = p[1], p2 = p[2], p3 = p[3], t } * fade
+                    out[0] = out[0] + s * gl
+                    out[1] = out[1] + s * gr
+                } else {
+                    let p = w + 2 * (base - 1)
+                    let a = interpolate{ p0 = p[0], p1 = p[2], p2 = p[4], p3 = p[6], t } * fade
+                    let b = interpolate{ p0 = p[1], p1 = p[3], p2 = p[5], p3 = p[7], t } * fade
+                    if target.mono {
+                        let s = 0.5 * (a + b)
+                        out[0] = out[0] + s * gl
+                        out[1] = out[1] + s * gr
+                    } else {
+                        out[0] = out[0] + a * gl
+                        out[1] = out[1] + b * gr
+                    }
+                }
+                pos = pos + step
+                i = i + 1
+                if v.fading and fade <= 0.0 { break }
+            }
+            v.pos = pos
+            if v.fading and v.fade <= 0.0 { break }
+        }
+        v.played = v.played + @as(f64, v.pos + v.pulled - start) / ONE
+        v.pulled = 0
+        v.gain_l = target.l
+        v.gain_r = target.r
+    }
+
+    const ONE: f64 = 4294967296.0       // 1.0 in the 32.32 positions
+
+    // Catmull-Rom between p1 and p2, t of the way.
+    fn interpolate { p0: f32, p1: f32, p2: f32, p3: f32, t: f32 } -> f32 {
+        return p1 + 0.5 * t * (p2 - p0 + t * (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3 + t * (3.0 * (p1 - p2) + p3 - p0)))
+    }
+
+    // Moves the frames still needed to the front of the window and fills the rest from the
+    // source. At the source's end, a looping voice starts it again; otherwise three frames of
+    // silence follow the last, and `ended` is set.
+    fn pull { mut m: Mixer, v: *mut Voice } {
+        let ch = v.channels
+        let keep_from = @as(usize, v.pos >> 32) - 1      // the interpolation's first point
+        let keep = v.have - keep_from
+        let mut i: usize = 0
+        while i < keep * ch {
+            v.window[i] = v.window[keep_from * ch + i]
+            i = i + 1
+        }
+        v.have = keep
+        v.pos = v.pos - (@as(u64, keep_from) << 32)
+        v.pulled = v.pulled + (@as(u64, keep_from) << 32)
+        let mut loops = 0
+        while v.have < WINDOW {
+            let room = WINDOW - v.have
+            let want = if room * ch > 4096 { 4096 / ch } else { room }
+            let got = read_source{ &m, v, frames = want }
+            if got > 0 {
+                let src = m.scratch[..got * ch]
+                let dst = v.window[v.have * ch..(v.have + got) * ch]
+                i = 0
+                while i < got * ch {
+                    dst[i] = @as(f32, src[i]) * (1.0 / 32768.0)
+                    i = i + 1
+                }
+                v.have = v.have + got
+                loops = 0
+                continue
+            }
+            let k = v.feed
+            if k != null and not m.feeds[k].ended { return }   // a feed waits for more
+            if v.p.looping and not v.failed and k == null and loops == 0 {
+                loops = 1                                       // an empty stream doesn't loop forever
+                snd::rewind{ s = &v.stream }
+                continue
+            }
+            // The end: pad with silence for the interpolation's last points.
+            v.ended = true
+            v.stop_at = v.have
+            i = 0
+            while i < 3 * ch {
+                v.window[v.have * ch + i] = 0.0
+                i = i + 1
+            }
+            v.have = v.have + 3
+            return
+        }
+    }
+
+    // Up to `frames` frames from a voice's source into m.scratch; 0 at its end (or a feed's
+    // empty ring).
+    fn read_source { mut m: Mixer, v: *mut Voice, frames: usize } -> usize {
+        let ch = v.channels
+        let k = v.feed
+        if k != null {
+            let f = &m.feeds[k]
+            let avail = f.count / ch
+            let n = if avail < frames { avail } else { frames }
+            let mut i: usize = 0
+            while i < n * ch {
+                m.scratch[i] = f.ring[f.read]
+                f.read = f.read + 1
+                if f.read == FEED_RING { f.read = 0 }
+                i = i + 1
+            }
+            f.count = f.count - n * ch
+            return n
+        }
+        if v.failed { return 0 }
+        return snd::read{ s = &v.stream, into = m.scratch[..frames * ch] } iferr {
+            v.failed = true
+            m.errors = m.errors + 1
+            0
+        }
+    }
+}

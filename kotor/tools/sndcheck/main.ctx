@@ -222,8 +222,8 @@ fn check_sound {
     let info = stream.info
     let class = class_of{ info }
     let ch: usize = info.channels
-    let expected = snd::count_frames{ s = stream.* }
-    let xing = snd::read_xing{ s = stream.* }
+    let expected = snd::count_frames{ s = stream }
+    let xing = snd::read_xing{ s = stream }
     if xing != null {
         let counted = xing.frames
         if counted != null and @as(u64, counted) * 1152 != expected {
@@ -290,7 +290,7 @@ fn compare_ref {
     let info = stream.info
     let mut start = info.data
     let end = info.data + info.size
-    if snd::read_xing{ s = stream.* } != null {
+    if snd::read_xing{ s = stream } != null {
         let h = mp3::read_header{ b = stream.bytes[start..end] } ifnull { return }
         start = start + h.size
     }

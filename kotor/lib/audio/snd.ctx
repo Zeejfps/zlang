@@ -161,7 +161,7 @@ namespace snd {
 
     // How many sample frames the stream holds: what its header says for PCM and IMA, and for MP3
     // its audio frames (found by walking their headers, without decoding) times 1,152.
-    fn count_frames { s: Stream } -> u64 {
+    fn count_frames { s: *Stream } -> u64 {
         if s.info.codec != wav::Codec::mp3 { return s.info.frames }
         let mut at = s.info.data
         let end = s.info.data + s.info.size
@@ -182,7 +182,7 @@ namespace snd {
 
     // An MP3 stream's leading Xing/Info frame, which says how many frames follow and how many
     // samples the encoder padded it with; null for other streams.
-    fn read_xing { s: Stream } -> ?mp3::Xing {
+    fn read_xing { s: *Stream } -> ?mp3::Xing {
         if s.info.codec != wav::Codec::mp3 { return null }
         let end = s.info.data + s.info.size
         let h = mp3::read_header{ b = s.bytes[s.info.data..end] } ifnull { return null }
@@ -191,7 +191,7 @@ namespace snd {
     }
 
     // Seconds of sound in `frames` sample frames.
-    fn seconds { s: Stream, frames: u64 } -> f64 {
+    fn seconds { s: *Stream, frames: u64 } -> f64 {
         return @as(f64, frames) / @as(f64, s.info.rate)
     }
 }
