@@ -162,13 +162,16 @@ namespace save {
     fn restore_inventory { mut w: world::World } -> ! {
         let bytes = get{ st = &w.gip, name = "inventory", kind = KIND_RES } ifnull { return }
         let doc = try gff::parse{ data = bytes, realloc = arena::alloc, heap = w.scratch }
-        let old = list::items{ list = w.bag }
+        // The bag's old items go. destroy() takes an item out of its holder's list, so walk a
+        // copy of the ids and clear the bag first (walking the list itself skipped every other one).
+        let old = try alloc::resize(u32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(u32){}, count = w.bag.len }
+        slice::copy(u32){ dst = old, src = list::items{ list = w.bag } }
+        list::clear{ list = &w.bag }
         let mut k: usize = 0
         while k < old.len {
             world::destroy{ &w, id = old[k] }
             k = k + 1
         }
-        list::clear{ list = &w.bag }
         let list = gff::get_list{ doc, s = gff::ROOT, label = "ItemList" } ifnull { return }
         k = 0
         while k < list.len {
