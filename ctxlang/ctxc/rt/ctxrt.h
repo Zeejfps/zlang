@@ -143,6 +143,9 @@ uint64_t ctx_ascii_f32_digits(float n, ctx_slice into);
 double ctx_ascii_f64_parse(ctx_slice text);
 float ctx_ascii_f32_parse(ctx_slice text);
 int64_t ctx_proc_run(ctx_slice argv, ctx_slice env, int32_t *code);
+int64_t ctx_proc_spawn(ctx_slice argv, ctx_slice env, uint64_t *id);
+int64_t ctx_proc_wait(uint64_t id, int32_t *code);
+uint32_t ctx_proc_processors(void);
 #ifdef _WIN32
 bool ctx_proc_env(ctx_slice name, ctx_slice *value);
 #endif

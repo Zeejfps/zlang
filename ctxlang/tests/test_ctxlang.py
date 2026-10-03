@@ -7369,6 +7369,35 @@ class Proc(Base):
 """)
         self.assertEqual((out, code), ('set\ntrue\ntrue\n', 0))
 
+    def test_spawn_and_wait(self):
+        # Two children run at once: the first waits for a file that only the second makes. Each
+        # is waited for, in any order.
+        import tempfile
+        d = tempfile.mkdtemp(prefix='ctxspawn-', dir=os.path.join(ROOT, 'build'))
+        self.addCleanup(shutil.rmtree, d, True)
+        flag = os.path.join(d, 'flag')
+        first = f'import os, sys, time\nwhile not os.path.exists({flag!r}): time.sleep(0.01)\nsys.exit(3)'
+        second = f'import sys\nopen({flag!r}, "w").close()\nsys.exit(4)'
+        out, code = self.run_proc("""
+    _ = list::push{ list = &argv, item = args[0] }
+    _ = list::push{ list = &argv, item = "-c" }
+    _ = list::push{ list = &argv, item = args[1] }
+    let a = proc::spawn{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} } iferr { return 1 }
+    list::items{ list = argv }[2] = args[2]
+    let b = proc::spawn{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} } iferr { return 2 }
+    io::println_i64{ &io, n = proc::wait{ &proc, child = b } iferr { return 3 } }
+    io::println_i64{ &io, n = proc::wait{ &proc, child = a } iferr { return 4 } }
+    io::println_bool{ &io, n = proc::processors{ &proc } >= 1 }
+    let mut missing = list::new([]u8){ realloc = arena::alloc, &heap }
+    _ = list::push{ list = &missing, item = "ctx-no-such-program-anywhere" }
+    match proc::spawn{ &proc, argv = list::items{ list = missing }, env = slice::empty([]u8){} } {
+        ok              => { return 5 }
+        proc::not_found => { return 0 }
+        else            => { return 6 }
+    }
+""", [sys.executable, first, second])
+        self.assertEqual((out, code), ('4\n3\ntrue\n', 0))
+
     def test_bad_env_entry_panics(self):
         with self.assertRaises(Panic) as cm:
             self.run_proc("""
