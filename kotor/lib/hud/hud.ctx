@@ -1,0 +1,247 @@
+// The heads-up display (docs/design/hud.md): the HUD panel (mipc2*.gui) over the running game.
+// It opens the panel for the window, fits the file's layout to it, and each frame sets its
+// controls from the world: party portraits and bars, the minimap, the target block and action
+// slots, the combat queue, the pause banner.
+//
+//   var h = try hud::open{ &g, &fs, &dev }              // once the module runs
+//   hud::update{ &h, &g, &w, &dev, dt }                 // each frame, after the world
+//   for ev in gui::take_events{ &g }: hud::on_event{ &h, &g, &w, ev }
+namespace hud {
+    const WIDGETS: usize = 3
+
+    // What a party widget shows now, so a frame only sets what changed.
+    struct Widget {
+        id: u32,                // the creature shown, obj::INVALID when the widget is empty
+        portrait: u32,          // portraits.2da row
+        hp: i32, hp_max: i32,
+        fp: i32, fp_max: i32,
+        level: i32,
+        down: bool,
+    }
+
+    // A control of the floating target block with its place in the file; the block moves as a
+    // whole over the selected object.
+    struct BlockPart { index: i32, x: i32, y: i32 }
+
+    struct Hud {
+        panel: u32,
+        file_w: i32, file_h: i32,           // the HUD file's design size
+        widgets: [3]Widget,
+        block: [16]BlockPart,
+        block_count: usize,
+        minimap: MiniMap,
+    }
+
+    // The HUD controls of the floating target block.
+    const BLOCK_TAGS: [16][]u8 = [
+        "LBL_NAMEBG", "LBL_NAME", "LBL_HEALTHBG", "PB_HEALTH",
+        "BTN_TARGET0", "BTN_TARGET1", "BTN_TARGET2",
+        "BTN_TARGETUP0", "BTN_TARGETUP1", "BTN_TARGETUP2",
+        "BTN_TARGETDOWN0", "BTN_TARGETDOWN1", "BTN_TARGETDOWN2",
+        "LBL_TARGET0", "LBL_TARGET1", "LBL_TARGET2",
+    ]
+
+    // Controls that show only when the game gives them something to show (a state, an event, a
+    // party member); they start hidden and the update turns them on.
+    const STARTS_HIDDEN: [27][]u8 = [
+        "LBL_ARROW_MARGIN", "LBL_MAP", "LBL_ARROW",
+        "LBL_CMBTMODEMSG", "LBL_CMBTMSGBG", "LBL_COMBATBG1", "LBL_COMBATBG2", "LBL_COMBATBG3",
+        "LBL_QUEUE0", "LBL_QUEUE1", "LBL_QUEUE2", "LBL_QUEUE3",
+        "BTN_CLEARONE", "BTN_CLEARONE2", "BTN_CLEARALL",
+        "LBL_ACTIONDESC", "LBL_ACTIONDESCBG", "TB_SOLO", "TB_STEALTH",
+        "LBL_JOURNAL", "LBL_CASH", "LBL_PLOTXP", "LBL_STEALTHXP", "LBL_DARKSHIFT", "LBL_LIGHTSHIFT",
+        "LBL_ITEMRCVD", "LBL_ITEMLOST",
+    ]
+
+    // Opens the HUD panel for the window, fitted to it.
+    fn open { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> !Hud {
+        let name = gui::hud_name{ w = g.ui_w, h = g.ui_h }
+        let panel = try gui::open{ &g, fs = &w.fs, &dev, name, mode = gui::Mode::placed, modal = false }
+        let p = gui::find_panel{ &g, id = panel } ifnull { return gui::no_such_gui{ name } }
+        let file_w = p.w
+        let file_h = p.h
+        fit_to_screen{ &g, p }
+        let mut h = Hud{
+            panel, file_w, file_h,
+            widgets = [Widget{ id = obj::INVALID, portrait = 0, hp = -1, hp_max = -1, fp = -1, fp_max = -1, level = -1, down = false }; 3],
+            block = [BlockPart{ index = -1, x = 0, y = 0 }; 16], block_count = 0,
+            minimap = open_minimap{ &g, &w, &dev, panel },
+        }
+        let mut i: usize = 0
+        while i < STARTS_HIDDEN.len {
+            gui::set_visible{ &g, panel, tag = STARTS_HIDDEN[i], visible = false }
+            i = i + 1
+        }
+        // The pause toggle and the menu buttons stay; the party widgets hide until a member fills them.
+        hide_slots{ &g, panel }
+        i = 0
+        while i < WIDGETS {
+            hide_widget{ &g, panel, n = i }
+            i = i + 1
+        }
+        i = 0
+        while i < BLOCK_TAGS.len {
+            let ci = gui::find_by_tag{ p, tag = BLOCK_TAGS[i] }
+            if ci >= 0 {
+                let c = list::at{ list = p.controls, i = @as(usize, ci) }
+                h.block[h.block_count] = BlockPart{ index = ci, x = c.x, y = c.y }
+                h.block_count = h.block_count + 1
+            }
+            i = i + 1
+        }
+        hide_block{ &h, &g }
+        return h
+    }
+
+    // The HUD file has one fixed pixel layout; the original shows the file made for the window's
+    // exact size. On any other size (a 16:9 window) we keep the pixels and anchor each control to
+    // the nearest edge of the screen: what sat in a corner of the file stays in that corner, what
+    // sat in the middle of an edge stays centred on it.
+    fn fit_to_screen { mut g: gui::Gui, p: *mut gui::Panel } {
+        let dw = g.ui_w - p.w
+        let dh = g.ui_h - p.h
+        if dw == 0 and dh == 0 { return }
+        let cs = list::items{ list = p.controls }
+        let mut i: usize = 0
+        while i < cs.len {
+            let c = &cs[i]
+            let cx = c.x + c.w / 2
+            let cy = c.y + c.h / 2
+            if cx * 3 > p.w * 2 { c.x = c.x + dw } else if cx * 3 >= p.w { c.x = c.x + dw / 2 }
+            if cy * 3 > p.h * 2 { c.y = c.y + dh } else if cy * 3 >= p.h { c.y = c.y + dh / 2 }
+            i = i + 1
+        }
+        p.w = g.ui_w
+        p.h = g.ui_h
+    }
+
+    // The self action slots (four) and their arrows and icons, all hidden until a list fills one.
+    const SLOT_TAGS: [4][]u8 = ["BTN_ACTION", "BTN_ACTIONUP", "BTN_ACTIONDOWN", "LBL_ACTION"]
+
+    fn hide_slots { mut g: gui::Gui, panel: u32 } {
+        let mut buf: [32]u8
+        let mut k: usize = 0
+        while k < SLOT_TAGS.len {
+            let mut n: usize = 0
+            while n < 4 {
+                gui::set_visible{ &g, panel, tag = tag_n{ into = buf[..], prefix = SLOT_TAGS[k], n }, visible = false }
+                n = n + 1
+            }
+            k = k + 1
+        }
+    }
+
+    // ---- party widgets
+
+    const WIDGET_TAGS: [11][]u8 = [
+        "BTN_CHAR", "LBL_CHAR", "PB_VIT", "PB_FORCE", "LBL_BACK", "LBL_LEVELUP", "LBL_LVLUPBG",
+        "LBL_DEBILATATED", "LBL_DISABLE", "LBL_CMBTEFCTRED", "LBL_CMBTEFCTINC",
+    ]
+
+    fn hide_widget { mut g: gui::Gui, panel: u32, n: usize } {
+        let mut buf: [32]u8
+        let mut k: usize = 0
+        while k < WIDGET_TAGS.len {
+            gui::set_visible{ &g, panel, tag = tag_n{ into = buf[..], prefix = WIDGET_TAGS[k], n = n + 1 }, visible = false }
+            k = k + 1
+        }
+    }
+
+    // The widget a party member goes to: the leader to the first; with exactly two members the
+    // companion to the third, beside the leader (docs/re/gui.md, "Party portraits").
+    fn widget_for { count: usize, member: usize } -> usize {
+        if count == 2 and member == 1 { return 2 }
+        return member
+    }
+
+    // Shows or hides every control of the floating target block.
+    fn hide_block { mut h: Hud, mut g: gui::Gui } {
+        let mut i: usize = 0
+        while i < BLOCK_TAGS.len {
+            gui::set_visible{ &g, panel = h.panel, tag = BLOCK_TAGS[i], visible = false }
+            i = i + 1
+        }
+    }
+
+    // Adds the HUD's own passes to the frame, before the panels (the minimap's target).
+    fn draw { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame } {
+        draw_minimap{ mm = &h.minimap, &g, &w, &dev, &frame, panel = h.panel }
+    }
+
+    // One frame: everything the HUD shows that the world decides.
+    fn update { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, mut text: utf8::Builder(heap::Heap), dt: f32 } {
+        update_party{ &h, &g, &w, &dev, &text }
+    }
+
+    // Portraits, vitality and Force bars, level-up and down marks of the party members.
+    fn update_party { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, mut text: utf8::Builder(heap::Heap) } {
+        let ids = party_ids{ w = &w }
+        let mut shown = [false; 3]
+        let mut m: usize = 0
+        while m < ids.len and m < WIDGETS {
+            let n = widget_for{ count = ids.len, member = m }
+            shown[n] = true
+            show_member{ &h, &g, &w, &dev, &text, n, id = ids[m] }
+            m = m + 1
+        }
+        let mut n: usize = 0
+        while n < WIDGETS {
+            if not shown[n] and h.widgets[n].id != obj::INVALID {
+                hide_widget{ &g, panel = h.panel, n }
+                h.widgets[n].id = obj::INVALID
+            }
+            n = n + 1
+        }
+    }
+
+    fn show_member { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, mut text: utf8::Builder(heap::Heap), n: usize, id: u32 } {
+        let panel = h.panel
+        let mut buf: [32]u8
+        let c = creature_of{ w = &w, id } ifnull { return }
+        let v = vitality_of{ w = &w, id }
+        let f = force_of{ w = &w, id }
+        let level = level_of{ w = &w, id }
+        let down = is_down{ w = &w, id }
+        let wd = &h.widgets[n]
+        let fresh = wd.id != id
+        if fresh {
+            // The controls a member's widget always shows.
+            let always: [5][]u8 = ["BTN_CHAR", "LBL_CHAR", "PB_VIT", "PB_FORCE", "LBL_BACK"]
+            let mut k: usize = 0
+            while k < 5 {
+                gui::set_visible{ &g, panel, tag = tag_n{ into = buf[..], prefix = always[k], n = n + 1 }, visible = true }
+                k = k + 1
+            }
+            let resref = portrait_of{ w = &w, id }
+            let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name = resref }
+            let tag = tag_n{ into = buf[..], prefix = "LBL_CHAR", n = n + 1 }
+            if img.ok { gui::set_picture{ &g, panel, tag, texture = img.tex, w = img.w, h = img.h } } else { gui::clear_picture{ &g, panel, tag } }
+            // The vitality bar's fill is green (the file's red is the original's odd case).
+            let fill = gui::resolve_img{ &g, fs = &w.fs, &dev, name = "greenfill" }
+            let bar = gui::find_control{ &g, panel, tag = tag_n{ into = buf[..], prefix = "PB_VIT", n = n + 1 } }
+            if bar != null and fill.ok { bar.progress.fill = fill }
+            wd.id = id
+            wd.hp = -1
+            wd.fp = -1
+            wd.level = -1
+        }
+        if fresh or wd.hp != v.hp or wd.hp_max != v.hp_max {
+            gui::set_max{ &g, panel, tag = tag_n{ into = buf[..], prefix = "PB_VIT", n = n + 1 }, max = v.hp_max }
+            gui::set_value{ &g, panel, tag = tag_n{ into = buf[..], prefix = "PB_VIT", n = n + 1 }, value = v.hp }
+            wd.hp = v.hp
+            wd.hp_max = v.hp_max
+        }
+        if fresh or wd.fp != f.fp or wd.fp_max != f.fp_max {
+            gui::set_max{ &g, panel, tag = tag_n{ into = buf[..], prefix = "PB_FORCE", n = n + 1 }, max = f.fp_max }
+            gui::set_value{ &g, panel, tag = tag_n{ into = buf[..], prefix = "PB_FORCE", n = n + 1 }, value = f.fp }
+            wd.fp = f.fp
+            wd.fp_max = f.fp_max
+        }
+        if fresh or wd.level != level or wd.down != down {
+            wd.level = level
+            wd.down = down
+        }
+        _ = c
+        _ = text
+    }
+}

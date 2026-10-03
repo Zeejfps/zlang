@@ -1,0 +1,152 @@
+// The minimap (docs/re/gui.md, "Minimap"): the area's map picture (`lbl_map<area>`) with the
+// party leader at the centre of a small viewport and an arrow turned by the leader's facing.
+// The viewport is drawn into a render target each frame and shown as the picture of the HUD's
+// LBL_MAPVIEW, so the picture is clipped to the viewport and the HUD's frame goes over it.
+//
+// The ARE's `Map` struct places the picture: two world points and where they are in the picture
+// (0..1), and NorthAxis, which of the world's axes runs along the picture's. Each picture axis is
+// linear in one world coordinate, so two points are enough to solve it.
+namespace hud {
+    // How the world maps onto the picture: pixel = scale * (u or v of the position) + offset,
+    // with (u, v) the world's x and y (or swapped, or negated) as NorthAxis says.
+    struct MapInfo {
+        present: bool,
+        axis: i32,
+        ax: f32, bx: f32,           // picture x (pixels) from u
+        ay: f32, by: f32,           // picture y (pixels) from v
+        picture: gui::Img,          // the picture, with its size
+    }
+
+    struct MiniMap {
+        area: u32,                  // the area the info is for (obj id), obj::INVALID before the first
+        info: MapInfo,
+        target: ?render::Target,
+        shown: ?render::Texture,    // the target's colour texture
+        side: i32,                  // the viewport's side in pixels
+        arrow: gui::Img,
+        fill: gui::Img,             // the HUD's map-view fill is cleared; this stays black
+    }
+
+    // The world's coordinates along the picture's axes: u runs along x, v along y.
+    fn map_u { axis: i32, x: f32, y: f32 } -> f32 {
+        if axis == 1 { return -x }
+        if axis == 2 { return -y }
+        if axis == 3 { return y }
+        return x
+    }
+
+    fn map_v { axis: i32, x: f32, y: f32 } -> f32 {
+        if axis == 1 { return y }
+        if axis == 2 { return -x }
+        if axis == 3 { return x }
+        return -y
+    }
+
+    fn no_map {} -> MapInfo {
+        return MapInfo{ present = false, axis = 0, ax = 0.0, bx = 0.0, ay = 0.0, by = 0.0, picture = gui::no_img{} }
+    }
+
+    // Reads the area's map placement and picture. `present` stays false when the area has no
+    // picture or no usable reference points (a few areas ship without).
+    fn load_map { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, area: u32 } -> MapInfo {
+        let ao = world::object{ w = &w, id = area } ifnull { return no_map{} }
+        let a = obj::area{ o = ao } ifnull { return no_map{} }
+        let mut key = a.resref
+        let name = resref::bytes{ r = &key }
+        let mut pic: [48]u8
+        slice::copy(u8){ dst = pic[..7], src = "lbl_map" }
+        let n = if name.len > 40 { 40 } else { name.len }
+        slice::copy(u8){ dst = pic[7..7 + n], src = name[..n] }
+        let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name = pic[..7 + n] }
+        if not img.ok { return no_map{} }
+        let doc = world::read_gff{ &w, name, kind = restype::Type::are } iferr { return no_map{} }
+        let d = doc ifnull { return no_map{} }
+        let ms = gff::get_struct{ doc = d, s = gff::ROOT, label = "Map" } ifnull { return no_map{} }
+        let axis = gff::get_int{ doc = d, s = ms, label = "NorthAxis" } ifnull 0
+        let w1x = gff::get_float{ doc = d, s = ms, label = "WorldPt1X" } ifnull 0.0
+        let w1y = gff::get_float{ doc = d, s = ms, label = "WorldPt1Y" } ifnull 0.0
+        let w2x = gff::get_float{ doc = d, s = ms, label = "WorldPt2X" } ifnull 0.0
+        let w2y = gff::get_float{ doc = d, s = ms, label = "WorldPt2Y" } ifnull 0.0
+        let m1x = gff::get_float{ doc = d, s = ms, label = "MapPt1X" } ifnull 0.0
+        let m1y = gff::get_float{ doc = d, s = ms, label = "MapPt1Y" } ifnull 0.0
+        let m2x = gff::get_float{ doc = d, s = ms, label = "MapPt2X" } ifnull 0.0
+        let m2y = gff::get_float{ doc = d, s = ms, label = "MapPt2Y" } ifnull 0.0
+        let u1 = map_u{ axis, x = w1x, y = w1y }
+        let u2 = map_u{ axis, x = w2x, y = w2y }
+        let v1 = map_v{ axis, x = w1x, y = w1y }
+        let v2 = map_v{ axis, x = w2x, y = w2y }
+        if math::abs{ x = u2 - u1 } < 0.001 or math::abs{ x = v2 - v1 } < 0.001 { return no_map{} }
+        let ax = (m2x - m1x) * img.w / (u2 - u1)
+        let ay = (m2y - m1y) * img.h / (v2 - v1)
+        return MapInfo{
+            present = true, axis, ax, bx = m1x * img.w - ax * u1, ay, by = m1y * img.h - ay * v1, picture = img,
+        }
+    }
+
+    // Where a world position lies in the picture, in its pixels.
+    fn map_point { info: MapInfo, x: f32, y: f32 } -> math::Vec2 {
+        return math::Vec2{
+            x = info.ax * map_u{ axis = info.axis, x, y } + info.bx,
+            y = info.ay * map_v{ axis = info.axis, x, y } + info.by,
+        }
+    }
+
+    // The arrow's turn for a facing vector, counterclockwise on the screen from pointing up.
+    fn arrow_angle { info: MapInfo, fx: f32, fy: f32 } -> f32 {
+        let dx = info.ax * map_u{ axis = info.axis, x = fx, y = fy }
+        let dy = info.ay * map_v{ axis = info.axis, x = fx, y = fy }
+        return math::atan2f{ y = -dx, x = -dy }
+    }
+
+    // Makes the viewport's render target the size of the HUD's map view and the picture the
+    // control shows. Called when the HUD opens.
+    fn open_minimap { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> MiniMap {
+        let mut mm = MiniMap{
+            area = obj::INVALID, info = no_map{}, target = null, shown = null, side = 0,
+            arrow = gui::resolve_img{ &g, fs = &w.fs, &dev, name = "mm_barrow" }, fill = gui::no_img{},
+        }
+        let r = gui::control_rect{ &g, panel, tag = "LBL_MAPVIEW" } ifnull { return mm }
+        let side = @as(i32, r.w)
+        if side < 8 { return mm }
+        let t = gpu::create_target{ &dev, width = @as(u32, side), height = @as(u32, side) } iferr { return mm }
+        mm.target = t
+        mm.shown = gpu::target_texture{ dev, t }
+        mm.side = side
+        return mm
+    }
+
+    // Draws the viewport into its target for this frame (a UI pass of its own, before the
+    // panels) and hands the result to the HUD's map-view control. With no picture the
+    // viewport is black.
+    fn draw_minimap { mut mm: MiniMap, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame, panel: u32 } {
+        let target = mm.target ifnull { return }
+        let shown = mm.shown ifnull { return }
+        if mm.area != w.area {
+            mm.area = w.area
+            mm.info = load_map{ &g, &w, &dev, area = w.area }
+        }
+        let side = @as(f32, mm.side)
+        render::begin_ui{ &frame, width = side, height = side, target }
+        render::fill_rect{ &frame, rect = render::Rect{ x = 0.0, y = 0.0, w = side, h = side }, color = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 } }
+        let leader = party::leader{ w = &w }
+        let o = world::object{ w = &w, id = leader }
+        if o != null and mm.info.present {
+            let at = map_point{ info = mm.info, x = o.position.x, y = o.position.y }
+            let pic = mm.info.picture
+            let mut q = render::make_quad{ rect = render::Rect{ x = side / 2.0 - at.x, y = side / 2.0 - at.y, w = pic.w, h = pic.h }, color = render::white{} }
+            q.image = render::Image::texture{ t = pic.tex }
+            q.clip = render::Rect{ x = 0.0, y = 0.0, w = side, h = side }
+            render::add_quad{ &frame, quad = q }
+            if mm.arrow.ok {
+                let mut a = render::make_quad{
+                    rect = render::Rect{ x = side / 2.0 - mm.arrow.w / 2.0, y = side / 2.0 - mm.arrow.h / 2.0, w = mm.arrow.w, h = mm.arrow.h },
+                    color = render::white{},
+                }
+                a.image = render::Image::texture{ t = mm.arrow.tex }
+                a.angle = arrow_angle{ info = mm.info, fx = o.orientation.x, fy = o.orientation.y }
+                render::add_quad{ &frame, quad = a }
+            }
+        }
+        gui::set_picture{ &g, panel, tag = "LBL_MAPVIEW", texture = shown, w = side, h = side }
+    }
+}
