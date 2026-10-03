@@ -10,7 +10,9 @@
 //   FRAME ui target TAG        select the object with the tag;  ui join TAG: it joins the party
 //   FRAME ui unlock TAG | ui global NAME N | ui goto TAG | ui where [PART]     test helpers: unlock a door or placeable;
 //                              set a number global; the leader walks to a tagged object; print objects by tag part
-//   FRAME ui list | pick | info | party    print selectable objects / the pick under the pointer / the target / the party
+//   FRAME ui hover             print the panels' places and the control under the pointer
+//   FRAME ui sweep             the pointer to the centre of each control: a hover test of every shown panel
+//   FRAME ui list | pick | info | party   print selectable objects / the pick under the pointer / the target / the party
 namespace ingame {
     fn run_command { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, text: []u8 } {
         let mut words = text::words{ s = text }
@@ -151,6 +153,55 @@ namespace ingame {
             if b != null {
                 _ = @fmt(&w.io, "box {} {} {} {} top {} {}\n", b.x0, b.y0, b.x1, b.y1, b.top.x, b.top.y)
             }
+        } else if ci::eq{ a = cmd, b = "hover" } {
+            // Test helper: where the panels are on the screen and which control is under the pointer.
+            let ps = list::items{ list = ui.gui.panels }
+            let mut i: usize = 0
+            while i < ps.len {
+                let p = ps[i]
+                i = i + 1
+                _ = @fmt(&w.io, "panel {} {} at {} {} size {} {} shown {}\n", p.id, resref::bytes{ r = &p.name }, p.sx, p.sy, p.w, p.h, p.shown)
+            }
+            _ = @fmt(&w.io, "pointer {} {} window {}x{} ui {}x{} scale {}\n", ui.gui.mouse_x, ui.gui.mouse_y, ui.gui.win_w, ui.gui.win_h, ui.gui.ui_w, ui.gui.ui_h, ui.gui.scale)
+            let h = ui.gui.hover
+            let hp = gui::find_panel{ g = &ui.gui, id = h.panel }
+            if hp != null and h.control >= 0 {
+                let c = list::at{ list = hp.controls, i = @as(usize, h.control) }
+                _ = @fmt(&w.io, "hover {} control {} at {} {} size {} {}\n", resref::bytes{ r = &hp.name }, c.tag, hp.sx + c.x, hp.sy + c.y, c.w, c.h)
+            } else {
+                _ = @fmt(&w.io, "hover nothing\n")
+            }
+        } else if ci::eq{ a = cmd, b = "sweep" } {
+            // Test helper: the pointer to the centre of every visible control that takes it, one at a
+            // time, through the event path; prints those where the hover is on another control (one
+            // lying over it, usually) and the totals. A hover offset from the drawing shows as many.
+            let mut total: u32 = 0
+            let mut wrong: u32 = 0
+            let ps = list::items{ list = ui.gui.panels }
+            let mut i: usize = 0
+            while i < ps.len {
+                let p = ps[i]
+                i = i + 1
+                if not p.shown or p.removing { continue }
+                let cs = list::items{ list = p.controls }
+                let mut k: usize = 0
+                while k < cs.len {
+                    let c = &cs[k]
+                    k = k + 1
+                    if not gui::is_interactive{ c } or (c.flags & gui::F_VISIBLE) == 0 or c.w <= 0 or c.h <= 0 { continue }
+                    let x = p.sx + c.x + c.w / 2
+                    let y = p.sy + c.y + c.h / 2
+                    send{ &ui, &w, &dev, ev = sdl::Event::mouse_motion{ x, y, dx = 0, dy = 0, buttons = 0 } }
+                    total = total + 1
+                    if ui.gui.hover.panel != p.id or ui.gui.hover.control != @as(i32, k) - 1 {
+                        wrong = wrong + 1
+                        let hp = gui::find_panel{ g = &ui.gui, id = ui.gui.hover.panel }
+                        let under: []u8 = if hp != null and ui.gui.hover.control >= 0 { list::at{ list = hp.controls, i = @as(usize, ui.gui.hover.control) }.tag } else { "-" }
+                        _ = @fmt(&w.io, "sweep: {} {} at {} {} hovers {}\n", resref::bytes{ r = &p.name }, c.tag, x, y, under)
+                    }
+                }
+            }
+            _ = @fmt(&w.io, "sweep: {} controls, {} hovered something else\n", total, wrong)
         } else if ci::eq{ a = cmd, b = "pick" } {
             let id = hud::pick_at{ p = ui.hud.projector, w = &w, x = ui.gui.mouse_x, y = ui.gui.mouse_y }
             _ = @fmt(&w.io, "pick at {} {}: {} {}\n", ui.gui.mouse_x, ui.gui.mouse_y, id, hud::name_of{ w = &w, id })
