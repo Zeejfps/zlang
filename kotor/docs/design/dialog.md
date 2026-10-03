@@ -176,8 +176,8 @@ is `computer.gui` over `WxHcomp0/1`. `<FullName>`, `<FirstName>`, `<LastName>` a
 `w.tokens`) are handed to the GUI before each line. Node fades (`FadeType` 3 in, 4 out, 1 and 2 at
 once) and the outbox's global fades (SetGlobalFadeIn/Out) run on the panels' fade layer, drawn after
 the 3D view and before the GUI. Barks (`Note::bark`: a one-liner, BarkString, SpeakString) show the
-bubble (`len x 0.11 + 1` s) and play their sound 3D at the speaker with its mouth. The HUD should hide
-while `w.conversation.active` (the in-game UI's job; the bars and fade are drawn under it otherwise).
+bubble (`len x 0.11 + 1` s) and play their sound 3D at the speaker with its mouth. The in-game UI
+hides the HUD while `w.conversation.active` (the bars and fade are drawn under the GUI).
 
 ## Headless checks
 
