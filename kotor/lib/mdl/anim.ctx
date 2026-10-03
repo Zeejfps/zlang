@@ -1,0 +1,427 @@
+// Animation of parsed models (lib/mdl's `mdl`): finding an animation along the supermodel
+// chain, binding it to the model it drives, sampling it into a pose, blending one animation
+// into the next over its transition time, firing its events, and what a renderer needs from a
+// pose: each node's model-space transform, skin palettes, and hook transforms for attachments.
+//
+//   let found = mdl_anim::find{ model = &body, name = "run", lookup = models::get{ &cache, _ } } ifnull { ... }
+//   let run = try mdl_anim::bind{ realloc, &heap, model = &body, animation = found.animation }
+//   let mut pose = try mdl_anim::make_pose{ realloc, &heap, model = &body }
+//   mdl_anim::play{ &player, binding = run, looping = true, speed = 1.0, transition = -1.0 }
+//   ... each frame:
+//   mdl_anim::advance{ &player, dt, on_event = sounds::on_event{ &mix, _ } }
+//   mdl_anim::evaluate{ model = &body, player, pose }
+//   mdl_anim::skin_palette{ model = &body, mesh = &body.meshes[i], pose, out = palette[..] }
+//
+// How keys apply (mdl.md, Animations; confirmed by renders of doors, Bastila and the rancor):
+// orientation keys replace the node's orientation; position keys are offsets added to the
+// node's own position, scaled by the driven model's animation scale; every other controller
+// replaces its property. A controller id means what it means for the kind of the node it
+// drives. Keys interpolate linearly (orientations by slerp); bezier keys use their values only,
+// our decision while the curve's form is unproven (mdl.md, Controllers).
+//
+// Poses and bindings hold memory from the caller's allocator, as models do; nothing is freed
+// piece by piece.
+namespace mdl_anim {
+    // The hooks attachments go to (models-usage.md): a B-type body's head at its headhook,
+    // weapons at the hands, masks and goggles at the head's gogglehook.
+    const HOOK_HEAD: []u8 = "headhook"
+    const HOOK_RIGHT_HAND: []u8 = "rhand"
+    const HOOK_LEFT_HAND: []u8 = "lhand"
+    const HOOK_GOGGLES: []u8 = "gogglehook"
+
+    // ---- poses
+
+    // One node's animatable state, relative to its parent.
+    struct NodeState {
+        position: math::Vec3,
+        orientation: math::Quat,
+        scale: f32,
+        alpha: f32,
+        self_illum: math::Vec3,
+    }
+
+    // A model's state at one moment. `nodes`, `lights` and `emitters` are what animations set;
+    // `world` and `alpha` follow from them (`finish`). Every array is indexed as the model's:
+    // nodes and world by tree index, lights and emitters as Model.lights and Model.emitters.
+    struct Pose {
+        nodes: []mut NodeState,
+        lights: []mut mdl::LightProps,
+        emitters: []mut mdl::EmitterProps,
+        world: []mut math::Mat4,               // model space
+        alpha: []mut f32,                      // the node's alpha times its ancestors'
+    }
+
+    // A pose for `model`, in its bind pose (the rest state of every node, world transforms done).
+    fn make_pose(S) { realloc: alloc::Fn(S), mut heap: S, model: *mdl::Model } -> !Pose {
+        let n = model.nodes.len
+        let pose = Pose{
+            nodes = try alloc::resize(NodeState, S){ realloc, &heap, mem = slice::empty(NodeState){}, count = n },
+            lights = try alloc::resize(mdl::LightProps, S){ realloc, &heap, mem = slice::empty(mdl::LightProps){}, count = model.lights.len },
+            emitters = try alloc::resize(mdl::EmitterProps, S){ realloc, &heap, mem = slice::empty(mdl::EmitterProps){}, count = model.emitters.len },
+            world = try alloc::resize(math::Mat4, S){ realloc, &heap, mem = slice::empty(math::Mat4){}, count = n },
+            alpha = try alloc::resize(f32, S){ realloc, &heap, mem = slice::empty(f32){}, count = n },
+        }
+        reset{ model, pose }
+        finish{ model, pose }
+        return pose
+    }
+
+    // Puts every node, light and emitter back to the model's own values.
+    fn reset { model: *mdl::Model, pose: Pose } {
+        let mut i: usize = 0
+        while i < model.nodes.len {
+            let n = model.nodes[i]
+            pose.nodes[i] = NodeState{ position = n.position, orientation = n.orientation, scale = n.scale, alpha = n.alpha, self_illum = n.self_illum }
+            i = i + 1
+        }
+        i = 0
+        while i < model.lights.len {
+            pose.lights[i] = model.lights[i].props
+            i = i + 1
+        }
+        i = 0
+        while i < model.emitters.len {
+            pose.emitters[i] = model.emitters[i].props
+            i = i + 1
+        }
+    }
+
+    // Computes the model-space transforms and accumulated alphas from the node states: each
+    // node's is its parent's times T(position) R(orientation) S(scale). Tree order puts every
+    // parent first, so one pass does it.
+    fn finish { model: *mdl::Model, pose: Pose } {
+        let mut i: usize = 0
+        while i < model.nodes.len {
+            let s = pose.nodes[i]
+            let local = math::mat4::compose{ t = s.position, r = s.orientation, s = math::vec3::splat{ s = s.scale } }
+            let parent = model.nodes[i].parent
+            if parent >= 0 {
+                let p = @as(usize, parent)
+                pose.world[i] = math::mat4::mul{ a = pose.world[p], b = local }
+                pose.alpha[i] = pose.alpha[p] * s.alpha
+            } else {
+                pose.world[i] = local
+                pose.alpha[i] = s.alpha
+            }
+            i = i + 1
+        }
+    }
+
+    // ---- finding and binding animations
+
+    // An animation and the model that holds it: the model asked about or one of its supermodels.
+    struct Found { owner: *mdl::Model, animation: *mdl::Animation }
+
+    // The animation called `name`: the model's own, else its supermodel's, and so on up the
+    // chain. `lookup` gives a model by resref (loading it if it must), or null if there is none.
+    // Null if no model of the chain has it, or the chain breaks or runs over 16 models.
+    fn find { model: *mdl::Model, name: []u8, lookup: &fn{ name: []u8 } -> ?*mdl::Model } -> ?Found {
+        let mut m = model
+        let mut depth = 0
+        while depth < 16 {
+            let i = mdl::find_animation{ model = m, name }
+            if i != null { return Found{ owner = m, animation = &m.animations[i] } }
+            if m.supermodel.len == 0 { return null }
+            m = lookup{ name = m.supermodel } ifnull { return null }
+            depth = depth + 1
+        }
+        return null
+    }
+
+    // An animation tied to a model it drives: the node each animation node drives, by name.
+    struct Binding {
+        animation: *mdl::Animation,
+        targets: []i32,                        // per animation node: a tree index, or -1
+        scale: f32,                            // the driven model's animation scale
+    }
+
+    // Binds `animation` (the model's own or a supermodel's) to `model`. Animation nodes drive
+    // the model's nodes of the same name; when the animation's root names a node of the model
+    // (an upper-body animation's `torso_g`, say), only that node's subtree.
+    fn bind(S) { realloc: alloc::Fn(S), mut heap: S, model: *mdl::Model, animation: *mdl::Animation } -> !Binding {
+        let targets = try alloc::resize(i32, S){ realloc, &heap, mem = slice::empty(i32){}, count = animation.nodes.len }
+        let root = mdl::find_node{ model, name = animation.root } ifnull { 0 }
+        let mut i: usize = 0
+        while i < animation.nodes.len {
+            targets[i] = -1
+            let found = mdl::find_node{ model, name = animation.nodes[i].name }
+            if found != null and is_within{ model, node = found, root } { targets[i] = @as(i32, found) }
+            i = i + 1
+        }
+        let scale = if model.anim_scale > 0.0 and model.anim_scale < 1000.0 { model.anim_scale } else { 1.0 }
+        return Binding{ animation, targets, scale }
+    }
+
+    // Whether `node` is `root` or below it.
+    fn is_within { model: *mdl::Model, node: u32, root: u32 } -> bool {
+        if root == 0 { return true }
+        let mut n = @as(i32, node)
+        while n >= 0 {
+            if @as(u32, n) == root { return true }
+            n = model.nodes[@as(usize, n)].parent
+        }
+        return false
+    }
+
+    // ---- sampling
+
+    // Samples `binding`'s animation at `time` (clamped to its keys) into `pose`, mixed with what
+    // the pose holds by `weight`: 1 replaces, 0 leaves it, between blends (positions, scales,
+    // alphas and colours linearly, orientations by slerp; light and emitter properties switch
+    // at one half). Nodes the animation doesn't key keep their state. Call `finish` after the
+    // last apply.
+    fn apply { model: *mdl::Model, binding: Binding, time: f32, weight: f32, pose: Pose } {
+        let a = binding.animation
+        let mut i: usize = 0
+        while i < a.nodes.len {
+            let target = binding.targets[i]
+            if target >= 0 {
+                apply_node{ model, node = @as(usize, target), cs = a.nodes[i].controllers, time, weight, scale = binding.scale, pose }
+            }
+            i = i + 1
+        }
+    }
+
+    fn apply_node { model: *mdl::Model, node: usize, cs: []mdl::Controller, time: f32, weight: f32, scale: f32, pose: Pose } {
+        let n = model.nodes[node]
+        let state = &pose.nodes[node]
+        let mut k: usize = 0
+        while k < cs.len {
+            let c = cs[k]
+            k = k + 1
+            if c.times.len == 0 or c.columns == 0 or c.columns > 4 { continue }
+            let v = sample{ c, time }
+            if c.id == mdl::CTRL_POSITION and c.columns == 3 {
+                let to = math::vec3::add{ a = n.position, b = math::vec3::scale{ v = math::Vec3{ x = v[0], y = v[1], z = v[2] }, s = scale } }
+                state.position = if weight >= 1.0 { to } else { math::vec3::lerp{ a = state.position, b = to, t = weight } }
+            } else if c.id == mdl::CTRL_ORIENTATION and c.columns == 4 {
+                let to = math::quat::normalize{ q = math::quat::make{ w = v[3], x = v[0], y = v[1], z = v[2] } }
+                state.orientation = if weight >= 1.0 { to } else { math::quat::slerp{ a = state.orientation, b = to, t = weight } }
+            } else if c.id == mdl::CTRL_SCALE {
+                state.scale = math::lerp{ a = state.scale, b = v[0], t = math::min{ a = weight, b = 1.0 } }
+            } else {
+                apply_prop{ model, n, state, id = c.id, v = v[..c.columns], weight, pose }
+            }
+        }
+    }
+
+    fn apply_prop { model: *mdl::Model, n: mdl::Node, state: *mut NodeState, id: u32, v: []f32, weight: f32, pose: Pose } {
+        let mut alpha = state.alpha
+        let mut self_illum = state.self_illum
+        let mut light: mdl::LightProps
+        let mut emitter: mdl::EmitterProps
+        let li = n.light
+        let ei = n.emitter
+        if li != null { light = pose.lights[li] }
+        if ei != null { emitter = pose.emitters[ei] }
+        if not mdl::set_prop{ flags = n.flags, id, v, &alpha, &self_illum, &light, &emitter } { return }
+        let w = math::min{ a = weight, b = 1.0 }
+        state.alpha = math::lerp{ a = state.alpha, b = alpha, t = w }
+        state.self_illum = math::vec3::lerp{ a = state.self_illum, b = self_illum, t = w }
+        if w >= 0.5 {
+            if li != null { pose.lights[li] = light }
+            if ei != null { pose.emitters[ei] = emitter }
+        }
+    }
+
+    // A controller's value at `time`, `columns` floats (orientations normalized by slerp),
+    // holding the first key before it and the last after.
+    fn sample { c: mdl::Controller, time: f32 } -> [4]f32 {
+        let mut out: [4]f32
+        let stride: usize = mdl::stride{ c }
+        let cols: usize = c.columns
+        let n = c.times.len
+        let mut k: usize = 0
+        let mut f: f32 = 0.0
+        if n > 1 and time > c.times[0] {
+            if time >= c.times[n - 1] {
+                k = n - 1
+            } else {
+                // The last key at or before `time`: times never decrease (mdl.md).
+                let mut lo: usize = 0
+                let mut hi: usize = n - 1
+                while hi - lo > 1 {
+                    let mid = (lo + hi) / 2
+                    if c.times[mid] <= time { lo = mid } else { hi = mid }
+                }
+                k = lo
+                let span = c.times[k + 1] - c.times[k]
+                f = if span > 0.0 { (time - c.times[k]) / span } else { 0.0 }
+            }
+        }
+        let a = c.values[k * stride..k * stride + cols]
+        if f <= 0.0 {
+            let mut i: usize = 0
+            while i < cols {
+                out[i] = a[i]
+                i = i + 1
+            }
+            return out
+        }
+        let b = c.values[(k + 1) * stride..(k + 1) * stride + cols]
+        if c.id == mdl::CTRL_ORIENTATION and cols == 4 {
+            let q = math::quat::slerp{
+                a = math::quat::make{ w = a[3], x = a[0], y = a[1], z = a[2] },
+                b = math::quat::make{ w = b[3], x = b[0], y = b[1], z = b[2] },
+                t = f,
+            }
+            return [q.x, q.y, q.z, q.w]
+        }
+        let mut i: usize = 0
+        while i < cols {
+            out[i] = a[i] + (b[i] - a[i]) * f
+            i = i + 1
+        }
+        return out
+    }
+
+    // The pose of `binding`'s model at `time` of the animation alone: the bind pose with the
+    // animation applied, transforms finished.
+    fn pose_at { model: *mdl::Model, binding: Binding, time: f32, pose: Pose } {
+        reset{ model, pose }
+        apply{ model, binding, time, weight = 1.0, pose }
+        finish{ model, pose }
+    }
+
+    // ---- events
+
+    // Calls `on_event` for each event of `animation` in the time interval from `from` to `to`:
+    // after `from` (or at it, when `from_inclusive`) and at or before `to`.
+    fn fire_events { animation: *mdl::Animation, from: f32, to: f32, from_inclusive: bool, on_event: &fn{ event: mdl::Event } } {
+        let mut i: usize = 0
+        while i < animation.events.len {
+            let e = animation.events[i]
+            let after = if from_inclusive { e.time >= from } else { e.time > from }
+            if after and e.time <= to { on_event{ event = e } }
+            i = i + 1
+        }
+    }
+
+    // ---- playing
+
+    struct Track {
+        binding: Binding,
+        time: f32,
+        speed: f32,
+        looping: bool,
+        started: bool,                         // events at the start time have fired
+    }
+
+    // Plays one animation at a time, blending each new one in from the one before over its
+    // transition time.
+    struct Player {
+        current: ?Track,
+        previous: ?Track,                      // the animation blending out
+        elapsed: f32,                          // time since the current one started
+        transition: f32,                       // how long the blend takes
+    }
+
+    fn new_player {} -> Player {
+        return Player{ current = null, previous = null, elapsed = 0.0, transition = 0.0 }
+    }
+
+    // Starts `binding`'s animation from its beginning. `transition` is the blend-in time in
+    // seconds; a negative one takes the animation's own (Animation.transition).
+    fn play { mut player: Player, binding: Binding, looping: bool, speed: f32, transition: f32 } {
+        player.previous = player.current
+        player.current = Track{ binding, time = 0.0, speed, looping, started = false }
+        player.elapsed = 0.0
+        player.transition = if transition >= 0.0 { transition } else { binding.animation.transition }
+        if player.previous == null { player.transition = 0.0 }
+    }
+
+    // Moves time on by `dt` seconds, calling `on_event` for the current animation's events it
+    // passes (each loop's, when it wraps).
+    fn advance { mut player: Player, dt: f32, on_event: &fn{ event: mdl::Event } } {
+        player.elapsed = player.elapsed + dt
+        match &player.previous {
+            some{ &value } => { step{ track = &value, dt, on_event = ignore_event } }
+            null => {}
+        }
+        if player.elapsed >= player.transition { player.previous = null }
+        match &player.current {
+            some{ &value } => { step{ track = &value, dt, on_event } }
+            null => {}
+        }
+    }
+
+    fn ignore_event { event: mdl::Event } {}
+
+    fn step { mut track: Track, dt: f32, on_event: &fn{ event: mdl::Event } } {
+        let a = track.binding.animation
+        let from = track.time
+        let inclusive = not track.started
+        track.started = true
+        let mut to = from + dt * track.speed
+        if a.length <= 0.0 {
+            track.time = 0.0
+            fire_events{ animation = a, from, to = 0.0, from_inclusive = inclusive, on_event }
+            return
+        }
+        if to < a.length or not track.looping {
+            if to > a.length { to = a.length }
+            fire_events{ animation = a, from, to, from_inclusive = inclusive, on_event }
+            track.time = to
+            return
+        }
+        // Wrap: the rest of this loop, every whole loop skipped, then the start of the next.
+        fire_events{ animation = a, from, to = a.length, from_inclusive = inclusive, on_event }
+        to = to - a.length
+        let mut loops = 0
+        while to >= a.length and loops < 8 {
+            fire_events{ animation = a, from = 0.0, to = a.length, from_inclusive = true, on_event }
+            to = to - a.length
+            loops = loops + 1
+        }
+        if to >= a.length { to = math::fmodf{ x = to, y = a.length } }
+        fire_events{ animation = a, from = 0.0, to, from_inclusive = true, on_event }
+        track.time = to
+    }
+
+    // Whether the current animation has played to its end (never, for a looping one).
+    fn is_done { player: Player } -> bool {
+        let t = player.current ifnull { return true }
+        return not t.looping and t.time >= t.binding.animation.length
+    }
+
+    // The pose the player is at: the bind pose, the animation blending out, then the current one
+    // over it by how far the blend has got; transforms finished.
+    fn evaluate { model: *mdl::Model, player: Player, pose: Pose } {
+        reset{ model, pose }
+        let prev = player.previous
+        if prev != null { apply{ model, binding = prev.binding, time = prev.time, weight = 1.0, pose } }
+        let cur = player.current
+        if cur != null {
+            let w = if prev != null and player.transition > 0.0 { math::clamp{ x = player.elapsed / player.transition, lo = 0.0, hi = 1.0 } } else { 1.0 }
+            apply{ model, binding = cur.binding, time = cur.time, weight = w, pose }
+        }
+        finish{ model, pose }
+    }
+
+    // ---- what a renderer takes from a pose
+
+    // A skinned mesh's bone matrices, one per palette slot, into `out` (at least
+    // skin.bone_nodes.len long; returns how many). They map the mesh's bind-pose vertices to
+    // where the pose puts them in the mesh node's own space, so a skinned mesh is drawn with its
+    // node's transform like any other: position = world(node) * sum of weight * palette[slot] *
+    // vertex. In the bind pose every matrix is the identity.
+    fn skin_palette { model: *mdl::Model, mesh: *mdl::Mesh, pose: Pose, out: []mut math::Mat4 } -> usize {
+        let skin = mesh.skin ifnull { return 0 }
+        let to_mesh = math::mat4::inverse_affine{ m = pose.world[mesh.node] }
+        let n = if skin.bone_nodes.len < out.len { skin.bone_nodes.len } else { out.len }
+        let mut s: usize = 0
+        while s < n {
+            out[s] = math::mat4::mul{ a = to_mesh, b = math::mat4::mul{ a = pose.world[skin.bone_nodes[s]], b = skin.inverse_bind[s] } }
+            s = s + 1
+        }
+        return n
+    }
+
+    // The model-space transform of the node called `name` (a hook: HOOK_HEAD, HOOK_RIGHT_HAND,
+    // ...), or null if the model has none. An attachment's root goes there: its model space is
+    // the hook's.
+    fn hook_transform { model: *mdl::Model, pose: Pose, name: []u8 } -> ?math::Mat4 {
+        let i = mdl::find_node{ model, name } ifnull { return null }
+        return pose.world[i]
+    }
+}
