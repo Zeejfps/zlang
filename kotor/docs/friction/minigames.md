@@ -36,3 +36,18 @@ Where ctxlang got in the way. Each entry: what we wanted, what we wrote instead,
   same family as the friction/models.md entry on caches.
 - **Narrowing does not reach fields.** `if w.minigame != null { w.minigame.input.fire = ... }` fails
   ("?*mut mg::Run has no field `input`"); `let mr = w.minigame` first. Twice.
+
+## The turret (`lib/minigame/turret.ctx`, `game/minigame_scene.ctx`)
+
+- **The same bound-function entry, in a helper.** `model_named{ lookup, r }` copying its `r: ResRef`
+  into a local to call `lookup` was "returned value holds the address of local `name`", though the
+  answer lives in the model cache. The helper takes `r: *ResRef` and the callers pass
+  `&f.models[m].name` (a place in the area's heap data). Four more sites in turret.ctx; every model
+  lookup by name from a resref hits it.
+- **A call that punned `&x` into a field of another name.** `ambience::wave{ &amb, ... }` where the
+  field is `a`, and `handle_event{ &mg_mouse, ev }` where it is `m`: "has no field `amb`" plus "is
+  missing `a`". Correct once read, but the first message points at the argument, not at the fix.
+  Six times, found one compile at a time.
+- **Parallel fixed arrays for one record.** `Run` carries `objs`, `gears`, `bullets` and `sounds`
+  indexed by the same slots; `Run{ ... }` spells every field (about 30 lines in `make_run`), and the
+  stack copy of a `Run` is ~100 KB.
