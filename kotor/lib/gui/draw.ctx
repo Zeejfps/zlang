@@ -1,0 +1,473 @@
+// Drawing borders, text and every control type into a render::Frame's UI pass
+// (docs/re/gui.md sections 3 to 6). Coordinates are GUI pixels (the UI pass's own size), y down.
+namespace gui {
+    const PI: f32 = 3.14159265
+    const HALF_PI: f32 = 1.57079633
+
+    // Text colours the code sets (docs/re/gui.md "Text colours set by code").
+    fn color_hilight {} -> render::Color { return render::Color{ r = 0.98, g = 1.0, b = 0.0, a = 1.0 } }
+    fn color_disabled {} -> render::Color { return render::Color{ r = 0.0, g = 0.33, b = 0.49, a = 1.0 } }
+    fn color_menu {} -> render::Color { return render::Color{ r = 0.0, g = 0.66, b = 0.98, a = 1.0 } }
+
+    fn rect_of { x: i32, y: i32, w: i32, h: i32 } -> render::Rect {
+        return render::Rect{ x = @as(f32, x), y = @as(f32, y), w = @as(f32, w), h = @as(f32, h) }
+    }
+
+    // A textured quad; `angle` turns it counterclockwise about its centre.
+    fn put_image {
+        mut frame: render::Frame, img: Img, x: f32, y: f32, w: f32, h: f32, color: render::Color, angle: f32, clip: render::Rect,
+    } {
+        if not img.ok or w <= 0.0 or h <= 0.0 { return }
+        render::add_quad{ &frame, quad = render::Quad{
+            rect = render::Rect{ x, y, w, h }, uv = render::upright{}, color,
+            image = render::Image::texture{ t = img.tex }, blend = render::Blend::alpha, clip = clip, angle,
+        } }
+    }
+
+    fn put_fill { mut frame: render::Frame, x: f32, y: f32, w: f32, h: f32, color: render::Color, clip: render::Rect } {
+        if w <= 0.0 or h <= 0.0 { return }
+        render::add_quad{ &frame, quad = render::Quad{
+            rect = render::Rect{ x, y, w, h }, uv = render::upright{}, color,
+            image = render::Image::none, blend = render::Blend::alpha, clip = clip, angle = 0.0,
+        } }
+    }
+
+    // How thick a border is: the corner size, the edge thickness and the length of one edge
+    // segment, in pixels (CSWGuiBorder::Draw: DIMENSION when set, else the textures' own sizes).
+    struct Metrics { corner: i32, thick: i32, seg: i32 }
+
+    fn border_metrics { b: Border } -> Metrics {
+        let mut m = Metrics{ corner = b.dimension, thick = b.dimension, seg = 0 }
+        if b.dimension > 0 {
+            m.seg = if b.edge.ok { @as(i32, b.edge.w) } else { b.dimension }
+        } else if b.corner.ok and b.edge.ok {
+            m.corner = @as(i32, b.corner.w)
+            m.thick = @as(i32, b.edge.h)
+            m.seg = @as(i32, b.edge.w)
+        } else {
+            m.corner = 0
+            m.thick = 0
+        }
+        if m.seg <= 0 { m.seg = 1 }
+        return m
+    }
+
+    // The rectangle the text of a control with border `b` goes in: inside the corners, grown by
+    // INNEROFFSET (vertically fully, horizontally by at most the thickness) (0x00415240).
+    struct Area { x: i32, y: i32, w: i32, h: i32 }
+
+    fn text_area { b: Border, x: i32, y: i32, w: i32, h: i32 } -> Area {
+        let m = border_metrics{ b }
+        let mut a = Area{ x = x + m.corner, y = y + m.corner, w = w - 2 * m.corner, h = h - 2 * m.corner }
+        if a.w <= 0 or a.h <= 0 { a = Area{ x = x + w / 2, y = y + h / 2, w = 0, h = 0 } }
+        let gh = if b.inner_offset < m.thick { b.inner_offset } else { m.thick }
+        a.x = a.x - gh
+        a.w = a.w + 2 * gh
+        a.y = a.y - b.inner_offset
+        a.h = a.h + 2 * b.inner_offset
+        return a
+    }
+
+    fn mul_alpha { c: render::Color, a: f32 } -> render::Color {
+        return render::Color{ r = c.r, g = c.g, b = c.b, a = c.a * a }
+    }
+
+    // One border around (x, y, w, h): corners, edges, then the fill (0x004168c0). `override` is
+    // a picture code gave the control, drawn as the fill when ok.
+    fn draw_border {
+        mut g: Gui, mut frame: render::Frame, b: Border, x: i32, y: i32, w: i32, h: i32, alpha: f32,
+        clip: render::Rect, override: Img,
+    } {
+        if not b.present or w <= 0 or h <= 0 { return }
+        let tint = if b.tinted { b.color } else { white_color{} }
+        let a_frame = alpha * (if (b.pulsing & 1) != 0 { g.pulse_border } else { 1.0 })
+        let a_fill = alpha * (if (b.pulsing & 2) != 0 { g.pulse_border } else { 1.0 })
+        let m = border_metrics{ b }
+        let mut csz = m.corner
+        if csz * 2 > w { csz = w / 2 }
+        if csz * 2 > h { csz = h / 2 }
+        let ct = mul_alpha{ c = tint, a = a_frame }
+        let fx = @as(f32, x)
+        let fy = @as(f32, y)
+        let fw = @as(f32, w)
+        let fh = @as(f32, h)
+        if b.corner.ok and csz > 0 {
+            let c = @as(f32, csz)
+            put_image{ &frame, img = b.corner, x = fx, y = fy, w = c, h = c, color = ct, angle = 0.0, clip }
+            put_image{ &frame, img = b.corner, x = fx, y = fy + fh - c, w = c, h = c, color = ct, angle = HALF_PI, clip }
+            put_image{ &frame, img = b.corner, x = fx + fw - c, y = fy + fh - c, w = c, h = c, color = ct, angle = PI, clip }
+            put_image{ &frame, img = b.corner, x = fx + fw - c, y = fy, w = c, h = c, color = ct, angle = PI + HALF_PI, clip }
+        }
+        if b.edge.ok and m.thick > 0 {
+            let t = m.thick
+            // Horizontal edges: the gap between the corners cut into whole segments.
+            let gap_h = w - 2 * csz
+            let gap_v = h - 2 * csz
+            draw_edge_run{ &frame, img = b.edge, x0 = x + csz, y0 = y, gap = gap_h, seg = m.seg, thick = t, side = 0, color = ct, clip }
+            draw_edge_run{ &frame, img = b.edge, x0 = x + csz, y0 = y + h - t, gap = gap_h, seg = m.seg, thick = t, side = 2, color = ct, clip }
+            draw_edge_run{ &frame, img = b.edge, x0 = x, y0 = y + csz, gap = gap_v, seg = m.seg, thick = t, side = 1, color = ct, clip }
+            draw_edge_run{ &frame, img = b.edge, x0 = x + w - t, y0 = y + csz, gap = gap_v, seg = m.seg, thick = t, side = 3, color = ct, clip }
+        }
+        // The fill: inside the corners, or the whole extent without a corner texture.
+        let inset = if b.corner.ok { csz } else { 0 }
+        let ax = x + inset
+        let ay = y + inset
+        let aw = w - 2 * inset
+        let ah = h - 2 * inset
+        let fill = if override.ok { override } else { b.fill }
+        if fill.ok and aw > 0 and ah > 0 {
+            let fc = mul_alpha{ c = tint, a = a_fill }
+            let style = if override.ok { FILL_STRETCHED } else { b.fill_style }
+            if style == FILL_STRETCHED {
+                put_image{ &frame, img = fill, x = @as(f32, ax), y = @as(f32, ay), w = @as(f32, aw), h = @as(f32, ah), color = fc, angle = 0.0, clip }
+            } else if style == FILL_CENTRED {
+                let mut tw = @as(i32, fill.w)
+                let mut th = @as(i32, fill.h)
+                if tw > aw { tw = aw }
+                if th > ah { th = ah }
+                put_image{ &frame, img = fill, x = @as(f32, ax + (aw - tw) / 2), y = @as(f32, ay + (ah - th) / 2), w = @as(f32, tw), h = @as(f32, th), color = fc, angle = 0.0, clip }
+            } else {
+                // Tiled: whole tiles of the texture's size, each stretched to fill exactly.
+                let tw = if fill.w < 1.0 { 1 } else { @as(i32, fill.w) }
+                let th = if fill.h < 1.0 { 1 } else { @as(i32, fill.h) }
+                let mut nx = aw / tw
+                let mut ny = ah / th
+                if nx < 1 { nx = 1 }
+                if ny < 1 { ny = 1 }
+                let cw = @as(f32, aw) / @as(f32, nx)
+                let chh = @as(f32, ah) / @as(f32, ny)
+                let mut j: i32 = 0
+                while j < ny {
+                    let mut i: i32 = 0
+                    while i < nx {
+                        put_image{ &frame, img = fill, x = @as(f32, ax) + cw * @as(f32, i), y = @as(f32, ay) + chh * @as(f32, j), w = cw, h = chh, color = fc, angle = 0.0, clip }
+                        i = i + 1
+                    }
+                    j = j + 1
+                }
+            }
+        }
+    }
+
+    // A run of edge segments along one side. `side`: 0 top, 1 left, 2 bottom, 3 right; the art is
+    // the top edge and turns a quarter for each step. (x0, y0) is the run's first pixel.
+    fn draw_edge_run {
+        mut frame: render::Frame, img: Img, x0: i32, y0: i32, gap: i32, seg: i32, thick: i32, side: i32,
+        color: render::Color, clip: render::Rect,
+    } {
+        if gap <= 0 { return }
+        let mut n = gap / seg
+        if n == 0 and gap * 2 >= seg { n = 1 }
+        if n == 0 { return }
+        let base = gap / n
+        let extra = gap - base * n
+        let mut off: i32 = 0
+        let mut k: i32 = 0
+        while k < n {
+            let len = base + (if k < extra { 1 } else { 0 })
+            if side == 0 or side == 2 {
+                let angle = if side == 0 { 0.0 } else { PI }
+                put_image{ &frame, img, x = @as(f32, x0 + off), y = @as(f32, y0), w = @as(f32, len), h = @as(f32, thick), color, angle, clip }
+            } else {
+                // Vertical: draw the segment as laid horizontally about the same centre, turned.
+                let cx = @as(f32, x0) + @as(f32, thick) / 2.0
+                let cy = @as(f32, y0 + off) + @as(f32, len) / 2.0
+                let angle = if side == 1 { HALF_PI } else { PI + HALF_PI }
+                put_image{ &frame, img, x = cx - @as(f32, len) / 2.0, y = cy - @as(f32, thick) / 2.0, w = @as(f32, len), h = @as(f32, thick), color, angle, clip }
+            }
+            off = off + len
+            k = k + 1
+        }
+    }
+
+    // ---- text of one control
+
+    // The colour a control's text is drawn in now.
+    fn text_color { mut g: Gui, c: *Control } -> render::Color {
+        let mut col = c.text.color
+        if (c.flags & F_PULSE_TEXT) != 0 or c.text.pulsing { col = mul_alpha{ c = col, a = g.pulse_border } }
+        return col
+    }
+
+    // Lays out and draws `text` in the rectangle by the control's font and alignment.
+    fn draw_text_in {
+        mut g: Gui, mut frame: render::Frame, t: Text, text: []u8, color: render::Color,
+        x: i32, y: i32, w: i32, h: i32, clip: render::Rect,
+    } {
+        if text.len == 0 { return }
+        if t.font < 0 or @as(usize, t.font) >= g.fonts.len { return }
+        let font = list::items{ list = g.fonts }[@as(usize, t.font)].font
+        let n = layout{ font, text, width = w, lines = g.lines }
+        draw_lines{ &frame, font, text, lines = g.lines, count = n, x, y, w, h, align = t.align, color, clip }
+    }
+
+    // ---- controls
+
+    fn border_for { c: *Control, hilighted: bool } -> Border {
+        if c.kind == K_CHECK {
+            let on = (c.flags & F_CHECKED) != 0
+            if on {
+                if hilighted and c.hilight_selected.present { return c.hilight_selected }
+                if c.selected.present { return c.selected }
+            }
+        }
+        if hilighted and c.hilight.present { return c.hilight }
+        return c.border
+    }
+
+    fn draw_control {
+        mut g: Gui, mut frame: render::Frame, p: *Panel, c: *Control, alpha: f32, clip: render::Rect,
+    } {
+        let x = p.sx + c.x
+        let y = p.sy + c.y
+        let hl = (c.flags & F_HILIGHT) != 0
+        let k = c.kind
+        if k == K_LIST {
+            draw_list{ &g, &frame, p, c, alpha, clip }
+            return
+        }
+        if k == K_PROGRESS {
+            draw_progress{ &g, &frame, c, x, y, alpha, clip }
+            return
+        }
+        let b = border_for{ c, hilighted = hl and (k == K_BUTTON or k == K_CHECK or k == K_PROTO or k == K_SLIDER or k == K_EDIT) }
+        draw_border{ &g, &frame, b, x, y, w = c.w, h = c.h, alpha, clip, override = c.override_fill }
+        if k == K_SLIDER { draw_slider_thumb{ &frame, c, x, y, alpha, clip } }
+        if c.text.present and c.text.text.len > 0 or k == K_EDIT {
+            let a = text_area{ b = c.border, x, y, w = c.w, h = c.h }
+            let mut col = text_color{ &g, c }
+            col = mul_alpha{ c = col, a = alpha }
+            if k == K_EDIT and hl {
+                // A caret after the typed text while the box has the focus.
+                draw_edit_text{ &g, &frame, c, a, col, clip }
+            } else {
+                draw_text_in{ &g, &frame, t = c.text, text = c.text.text, color = col, x = a.x, y = a.y, w = a.w, h = a.h, clip }
+            }
+        }
+    }
+
+    fn draw_edit_text { mut g: Gui, mut frame: render::Frame, c: *Control, a: Area, col: render::Color, clip: render::Rect } {
+        let n = c.text.text.len
+        if n + 1 > 255 { return }
+        let mut buf: [256]u8
+        slice::copy(u8){ dst = buf[..n], src = c.text.text }
+        buf[n] = '_'
+        draw_text_in{ &g, &frame, t = c.text, text = buf[..n + 1], color = col, x = a.x, y = a.y, w = a.w, h = a.h, clip }
+    }
+
+    fn draw_progress { mut g: Gui, mut frame: render::Frame, c: *Control, x: i32, y: i32, alpha: f32, clip: render::Rect } {
+        draw_border{ &g, &frame, b = c.border, x, y, w = c.w, h = c.h, alpha, clip, override = no_img{} }
+        // The PROGRESS border fills the inner rectangle's long axis by CURVALUE / MAXVALUE.
+        let a = text_area{ b = c.border, x, y, w = c.w, h = c.h }
+        let mut ax = a.x
+        let mut ay = a.y
+        let mut aw = a.w
+        let mut ah = a.h
+        if c.max > 0 {
+            let mut v = c.value
+            if v < 0 { v = 0 }
+            if v > c.max { v = c.max }
+            let frac = @as(f32, v) / @as(f32, c.max)
+            if ah > aw {
+                let len = @as(i32, frac * @as(f32, ah))
+                if not c.from_left { ay = ay + (ah - len) }
+                ah = len
+            } else {
+                let len = @as(i32, frac * @as(f32, aw))
+                if not c.from_left { ax = ax + (aw - len) }
+                aw = len
+            }
+        }
+        if aw > 0 and ah > 0 {
+            draw_border{ &g, &frame, b = c.progress, x = ax, y = ay, w = aw, h = ah, alpha, clip, override = no_img{} }
+        }
+    }
+
+    fn draw_slider_thumb { mut frame: render::Frame, c: *Control, x: i32, y: i32, alpha: f32, clip: render::Rect } {
+        if not c.thumb.ok { return }
+        let horizontal = c.w >= c.h
+        let tw = @as(i32, c.thumb.w)
+        let th = @as(i32, c.thumb.h)
+        let mx = if c.max > 0 { c.max } else { 1 }
+        let mut v = c.value
+        if v < 0 { v = 0 }
+        if v > mx { v = mx }
+        let col = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = alpha }
+        if horizontal {
+            let pos = x + (c.w - tw) * v / mx
+            put_image{ &frame, img = c.thumb, x = @as(f32, pos), y = @as(f32, y + (c.h - th) / 2), w = @as(f32, tw), h = @as(f32, th), color = col, angle = 0.0, clip }
+        } else {
+            let pos = y + (c.h - th) * v / mx
+            put_image{ &frame, img = c.thumb, x = @as(f32, x + (c.w - tw) / 2), y = @as(f32, pos), w = @as(f32, tw), h = @as(f32, th), color = col, angle = 0.0, clip }
+        }
+    }
+
+    // ---- list boxes
+
+    // Where a list box's pieces are, in the panel's pixels.
+    struct ListLayout {
+        ax: i32, ay: i32, aw: i32, ah: i32,         // the row area
+        row_h: i32, stride: i32, visible: i32,
+        stretch: i32, extra: i32,
+        sx: i32, sy: i32, sw: i32, sh: i32,         // the scroll bar
+        has_bar: bool,
+    }
+
+    fn proto_height { p: *Panel, c: *Control } -> i32 {
+        if c.proto < 0 { return 16 }
+        let pc = list::at{ list = p.controls, i = @as(usize, c.proto) }
+        return if pc.h > 0 { pc.h } else { 16 }
+    }
+
+    fn list_layout { p: *Panel, c: *Control } -> ListLayout {
+        let mut l = ListLayout{
+            ax = c.x, ay = c.y, aw = c.w, ah = c.h, row_h = 16, stride = 16, visible = 1, stretch = 0, extra = 0,
+            sx = 0, sy = 0, sw = 0, sh = 0, has_bar = false,
+        }
+        if c.scrollbar >= 0 {
+            let sb = list::at{ list = p.controls, i = @as(usize, c.scrollbar) }
+            l.has_bar = sb.w > 0
+            l.sx = sb.x
+            l.sy = sb.y
+            l.sw = sb.w
+            l.sh = sb.h
+            if l.has_bar {
+                // The bar sits at one end of the box; the rows take the rest.
+                l.aw = c.w - sb.w
+                if c.scroll_left { l.ax = c.x + sb.w }
+            }
+        }
+        l.row_h = proto_height{ p, c }
+        l.stride = l.row_h + c.padding
+        if l.stride < 1 { l.stride = 1 }
+        l.visible = l.ah / l.stride
+        if l.visible < 1 { l.visible = 1 }
+        let spare = l.ah - l.visible * l.stride - c.padding
+        if spare > 0 {
+            l.stretch = spare / l.visible
+            l.extra = spare - l.stretch * l.visible
+        }
+        return l
+    }
+
+    // The y of visible row slot `k` (0 is the first) and its height, relative to the list's area.
+    struct Slot { y: i32, h: i32 }
+
+    fn row_slot { l: ListLayout, padding: i32, k: i32 } -> Slot {
+        let mut y = padding
+        let mut i: i32 = 0
+        while i < k {
+            y = y + l.stride + l.stretch + (if i < l.extra { 1 } else { 0 })
+            i = i + 1
+        }
+        return Slot{ y, h = l.row_h + l.stretch + (if k < l.extra { 1 } else { 0 }) }
+    }
+
+    fn draw_list { mut g: Gui, mut frame: render::Frame, p: *Panel, c: *Control, alpha: f32, clip: render::Rect } {
+        let l = list_layout{ p, c }
+        let ox = p.sx
+        let oy = p.sy
+        draw_border{ &g, &frame, b = c.border, x = ox + c.x, y = oy + c.y, w = c.w, h = c.h, alpha, clip, override = no_img{} }
+        let area_clip = rect_of{ x = ox + l.ax, y = oy + l.ay, w = l.aw, h = l.ah }
+        if c.list_tinted {
+            put_fill{ &frame, x = area_clip.x, y = area_clip.y, w = area_clip.w, h = area_clip.h, color = render::Color{ r = c.list_color.r, g = c.list_color.g, b = c.list_color.b, a = alpha }, clip }
+        }
+        let rc = intersect{ a = area_clip, b = clip }
+        let count = @as(i32, c.row_count)
+        let mut k: i32 = 0
+        while k < l.visible {
+            let idx = c.first_row + k
+            if idx >= count { break }
+            let s = row_slot{ l, padding = c.padding, k }
+            draw_row{ &g, &frame, p, c, idx, x = ox + l.ax + c.padding, y = oy + l.ay + s.y, w = l.aw - 2 * c.padding, h = s.h, alpha, clip = rc }
+            k = k + 1
+        }
+        if l.has_bar and count > l.visible { draw_scrollbar{ &g, &frame, p, c, l, alpha, clip } }
+    }
+
+    fn intersect { a: render::Rect, b: render::Rect } -> render::Rect {
+        let x0 = if a.x > b.x { a.x } else { b.x }
+        let y0 = if a.y > b.y { a.y } else { b.y }
+        let x1 = if a.x + a.w < b.x + b.w { a.x + a.w } else { b.x + b.w }
+        let y1 = if a.y + a.h < b.y + b.h { a.y + a.h } else { b.y + b.h }
+        return render::Rect{ x = x0, y = y0, w = if x1 > x0 { x1 - x0 } else { 0.0 }, h = if y1 > y0 { y1 - y0 } else { 0.0 } }
+    }
+
+    fn draw_row {
+        mut g: Gui, mut frame: render::Frame, p: *Panel, c: *Control, idx: i32, x: i32, y: i32, w: i32, h: i32,
+        alpha: f32, clip: render::Rect,
+    } {
+        if c.proto < 0 { return }
+        let pc = list::at{ list = p.controls, i = @as(usize, c.proto) }
+        let row = c.rows[@as(usize, idx)]
+        let selected = c.selected_row == idx
+        let hover = c.hover_row == idx
+        let lit = selected or hover
+        // Hilighted rows swap borders; a row that is selected and hovered uses the combined one.
+        let mut b = pc.border
+        if selected and hover and pc.hilight_selected.present { b = pc.hilight_selected } else if selected and pc.selected.present { b = pc.selected } else if lit and pc.hilight.present { b = pc.hilight }
+        draw_border{ &g, &frame, b, x, y, w, h, alpha, clip, override = no_img{} }
+        let a = text_area{ b = pc.border, x, y, w, h }
+        let mut ax = a.x
+        let mut aw = a.w
+        if row.icon.ok {
+            let iw = @as(i32, row.icon.w)
+            let ih = @as(i32, row.icon.h)
+            put_image{ &frame, img = row.icon, x = @as(f32, ax), y = @as(f32, y + (h - ih) / 2), w = @as(f32, iw), h = @as(f32, ih), color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = alpha }, angle = 0.0, clip }
+            ax = ax + iw + 4
+            aw = aw - iw - 4
+        }
+        let mut col = pc.text.color
+        if row.has_color { col = row.color }
+        if lit and pc.kind == K_BUTTON and not row.has_color { col = color_hilight{} }
+        if not row.enabled { col = color_disabled{} }
+        if lit and pc.kind == K_BUTTON { col = mul_alpha{ c = col, a = g.pulse_border } }
+        col = mul_alpha{ c = col, a = alpha }
+        draw_text_in{ &g, &frame, t = pc.text, text = row.text, color = col, x = ax, y = a.y, w = aw, h = a.h, clip }
+    }
+
+    // The scroll bar of a list box (0x00419660): border, thumb and arrows; with DRAWMODE 1 only
+    // the arrows, each while scrolling that way is possible.
+    fn draw_scrollbar { mut g: Gui, mut frame: render::Frame, p: *Panel, c: *Control, l: ListLayout, alpha: f32, clip: render::Rect } {
+        let sb = list::at{ list = p.controls, i = @as(usize, c.scrollbar) }
+        let x = p.sx + l.sx
+        let y = p.sy + l.sy
+        let w = l.sw
+        let h = l.sh
+        let count = @as(i32, c.row_count)
+        let col = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = alpha }
+        let can_up = c.first_row > 0
+        let can_down = c.first_row + l.visible < count
+        if sb.draw_mode == 0 {
+            draw_border{ &g, &frame, b = sb.border, x, y, w, h, alpha, clip, override = no_img{} }
+            // The thumb rides the track between the arrows.
+            let track_y = y + w
+            let track_h = h - 2 * w
+            if track_h > 4 and sb.thumb.ok {
+                var_thumb{ &frame, sb, x, track_y, w, track_h, first = c.first_row, visible = l.visible, count, col, clip }
+            }
+        }
+        if sb.arrow.ok {
+            let aw = @as(f32, w)
+            if sb.draw_mode == 0 or can_up {
+                put_image{ &frame, img = sb.arrow, x = @as(f32, x), y = @as(f32, y), w = aw, h = aw, color = col, angle = 0.0, clip }
+            }
+            if sb.draw_mode == 0 or can_down {
+                put_image{ &frame, img = sb.arrow, x = @as(f32, x), y = @as(f32, y + h - w), w = aw, h = aw, color = col, angle = PI, clip }
+            }
+        }
+    }
+
+    fn var_thumb {
+        mut frame: render::Frame, sb: *Control, x: i32, track_y: i32, w: i32, track_h: i32, first: i32, visible: i32, count: i32,
+        col: render::Color, clip: render::Rect,
+    } {
+        if count <= visible { return }
+        let mut len = track_h * visible / count
+        if len < 12 { len = 12 }
+        if len > track_h { len = track_h }
+        let range = count - visible
+        let pos = (track_h - len) * first / range
+        put_image{ &frame, img = sb.thumb, x = @as(f32, x), y = @as(f32, track_y + pos), w = @as(f32, w), h = @as(f32, len), color = col, angle = 0.0, clip }
+    }
+}

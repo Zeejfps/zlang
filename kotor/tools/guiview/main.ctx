@@ -1,0 +1,382 @@
+// guiview: draws .gui files headless through lib/gui and the render seam and writes PNGs.
+//
+//   kotor/tools/ctxc run kotor/tools/guiview -- mainmenu                  kotor/out/gui/mainmenu.png
+//   kotor/tools/ctxc run kotor/tools/guiview -- inventory --hover BTN_EXIT --size 1024x768
+//   kotor/tools/ctxc run kotor/tools/guiview -- --all                     every .gui, plus a summary
+//
+// Options: --game DIR, --out DIR (kotor/out/gui), --size WxH (the window; 800x600, or the file's
+// own size when larger), --hover TAG (the pointer over that control), --select TAG:ROW (a list's
+// row selected), --fill TAG:N (N fake rows in list TAG), --scale S (the GUI's scale; 1).
+//
+// --all renders every GUI resource the engine finds and prints which control types and fields
+// the loader does not handle and which textures and fonts the install lacks.
+
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+
+struct Options {
+    game: []u8, out: []u8, width: i32, height: i32, all: bool, hover: []u8, select: []u8, fill: []u8,
+    scale: f32, first_name: usize,
+}
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } -> i32 {
+    let o = parse_args{ &io, args } ifnull { return 2 }
+    let pages = mem::pages{ &mem, size = 536870912 } ifnull {
+        io::eprintln{ &io, s = "guiview: out of memory" }
+        return 1
+    }
+    let scratch = mem::pages{ &mem, size = 134217728 } ifnull {
+        io::eprintln{ &io, s = "guiview: out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf = pages }
+    let mut h = heap::new{ &mem }
+    run{ &io, &fs, &sdl, &heap, &h, scratch, o, args } iferr err{ error } {
+        _ = @fmt(&io, "guiview: failed: {}\n", error)
+        match error {
+            gpu::shader_failed{ log } => { _ = @fmt(&io, "{}\n", log) }
+            sdl::failed => { _ = @fmt(&io, "SDL: {}\n", sdl::last_error{ &sdl }) }
+            else => {}
+        }
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return 0
+}
+
+struct Tally {
+    files: u32, controls: u32, failed: u32,
+    kinds: [16]u32,
+    unknown_labels: [64][]u8, unknown_counts: [64]u32, unknown_n: usize,
+}
+
+fn run {
+    mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut h: heap::Heap, scratch: alloc::Bytes,
+    o: Options, args: Args,
+} -> ! {
+    try sdl::init{ &sdl, flags = sdl::INIT_VIDEO | sdl::INIT_EVENTS }
+    defer sdl::quit{ &sdl }
+    let mut config = render::make_config{ title = "guiview", width = o.width, height = o.height, hidden = true }
+    config.debug = true
+    let mut dev = try gpu::open{ &sdl, realloc = arena::alloc, &heap, config }
+    defer gpu::close{ &dev, &sdl }
+    let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, &heap, cap = render::default_capacity{} }
+    let mut rm = try res::open{ &fs, heap = &h, game = o.game }
+    defer res::close{ &fs, &rm }
+    let mut cache = material::new_cache{ heap = &h, scratch }
+    defer material::free_cache{ &cache, &dev }
+    let mut path_buf: [512]u8
+    let tlk_path = join{ into = path_buf[..], a = o.game, b = "dialog.tlk" }
+    let table = try tlk::load{ &fs, realloc = heap::alloc, heap = &h, path = tlk_path }
+    defer tlk::free{ t = table, realloc = heap::alloc, heap = &h }
+    let mut g = try gui::make{ heap = &h, rm, cache = &cache, width = o.width, height = o.height }
+    defer gui::free{ &g }
+    gui::set_tlk{ &g, table = &table }
+    try gui::load_defaults{ &g, &fs, &dev }
+    make_dir{ &fs, path = o.out }
+
+    let mut tally: Tally
+    if o.all {
+        let found = try res::list_type(arena::Arena){ rm, kind = restype::Type::gui, realloc = arena::alloc, &heap }
+        let mut i: usize = 0
+        while i < found.len {
+            let name = resref::bytes{ r = &found[i].name }
+            render_one{ &io, &fs, &dev, &frame, &heap, &g, &tally, o, name }
+            i = i + 1
+        }
+        summarize{ &io, &g, &cache, tally }
+    } else {
+        let mut k = o.first_name - 1
+        while k < args.len {
+            render_one{ &io, &fs, &dev, &frame, &heap, &g, &tally, o, name = args[k] }
+            k = k + 1
+        }
+    }
+}
+
+// Opens one GUI as the game would show it, draws it and saves out/NAME.png.
+fn render_one {
+    mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena, mut g: gui::Gui,
+    mut tally: Tally, o: Options, name: []u8,
+} {
+    tally.files = tally.files + 1
+    let mode = pick_mode{ name }
+    let id = gui::open{ &g, &fs, &dev, name, mode, modal = false } iferr err{ error } {
+        tally.failed = tally.failed + 1
+        _ = @fmt(&io, "{}: {}\n", name, error)
+        return
+    }
+    scan{ &io, &fs, &g, &tally, name }
+    let p = gui::find_panel{ &g, id } ifnull { return }
+    // The window: 800x600, or the file's own size when it is bigger.
+    let mut w = o.width
+    let mut hgt = o.height
+    if p.w > w { w = p.w }
+    if p.h > hgt { hgt = p.h }
+    gpu::resize{ &dev, width = @as(u32, w), height = @as(u32, hgt) } iferr {}
+    gui::set_screen{ &g, &fs, &dev, width = w, height = hgt, scale = o.scale }
+    gui::ensure_backdrop{ &g, &fs, &dev, kind = 0 }
+    if o.fill.len > 0 { fake_rows{ &g, id, spec = o.fill } }
+    if o.select.len > 0 { select_row{ &g, id, spec = o.select } }
+    if o.hover.len > 0 {
+        let r = gui::control_rect{ &g, panel = id, tag = o.hover }
+        if r != null {
+            _ = gui::handle_event{ &g, ev = sdl::Event::mouse_motion{ x = @as(i32, r.x + r.w / 2.0), y = @as(i32, r.y + r.h / 2.0), dx = 0, dy = 0, buttons = 0 }, scale_x = 1.0, scale_y = 1.0 }
+        }
+    }
+    gui::update{ &g, dt = 0.5 }
+    render::begin_frame{ &frame, time = 0.0 }
+    gui::draw{ &g, &frame }
+    gpu::submit{ &dev, frame = &frame } iferr err{ error } {
+        _ = @fmt(&io, "{}: submit failed: {}\n", name, error)
+        gui::close{ &g, id }
+        gui::update{ &g, dt = 0.0 }
+        return
+    }
+    let mut buf: [64]u8
+    let mut file: [80]u8
+    let fname = join{ into = file[..], a = name, b = ".png" }
+    save_screen{ &io, &fs, &dev, &heap, dir = o.out, name = fname } iferr err{ error } {
+        _ = @fmt(&io, "{}: save failed: {}\n", name, error)
+    }
+    gui::close{ &g, id }
+    gui::update{ &g, dt = 0.0 }
+}
+
+// Full-screen menus (the 640x480 files) are centred over the backdrop; the HUD and tooltips
+// stay where their files put them; the rest are dialogs.
+fn pick_mode { name: []u8 } -> gui::Mode {
+    if ci::starts_with{ s = name, prefix = "mipc" } or ci::starts_with{ s = name, prefix = "tooltip" } or ci::starts_with{ s = name, prefix = "mainmenu" } or ci::starts_with{ s = name, prefix = "mi8" } or ci::eq{ a = name, b = "maininterface" } {
+        return gui::Mode::placed
+    }
+    return gui::Mode::full_screen
+}
+
+fn fake_rows { mut g: gui::Gui, id: u32, spec: []u8 } {
+    let mut colon: usize = 0
+    while colon < spec.len and spec[colon] != ':' { colon = colon + 1 }
+    if colon >= spec.len { return }
+    let tag = spec[..colon]
+    let mut n: i64 = 0
+    let mut k = colon + 1
+    while k < spec.len {
+        n = n * 10 + @as(i64, spec[k] - '0')
+        k = k + 1
+    }
+    let mut i: i64 = 0
+    while i < n {
+        let mut b: [32]u8
+        let t: []u8 = "Row number "
+        slice::copy(u8){ dst = b[..t.len], src = t }
+        b[t.len] = '0' + @trunc(u8, (i / 10) % 10)
+        b[t.len + 1] = '0' + @trunc(u8, i % 10)
+        _ = gui::list_add{ &g, panel = id, tag, text = b[..t.len + 2], user = i } iferr { 0 }
+        i = i + 1
+    }
+}
+
+fn select_row { mut g: gui::Gui, id: u32, spec: []u8 } {
+    let mut colon: usize = 0
+    while colon < spec.len and spec[colon] != ':' { colon = colon + 1 }
+    if colon >= spec.len { return }
+    let mut n: i32 = 0
+    let mut k = colon + 1
+    while k < spec.len {
+        n = n * 10 + @as(i32, spec[k] - '0')
+        k = k + 1
+    }
+    gui::list_select{ &g, panel = id, tag = spec[..colon], row = n }
+}
+
+// ---- what the loader doesn't know
+
+const KNOWN_LABELS: [63][]u8 = [
+    "CONTROLS", "CONTROLTYPE", "ID", "TAG", "Obj_ParentID", "PARENTID", "EXTENT", "LEFT", "TOP", "WIDTH", "HEIGHT",
+    "BORDER", "HILIGHT", "SELECTED", "HILIGHTSELECTED", "PROGRESS", "CORNER", "EDGE", "FILL", "FILLSTYLE",
+    "DIMENSION", "INNEROFFSET", "COLOR", "PULSING", "TEXT", "ALIGNMENT", "FONT", "STRREF", "MOVETO", "UP", "DOWN",
+    "RIGHT", "THUMB", "DIR", "IMAGE", "DRAWSTYLE", "FLIPSTYLE", "ROTATE", "ROTATESTYLE", "CURVALUE", "MAXVALUE",
+    "VISIBLEVALUE", "DRAWMODE", "STARTFROMLEFT", "ISSELECTED", "LOOPING", "PADDING", "LEFTSCROLLBAR", "PROTOITEM",
+    "SCROLLBAR", "ALPHA", "BACKGROUND", "Obj_Locked", "Obj_Parent", "Obj_Layer", "", "", "", "", "", "", "", "",
+]
+
+fn known { label: []u8 } -> bool {
+    let mut i: usize = 0
+    while i < 63 {
+        if slice::eq_bytes{ a = KNOWN_LABELS[i], b = label } { return true }
+        i = i + 1
+    }
+    return slice::eq_bytes{ a = label, b = "LEFT" }
+}
+
+// Walks a file's structs counting control types and labels the loader never reads.
+fn scan { mut io: Io, mut fs: Fs, mut g: gui::Gui, mut tally: Tally, name: []u8 } {
+    let loaded = res::load{ &fs, rm = g.rm, name, kind = restype::Type::gui, realloc = heap::alloc, heap = g.heap } iferr { return }
+    let bytes = loaded ifnull { return }
+    defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = bytes, count = 0 }
+    let doc = gff::parse{ data = bytes, realloc = heap::alloc, heap = g.heap } iferr { return }
+    defer gff::free(heap::Heap){ doc, realloc = heap::alloc, heap = g.heap }
+    let mut s: usize = 0
+    while s < doc.structs.len {
+        let fields = gff::fields_of{ doc, s = @as(u32, s) }
+        let mut i: usize = 0
+        while i < fields.len {
+            let label = gff::label_of{ doc, f = fields[i] }
+            if not known{ label } { note_unknown{ &tally, label } }
+            if slice::eq_bytes{ a = label, b = "CONTROLTYPE" } {
+                let v = gff::get_number{ doc, s = @as(u32, s), label = "CONTROLTYPE" } ifnull { 0 }
+                if v >= 0 and v < 16 { tally.kinds[@as(usize, v)] = tally.kinds[@as(usize, v)] + 1 }
+                tally.controls = tally.controls + 1
+            }
+            i = i + 1
+        }
+        s = s + 1
+    }
+}
+
+fn note_unknown { mut tally: Tally, label: []u8 } {
+    let mut i: usize = 0
+    while i < tally.unknown_n {
+        if slice::eq_bytes{ a = tally.unknown_labels[i], b = label } {
+            tally.unknown_counts[i] = tally.unknown_counts[i] + 1
+            return
+        }
+        i = i + 1
+    }
+    if tally.unknown_n < 64 {
+        tally.unknown_labels[tally.unknown_n] = label
+        tally.unknown_counts[tally.unknown_n] = 1
+        tally.unknown_n = tally.unknown_n + 1
+    }
+}
+
+fn summarize { mut io: Io, mut g: gui::Gui, mut cache: material::Cache, tally: Tally } {
+    _ = @fmt(&io, "\n{} GUI files, {} failed to open, {} control structs\n", tally.files, tally.failed, tally.controls)
+    let mut k: usize = 0
+    while k < 16 {
+        if tally.kinds[k] > 0 { _ = @fmt(&io, "  control type {}: {}\n", k, tally.kinds[k]) }
+        k = k + 1
+    }
+    _ = @fmt(&io, "textures: {} loaded, {} missing; fonts loaded: {}\n", cache.loaded, cache.missing, g.fonts.len)
+    if tally.unknown_n == 0 { _ = @fmt(&io, "every field is read by the loader\n") }
+    let mut i: usize = 0
+    while i < tally.unknown_n {
+        _ = @fmt(&io, "  unread field {} x{}\n", tally.unknown_labels[i], tally.unknown_counts[i])
+        i = i + 1
+    }
+}
+
+// ---- output
+
+fn save_screen { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, dir: []u8, name: []u8 } -> ! {
+    let size = gpu::screen_size{ dev }
+    let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
+    defer _ = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = pixels, count = 0 }
+    _ = try gpu::read_screen{ &dev, into = pixels }
+    let mut path_buf: [512]u8
+    let path = join{ into = path_buf[..], a = dir, b = name }
+    let image = png::Image{ width = size.width, height = size.height, rgba = pixels }
+    try png::save{ &fs, realloc = arena::alloc, &heap, path, image, alpha = false, bottom_up = false }
+    _ = @fmt(&io, "wrote {} ({}x{})\n", path, size.width, size.height)
+}
+
+fn join { into: []mut u8, a: []u8, b: []u8 } -> []u8 {
+    let mut n: usize = 0
+    let mut i: usize = 0
+    while i < a.len and n < into.len {
+        into[n] = a[i]
+        n = n + 1
+        i = i + 1
+    }
+    if n > 0 and into[n - 1] != '/' and b.len > 0 and b[0] != '.' and n < into.len {
+        into[n] = '/'
+        n = n + 1
+    }
+    i = 0
+    while i < b.len and n < into.len {
+        into[n] = b[i]
+        n = n + 1
+        i = i + 1
+    }
+    return into[..n]
+}
+
+fn make_dir { mut fs: Fs, path: []u8 } {
+    let mut i: usize = 1
+    while i <= path.len {
+        if i == path.len or path[i] == '/' {
+            fs::make_dir{ &fs, path = path[..i] } iferr {}
+        }
+        i = i + 1
+    }
+}
+
+fn parse_args { mut io: Io, args: Args } -> ?Options {
+    let mut o = Options{
+        game = DEFAULT_GAME, out = "kotor/out/gui", width = 800, height = 600, all = false,
+        hover = "", select = "", fill = "", scale = 1.0, first_name = 0,
+    }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        if slice::eq_bytes{ a, b = "--all" } {
+            o.all = true
+        } else if slice::eq_bytes{ a, b = "--game" } and i + 1 < args.len {
+            i = i + 1
+            o.game = args[i]
+        } else if slice::eq_bytes{ a, b = "--out" } and i + 1 < args.len {
+            i = i + 1
+            o.out = args[i]
+        } else if slice::eq_bytes{ a, b = "--hover" } and i + 1 < args.len {
+            i = i + 1
+            o.hover = args[i]
+        } else if slice::eq_bytes{ a, b = "--select" } and i + 1 < args.len {
+            i = i + 1
+            o.select = args[i]
+        } else if slice::eq_bytes{ a, b = "--fill" } and i + 1 < args.len {
+            i = i + 1
+            o.fill = args[i]
+        } else if slice::eq_bytes{ a, b = "--scale" } and i + 1 < args.len {
+            i = i + 1
+            let text = utf8::from{ bytes = args[i] } iferr { return usage{ &io } }
+            o.scale = @as(f32, utf8::parse_f64{ s = text } ifnull { return usage{ &io } })
+        } else if slice::eq_bytes{ a, b = "--size" } and i + 1 < args.len {
+            i = i + 1
+            let s = args[i]
+            let mut x: usize = 0
+            while x < s.len and s[x] != 'x' { x = x + 1 }
+            if x >= s.len { return usage{ &io } }
+            let mut w: i32 = 0
+            let mut k: usize = 0
+            while k < x {
+                w = w * 10 + @as(i32, s[k] - '0')
+                k = k + 1
+            }
+            let mut hh: i32 = 0
+            k = x + 1
+            while k < s.len {
+                hh = hh * 10 + @as(i32, s[k] - '0')
+                k = k + 1
+            }
+            o.width = w
+            o.height = hh
+        } else if a.len > 0 and a[0] == '-' {
+            return usage{ &io }
+        } else {
+            o.first_name = i + 1
+            break
+        }
+        i = i + 1
+    }
+    if not o.all and o.first_name == 0 { return usage{ &io } }
+    return o
+}
+
+fn usage { mut io: Io } -> ?Options {
+    io::eprintln{ &io, s = "usage: guiview [--game DIR] [--out DIR] [--size WxH] [--scale S] [--hover TAG] [--select TAG:ROW] [--fill TAG:N] (--all | NAME...)" }
+    return null
+}
+
+namespace gv_out {
+    #write
+    fn put_cstring { mut io: Io, s: c::String } { io::write{ &io, to = io::Stream::out, bytes = c::bytes{ s } } }
+}
