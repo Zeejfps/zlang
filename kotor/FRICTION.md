@@ -9,28 +9,14 @@ Remove an entry once a language change fixes it, and say which commit did.
 
 Counts are from the spike's sources (sdl.ctx, gl.ctx, png.ctx, main.ctx, about 2,650 lines).
 
-- **No multi-line string literal, and no way to join literals.** GLSL source wanted to be one
-  literal per shader. Written instead as `const MESH_VS: [17]c::String = [ "#version 410 core\n",
-  ... ]`, one element per line, passed to `glShaderSource` as `count` strings. The length is
-  counted by hand (a wrong count is caught: `expected [18]c::String, got [17]c::String`), and a
-  const isn't a place, so each array is copied to a local (`let mesh_vs = MESH_VS`) to take
-  `&mesh_vs`. 4 shaders, 54 lines here; the GL backend will have dozens. A raw or multi-line
-  literal, or `[_]T` for a const's length, would do.
+
 - **An `if` of literals as an `@fmt` hole** (ctxlang FRICTION #11): `@fmt(&io, "{}", if on {
   "on" } else { "absent" })` is "branches have different types: [2]u8 and [6]u8". Each needed a
   typed `let s: []u8 = if ...` first: 5 times in main.ctx.
-- **An `@fmt` hole doesn't widen `[]mut u8` to `[]u8`.** Writers are found by exact type, so
-  printing part of a mutable buffer (`log[..log_len]`, the GL debug log's `text[..used]` through
-  a `*mut`) found no writer until a second one for `[]mut u8` was added. Every writer of a slice
-  type needs a twin. Taking the `[]T` writer for a `[]mut T` hole (the one widening with no
-  ambiguity) would fix it.
-- **No `@fmt` straight to standard output.** std's only writers are for `utf8::Builder`, so a
-  formatted line takes an arena, a builder and `io::println`. The spike defines 15 one-line
-  `#write` fns over `Io` (`namespace out` in main.ctx) and then writes
-  `_ = @fmt(&io, "GL {}.{}\n", major, minor)`, which works well; it belongs in std's `io`. Two
-  rough edges remain: every `@fmt` needs `_ =` even when its writers can't fail (35 times), and
-  std has no writer of `[]u8` into a Builder, so a path or argument (bytes) goes through
-  `utf8::of{ chars = p }` first.
+
+- **Every `@fmt` onto the console needs `_ =`** even though its writers can't fail (35 times in
+  the spike). std's `io` now has the writers onto an `Io` (and `io::to_stderr`) that the spike
+  wrote itself in `namespace out`, and `utf8::push_bytes` writes bytes into a Builder.
 - **A GL function is written three times.** Each is a capability field with its C type, then
   `name = @cast(_, try proc{ get_proc, name = "glName" })` in the loader, where the C name is the
   field's in another case: 132 loader lines for 132 fields. An attribute on a capability field
@@ -55,8 +41,6 @@ Counts are from the spike's sources (sdl.ctx, gl.ctx, png.ctx, main.ctx, about 2
   (`glVertexAttribPointer`, `glDrawElements`). Nothing makes a pointer from a `usize`, so the
   binding declares those parameters `offset: usize`, which works because 64-bit ABIs pass the two
   alike. Fine for 64-bit targets only; noted in docs/design/platform.md.
-- **No math functions in std.** `sinf`, `cosf`, `tanf` and `sqrtf` are declared as extern fns
-  from libm in main.ctx (pure, so no capability). `lib/base` will want them; std's `math` could
-  hold them.
+
 - **Spec gap, not friction:** hex literals (`0x2FFF0000`) and `_` separators work (the lexer has
   them) but spec §11 Literals doesn't mention them.

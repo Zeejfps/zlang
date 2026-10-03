@@ -138,6 +138,115 @@ namespace io {
     fn println_f32  { mut io: Io, n: f32 }  { print_f32{ &io, n };  newline{ &io } }
     fn println_bool { mut io: Io, n: bool } { print_bool{ &io, n }; newline{ &io } }
 
+    // ---- @fmt onto the console (spec §13)
+    //
+    //   _ = @fmt(&io, "{} files, {} bytes\n", n, size)        // standard output
+    //   let mut err = io::to_stderr{ &io }
+    //   _ = @fmt(&err, "{}: {}\n", path, e)                    // standard error
+    //
+    // A writer for each type a hole may have: every integer type, f32, f64, bool, utf8::String,
+    // []u8 (bytes, as they are), c::String and strlit; a []mut u8 takes the []u8 one. They don't
+    // fail, but an @fmt's result is still a `!` to discard. A program's own writer of a type to
+    // an Io replaces std's (§13).
+
+    // Standard error, as an @fmt sink.
+    struct Stderr { io: *mut Io }
+
+    fn to_stderr { mut io: Io } -> Stderr {
+        return Stderr{ io = &io }
+    }
+
+    #write
+    fn write_text { mut io: Io, s: strlit } { write{ &io, to = Stream::out, bytes = s.bytes } }
+    #write
+    fn write_string { mut io: Io, s: utf8::String } { write{ &io, to = Stream::out, bytes = s.bytes } }
+    #write
+    fn write_bytes { mut io: Io, b: []u8 } { write{ &io, to = Stream::out, bytes = b } }
+    #write
+    fn write_cstring { mut io: Io, s: c::String } { write{ &io, to = Stream::out, bytes = c::bytes{ s } } }
+    #write
+    fn write_bool { mut io: Io, v: bool } { emit_bool{ &io, to = Stream::out, v } }
+    #write
+    fn write_i8 { mut io: Io, n: i8 } { emit_i64{ &io, to = Stream::out, n } }
+    #write
+    fn write_i16 { mut io: Io, n: i16 } { emit_i64{ &io, to = Stream::out, n } }
+    #write
+    fn write_i32 { mut io: Io, n: i32 } { emit_i64{ &io, to = Stream::out, n } }
+    #write
+    fn write_i64 { mut io: Io, n: i64 } { emit_i64{ &io, to = Stream::out, n } }
+    #write
+    fn write_u8 { mut io: Io, n: u8 } { emit_u64{ &io, to = Stream::out, n } }
+    #write
+    fn write_u16 { mut io: Io, n: u16 } { emit_u64{ &io, to = Stream::out, n } }
+    #write
+    fn write_u32 { mut io: Io, n: u32 } { emit_u64{ &io, to = Stream::out, n } }
+    #write
+    fn write_u64 { mut io: Io, n: u64 } { emit_u64{ &io, to = Stream::out, n } }
+    #write
+    fn write_usize { mut io: Io, n: usize } { emit_u64{ &io, to = Stream::out, n } }
+    #write
+    fn write_f32 { mut io: Io, n: f32 } { emit_f32{ &io, to = Stream::out, n } }
+    #write
+    fn write_f64 { mut io: Io, n: f64 } { emit_f64{ &io, to = Stream::out, n } }
+
+    #write
+    fn ewrite_text { mut e: Stderr, s: strlit } { write{ io = e.io, to = Stream::err, bytes = s.bytes } }
+    #write
+    fn ewrite_string { mut e: Stderr, s: utf8::String } { write{ io = e.io, to = Stream::err, bytes = s.bytes } }
+    #write
+    fn ewrite_bytes { mut e: Stderr, b: []u8 } { write{ io = e.io, to = Stream::err, bytes = b } }
+    #write
+    fn ewrite_cstring { mut e: Stderr, s: c::String } { write{ io = e.io, to = Stream::err, bytes = c::bytes{ s } } }
+    #write
+    fn ewrite_bool { mut e: Stderr, v: bool } { emit_bool{ io = e.io, to = Stream::err, v } }
+    #write
+    fn ewrite_i8 { mut e: Stderr, n: i8 } { emit_i64{ io = e.io, to = Stream::err, n } }
+    #write
+    fn ewrite_i16 { mut e: Stderr, n: i16 } { emit_i64{ io = e.io, to = Stream::err, n } }
+    #write
+    fn ewrite_i32 { mut e: Stderr, n: i32 } { emit_i64{ io = e.io, to = Stream::err, n } }
+    #write
+    fn ewrite_i64 { mut e: Stderr, n: i64 } { emit_i64{ io = e.io, to = Stream::err, n } }
+    #write
+    fn ewrite_u8 { mut e: Stderr, n: u8 } { emit_u64{ io = e.io, to = Stream::err, n } }
+    #write
+    fn ewrite_u16 { mut e: Stderr, n: u16 } { emit_u64{ io = e.io, to = Stream::err, n } }
+    #write
+    fn ewrite_u32 { mut e: Stderr, n: u32 } { emit_u64{ io = e.io, to = Stream::err, n } }
+    #write
+    fn ewrite_u64 { mut e: Stderr, n: u64 } { emit_u64{ io = e.io, to = Stream::err, n } }
+    #write
+    fn ewrite_usize { mut e: Stderr, n: usize } { emit_u64{ io = e.io, to = Stream::err, n } }
+    #write
+    fn ewrite_f32 { mut e: Stderr, n: f32 } { emit_f32{ io = e.io, to = Stream::err, n } }
+    #write
+    fn ewrite_f64 { mut e: Stderr, n: f64 } { emit_f64{ io = e.io, to = Stream::err, n } }
+
+    fn emit_i64 { mut io: Io, to: Stream, n: i64 } {
+        let mut buf: [20]u8
+        write{ &io, to, bytes = utf8::fmt_i64{ n, into = buf[..] }.bytes }
+    }
+
+    fn emit_u64 { mut io: Io, to: Stream, n: u64 } {
+        let mut buf: [20]u8
+        write{ &io, to, bytes = utf8::fmt_u64{ n, into = buf[..] }.bytes }
+    }
+
+    fn emit_f64 { mut io: Io, to: Stream, n: f64 } {
+        let mut buf: [32]u8
+        write{ &io, to, bytes = utf8::fmt_f64{ n, into = buf[..] }.bytes }
+    }
+
+    fn emit_f32 { mut io: Io, to: Stream, n: f32 } {
+        let mut buf: [32]u8
+        write{ &io, to, bytes = utf8::fmt_f32{ n, into = buf[..] }.bytes }
+    }
+
+    fn emit_bool { mut io: Io, to: Stream, v: bool } {
+        let s: []u8 = if v { "true" } else { "false" }
+        write{ &io, to, bytes = s }
+    }
+
     // ---- input
 
     // Reads one line into `into` and returns it without its line ending. Null at the end of input.

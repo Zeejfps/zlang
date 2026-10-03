@@ -586,6 +586,39 @@ fn main { mut io: Io } {
 }
 """, '1257\n104\n102.5\n')
 
+    def test_multiline_literals(self):
+        # `\\` lines (spec §11, Literals): raw text, joined with \n; a \r that ends a line isn't
+        # part of it.
+        src = r"""
+const VS: c::String =
+    \\#version 410 core
+    \\void main() {
+    \\    gl_Position = vec4(pos, "1.0" \n);
+    \\}
+
+fn main { mut io: Io } {
+    let text: []u8 =
+        \\one
+        \\
+        \\three\\
+    io::println_u64{ &io, n = text.len }
+    io::println{ &io, s = utf8::of{ chars = text } }
+    io::println{ &io, s = utf8::of{ chars = c::bytes{ s = VS } } }
+    let empty: []u8 = \\
+    let s: utf8::String = \\a "quoted" word
+    _ = @fmt(&io, "{} {}\n", empty.len, s)
+}
+"""
+        self.assertOutput(src, '12\none\n\nthree\\\\\n#version 410 core\nvoid main() {\n'
+                               '    gl_Position = vec4(pos, "1.0" \\n);\n}\n0 a "quoted" word\n')
+        self.assertOutput('fn main { mut io: Io } {\r\n    let t: []u8 =\r\n        \\\\a\r\n'
+                          '        \\\\b\r\n    io::println_u64{ &io, n = t.len }\r\n}\r\n', '3\n')
+
+    def test_multiline_literal_errors(self):
+        self.assertLexError('fn main {} {\n    let t: []u8 = \\\\caf\u00e9\n}',
+                            'a multi-line literal holds ASCII characters only', 2, 24)
+
+
 
 class Parser(Base):
     """Every syntax error, at its exact position: tools/parsetest.py compares ctxc's first
@@ -3234,7 +3267,7 @@ fn main { mut io: Io } {
             ('_ = @fmt(&b, "{y}", 1)', 'bad hole `{y}` in the format'),
             ('_ = @fmt(&b, "{x}", 1)', 'bad hole `{x}` in the format: a hole is `{}`'),
             ('_ = @fmt(&b, "{}", [1, 2])', "@fmt has no writer of [2]i32 to utf8::Builder(arena::Arena)"),
-            ('let s: []u8 = "x"\n    _ = @fmt(&b, "{}", s)', "@fmt has no writer of []u8 to utf8::Builder(arena::Arena)"),
+            ('let x = 1\n    _ = @fmt(&b, "{}", &x)', "@fmt has no writer of *i32 to utf8::Builder(arena::Arena)"),
             ('let mut n: i32 = 1\n    _ = @fmt(&n, "x")', '@fmt has no writer to i32: no `#write` fn it sees has a sink of that type'),
             ('_ = @fmt(b, "x")', '@fmt writes to a `*mut` sink, got utf8::Builder(arena::Arena)'),
             ('let bs: [1]utf8::Builder(arena::Arena) = [b]\n    _ = @fmt(&bs[0], "x")',
@@ -3447,6 +3480,56 @@ fn pick { n: i32 } -> ! {
              'string literal is not valid UTF-8 (byte 0)', 5, 14),
         ]:
             self.assertError(src + '\nfn main {} {}', msg, line, col)
+
+    def test_program_writers_come_before_std(self):
+        # std's utf8::push writes a String into a Builder; the program's own writer of one wins.
+        self.assertOutput("""
+namespace quoted {
+    #write
+    fn push_quoted(S) { mut b: utf8::Builder(S), s: utf8::String } -> ! {
+        try utf8::push{ &b, s = "'" }
+        try utf8::push{ &b, s }
+        try utf8::push{ &b, s = "'" }
+    }
+}
+fn main { mut io: Io } {
+    let mut mem: [256]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    let name: utf8::String = "x"
+    try! @fmt(&b, "{} and {}", name, 3)
+    io::println{ &io, s = utf8::view{ b } }
+}
+""", "'x' and 3\n")
+
+    def test_mut_slice_takes_the_slice_writer(self):
+        # A []mut T hole with no writer of its own is written by the []T one.
+        self.assertOutput("""
+struct Out { n: usize }
+#write
+fn text { mut o: Out, s: strlit } { o.n = o.n + s.bytes.len }
+#write
+fn bytes { mut o: Out, b: []u8 } { o.n = o.n + 100 * b.len }
+fn main { mut io: Io } {
+    let mut o = Out{ n = 0 }
+    let mut buf: [3]u8 = [1, 2, 3]
+    let m: []mut u8 = buf[..]
+    _ = @fmt(&o, "ab{}", m)
+    io::println_u64{ &io, n = o.n }
+}
+""", "302\n")
+        self.assertCompileError("""
+struct Out { n: usize }
+#write
+fn text { mut o: Out, s: strlit } {}
+fn main {} {
+    let mut o = Out{ n = 0 }
+    let mut buf: [3]u8 = [1, 2, 3]
+    let m: []mut u8 = buf[..]
+    _ = @fmt(&o, "{}", m)
+}
+""", "@fmt has no writer of []mut u8 to Out")
+
 
 
 WRITER_SETUP = """
@@ -3882,6 +3965,50 @@ fn main { mut io: Io } {
             run_source('fn main { mut io: Io } { io::println_i64{ &io, n = "x" } }', 'user.ctx')
         self.assertEqual(cm.exception.pos[2], 'user.ctx')
         self.assertIn('expected i64, got [1]u8', cm.exception.msg)
+
+    def test_fmt_to_console(self):
+        # std's writers onto an Io (standard output) and an io::Stderr; a []mut u8 takes the
+        # []u8 one, and bytes go as they are.
+        out, err = run_io("""
+fn main { mut io: Io } {
+    let n: u8 = 7
+    let s: utf8::String = "caf\\xc3\\xa9"
+    let mut buf: [3]u8 = ['a', 'b', 'c']
+    let m: []mut u8 = buf[..]
+    _ = @fmt(&io, "{} {} {} {} {} {} {} {}\\n", n, -5, true, 1.5, s, m, @as(f32, 0.1), @as(usize, 9))
+    let mut err = io::to_stderr{ &io }
+    _ = @fmt(&err, "warning: {} of {}\\n", 3, @as(u16, 4))
+    let raw: []u8 = "\\xff"
+    let cs: c::String = "hi"
+    _ = @fmt(&io, "{}|{}\\n", raw.len, cs)
+}
+""")
+        self.assertEqual((out, err), ('7 -5 true 1.5 café abc 0.1 9\n1|hi\n', 'warning: 3 of 4\n'))
+
+    def test_fmt_bytes_into_builder(self):
+        # utf8::push_bytes: bytes as text, a byte that starts no valid sequence as U+FFFD.
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let mut mem: [256]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    let raw: []u8 = "ok\\xff\\xc3\\xa9!"
+    let mut buf: [2]u8 = ['h', 'i']
+    let m: []mut u8 = buf[..]
+    try! @fmt(&b, "[{}] [{}]", raw, m)
+    io::println{ &io, s = utf8::view{ b } }
+}
+""", 'ok�é!'.join(['[', ']']) + ' [hi]\n')
+
+    def test_math(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    _ = @fmt(&io, "{} {} {}\\n", math::sqrt{ x = 2.0 }, math::floorf{ x = 2.5 }, math::atan2{ y = 1.0, x = 1.0 } * 4.0 == math::PI)
+    _ = @fmt(&io, "{} {} {}\\n", math::powf{ x = 2.0, y = 10.0 }, math::fmod{ x = -7.0, y = 2.0 }, math::round{ x = -2.5 })
+    _ = @fmt(&io, "{} {} {} {}\\n", math::is_nan{ x = 0.0 / 0.0 }, math::is_inf{ x = -1.0 / 0.0 }, math::is_finite{ x = 1.0 / 0.0 }, math::is_nan{ x = math::PI_F32 })
+}
+""", '1.4142135623730951 2.0 true\n1024.0 -1.0 -3.0\ntrue true false false\n')
+
 
 
 MAP_SETUP = """

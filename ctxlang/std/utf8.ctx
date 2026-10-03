@@ -546,6 +546,24 @@ namespace utf8 {
         try push{ &b, s = if v { "true" } else { "false" } }
     }
 
+    // Bytes as text: a path, an argument, a name from a file. Each byte that doesn't start a
+    // valid UTF-8 sequence becomes U+FFFD, the replacement character. A []mut u8 hole takes it
+    // too (§13).
+    #write
+    fn push_bytes(S) { mut b: Builder(S), s: []u8 } -> ! {
+        let mut i: usize = 0
+        while i < s.len {
+            let k = seq_len{ bytes = s, i }
+            if k == 0 {
+                try push{ &b, s = "\xef\xbf\xbd" }
+                i = i + 1
+            } else {
+                try push{ &b, s = String{ bytes = s[i..i + k] } }
+                i = i + k
+            }
+        }
+    }
+
     // Writers to name in an @fmt hole, as `utf8::write_hex{ n, _ }`: n in lowercase hex, and
     // character c. The padded ones below take a width.
     fn write_hex(S) { mut b: Builder(S), n: u64 } -> ! {

@@ -109,10 +109,18 @@ pass them down to what needs them (`&fs`). Code without capabilities is pure. C 
 
 ## Printing and text
 
-`io::println{ &io, s = "text" }`, `io::print_i64{ &io, n }`. Formatted text goes into a
-`utf8::Builder` with `@fmt(&b, "x = {} y = {}", x, y)` (§13), then `io::println{ &io, s =
-utf8::view{ b } }`. See existing tools for a small `@fmt`-to-stdout helper. String literals
-convert to `[]u8`, `utf8::String` or `c::String` as the context expects.
+`io::println{ &io, s = "text" }`, `io::print_i64{ &io, n }`. `_ = @fmt(&io, "x = {} y = {}\n",
+x, y)` (§13) prints formatted text; `let mut err = io::to_stderr{ &io }`, then `@fmt(&err, ...)`,
+goes to standard error. Into a `utf8::Builder`: `try @fmt(&b, ...)`, then `utf8::view{ b }`;
+`[]u8` holes are written as text. A tool's own `#write` fns for a type replace std's. String
+literals convert to `[]u8`, `utf8::String` or `c::String` as the context expects. A multi-line
+literal (GLSL) is lines that each start with `\\`, raw, joined with `\n` (§11, Literals, rule 9):
+
+```
+const MESH_VS: c::String =
+    \\#version 410 core
+    \\void main() { gl_Position = vec4(0.0); }
+```
 
 ## Building and checking
 
