@@ -229,6 +229,11 @@ Volume`, `Sound Effects Volume`, `Movie Volume` (0..100) go to `set_group_volume
 100; `Number 2D Voices` and `Number 3D Voices` to `mix::make`; `Disable Sound=1` means don't open
 a device and drop every sound.
 
+**No device.** If `audio::open` fails (no output, as the original sets `g_bDisableSound` when
+Miles fails), the game plays on silently: it still makes the mixer and calls `mix::render` into a
+scratch buffer for the frame's elapsed time instead of `audio::update`, so voices advance and end
+as they would and dialogue, lip sync and movies keep their clocks.
+
 ## Checked
 
 ```

@@ -2,10 +2,10 @@
 // out as interleaved 16-bit samples at the file's own rate and channels, a block or a frame at a
 // time, so music and voice-over never decode whole files up front.
 //
-//   let mut s: snd::Stream                        // zero, then opened in place: it is ~40 KB
-//   try snd::open{ &s, bytes }                    // bytes must outlive the stream
-//   let n = try snd::read{ &s, into = buf[..] }   // sample frames; 0 at the end
-//   snd::rewind{ &s }                             // back to the start, for loops
+//   let s = try snd::make{ realloc, &heap }      // ~40 KB, opened in place (the mixer's voices
+//   try snd::open{ s, bytes }                    //   hold theirs); bytes must outlive the stream
+//   let n = try snd::read{ s, into = buf[..] }   // sample frames; 0 at the end
+//   snd::rewind{ s }                             // back to the start, for loops
 //
 // A stream doesn't own the file's bytes: the caller keeps them (from the resource manager, or a
 // file read whole) until it is done with the stream.
