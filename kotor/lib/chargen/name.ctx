@@ -1,0 +1,38 @@
+// The name step (name): one edit box holding the whole name (docs/re/chargen.md E).
+namespace chargen {
+    const NAME_LIMIT: i32 = 18          // the edit box's character limit
+
+    fn open_name { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, p: u32 } -> ! {
+        gui::make_edit{ &g, panel = p, tag = "NAME_BOX_EDIT" }
+        gui::set_max_chars{ &g, panel = p, tag = "NAME_BOX_EDIT", max = NAME_LIMIT }
+        if st.ch.name_len == 0 {
+            try random_name_into_box{ st, &g, &fs, p }
+        } else {
+            try gui::set_text{ &g, panel = p, tag = "NAME_BOX_EDIT", text = st.ch.name[..st.ch.name_len] }
+        }
+        gui::set_focus{ &g, panel = p, tag = "NAME_BOX_EDIT" }
+    }
+
+    // A random first and last name for the gender, as long as the box takes.
+    fn random_name_into_box { st: *mut State, mut g: gui::Gui, mut fs: Fs, p: u32 } -> ! {
+        let mut buf: [48]u8
+        let n = random_name{ &fs, rm = g.rm, heap = st.heap, gender = st.ch.gender, rng = &st.rng, into = buf[..] }
+        let mut len = if n > @as(usize, NAME_LIMIT) { @as(usize, NAME_LIMIT) } else { n }
+        while len > 0 and buf[len - 1] == ' ' { len = len - 1 }
+        try gui::set_text{ &g, panel = p, tag = "NAME_BOX_EDIT", text = buf[..len] }
+    }
+
+    // Stores the typed name (trailing spaces cut); an empty one is refused with a message.
+    fn accept_name { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, p: u32 } -> !bool {
+        let typed = text_of{ &g, panel = p, tag = "NAME_BOX_EDIT" }
+        let mut len = typed.len
+        while len > 0 and typed[len - 1] == ' ' { len = len - 1 }
+        if len == 0 {
+            try show_message{ st, &g, &fs, &dev, strref = 42360, ask = Ask::info }
+            return false
+        }
+        st.ch.name_len = frontend::copy_into{ dst = st.ch.name[..], src = typed[..len] }
+        show_main_name{ st, &g }
+        return true
+    }
+}

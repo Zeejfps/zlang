@@ -54,6 +54,30 @@ namespace chargen {
         gui::play_sound{ &g, n = 5 }
     }
 
+    // What a screen shows when it opens.
     fn bind_screen { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, screen: u32, p: u32 } -> ! {
+        if screen == SCR_CLASS {
+            draw_slot_portraits{ st }
+            try show_class_name{ st, &g, p, slot = 0 }
+            gui::set_focus{ &g, panel = p, tag = "BTN_SEL1" }
+        } else if screen == SCR_MAIN {
+            try bind_main{ st, &g, &fs, &dev, p }
+        } else if screen == SCR_CHOICE {
+            try set_description{ &g, panel = p, tag = "LB_DESC", strref = 241 }
+            gui::set_focus{ &g, panel = p, tag = "QUICK_CHAR_BTN" }
+        } else if screen == SCR_QUICK or screen == SCR_CUSTOM {
+            bind_steps{ st, &g, p, screen }
+        } else if screen == SCR_PORTRAIT {
+            open_portrait{ st, &g, &fs, &dev, p }
+        } else if screen == SCR_NAME {
+            try open_name{ st, &g, &fs, &dev, p }
+        } else if screen == SCR_ABILITIES {
+            try open_abilities{ st, &g, p }
+        } else if screen == SCR_SKILLS {
+            try open_skills{ st, &g, p }
+        } else if screen == SCR_FEATS {
+            try open_feats{ st, &g, p }
+        }
+        refresh_views{ st, &g, &fs, &dev }
     }
 }

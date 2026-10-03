@@ -3,7 +3,7 @@
 // refused when namefilter.2da lists the name.
 namespace chargen {
     // Longest name part the generator is asked for (the engine passes none: 0).
-    const NAME_PART_MAX: usize = 24
+    const NAME_PART_MAX: usize = 15
 
     // The bytes of the table `name` (an LTR resref), read from the install; empty if it is missing.
     fn load_ltr { mut fs: Fs, rm: res::Manager, heap: *mut heap::Heap, name: []u8 } -> alloc::Bytes {

@@ -1,6 +1,6 @@
 // Character generation as the front end drives it (docs/design/chargen.md):
 //
-//   let st = try chargen::begin{ &fs, &g, &dev, heap = fe.heap }          // loads the rules tables, opens classsel
+//   let st = try chargen::begin{ &fs, &g, &dev, heap = fe.heap, seed }     // loads the rules tables, opens classsel
 //   each frame: for each GUI event: match chargen::on_event{ st, &g, &fs, &dev, ev } { running => {}, finished => ..., cancelled => ... }
 //               chargen::update{ st, dt }
 //               chargen::draw_views{ st, &g, &frame, target }              // the 3D creatures, after the panels
@@ -12,11 +12,43 @@ namespace chargen {
     struct State {
         heap: *mut heap::Heap,
         tables: *mut rules::Tables,
+        data: Data,
         stack: [10]Entry,
         depth: usize,
         ch: Choices,
         rng: ltr::Rng,
         player: alloc::Bytes,               // the finished creature's GFF bytes (heap)
+        scratch: *mut rules::Creature,      // a creature the screens ask the rules questions of
+        // class selection
+        slot_portrait: [SLOTS]i32,          // the random portrait each slot's creature shows
+        // the quick or custom list: which one is up and its step counter
+        mode: u32,                          // 0 none yet, 1 quick, 2 custom
+        step: i32,
+        // a message box over the panels
+        msg_panel: u32,
+        msg_ask: Ask,
+        // the portrait step
+        plist: [MAX_PORTRAITS]i32,
+        pcount: usize,
+        pidx: usize,
+        portrait_before: i32,
+        appearance_before: i32,
+        // the abilities step, in the panel's order STR DEX CON WIS INT CHA
+        ab: [6]i32,
+        ab_points: i32,
+        ab_focus: usize,
+        // the skills step
+        sk: [SKILLS]i32,
+        sk_points: i32,
+        sk_focus: usize,
+        // the feats step
+        frows: [MAX_FEAT_ROWS]FeatRow,
+        fcount: usize,
+        fpicks: i32,                        // regular feats still to choose
+        fchosen: [8]i32,
+        fnchosen: usize,
+        fsel: i32,                          // the row the feats list has selected
+        views: Views,
     }
 
     // Starts character generation: reads the rules tables and opens the class selection.
@@ -27,31 +59,20 @@ namespace chargen {
             alloc::free(rules::Tables, heap::Heap){ realloc = heap::alloc, heap, p = tables }
             return error
         }
+        let data = try load_data{ &fs, rm = g.rm, heap }
+        let mut blank_creature: rules::Creature
+        let scratch = try alloc::new(rules::Creature, heap::Heap){ realloc = heap::alloc, heap, value = blank_creature }
         let st = try alloc::new(State, heap::Heap){ realloc = heap::alloc, heap, value = State{
-            heap, tables, stack = [Entry{ screen = 0, panel = 0 }; 10], depth = 0, ch = fresh_choices{},
-            rng = ltr::seed_rng{ seed }, player = slice::empty(u8){},
+            heap, tables, data, stack = [Entry{ screen = 0, panel = 0 }; 10], depth = 0, ch = fresh_choices{},
+            rng = ltr::seed_rng{ seed }, player = slice::empty(u8){}, scratch,
+            slot_portrait = [0; SLOTS], mode = 0, step = 0, msg_panel = 0, msg_ask = Ask::nothing,
+            plist = [0; MAX_PORTRAITS], pcount = 0, pidx = 0, portrait_before = 0, appearance_before = 0,
+            ab = [8; 6], ab_points = 0, ab_focus = 0, sk = [0; SKILLS], sk_points = 0, sk_focus = 0,
+            frows = [FeatRow{ feat = 0, state = 0 }; MAX_FEAT_ROWS], fcount = 0, fpicks = 0, fchosen = [0; 8], fnchosen = 0, fsel = 0,
+            views = no_views{},
         } }
         try open_screen{ st, &g, &fs, &dev, screen = SCR_CLASS }
         return st
-    }
-
-    fn update { st: *mut State, dt: f32 } {
-    }
-
-    // The 3D creatures belong over the panels' rectangles; the front end calls it after the GUI.
-    fn draw_views { st: *mut State, mut g: gui::Gui, mut frame: render::Frame, target: render::Size } {
-    }
-
-    // Closes the panels and gives back everything.
-    fn free { st: *mut State, mut g: gui::Gui, mut dev: gpu::Device } {
-        while st.depth > 0 {
-            gui::close{ &g, id = st.stack[st.depth - 1].panel }
-            st.depth = st.depth - 1
-        }
-        free_bytes{ b = st.player, heap = st.heap }
-        rules::free_tables{ out = &st.tables.*, heap = &st.heap.* }
-        alloc::free(rules::Tables, heap::Heap){ realloc = heap::alloc, heap = st.heap, p = st.tables }
-        alloc::free(State, heap::Heap){ realloc = heap::alloc, heap = st.heap, p = st }
     }
 
     fn fresh_choices {} -> Choices {
@@ -60,6 +81,23 @@ namespace chargen {
         c.class = -1
         c.portrait = -1
         c.abil = [8; 6]
+        c.ability_points = ABILITY_POINTS
         return c
+    }
+
+    // Closes the panels and gives back everything.
+    fn free { st: *mut State, mut g: gui::Gui, mut dev: gpu::Device } {
+        free_views{ st, &dev }
+        while st.depth > 0 {
+            gui::close{ &g, id = st.stack[st.depth - 1].panel }
+            st.depth = st.depth - 1
+        }
+        close_message{ st, &g }
+        free_bytes{ b = st.player, heap = st.heap }
+        free_data{ d = st.data, heap = st.heap }
+        rules::free_tables{ out = &st.tables.*, heap = &st.heap.* }
+        alloc::free(rules::Tables, heap::Heap){ realloc = heap::alloc, heap = st.heap, p = st.tables }
+        alloc::free(rules::Creature, heap::Heap){ realloc = heap::alloc, heap = st.heap, p = st.scratch }
+        alloc::free(State, heap::Heap){ realloc = heap::alloc, heap = st.heap, p = st }
     }
 }

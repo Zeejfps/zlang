@@ -1,4 +1,5 @@
-// What the panels' events do (docs/re/chargen.md).
+// What the panels' events do (docs/re/chargen.md): class selection, the quick or custom lists, the
+// five steps and the confirmation boxes.
 namespace chargen {
     // Class selection's six slots, left to right: class (classes.2da row), gender, the description's
     // strref (0x007a2684).
@@ -18,6 +19,31 @@ namespace chargen {
         return @as(i32, d - '1')
     }
 
+    // The k of a BTN_STEPNAMEk tag (1 based), 0 for another tag.
+    fn step_button_of { tag: []u8 } -> i32 {
+        if tag.len != 13 or not slice::eq_bytes{ a = tag[..12], b = "BTN_STEPNAME" } { return 0 }
+        let d = tag[12]
+        if d < '1' or d > '6' { return 0 }
+        return @as(i32, d - '0')
+    }
+
+    // One event from the GUI.
+    fn on_event { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> Outcome {
+        if st.msg_panel != 0 and ev.panel == st.msg_panel { return message_event{ st, &g, &fs, &dev, ev } }
+        let screen = screen_of{ st, panel = ev.panel }
+        if screen == SCR_CLASS { return class_event{ st, &g, &fs, &dev, ev } }
+        if screen == SCR_CHOICE { return choice_event{ st, &g, &fs, &dev, ev } }
+        if screen == SCR_QUICK or screen == SCR_CUSTOM { return steps_event{ st, &g, &fs, &dev, ev, screen } }
+        if screen == SCR_PORTRAIT { return portrait_event{ st, &g, &fs, &dev, ev } }
+        if screen == SCR_NAME { return name_event{ st, &g, &fs, &dev, ev } }
+        if screen == SCR_ABILITIES { return abilities_event{ st, &g, &fs, &dev, ev } }
+        if screen == SCR_SKILLS { return skills_event{ st, &g, &fs, &dev, ev } }
+        if screen == SCR_FEATS { return feats_event{ st, &g, &fs, &dev, ev } }
+        return Outcome::running
+    }
+
+    // ---- class selection
+
     // "Male Scout": the gender word and the class name, joined.
     fn show_class_name { st: *mut State, mut g: gui::Gui, p: u32, slot: i32 } -> ! {
         let s = @as(usize, slot)
@@ -33,14 +59,6 @@ namespace chargen {
         try gui::set_strref{ &g, panel = p, tag = "LBL_DESC", strref = SLOT_DESC[s] }
     }
 
-    // One event from the GUI.
-    fn on_event { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> Outcome {
-        let screen = screen_of{ st, panel = ev.panel }
-        if screen == 0 { return Outcome::running }
-        if screen == SCR_CLASS { return class_event{ st, &g, &fs, &dev, ev } }
-        return Outcome::running
-    }
-
     fn class_event { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> Outcome {
         let p = ev.panel
         if ev.kind == gui::EventKind::cancel { return Outcome::cancelled }
@@ -49,12 +67,317 @@ namespace chargen {
             show_class_name{ st, &g, p, slot } iferr {}
         } else if ev.kind == gui::EventKind::activate {
             if tag_is{ ev, tag = "BTN_BACK" } { return Outcome::cancelled }
-            if slot >= 0 {
-                st.ch.slot = slot
-                st.ch.class = SLOT_CLASS[@as(usize, slot)]
-                st.ch.gender = SLOT_GENDER[@as(usize, slot)]
+            if slot >= 0 { choose_slot{ st, &g, &fs, &dev, slot } iferr {} }
+        }
+        return Outcome::running
+    }
+
+    // The slot's creature becomes the character; the summary opens with the quick-or-custom list.
+    fn choose_slot { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, slot: i32 } -> ! {
+        let s = @as(usize, slot)
+        st.ch = fresh_choices{}
+        st.ch.slot = slot
+        st.ch.class = SLOT_CLASS[s]
+        st.ch.gender = SLOT_GENDER[s]
+        st.ch.portrait = st.slot_portrait[s]
+        st.ch.appearance = portrait_appearance{ d = &st.data, row = st.ch.portrait, class = st.ch.class }
+        st.mode = 0
+        st.step = 0
+        try open_screen{ st, &g, &fs, &dev, screen = SCR_MAIN }
+        try open_screen{ st, &g, &fs, &dev, screen = SCR_CHOICE }
+    }
+
+    // ---- quick or custom
+
+    fn choice_event { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> Outcome {
+        let p = ev.panel
+        if ev.kind == gui::EventKind::cancel { leave_summary{ st, &g }; return Outcome::running }
+        if ev.kind == gui::EventKind::hilight {
+            if tag_is{ ev, tag = "QUICK_CHAR_BTN" } { set_description{ &g, panel = p, tag = "LB_DESC", strref = 241 } iferr {} }
+            if tag_is{ ev, tag = "CUST_CHAR_BTN" } { set_description{ &g, panel = p, tag = "LB_DESC", strref = 242 } iferr {} }
+        } else if ev.kind == gui::EventKind::activate {
+            if tag_is{ ev, tag = "BTN_BACK" } { leave_summary{ st, &g }; return Outcome::running }
+            if tag_is{ ev, tag = "QUICK_CHAR_BTN" } { show_step_panel{ st, &g, &fs, &dev, screen = SCR_QUICK } iferr {} }
+            if tag_is{ ev, tag = "CUST_CHAR_BTN" } { show_step_panel{ st, &g, &fs, &dev, screen = SCR_CUSTOM } iferr {} }
+        }
+        return Outcome::running
+    }
+
+    // Back on the quick-or-custom list closes the summary, which uncovers class selection.
+    fn leave_summary { st: *mut State, mut g: gui::Gui } {
+        while st.depth > 1 { close_top{ st, &g } }
+        refresh_views_after_leave{ st }
+    }
+
+    // Replaces the step list on top of the summary by `screen` (the quick-or-custom list, quick or custom).
+    fn show_step_panel { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, screen: u32 } -> ! {
+        while st.depth > 2 { close_top{ st, &g } }
+        st.step = 0
+        st.mode = if screen == SCR_QUICK { 1 } else if screen == SCR_CUSTOM { 2 } else { 0 }
+        let main = panel_of_screen{ st, screen = SCR_MAIN }
+        if screen == SCR_QUICK {
+            quick_build{ st }
+            refresh_summary{ st, &g, p = main } iferr {}
+        }
+        try open_screen{ st, &g, &fs, &dev, screen }
+    }
+
+    // ---- the step lists
+
+    // The panel `screen` ("quick" or "custom") with only the current step enabled.
+    fn bind_steps { st: *mut State, mut g: gui::Gui, p: u32, screen: u32 } {
+        let count: i32 = if screen == SCR_QUICK { 3 } else { 6 }
+        let mut k: i32 = 0
+        while k < count {
+            let mut tag: [16]u8
+            let n = frontend::copy_into{ dst = tag[..], src = "BTN_STEPNAME" }
+            tag[n] = '1' + @trunc(u8, k)
+            gui::set_enabled{ &g, panel = p, tag = tag[..n + 1], enabled = k == st.step }
+            k = k + 1
+        }
+        gui::set_enabled{ &g, panel = p, tag = "BTN_BACK", enabled = st.step > 0 }
+    }
+
+    // After a step: the counter moves on and the list below shows the next step.
+    fn finish_step { st: *mut State, mut g: gui::Gui, to: i32 } {
+        st.step = to
+        let screen = top_screen{ st }
+        if screen == SCR_QUICK or screen == SCR_CUSTOM { bind_steps{ st, &g, p = top_panel{ st }, screen } }
+    }
+
+    fn steps_event { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event, screen: u32 } -> Outcome {
+        if ev.kind == gui::EventKind::cancel { back_step{ st, &g, &fs, &dev }; return Outcome::running }
+        if ev.kind != gui::EventKind::activate { return Outcome::running }
+        if tag_is{ ev, tag = "BTN_BACK" } { back_step{ st, &g, &fs, &dev }; return Outcome::running }
+        if tag_is{ ev, tag = "BTN_CANCEL" } { cancel_step{ st, &g, &fs, &dev }; return Outcome::running }
+        let k = step_button_of{ tag = ev.tag }
+        if k == 0 or k - 1 != st.step { return Outcome::running }
+        return run_step{ st, &g, &fs, &dev, screen, index = k - 1 }
+    }
+
+    // The sub-panel (or Play) of the step at `index`.
+    fn run_step { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, screen: u32, index: i32 } -> Outcome {
+        let quick = screen == SCR_QUICK
+        let target: u32 = if index == 0 { SCR_PORTRAIT }
+            else if quick { if index == 1 { SCR_NAME } else { 0 } }
+            else if index == 1 { SCR_ABILITIES } else if index == 2 { SCR_SKILLS } else if index == 3 { SCR_FEATS } else if index == 4 { SCR_NAME } else { 0 }
+        if target == 0 { return play{ st } }
+        open_screen{ st, &g, &fs, &dev, screen = target } iferr {}
+        return Outcome::running
+    }
+
+    // Back: one step down (the custom list resets the character on reaching its second step), or
+    // out to the quick-or-custom list from the first.
+    fn back_step { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } {
+        let screen = top_screen{ st }
+        if st.step > 0 {
+            let to = st.step - 1
+            if screen == SCR_CUSTOM and to == 1 {
+                reset_character{ st, &g }
+            }
+            finish_step{ st, &g, to }
+            return
+        }
+        reset_character{ st, &g }
+        show_step_panel{ st, &g, &fs, &dev, screen = SCR_CHOICE } iferr {}
+    }
+
+    fn cancel_step { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } {
+        if st.step > 0 {
+            show_message{ st, &g, &fs, &dev, strref = 48541, ask = Ask::cancel_all } iferr {}
+            return
+        }
+        reset_character{ st, &g }
+        show_step_panel{ st, &g, &fs, &dev, screen = SCR_CHOICE } iferr {}
+    }
+
+    // All scores back to 8 and 30 points, skills and feats cleared; the name, portrait and body stay.
+    fn reset_character { st: *mut State, mut g: gui::Gui } {
+        st.ch.abil = [8; 6]
+        st.ch.ability_points = ABILITY_POINTS
+        st.ch.skills = [0; SKILLS]
+        st.ch.skill_points = 0
+        st.ch.nfeats = 0
+        let main = panel_of_screen{ st, screen = SCR_MAIN }
+        if main != 0 { clear_summary{ &g, p = main } }
+    }
+
+    // The answer to a message box.
+    fn message_event { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> Outcome {
+        if ev.kind != gui::EventKind::activate and ev.kind != gui::EventKind::cancel { return Outcome::running }
+        let ask = st.msg_ask
+        let ok = tag_is{ ev, tag = "BTN_OK" }
+        close_message{ st, &g }
+        if not ok { return Outcome::running }
+        if ask == Ask::cancel_all {
+            reset_character{ st, &g }
+            show_step_panel{ st, &g, &fs, &dev, screen = SCR_CHOICE } iferr {}
+        } else if ask == Ask::skills_left {
+            let done = accept_skills{ st, &g, &fs, &dev, confirmed = true } iferr { false }
+            if done { close_top{ st, &g }; finish_step{ st, &g, to = 3 } }
+        }
+        return Outcome::running
+    }
+
+    // ---- the five steps
+
+    fn portrait_event { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> Outcome {
+        let p = ev.panel
+        if ev.kind == gui::EventKind::cancel { leave_portrait{ st, &g, &fs, &dev }; return Outcome::running }
+        if ev.kind != gui::EventKind::activate { return Outcome::running }
+        if tag_is{ ev, tag = "BTN_ARRL" } { step_portrait{ st, &g, &fs, &dev, p, delta = -1 } }
+        if tag_is{ ev, tag = "BTN_ARRR" } { step_portrait{ st, &g, &fs, &dev, p, delta = 1 } }
+        if tag_is{ ev, tag = "BTN_BACK" } { leave_portrait{ st, &g, &fs, &dev } }
+        if tag_is{ ev, tag = "BTN_ACCEPT" } {
+            close_top{ st, &g }
+            let main = panel_of_screen{ st, screen = SCR_MAIN }
+            show_portrait_picture{ st, &g, &fs, &dev, p = main, tag = "PORTRAIT_LBL", row = st.ch.portrait }
+            refresh_views{ st, &g, &fs, &dev }
+            finish_step{ st, &g, to = 1 }
+        }
+        return Outcome::running
+    }
+
+    fn leave_portrait { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } {
+        restore_portrait{ st, &g, &fs, &dev }
+        close_top{ st, &g }
+        refresh_views{ st, &g, &fs, &dev }
+    }
+
+    fn name_event { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> Outcome {
+        let p = ev.panel
+        if ev.kind == gui::EventKind::cancel { close_top{ st, &g }; return Outcome::running }
+        let accepted = ev.kind == gui::EventKind::text_accepted or (ev.kind == gui::EventKind::activate and tag_is{ ev, tag = "END_BTN" })
+        if accepted {
+            let ok = accept_name{ st, &g, &fs, &dev, p } iferr { false }
+            if ok {
+                close_top{ st, &g }
+                finish_step{ st, &g, to = if st.mode == 1 { 2 } else { 5 } }
+            }
+        } else if ev.kind == gui::EventKind::activate {
+            if tag_is{ ev, tag = "BTN_RANDOM" } {
+                random_name_into_box{ st, &g, &fs, p } iferr {}
+                gui::set_focus{ &g, panel = p, tag = "NAME_BOX_EDIT" }
+            }
+            if tag_is{ ev, tag = "BTN_BACK" } { close_top{ st, &g } }
+        }
+        return Outcome::running
+    }
+
+    fn abilities_event { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> Outcome {
+        let p = ev.panel
+        if ev.kind == gui::EventKind::cancel { leave_abilities{ st, &g }; return Outcome::running }
+        let row = ability_row_of{ tag = ev.tag }
+        if ev.kind == gui::EventKind::hilight and row >= 0 {
+            focus_ability{ st, &g, p, row = @as(usize, row) }
+        } else if ev.kind == gui::EventKind::activate {
+            if row >= 0 and slice::eq_bytes{ a = ev.tag[4..], b = "PLUS_BTN" } {
+                raise_ability{ st, &g, &fs, &dev, p, row = @as(usize, row) } iferr {}
+            } else if row >= 0 and slice::eq_bytes{ a = ev.tag[4..], b = "MINUS_BTN" } {
+                lower_ability{ st, &g, &fs, &dev, p, row = @as(usize, row) } iferr {}
+            } else if tag_is{ ev, tag = "BTN_RECOMMENDED" } {
+                recommend_abilities{ st, &g, p } iferr {}
+            } else if tag_is{ ev, tag = "BTN_ACCEPT" } {
+                let ok = accept_abilities{ st, &g, &fs, &dev } iferr { false }
+                if ok {
+                    close_top{ st, &g }
+                    let main = panel_of_screen{ st, screen = SCR_MAIN }
+                    refresh_summary{ st, &g, p = main } iferr {}
+                    finish_step{ st, &g, to = 2 }
+                }
+            } else if tag_is{ ev, tag = "BTN_BACK" } {
+                leave_abilities{ st, &g }
             }
         }
         return Outcome::running
+    }
+
+    fn leave_abilities { st: *mut State, mut g: gui::Gui } {
+        st.ch.ability_points = ABILITY_POINTS
+        close_top{ st, &g }
+    }
+
+    fn skills_event { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> Outcome {
+        let p = ev.panel
+        if ev.kind == gui::EventKind::cancel { close_top{ st, &g }; return Outcome::running }
+        let row = skill_row_of{ tag = ev.tag }
+        if ev.kind == gui::EventKind::hilight and row >= 0 {
+            focus_skill{ st, &g, p, row = @as(usize, row) }
+        } else if ev.kind == gui::EventKind::activate {
+            if row >= 0 and slice::eq_bytes{ a = ev.tag[4..], b = "PLUS_BTN" } {
+                raise_skill{ st, &g, &fs, &dev, p, row = @as(usize, row) } iferr {}
+            } else if row >= 0 and slice::eq_bytes{ a = ev.tag[4..], b = "MINUS_BTN" } {
+                lower_skill{ st, &g, p, row = @as(usize, row) } iferr {}
+            } else if tag_is{ ev, tag = "BTN_RECOMMENDED" } {
+                recommend_skills{ st, &g, p } iferr {}
+            } else if tag_is{ ev, tag = "BTN_ACCEPT" } {
+                let ok = accept_skills{ st, &g, &fs, &dev, confirmed = false } iferr { false }
+                if ok {
+                    close_top{ st, &g }
+                    finish_step{ st, &g, to = 3 }
+                }
+            } else if tag_is{ ev, tag = "BTN_BACK" } {
+                st.sk = [0; SKILLS]
+                close_top{ st, &g }
+            }
+        }
+        return Outcome::running
+    }
+
+    fn feats_event { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> Outcome {
+        let p = ev.panel
+        if ev.kind == gui::EventKind::cancel { close_top{ st, &g }; return Outcome::running }
+        if ev.kind == gui::EventKind::row_selected {
+            st.fsel = ev.row
+            show_feat{ st, &g, p } iferr {}
+        } else if ev.kind == gui::EventKind::row_activated {
+            st.fsel = ev.row
+            toggle_feat{ st, &g, &fs, &dev, p } iferr {}
+        } else if ev.kind == gui::EventKind::activate {
+            if tag_is{ ev, tag = "BTN_SELECT" } {
+                toggle_feat{ st, &g, &fs, &dev, p } iferr {}
+            } else if tag_is{ ev, tag = "BTN_RECOMMENDED" } {
+                recommend_feats{ st, &g, p } iferr {}
+            } else if tag_is{ ev, tag = "BTN_ACCEPT" } {
+                let ok = accept_feats{ st, &g, &fs, &dev } iferr { false }
+                if ok {
+                    close_top{ st, &g }
+                    finish_step{ st, &g, to = 4 }
+                }
+            } else if tag_is{ ev, tag = "BTN_BACK" } {
+                close_top{ st, &g }
+            }
+        }
+        return Outcome::running
+    }
+
+    // ---- Quick Character and Play
+
+    // The class's recommended character: its scores, the feats and the skills its priority lists
+    // pick (docs/re/chargen.md C.4).
+    fn quick_build { st: *mut State } {
+        let mut r: usize = 0
+        while r < 6 {
+            st.ch.abil[r] = class_score{ d = &st.data, class = st.ch.class, ability = r }
+            r = r + 1
+        }
+        st.ch.ability_points = 0
+        reset_scratch{ st }
+        let mut rec: rules::LevelRecord
+        if not rules::prepare_auto_level{ tables = st.tables, c = st.scratch, class = st.ch.class, rec = &rec } { return }
+        st.ch.skills = rec.skills
+        st.ch.skill_points = rec.skill_left
+        st.ch.nfeats = rec.nfeats
+        let mut f: usize = 0
+        while f < 8 {
+            st.ch.feats[f] = rec.feats[f]
+            f = f + 1
+        }
+    }
+
+    // Play: the creature is made and the front end takes it.
+    fn play { st: *mut State } -> Outcome {
+        make_player{ st } iferr { return Outcome::running }
+        return Outcome::finished
     }
 }

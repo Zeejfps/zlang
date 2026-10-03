@@ -1,0 +1,299 @@
+// The feats step (ftchrgen): the level-1 feat pick (docs/re/chargen.md H). The granted feats are
+// listed dim, the class's regular feats as the rules allow them, in chains by successor.
+namespace chargen {
+    // Row states.
+    const FS_SELECTABLE: u8 = 0
+    const FS_CHOSEN: u8 = 1
+    const FS_GRANTED: u8 = 2
+    const FS_UNAVAILABLE: u8 = 4
+
+    fn feat_in_list { st: *State, feat: i32 } -> bool {
+        let row = rules::get_feat{ tables = st.tables, row = feat } ifnull { return false }
+        if not row.valid { return false }
+        let cx = @as(usize, st.ch.class)
+        let l = row.list[cx]
+        if l == 3 { return row.granted[cx] == 1 }
+        return l == 0 or l == 1
+    }
+
+    fn already_listed { st: *State, feat: i32 } -> bool {
+        let mut i: usize = 0
+        while i < st.fcount {
+            if st.frows[i].feat == feat { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    fn add_feat_row { st: *mut State, feat: i32 } {
+        if st.fcount >= MAX_FEAT_ROWS or already_listed{ st, feat } { return }
+        st.frows[st.fcount] = FeatRow{ feat, state = FS_SELECTABLE }
+        st.fcount = st.fcount + 1
+    }
+
+    // The level record of the picks so far, for the rules' prerequisite checks.
+    fn pending_of { st: *State } -> rules::LevelRecord {
+        let mut rec: rules::LevelRecord
+        rec.class = st.ch.class
+        rec.nfeats = @as(i32, st.fnchosen)
+        let mut i: usize = 0
+        while i < st.fnchosen {
+            rec.feats[i] = st.fchosen[i]
+            i = i + 1
+        }
+        return rec
+    }
+
+    // The rows the list shows: every feat of the class's list that is granted at level 1 or may be
+    // picked, root feats of a chain first with their successors after them.
+    fn build_feat_rows { st: *mut State } {
+        st.fcount = 0
+        let cx = @as(usize, st.ch.class)
+        let total = st.tables.feats.len
+        let mut f: usize = 0
+        while f < total {
+            // A root: nothing in the list names it as its successor.
+            if feat_in_list{ st, feat = @as(i32, f) } and not is_successor{ st, feat = @as(i32, f) } {
+                let mut at = @as(i32, f)
+                let mut guard: usize = 0
+                while at >= 0 and guard < 16 and feat_in_list{ st, feat = at } and not already_listed{ st, feat = at } {
+                    add_feat_row{ st, feat = at }
+                    at = (rules::get_feat{ tables = st.tables, row = at } ifnull { return }).successor
+                    guard = guard + 1
+                }
+            }
+            f = f + 1
+        }
+        f = 0
+        while f < total {
+            if feat_in_list{ st, feat = @as(i32, f) } { add_feat_row{ st, feat = @as(i32, f) } }
+            f = f + 1
+        }
+        _ = cx
+    }
+
+    fn is_successor { st: *State, feat: i32 } -> bool {
+        let mut f: usize = 0
+        while f < st.tables.feats.len {
+            let row = &st.tables.feats[f]
+            f = f + 1
+            if row.valid and row.successor == feat and feat_in_list{ st, feat = @as(i32, f - 1) } { return true }
+        }
+        return false
+    }
+
+    fn is_chosen { st: *State, feat: i32 } -> bool {
+        let mut i: usize = 0
+        while i < st.fnchosen {
+            if st.fchosen[i] == feat { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // Each row's state from the granted feats, the picks and the prerequisites.
+    fn refresh_feat_states { st: *mut State } {
+        let cx = @as(usize, st.ch.class)
+        let rec = pending_of{ st }
+        let mut i: usize = 0
+        while i < st.fcount {
+            let feat = st.frows[i].feat
+            let row = rules::get_feat{ tables = st.tables, row = feat } ifnull { return }
+            if row.list[cx] == 3 {
+                st.frows[i].state = FS_GRANTED
+            } else if is_chosen{ st, feat } {
+                st.frows[i].state = FS_CHOSEN
+            } else if rules::meets_feat_requirements{ tables = st.tables, c = st.scratch, feat, class = st.ch.class, class_level = 1, pending = &rec } {
+                st.frows[i].state = FS_SELECTABLE
+            } else {
+                st.frows[i].state = FS_UNAVAILABLE
+            }
+            i = i + 1
+        }
+    }
+
+    // The colour of a row: the dim menu blue for what cannot be changed.
+    fn feat_row_color { state: u8 } -> render::Color {
+        if state == FS_SELECTABLE or state == FS_CHOSEN { return gui::color_menu{} }
+        return gui::color_disabled{}
+    }
+
+    fn open_feats { st: *mut State, mut g: gui::Gui, p: u32 } -> ! {
+        reset_scratch{ st }
+        _ = rules::grant_class_feats{ tables = st.tables, c = st.scratch, class = st.ch.class, class_level = 1 }
+        st.fnchosen = 0
+        st.fsel = 0
+        let counts = rules::feat_counts_for_level{ tables = st.tables, class = st.ch.class, class_level = 1 }
+        st.fpicks = counts.general + counts.bonus
+        build_feat_rows{ st }
+        refresh_feat_states{ st }
+        try fill_feat_list{ st, &g, p }
+        try refresh_feat_counts{ st, &g, p }
+        try show_feat{ st, &g, p }
+        gui::set_focus{ &g, panel = p, tag = "LB_FEATS" }
+    }
+
+    fn fill_feat_list { st: *mut State, mut g: gui::Gui, p: u32 } -> ! {
+        gui::list_clear{ &g, panel = p, tag = "LB_FEATS" }
+        let mut i: usize = 0
+        while i < st.fcount {
+            let row = rules::get_feat{ tables = st.tables, row = st.frows[i].feat } ifnull { return }
+            let name = try gui::tlk_text{ &g, strref = @as(u32, row.name) }
+            defer gui::free_string{ &g, s = name }
+            let r = try gui::list_add{ &g, panel = p, tag = "LB_FEATS", text = name, user = @as(i64, st.frows[i].feat) }
+            gui::list_set_color{ &g, panel = p, tag = "LB_FEATS", row = r, color = feat_row_color{ state = st.frows[i].state } }
+            i = i + 1
+        }
+        if st.fsel >= 0 and @as(usize, st.fsel) < st.fcount { gui::list_select{ &g, panel = p, tag = "LB_FEATS", row = st.fsel } }
+    }
+
+    fn recolor_feat_list { st: *mut State, mut g: gui::Gui, p: u32 } {
+        let mut i: usize = 0
+        while i < st.fcount {
+            gui::list_set_color{ &g, panel = p, tag = "LB_FEATS", row = @as(i32, i), color = feat_row_color{ state = st.frows[i].state } }
+            i = i + 1
+        }
+    }
+
+    fn refresh_feat_counts { st: *mut State, mut g: gui::Gui, p: u32 } -> ! {
+        try set_number{ &g, panel = p, tag = "STD_REMAINING_SELECTIONS_LBL", n = st.fpicks }
+    }
+
+    // The selected row's name, description and what the Add button says.
+    fn show_feat { st: *mut State, mut g: gui::Gui, p: u32 } -> ! {
+        if st.fsel < 0 or @as(usize, st.fsel) >= st.fcount { return }
+        let fr = st.frows[@as(usize, st.fsel)]
+        let name_row = rules::get_feat{ tables = st.tables, row = fr.feat } ifnull { return }
+        try gui::set_strref{ &g, panel = p, tag = "LBL_NAME", strref = @as(u32, name_row.name) }
+        let desc = twoda::get_int{ t = st.data.feat.t, row = @as(usize, fr.feat), column = "description" } ifnull 0
+        try set_description{ &g, panel = p, tag = "LB_DESC", strref = @as(u32, desc) }
+        let remove = fr.state == FS_CHOSEN or fr.state == FS_GRANTED
+        let verb = try gui::tlk_text{ &g, strref = if remove { 38456 } else { 38455 } }
+        defer gui::free_string{ &g, s = verb }
+        let noun = try gui::tlk_text{ &g, strref = 42487 }
+        defer gui::free_string{ &g, s = noun }
+        let mut buf: [64]u8
+        let mut n = frontend::copy_into{ dst = buf[..], src = verb }
+        n = n + frontend::copy_into{ dst = buf[n..], src = " " }
+        n = n + frontend::copy_into{ dst = buf[n..], src = noun }
+        try gui::set_text{ &g, panel = p, tag = "BTN_SELECT", text = buf[..n] }
+        gui::set_text_color{ &g, panel = p, tag = "BTN_SELECT", color = if fr.state == FS_SELECTABLE or fr.state == FS_CHOSEN { gui::color_menu{} } else { gui::color_disabled{} } }
+    }
+
+    // Add or remove the selected row's feat, with the original's messages.
+    fn toggle_feat { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, p: u32 } -> ! {
+        if st.fsel < 0 or @as(usize, st.fsel) >= st.fcount { return }
+        let i = @as(usize, st.fsel)
+        let fr = st.frows[i]
+        if fr.state == FS_GRANTED {
+            try show_message{ st, &g, &fs, &dev, strref = 42183, ask = Ask::info }
+            return
+        }
+        if fr.state == FS_UNAVAILABLE {
+            try show_message{ st, &g, &fs, &dev, strref = 42184, ask = Ask::info }
+            return
+        }
+        if fr.state == FS_SELECTABLE {
+            if st.fpicks <= 0 {
+                try show_message{ st, &g, &fs, &dev, strref = 42530, ask = Ask::info }
+                return
+            }
+            if st.fnchosen < 8 {
+                st.fchosen[st.fnchosen] = fr.feat
+                st.fnchosen = st.fnchosen + 1
+                st.fpicks = st.fpicks - 1
+            }
+        } else {
+            drop_chosen{ st, feat = fr.feat }
+        }
+        refresh_feat_states{ st }
+        recolor_feat_list{ st, &g, p }
+        try refresh_feat_counts{ st, &g, p }
+        try show_feat{ st, &g, p }
+    }
+
+    // Removes a pick and every pick that needed it.
+    fn drop_chosen { st: *mut State, feat: i32 } {
+        let mut i: usize = 0
+        while i < st.fnchosen {
+            if st.fchosen[i] == feat {
+                let mut k = i
+                while k + 1 < st.fnchosen {
+                    st.fchosen[k] = st.fchosen[k + 1]
+                    k = k + 1
+                }
+                st.fnchosen = st.fnchosen - 1
+                st.fpicks = st.fpicks + 1
+                break
+            }
+            i = i + 1
+        }
+        // A pick whose prerequisites left with it goes too.
+        let rec = pending_of{ st }
+        let mut j: usize = 0
+        while j < st.fnchosen {
+            let ft = st.fchosen[j]
+            let mut without = rec
+            without.nfeats = 0
+            let mut m: usize = 0
+            while m < st.fnchosen {
+                if m != j {
+                    without.feats[@as(usize, without.nfeats)] = st.fchosen[m]
+                    without.nfeats = without.nfeats + 1
+                }
+                m = m + 1
+            }
+            if not rules::meets_feat_requirements{ tables = st.tables, c = st.scratch, feat = ft, class = st.ch.class, class_level = 1, pending = &without } {
+                drop_chosen{ st, feat = ft }
+                return
+            }
+            j = j + 1
+        }
+    }
+
+    // The class's recommended feats in place of the picks (the same ones Quick Character takes).
+    fn recommend_feats { st: *mut State, mut g: gui::Gui, p: u32 } -> ! {
+        let mut rec: rules::LevelRecord
+        reset_scratch{ st }
+        if not rules::prepare_auto_level{ tables = st.tables, c = st.scratch, class = st.ch.class, rec = &rec } { return }
+        reset_scratch{ st }
+        _ = rules::grant_class_feats{ tables = st.tables, c = st.scratch, class = st.ch.class, class_level = 1 }
+        st.fnchosen = 0
+        let counts = rules::feat_counts_for_level{ tables = st.tables, class = st.ch.class, class_level = 1 }
+        st.fpicks = counts.general + counts.bonus
+        let mut i: usize = 0
+        while i < @as(usize, rec.nfeats) and st.fnchosen < 8 {
+            st.fchosen[st.fnchosen] = rec.feats[i]
+            st.fnchosen = st.fnchosen + 1
+            st.fpicks = st.fpicks - 1
+            i = i + 1
+        }
+        refresh_feat_states{ st }
+        recolor_feat_list{ st, &g, p }
+        try refresh_feat_counts{ st, &g, p }
+        try show_feat{ st, &g, p }
+    }
+
+    // Takes the picks; refused while picks remain and something could still be chosen.
+    fn accept_feats { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } -> !bool {
+        if st.fpicks > 0 {
+            let mut any = false
+            let mut i: usize = 0
+            while i < st.fcount {
+                if st.frows[i].state == FS_SELECTABLE { any = true }
+                i = i + 1
+            }
+            if any {
+                try show_message{ st, &g, &fs, &dev, strref = 48215, ask = Ask::info }
+                return false
+            }
+        }
+        st.ch.nfeats = @as(i32, st.fnchosen)
+        let mut i: usize = 0
+        while i < st.fnchosen {
+            st.ch.feats[i] = st.fchosen[i]
+            i = i + 1
+        }
+        return true
+    }
+}

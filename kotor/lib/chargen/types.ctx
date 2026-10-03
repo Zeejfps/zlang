@@ -11,32 +11,29 @@ namespace chargen {
     const SCR_ABILITIES: u32 = 8        // abchrgen
     const SCR_SKILLS: u32 = 9           // skchrgen
     const SCR_FEATS: u32 = 10           // ftchrgen
-    const SCR_CONFIRM: u32 = 11         // a message box over the stack ("Are you sure you want to cancel?")
 
     const MAX_NAME: usize = 64
     const SLOTS: usize = 6              // class selection's class and gender choices
+    const SKILLS: usize = 8
+    const MAX_PORTRAITS: usize = 16     // portraits per gender
+    const MAX_FEAT_ROWS: usize = 96
 
-    // What the player has chosen so far.
+    // What the player has chosen so far. Abilities are in the rules' order (STR DEX CON INT WIS
+    // CHA); the abilities panel lists them as STR DEX CON WIS INT CHA.
     struct Choices {
         slot: i32,                      // class selection's slot (0..5), -1 none yet
         class: i32,                     // classes.2da row: 0 soldier, 1 scout, 2 scoundrel
         gender: i32,                    // 0 male, 1 female
         portrait: i32,                  // portraits.2da row
         appearance: i32,                // appearance.2da row of the body
-        abil: [6]i32,                   // base scores STR DEX CON INT WIS CHA
+        abil: [6]i32,                   // base scores
         ability_points: i32,            // point-buy points left
-        skills: [8]i32,                 // ranks bought
+        skills: [SKILLS]i32,            // ranks bought
         skill_points: i32,              // skill points left
         nfeats: i32,
         feats: [8]i32,                  // feat.2da rows chosen
         name: [MAX_NAME]u8,
         name_len: usize,
-        // which steps were completed
-        portrait_done: bool,
-        abilities_done: bool,
-        skills_done: bool,
-        feats_done: bool,
-        name_done: bool,
     }
 
     struct Entry { screen: u32, panel: u32 }
@@ -46,5 +43,19 @@ namespace chargen {
         running,
         finished,                       // the player is made: `State.player` holds it
         cancelled,                      // back to the main menu
+    }
+
+    // What a message box over the panels asks (it answers with OK or Cancel).
+    enum Ask: u8 {
+        nothing,
+        cancel_all,                     // "Are you sure you want to cancel?"
+        skills_left,                    // unspent skill points: continue?
+        info,                           // a message with only an OK
+    }
+
+    // One row of the feats list.
+    struct FeatRow {
+        feat: i32,                      // feat.2da row
+        state: u8,                      // 0 selectable, 1 chosen here, 2 granted this level, 3 known, 4 unavailable
     }
 }

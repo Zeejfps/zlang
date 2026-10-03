@@ -1,0 +1,100 @@
+// Portraits: the thirty player portraits of portraits.2da (ForPC = 1), fifteen to a gender, and the
+// body each makes for the chosen class (docs/re/chargen.md A and D).
+namespace chargen {
+    // The appearance row a portrait gives for a class: Soldier the large build, Scout the medium,
+    // Scoundrel the small.
+    fn portrait_appearance { d: *Data, row: i32, class: i32 } -> i32 {
+        let col: []u8 = if class == 0 { "appearance_l" } else if class == 1 { "appearancenumber" } else { "appearance_s" }
+        return twoda::get_int{ t = d.portraits.t, row = @as(usize, row), column = col } ifnull 0
+    }
+
+    fn portrait_resref { d: *Data, row: i32 } -> []u8 {
+        return twoda::get_string{ t = d.portraits.t, row = @as(usize, row), column = "baseresref" } ifnull ""
+    }
+
+    fn portrait_is_player { d: *Data, row: i32, gender: i32 } -> bool {
+        let r = @as(usize, row)
+        let forpc = twoda::get_int{ t = d.portraits.t, row = r, column = "forpc" } ifnull 0
+        let sex = twoda::get_int{ t = d.portraits.t, row = r, column = "sex" } ifnull -1
+        return forpc != 0 and sex == gender
+    }
+
+    // The portraits of a gender in table order, into `into`; how many.
+    fn list_portraits { d: *Data, gender: i32, into: []mut i32 } -> usize {
+        let mut n: usize = 0
+        let mut r: usize = 0
+        while r < twoda::rows{ t = d.portraits.t } and n < into.len {
+            if portrait_is_player{ d, row = @as(i32, r), gender } {
+                into[n] = @as(i32, r)
+                n = n + 1
+            }
+            r = r + 1
+        }
+        return n
+    }
+
+    // Each slot of class selection gets a random portrait of its gender, none twice in a gender.
+    fn draw_slot_portraits { st: *mut State } {
+        let mut gender: i32 = 0
+        while gender < 2 {
+            let mut pool: [MAX_PORTRAITS]i32
+            let mut left = list_portraits{ d = &st.data, gender, into = pool[..] }
+            let mut slot: usize = 0
+            while slot < SLOTS {
+                if SLOT_GENDER[slot] == gender and left > 0 {
+                    let k = @as(usize, ltr::roll_rand{ rng = &st.rng }) % left
+                    st.slot_portrait[slot] = pool[k]
+                    pool[k] = pool[left - 1]
+                    left = left - 1
+                }
+                slot = slot + 1
+            }
+            gender = gender + 1
+        }
+    }
+
+    // Puts the portrait picture in a label, sized to the label.
+    fn show_portrait_picture { st: *State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, p: u32, tag: []u8, row: i32 } {
+        let r = gui::control_rect{ &g, panel = p, tag } ifnull { return }
+        let img = gui::resolve_img{ &g, &fs, &dev, name = portrait_resref{ d = &st.data, row } }
+        if img.ok { gui::set_picture{ &g, panel = p, tag, texture = img.tex, w = r.w, h = r.h } } else { gui::clear_picture{ &g, panel = p, tag } }
+    }
+
+    fn open_portrait { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, p: u32 } {
+        st.pcount = list_portraits{ d = &st.data, gender = st.ch.gender, into = st.plist[..] }
+        st.pidx = 0
+        let mut i: usize = 0
+        while i < st.pcount {
+            if st.plist[i] == st.ch.portrait { st.pidx = i }
+            i = i + 1
+        }
+        st.portrait_before = st.ch.portrait
+        st.appearance_before = st.ch.appearance
+        show_portrait_picture{ st, &g, &fs, &dev, p, tag = "LBL_PORTRAIT", row = st.ch.portrait }
+        gui::set_focus{ &g, panel = p, tag = "BTN_ARRR" }
+    }
+
+    // Left or right, wrapping; the body follows at once.
+    fn step_portrait { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, p: u32, delta: i32 } {
+        if st.pcount == 0 { return }
+        let n = @as(i32, st.pcount)
+        let mut i = @as(i32, st.pidx) + delta
+        if i < 0 { i = n - 1 }
+        if i >= n { i = 0 }
+        st.pidx = @as(usize, i)
+        set_portrait{ st, &g, &fs, &dev, p, row = st.plist[st.pidx] }
+    }
+
+    fn set_portrait { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, p: u32, row: i32 } {
+        st.ch.portrait = row
+        st.ch.appearance = portrait_appearance{ d = &st.data, row, class = st.ch.class }
+        show_portrait_picture{ st, &g, &fs, &dev, p, tag = "LBL_PORTRAIT", row }
+        refresh_views{ st, &g, &fs, &dev }
+    }
+
+    // Back puts the portrait the panel opened with back.
+    fn restore_portrait { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } {
+        st.ch.portrait = st.portrait_before
+        st.ch.appearance = st.appearance_before
+    }
+}

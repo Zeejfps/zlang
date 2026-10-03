@@ -236,7 +236,12 @@ fn one_frame {
     let out = frontend::step{ &fe, &g, &fs, &dev, &sdl, output = null, mixer, dt = 1.0 / 30.0 }
     match out {
         running => {}
-        new_game{ module } => { _ = @fmt(&io, "outcome: new game in {}\n", resref::bytes{ r = &module }) }
+        new_game{ module, player } => {
+            _ = @fmt(&io, "outcome: new game in {} with a player of {} bytes\n", resref::bytes{ r = &module }, player.len)
+            if player.len > 0 {
+                _ = fs::write_all{ &fs, path = "kotor/out/chargen/player.utc", bytes = player } iferr { 0 }
+            }
+        }
         load_game{ folder, folder_len } => { _ = @fmt(&io, "outcome: load game {}\n", folder[..folder_len]) }
         quit => { _ = @fmt(&io, "outcome: quit\n") }
     }

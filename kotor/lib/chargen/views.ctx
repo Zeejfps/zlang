@@ -1,0 +1,22 @@
+// The 3D creatures of the panels (placeholder until preview3d is wired in).
+namespace chargen {
+    struct Views { none: u8 }
+
+    fn no_views {} -> Views { return Views{ none = 0 } }
+
+    fn free_views { st: *mut State, mut dev: gpu::Device } {
+    }
+
+    fn refresh_views { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } {
+    }
+
+    fn refresh_views_after_leave { st: *mut State } {
+    }
+
+    fn update { st: *mut State, dt: f32 } {
+    }
+
+    // The 3D creatures belong over the panels' rectangles; the front end calls it after the GUI.
+    fn draw_views { st: *mut State, mut g: gui::Gui, mut frame: render::Frame, target: render::Size } {
+    }
+}
