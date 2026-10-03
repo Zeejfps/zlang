@@ -244,6 +244,21 @@ name::item
 1. A namespace holds only top-level declaration kinds (§1). Namespaces may nest.
 2. Inside a namespace, its own items are referenced unqualified.
 3. `::` resolves namespace members and union and enum variants. `.` resolves struct fields.
+4. Two `namespace` declarations of one name in one scope, in one file or in several, declare one namespace: each adds its declarations to it, and inside either, the other's items are referenced unqualified. A name still can't be declared twice in it, from one file or two. A namespace nested in one of them joins the one of its name nested in the other, as `gff::inner` does below. std's namespaces and the program's are in different scopes (§17), so a program's `list` never joins std's: it shadows it.
+
+```
+// gff/read.ctx
+namespace gff {
+    fn read { bytes: []u8 } -> !Gff { ... check{ bytes } ... }
+    namespace inner { fn base {} -> i64 { return 1 } }
+}
+
+// gff/write.ctx
+namespace gff {
+    fn check { bytes: []u8 } -> ! { ... }      // gff::check, which read calls unqualified
+    namespace inner { fn more {} -> i64 { return base{} + 1 } }
+}
+```
 
 ### Name lookup
 
@@ -255,7 +270,7 @@ name::item
    - a name in a type is a path
    - a name in an expression is a value
 3. Lookup goes from the innermost scope outward: block locals, then context fields, then enclosing namespaces, then top level. The first match of the required kind wins.
-4. A path and a value may share a name in the same scope. Two paths or two values may not.
+4. A path and a value may share a name in the same scope. Two paths or two values may not, except two namespaces, which are one (§10, rule 4).
 5. A value in an inner scope shadows a value of the same name in an outer scope.
 6. In a call or literal `f{ ... }`, a local or context field `f` that doesn't hold a function doesn't hide an outer name: lookup goes on outward for a function value, then for a path. `let binders = binders{}` calls the function `binders`. If nothing else matches, the local is the callee, and the call is an error.
 

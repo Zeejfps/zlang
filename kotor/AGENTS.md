@@ -82,9 +82,9 @@ fn build { mut b: Build } {
 
 - Each program builds in its own directory under `ctxlang/build/run/`, so agents can build
   different programs at the same time. An unchanged program rebuilds in ~50 ms.
-- **A namespace must live in one file** for now ("already declared" otherwise). Keep each
-  namespace to one file and split big subsystems into several namespaces (`mdl` and
-  `mdl_anim`, say). A language change to let a namespace span files is planned.
+- A namespace may span files: `namespace gff { ... }` in `gff_read.ctx` and `gff_write.ctx` is
+  one namespace (spec §10, rule 4), and each file's items see the other's unqualified. Keep
+  files to a few thousand lines: a file is the unit of recompiling.
 - A big program's C is split into units of about 256 KiB, grouped by source file and compiled in
   parallel, each cached by its hash: ~100K lines build in ~8 s from scratch (63 s as one C file),
   and an edit to one function rebuilds in ~3 s. Inserting lines recompiles every unit of that
