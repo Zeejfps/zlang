@@ -140,7 +140,7 @@ starting). The shape of what we found:
 - Four areas carry an `ARE.MiniGame` struct: three swoop races (Taris `tar_m03mg`, Tatooine
   `tat_m17mg`, Manaan `manm26mg`) and the Ebon Hawk's gunner turret (`M12ab`). Story scripts enter
   them with `StartNewModule`; their own scripts leave (the race writes its time into globals; the
-  turret cannot be lost).
+  turret can end the game when the Hawk is destroyed in the real sequence).
 - Both are **on rails**. A track is an MDL whose `track` animation moves the node `modelhook`; the
   player's vehicle models hang on it and the player only steers a small offset (a lateral
   offset for the bike, two aim angles for the turret). Enemies (accelerator pads, Sith fighters)

@@ -189,9 +189,9 @@ fighter's HP to 2000, stops the alarm, plays `Health00`, applies visual effect 3
 - **2DA**: none of its own. Touched: `loadscreens` (`LOAD_SWOOP`/`LOAD_TURRET`), `modulesave`, `globalcat` (`M12AB_START_SYNC`
   number, `M12AB_END_SYNC` boolean), `keymap` input class `ICMiniGame` (rows `MGshoot` Space action 217, `PauseMinigame` Esc
   253, `Pause` 224, `ToolTips` 225, `MGActionUp/Down` W/S = event 282, `MGActionLeft/Right` A/D = 283, arrows = 285/286).
-- **Models** (all in `models.bif`; high): tracks `<mod>_tr01`/`_mgt01` (3 dummy nodes + `modelhook`, one `track` animation:
-  **a straight 2-key translation of the node along +Y** from 0 to 4980 (m03) or 4699.8 (m17, m26) over 48 s, identity
-  rotation) and pad tracks `_mgt02..31` (static `modelhook` only); the turret fighters' tracks `m12ab_mgt02..07` are Bezier splines
+- **Models** (all in `models.bif`; high): player tracks `m03mg_tr01`, `m17mg_mgt01`, `m26mg_mgt01` (a root dummy + `modelhook`, m03 also
+  `Camera01`, m17 a mesh; one `track` animation: **a straight 2-key translation of `modelhook` along +Y** from 0 to 4980 (m03) or
+  4699.8 (m17, m26) over 48 s, identity rotation; the node's static offset is (5,0,2) / (100,100,2.66)) and pad tracks `_mgt02..31` (static `modelhook` only); the turret fighters' tracks `m12ab_mgt02..07` are Bezier splines
   (54 keys in `mgt02`) of 43.03 / 48.80 / 51.30 / 61.70 / 84.10 / 54.60 s; the HUD radar animations `SithLoop02..07` of `mgf_hud01` have the same
   lengths, so the blips replay the fighters' paths. Obstacles `m03mg_mgo01..22`: dummy + `aabb` + trimesh, animations `Ready` (4 s) and
   `hit`. Pad `mgf_accelpad01`: aabb + 2 meshes, animations `Ready_01`, `hit`, `die` (7.63 s).
@@ -234,7 +234,7 @@ Class tree (all objects take a slot in the 255-slot registry; vtable, constructo
 | Class (ours) | Ctor / vtable | Notes |
 |---|---|---|
 | `CSWMiniObject` | `0x0066c540` / `0x00752424` (purecall) | base: id (`+8`), name, 10 script slots, `As{Follower,Player,Enemy,Obstacle}` slots (5-8) |
-| `CSWTrackFollower` | `0x0066dee0` / `0x007524c8` | rail follower: models list (`+0x68/6c`, 8-byte entries ptr+rotates), gun banks (`+0x74`), HP `+0x8c`/max `+0x90`, speed `+0x98`, invulnerability `+0x9c/a0`, class bit `+0x80` |
+| `CSWTrackFollower` | `0x0066dee0` / `0x007524c8` | rail follower: models list (`+0x68/6c`, 8-byte entries ptr+rotates), gun banks (`+0x74`), HP `+0x8c`/max `+0x90`, speed `+0x98`, invulnerability `+0x9c/a0`, loop count `+0x80` (Num_Loops, default 1), target-class bit from vtable slot 15 (player 1, enemy 2), last follower hit `+0x50` |
 | `CSWMiniPlayer` | `0x0066eb50` / `0x007525f0` | 0x250 bytes: offset vector `+0x1c4`, bank level `+0x1d0`, min/max/accel `+0x1d8/dc/e0`, tunnel `+0x1e4..0x204`, origin `+0x208`, target offset `+0x214` |
 | `CSWMiniEnemy` | built in `0x00671e40` / `0x007528a8` | fighters and pads; `Trigger` flag byte at `+0x1a0` (read by `0x006705f0`) |
 | gun bank / bullet | `0x006743b0`, `0x00674530` / `0x00752ae4`, `0x00752af0`; bullet controllers `0x006dadf0`, `0x006db590` | |
@@ -274,8 +274,9 @@ collision step `0x006732f0` once with up to **3 iterations** of player-vs-follow
 ### 4.4 Collisions and damage (high for structure, low for the tests' exact geometry)
 
 - Player vs followers (`0x0066eda0`): for every follower that is a **trigger** (pad) or when `DoBumping` (all data: 0), a swept sphere test (`FUN_004abdd0`) with radius
-  `follower sphere + player sphere`. Non-trigger hit: push-out along the contact, `OnHitFollower` of both, damage. Pad hit: only the scripts run (`0x0066c2d0`).
-  If the player's invulnerability timer is 0 after a bump the engine resets speed to MinSpeed, plays `damage`/`Ready_01`, starts the timer from `Invince_Period`.
+  `follower sphere + player sphere`. Non-trigger hit: push-out along the contact (averaged over the hits, then clamped by the tunnel bounds), the follower loses the player's
+  `Bump_Damage` (0 in all data), `OnHitFollower` of both. Pad hit: only the two scripts run (`0x0066c2d0`), after recording the pad as `GetLastFollowerHit`.
+  After a non-trigger bump with the player's invulnerability timer at 0 the engine resets speed to MinSpeed, plays `damage`/`Ready_01`, starts the timer from `Invince_Period`.
 - Player vs obstacles (`0x0066e6b0`): the obstacle's AABB tree (the MDL `aabb` node) is tested against the player's `modelhook` position; hit -> `hitbump`, OnHitObstacle
   script (slot 8). The shipped script slows the bike; there is no engine-side bounce.
 - Bullets vs followers (`0x0066d4e0` -> `0x006730a0`): each bullet's segment is tested against the target's `hitbullet` node/mesh; on a hit the bullet plays `explode`,
@@ -295,7 +296,8 @@ bullets with damage 0 (swoop) are harmless dummies that only trigger the `fire` 
 ### 4.6 Camera and view (med)
 
 The area camera (FOV, near, far from the ARE) gets a controller (`FUN_0049fb10`, 0x3c bytes) that makes it follow the world transform of node `camerahook` in the first of the
-player's models that has one (swoop `m17mg_camera`, turret `m12ab_camera`), searched in list order; for the turret the node is passed to the camera's attach slot. There is no smoothing. `CameraRotate` says whether
+player's models that has one (swoop `m17mg_camera`; searched in list order, then the track model), or, for the turret, of the dedicated camera model `Player.Camera`
+(`m12ab_camera`, kept at player `+0x220`). There is no smoothing. `CameraRotate` says whether
 the camera model turns with the player's rotating models. The speed blur (`0x0044f0a0..0x0044f130`: enable/disable and a ratio, default 0.75) and the heat distortion model are
 renderer features. The HUD models are children of the camera model, so they follow it.
 
@@ -310,8 +312,8 @@ renderer features. The HUD models are children of the camera model, so they foll
 ## 5. Recommended implementation plan (ctxlang)
 
 **Engine hooks needed** (all small, none exist yet; `lib/formats/lyt.ctx` already parses tracks/obstacles, `lib/mdl/anim.ctx` has animation players with events):
-1. Area load: read `ARE.MiniGame`; when present, do not spawn the party, load the area normally (rooms, GIT sounds, scripts), then build the minigame object, set the input
-   class to "minigame", hide the normal HUD, start `Music`, save nothing (`modulesave`).
+1. Area load: read `ARE.MiniGame`; when present, run with no controlled creature in the area (as the original does, 4.7), load the area normally (rooms, GIT sounds, scripts),
+   then build the minigame object, set the input class to "minigame", hide the normal HUD, start `Music`, save nothing (`modulesave`).
 2. Script VM: object arguments that are minigame ids (0..254) distinct from world objects, RunScript with `self` = a minigame object, `GetObjectByTag` for UTS sound objects (exists),
    `StartNewModule`, `SetGlobalFadeOut`, `PlayMovie`, `PlayRoomAnimation`, `BarkString`, `EffectVisualEffect` at a location (turret). Pop all arguments per prototype even where the
    original ignores them (`nAbsolute`).
