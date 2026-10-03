@@ -548,7 +548,8 @@ each frame:
   `FRAME up KEY` (a letter, `up`, `down`, `left`, `right`, `space`, `escape`), and for tests
   `FRAME warp TAG` (the leader 1.5 m in front of the object), `FRAME use TAG` (the leader's default
   action on it), `FRAME attack TAG` (the leader attacks the nearest live one), `FRAME save NAME`,
-  `FRAME load FOLDER`, `FRAME newgame` (the front end's New Game). Keys: W/S or arrows forward and back,
+  `FRAME load FOLDER`, `FRAME hush` (ends the running conversation), `FRAME newgame` (the front
+  end's New Game). Keys: W/S or arrows forward and back,
   Z/C strafe, A/D or arrows turn the camera, R or Space the default action (the nearest door,
   useable placeable or creature with a conversation in front, within 3 m).
 - `--screenshot-at F:PATH` (repeatable) reads the screen after frame F's render and writes a PNG.

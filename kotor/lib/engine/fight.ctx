@@ -847,6 +847,11 @@ namespace fight {
             if c.attempted_target == target { c.attempted_target = obj::INVALID }
         }
         if not script { return }
+        if w.log.combat {
+            world::prefix{ w = &w }
+            let state: []u8 = if target_alive { "alive" } else { "gone" }
+            _ = @fmt(&w.io, "{} ends its round (target {} {})\n", id, target, state)
+        }
         if id == party::leader{ w = &w } and target_alive and o.actions.len == 0 {
             let mut a = actions::make{ kind = actions::Kind::attack_object }
             a.params[0] = actions::Param::object{ id = target }
