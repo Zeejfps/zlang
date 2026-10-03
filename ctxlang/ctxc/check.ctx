@@ -552,9 +552,15 @@ namespace check {
                     push{ xs = &c.faults, n = d }
                 }
                 space{ name, decls = inner } => {
-                    let child = space{ &c, name = name.text, parent = ns }
+                    // A namespace already declared in this scope, in this file or another, is
+                    // the same one (§10): its declarations join it.
+                    let mut child = NONE
+                    if name.text.len > 0 and map::get{ m = get_space{ c, ns }.paths, key = name.text } is space{ ns = known } { child = known }
+                    if child == NONE {
+                        child = space{ &c, name = name.text, parent = ns }
+                        add_name{ &c, ns, values = false, name, e = Entry::space{ ns = child }, at = x.span }
+                    }
                     try! map::put{ m = &c.space_of, key = key{ file, id = x.id }, value = child }
-                    add_name{ &c, ns, values = false, name, e = Entry::space{ ns = child }, at = x.span }
                     collect{ &c, file, decls = inner, ns = child }
                 }
             }

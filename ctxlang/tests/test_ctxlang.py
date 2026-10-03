@@ -698,6 +698,66 @@ enum Sign: i8 { minus = -1, zero, plus }
 """
 
 
+class NamespacesAcrossFiles(Base):
+    """Two `namespace` declarations of one name in one scope are one namespace (spec §10), in
+    one file or in several."""
+
+    def run_files(self, files):
+        out = io.StringIO()
+        code = run_sources([(text, name) for name, text in files.items()], out=out)
+        return out.getvalue(), code
+
+    def test_one_namespace_in_two_files(self):
+        out, code = self.run_files({
+            'gff/read.ctx': """
+namespace gff {
+    struct Field { label: u32, value: i64 }
+    fn read { n: i64 } -> Field { return Field{ label = LABEL, value = twice{ n } } }
+    namespace inner { fn base {} -> i64 { return 100 } }
+}
+""",
+            'gff/write.ctx': """
+// Another file adds to gff, and to gff::inner, and names their items unqualified.
+namespace gff {
+    const LABEL: u32 = 7
+    fn twice { n: i64 } -> i64 { return 2 * n + inner::more{} }
+    fn write { f: Field } -> i64 { return @as(i64, f.label) + f.value }
+    namespace inner { fn more {} -> i64 { return base{} + 1 } }
+}
+namespace gff { fn again {} -> i64 { return 3 } }
+""",
+            'main.ctx': """
+fn main { mut io: Io } -> i32 {
+    io::println_i64{ &io, n = gff::write{ f = gff::read{ n = 5 } } + gff::again{} }
+    return 0
+}
+""",
+        })
+        self.assertEqual((out, code), ('121\n', 0))
+
+    def test_errors_across_files(self):
+        with self.assertRaises(CompileError) as cm:
+            run_sources([('namespace g { fn f {} -> i32 { return 1 } }\n', 'a.ctx'),
+                         ('namespace g {\n    fn f {} -> i32 { return 2 }\n}\nfn main {} {}\n', 'b.ctx')])
+        self.assertEqual((cm.exception.msg, cm.exception.pos), ('`f` is already declared in this scope', (2, 5, 'b.ctx')))
+        with self.assertRaises(CompileError) as cm:
+            run_sources([('struct g {}\n', 'a.ctx'), ('namespace g {}\nfn main {} {}\n', 'b.ctx')])
+        self.assertEqual((cm.exception.msg, cm.exception.pos), ('`g` is already declared in this scope', (1, 1, 'b.ctx')))
+
+    def test_a_program_namespace_shadows_std(self):
+        # A program's `list` is its own, in however many files: it doesn't join std's.
+        out, code = self.run_files({
+            'a.ctx': 'namespace list { fn mine {} -> i64 { return 4 } }\n',
+            'b.ctx': 'namespace list { fn yours {} -> i64 { return mine{} + 1 } }\n'
+                     'fn main { mut io: Io } { io::println_i64{ &io, n = list::yours{} } }\n',
+        })
+        self.assertEqual(out, '5\n')
+        with self.assertRaises(CompileError) as cm:
+            run_sources([('namespace list { fn mine {} -> i64 { return 4 } }\n', 'a.ctx'),
+                         ('fn main {} { let xs = list::new(i32) }\n', 'b.ctx')])
+        self.assertIn('new', cm.exception.msg)
+
+
 class Declarations(Base):
     """Every error in declarations, at its exact position: tools/checktest.py compares ctxc's
     first diagnostic with each of them through the corpus."""
@@ -712,7 +772,9 @@ class Declarations(Base):
             ('struct S {}\nstruct S {}', '`S` is already declared in this scope', 2, 1),
             ('fn f {} {}\nconst f: i32 = 1', '`f` is already declared in this scope', 2, 1),
             ('namespace n {}\nstruct n {}', '`n` is already declared in this scope', 2, 1),
-            ('namespace n { struct A {} }\nnamespace n { struct B {} }', '`n` is already declared in this scope', 2, 1),
+            ('namespace n { struct A {} }\nnamespace n { struct A {} }', '`A` is already declared in this scope', 2, 15),
+            ('struct n {}\nnamespace n {}', '`n` is already declared in this scope', 2, 1),
+            ('namespace n { fn f {} {} }\nnamespace n { const f: i32 = 1 }', '`f` is already declared in this scope', 2, 15),
             ('struct S(T, T) { a: T }', 'duplicate generic parameter in `S`', 1, 1),
             ('fn f(T, T) {} {}', 'duplicate generic parameter in `f`', 1, 1),
             ('struct S { a: Nope }', 'unknown type or namespace `Nope`', 1, 15),
