@@ -284,6 +284,30 @@ namespace rules {
         return &cell.item
     }
 
+    // GetDexModifierForDefense (0x005a5330): the DEX modifier, capped by the body armour's DEXBONUS
+    // when that is real armour (ModelType 1 with a BaseAC; robes have BaseAC 0 and no cap), and
+    // capped at 0 while the creature is debilitated.
+    fn dex_modifier_for_defense { tables: *Tables, c: *Creature } -> i32 {
+        let mut m = c.stats.abil_mod[1]
+        let body = equipped_item{ c, mask = slot::BODY }
+        if body != null {
+            let bi = get_baseitem{ tables, row = body.base_item }
+            if bi != null and bi.model_type == 1 and bi.base_ac > 0 and bi.dex_bonus >= 0 and m > bi.dex_bonus { m = bi.dex_bonus }
+        }
+        if is_debilitated{ c } and m > 0 { m = 0 }
+        return m
+    }
+
+    // The armour class the character sheet shows (GetArmorClass with nobody attacking): 10, the
+    // class bonus, natural, armour, shield and deflection, dodge (at most 10) and the capped DEX
+    // modifier. Attack-time defense, with the attacker's visibility and conditional effects, is
+    // rules::defense_versus in combat.
+    fn armor_class_sheet { tables: *Tables, c: *Creature } -> i32 {
+        let s = &c.stats
+        let dodge = if s.ac_dodge > 10 { 10 } else { s.ac_dodge }
+        return 10 + s.ac_class + s.ac_natural + s.ac_armour + s.ac_shield + s.ac_deflection + dodge + dex_modifier_for_defense{ tables, c }
+    }
+
     // Rebuilds Creature.stats. The order follows the engine: abilities first (everything else
     // reads the modifiers), then the pieces that need them.
     fn recompute { tables: *Tables, mut c: Creature } {

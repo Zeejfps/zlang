@@ -403,5 +403,146 @@ namespace fx {
             i = i + 1
         }
     }
+
+    // ---- the rest of the script constructors, for the VM (rules.md 1.2)
+
+    fn make_area_of_effect { vfx_persistent: i32, on_enter: u32, heartbeat: u32, on_exit: u32 } -> rules::Effect {
+        let mut e = make_with{ kind = AREA_OF_EFFECT, a = vfx_persistent, b = 0 }
+        e.handles = [on_enter, heartbeat, on_exit]
+        return e
+    }
+
+    fn make_beam { beam_vfx: i32, effector: u32, body_part: i32, miss: bool } -> rules::Effect {
+        let mut e = make_with{ kind = BEAM, a = beam_vfx, b = body_part }
+        e.ints[2] = if miss { 1 } else { 0 }
+        e.objects[0] = effector
+        return e
+    }
+
+    fn make_force_jump { target: u32, advanced: bool } -> rules::Effect {
+        let mut e = make_with{ kind = FORCE_JUMP, a = if advanced { 1 } else { 0 }, b = 0 }
+        e.objects[0] = target
+        return e
+    }
+
+    // EffectForcePushTargeted(centre location, ignore line test): the centre is three floats.
+    fn make_force_push_targeted { x: f32, y: f32, z: f32, ignore_line_test: bool } -> rules::Effect {
+        let mut e = make_with{ kind = FORCE_PUSH, a = 1, b = if ignore_line_test { 1 } else { 0 } }
+        e.floats = [x, y, z, 0.0]
+        return e
+    }
+
+    fn make_lightsaber_throw { target1: u32, target2: u32, target3: u32, advanced: bool } -> rules::Effect {
+        let mut e = make_with{ kind = LIGHTSABER_THROW, a = if advanced { 1 } else { 0 }, b = 0 }
+        e.objects = [target1, target2, target3, rules::OBJECT_INVALID]
+        return e
+    }
+
+    fn make_dispel_magic_all { caster_level: i32 } -> rules::Effect { return make_with{ kind = DISPEL_MAGIC_ALL, a = caster_level, b = 0 } }
+    fn make_dispel_magic_best { caster_level: i32 } -> rules::Effect { return make_with{ kind = DISPEL_MAGIC_BEST, a = caster_level, b = 0 } }
+    fn make_force_resisted { source: u32 } -> rules::Effect {
+        let mut e = make_effect{ kind = FORCE_RESISTED }
+        e.objects[0] = source
+        return e
+    }
+    fn make_hitpoint_change_when_dying { per_round: f32 } -> rules::Effect {
+        let mut e = make_effect{ kind = HP_CHANGE_WHEN_DYING }
+        e.floats[0] = per_round
+        return e
+    }
+    fn make_spell_level_absorption { max_level: i32, total: i32, school: i32 } -> rules::Effect {
+        let mut e = make_with{ kind = SPELL_LEVEL_ABSORPTION, a = max_level, b = total }
+        e.ints[2] = school
+        return e
+    }
+    fn make_assured_deflection { returns: bool } -> rules::Effect { return make_with{ kind = ASSURED_DEFLECTION, a = if returns { 1 } else { 0 }, b = 0 } }
+    fn make_curse {} -> rules::Effect { return make_effect{ kind = CURSE } }
+    fn make_silence {} -> rules::Effect { return make_effect{ kind = SILENCE } }
+    fn make_deaf {} -> rules::Effect { return make_effect{ kind = DEAF } }
+    fn make_blindness {} -> rules::Effect { return make_effect{ kind = BLINDNESS } }
+    fn make_darkness {} -> rules::Effect { return make_effect{ kind = DARKNESS } }
+    fn make_ultravision {} -> rules::Effect { return make_effect{ kind = ULTRAVISION } }
+    fn make_sanctuary {} -> rules::Effect { return make_effect{ kind = SANCTUARY } }
+    fn make_negative_level { levels: i32 } -> rules::Effect { return make_with{ kind = NEGATIVE_LEVEL, a = levels, b = 0 } }
+    fn make_miss_chance { percent: i32 } -> rules::Effect {
+        if percent < 1 or percent > 100 { return make_effect{ kind = INVALID } }
+        return make_with{ kind = MISS_CHANCE, a = percent, b = race::ANY }
+    }
+
+    // EffectCutScene{Horrified,Paralyze,Stunned}: states that skip immunity.
+    fn make_cutscene_horrified {} -> rules::Effect { return make_state{ state = STATE_HORRIFIED, cutscene = true } }
+    fn make_cutscene_paralyze {} -> rules::Effect { return make_state{ state = STATE_PARALYZED, cutscene = true } }
+    fn make_cutscene_stunned {} -> rules::Effect { return make_state{ state = STATE_STUNNED, cutscene = true } }
+
+    // GetEffectType: the script-visible type of an effect (rules.md 1.3), 0 for a link or an unmapped one.
+    fn script_type { e: *rules::Effect } -> i32 {
+        let k = e.kind
+        if k == DAMAGE_RESISTANCE { return 1 }
+        if k == REGENERATE { return 3 }
+        if k == DAMAGE_REDUCTION { return 7 }
+        if k == TEMPORARY_HITPOINTS { return 9 }
+        if k == ENTANGLE { return 11 }
+        if k == DEAF { return 13 }
+        if k == IMMUNITY { return 15 }
+        if k == ENEMY_ATTACK_BONUS { return 17 }
+        if k == ARCANE_SPELL_FAILURE { return 18 }
+        if k == AREA_OF_EFFECT { return 20 }
+        if k == BEAM { return 21 }
+        if k == POISON { return 31 }
+        if k == DISEASE { return 32 }
+        if k == CURSE { return 33 }
+        if k == SILENCE { return 34 }
+        if k == HASTE { return 36 }
+        if k == SLOW { return 37 }
+        if k == ABILITY_INCREASE { return 38 }
+        if k == ABILITY_DECREASE { return 39 }
+        if k == ATTACK_INCREASE { return 40 }
+        if k == ATTACK_DECREASE { return 41 }
+        if k == DAMAGE_INCREASE { return 42 }
+        if k == DAMAGE_DECREASE { return 43 }
+        if k == DAMAGE_IMMUNITY_INCREASE { return 44 }
+        if k == DAMAGE_IMMUNITY_DECREASE { return 45 }
+        if k == AC_INCREASE { return 46 }
+        if k == AC_DECREASE { return 47 }
+        if k == MOVEMENT_SPEED_INCREASE { return 48 }
+        if k == MOVEMENT_SPEED_DECREASE { return 49 }
+        if k == SAVING_THROW_INCREASE { return 50 }
+        if k == SAVING_THROW_DECREASE { return 51 }
+        if k == FORCE_RESISTANCE_INCREASE { return 52 }
+        if k == FORCE_RESISTANCE_DECREASE { return 53 }
+        if k == SKILL_INCREASE { return 54 }
+        if k == SKILL_DECREASE { return 55 }
+        if k == INVISIBILITY { return 56 }
+        if k == DARKNESS { return 58 }
+        if k == DISPEL_MAGIC_ALL { return 59 }
+        if k == DAMAGE_SHIELD { return 60 }
+        if k == NEGATIVE_LEVEL { return 61 }
+        if k == DISGUISE { return 62 }
+        if k == SANCTUARY { return 63 }
+        if k == TRUE_SEEING { return 64 }
+        if k == SEE_INVISIBLE { return 65 }
+        if k == TIMESTOP { return 66 }
+        if k == BLINDNESS { return 67 }
+        if k == SPELL_LEVEL_ABSORPTION { return 68 }
+        if k == DISPEL_MAGIC_BEST { return 69 }
+        if k == ULTRAVISION { return 70 }
+        if k == MISS_CHANCE { return 71 }
+        if k == CONCEALMENT { return 72 }
+        if k == SPELL_IMMUNITY { return 73 }
+        if k == ASSURED_HIT { return 74 }
+        if k == VISUALEFFECT { return 75 }
+        if k == LIGHTSABER_THROW { return 76 }
+        if k == FORCE_JUMP { return 77 }
+        if k == ASSURED_DEFLECTION { return 78 }
+        if k == SETSTATE {
+            let s = e.ints[0]
+            if s == STATE_CONFUSED { return 24 }
+            if s == STATE_FRIGHTENED { return 25 }
+            if s == STATE_PARALYZED { return 27 }
+            if s == STATE_STUNNED { return 29 }
+            if s == STATE_SLEEP { return 30 }
+        }
+        return 0
+    }
 }
 }
