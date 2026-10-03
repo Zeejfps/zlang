@@ -82,6 +82,33 @@ namespace fs {
         try os::make_dir{ &fs, path }
     }
 
+    // Renames the file at `from` to `to`, replacing any file at `to`. Where both are in one
+    // directory, no one sees `to` half written: the way to publish a file another program may
+    // be reading.
+    fn rename { mut fs: Fs, from: []u8, to: []u8 } -> ! {
+        if from.len == 0 or to.len == 0 { return not_found }
+        try os::rename{ &fs, from, to }
+    }
+
+    // Whether `path` is absolute: it starts with `/`, or on Windows with `\` or a drive (`C:`).
+    fn is_absolute { path: []u8 } -> bool {
+        return os::is_absolute{ path }
+    }
+
+    // `path` as an absolute path, in memory from `realloc`: a copy if it is one, or else the
+    // working directory and `path` joined by a `/`. It neither removes `.` and `..` nor looks at
+    // whether `path` exists.
+    fn make_absolute(S) { mut fs: Fs, mut heap: S, realloc: alloc::Fn(S), path: []u8 } -> !alloc::Bytes {
+        let mut dir: [32768]u8
+        let n = if os::is_absolute{ path } { 0 } else { try os::working_dir{ &fs, into = dir[..] } }
+        let sep: usize = if n > 0 and path.len > 0 and dir[n - 1] != '/' and dir[n - 1] != '\\' { 1 } else { 0 }
+        let out = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = n + sep + path.len }
+        slice::copy(u8){ dst = out[..n], src = dir[..n] }
+        if sep == 1 { out[n] = '/' }
+        slice::copy(u8){ dst = out[n + sep..], src = path }
+        return out
+    }
+
     // The names of directory `path`'s entries, without "." and "..", sorted by their bytes. They
     // are in memory from `realloc`, in two allocations: the names' bytes, and the slice of them.
     fn list(S) { mut fs: Fs, mut heap: S, realloc: alloc::Fn(S), path: []u8 } -> ![][]u8 {

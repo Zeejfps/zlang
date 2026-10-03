@@ -68,6 +68,8 @@ namespace os {
     extern fn GetFileAttributesExW { mut fs: Fs, name: *u16, level: i32, mut data: FileData } -> i32
     extern fn DeleteFileW { mut fs: Fs, name: *u16 } -> i32
     extern fn CreateDirectoryW { mut fs: Fs, name: *u16, security: ?*u8 } -> i32
+    extern fn MoveFileExW { mut fs: Fs, from: *u16, to: *u16, flags: u32 } -> i32
+    extern fn GetCurrentDirectoryW { mut fs: Fs, size: u32, buf: *mut u16 } -> u32
     extern fn FindFirstFileW { mut fs: Fs, name: *u16, mut data: FindData } -> u64
     extern fn FindNextFileW { mut fs: Fs, find: u64, mut data: FindData } -> i32
     extern fn FindClose { mut fs: Fs, find: u64 } -> i32
@@ -87,6 +89,7 @@ namespace os {
     const CREATE_ALWAYS: u32 = 2
     const OPEN_EXISTING: u32 = 3
     const OPEN_ALWAYS: u32 = 4
+    const MOVEFILE_REPLACE_EXISTING: u32 = 1
     const UTF8: u32 = 65001
     const NAME_MAX: usize = 1040                                // a found name's UTF-8 bytes, at most
 
@@ -155,6 +158,34 @@ namespace os {
         let mut buf: [32768]u16
         let p = wide_path{ &fs, path, buf = buf[..] } ifnull { return too_long{} }
         if CreateDirectoryW{ &fs, name = p, security = null } == 0 { return failed{ code = GetLastError{ &fs } } }
+    }
+
+    fn rename { mut fs: Fs, from: []u8, to: []u8 } -> ! {
+        let mut a: [32768]u16
+        let mut b: [32768]u16
+        let p = wide_path{ &fs, path = from, buf = a[..] } ifnull { return too_long{} }
+        let q = wide_path{ &fs, path = to, buf = b[..] } ifnull { return too_long{} }
+        if MoveFileExW{ &fs, from = p, to = q, flags = MOVEFILE_REPLACE_EXISTING } == 0 { return failed{ code = GetLastError{ &fs } } }
+    }
+
+    // The working directory's path, as UTF-8, into `into`. Returns its length.
+    fn working_dir { mut fs: Fs, into: []mut u8 } -> !usize {
+        let mut buf: [32768]u16
+        let n = GetCurrentDirectoryW{ &fs, size = @as(u32, buf.len), buf = buf[..].ptr }
+        if n == 0 { return failed{ code = GetLastError{ &fs } } }
+        if @as(usize, n) >= buf.len { return too_long{} }
+        let cap = if into.len > 2147483647 { 2147483647 } else { into.len }
+        let m = WideCharToMultiByte{ &fs, page = UTF8, flags = 0, text = buf[..].ptr, n = @as(i32, n), out = into.ptr, cap = @as(i32, cap), fallback = null, used = null }
+        if m <= 0 { return too_long{} }
+        return @as(usize, m)
+    }
+
+    // Whether `path` is absolute: from a drive (`C:`, which a path relative to that drive's
+    // working directory also starts with) or the root of the working directory's drive.
+    fn is_absolute { path: []u8 } -> bool {
+        if path.len == 0 { return false }
+        if path[0] == '/' or path[0] == '\\' { return true }
+        return path.len >= 2 and path[1] == ':'
     }
 
     fn dir_open { mut fs: Fs, path: []u8 } -> !Dir {

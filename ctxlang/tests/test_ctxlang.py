@@ -6026,6 +6026,46 @@ class Fs(Base):
 """, [existing, missing, self.dir, os.path.join(self.dir, 'no_such_dir', 'x.txt')], show_error())
         self.assertEqual(out, '1\n4\n3\n6\n1\ntrue\ntrue\n1\n1\n')
 
+    def test_rename(self):
+        a, b, missing = self.path('a.txt'), self.path('b.txt'), self.path('missing.txt')
+        with open(a, 'wb') as f:
+            f.write(b'new')
+        with open(b, 'wb') as f:
+            f.write(b'old, and longer')
+        # It replaces a file already at `to`.
+        out, code = self.run_fs("""
+    fs::rename{ &fs, from = args[0], to = args[1] } iferr { return 1 }
+    io::println_bool{ &io, n = match fs::size{ &fs, path = args[0] } { ok => { false } fs::not_found => { true } else => { false } } }
+    let text = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = args[1] } iferr { return 2 }
+    io::println{ &io, s = utf8::of{ chars = text } }
+    fs::rename{ &fs, from = args[2], to = args[1] } iferr err{ error } { show{ &io, e = error } }
+    return 0
+""", [a, b, missing], show_error())
+        self.assertEqual((out, code), ('true\nnew\n1\n', 0))
+
+    def test_make_absolute(self):
+        import subprocess
+        from toolchain import build_sources
+        exe, _ = build_sources([(FS_MAIN % """
+    let mut i: usize = 0
+    while i < args.len {
+        let p = fs::make_absolute{ &fs, &heap, realloc = arena::alloc, path = args[i] } iferr { return 1 }
+        io::println_bool{ &io, n = fs::is_absolute{ path = p } }
+        io::println{ &io, s = utf8::of{ chars = p } }
+        i = i + 1
+    }
+    return 0
+""", None)])
+        sub = os.path.join(self.dir, 'sub')
+        os.makedirs(sub)
+        r = subprocess.run([exe, 'x/../y.ctx', '', sub], cwd=self.dir, capture_output=True)
+        got = r.stdout.decode().replace('\r\n', '\n').split('\n')
+        self.assertEqual((r.returncode, got[0], got[2], got[4], got[5]), (0, 'true', 'true', 'true', sub))
+        # A relative path is joined to the working directory as it is, `..` and all.
+        here = got[3]
+        self.assertEqual(os.path.normcase(os.path.realpath(here)), os.path.normcase(os.path.realpath(self.dir)))
+        self.assertEqual(got[1], here + '/x/../y.ctx')
+
     def test_read_all_out_of_memory(self):
         p = self.path('big.bin')
         with open(p, 'wb') as f:
@@ -6238,13 +6278,16 @@ fn main { mut io: Io, mut mem: Mem, mut fs: Fs } -> i32 {
     _ = fs::write{ &fs, file = f, bytes = "y" }
     _ = fs::close{ &fs, file = f }
     _ = fs::list{ &fs, &heap, realloc = arena::alloc, path = "." }
+    _ = fs::rename{ &fs, from = "x", to = "z" }
+    _ = fs::make_absolute{ &fs, &heap, realloc = arena::alloc, path = "z" }
     return 0
 }
 """, 'main.ctx')])
-        posix = ['write', 'read', 'aligned_alloc', 'memset', 'open', 'close', 'opendir', 'readdir']
+        posix = ['write', 'read', 'aligned_alloc', 'memset', 'open', 'close', 'opendir', 'readdir', 'rename', 'getcwd']
         for platform, symbols in [('linux', posix + ['__errno_location']),
                                   ('macos', posix + ['__error']),
-                                  ('windows', ['_write', '_read', 'VirtualAlloc', 'CreateFileW', 'FindFirstFileW'])]:
+                                  ('windows', ['_write', '_read', 'VirtualAlloc', 'CreateFileW', 'FindFirstFileW',
+                                               'MoveFileExW', 'GetCurrentDirectoryW'])]:
             c = os.path.join(d, f'{platform}.c')
             self.assertEqual(toolchain.ctxc_build(toolchain.native_ctxc(), c, list(files), cwd=d, platform=platform), (0, ''))
             with open(c, encoding='utf-8') as f:
