@@ -1,0 +1,54 @@
+// The loading screen (loadscreen.gui, docs/re/gui.md "Loading screen"): a picture for the area
+// being loaded, a progress bar and a hint. The engine opens it before it loads a module, sets
+// the progress as the loading advances, and closes it when the area is ready.
+//
+//   let id = try frontend::show_loading{ &fe, &g, &fs, &dev, name = "end_m01aa", story = false, saving = false }
+//   frontend::set_loading_progress{ &g, panel = id, percent = 40 }      // then draw a frame (gui::draw)
+//   gui::close{ &g, id }
+namespace frontend {
+    // Opens the loading screen. `name` picks the picture from loadscreens.2da (a row labelled with
+    // the module or area name, else `default`); the hint is the next gameplay or story hint of
+    // loadscreenhints.2da, round-robin as the engine does; `saving` says "Saving" instead of
+    // "Loading".
+    fn show_loading { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, name: []u8, story: bool, saving: bool } -> !u32 {
+        let id = try gui::open{ &g, &fs, &dev, name = "loadscreen", mode = gui::Mode::full_screen, modal = true }
+        gui::set_backdrop{ &g, &fs, &dev, panel = id, kind = 5 }
+        try picture_for{ &fe, &g, &fs, &dev, panel = id, name }
+        try hint_for{ &fe, &g, &fs, panel = id, story }
+        try gui::set_strref{ &g, panel = id, tag = "LBL_LOADING", strref = if saving { 42528 } else { 42493 } }
+        gui::set_value{ &g, panel = id, tag = "PB_PROGRESS", value = 0 }
+        gui::set_max{ &g, panel = id, tag = "PB_PROGRESS", max = 100 }
+        return id
+    }
+
+    fn set_loading_progress { mut g: gui::Gui, panel: u32, percent: i32 } {
+        gui::set_value{ &g, panel, tag = "PB_PROGRESS", value = percent }
+    }
+
+    fn picture_for { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, panel: u32, name: []u8 } -> ! {
+        let bytes = try res::load{ &fs, rm = g.rm, name = "loadscreens", kind = restype::Type::twoda, realloc = heap::alloc, heap = fe.heap } ifnull { return }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = fe.heap, mem = bytes, count = 0 }
+        let t = try twoda::parse{ data = bytes, realloc = heap::alloc, heap = fe.heap }
+        defer twoda::free{ t, realloc = heap::alloc, heap = fe.heap }
+        let mut row = twoda::find_row{ t, label = name }
+        if row == null { row = twoda::find_row{ t, label = "default" } }
+        let r = row ifnull { return }
+        let pic = twoda::get_string{ t, row = r, column = "bmpresref" } ifnull { return }
+        let img = gui::resolve_img{ &g, &fs, &dev, name = pic }
+        if img.ok { gui::set_panel_picture{ &g, panel, img } }
+    }
+
+    fn hint_for { mut fe: Front, mut g: gui::Gui, mut fs: Fs, panel: u32, story: bool } -> ! {
+        let bytes = try res::load{ &fs, rm = g.rm, name = "loadscreenhints", kind = restype::Type::twoda, realloc = heap::alloc, heap = fe.heap } ifnull { return }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = fe.heap, mem = bytes, count = 0 }
+        let t = try twoda::parse{ data = bytes, realloc = heap::alloc, heap = fe.heap }
+        defer twoda::free{ t, realloc = heap::alloc, heap = fe.heap }
+        let rows = twoda::rows{ t }
+        if rows == 0 { return }
+        let counter = if story { fe.hint_story } else { fe.hint_game }
+        let row = @as(usize, counter) % rows
+        if story { fe.hint_story = counter + 1 } else { fe.hint_game = counter + 1 }
+        let strref = @as(u32, twoda::get_int{ t, row, column = if story { "storyhint" } else { "gameplayhint" } } ifnull 0)
+        try gui::set_strref{ &g, panel, tag = "LBL_HINT", strref }
+    }
+}

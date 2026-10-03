@@ -374,6 +374,15 @@ namespace gui {
         }
         let rc = intersect{ a = area_clip, b = clip }
         let count = @as(i32, c.row_count)
+        if c.text_mode {
+            // One wrapped text in the prototype's font, colour and alignment.
+            if count > 0 and c.proto >= 0 {
+                let pc = list::at{ list = p.controls, i = @as(usize, c.proto) }
+                let col = mul_alpha{ c = pc.text.color, a = alpha }
+                draw_text_in{ &g, &frame, t = pc.text, text = c.rows[0].text, color = col, x = ox + l.ax + c.padding, y = oy + l.ay + c.padding, w = l.aw - 2 * c.padding, h = l.ah - 2 * c.padding, clip = rc }
+            }
+            return
+        }
         let mut k: i32 = 0
         while k < l.visible {
             let idx = c.first_row + k

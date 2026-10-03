@@ -57,6 +57,11 @@ namespace frontend {
         // the 3D background of the main menu
         scene: ?*mut MenuScene,
         scene_failed: bool,
+        // the menu's music
+        music: mix::Handle,
+        music_bytes: []mut u8,
+        music_started: bool,
+        hint_game: u32, hint_story: u32,    // the loading screen's round-robin hint counters
     }
 
     // A front end with the options from `config_path` (the defaults if there is no such file).
@@ -72,6 +77,8 @@ namespace frontend {
             stage = 0, queue = [[0; 24]; 4], queue_lens = [0; 4], queue_count = 0, queue_at = 0,
             player = null, tables = null, audio_clock = true, from_menu = false,
             scene = null, scene_failed = false,
+            music = mix::Handle{ slot = 0, id = 0 }, music_bytes = slice::empty(u8){}, music_started = false,
+            hint_game = 0, hint_story = 0,
         }
         fe.config_len = copy_into{ dst = fe.config_path[..], src = config_path }
         fe.start_len = copy_into{ dst = fe.start_module[..], src = "end_m01aa" }

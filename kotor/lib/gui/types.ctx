@@ -117,6 +117,7 @@ namespace gui {
         row_count: u32,
         first_row: i32,                 // the top visible row
         selected_row: i32,              // -1 none
+        text_mode: bool,                // a list box showing one wrapped text (message boxes) instead of rows
         hover_row: i32,                 // -1 none
         // sounds (indices into guisounds.2da)
         click_sound: i32,
@@ -243,8 +244,8 @@ namespace gui {
         tooltip_ref: Ref,
         key_repeat: f32,
         // backdrop textures by resolution tag and kind, loaded when first needed
-        backdrops: [5]Img,
-        backdrop_for: [5]i32,
+        backdrops: [6]Img,
+        backdrop_for: [6]i32,
         // sounds
         sounds: [SOUNDS]Sound,
         sound_volume: f32,

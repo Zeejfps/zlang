@@ -204,6 +204,7 @@ namespace gui {
         c.rows = slice::empty(Row){}
         c.selected_row = -1
         c.hover_row = -1
+        c.text_mode = false
         c.click_sound = 0
         c.hover_sound = 1
         c.tooltip = ""
@@ -221,6 +222,10 @@ namespace gui {
         if p.mode == Mode::placed {
             p.sx = p.x
             p.sy = p.y
+        } else if p.mode == Mode::dialog {
+            // A dialog ignores its file's position (CenterOnScreen).
+            p.sx = (g.ui_w - p.w) / 2
+            p.sy = (g.ui_h - p.h) / 2
         } else {
             p.sx = p.x + (g.ui_w - p.w) / 2
             p.sy = p.y + (g.ui_h - p.h) / 2

@@ -17,14 +17,16 @@
 
 const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
 
-struct Options { game: []u8, out: []u8, movies: bool, first: usize }
+struct Options { game: []u8, out: []u8, movies: bool, audio: bool, first: usize }
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } -> i32 {
-    let mut o = Options{ game = DEFAULT_GAME, out = "kotor/out/gui", movies = false, first = args.len }
+    let mut o = Options{ game = DEFAULT_GAME, out = "kotor/out/gui", movies = false, audio = false, first = args.len }
     let mut i: usize = 0
     while i < args.len {
         if slice::eq_bytes{ a = args[i], b = "--movies" } {
             o.movies = true
+        } else if slice::eq_bytes{ a = args[i], b = "--audio" } {
+            o.audio = true
         } else if slice::eq_bytes{ a = args[i], b = "--game" } and i + 1 < args.len {
             i = i + 1
             o.game = args[i]
@@ -85,8 +87,16 @@ fn run {
 
     let mut fe = frontend::make{ &fs, heap = &h, game = o.game, config_path = "kotor/out/menutest-settings.ini" }
     fe.settings.disable_movies = not o.movies
+    // With --audio there is a mixer (no device): the GUI's sounds and the menu's music play into
+    // it and it is rendered each frame, so a failing sound shows in its error count.
+    let mut mixer: ?*mut mix::Mixer = null
+    if o.audio {
+        let m = try mix::make(heap::Heap){ realloc = heap::alloc, heap = &h, rate = 44100, voices_2d = 24, voices_3d = 16 }
+        mixer = m
+        gui::set_mixer{ &g, mixer = m }
+    }
     fe.audio_clock = false
-    try frontend::begin{ &fe, &g, &fs, &dev, &sdl, mixer = null }
+    try frontend::begin{ &fe, &g, &fs, &dev, &sdl, mixer }
 
     let mut k = o.first
     while k < args.len {
@@ -102,26 +112,49 @@ fn run {
             height = number{ s = arg[x + 1..] }
             try gpu::resize{ &dev, width = @as(u32, width), height = @as(u32, height) }
             gui::set_screen{ &g, &fs, &dev, width, height, scale = fe.settings.gui_scale }
+        } else if slice::eq_bytes{ a = name, b = "scale" } {
+            fe.settings.gui_scale = @as(f32, number{ s = arg }) / 10.0
+            gui::set_screen{ &g, &fs, &dev, width, height, scale = fe.settings.gui_scale }
+        } else if slice::eq_bytes{ a = name, b = "tip" } {
+            // tip:TAG:text sets the tooltip of a control on the top screen
+            let mut c4: usize = 0
+            while c4 < arg.len and arg[c4] != ':' { c4 = c4 + 1 }
+            if c4 < arg.len { try gui::set_tooltip{ &g, panel = frontend::top_panel{ &fe }, tag = arg[..c4], text = arg[c4 + 1..] } }
         } else if slice::eq_bytes{ a = name, b = "wait" } {
             let mut n = number{ s = arg }
             while n > 0 {
-                try one_frame{ &io, &fs, &sdl, &dev, &frame, &g, &fe }
+                try one_frame{ &io, &fs, &sdl, &dev, &frame, &g, &fe, mixer }
                 n = n - 1
             }
         } else if slice::eq_bytes{ a = name, b = "shot" } {
-            try one_frame{ &io, &fs, &sdl, &dev, &frame, &g, &fe }
+            try one_frame{ &io, &fs, &sdl, &dev, &frame, &g, &fe, mixer }
             let mut file: [80]u8
             let pre: []u8 = "menu_"
             let mut n = frontend::copy_into{ dst = file[..], src = pre }
             n = n + frontend::copy_into{ dst = file[n..], src = arg }
             n = n + frontend::copy_into{ dst = file[n..], src = ".png" }
             try save_screen{ &io, &fs, &dev, &heap, dir = o.out, name = file[..n] }
+        } else if slice::eq_bytes{ a = name, b = "loading" } {
+            let id = try frontend::show_loading{ &fe, &g, &fs, &dev, name = arg, story = false, saving = false }
+            frontend::set_loading_progress{ &g, panel = id, percent = 40 }
+        } else if slice::eq_bytes{ a = name, b = "msgbox" } {
+            _ = try gui::message_box{ &g, &fs, &dev, text = arg, cancel = true }
+        } else if slice::eq_bytes{ a = name, b = "savename" } {
+            let id = try gui::open{ &g, &fs, &dev, name = "savename", mode = gui::Mode::dialog, modal = true }
+            gui::make_edit{ &g, panel = id, tag = "EDITBOX" }
+            try gui::set_text{ &g, panel = id, tag = "EDITBOX", text = "Quicksave 1" }
+            gui::set_focus{ &g, panel = id, tag = "EDITBOX" }
+        } else if slice::eq_bytes{ a = name, b = "type" } {
+            _ = frontend::handle_event{ &fe, &g, ev = sdl::Event::text{ bytes = [0; 32], len = 0 }, scale_x = 1.0, scale_y = 1.0 }
+            let mut tb: [32]u8 = [0; 32]
+            let n = frontend::copy_into{ dst = tb[..], src = arg }
+            _ = frontend::handle_event{ &fe, &g, ev = sdl::Event::text{ bytes = tb, len = n }, scale_x = 1.0, scale_y = 1.0 }
         } else if slice::eq_bytes{ a = name, b = "key" } {
             let mut c: usize = 0
             while c < arg.len {
                 let kc: i32 = if arg[c] == 'd' { sdl::key::DOWN } else if arg[c] == 'u' { sdl::key::UP } else if arg[c] == 'l' { sdl::key::LEFT } else if arg[c] == 'r' { sdl::key::RIGHT } else if arg[c] == 'e' { sdl::key::RETURN } else { sdl::key::ESCAPE }
                 _ = frontend::handle_event{ &fe, &g, ev = sdl::Event::key{ down = true, repeat = false, scancode = 0, keycode = kc, mods = 0 }, scale_x = 1.0, scale_y = 1.0 }
-                try one_frame{ &io, &fs, &sdl, &dev, &frame, &g, &fe }
+                try one_frame{ &io, &fs, &sdl, &dev, &frame, &g, &fe, mixer }
                 c = c + 1
             }
         } else if slice::eq_bytes{ a = name, b = "click" } or slice::eq_bytes{ a = name, b = "move" } {
@@ -136,7 +169,7 @@ fn run {
                     _ = frontend::handle_event{ &fe, &g, ev = sdl::Event::mouse_button{ down = true, button = sdl::BUTTON_LEFT, clicks = 1, x = cx, y = cy }, scale_x = 1.0, scale_y = 1.0 }
                     _ = frontend::handle_event{ &fe, &g, ev = sdl::Event::mouse_button{ down = false, button = sdl::BUTTON_LEFT, clicks = 1, x = cx, y = cy }, scale_x = 1.0, scale_y = 1.0 }
                 }
-                try one_frame{ &io, &fs, &sdl, &dev, &frame, &g, &fe }
+                try one_frame{ &io, &fs, &sdl, &dev, &frame, &g, &fe, mixer }
             }
         } else if slice::eq_bytes{ a = name, b = "row" } {
             // row:TAG:N clicks row N of list TAG
@@ -153,7 +186,7 @@ fn run {
                 _ = frontend::handle_event{ &fe, &g, ev = sdl::Event::mouse_motion{ x, y, dx = 0, dy = 0, buttons = 0 }, scale_x = 1.0, scale_y = 1.0 }
                 _ = frontend::handle_event{ &fe, &g, ev = sdl::Event::mouse_button{ down = true, button = sdl::BUTTON_LEFT, clicks = 1, x, y }, scale_x = 1.0, scale_y = 1.0 }
                 _ = frontend::handle_event{ &fe, &g, ev = sdl::Event::mouse_button{ down = false, button = sdl::BUTTON_LEFT, clicks = 1, x, y }, scale_x = 1.0, scale_y = 1.0 }
-                try one_frame{ &io, &fs, &sdl, &dev, &frame, &g, &fe }
+                try one_frame{ &io, &fs, &sdl, &dev, &frame, &g, &fe, mixer }
             }
         } else if slice::eq_bytes{ a = name, b = "slide" } {
             let mut c2: usize = 0
@@ -167,7 +200,7 @@ fn run {
                 _ = frontend::handle_event{ &fe, &g, ev = sdl::Event::mouse_motion{ x, y, dx = 0, dy = 0, buttons = 0 }, scale_x = 1.0, scale_y = 1.0 }
                 _ = frontend::handle_event{ &fe, &g, ev = sdl::Event::mouse_button{ down = true, button = sdl::BUTTON_LEFT, clicks = 1, x, y }, scale_x = 1.0, scale_y = 1.0 }
                 _ = frontend::handle_event{ &fe, &g, ev = sdl::Event::mouse_button{ down = false, button = sdl::BUTTON_LEFT, clicks = 1, x, y }, scale_x = 1.0, scale_y = 1.0 }
-                try one_frame{ &io, &fs, &sdl, &dev, &frame, &g, &fe }
+                try one_frame{ &io, &fs, &sdl, &dev, &frame, &g, &fe, mixer }
             }
         } else {
             _ = @fmt(&io, "unknown command {}\n", cmd)
@@ -175,6 +208,8 @@ fn run {
         k = k + 1
     }
     _ = @fmt(&io, "settings: {}x{} music {} gamma {} difficulty {}\n", fe.settings.width, fe.settings.height, fe.settings.music, fe.settings.gamma, fe.settings.difficulty)
+    let mx2 = mixer
+    if mx2 != null { _ = @fmt(&io, "mixer errors: {}\n", mx2.errors) }
 }
 
 fn number { s: []u8 } -> i32 {
@@ -190,9 +225,15 @@ fn number { s: []u8 } -> i32 {
 // step, draw, submit; prints an outcome that isn't "running".
 fn one_frame {
     mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut dev: gpu::Device, mut frame: render::Frame, mut g: gui::Gui, mut fe: frontend::Front,
+    mixer: ?*mut mix::Mixer,
 } -> ! {
     gui::update{ &g, dt = 1.0 / 30.0 }
-    let out = frontend::step{ &fe, &g, &fs, &dev, &sdl, output = null, mixer = null, dt = 1.0 / 30.0 }
+    let mx = mixer
+    if mx != null {
+        let mut pcm: [1470]i16
+        mix::render{ m = mx, into = pcm[..] }
+    }
+    let out = frontend::step{ &fe, &g, &fs, &dev, &sdl, output = null, mixer, dt = 1.0 / 30.0 }
     match out {
         running => {}
         new_game{ module } => { _ = @fmt(&io, "outcome: new game in {}\n", resref::bytes{ r = &module }) }

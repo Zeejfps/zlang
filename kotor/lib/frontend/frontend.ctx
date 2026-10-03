@@ -152,6 +152,7 @@ namespace frontend {
             return Outcome::running
         }
         update_scene{ &fe, dt }
+        start_music{ &fe, &g, &fs, mixer }
         let n = g.events.len
         let mut i: usize = 0
         let mut out = Outcome::running
@@ -186,4 +187,38 @@ namespace frontend {
         gui::draw_panels{ &g, &frame }
     }
 
+    // ---- music
+
+    // The main menu's theme, mus_theme_cult from streammusic/, looping in the music group
+    // (docs/re/gui.md: ShowMainMenu starts it at full volume). Once, when the menu is up.
+    fn start_music { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mixer: ?*mut mix::Mixer } {
+        if fe.music_started { return }
+        let m = mixer ifnull { return }
+        fe.music_started = true
+        let loaded = res::load{ &fs, rm = g.rm, name = "mus_theme_cult", kind = restype::Type::wav, realloc = heap::alloc, heap = fe.heap } iferr { return }
+        let bytes = loaded ifnull { return }
+        let mut p = mix::sound_2d{ group = mix::Group::music, volume = 1.0 }
+        p.looping = true
+        let h = mix::play{ m, bytes, p } iferr {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = fe.heap, mem = bytes, count = 0 }
+            return
+        }
+        fe.music = h
+        fe.music_bytes = bytes
+    }
+
+    // Leaves the front end for the game: closes its panels, stops the music, frees the 3D scene.
+    // The engine calls it on new_game and load_game, before it loads the module.
+    fn leave { mut fe: Front, mut g: gui::Gui, mut dev: gpu::Device, mixer: ?*mut mix::Mixer } {
+        let mut i: usize = 0
+        while i < fe.depth {
+            gui::close{ &g, id = fe.stack[i].panel }
+            i = i + 1
+        }
+        fe.depth = 0
+        let m = mixer
+        if m != null { mix::stop{ m, h = fe.music, fade = 1.0 } }
+        free_scene{ &fe, &dev }
+        release_shot{ &fe, &dev }
+    }
 }

@@ -231,6 +231,69 @@ namespace gui {
         return rect_of{ x = p.sx + l.ax + c.padding, y = p.sy + l.ay + s.y, w = l.aw - 2 * c.padding, h = s.h }
     }
 
+    // Makes the list box show one wrapped text instead of rows (message boxes, descriptions).
+    fn set_list_text { mut g: Gui, panel: u32, tag: []u8, text: []u8 } -> ! {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        list_clear{ &g, panel, tag }
+        c.text_mode = true
+        _ = try list_add{ &g, panel, tag, text, user = 0 }
+    }
+
+    // Makes a label an edit box: it takes typed text while it has the focus (save names).
+    fn make_edit { mut g: Gui, panel: u32, tag: []u8 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.kind = K_EDIT
+        c.flags = c.flags | F_VISIBLE | F_ENABLED
+    }
+
+    // Puts a picture in the panel's own fill (the loading screen's area picture).
+    fn set_panel_picture { mut g: Gui, panel: u32, img: Img } {
+        let p = find_panel{ &g, id = panel } ifnull { return }
+        if not p.border.present { p.border = no_border{}; p.border.present = true }
+        p.border.fill = img
+        p.border.fill_style = FILL_STRETCHED
+    }
+
+    // Makes room for the message's lines: the list box, the panel and the buttons below grow.
+    fn grow_message_box { mut g: Gui, panel: u32 } {
+        let p = find_panel{ &g, id = panel } ifnull { return }
+        let li = find_by_tag{ p, tag = "LB_MESSAGE" }
+        if li < 0 { return }
+        let c = list::at{ list = p.controls, i = @as(usize, li) }
+        if c.proto < 0 or c.row_count == 0 { return }
+        let pc = list::at{ list = p.controls, i = @as(usize, c.proto) }
+        if pc.text.font < 0 or @as(usize, pc.text.font) >= g.fonts.len { return }
+        let font = list::items{ list = g.fonts }[@as(usize, pc.text.font)].font
+        let l = list_layout{ p, c }
+        let n = layout{ font, text = c.rows[0].text, width = l.aw - 2 * c.padding, lines = g.lines }
+        let need = lines_height{ font, count = n } + 2 * c.padding
+        if need <= c.h { return }
+        let extra = need - c.h
+        c.h = c.h + extra
+        p.h = p.h + extra
+        let cs = list::items{ list = p.controls }
+        let mut i: usize = 0
+        while i < cs.len {
+            if cs[i].kind == K_BUTTON and (cs[i].flags & F_INTERNAL) == 0 { cs[i].y = cs[i].y + extra }
+            i = i + 1
+        }
+        place{ &g, p }
+    }
+
+    // A confirmation or notice (confirm.gui): `text` over OK and, if `cancel`, Cancel. Modal,
+    // centred. The owner takes the activate events of BTN_OK / BTN_CANCEL and closes the panel.
+    fn message_box { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, text: []u8, cancel: bool } -> !u32 {
+        let id = try open{ &g, &fs, &dev, name = "confirm", mode = Mode::dialog, modal = true }
+        try set_list_text{ &g, panel = id, tag = "LB_MESSAGE", text }
+        grow_message_box{ &g, panel = id }
+        if not cancel {
+            set_visible{ &g, panel = id, tag = "BTN_CANCEL", visible = false }
+        }
+        set_focus{ &g, panel = id, tag = "BTN_OK" }
+        play_sound{ &g, n = 4 }
+        return id
+    }
+
     fn list_clear { mut g: Gui, panel: u32, tag: []u8 } {
         let c = find_control{ &g, panel, tag } ifnull { return }
         let mut r: usize = 0
