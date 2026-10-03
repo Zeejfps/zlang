@@ -73,9 +73,17 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
 - **Level-up and downed marks** on the party widgets, from `exptable.2da` and the hit points.
 - **Window resizes** reopen the HUD fitted to the new size (`ingame::resize` also calls
   `gpu::resize`: nothing else in the loop handles `resized`).
-- **Not built**: the four self action slots (Force powers, medical items, other items, mines) stay
-  hidden until lib/rules gives the leader powers and items an activation; the leader-swap
-  animation, effect-count icons, stealth toggle and bark bubbles (the dialogue lead's).
+- **Self action slots** (`lib/ingame/selfslots.ctx`, re/gui.md "Action menus"): the four buttons at
+  the bottom right hold the leader's friendly Force powers, medical items, other usable items and
+  mines; the arrows cycle, a click casts on the leader in place of its queued actions (the cast
+  action spends the item's use as it begins, `rt_item::spend_use`), an entry that cannot be used
+  shows dimmed and says why in the message bar for five seconds (Force Depleted, Restricted by
+  Armor, Full Health, PC Dead), and the hovered slot's entry is named above the slots. Which
+  entries make up each list is ours (the original's list builder was not read): see the header of
+  the file. Mines are not listed (no trap action in the engine) and the keys (keymap.2da) are not
+  bound. `ui useitem RESREF [N]` is the headless test; `scripts/selfslots.txt` the run.
+- **Not built**: the leader-swap animation, effect-count icons, stealth toggle and bark bubbles
+  (the dialogue lead's).
 
 ## Menus
 
@@ -168,7 +176,7 @@ comment so the rules lead's merge finds it.
 
 ## Open
 
-- Self action slots (Force powers, medical items, other items, mines), the leader-swap
+- Self action slots: the mines slot and the keys; the leader-swap
   animation, effect-count icons, the stealth toggle, bark bubbles (dialogue lead's).
 - Item drag-and-drop; variable-height list rows (the journal splits long texts into rows);
   a scrolling description box.

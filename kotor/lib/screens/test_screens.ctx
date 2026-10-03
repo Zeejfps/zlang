@@ -82,6 +82,19 @@ namespace test_screens {
                 list::free{ list = &b.bytes }
                 world::destroy{ &w, id }
             }
+        } else if ci::eq{ a = cmd, b = "hp" } {
+            let leader = party::leader{ w = &w }
+            if text::next_word{ &words } is some{ value = n } {
+                if world::object{ w = &w, id = leader } is some{ value = o } { o.hp = @trunc(i32, text::scan_decimal{ s = n }) }
+            }
+            if world::object{ w = &w, id = leader } is some{ value = o } { _ = @fmt(&w.io, "leader hp {} of {}\n", o.hp, o.hp_max) }
+        } else if ci::eq{ a = cmd, b = "useitem" } {
+            // The leader uses an item of the bag (made first, with the given stack, when it is a blueprint name).
+            let name = text::next_word{ &words } ifnull { return true }
+            let n = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "1" })
+            let leader = party::leader{ w = &w }
+            let item = rt_item::create_item{ &w, template = name, target = leader, stack = n }
+            items::use_item{ &w, who = leader, item }
         } else if ci::eq{ a = cmd, b = "addclass" } {
             // AddMultiClass for the leader: a new class slot at level 0 (3 Jedi Guardian, 4 Consular, 5 Sentinel).
             let f = levelup::fighter_of{ w = &w, id = party::leader{ w = &w } } ifnull { return true }
