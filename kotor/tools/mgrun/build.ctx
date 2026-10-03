@@ -1,10 +1,11 @@
-// The build program for mgdump: `kotor/tools/ctxc run kotor/tools/mgdump`.
+// The build program for mgrun: `kotor/tools/ctxc run kotor/tools/mgrun -- ...`.
 fn build { mut b: Build } {
-    let exe = build::exe{ &b, name = "mgdump", root = "." }
+    let exe = build::exe{ &b, name = "mgrun", root = "." }
     build::add_sources{ &b, exe, dir = "../../lib/base" }
     build::add_sources{ &b, exe, dir = "../../lib/res" }
     build::add_sources{ &b, exe, dir = "../../lib/formats" }
     build::add_sources{ &b, exe, dir = "../../lib/mdl" }
+    build::add_sources{ &b, exe, dir = "../../lib/mdl_cache" }
     build::add_sources{ &b, exe, dir = "../../lib/minigame" }
     build::add_sources{ &b, exe, dir = "../common" }
     build::optimize{ &b, exe, level = 2 }
