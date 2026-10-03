@@ -99,12 +99,15 @@ namespace ir {
     // A pattern binding: the slot gets payload field `field`, or its address if by_ref.
     struct Bind { slot: u32, field: u32, by_ref: bool }
 
-    // A switch case (a match on an enum): the body runs if the scrutinee has one of the values.
-    // values is empty for `else`.
-    struct Case { values: []Int, body: Block }
+    // A switch case (a match on an enum or an integer): the body runs if the scrutinee has one of
+    // the values or is in one of the ranges. Both are empty for `else`.
+    struct Case { values: []Int, ranges: []Range, body: Block }
 
     // An integer of any type: value is the magnitude.
     struct Int { negative: bool, value: u64 }
+
+    // The integers from lo to hi, both included.
+    struct Range { lo: Int, hi: Int }
 
     union Stmt {
         define{ slot: u32, init: Expr },                        // (let SLOT E)

@@ -179,6 +179,7 @@ namespace check {
         forwards:  map::Map(u64, []Forward, Heap),    // what `..` supplies to a call
         site_of:   map::Map(u64, u32, Heap),          // an @fmt's site, by its key
         holds:     map::Map(u64, []Place, Heap),      // the places a bind holds
+        int_cases: map::Map(u64, [][]ir::Range, Heap),  // by arm, a match's (by its scrutinee) or `is`'s integer patterns
         // A loop that a jump from an inner loop leaves or repeats has an id (1, 2, ... in each
         // body), and the jump names it.
         loop_ids:  map::Map(u64, u32, Heap),          // a `while` statement's id
@@ -368,6 +369,7 @@ namespace check {
             forwards = map::new(u64, []Forward){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             site_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             holds = map::new(u64, []Place){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            int_cases = map::new(u64, [][]ir::Range){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             loop_ids = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             jump_ids = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             label_ids = 0,
@@ -3883,11 +3885,15 @@ namespace check {
         } else if ok and through and is_enum{ c, t = ut } {
             error{ &c, at = expr_at{ e = scrut }, msg = "match cannot go through a pointer to an enum; match on the value with `.*`" }
             ok = false
+        } else if ok and int_type{ c, t = ut } {
+            if not through { return check_int_match{ &c, x, at, exp, value, may_leave, t = ut } }
+            error{ &c, at = expr_at{ e = scrut }, msg = "match cannot go through a pointer to an integer; match on the value with `.*`" }
+            ok = false
         } else if ok and untagged_type{ c, t = ut } {
             error{ &c, at = expr_at{ e = scrut }, msg = "an extern union has no tag to match on: read the field you know it holds" }
             ok = false
         } else if ok and not has_variants{ c, t = ut } {
-            errorf{ &c, at = expr_at{ e = scrut }, msg = @fmt("match needs a union, enum or optional value, got {}", tstr{ c, t = st }) }
+            errorf{ &c, at = expr_at{ e = scrut }, msg = @fmt("match needs a union, enum, optional or integer value, got {}", tstr{ c, t = st }) }
             ok = false
         }
         let vs: []Variant = if ok { variants_of{ &c, t = ut } } else { slice::empty(Variant){} }
@@ -3916,9 +3922,12 @@ namespace check {
             let mut k: usize = 0
             while k < arm.pats.len {
                 let p = arm.pats[k]
-                let vi = variant_index{ vs, name = p.variant.text }
+                let vi = if int_pattern{ p } { NONE } else { variant_index{ vs, name = p.variant.text } }
                 let mut known = ok
-                if ok and vi == NONE {
+                if ok and int_pattern{ p } {
+                    errorf{ &c, at = p.span, msg = @fmt("an integer pattern needs an integer to match, got {}", tstr{ c, t = ut }) }
+                    known = false
+                } else if ok and vi == NONE {
                     if p.variant.text.len > 0 {
                         errorf{ &c, at = p.span, msg = @fmt("{} has no variant `{}`", tstr{ c, t = ut }, str{ s = p.variant.text }) }
                     }
@@ -3962,6 +3971,130 @@ namespace check {
         restore{ &c, s = merge{ c, xs = list::items{ list = results } } }
         if value { return join{ &c, at, bs = list::items{ list = bs }, exp, may_leave } }
         return types::NO_TYPE
+    }
+
+    // ---- match on integers (§8, Match on integers)
+
+    // A literal or a range, which only an integer can match.
+    fn int_pattern { p: syntax::Pattern } -> bool {
+        return p.upto != null or (p.value != null and p.variant.text.len == 0)
+    }
+
+    fn int_type { c: Checker, t: Id } -> bool {
+        let x = types::prune{ s = c.ty, t }
+        return x != types::ERROR and is_int{ c, t = x }
+    }
+
+    // A match on an integer: each arm's patterns as ranges (int_pats), recorded for lowering.
+    fn check_int_match { mut c: Checker, x: syntax::Match, at: source::Span, exp: Id, value: bool, may_leave: bool, t: Id } -> Id {
+        let s0 = save{ c }
+        let mut seen = list::new(ir::Range){ realloc = arena::alloc, heap = c.heap }
+        let mut out = list::new([]ir::Range){ realloc = arena::alloc, heap = c.heap }
+        let mut has_else = false
+        let mut results = list::new(State){ realloc = arena::alloc, heap = c.heap }
+        let mut bs = list::new(Branch){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < x.arms.len {
+            let arm = x.arms[i]
+            if arm.pats.len == 0 {
+                if i != x.arms.len - 1 { error{ &c, at = arm.span, msg = "`else` must be the last arm" } }
+                has_else = true
+            }
+            let rs = int_pats{ &c, pats = arm.pats, t, &seen }
+            try! list::push{ list = &out, item = rs }
+            restore{ &c, s = s0 }
+            add_branch{ xs = &bs, b = branch{ &c, b = arm.body, vars = slice::empty(u32){}, facts = slice::empty(Fact){}, exp, value } }
+            add_state{ xs = &results, s = save{ c } }
+            i = i + 1
+        }
+        if not has_else { error{ &c, at, msg = "a match on an integer needs an `else` arm" } }
+        try! map::put{ m = &c.int_cases, key = expr_key{ e = x.scrut.* }, value = list::items{ list = out } }
+        restore{ &c, s = merge{ c, xs = list::items{ list = results } } }
+        if value { return join{ &c, at, bs = list::items{ list = bs }, exp, may_leave } }
+        return types::NO_TYPE
+    }
+
+    // `e is P | Q` on an integer.
+    fn check_int_is { mut c: Checker, e: syntax::Expr, pats: []syntax::Pattern, t: Id } -> Id {
+        let mut seen = list::new(ir::Range){ realloc = arena::alloc, heap = c.heap }
+        let mut out = list::new([]ir::Range){ realloc = arena::alloc, heap = c.heap }
+        let rs = int_pats{ &c, pats, t, &seen }
+        try! list::push{ list = &out, item = rs }
+        try! map::put{ m = &c.int_cases, key = expr_key{ e }, value = list::items{ list = out } }
+        try! map::put{ m = &c.is_vars, key = expr_key{ e }, value = slice::empty(u32){} }
+        return types::BOOL
+    }
+
+    // The ranges of an arm's integer patterns (a value is a range of one), none of which may
+    // overlap one seen in an earlier pattern.
+    fn int_pats { mut c: Checker, pats: []syntax::Pattern, t: Id, mut seen: list::List(ir::Range, Heap) } -> []ir::Range {
+        let mut out = list::new(ir::Range){ realloc = arena::alloc, heap = c.heap }
+        let s = signed_type{ c, t }
+        let mut k: usize = 0
+        while k < pats.len {
+            let p = pats[k]
+            k = k + 1
+            let lo_e = p.value
+            if lo_e == null {
+                if p.variant.text.len > 0 { error{ &c, at = p.span, msg = "an integer pattern is a literal, a const or a range `lo..=hi`, with no bindings" } }
+                continue
+            }
+            let lo = pat_int{ &c, e = lo_e.*, t }
+            let up = p.upto
+            let hi = if up != null { pat_int{ &c, e = up.*, t } } else { lo }
+            if lo == null or hi == null { continue }
+            if int_key{ n = hi, s } < int_key{ n = lo, s } {
+                errorf{ &c, at = p.span, msg = @fmt("range {}{}..={}{} is empty", sign{ n = lo }, lo.value, sign{ n = hi }, hi.value) }
+                continue
+            }
+            let r = ir::Range{ lo, hi }
+            let mut j: usize = 0
+            let mut clash = false
+            while j < seen.len {
+                let q = list::items{ list = seen }[j]
+                if int_key{ n = r.lo, s } <= int_key{ n = q.hi, s } and int_key{ n = q.lo, s } <= int_key{ n = r.hi, s } { clash = true }
+                j = j + 1
+            }
+            if clash {
+                if up == null {
+                    errorf{ &c, at = p.span, msg = @fmt("{}{} is already matched by an earlier pattern", sign{ n = lo }, lo.value) }
+                } else {
+                    errorf{ &c, at = p.span, msg = @fmt("range {}{}..={}{} overlaps an earlier pattern", sign{ n = lo }, lo.value, sign{ n = hi }, hi.value) }
+                }
+                continue
+            }
+            try! list::push{ list = &seen, item = r }
+            try! list::push{ list = &out, item = r }
+        }
+        return list::items{ list = out }
+    }
+
+    // The value of an integer pattern, e, which must convert to t and be folded (§14).
+    fn pat_int { mut c: Checker, e: syntax::Expr, t: Id } -> ?ir::Int {
+        expect{ &c, e, t }
+        if types::prune{ s = c.ty, t = type_of_expr{ c, e } } == types::ERROR { return null }
+        let v = fold_to{ &c, e, t }
+        if v != null {
+            if v is int{ negative, magnitude } { return ir::Int{ negative = negative and magnitude != 0, value = magnitude } }
+        }
+        error{ &c, at = expr_at{ e }, msg = "an integer pattern must be a literal or a const whose value is folded" }
+        return null
+    }
+
+    fn signed_type { c: Checker, t: Id } -> bool {
+        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is prim{ p } { return types::signed{ p } }
+        return true
+    }
+
+    // n's order among the integers of a type, signed or not, as an unsigned number.
+    fn int_key { n: ir::Int, s: bool } -> u64 {
+        if not s { return n.value }
+        if n.negative { return @wrap_sub(9223372036854775808, n.value) }
+        return @wrap_add(9223372036854775808, n.value)
+    }
+
+    fn sign { n: ir::Int } -> utf8::String {
+        return if n.negative { "-" } else { "" }
     }
 
     // "`a`, `b`", or "the arm bindings" if there are none.
@@ -4203,6 +4336,7 @@ namespace check {
     // true (facts).
     fn check_is { mut c: Checker, e: syntax::Expr, x: syntax::Expr, pats: []syntax::Pattern } -> Id {
         let t = typed{ &c, e = x }
+        if int_type{ c, t } { return check_int_is{ &c, e, pats, t } }
         let mut ok = t != types::ERROR
         match types::get{ s = c.ty, id = t } {
             ptr => {
@@ -4242,7 +4376,10 @@ namespace check {
                 vi = variant_index{ vs = inner, name }
             }
             let mut known = ok
-            if p.quals.len > 0 {
+            if ok and int_pattern{ p } {
+                errorf{ &c, at = p.span, msg = @fmt("an integer pattern needs an integer to test, got {}", tstr{ c, t }) }
+                known = false
+            } else if p.quals.len > 0 {
                 errorf{ &c, at = p.span, msg = @fmt("`is` names a variant alone: write `{}`", str{ s = name }) }
                 known = false
             } else if ok and vi == NONE {

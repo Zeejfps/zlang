@@ -596,21 +596,79 @@ namespace parser {
 
     // `variant` or `variant{ binders }`, where variant may be `null`, or an error's name with its
     // path, `a::b::name`. After `is` (test), a `{` begins binders only on the same line, and in a
-    // condition only where it would begin a call's braces.
+    // condition only where it would begin a call's braces. An integer pattern (§8, Match on
+    // integers) is a literal, `-` and one, or a name with its path, and `..=` and another for a
+    // range: a pattern without binders has its value as an expression too.
     fn pattern { mut p: Parser, test: bool } -> syntax::Pattern {
         let start = p.i
-        let mut variant = if next_is{ p, k = tok::Kind::kw_null } { keyword_name{ &p } } else { ident{ &p } }
+        let no_quals = slice::empty(syntax::Name){}
+        let none = slice::empty(syntax::Binder){}
+        if literal_start{ p } {
+            let lo = box{ &p, value = prefix{ &p } }
+            let hi = range_end{ &p }
+            let here = source::Span{ file = p.file, start = lo.span.start, end = lo.span.start }
+            return syntax::Pattern{ span = span_from{ p, start }, quals = no_quals, variant = made_name{ &p, at = here, text = "" }, binders = none, value = lo, upto = hi }
+        }
+        let is_null = next_is{ p, k = tok::Kind::kw_null }
+        let mut variant = if is_null { keyword_name{ &p } } else { ident{ &p } }
         let mut quals = list::new(syntax::Name){ realloc = arena::alloc, heap = p.heap }
         while next_is{ p, k = tok::Kind::colons } and variant.text.len > 0 {
             skip{ &p }
             try! list::push{ list = &quals, item = variant }
             variant = ident{ &p }
         }
-        let mut bs: []syntax::Binder = slice::empty(syntax::Binder){}
+        let mut bs: []syntax::Binder = none
         if next_is{ p, k = tok::Kind::lbrace } and (not test or (not nl{ p } and (not p.in_cond or brace_is_call{ p }))) {
             bs = binder_list{ &p }
         }
-        return syntax::Pattern{ span = span_from{ p, start }, quals = list::items{ list = quals }, variant, binders = bs }
+        let qs = list::items{ list = quals }
+        let mut value: ?*syntax::Expr = null
+        let mut hi: ?*syntax::Expr = null
+        if bs.len == 0 and not is_null and variant.text.len > 0 {
+            value = box{ &p, value = path_of{ &p, quals = qs, name = variant, start } }
+            hi = range_end{ &p }
+        }
+        return syntax::Pattern{ span = span_from{ p, start }, quals = qs, variant, binders = bs, value, upto = hi }
+    }
+
+    // Whether an integer pattern's literal starts here.
+    fn literal_start { p: Parser } -> bool {
+        let k = kind{ p, ahead = 0 }
+        return k == tok::Kind::int or k == tok::Kind::char or k == tok::Kind::minus
+    }
+
+    // A range pattern's `..= end`, if one follows.
+    fn range_end { mut p: Parser } -> ?*syntax::Expr {
+        if not next_is{ p, k = tok::Kind::dots } { return null }
+        if kind{ p, ahead = 1 } != tok::Kind::assign {
+            fail{ &p, msg = "a range pattern is `lo..=hi`, which includes hi" }
+            return null
+        }
+        skip{ &p }
+        skip{ &p }
+        let start = p.i
+        if literal_start{ p } { return box{ &p, value = prefix{ &p } } }
+        let mut name = ident{ &p }
+        let mut quals = list::new(syntax::Name){ realloc = arena::alloc, heap = p.heap }
+        while next_is{ p, k = tok::Kind::colons } and name.text.len > 0 {
+            skip{ &p }
+            try! list::push{ list = &quals, item = name }
+            name = ident{ &p }
+        }
+        return box{ &p, value = path_of{ &p, quals = list::items{ list = quals }, name, start } }
+    }
+
+    // The path expression `a::b::name`, from token start.
+    fn path_of { mut p: Parser, quals: []syntax::Name, name: syntax::Name, start: usize } -> syntax::Expr {
+        let mut segs = list::new(syntax::Seg){ realloc = arena::alloc, heap = p.heap }
+        let mut i: usize = 0
+        while i < quals.len {
+            try! list::push{ list = &segs, item = syntax::Seg{ name = quals[i], targs = null } }
+            i = i + 1
+        }
+        try! list::push{ list = &segs, item = syntax::Seg{ name, targs = null } }
+        let k = syntax::ExprKind::path{ segs = list::items{ list = segs } }
+        return syntax::Expr{ id = new_id{ &p }, span = span_from{ p, start }, at = start_of{ p, start }, k }
     }
 
     // `{ f, &g, h = x, &k = y }`: the payload fields a pattern binds.
@@ -838,21 +896,21 @@ namespace parser {
         try! list::push{ list = &binders, item = syntax::Binder{ span = here, by_ref = false, field, local = null } }
         let mut pats = list::new(syntax::Pattern){ realloc = arena::alloc, heap = p.heap }
         let has: []u8 = if is_null { "some" } else { "ok" }
-        try! list::push{ list = &pats, item = syntax::Pattern{ span = here, quals = no_quals, variant = made_name{ &p, at = here, text = has }, binders = list::items{ list = binders } } }
+        try! list::push{ list = &pats, item = syntax::Pattern{ span = here, quals = no_quals, variant = made_name{ &p, at = here, text = has }, binders = list::items{ list = binders }, value = null, upto = null } }
         let value = name_path{ &p, name = made_name{ &p, at = here, text = "value" } }
         let some_body = one{ &p, s = syntax::Stmt{ id = new_id{ &p }, span = here, k = syntax::StmtKind::eval{ e = value } } }
         let mut arms = list::new(syntax::Arm){ realloc = arena::alloc, heap = p.heap }
         try! list::push{ list = &arms, item = syntax::Arm{ span = here, pats = list::items{ list = pats }, body = some_body } }
         let mut nulls = list::new(syntax::Pattern){ realloc = arena::alloc, heap = p.heap }
         if is_null {
-            try! list::push{ list = &nulls, item = syntax::Pattern{ span = here, quals = no_quals, variant = made_name{ &p, at = here, text = "null" }, binders = slice::empty(syntax::Binder){} } }
+            try! list::push{ list = &nulls, item = syntax::Pattern{ span = here, quals = no_quals, variant = made_name{ &p, at = here, text = "null" }, binders = slice::empty(syntax::Binder){}, value = null, upto = null } }
         } else if err_pattern{ p } {
             let pat_start = p.i
             let name = ident{ &p }
             let bs = binder_list{ &p }
-            try! list::push{ list = &nulls, item = syntax::Pattern{ span = span_from{ p, start = pat_start }, quals = no_quals, variant = name, binders = bs } }
+            try! list::push{ list = &nulls, item = syntax::Pattern{ span = span_from{ p, start = pat_start }, quals = no_quals, variant = name, binders = bs, value = null, upto = null } }
         } else {
-            try! list::push{ list = &nulls, item = syntax::Pattern{ span = here, quals = no_quals, variant = made_name{ &p, at = here, text = "err" }, binders = slice::empty(syntax::Binder){} } }
+            try! list::push{ list = &nulls, item = syntax::Pattern{ span = here, quals = no_quals, variant = made_name{ &p, at = here, text = "err" }, binders = slice::empty(syntax::Binder){}, value = null, upto = null } }
         }
         let null_body = if next_is{ p, k = tok::Kind::lbrace } { block{ &p } } else { null_value{ &p } }
         try! list::push{ list = &arms, item = syntax::Arm{ span = span_from{ p, start = op_i }, pats = list::items{ list = nulls }, body = null_body } }

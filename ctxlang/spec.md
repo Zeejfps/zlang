@@ -121,7 +121,7 @@ match e {
 }
 ```
 
-1. The scrutinee is a union, a `?T`, or an enum (§12, Enums). The arms must be exhaustive. `else` matches every variant not listed, and must come last. `else` is an error if every variant is already listed.
+1. The scrutinee is a union, a `?T`, an enum (§12, Enums) or an integer (below). The arms must be exhaustive. `else` matches every variant not listed, and must come last. `else` is an error if every variant is already listed.
 2. Each variant appears in at most one arm, and at most once in it.
 3. An arm may list several patterns separated by `|`; its body runs for any of them. Every pattern must bind the same names, and each name must have the same type and be bound the same way (with or without `&`) in all of them. `else` can't be combined with other patterns.
 4. A pattern `variant{ f }` binds payload field `f` as a read-only local. `variant{ f = x }` binds it under the name `x` instead. A pattern may bind a subset of the fields.
@@ -130,6 +130,27 @@ match e {
 7. If the scrutinee is `&p`, no place that overlaps `p` (§3.1) may be accessed inside an arm except through that arm's bindings. For other pointer scrutinees this isn't checked.
 8. `match` is a statement, and can also be an expression (§11, If and match expressions).
 9. To take one variant apart and leave on any other, use `let` with a pattern (§11, Let-else). To test for one, use `is` (§8, Is).
+
+### Match on integers
+
+```
+match op {
+    0 => { ... }
+    OP_ADD | OP_SUB => { ... }          // folded consts (§14)
+    gl::TRIANGLES => { ... }
+    'a'..='z' | '_' => { ... }          // a range includes both ends
+    -8..=-1 => { ... }
+    else => { ... }
+}
+if c is '0'..='9' { ... }
+```
+
+1. A scrutinee of an integer type (`i8`..`i64`, `u8`..`u64`, `usize`) is matched by value. Its patterns are integer literals (a character literal is one), with a `-` or not; names of consts, with their path, whose values are folded (§14, rule 1); and ranges `lo..=hi` of these, which include `lo` and `hi`. `lo..hi` is a syntax error.
+2. Each value must convert to the scrutinee's type as an argument would (§11, Widening and Literals): `300` doesn't fit a `u8`, and an `i32` const doesn't convert to one.
+3. No value may be matched by two patterns, in one arm or two, and a range's `lo` can't be above its `hi`.
+4. `else` is required, even if the patterns cover every value. Patterns have no bindings.
+5. A pointer to an integer is an error: match on `p.*`. Let-else doesn't apply to integers.
+6. `e is P | Q` tests an integer the same way (§8, Is), and binds nothing.
 
 ### Optional
 
@@ -174,7 +195,7 @@ let found = map::get{ m, key } is field         // ?Kind for an enum Kind: null 
 ```
 
 1. `e is P` is a `bool`: true when `e` holds `P`'s variant. `P` is a pattern as in a match arm (§8, Match), its variant named alone, or several separated by `|`: then it is true for any of them, and each must bind the same names, each with the same type, as an arm's patterns do (§8, Match, rule 3). A binding is read-only: `&f` is an error.
-2. `e` is a union, an enum or a `?T`. A pointer is an error, and so is a `!T` or an error: use `match`.
+2. `e` is a union, an enum, a `?T` or an integer (§8, Match on integers). A pointer is an error, and so is a `!T` or an error: use `match`.
 3. On a `?U` for a union or enum `U`, a pattern may name a variant of `U`, which null doesn't match. `null` and `some` still name the optional's own variants. `match` doesn't do this: it lists exactly its scrutinee's variants.
 4. Its bindings are bound where the test is known true. `e is P` binds them when true, and `not`, `and` and `or` combine what conditions bind as they combine what they narrow (§8, Optional, rule 4). A name that would be bound twice, as in `a is x{ v } and b is y{ v }`, isn't bound, and neither is one that only one side of an `or` binds.
 5. They are in scope where narrowing would hold (§8, Optional, rule 5): in `b` of `a and b`, in the first branch of `if c` and the body of `while c`, and after an `if` whose branch leaves when `c` is false. After an `if`, they are declared in the enclosing block as a let-else's bindings are (§11, Let-else): a later `let` of the same name in that block is an error.
