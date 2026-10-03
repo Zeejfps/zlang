@@ -1,0 +1,208 @@
+// What a KOTOR sound file holds (docs/formats/audio.md): every sound is a ".wav", but the bytes
+// are a plain RIFF/WAVE file (PCM or IMA ADPCM), the same after 470 bytes of silent MPEG frames
+// (`mp3pad`), or an MP3 stream behind a 58-byte RIFF header that claims to be empty
+// (`riffstub`). `probe` finds which, and where the coded samples are; lib/audio's `snd` decodes
+// them.
+//
+//   let info = try wav::probe{ bytes }
+//   // info.codec, .channels, .rate, and the samples at bytes[info.data..info.data + info.size]
+//
+// A raw MP3 (an ID3v2 tag or a run of MPEG frames) is accepted too, for files a mod adds.
+namespace wav {
+    error not_audio             // none of the shapes above
+    error truncated             // a header or chunk runs past the end of the file
+    error no_format             // a RIFF/WAVE file without a `fmt ` chunk
+    error no_data               // ... or without a `data` chunk
+    error unknown_format{ tag: u32 }        // a format tag other than PCM (1) and IMA ADPCM (0x11)
+    error bad_format            // `fmt ` fields that don't fit together (bits, block align)
+
+    enum Codec: u8 { pcm, ima, mp3 }
+    enum Wrapper: u8 { none, mp3pad, riffstub }
+
+    struct Info {
+        codec: Codec,
+        wrapper: Wrapper,
+        channels: u32,
+        rate: u32,                  // Hz
+        bits: u32,                  // PCM: 8 or 16; IMA: 4; MP3: 0
+        data: usize,                // the coded samples are bytes[data..data + size]: for MP3,
+        size: usize,                // the MPEG frames, without ID3 tags
+        frames: u64,                // sample frames, as the header says: 0 for MP3, which doesn't say
+        block_align: u32,           // PCM: bytes per sample frame; IMA: bytes per block
+        block_frames: u32,          // IMA: sample frames per block
+    }
+
+    fn probe { bytes: []u8 } -> !Info {
+        let mut d = bytes
+        let mut base: usize = 0
+        let mut wrapper = Wrapper::none
+        // mp3pad: whole MPEG frames, then a RIFF file at a frame boundary.
+        let riff_at = find_riff_after_frames{ d }
+        if riff_at != null {
+            base = riff_at
+            d = bytes[base..]
+            wrapper = Wrapper::mp3pad
+        }
+        if is_riff{ d } {
+            let mut info = try read_riff{ d }
+            if info.codec == Codec::mp3 { wrapper = Wrapper::riffstub }
+            info.wrapper = wrapper
+            info.data = info.data + base
+            return info
+        }
+        if wrapper == Wrapper::none and looks_like_mp3{ d } {
+            return try probe_mp3{ d, at = 0 }
+        }
+        return not_audio
+    }
+
+    fn is_riff { d: []u8 } -> bool {
+        return d.len >= 12 and slice::eq_bytes{ a = d[0..4], b = "RIFF" } and slice::eq_bytes{ a = d[8..12], b = "WAVE" }
+    }
+
+    // Walks MPEG frame headers from the start; if a frame boundary holds a RIFF/WAVE file,
+    // where it starts. KOTOR's prefix is 3 frames, 470 bytes.
+    fn find_riff_after_frames { d: []u8 } -> ?usize {
+        let mut at: usize = 0
+        let mut frames = 0
+        while frames < 16 {
+            let h = mp3::read_header{ b = d[at..] } ifnull { return null }
+            if h.size == 0 { return null }
+            at = at + h.size
+            frames = frames + 1
+            if at > d.len { return null }
+            if is_riff{ d = d[at..] } { return at }
+        }
+        return null
+    }
+
+    fn read_u16 { d: []u8, at: usize } -> u32 {
+        return @as(u32, d[at]) | (@as(u32, d[at + 1]) << 8)
+    }
+
+    fn read_u32 { d: []u8, at: usize } -> u32 {
+        return @as(u32, d[at]) | (@as(u32, d[at + 1]) << 8) | (@as(u32, d[at + 2]) << 16) | (@as(u32, d[at + 3]) << 24)
+    }
+
+    // A RIFF/WAVE file at the start of `d`: its `fmt ` and `data`, or the MP3 behind a stub.
+    fn read_riff { d: []u8 } -> !Info {
+        let declared: usize = read_u32{ d, at = 4 }
+        let end: usize = if declared + 8 < d.len { declared + 8 } else { d.len }
+        let mut at: usize = 12
+        let mut fmt: ?usize = null
+        let mut fmt_size: usize = 0
+        let mut data: ?usize = null
+        let mut data_size: usize = 0
+        let mut fact: ?u32 = null
+        while at + 8 <= end {
+            let id = d[at..at + 4]
+            let size: usize = read_u32{ d, at = at + 4 }
+            let body = at + 8
+            if slice::eq_bytes{ a = id, b = "fmt " } {
+                if body + size > d.len { return truncated }
+                fmt = body
+                fmt_size = size
+            } else if slice::eq_bytes{ a = id, b = "data" } {
+                data = body
+                // A data chunk cut short keeps what is there.
+                data_size = if body + size > d.len { d.len - body } else { size }
+            } else if slice::eq_bytes{ a = id, b = "fact" } and size >= 4 and body + 4 <= d.len {
+                fact = read_u32{ d, at = body }
+            }
+            at = body + size + (size & 1)
+        }
+        let f = fmt ifnull { return no_format }
+        let body = data ifnull { return no_data }
+        if fmt_size < 16 { return truncated }
+        // The stub: an empty data chunk with MPEG audio after the RIFF's declared end.
+        if data_size == 0 and declared + 8 < d.len and body < d.len and looks_like_mp3{ d = d[body..] } {
+            return try probe_mp3{ d, at = body }
+        }
+        let tag = read_u16{ d, at = f }
+        let channels = read_u16{ d, at = f + 2 }
+        let rate = read_u32{ d, at = f + 4 }
+        let block_align = read_u16{ d, at = f + 12 }
+        let bits = read_u16{ d, at = f + 14 }
+        if channels == 0 or channels > 2 or rate == 0 or block_align == 0 { return bad_format }
+        if tag == 1 {
+            if bits != 8 and bits != 16 { return bad_format }
+            if block_align != channels * bits / 8 { return bad_format }
+            return Info{
+                codec = Codec::pcm, wrapper = Wrapper::none, channels, rate, bits, data = body,
+                size = data_size, frames = data_size / block_align, block_align, block_frames = 1,
+            }
+        }
+        if tag == 0x11 {
+            if bits != 4 or block_align <= 4 * channels { return bad_format }
+            // Samples per block: in the extra format bytes, and always what the block holds.
+            let per_block = (block_align - 4 * channels) * 2 / channels + 1
+            if fmt_size >= 20 and read_u16{ d, at = f + 16 } >= 2 and read_u16{ d, at = f + 18 } != per_block {
+                return bad_format
+            }
+            let blocks: u64 = data_size / block_align
+            let rest = data_size % block_align
+            let mut frames: u64 = blocks * per_block
+            if rest > 4 * channels { frames = frames + (rest - 4 * channels) * 2 / channels + 1 }
+            let counted = fact
+            if counted != null and counted < frames { frames = counted }
+            return Info{
+                codec = Codec::ima, wrapper = Wrapper::none, channels, rate, bits, data = body,
+                size = data_size, frames, block_align, block_frames = per_block,
+            }
+        }
+        return unknown_format{ tag }
+    }
+
+    // The 44-byte header of a 16-bit PCM RIFF/WAVE file of `frames` sample frames, for tools
+    // that write decoded sound out.
+    fn write_header { into: []mut u8, channels: u32, rate: u32, frames: u64 } {
+        let data = frames * channels * 2
+        let bytes: u32 = if data > 0xFFFFFFD3 { 0xFFFFFFD3 } else { @trunc(u32, data) }
+        slice::copy(u8){ dst = into[0..4], src = "RIFF" }
+        put_u32{ into, at = 4, v = bytes + 36 }
+        slice::copy(u8){ dst = into[8..16], src = "WAVEfmt " }
+        put_u32{ into, at = 16, v = 16 }
+        put_u32{ into, at = 20, v = 1 | (channels << 16) }               // PCM, channels
+        put_u32{ into, at = 24, v = rate }
+        put_u32{ into, at = 28, v = rate * channels * 2 }
+        put_u32{ into, at = 32, v = (channels * 2) | (16 << 16) }        // block align, bits
+        slice::copy(u8){ dst = into[36..40], src = "data" }
+        put_u32{ into, at = 40, v = bytes }
+    }
+
+    fn put_u32 { into: []mut u8, at: usize, v: u32 } {
+        into[at] = @trunc(u8, v)
+        into[at + 1] = @trunc(u8, v >> 8)
+        into[at + 2] = @trunc(u8, v >> 16)
+        into[at + 3] = @trunc(u8, v >> 24)
+    }
+
+    // An ID3v2 tag, or an MPEG frame header followed by another.
+    fn looks_like_mp3 { d: []u8 } -> bool {
+        if d.len >= 3 and slice::eq_bytes{ a = d[0..3], b = "ID3" } { return true }
+        let h = mp3::read_header{ b = d } ifnull { return false }
+        if h.size == 0 { return false }
+        if @as(usize, h.size) == d.len { return true }
+        return @as(usize, h.size) < d.len and mp3::read_header{ b = d[h.size..] } != null
+    }
+
+    // The MPEG stream in d[at..]: past an ID3v2 tag at its start, and short of an ID3v1 tag at
+    // its end. The first frame's header gives the channels and rate.
+    fn probe_mp3 { d: []u8, at: usize } -> !Info {
+        let mut start = at
+        let mut stop = d.len
+        if stop >= start + 128 + 4 and slice::eq_bytes{ a = d[stop - 128..stop - 125], b = "TAG" } { stop = stop - 128 }
+        if stop >= start + 10 and slice::eq_bytes{ a = d[start..start + 3], b = "ID3" } {
+            let s = d[start + 6..start + 10]
+            let size: usize = (@as(usize, s[0] & 0x7F) << 21) | (@as(usize, s[1] & 0x7F) << 14) | (@as(usize, s[2] & 0x7F) << 7) | @as(usize, s[3] & 0x7F)
+            let footer: usize = if (d[start + 5] & 0x10) != 0 { 10 } else { 0 }
+            start = start + 10 + size + footer
+            if start > stop { return truncated }
+        }
+        let h = mp3::read_header{ b = d[start..stop] } ifnull { return not_audio }
+        return Info{
+            codec = Codec::mp3, wrapper = Wrapper::none, channels = h.channels, rate = h.rate, bits = 0,
+            data = start, size = stop - start, frames = 0, block_align = 0, block_frames = h.samples,
+        }
+    }
+}

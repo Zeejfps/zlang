@@ -1,0 +1,92 @@
+// IMA ADPCM in Microsoft's block layout (WAVE format tag 0x11), as KOTOR's ambient beds and a few
+// blaster shots use it (docs/formats/audio.md). Each block starts afresh from a header per
+// channel, so blocks decode independently, which is what streaming and looping want.
+namespace ima {
+    const STEP: [89]i32 = [
+        7, 8, 9, 10, 11, 12, 13, 14, 16, 17,
+        19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
+        50, 55, 60, 66, 73, 80, 88, 97, 107, 118,
+        130, 143, 157, 173, 190, 209, 230, 253, 279, 307,
+        337, 371, 408, 449, 494, 544, 598, 658, 724, 796,
+        876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066,
+        2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358,
+        5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899,
+        15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767,
+    ]
+    const INDEX: [8]i32 = [-1, -1, -1, -1, 2, 4, 6, 8]
+
+    // One channel's predictor: the last sample and the step index.
+    struct Channel { sample: i32, index: i32 }
+
+    // The sample frames in a block of `size` bytes: the header's sample, then two per code byte.
+    fn frames_in { size: usize, channels: usize } -> usize {
+        if size < 4 * channels { return 0 }
+        return 1 + (size - 4 * channels) * 2 / channels
+    }
+
+    // Decodes one block into `into` (interleaved, at least frames_in{ block.len, channels } *
+    // channels long). Returns the sample frames written.
+    fn decode_block { block: []u8, channels: usize, into: []mut i16 } -> usize {
+        let frames = frames_in{ size = block.len, channels }
+        if frames == 0 { return 0 }
+        let mut state: [2]Channel
+        let mut c: usize = 0
+        while c < channels {
+            let raw: u32 = @as(u32, block[4 * c]) | (@as(u32, block[4 * c + 1]) << 8)
+            let sample: i32 = if raw >= 0x8000 { @as(i32, raw) - 0x10000 } else { @as(i32, raw) }
+            let index: i32 = if block[4 * c + 2] > 88 { 88 } else { @as(i32, block[4 * c + 2]) }
+            state[c] = Channel{ sample, index }
+            into[c] = @as(i16, sample)
+            c = c + 1
+        }
+        let codes = block[4 * channels..]
+        if channels == 1 {
+            let mut i: usize = 0
+            while i < codes.len {
+                let b = codes[i]
+                into[1 + 2 * i] = step{ ch = &state[0], code = b & 15 }
+                into[2 + 2 * i] = step{ ch = &state[0], code = b >> 4 }
+                i = i + 1
+            }
+            return frames
+        }
+        // Two channels: 4 bytes (8 codes) of the left, then 4 of the right, and so on.
+        let groups = codes.len / 8
+        let mut g: usize = 0
+        while g < groups {
+            c = 0
+            while c < 2 {
+                let at = 8 * g + 4 * c
+                let mut k: usize = 0
+                while k < 4 {
+                    let b = codes[at + k]
+                    let frame = 1 + 8 * g + 2 * k
+                    into[2 * frame + c] = step{ ch = &state[c], code = b & 15 }
+                    into[2 * (frame + 1) + c] = step{ ch = &state[c], code = b >> 4 }
+                    k = k + 1
+                }
+                c = c + 1
+            }
+            g = g + 1
+        }
+        return 1 + 8 * groups
+    }
+
+    // One 4-bit code: the IMA predictor's step, with the shifts the reference encoder uses.
+    fn step { mut ch: Channel, code: u8 } -> i16 {
+        let s = STEP[@as(usize, ch.index)]
+        let mut diff = s >> 3
+        if (code & 4) != 0 { diff = diff + s }
+        if (code & 2) != 0 { diff = diff + (s >> 1) }
+        if (code & 1) != 0 { diff = diff + (s >> 2) }
+        let mut p = if (code & 8) != 0 { ch.sample - diff } else { ch.sample + diff }
+        if p > 32767 { p = 32767 }
+        if p < -32768 { p = -32768 }
+        ch.sample = p
+        let mut i = ch.index + INDEX[code & 7]
+        if i < 0 { i = 0 }
+        if i > 88 { i = 88 }
+        ch.index = i
+        return @as(i16, p)
+    }
+}
