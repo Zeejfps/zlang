@@ -246,12 +246,15 @@ namespace render {
 
     // ---- materials
 
-    // How a surface meets what is behind it.
+    // How a surface meets what is behind it. The original's modes (re/render-gui.md, Materials):
+    // its default is alpha_depth; TXI `punchthrough` is punch, `additive` is additive.
     enum Blend: u8 {
         opaque,                 // writes depth; alpha is no transparency (with an envmap, it masks the reflection)
-        punch,                  // alpha-tested at 0.5 and otherwise opaque: grass, leaves, grates, hair
+        punch,                  // alpha-tested (kept above 0.35, the original's cut) and otherwise opaque
         alpha,                  // blended by alpha, no depth writes, drawn back to front after opaque
         additive,               // added (weighted by alpha), no depth writes, sorted with alpha
+        alpha_depth,            // blended by alpha but writing depth, only alpha 0 discarded: the
+                                //   original's default for a texture with alpha; sorted with alpha
     }
 
     struct Material {

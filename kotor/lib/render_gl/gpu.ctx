@@ -833,7 +833,7 @@ namespace gpu {
         dev.state.blend = want
         match blend {
             opaque | punch => { dev.gl.disable{ cap = gl::BLEND } }
-            alpha => {
+            alpha | alpha_depth => {
                 dev.gl.enable{ cap = gl::BLEND }
                 dev.gl.blend_func_separate{ sfactor_rgb = gl::SRC_ALPHA, dfactor_rgb = gl::ONE_MINUS_SRC_ALPHA, sfactor_alpha = gl::ONE, dfactor_alpha = gl::ONE_MINUS_SRC_ALPHA }
             }
@@ -842,6 +842,15 @@ namespace gpu {
                 dev.gl.blend_func_separate{ sfactor_rgb = gl::SRC_ALPHA, dfactor_rgb = gl::ONE, sfactor_alpha = gl::ZERO, dfactor_alpha = gl::ONE }
             }
         }
+    }
+
+    // Whether a blend is drawn with the transparent surfaces, back to front, after the opaque ones.
+    fn is_sorted { blend: render::Blend } -> bool {
+        return blend == render::Blend::alpha or blend == render::Blend::additive or blend == render::Blend::alpha_depth
+    }
+
+    fn writes_depth { blend: render::Blend } -> bool {
+        return blend == render::Blend::opaque or blend == render::Blend::punch or blend == render::Blend::alpha_depth
     }
 
     fn set_depth { mut dev: Device, test: bool, write: bool } {
@@ -995,7 +1004,7 @@ namespace gpu {
         d = 0
         while d < frame.draw_count {
             let draw = frame.draws[d]
-            let blended = draw.material.blend == render::Blend::alpha or draw.material.blend == render::Blend::additive
+            let blended = is_sorted{ blend = draw.material.blend }
             if draw.view == index and blended and (draw.radius <= 0.0 or visible{ draw, frustum }) and n < dev.sort.len {
                 let world = math::mat4::transform_point{ m = draw.transform, p = draw.center }
                 dev.sort[n] = SortItem{ key = depth_key{ sort = draw.material.sort, eye = v.camera.eye, at = world }, index = d }
@@ -1123,9 +1132,8 @@ namespace gpu {
         if mi == NO_SLOT { return }
         let mesh = dev.meshes[mi]
         let m = draw.material
-        let blended = m.blend == render::Blend::alpha or m.blend == render::Blend::additive
         set_blend{ &dev, blend = m.blend }
-        set_depth{ &dev, test = true, write = not blended and not m.decal }
+        set_depth{ &dev, test = true, write = writes_depth{ blend = m.blend } and not m.decal }
         set_cull{ &dev, on = not m.two_sided }
         set_offset{ &dev, on = m.decal }
         if m.decal { dev.gl.polygon_offset{ factor = -1.0, units = -2.0 } }
@@ -1306,8 +1314,7 @@ namespace gpu {
         if em.first + em.count > frame.particle_count { return }
         use_program{ &dev, program = dev.particle.id }
         set_blend{ &dev, blend = em.blend }
-        let blended = em.blend == render::Blend::alpha or em.blend == render::Blend::additive
-        set_depth{ &dev, test = true, write = not blended }
+        set_depth{ &dev, test = true, write = writes_depth{ blend = em.blend } }
         set_cull{ &dev, on = false }
         set_offset{ &dev, on = false }
         set_stencil{ &dev, on = false }

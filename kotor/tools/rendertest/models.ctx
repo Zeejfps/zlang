@@ -1,126 +1,46 @@
-// Real models through the seam, for checking: load a model and its supermodel chain through
-// res, upload its meshes (render::pack_streams over lib/mdl's arrays) with materials from
-// lib/material, and draw a pose. The game's own version of this is lib/mdl_render (models lead);
-// this one is test code.
+// Real models through the seam, the way the game draws them: lib/mdl_cache loads a model and its
+// supermodels, lib/mdl_render uploads its meshes and turns a pose into draws, lib/material gives
+// each mesh its material. What is left here is for framing and lighting test pictures.
 namespace kmodels {
     error no_model{ name: []u8 }
 
-    // Models by resref, loaded once, for animation lookup along supermodel chains.
-    struct Library { names: [32]resref::ResRef, models: [32]?*mut mdl::Model, count: usize }
+    // A model on the GPU: its meshes and a material for each (by Model.meshes index).
+    struct Loaded { gpu: mdl_render::Gpu, materials: []mut render::Material, count: usize }
 
-    fn new_library {} -> Library {
-        return Library{ names = [resref::empty{}; 32], models = [null; 32], count = 0 }
-    }
-
-    // The model `name` (loading it, then its supermodels, the first time), or null if missing.
-    fn load { mut lib: Library, mut fs: Fs, rm: res::Manager, mut heap: arena::Arena, name: []u8 } -> !?*mut mdl::Model {
-        let mut k: usize = 0
-        while k < lib.count {
-            if resref::matches{ r = lib.names[k], name } { return lib.models[k] }
-            k = k + 1
-        }
-        if lib.count >= lib.names.len { return null }
-        let mdl_bytes = try res::load{ &fs, rm, name, kind = restype::Type::mdl, realloc = arena::alloc, &heap } ifnull { return null }
-        let mdx_bytes = try res::load{ &fs, rm, name, kind = restype::Type::mdx, realloc = arena::alloc, &heap } ifnull { slice::empty(u8){} }
-        let model = try mdl::parse{ realloc = arena::alloc, &heap, mdl = mdl_bytes, mdx = mdx_bytes }
-        let p = try alloc::new(mdl::Model, arena::Arena){ realloc = arena::alloc, &heap, value = model }
-        lib.names[lib.count] = resref::truncate{ name }
-        lib.models[lib.count] = p
-        lib.count = lib.count + 1
-        if model.supermodel.len > 0 and not ci::eq{ a = model.supermodel, b = "NULL" } {
-            _ = try load{ &lib, &fs, rm, &heap, name = model.supermodel }
-        }
-        return p
-    }
-
-    // A loaded model by resref: what mdl_anim::find's lookup takes, bound as find{ lib = &lib, _ }.
-    fn find { lib: *Library, name: []u8 } -> ?*mdl::Model {
-        let mut i: usize = 0
-        while i < lib.count {
-            if resref::matches{ r = lib.names[i], name } {
-                let m = lib.models[i]
-                if m != null { return m }
-            }
-            i = i + 1
-        }
-        return null
-    }
-
-    // One drawable mesh of a model: which of Model.meshes, its GPU mesh, its material.
-    struct Part { mesh: u32, handle: render::Mesh, material: render::Material, skinned: bool }
-
-    // Uploads every mesh worth drawing: rendered, not the walkmesh copy (AABB), not a saber blade.
+    // Uploads a model's meshes and makes their materials (`envmap`: an appearance.2da override,
+    // "" for none).
     fn upload {
         mut dev: gpu::Device, mut cache: material::Cache, mut fs: Fs, rm: res::Manager, mut heap: arena::Arena,
         model: *mdl::Model, envmap: []u8,
-    } -> ![]mut Part {
-        let parts = try alloc::resize(Part, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(Part){}, count = model.meshes.len }
-        let mut n: usize = 0
+    } -> !Loaded {
+        let g = try mdl_render::upload{ &dev, realloc = arena::alloc, &heap, model }
+        let materials = try alloc::resize(render::Material, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(render::Material){}, count = model.meshes.len }
+        let mut count: usize = 0
         let mut i: usize = 0
         while i < model.meshes.len {
-            let m = &model.meshes[i]
+            let m = model.meshes[i]
+            materials[i] = mdl_render::base_material{ mesh = m }
+            if g.meshes[i] != null {
+                let mut mat = material::for_mesh{ &cache, &fs, &dev, rm, desc = material::MeshDesc{
+                    diffuse = m.textures[0], lightmap = m.textures[1], lightmapped = m.lightmapped,
+                    transparency_hint = m.transparency_hint, alpha = 1.0, self_illum = math::vec3::zero{}, envmap,
+                } }
+                mat.sort = materials[i].sort
+                materials[i] = mat
+                count = count + 1
+            }
             i = i + 1
-            if not m.render or m.aabb != null or m.saber != null or m.vertex_count == 0 or m.indices.len == 0 { continue }
-            let mut s = render::Streams{
-                vertex_count = m.vertex_count, positions = m.positions, normals = m.normals, uv0 = m.uv0, uv1 = m.uv1,
-                tangents = m.tangents, weights = slice::empty(f32){}, bones = slice::empty(u8){}, colors = slice::empty(u8){},
-                constraints = slice::empty(f32){},
-            }
-            let skin = m.skin
-            if skin != null {
-                s.weights = skin.weights
-                s.bones = skin.bones
-            }
-            let dangly = m.dangly
-            if dangly != null { s.constraints = dangly.constraints }
-            let buf = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = render::streams_size{ s } }
-            let layout = render::pack_streams{ s, into = buf } ifnull { continue }
-            let desc = render::MeshDesc{
-                layout, vertex_count = m.vertex_count, index_count = @as(u32, m.indices.len),
-                primitive = render::Primitive::triangles, dynamic = false,
-            }
-            let handle = try gpu::create_mesh{ &dev, desc, vertices = buf, indices = m.indices }
-            let material = material::for_mesh{ &cache, &fs, &dev, rm, desc = material::MeshDesc{
-                diffuse = m.textures[0], lightmap = m.textures[1], lightmapped = m.lightmapped,
-                transparency_hint = m.transparency_hint, alpha = 1.0, self_illum = math::vec3::zero{}, envmap,
-            } }
-            parts[n] = Part{ mesh = @as(u32, i - 1), handle, material, skinned = skin != null }
-            n = n + 1
         }
-        return parts[..n]
+        return Loaded{ gpu = g, materials, count }
     }
 
-    // Adds a posed model's draws to `view`: each mesh at instance * world(node), skins with their
-    // palettes, alpha and self-illumination from the pose. Returns the first draw's index.
+    // Adds a posed model's draws to `view` through mdl_render; returns the index of its first draw.
     fn draw {
-        mut frame: render::Frame, view: u32, model: *mdl::Model, pose: mdl_anim::Pose, parts: []Part,
+        mut frame: render::Frame, view: u32, model: *mdl::Model, pose: mdl_anim::Pose, parts: Loaded,
         instance: math::Mat4, palette: []mut math::Mat4,
     } -> u32 {
         let first = frame.draw_count
-        let mut i: usize = 0
-        while i < parts.len {
-            let part = parts[i]
-            let mesh = &model.meshes[part.mesh]
-            let node = mesh.node
-            let mut mat = part.material
-            material::set_alpha{ m = &mat, alpha = pose.alpha[node] }
-            let glow = pose.nodes[node].self_illum
-            if glow.x + glow.y + glow.z > 0.0 { mat.selfillum = glow }
-            let mut d = render::make_draw{ view, mesh = part.handle, transform = math::mat4::mul{ a = instance, b = pose.world[node] }, material = mat }
-            if part.skinned {
-                let n = mdl_anim::skin_palette{ model, mesh, pose, out = palette }
-                let at = render::add_bones{ &frame, palette = palette[..n] }
-                if at != null {
-                    d.bones = at
-                    d.bone_count = @as(u32, n)
-                }
-            } else {
-                d.center = mesh.average
-                d.radius = mesh.radius
-            }
-            _ = render::add_draw{ &frame, draw = d }
-            i = i + 1
-        }
+        _ = mdl_render::add_draws{ &frame, view, model, pose, g = parts.gpu, transform = instance, materials = parts.materials, time = frame.time }
         return first
     }
 
@@ -138,13 +58,16 @@ namespace kmodels {
         }
     }
 
-    // The model's posed bounds, for framing a camera: every rigid mesh's vertices through its
-    // node's transform, and every skinned vertex through its palette, under `instance`.
-    fn bounds { model: *mdl::Model, pose: mdl_anim::Pose, parts: []Part, instance: math::Mat4, box: math::Aabb, palette: []mut math::Mat4 } -> math::Aabb {
+    // The posed bounds of the meshes that draw, under `instance`, merged into `box`, for framing
+    // a camera: rigid vertices through their node, skinned ones through their palette too.
+    fn bounds { model: *mdl::Model, pose: mdl_anim::Pose, parts: Loaded, instance: math::Mat4, box: math::Aabb, palette: []mut math::Mat4 } -> math::Aabb {
         let mut out = box
         let mut i: usize = 0
-        while i < parts.len {
-            let mesh = &model.meshes[parts[i].mesh]
+        while i < model.meshes.len {
+            let mesh = &model.meshes[i]
+            let drawn = i < parts.gpu.meshes.len and parts.gpu.meshes[i] != null
+            i = i + 1
+            if not drawn or mesh.saber != null { continue }
             let w = math::mat4::mul{ a = instance, b = pose.world[mesh.node] }
             let n = mdl_anim::skin_palette{ model, mesh, pose, out = palette }
             let skin = mesh.skin
@@ -165,25 +88,7 @@ namespace kmodels {
                 out = math::aabb::extend{ b = out, p = math::mat4::transform_point{ m = w, p } }
                 v = v + 1
             }
-            i = i + 1
         }
         return out
-    }
-
-    fn bounds_rigid { model: *mdl::Model, pose: mdl_anim::Pose, parts: []Part } -> math::Aabb {
-        let mut box = math::aabb::empty{}
-        let mut i: usize = 0
-        while i < parts.len {
-            let mesh = &model.meshes[parts[i].mesh]
-            let w = pose.world[mesh.node]
-            let mut v: usize = 0
-            while v < @as(usize, mesh.vertex_count) {
-                let p = math::Vec3{ x = mesh.positions[v * 3], y = mesh.positions[v * 3 + 1], z = mesh.positions[v * 3 + 2] }
-                box = math::aabb::extend{ b = box, p = math::mat4::transform_point{ m = w, p } }
-                v = v + 1
-            }
-            i = i + 1
-        }
-        return box
     }
 }

@@ -448,6 +448,68 @@ namespace tex {
         return out
     }
 
+    error not_grey                                      // height_to_normal of a texture that isn't grey8
+
+    // A grey height map as a tangent-space normal map (txi-render.md, Bump maps): RGBA8 of the
+    // same shape, each texel's normal from the height slopes around it, times `scale` (the
+    // texture's bumpmapscaling), as RGB = n * 0.5 + 0.5 with alpha 255. Slopes wrap within each
+    // flipbook cell, so frames don't bleed into each other. How steep the engine makes a given
+    // scaling isn't known: a height step of one full range across one texel, at scaling 1, gives
+    // a 45 degree slope.
+    fn height_to_normal(S) { realloc: alloc::Fn(S), mut heap: S, t: Texture, scale: f32 } -> !Texture {
+        if t.format != Format::grey8 { return not_grey }
+        let per_image = chain_size{ format = Format::rgba8, width = t.width, height = t.height, levels = t.levels }
+        let data = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = per_image * @as(usize, t.images) }
+        let mut at: usize = 0
+        let mut image: u32 = 0
+        while image < t.images {
+            let mut k: u32 = 0
+            while k < t.levels {
+                let w = mip_dim{ n = t.width, k }
+                let h = mip_dim{ n = t.height, k }
+                let src = level{ t, image, level = k }
+                // Cells to wrap in: the flipbook grid where it divides the level, else the level.
+                let cw = if t.frames_x > 1 and w % t.frames_x == 0 { w / t.frames_x } else { w }
+                let ch = if t.frames_y > 1 and h % t.frames_y == 0 { h / t.frames_y } else { h }
+                let mut y: u32 = 0
+                while y < h {
+                    let mut x: u32 = 0
+                    while x < w {
+                        let x0 = x - x % cw
+                        let y0 = y - y % ch
+                        let left = x0 + (x % cw + cw - 1) % cw
+                        let right = x0 + (x % cw + 1) % cw
+                        let down = y0 + (y % ch + ch - 1) % ch
+                        let up = y0 + (y % ch + 1) % ch
+                        let sx = (@as(f32, src[@as(usize, y * w + right)]) - @as(f32, src[@as(usize, y * w + left)])) / 510.0
+                        let sy = (@as(f32, src[@as(usize, up * w + x)]) - @as(f32, src[@as(usize, down * w + x)])) / 510.0
+                        let n = math::vec3::normalize{ v = math::Vec3{ x = -sx * scale, y = -sy * scale, z = 1.0 } }
+                        let o = at + @as(usize, (y * w + x) * 4)
+                        data[o] = unit_byte{ v = n.x }
+                        data[o + 1] = unit_byte{ v = n.y }
+                        data[o + 2] = unit_byte{ v = n.z }
+                        data[o + 3] = 255
+                        x = x + 1
+                    }
+                    y = y + 1
+                }
+                at = at + @as(usize, w) * @as(usize, h) * 4
+                k = k + 1
+            }
+            image = image + 1
+        }
+        let mut out = t
+        out.format = Format::rgba8
+        out.data = data
+        return out
+    }
+
+    // A component in -1..1 as a byte, 128 for 0.
+    fn unit_byte { v: f32 } -> u8 {
+        let b = (v * 0.5 + 0.5) * 255.0 + 0.5
+        return if b <= 0.0 { 0 } else if b >= 255.0 { 255 } else { @as(u8, b) }
+    }
+
     // A flipbook as one RGBA8 image of frames_x by frames_y cells: frame i at column i % frames_x
     // and row i / frames_x, counted from the first stored row (the bottom), the layout of a TGA
     // flipbook. The result has kind flipbook, images 1 and the same grid, so a renderer treats it

@@ -128,8 +128,10 @@ or a viewport, then more GUI over it.
 fogged white): diffuse (uv0, through `uv_scale`/`uv_offset`, wrapped into a cell first with
 `uv_cell` for flipbook atlases: `set_flipbook_frame`), lightmap (uv1, multiplied in place of
 lighting), envmap (a cube is reflected in world space with Z up; a flat texture is used as a
-sphere map), bumpmap (a tangent-space normal map), blend (`opaque`, `punch` = alpha-tested at
-0.5, `alpha`, `additive`), colour (tint; its alpha is the opacity of the alpha controller or
+sphere map), bumpmap (a tangent-space normal map), blend (`opaque`; `punch` = kept where alpha >
+0.35, the original's cut, otherwise opaque; `alpha` = blended, no depth writes; `additive`;
+`alpha_depth` = blended but writing depth and discarding only alpha 0, the original's default for
+textures with alpha), colour (tint; its alpha is the opacity of the alpha controller or
 `wateralpha`), self-illumination, `lit`, `fog`, `two_sided`, `decal` (depth bias, no depth
 write), `env_amount`, and `sort` (the MDL transparency hint: lower draws first among transparent
 surfaces). With an envmap on an opaque or punch surface, the diffuse alpha is the reflection
@@ -151,15 +153,19 @@ it (`material::for_mesh`, given a mesh's texture names and flags), loading textu
 | TXI `bumpmaptexture` (an RGB(A) normal map; grey height maps not yet) | `bumpmap` |
 | TXI `wateralpha` | `alpha` at that opacity |
 | transparency hint | `sort` |
-| no blending keyword, no envmap, TPC AlphaMean < 0.99 | `alpha` if the hint is set or AlphaMean < 0.6, else `punch` (our heuristic, below) |
+| no blending keyword, no env/bumpy-shiny/bump map named, TPC AlphaMean < 0.999 | `alpha_depth` (the original's default blend, below) |
 | node alpha (pose, times ancestors') < 1 | `alpha`, colour.a times it (`material::set_alpha`) |
 | `selfillumcolor` | `selfillum` |
 | TXI `mipmap 0`, `filter 0`, `clamp` | the texture's sampling |
 
-The alpha heuristic: the original keeps alpha test and blending on for everything
-(re/render-gui.md, `GL_SetDefaultState`), so texture alpha is transparency unless something says
-otherwise; scorch marks (`LHR_blst02`: AlphaMean 0.07, no TXI, transparency hint 0 on one of its
-meshes in `m01aa_02a`) draw as black squares without it.
+Texture alpha, from the binary (re/render-gui.md, Materials): a material's default blend is
+`SRC_ALPHA, ONE_MINUS_SRC_ALPHA` with depth writes and alpha test `> 0`, so a texture's alpha is
+transparency unless the TXI says `punchthrough` (`ONE, ZERO`, alpha test `> 0.35`) or `additive`
+(`SRC_ALPHA, ONE`, no depth writes). Scorch marks (`LHR_blst02`, AlphaMean 0.07) and Dantooine's
+bushes and leaves (`LDA_bush*`, `LDA_leaf*`, about 0.3) rely on it. Where the TXI names an
+environment, bumpy-shiny or bump map, the alpha is a mask for that instead (HK-47, the
+astromech, `c_rancor01` with its bump map, all solid in the game): `opaque`. A texture without
+alpha (AlphaMean 1, DXT1) looks the same either way, and stays `opaque`, which sorts better.
 
 **Skinning**: a draw's palette slot k takes a mesh-space vertex to the space `transform` takes to
 world. lib/mdl's `mdl_anim::skin_palette` gives palettes in the skin node's own space (identity at
@@ -188,7 +194,10 @@ game; the frame gets the live particles. Emitters sort with transparent draws.
 **Text**: `render::Font` is a texture and a glyph box per byte (a font TXI's `upperleftcoords` and
 `lowerrightcoords`; v of the upper corner is the larger), with `fontheight`, `baselineheight` and
 `spacingR` × 100 in texels. `draw_text` lays out one line into quads, `measure_text` says how
-wide it is. Wrapping and alignment are the GUI's.
+wide it is. Wrapping and alignment are the GUI's. `font::load` (lib/material/font.ctx) makes a
+`render::Font` from a game font through `res`: the TPC's top level, nearest filtering, and the
+glyph table from its TXI; with `variant` it takes `NAMEb` when that exists (txi-render.md: GUI
+files name `fnt_d16x16`, whose table doesn't fit its pixels, and `fnt_d16x16b`'s does).
 
 **Video**: a movie's Y, U and V planes as three `grey8` textures updated each frame, drawn with
 `Image::yuv`; the backend converts BT.601 limited range (bink.md) in the shader.
@@ -217,7 +226,12 @@ viewport), `ui.png` (game fonts loaded through `res`, clipping, rotation, additi
 target, a YUV frame, alpha steps), `m01aa_02a_iso.png` (the lightmapped room, as
 `tools/py/mdlrender.py`'s `out/mdl/m01aa_02a_iso.png`) and `bastila.png` (`p_bastilabb` with
 `p_bastilah` at the headhook: bind pose, `pause1` at 0.5 s, `run` at 0.2 s from the side, GPU
-skinned; as `out/mdl/bastila_skinned.png`). `kotor/tools/texcheck` decodes every TPC and TGA of
+skinned; as `out/mdl/bastila_skinned.png`), `gallery.png` (HK-47 and an astromech with their
+TXI environment maps, a lightsaber hilt, a chrome ball reflecting the real `cm_tat` cube map:
+sky above, sand below), `area_top.png` (every room of `m01aa.lyt` from above, as
+`out/mdl/lyt_m01aa_top.png`) and `ingame.png` (Bastila standing on the room's walkmesh, found by
+casting a ray at its AABB mesh, lit by the room's lights and shadowed onto the floor from the
+nearest one, at eye height). `kotor/tools/texcheck` decodes every TPC and TGA of
 the install (11,536 + 5,602, 0 failures) and writes a contact sheet and single textures to
 `kotor/out/tex/`; `kotor/tools/mathcheck` checks the math identities.
 

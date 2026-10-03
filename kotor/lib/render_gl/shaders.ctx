@@ -82,8 +82,8 @@ namespace glsl {
     ]
 
     // u_maps: diffuse, lightmap, envmap (1 cube, 2 sphere), bumpmap.
-    // u_mode: blend (0 opaque, 1 punch, 2 alpha, 3 additive), lit, fog, shadow.
-    const SCENE_FS: [101]c::String = [
+    // u_mode: blend (0 opaque, 1 punch, 2 alpha, 3 additive, 4 alpha_depth), lit, fog, shadow.
+    const SCENE_FS: [102]c::String = [
         "#version 410 core\n",
         "layout(std140) uniform Frame {\n",
         "    mat4 u_view_proj;\n",
@@ -129,7 +129,8 @@ namespace glsl {
         "    if (u_maps.x == 1) {\n",
         "        tex = texture(u_diffuse, uv);\n",
         "    }\n",
-        "    if (u_mode.x == 1 && tex.a < 0.5) {\n",
+        "    float cut_alpha = tex.a * u_color.a * v_color.a;\n",
+        "    if ((u_mode.x == 1 && cut_alpha <= 0.35) || (u_mode.x == 4 && cut_alpha <= 0.0)) {\n",
         "        discard;\n",
         "    }\n",
         "    vec3 n = normalize(v_normal);\n",
@@ -320,7 +321,7 @@ namespace glsl {
         "    if (u_mode.z == 1) {\n",
         "        c *= texture(u_tex, v_uv);\n",
         "    }\n",
-        "    if (u_mode.x == 1 && c.a < 0.5) {\n",
+        "    if ((u_mode.x == 1 && c.a <= 0.35) || (u_mode.x == 4 && c.a <= 0.0)) {\n",
         "        discard;\n",
         "    }\n",
         "    if (u_mode.y == 1 && u_fog.z > 0.5) {\n",

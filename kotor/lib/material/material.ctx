@@ -25,6 +25,8 @@ namespace material {
         clamp: bool,                // `clamp` non-zero
         cycle: bool,                // `proceduretype cycle`
         fps: f32,
+        is_bumpmap: bool,           // `isbumpmap 1`: a grey one is a height map, made a normal map
+        bump_scale: f32,            // `bumpmapscaling`, 1 without it
     }
 
     // A texture in the cache. A missing one has texture null.
@@ -76,6 +78,7 @@ namespace material {
         return Props{
             blend = render::Blend::opaque, envmap = resref::empty{}, bumpmap = resref::empty{}, decal = false,
             water_alpha = -1.0, mipmap = true, nearest = false, clamp = false, cycle = false, fps = 0.0,
+            is_bumpmap = false, bump_scale = 1.0,
         }
     }
 
@@ -105,6 +108,9 @@ namespace material {
         if procedure != null and ci::eq{ a = procedure, b = "cycle" } { p.cycle = true }
         let fps = tex::txi_value{ txi, key = "fps" }
         if fps != null { p.fps = number{ text = fps } }
+        p.is_bumpmap = (tex::txi_number{ txi, key = "isbumpmap" } ifnull 0) != 0
+        let scaling = tex::txi_value{ txi, key = "bumpmapscaling" }
+        if scaling != null { p.bump_scale = number{ text = scaling } }
         return p
     }
 
@@ -162,6 +168,9 @@ namespace material {
         let props = read_props{ txi }
         if t.kind == tex::Kind::flipbook and t.images > 1 {
             t = try tex::to_atlas{ realloc = arena::alloc, heap = &cache.scratch, t }
+        }
+        if t.format == tex::Format::grey8 and props.is_bumpmap {
+            t = try tex::height_to_normal{ realloc = arena::alloc, heap = &cache.scratch, t, scale = props.bump_scale }
         }
         let texture = try upload{ &dev, scratch = &cache.scratch, t, props }
         cache.bytes = cache.bytes + t.data.len
@@ -291,25 +300,28 @@ namespace material {
             m.blend = render::Blend::alpha
             m.color.a = props.water_alpha
         }
-        // Without a blending keyword, a diffuse alpha that isn't the reflection mask (no envmap)
-        // is transparency: the original keeps alpha test and blending on for everything
-        // (re/render-gui.md, GL_SetDefaultState), and scorch marks such as LHR_blst02 (AlphaMean
-        // 0.07, no TXI, transparency hint 0 on some meshes) show it. Our split, by the TPC's
-        // AlphaMean, until RE says more: mostly clear textures, or meshes with a transparency
-        // hint, blend; mostly solid ones with holes are cut out, keeping their depth.
+        // Without a blending keyword the original blends every surface by its texture's alpha,
+        // writing depth and discarding only alpha 0 (its material's default blend, re/render-gui.md,
+        // Materials): scorch marks (LHR_blst02, AlphaMean 0.07) and leaves (LDA_leaf02) are
+        // see-through that way. Not where the alpha means something else: the reflection mask of
+        // an environment or bumpy-shiny map, and textures with a bump map (c_rancor01, AlphaMean
+        // 0.76, whose rancor is solid in the game). A texture without alpha (AlphaMean 1, DXT1)
+        // stays opaque, which is the same picture.
         if desc.transparency_hint != 0 { m.sort = @as(i32, desc.transparency_hint) }
-        if m.blend == render::Blend::opaque and m.envmap == null and has_diffuse and alpha_mean < 0.99 {
-            m.blend = if desc.transparency_hint != 0 or alpha_mean < 0.6 { render::Blend::alpha } else { render::Blend::punch }
+        let alpha_is_mask = not is_none{ name = env_name } or not resref::is_empty{ r = props.bumpmap }
+        if m.blend == render::Blend::opaque and has_diffuse and not alpha_is_mask and alpha_mean < 0.999 {
+            m.blend = render::Blend::alpha_depth
         }
         set_alpha{ &m, alpha = desc.alpha }
         m.selfillum = desc.self_illum
         return m
     }
 
-    // Applies a node's alpha (its controller, faded by its ancestors'): below 1 the surface blends.
+    // Applies a node's alpha (its controller, faded by its ancestors'): below 1 the surface blends,
+    // without writing depth, so what it fades over shows.
     fn set_alpha { mut m: render::Material, alpha: f32 } {
         if alpha >= 0.999 { return }
-        if m.blend == render::Blend::opaque or m.blend == render::Blend::punch { m.blend = render::Blend::alpha }
+        if m.blend == render::Blend::opaque or m.blend == render::Blend::punch or m.blend == render::Blend::alpha_depth { m.blend = render::Blend::alpha }
         m.color.a = m.color.a * math::clamp{ x = alpha, lo = 0.0, hi = 1.0 }
     }
 }

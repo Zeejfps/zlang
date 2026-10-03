@@ -1,0 +1,132 @@
+// The game's bitmap fonts as render::Font: a font TPC's top level as a texture, and its glyph
+// boxes and metrics from the TXI after its pixels (txi-render.md, Fonts).
+//
+//   let glyphs = ...256 render::Glyph...
+//   let f = try font::load{ &fs, &dev, &h, rm, name = "fnt_d16x16", variant = true, glyphs } ifnull { ... }
+//   render::draw_text{ &frame, font = f, x, y, text, color, scale = 1.0, clip = null }
+//
+// Only the font keywords are read; data-core's TXI parser can take this over once it has the
+// coordinate blocks.
+namespace font {
+    error not_a_font                         // no numchars, or a coordinate block shorter than it
+    error too_many_glyphs{ n: u32 }          // more glyphs than the caller's array holds
+
+    struct Metrics { count: u32, height: f32, baseline: f32, spacing: f32 }
+
+    // Loads font `name`. With `variant`, the `b` variant (name + "b") is taken when it exists:
+    // GUI files name `fnt_d16x16`, whose glyph table doesn't fit its pixels, while
+    // `fnt_d16x16b`'s does, and the engine evidently loads the suffixed one (txi-render.md, the
+    // fnt_d16x16 mismatch; the exact rule wants RE). Null if neither exists. `glyphs` (256 is
+    // enough for every font) holds the glyph table and must live as long as the font.
+    fn load {
+        mut fs: Fs, mut dev: gpu::Device, mut h: heap::Heap, rm: res::Manager, name: []u8, variant: bool,
+        glyphs: []mut render::Glyph,
+    } -> !?render::Font {
+        let mut buf: [17]u8
+        let mut loc: ?res::Loc = null
+        if variant and name.len < 16 {
+            slice::copy(u8){ dst = buf[..name.len], src = name }
+            buf[name.len] = 'b'
+            loc = res::find{ rm, name = buf[..name.len + 1], kind = restype::Type::tpc }
+        }
+        if loc == null { loc = res::find{ rm, name, kind = restype::Type::tpc } }
+        let found = loc ifnull { return null }
+        let bytes = try res::read{ &fs, rm, loc = found, realloc = heap::alloc, heap = &h }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &h, mem = bytes, count = 0 }
+        let t = try tex::read_tpc{ realloc = heap::alloc, heap = &h, bytes }
+        let m = try read_metrics{ text = t.txi, glyphs }
+        let mut desc = render::make_texture_desc{ format = material::pixel_format{ f = t.format }, width = t.width, height = t.height, levels = 1 }
+        desc.mipmap = false
+        desc.filter = render::Filter::nearest          // every font's TXI says `filter 0`
+        desc.wrap_u = render::Wrap::clamp
+        desc.wrap_v = render::Wrap::clamp
+        let texture = try gpu::create_texture{ &dev, desc, data = tex::level{ t, image = 0, level = 0 } }
+        return render::Font{
+            texture, texture_width = @as(f32, t.width), texture_height = @as(f32, t.height),
+            glyphs = glyphs[..@as(usize, m.count)], height = m.height, baseline = m.baseline, spacing = m.spacing,
+        }
+    }
+
+    // Fills `glyphs` (at least numchars long) from a font's TXI text; the metrics are in texels
+    // (the TXI's values times 100). Coordinates past 1 (a few reach 1.002) are clamped.
+    fn read_metrics { text: []u8, glyphs: []mut render::Glyph } -> !Metrics {
+        let mut m = Metrics{ count = 0, height = 0.0, baseline = 0.0, spacing = 0.0 }
+        let mut uls: u32 = 0
+        let mut lrs: u32 = 0
+        let mut cur = Lines{ text, at = 0 }
+        while true {
+            let line = next_line{ &cur } ifnull { break }
+            let key = word{ line, n = 0 }
+            if ci::eq{ a = key, b = "numchars" } {
+                m.count = @as(u32, math::max{ a = number{ line }, b = 0.0 })
+                if @as(usize, m.count) > glyphs.len { return too_many_glyphs{ n = m.count } }
+            } else if ci::eq{ a = key, b = "fontheight" } {
+                m.height = number{ line } * 100.0
+            } else if ci::eq{ a = key, b = "baselineheight" } {
+                m.baseline = number{ line } * 100.0
+            } else if ci::eq{ a = key, b = "spacingr" } {
+                m.spacing = number{ line } * 100.0
+            } else if ci::eq{ a = key, b = "upperleftcoords" } or ci::eq{ a = key, b = "lowerrightcoords" } {
+                let upper = ci::eq{ a = key, b = "upperleftcoords" }
+                let n = @as(u32, math::max{ a = number{ line }, b = 0.0 })
+                let mut k: u32 = 0
+                while k < n {
+                    let row = next_line{ &cur } ifnull { break }
+                    if @as(usize, k) < glyphs.len {
+                        let u = math::clamp{ x = parse{ w = word{ line = row, n = 0 } }, lo = 0.0, hi = 1.0 }
+                        let v = math::clamp{ x = parse{ w = word{ line = row, n = 1 } }, lo = 0.0, hi = 1.0 }
+                        if upper {
+                            glyphs[k].u0 = u
+                            glyphs[k].v0 = v
+                        } else {
+                            glyphs[k].u1 = u
+                            glyphs[k].v1 = v
+                        }
+                    }
+                    k = k + 1
+                }
+                if upper { uls = k } else { lrs = k }
+            }
+        }
+        if m.count == 0 or uls < m.count or lrs < m.count { return not_a_font }
+        return m
+    }
+
+    struct Lines { text: []u8, at: usize }
+
+    // The next non-blank line, without its line end or trailing blanks.
+    fn next_line { mut cur: Lines } -> ?[]u8 {
+        while cur.at < cur.text.len {
+            let start = cur.at
+            while cur.at < cur.text.len and cur.text[cur.at] != '\n' { cur.at = cur.at + 1 }
+            let mut end = cur.at
+            if cur.at < cur.text.len { cur.at = cur.at + 1 }
+            while end > start and (cur.text[end - 1] == '\r' or cur.text[end - 1] == ' ' or cur.text[end - 1] == '\t') { end = end - 1 }
+            if end > start { return cur.text[start..end] }
+        }
+        return null
+    }
+
+    // The n-th word of a line, split at spaces and tabs ("" past the last).
+    fn word { line: []u8, n: u32 } -> []u8 {
+        let mut i: usize = 0
+        let mut k: u32 = 0
+        while i < line.len {
+            while i < line.len and (line[i] == ' ' or line[i] == '\t') { i = i + 1 }
+            let start = i
+            while i < line.len and line[i] != ' ' and line[i] != '\t' { i = i + 1 }
+            if start < i {
+                if k == n { return line[start..i] }
+                k = k + 1
+            }
+        }
+        return ""
+    }
+
+    fn number { line: []u8 } -> f32 { return parse{ w = word{ line, n = 1 } } }
+
+    fn parse { w: []u8 } -> f32 {
+        let s = utf8::from{ bytes = w } iferr { return 0.0 }
+        return utf8::parse_f32{ s } ifnull { 0.0 }
+    }
+}
