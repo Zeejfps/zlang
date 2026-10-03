@@ -1,0 +1,1747 @@
+// The NWScript virtual machine: runs compiled scripts (NCS, docs/formats/ncs.md) as swkotor.exe's
+// VM does (docs/re/vm.md), with the engine behind one bound function. The design, the engine
+// interface and how actions are saved: docs/design/script.md.
+//
+//   let program = try nwvm::load{ realloc, &heap, name = "k_ai_master", bytes }
+//   let mut vm = try nwvm::new{ realloc, &heap, limits = nwvm::LIMITS }
+//   let answer = nwvm::run{ &vm, program = &program, self = id, engine = world::script_call{ &world, _ } }
+//
+// A run that goes wrong stops where it is, as in the game, and fails with `faulted`; vm.fault
+// says what happened, where (script and file offset) and in which routine, and describe() puts
+// it in words.
+namespace nwvm {
+    // ---- values
+
+    // The engine's id for "no object": the cell RSADDO pushes, and what CONSTO pushes for
+    // OBJECT_INVALID (and for OBJECT_SELF when the script runs as no object).
+    const OBJECT_INVALID: u32 = 0x7F000000
+
+    // A cell's type tag, as swkotor.exe's stack and save games number them (gff-save.md).
+    const INT: u8 = 3
+    const FLOAT: u8 = 4
+    const STRING: u8 = 5
+    const OBJECT: u8 = 6
+    const EFFECT: u8 = 0x10            // engine structure n is 0x10 + n
+    const EVENT: u8 = 0x11
+    const LOCATION: u8 = 0x12
+    const TALENT: u8 = 0x13
+
+    // The four engine structures nwscript.nss declares, in its order: their cells hold handles
+    // the engine gives out. Handle 0 is each type's default value (an empty effect, a location
+    // at the origin, ...), which RSADD pushes.
+    enum EngineType: u8 { effect, event, location, talent }
+
+    // One stack cell's 32 bits: an int, a float, an object id, a string's slot, an engine handle.
+    extern union Cell { i: i32, f: f32, u: u32 }
+
+    struct Vector { x: f32, y: f32, z: f32 }
+
+    fn engine_tag { kind: EngineType } -> u8 {
+        return EFFECT + @as(u8, kind)
+    }
+
+    // ---- programs
+
+    // An instruction decoded for running: opcode and type byte folded into one Op, offsets and
+    // sizes in cells, jump targets as instruction indexes.
+    enum Op: u8 {
+        push_const,     // CONSTI CONSTF: a value, b type
+        movsp,          // a cells to drop
+        cpdownsp,       // a offset (cells, from SP), b count
+        cptopsp,        // a offset, b count
+        rsadd,          // a default value, b type
+        jz,             // a target
+        action,         // a routine, b argc
+        jmp,            // a target
+        equal_ii,
+        jsr,            // a target
+        const_s,        // a offset of the text in the file, b its length
+        const_o,        // a operand: 0 OBJECT_SELF, anything else OBJECT_INVALID
+        retn,
+        cptopbp,        // a offset (cells, from BP), b count
+        logand,
+        logor,
+        neg_i,
+        gt_ii,
+        not_i,
+        nequal_ii,
+        lt_ii,
+        add_ss,
+        jnz,            // a target
+        leq_ii,
+        geq_ii,
+        add_ii,
+        incisp,         // a offset
+        decisp,
+        store_state,    // a resume index, b globals (bytes), c frame (bytes)
+        cpdownbp,       // a offset (cells, from BP), b count
+        savebp,
+        restorebp,
+        destruct,       // a cells removed, b offset kept, c cells kept
+        mul_ii,
+        sub_ii,
+        div_ff,
+        gt_ff,
+        lt_ff,
+        leq_ff,
+        equal,          // a cells per operand: any comparable pair, compared by the cells' types
+        nequal,
+        mul_if,
+        add_ff,
+        mul_ff,
+        div_ii,
+        add_if,
+        neg_f,
+        incor,
+        add_fi,
+        sub_ff,
+        mul_fi,
+        booland,
+        sub_fi,
+        div_if,
+        geq_ff,
+        mod_ii,
+        shleft,
+        shright,
+        ushright,
+        excor,
+        comp_i,
+        sub_if,
+        div_fi,
+        incibp,         // a offset (cells, from BP)
+        decibp,
+        add_vv,
+        sub_vv,
+        mul_vf,
+        mul_fv,
+        div_vf,
+        store_stateall, // a resume index
+        nop,            // swkotor.exe treats NOP as an invalid opcode
+        end,            // past the last instruction
+    }
+
+    struct Ins { op: Op, a: i32, b: i32, c: i32 }
+
+    // A script ready to run. `ins` has one more entry than the file has instructions: an `end`
+    // that faults if the code runs off its end. The program views `code`, which must outlive it.
+    struct Program {
+        name: []u8,
+        code: []u8,             // the NCS file, header included
+        ins: []mut Ins,
+        at: []mut u32,          // each instruction's offset in the file; the `end`'s is code.len
+    }
+
+    error bad_target{ at: u32 }                 // a jump or resume point isn't an instruction
+    error too_big                               // a file of 2 GB or more
+
+    // Decodes and checks a whole NCS file: the header (its size field is ignored, as the engine
+    // ignores it), every instruction, and every jump target and resume point. Memory for the
+    // program comes from `realloc`; free it with free_program.
+    fn load(S) { realloc: alloc::Fn(S), mut heap: S, name: []u8, bytes: []u8 } -> !Program {
+        try ncs::check_header{ bytes, check_size = false }
+        if bytes.len >= 2147483648 { return too_big }
+        let len = @as(u32, bytes.len)
+        let mut n: usize = 0
+        let mut at = ncs::HEADER_SIZE
+        while at < len {
+            let raw = try ncs::decode{ code = bytes, at, store_stateall = true }
+            at = at + raw.size
+            n = n + 1
+        }
+        let ins = try alloc::resize(Ins, S){ realloc, &heap, mem = slice::empty(Ins){}, count = n + 1 }
+        let offs = alloc::resize(u32, S){ realloc, &heap, mem = slice::empty(u32){}, count = n + 1 } iferr err{ error } {
+            _ = alloc::resize(Ins, S){ realloc, &heap, mem = ins, count = 0 }
+            return error
+        }
+        let mut program = Program{ name, code = bytes, ins, at = offs }
+        fill{ &program } iferr err{ error } {
+            free_program(S){ realloc, &heap, program }
+            return error
+        }
+        return program
+    }
+
+    fn free_program(S) { realloc: alloc::Fn(S), mut heap: S, program: Program } {
+        _ = alloc::resize(Ins, S){ realloc, &heap, mem = program.ins, count = 0 }
+        _ = alloc::resize(u32, S){ realloc, &heap, mem = program.at, count = 0 }
+    }
+
+    // The index of the instruction at file offset `at`, or null if none starts there.
+    fn index_of { program: Program, at: u32 } -> ?u32 {
+        let mut lo: usize = 0
+        let mut hi = program.at.len
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2
+            let x = program.at[mid]
+            if x == at { return @as(u32, mid) }
+            if x < at { lo = mid + 1 } else { hi = mid }
+        }
+        return null
+    }
+
+    // Decodes every instruction into program.ins (sized by load's first pass).
+    fn fill { mut program: Program } -> ! {
+        let len = @as(u32, program.code.len)
+        let mut k: usize = 0
+        let mut at = ncs::HEADER_SIZE
+        while at < len {
+            let raw = try ncs::decode{ code = program.code, at, store_stateall = true }
+            program.at[k] = at
+            program.ins[k] = lower{ raw }
+            at = at + raw.size
+            k = k + 1
+        }
+        program.at[k] = len
+        program.ins[k] = Ins{ op = Op::end, a = 0, b = 0, c = 0 }
+        // Jump targets and resume points, as offsets so far, become instruction indexes.
+        let mut i: usize = 0
+        while i < k {
+            let x = program.ins[i]
+            if x.op == Op::jmp or x.op == Op::jsr or x.op == Op::jz or x.op == Op::jnz
+                or x.op == Op::store_state or x.op == Op::store_stateall {
+                let target = @as(i64, program.at[i]) + @as(i64, x.a)
+                if target < 0 or target >= @as(i64, len) { return bad_target{ at = program.at[i] } }
+                let found = index_of{ program, at = @as(u32, target) } ifnull { return bad_target{ at = program.at[i] } }
+                program.ins[i].a = @as(i32, found)
+            }
+            i = i + 1
+        }
+    }
+
+    // One raw instruction as an Ins; jump targets stay offsets from the instruction for now.
+    fn lower { raw: ncs::Raw } -> Ins {
+        let op = raw.op
+        let ty = raw.ty
+        let mut x = Ins{ op = Op::nop, a = raw.a, b = raw.b, c = raw.c }
+        if op == ncs::CPDOWNSP { x.op = Op::cpdownsp; x.a = raw.a / 4; x.b = raw.b / 4 }
+        else if op == ncs::CPTOPSP { x.op = Op::cptopsp; x.a = raw.a / 4; x.b = raw.b / 4 }
+        else if op == ncs::CPDOWNBP { x.op = Op::cpdownbp; x.a = raw.a / 4; x.b = raw.b / 4 }
+        else if op == ncs::CPTOPBP { x.op = Op::cptopbp; x.a = raw.a / 4; x.b = raw.b / 4 }
+        else if op == ncs::RSADD {
+            x.op = Op::rsadd
+            x.b = @as(i32, ty)
+            x.a = if ty == OBJECT { ncs::i32_of_bits{ bits = OBJECT_INVALID } } else { 0 }
+        } else if op == ncs::CONST {
+            if ty == ncs::T_STRING {
+                // The engine copies the text through a "%s" format, so it ends at a NUL.
+                let mut n: usize = 0
+                while n < raw.text.len and raw.text[n] != 0 { n = n + 1 }
+                x.op = Op::const_s
+                x.a = @as(i32, raw.at + 4)
+                x.b = @as(i32, n)
+            } else if ty == ncs::T_OBJECT {
+                x.op = Op::const_o
+            } else {
+                x.op = Op::push_const
+                x.b = @as(i32, ty)
+            }
+        } else if op == ncs::ACTION { x.op = Op::action }
+        else if op == ncs::LOGAND { x.op = Op::logand }
+        else if op == ncs::LOGOR { x.op = Op::logor }
+        else if op == ncs::INCOR { x.op = Op::incor }
+        else if op == ncs::EXCOR { x.op = Op::excor }
+        else if op == ncs::BOOLAND { x.op = Op::booland }
+        else if op == ncs::EQUAL or op == ncs::NEQUAL {
+            let eq = op == ncs::EQUAL
+            if ty == ncs::T_II {
+                x.op = if eq { Op::equal_ii } else { Op::nequal_ii }
+            } else {
+                x.op = if eq { Op::equal } else { Op::nequal }
+                x.a = if ty == ncs::T_TT { raw.a / 4 } else { 1 }
+            }
+        } else if op == ncs::GEQ { x.op = if ty == ncs::T_II { Op::geq_ii } else { Op::geq_ff } }
+        else if op == ncs::GT { x.op = if ty == ncs::T_II { Op::gt_ii } else { Op::gt_ff } }
+        else if op == ncs::LT { x.op = if ty == ncs::T_II { Op::lt_ii } else { Op::lt_ff } }
+        else if op == ncs::LEQ { x.op = if ty == ncs::T_II { Op::leq_ii } else { Op::leq_ff } }
+        else if op == ncs::SHLEFT { x.op = Op::shleft }
+        else if op == ncs::SHRIGHT { x.op = Op::shright }
+        else if op == ncs::USHRIGHT { x.op = Op::ushright }
+        else if op == ncs::ADD {
+            x.op = if ty == ncs::T_II { Op::add_ii } else if ty == ncs::T_FF { Op::add_ff }
+                else if ty == ncs::T_IF { Op::add_if } else if ty == ncs::T_FI { Op::add_fi }
+                else if ty == ncs::T_SS { Op::add_ss } else { Op::add_vv }
+        } else if op == ncs::SUB {
+            x.op = if ty == ncs::T_II { Op::sub_ii } else if ty == ncs::T_FF { Op::sub_ff }
+                else if ty == ncs::T_IF { Op::sub_if } else if ty == ncs::T_FI { Op::sub_fi } else { Op::sub_vv }
+        } else if op == ncs::MUL {
+            x.op = if ty == ncs::T_II { Op::mul_ii } else if ty == ncs::T_FF { Op::mul_ff }
+                else if ty == ncs::T_IF { Op::mul_if } else if ty == ncs::T_FI { Op::mul_fi }
+                else if ty == ncs::T_VF { Op::mul_vf } else { Op::mul_fv }
+        } else if op == ncs::DIV {
+            x.op = if ty == ncs::T_II { Op::div_ii } else if ty == ncs::T_FF { Op::div_ff }
+                else if ty == ncs::T_IF { Op::div_if } else if ty == ncs::T_FI { Op::div_fi } else { Op::div_vf }
+        } else if op == ncs::MOD { x.op = Op::mod_ii }
+        else if op == ncs::NEG { x.op = if ty == ncs::T_INT { Op::neg_i } else { Op::neg_f } }
+        else if op == ncs::COMP { x.op = Op::comp_i }
+        else if op == ncs::MOVSP {
+            // The engine only ever lowers SP: a positive MOVSP does nothing.
+            x.op = Op::movsp
+            x.a = if raw.a < 0 { -(raw.a / 4) } else { 0 }
+        } else if op == ncs::STORE_STATEALL { x.op = Op::store_stateall; x.a = @as(i32, ty) }
+        else if op == ncs::JMP { x.op = Op::jmp }
+        else if op == ncs::JSR { x.op = Op::jsr }
+        else if op == ncs::JZ { x.op = Op::jz }
+        else if op == ncs::JNZ { x.op = Op::jnz }
+        else if op == ncs::RETN { x.op = Op::retn }
+        else if op == ncs::DESTRUCT { x.op = Op::destruct; x.a = raw.a / 4; x.b = raw.b / 4; x.c = raw.c / 4 }
+        else if op == ncs::NOT { x.op = Op::not_i }
+        else if op == ncs::DECISP { x.op = Op::decisp; x.a = raw.a / 4 }
+        else if op == ncs::INCISP { x.op = Op::incisp; x.a = raw.a / 4 }
+        else if op == ncs::DECIBP { x.op = Op::decibp; x.a = raw.a / 4 }
+        else if op == ncs::INCIBP { x.op = Op::incibp; x.a = raw.a / 4 }
+        else if op == ncs::SAVEBP { x.op = Op::savebp }
+        else if op == ncs::RESTOREBP { x.op = Op::restorebp }
+        else if op == ncs::STORE_STATE { x.op = Op::store_state; x.c = raw.b; x.b = raw.a; x.a = @as(i32, ty) }
+        return x
+    }
+
+    // ---- the machine
+
+    // What a VM may use. KOTOR's own: an outermost run (with every script it runs through
+    // ExecuteScript) fails at its 131,072nd instruction. Its stack has no limit; scripts use a
+    // few hundred cells.
+    struct Limits {
+        stack_cells: u32,
+        string_slots: u32,      // string cells that can be live at once
+        text_bytes: u32,        // bytes of strings one outermost run can make (ADDSS, routines)
+        budget: u32,            // the instruction of an outermost run that fails with `budget`
+    }
+
+    const LIMITS: Limits = Limits{ stack_cells = 65536, string_slots = 16384, text_bytes = 1048576, budget = 131072 }
+
+    // Scripts that can be running at once: one, and up to seven more nested through
+    // ExecuteScript.
+    const LEVELS: u32 = 8
+    // Return addresses JSR can hold, the -1 that starts each run included.
+    const RETURNS: u32 = 128
+    // The return address that ends a run.
+    const RUN_END: u32 = 0xFFFFFFFF
+
+    struct Level {
+        program: ?*Program,
+        self: u32,              // what OBJECT_SELF is
+    }
+
+    // The last STORE_STATE: the action argument the next routine that takes one turns into a
+    // Situation (pop_situation).
+    struct Saved {
+        valid: bool,
+        program: ?*Program,
+        resume: u32,            // instruction index
+        globals: i32,           // bytes below BP to keep
+        frame: i32,             // bytes below SP to keep
+    }
+
+    enum FaultKind: u8 {
+        none,
+        budget,             // the instruction budget ran out: a runaway script
+        too_deep,           // a ninth script nested through ExecuteScript
+        call_depth,         // JSR nested past the return-address stack (127 entries)
+        underflow,          // an instruction or a routine wanted more cells than the stack has
+        wrong_type,         // a cell isn't of the type wanted
+        bad_offset,         // a stack copy, DESTRUCT or INC/DEC reaches outside the stack
+        invalid_opcode,     // NOP, which the engine rejects
+        div_zero,           // division or modulo by zero (int or float)
+        div_overflow,       // INT_MIN / -1 or INT_MIN % -1, which trap on x86
+        past_end,           // the code ran off its end without RETN
+        not_comparable,     // EQUAL/NEQUAL on cells of different types
+        stack_full,         // a push past Limits.stack_cells
+        strings_full,       // string slots or bytes ran out (Limits.string_slots, text_bytes)
+        routine_failed,     // an engine routine replied `failed` and said why (fail) or not
+        bad_reply,          // the engine answered with the wrong kind of Reply
+        no_state,           // an action argument was taken without a STORE_STATE before it
+        bad_state,          // a STORE_STATE's sizes reach outside the stack
+        unbalanced,         // a script ended more than one cell above or below where it began
+        busy,               // resume while a script is running
+    }
+
+    struct Fault {
+        kind: FaultKind,
+        script: []u8,       // the program's name
+        offset: u32,        // the instruction's offset in the file, as the disassembler shows it
+        op: u8,             // its opcode and type byte, 0 if none
+        ty: u8,
+        routine: i32,       // inside an ACTION: the routine called, else -1
+        argc: i32,
+        want: u8,           // wrong_type, not_comparable: the cell types wanted and found
+        found: u8,
+        cells: i32,         // unbalanced: cells left above the start (negative: below)
+        why: []u8,          // a routine's own reason (fail)
+    }
+
+    struct Vm {
+        types: []mut u8,            // each cell's type
+        vals: []mut Cell,
+        sp: u32,                    // cells in use
+        bp: u32,                    // the cell SAVEBP pushed: globals are below it
+        rets: [128]u32,             // return addresses: instruction indexes, RUN_END
+        nret: u32,
+        strs: []mut []u8,           // string slots; slot 0 is always ""
+        nstr: u32,                  // slots handed out so far
+        free: []mut u32,            // slots free again (collect)
+        nfree: u32,
+        marks: []mut u8,            // collect's marks, one per slot
+        text: []mut u8,             // bytes of strings this run made
+        text_used: u32,
+        levels: [8]Level,
+        depth: u32,                 // scripts running: 0 when idle
+        count: u32,                 // instructions this outermost run has started
+        total: u64,                 // instructions every run so far has started
+        budget: u32,
+        saved: Saved,
+        result: ?i32,               // what the last script to end left: KOTOR's return value
+        fault: Fault,
+    }
+
+    // Cells a STORE_STATE may keep of each part, as the engine clamps them.
+    const STATE_CELLS: i64 = 65536
+
+    error faulted                       // the run stopped: vm.fault says why
+    error busy                          // resume while a script is running
+
+    // Errors of the accessors routines use. Each also sets vm.fault, so the run that called the
+    // routine reports it.
+    error underflow                     // no cell to pop
+    error wrong_type{ want: u8, found: u8 }
+    error stack_full
+    error strings_full
+    error no_state                      // pop_situation without a STORE_STATE
+    error bad_state                     // the STORE_STATE's sizes reach outside the stack
+
+    fn new(S) { realloc: alloc::Fn(S), mut heap: S, limits: Limits } -> !Vm {
+        let cells = @as(usize, limits.stack_cells)
+        let slots = @as(usize, limits.string_slots)
+        if slots == 0 { @panic("nwvm::new: no string slots") }
+        let types = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = cells }
+        let vals = try alloc::resize(Cell, S){ realloc, &heap, mem = slice::empty(Cell){}, count = cells }
+        let strs = try alloc::resize([]u8, S){ realloc, &heap, mem = slice::empty([]u8){}, count = slots }
+        let free = try alloc::resize(u32, S){ realloc, &heap, mem = slice::empty(u32){}, count = slots }
+        let marks = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = slots }
+        let text = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = @as(usize, limits.text_bytes) }
+        let mut vm = Vm{
+            types, vals, sp = 0, bp = 0, rets = [0; 128], nret = 0,
+            strs, nstr = 1, free, nfree = 0, marks, text, text_used = 0,
+            levels = [Level{ program = null, self = OBJECT_INVALID }; 8], depth = 0,
+            count = 0, total = 0, budget = limits.budget,
+            saved = Saved{ valid = false, program = null, resume = 0, globals = 0, frame = 0 },
+            result = null,
+            fault = no_fault{},
+        }
+        vm.strs[0] = ""
+        return vm
+    }
+
+    fn free_vm(S) { realloc: alloc::Fn(S), mut heap: S, vm: Vm } {
+        _ = alloc::resize(u8, S){ realloc, &heap, mem = vm.types, count = 0 }
+        _ = alloc::resize(Cell, S){ realloc, &heap, mem = vm.vals, count = 0 }
+        _ = alloc::resize([]u8, S){ realloc, &heap, mem = vm.strs, count = 0 }
+        _ = alloc::resize(u32, S){ realloc, &heap, mem = vm.free, count = 0 }
+        _ = alloc::resize(u8, S){ realloc, &heap, mem = vm.marks, count = 0 }
+        _ = alloc::resize(u8, S){ realloc, &heap, mem = vm.text, count = 0 }
+    }
+
+    fn no_fault {} -> Fault {
+        return Fault{
+            kind = FaultKind::none, script = "", offset = 0, op = 0, ty = 0, routine = -1, argc = 0,
+            want = 0, found = 0, cells = 0, why = "",
+        }
+    }
+
+    // Empties the stack and everything a run made: what happens before an outermost run and
+    // after one.
+    fn reset { mut vm: Vm } {
+        vm.total = vm.total + vm.count
+        vm.sp = 0
+        vm.bp = 0
+        vm.nret = 0
+        vm.count = 0
+        vm.nstr = 1
+        vm.nfree = 0
+        vm.text_used = 0
+        vm.saved.valid = false
+    }
+
+    // ---- the engine
+
+    // What the VM asks of the engine.
+    union Call {
+        // Run engine routine `routine` (nwscript::ROUTINES) with `argc` arguments: pop them
+        // (the first on top) with the pop_ functions, do the work, push the result. Reply done,
+        // or failed: the script then stops, as in the game.
+        action{ routine: u16, argc: u8 },
+        // EQUAL/NEQUAL on two engine values of one type. Reply equal.
+        equal{ kind: EngineType, a: u32, b: u32 },
+    }
+
+    union Reply { done, failed, equal{ same: bool } }
+
+    // The engine, as the VM sees it: one function, usually the engine's own bound to its state
+    // (`world::script_call{ &world, _ }`). It may run other scripts on the same VM
+    // (ExecuteScript runs one nested).
+    type Engine = &fn{ mut vm: Vm, call: Call } -> Reply
+
+    // ---- running
+
+    // Runs `program` from its first instruction, with OBJECT_SELF `self` (OBJECT_INVALID for
+    // none), until it returns. Returns the int the script left, as a StartingConditional script
+    // leaves its answer, or null. Called while a script runs (from a routine, as ExecuteScript
+    // does), it runs nested: on the same stack, budget and return-address stack, at most 8
+    // deep. As in the game, the value is the last one any script left during this run when
+    // `program` leaves none.
+    fn run { mut vm: Vm, program: *Program, self: u32, engine: Engine } -> !?i32 {
+        if vm.depth >= LEVELS {
+            vm.fault = no_fault{}
+            vm.fault.kind = FaultKind::too_deep
+            vm.fault.script = program.name
+            return faulted
+        }
+        let outermost = vm.depth == 0
+        if outermost { reset{ &vm } }
+        vm.result = null
+        let entry_sp = vm.sp
+        let entry_ret = vm.nret
+        if vm.nret + 1 >= RETURNS {
+            vm.fault = no_fault{}
+            vm.fault.kind = FaultKind::call_depth
+            vm.fault.script = program.name
+            return faulted
+        }
+        vm.rets[vm.nret] = RUN_END
+        vm.nret = vm.nret + 1
+        vm.levels[vm.depth] = Level{ program, self }
+        vm.depth = vm.depth + 1
+        let ok = exec{ &vm, program, engine, start = 0 }
+        vm.depth = vm.depth - 1
+        if not ok {
+            if vm.sp > entry_sp { vm.sp = entry_sp }
+            vm.nret = entry_ret
+            if outermost { reset{ &vm } }
+            return faulted
+        }
+        let sp = vm.sp
+        if sp == entry_sp + 1 and vm.types[entry_sp] == INT {
+            vm.result = vm.vals[entry_sp].i
+        } else if sp != entry_sp and sp != entry_sp + 1 {
+            vm.fault = no_fault{}
+            vm.fault.kind = FaultKind::unbalanced
+            vm.fault.script = program.name
+            vm.fault.cells = @as(i32, @as(i64, sp) - @as(i64, entry_sp))
+            if sp > entry_sp { vm.sp = entry_sp }
+            if outermost { reset{ &vm } }
+            return faulted
+        }
+        vm.sp = entry_sp
+        let answer = vm.result
+        if outermost { reset{ &vm } }
+        return answer
+    }
+
+    // What OBJECT_SELF is for the script running now (OBJECT_INVALID when none runs).
+    fn self_object { vm: Vm } -> u32 {
+        if vm.depth == 0 { return OBJECT_INVALID }
+        return vm.levels[vm.depth - 1].self
+    }
+
+    // The program running now, if any: for a routine that wants to know its caller.
+    fn running { vm: Vm } -> ?*Program {
+        if vm.depth == 0 { return null }
+        return vm.levels[vm.depth - 1].program
+    }
+
+    // The interpreter: runs the top level from instruction `start` until the RETN that pops its
+    // RUN_END. False after a fault, which vm.fault holds.
+    fn exec { mut vm: Vm, program: *Program, engine: Engine, start: u32 } -> bool {
+        let code = program.ins.ptr
+        let t = vm.types.ptr
+        let v = vm.vals.ptr
+        let cap = @as(usize, vm.types.len)
+        let budget = vm.budget
+        let mut count = vm.count
+        let mut sp = @as(usize, vm.sp)
+        let mut ip = @as(usize, start)
+        while true {
+            let cur = ip
+            let x = code[cur]
+            ip = cur + 1
+            count = count + 1
+            if count >= budget {
+                vm.count = count
+                return trap{ &vm, program, ip = cur, sp, kind = FaultKind::budget }
+            }
+            match x.op {
+                push_const => {
+                    if sp >= cap { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::stack_full } }
+                    t[sp] = @trunc(u8, x.b)
+                    v[sp].i = x.a
+                    sp = sp + 1
+                }
+                movsp => {
+                    let n = @as(usize, x.a)
+                    if n > sp { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::underflow } }
+                    sp = sp - n
+                }
+                cpdownsp => {
+                    let n = @as(usize, x.b)
+                    let dst = @as(i64, sp) + @as(i64, x.a)
+                    if n > sp or dst < 0 or dst + @as(i64, n) > @as(i64, sp) {
+                        vm.count = count
+                        return trap{ &vm, program, ip = cur, sp, kind = if n > sp { FaultKind::underflow } else { FaultKind::bad_offset } }
+                    }
+                    let d = @as(usize, dst)
+                    let s = sp - n
+                    let mut k: usize = 0
+                    while k < n {
+                        t[d + k] = t[s + k]
+                        v[d + k] = v[s + k]
+                        k = k + 1
+                    }
+                }
+                cptopsp => {
+                    let n = @as(usize, x.b)
+                    let src = @as(i64, sp) + @as(i64, x.a)
+                    if src < 0 or src + @as(i64, n) > @as(i64, sp) {
+                        vm.count = count
+                        return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset }
+                    }
+                    if sp + n > cap { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::stack_full } }
+                    let s = @as(usize, src)
+                    let mut k: usize = 0
+                    while k < n {
+                        t[sp + k] = t[s + k]
+                        v[sp + k] = v[s + k]
+                        k = k + 1
+                    }
+                    sp = sp + n
+                }
+                rsadd => {
+                    if sp >= cap { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::stack_full } }
+                    t[sp] = @trunc(u8, x.b)
+                    v[sp].i = x.a
+                    sp = sp + 1
+                }
+                jz => {
+                    if sp < 1 or t[sp - 1] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = 0, deep_n = 0, top = INT, top_n = 1 } }
+                    sp = sp - 1
+                    if v[sp].i == 0 { ip = @as(usize, x.a) }
+                }
+                action => {
+                    vm.sp = @as(u32, sp)
+                    vm.count = count
+                    vm.fault.kind = FaultKind::none
+                    vm.fault.why = ""
+                    let reply = engine{ &vm, call = Call::action{ routine = @trunc(u16, x.a), argc = @trunc(u8, x.b) } }
+                    sp = @as(usize, vm.sp)
+                    count = vm.count
+                    match reply {
+                        done => {}
+                        failed => {
+                            let kind = if vm.fault.kind == FaultKind::none { FaultKind::routine_failed } else { vm.fault.kind }
+                            let why = vm.fault.why
+                            let want = vm.fault.want
+                            let found = vm.fault.found
+                            _ = trap{ &vm, program, ip = cur, sp, kind }
+                            vm.fault.routine = x.a
+                            vm.fault.argc = x.b
+                            vm.fault.why = why
+                            vm.fault.want = want
+                            vm.fault.found = found
+                            return false
+                        }
+                        equal => {
+                            _ = trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_reply }
+                            vm.fault.routine = x.a
+                            vm.fault.argc = x.b
+                            return false
+                        }
+                    }
+                }
+                jmp => { ip = @as(usize, x.a) }
+                equal_ii => {
+                    if sp >= 2 and t[sp - 1] == INT and t[sp - 2] == INT {
+                        sp = sp - 1
+                        v[sp - 1].i = if v[sp - 1].i == v[sp].i { 1 } else { 0 }
+                    } else {
+                        vm.sp = @as(u32, sp)
+                        vm.count = count
+                        let same = compare{ &vm, program, engine, ip = cur, n = 1 } ifnull { return false }
+                        sp = @as(usize, vm.sp)
+                        t[sp] = INT
+                        v[sp].i = if same { 1 } else { 0 }
+                        sp = sp + 1
+                    }
+                }
+                jsr => {
+                    let n = vm.nret
+                    if n + 1 >= RETURNS { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::call_depth } }
+                    vm.rets[n] = @as(u32, ip)
+                    vm.nret = n + 1
+                    ip = @as(usize, x.a)
+                }
+                const_s => {
+                    if sp >= cap { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::stack_full } }
+                    let at = @as(usize, x.a)
+                    let slot = new_string{ &vm, s = program.code[at..at + @as(usize, x.b)] } ifnull {
+                        vm.count = count
+                        return trap{ &vm, program, ip = cur, sp, kind = FaultKind::strings_full }
+                    }
+                    t[sp] = STRING
+                    v[sp].u = slot
+                    sp = sp + 1
+                }
+                const_o => {
+                    if sp >= cap { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::stack_full } }
+                    t[sp] = OBJECT
+                    v[sp].u = if x.a == 0 { vm.levels[vm.depth - 1].self } else { OBJECT_INVALID }
+                    sp = sp + 1
+                }
+                retn => {
+                    let n = vm.nret
+                    if n == 0 { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::underflow } }
+                    vm.nret = n - 1
+                    let back = vm.rets[n - 1]
+                    if back == RUN_END {
+                        vm.sp = @as(u32, sp)
+                        vm.count = count
+                        return true
+                    }
+                    ip = @as(usize, back)
+                }
+                cptopbp => {
+                    let n = @as(usize, x.b)
+                    let src = @as(i64, vm.bp) + @as(i64, x.a)
+                    if src < 0 or src + @as(i64, n) > @as(i64, sp) {
+                        vm.count = count
+                        return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset }
+                    }
+                    if sp + n > cap { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::stack_full } }
+                    let s = @as(usize, src)
+                    let mut k: usize = 0
+                    while k < n {
+                        t[sp + k] = t[s + k]
+                        v[sp + k] = v[s + k]
+                        k = k + 1
+                    }
+                    sp = sp + n
+                }
+                logand => {
+                    if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
+                    sp = sp - 1
+                    v[sp - 1].i = if v[sp - 1].i != 0 and v[sp].i != 0 { 1 } else { 0 }
+                }
+                logor => {
+                    if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
+                    sp = sp - 1
+                    v[sp - 1].i = if v[sp - 1].i != 0 or v[sp].i != 0 { 1 } else { 0 }
+                }
+                neg_i => {
+                    if sp < 1 or t[sp - 1] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = 0, deep_n = 0, top = INT, top_n = 1 } }
+                    v[sp - 1].i = @wrap_sub(0, v[sp - 1].i)
+                }
+                gt_ii => {
+                    if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
+                    sp = sp - 1
+                    v[sp - 1].i = if v[sp - 1].i > v[sp].i { 1 } else { 0 }
+                }
+                not_i => {
+                    if sp < 1 or t[sp - 1] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = 0, deep_n = 0, top = INT, top_n = 1 } }
+                    v[sp - 1].i = if v[sp - 1].i == 0 { 1 } else { 0 }
+                }
+                nequal_ii => {
+                    if sp >= 2 and t[sp - 1] == INT and t[sp - 2] == INT {
+                        sp = sp - 1
+                        v[sp - 1].i = if v[sp - 1].i != v[sp].i { 1 } else { 0 }
+                    } else {
+                        vm.sp = @as(u32, sp)
+                        vm.count = count
+                        let same = compare{ &vm, program, engine, ip = cur, n = 1 } ifnull { return false }
+                        sp = @as(usize, vm.sp)
+                        t[sp] = INT
+                        v[sp].i = if same { 0 } else { 1 }
+                        sp = sp + 1
+                    }
+                }
+                lt_ii => {
+                    if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
+                    sp = sp - 1
+                    v[sp - 1].i = if v[sp - 1].i < v[sp].i { 1 } else { 0 }
+                }
+                add_ss => {
+                    if sp < 2 or t[sp - 1] != STRING or t[sp - 2] != STRING { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = STRING, deep_n = 1, top = STRING, top_n = 1 } }
+                    vm.sp = @as(u32, sp)
+                    let slot = concat{ &vm, a = v[sp - 2].u, b = v[sp - 1].u } ifnull {
+                        vm.count = count
+                        return trap{ &vm, program, ip = cur, sp, kind = FaultKind::strings_full }
+                    }
+                    sp = sp - 1
+                    v[sp - 1].u = slot
+                }
+                jnz => {
+                    if sp < 1 or t[sp - 1] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = 0, deep_n = 0, top = INT, top_n = 1 } }
+                    sp = sp - 1
+                    if v[sp].i != 0 { ip = @as(usize, x.a) }
+                }
+                leq_ii => {
+                    if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
+                    sp = sp - 1
+                    v[sp - 1].i = if v[sp - 1].i <= v[sp].i { 1 } else { 0 }
+                }
+                geq_ii => {
+                    if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
+                    sp = sp - 1
+                    v[sp - 1].i = if v[sp - 1].i >= v[sp].i { 1 } else { 0 }
+                }
+                add_ii => {
+                    if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
+                    sp = sp - 1
+                    v[sp - 1].i = @wrap_add(v[sp - 1].i, v[sp].i)
+                }
+                incisp => {
+                    let at = @as(i64, sp) + @as(i64, x.a)
+                    if at < 0 or at >= @as(i64, sp) { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset } }
+                    let i = @as(usize, at)
+                    if t[i] != INT { vm.count = count; return wrong_cell{ &vm, program, ip = cur, sp, want = INT, found = t[i] } }
+                    v[i].i = @wrap_add(v[i].i, 1)
+                }
+                decisp => {
+                    let at = @as(i64, sp) + @as(i64, x.a)
+                    if at < 0 or at >= @as(i64, sp) { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset } }
+                    let i = @as(usize, at)
+                    if t[i] != INT { vm.count = count; return wrong_cell{ &vm, program, ip = cur, sp, want = INT, found = t[i] } }
+                    v[i].i = @wrap_sub(v[i].i, 1)
+                }
+                store_state => {
+                    vm.saved = Saved{ valid = true, program, resume = @as(u32, x.a), globals = x.b, frame = x.c }
+                }
+                cpdownbp => {
+                    let n = @as(usize, x.b)
+                    let dst = @as(i64, vm.bp) + @as(i64, x.a)
+                    if n > sp or dst < 0 or dst + @as(i64, n) > @as(i64, sp) {
+                        vm.count = count
+                        return trap{ &vm, program, ip = cur, sp, kind = if n > sp { FaultKind::underflow } else { FaultKind::bad_offset } }
+                    }
+                    let d = @as(usize, dst)
+                    let s = sp - n
+                    let mut k: usize = 0
+                    while k < n {
+                        t[d + k] = t[s + k]
+                        v[d + k] = v[s + k]
+                        k = k + 1
+                    }
+                }
+                savebp => {
+                    if sp >= cap { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::stack_full } }
+                    t[sp] = INT
+                    v[sp].u = vm.bp
+                    vm.bp = @as(u32, sp)
+                    sp = sp + 1
+                }
+                restorebp => {
+                    if sp < 1 or t[sp - 1] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = 0, deep_n = 0, top = INT, top_n = 1 } }
+                    sp = sp - 1
+                    vm.bp = v[sp].u
+                }
+                destruct => {
+                    let n = @as(usize, x.a)
+                    if n > sp { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::underflow } }
+                    if x.b < 0 or x.c < 0 or x.b + x.c > x.a { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset } }
+                    let base = sp - n
+                    let keep = @as(usize, x.c)
+                    let from = base + @as(usize, x.b)
+                    let mut k: usize = 0
+                    while k < keep {
+                        t[base + k] = t[from + k]
+                        v[base + k] = v[from + k]
+                        k = k + 1
+                    }
+                    sp = base + keep
+                }
+                mul_ii => {
+                    if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
+                    sp = sp - 1
+                    v[sp - 1].i = @wrap_mul(v[sp - 1].i, v[sp].i)
+                }
+                sub_ii => {
+                    if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
+                    sp = sp - 1
+                    v[sp - 1].i = @wrap_sub(v[sp - 1].i, v[sp].i)
+                }
+                div_ff => {
+                    if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = FLOAT, top_n = 1 } }
+                    if v[sp - 1].f == 0.0 { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::div_zero } }
+                    sp = sp - 1
+                    v[sp - 1].f = v[sp - 1].f / v[sp].f
+                }
+                gt_ff => {
+                    if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = FLOAT, top_n = 1 } }
+                    sp = sp - 1
+                    t[sp - 1] = INT
+                    v[sp - 1].i = if v[sp - 1].f > v[sp].f { 1 } else { 0 }
+                }
+                lt_ff => {
+                    if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = FLOAT, top_n = 1 } }
+                    sp = sp - 1
+                    t[sp - 1] = INT
+                    v[sp - 1].i = if v[sp - 1].f < v[sp].f { 1 } else { 0 }
+                }
+                leq_ff => {
+                    if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = FLOAT, top_n = 1 } }
+                    sp = sp - 1
+                    t[sp - 1] = INT
+                    v[sp - 1].i = if v[sp - 1].f <= v[sp].f { 1 } else { 0 }
+                }
+                equal => {
+                    vm.sp = @as(u32, sp)
+                    vm.count = count
+                    let same = compare{ &vm, program, engine, ip = cur, n = @as(usize, x.a) } ifnull { return false }
+                    sp = @as(usize, vm.sp)
+                    if sp >= cap { return trap{ &vm, program, ip = cur, sp, kind = FaultKind::stack_full } }
+                    t[sp] = INT
+                    v[sp].i = if same { 1 } else { 0 }
+                    sp = sp + 1
+                }
+                nequal => {
+                    vm.sp = @as(u32, sp)
+                    vm.count = count
+                    let same = compare{ &vm, program, engine, ip = cur, n = @as(usize, x.a) } ifnull { return false }
+                    sp = @as(usize, vm.sp)
+                    if sp >= cap { return trap{ &vm, program, ip = cur, sp, kind = FaultKind::stack_full } }
+                    t[sp] = INT
+                    v[sp].i = if same { 0 } else { 1 }
+                    sp = sp + 1
+                }
+                mul_if => {
+                    if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = FLOAT, top_n = 1 } }
+                    sp = sp - 1
+                    t[sp - 1] = FLOAT
+                    v[sp - 1].f = @as(f32, v[sp - 1].i) * v[sp].f
+                }
+                add_ff => {
+                    if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = FLOAT, top_n = 1 } }
+                    sp = sp - 1
+                    v[sp - 1].f = v[sp - 1].f + v[sp].f
+                }
+                mul_ff => {
+                    if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = FLOAT, top_n = 1 } }
+                    sp = sp - 1
+                    v[sp - 1].f = v[sp - 1].f * v[sp].f
+                }
+                div_ii => {
+                    if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
+                    let b = v[sp - 1].i
+                    let a = v[sp - 2].i
+                    if b == 0 { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::div_zero } }
+                    if b == -1 and a == -2147483648 { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::div_overflow } }
+                    sp = sp - 1
+                    v[sp - 1].i = a / b
+                }
+                add_if => {
+                    if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = FLOAT, top_n = 1 } }
+                    sp = sp - 1
+                    t[sp - 1] = FLOAT
+                    v[sp - 1].f = @as(f32, v[sp - 1].i) + v[sp].f
+                }
+                neg_f => {
+                    if sp < 1 or t[sp - 1] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = 0, deep_n = 0, top = FLOAT, top_n = 1 } }
+                    v[sp - 1].f = -v[sp - 1].f
+                }
+                incor => {
+                    if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
+                    sp = sp - 1
+                    v[sp - 1].i = v[sp - 1].i | v[sp].i
+                }
+                add_fi => {
+                    if sp < 2 or t[sp - 1] != INT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = INT, top_n = 1 } }
+                    sp = sp - 1
+                    v[sp - 1].f = v[sp - 1].f + @as(f32, v[sp].i)
+                }
+                sub_ff => {
+                    if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = FLOAT, top_n = 1 } }
+                    sp = sp - 1
+                    v[sp - 1].f = v[sp - 1].f - v[sp].f
+                }
+                mul_fi => {
+                    if sp < 2 or t[sp - 1] != INT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = INT, top_n = 1 } }
+                    sp = sp - 1
+                    v[sp - 1].f = v[sp - 1].f * @as(f32, v[sp].i)
+                }
+                booland => {
+                    if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
+                    sp = sp - 1
+                    v[sp - 1].i = v[sp - 1].i & v[sp].i
+                }
+                sub_fi => {
+                    if sp < 2 or t[sp - 1] != INT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = INT, top_n = 1 } }
+                    sp = sp - 1
+                    v[sp - 1].f = v[sp - 1].f - @as(f32, v[sp].i)
+                }
+                div_if => {
+                    if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = FLOAT, top_n = 1 } }
+                    if v[sp - 1].f == 0.0 { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::div_zero } }
+                    sp = sp - 1
+                    t[sp - 1] = FLOAT
+                    v[sp - 1].f = @as(f32, v[sp - 1].i) / v[sp].f
+                }
+                geq_ff => {
+                    if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = FLOAT, top_n = 1 } }
+                    sp = sp - 1
+                    t[sp - 1] = INT
+                    v[sp - 1].i = if v[sp - 1].f >= v[sp].f { 1 } else { 0 }
+                }
+                mod_ii => {
+                    if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
+                    let b = v[sp - 1].i
+                    let a = v[sp - 2].i
+                    if b == 0 { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::div_zero } }
+                    if b == -1 and a == -2147483648 { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::div_overflow } }
+                    sp = sp - 1
+                    v[sp - 1].i = a % b
+                }
+                shleft => {
+                    if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
+                    sp = sp - 1
+                    v[sp - 1].i = v[sp - 1].i << (v[sp].i & 31)
+                }
+                shright => {
+                    // Rounds toward zero: a negative number is shifted as its magnitude.
+                    if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
+                    sp = sp - 1
+                    let a = v[sp - 1].i
+                    let n = v[sp].i & 31
+                    v[sp - 1].i = if a >= 0 { a >> n } else { @wrap_sub(0, @wrap_sub(0, a) >> n) }
+                }
+                ushright => {
+                    // Sign-extending, as in the engine (and NWN): not a logical shift.
+                    if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
+                    sp = sp - 1
+                    v[sp - 1].i = v[sp - 1].i >> (v[sp].i & 31)
+                }
+                excor => {
+                    if sp < 2 or t[sp - 1] != INT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = INT, top_n = 1 } }
+                    sp = sp - 1
+                    v[sp - 1].i = v[sp - 1].i ^ v[sp].i
+                }
+                comp_i => {
+                    if sp < 1 or t[sp - 1] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = 0, deep_n = 0, top = INT, top_n = 1 } }
+                    v[sp - 1].i = v[sp - 1].i ^ -1
+                }
+                sub_if => {
+                    if sp < 2 or t[sp - 1] != FLOAT or t[sp - 2] != INT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = INT, deep_n = 1, top = FLOAT, top_n = 1 } }
+                    sp = sp - 1
+                    t[sp - 1] = FLOAT
+                    v[sp - 1].f = @as(f32, v[sp - 1].i) - v[sp].f
+                }
+                div_fi => {
+                    if sp < 2 or t[sp - 1] != INT or t[sp - 2] != FLOAT { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = INT, top_n = 1 } }
+                    if v[sp - 1].i == 0 { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::div_zero } }
+                    sp = sp - 1
+                    v[sp - 1].f = v[sp - 1].f / @as(f32, v[sp].i)
+                }
+                incibp => {
+                    let at = @as(i64, vm.bp) + @as(i64, x.a)
+                    if at < 0 or at >= @as(i64, sp) { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset } }
+                    let i = @as(usize, at)
+                    if t[i] != INT { vm.count = count; return wrong_cell{ &vm, program, ip = cur, sp, want = INT, found = t[i] } }
+                    v[i].i = @wrap_add(v[i].i, 1)
+                }
+                decibp => {
+                    let at = @as(i64, vm.bp) + @as(i64, x.a)
+                    if at < 0 or at >= @as(i64, sp) { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::bad_offset } }
+                    let i = @as(usize, at)
+                    if t[i] != INT { vm.count = count; return wrong_cell{ &vm, program, ip = cur, sp, want = INT, found = t[i] } }
+                    v[i].i = @wrap_sub(v[i].i, 1)
+                }
+                add_vv => {
+                    if sp < 6 or not floats{ t, from = sp - 6, n = 6 } { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 3, top = FLOAT, top_n = 3 } }
+                    sp = sp - 3
+                    v[sp - 3].f = v[sp - 3].f + v[sp].f
+                    v[sp - 2].f = v[sp - 2].f + v[sp + 1].f
+                    v[sp - 1].f = v[sp - 1].f + v[sp + 2].f
+                }
+                sub_vv => {
+                    if sp < 6 or not floats{ t, from = sp - 6, n = 6 } { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 3, top = FLOAT, top_n = 3 } }
+                    sp = sp - 3
+                    v[sp - 3].f = v[sp - 3].f - v[sp].f
+                    v[sp - 2].f = v[sp - 2].f - v[sp + 1].f
+                    v[sp - 1].f = v[sp - 1].f - v[sp + 2].f
+                }
+                mul_vf => {
+                    if sp < 4 or not floats{ t, from = sp - 4, n = 4 } { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 3, top = FLOAT, top_n = 1 } }
+                    sp = sp - 1
+                    let k = v[sp].f
+                    v[sp - 3].f = v[sp - 3].f * k
+                    v[sp - 2].f = v[sp - 2].f * k
+                    v[sp - 1].f = v[sp - 1].f * k
+                }
+                mul_fv => {
+                    if sp < 4 or not floats{ t, from = sp - 4, n = 4 } { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 1, top = FLOAT, top_n = 3 } }
+                    let k = v[sp - 4].f
+                    v[sp - 4].f = k * v[sp - 3].f
+                    v[sp - 3].f = k * v[sp - 2].f
+                    v[sp - 2].f = k * v[sp - 1].f
+                    sp = sp - 1
+                }
+                div_vf => {
+                    if sp < 4 or not floats{ t, from = sp - 4, n = 4 } { vm.count = count; return bad_operands{ &vm, program, ip = cur, sp, deep = FLOAT, deep_n = 3, top = FLOAT, top_n = 1 } }
+                    let k = v[sp - 1].f
+                    if k == 0.0 { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::div_zero } }
+                    sp = sp - 1
+                    v[sp - 3].f = v[sp - 3].f / k
+                    v[sp - 2].f = v[sp - 2].f / k
+                    v[sp - 1].f = v[sp - 1].f / k
+                }
+                store_stateall => {
+                    vm.saved = Saved{ valid = true, program, resume = @as(u32, x.a), globals = 0, frame = 0 }
+                }
+                nop => { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::invalid_opcode } }
+                end => { vm.count = count; return trap{ &vm, program, ip = cur, sp, kind = FaultKind::past_end } }
+            }
+        }
+    }
+
+    // Whether cells [from, from + n) are all floats.
+    fn floats { t: *mut u8, from: usize, n: usize } -> bool {
+        let mut k: usize = 0
+        while k < n {
+            if t[from + k] != FLOAT { return false }
+            k = k + 1
+        }
+        return true
+    }
+
+    // Records a fault at instruction `ip` of `program`; false, for `return trap{ ... }`.
+    fn trap { mut vm: Vm, program: *Program, ip: usize, sp: usize, kind: FaultKind } -> bool {
+        vm.sp = @as(u32, sp)
+        vm.fault = no_fault{}
+        vm.fault.kind = kind
+        vm.fault.script = program.name
+        let at = program.at[ip]
+        vm.fault.offset = at
+        let p = @as(usize, at)
+        if p + 2 <= program.code.len {
+            vm.fault.op = program.code[p]
+            vm.fault.ty = program.code[p + 1]
+        }
+        return false
+    }
+
+    fn wrong_cell { mut vm: Vm, program: *Program, ip: usize, sp: usize, want: u8, found: u8 } -> bool {
+        _ = trap{ &vm, program, ip, sp, kind = FaultKind::wrong_type }
+        vm.fault.want = want
+        vm.fault.found = found
+        return false
+    }
+
+    // An operation on a `deep` operand of `deep_n` cells under a `top` one of `top_n` cells
+    // found the stack too short or a cell of another type: records which.
+    fn bad_operands { mut vm: Vm, program: *Program, ip: usize, sp: usize, deep: u8, deep_n: usize, top: u8, top_n: usize } -> bool {
+        if sp < deep_n + top_n { return trap{ &vm, program, ip, sp, kind = FaultKind::underflow } }
+        let t = vm.types
+        let base = sp - deep_n - top_n
+        let mut k: usize = 0
+        while k < deep_n + top_n {
+            let want = if k < deep_n { deep } else { top }
+            if t[base + k] != want { return wrong_cell{ &vm, program, ip, sp, want, found = t[base + k] } }
+            k = k + 1
+        }
+        return trap{ &vm, program, ip, sp, kind = FaultKind::wrong_type }
+    }
+
+    // EQUAL/NEQUAL: pops two operands of n cells and compares them cell by cell, each by its
+    // own type: ints, floats and objects by their 32 bits (so 0.0 isn't -0.0), strings ignoring
+    // ASCII case, engine values through the engine. Null after a fault.
+    fn compare { mut vm: Vm, program: *Program, engine: Engine, ip: usize, n: usize } -> ?bool {
+        let sp = @as(usize, vm.sp)
+        if n == 0 or 2 * n > sp { _ = trap{ &vm, program, ip, sp, kind = FaultKind::underflow }; return null }
+        let a = sp - 2 * n
+        let b = sp - n
+        let mut same = true
+        let mut k: usize = 0
+        while k < n {
+            let ta = vm.types[a + k]
+            let tb = vm.types[b + k]
+            if ta != tb {
+                _ = trap{ &vm, program, ip, sp, kind = FaultKind::not_comparable }
+                vm.fault.want = ta
+                vm.fault.found = tb
+                return null
+            }
+            let va = vm.vals[a + k].u
+            let vb = vm.vals[b + k].u
+            if ta == INT or ta == FLOAT or ta == OBJECT {
+                if va != vb { same = false }
+            } else if ta == STRING {
+                if not same_text{ a = vm.strs[va], b = vm.strs[vb] } { same = false }
+            } else if ta >= EFFECT and ta <= TALENT {
+                let kind = @as(EngineType, ta - EFFECT)
+                match engine{ &vm, call = Call::equal{ kind, a = va, b = vb } } {
+                    equal{ same = eq } => { if not eq { same = false } }
+                    else => { _ = trap{ &vm, program, ip, sp, kind = FaultKind::bad_reply }; return null }
+                }
+            } else {
+                _ = trap{ &vm, program, ip, sp, kind = FaultKind::not_comparable }
+                vm.fault.want = ta
+                vm.fault.found = tb
+                return null
+            }
+            k = k + 1
+        }
+        vm.sp = @as(u32, a)
+        return same
+    }
+
+    // Whether two strings are equal ignoring ASCII case, as the engine compares them.
+    fn same_text { a: []u8, b: []u8 } -> bool {
+        if a.len != b.len { return false }
+        let mut i: usize = 0
+        while i < a.len {
+            if ascii::to_lower{ c = a[i] } != ascii::to_lower{ c = b[i] } { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    // ---- strings
+    //
+    // A string cell holds a slot, which holds a view of the string's bytes: in a program's code
+    // (CONSTS), in vm.text (made by ADDSS or pushed by a routine), or in a Situation being
+    // resumed. Strings never change, so copying a cell shares its slot. Slots go back to use when
+    // they run out (collect); bytes only when the outermost run ends.
+
+    // A slot holding `s`, or null if every slot is live.
+    fn new_string { mut vm: Vm, s: []u8 } -> ?u32 {
+        if s.len == 0 { return 0 }
+        if vm.nfree == 0 and vm.nstr >= @as(u32, vm.strs.len) { collect{ &vm } }
+        let mut slot: u32 = 0
+        if vm.nfree > 0 {
+            vm.nfree = vm.nfree - 1
+            slot = vm.free[vm.nfree]
+        } else if vm.nstr < @as(u32, vm.strs.len) {
+            slot = vm.nstr
+            vm.nstr = vm.nstr + 1
+        } else {
+            return null
+        }
+        vm.strs[slot] = s
+        return slot
+    }
+
+    // Makes every slot no cell on the stack holds free again.
+    fn collect { mut vm: Vm } {
+        slice::fill{ s = vm.marks[..vm.nstr], v = 0 }
+        let mut i: u32 = 0
+        while i < vm.sp {
+            if vm.types[i] == STRING { vm.marks[vm.vals[i].u] = 1 }
+            i = i + 1
+        }
+        vm.nfree = 0
+        let mut s: u32 = 1
+        while s < vm.nstr {
+            if vm.marks[s] == 0 {
+                vm.free[vm.nfree] = s
+                vm.nfree = vm.nfree + 1
+            }
+            s = s + 1
+        }
+    }
+
+    // Room for n bytes of new text, or null.
+    fn new_text { mut vm: Vm, n: usize } -> ?[]mut u8 {
+        let at = @as(usize, vm.text_used)
+        if n > vm.text.len - at { return null }
+        vm.text_used = @as(u32, at + n)
+        return vm.text[at..at + n]
+    }
+
+    // A slot holding slot a's string followed by slot b's; null when out of string memory.
+    fn concat { mut vm: Vm, a: u32, b: u32 } -> ?u32 {
+        let sa = vm.strs[a]
+        let sb = vm.strs[b]
+        if sa.len == 0 { return b }
+        if sb.len == 0 { return a }
+        let out = new_text{ &vm, n = sa.len + sb.len } ifnull { return null }
+        slice::copy(u8){ dst = out[..sa.len], src = sa }
+        slice::copy(u8){ dst = out[sa.len..], src = sb }
+        return new_string{ &vm, s = out }
+    }
+
+    // ---- what routines use: arguments and results
+    //
+    // A routine pops its arguments in declaration order (the first is on top) and pushes its
+    // result. Each of these fails, and records why in vm.fault, when the stack is empty, the cell
+    // is of another type, or the stack or string memory is full; the routine then replies
+    // `failed`, which stops the script as the game's would.
+
+    fn note { mut vm: Vm, kind: FaultKind, want: u8, found: u8 } {
+        vm.fault.kind = kind
+        vm.fault.want = want
+        vm.fault.found = found
+    }
+
+    // The top cell, which must be of type `want`; it stays on the stack.
+    fn top { mut vm: Vm, want: u8 } -> !Cell {
+        if vm.sp == 0 {
+            note{ &vm, kind = FaultKind::underflow, want, found = 0 }
+            return underflow
+        }
+        let i = vm.sp - 1
+        let found = vm.types[i]
+        if found != want {
+            note{ &vm, kind = FaultKind::wrong_type, want, found }
+            return wrong_type{ want, found }
+        }
+        return vm.vals[i]
+    }
+
+    fn pop_int { mut vm: Vm } -> !i32 {
+        let c = try top{ &vm, want = INT }
+        vm.sp = vm.sp - 1
+        return c.i
+    }
+
+    fn pop_float { mut vm: Vm } -> !f32 {
+        let c = try top{ &vm, want = FLOAT }
+        vm.sp = vm.sp - 1
+        return c.f
+    }
+
+    fn pop_object { mut vm: Vm } -> !u32 {
+        let c = try top{ &vm, want = OBJECT }
+        vm.sp = vm.sp - 1
+        return c.u
+    }
+
+    // A view of the string's bytes, valid until the outermost run ends: copy it to keep it.
+    fn pop_string { mut vm: Vm } -> ![]u8 {
+        let c = try top{ &vm, want = STRING }
+        vm.sp = vm.sp - 1
+        return vm.strs[c.u]
+    }
+
+    // A vector argument: three float cells, z on top.
+    fn pop_vector { mut vm: Vm } -> !Vector {
+        let z = try pop_float{ &vm }
+        let y = try pop_float{ &vm }
+        let x = try pop_float{ &vm }
+        return Vector{ x, y, z }
+    }
+
+    // An engine value's handle. The handle stays the engine's: it is only valid for as long as
+    // the engine keeps the value.
+    fn pop_engine { mut vm: Vm, kind: EngineType } -> !u32 {
+        let c = try top{ &vm, want = engine_tag{ kind } }
+        vm.sp = vm.sp - 1
+        return c.u
+    }
+
+    fn push { mut vm: Vm, tag: u8, c: Cell } -> ! {
+        let i = vm.sp
+        if @as(usize, i) >= vm.types.len {
+            note{ &vm, kind = FaultKind::stack_full, want = 0, found = 0 }
+            return stack_full
+        }
+        vm.types[i] = tag
+        vm.vals[i] = c
+        vm.sp = i + 1
+    }
+
+    fn push_int { mut vm: Vm, v: i32 } -> ! { try push{ &vm, tag = INT, c = Cell{ i = v } } }
+    fn push_float { mut vm: Vm, v: f32 } -> ! { try push{ &vm, tag = FLOAT, c = Cell{ f = v } } }
+    fn push_object { mut vm: Vm, id: u32 } -> ! { try push{ &vm, tag = OBJECT, c = Cell{ u = id } } }
+
+    fn push_vector { mut vm: Vm, v: Vector } -> ! {
+        if @as(usize, vm.sp) + 3 > vm.types.len {
+            note{ &vm, kind = FaultKind::stack_full, want = 0, found = 0 }
+            return stack_full
+        }
+        try push_float{ &vm, v = v.x }
+        try push_float{ &vm, v = v.y }
+        try push_float{ &vm, v = v.z }
+    }
+
+    fn push_engine { mut vm: Vm, kind: EngineType, handle: u32 } -> ! {
+        try push{ &vm, tag = engine_tag{ kind }, c = Cell{ u = handle } }
+    }
+
+    // Pushes a copy of `s`.
+    fn push_string { mut vm: Vm, s: []u8 } -> ! {
+        if @as(usize, vm.sp) >= vm.types.len {
+            note{ &vm, kind = FaultKind::stack_full, want = 0, found = 0 }
+            return stack_full
+        }
+        let mut slot: u32 = 0
+        if s.len > 0 {
+            let out = new_text{ &vm, n = s.len } ifnull {
+                note{ &vm, kind = FaultKind::strings_full, want = 0, found = 0 }
+                return strings_full
+            }
+            slice::copy(u8){ dst = out, src = s }
+            slot = new_string{ &vm, s = out } ifnull {
+                note{ &vm, kind = FaultKind::strings_full, want = 0, found = 0 }
+                return strings_full
+            }
+        }
+        try push{ &vm, tag = STRING, c = Cell{ u = slot } }
+    }
+
+    // A routine's own reason for failing, before it replies `failed`.
+    fn fail { mut vm: Vm, why: []u8 } {
+        vm.fault.kind = FaultKind::routine_failed
+        vm.fault.why = why
+    }
+
+    // ---- actions: STORE_STATE and situations
+    //
+    // An `action` argument (AssignCommand, DelayCommand, ActionDoCommand) is the code after the
+    // last STORE_STATE, to run later: the routine takes it with pop_situation, which copies what
+    // that code needs (the globals and the calling function's frame) out of the stack. The
+    // engine keeps the Situation as long as it likes (an action queue, a timed event, a save
+    // game) and runs it with resume. Strings are copied into the situation; engine values are
+    // their handles, which the engine must keep valid for as long as it keeps the situation.
+
+    struct Situation {
+        program: *Program,
+        resume: u32,            // the instruction to start at: the action's first
+        bp: u32,                // cells below BP when it runs: the globals
+        stack_size: u32,        // SP when it was taken, for save games (StackSize)
+        types: []mut u8,        // each saved cell's type
+        vals: []mut Cell,       // its value; a string's is the offset of its record in `text`
+        text: []mut u8,         // the strings: each a little-endian u32 length and the bytes
+    }
+
+    // The action argument the last STORE_STATE describes, from memory `realloc` gives; free it
+    // with free_situation. As the engine: the `globals` bytes below BP become the first cells
+    // (and BP), followed by the `frame` bytes below SP; both 0 keeps the whole stack, at most
+    // 65,536 cells of each part, the first at most BP.
+    fn pop_situation(S) { mut vm: Vm, realloc: alloc::Fn(S), mut heap: S } -> !Situation {
+        let s = vm.saved
+        if not s.valid {
+            note{ &vm, kind = FaultKind::no_state, want = 0, found = 0 }
+            return no_state
+        }
+        let program = s.program ifnull {
+            note{ &vm, kind = FaultKind::no_state, want = 0, found = 0 }
+            return no_state
+        }
+        let sp = @as(i64, vm.sp)
+        let bp = @as(i64, vm.bp)
+        let mut base = @as(i64, s.globals / 4)
+        let mut frame = @as(i64, s.frame / 4)
+        if base == 0 and frame == 0 {
+            base = bp
+            frame = sp - bp
+        }
+        if base < 0 { base = 0 }
+        if base > STATE_CELLS { base = STATE_CELLS }
+        if base > bp { base = bp }
+        if frame < 0 { frame = 0 }
+        if frame > STATE_CELLS { frame = STATE_CELLS }
+        if frame > sp or bp > sp {
+            note{ &vm, kind = FaultKind::bad_state, want = 0, found = 0 }
+            return bad_state
+        }
+        let nb = @as(usize, base)
+        let nf = @as(usize, frame)
+        let n = nb + nf
+        let from_base = @as(usize, bp) - nb
+        let from_frame = @as(usize, sp) - nf
+        // The strings' bytes, each after its length.
+        let mut text_len: usize = 0
+        let mut k: usize = 0
+        while k < n {
+            let i = if k < nb { from_base + k } else { from_frame + k - nb }
+            if vm.types[i] == STRING { text_len = text_len + 4 + vm.strs[vm.vals[i].u].len }
+            k = k + 1
+        }
+        let types = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = n }
+        let vals = alloc::resize(Cell, S){ realloc, &heap, mem = slice::empty(Cell){}, count = n } iferr err{ error } {
+            _ = alloc::resize(u8, S){ realloc, &heap, mem = types, count = 0 }
+            return error
+        }
+        let text = alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = text_len } iferr err{ error } {
+            _ = alloc::resize(u8, S){ realloc, &heap, mem = types, count = 0 }
+            _ = alloc::resize(Cell, S){ realloc, &heap, mem = vals, count = 0 }
+            return error
+        }
+        let mut at: usize = 0
+        k = 0
+        while k < n {
+            let i = if k < nb { from_base + k } else { from_frame + k - nb }
+            let tag = vm.types[i]
+            types[k] = tag
+            if tag == STRING {
+                let bytes = vm.strs[vm.vals[i].u]
+                vals[k] = Cell{ u = @as(u32, at) }
+                put_le32{ b = text, at, n = @as(u32, bytes.len) }
+                slice::copy(u8){ dst = text[at + 4..at + 4 + bytes.len], src = bytes }
+                at = at + 4 + bytes.len
+            } else {
+                vals[k] = vm.vals[i]
+            }
+            k = k + 1
+        }
+        return Situation{ program, resume = s.resume, bp = @as(u32, nb), stack_size = vm.sp, types, vals, text }
+    }
+
+    fn free_situation(S) { realloc: alloc::Fn(S), mut heap: S, situation: Situation } {
+        _ = alloc::resize(u8, S){ realloc, &heap, mem = situation.types, count = 0 }
+        _ = alloc::resize(Cell, S){ realloc, &heap, mem = situation.vals, count = 0 }
+        _ = alloc::resize(u8, S){ realloc, &heap, mem = situation.text, count = 0 }
+    }
+
+    // Runs an action: the situation's cells become the stack (BP as saved), and its program runs
+    // from the action's first instruction, as OBJECT_SELF `self`, until the action returns. Only
+    // when no script is running, as the engine runs actions from its event and action queues;
+    // otherwise it fails with `busy`. The situation's strings are used where they are, so it
+    // must outlive the call; the engine frees it after (or keeps it, to run it again).
+    fn resume { mut vm: Vm, situation: Situation, self: u32, engine: Engine } -> ! {
+        if vm.depth != 0 {
+            vm.fault = no_fault{}
+            vm.fault.kind = FaultKind::busy
+            vm.fault.script = situation.program.name
+            return busy
+        }
+        reset{ &vm }
+        vm.result = null
+        let n = situation.types.len
+        if n > vm.types.len or situation.bp > @as(u32, n) {
+            vm.fault = no_fault{}
+            vm.fault.kind = if n > vm.types.len { FaultKind::stack_full } else { FaultKind::bad_state }
+            vm.fault.script = situation.program.name
+            return faulted
+        }
+        let mut k: usize = 0
+        while k < n {
+            let tag = situation.types[k]
+            vm.types[k] = tag
+            if tag == STRING {
+                let at = @as(usize, situation.vals[k].u)
+                let bytes = record{ text = situation.text, at }
+                let slot = new_string{ &vm, s = bytes } ifnull {
+                    vm.fault = no_fault{}
+                    vm.fault.kind = FaultKind::strings_full
+                    vm.fault.script = situation.program.name
+                    reset{ &vm }
+                    return faulted
+                }
+                vm.vals[k] = Cell{ u = slot }
+            } else {
+                vm.vals[k] = situation.vals[k]
+            }
+            k = k + 1
+        }
+        vm.sp = @as(u32, n)
+        vm.bp = situation.bp
+        vm.rets[0] = RUN_END
+        vm.nret = 1
+        vm.levels[0] = Level{ program = situation.program, self }
+        vm.depth = 1
+        let ok = exec{ &vm, program = situation.program, engine, start = situation.resume }
+        vm.depth = 0
+        reset{ &vm }
+        if not ok { return faulted }
+    }
+
+    // The string record at `at` in a situation's text: a u32 length and the bytes.
+    fn record { text: []u8, at: usize } -> []u8 {
+        let n = @as(usize, text[at]) | (@as(usize, text[at + 1]) << 8) | (@as(usize, text[at + 2]) << 16) | (@as(usize, text[at + 3]) << 24)
+        return text[at + 4..at + 4 + n]
+    }
+
+    fn put_le32 { b: []mut u8, at: usize, n: u32 } {
+        b[at] = @trunc(u8, n)
+        b[at + 1] = @trunc(u8, n >> 8)
+        b[at + 2] = @trunc(u8, n >> 16)
+        b[at + 3] = @trunc(u8, n >> 24)
+    }
+
+    // ---- situations in save games
+    //
+    // A save stores a situation as gff-save.md's "script situation": Code (the program's file
+    // without its 13-byte header), InstructionPtr (instruction_ptr), Name, StackSize
+    // (stack_size), and Stack: BasePointer (bp), StackPointer (the cell count), TotalSize (the
+    // count + 16, as the engine sizes it) and one Type/Value per cell (saved_cell). Loading one
+    // is make_situation over a program decoded from the saved Code.
+
+    // A situation's cell as a save game stores it.
+    union SavedCell {
+        int{ v: i32 },
+        float{ v: f32 },
+        string{ s: []u8 },
+        object{ id: u32 },
+        engine{ kind: EngineType, handle: u32 },
+    }
+
+    // The resume point as the save's InstructionPtr: its offset in the code after the header.
+    fn instruction_ptr { situation: Situation } -> u32 {
+        return situation.program.at[situation.resume] - ncs::HEADER_SIZE
+    }
+
+    fn saved_cell { situation: Situation, i: usize } -> SavedCell {
+        let tag = situation.types[i]
+        let c = situation.vals[i]
+        if tag == INT { return SavedCell::int{ v = c.i } }
+        if tag == FLOAT { return SavedCell::float{ v = c.f } }
+        if tag == STRING { return SavedCell::string{ s = record{ text = situation.text, at = @as(usize, c.u) } } }
+        if tag == OBJECT { return SavedCell::object{ id = c.u } }
+        return SavedCell::engine{ kind = @as(EngineType, tag - EFFECT), handle = c.u }
+    }
+
+    error bad_resume{ ptr: u32 }        // InstructionPtr isn't an instruction of the program
+
+    // A situation from a save game's fields, in memory from `realloc`: `program` decoded from its
+    // Code, `instruction_ptr` and `base_pointer` as saved, and its cells.
+    fn make_situation(S) { realloc: alloc::Fn(S), mut heap: S, program: *Program, instruction_ptr: u32, base_pointer: u32, stack_size: u32, cells: []SavedCell } -> !Situation {
+        let resume = index_of{ program = program.*, at = instruction_ptr + ncs::HEADER_SIZE } ifnull {
+            return bad_resume{ ptr = instruction_ptr }
+        }
+        if @as(usize, base_pointer) > cells.len { return bad_state }
+        let n = cells.len
+        let mut text_len: usize = 0
+        let mut k: usize = 0
+        while k < n {
+            match cells[k] {
+                string{ s } => { text_len = text_len + 4 + s.len }
+                else => {}
+            }
+            k = k + 1
+        }
+        let types = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = n }
+        let vals = alloc::resize(Cell, S){ realloc, &heap, mem = slice::empty(Cell){}, count = n } iferr err{ error } {
+            _ = alloc::resize(u8, S){ realloc, &heap, mem = types, count = 0 }
+            return error
+        }
+        let text = alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = text_len } iferr err{ error } {
+            _ = alloc::resize(u8, S){ realloc, &heap, mem = types, count = 0 }
+            _ = alloc::resize(Cell, S){ realloc, &heap, mem = vals, count = 0 }
+            return error
+        }
+        let mut at: usize = 0
+        k = 0
+        while k < n {
+            match cells[k] {
+                int{ v } => { types[k] = INT; vals[k] = Cell{ i = v } }
+                float{ v } => { types[k] = FLOAT; vals[k] = Cell{ f = v } }
+                object{ id } => { types[k] = OBJECT; vals[k] = Cell{ u = id } }
+                engine{ kind, handle } => { types[k] = engine_tag{ kind }; vals[k] = Cell{ u = handle } }
+                string{ s } => {
+                    types[k] = STRING
+                    vals[k] = Cell{ u = @as(u32, at) }
+                    put_le32{ b = text, at, n = @as(u32, s.len) }
+                    slice::copy(u8){ dst = text[at + 4..at + 4 + s.len], src = s }
+                    at = at + 4 + s.len
+                }
+            }
+            k = k + 1
+        }
+        return Situation{ program, resume, bp = base_pointer, stack_size, types, vals, text }
+    }
+
+    // ---- faults in words
+
+    // A fixed buffer that @fmt writes into, dropping what doesn't fit.
+    struct Text { buf: []mut u8, len: usize }
+
+    // A u32 written as 8 hex digits.
+    struct Hex { n: u32 }
+
+    #write
+    fn text_bytes { mut t: Text, s: []u8 } {
+        let room = t.buf.len - t.len
+        let n = if s.len < room { s.len } else { room }
+        slice::copy(u8){ dst = t.buf[t.len..t.len + n], src = s[..n] }
+        t.len = t.len + n
+    }
+
+    #write
+    fn text_literal { mut t: Text, s: strlit } { text_bytes{ &t, s = s.bytes } }
+
+    #write
+    fn text_i64 { mut t: Text, n: i64 } {
+        let mut buf: [24]u8
+        text_bytes{ &t, s = utf8::fmt_i64{ n, into = buf[..] }.bytes }
+    }
+
+    #write
+    fn text_i32 { mut t: Text, n: i32 } { text_i64{ &t, n } }
+
+    #write
+    fn text_u32 { mut t: Text, n: u32 } { text_i64{ &t, n } }
+
+    #write
+    fn text_hex { mut t: Text, h: Hex } {
+        let digits = "0123456789abcdef"
+        let mut buf: [8]u8
+        let mut k: usize = 0
+        while k < 8 {
+            buf[k] = digits[@as(usize, (h.n >> @as(u32, 28 - 4 * k)) & 15)]
+            k = k + 1
+        }
+        text_bytes{ &t, s = buf[..] }
+    }
+
+    // A cell type's name.
+    fn type_name { tag: u8 } -> []u8 {
+        if tag == INT { return "int" }
+        if tag == FLOAT { return "float" }
+        if tag == STRING { return "string" }
+        if tag == OBJECT { return "object" }
+        if tag == EFFECT { return "effect" }
+        if tag == EVENT { return "event" }
+        if tag == LOCATION { return "location" }
+        if tag == TALENT { return "talent" }
+        if tag == 0 { return "nothing" }
+        return "an unknown type"
+    }
+
+    fn kind_name { kind: FaultKind } -> []u8 {
+        return match kind {
+            none => { "no fault" }
+            budget => { "the instruction budget ran out" }
+            too_deep => { "more than 8 scripts nested" }
+            call_depth => { "calls nested too deep for the return-address stack" }
+            underflow => { "stack underflow" }
+            wrong_type => { "wrong type" }
+            bad_offset => { "stack access outside the stack" }
+            invalid_opcode => { "invalid opcode" }
+            div_zero => { "division by zero" }
+            div_overflow => { "integer division overflow" }
+            past_end => { "ran past the end of the code" }
+            not_comparable => { "compared values of different types" }
+            stack_full => { "stack full" }
+            strings_full => { "string memory full" }
+            routine_failed => { "routine failed" }
+            bad_reply => { "the engine gave the wrong kind of reply" }
+            no_state => { "action argument without STORE_STATE" }
+            bad_state => { "STORE_STATE reaches outside the stack" }
+            unbalanced => { "ended with the stack unbalanced" }
+            busy => { "a script is already running" }
+        }
+    }
+
+    // The fault in one line, into `into`: "k_ai_master @ 000001a4 ACTION 7 2 (DelayCommand):
+    // wrong type: wanted float, found string".
+    fn describe { f: Fault, into: []mut u8 } -> []u8 {
+        let mut t = Text{ buf = into, len = 0 }
+        _ = @fmt(&t, "{}", f.script)
+        if f.op != 0 {
+            let name = ncs::op_name{ op = f.op }
+            let suffix: []u8 = if f.op == ncs::STORE_STATE { "" } else { ncs::type_suffix{ ty = f.ty } ifnull { "?" } }
+            _ = @fmt(&t, " @ {} {}{}", Hex{ n = f.offset }, name, suffix)
+        }
+        if f.routine >= 0 {
+            let r = @as(usize, f.routine)
+            let routine_name: []u8 = if r < nwscript::ROUTINES.len { nwscript::ROUTINES[r].name } else { "?" }
+            _ = @fmt(&t, " {} {} ({})", f.routine, f.argc, routine_name)
+        }
+        _ = @fmt(&t, ": {}", kind_name{ kind = f.kind })
+        if f.kind == FaultKind::wrong_type {
+            _ = @fmt(&t, ": wanted {}, found {}", type_name{ tag = f.want }, type_name{ tag = f.found })
+        } else if f.kind == FaultKind::not_comparable {
+            _ = @fmt(&t, ": {} and {}", type_name{ tag = f.want }, type_name{ tag = f.found })
+        } else if f.kind == FaultKind::unbalanced {
+            _ = @fmt(&t, ": {} cells left", f.cells)
+        }
+        if f.why.len > 0 { _ = @fmt(&t, ": {}", f.why) }
+        return t.buf[..t.len]
+    }
+}
