@@ -1,0 +1,867 @@
+// texcheck: lib/tex over every texture in the install.
+//
+//   kotor/tools/ctxc run kotor/tools/texcheck -- [DIR] [--sheet OUT.png] [--every N]
+//   kotor/tools/ctxc run kotor/tools/texcheck -- [DIR] --png NAME [--png NAME ...]
+//   kotor/tools/ctxc run kotor/tools/texcheck -- [DIR] --fuzz N
+//
+// DIR holds the textures as files, as tools/py/texdump.py extracts them
+// (G:/Dev/zlang/kotor/extract/tex by default: `<container>__<resref>.tpc|tga|txi`); there is no
+// resource manager in ctxlang yet.
+//
+// Without --png it reads every .tpc and .tga there, decodes every level of every image (cube face,
+// flipbook frame) to RGBA8, turns each flipbook into an atlas, and with a TGA reads its standalone
+// TXI (a water map's grid). It prints each failure with its error, then tallies (format, kind,
+// levels, sizes, TXI, flipbook grids) beside the counts tpc.md and tga.md give, and a check of the
+// DXT decoder against the data: a TPC header's AlphaMean is the mean alpha of its top level, which
+// it should match within 0.02 in the tpa, gui and patch.erf files. Each atlas is checked against
+// its frames, cell by cell at every level. It writes a contact sheet of
+// every Nth texture (40; --every), top level, upright, alpha over a checkerboard, to --sheet
+// (kotor/out/tex/contact.png, from the working directory).
+//
+// With --png it writes each NAME upright to kotor/out/tex/NAME.png instead: the top level, alpha
+// over a checkerboard; a cube map as a cross of its six faces, sampled the way GL samples a cube
+// map with KOTOR's Z up (the sides +Y +X -Y -X left to right, +Z above +X, -Z below it); a
+// flipbook as its atlas. NAME is a resref (the first file in sorted order: patch, then the GUI
+// pack, then tpa) or a whole file stem such as swpc_tex_tpb__cm_tat.
+//
+// With --fuzz it damages every Nth texture 64 ways and reads each copy (see fuzz, below): lib/tex
+// must answer malformed data with an error, never a panic.
+//
+// Exit status: 0 if nothing failed, 1 otherwise, 2 for bad arguments.
+
+struct Options { dir: []u8, sheet: []u8, every: usize, pngs: bool, fuzz: usize }
+
+// Memory for one texture at a time, reset before each; and for what lasts the whole run.
+const WORK: usize = 268435456
+const KEEP: usize = 67108864
+
+// The contact sheet: COLS cells across, each CELL texels square.
+const COLS: usize = 24
+const CELL: usize = 64
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let opts = parse_args{ &io, args } ifnull { return 2 }
+    let work_pages = mem::pages{ &mem, size = WORK } ifnull {
+        io::eprintln{ &io, s = "texcheck: out of memory" }
+        return 1
+    }
+    let keep_pages = mem::pages{ &mem, size = KEEP } ifnull {
+        io::eprintln{ &io, s = "texcheck: out of memory" }
+        return 1
+    }
+    let mut work = arena::new{ buf = work_pages }
+    let mut keep = arena::new{ buf = keep_pages }
+    let names = fs::list{ &fs, heap = &keep, realloc = arena::alloc, path = opts.dir } iferr err{ error } {
+        _ = @fmt(&io, "texcheck: {}: {}\n", opts.dir, error)
+        io::flush{ &io }
+        return 1
+    }
+    let status = if opts.pngs {
+        write_pngs{ &io, &fs, &work, opts, names, args }
+    } else if opts.fuzz > 0 {
+        fuzz{ &io, &fs, &work, opts, names }
+    } else {
+        check{ &io, &fs, &work, &keep, opts, names }
+    }
+    io::flush{ &io }
+    return status
+}
+
+// ---- the corpus check
+
+struct Stats {
+    files: [2]u32,                  // [0] TPC, [1] TGA
+    failures: u32,
+    format: [2][5]u32,              // by tex::Format
+    kind: [2][3]u32,                // by tex::Kind
+    levels: [3][20]u32,             // TPC: by kind, the levels per image
+    full_chains: [3]u32,            // TPC: by kind, images with every level down to 1x1
+    sizes: [2][16][16]u32,          // log2 of the header's width and height (a TPC's whole grid or face strip)
+    odd_sizes: [2]u32,              // a side that isn't a power of two, or past 32768
+    txi: [2]u32,                    // TPC: TXI text after the pixels; TGA: a standalone TXI
+    grids: [17][17]u32,             // flipbooks by numx, numy
+    big_grids: u32,
+    images: u64,                    // images decoded (faces, frames), every level of each
+    decoded: u64,                   // levels decoded
+    texels: u64,
+    atlases: u32,
+    alpha_checked: u32,             // AlphaMean against the decoded top level
+    alpha_close: u32,               // within 0.02
+    alpha_tight: u32,               // within 0.005
+}
+
+fn check { mut io: Io, mut fs: Fs, mut work: arena::Arena, mut keep: arena::Arena, opts: Options, names: [][]u8 } -> i32 {
+    let mut count: usize = 0
+    let mut i: usize = 0
+    while i < names.len {
+        if texture_kind{ name = names[i] } != 0 { count = count + 1 }
+        i = i + 1
+    }
+    let samples = (count + opts.every - 1) / opts.every
+    let rows = if samples == 0 { 1 } else { (samples + COLS - 1) / COLS }
+    let sheet_w = COLS * CELL
+    let sheet_h = rows * CELL
+    let sheet = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &keep, mem = slice::empty(u8){}, count = sheet_w * sheet_h * 4 } iferr {
+        io::eprintln{ &io, s = "texcheck: no memory for the contact sheet" }
+        return 1
+    }
+    i = 0
+    while i < sheet.len {
+        sheet[i] = if i % 4 == 3 { 255 } else { 24 }
+        i = i + 1
+    }
+
+    let mut stats: Stats
+    let mut index: usize = 0
+    i = 0
+    while i < names.len {
+        let name = names[i]
+        i = i + 1
+        let which = texture_kind{ name }
+        if which == 0 { continue }
+        arena::reset{ heap = &work }
+        let cell: ?usize = if index % opts.every == 0 { index / opts.every } else { null }
+        index = index + 1
+        let path = join{ realloc = arena::alloc, heap = &work, dir = opts.dir, name } iferr {
+            io::eprintln{ &io, s = "texcheck: out of memory" }
+            return 1
+        }
+        check_file{ &io, &fs, &work, &stats, path, name, is_tpc = which == 1, cell, sheet, sheet_w } iferr err{ error } {
+            stats.failures = stats.failures + 1
+            _ = @fmt(&io, "FAIL {}: {}\n", name, error)
+        }
+    }
+    report{ &io, stats }
+
+    make_parents{ &fs, path = opts.sheet }
+    arena::reset{ heap = &work }
+    let image = png::Image{ width = @trunc(u32, sheet_w), height = @trunc(u32, sheet_h), rgba = sheet }
+    png::save{ &fs, realloc = arena::alloc, heap = &work, path = opts.sheet, image, alpha = false, bottom_up = false } iferr err{ error } {
+        _ = @fmt(&io, "texcheck: {}: {}\n", opts.sheet, error)
+        return 1
+    }
+    _ = @fmt(&io, "contact sheet: {} ({} textures, every {}th, {}x{})\n", opts.sheet, samples, opts.every, sheet_w, sheet_h)
+    return if stats.failures == 0 { 0 } else { 1 }
+}
+
+// 1 for a .tpc, 2 for a .tga, 0 for anything else.
+fn texture_kind { name: []u8 } -> u32 {
+    if ends_with{ s = name, suffix = ".tpc" } { return 1 }
+    if ends_with{ s = name, suffix = ".tga" } { return 2 }
+    return 0
+}
+
+// Reads, decodes and tallies one texture; draws its top level into contact sheet cell `cell`.
+fn check_file {
+    mut io: Io, mut fs: Fs, mut work: arena::Arena, mut stats: Stats,
+    path: []u8, name: []u8, is_tpc: bool, cell: ?usize, sheet: []mut u8, sheet_w: usize,
+} -> ! {
+    let loaded = try read_texture{ &fs, &work, path, is_tpc }
+    let t = loaded.t
+    let src: usize = if is_tpc { 0 } else { 1 }
+    if loaded.standalone_txi { stats.txi[1] = stats.txi[1] + 1 }
+    let kind = @as(usize, t.kind)
+    stats.files[src] = stats.files[src] + 1
+    stats.format[src][@as(usize, t.format)] = stats.format[src][@as(usize, t.format)] + 1
+    stats.kind[src][kind] = stats.kind[src][kind] + 1
+
+    // The header's dimensions, as tpc.md counts sizes: a cube map's face strip, a flipbook's grid.
+    let mut file_w = t.width
+    let mut file_h = t.height
+    if t.kind == tex::Kind::cube { file_h = 6 * t.height }
+    if t.kind == tex::Kind::flipbook and t.images > 1 {
+        file_w = t.width * t.frames_x
+        file_h = t.height * t.frames_y
+    }
+    let lw = log2{ n = file_w }
+    let lh = log2{ n = file_h }
+    if lw != null and lh != null and lw < 16 and lh < 16 {
+        stats.sizes[src][lw][lh] = stats.sizes[src][lw][lh] + 1
+    } else {
+        stats.odd_sizes[src] = stats.odd_sizes[src] + 1
+    }
+    if is_tpc {
+        let l: usize = if t.levels < 20 { t.levels } else { 19 }
+        stats.levels[kind][l] = stats.levels[kind][l] + 1
+        if t.levels == full_levels{ width = t.width, height = t.height } { stats.full_chains[kind] = stats.full_chains[kind] + 1 }
+        if has_text{ s = t.txi } { stats.txi[0] = stats.txi[0] + 1 }
+    }
+    if t.kind == tex::Kind::flipbook {
+        if t.frames_x <= 16 and t.frames_y <= 16 {
+            stats.grids[t.frames_x][t.frames_y] = stats.grids[t.frames_x][t.frames_y] + 1
+        } else {
+            stats.big_grids = stats.big_grids + 1
+        }
+    }
+
+    // Every level of every image, to RGBA8.
+    let mut image: u32 = 0
+    while image < t.images {
+        let mut level: u32 = 0
+        while level < t.levels {
+            let rgba = try tex::decode_level{ realloc = arena::alloc, heap = &work, t, image, level }
+            stats.decoded = stats.decoded + 1
+            stats.texels = stats.texels + rgba.len / 4
+            if image == 0 and level == 0 {
+                if is_tpc and alpha_checked{ name } {
+                    let diff = abs{ x = mean_alpha{ rgba } - t.alpha_mean }
+                    stats.alpha_checked = stats.alpha_checked + 1
+                    if diff <= 0.02 { stats.alpha_close = stats.alpha_close + 1 }
+                    if diff <= 0.005 { stats.alpha_tight = stats.alpha_tight + 1 }
+                    if diff > 0.02 { _ = @fmt(&io, "note {}: AlphaMean {} but the top level's mean alpha is {}\n", name, t.alpha_mean, mean_alpha{ rgba }) }
+                }
+                if cell != null { draw_cell{ sheet, sheet_w, cell, rgba, width = t.width, height = t.height } }
+            }
+            level = level + 1
+        }
+        stats.images = stats.images + 1
+        image = image + 1
+    }
+
+    if t.kind == tex::Kind::flipbook {
+        let atlas = try tex::to_atlas{ realloc = arena::alloc, heap = &work, t }
+        // Its levels must tile its data exactly.
+        let mut total: usize = 0
+        let mut k: u32 = 0
+        while k < atlas.levels {
+            total = total + tex::level{ t = atlas, image = 0, level = k }.len
+            k = k + 1
+        }
+        if total != atlas.data.len { return bad_atlas }
+        try check_atlas{ &work, t, atlas }
+        stats.atlases = stats.atlases + 1
+    }
+}
+
+error bad_atlas    // to_atlas's result isn't the frames laid out as tga.md says
+
+// Each atlas level must hold the frames' own level, decoded, frame i at column i % frames_x and
+// row i / frames_x from the bottom; an atlas of a one-image flipbook is that image.
+fn check_atlas { mut work: arena::Arena, t: tex::Texture, atlas: tex::Texture } -> ! {
+    if atlas.kind != tex::Kind::flipbook or atlas.images != 1 or atlas.format != tex::Format::rgba8 { return bad_atlas }
+    if atlas.frames_x != t.frames_x or atlas.frames_y != t.frames_y or atlas.levels == 0 or atlas.levels > t.levels { return bad_atlas }
+    if t.images > 1 and (atlas.width != t.width * t.frames_x or atlas.height != t.height * t.frames_y) { return bad_atlas }
+    let mut k: u32 = 0
+    while k < atlas.levels {
+        let cells = tex::level{ t = atlas, image = 0, level = k }
+        if t.images == 1 {
+            let want = try tex::decode_level{ realloc = arena::alloc, heap = &work, t, image = 0, level = k }
+            if not slice::eq_bytes{ a = want, b = cells } { return bad_atlas }
+        } else {
+            let lw: usize = atlas.width >> k
+            let cw: usize = t.width >> k
+            let ch: usize = t.height >> k
+            let mut frame: u32 = 0
+            while frame < t.images {
+                let want = try tex::decode_level{ realloc = arena::alloc, heap = &work, t, image = frame, level = k }
+                let x0 = @as(usize, frame % t.frames_x) * cw
+                let y0 = @as(usize, frame / t.frames_x) * ch
+                let mut r: usize = 0
+                while r < ch {
+                    let at = ((y0 + r) * lw + x0) * 4
+                    if not slice::eq_bytes{ a = want[r * cw * 4..(r + 1) * cw * 4], b = cells[at..at + cw * 4] } { return bad_atlas }
+                    r = r + 1
+                }
+                frame = frame + 1
+            }
+        }
+        k = k + 1
+    }
+}
+
+struct Loaded { t: tex::Texture, standalone_txi: bool }
+
+// Reads a TPC, or a TGA with its standalone TXI beside it (the same path ending .txi) if any.
+fn read_texture { mut fs: Fs, mut work: arena::Arena, path: []u8, is_tpc: bool } -> !Loaded {
+    let bytes = try fs::read_all{ &fs, heap = &work, realloc = arena::alloc, path }
+    if is_tpc { return Loaded{ t = try tex::read_tpc{ realloc = arena::alloc, heap = &work, bytes }, standalone_txi = false } }
+    let t = try tex::read_tga{ realloc = arena::alloc, heap = &work, bytes }
+    let txi_path = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &work, mem = slice::empty(u8){}, count = path.len }
+    slice::copy(u8){ dst = txi_path, src = path }
+    txi_path[path.len - 2] = 'x'
+    txi_path[path.len - 1] = 'i'
+    let txi = fs::read_all{ &fs, heap = &work, realloc = arena::alloc, path = txi_path } iferr { return Loaded{ t, standalone_txi = false } }
+    return Loaded{ t = try tex::apply_txi{ t, txi }, standalone_txi = true }
+}
+
+fn report { mut io: Io, stats: Stats } {
+    let s = stats
+    _ = @fmt(&io, "texcheck: {} files ({} tpc, {} tga), {} failures\n", s.files[0] + s.files[1], s.files[0], s.files[1], s.failures)
+    _ = @fmt(&io, "decoded: {} images, {} levels, {} texels; {} flipbook atlases\n", s.images, s.decoded, s.texels, s.atlases)
+    _ = @fmt(&io, "tpc format: dxt1 {}, dxt5 {}, rgba8 {}, rgb8 {}, grey8 {}   (tpc.md: 5311, 4511, 1495, 207, 12)\n",
+        s.format[0][3], s.format[0][4], s.format[0][2], s.format[0][1], s.format[0][0])
+    _ = @fmt(&io, "tpc kind: plain {}, cube {}, flipbook {}   (tpc.md: 11226, 189, 121)\n", s.kind[0][0], s.kind[0][1], s.kind[0][2])
+    _ = @fmt(&io, "tpc full mip chains: plain {}, cube {}, flipbook frames {}   (tpc.md: 8375 plain, 189 cube; a frame always has one)\n",
+        s.full_chains[0], s.full_chains[1], s.full_chains[2])
+    let kinds: [3][]u8 = ["plain", "cube", "flipbook"]
+    let mut k: usize = 0
+    while k < 3 {
+        _ = @fmt(&io, "tpc levels per image, {}:", kinds[k])
+        let mut l: usize = 0
+        while l < 20 {
+            if s.levels[k][l] > 0 { _ = @fmt(&io, " {}x{}", l, s.levels[k][l]) }
+            l = l + 1
+        }
+        _ = @fmt(&io, "\n")
+        k = k + 1
+    }
+    _ = @fmt(&io, "tpc with TXI text after the pixels: {}   (tpc.md: 6180)\n", s.txi[0])
+    _ = @fmt(&io, "tga format: grey8 {}, rgba8 {}   (tga.md: 14 grey, 5588 colour)\n", s.format[1][0], s.format[1][2])
+    _ = @fmt(&io, "tga kind: plain {}, flipbook {}   (tga.md: 14 water flipbooks)\n", s.kind[1][0], s.kind[1][2])
+    _ = @fmt(&io, "tga with a standalone TXI: {}   (tga.md: 5586 lightmaps + 14 water maps)\n", s.txi[1])
+    _ = @fmt(&io, "flipbook grids (numx x numy):")
+    let mut x: usize = 0
+    while x <= 16 {
+        let mut y: usize = 0
+        while y <= 16 {
+            if s.grids[x][y] > 0 { _ = @fmt(&io, " {}x{} {}", x, y, s.grids[x][y]) }
+            y = y + 1
+        }
+        x = x + 1
+    }
+    if s.big_grids > 0 { _ = @fmt(&io, " larger {}", s.big_grids) }
+    _ = @fmt(&io, "\n")
+    print_sizes{ &io, what = "tpc", sizes = s.sizes[0], odd = s.odd_sizes[0] }
+    _ = @fmt(&io, "   (tpc.md: 64x64 2616, 128x128 2584, 256x256 2219, 32x32 1385, 512x512 1157)\n")
+    print_sizes{ &io, what = "tga", sizes = s.sizes[1], odd = s.odd_sizes[1] }
+    _ = @fmt(&io, "   (tga.md lightmaps: 64x64 1355, 32x32 1247, 16x16 1122, 128x128 718, 8x8 675)\n")
+    _ = @fmt(&io, "AlphaMean vs decoded top level (tpa, gui, patch): {} checked, {} within 0.02, {} within 0.005   (tpc.md: 4948, 4948, 4847)\n",
+        s.alpha_checked, s.alpha_close, s.alpha_tight)
+}
+
+// The commonest sizes, most first.
+fn print_sizes { mut io: Io, what: []u8, sizes: [16][16]u32, odd: u32 } {
+    let mut left = sizes
+    _ = @fmt(&io, "{} sizes:", what)
+    let mut shown = 0
+    while shown < 12 {
+        let mut best: u32 = 0
+        let mut bw: usize = 0
+        let mut bh: usize = 0
+        let mut w: usize = 0
+        while w < 16 {
+            let mut h: usize = 0
+            while h < 16 {
+                if left[w][h] > best {
+                    best = left[w][h]
+                    bw = w
+                    bh = h
+                }
+                h = h + 1
+            }
+            w = w + 1
+        }
+        if best == 0 { break }
+        _ = @fmt(&io, " {}x{} {}", @as(u32, 1) << bw, @as(u32, 1) << bh, best)
+        left[bw][bh] = 0
+        shown = shown + 1
+    }
+    if odd > 0 { _ = @fmt(&io, "; not powers of two {}", odd) }
+    _ = @fmt(&io, "\n")
+}
+
+// Whether the AlphaMean check applies: tpa, gui and patch.erf, whose header float belongs to their
+// own pixels (tpb and tpc carry tpa's).
+fn alpha_checked { name: []u8 } -> bool {
+    return starts_with{ s = name, prefix = "swpc_tex_tpa__" } or starts_with{ s = name, prefix = "swpc_tex_gui__" }
+        or starts_with{ s = name, prefix = "patch__" }
+}
+
+fn mean_alpha { rgba: []u8 } -> f32 {
+    let mut sum: u64 = 0
+    let mut i: usize = 3
+    while i < rgba.len {
+        sum = sum + rgba[i]
+        i = i + 4
+    }
+    let n = rgba.len / 4
+    return @as(f32, sum) / (255.0 * @as(f32, n))
+}
+
+// Whether there is anything but whitespace.
+fn has_text { s: []u8 } -> bool {
+    let mut i: usize = 0
+    while i < s.len {
+        if not ascii::is_space{ c = s[i] } { return true }
+        i = i + 1
+    }
+    return false
+}
+
+// One top level, scaled to fit a cell (nearest texel), upright, over a checkerboard.
+fn draw_cell { sheet: []mut u8, sheet_w: usize, cell: usize, rgba: []u8, width: u32, height: u32 } {
+    let w: usize = width
+    let h: usize = height
+    let inner = CELL - 2
+    let longest = if w > h { w } else { h }
+    let mut dw = w * inner / longest
+    let mut dh = h * inner / longest
+    if dw == 0 { dw = 1 }
+    if dh == 0 { dh = 1 }
+    let x0 = (cell % COLS) * CELL + 1 + (inner - dw) / 2
+    let y0 = (cell / COLS) * CELL + 1 + (inner - dh) / 2
+    let mut dy: usize = 0
+    while dy < dh {
+        let sy = h - 1 - dy * h / dh                // the texture's rows are bottom first
+        let mut dx: usize = 0
+        while dx < dw {
+            let sx = dx * w / dw
+            let s = (sy * w + sx) * 4
+            let o = ((y0 + dy) * sheet_w + x0 + dx) * 4
+            put_over_checker{ px = rgba[s..s + 4], x = dx, y = dy, into = sheet[o..o + 4] }
+            dx = dx + 1
+        }
+        dy = dy + 1
+    }
+}
+
+// A texel composited over a grey checkerboard of 8-texel squares, opaque.
+fn put_over_checker { px: []u8, x: usize, y: usize, into: []mut u8 } {
+    let back: u32 = if (x / 8 + y / 8) % 2 == 0 { 96 } else { 144 }
+    let a: u32 = px[3]
+    let mut c: usize = 0
+    while c < 3 {
+        let v: u32 = px[c]
+        into[c] = @trunc(u8, (v * a + back * (255 - a) + 127) / 255)
+        c = c + 1
+    }
+    into[3] = 255
+}
+
+// ---- single textures as PNGs
+
+fn write_pngs { mut io: Io, mut fs: Fs, mut work: arena::Arena, opts: Options, names: [][]u8, args: Args } -> i32 {
+    let mut status = 0
+    make_parents{ &fs, path = "kotor/out/tex/x.png" }
+    let mut i: usize = 0
+    while i < args.len {
+        if slice::eq_bytes{ a = args[i], b = "--png" } and i + 1 < args.len {
+            let want = args[i + 1]
+            arena::reset{ heap = &work }
+            write_png{ &io, &fs, &work, dir = opts.dir, names, want } iferr err{ error } {
+                _ = @fmt(&io, "texcheck: {}: {}\n", want, error)
+                status = 1
+            }
+            i = i + 1
+        }
+        i = i + 1
+    }
+    return status
+}
+
+error no_texture    // no file in DIR matches a --png NAME
+
+fn write_png { mut io: Io, mut fs: Fs, mut work: arena::Arena, dir: []u8, names: [][]u8, want: []u8 } -> ! {
+    let name = find_texture{ names, want } ifnull { return no_texture }
+    let path = try join{ realloc = arena::alloc, heap = &work, dir, name }
+    let t = (try read_texture{ &fs, &work, path, is_tpc = texture_kind{ name } == 1 }).t
+    _ = @fmt(&io, "{}: {} {}, {}x{}, {} levels, {} images, grid {}x{}, {} bytes of TXI, AlphaMean {}\n",
+        name, format_name{ f = t.format }, kind_name{ k = t.kind }, t.width, t.height, t.levels, t.images,
+        t.frames_x, t.frames_y, t.txi.len, t.alpha_mean)
+    let mut width: usize = 0
+    let mut height: usize = 0
+    let mut rgba: []u8
+    let mut bottom_up = true
+    if t.kind == tex::Kind::cube {
+        let cross = try draw_cross{ &work, t }
+        width = 4 * @as(usize, t.width)
+        height = 3 * @as(usize, t.width)
+        rgba = cross
+        bottom_up = false
+    } else if t.kind == tex::Kind::flipbook {
+        let atlas = try tex::to_atlas{ realloc = arena::alloc, heap = &work, t }
+        width = atlas.width
+        height = atlas.height
+        rgba = tex::level{ t = atlas, image = 0, level = 0 }
+    } else {
+        width = t.width
+        height = t.height
+        rgba = try tex::decode_level{ realloc = arena::alloc, heap = &work, t, image = 0, level = 0 }
+    }
+    let flat = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &work, mem = slice::empty(u8){}, count = width * height * 4 }
+    let mut p: usize = 0
+    while p < width * height {
+        put_over_checker{ px = rgba[p * 4..p * 4 + 4], x = p % width, y = p / width, into = flat[p * 4..p * 4 + 4] }
+        p = p + 1
+    }
+    let out = try join3{ realloc = arena::alloc, heap = &work, a = "kotor/out/tex/", b = want, c = ".png" }
+    try png::save{
+        &fs, realloc = arena::alloc, heap = &work, path = out,
+        image = png::Image{ width = @trunc(u32, width), height = @trunc(u32, height), rgba = flat },
+        alpha = false, bottom_up,
+    }
+    _ = @fmt(&io, "wrote {} ({}x{})\n", out, width, height)
+}
+
+// The first texture file whose stem, or resref after the container's `__`, is `want`.
+fn find_texture { names: [][]u8, want: []u8 } -> ?[]u8 {
+    let mut i: usize = 0
+    while i < names.len {
+        let n = names[i]
+        i = i + 1
+        if texture_kind{ name = n } == 0 { continue }
+        let stem = n[..n.len - 4]
+        if same_word{ a = stem, b = want } { return n }
+        let mut k: usize = 0
+        while k + 2 <= stem.len {
+            if stem[k] == '_' and stem[k + 1] == '_' {
+                if same_word{ a = stem[k + 2..], b = want } { return n }
+                break
+            }
+            k = k + 1
+        }
+    }
+    return null
+}
+
+// A cube map as an unfolded cube, top down: +Y, +X, -Y, -X across the middle row (the horizon,
+// each continuing the last), +Z above +X and -Z below it. Each texel is the face texel GL would
+// sample for its direction (OpenGL 4.1, table 8.18), with KOTOR's Z up, so a face stored the wrong
+// way round shows as a seam.
+fn draw_cross { mut work: arena::Arena, t: tex::Texture } -> ![]mut u8 {
+    let size: usize = t.width
+    let w = 4 * size
+    let h = 3 * size
+    let out = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &work, mem = slice::empty(u8){}, count = w * h * 4 }
+    slice::fill(u8){ s = out, v = 0 }
+    let mut faces: [6][]u8
+    let mut f: usize = 0
+    while f < 6 {
+        faces[f] = try tex::decode_level{ realloc = arena::alloc, heap = &work, t, image = @trunc(u32, f), level = 0 }
+        f = f + 1
+    }
+    // Cells: column, row, then the view's forward, right and up vectors.
+    let cells: [6][11]f32 = [
+        [0.0, 1.0,   0.0, 1.0, 0.0,    1.0, 0.0, 0.0,    0.0, 0.0, 1.0],     // +Y
+        [1.0, 1.0,   1.0, 0.0, 0.0,    0.0, -1.0, 0.0,   0.0, 0.0, 1.0],     // +X
+        [2.0, 1.0,   0.0, -1.0, 0.0,   -1.0, 0.0, 0.0,   0.0, 0.0, 1.0],     // -Y
+        [3.0, 1.0,   -1.0, 0.0, 0.0,   0.0, 1.0, 0.0,    0.0, 0.0, 1.0],     // -X
+        [1.0, 0.0,   0.0, 0.0, 1.0,    0.0, -1.0, 0.0,   -1.0, 0.0, 0.0],    // +Z, its bottom edge on +X's top
+        [1.0, 2.0,   0.0, 0.0, -1.0,   0.0, -1.0, 0.0,   1.0, 0.0, 0.0],     // -Z, its top edge on +X's bottom
+    ]
+    let n: f32 = @as(f32, size)
+    let mut c: usize = 0
+    while c < 6 {
+        let v = cells[c]
+        let col = @as(usize, v[0])
+        let row = @as(usize, v[1])
+        let mut py: usize = 0
+        while py < size {
+            let up = 1.0 - 2.0 * (@as(f32, py) + 0.5) / n
+            let mut px: usize = 0
+            while px < size {
+                let right = 2.0 * (@as(f32, px) + 0.5) / n - 1.0
+                let x = v[2] + right * v[5] + up * v[8]
+                let y = v[3] + right * v[6] + up * v[9]
+                let z = v[4] + right * v[7] + up * v[10]
+                let s = sample_cube{ x, y, z, size }
+                let from = (s.row * size + s.col) * 4
+                let o = ((row * size + py) * w + col * size + px) * 4
+                slice::copy(u8){ dst = out[o..o + 4], src = faces[s.face][from..from + 4] }
+                px = px + 1
+            }
+            py = py + 1
+        }
+        c = c + 1
+    }
+    return out
+}
+
+struct CubeTexel { face: usize, col: usize, row: usize }
+
+// The face and texel GL samples for direction (x, y, z); `row` counts from the face's first
+// stored row (t = 0).
+fn sample_cube { x: f32, y: f32, z: f32, size: usize } -> CubeTexel {
+    let ax = abs{ x }
+    let ay = abs{ x = y }
+    let az = abs{ x = z }
+    let mut face: usize = 0
+    let mut sc: f32 = 0.0
+    let mut tc: f32 = 0.0
+    let mut ma: f32 = 1.0
+    if ax >= ay and ax >= az {
+        ma = ax
+        tc = -y
+        if x > 0.0 {
+            face = 0
+            sc = -z
+        } else {
+            face = 1
+            sc = z
+        }
+    } else if ay >= az {
+        ma = ay
+        sc = x
+        if y > 0.0 {
+            face = 2
+            tc = z
+        } else {
+            face = 3
+            tc = -z
+        }
+    } else {
+        ma = az
+        tc = -y
+        if z > 0.0 {
+            face = 4
+            sc = x
+        } else {
+            face = 5
+            sc = -x
+        }
+    }
+    let s = (sc / ma + 1.0) * 0.5
+    let t = (tc / ma + 1.0) * 0.5
+    return CubeTexel{ face, col = texel_of{ f = s, size }, row = texel_of{ f = t, size } }
+}
+
+fn texel_of { f: f32, size: usize } -> usize {
+    let v = f * @as(f32, size)
+    if v <= 0.0 { return 0 }
+    let i = @as(usize, v)
+    return if i >= size { size - 1 } else { i }
+}
+
+fn format_name { f: tex::Format } -> []u8 {
+    return match f {
+        grey8 => { "grey8" }
+        rgb8 => { "rgb8" }
+        rgba8 => { "rgba8" }
+        dxt1 => { "dxt1" }
+        dxt5 => { "dxt5" }
+    }
+}
+
+fn kind_name { k: tex::Kind } -> []u8 {
+    return match k {
+        plain => { "plain" }
+        cube => { "cube" }
+        flipbook => { "flipbook" }
+    }
+}
+
+// ---- malformed input
+
+// Every Nth texture, damaged VARIANTS ways (cut short at the header's edges and at random lengths,
+// header bytes set at random, random bytes anywhere, the TXI's end scrambled), each parsed,
+// decoded at every level and made an atlas where it is a flipbook. Each must give a texture or
+// an error: a panic or a bad slice stops the program, which is the failure this looks for.
+const VARIANTS: u32 = 64
+
+fn fuzz { mut io: Io, mut fs: Fs, mut work: arena::Arena, opts: Options, names: [][]u8 } -> i32 {
+    let mut seed: u32 = 2463534242
+    let mut files: u32 = 0
+    let mut accepted: u32 = 0
+    let mut rejected: u32 = 0
+    let mut index: usize = 0
+    let mut i: usize = 0
+    while i < names.len {
+        let name = names[i]
+        i = i + 1
+        let which = texture_kind{ name }
+        if which == 0 { continue }
+        index = index + 1
+        if (index - 1) % opts.fuzz != 0 { continue }
+        arena::reset{ heap = &work }
+        let path = join{ realloc = arena::alloc, heap = &work, dir = opts.dir, name } iferr { return 1 }
+        let bytes = fs::read_all{ &fs, heap = &work, realloc = arena::alloc, path } iferr err{ error } {
+            _ = @fmt(&io, "texcheck: {}: {}\n", name, error)
+            return 1
+        }
+        let copy = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &work, mem = slice::empty(u8){}, count = bytes.len } iferr { return 1 }
+        let mark = work.used
+        files = files + 1
+        let header: usize = if which == 1 { 14 } else { 18 }
+        let mut v: u32 = 0
+        while v < VARIANTS {
+            work.used = mark
+            slice::copy(u8){ dst = copy, src = bytes }
+            let mut len = bytes.len
+            if v < 8 {
+                let cuts = [0, 1, header - 1, header, header + 1, 128, bytes.len / 2, bytes.len - 1]
+                len = if cuts[v] < bytes.len { cuts[v] } else { bytes.len }
+            } else {
+                let changes = 1 + next{ &seed } % 3
+                let mut c: u32 = 0
+                while c < changes {
+                    let r = next{ &seed }
+                    let span: usize = if v < 32 { header } else if v < 48 { bytes.len } else { 64 }
+                    let reach = if span < bytes.len { span } else { bytes.len }
+                    let at = if v < 48 { @as(usize, r) % reach } else { bytes.len - 1 - @as(usize, r) % reach }
+                    copy[at] = @trunc(u8, next{ &seed })
+                    c = c + 1
+                }
+                if v % 5 == 0 { len = @as(usize, next{ &seed }) % (bytes.len + 1) }
+            }
+            exercise{ &work, bytes = copy[..len], is_tpc = which == 1 } iferr {
+                rejected = rejected + 1
+                v = v + 1
+                continue
+            }
+            accepted = accepted + 1
+            v = v + 1
+        }
+    }
+    _ = @fmt(&io, "fuzz: {} files, {} damaged copies: {} read and decoded, {} rejected with an error, no panics\n",
+        files, accepted + rejected, accepted, rejected)
+    return 0
+}
+
+// Parses, decodes every level of every image, and makes the atlas of a flipbook.
+fn exercise { mut work: arena::Arena, bytes: []u8, is_tpc: bool } -> ! {
+    let t = if is_tpc { try tex::read_tpc{ realloc = arena::alloc, heap = &work, bytes } } else { try tex::read_tga{ realloc = arena::alloc, heap = &work, bytes } }
+    let mut image: u32 = 0
+    while image < t.images {
+        let mut level: u32 = 0
+        while level < t.levels {
+            _ = try tex::decode_level{ realloc = arena::alloc, heap = &work, t, image, level }
+            level = level + 1
+        }
+        image = image + 1
+    }
+    if t.kind == tex::Kind::flipbook { _ = try tex::to_atlas{ realloc = arena::alloc, heap = &work, t } }
+}
+
+// xorshift32: the next number of a fixed sequence, so a run can be repeated.
+fn next { mut seed: u32 } -> u32 {
+    let mut x = seed
+    x = x ^ (x << 13)
+    x = x ^ (x >> 17)
+    x = x ^ (x << 5)
+    seed = x
+    return x
+}
+
+// ---- small helpers
+
+fn abs { x: f32 } -> f32 { return if x < 0.0 { -x } else { x } }
+
+fn log2 { n: u32 } -> ?usize {
+    if n == 0 or (n & (n - 1)) != 0 { return null }
+    let mut k: usize = 0
+    while (@as(u32, 1) << k) != n { k = k + 1 }
+    return k
+}
+
+fn full_levels { width: u32, height: u32 } -> u32 {
+    let mut n: u32 = 1
+    let mut w = width
+    let mut h = height
+    while w > 1 or h > 1 {
+        w = if w > 1 { w / 2 } else { 1 }
+        h = if h > 1 { h / 2 } else { 1 }
+        n = n + 1
+    }
+    return n
+}
+
+fn starts_with { s: []u8, prefix: []u8 } -> bool {
+    return s.len >= prefix.len and slice::eq_bytes{ a = s[..prefix.len], b = prefix }
+}
+
+fn ends_with { s: []u8, suffix: []u8 } -> bool {
+    return s.len >= suffix.len and same_word{ a = s[s.len - suffix.len..], b = suffix }
+}
+
+fn same_word { a: []u8, b: []u8 } -> bool {
+    if a.len != b.len { return false }
+    let mut i: usize = 0
+    while i < a.len {
+        if ascii::to_lower{ c = a[i] } != ascii::to_lower{ c = b[i] } { return false }
+        i = i + 1
+    }
+    return true
+}
+
+// dir/name, in memory from the allocator.
+fn join(S) { realloc: alloc::Fn(S), mut heap: S, dir: []u8, name: []u8 } -> ![]u8 {
+    return join3{ realloc, &heap, a = dir, b = "/", c = name }
+}
+
+fn join3(S) { realloc: alloc::Fn(S), mut heap: S, a: []u8, b: []u8, c: []u8 } -> ![]u8 {
+    let out = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = a.len + b.len + c.len }
+    slice::copy(u8){ dst = out, src = a }
+    slice::copy(u8){ dst = out[a.len..], src = b }
+    slice::copy(u8){ dst = out[a.len + b.len..], src = c }
+    return out
+}
+
+// Makes each directory on the way to the file at `path`; ones already there are fine.
+fn make_parents { mut fs: Fs, path: []u8 } {
+    let mut i: usize = 1
+    while i < path.len {
+        if path[i] == '/' { _ = fs::make_dir{ &fs, path = path[..i] } }
+        i = i + 1
+    }
+}
+
+fn parse_args { mut io: Io, args: Args } -> ?Options {
+    let mut o = Options{ dir = "G:/Dev/zlang/kotor/extract/tex", sheet = "kotor/out/tex/contact.png", every = 40, pngs = false, fuzz = 0 }
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        if slice::eq_bytes{ a, b = "--sheet" } and i + 1 < args.len {
+            i = i + 1
+            o.sheet = args[i]
+        } else if slice::eq_bytes{ a, b = "--every" } and i + 1 < args.len {
+            i = i + 1
+            let text = utf8::from{ bytes = args[i] } iferr { return usage{ &io } }
+            let n = utf8::parse_u64{ s = text } ifnull { return usage{ &io } }
+            if n == 0 { return usage{ &io } }
+            o.every = @trunc(usize, n)
+        } else if slice::eq_bytes{ a, b = "--fuzz" } and i + 1 < args.len {
+            i = i + 1
+            let text = utf8::from{ bytes = args[i] } iferr { return usage{ &io } }
+            let n = utf8::parse_u64{ s = text } ifnull { return usage{ &io } }
+            if n == 0 { return usage{ &io } }
+            o.fuzz = @trunc(usize, n)
+        } else if slice::eq_bytes{ a, b = "--png" } and i + 1 < args.len {
+            i = i + 1
+            o.pngs = true
+        } else if a.len > 0 and a[0] != '-' {
+            o.dir = a
+        } else {
+            return usage{ &io }
+        }
+        i = i + 1
+    }
+    return o
+}
+
+fn usage { mut io: Io } -> ?Options {
+    io::eprintln{ &io, s = "usage: texcheck [DIR] [--sheet OUT.png] [--every N] | [DIR] --png NAME [--png NAME ...] | [DIR] --fuzz N" }
+    return null
+}
+
+// ---- @fmt into standard output: each hole's type has a writer here (spec §13, Formatting)
+
+namespace out {
+    #write
+    fn put_text { mut io: Io, s: strlit } { io::write{ &io, to = io::Stream::out, bytes = s.bytes } }
+    #write
+    fn put_string { mut io: Io, s: utf8::String } { io::print{ &io, s } }
+    #write
+    fn put_bytes { mut io: Io, b: []u8 } { io::write{ &io, to = io::Stream::out, bytes = b } }
+    #write
+    fn put_mut_bytes { mut io: Io, b: []mut u8 } { io::write{ &io, to = io::Stream::out, bytes = b } }
+    #write
+    fn put_bool { mut io: Io, b: bool } { io::print_bool{ &io, n = b } }
+    #write
+    fn put_i32 { mut io: Io, n: i32 } { io::print_i64{ &io, n } }
+    #write
+    fn put_i64 { mut io: Io, n: i64 } { io::print_i64{ &io, n } }
+    #write
+    fn put_u8 { mut io: Io, n: u8 } { io::print_u64{ &io, n } }
+    #write
+    fn put_u16 { mut io: Io, n: u16 } { io::print_u64{ &io, n } }
+    #write
+    fn put_u32 { mut io: Io, n: u32 } { io::print_u64{ &io, n } }
+    #write
+    fn put_u64 { mut io: Io, n: u64 } { io::print_u64{ &io, n } }
+    #write
+    fn put_usize { mut io: Io, n: usize } { io::print_u64{ &io, n } }
+    #write
+    fn put_f32 { mut io: Io, n: f32 } { io::print_f32{ &io, n } }
+    #write
+    fn put_f64 { mut io: Io, n: f64 } { io::print_f64{ &io, n } }
+}

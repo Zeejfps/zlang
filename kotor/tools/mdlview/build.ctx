@@ -1,0 +1,25 @@
+// The build program for mdlview: `kotor/tools/ctxc run kotor/tools/mdlview -- MODEL [OPTIONS]`.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "mdlview", root = "." }
+    build::add_sources{ &b, exe, dir = "../../lib/base" }
+    build::add_sources{ &b, exe, dir = "../../lib/res" }
+    build::add_sources{ &b, exe, dir = "../../lib/formats" }
+    build::add_sources{ &b, exe, dir = "../../lib/tex" }
+    build::add_sources{ &b, exe, dir = "../../lib/material" }
+    build::add_sources{ &b, exe, dir = "../../lib/platform" }
+    build::add_sources{ &b, exe, dir = "../../lib/render" }
+    build::add_sources{ &b, exe, dir = "../../lib/render_gl" }
+    build::add_sources{ &b, exe, dir = "../../lib/mdl" }
+    build::add_sources{ &b, exe, dir = "../../lib/mdl_cache" }
+    build::add_sources{ &b, exe, dir = "../../lib/mdl_render" }
+    build::add_sources{ &b, exe, dir = "../common" }
+    build::optimize{ &b, exe, level = 2 }
+    match build::os{ &b } {
+        macos => {
+            build::lib_path{ &b, exe, path = "/opt/homebrew/lib" }
+            build::link{ &b, exe, lib = "SDL2" }
+        }
+        windows => { build::link{ &b, exe, lib = "SDL2" } }
+        linux => { build::link{ &b, exe, lib = "SDL2" } }
+    }
+}

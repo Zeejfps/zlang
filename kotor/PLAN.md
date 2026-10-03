@@ -6,9 +6,9 @@ The orchestrator keeps this file current. Rules and layout are in [AGENTS.md](AG
 
 | Stage | What | State |
 |---|---|---|
-| 0 | [Foundations](#0-foundations): multi-directory builds, RE pipeline, format docs, SDL+GL spike | in progress |
-| 1 | [Data layer](#1-data-layer): resources, GFF and tables, textures, models, walkmeshes, audio, NCS VM, Bink | planned |
-| 2 | [Rendering](#2-rendering): the render seam, GL 4.1 backend, viewers | planned |
+| 0 | [Foundations](#0-foundations): multi-directory builds, RE pipeline, format docs, SDL+GL spike | done but 0.5 |
+| 1 | [Data layer](#1-data-layer): resources, GFF and tables, textures, models, walkmeshes, audio, NCS VM, Bink | in progress |
+| 2 | [Rendering](#2-rendering): the render seam, GL 4.1 backend, viewers | in progress |
 | 3 | [Engine core](#3-engine-core): modules, objects, scene, camera, movement, scripting runtime | planned |
 | 4 | [GUI and presentation](#4-gui-and-presentation): GUI system, menus, HUD, dialogue, movies | planned |
 | 5 | [Rules](#5-rules): d20 combat, feats, powers, effects, items, party, AI | planned |
@@ -30,6 +30,12 @@ The orchestrator keeps this file current. Rules and layout are in [AGENTS.md](AG
    counts, modules, what lives where.
 4. **SDL2 + OpenGL 4.1 core spike** from ctxlang: a window, a core context, a textured triangle,
    offscreen capture to PNG (the screenshot path every rendering agent uses to check its work).
+5. **Language for a big program** (in progress): C output split into files compiled in parallel
+   (one 96K-line C file takes ~60 s in gcc at -O1), namespaces spanning files, integer `match`,
+   multi-line strings, std math and formatted printing, `@offset_of`.
+
+Done: 1 (driver, `e16a186`), 2 (`8f14e74`; behaviour RE continues for stage 3), 3 (`e99e33c`,
+`d0549e0`, `a1e642d`), 4 (`6524ca8`).
 
 ## 1. Data layer
 

@@ -1,0 +1,302 @@
+// NCS, compiled NWScript (docs/formats/ncs.md): the header and the instruction encoding, shared by
+// the VM's loader (nwvm::load) and the disassembler (tools/ncsdis).
+//
+//   try ncs::check_header{ bytes, check_size = true }
+//   let mut at: u32 = ncs::HEADER_SIZE
+//   while at < bytes.len {
+//       let raw = try ncs::decode{ code = bytes, at, store_stateall = false }
+//       ...
+//       at = at + raw.size
+//   }
+//
+// Offsets are byte offsets from the start of the file, so the first instruction is at 13. Every
+// multi-byte operand is big-endian.
+namespace ncs {
+    const HEADER_SIZE: u32 = 13
+
+    error too_short{ size: usize }                  // shorter than the 13-byte header
+    error bad_magic                                 // the first 8 bytes aren't "NCS V1.0"
+    error bad_marker{ byte: u8 }                    // byte 8 isn't 0x42
+    error bad_size{ said: u32, size: usize }        // the header's size isn't the file's
+    error no_header                                 // the instruction header runs off the end
+    error unknown_opcode{ op: u8 }
+    error bad_type{ op: u8, ty: u8 }                // a type byte this opcode doesn't take
+    error truncated{ op: u8 }                       // the operands run off the end
+
+    // One instruction as the file holds it. The operands are those its mnemonic lists, in order:
+    //
+    //   CPDOWNSP CPTOPSP CPDOWNBP CPTOPBP   a offset, b size (bytes)
+    //   CONSTI CONSTO                       a value
+    //   CONSTF                              f value
+    //   CONSTS                              text (a view of the file's bytes)
+    //   ACTION                              a routine, b argument count
+    //   EQUALTT NEQUALTT                    a size (bytes)
+    //   MOVSP DECISP INCISP DECIBP INCIBP   a offset (bytes)
+    //   JMP JSR JZ JNZ                      a offset from this instruction
+    //   DESTRUCT                            a size, b offset kept, c size kept (bytes)
+    //   STORE_STATE                         a globals (bytes), b frame (bytes); ty is the resume
+    //                                       point's distance from this instruction
+    struct Raw {
+        at: u32,            // offset in the file
+        size: u32,          // bytes, opcode and type byte included
+        op: u8,
+        ty: u8,
+        a: i32,
+        b: i32,
+        c: i32,
+        f: f32,
+        text: []u8,
+    }
+
+    // Opcodes.
+    const CPDOWNSP: u8 = 0x01
+    const RSADD: u8 = 0x02
+    const CPTOPSP: u8 = 0x03
+    const CONST: u8 = 0x04
+    const ACTION: u8 = 0x05
+    const LOGAND: u8 = 0x06
+    const LOGOR: u8 = 0x07
+    const INCOR: u8 = 0x08
+    const EXCOR: u8 = 0x09
+    const BOOLAND: u8 = 0x0A
+    const EQUAL: u8 = 0x0B
+    const NEQUAL: u8 = 0x0C
+    const GEQ: u8 = 0x0D
+    const GT: u8 = 0x0E
+    const LT: u8 = 0x0F
+    const LEQ: u8 = 0x10
+    const SHLEFT: u8 = 0x11
+    const SHRIGHT: u8 = 0x12
+    const USHRIGHT: u8 = 0x13
+    const ADD: u8 = 0x14
+    const SUB: u8 = 0x15
+    const MUL: u8 = 0x16
+    const DIV: u8 = 0x17
+    const MOD: u8 = 0x18
+    const NEG: u8 = 0x19
+    const COMP: u8 = 0x1A
+    const MOVSP: u8 = 0x1B
+    const STORE_STATEALL: u8 = 0x1C
+    const JMP: u8 = 0x1D
+    const JSR: u8 = 0x1E
+    const JZ: u8 = 0x1F
+    const RETN: u8 = 0x20
+    const DESTRUCT: u8 = 0x21
+    const NOT: u8 = 0x22
+    const DECISP: u8 = 0x23
+    const INCISP: u8 = 0x24
+    const JNZ: u8 = 0x25
+    const CPDOWNBP: u8 = 0x26
+    const CPTOPBP: u8 = 0x27
+    const DECIBP: u8 = 0x28
+    const INCIBP: u8 = 0x29
+    const SAVEBP: u8 = 0x2A
+    const RESTOREBP: u8 = 0x2B
+    const STORE_STATE: u8 = 0x2C
+    const NOP: u8 = 0x2D
+
+    // Type bytes.
+    const T_INT: u8 = 0x03
+    const T_FLOAT: u8 = 0x04
+    const T_STRING: u8 = 0x05
+    const T_OBJECT: u8 = 0x06
+    const T_EFFECT: u8 = 0x10           // engine structure n is 0x10 + n: effect, event, location, talent
+    const T_TALENT: u8 = 0x13
+    const T_II: u8 = 0x20
+    const T_FF: u8 = 0x21
+    const T_OO: u8 = 0x22
+    const T_SS: u8 = 0x23
+    const T_TT: u8 = 0x24
+    const T_IF: u8 = 0x25
+    const T_FI: u8 = 0x26
+    const T_EFFECT_PAIR: u8 = 0x30      // engine structures n, n: 0x30 + n
+    const T_TALENT_PAIR: u8 = 0x33
+    const T_VV: u8 = 0x3A
+    const T_VF: u8 = 0x3B
+    const T_FV: u8 = 0x3C
+
+    // Checks the 13-byte header: "NCS V1.0", 0x42, and, with `check_size`, the big-endian file
+    // size. swkotor.exe never reads the size (docs/re/vm.md), so the VM doesn't check it; every
+    // file in the install has it right.
+    fn check_header { bytes: []u8, check_size: bool } -> ! {
+        if bytes.len < 13 { return too_short{ size = bytes.len } }
+        if not slice::eq_bytes{ a = bytes[..8], b = "NCS V1.0" } { return bad_magic }
+        if bytes[8] != 0x42 { return bad_marker{ byte = bytes[8] } }
+        let said = be_u32{ b = bytes, at = 9 }
+        if check_size and @as(usize, said) != bytes.len { return bad_size{ said, size = bytes.len } }
+    }
+
+    // Whether opcode `op` takes type byte `ty`: the full set the format defines, so a file the
+    // compiler could have written decodes even where the shipped scripts never use the pair.
+    // STORE_STATEALL (0x1C) is obsolete and not here; `decode` takes it on request.
+    fn allowed { op: u8, ty: u8 } -> bool {
+        if op == CPDOWNSP or op == CPTOPSP or op == CPDOWNBP or op == CPTOPBP or op == DESTRUCT { return ty == 0x01 }
+        if op == RSADD { return (ty >= T_INT and ty <= T_OBJECT) or (ty >= T_EFFECT and ty <= T_TALENT) }
+        if op == CONST { return ty >= T_INT and ty <= T_OBJECT }
+        if op == ACTION or op == MOVSP or op == JMP or op == JSR or op == JZ or op == RETN or op == JNZ
+            or op == SAVEBP or op == RESTOREBP or op == NOP { return ty == 0x00 }
+        if op == LOGAND or op == LOGOR or op == INCOR or op == EXCOR or op == BOOLAND or op == MOD
+            or op == SHLEFT or op == SHRIGHT or op == USHRIGHT { return ty == T_II }
+        if op == EQUAL or op == NEQUAL {
+            return (ty >= T_II and ty <= T_TT) or (ty >= T_EFFECT_PAIR and ty <= T_TALENT_PAIR)
+        }
+        if op == GEQ or op == GT or op == LT or op == LEQ { return ty == T_II or ty == T_FF }
+        let arith = ty == T_II or ty == T_FF or ty == T_IF or ty == T_FI
+        if op == ADD { return arith or ty == T_SS or ty == T_VV }
+        if op == SUB { return arith or ty == T_VV }
+        if op == MUL { return arith or ty == T_VF or ty == T_FV }
+        if op == DIV { return arith or ty == T_VF }
+        if op == NEG { return ty == T_INT or ty == T_FLOAT }
+        if op == COMP or op == NOT or op == DECISP or op == INCISP or op == DECIBP or op == INCIBP { return ty == T_INT }
+        if op == STORE_STATE { return ty == 0x10 }
+        return false
+    }
+
+    // Whether `op` is a jump: JMP, JSR, JZ or JNZ, whose operand is an offset from the
+    // instruction.
+    fn is_jump { op: u8 } -> bool {
+        return op == JMP or op == JSR or op == JZ or op == JNZ
+    }
+
+    // The instruction at `at`. With `store_stateall`, the obsolete STORE_STATEALL decodes as
+    // swkotor.exe runs it (2 bytes, its type byte the resume point's distance); without, it is a
+    // bad_type, as for the disassembler.
+    fn decode { code: []u8, at: u32, store_stateall: bool } -> !Raw {
+        let p = @as(usize, at)
+        if p + 2 > code.len { return no_header }
+        let op = code[p]
+        let ty = code[p + 1]
+        if op == 0 or op > NOP { return unknown_opcode{ op } }
+        let mut raw = Raw{ at, size = 2, op, ty, a = 0, b = 0, c = 0, f = 0.0, text = slice::empty(u8){} }
+        if op == STORE_STATEALL and store_stateall { return raw }
+        if not allowed{ op, ty } { return bad_type{ op, ty } }
+        let q = p + 2
+        let left = code.len - q
+        if op == CPDOWNSP or op == CPTOPSP or op == CPDOWNBP or op == CPTOPBP {
+            if left < 6 { return truncated{ op } }
+            raw.a = be_i32{ b = code, at = q }
+            raw.b = @as(i32, be_u16{ b = code, at = q + 4 })
+            raw.size = 8
+        } else if op == CONST {
+            if ty == T_STRING {
+                if left < 2 { return truncated{ op } }
+                let n = @as(usize, be_u16{ b = code, at = q })
+                if left - 2 < n { return truncated{ op } }
+                raw.text = code[q + 2..q + 2 + n]
+                raw.size = @as(u32, 4 + n)
+            } else {
+                if left < 4 { return truncated{ op } }
+                raw.a = be_i32{ b = code, at = q }
+                if ty == T_FLOAT { raw.f = f32_of_bits{ bits = be_u32{ b = code, at = q } } }
+                raw.size = 6
+            }
+        } else if op == ACTION {
+            if left < 3 { return truncated{ op } }
+            raw.a = @as(i32, be_u16{ b = code, at = q })
+            raw.b = @as(i32, code[q + 2])
+            raw.size = 5
+        } else if (op == EQUAL or op == NEQUAL) and ty == T_TT {
+            if left < 2 { return truncated{ op } }
+            raw.a = @as(i32, be_u16{ b = code, at = q })
+            raw.size = 4
+        } else if op == MOVSP or op == DECISP or op == INCISP or op == DECIBP or op == INCIBP or is_jump{ op } {
+            if left < 4 { return truncated{ op } }
+            raw.a = be_i32{ b = code, at = q }
+            raw.size = 6
+        } else if op == DESTRUCT {
+            if left < 6 { return truncated{ op } }
+            raw.a = @as(i32, be_u16{ b = code, at = q })
+            raw.b = @as(i32, @trunc(i16, be_u16{ b = code, at = q + 2 }))
+            raw.c = @as(i32, be_u16{ b = code, at = q + 4 })
+            raw.size = 8
+        } else if op == STORE_STATE {
+            if left < 8 { return truncated{ op } }
+            raw.a = be_i32{ b = code, at = q }
+            raw.b = be_i32{ b = code, at = q + 4 }
+            raw.size = 10
+        }
+        return raw
+    }
+
+    // The mnemonic's stem: "CPDOWNSP", "RSADD", ...
+    fn op_name { op: u8 } -> []u8 {
+        let names = OP_NAMES
+        if op == 0 or op > NOP { return "?" }
+        return names[op]
+    }
+
+    const OP_NAMES: [46][]u8 = [
+        "?", "CPDOWNSP", "RSADD", "CPTOPSP", "CONST", "ACTION", "LOGAND", "LOGOR", "INCOR", "EXCOR",
+        "BOOLAND", "EQUAL", "NEQUAL", "GEQ", "GT", "LT", "LEQ", "SHLEFT", "SHRIGHT", "USHRIGHT",
+        "ADD", "SUB", "MUL", "DIV", "MOD", "NEG", "COMP", "MOVSP", "STORE_STATEALL", "JMP", "JSR",
+        "JZ", "RETN", "DESTRUCT", "NOT", "DECISP", "INCISP", "JNZ", "CPDOWNBP", "CPTOPBP", "DECIBP",
+        "INCIBP", "SAVEBP", "RESTOREBP", "STORE_STATE", "NOP",
+    ]
+
+    // The mnemonic's type suffix: "I", "FF", "LOCLOC", ... (empty for 0x00 and 0x01), or null for
+    // a type byte the format doesn't define.
+    fn type_suffix { ty: u8 } -> ?[]u8 {
+        if ty == 0x00 or ty == 0x01 { return "" }
+        if ty == T_INT { return "I" }
+        if ty == T_FLOAT { return "F" }
+        if ty == T_STRING { return "S" }
+        if ty == T_OBJECT { return "O" }
+        if ty == 0x10 { return "EFFECT" }
+        if ty == 0x11 { return "EVENT" }
+        if ty == 0x12 { return "LOCATION" }
+        if ty == 0x13 { return "TALENT" }
+        if ty == T_II { return "II" }
+        if ty == T_FF { return "FF" }
+        if ty == T_OO { return "OO" }
+        if ty == T_SS { return "SS" }
+        if ty == T_TT { return "TT" }
+        if ty == T_IF { return "IF" }
+        if ty == T_FI { return "FI" }
+        if ty == 0x30 { return "EFFECTEFFECT" }
+        if ty == 0x31 { return "EVENTEVENT" }
+        if ty == 0x32 { return "LOCLOC" }
+        if ty == 0x33 { return "TALTAL" }
+        if ty == T_VV { return "VV" }
+        if ty == T_VF { return "VF" }
+        if ty == T_FV { return "FV" }
+        return null
+    }
+
+    // ---- big-endian reads; the caller has checked the bytes are there
+
+    fn be_u16 { b: []u8, at: usize } -> u16 {
+        return (@as(u16, b[at]) << 8) | @as(u16, b[at + 1])
+    }
+
+    fn be_u32 { b: []u8, at: usize } -> u32 {
+        return (@as(u32, b[at]) << 24) | (@as(u32, b[at + 1]) << 16) | (@as(u32, b[at + 2]) << 8) | @as(u32, b[at + 3])
+    }
+
+    fn be_i32 { b: []u8, at: usize } -> i32 {
+        return i32_of_bits{ bits = be_u32{ b, at } }
+    }
+
+    // The i32 with the same 32 bits as `bits`.
+    fn i32_of_bits { bits: u32 } -> i32 {
+        let mut v = bits
+        return @cast(*i32, &v).*
+    }
+
+    // An i32's 32 bits.
+    fn bits_of_i32 { i: i32 } -> u32 {
+        let mut v = i
+        return @cast(*u32, &v).*
+    }
+
+    // The f32 with the IEEE-754 bits `bits`.
+    fn f32_of_bits { bits: u32 } -> f32 {
+        let mut v = bits
+        return @cast(*f32, &v).*
+    }
+
+    // An f32's IEEE-754 bits.
+    fn bits_of_f32 { f: f32 } -> u32 {
+        let mut v = f
+        return @cast(*u32, &v).*
+    }
+}

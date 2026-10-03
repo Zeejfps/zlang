@@ -17,8 +17,9 @@ _Static_assert(sizeof(void *) == 8, "ctxrt needs 64-bit pointers");
 
 // ---- panics
 
-// Prints "FILE:LINE:COL: panic: MSG" to standard error and exits with 134. `file` indexes the
-// program's file table; an empty name stands for the program's own path.
+// Prints "FILE:LINE:COL: panic: MSG" to standard error and exits with 134. `file` is FNV-1a of
+// the file's name with the top bit set, which names it in the program's file table (ctx_init), or
+// an index into that table; an empty name stands for the program's own path.
 _Noreturn void ctx_panic(uint32_t line, uint32_t col, uint32_t file, const char *msg);
 // A panic without a position, such as a native's: "PROGRAM: panic: MSG".
 _Noreturn void ctx_panic_nopos(const char *msg);
@@ -143,6 +144,9 @@ uint64_t ctx_ascii_f32_digits(float n, ctx_slice into);
 double ctx_ascii_f64_parse(ctx_slice text);
 float ctx_ascii_f32_parse(ctx_slice text);
 int64_t ctx_proc_run(ctx_slice argv, ctx_slice env, int32_t *code);
+int64_t ctx_proc_spawn(ctx_slice argv, ctx_slice env, uint64_t *id);
+int64_t ctx_proc_wait(uint64_t id, int32_t *code);
+uint32_t ctx_proc_processors(void);
 #ifdef _WIN32
 bool ctx_proc_env(ctx_slice name, ctx_slice *value);
 #endif

@@ -1,0 +1,49 @@
+// walkcheck: checks lib/walk/bwm.ctx against every walkmesh in the install. Exits 1 if a count
+// differs from kotor/docs/formats/bwm.md, 2 on bad arguments.
+//
+//   kotor/tools/ctxc run kotor/tools/walkcheck                       through the resource manager
+//   kotor/tools/ctxc run kotor/tools/walkcheck -- --game DIR         the install at DIR
+//   kotor/tools/ctxc run kotor/tools/walkcheck -- --extract DIR      an extraction (walk.txt, walk/)
+//
+// The checks are in lib/check.ctx, which other corpus tools build in and call
+// (walkcheck::run_install, walkcheck::run_extract).
+
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let mut game = DEFAULT_GAME
+    let mut extract: []u8 = ""
+    let mut i: usize = 0
+    while i < args.len {
+        if i + 1 < args.len and slice::eq_bytes{ a = args[i], b = "--game" } {
+            game = args[i + 1]
+        } else if i + 1 < args.len and slice::eq_bytes{ a = args[i], b = "--extract" } {
+            extract = args[i + 1]
+        } else {
+            io::eprintln{ &io, s = "usage: walkcheck [--game DIR | --extract DIR]" }
+            return 2
+        }
+        i = i + 2
+    }
+    let pages = mem::pages{ &mem, size = 536870912 } ifnull {
+        io::eprintln{ &io, s = "walkcheck: out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf = pages }
+    let mut h = heap::new{ &mem }
+    let summary = run{ &io, &fs, &heap, &h, game, extract } iferr err{ error } {
+        let mut con = walkcheck::Con{ io }
+        _ = @fmt(&con, "walkcheck: failed: {}\n", error)
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return if summary.surprises == 0 { 0 } else { 1 }
+}
+
+fn run { mut io: Io, mut fs: Fs, mut heap: arena::Arena, mut h: heap::Heap, game: []u8, extract: []u8 } -> !walkcheck::Summary {
+    if extract.len > 0 { return try walkcheck::run_extract{ &io, &fs, &heap, dir = extract } }
+    let mut rm = try res::open{ &fs, heap = &h, game }
+    defer res::close{ &fs, &rm }
+    return try walkcheck::run_install{ &io, &fs, &heap, rm }
+}
