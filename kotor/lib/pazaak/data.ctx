@@ -1,0 +1,23 @@
+// What pazaak reads from the install: the opponents' decks (pazaakdecks.2da).
+namespace pazaak {
+    // The side deck of row `row` of pazaakdecks.2da; a negative row picks one at random, as the
+    // original does (`rand() % rows`), from `seed`. Rows or cards the table lacks give -1 cards.
+    fn load_opponent_deck { mut fs: Fs, heap: *mut heap::Heap, rm: res::Manager, row: i32, seed: u32 } -> ![10]i32 {
+        let bytes = try res::load{ &fs, rm, name = "pazaakdecks", kind = restype::Type::twoda, realloc = heap::alloc, heap } ifnull {
+            return [-1; 10]
+        }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = bytes, count = 0 }
+        let t = try twoda::parse{ data = bytes, realloc = heap::alloc, heap }
+        defer twoda::free{ t, realloc = heap::alloc, heap }
+        let rows = twoda::rows{ t }
+        if rows == 0 { return [-1; 10] }
+        let mut pick: usize = 0
+        if row < 0 {
+            let mut rng = make_rng{ seed }
+            pick = @as(usize, rand_below{ rng = &rng, n = @as(i32, rows) })
+        } else {
+            pick = @as(usize, row)
+        }
+        return opponent_deck{ t, row = pick } ifnull { [-1; 10] }
+    }
+}
