@@ -29,7 +29,7 @@
 //
 // Exit status: 0 if nothing failed, 1 otherwise, 2 for bad arguments.
 
-struct Options { dir: []u8, sheet: []u8, every: usize, pngs: bool, fuzz: usize }
+struct Options { dir: []u8, sheet: []u8, every: usize, pngs: bool, fuzz: usize, normal: f32 }
 
 // Memory for one texture at a time, reset before each; and for what lasts the whole run.
 const WORK: usize = 268435456
@@ -438,7 +438,7 @@ fn write_pngs { mut io: Io, mut fs: Fs, mut work: arena::Arena, opts: Options, n
         if slice::eq_bytes{ a = args[i], b = "--png" } and i + 1 < args.len {
             let want = args[i + 1]
             arena::reset{ heap = &work }
-            write_png{ &io, &fs, &work, dir = opts.dir, names, want } iferr err{ error } {
+            write_png{ &io, &fs, &work, dir = opts.dir, names, want, normal = opts.normal } iferr err{ error } {
                 _ = @fmt(&io, "texcheck: {}: {}\n", want, error)
                 status = 1
             }
@@ -451,10 +451,13 @@ fn write_pngs { mut io: Io, mut fs: Fs, mut work: arena::Arena, opts: Options, n
 
 error no_texture    // no file in DIR matches a --png NAME
 
-fn write_png { mut io: Io, mut fs: Fs, mut work: arena::Arena, dir: []u8, names: [][]u8, want: []u8 } -> ! {
+// With `normal` above 0, a grey texture (a bump height map) is shown as the normal map
+// tex::height_to_normal makes of it at that scaling.
+fn write_png { mut io: Io, mut fs: Fs, mut work: arena::Arena, dir: []u8, names: [][]u8, want: []u8, normal: f32 } -> ! {
     let name = find_texture{ names, want } ifnull { return no_texture }
     let path = try join{ realloc = arena::alloc, heap = &work, dir, name }
-    let t = (try read_texture{ &fs, &work, path, is_tpc = texture_kind{ name } == 1 }).t
+    let mut t = (try read_texture{ &fs, &work, path, is_tpc = texture_kind{ name } == 1 }).t
+    if normal > 0.0 and t.format == tex::Format::grey8 { t = try tex::height_to_normal{ realloc = arena::alloc, heap = &work, t, scale = normal } }
     _ = @fmt(&io, "{}: {} {}, {}x{}, {} levels, {} images, grid {}x{}, {} bytes of TXI, AlphaMean {}\n",
         name, format_name{ f = t.format }, kind_name{ k = t.kind }, t.width, t.height, t.levels, t.images,
         t.frames_x, t.frames_y, t.txi.len, t.alpha_mean)
@@ -796,7 +799,7 @@ fn make_parents { mut fs: Fs, path: []u8 } {
 }
 
 fn parse_args { mut io: Io, args: Args } -> ?Options {
-    let mut o = Options{ dir = "G:/Dev/zlang/kotor/extract/tex", sheet = "kotor/out/tex/contact.png", every = 40, pngs = false, fuzz = 0 }
+    let mut o = Options{ dir = "G:/Dev/zlang/kotor/extract/tex", sheet = "kotor/out/tex/contact.png", every = 40, pngs = false, fuzz = 0, normal = 0.0 }
     let mut i: usize = 0
     while i < args.len {
         let a = args[i]
@@ -815,6 +818,10 @@ fn parse_args { mut io: Io, args: Args } -> ?Options {
             let n = utf8::parse_u64{ s = text } ifnull { return usage{ &io } }
             if n == 0 { return usage{ &io } }
             o.fuzz = @trunc(usize, n)
+        } else if slice::eq_bytes{ a, b = "--normal" } and i + 1 < args.len {
+            i = i + 1
+            let text = utf8::from{ bytes = args[i] } iferr { return usage{ &io } }
+            o.normal = utf8::parse_f32{ s = text } ifnull { return usage{ &io } }
         } else if slice::eq_bytes{ a, b = "--png" } and i + 1 < args.len {
             i = i + 1
             o.pngs = true
@@ -829,7 +836,7 @@ fn parse_args { mut io: Io, args: Args } -> ?Options {
 }
 
 fn usage { mut io: Io } -> ?Options {
-    io::eprintln{ &io, s = "usage: texcheck [DIR] [--sheet OUT.png] [--every N] | [DIR] --png NAME [--png NAME ...] | [DIR] --fuzz N" }
+    io::eprintln{ &io, s = "usage: texcheck [DIR] [--sheet OUT.png] [--every N] | [DIR] [--normal SCALE] --png NAME [--png NAME ...] | [DIR] --fuzz N" }
     return null
 }
 

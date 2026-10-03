@@ -25,6 +25,8 @@ namespace material {
         clamp: bool,                // `clamp` non-zero
         cycle: bool,                // `proceduretype cycle`
         fps: f32,
+        is_bumpmap: bool,           // `isbumpmap 1`: a grey one is a height map, made a normal map
+        bump_scale: f32,            // `bumpmapscaling`, 1 without it
     }
 
     // A texture in the cache. A missing one has texture null.
@@ -76,6 +78,7 @@ namespace material {
         return Props{
             blend = render::Blend::opaque, envmap = resref::empty{}, bumpmap = resref::empty{}, decal = false,
             water_alpha = -1.0, mipmap = true, nearest = false, clamp = false, cycle = false, fps = 0.0,
+            is_bumpmap = false, bump_scale = 1.0,
         }
     }
 
@@ -105,6 +108,9 @@ namespace material {
         if procedure != null and ci::eq{ a = procedure, b = "cycle" } { p.cycle = true }
         let fps = tex::txi_value{ txi, key = "fps" }
         if fps != null { p.fps = number{ text = fps } }
+        p.is_bumpmap = (tex::txi_number{ txi, key = "isbumpmap" } ifnull 0) != 0
+        let scaling = tex::txi_value{ txi, key = "bumpmapscaling" }
+        if scaling != null { p.bump_scale = number{ text = scaling } }
         return p
     }
 
@@ -162,6 +168,9 @@ namespace material {
         let props = read_props{ txi }
         if t.kind == tex::Kind::flipbook and t.images > 1 {
             t = try tex::to_atlas{ realloc = arena::alloc, heap = &cache.scratch, t }
+        }
+        if t.format == tex::Format::grey8 and props.is_bumpmap {
+            t = try tex::height_to_normal{ realloc = arena::alloc, heap = &cache.scratch, t, scale = props.bump_scale }
         }
         let texture = try upload{ &dev, scratch = &cache.scratch, t, props }
         cache.bytes = cache.bytes + t.data.len
