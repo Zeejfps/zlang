@@ -5,6 +5,8 @@ fn build { mut b: Build } {
     build::add_sources{ &b, exe, dir = "../../lib/res" }
     build::add_sources{ &b, exe, dir = "../../lib/formats" }
     build::add_sources{ &b, exe, dir = "../../lib/mdl" }
+    build::add_sources{ &b, exe, dir = "../../lib/walk" }
+    build::add_sources{ &b, exe, dir = "../walkcheck/lib" }
     build::add_sources{ &b, exe, dir = "../common" }
     build::optimize{ &b, exe, level = 2 }
 }
