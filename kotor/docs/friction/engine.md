@@ -46,3 +46,19 @@ Where ctxlang got in the way while writing the world, the routines, the scene an
 - **`#write` needs one writer per exact type**: the log prefix's zero-padded milliseconds needed
   its own wrapper struct and writer (`world::Pad3`), and SDL's `c::String` error text another in
   game/main (`kotor_out`), since tools/common has neither.
+
+## 2026-10-03: saves, combat
+
+- **Narrowing hides `is some`.** After `if x != null { ... }` the variable is a plain pointer,
+  so `if x is some{ value = v }` inside it is an error ("`is` cannot test through a pointer");
+  `x ifnull 0` inside is an error too. Testing `is some` directly on the call
+  (`if world::object{ w, id } is some{ value = o }`) avoids it; six places in fight.ctx.
+- **`@as(u32, -1)` panics at run time**, not at compile time: writing GFF "none" values
+  (SpellId 0xFFFFFFFF, LvlStatAbility -1) crashed a save. lib/save has a `bits{ v }` helper for
+  i32-to-u32 reinterpretation; a `@bitcast` would do.
+- **Escape check on results of calls with local arguments.** `obj::copy_lower{ heap, s =
+  info.last_module }` (a fresh heap copy) counted as derived from the local GFF document, so a
+  later `try` was refused; the copy had to be written inline with alloc::resize.
+- **One flat namespace across a directory's files.** lib/save's files written by two agents at
+  once (`put_*` helpers) had to coordinate names by message; per-file private functions would
+  avoid it.

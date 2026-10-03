@@ -9,6 +9,11 @@ namespace save {
     fn save_module_state { mut w: world::World } -> ! {
         let mo = world::object{ w = &w, id = w.module } ifnull { return }
         let m = obj::module{ o = mo } ifnull { return }
+        // modulesave.2da IncludeInSave 0: the module starts afresh every time.
+        let mut key = m.name
+        if twoda::find_row{ t = w.tables.modulesave, label = resref::bytes{ r = &key } } is some{ value = r } {
+            if (twoda::get_int{ t = w.tables.modulesave, row = r, column = "includeinsave" } ifnull 1) == 0 { return }
+        }
         let ao = world::object{ w = &w, id = w.area } ifnull { return }
         let mut module_name = m.name
         let mut area_name = m.area_name
@@ -22,6 +27,26 @@ namespace save {
         ]
         let nested = try erf::write(arena::Arena){ realloc = arena::alloc, heap = w.scratch, sig = erf::Sig::mod, members = members[..], year = 0, day = 0 }
         try put{ st = &w.gip, name = resref::bytes{ r = &module_name }, kind = 2057, bytes = nested }
+    }
+
+    // DeleteModuleSaveGroup (gameloop.md 5.3 step 7): entering `module`, whose modulesave.2da
+    // row names a group in DeleteSaveGroupOnEnter, drops the kept states of that group's modules.
+    fn delete_save_group { mut w: world::World, module: []u8 } {
+        let t = w.tables.modulesave
+        let r = twoda::find_row{ t, label = module } ifnull { return }
+        let group = twoda::get_int{ t, row = r, column = "deletesavegrouponenter" } ifnull { return }
+        let rows = twoda::rows{ t }
+        let mut i: usize = 0
+        while i < rows {
+            let g = twoda::get_int{ t, row = i, column = "savegroup" }
+            if g is some{ value = gv } {
+                if gv == group {
+                    let name = twoda::get_string{ t, row = i, column = "modulename" } ifnull ""
+                    if name.len > 0 { remove{ st = &w.gip, name, kind = 2057 } }
+                }
+            }
+            i = i + 1
+        }
     }
 
     fn write_ifo { mut w: world::World, mo: *obj::Object, m: *obj::Module } -> ![]u8 {

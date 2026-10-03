@@ -48,6 +48,7 @@ namespace play {
         let mut sc = scene::make{ arena = &scene_arena, heap = w.heap, scratch = texture_scratch, rm = w.rm.* }
         try scene::load_area{ &sc, &w, &dev }
         let mut camera = cam::new{}
+        let mut camera_row: u32 = 0xFFFFFFFF    // the camerastyle.2da row the camera uses
         let mut control = ctl::new{}
         let ao = world::object{ w = &w, id = w.area }
         if ao != null {
@@ -149,6 +150,12 @@ namespace play {
                 }
             }
             w.played_seconds = w.played_seconds + @as(f64, real)
+            w.autosave_ms = w.autosave_ms + @as(f64, real) * 1000.0
+            // An autosave wanted by a transition or a script, once the area is in place.
+            if w.autosave_due and w.transition == null and w.arrival == 0 and want_save.len == 0 {
+                w.autosave_due = false
+                want_save = "AUTOSAVE"
+            }
             // 3-6. The world.
             clock::advance{ c = &w.clock, seconds = dt }
             // The player doesn't walk while a conversation runs (re/dialogue.md 4.9).
@@ -198,6 +205,14 @@ namespace play {
             scene::sync{ &sc, &w, &dev, dt = w.clock.dt }
             dlgview::post_sync{ v = &dview, w = &w, sc = &sc, dt = w.clock.dt }
             let look_height = leader_height{ w = &w }
+            // Combat mode: the combat camera's style (camerastyle.2da row 8) while the leader
+            // fights, the area's otherwise (movement.md 2.1, 2.2).
+            let wanted_row = camera_row_now{ w = &w }
+            if wanted_row != camera_row {
+                camera_row = wanted_row
+                cam::set_style{ c = &camera, t = w.tables.camerastyle, row = wanted_row }
+                ctl::set_style{ ctl = &control, t = w.tables.camerastyle, row = wanted_row }
+            }
             cam::update{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height, turn = ctl::turn_input{ keys }, dt }
             dlgview::apply_camera{ v = &dview, w = &w, sc = &sc, camera = &camera }
             let pc = world::object{ w = &w, id = w.pc }
@@ -458,6 +473,17 @@ namespace play {
         let mut a = actions::make{ kind }
         a.params[0] = actions::Param::object{ id }
         _ = actions::add{ &w, id = w.pc, action = a, force = false }
+    }
+
+    fn camera_row_now { w: *world::World } -> u32 {
+        let lead = party::leader{ w }
+        let id = if lead == obj::INVALID { w.pc } else { lead }
+        if world::object{ w, id } is some{ value = o } {
+            if obj::creature{ o } is some{ value = c } { if c.in_combat and not c.dead { return 8 } }
+        }
+        let ao = world::object{ w, id = w.area } ifnull { return 0 }
+        let a = obj::area{ o = ao } ifnull { return 0 }
+        return a.camera_style
     }
 
     // `attack TAG`: the leader attacks the nearest live object with that tag.

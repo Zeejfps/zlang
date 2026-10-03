@@ -354,6 +354,34 @@ namespace fight {
         }
     }
 
+    // Damage to a door or placeable (combat.md 6.6 step 2, 8.2): hit points down unless plot,
+    // OnDamaged; at 0 a door is bashed open (and plot from then on), a placeable dies (OnDeath,
+    // destroyed 2 s later). The attacker stops.
+    fn damage_object { mut w: world::World, id: u32, amount: i32, who: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        if o.plot or o.hp < 1 or amount <= 0 { return }
+        o.hp = o.hp - amount
+        o.ctx.last_damager = who
+        if w.log.combat {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "{} ({}) takes {} damage from {}: {}/{}\n", id, o.tag, amount, who, o.hp, o.hp_max)
+        }
+        events::post{ &w, delay_ms = 0, caller = who, target = id, payload = events::Payload::script{ e = events::script_event{ kind = events::DAMAGED, object = who } } }
+        if o.hp >= 1 { return }
+        if o.kind == obj::Kind::door {
+            doors::set_door_state{ &w, id, state = obj::DoorState::open1 }
+            let back = world::object{ w = &w, id } ifnull { return }
+            back.plot = true
+        } else {
+            events::post{ &w, delay_ms = 2000, caller = id, target = id, payload = events::Payload::destroy }
+        }
+        events::post{ &w, delay_ms = 0, caller = who, target = id, payload = events::Payload::script{ e = events::script_event{ kind = events::DEATH, object = who } } }
+        actions::clear_all{ &w, id = who }
+        if world::object{ w = &w, id = who } is some{ value = a } {
+            if obj::creature{ o = a } is some{ value = ac } { if ac.attack_target == id { ac.attack_target = obj::INVALID } }
+        }
+    }
+
     // Everyone who was attacking `id` stops (ClearAttackersInArea, 3.6).
     fn clear_attackers { mut w: world::World, id: u32 } {
         let all = list::items{ list = w.objects.all }
@@ -586,25 +614,39 @@ namespace fight {
             a.params = [actions::Param::none; 8]
             return actions::Status::done
         }
-        start_round{ &w, id, target, s, ranged }
+        start_round{ &w, id, target, s, ranged, feat = actions::int_param{ a, i = 2 } }
         return actions::Status::done
     }
 
     // StartCombatRound and the attacks of the round resolved at once (3.1, 3.3): the impacts
     // land later, at their hit times.
-    fn start_round { mut w: world::World, id: u32, target: u32, s: i32, ranged: bool } {
+    fn start_round { mut w: world::World, id: u32, target: u32, s: i32, ranged: bool, feat: i32 } {
         let o = world::object{ w = &w, id } ifnull { return }
         let c = obj::creature{ o } ifnull { return }
         let f = c.fighter ifnull { return }
         let t = world::object{ w = &w, id = target } ifnull { return }
-        let tc = obj::creature{ o = t } ifnull { return }       // HOOK(rules): doors and placeables as targets
-        let tf = tc.fighter ifnull { return }
         sync_flags{ w = &w, o, f }
-        sync_flags{ w = &w, o = t, f = tf }
+        // The defender as the rules see it: a creature's own, or for a door or placeable a plain
+        // stand-in (AC 10; the rules' target_object rules apply).
+        let mut stand_in: rules::Creature
+        stand_in.loaded_hp = -1
+        stand_in.abil = [10; 6]
+        let mut def: *mut rules::Creature = &stand_in
+        let mut ts: i32 = 8
+        let mut is_object = false
+        if obj::creature{ o = t } is some{ value = tc } {
+            let tf = tc.fighter ifnull { return }
+            sync_flags{ w = &w, o = t, f = tf }
+            ts = stance{ w = &w, c = tc }
+            def = &tf.c
+        } else {
+            if t.kind != obj::Kind::door and t.kind != obj::Kind::placeable { return }
+            rules::recompute{ tables = w.rules, c = &stand_in }
+            is_object = true
+        }
         // Face the target.
         let dir = math::vec3::sub{ a = t.position, b = o.position }
         if dir.x * dir.x + dir.y * dir.y > 0.0001 { world::set_orientation{ o, v = math::Vec3{ x = dir.x, y = dir.y, z = 0.0 } } }
-        let ts = stance{ w = &w, c = tc }
         let duel = not ranged and not is_ranged_stance{ s = ts } and s != 8 and ts != 8
         let row = attack_row{ &w, s, duel, ranged_beast = ranged and s == 0 }
         f.round = no_round{}
@@ -629,7 +671,10 @@ namespace fight {
         sit.facing_dot = t.orientation.x * o.orientation.x + t.orientation.y * o.orientation.y
         sit.defender_hp = t.hp
         sit.attacker_id = id
-        let counts = rules::attack_counts{ tables = w.rules, c = &f.c, combat_feat = 0 }
+        sit.target_object = is_object
+        sit.target_plot = is_object and t.plot
+        let counts = rules::attack_counts{ tables = w.rules, c = &f.c, combat_feat = feat }
+        c.last_combat_feat = if feat > 0 { feat } else { -1 }
         let total = @as(usize, if counts.total > 0 { counts.total } else { 1 })
         // When the attacks land: melee hit times from combatanimations.2da (hit1..3), ranged shots
         // from weapondischarge.2da, spread over the attacks at random (3.3).
@@ -679,7 +724,7 @@ namespace fight {
             imp.attack = carries[k]
             if carries[k] {
                 rules::clear_events{ ev = &w.rev }
-                let res = rules::resolve_attack{ tables = w.rules, rng = &w.dice, atk = &f.c, def = &tf.c, ev = &w.rev, sit = &sit, attack_index = attack, combat_feat = 0, simulate = false }
+                let res = rules::resolve_attack{ tables = w.rules, rng = &w.dice, atk = &f.c, def, ev = &w.rev, sit = &sit, attack_index = attack, combat_feat = feat, simulate = false }
                 drain{ &w, id = target }
                 imp.hit = res.hit
                 imp.result = res.roll.result
@@ -738,6 +783,10 @@ namespace fight {
     // first), the reaction animation.
     fn land { mut w: world::World, id: u32, imp: *Impact } {
         let t = world::object{ w = &w, id = imp.target } ifnull { return }
+        if t.kind == obj::Kind::door or t.kind == obj::Kind::placeable {
+            if imp.attack and imp.hit { damage_object{ &w, id = imp.target, amount = imp.damage.total, who = id } }
+            return
+        }
         let tc = obj::creature{ o = t } ifnull { return }
         if tc.dead { return }
         if not imp.attack { return }
@@ -787,6 +836,7 @@ namespace fight {
         if c.dead or f.c.down { return }
         let mut target_alive = false
         if world::object{ w = &w, id = target } is some{ value = tv } {
+            if tv.kind == obj::Kind::door or tv.kind == obj::Kind::placeable { target_alive = tv.hp >= 1 and not tv.plot }
             if obj::creature{ o = tv } is some{ value = tc } {
                 target_alive = not tc.dead
                 if tc.fighter is some{ value = tf } { if tf.c.down { target_alive = false } }
@@ -892,5 +942,150 @@ namespace fight {
             if world::standing{ w, from = pc.faction, toward = o.faction } <= 10 { return true }
         }
         return false
+    }
+
+    // ---- Force powers (actions.md 3.13, rules.md "Force powers")
+
+    // The approximate range of a spells.2da range letter (ranges.2da's spell rows).
+    fn spell_range { w: *world::World, spell: i32 } -> f32 {
+        let r = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "range" } ifnull ""
+        if r.len == 0 { return 2.25 }
+        let row: usize = if r[0] == 'P' { 0 } else if r[0] == 'T' { 1 } else if r[0] == 'S' { 2 } else if r[0] == 'M' { 3 } else if r[0] == 'L' { 4 } else { 2 }
+        let v = twoda::get_float{ t = w.tables.ranges, row, column = "primaryrange" } ifnull 10.0
+        return if v < 2.25 { 2.25 } else { v }
+    }
+
+    // The animation rows of a spells.2da conjure or cast animation name (ours: the client's
+    // mapping was not read): hand and self cast out with the first set, dark the second, up the
+    // third, throw the sabre throw.
+    fn cast_row { name: []u8, looping: bool } -> i32 {
+        if name.len == 0 { return NO_ROW }
+        if ci::eq{ a = name, b = "dark" } { return if looping { 65 } else { 64 } }
+        if ci::eq{ a = name, b = "up" } { return if looping { 67 } else { 66 } }
+        if ci::eq{ a = name, b = "throw" } { return if looping { 70 } else { 69 } }
+        return if looping { 63 } else { 62 }
+    }
+
+    // CASTSPELL (0xf): params 0 spell, 1 target, 2 location, 3 cheat, 4 instant, 5 feat talent,
+    // 6 item. Approach to the power's range, pay (begin_cast), conjure, cast; at the end of the
+    // cast the impact script runs as the caster with the spell context set; then the catch time.
+    fn cast_spell { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut actions::Action } -> actions::Status {
+        let o = world::object{ w = &w, id } ifnull { return actions::Status::failed }
+        let spell = actions::int_param{ a, i = 0 }
+        let target = actions::object_param{ a, i = 1 }
+        let mut at = actions::vector_param{ a, i = 2 }
+        if target != obj::INVALID {
+            let t = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
+            at = t.position
+        }
+        let now = clock::now_ms{ c = w.clock }
+        if a.phase == 0 {
+            // In range first (creatures walk; others cast from where they are).
+            if o.kind == obj::Kind::creature and target != id {
+                let range = spell_range{ w = &w, spell }
+                if doors::distance_2d{ a = o.position, b = at } > range + 0.5 {
+                    if a.serial > 0 and a.started + 20000 < now { return actions::Status::failed }
+                    let mut copy = a.*
+                    copy.has_started = true
+                    actions::add_front{ &w, id, action = copy }
+                    let mut move = actions::make{ kind = actions::Kind::move_to_point }
+                    move.params[0] = actions::Param::vector{ v = at }
+                    move.params[1] = actions::Param::int{ v = 1 }
+                    move.params[2] = actions::Param::float{ v = range }
+                    move.params[3] = actions::Param::object{ id = target }
+                    move.params[4] = actions::Param::float{ v = 8.0 }
+                    actions::add_front{ &w, id, action = move }
+                    a.params = [actions::Param::none; 8]
+                    return actions::Status::done
+                }
+            }
+            // Pay (PayForcePowerCost): not for a cheat, a feat's power or an item's.
+            let free = actions::int_param{ a, i = 3 } != 0 or actions::int_param{ a, i = 5 } != 0 or actions::object_param{ a, i = 6 } != obj::INVALID
+            if of{ o } is some{ value = f } {
+                sync_flags{ w = &w, o, f }
+                let alive = if obj::creature{ o } is some{ value = c } { not c.dead } else { true }
+                let start = rules::begin_cast{ tables = w.rules, c = &f.c, spell, alive, from_item = free }
+                if start.reason != rules::cast::OK and start.reason != rules::cast::ENTANGLED {
+                    if w.log.combat {
+                        world::prefix{ w = &w }
+                        _ = @fmt(&w.io, "{} cannot cast {}: reason {}\n", id, spell, start.reason)
+                    }
+                    return actions::Status::failed
+                }
+                if start.interrupted { return actions::Status::failed }
+            }
+            let dir = math::vec3::sub{ a = at, b = o.position }
+            if dir.x * dir.x + dir.y * dir.y > 0.0001 { world::set_orientation{ o, v = math::Vec3{ x = dir.x, y = dir.y, z = 0.0 } } }
+            if obj::creature{ o } is some{ value = c } {
+                if target != obj::INVALID and target != id {
+                    c.last_hostile_target = target
+                    if world::object{ w = &w, id = target } is some{ value = t } {
+                        if t.kind == obj::Kind::creature and world::standing{ w = &w, from = o.faction, toward = t.faction } <= 10 {
+                            enter_combat{ &w, id, other = target }
+                            enter_combat{ &w, id = target, other = id }
+                        }
+                    }
+                }
+                c.last_force_power = spell
+            }
+            let conj = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "conjanim" } ifnull ""
+            play_row{ &w, o, row = cast_row{ name = conj, looping = true } }
+            a.phase = 1
+            a.started = now
+            if w.log.combat {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "{} casts {} at {}\n", id, spell, target)
+            }
+        }
+        let times = rules::spell_phase_times{ tables = w.rules, spell }
+        let instant = actions::int_param{ a, i = 4 } != 0
+        let conj_ms = if instant { 0 } else { @as(u64, @as(u32, if times.conj_ms > 0 { times.conj_ms } else { 0 })) }
+        let cast_ms = if instant { 0 } else { @as(u64, @as(u32, if times.cast_ms > 0 { times.cast_ms } else { 0 })) }
+        let catch_ms = if instant { 0 } else { @as(u64, @as(u32, if times.catch_ms > 0 { times.catch_ms } else { 0 })) }
+        let elapsed = now - a.started
+        if a.phase == 1 {
+            if elapsed < conj_ms { return actions::Status::running }
+            let anim = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "castanim" } ifnull ""
+            let back = world::object{ w = &w, id } ifnull { return actions::Status::failed }
+            play_row{ &w, o = back, row = cast_row{ name = anim, looping = false } }
+            a.phase = 2
+        }
+        if a.phase == 2 {
+            if elapsed < conj_ms + cast_ms { return actions::Status::running }
+            impact{ &w, &vm, engine, id, spell, target, at }
+            a.phase = 3
+        }
+        if elapsed < conj_ms + cast_ms + catch_ms { return actions::Status::running }
+        // The cast was a combat round: OnEndRound gets the AI's next move.
+        if world::object{ w = &w, id } is some{ value = done_o } {
+            if obj::creature{ o = done_o } is some{ value = c } {
+                if c.in_combat and not c.dead and id != w.pc {
+                    events::post{ &w, delay_ms = 0, caller = id, target = id, payload = events::Payload::script{ e = events::script_event{ kind = events::END_COMBAT_ROUND, object = target } } }
+                }
+                if c.in_combat { play_ready{ &w, o = done_o, c } } else { world::set_animation{ o = done_o, id = obj::ANIM_STAND, speed = 1.0 } }
+            }
+        }
+        return actions::Status::done
+    }
+
+    // The impact: the power's script (spells.2da impactscript) as the caster, with the spell
+    // context set on it and the target told who cast what at it.
+    fn impact { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, spell: i32, target: u32, at: math::Vec3 } {
+        let name = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "impactscript" } ifnull ""
+        if world::object{ w = &w, id = target } is some{ value = t } {
+            t.ctx.last_spell = spell
+            t.ctx.last_spell_caster = id
+        }
+        let o = world::object{ w = &w, id } ifnull { return }
+        o.ctx.spell_id = spell
+        o.ctx.spell_target = target
+        o.ctx.spell_location = at
+        if name.len > 0 and not ci::eq{ a = name, b = "****" } {
+            _ = scripts::run{ &w, &vm, engine, name = resref::truncate{ name }, self = id }
+        }
+        if world::object{ w = &w, id } is some{ value = back } {
+            back.ctx.spell_id = -1
+            back.ctx.spell_target = obj::INVALID
+        }
     }
 }

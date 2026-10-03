@@ -16,6 +16,8 @@ namespace modload {
     fn enter { mut w: world::World, name: []u8 } -> ! {
         // A module visited before (or loaded from a save) comes back from the game in progress
         // (party-items-saves.md 1.2): its <module>.sav, mounted from the store's file.
+        // DeleteSaveGroupOnEnter: the kept states of every module of that save group go.
+        save::delete_save_group{ &w, module = name }
         let saved = save::find{ st = &w.gip, name, kind = 2057 } != null
         if saved { try save::write_store{ fs = &w.fs, st = &w.gip } }
         try res::mount_module{ fs = &w.fs, rm = w.rm, name, save = if saved { w.gip.path } else { "" } }
@@ -616,6 +618,16 @@ namespace modload {
         let kept = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = name.len }
         slice::copy(u8){ dst = kept, src = name }
         try enter{ &w, name = kept }
+        // An autosave on arrival (gameloop.md 5.7): modulesave.2da AutoSaveOnEnter of the target
+        // says force (always), no (never) or yes (when the 15 min timer is due); no row: always.
+        let row = twoda::find_row{ t = w.tables.modulesave, label = kept }
+        if row is some{ value = r } {
+            let how = twoda::get_string{ t = w.tables.modulesave, row = r, column = "autosaveonenter" } ifnull "yes"
+            if ci::eq{ a = how, b = "force" } { w.autosave_due = true }
+            else if ci::eq{ a = how, b = "yes" } and w.autosave_ms >= 900000.0 { w.autosave_due = true }
+        } else {
+            w.autosave_due = true
+        }
         return true
     }
 }

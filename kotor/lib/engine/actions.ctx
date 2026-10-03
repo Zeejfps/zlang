@@ -248,6 +248,7 @@ namespace actions {
             follow_leader => { return follow{ &w, id, a, leader = true } }
             random_walk => { return random_walk{ &w, id, a } }
             attack_object => { return fight::attack_object{ &w, id, a } }
+            cast_spell => { return fight::cast_spell{ &w, &vm, engine, id, a } }
             else => {
                 // Not written yet: done, so queues behind it keep moving.
                 if w.log.actions {

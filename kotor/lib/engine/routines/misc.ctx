@@ -8,6 +8,12 @@
 // Custom tokens (SetCustomToken) are kept in `w.tokens` (tokens.ctx) for the whole session, as
 // number and text; dialogue and GUI strings that say <CUSTOMnnn> read them with `tokens::get`.
 namespace rt_misc {
+    // The calling object's event context (no object: the defaults).
+    fn self_ctx_of { w: *world::World, vm: *nwvm::Vm } -> obj::Context {
+        let o = world::object{ w, id = nwvm::self_object{ vm = vm.* } } ifnull { return obj::no_context{} }
+        return o.ctx
+    }
+
     fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
         match routine {
             // ---- the area and its objects
@@ -52,11 +58,15 @@ namespace rt_misc {
             nwscript::GetListenPatternNumber => { try nwvm::push_int{ &vm, v = self_ctx{ w = &w, vm = &vm }.listen_pattern } }
             nwscript::GetLastAttacker => { try get_last_attacker{ &w, &vm, argc } }
             nwscript::GetLastSpeaker => { try nwvm::push_object{ &vm, id = live_or_invalid{ w = &w, id = self_ctx{ w = &w, vm = &vm }.last_speaker } } }
-            nwscript::GetLastSpell => { try nwvm::push_int{ &vm, v = -1 } }
-            nwscript::GetSpellId => { try nwvm::push_int{ &vm, v = -1 } }
-            nwscript::GetSpellTargetObject => { try nwvm::push_object{ &vm, id = obj::INVALID } }
-            nwscript::GetSpellTargetLocation => { try rt_obj::push_location{ &w, &vm, l = values::no_location{} } }
-            nwscript::GetLastSpellCaster => { try nwvm::push_object{ &vm, id = obj::INVALID } }
+            nwscript::GetLastSpell => { try nwvm::push_int{ &vm, v = self_ctx_of{ w = &w, vm = &vm }.last_spell } }
+            nwscript::GetSpellId => { try nwvm::push_int{ &vm, v = self_ctx_of{ w = &w, vm = &vm }.spell_id } }
+            nwscript::GetSpellTargetObject => { try nwvm::push_object{ &vm, id = self_ctx_of{ w = &w, vm = &vm }.spell_target } }
+            nwscript::GetSpellTargetLocation => {
+                let cx = self_ctx_of{ w = &w, vm = &vm }
+                let l = values::Location{ position = cx.spell_location, facing = 0.0, area = w.area }
+                try rt_obj::push_location{ &w, &vm, l }
+            }
+            nwscript::GetLastSpellCaster => { try nwvm::push_object{ &vm, id = self_ctx_of{ w = &w, vm = &vm }.last_spell_caster } }
             nwscript::GetAttemptedSpellTarget => { try nwvm::push_object{ &vm, id = obj::INVALID } }
             nwscript::GetAttemptedMovementTarget => { try nwvm::push_object{ &vm, id = obj::INVALID } }
             nwscript::GetSpellTarget => { try get_spell_target{ &w, &vm, argc } }

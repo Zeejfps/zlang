@@ -62,6 +62,7 @@ namespace save {
         try save_module_state{ &w }
         try keep_party{ &w }
         w.party.saved_count = 0
+        w.autosave_ms = 0.0
         let mut buf: [512]u8
         let local = folder_path{ root = w.gip.root, slot, name = folder_name, into = buf[..] }
         let folder = try obj::copy_bytes{ heap = w.heap, s = local }

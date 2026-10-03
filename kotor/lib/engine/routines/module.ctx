@@ -4,14 +4,14 @@
 namespace rt_mod {
     fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
         if routine == nwscript::StartNewModule { try start_new_module{ &w, &vm, argc } }
-        else if routine == nwscript::GetLoadFromSaveGame { try nwvm::push_int{ &vm, v = 0 } }
+        else if routine == nwscript::GetLoadFromSaveGame { try nwvm::push_int{ &vm, v = if w.restoring { 1 } else { 0 } } }
         else if routine == nwscript::GetModuleFileName { try get_module_file_name{ &w, &vm } }
         else if routine == nwscript::SetReturnStrref { try set_return_strref{ &vm, argc } }
         else if routine == nwscript::AddJournalQuestEntry { try add_journal_quest_entry{ &w, &vm, argc } }
         else if routine == nwscript::RemoveJournalQuestEntry { try remove_journal_quest_entry{ &w, &vm, argc } }
         else if routine == nwscript::GetJournalEntry { try get_journal_entry{ &vm, argc } }
         else if routine == nwscript::RevealMap { try reveal_map{ &vm, argc } }
-        else if routine == nwscript::DoSinglePlayerAutoSave { return true }
+        else if routine == nwscript::DoSinglePlayerAutoSave { w.autosave_due = true }
         else if routine == nwscript::SetPlanetAvailable { try set_planet{ &w, &vm, argc, routine } }
         else if routine == nwscript::SetPlanetSelectable { try set_planet{ &w, &vm, argc, routine } }
         else if routine == nwscript::GetPlanetAvailable { try get_planet{ &vm, argc, routine } }
