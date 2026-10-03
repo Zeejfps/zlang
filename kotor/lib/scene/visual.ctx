@@ -1,0 +1,277 @@
+// An object's visual: the models that show it and how they animate (docs/formats/models-usage.md).
+// A creature is its body (B type: model<L> with tex<L>NN; F: modela or race; S and L: race,
+// retextured with racetex), a head at the body's headhook (B type), and its weapons at rhand and
+// lhand; a door is its genericdoors model, a placeable its placeables model. The object's
+// internal animation id (animname) picks the body's animation; a door's state picks
+// opening1/opened1/closing1/closed.
+namespace visual {
+    error no_model{ name: []u8 }
+
+    // appearance.2da's per-letter columns, a to j.
+    const MODEL_COLUMNS: [10][]u8 = ["modela", "modelb", "modelc", "modeld", "modele", "modelf", "modelg", "modelh", "modeli", "modelj"]
+    const TEX_COLUMNS: [10][]u8 = ["texa", "texb", "texc", "texd", "texe", "texf", "texg", "texh", "texi", "texj"]
+
+    // The object's visual, made now; its index in Scene.visuals, or null when it shows nothing.
+    fn create { mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, o: *obj::Object } -> !?usize {
+        let first = sc.parts.len
+        let mut prefix = false
+        match o.ext {
+            creature{ c } => {
+                let made = try creature_parts{ &sc, &w, &dev, o, c } ifnull { return null }
+                prefix = made
+            }
+            door{ d } => {
+                let mut m = d.model
+                if resref::is_empty{ r = m } { return null }
+                let loaded = try scene::load_model{ &sc, &w, &dev, name = resref::bytes{ r = &m }, body_texture = "", envmap = "" } ifnull { return null }
+                _ = try scene::add_part{ &sc, loaded, parent = -1, hook = "" }
+            }
+            placeable{ p } => {
+                let mut m = p.model
+                if resref::is_empty{ r = m } { return null }
+                let loaded = try scene::load_model{ &sc, &w, &dev, name = resref::bytes{ r = &m }, body_texture = "", envmap = "" } ifnull { return null }
+                _ = try scene::add_part{ &sc, loaded, parent = -1, hook = "" }
+            }
+            else => { return null }
+        }
+        if sc.parts.len == first { return null }
+        try list::push{ list = &sc.visuals, item = scene::Visual{
+            id = o.id, first, count = sc.parts.len - first, animation = 0xFFFFFFFF, state = 0xFFFFFFFF,
+            room = -1, creature_prefix = prefix, alive = true,
+        } }
+        let index = sc.visuals.len - 1
+        try map::put{ m = &sc.by_id, key = o.id, value = index }
+        return index
+    }
+
+    // A cell of appearance.2da ("" for a blank or "****").
+    fn cell { t: twoda::Table, row: usize, column: []u8 } -> []u8 {
+        return twoda::get_string{ t, row, column } ifnull ""
+    }
+
+    // The body, head and weapons; whether the model type names animations with `c` (S and L);
+    // null when the appearance has no model.
+    fn creature_parts { mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, o: *obj::Object, c: *mut obj::Creature } -> !?bool {
+        let t = w.tables.appearance
+        let row = @as(usize, c.appearance)
+        let kind = cell{ t, row, column = "modeltype" }
+        let mut envmap = cell{ t, row, column = "envmap" }
+        if ci::eq{ a = envmap, b = "default" } { envmap = "" }
+        let mut body_name: []u8 = ""
+        let mut texture: [24]u8
+        let mut texture_len: usize = 0
+        let is_b = ci::eq{ a = kind, b = "b" }
+        if is_b {
+            // The armour's body letter (models-usage.md, B-type bodies): a without armour.
+            let mut letter: u8 = 'a'
+            let mut texvar = @as(u32, c.texture_variation)
+            let armor = world::object{ w = &w, id = c.equipped[obj::SLOT_BODY] }
+            if armor != null {
+                if obj::item{ o = armor } is some{ value = it } {
+                    let bodyvar = cell{ t = w.tables.baseitems, row = @as(usize, it.base), column = "bodyvar" }
+                    if bodyvar.len == 1 { letter = ascii::to_lower{ c = bodyvar[0] } }
+                    else if it.body_variation >= 1 and it.body_variation <= 10 { letter = @trunc(u8, 'a' + it.body_variation - 1) }
+                    texvar = it.texture_variation
+                }
+            }
+            let li = if letter >= 'a' and letter <= 'j' { @as(usize, letter - 'a') } else { 0 }
+            body_name = cell{ t, row, column = MODEL_COLUMNS[li] }
+            let base = cell{ t, row, column = TEX_COLUMNS[li] }
+            if base.len > 0 and base.len < 20 {
+                let mut i: usize = 0
+                while i < base.len {
+                    texture[i] = base[i]
+                    i = i + 1
+                }
+                let v = if texvar == 0 { 1 } else { texvar }
+                texture[i] = @trunc(u8, '0' + (v / 10) % 10)
+                texture[i + 1] = @trunc(u8, '0' + v % 10)
+                texture_len = i + 2
+            }
+        } else if ci::eq{ a = kind, b = "f" } {
+            body_name = cell{ t, row, column = "modela" }
+            if body_name.len == 0 { body_name = cell{ t, row, column = "race" } }
+        } else {
+            body_name = cell{ t, row, column = "race" }
+            let racetex = cell{ t, row, column = "racetex" }
+            if racetex.len > 0 and racetex.len < 24 {
+                let mut i: usize = 0
+                while i < racetex.len {
+                    texture[i] = racetex[i]
+                    i = i + 1
+                }
+                texture_len = racetex.len
+            }
+        }
+        if body_name.len == 0 { return null }
+        let body_loaded = try scene::load_model{ &sc, &w, &dev, name = body_name, body_texture = texture[..texture_len], envmap } ifnull {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "creature {} ({}): no model {}\n", o.id, o.tag, body_name)
+            return null
+        }
+        let body = try scene::add_part{ &sc, loaded = body_loaded, parent = -1, hook = "" }
+        if is_b {
+            let head_row = twoda::get_int{ t, row, column = "normalhead" }
+            if head_row != null and head_row >= 0 {
+                let head = cell{ t = w.tables.heads, row = @as(usize, head_row), column = "head" }
+                if head.len > 0 {
+                    let hl = try scene::load_model{ &sc, &w, &dev, name = head, body_texture = "", envmap }
+                    if hl != null { _ = try scene::add_part{ &sc, loaded = hl, parent = @as(i32, body), hook = mdl_anim::HOOK_HEAD } }
+                }
+            }
+        }
+        try weapon{ &sc, &w, &dev, item = c.equipped[obj::SLOT_RIGHT_WEAPON], body, hook = mdl_anim::HOOK_RIGHT_HAND }
+        try weapon{ &sc, &w, &dev, item = c.equipped[obj::SLOT_LEFT_WEAPON], body, hook = mdl_anim::HOOK_LEFT_HAND }
+        return not is_b and not ci::eq{ a = kind, b = "f" }
+    }
+
+    // An equipped item's model at a hook: `<itemclass>_<variation:03>` (models-usage.md).
+    fn weapon { mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, item: u32, body: usize, hook: []u8 } -> ! {
+        let io = world::object{ w = &w, id = item } ifnull { return }
+        let it = obj::item{ o = io } ifnull { return }
+        let class = cell{ t = w.tables.baseitems, row = @as(usize, it.base), column = "itemclass" }
+        if class.len == 0 or class.len > 12 { return }
+        let mut name: [20]u8
+        let mut i: usize = 0
+        while i < class.len {
+            name[i] = class[i]
+            i = i + 1
+        }
+        let v = if it.model_variation == 0 { 1 } else { it.model_variation }
+        name[i] = '_'
+        name[i + 1] = @trunc(u8, '0' + (v / 100) % 10)
+        name[i + 2] = @trunc(u8, '0' + (v / 10) % 10)
+        name[i + 3] = @trunc(u8, '0' + v % 10)
+        let loaded = try scene::load_model{ &sc, &w, &dev, name = name[..i + 4], body_texture = "", envmap = "" } ifnull { return }
+        _ = try scene::add_part{ &sc, loaded, parent = @as(i32, body), hook }
+    }
+
+    // Brings a visual up to date with its object: the room under it, the animation its state
+    // asks for, every part advanced.
+    fn update { mut sc: scene::Scene, mut w: world::World, v: *mut scene::Visual, o: *obj::Object, dt: f32 } {
+        if v.room < 0 or o.dirty & obj::DIRTY_POSITION != 0 {
+            v.room = walkmap::room_at{ m = &w.walk, x = o.position.x, y = o.position.y, z = o.position.z + 0.5 }
+        }
+        match o.ext {
+            creature => { animate_creature{ &sc, &w, v, o } }
+            door{ d } => { animate_door{ &sc, &w, v, state = @as(u32, d.state) } }
+            placeable{ p } => { animate_placeable{ &sc, &w, v, anim = p.anim } }
+            else => {}
+        }
+        let mut i: usize = 0
+        while i < v.count {
+            scene::advance_part{ &sc, &w, part = v.first + i, dt }
+            i = i + 1
+        }
+    }
+
+    // The body plays the object's animation (with the `c` prefix for S and L models; pause1 when
+    // the model lacks it); a head plays the same name when its model has it.
+    fn animate_creature { mut sc: scene::Scene, mut w: world::World, v: *mut scene::Visual, o: *obj::Object } {
+        if v.animation == o.animation { return }
+        v.animation = o.animation
+        let base = animname::name_of{ id = o.animation }
+        let looping = animname::loops{ id = o.animation }
+        let mut buf: [34]u8
+        let name = with_prefix{ into = buf[..], name = if base.len > 0 { base } else { "pause1" }, prefix = v.creature_prefix }
+        let mut fallback: [34]u8
+        let pause = with_prefix{ into = fallback[..], name = "pause1", prefix = v.creature_prefix }
+        if not scene::play{ &sc, &w, part = v.first, name, looping, speed = o.anim_speed, transition = 0.25 } {
+            _ = scene::play{ &sc, &w, part = v.first, name = pause, looping = true, speed = 1.0, transition = 0.25 }
+        }
+        // The head part (a B body's second part hangs at the headhook).
+        if v.count > 1 {
+            let head = scene::part_at{ sc = &sc, i = v.first + 1 }
+            if slice::eq_bytes{ a = head.hook, b = mdl_anim::HOOK_HEAD } {
+                if not scene::play{ &sc, &w, part = v.first + 1, name, looping, speed = o.anim_speed, transition = 0.25 } {
+                    _ = scene::play{ &sc, &w, part = v.first + 1, name = "pause1", looping = true, speed = 1.0, transition = 0.25 }
+                }
+            }
+        }
+    }
+
+    fn with_prefix { into: []mut u8, name: []u8, prefix: bool } -> []u8 {
+        let mut n: usize = 0
+        if prefix {
+            into[0] = 'c'
+            n = 1
+        }
+        let mut i: usize = 0
+        while i < name.len and n < into.len {
+            into[n] = name[i]
+            n = n + 1
+            i = i + 1
+        }
+        return into[..n]
+    }
+
+    // closed -> opening1 then opened1 (and back with closing1 then closed); a door first seen
+    // open shows opened1 at once.
+    fn animate_door { mut sc: scene::Scene, mut w: world::World, v: *mut scene::Visual, state: u32 } {
+        if v.state == state { return }
+        let first = v.state == 0xFFFFFFFF
+        v.state = state
+        let part = v.first
+        if state == 0 {
+            if first or not scene::play{ &sc, &w, part, name = "closing1", looping = false, speed = 1.0, transition = 0.0 } {
+                _ = scene::play{ &sc, &w, part, name = "closed", looping = true, speed = 1.0, transition = 0.0 }
+            } else { set_next{ sc = &sc, part, name = "closed" } }
+            return
+        }
+        let opening: []u8 = if state == 2 { "opening2" } else { "opening1" }
+        let opened: []u8 = if state == 2 { "opened2" } else { "opened1" }
+        if first or not scene::play{ &sc, &w, part, name = opening, looping = false, speed = 1.0, transition = 0.0 } {
+            _ = scene::play{ &sc, &w, part, name = opened, looping = true, speed = 1.0, transition = 0.0 }
+        } else { set_next{ sc = &sc, part, name = opened } }
+    }
+
+    fn set_next { sc: *scene::Scene, part: usize, name: []u8 } {
+        let p = scene::part_at{ sc, i = part }
+        let mut i: usize = 0
+        while i < name.len and i < 32 {
+            p.next[i] = name[i]
+            i = i + 1
+        }
+        p.next_len = i
+    }
+
+    // A placeable plays `default` (or nothing), or the animation its state names (on, off, open,
+    // close, animloopN).
+    fn animate_placeable { mut sc: scene::Scene, mut w: world::World, v: *mut scene::Visual, anim: u32 } {
+        if v.state == anim { return }
+        v.state = anim
+        let name = animname::name_of{ id = anim }
+        if anim == obj::ANIM_STAND or name.len == 0 {
+            _ = scene::play{ &sc, &w, part = v.first, name = "default", looping = true, speed = 1.0, transition = 0.0 }
+            return
+        }
+        _ = scene::play{ &sc, &w, part = v.first, name, looping = animname::loops{ id = anim }, speed = 1.0, transition = 0.0 }
+    }
+
+    // The visual's draws: each part under its parent's hook.
+    fn draw { sc: *scene::Scene, v: *scene::Visual, o: *obj::Object, mut frame: render::Frame, view: u32 } {
+        let yaw = obj::model_yaw{ orientation = o.orientation }
+        let instance = math::mat4::from_rotation_translation{
+            r = math::quat::from_axis_angle{ axis = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, angle = yaw }, t = o.position,
+        }
+        let mut transforms: [8]math::Mat4
+        let mut i: usize = 0
+        while i < v.count and i < 8 {
+            let p = scene::part_at{ sc, i = v.first + i }
+            let l = scene::loaded_at{ sc, i = p.loaded }
+            let mut t = instance
+            if p.parent >= 0 {
+                let parent_index = @as(usize, p.parent) - v.first
+                if parent_index < i {
+                    let parent = scene::part_at{ sc, i = @as(usize, p.parent) }
+                    let parent_model = scene::loaded_at{ sc, i = parent.loaded }.model
+                    let hook = mdl_anim::hook_transform{ model = parent_model, pose = parent.pose, name = p.hook } ifnull { math::mat4::identity{} }
+                    t = math::mat4::mul{ a = transforms[parent_index], b = hook }
+                }
+            }
+            transforms[i] = t
+            _ = mdl_render::add_draws{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = t, materials = l.materials, time = sc.time }
+            i = i + 1
+        }
+    }
+}

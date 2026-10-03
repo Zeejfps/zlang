@@ -1,4 +1,369 @@
-// The presentation: see docs/design/engine.md, "The scene".
+// The presentation of the world (docs/design/engine.md, "The scene"): the area's rooms and
+// their visibility (LYT, VIS), a visual for each object with a model (lib/scene/visual.ctx), and
+// the draws of one frame. Nothing here is game state: it mirrors `w` and can be rebuilt from it.
+//
+//   let mut sc = try scene::make{ arena = &scene_arena, heap = &h, scratch }
+//   try scene::load_area{ &sc, w, &dev }
+//   each frame: scene::sync{ &sc, w, &dev, dt }; scene::draw{ &sc, w, &frame, view }
 namespace scene {
-    const VERSION: u32 = 0
+    // A model that didn't upload (its meshes or textures failed on the device); the payload-free
+    // error keeps callers that name models from local buffers free of the escape check.
+    error upload_failed
+
+    // Visuals.by_id's value for an object that shows nothing.
+    const NO_VISUAL: usize = 0xFFFFFFFF
+
+    // A model on the GPU with a material per mesh, shared by every part that shows it.
+    struct Loaded { model: *mdl::Model, gpu: mdl_render::Gpu, materials: []mut render::Material }
+
+    // One model instance: a room, or a part of an object's visual (body, head, weapon).
+    struct Part {
+        loaded: usize,                  // index in Scene.loaded
+        pose: mdl_anim::Pose,
+        player: mdl_anim::Player,
+        anim: [32]u8,                   // the animation playing (lower case), anim_len bytes
+        anim_len: usize,
+        next: [32]u8,                   // what follows a one-shot (a door's opened1 after opening1)
+        next_len: usize,
+        parent: i32,                    // the part it hangs from (index in Scene.parts), -1 none
+        hook: []u8,                     // the parent's node it hangs at
+    }
+
+    struct Room {
+        name: resref::ResRef,
+        position: math::Vec3,
+        part: i32,                      // -1: no model
+        visible: bool,
+    }
+
+    struct Visual {
+        id: u32,
+        first: usize,                   // its parts: Scene.parts[first .. first + count], the root first
+        count: usize,
+        animation: u32,                 // the object's animation when last synced
+        state: u32,                     // a door's state, a placeable's animation, when last synced
+        room: i32,                      // the room under it, -1 unknown
+        creature_prefix: bool,          // S and L models name their animations with a `c` prefix
+        alive: bool,
+    }
+
+    struct Scene {
+        arena: *mut arena::Arena,       // models, poses, bindings: reset with the area
+        heap: *mut heap::Heap,
+        models: mdl_cache::Cache,
+        materials: material::Cache,
+        loaded: list::List(Loaded, arena::Arena),
+        loaded_by_key: map::Map([]u8, usize, arena::Arena),
+        bindings: map::Map([]u8, mdl_anim::Binding, arena::Arena),
+        missing_anims: map::Map([]u8, u32, arena::Arena),
+        parts: list::List(Part, arena::Arena),
+        rooms: list::List(Room, arena::Arena),
+        visuals: list::List(Visual, arena::Arena),
+        by_id: map::Map(u32, usize, arena::Arena),
+        time: f32,
+        current_room: i32,
+        ambient: math::Vec3,
+        fog: render::Fog,
+        drawn_rooms: u32,
+        drawn_objects: u32,
+    }
+
+    fn make { arena: *mut arena::Arena, heap: *mut heap::Heap, scratch: alloc::Bytes, rm: res::Manager } -> Scene {
+        return Scene{
+            arena, heap,
+            models = mdl_cache::new{ rm, keep = arena },
+            materials = material::new_cache{ heap, scratch },
+            loaded = list::new(Loaded, arena::Arena){ realloc = arena::alloc, heap = arena },
+            loaded_by_key = map::new([]u8, usize, arena::Arena){ realloc = arena::alloc, heap = arena, hash = map::hash_bytes, eq = slice::eq_bytes },
+            bindings = map::new([]u8, mdl_anim::Binding, arena::Arena){ realloc = arena::alloc, heap = arena, hash = map::hash_bytes, eq = slice::eq_bytes },
+            missing_anims = map::new([]u8, u32, arena::Arena){ realloc = arena::alloc, heap = arena, hash = map::hash_bytes, eq = slice::eq_bytes },
+            parts = list::new(Part, arena::Arena){ realloc = arena::alloc, heap = arena },
+            rooms = list::new(Room, arena::Arena){ realloc = arena::alloc, heap = arena },
+            visuals = list::new(Visual, arena::Arena){ realloc = arena::alloc, heap = arena },
+            by_id = map::new(u32, usize, arena::Arena){ realloc = arena::alloc, heap = arena, hash = map::hash_u32, eq = map::eq_u32 },
+            time = 0.0, current_room = -1, ambient = math::Vec3{ x = 0.35, y = 0.35, z = 0.35 }, fog = render::no_fog{},
+            drawn_rooms = 0, drawn_objects = 0,
+        }
+    }
+
+    // ---- models
+
+    // A heap-free key in the scene arena: the parts joined by '|', lower case.
+    fn key_of { mut sc: Scene, a: []u8, b: []u8 } -> ![]u8 {
+        let out = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(u8){}, count = a.len + 1 + b.len }
+        let mut i: usize = 0
+        while i < a.len {
+            out[i] = ascii::to_lower{ c = a[i] }
+            i = i + 1
+        }
+        out[a.len] = '|'
+        i = 0
+        while i < b.len {
+            out[a.len + 1 + i] = ascii::to_lower{ c = b[i] }
+            i = i + 1
+        }
+        return out
+    }
+
+    // The model `name` on the GPU (loaded once per name, texture override and envmap); null if it
+    // isn't there. `body_texture`, when not empty, replaces the diffuse texture of meshes whose
+    // texture starts with its first four letters (a B-type body's tex<L>NN, models-usage.md).
+    fn load_model { mut sc: Scene, mut w: world::World, mut dev: gpu::Device, name: []u8, body_texture: []u8, envmap: []u8 } -> !?usize {
+        let mut variant: [40]u8
+        let mut n: usize = 0
+        let mut i: usize = 0
+        while i < body_texture.len and n < 20 {
+            variant[n] = body_texture[i]
+            n = n + 1
+            i = i + 1
+        }
+        variant[n] = '/'
+        n = n + 1
+        i = 0
+        while i < envmap.len and n < 40 {
+            variant[n] = envmap[i]
+            n = n + 1
+            i = i + 1
+        }
+        let key = try key_of{ &sc, a = name, b = variant[..n] }
+        let have = map::get{ m = sc.loaded_by_key, key }
+        if have != null { return have }
+        let model = mdl_cache::get{ fs = &w.fs, cache = &sc.models, name } ifnull { return null }
+        let g = mdl_render::upload(arena::Arena){ &dev, realloc = arena::alloc, heap = sc.arena, model } iferr { return upload_failed }
+        let mats = try alloc::resize(render::Material, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(render::Material){}, count = model.meshes.len }
+        i = 0
+        while i < model.meshes.len {
+            let m = model.meshes[i]
+            mats[i] = mdl_render::base_material{ mesh = m }
+            if i < g.meshes.len and g.meshes[i] != null {
+                let mut diffuse = m.textures[0]
+                if body_texture.len >= 4 and diffuse.len >= 4 and ci::eq{ a = diffuse[..4], b = body_texture[..4] } {
+                    if res::find_texture{ rm = w.rm.*, name = body_texture } != null { diffuse = body_texture }
+                }
+                let mut mat = material::for_mesh{ cache = &sc.materials, fs = &w.fs, &dev, rm = w.rm.*, desc = material::MeshDesc{
+                    diffuse, lightmap = m.textures[1], lightmapped = m.lightmapped,
+                    transparency_hint = m.transparency_hint, alpha = 1.0, self_illum = math::vec3::zero{}, envmap,
+                } }
+                mat.sort = mats[i].sort
+                mats[i] = mat
+            }
+            i = i + 1
+        }
+        try list::push{ list = &sc.loaded, item = Loaded{ model, gpu = g, materials = mats } }
+        let index = sc.loaded.len - 1
+        try map::put{ m = &sc.loaded_by_key, key, value = index }
+        return index
+    }
+
+    fn loaded_at { sc: *Scene, i: usize } -> Loaded { return list::items{ list = sc.loaded }[i] }
+
+    // A new part showing loaded model `loaded`; its index.
+    fn add_part { mut sc: Scene, loaded: usize, parent: i32, hook: []u8 } -> !usize {
+        let model = loaded_at{ sc = &sc, i = loaded }.model
+        let pose = try mdl_anim::make_pose(arena::Arena){ realloc = arena::alloc, heap = sc.arena, model }
+        try list::push{ list = &sc.parts, item = Part{
+            loaded, pose, player = mdl_anim::new_player{}, anim = [0; 32], anim_len = 0, next = [0; 32], next_len = 0, parent, hook,
+        } }
+        return sc.parts.len - 1
+    }
+
+    fn part_at { sc: *Scene, i: usize } -> *mut Part { return list::at{ list = sc.parts, i } }
+
+    // The binding of animation `name` to the part's model, found along its supermodel chain and
+    // kept; null if the chain has no such animation.
+    fn binding_for { mut sc: Scene, mut w: world::World, model: *mdl::Model, name: []u8 } -> ?mdl_anim::Binding {
+        let key = key_of{ &sc, a = model.name, b = name } iferr { return null }
+        let have = map::get{ m = sc.bindings, key }
+        if have != null { return have }
+        if map::get{ m = sc.missing_anims, key } != null { return null }
+        // One bind record per (model, animation) the scene ever binds (friction/engine.md).
+        let found = mdl_anim::find{ model, name, lookup = mdl_cache::get{ fs = &w.fs, cache = &sc.models, _ } } ifnull {
+            map::put{ m = &sc.missing_anims, key, value = 1 } iferr {}
+            return null
+        }
+        let b = mdl_anim::bind(arena::Arena){ realloc = arena::alloc, heap = sc.arena, model, animation = found.animation } iferr { return null }
+        map::put{ m = &sc.bindings, key, value = b } iferr {}
+        return b
+    }
+
+    // Starts animation `name` on a part (no change if it already plays it); false if the model
+    // has no such animation.
+    fn play { mut sc: Scene, mut w: world::World, part: usize, name: []u8, looping: bool, speed: f32, transition: f32 } -> bool {
+        let p = part_at{ sc = &sc, i = part }
+        if p.anim_len == name.len and ci::eq{ a = p.anim[..p.anim_len], b = name } { return true }
+        let model = loaded_at{ sc = &sc, i = p.loaded }.model
+        let b = binding_for{ &sc, &w, model, name } ifnull { return false }
+        mdl_anim::play{ player = &p.player, binding = b, looping, speed, transition }
+        let n = if name.len < 32 { name.len } else { 32 }
+        let mut i: usize = 0
+        while i < n {
+            p.anim[i] = ascii::to_lower{ c = name[i] }
+            i = i + 1
+        }
+        p.anim_len = n
+        p.next_len = 0
+        return true
+    }
+
+    // ---- the area
+
+    // The rooms of the area's layout, each with its model and looping animation.
+    fn load_area { mut sc: Scene, mut w: world::World, mut dev: gpu::Device } -> ! {
+        let layout = w.layout ifnull { return }
+        let mut i: usize = 0
+        while i < layout.rooms.len {
+            let r = layout.rooms[i]
+            i = i + 1
+            let mut key = r.model
+            let name = resref::bytes{ r = &key }
+            let mut part: i32 = -1
+            let loaded = try load_model{ &sc, &w, &dev, name, body_texture = "", envmap = "" }
+            if loaded != null {
+                let p = try add_part{ &sc, loaded, parent = -1, hook = "" }
+                part = @as(i32, p)
+                _ = play{ &sc, &w, part = p, name = "animloop1", looping = true, speed = 1.0, transition = 0.0 }
+            }
+            try list::push{ list = &sc.rooms, item = Room{ name = r.model, position = math::Vec3{ x = r.x, y = r.y, z = r.z }, part, visible = true } }
+        }
+        let ao = world::object{ w = &w, id = w.area }
+        if ao != null {
+            if obj::area{ o = ao } is some{ value = a } {
+                sc.ambient = color_of{ bgr = a.dyn_ambient }
+                if sc.ambient.x + sc.ambient.y + sc.ambient.z < 0.05 { sc.ambient = math::Vec3{ x = 0.3, y = 0.3, z = 0.3 } }
+                if a.fog_on {
+                    sc.fog = render::Fog{ on = true, color = color_of{ bgr = a.fog_color }, near = a.fog_near, far = a.fog_far }
+                }
+            }
+        }
+    }
+
+    // An ARE colour (0x00BBGGRR) as RGB in 0..1.
+    fn color_of { bgr: u32 } -> math::Vec3 {
+        return math::Vec3{
+            x = @as(f32, bgr & 0xFF) / 255.0,
+            y = @as(f32, (bgr >> 8) & 0xFF) / 255.0,
+            z = @as(f32, (bgr >> 16) & 0xFF) / 255.0,
+        }
+    }
+
+    // Which rooms show from `room` (VIS; everything when there is no VIS, no entry, or no room).
+    fn update_visibility { mut sc: Scene, w: *world::World, room: i32 } {
+        sc.current_room = room
+        let rooms = list::items{ list = sc.rooms }
+        let v = w.vis
+        let mut i: usize = 0
+        while i < rooms.len {
+            rooms[i].visible = true
+            if room >= 0 and @as(usize, room) < rooms.len and v != null and @as(usize, room) != i {
+                let mut from = rooms[@as(usize, room)].name
+                let mut to = rooms[i].name
+                rooms[i].visible = vis::sees{ v, from = resref::bytes{ r = &from }, to = resref::bytes{ r = &to } }
+            }
+            i = i + 1
+        }
+    }
+
+    // ---- each frame
+
+    // Mirrors the world: visuals for new objects, gone ones dropped, transforms and animations
+    // brought up to date, every animation advanced by `dt`.
+    fn sync { mut sc: Scene, mut w: world::World, mut dev: gpu::Device, dt: f32 } {
+        sc.time = sc.time + dt
+        let visuals = list::items{ list = sc.visuals }
+        let mut i: usize = 0
+        while i < visuals.len {
+            visuals[i].alive = false
+            i = i + 1
+        }
+        let all = list::items{ list = w.objects.all }
+        i = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed { continue }
+            let have = map::get{ m = sc.by_id, key = o.id }
+            let mut index: usize = 0
+            if have != null { index = have } else {
+                let made = visual::create{ &sc, &w, &dev, o } iferr err{ error } {
+                    world::prefix{ w = &w }
+                    _ = @fmt(&w.io, "visual {} ({}): {}\n", o.id, o.tag, error)
+                    null
+                }
+                if made == null {
+                    map::put{ m = &sc.by_id, key = o.id, value = NO_VISUAL } iferr {}
+                    continue
+                }
+                index = made
+            }
+            if index == NO_VISUAL { continue }
+            let v = list::at{ list = sc.visuals, i = index }
+            v.alive = true
+            visual::update{ &sc, &w, v, o, dt }
+        }
+        // Rooms animate too.
+        let rooms = list::items{ list = sc.rooms }
+        i = 0
+        while i < rooms.len {
+            if rooms[i].part >= 0 { advance_part{ &sc, &w, part = @as(usize, rooms[i].part), dt } }
+            i = i + 1
+        }
+    }
+
+    fn advance_part { mut sc: Scene, mut w: world::World, part: usize, dt: f32 } {
+        let p = part_at{ sc = &sc, i = part }
+        mdl_anim::advance{ player = &p.player, dt, on_event = mdl_anim::ignore_event }
+        if p.next_len > 0 and mdl_anim::is_done{ player = p.player } {
+            let mut next: [32]u8 = p.next
+            let n = p.next_len
+            p.next_len = 0
+            _ = play{ &sc, &w, part, name = next[..n], looping = true, speed = 1.0, transition = 0.0 }
+        }
+        let q = part_at{ sc = &sc, i = part }
+        let model = loaded_at{ sc = &sc, i = q.loaded }.model
+        mdl_anim::evaluate{ model, player = q.player, pose = q.pose }
+    }
+
+    // Adds the frame's draws: the rooms visible from the leader's room, their lights, and every
+    // live visual in a visible room.
+    fn draw { mut sc: Scene, w: *world::World, mut frame: render::Frame, view: u32 } {
+        sc.drawn_rooms = 0
+        sc.drawn_objects = 0
+        let rooms = list::items{ list = sc.rooms }
+        let mut i: usize = 0
+        while i < rooms.len {
+            let r = rooms[i]
+            i = i + 1
+            if not r.visible or r.part < 0 { continue }
+            let p = part_at{ sc = &sc, i = @as(usize, r.part) }
+            let l = loaded_at{ sc = &sc, i = p.loaded }
+            let instance = math::mat4::translation{ t = r.position }
+            add_lights{ &frame, model = l.model, pose = p.pose, instance }
+            _ = mdl_render::add_draws{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = instance, materials = l.materials, time = sc.time }
+            sc.drawn_rooms = sc.drawn_rooms + 1
+        }
+        let visuals = list::items{ list = sc.visuals }
+        i = 0
+        while i < visuals.len {
+            let v = visuals[i]
+            i = i + 1
+            if not v.alive { continue }
+            if v.room >= 0 and @as(usize, v.room) < rooms.len and not rooms[@as(usize, v.room)].visible { continue }
+            let o = world::object{ w, id = v.id } ifnull { continue }
+            visual::draw{ sc = &sc, v = &v, o, &frame, view }
+            sc.drawn_objects = sc.drawn_objects + 1
+        }
+    }
+
+    // A model's lights as frame lights (the room's light nodes light dynamic objects).
+    fn add_lights { mut frame: render::Frame, model: *mdl::Model, pose: mdl_anim::Pose, instance: math::Mat4 } {
+        let mut i: usize = 0
+        while i < model.lights.len {
+            let l = model.lights[i]
+            let p = pose.lights[i]
+            i = i + 1
+            if l.ambient_only or p.radius <= 0.0 { continue }
+            let at = math::mat4::transform_point{ m = math::mat4::mul{ a = instance, b = pose.world[l.node] }, p = math::vec3::zero{} }
+            render::add_light{ &frame, light = render::Light{ position = at, color = math::vec3::scale{ v = p.color, s = p.multiplier }, radius = p.radius } }
+        }
+    }
 }

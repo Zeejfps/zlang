@@ -1,0 +1,118 @@
+// The chase camera (docs/re/movement.md 2.2, 2.3): behind and above the leader at the area's
+// camerastyle.2da row, turned by the rotate keys through the original's rate integrator, its
+// distance easing back to the style's after collisions, looking at the leader with a fixed pitch.
+namespace cam {
+    struct Style { distance: f32, pitch: f32, height: f32, fov: f32 }
+
+    struct Camera {
+        style: Style,
+        yaw: f32,               // radians; 0 looks along +y, forward = (-sin yaw, cos yaw)
+        rate: f32,              // degrees per second, the rotate keys' integrator
+        h: f32,                 // the current horizontal distance to the look-at point
+        started: bool,
+        eye: math::Vec3,
+        look: math::Vec3,
+        dir: math::Vec3,
+        stops: [64]bool,        // surface materials a camera ray stops at: all but triggers (30)
+    }
+
+    // Keyboard camera defaults (movement.md 2.3): 200 deg/s, 500 deg/s^2 up, 2000 deg/s^2 down.
+    const DPS: f32 = 200.0
+    const ACCELERATION: f32 = 500.0
+    const DECELERATION: f32 = 2000.0
+
+    fn new {} -> Camera {
+        let mut stops = [true; 64]
+        stops[30] = false
+        return Camera{
+            style = Style{ distance = 6.25, pitch = 80.0, height = 3.5, fov = 55.0 }, yaw = 0.0, rate = 0.0, h = 3.2,
+            started = false, eye = math::vec3::zero{}, look = math::vec3::zero{}, dir = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, stops,
+        }
+    }
+
+    // The area's style row (without the table: the chase camera's fallback, movement.md 2.2).
+    fn set_style { mut c: Camera, t: twoda::Table, row: u32 } {
+        let r = @as(usize, row)
+        c.style.distance = twoda::get_float{ t, row = r, column = "distance" } ifnull 6.25
+        c.style.pitch = twoda::get_float{ t, row = r, column = "pitch" } ifnull 80.0
+        c.style.height = twoda::get_float{ t, row = r, column = "height" } ifnull 3.5
+        let fov = twoda::get_float{ t, row = r, column = "viewangle" } ifnull 55.0
+        c.style.fov = if fov <= 0.0 { 55.0 } else { fov }
+    }
+
+    fn forward { yaw: f32 } -> math::Vec3 {
+        return math::Vec3{ x = -math::sinf{ x = yaw }, y = math::cosf{ x = yaw }, z = 0.0 }
+    }
+
+    // One update: `turn` is the rotate keys' input (-1..1, positive turns left), `target` the
+    // leader, `look_height` its head height above its feet.
+    fn update { mut c: Camera, w: *world::World, target: u32, look_height: f32, turn: f32, dt: f32 } {
+        let o = world::object{ w, id = target } ifnull { return }
+        let look = math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + look_height }
+        if not c.started {
+            // SnapBehindTarget: the yaw from the target's facing.
+            c.yaw = math::atan2f{ y = -o.orientation.x, x = o.orientation.y }
+            c.h = c.style.distance
+            c.started = true
+        }
+        // The rate integrator (CRateIntegrator), dt clamped to 0.2 s.
+        let step = math::min{ a = dt, b = 0.2 }
+        if turn != 0.0 {
+            c.rate = c.rate + (ACCELERATION * turn - (ACCELERATION / DPS) * c.rate) * step
+        } else {
+            c.rate = c.rate - (DECELERATION / DPS) * c.rate * step
+            if math::abs{ x = c.rate } < 0.01 { c.rate = 0.0 }
+        }
+        c.yaw = c.yaw + math::radians{ degrees = c.rate * step }
+        // The distance error halves every frame (ComputeFollowPosition).
+        c.h = c.style.distance + 0.5 * (c.h - c.style.distance)
+        let f = forward{ yaw = c.yaw }
+        let mut eye = math::Vec3{ x = look.x - f.x * c.h, y = look.y - f.y * c.h, z = look.z + c.style.height }
+        eye = collide{ c = &c, w, look, eye }
+        c.h = math::sqrtf{ x = (eye.x - look.x) * (eye.x - look.x) + (eye.y - look.y) * (eye.y - look.y) }
+        // Look toward the leader, pitched down by 90 - PITCH degrees.
+        let dx = look.x - eye.x
+        let dy = look.y - eye.y
+        let len = math::sqrtf{ x = dx * dx + dy * dy }
+        let hx = if len > 0.001 { dx / len } else { f.x }
+        let hy = if len > 0.001 { dy / len } else { f.y }
+        let down = math::radians{ degrees = 90.0 - c.style.pitch }
+        let cd = math::cosf{ x = down }
+        c.dir = math::Vec3{ x = hx * cd, y = hy * cd, z = -math::sinf{ x = down } }
+        c.eye = eye
+        c.look = look
+    }
+
+    // Pulls the camera in front of walls: a ray from the look-at point to the camera against
+    // every room's walkmesh (ours: the original casts four rays against the rooms' AABB meshes
+    // and the scene objects, movement.md 2.3).
+    fn collide { c: *Camera, w: *world::World, look: math::Vec3, eye: math::Vec3 } -> math::Vec3 {
+        let d = math::vec3::sub{ a = eye, b = look }
+        let len = math::vec3::length{ v = d }
+        if len < 0.01 { return eye }
+        let ray = math::ray::make{ origin = look, dir = math::vec3::scale{ v = d, s = 1.0 / len } }
+        let rooms = list::items{ list = w.walk.rooms }
+        let mut best = len
+        let mut i: usize = 0
+        while i < rooms.len {
+            let mesh = rooms[i].mesh
+            i = i + 1
+            if mesh == null { continue }
+            let hit = bwm::cast_ray{ w = mesh, ray, max_t = best, stops = c.stops[..] } ifnull { continue }
+            if hit.t < best { best = hit.t }
+        }
+        if best >= len { return eye }
+        let pulled = math::max{ a = best - 0.25, b = 0.3 }
+        return math::vec3::add_scaled{ a = look, b = ray.dir, s = pulled }
+    }
+
+    // The render camera for an aspect ratio.
+    fn render_camera { c: *Camera, aspect: f32 } -> render::Camera {
+        let at = math::vec3::add{ a = c.eye, b = c.dir }
+        return render::Camera{
+            view = math::mat4::look_at{ eye = c.eye, at, up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } },
+            proj = math::mat4::perspective{ fovy = math::radians{ degrees = c.style.fov }, aspect, near = 0.1, far = 1000.0 },
+            eye = c.eye,
+        }
+    }
+}

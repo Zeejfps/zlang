@@ -1,0 +1,179 @@
+// Keyboard control of the party leader (docs/re/movement.md 1.2-1.4): the forward and strafe
+// axes, turned by the camera's yaw, integrated into a velocity, the leader turning at the
+// camerastyle rates and moving along its facing on the walkmesh with sliding; its new position
+// goes straight into the world object, with the trigger bookkeeping. The default-action key uses
+// the object in front of the leader (door: open, placeable: use, creature: talk).
+namespace ctl {
+    struct Keys {
+        forward: bool,
+        back: bool,
+        strafe_left: bool,
+        strafe_right: bool,
+        turn_left: bool,            // camera rotate keys
+        turn_right: bool,
+        action: bool,               // the default-action key went down this frame
+    }
+
+    fn no_keys {} -> Keys {
+        return Keys{ forward = false, back = false, strafe_left = false, strafe_right = false, turn_left = false, turn_right = false, action = false }
+    }
+
+    struct Control {
+        vx: f32,                    // velocity, m/s
+        vy: f32,
+        min_turn: f32,              // degrees per second (camerastyle MinTurnRate, MaxTurnRate)
+        max_turn: f32,
+    }
+
+    fn new {} -> Control { return Control{ vx = 0.0, vy = 0.0, min_turn = 150.0, max_turn = 1500.0 } }
+
+    fn set_style { mut ctl: Control, t: twoda::Table, row: u32 } {
+        ctl.min_turn = twoda::get_float{ t, row = @as(usize, row), column = "minturnrate" } ifnull 150.0
+        ctl.max_turn = twoda::get_float{ t, row = @as(usize, row), column = "maxturnrate" } ifnull 1500.0
+    }
+
+    // The camera's rotate input for these keys (positive turns left).
+    fn turn_input { keys: Keys } -> f32 {
+        let mut t: f32 = 0.0
+        if keys.turn_left { t = t + 1.0 }
+        if keys.turn_right { t = t - 1.0 }
+        return t
+    }
+
+    // One frame of control: `yaw` is the camera's (radians, 0 along +y).
+    fn update { mut ctl: Control, mut w: world::World, keys: Keys, yaw: f32, dt: f32 } {
+        let id = w.pc
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        if c.dead or dt <= 0.0 { return }
+        if keys.action { default_action{ &w, id } }
+        let step = math::min{ a = dt, b = 1.0 }
+        // The input vector in the camera's frame (x right, y forward), normalised on diagonals.
+        let mut ix: f32 = 0.0
+        let mut iy: f32 = 0.0
+        if keys.forward { iy = iy + 1.0 }
+        if keys.back { iy = iy - 1.0 }
+        if keys.strafe_right { ix = ix + 1.0 }
+        if keys.strafe_left { ix = ix - 1.0 }
+        if ix != 0.0 and iy != 0.0 {
+            ix = ix * 0.70710678
+            iy = iy * 0.70710678
+        }
+        let has_input = ix != 0.0 or iy != 0.0
+        // Input cancels whatever the leader was doing (movement.md 1.4; ours: at once).
+        if has_input and o.actions.len > 0 { actions::clear_all{ &w, id } }
+        let o2 = world::object{ w = &w, id } ifnull { return }
+        let c2 = obj::creature{ o = o2 } ifnull { return }
+        let fx = -math::sinf{ x = yaw }
+        let fy = math::cosf{ x = yaw }
+        let ux = fx * iy + fy * ix
+        let uy = fy * iy - fx * ix
+        let vmax = c2.run_rate
+        // Turning toward the desired heading, fast when slow (movement.md 1.2 step 5).
+        let speed = math::sqrtf{ x = ctl.vx * ctl.vx + ctl.vy * ctl.vy }
+        if has_input and speed > 0.1 {
+            let want = math::atan2f{ y = uy, x = ux }
+            let have = math::atan2f{ y = o2.orientation.y, x = o2.orientation.x }
+            let mut delta = want - have
+            while delta > math::PI { delta = delta - 2.0 * math::PI }
+            while delta < -math::PI { delta = delta + 2.0 * math::PI }
+            let rate = ctl.min_turn + (ctl.max_turn - ctl.min_turn) * (1.0 - math::min{ a = speed / vmax, b = 1.0 })
+            let max_step = math::radians{ degrees = rate * step }
+            let turn = math::clamp{ x = delta, lo = -max_step, hi = max_step }
+            let heading = have + turn
+            world::set_orientation{ o = o2, v = math::Vec3{ x = math::cosf{ x = heading }, y = math::sinf{ x = heading }, z = 0.0 } }
+        } else if has_input and speed <= 0.1 {
+            // From standstill the original starts the velocity first; face the input at once so
+            // the first step goes where the keys say (ours).
+            world::set_orientation{ o = o2, v = math::Vec3{ x = ux, y = uy, z = 0.0 } }
+        }
+        // Velocity: v approaches u * vmax (movement.md 1.2 step 6; K = 15, ours).
+        if not has_input and math::abs{ x = ctl.vx } < 0.25 and math::abs{ x = ctl.vy } < 0.25 {
+            ctl.vx = 0.0
+            ctl.vy = 0.0
+        } else {
+            let k: f32 = 15.0
+            let decay = math::expf{ x = -step * k / vmax }
+            ctl.vx = ux * vmax + (ctl.vx - ux * vmax) * decay
+            ctl.vy = uy * vmax + (ctl.vy - uy * vmax) * decay
+        }
+        let v = math::sqrtf{ x = ctl.vx * ctl.vx + ctl.vy * ctl.vy }
+        c2.speed = v
+        if v > 1.0 {
+            // Move along the facing by |v| dt (movement.md 1.2 step 7), sliding along what blocks.
+            let d = v * step
+            let from = o2.position
+            let to = math::Vec3{ x = from.x + o2.orientation.x * d, y = from.y + o2.orientation.y * d, z = from.z }
+            let moved = slide{ &w, from, to }
+            if moved != null {
+                world::set_position{ o = o2, p = moved }
+                movement::cross_volumes{ &w, id, from, to = moved }
+            } else {
+                ctl.vx = 0.0
+                ctl.vy = 0.0
+            }
+            let o3 = world::object{ w = &w, id } ifnull { return }
+            world::set_animation{ o = o3, id = if v > 2.5 { obj::ANIM_RUN } else { obj::ANIM_WALK }, speed = 1.0 }
+        } else if o2.actions.len == 0 and (o2.animation == obj::ANIM_RUN or o2.animation == obj::ANIM_WALK) {
+            world::set_animation{ o = o2, id = obj::ANIM_STAND, speed = 1.0 }
+        }
+    }
+
+    // Where a step from `from` toward `to` ends: the whole step, else its x or y part alone
+    // (ours, for the original's six slide attempts along the edge it hit), else null.
+    fn slide { mut w: world::World, from: math::Vec3, to: math::Vec3 } -> ?math::Vec3 {
+        let z = walkmap::step_to{ m = &w.walk, from, to }
+        if z != null { return math::Vec3{ x = to.x, y = to.y, z } }
+        let tx = math::Vec3{ x = to.x, y = from.y, z = from.z }
+        let zx = walkmap::step_to{ m = &w.walk, from, to = tx }
+        let ty = math::Vec3{ x = from.x, y = to.y, z = from.z }
+        let zy = walkmap::step_to{ m = &w.walk, from, to = ty }
+        let dx = math::abs{ x = to.x - from.x }
+        let dy = math::abs{ x = to.y - from.y }
+        if zx != null and (zy == null or dx >= dy) { return math::Vec3{ x = tx.x, y = tx.y, z = zx } }
+        if zy != null { return math::Vec3{ x = ty.x, y = ty.y, z = zy } }
+        return null
+    }
+
+    // The default action on the nearest door, useable placeable or creature with a
+    // conversation in front of the leader, within 3 m (movement.md 7.4).
+    fn default_action { mut w: world::World, id: u32 } {
+        let me = world::object{ w = &w, id } ifnull { return }
+        let all = list::items{ list = w.objects.all }
+        let mut best = obj::INVALID
+        let mut best_d: f32 = 3.0
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed or o.id == id { continue }
+            let usable = match o.ext {
+                door{ d } => { d.state == obj::DoorState::closed and not d.static }
+                placeable{ p } => { p.useable }
+                creature => { not resref::is_empty{ r = o.conversation } }
+                else => { false }
+            }
+            if not usable { continue }
+            let dx = o.position.x - me.position.x
+            let dy = o.position.y - me.position.y
+            let d = math::sqrtf{ x = dx * dx + dy * dy }
+            if d >= best_d or d < 0.001 { continue }
+            if (dx * me.orientation.x + dy * me.orientation.y) / d < 0.3 { continue }
+            best = o.id
+            best_d = d
+        }
+        let target = world::object{ w = &w, id = best } ifnull { return }
+        let kind = match target.kind {
+            door => { actions::Kind::open_door }
+            placeable => { actions::Kind::use_object }
+            else => { actions::Kind::dialog_object }
+        }
+        let mut a = actions::make{ kind }
+        a.params[0] = actions::Param::object{ id = best }
+        if w.log.actions {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "player default action on {} ({})\n", best, target.tag)
+        }
+        _ = actions::add{ &w, id, action = a, force = false }
+    }
+}

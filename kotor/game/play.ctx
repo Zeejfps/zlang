@@ -1,6 +1,159 @@
-// The live and headless loop with rendering (docs/design/engine.md, "The frame").
+// The loop with a window (docs/design/engine.md, "The frame"): input, the world, the scene, the
+// camera, the frame drawn; live, or headless with a fixed step, scripted input and screenshots.
 namespace play {
+    // One scripted input line: `FRAME down KEY`, `FRAME up KEY`.
+    struct Scripted { frame: u64, down: bool, key: []u8 }
+
     fn run { mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut mem: Mem, opts: options::Options } -> !i32 {
+        try sdl::init{ &sdl, flags = sdl::INIT_VIDEO | sdl::INIT_EVENTS }
+        defer sdl::quit{ &sdl }
+        let scene_pages = mem::pages{ &mem, size = 805306368 } ifnull { return 1 }
+        let mut scene_arena = arena::new{ buf = scene_pages }
+        let texture_scratch = mem::pages{ &mem, size = 100663296 } ifnull { return 1 }
+        let config = render::make_config{ title = "kotor", width = @as(i32, opts.width), height = @as(i32, opts.height), hidden = opts.headless }
+        let mut dev = try gpu::open(arena::Arena){ &sdl, realloc = arena::alloc, heap = &scene_arena, config }
+        defer gpu::close{ &dev, &sdl }
+        let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, heap = &scene_arena, cap = render::default_capacity{} }
+        // The scene's own memory starts after the device's and the frame's.
+        let mut sc = scene::make{ arena = &scene_arena, heap = w.heap, scratch = texture_scratch, rm = w.rm.* }
+        try scene::load_area{ &sc, &w, &dev }
+        let mut camera = cam::new{}
+        let mut control = ctl::new{}
+        let ao = world::object{ w = &w, id = w.area }
+        if ao != null {
+            if obj::area{ o = ao } is some{ value = a } {
+                cam::set_style{ c = &camera, t = w.tables.camerastyle, row = a.camera_style }
+                ctl::set_style{ ctl = &control, t = w.tables.camerastyle, row = a.camera_style }
+            }
+        }
+        let script = try read_script{ &w, path = opts.input }
+        let mut next_line: usize = 0
+        let mut keys = ctl::no_keys{}
+        let freq = sdl::counter_frequency{ &sdl }
+        let mut last = sdl::counter{ &sdl }
+        let mut frame_no: u64 = 0
+        let mut quit = false
+        while not quit {
+            frame_no = frame_no + 1
+            if opts.frames > 0 and frame_no > opts.frames { break }
+            keys.action = false
+            // 1. Input: the window's events, or the script's lines for this frame.
+            while true {
+                let e = sdl::poll{ &sdl } ifnull { break }
+                match e {
+                    quit | close => { quit = true }
+                    key{ down, repeat, keycode } => {
+                        if not repeat { apply_key{ keys = &keys, keycode, down } }
+                        if down and keycode == sdl::key::ESCAPE { quit = true }
+                    }
+                    else => {}
+                }
+            }
+            while next_line < script.len and script[next_line].frame <= frame_no {
+                let s = script[next_line]
+                next_line = next_line + 1
+                apply_key{ keys = &keys, keycode = keycode_of{ name = s.key }, down = s.down }
+            }
+            // The step: fixed when headless, measured otherwise.
+            let now = sdl::counter{ &sdl }
+            let real = @as(f32, @as(f64, now - last) / @as(f64, freq))
+            last = now
+            let dt = if opts.dt > 0.0 { opts.dt } else { math::min{ a = real, b = 0.25 } }
+            // 3-6. The world.
+            clock::advance{ c = &w.clock, seconds = dt }
+            ctl::update{ ctl = &control, &w, keys, yaw = camera.yaw, dt = w.clock.dt }
+            world::tick{ &w, &vm, engine }
+            // 8. The outbox (HOOK(gui), the ambience lead's sound).
+            outbox::clear{ out = &w.out }
+            // 9-10. Scene and camera.
+            scene::sync{ &sc, &w, &dev, dt = w.clock.dt }
+            let look_height = leader_height{ w = &w }
+            cam::update{ c = &camera, w = &w, target = w.pc, look_height, turn = ctl::turn_input{ keys }, dt }
+            let pc = world::object{ w = &w, id = w.pc }
+            let room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
+            scene::update_visibility{ &sc, w = &w, room }
+            // 12. Render.
+            let size = gpu::screen_size{ dev }
+            render::begin_frame{ &frame, time = sc.time }
+            let mut view = render::make_view{ camera = cam::render_camera{ c = &camera, aspect = @as(f32, size.width) / @as(f32, size.height) } }
+            view.ambient = sc.ambient
+            view.fog = sc.fog
+            let vi = render::add_view{ &frame, view } ifnull { 0 }
+            scene::draw{ &sc, w = &w, &frame, view = vi }
+            gpu::submit{ &dev, frame = &frame } iferr err{ error } {
+                _ = @fmt(&w.io, "kotor: submit failed: {}\n", error)
+                return 1
+            }
+            let mut s: usize = 0
+            while s < opts.shot_count {
+                if opts.shots[s].frame == frame_no { try screenshot{ &w, &dev, heap = &scene_arena, path = opts.shots[s].path, frame_no } }
+                s = s + 1
+            }
+            if not opts.headless { gpu::present{ &dev, &sdl } }
+            arena::reset{ heap = w.scratch }
+        }
+        _ = @fmt(&w.io, "scene: {} rooms drawn of {}, {} objects drawn, {} visuals; textures {} loaded, {} missing\n",
+            sc.drawn_rooms, sc.rooms.len, sc.drawn_objects, sc.visuals.len, sc.materials.loaded, sc.materials.missing)
+        report::summary{ &w, routines = opts.report }
         return 0
+    }
+
+    // How high above the leader's feet the camera looks (ours: a humanoid's head; the original
+    // takes the HEAD_G node's height plus appearance.2da CameraHeightOffset).
+    fn leader_height { w: *world::World } -> f32 {
+        let o = world::object{ w, id = w.pc } ifnull { return 1.6 }
+        let c = obj::creature{ o } ifnull { return 1.6 }
+        let offset = twoda::get_float{ t = w.tables.appearance, row = @as(usize, c.appearance), column = "cameraheightoffset" } ifnull 0.0
+        return 1.6 + offset
+    }
+
+    fn apply_key { mut keys: ctl::Keys, keycode: i32, down: bool } {
+        if keycode == 'w' or keycode == sdl::key::UP { keys.forward = down }
+        else if keycode == 's' or keycode == sdl::key::DOWN { keys.back = down }
+        else if keycode == 'z' { keys.strafe_left = down }
+        else if keycode == 'c' { keys.strafe_right = down }
+        else if keycode == 'a' or keycode == sdl::key::LEFT { keys.turn_left = down }
+        else if keycode == 'd' or keycode == sdl::key::RIGHT { keys.turn_right = down }
+        else if keycode == 'r' or keycode == sdl::key::SPACE { if down { keys.action = true } }
+    }
+
+    // A key's SDL keycode by the name the input script uses (a letter, `up`, `space`, ...).
+    fn keycode_of { name: []u8 } -> i32 {
+        if name.len == 1 { return @as(i32, ascii::to_lower{ c = name[0] }) }
+        if ci::eq{ a = name, b = "up" } { return sdl::key::UP }
+        if ci::eq{ a = name, b = "down" } { return sdl::key::DOWN }
+        if ci::eq{ a = name, b = "left" } { return sdl::key::LEFT }
+        if ci::eq{ a = name, b = "right" } { return sdl::key::RIGHT }
+        if ci::eq{ a = name, b = "space" } { return sdl::key::SPACE }
+        if ci::eq{ a = name, b = "escape" } { return sdl::key::ESCAPE }
+        return 0
+    }
+
+    // The input script (`FRAME down KEY` / `FRAME up KEY` per line, # comments), in frame order.
+    fn read_script { mut w: world::World, path: []u8 } -> ![]Scripted {
+        if path.len == 0 { return slice::empty(Scripted){} }
+        let bytes = try fs::read_all(heap::Heap){ fs = &w.fs, heap = w.heap, realloc = heap::alloc, path }
+        let mut out = list::new(Scripted, heap::Heap){ realloc = heap::alloc, heap = w.heap }
+        let mut lines = text::Lines{ data = bytes, pos = 0 }
+        while true {
+            let line = text::next_line{ &lines } ifnull { break }
+            let mut words = text::Words{ s = line, pos = 0 }
+            let f = text::next_word{ &words } ifnull { continue }
+            if f.len == 0 or f[0] == '#' { continue }
+            let what = text::next_word{ &words } ifnull { continue }
+            let key = text::next_word{ &words } ifnull { continue }
+            try list::push{ list = &out, item = Scripted{ frame = @as(u64, text::scan_decimal{ s = f }), down = ci::eq{ a = what, b = "down" }, key } }
+        }
+        return list::items{ list = out }
+    }
+
+    fn screenshot { mut w: world::World, mut dev: gpu::Device, mut heap: arena::Arena, path: []u8, frame_no: u64 } -> ! {
+        let size = gpu::screen_size{ dev }
+        let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
+        defer _ = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = pixels, count = 0 }
+        _ = try gpu::read_screen{ &dev, into = pixels }
+        let image = png::Image{ width = size.width, height = size.height, rgba = pixels }
+        try png::save{ fs = &w.fs, realloc = arena::alloc, &heap, path, image, alpha = false, bottom_up = false }
+        _ = @fmt(&w.io, "frame {}: wrote {} ({}x{})\n", frame_no, path, size.width, size.height)
     }
 }
