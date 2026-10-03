@@ -1,0 +1,11 @@
+3 ui join carth
+4 ui stock
+6 ui menu equip
+9 ui click 441 544
+13 ui click 559 334
+17 ui click 760 380
+21 ui click 760 380
+24 ui menu inventory
+27 ui click 441 544
+30 ui menu equip
+33 ui inv

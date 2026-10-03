@@ -1,0 +1,9 @@
+3 ui join carth
+4 ui stock
+5 ui inv
+6 ui menu equip
+8 ui move 609 384
+12 ui click 609 384
+16 ui click 760 380
+20 ui click 760 380
+24 ui inv

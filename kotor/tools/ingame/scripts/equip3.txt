@@ -1,0 +1,18 @@
+3 ui join carth
+4 ui stock
+6 ui menu equip
+8 ui click 609 384
+12 ui click 760 380
+16 ui click 760 380
+20 ui click 509 384
+24 ui key return
+26 ui combat 1
+28 ui click 559 334
+32 ui key return
+34 ui race 5
+36 ui menu inventory
+38 ui menu equip
+42 ui move 559 284
+44 ui click 559 284
+48 ui key return
+50 ui inv
