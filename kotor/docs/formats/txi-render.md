@@ -81,14 +81,17 @@ not known; `GL_SRC_ALPHA, GL_ONE` is the safe choice, identical to `GL_ONE, GL_O
 majority.
 
 **`blending punchthrough`**: alpha-tested cut-outs (grass, leaves, grates, hair) (*community*):
-texels below a threshold are discarded, the rest drawn opaque with depth writes, no blending. All 56
-users have varying alpha (55 DXT5, 1 RGBA) (*data*). The threshold is not known; 0.5 is the usual
-choice.
+texels with alpha 0.35 or less are discarded, the rest drawn opaque (`ONE, ZERO`) with depth writes
+(*exe*). All 56 users have varying alpha (55 DXT5, 1 RGBA) (*data*).
 
-**No `blending` keyword**: alpha is not transparency by default. In env-mapped textures it is the
-reflection mask (below); otherwise whether the surface is drawn transparent at all is the model's
-decision (MDL doc). 630 DXT5/RGBA textures in tpa have varying alpha and no blending,
-environment, bump or lightmap keyword (*data*); most are area textures whose model decides.
+**No `blending` keyword**: the engine's default blend is ordinary alpha blending with depth writes
+and an alpha test of `> 0` (*exe*: [re/render-gui.md](../re/render-gui.md#materials-blending-and-alpha-test)),
+so alpha is transparency: scorch marks (`LHR_blst02`) and Dantooine's bushes and leaves
+(`LDA_bush*`, `LDA_leaf*`) are see-through without a keyword. In env-mapped, bumpy-shiny and
+bump-mapped textures the alpha is a mask for that effect instead (below), and those surfaces are
+solid in the game (*inferred*: the rancor's `c_rancor01` has AlphaMean 0.76 and a bump map).
+630 DXT5/RGBA textures in tpa have varying alpha and no blending, environment, bump or lightmap
+keyword (*data*). `punchthrough` cuts at alpha 0.35 (*exe*).
 
 ### Environment maps
 

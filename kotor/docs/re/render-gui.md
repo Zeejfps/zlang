@@ -226,6 +226,31 @@ layout. glDrawArrays is used only for particles, lines and debug drawing (0x0042
   0x00420440 / `CAurTexture::Bind` 0x004204f0, which record the binding in the six-entry cache
   0x007a683c and apply anisotropy (0x007a685c).
 
+### Materials: blending and alpha test
+
+A mesh's material object (constructor `0x0047b290`, our `CAurMaterial`; built by `0x0047b560` from
+up to four texture names, which reads each texture's TXI through `0x0047b110`) holds per texture
+layer a source and a destination blend factor, as indices into the table at `0x0073f270`:
+0 `GL_SRC_ALPHA`, 1 `GL_ONE_MINUS_SRC_ALPHA`, 2 `GL_ONE`, 3 `GL_ZERO`, 4 `GL_SRC_COLOR`, 5
+`GL_DST_COLOR`, 6 `GL_ONE_MINUS_DST_ALPHA`, 7 `GL_DST_ALPHA`. (high)
+
+- The constructor's default is (0, 1): **ordinary alpha blending** (`SRC_ALPHA,
+  ONE_MINUS_SRC_ALPHA`). (high)
+- The TXI keyword reader (`0x0047abd0`, which also takes `bumpmaptexture`, `bumpyshinytexture`,
+  `envmaptexture`, `decal`, `renderbmlmtype` and `wateralpha`) sets `blending additive` to (0, 2)
+  `SRC_ALPHA, ONE` and `blending punchthrough` to (2, 3) `ONE, ZERO`; any other value leaves the
+  default. (high)
+- Applying a layer (`0x0047af70`, from `CAurPartTriMesh::ApplyMaterial` 0x00473900 and ten
+  other draw paths; `0x0047b000` for layer 0) calls glBlendFunc with the pair, turns depth writes
+  **off only for (0, 2)** (additive), and sets the alpha test to `GREATER 0.35` (`0x00798a90`)
+  for (2, 3) and `GREATER 0` otherwise (the flag `0x00798a8c` that enables this is 1 in .data and
+  never written). (high)
+
+So a texture's alpha is transparency by default: blended, depth-written, only alpha 0 discarded;
+punch-through cuts at 0.35. The env-map and bump-map paths (register combiners / ARB programs,
+not traced) evidently don't use the diffuse alpha as opacity: env-mapped droids and the
+bump-mapped rancor (`c_rancor01`, AlphaMean 0.76) are solid in the game. (inferred)
+
 ### Shadows, grass, frame-buffer effects, options
 
 The client options loader (0x0061dbe0, which reads `[Graphics Options]`) calls small setters:
