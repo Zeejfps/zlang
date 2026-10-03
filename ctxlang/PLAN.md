@@ -348,6 +348,9 @@ in one step; `fixpoint.py` says when one is out of date.
 - The front end is over its budget: checking and lowering ctxc takes about 215 ms natively,
   against 100 ms for the check alone. It hasn't been profiled.
 - The C backend prints no `in fn` stack trace with a panic (see Open decisions).
+- On Linux and macOS, `mem::pages` clears its memory with memset (std/os/posix), touching every
+  page up front; calloc, as `mem::reserve` uses (ctxrt.c), would leave that to the OS. ctxc's
+  own arenas use `reserve`. Untested there, so left for a machine that can run it.
 - 20 corpus programs read temporary files that the test suite deletes once it's done.
   `tools/corpus.py` should copy those files into the case directory.
 - The interpreter is the only second implementation, and it runs only programs that just print:

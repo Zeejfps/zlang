@@ -1331,8 +1331,14 @@ namespace eval {
     // ---- extern fns
 
     fn external { mut m: M, f: ir::Func, base: usize, res: Addr } -> ! {
+        let s = f.symbol
+        if slice::eq_bytes{ a = s, b = "ctx_commit" } {
+            // arena::alloc's: making reserved memory usable, which this memory always is. So a
+            // const or a literal conversion may allocate from an arena.
+            try store{ &m, a = res, n = 1, v = 1 }
+            return
+        }
         if m.emulate {
-            let s = f.symbol
             if slice::eq_bytes{ a = s, b = "ctx_io_out" } {
                 // ctxrt.c's { ctx_slice buf; uint64_t len; } over a 64 KiB buffer
                 if m.stdout == 0 {

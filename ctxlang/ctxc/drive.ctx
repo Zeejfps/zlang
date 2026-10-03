@@ -81,7 +81,7 @@ namespace drive {
             return 2
         }
         let path = trim_slash{ path = args[1] }
-        let pages = mem::pages{ &mem, size = 16777216 } ifnull {
+        let pages = mem::reserve{ &mem, size = 16777216 } ifnull {
             io::eprintln{ &io, s = "out of memory" }
             return 1
         }
@@ -171,7 +171,7 @@ namespace drive {
             return 2
         }
         let path = trim_slash{ path = args[1] }
-        let pages = mem::pages{ &mem, size = 16777216 } ifnull {
+        let pages = mem::reserve{ &mem, size = 16777216 } ifnull {
             io::eprintln{ &io, s = "out of memory" }
             return 1
         }
