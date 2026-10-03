@@ -1,0 +1,134 @@
+// The creature census: every UTC in the install (every copy in every archive, modules and saves
+// included) goes through rules::read_creature, and the derived numbers are checked for sanity:
+// finite and in the ranges the original data keeps (docs/formats/gff-templates.md, the value
+// columns). A copy that fails a check is named once; the totals say how many there were.
+namespace check {
+    struct Census {
+        copies: i32,
+        parse_failed: i32,
+        anomalies: i32,
+        printed: i32,
+        jedi: i32,
+        droids: i32,
+        multiclass: i32,
+        classes: [9]i32,
+        max_level: i32,
+        level_sum: i64,
+        hp_min: i32,
+        hp_max: i32,
+        fp_max: i32,
+        ac_min: i32,
+        ac_max: i32,
+        bab_max: i32,
+        fort_min: i32,
+        fort_max: i32,
+    }
+
+    fn new_census {} -> Census {
+        return Census{
+            copies = 0, parse_failed = 0, anomalies = 0, printed = 0, jedi = 0, droids = 0, multiclass = 0,
+            classes = [0; 9], max_level = 0, level_sum = 0, hp_min = 100000, hp_max = 0, fp_max = 0,
+            ac_min = 1000, ac_max = 0, bab_max = 0, fort_min = 1000, fort_max = -1000,
+        }
+    }
+
+    fn wants_utc { kind: u16 } -> bool {
+        return kind == @as(u16, restype::Type::utc)
+    }
+
+    // Notes an anomaly; the first 30 are printed with the copy's name.
+    fn note_anomaly { mut io: Io, mut st: Census, copy: corpus::Copy, what: []u8, value: i64 } {
+        st.anomalies = st.anomalies + 1
+        if st.printed < 30 {
+            st.printed = st.printed + 1
+            _ = @fmt(&io, "census: {} in {}: {}\n", what, copy.name, value)
+        }
+    }
+
+    fn visit_creature { mut io: Io, mut st: Census, tables: *rules::Tables, mut scratch: arena::Arena, copy: corpus::Copy, data: []u8 } {
+        arena::reset{ heap = &scratch }
+        st.copies = st.copies + 1
+        let doc = gff::parse{ data, realloc = arena::alloc, heap = &scratch } iferr err{ error } {
+            st.parse_failed = st.parse_failed + 1
+            return
+        }
+        let mut c: rules::Creature
+        rules::read_creature{ tables, doc = &doc, s = gff::ROOT, out = &c }
+        let s = &c.stats
+        if c.nclasses == 0 { note_anomaly{ &io, &st, copy, what = "no class", value = 0 } }
+        if c.nclasses > 1 { st.multiclass = st.multiclass + 1 }
+        let mut i: usize = 0
+        while i < @as(usize, c.nclasses) {
+            let cl = c.classes[i].class
+            if cl < 0 or cl >= 9 {
+                note_anomaly{ &io, &st, copy, what = "class row", value = @as(i64, cl) }
+            } else {
+                st.classes[@as(usize, cl)] = st.classes[@as(usize, cl)] + 1
+                if cl >= 3 and cl <= 5 { st.jedi = st.jedi + 1 }
+            }
+            i = i + 1
+        }
+        if c.race == rules::race::DROID { st.droids = st.droids + 1 }
+        if s.level > 30 or s.level < 0 { note_anomaly{ &io, &st, copy, what = "level", value = @as(i64, s.level) } }
+        if s.level > st.max_level { st.max_level = s.level }
+        st.level_sum = st.level_sum + @as(i64, s.level)
+
+        let mut a: usize = 0
+        while a < 6 {
+            if s.abil[a] < 3 or s.abil[a] > 60 { note_anomaly{ &io, &st, copy, what = "ability score", value = @as(i64, s.abil[a]) } }
+            if s.abil_mod[a] < -4 or s.abil_mod[a] > 25 { note_anomaly{ &io, &st, copy, what = "ability modifier", value = @as(i64, s.abil_mod[a]) } }
+            a = a + 1
+        }
+        if s.bab < 0 or s.bab > s.level { note_anomaly{ &io, &st, copy, what = "base attack bonus", value = @as(i64, s.bab) } }
+        if s.bab > st.bab_max { st.bab_max = s.bab }
+        let mut w: usize = 0
+        while w < 3 {
+            let v = s.save_base[w]
+            if v < -5 or v > 150 { note_anomaly{ &io, &st, copy, what = "save", value = @as(i64, v) } }
+            if w == 0 {
+                if v < st.fort_min { st.fort_min = v }
+                if v > st.fort_max { st.fort_max = v }
+            }
+            w = w + 1
+        }
+        if s.max_hp < 1 or s.max_hp > 5000 { note_anomaly{ &io, &st, copy, what = "max hit points", value = @as(i64, s.max_hp) } }
+        if s.max_hp < st.hp_min { st.hp_min = s.max_hp }
+        if s.max_hp > st.hp_max { st.hp_max = s.max_hp }
+        if s.max_fp < 0 or s.max_fp > 1500 { note_anomaly{ &io, &st, copy, what = "max force points", value = @as(i64, s.max_fp) } }
+        if s.max_fp > st.fp_max { st.fp_max = s.max_fp }
+        let ac = 10 + s.ac_class + s.ac_natural + s.ac_armour + s.ac_shield + s.ac_deflection + s.ac_dodge
+        if ac < 5 or ac > 70 { note_anomaly{ &io, &st, copy, what = "armour class", value = @as(i64, ac) } }
+        if ac < st.ac_min { st.ac_min = ac }
+        if ac > st.ac_max { st.ac_max = ac }
+        if not (s.speed_factor >= 0.125 and s.speed_factor <= 1.5) { note_anomaly{ &io, &st, copy, what = "speed factor", value = 0 } }
+        let mut k: usize = 0
+        while k < rules::NUM_SKILLS {
+            if s.skill[k] < -20 or s.skill[k] > 127 { note_anomaly{ &io, &st, copy, what = "skill rank", value = @as(i64, s.skill[k]) } }
+            k = k + 1
+        }
+    }
+
+    // Reads every UTC and prints the census. Returns the number of anomalies.
+    fn run_census { mut io: Io, mut fs: Fs, mut heap: heap::Heap, mut r: Report, tables: *rules::Tables, game: []u8 } {
+        let buf = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = slice::empty(u8){}, count = 8 * 1024 * 1024 } iferr err{ error } {
+            fail{ &io, &r, name = "census: no memory for the scratch arena", detail = 0 }
+            return
+        }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = buf, count = 0 }
+        let mut scratch = arena::new{ buf }
+        let mut st = new_census{}
+        _ = corpus::each{ &fs, h = &heap, game, want = wants_utc, visit = visit_creature{ &io, &st, tables, &scratch, _ } } iferr err{ error } {
+            fail{ &io, &r, name = "census: walking the install failed", detail = 0 }
+            return
+        }
+        _ = @fmt(&io, "census: {} creature templates ({} unparsable), {} anomalies\n", st.copies, st.parse_failed, st.anomalies)
+        _ = @fmt(&io, "census: classes")
+        _ = @fmt(&io, " soldier {} scout {} scoundrel {} guardian {} consular {} sentinel {} combat droid {} expert droid {} minion {}\n",
+            st.classes[0], st.classes[1], st.classes[2], st.classes[3], st.classes[4], st.classes[5], st.classes[6], st.classes[7], st.classes[8])
+        _ = @fmt(&io, "census: multiclass {} droids {} max level {} mean level x100 {} max BAB {}\n",
+            st.multiclass, st.droids, st.max_level, if st.copies > 0 { st.level_sum * 100 / @as(i64, st.copies) } else { 0 }, st.bab_max)
+        _ = @fmt(&io, "census: max HP {}..{}, max FP up to {}, AC {}..{}, fortitude {}..{}\n", st.hp_min, st.hp_max, st.fp_max, st.ac_min, st.ac_max, st.fort_min, st.fort_max)
+        expect_eq{ &io, &r, name = "census: creatures with anomalies", got = @as(i64, st.anomalies), want = 0 }
+        expect_eq{ &io, &r, name = "census: unparsable creature templates", got = @as(i64, st.parse_failed), want = 0 }
+    }
+}

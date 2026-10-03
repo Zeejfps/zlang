@@ -52,10 +52,10 @@ namespace rt_pres {
         outbox::post{ out = &w.out, note = outbox::Note::no_clicks{ seconds } }
     }
 
+    // int PlayRumblePattern(int nPattern): no controller to rumble on PC; 0.
     fn rumble { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let pattern = try nwarg::int{ &vm, routine = nwscript::PlayRumblePattern, argc, i = 0 }
         outbox::post{ out = &w.out, note = outbox::Note::rumble{ pattern } }
-        // int PlayRumblePattern: whether a pad rumbled; no pad here.
         try nwvm::push_int{ &vm, v = 0 }
     }
 }

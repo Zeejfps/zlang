@@ -47,7 +47,7 @@ namespace cam {
 
     // One update: `turn` is the rotate keys' input (-1..1, positive turns left), `target` the
     // leader, `look_height` its head height above its feet.
-    fn update { mut c: Camera, w: *world::World, target: u32, look_height: f32, turn: f32, dt: f32 } {
+    fn update { mut c: Camera, w: *world::World, sc: *scene::Scene, target: u32, look_height: f32, turn: f32, dt: f32 } {
         let o = world::object{ w, id = target } ifnull { return }
         let look = math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + look_height }
         if not c.started {
@@ -69,7 +69,7 @@ namespace cam {
         c.h = c.style.distance + 0.5 * (c.h - c.style.distance)
         let f = forward{ yaw = c.yaw }
         let mut eye = math::Vec3{ x = look.x - f.x * c.h, y = look.y - f.y * c.h, z = look.z + c.style.height }
-        eye = collide{ c = &c, w, look, eye }
+        eye = collide{ c = &c, w, sc, look, eye }
         c.h = math::sqrtf{ x = (eye.x - look.x) * (eye.x - look.x) + (eye.y - look.y) * (eye.y - look.y) }
         // Look toward the leader, pitched down by 90 - PITCH degrees.
         let dx = look.x - eye.x
@@ -88,7 +88,7 @@ namespace cam {
     // Pulls the camera in front of walls: a ray from the look-at point to the camera against
     // every room's walkmesh (ours: the original casts four rays against the rooms' AABB meshes
     // and the scene objects, movement.md 2.3).
-    fn collide { c: *Camera, w: *world::World, look: math::Vec3, eye: math::Vec3 } -> math::Vec3 {
+    fn collide { c: *Camera, w: *world::World, sc: *scene::Scene, look: math::Vec3, eye: math::Vec3 } -> math::Vec3 {
         let d = math::vec3::sub{ a = eye, b = look }
         let len = math::vec3::length{ v = d }
         if len < 0.01 { return eye }
@@ -103,6 +103,9 @@ namespace cam {
             let hit = bwm::cast_ray{ w = mesh, ray, max_t = best, stops = c.stops[..] } ifnull { continue }
             if hit.t < best { best = hit.t }
         }
+        // And the drawn rooms: walls rise above what the walkmeshes model.
+        let drawn = scene::ray_hit{ sc, w, origin = look, dir = ray.dir, max_t = best }
+        if drawn != null and drawn < best { best = drawn }
         if best >= len { return eye }
         let pulled = math::max{ a = best - 0.25, b = 0.3 }
         return math::vec3::add_scaled{ a = look, b = ray.dir, s = pulled }

@@ -1,0 +1,29 @@
+// Routines: what a creature perceives (lib/engine/perception.ctx) and what its OnPerception
+// script is told.
+namespace rt_perc {
+    fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
+        match routine {
+            nwscript::GetObjectSeen => { try seen_or_heard{ &w, &vm, argc, routine, heard = false } }
+            nwscript::GetObjectHeard => { try seen_or_heard{ &w, &vm, argc, routine, heard = true } }
+            nwscript::GetLastPerceived => { try nwvm::push_object{ &vm, id = rt_cmd::self_ctx{ w = &w, vm = &vm }.last_perceived } }
+            nwscript::GetLastPerceptionSeen => { try push_bool{ &vm, b = rt_cmd::self_ctx{ w = &w, vm = &vm }.perceived_seen } }
+            nwscript::GetLastPerceptionHeard => { try push_bool{ &vm, b = rt_cmd::self_ctx{ w = &w, vm = &vm }.perceived_heard } }
+            nwscript::GetLastPerceptionVanished => { try push_bool{ &vm, b = rt_cmd::self_ctx{ w = &w, vm = &vm }.perceived_vanished } }
+            nwscript::GetLastPerceptionInaudible => { try push_bool{ &vm, b = rt_cmd::self_ctx{ w = &w, vm = &vm }.perceived_inaudible } }
+            else => { return false }
+        }
+        return true
+    }
+
+    fn push_bool { mut vm: nwvm::Vm, b: bool } -> ! { try nwvm::push_int{ &vm, v = if b { 1 } else { 0 } } }
+
+    // int GetObjectSeen(object oTarget, object oSource = OBJECT_SELF), GetObjectHeard likewise.
+    fn seen_or_heard { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, heard: bool } -> ! {
+        let target = try nwarg::object{ &vm, routine, argc, i = 0 }
+        let source = try nwarg::object{ &vm, routine, argc, i = 1 }
+        let e = perception::entry_of{ w = &w, viewer = source, target }
+        let mut v = false
+        if e != null { v = if heard { e.heard } else { e.seen } }
+        try push_bool{ &vm, b = v }
+    }
+}

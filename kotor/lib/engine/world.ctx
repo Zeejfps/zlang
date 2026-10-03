@@ -46,6 +46,7 @@ namespace world {
     struct Stats {
         calls: [772]u32,            // routine calls by id
         missing: [772]u32,          // calls no category implements (fell back to nwstub)
+        unbalanced: [772]bool,      // routines found leaving the stack wrong (reported once)
         script_runs: u32,
         faults: u32,
         events: u32,
@@ -75,6 +76,7 @@ namespace world {
         values: values::Store,
         walk: walkmap::Map,
         layout: ?lyt::Layout,
+        paths: ?pth::Graph,                 // the area's path points (module memory)
         vis: ?vis::Vis,
         tables: Tables,
         tlk: ?tlk::Table,                   // dialog.tlk (game/main loads it)
@@ -116,13 +118,13 @@ namespace world {
             scripts = scripts::new_cache{ heap },
             values = values::new{ heap },
             walk = walkmap::empty{ heap },
-            layout = null, vis = null,
+            layout = null, paths = null, vis = null,
             tables, tlk = null, globals,
             out = outbox::new{ heap },
             transition = null,
             arrival_waypoint = [0; 64], arrival_waypoint_len = 0,
             rng = Rng{ state = seed },
-            stats = Stats{ calls = [0; 772], missing = [0; 772], script_runs = 0, faults = 0, events = 0, objects_made = 0 },
+            stats = Stats{ calls = [0; 772], missing = [0; 772], unbalanced = [false; 772], script_runs = 0, faults = 0, events = 0, objects_made = 0 },
             log = elog::quiet{},
             doomed = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
             module_frame = false,
@@ -299,7 +301,10 @@ namespace world {
                 } } }
             }
             encounter => {
-                return obj::Ext::encounter{ e = try alloc::new(obj::Encounter, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Encounter{ active = true, polygon = slice::empty(math::Vec3){} } } }
+                return obj::Ext::encounter{ e = try alloc::new(obj::Encounter, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Encounter{
+                    active = true, polygon = slice::empty(math::Vec3){}, spawn_points = slice::empty(math::Vec4){},
+                    creatures = slice::empty(resref::ResRef){}, max_creatures = 1, rec_creatures = 1, player_only = true, spawned = false,
+                } } }
             }
             store => {
                 return obj::Ext::store{ st = try alloc::new(obj::Store, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Store{ markup = 100, markdown = 100 } } }
@@ -377,6 +382,7 @@ namespace world {
                 list::free{ list = &c.inventory }
                 list::free{ list = &c.path }
                 list::free{ list = &c.triggers }
+                list::free{ list = &c.perceived }
                 _ = alloc::resize(obj::Creature, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(c, 1), count = 0 }
             }
             door{ d } => {
@@ -408,6 +414,8 @@ namespace world {
             }
             encounter{ e } => {
                 _ = alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = e.polygon, count = 0 }
+                _ = alloc::resize(math::Vec4, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = e.spawn_points, count = 0 }
+                _ = alloc::resize(resref::ResRef, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = e.creatures, count = 0 }
                 _ = alloc::resize(obj::Encounter, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(e, 1), count = 0 }
             }
             store{ st } => { _ = alloc::resize(obj::Store, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = @slice(st, 1), count = 0 } }

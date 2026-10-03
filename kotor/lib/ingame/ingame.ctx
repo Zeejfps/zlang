@@ -1,0 +1,106 @@
+// The in-game interface (docs/design/hud.md): one Gui for everything that draws over a running
+// module. It owns the HUD, the menu bar and the menu panels; the game loop gives it events and
+// the world each frame and asks it to draw. Other systems that put panels on the screen
+// (dialogue) use `ui.gui` and its stack.
+//
+//   let ui = try ingame::make{ &w, &dev, mixer, scratch, width, height }       // after the module is entered
+//   used = ingame::handle_event{ ui, ev, scale_x, scale_y }                    // per SDL event: true, the GUI took it
+//   ingame::update{ ui, &w, &dev, dt }                                         // after the world's tick
+//   ingame::draw{ ui, &w, &dev, &frame }                                       // after the scene, before submit
+namespace ingame {
+    struct Ingame {
+        heap: *mut heap::Heap,
+        cache: *mut material::Cache,        // the GUI's textures: panels, portraits, icons
+        gui: gui::Gui,                      // shared with whoever else shows panels in game
+        hud: hud::Hud,
+        text: utf8::Builder(heap::Heap),    // scratch for formatted text
+        width: i32, height: i32,
+    }
+
+    // Opens the interface for a window of `width` x `height`. `scratch` is the texture decoder's
+    // working memory (the scene's may be shared: loads never overlap).
+    fn make {
+        mut w: world::World, mut dev: gpu::Device, mixer: ?*mut mix::Mixer, scratch: alloc::Bytes, width: i32, height: i32,
+    } -> !*mut Ingame {
+        let cache = try alloc::new(material::Cache, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = material::new_cache{ heap = w.heap, scratch } }
+        let mut g = try gui::make{ heap = w.heap, rm = w.rm.*, cache, width, height }
+        if w.tlk != null {
+            let tb = w.tlk ifnull { return gui::no_such_gui{ name = "dialog.tlk" } }
+            let t = try alloc::new(tlk::Table, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = tb }
+            gui::set_tlk{ &g, table = t }
+        }
+        try gui::load_defaults{ &g, fs = &w.fs, &dev }
+        if mixer != null { gui::set_mixer{ &g, mixer } }
+        let h = try hud::open{ &g, &w, &dev }
+        let ui = Ingame{
+            heap = w.heap, cache, gui = g, hud = h,
+            text = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } },
+            width, height,
+        }
+        return try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
+    }
+
+    // Closes every panel and frees the interface (a module change makes a new one).
+    fn free { mut ui: Ingame, mut dev: gpu::Device } {
+        gui::free{ g = &ui.gui }
+        list::free{ list = &ui.text.bytes }
+        material::free_cache{ cache = ui.cache, &dev }
+    }
+
+    // Offers a platform event to the interface; true when it used it, so the game does not also
+    // treat it as a key or a world click.
+    fn handle_event { mut ui: Ingame, ev: sdl::Event, scale_x: f32, scale_y: f32 } -> bool {
+        return gui::handle_event{ g = &ui.gui, ev, scale_x, scale_y }
+    }
+
+    // One frame after the world's: the GUI's clocks, the HUD from the world, then what the panels
+    // said.
+    fn update { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, camera: cam::Camera, dt: f32 } {
+        gui::update{ g = &ui.gui, dt }
+        hud::update{ h = &ui.hud, g = &ui.gui, &w, &dev, text = &ui.text, dt }
+        gui::clear_events{ g = &ui.gui }
+    }
+
+    // A line of the headless input script after `ui` (play.ctx): `move X Y` puts the pointer
+    // there, `click X Y` presses and releases the left button, `key NAME` a key (escape, return,
+    // space, a letter). Pixels are the window's.
+    fn run_command { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, text: []u8 } {
+        let mut words = text::words{ s = text }
+        let cmd = text::next_word{ &words } ifnull { return }
+        if ci::eq{ a = cmd, b = "move" } or ci::eq{ a = cmd, b = "click" } {
+            let x = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+            let y = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+            _ = handle_event{ &ui, ev = sdl::Event::mouse_motion{ x, y, dx = 0, dy = 0, buttons = 0 }, scale_x = 1.0, scale_y = 1.0 }
+            if ci::eq{ a = cmd, b = "click" } {
+                _ = handle_event{ &ui, ev = sdl::Event::mouse_button{ down = true, button = sdl::BUTTON_LEFT, clicks = 1, x, y }, scale_x = 1.0, scale_y = 1.0 }
+                _ = handle_event{ &ui, ev = sdl::Event::mouse_button{ down = false, button = sdl::BUTTON_LEFT, clicks = 1, x, y }, scale_x = 1.0, scale_y = 1.0 }
+            }
+        } else if ci::eq{ a = cmd, b = "key" } {
+            let name = text::next_word{ &words } ifnull { return }
+            let code = key_code{ name }
+            if code != 0 {
+                _ = handle_event{ &ui, ev = sdl::Event::key{ down = true, repeat = false, scancode = 0, keycode = code, mods = 0 }, scale_x = 1.0, scale_y = 1.0 }
+                _ = handle_event{ &ui, ev = sdl::Event::key{ down = false, repeat = false, scancode = 0, keycode = code, mods = 0 }, scale_x = 1.0, scale_y = 1.0 }
+            }
+        }
+    }
+
+    // An SDL keycode by the name scripts use; 0 for an unknown one.
+    fn key_code { name: []u8 } -> i32 {
+        if name.len == 1 { return @as(i32, ascii::to_lower{ c = name[0] }) }
+        if ci::eq{ a = name, b = "escape" } { return sdl::key::ESCAPE }
+        if ci::eq{ a = name, b = "return" } { return sdl::key::RETURN }
+        if ci::eq{ a = name, b = "space" } { return sdl::key::SPACE }
+        if ci::eq{ a = name, b = "up" } { return sdl::key::UP }
+        if ci::eq{ a = name, b = "down" } { return sdl::key::DOWN }
+        if ci::eq{ a = name, b = "left" } { return sdl::key::LEFT }
+        if ci::eq{ a = name, b = "right" } { return sdl::key::RIGHT }
+        return 0
+    }
+
+    // Adds the interface to the frame: the HUD's own render targets, then the panels.
+    fn draw { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame } {
+        hud::draw{ h = &ui.hud, g = &ui.gui, &w, &dev, &frame }
+        gui::draw{ g = &ui.gui, &frame }
+    }
+}

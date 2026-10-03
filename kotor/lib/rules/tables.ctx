@@ -1,0 +1,584 @@
+// The 2DAs the rules read, loaded once through the resource manager and kept: the hot ones
+// (classes, feats, skills, spells, base items, appearance sizes) as typed rows so combat never
+// parses a cell, the rest as the raw tables, looked up by name when an item is equipped or an
+// effect is built.
+//
+//   let mut tables: rules::Tables
+//   try rules::load_tables{ &fs, rm, &heap, &tables }
+//   defer rules::free_tables{ &tables, &heap }
+//   let hit_die = tables.classes[3].hit_die
+//
+// Class-dependent columns are found the way the engine finds them: classes.2da names, per class,
+// a 3-letter code for each table family (featstable SOL -> feat.2da columns sol_list, sol_granted;
+// skillstable -> skills.2da sol_class, ...), and a table (CLS_ATK_1, CLS_ST_SOLDIER) for the
+// attack bonus and saves.
+namespace rules {
+    // A 2DA the install lacks, or one that doesn't parse.
+    error table_missing{ name: resref::ResRef }
+    error table_bad{ name: resref::ResRef }
+
+    const MAX_LEVEL: usize = 20
+    const MAX_FEATS: usize = 256
+    const MAX_SPELLS: usize = 256
+
+    // A parsed 2DA and the bytes its cells are views into.
+    struct Held { t: twoda::Table, bytes: alloc::Bytes }
+
+    // The raw tables kept (the order is the array order in Tables.raw).
+    enum Tab: u8 {
+        xptable, plot, npc, regeneration, forceadjust, diffsettings, difficultyopt, creaturesize,
+        itempropdef, iprp_costtable, iprp_paramtable, iprp_bonuscost, iprp_meleecost,
+        iprp_neg5cost, iprp_neg10cost, iprp_damagecost, iprp_immuncost, iprp_damvulcost,
+        iprp_soakcost, iprp_resistcost, iprp_srcost, iprp_onhit, iprp_onhitdur, iprp_onhitdc,
+        iprp_onhitcost, iprp_monstcost, iprp_immunity, iprp_chargecost, gameeffects, poison,
+        removefxondeath, effecticon, baseitems,
+    }
+    const TAB_COUNT: usize = 33
+
+    fn tab_name { t: Tab } -> []u8 {
+        let s: []u8 = match t {
+            xptable => { "xptable" }
+            plot => { "plot" }
+            npc => { "npc" }
+            regeneration => { "regeneration" }
+            forceadjust => { "forceadjust" }
+            diffsettings => { "diffsettings" }
+            difficultyopt => { "difficultyopt" }
+            creaturesize => { "creaturesize" }
+            itempropdef => { "itempropdef" }
+            iprp_costtable => { "iprp_costtable" }
+            iprp_paramtable => { "iprp_paramtable" }
+            iprp_bonuscost => { "iprp_bonuscost" }
+            iprp_meleecost => { "iprp_meleecost" }
+            iprp_neg5cost => { "iprp_neg5cost" }
+            iprp_neg10cost => { "iprp_neg10cost" }
+            iprp_damagecost => { "iprp_damagecost" }
+            iprp_immuncost => { "iprp_immuncost" }
+            iprp_damvulcost => { "iprp_damvulcost" }
+            iprp_soakcost => { "iprp_soakcost" }
+            iprp_resistcost => { "iprp_resistcost" }
+            iprp_srcost => { "iprp_srcost" }
+            iprp_onhit => { "iprp_onhit" }
+            iprp_onhitdur => { "iprp_onhitdur" }
+            iprp_onhitdc => { "iprp_onhitdc" }
+            iprp_onhitcost => { "iprp_onhitcost" }
+            iprp_monstcost => { "iprp_monstcost" }
+            iprp_immunity => { "iprp_immunity" }
+            iprp_chargecost => { "iprp_chargecost" }
+            gameeffects => { "gameeffects" }
+            poison => { "poison" }
+            removefxondeath => { "removefxondeath" }
+            effecticon => { "effecticon" }
+            baseitems => { "baseitems" }
+        }
+        return s
+    }
+
+    // ---- typed rows
+
+    struct ClassRow {
+        valid: bool,
+        name: i32,                      // strref
+        hit_die: i32,
+        force_die: i32,
+        skill_base: i32,                // skill points per level
+        primary: i32,                   // the ability auto-levelling raises (0..5)
+        caster: bool,
+        player: bool,
+        bab: [MAX_LEVEL]i32,            // by class level - 1
+        fort: [MAX_LEVEL]i32,
+        refl: [MAX_LEVEL]i32,
+        will: [MAX_LEVEL]i32,
+        ac_bonus: [21]i32,              // by class level
+        feat_reg: [MAX_LEVEL]i32,       // general feats gained at that level
+        feat_bon: [MAX_LEVEL]i32,       // bonus feats
+        power_gain: [MAX_LEVEL]i32,     // Force powers gained (classpowergain.2da), 0 for non-Jedi
+    }
+
+    struct FeatRow {
+        valid: bool,
+        name: i32,
+        min_level: i32,
+        min_attack: i32,
+        min_str: i32,
+        min_dex: i32,
+        min_int: i32,
+        min_wis: i32,
+        min_spell_level: i32,
+        prereq: [2]i32,                 // -1 none
+        or_req: [5]i32,                 // -1 none
+        req_skill: i32,                 // -1 none
+        successor: i32,
+        uses_per_day: i32,              // 0: no limit
+        use_type: i32,
+        all_classes: bool,
+        list: [NUM_CLASS_ROWS]i32,      // <class>_list: 3 granted, 0/1 selectable, 4 not available
+        granted: [NUM_CLASS_ROWS]i32,   // class level that grants it, -1 never
+        recom: [NUM_CLASS_ROWS]i32,     // auto-level order, -1 unranked
+    }
+
+    struct SkillRow {
+        valid: bool,
+        name: i32,
+        untrained: bool,
+        key_ability: i32,               // 0..5
+        armor_check: bool,
+        droid_can_use: bool,
+        npc_can_use: bool,
+        all_classes: bool,
+        class_skill: [NUM_CLASS_ROWS]bool,
+        reco: [NUM_CLASS_ROWS]i32,      // auto-level order, -1 unranked
+    }
+
+    struct SpellRow {
+        valid: bool,
+        name: i32,
+        fp_cost: i32,
+        good_evil: i32,                 // 'G', 'E' or '-' as a byte
+        user_type: i32,                 // 1 Force power, 2 special ability, 4 item ability, -2 disabled
+        nprereq: i32,
+        prereq: [4]i32,
+        learn: [NUM_CLASS_ROWS]i32,     // class level at which the class may learn it (0 never)
+        innate: i32,
+        conj_time: i32,                 // ms
+        cast_time: i32,
+        catch_time: i32,
+        require_items: i32,             // equipped-item type mask the cast needs
+        forbid_items: i32,              // ... must not have
+        hostile: bool,
+        category: i32,
+        impact: resref::ResRef,
+        light_recom: i32,               // auto-level order for a light-side character, 0 unranked (the engine reads blank as 0)
+        dark_recom: i32,
+    }
+
+    struct BaseItemRow {
+        valid: bool,
+        name: i32,
+        equip_slots: u32,
+        model_type: i32,
+        wield: i32,                     // 1..6, see is_two_handed
+        weapon_type: i32,               // 0 none, 1 melee, 3, 4 ranged
+        damage_flags: i32,
+        weapon_size: i32,
+        ranged: bool,
+        num_dice: i32,
+        die: i32,
+        crit_threat: i32,
+        crit_mult: i32,
+        stacking: i32,
+        base_ac: i32,
+        dex_bonus: i32,                 // max DEX bonus in armour, -1 not armour
+        ammo_type: i32,
+        item_type: i32,
+        spec_feat: i32,                 // weapon specialization, -1 none
+        foc_feat: i32,                  // weapon focus, -1 none
+        req_feat: [5]i32,               // -1 none
+        droid_or_human: i32,            // 0 both (blasters), 1 humans, 2 droids
+        deny_subrace: i32,
+        prop_column: i32,
+        max_range: i32,
+    }
+
+    // ---- the whole set
+
+    // Game-wide rule settings the engine owns and may change at run time (the difficulty option).
+    struct Settings {
+        difficulty: i32,                    // 0 easy, 1 normal, 2 difficult: selects the diffsettings and difficultyopt columns
+        ms_per_day: i32,                    // the world timer's day: 1440 x minutes-per-hour (the module's, normally 2) x 1000
+        auto_level: bool,                   // the client option: level up as soon as the XP is there
+    }
+
+    struct Tables {
+        settings: Settings,
+        raw: [TAB_COUNT]Held,
+        classes: [NUM_CLASS_ROWS]ClassRow,
+        skills: [NUM_SKILLS]SkillRow,
+        feats: []mut FeatRow,
+        spells: []mut SpellRow,
+        baseitems: []mut BaseItemRow,
+        appearance_size: []mut i32,         // appearance.2da sizecategory by row
+        xp_level: [21]i32,                  // exptable.2da: XP needed for level L+1 at index L (-1 = no more)
+    }
+
+    // ---- reading cells
+
+    fn cell_int { t: twoda::Table, row: usize, col: []u8, dflt: i32 } -> i32 {
+        return twoda::get_int{ t, row, column = col } ifnull dflt
+    }
+
+    fn cell_flag { t: twoda::Table, row: usize, col: []u8 } -> bool {
+        return cell_int{ t, row, col, dflt = 0 } != 0
+    }
+
+    fn cell_text { t: twoda::Table, row: usize, col: []u8 } -> []u8 {
+        return twoda::get_string{ t, row, column = col } ifnull ""
+    }
+
+    // "<code>_<suffix>" into buf (lower case is not needed: column lookups ignore case).
+    fn join_column { buf: []mut u8, code: []u8, suffix: []u8 } -> []u8 {
+        let mut n: usize = 0
+        let mut i: usize = 0
+        while i < code.len and n < buf.len { buf[n] = code[i]; n = n + 1; i = i + 1 }
+        if n < buf.len { buf[n] = '_'; n = n + 1 }
+        i = 0
+        while i < suffix.len and n < buf.len { buf[n] = suffix[i]; n = n + 1; i = i + 1 }
+        return buf[..n]
+    }
+
+    // The ability named by a 3-letter column value ("STR".."CHA"), 0 when unknown.
+    fn ability_of { s: []u8 } -> i32 {
+        if ci::eq{ a = s, b = "dex" } { return 1 }
+        if ci::eq{ a = s, b = "con" } { return 2 }
+        if ci::eq{ a = s, b = "int" } { return 3 }
+        if ci::eq{ a = s, b = "wis" } { return 4 }
+        if ci::eq{ a = s, b = "cha" } { return 5 }
+        return 0
+    }
+
+    // Parses "47_12" (spell prerequisites) into out; returns how many.
+    fn parse_list { s: []u8, mut out: [4]i32 } -> i32 {
+        let mut n: usize = 0
+        let mut cur: i32 = 0
+        let mut have = false
+        let mut i: usize = 0
+        while i <= s.len {
+            let c: u8 = if i < s.len { s[i] } else { '_' }
+            if c >= '0' and c <= '9' {
+                cur = cur * 10 + @as(i32, c - '0')
+                have = true
+            } else {
+                if have and n < 4 {
+                    out[n] = cur
+                    n = n + 1
+                }
+                cur = 0
+                have = false
+            }
+            i = i + 1
+        }
+        return @as(i32, n)
+    }
+
+    // ---- loading
+
+    fn load_held { mut fs: Fs, rm: res::Manager, mut heap: heap::Heap, name: []u8 } -> !Held {
+        let bytes = try res::load{ &fs, rm, name, kind = restype::Type::twoda, realloc = heap::alloc, heap = &heap } ifnull {
+            return table_missing{ name = resref::truncate{ name } }
+        }
+        let t = twoda::parse{ data = bytes, realloc = heap::alloc, heap = &heap } iferr err{ error } {
+            _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = bytes, count = 0 }
+            return table_bad{ name = resref::truncate{ name } }
+        }
+        return Held{ t, bytes }
+    }
+
+    fn free_held { h: Held, mut heap: heap::Heap } {
+        twoda::free{ t = h.t, realloc = heap::alloc, heap = &heap }
+        _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = h.bytes, count = 0 }
+    }
+
+    // Reads column `col` of the table `name` into the first into.len rows of `into`.
+    fn load_column { mut fs: Fs, rm: res::Manager, mut heap: heap::Heap, name: []u8, col: []u8, into: []mut i32 } -> ! {
+        let h = try load_held{ &fs, rm, &heap, name }
+        defer free_held{ h, &heap }
+        let mut i: usize = 0
+        while i < into.len {
+            into[i] = cell_int{ t = h.t, row = i, col, dflt = 0 }
+            i = i + 1
+        }
+    }
+
+    fn load_classes { mut fs: Fs, rm: res::Manager, mut heap: heap::Heap, mut out: Tables } -> ! {
+        let cl = try load_held{ &fs, rm, &heap, name = "classes" }
+        defer free_held{ h = cl, &heap }
+        let gain = try load_held{ &fs, rm, &heap, name = "classpowergain" }
+        defer free_held{ h = gain, &heap }
+        let ac = try load_held{ &fs, rm, &heap, name = "acbonus" }
+        defer free_held{ h = ac, &heap }
+        let fg = try load_held{ &fs, rm, &heap, name = "featgain" }
+        defer free_held{ h = fg, &heap }
+
+        let rows = twoda::rows{ t = cl.t }
+        let mut r: usize = 0
+        while r < NUM_CLASS_ROWS and r < rows {
+            let c = &out.classes[r]
+            c.valid = true
+            c.name = cell_int{ t = cl.t, row = r, col = "name", dflt = 0 }
+            c.hit_die = cell_int{ t = cl.t, row = r, col = "hitdie", dflt = 6 }
+            c.force_die = cell_int{ t = cl.t, row = r, col = "forcedie", dflt = 0 }
+            c.skill_base = cell_int{ t = cl.t, row = r, col = "skillpointbase", dflt = 2 }
+            c.primary = ability_of{ s = cell_text{ t = cl.t, row = r, col = "primaryabil" } }
+            c.caster = cell_flag{ t = cl.t, row = r, col = "spellcaster" }
+            c.player = cell_flag{ t = cl.t, row = r, col = "playerclass" }
+
+            try load_column{ &fs, rm, &heap, name = cell_text{ t = cl.t, row = r, col = "attackbonustable" }, col = "bab", into = c.bab[..] }
+            let st = cell_text{ t = cl.t, row = r, col = "savingthrowtable" }
+            try load_column{ &fs, rm, &heap, name = st, col = "fortsave", into = c.fort[..] }
+            try load_column{ &fs, rm, &heap, name = st, col = "refsave", into = c.refl[..] }
+            try load_column{ &fs, rm, &heap, name = st, col = "willsave", into = c.will[..] }
+
+            let mut buf: [24]u8
+            let acol = cell_text{ t = cl.t, row = r, col = "armorclasscolumn" }
+            let mut lv: usize = 0
+            while lv < 21 {
+                c.ac_bonus[lv] = cell_int{ t = ac.t, row = lv, col = acol, dflt = 0 }
+                lv = lv + 1
+            }
+            let fcode = cell_text{ t = cl.t, row = r, col = "featgain" }
+            let reg = join_column{ buf = buf[..], code = fcode, suffix = "reg" }
+            lv = 0
+            while lv < MAX_LEVEL {
+                c.feat_reg[lv] = cell_int{ t = fg.t, row = lv, col = reg, dflt = 0 }
+                lv = lv + 1
+            }
+            let bon = join_column{ buf = buf[..], code = fcode, suffix = "bon" }
+            lv = 0
+            while lv < MAX_LEVEL {
+                c.feat_bon[lv] = cell_int{ t = fg.t, row = lv, col = bon, dflt = 0 }
+                lv = lv + 1
+            }
+            let pcode = cell_text{ t = cl.t, row = r, col = "spellgaintable" }
+            if pcode.len > 0 {
+                lv = 0
+                while lv < MAX_LEVEL {
+                    c.power_gain[lv] = cell_int{ t = gain.t, row = lv, col = pcode, dflt = 0 }
+                    lv = lv + 1
+                }
+            }
+            r = r + 1
+        }
+    }
+
+    // The class table codes (SOL, SCT, ...) that name the columns of feat.2da and skills.2da.
+    fn load_feats { mut fs: Fs, rm: res::Manager, mut heap: heap::Heap, mut out: Tables } -> ! {
+        let cl = try load_held{ &fs, rm, &heap, name = "classes" }
+        defer free_held{ h = cl, &heap }
+        let ft = try load_held{ &fs, rm, &heap, name = "feat" }
+        defer free_held{ h = ft, &heap }
+        let rows = twoda::rows{ t = ft.t }
+        let n = if rows > MAX_FEATS { MAX_FEATS } else { rows }
+        out.feats = try alloc::resize(FeatRow, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = slice::empty(FeatRow){}, count = n }
+        let mut i: usize = 0
+        while i < n {
+            let f = &out.feats[i]
+            let has_name = twoda::get_string{ t = ft.t, row = i, column = "label" } != null
+            f.valid = has_name
+            f.name = cell_int{ t = ft.t, row = i, col = "name", dflt = 0 }
+            f.min_level = cell_int{ t = ft.t, row = i, col = "mincharlevel", dflt = 0 }
+            f.min_attack = cell_int{ t = ft.t, row = i, col = "minattackbonus", dflt = 0 }
+            f.min_str = cell_int{ t = ft.t, row = i, col = "minstr", dflt = 0 }
+            f.min_dex = cell_int{ t = ft.t, row = i, col = "mindex", dflt = 0 }
+            f.min_int = cell_int{ t = ft.t, row = i, col = "minint", dflt = 0 }
+            f.min_wis = cell_int{ t = ft.t, row = i, col = "minwis", dflt = 0 }
+            f.min_spell_level = cell_int{ t = ft.t, row = i, col = "minspelllvl", dflt = 0 }
+            f.prereq[0] = cell_int{ t = ft.t, row = i, col = "prereqfeat1", dflt = -1 }
+            f.prereq[1] = cell_int{ t = ft.t, row = i, col = "prereqfeat2", dflt = -1 }
+            f.or_req[0] = cell_int{ t = ft.t, row = i, col = "orreqfeat0", dflt = -1 }
+            f.or_req[1] = cell_int{ t = ft.t, row = i, col = "orreqfeat1", dflt = -1 }
+            f.or_req[2] = cell_int{ t = ft.t, row = i, col = "orreqfeat2", dflt = -1 }
+            f.or_req[3] = cell_int{ t = ft.t, row = i, col = "orreqfeat3", dflt = -1 }
+            f.or_req[4] = cell_int{ t = ft.t, row = i, col = "orreqfeat4", dflt = -1 }
+            f.req_skill = cell_int{ t = ft.t, row = i, col = "reqskill", dflt = -1 }
+            f.successor = cell_int{ t = ft.t, row = i, col = "successor", dflt = -1 }
+            f.uses_per_day = cell_int{ t = ft.t, row = i, col = "usesperday", dflt = 0 }
+            f.use_type = cell_int{ t = ft.t, row = i, col = "usetype", dflt = 0 }
+            f.all_classes = cell_flag{ t = ft.t, row = i, col = "allclassescanuse" }
+            let mut c: usize = 0
+            while c < NUM_CLASS_ROWS {
+                let mut buf: [24]u8
+                let code = cell_text{ t = cl.t, row = c, col = "featstable" }
+                f.list[c] = cell_int{ t = ft.t, row = i, col = join_column{ buf = buf[..], code, suffix = "list" }, dflt = 4 }
+                f.granted[c] = cell_int{ t = ft.t, row = i, col = join_column{ buf = buf[..], code, suffix = "granted" }, dflt = -1 }
+                f.recom[c] = cell_int{ t = ft.t, row = i, col = join_column{ buf = buf[..], code, suffix = "recom" }, dflt = -1 }
+                c = c + 1
+            }
+            i = i + 1
+        }
+    }
+
+    fn load_skills { mut fs: Fs, rm: res::Manager, mut heap: heap::Heap, mut out: Tables } -> ! {
+        let cl = try load_held{ &fs, rm, &heap, name = "classes" }
+        defer free_held{ h = cl, &heap }
+        let sk = try load_held{ &fs, rm, &heap, name = "skills" }
+        defer free_held{ h = sk, &heap }
+        let rows = twoda::rows{ t = sk.t }
+        let mut i: usize = 0
+        while i < NUM_SKILLS and i < rows {
+            let s = &out.skills[i]
+            s.valid = true
+            s.name = cell_int{ t = sk.t, row = i, col = "name", dflt = 0 }
+            s.untrained = cell_flag{ t = sk.t, row = i, col = "untrained" }
+            s.key_ability = ability_of{ s = cell_text{ t = sk.t, row = i, col = "keyability" } }
+            s.armor_check = cell_flag{ t = sk.t, row = i, col = "armorcheckpenalty" }
+            s.droid_can_use = cell_flag{ t = sk.t, row = i, col = "droidcanuse" }
+            s.npc_can_use = cell_flag{ t = sk.t, row = i, col = "npccanuse" }
+            s.all_classes = cell_flag{ t = sk.t, row = i, col = "allclassescanuse" }
+            let mut c: usize = 0
+            while c < NUM_CLASS_ROWS {
+                let mut buf: [24]u8
+                let code = cell_text{ t = cl.t, row = c, col = "skillstable" }
+                s.class_skill[c] = cell_flag{ t = sk.t, row = i, col = join_column{ buf = buf[..], code, suffix = "class" } }
+                s.reco[c] = cell_int{ t = sk.t, row = i, col = join_column{ buf = buf[..], code, suffix = "reco" }, dflt = -1 }
+                c = c + 1
+            }
+            i = i + 1
+        }
+    }
+
+    fn load_spells { mut fs: Fs, rm: res::Manager, mut heap: heap::Heap, mut out: Tables } -> ! {
+        let sp = try load_held{ &fs, rm, &heap, name = "spells" }
+        defer free_held{ h = sp, &heap }
+        let rows = twoda::rows{ t = sp.t }
+        let n = if rows > MAX_SPELLS { MAX_SPELLS } else { rows }
+        out.spells = try alloc::resize(SpellRow, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = slice::empty(SpellRow){}, count = n }
+        let mut i: usize = 0
+        while i < n {
+            let s = &out.spells[i]
+            s.valid = twoda::get_string{ t = sp.t, row = i, column = "label" } != null
+            s.name = cell_int{ t = sp.t, row = i, col = "name", dflt = 0 }
+            s.fp_cost = cell_int{ t = sp.t, row = i, col = "forcepoints", dflt = 0 }
+            let ge = cell_text{ t = sp.t, row = i, col = "goodevil" }
+            s.good_evil = if ge.len > 0 { @as(i32, ge[0]) } else { 45 }
+            s.user_type = cell_int{ t = sp.t, row = i, col = "usertype", dflt = 0 }
+            s.nprereq = parse_list{ s = cell_text{ t = sp.t, row = i, col = "prerequisites" }, out = &s.prereq }
+            s.learn[3] = cell_int{ t = sp.t, row = i, col = "guardian", dflt = 0 }
+            s.learn[4] = cell_int{ t = sp.t, row = i, col = "consular", dflt = 0 }
+            s.learn[5] = cell_int{ t = sp.t, row = i, col = "sentinel", dflt = 0 }
+            s.innate = cell_int{ t = sp.t, row = i, col = "inate", dflt = 0 }
+            s.conj_time = cell_int{ t = sp.t, row = i, col = "conjtime", dflt = 0 }
+            s.cast_time = cell_int{ t = sp.t, row = i, col = "casttime", dflt = 0 }
+            s.catch_time = cell_int{ t = sp.t, row = i, col = "catchtime", dflt = 0 }
+            s.require_items = cell_int{ t = sp.t, row = i, col = "requireitemmask", dflt = 0 }
+            s.forbid_items = cell_int{ t = sp.t, row = i, col = "forbiditemmask", dflt = 0 }
+            s.hostile = cell_flag{ t = sp.t, row = i, col = "hostilesetting" }
+            s.category = cell_int{ t = sp.t, row = i, col = "category", dflt = 0 }
+            s.impact = resref::truncate{ name = cell_text{ t = sp.t, row = i, col = "impactscript" } }
+            s.light_recom = cell_int{ t = sp.t, row = i, col = "light_recom", dflt = 0 }
+            s.dark_recom = cell_int{ t = sp.t, row = i, col = "dark_recom", dflt = 0 }
+            i = i + 1
+        }
+    }
+
+    fn load_baseitems { mut fs: Fs, rm: res::Manager, mut heap: heap::Heap, mut out: Tables } -> ! {
+        let bi = try load_held{ &fs, rm, &heap, name = "baseitems" }
+        defer free_held{ h = bi, &heap }
+        let n = twoda::rows{ t = bi.t }
+        out.baseitems = try alloc::resize(BaseItemRow, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = slice::empty(BaseItemRow){}, count = n }
+        let mut i: usize = 0
+        while i < n {
+            let b = &out.baseitems[i]
+            b.valid = twoda::get_string{ t = bi.t, row = i, column = "label" } != null
+            b.name = cell_int{ t = bi.t, row = i, col = "name", dflt = 0 }
+            b.equip_slots = @trunc(u32, cell_int{ t = bi.t, row = i, col = "equipableslots", dflt = 0 })
+            b.model_type = cell_int{ t = bi.t, row = i, col = "modeltype", dflt = 0 }
+            b.wield = cell_int{ t = bi.t, row = i, col = "weaponwield", dflt = 0 }
+            b.weapon_type = cell_int{ t = bi.t, row = i, col = "weapontype", dflt = 0 }
+            b.damage_flags = cell_int{ t = bi.t, row = i, col = "damageflags", dflt = 0 }
+            b.weapon_size = cell_int{ t = bi.t, row = i, col = "weaponsize", dflt = 0 }
+            b.ranged = cell_flag{ t = bi.t, row = i, col = "rangedweapon" }
+            b.num_dice = cell_int{ t = bi.t, row = i, col = "numdice", dflt = 0 }
+            b.die = cell_int{ t = bi.t, row = i, col = "dietoroll", dflt = 0 }
+            b.crit_threat = cell_int{ t = bi.t, row = i, col = "critthreat", dflt = 1 }
+            b.crit_mult = cell_int{ t = bi.t, row = i, col = "crithitmult", dflt = 2 }
+            b.stacking = cell_int{ t = bi.t, row = i, col = "stacking", dflt = 1 }
+            b.base_ac = cell_int{ t = bi.t, row = i, col = "baseac", dflt = 0 }
+            b.dex_bonus = cell_int{ t = bi.t, row = i, col = "dexbonus", dflt = -1 }
+            b.ammo_type = cell_int{ t = bi.t, row = i, col = "ammunitiontype", dflt = 0 }
+            b.item_type = cell_int{ t = bi.t, row = i, col = "itemtype", dflt = 0 }
+            b.spec_feat = cell_int{ t = bi.t, row = i, col = "specfeat", dflt = -1 }
+            b.foc_feat = cell_int{ t = bi.t, row = i, col = "focfeat", dflt = -1 }
+            b.req_feat[0] = cell_int{ t = bi.t, row = i, col = "reqfeat0", dflt = -1 }
+            b.req_feat[1] = cell_int{ t = bi.t, row = i, col = "reqfeat1", dflt = -1 }
+            b.req_feat[2] = cell_int{ t = bi.t, row = i, col = "reqfeat2", dflt = -1 }
+            b.req_feat[3] = cell_int{ t = bi.t, row = i, col = "reqfeat3", dflt = -1 }
+            b.req_feat[4] = cell_int{ t = bi.t, row = i, col = "reqfeat4", dflt = -1 }
+            b.droid_or_human = cell_int{ t = bi.t, row = i, col = "droidorhuman", dflt = 0 }
+            b.deny_subrace = cell_int{ t = bi.t, row = i, col = "denysubrace", dflt = 0 }
+            b.prop_column = cell_int{ t = bi.t, row = i, col = "propcolumn", dflt = 0 }
+            b.max_range = cell_int{ t = bi.t, row = i, col = "maxattackrange", dflt = 0 }
+            i = i + 1
+        }
+    }
+
+    fn load_appearance { mut fs: Fs, rm: res::Manager, mut heap: heap::Heap, mut out: Tables } -> ! {
+        let ap = try load_held{ &fs, rm, &heap, name = "appearance" }
+        defer free_held{ h = ap, &heap }
+        let n = twoda::rows{ t = ap.t }
+        out.appearance_size = try alloc::resize(i32, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = slice::empty(i32){}, count = n }
+        let mut i: usize = 0
+        while i < n {
+            out.appearance_size[i] = cell_int{ t = ap.t, row = i, col = "sizecategory", dflt = 3 }
+            i = i + 1
+        }
+    }
+
+    // Loads everything. On failure `out` holds what was loaded so far: call free_tables.
+    fn load_tables { mut fs: Fs, rm: res::Manager, mut heap: heap::Heap, mut out: Tables } -> ! {
+        out.settings = Settings{ difficulty = 1, ms_per_day = 2880000, auto_level = false }
+        let mut i: usize = 0
+        while i < TAB_COUNT {
+            let which = @as(Tab, @as(u8, i))
+            out.raw[i] = try load_held{ &fs, rm, &heap, name = tab_name{ t = which } }
+            i = i + 1
+        }
+        try load_classes{ &fs, rm, &heap, &out }
+        try load_feats{ &fs, rm, &heap, &out }
+        try load_skills{ &fs, rm, &heap, &out }
+        try load_spells{ &fs, rm, &heap, &out }
+        try load_baseitems{ &fs, rm, &heap, &out }
+        try load_appearance{ &fs, rm, &heap, &out }
+        try load_column{ &fs, rm, &heap, name = "exptable", col = "xp", into = out.xp_level[..] }
+    }
+
+    fn free_tables { mut out: Tables, mut heap: heap::Heap } {
+        let mut i: usize = 0
+        while i < TAB_COUNT {
+            if out.raw[i].bytes.len > 0 { free_held{ h = out.raw[i], &heap } }
+            out.raw[i] = Held{ t = out.raw[i].t, bytes = slice::empty(u8){} }
+            i = i + 1
+        }
+        _ = alloc::resize(FeatRow, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = out.feats, count = 0 }
+        _ = alloc::resize(SpellRow, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = out.spells, count = 0 }
+        _ = alloc::resize(BaseItemRow, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = out.baseitems, count = 0 }
+        _ = alloc::resize(i32, heap::Heap){ realloc = heap::alloc, heap = &heap, mem = out.appearance_size, count = 0 }
+        out.feats = slice::empty(FeatRow){}
+        out.spells = slice::empty(SpellRow){}
+        out.baseitems = slice::empty(BaseItemRow){}
+        out.appearance_size = slice::empty(i32){}
+    }
+
+    // ---- lookups
+
+    fn raw_table { tables: *Tables, which: Tab } -> twoda::Table {
+        return tables.raw[@as(usize, @as(u8, which))].t
+    }
+
+    // The row of a table by name, or null for an unknown index.
+    fn get_baseitem { tables: *Tables, row: i32 } -> ?*BaseItemRow {
+        if row < 0 or @as(usize, row) >= tables.baseitems.len { return null }
+        return &tables.baseitems[@as(usize, row)]
+    }
+
+    fn get_feat { tables: *Tables, row: i32 } -> ?*FeatRow {
+        if row < 0 or @as(usize, row) >= tables.feats.len { return null }
+        return &tables.feats[@as(usize, row)]
+    }
+
+    fn get_spell { tables: *Tables, row: i32 } -> ?*SpellRow {
+        if row < 0 or @as(usize, row) >= tables.spells.len { return null }
+        return &tables.spells[@as(usize, row)]
+    }
+
+    fn get_class { tables: *Tables, row: i32 } -> ?*ClassRow {
+        if row < 0 or @as(usize, row) >= NUM_CLASS_ROWS { return null }
+        if not tables.classes[@as(usize, row)].valid { return null }
+        return &tables.classes[@as(usize, row)]
+    }
+
+    // appearance.2da's size category (creaturesize.2da row), medium when unknown.
+    fn size_of_appearance { tables: *Tables, appearance: i32 } -> i32 {
+        if appearance < 0 or @as(usize, appearance) >= tables.appearance_size.len { return 3 }
+        return tables.appearance_size[@as(usize, appearance)]
+    }
+}

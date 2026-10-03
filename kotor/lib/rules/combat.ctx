@@ -1,0 +1,365 @@
+// The combat math: how many attacks a round has, the attack roll, defense, critical hits,
+// deflection, sneak attacks, damage and what a hit puts on the target (docs/re/combat.md 3.2, 4, 5,
+// 6; rules.md 1.7). This file holds the shared types, the weapon questions and the small rules;
+// combat_attack.ctx has the attack roll and defense, combat_damage.ctx the damage roll and
+// resolve_attack.
+//
+// Nothing here touches the world. The engine hands in two creatures (pointers: the defender is a
+// `mut` place only where damage mitigation may spend a limited resistance) and an
+// AttackSituation (the facts only the world knows: distance, who sees whom, facing, cutscene
+// attacks), and gets back plain results: every number the combat log shows, and the Effect values
+// the hit puts on the defender or on the attacker. All randomness is `mut rng: Rng`, drawn in the
+// engine's order (d20, deflection d20, confirmation d20, [special-attack save], damage dice,
+// on-hit chances and saves), so a seed reproduces a fight.
+//
+// Public entry points (names as the brief asked; shapes noted)
+//   attack_counts{ tables, c, combat_feat } -> AttackCounts         3.2: on-hand, off-hand, total, per
+//                                                                   attack the off-hand flag and weapon type
+//   ROUND_LENGTH_MS                                                 3000 (the brief said round_length_ms)
+//   attack_modifier{ tables, atk, def, sit, attack_index, combat_feat } -> AttackModifier      4.2
+//   defense_versus{ tables, def, atk, sit, attack_index, combat_feat, touch } -> DefenseBreakdown   5
+//   critical_threat_roll{ tables, c, off_hand, combat_feat } -> i32         4.3 (lowest threatening d20)
+//   critical_multiplier{ tables, c, off_hand } -> i32                       4.3
+//   sneak_attack_eligible{ tables, atk, def, sit } -> SneakCheck            4.7
+//   deflection_roll{ tables, rng, atk, def, sit, attack_total } -> Deflection       4.6
+//   roll_attack{ tables, rng, atk, def, sit, attack_index, combat_feat } -> AttackRoll    4.1
+//   roll_damage{ tables, rng, atk, def, ev, sit, attack_index, combat_feat, critical, sneak, simulate } -> DamageRoll   6
+//   resolve_attack{ tables, rng, atk, def, ev, sit, attack_index, combat_feat, simulate } -> AttackResolution
+//   make_situation{} -> AttackSituation                             defaults: a visible target 3 m away in front
+//   apply_difficulty_to_damage_roll{ ... }                          6.1, the exe's ApplyDifficultyToDamageRoll
+//
+// How the engine drives it, per attack i of a round (attack_counts says how many there are):
+//   let sit = make_situation{}  (set the distance, perception, facing, ids)
+//   let out = resolve_attack{ ... attack_index = i, combat_feat ... }
+//   out.roll      what the log shows of the roll; out.damage the damage per type slot
+//   out.effects   Effects to apply: to_attacker ones to the attacker (the 3 s AC penalty), the rest
+//                 to the defender; make_damage_effects{ roll = &out.damage, creator } gives the DAMAGE
+//                 effects (one per damage type, marked as combat damage), applied first
+//   out.hit / out.killing_blow   hit (results 1..3) and a total at or over the defender's hit points
+//                 (the hook for the kill XP of combat.md 8.3 and the death effect)
+// A bolt turned back at its shooter (result 9) or knocked away (8) or absorbed (10) is not a hit:
+// the engine moves it; for 9 it may call roll_damage with the two creatures swapped (combat.md
+// 4.6 gives the shooter the damage; how much is not read from the exe, so this is the engine's).
+// The ranged shot index and the animation-driven timing of combat.md 3.3-3.4 are the engine's.
+//
+// Decision: diffsettings columns. Difficulty 0 (easy), 1 (normal) and 2 (difficult) read the
+//   columns named easy, normal and hardcore (the exe stores the file's five value columns by a
+//   server value counted from the first, dmeasy, and the shipped numbers only make sense with easy
+//   the second); difficultyopt (the damage the party takes, applied by the DAMAGE effect, not
+//   here) is row = difficulty.
+// Decision: a combat feat the attacker does not have counts as none, everywhere (the exe clears it
+//   in the special-attack step, after the first attack roll has used it).
+// Decision: the combat feat applies to every attack of the round for to-hit, threat and damage;
+//   its side effects (self penalty, stun) belong to the first attack only (attack_index 0).
+// Decision: DAMAGE_REDUCTION power = the weapon's enhancement bonus 0..5 (the NWN meaning); 0
+//   unarmed. The exe passes an unread stack value there.
+// Decision: doors and placeables are targets with AttackSituation.target_object: defense 0, no
+//   deflection, no sneak attack, no mitigation or difficulty scaling, no critical immunity.
+// Decision: AC damage-type filters 0x4007 and the script's 0x2007 both mean "all damage types";
+//   the exe's 1/2/4 against weapon flags 0/1/2 index mismatch is reproduced.
+// Decision: effect damage bonuses add to the total (the exe stores their sum apart in the record);
+//   each damage slot's total is returned, and the slots sum to the total.
+namespace rules {
+    // A combat round lasts 3 seconds (combat.md 3.1); attack animations may shorten it, the
+    // engine's business.
+    const ROUND_LENGTH_MS: i32 = 3000
+
+    // On-hand 1 + 2 effect attacks + 1 feat, plus one off-hand attack.
+    const MAX_ATTACKS: usize = 5
+
+    // Attack results (ATTACK_RESULT_*, combat.md 4.4).
+    namespace outcome {
+        const HIT: i32 = 1
+        const CRITICAL: i32 = 2
+        const AUTOMATIC_HIT: i32 = 3
+        const MISS: i32 = 4
+        const DEFLECTED: i32 = 8            // bolt knocked away
+        const RETURNED: i32 = 9             // bolt sent back at the shooter
+        const SHIELD: i32 = 10              // missed bolt absorbed by an energy shield
+    }
+
+    // Weapon attack types (combat.md 3.2).
+    namespace watk {
+        const NONE: i32 = 0
+        const RIGHT: i32 = 1
+        const LEFT: i32 = 2
+        const CREATURE_L: i32 = 3
+        const EXTRA: i32 = 6                // an extra attack with the right weapon
+        const UNARMED: i32 = 7              // gloves or bare hands
+        const UNARMED_EXTRA: i32 = 8
+    }
+
+    // ---- what the engine tells the library about one attack
+
+    // The facts of a single attack that only the world knows. `make_situation` gives the defaults.
+    struct AttackSituation {
+        target_object: bool,        // the target is a door or placeable, not a creature
+        target_plot: bool,          // an object target that cannot be damaged (creatures use Creature.plot)
+        dist2: f32,                 // squared distance attacker-defender in metres squared
+        defender_sees: bool,        // the defender's perception of the attacker has the seen bit
+        facing_cos: f32,            // cosine of the angle between the defender's facing and the direction to the attacker
+        facing_dot: f32,            // dot product of the two creatures' facing vectors (<= 0: the defender faces the shooter)
+        defender_busy: bool,        // the defender is in the middle of something (no deflection)
+        shield_absorbs: bool,       // an energy shield would stop a missed bolt (result 10)
+        defender_hp: i32,           // the defender's current hit points (killing blow, dying)
+        attacker_id: u32,           // creator of the effects the hit makes
+        forced: bool,               // a cutscene attack: the result (and the damage) are given
+        forced_result: i32,
+        forced_damage: i32,         // -1: roll it
+    }
+
+    fn make_situation {} -> AttackSituation {
+        return AttackSituation{
+            target_object = false, target_plot = false, dist2 = 9.0, defender_sees = true, facing_cos = 1.0,
+            facing_dot = -1.0, defender_busy = false, shield_absorbs = false, defender_hp = 1000,
+            attacker_id = OBJECT_INVALID, forced = false, forced_result = outcome::HIT, forced_damage = -1,
+        }
+    }
+
+    // ---- weapons and slots
+
+    // WeaponWield of an item's base item (0 when unknown): 1 small, 2 one-handed, 3 double, 4 pistol,
+    // 5 rifle, 6 heavy.
+    fn combat_get_wield { tables: *Tables, item: *Item } -> i32 {
+        let bi = get_baseitem{ tables, row = item.base_item } ifnull { return 0 }
+        return bi.wield
+    }
+
+    fn combat_is_lightsaber { item: *Item } -> bool {
+        return item.base_item == 8 or item.base_item == 9 or item.base_item == 10
+    }
+
+    // The attacker's attacks are ranged when the right-hand weapon is a ranged one (combat.md 3.3).
+    fn combat_is_ranged { tables: *Tables, c: *Creature } -> bool {
+        let right = equipped_item{ c, mask = slot::RIGHT } ifnull { return false }
+        let bi = get_baseitem{ tables, row = right.base_item } ifnull { return false }
+        return bi.ranged
+    }
+
+    // GetCurrentAttackWeapon: 1 and 6 the right weapon, 2 the right weapon if it is a double
+    // weapon else the left one, 3 the creature weapon in slot 0x4000 (4 and 5 the other two), 7
+    // and 8 the gloves.
+    fn combat_find_weapon { tables: *Tables, c: *Creature, wtype: i32 } -> ?*Item {
+        if wtype == watk::RIGHT or wtype == watk::EXTRA { return equipped_item{ c, mask = slot::RIGHT } }
+        if wtype == watk::LEFT {
+            let right = equipped_item{ c, mask = slot::RIGHT }
+            if right != null {
+                if combat_get_wield{ tables, item = right } == 3 { return right }
+            }
+            return equipped_item{ c, mask = slot::LEFT }
+        }
+        if wtype == watk::CREATURE_L { return equipped_item{ c, mask = slot::CREATURE_L } }
+        if wtype == 4 { return equipped_item{ c, mask = slot::CREATURE_R } }
+        if wtype == 5 { return equipped_item{ c, mask = slot::CREATURE_B } }
+        if wtype == watk::UNARMED or wtype == watk::UNARMED_EXTRA { return equipped_item{ c, mask = slot::HANDS } }
+        return null
+    }
+
+    // The item that gives the off-hand attack its penalty and threat: the left one, or the right
+    // one when it is a double weapon and nothing is in the left hand (GetAttackModifierVersus).
+    fn combat_find_off_hand_weapon { tables: *Tables, c: *Creature } -> ?*Item {
+        let left = equipped_item{ c, mask = slot::LEFT }
+        if left != null { return left }
+        let right = equipped_item{ c, mask = slot::RIGHT } ifnull { return null }
+        if combat_get_wield{ tables, item = right } == 3 { return right }
+        return null
+    }
+
+    // WeaponSize minus creature size, -10 outside -2..1 (GetRelativeWeaponSize).
+    fn combat_get_relative_size { tables: *Tables, c: *Creature, item: *Item } -> i32 {
+        let bi = get_baseitem{ tables, row = item.base_item } ifnull { return -10 }
+        let d = bi.weapon_size - c.stats.size
+        if d < -2 or d > 1 { return -10 }
+        return d
+    }
+
+    // The combat feat if the attacker has it, else 0. Decision: a feat the creature lacks counts
+    // as none everywhere; the exe clears it only in the special-attack step, after the first
+    // attack roll already used it.
+    fn combat_pick_feat { c: *Creature, combat_feat: i32 } -> i32 {
+        if combat_feat != 0 and has_feat{ c, feat = combat_feat } { return combat_feat }
+        return 0
+    }
+
+    // Flurry 11, Improved Flurry 91, Master Flurry 53, Rapid Shot 30, Improved 92, Multi Shot 26.
+    fn combat_feat_adds_attack { feat: i32 } -> bool {
+        return feat == 11 or feat == 91 or feat == 53 or feat == 30 or feat == 92 or feat == 26
+    }
+
+    // The ability whose modifier sets the stun DC of Critical Strike (STR, melee) and Sniper Shot
+    // (INT, ranged); -1 for every other feat.
+    fn combat_get_stun_ability { feat: i32 } -> i32 {
+        if feat == 8 or feat == 19 or feat == 81 { return abil::STR }
+        if feat == 31 or feat == 20 or feat == 77 { return abil::INT }
+        return -1
+    }
+
+    // ---- number of attacks (3.2)
+
+    struct AttackCounts {
+        on_hand: i32,
+        off_hand: i32,
+        total: i32,
+        is_off_hand: [MAX_ATTACKS]bool,     // attack i is an off-hand attack (i >= on_hand)
+        weapon_type: [MAX_ATTACKS]i32,      // the weapon attack type of attack i (watk::*)
+    }
+
+    // CalculateOffHandAttacks: one when the right weapon is no bigger than the creature and a real
+    // weapon is in the left slot, or the right weapon is bigger than the creature and a double
+    // weapon (WeaponWield 3). Needs a right weapon either way.
+    fn combat_count_off_hand_attacks { tables: *Tables, c: *Creature } -> i32 {
+        let right = equipped_item{ c, mask = slot::RIGHT } ifnull { return 0 }
+        let rb = get_baseitem{ tables, row = right.base_item } ifnull { return 0 }
+        if rb.weapon_size <= c.stats.size {
+            let left = equipped_item{ c, mask = slot::LEFT } ifnull { return 0 }
+            let lb = get_baseitem{ tables, row = left.base_item } ifnull { return 0 }
+            if lb.weapon_type != 0 and lb.wield != 0 { return 1 }
+            return 0
+        }
+        if rb.wield == 3 { return 1 }
+        return 0
+    }
+
+    // GetWeaponAttackType for attack `index` (CSWSCombatRound 0x004d3da0). A creature with only
+    // creature weapons attacks with the first one (3) or has none (0); an off-hand attack is 2;
+    // an "extra" attack (effect attacks and an index past the on-hand count, which no round
+    // reaches) is 6 with a right weapon, 8 without; otherwise 1 with a right weapon, 7 without.
+    fn combat_get_weapon_type { c: *Creature, on_hand: i32, index: i32, off_hand: bool } -> i32 {
+        let right = equipped_item{ c, mask = slot::RIGHT }
+        let left = equipped_item{ c, mask = slot::LEFT }
+        if right == null and left == null {
+            let any = equipped_item{ c, mask = slot::CREATURE_L } != null or
+                equipped_item{ c, mask = slot::CREATURE_R } != null or
+                equipped_item{ c, mask = slot::CREATURE_B } != null
+            if any {
+                return if equipped_item{ c, mask = slot::CREATURE_L } != null { watk::CREATURE_L } else { watk::NONE }
+            }
+        }
+        if off_hand { return watk::LEFT }
+        let extra = c.stats.extra_attacks != 0 and on_hand < index + 1
+        if not extra { return if right != null { watk::RIGHT } else { watk::UNARMED } }
+        return if right != null { watk::EXTRA } else { watk::UNARMED_EXTRA }
+    }
+
+    // How many attacks the creature makes in a round and what each one is. `combat_feat` is the
+    // feat of the action (0 for a plain attack); Flurry and the Rapid Shot line add an on-hand attack.
+    fn attack_counts { tables: *Tables, c: *Creature, combat_feat: i32 } -> AttackCounts {
+        let feat = combat_pick_feat{ c, combat_feat }
+        let mut on_hand = 1 + c.stats.extra_attacks
+        if combat_feat_adds_attack{ feat } { on_hand = on_hand + 1 }
+        let off = combat_count_off_hand_attacks{ tables, c }
+        let mut out = AttackCounts{
+            on_hand, off_hand = off, total = on_hand + off,
+            is_off_hand = [false; MAX_ATTACKS], weapon_type = [0; MAX_ATTACKS],
+        }
+        let mut i: usize = 0
+        while i < @as(usize, out.total) and i < MAX_ATTACKS {
+            let is_off = @as(i32, i) >= on_hand
+            out.is_off_hand[i] = is_off
+            out.weapon_type[i] = combat_get_weapon_type{ c, on_hand, index = @as(i32, i), off_hand = is_off }
+            i = i + 1
+        }
+        return out
+    }
+
+    // ---- critical hits (4.3)
+
+    // GetCriticalHitRoll: the lowest d20 that threatens, 21 - (CritThreat x (1 + Keen + feat width)).
+    // The weapon is the right one; for an off-hand attack the left one unless the right is a double
+    // weapon; with no weapon the gloves; with none of those the width is 1. Critical Strike (8) and
+    // Sniper Shot (31) add one width, the improved feats (19, 20) two, the master ones (81, 77) three.
+    // Example: a lightsaber (CritThreat 2) threatens on 19, with Critical Strike on 17.
+    fn critical_threat_roll { tables: *Tables, c: *Creature, off_hand: bool, combat_feat: i32 } -> i32 {
+        let weapon = combat_find_threat_weapon{ tables, c, off_hand }
+        let mut t = 1
+        let mut keen = 0
+        if weapon != null {
+            let bi = get_baseitem{ tables, row = weapon.base_item }
+            t = if bi != null { bi.crit_threat } else { 1 }
+            if weapon_keen{ item = weapon } { keen = t }
+        }
+        let mut feat_width = 0
+        if combat_feat == 8 or combat_feat == 31 { feat_width = t }
+        if combat_feat == 19 or combat_feat == 20 { feat_width = 2 * t }
+        if combat_feat == 77 or combat_feat == 81 { feat_width = 3 * t }
+        return 21 - (t + keen + feat_width)
+    }
+
+    // The weapon whose threat range counts: the right one; for an off-hand attack the left one
+    // unless the right is a double weapon; with none, the gloves.
+    fn combat_find_threat_weapon { tables: *Tables, c: *Creature, off_hand: bool } -> ?*Item {
+        let right = equipped_item{ c, mask = slot::RIGHT }
+        if off_hand and right != null {
+            if combat_get_wield{ tables, item = right } != 3 {
+                let left = equipped_item{ c, mask = slot::LEFT }
+                if left != null { return left }
+                return equipped_item{ c, mask = slot::HANDS }
+            }
+        }
+        if right != null { return right }
+        return equipped_item{ c, mask = slot::HANDS }
+    }
+
+    // GetCriticalHitMultiplier: CritHitMult of the right weapon (the left one for an off-hand
+    // attack unless the right is a double weapon); 2 with no weapon, and no glove fall-back.
+    fn critical_multiplier { tables: *Tables, c: *Creature, off_hand: bool } -> i32 {
+        let right = equipped_item{ c, mask = slot::RIGHT }
+        let mut weapon = right
+        if off_hand {
+            if right == null { return 2 }
+            if combat_get_wield{ tables, item = right } != 3 { weapon = equipped_item{ c, mask = slot::LEFT } }
+        }
+        return combat_get_crit_mult{ tables, weapon }
+    }
+
+    fn combat_get_crit_mult { tables: *Tables, weapon: ?*Item } -> i32 {
+        let w = weapon ifnull { return 2 }
+        let bi = get_baseitem{ tables, row = w.base_item } ifnull { return 2 }
+        return bi.crit_mult
+    }
+
+    // ---- sneak attacks (4.7)
+
+    struct SneakCheck {
+        eligible: bool,         // the attack gets its sneak dice if it hits
+        immune: bool,           // the defender is immune to sneak attacks or critical hits (feedback 0x86)
+    }
+
+    // The sneak attack feat row 60..69 the attacker has (the highest), or -1.
+    fn combat_find_sneak_feat { c: *Creature } -> i32 {
+        let mut f = feat::SNEAK_ATTACK_10
+        while f >= feat::SNEAK_ATTACK_1 {
+            if has_feat{ c, feat = f } { return f }
+            f = f - 1
+        }
+        return -1
+    }
+
+    // ResolveSneakAttack (0x005b8820). Only attackers with a Sneak Attack feat. The attack
+    // sneaks when the defender is debilitated or dying, or does not see the attacker and the
+    // attack is melee or ranged within 10 m (and then the defender must not be immune to sneak
+    // attacks or critical hits); or when the defender sees the attacker but the attacker is
+    // outside the 90 degree cone in front of it (cosine below 0.707) and, for ranged attacks,
+    // within 10 m (this path checks no immunity). A ranged attack from beyond 10 m takes the
+    // cone path even against an unaware defender.
+    fn sneak_attack_eligible { tables: *Tables, atk: *Creature, def: *Creature, sit: *AttackSituation } -> SneakCheck {
+        let none = SneakCheck{ eligible = false, immune = false }
+        if sit.target_object or combat_find_sneak_feat{ c = atk } < 0 { return none }
+        let ranged = combat_is_ranged{ tables, c = atk }
+        let near = sit.dist2 <= 100.0
+        let down = def.stats.state != 0 or def.down or sit.defender_hp < 1
+        let mut unaware_path = down
+        if not down and not sit.defender_sees {
+            unaware_path = not ranged or near
+        }
+        if unaware_path {
+            let vs = versus_creature{ c = atk }
+            if has_immunity{ c = def, kind = imm::SNEAK_ATTACK, vs } or has_immunity{ c = def, kind = imm::CRITICAL_HIT, vs } {
+                return SneakCheck{ eligible = false, immune = true }
+            }
+            return SneakCheck{ eligible = true, immune = false }
+        }
+        if sit.facing_cos >= 0.707 or (ranged and not near) { return none }
+        return SneakCheck{ eligible = true, immune = false }
+    }
+}

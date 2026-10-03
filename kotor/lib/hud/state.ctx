@@ -1,0 +1,77 @@
+// What the HUD and the in-game panels read from the game (docs/design/hud.md, "Reading the
+// game"). Every question the interface asks of the world is one function here, so the places
+// where a system is still a stand-in (Force points and levels wait for lib/rules, the party
+// purse and the journal for their owners) change in one file.
+namespace hud {
+    // The creature behind an id, or null for anything else (an item, a door, a stale id).
+    fn creature_of { w: *world::World, id: u32 } -> ?*mut obj::Creature {
+        let o = world::object{ w, id } ifnull { return null }
+        return obj::creature{ o }
+    }
+
+    // The party, leader first.
+    fn party_ids { w: *world::World } -> []u32 { return party::members{ w } }
+
+    // A name for display: the object's dialog.tlk string when it has a strref, else its own text.
+    fn name_of { w: *world::World, id: u32 } -> []u8 {
+        let o = world::object{ w, id } ifnull { return "" }
+        if o.name.strref != 0xFFFFFFFF {
+            let text = world::string_by_strref{ w, strref = o.name.strref }
+            if text.len > 0 { return text }
+        }
+        return o.name.text
+    }
+
+    // Hit points as the bars show them: current and maximum, never below zero.
+    struct Vitality { hp: i32, hp_max: i32 }
+
+    fn vitality_of { w: *world::World, id: u32 } -> Vitality {
+        let o = world::object{ w, id } ifnull { return Vitality{ hp = 0, hp_max = 1 } }
+        let max = if o.hp_max < 1 { 1 } else { o.hp_max }
+        let hp = if o.hp < 0 { 0 } else if o.hp > max { max } else { o.hp }
+        return Vitality{ hp, hp_max = max }
+    }
+
+    // Force points: current and maximum. Stand-in until lib/rules' stats are on the creature
+    // (PLACEHOLDER: a creature with no Force has max 1, value 0, as the original's bar does).
+    struct Force { fp: i32, fp_max: i32 }
+
+    fn force_of { w: *world::World, id: u32 } -> Force {
+        return Force{ fp = 0, fp_max = 1 }
+    }
+
+    // The character level: the sum of the class levels (PLACEHOLDER: the engine keeps them on
+    // the creature until lib/rules' stats arrive).
+    fn level_of { w: *world::World, id: u32 } -> i32 {
+        let c = creature_of{ w, id } ifnull { return 1 }
+        let mut n: u32 = 0
+        let mut i: usize = 0
+        while i < 3 {
+            n = n + c.class_levels[i]
+            i = i + 1
+        }
+        if n == 0 { n = c.hit_dice }
+        return if n == 0 { 1 } else { @as(i32, n) }
+    }
+
+    // Whether the creature is down: dead, or out of hit points.
+    fn is_down { w: *world::World, id: u32 } -> bool {
+        let c = creature_of{ w, id } ifnull { return true }
+        let o = world::object{ w, id } ifnull { return true }
+        return c.dead or o.hp <= 0
+    }
+
+    // The portrait texture's resref for a creature: portraits.2da's baseresref for its row.
+    fn portrait_of { w: *world::World, id: u32 } -> []u8 {
+        let c = creature_of{ w, id } ifnull { return "" }
+        return twoda::get_string{ t = w.tables.portraits, row = @as(usize, c.portrait), column = "baseresref" } ifnull ""
+    }
+
+    // Writes `prefix` then the decimal `n` into `into` and returns the used part: control tags
+    // like PB_VIT1.
+    fn tag_n { into: []mut u8, prefix: []u8, n: usize } -> []u8 {
+        slice::copy(u8){ dst = into[..prefix.len], src = prefix }
+        let digits = utf8::fmt_u64{ n = @as(u64, n), into = into[prefix.len..] }
+        return into[..prefix.len + digits.bytes.len]
+    }
+}

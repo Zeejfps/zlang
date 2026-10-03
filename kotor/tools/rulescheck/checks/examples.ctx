@@ -1,0 +1,391 @@
+// Worked examples of the effect system, derived stats and saves, each computed by hand from the
+// formulas in docs/re/rules.md and combat.md and from the 2DA values they name. A test builds a
+// creature in code, so no game resource but the tables is involved.
+namespace check {
+    // A creature of one class and level with the given ability scores (STR DEX CON INT WIS CHA).
+    fn build_creature { tables: *rules::Tables, class: i32, level: i32, str: i32, dex: i32, con: i32, wis: i32, cha: i32 } -> rules::Creature {
+        let mut c = rules::make_creature{}
+        c.nclasses = 1
+        c.classes[0] = rules::ClassSlot{ class, level }
+        c.abil = [str, dex, con, 10, wis, cha]
+        c.hp_base = 40
+        rules::recompute{ tables, c = &c }
+        return c
+    }
+
+    fn count_events { ev: rules::Events, kind: i32 } -> i64 {
+        let mut n: i64 = 0
+        let mut i: usize = 0
+        while i < @as(usize, ev.len) {
+            if ev.items[i].kind == kind { n = n + 1 }
+            i = i + 1
+        }
+        return n
+    }
+
+    fn event_value { ev: rules::Events, kind: i32 } -> i64 {
+        let mut i: usize = 0
+        while i < @as(usize, ev.len) {
+            if ev.items[i].kind == kind { return @as(i64, ev.items[i].a) }
+            i = i + 1
+        }
+        return -1000000
+    }
+
+    fn zero_time {} -> rules::Time { return rules::Time{ day = 0, ms = 0 } }
+
+    // Applies an effect with the given duration to a creature at time `now`; returns whether it stuck.
+    fn apply_timed { env: rules::Env, mut c: rules::Creature, e: rules::Effect, dur: i32, seconds: f32, spell: i32, id: u64, mut rng: rules::Rng, mut ev: rules::Events } -> bool {
+        let mut x = e
+        x.dur = dur
+        x.duration = seconds
+        x.spell_id = spell
+        x.id = id
+        let res = rules::apply_effect{ env, c = &c, e = x, rng = &rng, ev = &ev }
+        return res.kept
+    }
+
+    fn run_examples { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let mut rng = rules::seed_rng{ seed = 1 }
+        let mut ev: rules::Events
+        let env = rules::Env{ tables, now = zero_time{}, hp = 30 }
+
+        // ---- ability modifiers: (score - 10) / 2 rounded down
+        expect_eq{ &io, &r, name = "modifier of 7", got = @as(i64, rules::ability_modifier{ score = 7 }), want = -2 }
+        expect_eq{ &io, &r, name = "modifier of 9", got = @as(i64, rules::ability_modifier{ score = 9 }), want = -1 }
+        expect_eq{ &io, &r, name = "modifier of 11", got = @as(i64, rules::ability_modifier{ score = 11 }), want = 0 }
+        expect_eq{ &io, &r, name = "modifier of 15", got = @as(i64, rules::ability_modifier{ score = 15 }), want = 2 }
+
+        // ---- base attack bonus: cls_atk_1 is level, cls_atk_2 is 3/4
+        let soldier5 = build_creature{ tables, class = rules::cls::SOLDIER, level = 5, str = 16, dex = 12, con = 14, wis = 10, cha = 10 }
+        expect_eq{ &io, &r, name = "soldier 5 BAB", got = @as(i64, soldier5.stats.bab), want = 5 }
+        let scoundrel5 = build_creature{ tables, class = rules::cls::SCOUNDREL, level = 5, str = 10, dex = 16, con = 10, wis = 10, cha = 14 }
+        expect_eq{ &io, &r, name = "scoundrel 5 BAB", got = @as(i64, scoundrel5.stats.bab), want = 3 }
+        let mut multi = soldier5
+        multi.nclasses = 2
+        multi.classes[0] = rules::ClassSlot{ class = rules::cls::SOLDIER, level = 2 }
+        multi.classes[1] = rules::ClassSlot{ class = rules::cls::SCOUNDREL, level = 2 }
+        rules::recompute{ tables, c = &multi }
+        expect_eq{ &io, &r, name = "soldier 2 + scoundrel 2 BAB", got = @as(i64, multi.stats.bab), want = 3 }
+
+        // ---- saves: class table + ability modifier (+ Conditioning, + template bonus)
+        // Soldier 3: fort 3, reflex 1, will 1 (cls_st_soldier rows 2); CON 14 +2, DEX 12 +1, WIS 10 +0
+        let soldier3 = build_creature{ tables, class = rules::cls::SOLDIER, level = 3, str = 16, dex = 12, con = 14, wis = 10, cha = 10 }
+        expect_eq{ &io, &r, name = "soldier 3 fortitude", got = @as(i64, soldier3.stats.save_base[0]), want = 3 + 2 }
+        expect_eq{ &io, &r, name = "soldier 3 reflex", got = @as(i64, soldier3.stats.save_base[1]), want = 1 + 1 }
+        expect_eq{ &io, &r, name = "soldier 3 will", got = @as(i64, soldier3.stats.save_base[2]), want = 1 + 0 }
+        let mut conditioned = soldier3
+        rules::grant_feat{ c = &conditioned, feat = rules::feat::CONDITIONING }
+        rules::grant_feat{ c = &conditioned, feat = rules::feat::IMPROVED_CONDITIONING }
+        conditioned.save_bonus[2] = 2
+        rules::recompute{ tables, c = &conditioned }
+        expect_eq{ &io, &r, name = "improved conditioning (+2 only) and a template bonus on will", got = @as(i64, conditioned.stats.save_base[2]), want = 1 + 0 + 2 + 2 }
+        let consular1 = build_creature{ tables, class = rules::cls::JEDI_CONSULAR, level = 1, str = 10, dex = 14, con = 10, wis = 16, cha = 14 }
+        expect_eq{ &io, &r, name = "consular 1 will", got = @as(i64, consular1.stats.save_base[2]), want = 2 + 3 }
+
+        // ---- hit points
+        // PC: sum over the history of max(1, die + CON mod) + Toughness per level
+        let mut pc = build_creature{ tables, class = rules::cls::SOLDIER, level = 3, str = 16, dex = 12, con = 14, wis = 10, cha = 10 }
+        pc.pc_rules = true
+        pc.nhistory = 3
+        pc.history[0].hp = 10
+        pc.history[1].hp = 10
+        pc.history[2].hp = 4
+        rules::recompute{ tables, c = &pc }
+        expect_eq{ &io, &r, name = "pc max HP (12 + 12 + 6)", got = @as(i64, pc.stats.max_hp), want = 30 }
+        rules::grant_feat{ c = &pc, feat = rules::feat::TOUGHNESS }
+        rules::recompute{ tables, c = &pc }
+        expect_eq{ &io, &r, name = "pc max HP with Toughness (+1 per level)", got = @as(i64, pc.stats.max_hp), want = 33 }
+        // NPC: template HP + level x (CON mod + bonuses), or one HP per level when that is less
+        let mut npc = build_creature{ tables, class = rules::cls::SOLDIER, level = 5, str = 16, dex = 12, con = 12, wis = 10, cha = 10 }
+        npc.hp_base = 60
+        rules::recompute{ tables, c = &npc }
+        expect_eq{ &io, &r, name = "npc max HP, CON 12", got = @as(i64, npc.stats.max_hp), want = 60 + 5 * 1 }
+        rules::grant_feat{ c = &npc, feat = rules::feat::WOOKIEE_ENDURANCE }
+        rules::recompute{ tables, c = &npc }
+        expect_eq{ &io, &r, name = "npc max HP with Wookiee Endurance", got = @as(i64, npc.stats.max_hp), want = 60 + 5 * (1 + 2) }
+        let mut frail = build_creature{ tables, class = rules::cls::SOLDIER, level = 5, str = 10, dex = 10, con = 8, wis = 10, cha = 10 }
+        frail.hp_base = 2
+        rules::recompute{ tables, c = &frail }
+        expect_eq{ &io, &r, name = "npc max HP floor of one per level", got = @as(i64, frail.stats.max_hp), want = 5 }
+
+        // ---- Force points
+        let mut guardian = build_creature{ tables, class = rules::cls::JEDI_GUARDIAN, level = 4, str = 14, dex = 14, con = 14, wis = 14, cha = 10 }
+        guardian.fp_base = 10
+        rules::recompute{ tables, c = &guardian }
+        expect_eq{ &io, &r, name = "npc guardian 4 max FP: 10 + 4 x (2 + 0)", got = @as(i64, guardian.stats.max_fp), want = 18 }
+        rules::grant_feat{ c = &guardian, feat = rules::feat::FORCE_SENSITIVE }
+        rules::recompute{ tables, c = &guardian }
+        expect_eq{ &io, &r, name = "npc guardian with Force Sensitive (+40)", got = @as(i64, guardian.stats.max_fp), want = 58 }
+        let mut jedi_pc = build_creature{ tables, class = rules::cls::JEDI_GUARDIAN, level = 3, str = 14, dex = 14, con = 14, wis = 14, cha = 12 }
+        jedi_pc.pc_rules = true
+        jedi_pc.nhistory = 3
+        jedi_pc.history[0].fp = 4
+        jedi_pc.history[1].fp = 4
+        jedi_pc.history[2].fp = 4
+        rules::recompute{ tables, c = &jedi_pc }
+        expect_eq{ &io, &r, name = "pc guardian 3 max FP: 3 x (2 + 4 + 1)", got = @as(i64, jedi_pc.stats.max_fp), want = 21 }
+        let mut droid = guardian
+        droid.race = rules::race::DROID
+        rules::recompute{ tables, c = &droid }
+        expect_eq{ &io, &r, name = "droids have no Force points", got = @as(i64, droid.stats.max_fp), want = 0 }
+        let mut soldier_npc = soldier5
+        soldier_npc.fp_base = 30
+        rules::recompute{ tables, c = &soldier_npc }
+        expect_eq{ &io, &r, name = "soldiers have no Force points", got = @as(i64, soldier_npc.stats.max_fp), want = 0 }
+
+        // ---- class armour bonus: acbonus.2da by class level
+        let guardian6 = build_creature{ tables, class = rules::cls::JEDI_GUARDIAN, level = 6, str = 14, dex = 14, con = 14, wis = 14, cha = 10 }
+        expect_eq{ &io, &r, name = "guardian 6 class AC bonus", got = @as(i64, guardian6.stats.ac_class), want = 4 }
+        expect_eq{ &io, &r, name = "soldier 6 class AC bonus", got = @as(i64, soldier5.stats.ac_class), want = 0 }
+
+        // ---- stacking (rules.md 1.7)
+        // Two attack bonuses of one spell count once (the larger), of two spells they add.
+        let mut c = build_creature{ tables, class = rules::cls::SOLDIER, level = 5, str = 16, dex = 12, con = 14, wis = 10, cha = 10 }
+        rules::clear_events{ &ev }
+        _ = apply_timed{ env, c = &c, e = rules::fx::make_attack_increase{ amount = 2, hand = 0 }, dur = rules::dur::PERMANENT, seconds = 0.0, spell = 7, id = 1, rng = &rng, ev = &ev }
+        _ = apply_timed{ env, c = &c, e = rules::fx::make_attack_increase{ amount = 3, hand = 0 }, dur = rules::dur::PERMANENT, seconds = 0.0, spell = 7, id = 2, rng = &rng, ev = &ev }
+        let q = rules::BonusQuery{ category = rules::cat::ATTACK, a = 0, b = 0, hand = 0, vs = rules::no_versus{} }
+        expect_eq{ &io, &r, name = "attack bonuses of one spell: the larger", got = @as(i64, rules::net{ b = rules::effect_bonus{ c = &c, q } }), want = 3 }
+        _ = apply_timed{ env, c = &c, e = rules::fx::make_attack_increase{ amount = 2, hand = 0 }, dur = rules::dur::PERMANENT, seconds = 0.0, spell = 8, id = 3, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "attack bonuses of two spells: added", got = @as(i64, rules::net{ b = rules::effect_bonus{ c = &c, q } }), want = 5 }
+        _ = apply_timed{ env, c = &c, e = rules::fx::make_attack_increase{ amount = 30, hand = 0 }, dur = rules::dur::PERMANENT, seconds = 0.0, spell = -1, id = 4, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "attack bonus capped at +20", got = @as(i64, rules::net{ b = rules::effect_bonus{ c = &c, q } }), want = 20 }
+        // A bonus against a race applies to that race only, never to a character sheet.
+        let mut rc = build_creature{ tables, class = rules::cls::SOLDIER, level = 1, str = 10, dex = 10, con = 10, wis = 10, cha = 10 }
+        let mut vs_race = rules::fx::make_attack_increase{ amount = 4, hand = 0 }
+        vs_race.ints[2] = 5
+        _ = apply_timed{ env, c = &rc, e = vs_race, dur = rules::dur::PERMANENT, seconds = 0.0, spell = -1, id = 5, rng = &rng, ev = &ev }
+        let qd = rules::BonusQuery{ category = rules::cat::ATTACK, a = 0, b = 0, hand = 0, vs = rules::Versus{ valid = true, race = 5, align = 1 } }
+        let qh = rules::BonusQuery{ category = rules::cat::ATTACK, a = 0, b = 0, hand = 0, vs = rules::Versus{ valid = true, race = 6, align = 1 } }
+        expect_eq{ &io, &r, name = "racial attack bonus versus a droid", got = @as(i64, rules::net{ b = rules::effect_bonus{ c = &rc, q = qd } }), want = 4 }
+        expect_eq{ &io, &r, name = "racial attack bonus versus a human", got = @as(i64, rules::net{ b = rules::effect_bonus{ c = &rc, q = qh } }), want = 0 }
+        expect_eq{ &io, &r, name = "racial attack bonus with nobody to compare", got = @as(i64, rules::net{ b = rules::effect_bonus{ c = &rc, q } }), want = 0 }
+
+        // AC: dodge adds, natural keeps the highest
+        let mut ac = build_creature{ tables, class = rules::cls::SCOUNDREL, level = 1, str = 10, dex = 14, con = 10, wis = 10, cha = 10 }
+        rules::clear_events{ &ev }
+        _ = apply_timed{ env, c = &ac, e = rules::fx::make_ac_increase{ amount = 2, mod_type = 0 }, dur = rules::dur::PERMANENT, seconds = 0.0, spell = 1, id = 10, rng = &rng, ev = &ev }
+        _ = apply_timed{ env, c = &ac, e = rules::fx::make_ac_increase{ amount = 3, mod_type = 0 }, dur = rules::dur::PERMANENT, seconds = 0.0, spell = 2, id = 11, rng = &rng, ev = &ev }
+        _ = apply_timed{ env, c = &ac, e = rules::fx::make_ac_increase{ amount = 2, mod_type = 1 }, dur = rules::dur::PERMANENT, seconds = 0.0, spell = 3, id = 12, rng = &rng, ev = &ev }
+        _ = apply_timed{ env, c = &ac, e = rules::fx::make_ac_increase{ amount = 4, mod_type = 1 }, dur = rules::dur::PERMANENT, seconds = 0.0, spell = 4, id = 13, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "dodge AC adds", got = @as(i64, ac.stats.ac_dodge), want = 5 }
+        expect_eq{ &io, &r, name = "natural AC keeps the highest", got = @as(i64, ac.stats.ac_natural), want = 4 }
+        expect_eq{ &io, &r, name = "removing the 4 leaves the 2", got = @as(i64, rules::remove_effect_id{ tables, c = &ac, id = 13, ev = &ev }), want = 1 }
+        expect_eq{ &io, &r, name = "natural AC after removal", got = @as(i64, ac.stats.ac_natural), want = 2 }
+
+        // Ability effects: an increase of CON changes the maximum HP and says so; penalties of one spell add.
+        let mut hp = build_creature{ tables, class = rules::cls::SOLDIER, level = 4, str = 16, dex = 12, con = 12, wis = 10, cha = 10 }
+        hp.hp_base = 40
+        rules::recompute{ tables, c = &hp }
+        expect_eq{ &io, &r, name = "max HP before: 40 + 4 x 1", got = @as(i64, hp.stats.max_hp), want = 44 }
+        rules::clear_events{ &ev }
+        _ = apply_timed{ env, c = &hp, e = rules::fx::make_ability_increase{ ability = rules::abil::CON, amount = 4 }, dur = rules::dur::TEMPORARY, seconds = 60.0, spell = 20, id = 20, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "CON +4 raises max HP by 4 x 2", got = @as(i64, hp.stats.max_hp), want = 52 }
+        expect_eq{ &io, &r, name = "the max HP change is reported (new value)", got = event_value{ ev, kind = rules::ev::MAX_HP_CHANGED }, want = 44 }
+        // expiry: 60 s later the effect is gone
+        let later = rules::Env{ tables, now = rules::time_add_seconds{ t = zero_time{}, seconds = 61.0, ms_per_day = 2880000 }, hp = 30 }
+        rules::clear_events{ &ev }
+        rules::update_effects{ env = later, c = &hp, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "the temporary CON bonus has expired", got = @as(i64, hp.stats.max_hp), want = 44 }
+        expect_eq{ &io, &r, name = "expiry leaves the list empty", got = @as(i64, hp.nfx), want = 0 }
+
+        // Temporary hit points absorb damage before hit points; an effect is dropped when spent.
+        let mut tmp = build_creature{ tables, class = rules::cls::SOLDIER, level = 1, str = 10, dex = 10, con = 10, wis = 10, cha = 10 }
+        rules::clear_events{ &ev }
+        _ = apply_timed{ env, c = &tmp, e = rules::fx::make_temporary_hitpoints{ amount = 10 }, dur = rules::dur::TEMPORARY, seconds = 30.0, spell = 21, id = 30, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "temporary HP granted", got = @as(i64, tmp.temp_hp), want = 10 }
+        let dmg = rules::fx::make_damage{ amount = 14, types = rules::dmg::BLASTER, power = 0 }
+        _ = apply_timed{ env, c = &tmp, e = dmg, dur = rules::dur::INSTANT, seconds = 0.0, spell = -1, id = 31, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "14 damage through 10 temporary HP leaves 4", got = event_value{ ev, kind = rules::ev::DAMAGE_HP }, want = 4 }
+        expect_eq{ &io, &r, name = "temporary HP spent", got = @as(i64, tmp.temp_hp), want = 0 }
+        expect_eq{ &io, &r, name = "the spent effect is removed", got = @as(i64, tmp.nfx), want = 0 }
+
+        // Damage immunity, resistance and reduction: immunity first, then resistance, then reduction.
+        let mut tgt = build_creature{ tables, class = rules::cls::SOLDIER, level = 1, str = 10, dex = 10, con = 10, wis = 10, cha = 10 }
+        _ = apply_timed{ env, c = &tgt, e = rules::fx::make_damage_immunity_increase{ types = rules::dmg::BLASTER, percent = 50 }, dur = rules::dur::PERMANENT, seconds = 0.0, spell = -1, id = 40, rng = &rng, ev = &ev }
+        _ = apply_timed{ env, c = &tgt, e = rules::fx::make_damage_resistance{ types = rules::dmg::BLASTER, amount = 3, limit = 0 }, dur = rules::dur::PERMANENT, seconds = 0.0, spell = -1, id = 41, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "20 blaster damage: 50% immunity -> 10, resistance 3 -> 7", got = @as(i64, rules::mitigate_damage{ c = &tgt, amount = 20, flags = rules::dmg::BLASTER, power = 0, simulate = true, ev = &ev }), want = 7 }
+        expect_eq{ &io, &r, name = "slashing damage is untouched", got = @as(i64, rules::mitigate_damage{ c = &tgt, amount = 20, flags = rules::dmg::SLASHING, power = 0, simulate = true, ev = &ev }), want = 20 }
+        // A limited resistance wears out.
+        let mut lim = build_creature{ tables, class = rules::cls::SOLDIER, level = 1, str = 10, dex = 10, con = 10, wis = 10, cha = 10 }
+        _ = apply_timed{ env, c = &lim, e = rules::fx::make_damage_resistance{ types = rules::dmg::ION, amount = 5, limit = 8 }, dur = rules::dur::PERMANENT, seconds = 0.0, spell = -1, id = 42, rng = &rng, ev = &ev }
+        // The engine counts a limit down by the whole damage (combat.md 6.4, 0x004d0e40): a 9 damage
+        // hit exceeds the limit of 8, so the resistance absorbs the 8 it has left and goes.
+        expect_eq{ &io, &r, name = "limited resistance: a hit past the limit absorbs the limit", got = @as(i64, rules::mitigate_damage{ c = &lim, amount = 9, flags = rules::dmg::ION, power = 0, simulate = false, ev = &ev }), want = 1 }
+        expect_eq{ &io, &r, name = "the spent resistance is removed", got = @as(i64, lim.nfx), want = 0 }
+        expect_eq{ &io, &r, name = "no resistance left: damage untouched", got = @as(i64, rules::mitigate_damage{ c = &lim, amount = 9, flags = rules::dmg::ION, power = 0, simulate = false, ev = &ev }), want = 9 }
+
+        // Haste and slow: 150% and 50% movement, +4 / -2 dodge AC.
+        let mut hs = build_creature{ tables, class = rules::cls::SOLDIER, level = 1, str = 10, dex = 10, con = 10, wis = 10, cha = 10 }
+        _ = apply_timed{ env, c = &hs, e = rules::fx::make_haste{}, dur = rules::dur::TEMPORARY, seconds = 30.0, spell = 50, id = 50, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "haste: speed x 1.5 (x1000)", got = @as(i64, @as(i32, hs.stats.speed_factor * 1000.0)), want = 1500 }
+        expect_eq{ &io, &r, name = "haste: +4 dodge AC", got = @as(i64, hs.stats.ac_dodge), want = 4 }
+        _ = apply_timed{ env, c = &hs, e = rules::fx::make_slow{}, dur = rules::dur::TEMPORARY, seconds = 30.0, spell = 51, id = 51, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "haste and slow cancel", got = @as(i64, @as(i32, hs.stats.speed_factor * 1000.0)), want = 1000 }
+
+        // Crowd control: the highest-numbered state is active; the creature is uncommandable until
+        // the last one ends.
+        let mut cc = build_creature{ tables, class = rules::cls::SOLDIER, level = 1, str = 10, dex = 10, con = 10, wis = 10, cha = 10 }
+        rules::clear_events{ &ev }
+        _ = apply_timed{ env, c = &cc, e = rules::fx::make_stunned{}, dur = rules::dur::TEMPORARY, seconds = 10.0, spell = 60, id = 60, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "stunned: state 4", got = @as(i64, cc.stats.state), want = 4 }
+        expect_eq{ &io, &r, name = "stunned: cannot move", got = @as(i64, if rules::can_move{ c = &cc } { 1 } else { 0 }), want = 0 }
+        expect_eq{ &io, &r, name = "stunned: may still attack bits", got = @as(i64, if rules::can_attack{ c = &cc } { 1 } else { 0 }), want = 1 }
+        expect_eq{ &io, &r, name = "stun makes the creature uncommandable", got = event_value{ ev, kind = rules::ev::COMMANDABLE }, want = 0 }
+        _ = apply_timed{ env, c = &cc, e = rules::fx::make_paralyze{}, dur = rules::dur::TEMPORARY, seconds = 20.0, spell = 61, id = 61, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "paralysis outranks stun: state 5", got = @as(i64, cc.stats.state), want = 5 }
+        expect_eq{ &io, &r, name = "paralyzed: cannot attack", got = @as(i64, if rules::can_attack{ c = &cc } { 1 } else { 0 }), want = 0 }
+        _ = rules::remove_effect_id{ tables, c = &cc, id = 61, ev = &ev }
+        expect_eq{ &io, &r, name = "paralysis gone: back to stun", got = @as(i64, cc.stats.state), want = 4 }
+        rules::clear_events{ &ev }
+        _ = rules::remove_effect_id{ tables, c = &cc, id = 60, ev = &ev }
+        expect_eq{ &io, &r, name = "all gone: free", got = @as(i64, cc.stats.state), want = 0 }
+        expect_eq{ &io, &r, name = "commandable again", got = event_value{ ev, kind = rules::ev::COMMANDABLE }, want = 1 }
+        // immunity: a creature with the stun immunity turns the effect away and says why
+        let mut imm_c = cc
+        _ = apply_timed{ env, c = &imm_c, e = rules::fx::make_immunity{ immunity = rules::imm::STUN }, dur = rules::dur::PERMANENT, seconds = 0.0, spell = -1, id = 62, rng = &rng, ev = &ev }
+        let refused = rules::apply_effect{ env, c = &imm_c, e = rules::fx::make_stunned{}, rng = &rng, ev = &ev }
+        expect_true{ &io, &r, name = "stun immunity refuses a stun", cond = refused.refused and not refused.kept }
+        expect_eq{ &io, &r, name = "stun immunity feedback number", got = @as(i64, refused.feedback), want = 0x8a }
+
+        // Links: a group applies under one id and is removed as a unit; a refused real child takes
+        // the visual with it.
+        let mut lk = build_creature{ tables, class = rules::cls::SOLDIER, level = 1, str = 10, dex = 10, con = 10, wis = 10, cha = 10 }
+        let mut group = rules::fx::link_groups{ child = rules::fx::make_group{ e = rules::fx::make_visual_effect{ vfx = 2002, miss = false } }, parent = rules::fx::make_group{ e = rules::fx::make_ac_increase{ amount = 1, mod_type = 0 } } }
+        let mut ids = rules::EffectIds{ next = 100 }
+        rules::fx::assign_id{ &ids, g = &group }
+        rules::fx::set_group_timing{ g = &group, dur = rules::dur::PERMANENT, seconds = 0.0 }
+        let gr = rules::apply_group{ env, c = &lk, g = group, rng = &rng, ev = &ev }
+        expect_true{ &io, &r, name = "linked group applied", cond = gr.kept }
+        expect_eq{ &io, &r, name = "both leaves are on the creature", got = @as(i64, lk.nfx), want = 2 }
+        expect_eq{ &io, &r, name = "removal by id takes the whole link", got = @as(i64, rules::remove_effect_id{ tables, c = &lk, id = group.items[0].id, ev = &ev }), want = 2 }
+        let mut stun_link = rules::fx::link_groups{ child = rules::fx::make_group{ e = rules::fx::make_visual_effect{ vfx = 2002, miss = false } }, parent = rules::fx::make_group{ e = rules::fx::make_stunned{} } }
+        rules::fx::assign_id{ &ids, g = &stun_link }
+        rules::fx::set_group_timing{ g = &stun_link, dur = rules::dur::PERMANENT, seconds = 0.0 }
+        let mut immune_target = imm_c
+        let sr = rules::apply_group{ env, c = &immune_target, g = stun_link, rng = &rng, ev = &ev }
+        expect_true{ &io, &r, name = "a stun + visual link on a stun-immune target: nothing sticks", cond = not sr.kept }
+        expect_eq{ &io, &r, name = "only the immunity effect remains", got = @as(i64, immune_target.nfx), want = 1 }
+
+        // Saving throws: d20 + base + effects against the DC, no automatic success.
+        let mut sv = build_creature{ tables, class = rules::cls::SOLDIER, level = 3, str = 16, dex = 12, con = 14, wis = 10, cha = 10 }
+        // The rng sequence is fixed by the seed: roll once to know the d20 the save will use.
+        let mut probe = rules::seed_rng{ seed = 77 }
+        let d20 = rules::roll_dice{ rng = &probe, count = 1, sides = 20 }
+        let mut real = rules::seed_rng{ seed = 77 }
+        let none = rules::no_versus{}
+        let res = rules::saving_throw{ c = &sv, which = rules::save::FORT, dc = d20 + 5, save_type = 0, vs = none, force_power = false, rng = &real }
+        expect_eq{ &io, &r, name = "fortitude save of a soldier 3 (3 + 2) meets DC d20 + 5", got = @as(i64, res.result), want = 1 }
+        expect_eq{ &io, &r, name = "the save reports the d20", got = @as(i64, res.roll), want = @as(i64, d20) }
+        let mut real2 = rules::seed_rng{ seed = 77 }
+        let res2 = rules::saving_throw{ c = &sv, which = rules::save::FORT, dc = d20 + 6, save_type = 0, vs = none, force_power = false, rng = &real2 }
+        expect_eq{ &io, &r, name = "one point short fails", got = @as(i64, res2.result), want = 0 }
+
+        // Regeneration: 2 HP every 6 s, once the interval has passed, then the clock restarts.
+        let mut rg = build_creature{ tables, class = rules::cls::SOLDIER, level = 1, str = 10, dex = 10, con = 10, wis = 10, cha = 10 }
+        _ = apply_timed{ env, c = &rg, e = rules::fx::make_regenerate{ amount = 2, seconds = 6.0 }, dur = rules::dur::PERMANENT, seconds = 0.0, spell = -1, id = 70, rng = &rng, ev = &ev }
+        let hurt = 5
+        let at5 = rules::Env{ tables, now = rules::time_add_seconds{ t = zero_time{}, seconds = 5.0, ms_per_day = 2880000 }, hp = hurt }
+        rules::clear_events{ &ev }
+        rules::update_effects{ env = at5, c = &rg, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "regeneration: nothing before the interval", got = count_events{ ev, kind = rules::ev::HEAL_HP }, want = 0 }
+        let at7 = rules::Env{ tables, now = rules::time_add_seconds{ t = zero_time{}, seconds = 7.0, ms_per_day = 2880000 }, hp = hurt }
+        rules::update_effects{ env = at7, c = &rg, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "regeneration: heals 2 after the interval", got = event_value{ ev, kind = rules::ev::HEAL_HP }, want = 2 }
+        rules::clear_events{ &ev }
+        rules::update_effects{ env = at7, c = &rg, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "regeneration: the clock restarted", got = count_events{ ev, kind = rules::ev::HEAL_HP }, want = 0 }
+
+        // Death strips temporary effects, keeps equipped and innate ones; ClearAllEffects likewise.
+        let mut dd = build_creature{ tables, class = rules::cls::SOLDIER, level = 1, str = 10, dex = 10, con = 10, wis = 10, cha = 10 }
+        _ = apply_timed{ env, c = &dd, e = rules::fx::make_ac_increase{ amount = 2, mod_type = 0 }, dur = rules::dur::TEMPORARY, seconds = 60.0, spell = 80, id = 80, rng = &rng, ev = &ev }
+        _ = apply_timed{ env, c = &dd, e = rules::fx::make_ac_increase{ amount = 1, mod_type = 2 }, dur = rules::dur::EQUIPPED, seconds = 0.0, spell = -1, id = 81, rng = &rng, ev = &ev }
+        let mut cleared = dd
+        rules::clear_effects{ tables, c = &cleared, ev = &ev }
+        expect_eq{ &io, &r, name = "ClearAllEffects keeps the equipped effect", got = @as(i64, cleared.nfx), want = 1 }
+        rules::clear_events{ &ev }
+        _ = rules::apply_effect{ env, c = &dd, e = rules::fx::make_death{ spectacular = false, feedback = true }, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "death is reported", got = count_events{ ev, kind = rules::ev::DEATH }, want = 1 }
+        expect_eq{ &io, &r, name = "death leaves only the equipped effect", got = @as(i64, dd.nfx), want = 1 }
+        let mut plot = build_creature{ tables, class = rules::cls::SOLDIER, level = 1, str = 10, dex = 10, con = 10, wis = 10, cha = 10 }
+        plot.plot = true
+        rules::clear_events{ &ev }
+        _ = rules::apply_effect{ env, c = &plot, e = rules::fx::make_death{ spectacular = false, feedback = true }, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "death does nothing to a plot creature", got = count_events{ ev, kind = rules::ev::DEATH }, want = 0 }
+        let plot_ac = rules::apply_effect{ env, c = &plot, e = rules::fx::make_ac_decrease{ amount = 2, mod_type = 0 }, rng = &rng, ev = &ev }
+        expect_true{ &io, &r, name = "plot creatures refuse AC decreases", cond = plot_ac.refused }
+
+        // Poison: a failed Fortitude save (DC 15 for mild damage poison) starts a 30 s poison that
+        // ticks 3 damage every 3 s and goes after 30 s. Find a seed whose first d20 is low.
+        let mut seed: u32 = 1
+        let mut low = rules::seed_rng{ seed }
+        while rules::roll_dice{ rng = &low, count = 1, sides = 20 } > 5 {
+            seed = seed + 1
+            low = rules::seed_rng{ seed }
+        }
+        let mut ps = build_creature{ tables, class = rules::cls::SOLDIER, level = 1, str = 10, dex = 10, con = 10, wis = 10, cha = 10 }
+        let mut prng = rules::seed_rng{ seed }
+        rules::clear_events{ &ev }
+        let pres = rules::apply_effect{ env, c = &ps, e = rules::fx::make_poison{ poison_row = 3 }, rng = &prng, ev = &ev }
+        expect_true{ &io, &r, name = "poison takes hold after a failed save", cond = pres.kept }
+        expect_eq{ &io, &r, name = "poison: the first tick damages 3", got = event_value{ ev, kind = rules::ev::DAMAGE_HP }, want = 3 }
+        let at4 = rules::Env{ tables, now = rules::time_add_seconds{ t = zero_time{}, seconds = 4.0, ms_per_day = 2880000 }, hp = 20 }
+        rules::clear_events{ &ev }
+        rules::update_effects{ env = at4, c = &ps, rng = &prng, ev = &ev }
+        expect_eq{ &io, &r, name = "poison: the next tick after the period", got = count_events{ ev, kind = rules::ev::DAMAGE_HP }, want = 1 }
+        let at40 = rules::Env{ tables, now = rules::time_add_seconds{ t = zero_time{}, seconds = 40.0, ms_per_day = 2880000 }, hp = 20 }
+        rules::update_effects{ env = at40, c = &ps, rng = &prng, ev = &ev }
+        expect_eq{ &io, &r, name = "poison runs out", got = @as(i64, ps.nfx), want = 0 }
+        let mut ps2 = build_creature{ tables, class = rules::cls::SOLDIER, level = 1, str = 10, dex = 10, con = 10, wis = 10, cha = 10 }
+        _ = apply_timed{ env, c = &ps2, e = rules::fx::make_immunity{ immunity = rules::imm::POISON }, dur = rules::dur::PERMANENT, seconds = 0.0, spell = -1, id = 90, rng = &rng, ev = &ev }
+        let pres2 = rules::apply_effect{ env, c = &ps2, e = rules::fx::make_poison{ poison_row = 3 }, rng = &prng, ev = &ev }
+        expect_true{ &io, &r, name = "poison immunity refuses poison", cond = pres2.refused }
+
+        // Force point regeneration: a party member out of combat gains 1 % of the pool per second.
+        let mut fr = build_creature{ tables, class = rules::cls::JEDI_GUARDIAN, level = 10, str = 10, dex = 10, con = 10, wis = 18, cha = 10 }
+        fr.fp_base = 60
+        fr.party = true
+        rules::recompute{ tables, c = &fr }
+        fr.fp = 0
+        _ = rules::regenerate_pools{ tables, c = &fr, dt_ms = 3000, in_combat = false, alive = true }
+        expect_true{ &io, &r, name = "FP regeneration: 1 % of max FP 100 per second gives 2 or 3 in 3 s (single-precision fractions)", cond = fr.fp >= 2 and fr.fp <= 3 }
+        let before_combat = fr.fp
+        _ = rules::regenerate_pools{ tables, c = &fr, dt_ms = 3000, in_combat = true, alive = true }
+        expect_eq{ &io, &r, name = "FP regeneration: none in combat", got = @as(i64, fr.fp), want = @as(i64, before_combat) }
+
+        // Alignment mastery: +3 to the class's ability at the light extreme, +50 Force points for a
+        // dark Consular, one copy only, gone again in the middle.
+        let mut mids = rules::EffectIds{ next = 1000 }
+        let mut gm = build_creature{ tables, class = rules::cls::JEDI_GUARDIAN, level = 6, str = 14, dex = 14, con = 14, wis = 14, cha = 10 }
+        gm.good_evil = 100
+        rules::update_alignment_mastery{ env, c = &gm, ids = &mids, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "light mastery: guardian STR 14 -> 17", got = @as(i64, gm.stats.abil[0]), want = 17 }
+        rules::update_alignment_mastery{ env, c = &gm, ids = &mids, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "light mastery applied twice is still +3", got = @as(i64, gm.stats.abil[0]), want = 17 }
+        gm.good_evil = 50
+        rules::update_alignment_mastery{ env, c = &gm, ids = &mids, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "no mastery in the middle", got = @as(i64, gm.stats.abil[0]), want = 14 }
+        expect_eq{ &io, &r, name = "no mastery effects left", got = @as(i64, gm.nfx), want = 0 }
+        let mut cm = build_creature{ tables, class = rules::cls::JEDI_CONSULAR, level = 3, str = 10, dex = 10, con = 10, wis = 14, cha = 10 }
+        cm.fp_base = 10
+        rules::recompute{ tables, c = &cm }
+        expect_eq{ &io, &r, name = "consular 3 max FP: 10 + 3 x 2", got = @as(i64, cm.stats.max_fp), want = 16 }
+        cm.good_evil = 0
+        rules::update_alignment_mastery{ env, c = &cm, ids = &mids, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "dark mastery: consular +50 FP", got = @as(i64, cm.stats.max_fp), want = 66 }
+        cm.good_evil = 100
+        rules::update_alignment_mastery{ env, c = &cm, ids = &mids, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "light mastery: consular CHA +3 -> 13 gives +3 x 1 FP", got = @as(i64, cm.stats.max_fp), want = 19 }
+        let mut sm = build_creature{ tables, class = rules::cls::JEDI_SENTINEL, level = 4, str = 10, dex = 10, con = 10, wis = 10, cha = 10 }
+        sm.good_evil = 0
+        rules::update_alignment_mastery{ env, c = &sm, ids = &mids, rng = &rng, ev = &ev }
+        expect_true{ &io, &r, name = "dark mastery: sentinel is poison immune", cond = rules::has_immunity{ c = &sm, kind = rules::imm::POISON, vs = none } }
+
+        // The rng: the same seed, the same dice; MSVC's rand() first values for seed 1: 41, 18467, 6334
+        let mut m = rules::seed_rng{ seed = 1 }
+        expect_eq{ &io, &r, name = "rand() #1 for seed 1", got = @as(i64, rules::next_rand{ rng = &m }), want = 41 }
+        expect_eq{ &io, &r, name = "rand() #2 for seed 1", got = @as(i64, rules::next_rand{ rng = &m }), want = 18467 }
+        expect_eq{ &io, &r, name = "rand() #3 for seed 1", got = @as(i64, rules::next_rand{ rng = &m }), want = 6334 }
+    }
+}

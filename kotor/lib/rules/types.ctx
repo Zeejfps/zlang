@@ -1,0 +1,436 @@
+// The data the rules library owns and the engine embeds (docs/design/rules.md).
+//
+// Everything here is a plain value: fixed-size arrays, no pointers, no allocator state. A
+// Creature or Item can be copied (for the equip preview, for a save) and zero-initialised
+// (`let mut c: rules::Creature`). Numbers are i32 unless a field holds an object id or a bit
+// mask (u32). Object ids are the engine's: the library never looks one up.
+//
+// The sources are docs/re/rules.md, combat.md and party-items-saves.md; section numbers in
+// comments name them.
+namespace rules {
+    // NWScript's OBJECT_INVALID.
+    const OBJECT_INVALID: u32 = 2130706432
+
+    // ---- sizes of the fixed arrays
+
+    const MAX_FX: usize = 96            // effects on one creature (the original only warns at 500)
+    const MAX_PROPS: usize = 40         // item properties (shipped items have at most 35)
+    const MAX_LEVELS: usize = 20        // level-up history of a player character
+    const MAX_CLASSES: usize = 3        // class slots (the engine uses 2, templates may list 3)
+    const NUM_SLOTS: usize = 15         // equipment storage cells (slot numbers 0..10 and 14..17)
+    const NUM_SKILLS: usize = 8
+    const NUM_CLASS_ROWS: usize = 9
+    const GROUP_MAX: usize = 8          // effects in a linked group
+    const EVENTS_MAX: usize = 48
+
+    // ---- time and randomness
+
+    // World time as the effects use it: a calendar day and the millisecond of that day.
+    struct Time { day: u32, ms: u32 }
+
+    // The engine's random numbers are the C runtime's rand(): MSVC's linear congruential
+    // generator. One per world, passed by `&rng` to everything that rolls.
+    struct Rng { state: u32 }
+
+    // ---- abilities and constants shared with the 2DAs and scripts
+
+    namespace abil {
+        const STR: i32 = 0
+        const DEX: i32 = 1
+        const CON: i32 = 2
+        const INT: i32 = 3
+        const WIS: i32 = 4
+        const CHA: i32 = 5
+    }
+
+    // classes.2da rows.
+    namespace cls {
+        const SOLDIER: i32 = 0
+        const SCOUT: i32 = 1
+        const SCOUNDREL: i32 = 2
+        const JEDI_GUARDIAN: i32 = 3
+        const JEDI_CONSULAR: i32 = 4
+        const JEDI_SENTINEL: i32 = 5
+        const COMBAT_DROID: i32 = 6
+        const EXPERT_DROID: i32 = 7
+        const MINION: i32 = 8
+    }
+
+    // skills.2da rows.
+    namespace skill {
+        const COMPUTER_USE: i32 = 0
+        const DEMOLITIONS: i32 = 1
+        const STEALTH: i32 = 2
+        const AWARENESS: i32 = 3
+        const PERSUADE: i32 = 4
+        const REPAIR: i32 = 5
+        const SECURITY: i32 = 6
+        const TREAT_INJURY: i32 = 7
+        const ALL: i32 = 255
+    }
+
+    // racialtypes.2da rows and the "any race" value (the row count).
+    namespace race {
+        const DROID: i32 = 5
+        const HUMAN: i32 = 6
+        const ANY: i32 = 7
+    }
+
+    // Save selectors (effects, scripts) and save types.
+    namespace save {
+        const ALL: i32 = 0
+        const FORT: i32 = 1
+        const REFLEX: i32 = 2
+        const WILL: i32 = 3
+        const TYPE_ALL: i32 = 0
+        const TYPE_DEATH: i32 = 4
+        const TYPE_DISEASE: i32 = 5
+        const TYPE_FEAR: i32 = 8
+        const TYPE_MIND: i32 = 10
+        const TYPE_POISON: i32 = 12
+        const TYPE_TRAP: i32 = 14
+        const TYPE_FORCE_POWER: i32 = 15
+    }
+
+    // DAMAGE_TYPE_* bits.
+    namespace dmg {
+        const BLUDGEONING: i32 = 1
+        const PIERCING: i32 = 2
+        const SLASHING: i32 = 4
+        const UNIVERSAL: i32 = 8
+        const ACID: i32 = 16
+        const COLD: i32 = 32
+        const LIGHT_SIDE: i32 = 64
+        const ELECTRICAL: i32 = 128
+        const FIRE: i32 = 256
+        const DARK_SIDE: i32 = 512
+        const SONIC: i32 = 1024
+        const ION: i32 = 2048
+        const BLASTER: i32 = 4096
+        const PHYSICAL: i32 = 7
+        const SLOTS: usize = 15
+    }
+
+    // IMMUNITY_TYPE_*.
+    namespace imm {
+        const MIND: i32 = 1
+        const POISON: i32 = 2
+        const DISEASE: i32 = 3
+        const FEAR: i32 = 4
+        const TRAP: i32 = 5
+        const PARALYSIS: i32 = 6
+        const BLINDNESS: i32 = 7
+        const DEAFNESS: i32 = 8
+        const SLOW: i32 = 9
+        const ENTANGLE: i32 = 10
+        const SILENCE: i32 = 11
+        const STUN: i32 = 12
+        const SLEEP: i32 = 13
+        const CONFUSED: i32 = 16
+        const CURSED: i32 = 17
+        const ABILITY_DECREASE: i32 = 19
+        const ATTACK_DECREASE: i32 = 20
+        const DAMAGE_DECREASE: i32 = 21
+        const DAMAGE_IMMUNITY_DECREASE: i32 = 22
+        const AC_DECREASE: i32 = 23
+        const SPEED_DECREASE: i32 = 24
+        const SAVE_DECREASE: i32 = 25
+        const FORCE_RESIST_DECREASE: i32 = 26
+        const SKILL_DECREASE: i32 = 27
+        const KNOCKDOWN: i32 = 28
+        const NEGATIVE_LEVEL: i32 = 29
+        const SNEAK_ATTACK: i32 = 30
+        const CRITICAL_HIT: i32 = 31
+        const DEATH: i32 = 32
+    }
+
+    // Equipment slot masks (INVENTORY_SLOT_* as bits).
+    namespace slot {
+        const HEAD: u32 = 0x1
+        const BODY: u32 = 0x2
+        const HANDS: u32 = 0x8
+        const RIGHT: u32 = 0x10
+        const LEFT: u32 = 0x20
+        const LEFT_ARM: u32 = 0x80
+        const RIGHT_ARM: u32 = 0x100
+        const IMPLANT: u32 = 0x200
+        const BELT: u32 = 0x400
+        const CREATURE_L: u32 = 0x4000
+        const CREATURE_R: u32 = 0x8000
+        const CREATURE_B: u32 = 0x10000
+        const CREATURE_HIDE: u32 = 0x20000
+    }
+
+    // Feat rows of feat.2da that the rules name.
+    namespace feat {
+        const ADVANCED_JEDI_DEFENSE: i32 = 1
+        const TWO_WEAPON_FIGHTING: i32 = 3
+        const CAUTIOUS: i32 = 7
+        const CRITICAL_STRIKE: i32 = 8
+        const TWO_WEAPON_ADVANCED: i32 = 9
+        const EMPATHY: i32 = 10
+        const FLURRY: i32 = 11
+        const GEAR_HEAD: i32 = 12
+        const CONDITIONING: i32 = 13
+        const IMPROVED_POWER_ATTACK: i32 = 17
+        const IMPROVED_POWER_BLAST: i32 = 18
+        const IMPROVED_CRITICAL_STRIKE: i32 = 19
+        const IMPROVED_SNIPER_SHOT: i32 = 20
+        const IMPROVED_CONDITIONING: i32 = 21
+        const MASTER_CONDITIONING: i32 = 22
+        const MASTER_JEDI_DEFENSE: i32 = 24
+        const MULTI_SHOT: i32 = 26
+        const POWER_ATTACK: i32 = 28
+        const POWER_BLAST: i32 = 29
+        const RAPID_SHOT: i32 = 30
+        const SNIPER_SHOT: i32 = 31
+        const WHIRLWIND_ATTACK: i32 = 53
+        const JEDI_DEFENSE: i32 = 55
+        const SNEAK_ATTACK_1: i32 = 60
+        const SNEAK_ATTACK_10: i32 = 69
+        const MASTER_SNIPER_SHOT: i32 = 77
+        const MASTER_CRITICAL_STRIKE: i32 = 81
+        const MASTER_POWER_BLAST: i32 = 82
+        const MASTER_POWER_ATTACK: i32 = 83
+        const TOUGHNESS: i32 = 84
+        const TWO_WEAPON_MASTERY: i32 = 85
+        const FORCE_FOCUS: i32 = 88
+        const FORCE_FOCUS_ADVANCED: i32 = 89
+        const FORCE_FOCUS_MASTERY: i32 = 90
+        const IMPROVED_FLURRY: i32 = 91
+        const IMPROVED_RAPID_SHOT: i32 = 92
+        const PROFICIENCY_ALL: i32 = 93
+        const WOOKIEE_ENDURANCE: i32 = 95
+        const FORCE_IMMUNITY_FEAR: i32 = 98
+        const FORCE_IMMUNITY_STUN: i32 = 99
+        const FORCE_IMMUNITY_PARALYSIS: i32 = 100
+        const FORCE_JUMP: i32 = 101
+        const FORCE_JUMP_ADVANCED: i32 = 102
+        const FORCE_JUMP_MASTERY: i32 = 103
+        const MASTER_SENSE: i32 = 109
+        const DUELING: i32 = 113
+        const ADVANCED_DUELING: i32 = 114
+        const MASTER_DUELING: i32 = 115
+        const FORCE_SENSITIVE: i32 = 116
+        const IMPROVED_CAUTION: i32 = 117
+        const MASTER_CAUTION: i32 = 118
+        const GEAR_HEAD_ADEPT: i32 = 119
+        const GEAR_HEAD_MASTER: i32 = 120
+        const IMPROVED_EMPATHY: i32 = 121
+        const MASTER_EMPATHY: i32 = 122
+        const IMPROVED_TOUGHNESS: i32 = 123
+        const MASTER_TOUGHNESS: i32 = 124
+    }
+
+    // ---- effects (rules.md section 1)
+
+    // Duration kinds (the low bits of the engine's SubType word).
+    namespace dur {
+        const INSTANT: i32 = 0
+        const TEMPORARY: i32 = 1
+        const PERMANENT: i32 = 2
+        const EQUIPPED: i32 = 3             // made from item properties while the item is worn
+        const INNATE: i32 = 4               // internal effects the engine adds and removes itself
+    }
+
+    // Effect subtypes (bits 3 and 4 of the engine's SubType word).
+    namespace sub {
+        const MAGICAL: i32 = 8
+        const SUPERNATURAL: i32 = 16
+        const EXTRAORDINARY: i32 = 24
+    }
+
+    // One effect: the engine's CGameEffect (rules.md 1.1). The integer parameters sit where the
+    // engine keeps them, except DAMAGE, whose 21 integers are reduced to the five that matter
+    // (see fx::make_damage). `kind` is one of fx::*.
+    struct Effect {
+        id: u64,                // shared by the children of a link; removal works by id
+        kind: i32,
+        dur: i32,               // dur::*
+        sub: i32,               // sub::*
+        duration: f32,          // seconds, for temporary effects
+        expire: Time,           // absolute, set when a temporary effect is applied
+        creator: u32,           // object id (or the item's, for an equipped-duration effect)
+        spell_id: i32,          // spells.2da row, -1 for none
+        caster_level: i32,      // override, -1 for none
+        exposed: bool,          // made by a script constructor (false for engine sub-effects)
+        ints: [8]i32,
+        floats: [4]f32,
+        objects: [4]u32,
+        handles: [3]u32,        // opaque strings (AoE scripts): the script layer's handles
+    }
+
+    // The value a script constructor returns: one effect, or the leaves of an EffectLinkEffects,
+    // which the engine applies one by one under one id (rules.md 1.5).
+    struct EffectGroup { len: i32, items: [GROUP_MAX]Effect }
+
+    // The counter effect ids come from. One per world.
+    struct EffectIds { next: u64 }
+
+    // What applying or removing an effect tells the engine to do (rules never calls back).
+    namespace ev {
+        const HEAL_HP: i32 = 1          // a: amount to add to current HP (the engine clamps to max)
+        const DAMAGE_HP: i32 = 2        // a: amount to subtract (immunity, resistance and temp HP already applied)
+        const DEATH: i32 = 3            // a: killing blow was melee, b: spectacular, who: the killer
+        const RESURRECT: i32 = 4        // a: HP to set (1)
+        const MAX_HP_CHANGED: i32 = 5   // a: old max, b: new max; the engine keeps the HP deficit
+        const FEEDBACK: i32 = 6         // a: the engine's feedback message number, who: the other party
+        const CLEAR_ACTIONS: i32 = 7    // a state effect took hold: ClearAllActions, abort the combat round
+        const COMMANDABLE: i32 = 8      // a: 1 the creature may be given actions, 0 not
+        const STATE: i32 = 9            // a: the crowd-control state now active (0 none)
+        const VISUAL_ON: i32 = 10       // a: visualeffects.2da row, who: the effect id's low bits are in b
+        const VISUAL_OFF: i32 = 11
+        const ICON_ON: i32 = 12         // a: effecticon.2da row
+        const ICON_OFF: i32 = 13
+        const EFFECT_ENDED: i32 = 14    // a: effect kind, who: its creator (an expiry or removal happened)
+        const APPEARANCE: i32 = 15      // a: disguise appearance row, 0 to restore
+        const FORCE_PUSH: i32 = 16      // a: push duration is the effect's; the engine moves the body
+        const SPAWN_CREATURE: i32 = 17
+        const LEAVE_STEALTH: i32 = 18
+        const COMBAT_ROUND_ABORT: i32 = 19
+        const KNOCKDOWN: i32 = 20       // the engine plays the animation
+    }
+
+    struct Event { kind: i32, a: i32, b: i32, who: u32 }
+    struct Events { len: i32, lost: i32, items: [EVENTS_MAX]Event }
+
+    // ---- items (party-items-saves.md 4.6)
+
+    // One entry of a UTI's PropertiesList. UpgradeType 255 means native (always active).
+    struct Prop {
+        name: u16,              // itempropdef.2da row
+        subtype: u16,
+        cost_table: u16,
+        cost_value: u16,
+        param1: u16,            // 255 = none
+        param1_value: u16,
+        upgrade: u16,           // 255 = native
+        uses_per_day: u16,      // 255 = not limited
+    }
+
+    struct Item {
+        resref: resref::ResRef,
+        base_item: i32,         // baseitems.2da row, -1 for an empty Item
+        stack: i32,
+        charges: i32,
+        cost: i32,
+        add_cost: i32,
+        plot: bool,
+        identified: bool,
+        stolen: bool,
+        non_equippable: bool,
+        upgrades: u32,          // bit n set = upgrade n installed
+        model_variation: i32,
+        body_variation: i32,
+        texture_var: i32,
+        nprops: i32,
+        props: [MAX_PROPS]Prop,
+    }
+
+    // An equipment cell: the item's object id and a copy of the item (what combat reads off a
+    // weapon at attack time). `id` is OBJECT_INVALID when the cell is empty.
+    struct Equipped { used: bool, id: u32, item: Item }
+
+    // ---- creatures
+
+    struct ClassSlot { class: i32, level: i32 }         // class -1: unused slot
+
+    // One level of a player character's history (CSWSLevelStats, rules.md 4.3).
+    struct LevelRecord {
+        class: i32,
+        hp: i32,                // the hit die gained (before the CON modifier)
+        fp: i32,
+        ability: i32,           // 0..5 raised this level, -1 none
+        skill_left: i32,        // unspent skill points after the level
+        skills: [NUM_SKILLS]i32, // ranks bought this level
+        nfeats: i32,
+        feats: [8]i32,
+        npowers: i32,
+        powers: [8]i32,
+    }
+
+    // The derived numbers (rules.md 1.7, combat.md 4-5), rebuilt by rules::recompute. Everything
+    // here is "with effects" unless it says otherwise; getters that depend on the other party
+    // (attack bonus versus a race, AC versus an attacker) are functions, not fields.
+    struct Stats {
+        level: i32,                     // total character level
+        size: i32,                      // creaturesize.2da row
+        abil: [6]i32,                   // ability scores: base + effects, never below 3
+        abil_mod: [6]i32,               // (score - 10) / 2 rounded down
+        bab: i32,                       // base attack bonus
+        save_base: [3]i32,              // fort, reflex, will: class + feats + ability + template bonus, no effects
+        save_effect: [3]i32,            // effects that apply to every kind of save
+        max_hp: i32,
+        max_fp: i32,
+        skill: [NUM_SKILLS]i32,         // GetSkillRank without a versus
+        // Armour class pieces (combat.md 5): the unconditional ones
+        ac_natural: i32,
+        ac_armour: i32,
+        ac_shield: i32,
+        ac_deflection: i32,
+        ac_dodge: i32,                  // dodge bonuses minus penalties, before the cap of 10
+        ac_class: i32,                  // acbonus.2da
+        force_resistance: i32,
+        speed_factor: f32,              // movement rate multiplier, clamped to [0.125, 1.5]
+        // The crowd-control state and what it allows (rules.md 1.10)
+        state: i32,                     // highest active SETSTATE number, 0 free
+        ai_mask: i32,                   // 0xffff when free; bit 2 may move, 0x84 may attack
+        vision: i32,                    // bits: 2 true seeing, 8 blind, 0x10 darkness, 1/4 see invisible
+        assured_hit: bool,
+        assured_deflection: bool,
+        deflection_returns: bool,
+        walk_only: bool,
+        extra_attacks: i32,             // MODIFYNUMATTACKS, 0..2
+        temp_hp_pool: i32,
+        poisoned: bool,
+        attack_misc: i32,               // flat attack penalties of states: entangled -2, slow -2
+        entangled: bool,
+        dirty: bool,                    // an effect or an item changed since the last recompute
+    }
+
+    struct Creature {
+        // the template
+        race: i32,
+        subrace: i32,
+        gender: i32,
+        appearance: i32,
+        faction: i32,
+        abil: [6]i32,                   // base ability scores (STR DEX CON INT WIS CHA)
+        natural_ac: i32,
+        hp_base: i32,                   // the template's HitPoints / the engine's base max HP
+        fp_base: i32,                   // base max Force points
+        save_bonus: [3]i32,             // template fort, reflex, will bonuses
+        good_evil: i32,                 // 0 dark .. 100 light
+        challenge: f32,                 // ChallengeRating
+        // classes and progression
+        nclasses: i32,
+        classes: [MAX_CLASSES]ClassSlot,
+        feats: [8]u32,                  // bit set over feat.2da rows 0..255
+        powers: [8]u32,                 // bit set over spells.2da rows 0..255 (Force powers known)
+        skills: [NUM_SKILLS]i32,        // ranks
+        skill_points: i32,              // unspent
+        xp: i32,
+        nhistory: i32,
+        history: [MAX_LEVELS]LevelRecord,
+        // flags the engine sets
+        is_pc: bool,                    // the player character
+        pc_rules: bool,                 // is_pc and the player is not controlling a companion: use the history formulas (3.8, 4.5)
+        plot: bool,                     // cannot be damaged or killed; refuses debuffs
+        min1hp: bool,
+        party: bool,                    // a member of the player's party (damage is scaled by the difficulty option)
+        down: bool,                     // a party member at 0 HP or less (helpless, never dead)
+        // Force points (current; HP are on the engine's object header)
+        loaded_hp: i32,                 // current HP read from the file (-1: none), for the engine to adopt once
+        fp: i32,
+        temp_fp: i32,
+        fp_frac: f32,                   // fractional Force points regenerated so far
+        hp_frac: f32,
+        temp_hp: i32,                   // temporary hit points left (absorbed before HP)
+        // equipment by storage cell, see rules::slot_index
+        equip: [NUM_SLOTS]Equipped,
+        // effects, in the engine's order: by type, then by application
+        nfx: i32,
+        fx: [MAX_FX]Effect,
+        stats: Stats,
+    }
+}

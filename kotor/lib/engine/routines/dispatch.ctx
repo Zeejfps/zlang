@@ -33,6 +33,35 @@ namespace routines {
             try nwstub::fallback{ &vm, routine, argc }
         }
         if w.log.routines { log_call{ &w, vm = &vm, routine, argc, sp, done } }
+        check_balance{ &w, vm = &vm, routine, argc, sp }
+    }
+
+    // Every handler must leave the stack as the prototype says: the arguments the script passed
+    // gone, the result pushed. A handler that doesn't misaligns the script's stack silently, so
+    // it is reported (once per routine) as a bug of that category.
+    fn check_balance { mut w: world::World, vm: *nwvm::Vm, routine: u16, argc: u8, sp: u32 } {
+        let r = nwscript::ROUTINES[@as(usize, routine)]
+        let mut args: u32 = 0
+        let mut i: usize = 0
+        while i < @as(usize, argc) and i < @as(usize, r.count) {
+            args = args + cells_of{ t = nwscript::PARAMS[@as(usize, r.first) + i].kind }
+            i = i + 1
+        }
+        let want = @as(i64, sp) - @as(i64, args) + @as(i64, cells_of{ t = r.ret })
+        if @as(i64, vm.sp) == want { return }
+        let k = @as(usize, routine)
+        if w.stats.unbalanced[k] { return }
+        w.stats.unbalanced[k] = true
+        world::prefix{ w = &w }
+        _ = @fmt(&w.io, "BUG: routine {} left {} stack cells, wanted {}\n", r.name, @as(i64, vm.sp) - @as(i64, sp), want - @as(i64, sp))
+    }
+
+    fn cells_of { t: nwscript::Type } -> u32 {
+        match t {
+            void | action => { return 0 }
+            vector => { return 3 }
+            else => { return 1 }
+        }
     }
 
     // Each category in turn. Add a line for a new category file.
@@ -44,12 +73,14 @@ namespace routines {
         if try rt_act::run{ &w, &vm, routine, argc } { return true }
         if try rt_party::run{ &w, &vm, routine, argc } { return true }
         if try rt_pres::run{ &w, &vm, routine, argc } { return true }
+        if try rt_perc::run{ &w, &vm, routine, argc } { return true }
         if try rt_time::run{ &w, &vm, routine, argc } { return true }
         if try rt_mod::run{ &w, &vm, routine, argc } { return true }
         if try rt_crea::run{ &w, &vm, routine, argc } { return true }
         if try rt_item::run{ &w, &vm, routine, argc } { return true }
         if try rt_fx::run{ &w, &vm, routine, argc } { return true }
         if try rt_dlg::run{ &w, &vm, routine, argc } { return true }
+        if try rt_combat::run{ &w, &vm, routine, argc } { return true }
         return false
     }
 

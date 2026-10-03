@@ -139,6 +139,8 @@ uint64_t ctx_f2i_u(double v, uint64_t hi, const char *dst, CTX_POS);
 // platform layer (std/os) instead.
 
 void *ctx_io_out(void);                    // io::Out: standard output's buffer, a ctx_slice and its length
+uint8_t *ctx_reserve(uint64_t size);       // mem::reserve: an arena's memory, committed as it's reached
+bool ctx_commit(const uint8_t *last);      // arena::alloc: makes reserved memory usable up to last
 uint64_t ctx_ascii_f64_digits(double n, ctx_slice into);
 uint64_t ctx_ascii_f32_digits(float n, ctx_slice into);
 double ctx_ascii_f64_parse(ctx_slice text);
