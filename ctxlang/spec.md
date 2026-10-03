@@ -830,7 +830,7 @@ fn build { mut b: Build } {
 1. A program that is a directory may have a `build.ctx` at its top: its **build program**, compiled and run before anything else is built. It describes the executables to build, which files each is made of, and how each is compiled and linked. Platform choices are ordinary code.
 2. A build program is a program whose entry point is `fn build` instead of `fn main`: §15's rules for `main` apply to it. A program with a `main` has no other entry point, and a `fn build` in it is an ordinary function.
 3. Only `build` may take a `Build` (§15): `main` can't.
-4. `build::exe{ &b, name, root }` names an executable built from the `.ctx` files of directory `root`, not of its subdirectories, and returns a `build::Exe` for the calls that add to it. `build::os` is the operating system the build is for.
+4. `build::exe{ &b, name, root }` names an executable built from the `.ctx` files of directory `root`, not of its subdirectories, and returns a `build::Exe` for the calls that add to it. Two executables of one build can't have the same name. `build::os` is the operating system the build is for.
 5. `build::add_sources{ &b, exe, dir }` adds the `.ctx` files under directory `dir`: those in it and in its subdirectories, at any depth. So libraries can live in directories of their own, which several programs add. A file that two directories reach, or one directory twice, is compiled once.
 6. `build::optimize{ &b, exe, level }` compiles the executable's C at optimization level 0 to 3 (`-O0` to `-O3`) instead of 1. The other flags stay (PLAN.md, How ctxlang maps to C).
 7. `link` adds a library (`-l`), `framework` a macOS framework, and `lib_path` a directory to find libraries in (`-L`).

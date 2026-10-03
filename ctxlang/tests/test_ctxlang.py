@@ -7535,6 +7535,10 @@ fn build { mut b: Build } {
             f.write('fn build { mut b: Build } { build::add_sources{ &b, exe = build::exe{ &b, name = "t", root = "." }, dir = "../../lib/empty" } }\n')
         code, _, err = self.ctxc('run', tool, cwd=d)
         self.assertEqual((code, err), (1, 'lib/empty: no .ctx files in directory or below\n'))
+        with open(os.path.join(d, tool, 'build.ctx'), 'w') as f:
+            f.write('fn build { mut b: Build } {\n    _ = build::exe{ &b, name = "t", root = "." }\n    _ = build::exe{ &b, name = "t", root = "sub" }\n}\n')
+        code, _, err = self.ctxc('run', tool, cwd=d)
+        self.assertEqual((code, err), (1, f'{tool}/build.ctx: describes two executables of the same name\n'))
 
     def test_skips_unchanged_builds(self):
         import re

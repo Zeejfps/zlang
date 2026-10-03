@@ -102,6 +102,20 @@ namespace drive {
                 cannot{ &io, path = build_file, what = "describes no executable" }
                 return 1
             }
+            // An executable's files are named after it.
+            let ts = list::items{ list = targets }
+            let mut k: usize = 1
+            while k < ts.len {
+                let mut j: usize = 0
+                while j < k {
+                    if slice::eq_bytes{ a = ts[j].name, b = ts[k].name } {
+                        cannot{ &io, path = build_file, what = "describes two executables of the same name" }
+                        return 1
+                    }
+                    j = j + 1
+                }
+                k = k + 1
+            }
         } else {
             let root: []u8 = if kind == 2 { "." } else { path }
             add_target{ &targets, &heap, name = program, root }
