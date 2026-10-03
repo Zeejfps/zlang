@@ -1,0 +1,84 @@
+// std: math. The C library's math functions (libm, which every program links), for f64 and,
+// with C's `f` suffix, f32. They keep libm's names, as a binding keeps a C library's, and take no
+// capability: they are pure (§18).
+//
+//   let d = math::sqrt{ x = dx * dx + dy * dy }       // f64
+//   let a = math::atan2f{ y, x }                      // f32
+//   if math::is_nan{ x = v } { ... }                  // an f32 widens to the f64 these take
+//
+// A program's own `math` namespace shadows this one (§10).
+
+namespace math {
+    const PI: f64 = 3.141592653589793
+    const TAU: f64 = 6.283185307179586
+    const E: f64 = 2.718281828459045
+    const PI_F32: f32 = 3.1415927
+    const TAU_F32: f32 = 6.2831855
+
+    // Whether x is NaN, an infinity, or neither.
+    fn is_nan { x: f64 } -> bool { return x != x }
+    fn is_inf { x: f64 } -> bool { return x == x and x - x != x - x }
+    fn is_finite { x: f64 } -> bool { return x - x == x - x }
+
+    // ---- f64
+
+    extern fn sqrt { x: f64 } -> f64
+    extern fn cbrt { x: f64 } -> f64
+    extern fn hypot { x: f64, y: f64 } -> f64
+    extern fn pow { x: f64, y: f64 } -> f64
+    extern fn exp { x: f64 } -> f64
+    extern fn exp2 { x: f64 } -> f64
+    extern fn log { x: f64 } -> f64
+    extern fn log2 { x: f64 } -> f64
+    extern fn log10 { x: f64 } -> f64
+    extern fn sin { x: f64 } -> f64
+    extern fn cos { x: f64 } -> f64
+    extern fn tan { x: f64 } -> f64
+    extern fn asin { x: f64 } -> f64
+    extern fn acos { x: f64 } -> f64
+    extern fn atan { x: f64 } -> f64
+    extern fn atan2 { y: f64, x: f64 } -> f64
+    extern fn sinh { x: f64 } -> f64
+    extern fn cosh { x: f64 } -> f64
+    extern fn tanh { x: f64 } -> f64
+    extern fn floor { x: f64 } -> f64
+    extern fn ceil { x: f64 } -> f64
+    extern fn round { x: f64 } -> f64              // halfway cases away from zero
+    extern fn trunc { x: f64 } -> f64
+    extern fn fabs { x: f64 } -> f64
+    extern fn fmod { x: f64, y: f64 } -> f64       // the remainder of x / y, with x's sign
+    extern fn fmin { x: f64, y: f64 } -> f64       // the other one if one is NaN
+    extern fn fmax { x: f64, y: f64 } -> f64
+    extern fn copysign { x: f64, y: f64 } -> f64
+
+    // ---- f32
+
+    extern fn sqrtf { x: f32 } -> f32
+    extern fn cbrtf { x: f32 } -> f32
+    extern fn hypotf { x: f32, y: f32 } -> f32
+    extern fn powf { x: f32, y: f32 } -> f32
+    extern fn expf { x: f32 } -> f32
+    extern fn exp2f { x: f32 } -> f32
+    extern fn logf { x: f32 } -> f32
+    extern fn log2f { x: f32 } -> f32
+    extern fn log10f { x: f32 } -> f32
+    extern fn sinf { x: f32 } -> f32
+    extern fn cosf { x: f32 } -> f32
+    extern fn tanf { x: f32 } -> f32
+    extern fn asinf { x: f32 } -> f32
+    extern fn acosf { x: f32 } -> f32
+    extern fn atanf { x: f32 } -> f32
+    extern fn atan2f { y: f32, x: f32 } -> f32
+    extern fn sinhf { x: f32 } -> f32
+    extern fn coshf { x: f32 } -> f32
+    extern fn tanhf { x: f32 } -> f32
+    extern fn floorf { x: f32 } -> f32
+    extern fn ceilf { x: f32 } -> f32
+    extern fn roundf { x: f32 } -> f32
+    extern fn truncf { x: f32 } -> f32
+    extern fn fabsf { x: f32 } -> f32
+    extern fn fmodf { x: f32, y: f32 } -> f32
+    extern fn fminf { x: f32, y: f32 } -> f32
+    extern fn fmaxf { x: f32, y: f32 } -> f32
+    extern fn copysignf { x: f32, y: f32 } -> f32
+}

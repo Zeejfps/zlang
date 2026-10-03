@@ -3234,7 +3234,7 @@ fn main { mut io: Io } {
             ('_ = @fmt(&b, "{y}", 1)', 'bad hole `{y}` in the format'),
             ('_ = @fmt(&b, "{x}", 1)', 'bad hole `{x}` in the format: a hole is `{}`'),
             ('_ = @fmt(&b, "{}", [1, 2])', "@fmt has no writer of [2]i32 to utf8::Builder(arena::Arena)"),
-            ('let s: []u8 = "x"\n    _ = @fmt(&b, "{}", s)', "@fmt has no writer of []u8 to utf8::Builder(arena::Arena)"),
+            ('let x = 1\n    _ = @fmt(&b, "{}", &x)', "@fmt has no writer of *i32 to utf8::Builder(arena::Arena)"),
             ('let mut n: i32 = 1\n    _ = @fmt(&n, "x")', '@fmt has no writer to i32: no `#write` fn it sees has a sink of that type'),
             ('_ = @fmt(b, "x")', '@fmt writes to a `*mut` sink, got utf8::Builder(arena::Arena)'),
             ('let bs: [1]utf8::Builder(arena::Arena) = [b]\n    _ = @fmt(&bs[0], "x")',
@@ -3932,6 +3932,50 @@ fn main { mut io: Io } {
             run_source('fn main { mut io: Io } { io::println_i64{ &io, n = "x" } }', 'user.ctx')
         self.assertEqual(cm.exception.pos[2], 'user.ctx')
         self.assertIn('expected i64, got [1]u8', cm.exception.msg)
+
+    def test_fmt_to_console(self):
+        # std's writers onto an Io (standard output) and an io::Stderr; a []mut u8 takes the
+        # []u8 one, and bytes go as they are.
+        out, err = run_io("""
+fn main { mut io: Io } {
+    let n: u8 = 7
+    let s: utf8::String = "caf\\xc3\\xa9"
+    let mut buf: [3]u8 = ['a', 'b', 'c']
+    let m: []mut u8 = buf[..]
+    _ = @fmt(&io, "{} {} {} {} {} {} {} {}\\n", n, -5, true, 1.5, s, m, @as(f32, 0.1), @as(usize, 9))
+    let mut err = io::to_stderr{ &io }
+    _ = @fmt(&err, "warning: {} of {}\\n", 3, @as(u16, 4))
+    let raw: []u8 = "\\xff"
+    let cs: c::String = "hi"
+    _ = @fmt(&io, "{}|{}\\n", raw.len, cs)
+}
+""")
+        self.assertEqual((out, err), ('7 -5 true 1.5 café abc 0.1 9\n1|hi\n', 'warning: 3 of 4\n'))
+
+    def test_fmt_bytes_into_builder(self):
+        # utf8::push_bytes: bytes as text, a byte that starts no valid sequence as U+FFFD.
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let mut mem: [256]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    let raw: []u8 = "ok\\xff\\xc3\\xa9!"
+    let mut buf: [2]u8 = ['h', 'i']
+    let m: []mut u8 = buf[..]
+    try! @fmt(&b, "[{}] [{}]", raw, m)
+    io::println{ &io, s = utf8::view{ b } }
+}
+""", 'ok�é!'.join(['[', ']']) + ' [hi]\n')
+
+    def test_math(self):
+        self.assertOutput("""
+fn main { mut io: Io } {
+    _ = @fmt(&io, "{} {} {}\\n", math::sqrt{ x = 2.0 }, math::floorf{ x = 2.5 }, math::atan2{ y = 1.0, x = 1.0 } * 4.0 == math::PI)
+    _ = @fmt(&io, "{} {} {}\\n", math::powf{ x = 2.0, y = 10.0 }, math::fmod{ x = -7.0, y = 2.0 }, math::round{ x = -2.5 })
+    _ = @fmt(&io, "{} {} {} {}\\n", math::is_nan{ x = 0.0 / 0.0 }, math::is_inf{ x = -1.0 / 0.0 }, math::is_finite{ x = 1.0 / 0.0 }, math::is_nan{ x = math::PI_F32 })
+}
+""", '1.4142135623730951 2.0 true\n1024.0 -1.0 -3.0\ntrue true false false\n')
+
 
 
 MAP_SETUP = """
