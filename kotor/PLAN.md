@@ -113,6 +113,12 @@ Open items the leads left, by owner. Remove an item when it lands.
 - Creature stats and party members (`AVAILNPC`) written into saves.
 - The remaining routines (`--report routines`; `docs/design/routines.tsv`).
 
+**Screens/HUD** (lib/screens, lib/hud): the store panel draws a second, larger frame around
+itself; one stock item shows as several identical rows (Antidote Kit x5) where the original
+stacks it; item property lines in descriptions; the original's hexagon item rows; the bench's 3D
+item models; arrow-key planet cycling; the level-up preview without armour and nothing for droids;
+the four self action slots on the HUD.
+
 **Render/models:** one shared character-assembly function (body, head, equipment, held shared nodes) used by lib/scene, lib/chargen's previews, mdlview and rendertest: the head fix had to be made twice because each had its own. the engine's real dangly spring and bezier curves, the saber swing trail,
 particle simulation, stencil shadows, light falloff and env-map strength checked against the
 original.
