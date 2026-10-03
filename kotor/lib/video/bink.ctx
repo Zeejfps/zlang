@@ -1,0 +1,332 @@
+// Bink movies (`movies/*.bik`): the container, and a movie decoded frame by frame.
+//
+//   let tables = try bink_tables::load{ &fs, realloc, &heap, path = "<install>/binkw32.dll" }
+//   let mut movie = try bink::open{ &fs, realloc, &heap, path = "<install>/movies/01a.bik", tables = &tables }
+//   while true {
+//       let frame = try bink::next{ &fs, &movie } ifnull { break }
+//       // frame.y, frame.u, frame.v: the picture, to show at bink::frame_time_us{ movie.header, frame.number }
+//       // frame.audio: interleaved 16-bit samples (movie.audio_channels at movie.audio_rate) to
+//       // queue for playing; the first frame carries about 0.8 s of them
+//   }
+//   bink::close{ &fs, realloc, &heap, &movie }
+//
+// A file is a header, the audio track tables, an index of frame offsets, then the frames, each
+// one packet per audio track followed by the video packet (docs/formats/bink.md, "Container").
+// Frames are read from the file one at a time, in order: KOTOR's movies have a single keyframe,
+// frame 0, so a movie plays from its start and never seeks.
+namespace bink {
+    error not_bink                                       // no "BIK" signature
+    error unsupported{ revision: u8, video_flags: u32 }  // a revision other than 'i', or alpha/grey/scaled video
+    error bad_frame_count{ frames: u32 }
+    error bad_frame_rate{ num: u32, den: u32 }
+    error too_many_tracks{ tracks: u32 }
+    error bad_frame{ frame: u32 }                        // its packets don't fit it, or the index is out of order
+    error truncated{ frame: u32 }                        // the file ends inside a frame (or its header)
+    error bad_audio_size{ bytes: u32 }                   // the track's largest packet is implausibly large
+
+    const HEADER_SIZE: usize = 44
+    const MAX_TRACKS: u32 = 8
+    const MAX_FRAMES: u32 = 1000000
+    const MAX_AUDIO_BYTES: u32 = 16777216     // a packet's decoded size, at most
+
+    // Video flags we can't decode: an alpha plane, greyscale, scaled modes.
+    const FLAG_ALPHA: u32 = 0x00100000
+    const FLAG_GREY: u32 = 0x00020000
+    const FLAG_SCALING: u32 = 0xF0000000
+
+    // An audio track: the largest packet's decoded size in bytes, the sample rate, the flags
+    // (0x1000 DCT, 0x2000 stereo, 0x4000 16-bit) and the track's id.
+    struct Track { max_decoded: u32, rate: u32, flags: u32, id: u32 }
+
+    struct Header {
+        revision: u8,                // the letter after "BIK"
+        frames: u32,
+        largest_frame: u32,          // in bytes
+        width: u32,
+        height: u32,
+        rate_num: u32,               // frames per second: rate_num / rate_den
+        rate_den: u32,
+        video_flags: u32,
+        track_count: u32,
+        tracks: [8]Track,            // the first track_count
+    }
+
+    struct Movie {
+        header: Header,
+        file: fs::File,
+        index: []mut u32,            // frames + 1 offsets; bit 0 marks a keyframe, the last is the end
+        frame: u32,                  // the next frame to decode
+        pos: u64,                    // where the file is read next
+        buffer: alloc::Bytes,        // one frame's bytes
+        video: bink_video::Decoder,
+        audio_rate: u32,             // track 0's samples per second and channels; 0 without audio
+        audio_channels: u32,
+        audio_unsupported: bool,     // track 0 isn't Bink's DCT audio: the movie plays silent
+        audio: bink_audio::Decoder,  // only when audio_rate isn't 0
+        pcm: []mut i16,              // the samples of the last frame's audio packet
+    }
+
+    // One decoded frame. Its planes and samples live in the movie until the next call to `next`.
+    struct Frame {
+        number: u32,
+        keyframe: bool,
+        y: bink_video::Plane,
+        u: bink_video::Plane,        // Cb
+        v: bink_video::Plane,        // Cr
+        audio: []i16,                // track 0's samples from this frame's packet, interleaved
+    }
+
+    // ---- header
+
+    // The bytes the header and the track tables take, from the first 44 bytes.
+    fn header_size { first: []u8 } -> !usize {
+        if first.len < HEADER_SIZE { return truncated{ frame = 0 } }
+        let tracks = u32_at{ b = first, at = 40 }
+        if tracks > MAX_TRACKS { return too_many_tracks{ tracks } }
+        return HEADER_SIZE + 12 * @as(usize, tracks)
+    }
+
+    // The header and track tables (`header_size` bytes).
+    fn parse_header { bytes: []u8 } -> !Header {
+        if bytes.len < HEADER_SIZE { return truncated{ frame = 0 } }
+        if bytes[0] != 'B' or bytes[1] != 'I' or bytes[2] != 'K' { return not_bink }
+        let mut h = Header{
+            revision = bytes[3],
+            frames = u32_at{ b = bytes, at = 8 },
+            largest_frame = u32_at{ b = bytes, at = 12 },
+            width = u32_at{ b = bytes, at = 20 },
+            height = u32_at{ b = bytes, at = 24 },
+            rate_num = u32_at{ b = bytes, at = 28 },
+            rate_den = u32_at{ b = bytes, at = 32 },
+            video_flags = u32_at{ b = bytes, at = 36 },
+            track_count = u32_at{ b = bytes, at = 40 },
+            tracks = [Track{ max_decoded = 0, rate = 0, flags = 0, id = 0 }; 8],
+        }
+        let flags = h.video_flags & (FLAG_ALPHA | FLAG_GREY | FLAG_SCALING)
+        if h.revision != 'i' or flags != 0 { return unsupported{ revision = h.revision, video_flags = h.video_flags } }
+        if h.frames == 0 or h.frames > MAX_FRAMES { return bad_frame_count{ frames = h.frames } }
+        if h.rate_num == 0 or h.rate_den == 0 { return bad_frame_rate{ num = h.rate_num, den = h.rate_den } }
+        if h.track_count > MAX_TRACKS { return too_many_tracks{ tracks = h.track_count } }
+        let n: usize = h.track_count
+        if bytes.len < HEADER_SIZE + 12 * n { return truncated{ frame = 0 } }
+        // Three tables of one entry per track: largest decoded packet; rate and flags; id.
+        let mut t: usize = 0
+        while t < n {
+            let rate_flags = u32_at{ b = bytes, at = HEADER_SIZE + 4 * n + 4 * t }
+            h.tracks[t] = Track{
+                max_decoded = u32_at{ b = bytes, at = HEADER_SIZE + 4 * t },
+                rate = rate_flags & 0xFFFF,
+                flags = rate_flags >> 16,
+                id = u32_at{ b = bytes, at = HEADER_SIZE + 8 * n + 4 * t },
+            }
+            t = t + 1
+        }
+        return h
+    }
+
+    fn u32_at { b: []u8, at: usize } -> u32 {
+        let b0: u32 = b[at]
+        let b1: u32 = b[at + 1]
+        let b2: u32 = b[at + 2]
+        let b3: u32 = b[at + 3]
+        return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+    }
+
+    // When frame `frame` starts, in microseconds from the start of the movie.
+    fn frame_time_us { header: Header, frame: u32 } -> u64 {
+        let f: u64 = frame
+        let den: u64 = header.rate_den
+        let num: u64 = header.rate_num
+        return f * den * 1000000 / num
+    }
+
+    fn duration_us { header: Header } -> u64 {
+        return frame_time_us{ header, frame = header.frames }
+    }
+
+    // ---- a movie
+
+    // Opens a movie and reads its header and frame index. The decoder's memory (about 2.5 times a
+    // picture's pixels, plus one frame of the file) comes from `realloc`; `close` gives it back.
+    fn open(S) { mut fs: Fs, realloc: alloc::Fn(S), mut heap: S, path: []u8, tables: *bink_tables::Tables } -> !Movie {
+        let file = try fs::open{ &fs, path, mode = fs::Mode::read }
+        let m = start{ &fs, realloc, &heap, file, tables } iferr err{ error } {
+            _ = fs::close{ &fs, file }
+            return error
+        }
+        return m
+    }
+
+    fn start(S) { mut fs: Fs, realloc: alloc::Fn(S), mut heap: S, file: fs::File, tables: *bink_tables::Tables } -> !Movie {
+        let mut head: [140]u8                                  // 44 + 8 tracks * 12
+        try read_exact{ &fs, file, into = head[..HEADER_SIZE], frame = 0 }
+        let size = try header_size{ first = head[..HEADER_SIZE] }
+        try read_exact{ &fs, file, into = head[HEADER_SIZE..size], frame = 0 }
+        let header = try parse_header{ bytes = head[..size] }
+
+        let count: usize = header.frames + 1
+        let index = try alloc::resize(u32, S){ realloc, &heap, mem = slice::empty(u32){}, count }
+        let largest = read_index{ &fs, file, index, start = size } iferr err{ error } {
+            _ = alloc::resize(u32, S){ realloc, &heap, mem = index, count = 0 }
+            return error
+        }
+        let buffer = alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = largest } iferr err{ error } {
+            _ = alloc::resize(u32, S){ realloc, &heap, mem = index, count = 0 }
+            return error
+        }
+        let video = bink_video::new{ realloc, &heap, width = header.width, height = header.height, tables } iferr err{ error } {
+            _ = alloc::resize(u8, S){ realloc, &heap, mem = buffer, count = 0 }
+            _ = alloc::resize(u32, S){ realloc, &heap, mem = index, count = 0 }
+            return error
+        }
+        let pos: u64 = size + 4 * count
+        let mut m = Movie{
+            header, file, index, frame = 0, pos, buffer, video,
+            audio_rate = 0, audio_channels = 0, audio_unsupported = false,
+            audio = zero_audio{}, pcm = slice::empty(i16){},
+        }
+        start_audio{ realloc, &heap, &m } iferr err{ error } {
+            bink_video::free{ realloc, &heap, d = &m.video }
+            _ = alloc::resize(u8, S){ realloc, &heap, mem = buffer, count = 0 }
+            _ = alloc::resize(u32, S){ realloc, &heap, mem = index, count = 0 }
+            return error
+        }
+        return m
+    }
+
+    fn zero_audio {} -> bink_audio::Decoder {
+        let mut d: bink_audio::Decoder
+        return d
+    }
+
+    // Track 0's decoder and a buffer for its largest packet. A track that isn't DCT audio leaves
+    // the movie silent rather than unplayable.
+    fn start_audio(S) { realloc: alloc::Fn(S), mut heap: S, mut m: Movie } -> ! {
+        if m.header.track_count == 0 { return }
+        let track = m.header.tracks[0]
+        if track.max_decoded > MAX_AUDIO_BYTES { return bad_audio_size{ bytes = track.max_decoded } }
+        let audio = bink_audio::new{ realloc, &heap, rate = track.rate, flags = track.flags } iferr err{ error } {
+            match error {
+                bink_audio::unsupported => {
+                    m.audio_unsupported = true
+                    return
+                }
+                else => { return error }
+            }
+        }
+        let count: usize = track.max_decoded / 2
+        m.pcm = alloc::resize(i16, S){ realloc, &heap, mem = slice::empty(i16){}, count } iferr err{ error } {
+            let mut a = audio
+            bink_audio::free{ realloc, &heap, d = &a }
+            return error
+        }
+        m.audio = audio
+        m.audio_rate = track.rate
+        m.audio_channels = bink_audio::channels{ d = audio }
+    }
+
+    // Reads the frame index into `index` and checks it: offsets increase, the first frame starts
+    // after the index. Returns the largest frame's size.
+    fn read_index { mut fs: Fs, file: fs::File, index: []mut u32, start: usize } -> !usize {
+        let mut chunk: [4096]u8
+        let mut i: usize = 0
+        while i < index.len {
+            let n = if index.len - i < 1024 { index.len - i } else { 1024 }
+            try read_exact{ &fs, file, into = chunk[..4 * n], frame = 0 }
+            let mut k: usize = 0
+            while k < n {
+                index[i + k] = u32_at{ b = chunk[..], at = 4 * k }
+                k = k + 1
+            }
+            i = i + n
+        }
+        let end_of_index: u64 = start + 4 * index.len
+        let first: u64 = index[0] & 0xFFFFFFFE
+        if first < end_of_index { return bad_frame{ frame = 0 } }
+        let mut largest: usize = 0
+        let mut f: usize = 0
+        while f + 1 < index.len {
+            let a = index[f] & 0xFFFFFFFE
+            let b = index[f + 1] & 0xFFFFFFFE
+            if b < a { return bad_frame{ frame = @trunc(u32, f) } }
+            let size: usize = b - a
+            if size > largest { largest = size }
+            f = f + 1
+        }
+        return largest
+    }
+
+    // Fills `into` from the file, or fails with truncated.
+    fn read_exact { mut fs: Fs, file: fs::File, into: []mut u8, frame: u32 } -> ! {
+        let mut done: usize = 0
+        while done < into.len {
+            let n = try fs::read{ &fs, file, into = into[done..] }
+            if n == 0 { return truncated{ frame } }
+            done = done + n
+        }
+    }
+
+    // Decodes the next frame, or returns null after the last.
+    fn next { mut fs: Fs, mut m: Movie } -> !?Frame {
+        let f = m.frame
+        if f >= m.header.frames { return null }
+        let start: u64 = m.index[f] & 0xFFFFFFFE
+        let end: u64 = m.index[f + 1] & 0xFFFFFFFE
+        if start < m.pos { return bad_frame{ frame = f } }
+        // Bytes between frames (none in KOTOR's files) are read past.
+        while m.pos < start {
+            let gap = start - m.pos
+            let n: usize = if gap < m.buffer.len { @trunc(usize, gap) } else { m.buffer.len }
+            if n == 0 { return bad_frame{ frame = f } }
+            try read_exact{ &fs, file = m.file, into = m.buffer[..n], frame = f }
+            m.pos = m.pos + n
+        }
+        let size: usize = @trunc(usize, end - start)
+        let bytes = m.buffer[..size]
+        try read_exact{ &fs, file = m.file, into = bytes, frame = f }
+        m.pos = end
+
+        // One packet per audio track, each a u32 size and that many bytes, then the video.
+        let mut at: usize = 0
+        let mut audio: []u8 = slice::empty(u8){}
+        let mut t: u32 = 0
+        while t < m.header.track_count {
+            if size - at < 4 { return bad_frame{ frame = f } }
+            let n: usize = u32_at{ b = bytes, at }
+            at = at + 4
+            if n > size - at { return bad_frame{ frame = f } }
+            if t == 0 { audio = bytes[at..at + n] }
+            at = at + n
+            t = t + 1
+        }
+        let mut samples: usize = 0
+        if audio.len > 0 and m.audio_rate != 0 {
+            samples = try bink_audio::decode_packet{ d = &m.audio, packet = audio, out = m.pcm }
+        }
+        try bink_video::decode{ d = &m.video, packet = bytes[at..] }
+        m.frame = f + 1
+        return Frame{
+            number = f,
+            keyframe = (m.index[f] & 1) != 0,
+            y = bink_video::plane{ d = m.video, p = 0 },
+            u = bink_video::plane{ d = m.video, p = 1 },
+            v = bink_video::plane{ d = m.video, p = 2 },
+            audio = m.pcm[..samples],
+        }
+    }
+
+    fn close(S) { mut fs: Fs, realloc: alloc::Fn(S), mut heap: S, mut m: Movie } {
+        _ = fs::close{ &fs, file = m.file }
+        bink_video::free{ realloc, &heap, d = &m.video }
+        if m.audio_rate != 0 {
+            bink_audio::free{ realloc, &heap, d = &m.audio }
+            _ = alloc::resize(i16, S){ realloc, &heap, mem = m.pcm, count = 0 }
+            m.pcm = slice::empty(i16){}
+            m.audio_rate = 0
+        }
+        _ = alloc::resize(u8, S){ realloc, &heap, mem = m.buffer, count = 0 }
+        _ = alloc::resize(u32, S){ realloc, &heap, mem = m.index, count = 0 }
+        m.buffer = slice::empty(u8){}
+        m.index = slice::empty(u32){}
+    }
+}
