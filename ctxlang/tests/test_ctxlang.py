@@ -6767,6 +6767,130 @@ fn main { mut io: Io, args: Args } -> i32 {
 """, args=['x', 'y'])
         self.assertEqual((out, code), ('3.0\n6.0\n9.0\n', 6))
 
+    def test_big_args_by_reference(self):
+        # A read-only struct over 32 bytes is passed by reference (spec §14.6), but copied where
+        # a `mut` reference of the same call overlaps it, a later argument may write it, or a
+        # bind passed with it holds it: the callee sees the value it had when evaluated.
+        out, code = self.both("""
+struct Big { a: [20]i64, n: i64 }
+
+fn sum { b: Big } -> i64 {
+    let mut s: i64 = 0
+    let mut i = 0
+    while i < 20 { s = s + b.a[i]; i = i + 1 }
+    return s + b.n
+}
+
+// reads b after changing x: b must be a copy when x overlaps it
+fn bump_then_sum { b: Big, mut x: i64 } -> i64 {
+    x = x + 1000
+    return sum{ b }
+}
+
+fn set { mut b: Big, v: i64 } -> i64 {
+    b.n = v
+    return v
+}
+
+fn pair { b: Big, v: i64 } -> i64 { return sum{ b } * 10000 + v }
+
+fn twice { b: Big, f: &fn{} -> i64 } -> i64 {
+    let before = sum{ b }
+    let r = f{}
+    return before * 1000000 + sum{ b } * 1000 + r
+}
+
+fn ident { b: Big } -> Big { return b }
+
+fn apply { g: fn{ b: Big } -> i64, b: Big } -> i64 { return g{ b } }
+
+const K: Big = Big{ a = [1; 20], n = 2 }
+
+fn main { mut io: Io } {
+    let mut b = Big{ a = [0; 20], n = 1 }
+    b.a[3] = 5
+    io::println_i64{ &io, n = sum{ b } }                       // 6
+    io::println_i64{ &io, n = bump_then_sum{ b, x = &b.n } }   // copy: 6
+    io::println_i64{ &io, n = pair{ b, v = set{ &b, v = 7 } } } // copy before set: 6*10000+7
+    io::println_i64{ &io, n = sum{ b } }                       // 12
+    io::println_i64{ &io, n = twice{ b, f = set{ &b, v = 100, _ } } } // copy: 12, 12, 100
+    io::println_i64{ &io, n = sum{ b } }                       // 105
+    io::println_i64{ &io, n = sum{ b = ident{ b } } }           // 105
+    io::println_i64{ &io, n = sum{ b = K } }                    // 22
+    io::println_i64{ &io, n = apply{ g = sum, b } }             // 105
+    let p = &b
+    io::println_i64{ &io, n = sum{ b = p.* } }                  // 105
+    let mut bs = [b, K]
+    io::println_i64{ &io, n = sum{ b = bs[1] } }                // 22
+    let s = bs[..]
+    io::println_i64{ &io, n = sum{ b = s[0] } }                 // 105
+    let o: ?Big = b
+    if o != null { io::println_i64{ &io, n = sum{ b = o } } }   // 105
+}
+""")
+        self.assertEqual((out, code), ('6\n6\n10060007\n12\n12012100\n105\n105\n22\n105\n105\n22\n105\n105\n', 0))
+
+    def test_big_args_through_function_values(self):
+        # Binds capture a copy and forward a reference; an adapter and a bound function value
+        # pass them on; a call of a `&fn` local, which may hold the argument, gets a copy.
+        out, code = self.both("""
+struct Big { a: [20]i64, n: i64 }
+
+fn sum { b: Big } -> i64 {
+    let mut s: i64 = 0
+    let mut i = 0
+    while i < 20 { s = s + b.a[i]; i = i + 1 }
+    return s + b.n
+}
+
+fn pair { b: Big, v: i64 } -> i64 { return sum{ b } * 100 + v }
+
+fn reset_sum { mut x: Big, b: Big } -> i64 {
+    x.n = 0
+    return sum{ b }
+}
+
+fn via { f: &fn{ b: Big } -> i64, b: Big } -> i64 { return f{ b } }
+
+fn wide { f: fn{ b: Big, extra: i64 } -> i64, b: Big } -> i64 { return f{ b, extra = 1 } }
+
+fn take { mut s: State } -> i64 {
+    s.big.n = s.big.n + 1
+    return s.big.n
+}
+
+struct State { big: Big, k: i64 }
+
+fn both { b: Big, n: i64 } -> i64 { return sum{ b } * 100 + n }
+
+fn main { mut io: Io } {
+    let mut b = Big{ a = [1; 20], n = 0 }
+    let g = pair{ v = 3, _ }
+    io::println_i64{ &io, n = g{ b } }                    // 2003
+    let h = sum{ b, _ }
+    b.n = 50
+    io::println_i64{ &io, n = h{} }                       // 20: captured copy
+    io::println_i64{ &io, n = via{ f = g, b } }           // 7003
+    io::println_i64{ &io, n = wide{ f = sum, b } }        // 70: an adapter
+    let cb = reset_sum{ x = &b, _ }
+    io::println_i64{ &io, n = cb{ b } }                   // 70: b copied, cb holds &b
+    io::println_i64{ &io, n = sum{ b } }                  // 20
+    let mut s = State{ big = b, k = 0 }
+    io::println_i64{ &io, n = both{ b = s.big, n = take{ &s } } }   // 2001: copied before take
+    let ps = &s
+    io::println_i64{ &io, n = both{ b = ps.*.big, n = s.k } }       // 2100
+    let bs = [b, b]
+    let sl = bs[..]
+    io::println_i64{ &io, n = sum{ b = sl[1] } }          // 20
+    let o: ?Big = b
+    match o {
+        some{ value } => { io::println_i64{ &io, n = sum{ b = value } } }   // 20
+        null => {}
+    }
+}
+""")
+        self.assertEqual((out, code), ('2003\n20\n7003\n70\n70\n20\n2001\n2100\n20\n20\n', 0))
+
 
 class ExternFns(Base):
     """`extern fn` and attributes (spec §18): C functions called through the C library, which

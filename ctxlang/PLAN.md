@@ -385,6 +385,7 @@ program asks for one (spec §19).
 | `*T`, `q + n`, `q[i]` | `T*`, pointer arithmetic | Not checked. §12.7 calls a bad pointer UB. |
 | `a[i]` on arrays | index with a bounds check | Panics, as the spec requires. |
 | `fn{C} -> R` | pointer to a record whose first member is the code | Called with the record and the fields in name order. Conversion to a type with more fields wraps the value in an adapter. |
+| read-only param of a struct, union or array over 32 bytes | `T *`, used as `(*lN)` | Spec §14.6: the caller passes its place, or a copy where another argument or the callee could change it (emit_c.ctx, `pass`). Not to extern fns. A 300 KB struct passed 20,000 times: 0.89 s to 0.06 s; `ctxc build` of ctxc, 451 ms to 317 ms. |
 | `&fn{C} -> R` | a bind record from `ctx_alloc` | Never freed. |
 | `defer` | copied to each exit | Innermost first. `return e` evaluates `e` into a temporary first. |
 | const of array, struct or union type | `static const qvN = VALUE;` | The checker folds the value to literals; `[x; N]` is a GNU range designator. A scalar const is its value at each use. |
