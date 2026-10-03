@@ -1,0 +1,71 @@
+// Merchants (UTM) and container contents (UTP ItemList), the two blueprints whose item lists the
+// screens show (docs/design/screens.md; docs/re/party-items-saves.md 5.7 and 5.8). Both read the
+// same list shape as a creature's: an element names a blueprint (InventoryRes) or is a saved item
+// whole.
+namespace tmpl {
+    // A store: its percentages, what it offers and its stock. The stock is loaded in ascending
+    // order of value, the order CSWSStore::LoadStore leaves it in (collected from the dearest and
+    // inserted from the cheapest, InsertItemByCost).
+    fn read_store { mut w: world::World, o: *mut obj::Object, st: *mut obj::Store, doc: *gff::Doc, s: u32 } -> ! {
+        try read_common{ &w, o, doc, s, name_label = "LocName" }
+        st.markup = @trunc(i32, number{ doc, s, label = "MarkUp", default = @as(i64, st.markup) })
+        st.markdown = @trunc(i32, number{ doc, s, label = "MarkDown", default = @as(i64, st.markdown) })
+        st.buy_sell = @trunc(u8, number{ doc, s, label = "BuySellFlag", default = @as(i64, st.buy_sell) })
+        script{ doc, s, o, label = "OnOpenStore", slot = obj::Slot::open_store }
+        let entries = gff::get_list{ doc = doc.*, s, label = "ItemList" } ifnull { return }
+        discard_items{ &w, l = &st.stock }
+        let mut k: usize = 0
+        while k < entries.len {
+            let e = entries[k]
+            k = k + 1
+            let item = item_of{ &w, doc, s = e, label = "InventoryRes", possessor = o.id } ifnull { continue }
+            if world::object{ w = &w, id = item } is some{ value = io } {
+                if obj::item{ o = io } is some{ value = it } { it.infinite = (gff::get_number{ doc = doc.*, s = e, label = "Infinite" } ifnull 0) != 0 }
+            }
+            insert_by_value{ &w, l = &st.stock, item }
+        }
+    }
+
+    // A container's contents. A struct that has an ItemList replaces what the object holds (a
+    // saved placeable over its blueprint); one without leaves it alone.
+    fn read_container { mut w: world::World, o: *mut obj::Object, p: *mut obj::Placeable, doc: *gff::Doc, s: u32 } {
+        p.die_when_empty = flag{ doc, s, label = "DieWhenEmpty", default = p.die_when_empty }
+        let entries = gff::get_list{ doc = doc.*, s, label = "ItemList" } ifnull { return }
+        discard_items{ &w, l = &p.inventory }
+        let mut k: usize = 0
+        while k < entries.len {
+            let e = entries[k]
+            k = k + 1
+            let item = item_of{ &w, doc, s = e, label = "InventoryRes", possessor = o.id } ifnull { continue }
+            list::push{ list = &p.inventory, item } iferr {}
+        }
+    }
+
+    // Destroys the items a list holds and empties it.
+    fn discard_items { mut w: world::World, l: *mut list::List(u32, heap::Heap) } {
+        let ids = list::items{ list = l.* }
+        let mut i: usize = 0
+        while i < ids.len {
+            // No longer held, so destroying it does not edit the list being walked.
+            if world::object{ w = &w, id = ids[i] } is some{ value = io } {
+                if obj::item{ o = io } is some{ value = it } { it.possessor = obj::INVALID }
+            }
+            world::destroy{ &w, id = ids[i] }
+            i = i + 1
+        }
+        list::clear{ list = l }
+    }
+
+    // Puts `item` into a stock list after the items worth no more than it (stable among equals).
+    fn insert_by_value { mut w: world::World, l: *mut list::List(u32, heap::Heap), item: u32 } {
+        list::push{ list = l, item } iferr { return }
+        let ids = list::items{ list = l.* }
+        let v = store::value_of{ w = &w, item }
+        let mut at = ids.len - 1
+        while at > 0 and store::value_of{ w = &w, item = ids[at - 1] } > v {
+            ids[at] = ids[at - 1]
+            at = at - 1
+        }
+        ids[at] = item
+    }
+}

@@ -1,0 +1,8 @@
+// twodacat: prints a 2DA from the install as a table.
+//   kotor/tools/ctxc run kotor/tools/twodacat -- planetary [--from 0] [--to 5]
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "twodacat", root = "." }
+    build::add_sources{ &b, exe, dir = "../../lib/base" }
+    build::add_sources{ &b, exe, dir = "../../lib/res" }
+    build::add_sources{ &b, exe, dir = "../../lib/formats" }
+}

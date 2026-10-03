@@ -77,8 +77,8 @@ namespace rt_misc {
             nwscript::GetAttemptedSpellTarget => { try nwvm::push_object{ &vm, id = obj::INVALID } }
             nwscript::GetAttemptedMovementTarget => { try nwvm::push_object{ &vm, id = obj::INVALID } }
             nwscript::GetSpellTarget => { try get_spell_target{ &w, &vm, argc } }
-            nwscript::GetInventoryDisturbType => { try nwvm::push_int{ &vm, v = 0 } }
-            nwscript::GetInventoryDisturbItem => { try nwvm::push_object{ &vm, id = obj::INVALID } }
+            nwscript::GetInventoryDisturbType => { try nwvm::push_int{ &vm, v = self_ctx_of{ w = &w, vm = &vm }.disturb_type } }
+            nwscript::GetInventoryDisturbItem => { try nwvm::push_object{ &vm, id = live_or_invalid{ w = &w, id = self_ctx_of{ w = &w, vm = &vm }.last_disturbed } } }
             nwscript::GetItemActivated => { try nwvm::push_object{ &vm, id = obj::INVALID } }
             nwscript::GetItemActivator => { try nwvm::push_object{ &vm, id = obj::INVALID } }
             // ---- cutscene verbs

@@ -1,0 +1,63 @@
+// The message boxes the screens put over themselves: a refusal with OK, or a question with OK
+// and Cancel (confirm.gui, docs/re/gui.md "CSWGuiMessageBox"). A screen keeps one `Box` per kind
+// of question, opens it, and asks `answer` of each event it gets.
+namespace msgbox {
+    // `what` and `item` are the owner's: which question it was and about what.
+    struct Box { panel: u32, what: i32, item: u32 }
+
+    enum Answer: u8 { none, ok, cancel }
+
+    fn blank {} -> Box { return Box{ panel = 0, what = 0, item = 0 } }
+
+    fn is_open { b: Box } -> bool { return b.panel != 0 }
+
+    // Opens a box with `text`; with `cancel` it asks, else it tells. A box that cannot open
+    // (confirm.gui missing) comes back closed.
+    fn show { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, text: []u8, cancel: bool, what: i32, item: u32 } -> Box {
+        if text.len == 0 { return blank{} }
+        let id = gui::message_box{ &g, fs = &w.fs, &dev, text, cancel } iferr { return blank{} }
+        return Box{ panel = id, what, item }
+    }
+
+    // A dialog.tlk string in the box.
+    fn show_strref { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, strref: u32, cancel: bool, what: i32, item: u32 } -> Box {
+        return show{ &g, &w, &dev, text = world::string_by_strref{ w = &w, strref }, cancel, what, item }
+    }
+
+    // A dialog.tlk string whose <CUSTOM0> is the number `n` ("This item costs more than
+    // <CUSTOM0> credits."). The engine fills the token before the string is shown.
+    fn show_number { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, strref: u32, n: i32, cancel: bool, what: i32, item: u32 } -> Box {
+        let mut b = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } }
+        defer list::free{ list = &b.bytes }
+        let src = world::string_by_strref{ w = &w, strref }
+        let token: []u8 = "<CUSTOM0>"
+        let mut i: usize = 0
+        while i < src.len {
+            if i + token.len <= src.len and slice::eq_bytes{ a = src[i..i + token.len], b = token } {
+                @fmt(&b, "{}", n) iferr { return blank{} }
+                i = i + token.len
+            } else {
+                list::push{ list = &b.bytes, item = src[i] } iferr { return blank{} }
+                i = i + 1
+            }
+        }
+        return show{ &g, &w, &dev, text = utf8::view{ b }.bytes, cancel, what, item }
+    }
+
+    // What an event says to the box: OK or Cancel (Escape counts as Cancel, or as OK on a box that
+    // has only OK).
+    fn answer { b: Box, ev: gui::Event } -> Answer {
+        if b.panel == 0 or ev.panel != b.panel { return Answer::none }
+        if ev.kind == gui::EventKind::cancel { return Answer::cancel }
+        if ev.kind == gui::EventKind::activate {
+            if slice::eq_bytes{ a = ev.tag, b = "BTN_OK" } { return Answer::ok }
+            if slice::eq_bytes{ a = ev.tag, b = "BTN_CANCEL" } { return Answer::cancel }
+        }
+        return Answer::none
+    }
+
+    fn close { mut g: gui::Gui, mut b: Box } {
+        if b.panel != 0 { gui::close{ &g, id = b.panel } }
+        b.panel = 0
+    }
+}

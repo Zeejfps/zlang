@@ -49,6 +49,7 @@ namespace tmpl {
             sound{ s = snd } => { try read_sound{ &w, o, snd, doc, s } }
             item{ i } => { try read_item{ &w, o, i, doc, s } }
             encounter{ e } => { try read_encounter{ &w, o, e, doc, s } }
+            store{ st } => { try read_store{ &w, o, st, doc, s } }
             else => { try read_common{ &w, o, doc, s, name_label = "LocName" } }
         }
     }
@@ -365,6 +366,7 @@ namespace tmpl {
         p.model = resref::truncate{ name = model }
         o.animation = p.anim
         if p.static { o.ai_level = 0 }
+        read_container{ &w, o, p, doc, s }
     }
 
     // ---- triggers (UTT) and the GIT trigger entry

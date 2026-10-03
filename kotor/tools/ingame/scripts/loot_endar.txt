@@ -1,0 +1,10 @@
+# The Endar Spire's footlocker: opened, one item taken (OnInvDisturbed fires, which unlocks door01),
+# the rest with Get Items. Run with --log scripts,events to see the scripts.
+#   sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/loot_endar.txt 60 12:loot_open 30:loot_all
+10 ui bag
+11 ui loot end_locker01
+14 ui click 560 280
+15 ui click 560 280
+24 ui bag
+26 ui click 640 452
+40 ui bag

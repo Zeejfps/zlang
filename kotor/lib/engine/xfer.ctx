@@ -1,0 +1,75 @@
+// Moving items between holders for the screens (stores, containers, the workbench). The move
+// itself, with merging into stacks, credits and the module's acquire and lose events, is
+// rt_misc::move_item (the GiveItem routine's); this adds what a panel needs around it: splitting
+// one unit off a stack and copying an item.
+//
+//   let one = xfer::take_one{ &w, item }          // a single item out of a stack (the item itself if it is one)
+//   _ = rt_misc::move_item{ &w, item = one, to = w.player }
+namespace xfer {
+    // A new item that is `item` with a stack of `stack`, held by nobody. The blueprint it came
+    // from supplies the properties; what play can have changed (upgrades, charges, the stolen
+    // flag, identification, variations) is copied. OBJECT_INVALID when the blueprint is gone.
+    fn copy_item { mut w: world::World, item: u32, stack: u32 } -> u32 {
+        let src = world::object{ w = &w, id = item } ifnull { return obj::INVALID }
+        let si = obj::item{ o = src } ifnull { return obj::INVALID }
+        let id = tmpl::spawn_item{ &w, template = resref::bytes{ r = &src.template }, possessor = obj::INVALID } iferr { return obj::INVALID }
+        let o = world::object{ w = &w, id } ifnull { return obj::INVALID }
+        let it = obj::item{ o } ifnull { return id }
+        it.stack = stack
+        it.charges = si.charges
+        it.identified = si.identified
+        it.model_variation = si.model_variation
+        it.body_variation = si.body_variation
+        it.texture_variation = si.texture_variation
+        it.non_equippable = si.non_equippable
+        o.plot = src.plot
+        if it.rules is some{ value = ri } {
+            if si.rules is some{ value = sr } {
+                ri.upgrades = sr.upgrades
+                ri.stolen = sr.stolen
+                ri.charges = sr.charges
+                ri.identified = sr.identified
+            }
+            ri.stack = @as(i32, stack)
+        }
+        return id
+    }
+
+    // One unit of `item`: the item itself when it is a single, else a copy with a stack of 1
+    // and the stack of the original one smaller (it stays where it is).
+    fn take_one { mut w: world::World, item: u32 } -> u32 {
+        let o = world::object{ w = &w, id = item } ifnull { return obj::INVALID }
+        let it = obj::item{ o } ifnull { return obj::INVALID }
+        if it.stack <= 1 { return item }
+        let one = copy_item{ &w, item, stack = 1 }
+        if one == obj::INVALID { return obj::INVALID }
+        it.stack = it.stack - 1
+        if it.rules is some{ value = ri } { ri.stack = @as(i32, it.stack) }
+        return one
+    }
+
+    // `item` goes to the party's inventory out of whatever holds it: credits become the purse,
+    // a pazaak card is counted instead of kept (party-items-saves.md 5.9), the rest merges into
+    // stacks. False when it could not.
+    fn to_party { mut w: world::World, item: u32 } -> bool {
+        let o = world::object{ w = &w, id = item } ifnull { return false }
+        let it = obj::item{ o } ifnull { return false }
+        if not rt_item::is_credits{ w = &w, base = it.base } and rt_mg::take_card{ &w, base = it.base, variation = it.model_variation, stack = it.stack } {
+            world::destroy{ &w, id = item }
+            return true
+        }
+        return rt_misc::move_item{ &w, item, to = w.player }
+    }
+
+    // Whether two items would share a stack (CSWSItem::CompareItem).
+    fn stacks_together { w: *world::World, a: u32, b: u32 } -> bool {
+        let ao = world::object{ w, id = a } ifnull { return false }
+        let bo = world::object{ w, id = b } ifnull { return false }
+        let ai = obj::item{ o = ao } ifnull { return false }
+        let bi = obj::item{ o = bo } ifnull { return false }
+        if ai.base != bi.base or not resref::eq{ a = ao.template, b = bo.template } { return false }
+        let ar = ai.rules ifnull { return true }
+        let br = bi.rules ifnull { return true }
+        return rules::compare_items{ a = ar, b = br }
+    }
+}
