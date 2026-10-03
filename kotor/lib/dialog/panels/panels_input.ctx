@@ -1,0 +1,170 @@
+// Input of the conversation panels: the keys and presses lib/gui does not give a panel that is
+// not modal, the clicks it does (a click on a reply row is `row_selected`), and what `poll` makes of
+// them (docs/re/gui.md "Conversation panels", `CSWGuiDialog::HandleInputEvent` 0x006a7230).
+namespace dlgpanel {
+    const KEY_1: i32 = 49
+    const KEY_9: i32 = 57
+    const KEY_KP_ENTER: i32 = 0x40000058
+    const KEY_KP_1: i32 = 0x40000059        // KP_1 .. KP_9 follow
+    const KEY_KP_9: i32 = 0x40000061
+
+    // Whether text and replies are on screen and take input: the bars have arrived.
+    fn content_on { p: Panels } -> bool {
+        if p.main == 0 { return false }
+        return p.computer or p.bars_done
+    }
+
+    // The reply a number key stands for (Dialog1..9, 0xfe..0x106), or -1.
+    fn reply_of_key { keycode: i32 } -> i32 {
+        if keycode >= KEY_1 and keycode <= KEY_9 { return keycode - KEY_1 }
+        if keycode >= KEY_KP_1 and keycode <= KEY_KP_9 { return keycode - KEY_KP_1 }
+        return -1
+    }
+
+    fn can_pick { p: Panels, index: usize } -> bool {
+        return index < p.reply_count and index < MAX_REPLIES and p.reply_first[index] >= 0 and p.reply_enabled[index]
+    }
+
+    // Offers a platform event to the conversation panel. Returns true when it used the event (the
+    // owner then does not treat it as a world click or a game key). Send every event while a panel is
+    // open: it takes the number keys 1..9 (reply n), Enter (the selected reply; with only a line on
+    // screen: skip it), Space (skip), Up and Down (the selection), and a left press while only a
+    // line is on screen (skip); the rest goes to `gui::handle_event`. Picks wait for `poll`.
+    fn handle_event { mut p: Panels, mut g: gui::Gui, ev: sdl::Event, scale_x: f32, scale_y: f32 } -> bool {
+        if p.main == 0 or g.hidden { return false }
+        match ev {
+            key{ down, repeat, keycode } => {
+                if down and content_on{ p } {
+                    let n = reply_of_key{ keycode }
+                    if p.shown == SHOWN_REPLIES and n >= 0 {
+                        if not repeat and can_pick{ p, index = @as(usize, n) } {
+                            p.pending = PENDING_REPLY
+                            p.pending_index = @as(usize, n)
+                        }
+                        return true
+                    }
+                    if keycode == sdl::key::RETURN or keycode == KEY_KP_ENTER {
+                        if repeat { return true }
+                        if p.shown == SHOWN_REPLIES {
+                            if p.selected >= 0 and can_pick{ p, index = @as(usize, p.selected) } {
+                                p.pending = PENDING_REPLY
+                                p.pending_index = @as(usize, p.selected)
+                            }
+                        } else if p.shown == SHOWN_LINE {
+                            p.pending = PENDING_SKIP
+                        }
+                        return true
+                    }
+                    if keycode == sdl::key::SPACE and p.shown == SHOWN_LINE {
+                        if not repeat { p.pending = PENDING_SKIP }
+                        return true
+                    }
+                    if p.shown == SHOWN_REPLIES and (keycode == sdl::key::UP or keycode == sdl::key::DOWN) {
+                        move_selection{ &p, &g, step = if keycode == sdl::key::UP { -1 } else { 1 } }
+                        return true
+                    }
+                }
+            }
+            mouse_button{ down, button } => {
+                if down and button == sdl::BUTTON_LEFT and content_on{ p } and p.shown == SHOWN_LINE {
+                    p.pending = PENDING_SKIP
+                    return true
+                }
+            }
+            else => {}
+        }
+        return gui::handle_event{ &g, ev, scale_x, scale_y }
+    }
+
+    // Moves the selection to the previous or next reply that can be picked.
+    fn move_selection { mut p: Panels, mut g: gui::Gui, step: i32 } {
+        if p.reply_count == 0 { return }
+        let mut i = p.selected + step
+        while i >= 0 and i < @as(i32, p.reply_count) {
+            if can_pick{ p, index = @as(usize, i) } {
+                p.selected = i
+                gui::list_select{ &g, panel = p.main, tag = "LB_REPLIES", row = p.reply_first[@as(usize, i)] }
+                tint_rows{ &p, &g }
+                return
+            }
+            i = i + step
+        }
+    }
+
+    // The player's choice since the last call. Takes this panel's events out of the GUI's queue
+    // (the owner's loop over `gui::take_events` does not see them), so call it once a frame, after
+    // the events were handled and before that loop.
+    fn poll { mut p: Panels, mut g: gui::Gui } -> Pick {
+        let mut out = Pick::none
+        let mut i: usize = 0
+        while i < g.events.len {
+            let ev = list::items{ list = g.events }[i]
+            let mine = ev.panel != 0 and (ev.panel == p.main or ev.panel == p.last or ev.panel == p.bark)
+            if not mine {
+                i = i + 1
+                continue
+            }
+            let picked = ev.panel == p.main and (ev.kind == gui::EventKind::row_selected or ev.kind == gui::EventKind::row_activated)
+            if picked and out is none and slice::eq_bytes{ a = ev.tag, b = "LB_REPLIES" } and ev.user >= 0 {
+                let index = @as(usize, ev.user)
+                if can_pick{ p, index } {
+                    out = Pick::reply{ index }
+                    p.selected = @as(i32, index)
+                }
+            }
+            // Out of the queue, the later events one place nearer.
+            let items = list::items{ list = g.events }
+            let mut j = i
+            while j + 1 < items.len {
+                items[j] = items[j + 1]
+                j = j + 1
+            }
+            _ = list::pop{ list = &g.events }
+        }
+        if out is none {
+            if p.pending == PENDING_REPLY and can_pick{ p, index = p.pending_index } {
+                out = Pick::reply{ index = p.pending_index }
+            } else if p.pending == PENDING_SKIP {
+                out = Pick::skip
+            }
+        }
+        p.pending = PENDING_NONE
+        if out is reply { gui::play_sound{ &g, n = 0 } }     // PlayGuiSound(0) when a reply is chosen
+        return out
+    }
+
+    // ---- the look of the reply rows
+
+    // Selected and hovered replies are yellow (OnReplyHilight), the others their own colour: the
+    // menu blue in the cinematic panel, the file's in the computer panel. Disabled rows dim on their own.
+    fn tint_rows { mut p: Panels, mut g: gui::Gui } {
+        if p.main == 0 { return }
+        let c = gui::find_control{ &g, panel = p.main, tag = "LB_REPLIES" } ifnull { return }
+        let pn = gui::find_panel{ &g, id = p.main } ifnull { return }
+        let mut base = gui::color_menu{}
+        if p.computer and c.proto >= 0 {
+            base = list::at{ list = pn.controls, i = @as(usize, c.proto) }.text.color
+        }
+        let hl = gui::color_hilight{}
+        let mut r: usize = 0
+        while r < @as(usize, c.row_count) {
+            c.rows[r].color = if c.rows[r].user == @as(i64, p.selected) { hl } else { base }
+            c.rows[r].has_color = true
+            r = r + 1
+        }
+    }
+
+    // The pointer moving onto a reply selects it (so Enter picks what is pointed at).
+    fn follow_pointer { mut p: Panels, mut g: gui::Gui } {
+        let c = gui::find_control{ &g, panel = p.main, tag = "LB_REPLIES" } ifnull { return }
+        if c.hover_row == p.last_hover { return }
+        p.last_hover = c.hover_row
+        if c.hover_row < 0 or c.hover_row >= @as(i32, c.row_count) { return }
+        let user = c.rows[@as(usize, c.hover_row)].user
+        if user >= 0 and can_pick{ p, index = @as(usize, user) } {
+            p.selected = @as(i32, user)
+            // Not `list_select`: the list must not scroll under the pointer.
+            c.selected_row = p.reply_first[@as(usize, user)]
+        }
+    }
+}
