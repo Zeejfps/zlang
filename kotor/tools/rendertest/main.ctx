@@ -86,6 +86,8 @@ fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut 
     let mut lib = kmodels::new_library{}
     try draw_room{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, dir = opts.out_dir }
     try draw_bastila{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, dir = opts.out_dir }
+    try draw_gallery{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, a = assets, dir = opts.out_dir }
+    try draw_area{ &io, &fs, &dev, &frame, &heap, &lib, &cache, rm, area = "m01aa", dir = opts.out_dir }
 
     if opts.show > 0.0 {
         let freq = sdl::counter_frequency{ &sdl }
@@ -784,4 +786,103 @@ fn draw_bastila {
     _ = @fmt(&io, "bastila: body {} meshes, head {} meshes; textures {} loaded, {} missing\n", body_parts.len, head_parts.len, cache.loaded, cache.missing)
     try save_screen{ &io, &fs, &dev, &heap, dir, name = "bastila.png" }
     report{ &io, &dev }
+}
+
+// Models that exercise other material paths, each in its own viewport: HK-47 and an astromech
+// (environment maps from their textures' TXI), a lightsaber (additive glow planes), and a
+// chrome ball reflecting a real cube map (cm_tat, Tatooine: sky above, sand below).
+fn draw_gallery {
+    mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena,
+    mut lib: kmodels::Library, mut cache: material::Cache, rm: res::Manager, a: Assets, dir: []u8,
+} -> ! {
+    let palette = try alloc::resize(math::Mat4, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(math::Mat4){}, count = 64 }
+    let names: [3][]u8 = ["p_hk47", "c_drdastro", "w_lghtsbr_001"]
+    let w = @as(f32, WIDTH) / 4.0
+    let mut k: usize = 0
+    while k < 4 {
+        render::begin_frame{ &frame, time = 0.0 }
+        let viewport = render::rect{ x = @as(f32, k) * w, y = 0.0, w, h = @as(f32, HEIGHT) }
+        if k < 3 {
+            let model = try kmodels::load{ &lib, &fs, rm, &heap, name = names[k] } ifnull { return kmodels::no_model{ name = names[k] } }
+            let parts = try kmodels::upload{ &dev, &cache, &fs, rm, &heap, model, envmap = "" }
+            let pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model }
+            let box = kmodels::bounds{ model, pose, parts, instance = math::mat4::identity{}, box = math::aabb::empty{}, palette }
+            let mut view = render::make_view{ camera = ortho_camera{ box, r = view_rotation{ which = if k == 2 { 1 } else { 0 } }, aspect = w / @as(f32, HEIGHT) } }
+            view.viewport = viewport
+            view.clear_color = render::rgba{ r = 0.15, g = 0.15, b = 0.18, a = 1.0 }
+            view.ambient = v3{ x = 0.4, y = 0.4, z = 0.42 }
+            let vi = render::add_view{ &frame, view } ifnull { return }
+            render::add_light{ &frame, light = render::Light{ position = v3{ x = 3.0, y = 6.0, z = 5.0 }, color = v3{ x = 0.9, y = 0.88, z = 0.85 }, radius = 40.0 } }
+            _ = kmodels::draw{ &frame, view = vi, model, pose, parts, instance = math::mat4::identity{}, palette }
+            _ = @fmt(&io, "{}: {} meshes drawn of {}\n", names[k], parts.len, model.meshes.len)
+        } else {
+            let sky = material::get{ &cache, &fs, &dev, rm, name = "cm_tat" }
+            let box = math::aabb::make{ min = v3{ x = -0.7, y = -0.7, z = -0.7 }, max = v3{ x = 0.7, y = 0.7, z = 0.7 } }
+            let mut view = render::make_view{ camera = ortho_camera{ box, r = view_rotation{ which = 0 }, aspect = w / @as(f32, HEIGHT) } }
+            view.viewport = viewport
+            view.clear_color = render::rgba{ r = 0.15, g = 0.15, b = 0.18, a = 1.0 }
+            let vi = render::add_view{ &frame, view } ifnull { return }
+            let mut chrome = render::make_material{}
+            chrome.diffuse = a.shiny
+            chrome.envmap = sky.texture
+            _ = render::add_draw{ &frame, draw = render::make_draw{ view = vi, mesh = a.sphere, transform = math::mat4::identity{}, material = chrome } }
+        }
+        try gpu::submit{ &dev, frame = &frame }
+        k = k + 1
+    }
+    _ = @fmt(&io, "gallery: textures {} loaded, {} missing\n", cache.loaded, cache.missing)
+    try save_screen{ &io, &fs, &dev, &heap, dir, name = "gallery.png" }
+    report{ &io, &dev }
+}
+
+// A whole area: every room of its LYT at its position, from above (as mdlrender.py's
+// lyt_m01aa_top.png), skipping sky-sized rooms. Rooms are lightmapped; back faces are culled, so
+// ceilings vanish from above.
+fn draw_area {
+    mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: render::Frame, mut heap: arena::Arena,
+    mut lib: kmodels::Library, mut cache: material::Cache, rm: res::Manager, area: []u8, dir: []u8,
+} -> ! {
+    let text = try res::load{ &fs, rm, name = area, kind = restype::Type::lyt, realloc = arena::alloc, &heap } ifnull { return kmodels::no_model{ name = area } }
+    let palette = try alloc::resize(math::Mat4, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(math::Mat4){}, count = 64 }
+    try gpu::resize{ &dev, width = 1024, height = 1024 }
+    render::begin_frame{ &frame, time = 0.0 }
+    // The view is added first and its camera set once every room's bounds are known.
+    let mut view = render::make_view{ camera = ortho_camera{ box = math::aabb::make{ min = math::vec3::zero{}, max = math::vec3::splat{ s = 1.0 } }, r = math::mat3::identity{}, aspect = 1.0 } }
+    view.clear_color = render::rgba{ r = 0.15, g = 0.15, b = 0.18, a = 1.0 }
+    let vi = render::add_view{ &frame, view } ifnull { return }
+    let mut box = math::aabb::empty{}
+    let mut rooms: u32 = 0
+    let mut lines = fonttxi::Lines{ text, at = 0 }
+    let mut left: u32 = 0
+    while true {
+        let line = fonttxi::next_line{ cur = &lines } ifnull { break }
+        let key = fonttxi::word{ line, n = 0 }
+        if fonttxi::same_word{ a = key, b = "roomcount" } {
+            left = @as(u32, fonttxi::number{ line })
+            continue
+        }
+        if left == 0 { continue }
+        left = left - 1
+        let name = fonttxi::word{ line, n = 0 }
+        let at = v3{ x = fonttxi::parse{ w = fonttxi::word{ line, n = 1 } }, y = fonttxi::parse{ w = fonttxi::word{ line, n = 2 } }, z = fonttxi::parse{ w = fonttxi::word{ line, n = 3 } } }
+        let model = try kmodels::load{ &lib, &fs, rm, &heap, name } ifnull { continue }
+        let parts = try kmodels::upload{ &dev, &cache, &fs, rm, &heap, model, envmap = "" }
+        let pose = try mdl_anim::make_pose{ realloc = arena::alloc, &heap, model }
+        let instance = math::mat4::translation{ t = at }
+        let room_box = kmodels::bounds{ model, pose, parts, instance, box = math::aabb::empty{}, palette }
+        let size = math::vec3::sub{ a = room_box.max, b = room_box.min }
+        if math::max{ a = size.x, b = size.y } > 150.0 {
+            _ = @fmt(&io, "  {}: sky-sized, skipped\n", name)
+            continue
+        }
+        box = math::aabb::merge{ a = box, b = room_box }
+        _ = kmodels::draw{ &frame, view = vi, model, pose, parts, instance, palette }
+        rooms = rooms + 1
+    }
+    frame.views[vi].camera = ortho_camera{ box, r = math::mat3::identity{}, aspect = 1.0 }
+    try gpu::submit{ &dev, frame = &frame }
+    _ = @fmt(&io, "{}: {} rooms; textures {} loaded, {} missing\n", area, rooms, cache.loaded, cache.missing)
+    try save_screen{ &io, &fs, &dev, &heap, dir, name = "area_top.png" }
+    report{ &io, &dev }
+    try gpu::resize{ &dev, width = @as(u32, WIDTH), height = @as(u32, HEIGHT) }
 }

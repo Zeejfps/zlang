@@ -6,10 +6,10 @@ namespace kmodels {
     error no_model{ name: []u8 }
 
     // Models by resref, loaded once, for animation lookup along supermodel chains.
-    struct Library { names: [32]resref::ResRef, models: [32]?*mut mdl::Model, count: usize }
+    struct Library { names: [64]resref::ResRef, models: [64]?*mut mdl::Model, count: usize }
 
     fn new_library {} -> Library {
-        return Library{ names = [resref::empty{}; 32], models = [null; 32], count = 0 }
+        return Library{ names = [resref::empty{}; 64], models = [null; 64], count = 0 }
     }
 
     // The model `name` (loading it, then its supermodels, the first time), or null if missing.
