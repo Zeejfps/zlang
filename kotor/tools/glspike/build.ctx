@@ -3,6 +3,7 @@ fn build { mut b: Build } {
     let exe = build::exe{ &b, name = "glspike", root = "." }
     build::add_sources{ &b, exe, dir = "../../lib/base" }
     build::add_sources{ &b, exe, dir = "../../lib/platform" }
+    build::add_sources{ &b, exe, dir = "../../lib/render" }
     build::add_sources{ &b, exe, dir = "../../lib/render_gl" }
     match build::os{ &b } {
         macos => {
