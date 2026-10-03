@@ -16,7 +16,8 @@
 // the runs' alone (not reading or decoding files), at -O2.
 //
 // Options: --game DIR (F:/Steam/steamapps/common/swkotor), -v (each run's routine calls and how
-// it ends), --results (a line per run, for tools/py/ncsvmtest.py), --actions N (32), --show N
+// it ends), --results (a line per run, for tools/py/ncsvmtest.py), --execute (with paths: the
+// stub's ExecuteScript runs any script the paths name, nested), --actions N (32), --show N
 // (faults listed per class, 20), --repeat N (run every script N times, for timing), --budget N
 // (instructions per run; the game's is 131072).
 
@@ -24,6 +25,7 @@ struct Options {
     game: []u8,
     verbose: bool,
     results: bool,
+    execute: bool,
     actions: usize,
     show: u64,
     repeat: u32,
@@ -58,7 +60,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } 
     let scratch = mem::pages{ &mem, size = 134217728 } ifnull { return out_of_memory{ &io } }
     let mut work = arena::new{ buf = scratch }                 // one script at a time
     let mut opts = Options{
-        game = DEFAULT_GAME, verbose = false, results = false, actions = 32, show = 20, repeat = 1,
+        game = DEFAULT_GAME, verbose = false, results = false, execute = false, actions = 32, show = 20, repeat = 1,
         budget = nwvm::LIMITS.budget,
     }
     let mut paths = list::new([]u8, arena::Arena){ realloc = arena::alloc, heap = &keep }
@@ -69,6 +71,8 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } 
             opts.verbose = true
         } else if slice::eq_bytes{ a, b = "--results" } {
             opts.results = true
+        } else if slice::eq_bytes{ a, b = "--execute" } {
+            opts.execute = true
         } else if slice::eq_bytes{ a, b = "--game" } {
             if i + 1 >= args.len { return usage{ &io } }
             opts.game = args[i + 1]
@@ -106,6 +110,9 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } 
         scripts = no_tally{}, actions = no_tally{}, shown = no_tally{}, files = 0, unique = 0, failed = 0, ticks = 0,
     }
 
+    if opts.execute and paths.len > 0 {
+        stub.scripts = preload{ &io, &fs, &keep, paths = list::items{ list = paths } } ifnull { return out_of_memory{ &io } }
+    }
     let code = if paths.len > 0 {
         from_paths{ &io, &fs, &sdl, &vm, &work, &keep, &report, stub = stub_at, opts, engine, paths = list::items{ list = paths } }
     } else {
@@ -131,6 +138,40 @@ fn no_tally {} -> Tally {
     return Tally{ runs = 0, ok = 0, vm = 0, routine = 0, budget = 0, kinds = [0; 24] }
 }
 
+// --execute: every script the paths name, decoded and kept, for the stub's ExecuteScript.
+fn preload { mut io: Io, mut fs: Fs, mut keep: arena::Arena, paths: [][]u8 } -> ?[]nwvm::Program {
+    let mut programs = list::new(nwvm::Program, arena::Arena){ realloc = arena::alloc, heap = &keep }
+    let mut i: usize = 0
+    while i < paths.len {
+        let p = paths[i]
+        i = i + 1
+        if ends_with{ s = p, suffix = ".sit" } { continue }
+        let mut files = list::new([]u8, arena::Arena){ realloc = arena::alloc, heap = &keep }
+        if ends_with{ s = p, suffix = ".ncs" } {
+            list::push{ list = &files, item = p } iferr { return null }
+        } else {
+            let names = fs::list{ &fs, heap = &keep, realloc = arena::alloc, path = p } iferr { continue }
+            let mut k: usize = 0
+            while k < names.len {
+                if ends_with{ s = names[k], suffix = ".ncs" } {
+                    let joined = join{ heap = &keep, dir = p, name = names[k] } ifnull { return null }
+                    list::push{ list = &files, item = joined } iferr { return null }
+                }
+                k = k + 1
+            }
+        }
+        let mut k: usize = 0
+        while k < files.len {
+            let path = list::items{ list = files }[k]
+            k = k + 1
+            let bytes = fs::read_all{ &fs, heap = &keep, realloc = arena::alloc, path } iferr { continue }
+            let program = nwvm::load(arena::Arena){ realloc = arena::alloc, heap = &keep, name = script_name{ path }, bytes } iferr { continue }
+            list::push{ list = &programs, item = program } iferr { return null }
+        }
+    }
+    return list::items{ list = programs }
+}
+
 // Every .ncs file given, or found in a directory given, in name order.
 fn from_paths {
     mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut vm: nwvm::Vm, mut work: arena::Arena, mut keep: arena::Arena,
@@ -142,6 +183,10 @@ fn from_paths {
         i = i + 1
         if ends_with{ s = p, suffix = ".ncs" } {
             from_file{ &io, &fs, &sdl, &vm, &work, &report, stub, opts, engine, path = p }
+            continue
+        }
+        if ends_with{ s = p, suffix = ".sit" } {
+            from_situation{ &io, &fs, &sdl, &vm, &work, &report, stub, opts, engine, path = p }
             continue
         }
         let names = fs::list{ &fs, heap = &keep, realloc = arena::alloc, path = p } iferr err{ error } {
@@ -173,6 +218,90 @@ fn from_file {
         return
     }
     run_script{ &io, &sdl, &vm, &work, &report, stub, opts, engine, name = script_name{ path }, bytes }
+}
+
+error bad_situation{ at: usize }
+
+// A saved game's action (tools/py/ncssituations.py writes NAME.sit and NAME.ncs): rebuilt with
+// nwvm::make_situation, checked to give back the fields it was made from, and resumed.
+fn from_situation {
+    mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut vm: nwvm::Vm, mut work: arena::Arena, mut report: Report,
+    stub: *mut nwstub::Stub, opts: Options, engine: nwvm::Engine, path: []u8,
+} {
+    nwstub::clear{ stub }
+    arena::reset{ heap = &work }
+    report.files = report.files + 1
+    let name = script_name{ path }
+    load_situation{ &io, &fs, &sdl, &vm, &work, &report, stub, opts, engine, path, name } iferr err{ error } {
+        _ = @fmt(&io, "{}: {}\n", path, error)
+        report.failed = report.failed + 1
+    }
+}
+
+fn load_situation {
+    mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut vm: nwvm::Vm, mut work: arena::Arena, mut report: Report,
+    stub: *mut nwstub::Stub, opts: Options, engine: nwvm::Engine, path: []u8, name: []u8,
+} -> ! {
+    let data = try fs::read_all{ &fs, heap = &work, realloc = arena::alloc, path }
+    let code_path = copy{ heap = &work, b = path } ifnull { return alloc::out_of_memory }
+    slice::copy(u8){ dst = code_path[code_path.len - 3..], src = "ncs" }
+    let bytes = try fs::read_all{ &fs, heap = &work, realloc = arena::alloc, path = code_path }
+    let program = try nwvm::load(arena::Arena){ realloc = arena::alloc, heap = &work, name, bytes }
+    let mut r = le::reader{ data }
+    let ip = try le::read_u32{ &r }
+    let bp = try le::read_u32{ &r }
+    let stack_size = try le::read_u32{ &r }
+    let n = @as(usize, try le::read_u32{ &r })
+    let cells = try alloc::resize(nwvm::SavedCell, arena::Arena){ realloc = arena::alloc, heap = &work, mem = slice::empty(nwvm::SavedCell){}, count = n }
+    let mut k: usize = 0
+    while k < n {
+        let tag = try le::read_u8{ &r }
+        let v = try le::read_u32{ &r }
+        cells[k] = if tag == nwvm::INT { nwvm::SavedCell::int{ v = ncs::i32_of_bits{ bits = v } } }
+            else if tag == nwvm::FLOAT { nwvm::SavedCell::float{ v = ncs::f32_of_bits{ bits = v } } }
+            else if tag == nwvm::OBJECT { nwvm::SavedCell::object{ id = v } }
+            else if tag == nwvm::STRING {
+                let at = r.pos
+                if not le::fits{ data, at, want = @as(usize, v) } { return bad_situation{ at } }
+                r.pos = at + @as(usize, v)
+                nwvm::SavedCell::string{ s = data[at..at + @as(usize, v)] }
+            }
+            else if tag >= nwvm::EFFECT and tag <= nwvm::TALENT { nwvm::SavedCell::engine{ kind = @as(nwvm::EngineType, tag - nwvm::EFFECT), handle = v } }
+            else { return bad_situation{ at = r.pos } }
+        k = k + 1
+    }
+    let s = try nwvm::make_situation(arena::Arena){
+        realloc = arena::alloc, heap = &work, program = &program, instruction_ptr = ip, base_pointer = bp, stack_size, cells,
+    }
+    // It must give back what it was made from, as a save would write it again.
+    if nwvm::instruction_ptr{ situation = s } != ip or s.bp != bp or s.stack_size != stack_size or s.types.len != n {
+        return bad_situation{ at = 0 }
+    }
+    k = 0
+    while k < n {
+        if not same_cell{ a = nwvm::saved_cell{ situation = s, i = k }, b = cells[k] } { return bad_situation{ at = k } }
+        k = k + 1
+    }
+    report.unique = report.unique + 1
+    if opts.verbose { _ = @fmt(&io, "{}: {} cells, BP {}, resuming at {}\n", name, n, bp, ip) }
+    let mut line: [512]u8
+    let t0 = sdl::counter{ &sdl }
+    let done = nwvm::resume{ &vm, situation = s, self = nwstub::SELF, engine }
+    report.ticks = report.ticks + (sdl::counter{ &sdl } - t0)
+    flush_log{ &io, stub }
+    let fine = match done { ok => { true } err => { false } }
+    if opts.results { result{ &io, name, what = "action", vm, ok = fine, value = null } }
+    tally{ &io, t = &report.actions, shown = &report.shown, vm, ok = fine, opts, line = line[..] }
+}
+
+fn same_cell { a: nwvm::SavedCell, b: nwvm::SavedCell } -> bool {
+    return match a {
+        int{ v = x } => { match b { int{ v } => { v == x } else => { false } } }
+        float{ v = x } => { match b { float{ v } => { ncs::bits_of_f32{ f = v } == ncs::bits_of_f32{ f = x } } else => { false } } }
+        string{ s = x } => { match b { string{ s } => { slice::eq_bytes{ a = s, b = x } } else => { false } } }
+        object{ id = x } => { match b { object{ id } => { id == x } else => { false } } }
+        engine{ kind = j, handle = x } => { match b { engine{ kind, handle } => { kind == j and handle == x } else => { false } } }
+    }
 }
 
 // Every script in the game through the resource manager: the global search's, then each
@@ -366,7 +495,7 @@ fn summary { mut io: Io, what: []u8, t: Tally } {
     }
 }
 
-// "dir/k_foo.ncs" -> "k_foo"
+// "dir/k_foo.ncs" -> "k_foo", and a situation's "dir/NAME.sit" -> "NAME"
 fn script_name { path: []u8 } -> []u8 {
     let mut start: usize = 0
     let mut i: usize = 0
@@ -374,7 +503,7 @@ fn script_name { path: []u8 } -> []u8 {
         if path[i] == '/' or path[i] == '\\' { start = i + 1 }
         i = i + 1
     }
-    let end = if ends_with{ s = path, suffix = ".ncs" } { path.len - 4 } else { path.len }
+    let end = if ends_with{ s = path, suffix = ".ncs" } or ends_with{ s = path, suffix = ".sit" } { path.len - 4 } else { path.len }
     return path[start..end]
 }
 
@@ -390,14 +519,14 @@ fn join { mut heap: arena::Arena, dir: []u8, name: []u8 } -> ?[]u8 {
     return out
 }
 
-fn copy { mut heap: arena::Arena, b: []u8 } -> ?[]u8 {
+fn copy { mut heap: arena::Arena, b: []u8 } -> ?[]mut u8 {
     let out = arena::alloc{ &heap, mem = slice::empty(u8){}, new = b.len, align = 1 } ifnull { return null }
     slice::copy(u8){ dst = out, src = b }
     return out
 }
 
 fn usage { mut io: Io } -> i32 {
-    io::eprintln{ &io, s = "usage: ncsrun [PATH...] [--game DIR] [-v] [--results] [--actions N] [--show N] [--repeat N] [--budget N]" }
+    io::eprintln{ &io, s = "usage: ncsrun [PATH...] [--game DIR] [-v] [--results] [--execute] [--actions N] [--show N] [--repeat N] [--budget N]" }
     return 2
 }
 

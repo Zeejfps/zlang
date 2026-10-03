@@ -13,8 +13,9 @@
 // loops that wait for a lookup to fail end), GetIsObjectValid says whether its object is, Random
 // is deterministic, IntToString, IntToFloat, GetStringLength and StringToInt compute, dice roll 1,
 // hit points and hit dice are 10, and engine values are fresh handles that compare equal only to
-// themselves. With a log buffer, each call is written there as one line: the routine and the
-// arguments as the script passed them.
+// themselves. ExecuteScript runs a script of stub.scripts, if it has one by that name, nested.
+// With a log buffer, each call is written there as one line: the routine and the arguments as the
+// script passed them.
 namespace nwstub {
     // The object scripts run as.
     const SELF: u32 = 0x10
@@ -55,6 +56,7 @@ namespace nwstub {
         iteration: u32,                             // GetNext* calls since the last GetFirst*
         dice: u32,
         lookups: [772]u16,                          // objects each routine has given
+        scripts: []nwvm::Program,                   // what ExecuteScript can run, by name
     }
 
     error no_routine{ routine: u16 }
@@ -64,6 +66,7 @@ namespace nwstub {
             heap, actions = list::new(nwvm::Situation, arena::Arena){ realloc = arena::alloc, heap },
             limit = actions, taken = 0, dropped = 0, calls = 0, log = nwvm::Text{ buf = log, len = 0 },
             next_object = 0x100, next_handle = 1, iteration = 0, dice = 12345, lookups = [0; 772],
+            scripts = slice::empty(nwvm::Program){},
         }
     }
 
@@ -116,7 +119,23 @@ namespace nwstub {
             i = i + 1
         }
         if stub.log.buf.len > 0 { log{ log = &stub.log, routine, r, args = &args, n } }
+        if routine == nwscript::ExecuteScript { execute{ &stub, &vm, args = &args } }
         try push_result{ &stub, &vm, routine, r, args = &args }
+    }
+
+    // ExecuteScript(sScript, oTarget): runs the script now, nested in the caller's run, as
+    // oTarget, if stub.scripts has it. As in the game, how it ends is no concern of the caller.
+    fn execute { mut stub: Stub, mut vm: nwvm::Vm, args: *[16]Arg } {
+        let name = match args[0] { string{ s } => { s } else => { return } }
+        let target = match args[1] { object{ id } => { id } else => { nwvm::OBJECT_INVALID } }
+        let mut i: usize = 0
+        while i < stub.scripts.len {
+            if nwvm::same_text{ a = stub.scripts[i].name, b = name } {
+                _ = nwvm::run{ &vm, program = &stub.scripts[i], self = target, engine = call{ &stub, _ } }
+                return
+            }
+            i = i + 1
+        }
     }
 
     fn pop_arg { mut stub: Stub, mut vm: nwvm::Vm, kind: nwscript::Type } -> !Arg {

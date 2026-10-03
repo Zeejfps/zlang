@@ -242,6 +242,28 @@ test('action_nested', ('ok', 'none'),
      ('label', 'after'), ('CONSTF', 1.0), ('ACTION', DELAY, 2), ('RETN',), actions=2)
 
 
+# ---- ExecuteScript: nested runs on one stack, budget and return stack (the stub runs any test
+# script by name)
+EXEC = routine('ExecuteScript')
+
+
+def execute(name):
+    return (('CONSTI', -1), ('CONSTO', 0), ('CONSTS', name), ('ACTION', EXEC, 3))
+
+
+ints('exec_inner', 77, ('CONSTI', 77))
+# A void script reports the int the last script to end left, as the game's RunScript does.
+test('exec_outer_keeps_inner_value', ('ok', 77), *execute('exec_inner'), ('RETN',))
+# A script that runs itself: the ninth level fails, which its caller ignores, so all end normally.
+test('exec_self_nests_eight_deep', ('ok', 'none'), *execute('exec_self_nests_eight_deep'), ('RETN',))
+# The budget is the outermost run's: a nested script that runs away leaves the caller none.
+test('exec_loop', ('fault', 'budget'), ('label', 'l'), ('JMP', 'l'))
+test('exec_shares_budget', ('fault', 'budget'), *execute('exec_loop'), ('CONSTI', 1), ('MOVSP', -4), ('RETN',))
+# A nested fault restores the stack the caller had.
+test('exec_fault', ('fault', 'underflow'), ('ADDII',), ('RETN',))
+ints('exec_caller_continues', 9, ('CONSTI', 9), *execute('exec_fault'))
+
+
 def main(argv):
     if os.path.isdir(OUT):
         shutil.rmtree(OUT)
@@ -252,7 +274,7 @@ def main(argv):
             f.write(build(code))
         want[name] = (expect, actions)
     cmd = ['bash', 'kotor/tools/ctxc', 'run', 'kotor/tools/ncsrun', '--',
-           os.path.relpath(OUT, ROOT).replace(os.sep, '/'), '--results', '--show', '0']
+           os.path.relpath(OUT, ROOT).replace(os.sep, '/'), '--results', '--execute', '--show', '0']
     p = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
     got = {}
     for line in p.stdout.splitlines():
@@ -277,6 +299,23 @@ def main(argv):
     print(f'{len(want)} tests, {failures} failures')
     if p.returncode not in (0, 1):
         print(p.stdout[-2000:], p.stderr[-2000:])
+
+    # The install's saved actions, rebuilt from the save's fields and resumed.
+    import ncssituations
+    sits = os.path.join(OUT, 'situations')
+    ncssituations.main([sits])
+    files = sorted(n for n in os.listdir(sits) if n.endswith('.sit'))
+    cmd = ['bash', 'kotor/tools/ctxc', 'run', 'kotor/tools/ncsrun', '--', '--results', '--show', '0']
+    cmd += [os.path.relpath(os.path.join(sits, n), ROOT).replace(os.sep, '/') for n in files]
+    p = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+    ended = [line.split('\t') for line in p.stdout.splitlines() if line.startswith('RESULT\t')]
+    bad = [e for e in ended if e[3] != 'ok']
+    if len(ended) != len(files) or bad:
+        print(f'FAIL saved situations: {len(files)} files, results {ended}')
+        print(p.stdout[-2000:], p.stderr[-2000:])
+        failures += 1
+    else:
+        print(f'{len(files)} saved situations resumed and ended normally')
     return 1 if failures else 0
 
 
