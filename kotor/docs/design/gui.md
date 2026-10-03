@@ -50,6 +50,8 @@ size, so drawing needs no file system and no device. Textures come through the s
 **Hover and keyboard focus are one thing**, as in the engine: the control under the pointer becomes
 its panel's focus (hilighted, hover sound); arrow keys move it along the file's MOVETO links. A
 button's text turns yellow and pulses while it has the focus; a disabled control's goes dim blue.
+The focus hilights the control's ancestors too (the Obj_Parent chain): the top menu bar's invisible
+tab buttons sit on `LBLH_*` frame labels, and the label's lit picture is what shows on hover.
 
 **Events go to the owner, polled.** Controls have no handlers. An action puts an `Event` in a queue
 (`activate`, `cancel`, `hilight`, `unhilight`, `row_selected`, `row_activated`, `value_changed`,

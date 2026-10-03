@@ -203,13 +203,19 @@ namespace gui {
         p.removing = true
     }
 
-    // Removes closed panels and drops what pointed into them. Called by `update`.
+    // Removes closed panels and drops what pointed into them. Called by `update`. A pointer that
+    // rested on a removed panel is tested again afterwards (as RemovePanel does), so the tab bar a
+    // click replaced lights its tab under the resting pointer without waiting for a mouse move.
     fn reap { mut g: Gui } {
+        let mut lost_hover = false
         let mut i: usize = 0
         while i < g.panels.len {
             let p = list::items{ list = g.panels }[i]
             if p.removing {
-                if g.hover.panel == p.id { g.hover = Ref{ panel = 0, control = -1 } }
+                if g.hover.panel == p.id {
+                    g.hover = Ref{ panel = 0, control = -1 }
+                    lost_hover = true
+                }
                 if g.capture.panel == p.id { g.capture = Ref{ panel = 0, control = -1 } }
                 if g.tooltip_ref.panel == p.id { g.tooltip_ref = Ref{ panel = 0, control = -1 } }
                 destroy_panel{ &g, p }
@@ -224,6 +230,7 @@ namespace gui {
                 i = i + 1
             }
         }
+        if lost_hover and g.capture.panel == 0 { on_motion{ &g, x = g.mouse_x, y = g.mouse_y } }
     }
 
     // Whether any modal panel is open (the world pauses on it, docs/re/gameloop.md).
