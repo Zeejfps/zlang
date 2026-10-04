@@ -1,0 +1,52 @@
+// The label that names an area transition while the pointer is over it (CSWGuiAreaTransition,
+// docs/re/gui.md): areatransition.gui, 400 x 82, centred at the top. The text is the transition
+// door's destination name (the door's TransitionDestin) after the first "- " ("Taris - Upper City" shows
+// "Upper City").
+namespace hud {
+    // The destination name of a transition door, "" for anything else.
+    fn transition_text { w: *world::World, id: u32 } -> []u8 {
+        let o = world::object{ w, id } ifnull { return "" }
+        if o.kind != obj::Kind::door or modload::link_of{ o } == null { return "" }
+        let d = obj::door{ o } ifnull { return "" }
+        let mut text: []u8 = d.transition_name.text
+        if d.transition_name.strref != 0xFFFFFFFF {
+            let t = world::string_by_strref{ w, strref = d.transition_name.strref }
+            if t.len > 0 { text = t }
+        }
+        // A door without a destination name shows its own.
+        if text.len == 0 { text = name_of{ w, id } }
+        let mut i: usize = 0
+        while i + 1 < text.len {
+            if text[i] == '-' and text[i + 1] == ' ' { return text[i + 2..] }
+            i = i + 1
+        }
+        return text
+    }
+
+    // Shows the label over the transition `id` the pointer is on, takes it down when the pointer leaves.
+    fn update_transition { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, id: u32 } {
+        let text = if id == obj::INVALID { "" } else { transition_text{ w = &w, id } }
+        if text.len == 0 {
+            if h.trans_panel != 0 {
+                gui::close{ &g, id = h.trans_panel }
+                h.trans_panel = 0
+                h.trans_object = obj::INVALID
+            }
+            return
+        }
+        if h.trans_panel == 0 {
+            let p = gui::open{ g = &g, fs = &w.fs, &dev, name = "areatransition", mode = gui::Mode::placed, modal = false } iferr { 0 }
+            if p == 0 { return }
+            h.trans_panel = p
+            h.trans_object = obj::INVALID
+            let pp = gui::find_panel{ &g, id = p } ifnull { return }
+            pp.x = (g.ui_w - pp.w) / 2
+            pp.y = 80
+            gui::place{ &g, p = pp }
+        }
+        if h.trans_object != id {
+            h.trans_object = id
+            gui::set_text{ &g, panel = h.trans_panel, tag = "LBL_DESCRIPTION", text } iferr {}
+        }
+    }
+}

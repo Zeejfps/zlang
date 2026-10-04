@@ -112,6 +112,7 @@ namespace world {
         log: elog::Log,
         doomed: list::List(u32, heap::Heap),   // destroyed this frame, removed by sweep
         module_frame: bool,                 // module and area heartbeats alternate frames
+        autopause_asked: i32,               // the first auto-pause reason (lib/engine/autopause.ctx) the interface has not taken yet, 0 none
         serial: u32,                        // action serial numbers
         heartbeats: map::Map(u32, u64, heap::Heap),   // last heartbeat of doors, placeables, triggers
         cursor_area: usize,                 // GetNextObjectInArea: where in objects.all to go on from
@@ -171,7 +172,7 @@ namespace world {
             stats = Stats{ calls = [0; 772], missing = [0; 772], unbalanced = [false; 772], script_runs = 0, faults = 0, events = 0, objects_made = 0 },
             log = elog::quiet{},
             doomed = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
-            module_frame = false,
+            module_frame = false, autopause_asked = 0,
             serial = 0,
             heartbeats = map::new(u32, u64, heap::Heap){ realloc = heap::alloc, heap, hash = map::hash_u32, eq = map::eq_u32 },
             cursor_area = 0, cursor_shape = 0, minigame = null,
