@@ -156,24 +156,31 @@ script has to know: the reply queue is consumed only by lists with a choice (a l
 with an earlier frame waits for the lines before it); the camera of Calo Nord's last conversation is a low tilted shot
 (the data's, not a bug that was found).
 
-## Where story QA stopped (paused for rendering) and how to resume
+## The Taris chain after the merges (what broke, and how to resume)
 
-The story was played from the swoop race to the Dantooine landing (steps 46-53 above) and every step worked, with the
-engine of commit 6036766. After merging `kotor` at 75e8167 the scripts no longer line up, and the checkpoints made by
-`chain.sh` after that merge are **not all good**; `chain.sh` says so ("WRONG MODULE" / "no save"). State of the chain with the
-merged engine (the last run): `vulkar`, `garage`, `kandon`, `swoop`, `apt` are good; **`cand` has no save**: in
-`47_canderous.txt` the bot walks to the Lower City cantina but the Canderous conversation (`tar03_cand031`) did not start
-in 21,000 frames (after Bastila's own talk `k_hbas_dialog` it stalls: look at `ui bot status`, `ui pos` and the screenshot
-at 14000-20000; the trigger `tar02_candtlk` or a door on the way is the suspect); `t3`, `codes` and `davik` came from a
-stale `cand`, so they are wrong too. To resume: `sh kotor/tools/checkpoints/make.sh` then `chain.sh` (EXE=your exe), fix
-`47_canderous.txt` until `cand` is made (`savewhen tar_m03ae cand tar_buydroid 50`), then `48_t3.txt` (the party screen now
-opens empty: click Carth `598 271` and T3-M4 `507 447`, then OK; the click frames follow the end of Janice's conversation),
-`49_sithbase.txt` (the Dark Jedi's remains are tried every 1500 frames from 13000), `50_codes.txt` (`savewhen ... davik
-tar_escape 40`) and `51_davik.txt` (from `davik`, to the Dantooine landing). The dice and the timing of the fights move the
-frames of these scripts whenever the engine changes; `savewhen MODULE NAME [QUEST ENTRY]` (play.ctx) saves when the story is
-quiet in MODULE and the journal quest has reached ENTRY, so a checkpoint does not depend on a frame. The Sith base camp's
-rancor (`tar05_stampy`, 90 hit points) is only killed by the party when `40_sithbase.txt` lowers its hit points
-(`ui sethp tar05_stampy 8`): the level 7 player and the companions hit it once in 2,000 frames.
+The story was played from the swoop race to the Dantooine landing (steps 46-53 above) with the engine of commit 6036766.
+After merging `kotor` at 75e8167 `chain.sh` stopped at `cand`: the bot walked to the Lower City cantina but Canderous's
+conversation (`tar03_cand031`) never started. It was not a game bug and not one of the Dantooine, Tatooine or Kashyyyk
+fixes: the bot's change to stand "in the middle of a trigger" (86bd1ef) took the mean of the polygon's corners, and
+`tar02_candtlk` is an L-shaped strip about a metre wide whose mean lies outside it, so the bot finished its route beside the
+trigger and the OnEnter never ran (a player crossing the strip starts the talk; the old bot walked to the trigger's origin,
+which is one of its corners). The bot now stands on a point that is inside the polygon (`bot::polygon_middle`) and counts a
+trigger stop done only when the leader is inside it; `ui where TAG` prints a trigger's corners to check such a thing.
+
+State of the chain with the merged engine: `vulkar`, `garage`, `kandon`, `swoop`, `apt`, `cand`, `t3`, `codes` and `davik`
+are all good (`chain.sh` checks the module and, for `cand`, `t3`, `codes` and `davik`, a companion that must be in the party:
+Bastila, T3-M4, T3-M4, Canderous). Each of `46_race.txt` to `51_davik.txt` starts from the checkpoint before it; the header of
+each says the command. What each needed after the merges: `48_t3.txt`'s party screen opens with Bastila and Carth selected:
+click Carth `598 271` and T3-M4 `507 447`, then OK; the click frames follow the end of Janice's conversation (5346 in the
+last run, clicks at 5790), so if `t3` comes out with the wrong party, move them. `49_sithbase.txt`: the party needs about
+15,500 frames to reach the Dark Jedi and 17,800 to kill him, so the remains are tried every 1500 frames from 19000 (the bot
+stays on) and the run is 30,000 frames; `savewhen tar_m09ab codes tar_escape 25` saves when the codes are in the bag.
+`50_codes.txt` saves `davik` with `savewhen tar_m08aa davik tar_escape 40`. `51_davik.txt` (from `davik`, to the Dantooine
+landing) was not played again after the merges. The dice and the timing of the fights move the frames of these scripts
+whenever the engine changes; `savewhen MODULE NAME [QUEST ENTRY]` (play.ctx) saves when the story is quiet in MODULE and the
+journal quest has reached ENTRY, so a checkpoint does not depend on a frame. The Sith base camp's rancor (`tar05_stampy`, 90
+hit points) is only killed by the party when `40_sithbase.txt` lowers its hit points (`ui sethp tar05_stampy 8`): the level 7
+player and the companions hit it once in 2,000 frames.
 
 ## Open items (not blocking)
 
