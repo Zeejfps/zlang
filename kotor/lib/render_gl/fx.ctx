@@ -311,7 +311,8 @@ namespace gpu {
         draw_opaque{ &dev, frame, index, frustum }
         timer_mark{ &dev, name = "opaque" }
         set_outputs{ &dev, n = 1 }
-        if dev.enhance.shadows == 0 { try draw_shadows{ &dev, frame, index } }
+        // The original's planar shadows until shadow maps take their place.
+        try draw_shadows{ &dev, frame, index }
         try draw_transparent{ &dev, frame, index, frustum, eye = v.camera.eye }
         try draw_debug{ &dev, frame, index }
         set_offset{ &dev, on = false }
