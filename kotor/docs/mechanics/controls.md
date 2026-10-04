@@ -62,7 +62,7 @@ Reverse Mouse Buttons (options) swaps left and right: matches.
 | Walkmesh sliding along walls (6 attempts) | `MoveDirect` 0x00614b90 | matches (x or y part alone, ours) |
 | Triggers see the move (enter, exit) | `MoveCreatureFromClient` | matches |
 | B held halves the input vector | event 265, step 3 | matches |
-| Walk, run and stand animations; cycle rate = speed / appearance WALKDIST or RUNDIST | `UpdateMovementAnimation` 0x00611f50 | matches: 5.4 m/s on the player's 3.96 runs the cycle at 1.36x. Which cycle: walk below the midpoint of the walk and run rates (ours) |
+| Walk, run and stand animations; cycle rate = speed x the cycle's length / appearance WALKDIST or RUNDIST (metres per cycle) | `UpdateMovementAnimation` 0x00611f50 | matches: the player's 0.733 s run cycle covers 3.96 m, so at 5.4 m/s it plays at rate 1.0 (and the walk's 1.067 s over 1.813 m at 1.7 m/s); the rate follows the speed through the 1 s acceleration and the braking (floor 0.1) and reaches the playing cycle. Which cycle: walk below the midpoint of the walk and run rates (ours) |
 | Input while the leader has orders cancels them (the original waits 0.3 s first; in combat mode movement is allowed with the "Combat Movement" option on, the install's default) | 1.4 | ours: at once |
 | No click-to-move | 1.5 | matches: a click on the ground does nothing |
 | Dead or dying leader, a conversation: no movement | step 1 | matches |

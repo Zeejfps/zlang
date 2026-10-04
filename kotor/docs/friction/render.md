@@ -20,10 +20,6 @@ this extends).
 - **No float bit cast.** Sorting transparent draws by depth wants an f32's bits as a u32:
   written `@cast(*u32, &dist).*` through a local; lib/tex reads the TPC header's float the same
   way (`@cast(*f32, &bits).*`). A `@bits(u32, x)` builtin (and back) would say it.
-- **A function with an inferred error set can't be a function value** (spec §8 rule 12), so the
-  backend contract (lib/render/contract.ctx) can't be a table of function types; it is a never
-  called function that calls each `gpu` function with typed `let`s. It works, but it checks
-  "callable like this", not the exact signature.
 - **`is` is a keyword**, so a natural helper name (`fonttxi::is{ a, b }` for a keyword match)
   was a parse error far from its cause: "expected an expression, found 'is'". Renamed
   `same_word`.

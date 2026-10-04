@@ -81,6 +81,8 @@ namespace world {
         party: party::Party,
         target: u32,                        // the selected object (HUD picking), obj::INVALID none
         hover: u32,                         // the object under the cursor
+        aim_id: u32,                        // the object `aim` belongs to: the target, once the scene has found where its reticle hangs
+        aim: math::Vec3,                    // that point in the world (the model's head_g / lookathook node), for the HUD's reticle
         repute: [32][32]u8,                 // repute.2da standings, faction by faction (0..100)
         repute_rows: usize,
         arrival: u32,                       // frames until the PC is placed (gameloop.md 5.5)
@@ -111,6 +113,7 @@ namespace world {
         arrival_waypoint_len: usize,
         rng: Rng,
         stats: Stats,
+        routes: [772]?routines::Category,   // each routine's category file, found by its first call (routines::categories)
         log: elog::Log,
         doomed: list::List(u32, heap::Heap),   // destroyed this frame, removed by sweep
         module_frame: bool,                 // module and area heartbeats alternate frames
@@ -118,7 +121,8 @@ namespace world {
         serial: u32,                        // action serial numbers
         heartbeats: map::Map(u32, u64, heap::Heap),   // last heartbeat of doors, placeables, triggers
         cursor_area: usize,                 // GetNextObjectInArea: where in objects.all to go on from
-        cursor_shape: usize,                // GetNextObjectInShape: likewise
+        cursor_shape: usize,                // GetNextObjectInShape: the next place in shape_walk
+        shape_walk: list::List(u32, heap::Heap),    // GetFirstObjectInShape's matches in ascending x (routines/objects.ctx)
         // Appended by routines/misc.ctx.
         cursor_inside: usize,               // GetNextInPersistentObject: where in the trigger's list to go on from
         tokens: tokens::Table,              // SetCustomToken: <CUSTOMnnn> texts, for the whole session
@@ -159,7 +163,7 @@ namespace world {
             clock = clock::new{},
             objects = obj::new_table{ heap },
             module = obj::INVALID, area = obj::INVALID, pc = obj::INVALID, arrival = 0,
-            party = party::new{}, target = obj::INVALID, hover = obj::INVALID,
+            party = party::new{}, target = obj::INVALID, hover = obj::INVALID, aim_id = obj::INVALID, aim = math::vec3::zero{},
             repute = [[50; 32]; 32], repute_rows = 0,
             queue = events::new_queue{ heap },
             scripts = scripts::new_cache{ heap },
@@ -172,12 +176,13 @@ namespace world {
             arrival_waypoint = [0; 64], arrival_waypoint_len = 0,
             rng = Rng{ state = seed },
             stats = Stats{ calls = [0; 772], missing = [0; 772], unbalanced = [false; 772], script_runs = 0, faults = 0, events = 0, objects_made = 0 },
+            routes = [null; 772],
             log = elog::quiet{},
             doomed = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
             module_frame = false, autopause_asked = 0,
             serial = 0,
             heartbeats = map::new(u32, u64, heap::Heap){ realloc = heap::alloc, heap, hash = map::hash_u32, eq = map::eq_u32 },
-            cursor_area = 0, cursor_shape = 0, minigame = null,
+            cursor_area = 0, cursor_shape = 0, shape_walk = list::new(u32, heap::Heap){ realloc = heap::alloc, heap }, minigame = null,
             conversation = dlg::new_state{},
             cursor_inside = 0, tokens = tokens::new{ heap }, last_acquired = obj::INVALID, last_acquired_from = obj::INVALID,
             last_activated = obj::INVALID, last_activator = obj::INVALID, last_activated_target = obj::INVALID,
@@ -552,9 +557,22 @@ namespace world {
     }
 
     fn set_animation { o: *mut obj::Object, id: u32, speed: f32 } {
-        if o.animation == id and o.anim_speed == speed { return }
+        if o.animation == id and o.anim_speed == speed and o.anim_cycles == 0.0 { return }
         o.animation = id
         o.anim_speed = speed
+        o.anim_cycles = 0.0
+        o.dirty = o.dirty | obj::DIRTY_ANIMATION
+    }
+
+    // The walk or run cycle for a creature moving at a speed: `cycles` a second is what the ground speed
+    // asks for (speed / the appearance's WALKDIST or RUNDIST, movement::gait_cycles), which the scene
+    // turns into a playback rate by the length of the cycle it plays. 0 when the appearance has no
+    // distance: the cycle plays at rate 1.
+    fn set_gait { o: *mut obj::Object, id: u32, cycles: f32 } {
+        if o.animation == id and o.anim_cycles == cycles { return }
+        o.animation = id
+        o.anim_speed = 1.0
+        o.anim_cycles = cycles
         o.dirty = o.dirty | obj::DIRTY_ANIMATION
     }
 

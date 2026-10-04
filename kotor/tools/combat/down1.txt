@@ -1,0 +1,24 @@
+20 ui heal
+30 ui foe g_sithtroop01 7 -4
+31 cam toward g_sithtroop01
+40 ui clickon g_sithtroop01
+42 ui clickon g_sithtroop01
+60 ui damage carth 100
+62 ui fight
+70 ui damage g_sithtroop01 20
+120 ui anims
+200 ui fight
+280 ui anims
+285 ui anims
+300 ui fight
+310 ui anims
+330 ui anims
+400 ui fight
+500 ui fight
+600 ui fight
+700 ui fight
+800 ui fight
+900 ui party
+900 ui pos
+2000 ui party
+2600 ui anims

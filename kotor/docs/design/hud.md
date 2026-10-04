@@ -55,14 +55,21 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
   creature, door or placeable whose projected box holds it (`w.hover`, and the pointer's picture
   from the default action); a click targets (`w.target`), a click on the target does its default
   action; Q and E cycle. The block with name, health and three action slots floats over the target;
-  the reticle is drawn under the panels. Models carry no usable bounds (the compiler's default
-  box), so the boxes are ours: creature height scaled by `PERSPACE`, typical door and placeable
-  sizes. Slot 1 holds the default actions (open/bash, use, talk, attack); the Force-power and item
-  slots are empty until lib/rules gives the leader any (PLACEHOLDER).
-- **Combat** (`combat.ctx`): while the leader's `in_combat` flag is set the combat bar (queue
-  icons from the leader's attack actions, Disengage, clear-one) and for six seconds the combat-mode
-  message show; Disengage clears the actions and the flag. There is no combat system to set the
-  flag yet, so `ui combat TAG` sets it for tests.
+  the reticle is drawn under the panels. Both hang from the aim point the scene finds each frame (`w.aim`: a
+  creature's `head_g`, the `lookathook` of a door or placeable; the middle of the box when there is none): the
+  block 32 pixels above it, the reticle centred on it, 64 pixels square within 5 m of the leader and shrinking
+  to 16 (creature) or 32 (door, placeable, mine) at 30 m, whatever the object's size (UpdateReticles
+  `0x0068a310`; not modelled: the combat reticle's zoom-in and the edge arrows of an off-screen target).
+  Models carry no usable bounds (the compiler's default box), so the pick boxes are ours: creature height
+  scaled by `PERSPACE`, typical door and placeable sizes. Slot 1 holds, on a foe, the leader's best Critical
+  Strike / Flurry / Power Attack (or Power Blast / Rapid Shot / Sniper Shot with a ranged weapon) and Attack
+  (`attack_slot`), else the default actions; slot 2 the hostile Force powers; slot 3 the party's grenades. A
+  click on the target and R do the default list's first action (plain Attack on a foe).
+- **Combat** (`combat.ctx`): while the leader's `in_combat` flag is set the combat bar (the round
+  being fought and up to three waiting fighting orders, each with its feat's, item's or power's
+  icon; Disengage, clear-one) and for six seconds the combat-mode message show. Fighting orders
+  given in combat queue behind the round (at most four), Shift makes them replace
+  (docs/mechanics/combat.md).
 - **Feedback** (`feedback.ctx`, `log.ctx`): outbox `feedback` notes go to a 64-line ring
   (`hud::MessageLog`, also read by the Messages menu); the young ones draw as blue lines under the
   minimap's notification icons and fade after six seconds.
@@ -133,7 +140,7 @@ the tab bar. A panel handles the rest in `on_event`: `activate` for buttons, `ro
 |---|---|---|---|
 | Equipment | `equip_panel`, `items_*` | slots, candidate lists, descriptions, defence/damage/to-hit; equip and unequip apply on OK, refusals open the original's message boxes | no EQUIPITEM/UNEQUIPITEM action handlers (applied to the creature directly); item-property text; proficiency checks; base attack bonus is the level |
 | Inventory | `inventory_panel`, `items_*` | worn items first, then the bag by base item and name; six filters kept between openings; Use Item | the party's shared inventory and purse (the leader's own bag stands in); using an item only posts its activate event |
-| Character | `character_panel`, `sheet_*` | name, classes, vitality, Force, defence, attributes with modifiers, saves, alignment bar, XP and next level; Level Up / Auto show when the XP allows | all numbers come from `sheet::read` / `known_of` / `skill_total` (d20 formulas over the creature's data) until lib/rules is wired into the creature; the Level Up and Auto buttons open the level-up panels ([screens.md](screens.md)); the script-select panel and the 3D model are not built |
+| Character | `character_panel`, `sheet_*` | name, classes, vitality, Force, defence, attributes with modifiers, saves, alignment bar, XP and next level; Level Up / Auto show when the XP allows | all numbers come from `sheet::read` / `known_of` / `skill_total` (d20 formulas over the creature's data) until lib/rules is wired into the creature; the Level Up and Auto buttons open the level-up panels ([screens.md](screens.md)); Scripts opens the AI style panel (`scriptselect_panel`); the 3D model is not built |
 | Abilities | `abilities_panel`, `sheet_*` | skills, feats and Force powers from the creature's blueprint with icons and descriptions | as above |
 | Messages | `messages_panel` | the dialogue and feedback logs (`hud::MessageLog`), switched with BTN_SHOW | dialogue lines are added by whoever speaks them (`hud::log_add` with `LOG_DIALOG`) |
 | Journal | `journal_panel`, `journal_*` | `global.jrl` quests with their text from dialog.tlk, active and completed lists, four sorts, quest items; see [re/journal.md](../re/journal.md) | the engine keeps no journal: `journal::Journal` lives in the panel (move it to `World`, `AddJournalQuestEntry` calls `journal::set_state`) |
@@ -175,8 +182,8 @@ comment so the rules lead's merge finds it.
   the original shows nothing on sizes it has no file for (a bug, not a feature).
 - Menus are **non-modal** full-screen panels so the tab bar over them takes clicks; a modal panel
   (message box, party selection, option screens) opened by a menu takes input and Escape itself.
-- Models carry no usable bounds, so picking boxes and the reticle are built from `PERSPACE` and
-  typical sizes; picks are by projected box, not triangles.
+- Models carry no usable bounds, so picking boxes are built from `PERSPACE` and typical sizes; picks are by
+  projected box, not triangles. The reticle and the block use the model's own nodes instead (`w.aim`).
 - The leader is "the character" of every menu; BTN_CHANGE1/2 and Tab change the leader (`w.pc`
   follows), and a dead member cannot become leader.
 - Space pauses (keymap.2da action 241); Escape closes a menu or opens the options; the engine

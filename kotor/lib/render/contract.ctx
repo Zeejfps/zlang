@@ -1,40 +1,39 @@
-// The functions every backend's namespace `gpu` declares, written as calls so the compiler checks
-// them against whichever backend the build added. Nothing calls `check`; compiling it is the test.
-// A backend that changes a signature breaks the build here, not in game code.
-//
-// ctxlang can't name a function whose error set is inferred as a value of a function type (spec
-// §8, Errors, rule 12), so the contract is calls with the argument and result types spelled out.
+// The functions every backend's namespace `gpu` declares, as values of their function types, so
+// the compiler checks them against whichever backend the build added. Nothing calls `check`;
+// compiling it is the test. A backend that changes a signature breaks the build here, not in game
+// code. A function converts to its type if it takes no field the type lacks (it may leave one
+// out), each with the same type and, if `mut`, `mut` there too, and returns the same result type:
+// a `!T` fails with any error in the type, and the function's own errors convert to it (spec §5).
 namespace render_contract {
-    fn check {
-        mut sdl: sdl::Sdl, realloc: alloc::Fn(arena::Arena), mut heap: arena::Arena, config: render::Config,
-        texture_desc: render::TextureDesc, mesh_desc: render::MeshDesc, data: []u8, indices: []u16,
-        frame: *render::Frame, pixels: []mut u8,
-    } -> ! {
-        let mut dev: gpu::Device = try gpu::open{ &sdl, realloc, &heap, config }
-        let info: render::Info = gpu::describe{ dev }
-        let stats: render::Stats = gpu::get_stats{ dev }
-        let screen: render::Size = gpu::screen_size{ dev }
-        let messages: []u8 = gpu::messages{ dev }
-        gpu::clear_messages{ &dev }
-        try gpu::resize{ &dev, width = screen.width, height = screen.height }
+    fn check {} {
+        let open: fn{ mut sdl: sdl::Sdl, realloc: alloc::Fn(arena::Arena), mut heap: arena::Arena, config: render::Config } -> !gpu::Device = gpu::open
+        let describe: fn{ dev: gpu::Device } -> render::Info = gpu::describe
+        let get_stats: fn{ dev: gpu::Device } -> render::Stats = gpu::get_stats
+        let screen_size: fn{ dev: gpu::Device } -> render::Size = gpu::screen_size
+        let messages: fn{ dev: gpu::Device } -> []u8 = gpu::messages
+        let clear_messages: fn{ mut dev: gpu::Device } = gpu::clear_messages
+        let resize: fn{ mut dev: gpu::Device, width: u32, height: u32 } -> ! = gpu::resize
 
-        let t: render::Texture = try gpu::create_texture{ &dev, desc = texture_desc, data }
-        try gpu::update_texture{ &dev, t, level = 0, x = 0, y = 0, width = 1, height = 1, format = render::PixelFormat::rgba8, data }
-        let size: render::Size = gpu::texture_size{ dev, t }
-        gpu::free_texture{ &dev, t }
+        let create_texture: fn{ mut dev: gpu::Device, desc: render::TextureDesc, data: []u8 } -> !render::Texture = gpu::create_texture
+        let update_texture: fn{
+            mut dev: gpu::Device, t: render::Texture, level: u32, x: u32, y: u32, width: u32, height: u32,
+            format: render::PixelFormat, data: []u8,
+        } -> ! = gpu::update_texture
+        let texture_size: fn{ dev: gpu::Device, t: render::Texture } -> render::Size = gpu::texture_size
+        let free_texture: fn{ mut dev: gpu::Device, t: render::Texture } = gpu::free_texture
 
-        let m: render::Mesh = try gpu::create_mesh{ &dev, desc = mesh_desc, vertices = data, indices }
-        try gpu::update_mesh{ &dev, m, offset = 0, vertices = data }
-        gpu::free_mesh{ &dev, m }
+        let create_mesh: fn{ mut dev: gpu::Device, desc: render::MeshDesc, vertices: []u8, indices: []u16 } -> !render::Mesh = gpu::create_mesh
+        let update_mesh: fn{ mut dev: gpu::Device, m: render::Mesh, offset: usize, vertices: []u8 } -> ! = gpu::update_mesh
+        let free_mesh: fn{ mut dev: gpu::Device, m: render::Mesh } = gpu::free_mesh
 
-        let target: render::Target = try gpu::create_target{ &dev, width = 64, height = 64 }
-        let colour: ?render::Texture = gpu::target_texture{ dev, t = target }
-        let read: render::Size = try gpu::read_target{ &dev, t = target, into = pixels }
-        gpu::free_target{ &dev, t = target }
+        let create_target: fn{ mut dev: gpu::Device, width: u32, height: u32 } -> !render::Target = gpu::create_target
+        let target_texture: fn{ dev: gpu::Device, t: render::Target } -> ?render::Texture = gpu::target_texture
+        let read_target: fn{ mut dev: gpu::Device, t: render::Target, into: []mut u8 } -> !render::Size = gpu::read_target
+        let free_target: fn{ mut dev: gpu::Device, t: render::Target } = gpu::free_target
 
-        try gpu::submit{ &dev, frame }
-        gpu::present{ &dev, &sdl }
-        let shot: render::Size = try gpu::read_screen{ &dev, into = pixels }
-        gpu::close{ &dev, &sdl }
+        let submit: fn{ mut dev: gpu::Device, frame: *render::Frame } -> ! = gpu::submit
+        let present: fn{ mut dev: gpu::Device, mut sdl: sdl::Sdl } = gpu::present
+        let read_screen: fn{ mut dev: gpu::Device, into: []mut u8 } -> !render::Size = gpu::read_screen
+        let close: fn{ mut dev: gpu::Device, mut sdl: sdl::Sdl } = gpu::close
     }
 }

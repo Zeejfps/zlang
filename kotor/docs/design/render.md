@@ -26,10 +26,10 @@ functions. Game code names `render::` and `gpu::` only.
 day, `lib/render_metal`); that is the only place a backend is named. ctxlang has no interfaces
 or dynamic dispatch to hide a backend behind, and a namespace is the cheapest seam there is:
 calls are direct, and a second backend is a second directory with the same declarations.
-`lib/render/contract.ctx` calls each `gpu` function with its argument and result types spelled
-out; nothing calls it, but compiling it checks that the backend in the build matches the contract
-(a function type can't stand in, since a function whose error set is inferred can't be a value of
-a function type). A program that adds `lib/render` must add a backend.
+`lib/render/contract.ctx` gives each `gpu` function as a value of its function type; nothing calls
+it, but compiling it checks that the backend in the build matches the contract (a fallible one
+converts to a `!T` that may fail with any error, spec §5). A program that adds `lib/render` must
+add a backend.
 
 **Only the backend holds the API's capability.** `gpu::Device` holds `gl::Gl`; the game holds a
 `gpu::Device` and passes `&dev`. The window comes with the device (`gpu::open` makes both from
@@ -135,8 +135,9 @@ textures with alpha), colour (tint; its alpha is the opacity of the alpha contro
 `wateralpha`), self-illumination (the original's GL_EMISSION, 0x00473900: added to the light, the
 sum clamped to 1 as the fixed-function pipeline clamps the lit colour, then modulated by the
 texture), `lit`, `fog`, `two_sided`, `decal` (depth bias, no depth
-write), `env_amount`, and `sort` (the MDL transparency hint: lower draws first among transparent
-surfaces). With an envmap on an opaque or punch surface, the diffuse alpha is the reflection
+write), `env_amount`, `inflate` (metres each vertex is pushed out along its normal, after skinning:
+a shell drawn over a body, the original's energy shield; 0 for everything else) and `sort` (the
+MDL transparency hint: lower draws first among transparent surfaces). With an envmap on an opaque or punch surface, the diffuse alpha is the reflection
 mask and the surface stays opaque (re/render-gui.md, "Environment maps"): on a lightmapped surface
 the reflection is added, `lit + reflection × (1 − alpha)`; on any other (creatures, placeables,
 doors) the two are blended by alpha, `mix(reflection, lit diffuse, alpha)`, so low-alpha armour

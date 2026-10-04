@@ -75,6 +75,10 @@ namespace outbox {
         //     node `hook` of `object` for `life` seconds (0: its animation's length), or at
         //     `position` when `object` is OBJECT_INVALID
         effect_model{ model: resref::ResRef, object: u32, hook: resref::ResRef, position: math::Vec3, life: f32 },
+        //   floating_text: a number or word that floats over a creature for a moment (the "Floating
+        //     Numbers" option; docs/re/combat.md 10): `kind` 0 damage, 1 healing, 2 "miss", 3 "XP <amount>",
+        //     4 "Level <amount>" (fight_log::FLOAT_*); the presentation words and colours it
+        floating_text{ object: u32, kind: i32, amount: i32 },
         // Appended by traps.ctx: a mine leaves the world, exploding (`activate`) or disarmed
         // (`deactivate`): its model plays that at its place (the client's delete reasons 1 and 2).
         mine_gone{ model: resref::ResRef, position: math::Vec3, exploded: bool },
