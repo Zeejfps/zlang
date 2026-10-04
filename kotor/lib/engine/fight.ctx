@@ -283,8 +283,10 @@ namespace fight {
         let o = world::object{ w = &w, id } ifnull { return }
         let k = e.kind
         if k == rules::ev::HEAL_HP {
+            let before = o.hp
             o.hp = o.hp + e.a
             if o.hp > o.hp_max { o.hp = o.hp_max }
+            fight_log::healed{ &w, target = id, amount = o.hp - before }
         } else if k == rules::ev::DAMAGE_HP {
             take_damage{ &w, id, amount = e.a, types = e.b, who = e.who }
         } else if k == rules::ev::DEATH {
