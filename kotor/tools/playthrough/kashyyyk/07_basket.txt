@@ -1,0 +1,13 @@
+# Kashyyyk, part 7: the Great Walkway to the elevator basket (kas22_baskettalk at 300 101): Chorrawl's Wookiees against the kinrath
+# (triggers kas22_chorratrig and kas22_wookf_trig), Gorwooken at the basket, and the ride down to the Shadowlands (kas_m24aa).
+# From the checkpoint "walk3" (CKPT=walk3): the party stands at the village door on the Walkway. The long walk is cut with a warp.
+3 ui stat hpmax 130
+3 ui stat hp 130
+5 ui replies 2 default 1
+10 ui bot god on
+10 warp kas22_chorraw_01 party
+40 ui goto kas22_baskettalk
+700 goto 301.5,103.5
+1500 ui pos
+3000 ui pos
+2900 save shadow1

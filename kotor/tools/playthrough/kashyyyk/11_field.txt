@@ -1,0 +1,19 @@
+# Kashyyyk, part 11: the Czerka repulsor field (kas_m24aa, 341 163): with Jolee in the party he lowers it (kas24_force_01) and
+# the party goes down to the Lower Shadowlands (kas_m25aa). From the checkpoint "jolee" (CKPT=jolee); the walk is cut with a warp.
+3 ui stat hpmax 130
+3 ui stat hp 130
+4 ui leader jolee
+4 ui jedi 5 10
+4 ui giveitem g_w_lghtsbr01 1 equip
+4 ui stat hpmax 130
+4 ui stat hp 130
+4 ui stat xp 49490
+5 ui leader pc
+5 ui replies 2 2 default 1
+10 ui bot god on
+10 warp kas24_fieldspeak party
+30 use kas24_forcefield
+1300 ui party
+1300 ui pos
+1300 ui journal list
+1350 save lower1

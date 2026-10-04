@@ -1,0 +1,16 @@
+# Kashyyyk, part 9: Jolee's task, the Czerka poacher camp (kas_m24aa, 233 235): the leader's talk (kas24_poffice_01), the
+# threat that makes him hostile, the fight with the poachers. From the checkpoint "camp" (CKPT=camp): Jolee waits at his camp
+# (147 140); the walk across the forest (230 m) is cut with a warp.
+3 ui stat hpmax 130
+3 ui stat hp 130
+5 ui replies 1 4 4 default 1
+10 ui bot god on
+10 warp kas24_poffice_01 party
+30 use kas24_poffice_01
+1400 ui bot on
+3400 ui bot off
+3400 ui hostiles
+3400 ui journal list
+3400 ui xp
+3400 ui pos
+3450 save poached

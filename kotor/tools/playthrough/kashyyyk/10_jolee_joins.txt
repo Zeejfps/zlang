@@ -1,0 +1,16 @@
+# Kashyyyk, part 10: back at Jolee's camp after the poachers' death: "I have made certain the poachers are gone", the repulsor
+# field, and Jolee joins (the party screen). From the checkpoint "poached" (CKPT=poached).
+3 ui stat hpmax 130
+3 ui stat hp 130
+5 ui replies default 1
+10 ui bot god on
+10 warp jolee party
+30 use jolee
+# Jolee is forced into the party (yellow frame); Canderous is picked for the free slot, OK.
+2600 ui click 507 271
+2620 ui click 640 545
+2800 ui party
+2800 ui journal list
+2800 ui xp
+2800 ui pos
+2850 save jolee
