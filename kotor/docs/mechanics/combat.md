@@ -94,3 +94,11 @@ d20, total and the defense it was against. The helpers are in `lib/ingame/test_c
 | 32 | Energy shields (items used from the self slot) absorb damage until spent or timed out | rules.md 1.13, `OnApplyForceShield` 0x004df540 | fixed (sub-agent, merged 3f13a64): bands absorb blaster and ion damage until their points run out (20, 7, 3, then the shield breaks and 4 gets through), a missed bolt on a shield is result 10, a new shield replaces the old; open: the shield aura of rows 0-14 is an engine-coded effect lib/vfx does not draw |
 | 33 | Grenades thrown at a target or point, area damage, saves | items | grenades in the block's third slot: the items owner; a fighting order (queues in combat). Thrown by AI: Trask as grenadier throws frag grenades (spell 87) at two troopers on the Endar Spire and the blasts kill both (052d337 made GetFirst/NextObjectInShape walk ascending x, which GN_FindGrenadeTarget depends on) |
 | 34 | Mines exploding when walked on in combat | items | the items/skills owner (traps and mines sub-agent); hooks agreed: MINE_SIGHTED auto-pause, damage as rules effects |
+
+## QA reports
+
+| Report | Cause | Status |
+|---|---|---|
+| A party member at 0 HP stays down (red X) for the rest of the area | we waited for no hostile in the area to be "in combat"; the original gets them up 5 s after no hostile sees the party (`UpdatePartyDeath`) | fixed (row 23) |
+| Fights are very slow (Kandon Ark, 88 HP: ~8,000 frames with three fighters) | Carth never fought: no loaded companion listened to the leader's GEN_I_WAS_ATTACKED shout (listen patterns were not saved), the leader's own OnAttacked never ran, and the AI could pick downed members; the rest is the replay's player never levelling up (22 HP, attack +3 against Kandon's defense 23: 2 hits in 45) | fixed (rows 19-23): from the garage checkpoint with `44_kandon.txt` the Kandon fight now ends 3,900 frames after his conversation, Carth and Mission fighting throughout (48 and 47 attack rounds) |
+| Companions sit idle in some fights | as above; also a pathing failure (Carth could not plan a way to Kandon), fixed by the controls owner | fixed |
