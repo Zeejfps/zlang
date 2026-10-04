@@ -1,0 +1,245 @@
+// What the area gives the enhanced renderer's atmosphere (docs/design/enhanced-render.md, Height fog and Colour
+// grades): the colour grade of its planet, a lookup table made in code, and the height fog of outdoor areas.
+// Both are found the first time they are asked for in an area (like the sun, sun.ctx) and given to every view.
+namespace scene {
+    // ---- colour grades
+
+    // A grade: what is done to a colour in 0..1, in this order. `contrast` pulls toward an S curve (0 none);
+    // `gamma` above 1 lightens the mid-tones; `lift` raises the blacks and `gain` scales the whites (the same
+    // for each, with the other end held); `shadows` and `lights` are colours added where the picture is dark and
+    // where it is bright (split toning); `saturation` 1 leaves the colourfulness alone.
+    struct Grade {
+        contrast: f32, gamma: f32, lift: math::Vec3, gain: math::Vec3,
+        shadows: math::Vec3, lights: math::Vec3, saturation: f32,
+    }
+
+    enum Planet: u8 { none, endar, taris, dantooine, tatooine, kashyyyk, manaan, korriban, leviathan, unknown, star_forge, ebon_hawk }
+
+    fn v3 { x: f32, y: f32, z: f32 } -> math::Vec3 { return math::Vec3{ x, y, z } }
+
+    // The planet a module belongs to, from its name's first letters; none for the rest (the grade is the identity).
+    fn planet_of { module: []u8 } -> Planet {
+        if module.len < 4 { return Planet::none }
+        let a = ascii::to_lower{ c = module[0] }
+        let b = ascii::to_lower{ c = module[1] }
+        let c = ascii::to_lower{ c = module[2] }
+        let d = ascii::to_lower{ c = module[3] }
+        if a == 'e' and b == 'n' and c == 'd' and d == '_' { return Planet::endar }
+        if a == 't' and b == 'a' and c == 'r' and d == '_' { return Planet::taris }
+        if a == 'd' and b == 'a' and c == 'n' and d == 'm' { return Planet::dantooine }
+        if a == 't' and b == 'a' and c == 't' and d == '_' { return Planet::tatooine }
+        if a == 'k' and b == 'a' and c == 's' and d == '_' { return Planet::kashyyyk }
+        if a == 'm' and b == 'a' and c == 'n' and d == 'm' { return Planet::manaan }
+        if a == 'k' and b == 'o' and c == 'r' and d == 'r' { return Planet::korriban }
+        if a == 'l' and b == 'e' and c == 'v' and d == '_' { return Planet::leviathan }
+        if a == 'u' and b == 'n' and c == 'k' and d == '_' { return Planet::unknown }
+        if a == 's' and b == 't' and c == 'a' and d == '_' { return Planet::star_forge }
+        if a == 'e' and b == 'b' and c == 'o' and d == '_' { return Planet::ebon_hawk }
+        return Planet::none
+    }
+
+    // Each planet's grade: its place in the story's look, in changes of a few per cent so the artists' colours
+    // stay what they are (docs/design/enhanced-render.md, Colour grades).
+    fn grade_of_planet { p: Planet } -> Grade {
+        let flat = Grade{
+                contrast = 0.0, gamma = 1.0, lift = v3{ x = 0.0, y = 0.0, z = 0.0 }, gain = v3{ x = 1.0, y = 1.0, z = 1.0 },
+                shadows = v3{ x = 0.0, y = 0.0, z = 0.0 }, lights = v3{ x = 0.0, y = 0.0, z = 0.0 }, saturation = 1.0,
+        }
+        return match p {
+            // The Endar Spire: clean steel, a cold cast in the shadows, a touch less colour.
+            endar => { Grade{
+                contrast = 0.068, gamma = 1.0, lift = v3{ x = 0.0, y = 0.002, z = 0.006 }, gain = v3{ x = 0.993, y = 1.0, z = 1.014 },
+                shadows = v3{ x = -0.003, y = 0.0, z = 0.007 }, lights = v3{ x = 0.0, y = 0.0, z = 0.0 }, saturation = 0.972,
+            } }
+            // Taris: a smoggy city under sodium light; sickly greens in the shadows, yellow highlights, drained.
+            taris => { Grade{
+                contrast = 0.085, gamma = 0.979, lift = v3{ x = 0.0, y = 0.004, z = 0.002 }, gain = v3{ x = 1.021, y = 1.007, z = 0.965 },
+                shadows = v3{ x = -0.003, y = 0.004, z = 0.001 }, lights = v3{ x = 0.008, y = 0.006, z = -0.008 }, saturation = 0.93,
+            } }
+            // Dantooine: warm and golden, a little more colour, the mid-tones lifted.
+            dantooine => { Grade{
+                contrast = 0.043, gamma = 1.028, lift = v3{ x = 0.003, y = 0.001, z = 0.0 }, gain = v3{ x = 1.021, y = 1.007, z = 0.972 },
+                shadows = v3{ x = 0.002, y = 0.0, z = 0.0 }, lights = v3{ x = 0.007, y = 0.004, z = -0.004 }, saturation = 1.056,
+            } }
+            // Tatooine: sun-bleached, warm shadows, orange highlights, firm contrast.
+            tatooine => { Grade{
+                contrast = 0.102, gamma = 1.0, lift = v3{ x = 0.006, y = 0.003, z = 0.0 }, gain = v3{ x = 1.028, y = 1.0, z = 0.951 },
+                shadows = v3{ x = 0.004, y = 0.0, z = -0.004 }, lights = v3{ x = 0.01, y = 0.004, z = -0.008 }, saturation = 0.958,
+            } }
+            // Kashyyyk: the forest's greens deepened in the shadows, a little darker, a little richer.
+            kashyyyk => { Grade{
+                contrast = 0.085, gamma = 0.979, lift = v3{ x = -0.001, y = 0.004, z = 0.003 }, gain = v3{ x = 0.986, y = 1.014, z = 0.979 },
+                shadows = v3{ x = -0.004, y = 0.006, z = 0.003 }, lights = v3{ x = 0.006, y = 0.003, z = -0.003 }, saturation = 1.042,
+            } }
+            // Manaan: sea and glass, cool teal in the shadows and the lights.
+            manaan => { Grade{
+                contrast = 0.051, gamma = 1.014, lift = v3{ x = 0.0, y = 0.003, z = 0.007 }, gain = v3{ x = 0.979, y = 1.007, z = 1.028 },
+                shadows = v3{ x = -0.003, y = 0.004, z = 0.008 }, lights = v3{ x = -0.003, y = 0.004, z = 0.008 }, saturation = 1.021,
+            } }
+            // Korriban: ochre and dried blood, deeper darks, red shadows.
+            korriban => { Grade{
+                contrast = 0.119, gamma = 0.965, lift = v3{ x = 0.004, y = 0.0, z = -0.003 }, gain = v3{ x = 1.028, y = 0.993, z = 0.965 },
+                shadows = v3{ x = 0.006, y = -0.003, z = -0.003 }, lights = v3{ x = 0.004, y = 0.0, z = -0.004 }, saturation = 0.972,
+            } }
+            // The Leviathan: cold, dim and sickly, drained of colour.
+            leviathan => { Grade{
+                contrast = 0.085, gamma = 0.986, lift = v3{ x = 0.0, y = 0.003, z = 0.003 }, gain = v3{ x = 0.979, y = 1.007, z = 0.993 },
+                shadows = v3{ x = -0.003, y = 0.004, z = 0.003 }, lights = v3{ x = 0.0, y = 0.0, z = 0.0 }, saturation = 0.944,
+            } }
+            // The Unknown World: dust and ancient stone, warm gold, a little cool in the shade.
+            unknown => { Grade{
+                contrast = 0.068, gamma = 1.0, lift = v3{ x = 0.001, y = 0.0, z = 0.003 }, gain = v3{ x = 1.014, y = 1.0, z = 0.979 },
+                shadows = v3{ x = -0.001, y = 0.0, z = 0.006 }, lights = v3{ x = 0.006, y = 0.003, z = -0.004 }, saturation = 0.979,
+            } }
+            // The Star Forge: hard contrast, cold blue-teal shadows under hot lights.
+            star_forge => { Grade{
+                contrast = 0.102, gamma = 1.0, lift = v3{ x = 0.0, y = 0.001, z = 0.006 }, gain = v3{ x = 0.986, y = 1.0, z = 1.021 },
+                shadows = v3{ x = -0.003, y = 0.001, z = 0.008 }, lights = v3{ x = 0.004, y = 0.0, z = -0.003 }, saturation = 1.028,
+            } }
+            // The Ebon Hawk: lived-in, a hair warm.
+            ebon_hawk => { Grade{
+                contrast = 0.043, gamma = 1.0, lift = v3{ x = 0.001, y = 0.001, z = 0.0 }, gain = v3{ x = 1.007, y = 1.0, z = 0.986 },
+                shadows = v3{ x = 0.001, y = 0.0, z = 0.0 }, lights = v3{ x = 0.004, y = 0.002, z = -0.002 }, saturation = 1.0,
+            } }
+            none => { flat }
+        }
+    }
+
+    fn clamp01 { x: f32 } -> f32 { return math::min{ a = math::max{ a = x, b = 0.0 }, b = 1.0 } }
+
+    // A grade applied to one colour (0..1 per channel).
+    fn grade_colour { g: Grade, c: math::Vec3 } -> math::Vec3 {
+        let mut ch: [3]f32 = [c.x, c.y, c.z]
+        let lift: [3]f32 = [g.lift.x, g.lift.y, g.lift.z]
+        let gain: [3]f32 = [g.gain.x, g.gain.y, g.gain.z]
+        let mut i: usize = 0
+        while i < 3 {
+            let x = ch[i]
+            let s = x * x * (3.0 - 2.0 * x)
+            let mut y = x + g.contrast * (s - x)
+            y = math::powf{ x = y, y = 1.0 / g.gamma }
+            ch[i] = y * gain[i] + lift[i] * (1.0 - y)
+            i = i + 1
+        }
+        let l1 = 0.299 * ch[0] + 0.587 * ch[1] + 0.114 * ch[2]
+        let dark = (1.0 - l1) * (1.0 - l1)
+        let bright = l1 * l1
+        ch[0] = ch[0] + g.shadows.x * dark + g.lights.x * bright
+        ch[1] = ch[1] + g.shadows.y * dark + g.lights.y * bright
+        ch[2] = ch[2] + g.shadows.z * dark + g.lights.z * bright
+        let l2 = 0.299 * ch[0] + 0.587 * ch[1] + 0.114 * ch[2]
+        return math::Vec3{
+            x = clamp01{ x = l2 + (ch[0] - l2) * g.saturation },
+            y = clamp01{ x = l2 + (ch[1] - l2) * g.saturation },
+            z = clamp01{ x = l2 + (ch[2] - l2) * g.saturation },
+        }
+    }
+
+    // The grade as the strip the composite reads: 32 slices of 32 x 32 side by side (1024 x 32, rgb8), slice b at
+    // x = 32 b, red along a slice's row, green up its rows (bottom row first).
+    fn grade_strip { g: Grade, out: []mut u8 } {
+        let mut b: usize = 0
+        while b < 32 {
+            let mut y: usize = 0
+            while y < 32 {
+                let mut x: usize = 0
+                while x < 32 {
+                    let c = grade_colour{ g, c = math::Vec3{ x = @as(f32, x) / 31.0, y = @as(f32, y) / 31.0, z = @as(f32, b) / 31.0 } }
+                    let at = (y * 1024 + b * 32 + x) * 3
+                    out[at] = @trunc(u8, @as(u32, c.x * 255.0 + 0.5))
+                    out[at + 1] = @trunc(u8, @as(u32, c.y * 255.0 + 0.5))
+                    out[at + 2] = @trunc(u8, @as(u32, c.z * 255.0 + 0.5))
+                    x = x + 1
+                }
+                y = y + 1
+            }
+            b = b + 1
+        }
+    }
+
+    // The area's colour grade for the view (null: none, the picture as it is), made the first time it is asked for.
+    fn grade_of { mut sc: Scene, mut w: world::World, mut dev: gpu::Device } -> ?render::Texture {
+        if sc.grade_state == 0 { make_grade{ &sc, &w, &dev } }
+        return sc.grade
+    }
+
+    fn make_grade { mut sc: Scene, mut w: world::World, mut dev: gpu::Device } {
+        sc.grade_state = 2
+        let mo = world::object{ w = &w, id = w.module } ifnull { return }
+        let m = obj::module{ o = mo } ifnull { return }
+        let mut name = m.name
+        let p = planet_of{ module = resref::bytes{ r = &name } }
+        if p == Planet::none { return }
+        let data = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(u8){}, count = 1024 * 32 * 3 } iferr { return }
+        grade_strip{ g = grade_of_planet{ p }, out = data }
+        let desc = render::TextureDesc{
+            kind = render::TextureKind::flat, format = render::PixelFormat::rgb8, width = 1024, height = 32, levels = 1, mipmap = false,
+            filter = render::Filter::linear, wrap_u = render::Wrap::clamp, wrap_v = render::Wrap::clamp,
+        }
+        let t = gpu::create_texture{ &dev, desc, data } iferr { return }
+        sc.grade = t
+        sc.grade_state = 1
+    }
+
+    // ---- height fog
+
+    // The area's height fog for the view, found the first time it is asked for: off for interiors and undergrounds
+    // and for areas with no walkmesh.
+    fn height_fog_of { mut sc: Scene, w: *world::World } -> render::HeightFog {
+        if sc.hfog_state == 0 { find_height_fog{ &sc, w } }
+        return sc.hfog
+    }
+
+    fn find_height_fog { mut sc: Scene, w: *world::World } {
+        sc.hfog_state = 2
+        let ao = world::object{ w, id = w.area } ifnull { return }
+        let a = obj::area{ o = ao } ifnull { return }
+        if not outdoors{ flags = a.flags } { return }
+        // The walkable ground's lowest and highest points.
+        let rooms = list::items{ list = w.walk.rooms }
+        let mut lo: f32 = 1.0e9
+        let mut hi: f32 = -1.0e9
+        let mut i: usize = 0
+        while i < rooms.len {
+            let r = rooms[i]
+            i = i + 1
+            let mesh = r.mesh ifnull { continue }
+            let mut f: usize = 0
+            while f < mesh.adjacency.len {
+                let face = mesh.faces[f]
+                f = f + 1
+                let mut k: usize = 0
+                while k < 3 {
+                    let z = mesh.vertices[@as(usize, face[k])].z
+                    lo = math::min{ a = lo, b = z }
+                    hi = math::max{ a = hi, b = z }
+                    k = k + 1
+                }
+            }
+        }
+        if lo > hi { return }
+        sc.hfog = render::HeightFog{
+            on = true, color = haze_colour{ a }, base = lo,
+            density = HEIGHT_FOG_DENSITY, falloff = math::clamp{ x = HEIGHT_FOG_FALLOFF + (hi - lo) * 0.4, lo = 5.0, hi = 14.0 },
+        }
+        sc.hfog_state = 1
+    }
+
+    // Whether an area's flags (ARE Flags: 1 interior, 2 underground, 4 natural) make it open air: not an interior, and
+    // not underground unless natural (the Kashyyyk Shadowlands are underground only by the canopy).
+    fn outdoors { flags: u32 } -> bool {
+        return (flags & 1) == 0 and ((flags & 2) == 0 or (flags & 4) != 0)
+    }
+
+    // The fog's thickness at its base (per metre), and the height over which it thins by e: this much, and 0.4 m more
+    // for each metre between the walkmesh's lowest and highest points (5 to 14 m in all).
+    const HEIGHT_FOG_DENSITY: f32 = 0.006
+    const HEIGHT_FOG_FALLOFF: f32 = 4.0
+
+    // The haze's colour: the area's fog colour where it has one, else its ambient light lifted toward the sun's.
+    fn haze_colour { a: *obj::Area } -> math::Vec3 {
+        if a.fog_on { return color_of{ bgr = a.fog_color } }
+        let amb = color_of{ bgr = a.dyn_ambient }
+        return math::Vec3{ x = amb.x * 1.5 + 0.05, y = amb.y * 1.5 + 0.05, z = amb.z * 1.5 + 0.05 }
+    }
+}
