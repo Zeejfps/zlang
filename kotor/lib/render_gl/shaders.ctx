@@ -10,7 +10,7 @@ namespace glsl {
 
     // Meshes: rigid, skinned (a bone palette of up to 32) and dangly, and the planar shadows,
     // which run the same vertices through `u_post`.
-    const SCENE_VS: [67]c::String = [
+    const SCENE_VS: [70]c::String = [
         "#version 410 core\n",
         "layout(std140) uniform Frame {\n",
         "    mat4 u_view_proj;\n",
@@ -68,6 +68,10 @@ namespace glsl {
         "        n = s3 * n;\n",
         "        t = s3 * t;\n",
         "        b = s3 * b;\n",
+        "    }\n",
+        // The material's inflate (u_dangle.w): out along the skinned normal, a shell around the body.
+        "    if (u_dangle.w != 0.0) {\n",
+        "        p += normalize(n) * u_dangle.w;\n",
         "    }\n",
         "    vec4 world = u_post * (u_model * vec4(p, 1.0));\n",
         "    v_world = world.xyz / world.w;\n",

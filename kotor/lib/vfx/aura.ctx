@@ -1,0 +1,252 @@
+// Texture auras: the visualeffects.2da rows whose look the original draws in code, with no model
+// (their `progfx_duration` / `progfx_impact` codes 1401-1426). The energy shields of the forearm
+// bands and the droid utility shields (rows 2040-2048, codes 1413-1421) are such rows.
+//
+// What the original does with such a code (re/render-gui.md, "Engine-coded visual effects"): it
+// picks a flipbook texture `fx_tex_NN` (TXI: additive, 16 frames of 32 by 32 at 8 or 16 fps),
+// and draws every mesh of the creature's body and head a second time, 2 cm fatter along their
+// normals, unlit, with that texture added over the picture. The pass lasts as long as the
+// effect, and only the newest texture effect of a creature shows (a one-second impact flash
+// shows over a running shield and the shield comes back after it).
+//
+// Ours: the same second pass, as draws of the part's meshes with a material of the seam
+// (`render::Material.inflate` is the 2 cm; the texture a flipbook atlas, its cell advanced by the
+// clock). `update` finds the parts and their world matrices (it has the world, `draw` has not).
+namespace vfx {
+    const MAX_AURAS: usize = 16
+
+    // How far the shell stands off the body: the 0.02 the original passes along with the texture.
+    const AURA_INFLATE: f32 = 0.02
+
+    // An impact flash (progfx_impact 1401-1412) lasts a second (the original's default for a
+    // state-1 effect without a model).
+    const AURA_FLASH: f32 = 1.0
+
+    // What a duration row applied once (`fx visual`, an instant application) shows: a few seconds.
+    const AURA_ONCE: f32 = 3.0
+
+    // Meshes of one part that get a shell (a creature's body and head have a handful).
+    const AURA_MESHES: usize = 48
+
+    // The textures of the codes 1401 to 1426, in order. The original's switch has no 13.
+    const AURA_TEXTURES: [26][]u8 = [
+        "fx_tex_01", "fx_tex_02", "fx_tex_03", "fx_tex_04", "fx_tex_05", "fx_tex_06", "fx_tex_07", "fx_tex_08",
+        "fx_tex_09", "fx_tex_10", "fx_tex_11", "fx_tex_12", "fx_tex_14", "fx_tex_15", "fx_tex_16", "fx_tex_17",
+        "fx_tex_18", "fx_tex_19", "fx_tex_20", "fx_tex_21", "fx_tex_22", "fx_tex_23", "fx_tex_24", "fx_tex_25",
+        "fx_tex_26", "fx_tex_stealth",
+    ]
+
+    struct Aura {
+        live: bool,
+        object: u32,
+        hold: i32,                      // the visualeffects.2da row kept until it is released, 0 for a timed one
+        age: f32,
+        life: f32,                      // a timed one's length
+        order: u32,                     // when it began: the newest of an object shows
+        texture: ?render::Texture,
+        cols: u32,                      // the flipbook's grid
+        rows: u32,
+        fps: f32,
+        blend: render::Blend,
+        // where it stands this step (update): the visual's index in the scene, the parts that get
+        // the shell and their matrices
+        shown: bool,
+        visual: usize,
+        count: usize,
+        part: [4]usize,
+        transform: [4]math::Mat4,
+    }
+
+    fn no_aura {} -> Aura {
+        return Aura{
+            live = false, object = obj::INVALID, hold = 0, age = 0.0, life = 0.0, order = 0, texture = null, cols = 1, rows = 1, fps = 0.0,
+            blend = render::Blend::additive, shown = false, visual = 0, count = 0, part = [0; 4], transform = [math::mat4::identity{}; 4],
+        }
+    }
+
+    // The texture a code 1401-1426 names; empty for every other code (-1, 0 and the codes of other
+    // kinds of engine-coded effect).
+    fn aura_texture { code: i32 } -> []u8 {
+        if code < 1401 or code > 1426 { return "" }
+        return AURA_TEXTURES[@as(usize, code - 1401)]
+    }
+
+    // A column of a visualeffects.2da row as an engine-coded effect's code, 0 for `****`.
+    fn progfx_code { t: twoda::Table, row: usize, column: []u8 } -> i32 {
+        return twoda::get_int{ t, row, column } ifnull 0
+    }
+
+    // A texture aura of `code` on `object`: held until `release_aura` ends it (`hold` is the row's
+    // id) or, for a timed one (`hold` 0), `life` seconds. The same row again on the same object
+    // begins it anew.
+    fn start_aura {
+        mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, code: i32, object: u32, hold: i32, life: f32,
+    } {
+        let name = aura_texture{ code }
+        if name.len == 0 { return }
+        let t = material::get{ cache = &sc.materials, fs = &w.fs, &dev, rm = w.rm.*, name }
+        if t.texture == null { return }
+        let mut pick: ?usize = null
+        let mut spare: ?usize = null
+        let mut i: usize = 0
+        while i < MAX_AURAS {
+            let a = &v.auras[i]
+            if a.live and hold != 0 and a.hold == hold and a.object == object { pick = i; break }
+            if not a.live and spare == null { spare = i }
+            i = i + 1
+        }
+        if pick == null { pick = spare }
+        if pick == null {
+            v.dropped = v.dropped + 1
+            return
+        }
+        let slot = pick ifnull { return }
+        v.aura_count = v.aura_count + 1
+        let a = &v.auras[slot]
+        v.auras[slot] = no_aura{}
+        a.live = true
+        a.object = object
+        a.hold = hold
+        a.life = life
+        a.order = v.aura_count
+        a.texture = t.texture
+        a.cols = if t.frames_x > 0 { t.frames_x } else { 1 }
+        a.rows = if t.frames_y > 0 { t.frames_y } else { 1 }
+        a.fps = t.props.fps
+        // The layer's blend is the texture's own (all of fx_tex_* are additive); a texture without a
+        // blending keyword is blended by its alpha.
+        a.blend = if t.props.blend == render::Blend::opaque { render::Blend::alpha } else { t.props.blend }
+        if w.log.trace {
+            let how: []u8 = if hold != 0 { "held" } else { "timed" }
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "vfx aura {} (code {}, {}x{} at {} fps) on {} {}\n", name, code, a.cols, a.rows, a.fps, object, how)
+        }
+        place_aura{ sc = &sc, w = &w, a }
+    }
+
+    // The row `effect` ended on `object`: its aura goes.
+    fn release_aura { mut v: Vfx, mut w: world::World, effect: i32, object: u32 } {
+        let mut i: usize = 0
+        while i < MAX_AURAS {
+            let a = &v.auras[i]
+            i = i + 1
+            if a.live and effect != 0 and a.hold == effect and a.object == object {
+                a.live = false
+                if w.log.trace {
+                    world::prefix{ w = &w }
+                    _ = @fmt(&w.io, "vfx aura on {} ended after {} s\n", object, a.age)
+                }
+            }
+        }
+    }
+
+    // The start of a row's auras when it is applied to `object`: `lasting` takes the duration code
+    // (an effect that stays), else the impact code (a flash).
+    fn aura_for_row {
+        mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, row: usize, effect: i32, object: u32, lasting: bool,
+    } {
+        let t = w.tables.visualeffects
+        if lasting {
+            start_aura{ &v, &sc, &w, &dev, code = progfx_code{ t, row, column = "progfx_duration" }, object, hold = effect, life = 0.0 }
+        } else {
+            start_aura{ &v, &sc, &w, &dev, code = progfx_code{ t, row, column = "progfx_impact" }, object, hold = 0, life = AURA_FLASH }
+            // A duration row played once (`fx visual`): its look for a few seconds.
+            let kind = twoda::get_string{ t, row, column = "type_fd" } ifnull ""
+            if kind.len > 0 and kind[0] == 'D' {
+                start_aura{ &v, &sc, &w, &dev, code = progfx_code{ t, row, column = "progfx_duration" }, object, hold = 0, life = AURA_ONCE }
+            }
+        }
+    }
+
+    // ---- each step
+
+    // Ages the auras, ends the timed ones, and finds where each one's object stands.
+    fn step_auras { mut v: Vfx, mut sc: scene::Scene, mut w: world::World, dt: f32 } {
+        let mut i: usize = 0
+        while i < MAX_AURAS {
+            let a = &v.auras[i]
+            i = i + 1
+            if not a.live { continue }
+            a.age = a.age + dt
+            if a.hold == 0 and a.age >= a.life {
+                a.live = false
+                continue
+            }
+            place_aura{ sc = &sc, w = &w, a }
+        }
+    }
+
+    // The parts of the object's visual that wear the shell (the body and the head, not the weapons)
+    // and their world matrices; `shown` false when the object shows nothing.
+    fn place_aura { sc: *scene::Scene, w: *world::World, mut a: Aura } {
+        a.shown = false
+        a.count = 0
+        let index = map::get{ m = sc.by_id, key = a.object } ifnull { return }
+        if index == scene::NO_VISUAL { return }
+        let vis = list::at{ list = sc.visuals, i = index }
+        if not vis.alive { return }
+        let o = world::object{ w, id = a.object } ifnull { return }
+        let mut transforms: [8]math::Mat4
+        let n = visual::part_transforms{ sc, v = vis, o, out = transforms[..] }
+        let mut k: usize = 0
+        while k < n and a.count < 4 {
+            let p = scene::part_at{ sc, i = vis.first + k }
+            if k == 0 or ci::eq{ a = p.hook, b = mdl_anim::HOOK_HEAD } {
+                a.part[a.count] = vis.first + k
+                a.transform[a.count] = transforms[k]
+                a.count = a.count + 1
+            }
+            k = k + 1
+        }
+        a.visual = index
+        a.shown = a.count > 0
+    }
+
+    // ---- drawing
+
+    // The shell's material at `time`: the flipbook's cell for the clock, unlit, added.
+    fn aura_material { a: *Aura, time: f32 } -> render::Material {
+        let mut m = render::make_material{}
+        m.diffuse = a.texture
+        m.blend = a.blend
+        m.lit = false
+        m.inflate = AURA_INFLATE
+        if a.cols * a.rows > 1 {
+            render::set_flipbook_frame{ &m, cols = a.cols, rows = a.rows, frame = @as(u32, time * a.fps) }
+        }
+        return m
+    }
+
+    // Only the newest aura of an object shows.
+    fn newest_aura { v: *Vfx, a: *Aura } -> bool {
+        let mut i: usize = 0
+        while i < MAX_AURAS {
+            let b = &v.auras[i]
+            i = i + 1
+            if b.live and b.shown and b.object == a.object and b.order > a.order { return false }
+        }
+        return true
+    }
+
+    fn draw_auras { v: *Vfx, sc: *scene::Scene, mut frame: render::Frame, view: u32 } {
+        let rooms = list::items{ list = sc.rooms }
+        let mut i: usize = 0
+        while i < MAX_AURAS {
+            let a = &v.auras[i]
+            i = i + 1
+            if not a.live or not a.shown or not newest_aura{ v, a } { continue }
+            let vis = list::at{ list = sc.visuals, i = a.visual }
+            if not vis.alive { continue }
+            if vis.room >= 0 and @as(usize, vis.room) < rooms.len and not rooms[@as(usize, vis.room)].visible { continue }
+            let mats = [aura_material{ a, time = v.time }; AURA_MESHES]
+            let mut k: usize = 0
+            while k < a.count {
+                let p = scene::part_at{ sc, i = a.part[k] }
+                let l = scene::loaded_at{ sc, i = p.loaded }
+                let n = if l.model.meshes.len < AURA_MESHES { l.model.meshes.len } else { AURA_MESHES }
+                _ = mdl_render::add_draws{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = a.transform[k], materials = mats[..n], time = sc.time }
+                k = k + 1
+            }
+        }
+    }
+}
