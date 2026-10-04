@@ -93,7 +93,7 @@ State: **works** (checked, 0 faults), **fixed** (a commit of this branch), **ope
 systems on three pillars, the 15 moves of the Tower of Hanoi as `ui replies ~from_the_left_pillar ~The_middle_pillar ...`; the read-out's
 `<CUSTOM10..12>` come out as "Active systems - left pillar: Base System, Mid-Lower System, ...", the rings move from pillar to pillar, no
 overload, and the talk ends normally after the last move (18,700 frames of lines). `28b_redeem.txt` (from `map`) the redemption ending below.
-`dark_shaardan.txt` (from `port`) and `dark_torture.txt` (from `code`) the dark replies. `disguise.txt` (from `dock`) the Jedi without
+`dark_shaardan.txt` (from `port`), `dark_torture.txt` and `dark_kel.txt` (from `code`) the dark replies (Kel's "You're no Sith" is guarded by `k_con_dark`: a light Jedi is not offered it). `disguise.txt` (from `dock`) the Jedi without
 robe and saber. `dustil.txt` (from `valley`) the attempt to spawn Carth's son.
 
 Experience and alignment through the chain (the player; Carth and Bastila hold the same XP from the party pool): 91,000 at the start
