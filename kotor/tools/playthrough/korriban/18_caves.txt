@@ -1,0 +1,12 @@
+# Korriban, part 18: out of the droid tomb to the Valley, and into the shyrack caves (korr_m34aa) by the transition strip k36_trg_k34;
+# Thalia May and the renegade students who refused Master Uthar's order to kill civilians (kor34_thaliamay, trigger k34_init_thalia):
+# the Jedi asks what they are doing, offers help, persuades them and takes on the beast in the passage (journal kor35_renegadesith 20).
+# From the checkpoint "droid". The walk across the caves (about 100 m) is a warp next to Thalia's trigger.
+5 ui replies ~Go_back ~Slow_down ~Maybe_I_can_help ~[Persuade]_Give_me ~I_can_try default 1
+10 warp kor38a_kor36 party
+30 use kor38a_kor36
+200 warpxy 57.5,63 party
+500 warpxy 118,104 party
+5000 ui journal list
+5000 ui rules
+5010 save thalia

@@ -966,6 +966,37 @@ of combat mode (`+0x320`) the game also pauses with reason 11 (49118). The latch
 disappears from the list while hostiles are present in combat mode, a 1.5 s timer (`+0x378`) runs
 before a new target is picked automatically. (med)
 
+**What decides who is selectable and visible** (read from `0x004f2c30`, `0x004fc4c0`, `0x00617ad0`,
+`0x00502ac0`; high). `GetNearbySelectableObjects` fills two lists from the x-sorted area list,
+skipping the leader: every selectable object within 30 m, sorted by bearing (degrees from the
+leader's facing, 0 up to 360, ascending), and the **front list**, the objects with a non-negative
+dot product with the facing whose direction from a point **4 m behind** the leader makes an angle
+under 30 degrees with the facing (cos > 0.866), sorted by distance. A creature is selectable when
+it is alive, not dying, and the leader's perception entry for it has its seen bit **or** the
+sight check `0x004f1fd0` says the leader sees it now. The PC's own perception pass (`0x00502ac0`)
+sets seen for everything in its area with no range or line test (the 250 m of ranges row 12 are
+not even looked at); what keeps a PC leader from selecting what is behind a wall is the client's
+visibility ray, `CSWCCreature::GetIsTargetVisible` (`0x00617ad0`): a walkmesh line-of-sight test
+(`CSWSArea::ClearLineOfSight`'s room half) and a scene ray from the leader to the object, the
+object's own model and the leader's left out, that gives up on a **closed door** in the way and
+steps past any other object. Visibility is cached per entry per frame; the pointer's pick
+(`ProcessInput`), `CycleTarget` (invisible entries are dropped) and the auto-target below all use it.
+
+**The auto-target** (`UpdateSelectableObjects`, every frame while no modal panel is up; ours:
+`lib/hud/autotarget.ctx`). Order: (1) a hostile creature or mine is looked for in bearing order; the
+first visible hostile creature, when the *sighting latch* (`+0x324`) is clear and the server is not
+paused, becomes the target (`+0x2b4`) and, with the Enemy Sighted option (`0x1000`) and combat mode
+(`+0x320`) off, asks reason 1; (2) a current target that is still in the list is kept: while it
+is visible the out-of-view timer (`+0x368`) is 0, when it is not the timer counts real seconds and
+at 1.0 the target is re-picked; (3) with no target, **the first visible entry of the front list**
+(nearest first); in combat mode with a hostile creature among the entries, the first visible
+*hostile* in the front list, else the first visible hostile in bearing order, else the first
+non-hostile of the front list; (4) nothing visible clears the target. The latch is set while any
+visible hostile creature is in the list and clears when none has been for 10 s (`+0x394`). A
+reticle and the target block hang on the HUD target alone (`CGuiInGame::SetHudTarget`, called only by
+`SelectTarget`), never on the hover object: `SetHoverObject` sets the pointer's picture (select,
+or the default action's if it is the target) and nothing else.
+
 ### 7.2 Hover picking
 
 `ProcessInput` works out the object under the cursor every frame and calls `SetHoverObject`
@@ -993,12 +1024,13 @@ behaviour)
 | Kind | Target | Actions (icon) | Code | Callback |
 |---|---|---|---|---|
 | 0 | none | "no action" (`i_noaction`, strref 32236) | `0x404` | — |
-| 1 | door | open (`i_opendoor`, 365) unless `0x0061f790` or `+0x138` refuses it; bash (`i_attack`, 368) if not plot (`+0x104`) and bashable (`+0x108`) and the area allows combat | `0x3f2` / `0x3f5` | `CSWCDoor::DefaultActionOpen` `0x00683d90` sends (6,3) / `0x00683e90` |
+| 1 | door | open (`i_opendoor`, 365) unless `0x0061f790` (the door's animation is already an open one, 10050 / 10051) or `+0x138` refuses it; then bash (`i_attack`, 368) if not plot (`+0x104`), **locked** (`+0x108`: the same flag gates the Security entry, so it is the Locked field, not a "bashable" one) and the area's RestrictMode (`area+0x2b0`) is 0 | `0x3f2` / `0x3f5` | `CSWCDoor::DefaultActionOpen` `0x00683d90` sends the open message (a locked door is refused by the server: locked feedback, OnFailToOpen; there is no unlock in this list) / `0x00683e90` |
 | 1 / 3 | placeable | use or open (`i_useplace` 366 / `i_openplace` 365) if it has an inventory or is useable; bash (368) if not plot and bashable | `0x3f7` / `0x3f5` | `0x00682660` / `0x006826a0` |
 | 3 | friendly creature | talk (`i_dialog`, 371) | `0x3ea` | `DefaultActionTalk` `0x0060f620`: cancel actions, face, send (6,8) |
 | 2 | mine (any client trigger) | disable (`i_disablemine`, 370) when the mine is hostile, recover (`i_recovermine`, 1531) on any; both need the leader's Demolitions (`0x006477e0`). In the target block (`0x00691f00`) Disable is the left slot, Recover the middle, the right empty; no flag or examine | `0x3f4` / `0x402` | `0x00691900` / `0x00691950` (input message 0x12 to UseSkill, subskill 0 / 101) |
 | 4 | hostile creature (or any creature while the auto-target timer runs) | attack (`i_attack`, 375) unless the area forbids combat (`area+0x2b0`) | `0x3eb` | `0x00616800` |
 
+- **The target block's slots are not this list.** The block asks `FUN_00619c20` for each of its three lists by the target's kind: a door (`FUN_00684410`): slot 0 Bash (`0x3f5`, `i_attack`) under the conditions above, slot 1 Security (`0x3f3`, strref 329, the skills.2da icon; door locked, server `KeyRequired` +0x2d8 clear, leader has skill 6), slot 2 empty; a placeable (`FUN_006837d0`): slot 0 Bash (not plot, area RestrictMode 0, locked `+0x118`), slot 1 Security (useable, locked, leader trained); a hostile creature: feats and Attack, Force powers, grenades; a mine (`FUN_00691f00`); a friendly creature: nothing. Each slot's selected entry is remembered per target kind by the entry's code. Open, Use and Talk are only default actions.
 - **Mouse**: on left button up in the world (not over a GUI, not in mouse look), clicking the
   object that is already the target and was under the cursor at button down runs **entry 0**
   (the default action, GUI sound 6); clicking another object makes it the target

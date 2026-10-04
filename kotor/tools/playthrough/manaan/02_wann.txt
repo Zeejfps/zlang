@@ -7,8 +7,7 @@
 # Map", "You know something?", "What do you want me to do?"), the droid in the Sith Embassy ("Where is the droid?"), "How do I
 # get in the Sith base?", then the three ways in: the prisoner (taken), the passcard, the landing bay (the card is given);
 # "I think I'll interrogate the prisoner."
-3 ui stat hpmax 150
-3 ui stat hp 150
+3 ui stat hp 144
 5 ui replies ~mission_from_the_jedi ~star_map ~know_something ~what_do_you_want ~where_is_the_droid ~how_do_i_get ~interrogating ~another_way ~interrogate_the_prisoner default 1
 10 warp man26ac_to26ae
 40 use man26ac_to26ae

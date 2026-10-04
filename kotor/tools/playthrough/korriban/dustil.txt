@@ -1,0 +1,8 @@
+# Korriban, Carth's son (scouting, from the checkpoint "valley"): KOR_DUSTIL_SPAWN is read by the Academy's area enter script
+# (kor35_enter), which makes kor35_dustil at k35_way_dustil. Nothing in the chain sets it (it belongs to Carth's talk on the Hawk, K_SWG_DUSTIL1,
+# KOR_DANEL), so it is set by hand here.
+5 ui gbool KOR_DUSTIL_SPAWN 1
+10 warp kor36_kor35 party
+30 use kor36_kor35
+600 ui where dustil
+600 ui pos

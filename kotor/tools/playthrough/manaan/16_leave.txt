@@ -1,0 +1,17 @@
+# Manaan, part 16: the way out. From the checkpoint "surface" (CKPT=surface: Wann's report is done, the Star Map is in the bag). The embassy's
+# door and the city's door to the docking bay are the game's (cut with warps next to them); in the bay the walk to the ramp is cut with a
+# warp to the Hawk's waypoint and `goto X,Y` ends inside the trigger `man26ad_to12aa` (the bay's "leaving the security zone" camera
+# conversation, man26_exit5, starts on the way and is cut by the transition). The module changes to ebo_m12aa at K_EBN_RAMP_ENTRANCE: the
+# party is gone from the player's side by design: the Hawk's entry script (k_pebn_pophawk) saves every companion, destroys the party's
+# copies and stands each available one at its place in the ship; leaving the Hawk asks for the party again (k_pebn_leavhawk,
+# ShowPartySelectionGUI). The next step is the galaxy map from the Hawk (not played).
+3 ui stat hp 144
+8 ui replies default 1
+10 warp man26ae_to26ac
+40 use man26ae_to26ac
+300 warp man26ac_to26ad
+340 use man26ac_to26ad
+700 warp K_MAN_EBON_HAWK_TRANSITION party
+740 goto 261,174
+1200 ui pos
+1200 ui party

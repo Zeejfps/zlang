@@ -27,13 +27,15 @@ namespace play {
         }
         let mut config = render::make_config{ title = "kotor", width = live.width, height = live.height, hidden = opts.headless }
         config.vsync = live.vsync
+        // The game draws its own pointer: Windows' stays hidden from the window's first moment (display::apply keeps it so).
+        if not opts.headless { sdl::hide_cursor{ &sdl } }
         let mut dev = try gpu::open(arena::Arena){ &sdl, realloc = arena::alloc, heap = &device_arena, config }
         defer gpu::close{ &dev, &sdl }
         let mut disp = display::make{ hidden = opts.headless, path = opts.settings }
         let first_change = display::apply{ d = &disp, &dev, &sdl, s = &live }
         disp.live = live
         if (first_change & display::CHANGED_TEXTURES) != 0 { mount_packs{ &w, quality = live.texture_quality } }
-        if not opts.headless { display::report{ d = &disp, io = &w.io } }
+        if not opts.headless { display::report{ d = &disp, &sdl, io = &w.io } }
         let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, heap = &device_arena, cap = render::default_capacity{} }
         // Sound: a device when there is a window; headless, the mixer runs on without one (as the
         // original does with no sound device, audio.md), so sounds still start and end.
@@ -226,7 +228,7 @@ namespace play {
                 disp.live = s
                 options_changed{ &w, &dev, ui, &dview, &disp, ld, changed }
                 reload_scene = reload_scene or (changed & display::CHANGED_TEXTURES) != 0
-                if (changed & display::CHANGED_SIZE) != 0 and not opts.headless { display::report{ d = &disp, io = &w.io } }
+                if (changed & display::CHANGED_SIZE) != 0 and not opts.headless { display::report{ d = &disp, &sdl, io = &w.io } }
             }
             if ingame::take_display_change{ ui } is some{ value = st } {
                 let changed = display::apply{ d = &disp, &dev, &sdl, s = st }

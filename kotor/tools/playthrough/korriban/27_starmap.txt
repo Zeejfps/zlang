@@ -1,0 +1,12 @@
+# Korriban, part 27: across the frozen pool to the Star Map room of Naga Sadow's tomb (strip k_kor_star_map at 120,108: the Star Map
+# speaks, kor39_starspeak). From the checkpoint "acid".
+10 ui unlock kor39_dooracid
+10 ui unlock k39_door_starmap
+20 warpxy 108,108 party
+400 ui pos
+420 warpxy 120,108 party
+1000 ui globals STAR_MAP
+1000 ui journal list
+1000 ui rules
+1000 ui xp
+1010 save map

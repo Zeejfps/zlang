@@ -59,6 +59,9 @@ namespace test_force {
                 f.c.stats.force_resistance, f.c.stats.speed_factor, f.c.stats.save_base[0], f.c.stats.save_base[1], f.c.stats.save_base[2])
             let o = world::object{ w = &w, id } ifnull { return true }
             _ = @fmt(&w.io, "  state {} ai_mask {} commandable {} hp {}/{} effects {} anim {} gear {}\n", f.c.stats.state, f.c.stats.ai_mask, o.commandable, o.hp, o.hp_max, f.c.nfx, o.animation, rules::equipped_type_mask{ tables = w.rules, c = &f.c })
+            // Alignment: 0 dark .. 100 light, the rules' value and the engine's copy (scripts read one, the sheet the other).
+            let c = obj::creature{ o } ifnull { return true }
+            _ = @fmt(&w.io, "  align {} (engine copy {}) xp {}\n", f.c.good_evil, c.good_evil, f.c.xp)
             return true
         }
         if ci::eq{ a = cmd, b = "play" } {

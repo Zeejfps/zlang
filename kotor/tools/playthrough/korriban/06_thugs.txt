@@ -1,0 +1,21 @@
+# Korriban, part 6: four Sith thugs who have just been accepted into the academy pick a fight (kor33_siththug1, the trigger
+# k33b_trg_initthg at (198,188)). The Jedi will not bribe or talk them out of it here: "Are you sure you want to die?", "Take another
+# step and I'll show you.", then the fight (k33b_thug_fight). The leader (k33b_sththuglead) carries a Sith medallion: his body
+# becomes a bag ("Remains"), clicked like a player does (hover, two clicks, the loot panel's Get Items). From the checkpoint "back".
+# The test bot fights what is hostile in sight (the leader of a real game would be played by hand).
+5 ui replies ~Are_you_sure_you_want_to_die ~Take_another_step default 1
+8 ui rules
+10 warpxy 198.2,188.4 party
+20 ui bot on
+300 ui pos
+3500 ui rules
+3500 ui xp
+3500 ui globals kor
+3500 ui bot off
+3510 hoveron =Remains
+3513 mouse click
+3516 mouse click
+3900 ui click 640 452
+4000 ui inv
+4000 ui list
+4010 save thugs

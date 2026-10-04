@@ -1,0 +1,9 @@
+# Korriban, dark side check 1 (from the checkpoint "port"): Shaardan and the three hopefuls, the other way: "Kill them, I don't care."
+# (Bastila and Juhani object, k_act_darkmed, k33_sha_nomercy: the hopefuls die). The leader's alignment is printed before and after
+# (part 3 of the chain, the light way, goes from 85 to 90).
+5 ui replies ~Why?_What_did_they_do ~Kill_them default 1
+8 ui rules
+10 warpxy 136,154.6 party
+4900 ui rules
+4900 ui party
+4900 ui xp

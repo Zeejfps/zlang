@@ -1,0 +1,7 @@
+# Korriban, part 15 (scouting): out of the Academy to the Valley of the Dark Lords (korr_m36aa) through the surface exit.
+# From the checkpoint "report1".
+10 warp kor35_kor36 party
+30 use kor35_kor36
+600 ui pos
+600 ui where
+700 save valley

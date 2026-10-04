@@ -1,0 +1,16 @@
+# Korriban, part 31: leaving. Out of the Academy (kor35_kor33b), through the Academy Entrance (kor33b_kor33a) to Dreshdae, and to the
+# Ebon Hawk (the strip k33_trg_ebonhawk, 107,183, takes the party aboard). From the checkpoint "finale": the Valley guards are skipped by
+# the warp of part 30, the party waits at the Academy's surface exit and rejoins.
+5 ui heal
+10 warp kor39_kor36 party
+30 use kor39_kor36
+300 warp kor36_kor35 party
+320 use kor36_kor35
+700 warp kor35_kor33b party
+720 use kor35_kor33b
+1100 warp kor33b_kor33a party
+1120 use kor33b_kor33a
+1500 warpxy 107,183 party
+2100 save hawk
+2100 ui journal list
+2100 ui rules
