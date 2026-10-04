@@ -119,7 +119,7 @@ namespace save {
                 y = base.y - facing.y * 1.5 - facing.x * side * 1.0,
                 z = base.z,
             } }
-            movement::place{ &w, id, at }
+            if at_saved { movement::place_loaded{ &w, id, at } } else { movement::place{ &w, id, at } }
             if not at_saved { world::set_orientation{ o, v = facing } }
             _ = party::add{ &w, id }
         }

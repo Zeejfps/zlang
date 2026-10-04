@@ -77,7 +77,10 @@ namespace modload {
         while i < all.len {
             let o = all[i]
             i = i + 1
-            if o.kind != obj::Kind::creature or from_save or o.id == w.pc { continue }
+            if o.kind != obj::Kind::creature or o.id == w.pc { continue }
+            // A loaded save's creatures stand inside their triggers already (no OnEnter for them).
+            if w.restoring { movement::settle_volumes{ &w, id = o.id } }
+            if from_save { continue }
             events::post{ &w, delay_ms = 0, caller = o.id, target = w.area, payload = events::Payload::script{ e = events::script_event{ kind = events::OBJECT_ENTER, object = o.id } } }
         }
         events::post{ &w, delay_ms = 0, caller = w.module, target = w.module, payload = events::Payload::script{ e = events::script_event{ kind = events::MODULE_LOAD, object = obj::INVALID } } }
@@ -419,7 +422,8 @@ namespace modload {
             w.restoring = false
         }
         world::set_orientation{ o = pc, v = facing }
-        movement::place{ &w, id = w.pc, at }
+        // A loaded save's player is already inside the triggers around it: no OnEnter again.
+        if from_save { movement::place_loaded{ &w, id = w.pc, at } } else { movement::place{ &w, id = w.pc, at } }
         // A loaded save's party inventory (INVENTORY.res, RestoreParty step 3).
         if from_save {
             save::restore_inventory{ &w } iferr err{ error } {

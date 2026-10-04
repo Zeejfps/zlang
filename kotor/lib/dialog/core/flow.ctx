@@ -609,6 +609,12 @@ namespace dlg {
         }
         w.conversation.end_flag = true
         w.conversation.ending = true
+        // HandleDialogReply (0x004cb480): when HandleReply finds no entry to go on to it fails, and the
+        // caller ends the conversation (normal: the end flag is set) in the same call, before the
+        // next frame. The reply's script has only queued what it ordered: a DestroyObject of the
+        // owner is an event that fires later, so the end scripts still find the owner (Shaardan's
+        // k_pkor_shamcydst, the acid wall's k_pkor_destacid).
+        finish{ &w, &vm, engine, normal = true }
     }
 
     // ---- the pump
