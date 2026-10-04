@@ -90,7 +90,11 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
   `gpu::resize`: nothing else in the loop handles `resized`).
 - **Self action slots** (`lib/ingame/selfslots.ctx`, re/gui.md "Action menus"): the four buttons at
   the bottom right hold the leader's friendly Force powers, medical items, other usable items and
-  mines; the arrows cycle, a click casts on the leader in place of its queued actions (the cast
+  mines. All four frames, icons and arrows are on screen from the start and nothing hides them (`SetState`
+  `0x00689280`): a slot with choices shows the selected one's picture and its arrows when it has more than one, a
+  slot with none only blanks the icon and leaves its arrows as they were, so an empty slot is a blank frame (with
+  its arrows until a single-choice slot hides them). A use dips the icon's alpha to 0 and back over 0.2 s
+  (`UpdateBlink`). The arrows cycle, a click casts on the leader in place of its queued actions (the cast
   action spends the item's use as it begins, `rt_item::spend_use`), an entry that cannot be used
   shows dimmed and says why in the message bar for five seconds (Force Depleted, Restricted by
   Armor, Full Health, PC Dead), and the hovered slot's entry is named above the slots. The friendly

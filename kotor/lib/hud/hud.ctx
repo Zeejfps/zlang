@@ -104,8 +104,8 @@ namespace hud {
         // The action slots' down arrows are the up arrow turned half way round (CSWGuiActionSlot::Init).
         turn_down_arrows{ &g, panel }
         adopt_slot_parts{ &g, panel }
-        // The pause toggle and the menu buttons stay; the party widgets hide until a member fills them.
-        hide_slots{ &g, panel }
+        // The pause toggle, the menu buttons and the four self action slots stay (a slot with nothing is a
+        // blank frame, selfslots.ctx); the party widgets hide until a member fills them.
         i = 0
         while i < WIDGETS {
             hide_widget{ &g, panel, n = i }
@@ -146,9 +146,6 @@ namespace hud {
         p.h = g.ui_h
     }
 
-    // The self action slots (four) and their arrows and icons, all hidden until a list fills one.
-    const SLOT_TAGS: [4][]u8 = ["BTN_ACTION", "BTN_ACTIONUP", "BTN_ACTIONDOWN", "LBL_ACTION"]
-
     // The down arrows (BTN_ACTIONDOWN0..3, BTN_TARGETDOWN0..2) use the same picture as the up arrows, turned 180 degrees.
     fn turn_down_arrows { mut g: gui::Gui, panel: u32 } {
         let mut buf: [32]u8
@@ -172,19 +169,6 @@ namespace hud {
             gui::set_parent{ &g, panel, tag = tag_n{ into = b[..], prefix = "BTN_TARGETDOWN", n }, parent = frame }
             gui::set_parent{ &g, panel, tag = tag_n{ into = b[..], prefix = "LBL_TARGET", n }, parent = frame }
             n = n + 1
-        }
-    }
-
-    fn hide_slots { mut g: gui::Gui, panel: u32 } {
-        let mut buf: [32]u8
-        let mut k: usize = 0
-        while k < SLOT_TAGS.len {
-            let mut n: usize = 0
-            while n < 4 {
-                gui::set_visible{ &g, panel, tag = tag_n{ into = buf[..], prefix = SLOT_TAGS[k], n }, visible = false }
-                n = n + 1
-            }
-            k = k + 1
         }
     }
 
