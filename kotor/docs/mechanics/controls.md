@@ -125,6 +125,7 @@ Reverse Mouse Buttons (options) swaps left and right: matches.
 | Opening a menu pauses (the menu bit) and closing it resumes | 6.3 | matches |
 | Auto-pause (install defaults: enemy sighted, mine sighted, party killed, new target selected on; end of combat round, action menu off): the first hostile seen within 30 m, a party member going down while others stand (2 s cool-down), a slot's choice stepped (action menu), the end of a combat round, a new target in combat mode; the banner carries the reason's text | 6.4, `UpdateSelectableObjects` 0x005fa5a0 | matches. The engine and the HUD call `autopause::request{reason}` (`lib/engine/autopause.ctx`); `ingame::update` takes the frame's first request and weighs it against the option, a person playing, a conversation or menu up and a pause already on. Mine sighted: nothing calls it yet (no mines). Runs only when a person plays: headless runs and replays keep it off (`ui autopause on` turns it on) |
 | The banner button unpauses by click | gui.md | matches |
+| Switching to another window pauses; coming back resumes unless the game was paused already | `OnAppDeactivate` 0x00401d90, `OnAppActivate` 0x00401e00 | matches (only when a person plays) |
 
 ## Minimap and HUD buttons
 
