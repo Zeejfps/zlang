@@ -248,6 +248,8 @@ namespace frontend {
             fe.settings.gamma = d.gamma
             fe.settings.shadows = d.shadows
             fe.settings.grass = d.grass
+            fe.settings.emitters = d.emitters
+            fe.settings.gui_scale = d.gui_scale
             fe.display_pending = true
         } else if screen == SCR_GRAPHICS_ADV {
             fe.settings.antialias = d.antialias
@@ -272,6 +274,63 @@ namespace frontend {
         }
     }
 
+    const DESC_DISPLAY_MODE: []u8 = "WINDOWED: Play in a window you can move and resize.\n\nBORDERLESS: A window over the whole desktop, with no border, so switching to another program is instant. A smaller resolution is scaled up to fit.\n\nFULLSCREEN: The display changes to the chosen resolution and refresh rate."
+    const DESC_UI_SCALE: []u8 = "AUTO: The menus, the HUD and the conversations are scaled to the window, so text stays readable at 1080p, 1440p and 4K.\n\n100%: The original's pixel-for-pixel interface.\n\nThe other steps make everything that much larger or smaller."
+    const DESC_BRIGHTNESS: []u8 = "Brightness lightens or darkens everything on the screen, movies included."
+
+    fn starts_with { s: []u8, prefix: []u8 } -> bool {
+        return s.len >= prefix.len and slice::eq_bytes{ a = s[..prefix.len], b = prefix }
+    }
+
+    // The dialog.tlk string that explains a graphics control: the original keeps it right after the label's
+    // (Shadows is 47950, its explanation 47951). 0: the control has none.
+    fn description_strref { tag: []u8 } -> u32 {
+        if tag_eq{ tag, other = "CB_SHADOWS" } { return 47951 }
+        if tag_eq{ tag, other = "CB_SOFTSHADOWS" } { return 47953 }
+        if tag_eq{ tag, other = "CB_GRASS" } { return 47955 }
+        if tag_eq{ tag, other = "CB_FRAMEBUFF" } { return 47957 }
+        if tag_eq{ tag, other = "CB_EMITTERS" } { return 47959 }
+        if starts_with{ s = tag, prefix = "BTN_ANISOTROPY" } { return 47961 }
+        if starts_with{ s = tag, prefix = "BTN_TEXQUAL" } { return 47965 }
+        if tag_eq{ tag, other = "BTN_RESOLUTION" } { return 47967 }
+        if tag_eq{ tag, other = "CB_VSYNC" } { return 47969 }
+        if starts_with{ s = tag, prefix = "BTN_ANTIALIAS" } { return 47971 }
+        return 0
+    }
+
+    fn tag_eq { tag: []u8, other: []u8 } -> bool { return slice::eq_bytes{ a = tag, b = other } }
+
+    // The description pane on the right of the graphics panels shows what the control under the pointer
+    // does. Our own two buttons have no string in the original's file, so their text is here.
+    fn describe_option { mut g: gui::Gui, p: u32, screen: u32, tag: []u8 } -> ! {
+        if screen != SCR_GRAPHICS and screen != SCR_GRAPHICS_ADV { return }
+        if tag_eq{ tag, other = "BTN_DISPLAYMODE" } {
+            try gui::set_list_text{ &g, panel = p, tag = "LB_DESC", text = DESC_DISPLAY_MODE }
+            return
+        }
+        if tag_eq{ tag, other = "BTN_UISCALE" } {
+            try gui::set_list_text{ &g, panel = p, tag = "LB_DESC", text = DESC_UI_SCALE }
+            return
+        }
+        if tag_eq{ tag, other = "SLI_GAMMA" } {
+            try gui::set_list_text{ &g, panel = p, tag = "LB_DESC", text = DESC_BRIGHTNESS }
+            return
+        }
+        let strref = description_strref{ tag }
+        if strref == 0 { return }
+        let text = try gui::tlk_text{ &g, strref }
+        defer gui::free_string{ &g, s = text }
+        try gui::set_list_text{ &g, panel = p, tag = "LB_DESC", text }
+    }
+
+    // Writes the Graphics panel's display texts again if that panel is the top screen: the engine
+    // calls it after it applied a change, which may have settled on another size or mode.
+    fn refresh_display_texts { mut fe: Front, mut g: gui::Gui } {
+        if fe.depth == 0 { return }
+        let top = fe.stack[fe.depth - 1]
+        if top.screen == SCR_GRAPHICS { sync_graphics{ &fe, &g, p = top.panel } iferr {} }
+    }
+
     // A check box or slider of an options panel changed to `v`.
     fn apply_value { mut fe: Front, screen: u32, tag: []u8, v: i32 } {
         let on = v != 0
@@ -293,6 +352,7 @@ namespace frontend {
             if slice::eq_bytes{ a = tag, b = "SLI_GAMMA" } { s.gamma = v; fe.display_pending = true }
             else if slice::eq_bytes{ a = tag, b = "CB_SHADOWS" } { s.shadows = on; fe.display_pending = true }
             else if slice::eq_bytes{ a = tag, b = "CB_GRASS" } { s.grass = on; fe.display_pending = true }
+            else if slice::eq_bytes{ a = tag, b = "CB_EMITTERS" } { s.emitters = on; fe.display_pending = true }
         } else if screen == SCR_GRAPHICS_ADV {
             if slice::eq_bytes{ a = tag, b = "CB_FRAMEBUFF" } { s.frame_buffer = on }
             else if slice::eq_bytes{ a = tag, b = "CB_SOFTSHADOWS" } { s.soft_shadows = on }
@@ -405,6 +465,10 @@ namespace frontend {
             if screen != SCR_MAIN { close_top{ &fe, &g, &fs, &dev } }
             return Outcome::running
         }
+        if ev.kind == gui::EventKind::hilight {
+            describe_option{ &g, p, screen, tag = ev.tag } iferr {}
+            return Outcome::running
+        }
         if screen == SCR_MAIN {
             if ev.kind != gui::EventKind::activate { return Outcome::running }
             if tag_is{ ev, tag = "BTN_NEWGAME" } { return begin_chargen{ &fe, &g, &fs, &dev } }
@@ -462,12 +526,16 @@ namespace frontend {
         if screen == SCR_RESOLUTION {
             if ev.kind == gui::EventKind::row_activated or (ev.kind == gui::EventKind::activate and tag_is{ ev, tag = "BTN_OK" }) {
                 let row = gui::list_selected{ &g, panel = p, tag = "LB_RESOLUTIONS" }
-                if row >= 0 and row < 15 {
-                    fe.settings.width = MODES[@as(usize, row)][0]
-                    fe.settings.height = MODES[@as(usize, row)][1]
+                if row >= 0 and @as(usize, row) < fe.row_count {
+                    let m = fe.rows[@as(usize, row)]
+                    fe.settings.width = m.width
+                    fe.settings.height = m.height
+                    // The refresh rate is a full-screen choice; the other modes follow the display's.
+                    fe.settings.refresh = if fe.settings.window_mode == 1 { m.refresh } else { 0 }
                     fe.display_pending = true
                 }
                 close_top{ &fe, &g, &fs, &dev }
+                persist{ &fe, &fs }
             } else if ev.kind == gui::EventKind::activate and tag_is{ ev, tag = "BTN_CANCEL" } {
                 close_top{ &fe, &g, &fs, &dev }
             }
@@ -502,6 +570,24 @@ namespace frontend {
         } else if screen == SCR_GRAPHICS {
             if tag_is{ ev, tag = "BTN_RESOLUTION" } { open_screen{ &fe, &g, &fs, &dev, screen = SCR_RESOLUTION } iferr {} }
             else if tag_is{ ev, tag = "BTN_ADVANCED" } { open_screen{ &fe, &g, &fs, &dev, screen = SCR_GRAPHICS_ADV } iferr {} }
+            else if tag_is{ ev, tag = "BTN_DISPLAYMODE" } {
+                // Windowed, borderless, full screen: the order of how little each changes.
+                let m = fe.settings.window_mode
+                fe.settings.window_mode = if m == 0 { 2 } else if m == 2 { 1 } else { 0 }
+                fe.display_pending = true
+                sync_graphics{ &fe, &g, p } iferr {}
+            } else if tag_is{ ev, tag = "BTN_UISCALE" } {
+                let mut at: usize = 0
+                let mut i: usize = 0
+                while i < UI_SCALES.len {
+                    let near = math::abs{ x = UI_SCALES[i] - fe.settings.gui_scale }
+                    if near < math::abs{ x = UI_SCALES[at] - fe.settings.gui_scale } { at = i }
+                    i = i + 1
+                }
+                fe.settings.gui_scale = UI_SCALES[(at + 1) % UI_SCALES.len]
+                fe.display_pending = true
+                sync_graphics{ &fe, &g, p } iferr {}
+            }
         } else if screen == SCR_SOUND {
             if tag_is{ ev, tag = "BTN_ADVANCED" } { open_screen{ &fe, &g, &fs, &dev, screen = SCR_SOUND_ADV } iferr {} }
         } else if screen == SCR_GRAPHICS_ADV or screen == SCR_SOUND_ADV {

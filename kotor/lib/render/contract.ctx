@@ -18,6 +18,24 @@ namespace render_contract {
         gpu::clear_messages{ &dev }
         try gpu::resize{ &dev, width = screen.width, height = screen.height }
 
+        // The window and the display options (docs/mechanics/graphics.md).
+        let window: render::Size = gpu::window_size{ &sdl, dev }
+        let drawable: render::Size = gpu::drawable_size{ &sdl, dev }
+        let mut modes: [8]render::DisplayMode
+        let mode_count: usize = gpu::list_display_modes{ &sdl, dev, into = modes[..] }
+        let desktop: render::DisplayMode = gpu::desktop_mode{ &sdl, dev }
+        let usable: render::Size = gpu::usable_size{ &sdl, dev }
+        let dpi_scale: f32 = gpu::display_scale{ &sdl, dev }
+        let kind: render::WindowMode = gpu::window_mode{ &sdl, dev }
+        try gpu::set_window_mode{ &dev, &sdl, mode = kind, width = 640, height = 480, refresh = 0 }
+        let vsync: bool = gpu::set_vsync{ &dev, &sdl, on = true }
+        let samples: i32 = gpu::set_antialias{ &dev, samples = 4 }
+        let aniso: f32 = gpu::set_anisotropy{ &dev, level = 8 }
+        gpu::set_gamma{ &dev, exponent = 1.0 }
+        gpu::set_effects{ &dev, shadows = true, soft_shadows = false, particles = true, screen_effects = true }
+        gpu::shade_pixels{ dev, pixels }
+        let shown: render::Rect = gpu::present_rect{ &sdl, dev }
+
         let t: render::Texture = try gpu::create_texture{ &dev, desc = texture_desc, data }
         try gpu::update_texture{ &dev, t, level = 0, x = 0, y = 0, width = 1, height = 1, format = render::PixelFormat::rgba8, data }
         let size: render::Size = gpu::texture_size{ dev, t }

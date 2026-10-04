@@ -24,9 +24,15 @@ namespace gpu {
     const SORT_ITEMS: usize = 65536
     const FRAME_FLOATS: usize = 48
 
-    struct TexSlot { name: u32, target: u32, width: u32, height: u32, cube: bool, gen: u32, live: bool }
+    // `filtered`: a mipmapped, linearly filtered flat texture, which the anisotropy option applies to.
+    struct TexSlot { name: u32, target: u32, width: u32, height: u32, cube: bool, filtered: bool, gen: u32, live: bool }
     struct MeshSlot { vao: u32, vbo: u32, ibo: u32, vertex_count: u32, index_count: u32, mode: u32, gen: u32, live: bool }
-    struct TargetSlot { fbo: u32, depth: u32, color: u32, width: i32, height: i32, gen: u32, live: bool }
+    // The multisampled twin of a render target: drawing goes here when anti-aliasing is on, and
+    // `resolve` copies it into the target's own texture. `fbo` 0: not made yet.
+    struct MsBuffers { fbo: u32, color: u32, depth: u32, width: i32, height: i32, samples: i32, dirty: bool }
+    struct TargetSlot { fbo: u32, depth: u32, color: u32, width: i32, height: i32, ms: MsBuffers, gen: u32, live: bool }
+
+    fn no_ms {} -> MsBuffers { return MsBuffers{ fbo = 0, color = 0, depth = 0, width = 0, height = 0, samples = 0, dirty = false } }
 
     struct ScenePrograms {
         id: u32,
@@ -37,6 +43,7 @@ namespace gpu {
     struct UiProgram { id: u32, screen: i32, image: i32 }
     struct ParticleProgram { id: u32, model: i32, emit: i32, axis: i32, mode: i32 }
     struct DebugProgram { id: u32 }
+    struct PostProgram { id: u32, exponent: i32 }
 
     // What GL has bound now, so a draw changes only what differs. -1: unknown.
     struct State {
@@ -61,10 +68,19 @@ namespace gpu {
         meshes: []mut MeshSlot,
         targets: []mut TargetSlot,
         screen: gl::Target,
+        screen_ms: MsBuffers,       // the screen's multisampled twin (samples > 0)
+        samples: i32,               // the anti-aliasing option: 0 off, else 2, 4 or 8 samples
+        max_samples: i32,
+        shadows: bool,              // the Shadows and Soft Shadows options: whether the frame's shadows are drawn, and softened
+        soft_shadows: bool,
+        particles: bool,            // the Emitters option: whether the frame's emitters are drawn
+        screen_effects: bool,       // the Frame Buffer Effects option: effects that read the picture so far
+        gamma: f32,                 // the brightness option's exponent; 1 leaves the picture alone
         scene: ScenePrograms,
         ui: UiProgram,
         particle: ParticleProgram,
         debug: DebugProgram,
+        post: PostProgram,
         frame_ubo: u32,
         white: u32,                 // a 1x1 white 2D texture and a black cube, bound where a material
         black_cube: u32,            //   has no map, so every sampler has something complete
@@ -77,7 +93,8 @@ namespace gpu {
         sort_tmp: []mut SortItem,
         state: State,
         stats: render::Stats,
-        anisotropy: f32,
+        anisotropy: f32,            // the anisotropic filtering level textures get (0: the driver has none)
+        max_anisotropy: f32,
         log: []mut u8,              // for the driver's shader logs
     }
 
@@ -111,6 +128,9 @@ namespace gpu {
         let screen = try gl::make_target{ &gl, width = size.width, height = size.height }
         let aniso = gl::has_extension{ &gl, name = "GL_EXT_texture_filter_anisotropic" }
             or gl::has_extension{ &gl, name = "GL_ARB_texture_filter_anisotropic" }
+        let mut max_aniso: f32 = 0.0
+        if aniso { gl.get_floatv{ pname = gl::MAX_TEXTURE_MAX_ANISOTROPY, data = &max_aniso } }
+        let max_samples = gl::get_int{ &gl, pname = gl::MAX_SAMPLES }
         let info = render::Info{
             api = "OpenGL 4.1 core",
             device = gl::string{ &gl, name = gl::RENDERER },
@@ -122,7 +142,8 @@ namespace gpu {
             textures = try alloc::resize(TexSlot, S){ realloc, &heap, mem = slice::empty(TexSlot){}, count = config.max_textures },
             meshes = try alloc::resize(MeshSlot, S){ realloc, &heap, mem = slice::empty(MeshSlot){}, count = config.max_meshes },
             targets = try alloc::resize(TargetSlot, S){ realloc, &heap, mem = slice::empty(TargetSlot){}, count = config.max_targets },
-            screen,
+            screen, screen_ms = no_ms{}, samples = 0, max_samples = if max_samples > 8 { 8 } else { max_samples }, gamma = 1.0,
+            shadows = true, soft_shadows = false, particles = true, screen_effects = true,
             scene = ScenePrograms{
                 id = 0, model = -1, post = -1, normal = -1, bone_count = -1, bones = -1, dangle = -1, maps = -1, mode = -1,
                 color = -1, selfillum = -1, uv = -1, uv_cell = -1, light_count = -1, light_pos = -1, light_color = -1,
@@ -130,13 +151,14 @@ namespace gpu {
             ui = UiProgram{ id = 0, screen = -1, image = -1 },
             particle = ParticleProgram{ id = 0, model = -1, emit = -1, axis = -1, mode = -1 },
             debug = DebugProgram{ id = 0 },
+            post = PostProgram{ id = 0, exponent = -1 },
             frame_ubo = 0, white = 0, black_cube = 0, stream = 0, ui_vao = 0, particle_vao = 0, debug_vao = 0,
             scratch = try alloc::resize(f32, S){ realloc, &heap, mem = slice::empty(f32){}, count = STREAM_FLOATS },
             sort = try alloc::resize(SortItem, S){ realloc, &heap, mem = slice::empty(SortItem){}, count = SORT_ITEMS },
             sort_tmp = try alloc::resize(SortItem, S){ realloc, &heap, mem = slice::empty(SortItem){}, count = SORT_ITEMS },
             state = unknown_state{},
             stats = render::Stats{ draws = 0, triangles = 0, culled = 0, state_changes = 0, quads = 0, particles = 0 },
-            anisotropy = if aniso { 8.0 } else { 0.0 },
+            anisotropy = if aniso { math::min{ a = 8.0, b = max_aniso } } else { 0.0 }, max_anisotropy = max_aniso,
             log = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = 8192 },
         }
         clear_tables{ &dev }
@@ -158,7 +180,7 @@ namespace gpu {
     fn clear_tables { mut dev: Device } {
         let mut i: usize = 0
         while i < dev.textures.len {
-            dev.textures[i] = TexSlot{ name = 0, target = 0, width = 0, height = 0, cube = false, gen = 1, live = false }
+            dev.textures[i] = TexSlot{ name = 0, target = 0, width = 0, height = 0, cube = false, filtered = false, gen = 1, live = false }
             i = i + 1
         }
         i = 0
@@ -168,7 +190,7 @@ namespace gpu {
         }
         i = 0
         while i < dev.targets.len {
-            dev.targets[i] = TargetSlot{ fbo = 0, depth = 0, color = 0, width = 0, height = 0, gen = 1, live = false }
+            dev.targets[i] = TargetSlot{ fbo = 0, depth = 0, color = 0, width = 0, height = 0, ms = no_ms{}, gen = 1, live = false }
             i = i + 1
         }
     }
@@ -194,6 +216,8 @@ namespace gpu {
         dev.gl.delete_program{ program = dev.ui.id }
         dev.gl.delete_program{ program = dev.particle.id }
         dev.gl.delete_program{ program = dev.debug.id }
+        dev.gl.delete_program{ program = dev.post.id }
+        free_ms{ gl = &dev.gl, ms = &dev.screen_ms }
         gl::delete_buffer{ gl = &dev.gl, id = dev.frame_ubo }
         gl::delete_texture{ gl = &dev.gl, id = dev.white }
         gl::delete_texture{ gl = &dev.gl, id = dev.black_cube }
@@ -218,12 +242,251 @@ namespace gpu {
         dev.debug_log.dropped = 0
     }
 
-    // Remakes the screen target at a new size: call it when the window's drawable size changes.
+    // Remakes the screen target at a new size: the size the game renders at. Normally the
+    // window's drawable size (call it when that changes); smaller, `present` scales it up to the
+    // window with its aspect kept.
     fn resize { mut dev: Device, width: u32, height: u32 } -> ! {
         if @as(i32, width) == dev.screen.width and @as(i32, height) == dev.screen.height { return }
         gl::free_target{ gl = &dev.gl, t = dev.screen }
+        free_ms{ gl = &dev.gl, ms = &dev.screen_ms }
         dev.screen = try gl::make_target{ gl = &dev.gl, width = @as(i32, width), height = @as(i32, height) }
         dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = 0 }
+    }
+
+    // ---- the window and the display
+
+    // The window's size in the OS's units, and its drawable's in pixels (larger on a high-DPI
+    // display where the OS scales windows, as macOS does).
+    fn window_size { mut sdl: sdl::Sdl, dev: Device } -> render::Size {
+        let s = sdl::window_size{ &sdl, w = dev.win }
+        return render::Size{ width = @as(u32, s.width), height = @as(u32, s.height) }
+    }
+
+    fn drawable_size { mut sdl: sdl::Sdl, dev: Device } -> render::Size {
+        let s = sdl::drawable_size{ &sdl, w = dev.win }
+        return render::Size{ width = @as(u32, s.width), height = @as(u32, s.height) }
+    }
+
+    // The window's display modes, as many as fit `into`, and how many were written: every size and
+    // refresh rate the display can be set to, largest first, highest refresh first.
+    fn list_display_modes { mut sdl: sdl::Sdl, dev: Device, into: []mut render::DisplayMode } -> usize {
+        let display = sdl::window_display{ &sdl, w = dev.win }
+        let count = sdl::mode_count{ &sdl, display }
+        let mut n: usize = 0
+        let mut i: i32 = 0
+        while i < count and n < into.len {
+            let m = sdl::mode_at{ &sdl, display, index = i }
+            if m is some{ value } {
+                into[n] = render::DisplayMode{ width = value.width, height = value.height, refresh = value.refresh }
+                n = n + 1
+            }
+            i = i + 1
+        }
+        return n
+    }
+
+    // The desktop's mode on the window's display (borderless full screen is this size).
+    fn desktop_mode { mut sdl: sdl::Sdl, dev: Device } -> render::DisplayMode {
+        let display = sdl::window_display{ &sdl, w = dev.win }
+        let m = sdl::desktop_mode{ &sdl, display } ifnull { return render::DisplayMode{ width = 1920, height = 1080, refresh = 60 } }
+        return render::DisplayMode{ width = m.width, height = m.height, refresh = m.refresh }
+    }
+
+    // What a window may take of the window's display (the desktop less the task bar).
+    fn usable_size { mut sdl: sdl::Sdl, dev: Device } -> render::Size {
+        let display = sdl::window_display{ &sdl, w = dev.win }
+        let r = sdl::usable_bounds{ &sdl, display } ifnull { return drawable_size{ &sdl, dev } }
+        return render::Size{ width = @as(u32, r.w), height = @as(u32, r.h) }
+    }
+
+    // The display's pixel density relative to the OS's 100% (96 dpi): 1.5 on a 150% desktop. 1 when unknown.
+    fn display_scale { mut sdl: sdl::Sdl, dev: Device } -> f32 {
+        let display = sdl::window_display{ &sdl, w = dev.win }
+        let dpi = sdl::display_dpi{ &sdl, display }
+        return if dpi < 48.0 { 1.0 } else { dpi / 96.0 }
+    }
+
+    fn window_mode { mut sdl: sdl::Sdl, dev: Device } -> render::WindowMode {
+        let k = sdl::window_kind{ &sdl, w = dev.win }
+        return match k {
+            windowed => { render::WindowMode::windowed }
+            fullscreen => { render::WindowMode::fullscreen }
+            borderless => { render::WindowMode::borderless }
+        }
+    }
+
+    // Puts the window in a mode (render::WindowMode); `refresh` 0 takes the display's highest. The
+    // caller then sizes the screen to the drawable (`resize`) or to the size it wants to render.
+    fn set_window_mode { mut dev: Device, mut sdl: sdl::Sdl, mode: render::WindowMode, width: i32, height: i32, refresh: i32 } -> ! {
+        if dev.config.hidden {
+            // Nothing to show: a hidden window only takes the size, so offscreen runs of any size work.
+            sdl::SDL_SetWindowSize{ &sdl, window = dev.win.window, w = width, h = height }
+            return
+        }
+        let kind = match mode {
+            windowed => { sdl::WindowKind::windowed }
+            fullscreen => { sdl::WindowKind::fullscreen }
+            borderless => { sdl::WindowKind::borderless }
+        }
+        try sdl::set_window_kind{ &sdl, w = dev.win, kind, width, height, refresh }
+    }
+
+    // V-sync on or off. False when the driver refuses (the setting is then unchanged).
+    fn set_vsync { mut dev: Device, mut sdl: sdl::Sdl, on: bool } -> bool {
+        if dev.config.hidden { return true }
+        sdl::set_swap_interval{ &sdl, interval = if on { 1 } else { 0 } } iferr { return false }
+        return true
+    }
+
+    // The sample count of anti-aliasing (0 off), rounded down to 2, 4 or 8 and to what the driver
+    // has. Returns the count in force. Drawing goes to multisampled buffers from the next frame.
+    fn set_antialias { mut dev: Device, samples: i32 } -> i32 {
+        let mut s = samples
+        if s > dev.max_samples { s = dev.max_samples }
+        if s >= 8 { s = 8 } else if s >= 4 { s = 4 } else if s >= 2 { s = 2 } else { s = 0 }
+        dev.samples = s
+        free_ms{ gl = &dev.gl, ms = &dev.screen_ms }
+        let mut i: usize = 0
+        while i < dev.targets.len {
+            if dev.targets[i].live { free_ms{ gl = &dev.gl, ms = &dev.targets[i].ms } }
+            i = i + 1
+        }
+        return s
+    }
+
+    // Anisotropic filtering of mipmapped textures: 1 (off), 2, 4, 8 or 16 taps, capped by the driver.
+    // Applies to the textures already made too. Returns the level in force (0 when the driver has none).
+    fn set_anisotropy { mut dev: Device, level: i32 } -> f32 {
+        if dev.max_anisotropy <= 0.0 { return 0.0 }
+        let want: f32 = if level <= 1 { 1.0 } else { @as(f32, level) }
+        dev.anisotropy = math::min{ a = want, b = dev.max_anisotropy }
+        let mut i: usize = 0
+        while i < dev.textures.len {
+            if dev.textures[i].live and dev.textures[i].filtered {
+                bind_unit{ &dev, unit = 0, target = dev.textures[i].target, name = dev.textures[i].name }
+                dev.gl.tex_parameterf{ target = dev.textures[i].target, pname = gl::TEXTURE_MAX_ANISOTROPY, param = dev.anisotropy }
+            }
+            i = i + 1
+        }
+        return dev.anisotropy
+    }
+
+    // The brightness option's curve: the picture shown is the screen's colours to the power
+    // `exponent` (1: unchanged, above 1 darker, below 1 lighter).
+    fn set_gamma { mut dev: Device, exponent: f32 } {
+        dev.gamma = if exponent < 0.1 { 0.1 } else if exponent > 4.0 { 4.0 } else { exponent }
+    }
+
+    // The options that choose what the frame's shadows, emitters and screen effects show. All on at open.
+    fn set_effects { mut dev: Device, shadows: bool, soft_shadows: bool, particles: bool, screen_effects: bool } {
+        dev.shadows = shadows
+        dev.soft_shadows = soft_shadows
+        dev.particles = particles
+        dev.screen_effects = screen_effects
+    }
+
+    // Applies the brightness curve to RGBA8 pixels read back from the screen, so a screenshot shows what
+    // the window does (the curve is applied in `present`, after the screen is read).
+    fn shade_pixels { dev: Device, pixels: []mut u8 } {
+        if dev.gamma > 0.99 and dev.gamma < 1.01 { return }
+        let mut lut: [256]u8
+        let mut i: usize = 0
+        while i < 256 {
+            let v = math::powf{ x = @as(f32, i) / 255.0, y = dev.gamma } * 255.0 + 0.5
+            lut[i] = @trunc(u8, @as(i32, math::min{ a = v, b = 255.0 }))
+            i = i + 1
+        }
+        let mut k: usize = 0
+        while k + 3 < pixels.len {
+            pixels[k] = lut[@as(usize, pixels[k])]
+            pixels[k + 1] = lut[@as(usize, pixels[k + 1])]
+            pixels[k + 2] = lut[@as(usize, pixels[k + 2])]
+            k = k + 4
+        }
+    }
+
+    // ---- multisampled buffers
+
+    fn free_ms { mut gl: gl::Gl, mut ms: MsBuffers } {
+        if ms.fbo != 0 {
+            gl::delete_framebuffer{ &gl, id = ms.fbo }
+            gl::delete_renderbuffer{ &gl, id = ms.color }
+            gl::delete_renderbuffer{ &gl, id = ms.depth }
+        }
+        ms = no_ms{}
+    }
+
+    // Colour and depth-stencil renderbuffers of `samples` samples in a framebuffer, replacing any before.
+    fn make_ms { mut gl: gl::Gl, mut ms: MsBuffers, width: i32, height: i32, samples: i32 } -> ! {
+        free_ms{ gl = &gl, ms = &ms }
+        let color = gl::gen_renderbuffer{ &gl }
+        gl.bind_renderbuffer{ target = gl::RENDERBUFFER, renderbuffer = color }
+        gl.renderbuffer_storage_multisample{ target = gl::RENDERBUFFER, samples, internal_format = gl::RGBA8, width, height }
+        let depth = gl::gen_renderbuffer{ &gl }
+        gl.bind_renderbuffer{ target = gl::RENDERBUFFER, renderbuffer = depth }
+        gl.renderbuffer_storage_multisample{ target = gl::RENDERBUFFER, samples, internal_format = gl::DEPTH24_STENCIL8, width, height }
+        let fbo = gl::gen_framebuffer{ &gl }
+        gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = fbo }
+        gl.framebuffer_renderbuffer{ target = gl::FRAMEBUFFER, attachment = gl::COLOR_ATTACHMENT0, renderbuffer_target = gl::RENDERBUFFER, renderbuffer = color }
+        gl.framebuffer_renderbuffer{ target = gl::FRAMEBUFFER, attachment = gl::DEPTH_STENCIL_ATTACHMENT, renderbuffer_target = gl::RENDERBUFFER, renderbuffer = depth }
+        let status = gl.check_framebuffer_status{ target = gl::FRAMEBUFFER }
+        gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = 0 }
+        if status != gl::FRAMEBUFFER_COMPLETE {
+            gl::delete_framebuffer{ &gl, id = fbo }
+            gl::delete_renderbuffer{ &gl, id = color }
+            gl::delete_renderbuffer{ &gl, id = depth }
+            return gl::incomplete{ status }
+        }
+        ms = MsBuffers{ fbo, color, depth, width, height, samples, dirty = false }
+    }
+
+    // The framebuffer the screen is drawn into: the multisampled one when anti-aliasing is on.
+    fn screen_fbo { mut dev: Device } -> u32 {
+        if dev.samples == 0 { return dev.screen.framebuffer }
+        let m = dev.screen_ms
+        if m.fbo == 0 or m.samples != dev.samples or m.width != dev.screen.width or m.height != dev.screen.height {
+            make_ms{ gl = &dev.gl, ms = &dev.screen_ms, width = dev.screen.width, height = dev.screen.height, samples = dev.samples } iferr {
+                dev.samples = 0
+                return dev.screen.framebuffer
+            }
+        }
+        dev.screen_ms.dirty = true
+        return dev.screen_ms.fbo
+    }
+
+    fn target_fbo { mut dev: Device, index: u32 } -> u32 {
+        if dev.samples == 0 { return dev.targets[index].fbo }
+        let m = dev.targets[index].ms
+        let w = dev.targets[index].width
+        let h = dev.targets[index].height
+        if m.fbo == 0 or m.samples != dev.samples or m.width != w or m.height != h {
+            make_ms{ gl = &dev.gl, ms = &dev.targets[index].ms, width = w, height = h, samples = dev.samples } iferr {
+                return dev.targets[index].fbo
+            }
+        }
+        dev.targets[index].ms.dirty = true
+        return dev.targets[index].ms.fbo
+    }
+
+    // Copies what was drawn into multisampled buffers (averaging the samples) to `into`.
+    fn resolve_ms { mut gl: gl::Gl, mut ms: MsBuffers, into: u32 } {
+        if ms.fbo == 0 or not ms.dirty { return }
+        gl.disable{ cap = gl::SCISSOR_TEST }
+        gl.bind_framebuffer{ target = gl::READ_FRAMEBUFFER, framebuffer = ms.fbo }
+        gl.bind_framebuffer{ target = gl::DRAW_FRAMEBUFFER, framebuffer = into }
+        gl.blit_framebuffer{
+            src_x0 = 0, src_y0 = 0, src_x1 = ms.width, src_y1 = ms.height,
+            dst_x0 = 0, dst_y0 = 0, dst_x1 = ms.width, dst_y1 = ms.height,
+            mask = gl::COLOR_BUFFER_BIT, filter = gl::NEAREST,
+        }
+        ms.dirty = false
+    }
+
+    fn resolve_target { mut dev: Device, target: ?render::Target } {
+        if target == null { return }
+        let i = target_slot{ dev, t = target }
+        if i == NO_SLOT { return }
+        resolve_ms{ gl = &dev.gl, ms = &dev.targets[i].ms, into = dev.targets[i].fbo }
     }
 
     // ---- programs and buffers
@@ -237,6 +500,8 @@ namespace gpu {
         let particle_fs = glsl::PARTICLE_FS
         let debug_vs = glsl::DEBUG_VS
         let debug_fs = glsl::DEBUG_FS
+        let post_vs = glsl::POST_VS
+        let post_fs = glsl::POST_FS
         let mut n: usize = 0
         let scene = try_link{ gl = &dev.gl, vertex = &scene_vs, fragment = &scene_fs, log = dev.log, log_len = &n }
         if scene == 0 { return shader_failed{ log = dev.log[..n] } }
@@ -246,6 +511,8 @@ namespace gpu {
         if particle == 0 { return shader_failed{ log = dev.log[..n] } }
         let debug = try_link{ gl = &dev.gl, vertex = &debug_vs, fragment = &debug_fs, log = dev.log, log_len = &n }
         if debug == 0 { return shader_failed{ log = dev.log[..n] } }
+        let post = try_link{ gl = &dev.gl, vertex = &post_vs, fragment = &post_fs, log = dev.log, log_len = &n }
+        if post == 0 { return shader_failed{ log = dev.log[..n] } }
 
         bind_frame_block{ &dev, program = scene }
         bind_frame_block{ &dev, program = particle }
@@ -262,6 +529,8 @@ namespace gpu {
         set_unit{ &dev, program = ui, name = "u_tex_v", unit = 2 }
         dev.gl.use_program{ program = particle }
         set_unit{ &dev, program = particle, name = "u_tex", unit = 0 }
+        dev.gl.use_program{ program = post }
+        set_unit{ &dev, program = post, name = "u_tex", unit = 0 }
         dev.gl.use_program{ program = 0 }
 
         dev.scene = ScenePrograms{
@@ -295,6 +564,7 @@ namespace gpu {
             mode = dev.gl.get_uniform_location{ program = particle, name = "u_mode" },
         }
         dev.debug = DebugProgram{ id = debug }
+        dev.post = PostProgram{ id = post, exponent = dev.gl.get_uniform_location{ program = post, name = "u_exponent" } }
     }
 
     // gl::link's program, or 0 with the length of the driver's log in `log`. (Its error would be
@@ -466,6 +736,7 @@ namespace gpu {
         slot.width = desc.width
         slot.height = desc.height
         slot.cube = cube
+        slot.filtered = desc.mipmap and desc.filter == render::Filter::linear
         slot.live = true
         return render::Texture{ id = make_id{ index, gen = slot.gen } }
     }
@@ -713,10 +984,12 @@ namespace gpu {
         tslot.width = width
         tslot.height = height
         tslot.cube = false
+        tslot.filtered = false
         tslot.live = true
         let slot = &dev.targets[index]
         slot.fbo = fbo
         slot.depth = depth
+        slot.ms = no_ms{}
         slot.color = make_id{ index = tex_index, gen = tslot.gen }
         slot.width = w
         slot.height = h
@@ -741,6 +1014,7 @@ namespace gpu {
         let slot = &dev.targets[index]
         gl::delete_framebuffer{ gl = &dev.gl, id = slot.fbo }
         gl::delete_renderbuffer{ gl = &dev.gl, id = slot.depth }
+        free_ms{ gl = &dev.gl, ms = &slot.ms }
         free_texture{ &dev, t = render::Texture{ id = slot.color } }
         slot.live = false
         slot.gen = next_gen{ gen = slot.gen }
@@ -790,10 +1064,69 @@ namespace gpu {
         }
     }
 
-    // Shows the screen in the window.
+    // Where the screen lands in the window's drawable (pixels, top left origin): all of it when
+    // the aspects agree, else the largest centred rectangle of the screen's aspect (black around).
+    fn present_rect { mut sdl: sdl::Sdl, dev: Device } -> render::Rect {
+        let size = sdl::drawable_size{ &sdl, w = dev.win }
+        return fit_rect{ src_w = dev.screen.width, src_h = dev.screen.height, dst_w = size.width, dst_h = size.height }
+    }
+
+    fn fit_rect { src_w: i32, src_h: i32, dst_w: i32, dst_h: i32 } -> render::Rect {
+        let dw = @as(f32, dst_w)
+        let dh = @as(f32, dst_h)
+        if src_w <= 0 or src_h <= 0 or dst_w <= 0 or dst_h <= 0 { return render::Rect{ x = 0.0, y = 0.0, w = dw, h = dh } }
+        let sa = @as(f32, src_w) / @as(f32, src_h)
+        let da = dw / dh
+        // Within half a percent is the same shape: fill the window rather than leave a sliver.
+        if da > sa * 0.995 and da < sa * 1.005 { return render::Rect{ x = 0.0, y = 0.0, w = dw, h = dh } }
+        if da > sa {
+            let w = math::floorf{ x = dh * sa + 0.5 }
+            return render::Rect{ x = math::floorf{ x = (dw - w) * 0.5 }, y = 0.0, w, h = dh }
+        }
+        let h = math::floorf{ x = dw / sa + 0.5 }
+        return render::Rect{ x = 0.0, y = math::floorf{ x = (dh - h) * 0.5 }, w = dw, h }
+    }
+
+    // Shows the screen in the window: scaled to fit, with the brightness curve applied.
     fn present { mut dev: Device, mut sdl: sdl::Sdl } {
         let size = sdl::drawable_size{ &sdl, w = dev.win }
-        gl::present{ gl = &dev.gl, t = dev.screen, width = size.width, height = size.height }
+        let r = fit_rect{ src_w = dev.screen.width, src_h = dev.screen.height, dst_w = size.width, dst_h = size.height }
+        let x = @as(i32, r.x)
+        let y = @as(i32, r.y)
+        let w = @as(i32, r.w)
+        let h = @as(i32, r.h)
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = 0 }
+        dev.gl.disable{ cap = gl::SCISSOR_TEST }
+        dev.gl.color_mask{ red = gl::TRUE, green = gl::TRUE, blue = gl::TRUE, alpha = gl::TRUE }
+        if w < size.width or h < size.height {
+            dev.gl.clear_color{ red = 0.0, green = 0.0, blue = 0.0, alpha = 1.0 }
+            dev.gl.clear{ mask = gl::COLOR_BUFFER_BIT }
+        }
+        let identity = dev.gamma > 0.99 and dev.gamma < 1.01
+        if identity {
+            dev.gl.bind_framebuffer{ target = gl::READ_FRAMEBUFFER, framebuffer = dev.screen.framebuffer }
+            dev.gl.bind_framebuffer{ target = gl::DRAW_FRAMEBUFFER, framebuffer = 0 }
+            let same = w == dev.screen.width and h == dev.screen.height
+            dev.gl.blit_framebuffer{
+                src_x0 = 0, src_y0 = 0, src_x1 = dev.screen.width, src_y1 = dev.screen.height,
+                dst_x0 = x, dst_y0 = size.height - y - h, dst_x1 = x + w, dst_y1 = size.height - y,
+                mask = gl::COLOR_BUFFER_BIT, filter = if same { gl::NEAREST } else { gl::LINEAR },
+            }
+        } else {
+            dev.gl.viewport{ x, y = size.height - y - h, width = w, height = h }
+            dev.gl.disable{ cap = gl::BLEND }
+            dev.gl.disable{ cap = gl::DEPTH_TEST }
+            dev.gl.disable{ cap = gl::CULL_FACE }
+            dev.gl.disable{ cap = gl::STENCIL_TEST }
+            dev.gl.use_program{ program = dev.post.id }
+            dev.gl.uniform1f{ location = dev.post.exponent, v0 = dev.gamma }
+            bind_unit{ &dev, unit = 0, target = gl::TEXTURE_2D, name = dev.screen.color }
+            dev.gl.bind_vertex_array{ array = dev.ui_vao }
+            dev.gl.draw_arrays{ mode = gl::TRIANGLES, first = 0, count = 3 }
+            dev.gl.bind_vertex_array{ array = 0 }
+            dev.gl.use_program{ program = 0 }
+            dev.state = unknown_state{}
+        }
         sdl::swap{ &sdl, w = dev.win }
     }
 
@@ -898,15 +1231,23 @@ namespace gpu {
         while s < frame.step_count {
             let step = frame.steps[s]
             match step.kind {
-                view => { try draw_view{ &dev, frame, index = step.view } }
-                ui => { try draw_ui{ &dev, frame, step } }
+                view => {
+                    try draw_view{ &dev, frame, index = step.view }
+                    // A target other passes sample is resolved as soon as it is drawn; the screen waits for the last pass.
+                    resolve_target{ &dev, target = frame.views[step.view].target }
+                }
+                ui => {
+                    try draw_ui{ &dev, frame, step }
+                    resolve_target{ &dev, target = step.target }
+                }
             }
             s = s + 1
         }
         dev.gl.bind_vertex_array{ array = 0 }
         dev.gl.use_program{ program = 0 }
-        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = 0 }
         dev.gl.disable{ cap = gl::SCISSOR_TEST }
+        resolve_ms{ gl = &dev.gl, ms = &dev.screen_ms, into = dev.screen.framebuffer }
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = 0 }
         dev.gl.disable{ cap = gl::STENCIL_TEST }
         dev.gl.depth_mask{ flag = gl::TRUE }
         dev.state = unknown_state{}
@@ -917,11 +1258,11 @@ namespace gpu {
     struct Bound { fbo: u32, width: i32, height: i32 }
 
     fn bind_target { mut dev: Device, target: ?render::Target } -> !Bound {
-        let mut b = Bound{ fbo = dev.screen.framebuffer, width = dev.screen.width, height = dev.screen.height }
+        let mut b = Bound{ fbo = screen_fbo{ &dev }, width = dev.screen.width, height = dev.screen.height }
         if target != null {
             let i = target_slot{ dev, t = target }
             if i == NO_SLOT { return bad_handle{ what = "target" } }
-            b = Bound{ fbo = dev.targets[i].fbo, width = dev.targets[i].width, height = dev.targets[i].height }
+            b = Bound{ fbo = target_fbo{ &dev, index = i }, width = dev.targets[i].width, height = dev.targets[i].height }
         }
         dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = b.fbo }
         return b
@@ -1230,6 +1571,7 @@ namespace gpu {
     // Each shadow: its draw's mesh through the planar projection from its light, darkening each
     // pixel at most once (the stencil counts).
     fn draw_shadows { mut dev: Device, frame: *render::Frame, index: u32 } -> ! {
+        if not dev.shadows { return }
         let mut any = false
         let mut s: u32 = 0
         while s < frame.shadow_count {
@@ -1311,6 +1653,7 @@ namespace gpu {
     }
 
     fn draw_emitter { mut dev: Device, frame: *render::Frame, em: render::Emitter } -> ! {
+        if not dev.particles { return }
         if em.first + em.count > frame.particle_count { return }
         use_program{ &dev, program = dev.particle.id }
         set_blend{ &dev, blend = em.blend }

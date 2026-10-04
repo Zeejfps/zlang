@@ -1,0 +1,2 @@
+# The main menu's Options, at 1280x720 (GUI scale 1: the panel's origin is 240,60).
+10 mouse click 724 445

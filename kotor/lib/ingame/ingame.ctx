@@ -17,7 +17,8 @@ namespace ingame {
         hud: hud::Hud,
         selfs: selfslots::State,            // the HUD's four self action slots
         text: utf8::Builder(heap::Heap),    // scratch for formatted text
-        width: i32, height: i32,
+        width: i32, height: i32,            // the render size in pixels
+        gui_scale: f32,                     // the GUI Scale option: 0 fits the window, 1 the original's pixels
         menu: i32,                          // the open menu (MENU_*), NO_MENU
         menu_panel: u32,                    // its panel and the tab bar's, 0 when none
         top_panel: u32,
@@ -62,6 +63,7 @@ namespace ingame {
     // working memory (the scene's may be shared: loads never overlap).
     fn make {
         mut w: world::World, mut dev: gpu::Device, mixer: ?*mut mix::Mixer, scratch: alloc::Bytes, width: i32, height: i32,
+        settings: []u8, gui_scale: f32,
     } -> !*mut Ingame {
         let cache = try alloc::new(material::Cache, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = material::new_cache{ heap = w.heap, scratch } }
         let mut g = try gui::make{ heap = w.heap, rm = w.rm.*, cache, width, height }
@@ -71,8 +73,9 @@ namespace ingame {
             gui::set_tlk{ &g, table = t }
         }
         try gui::load_defaults{ &g, fs = &w.fs, &dev }
+        gui::set_screen{ &g, fs = &w.fs, &dev, width, height, scale = gui_scale }
         // The game options the rules read: Auto Level Up NPCs and the difficulty (the options menu keeps them current).
-        let saved = frontend::load_settings{ fs = &w.fs, heap = w.heap, path = "kotor/out/kotor-settings.ini" }
+        let saved = frontend::load_settings{ fs = &w.fs, heap = w.heap, path = settings }
         w.rules.settings.auto_level = saved.auto_level_up
         w.rules.settings.difficulty = saved.difficulty
         if mixer != null { gui::set_mixer{ &g, mixer } }
@@ -80,7 +83,7 @@ namespace ingame {
         let ui = Ingame{
             heap = w.heap, cache, gui = g, hud = h, selfs = selfslots::new{},
             text = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } },
-            width, height, menu = NO_MENU, menu_panel = 0, top_panel = 0, menus = new_menus{}, log = hud::new_log{},
+            width, height, gui_scale, menu = NO_MENU, menu_panel = 0, top_panel = 0, menus = new_menus{}, log = hud::new_log{},
             pause_panel = 0, hud_hidden = false, screens = screens::new{}, bot = bot::new{},
             shift_held = false, ctrl_held = false, solo_box = msgbox::blank{}, solo_pause = false, focus_paused = false, run_script = resref::empty{},
             right_held = false, look_x = 0, look_y = 0, looking = false, freelook = false, turn_to = obj::INVALID, mouse_look = saved.mouse_look, mouse_sens = saved.mouse_sensitivity, reverse_buttons = saved.reverse_buttons,
@@ -91,8 +94,22 @@ namespace ingame {
             mine_quiet = 1000.0,
         }
         let mut p = try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
+        options_panel::set_config{ s = &p.menus.options, path = settings }
+        // The option screens' state exists from the start, so the engine can tell it what the display offers.
+        try options_panel::make_front{ s = &p.menus.options, &w }
         hud::set_tooltips{ h = &p.hud, g = &p.gui, &w, text = &p.text }
         return p
+    }
+
+    // The option screens' front end: its settings are what the Graphics panels edit.
+    fn options_front { mut ui: Ingame } -> ?*mut frontend::Front { return ui.menus.options.fe }
+
+    // Once, after the player changed a graphics option in the options menu: the settings to make the
+    // device agree with. The caller may correct them (a mode the display refused).
+    fn take_display_change { mut ui: Ingame } -> ?*mut frontend::Settings {
+        if not options_panel::take_display_change{ s = &ui.menus.options } { return null }
+        let fe = ui.menus.options.fe ifnull { return null }
+        return &fe.settings
     }
 
     // Closes every panel and frees the interface (a module change makes a new one).
@@ -108,9 +125,19 @@ namespace ingame {
     fn resize { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, width: i32, height: i32 } {
         if width < 320 or height < 240 { return }
         gpu::resize{ &dev, width = @as(u32, width), height = @as(u32, height) } iferr { return }
+        relayout{ &ui, &w, &dev, width, height }
+    }
+
+    // The GUI Scale option changed (0 fits the window); `relayout` then applies it.
+    fn set_gui_scale { mut ui: Ingame, scale: f32 } { ui.gui_scale = scale }
+
+    // The render size or the GUI scale changed and the device already follows: the GUI's pixel space
+    // and the HUD, fitted to it, are made again.
+    fn relayout { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, width: i32, height: i32 } {
+        if width < 320 or height < 240 { return }
         ui.width = width
         ui.height = height
-        gui::set_screen{ g = &ui.gui, fs = &w.fs, &dev, width, height, scale = 1.0 }
+        gui::set_screen{ g = &ui.gui, fs = &w.fs, &dev, width, height, scale = ui.gui_scale }
         let was_hidden = ui.hud_hidden
         hud::close{ h = &ui.hud, g = &ui.gui, &dev }
         let h = hud::open{ g = &ui.gui, &w, &dev } iferr err{ error } {

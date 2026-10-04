@@ -29,11 +29,10 @@ namespace frontend {
 
     struct Entry { screen: u32, panel: u32 }
 
-    // The display modes the resolution list offers (the platform layer cannot list them yet).
-    const MODES: [15][2]i32 = [
-        [800, 600], [1024, 768], [1280, 720], [1280, 800], [1280, 960], [1280, 1024], [1366, 768], [1440, 900],
-        [1600, 900], [1600, 1200], [1680, 1050], [1920, 1080], [1920, 1200], [2560, 1440], [3840, 2160],
-    ]
+    const MAX_MODES: usize = 192
+
+    // The values the UI Scale button steps through; 0 fits the window.
+    const UI_SCALES: [9]f32 = [0.0, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0]
 
     struct Front {
         heap: *mut heap::Heap,
@@ -48,6 +47,13 @@ namespace frontend {
         saves: SaveList, saves_loaded: bool,
         shot: ?render::Texture,             // the selected save's screenshot
         display_pending: bool,              // resolution, fullscreen or vsync changed: the engine applies it
+        // What the display offers, for the resolution list (set_display_info): every mode, the desktop's, and the
+        // room a window has; and the size the game renders at now, for the UI Scale button's "Auto (175%)".
+        modes: [192]render::DisplayMode, mode_count: usize,
+        desktop: render::DisplayMode,
+        usable_w: i32, usable_h: i32,
+        render_w: i32, render_h: i32,
+        rows: [192]render::DisplayMode, row_count: usize,      // the rows the resolution list shows
         sound_pending: bool,
         play_request: [24]u8, play_len: usize,      // a movie the player picked in the movie list
         start_module: [16]u8, start_len: usize,
@@ -81,6 +87,10 @@ namespace frontend {
             config_path = [0; 256], config_len = 0, stack = [Entry{ screen = 0, panel = 0 }; 10], depth = 0,
             saves = SaveList{ entries = slice::empty(SaveEntry){}, count = 0 }, saves_loaded = false, shot = null,
             display_pending = false, sound_pending = true,
+            modes = [render::DisplayMode{ width = 0, height = 0, refresh = 0 }; 192], mode_count = 0,
+            desktop = render::DisplayMode{ width = 1920, height = 1080, refresh = 60 }, usable_w = 1920, usable_h = 1080,
+            render_w = 1280, render_h = 720,
+            rows = [render::DisplayMode{ width = 0, height = 0, refresh = 0 }; 192], row_count = 0,
             play_request = [0; 24], play_len = 0, start_module = [0; 16], start_len = 0,
             saves_dir = [0; 300], saves_dir_len = 0,
             snapshot = default_settings{},
@@ -220,9 +230,7 @@ namespace frontend {
             gui::set_checked{ &g, panel = p, tag = "CB_ACTIONMENU", on = s.pause_action_menu }
             gui::set_checked{ &g, panel = p, tag = "CB_TRIGGERS", on = s.pause_triggers }
         } else if screen == SCR_GRAPHICS {
-            gui::set_value{ &g, panel = p, tag = "SLI_GAMMA", value = s.gamma }
-            gui::set_checked{ &g, panel = p, tag = "CB_SHADOWS", on = s.shadows }
-            gui::set_checked{ &g, panel = p, tag = "CB_GRASS", on = s.grass }
+            try bind_graphics{ &fe, &g, p }
         } else if screen == SCR_GRAPHICS_ADV {
             gui::set_checked{ &g, panel = p, tag = "CB_FRAMEBUFF", on = s.frame_buffer }
             gui::set_checked{ &g, panel = p, tag = "CB_SOFTSHADOWS", on = s.soft_shadows }
@@ -298,15 +306,158 @@ namespace frontend {
         }
     }
 
+    // ---- the graphics panel's extra controls
+
+    // What the display offers (the platform layer's list: gpu::list_display_modes, desktop_mode,
+    // usable_size) and the size the game renders at. Set before the options open, and again when the
+    // display changes.
+    fn set_display_info { mut fe: Front, modes: []render::DisplayMode, desktop: render::DisplayMode, usable: render::Size, render_size: render::Size } {
+        let n = if modes.len < MAX_MODES { modes.len } else { MAX_MODES }
+        let mut i: usize = 0
+        while i < n {
+            fe.modes[i] = modes[i]
+            i = i + 1
+        }
+        fe.mode_count = n
+        fe.desktop = desktop
+        fe.usable_w = @as(i32, usable.width)
+        fe.usable_h = @as(i32, usable.height)
+        fe.render_w = @as(i32, render_size.width)
+        fe.render_h = @as(i32, render_size.height)
+    }
+
+    fn window_mode_text { mode: i32 } -> []u8 {
+        if mode == 1 { return "Display Mode: Fullscreen" }
+        if mode == 2 { return "Display Mode: Borderless" }
+        return "Display Mode: Windowed"
+    }
+
+    // "UI Scale: Auto (175%)" or "UI Scale: 200%".
+    fn ui_scale_text { fe: *Front, into: []mut u8 } -> []u8 {
+        let want = fe.settings.gui_scale
+        let shown = if want <= 0.0 { gui::auto_scale{ w = fe.render_w, h = fe.render_h } } else { want }
+        let mut n = copy_into{ dst = into, src = "UI Scale: " }
+        if want <= 0.0 { n = n + copy_into{ dst = into[n..], src = "Auto (" } }
+        n = put_int{ into, at = n, n = @as(i32, math::floorf{ x = shown * 100.0 + 0.5 }) }
+        n = n + copy_into{ dst = into[n..], src = "%" }
+        if want <= 0.0 { n = n + copy_into{ dst = into[n..], src = ")" } }
+        return into[..n]
+    }
+
+    fn resolution_text { fe: *Front, into: []mut u8 } -> []u8 {
+        let s = &fe.settings
+        let mut n = copy_into{ dst = into, src = "Resolution: " }
+        if s.window_mode == 2 and s.width >= fe.desktop.width and s.height >= fe.desktop.height {
+            n = n + copy_into{ dst = into[n..], src = "Desktop (" }
+            n = put_int{ into, at = n, n = fe.desktop.width }
+            n = n + copy_into{ dst = into[n..], src = " x " }
+            n = put_int{ into, at = n, n = fe.desktop.height }
+            n = n + copy_into{ dst = into[n..], src = ")" }
+            return into[..n]
+        }
+        n = n + format_mode{ into = into[n..], w = s.width, h = s.height }
+        return into[..n]
+    }
+
+    // Writes the display texts of the Graphics panel again (its three buttons show the settings).
+    fn sync_graphics { mut fe: Front, mut g: gui::Gui, p: u32 } -> ! {
+        let mut buf: [48]u8
+        try gui::set_text{ &g, panel = p, tag = "BTN_RESOLUTION", text = resolution_text{ &fe, into = buf[..] } }
+        try gui::set_text{ &g, panel = p, tag = "BTN_DISPLAYMODE", text = window_mode_text{ mode = fe.settings.window_mode } }
+        try gui::set_text{ &g, panel = p, tag = "BTN_UISCALE", text = ui_scale_text{ &fe, into = buf[..] } }
+    }
+
+    // The Graphics panel has the original's controls and three of ours (a display mode and a UI scale button, an
+    // Emitters check box, which the original's strings have but its panel lost), laid out in the room the file leaves.
+    fn bind_graphics { mut fe: Front, mut g: gui::Gui, p: u32 } -> ! {
+        let s = fe.settings
+        // (Set Default binds the panel again: the controls are added once.)
+        if not gui::has_control{ &g, panel = p, tag = "BTN_DISPLAYMODE" } {
+            _ = try gui::clone_control{ &g, panel = p, from = "BTN_RESOLUTION", tag = "BTN_DISPLAYMODE", x = 60, y = 180 }
+            _ = try gui::clone_control{ &g, panel = p, from = "BTN_RESOLUTION", tag = "BTN_UISCALE", x = 60, y = 206 }
+            _ = try gui::clone_control{ &g, panel = p, from = "CB_GRASS", tag = "CB_EMITTERS", x = 60, y = 308 }
+            gui::set_extent{ &g, panel = p, tag = "BTN_RESOLUTION", x = 60, y = 154, w = 240, h = 22 }
+            gui::set_extent{ &g, panel = p, tag = "CB_SHADOWS", x = 60, y = 234, w = 240, h = 40 }
+            gui::set_extent{ &g, panel = p, tag = "CB_GRASS", x = 60, y = 271, w = 240, h = 40 }
+            try gui::set_strref{ &g, panel = p, tag = "CB_EMITTERS", strref = 47958 }
+        }
+        gui::set_value{ &g, panel = p, tag = "SLI_GAMMA", value = s.gamma }
+        gui::set_checked{ &g, panel = p, tag = "CB_SHADOWS", on = s.shadows }
+        gui::set_checked{ &g, panel = p, tag = "CB_GRASS", on = s.grass }
+        gui::set_checked{ &g, panel = p, tag = "CB_EMITTERS", on = s.emitters }
+        try sync_graphics{ &fe, &g, p }
+    }
+
+    // ---- the resolution list
+
+    // The rows of the resolution list for the current display mode: windowed, the display's sizes that fit the
+    // desktop; borderless, the sizes up to the desktop's (smaller ones are drawn scaled up); full screen, every
+    // size and refresh rate. Largest first. The current choice is always among them.
+    fn build_rows { mut fe: Front } {
+        let mode = fe.settings.window_mode
+        let mut n: usize = 0
+        let mut i: usize = 0
+        while i < fe.mode_count and n < MAX_MODES {
+            let m = fe.modes[i]
+            i = i + 1
+            if m.width < 640 or m.height < 480 { continue }
+            if mode == 0 and (m.width > fe.usable_w or m.height > fe.usable_h) { continue }
+            if mode == 2 and (m.width > fe.desktop.width or m.height > fe.desktop.height) { continue }
+            // One row per size unless the refresh rate is what the player is choosing.
+            let mut dup = false
+            let mut k: usize = 0
+            while k < n {
+                if fe.rows[k].width == m.width and fe.rows[k].height == m.height and (mode != 1 or fe.rows[k].refresh == m.refresh) { dup = true }
+                k = k + 1
+            }
+            if dup { continue }
+            fe.rows[n] = m
+            n = n + 1
+        }
+        // The display may not list the size the settings hold (a window can be any size).
+        let mut have = false
+        let mut k: usize = 0
+        while k < n {
+            if fe.rows[k].width == fe.settings.width and fe.rows[k].height == fe.settings.height { have = true }
+            k = k + 1
+        }
+        if not have and n < MAX_MODES {
+            // Insert in size order.
+            let mut at: usize = 0
+            while at < n and fe.rows[at].width * fe.rows[at].height > fe.settings.width * fe.settings.height { at = at + 1 }
+            let mut j = n
+            while j > at {
+                fe.rows[j] = fe.rows[j - 1]
+                j = j - 1
+            }
+            fe.rows[at] = render::DisplayMode{ width = fe.settings.width, height = fe.settings.height, refresh = fe.settings.refresh }
+            n = n + 1
+        }
+        fe.row_count = n
+    }
+
     fn fill_resolutions { mut fe: Front, mut g: gui::Gui, p: u32 } -> ! {
         gui::list_clear{ &g, panel = p, tag = "LB_RESOLUTIONS" }
+        build_rows{ &fe }
+        let full = fe.settings.window_mode == 1
+        let mut picked = false
         let mut i: usize = 0
-        while i < 15 {
-            let mut buf: [24]u8
-            let n = format_mode{ into = buf[..], w = MODES[i][0], h = MODES[i][1] }
+        while i < fe.row_count {
+            let m = fe.rows[i]
+            let mut buf: [40]u8
+            let mut n = format_mode{ into = buf[..], w = m.width, h = m.height }
+            if full and m.refresh > 0 {
+                n = n + copy_into{ dst = buf[n..], src = " @ " }
+                n = put_int{ into = buf[..], at = n, n = m.refresh }
+                n = n + copy_into{ dst = buf[n..], src = " Hz" }
+            }
             let row = try gui::list_add{ &g, panel = p, tag = "LB_RESOLUTIONS", text = buf[..n], user = @as(i64, i) }
-            if MODES[i][0] == fe.settings.width and MODES[i][1] == fe.settings.height {
+            // The row of the current size (full screen: and the refresh rate, 0 meaning the highest, the first).
+            let same_size = m.width == fe.settings.width and m.height == fe.settings.height
+            if not picked and same_size and
+                (not full or fe.settings.refresh == 0 or fe.settings.refresh == m.refresh) {
                 gui::list_select{ &g, panel = p, tag = "LB_RESOLUTIONS", row }
+                picked = true
             }
             i = i + 1
         }

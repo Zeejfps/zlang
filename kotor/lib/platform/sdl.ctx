@@ -62,6 +62,31 @@ namespace sdl {
     extern fn SDL_HideWindow { mut sdl: Sdl, window: *mut Window }
     extern fn SDL_RaiseWindow { mut sdl: Sdl, window: *mut Window }
     extern fn SDL_SetWindowFullscreen { mut sdl: Sdl, window: *mut Window, flags: u32 } -> i32
+    extern fn SDL_SetWindowBordered { mut sdl: Sdl, window: *mut Window, bordered: i32 }
+    extern fn SDL_SetWindowResizable { mut sdl: Sdl, window: *mut Window, resizable: i32 }
+    extern fn SDL_SetWindowPosition { mut sdl: Sdl, window: *mut Window, x: i32, y: i32 }
+    extern fn SDL_GetWindowPosition { mut sdl: Sdl, window: *mut Window, x: ?*mut i32, y: ?*mut i32 }
+    extern fn SDL_SetWindowMinimumSize { mut sdl: Sdl, window: *mut Window, w: i32, h: i32 }
+    extern fn SDL_MaximizeWindow { mut sdl: Sdl, window: *mut Window }
+    extern fn SDL_RestoreWindow { mut sdl: Sdl, window: *mut Window }
+    extern fn SDL_GetWindowDisplayIndex { mut sdl: Sdl, window: *mut Window } -> i32
+    extern fn SDL_SetWindowDisplayMode { mut sdl: Sdl, window: *mut Window, mode: ?*DisplayMode } -> i32
+
+    // ---- displays
+
+    // SDL_DisplayMode: the pixel format, size, refresh rate in Hz (0: unknown) and the driver's data.
+    struct DisplayMode { format: u32, w: i32, h: i32, refresh_rate: i32, driverdata: ?*mut u8 }
+    struct Rect { x: i32, y: i32, w: i32, h: i32 }
+
+    extern fn SDL_GetNumVideoDisplays { mut sdl: Sdl } -> i32
+    extern fn SDL_GetNumDisplayModes { mut sdl: Sdl, display: i32 } -> i32
+    extern fn SDL_GetDisplayMode { mut sdl: Sdl, display: i32, index: i32, mut mode: DisplayMode } -> i32
+    extern fn SDL_GetDesktopDisplayMode { mut sdl: Sdl, display: i32, mut mode: DisplayMode } -> i32
+    extern fn SDL_GetCurrentDisplayMode { mut sdl: Sdl, display: i32, mut mode: DisplayMode } -> i32
+    extern fn SDL_GetClosestDisplayMode { mut sdl: Sdl, display: i32, mode: *DisplayMode, mut closest: DisplayMode } -> ?*DisplayMode
+    extern fn SDL_GetDisplayBounds { mut sdl: Sdl, display: i32, mut rect: Rect } -> i32
+    extern fn SDL_GetDisplayUsableBounds { mut sdl: Sdl, display: i32, mut rect: Rect } -> i32
+    extern fn SDL_GetDisplayDPI { mut sdl: Sdl, display: i32, ddpi: ?*mut f32, hdpi: ?*mut f32, vdpi: ?*mut f32 } -> i32
 
     const MESSAGEBOX_ERROR: u32 = 0x10
     const MESSAGEBOX_WARNING: u32 = 0x20
@@ -376,7 +401,7 @@ namespace sdl {
             and @size_of(TextInputEvent) == 44 and @size_of(MouseMotionEvent) == 36
             and @size_of(MouseButtonEvent) == 28 and @size_of(MouseWheelEvent) == 44
             and @size_of(DropEvent) == 24 and @size_of(UserEvent) == 32
-            and @size_of(AudioSpec) == 32
+            and @size_of(AudioSpec) == 32 and @size_of(DisplayMode) == 24 and @size_of(Rect) == 16
     }
 
     // ---- the platform calls, in ctxlang shapes
@@ -384,7 +409,12 @@ namespace sdl {
     // An SDL call that failed; SDL_GetError (`last_error`) says why.
     error failed{ call: c::String }
 
+    // Starts SDL. Windows is told first that the game handles each monitor's scaling itself
+    // (permonitorv2): without that a 150% desktop reports a smaller screen and stretches our
+    // pixels, so every size below would be in virtual units, blurry and wrong. With it the window
+    // and the drawable are in real pixels. macOS gets pixels through ALLOW_HIGHDPI instead.
     fn init { mut sdl: Sdl, flags: u32 } -> ! {
+        _ = SDL_SetHint{ &sdl, name = "SDL_WINDOWS_DPI_AWARENESS", value = "permonitorv2" }
         if SDL_Init{ &sdl, flags } != 0 { return failed{ call = "SDL_Init" } }
     }
 
@@ -482,6 +512,98 @@ namespace sdl {
         let mut height: i32 = 0
         SDL_GetWindowSize{ &sdl, window = w.window, w = &width, h = &height }
         return Size{ width, height }
+    }
+
+    // ---- displays and window modes
+
+    // A display mode as the game lists it: size and refresh rate (Hz, 0 unknown).
+    struct Mode { width: i32, height: i32, refresh: i32 }
+
+    // How many displays are connected (at least 1 once video is up).
+    fn display_count { mut sdl: Sdl } -> i32 {
+        let n = SDL_GetNumVideoDisplays{ &sdl }
+        return if n < 1 { 1 } else { n }
+    }
+
+    // The display the window is on (0 when SDL cannot say).
+    fn window_display { mut sdl: Sdl, w: GlWindow } -> i32 {
+        let d = SDL_GetWindowDisplayIndex{ &sdl, window = w.window }
+        return if d < 0 { 0 } else { d }
+    }
+
+    // The mode the desktop is in on `display`: what borderless full screen uses.
+    fn desktop_mode { mut sdl: Sdl, display: i32 } -> ?Mode {
+        let mut m: DisplayMode
+        if SDL_GetDesktopDisplayMode{ &sdl, display, mode = &m } != 0 { return null }
+        return Mode{ width = m.w, height = m.h, refresh = m.refresh_rate }
+    }
+
+    // The number of modes `display` can be set to, and mode `index` of them (SDL sorts them largest
+    // first, highest refresh first within a size).
+    fn mode_count { mut sdl: Sdl, display: i32 } -> i32 {
+        let n = SDL_GetNumDisplayModes{ &sdl, display }
+        return if n < 0 { 0 } else { n }
+    }
+
+    fn mode_at { mut sdl: Sdl, display: i32, index: i32 } -> ?Mode {
+        let mut m: DisplayMode
+        if SDL_GetDisplayMode{ &sdl, display, index, mode = &m } != 0 { return null }
+        return Mode{ width = m.w, height = m.h, refresh = m.refresh_rate }
+    }
+
+    // The part of `display` a window may take (the desktop less the task bar and the dock).
+    fn usable_bounds { mut sdl: Sdl, display: i32 } -> ?Rect {
+        let mut r: Rect
+        if SDL_GetDisplayUsableBounds{ &sdl, display, rect = &r } != 0 { return null }
+        return r
+    }
+
+    // The display's pixels per inch (96 is 100% scaling on Windows); 0 when unknown.
+    fn display_dpi { mut sdl: Sdl, display: i32 } -> f32 {
+        let mut d: f32 = 0.0
+        if SDL_GetDisplayDPI{ &sdl, display, ddpi = &d, hdpi = null, vdpi = null } != 0 { return 0.0 }
+        return d
+    }
+
+    enum WindowKind: u8 { windowed, fullscreen, borderless }
+
+    // Puts the window in a mode. `windowed`: a bordered window of width by height, centred on its
+    // display. `fullscreen`: the display switches to the closest mode of that size and refresh rate
+    // (0: the highest). `borderless`: a window the size of the desktop with no border, over the
+    // desktop's own mode (the size asked for is then only a render size). Fails when SDL refuses.
+    fn set_window_kind { mut sdl: Sdl, w: GlWindow, kind: WindowKind, width: i32, height: i32, refresh: i32 } -> ! {
+        let display = window_display{ &sdl, w }
+        // Leave full screen first, so the size and the border can change.
+        let flags = SDL_GetWindowFlags{ &sdl, window = w.window }
+        if (flags & WINDOW_FULLSCREEN) != 0 {
+            if SDL_SetWindowFullscreen{ &sdl, window = w.window, flags = 0 } != 0 { return failed{ call = "SDL_SetWindowFullscreen" } }
+        }
+        match kind {
+            windowed => {
+                SDL_SetWindowBordered{ &sdl, window = w.window, bordered = 1 }
+                SDL_SetWindowResizable{ &sdl, window = w.window, resizable = 1 }
+                SDL_SetWindowSize{ &sdl, window = w.window, w = width, h = height }
+                SDL_SetWindowPosition{ &sdl, window = w.window, x = WINDOWPOS_CENTERED, y = WINDOWPOS_CENTERED }
+            }
+            fullscreen => {
+                let want = DisplayMode{ format = 0, w = width, h = height, refresh_rate = refresh, driverdata = null }
+                let mut got: DisplayMode
+                if SDL_GetClosestDisplayMode{ &sdl, display, mode = &want, closest = &got } == null { return failed{ call = "SDL_GetClosestDisplayMode" } }
+                if SDL_SetWindowDisplayMode{ &sdl, window = w.window, mode = &got } != 0 { return failed{ call = "SDL_SetWindowDisplayMode" } }
+                if SDL_SetWindowFullscreen{ &sdl, window = w.window, flags = WINDOW_FULLSCREEN } != 0 { return failed{ call = "SDL_SetWindowFullscreen" } }
+            }
+            borderless => {
+                if SDL_SetWindowFullscreen{ &sdl, window = w.window, flags = WINDOW_FULLSCREEN_DESKTOP } != 0 { return failed{ call = "SDL_SetWindowFullscreen" } }
+            }
+        }
+    }
+
+    // The window's mode now, from its flags.
+    fn window_kind { mut sdl: Sdl, w: GlWindow } -> WindowKind {
+        let flags = SDL_GetWindowFlags{ &sdl, window = w.window }
+        if (flags & WINDOW_FULLSCREEN_DESKTOP) == WINDOW_FULLSCREEN_DESKTOP { return WindowKind::borderless }
+        if (flags & WINDOW_FULLSCREEN) != 0 { return WindowKind::fullscreen }
+        return WindowKind::windowed
     }
 
     // Relative mode hides the cursor and reports only motion, for mouse look.

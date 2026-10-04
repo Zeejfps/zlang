@@ -31,13 +31,22 @@ namespace options_panel {
         box_for: u32,
         save_req: [64]u8, save_len: usize,  // the name a game is to be saved under, once chosen
         load_req: [300]u8, load_len: usize, // the folder (a path) of the save to load, once chosen
+        config: [256]u8, config_len: usize, // the options file
     }
 
     fn new {} -> State {
         return State{
             opened = false, quit = false, fe = null, box = 0, box_for = BOX_NONE,
             save_req = [0; 64], save_len = 0, load_req = [0; 300], load_len = 0,
+            config = [0; 256], config_len = 0,
         }
+    }
+
+    // Which file the option screens read and write (default: kotor/out/kotor-settings.ini).
+    fn set_config { mut s: State, path: []u8 } {
+        let n = if path.len < 256 { path.len } else { 256 }
+        slice::copy(u8){ dst = s.config[..n], src = path[..n] }
+        s.config_len = n
     }
 
     // Whether a save or a load was chosen and not yet taken: the menu closes itself then, so that
@@ -84,7 +93,7 @@ namespace options_panel {
         if s.fe != null { return }
         let fe = try alloc::new(frontend::Front, heap::Heap){
             realloc = heap::alloc, heap = w.heap,
-            value = frontend::make{ fs = &w.fs, heap = w.heap, game = w.rm.game, config_path = "kotor/out/kotor-settings.ini" },
+            value = frontend::make{ fs = &w.fs, heap = w.heap, game = w.rm.game, config_path = if s.config_len > 0 { s.config[..s.config_len] } else { "kotor/out/kotor-settings.ini" } },
         }
         // The screens close themselves down to the main menu, which is not here: a stand-in entry
         // for it keeps close_top from refusing.

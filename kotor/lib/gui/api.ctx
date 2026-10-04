@@ -296,6 +296,43 @@ namespace gui {
         _ = try list_add{ &g, panel, tag, text, user = 0 }
     }
 
+    // Adds a control to a panel that looks like one it has: a copy of `from` under the new tag
+    // `tag`, at x, y in the panel's pixels (the file's units). For options the original's panels
+    // lack: a button or a check box like their neighbours. The copy has no text of its own yet
+    // (set it with set_text), no links for the arrow keys and no ancestors. False when the panel
+    // has no `from`.
+    fn clone_control { mut g: Gui, panel: u32, from: []u8, tag: []u8, x: i32, y: i32 } -> !bool {
+        let p = find_panel{ &g, id = panel } ifnull { return false }
+        let i = find_by_tag{ p, tag = from }
+        if i < 0 { return false }
+        let mut c: Control = list::at{ list = p.controls, i = @as(usize, i) }.*
+        let items = list::items{ list = p.controls }
+        let mut top: i32 = 0
+        let mut k: usize = 0
+        while k < items.len {
+            if items[k].id > top { top = items[k].id }
+            k = k + 1
+        }
+        c.tag = tag
+        c.id = top + 1
+        c.parent = -1
+        c.x = x
+        c.y = y
+        c.flags = clear_bits{ f = c.flags, bits = F_HILIGHT }
+        c.text.text = ""
+        c.text.buf = slice::empty(u8){}
+        c.text.strref = 0xFFFFFFFF
+        c.tooltip = ""
+        c.tooltip_buf = slice::empty(u8){}
+        c.rows = slice::empty(Row){}
+        c.row_count = 0
+        c.first_row = 0
+        c.selected_row = -1
+        c.moveto = [-1; 4]
+        try list::push{ list = &p.controls, item = c }
+        return true
+    }
+
     // Makes a label an edit box: it takes typed text while it has the focus (save names).
     fn make_edit { mut g: Gui, panel: u32, tag: []u8 } {
         let c = find_control{ &g, panel, tag } ifnull { return }

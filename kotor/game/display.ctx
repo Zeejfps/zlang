@@ -1,0 +1,301 @@
+// The graphics options at work (docs/mechanics/graphics.md): the window and its modes, the size the
+// game renders at, and every option of the Graphics and Advanced Graphics panels that the device
+// carries out. The panels edit a `frontend::Settings`; `apply` makes the device agree with one, doing
+// only what differs from the last time, so it can be called after every change (live, as the
+// original applies them) and once at start-up.
+//
+// Three sizes matter, and the code below keeps them apart:
+//   - the window, in the OS's units (what the mouse reports; a Retina window is half its pixels),
+//   - the drawable, in pixels (what the device presents into),
+//   - the render size, the pixels the game draws at (the screen target). It is the drawable unless
+//     a borderless window renders below the desktop's size; `present` then scales it up.
+namespace display {
+    // What `apply` changed, for the owner to act on: bits of its result.
+    const CHANGED_SIZE: u32 = 1             // the render size, the window or the display mode: lay the interface out again
+    const CHANGED_UI_SCALE: u32 = 2         // the interface scale: lay it out again
+    const CHANGED_TEXTURES: u32 = 4         // the texture quality: another texture pack, textures to load again
+    const CHANGED_GRASS: u32 = 8            // grass on or off: the area's grass is built or dropped
+
+    const MAX_MODES: usize = 192
+
+    struct Display {
+        hidden: bool,                       // an offscreen run: no window mode, the mouse is the script's
+        applied: frontend::Settings,        // what the device was last made to agree with
+        have: bool,                         // applied holds something (the first apply sets everything)
+        modes: [192]render::DisplayMode, mode_count: usize,     // the display's, largest first
+        desktop: render::DisplayMode,
+        usable: render::Size,               // the room a window has on its display
+        window: render::Size,               // the OS's units
+        drawable: render::Size,             // pixels
+        render: render::Size,               // the pixels the game draws at
+        shown: render::Rect,                // where the render lands in the drawable
+        path: [256]u8, path_len: usize,     // the settings file, for the scripted `gfx` words
+        frame_start: u64,                   // the frame limit's clock
+        live: frontend::Settings,           // the settings as the script's `gfx` words and the command line left them
+        pending: bool,                      // `live` changed: apply it
+    }
+
+    fn make { hidden: bool, path: []u8 } -> Display {
+        let none = render::DisplayMode{ width = 0, height = 0, refresh = 0 }
+        let mut d = Display{
+            hidden, applied = frontend::default_settings{}, have = false,
+            modes = [none; 192], mode_count = 0,
+            desktop = render::DisplayMode{ width = 1920, height = 1080, refresh = 60 },
+            usable = render::Size{ width = 1920, height = 1080 },
+            window = render::Size{ width = 1280, height = 720 }, drawable = render::Size{ width = 1280, height = 720 },
+            render = render::Size{ width = 1280, height = 720 },
+            shown = render::Rect{ x = 0.0, y = 0.0, w = 1280.0, h = 720.0 },
+            path = [0; 256], path_len = 0, frame_start = 0, live = frontend::default_settings{}, pending = false,
+        }
+        let n = if path.len < 256 { path.len } else { 256 }
+        slice::copy(u8){ dst = d.path[..n], src = path[..n] }
+        d.path_len = n
+        return d
+    }
+
+    // Puts the original's defaults in the graphics options, leaving the rest of the settings: an offscreen run's pictures
+    // and logs then repeat whatever options file is lying about.
+    fn use_default_graphics { mut s: frontend::Settings } {
+        let d = frontend::default_settings{}
+        s.width = d.width
+        s.height = d.height
+        s.window_mode = d.window_mode
+        s.refresh = d.refresh
+        s.vsync = d.vsync
+        s.gamma = d.gamma
+        s.shadows = d.shadows
+        s.soft_shadows = d.soft_shadows
+        s.grass = d.grass
+        s.frame_buffer = d.frame_buffer
+        s.emitters = d.emitters
+        s.anisotropy = d.anisotropy
+        s.antialias = d.antialias
+        s.texture_quality = d.texture_quality
+        s.gui_scale = d.gui_scale
+        s.frame_limit = d.frame_limit
+    }
+
+    // ---- what the display offers
+
+    // Reads the display's modes (one entry per size and refresh rate, largest first), the desktop's
+    // mode and the room a window has.
+    fn scan { mut d: Display, dev: gpu::Device, mut sdl: sdl::Sdl } {
+        d.mode_count = gpu::list_display_modes{ &sdl, dev, into = d.modes[..] }
+        d.desktop = gpu::desktop_mode{ &sdl, dev }
+        d.usable = gpu::usable_size{ &sdl, dev }
+    }
+
+    // Tells a front end what the display offers, for its resolution list and its texts.
+    fn tell { d: *Display, mut fe: frontend::Front } {
+        frontend::set_display_info{ &fe, modes = d.modes[..d.mode_count], desktop = d.desktop, usable = d.usable, render_size = d.render }
+    }
+
+    // ---- sizes
+
+    // The size and place the device really has, after a change of mode or a resize.
+    fn measure { mut d: Display, dev: gpu::Device, mut sdl: sdl::Sdl } {
+        d.window = gpu::window_size{ &sdl, dev }
+        d.drawable = gpu::drawable_size{ &sdl, dev }
+        d.render = gpu::screen_size{ dev }
+        d.shown = gpu::present_rect{ &sdl, dev }
+    }
+
+    // The size to render at for the settings: the drawable, except in a borderless window asked to
+    // render smaller than the desktop (a lower resolution on a bigger screen).
+    fn render_size_for { s: frontend::Settings, drawable: render::Size } -> render::Size {
+        if s.window_mode != 2 { return drawable }
+        let w = if s.width > 0 and @as(u32, s.width) < drawable.width { @as(u32, s.width) } else { drawable.width }
+        let h = if s.height > 0 and @as(u32, s.height) < drawable.height { @as(u32, s.height) } else { drawable.height }
+        return render::Size{ width = w, height = h }
+    }
+
+    // Makes the device's render size follow the drawable (a resized window) or the settings.
+    // True if it changed.
+    fn follow { mut d: Display, mut dev: gpu::Device, mut sdl: sdl::Sdl, s: frontend::Settings } -> bool {
+        let drawable = gpu::drawable_size{ &sdl, dev }
+        // A minimised window has no size to draw at.
+        if drawable.width < 64 or drawable.height < 64 { return false }
+        let want = render_size_for{ s, drawable }
+        let had = gpu::screen_size{ dev }
+        if want.width != had.width or want.height != had.height {
+            gpu::resize{ &dev, width = want.width, height = want.height } iferr { return false }
+        }
+        measure{ &d, dev, &sdl }
+        return want.width != had.width or want.height != had.height
+    }
+
+    // The window was resized (by the player, or by a mode change). True if the render size changed.
+    fn on_resized { mut d: Display, mut dev: gpu::Device, mut sdl: sdl::Sdl } -> bool {
+        return follow{ &d, &dev, &sdl, s = d.applied }
+    }
+
+    // ---- applying the options
+
+    // Brightness: the original builds a gamma ramp, out = in ^ (2 - 1.77 * slider / 100), so 57 is
+    // (very nearly) the picture as drawn, 0 darkens and 100 lightens (0x006ded30, 0x0044d990).
+    fn gamma_exponent { slider: i32 } -> f32 {
+        return 2.0 - 1.77 * @as(f32, slider) / 100.0
+    }
+
+    // Samples for the anti-aliasing option (0 off, then 2x, 4x, 8x) and taps for anisotropy (off, 2x, 4x, 8x).
+    fn samples_for { level: i32 } -> i32 { return if level <= 0 { 0 } else if level == 1 { 2 } else if level == 2 { 4 } else { 8 } }
+    fn taps_for { level: i32 } -> i32 { return if level <= 0 { 1 } else if level == 1 { 2 } else if level == 2 { 4 } else { 8 } }
+
+    // The window's mode, size and refresh rate as the settings ask. A full-screen mode the display
+    // refuses becomes a borderless window; a window larger than its display shrinks to fit it. The
+    // settings are corrected to what was done, so the panels show the truth.
+    fn set_geometry { mut d: Display, mut dev: gpu::Device, mut sdl: sdl::Sdl, mut s: frontend::Settings } {
+        scan{ &d, dev, &sdl }
+        if d.hidden {
+            gpu::set_window_mode{ &dev, &sdl, mode = render::WindowMode::windowed, width = s.width, height = s.height, refresh = 0 } iferr {}
+            _ = follow{ &d, &dev, &sdl, s }
+            return
+        }
+        if s.window_mode == 1 {
+            let size_ok = s.width <= d.desktop.width * 4 and s.height <= d.desktop.height * 4
+            let done = size_ok and set_mode{ &dev, &sdl, mode = render::WindowMode::fullscreen, s }
+            if not done { s.window_mode = 2 }
+        }
+        if s.window_mode == 2 {
+            gpu::set_window_mode{ &dev, &sdl, mode = render::WindowMode::borderless, width = s.width, height = s.height, refresh = 0 } iferr {
+                s.window_mode = 0
+            }
+        }
+        if s.window_mode == 0 {
+            // A window no bigger than the room its display has (less its title bar and borders).
+            let mut w = s.width
+            let mut h = s.height
+            let room_w = @as(i32, d.usable.width)
+            let room_h = @as(i32, d.usable.height) - 40
+            if w > room_w or h > room_h {
+                let k = math::min{ a = @as(f32, room_w) / @as(f32, w), b = @as(f32, room_h) / @as(f32, h) }
+                w = @as(i32, @as(f32, w) * k)
+                h = @as(i32, @as(f32, h) * k)
+            }
+            gpu::set_window_mode{ &dev, &sdl, mode = render::WindowMode::windowed, width = w, height = h, refresh = 0 } iferr {}
+        }
+        _ = follow{ &d, &dev, &sdl, s }
+    }
+
+    fn set_mode { mut dev: gpu::Device, mut sdl: sdl::Sdl, mode: render::WindowMode, s: frontend::Settings } -> bool {
+        gpu::set_window_mode{ &dev, &sdl, mode, width = s.width, height = s.height, refresh = s.refresh } iferr { return false }
+        return true
+    }
+
+    // Makes the device agree with `s`: the parts that differ from the last call (all of them the first
+    // time). Returns the CHANGED_ bits the owner has to act on; `s` is corrected to what was possible.
+    fn apply { mut d: Display, mut dev: gpu::Device, mut sdl: sdl::Sdl, mut s: frontend::Settings } -> u32 {
+        let a = d.applied
+        let first = not d.have
+        let mut changed: u32 = 0
+        let moved = s.width != a.width or s.height != a.height or s.window_mode != a.window_mode or s.refresh != a.refresh
+        if first or moved {
+            set_geometry{ &d, &dev, &sdl, &s }
+            changed = changed | CHANGED_SIZE
+        }
+        if first or s.vsync != a.vsync { _ = gpu::set_vsync{ &dev, &sdl, on = s.vsync } }
+        if first or s.antialias != a.antialias { _ = gpu::set_antialias{ &dev, samples = samples_for{ level = s.antialias } } }
+        if first or s.anisotropy != a.anisotropy { _ = gpu::set_anisotropy{ &dev, level = taps_for{ level = s.anisotropy } } }
+        if first or s.gamma != a.gamma { gpu::set_gamma{ &dev, exponent = gamma_exponent{ slider = s.gamma } } }
+        if first or s.shadows != a.shadows or s.soft_shadows != a.soft_shadows or s.emitters != a.emitters or s.frame_buffer != a.frame_buffer {
+            gpu::set_effects{ &dev, shadows = s.shadows, soft_shadows = s.soft_shadows, particles = s.emitters, screen_effects = s.frame_buffer }
+        }
+        if first or s.grass != a.grass { changed = changed | CHANGED_GRASS }
+        if first or s.texture_quality != a.texture_quality { changed = changed | CHANGED_TEXTURES }
+        if first or s.gui_scale != a.gui_scale { changed = changed | CHANGED_UI_SCALE }
+        d.applied = s
+        d.have = true
+        measure{ &d, dev, &sdl }
+        return changed
+    }
+
+    // The interface scale in force for a render size and the setting (0: fit the window).
+    fn ui_scale { s: frontend::Settings, size: render::Size } -> f32 {
+        return if s.gui_scale > 0.0 { s.gui_scale } else { gui::auto_scale{ w = @as(i32, size.width), h = @as(i32, size.height) } }
+    }
+
+    // ---- the mouse
+
+    // A mouse event's position in render pixels. The OS reports window units; the drawable can be
+    // larger (a Retina window) and the render smaller than it (a borderless window rendering
+    // below the desktop's size, with bars around it), so both are undone. Other events pass.
+    fn map_event { d: *Display, ev: sdl::Event } -> sdl::Event {
+        let plain = d.window.width == d.render.width and d.window.height == d.render.height and d.shown.x == 0.0 and d.shown.y == 0.0
+        if plain { return ev }
+        if ev is mouse_motion{ x, y, dx, dy, buttons } {
+            return sdl::Event::mouse_motion{ x = map_x{ d, x }, y = map_y{ d, y }, dx, dy, buttons }
+        }
+        if ev is mouse_button{ down, button, clicks, x, y } {
+            return sdl::Event::mouse_button{ down, button, clicks, x = map_x{ d, x }, y = map_y{ d, y } }
+        }
+        return ev
+    }
+
+    fn map_x { d: *Display, x: i32 } -> i32 {
+        let px = @as(f32, x) * @as(f32, d.drawable.width) / @as(f32, d.window.width)
+        let rx = (px - d.shown.x) * @as(f32, d.render.width) / d.shown.w
+        return @as(i32, math::clamp{ x = rx, lo = 0.0, hi = @as(f32, d.render.width) - 1.0 })
+    }
+
+    fn map_y { d: *Display, y: i32 } -> i32 {
+        let py = @as(f32, y) * @as(f32, d.drawable.height) / @as(f32, d.window.height)
+        let ry = (py - d.shown.y) * @as(f32, d.render.height) / d.shown.h
+        return @as(i32, math::clamp{ x = ry, lo = 0.0, hi = @as(f32, d.render.height) - 1.0 })
+    }
+
+    // ---- the script's words
+
+    // `gfx KEY VALUE...` changes an option as the panels would, for tests and pictures; the change is
+    // applied at the end of the frame's input and written to the settings file. The keys: size W H,
+    // mode windowed|fullscreen|borderless, refresh, vsync, brightness, shadows, softshadows, grass,
+    // emitters, framebuffer, aniso, aa, texture (levels as the panels' buttons count them, switches
+    // 0 or 1) and scale (the interface scale, 0 for auto).
+    fn handle_scripted { mut d: Display, word: []u8, rest: []u8 } -> bool {
+        if not ci::eq{ a = word, b = "gfx" } { return false }
+        let mut ws = text::words{ s = rest }
+        let key = text::next_word{ words = &ws } ifnull ""
+        let first = text::next_word{ words = &ws } ifnull ""
+        let n = @as(i32, text::scan_decimal{ s = first })
+        let on = n != 0
+        let s = &d.live
+        if ci::eq{ a = key, b = "size" } {
+            s.width = n
+            s.height = @as(i32, text::scan_decimal{ s = text::next_word{ words = &ws } ifnull "" })
+        }
+        else if ci::eq{ a = key, b = "mode" } {
+            s.window_mode = if ci::eq{ a = first, b = "fullscreen" } { 1 } else if ci::eq{ a = first, b = "borderless" } { 2 } else { 0 }
+        }
+        else if ci::eq{ a = key, b = "refresh" } { s.refresh = n }
+        else if ci::eq{ a = key, b = "vsync" } { s.vsync = on }
+        else if ci::eq{ a = key, b = "brightness" } { s.gamma = n }
+        else if ci::eq{ a = key, b = "shadows" } { s.shadows = on }
+        else if ci::eq{ a = key, b = "softshadows" } { s.soft_shadows = on }
+        else if ci::eq{ a = key, b = "grass" } { s.grass = on }
+        else if ci::eq{ a = key, b = "emitters" } { s.emitters = on }
+        else if ci::eq{ a = key, b = "framebuffer" } { s.frame_buffer = on }
+        else if ci::eq{ a = key, b = "aniso" } { s.anisotropy = n }
+        else if ci::eq{ a = key, b = "aa" } { s.antialias = n }
+        else if ci::eq{ a = key, b = "texture" } { s.texture_quality = n }
+        else if ci::eq{ a = key, b = "scale" } { s.gui_scale = text::scan_f32{ s = first } ifnull 0.0 }
+        else if ci::eq{ a = key, b = "limit" } { s.frame_limit = n }
+        else { return false }
+        d.pending = true
+        return true
+    }
+
+    // ---- the frame limit
+
+    // Called once per frame after the picture is shown: waits out the rest of the frame when the
+    // Frame Limit option asks for one (sleeping, then spinning for the last half millisecond).
+    fn limit_frame { mut d: Display, mut sdl: sdl::Sdl, fps: i32 } {
+        let freq = sdl::counter_frequency{ &sdl }
+        if fps > 0 and d.frame_start != 0 {
+            let want = d.frame_start + freq / @as(u64, fps)
+            while sdl::counter{ &sdl } < want {
+                let left = want - sdl::counter{ &sdl }
+                if left > freq / 600 { sdl::delay{ &sdl, ms = 1 } }
+            }
+        }
+        d.frame_start = sdl::counter{ &sdl }
+    }
+}
