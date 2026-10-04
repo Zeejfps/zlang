@@ -368,7 +368,7 @@ program asks for one (spec §19).
 | `+ - *` on integers | `__builtin_*_overflow` | Panics with `integer overflow`. |
 | `/ %` on integers | guarded C `/ %` | Zero divisor panics. `MIN / -1` panics. `MIN % -1` is 0. Both round toward zero. |
 | `f32` arithmetic | `float` | Needs `FLT_EVAL_METHOD == 0` (SSE). |
-| `@as`, `@trunc`, `@wrap_*` | range check then cast; unsigned arithmetic then cast | |
+| `@as`, `@trunc`, `@wrap_*` | range check then cast; unsigned arithmetic then cast | Float-to-integer `@as` checks are inline in ctxrt.h; only a failed conversion calls the runtime for its diagnostic. |
 | `[N]T` | `struct { T a[N]; }` | Wrapped so arrays copy, assign and return as values. |
 | `[]T`, `s[i]`, `s[lo..hi]` | `struct { T *m_ptr; uint64_t m_len; }`; `ctx_idx`, `ctx_range` | Bounds checks panic. The runtime's C functions see it as `ctx_slice`. |
 | `strlit` | its bytes' `[]u8` | A literal's view points to a C string literal, whose NUL is the hidden zero. |
