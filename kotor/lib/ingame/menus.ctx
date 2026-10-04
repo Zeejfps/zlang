@@ -222,14 +222,30 @@ namespace ingame {
 
     fn party_ids_of { w: *world::World } -> []u32 { return party::members{ w } }
 
-    // Makes the party member `step` places down the list the leader (1 or 2 from the leader).
-    fn change_leader { mut w: world::World, step: usize } {
+    // Makes the party member `step` places down the list the leader (1 or 2 from the leader), as a
+    // portrait does: the table turns until that member is first (party::rotate_to_front). True when it did.
+    fn take_lead { mut w: world::World, step: usize } -> bool {
         let ids = party::members{ w = &w }
-        if step >= ids.len { return }
+        if step >= ids.len { return false }
         let id = ids[step]
-        if hud::is_down{ w = &w, id } { return }
-        party::set_leader{ &w, id }
+        if hud::is_down{ w = &w, id } { return false }
+        if not party::rotate_to_front{ &w, id } { return false }
         w.pc = id
+        return true
+    }
+
+    fn change_leader { mut w: world::World, step: usize } { _ = take_lead{ &w, step } }
+
+    // Tab (ChangeChar, movement.md 6.3): the next member who can act becomes the leader, passing over
+    // the fallen. True when the leader changed.
+    fn cycle_leader { mut w: world::World } -> bool {
+        let count = party::members{ w = &w }.len
+        let mut step: usize = 1
+        while step < count {
+            if take_lead{ &w, step } { return true }
+            step = step + 1
+        }
+        return false
     }
 
     // The events of an open menu and its bar. Returns after handling them all.

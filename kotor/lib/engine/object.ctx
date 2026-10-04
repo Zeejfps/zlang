@@ -215,6 +215,7 @@ namespace obj {
         path: list::List(math::Vec3, heap::Heap),   // waypoints still to walk
         path_next: usize,
         path_goal: math::Vec3,                      // where the path was planned to
+        path_adjusted: bool,                        // the path ends at the nearest reachable point of an unreachable goal
         moving: bool,
         in_combat: bool,
         dead: bool,
@@ -606,7 +607,7 @@ namespace obj {
             perception_range = 11, spawn_fired = false, last_heartbeat = 0, heartbeat_interval = 3000,
             speed = 0.0, speed_factor = 0.1,
             path = list::new(math::Vec3, heap::Heap){ realloc = heap::alloc, heap },
-            path_next = 0, path_goal = math::vec3::zero{}, moving = false, in_combat = false, dead = false,
+            path_next = 0, path_goal = math::vec3::zero{}, path_adjusted = false, moving = false, in_combat = false, dead = false,
             triggers = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
             perceived = list::new(Perceived, heap::Heap){ realloc = heap::alloc, heap },
             sight_range = 0.0, hearing_range = 0.0, last_perception = 0,

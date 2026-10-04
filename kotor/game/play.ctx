@@ -84,6 +84,7 @@ namespace play {
         if not opts.headless { _ = sdl::SDL_ShowCursor{ &sdl, toggle = 0 } }    // HOOK(ingame): the GUI draws the pointer
         let silent = try alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(i16){}, count = 44100 }
         let mut keys = ctl::no_keys{}
+        let mut inputs = inject::new_inputs{}      // the scripted pointer and held modifiers
         let freq = sdl::counter_frequency{ &sdl }
         let mut last = sdl::counter{ &sdl }
         let mut quit = false
@@ -99,33 +100,16 @@ namespace play {
             if opts.frames > 0 and frame_no > opts.frames { break }
             keys.action = false
             ingame::begin_frame{ ui }    // HOOK(ingame)
-            // 1. Input: the window's events, or the script's lines for this frame.
-            while true {
-                let e = sdl::poll{ &sdl } ifnull { break }
-                // HOOK(minigames): a minigame has no HUD, menus or quick saves: the mouse and Escape are
-                // its own, the other keys go straight to the game's keys.
-                if mg_game::active{ w = &w } {
-                    if mg_game::handle_event{ m = &mg_mouse, ev = e } { continue }
-                    if e is key{ down, repeat, keycode } {
-                        if not repeat { apply_key{ keys = &keys, keycode, down } }
-                        continue
-                    }
-                }
-                if dlgview::handle_event{ v = &dview, g = &ui.gui, ev = e, scale_x = 1.0, scale_y = 1.0 } { continue }
-                if ingame::handle_event{ ui, &w, &dev, ev = e, scale_x = 1.0, scale_y = 1.0 } { continue }    // HOOK(ingame)
-                match e {
-                    quit | close => { quit = true }
-                    key{ down, repeat, keycode } => {
-                        if down and not repeat and keycode == sdl::key::F1 + 3 { want_save = "QUICKSAVE" }
-                        if down and not repeat and keycode == sdl::key::F1 + 4 { want_load = "000000 - QUICKSAVE" }
-                        if not repeat { apply_key{ keys = &keys, keycode, down } }
-                    }
-                    else => {}
-                }
-            }
+            // 1. Input: the window's events, then the script's lines for this frame. A scripted key or click
+            // is put on SDL's queue (game/inject.ctx) and read back at once, so it takes the path a real one does.
+            pump_events{ &sdl, &w, &dev, ui, &dview, &mg_mouse, &keys, &quit, &want_save, &want_load }
             while next_line < script.len and script[next_line].frame <= frame_no {
                 let s = script[next_line]
                 next_line = next_line + 1
+                if inject::handle_scripted{ &sdl, inp = &inputs, word = s.word, rest = s.rest } {
+                    pump_events{ &sdl, &w, &dev, ui, &dview, &mg_mouse, &keys, &quit, &want_save, &want_load }
+                    continue
+                }
                 // One call per owner, in turn: the first that knows the word takes the line. A new owner adds
                 // its call here (docs/testing.md, "Adding a scripted command").
                 let handled = handle_scripted{ &w, &vm, engine, &keys, &want_save, &want_load, word = s.word, rest = s.rest } or
@@ -314,6 +298,7 @@ namespace play {
             if ingame::wants_quit{ ui } { quit = true }    // HOOK(ingame)
             // The party selection screen was applied: its exit script (ShowPartySelectionGUI's), with no caller.
             if ingame::take_exit_script{ ui } is some{ value = exit_script } { _ = scripts::run{ &w, &vm, engine, name = exit_script, self = obj::INVALID } }    // HOOK(ingame)
+            if ingame::take_script_request{ ui } is some{ value = script } { _ = scripts::run{ &w, &vm, engine, name = script, self = obj::INVALID } }    // HOOK(ingame)
             // The options menu's Save Game and Load Game (the menus have closed themselves).
             if ingame::take_save_request{ ui } is some{ value = n } { want_save = n }    // HOOK(ingame)
             if ingame::take_load_request{ ui } is some{ value = n } { want_load = n }    // HOOK(ingame)
@@ -490,26 +475,54 @@ namespace play {
         return 1.6 + offset
     }
 
-    fn apply_key { mut keys: ctl::Keys, keycode: i32, down: bool } {
-        if keycode == 'w' or keycode == sdl::key::UP { keys.forward = down }
-        else if keycode == 's' or keycode == sdl::key::DOWN { keys.back = down }
-        else if keycode == 'z' { keys.strafe_left = down }
-        else if keycode == 'c' { keys.strafe_right = down }
-        else if keycode == 'a' or keycode == sdl::key::LEFT { keys.turn_left = down }
-        else if keycode == 'd' or keycode == sdl::key::RIGHT { keys.turn_right = down }
-        else if keycode == 'r' or keycode == sdl::key::SPACE { if down { keys.action = true } }
+    // Everything SDL has queued, each event offered in turn to the minigame, the conversation panels, the
+    // interface and then the world's own keys; the first that takes it ends its trip.
+    fn pump_events {
+        mut sdl: sdl::Sdl, mut w: world::World, mut dev: gpu::Device, ui: *mut ingame::Ingame, mut dview: dlgview::View,
+        mut mg_mouse: mg_game::Mouse, mut keys: ctl::Keys, mut quit: bool, mut want_save: []u8, mut want_load: []u8,
+    } {
+        while true {
+            let e = sdl::poll{ &sdl } ifnull { break }
+            // A key let go always lets go of the walk, whoever else sees the event (a menu opened while W
+            // was down would otherwise keep the leader walking when it closes).
+            if e is key{ down, keycode } {
+                if not down { apply_key{ keys = &keys, keycode, down = false, minigame = mg_game::active{ w = &w } } }
+            }
+            // HOOK(minigames): a minigame has no HUD, menus or quick saves: the mouse and Escape are
+            // its own, the other keys go straight to the game's keys.
+            if mg_game::active{ w = &w } {
+                if mg_game::handle_event{ m = &mg_mouse, ev = e } { continue }
+                if e is key{ down, repeat, keycode } {
+                    if not repeat { apply_key{ keys = &keys, keycode, down, minigame = true } }
+                    continue
+                }
+            }
+            if dlgview::handle_event{ v = &dview, g = &ui.gui, ev = e, scale_x = 1.0, scale_y = 1.0 } { continue }
+            if ingame::handle_event{ ui, &w, &dev, ev = e, scale_x = 1.0, scale_y = 1.0 } { continue }    // HOOK(ingame)
+            match e {
+                quit | close => { quit = true }
+                key{ down, repeat, keycode } => {
+                    if down and not repeat and keycode == sdl::key::F1 + 3 { want_save = "QUICKSAVE" }
+                    if down and not repeat and keycode == sdl::key::F1 + 4 { want_load = "000000 - QUICKSAVE" }
+                    if not repeat { apply_key{ keys = &keys, keycode, down, minigame = false } }
+                }
+                else => {}
+            }
+        }
     }
 
-    // A key's SDL keycode by the name the input script uses (a letter, `up`, `space`, ...).
-    fn keycode_of { name: []u8 } -> i32 {
-        if name.len == 1 { return @as(i32, ascii::to_lower{ c = name[0] }) }
-        if ci::eq{ a = name, b = "up" } { return sdl::key::UP }
-        if ci::eq{ a = name, b = "down" } { return sdl::key::DOWN }
-        if ci::eq{ a = name, b = "left" } { return sdl::key::LEFT }
-        if ci::eq{ a = name, b = "right" } { return sdl::key::RIGHT }
-        if ci::eq{ a = name, b = "space" } { return sdl::key::SPACE }
-        if ci::eq{ a = name, b = "escape" } { return sdl::key::ESCAPE }
-        return 0
+    // The held keys the world reads each frame (keymap.2da's ICPC rows): W and S forward and back, Z and C
+    // strafe, A and D turn the camera, B walks. The arrows, R and Space are a minigame's (ICMiniGame) and
+    // nothing in the world's: there R runs the target's default action and Space pauses (lib/ingame).
+    fn apply_key { mut keys: ctl::Keys, keycode: i32, down: bool, minigame: bool } {
+        if keycode == 'w' or (minigame and keycode == sdl::key::UP) { keys.forward = down }
+        else if keycode == 's' or (minigame and keycode == sdl::key::DOWN) { keys.back = down }
+        else if keycode == 'z' { keys.strafe_left = down }
+        else if keycode == 'c' { keys.strafe_right = down }
+        else if keycode == 'a' or (minigame and keycode == sdl::key::LEFT) { keys.turn_left = down }
+        else if keycode == 'd' or (minigame and keycode == sdl::key::RIGHT) { keys.turn_right = down }
+        else if keycode == 'b' { keys.walk = down }
+        else if minigame and (keycode == 'r' or keycode == sdl::key::SPACE) { if down { keys.action = true } }
     }
 
     // Play's own scripted words: keys, the leader's moves, saves and loads, and the conversation and
@@ -519,9 +532,7 @@ namespace play {
         mut want_save: []u8, mut want_load: []u8, word: []u8, rest: []u8,
     } -> bool {
         let arg = text::first_word{ s = rest }
-        if ci::eq{ a = word, b = "down" } { apply_key{ keys = &keys, keycode = keycode_of{ name = arg }, down = true } }
-        else if ci::eq{ a = word, b = "up" } { apply_key{ keys = &keys, keycode = keycode_of{ name = arg }, down = false } }
-        else if ci::eq{ a = word, b = "warp" } { warp_to{ &w, tag = arg } }
+        if ci::eq{ a = word, b = "warp" } { warp_to{ &w, tag = arg } }
         else if ci::eq{ a = word, b = "warpxy" } { warp_xy{ &w, at = arg } }
         else if ci::eq{ a = word, b = "use" } { use_tagged{ &w, tag = arg } }
         else if ci::eq{ a = word, b = "attack" } { attack_tagged{ &w, tag = arg } }

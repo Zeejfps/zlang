@@ -37,10 +37,17 @@ namespace doors {
     // turn to face the target and a copy of `a` (actions.md 1.4), and says so. Non-creatures act
     // from where they are.
     fn approach { mut w: world::World, id: u32, target: u32, a: *mut actions::Action } -> bool {
+        return approach_within{ &w, id, target, a, extra = 0.0 }
+    }
+
+    // The same with the stopping range widened by `extra` (a player's talk order stops 1 m beyond the
+    // use range: DIALOGOBJECT's approach mode 1, actions.md 3.12).
+    fn approach_within { mut w: world::World, id: u32, target: u32, a: *mut actions::Action, extra: f32 } -> bool {
         let actor = world::object{ w = &w, id } ifnull { return false }
         if actor.kind != obj::Kind::creature { return false }
         let t = world::object{ w = &w, id = target } ifnull { return false }
-        let up = use_point{ w = &w, actor, target = t }
+        let mut up = use_point{ w = &w, actor, target = t }
+        up.range = up.range + extra
         if distance_2d{ a = actor.position, b = up.point } <= up.range + 0.1 or a.phase > 0 { return false }
         let mut copy = a.*
         copy.phase = 1

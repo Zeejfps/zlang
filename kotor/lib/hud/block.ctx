@@ -140,6 +140,15 @@ namespace hud {
         return true
     }
 
+    // Target slot `k`'s next (or previous) choice, wrapping: its arrows, and Shift with the slot's key.
+    fn cycle_slot { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, k: usize, forward: bool } {
+        let l = &h.lists[k]
+        if l.count > 1 {
+            l.selected = if forward { (l.selected + 1) % l.count } else { (l.selected + l.count - 1) % l.count }
+            refresh_slot{ &h, &g, &w, &dev, k }
+        }
+    }
+
     // What the block's buttons do. True when the event was one of theirs.
     fn block_event { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> bool {
         if ev.kind != gui::EventKind::activate { return false }
@@ -156,11 +165,7 @@ namespace hud {
             let up = slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "BTN_TARGETUP", n = k } }
             let down = slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "BTN_TARGETDOWN", n = k } }
             if up or down {
-                let l = &h.lists[k]
-                if l.count > 1 {
-                    l.selected = if down { (l.selected + 1) % l.count } else { (l.selected + l.count - 1) % l.count }
-                    refresh_slot{ &h, &g, &w, &dev, k }
-                }
+                cycle_slot{ &h, &g, &w, &dev, k, forward = down }
                 return true
             }
             k = k + 1
@@ -182,7 +187,10 @@ namespace hud {
         if id == obj::INVALID or id != began { return false }
         if id == w.target {
             let l = h.lists[0]
-            if l.count > 0 { run_act{ &w, act = l.entries[0].act, target = id } }
+            if l.count > 0 {
+                gui::play_sound{ &g, n = 6 }
+                run_act{ &w, act = l.entries[0].act, target = id }
+            }
         } else {
             w.target = id
         }

@@ -57,10 +57,20 @@ namespace movement {
         }
         let dt_ms = w.clock.dt * 1000.0
         if dt_ms <= 0.0 { return actions::Status::running }
+        // A path to the nearest reachable point of a goal that cannot be stood on ends there: arrived.
+        if c.path_adjusted and c.path.len > 0 and c.path_next >= c.path.len and distance_2d{ a = c.path_goal, b = goal } < 2.0 {
+            stop{ &w, id }
+            world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
+            return actions::Status::done
+        }
         if c.path.len == 0 or c.path_next >= c.path.len or distance_2d{ a = c.path_goal, b = goal } >= 2.0 {
             c.path_next = 0
             c.path_goal = goal
-            if not paths::plan{ &w, from = o.position, goal, out = &c.path } {
+            if not paths::plan{ &w, from = o.position, goal, out = &c.path, adjusted = &c.path_adjusted } {
+                if w.log.actions {
+                    world::prefix{ w = &w }
+                    _ = @fmt(&w.io, "move {}: no route from {} {} to {} {} (try {})\n", id, o.position.x, o.position.y, goal.x, goal.y, a.phase + 1)
+                }
                 a.phase = a.phase + 1
                 if a.phase >= GIVE_UP {
                     stop{ &w, id }
@@ -115,6 +125,10 @@ namespace movement {
                     return actions::Status::failed
                 }
                 // Blocked: plan again next frame, give up after six times in a row.
+                if w.log.actions {
+                    world::prefix{ w = &w }
+                    _ = @fmt(&w.io, "move {}: blocked at {} {} going to {} {} (goal {} {}, try {})\n", id, here.x, here.y, p.x, p.y, goal.x, goal.y, a.phase + 1)
+                }
                 c.path_next = c.path.len
                 a.phase = a.phase + 1
                 if a.phase >= GIVE_UP {

@@ -331,30 +331,11 @@ namespace partysel_panel {
         show_counts{ &s, &g }
     }
 
-    // Done: with no companion, or both forced, the party applies at once; otherwise the player is
-    // asked first (a short party gets the longer warning).
+    // Done: the party applies at once. The original's party screen asks nothing (CSWGuiPartySelection
+    // has no confirmation: the strings "Are you sure this is the party configuration..." are in the
+    // string table but no code refers to them), so a free companion left out is the player's choice.
     fn done { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } {
-        let count = picked_count{ &s }
-        let mut forced: i32 = 0
-        let mut n: usize = 0
-        while n < SLOTS {
-            if s.forced[n] { forced = forced + 1 }
-            n = n + 1
-        }
-        // Nothing left to pick (every companion the party can take is picked: the Endar Spire has only
-        // Trask) is as good as a full party. PLACEHOLDER for the original's counting, which is not traced.
-        let mut pickable: i32 = 0
-        n = 0
-        while n < SLOTS {
-            if slot_pickable{ w = &w, n } { pickable = pickable + 1 }
-            n = n + 1
-        }
-        if count == 0 or (count == MAX_COMPANIONS and forced == MAX_COMPANIONS) or count >= pickable {
-            apply{ &s, &g, &w, &dev }
-            return
-        }
-        say{ &s, &g, &w, &dev, strref = if count == 1 { 38329 } else { 38328 }, ask = true }
-        s.confirming = s.box != 0
+        apply{ &s, &g, &w, &dev }
     }
 
     // The test bot's way of pressing OK: the question's OK if the box is up, else the screen's OK.
