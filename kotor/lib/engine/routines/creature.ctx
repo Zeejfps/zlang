@@ -780,7 +780,7 @@ namespace rt_crea {
         match t {
             nwconst::CREATURE_TYPE_RACIAL_TYPE => { return @as(i32, c.race) == v }
             nwconst::CREATURE_TYPE_PLAYER_CHAR => {
-                let pc = o.id == w.pc or c.is_pc
+                let pc = o.id == w.player or c.is_pc
                 return if v == nwconst::PLAYER_CHAR_IS_PC { pc } else { not pc }
             }
             nwconst::CREATURE_TYPE_CLASS => {

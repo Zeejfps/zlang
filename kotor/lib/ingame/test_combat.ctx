@@ -53,6 +53,21 @@ namespace test_combat {
             print_fight{ ui = &ui, &w }
             return true
         }
+        if ci::eq{ a = cmd, b = "acts" } {
+            // Test output: a creature's combat state and action queue (kinds and first object param).
+            let id = world::object_by_tag{ w = &w, tag = text::trim{ s = args }, nth = 0 }
+            let o = world::object{ w = &w, id } ifnull { return true }
+            let c = obj::creature{ o } ifnull { return true }
+            _ = @fmt(&w.io, "acts {} {} hp {} in_combat {} attack_target {} attempted {} commandable {} queue", id, o.tag, o.hp, c.in_combat, c.attack_target, c.attempted_target, o.commandable)
+            let q = list::items{ list = o.actions }
+            let mut i: usize = 0
+            while i < q.len {
+                _ = @fmt(&w.io, " {}:{}", @as(u32, q[i].kind), actions::object_param{ a = &q[i], i = 0 })
+                i = i + 1
+            }
+            _ = @fmt(&w.io, "\n")
+            return true
+        }
         if ci::eq{ a = cmd, b = "foe" } {
             // Test setup: a creature from a template DIST metres ahead of the leader (SIDE metres to its
             // right), facing it, as a script's CreateObject would make it.

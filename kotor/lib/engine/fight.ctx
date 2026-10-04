@@ -35,6 +35,7 @@ namespace fight {
         attack: bool,                   // carries an attack (a ranged shot may be only visual)
         hit: bool,
         result: i32,                    // rules::outcome
+        roll: rules::AttackRoll,        // the whole roll, for the combat log (fight_log)
         killing: bool,
         ranged: bool,
         reaction: i32,                  // the target's animations.2da reaction row, NO_ROW none
@@ -93,7 +94,8 @@ namespace fight {
     fn no_impact {} -> Impact {
         let mut fx: [rules::MAX_COMBAT_FX]rules::CombatEffect
         let mut damage: rules::DamageRoll
-        return Impact{ at_ms = 0, fire_ms = 0, hand = 0, target = obj::INVALID, attack = false, hit = false, result = 0, killing = false, ranged = false, reaction = NO_ROW, cutscene = false, damage, nfx = 0, fx }
+        let mut roll: rules::AttackRoll
+        return Impact{ at_ms = 0, fire_ms = 0, hand = 0, target = obj::INVALID, attack = false, hit = false, result = 0, roll, killing = false, ranged = false, reaction = NO_ROW, cutscene = false, damage, nfx = 0, fx }
     }
 
     fn no_round {} -> Round {
@@ -283,8 +285,10 @@ namespace fight {
         let o = world::object{ w = &w, id } ifnull { return }
         let k = e.kind
         if k == rules::ev::HEAL_HP {
+            let before = o.hp
             o.hp = o.hp + e.a
             if o.hp > o.hp_max { o.hp = o.hp_max }
+            fight_log::healed{ &w, target = id, amount = o.hp - before }
         } else if k == rules::ev::DAMAGE_HP {
             take_damage{ &w, id, amount = e.a, types = e.b, who = e.who }
         } else if k == rules::ev::DEATH {
@@ -555,7 +559,35 @@ namespace fight {
             if c.fighter is some{ value = f } { f.combat_ms = COMBAT_MS }
             if not was { bark{ &w, id, first = VOICE_BATTLE, count = 6, chance_in = 1, quiet = false } }
         }
-        _ = other
+        pull_in{ &w, id, other }
+    }
+
+    // SignalCombatWith (0x004fbbe0, 3.6): a creature in a fight with a hostile one brings its
+    // faction-mates that stand near and are hostile to the same one into combat too: within 30 m
+    // for the party, within its sight range for anyone else. So the leader is in combat (the
+    // combat bar, the auto-pause) when only a companion is attacked. Being in combat makes no one
+    // act: the AI acts on shouts, perception and its rounds.
+    fn pull_in { mut w: world::World, id: u32, other: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let foe = world::object{ w = &w, id = other } ifnull { return }
+        if foe.kind != obj::Kind::creature or world::standing{ w = &w, from = o.faction, toward = foe.faction } >= 11 { return }
+        let party = party::is_member{ w = &w, id }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let m = all[i]
+            i = i + 1
+            if m.id == id or m.id == other or m.destroyed or m.kind != obj::Kind::creature or m.area != o.area { continue }
+            let in_party = party::is_member{ w = &w, id = m.id }
+            if in_party != party or (not party and m.faction != o.faction) { continue }
+            let mc = obj::creature{ o = m } ifnull { continue }
+            if mc.dead or mc.in_combat { continue }
+            if world::standing{ w = &w, from = m.faction, toward = foe.faction } >= 11 { continue }
+            let range = if party { 30.0 } else { mc.sight_range }
+            if doors::distance_2d{ a = m.position, b = o.position } > range { continue }
+            mc.in_combat = true
+            if mc.fighter is some{ value = mf } { mf.combat_ms = COMBAT_MS }
+        }
     }
 
     // ---- animations
@@ -657,13 +689,28 @@ namespace fight {
 
     // ---- the round (3.1 - 3.5)
 
+    // Within the maximum range (reach + 0.5; a ranged weapon's maxattackrange) and, for a shot at
+    // a creature, with a clear line from 1.5 m above each foot (actions.md 3.13 steps 4-6,
+    // 0x0050c330).
     fn in_reach { w: *world::World, o: *obj::Object, t: *obj::Object, ranged: bool } -> bool {
         let d = doors::distance_2d{ a = o.position, b = t.position }
-        return d <= reach{ w, o, t, ranged } + 0.5
+        if d > reach{ w, o, t, ranged } + 0.5 { return false }
+        if ranged and t.kind == obj::Kind::creature { return perception::clear_line{ w, a = o.position, b = t.position } }
+        return true
+    }
+
+    // Where an approach stops: at reach, or for a shooter in range without a clear line, a few
+    // metres nearer each time until it has one.
+    fn approach_range { w: *world::World, o: *obj::Object, t: *obj::Object, ranged: bool } -> f32 {
+        let r = reach{ w, o, t, ranged }
+        if not ranged { return r }
+        let d = doors::distance_2d{ a = o.position, b = t.position }
+        if d <= r + 0.5 { return math::max{ a = d - 4.0, b = 1.5 } }
+        return r
     }
 
     // How near the attacker must stand (actions.md 3.13 step 4): melee both personal spaces + 0.7,
-    // ranged the weapon's maxattackrange (30 when 0), less a margin.
+    // ranged the weapon's maxattackrange (30 when 0).
     fn reach { w: *world::World, o: *obj::Object, t: *obj::Object, ranged: bool } -> f32 {
         let mut mine: f32 = 0.5
         let mut theirs: f32 = 0.5
@@ -677,7 +724,7 @@ namespace fight {
                     }
                 }
                 if range <= 0.0 { range = 30.0 }
-                return math::min{ a = range, b = 15.0 }
+                return range
             }
         }
         if obj::creature{ o = t } is some{ value = tc } { theirs = tc.perspace }
@@ -728,7 +775,7 @@ namespace fight {
             let mut move = actions::make{ kind = actions::Kind::move_to_point }
             move.params[0] = actions::Param::vector{ v = t.position }
             move.params[1] = actions::Param::int{ v = 1 }
-            move.params[2] = actions::Param::float{ v = reach{ w = &w, o, t, ranged } }
+            move.params[2] = actions::Param::float{ v = approach_range{ w = &w, o, t, ranged } }
             move.params[3] = actions::Param::object{ id = target }
             move.params[4] = actions::Param::float{ v = 6.0 }
             actions::add_front{ &w, id, action = move }
@@ -878,6 +925,7 @@ namespace fight {
                 drain{ &w, id = target }
                 imp.hit = res.hit
                 imp.result = res.roll.result
+                imp.roll = res.roll
                 imp.killing = res.killing_blow
                 imp.damage = res.damage
                 imp.nfx = res.effects.len

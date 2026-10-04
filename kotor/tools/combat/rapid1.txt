@@ -1,0 +1,17 @@
+20 ui heal
+21 ui sethp pc 300
+21 ui giveitem g_w_blstrpstl001 1 equip
+22 ui grantfeat 30
+22 ui grantfeat 29
+30 ui foe g_sithtroop01 18 -4
+35 cam toward g_sithtroop01
+40 ui target g_sithtroop01
+41 ui key r
+44 ui fight
+45 ui pos
+50 ui clicktag BTN_TARGETDOWN0
+52 ui clicktag BTN_TARGET0
+54 ui fight
+150 ui pos
+150 ui where g_sith
+200 ui fight
