@@ -8,6 +8,7 @@
 //   FRAME ui bot unlock on|off   open the lock of a door before opening it (the story's own way is
 //                                a key, a skill or a switch of the party leader)
 //   FRAME ui bot god on|off      the leader never drops below 1 hit point
+//   FRAME ui bot tour            a route made of the area's own waypoints, doors, placeables, triggers and talkers (bot_tour.ctx)
 //   FRAME ui bot status          where the route stands
 namespace bot {
     const MAX_ROUTE: usize = 64
@@ -29,10 +30,11 @@ namespace bot {
         waiting: u32,                           // decisions spent on the current stop
         foe: u32,                               // the one it last ordered an attack on
         seen_open: bool,                        // the door of the current stop has been seen open (one the story shuts again is passed, not opened twice)
+        tour: Tour,                             // the area's own route, when `bot tour` made one
     }
 
     fn new {} -> Bot {
-        return Bot{ on = false, unlock = false, god = false, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false }
+        return Bot{ on = false, unlock = false, god = false, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false, tour = new_tour{} }
     }
 
     // The `bot ...` input line, after the word `bot`.
@@ -50,6 +52,8 @@ namespace bot {
                 b.lens[b.count] = @trunc(u8, n)
                 b.count = b.count + 1
             }
+        } else if ci::eq{ a = what, b = "tour" } {
+            tour_build{ &b, &w }
         } else if ci::eq{ a = what, b = "on" } {
             b.on = true
         } else if ci::eq{ a = what, b = "off" } {
@@ -59,6 +63,13 @@ namespace bot {
         } else if ci::eq{ a = what, b = "god" } {
             b.god = on_word{ words = &words }
         } else if ci::eq{ a = what, b = "status" } {
+            if b.tour.on {
+                _ = @fmt(&w.io, "bot: tour of {} stops, at {}", b.tour.count, b.tour.next)
+                if b.tour.next < b.tour.count {
+                    if world::object{ w = &w, id = b.tour.ids[b.tour.next] } is some{ value = t } { _ = @fmt(&w.io, " ({} {} acted {} still {})", t.tag, @as(u32, t.kind), b.tour.acted, b.tour.still) }
+                }
+                _ = @fmt(&w.io, "\n")
+            }
             _ = @fmt(&w.io, "bot: {} stops, at {}", b.count, b.next)
             if b.next < b.count { _ = @fmt(&w.io, " ({})", b.route[b.next][..@as(usize, b.lens[b.next])]) }
             _ = @fmt(&w.io, "\n")
@@ -84,7 +95,7 @@ namespace bot {
         if b.god { me.min_one_hp = true }
         // Something hostile and alive within sight: fight it, nearest first.
         let foe = nearest_foe{ w = &w, me }
-        if foe != obj::INVALID {
+        if foe != obj::INVALID and not tour_ignores{ &b, foe } {
             if foe != b.foe or me.actions.len == 0 {
                 b.foe = foe
                 let mut a = actions::make{ kind = actions::Kind::attack_object }
@@ -95,6 +106,10 @@ namespace bot {
             return
         }
         b.foe = obj::INVALID
+        if b.tour.on {
+            tour_step{ &b, &w, lead, me }
+            return
+        }
         if b.next >= b.count { return }
         let tag = b.route[b.next][..@as(usize, b.lens[b.next])]
         let t = world::object{ w = &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } } ifnull {

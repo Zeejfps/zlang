@@ -95,6 +95,8 @@ fn build { mut b: Build } {
   file. Tools that include only the libraries they need still build faster than the whole game.
 - `@size_of` and `@offset_of(T, field)` check bindings' structs against C's layouts.
 
+Testing the game (fast headless runs, checkpoints, the module smoke test, the conversation sweep): [docs/testing.md](docs/testing.md).
+
 ## Layout
 
 ```

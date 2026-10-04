@@ -1,0 +1,154 @@
+// dlgsweep: walks every node of the conversations the install carries and runs their scripts.
+//
+//   dlgsweep --module M [--list | --dlg NAME | --dlgs FILE] [--settle N] [--game DIR]
+//   dlgsweep --list-global [--game DIR]
+//
+// With --module M the module is entered (as the game does) and these dialogues are swept: the ones
+// its own archive holds and the ones its objects name in their Conversation field, each with the
+// object that names it as the owner (else a stand-in creature), the player as the other side.
+// --list only prints those names (CAND name). --dlg or --dlgs (a file of names) sweep those instead, the
+// owner being an object that names them or else a stand-in. --list-global prints the names of the dialogues that no module's
+// archive carries. See walk.ctx for the walk and the output.
+const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
+
+struct Options {
+    game: []u8,
+    module: []u8,
+    one: []u8,
+    file: []u8,
+    list: bool,
+    list_global: bool,
+    settle: u32,
+}
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
+    let mut o = Options{ game = DEFAULT_GAME, module = "", one = "", file = "", list = false, list_global = false, settle = 30 }
+    let mut i: usize = 0
+    while i < args.len {
+        let has = i + 1 < args.len
+        if slice::eq_bytes{ a = args[i], b = "--game" } and has { i = i + 1; o.game = args[i] }
+        else if slice::eq_bytes{ a = args[i], b = "--module" } and has { i = i + 1; o.module = args[i] }
+        else if slice::eq_bytes{ a = args[i], b = "--dlg" } and has { i = i + 1; o.one = args[i] }
+        else if slice::eq_bytes{ a = args[i], b = "--dlgs" } and has { i = i + 1; o.file = args[i] }
+        else if slice::eq_bytes{ a = args[i], b = "--settle" } and has { i = i + 1; o.settle = @trunc(u32, text::scan_decimal{ s = args[i] }) }
+        else if slice::eq_bytes{ a = args[i], b = "--list" } { o.list = true }
+        else if slice::eq_bytes{ a = args[i], b = "--list-global" } { o.list_global = true }
+        else {
+            io::eprintln{ &io, s = "usage: dlgsweep --module M [--list | --dlg NAME | --dlgs FILE] [--settle N] [--game DIR] | --list-global" }
+            return 2
+        }
+        i = i + 1
+    }
+    if o.module.len == 0 and not o.list_global {
+        io::eprintln{ &io, s = "dlgsweep: --module or --list-global" }
+        return 2
+    }
+    let mut h = heap::new{ &mem }
+    let module_pages = mem::pages{ &mem, size = 268435456 } ifnull { return 1 }
+    let scratch_pages = mem::pages{ &mem, size = 134217728 } ifnull { return 1 }
+    let mut module_arena = arena::new{ buf = module_pages }
+    let mut scratch = arena::new{ buf = scratch_pages }
+    let mut rm = res::open{ &fs, heap = &h, game = o.game } iferr err{ error } {
+        _ = @fmt(&io, "dlgsweep: no game data at {}: {}\n", o.game, error)
+        io::flush{ &io }
+        return 1
+    }
+    run{ &io, &fs, &h, &rm, &module_arena, &scratch, o } iferr err{ error } {
+        _ = @fmt(&io, "dlgsweep: failed: {}\n", error)
+        io::flush{ &io }
+        return 1
+    }
+    io::flush{ &io }
+    return 0
+}
+
+fn run { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut rm: res::Manager, mut module_arena: arena::Arena, mut scratch: arena::Arena, o: Options } -> ! {
+    // Its own saves directory: the game-in-progress file is written beside the saves.
+    let w = try world::make{ fs, io, heap = &h, rm = &rm, module_arena = &module_arena, scratch = &scratch, seed = 1, saves = "kotor/out/dlgsweep-saves" }
+    try walkmap::load_materials{ m = &w.walk, heap = &h, table = w.tables.surfacemat }
+    let tlk_path = try path::join(heap::Heap){ realloc = heap::alloc, heap = &h, dir = o.game, name = "dialog.tlk" }
+    w.tlk = tlk::load(heap::Heap){ &fs, realloc = heap::alloc, heap = &h, path = tlk_path } iferr null
+    if o.list_global {
+        let found = try res::list_type(arena::Arena){ rm = w.rm.*, kind = restype::Type::dlg, realloc = arena::alloc, heap = w.scratch }
+        let mut i: usize = 0
+        while i < found.len {
+            _ = @fmt(&w.io, "{}\n", found[i].name)
+            i = i + 1
+        }
+        return
+    }
+    let mut vm = try nwvm::new(heap::Heap){ realloc = heap::alloc, heap = &h, limits = nwvm::LIMITS }
+    let engine = routines::call{ w, _ }
+    try modload::enter{ w, name = o.module }
+    arena::reset{ heap = &scratch }
+    settle{ w, &vm, engine, frames = o.settle }
+    _ = @fmt(&w.io, "MODULE {} {} objects\n", o.module, w.objects.all.len)
+
+    // The dialogues to sweep.
+    let mut names = list::new(resref::ResRef, heap::Heap){ realloc = heap::alloc, heap = &h }
+    if o.one.len > 0 {
+        try add_name{ &names, name = resref::truncate{ name = o.one } }
+    } else if o.file.len > 0 {
+        let bytes = try fs::read_all(heap::Heap){ fs = &w.fs, heap = &h, realloc = heap::alloc, path = o.file }
+        let mut lines = text::Lines{ data = bytes, pos = 0 }
+        while true {
+            let line = text::next_line{ &lines } ifnull { break }
+            let mut words = text::Words{ s = line, pos = 0 }
+            let word = text::next_word{ &words } ifnull { continue }
+            try add_name{ &names, name = resref::truncate{ name = word } }
+        }
+    } else {
+        // The module's own archive.
+        let found = try res::list_type(heap::Heap){ rm = w.rm.*, kind = restype::Type::dlg, realloc = heap::alloc, heap = &h }
+        let mut i: usize = 0
+        while i < found.len {
+            if found[i].loc.class == res::Class::rim or found[i].loc.class == res::Class::erf1 or found[i].loc.class == res::Class::erf2 {
+                try add_name{ &names, name = found[i].name }
+            }
+            i = i + 1
+        }
+        // What its objects name.
+        let all = list::items{ list = w.objects.all }
+        i = 0
+        while i < all.len {
+            if not all[i].destroyed and not resref::is_empty{ r = all[i].conversation } { try add_name{ &names, name = all[i].conversation } }
+            i = i + 1
+        }
+    }
+    let items = list::items{ list = names }
+    let mut k: usize = 0
+    if o.list {
+        while k < items.len {
+            _ = @fmt(&w.io, "CAND {}\n", items[k])
+            k = k + 1
+        }
+        return
+    }
+    while k < items.len {
+        try sweep_one{ w, &vm, engine, name = items[k], module = o.module, settle_frames = o.settle }
+        arena::reset{ heap = &scratch }
+        k = k + 1
+    }
+}
+
+fn add_name { mut names: list::List(resref::ResRef, heap::Heap), name: resref::ResRef } -> ! {
+    let items = list::items{ list = names }
+    let mut i: usize = 0
+    while i < items.len {
+        if resref::eq{ a = items[i], b = name } { return }
+        i = i + 1
+    }
+    try list::push{ list = &names, item = name }
+}
+
+// Lets the world run a little: spawn scripts, the module's load script, delayed commands.
+fn settle { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, frames: u32 } {
+    let mut f: u32 = 0
+    while f < frames {
+        clock::advance{ c = &w.clock, seconds = 1.0 / 30.0 }
+        world::tick{ &w, &vm, engine }
+        outbox::clear{ out = &w.out }
+        arena::reset{ heap = w.scratch }
+        f = f + 1
+    }
+}
