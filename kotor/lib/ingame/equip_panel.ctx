@@ -233,21 +233,37 @@ namespace equip_panel {
         while slot < items::SLOTS {
             let index = items::SLOT_OF[slot]
             let mut item = c.equipped[index]
-            if index == obj::SLOT_LEFT_WEAPON and item == obj::INVALID {
+            // A two-handed weapon (weapon size 4, or WeaponWield 3) in the right hand is drawn in
+            // the left slot too, at a quarter of the alpha (UpdateStats, +0x10c8 = 0.25).
+            let mut ghost = false
+            if index == obj::SLOT_LEFT_WEAPON {
                 let right = c.equipped[obj::SLOT_RIGHT_WEAPON]
-                if right != obj::INVALID and items::is_two_handed{ w = &w, id = right } { item = right }
+                if right != obj::INVALID and (items::base_int{ w = &w, id = right, column = "weaponsize", fallback = 0 } == 4 or
+                    items::base_int{ w = &w, id = right, column = "weaponwield", fallback = 0 } == 3) {
+                    item = right
+                    ghost = true
+                }
             }
             let tag = items::join_tag{ into = buf[..], a = "LBL_INV_", b = items::SLOT_TAGS[slot] }
             let mut img = gui::no_img{}
             if item != obj::INVALID and world::is_valid{ w = &w, id = item } { img = items::icon_of{ &g, &w, &dev, id = item } }
             if not img.ok { img = items::empty_slot_icon{ &g, &w, &dev, slot, droid } }
             if img.ok { gui::set_picture{ &g, panel, tag, texture = img.tex, w = img.w, h = img.h } } else { gui::clear_picture{ &g, panel, tag } }
+            gui::set_picture_alpha{ &g, panel, tag, alpha = if ghost { 0.25 } else { 1.0 } }
             slot = slot + 1
         }
     }
 
-    // Vitality, defense and, per hand, damage and attack bonus. A hand with no weapon shows
-    // nothing.
+    // The numbers' colour when something beyond the weapon raised them (0x007a23e4).
+    fn boosted_color {} -> render::Color { return render::Color{ r = 0.28, g = 0.92, b = 0.11, a = 1.0 } }
+
+    // Vitality, defense and, per hand, the damage as "lowest-highest" and the attack bonus
+    // ("+3", "0", "-1"), green when effects raised the damage or the attack is above the base
+    // attack bonus (UpdateStats 0x006b9970). The left hand shows nothing without a weapon, except
+    // that a double weapon (WeaponWield 3) in the right hand shows its off-hand end there; the
+    // right hand shows the bare-handed numbers without one.
+    // The tags name the numbers the other way round from the captions between them: the
+    // ATK labels sit above "Damage", the TOHIT labels below "To Hit".
     fn fill_stats { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } -> ! {
         let c = hud::creature_of{ w = &w, id = s.who } ifnull { return }
         let v = hud::vitality_of{ w = &w, id = s.who }
@@ -258,20 +274,35 @@ namespace equip_panel {
         list::clear{ list = &b.bytes }
         try @fmt(&b, "{}", items::defense_of{ w = &w, who = s.who })
         try gui::set_text{ &g, panel, tag = "LBL_DEF", text = utf8::view{ b }.bytes }
-        // The tags name the numbers the other way round from the captions between them: the
-        // ATK labels sit above "Damage", the TOHIT labels below "To Hit".
         let hands: [2]usize = [obj::SLOT_LEFT_WEAPON, obj::SLOT_RIGHT_WEAPON]
         let damage_tags: [2][]u8 = ["LBL_ATKL", "LBL_ATKR"]
         let hit_tags: [2][]u8 = ["LBL_TOHITL", "LBL_TOHITR"]
+        let right = c.equipped[obj::SLOT_RIGHT_WEAPON]
+        let double = right != obj::INVALID and items::base_int{ w = &w, id = right, column = "weaponwield", fallback = 0 } == 3
         let mut k: usize = 0
         while k < 2 {
-            let item = c.equipped[hands[k]]
+            let mut item = c.equipped[hands[k]]
+            let left = k == 0
+            let mut shown = item != obj::INVALID
+            if left and not shown and double {
+                item = right
+                shown = true
+            }
+            if not left and not shown { shown = true }      // a bare right hand: its unarmed numbers
             list::clear{ list = &b.bytes }
-            if item != obj::INVALID { try items::damage_text{ &b, w = &w, who = s.who, item } }
+            let mut boosted = false
+            if shown { boosted = try items::push_damage{ &b, w = &w, who = s.who, item, off_hand = left } }
             try gui::set_text{ &g, panel, tag = damage_tags[k], text = utf8::view{ b }.bytes }
+            gui::set_text_color{ &g, panel, tag = damage_tags[k], color = if boosted { boosted_color{} } else { gui::color_menu{} } }
             list::clear{ list = &b.bytes }
-            if item != obj::INVALID { try items::push_signed{ &b, n = items::attack_bonus_of{ w = &w, who = s.who, item } } }
+            let mut up = false
+            if shown {
+                let n = items::attack_bonus_of{ w = &w, who = s.who, item, off_hand = left }
+                try items::push_signed{ &b, n }
+                up = items::attack_boosted{ w = &w, who = s.who, n }
+            }
             try gui::set_text{ &g, panel, tag = hit_tags[k], text = utf8::view{ b }.bytes }
+            gui::set_text_color{ &g, panel, tag = hit_tags[k], color = if up { boosted_color{} } else { gui::color_menu{} } }
             k = k + 1
         }
     }

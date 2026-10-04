@@ -238,6 +238,13 @@ namespace gui {
     fn clear_picture { mut g: Gui, panel: u32, tag: []u8 } {
         let c = find_control{ &g, panel, tag } ifnull { return }
         c.override_fill = no_img{}
+        c.picture_alpha = 1.0
+    }
+
+    // The alpha the control's picture is drawn with (1.0 normally); the next set_picture keeps it.
+    fn set_picture_alpha { mut g: Gui, panel: u32, tag: []u8, alpha: f32 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.picture_alpha = alpha
     }
 
     fn set_tooltip { mut g: Gui, panel: u32, tag: []u8, text: []u8 } -> ! {
