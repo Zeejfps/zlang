@@ -1,0 +1,19 @@
+# Kashyyyk, part 12: the Lower Shadowlands (kas_m25aa) from the repulsor field's landing (185 241) north to the feral Wookiee,
+# Freyyr (kas25_freyyr_01 at 186 157). From the checkpoint "lower1" (CKPT=lower1). The fights with tach, kinrath and the
+# Mandalorian hunters of the cut scene at 131 196 are skipped with a warp (the party stands beside the leader); Freyyr's
+# conversation (kas25_freyyr_01, 87 KB) takes the first replies.
+3 ui stat hpmax 130
+3 ui stat hp 130
+5 ui replies 1 1 1 1 2 2 default 1
+10 ui bot god on
+10 warp kas25_freyyr_01 party
+30 use kas25_freyyr_01
+1040 ui bot on
+1100 ui locals kas25_freyyr_01
+1500 ui locals kas25_freyyr_01
+1500 ui fight
+9900 ui journal list
+9900 ui party
+9900 ui xp
+9900 ui pos
+9950 save freyyr

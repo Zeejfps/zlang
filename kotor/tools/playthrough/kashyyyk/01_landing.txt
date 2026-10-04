@@ -1,0 +1,30 @@
+# Kashyyyk, part 1: the landing at the Czerka pad (kas_m22aa). Start: kotor.exe --module kas_m22aa.
+#
+# The state Dantooine leaves: a Jedi Guardian player, Bastila and Zaalbar in the party, Canderous, Carth, Juhani and
+# Mission available. (Test cheats for setup only: join, avail, jedi, stat, stock, credits.)
+4 join p_zaalbar 8
+4 join p_bastilla 0
+4 ui avail 0 1 2 5 6 8
+4 ui jedi 3 10
+4 ui stat str 16
+4 ui stat dex 14
+4 ui stat con 14
+4 ui stat hpmax 130
+4 ui stat hp 130
+4 ui giveitem g_w_lghtsbr01 1 equip
+4 ui giveitem g_a_jedirobe01 1 equip
+4 ui giveitem g_i_medeqpmnt01 5
+4 ui giveitem g_i_adrnaline001 3
+4 ui credits 300
+5 ui replies default 1
+200 ui party
+200 ui rules
+200 ui inv
+3000 ui goto kas_janosstore
+# Janos leads to the information center; the walk crosses the trigger of Zaalbar's talk (22aa_zaalb01_01, about 3,300 to 6,400).
+3000 ui goto kas_janosstore
+5000 ui where zaalbar
+5000 ui where bastila
+5000 ui pos
+6500 ui pos
+6500 save pad1
