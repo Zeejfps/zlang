@@ -15,6 +15,10 @@ namespace cam {
         dir: math::Vec3,
         up: math::Vec3,         // +Z, except while a conversation camera rolls it (lib/dialog)
         stops: [64]bool,        // surface materials a camera ray stops at: all but triggers (30)
+        freelook: bool,         // the eye is in the leader's head (free look): yaw is the leader's, pitch the mouse's
+        fl_pitch: f32,          // free look's pitch in degrees, up positive
+        turn_to: u32,           // an object the camera is swinging round to show (target cycling), obj::INVALID when none
+        turn_rate: f32,         // that swing's easing rate per second, 2.5 to 7.5
     }
 
     // Keyboard camera defaults (movement.md 2.3): 200 deg/s, 500 deg/s^2 up, 2000 deg/s^2 down.
@@ -27,7 +31,7 @@ namespace cam {
         stops[30] = false
         return Camera{
             style = Style{ distance = 6.25, pitch = 80.0, height = 3.5, fov = 55.0 }, yaw = 0.0, rate = 0.0, h = 3.2,
-            started = false, eye = math::vec3::zero{}, look = math::vec3::zero{}, dir = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, stops,
+            started = false, freelook = false, fl_pitch = 0.0, turn_to = obj::INVALID, turn_rate = 2.5, eye = math::vec3::zero{}, look = math::vec3::zero{}, dir = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, stops,
         }
     }
 
@@ -41,13 +45,20 @@ namespace cam {
         c.style.fov = if fov <= 0.0 { 55.0 } else { fov }
     }
 
+    // Target cycling (Q, E) asks the camera to bring the new target into view (TurnTowardObject 0x00639c30);
+    // any turn by hand cancels it.
+    fn turn_toward { mut c: Camera, id: u32 } {
+        c.turn_to = id
+        c.turn_rate = 2.5
+    }
+
     fn forward { yaw: f32 } -> math::Vec3 {
         return math::Vec3{ x = -math::sinf{ x = yaw }, y = math::cosf{ x = yaw }, z = 0.0 }
     }
 
     // One update: `turn` is the rotate keys' input (-1..1, positive turns left), `target` the
     // leader, `look_height` its head height above its feet.
-    fn update { mut c: Camera, w: *world::World, sc: *scene::Scene, target: u32, look_height: f32, turn: f32, dt: f32 } {
+    fn update { mut c: Camera, w: *world::World, sc: *scene::Scene, target: u32, look_height: f32, turn: f32, mouse_degrees: f32, pitch_degrees: f32, dt: f32 } {
         let o = world::object{ w, id = target } ifnull { return }
         let look = math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + look_height }
         if not c.started {
@@ -56,15 +67,57 @@ namespace cam {
             c.h = c.style.distance
             c.started = true
         }
+        // Free look (movement.md 2.5): the eye at the head looking along the leader's facing, pitched by the
+        // mouse within the style's FL_LOOKDOWN and FL_LOOKUP (20 and 15 degrees by default). The chase camera
+        // starts again from close in and swings out.
+        if c.freelook {
+            c.yaw = math::atan2f{ y = -o.orientation.x, x = o.orientation.y }
+            c.fl_pitch = math::clamp{ x = c.fl_pitch + pitch_degrees, lo = -20.0, hi = 15.0 }
+            let f = forward{ yaw = c.yaw }
+            let up = math::radians{ degrees = c.fl_pitch }
+            let cp = math::cosf{ x = up }
+            c.eye = math::Vec3{ x = o.position.x + f.x * 0.15, y = o.position.y + f.y * 0.15, z = o.position.z + look_height }
+            c.dir = math::Vec3{ x = f.x * cp, y = f.y * cp, z = math::sinf{ x = up } }
+            c.look = math::vec3::add{ a = c.eye, b = c.dir }
+            c.up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }
+            c.h = 0.2
+            c.rate = 0.0
+            c.turn_to = obj::INVALID
+            return
+        }
+        c.fl_pitch = 0.0
         // The rate integrator (CRateIntegrator), dt clamped to 0.2 s.
         let step = math::min{ a = dt, b = 0.2 }
+        // Swinging round to a cycled target: with no turn by hand, the yaw eases toward the heading from the
+        // leader to the object, 15 degrees to the side it is already on, at a rate that grows while the
+        // camera is more than a metre from where it should be and falls back near it (movement.md 2.3).
+        if c.turn_to != obj::INVALID {
+            if turn != 0.0 or mouse_degrees != 0.0 {
+                c.turn_to = obj::INVALID
+            } else if world::object{ w, id = c.turn_to } is some{ value = goal } {
+                let heading = math::atan2f{ y = -(goal.position.x - o.position.x), x = goal.position.y - o.position.y }
+                let mut side = c.yaw - heading
+                while side > math::PI { side = side - 2.0 * math::PI }
+                while side < -math::PI { side = side + 2.0 * math::PI }
+                let want = heading + (if side >= 0.0 { 0.2617994 } else { -0.2617994 })
+                let mut delta = want - c.yaw
+                while delta > math::PI { delta = delta - 2.0 * math::PI }
+                while delta < -math::PI { delta = delta + 2.0 * math::PI }
+                let chord = 2.0 * c.h * math::sinf{ x = math::abs{ x = delta } * 0.5 }
+                c.turn_rate = math::clamp{ x = c.turn_rate + (if chord > 1.0 { 3.0 } else { -5.0 }) * step, lo = 2.5, hi = 7.5 }
+                c.yaw = c.yaw + delta * math::min{ a = c.turn_rate * step, b = 1.0 }
+                if math::abs{ x = delta } < 0.017 { c.turn_to = obj::INVALID }
+            } else {
+                c.turn_to = obj::INVALID
+            }
+        }
         if turn != 0.0 {
             c.rate = c.rate + (ACCELERATION * turn - (ACCELERATION / DPS) * c.rate) * step
         } else {
             c.rate = c.rate - (DECELERATION / DPS) * c.rate * step
             if math::abs{ x = c.rate } < 0.01 { c.rate = 0.0 }
         }
-        c.yaw = c.yaw + math::radians{ degrees = c.rate * step }
+        c.yaw = c.yaw + math::radians{ degrees = c.rate * step + mouse_degrees }
         // The distance error halves every frame (ComputeFollowPosition).
         c.h = c.style.distance + 0.5 * (c.h - c.style.distance)
         let f = forward{ yaw = c.yaw }

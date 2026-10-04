@@ -69,7 +69,9 @@ The room list names the same set of room models as the area's LYT file (checked:
 the order matches in only 56, so match rooms by name), and gives each its environmental audio and
 ambient-sound scale. `Map` places the area map image
 `lbl_map<area>` (a 512x256 TPC, present for 95 of the 117 areas): `MapPt1`/`MapPt2` are normalised
-image coordinates of the world points `WorldPt1`/`WorldPt2`, which defines the linear world-to-map
+map coordinates of the world points `WorldPt1`/`WorldPt2` (of the map's 440x256 texels, the art in the
+left part of the texture, not of the whole 512 columns; `end_m01ab`'s second point lands on the end
+of its corridor only that way), which defines the linear world-to-map
 mapping, and `NorthAxis` says which world direction is up on the map *(inferred: 0 +Y, 1 -Y,
 2 +X, 3 -X)*. `MiniGame` is present only in the four minigame areas: `m03mg`, `m17mg`, `m26mg`
 (swoop races, `Type` 1) and `m12ab` (the Ebon Hawk turret, `Type` 2).

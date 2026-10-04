@@ -111,9 +111,13 @@ without the reflection.
 **The diffuse texture's alpha is the reflection mask**, not transparency: more black (lower alpha)
 means more reflection (*community* [1]). *Data* backs the "not transparency" half: 318 of the 338
 `envmaptexture` users and 98 of 107 `bumpyshinytexture` users are DXT5 with varying alpha and no
-`blending` keyword, on plainly opaque things such as droids (`c_drdastro01`, mean alpha 0.90). A
-reasonable shader is `colour = lit diffuse + reflection * (1 - alpha)` (*inferred*; the exact blend
-needs RE). A texture cannot be both transparent and reflective (*community*).
+`blending` keyword, on plainly opaque things such as droids (`c_drdastro01`, mean alpha 0.90). The
+exe's blends are in [re/render-gui.md](../re/render-gui.md#environment-maps) (*exe*): where a
+mesh has a lightmap, `diffuse * lightmap + reflection * (1 - alpha)`; elsewhere (creatures,
+placeables) `alpha * (diffuse * light) + (1 - alpha) * reflection`, so alpha 0 is a mirror and
+alpha 1 shows only the diffuse. The Sith soldiers' armour (`N_SithSoldier03`, AlphaMean 0.55,
+`envmaptexture CM_Baremetal`) is dark gunmetal with a bronze sheen that way and silver chrome
+with the additive sum. A texture cannot be both transparent and reflective (*community*).
 
 ### Bump maps
 

@@ -1,0 +1,9 @@
+4 ui stat class 4
+4 ui stat level 10
+4 ui stat wis 18
+4 ui stat cha 14
+5 ui powers all
+5 ui fp 150
+6 ui rules
+7 ui menu character
+8 ui close

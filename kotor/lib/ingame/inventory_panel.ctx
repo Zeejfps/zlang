@@ -31,10 +31,12 @@ namespace inventory_panel {
         filter: i32,            // kept between openings, as the original keeps it
         picked: u32,            // the selected item, INVALID none
         box: u32,               // the refusal message box, 0 when none
+        seen: [64]u32,          // the new items whose description was shown: no longer new when the screen closes
+        nseen: usize,
     }
 
     fn new {} -> State {
-        return State{ opened = false, who = obj::INVALID, filter = FILTER_ALL, picked = obj::INVALID, box = 0 }
+        return State{ opened = false, who = obj::INVALID, filter = FILTER_ALL, picked = obj::INVALID, box = 0, seen = [obj::INVALID; 64], nseen = 0 }
     }
 
     // The panel was just added, or the leader changed and it must be filled again.
@@ -94,6 +96,13 @@ namespace inventory_panel {
 
     // The panel is going away.
     fn close { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } {
+        // CSWGuiInventory::OnPanelRemoved hands the seen items to the party table, which clears their flag.
+        let mut k: usize = 0
+        while k < s.nseen {
+            if items::item_of{ w = &w, id = s.seen[k] } is some{ value = it } { it.fresh = false }
+            k = k + 1
+        }
+        s.nseen = 0
         if s.box != 0 { gui::close{ &g, id = s.box } }
         s.box = 0
         s.opened = false
@@ -199,6 +208,10 @@ namespace inventory_panel {
     fn pick { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32, user: i64 } -> !bool {
         let id = if user > 0 { @as(u32, user) } else { obj::INVALID }
         s.picked = id
+        if id != obj::INVALID and items::is_new{ w = &w, id } and s.nseen < 64 {
+            s.seen[s.nseen] = id
+            s.nseen = s.nseen + 1
+        }
         try items::show_description{ &g, &w, panel, tag = "LB_DESCRIPTION", id = if id == obj::INVALID { 0 } else { id } }
         let usable = id != obj::INVALID and items::can_use{ &w, who = s.who, id }
         gui::set_text_color{ &g, panel, tag = "BTN_USEITEM", color = if usable { gui::color_menu{} } else { gui::color_disabled{} } }

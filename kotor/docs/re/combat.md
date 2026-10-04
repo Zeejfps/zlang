@@ -393,6 +393,52 @@ Global pause (`0x004ae980(2)` on the server) freezes everything. (high)
 - When the player's leader attacks (`AddAttackActions` `0x004fde40`, direct mode): the PC plays a
   battle cry 75 % of the time if not yet in combat, other party members 10 %.
 
+**Battle music** (high for the flow, med for the details). No script plays the battle track of an
+ordinary fight; the creatures' combat code does, through the area's sound object.
+
+- *The area's server-side sound object* is a 0x30-byte object at `CSWSArea+0x208` (constructor
+  `0x005c95a0`, vtable `0x0074c268`). It holds the "battle music is on" flag (`+0x14`) and the
+  battle track last set (`+0x18`). Slot `+0x10`, `MusicBattle(on)` (`0x005c9b90`), and slot `+0x14`,
+  `MusicBattleChange(row)` (`0x005c9c30`), act only when the value differs from the stored one: they
+  send each player in the area a server message, major `0x28` ("Ambient"), minor 4 or 5
+  (`0x0056ae90`, `0x0056aef0`). The script routines MusicBattlePlay, MusicBattleStop and
+  MusicBattleChange (430 to 432, one handler `0x005400c0`) call these two slots, and so does the
+  combat code below.
+- *Turning it on*: `0x004f3580(creature, row)`. It reads `excitedduration.2da` (a 3-row table,
+  `None` 0, `Damage` 10000, `SpellCast` 10000 ms), and if the row's duration is longer than the
+  creature's countdown `+0x384` it stores it there. Then, if the creature has an area with this sound
+  object and finds a hostile creature within 30 m (the nearest-enemy search `0x004f2de0`, over the
+  creature's perception), it calls `MusicBattle(1)`. Callers: `SignalCombatWith` (3.6, above) for
+  every faction-mate it pulls into the fight, with row 1; the creature event handler `0x004fece0` (the
+  attacked creature with row 2, the attacker with row 1); the placeable's and the door's event
+  handlers. So the music starts at the first hostile act (the attack that begins, not the hit that
+  lands), for the whole area, and every later act renews the countdowns of those it concerns and of
+  their faction-mates within range.
+- *Turning it off*: step 6 of `AIUpdate` (`0x004ed110`, gameloop.md 2.3) runs the countdown `+0x384`
+  down by the creature's update step; when it reaches zero it calls `MusicBattle(0)`. The first
+  creature to run out switches the music off for the area (a creature that dies stops counting); the
+  next hostile act switches it on again. So the battle music lasts until 10 s after the last act of
+  whichever creature was stirred up earliest.
+- *The client* (message `0x28`/4 and `/5`: `0x00665510` → `0x006544d0`, `0x00654530`) hands the value
+  to the client area's sound manager (`CSWCArea+0x1dc`, constructor `0x0068df40`, vtable `0x007541c8`),
+  which keeps four ambientmusic.2da entries (resource and the three stingers each: day `+0x2c`,
+  night `+0x4c`, battle `+0x6c`, and two ambient beds) and three streaming sources (`+0xe0` the music,
+  played once; `+0xe4` the ambient bed, looped; `+0x104` the stinger). Its slot `+0x10`
+  (`0x0068e610`): *on*, if the area has a battle track and music is enabled, sets `+0x14`, stops the
+  background track if one plays and starts the battle track (the frame update below does the starting,
+  ten milliseconds later); *off*, if `+0x14` was set, stops the music source, plays a stinger
+  (`0x0068db30`: one of the entry's non-empty `stinger1..3` at random, on the third source at
+  priority 1, once; the files are in `streamsounds/`, e.g. `mus_sbat_townint`), restarts the
+  background music (slot 0, `MusicBackgroundPlay(1)`) and clears `+0x14`. The frame update
+  (`0x0068ef80`): when the music source is idle it waits (the battle track 1000 ms, the background the
+  area's MusicDelay, `+0xcc`, 30000 by default) and starts the same track again. An area whose
+  `MusicBattle` is 0, or whose row has no resource (row 35), plays nothing.
+- *Ours*: `ambience::update_battle` (`lib/scene/ambience.ctx`) reads each creature's combat timer
+  (fight.ctx sets it to 8 s at every hostile act and lets it run down: a timer that did not fall was
+  just renewed), gives that creature and its faction-mates within 30 m a 10 s countdown, and calls
+  the same `battle_music` that MusicBattlePlay/Stop use when a creature with a hostile creature within
+  30 m is renewed and when a countdown runs out; `battle_music(off)` plays the stinger.
+
 ### 3.7 When the target dies mid-round
 
 Already-queued impacts still fire, but `OnApplyDamage` ignores a dead or downed target
@@ -786,7 +832,14 @@ gates a client call when the PC uses a stim (ItemType 25) in `AIActionItemCastSp
      (`0x0062b150`).
 
 What brings a downed party member back up, and the "Your entire party has been killed" end
-(strref 42351), were not found (see Open questions). Party members up and out of combat
+(strref 42351): `UpdatePartyDeath` (`0x004b6da0`, gameloop.md 1.3) gets the downed up after 5 s in which no hostile
+creature perceives a party member (real time; while anyone is down a 1 s scan of the area's
+creatures looks for one that is not player-controlled, has reputation < 11 toward a member and a
+seen perception entry of a party member, `IsPerceivingPartyMember` `0x004f7650`; finding one resets
+the 5 s), then moves each downed member to a free spot within 5 m, applies a RESURRECTION effect
+(type 4: HP 1) and sets `+0xf0`; unless solo mode, members more than 40 m from the first are moved
+back to their formation places (high). It starts the party-wipe sequence when every member is down
+(slow motion, death camera, message box and fade, then the main menu: gameloop.md 6.6). Party members up and out of combat
 regenerate in `AIUpdate` using `regeneration.2da` (InCombat/OutOfCombat × health/Force, per
 second as a percentage of the maximum); the shipped table gives only out-of-combat Force
 regeneration (1 %/s). (high for the regeneration code)
@@ -833,6 +886,19 @@ The engine (high):
   applied (6.6), then **OnDeath** (8.2); **OnEndRound** at the end of every round (3.5);
 - for the player: `ActionAttack` (routine 37) queues a scheduled attack for one round plus the
   combat-step action (see actions.md); the player's own clicks go through `AddAttackActions` too.
+- for the client party's leader, at the end of each round after OnEndRound (unless a cutscene
+  round; `EndCombatRound` calls `0x005b6980(targetDied, spellRound, nextTarget)`): while the round's
+  target lives, is hostile (reputation < 11) and nothing else is scheduled, it schedules another
+  plain attack on it (`AddAttackAction`, 1500 ms) — this is what keeps the player's character
+  fighting; when the target died (or nothing valid is left), it looks for the nearest enemy
+  (`0x004f2de0`: a creature hostile to it, alive, not dying, seen, with a clear line of sight from
+  1.5 m up, nearest by distance between their edges) within `GetMaxAttackRange` + 2 m
+  (`0x004ffad0`), makes it the attempted attack target and the client's selected target
+  (`0x005edd70`), turns the retargettable scheduled attacks on it
+  (`UpdateAttackTargetForAllActions` `0x004d3e50`) and schedules an attack; with none it stands
+  (animation 10000) and leaves combat mode. The same tail asks for the "End Of Combat Round"
+  auto-pause (reason 5, option bit 0x800) when the leader is in combat mode. (high for the flow,
+  med for the arguments' meaning)
 
 The shipped AI (`k_ai_master` with event numbers 1003/1005/1006/1007 from the default
 `k_def_*` scripts) decides what happens next: on end of round and when attacked it calls
@@ -906,10 +972,6 @@ suggest `GetFeatRemainingUses` and `HasFeatInLists`, for the lead to decide.
 
 ## 12. Open questions
 
-- **Party members getting back up and game over.** Downed members (HP < 1) get the death effect,
-  HP −11 and the module OnPlayerDeath; nothing found yet restores them after combat or ends the
-  game with strref 42351 ("Your entire party has been killed"). Look in the client party code
-  (`0x005f7960` and around), the in-game GUI update, and `CSWPartyTable`.
 - The server difficulty value used for `diffsettings.2da` (`(internal+0x10004)+0x108`) versus the
   client option used for `difficultyopt.2da`: which column each KOTOR setting selects.
 - The exact pause time set by ATTACKOBJECT (a local the decompiler confused) and the client half of

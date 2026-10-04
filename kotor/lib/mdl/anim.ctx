@@ -345,6 +345,13 @@ namespace mdl_anim {
         transition: f32,                       // how long the blend takes
     }
 
+    // Changes the pace of what is playing now, from where it is (a walker speeding up).
+    fn set_speed { mut player: Player, speed: f32 } {
+        let mut t = player.current ifnull { return }
+        t.speed = speed
+        player.current = t
+    }
+
     fn new_player {} -> Player {
         return Player{ current = null, previous = null, held = null, elapsed = 0.0, transition = 0.0 }
     }

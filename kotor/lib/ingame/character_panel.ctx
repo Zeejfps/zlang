@@ -4,8 +4,8 @@
 // (sheet_data.ctx), the one place that works them out.
 //
 // What the original has that this does not yet (each marked PLACEHOLDER below): the 3D model in the
-// middle (the portrait stands in), the level-up flow and the script-select panel. The effect icons
-// next to the alignment bar are the creature's ICON effects.
+// middle (the portrait stands in). The effect icons next to the alignment bar are the creature's ICON
+// effects. The Scripts button opens the AI style panel (scriptselect_panel.ctx) for the character shown.
 namespace character_panel {
     // The label tags of the six attributes and their modifiers, in STR DEX CON INT WIS CHA order.
     const ABIL_TAGS: [6][]u8 = ["LBL_STR", "LBL_DEX", "LBL_CON", "LBL_INT", "LBL_WIS", "LBL_CHA"]
@@ -15,11 +15,11 @@ namespace character_panel {
     struct State {
         opened: bool,
         who: u32,                       // the creature shown
-        box: u32,                       // the "not yet" message box, 0 when none
+        script: scriptselect_panel::State,  // the AI style panel (BTN_SCRIPTS), modal over the sheet
         area: [4]i32,                   // LBL_3DCHAR as the file has it: x, y, w, h
     }
 
-    fn new {} -> State { return State{ opened = false, who = obj::INVALID, box = 0, area = [0; 4] } }
+    fn new {} -> State { return State{ opened = false, who = obj::INVALID, script = scriptselect_panel::new{}, area = [0; 4] } }
 
     // The panel was just added, or the leader changed and it must be filled again.
     fn open { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> ! {
@@ -98,7 +98,6 @@ namespace character_panel {
             try gui::set_tooltip{ &g, panel, tag = "BTN_LEVELUP", text = "Level Up" }
             try gui::set_tooltip{ &g, panel, tag = "BTN_AUTO", text = "Auto Level Up" }
         }
-        try gui::set_tooltip{ &g, panel, tag = "BTN_SCRIPTS", text = "PLACEHOLDER: the script-select panel is not built yet." }
 
         try show_effects{ &g, &w, &dev, panel, id }
 
@@ -154,20 +153,9 @@ namespace character_panel {
         gui::set_visible{ &g, panel, tag = "LBL_MORE", visible = more }
     }
 
-    // Every frame while the panel is shown: the "not yet" box closes with its OK.
+    // Every frame while the panel is shown: the AI style panel over it, when open, takes its events.
     fn update { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, dt: f32 } {
-        if s.box == 0 { return }
-        let events = gui::take_events{ &g }
-        let mut i: usize = 0
-        while i < events.len {
-            let ev = events[i]
-            i = i + 1
-            if ev.panel == s.box and (ev.kind == gui::EventKind::activate or ev.kind == gui::EventKind::cancel) {
-                gui::close{ &g, id = s.box }
-                s.box = 0
-                return
-            }
-        }
+        scriptselect_panel::update{ s = &s.script, g = &g, w = &w, dev = &dev }
     }
 
     // One of the panel's GUI events (BTN_EXIT, Escape and the BTN_CHANGE buttons are the
@@ -194,10 +182,11 @@ namespace character_panel {
             open{ &s, &g, &w, &dev, panel } iferr err{ error } { _ = @fmt(&w.io, "kotor: character sheet: {}\n", error) }
             return true
         }
-        let scripts = slice::eq_bytes{ a = ev.tag, b = "BTN_SCRIPTS" }
-        if scripts and s.box == 0 {
-            // PLACEHOLDER: the script-select panel belongs to another owner.
-            s.box = gui::message_box{ &g, fs = &w.fs, &dev, text = "This part of the game is not built yet.", cancel = false } iferr { 0 }
+        // Scripts: the AI style of the character shown (script select, modal; re/gui.md event 0x29).
+        if slice::eq_bytes{ a = ev.tag, b = "BTN_SCRIPTS" } {
+            scriptselect_panel::open_modal{ s = &s.script, g = &g, w = &w, dev = &dev, who = s.who } iferr err{ error } {
+                _ = @fmt(&w.io, "kotor: script select: {}\n", error)
+            }
             return true
         }
         return false
@@ -205,10 +194,7 @@ namespace character_panel {
 
     // The panel is going away.
     fn close { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } {
-        if s.box != 0 {
-            gui::close{ &g, id = s.box }
-            s.box = 0
-        }
+        scriptselect_panel::close{ s = &s.script, g = &g, w = &w }
         s.opened = false
     }
 }

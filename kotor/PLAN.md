@@ -113,11 +113,15 @@ Open items the leads left, by owner. Remove an item when it lands.
 - Creature stats and party members (`AVAILNPC`) written into saves.
 - The remaining routines (`--report routines`; `docs/design/routines.tsv`).
 
+**Controls** (docs/mechanics/controls.md, open lines): T tooltips-on-hold, X flourish, G stealth key
+(with the items owner's stealth), combat camera framing, the camera clipping through creatures,
+formation/trail following (followers use one follow action to 2 m).
+
 **Screens/HUD** (lib/screens, lib/hud): the original's hexagon item rows; the bench's 3D
 item models; arrow-key planet cycling; the level-up preview without armour and nothing for droids;
 the self action slots' mines slot (needs a trap action) and keys, and the original's rules for what each slot lists (ours, `lib/ingame/selfslots.ctx`).
 
-**Render/models:** one shared character-assembly function (body, head, equipment, held shared nodes) used by lib/scene, lib/chargen's previews, mdlview and rendertest: the head fix had to be made twice because each had its own. the engine's real dangly spring and bezier curves, the saber swing trail,
+**Render/models:** creature shadows (the render seam has planar shadows; lib/scene never submits them); one shared character-assembly function (body, head, equipment, held shared nodes) used by lib/scene, lib/chargen's previews, mdlview and rendertest: the head fix had to be made twice because each had its own. the engine's real dangly spring and bezier curves, the saber swing trail,
 particle simulation, stencil shadows, light falloff and env-map strength checked against the
 original.
 

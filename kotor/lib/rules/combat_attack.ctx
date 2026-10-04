@@ -506,10 +506,10 @@ namespace rules {
         }
         if d20 == 1 {
             r.natural_1 = true
-            return combat_finish_miss{ r, v, sit }
+            return combat_finish_miss{ tables, atk, def, r, v, sit }
         }
         r.natural_20 = d20 == 20
-        if r.attack_total < defense and not r.natural_20 { return combat_finish_miss{ r, v, sit } }
+        if r.attack_total < defense and not r.natural_20 { return combat_finish_miss{ tables, atk, def, r, v, sit } }
         r.threat_range = critical_threat_roll{ tables, c = atk, off_hand = v.off_hand, combat_feat = v.feat }
         if d20 < r.threat_range {
             r.result = outcome::HIT
@@ -532,12 +532,17 @@ namespace rules {
         return r
     }
 
-    // A miss: how far off, and an energy shield may still absorb a missed bolt (result 10).
-    fn combat_finish_miss { r: AttackRoll, v: AttackView, sit: *AttackSituation } -> AttackRoll {
+    // A miss: how far off, and an energy shield may still absorb a missed bolt (result 10): the
+    // defender's FORCE_SHIELD effect and the shooter's ammunition decide (shield_absorbs_miss), or
+    // the engine says so in the situation.
+    fn combat_finish_miss { tables: *Tables, atk: *Creature, def: *Creature, r: AttackRoll, v: AttackView, sit: *AttackSituation } -> AttackRoll {
         let mut out = r
         out.result = outcome::MISS
         out.missed_by = if out.defense.total > out.attack_total { out.defense.total - out.attack_total } else { 0 }
-        if v.ranged and sit.shield_absorbs and not sit.target_object { out.result = outcome::SHIELD }
+        if v.ranged and not sit.target_object and (sit.shield_absorbs or
+            shield_absorbs_miss{ tables, atk, def, off_hand = v.off_hand, defender_hp = sit.defender_hp }) {
+            out.result = outcome::SHIELD
+        }
         return out
     }
 }
