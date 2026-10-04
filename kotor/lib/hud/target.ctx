@@ -57,7 +57,8 @@ namespace hud {
         if dx * dx + dy * dy + dz * dz > RANGE2 { return false }
         match o.ext {
             creature{ c } => { return not c.dead and o.hp > 0 }
-            door{ d } => { return d.state == obj::DoorState::closed and not d.static }
+            // An area transition stays clickable once someone has opened it (the click walks the leader through).
+            door{ d } => { return (d.state == obj::DoorState::closed or modload::link_of{ o } != null) and not d.static }
             placeable{ p } => { return (p.useable or p.has_inventory) and not p.static }
             else => { return false }
         }

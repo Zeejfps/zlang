@@ -38,6 +38,8 @@ namespace hud {
         shown_target: u32,                  // the target the block was built for
         lists: [3]ActionList,               // the block's slots
         pressed: u32,                       // the object under the pointer when the button went down
+        trans_panel: u32,                   // the area transition label's panel while the pointer is on a transition, else 0
+        trans_object: u32,                  // the transition it names
         projector: Projector,               // this frame's, for picking and the reticle
     }
 
@@ -76,7 +78,7 @@ namespace hud {
             block = [BlockPart{ index = -1, x = 0, y = 0 }; 16],
             minimap = open_minimap{ &g, &w, &dev, panel },
             font = gui::font_slot{ &g, fs = &w.fs, &dev, name = "dialogfont10x10" }, combat = false, combat_message = 0.0, notify = [0.0; 9], notify_shown = [false; 9],
-            shown_target = obj::INVALID, lists = [empty_list{}; 3], pressed = obj::INVALID,
+            shown_target = obj::INVALID, lists = [empty_list{}; 3], pressed = obj::INVALID, trans_panel = 0, trans_object = obj::INVALID,
             projector = Projector{ vp = math::mat4::identity{}, eye = math::vec3::zero{}, w = 1.0, h = 1.0 },
         }
         let mut i: usize = 0
@@ -222,6 +224,7 @@ namespace hud {
         h.projector = make_projector{ camera, ui_w = g.ui_w, ui_h = g.ui_h, aspect }
         update_party{ &h, &g, &w, &dev, &text }
         update_hover{ &h, &g, &w, blocked }
+        update_transition{ &h, &g, &w, &dev, id = w.hover }
         update_block{ &h, &g, &w, &dev }
         update_combat{ &h, &g, &w, &dev, dt }
         // Solo mode: its toggle shows once there is someone to leave behind.

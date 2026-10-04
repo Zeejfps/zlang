@@ -118,7 +118,10 @@ namespace inject {
             return true
         }
         if not ci::eq{ a = word, b = "mouse" } { return false }
-        let cmd = text::next_word{ &words } ifnull { return true }
+        let cmd = text::next_word{ &words } ifnull { return false }
+        // `mouse DX DY` (numbers first) is a minigame's own word: the mouse moves by those counts.
+        let ours = ci::eq{ a = cmd, b = "move" } or ci::eq{ a = cmd, b = "down" } or ci::eq{ a = cmd, b = "up" } or ci::eq{ a = cmd, b = "click" } or ci::eq{ a = cmd, b = "wheel" }
+        if not ours { return false }
         if ci::eq{ a = cmd, b = "wheel" } {
             let dy = @as(f32, @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "1" }))
             _ = sdl::push{ &sdl, ev = sdl::Event::mouse_wheel{ dx = 0.0, dy } }

@@ -82,9 +82,11 @@ namespace play {
         // HOOK(ingame): the HUD and the in-game menus (docs/design/hud.md).
         let ui = try ingame::make{ &w, &dev, mixer, scratch = texture_scratch, width = @as(i32, opts.width), height = @as(i32, opts.height) }
         if not opts.headless { _ = sdl::SDL_ShowCursor{ &sdl, toggle = 0 } }    // HOOK(ingame): the GUI draws the pointer
+        ui.autopause = not opts.headless    // HOOK(ingame): a person is playing: the auto-pause options apply
         let silent = try alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(i16){}, count = 44100 }
         let mut keys = ctl::no_keys{}
         let mut inputs = inject::new_inputs{}      // the scripted pointer and held modifiers
+        let mut mouse_was_looking = false         // the mouse was turning the camera last frame (relative mode is on)
         let freq = sdl::counter_frequency{ &sdl }
         let mut last = sdl::counter{ &sdl }
         let mut quit = false
@@ -287,7 +289,16 @@ namespace play {
                 cam::set_style{ c = &camera, t = w.tables.camerastyle, row = wanted_row }
                 ctl::set_style{ ctl = &control, t = w.tables.camerastyle, row = wanted_row }
             }
-            cam::update{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height, turn = ctl::turn_input{ keys }, dt = camera_dt }
+            // The mouse's share (Lookabout / Mouse Look, the screen edges): keys win over the edge.
+            let mouse = ingame::camera_input{ ui }    // HOOK(ingame)
+            if mouse.looking != mouse_was_looking {
+                mouse_was_looking = mouse.looking
+                if not opts.headless { sdl::set_relative_mouse{ &sdl, on = mouse.looking } iferr {} }
+            }
+            let swing_to = ingame::take_turn_to{ ui }    // HOOK(ingame)
+            if swing_to != obj::INVALID { cam::turn_toward{ c = &camera, id = swing_to } }
+            let key_turn = ctl::turn_input{ keys }
+            cam::update{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height, turn = if key_turn != 0.0 { key_turn } else { mouse.edge }, mouse_degrees = mouse.yaw_degrees, dt = camera_dt }
             dlgview::apply_camera{ v = &dview, w = &w, sc = &sc, camera = &camera }
             if test_camera.len > 0 { place_test_camera{ &w, spec = test_camera, &camera } }
             let pc = world::object{ w = &w, id = w.pc }
