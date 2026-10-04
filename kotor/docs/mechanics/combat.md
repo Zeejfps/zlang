@@ -27,7 +27,7 @@ d20, total and the defense it was against. The helpers are in `lib/ingame/test_c
 |---|---|---|---|
 | 1 | A hostile act puts both sides in combat for 8 s after the last one; faction-mates within range that are hostile join | combat.md 3.6 | matches (engine `enter_combat`; faction pull-in not modelled, scripts' shouts do it) |
 | 2 | The HUD: combat bar with Disengage and the queue, "Combat mode engaged" message for a few seconds while the leader is in combat | gui.md "Combat mode" | matches (screenshot) |
-| 3 | Disengage (BTN_CLEARALL) ends combat for the leader and clears its actions | gui.md | to check |
+| 3 | Disengage (BTN_CLEARALL) ends combat for the leader and clears its actions | gui.md, `ClearAllCombatActions` 0x006887d0 | matches (the controls owner's `hud::disengage`: the client leaves combat mode, the leader's actions are cancelled; the server's combat state times out as usual) |
 | 4 | Battle music: the area's MusicBattle while the party fights, its stinger when the fight ends | ambientmusic.2da (`mus_bat_*`, `mus_sbat_*` stingers); no script calls MusicBattlePlay for ordinary fights | open: no battle music plays unless a script asks |
 | 5 | Camera: no change for combat | play | matches |
 
@@ -51,8 +51,8 @@ d20, total and the defense it was against. The helpers are in `lib/ingame/test_c
 | 14 | In combat a chosen action is added to the queue (at most 4 pending); out of combat it replaces the queue | actions.md 3.13 "Scheduled", `AddAttackActions` | fixed 7713448 (three feat attacks queued in combat, one per round) |
 | 15 | Queue icons: the queued actions' icons (the feat's icon for a feat attack), clear-one drops the last | gui.md "Combat mode" | fixed 7713448 (screenshot: the round and the waiting orders with feat icons) |
 | 16 | The leader keeps attacking its target round after round until it dies | play | matches (ours, end of round) |
-| 17 | Feat attacks: to-hit/damage/self-defense penalties, extra attack, stun on Critical Strike | combat.md 4.5 | to check through the menu |
-| 18 | Attacking a door or placeable (bash) | combat.md 6.6 | to check |
+| 17 | Feat attacks: to-hit/damage/self-defense penalties, extra attack, stun on Critical Strike | combat.md 4.5 | matches (log through the target block: Flurry two attacks at -4, the feat's numbers from the rules library, rulescheck) |
+| 18 | Attacking a door or placeable (bash) | combat.md 6.6 | matches (bunk checkpoint, a relocked non-plot door: Bash in the block, defense 0, 8+7+3+3 damage over 4 rounds, the door opens and turns plot, the attacker stops) |
 
 ### Others' actions
 
@@ -66,7 +66,7 @@ d20, total and the defense it was against. The helpers are in `lib/ingame/test_c
 
 | # | Behaviour | Evidence | Status |
 |---|---|---|---|
-| 22 | A party member at HP < 1 is down (never dead), drops, can do nothing | combat.md 8.1-8.2 | fixed (and GetNearestCreature leaves dead and downed creatures out unless asked, 0x0054b550, so the AI stops picking them) |
+| 22 | A party member at HP < 1 is down (never dead), drops, can do nothing | combat.md 8.1-8.2 | fixed: falls with die or die1 at random, lies still (its queue cleared each frame), gets up with getupdead or getupdead1 (and GetNearestCreature leaves dead and downed creatures out unless asked, 0x0054b550, so the AI stops picking them) |
 | 23 | Downed members get up (HP 1, moved to a free spot within 5 m) once 5 s pass with no hostile creature perceiving any party member | `UpdatePartyDeath` `0x004b6da0` | fixed (ours waited for no hostile "in combat" in the area; QA saw Carth stay down for the rest of it): checked, Carth down, the foe killed, Carth up 151 frames later |
 | 24 | The leader going down passes control to the next member who is up | combat.md 8.2 | fixed (checked: the player down, Carth leads) |
 | 25 | The whole party down: slow motion, death camera, fade to black over 12 s, "Your entire party has been killed." box, then the main menu | `StartDeathCamera` `0x005f7200`, `0x00627260` | open: ours freezes the world and prints the line |
@@ -78,7 +78,7 @@ d20, total and the defense it was against. The helpers are in `lib/ingame/test_c
 |---|---|---|---|
 | 27 | Combat log in Messages > Feedback: attack summary ("X succeeds/fails with attack on Y"), breakdowns, damage, kills | combat.md 10, dialog.tlk 42042, 42119, 1403, 1407 | open: nothing is written |
 | 28 | Floating combat numbers (option "Floating Numbers") | gui.md HUD overlay `+0x5cb4` | open |
-| 29 | HP bars of the target block and party portraits follow the damage | hud | to check |
+| 29 | HP bars of the target block and party portraits follow the damage | hud | matches (screenshots: the trooper's bar at 7/25, the leader's vitality bar at 17/22) |
 
 ### Options
 
