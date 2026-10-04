@@ -101,6 +101,16 @@ namespace ingame {
         return ui.menu != NO_MENU or ui.hud_hidden or gui::is_modal_open{ g = &ui.gui } or screens::is_open{ s = &ui.screens }
     }
 
+    // Whether the UI is in the middle of something (--speed lets an idle UI skip ticks, not this one).
+    fn is_busy { mut ui: Ingame } -> bool {
+        return ui.psel_wait or screens::is_waiting{ s = &ui.screens } or is_blocked{ &ui }
+    }
+
+    // The test player's step alone: --speed runs the rest of the UI once per N ticks, the bot decides every tick.
+    fn step_bot { mut ui: Ingame, mut w: world::World } {
+        bot::step{ b = &ui.bot, &w }
+    }
+
     // Whether the player confirmed Exit Game in the options menu: the loop should end.
     fn wants_quit { ui: *Ingame } -> bool {
         return ui.menus.options.quit

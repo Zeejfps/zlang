@@ -1,5 +1,5 @@
 // enginetest: enters a module and runs the world for N frames at a fixed step, with the
-// engine's logs and the end-of-run report (game/main's --no-render, without the presentation).
+// engine's logs and the end-of-run report (game/main's --engine-only, without the presentation).
 //
 //   enginetest [--module M] [--game DIR] [--frames N] [--dt S] [--log LIST] [--report] [--seed N]
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {

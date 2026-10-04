@@ -32,9 +32,19 @@ namespace play {
         }
         let rate: u32 = match adev { some{ value } => { value.rate } null => { 44100 } }
         let mixer = try mix::make(heap::Heap){ realloc = heap::alloc, heap = w.heap, rate, voices_2d = 24, voices_3d = 16 }
+        speed::mute_unheard{ mixer, opts }
         let script = try read_script{ &w, path = opts.input }
         let mut next_line: usize = 0
         let mut frame_no: u64 = 0
+        // --load SAVE: the game starts from that save, as the front end's Load Game would.
+        if w.module == obj::INVALID and opts.load.len > 0 {
+            let folder = save::find_save{ &w, game = opts.game, name = opts.load } ifnull {
+                _ = @fmt(&w.io, "kotor: no save {}\n", opts.load)
+                return 1
+            }
+            try save::load_game{ &w, &vm, engine, folder }
+            arena::reset{ heap = w.scratch }
+        }
         // No module named: the front end (movies, main menu) until New Game.
         if w.module == obj::INVALID {
             let chosen = try front_end{ &sdl, &w, &dev, &frame, mixer, adev, scratch = texture_scratch, opts, script, &next_line, &frame_no }
@@ -82,6 +92,7 @@ namespace play {
         let mut real_total: f64 = 0.0
         let mut real_worst: f32 = 0.0
         let mut timed: u64 = 0
+        let mut owed = speed::Owed{ dt = 0.0, clock_dt = 0.0 }    // --speed: the presentation's time to catch up
         while not quit {
             frame_no = frame_no + 1
             if opts.frames > 0 and frame_no > opts.frames { break }
@@ -151,7 +162,7 @@ namespace play {
                 if real > real_worst { real_worst = real }
             }
             timed = timed + 1
-            let dt = if opts.dt > 0.0 { opts.dt } else { math::min{ a = real, b = 0.25 } }
+            let mut dt = if opts.dt > 0.0 { opts.dt } else { math::min{ a = real, b = 0.25 } }
             // A load replaces the world's game, then the presentation starts over (as a transition).
             if want_load.len > 0 {
                 let folder = save::find_save{ &w, game = opts.game, name = want_load }
@@ -186,8 +197,10 @@ namespace play {
                     outbox::post{ out = &w.out, note = outbox::Note::fade{ out = false, wait = 0.5, length = 1.0, color = math::vec3::zero{} } }
                 }
             }
-            w.played_seconds = w.played_seconds + @as(f64, real)
-            w.autosave_ms = w.autosave_ms + @as(f64, real) * 1000.0
+            // Headless the step is fixed, so the play time and the autosave timer follow the world's clock, not the wall's.
+            let lived = if opts.dt > 0.0 { dt } else { real }
+            w.played_seconds = w.played_seconds + @as(f64, lived)
+            w.autosave_ms = w.autosave_ms + @as(f64, lived) * 1000.0
             // An autosave wanted by a transition or a script, once the area is in place.
             if w.autosave_due and w.transition == null and w.arrival == 0 and want_save.len == 0 {
                 w.autosave_due = false
@@ -269,6 +282,22 @@ namespace play {
                 }
                 last = sdl::counter{ &sdl }
             }
+            // --speed N: the presentation below steps once per N ticks, or sooner when something needs it (game/speed.ctx).
+            let fresh_input = next_line > 0 and script[next_line - 1].frame >= frame_no
+            if not speed::due{ opts, frame_no, w = &w, fresh_input, shown = dview.up, busy = ingame::is_busy{ ui }, saving = want_save.len > 0 } {
+                speed::owe{ &owed, dt, clock_dt = w.clock.dt }
+                ingame::step_bot{ ui, &w }    // HOOK(ingame)
+                arena::reset{ heap = w.scratch }
+                continue
+            }
+            // The skipped ticks' time: the scene's animations and the mixer's voices advance by it before this tick's own
+            // presentation starts anything new (a voice that starts now plays one tick, not N); the camera takes it with its step.
+            if owed.dt > 0.0 {
+                scene::sync{ &sc, &w, &dev, dt = owed.clock_dt }
+                if adev == null { speed::mix_seconds{ mixer, silent, rate, seconds = owed.dt } }
+            }
+            let camera_dt = dt + owed.dt
+            owed = speed::Owed{ dt = 0.0, clock_dt = 0.0 }
             // 9-10. Scene and camera (which snaps behind the leader again once it is placed).
             if w.arrival > 0 { camera.started = false }
             dlgview::pre_sync{ v = &dview, w = &w, sc = &sc, dev = &dev, g = &ui.gui, dt = w.clock.dt }
@@ -283,7 +312,7 @@ namespace play {
                 cam::set_style{ c = &camera, t = w.tables.camerastyle, row = wanted_row }
                 ctl::set_style{ ctl = &control, t = w.tables.camerastyle, row = wanted_row }
             }
-            cam::update{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height, turn = ctl::turn_input{ keys }, dt }
+            cam::update{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height, turn = ctl::turn_input{ keys }, dt = camera_dt }
             dlgview::apply_camera{ v = &dview, w = &w, sc = &sc, camera = &camera }
             let pc = world::object{ w = &w, id = w.pc }
             let player_room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
@@ -305,19 +334,21 @@ namespace play {
                     mix::render{ m = mixer, into = silent[..@as(usize, frames) * 2] }
                 }
             }
-            // 12. Render.
-            let size = gpu::screen_size{ dev }
-            render::begin_frame{ &frame, time = sc.time }
-            let mut view = render::make_view{ camera = cam::render_camera{ c = &camera, aspect = @as(f32, size.width) / @as(f32, size.height) } }
-            view.ambient = sc.ambient
-            view.fog = sc.fog
-            let vi = render::add_view{ &frame, view } ifnull { 0 }
-            scene::draw{ &sc, w = &w, &frame, view = vi }
-            dlgview::draw{ v = &dview, frame = &frame }
-            ingame::draw{ ui, &w, &dev, &frame }    // HOOK(ingame)
-            gpu::submit{ &dev, frame = &frame } iferr err{ error } {
-                _ = @fmt(&w.io, "kotor: submit failed: {}\n", error)
-                return 1
+            // 12. Render (--no-render: only for a picture someone takes).
+            if speed::picture_wanted{ opts, frame_no, saving = want_save.len > 0 } {
+                let size = gpu::screen_size{ dev }
+                render::begin_frame{ &frame, time = sc.time }
+                let mut view = render::make_view{ camera = cam::render_camera{ c = &camera, aspect = @as(f32, size.width) / @as(f32, size.height) } }
+                view.ambient = sc.ambient
+                view.fog = sc.fog
+                let vi = render::add_view{ &frame, view } ifnull { 0 }
+                scene::draw{ &sc, w = &w, &frame, view = vi }
+                dlgview::draw{ v = &dview, frame = &frame }
+                ingame::draw{ ui, &w, &dev, &frame }    // HOOK(ingame)
+                gpu::submit{ &dev, frame = &frame } iferr err{ error } {
+                    _ = @fmt(&w.io, "kotor: submit failed: {}\n", error)
+                    return 1
+                }
             }
             let mut s: usize = 0
             while s < opts.shot_count {

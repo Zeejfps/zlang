@@ -2,7 +2,7 @@
 //
 //   kotor --module end_m01aa [--game DIR] [--headless] [--frames N] [--dt S] [--input FILE]
 //         [--screenshot-at FRAME:PATH]... [--log scripts,routines,events,actions,objects]
-//         [--report routines] [--seed N] [--size WxH] [--no-render]
+//         [--report routines] [--seed N] [--size WxH] [--no-render] [--speed N] [--mute] [--engine-only] [--load SAVE]
 namespace options {
     struct Shot { frame: u64, path: []u8 }
 
@@ -10,7 +10,11 @@ namespace options {
         module: []u8,
         game: []u8,
         headless: bool,
-        no_render: bool,
+        no_render: bool,        // the whole game loop, but a frame is drawn only for a screenshot or a save's picture
+        engine_only: bool,      // just lib/engine's world loop: no scene, no conversations' view, no input script
+        load: []u8,             // start from this save (a folder of ours, a path, or one of the install's) instead of a module or the front end
+        mute: bool,             // the mixer skips the music and the effects (no one hears them); voice-overs still play
+        speed: u32,             // world ticks per loop iteration (--no-render): the presentation catches up once per N
         frames: u64,            // 0: until quit
         dt: f32,                // fixed step (headless); 0: real time
         input: []u8,            // the scripted input file, "" none
@@ -27,7 +31,7 @@ namespace options {
 
     fn defaults {} -> Options {
         return Options{
-            module = "", game = "F:/Steam/steamapps/common/swkotor", headless = false, no_render = false,
+            module = "", game = "F:/Steam/steamapps/common/swkotor", headless = false, no_render = false, engine_only = false, mute = false, speed = 1, load = "",
             frames = 0, dt = 0.0, input = "", shots = [Shot{ frame = 0, path = "" }; 16], shot_count = 0,
             log = "", saves = "kotor/out/saves", report = false, seed = 1, width = 1280, height = 720, run_script = "",
         }
@@ -49,6 +53,17 @@ namespace options {
                 o.headless = true
             } else if slice::eq_bytes{ a, b = "--no-render" } {
                 o.no_render = true
+            } else if slice::eq_bytes{ a, b = "--mute" } {
+                o.mute = true
+            } else if slice::eq_bytes{ a, b = "--load" } and has {
+                i = i + 1
+                o.load = args[i]
+            } else if slice::eq_bytes{ a, b = "--engine-only" } {
+                o.engine_only = true
+            } else if slice::eq_bytes{ a, b = "--speed" } and has {
+                i = i + 1
+                let n = @trunc(u32, text::scan_decimal{ s = args[i] })
+                o.speed = if n > 1 { n } else { 1 }
             } else if slice::eq_bytes{ a, b = "--frames" } and has {
                 i = i + 1
                 o.frames = @as(u64, text::scan_decimal{ s = args[i] })
@@ -90,12 +105,14 @@ namespace options {
             }
             i = i + 1
         }
+        // Nothing is drawn, so nothing needs a visible window or the display's pace.
+        if o.no_render or o.engine_only { o.headless = true }
         if o.headless and o.dt <= 0.0 { o.dt = 1.0 / 30.0 }
         return o
     }
 
     fn usage { mut io: Io } -> ?Options {
-        io::eprintln{ &io, s = "usage: kotor [--module M] [--game DIR] [--headless] [--no-render] [--frames N] [--dt S] [--input FILE] [--screenshot-at FRAME:PATH]... [--log LIST] [--report routines] [--seed N] [--size WxH] [--run-script NAME]" }
+        io::eprintln{ &io, s = "usage: kotor [--module M] [--game DIR] [--headless] [--no-render] [--speed N] [--mute] [--engine-only] [--load SAVE] [--frames N] [--dt S] [--input FILE] [--screenshot-at FRAME:PATH]... [--log LIST] [--report routines] [--seed N] [--size WxH] [--run-script NAME]" }
         return null
     }
 }

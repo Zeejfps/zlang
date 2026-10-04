@@ -1,0 +1,66 @@
+// Fast-forward and drawing on demand for headless runs (docs/design/engine.md, "Headless and logs").
+//
+//   --no-render   the whole loop, but a frame is drawn only for a screenshot or a save's picture
+//   --speed N     the presentation (scene sync, camera, UI, sound) steps once per N world ticks
+//
+// The world, the conversation pump, the test bot and the outbox run every tick, so the log is the
+// one a --speed 1 run writes. The presentation catches up with the time it owes in one step
+// unless something reads it sooner: a conversation is up or was just shown (its voice, camera and
+// panels answer the pump), a menu or screen is open, an input line was applied, a module is
+// arriving, or a picture is due. Pictures taken in between show a camera that has stepped by N
+// ticks at once.
+namespace speed {
+    // The time the skipped ticks owe the presentation: the step and the world clock's (0 while paused).
+    struct Owed { dt: f32, clock_dt: f32 }
+
+    // Whether a screenshot is due at this frame.
+    fn shot_due { opts: options::Options, frame_no: u64 } -> bool {
+        let mut s: usize = 0
+        while s < opts.shot_count {
+            if opts.shots[s].frame == frame_no { return true }
+            s = s + 1
+        }
+        return false
+    }
+
+    // Whether this frame is drawn: always, but with --no-render only when a screenshot is due at
+    // it or a save needs the picture for its thumbnail.
+    fn picture_wanted { opts: options::Options, frame_no: u64, saving: bool } -> bool {
+        return not opts.no_render or saving or shot_due{ opts, frame_no }
+    }
+
+    // Whether the presentation steps in this tick (always at --speed 1).
+    fn due { opts: options::Options, frame_no: u64, w: *world::World, fresh_input: bool, shown: bool, busy: bool, saving: bool } -> bool {
+        if opts.speed <= 1 or frame_no % @as(u64, opts.speed) == 0 { return true }
+        if fresh_input or shown or busy or saving { return true }
+        if w.conversation.active or w.arrival > 0 or w.transition != null { return true }
+        return shot_due{ opts, frame_no }
+    }
+
+    // --mute (with --no-render): no one hears the music and the effects, so the mixer does not synthesise
+    // them (a paused group renders nothing and stops at once). Voice-overs still play: conversations wait
+    // for them. Not the default: with another voice mixing, a voice-over ends up to two ticks later than
+    // alone (the mixer's MP3 voices seem to disturb each other), so a muted run's timings differ.
+    fn mute_unheard { mixer: *mut mix::Mixer, opts: options::Options } {
+        if not opts.mute { return }
+        mix::set_group_paused{ m = mixer, group = mix::Group::music, paused = true }
+        mix::set_group_paused{ m = mixer, group = mix::Group::sfx, paused = true }
+        mix::set_group_paused{ m = mixer, group = mix::Group::movie, paused = true }
+    }
+
+    // The mixer renders `seconds` of sound into the scratch buffer (no device: the sounds still run on).
+    fn mix_seconds { mixer: *mut mix::Mixer, silent: []mut i16, rate: u32, seconds: f32 } {
+        let mut left = @as(f32, rate) * seconds
+        while left >= 1.0 {
+            let frames = math::min{ a = left, b = 22050.0 }
+            mix::render{ m = mixer, into = silent[..@as(usize, frames) * 2] }
+            left = left - frames
+        }
+    }
+
+    // A tick the presentation skips: it is owed this tick's time.
+    fn owe { mut owed: Owed, dt: f32, clock_dt: f32 } {
+        owed.dt = owed.dt + dt
+        owed.clock_dt = owed.clock_dt + clock_dt
+    }
+}

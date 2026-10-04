@@ -94,8 +94,8 @@ appear only when the script asks for them.
   frame with a session over the in-game GUI (`ui.gui`) until it is done. `conclude` then adds or
   takes the wager from `party.gold` (not below 0), keeps the side deck if complete, sets
   `pazaak_won` and runs the end script with OBJECT_INVALID as owner, as the original does. Headless
-  (`--headless`, `--no-render`) `visit_auto` lets the AI play both sides with the default deck, so
-  a script that asks for pazaak completes in tests: `kotor --module end_m01aa --no-render --frames
+  (`--headless`, `--engine-only`) `visit_auto` lets the AI play both sides with the default deck, so
+  a script that asks for pazaak completes in tests: `kotor --module end_m01aa --engine-only --frames
   60 --run-script k_act_mispaz --log routines`.
 - **Cards found**: `rt_mg::take_card{ w, base, variation, stack }`; an item of ItemType 42
   entering the party's inventory is counted at `(variation + 11) mod 18` instead of kept (the item
@@ -210,7 +210,7 @@ world's generic routines answer "no such object" for them.
 - The unmodified `oncreate`, `heartbeat`, `onfire`, `accelpad` and `obstacle` scripts of all three
   races run against the routines with no fault: the start lights, gear shifts, the timer, the speed
   gauge and the finish (a fade, the time into the `*_SWOOP_*` globals and `StartNewModule` back
-  home) all happen. Headless (`--no-render`) the fire key is pressed twice a second; windowed it is
+  home) all happen. Headless (`--engine-only`) the fire key is pressed twice a second; windowed it is
   Space, steering is A/D or the arrows.
 - The picture: the bike, pads and obstacles as scene parts, the camera on the camera model's
   `camerahook` (so the shake animations move it), the HUD models with their animations layered

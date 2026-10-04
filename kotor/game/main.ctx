@@ -42,16 +42,16 @@ fn run {
     }
     let mut vm = try nwvm::new(heap::Heap){ realloc = heap::alloc, heap = &h, limits = nwvm::LIMITS }
     let engine = routines::call{ w, _ }
-    if opts.module.len > 0 or opts.no_render {
+    if (opts.module.len > 0 and opts.load.len == 0) or opts.engine_only {
         try modload::enter{ w, name = if opts.module.len > 0 { opts.module } else { "end_m01aa" } }
         arena::reset{ heap = &scratch }
         if opts.run_script.len > 0 { _ = scripts::run{ w, &vm, engine, name = resref::truncate{ name = opts.run_script }, self = w.area } }
     }
     // HOOK(minigames): a minigame area gets its run (game/minigame.ctx); the scene does the same in play.ctx.
     let mut mg_models = mdl_cache::new{ rm = w.rm.*, keep = &module_arena }
-    if opts.no_render and w.module != obj::INVALID { _ = try mg_game::enter{ w, models = &mg_models } }
+    if opts.engine_only and w.module != obj::INVALID { _ = try mg_game::enter{ w, models = &mg_models } }
 
-    if opts.no_render {
+    if opts.engine_only {
         let mut frame: u64 = 0
         let dt = if opts.dt > 0.0 { opts.dt } else { 1.0 / 30.0 }
         while opts.frames == 0 or frame < opts.frames {
