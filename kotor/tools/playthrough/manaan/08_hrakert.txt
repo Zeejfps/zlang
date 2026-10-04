@@ -1,0 +1,35 @@
+# Manaan, part 8: the Republic enclave's submarine and the Hrakert Station (manm28aa). From the checkpoint "wann2" (CKPT=wann2: Wann
+# has given the Submersible Bay Key, journal man_planet 30). Test cheats for setup only: hit points per member, `ui bot`.
+#
+# The door behind the kolto packing room (man26ac_door05) opens to the key (`use`: a click on it would need it on the screen), the
+# submersible (man26_sub: "[Use the submersible.]") takes the party to the station, where the Selkath have gone insane and the
+# droids fight them: a mercenary (man28_merc) talks as the party arrives, then the bot (god mode, the leader is never
+# left dead) fights its way along the station's east corridor to the Environmental suit (EnvrSuit, `use`: the suit is an item in the
+# bag, k_pman_suituse), journal man_planet 40. The Insane Selkath's bites cut the maximum hit points (150 to 72) for a while.
+3 ui stat hpmax 150
+3 ui stat hp 150
+4 ui leader carth
+4 ui stat hpmax 160
+4 ui stat hp 160
+5 ui leader bastila
+5 ui stat hpmax 130
+5 ui stat hp 130
+6 ui leader pc
+8 ui replies ~use_the_submersible default 1
+10 warp man26_wp_repdipt party
+60 use man26ac_door05
+400 use man26ae_sub
+1000 ui party
+1000 ui pos
+1010 ui bot god on
+1011 ui bot on
+1012 ui bot route EnvrSuit
+9500 ui pos
+9520 ui bot off
+9530 use EnvrSuit
+9800 ui inv
+9800 ui pos
+9800 ui party
+9800 ui xp
+9800 ui journal list
+9810 save suit

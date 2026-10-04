@@ -1,0 +1,15 @@
+# Tatooine, part 19: leaving Tatooine (checkpoint "czerka", in the Czerka office with the Star Map): out of the office and across Anchorhead to the docking bay (tat_m17ab)
+# and up the Ebon Hawk's ramp (the trigger EbonHawk, area transition to ebo_m12aa). A save in the Hawk ("hawk").
+#   LOAD=kotor/out/tat_cp/czerka sh kotor/tools/playthrough/tatooine/run.sh hawk kotor/tools/playthrough/tatooine/19_hawk.txt 1000
+4 ui heal
+4 ui stat hp 127
+5 ui bot god on
+5 ui bot unlock on
+5 ui replies default 1
+5 ui bot route tatooinedoor1 tatooinetransition#0 EbonHawk
+6 ui bot on
+900 ui pos
+900 ui party
+900 ui journal list
+900 ui globals K_
+950 save hawk

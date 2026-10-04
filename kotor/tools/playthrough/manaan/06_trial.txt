@@ -1,0 +1,34 @@
+# Manaan, part 6: out of the Sith base, the Selkath arrest, and the player's own trial (the Ahto City courtroom, manm26aa). From
+# the checkpoint "droid" (CKPT=droid: the Data Module is in the bag, the base's second room is won).
+#
+# The party is put in the lobby (the bot's way back is long and a banter conversation of Carth and Bastila starts on the way: it
+# takes the first reply of the queue, `~leave_her_alone`), the lobby door is opened with `use` (a closed door stops a `goto`: the
+# planner finds no route through it) and `goto X,Y` ends inside the exit trigger `to26b`. In Ahto East the cut scene
+# `man26_selarrest` (a Selkath constable arrests the player at the Sith Embassy's gate; the companions are kept at the ship,
+# k_pman_arrest01) takes the party to the cell in manm26aa, where Bwa'lass, the Arbiter, defends the player in `man26_selarb`
+# (187 entries, 12,000 frames of voice). The way to the verdict: [Interrupt.] his first speech, dismiss him, plead "Not
+# guilty", explain "The Sith lured me inside" / "I was there for diplomatic negotiations": the judges find "not enough
+# evidence" and the Sith Embassy is closed to the city's security (MAN_SITHBASE_SEALED). The first reply of every list instead
+# ("No! I am a Republic citizen!") ends in "You will be executed immediately" and EndGame.
+3 ui stat hpmax 150
+3 ui stat hp 150
+4 ui leader carth
+4 ui stat hpmax 160
+4 ui stat hp 160
+5 ui leader bastila
+5 ui stat hpmax 130
+5 ui stat hp 130
+6 ui leader pc
+8 ui replies ~leave_her_alone ~what?_why? ~arbiter ~i_don't_need_anyone ~how_will_you_get_me_free ~i_was_invited ~i_have_no_prior ~let's_get_the_trial_started ~interrupt ~i_wish_to_dismiss ~i_will_defend_myself ~not_guilty ~the_sith_lured_me_inside ~i_was_there_for_diplomatic default 1
+10 ui bot god on
+20 warpxy 105.7,34.3 party
+2450 use manm27_door20
+2700 goto 98.5,35.5
+2900 goto 98.5,35.5
+3100 goto 98.5,35.5
+17200 ui pos
+17200 ui party
+17200 ui journal list
+17200 ui globals MAN_
+17200 ui xp
+17300 save trial

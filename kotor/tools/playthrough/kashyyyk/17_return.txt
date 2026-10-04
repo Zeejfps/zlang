@@ -1,9 +1,14 @@
-# Kashyyyk, part 17: back up from the Lower Shadowlands: the exit trigger (186 245) to the Upper Shadowlands, the elevator basket
-# (the placeable kas24_baskettalk; the enter script destroyed the trigger kas24_basketup) to the Great Walkway. From the checkpoint "mapped"
-# (CKPT=mapped); the long walks are cut with warps (the party stands beside the leader).
+# Kashyyyk, part 17: back up from the Lower Shadowlands to Chuundar's hall. The exit trigger (186 245) to the Upper Shadowlands, the elevator basket
+# (the placeable kas24_baskettalk; the enter script destroyed the trigger kas24_basketup) to the Great Walkway. Freyyr has gone to rally the Wookiees
+# (kas_HelpedFreyyr), so the village door's guard keeps the hall shut; the way is Chorrawl, who waits by the trigger kas22_chorratrig (210 75) and takes
+# the party to the throne room behind the guards (kas22_chorraw_02, k_pkas_backking: the module change to kas_m23ad). In the hall Chuundar's conversation
+# (kas23_chuunda_01, start branch k_pkas_freyyhelp) has Freyyr, Zaalbar and the party face him; Zaalbar asks what to do and the party sides with Freyyr:
+# "Side with Freyyr", "Without doubt! Chuundar is a slaver!" (journal 110, k_pkas_chuundatk). A save as the duel begins ("duel").
+# From the checkpoint "mapped" (CKPT=mapped); the long walks are cut with warps (the party stands beside the leader).
 3 ui stat hpmax 130
 3 ui stat hp 130
-5 ui replies default 1
+# the replies in the order the lists open: the basket (raise it), Chorrawl (lead on), Zaalbar's question and the two that settle the side
+5 ui replies 1 ~Lead_on ~You_tell_them ~Side_with_Freyyr ~Without_doubt default 1
 10 ui bot god on
 10 warp kas25aa_exit party
 40 ui goto exit
@@ -11,8 +16,9 @@
 200 warp kas24_gorwook_01 party
 # The basket here is a placeable the enter script put in the trigger's place (kas24_baskettalk, conversation kas24_xbasket_01).
 260 use kas24_baskettalk
-# On the Walkway the way to the village is cut with a warp to its door; the village door to Chuundar's hall is the game's.
-1100 warp kas22_towndoor party
-1120 use kas22_towndoor
-1500 warp kas23ad_door party
-1520 use kas23ad_door
+# On the Walkway the party is put in front of Chorrawl: his trigger starts the talk.
+1100 warp kas22_chorraw_02 party
+5100 ui journal list
+5100 ui party
+5100 ui where kas23_
+5260 save duel

@@ -1,0 +1,21 @@
+# Manaan, part 10: Kolto Control (manm28ac): Kono Nolan and Sami behind the force door. From the checkpoint "kolto" (CKPT=kolto: the Insane
+# Selkath at the arrival are dead, journal man_planet 40).
+#
+# The first click on the door (`man28_sur3` is the door's conversation) is the scientists' panic: Kono threatens to empty the
+# chamber of its air (the countdown barks, "60 seconds to complete depressurization", k_pman_press03/sur01). The second click is
+# the persuasion: "I'm here to help you" and "[Persuade] I'll keep you safe" (a computer skill spike would also stop the
+# sequence at the panel), the door opens, and Kono and Sami tell what happened: the giant firaxan shark in the Rift, and two
+# ways to be rid of it: their toxin (a Chemical Cannister to vent through the kolto harvester, journal man_planet 50) or
+# the harvester's overloaded fuel tanks. The reply words below take the toxin; Sami objects once ("Wait! Don't!") and
+# the player holds to the toxin ("I will try to poison the shark").
+3 ui stat hpmax 150
+3 ui stat hp 150
+8 ui replies ~here_to_help_you ~keep_you_safe ~you_have_a_lot_to_answer ~mission_for_the_jedi ~what_happened ~turned_on_you ~like_what ~so_what_can_i_do ~what_are_you_talking_about ~how_would_i_poison ~vent_the_toxin ~how_would_i_do_that ~try_to_poison default 1
+10 warpxy 217.0,104.0 party
+60 use man28ac_force01
+1600 use man28ac_force01
+12200 ui pos
+12200 ui journal list
+12200 ui inv
+12200 ui xp
+12210 save sci
