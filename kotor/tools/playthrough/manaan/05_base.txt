@@ -1,0 +1,31 @@
+# Manaan, part 5: the Sith base (manm27aa): the test player (`ui bot`) fights through the lobby's survivors, the Sith troopers
+# and war droids of the second room to the Broken Droid (the Republic probe's remains), and the party takes the Data Module from
+# it. From the checkpoint "lobby" (CKPT=lobby: the lobby fight is won, the Sith Diplomat and Security Officer are dead).
+#
+# The party is not left to die: `ui bot god on` keeps the leader up (without it the party is wiped in the second room by the
+# two Assault Droids' flame throwers, step 14 of docs/playthrough-manaan.md). Test cheats for setup only: hit points per member
+# (a loaded companion keeps the maximum the rules gave its level), `ui bot`.
+3 ui stat hpmax 150
+3 ui stat hp 150
+4 ui leader carth
+4 ui stat hpmax 160
+4 ui stat hp 160
+5 ui leader bastila
+5 ui stat hpmax 130
+5 ui stat hp 130
+6 ui leader pc
+8 ui replies default 1
+10 ui bot god on
+11 ui bot on
+12 ui bot route BroknDrd
+3000 ui pos
+3000 ui party
+# At the droid: the container (a click on it opens the loot panel), "Get Items".
+3300 ui bot off
+3310 use BroknDrd
+3500 ui click 640 452
+3560 ui inv
+3600 ui journal list
+3600 ui xp
+3600 ui party
+3610 save droid

@@ -472,7 +472,7 @@ namespace play {
             let player_room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
             let room = dlgview::view_room{ v = &dview, w = &w, player_room }
             scene::update_visibility{ &sc, w = &w, room }
-            ingame::update{ ui, &w, &dev, sc, camera, dt }    // HOOK(ingame)
+            ingame::update{ ui, &w, &dev, sc, camera, dt = camera_dt }    // HOOK(ingame): under --speed the GUI's clocks (feedback fade, tooltips) get the ticks it skipped
             if ingame::wants_quit{ ui } { quit = true }    // HOOK(ingame)
             // The party wipe's box answered or its fade over: the options menu's Exit Game is the way out (the main menu).
             death::after_ui{ d = &wipe, ui, &w, fade_running = dlgpanel::fade_running{ p = dview.panels } }
