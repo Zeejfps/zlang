@@ -33,7 +33,7 @@ turns them all off. See [../design/enhanced-render.md](../design/enhanced-render
 | Option (panel) | Original | Ours | State |
 |---|---|---|---|
 | Brightness slider (Graphics), key `Brightness` | The handler (`0x006ded30`) turns the slider `v` (0..100) into the exponent `2 - 1.77 v/100` and loads a 256-entry gamma ramp with `SetDeviceGammaRamp` (`SetGamma 0x0044d990`: `out = in ^ exponent`), live; put back to 1.0 when the window is deactivated. 57 (the install's value) is the exponent 0.99, the picture as drawn | The same curve as a shader in `present` (the picture, movies and GUI together, as a hardware ramp does), live; screenshots apply it too. 56 and 57 are left alone (a plain blit). Default 57 (ours was 50, 1.115: a darker game than before). Needs no display ramp, so alt-tab cannot leave the desktop dark | matches |
-| Screen Resolution (Graphics) | A list of the display's modes, rows `%d x %d` or `%d x %d @ %d Hz`; OK applies it through `ChangeVideoMode` (`0x006df690`) | The list is SDL's: `windowed` the sizes that fit the desktop, `borderless` the sizes up to the desktop's (a smaller one is rendered small and scaled up with bars), `fullscreen` every size and refresh rate; the current size is always a row. The button shows `Resolution: W x H`. Applied at once; a full-screen mode the display refuses becomes borderless | matches, modern list |
+| Screen Resolution (Graphics) | A list of the display's modes, rows `%d x %d` or `%d x %d @ %d Hz`; OK applies it through `ChangeVideoMode` (`0x006df690`) | The list is SDL's: `windowed` the sizes that fit the desktop, `borderless` the sizes up to the desktop's (a smaller one is rendered small and scaled up with bars), `fullscreen` every size and refresh rate; the current size is always a row. The button shows `Screen: W x H` (`Screen: Desktop` for a borderless window at the desktop's size). Applied at once; a full-screen mode the display refuses becomes borderless | matches, modern list |
 | Display Mode (Graphics) | `FullScreen` key only (no control); `AllowWindowedMode` | A button: Windowed, Borderless, Fullscreen (key `FullScreen` = 0, 2, 1). Windowed is a resizable window centred on its display, no larger than the room it has; Borderless is a window over the desktop at its resolution; Fullscreen switches the display's mode | ours |
 | UI Scale (Graphics) | none: the GUI is never scaled (re/gui.md) | A button: Auto, 100%, 125% ... 400% (key `GUI Scale`, 0 is auto). Auto is the largest quarter step at which the 800x600 main menu fits the window (1080p 175%, 1440p 225%, 4K 350%), so panels, HUD, conversations and text stay readable. Everything lays itself out again at once | ours |
 | Shadows (Graphics) | Flag `0x0078e3a8` (`0x0044ee20`); stencil shadow volumes from the lights that cast shadows (`CAurScene::RenderPasses`, `GL_DrawShadowVolume`) | Off: no shadow is drawn. On: each creature casts the meshes its model flags (`Mesh.shadow`) onto the walkmesh face under it, from the nearest light of the room above it, else from the sun overhead; the area's `ShadowOpacity` (50 or 205 in the data) is how dark. (Nothing submitted a shadow before: the option had nothing to switch) | partial (planar, creatures only) |
@@ -96,6 +96,13 @@ original lacks.
   `display::map_event` undoes the window, the drawable and the bars of a borderless window that renders below the
   desktop's size (checked with the real pointer: 2176,1332 on a 3840x2160 desktop with a 1440x1080 render is 848,666,
   the Options button).
+- **Labels of our added buttons** keep the margins of the original's: the original's buttons leave 17 to 25 pixels
+  either side of their text (dialogfont16x16: "Frame Buffer Effects" in 240 leaves 18, "Texture Quality" in 200
+  leaves 24), so ours take at most 204 pixels in the Graphics panel's 240: `Screen: 3840 x 2160` (200),
+  `Display: Borderless` (184), `UI Scale: Auto 350%` (200), `Enhanced Graphics` (176). The Enhanced Graphics rows are
+  218 wide between their arrows (the original's were 198) for the longest, `Lightmaps: Original` (176, 21 either side).
+  Before, `Display Mode: Borderless` took 239 of 240 and `Resolution: Desktop (3840 x 2160)` 327. Seen at 1.0, 1.5,
+  2.25 and 3.5 in all three modes (widths from the font's TXI, counted the way `gui::glyph_width` does).
 - **Frame rate**: the simulation runs on the measured frame time, clamped to 0.25 s, never on a count of frames. Checked
   with `--dt` at 1/30, 1/60, 1/144 and 1/240 s (below).
 
