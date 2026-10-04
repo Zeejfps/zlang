@@ -260,7 +260,7 @@ namespace gpu {
     fn set_fx_draw { mut dev: Device, frame: *render::Frame, draw: render::Draw } {
         let e = dev.enhance
         let cube = e.room_light > 0 and draw.ambient > 0 and draw.ambient <= frame.ambient_count
-        dev.gl.uniform4i{ location = dev.cur.fx, v0 = @as(i32, draw.kind), v1 = if e.smooth_lightmaps { 1 } else { 0 }, v2 = if cube { 1 } else { 0 }, v3 = 0 }
+        dev.gl.uniform4i{ location = dev.cur.fx, v0 = @as(i32, draw.kind), v1 = if e.smooth_lightmaps { 1 } else { 0 }, v2 = if cube { 1 } else { 0 }, v3 = if coverage_wanted{ samples = dev.samples, e, blend = draw.material.blend } { 1 } else { 0 } }
         let glow = emissive_gain{ e }
         dev.gl.uniform4f{ location = dev.cur.fx2, v0 = glow, v1 = glow * 1.5, v2 = 0.0, v3 = 0.0 }
         if cube {

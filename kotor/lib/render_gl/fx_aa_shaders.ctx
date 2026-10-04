@@ -1,0 +1,124 @@
+// GLSL 410 source of the enhanced renderer's edge filter (fx_aa.ctx; docs/design/enhanced-render.md, Anti-aliasing).
+// Runs with glsl::POST_VS (one triangle, v_uv 0..1 over the destination).
+namespace glsl {
+    // The edge filter, for when multisampling is off: the tone-mapped picture (RGBA8, luma in alpha) smoothed along
+    // the edges it finds, into the screen over the view's area. Written for this renderer; the idea is the usual one
+    // of filters of this family: find where the picture's luma changes sharply, measure how far the edge runs, and
+    // move each pixel's sample toward the other side of the edge by the share of the pixel the edge covers.
+    //
+    // 1. Contrast. The pixel and its four neighbours' lumas give the local range; a range under both the floor
+    //    (u_cfg.x) and the share of the brightest (u_cfg.y) is left untouched (flat areas and noise stay sharp).
+    // 2. Direction. Second differences of luma along each axis, weighted over the 3x3, say whether the edge runs along
+    //    x or along y; the steeper neighbour across it says which side the edge lies on.
+    // 3. Reach. Standing on the edge line half a pixel to that side, walk both ways along it (bilinear taps whose
+    //    stride grows with each step) until the luma there has moved a quarter of the edge's step away from the
+    //    average of the two sides, or the walk runs out (10 steps at level 1, 20 at level 2). The edge's length is
+    //    the sum of the two distances, and the pixel sits `nearer distance / length` from its nearer end.
+    // 4. Offset. Only when the nearer end bends the right way (the pixel is on the side the edge cuts into) is the
+    //    sample moved, by 0.5 - nearer / length pixels across the edge. Where there is no edge to follow (single
+    //    bright pixels, thin lines) the 3x3 low-pass says how far the pixel is from its surroundings, and the
+    //    larger of the two offsets wins. Level 2 handles specks (a pixel brighter or darker than its four neighbours
+    //    over a luma range above 0.25) harder: the offset unsquared, and the low-pass itself mixed in.
+    //
+    // u_ldr: the picture (unit 0). u_size: 1 / its size. u_area: the view's pixels, x0 y0 x1 y1: taps stay inside it.
+    // u_cfg: x contrast floor, y contrast share, z sub-pixel strength, w the level (1 or 2).
+    const AA_FS: c::String =
+        \\#version 410 core
+        \\uniform sampler2D u_ldr;
+        \\uniform vec2 u_size;
+        \\uniform vec4 u_area;
+        \\uniform vec4 u_cfg;
+        \\layout(location = 0) out vec4 o_color;
+        \\vec4 tap(vec2 p) {
+        \\    return textureLod(u_ldr, clamp(p, u_area.xy + 0.5, u_area.zw - 0.5) * u_size, 0.0);
+        \\}
+        \\float stride_at(int i, float cap) {
+        \\    return min(1.0 + 0.5 * float(max(i - 3, 0)), cap);
+        \\}
+        \\void main() {
+        \\    vec2 p = gl_FragCoord.xy;
+        \\    vec4 cm = tap(p);
+        \\    vec4 cn = tap(p + vec2(0.0, 1.0));
+        \\    vec4 cs = tap(p + vec2(0.0, -1.0));
+        \\    vec4 ce = tap(p + vec2(1.0, 0.0));
+        \\    vec4 cw = tap(p + vec2(-1.0, 0.0));
+        \\    float lm = cm.a, ln = cn.a, ls = cs.a, le = ce.a, lw = cw.a;
+        \\    float hi = max(max(lm, ln), max(max(ls, le), lw));
+        \\    float lo = min(min(lm, ln), min(min(ls, le), lw));
+        \\    float range = hi - lo;
+        \\    if (range < max(u_cfg.x, hi * u_cfg.y)) {
+        \\        o_color = vec4(cm.rgb, 1.0);
+        \\        return;
+        \\    }
+        \\    vec4 cne = tap(p + vec2(1.0, 1.0));
+        \\    vec4 cnw = tap(p + vec2(-1.0, 1.0));
+        \\    vec4 cse = tap(p + vec2(1.0, -1.0));
+        \\    vec4 csw = tap(p + vec2(-1.0, -1.0));
+        \\    float lne = cne.a, lnw = cnw.a, lse = cse.a, lsw = csw.a;
+        \\
+        \\    // Which way the edge runs, and which side of the pixel it lies on.
+        \\    float across_y = 2.0 * abs(ln + ls - 2.0 * lm) + abs(lne + lse - 2.0 * le) + abs(lnw + lsw - 2.0 * lw);
+        \\    float across_x = 2.0 * abs(le + lw - 2.0 * lm) + abs(lne + lnw - 2.0 * ln) + abs(lse + lsw - 2.0 * ls);
+        \\    bool along_x = across_y >= across_x;
+        \\    vec2 along = along_x ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+        \\    vec2 across = along_x ? vec2(0.0, 1.0) : vec2(1.0, 0.0);
+        \\    float l_neg = along_x ? ls : lw;
+        \\    float l_pos = along_x ? ln : le;
+        \\    float step_neg = abs(l_neg - lm);
+        \\    float step_pos = abs(l_pos - lm);
+        \\    bool toward_neg = step_neg >= step_pos;
+        \\    float step_edge = max(step_neg, step_pos);
+        \\    vec2 dir = toward_neg ? -across : across;
+        \\    float mid = 0.5 * ((toward_neg ? l_neg : l_pos) + lm);
+        \\
+        \\    // Walk the edge line both ways.
+        \\    bool high = u_cfg.w > 1.5;
+        \\    int steps = high ? 20 : 10;
+        \\    float cap = high ? 6.0 : 4.0;
+        \\    float stop = 0.25 * step_edge;
+        \\    vec2 q = p + dir * 0.5;
+        \\    vec2 qa = q, qb = q;
+        \\    float da = 0.0, db = 0.0;
+        \\    float ea = 0.0, eb = 0.0;
+        \\    bool fa = false, fb = false;
+        \\    for (int i = 0; i < steps; i++) {
+        \\        float s = stride_at(i, cap);
+        \\        if (!fa) {
+        \\            qa -= along * s;
+        \\            da += s;
+        \\            ea = tap(qa).a - mid;
+        \\            fa = abs(ea) >= stop;
+        \\        }
+        \\        if (!fb) {
+        \\            qb += along * s;
+        \\            db += s;
+        \\            eb = tap(qb).a - mid;
+        \\            fb = abs(eb) >= stop;
+        \\        }
+        \\        if (fa && fb) {
+        \\            break;
+        \\        }
+        \\    }
+        \\    bool a_nearer = da < db;
+        \\    float near = a_nearer ? da : db;
+        \\    float near_dev = a_nearer ? ea : eb;
+        \\    float shift = 0.0;
+        \\    if ((near_dev < 0.0) != (lm < mid)) {
+        \\        shift = 0.5 - near / (da + db);
+        \\    }
+        \\
+        \\    // Details too small for an edge: how far the pixel is from the 3x3 around it.
+        \\    vec4 low = (2.0 * (cn + cs + ce + cw) + (cne + cnw + cse + csw) + 4.0 * cm) * (1.0 / 16.0);
+        \\    float away = clamp(abs(low.a - lm) / range, 0.0, 1.0);
+        \\    float sub = smoothstep(0.0, 1.0, away);
+        \\    bool speck = range > 0.25 && (lm > max(max(ln, ls), max(le, lw)) || lm < min(min(ln, ls), min(le, lw)));
+        \\    sub = (high && speck ? sub : sub * sub) * u_cfg.z;
+        \\    vec4 c = tap(p + dir * max(shift, sub));
+        \\    vec3 rgb = c.rgb;
+        \\    if (high && speck) {
+        \\        rgb = mix(rgb, low.rgb, sub * 0.5);
+        \\    }
+        \\    o_color = vec4(rgb, 1.0);
+        \\}
+        \\
+}

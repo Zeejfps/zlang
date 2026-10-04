@@ -55,6 +55,7 @@ namespace gpu {
         depth_test: i32, depth_write: i32, cull: i32, offset: i32, stencil: i32,
         units: [5]u32,          // the texture bound to units 0..4
         vao: u32,
+        coverage: i32,          // alpha-to-coverage (enhanced views, fx_aa.ctx)
     }
 
     // An item to sort: its key and which draw (or, with the top bit, which emitter) it is.
@@ -215,7 +216,7 @@ namespace gpu {
     }
 
     fn unknown_state {} -> State {
-        return State{ program = 0, blend = -2, depth_test = -1, depth_write = -1, cull = -1, offset = -1, stencil = -1, units = [0; 5], vao = 0 }
+        return State{ program = 0, blend = -2, depth_test = -1, depth_write = -1, cull = -1, offset = -1, stencil = -1, units = [0; 5], vao = 0, coverage = -1 }
     }
 
     fn clear_tables { mut dev: Device } {
@@ -1430,6 +1431,7 @@ namespace gpu {
             draw_mesh{ &dev, frame, draw = frame.draws[dev.sort[i].index] }
             i = i + 1
         }
+        if dev.in_fx { set_coverage{ &dev, punch = false } }
     }
 
     // A view's transparent surfaces and particles, far to near within each sort group.
@@ -1468,6 +1470,7 @@ namespace gpu {
             }
             i = i + 1
         }
+        if dev.in_fx { set_coverage{ &dev, punch = false } }
     }
 
     // The Frame Buffer Effects option's speed blur: the screen so far, copied, is drawn back sampled along the line to the
@@ -1631,7 +1634,10 @@ namespace gpu {
         } else {
             dev.gl.uniform1i{ location = dev.cur.light_count, v0 = 0 }
         }
-        if dev.in_fx { set_fx_draw{ &dev, frame, draw } }
+        if dev.in_fx {
+            set_fx_draw{ &dev, frame, draw }
+            set_coverage{ &dev, punch = m.blend == render::Blend::punch }
+        }
 
         let first = if draw.first < mesh.index_count { draw.first } else { mesh.index_count }
         let count = if draw.count == 0 or first + draw.count > mesh.index_count { mesh.index_count - first } else { draw.count }
@@ -1835,8 +1841,12 @@ namespace gpu {
         }
         dev.gl.uniform4i{ location = dev.cur_particle.emit, v0 = facing, v1 = @as(i32, em.grid_x), v2 = @as(i32, em.grid_y), v3 = 0 }
         dev.gl.uniform4f{ location = dev.cur_particle.axis, v0 = em.axis.x, v1 = em.axis.y, v2 = em.axis.z, v3 = 0.0 }
-        dev.gl.uniform4i{ location = dev.cur_particle.mode, v0 = @as(i32, em.blend), v1 = if em.fog { 1 } else { 0 }, v2 = textured, v3 = 0 }
-        if dev.in_fx { dev.gl.uniform1f{ location = dev.cur_particle.gain, v0 = emissive_gain{ e = dev.enhance } * 1.5 } }
+        let cover = dev.in_fx and coverage_wanted{ samples = dev.samples, e = dev.enhance, blend = em.blend }
+        dev.gl.uniform4i{ location = dev.cur_particle.mode, v0 = @as(i32, em.blend), v1 = if em.fog { 1 } else { 0 }, v2 = textured, v3 = if cover { 1 } else { 0 } }
+        if dev.in_fx {
+            dev.gl.uniform1f{ location = dev.cur_particle.gain, v0 = emissive_gain{ e = dev.enhance } * 1.5 }
+            set_coverage{ &dev, punch = em.blend == render::Blend::punch }
+        }
         let per: usize = 14
         let room = dev.scratch.len / per
         let mut done: u32 = 0
