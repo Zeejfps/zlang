@@ -341,6 +341,9 @@ namespace fight {
             else { visual_effect{ &w, effect = e.a, target = id, source = e.who, position = math::vec3::zero{} } }
         } else if k == rules::ev::VISUAL_OFF {
             outbox::post{ out = &w.out, note = outbox::Note::visual_release{ effect = e.a, target = id } }
+        } else if k == rules::ev::APPEARANCE {
+            // A disguise (EffectDisguise, the Sand People Clothing's property) puts another appearance on; 0 takes it off.
+            if obj::creature{ o } is some{ value = c } { c.disguise = @as(u32, e.a) }
         } else if k == rules::ev::STATE {
             state_changed{ &w, id, after = e.a, before = e.b }
         } else if k == rules::ev::FORCE_PUSH {
@@ -1478,6 +1481,16 @@ namespace fight {
             f.c.party = party::is_member{ w = &w, id }
             let gain = rules::regenerate_pools{ tables = w.rules, c = &f.c, dt_ms = dt, in_combat = c.in_combat, alive = o.hp > 0 }
             if gain > 0 { o.hp = if o.hp + gain > o.hp_max { o.hp_max } else { o.hp + gain } }
+        }
+        // A disguise follows the effects on the creature (a load puts the worn clothing's effect back without the event).
+        if f.loaded {
+            let mut shown: u32 = 0
+            let mut k: i32 = 0
+            while k < f.c.nfx {
+                if f.c.fx[@as(usize, k)].kind == rules::fx::DISGUISE { shown = @as(u32, f.c.fx[@as(usize, k)].ints[0]) }
+                k = k + 1
+            }
+            c.disguise = shown
         }
         // The effects' timers (UpdateEffectList): regeneration, poison, expiry.
         if f.c.nfx > 0 and not c.dead {

@@ -202,6 +202,7 @@ namespace obj {
         // Placeholder stats until lib/rules (HOOK(rules): stats: rules::Creature).
         abilities: [6]u8,
         hit_dice: u32,
+        disguise: u32,                      // an EffectDisguise's appearance.2da row (0: none): what the creature looks like
         classes: [3]u32,
         class_levels: [3]u32,
         good_evil: u32,
@@ -618,7 +619,7 @@ namespace obj {
             portrait = 0, soundset = 0xFFFFFFFF, is_pc = false, walk_rate = 1.7, run_rate = 5.4,
             perspace = 0.35, creperspace = 0.4, height = 1.6, equipped = [INVALID; 20],
             inventory = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
-            abilities = [10; 6], hit_dice = 1, classes = [0; 3], class_levels = [0; 3], good_evil = 50,
+            abilities = [10; 6], hit_dice = 1, disguise = 0, classes = [0; 3], class_levels = [0; 3], good_evil = 50,
             perception_range = 11, spawn_fired = false, last_heartbeat = 0, heartbeat_interval = 3000,
             speed = 0.0, speed_factor = 0.1,
             path = list::new(math::Vec3, heap::Heap){ realloc = heap::alloc, heap },

@@ -53,12 +53,15 @@ namespace visual {
     // What a visual's models depend on: a creature's appearance and its armour and weapons.
     fn signature_of { o: *obj::Object } -> u64 {
         let c = obj::creature{ o } ifnull { return 0 }
-        let mut h: u64 = @as(u64, c.appearance) + @as(u64, c.head + 1) * 4096
+        let mut h: u64 = @as(u64, shown_appearance{ c }) + @as(u64, c.head + 1) * 4096
         h = @wrap_add(@wrap_mul(h, 1000003), @as(u64, c.equipped[obj::SLOT_BODY]))
         h = @wrap_add(@wrap_mul(h, 1000003), @as(u64, c.equipped[obj::SLOT_RIGHT_WEAPON]))
         h = @wrap_add(@wrap_mul(h, 1000003), @as(u64, c.equipped[obj::SLOT_LEFT_WEAPON]))
         return h
     }
+
+    // The appearance.2da row the creature is drawn with: its disguise's while it has one.
+    fn shown_appearance { c: *obj::Creature } -> u32 { return if c.disguise > 0 { c.disguise } else { c.appearance } }
 
     // A cell of appearance.2da ("" for a blank or "****").
     fn cell { t: twoda::Table, row: usize, column: []u8 } -> []u8 {
@@ -69,7 +72,7 @@ namespace visual {
     // null when the appearance has no model.
     fn creature_parts { mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, o: *obj::Object, c: *mut obj::Creature } -> !?bool {
         let t = w.tables.appearance
-        let row = @as(usize, c.appearance)
+        let row = @as(usize, shown_appearance{ c })
         let kind = cell{ t, row, column = "modeltype" }
         let mut envmap = cell{ t, row, column = "envmap" }
         if ci::eq{ a = envmap, b = "default" } { envmap = "" }
