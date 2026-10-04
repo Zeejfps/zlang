@@ -65,7 +65,7 @@ namespace render {
     enum WindowMode: u8 { windowed, fullscreen, borderless }
 
     // What the last submit drew.
-    struct Stats { draws: u32, triangles: u32, culled: u32, state_changes: u32, quads: u32, particles: u32 }
+    struct Stats { draws: u32, triangles: u32, culled: u32, state_changes: u32, quads: u32, particles: u32, ui_draws: u32 }
 
     // ---- textures
 

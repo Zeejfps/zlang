@@ -83,6 +83,8 @@ namespace fxhud {
     fn log { mut w: world::World, dev: gpu::Device } {
         let t = gpu::get_timings{ dev }
         if t.count == 0 { return }
+        let st = gpu::get_stats{ dev }
+        _ = @fmt(&w.io, "  ui: {} quads in {} draws\n", st.quads, st.ui_draws)
         _ = @fmt(&w.io, "  gpu: {} ms in all:", t.total)
         let mut i: u32 = 0
         while i < t.count {
