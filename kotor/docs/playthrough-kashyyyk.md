@@ -80,8 +80,7 @@ the Walkway and the Dark Jedi, 49,490 after the poachers, 50,490 with the Great 
    `warp TAG party` and `warpxy X,Y party` stand the followers beside the leader (18671af; a plain warp left them 200 m away).
 4. **`SurrenderToEnemies` only stopped the fight** (this branch). The original (`CSWSCreature::SurrenderToEnemies`, 0x00518990, re/combat.md 8.5)
    cancels combat and clears the effects of the caller and of every creature within 250 m that the caller counts an
-   enemy (standing below 11), which also makes them commandable again, and then moves the caller into a faction everybody is
-   neutral to (repute.2da's Surrender_1, all 50). Ours cleared actions within 10 m and left Freyyr in Hostile_1: the party went
+   enemy (standing below 11), which also makes them commandable again, and then moves the caller into the Neutral faction (repute.2da row 5: re/combat.md 8.5). Ours cleared actions within 10 m and left Freyyr in Hostile_1: the party went
    on beating the one-hit-point immortal after the talk (part 13 made him neutral by hand), and a player knocked down by his
    weapon stayed non-commandable (`ActionStartConversation(PC)` refuses such a target, which lost the talk in an earlier run). Freyyr's "Now die!" reply
    (`k_pkas_freyyrfin`) sends him back to Hostile_1 itself. Part 13 no longer touches him: his faction is 9 and nobody hits him.

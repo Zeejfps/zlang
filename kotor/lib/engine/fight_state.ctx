@@ -18,8 +18,11 @@ namespace fight {
     const STATE_HORRIFIED: i32 = 8
     const STATE_WHIRLWIND: i32 = 10
 
-    // repute.2da's Surrender_1 row and column are all 50: neutral to everyone, and everyone to it.
-    const SURRENDER_FACTION: u32 = 9
+    // The faction SurrenderToEnemies puts the caller into: the manager's first slot (CServerExoAppInternal+0x10054,
+    // field 0), which the faction loader (0x0052b2a0) fills with the repute.2da row labelled "neutral", row 5. A
+    // creature that dies joins it too (OnApplyDeath, 0x004e0ac0). Its row is 50 toward every standard faction but
+    // Endar_Spire's, and theirs toward it is 50.
+    const SURRENDER_FACTION: u32 = 5
 
     // The looping animation of a state (UpdateStateAnimation 0x004f28d0 picks one per state; the
     // client's table from state to name was not read, so these are the animations.2da rows that
@@ -180,7 +183,7 @@ namespace fight {
     // creature of its area within 250 m that it counts an enemy (its standing toward them is below 11) stop
     // fighting and lose their effects, a knockdown included, so that whoever it speaks to next can be spoken to
     // (the player's, after Freyyr's hit); `keep_own` leaves the effects a creature made on itself. The surrendering
-    // creature then joins the Surrender_1 faction, which everybody counts neutral: nobody takes up the fight again
+    // creature then joins the Neutral faction, which every standard faction counts neutral: nobody takes up the fight again
     // when the talk ends (Freyyr, k_pkas_freyyuser, never has his side reset; "Now die!" sends him back to
     // Hostile_1 with k_pkas_freyyrfin). The standing of the others toward it is not changed.
     fn surrender { mut w: world::World, id: u32, keep_own: bool } {
