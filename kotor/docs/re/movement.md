@@ -331,6 +331,15 @@ tracked part is the creature model's `CAMERAHOOK` node if it has one, otherwise 
    and C += up·(0.35 + 0.15)·p/|C − L| (`up` = the target's +z): the camera moves in and rises a
    little. (high)
 
+Notes on this (read from `ResolveCollision` `0x0063b050` and `ClipCameraSegmentToCreatures` `0x004bf650`
+again): the loop in `ResolveCollision` runs once (its counter starts at 1), so the four rays are cast once
+from the camera `ComputeFollowPosition` gave; the hit nearest the ray's end does not matter, the stretch
+left past the hit does, and the camera ends *on* the surface of the worst ray. The creature clip only acts
+when the camera is inside a creature's CAMERASPACE circle (the pre-test) *and* the segment crosses that
+circle twice (the call that finds the crossings returns 2 only then); a segment that ends inside a circle
+has one crossing, so as decompiled the clip never fires (low: a flag test in the compare could hide it).
+The up vector for the lift is the target's orientation applied to +z (the quaternion is stored w first).
+
 There is **no zoom**: the mouse wheel goes to the GUI; the zoom input `0x006401d0` belongs to the
 legacy modes. (med)
 

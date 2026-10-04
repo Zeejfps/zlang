@@ -277,6 +277,9 @@ namespace tmpl {
         let row = @as(usize, c.appearance)
         c.perspace = twoda::get_float{ t, row, column = "perspace" } ifnull c.perspace
         c.creperspace = twoda::get_float{ t, row, column = "creperspace" } ifnull c.perspace
+        // A blank CAMERASPACE (nearly every row) is CREPERSPACE.
+        let camspace = twoda::get_float{ t, row, column = "cameraspace" } ifnull 0.0
+        c.camspace = if camspace > 0.0 { camspace } else { c.creperspace }
         c.height = twoda::get_float{ t, row, column = "height" } ifnull c.height
         let rate = twoda::get_string{ t, row, column = "moverate" } ifnull "NORM"
         let speeds = w.tables.creaturespeed
