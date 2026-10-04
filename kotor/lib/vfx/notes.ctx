@@ -83,6 +83,13 @@ namespace vfx {
                 if target != obj::INVALID { visual_on{ &v, &sc, &w, &dev, effect, object = target } }
                 else { visual_at{ &v, &sc, &w, &dev, effect, at = position, facing = math::vec3::zero{} } }
             }
+            beam{ style, source, target, part, seconds } => {
+                if v.beam_tex == null {
+                    v.beam_tex = material::get{ cache = &sc.materials, fs = &w.fs, &dev, rm = w.rm.*, name = "fx_lightning" }.texture
+                }
+                start_beam{ &v, style, source, target, part, seconds }
+            }
+            beam_end{ style, target } => { end_beams{ &v, style, target } }
             visual_hold{ effect, target } => { hold_on{ &v, &sc, &w, &dev, effect, object = target } }
             visual_release{ effect, target } => { release{ &v, effect, object = target } }
             effect_model{ model, object, hook, position, life } => {

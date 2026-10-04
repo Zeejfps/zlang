@@ -104,6 +104,22 @@ namespace fight {
             }
             k = k + 1
         }
+        // The cast sound (v_useforce for the Force powers) as the power is cast; the conjuration's own
+        // sounds, a generic one and one by the caster's gender, as it begins.
+        if cast {
+            let sound = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "castsound" } ifnull ""
+            if sound.len > 0 and not ci::eq{ a = sound, b = "****" } { say{ &w, name = sound, at = chest_of{ o }, source = id } }
+        } else {
+            let mut gender: bool = false
+            if obj::creature{ o } is some{ value = c } { gender = c.gender == 1 }
+            let columns: [2][]u8 = ["conjsoundvfx", if gender { "conjsoundfemale" } else { "conjsoundmale" }]
+            let mut n: usize = 0
+            while n < 2 {
+                let sound = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = columns[n] } ifnull ""
+                if sound.len > 0 and not ci::eq{ a = sound, b = "****" } { say{ &w, name = sound, at = chest_of{ o }, source = id } }
+                n = n + 1
+            }
+        }
     }
 
     // The first damagehitvisual.2da effect of a damage type that did damage (ranged column).
