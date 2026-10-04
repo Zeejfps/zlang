@@ -227,6 +227,7 @@ namespace obj {
         sight_range: f32,                           // 0 until first computed
         hearing_range: f32,
         last_perception: u64,
+        idle_since: u64,                            // world ms its action queue has been empty since (ai::wake_follower); 0: not idle
         // Appended by routines/creature.ctx and items.ctx.
         xp: u32,                            // GetXP/SetXP (stats +0x68)
         gold: u32,                          // GetGold (UTC Gold); the party purse is HOOK(party)
@@ -626,7 +627,7 @@ namespace obj {
             path_next = 0, path_goal = math::vec3::zero{}, path_adjusted = false, moving = false, in_combat = false, dead = false,
             triggers = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
             perceived = list::new(Perceived, heap::Heap){ realloc = heap::alloc, heap },
-            sight_range = 0.0, hearing_range = 0.0, last_perception = 0,
+            sight_range = 0.0, hearing_range = 0.0, last_perception = 0, idle_since = 0,
             xp = 0, gold = 0, inv_cursor = 0, listening = false, listen_text = [[0; 32]; 4],
             listen_len = [0; 4], listen_number = [0; 4], listen_count = 0,
             destroyable = true, raiseable = true, selectable_dead = false,
