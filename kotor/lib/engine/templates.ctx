@@ -438,6 +438,7 @@ namespace tmpl {
         script{ doc, s, o, label = "OnTrapTriggered", slot = obj::Slot::trap_triggered }
         script{ doc, s, o, label = "OnDisarm", slot = obj::Slot::disarm }
         script{ doc, s, o, label = "OnClick", slot = obj::Slot::click }
+        traps::read{ doc, s, t = &t.trap, trigger_type = t.trigger_type, table = w.tables.traps }
     }
 
     // The GIT's Geometry list: points relative to the trigger's position, into area space.

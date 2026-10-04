@@ -52,6 +52,7 @@ namespace ingame {
         party_alive: i32,                   // party members on their feet last frame
         ap_cooldown: f32,                   // seconds before "Party Member Down" may pause again
         pause_reason: u32,                  // the banner's text (dialog.tlk) for the next pause
+        mine_quiet: f32,                    // seconds no hostile mine has been in sight (mine_watch.ctx)
     }
 
     // What the camera takes from the mouse each frame (CameraInputMouseYaw, movement.md 2.3).
@@ -87,6 +88,7 @@ namespace ingame {
             ap_target = saved.pause_triggers, ap_round = saved.pause_end_round, ap_action_menu = saved.pause_action_menu,
             enemy_noted = false, party_alive = 0, ap_cooldown = 0.0, pause_reason = REASON_PAUSED,
             psel_wait = false, psel_exit = resref::empty{}, psel_force1 = -1, psel_force2 = -1, psel_paused = false,
+            mine_quiet = 1000.0,
         }
         let mut p = try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
         hud::set_tooltips{ h = &p.hud, g = &p.gui, &w, text = &p.text }
@@ -602,6 +604,7 @@ namespace ingame {
             if ev.panel == ui.hud.panel { hud_event{ &ui, &w, &dev, ev } }
             else if ev.panel == ui.pause_panel and ev.kind == gui::EventKind::activate { set_player_pause{ &ui, &w, &dev, on = false } }
         }
+        if not ui.hud_hidden { watch_mines{ &ui, &w, dt } }
         // The pause banner follows the clock (a script or the toggle can change it).
         if ui.pause_panel != 0 and not clock_paused_by_player{ w = &w } {
             gui::close{ g = &ui.gui, id = ui.pause_panel }

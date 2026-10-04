@@ -82,8 +82,8 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
   shows dimmed and says why in the message bar for five seconds (Force Depleted, Restricted by
   Armor, Full Health, PC Dead), and the hovered slot's entry is named above the slots. The friendly
   powers are the original's list (one per `ForceFriendly` line, the highest `ForcePriority`:
-  [mechanics/force.md](../mechanics/force.md)); the item lists are ours (the header of the file). Mines are not listed (no trap action in the engine) and the keys (keymap.2da) are not
-  bound. `ui useitem RESREF [N]` is the headless test; `scripts/selfslots.txt` the run.
+  [mechanics/force.md](../mechanics/force.md)); the item lists are the original's (docs/mechanics/items-skills.md); the mine slot lists trap kits and lays one
+  (lib/engine/traps.ctx, docs/mechanics/traps.md). The keys (keymap.2da) are not bound. `ui useitem RESREF [N]` is the headless test; `scripts/selfslots.txt` the run.
 - **The target block's Force powers** (`hud::power_actions` in `target.ctx`, used by `block.ctx`): against a hostile
   creature the middle slot lists the leader's hostile powers, one per `ForceHostile` line (spells.2da), the
   known power of the line with the highest priority, those that bar the target's race (`Exclusion`) left out. An
@@ -185,7 +185,7 @@ comment so the rules lead's merge finds it.
 
 ## Open
 
-- Self action slots: the mines slot and the keys; the leader-swap
+- Self action slots: the keys; the leader-swap
   animation, effect-count icons, the stealth toggle, bark bubbles (dialogue lead's).
 - Item drag-and-drop; variable-height list rows (the journal splits long texts into rows);
   a scrolling description box.

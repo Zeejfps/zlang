@@ -1,0 +1,9 @@
+# The leader walks over a hostile mine (docs/mechanics/traps.md). Start: module:tar_m04aa, 160 frames.
+# Setup only: 200 hit points. Walking (goto, a click on the floor's walk) across mine 148 brings the leader within
+# a metre of it: "You triggered a Mine!", k_trp_generic runs as the mine (18 fragmentation damage, Reflex DC 15
+# halves), the one-shot mine explodes (its `activate`, cb_gr_fragment) and goes. Found or not does not matter.
+5 warpxy 308,239.5
+10 goto 300,239.5
+10 ui stat hp 200
+150 ui pos
+150 ui mines

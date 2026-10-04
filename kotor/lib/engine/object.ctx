@@ -257,6 +257,8 @@ namespace obj {
         // Appended by routines/creature.ctx and actions.ctx.
         head: i32,                          // DuplicateHeadAppearance: a heads.2da row to show instead of the appearance's own, -1 none
         stealth: bool,                      // ActionUseSkill(SKILL_STEALTH): stealth mode is on (perception does not read it yet)
+        // Appended by traps.ctx.
+        trap_search_ms: u64,                // when it last looked for traps (DoTrapDetection's timer)
     }
 
     // One creature another perceives (gameloop.md 2.4).
@@ -331,6 +333,7 @@ namespace obj {
         linked_flags: u8,
         transition_name: Name,
         inside: list::List(u32, heap::Heap),
+        trap: traps::Trap,                  // a trap trigger's trap (traps.ctx)
     }
 
     struct Waypoint { has_map_note: bool, map_note_enabled: bool, map_note: Name }
@@ -619,6 +622,7 @@ namespace obj {
             last_hostile_target = INVALID, last_attack_action = 65535, last_force_power = -1,
             last_combat_feat = -1, last_attack_result = 0, force_power_ok = false, ai_style = 0,
             party_ai_style = 0, blocked_ms = 0, fighter = null, fx_cursor = 0, head = -1, stealth = false,
+            trap_search_ms = 0,
         }
     }
 }

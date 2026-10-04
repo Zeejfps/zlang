@@ -41,6 +41,7 @@ namespace world {
         weaponsounds: twoda::Table,
         appearancesndset: twoda::Table,
         soundset: twoda::Table,
+        traps: twoda::Table,
     }
 
     // A pending module change (gameloop.md 5.1).
@@ -251,6 +252,7 @@ namespace world {
             weaponsounds = try load_table{ &fs, heap, rm, name = "weaponsounds" },
             appearancesndset = try load_table{ &fs, heap, rm, name = "appearancesndset" },
             soundset = try load_table{ &fs, heap, rm, name = "soundset" },
+            traps = try load_table{ &fs, heap, rm, name = "traps" },
         }
     }
 
@@ -353,7 +355,7 @@ namespace world {
                     polygon = slice::empty(math::Vec3){}, trigger_type = 0, linked_to = slice::empty(u8){},
                     linked_to_module = resref::empty{}, linked_flags = 0,
                     transition_name = obj::Name{ strref = 0xFFFFFFFF, text = slice::empty(u8){} },
-                    inside = list::new(u32, heap::Heap){ realloc = heap::alloc, heap = h },
+                    inside = list::new(u32, heap::Heap){ realloc = heap::alloc, heap = h }, trap = traps::none{},
                 } } }
             }
             item => {

@@ -336,13 +336,15 @@ namespace rt_act {
     // void ActionUseSkill(int nSkill, object oTarget, int nSubSkill = 0, object oItemUsed = OBJECT_INVALID)
     // (actions.md 3.13, UseSkill 0x004fbe40): a skill the creature does not have does nothing. Stealth
     // toggles stealth mode (kept on the creature; perception does not read it yet), Security opens the
-    // target's lock (unlock_with_security). Demolitions (traps: no trap system) and Treat Injury (HEAL:
-    // medpacs and poisons are not modelled) are not done; the rest are not usable on a target.
+    // target's lock (unlock_with_security). Demolitions queues a trap action on the target (subskill
+    // 100 FLAGTRAP, 101 RECOVERTRAP, 102 EXAMINETRAP, else DISABLETRAP; disable and recover refuse a
+    // trap that is not disarmable: AddTrapActions 0x004f9da0). Treat Injury (HEAL: medpacs and poisons
+    // are not modelled) is not done; the rest are not usable on a target.
     fn action_use_skill { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let r = nwscript::ActionUseSkill
         let skill = try nwarg::int{ &vm, routine = r, argc, i = 0 }
         let target = try nwarg::object{ &vm, routine = r, argc, i = 1 }
-        _ = try nwarg::int{ &vm, routine = r, argc, i = 2 }
+        let sub = try nwarg::int{ &vm, routine = r, argc, i = 2 }
         _ = try nwarg::object{ &vm, routine = r, argc, i = 3 }
         let me = self_of{ vm = &vm }
         let o = world::object{ w = &w, id = me } ifnull { return }
@@ -354,6 +356,14 @@ namespace rt_act {
             c.stealth = not c.stealth
         } else if skill == rules::skill::SECURITY {
             _ = unlock_with_security{ &w, who = me, target }
+        } else if skill == rules::skill::DEMOLITIONS {
+            let t = world::object{ w = &w, id = target } ifnull { return }
+            let trap = traps::of{ o = t } ifnull { return }
+            let kind = if sub == 100 { actions::Kind::flag_trap } else if sub == 101 { actions::Kind::recover_trap } else if sub == 102 { actions::Kind::examine_trap } else { actions::Kind::disable_trap }
+            if (kind == actions::Kind::disable_trap or kind == actions::Kind::recover_trap) and not trap.disarmable { return }
+            let mut a = actions::make{ kind }
+            a.params[0] = actions::Param::object{ id = target }
+            _ = actions::add{ &w, id = me, action = a, force = false }
         } else if w.log.actions {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "ActionUseSkill {} on {}: not implemented\n", skill, target)

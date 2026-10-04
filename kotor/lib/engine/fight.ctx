@@ -1191,13 +1191,17 @@ namespace fight {
     }
 
     // Whether the head of the queue plays an animations.2da row of its own, which this must not
-    // end as it ends an attack's: OPENLOCK and LOCK kneel at the lock for 1.5 s (doors.ctx).
+    // end as it ends an attack's: OPENLOCK and LOCK kneel at the lock for 1.5 s (doors.ctx), the trap
+    // actions over the mine (traps.ctx).
     fn action_holds_animation { o: *obj::Object } -> bool {
         if o.actions.len == 0 { return false }
         let head = list::items{ list = o.actions }[0]
         // A cast plays its conjure and cast animations (and a thrown saber keeps the pose) from its second phase.
         if head.kind == actions::Kind::cast_spell and head.phase >= 1 { return true }
-        return (head.kind == actions::Kind::open_lock or head.kind == actions::Kind::lock) and head.phase >= 2
+        let k = head.kind
+        let kneels = k == actions::Kind::open_lock or k == actions::Kind::lock or k == actions::Kind::disable_trap or k == actions::Kind::recover_trap or
+            k == actions::Kind::flag_trap or k == actions::Kind::examine_trap or k == actions::Kind::set_trap
+        return kneels and head.phase >= 2
     }
 
     fn play_ready { mut w: world::World, o: *mut obj::Object, c: *obj::Creature } {
