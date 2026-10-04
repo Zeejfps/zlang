@@ -59,6 +59,26 @@ shadows, 0 pixels differ.
 - **Cost** (RTX 4090, the Endar Spire bridge): bloom 0.05 ms at 1080p, 0.10 ms at 4K; composite 0.01 / 0.03 ms.
 - **Pictures**: `kotor/out/fx/t/bridge_base.png` / `bridge_fx_planar.png`.
 
+### Room light (creatures lit by the room)
+
+- **Inputs**: `Enhance.room_light`; `Draw.ambient` and `frame.ambients` (ambient cubes), filled by `lib/scene/probes.ctx`.
+- **What**: the game finds the light around each creature, placeable and door from the rooms' lightmaps and hands it
+  over as an ambient cube; the shader uses it in place of the area's flat ambient (`DynAmbientColor`), so a character
+  in shadow is darker, one by a red wall is tinted by it, and the floor lights it from below. The frame's point lights
+  still add on top, per pixel as before.
+- **Probes**: a lattice of cells 1.5 m across and 2 m high; a cell's probe is made the first time something drawn
+  stands next to it and kept for the area. A probe casts 12 rays over each face's hemisphere (cosine-spread) at the
+  rooms' opaque triangles (world space, kept with their lightmap UVs; triangles far from the walkmeshes and backdrops
+  over 80 m are left out) through a grid of 2 m cubes; a hit sends back its lightmap texel (lightmaps kept on the CPU
+  at 64x64 at most) times its texture's mean colour, a miss the area's ambient. A ray meeting a surface from behind is
+  inside geometry; a probe that sees mostly backs counts for nothing. An object's cube mixes the four probes around it.
+  Decisions, to keep the art direction: half of each face's colour is pulled back to the area's ambient tint (the
+  designers' choice) at the face's brightness, and the brightness stays between half and twice the area's ambient.
+- **Cost**: CPU, the first frame of an area (the triangles, lightmaps and grid, then the visible objects' probes):
+  65 ms on the Endar Spire bridge (77,000 triangles, 104 probes), 37 ms in the Dantooine grove; afterwards only new
+  cells, at ~0.1 ms a probe. GPU: one more uniform array per draw.
+- **Pictures**: `kotor/out/fx/t/apt_rl_cmp.png` (the Taris apartment: flat ambient, room light), `grove_rl_cmp.png`.
+
 ## Settings
 
 The panel is the Advanced Graphics panel's file (`optgraphicsadv.gui`) laid out again: one column of fifteen

@@ -51,6 +51,8 @@ namespace scene {
         signature: u64,                 // what the models were made from (visual::signature_of)
         saber: u8,                      // the lightsaber's blade: 0 not looked at yet, 1 off, 2 lit, 3 this creature has none
         saber_force: u8,                // a script's SetLightsaberPowered override: 0 none, 1 off, 2 lit
+        light: render::AmbientCube,     // the light around it (probes.ctx), when `lit`
+        lit: bool,
     }
 
     struct Scene {
@@ -74,6 +76,8 @@ namespace scene {
         drawn_objects: u32,
         look: Look,                     // a creature in stealth mode's texture (stealth_look.ctx)
         grass: grass::Field,            // the area's grass (grass.ctx); `grass.on` is the Grass option, set by the owner
+        room_light: bool,               // the Room Light option (set by the owner): visuals take the light around them (probes.ctx)
+        field: Field,                   // what the probes are cast against, and the probes
     }
 
     fn make { arena: *mut arena::Arena, heap: *mut heap::Heap, scratch: alloc::Bytes, rm: res::Manager } -> Scene {
@@ -91,6 +95,7 @@ namespace scene {
             by_id = map::new(u32, usize, arena::Arena){ realloc = arena::alloc, heap = arena, hash = map::hash_u32, eq = map::eq_u32 },
             time = 0.0, current_room = -1, ambient = math::Vec3{ x = 0.35, y = 0.35, z = 0.35 }, fog = render::no_fog{},
             drawn_rooms = 0, drawn_objects = 0, look = no_look{}, grass = grass::none{},
+            room_light = false, field = no_field{ arena },
         }
     }
 
