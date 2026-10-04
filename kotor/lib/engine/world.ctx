@@ -117,7 +117,8 @@ namespace world {
         serial: u32,                        // action serial numbers
         heartbeats: map::Map(u32, u64, heap::Heap),   // last heartbeat of doors, placeables, triggers
         cursor_area: usize,                 // GetNextObjectInArea: where in objects.all to go on from
-        cursor_shape: usize,                // GetNextObjectInShape: likewise
+        cursor_shape: usize,                // GetNextObjectInShape: the next place in shape_walk
+        shape_walk: list::List(u32, heap::Heap),    // GetFirstObjectInShape's matches in ascending x (routines/objects.ctx)
         // Appended by routines/misc.ctx.
         cursor_inside: usize,               // GetNextInPersistentObject: where in the trigger's list to go on from
         tokens: tokens::Table,              // SetCustomToken: <CUSTOMnnn> texts, for the whole session
@@ -176,7 +177,7 @@ namespace world {
             module_frame = false, autopause_asked = 0,
             serial = 0,
             heartbeats = map::new(u32, u64, heap::Heap){ realloc = heap::alloc, heap, hash = map::hash_u32, eq = map::eq_u32 },
-            cursor_area = 0, cursor_shape = 0, minigame = null,
+            cursor_area = 0, cursor_shape = 0, shape_walk = list::new(u32, heap::Heap){ realloc = heap::alloc, heap }, minigame = null,
             conversation = dlg::new_state{},
             cursor_inside = 0, tokens = tokens::new{ heap }, last_acquired = obj::INVALID, last_acquired_from = obj::INVALID,
             last_activated = obj::INVALID, last_activator = obj::INVALID, last_activated_target = obj::INVALID,
