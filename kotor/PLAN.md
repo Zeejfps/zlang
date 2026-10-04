@@ -137,6 +137,10 @@ original's droid and its shield item. Kashyyyk: Freyyr stays hostile after his s
 makes him neutral by hand), and Chuundar's plot end is unplayed. Tatooine: from the krayt dragon on.
 Taris: the Sith uniform route and the side quests.
 
+**Enhanced rendering** (docs/design/enhanced-render.md): depth of field blurs the whole of a cutscene's wide
+shot on Manaan's sea floor (`kotor/out/dof_blur_m12b.png`, the Star Map scene's second shot): focus fell on
+something not in view, or the focus distance was wrong.
+
 **Audio:** the sound-object scheduler, `prioritygroups.2da` limits, battle music, EAX-style
 reverb.
 
