@@ -27,7 +27,8 @@ namespace selfslots {
     // changes when the bag or the leader does.
     const REBUILD: f32 = 0.2
     const MESSAGE_SECONDS: f32 = 5.0
-    const BLINK_SECONDS: f32 = 0.4
+    // A use makes the icon dip to nothing and come back over two tenths of a second (UpdateBlink, 0x006858e0).
+    const BLINK_SECONDS: f32 = 0.2
 
     // Why an entry cannot be used now (the original's reason codes).
     const R_OK: i32 = 0
@@ -237,20 +238,25 @@ namespace selfslots {
 
     fn tag_for { into: []mut u8, prefix: []u8, k: usize } -> []u8 { return hud::tag_n{ into, prefix, n = k } }
 
-    // Sets slot `k`'s controls from its list: hidden when empty, the selected entry's picture
-    // (dimmed when it cannot be used), the arrows when there is more than one.
+    // Sets slot `k`'s controls from its list as CSWGuiActionSlot::SetState does (0x00689280, called for every
+    // slot every frame by UpdateActionMenus): the frame and the icon are never hidden, the arrows show only
+    // for more than one choice, and a slot with none is a blank frame drawn at half strength. A list with
+    // choices puts the selected one's picture on the icon (dimmed when it cannot be used).
     fn show_slot { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, k: usize } {
         let mut buf: [24]u8
+        let mut icon_buf: [24]u8
         let sl = &s.slots[k]
         let has = sl.count > 0
-        gui::set_visible{ &g, panel, tag = tag_for{ into = buf[..], prefix = "BTN_ACTION", k }, visible = has }
-        gui::set_visible{ &g, panel, tag = tag_for{ into = buf[..], prefix = "LBL_ACTION", k }, visible = has }
+        gui::set_tooltip{ &g, panel, tag = tag_for{ into = buf[..], prefix = "BTN_ACTION", k }, text = world::string_by_strref{ w = &w, strref = TIPS[k] } } iferr {}
+        let lbl = tag_for{ into = icon_buf[..], prefix = "LBL_ACTION", k }
+        gui::set_frame_alpha{ &g, panel, tag = tag_for{ into = buf[..], prefix = "BTN_ACTION", k }, alpha = if has { 1.0 } else { 0.5 } }
         gui::set_visible{ &g, panel, tag = tag_for{ into = buf[..], prefix = "BTN_ACTIONUP", k }, visible = sl.count > 1 }
         gui::set_visible{ &g, panel, tag = tag_for{ into = buf[..], prefix = "BTN_ACTIONDOWN", k }, visible = sl.count > 1 }
-        gui::set_tooltip{ &g, panel, tag = tag_for{ into = buf[..], prefix = "BTN_ACTION", k }, text = world::string_by_strref{ w = &w, strref = TIPS[k] } } iferr {}
-        if not has { return }
+        if not has {
+            gui::clear_picture{ &g, panel, tag = lbl }
+            return
+        }
         let e = sl.entries[index_of{ sl, id = sl.selected }]
-        let lbl = tag_for{ into = buf[..], prefix = "LBL_ACTION", k }
         let img = if k == 0 { gui::resolve_img{ &g, fs = &w.fs, &dev, name = e.icon[..e.icon_len] } } else { items::icon_of{ &g, &w, &dev, id = e.id } }
         if img.ok { gui::set_picture{ &g, panel, tag = lbl, texture = img.tex, w = img.w, h = img.h } } else { gui::clear_picture{ &g, panel, tag = lbl } }
         if gui::find_control{ &g, panel, tag = lbl } is some{ value = c } {
@@ -328,9 +334,16 @@ namespace selfslots {
         while k < SLOTS {
             if s.blink[k] > 0.0 {
                 s.blink[k] = s.blink[k] - dt
-                // Two blinks: dark for the first and third tenth, lit for the others.
-                let phase = if s.blink[k] <= 0.0 { 1 } else { @as(i32, s.blink[k] / 0.1) }
-                gui::set_visible{ &g, panel, tag = tag_for{ into = buf[..], prefix = "LBL_ACTION", k }, visible = s.slots[k].count > 0 and phase % 2 == 1 }
+                if s.blink[k] <= 0.0 {
+                    // Over: the icon is as the list left it.
+                    show_slot{ &s, &g, &w, &dev, panel, k }
+                } else if gui::find_control{ &g, panel, tag = tag_for{ into = buf[..], prefix = "LBL_ACTION", k } } is some{ value = c } {
+                    // The first tenth the icon fades out, the second it fades in; it overrides the dimming.
+                    let t = s.blink[k]
+                    let a: f32 = if t > 0.1 { 1.0 - (0.2 - t) * 10.0 } else { (0.1 - t) * 10.0 }
+                    c.border.tinted = true
+                    c.border.color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a }
+                }
             }
             k = k + 1
         }

@@ -543,15 +543,32 @@ room and face under the new point. (high)
 
 ### 3.6 Animations
 
-Movement picks server-side animation ids; the client blends them. `CSWCCreature::UpdateMovementAnimation`
-`0x00611f50` sets the walk or run cycle's playback rate to `S x A / D x f` (high for the shape, med for the
-details): S the creature's walk or run speed, A the length of the cycle that is playing, D the appearance's
-`WALKDIST` or `RUNDIST` (the **metres one cycle covers**, scaled by 1000 against the millisecond length in the
-code) and f the acceleration and braking factor of 3.3 (the client recomputes it, `0x0060bf60`; floor 0.1). The
-cycle's own pace is D / A; the data agrees: the humanoid run cycle is 0.733 s and RUNDIST 3.96 m (5.4 m/s, the
-Normal run rate), the walk 1.067 s and WALKDIST 1.813 m (1.7 m/s), and the stance foot of both moves back at
-about that speed. A cycle that replaces another starts at the same fraction of its length. (Not modelled: that, and a run
-case that reads WALKDIST while the animation is in its first half second.)
+Movement picks server-side animation ids; the client blends them. Three client routines choose the walk
+or run cycle and its playback rate, by who is moving (the client creature's update, `0x0061ad60`, asks them in this
+order). The rate is always **speed x the cycle's length / the ground one cycle covers**, so the feet keep up
+with the ground; what differs is which speed, which distance and who picks walk or run. (high for the shape, med
+for the details)
+
+| Who | Routine | Walk or run | Rate |
+|---|---|---|---|
+| The creature the player drives (the leader under the keys) | `0x00615960` | its forward velocity above 0.6 x its run speed: run (10004), else walk (10002); sideways and backward velocity play the strafe and back-pedal cycles, no velocity the stand cycle | velocity x cycle length / appearance **DriveAnimRun** or **DriveAnimWalk** |
+| A party member (slot 1 or 2) with FOLLOWLEADER at the head of its queue | `0x00615e80` | its smoothed speed (6.2) 0: stand; below 0.6 x its run rate: walk; else run | smoothed speed x cycle length / DriveAnimRun or DriveAnimWalk |
+| Everyone else: a creature on a planned path (MOVETOPOINT and everything built on it) | `CSWCCreature::UpdateMovementAnimation` `0x00611f50` | the server's animation id: run when the action's run flag is set, else walk | speed x cycle length / appearance **RUNDIST** or **WALKDIST** x f (the acceleration and braking factor of 3.3, which the client recomputes, `0x0060bf60`; floor 0.1) |
+
+The run speed is the run rate the server last sent the client (creature `+0x210`, mm/s, with the speed effects in it:
+`GetRunRate`) and the same figure in m/s at the movement block `+0x5c`. The movement block (`+0x21c`, one per client
+creature) is the appearance row's DriveAccl (`+0x58`), DriveMaxSpeed (`+0x5c`), DriveAnimWalk (`+0x60`) and DriveAnimRun
+(`+0x64`), filled by `0x00698b10`; a DriveAnim column of 0 reads as 2 (walk) or 4 (run). In stealth mode
+the driven creature's velocity is capped to `+0x60` and both cycles are replaced by the stealth walk (10133). The
+distance columns are the **metres one cycle covers** (scaled by 1000 against the millisecond length in the code):
+the humanoid run cycle is 0.733 s and RUNDIST / DriveAnimRun 3.96 m (5.4 m/s, the Normal run rate, plays at
+rate 1.0), the walk 1.067 s and 1.813 m (1.7 m/s), and the stance foot of both moves back at about that speed. The
+two column pairs agree for the humanoids and differ for some rows (the Envirosuit's DriveAnimWalk 0.75 and
+DriveAnimRun 1.25 against WALKDIST 1.2 and RUNDIST 2.3; the Rodians' 1.7 and 5.4 against 2 and 4). There is **no
+blending between walk and run by anything but the speed threshold**: a creature under control passes from the
+walk to the run cycle when its velocity crosses 0.6 x its run speed (3.24 m/s for a run rate of 5.4), the walk
+cycle playing at up to 1.9 x on the way. A cycle that replaces another starts at the same fraction of its length.
+(Not modelled: that, and a run case that reads WALKDIST while the animation is in its first half second.)
 
 | Id | Use |
 |---|---|
@@ -559,7 +576,7 @@ case that reads WALKDIST while the animation is in its first half second.)
 | 10002 | walk |
 | 10003 | walk backwards (short reverse moves, 3.4) |
 | 10004 | run |
-| 10093, 10133 | other walk variants (`IsWalkAnimation` `0x004cc1c0`) |
+| 10093, 10133 | other walk variants (`IsWalkAnimation` `0x004cc1c0`); 10133 is the stealth walk both cycles turn into |
 
 ### 3.7 Forced motion (states 4–6)
 
@@ -904,16 +921,21 @@ here. (med)
 ### 6.2 One follower step (`UpdateFollowLeader`)
 
 1. Not in the party table → keep waiting; the leader → done.
-2. **Speed** (mm/s): let L be the leader's client speed (`+0x3b0`, m/s) and Dl the squared
-   distance the leader moved from the follower's reference point.
-   - Dl ≥ 16 (4 m) or the follower is 10 m or more from its last good position: L·1000 if the
-     leader moves faster than 0.1 m/s and that is more than the follower's run rate, else the
-     follower's run rate.
-   - Otherwise, leader moving: L·1000. Leader standing: the run rate (×0.6, `0x007a22f4`, when Dl
-     ≥ 4), or 0.9·walk rate capped by the smoothed speed when the follower is still settling.
-   - Then by the squared distance d² to its target: d² < 1 → ×0.9, 1 ≤ d² < 225 → ×1.2,
-     d² ≥ 225 (15 m) → ×1.5 (catch-up running).
-   (med; the branches are hard to read)
+2. **Speed** (mm/s). L is the leader's client speed (`+0x3b0`, m/s); A the follower's place on the leader's
+   trail (entry `+0x18`, which `FUN_00634e80` moves along the trail by the frame's distance toward B); B where
+   that walk ends (entry `+0x28`: the follow point behind the leader); d the straight distance from A to B (what is
+   left to walk); C the follower's last good position (`+0x5c`). The pace before the factor, `base`:
+   - d at least 4 m, or B 10 m or more from C (**catch-up**): the run rate; L when the leader moves (above
+     0.1 m/s) faster than that.
+   - Else, leader moving: L.
+   - Else (leader standing): d under 3 cm: 0.6 x the run rate (`g_fFollowCloseRunFactor`, `0x007a22f4`);
+     otherwise the follower's smoothed speed, at least 0.9 x the walk rate (so a follower that has to walk a
+     metre or two to a standing leader walks it at 0.9 x 1.2 x 1.7 = 1.84 m/s, and one that was running goes on at
+     its running pace and slows over the last metre).
+   - The speed is `base` x 0.9 (d up to 1 m), x 1.2 (up to 15 m) or x 1.5 (beyond).
+   There is no acceleration ramp and no braking (3.3 belongs to MOVETOPOINT): the speed applies from the first
+   frame. In a steady chase the follower hovers about 1 m from its follow point, its speed flipping between 0.9 L and 1.2 L,
+   so its mean is L. (high for the structure and the constants, med for what A and B are)
 3. **Follow state machine** (path state `+0x34` = the other follower, area `+0x1ac` = this path
    state): the entry's state (0..10) picks a handler (`FollowState*` `0x00511290` …
    `0x00512de0`) which consumes the frame's distance and may move to another state in the same
@@ -929,8 +951,19 @@ here. (med)
    - 1–4, 6–10: walking along the trail and toward the formation point (not read in detail).
 4. The position is written through `MoveCreatureFromClient` (triggers fire for followers too); if
    the follower did not move it turns its head toward the leader within 8 m and keeps its facing,
-   else it faces its walking direction. The smoothed speed `+0x48` = average of the frame speed and
-   the old value (0 below 10 mm/s). (med)
+   else it faces its walking direction. The **smoothed speed** `+0x48` is the speed made this frame (the
+   step's length over the frame time, mm/s) averaged with the old value (this frame's alone when the step was
+   nil), 0 below 10 mm/s, and then capped by one more stack value: the pace before the factor in our reading
+   of the code (the decompile and the assembly disagree about which slot it is), which keeps the
+   animation at the leader's own pace while the follower hurries at 1.2 x or 1.5 x. The cycle (3.6) follows
+   this speed: walk below 0.6 x the run rate, run above, the rate speed x cycle length / DriveAnim. (med)
+
+**Ours** (`movement::follow_pace`, `settle_follow_gait`; FOLLOWLEADER queues a MOVETOPOINT to the leader, range 2 m,
+flagged as a follower): d is the path still to walk to the leader less the 2 m, there is no trail or formation, and the
+rules above give the speed, the smoothed speed (kept in `follow_speed`, 0 whenever the follower stops), the cycle and its
+rate. The order to follow still comes from `ai::wake_follower` (leader over 4 m away, queue empty for a second), not
+from the first step the leader takes as in the original, so a follower starts a few metres behind where the original's
+would be and walks or runs in by the same rules.
 
 There is **no teleport** of a far follower in this code: it pathfinds instead (state 0). Script
 and module-transition code place party members explicitly. (med)
@@ -1147,6 +1180,10 @@ rules.md owns the faction system.
 - The source of the client creature's movement block (`+0x21c`: `+0x58` acceleration, `+0x5c`
   speed, `+0x60` stealth speed) and whether it equals the server's run rate.
 - The walk modifier event 265: unbound on PC; is there any way to walk slowly with the keyboard?
+- What A and B of the follower step (6.2, entry `+0x18` and `+0x28`) are exactly and what caps the smoothed speed
+  (`0x0051cccc`: the stack slot it is compared with is not the one the decompile names). The rules are read from
+  the code; the trail's spacing (a point every 0.5 m of the leader's walk, `0x00636a30`) decides how often a follower
+  is more than a metre from its follow point, and with it how often it hurries at 1.2 x.
 - The follow states 1–4 and 6–10 and the client trail object (`+0x2dc`, `0x00636a30`,
   `0x006350f0`, `0x00634cc0`): trail spacing, formation offsets per slot, when a follower stops.
 - Whether the client smooths NPC turning visually (the server snaps the facing).

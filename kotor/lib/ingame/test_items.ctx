@@ -7,6 +7,7 @@
 //   FRAME ui stock                              a spread of weapons, armour, gear, medpacs and grenades
 //                                              (one blaster pistol and a suit of armour are put on)
 //   FRAME ui unequip SLOT                       takes off the item in equipment index SLOT (0..17)
+//   FRAME ui nobag                              takes everything off and empties the party's bag (the self action slots show nothing)
 //   FRAME ui race N                             the leader's race (5 droid, 6 human): the droid slots
 //   FRAME ui combat 0|1                         the leader in combat (armour cannot be changed then)
 //   FRAME ui credits N                          the leader's credits
@@ -43,6 +44,13 @@ namespace test_items {
                 give{ &w, leader, name = STOCK[k], count = stack, equip = k == 0 or k == 8 }
                 k = k + 1
             }
+        } else if ci::eq{ a = cmd, b = "nobag" } {
+            let mut slot: usize = 0
+            while slot < obj::EQUIP_SLOTS {
+                _ = items::unequip{ &w, who = leader, index = slot }
+                slot = slot + 1
+            }
+            list::clear{ list = &w.bag }
         } else if ci::eq{ a = cmd, b = "unequip" } {
             let slot = @as(usize, text::scan_decimal{ s = args })
             if slot < obj::EQUIP_SLOTS { _ = items::unequip{ &w, who = leader, index = slot } }

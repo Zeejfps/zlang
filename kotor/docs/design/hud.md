@@ -67,8 +67,9 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
   (`block.ctx`, `refresh_slot`, `set_look`; re/gui.md "The target block's drawing"): when any slot has a choice all three
   frames are drawn and an empty one is a blank frame; with none, only the name and the health bar (the block hangs 33
   pixels high instead of 94 over the reticle). The frames are red (`lbl_miscroll_h`) on a hostile target and blue
-  (`_f`) otherwise, the health bar `enemy_bar` / `friend_bar` / green `poison_bar`; the arrows start shown and a slot
-  with no choice leaves them as they were; the down arrows are the up arrow turned 180 degrees (`gui::set_fill_turns`,
+  (`_f`) otherwise, the health bar `enemy_bar` / `friend_bar` / green `poison_bar`; a slot with no choice is a blank frame
+  at half strength (`SetState` sets the frame alpha to 0.5) and the arrows show only for more than one choice;
+  the down arrows are the up arrow turned 180 degrees (`gui::set_fill_turns`,
   also the self slots'); the frame is the parent of its icon and arrows, so the pointer on any lights it yellow. A
   click on the target and R do the default list's first action (plain Attack on a foe).
 - **Combat** (`combat.ctx`): while the leader's `in_combat` flag is set the combat bar (the round
@@ -90,7 +91,10 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
   `gpu::resize`: nothing else in the loop handles `resized`).
 - **Self action slots** (`lib/ingame/selfslots.ctx`, re/gui.md "Action menus"): the four buttons at
   the bottom right hold the leader's friendly Force powers, medical items, other usable items and
-  mines; the arrows cycle, a click casts on the leader in place of its queued actions (the cast
+  mines. The frames and icons are never hidden (`SetState` `0x00689280`): a slot with choices shows the selected
+  one's picture, and its arrows only when it has more than one; a slot with none is a blank frame at half strength
+  with no arrows. A use dips the icon's alpha to 0 and back over 0.2 s
+  (`UpdateBlink`). The arrows cycle, a click casts on the leader in place of its queued actions (the cast
   action spends the item's use as it begins, `rt_item::spend_use`), an entry that cannot be used
   shows dimmed and says why in the message bar for five seconds (Force Depleted, Restricted by
   Armor, Full Health, PC Dead), and the hovered slot's entry is named above the slots. The friendly

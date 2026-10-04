@@ -1,0 +1,14 @@
+# From `uppercity` (Taris Upper City, Carth follows; a Duros joins as the second follower): the leader runs by the keys
+# (W, then S back again, with the walk modifier B held for the second half), stops, and walks to a locker as a click on it
+# would send him (`ui goto`: a MOVETOPOINT run). Every walking or running creature's gait is logged each frame.
+#   EXE=kotor/out/kotor_gait.exe sh kotor/tools/gait/run.sh taris uppercity kotor/tools/gait/scripts/taris_street.txt 700
+#   python kotor/tools/py/gait_check.py kotor/out/gait/taris.log 1 700 10 "(player)" carth duros
+1 ui bot off
+2 ui join duros
+90 keydown w
+200 keyup w
+290 keydown s
+350 keydown b
+410 keyup b
+420 keyup s
+520 ui goto ptar_lockde

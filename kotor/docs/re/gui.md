@@ -1210,10 +1210,21 @@ name background, the health background, the name label, the health bar, then eac
 the three lists has an entry, else the health bar's `top + height` (27 + 6 = 33), its bottom 32 pixels above the point
 the reticle hangs from, so a target with nothing to offer shows only the name and the bar, closer to the reticle. The
 slots are never hidden one by one: `Refresh` (`0x00689410`, every frame, with a null target too) calls
-`CSWGuiActionSlot::SetState` (`0x00689280`) per slot, and an empty list only blanks the icon (`SetFill("")`) while a
-list with entries sets the arrows' visible bit to "more than one entry". The arrows start visible (a control's
-constructor sets the visible bits), so an empty slot is a blank frame, with its arrows unless an earlier slot with a
-single entry hid them. (high)
+`CSWGuiActionSlot::SetState(slot, bEmpty, bHasMore)` (`0x00689280`) per slot (and `UpdateActionMenus` the same for the
+four self slots). SetState does, whichever way `bEmpty` goes: blank the icon when empty (`SetFill("")`, icon alpha 1);
+set the frame's alpha, BORDER (`+0x8c`) and HILIGHT (`+0x100`), to **1.0 when it has a choice and 0.5 when it has none**
+(floats `0x0073d764` = 1.0 and `0x0073e9ac` = 0.5); and set the **up and down arrows' visible bit (`+0x3cc`, `+0x590`,
+bit value 2) to `bHasMore`**, which the callers pass as "more than one entry". So an empty slot is a blank frame at half
+strength with no arrows, a slot with one choice has no arrows, and only a slot with several shows them. The arrows'
+initial state (visible, from the control constructor's flags `0x0a`, and no field of the .gui changes it) never shows:
+the first `Refresh` hides them. (high)
+
+*Where an earlier reading of this section went wrong:* the exported decompile of `0x00689280` ends the empty branch at
+a call Ghidra took for `noreturn` (the `CExoString` destructor, "Removing unreachable block"), so the frame alphas and the
+arrow bits, which the assembly runs for both branches (`0x0068933b`-`0x00689382`), were missing from it. They were read as
+"the empty path leaves the arrows alone" and the arrows as starting visible and sticky; the instructions and the user's
+memory of the original say otherwise. Check the listing (`asm`) of a function whose decompile stops at a destructor.
+(high)
 
 `FUN_006859e0` (called by `UpdateReticles` for any target, every frame) sets the three frames' BORDER fill to `lbl_miscroll_h`
 (red) when the reticle is the hostile one and `lbl_miscroll_f` (blue) otherwise, and the health bar's PROGRESS fill to
