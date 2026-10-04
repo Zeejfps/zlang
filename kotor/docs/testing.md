@@ -77,3 +77,18 @@ VM, or `lib/dialog/core`.
 A new subsystem gets a corpus tool that runs it over every resource of its type (AGENTS.md rule 6). A new input-script
 command goes in `play.ctx` or `lib/ingame/script.ctx` and the table in [playthrough.md](playthrough.md). A new report
 line for the smoke test starts with a word its `report.sh` can match (`stuck`, `fault:`); keep it out of the default log.
+
+## Known runaways in the original's own scripts
+
+These run out of the VM's instruction budget in the original game too (same 131,072-instruction
+limit, VM error -93), so the smoke and sweep tables list them but they are not our bugs:
+
+- `k_ai_master` ("Commoner AI", reached from `k_def_endconv` after `tar02_drunk021`,
+  `tar02_preraid`, `tar02_bountyh022`, `tar02_scaredm021`, and in the smoke row of `tar_m02ad`):
+  its loop over `GetNearestCreature(REPUTATION, NEUTRAL, self, n)` only advances `n` for creatures
+  outside the hostile standard factions, so a Hostile_1 creature over 20 m away keeps it spinning.
+- `k_ptat_tuskenmad` (`tat_m20aa`): `GetFirstObjectInArea` with an empty `while` body and no
+  `GetNext`.
+
+And one faithful load failure: `end_carth001` is named by `end_m01aa`'s copy of `p_carth001` but
+ships only in `end_m01ab_s.rim`.
