@@ -105,6 +105,14 @@ namespace test_combat {
             _ = fight::apply{ &w, target = id, e = rules::fx::make_damage{ amount = n, types = 1, power = 0 } }
             return true
         }
+        if ci::eq{ a = cmd, b = "plot" } {
+            // Test setup: `ui plot TAG 0|1` sets an object's Plot flag (a bashable door is not plot).
+            let mut words = text::words{ s = args }
+            let tag = text::next_word{ &words } ifnull { return true }
+            let on = text::scan_decimal{ s = text::next_word{ &words } ifnull "1" } != 0
+            if world::object{ w = &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } } is some{ value = o } { o.plot = on }
+            return true
+        }
         if ci::eq{ a = cmd, b = "grantfeat" } {
             let feat = @as(i32, text::scan_decimal{ s = text::first_word{ s = args } })
             let o = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return true }

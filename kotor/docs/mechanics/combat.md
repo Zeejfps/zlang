@@ -46,10 +46,10 @@ d20, total and the defense it was against. The helpers are in `lib/ingame/test_c
 | # | Behaviour | Evidence | Status |
 |---|---|---|---|
 | 11 | Click a hostile: first click targets, second (or R) attacks; the leader walks into reach and fights | movement.md 7.4 | matches |
-| 12 | Target block slot 1 on a hostile creature: the best rank of Critical Strike / Flurry / Power Attack (melee weapon) or Power Blast / Rapid Shot / Sniper Shot (ranged), then Attack | `0x00619950`, `0x00619b10` | open: only Attack is offered |
-| 13 | Slot 2: hostile Force powers; slot 3: grenades and other items usable on the target | `0x006191f0`, `0x006198e0` | open: empty |
-| 14 | In combat a chosen action is added to the queue (at most 4 pending); out of combat it replaces the queue | actions.md 3.13 "Scheduled", `AddAttackActions` | open: always replaces |
-| 15 | Queue icons: the queued actions' icons (the feat's icon for a feat attack), clear-one drops the last | gui.md "Combat mode" | open: only `i_attack` |
+| 12 | Target block slot 1 on a hostile creature: the best rank of Critical Strike / Flurry / Power Attack (melee weapon) or Power Blast / Rapid Shot / Sniper Shot (ranged), then Attack | `0x00619950`, `0x00619b10` | fixed 7713448 (checked by clicks: the block shows Critical Strike, Flurry, Power Attack, Attack with their icons; the arrows cycle; the choice is kept) |
+| 13 | Slot 2: hostile Force powers; slot 3: grenades and other items usable on the target | `0x006191f0`, `0x006198e0` | slot 3 grenades: the items owner (merged); slot 2 Force powers: the Force owner |
+| 14 | In combat a chosen action is added to the queue (at most 4 pending); out of combat it replaces the queue | actions.md 3.13 "Scheduled", `AddAttackActions` | fixed 7713448 (three feat attacks queued in combat, one per round) |
+| 15 | Queue icons: the queued actions' icons (the feat's icon for a feat attack), clear-one drops the last | gui.md "Combat mode" | fixed 7713448 (screenshot: the round and the waiting orders with feat icons) |
 | 16 | The leader keeps attacking its target round after round until it dies | play | matches (ours, end of round) |
 | 17 | Feat attacks: to-hit/damage/self-defense penalties, extra attack, stun on Critical Strike | combat.md 4.5 | to check through the menu |
 | 18 | Attacking a door or placeable (bash) | combat.md 6.6 | to check |
