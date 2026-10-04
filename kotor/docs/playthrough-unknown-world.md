@@ -77,7 +77,7 @@ State: **works** (checked, 0 faults), **fixed** (a commit of this branch), **che
 | 19 | The Rakata computer on the summit (`unk44_comp`): "Shut down planetary disruptor field.", "Shut down Temple energy shield.", "Log out." (`UNK_DISRUPT_OFF`, `UNK_SHIELD_OFF`; `k_starforge` 75) | works | `19_field.txt` |
 | 20 | Out of the summit and through the Temple (the doors, the hall, the vestibule's `unk44_exitdoor`) to the approach (`unk_m41ad`) | works / cheat (factions) | `20_out.txt` |
 | 21 | Down to the beach: Carth's talk (`unk41_carth`, "Bastila has fallen to the dark side. She fled to the Star Forge.", Jolee's counsel), the Hawk (`ebo41_tell`: the ship parts) | works | `21_hawk.txt` |
-| 22 | The hyperdrive (`ebo41_hyper`, `k_pebn_hyper01`: the part is used, `EBO_HYPER_FIXED`), the galaxy map (`ebn12_galaxymap`, `k_pebn_starf`): the Star Forge picked, films `05_8c` and `43`, `stunt_42` | works / open (2) | `22_takeoff.txt` |
+| 22 | The hyperdrive (`ebo41_hyper`, `k_pebn_hyper01`: the part is used, `EBO_HYPER_FIXED`), the galaxy map (`ebn12_galaxymap`, `k_pebn_starf`): the Star Forge picked, films `05_8c` and `43`, `stunt_42`; the leader walks to the hyperdrive and on to the bridge, no warps | works | `22_takeoff.txt` |
 
 Checkpoints (`kotor/out/pt/unk_ckpt`): `crash` (1), `beach` (2), `duros` (3), `approach` (5), `cave` (6), `door` (7), `eldertalk` (8), `onecamp` (9), `scout` (10), `elders2` (11),
 `eldersok` (12), `alone1` (13), `alone2` (14), `temple` (15), `library` (16), `summit` (17), `bastdone` (18), `fieldoff` (19), `templeout` (20), `hawkback` (21).
@@ -126,9 +126,12 @@ field shut down). Globals: `Unk_One_Dead`, `UNK_TEMPLEREADY`, `UNK_TILES`, `Punk
   door closed and locked; the cause was not traced (the bot's moves carry no timeout, no script of the log's categories ran). Jolee and Juhani stand on the exit
   door's footprint on arrival (`move 648: no route from 94.3 37.7 to ...`, the start is not walkable). Whether a player's click can pass the door, or the doors at
   the ends of the same wall (`unk44_templedoor` at 63.8 45.0 and 127.5 45.0) lead round it, is open.
-- **OPEN (2): the Hawk's hyperdrive is out of the path graph's reach.** In `ebo_m41aa` a click or `use hyperdrive` from 3 m away logs
-  `route: no clear path point near the goal 49.4 12.2 ...` and fails; a leader placed beside it cannot route out (`bot: stuck 60 m from ebo41_galaxymap`). The chain
-  warps to the hyperdrive and back to the bridge. The path graph work (`lib/engine/paths.ctx`) is another agent's; a real player would be unable to walk to the engine room.
+- **Fixed (2): the Hawk's hyperdrive.** A click or `use hyperdrive` logged `route: no clear path point near the goal 49.4 12.2` because the engine walked to the
+  placeable's *centre*: `PLC_Hyper` fills the neck of the engine room, its centre is 2.5 m beyond the last floor a creature can stand on, and no path point
+  has a clear walk to anything inside the footprint. The original walks to the nearer of the PWK's two *use hooks* (`GetUseRange`, `0x004ee440` /
+  `0x00584c20`, actions.md 1.4): here (48.5, 14.9) and (48.5, 15.4), just north of the footprint. `doors::use_point` now does that for a placeable
+  (hook = the PWK's relative hook + its position, placed with the object; range radius + 0.75; no hook: the centre, as before). The part now walks the leader to
+  the hook and on to the galaxy map by itself. PreciseUse (range 0.1 at the hook) is not done.
 - **OPEN: the film `5_9`** (`k_sup_galaxymap` names `5_9` as the second film of the take-off, `05_8C` the first): the install's file is `05_9.bik`, the log says
   `movie 5_9 (not shown: fs::not_found)`. The original's lookup most likely fails the same way (a typo in the script); not checked against it.
 - **The Elders' and the One's choice**: only the Elders' side is played (the light path). The One's deal (`unk_trapped` 10: kill the Elders for the Black Rakata), the Mandalorians'
