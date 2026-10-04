@@ -576,7 +576,8 @@ namespace play {
     }
 
     // `FRAME cam duel TAGA TAGB [DISTANCE]`: the camera stands to the side of two tagged objects, looking
-    // at the middle of them, every frame; `cam at X,Y,Z X,Y,Z` stands at one point looking at the other;
+    // at the middle of them, every frame; `cam toward TAG` turns the follow camera so the object is
+    // ahead of the leader (combat tests click on it); `cam at X,Y,Z X,Y,Z` stands at one point looking at the other;
     // `cam off` gives the camera back. For pictures of a fight.
     fn place_test_camera { mut w: world::World, spec: []u8, mut camera: cam::Camera } {
         let mut words = text::words{ s = spec }
@@ -593,6 +594,15 @@ namespace play {
             let reach = if far > 0.0 { far } else { math::max{ a = 4.0, b = math::vec3::length{ v = d } * 0.9 } }
             eye = math::Vec3{ x = mid.x + side.x * reach, y = mid.y + side.y * reach, z = mid.z + 0.4 }
             look = mid
+        } else if ci::eq{ a = kind, b = "toward" } {
+            // The follow camera turned so the object is straight ahead of the leader, as the player
+            // turns it with the keys (the next frame's camera update places it).
+            let t = world::object{ w = &w, id = tagged{ w = &w, word = text::next_word{ &words } ifnull "" } } ifnull { return }
+            let pc = world::object{ w = &w, id = w.pc } ifnull { return }
+            let dx = t.position.x - pc.position.x
+            let dy = t.position.y - pc.position.y
+            if dx * dx + dy * dy > 0.01 { camera.yaw = math::atan2f{ y = -dx, x = dy } }
+            return
         } else if ci::eq{ a = kind, b = "at" } {
             let from = text::next_word{ &words } ifnull { return }
             let to = text::next_word{ &words } ifnull { return }

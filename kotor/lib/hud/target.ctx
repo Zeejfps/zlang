@@ -209,6 +209,7 @@ namespace hud {
         }
         let next = if at == n { if forward { 0 } else { n - 1 } } else if forward { (at + 1) % n } else { (at + n - 1) % n }
         w.target = ids[next]
+        autopause::request{ &w, reason = autopause::NEW_TARGET }
     }
 
     // Does `act` on `target` for the leader: queues the matching action in place of whatever it
