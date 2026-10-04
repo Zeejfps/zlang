@@ -23,5 +23,5 @@ if [ "$1" = "--" ]; then shift; fi
 mkdir -p kotor/out/pt
 mode="--headless"
 if [ -n "$FAST" ]; then mode="--no-render --speed ${SPEED:-8}"; fi
-timeout ${TIMEOUT:-240} kotor/out/kotor.exe $mode --frames $frames --input $script $shots --log ${LOG:-scripts} ${LOAD:+--load "$LOAD"} ${SAVES:+--saves "$SAVES"} "$@" > kotor/out/pt/$name.log 2>&1
+timeout ${TIMEOUT:-240} ${EXE:-kotor/out/kotor.exe} $mode --frames $frames --input $script $shots --log ${LOG:-scripts} ${LOAD:+--load "$LOAD"} ${SAVES:+--saves "$SAVES"} "$@" > kotor/out/pt/$name.log 2>&1
 echo "exit $? lines $(wc -l < kotor/out/pt/$name.log)"

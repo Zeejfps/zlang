@@ -5,7 +5,7 @@ namespace play {
     // (the leader jumps next to the object), `FRAME use TAG` (the leader's default action on it) and
     // `FRAME gunner` (a bot aims and fires the turret) and `FRAME mouse DX DY` (the mouse moves by
     // those counts, aiming the turret) and `FRAME pause` (Escape in a minigame: game/minigame_scene.ctx).
-    enum Command: u8 { down, up, warp, warpxy, use, newgame, ui, save, load, attack, talk, hush, drop, join, cutatk, pick, gunner, mouse, pause }
+    enum Command: u8 { down, up, warp, warpxy, use, newgame, ui, save, load, attack, talk, hush, drop, join, cutatk, pick, gunner, mouse, pause, cam }
     struct Scripted { frame: u64, command: Command, key: []u8 }
 
     fn run { mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut mem: Mem, opts: options::Options } -> !i32 {
@@ -60,6 +60,7 @@ namespace play {
         let mut sc = scene::make{ arena = &scene_arena, heap = w.heap, scratch = texture_scratch, rm = w.rm.* }
         try scene::load_area{ &sc, &w, &dev }
         let mut camera = cam::new{}
+        let mut test_camera: []u8 = ""       // `FRAME cam ...`: a camera for pictures (see place_test_camera)
         let mut camera_row: u32 = 0xFFFFFFFF    // the camerastyle.2da row the camera uses
         let mut control = ctl::new{}
         let ao = world::object{ w = &w, id = w.area }
@@ -146,6 +147,7 @@ namespace play {
                     join => { join_template{ &w, text = s.key } }
                     pick => { pick_lock{ &w, tag = s.key } }
                     cutatk => { cut_attack{ &w, text = s.key } }
+                    cam => { test_camera = s.key }
                     ui => {
                         if not dlgview::run_command{ v = &dview, w = &w, g = &ui.gui, text = s.key } { ingame::run_command{ ui, &w, &dev, text = s.key } }    // HOOK(ingame)
                     }
@@ -221,6 +223,7 @@ namespace play {
             if w.conversation.active { keys = ctl::no_keys{} }
             ctl::update{ ctl = &control, &w, keys, yaw = camera.yaw, dt = w.clock.dt }
             world::tick{ &w, &vm, engine }
+            fight::trace{ &w }
             // The whole party fallen: the game is over (ours: the world stops, the options menu's
             // Load Game is the way on; the original's death camera and panel are not built).
             if not game_over and w.arrival == 0 and w.transition == null and fight::party_fallen{ w = &w } {
@@ -314,6 +317,7 @@ namespace play {
             }
             cam::update{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height, turn = ctl::turn_input{ keys }, dt = camera_dt }
             dlgview::apply_camera{ v = &dview, w = &w, sc = &sc, camera = &camera }
+            if test_camera.len > 0 { place_test_camera{ &w, spec = test_camera, &camera } }
             let pc = world::object{ w = &w, id = w.pc }
             let player_room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
             let room = dlgview::view_room{ v = &dview, w = &w, player_room }
@@ -535,12 +539,58 @@ namespace play {
                 else if ci::eq{ a = what, b = "ui" } { Command::ui } else if ci::eq{ a = what, b = "save" } { Command::save } else if ci::eq{ a = what, b = "talk" } { Command::talk }
                 else if ci::eq{ a = what, b = "load" } { Command::load } else if ci::eq{ a = what, b = "attack" } { Command::attack }
                 else if ci::eq{ a = what, b = "hush" } { Command::hush } else if ci::eq{ a = what, b = "drop" } { Command::drop } else if ci::eq{ a = what, b = "join" } { Command::join } else if ci::eq{ a = what, b = "cutatk" } { Command::cutatk } else if ci::eq{ a = what, b = "pick" } { Command::pick }
-                else if ci::eq{ a = what, b = "gunner" } { Command::gunner } else if ci::eq{ a = what, b = "mouse" } { Command::mouse } else if ci::eq{ a = what, b = "pause" } { Command::pause } else { Command::up }
+                else if ci::eq{ a = what, b = "gunner" } { Command::gunner } else if ci::eq{ a = what, b = "mouse" } { Command::mouse } else if ci::eq{ a = what, b = "pause" } { Command::pause } else if ci::eq{ a = what, b = "cam" } { Command::cam } else { Command::up }
             // `ui`, `talk`, `load`, `save`, `cutatk` and `mouse` take the rest of the line; the others one word.
-            let key = if command == Command::ui or command == Command::load or command == Command::save or command == Command::talk or command == Command::cutatk or command == Command::mouse or command == Command::join { text::rest{ words } } else { text::next_word{ &words } ifnull "" }
+            let key = if command == Command::ui or command == Command::load or command == Command::save or command == Command::talk or command == Command::cutatk or command == Command::mouse or command == Command::join or command == Command::cam { text::rest{ words } } else { text::next_word{ &words } ifnull "" }
             try list::push{ list = &out, item = Scripted{ frame = @as(u64, text::scan_decimal{ s = f }), command, key } }
         }
         return list::items{ list = out }
+    }
+
+    // `FRAME cam duel TAGA TAGB [DISTANCE]`: the camera stands to the side of two tagged objects, looking
+    // at the middle of them, every frame; `cam at X,Y,Z X,Y,Z` stands at one point looking at the other;
+    // `cam off` gives the camera back. For pictures of a fight.
+    fn place_test_camera { mut w: world::World, spec: []u8, mut camera: cam::Camera } {
+        let mut words = text::words{ s = spec }
+        let kind = text::next_word{ &words } ifnull { return }
+        let mut eye = camera.eye
+        let mut look = camera.look
+        if ci::eq{ a = kind, b = "duel" } {
+            let a = world::object{ w = &w, id = tagged{ w = &w, word = text::next_word{ &words } ifnull "" } } ifnull { return }
+            let b = world::object{ w = &w, id = tagged{ w = &w, word = text::next_word{ &words } ifnull "" } } ifnull { return }
+            let far = text::scan_f32{ s = text::next_word{ &words } ifnull "" } ifnull 0.0
+            let mid = math::Vec3{ x = (a.position.x + b.position.x) * 0.5, y = (a.position.y + b.position.y) * 0.5, z = (a.position.z + b.position.z) * 0.5 + 1.1 }
+            let d = math::vec3::sub{ a = b.position, b = a.position }
+            let side = math::vec3::normalize{ v = math::Vec3{ x = -d.y, y = d.x, z = 0.0 } }
+            let reach = if far > 0.0 { far } else { math::max{ a = 4.0, b = math::vec3::length{ v = d } * 0.9 } }
+            eye = math::Vec3{ x = mid.x + side.x * reach, y = mid.y + side.y * reach, z = mid.z + 0.4 }
+            look = mid
+        } else if ci::eq{ a = kind, b = "at" } {
+            let from = text::next_word{ &words } ifnull { return }
+            let to = text::next_word{ &words } ifnull { return }
+            eye = vec_of{ s = from }
+            look = vec_of{ s = to }
+        } else {
+            return
+        }
+        camera.eye = eye
+        camera.look = look
+        camera.dir = math::vec3::normalize{ v = math::vec3::sub{ a = look, b = eye } }
+        camera.up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }
+    }
+
+    // The object a test script names: `pc` is the player's character, else a tag.
+    fn tagged { mut w: world::World, word: []u8 } -> u32 {
+        if ci::eq{ a = word, b = "pc" } { return w.pc }
+        return world::object_by_tag{ w = &w, tag = word, nth = 0 }
+    }
+
+    // "x,y,z" as a point.
+    fn vec_of { s: []u8 } -> math::Vec3 {
+        let c1 = text::find_byte{ s, c = ',' } ifnull { return math::vec3::zero{} }
+        let rest = s[c1 + 1..]
+        let c2 = text::find_byte{ s = rest, c = ',' } ifnull { return math::vec3::zero{} }
+        return math::Vec3{ x = text::scan_f32{ s = s[..c1] } ifnull 0.0, y = text::scan_f32{ s = rest[..c2] } ifnull 0.0, z = text::scan_f32{ s = rest[c2 + 1..] } ifnull 0.0 }
     }
 
     // `FRAME talk RESREF [TAG]`: starts conversation RESREF with the creature tagged TAG
