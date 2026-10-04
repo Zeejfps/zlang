@@ -18,6 +18,8 @@
 15 ui giveitem g_w_lghtsbr01 1 equip
 15 ui giveitem g_a_jedirobe01 1 equip
 15 ui gold 3000
+# the galaxy map script (k_sup_galaxymap) sets K_KALO_BANDON to 10 when the Hawk takes off from Dantooine: Calo Nord waits on the next planet visited (part 16)
+15 ui global K_KALO_BANDON 10
 16 ui leader Carth
 16 ui autolevel
 17 ui leader bastila
