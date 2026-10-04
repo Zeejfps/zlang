@@ -285,7 +285,8 @@ namespace obj {
         lockable: bool,
         key_required: bool,
         key: []mut u8,                          // the key item's tag
-        open_dc: u32,
+        open_dc: u32,                       // OpenLockDC: the Security skill's difficulty to pick it
+        close_dc: u32,                      // CloseLockDC
         linked_to: []mut u8,
         linked_to_module: resref::ResRef,
         linked_flags: u8,                   // 0 none, 1 door, 2 waypoint
@@ -304,7 +305,11 @@ namespace obj {
         party_interact: bool,
         static: bool,
         locked: bool,
+        lockable: bool,
+        key_required: bool,                 // only its key opens it; Security cannot
         key: []mut u8,
+        open_dc: u32,                       // OpenLockDC / CloseLockDC, as on a door
+        close_dc: u32,
         inventory: list::List(u32, heap::Heap),
         walk: i32,
         model: resref::ResRef,              // placeables modelname
