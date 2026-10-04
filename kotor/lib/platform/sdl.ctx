@@ -642,7 +642,10 @@ namespace sdl {
         const UP: i32 = 0x40000052
         const LSHIFT: i32 = 0x400000E1
         const LCTRL: i32 = 0x400000E0
+        const RCTRL: i32 = 0x400000E4
+        const RSHIFT: i32 = 0x400000E5
         const CAPSLOCK: i32 = 0x40000039
+        const PAUSE: i32 = 0x40000048
 
         fn of_scancode { scancode: i32 } -> i32 { return scancode | 0x40000000 }
     }

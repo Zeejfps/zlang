@@ -298,6 +298,7 @@ namespace play {
             if ingame::wants_quit{ ui } { quit = true }    // HOOK(ingame)
             // The party selection screen was applied: its exit script (ShowPartySelectionGUI's), with no caller.
             if ingame::take_exit_script{ ui } is some{ value = exit_script } { _ = scripts::run{ &w, &vm, engine, name = exit_script, self = obj::INVALID } }    // HOOK(ingame)
+            if ingame::take_script_request{ ui } is some{ value = script } { _ = scripts::run{ &w, &vm, engine, name = script, self = obj::INVALID } }    // HOOK(ingame)
             // The options menu's Save Game and Load Game (the menus have closed themselves).
             if ingame::take_save_request{ ui } is some{ value = n } { want_save = n }    // HOOK(ingame)
             if ingame::take_load_request{ ui } is some{ value = n } { want_load = n }    // HOOK(ingame)
@@ -482,12 +483,17 @@ namespace play {
     } {
         while true {
             let e = sdl::poll{ &sdl } ifnull { break }
+            // A key let go always lets go of the walk, whoever else sees the event (a menu opened while W
+            // was down would otherwise keep the leader walking when it closes).
+            if e is key{ down, keycode } {
+                if not down { apply_key{ keys = &keys, keycode, down = false, minigame = mg_game::active{ w = &w } } }
+            }
             // HOOK(minigames): a minigame has no HUD, menus or quick saves: the mouse and Escape are
             // its own, the other keys go straight to the game's keys.
             if mg_game::active{ w = &w } {
                 if mg_game::handle_event{ m = &mg_mouse, ev = e } { continue }
                 if e is key{ down, repeat, keycode } {
-                    if not repeat { apply_key{ keys = &keys, keycode, down } }
+                    if not repeat { apply_key{ keys = &keys, keycode, down, minigame = true } }
                     continue
                 }
             }
@@ -498,21 +504,25 @@ namespace play {
                 key{ down, repeat, keycode } => {
                     if down and not repeat and keycode == sdl::key::F1 + 3 { want_save = "QUICKSAVE" }
                     if down and not repeat and keycode == sdl::key::F1 + 4 { want_load = "000000 - QUICKSAVE" }
-                    if not repeat { apply_key{ keys = &keys, keycode, down } }
+                    if not repeat { apply_key{ keys = &keys, keycode, down, minigame = false } }
                 }
                 else => {}
             }
         }
     }
 
-    fn apply_key { mut keys: ctl::Keys, keycode: i32, down: bool } {
-        if keycode == 'w' or keycode == sdl::key::UP { keys.forward = down }
-        else if keycode == 's' or keycode == sdl::key::DOWN { keys.back = down }
+    // The held keys the world reads each frame (keymap.2da's ICPC rows): W and S forward and back, Z and C
+    // strafe, A and D turn the camera, B walks. The arrows, R and Space are a minigame's (ICMiniGame) and
+    // nothing in the world's: there R runs the target's default action and Space pauses (lib/ingame).
+    fn apply_key { mut keys: ctl::Keys, keycode: i32, down: bool, minigame: bool } {
+        if keycode == 'w' or (minigame and keycode == sdl::key::UP) { keys.forward = down }
+        else if keycode == 's' or (minigame and keycode == sdl::key::DOWN) { keys.back = down }
         else if keycode == 'z' { keys.strafe_left = down }
         else if keycode == 'c' { keys.strafe_right = down }
-        else if keycode == 'a' or keycode == sdl::key::LEFT { keys.turn_left = down }
-        else if keycode == 'd' or keycode == sdl::key::RIGHT { keys.turn_right = down }
-        else if keycode == 'r' or keycode == sdl::key::SPACE { if down { keys.action = true } }
+        else if keycode == 'a' or (minigame and keycode == sdl::key::LEFT) { keys.turn_left = down }
+        else if keycode == 'd' or (minigame and keycode == sdl::key::RIGHT) { keys.turn_right = down }
+        else if keycode == 'b' { keys.walk = down }
+        else if minigame and (keycode == 'r' or keycode == sdl::key::SPACE) { if down { keys.action = true } }
     }
 
     // Play's own scripted words: keys, the leader's moves, saves and loads, and the conversation and

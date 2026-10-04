@@ -30,6 +30,11 @@ namespace ingame {
         psel_exit: resref::ResRef,          // its exit script, forced slots
         psel_force1: i32, psel_force2: i32,
         bot: bot::Bot,                      // the headless test player (bot.ctx); off unless a script turns it on
+        shift_held: bool,                   // Shift (AlternateActions): with a slot's key it steps through the slot's choices
+        ctrl_held: bool,                    // Ctrl (Lookabout): the camera follows the mouse (lib/scene/camera, play.ctx)
+        solo_box: msgbox::Box,              // "Do you wish to turn Solo Mode on?", up while the question is asked
+        solo_pause: bool,                   // the box paused the game and must unpause it
+        run_script: resref::ResRef,         // a script the loop should run when it can (no caller), empty when none
     }
 
     // Opens the interface for a window of `width` x `height`. `scratch` is the texture decoder's
@@ -54,6 +59,7 @@ namespace ingame {
             text = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } },
             width, height, menu = NO_MENU, menu_panel = 0, top_panel = 0, menus = new_menus{}, log = hud::new_log{},
             pause_panel = 0, hud_hidden = false, screens = screens::new{}, bot = bot::new{},
+            shift_held = false, ctrl_held = false, solo_box = msgbox::blank{}, solo_pause = false, run_script = resref::empty{},
             psel_wait = false, psel_exit = resref::empty{}, psel_force1 = -1, psel_force2 = -1,
         }
         let mut p = try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
@@ -138,6 +144,8 @@ namespace ingame {
         // Keys first: the menu keys, Escape and pause work with or without a menu open, and a menu
         // (a full-screen panel) would otherwise take every key.
         if ev is key{ down, repeat, keycode } {
+            if keycode == sdl::key::LSHIFT or keycode == sdl::key::RSHIFT { ui.shift_held = down }
+            if keycode == sdl::key::LCTRL or keycode == sdl::key::RCTRL { ui.ctrl_held = down }
             if down and not repeat {
                 if handle_key{ &ui, &w, &dev, keycode } { return true }
             }
@@ -158,9 +166,11 @@ namespace ingame {
         return false
     }
 
-    // The game's keys (keymap.2da's defaults): menus on U I P K J L M O, Escape closes the open
-    // menu or opens the options, Q and E step through the menus or the targets, Space pauses, Tab
-    // changes the leader.
+    // The game's keys (keymap.2da's defaults, docs/mechanics/controls.md): menus on U I P K J L M O, Escape
+    // closes the open menu or opens the options, Q and E step through the menus or the targets, Space and
+    // Pause pause, Tab changes the leader, V asks about solo mode, 1-3 and 4-7 run the target block's and the
+    // self slots' choices (with Shift they step to the next choice), R the target's default action, F leaves
+    // combat, Y drops the last queued action. True when the key was used.
     fn handle_key { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, keycode: i32 } -> bool {
         if ui.hud_hidden or gui::is_modal_open{ g = &ui.gui } { return false }
         if keycode == sdl::key::ESCAPE {
@@ -172,6 +182,14 @@ namespace ingame {
         let n = menu_of_key{ keycode }
         if n >= 0 {
             if ui.menu == n { close_menu{ &ui, &w } } else { open_menu{ &ui, &w, &dev, n } }
+            return true
+        }
+        // ChangeChar works in the world and in the menus (ICPC and ICPCGUI); a menu shows the new leader.
+        if keycode == sdl::key::TAB {
+            if cycle_leader{ &w } {
+                gui::play_sound{ g = &ui.gui, n = 6 }
+                if ui.menu != NO_MENU { fill_panel{ &ui, &w, &dev, n = ui.menu, panel = ui.menu_panel } }
+            }
             return true
         }
         if ui.menu != NO_MENU {
@@ -191,17 +209,70 @@ namespace ingame {
         }
         if keycode >= '1' and keycode <= '3' {
             // The target block's three slots (keymap.2da: TargetLeft/Middle/RightAct).
-            return hud::run_slot{ h = &ui.hud, &w, k = @as(usize, keycode - '1') }
+            let k = @as(usize, keycode - '1')
+            if ui.shift_held {
+                hud::cycle_slot{ h = &ui.hud, g = &ui.gui, &w, &dev, k, forward = true }
+                return true
+            }
+            return hud::run_slot{ h = &ui.hud, &w, k }
         }
-        if keycode == sdl::key::SPACE {
-            set_player_pause{ &ui, &w, &dev, on = not clock_paused_by_player{ w = &w } }
+        if keycode >= '4' and keycode <= '7' {
+            // The four self slots: 4 friendly powers, 5 medical items, 6 other items, 7 mines.
+            let k: usize = if keycode == '4' { 0 } else if keycode == '5' { 1 } else if keycode == '6' { 2 } else { 3 }
+            if ui.shift_held {
+                selfslots::cycle{ s = &ui.selfs, g = &ui.gui, &w, &dev, panel = ui.hud.panel, k, forward = true }
+            } else {
+                selfslots::use_slot{ s = &ui.selfs, g = &ui.gui, &w, panel = ui.hud.panel, k }
+            }
             return true
         }
-        if keycode == sdl::key::TAB {
-            change_leader{ &w, step = 1 }
+        if keycode == sdl::key::SPACE or keycode == sdl::key::PAUSE {
+            set_player_pause{ &ui, &w, &dev, on = not clock_paused_by_player{ w = &w } }
+            gui::play_sound{ g = &ui.gui, n = 6 }
+            return true
+        }
+        if keycode == 'v' {
+            ask_solo{ &ui, &w, &dev }
+            return true
+        }
+        if keycode == 'f' {
+            hud::disengage{ &w }
+            return true
+        }
+        if keycode == 'y' {
+            hud::clear_one{ &w }
             return true
         }
         return false
+    }
+
+    // Solo mode (ShowSoloModeConfirm, re/gui.md): with more than one in the party, no conversation and a
+    // leader who can act, the game pauses and a box asks whether to turn solo mode on or off; anything
+    // else is a refusal sound.
+    fn ask_solo { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device } {
+        if w.party.count < 2 or w.conversation.active or hud::is_down{ w = &w, id = party::leader{ w = &w } } or msgbox::is_open{ b = ui.solo_box } {
+            gui::play_sound{ g = &ui.gui, n = 2 }
+            return
+        }
+        if not clock_paused_by_player{ w = &w } {
+            set_player_pause{ &ui, &w, &dev, on = true }
+            ui.solo_pause = true
+        }
+        ui.solo_box = msgbox::show_strref{ g = &ui.gui, &w, &dev, strref = if w.party.solo { 37891 } else { 37889 }, cancel = true, what = 0, item = 0 }
+    }
+
+    // The box's answer: OK flips solo mode, either way the box goes and the game runs on again.
+    fn answer_solo { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } {
+        let a = msgbox::answer{ b = ui.solo_box, ev }
+        if a == msgbox::Answer::none { return }
+        msgbox::close{ g = &ui.gui, b = &ui.solo_box }
+        ui.solo_box = msgbox::blank{}
+        if a == msgbox::Answer::ok {
+            w.party.solo = not w.party.solo
+            ui.run_script = resref::truncate{ name = "k_sup_solo" }
+        }
+        if ui.solo_pause { set_player_pause{ &ui, &w, &dev, on = false } }
+        ui.solo_pause = false
     }
 
     // The start of a frame: what the panels said last frame has been seen by now.
@@ -285,6 +356,7 @@ namespace ingame {
         while i < events.len {
             let ev = events[i]
             i = i + 1
+            answer_solo{ &ui, &w, &dev, ev }
             if ev.panel == ui.hud.panel { hud_event{ &ui, &w, &dev, ev } }
             else if ev.panel == ui.pause_panel and ev.kind == gui::EventKind::activate { set_player_pause{ &ui, &w, &dev, on = false } }
         }
@@ -323,6 +395,15 @@ namespace ingame {
         }
     }
 
+    // A script the interface wants run once, with no caller (the solo mode box's k_sup_solo): the owner
+    // of the VM runs it.
+    fn take_script_request { mut ui: Ingame } -> ?resref::ResRef {
+        if resref::is_empty{ r = ui.run_script } { return null }
+        let r = ui.run_script
+        ui.run_script = resref::empty{}
+        return r
+    }
+
     // The exit script of a party selection that was just applied, once: the owner of the VM runs it
     // (scripts::run with no caller).
     fn take_exit_script { mut ui: Ingame } -> ?resref::ResRef {
@@ -353,8 +434,8 @@ namespace ingame {
         } else if ev.kind == gui::EventKind::value_changed and slice::eq_bytes{ a = ev.tag, b = "TB_PAUSE" } {
             set_player_pause{ &ui, &w, &dev, on = ev.value != 0 }
         } else if ev.kind == gui::EventKind::value_changed and slice::eq_bytes{ a = ev.tag, b = "TB_SOLO" } {
-            // The original asks first (confirm.gui); the choice is the party lead's to follow.
-            w.party.solo = ev.value != 0
+            // The toggle only asks (the box decides); the HUD sets the check mark from the party table.
+            ask_solo{ &ui, &w, &dev }
         }
     }
 
