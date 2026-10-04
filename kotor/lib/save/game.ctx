@@ -204,6 +204,22 @@ namespace save {
         return null
     }
 
+    // The module a save was made in (savenfo.res's LASTMODULE, lower case) written into `into`; its length, or 0 when
+    // the save has none or cannot be read. The loading screen picks its picture by it before the load starts.
+    fn last_module { mut w: world::World, folder: []u8, into: []mut u8 } -> usize {
+        let path = file_in{ &w, folder, name = "savenfo.res" } iferr { return 0 }
+        let bytes = fs::read_all(arena::Arena){ fs = &w.fs, heap = w.scratch, realloc = arena::alloc, path } iferr { return 0 }
+        let doc = gff::parse{ data = bytes, realloc = arena::alloc, heap = w.scratch } iferr { return 0 }
+        let info = read_info{ doc = &doc }
+        let n = if info.last_module.len < into.len { info.last_module.len } else { into.len }
+        let mut k: usize = 0
+        while k < n {
+            into[k] = ascii::to_lower{ c = info.last_module[k] }
+            k = k + 1
+        }
+        return n
+    }
+
     // Loads the save in `folder` (party-items-saves.md 1.6): the game in progress replaced by its
     // SAVEGAME.sav, the globals and the party table read, the module left without keeping its
     // state, then its LASTMODULE entered with the player where it was saved.

@@ -37,7 +37,7 @@ namespace frontend {
     }
 
     fn update_scene { mut fe: Front, dt: f32 } {
-        if fe.cg != null or top_screen{ &fe } != SCR_MAIN { return }
+        if fe.cg != null or fe.load_panel != 0 or top_screen{ &fe } != SCR_MAIN { return }
         let ms = fe.scene ifnull { return }
         gui3d::update{ scene = &ms.scene, dt }
     }

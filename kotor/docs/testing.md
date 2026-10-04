@@ -36,6 +36,9 @@ Use `--no-render --speed 8` for anything you would run `--headless` for, unless 
   finding a flash between two cuts: `python kotor/tools/py/framediff.py DIR [THRESHOLD]` lists the frame steps whose picture
   changes by more than the threshold and marks a frame that differs from two equal neighbours (BLIP) or a few
   (FLASH); `kotor/tools/py/contact_sheet.py OUT.png FRAMES...` lays frames out to look at.
+- `--screenshot-loading DIR` writes every frame of the loading screen as `DIR/lNNNNN.png` (the stages of the load, then
+  one per tick behind it); `--no-render` draws the screen only for this. Menu clicks in the input script work in the
+  front end too (`mouse click 725 353` on a 1280x720 window is New Game).
 - Standard output is written in 64 KB blocks: a log that looks stuck is usually a run still going. To see how far a
   run got, give it fewer `--frames` (or `--screenshot-at`) instead of killing it and reading the file.
 - Processes that run at the same time need a `--saves DIR` each (`SAVES=` in `run.sh`): the game in progress is a file there.

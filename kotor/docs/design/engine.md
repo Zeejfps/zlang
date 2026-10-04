@@ -222,6 +222,22 @@ N+1:
 | 11 | audio: listener at the camera, music/ambient/sound objects, `audio::update` | `ambience::update` |
 | 12 | render: `scene::draw` (rooms visible per VIS, objects, lights) into the frame, then `gui::draw`, `gpu::submit`, present or screenshot | game/main |
 
+**The loading screen** (game/loading.ctx, `lib/frontend/loading.ctx`; gameloop.md 5.3 to 5.6). Every way into an
+area puts it up first: Play in character creation and New Game, Load Game from the front end or the options menu,
+`--load`, and a module change (the transition branch of step 6). It is its own GUI (`loading::make`, built once), the
+picture of `frontend::show_loading` (the row of loadscreens.2da labelled with the module, else the module's own
+`load_<module>` texture, else the default row), a story hint for a new game and gameplay hints otherwise, and a bar
+that `loading::step` moves between the stages of the load (module entered 40, scene built 75, interface 90) with one
+GUI-only frame drawn each. The class selection has its own (the `classsel` row, `begin_chargen`). The world is not
+paused behind it: the loop runs on, ticks the new area and builds its presentation, and draws the screen in the
+scene's place until `loading::settled` says the area is ready, which is the PC placed, four ticks run, what the
+arrival scripts delayed (DelayCommand due within 0.3 s) fired, and a conversation they ordered begun with its first
+line on screen. At the start of a game that is the opening cutscene's first frame (black, its fade), not the ship
+assembling. Input is dropped behind it, an autosave waits for it, and nothing in the world changes: a replay is
+tick for tick the same. `--screenshot-loading DIR` writes each frame of it (`--no-render` draws it only for that).
+The GUI keeps a copy of the resource manager, so `show` refreshes it (a copy from before a module was mounted walks
+freed memory).
+
 `world::tick{ &w, &vm, engine }` does step 5 in the original's order (gameloop.md 2.2): events due
 at the frame's world time are delivered first (an event queued during the frame with no delay is
 delivered in the same frame, at the next delivery point), then each AI level's objects. There is

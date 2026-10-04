@@ -1,0 +1,155 @@
+// The loading screen as the original shows it (docs/re/gui.md "Loading screen", docs/re/gameloop.md 5.4 to 5.6):
+// the picture for the module being entered, a progress bar and a hint, up from the moment a new game, a
+// load or an area change starts until the area is ready, and at the start of a game until the opening
+// cutscene has begun. It is drawn with its own GUI (lib/frontend's `show_loading`), a frame at a time between
+// the stages of the load, and the game loop keeps drawing it instead of the scene while the first ticks of
+// the new area run behind it.
+//
+//   let ld = try loading::make{ &w, &dev, scratch, opts }
+//   loading::show{ ld, &w, &dev, name = "end_m01aa", story = true }
+//   loading::step{ ld, &w, &dev, &sdl, &frame, opts, percent = 30 }      // after each stage
+//   each loop iteration while loading::is_up{ ld }: loading::tick{ ld }, loading::draw_frame{ ... } for the scene's frame,
+//   and loading::hide{ ld } once loading::settled{ ... }.
+namespace loading {
+    // The area is "ready" once the PC is placed (w.arrival) and this many ticks of the new area have run, so
+    // its OnEnter scripts have started what they start; at most MAX_TICKS (a conversation ordered by a script
+    // that is never going to start must not keep the screen up).
+    const MIN_TICKS: u32 = 4
+    const MAX_TICKS: u32 = 90
+    // A delayed command of the area's scripts due within DELAY_MS is waited for, for DELAY_TICKS ticks at most.
+    const DELAY_MS: u64 = 300
+    const DELAY_TICKS: u32 = 12
+
+    struct Loading {
+        cache: *mut material::Cache,
+        g: gui::Gui,
+        fe: frontend::Front,            // the hint counters
+        panel: u32,                     // the loadscreen panel, 0 when none is up
+        ticks: u32,                     // loop iterations since `show` (the area's ticks, behind the screen)
+        frames: u32,                    // loading frames drawn, for the numbering of --screenshot-loading
+        quit: bool,                     // the window was closed meanwhile
+    }
+
+    // The loading screen's GUI, built once at start-up (fonts, the dialog.tlk for the hints).
+    fn make { mut w: world::World, mut dev: gpu::Device, scratch: alloc::Bytes, opts: options::Options } -> !*mut Loading {
+        let cache = try alloc::new(material::Cache, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = material::new_cache{ heap = w.heap, scratch } }
+        let mut g = try gui::make{ heap = w.heap, rm = w.rm.*, cache, width = @as(i32, opts.width), height = @as(i32, opts.height) }
+        if w.tlk != null {
+            let tb = w.tlk ifnull { return gui::no_such_gui{ name = "dialog.tlk" } }
+            let t = try alloc::new(tlk::Table, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = tb }
+            gui::set_tlk{ &g, table = t }
+        }
+        try gui::load_defaults{ &g, fs = &w.fs, &dev }
+        gui::set_cursor_visible{ &g, visible = false }
+        let fe = frontend::make{ fs = &w.fs, heap = w.heap, game = opts.game, config_path = "kotor/out/kotor-settings.ini" }
+        gui::set_screen{ &g, fs = &w.fs, &dev, width = @as(i32, opts.width), height = @as(i32, opts.height), scale = fe.settings.gui_scale }
+        let l = Loading{ cache, g, fe, panel = 0, ticks = 0, frames = 0, quit = false }
+        return try alloc::new(Loading, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = l }
+    }
+
+    fn is_up { l: *Loading } -> bool { return l.panel != 0 }
+
+    // Puts the screen up for the module `name` (its row in loadscreens.2da, else its own `load_<name>` picture,
+    // else the default); `story` picks the story hints (a new game), else the gameplay ones. Nothing is drawn yet.
+    fn show { mut l: Loading, mut w: world::World, mut dev: gpu::Device, name: []u8, story: bool } {
+        hide{ &l }
+        l.ticks = 0
+        // The GUI holds a copy of the resource manager, and a module mounted since the copy was made has moved
+        // the manager's source list: a stale copy walks freed memory (the first show after a transition hung in it).
+        l.g.rm = w.rm.*
+        l.panel = frontend::show_loading{ fe = &l.fe, g = &l.g, fs = &w.fs, dev = &dev, name, story, saving = false } iferr err{ error } {
+            _ = @fmt(&w.io, "kotor: loading screen: {}\n", error)
+            0
+        }
+        if w.log.module {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "loading screen up for {}\n", name)
+        }
+    }
+
+    // Takes the screen away; the next frame shows the game.
+    fn hide { mut l: Loading } {
+        if l.panel == 0 { return }
+        gui::close{ g = &l.g, id = l.panel }
+        l.panel = 0
+        // The panel is reaped by the next update; nothing draws it meanwhile.
+        gui::update{ g = &l.g, dt = 0.0 }
+    }
+
+    // The bar moves to `percent` and a frame is drawn: the stages of a load call this between them (the
+    // original's RenderLoadingFrame).
+    fn step { mut l: Loading, mut w: world::World, mut dev: gpu::Device, mut sdl: sdl::Sdl, mut frame: render::Frame, opts: options::Options, percent: i32 } {
+        if l.panel == 0 { return }
+        frontend::set_loading_progress{ g = &l.g, panel = l.panel, percent }
+        draw_frame{ &l, &w, &dev, &sdl, &frame, opts, present = true }
+    }
+
+    // Draws the screen: a GUI-only frame (headless runs with --no-render draw it only when its pictures are asked
+    // for with --screenshot-loading DIR). `present` swaps it to the window; the game loop does that itself at the
+    // end of its frame, after any screenshot it takes of it.
+    fn draw_frame { mut l: Loading, mut w: world::World, mut dev: gpu::Device, mut sdl: sdl::Sdl, mut frame: render::Frame, opts: options::Options, present: bool } {
+        if l.panel == 0 { return }
+        l.frames = l.frames + 1
+        let shots = opts.loading_dir.len > 0
+        if not opts.headless {
+            // The window stays alive through a long load.
+            while true {
+                let e = sdl::poll{ &sdl } ifnull { break }
+                if e is quit | close { l.quit = true }
+            }
+        }
+        if opts.no_render and not shots { return }
+        gui::update{ g = &l.g, dt = 1.0 / 30.0 }
+        render::begin_frame{ &frame, time = 0.0 }
+        gui::draw_backdrop_pass{ g = &l.g, &frame }
+        gui::draw_panels{ g = &l.g, &frame }
+        gpu::submit{ &dev, frame = &frame } iferr err{ error } {
+            _ = @fmt(&w.io, "kotor: loading screen: submit failed: {}\n", error)
+            return
+        }
+        if shots {
+            play::screenshot_numbered{ &w, &dev, dir = opts.loading_dir, letter = 'l', number = @as(u64, l.frames) } iferr err{ error } {
+                _ = @fmt(&w.io, "kotor: loading screen: picture: {}\n", error)
+            }
+        }
+        if present and not opts.headless { gpu::present{ &dev, &sdl } }
+    }
+
+    // One loop iteration behind the screen: the bar creeps up through the last tenth while the area's first ticks run.
+    fn tick { mut l: Loading } {
+        if l.panel == 0 { return }
+        l.ticks = l.ticks + 1
+        let percent = 90 + @as(i32, l.ticks) / 4
+        frontend::set_loading_progress{ g = &l.g, panel = l.panel, percent = if percent > 99 { 99 } else { percent } }
+    }
+
+    // A script's delayed command (DelayCommand) falls due within `ms` of world time: the OnEnter scripts of a
+    // new area often start their cutscene that way (the Endar Spire's opening, 0.1 s after the fades).
+    fn delayed_soon { w: *world::World, ms: u64 } -> bool {
+        let now = clock::now_ms{ c = w.clock }
+        let events = list::items{ list = w.queue.events }
+        let mut i: usize = 0
+        while i < events.len {
+            if events[i].payload is situation and events[i].due <= now + ms { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // Whether the area behind the screen is ready to be seen: the PC is placed, the area has run a few ticks, what
+    // its scripts have just delayed has fired, and a conversation they ordered has begun and its first line is up
+    // (`line_shown`: the view has put it on screen), so the opening cutscene is what appears when the screen goes,
+    // not the world assembling. The waits are capped (a script that delays something every half second must not
+    // keep the screen up).
+    fn settled { l: *Loading, mut w: world::World, line_shown: bool } -> bool {
+        if l.panel == 0 { return true }
+        if w.arrival > 0 or w.transition != null { return false }
+        if l.ticks >= MAX_TICKS { return true }
+        if l.ticks < MIN_TICKS { return false }
+        // (`pending` stays set while the conversation runs, to its end.)
+        if (w.conversation.pending or w.conversation.event_pending) and not w.conversation.active { return false }
+        if w.conversation.active and not (w.conversation.scene_ready and line_shown) { return false }
+        if l.ticks < MIN_TICKS + DELAY_TICKS and not w.conversation.active and delayed_soon{ w = &w, ms = DELAY_MS } { return false }
+        return true
+    }
+}
