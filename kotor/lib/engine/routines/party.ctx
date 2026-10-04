@@ -88,6 +88,16 @@ namespace rt_party {
         o.faction = pc.faction
     }
 
+    // A slot that becomes available holds a new companion: what was kept of the one before (its
+    // AVAILNPC<n> file, its link) is let go, or SpawnAvailableNPC would bring the old creature back
+    // (the Endar Spire's Trask held slot 0 until Bastila took it over on Taris; the AddAvailableNPC
+    // routines write the new creature's file, 0x00564300).
+    fn forget_slot_state { mut w: world::World, s: usize } {
+        let mut buf: [16]u8
+        save::remove{ st = &w.gip, name = save::npc_name{ slot = s, into = buf[..] }, kind = save::KIND_UTC }
+        if not party::is_member{ w = &w, id = w.party.npcs[s] } { w.party.npcs[s] = obj::INVALID }
+    }
+
     // AddAvailableNPCByObject (0x00564300): refuses a slot that is available, a bad slot or a
     // creature that is not there. Only the blueprint is kept; the creature is not linked.
     fn make_available_from { mut w: world::World, n: i32, id: u32 } -> bool {
@@ -97,6 +107,7 @@ namespace rt_party {
         let o = world::object{ w = &w, id } ifnull { return false }
         let c = obj::creature{ o } ifnull { return false }
         if resref::is_empty{ r = o.template } { return false }
+        forget_slot_state{ &w, s }
         w.party.available[s] = true
         w.party.selectable[s] = true
         w.party.templates[s] = o.template
@@ -122,6 +133,7 @@ namespace rt_party {
             let found = world::read_gff{ &w, name = template, kind = restype::Type::utc } iferr { null }
             if found != null {
                 let s = @as(usize, n)
+                forget_slot_state{ &w, s }
                 w.party.available[s] = true
                 w.party.selectable[s] = true
                 w.party.templates[s] = resref::truncate{ name = template }

@@ -1,0 +1,123 @@
+// A swoop racer for tests and unattended runs (`FRAME racer` in the input script; the real player steers
+// with A and D and shifts with Space): it shifts when the gear allows and steers between the obstacles it
+// can see coming. Its output is the same `Input` the keys make, so the scripts cannot tell it apart.
+//
+// Looking ahead: the player's place for a future moment and offset is its rail's transform at that rail
+// time plus the offset, and an obstacle is hit when its box holds that place (`collide`). A table of
+// RACER_STEPS moments by RACER_COLS offsets marks where the player would be hit, and a shortest path through
+// it (the offset may change by RACER_SLEW a moment) gives the offset to be at in a few moments.
+namespace mg {
+    const RACER_STEPS: usize = 48       // moments looked at, RACER_DT seconds apart
+    const RACER_DT: f32 = 0.05
+    const RACER_COLS: usize = 41        // offsets -20 .. 20 in whole units
+    const RACER_SLEW: i32 = 4           // the most the path moves sideways between two moments
+    const RACER_MARGIN: f32 = 1.5       // keeps this far from a box (the player's sphere is bigger than a point)
+    const RACER_GEARS: [5]f32 = [35.0, 60.0, 100.0, 150.0, 210.0]
+
+    // Where a follower on its rail would be `t` seconds along it, with a sideways offset.
+    fn racer_place { run: *Run, o: *Obj, t: f32, x: f32 } -> math::Vec3 {
+        let base = math::mat4::translation{ t = o.origin }
+        let r = rail_of{ run, o } ifnull { return math::vec3::add{ a = o.origin, b = math::Vec3{ x = x, y = 0.0, z = 0.0 } } }
+        let m = math::mat4::mul{ a = base, b = rail_at{ rail = r.*, t, loops = o.num_loops } }
+        return math::mat4::get_translation{ m = math::mat4::mul{ a = m, b = math::mat4::translation{ t = math::Vec3{ x = x, y = 0.0, z = 0.0 } } } }
+    }
+
+    // The controls of a rider who shifts up as soon as the gear lets it and keeps clear of the obstacles.
+    fn racer_input { run: *Run } -> Input {
+        let player = &run.objs[PLAYER]
+        // the gear: the first shift once the lights are green, then each time the speed reaches the next threshold
+        let mut fire = false
+        if run.time > 5.3 {
+            if run.max_speed <= 0.5 {
+                fire = true
+            } else {
+                let mut g: usize = 0
+                while g < 5 and RACER_GEARS[g] <= run.min_speed + 0.5 { g = g + 1 }
+                if g < 5 and run.speed >= RACER_GEARS[g] { fire = true }
+            }
+        }
+        let steer = Input{ x = 0.0, y = 0.0, fire, aim_x = 0.0, aim_y = 0.0 }
+        if run.speed < 1.0 { return steer }
+
+        // the table of hits
+        let ahead = run.speed * 0.01 * 1.1
+        let lo = @as(i32, math::floorf{ x = math::max{ a = run.origin.x + run.tunnel_neg.x, b = -20.0 } })
+        let hi = @as(i32, math::floorf{ x = math::min{ a = run.origin.x + run.tunnel_pos.x, b = 20.0 } })
+        if hi < lo { return steer }
+        let mut cost: [48][41]f32
+        let mut k: usize = 0
+        while k < RACER_STEPS {
+            let tail = player.t + @as(f32, k + 1) * RACER_DT * ahead
+            let mut c: usize = 0
+            while c < RACER_COLS {
+                let x = @as(f32, @as(i32, c) - 20)
+                let mut hit: f32 = 0.0
+                if @as(i32, c) - 20 < lo or @as(i32, c) - 20 > hi {
+                    hit = 1.0e4
+                } else {
+                    let p = racer_place{ run, o = player, t = tail, x }
+                    let mut n: usize = 1
+                    while n < run.count {
+                        let o = &run.objs[n]
+                        n = n + 1
+                        if o.removed or o.dead { continue }
+                        if o.kind == ObjKind::obstacle {
+                            if math::aabb::is_empty{ b = o.bounds } { continue }
+                            let grown = math::aabb::make{
+                                min = math::Vec3{ x = o.bounds.min.x - RACER_MARGIN, y = o.bounds.min.y - RACER_MARGIN, z = o.bounds.min.z - RACER_MARGIN },
+                                max = math::Vec3{ x = o.bounds.max.x + RACER_MARGIN, y = o.bounds.max.y + RACER_MARGIN, z = o.bounds.max.z + RACER_MARGIN },
+                            }
+                            if math::aabb::contains{ b = grown, p } { hit = hit + 100.0 }
+                        } else if o.kind == ObjKind::enemy and o.trigger and o.rail >= 0 {
+                            let q = racer_place{ run, o, t = o.t + @as(f32, k + 1) * RACER_DT, x = 0.0 }
+                            if math::vec3::distance{ a = p, b = q } < o.sphere + player.sphere { hit = hit - 3.0 }
+                        }
+                    }
+                }
+                cost[k][c] = hit
+                c = c + 1
+            }
+            k = k + 1
+        }
+
+        // the cheapest path from where the player is, backwards over the moments
+        let mut best: [41]f32
+        let mut c: usize = 0
+        while c < RACER_COLS {
+            best[c] = 0.0
+            c = c + 1
+        }
+        let mut first: [41]i32
+        k = RACER_STEPS
+        while k > 0 {
+            k = k - 1
+            let mut next: [41]f32
+            c = 0
+            while c < RACER_COLS {
+                let mut m: f32 = 1.0e9
+                let mut d: i32 = -RACER_SLEW
+                while d <= RACER_SLEW {
+                    let j = @as(i32, c) + d
+                    if j >= 0 and j < @as(i32, RACER_COLS) {
+                        let v = best[@as(usize, j)] + 0.05 * @as(f32, if d < 0 { -d } else { d })
+                        if v < m {
+                            m = v
+                            if k == 0 { first[c] = j }
+                        }
+                    }
+                    d = d + 1
+                }
+                next[c] = m + cost[k][c]
+                c = c + 1
+            }
+            best = next
+        }
+        // the first moment's offset is where the path from here goes first; aim a few moments on for a smooth line
+        let mut now = @as(i32, math::floorf{ x = run.offset.x + 0.5 }) + 20
+        if now < 0 { now = 0 }
+        if now >= @as(i32, RACER_COLS) { now = @as(i32, RACER_COLS) - 1 }
+        let target = @as(f32, first[@as(usize, now)] - 20)
+        let want = math::clamp{ x = (target - run.offset.x) * 2.0 - run.velocity.x * 0.02, lo = -1.0, hi = 1.0 }
+        return Input{ x = want, y = 0.0, fire, aim_x = 0.0, aim_y = 0.0 }
+    }
+}

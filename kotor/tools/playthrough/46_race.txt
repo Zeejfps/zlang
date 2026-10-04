@@ -1,0 +1,25 @@
+# From the swoop checkpoint (tar_m03af, the mechanic done, the player alone): the race announcer, two heats (the racer
+# bot rides: `racer`), Brejik's finale, the fight (the test bot on, god mode), Bastila's conversation, to the apartment.
+#   FAST=1 LOAD=kotor/out/checkpoints/swoop SAVES=kotor/out/pt/saves_rc LOG=dialog,module,combat sh kotor/tools/playthrough/run.sh rc kotor/tools/playthrough/46_race.txt 20000
+3 ui bot off
+3 ui autolevel
+3 ui replies default 1
+5 racer
+5 ui goto tar03_wpmechanic
+300 hoveron raceannoun031
+303 mouse click
+306 mouse click
+3400 ui globals swoop
+4500 ui goto raceannoun031
+4800 hoveron raceannoun031
+4803 mouse click
+4806 mouse click
+10240 ui bot god on
+10241 ui bot on
+15000 ui where bast
+15000 ui party
+15010 hoveron bastilla03
+15013 mouse click
+15016 mouse click
+17900 ui party
+22000 save apt

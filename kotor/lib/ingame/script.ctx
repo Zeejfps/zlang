@@ -21,6 +21,40 @@ namespace ingame {
         return true
     }
 
+    // Where a click would land on the tagged object (the Nth of several, from 0): the middle of its box
+    // on the screen, or the nearest point to the middle that the HUD's pick gives to it (another object
+    // in front of it, or the screen's edge, can hide the middle). Null when no point of it can be picked.
+    // `FRAME clickon TAG [N] [right]` in play.ctx clicks there through the SDL queue.
+    fn click_point { ui: Ingame, w: *world::World, tag: []u8, nth: i32 } -> ?[2]i32 {
+        let id = world::object_by_tag{ w, tag, nth }
+        let o = world::object{ w, id } ifnull { return null }
+        let b = hud::box_on_screen{ p = ui.hud.projector, o } ifnull { return null }
+        let sw = @as(f32, ui.gui.ui_w)
+        let sh = @as(f32, ui.gui.ui_h)
+        let x0 = math::max{ a = b.x0, b = 0.0 }
+        let x1 = math::min{ a = b.x1, b = sw - 1.0 }
+        let y0 = math::max{ a = b.y0, b = 0.0 }
+        let y1 = math::min{ a = b.y1, b = sh - 1.0 }
+        if x1 <= x0 or y1 <= y0 { return null }
+        // the middle first, then rings of points around it
+        let cx = (x0 + x1) * 0.5
+        let cy = (y0 + y1) * 0.5
+        let mut ring: i32 = 0
+        while ring <= 8 {
+            let mut k: i32 = 0
+            while k < 9 {
+                let ox = @as(f32, (k % 3) - 1) * @as(f32, ring) * (x1 - x0) / 16.0
+                let oy = @as(f32, (k / 3) - 1) * @as(f32, ring) * (y1 - y0) / 16.0
+                k = k + 1
+                let px = @as(i32, cx + ox)
+                let py = @as(i32, cy + oy)
+                if hud::pick_at{ p = ui.hud.projector, w, x = px, y = py } == id { return [px, py] }
+            }
+            ring = ring + 1
+        }
+        return null
+    }
+
     fn run_command { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, text: []u8 } {
         let mut words = text::words{ s = text }
         let cmd = text::next_word{ &words } ifnull { return }
@@ -109,6 +143,19 @@ namespace ingame {
             let name = text::next_word{ &words } ifnull { return }
             let v = text::scan_decimal{ s = text::next_word{ &words } ifnull "0" }
             globals::set_boolean{ g = &w.globals, name, value = v != 0 }
+        } else if ci::eq{ a = cmd, b = "globals" } {
+            // Test helper: the number and boolean globals whose name contains the word and are not zero
+            // (`ui globals tar_` lists the Taris story's state).
+            let part = text::next_word{ &words } ifnull ""
+            let all = list::items{ list = w.globals.all }
+            let mut i: usize = 0
+            while i < all.len {
+                let g = all[i]
+                i = i + 1
+                if (g.kind != globals::Type::boolean and g.kind != globals::Type::number) or g.number == 0 { continue }
+                if not has_part{ s = g.name, part } { continue }
+                _ = @fmt(&w.io, "global {} {}\n", g.name, g.number)
+            }
         } else if ci::eq{ a = cmd, b = "where" } {
             // Test helper: every object whose tag contains the word (none given: all), with its place.
             let part = text::next_word{ &words } ifnull ""

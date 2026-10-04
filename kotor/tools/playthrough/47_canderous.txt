@@ -1,0 +1,21 @@
+# From the apt checkpoint (tar_m02af, Bastila and Carth reunited, the vision done, the player alone): the door (a click on
+# it opens the party screen), the party chosen with clicks, the Upper City, Canderous's messenger.
+#   FAST=1 LOAD=kotor/out/checkpoints/apt SAVES=kotor/out/pt/saves_cd LOG=dialog,module sh kotor/tools/playthrough/run.sh cd kotor/tools/playthrough/47_canderous.txt 6000
+3 ui bot off
+3 ui replies default 1
+5 ui goto tar02_aptdoor
+320 hoveron tar02_aptdoor
+323 mouse click
+326 mouse click
+420 mouse click 416 271
+435 mouse click 598 271
+455 mouse click 639 545
+480 ui party
+500 ui bot god on
+500 ui bot unlock on
+500 ui bot party on
+500 ui bot route ptar_stnddr tar02_bhtstr uppernorth tar02_lowdoor tar03_javydoor tar02_candtlk
+501 ui bot on
+3000 ui bot status
+6000 ui bot status
+19500 save cand
