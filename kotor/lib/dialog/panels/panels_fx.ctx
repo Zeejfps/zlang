@@ -25,17 +25,23 @@ namespace dlgpanel {
             p.bars_instant = was
         }
         if p.bars_on { step_bars{ &p, dt } }
-        if not p.computer {
-            let on = p.bars_done
-            gui::set_visible{ &g, panel = p.main, tag = "LBL_MESSAGE", visible = on and p.shown == SHOWN_LINE }
-            gui::set_visible{ &g, panel = p.main, tag = "LB_REPLIES", visible = on and p.shown == SHOWN_REPLIES }
-            if p.last != 0 {
-                gui::set_visible{ &g, panel = p.last, tag = "LBL_MESSAGE", visible = on and p.shown == SHOWN_REPLIES }
-            }
-        }
+        show_what_is_set{ &p, &g }
         if p.shown == SHOWN_REPLIES {
             follow_pointer{ &p, &g }
             tint_rows{ &p, &g }
+        }
+    }
+
+    // Shows the line or the replies that are set, once the bars have arrived. `set_line` and `set_replies` call it
+    // too: the owner sets a line after this frame's `update`, so waiting for the next one left the new text
+    // (or the new list) out of one picture, the old one hidden and the new one not yet shown.
+    fn show_what_is_set { mut p: Panels, mut g: gui::Gui } {
+        if p.main == 0 or p.computer { return }
+        let on = p.bars_done
+        gui::set_visible{ &g, panel = p.main, tag = "LBL_MESSAGE", visible = on and p.shown == SHOWN_LINE }
+        gui::set_visible{ &g, panel = p.main, tag = "LB_REPLIES", visible = on and p.shown == SHOWN_REPLIES }
+        if p.last != 0 {
+            gui::set_visible{ &g, panel = p.last, tag = "LBL_MESSAGE", visible = on and p.shown == SHOWN_REPLIES }
         }
     }
 

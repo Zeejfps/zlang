@@ -372,11 +372,33 @@ namespace frontend {
 
     // New Game: the original makes the player before it loads the first module. Without the data
     // for it (or when it fails) the game starts at once with the engine's default player.
+    //
+    // Character generation shows the loading screen with the class selection's picture while it is made
+    // (re/gui.md 10.2: CSWGuiClassSelection's constructor does): this only puts the screen up, and the work is
+    // done by `start_chargen` on the next step, after the engine has drawn the screen once.
     fn begin_chargen { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } -> Outcome {
-        let seed = @as(u32, g.time * 1000.0)
-        let st = chargen::begin{ &fs, &g, &dev, heap = fe.heap, seed } iferr { return new_game_outcome{ &fe, player = slice::empty(u8){} } }
-        fe.cg = st
+        fe.load_panel = show_loading{ &fe, &g, &fs, &dev, name = "classsel", story = false, saving = false } iferr { 0 }
+        if fe.load_panel == 0 { return start_chargen{ &fe, &g, &fs, &dev } }
+        set_loading_progress{ &g, panel = fe.load_panel, percent = 30 }
+        fe.cg_wait = true
         return Outcome::running
+    }
+
+    fn start_chargen { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device } -> Outcome {
+        fe.cg_wait = false
+        let seed = @as(u32, g.time * 1000.0)
+        let st = chargen::begin{ &fs, &g, &dev, heap = fe.heap, seed } iferr {
+            close_loading{ &fe, &g }
+            return new_game_outcome{ &fe, player = slice::empty(u8){} }
+        }
+        fe.cg = st
+        close_loading{ &fe, &g }
+        return Outcome::running
+    }
+
+    fn close_loading { mut fe: Front, mut g: gui::Gui } {
+        if fe.load_panel != 0 { gui::close{ &g, id = fe.load_panel } }
+        fe.load_panel = 0
     }
 
     fn end_chargen { mut fe: Front, mut g: gui::Gui, mut dev: gpu::Device } {

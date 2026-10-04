@@ -30,8 +30,22 @@ namespace frontend {
         defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = fe.heap, mem = bytes, count = 0 }
         let t = try twoda::parse{ data = bytes, realloc = heap::alloc, heap = fe.heap }
         defer twoda::free{ t, realloc = heap::alloc, heap = fe.heap }
+        // The row labelled with the name (character generation, the minigames), else the area's own picture
+        // `load_<name>` (SetLoadScreenImage), else the default row's.
         let mut row = twoda::find_row{ t, label = name }
-        if row == null { row = twoda::find_row{ t, label = "default" } }
+        if row == null {
+            let mut own: [40]u8
+            let prefix: []u8 = "load_"
+            slice::copy(u8){ dst = own[..prefix.len], src = prefix }
+            let n = if name.len < own.len - prefix.len { name.len } else { own.len - prefix.len }
+            slice::copy(u8){ dst = own[prefix.len..prefix.len + n], src = name[..n] }
+            let img = gui::resolve_img{ &g, &fs, &dev, name = own[..prefix.len + n] }
+            if img.ok {
+                gui::set_panel_picture{ &g, panel, img }
+                return
+            }
+            row = twoda::find_row{ t, label = "default" }
+        }
         let r = row ifnull { return }
         let pic = twoda::get_string{ t, row = r, column = "bmpresref" } ifnull { return }
         let img = gui::resolve_img{ &g, &fs, &dev, name = pic }

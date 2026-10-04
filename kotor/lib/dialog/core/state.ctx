@@ -82,6 +82,7 @@ namespace dlg {
         vo_cut: bool,
         // The presentation's side.
         client: bool,               // a view is attached and answers the flags below
+        hold: bool,                 // the view keeps the ended conversation's picture up a moment (another may follow): the HUD stays away
         scene_ready: bool,
         vo_playing: bool,           // set when a voiced line starts; the view clears it at the end
         vo_stop: bool,              // asks the view to stop the voice
@@ -133,7 +134,7 @@ namespace dlg {
             last_resref = resref::empty{},
             entry = -1, chosen = -1, step = Step::none, step_entry = 0, node_end_ms = 0, wait_flags = 0,
             paused = false, end_flag = false, ending = false, end_ran = false, skip = false, pick = -1, scripted = [0; 128], scripted_count = 0, scripted_pos = 0, scripted_default = 0, vo_cut = false,
-            client = false, scene_ready = false, vo_playing = false, vo_stop = false, vo_virtual_end = 0,
+            client = false, hold = false, scene_ready = false, vo_playing = false, vo_stop = false, vo_virtual_end = 0,
             anim_busy = false, camera_busy = false, fade_busy = false,
             line = no_line{}, choices = no_choices{},
             speaker = obj::INVALID, listener = obj::INVALID, prev_speaker = obj::INVALID, prev_listener = obj::INVALID,

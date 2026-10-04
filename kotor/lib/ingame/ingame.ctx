@@ -610,7 +610,8 @@ namespace ingame {
             let lead = world::object{ w = &w, id = party::leader{ w = &w } }
             if lead == null or lead.actions.len > 0 or w.conversation.active { ui.freelook = false }
         }
-        let wants_hidden = w.conversation.active or ui.freelook
+        // A cutscene's picture is held a moment after it ends (dlgview), so the HUD does not show between it and the next conversation.
+        let wants_hidden = w.conversation.active or w.conversation.hold or ui.freelook
         if wants_hidden != ui.hud_hidden {
             if w.conversation.active and ui.menu != NO_MENU { close_menu{ &ui, &w } }
             set_hud_hidden{ &ui, hidden = wants_hidden }

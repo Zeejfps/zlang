@@ -12,6 +12,11 @@
 //     dlgview::post_sync{ &view, &w, &sc, dt }                // lips, after the poses are made
 //     dlgview::apply_camera{ &view, &w, &camera }             // the shot over the chase camera
 namespace dlgview {
+    // How long the picture of a cutscene that ended stays up. A cutscene's end script starts the next
+    // conversation a moment later (k_pend_cut09 delays it by 0.1 s), and between the two the world's own
+    // camera and the HUD would show for a few frames.
+    const HOLD_SECONDS: f32 = 0.4
+
     // What the camera does now.
     enum Mode: u8 { none, framed, fixed, animated, keep }
 
@@ -33,6 +38,10 @@ namespace dlgview {
         heap: *mut heap::Heap,
         m: *mut mix::Mixer,
         up: bool,                   // a conversation is being presented
+        holding: bool,              // it has ended, and its picture stays up for HOLD_SECONDS in case another follows
+        hold_left: f32,
+        cutscene: bool,             // the presented conversation is an animated cutscene (the kind that hands over to the next)
+        carry_bars: bool,           // the next `begin` is a hand-over: the bars are in already
         seen_started: u32,
         seen_ended: u32,
         seen_line: u32,
@@ -85,7 +94,7 @@ namespace dlgview {
         stops[30] = false
         let none = mix::Handle{ slot = 0, id = 0 }
         return View{
-            heap, m, up = false, seen_started = 0, seen_ended = 0, seen_line = 0, seen_choices = 0, wait = 0.0,
+            heap, m, up = false, holding = false, hold_left = 0.0, cutscene = false, carry_bars = false, seen_started = 0, seen_ended = 0, seen_line = 0, seen_choices = 0, wait = 0.0,
             mode = Mode::none, rig = dlgcam::Rig{ eye = math::vec3::zero{}, forward = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, up = dlgcam::zup{}, fov = dlgcam::FOV },
             have_rig = false, speaker = obj::INVALID, listener = obj::INVALID, angle = 0, cam_height = 0.0, tar_height = 0.0,
             pull_back = 0.0, fov = 0.0, static_id = -1, seen_static = -1, blocked = false,
@@ -111,8 +120,33 @@ namespace dlgview {
 
     fn pre_sync { mut v: View, mut w: world::World, mut sc: scene::Scene, mut dev: gpu::Device, mut g: gui::Gui, dt: f32 } {
         // A conversation that ended, or one that replaced it.
-        if v.up and (not w.conversation.active or w.conversation.started_serial != v.seen_started) {
-            finish{ &v, &w, &sc, &g }
+        let next = w.conversation.active and w.conversation.started_serial != v.seen_started
+        if v.up and v.holding {
+            if next {
+                hand_over{ &v, &w, &sc, &g }
+            } else if v.hold_left <= 0.0 or w.transition != null {
+                v.holding = false
+                w.conversation.hold = false
+                finish{ &v, &w, &sc, &g }
+            } else {
+                v.hold_left = v.hold_left - dt
+                dlgpanel::update{ p = &v.panels, g = &g, dt }
+                return
+            }
+        } else if v.up and next {
+            hand_over{ &v, &w, &sc, &g }
+        } else if v.up and not w.conversation.active {
+            if v.cutscene and w.transition == null {
+                v.holding = true
+                v.hold_left = HOLD_SECONDS
+                w.conversation.hold = true
+                stop_voice{ &v, &w, fade = 0.3 }
+                stop_ambient_track{ &v }
+                dlgpanel::update{ p = &v.panels, g = &g, dt }
+                return
+            } else {
+                finish{ &v, &w, &sc, &g }
+            }
         }
         if not v.up and w.conversation.active { begin{ &v, &w, &dev, &g } }
         dlgpanel::update{ p = &v.panels, g = &g, dt }
@@ -147,6 +181,7 @@ namespace dlgview {
     // the scene it touched still exists.
     fn leave { mut v: View, mut w: world::World, mut sc: scene::Scene, mut g: gui::Gui } {
         if v.up { finish{ &v, &w, &sc, &g } }
+        w.conversation.hold = false
         v.camera_model.loaded = false
         v.swap_count = 0
     }
@@ -199,11 +234,16 @@ namespace dlgview {
         v.seen_static = -1
         v.camera_model.loaded = false
         w.conversation.scene_ready = false
+        v.cutscene = w.conversation.d.animated_cut
         let computer = w.conversation.d.conversation_type == dlg::TYPE_COMPUTER
+        // A conversation that follows another without a break (a cutscene's hand-over) finds the bars in.
+        v.panels.bars_instant = v.carry_bars
+        v.carry_bars = false
         dlgpanel::open{ p = &v.panels, g = &g, fs = &w.fs, dev = &dev, computer, computer_type = w.conversation.d.computer_type } iferr err{ error } {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "dialog panels: {}\n", error)
         }
+        v.panels.bars_instant = false
         sync_tokens{ &w, &g }
         sync_computer{ &v, &w, &g }
         start_ambient_track{ &v, &w, name = w.conversation.d.ambient_track }
@@ -235,10 +275,40 @@ namespace dlgview {
         v.mode = Mode::none
         v.have_rig = false
         v.up = false
+        v.holding = false
+        w.conversation.hold = false
         v.seen_ended = w.conversation.ended_serial
         if w.log.dialog {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "dialog view: finish\n")
+        }
+    }
+
+    // The next conversation starts while the last one's picture is still up (it ended a moment ago, or was
+    // replaced in the same frame): its stunt models and animations go back and its voice stops, but the
+    // panels and their bars stay, so the cut from the one to the other is a cut and not a pause in a
+    // different camera with the HUD.
+    fn hand_over { mut v: View, mut w: world::World, mut sc: scene::Scene, mut g: gui::Gui } {
+        restore_stunts{ &v, &w, &sc }
+        let mut i: usize = 0
+        while i < v.cast_count {
+            let o = world::object{ w = &w, id = v.cast[i] }
+            if o != null { world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 } }
+            i = i + 1
+        }
+        v.cast_count = 0
+        stop_voice{ &v, &w, fade = 0.3 }
+        stop_ambient_track{ &v }
+        v.mode = Mode::none
+        v.have_rig = false
+        v.up = false
+        v.holding = false
+        w.conversation.hold = false
+        v.carry_bars = true
+        v.seen_ended = w.conversation.ended_serial
+        if w.log.dialog {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog view: hand over\n")
         }
     }
 
