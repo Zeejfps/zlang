@@ -1561,8 +1561,17 @@ bEquipped, bNew)` (0x006b6710) fills it (high):
 
 - item id at +0x1c4, flags at +0x394 (bit1 equipped, bit2 new);
 - name = the item's localized name (item +0x280), with " (Equipped)" (strref 32346) appended
-  when equipped; name colour normal blue (0x007a23b4, image value 0.0/0.66/0.98) with yellow
-  hilight (0x007a23c0, 0.98/1.0/0.0), or (0.95/0.0/0.85) from 0x007a23fc for *new* items;
+  when equipped. The **text colour is not touched** (it is the prototype's blue, and a button's
+  yellow pulse under the pointer). What `SetItem` sets is the colour of the row's four frames, the
+  `BORDER` colour (entry +0x90..0x98), the `HILIGHT` colour (+0x104..0x10c) and the same two of
+  the icon's hexagon frame (+0x1ec, +0x260): menu blue (0x007a23b4, 0.0/0.66/0.98) and yellow
+  (0x007a23c0, 0.98/1.0/0.0) normally, or magenta (0.95/0.0/0.85, 0x007a23fc) for all four for a
+  *new* item, whose `BORDER` alpha (+0x8c) and hexagon alpha (+0x1e8) it also sets to 0.5.
+  `FUN_006b5060(row, state)` repaints them after `SetItem` for the equipment list: state 0 or 1
+  as normal, state 2 or 3 red-orange (0x007a23d8, 0.74/0.11/0.0) for all four, and sets the
+  hilight frames pulsing while the row is hilighted. The new flag is the argument the caller
+  passes: the inventory passes bit 7 of the item's flags, the container (0x006b8130, 0x006b8410)
+  and the equipment list (0x006b9470) pass 0;
 - icon = the item's icon resref (`CSWSItem::GetIconResRef` 0x005556b0) drawn inside a hexagon
   frame: `lbl_hex_3` for a single item, `lbl_hex_6` for stacks of 2..99, `lbl_hex_7` for 100 and
   more; the stack size (item +0x28c) is printed with font `fnt_d16x16`, alignment 0x22
@@ -1709,15 +1718,24 @@ Empty-slot icons are `i` + suffix, or `id` + suffix for droids (both exist in
 `i`/`id` rule, which is inferred from the textures and `0x006b5600`)
 
 **Slot view.** Hovering a slot button (event 0) builds LB_ITEMS for that slot so the player sees
-what could go there before clicking. The list is: row 0 "None" (unequip), row 1 the equipped item
+what could go there before clicking. The list is only a preview then: `SetSelectionMode(0)`
+(0x006b7680, called by the constructor and `EndSelection`) clears the list box's selectable flag
+0x08 (`SetSelectable`, vtable +0x88; the hit test and the keys pass a non-selectable control by)
+and sets the `BORDER` alpha (+0x8c) of every row to 0, and `GetRow` (0x006b91c0) gives every row it
+hands out the same 0, so the rows show their pictures and names without the frame, cannot be
+hilighted or clicked (`OnRowHilighted` also un-hilights a row at once while LB_DESC is hidden).
+`SetSelectionMode(1)` sets the flag, the alpha 1.0, shows LB_DESC, BTN_EQUIP and the title, hides
+the nine slots and the labels (and the four party buttons through `UpdatePartyButtons(0)`). The list is: row 0 "None" (unequip), row 1 the equipped item
 (if any), then every inventory item whose base item's equipable slots include the slot mask and
 whose `droidorhuman` column (base item +0xb4) fits the creature (0 anyone; 1 only when the
 creature's race is 6; 2 only when it is 5). Each candidate is tested with the server's
 can-equip check (0x0051aa60); a failure marks the row state 2 (cannot equip). With the "Hide
 Unequippable" option (client options +0x14 bit0) failing items are left out. For the weapon
-slots, an item whose wield type (base item +8) does not pair with the weapon in the other hand
-(both must be 2 or both 4) gets state 3. (high for the order and the tests, med for the meaning
-of the states)
+slots (candidate for the right slot against the left hand's item, or the other way round), when
+the other hand holds an item and the candidate is not the same item of weapon size (base item
++0x1b) 4 in the right slot, the base items' wield types (+8) must be equal and 2 or 4, else the
+row gets state 3 (the text is strref 42271); the state is fixed when the list is built, and
+overrides state 2. (high for the order and the tests, high for state 3 now: 0x006b976e)
 
 **Selection mode.** Clicking a slot (0x27):
 - body armour while in combat (creature +0x4e0 == 1 and +0xac0 == 1): "You cannot equip or unequip
@@ -1725,17 +1743,26 @@ of the states)
 - left weapon slot while the right hand holds a two-handed weapon (base item +0x1b == 4):
   strref 42344;
 - no candidates: "You have no items that can be equipped in this slot." (42345);
-- otherwise hide the slot buttons and stat labels, show LB_ITEMS with keyboard focus, select the
-  equipped row, title "Select Item to Equip" (38154), BTN_BACK reads "Cancel" (1581; "Close" 1582
-  outside), tutorial 0x0b. (high)
+- the refusals test the list as built: a list of one row (only "None") is "no candidates";
+- otherwise `SetSelectionMode(1)`, give LB_ITEMS the keyboard focus (panel vtable +8), select the
+  equipped row if there is one (`SetSelectedIndex(1, no sound)`; with a bare slot nothing is
+  selected and no description is set), set the mode flag (+0x4270 bit 0), title "Select Item to
+  Equip" (38154), BTN_BACK reads "Cancel" (1581; "Close" 1582 outside), tutorial 0x0b. (high)
 
 While in selection mode, **hovering a row really equips that item** (`OnRowHilighted`): the first
 time, the originally equipped item's id and a copy are saved (+0x42ac/+0x42b0; for a two-handed
 right weapon also the left weapon, +0x42b4/+0x42b8, which is unequipped); then the hovered item is
 equipped (`EquipItem`) or the slot emptied (`UnequipItem`) with GUI sounds 0xb / 0xa, so the stat
-labels update live. `OnEquip` (BTN_EQUIP or clicking the row) keeps the result and leaves the
-mode. Cancel (0x28/0x2e/0xdf in the mode) re-equips the saved originals and leaves the mode;
-outside the mode those keys close the menu. (high)
+labels update live. A row of state 2 or 3 puts nothing on and does not undo what an earlier
+row put on: it shows its reason in the numbers' place (`FUN_006b59f0(1, 38450 or 42271)` hides
+the ten stat controls including the two icons, shows LBL_CANTEQUIP, dims BTN_EQUIP and makes it
+unselectable). `OnEquip` (BTN_EQUIP or clicking a row, whatever its state) keeps the result and
+leaves the mode. Cancel (0x28/0x2e/0xdf in the mode) re-equips the saved originals and leaves the
+mode; outside the mode those keys close the menu (0x2d, the menu key, only outside; 0xce, change
+leader, only outside; up/down scroll LB_DESC only inside). `EndSelection` (0x006b7e30) is
+`SetSelectionMode(0)`, clear the flag, make the clicked slot button the active control (so it is
+hilighted), `OnSlotHilighted` to rebuild the list, clear the title, make the list unselectable.
+(high)
 
 `EquipItem` checks the base item fits the slot, clears the creature's action queue
 (`CSWSObject::ClearAllActions`) and combat state when asked, calls

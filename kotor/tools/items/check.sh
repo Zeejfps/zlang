@@ -32,5 +32,7 @@ expect props        bunk props_effects.txt     60 "fx : 3 effects" "fx : 0 effec
 expect medpac_tut   bunk medpac_tutorial.txt  220 "leader hp 18 of 22"
 expect container    bunk container_give.txt   120 "Medpac x2"
 expect slots        bunk slots_lists.txt      110
+expect equip_flow   bunk equip_flow.txt       215 "LB_ITEMS in equip.* enabled false rows" "LB_ITEMS in equip.* enabled true rows" "worn 4: 289 Long Sword"
+expect equip_dual   bunk equip_dual.txt       125 "worn 5: 289 Long Sword" "worn 4: 280 Blaster Rifle"
 
 if [ "$fails" -eq 0 ]; then echo "all item checks passed"; else echo "$fails item checks failed"; exit 1; fi

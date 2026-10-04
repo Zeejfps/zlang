@@ -1,0 +1,31 @@
+# The equipment list is a preview until a slot is chosen (CSWGuiEquip::SetSelectionMode): in the slot
+# view pointing at a row or clicking it does nothing; a click on the slot makes the list selectable;
+# Cancel and OK go back to the slot view. The refusal texts: a Jedi robe (38450), and a pistol in the
+# left hand beside the short sword in the right (42271, the other hand's weapon does not pair).
+4 ui giveitem g_w_blstrpstl001
+4 ui giveitem g_w_lngswrd01
+4 ui giveitem g_a_jedirobe01
+10 ui key u
+30 ui movectl BTN_INV_WEAP_R
+40 ui ctl LB_ITEMS
+50 ui movectl LB_ITEMS 2
+55 ui clickctl LB_ITEMS 2
+60 ui inv
+70 ui clickctl BTN_INV_WEAP_R
+80 ui ctl LB_ITEMS
+90 ui movectl LB_ITEMS 2
+100 ui inv
+110 ui clickctl BTN_BACK
+120 ui ctl LB_ITEMS
+130 ui inv
+140 ui clickctl BTN_INV_WEAP_L
+150 ui movectl LB_ITEMS 2
+155 ui ctl LBL_CANTEQUIP
+160 ui movectl LB_ITEMS 3
+165 ui ctl LBL_CANTEQUIP
+170 ui key escape
+180 ui clickctl BTN_INV_BODY
+190 ui movectl LB_ITEMS 2
+195 ui ctl LBL_CANTEQUIP
+200 ui clickctl LB_ITEMS 2
+210 ui inv

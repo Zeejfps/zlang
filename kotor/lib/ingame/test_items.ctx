@@ -171,7 +171,7 @@ namespace test_items {
                 y = @as(i32, r.y + r.h / 2.0)
             }
             if print {
-                _ = @fmt(&w.io, "ctl: {} in {} at {} {} size {} {} centre {} {} visible {} rows {}\n", tag, resref::bytes{ r = &p.name }, p.sx + c.x, p.sy + c.y, c.w, c.h, x, y, (c.flags & gui::F_VISIBLE) != 0, c.row_count)
+                _ = @fmt(&w.io, "ctl: {} in {} at {} {} size {} {} centre {} {} visible {} enabled {} rows {}\n", tag, resref::bytes{ r = &p.name }, p.sx + c.x, p.sy + c.y, c.w, c.h, x, y, (c.flags & gui::F_VISIBLE) != 0, (c.flags & gui::F_ENABLED) != 0, c.row_count)
                 return
             }
             let wx = @as(i32, @as(f32, x) * ui.gui.scale)
