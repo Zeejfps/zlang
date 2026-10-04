@@ -1,0 +1,16 @@
+# A mine recovered from the target block's middle slot, then laid again from the HUD's mine slot
+# (docs/mechanics/traps.md). Start: module:tar_m04aa, 440 frames.
+# Setup only: Awareness 10, Demolitions 12 (recovering takes the disarm DC + 10: 20 + 12 + 1 = 33 against 30).
+# The found mine is the target (the mine-sighted watch); the middle slot (BTN_TARGET1) is Recover: the leader
+# kneels 4.5 s, the kit g_i_trapkit004 goes into the bag and the mine goes. The fourth self slot then lists the
+# kit ("Minor Frag Mine (self)"); a click lays it at the leader's feet (2 s, SetDC 15), the party's own mine
+# (its faction, shown at once, only Recover offered), and the kit is spent.
+5 warpxy 302.2,237.6
+6 ui stat awareness 10
+6 ui stat demolitions 12
+65 ui clickctl BTN_TARGET1
+300 ui inv
+310 ui movectl BTN_ACTION3
+312 ui clickctl BTN_ACTION3
+430 ui mines
+430 ui inv
