@@ -1,0 +1,10 @@
+# The leader becomes a Consular who knows Burst of Speed and casts it (the self slots, keys 4-7): the Frame Buffer
+# Effects option's speed blur eases in while the haste lasts.
+5 ui jedi 4 10
+6 ui powers 8
+7 ui fp 99
+40 ui key 4
+44 ui key 5
+48 ui key 6
+52 ui key 7
+100 ui rules

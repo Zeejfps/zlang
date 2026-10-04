@@ -1,0 +1,8 @@
+# A real window through its modes: windowed -> borderless -> full screen -> a smaller full-screen mode -> windowed again,
+# then a resize (kotor/tools/gfx/README in docs/mechanics/graphics.md). Pictures are taken after each.
+30 gfx mode borderless
+60 gfx mode fullscreen
+90 gfx size 1280 720
+120 gfx mode windowed
+150 gfx size 1920 1080
+180 gfx size 1024 768

@@ -202,7 +202,7 @@ namespace gui3d {
             let look = look_of{ e, world = node_world }
             render::add_emitter{ &frame, emitter = render::Emitter{
                 view = vi, texture = em.texture, blend = look.blend, grid_x = e.x_grid, grid_y = e.y_grid,
-                facing = look.facing, axis = look.axis, transform = node_world, first = 0, count = 0,
+                facing = look.facing, axis = look.axis, transform = node_world, first = 0, count = 0, effect = true,
                 fog = true, sort = @as(i32, e.render_order),
             }, particles = em.out[..@as(usize, n)] }
             scene.particles = scene.particles + n

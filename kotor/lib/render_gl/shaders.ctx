@@ -393,6 +393,25 @@ namespace glsl {
         "\n",
     ]
 
+    // Speed blur: the picture sampled along the line to the centre, more toward the edges (a view's `blur`).
+    const BLUR_FS: [15]c::String = [
+        "#version 410 core\n",
+        "uniform sampler2D u_tex;\n",
+        "uniform float u_strength;\n",
+        "in vec2 v_uv;\n",
+        "layout(location = 0) out vec4 o_color;\n",
+        "void main() {\n",
+        "    vec2 to_center = vec2(0.5) - v_uv;\n",
+        "    float edge = clamp(length(to_center) * 1.6, 0.0, 1.0);\n",
+        "    vec3 sum = vec3(0.0);\n",
+        "    for (int i = 0; i < 12; i++) {\n",
+        "        float t = float(i) / 11.0;\n",
+        "        sum += texture(u_tex, v_uv + to_center * (u_strength * edge * t)).rgb;\n",
+        "    }\n",
+        "    o_color = vec4(sum / 12.0, 1.0);\n",
+        "}\n",
+    ]
+
     const POST_FS: [10]c::String = [
         "#version 410 core\n",
         "uniform sampler2D u_tex;\n",

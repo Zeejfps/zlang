@@ -95,7 +95,7 @@ namespace pz_game {
     // True if the window was closed meanwhile (the game should end).
     fn visit {
         mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut dev: gpu::Device, mut frame: render::Frame,
-        ui: *mut ingame::Ingame, mixer: *mut mix::Mixer, adev: ?*mut audio::Device, r: Request,
+        ui: *mut ingame::Ingame, mixer: *mut mix::Mixer, adev: ?*mut audio::Device, r: Request, mut disp: display::Display,
     } -> !bool {
         let p = try make_params{ &w, r }
         let mut s = try pazaak::begin{ g = &ui.gui, fs = &w.fs, dev = &dev, mixer, params = p, owned = w.party.pazaak_cards, side_deck = w.party.pazaak_deck }
@@ -107,7 +107,16 @@ namespace pz_game {
         defer _ = alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = silent, count = 0 }
         while not s.done and not closed {
             while true {
-                let e = sdl::poll{ &sdl } ifnull { break }
+                let polled = sdl::poll{ &sdl } ifnull { break }
+                display::note_event{ d = &disp, ev = polled }
+                if polled is resized {
+                    if display::on_resized{ d = &disp, &dev, &sdl } {
+                        ingame::set_gui_scale{ ui, scale = disp.applied.gui_scale }
+                        ingame::relayout{ ui, &w, &dev, width = @as(i32, disp.render.width), height = @as(i32, disp.render.height) }
+                    }
+                    continue
+                }
+                let e = display::map_event{ d = &disp, ev = polled }
                 if e is quit | close { closed = true }
                 _ = gui::handle_event{ g = &ui.gui, ev = e, scale_x = 1.0, scale_y = 1.0 }
             }

@@ -12,6 +12,7 @@ the 24-core development machine.
 | Does every conversation's graph and scripts run? | the conversation sweep, `sh kotor/tools/dlgsweep/run.sh` → [dlgsweep.md](dlgsweep.md) | 45 s for all 1,262 |
 | Does the story still play from here to there? | the playthrough replay, from a checkpoint if it can start in the middle ([playthrough.md](playthrough.md)) | 30 s for the Endar Spire, 1-2 min to the Undercity from the apartment |
 | Does it look right? | a screenshot (`--screenshot-at FRAME:PNG`), read with the Read tool | one run |
+| Does a graphics option, a window size or the GUI scale work? | `FRAME gfx KEY VALUE` input lines (`--gfx --settings FILE` to read an options file headless), `sh kotor/tools/gfx/sizes.sh EXE` for four scenes at five sizes, the scripts in `kotor/tools/gfx/scripts/` ([mechanics/graphics.md](mechanics/graphics.md)) | seconds |
 | Does an item, a skill or a panel work when clicked like a player does? | `sh kotor/tools/items/run.sh NAME CHECKPOINT SCRIPT FRAMES [FRAME:SHOT]...` with `ui clickctl TAG [ROW]` / `ui movectl` in the script ([mechanics/items-skills.md](mechanics/items-skills.md)) | seconds |
 | Does stealth (the toggle, G, the solo-mode box, hiding past enemies) work as a player meets it? | `sh kotor/tools/stealth/run.sh NAME START SCRIPT FRAMES [FRAME:SHOT]...` with the scripts in `kotor/tools/stealth/scripts/`; `ui stealth [TAG]` prints the state ([mechanics/stealth.md](mechanics/stealth.md)) | seconds |
 

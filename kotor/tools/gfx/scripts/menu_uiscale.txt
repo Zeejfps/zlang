@@ -1,0 +1,6 @@
+# The Graphics panel's UI Scale button, three clicks: 100%, 125%, 150% (1280x720, the panel at 240,60 at first).
+10 mouse click 724 445
+20 mouse click 511 385
+30 mouse click 500 338
+40 mouse click 500 338
+50 mouse click 500 338

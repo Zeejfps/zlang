@@ -1,0 +1,6 @@
+# In the game's options menu: Graphics, the Grass check box off, Close; then the menu closes (1280x720, GUI scale 1).
+5 ui menu options
+15 mouse click 499 423
+25 mouse click 392 412
+35 mouse click 785 545
+45 ui menu close
