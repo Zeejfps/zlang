@@ -40,8 +40,8 @@ namespace mg_game {
     fn active { w: *world::World } -> bool { return w.minigame != null }
 
     // What the player does with the mouse and the fire keys between frames, whether Escape has
-    // paused the game, and whether a gunner bot plays (headless tests: `FRAME gunner` in the input
-    // script).
+    // paused the game, and whether a gunner (turret) or racer (swoop) bot plays (headless tests:
+    // `FRAME gunner` or `FRAME racer` in the input script).
     struct Mouse { dx: i32, dy: i32, fire_key: bool, fire_button: bool, auto: bool, paused: bool }
 
     fn make_mouse {} -> Mouse { return Mouse{ dx = 0, dy = 0, fire_key = false, fire_button = false, auto = false, paused = false } }
@@ -49,7 +49,7 @@ namespace mg_game {
     // The input script's lines for a minigame (play.ctx hands each line to every owner in turn):
     // `gunner`, `mouse DX DY` (the mouse moves by those counts) and `pause`. True if `word` is one.
     fn handle_scripted { mut m: Mouse, word: []u8, rest: []u8 } -> bool {
-        if ci::eq{ a = word, b = "gunner" } { m.auto = true }
+        if ci::eq{ a = word, b = "gunner" } or ci::eq{ a = word, b = "racer" } { m.auto = true }
         else if ci::eq{ a = word, b = "pause" } { m.paused = not m.paused }
         else if ci::eq{ a = word, b = "mouse" } {
             let mut words = text::words{ s = rest }
@@ -327,7 +327,9 @@ namespace mg_game {
         }
         mouse.dx = 0
         mouse.dy = 0
-        if mouse.auto and run.area.kind == mg::TURRET { input = mg::gunner_input{ run } }
+        if mouse.auto {
+            input = if run.area.kind == mg::TURRET { mg::gunner_input{ run } } else { mg::racer_input{ run } }
+        }
         return input
     }
 
