@@ -17,6 +17,7 @@ is ignored.
 | [app.md](app.md) | start-up, main loop, input, audio, movies |
 | [render-gui.md](render-gui.md) | the OpenGL renderer and the GUI system |
 | [particles.md](particles.md) | MDL emitters in the original: the update types, the particle step, the seven render modes and how each draws its quad |
+| [noreturn-fix.md](noreturn-fix.md) | the "does not return" bug of the first analysis: what it cut, what the rebuild changed, earlier conclusions to recheck ([every function that changed](noreturn-fix-functions.tsv), [per doc](noreturn-fix-recheck.tsv)) |
 
 The file formats themselves are described in [../formats/](../formats/); these pages are about
 the engine's code.
@@ -131,6 +132,7 @@ rex.py dword 0x7450e4 11           # raw dwords from the image (names resolved)
 rex.py bytes 0x73d790 64           # hex dump
 rex.py asm 0x52c0d0                # Ghidra disassembly listing with resolved references (~10 s)
 rex.py stats                       # sizes and counts of the exports
+rex.py noreturn                    # audit: functions marked "does not return" with evidence; how much of .text is code
 ```
 
 Plain `grep`/`rg` over `kotor/re/export/` works too: every file is UTF-8 text, TSVs have a
@@ -218,10 +220,26 @@ The pipeline: Steamless removes SteamStub; Ghidra imports with its default Windo
 plus Decompiler Parameter ID; `KotorRE.java fixup` creates functions at every address that is
 taken but not yet a function (vtable slots, handlers stored by init routines, callbacks) and
 defines short strings that code references (GFF labels, 2DA column names), then re-runs analysis
-on the changes; names.tsv is applied; everything is exported.
+on the changes; names.tsv is applied; everything is exported. The import turns Ghidra's
+"Non-Returning Functions - Discovered" analyzer off (`SetAnalysisOptions.java`): left on, it marks
+returning functions as non-returning and then clears the code after their calls
+([noreturn-fix.md](noreturn-fix.md)). The few functions that really never return carry
+`__noreturn` in their names.tsv prototype.
+
+To replace a live pipeline with one rebuilt elsewhere (what fixed the above), build it with
+`KOTOR_RE=some/dir rex.py setup` and run `rex.py adopt some/dir`: it swaps the project files and
+the export under the Ghidra lock and keeps the old ones as `*.prev` and `kotor/re/export_prev`.
 
 ## Caveats
 
+- **A decompile that ends right after a call, or has "Removing unreachable block" in its header
+  comment, may be cut short: check the asm** (`rex.py asm ADDR`). Ghidra drops the code after a
+  call to a function it thinks never returns, and a wrong "does not return" flag on a small
+  helper (a string destructor) did that to the callers of 2,300 call sites. If the bytes after
+  the call are real code, not `int3` padding or the next function, the callee is flagged wrongly:
+  `rex.py noreturn` lists what is flagged and how much of `.text` is still not code. A
+  "Removing unreachable block" after a conditional jump is a branch the decompiler proved dead,
+  not this bug.
 - Coverage: names.tsv holds ~2,100 rows (~1,950 of the 12,700 functions, 15%, plus globals and
   vtables). The 772 script handlers, the VM, resources, GFF/2DA/TLK, start-up, the main loop and
   the object model are well covered; client-side objects, animation, most GUI panels, combat

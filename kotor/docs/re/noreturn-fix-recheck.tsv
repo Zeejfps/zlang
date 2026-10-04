@@ -1,0 +1,2629 @@
+doc	kind	addr	name	lines_before	lines_after
+mechanics/combat.md	changed	0x004df540	CSWSEffectListHandler::OnApplyForceShield	72	187
+mechanics/combat.md	changed	0x00635480	CSWCParty::SetLeader	113	207
+mechanics/combat.md	changed	0x004fece0	CSWSCreature::EventHandler	524	564
+mechanics/combat.md	changed	0x0054b550	CSWVirtualMachineCommands::ExecuteCommandGetNearestCreature	450	471
+mechanics/combat.md	changed	0x00619b10	FUN_00619b10	37	47
+mechanics/combat.md	changed	0x00514af0	CSWSCreature::AIActionCastSpell	394	399
+mechanics/combat.md	changed	0x006191f0	FUN_006191f0	75	75
+mechanics/controls.md	changed	0x00620620	CClientExoAppInternal::BuildDefaultActions	234	411
+mechanics/controls.md	changed	0x00635480	CSWCParty::SetLeader	113	207
+mechanics/controls.md	new	0x00683d90	CSWCDoor::DefaultActionOpen		23
+mechanics/controls.md	changed	0x006c7ec0	CSWGuiAreaTransition::SetTransitionObject	59	69
+mechanics/controls.md	changed	0x005f5e10	CClientExoAppInternal::UpdateCameraInput	187	186
+mechanics/controls.md	changed	0x00621210	CClientExoAppInternal::HandleInputAction	654	654
+mechanics/controls.md	changed	0x006227e0	CClientExoAppInternal::ProcessInput	888	888
+mechanics/controls.md	changed	0x00687860	CSWGuiMainInterface::UpdatePartyPortraits	273	273
+mechanics/force.md	changed	0x0064a870	FUN_0064a870	278	321
+mechanics/force.md	changed	0x00514af0	CSWSCreature::AIActionCastSpell	394	399
+mechanics/force.md	changed	0x004cdf50	CSWSObject::SpellCastAndImpact	126	127
+mechanics/force.md	changed	0x006191f0	FUN_006191f0	75	75
+mechanics/force.md	changed	0x0064af10	FUN_0064af10	30	30
+mechanics/graphics.md	changed	0x00403800	SetVideoMode	77	199
+mechanics/graphics.md	changed	0x005f14a0	FUN_005f14a0	79	153
+mechanics/graphics.md	changed	0x006df690	CSWGuiOptionsResolution::OnOk	67	102
+mechanics/items-skills.md	changed	0x0050f170	CSWSCreature::AIActionItemCastSpell	212	420
+mechanics/items-skills.md	changed	0x00517a60	CSWSCreature::AIActionHeal	277	303
+mechanics/items-skills.md	changed	0x006a8240	FUN_006a8240	47	68
+mechanics/items-skills.md	changed	0x00686e20	FUN_00686e20	67	75
+mechanics/items-skills.md	changed	0x006196a0	FUN_006196a0	55	54
+mechanics/items-skills.md	changed	0x006191f0	FUN_006191f0	75	75
+mechanics/items-skills.md	changed	0x006197d0	FUN_006197d0	48	48
+mechanics/stealth.md	changed	0x005fcd10	CClientExoAppInternal::FormatFeedbackMessage	2309	2491
+mechanics/stealth.md	changed	0x005a2ae0	CSWSDialog::LoadDialog	352	367
+mechanics/stealth.md	changed	0x006a5000	FUN_006a5000	194	205
+mechanics/stealth.md	changed	0x005b6210	CSWSCreature::AIActionCombat	225	232
+mechanics/stealth.md	changed	0x004f1fd0	CSWSCreature::GetCanSeeStealthedBySight	206	211
+mechanics/stealth.md	changed	0x00508770	CSWSArea::AwardStealthXP	32	36
+mechanics/stealth.md	changed	0x006a1220	CSWCVisualEffect::ApplyTextureEffect	132	136
+mechanics/stealth.md	changed	0x004f2a50	CSWSCreature::SetActivityMode	90	93
+mechanics/stealth.md	changed	0x004f6d70	CSWSCreature::ApplyStealthEffects	68	71
+mechanics/stealth.md	changed	0x00502ac0	CSWSCreature::DoPerceptionCheck	394	397
+mechanics/stealth.md	changed	0x005f2a20	CClientExoAppInternal::ToggleSoloMode	28	31
+mechanics/stealth.md	changed	0x0060f4b0	CSWCCreature::RequestStealthToggle	21	24
+mechanics/stealth.md	changed	0x00610ac0	CSWCCreature::GetCanStealth	54	57
+mechanics/stealth.md	changed	0x00613930	CSWCCreature::SetStealthLook	53	56
+mechanics/stealth.md	changed	0x00506a80	CSWSArea::SetStealthXPMax	9	11
+mechanics/stealth.md	changed	0x00506aa0	CSWSArea::SetStealthXPCurrent	10	12
+mechanics/stealth.md	changed	0x004fb4b0	CSWSCreature::GetCanSeeStealthed	215	216
+mechanics/stealth.md	changed	0x00500350	CSWSCreature::LoadCreature	105	104
+mechanics/stealth.md	changed	0x00686ba0	CSWGuiMainInterface::Update	86	87
+mechanics/stealth.md	changed	0x004faa70	CSWSCreature::UnequipItem	27	27
+mechanics/stealth.md	changed	0x004fbe40	CSWSCreature::UseSkill	115	115
+mechanics/stealth.md	changed	0x004fe210	CSWSCreature::AIUpdate	380	380
+mechanics/traps.md	changed	0x00519e30	CSWSCreature::AIActionSetTrap	175	455
+mechanics/traps.md	changed	0x0058da80	CSWSTrigger::LoadTrigger	120	343
+mechanics/traps.md	changed	0x00620620	CClientExoAppInternal::BuildDefaultActions	234	411
+mechanics/traps.md	changed	0x0064f4b0	FUN_0064f4b0	38	204
+mechanics/traps.md	changed	0x0065b4a0	switchD_00656d8f::caseD_9	42	194
+mechanics/traps.md	new	0x0058e660	CSWSTrigger::SaveTrigger		108
+mechanics/traps.md	changed	0x006193a0	FUN_006193a0	38	124
+mechanics/traps.md	changed	0x00518c40	CSWSCreature::AIActionRecoverTrap	311	367
+mechanics/traps.md	changed	0x00691f00	FUN_00691f00	51	77
+mechanics/traps.md	changed	0x0050e900	CSWSCreature::AIActionExamineTrap	180	195
+mechanics/traps.md	changed	0x00519570	CSWSCreature::AIActionDisableTrap	357	372
+mechanics/traps.md	changed	0x0050e400	CSWSCreature::AIActionFlagTrap	175	189
+mechanics/traps.md	changed	0x0054c0e0	CSWVirtualMachineCommands::ExecuteCommandGetTrapDisarmable	341	343
+mechanics/traps.md	changed	0x0064f960	FUN_0064f960	69	71
+mechanics/traps.md	changed	0x0058f140	CSWSTrigger::EventHandler	232	233
+mechanics/traps.md	changed	0x004f2c30	CSWSCreature::GetIsSelectableTarget	71	71
+mechanics/traps.md	changed	0x004fbe40	CSWSCreature::UseSkill	115	115
+mechanics/traps.md	changed	0x0050ee30	FUN_0050ee30	9	9
+mechanics/traps.md	changed	0x006197d0	FUN_006197d0	48	48
+mechanics/traps.md	changed	0x006227e0	CClientExoAppInternal::ProcessInput	888	888
+re/README.md	changed	0x005afce0	CSWSCreatureStats::ReadStatsFromGff	63	1093
+re/README.md	changed	0x005eeb10	CClientExoAppInternal::SetupKeymapping	148	888
+re/README.md	new	0x00602eb0	CClientExoAppInternal::MainLoop		698
+re/README.md	changed	0x004c9050	CSWSModule::LoadModuleStart	37	661
+re/README.md	changed	0x004b95b0	CServerExoAppInternal::LoadModule	60	467
+re/README.md	changed	0x004041f0	WinMain	41	328
+re/README.md	new	0x0054fec0	FUN_0054fec0		197
+re/README.md	changed	0x0040fb80	CExoKeyTable::AddKeyTableContents	111	239
+re/README.md	new	0x00405b30	CExoMoviePlayerInternal::MovieThreadProc		97
+re/README.md	new	0x006f9e70	CSWGuiCharGenName::CSWGuiCharGenName		89
+re/README.md	changed	0x0051f4f0	CSWSCreature::AIActionMoveToPoint	630	683
+re/README.md	changed	0x0041e1a0	CTlkTable::FetchInternal	135	150
+re/README.md	changed	0x00413030	CResGFF::WriteGFFFile	23	36
+re/README.md	changed	0x0040a680	CSWGuiPanel::LoadGui	73	80
+re/README.md	changed	0x00401000	FUN_00401000	15	20
+re/README.md	changed	0x005d2bd0	CVirtualMachineInternal::ExecuteCode	801	797
+re/README.md	changed	0x005026d0	CSWSCreature::LoadFromTemplate	139	136
+re/README.md	changed	0x0059ff50	CSWSDialog::SetNodeDuration	43	45
+re/README.md	changed	0x00406e20	CExoResMan::AddKeyTable	101	102
+re/README.md	changed	0x004dfa40	CSWSEffectListHandler::OnApplyDamage	522	522
+re/README.md	changed	0x0057f4a0	CSWSObject::RunActions	630	630
+re/README.md	changed	0x005e6d20	CExoResTypes::InitResourceTypes	218	218
+re/README.md	changed	0x006fb38d	entry	95	95
+re/actions.md	changed	0x00519e30	CSWSCreature::AIActionSetTrap	175	455
+re/actions.md	changed	0x0057d490	CSWSObject::AIActionOpenDoor	102	380
+re/actions.md	changed	0x0050f170	CSWSCreature::AIActionItemCastSpell	212	420
+re/actions.md	changed	0x0057e8c0	CSWSObject::AIActionUseObject	233	435
+re/actions.md	changed	0x005fcd10	CClientExoAppInternal::FormatFeedbackMessage	2309	2491
+re/actions.md	changed	0x0057bbf0	CSWSObject::AIActionCloseDoor	87	195
+re/actions.md	changed	0x0057d9d0	CSWSObject::AIActionOpenLock	561	656
+re/actions.md	changed	0x0053fb00	CSWVirtualMachineCommands::ExecuteCommandActionMoveToObject	79	144
+re/actions.md	changed	0x0057bec0	CSWSObject::AIActionLock	387	449
+re/actions.md	new	0x004cc7e0	CSWSObject::SaveActionQueue		60
+re/actions.md	changed	0x0057a470	CSWSObject::AIActionDialogObject	438	498
+re/actions.md	changed	0x00518c40	CSWSCreature::AIActionRecoverTrap	311	367
+re/actions.md	changed	0x0051f4f0	CSWSCreature::AIActionMoveToPoint	630	683
+re/actions.md	changed	0x0057b6a0	CSWSObject::AIActionGiveItem	136	189
+re/actions.md	changed	0x005101a0	CSWSCreature::AIActionCheckMoveToObject	44	88
+re/actions.md	changed	0x005103b0	CSWSCreature::AIActionCheckInRangeOfObject	59	103
+re/actions.md	changed	0x004f6000	CSWSCreature::GetIsInUseRange	50	91
+re/actions.md	changed	0x004eb3a0	CSWSCreature::GetSpellRange	35	70
+re/actions.md	changed	0x00587ba0	CSWSPlaceable::EventHandler	397	432
+re/actions.md	changed	0x0058b850	CSWSDoor::EventHandler	495	529
+re/actions.md	changed	0x006364c0	FUN_006364c0	122	153
+re/actions.md	changed	0x00517a60	CSWSCreature::AIActionHeal	277	303
+re/actions.md	changed	0x0058c8a0	CSWSTrigger::GetNearestPointOnGeometry	104	129
+re/actions.md	changed	0x005bbbf0	CSWSCreature::AIActionAttackObject	474	498
+re/actions.md	new	0x00691900	CSWCTrigger::DefaultActionDisarm		19
+re/actions.md	changed	0x0050e900	CSWSCreature::AIActionExamineTrap	180	195
+re/actions.md	changed	0x00519570	CSWSCreature::AIActionDisableTrap	357	372
+re/actions.md	changed	0x00540550	CSWVirtualMachineCommands::ExecuteCommandActionPlayAnimation	404	419
+re/actions.md	changed	0x0050e400	CSWSCreature::AIActionFlagTrap	175	189
+re/actions.md	changed	0x00527b20	CSWSMessage::HandlePlayerToServerMessage	165	174
+re/actions.md	new	0x00691950	CSWCTrigger::DefaultActionRecover		8
+re/actions.md	changed	0x005b6210	CSWSCreature::AIActionCombat	225	232
+re/actions.md	changed	0x0052d5b0	CSWVirtualMachineCommands::ExecuteCommandActionStartConversation	130	136
+re/actions.md	changed	0x004cecb0	CSWSObject::LoadActionQueue	183	188
+re/actions.md	changed	0x00514af0	CSWSCreature::AIActionCastSpell	394	399
+re/actions.md	changed	0x005254c0	CSWSMessage::HandlePlayerToServerInputMessage	795	799
+re/actions.md	changed	0x004cc4d0	CSWSObjectActionNode::~CSWSObjectActionNode	30	33
+re/actions.md	changed	0x0052e9f0	CSWVirtualMachineCommands::ExecuteCommandBeginConversation	197	200
+re/actions.md	changed	0x0057b430	CSWSObject::AIActionSpeak	52	55
+re/actions.md	changed	0x0057ce00	CSWSObject::AIActionBarkString	44	47
+re/actions.md	changed	0x00541170	CSWVirtualMachineCommands::ExecuteCommandPlaySound	46	48
+re/actions.md	changed	0x00543f70	CSWVirtualMachineCommands::ExecuteCommandSpeakOneLinerConversation	57	59
+re/actions.md	changed	0x00571960	CSWSMessage::SendSpeakMessage	181	183
+re/actions.md	changed	0x004cdf50	CSWSObject::SpellCastAndImpact	126	127
+re/actions.md	changed	0x004fd1e0	CSWSCreature::Rest	120	121
+re/actions.md	changed	0x00523c20	CSWSMessage::HandlePlayerToServerInventoryMessage	381	380
+re/actions.md	changed	0x00544090	CSWVirtualMachineCommands::ExecuteCommandActionSpeakString	89	90
+re/actions.md	changed	0x00548900	CSWVirtualMachineCommands::ExecuteCommandBarkString	76	77
+re/actions.md	changed	0x0057cf00	CSWSObject::AIActionPlaySound	56	57
+re/actions.md	changed	0x0057d080	CSWSObject::AIActionPlayAnimation	177	176
+re/actions.md	changed	0x00634a70	FUN_00634a70	44	43
+re/actions.md	changed	0x004f1310	CSWSCreature::GetMeleeAttackRange	53	53
+re/actions.md	changed	0x004f87d0	CSWSCreature::ClearActivities	77	77
+re/actions.md	changed	0x004fa100	CSWSCreature::AddToArea	97	97
+re/actions.md	changed	0x004fbe40	CSWSCreature::UseSkill	115	115
+re/actions.md	changed	0x004fe210	CSWSCreature::AIUpdate	380	380
+re/actions.md	changed	0x0057f4a0	CSWSObject::RunActions	630	630
+re/app.md	new	0x0061dbe0	FUN_0061dbe0		838
+re/app.md	changed	0x005eeb10	CClientExoAppInternal::SetupKeymapping	148	888
+re/app.md	new	0x00602eb0	CClientExoAppInternal::MainLoop		698
+re/app.md	changed	0x0061b780	FUN_0061b780	33	643
+re/app.md	new	0x005f8550	CClientExoAppInternal::Initialize		558
+re/app.md	new	0x00402800	MainWndProc		442
+re/app.md	new	0x005fbfe0	CClientExoAppInternal::CClientExoAppInternal		313
+re/app.md	new	0x005f1f70	CClientExoAppInternal::InitializeSound		306
+re/app.md	changed	0x004041f0	WinMain	41	328
+re/app.md	new	0x00604130	CClientExoAppInternal::ShutDown		280
+re/app.md	new	0x004b63e0	CServerExoAppInternal::Initialize		245
+re/app.md	new	0x005e1880	CExoInputInternal::CExoInputInternal		234
+re/app.md	new	0x006cb0e0	CSWGuiSaveLoad::LoadSelectedGame		229
+re/app.md	new	0x0062fed0	CGuiInGame::CGuiInGame		222
+re/app.md	new	0x004053e0	CExoMoviePlayerInternal::OpenMovie		197
+re/app.md	new	0x004b55e0	CServerExoAppInternal::CServerExoAppInternal		124
+re/app.md	changed	0x00403800	SetVideoMode	77	199
+re/app.md	new	0x00403f20	CreateMainWindow		122
+re/app.md	new	0x005f1c20	FUN_005f1c20		109
+re/app.md	new	0x00405b30	CExoMoviePlayerInternal::MovieThreadProc		97
+re/app.md	new	0x0067b9d0	FUN_0067b9d0		93
+re/app.md	new	0x006dbdf0	CSWGuiClassSelection::StartGame		89
+re/app.md	new	0x00405190	CExoMoviePlayerInternal::MovieWndProc		87
+re/app.md	new	0x005f5ab0	CClientExoAppInternal::SetDisplayMode		87
+re/app.md	new	0x0040bad0	CSWGuiManager::CSWGuiManager		85
+re/app.md	new	0x005f4180	FUN_005f4180		83
+re/app.md	new	0x005e6b10	FUN_005e6b10		81
+re/app.md	changed	0x004b7c60	CServerExoAppInternal::ShutDownServer	79	155
+re/app.md	new	0x005f51c0	CClientExoAppInternal::PostInitialize		75
+re/app.md	changed	0x005f14a0	FUN_005f14a0	79	153
+re/app.md	new	0x00401160	CAppManager::CAppManager		68
+re/app.md	new	0x00401700	ParseCommandLine		68
+re/app.md	changed	0x005dbd30	CExoStreamingSoundSourceInternal::Open	158	224
+re/app.md	new	0x005e3e80	CExoDirectInput::CExoDirectInput		61
+re/app.md	new	0x004036f0	CreateRenderWindow		60
+re/app.md	changed	0x0067a710	CSWGuiLoadScreen::CSWGuiLoadScreen	39	93
+re/app.md	new	0x004012c0	CAppManager::~CAppManager		49
+re/app.md	new	0x00404c80	CExoMoviePlayerInternal::PlayFrames		49
+re/app.md	new	0x00405d70	CExoMoviePlayerInternal::CExoMoviePlayerInternal		46
+re/app.md	new	0x005e66a0	CExoBase::~CExoBase		46
+re/app.md	new	0x005f8470	CClientExoAppInternal::ShutDownClient		44
+re/app.md	new	0x00401380	CAppManager::CreateServer		43
+re/app.md	new	0x00405a50	CExoMoviePlayerInternal::~CExoMoviePlayerInternal		42
+re/app.md	new	0x00602dc0	CClientExoAppInternal::PlayLegalMovies		37
+re/app.md	new	0x005d5550	CNetLayer::Initialize		35
+re/app.md	new	0x005e1740	CExoInputInternal::SetHardwareCursorHidden		33
+re/app.md	new	0x005d54a0	CNetLayer::CNetLayer		31
+re/app.md	changed	0x0067c4c0	CSWGuiMainMenu::CSWGuiMainMenu	130	161
+re/app.md	new	0x005f2bf0	CClientExoAppInternal::CreateMoviePlayer		30
+re/app.md	new	0x004aec00	CServerExoApp::CServerExoApp		29
+re/app.md	new	0x005df3f0	CExoInput::CExoInput		29
+re/app.md	new	0x00404f80	FUN_00404f80		28
+re/app.md	new	0x005ee2f0	CClientExoApp::CClientExoApp		28
+re/app.md	new	0x005ee990	FUN_005ee990		28
+re/app.md	new	0x004ae4c0	CWorldTimer::CWorldTimer		27
+re/app.md	new	0x0070c170	CExoMoviePlayer::CExoMoviePlayer		27
+re/app.md	changed	0x00402240	HandleCharMessage	89	114
+re/app.md	new	0x00404bb0	CExoMoviePlayerInternal::CloseMovie		24
+re/app.md	new	0x0044ecd0	CAurGLDisplay::GetInstance		22
+re/app.md	new	0x00404f40	FUN_00404f40		19
+re/app.md	new	0x005d5cd0	FUN_005d5cd0		19
+re/app.md	new	0x005d5d50	FUN_005d5d50		19
+re/app.md	changed	0x005dca30	CExoStreamingSoundSourceInternal::Play	120	139
+re/app.md	new	0x0044ef00	FUN_0044ef00		17
+re/app.md	new	0x005df490	CExoInput::SetEventRepeat		10
+re/app.md	new	0x005ed860	CClientExoApp::Initialize		10
+re/app.md	new	0x00404c20	FUN_00404c20		9
+re/app.md	new	0x004ae8f0	CServerExoApp::Initialize		8
+re/app.md	new	0x005df5a0	CExoInput::SetHardwareCursorHidden		8
+re/app.md	new	0x005ed300	CClientExoApp::PlayLegalMovies		8
+re/app.md	new	0x005ed7b0	CClientExoApp::PostInitialize		8
+re/app.md	new	0x005ed7d0	CClientExoApp::MainLoop		8
+re/app.md	new	0x005ed810	CClientExoApp::ShutDownClient		8
+re/app.md	new	0x005ed880	CClientExoApp::ShutDown		8
+re/app.md	new	0x005ee1f0	CClientExoApp::CheckMovieFinished		8
+re/app.md	new	0x00604b20	FUN_00604b20		8
+re/app.md	changed	0x004babb0	CServerExoAppInternal::MainLoop	307	311
+re/app.md	changed	0x005da6d0	CExoSoundInternal::Choose3DProvider	96	100
+re/app.md	changed	0x00540ed0	CSWVirtualMachineCommands::ExecuteCommandPlayMovie	37	39
+re/app.md	changed	0x005d6d30	CExoSoundInternal::ShutDown	104	102
+re/app.md	changed	0x005db4d0	CExoSoundSourceInternal::Play	137	139
+re/app.md	changed	0x004024f0	HandleKeyDownMessage	88	87
+re/app.md	changed	0x005dc3c0	CExoStreamingSoundSourceInternal::Stop	39	40
+re/app.md	changed	0x005ecea0	FUN_005ecea0	121	122
+re/app.md	changed	0x0040c8e0	CSWGuiManager::HandleInputEvent	175	175
+re/app.md	changed	0x00621210	CClientExoAppInternal::HandleInputAction	654	654
+re/app.md	changed	0x006227e0	CClientExoAppInternal::ProcessInput	888	888
+re/app.md	changed	0x006fb38d	entry	95	95
+re/chargen-3d.md	new	0x006dc3c0	CSWGuiClassSelection::CSWGuiClassSelection		368
+re/chargen-3d.md	changed	0x006eb420	CSWGuiCharGenMain::CSWGuiCharGenMain	102	329
+re/chargen-3d.md	new	0x006f9430	CSWGuiCharGenPortrait::CSWGuiCharGenPortrait		185
+re/chargen-creature.md	changed	0x005afce0	CSWSCreatureStats::ReadStatsFromGff	63	1093
+re/chargen-creature.md	new	0x006123e0	FUN_006123e0		430
+re/chargen-creature.md	new	0x006dc3c0	CSWGuiClassSelection::CSWGuiClassSelection		368
+re/chargen-creature.md	changed	0x006eb420	CSWGuiCharGenMain::CSWGuiCharGenMain	102	329
+re/chargen-creature.md	new	0x006f90f0	FUN_006f90f0		152
+re/chargen-creature.md	new	0x006dbdf0	CSWGuiClassSelection::StartGame		89
+re/chargen-creature.md	changed	0x006eac30	FUN_006eac30	23	103
+re/chargen-creature.md	new	0x006f9cd0	CSWGuiCharGenName::OnAccept		67
+re/chargen-creature.md	new	0x005d5040	FUN_005d5040		52
+re/chargen-creature.md	new	0x0060d600	FUN_0060d600		50
+re/chargen-creature.md	changed	0x00678080	FUN_00678080	42	88
+re/chargen-creature.md	changed	0x00501c40	CSWSCreature::EquipDefaultClothes	30	66
+re/chargen-creature.md	changed	0x0067afb0	CSWGuiMainMenu::OnNewGame	37	73
+re/chargen-creature.md	changed	0x004b7470	CServerExoAppInternal::PlayerLoginToModule	148	179
+re/chargen-creature.md	new	0x00677fa0	FUN_00677fa0		23
+re/chargen-creature.md	new	0x006ef220	CSWGuiCharGenCustomPanel::OnPlay		10
+re/chargen-creature.md	new	0x006efd60	CSWGuiCharGenQuickPanel::OnPlay		10
+re/chargen-creature.md	new	0x006eb320	CSWGuiCharGenMain::Finish		9
+re/chargen-creature.md	new	0x005edaa0	FUN_005edaa0		6
+re/chargen-creature.md	changed	0x004b5c50	CServerExoAppInternal::SignalPlayerEnterModule	138	140
+re/chargen-creature.md	changed	0x00560e60	FUN_00560e60	76	74
+re/chargen-creature.md	changed	0x0064f280	FUN_0064f280	70	72
+re/chargen-creature.md	changed	0x004f1c40	CSWSCreature::PostProcess	120	121
+re/chargen.md	new	0x006f51d0	CSWGuiCharGenSkills::CSWGuiCharGenSkills		480
+re/chargen.md	new	0x006123e0	FUN_006123e0		430
+re/chargen.md	new	0x006f7600	CSWGuiCharGenAbilities::CSWGuiCharGenAbilities		389
+re/chargen.md	new	0x006dc3c0	CSWGuiClassSelection::CSWGuiClassSelection		368
+re/chargen.md	new	0x0054f2c0	FUN_0054f2c0		339
+re/chargen.md	changed	0x006eb420	CSWGuiCharGenMain::CSWGuiCharGenMain	102	329
+re/chargen.md	new	0x006f2180	CSWGuiCharGenPowers::CSWGuiCharGenPowers		217
+re/chargen.md	new	0x006f9430	CSWGuiCharGenPortrait::CSWGuiCharGenPortrait		185
+re/chargen.md	new	0x006f3460	FUN_006f3460		180
+re/chargen.md	new	0x006f90f0	FUN_006f90f0		152
+re/chargen.md	changed	0x00697ce0	CSWCCreatureAppearance::CreateBTypeBody	40	177
+re/chargen.md	changed	0x006f3d60	CSWGuiCharGenFeats::CSWGuiCharGenFeats	88	219
+re/chargen.md	new	0x006ef730	CSWGuiCharGenCustomPanel::CSWGuiCharGenCustomPanel		106
+re/chargen.md	new	0x006ce570	FUN_006ce570		101
+re/chargen.md	new	0x006f09f0	CSWGuiCharGenQuickOrCustom::CSWGuiCharGenQuickOrCustom		99
+re/chargen.md	new	0x006f0390	CSWGuiCharGenQuickPanel::CSWGuiCharGenQuickPanel		97
+re/chargen.md	new	0x006dbdf0	CSWGuiClassSelection::StartGame		89
+re/chargen.md	new	0x006f9e70	CSWGuiCharGenName::CSWGuiCharGenName		89
+re/chargen.md	changed	0x006eac30	FUN_006eac30	23	103
+re/chargen.md	changed	0x007118c0	FUN_007118c0	250	325
+re/chargen.md	new	0x006f9cd0	CSWGuiCharGenName::OnAccept		67
+re/chargen.md	changed	0x006dba70	CSWGuiClassSelection::OnHoverClass	45	108
+re/chargen.md	changed	0x006eb010	CSWGuiCharGenMain::ResetCharacter	22	84
+re/chargen.md	changed	0x006ea9f0	FUN_006ea9f0	23	81
+re/chargen.md	new	0x006f0860	FUN_006f0860		56
+re/chargen.md	new	0x0060d600	FUN_0060d600		50
+re/chargen.md	changed	0x0067afb0	CSWGuiMainMenu::OnNewGame	37	73
+re/chargen.md	new	0x006ee350	CSWGuiLevelUpPanel::OnPowers		34
+re/chargen.md	new	0x006ef6a0	CSWGuiCharGenCustomPanel::OnCancel		27
+re/chargen.md	changed	0x006f7390	CSWGuiCharGenAbilities::Recommended	66	92
+re/chargen.md	new	0x006f0310	CSWGuiCharGenQuickPanel::OnCancel		24
+re/chargen.md	new	0x006f3cf0	CSWGuiCharGenFeats::OnFeatPressed		24
+re/chargen.md	new	0x006eef70	FUN_006eef70		23
+re/chargen.md	new	0x006ef5b0	FUN_006ef5b0		18
+re/chargen.md	new	0x006f0220	FUN_006f0220		15
+re/chargen.md	new	0x006f3420	CSWGuiCharGenFeats::OnFeatClicked		14
+re/chargen.md	new	0x006f0800	CSWGuiCharGenQuickOrCustom::OnQuick		12
+re/chargen.md	new	0x006f0830	CSWGuiCharGenQuickOrCustom::OnCustom		12
+re/chargen.md	changed	0x006f6570	FUN_006f6570	131	143
+re/chargen.md	changed	0x006ea910	FUN_006ea910	21	32
+re/chargen.md	new	0x006ef220	CSWGuiCharGenCustomPanel::OnPlay		10
+re/chargen.md	new	0x006efd60	CSWGuiCharGenQuickPanel::OnPlay		10
+re/chargen.md	new	0x006eb320	CSWGuiCharGenMain::Finish		9
+re/chargen.md	changed	0x006f9bf0	FUN_006f9bf0	30	39
+re/chargen.md	changed	0x004163a0	CSWGuiEditText::AppendText	38	46
+re/chargen.md	new	0x006ea9b0	FUN_006ea9b0		8
+re/chargen.md	changed	0x006f70e0	CSWGuiCharGenAbilities::OnHoverAbility	85	93
+re/chargen.md	new	0x006ef4e0	FUN_006ef4e0		7
+re/chargen.md	new	0x006eff80	FUN_006eff80		7
+re/chargen.md	changed	0x006db8f0	FUN_006db8f0	20	26
+re/chargen.md	changed	0x00697a20	FUN_00697a20	32	35
+re/chargen.md	changed	0x006f3290	FUN_006f3290	86	87
+re/chargen.md	changed	0x006f6370	FUN_006f6370	64	65
+re/chargen.md	changed	0x006f8670	CSWGuiCharGenAbilities::IncreaseAbility	82	83
+re/chargen.md	changed	0x006134c0	FUN_006134c0	102	102
+re/chargen.md	changed	0x006fa140	FUN_006fa140	45	45
+re/combat.md	changed	0x00656d20	CClientExoApp::FormatCombatFeedback	2490	5896
+re/combat.md	changed	0x005b31d0	CSWBaseItemArray::Load	63	546
+re/combat.md	changed	0x0065799d	switchD_00656d8f::caseD_3	70	318
+re/combat.md	changed	0x0065f56c	switchD_00656d8f::caseD_12	68	288
+re/combat.md	changed	0x0050f170	CSWSCreature::AIActionItemCastSpell	212	420
+re/combat.md	changed	0x006603d9	switchD_00656d8f::caseD_14	50	232
+re/combat.md	changed	0x004e0ac0	CSWSEffectListHandler::OnApplyDeath	238	388
+re/combat.md	changed	0x004f3fe0	CSWSCreature::GetTotalEffectBonus	1291	1439
+re/combat.md	changed	0x006619e1	switchD_00656d8f::caseD_17	152	290
+re/combat.md	changed	0x005bafa0	CSWSCreature::ResolveOnHitEffect	77	199
+re/combat.md	new	0x004d3ec0	CSWSCombatRound::SaveCombatRound		89
+re/combat.md	changed	0x00661379	switchD_00656d8f::caseD_16	30	117
+re/combat.md	new	0x005bcda0	CSWClass::LoadAttackBonusTable		85
+re/combat.md	changed	0x004fb1e0	CSWSCreature::AwardKillXP	49	131
+re/combat.md	new	0x005bde80	CSWClass::LoadArmorClassTable		82
+re/combat.md	changed	0x005a9050	CSWSCreatureStats::GetDamageRoll	435	507
+re/combat.md	new	0x00550c50	CSWRules::LoadDiffSettings		56
+re/combat.md	new	0x004ec500	FUN_004ec500		49
+re/combat.md	new	0x0052b2a0	FUN_0052b2a0		48
+re/combat.md	changed	0x004fece0	CSWSCreature::EventHandler	524	564
+re/combat.md	new	0x004f3770	FUN_004f3770		34
+re/combat.md	changed	0x00661134	switchD_00656d8f::caseD_15	25	57
+re/combat.md	changed	0x005f6640	FUN_005f6640	98	127
+re/combat.md	new	0x004ce9a0	FUN_004ce9a0		27
+re/combat.md	changed	0x005a7ea0	CSWSCreatureStats::GetAttackModifierVersus	449	476
+re/combat.md	new	0x0062b150	FUN_0062b150		27
+re/combat.md	changed	0x004ce220	CSWSObject::SpawnBodyBag	168	194
+re/combat.md	changed	0x0065ac7e	switchD_00656d8f::caseD_4	45	71
+re/combat.md	changed	0x00662a10	switchD_00656d8f::caseD_1a	57	83
+re/combat.md	changed	0x005bbbf0	CSWSCreature::AIActionAttackObject	474	498
+re/combat.md	changed	0x004df420	FUN_004df420	27	45
+re/combat.md	changed	0x004f3580	FUN_004f3580	22	40
+re/combat.md	new	0x004d1dd0	CSWSCombatRoundAction::SaveData		17
+re/combat.md	changed	0x0052b490	FUN_0052b490	35	51
+re/combat.md	changed	0x005ad0e0	CSWSCreatureStats::GetArmorClassVersus	423	439
+re/combat.md	changed	0x004d2450	CSWSCombatAttackData::LoadData	100	115
+re/combat.md	changed	0x005a8be0	CSWSCreatureStats::GetDamageBonus	153	165
+re/combat.md	changed	0x005b47c0	CSWSCreature::GetIsSimpleModel	29	40
+re/combat.md	changed	0x005b7d10	FUN_005b7d10	98	108
+re/combat.md	changed	0x0066a640	CSWCMessage::HandleServerToPlayerMessage	208	218
+re/combat.md	changed	0x005b6210	CSWSCreature::AIActionCombat	225	232
+re/combat.md	changed	0x00514af0	CSWSCreature::AIActionCastSpell	394	399
+re/combat.md	changed	0x004f3830	CSWSCreature::TakeDamage	98	102
+re/combat.md	changed	0x005254c0	CSWSMessage::HandlePlayerToServerInputMessage	795	799
+re/combat.md	changed	0x005b4f30	CSWSCreature::GetCombatAnimationHitTime	24	27
+re/combat.md	changed	0x005b78e0	CSWSCreature::GetCanDeflectProjectile	93	96
+re/combat.md	changed	0x004d4c10	CSWSCombatRound::IncrementTimer	84	86
+re/combat.md	changed	0x004d4620	CSWSCombatRound::EndCombatRound	236	237
+re/combat.md	changed	0x004d4e80	CSWSCombatRound::DecrementPauseTimer	40	41
+re/combat.md	changed	0x004f19e0	CSWSCreature::GetKillXPValue	61	62
+re/combat.md	changed	0x004f2610	CSWSCreature::SetCombatState	100	101
+re/combat.md	changed	0x005b9040	CSWSCreature::ResolveDamageVisualEffects	106	107
+re/combat.md	changed	0x0068e610	FUN_0068e610	131	132
+re/combat.md	changed	0x004dfa40	CSWSEffectListHandler::OnApplyDamage	522	522
+re/combat.md	changed	0x004fbbe0	CSWSCreature::SignalCombatWith	124	124
+re/combat.md	changed	0x004fe210	CSWSCreature::AIUpdate	380	380
+re/combat.md	changed	0x005b5ea0	CSWSCreature::SendAttackSummary	85	85
+re/combat.md	changed	0x005ed350	FUN_005ed350	6	6
+re/dialogue.md	new	0x00602eb0	CClientExoAppInternal::MainLoop		698
+re/dialogue.md	changed	0x005a1c00	CSWSDialog::SendRepliesToPlayer	288	465
+re/dialogue.md	new	0x005a1050	CSWSDialog::PlayOneLiner		145
+re/dialogue.md	changed	0x0059f5f0	CSWSDialog::ReadNode	45	183
+re/dialogue.md	changed	0x004cf490	CSWSObject::StartConversation	111	212
+re/dialogue.md	new	0x005a3640	CSWSDialog::GetStartingEntry		89
+re/dialogue.md	changed	0x00631d80	CGuiInGame::ShowDialogEntry	77	162
+re/dialogue.md	changed	0x006a8b40	CSWGuiDialogLetterbox::CSWGuiDialogLetterbox	34	97
+re/dialogue.md	changed	0x0057a470	CSWSObject::AIActionDialogObject	438	498
+re/dialogue.md	changed	0x004fece0	CSWSCreature::EventHandler	524	564
+re/dialogue.md	changed	0x005a13d0	CSWSDialog::SendEntry	320	360
+re/dialogue.md	changed	0x005f7710	CClientExoAppInternal::EnableVideoEffect	44	80
+re/dialogue.md	changed	0x00641010	CSWCModule::PlayCameraAnimation	86	122
+re/dialogue.md	changed	0x005a4010	CSWSDialog::RunEntry	304	334
+re/dialogue.md	changed	0x0059eaa0	CSWSDialog::ReadNodeCamera	28	54
+re/dialogue.md	new	0x0059f430	CSWSDialog::SetOwner		17
+re/dialogue.md	changed	0x005a2ae0	CSWSDialog::LoadDialog	352	367
+re/dialogue.md	changed	0x005666e0	CSWPartyTable::GivePlotXPByRow	30	43
+re/dialogue.md	changed	0x006306e0	CGuiInGame::SetDialogCamera	448	460
+re/dialogue.md	changed	0x006a9770	CSWGuiBarkBubble::CSWGuiBarkBubble	34	45
+re/dialogue.md	changed	0x0059ec90	CSWSDialog::CheckCondition	34	43
+re/dialogue.md	changed	0x0052d5b0	CSWVirtualMachineCommands::ExecuteCommandActionStartConversation	130	136
+re/dialogue.md	changed	0x005254c0	CSWSMessage::HandlePlayerToServerInputMessage	795	799
+re/dialogue.md	changed	0x0052e9f0	CSWVirtualMachineCommands::ExecuteCommandBeginConversation	197	200
+re/dialogue.md	changed	0x0057b430	CSWSObject::AIActionSpeak	52	55
+re/dialogue.md	changed	0x0057ce00	CSWSObject::AIActionBarkString	44	47
+re/dialogue.md	changed	0x0053f010	CSWVirtualMachineCommands::ExecuteCommandGetLastConversation	25	27
+re/dialogue.md	changed	0x00540ed0	CSWVirtualMachineCommands::ExecuteCommandPlayMovie	37	39
+re/dialogue.md	changed	0x00543f70	CSWVirtualMachineCommands::ExecuteCommandSpeakOneLinerConversation	57	59
+re/dialogue.md	changed	0x00548210	CSWVirtualMachineCommands::ExecuteCommandQueueMovie	35	37
+re/dialogue.md	changed	0x00571960	CSWSMessage::SendSpeakMessage	181	183
+re/dialogue.md	changed	0x0059ef00	CSWSDialog::UpdateJournal	121	123
+re/dialogue.md	changed	0x0059ff50	CSWSDialog::SetNodeDuration	43	45
+re/dialogue.md	changed	0x005a03c0	CSWSDialog::HandleReply	231	233
+re/dialogue.md	changed	0x005ea270	CExoLocString::GetDisplayTime	30	32
+re/dialogue.md	changed	0x00616310	CSWCCreature::PlayLipSync	92	94
+re/dialogue.md	changed	0x00544090	CSWVirtualMachineCommands::ExecuteCommandActionSpeakString	89	90
+re/dialogue.md	changed	0x00548900	CSWVirtualMachineCommands::ExecuteCommandBarkString	76	77
+re/dialogue.md	changed	0x0059ed70	CSWSDialog::RunScript	29	28
+re/dialogue.md	changed	0x0059f320	CSWSDialog::GetNodeText	29	30
+re/dialogue.md	changed	0x005a3820	CSWSDialog::SendReplies	321	322
+re/dialogue.md	changed	0x006288f0	GetCutsceneAnimationName	1562	1563
+re/dialogue.md	changed	0x0062bf70	CGuiInGame::TryAnimatedDialogCamera	37	37
+re/dialogue.md	changed	0x006339c0	CGuiInGame::SelectDialogReply	100	100
+re/gameloop.md	new	0x0061dbe0	FUN_0061dbe0		838
+re/gameloop.md	new	0x00602eb0	CClientExoAppInternal::MainLoop		698
+re/gameloop.md	new	0x004b8300	CServerExoAppInternal::WriteTransitionAutoSave		472
+re/gameloop.md	changed	0x004041f0	WinMain	41	328
+re/gameloop.md	new	0x006ca250	CSWGuiSaveLoad::LoadTransitionAutoSave		232
+re/gameloop.md	changed	0x00675710	CSWCMessage::HandleServerStatusMessage	31	236
+re/gameloop.md	changed	0x004b3110	CServerExoAppInternal::DoSaveGame	113	310
+re/gameloop.md	new	0x004c7050	CSWSModule::SaveModuleIFOStart		192
+re/gameloop.md	changed	0x004e0ac0	CSWSEffectListHandler::OnApplyDeath	238	388
+re/gameloop.md	new	0x004b2ba0	CServerExoAppInternal::SavePlayerCharacters		106
+re/gameloop.md	changed	0x004b58a0	CServerExoAppInternal::RequestSaveGame	33	131
+re/gameloop.md	changed	0x0063f660	CSWCModule::LoadFromMessage	59	149
+re/gameloop.md	changed	0x00528380	CSWSMessage::HandleServerAdminMessage	284	367
+re/gameloop.md	changed	0x00637050	FUN_00637050	130	208
+re/gameloop.md	changed	0x004ba920	CServerExoAppInternal::StartModuleTransition	44	119
+re/gameloop.md	new	0x004b5050	CServerExoAppInternal::ShouldAutoSaveOnEnter		73
+re/gameloop.md	new	0x004b2380	DeleteModuleSaveGroup		68
+re/gameloop.md	changed	0x0050d6c0	CSWSArea::EventHandler	157	216
+re/gameloop.md	changed	0x0064bab0	CSWCMessage::HandleServerToPlayerAreaLoad	126	177
+re/gameloop.md	new	0x004ba820	CServerExoAppInternal::BeginLoadModule		40
+re/gameloop.md	new	0x00675690	CSWCMessage::SendAdminCommand		40
+re/gameloop.md	changed	0x004b2e70	CServerExoAppInternal::SaveCurrentModuleToGameInProgress	29	68
+re/gameloop.md	changed	0x00591ca0	FUN_00591ca0	162	201
+re/gameloop.md	new	0x004ae3e0	CWorldTimer::SetCalendarTime		31
+re/gameloop.md	changed	0x004b7470	CServerExoAppInternal::PlayerLoginToModule	148	179
+re/gameloop.md	new	0x004b28e0	CAutoSaveParams::Save		29
+re/gameloop.md	new	0x004ae4c0	CWorldTimer::CWorldTimer		27
+re/gameloop.md	new	0x006cf9d0	FUN_006cf9d0		27
+re/gameloop.md	new	0x004b4f50	CServerExoAppInternal::RunAreaExitScripts		26
+re/gameloop.md	changed	0x00561e30	CSWSPlayer::LoadCharacter	145	170
+re/gameloop.md	changed	0x0062d040	CGuiInGame::ShowGalaxyMap	40	64
+re/gameloop.md	new	0x00677ea0	CSWCMessage::SendPlayerToServerInput_Dialog		24
+re/gameloop.md	new	0x00683d90	CSWCDoor::DefaultActionOpen		23
+re/gameloop.md	new	0x00677d70	CSWCMessage::SendPlayerToServerInput_Door		21
+re/gameloop.md	new	0x00677de0	CSWCMessage::SendPlayerToServerInput_Unlock		21
+re/gameloop.md	changed	0x0062e310	CGuiInGame::OpenStore	38	58
+re/gameloop.md	new	0x00688590	CSWGuiMainInterface::OnPauseToggle		20
+re/gameloop.md	new	0x00677d10	CSWCMessage::SendPlayerToServerInput_UseObject		19
+re/gameloop.md	changed	0x00544390	CSWVirtualMachineCommands::ExecuteCommandStartNewModule	116	134
+re/gameloop.md	new	0x006c0350	CSWGuiPause::OnUnpause		18
+re/gameloop.md	new	0x004adba0	CWorldTimer::SetMinutesPerHour		14
+re/gameloop.md	new	0x00683e50	FUN_00683e50		13
+re/gameloop.md	changed	0x0066a640	CSWCMessage::HandleServerToPlayerMessage	208	218
+re/gameloop.md	changed	0x00527b20	CSWSMessage::HandlePlayerToServerMessage	165	174
+re/gameloop.md	changed	0x004eb6e0	CSWSCreature::RunHeartbeat	179	187
+re/gameloop.md	new	0x004aed20	CServerExoApp::GetAutoSavePending		7
+re/gameloop.md	changed	0x004b3a90	CServerExoAppInternal::PrepareAreaForPlayer	106	112
+re/gameloop.md	changed	0x004babb0	CServerExoAppInternal::MainLoop	307	311
+re/gameloop.md	changed	0x005254c0	CSWSMessage::HandlePlayerToServerInputMessage	795	799
+re/gameloop.md	changed	0x00502ac0	CSWSCreature::DoPerceptionCheck	394	397
+re/gameloop.md	changed	0x004b5c50	CServerExoAppInternal::SignalPlayerEnterModule	138	140
+re/gameloop.md	changed	0x004b6270	CServerExoAppInternal::StartModuleRunning	58	60
+re/gameloop.md	changed	0x00506aa0	CSWSArea::SetStealthXPCurrent	10	12
+re/gameloop.md	changed	0x00535b70	CSWVirtualMachineCommands::ExecuteCommandExecuteScript	44	46
+re/gameloop.md	changed	0x004b9240	CServerExoAppInternal::UnloadModule	156	157
+re/gameloop.md	changed	0x004d1730	CSWSObject::UpdateEffectList	187	188
+re/gameloop.md	changed	0x004d4620	CSWSCombatRound::EndCombatRound	236	237
+re/gameloop.md	changed	0x004efc70	CSWSCreature::GetSightRange	37	36
+re/gameloop.md	changed	0x004efd20	CSWSCreature::GetHearingRange	37	36
+re/gameloop.md	changed	0x005d4cb0	CNetLayer::SendMessageToPlayer	79	78
+re/gameloop.md	changed	0x005f5e10	CClientExoAppInternal::UpdateCameraInput	187	186
+re/gameloop.md	changed	0x0062c9b0	CGuiInGame::ShowInGameMenu	77	76
+re/gameloop.md	changed	0x0064dcf0	FUN_0064dcf0	64	63
+re/gameloop.md	changed	0x006c00c0	CSWGuiPause::SetReason	104	105
+re/gameloop.md	changed	0x004b3000	CServerExoAppInternal::ProcessPendingPlayerUpdates	23	23
+re/gameloop.md	changed	0x004fa100	CSWSCreature::AddToArea	97	97
+re/gameloop.md	changed	0x004fe210	CSWSCreature::AIUpdate	380	380
+re/gameloop.md	changed	0x0051b050	CSWSCreature::UpdatePerception	119	119
+re/gameloop.md	changed	0x0057f4a0	CSWSObject::RunActions	630	630
+re/gameloop.md	changed	0x0060af50	FUN_0060af50	48	48
+re/gameloop.md	changed	0x00621210	CClientExoAppInternal::HandleInputAction	654	654
+re/gameloop.md	changed	0x006227e0	CClientExoAppInternal::ProcessInput	888	888
+re/gameloop.md	changed	0x006339c0	CGuiInGame::SelectDialogReply	100	100
+re/gui.md	changed	0x005afce0	CSWSCreatureStats::ReadStatsFromGff	63	1093
+re/gui.md	new	0x0061dbe0	FUN_0061dbe0		838
+re/gui.md	changed	0x0061b780	FUN_0061b780	33	643
+re/gui.md	changed	0x006afda0	CSWGuiCharacter::UpdateStats	54	565
+re/gui.md	new	0x006f51d0	CSWGuiCharGenSkills::CSWGuiCharGenSkills		480
+re/gui.md	changed	0x006b0e40	CSWGuiCharacter::CSWGuiCharacter	161	551
+re/gui.md	new	0x006f7600	CSWGuiCharGenAbilities::CSWGuiCharGenAbilities		389
+re/gui.md	new	0x006dc3c0	CSWGuiClassSelection::CSWGuiClassSelection		368
+re/gui.md	new	0x006808a0	CSWGuiPazaakGame::CSWGuiPazaakGame		344
+re/gui.md	changed	0x006b9970	CSWGuiEquip::UpdateStats	27	367
+re/gui.md	new	0x006c6b60	CSWGuiUpgrade::CSWGuiUpgrade		314
+re/gui.md	changed	0x0068c100	CSWGuiMainInterface::CSWGuiMainInterface	207	492
+re/gui.md	changed	0x006cfa70	CSWGuiDebugModules::CSWGuiDebugModules	36	280
+re/gui.md	new	0x006cc160	CSWGuiSaveLoad::PopulateList		233
+re/gui.md	changed	0x006eb420	CSWGuiCharGenMain::CSWGuiCharGenMain	102	329
+re/gui.md	changed	0x006ba980	CSWGuiEquip::CSWGuiEquip	103	327
+re/gui.md	new	0x0062fed0	CGuiInGame::CGuiInGame		222
+re/gui.md	new	0x006e16e0	CSWGuiOptionsGraphicsAdvanced::CSWGuiOptionsGraphicsAdvanced		220
+re/gui.md	changed	0x006e8ef0	CSWGuiLevelUpMain::CSWGuiLevelUpMain	129	348
+re/gui.md	new	0x006f2180	CSWGuiCharGenPowers::CSWGuiCharGenPowers		217
+re/gui.md	new	0x005b1b90	CSWSCreatureStats::SaveStats		216
+re/gui.md	new	0x006ee7d0	CSWGuiLevelUpPanel::CSWGuiLevelUpPanel		198
+re/gui.md	new	0x006e69a0	CSWGuiOptionsGameplay::CSWGuiOptionsGameplay		197
+re/gui.md	new	0x006f9430	CSWGuiCharGenPortrait::CSWGuiCharGenPortrait		185
+re/gui.md	new	0x006f3460	FUN_006f3460		180
+re/gui.md	new	0x006e3550	CSWGuiOptionsSound::CSWGuiOptionsSound		177
+re/gui.md	new	0x006e0710	CSWGuiOptionsResolution::CSWGuiOptionsResolution		173
+re/gui.md	changed	0x00693650	CSWGuiMap::OnPanelAdded	61	221
+re/gui.md	changed	0x006b34c0	CSWGuiInventory::CSWGuiInventory	76	236
+re/gui.md	new	0x006e2e70	CSWGuiOptionsGraphics::CSWGuiOptionsGraphics		152
+re/gui.md	changed	0x006adda0	CSWGuiAbilities::CSWGuiAbilities	84	235
+re/gui.md	new	0x006cbb60	CSWGuiSaveLoad::OnSave		150
+re/gui.md	changed	0x00695180	CSWGuiGalaxyMap::CSWGuiGalaxyMap	72	220
+re/gui.md	changed	0x00644a40	CSWGuiJournal::CSWGuiJournal	59	206
+re/gui.md	new	0x006b44d0	CSWGuiInventory::AddItemRow		141
+re/gui.md	changed	0x0067f000	CSWGuiPazaakWager::CSWGuiPazaakWager	58	193
+re/gui.md	changed	0x006f3d60	CSWGuiCharGenFeats::CSWGuiCharGenFeats	88	219
+re/gui.md	changed	0x00627980	CSWGuiTopMenu::CSWGuiTopMenu	59	188
+re/gui.md	changed	0x006b7920	CSWGuiEquip::OnRowHilighted	72	199
+re/gui.md	changed	0x006ea000	CSWGuiScriptSelect::CSWGuiScriptSelect	46	172
+re/gui.md	new	0x006e20a0	CSWGuiOptionsSoundAdvanced::CSWGuiOptionsSoundAdvanced		122
+re/gui.md	new	0x006bf3b0	CSWGuiPartySelection::OnDone		118
+re/gui.md	gone	0x006e1406	switchD_006e13cf::caseD_1	116	
+re/gui.md	changed	0x006a8eb0	CSWGuiDialogComputer::CSWGuiDialogComputer	67	182
+re/gui.md	new	0x006e76a0	CSWGuiOptionsAutoPause::CSWGuiOptionsAutoPause		114
+re/gui.md	changed	0x006d0620	CSWGuiDebugItems::CSWGuiDebugItems	34	146
+re/gui.md	changed	0x0068f8d0	CSWGuiCredits::CSWGuiCredits	39	150
+re/gui.md	changed	0x006ad560	CSWGuiAbilities::RebuildList	31	142
+re/gui.md	new	0x006af450	CSWGuiCharacter::OnPreviousCharacter		111
+re/gui.md	new	0x006af6d0	CSWGuiCharacter::OnNextCharacter		111
+re/gui.md	new	0x006b2fd0	CSWGuiInventory::OnPreviousCharacter		111
+re/gui.md	new	0x006b3250	CSWGuiInventory::OnNextCharacter		111
+re/gui.md	new	0x006b60f0	CSWGuiEquip::OnPreviousCharacter		111
+re/gui.md	new	0x006b6370	CSWGuiEquip::OnNextCharacter		111
+re/gui.md	new	0x006ef730	CSWGuiCharGenCustomPanel::CSWGuiCharGenCustomPanel		106
+re/gui.md	changed	0x006cc680	CSWGuiSaveLoad::CSWGuiSaveLoad	50	155
+re/gui.md	changed	0x006272a0	CSWGuiStatusSummary::CSWGuiStatusSummary	40	143
+re/gui.md	new	0x006ad180	CSWGuiAbilities::OnRowHilighted		102
+re/gui.md	changed	0x006b4810	CSWGuiInventory::RebuildItemList	54	156
+re/gui.md	new	0x006ce570	FUN_006ce570		101
+re/gui.md	new	0x006b8eb0	CSWGuiEquip::OnSlotClicked		100
+re/gui.md	new	0x006f09f0	CSWGuiCharGenQuickOrCustom::CSWGuiCharGenQuickOrCustom		99
+re/gui.md	new	0x006f0390	CSWGuiCharGenQuickPanel::CSWGuiCharGenQuickPanel		97
+re/gui.md	changed	0x006c78d0	CSWGuiUpgradeSelect::CSWGuiUpgradeSelect	39	133
+re/gui.md	new	0x00409f00	CSWGuiManager::LoadGuiSounds		92
+re/gui.md	new	0x006c7630	CSWGuiUpgradeItems::CSWGuiUpgradeItems		90
+re/gui.md	new	0x006dbdf0	CSWGuiClassSelection::StartGame		89
+re/gui.md	new	0x006f9e70	CSWGuiCharGenName::CSWGuiCharGenName		89
+re/gui.md	changed	0x00681a90	CSWGuiPazaakSetup::CSWGuiPazaakSetup	143	231
+re/gui.md	changed	0x006e3e80	CSWGuiOptionsMain::CSWGuiOptionsMain	39	126
+re/gui.md	changed	0x006193a0	FUN_006193a0	38	124
+re/gui.md	new	0x006e2a70	CSWGuiOptionsFeedback::CSWGuiOptionsFeedback		84
+re/gui.md	changed	0x006c1c00	CSWGuiStore::CSWGuiStore	79	162
+re/gui.md	changed	0x00626400	CSWGuiMessages::CSWGuiMessages	46	128
+re/gui.md	new	0x006b3d10	CSWGuiInventory::OnItemHilighted		81
+re/gui.md	new	0x0041d3e0	CSWGuiListBox::LoadProtoItem		80
+re/gui.md	changed	0x006bf5b0	CSWGuiPartySelection::OnNPCHilighted	70	150
+re/gui.md	changed	0x006ab2f0	CSWGuiOptionsInGame::CSWGuiOptionsInGame	51	128
+re/gui.md	new	0x005f51c0	CClientExoAppInternal::PostInitialize		75
+re/gui.md	changed	0x00694d50	CSWGuiMap::CSWGuiMap	49	124
+re/gui.md	new	0x006ba820	CSWGuiEquip::OnChangeCharacter		75
+re/gui.md	changed	0x006bfa40	CSWGuiPartySelection::CSWGuiPartySelection	78	150
+re/gui.md	changed	0x006b7680	CSWGuiEquip::SetSelectionMode	36	105
+re/gui.md	new	0x006f9cd0	CSWGuiCharGenName::OnAccept		67
+re/gui.md	changed	0x006456e0	CSWGuiJournal::HandleInputEvent	159	223
+re/gui.md	new	0x006adc80	CSWGuiAbilities::OnChangeCharacter		64
+re/gui.md	changed	0x006a8b40	CSWGuiDialogLetterbox::CSWGuiDialogLetterbox	34	97
+re/gui.md	changed	0x006dba70	CSWGuiClassSelection::OnHoverClass	45	108
+re/gui.md	changed	0x006a9920	CSWGuiBarkBubble::ShowBark	42	103
+re/gui.md	new	0x006b2ec0	CSWGuiInventory::OnChangeCharacter		61
+re/gui.md	changed	0x006b6dc0	CSWGuiContainer::CSWGuiContainer	48	109
+re/gui.md	new	0x006cae70	CSWGuiSaveName::CSWGuiSaveName		60
+re/gui.md	changed	0x006e2600	CSWGuiOptionsMouse::CSWGuiOptionsMouse	45	105
+re/gui.md	changed	0x0067b6c0	CSWGuiMainMenu::OnPanelAdded	23	82
+re/gui.md	new	0x0062ccd0	CGuiInGame::NextInGameMenu		58
+re/gui.md	new	0x0062cdf0	CGuiInGame::PrevInGameMenu		58
+re/gui.md	changed	0x006edc90	CSWGuiOptionsKeyMapping::CSWGuiOptionsKeyMapping	53	111
+re/gui.md	changed	0x0067a710	CSWGuiLoadScreen::CSWGuiLoadScreen	39	93
+re/gui.md	changed	0x00625c60	CSWGuiStatusSummary::OnPanelAdded	238	291
+re/gui.md	changed	0x0067ace0	CSWGuiMainMenu::InitPanel	27	80
+re/gui.md	new	0x006b2c90	CSWGuiInventory::PassesFilter		52
+re/gui.md	changed	0x006c6500	CSWGuiUpgrade::OnSlotClicked	141	192
+re/gui.md	new	0x0062b730	CGuiInGame::ShowConversationPanel		49
+re/gui.md	new	0x00681890	FUN_00681890		49
+re/gui.md	changed	0x006b6710	CSWGuiItemEntry::SetItem	154	203
+re/gui.md	changed	0x00626df0	CSWGuiMessageBox::CSWGuiMessageBox	47	93
+re/gui.md	new	0x006e9d50	FUN_006e9d50		46
+re/gui.md	changed	0x00645e00	CSWGuiJournal::OnPanelAdded	53	98
+re/gui.md	new	0x006ef120	CSWGuiCharGenCustomPanel::OnPortrait		45
+re/gui.md	new	0x006efe10	CSWGuiCharGenQuickPanel::OnPortrait		45
+re/gui.md	new	0x006e05e0	FUN_006e05e0		43
+re/gui.md	new	0x006e0520	FUN_006e0520		42
+re/gui.md	new	0x006ee3d0	CSWGuiLevelUpPanel::OnFeats		39
+re/gui.md	new	0x006b25e0	CSWGuiInventory::OnUseItem		38
+re/gui.md	changed	0x006b2a80	CSWGuiInventory::CycleFilter	48	85
+re/gui.md	changed	0x006b8410	CSWGuiContainer::ShowGiveItems	99	136
+re/gui.md	new	0x006df9b0	FUN_006df9b0		37
+re/gui.md	changed	0x005f4760	CClientExoAppInternal::PickLoadScreenHint	70	106
+re/gui.md	changed	0x0067afb0	CSWGuiMainMenu::OnNewGame	37	73
+re/gui.md	changed	0x0041bcd0	CSWGuiScrollBar::LoadFromGFF	23	58
+re/gui.md	changed	0x006ce7c0	CSWGuiSkillInfo::CSWGuiSkillInfo	38	73
+re/gui.md	changed	0x006df690	CSWGuiOptionsResolution::OnOk	67	102
+re/gui.md	new	0x006ee350	CSWGuiLevelUpPanel::OnPowers		34
+re/gui.md	new	0x006ee480	CSWGuiLevelUpPanel::OnSkills		34
+re/gui.md	new	0x006ee500	CSWGuiLevelUpPanel::OnAbilities		34
+re/gui.md	new	0x006ef2d0	CSWGuiCharGenCustomPanel::OnFeats		34
+re/gui.md	new	0x006ef360	CSWGuiCharGenCustomPanel::OnSkills		34
+re/gui.md	new	0x006ef3f0	CSWGuiCharGenCustomPanel::OnAbilities		34
+re/gui.md	new	0x006aaaf0	CSWGuiOptionsInGame::OnLoadGame		33
+re/gui.md	new	0x006aab80	CSWGuiOptionsInGame::OnSaveGame		33
+re/gui.md	new	0x006e9f10	FUN_006e9f10		33
+re/gui.md	new	0x006a7540	CSWGuiLetterbox::InitBottomBar		32
+re/gui.md	new	0x006aac90	CSWGuiOptionsInGame::OnFeedback		32
+re/gui.md	new	0x006aad10	CSWGuiOptionsInGame::OnAutoPause		32
+re/gui.md	new	0x006aad90	CSWGuiOptionsInGame::OnGraphics		32
+re/gui.md	new	0x006aae10	CSWGuiOptionsInGame::OnSound		32
+re/gui.md	new	0x006de2c0	CSWGuiOptionsMain::OnAutoPause		32
+re/gui.md	new	0x006e2df0	CSWGuiOptionsMain::OnFeedback		32
+re/gui.md	new	0x006e3d80	CSWGuiOptionsMain::OnGraphics		32
+re/gui.md	new	0x006e3e00	CSWGuiOptionsMain::OnSound		32
+re/gui.md	new	0x006ef240	CSWGuiCharGenCustomPanel::OnName		32
+re/gui.md	new	0x006efd80	CSWGuiCharGenQuickPanel::OnName		32
+re/gui.md	changed	0x0067c4c0	CSWGuiMainMenu::CSWGuiMainMenu	130	161
+re/gui.md	new	0x006a74b0	CSWGuiLetterbox::InitTopBar		31
+re/gui.md	new	0x006aac10	CSWGuiOptionsInGame::OnGameplay		31
+re/gui.md	changed	0x006d26c0	CSWGuiQuestItems::CSWGuiQuestItems	41	72
+re/gui.md	new	0x006de240	CSWGuiOptionsMain::OnGameplay		31
+re/gui.md	new	0x006e2cf0	FUN_006e2cf0		31
+re/gui.md	new	0x006e2d70	FUN_006e2d70		31
+re/gui.md	new	0x004efe30	FUN_004efe30		30
+re/gui.md	changed	0x00564700	CSWPartyTable::GetNPCObject	50	80
+re/gui.md	new	0x006e1660	FUN_006e1660		30
+re/gui.md	changed	0x0041d5b0	CSWGuiListBox::LoadFromGFF	23	52
+re/gui.md	changed	0x006c03b0	CSWGuiPause::CSWGuiPause	33	62
+re/gui.md	changed	0x0041cc30	CSWGuiSlider::LoadFromGFF	23	51
+re/gui.md	changed	0x005f3480	CClientExoAppInternal::SetLoadScreenImage	36	64
+re/gui.md	new	0x0061db60	CClientOptions::SetDefaults		28
+re/gui.md	changed	0x006dd910	CSWGuiTitleMovies::CSWGuiTitleMovies	37	65
+re/gui.md	new	0x006ef6a0	CSWGuiCharGenCustomPanel::OnCancel		27
+re/gui.md	changed	0x00416050	CSWGuiText::LoadFromGFF	49	74
+re/gui.md	new	0x006ac8d0	CSWGuiAbilities::KeepTabHilighted		25
+re/gui.md	new	0x006ad4b0	CSWGuiAbilities::OnSelectionChanged		25
+re/gui.md	changed	0x006b0cb0	CSWGuiCharacter::AutoLevelUp	40	65
+re/gui.md	changed	0x0062d040	CGuiInGame::ShowGalaxyMap	40	64
+re/gui.md	new	0x006819e0	FUN_006819e0		24
+re/gui.md	new	0x006935a0	CSWGuiGalaxyMap::OnPlanetClicked		24
+re/gui.md	changed	0x006b8130	CSWGuiContainer::ShowContainerItems	101	125
+re/gui.md	new	0x006cc0e0	CSWGuiSaveLoad::OnLoad		24
+re/gui.md	new	0x006f0310	CSWGuiCharGenQuickPanel::OnCancel		24
+re/gui.md	new	0x006f3cf0	CSWGuiCharGenFeats::OnFeatPressed		24
+re/gui.md	changed	0x0040b060	CSWGuiManager::CreateCursorModel	50	73
+re/gui.md	new	0x006cd1c0	FUN_006cd1c0		23
+re/gui.md	changed	0x00418a90	CSWGuiControl::GetTooltipText	71	93
+re/gui.md	changed	0x0041bbc0	CSWGuiProgressBar::LoadFromGFF	23	45
+re/gui.md	new	0x006e9e70	FUN_006e9e70		22
+re/gui.md	changed	0x006c0f40	CSWGuiStore::OnSell	64	85
+re/gui.md	new	0x006c6190	CSWGuiUpgrade::OnAssemble		21
+re/gui.md	changed	0x0062e310	CGuiInGame::OpenStore	38	58
+re/gui.md	new	0x00688590	CSWGuiMainInterface::OnPauseToggle		20
+re/gui.md	new	0x00688640	CSWGuiMainInterface::OnStealthToggle		20
+re/gui.md	changed	0x006c1130	CSWGuiStore::OnBuy	73	93
+re/gui.md	new	0x006ab1b0	CSWGuiOptionsInGame::OnQuit		19
+re/gui.md	new	0x006aed90	CSWGuiCharacter::RotateModelLeft		19
+re/gui.md	new	0x006aede0	CSWGuiCharacter::RotateModelRight		19
+re/gui.md	new	0x006c2b60	CSWGuiUpgradeSelect::OnCategory		19
+re/gui.md	changed	0x006cf5a0	CSWGuiDebugMenu::CSWGuiDebugMenu	31	50
+re/gui.md	new	0x006b26e0	CSWGuiInventory::OnEquippableItemClicked		18
+re/gui.md	new	0x006b2740	CSWGuiInventory::OnUnusableItemClicked		18
+re/gui.md	new	0x006b27a0	CSWGuiInventory::OnItemClickedViewOnly		18
+re/gui.md	new	0x006b2800	CSWGuiInventory::OnMedpacFullHealth		18
+re/gui.md	new	0x006b2860	CSWGuiInventory::OnSquadMedpacNoInjured		18
+re/gui.md	changed	0x006bdc60	CSWGuiDebugMenu2::CSWGuiDebugMenu2	40	58
+re/gui.md	new	0x006c0350	CSWGuiPause::OnUnpause		18
+re/gui.md	new	0x006caa90	CSWGuiSaveLoad::OnDelete		18
+re/gui.md	new	0x006e6930	FUN_006e6930		18
+re/gui.md	changed	0x0041cb40	CSWGuiCheckBox::LoadFromGFF	23	40
+re/gui.md	new	0x006e06d0	FUN_006e06d0		17
+re/gui.md	changed	0x0041c930	CSWGuiButton::LoadFromGFF	23	39
+re/gui.md	changed	0x006c0aa0	CSWGuiStore::OnItemHilighted	44	60
+re/gui.md	new	0x006e0680	FUN_006e0680		16
+re/gui.md	new	0x006e68e0	FUN_006e68e0		16
+re/gui.md	new	0x00627160	CSWGuiMessageBox::SetIcon		15
+re/gui.md	new	0x00688610	CSWGuiMainInterface::OnSoloToggle		15
+re/gui.md	changed	0x006c7d50	CSWGuiAreaTransition::CSWGuiAreaTransition	37	52
+re/gui.md	new	0x006dee00	FUN_006dee00		15
+re/gui.md	new	0x006ee5f0	CSWGuiLevelUpPanel::OnCancel		15
+re/gui.md	new	0x006ee780	CSWGuiLevelUpPanel::OnFinish		15
+re/gui.md	new	0x006dedb0	FUN_006dedb0		14
+re/gui.md	new	0x006f3420	CSWGuiCharGenFeats::OnFeatClicked		14
+re/gui.md	new	0x00624c00	CSWGuiTopMenu::OnPrevMenu		13
+re/gui.md	new	0x00624c30	CSWGuiTopMenu::OnNextMenu		13
+re/gui.md	new	0x00624cf0	CSWGuiTopMenu::OnEquip		13
+re/gui.md	new	0x00624d10	CSWGuiTopMenu::OnInventory		13
+re/gui.md	new	0x00624d30	CSWGuiTopMenu::OnCharacter		13
+re/gui.md	new	0x00624d50	CSWGuiTopMenu::OnMap		13
+re/gui.md	new	0x00624d70	CSWGuiTopMenu::OnAbilities		13
+re/gui.md	new	0x00624d90	CSWGuiTopMenu::OnJournal		13
+re/gui.md	new	0x00624db0	CSWGuiTopMenu::OnOptions		13
+re/gui.md	new	0x00624dd0	CSWGuiTopMenu::OnMessages		13
+re/gui.md	changed	0x00624df0	CSWGuiMessages::ShowDialogLog	45	58
+re/gui.md	changed	0x00624f70	CSWGuiMessages::ShowFeedbackLog	45	58
+re/gui.md	changed	0x006b28c0	CSWGuiInventory::UpdateStats	55	68
+re/gui.md	new	0x006bec90	CSWGuiPartySelection::OnConfirmed		13
+re/gui.md	new	0x006e1270	FUN_006e1270		13
+re/gui.md	new	0x006ada70	CSWGuiAbilities::OnFeatsTab		12
+re/gui.md	new	0x006adaa0	CSWGuiAbilities::OnPowersTab		12
+re/gui.md	new	0x006adad0	CSWGuiAbilities::OnSkillsTab		12
+re/gui.md	changed	0x006c0850	CSWGuiStore::FillPlayerItems	104	116
+re/gui.md	new	0x006e0100	FUN_006e0100		12
+re/gui.md	new	0x006e0190	FUN_006e0190		12
+re/gui.md	new	0x006e0470	FUN_006e0470		12
+re/gui.md	new	0x006e0f50	FUN_006e0f50		12
+re/gui.md	new	0x006e12b0	FUN_006e12b0		12
+re/gui.md	new	0x006f0800	CSWGuiCharGenQuickOrCustom::OnQuick		12
+re/gui.md	new	0x006f0830	CSWGuiCharGenQuickOrCustom::OnCustom		12
+re/gui.md	changed	0x00684f50	CSWGuiPartyButton::BuildTooltipText	61	72
+re/gui.md	changed	0x006929b0	CSWGuiMap::ShowMapNote	47	58
+re/gui.md	new	0x006a6fc0	CSWGuiDialog::OnReplyHilight		11
+re/gui.md	new	0x006a6fe0	CSWGuiDialog::OnReplyUnhilight		11
+re/gui.md	changed	0x006a9770	CSWGuiBarkBubble::CSWGuiBarkBubble	34	45
+re/gui.md	changed	0x006c1840	CSWGuiStore::FillStoreItems	88	99
+re/gui.md	new	0x006e04e0	FUN_006e04e0		11
+re/gui.md	changed	0x0040acc0	CSWGuiManager::UpdateTopPanel	59	69
+re/gui.md	new	0x00644730	CSWGuiPanel::OnButtonZ		10
+re/gui.md	changed	0x006aa670	CSWGuiTutorialBox::NextPage	53	63
+re/gui.md	changed	0x006c7ec0	CSWGuiAreaTransition::SetTransitionObject	59	69
+re/gui.md	new	0x006e04a0	FUN_006e04a0		10
+re/gui.md	new	0x006ef220	CSWGuiCharGenCustomPanel::OnPlay		10
+re/gui.md	new	0x006efd60	CSWGuiCharGenQuickPanel::OnPlay		10
+re/gui.md	changed	0x0068f0e0	CSWGuiCredits::~CSWGuiCredits	46	55
+re/gui.md	changed	0x006a95f0	CSWGuiDialogComputerCamera::CSWGuiDialogComputerCamera	44	53
+re/gui.md	changed	0x006b7590	CSWGuiEquip::SetCreature	39	48
+re/gui.md	new	0x006c8470	CSWGuiSaveName::OnCancel		9
+re/gui.md	new	0x006ddb30	FUN_006ddb30		9
+re/gui.md	new	0x006ddb80	FUN_006ddb80		9
+re/gui.md	new	0x006ddff0	FUN_006ddff0		9
+re/gui.md	new	0x006e9fe0	FUN_006e9fe0		9
+re/gui.md	new	0x006eb320	CSWGuiCharGenMain::Finish		9
+re/gui.md	changed	0x0041b960	CSWGuiLabel::LoadFromGFF	23	31
+re/gui.md	changed	0x0041c7d0	CSWGuiEditBox::LoadFromGFF	23	31
+re/gui.md	new	0x00625a80	CSWGuiMessageBox::OnOk		8
+re/gui.md	new	0x00625aa0	CSWGuiMessageBox::OnCancel		8
+re/gui.md	changed	0x00626b10	FUN_00626b10	92	100
+re/gui.md	new	0x0067b490	CSWGuiMainMenu::OnDiskSpaceQuit		8
+re/gui.md	new	0x0067cb40	CSWGuiPanel::OnButtonPrev		8
+re/gui.md	new	0x0067cb50	CSWGuiPanel::OnButtonNext		8
+re/gui.md	new	0x0067cb60	CSWGuiPanel::OnButtonAlternateAccept		8
+re/gui.md	new	0x006927b0	CSWGuiMap::OnNoteUp		8
+re/gui.md	new	0x006927c0	CSWGuiMap::OnNoteDown		8
+re/gui.md	changed	0x006a6e20	CSWGuiDialogComputer::GetResolutionTag	34	42
+re/gui.md	new	0x006f09d0	CSWGuiCharGenQuickOrCustom::OnHoverQuick		8
+re/gui.md	new	0x006f09e0	CSWGuiCharGenQuickOrCustom::OnHoverCustom		8
+re/gui.md	changed	0x0040a680	CSWGuiPanel::LoadGui	73	80
+re/gui.md	changed	0x00624810	CSWGuiFade::CSWGuiFade	34	41
+re/gui.md	new	0x006ddb10	FUN_006ddb10		7
+re/gui.md	changed	0x006246c0	CSWGuiFade::SetMessageStrRef	34	40
+re/gui.md	new	0x0067e530	FUN_0067e530		6
+re/gui.md	new	0x006ddb60	FUN_006ddb60		6
+re/gui.md	changed	0x0055f340	CSWSItem::GetDescription	69	74
+re/gui.md	changed	0x0068b9d0	CSWGuiActionSlot::Init	132	137
+re/gui.md	changed	0x0040a900	CSWGuiPanel::GetResolutionTag	27	31
+re/gui.md	changed	0x00628260	CSWGuiMessages::HandleInputEvent	90	94
+re/gui.md	changed	0x00645330	CSWGuiJournal::RebuildQuestList	125	129
+re/gui.md	changed	0x006a7e20	CSWGuiDialogLetterbox::SelectReply	35	39
+re/gui.md	changed	0x006b9470	CSWGuiEquip::OnSlotHilighted	193	197
+re/gui.md	changed	0x0041ba20	CSWGuiProtoItem::LoadFromGFF	23	26
+re/gui.md	changed	0x004f2a50	CSWSCreature::SetActivityMode	90	93
+re/gui.md	changed	0x005f2a20	CClientExoAppInternal::ToggleSoloMode	28	31
+re/gui.md	changed	0x0060f4b0	CSWCCreature::RequestStealthToggle	21	24
+re/gui.md	changed	0x00610ac0	CSWCCreature::GetCanStealth	54	57
+re/gui.md	changed	0x00687e40	CSWGuiMainInterface::LoadMiniMapTexture	70	73
+re/gui.md	changed	0x0068a010	CSWGuiMainInterface::UpdateCombatQueue	109	112
+re/gui.md	changed	0x006b7e30	CSWGuiEquip::EndSelection	25	28
+re/gui.md	changed	0x006c9d50	CSWGuiSaveName::OnOk	22	25
+re/gui.md	changed	0x0055d330	CItemRepository::AddItem	227	229
+re/gui.md	changed	0x006277c0	CSWGuiToolTip::CSWGuiToolTip	56	58
+re/gui.md	changed	0x00693bc0	CSWGuiMap::HandleInputEvent	101	103
+re/gui.md	changed	0x006a7ef0	CSWGuiDialogLetterbox::Layout	59	61
+re/gui.md	changed	0x006d29f0	CSWGuiQuestItems::RebuildList	96	98
+re/gui.md	changed	0x0040ae80	CSWGuiManager::DrawBackdrop	93	92
+re/gui.md	changed	0x0040bec0	CSWGuiManager::DrawDebugOverlay	119	118
+re/gui.md	changed	0x00415e50	CSWGuiTextInfo::SetStrRef	41	40
+re/gui.md	changed	0x00419ee0	CSWGuiListBox::LayoutText	160	161
+re/gui.md	changed	0x00540300	CSWVirtualMachineCommands::ExecuteCommandOpenStore	108	109
+re/gui.md	changed	0x005f7b20	CClientExoAppInternal::UpdateLoadScreenHint	44	43
+re/gui.md	changed	0x005fb3f0	CClientExoAppInternal::SetLoadProgress	32	31
+re/gui.md	changed	0x006271a0	CSWGuiMessageBox::SetMessageText	22	23
+re/gui.md	changed	0x0062c9b0	CGuiInGame::ShowInGameMenu	77	76
+re/gui.md	changed	0x0062cf10	CGuiInGame::SwitchInGameMenu	56	55
+re/gui.md	changed	0x0067b2f0	CSWGuiMainMenu::OnOptions	34	33
+re/gui.md	changed	0x00686920	CSWGuiNotifyLabel::Init	61	62
+re/gui.md	changed	0x00686ba0	CSWGuiMainInterface::Update	86	87
+re/gui.md	changed	0x006898a0	CSWGuiPartyMemberSlot::Init	86	87
+re/gui.md	changed	0x00695980	CSWGuiGalaxyMap::HandleInputEvent	68	67
+re/gui.md	changed	0x006b0bb0	CSWGuiCharacter::StartLevelUp	44	45
+re/gui.md	changed	0x006b5600	CSWGuiEquip::GetEmptySlotIcon	23	24
+re/gui.md	changed	0x006c00c0	CSWGuiPause::SetReason	104	105
+re/gui.md	changed	0x006c0610	CSWGuiStore::UpdateCredits	35	34
+re/gui.md	changed	0x006c0be0	CSWGuiStore::DoBuy	57	56
+re/gui.md	changed	0x006c0d80	CSWGuiStore::DoSell	65	64
+re/gui.md	changed	0x006d2580	CSWGuiQuestItems::OnItemHilighted	61	60
+re/gui.md	changed	0x006f8670	CSWGuiCharGenAbilities::IncreaseAbility	82	83
+re/gui.md	changed	0x0040c8e0	CSWGuiManager::HandleInputEvent	175	175
+re/gui.md	changed	0x004faa70	CSWSCreature::UnequipItem	27	27
+re/gui.md	changed	0x005ede60	FUN_005ede60	6	6
+re/gui.md	changed	0x006197d0	FUN_006197d0	48	48
+re/gui.md	changed	0x00621210	CClientExoAppInternal::HandleInputAction	654	654
+re/gui.md	changed	0x006227e0	CClientExoAppInternal::ProcessInput	888	888
+re/gui.md	changed	0x00687860	CSWGuiMainInterface::UpdatePartyPortraits	273	273
+re/gui.md	changed	0x006933a0	CSWGuiGalaxyMap::ShowPlanet	74	74
+re/gui.md	changed	0x006adb00	CSWGuiAbilities::SetCreature	47	47
+re/gui.md	changed	0x006ae5f0	CSWGuiAbilities::HandleInputEvent	167	167
+re/gui.md	changed	0x006b2250	CSWGuiCharacter::HandleInputEvent	114	114
+re/gui.md	changed	0x006b3ed0	CSWGuiInventory::HandleInputEvent	58	58
+re/gui.md	changed	0x006b4bb0	CSWGuiInventory::Render	29	29
+re/gui.md	changed	0x006b4c30	CSWGuiInventory::OnPanelAdded	16	16
+re/gui.md	changed	0x006b8770	CSWGuiContainer::Update	18	18
+re/gui.md	changed	0x006b92f0	CSWGuiContainer::HandleInputEvent	63	63
+re/gui.md	changed	0x006bb510	CSWGuiEquip::Render	9	9
+re/gui.md	changed	0x006d2c20	CSWGuiQuestItems::OnPanelAdded	9	9
+re/gui.md	changed	0x006de160	FUN_006de160	18	18
+re/gui.md	changed	0x006f8880	CSWGuiCharGenAbilities::HandleInputEvent	65	65
+re/gui3d.md	changed	0x0067c4c0	CSWGuiMainMenu::CSWGuiMainMenu	130	161
+re/journal.md	changed	0x005c5a40	FUN_005c5a40	125	348
+re/journal.md	changed	0x006456e0	CSWGuiJournal::HandleInputEvent	159	223
+re/journal.md	changed	0x00645e00	CSWGuiJournal::OnPanelAdded	53	98
+re/journal.md	changed	0x00645100	FUN_00645100	67	87
+re/journal.md	changed	0x0053a680	CSWVirtualMachineCommands::ExecuteCommandGetJournalQuestExperience	82	93
+re/journal.md	changed	0x00626b10	FUN_00626b10	92	100
+re/journal.md	changed	0x005483f0	CSWVirtualMachineCommands::ExecuteCommandAddJournalQuestEntry	108	112
+re/journal.md	changed	0x00645330	CSWGuiJournal::RebuildQuestList	125	129
+re/minigames-swoop-turret.md	new	0x00607610	CSWCArea::LoadArea		1001
+re/minigames-swoop-turret.md	gone	0x00674c6f	switchD_00674bfb::caseD_2	160	
+re/minigames-swoop-turret.md	changed	0x00674b90	FUN_00674b90	344	354
+re/minigames-swoop-turret.md	changed	0x005cb480	CSWVirtualMachineCommands::ExecuteCommandSWMG_GetLastEvent	40	49
+re/minigames-swoop-turret.md	changed	0x0066fe50	FUN_0066fe50	65	61
+re/minigames-swoop-turret.md	changed	0x0066c0a0	FUN_0066c0a0	32	31
+re/minigames-swoop-turret.md	changed	0x0066c190	FUN_0066c190	47	48
+re/minigames-swoop-turret.md	changed	0x0066c2d0	FUN_0066c2d0	31	30
+re/minigames-swoop-turret.md	changed	0x0066e2a0	FUN_0066e2a0	85	86
+re/minigames-swoop-turret.md	changed	0x0066e5c0	FUN_0066e5c0	44	45
+re/minigames-swoop-turret.md	changed	0x0066e7a0	FUN_0066e7a0	56	57
+re/minigames-swoop-turret.md	changed	0x006227e0	CClientExoAppInternal::ProcessInput	888	888
+re/modules.md	new	0x00607610	CSWCArea::LoadArea		1001
+re/modules.md	changed	0x004c9050	CSWSModule::LoadModuleStart	37	661
+re/modules.md	changed	0x00508c50	CSWSArea::LoadAreaHeader	37	589
+re/modules.md	new	0x004b8300	CServerExoAppInternal::WriteTransitionAutoSave		472
+re/modules.md	changed	0x004b95b0	CServerExoAppInternal::LoadModule	60	467
+re/modules.md	new	0x006ca250	CSWGuiSaveLoad::LoadTransitionAutoSave		232
+re/modules.md	new	0x004094a0	CExoResMan::LoadModuleResources		230
+re/modules.md	new	0x004c7050	CSWSModule::SaveModuleIFOStart		192
+re/modules.md	changed	0x004c44d0	CSWSModule::RemoveModuleResources	41	216
+re/modules.md	new	0x004c4150	CSWSModule::AddModuleResources		119
+re/modules.md	new	0x005dd710	CERFFile::ExtractAll		108
+re/modules.md	new	0x004c8960	CSWSModule::SaveModuleIFO		99
+re/modules.md	changed	0x004b7c60	CServerExoAppInternal::ShutDownServer	79	155
+re/modules.md	changed	0x004c84a0	CSWSModule::CSWSModule	112	186
+re/modules.md	new	0x004c4cc0	CSWSModule::SetResRef		70
+re/modules.md	changed	0x0059aa80	CSWSScriptVarTable::LoadVarTable	54	120
+re/modules.md	changed	0x004c68a0	CSWSModule::~CSWSModule	85	136
+re/modules.md	changed	0x0064bab0	CSWCMessage::HandleServerToPlayerAreaLoad	126	177
+re/modules.md	changed	0x0050a350	CSWSArea::LoadTriggers	118	142
+re/modules.md	new	0x004c3060	FUN_004c3060		22
+re/modules.md	changed	0x0050d370	CSWSArea::~CSWSArea	110	129
+re/modules.md	new	0x004064f0	CExoResMan::StartModuleLoad		18
+re/modules.md	changed	0x0052b490	FUN_0052b490	35	51
+re/modules.md	changed	0x004babb0	CServerExoAppInternal::MainLoop	307	311
+re/modules.md	changed	0x005df140	CLayout::LoadLayout	23	25
+re/modules.md	changed	0x004c7de0	CSWSModule::AddObjectToLookupTable	64	65
+re/modules.md	changed	0x005638d0	CSWPartyTable::MountGameInProgress	27	26
+re/modules.md	changed	0x00563950	CSWPartyTable::UnmountGameInProgress	29	28
+re/modules.md	changed	0x005057a0	CSWSArea::LoadStores	124	124
+re/modules.md	changed	0x0050a7b0	CSWSArea::LoadPlaceables	97	97
+re/movement.md	new	0x00607610	CSWCArea::LoadArea		1001
+re/movement.md	changed	0x005eeb10	CClientExoAppInternal::SetupKeymapping	148	888
+re/movement.md	changed	0x0058da80	CSWSTrigger::LoadTrigger	120	343
+re/movement.md	changed	0x00620620	CClientExoAppInternal::BuildDefaultActions	234	411
+re/movement.md	changed	0x0063f660	CSWCModule::LoadFromMessage	59	149
+re/movement.md	new	0x0058d060	CSWSTrigger::LoadGeometry		73
+re/movement.md	new	0x0060f620	CSWCCreature::DefaultActionTalk		60
+re/movement.md	changed	0x00638070	CSWCChaseCamera::LoadCameraStyle	42	102
+re/movement.md	changed	0x00516630	CSWSCreature::StepAlongPath	400	456
+re/movement.md	changed	0x0051f4f0	CSWSCreature::AIActionMoveToPoint	630	683
+re/movement.md	changed	0x006d12b0	CSWCCombatCamera::CSWCCombatCamera	37	82
+re/movement.md	changed	0x004f6000	CSWSCreature::GetIsInUseRange	50	91
+re/movement.md	changed	0x005a5680	CSWSCreatureStats::SetMovementRate	45	86
+re/movement.md	changed	0x00691f00	FUN_00691f00	51	77
+re/movement.md	changed	0x006383c0	CSWCFreeLookCamera::LoadCameraStyle	34	59
+re/movement.md	changed	0x006793c0	CSWCPlayerControl::LoadSettings	28	53
+re/movement.md	new	0x00677ea0	CSWCMessage::SendPlayerToServerInput_Dialog		24
+re/movement.md	new	0x00683d90	CSWCDoor::DefaultActionOpen		23
+re/movement.md	new	0x00677d70	CSWCMessage::SendPlayerToServerInput_Door		21
+re/movement.md	new	0x00677de0	CSWCMessage::SendPlayerToServerInput_Unlock		21
+re/movement.md	new	0x0061d9e0	CClientOptions::SetKeyboardCameraDefaults		19
+re/movement.md	new	0x00677d10	CSWCMessage::SendPlayerToServerInput_UseObject		19
+re/movement.md	new	0x00691900	CSWCTrigger::DefaultActionDisarm		19
+re/movement.md	new	0x00682660	CSWCPlaceable::DefaultActionUse		18
+re/movement.md	changed	0x005d0840	CPathAvoidance::ResolveBlockingCreature	200	210
+re/movement.md	new	0x00691950	CSWCTrigger::DefaultActionRecover		8
+re/movement.md	changed	0x004f1fd0	CSWSCreature::GetCanSeeStealthedBySight	206	211
+re/movement.md	changed	0x005254c0	CSWSMessage::HandlePlayerToServerInputMessage	795	799
+re/movement.md	changed	0x004f6d70	CSWSCreature::ApplyStealthEffects	68	71
+re/movement.md	changed	0x00502ac0	CSWSCreature::DoPerceptionCheck	394	397
+re/movement.md	changed	0x0060f4b0	CSWCCreature::RequestStealthToggle	21	24
+re/movement.md	changed	0x004f6390	CSWSCreature::PushCreatureAside	150	152
+re/movement.md	changed	0x005f9c60	CClientExoAppInternal::SelectTarget	348	346
+re/movement.md	changed	0x00506400	CSWSArea::IsWalkablePoint	31	32
+re/movement.md	changed	0x0058f140	CSWSTrigger::EventHandler	232	233
+re/movement.md	changed	0x005f5e10	CClientExoAppInternal::UpdateCameraInput	187	186
+re/movement.md	changed	0x00634cc0	CSWCPartyTrail::GetFormationSlot	26	25
+re/movement.md	changed	0x004f2c30	CSWSCreature::GetIsSelectableTarget	71	71
+re/movement.md	changed	0x00584220	CSWWalkMesh::WalkSegment	255	255
+re/movement.md	changed	0x00621210	CClientExoAppInternal::HandleInputAction	654	654
+re/movement.md	changed	0x006227e0	CClientExoAppInternal::ProcessInput	888	888
+re/names.tsv	changed	0x00656d20	CClientExoApp::FormatCombatFeedback	2490	5896
+re/names.tsv	changed	0x005afce0	CSWSCreatureStats::ReadStatsFromGff	63	1093
+re/names.tsv	new	0x00607610	CSWCArea::LoadArea		1001
+re/names.tsv	changed	0x0059ba20	CSWSpellArray::Load	64	868
+re/names.tsv	changed	0x005eeb10	CClientExoAppInternal::SetupKeymapping	148	888
+re/names.tsv	new	0x00602eb0	CClientExoAppInternal::MainLoop		698
+re/names.tsv	changed	0x004c9050	CSWSModule::LoadModuleStart	37	661
+re/names.tsv	new	0x005f8550	CClientExoAppInternal::Initialize		558
+re/names.tsv	changed	0x00508c50	CSWSArea::LoadAreaHeader	37	589
+re/names.tsv	changed	0x006afda0	CSWGuiCharacter::UpdateStats	54	565
+re/names.tsv	changed	0x005b31d0	CSWBaseItemArray::Load	63	546
+re/names.tsv	new	0x006f51d0	CSWGuiCharGenSkills::CSWGuiCharGenSkills		480
+re/names.tsv	new	0x004b8300	CServerExoAppInternal::WriteTransitionAutoSave		472
+re/names.tsv	changed	0x00654cc0	CSWCMessage::HandleServerToPlayerChatMessage	112	556
+re/names.tsv	new	0x00402800	MainWndProc		442
+re/names.tsv	changed	0x004b95b0	CServerExoAppInternal::LoadModule	60	467
+re/names.tsv	changed	0x0055fcd0	CSWSItem::LoadDataFromGff	29	428
+re/names.tsv	changed	0x006b0e40	CSWGuiCharacter::CSWGuiCharacter	161	551
+re/names.tsv	new	0x006f7600	CSWGuiCharGenAbilities::CSWGuiCharGenAbilities		389
+re/names.tsv	new	0x006dc3c0	CSWGuiClassSelection::CSWGuiClassSelection		368
+re/names.tsv	changed	0x00585670	CSWSPlaceable::LoadPlaceable	30	380
+re/names.tsv	new	0x006808a0	CSWGuiPazaakGame::CSWGuiPazaakGame		344
+re/names.tsv	changed	0x0058a1f0	CSWSDoor::LoadDoor	104	446
+re/names.tsv	changed	0x00592430	CSWSEncounter::ReadEncounterFromGff	80	421
+re/names.tsv	changed	0x006b9970	CSWGuiEquip::UpdateStats	27	367
+re/names.tsv	changed	0x00520bf0	CSWSMessage::HandlePlayerToServerCheatMessage	714	1033
+re/names.tsv	new	0x0052a280	ReadTableWithCat		318
+re/names.tsv	new	0x006c6b60	CSWGuiUpgrade::CSWGuiUpgrade		314
+re/names.tsv	new	0x005fbfe0	CClientExoAppInternal::CClientExoAppInternal		313
+re/names.tsv	new	0x0050ba00	CSWSArea::SaveGIT		310
+re/names.tsv	new	0x005f1f70	CClientExoAppInternal::InitializeSound		306
+re/names.tsv	new	0x005aec90	CSWSCreatureStats::SaveClassInfo		294
+re/names.tsv	changed	0x004ee770	CSWSCreature::ApplyPoisonTick	32	322
+re/names.tsv	changed	0x004041f0	WinMain	41	328
+re/names.tsv	changed	0x0068c100	CSWGuiMainInterface::CSWGuiMainInterface	207	492
+re/names.tsv	changed	0x00519e30	CSWSCreature::AIActionSetTrap	175	455
+re/names.tsv	new	0x00604130	CClientExoAppInternal::ShutDown		280
+re/names.tsv	changed	0x0057d490	CSWSObject::AIActionOpenDoor	102	380
+re/names.tsv	new	0x00565d20	CSWPartyTable::LoadPartyTable		267
+re/names.tsv	new	0x006c8e50	CSWGuiSaveLoadEntry::ReadSaveInfo		267
+re/names.tsv	new	0x004b63e0	CServerExoAppInternal::Initialize		245
+re/names.tsv	changed	0x006cfa70	CSWGuiDebugModules::CSWGuiDebugModules	36	280
+re/names.tsv	new	0x005e1880	CExoInputInternal::CExoInputInternal		234
+re/names.tsv	new	0x006cc160	CSWGuiSaveLoad::PopulateList		233
+re/names.tsv	new	0x006ca250	CSWGuiSaveLoad::LoadTransitionAutoSave		232
+re/names.tsv	new	0x004094a0	CExoResMan::LoadModuleResources		230
+re/names.tsv	new	0x006cb0e0	CSWGuiSaveLoad::LoadSelectedGame		229
+re/names.tsv	changed	0x006eb420	CSWGuiCharGenMain::CSWGuiCharGenMain	102	329
+re/names.tsv	changed	0x006ba980	CSWGuiEquip::CSWGuiEquip	103	327
+re/names.tsv	changed	0x0058da80	CSWSTrigger::LoadTrigger	120	343
+re/names.tsv	new	0x0062fed0	CGuiInGame::CGuiInGame		222
+re/names.tsv	new	0x006e16e0	CSWGuiOptionsGraphicsAdvanced::CSWGuiOptionsGraphicsAdvanced		220
+re/names.tsv	changed	0x006e8ef0	CSWGuiLevelUpMain::CSWGuiLevelUpMain	129	348
+re/names.tsv	new	0x006f2180	CSWGuiCharGenPowers::CSWGuiCharGenPowers		217
+re/names.tsv	new	0x005b1b90	CSWSCreatureStats::SaveStats		216
+re/names.tsv	changed	0x005648c0	CSWPartyTable::SavePartyTable	37	252
+re/names.tsv	changed	0x0050f170	CSWSCreature::AIActionItemCastSpell	212	420
+re/names.tsv	changed	0x00675710	CSWCMessage::HandleServerStatusMessage	31	236
+re/names.tsv	changed	0x0057e8c0	CSWSObject::AIActionUseObject	233	435
+re/names.tsv	new	0x006ee7d0	CSWGuiLevelUpPanel::CSWGuiLevelUpPanel		198
+re/names.tsv	new	0x004053e0	CExoMoviePlayerInternal::OpenMovie		197
+re/names.tsv	changed	0x004b3110	CServerExoAppInternal::DoSaveGame	113	310
+re/names.tsv	new	0x005299b0	CSWGlobalVariableTable::WriteTable		197
+re/names.tsv	new	0x006e69a0	CSWGuiOptionsGameplay::CSWGuiOptionsGameplay		197
+re/names.tsv	new	0x004c7050	CSWSModule::SaveModuleIFOStart		192
+re/names.tsv	changed	0x005c0270	C2DAs::LoadAppearance	51	243
+re/names.tsv	new	0x00552c50	CSWRules::CSWRules		185
+re/names.tsv	new	0x006f9430	CSWGuiCharGenPortrait::CSWGuiCharGenPortrait		185
+re/names.tsv	changed	0x005fcd10	CClientExoAppInternal::FormatFeedbackMessage	2309	2491
+re/names.tsv	changed	0x005a1c00	CSWSDialog::SendRepliesToPlayer	288	465
+re/names.tsv	changed	0x00620620	CClientExoAppInternal::BuildDefaultActions	234	411
+re/names.tsv	new	0x006e3550	CSWGuiOptionsSound::CSWGuiOptionsSound		177
+re/names.tsv	changed	0x004c44d0	CSWSModule::RemoveModuleResources	41	216
+re/names.tsv	new	0x006e0710	CSWGuiOptionsResolution::CSWGuiOptionsResolution		173
+re/names.tsv	changed	0x005c7180	CSWSStore::LoadStore	27	193
+re/names.tsv	changed	0x004e5490	CSWSItemPropertyHandler::ApplyEnhancementBonus	39	203
+re/names.tsv	new	0x0041e5a0	CTlkTable::SetTlkFile		161
+re/names.tsv	changed	0x00693650	CSWGuiMap::OnPanelAdded	61	221
+re/names.tsv	changed	0x006b34c0	CSWGuiInventory::CSWGuiInventory	76	236
+re/names.tsv	changed	0x005c1010	C2DAs::LoadVFXPersistent	50	207
+re/names.tsv	new	0x006e2e70	CSWGuiOptionsGraphics::CSWGuiOptionsGraphics		152
+re/names.tsv	changed	0x005864b0	CSWSPlaceable::InitBodyBag	30	181
+re/names.tsv	changed	0x006adda0	CSWGuiAbilities::CSWGuiAbilities	84	235
+re/names.tsv	changed	0x004e0ac0	CSWSEffectListHandler::OnApplyDeath	238	388
+re/names.tsv	new	0x00529ef0	CSWGlobalVariableTable::ReadTableNoCat		150
+re/names.tsv	new	0x006cbb60	CSWGuiSaveLoad::OnSave		150
+re/names.tsv	changed	0x004e7f40	CSWSItemPropertyHandler::RemoveEnhancementBonus	24	173
+re/names.tsv	changed	0x004f3fe0	CSWSCreature::GetTotalEffectBonus	1291	1439
+re/names.tsv	new	0x00591350	CSWSEncounter::SaveEncounter		148
+re/names.tsv	changed	0x00695180	CSWGuiGalaxyMap::CSWGuiGalaxyMap	72	220
+re/names.tsv	changed	0x00644a40	CSWGuiJournal::CSWGuiJournal	59	206
+re/names.tsv	new	0x005a1050	CSWSDialog::PlayOneLiner		145
+re/names.tsv	new	0x005bd0f0	CSWClass::LoadFeatTable		143
+re/names.tsv	new	0x006b44d0	CSWGuiInventory::AddItemRow		141
+re/names.tsv	changed	0x0059f5f0	CSWSDialog::ReadNode	45	183
+re/names.tsv	new	0x005ddbc0	CERFFile::AddFile		137
+re/names.tsv	changed	0x00697ce0	CSWCCreatureAppearance::CreateBTypeBody	40	177
+re/names.tsv	changed	0x0067f000	CSWGuiPazaakWager::CSWGuiPazaakWager	58	193
+re/names.tsv	new	0x005bd900	CSWClass::LoadSpellGainTable		134
+re/names.tsv	changed	0x00633c50	CGuiInGame::QuickLoad	31	163
+re/names.tsv	new	0x00500610	CSWSCreature::SaveCreature		131
+re/names.tsv	new	0x00586a70	CSWSPlaceable::SavePlaceable		131
+re/names.tsv	changed	0x006f3d60	CSWGuiCharGenFeats::CSWGuiCharGenFeats	88	219
+re/names.tsv	new	0x0052ae50	CSWGlobalVariableTable::LoadCatalogue		130
+re/names.tsv	changed	0x00627980	CSWGuiTopMenu::CSWGuiTopMenu	59	188
+re/names.tsv	changed	0x0040fb80	CExoKeyTable::AddKeyTableContents	111	239
+re/names.tsv	new	0x00412db0	CResGFF::Pack		127
+re/names.tsv	changed	0x006b7920	CSWGuiEquip::OnRowHilighted	72	199
+re/names.tsv	changed	0x006ea000	CSWGuiScriptSelect::CSWGuiScriptSelect	46	172
+re/names.tsv	new	0x004b55e0	CServerExoAppInternal::CServerExoAppInternal		124
+re/names.tsv	new	0x0041d920	CTlkTable::OpenFile		123
+re/names.tsv	new	0x006caaf0	CSWGuiSaveLoad::PrepareGameInProgress		123
+re/names.tsv	changed	0x00403800	SetVideoMode	77	199
+re/names.tsv	new	0x00403f20	CreateMainWindow		122
+re/names.tsv	changed	0x005bafa0	CSWSCreature::ResolveOnHitEffect	77	199
+re/names.tsv	new	0x006323a0	CGuiInGame::PrepareGameInProgress		122
+re/names.tsv	new	0x006e20a0	CSWGuiOptionsSoundAdvanced::CSWGuiOptionsSoundAdvanced		122
+re/names.tsv	new	0x004c4150	CSWSModule::AddModuleResources		119
+re/names.tsv	new	0x005bdbe0	CSWClass::LoadSpellKnownTable		119
+re/names.tsv	new	0x004afea0	CServerAIMaster::SaveEvent		118
+re/names.tsv	new	0x006bf3b0	CSWGuiPartySelection::OnDone		118
+re/names.tsv	changed	0x004df540	CSWSEffectListHandler::OnApplyForceShield	72	187
+re/names.tsv	changed	0x004e58c0	CSWSItemPropertyHandler::ApplyEnhancementPenalty	45	160
+re/names.tsv	gone	0x00529c8b	switchD_00529c2c::caseD_1	115	
+re/names.tsv	changed	0x006a8eb0	CSWGuiDialogComputer::CSWGuiDialogComputer	67	182
+re/names.tsv	new	0x006e76a0	CSWGuiOptionsAutoPause::CSWGuiOptionsAutoPause		114
+re/names.tsv	changed	0x006c4d70	CSWGuiUpgrade::OnPanelAdded	142	255
+re/names.tsv	new	0x005ddf30	CERFFile::AddResource		112
+re/names.tsv	changed	0x006d0620	CSWGuiDebugItems::CSWGuiDebugItems	34	146
+re/names.tsv	changed	0x0068f8d0	CSWGuiCredits::CSWGuiCredits	39	150
+re/names.tsv	changed	0x006ad560	CSWGuiAbilities::RebuildList	31	142
+re/names.tsv	new	0x006af450	CSWGuiCharacter::OnPreviousCharacter		111
+re/names.tsv	new	0x006af6d0	CSWGuiCharacter::OnNextCharacter		111
+re/names.tsv	new	0x006b2fd0	CSWGuiInventory::OnPreviousCharacter		111
+re/names.tsv	new	0x006b3250	CSWGuiInventory::OnNextCharacter		111
+re/names.tsv	new	0x006b60f0	CSWGuiEquip::OnPreviousCharacter		111
+re/names.tsv	new	0x006b6370	CSWGuiEquip::OnNextCharacter		111
+re/names.tsv	changed	0x0057bbf0	CSWSObject::AIActionCloseDoor	87	195
+re/names.tsv	new	0x0058e660	CSWSTrigger::SaveTrigger		108
+re/names.tsv	new	0x005dd710	CERFFile::ExtractAll		108
+re/names.tsv	new	0x004c5980	CSWSModule::DemandModuleResourcesOfType		107
+re/names.tsv	new	0x004b2ba0	CServerExoAppInternal::SavePlayerCharacters		106
+re/names.tsv	new	0x0062fbe0	CGuiInGame::ExtractSaveToFutureGame		106
+re/names.tsv	new	0x006c9a90	CSWGuiSaveLoad::ExtractSaveToFutureGame		106
+re/names.tsv	new	0x006ef730	CSWGuiCharGenCustomPanel::CSWGuiCharGenCustomPanel		106
+re/names.tsv	changed	0x005c9040	CSWSSoundObject::LoadSound	32	137
+re/names.tsv	changed	0x006cc680	CSWGuiSaveLoad::CSWGuiSaveLoad	50	155
+re/names.tsv	new	0x00412a10	CResGFF::WriteFieldCExoLocString		104
+re/names.tsv	new	0x00588ad0	CSWSDoor::SaveDoor		103
+re/names.tsv	changed	0x006272a0	CSWGuiStatusSummary::CSWGuiStatusSummary	40	143
+re/names.tsv	new	0x005bd6c0	CSWClass::LoadSkillsTable		102
+re/names.tsv	new	0x006ad180	CSWGuiAbilities::OnRowHilighted		102
+re/names.tsv	changed	0x006b4810	CSWGuiInventory::RebuildItemList	54	156
+re/names.tsv	changed	0x004cf490	CSWSObject::StartConversation	111	212
+re/names.tsv	new	0x006b8eb0	CSWGuiEquip::OnSlotClicked		100
+re/names.tsv	new	0x004c8960	CSWSModule::SaveModuleIFO		99
+re/names.tsv	new	0x006f09f0	CSWGuiCharGenQuickOrCustom::CSWGuiCharGenQuickOrCustom		99
+re/names.tsv	changed	0x004b58a0	CServerExoAppInternal::RequestSaveGame	33	131
+re/names.tsv	new	0x0059adb0	CSWSScriptVarTable::SaveVarTable		98
+re/names.tsv	new	0x00405b30	CExoMoviePlayerInternal::MovieThreadProc		97
+re/names.tsv	new	0x006f0390	CSWGuiCharGenQuickPanel::CSWGuiCharGenQuickPanel		97
+re/names.tsv	changed	0x0057d9d0	CSWSObject::AIActionOpenLock	561	656
+re/names.tsv	changed	0x005c32e0	C2DAs::LoadAnimations	50	145
+re/names.tsv	new	0x005bd480	CSWClass::LoadSavingThrowTable		94
+re/names.tsv	changed	0x00635480	CSWCParty::SetLeader	113	207
+re/names.tsv	changed	0x006c78d0	CSWGuiUpgradeSelect::CSWGuiUpgradeSelect	39	133
+re/names.tsv	changed	0x004e83a0	CSWSItemPropertyHandler::RemoveEnhancementPenalty	31	124
+re/names.tsv	new	0x005be4c0	CSWClass::LoadSpellsTable		93
+re/names.tsv	new	0x005c7ad0	CSWRace::LoadFeatTable		93
+re/names.tsv	new	0x005dd3c0	CERFFile::ReadLists		93
+re/names.tsv	new	0x00409f00	CSWGuiManager::LoadGuiSounds		92
+re/names.tsv	new	0x005d1ef0	CVirtualMachineStack::LoadStack		91
+re/names.tsv	changed	0x0063f660	CSWCModule::LoadFromMessage	59	149
+re/names.tsv	new	0x006c7630	CSWGuiUpgradeItems::CSWGuiUpgradeItems		90
+re/names.tsv	new	0x006c9de0	CAutoSaveParams::Load		90
+re/names.tsv	new	0x004d3ec0	CSWSCombatRound::SaveCombatRound		89
+re/names.tsv	new	0x005a3640	CSWSDialog::GetStartingEntry		89
+re/names.tsv	new	0x006dbdf0	CSWGuiClassSelection::StartGame		89
+re/names.tsv	new	0x006f9e70	CSWGuiCharGenName::CSWGuiCharGenName		89
+re/names.tsv	changed	0x004d8680	CSWSEffectListHandler::OnApplySummonCreature	71	159
+re/names.tsv	changed	0x00681a90	CSWGuiPazaakSetup::CSWGuiPazaakSetup	143	231
+re/names.tsv	new	0x00405190	CExoMoviePlayerInternal::MovieWndProc		87
+re/names.tsv	changed	0x004e5e80	CSWSItemPropertyHandler::ApplyAttackBonus	30	117
+re/names.tsv	changed	0x005c0c80	C2DAs::LoadVisualeffects	50	137
+re/names.tsv	new	0x005f5ab0	CClientExoAppInternal::SetDisplayMode		87
+re/names.tsv	changed	0x006e3e80	CSWGuiOptionsMain::CSWGuiOptionsMain	39	126
+re/names.tsv	changed	0x005947b0	CSWSAreaOfEffectObject::LoadEffect	28	114
+re/names.tsv	changed	0x00408e90	CExoResMan::CleanDirectoryRecursive	134	219
+re/names.tsv	new	0x0040bad0	CSWGuiManager::CSWGuiManager		85
+re/names.tsv	new	0x005bcda0	CSWClass::LoadAttackBonusTable		85
+re/names.tsv	changed	0x005f0ce0	CClientExoAppInternal::ReadDisplaySettings	35	120
+re/names.tsv	changed	0x00631d80	CGuiInGame::ShowDialogEntry	77	162
+re/names.tsv	new	0x006e2a70	CSWGuiOptionsFeedback::CSWGuiOptionsFeedback		84
+re/names.tsv	changed	0x00528380	CSWSMessage::HandleServerAdminMessage	284	367
+re/names.tsv	gone	0x0052a133	switchD_0052a12c::caseD_0	83	
+re/names.tsv	changed	0x00564300	CSWPartyTable::AddAvailableNPCByObject	31	114
+re/names.tsv	changed	0x006c1c00	CSWGuiStore::CSWGuiStore	79	162
+re/names.tsv	changed	0x004e8950	CSWSItemPropertyHandler::RemoveAttackBonus	24	106
+re/names.tsv	changed	0x004fb1e0	CSWSCreature::AwardKillXP	49	131
+re/names.tsv	new	0x005bde80	CSWClass::LoadArmorClassTable		82
+re/names.tsv	changed	0x00626400	CSWGuiMessages::CSWGuiMessages	46	128
+re/names.tsv	new	0x006b3d10	CSWGuiInventory::OnItemHilighted		81
+re/names.tsv	new	0x0041d3e0	CSWGuiListBox::LoadProtoItem		80
+re/names.tsv	changed	0x006bf5b0	CSWGuiPartySelection::OnNPCHilighted	70	150
+re/names.tsv	changed	0x004ddac0	CSWSEffectListHandler::OnRemoveType54	39	117
+re/names.tsv	new	0x0052b170	CSWGlobalVariableTable::CSWGlobalVariableTable		78
+re/names.tsv	changed	0x006ab2f0	CSWGuiOptionsInGame::CSWGuiOptionsInGame	51	128
+re/names.tsv	changed	0x004b7c60	CServerExoAppInternal::ShutDownServer	79	155
+re/names.tsv	changed	0x004ba920	CServerExoAppInternal::StartModuleTransition	44	119
+re/names.tsv	changed	0x004daa40	CSWSEffectListHandler::OnApplyVisualEffect	61	136
+re/names.tsv	new	0x00563200	CSWPartyTable::Reset		75
+re/names.tsv	new	0x005bcf70	CSWClass::LoadFeatGain		75
+re/names.tsv	new	0x005f51c0	CClientExoAppInternal::PostInitialize		75
+re/names.tsv	changed	0x00694d50	CSWGuiMap::CSWGuiMap	49	124
+re/names.tsv	new	0x006ba820	CSWGuiEquip::OnChangeCharacter		75
+re/names.tsv	new	0x00406990	CExoResMan::CopyFile		74
+re/names.tsv	changed	0x004c84a0	CSWSModule::CSWSModule	112	186
+re/names.tsv	new	0x004b5050	CServerExoAppInternal::ShouldAutoSaveOnEnter		73
+re/names.tsv	new	0x0058d060	CSWSTrigger::LoadGeometry		73
+re/names.tsv	changed	0x005a9050	CSWSCreatureStats::GetDamageRoll	435	507
+re/names.tsv	changed	0x006bfa40	CSWGuiPartySelection::CSWGuiPartySelection	78	150
+re/names.tsv	new	0x0070d380	FUN_0070d380		72
+re/names.tsv	new	0x004ba640	CServerExoAppInternal::LoadGame		71
+re/names.tsv	new	0x004c3960	CSWSModule::SaveReputeFile		71
+re/names.tsv	changed	0x00524800	CSWSMessage::HandlePlayerToServerModuleMessage	78	149
+re/names.tsv	new	0x0040ed20	CExoKeyTable::ListKeysOfType		70
+re/names.tsv	new	0x004c4cc0	CSWSModule::SetResRef		70
+re/names.tsv	new	0x0070dbf0	CResHelperPLT::SetResRef		70
+re/names.tsv	new	0x0070ee30	CResHelperTGA::SetResRef		70
+re/names.tsv	new	0x0070f0f0	CResHelperVIS::SetResRef		70
+re/names.tsv	new	0x0070f800	CResHelperTPC::SetResRef		70
+re/names.tsv	new	0x0070fb90	CResHelperTXI::SetResRef		70
+re/names.tsv	new	0x0070fe60	CResHelperMDX::SetResRef		70
+re/names.tsv	new	0x00710530	CResHelperDDS::SetResRef		70
+re/names.tsv	new	0x00710910	CResHelper4PC::SetResRef		70
+re/names.tsv	changed	0x004e6f60	CSWSItemPropertyHandler::ApplyDamagePenalty	38	107
+re/names.tsv	changed	0x004e97a0	CSWSItemPropertyHandler::RemoveDamageImmunity	35	104
+re/names.tsv	changed	0x006b7680	CSWGuiEquip::SetSelectionMode	36	105
+re/names.tsv	new	0x00401160	CAppManager::CAppManager		68
+re/names.tsv	new	0x00401700	ParseCommandLine		68
+re/names.tsv	new	0x004b2380	DeleteModuleSaveGroup		68
+re/names.tsv	new	0x006f9cd0	CSWGuiCharGenName::OnAccept		67
+re/names.tsv	new	0x0055f0f0	CSWSItem::LoadContainerItems		66
+re/names.tsv	changed	0x0059aa80	CSWSScriptVarTable::LoadVarTable	54	120
+re/names.tsv	changed	0x005dbd30	CExoStreamingSoundSourceInternal::Open	158	224
+re/names.tsv	changed	0x0053fb00	CSWVirtualMachineCommands::ExecuteCommandActionMoveToObject	79	144
+re/names.tsv	gone	0x005d200d	switchD_005d1fe4::caseD_4	65	
+re/names.tsv	new	0x005dda50	CERFFile::SetNumEntries		65
+re/names.tsv	new	0x005de2c0	CERFFile::Reset		65
+re/names.tsv	new	0x00555790	CSWSItem::SaveProperties		64
+re/names.tsv	changed	0x006456e0	CSWGuiJournal::HandleInputEvent	159	223
+re/names.tsv	new	0x006adc80	CSWGuiAbilities::OnChangeCharacter		64
+re/names.tsv	changed	0x004078f0	CExoResMan::ServiceFromDirectory	56	119
+re/names.tsv	new	0x00408670	CExoResMan::~CExoResMan		63
+re/names.tsv	changed	0x005b4fb0	CSWSCreature::GetWeaponDischargeRowLabel	28	91
+re/names.tsv	changed	0x006a8b40	CSWGuiDialogLetterbox::CSWGuiDialogLetterbox	34	97
+re/names.tsv	changed	0x006dba70	CSWGuiClassSelection::OnHoverClass	45	108
+re/names.tsv	changed	0x004e60c0	CSWSItemPropertyHandler::ApplyAttackPenalty	37	99
+re/names.tsv	gone	0x004e8ebf	switchD_004e8ea7::caseD_1	62	
+re/names.tsv	gone	0x004ea07f	switchD_004ea067::caseD_1	62	
+re/names.tsv	changed	0x0057bec0	CSWSObject::AIActionLock	387	449
+re/names.tsv	changed	0x006eb010	CSWGuiCharGenMain::ResetCharacter	22	84
+re/names.tsv	new	0x00409bf0	CExoResMan::CExoResMan		61
+re/names.tsv	gone	0x004cc907	switchD_004cc8ea::caseD_2	61	
+re/names.tsv	new	0x005e3e80	CExoDirectInput::CExoDirectInput		61
+re/names.tsv	changed	0x006a9920	CSWGuiBarkBubble::ShowBark	42	103
+re/names.tsv	new	0x006b2ec0	CSWGuiInventory::OnChangeCharacter		61
+re/names.tsv	changed	0x006b6dc0	CSWGuiContainer::CSWGuiContainer	48	109
+re/names.tsv	new	0x004036f0	CreateRenderWindow		60
+re/names.tsv	new	0x004cc7e0	CSWSObject::SaveActionQueue		60
+re/names.tsv	changed	0x0057a470	CSWSObject::AIActionDialogObject	438	498
+re/names.tsv	new	0x00594d80	CSWSAreaOfEffectObject::SaveAreaEffect		60
+re/names.tsv	new	0x0060f620	CSWCCreature::DefaultActionTalk		60
+re/names.tsv	changed	0x00638070	CSWCChaseCamera::LoadCameraStyle	42	102
+re/names.tsv	new	0x006cae70	CSWGuiSaveName::CSWGuiSaveName		60
+re/names.tsv	changed	0x006e2600	CSWGuiOptionsMouse::CSWGuiOptionsMouse	45	105
+re/names.tsv	changed	0x0050d6c0	CSWSArea::EventHandler	157	216
+re/names.tsv	changed	0x0067b6c0	CSWGuiMainMenu::OnPanelAdded	23	82
+re/names.tsv	new	0x004e67d0	CSWSItemPropertyHandler::ApplySavingThrowEffect		58
+re/names.tsv	new	0x0062ccd0	CGuiInGame::NextInGameMenu		58
+re/names.tsv	new	0x0062cdf0	CGuiInGame::PrevInGameMenu		58
+re/names.tsv	changed	0x006edc90	CSWGuiOptionsKeyMapping::CSWGuiOptionsKeyMapping	53	111
+re/names.tsv	new	0x00406720	CExoKeyTable::IsModuleBlueprintType		57
+re/names.tsv	new	0x004113d0	CResGFF::WriteGFFData		57
+re/names.tsv	new	0x004c3b10	CSWSModule::SaveAreaGIT		57
+re/names.tsv	changed	0x005c7f30	CSWSWaypoint::LoadWaypoint	42	99
+re/names.tsv	changed	0x004d8a40	CSWSEffectListHandler::OnApplySummonInternal	52	108
+re/names.tsv	changed	0x00516630	CSWSCreature::StepAlongPath	400	456
+re/names.tsv	changed	0x00518c40	CSWSCreature::AIActionRecoverTrap	311	367
+re/names.tsv	new	0x00550c50	CSWRules::LoadDiffSettings		56
+re/names.tsv	new	0x00407390	CExoResMan::ListResourcesOfType		55
+re/names.tsv	changed	0x004e2720	CSWSEffectListHandler::OnApplyDisease	112	166
+re/names.tsv	changed	0x0067a710	CSWGuiLoadScreen::CSWGuiLoadScreen	39	93
+re/names.tsv	changed	0x004db320	CSWSEffectListHandler::OnApplyPoison	146	199
+re/names.tsv	changed	0x004e8f70	CSWSItemPropertyHandler::RemoveACBonus	32	85
+re/names.tsv	changed	0x0051f4f0	CSWSCreature::AIActionMoveToPoint	630	683
+re/names.tsv	new	0x0052abe0	CSWGlobalVariableTable::ReadTable		53
+re/names.tsv	new	0x0055ccd0	CSWSItem::SaveItem		53
+re/names.tsv	changed	0x0057b6a0	CSWSObject::AIActionGiveItem	136	189
+re/names.tsv	new	0x005c86d0	CSWSSoundObject::SaveSound		53
+re/names.tsv	changed	0x00625c60	CSWGuiStatusSummary::OnPanelAdded	238	291
+re/names.tsv	changed	0x0067ace0	CSWGuiMainMenu::InitPanel	27	80
+re/names.tsv	changed	0x004e8bc0	CSWSItemPropertyHandler::RemoveAttackPenalty	31	83
+re/names.tsv	changed	0x004e9990	CSWSItemPropertyHandler::RemoveDamagePenalty	31	83
+re/names.tsv	new	0x005de1a0	CERFFile::AddDirectory		52
+re/names.tsv	new	0x006b2c90	CSWGuiInventory::PassesFilter		52
+re/names.tsv	changed	0x004c68a0	CSWSModule::~CSWSModule	85	136
+re/names.tsv	changed	0x0064bab0	CSWCMessage::HandleServerToPlayerAreaLoad	126	177
+re/names.tsv	changed	0x006c6500	CSWGuiUpgrade::OnSlotClicked	141	192
+re/names.tsv	changed	0x004e9f60	CSWSItemPropertyHandler::RemoveDecreaseAbility	31	81
+re/names.tsv	new	0x004012c0	CAppManager::~CAppManager		49
+re/names.tsv	new	0x00404c80	CExoMoviePlayerInternal::PlayFrames		49
+re/names.tsv	changed	0x004e8db0	CSWSItemPropertyHandler::RemoveAbilityBonus	31	80
+re/names.tsv	changed	0x00594b00	CSWSAreaOfEffectObject::LoadAreaEffect	28	77
+re/names.tsv	new	0x0062b730	CGuiInGame::ShowConversationPanel		49
+re/names.tsv	changed	0x006b6710	CSWGuiItemEntry::SetItem	154	203
+re/names.tsv	changed	0x0058eae0	CSWSTrigger::CSWSTrigger	49	97
+re/names.tsv	changed	0x004c3c70	CSWSModule::ExportPlayerBic	39	86
+re/names.tsv	changed	0x004e4790	CSWSEffectListHandler::OnApplyIcon	73	120
+re/names.tsv	new	0x00405d70	CExoMoviePlayerInternal::CExoMoviePlayerInternal		46
+re/names.tsv	new	0x0040d200	CExoKeyTable::LocateBifFile		46
+re/names.tsv	new	0x004b0780	CServerAIMaster::CServerAIMaster		46
+re/names.tsv	new	0x004ca680	CSWSModule::FinishModuleSave		46
+re/names.tsv	changed	0x004e74f0	CSWSItemPropertyHandler::ApplyDecreaseAbility	31	77
+re/names.tsv	new	0x005c6cd0	CSWSStore::SaveStore		46
+re/names.tsv	new	0x005e66a0	CExoBase::~CExoBase		46
+re/names.tsv	changed	0x00626df0	CSWGuiMessageBox::CSWGuiMessageBox	47	93
+re/names.tsv	changed	0x00408080	CExoResMan::ReadRawFromDirectory	54	99
+re/names.tsv	new	0x00408450	CExoResMan::ReadRawFromResFile		45
+re/names.tsv	new	0x004128c0	CResGFF::WriteFieldCResRef		45
+re/names.tsv	changed	0x004e6390	CSWSItemPropertyHandler::ApplyAbilityBonus	31	76
+re/names.tsv	changed	0x00645e00	CSWGuiJournal::OnPanelAdded	53	98
+re/names.tsv	changed	0x006d12b0	CSWCCombatCamera::CSWCCombatCamera	37	82
+re/names.tsv	new	0x006ef120	CSWGuiCharGenCustomPanel::OnPortrait		45
+re/names.tsv	new	0x006efe10	CSWGuiCharGenQuickPanel::OnPortrait		45
+re/names.tsv	changed	0x004e6510	CSWSItemPropertyHandler::ApplyACBonus	37	81
+re/names.tsv	changed	0x005101a0	CSWSCreature::AIActionCheckMoveToObject	44	88
+re/names.tsv	changed	0x005103b0	CSWSCreature::AIActionCheckInRangeOfObject	59	103
+re/names.tsv	new	0x00528ec0	CSWGlobalVariableTable::InsertName		44
+re/names.tsv	new	0x005dce50	CERFFile::ReadHeader		44
+re/names.tsv	new	0x005dd5a0	CERFFile::WriteStringList		44
+re/names.tsv	new	0x005f8470	CClientExoAppInternal::ShutDownClient		44
+re/names.tsv	new	0x00401380	CAppManager::CreateServer		43
+re/names.tsv	new	0x0040aaa0	CSWGuiManager::~CSWGuiManager		43
+re/names.tsv	changed	0x004dade0	CSWSEffectListHandler::OnApplyAreaOfEffect	47	90
+re/names.tsv	new	0x00405a50	CExoMoviePlayerInternal::~CExoMoviePlayerInternal		42
+re/names.tsv	gone	0x005bd431	switchD_005bd321::caseD_4	42	
+re/names.tsv	new	0x00638e80	CSWCChaseCamera::FaceTarget		42
+re/names.tsv	changed	0x004f6000	CSWSCreature::GetIsInUseRange	50	91
+re/names.tsv	changed	0x005a5680	CSWSCreatureStats::SetMovementRate	45	86
+re/names.tsv	new	0x004ba820	CServerExoAppInternal::BeginLoadModule		40
+re/names.tsv	changed	0x004fece0	CSWSCreature::EventHandler	524	564
+re/names.tsv	changed	0x00564030	CSWPartyTable::SaveInventory	40	80
+re/names.tsv	changed	0x005a13d0	CSWSDialog::SendEntry	320	360
+re/names.tsv	new	0x005d4900	CVirtualMachineInternal::CVirtualMachineInternal		40
+re/names.tsv	new	0x00675690	CSWCMessage::SendAdminCommand		40
+re/names.tsv	changed	0x004b2e70	CServerExoAppInternal::SaveCurrentModuleToGameInProgress	29	68
+re/names.tsv	changed	0x005c08f0	C2DAs::LoadAppearanceSndSet	50	89
+re/names.tsv	new	0x005de3a0	CERFFile::~CERFFile		39
+re/names.tsv	new	0x006ee3d0	CSWGuiLevelUpPanel::OnFeats		39
+re/names.tsv	changed	0x005541c0	CSWSItem::GetUpgradeCategory	82	120
+re/names.tsv	new	0x006b25e0	CSWGuiInventory::OnUseItem		38
+re/names.tsv	new	0x0070c790	Render_LoadTGAResource		38
+re/names.tsv	new	0x005dcfc0	CERFFile::Create		37
+re/names.tsv	new	0x00602dc0	CClientExoAppInternal::PlayLegalMovies		37
+re/names.tsv	changed	0x006b2a80	CSWGuiInventory::CycleFilter	48	85
+re/names.tsv	changed	0x006b8410	CSWGuiContainer::ShowGiveItems	99	136
+re/names.tsv	new	0x006c0690	CSWGuiStore::SetDescription		37
+re/names.tsv	changed	0x00501c40	CSWSCreature::EquipDefaultClothes	30	66
+re/names.tsv	changed	0x00590820	CSWSEncounter::ReadEncounterScriptsFromGff	31	67
+re/names.tsv	changed	0x005f4760	CClientExoAppInternal::PickLoadScreenHint	70	106
+re/names.tsv	changed	0x005f7710	CClientExoAppInternal::EnableVideoEffect	44	80
+re/names.tsv	changed	0x00641010	CSWCModule::PlayCameraAnimation	86	122
+re/names.tsv	changed	0x0067afb0	CSWGuiMainMenu::OnNewGame	37	73
+re/names.tsv	new	0x0070c6e0	FUN_0070c6e0		36
+re/names.tsv	new	0x0040ee80	CExoResFile::CExoResFile		35
+re/names.tsv	new	0x00412ca0	CResGFF::WriteFieldQuaternion		35
+re/names.tsv	changed	0x0041bcd0	CSWGuiScrollBar::LoadFromGFF	23	58
+re/names.tsv	new	0x004b2840	CAutoSaveParams::CAutoSaveParams		35
+re/names.tsv	changed	0x004eb3a0	CSWSCreature::GetSpellRange	35	70
+re/names.tsv	changed	0x00587ba0	CSWSPlaceable::EventHandler	397	432
+re/names.tsv	new	0x005d5550	CNetLayer::Initialize		35
+re/names.tsv	changed	0x006ce7c0	CSWGuiSkillInfo::CSWGuiSkillInfo	38	73
+re/names.tsv	changed	0x006df690	CSWGuiOptionsResolution::OnOk	67	102
+re/names.tsv	new	0x004072e0	CExoResMan::ListResourcesOfTypeInTableList		34
+re/names.tsv	changed	0x0058b850	CSWSDoor::EventHandler	495	529
+re/names.tsv	new	0x005dd9c0	CERFFile::CERFFile		34
+re/names.tsv	new	0x006ee350	CSWGuiLevelUpPanel::OnPowers		34
+re/names.tsv	new	0x006ee480	CSWGuiLevelUpPanel::OnSkills		34
+re/names.tsv	new	0x006ee500	CSWGuiLevelUpPanel::OnAbilities		34
+re/names.tsv	new	0x006ef2d0	CSWGuiCharGenCustomPanel::OnFeats		34
+re/names.tsv	new	0x006ef360	CSWGuiCharGenCustomPanel::OnSkills		34
+re/names.tsv	new	0x006ef3f0	CSWGuiCharGenCustomPanel::OnAbilities		34
+re/names.tsv	changed	0x004067b0	CExoResMan::GetFreeDiskSpace	26	59
+re/names.tsv	changed	0x00406b20	CExoResMan::RemoveFile	26	59
+re/names.tsv	changed	0x004d9320	CSWSEffectListHandler::OnRemoveTemporaryHitpoints	117	150
+re/names.tsv	changed	0x004dc7a0	CSWSEffectListHandler::OnRemoveHitPointChangeWhenDying	88	121
+re/names.tsv	new	0x005e1740	CExoInputInternal::SetHardwareCursorHidden		33
+re/names.tsv	new	0x006aaaf0	CSWGuiOptionsInGame::OnLoadGame		33
+re/names.tsv	new	0x006aab80	CSWGuiOptionsInGame::OnSaveGame		33
+re/names.tsv	new	0x00412d30	CResGFF::WriteFieldVector		32
+re/names.tsv	new	0x004b2230	CAutoSaveParams::~CAutoSaveParams		32
+re/names.tsv	new	0x00563d90	CSWPartyTable::SaveJournal		32
+re/names.tsv	new	0x006a7540	CSWGuiLetterbox::InitBottomBar		32
+re/names.tsv	new	0x006aac90	CSWGuiOptionsInGame::OnFeedback		32
+re/names.tsv	new	0x006aad10	CSWGuiOptionsInGame::OnAutoPause		32
+re/names.tsv	new	0x006aad90	CSWGuiOptionsInGame::OnGraphics		32
+re/names.tsv	new	0x006aae10	CSWGuiOptionsInGame::OnSound		32
+re/names.tsv	new	0x006de2c0	CSWGuiOptionsMain::OnAutoPause		32
+re/names.tsv	new	0x006e2df0	CSWGuiOptionsMain::OnFeedback		32
+re/names.tsv	new	0x006e3d80	CSWGuiOptionsMain::OnGraphics		32
+re/names.tsv	new	0x006e3e00	CSWGuiOptionsMain::OnSound		32
+re/names.tsv	new	0x006ef240	CSWGuiCharGenCustomPanel::OnName		32
+re/names.tsv	new	0x006efd80	CSWGuiCharGenQuickPanel::OnName		32
+re/names.tsv	new	0x004ae3e0	CWorldTimer::SetCalendarTime		31
+re/names.tsv	changed	0x004b7470	CServerExoAppInternal::PlayerLoginToModule	148	179
+re/names.tsv	new	0x00507680	CSWSArea::SaveCreatures		31
+re/names.tsv	new	0x00507750	CSWSArea::SaveItems		31
+re/names.tsv	new	0x00507810	CSWSArea::SaveDoors		31
+re/names.tsv	new	0x005078d0	CSWSArea::SaveTriggers		31
+re/names.tsv	new	0x00507990	CSWSArea::SaveEncounters		31
+re/names.tsv	new	0x00507a50	CSWSArea::SaveWaypoints		31
+re/names.tsv	new	0x00507b10	CSWSArea::SaveSounds		31
+re/names.tsv	new	0x00507bd0	CSWSArea::SavePlaceables		31
+re/names.tsv	new	0x00507ca0	CSWSArea::SaveStores		31
+re/names.tsv	new	0x00507d60	CSWSArea::SaveAreaEffects		31
+re/names.tsv	changed	0x005c1980	C2DAs::LoadPlaceableobjsnds	50	81
+re/names.tsv	changed	0x005c4730	C2DAs::LoadIPRPCostTables	75	106
+re/names.tsv	new	0x005d54a0	CNetLayer::CNetLayer		31
+re/names.tsv	changed	0x0067c4c0	CSWGuiMainMenu::CSWGuiMainMenu	130	161
+re/names.tsv	new	0x006a74b0	CSWGuiLetterbox::InitTopBar		31
+re/names.tsv	new	0x006aac10	CSWGuiOptionsInGame::OnGameplay		31
+re/names.tsv	changed	0x006d26c0	CSWGuiQuestItems::CSWGuiQuestItems	41	72
+re/names.tsv	new	0x006de240	CSWGuiOptionsMain::OnGameplay		31
+re/names.tsv	changed	0x0040f3c0	CExoKeyTable::AddEncapsulatedContents	249	279
+re/names.tsv	new	0x004efe30	FUN_004efe30		30
+re/names.tsv	changed	0x00564700	CSWPartyTable::GetNPCObject	50	80
+re/names.tsv	changed	0x005a4010	CSWSDialog::RunEntry	304	334
+re/names.tsv	new	0x005f2bf0	CClientExoAppInternal::CreateMoviePlayer		30
+re/names.tsv	new	0x004010c0	CModuleTransition::CModuleTransition		29
+re/names.tsv	changed	0x0041d5b0	CSWGuiListBox::LoadFromGFF	23	52
+re/names.tsv	new	0x004aec00	CServerExoApp::CServerExoApp		29
+re/names.tsv	new	0x004b28e0	CAutoSaveParams::Save		29
+re/names.tsv	new	0x005df3f0	CExoInput::CExoInput		29
+re/names.tsv	changed	0x006c03b0	CSWGuiPause::CSWGuiPause	33	62
+re/names.tsv	new	0x00410520	InitCRC32Table		28
+re/names.tsv	changed	0x0041cc30	CSWGuiSlider::LoadFromGFF	23	51
+re/names.tsv	new	0x0041d810	CTlkFile::CTlkFile		28
+re/names.tsv	new	0x0055cfa0	CSWSItem::SaveContainerItems		28
+re/names.tsv	new	0x00563b90	CSWPartyTable::AutoLevelUpMembers		28
+re/names.tsv	new	0x005ee2f0	CClientExoApp::CClientExoApp		28
+re/names.tsv	changed	0x005f3480	CClientExoAppInternal::SetLoadScreenImage	36	64
+re/names.tsv	new	0x0061db60	CClientOptions::SetDefaults		28
+re/names.tsv	changed	0x006dd910	CSWGuiTitleMovies::CSWGuiTitleMovies	37	65
+re/names.tsv	new	0x0040a0d0	CSWGuiManager::UnloadGuiSounds		27
+re/names.tsv	new	0x0040d1a0	CExoKeyTable::GetEntryCount		27
+re/names.tsv	new	0x004ae4c0	CWorldTimer::CWorldTimer		27
+re/names.tsv	new	0x0059b250	CSWVarTable::SaveVarTable		27
+re/names.tsv	changed	0x005a7ea0	CSWSCreatureStats::GetAttackModifierVersus	449	476
+re/names.tsv	changed	0x005c49c0	C2DAs::LoadIPRPParamTables	61	88
+re/names.tsv	new	0x005c8230	CSWSWaypoint::SaveWaypoint		27
+re/names.tsv	new	0x005d0f40	CVirtualMachine::CVirtualMachine		27
+re/names.tsv	new	0x006ef6a0	CSWGuiCharGenCustomPanel::OnCancel		27
+re/names.tsv	new	0x0070c170	CExoMoviePlayer::CExoMoviePlayer		27
+re/names.tsv	new	0x004b4f50	CServerExoAppInternal::RunAreaExitScripts		26
+re/names.tsv	changed	0x004ce220	CSWSObject::SpawnBodyBag	168	194
+re/names.tsv	changed	0x00517a60	CSWSCreature::AIActionHeal	277	303
+re/names.tsv	changed	0x0059eaa0	CSWSDialog::ReadNodeCamera	28	54
+re/names.tsv	new	0x005dd2b0	CERFFile::ReadLocString		26
+re/names.tsv	changed	0x006f7390	CSWGuiCharGenAbilities::Recommended	66	92
+re/names.tsv	changed	0x00402240	HandleCharMessage	89	114
+re/names.tsv	changed	0x00416050	CSWGuiText::LoadFromGFF	49	74
+re/names.tsv	new	0x004173d0	CSWGuiEditText::CSWGuiEditText		25
+re/names.tsv	new	0x0041c6b0	CSWGuiEditBox::CSWGuiEditBox		25
+re/names.tsv	changed	0x004ef2e0	CSWSCreature::GetBodyBagAppearance	25	50
+re/names.tsv	changed	0x00561e30	CSWSPlayer::LoadCharacter	145	170
+re/names.tsv	changed	0x005851e0	CSWSPlaceable::GetBodyBagAppearance	25	50
+re/names.tsv	changed	0x0058c8a0	CSWSTrigger::GetNearestPointOnGeometry	104	129
+re/names.tsv	changed	0x006383c0	CSWCFreeLookCamera::LoadCameraStyle	34	59
+re/names.tsv	changed	0x006793c0	CSWCPlayerControl::LoadSettings	28	53
+re/names.tsv	changed	0x0068bf50	CSWGuiTargetInfo::Init	31	56
+re/names.tsv	new	0x006ac8d0	CSWGuiAbilities::KeepTabHilighted		25
+re/names.tsv	new	0x006ad4b0	CSWGuiAbilities::OnSelectionChanged		25
+re/names.tsv	changed	0x006b0cb0	CSWGuiCharacter::AutoLevelUp	40	65
+re/names.tsv	new	0x00404bb0	CExoMoviePlayerInternal::CloseMovie		24
+re/names.tsv	new	0x00408e30	CExoResMan::ReadRaw		24
+re/names.tsv	changed	0x004d0220	CSWSObject::~CSWSObject	86	110
+re/names.tsv	new	0x004d08d0	CSWSObject::RemoveEffectsBySpellTypeAndValue		24
+re/names.tsv	changed	0x004e7670	CSWSItemPropertyHandler::ApplyDecreaseAC	31	55
+re/names.tsv	changed	0x004ea130	CSWSItemPropertyHandler::RemoveDecreaseAC	31	55
+re/names.tsv	changed	0x004ea290	CSWSItemPropertyHandler::RemoveDecreaseSkill	31	55
+re/names.tsv	changed	0x0050a350	CSWSArea::LoadTriggers	118	142
+re/names.tsv	new	0x0052ade0	CSWGlobalVariableTable::LoadFromSaveDirectory		24
+re/names.tsv	changed	0x005bbbf0	CSWSCreature::AIActionAttackObject	474	498
+re/names.tsv	changed	0x005c3bf0	C2DAs::LoadDialogAnimations	50	74
+re/names.tsv	new	0x005f7190	CClientExoAppInternal::DestroyMoviePlayer		24
+re/names.tsv	changed	0x0062d040	CGuiInGame::ShowGalaxyMap	40	64
+re/names.tsv	new	0x00677ea0	CSWCMessage::SendPlayerToServerInput_Dialog		24
+re/names.tsv	new	0x006935a0	CSWGuiGalaxyMap::OnPlanetClicked		24
+re/names.tsv	changed	0x006b8130	CSWGuiContainer::ShowContainerItems	101	125
+re/names.tsv	new	0x006cc0e0	CSWGuiSaveLoad::OnLoad		24
+re/names.tsv	new	0x006f0310	CSWGuiCharGenQuickPanel::OnCancel		24
+re/names.tsv	new	0x006f3cf0	CSWGuiCharGenFeats::OnFeatPressed		24
+re/names.tsv	changed	0x0040b060	CSWGuiManager::CreateCursorModel	50	73
+re/names.tsv	new	0x004b0970	CServerAIMaster::SaveEventQueue		23
+re/names.tsv	new	0x004cc9d0	CSWSObject::SaveEffectList		23
+re/names.tsv	changed	0x004e77c0	CSWSItemPropertyHandler::ApplyDecreaseSkill	31	54
+re/names.tsv	changed	0x00563430	CSWPartyTable::LoadJournal	51	74
+re/names.tsv	new	0x00563a40	CSWPartyTable::SetLeaderByCreature		23
+re/names.tsv	changed	0x00563e80	CSWPartyTable::SaveNPCState	49	72
+re/names.tsv	new	0x005e7a40	CExoResTypes::GetResTypeFromExtension		23
+re/names.tsv	new	0x00683d90	CSWCDoor::DefaultActionOpen		23
+re/names.tsv	new	0x0070d9c0	Render_InstallResourceCallbacks		23
+re/names.tsv	changed	0x00418a90	CSWGuiControl::GetTooltipText	71	93
+re/names.tsv	changed	0x0041bbc0	CSWGuiProgressBar::LoadFromGFF	23	45
+re/names.tsv	new	0x0044ecd0	CAurGLDisplay::GetInstance		22
+re/names.tsv	changed	0x004e9e30	CSWSItemPropertyHandler::RemoveDamageVulnerability	32	54
+re/names.tsv	changed	0x00530170	CSWVirtualMachineCommands::ExecuteCommandDisplayFeedBackText	48	70
+re/names.tsv	new	0x00563d40	CSWPartyTable::FreeInventoryAndJournal		22
+re/names.tsv	changed	0x005667c0	CSWPartyTable::SwitchPlayerCharacter	232	254
+re/names.tsv	changed	0x005d26f0	CVirtualMachineInternal::LoadScriptSituation	67	89
+re/names.tsv	new	0x0041d8d0	CTlkTable::CTlkTable		21
+re/names.tsv	changed	0x004e6e20	CSWSItemPropertyHandler::ApplyDamageImmunity	33	54
+re/names.tsv	changed	0x004e9cf0	CSWSItemPropertyHandler::RemoveDamageResistance	32	53
+re/names.tsv	changed	0x00541a30	CSWVirtualMachineCommands::ExecuteCommandRandomName	30	51
+re/names.tsv	changed	0x0054b550	CSWVirtualMachineCommands::ExecuteCommandGetNearestCreature	450	471
+re/names.tsv	new	0x00563bf0	CSWPartyTable::GetPlayedSeconds		21
+re/names.tsv	new	0x005dd080	CERFFile::WriteHeader		21
+re/names.tsv	new	0x00677d70	CSWCMessage::SendPlayerToServerInput_Door		21
+re/names.tsv	new	0x00677de0	CSWCMessage::SendPlayerToServerInput_Unlock		21
+re/names.tsv	changed	0x006c0f40	CSWGuiStore::OnSell	64	85
+re/names.tsv	new	0x006c6190	CSWGuiUpgrade::OnAssemble		21
+re/names.tsv	new	0x00406040	CResRef::GetLength		20
+re/names.tsv	changed	0x004e66b0	CSWSItemPropertyHandler::ApplyForceResistance	31	51
+re/names.tsv	changed	0x004e9bb0	CSWSItemPropertyHandler::RemoveDamageReduction	31	51
+re/names.tsv	new	0x00528de0	CSWGlobalVariableTable::~CSWGlobalVariableTable		20
+re/names.tsv	changed	0x0062e310	CGuiInGame::OpenStore	38	58
+re/names.tsv	new	0x00688590	CSWGuiMainInterface::OnPauseToggle		20
+re/names.tsv	new	0x00688640	CSWGuiMainInterface::OnStealthToggle		20
+re/names.tsv	changed	0x006c1130	CSWGuiStore::OnBuy	73	93
+re/names.tsv	changed	0x0050d370	CSWSArea::~CSWSArea	110	129
+re/names.tsv	changed	0x00565130	CSWPartyTable::SpawnAvailableNPC	85	104
+re/names.tsv	changed	0x005dca30	CExoStreamingSoundSourceInternal::Play	120	139
+re/names.tsv	new	0x0061d9e0	CClientOptions::SetKeyboardCameraDefaults		19
+re/names.tsv	new	0x00677d10	CSWCMessage::SendPlayerToServerInput_UseObject		19
+re/names.tsv	new	0x00691900	CSWCTrigger::DefaultActionDisarm		19
+re/names.tsv	new	0x006ab1b0	CSWGuiOptionsInGame::OnQuit		19
+re/names.tsv	new	0x006aed90	CSWGuiCharacter::RotateModelLeft		19
+re/names.tsv	new	0x006aede0	CSWGuiCharacter::RotateModelRight		19
+re/names.tsv	new	0x006c2b60	CSWGuiUpgradeSelect::OnCategory		19
+re/names.tsv	changed	0x006cf5a0	CSWGuiDebugMenu::CSWGuiDebugMenu	31	50
+re/names.tsv	new	0x007129a0	CResTGA::CResTGA		19
+re/names.tsv	new	0x004064f0	CExoResMan::StartModuleLoad		18
+re/names.tsv	changed	0x00544390	CSWVirtualMachineCommands::ExecuteCommandStartNewModule	116	134
+re/names.tsv	changed	0x00554080	CSWSItem::GetItemLevel	30	48
+re/names.tsv	new	0x00682660	CSWCPlaceable::DefaultActionUse		18
+re/names.tsv	new	0x006b26e0	CSWGuiInventory::OnEquippableItemClicked		18
+re/names.tsv	new	0x006b2740	CSWGuiInventory::OnUnusableItemClicked		18
+re/names.tsv	new	0x006b27a0	CSWGuiInventory::OnItemClickedViewOnly		18
+re/names.tsv	new	0x006b2800	CSWGuiInventory::OnMedpacFullHealth		18
+re/names.tsv	new	0x006b2860	CSWGuiInventory::OnSquadMedpacNoInjured		18
+re/names.tsv	changed	0x006bdc60	CSWGuiDebugMenu2::CSWGuiDebugMenu2	40	58
+re/names.tsv	new	0x006c0350	CSWGuiPause::OnUnpause		18
+re/names.tsv	new	0x006caa90	CSWGuiSaveLoad::OnDelete		18
+re/names.tsv	new	0x00712ea0	CResTPC::CResTPC		18
+re/names.tsv	new	0x00401080	WriteSaveScreenshot		17
+re/names.tsv	changed	0x004068c0	CExoResMan::CreateDirectory	26	43
+re/names.tsv	new	0x00417fe0	CSWGuiProgressBar::SetStartFromLeft		17
+re/names.tsv	changed	0x0041cb40	CSWGuiCheckBox::LoadFromGFF	23	40
+re/names.tsv	new	0x004b2320	CServerExoAppInternal::GetStoredGameTime		17
+re/names.tsv	new	0x004d1dd0	CSWSCombatRoundAction::SaveData		17
+re/names.tsv	changed	0x004e9110	CSWSItemPropertyHandler::RemoveForceResistance	31	48
+re/names.tsv	changed	0x0058c5f0	CSWSDoor::LoadFromGITEntry	59	76
+re/names.tsv	new	0x0059f430	CSWSDialog::SetOwner		17
+re/names.tsv	changed	0x005c1830	C2DAs::LoadPlaceables	50	67
+re/names.tsv	new	0x005dd0e0	CERFFile::Finish		17
+re/names.tsv	new	0x005f4db0	CClientExoAppInternal::CheckMovieFinished		17
+re/names.tsv	new	0x00710b50	CResPLT::CResPLT		17
+re/names.tsv	new	0x00401bb0	GL_SetDefaultState		16
+re/names.tsv	changed	0x0041c930	CSWGuiButton::LoadFromGFF	23	39
+re/names.tsv	changed	0x0053d720	CSWVirtualMachineCommands::ExecuteCommandGetStringLeft	42	58
+re/names.tsv	changed	0x0053d920	CSWVirtualMachineCommands::ExecuteCommandGetStringLowerCase	38	54
+re/names.tsv	changed	0x0053da40	CSWVirtualMachineCommands::ExecuteCommandGetStringRight	42	58
+re/names.tsv	changed	0x0053db80	CSWVirtualMachineCommands::ExecuteCommandGetStringUpperCase	38	54
+re/names.tsv	changed	0x0053dda0	CSWVirtualMachineCommands::ExecuteCommandGetSubString	46	62
+re/names.tsv	new	0x00553900	CSWSItem::IsUsablePropertyType		16
+re/names.tsv	changed	0x005ad0e0	CSWSCreatureStats::GetArmorClassVersus	423	439
+re/names.tsv	new	0x0068b050	CSWGuiMainInterface::OnClearOneAction		16
+re/names.tsv	changed	0x006c0aa0	CSWGuiStore::OnItemHilighted	44	60
+re/names.tsv	new	0x00407780	CExoResMan::GetTableCount		15
+re/names.tsv	new	0x00408c60	CExoResMan::ListTableResourcesOfType		15
+re/names.tsv	new	0x00411540	CResGFF::GetTotalSize		15
+re/names.tsv	new	0x0041d890	CTlkFile::ReadHeader		15
+re/names.tsv	changed	0x0041e1a0	CTlkTable::FetchInternal	135	150
+re/names.tsv	new	0x004ae6f0	CServerExoApp::LoadGame		15
+re/names.tsv	changed	0x004cad20	CSWSObject::SetPortraitId	39	54
+re/names.tsv	changed	0x004d2450	CSWSCombatAttackData::LoadData	100	115
+re/names.tsv	changed	0x004f8410	CSWSCreature::~CSWSCreature	142	157
+re/names.tsv	changed	0x00503790	CGameEffect::SaveEffect	65	80
+re/names.tsv	changed	0x0050e900	CSWSCreature::AIActionExamineTrap	180	195
+re/names.tsv	changed	0x00519570	CSWSCreature::AIActionDisableTrap	357	372
+re/names.tsv	changed	0x00530ce0	CSWVirtualMachineCommands::ExecuteCommandEffectAreaOfEffect	85	100
+re/names.tsv	changed	0x00540550	CSWVirtualMachineCommands::ExecuteCommandActionPlayAnimation	404	419
+re/names.tsv	changed	0x005a2ae0	CSWSDialog::LoadDialog	352	367
+re/names.tsv	new	0x005ee360	CClientExoApp::~CClientExoApp		15
+re/names.tsv	new	0x00627160	CSWGuiMessageBox::SetIcon		15
+re/names.tsv	new	0x00688610	CSWGuiMainInterface::OnSoloToggle		15
+re/names.tsv	changed	0x006c7d50	CSWGuiAreaTransition::CSWGuiAreaTransition	37	52
+re/names.tsv	new	0x006ee5f0	CSWGuiLevelUpPanel::OnCancel		15
+re/names.tsv	new	0x006ee780	CSWGuiLevelUpPanel::OnFinish		15
+re/names.tsv	new	0x0070c250	CExoMoviePlayer::~CExoMoviePlayer		15
+re/names.tsv	new	0x00409b90	CExoResMan::LoaderThreadProc		14
+re/names.tsv	new	0x00418270	CSWGuiListBox::SetLeftScrollBar		14
+re/names.tsv	changed	0x0041dd30	CTlkTable::ParseStr	194	208
+re/names.tsv	new	0x004adba0	CWorldTimer::SetMinutesPerHour		14
+re/names.tsv	changed	0x0050e400	CSWSCreature::AIActionFlagTrap	175	189
+re/names.tsv	new	0x00528f70	CSWGlobalVariableTable::AddBoolean		14
+re/names.tsv	new	0x00528fa0	CSWGlobalVariableTable::AddNumber		14
+re/names.tsv	new	0x00528fd0	CSWGlobalVariableTable::AddLocation		14
+re/names.tsv	new	0x00529000	CSWGlobalVariableTable::AddString		14
+re/names.tsv	new	0x005e6ad0	CExoFile::SeekBeginning		14
+re/names.tsv	new	0x006f3420	CSWGuiCharGenFeats::OnFeatClicked		14
+re/names.tsv	new	0x00710ea0	CResDDS::CResDDS		14
+re/names.tsv	new	0x00710f90	CRes4PC::CRes4PC		14
+re/names.tsv	changed	0x00401440	UpdateWindowTitle	27	40
+re/names.tsv	changed	0x00413030	CResGFF::WriteGFFFile	23	36
+re/names.tsv	changed	0x00418840	CSWGuiControl::LoadFromPanelGFF	44	57
+re/names.tsv	new	0x004aebd0	CServerExoApp::GetStoredGameTime		13
+re/names.tsv	changed	0x004af630	CServerAIMaster::DebugPrintEvent	253	266
+re/names.tsv	changed	0x0053c390	CSWVirtualMachineCommands::ExecuteCommandGetFirstObjectInArea	107	120
+re/names.tsv	changed	0x00566600	CSWPartyTable::GivePlotXP	30	43
+re/names.tsv	changed	0x005666e0	CSWPartyTable::GivePlotXPByRow	30	43
+re/names.tsv	new	0x005d1a40	CVirtualMachineInternal::SetCommandImplementer		13
+re/names.tsv	new	0x00624c00	CSWGuiTopMenu::OnPrevMenu		13
+re/names.tsv	new	0x00624c30	CSWGuiTopMenu::OnNextMenu		13
+re/names.tsv	new	0x00624cf0	CSWGuiTopMenu::OnEquip		13
+re/names.tsv	new	0x00624d10	CSWGuiTopMenu::OnInventory		13
+re/names.tsv	new	0x00624d30	CSWGuiTopMenu::OnCharacter		13
+re/names.tsv	new	0x00624d50	CSWGuiTopMenu::OnMap		13
+re/names.tsv	new	0x00624d70	CSWGuiTopMenu::OnAbilities		13
+re/names.tsv	new	0x00624d90	CSWGuiTopMenu::OnJournal		13
+re/names.tsv	new	0x00624db0	CSWGuiTopMenu::OnOptions		13
+re/names.tsv	new	0x00624dd0	CSWGuiTopMenu::OnMessages		13
+re/names.tsv	changed	0x00624df0	CSWGuiMessages::ShowDialogLog	45	58
+re/names.tsv	changed	0x00624f70	CSWGuiMessages::ShowFeedbackLog	45	58
+re/names.tsv	changed	0x006b28c0	CSWGuiInventory::UpdateStats	55	68
+re/names.tsv	new	0x006bec90	CSWGuiPartySelection::OnConfirmed		13
+re/names.tsv	new	0x00710d50	CResVIS::CResVIS		13
+re/names.tsv	new	0x00710db0	CResTXI::CResTXI		13
+re/names.tsv	new	0x00710e10	CResMDX::CResMDX		13
+re/names.tsv	new	0x0041e0f0	CTlkTable::GetLanguageID		12
+re/names.tsv	new	0x004cec50	CSWSObject::SaveObjectState		12
+re/names.tsv	changed	0x0053a390	CSWVirtualMachineCommands::ExecuteCommandGetItemPossessedBy	103	115
+re/names.tsv	new	0x00563a80	CSWPartyTable::ResetFollowState		12
+re/names.tsv	changed	0x0058b550	CSWSDoor::~CSWSDoor	55	67
+re/names.tsv	changed	0x005a8be0	CSWSCreatureStats::GetDamageBonus	153	165
+re/names.tsv	changed	0x006306e0	CGuiInGame::SetDialogCamera	448	460
+re/names.tsv	new	0x006ada70	CSWGuiAbilities::OnFeatsTab		12
+re/names.tsv	new	0x006adaa0	CSWGuiAbilities::OnPowersTab		12
+re/names.tsv	new	0x006adad0	CSWGuiAbilities::OnSkillsTab		12
+re/names.tsv	changed	0x006c0850	CSWGuiStore::FillPlayerItems	104	116
+re/names.tsv	new	0x006f0800	CSWGuiCharGenQuickOrCustom::OnQuick		12
+re/names.tsv	new	0x006f0830	CSWGuiCharGenQuickOrCustom::OnCustom		12
+re/names.tsv	changed	0x00411fd0	CResGFF::ReadFieldCExoLocString	77	88
+re/names.tsv	new	0x004b1650	CServerExoAppInternal::LoadGlobalVariableCatalogue		11
+re/names.tsv	new	0x004cc490	CSWSDialog::AddPlayer		11
+re/names.tsv	changed	0x0053a680	CSWVirtualMachineCommands::ExecuteCommandGetJournalQuestExperience	82	93
+re/names.tsv	changed	0x0053c280	CSWVirtualMachineCommands::ExecuteCommandGetObjectByTag	41	52
+re/names.tsv	changed	0x0054b1e0	CSWVirtualMachineCommands::ExecuteCommandSetJournalQuestEntryPicture	96	107
+re/names.tsv	changed	0x0058eef0	CSWSTrigger::~CSWSTrigger	41	52
+re/names.tsv	changed	0x0059b5b0	CSWSpell::~CSWSpell	21	32
+re/names.tsv	changed	0x005b47c0	CSWSCreature::GetIsSimpleModel	29	40
+re/names.tsv	changed	0x005b5420	CSWSCreature::GetWeaponDischargeHand	29	40
+re/names.tsv	new	0x005dd120	CERFFile::WriteKey		11
+re/names.tsv	changed	0x00684f50	CSWGuiPartyButton::BuildTooltipText	61	72
+re/names.tsv	changed	0x006929b0	CSWGuiMap::ShowMapNote	47	58
+re/names.tsv	new	0x006a6fc0	CSWGuiDialog::OnReplyHilight		11
+re/names.tsv	new	0x006a6fe0	CSWGuiDialog::OnReplyUnhilight		11
+re/names.tsv	changed	0x006a9770	CSWGuiBarkBubble::CSWGuiBarkBubble	34	45
+re/names.tsv	changed	0x006c1840	CSWGuiStore::FillStoreItems	88	99
+re/names.tsv	new	0x006f6e40	CSWGuiCharGenAbilities::OnUnhoverAbility		11
+re/names.tsv	new	0x00409b20	CRes::ReadRaw		10
+re/names.tsv	changed	0x0040acc0	CSWGuiManager::UpdateTopPanel	59	69
+re/names.tsv	new	0x004ae6e0	CServerExoApp::RequestSaveGame		10
+re/names.tsv	new	0x004c30c0	CResIFO::CResIFO		10
+re/names.tsv	changed	0x004ed4c0	CSWSCreature::SetPortraitId	39	49
+re/names.tsv	changed	0x0053ebc0	CSWVirtualMachineCommands::ExecuteCommandIntToString	35	45
+re/names.tsv	new	0x00563d20	CSWPartyTable::CSWPartyTable		10
+re/names.tsv	changed	0x005c1580	C2DAs::LoadCreatureSpeed	50	60
+re/names.tsv	changed	0x005c2180	C2DAs::LoadFootstepSounds	50	60
+re/names.tsv	changed	0x005c2c20	C2DAs::LoadRegeneration	50	60
+re/names.tsv	changed	0x005c3710	C2DAs::LoadForceAdjust	50	60
+re/names.tsv	changed	0x005d0840	CPathAvoidance::ResolveBlockingCreature	200	210
+re/names.tsv	new	0x005df490	CExoInput::SetEventRepeat		10
+re/names.tsv	new	0x005e6670	CExoBase::GetResTypeFromExtension		10
+re/names.tsv	new	0x005e9f00	CExoLocString::GetStringLength		10
+re/names.tsv	new	0x005ed860	CClientExoApp::Initialize		10
+re/names.tsv	new	0x0062ab70	IsLoopingCutsceneAnimation		10
+re/names.tsv	new	0x00644730	CSWGuiPanel::OnButtonZ		10
+re/names.tsv	changed	0x0066a640	CSWCMessage::HandleServerToPlayerMessage	208	218
+re/names.tsv	new	0x0068b0a0	CSWGuiMainInterface::OnClearAllActions		10
+re/names.tsv	changed	0x006aa670	CSWGuiTutorialBox::NextPage	53	63
+re/names.tsv	changed	0x006c7ec0	CSWGuiAreaTransition::SetTransitionObject	59	69
+re/names.tsv	new	0x006ef220	CSWGuiCharGenCustomPanel::OnPlay		10
+re/names.tsv	new	0x006efd60	CSWGuiCharGenQuickPanel::OnPlay		10
+re/names.tsv	changed	0x0040e1f0	CExoEncapsulatedFile::LoadHeader	189	198
+re/names.tsv	changed	0x005043a0	CGameEffect::LoadEffect	146	155
+re/names.tsv	changed	0x00527b20	CSWSMessage::HandlePlayerToServerMessage	165	174
+re/names.tsv	changed	0x00535c90	CSWVirtualMachineCommands::ExecuteCommandFindSubString	42	51
+re/names.tsv	changed	0x00536000	CSWVirtualMachineCommands::ExecuteCommandFloatToString	64	73
+re/names.tsv	changed	0x0053e960	CSWVirtualMachineCommands::ExecuteCommandInsertString	46	55
+re/names.tsv	changed	0x00544ef0	CSWVirtualMachineCommands::ExecuteCommandTestStringAgainstPattern	55	64
+re/names.tsv	changed	0x0059ec90	CSWSDialog::CheckCondition	34	43
+re/names.tsv	changed	0x005cb480	CSWVirtualMachineCommands::ExecuteCommandSWMG_GetLastEvent	40	49
+re/names.tsv	changed	0x005cb560	CSWVirtualMachineCommands::ExecuteCommandSWMG_GetLastEventModelName	41	50
+re/names.tsv	new	0x005d0ff0	CVirtualMachine::SetCommandImplementer		9
+re/names.tsv	new	0x005dce30	CERFFile::SetFileType		9
+re/names.tsv	changed	0x00689280	CSWGuiActionSlot::SetState	43	52
+re/names.tsv	changed	0x0068f0e0	CSWGuiCredits::~CSWGuiCredits	46	55
+re/names.tsv	changed	0x006a95f0	CSWGuiDialogComputerCamera::CSWGuiDialogComputerCamera	44	53
+re/names.tsv	changed	0x006b7590	CSWGuiEquip::SetCreature	39	48
+re/names.tsv	changed	0x006c5510	CSWGuiUpgrade::OnUpgradeChosen	159	168
+re/names.tsv	new	0x006c8470	CSWGuiSaveName::OnCancel		9
+re/names.tsv	new	0x006eb320	CSWGuiCharGenMain::Finish		9
+re/names.tsv	new	0x004087a0	CExoResMan::AddEncapsulatedResourceFile		8
+re/names.tsv	new	0x004087e0	CExoResMan::AddKeyTableFile		8
+re/names.tsv	new	0x004088c0	CExoResMan::RemoveKeyTableFile		8
+re/names.tsv	changed	0x004162e0	CSWGuiEditText::Backspace	34	42
+re/names.tsv	changed	0x004163a0	CSWGuiEditText::AppendText	38	46
+re/names.tsv	changed	0x0041b960	CSWGuiLabel::LoadFromGFF	23	31
+re/names.tsv	changed	0x0041c7d0	CSWGuiEditBox::LoadFromGFF	23	31
+re/names.tsv	new	0x0044ee30	Render_EnableGrass		8
+re/names.tsv	new	0x0044ee40	Render_DisableGrass		8
+re/names.tsv	new	0x0044ef60	Render_DisableVBO		8
+re/names.tsv	new	0x0044ef70	Render_DisableWriteOnlyVBO		8
+re/names.tsv	new	0x0044ef80	Render_EnableWriteOnlyVBO		8
+re/names.tsv	new	0x004ae8f0	CServerExoApp::Initialize		8
+re/names.tsv	new	0x004aed00	CServerExoApp::SetModuleLoadInProgress		8
+re/names.tsv	new	0x004aed40	CServerExoApp::GetMoveToModuleWaypoint		8
+re/names.tsv	new	0x004af090	CServerExoApp::SetModuleTransitionFlag		8
+re/names.tsv	new	0x004af0e0	CServerExoApp::SetSaveGameName		8
+re/names.tsv	changed	0x004d79b0	CScriptEvent::LoadEvent	157	165
+re/names.tsv	changed	0x004e73d0	CSWSItemPropertyHandler::ApplyDamageVulnerability	42	50
+re/names.tsv	changed	0x004eb6e0	CSWSCreature::RunHeartbeat	179	187
+re/names.tsv	changed	0x0052ad10	CSWGlobalVariableTable::SaveToDirectory	31	39
+re/names.tsv	changed	0x0052f820	CSWVirtualMachineCommands::ExecuteCommandCreateObject	233	241
+re/names.tsv	changed	0x00540170	CSWVirtualMachineCommands::ExecuteCommandObjectToString	39	47
+re/names.tsv	changed	0x00548640	CSWVirtualMachineCommands::ExecuteCommandAddJournalWorldEntry	68	76
+re/names.tsv	new	0x005df5a0	CExoInput::SetHardwareCursorHidden		8
+re/names.tsv	new	0x005ed300	CClientExoApp::PlayLegalMovies		8
+re/names.tsv	new	0x005ed7b0	CClientExoApp::PostInitialize		8
+re/names.tsv	new	0x005ed7d0	CClientExoApp::MainLoop		8
+re/names.tsv	new	0x005ed810	CClientExoApp::ShutDownClient		8
+re/names.tsv	new	0x005ed880	CClientExoApp::ShutDown		8
+re/names.tsv	new	0x005ee1f0	CClientExoApp::CheckMovieFinished		8
+re/names.tsv	changed	0x00610490	CSWCCreature::GetFreeLookEffect	29	37
+re/names.tsv	new	0x00625a80	CSWGuiMessageBox::OnOk		8
+re/names.tsv	new	0x00625aa0	CSWGuiMessageBox::OnCancel		8
+re/names.tsv	new	0x0067b490	CSWGuiMainMenu::OnDiskSpaceQuit		8
+re/names.tsv	new	0x0067cb40	CSWGuiPanel::OnButtonPrev		8
+re/names.tsv	new	0x0067cb50	CSWGuiPanel::OnButtonNext		8
+re/names.tsv	new	0x0067cb60	CSWGuiPanel::OnButtonAlternateAccept		8
+re/names.tsv	new	0x00691950	CSWCTrigger::DefaultActionRecover		8
+re/names.tsv	new	0x006927b0	CSWGuiMap::OnNoteUp		8
+re/names.tsv	new	0x006927c0	CSWGuiMap::OnNoteDown		8
+re/names.tsv	changed	0x006a6e20	CSWGuiDialogComputer::GetResolutionTag	34	42
+re/names.tsv	new	0x006f09d0	CSWGuiCharGenQuickOrCustom::OnHoverQuick		8
+re/names.tsv	new	0x006f09e0	CSWGuiCharGenQuickOrCustom::OnHoverCustom		8
+re/names.tsv	changed	0x006f70e0	CSWGuiCharGenAbilities::OnHoverAbility	85	93
+re/names.tsv	changed	0x00406650	CExoResMan::GetResTypeFromFile	33	40
+re/names.tsv	changed	0x0040a680	CSWGuiPanel::LoadGui	73	80
+re/names.tsv	new	0x004aecf0	CServerExoApp::GetModuleLoadInProgress		7
+re/names.tsv	new	0x004aed20	CServerExoApp::GetAutoSavePending		7
+re/names.tsv	new	0x004aedf0	CServerExoApp::GetTimeStopTimer		7
+re/names.tsv	new	0x004af040	CServerExoApp::GetDialogEventFlag		7
+re/names.tsv	new	0x004af0b0	CServerExoApp::GetStoredPauseDay		7
+re/names.tsv	new	0x004af0d0	CServerExoApp::GetStoredPauseTime		7
+re/names.tsv	changed	0x005854b0	CSWSPlaceable::~CSWSPlaceable	57	64
+re/names.tsv	changed	0x005b6210	CSWSCreature::AIActionCombat	225	232
+re/names.tsv	changed	0x005ea050	CExoLocString::GetStringNoCache	38	45
+re/names.tsv	changed	0x005ea130	CExoLocString::GetString	45	52
+re/names.tsv	changed	0x00624810	CSWGuiFade::CSWGuiFade	34	41
+re/names.tsv	changed	0x006c3c30	CSWGuiUpgrade::OnSlotHilighted	67	74
+re/names.tsv	changed	0x004b20e0	GetModuleIncludeInSave	52	58
+re/names.tsv	changed	0x004b3a90	CServerExoAppInternal::PrepareAreaForPlayer	106	112
+re/names.tsv	changed	0x004e7190	CSWSItemPropertyHandler::ApplyDamageReduction	44	50
+re/names.tsv	changed	0x004e72b0	CSWSItemPropertyHandler::ApplyDamageResistance	44	50
+re/names.tsv	changed	0x004e9230	CSWSItemPropertyHandler::ApplyImprovedSavingThrow	31	37
+re/names.tsv	changed	0x004e92e0	CSWSItemPropertyHandler::ApplyReducedSavingThrow	31	37
+re/names.tsv	changed	0x0052d5b0	CSWVirtualMachineCommands::ExecuteCommandActionStartConversation	130	136
+re/names.tsv	changed	0x00538ed0	CSWVirtualMachineCommands::ExecuteCommandGetGlobalString	45	51
+re/names.tsv	changed	0x0053d610	CSWVirtualMachineCommands::ExecuteCommandGetStringByStrRef	44	50
+re/names.tsv	changed	0x00542c60	CSWVirtualMachineCommands::ExecuteCommandSetGlobalString	43	49
+re/names.tsv	changed	0x00547f60	CSWVirtualMachineCommands::ExecuteCommandCreateItemOnFloor	89	95
+re/names.tsv	changed	0x006246c0	CSWGuiFade::SetMessageStrRef	34	40
+re/names.tsv	changed	0x004074d0	CExoResMan::GetResObject	78	83
+re/names.tsv	changed	0x0040dc30	CExoEncapsulatedFile::OpenFile	133	128
+re/names.tsv	changed	0x0040df10	CExoEncapsulatedFile::OpenAsyncFile	133	128
+re/names.tsv	changed	0x004b2520	CServerExoAppInternal::HasDiskSpaceForSave	26	31
+re/names.tsv	changed	0x004cecb0	CSWSObject::LoadActionQueue	183	188
+re/names.tsv	changed	0x004f1fd0	CSWSCreature::GetCanSeeStealthedBySight	206	211
+re/names.tsv	changed	0x00514af0	CSWSCreature::AIActionCastSpell	394	399
+re/names.tsv	changed	0x0055f340	CSWSItem::GetDescription	69	74
+re/names.tsv	changed	0x005b5230	CSWSCreature::GetWeaponDischargeShots	27	32
+re/names.tsv	changed	0x005b52e0	CSWSCreature::GetWeaponDischargeHits	27	32
+re/names.tsv	changed	0x0068b9d0	CSWGuiActionSlot::Init	132	137
+re/names.tsv	changed	0x0040a900	CSWGuiPanel::GetResolutionTag	27	31
+re/names.tsv	changed	0x00419a20	CSWGuiControl::~CSWGuiControl	21	25
+re/names.tsv	changed	0x004babb0	CServerExoAppInternal::MainLoop	307	311
+re/names.tsv	changed	0x004ea890	CSWSItemPropertyHandler::RemoveImprovedSavingThrow	31	35
+re/names.tsv	changed	0x004ea940	CSWSItemPropertyHandler::RemoveReducedSavingThrow	31	35
+re/names.tsv	changed	0x004f3830	CSWSCreature::TakeDamage	98	102
+re/names.tsv	changed	0x00508770	CSWSArea::AwardStealthXP	32	36
+re/names.tsv	changed	0x005254c0	CSWSMessage::HandlePlayerToServerInputMessage	795	799
+re/names.tsv	changed	0x0053e2b0	CSWVirtualMachineCommands::ExecuteCommandGetWaypointByTag	49	53
+re/names.tsv	changed	0x00540dd0	CSWVirtualMachineCommands::ExecuteCommandPlayRoomAnimation	47	51
+re/names.tsv	changed	0x00541690	CSWVirtualMachineCommands::ExecuteCommandWriteTimestampedLogEntry	38	42
+re/names.tsv	changed	0x00544710	CSWVirtualMachineCommands::ExecuteCommandStringToInt	53	57
+re/names.tsv	changed	0x005483f0	CSWVirtualMachineCommands::ExecuteCommandAddJournalQuestEntry	108	112
+re/names.tsv	changed	0x00549f30	CSWVirtualMachineCommands::ExecuteCommandGetJournalEntry	67	71
+re/names.tsv	changed	0x005d2bd0	CVirtualMachineInternal::ExecuteCode	801	797
+re/names.tsv	changed	0x005da6d0	CExoSoundInternal::Choose3DProvider	96	100
+re/names.tsv	changed	0x00628260	CSWGuiMessages::HandleInputEvent	90	94
+re/names.tsv	changed	0x00645330	CSWGuiJournal::RebuildQuestList	125	129
+re/names.tsv	changed	0x006a1220	CSWCVisualEffect::ApplyTextureEffect	132	136
+re/names.tsv	changed	0x006a7e20	CSWGuiDialogLetterbox::SelectReply	35	39
+re/names.tsv	changed	0x006b9470	CSWGuiEquip::OnSlotHilighted	193	197
+re/names.tsv	changed	0x00413d80	C2DA::~C2DA	20	23
+re/names.tsv	changed	0x0041ba20	CSWGuiProtoItem::LoadFromGFF	23	26
+re/names.tsv	changed	0x004cc4d0	CSWSObjectActionNode::~CSWSObjectActionNode	30	33
+re/names.tsv	changed	0x004f2a50	CSWSCreature::SetActivityMode	90	93
+re/names.tsv	changed	0x004f6d70	CSWSCreature::ApplyStealthEffects	68	71
+re/names.tsv	changed	0x00500c00	CSWSCreature::GetPerceives	34	37
+re/names.tsv	changed	0x005026d0	CSWSCreature::LoadFromTemplate	139	136
+re/names.tsv	changed	0x00502ac0	CSWSCreature::DoPerceptionCheck	394	397
+re/names.tsv	changed	0x0050ee50	CSWSCreature::SetStealthMode	10	13
+re/names.tsv	changed	0x0052dcd0	CSWVirtualMachineCommands::ExecuteCommandAddAvailableNPCByTemplate	46	49
+re/names.tsv	changed	0x0052e9f0	CSWVirtualMachineCommands::ExecuteCommandBeginConversation	197	200
+re/names.tsv	changed	0x0052f570	CSWVirtualMachineCommands::ExecuteCommandCreateItemOnObject	151	154
+re/names.tsv	changed	0x005366a0	CSWVirtualMachineCommands::ExecuteCommandGetArea	58	61
+re/names.tsv	changed	0x0053c080	CSWVirtualMachineCommands::ExecuteCommandGetName	57	60
+re/names.tsv	changed	0x0053d860	CSWVirtualMachineCommands::ExecuteCommandGetStringLength	36	39
+re/names.tsv	changed	0x0053dca0	CSWVirtualMachineCommands::ExecuteCommandGetStrRefSoundDuration	46	49
+re/names.tsv	changed	0x0053df00	CSWVirtualMachineCommands::ExecuteCommandGetTag	56	59
+re/names.tsv	changed	0x0053eaf0	CSWVirtualMachineCommands::ExecuteCommandIntToHexString	37	40
+re/names.tsv	changed	0x00541320	CSWVirtualMachineCommands::ExecuteCommandPopUpGUIPanel	81	84
+re/names.tsv	changed	0x00542a50	CSWVirtualMachineCommands::ExecuteCommandSetGlobalLocation	51	54
+re/names.tsv	changed	0x00545e20	CSWVirtualMachineCommands::ExecuteCommandGivePlotXP	42	45
+re/names.tsv	changed	0x00547970	CSWVirtualMachineCommands::ExecuteCommandChangeItemCost	64	67
+re/names.tsv	changed	0x00547ab0	CSWVirtualMachineCommands::ExecuteCommandGetIsLiveContentAvailable	47	50
+re/names.tsv	changed	0x0054af60	CSWVirtualMachineCommands::ExecuteCommandRemoveJournalQuestEntry	56	59
+re/names.tsv	changed	0x0054c830	CSWVirtualMachineCommands::ExecuteCommandGetMatchedSubstring	55	58
+re/names.tsv	changed	0x0057b430	CSWSObject::AIActionSpeak	52	55
+re/names.tsv	changed	0x0057ce00	CSWSObject::AIActionBarkString	44	47
+re/names.tsv	changed	0x00587a70	CSWSPlaceable::LoadFromTemplate	45	48
+re/names.tsv	changed	0x00593a90	CSWSEncounter::LoadFromTemplate	51	54
+re/names.tsv	changed	0x005b4f30	CSWSCreature::GetCombatAnimationHitTime	24	27
+re/names.tsv	changed	0x005b5390	CSWSCreature::GetWeaponDischargeShotTime	24	27
+re/names.tsv	changed	0x005b78e0	CSWSCreature::GetCanDeflectProjectile	93	96
+re/names.tsv	changed	0x005c7760	CSWSStore::LoadFromTemplate	45	48
+re/names.tsv	changed	0x005c83b0	CSWSWaypoint::LoadFromTemplate	45	48
+re/names.tsv	changed	0x005cb350	CSWVirtualMachineCommands::ExecuteCommandAurPostString	46	49
+re/names.tsv	changed	0x005cb650	CSWVirtualMachineCommands::ExecuteCommandSWMG_GetObjectByName	45	48
+re/names.tsv	changed	0x005cc450	CSWVirtualMachineCommands::ExecuteCommandSWMG_GetGunBankBulletModel	62	65
+re/names.tsv	changed	0x005f2a20	CClientExoAppInternal::ToggleSoloMode	28	31
+re/names.tsv	changed	0x005f4b50	CClientExoAppInternal::QuickSave	25	28
+re/names.tsv	changed	0x0060f4b0	CSWCCreature::RequestStealthToggle	21	24
+re/names.tsv	changed	0x00610ac0	CSWCCreature::GetCanStealth	54	57
+re/names.tsv	changed	0x00613930	CSWCCreature::SetStealthLook	53	56
+re/names.tsv	changed	0x0067a9c0	CSWGuiLoadScreen::SetHint	34	37
+re/names.tsv	changed	0x00687e40	CSWGuiMainInterface::LoadMiniMapTexture	70	73
+re/names.tsv	changed	0x00689cc0	CSWGuiPartyMemberSlot::~CSWGuiPartyMemberSlot	27	30
+re/names.tsv	changed	0x0068a010	CSWGuiMainInterface::UpdateCombatQueue	109	112
+re/names.tsv	changed	0x006b7e30	CSWGuiEquip::EndSelection	25	28
+re/names.tsv	changed	0x006c9d50	CSWGuiSaveName::OnOk	22	25
+re/names.tsv	changed	0x006fee5f	terminate	19	16
+re/names.tsv	changed	0x0040e790	CExoResourceImageFile::OpenFile	106	104
+re/names.tsv	changed	0x0040f200	CExoKeyTable::AddDirectoryContents	78	80
+re/names.tsv	changed	0x00411260	CResGFF::CreateGFFFile	51	53
+re/names.tsv	changed	0x00415ff0	CSWGuiText::~CSWGuiText	23	25
+re/names.tsv	changed	0x004b5c50	CServerExoAppInternal::SignalPlayerEnterModule	138	140
+re/names.tsv	changed	0x004b6270	CServerExoAppInternal::StartModuleRunning	58	60
+re/names.tsv	changed	0x004d4c10	CSWSCombatRound::IncrementTimer	84	86
+re/names.tsv	changed	0x004ef930	CSWSCreature::AddExperience	53	55
+re/names.tsv	changed	0x004f6390	CSWSCreature::PushCreatureAside	150	152
+re/names.tsv	changed	0x00506a80	CSWSArea::SetStealthXPMax	9	11
+re/names.tsv	changed	0x00506aa0	CSWSArea::SetStealthXPCurrent	10	12
+re/names.tsv	changed	0x00529110	CSWGlobalVariableTable::GetValueBoolean	45	47
+re/names.tsv	changed	0x00529240	CSWGlobalVariableTable::GetValueNumber	42	44
+re/names.tsv	changed	0x00529350	CSWGlobalVariableTable::GetValueLocation	49	51
+re/names.tsv	changed	0x00529460	CSWGlobalVariableTable::GetValueString	43	45
+re/names.tsv	changed	0x00529570	CSWGlobalVariableTable::SetValueBoolean	41	43
+re/names.tsv	changed	0x00529680	CSWGlobalVariableTable::SetValueNumber	42	44
+re/names.tsv	changed	0x00529790	CSWGlobalVariableTable::SetValueLocation	49	51
+re/names.tsv	changed	0x005298a0	CSWGlobalVariableTable::SetValueString	44	46
+re/names.tsv	changed	0x00535b70	CSWVirtualMachineCommands::ExecuteCommandExecuteScript	44	46
+re/names.tsv	changed	0x00535db0	CSWVirtualMachineCommands::ExecuteCommandFloatingTextStrRefOnCreature	97	99
+re/names.tsv	changed	0x00538cd0	CSWVirtualMachineCommands::ExecuteCommandGetGlobalLocation	49	51
+re/names.tsv	changed	0x00538dc0	CSWVirtualMachineCommands::ExecuteCommandGetGlobalBoolean	54	56
+re/names.tsv	changed	0x0053ba10	CSWVirtualMachineCommands::ExecuteCommandGetLockKeyRequired	137	139
+re/names.tsv	changed	0x0053f010	CSWVirtualMachineCommands::ExecuteCommandGetLastConversation	25	27
+re/names.tsv	changed	0x00540ed0	CSWVirtualMachineCommands::ExecuteCommandPlayMovie	37	39
+re/names.tsv	changed	0x00541170	CSWVirtualMachineCommands::ExecuteCommandPlaySound	46	48
+re/names.tsv	changed	0x005417c0	CSWVirtualMachineCommands::ExecuteCommandPrintString	59	61
+re/names.tsv	changed	0x00542300	CSWVirtualMachineCommands::ExecuteCommandSendMessageToPC	55	57
+re/names.tsv	changed	0x00542410	CSWVirtualMachineCommands::ExecuteCommandSetAreaTransitionBMP	40	42
+re/names.tsv	changed	0x00542b60	CSWVirtualMachineCommands::ExecuteCommandSetGlobalBoolean	49	51
+re/names.tsv	changed	0x00543030	CSWVirtualMachineCommands::ExecuteCommandSetListenPattern	47	49
+re/names.tsv	changed	0x005438b0	CSWVirtualMachineCommands::ExecuteCommandShowPartySelectionGUI	46	48
+re/names.tsv	changed	0x00543f70	CSWVirtualMachineCommands::ExecuteCommandSpeakOneLinerConversation	57	59
+re/names.tsv	changed	0x005473e0	CSWVirtualMachineCommands::ExecuteCommandStartCreditSequence	50	52
+re/names.tsv	changed	0x005474f0	CSWVirtualMachineCommands::ExecuteCommandGetDifficultyModifier	31	33
+re/names.tsv	changed	0x00548210	CSWVirtualMachineCommands::ExecuteCommandQueueMovie	35	37
+re/names.tsv	changed	0x0054b090	CSWVirtualMachineCommands::ExecuteCommandSetCustomToken	51	53
+re/names.tsv	changed	0x0054c0e0	CSWVirtualMachineCommands::ExecuteCommandGetTrapDisarmable	341	343
+re/names.tsv	changed	0x0055d330	CItemRepository::AddItem	227	229
+re/names.tsv	changed	0x00571960	CSWSMessage::SendSpeakMessage	181	183
+re/names.tsv	changed	0x00593830	CSWSEncounter::LoadEncounter	100	102
+re/names.tsv	changed	0x0059ef00	CSWSDialog::UpdateJournal	121	123
+re/names.tsv	changed	0x0059ff50	CSWSDialog::SetNodeDuration	43	45
+re/names.tsv	changed	0x005a03c0	CSWSDialog::HandleReply	231	233
+re/names.tsv	changed	0x005af480	CSWSCreatureStats::SetExperience	79	81
+re/names.tsv	changed	0x005cb730	CSWVirtualMachineCommands::ExecuteCommandSWMG_PlayAnimation	61	63
+re/names.tsv	changed	0x005cbdb0	CSWVirtualMachineCommands::ExecuteCommandSWMG_RemoveAnimation	51	53
+re/names.tsv	changed	0x005cc7f0	CSWVirtualMachineCommands::ExecuteCommandSWMG_SetGunBankBulletModel	54	56
+re/names.tsv	changed	0x005ccbb0	CSWVirtualMachineCommands::ExecuteCommandSWMG_GetLastBulletHitPart	40	42
+re/names.tsv	changed	0x005d4270	CVirtualMachineInternal::RunScriptFile	51	49
+re/names.tsv	changed	0x005d6d30	CExoSoundInternal::ShutDown	104	102
+re/names.tsv	changed	0x005db4d0	CExoSoundSourceInternal::Play	137	139
+re/names.tsv	changed	0x005df140	CLayout::LoadLayout	23	25
+re/names.tsv	changed	0x005ea270	CExoLocString::GetDisplayTime	30	32
+re/names.tsv	changed	0x005ea340	CExoLocString::AddString	34	36
+re/names.tsv	changed	0x005eb6b0	CExoAliasListInternal::ResolveFileName	57	59
+re/names.tsv	changed	0x005ee700	CClientExoAppInternal::HandleMessage	60	62
+re/names.tsv	changed	0x005f9c60	CClientExoAppInternal::SelectTarget	348	346
+re/names.tsv	changed	0x00616310	CSWCCreature::PlayLipSync	92	94
+re/names.tsv	changed	0x006277c0	CSWGuiToolTip::CSWGuiToolTip	56	58
+re/names.tsv	changed	0x00693bc0	CSWGuiMap::HandleInputEvent	101	103
+re/names.tsv	changed	0x0069e1f0	CSWCAnimBase::LoadModel	65	63
+re/names.tsv	changed	0x006a7ef0	CSWGuiDialogLetterbox::Layout	59	61
+re/names.tsv	changed	0x006d29f0	CSWGuiQuestItems::RebuildList	96	98
+re/names.tsv	changed	0x006fcbcb	__CxxThrowException@8	29	27
+re/names.tsv	changed	0x0070c590	CLIPFile::Load	44	46
+re/names.tsv	changed	0x004024f0	HandleKeyDownMessage	88	87
+re/names.tsv	changed	0x004065a0	CExoResMan::GetResRefFromFile	34	35
+re/names.tsv	changed	0x00406e20	CExoResMan::AddKeyTable	101	102
+re/names.tsv	changed	0x0040ae80	CSWGuiManager::DrawBackdrop	93	92
+re/names.tsv	changed	0x0040bec0	CSWGuiManager::DrawDebugOverlay	119	118
+re/names.tsv	changed	0x0040d0d0	CExoKeyTable::DeleteTableList	52	53
+re/names.tsv	changed	0x0040d2e0	CExoKeyTable::DestroyTable	82	83
+re/names.tsv	changed	0x0040d6f0	CExoResFile::OpenFile	57	56
+re/names.tsv	changed	0x0040d800	CExoResFile::OpenAsyncFile	56	55
+re/names.tsv	changed	0x0040ef00	CExoResFile::~CExoResFile	31	32
+re/names.tsv	changed	0x0040f010	CExoEncapsulatedFile::~CExoEncapsulatedFile	32	33
+re/names.tsv	changed	0x0040f0a0	CExoResourceImageFile::~CExoResourceImageFile	27	28
+re/names.tsv	changed	0x00415e50	CSWGuiTextInfo::SetStrRef	41	40
+re/names.tsv	changed	0x00416530	CSWGuiEditText::SetFocused	30	31
+re/names.tsv	changed	0x00419ee0	CSWGuiListBox::LayoutText	160	161
+re/names.tsv	changed	0x0041e8f0	CTlkTable::GetSimpleString	31	32
+re/names.tsv	changed	0x004b9240	CServerExoAppInternal::UnloadModule	156	157
+re/names.tsv	changed	0x004c4b80	CSWSModule::GetNameWithoutAlias	37	38
+re/names.tsv	changed	0x004c7de0	CSWSModule::AddObjectToLookupTable	64	65
+re/names.tsv	changed	0x004cdf50	CSWSObject::SpellCastAndImpact	126	127
+re/names.tsv	changed	0x004d1730	CSWSObject::UpdateEffectList	187	188
+re/names.tsv	changed	0x004d4620	CSWSCombatRound::EndCombatRound	236	237
+re/names.tsv	changed	0x004d4e80	CSWSCombatRound::DecrementPauseTimer	40	41
+re/names.tsv	changed	0x004ebf20	CSWSCreature::ReadScriptsFromGff	97	98
+re/names.tsv	changed	0x004efc70	CSWSCreature::GetSightRange	37	36
+re/names.tsv	changed	0x004efd20	CSWSCreature::GetHearingRange	37	36
+re/names.tsv	changed	0x004f19e0	CSWSCreature::GetKillXPValue	61	62
+re/names.tsv	changed	0x004f1c40	CSWSCreature::PostProcess	120	121
+re/names.tsv	changed	0x004f2610	CSWSCreature::SetCombatState	100	101
+re/names.tsv	changed	0x004fb4b0	CSWSCreature::GetCanSeeStealthed	215	216
+re/names.tsv	changed	0x004fd1e0	CSWSCreature::Rest	120	121
+re/names.tsv	changed	0x00500350	CSWSCreature::LoadCreature	105	104
+re/names.tsv	changed	0x00506400	CSWSArea::IsWalkablePoint	31	32
+re/names.tsv	changed	0x00523c20	CSWSMessage::HandlePlayerToServerInventoryMessage	381	380
+re/names.tsv	changed	0x0053bec0	CSWVirtualMachineCommands::ExecuteCommandGetModuleFileName	58	59
+re/names.tsv	changed	0x00540300	CSWVirtualMachineCommands::ExecuteCommandOpenStore	108	109
+re/names.tsv	changed	0x00540fd0	CSWVirtualMachineCommands::ExecuteCommandPlayPazaak	61	62
+re/names.tsv	changed	0x005414d0	CSWVirtualMachineCommands::ExecuteCommandPrintFloat	73	74
+re/names.tsv	changed	0x00544090	CSWVirtualMachineCommands::ExecuteCommandActionSpeakString	89	90
+re/names.tsv	changed	0x00548900	CSWVirtualMachineCommands::ExecuteCommandBarkString	76	77
+re/names.tsv	changed	0x00553040	CSWSObject::SetTag	23	24
+re/names.tsv	changed	0x00563620	CSWPartyTable::GetNPCResRef	23	24
+re/names.tsv	changed	0x005638d0	CSWPartyTable::MountGameInProgress	27	26
+re/names.tsv	changed	0x00563950	CSWPartyTable::UnmountGameInProgress	29	28
+re/names.tsv	changed	0x0057cf00	CSWSObject::AIActionPlaySound	56	57
+re/names.tsv	changed	0x0057d080	CSWSObject::AIActionPlayAnimation	177	176
+re/names.tsv	changed	0x0058f140	CSWSTrigger::EventHandler	232	233
+re/names.tsv	changed	0x0059ed70	CSWSDialog::RunScript	29	28
+re/names.tsv	changed	0x0059f320	CSWSDialog::GetNodeText	29	30
+re/names.tsv	changed	0x005a3820	CSWSDialog::SendReplies	321	322
+re/names.tsv	changed	0x005aeb30	CSWSCreatureStats::ReadSpellsFromGff	63	62
+re/names.tsv	changed	0x005b9040	CSWSCreature::ResolveDamageVisualEffects	106	107
+re/names.tsv	changed	0x005c0ae0	C2DAs::LoadGENDER	50	51
+re/names.tsv	changed	0x005c0bb0	C2DAs::LoadSURFACEMAT	50	51
+re/names.tsv	changed	0x005c1690	C2DAs::LoadDoorTypes	50	51
+re/names.tsv	changed	0x005c1760	C2DAs::LoadGenericDoors	50	51
+re/names.tsv	changed	0x005c2290	C2DAs::LoadWeaponSounds	50	51
+re/names.tsv	changed	0x005cbb80	CSWVirtualMachineCommands::ExecuteCommandSWMG_GetObjectName	52	53
+re/names.tsv	changed	0x005d4550	CVirtualMachineScript::~CVirtualMachineScript	29	30
+re/names.tsv	changed	0x005d4cb0	CNetLayer::SendMessageToPlayer	79	78
+re/names.tsv	changed	0x005dbca0	CExoStreamingSoundSourceInternal::Close	31	32
+re/names.tsv	changed	0x005dc3c0	CExoStreamingSoundSourceInternal::Stop	39	40
+re/names.tsv	changed	0x005e6270	CExoString::SubString	52	51
+re/names.tsv	changed	0x005f5e10	CClientExoAppInternal::UpdateCameraInput	187	186
+re/names.tsv	changed	0x005f7b20	CClientExoAppInternal::UpdateLoadScreenHint	44	43
+re/names.tsv	changed	0x005fb3f0	CClientExoAppInternal::SetLoadProgress	32	31
+re/names.tsv	changed	0x006271a0	CSWGuiMessageBox::SetMessageText	22	23
+re/names.tsv	changed	0x006288f0	GetCutsceneAnimationName	1562	1563
+re/names.tsv	changed	0x0062c9b0	CGuiInGame::ShowInGameMenu	77	76
+re/names.tsv	changed	0x0062cf10	CGuiInGame::SwitchInGameMenu	56	55
+re/names.tsv	changed	0x00634cc0	CSWCPartyTrail::GetFormationSlot	26	25
+re/names.tsv	changed	0x00640f70	CSWCModule::LoadDialogCameraModel	38	37
+re/names.tsv	changed	0x0067b2f0	CSWGuiMainMenu::OnOptions	34	33
+re/names.tsv	changed	0x00686920	CSWGuiNotifyLabel::Init	61	62
+re/names.tsv	changed	0x00686ba0	CSWGuiMainInterface::Update	86	87
+re/names.tsv	changed	0x006898a0	CSWGuiPartyMemberSlot::Init	86	87
+re/names.tsv	changed	0x00695980	CSWGuiGalaxyMap::HandleInputEvent	68	67
+re/names.tsv	changed	0x006aa040	CSWGuiTutorialBox::SetMessageStrRef	24	25
+re/names.tsv	changed	0x006b0bb0	CSWGuiCharacter::StartLevelUp	44	45
+re/names.tsv	changed	0x006b5600	CSWGuiEquip::GetEmptySlotIcon	23	24
+re/names.tsv	changed	0x006c00c0	CSWGuiPause::SetReason	104	105
+re/names.tsv	changed	0x006c0610	CSWGuiStore::UpdateCredits	35	34
+re/names.tsv	changed	0x006c0be0	CSWGuiStore::DoBuy	57	56
+re/names.tsv	changed	0x006c0d80	CSWGuiStore::DoSell	65	64
+re/names.tsv	changed	0x006c8790	CSWGuiSaveLoad::DoSave	57	58
+re/names.tsv	changed	0x006d2580	CSWGuiQuestItems::OnItemHilighted	61	60
+re/names.tsv	changed	0x006e59c0	CSWCAnimBaseDoor::GetAnimationName	44	45
+re/names.tsv	changed	0x006f8480	CSWGuiCharGenAbilities::DecreaseAbility	82	83
+re/names.tsv	changed	0x006f8670	CSWGuiCharGenAbilities::IncreaseAbility	82	83
+re/names.tsv	changed	0x0040c8e0	CSWGuiManager::HandleInputEvent	175	175
+re/names.tsv	changed	0x0040d560	CExoBaseResFile::~CExoBaseResFile	9	9
+re/names.tsv	changed	0x004b3000	CServerExoAppInternal::ProcessPendingPlayerUpdates	23	23
+re/names.tsv	changed	0x004da330	CSWSEffectListHandler::OnApplySetStateInternal	218	218
+re/names.tsv	changed	0x004dd270	CSWSEffectListHandler::OnRemoveType4F	71	71
+re/names.tsv	changed	0x004dfa40	CSWSEffectListHandler::OnApplyDamage	522	522
+re/names.tsv	changed	0x004e7900	CSWSItemPropertyHandler::ApplyImmunity	97	97
+re/names.tsv	changed	0x004f00a0	CSWSCreature::SetActivity	83	83
+re/names.tsv	changed	0x004f1310	CSWSCreature::GetMeleeAttackRange	53	53
+re/names.tsv	changed	0x004f2c30	CSWSCreature::GetIsSelectableTarget	71	71
+re/names.tsv	changed	0x004f87d0	CSWSCreature::ClearActivities	77	77
+re/names.tsv	changed	0x004fa100	CSWSCreature::AddToArea	97	97
+re/names.tsv	changed	0x004faa70	CSWSCreature::UnequipItem	27	27
+re/names.tsv	changed	0x004fbbe0	CSWSCreature::SignalCombatWith	124	124
+re/names.tsv	changed	0x004fbe40	CSWSCreature::UseSkill	115	115
+re/names.tsv	changed	0x004fe210	CSWSCreature::AIUpdate	380	380
+re/names.tsv	changed	0x005057a0	CSWSArea::LoadStores	124	124
+re/names.tsv	changed	0x0050a7b0	CSWSArea::LoadPlaceables	97	97
+re/names.tsv	changed	0x0050ee30	FUN_0050ee30	9	9
+re/names.tsv	changed	0x0051b050	CSWSCreature::UpdatePerception	119	119
+re/names.tsv	changed	0x0052e430	CSWVirtualMachineCommands::ExecuteCommandApplyEffectAtLocation	65	65
+re/names.tsv	changed	0x00541280	CSWVirtualMachineCommands::ExecuteCommandPlayVisualAreaEffect	37	37
+re/names.tsv	changed	0x00546b70	CSWVirtualMachineCommands::ExecuteCommandSetMaxStealthXP	30	30
+re/names.tsv	changed	0x00546c20	CSWVirtualMachineCommands::ExecuteCommandSetCurrentStealthXP	30	30
+re/names.tsv	changed	0x00546c80	CSWVirtualMachineCommands::ExecuteCommandAwardStealthXP	27	27
+re/names.tsv	changed	0x00546f90	CSWVirtualMachineCommands::ExecuteCommandDuplicateHeadAppearance	61	61
+re/names.tsv	changed	0x0057f4a0	CSWSObject::RunActions	630	630
+re/names.tsv	changed	0x00584220	CSWWalkMesh::WalkSegment	255	255
+re/names.tsv	changed	0x005b5ea0	CSWSCreature::SendAttackSummary	85	85
+re/names.tsv	changed	0x005d1c40	CVirtualMachineStack::AssignLocationToLocation	62	62
+re/names.tsv	changed	0x005d2140	CVirtualMachineStack::ClearStack	41	41
+re/names.tsv	changed	0x005d21f0	CVirtualMachineStack::SetStackPointer	29	29
+re/names.tsv	changed	0x005e6640	CExoBase::GetDirectoryList	8	8
+re/names.tsv	changed	0x005e6d20	CExoResTypes::InitResourceTypes	218	218
+re/names.tsv	changed	0x00621210	CClientExoAppInternal::HandleInputAction	654	654
+re/names.tsv	changed	0x006227e0	CClientExoAppInternal::ProcessInput	888	888
+re/names.tsv	changed	0x0062ab30	CGuiInGame::ShowBarkBubble	12	12
+re/names.tsv	changed	0x0062bf70	CGuiInGame::TryAnimatedDialogCamera	37	37
+re/names.tsv	changed	0x006339c0	CGuiInGame::SelectDialogReply	100	100
+re/names.tsv	changed	0x00686b50	CSWGuiPartyButton::ScalarDeletingDestructor	12	12
+re/names.tsv	changed	0x00687700	CSWGuiMainInterface::ShowCombatMessage	71	71
+re/names.tsv	changed	0x00687860	CSWGuiMainInterface::UpdatePartyPortraits	273	273
+re/names.tsv	changed	0x006933a0	CSWGuiGalaxyMap::ShowPlanet	74	74
+re/names.tsv	changed	0x006a89f0	CSWGuiLetterbox::ScalarDeletingDestructor	11	11
+re/names.tsv	changed	0x006adb00	CSWGuiAbilities::SetCreature	47	47
+re/names.tsv	changed	0x006ae5f0	CSWGuiAbilities::HandleInputEvent	167	167
+re/names.tsv	changed	0x006b2250	CSWGuiCharacter::HandleInputEvent	114	114
+re/names.tsv	changed	0x006b3ed0	CSWGuiInventory::HandleInputEvent	58	58
+re/names.tsv	changed	0x006b4bb0	CSWGuiInventory::Render	29	29
+re/names.tsv	changed	0x006b4c30	CSWGuiInventory::OnPanelAdded	16	16
+re/names.tsv	changed	0x006b8770	CSWGuiContainer::Update	18	18
+re/names.tsv	changed	0x006b92f0	CSWGuiContainer::HandleInputEvent	63	63
+re/names.tsv	changed	0x006bb510	CSWGuiEquip::Render	9	9
+re/names.tsv	changed	0x006bff90	CSWGuiPartySelection::ScalarDeletingDestructor	12	12
+re/names.tsv	changed	0x006d2c20	CSWGuiQuestItems::OnPanelAdded	9	9
+re/names.tsv	changed	0x006f8880	CSWGuiCharGenAbilities::HandleInputEvent	65	65
+re/names.tsv	changed	0x006fb38d	entry	95	95
+re/objects.md	changed	0x005afce0	CSWSCreatureStats::ReadStatsFromGff	63	1093
+re/objects.md	changed	0x0055fcd0	CSWSItem::LoadDataFromGff	29	428
+re/objects.md	changed	0x00585670	CSWSPlaceable::LoadPlaceable	30	380
+re/objects.md	changed	0x0058a1f0	CSWSDoor::LoadDoor	104	446
+re/objects.md	changed	0x00592430	CSWSEncounter::ReadEncounterFromGff	80	421
+re/objects.md	new	0x0050ba00	CSWSArea::SaveGIT		310
+re/objects.md	new	0x005aec90	CSWSCreatureStats::SaveClassInfo		294
+re/objects.md	changed	0x00519e30	CSWSCreature::AIActionSetTrap	175	455
+re/objects.md	changed	0x0057d490	CSWSObject::AIActionOpenDoor	102	380
+re/objects.md	new	0x004b63e0	CServerExoAppInternal::Initialize		245
+re/objects.md	changed	0x0058da80	CSWSTrigger::LoadTrigger	120	343
+re/objects.md	new	0x005b1b90	CSWSCreatureStats::SaveStats		216
+re/objects.md	changed	0x0050f170	CSWSCreature::AIActionItemCastSpell	212	420
+re/objects.md	changed	0x0057e8c0	CSWSObject::AIActionUseObject	233	435
+re/objects.md	changed	0x005c7180	CSWSStore::LoadStore	27	193
+re/objects.md	new	0x00591350	CSWSEncounter::SaveEncounter		148
+re/objects.md	new	0x00500610	CSWSCreature::SaveCreature		131
+re/objects.md	new	0x00586a70	CSWSPlaceable::SavePlaceable		131
+re/objects.md	changed	0x0057bbf0	CSWSObject::AIActionCloseDoor	87	195
+re/objects.md	new	0x0058e660	CSWSTrigger::SaveTrigger		108
+re/objects.md	changed	0x005c9040	CSWSSoundObject::LoadSound	32	137
+re/objects.md	new	0x00588ad0	CSWSDoor::SaveDoor		103
+re/objects.md	new	0x0059adb0	CSWSScriptVarTable::SaveVarTable		98
+re/objects.md	changed	0x0057d9d0	CSWSObject::AIActionOpenLock	561	656
+re/objects.md	new	0x004d3ec0	CSWSCombatRound::SaveCombatRound		89
+re/objects.md	changed	0x005947b0	CSWSAreaOfEffectObject::LoadEffect	28	114
+re/objects.md	changed	0x004c84a0	CSWSModule::CSWSModule	112	186
+re/objects.md	changed	0x0059aa80	CSWSScriptVarTable::LoadVarTable	54	120
+re/objects.md	changed	0x0057bec0	CSWSObject::AIActionLock	387	449
+re/objects.md	gone	0x004cc907	switchD_004cc8ea::caseD_2	61	
+re/objects.md	new	0x004cc7e0	CSWSObject::SaveActionQueue		60
+re/objects.md	changed	0x0057a470	CSWSObject::AIActionDialogObject	438	498
+re/objects.md	new	0x00594d80	CSWSAreaOfEffectObject::SaveAreaEffect		60
+re/objects.md	changed	0x0050d6c0	CSWSArea::EventHandler	157	216
+re/objects.md	changed	0x005c7f30	CSWSWaypoint::LoadWaypoint	42	99
+re/objects.md	changed	0x00518c40	CSWSCreature::AIActionRecoverTrap	311	367
+re/objects.md	changed	0x0051f4f0	CSWSCreature::AIActionMoveToPoint	630	683
+re/objects.md	new	0x0055ccd0	CSWSItem::SaveItem		53
+re/objects.md	new	0x005c86d0	CSWSSoundObject::SaveSound		53
+re/objects.md	changed	0x004c68a0	CSWSModule::~CSWSModule	85	136
+re/objects.md	changed	0x00594b00	CSWSAreaOfEffectObject::LoadAreaEffect	28	77
+re/objects.md	changed	0x0058eae0	CSWSTrigger::CSWSTrigger	49	97
+re/objects.md	new	0x004b0780	CServerAIMaster::CServerAIMaster		46
+re/objects.md	new	0x005c6cd0	CSWSStore::SaveStore		46
+re/objects.md	changed	0x005101a0	CSWSCreature::AIActionCheckMoveToObject	44	88
+re/objects.md	changed	0x004fece0	CSWSCreature::EventHandler	524	564
+re/objects.md	changed	0x00590820	CSWSEncounter::ReadEncounterScriptsFromGff	31	67
+re/objects.md	changed	0x00587ba0	CSWSPlaceable::EventHandler	397	432
+re/objects.md	changed	0x0058b850	CSWSDoor::EventHandler	495	529
+re/objects.md	new	0x00507680	CSWSArea::SaveCreatures		31
+re/objects.md	new	0x00507750	CSWSArea::SaveItems		31
+re/objects.md	new	0x00507810	CSWSArea::SaveDoors		31
+re/objects.md	new	0x005078d0	CSWSArea::SaveTriggers		31
+re/objects.md	new	0x00507990	CSWSArea::SaveEncounters		31
+re/objects.md	new	0x00507a50	CSWSArea::SaveWaypoints		31
+re/objects.md	new	0x00507b10	CSWSArea::SaveSounds		31
+re/objects.md	new	0x00507bd0	CSWSArea::SavePlaceables		31
+re/objects.md	new	0x00507ca0	CSWSArea::SaveStores		31
+re/objects.md	new	0x00507d60	CSWSArea::SaveAreaEffects		31
+re/objects.md	new	0x0059b250	CSWVarTable::SaveVarTable		27
+re/objects.md	new	0x005c8230	CSWSWaypoint::SaveWaypoint		27
+re/objects.md	changed	0x00517a60	CSWSCreature::AIActionHeal	277	303
+re/objects.md	changed	0x004d0220	CSWSObject::~CSWSObject	86	110
+re/objects.md	changed	0x0050a350	CSWSArea::LoadTriggers	118	142
+re/objects.md	changed	0x005bbbf0	CSWSCreature::AIActionAttackObject	474	498
+re/objects.md	new	0x004b0970	CServerAIMaster::SaveEventQueue		23
+re/objects.md	new	0x004cc9d0	CSWSObject::SaveEffectList		23
+re/objects.md	changed	0x0050d370	CSWSArea::~CSWSArea	110	129
+re/objects.md	changed	0x0058c5f0	CSWSDoor::LoadFromGITEntry	59	76
+re/objects.md	changed	0x004cad20	CSWSObject::SetPortraitId	39	54
+re/objects.md	changed	0x004d2450	CSWSCombatAttackData::LoadData	100	115
+re/objects.md	changed	0x004f8410	CSWSCreature::~CSWSCreature	142	157
+re/objects.md	changed	0x0050e900	CSWSCreature::AIActionExamineTrap	180	195
+re/objects.md	changed	0x00519570	CSWSCreature::AIActionDisableTrap	357	372
+re/objects.md	changed	0x0050e400	CSWSCreature::AIActionFlagTrap	175	189
+re/objects.md	changed	0x004af630	CServerAIMaster::DebugPrintEvent	253	266
+re/objects.md	new	0x004cec50	CSWSObject::SaveObjectState		12
+re/objects.md	changed	0x0058b550	CSWSDoor::~CSWSDoor	55	67
+re/objects.md	changed	0x0058eef0	CSWSTrigger::~CSWSTrigger	41	52
+re/objects.md	changed	0x004ed4c0	CSWSCreature::SetPortraitId	39	49
+re/objects.md	changed	0x004d79b0	CScriptEvent::LoadEvent	157	165
+re/objects.md	changed	0x004eb6e0	CSWSCreature::RunHeartbeat	179	187
+re/objects.md	changed	0x005854b0	CSWSPlaceable::~CSWSPlaceable	57	64
+re/objects.md	changed	0x005b6210	CSWSCreature::AIActionCombat	225	232
+re/objects.md	changed	0x004cecb0	CSWSObject::LoadActionQueue	183	188
+re/objects.md	changed	0x00514af0	CSWSCreature::AIActionCastSpell	394	399
+re/objects.md	changed	0x004babb0	CServerExoAppInternal::MainLoop	307	311
+re/objects.md	changed	0x005026d0	CSWSCreature::LoadFromTemplate	139	136
+re/objects.md	changed	0x0053df00	CSWVirtualMachineCommands::ExecuteCommandGetTag	56	59
+re/objects.md	changed	0x0057b430	CSWSObject::AIActionSpeak	52	55
+re/objects.md	changed	0x0057ce00	CSWSObject::AIActionBarkString	44	47
+re/objects.md	changed	0x00587a70	CSWSPlaceable::LoadFromTemplate	45	48
+re/objects.md	changed	0x00593a90	CSWSEncounter::LoadFromTemplate	51	54
+re/objects.md	changed	0x005c7760	CSWSStore::LoadFromTemplate	45	48
+re/objects.md	changed	0x005c83b0	CSWSWaypoint::LoadFromTemplate	45	48
+re/objects.md	changed	0x004d4c10	CSWSCombatRound::IncrementTimer	84	86
+re/objects.md	changed	0x00593830	CSWSEncounter::LoadEncounter	100	102
+re/objects.md	changed	0x004c7de0	CSWSModule::AddObjectToLookupTable	64	65
+re/objects.md	changed	0x004d4620	CSWSCombatRound::EndCombatRound	236	237
+re/objects.md	changed	0x004d4e80	CSWSCombatRound::DecrementPauseTimer	40	41
+re/objects.md	changed	0x004ebf20	CSWSCreature::ReadScriptsFromGff	97	98
+re/objects.md	changed	0x004f1c40	CSWSCreature::PostProcess	120	121
+re/objects.md	changed	0x00500350	CSWSCreature::LoadCreature	105	104
+re/objects.md	changed	0x00553040	CSWSObject::SetTag	23	24
+re/objects.md	changed	0x0057cf00	CSWSObject::AIActionPlaySound	56	57
+re/objects.md	changed	0x0057d080	CSWSObject::AIActionPlayAnimation	177	176
+re/objects.md	changed	0x0058f140	CSWSTrigger::EventHandler	232	233
+re/objects.md	changed	0x005aeb30	CSWSCreatureStats::ReadSpellsFromGff	63	62
+re/objects.md	changed	0x004fe210	CSWSCreature::AIUpdate	380	380
+re/objects.md	changed	0x005057a0	CSWSArea::LoadStores	124	124
+re/objects.md	changed	0x0050a7b0	CSWSArea::LoadPlaceables	97	97
+re/objects.md	changed	0x0057f4a0	CSWSObject::RunActions	630	630
+re/party-items-saves.md	changed	0x005afce0	CSWSCreatureStats::ReadStatsFromGff	63	1093
+re/party-items-saves.md	new	0x004b8300	CServerExoAppInternal::WriteTransitionAutoSave		472
+re/party-items-saves.md	changed	0x0055fcd0	CSWSItem::LoadDataFromGff	29	428
+re/party-items-saves.md	changed	0x00585670	CSWSPlaceable::LoadPlaceable	30	380
+re/party-items-saves.md	new	0x0052a280	ReadTableWithCat		318
+re/party-items-saves.md	new	0x006c6b60	CSWGuiUpgrade::CSWGuiUpgrade		314
+re/party-items-saves.md	new	0x00565d20	CSWPartyTable::LoadPartyTable		267
+re/party-items-saves.md	new	0x006c8e50	CSWGuiSaveLoadEntry::ReadSaveInfo		267
+re/party-items-saves.md	new	0x006cc160	CSWGuiSaveLoad::PopulateList		233
+re/party-items-saves.md	new	0x006ca250	CSWGuiSaveLoad::LoadTransitionAutoSave		232
+re/party-items-saves.md	new	0x006cb0e0	CSWGuiSaveLoad::LoadSelectedGame		229
+re/party-items-saves.md	changed	0x005648c0	CSWPartyTable::SavePartyTable	37	252
+re/party-items-saves.md	changed	0x004b3110	CServerExoAppInternal::DoSaveGame	113	310
+re/party-items-saves.md	new	0x005299b0	CSWGlobalVariableTable::WriteTable		197
+re/party-items-saves.md	changed	0x005fcd10	CClientExoAppInternal::FormatFeedbackMessage	2309	2491
+re/party-items-saves.md	changed	0x005c7180	CSWSStore::LoadStore	27	193
+re/party-items-saves.md	changed	0x004e5490	CSWSItemPropertyHandler::ApplyEnhancementBonus	39	203
+re/party-items-saves.md	changed	0x005864b0	CSWSPlaceable::InitBodyBag	30	181
+re/party-items-saves.md	new	0x00529ef0	CSWGlobalVariableTable::ReadTableNoCat		150
+re/party-items-saves.md	changed	0x004e7f40	CSWSItemPropertyHandler::RemoveEnhancementBonus	24	173
+re/party-items-saves.md	new	0x00500610	CSWSCreature::SaveCreature		131
+re/party-items-saves.md	new	0x0052ae50	CSWGlobalVariableTable::LoadCatalogue		130
+re/party-items-saves.md	new	0x006caaf0	CSWGuiSaveLoad::PrepareGameInProgress		123
+re/party-items-saves.md	changed	0x004e58c0	CSWSItemPropertyHandler::ApplyEnhancementPenalty	45	160
+re/party-items-saves.md	gone	0x00529c8b	switchD_00529c2c::caseD_1	115	
+re/party-items-saves.md	changed	0x006c4d70	CSWGuiUpgrade::OnPanelAdded	142	255
+re/party-items-saves.md	new	0x004b2ba0	CServerExoAppInternal::SavePlayerCharacters		106
+re/party-items-saves.md	new	0x006c9a90	CSWGuiSaveLoad::ExtractSaveToFutureGame		106
+re/party-items-saves.md	new	0x004c8960	CSWSModule::SaveModuleIFO		99
+re/party-items-saves.md	changed	0x004b58a0	CServerExoAppInternal::RequestSaveGame	33	131
+re/party-items-saves.md	changed	0x00635480	CSWCParty::SetLeader	113	207
+re/party-items-saves.md	changed	0x006c78d0	CSWGuiUpgradeSelect::CSWGuiUpgradeSelect	39	133
+re/party-items-saves.md	changed	0x004e83a0	CSWSItemPropertyHandler::RemoveEnhancementPenalty	31	124
+re/party-items-saves.md	new	0x006c7630	CSWGuiUpgradeItems::CSWGuiUpgradeItems		90
+re/party-items-saves.md	new	0x006c9de0	CAutoSaveParams::Load		90
+re/party-items-saves.md	changed	0x004e5e80	CSWSItemPropertyHandler::ApplyAttackBonus	30	117
+re/party-items-saves.md	gone	0x0052a133	switchD_0052a12c::caseD_0	83	
+re/party-items-saves.md	changed	0x00564300	CSWPartyTable::AddAvailableNPCByObject	31	114
+re/party-items-saves.md	changed	0x006c1c00	CSWGuiStore::CSWGuiStore	79	162
+re/party-items-saves.md	changed	0x004e8950	CSWSItemPropertyHandler::RemoveAttackBonus	24	106
+re/party-items-saves.md	new	0x0052b170	CSWGlobalVariableTable::CSWGlobalVariableTable		78
+re/party-items-saves.md	new	0x00563200	CSWPartyTable::Reset		75
+re/party-items-saves.md	new	0x004ba640	CServerExoAppInternal::LoadGame		71
+re/party-items-saves.md	new	0x004c3960	CSWSModule::SaveReputeFile		71
+re/party-items-saves.md	changed	0x004e6f60	CSWSItemPropertyHandler::ApplyDamagePenalty	38	107
+re/party-items-saves.md	changed	0x004e97a0	CSWSItemPropertyHandler::RemoveDamageImmunity	35	104
+re/party-items-saves.md	changed	0x004e60c0	CSWSItemPropertyHandler::ApplyAttackPenalty	37	99
+re/party-items-saves.md	gone	0x004e8ebf	switchD_004e8ea7::caseD_1	62	
+re/party-items-saves.md	gone	0x004ea07f	switchD_004ea067::caseD_1	62	
+re/party-items-saves.md	changed	0x006b6dc0	CSWGuiContainer::CSWGuiContainer	48	109
+re/party-items-saves.md	new	0x004e67d0	CSWSItemPropertyHandler::ApplySavingThrowEffect		58
+re/party-items-saves.md	new	0x004c3b10	CSWSModule::SaveAreaGIT		57
+re/party-items-saves.md	changed	0x004e8f70	CSWSItemPropertyHandler::RemoveACBonus	32	85
+re/party-items-saves.md	new	0x0055ccd0	CSWSItem::SaveItem		53
+re/party-items-saves.md	changed	0x004e8bc0	CSWSItemPropertyHandler::RemoveAttackPenalty	31	83
+re/party-items-saves.md	changed	0x004e9990	CSWSItemPropertyHandler::RemoveDamagePenalty	31	83
+re/party-items-saves.md	new	0x006b2c90	CSWGuiInventory::PassesFilter		52
+re/party-items-saves.md	changed	0x006c6500	CSWGuiUpgrade::OnSlotClicked	141	192
+re/party-items-saves.md	changed	0x004e9f60	CSWSItemPropertyHandler::RemoveDecreaseAbility	31	81
+re/party-items-saves.md	new	0x004b1b00	FUN_004b1b00		49
+re/party-items-saves.md	changed	0x004e8db0	CSWSItemPropertyHandler::RemoveAbilityBonus	31	80
+re/party-items-saves.md	new	0x004ca680	CSWSModule::FinishModuleSave		46
+re/party-items-saves.md	changed	0x004e74f0	CSWSItemPropertyHandler::ApplyDecreaseAbility	31	77
+re/party-items-saves.md	new	0x005c6cd0	CSWSStore::SaveStore		46
+re/party-items-saves.md	changed	0x004e6390	CSWSItemPropertyHandler::ApplyAbilityBonus	31	76
+re/party-items-saves.md	changed	0x004e6510	CSWSItemPropertyHandler::ApplyACBonus	37	81
+re/party-items-saves.md	new	0x00638e80	CSWCChaseCamera::FaceTarget		42
+re/party-items-saves.md	changed	0x005a5680	CSWSCreatureStats::SetMovementRate	45	86
+re/party-items-saves.md	new	0x004ba820	CServerExoAppInternal::BeginLoadModule		40
+re/party-items-saves.md	changed	0x00564030	CSWPartyTable::SaveInventory	40	80
+re/party-items-saves.md	changed	0x004b2e70	CServerExoAppInternal::SaveCurrentModuleToGameInProgress	29	68
+re/party-items-saves.md	changed	0x005541c0	CSWSItem::GetUpgradeCategory	82	120
+re/party-items-saves.md	changed	0x00501c40	CSWSCreature::EquipDefaultClothes	30	66
+re/party-items-saves.md	new	0x004b2840	CAutoSaveParams::CAutoSaveParams		35
+re/party-items-saves.md	new	0x00563d90	CSWPartyTable::SaveJournal		32
+re/party-items-saves.md	new	0x00507680	CSWSArea::SaveCreatures		31
+re/party-items-saves.md	changed	0x00564700	CSWPartyTable::GetNPCObject	50	80
+re/party-items-saves.md	new	0x004b28e0	CAutoSaveParams::Save		29
+re/party-items-saves.md	changed	0x00697610	FUN_00697610	65	92
+re/party-items-saves.md	changed	0x004ce220	CSWSObject::SpawnBodyBag	168	194
+re/party-items-saves.md	changed	0x00561e30	CSWSPlayer::LoadCharacter	145	170
+re/party-items-saves.md	changed	0x004e7670	CSWSItemPropertyHandler::ApplyDecreaseAC	31	55
+re/party-items-saves.md	changed	0x004ea130	CSWSItemPropertyHandler::RemoveDecreaseAC	31	55
+re/party-items-saves.md	changed	0x004ea290	CSWSItemPropertyHandler::RemoveDecreaseSkill	31	55
+re/party-items-saves.md	new	0x0052ade0	CSWGlobalVariableTable::LoadFromSaveDirectory		24
+re/party-items-saves.md	changed	0x004e77c0	CSWSItemPropertyHandler::ApplyDecreaseSkill	31	54
+re/party-items-saves.md	new	0x00563a40	CSWPartyTable::SetLeaderByCreature		23
+re/party-items-saves.md	changed	0x00563e80	CSWPartyTable::SaveNPCState	49	72
+re/party-items-saves.md	changed	0x004e9e30	CSWSItemPropertyHandler::RemoveDamageVulnerability	32	54
+re/party-items-saves.md	changed	0x005667c0	CSWPartyTable::SwitchPlayerCharacter	232	254
+re/party-items-saves.md	changed	0x004e6e20	CSWSItemPropertyHandler::ApplyDamageImmunity	33	54
+re/party-items-saves.md	changed	0x004e9cf0	CSWSItemPropertyHandler::RemoveDamageResistance	32	53
+re/party-items-saves.md	new	0x00563bf0	CSWPartyTable::GetPlayedSeconds		21
+re/party-items-saves.md	changed	0x006c0f40	CSWGuiStore::OnSell	64	85
+re/party-items-saves.md	new	0x006c6190	CSWGuiUpgrade::OnAssemble		21
+re/party-items-saves.md	changed	0x004e66b0	CSWSItemPropertyHandler::ApplyForceResistance	31	51
+re/party-items-saves.md	changed	0x004e9bb0	CSWSItemPropertyHandler::RemoveDamageReduction	31	51
+re/party-items-saves.md	changed	0x0062e310	CGuiInGame::OpenStore	38	58
+re/party-items-saves.md	changed	0x006c1130	CSWGuiStore::OnBuy	73	93
+re/party-items-saves.md	changed	0x00565130	CSWPartyTable::SpawnAvailableNPC	85	104
+re/party-items-saves.md	changed	0x00554080	CSWSItem::GetItemLevel	30	48
+re/party-items-saves.md	new	0x00401080	WriteSaveScreenshot		17
+re/party-items-saves.md	changed	0x004e9110	CSWSItemPropertyHandler::RemoveForceResistance	31	48
+re/party-items-saves.md	new	0x00553900	CSWSItem::IsUsablePropertyType		16
+re/party-items-saves.md	changed	0x006c0aa0	CSWGuiStore::OnItemHilighted	44	60
+re/party-items-saves.md	changed	0x006b7270	FUN_006b7270	89	102
+re/party-items-saves.md	changed	0x0053a390	CSWVirtualMachineCommands::ExecuteCommandGetItemPossessedBy	103	115
+re/party-items-saves.md	new	0x00563a80	CSWPartyTable::ResetFollowState		12
+re/party-items-saves.md	changed	0x006c0850	CSWGuiStore::FillPlayerItems	104	116
+re/party-items-saves.md	new	0x004b1650	CServerExoAppInternal::LoadGlobalVariableCatalogue		11
+re/party-items-saves.md	changed	0x006c1840	CSWGuiStore::FillStoreItems	88	99
+re/party-items-saves.md	new	0x00563d20	CSWPartyTable::CSWPartyTable		10
+re/party-items-saves.md	changed	0x006c5510	CSWGuiUpgrade::OnUpgradeChosen	159	168
+re/party-items-saves.md	new	0x004af0e0	CServerExoApp::SetSaveGameName		8
+re/party-items-saves.md	changed	0x004e73d0	CSWSItemPropertyHandler::ApplyDamageVulnerability	42	50
+re/party-items-saves.md	changed	0x0052ad10	CSWGlobalVariableTable::SaveToDirectory	31	39
+re/party-items-saves.md	changed	0x005b6210	CSWSCreature::AIActionCombat	225	232
+re/party-items-saves.md	changed	0x004b20e0	GetModuleIncludeInSave	52	58
+re/party-items-saves.md	changed	0x004e7190	CSWSItemPropertyHandler::ApplyDamageReduction	44	50
+re/party-items-saves.md	changed	0x004e72b0	CSWSItemPropertyHandler::ApplyDamageResistance	44	50
+re/party-items-saves.md	changed	0x004e9230	CSWSItemPropertyHandler::ApplyImprovedSavingThrow	31	37
+re/party-items-saves.md	changed	0x004e92e0	CSWSItemPropertyHandler::ApplyReducedSavingThrow	31	37
+re/party-items-saves.md	changed	0x00538ed0	CSWVirtualMachineCommands::ExecuteCommandGetGlobalString	45	51
+re/party-items-saves.md	changed	0x00542c60	CSWVirtualMachineCommands::ExecuteCommandSetGlobalString	43	49
+re/party-items-saves.md	changed	0x004ea890	CSWSItemPropertyHandler::RemoveImprovedSavingThrow	31	35
+re/party-items-saves.md	changed	0x004ea940	CSWSItemPropertyHandler::RemoveReducedSavingThrow	31	35
+re/party-items-saves.md	changed	0x006b9470	CSWGuiEquip::OnSlotHilighted	193	197
+re/party-items-saves.md	changed	0x004f2a50	CSWSCreature::SetActivityMode	90	93
+re/party-items-saves.md	changed	0x0052dcd0	CSWVirtualMachineCommands::ExecuteCommandAddAvailableNPCByTemplate	46	49
+re/party-items-saves.md	changed	0x0052f570	CSWVirtualMachineCommands::ExecuteCommandCreateItemOnObject	151	154
+re/party-items-saves.md	changed	0x00542a50	CSWVirtualMachineCommands::ExecuteCommandSetGlobalLocation	51	54
+re/party-items-saves.md	changed	0x00547970	CSWVirtualMachineCommands::ExecuteCommandChangeItemCost	64	67
+re/party-items-saves.md	changed	0x005f4b50	CClientExoAppInternal::QuickSave	25	28
+re/party-items-saves.md	changed	0x004b6270	CServerExoAppInternal::StartModuleRunning	58	60
+re/party-items-saves.md	changed	0x00538cd0	CSWVirtualMachineCommands::ExecuteCommandGetGlobalLocation	49	51
+re/party-items-saves.md	changed	0x00538dc0	CSWVirtualMachineCommands::ExecuteCommandGetGlobalBoolean	54	56
+re/party-items-saves.md	changed	0x00542b60	CSWVirtualMachineCommands::ExecuteCommandSetGlobalBoolean	49	51
+re/party-items-saves.md	changed	0x005438b0	CSWVirtualMachineCommands::ExecuteCommandShowPartySelectionGUI	46	48
+re/party-items-saves.md	changed	0x0055d330	CItemRepository::AddItem	227	229
+re/party-items-saves.md	changed	0x004f2610	CSWSCreature::SetCombatState	100	101
+re/party-items-saves.md	changed	0x00540300	CSWVirtualMachineCommands::ExecuteCommandOpenStore	108	109
+re/party-items-saves.md	changed	0x005638d0	CSWPartyTable::MountGameInProgress	27	26
+re/party-items-saves.md	changed	0x00563950	CSWPartyTable::UnmountGameInProgress	29	28
+re/party-items-saves.md	changed	0x006c0be0	CSWGuiStore::DoBuy	57	56
+re/party-items-saves.md	changed	0x006c0d80	CSWGuiStore::DoSell	65	64
+re/party-items-saves.md	changed	0x006c8790	CSWGuiSaveLoad::DoSave	57	58
+re/party-items-saves.md	changed	0x004e7900	CSWSItemPropertyHandler::ApplyImmunity	97	97
+re/party-items-saves.md	changed	0x004faa70	CSWSCreature::UnequipItem	27	27
+re/pazaak.md	new	0x006808a0	CSWGuiPazaakGame::CSWGuiPazaakGame		344
+re/pazaak.md	changed	0x0067f000	CSWGuiPazaakWager::CSWGuiPazaakWager	58	193
+re/pazaak.md	changed	0x00681a90	CSWGuiPazaakSetup::CSWGuiPazaakSetup	143	231
+re/pazaak.md	changed	0x00540fd0	CSWVirtualMachineCommands::ExecuteCommandPlayPazaak	61	62
+re/render-gui.md	new	0x00607610	CSWCArea::LoadArea		1001
+re/render-gui.md	new	0x0061dbe0	FUN_0061dbe0		838
+re/render-gui.md	new	0x00602eb0	CClientExoAppInternal::MainLoop		698
+re/render-gui.md	changed	0x0061b780	FUN_0061b780	33	643
+re/render-gui.md	changed	0x006a1880	FUN_006a1880	54	625
+re/render-gui.md	new	0x005f8550	CClientExoAppInternal::Initialize		558
+re/render-gui.md	new	0x006f51d0	CSWGuiCharGenSkills::CSWGuiCharGenSkills		480
+re/render-gui.md	changed	0x006b0e40	CSWGuiCharacter::CSWGuiCharacter	161	551
+re/render-gui.md	new	0x006f7600	CSWGuiCharGenAbilities::CSWGuiCharGenAbilities		389
+re/render-gui.md	new	0x006dc3c0	CSWGuiClassSelection::CSWGuiClassSelection		368
+re/render-gui.md	new	0x006808a0	CSWGuiPazaakGame::CSWGuiPazaakGame		344
+re/render-gui.md	new	0x006c6b60	CSWGuiUpgrade::CSWGuiUpgrade		314
+re/render-gui.md	changed	0x004041f0	WinMain	41	328
+re/render-gui.md	changed	0x0068c100	CSWGuiMainInterface::CSWGuiMainInterface	207	492
+re/render-gui.md	changed	0x006ba980	CSWGuiEquip::CSWGuiEquip	103	327
+re/render-gui.md	new	0x0062fed0	CGuiInGame::CGuiInGame		222
+re/render-gui.md	new	0x006e16e0	CSWGuiOptionsGraphicsAdvanced::CSWGuiOptionsGraphicsAdvanced		220
+re/render-gui.md	new	0x006f2180	CSWGuiCharGenPowers::CSWGuiCharGenPowers		217
+re/render-gui.md	new	0x006ee7d0	CSWGuiLevelUpPanel::CSWGuiLevelUpPanel		198
+re/render-gui.md	new	0x006e69a0	CSWGuiOptionsGameplay::CSWGuiOptionsGameplay		197
+re/render-gui.md	new	0x006e3550	CSWGuiOptionsSound::CSWGuiOptionsSound		177
+re/render-gui.md	new	0x006e0710	CSWGuiOptionsResolution::CSWGuiOptionsResolution		173
+re/render-gui.md	changed	0x006b34c0	CSWGuiInventory::CSWGuiInventory	76	236
+re/render-gui.md	new	0x006e2e70	CSWGuiOptionsGraphics::CSWGuiOptionsGraphics		152
+re/render-gui.md	changed	0x006adda0	CSWGuiAbilities::CSWGuiAbilities	84	235
+re/render-gui.md	changed	0x00695180	CSWGuiGalaxyMap::CSWGuiGalaxyMap	72	220
+re/render-gui.md	changed	0x00644a40	CSWGuiJournal::CSWGuiJournal	59	206
+re/render-gui.md	changed	0x0067f000	CSWGuiPazaakWager::CSWGuiPazaakWager	58	193
+re/render-gui.md	changed	0x006f3d60	CSWGuiCharGenFeats::CSWGuiCharGenFeats	88	219
+re/render-gui.md	changed	0x00627980	CSWGuiTopMenu::CSWGuiTopMenu	59	188
+re/render-gui.md	changed	0x006ea000	CSWGuiScriptSelect::CSWGuiScriptSelect	46	172
+re/render-gui.md	changed	0x00403800	SetVideoMode	77	199
+re/render-gui.md	new	0x006e20a0	CSWGuiOptionsSoundAdvanced::CSWGuiOptionsSoundAdvanced		122
+re/render-gui.md	changed	0x006a8eb0	CSWGuiDialogComputer::CSWGuiDialogComputer	67	182
+re/render-gui.md	new	0x006e76a0	CSWGuiOptionsAutoPause::CSWGuiOptionsAutoPause		114
+re/render-gui.md	changed	0x0068f8d0	CSWGuiCredits::CSWGuiCredits	39	150
+re/render-gui.md	new	0x006ef730	CSWGuiCharGenCustomPanel::CSWGuiCharGenCustomPanel		106
+re/render-gui.md	changed	0x006cc680	CSWGuiSaveLoad::CSWGuiSaveLoad	50	155
+re/render-gui.md	changed	0x006272a0	CSWGuiStatusSummary::CSWGuiStatusSummary	40	143
+re/render-gui.md	new	0x006f09f0	CSWGuiCharGenQuickOrCustom::CSWGuiCharGenQuickOrCustom		99
+re/render-gui.md	new	0x006f0390	CSWGuiCharGenQuickPanel::CSWGuiCharGenQuickPanel		97
+re/render-gui.md	changed	0x006c78d0	CSWGuiUpgradeSelect::CSWGuiUpgradeSelect	39	133
+re/render-gui.md	new	0x00409f00	CSWGuiManager::LoadGuiSounds		92
+re/render-gui.md	changed	0x0063f660	CSWCModule::LoadFromMessage	59	149
+re/render-gui.md	new	0x006c7630	CSWGuiUpgradeItems::CSWGuiUpgradeItems		90
+re/render-gui.md	new	0x006f9e70	CSWGuiCharGenName::CSWGuiCharGenName		89
+re/render-gui.md	changed	0x00681a90	CSWGuiPazaakSetup::CSWGuiPazaakSetup	143	231
+re/render-gui.md	changed	0x006e3e80	CSWGuiOptionsMain::CSWGuiOptionsMain	39	126
+re/render-gui.md	new	0x0040bad0	CSWGuiManager::CSWGuiManager		85
+re/render-gui.md	new	0x006e2a70	CSWGuiOptionsFeedback::CSWGuiOptionsFeedback		84
+re/render-gui.md	changed	0x006c1c00	CSWGuiStore::CSWGuiStore	79	162
+re/render-gui.md	changed	0x00626400	CSWGuiMessages::CSWGuiMessages	46	128
+re/render-gui.md	new	0x0041d3e0	CSWGuiListBox::LoadProtoItem		80
+re/render-gui.md	changed	0x006ab2f0	CSWGuiOptionsInGame::CSWGuiOptionsInGame	51	128
+re/render-gui.md	changed	0x00694d50	CSWGuiMap::CSWGuiMap	49	124
+re/render-gui.md	changed	0x006bfa40	CSWGuiPartySelection::CSWGuiPartySelection	78	150
+re/render-gui.md	new	0x0070d380	FUN_0070d380		72
+re/render-gui.md	new	0x0070d510	FUN_0070d510		67
+re/render-gui.md	new	0x0070d6b0	FUN_0070d6b0		65
+re/render-gui.md	changed	0x006a8b40	CSWGuiDialogLetterbox::CSWGuiDialogLetterbox	34	97
+re/render-gui.md	changed	0x006b6dc0	CSWGuiContainer::CSWGuiContainer	48	109
+re/render-gui.md	new	0x006cae70	CSWGuiSaveName::CSWGuiSaveName		60
+re/render-gui.md	changed	0x006e2600	CSWGuiOptionsMouse::CSWGuiOptionsMouse	45	105
+re/render-gui.md	changed	0x0067a710	CSWGuiLoadScreen::CSWGuiLoadScreen	39	93
+re/render-gui.md	changed	0x0067ace0	CSWGuiMainMenu::InitPanel	27	80
+re/render-gui.md	changed	0x00626df0	CSWGuiMessageBox::CSWGuiMessageBox	47	93
+re/render-gui.md	new	0x0040aaa0	CSWGuiManager::~CSWGuiManager		43
+re/render-gui.md	new	0x0070c790	Render_LoadTGAResource		38
+re/render-gui.md	new	0x0070ce80	FUN_0070ce80		38
+re/render-gui.md	new	0x0070cc60	FUN_0070cc60		37
+re/render-gui.md	changed	0x0067afb0	CSWGuiMainMenu::OnNewGame	37	73
+re/render-gui.md	new	0x0070c6e0	FUN_0070c6e0		36
+re/render-gui.md	new	0x0070cd10	FUN_0070cd10		36
+re/render-gui.md	new	0x0070cdd0	FUN_0070cdd0		36
+re/render-gui.md	changed	0x0041bcd0	CSWGuiScrollBar::LoadFromGFF	23	58
+re/render-gui.md	changed	0x006ce7c0	CSWGuiSkillInfo::CSWGuiSkillInfo	38	73
+re/render-gui.md	changed	0x0067c4c0	CSWGuiMainMenu::CSWGuiMainMenu	130	161
+re/render-gui.md	changed	0x0041d5b0	CSWGuiListBox::LoadFromGFF	23	52
+re/render-gui.md	changed	0x006c03b0	CSWGuiPause::CSWGuiPause	33	62
+re/render-gui.md	changed	0x0041cc30	CSWGuiSlider::LoadFromGFF	23	51
+re/render-gui.md	changed	0x006dd910	CSWGuiTitleMovies::CSWGuiTitleMovies	37	65
+re/render-gui.md	changed	0x00402240	HandleCharMessage	89	114
+re/render-gui.md	changed	0x00416050	CSWGuiText::LoadFromGFF	49	74
+re/render-gui.md	new	0x004173d0	CSWGuiEditText::CSWGuiEditText		25
+re/render-gui.md	new	0x0041c6b0	CSWGuiEditBox::CSWGuiEditBox		25
+re/render-gui.md	new	0x0070d9c0	Render_InstallResourceCallbacks		23
+re/render-gui.md	changed	0x00418a90	CSWGuiControl::GetTooltipText	71	93
+re/render-gui.md	changed	0x0041bbc0	CSWGuiProgressBar::LoadFromGFF	23	45
+re/render-gui.md	new	0x0044ecd0	CAurGLDisplay::GetInstance		22
+re/render-gui.md	changed	0x0041cb40	CSWGuiCheckBox::LoadFromGFF	23	40
+re/render-gui.md	new	0x00401bb0	GL_SetDefaultState		16
+re/render-gui.md	changed	0x0041c930	CSWGuiButton::LoadFromGFF	23	39
+re/render-gui.md	changed	0x006c7d50	CSWGuiAreaTransition::CSWGuiAreaTransition	37	52
+re/render-gui.md	changed	0x00418840	CSWGuiControl::LoadFromPanelGFF	44	57
+re/render-gui.md	changed	0x006a9770	CSWGuiBarkBubble::CSWGuiBarkBubble	34	45
+re/render-gui.md	changed	0x006a95f0	CSWGuiDialogComputerCamera::CSWGuiDialogComputerCamera	44	53
+re/render-gui.md	changed	0x004162e0	CSWGuiEditText::Backspace	34	42
+re/render-gui.md	changed	0x004163a0	CSWGuiEditText::AppendText	38	46
+re/render-gui.md	changed	0x0041b960	CSWGuiLabel::LoadFromGFF	23	31
+re/render-gui.md	changed	0x0041c7d0	CSWGuiEditBox::LoadFromGFF	23	31
+re/render-gui.md	new	0x0044ee30	Render_EnableGrass		8
+re/render-gui.md	new	0x0044ee40	Render_DisableGrass		8
+re/render-gui.md	new	0x0044ef60	Render_DisableVBO		8
+re/render-gui.md	new	0x0044ef70	Render_DisableWriteOnlyVBO		8
+re/render-gui.md	new	0x0044ef80	Render_EnableWriteOnlyVBO		8
+re/render-gui.md	changed	0x0040a680	CSWGuiPanel::LoadGui	73	80
+re/render-gui.md	changed	0x00624810	CSWGuiFade::CSWGuiFade	34	41
+re/render-gui.md	changed	0x006a30e0	FUN_006a30e0	157	150
+re/render-gui.md	changed	0x0040a900	CSWGuiPanel::GetResolutionTag	27	31
+re/render-gui.md	changed	0x00419a20	CSWGuiControl::~CSWGuiControl	21	25
+re/render-gui.md	changed	0x006a1220	CSWCVisualEffect::ApplyTextureEffect	132	136
+re/render-gui.md	changed	0x0041ba20	CSWGuiProtoItem::LoadFromGFF	23	26
+re/render-gui.md	changed	0x006a0680	FUN_006a0680	86	89
+re/render-gui.md	changed	0x006277c0	CSWGuiToolTip::CSWGuiToolTip	56	58
+re/render-gui.md	changed	0x006a2af0	FUN_006a2af0	117	119
+re/render-gui.md	changed	0x0040ae80	CSWGuiManager::DrawBackdrop	93	92
+re/render-gui.md	changed	0x0040bec0	CSWGuiManager::DrawDebugOverlay	119	118
+re/render-gui.md	changed	0x00415e50	CSWGuiTextInfo::SetStrRef	41	40
+re/render-gui.md	changed	0x0067b2f0	CSWGuiMainMenu::OnOptions	34	33
+re/render-gui.md	changed	0x00686ba0	CSWGuiMainInterface::Update	86	87
+re/render-gui.md	changed	0x006a34b0	FUN_006a34b0	66	67
+re/render-gui.md	changed	0x006a3660	FUN_006a3660	34	35
+re/render-gui.md	changed	0x006a38e0	FUN_006a38e0	235	236
+re/render-gui.md	changed	0x0040c8e0	CSWGuiManager::HandleInputEvent	175	175
+re/render-gui.md	changed	0x00621210	CClientExoAppInternal::HandleInputAction	654	654
+re/render-gui.md	changed	0x006227e0	CClientExoAppInternal::ProcessInput	888	888
+re/resman.md	new	0x005f8550	CClientExoAppInternal::Initialize		558
+re/resman.md	changed	0x004b95b0	CServerExoAppInternal::LoadModule	60	467
+re/resman.md	new	0x006dc3c0	CSWGuiClassSelection::CSWGuiClassSelection		368
+re/resman.md	new	0x004094a0	CExoResMan::LoadModuleResources		230
+re/resman.md	changed	0x004c44d0	CSWSModule::RemoveModuleResources	41	216
+re/resman.md	new	0x004c4150	CSWSModule::AddModuleResources		119
+re/resman.md	changed	0x005f14a0	FUN_005f14a0	79	153
+re/resman.md	new	0x0070d510	FUN_0070d510		67
+re/resman.md	new	0x0070cf80	FUN_0070cf80		40
+re/resman.md	new	0x0070d800	FUN_0070d800		38
+re/resman.md	changed	0x0067c4c0	CSWGuiMainMenu::CSWGuiMainMenu	130	161
+re/resman.md	changed	0x0040f3c0	CExoKeyTable::AddEncapsulatedContents	249	279
+re/resman.md	changed	0x005a4010	CSWSDialog::RunEntry	304	334
+re/resman.md	new	0x005e7a40	CExoResTypes::GetResTypeFromExtension		23
+re/resman.md	new	0x0070d9c0	Render_InstallResourceCallbacks		23
+re/resman.md	changed	0x005dca30	CExoStreamingSoundSourceInternal::Play	120	139
+re/resman.md	new	0x0070cf30	FUN_0070cf30		19
+re/resman.md	new	0x004064f0	CExoResMan::StartModuleLoad		18
+re/resman.md	new	0x004087a0	CExoResMan::AddEncapsulatedResourceFile		8
+re/resman.md	new	0x004087e0	CExoResMan::AddKeyTableFile		8
+re/resman.md	changed	0x00406650	CExoResMan::GetResTypeFromFile	33	40
+re/resman.md	changed	0x0040f200	CExoKeyTable::AddDirectoryContents	78	80
+re/resman.md	changed	0x004065a0	CExoResMan::GetResRefFromFile	34	35
+re/resman.md	changed	0x00406e20	CExoResMan::AddKeyTable	101	102
+re/resman.md	changed	0x0040c8e0	CSWGuiManager::HandleInputEvent	175	175
+re/resman.md	changed	0x004165e0	FUN_004165e0	57	57
+re/resman.md	changed	0x005e6d20	CExoResTypes::InitResourceTypes	218	218
+re/resources.md	changed	0x005b31d0	CSWBaseItemArray::Load	63	546
+re/resources.md	new	0x0054f2c0	FUN_0054f2c0		339
+re/resources.md	changed	0x005515e0	FUN_005515e0	131	383
+re/resources.md	new	0x004094a0	CExoResMan::LoadModuleResources		230
+re/resources.md	new	0x0054fec0	FUN_0054fec0		197
+re/resources.md	new	0x00550590	FUN_00550590		192
+re/resources.md	changed	0x005c0270	C2DAs::LoadAppearance	51	243
+re/resources.md	new	0x00552c50	CSWRules::CSWRules		185
+re/resources.md	new	0x0041e5a0	CTlkTable::SetTlkFile		161
+re/resources.md	changed	0x005c1010	C2DAs::LoadVFXPersistent	50	207
+re/resources.md	new	0x005ddbc0	CERFFile::AddFile		137
+re/resources.md	changed	0x0040fb80	CExoKeyTable::AddKeyTableContents	111	239
+re/resources.md	new	0x00412db0	CResGFF::Pack		127
+re/resources.md	new	0x0041d920	CTlkTable::OpenFile		123
+re/resources.md	new	0x005ddf30	CERFFile::AddResource		112
+re/resources.md	new	0x005dd710	CERFFile::ExtractAll		108
+re/resources.md	new	0x00412a10	CResGFF::WriteFieldCExoLocString		104
+re/resources.md	changed	0x005c32e0	C2DAs::LoadAnimations	50	145
+re/resources.md	new	0x005dd3c0	CERFFile::ReadLists		93
+re/resources.md	changed	0x005c0c80	C2DAs::LoadVisualeffects	50	137
+re/resources.md	changed	0x00408e90	CExoResMan::CleanDirectoryRecursive	134	219
+re/resources.md	new	0x00406990	CExoResMan::CopyFile		74
+re/resources.md	new	0x004c4cc0	CSWSModule::SetResRef		70
+re/resources.md	new	0x0070dbf0	CResHelperPLT::SetResRef		70
+re/resources.md	new	0x0070ee30	CResHelperTGA::SetResRef		70
+re/resources.md	new	0x0070f0f0	CResHelperVIS::SetResRef		70
+re/resources.md	new	0x0070f800	CResHelperTPC::SetResRef		70
+re/resources.md	new	0x0070fb90	CResHelperTXI::SetResRef		70
+re/resources.md	new	0x0070fe60	CResHelperMDX::SetResRef		70
+re/resources.md	new	0x00710530	CResHelperDDS::SetResRef		70
+re/resources.md	new	0x00710910	CResHelper4PC::SetResRef		70
+re/resources.md	new	0x005dda50	CERFFile::SetNumEntries		65
+re/resources.md	changed	0x004078f0	CExoResMan::ServiceFromDirectory	56	119
+re/resources.md	new	0x00409bf0	CExoResMan::CExoResMan		61
+re/resources.md	new	0x004113d0	CResGFF::WriteGFFData		57
+re/resources.md	new	0x00407390	CExoResMan::ListResourcesOfType		55
+re/resources.md	new	0x005de1a0	CERFFile::AddDirectory		52
+re/resources.md	new	0x0040d200	CExoKeyTable::LocateBifFile		46
+re/resources.md	changed	0x00408080	CExoResMan::ReadRawFromDirectory	54	99
+re/resources.md	new	0x00408450	CExoResMan::ReadRawFromResFile		45
+re/resources.md	new	0x004128c0	CResGFF::WriteFieldCResRef		45
+re/resources.md	new	0x005dce50	CERFFile::ReadHeader		44
+re/resources.md	changed	0x005c08f0	C2DAs::LoadAppearanceSndSet	50	89
+re/resources.md	new	0x005dcfc0	CERFFile::Create		37
+re/resources.md	new	0x00412ca0	CResGFF::WriteFieldQuaternion		35
+re/resources.md	new	0x005dd9c0	CERFFile::CERFFile		34
+re/resources.md	changed	0x004067b0	CExoResMan::GetFreeDiskSpace	26	59
+re/resources.md	changed	0x00406b20	CExoResMan::RemoveFile	26	59
+re/resources.md	new	0x00412d30	CResGFF::WriteFieldVector		32
+re/resources.md	changed	0x005c1980	C2DAs::LoadPlaceableobjsnds	50	81
+re/resources.md	changed	0x005c4730	C2DAs::LoadIPRPCostTables	75	106
+re/resources.md	changed	0x0040f3c0	CExoKeyTable::AddEncapsulatedContents	249	279
+re/resources.md	new	0x0041d810	CTlkFile::CTlkFile		28
+re/resources.md	changed	0x005c49c0	C2DAs::LoadIPRPParamTables	61	88
+re/resources.md	new	0x00408e30	CExoResMan::ReadRaw		24
+re/resources.md	changed	0x005c3bf0	C2DAs::LoadDialogAnimations	50	74
+re/resources.md	new	0x005e7a40	CExoResTypes::GetResTypeFromExtension		23
+re/resources.md	new	0x005dd080	CERFFile::WriteHeader		21
+re/resources.md	new	0x007129a0	CResTGA::CResTGA		19
+re/resources.md	new	0x004064f0	CExoResMan::StartModuleLoad		18
+re/resources.md	new	0x00712ea0	CResTPC::CResTPC		18
+re/resources.md	changed	0x004068c0	CExoResMan::CreateDirectory	26	43
+re/resources.md	changed	0x005c1830	C2DAs::LoadPlaceables	50	67
+re/resources.md	new	0x005dd0e0	CERFFile::Finish		17
+re/resources.md	new	0x00710b50	CResPLT::CResPLT		17
+re/resources.md	new	0x00408c60	CExoResMan::ListTableResourcesOfType		15
+re/resources.md	new	0x0041d890	CTlkFile::ReadHeader		15
+re/resources.md	changed	0x0041e1a0	CTlkTable::FetchInternal	135	150
+re/resources.md	new	0x00409b90	CExoResMan::LoaderThreadProc		14
+re/resources.md	changed	0x0041dd30	CTlkTable::ParseStr	194	208
+re/resources.md	new	0x00710ea0	CResDDS::CResDDS		14
+re/resources.md	new	0x00710f90	CRes4PC::CRes4PC		14
+re/resources.md	changed	0x00413030	CResGFF::WriteGFFFile	23	36
+re/resources.md	new	0x00710d50	CResVIS::CResVIS		13
+re/resources.md	new	0x00710db0	CResTXI::CResTXI		13
+re/resources.md	new	0x00710e10	CResMDX::CResMDX		13
+re/resources.md	new	0x0041e0f0	CTlkTable::GetLanguageID		12
+re/resources.md	changed	0x00411fd0	CResGFF::ReadFieldCExoLocString	77	88
+re/resources.md	new	0x004c30c0	CResIFO::CResIFO		10
+re/resources.md	changed	0x005c1580	C2DAs::LoadCreatureSpeed	50	60
+re/resources.md	changed	0x005c2180	C2DAs::LoadFootstepSounds	50	60
+re/resources.md	changed	0x005c2c20	C2DAs::LoadRegeneration	50	60
+re/resources.md	changed	0x005c3710	C2DAs::LoadForceAdjust	50	60
+re/resources.md	new	0x005e6670	CExoBase::GetResTypeFromExtension		10
+re/resources.md	new	0x005e9f00	CExoLocString::GetStringLength		10
+re/resources.md	changed	0x00674b90	FUN_00674b90	344	354
+re/resources.md	changed	0x0040e1f0	CExoEncapsulatedFile::LoadHeader	189	198
+re/resources.md	new	0x005dce30	CERFFile::SetFileType		9
+re/resources.md	new	0x004087a0	CExoResMan::AddEncapsulatedResourceFile		8
+re/resources.md	new	0x004087e0	CExoResMan::AddKeyTableFile		8
+re/resources.md	new	0x004088c0	CExoResMan::RemoveKeyTableFile		8
+re/resources.md	changed	0x00406650	CExoResMan::GetResTypeFromFile	33	40
+re/resources.md	changed	0x005ea050	CExoLocString::GetStringNoCache	38	45
+re/resources.md	changed	0x005ea130	CExoLocString::GetString	45	52
+re/resources.md	changed	0x004074d0	CExoResMan::GetResObject	78	83
+re/resources.md	changed	0x0040e790	CExoResourceImageFile::OpenFile	106	104
+re/resources.md	changed	0x0040f200	CExoKeyTable::AddDirectoryContents	78	80
+re/resources.md	changed	0x00411260	CResGFF::CreateGFFFile	51	53
+re/resources.md	changed	0x005ea340	CExoLocString::AddString	34	36
+re/resources.md	changed	0x004065a0	CExoResMan::GetResRefFromFile	34	35
+re/resources.md	changed	0x00406e20	CExoResMan::AddKeyTable	101	102
+re/resources.md	changed	0x0041e8f0	CTlkTable::GetSimpleString	31	32
+re/resources.md	changed	0x005c0ae0	C2DAs::LoadGENDER	50	51
+re/resources.md	changed	0x005c0bb0	C2DAs::LoadSURFACEMAT	50	51
+re/resources.md	changed	0x005c1690	C2DAs::LoadDoorTypes	50	51
+re/resources.md	changed	0x005c1760	C2DAs::LoadGenericDoors	50	51
+re/resources.md	changed	0x005c2290	C2DAs::LoadWeaponSounds	50	51
+re/resources.md	changed	0x005e6d20	CExoResTypes::InitResourceTypes	218	218
+re/rules.md	changed	0x0059ba20	CSWSpellArray::Load	64	868
+re/rules.md	changed	0x004ee770	CSWSCreature::ApplyPoisonTick	32	322
+re/rules.md	changed	0x00519e30	CSWSCreature::AIActionSetTrap	175	455
+re/rules.md	new	0x00552c50	CSWRules::CSWRules		185
+re/rules.md	changed	0x004f6790	FUN_004f6790	34	213
+re/rules.md	changed	0x004e5490	CSWSItemPropertyHandler::ApplyEnhancementBonus	39	203
+re/rules.md	changed	0x004e0ac0	CSWSEffectListHandler::OnApplyDeath	238	388
+re/rules.md	changed	0x004f3fe0	CSWSCreature::GetTotalEffectBonus	1291	1439
+re/rules.md	new	0x005bd0f0	CSWClass::LoadFeatTable		143
+re/rules.md	new	0x005bd900	CSWClass::LoadSpellGainTable		134
+re/rules.md	changed	0x004df540	CSWSEffectListHandler::OnApplyForceShield	72	187
+re/rules.md	new	0x005bd6c0	CSWClass::LoadSkillsTable		102
+re/rules.md	changed	0x0057d9d0	CSWSObject::AIActionOpenLock	561	656
+re/rules.md	new	0x005bd480	CSWClass::LoadSavingThrowTable		94
+re/rules.md	changed	0x004d8680	CSWSEffectListHandler::OnApplySummonCreature	71	159
+re/rules.md	new	0x005bcda0	CSWClass::LoadAttackBonusTable		85
+re/rules.md	changed	0x004fb1e0	CSWSCreature::AwardKillXP	49	131
+re/rules.md	changed	0x004daa40	CSWSEffectListHandler::OnApplyVisualEffect	61	136
+re/rules.md	new	0x005bcf70	CSWClass::LoadFeatGain		75
+re/rules.md	changed	0x00518c40	CSWSCreature::AIActionRecoverTrap	311	367
+re/rules.md	changed	0x004e2720	CSWSEffectListHandler::OnApplyDisease	112	166
+re/rules.md	changed	0x004db320	CSWSEffectListHandler::OnApplyPoison	146	199
+re/rules.md	changed	0x004e4790	CSWSEffectListHandler::OnApplyIcon	73	120
+re/rules.md	changed	0x004dade0	CSWSEffectListHandler::OnApplyAreaOfEffect	47	90
+re/rules.md	gone	0x005bd431	switchD_005bd321::caseD_4	42	
+re/rules.md	changed	0x004fece0	CSWSCreature::EventHandler	524	564
+re/rules.md	changed	0x004d9320	CSWSEffectListHandler::OnRemoveTemporaryHitpoints	117	150
+re/rules.md	changed	0x004dc7a0	CSWSEffectListHandler::OnRemoveHitPointChangeWhenDying	88	121
+re/rules.md	changed	0x00517a60	CSWSCreature::AIActionHeal	277	303
+re/rules.md	new	0x004cf390	FUN_004cf390		24
+re/rules.md	changed	0x004df420	FUN_004df420	27	45
+re/rules.md	changed	0x00617470	FUN_00617470	168	186
+re/rules.md	changed	0x00503790	CGameEffect::SaveEffect	65	80
+re/rules.md	changed	0x0050e900	CSWSCreature::AIActionExamineTrap	180	195
+re/rules.md	changed	0x00519570	CSWSCreature::AIActionDisableTrap	357	372
+re/rules.md	changed	0x00530ce0	CSWVirtualMachineCommands::ExecuteCommandEffectAreaOfEffect	85	100
+re/rules.md	changed	0x0050e400	CSWSCreature::AIActionFlagTrap	175	189
+re/rules.md	changed	0x00566600	CSWPartyTable::GivePlotXP	30	43
+re/rules.md	changed	0x005043a0	CGameEffect::LoadEffect	146	155
+re/rules.md	changed	0x004f1fd0	CSWSCreature::GetCanSeeStealthedBySight	206	211
+re/rules.md	changed	0x00514af0	CSWSCreature::AIActionCastSpell	394	399
+re/rules.md	changed	0x00508770	CSWSArea::AwardStealthXP	32	36
+re/rules.md	changed	0x00502ac0	CSWSCreature::DoPerceptionCheck	394	397
+re/rules.md	changed	0x005b78e0	CSWSCreature::GetCanDeflectProjectile	93	96
+re/rules.md	changed	0x004ef930	CSWSCreature::AddExperience	53	55
+re/rules.md	changed	0x00506a80	CSWSArea::SetStealthXPMax	9	11
+re/rules.md	changed	0x00506aa0	CSWSArea::SetStealthXPCurrent	10	12
+re/rules.md	changed	0x005af480	CSWSCreatureStats::SetExperience	79	81
+re/rules.md	changed	0x004cdf50	CSWSObject::SpellCastAndImpact	126	127
+re/rules.md	changed	0x004d1730	CSWSObject::UpdateEffectList	187	188
+re/rules.md	changed	0x004f19e0	CSWSCreature::GetKillXPValue	61	62
+re/rules.md	changed	0x004fb4b0	CSWSCreature::GetCanSeeStealthed	215	216
+re/rules.md	changed	0x004da330	CSWSEffectListHandler::OnApplySetStateInternal	218	218
+re/rules.md	changed	0x004dfa40	CSWSEffectListHandler::OnApplyDamage	522	522
+re/rules.md	changed	0x004fe210	CSWSCreature::AIUpdate	380	380
+re/rules.md	changed	0x0051b050	CSWSCreature::UpdatePerception	119	119
+re/rules.md	changed	0x0052e430	CSWVirtualMachineCommands::ExecuteCommandApplyEffectAtLocation	65	65
+re/vm.md	new	0x004b63e0	CServerExoAppInternal::Initialize		245
+re/vm.md	new	0x004afea0	CServerAIMaster::SaveEvent		118
+re/vm.md	new	0x005d1ef0	CVirtualMachineStack::LoadStack		91
+re/vm.md	changed	0x004b7c60	CServerExoAppInternal::ShutDownServer	79	155
+re/vm.md	gone	0x005d200d	switchD_005d1fe4::caseD_4	65	
+re/vm.md	new	0x004cc7e0	CSWSObject::SaveActionQueue		60
+re/vm.md	new	0x005d4900	CVirtualMachineInternal::CVirtualMachineInternal		40
+re/vm.md	new	0x005d0f40	CVirtualMachine::CVirtualMachine		27
+re/vm.md	changed	0x005d26f0	CVirtualMachineInternal::LoadScriptSituation	67	89
+re/vm.md	changed	0x00503790	CGameEffect::SaveEffect	65	80
+re/vm.md	changed	0x005d14d0	FUN_005d14d0	19	32
+re/vm.md	new	0x005d1a40	CVirtualMachineInternal::SetCommandImplementer		13
+re/vm.md	changed	0x005043a0	CGameEffect::LoadEffect	146	155
+re/vm.md	changed	0x0059ec90	CSWSDialog::CheckCondition	34	43
+re/vm.md	new	0x005d0ff0	CVirtualMachine::SetCommandImplementer		9
+re/vm.md	changed	0x004d79b0	CScriptEvent::LoadEvent	157	165
+re/vm.md	changed	0x004074d0	CExoResMan::GetResObject	78	83
+re/vm.md	changed	0x004cecb0	CSWSObject::LoadActionQueue	183	188
+re/vm.md	changed	0x005d2bd0	CVirtualMachineInternal::ExecuteCode	801	797
+re/vm.md	changed	0x00535b70	CSWVirtualMachineCommands::ExecuteCommandExecuteScript	44	46
+re/vm.md	changed	0x005d4270	CVirtualMachineInternal::RunScriptFile	51	49
+re/vm.md	changed	0x005d4550	CVirtualMachineScript::~CVirtualMachineScript	29	30
+re/vm.md	changed	0x0057f4a0	CSWSObject::RunActions	630	630
+re/vm.md	changed	0x005d1c40	CVirtualMachineStack::AssignLocationToLocation	62	62
+re/vm.md	changed	0x005d2140	CVirtualMachineStack::ClearStack	41	41
+re/vm.md	changed	0x005d21f0	CVirtualMachineStack::SetStackPointer	29	29

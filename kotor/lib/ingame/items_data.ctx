@@ -268,6 +268,29 @@ namespace items {
         return fit_refusal{ w, who, item, index } == null
     }
 
+    // What an equipment list marks a candidate row with (CSWGuiEquip::OnSlotHilighted 0x006b9470).
+    const FITS: u8 = 0
+    const REFUSED: u8 = 2           // CanEquipItem says no: proficiency, class, alignment, race
+    const PAIR: u8 = 3              // a weapon hand whose other hand holds a weapon it cannot go with
+
+    // The state of one candidate for the equipment index: FITS, REFUSED, or for a weapon hand PAIR.
+    // The pair rule is the screen's own, on top of the engine's (which would clear the other hand):
+    // with a weapon in the other hand both must have the same WeaponWield, and it must be 2
+    // (one-handed melee) or 4 (pistol). A weapon of size 4 in the right hand needs no partner.
+    fn row_state { w: *world::World, who: u32, item: u32, index: usize } -> u8 {
+        let state: u8 = if can_equip{ w, who, item, index } { FITS } else { REFUSED }
+        let right = index == obj::SLOT_RIGHT_WEAPON
+        if not right and index != obj::SLOT_LEFT_WEAPON { return state }
+        let c = hud::creature_of{ w, id = who } ifnull { return state }
+        let other = c.equipped[if right { obj::SLOT_LEFT_WEAPON } else { obj::SLOT_RIGHT_WEAPON }]
+        if other == obj::INVALID or not world::is_valid{ w, id = other } { return state }
+        if right and base_int{ w, id = item, column = "weaponsize", fallback = 0 } == 4 { return state }
+        let mine = base_int{ w, id = item, column = "weaponwield", fallback = 0 }
+        let theirs = base_int{ w, id = other, column = "weaponwield", fallback = 0 }
+        if mine != theirs or (mine != 2 and mine != 4) { return PAIR }
+        return state
+    }
+
     // ---- stats the equip screen shows
 
     // Defense: the rules' sheet armour class (class bonus, natural, armour, shield, deflection,

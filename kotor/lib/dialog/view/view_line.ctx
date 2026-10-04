@@ -18,7 +18,7 @@ namespace dlgview {
     fn play_animation { mut v: View, mut w: world::World, id: u32, number: u32, mut mark: [16]u32, mut marked: usize } {
         if id == obj::INVALID or number == NO_ANIMATION { return }
         let o = world::object{ w = &w, id } ifnull { return }
-        if obj::creature{ o } is some{ value = c } { if c.dead { return } }
+        if not fight::can_animate_participant{ w = &w, id } { return }
         world::set_animation{ o, id = number, speed = 1.0 }
         if marked < 16 {
             mark[marked] = id
@@ -49,10 +49,15 @@ namespace dlgview {
 
     // UpdateDialogAnimations: the node's AnimList, then the talk and listen loops for the speaker
     // and listener it doesn't name; whoever was animated for the last line and isn't now stands.
-    // A stunt body running its scene animation keeps it through the loops (and the standing): the
-    // cutscenes chain their shots through empty replies spoken by the player, whose default talk loop
-    // would show the real creature for a frame in the middle of the cut.
+    // A stunt body running its scene animation keeps it through the loops (and the standing) in a cut: a
+    // cutscene shot (a camera animation, or any line of an animated cutscene) is built on the stunt bodies'
+    // area-space poses, and the default talk loop would show the real creature in the middle of it. A line
+    // with a shot of the ordinary kind (framed, or a static camera) is the original's ordinary line, whose
+    // participants loop Talk and Listen: the Taris apartment's wake-up kept the player on its last scene
+    // animation through the whole talk after it, and every shot framed on the player was built on a pose
+    // at the area's origin (the black screen of the talk with Carth).
     fn update_animations { mut v: View, mut w: world::World, mut sc: scene::Scene, node: *dlg::Node, speaker: u32, listener: u32 } {
+        let in_cut = w.conversation.d.animated_cut or (v.camera_model.loaded and node.camera_anim >= 1000 and node.camera_anim < 1728)
         let mut mark: [16]u32 = [obj::INVALID; 16]
         let mut marked: usize = 0
         let mut speaker_named = false
@@ -68,7 +73,7 @@ namespace dlgview {
             play_animation{ &v, &w, id, number = a.animation, mark = &mark, marked = &marked }
         }
         if not speaker_named and speaker != obj::INVALID {
-            if runs_scene_animation{ v, &sc, id = speaker } {
+            if in_cut and runs_scene_animation{ v, &sc, id = speaker } {
                 keep_animation{ id = speaker, mark = &mark, marked = &marked }
             } else {
                 let n = if injured{ w = &w, id = speaker } { TALK_INJURED } else { TALK }
@@ -76,7 +81,7 @@ namespace dlgview {
             }
         }
         if not listener_named and listener != obj::INVALID and listener != speaker {
-            if runs_scene_animation{ v, &sc, id = listener } {
+            if in_cut and runs_scene_animation{ v, &sc, id = listener } {
                 keep_animation{ id = listener, mark = &mark, marked = &marked }
             } else {
                 let n = if injured{ w = &w, id = listener } { LISTEN_INJURED } else { LISTEN }
@@ -96,7 +101,7 @@ namespace dlgview {
             }
             if still { continue }
             let o = world::object{ w = &w, id } ifnull { continue }
-            world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
+            if fight::can_animate_participant{ w = &w, id } { world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 } }
         }
     }
 

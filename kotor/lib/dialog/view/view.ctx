@@ -61,6 +61,7 @@ namespace dlgview {
         static_id: i32,
         seen_static: i32,           // the last SetDialogPlaceableCamera id taken
         blocked: bool,              // the framed shot hit a wall: the plain close-up for this line
+        log_shot: bool,             // the next applied camera is written to the log (--log dialog), once per line
         sides: [4]SideEntry,
         side_count: usize,
         side_next: usize,
@@ -97,7 +98,7 @@ namespace dlgview {
             heap, m, up = false, holding = false, hold_left = 0.0, cutscene = false, carry_bars = false, seen_started = 0, seen_ended = 0, seen_line = 0, seen_choices = 0, wait = 0.0,
             mode = Mode::none, rig = dlgcam::Rig{ eye = math::vec3::zero{}, forward = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, up = dlgcam::zup{}, fov = dlgcam::FOV },
             have_rig = false, speaker = obj::INVALID, listener = obj::INVALID, angle = 0, cam_height = 0.0, tar_height = 0.0,
-            pull_back = 0.0, fov = 0.0, static_id = -1, seen_static = -1, blocked = false,
+            pull_back = 0.0, fov = 0.0, static_id = -1, seen_static = -1, blocked = false, log_shot = false,
             sides = [SideEntry{ a = obj::INVALID, b = obj::INVALID, side = 1.0 }; 4], side_count = 0, side_next = 0,
             stops, saved_fov = dlgcam::FOV, overriding = false,
             camera_model = CameraModel{ loaded = false, part = 0, node = 0, model = null },
@@ -265,7 +266,7 @@ namespace dlgview {
         let mut i: usize = 0
         while i < v.cast_count {
             let o = world::object{ w = &w, id = v.cast[i] }
-            if o != null { world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 } }
+            if o != null and fight::can_animate_participant{ w = &w, id = v.cast[i] } { world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 } }
             i = i + 1
         }
         v.cast_count = 0
@@ -297,7 +298,7 @@ namespace dlgview {
         let mut i: usize = 0
         while i < v.cast_count {
             let o = world::object{ w = &w, id = v.cast[i] }
-            if o != null { world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 } }
+            if o != null and fight::can_animate_participant{ w = &w, id = v.cast[i] } { world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 } }
             i = i + 1
         }
         v.cast_count = 0

@@ -9,6 +9,7 @@ the 24-core development machine.
 | Does this parser read every resource of its type? | the corpus tool for the format (`dlgcheck`, `fmtcheck`, `texcheck`, `mdlcheck`, `walkcheck`, ...) | seconds to a minute |
 | Does a script, routine or the VM do the right thing in a module? | `kotor.exe --engine-only --module M --frames N --log routines --report routines`, or `tools/enginetest` | well under a second |
 | Does any module fault, hang, crash or lack a routine, with a party that walks it? | the module smoke test, `sh kotor/tools/smoke/run.sh` → [smoke.md](smoke.md) | 4 minutes for all 117 |
+| Does a conversation shot show something (not a black or empty frame: Trask on the Endar Spire, Carth in the Taris apartment, the Dantooine Council)? | `sh kotor/tools/camcheck/run.sh` → [Conversation shots](#conversation-shots) | 20 s |
 | Does every conversation's graph and scripts run? | the conversation sweep, `sh kotor/tools/dlgsweep/run.sh` → [dlgsweep.md](dlgsweep.md) | 45 s for all 1,262 |
 | Does the story still play from here to there? | the playthrough replay, from a checkpoint if it can start in the middle ([playthrough.md](playthrough.md)) | 30 s for the Endar Spire, 1-2 min to the Undercity from the apartment; Dantooine (`sh kotor/tools/playthrough/dantooine/all.sh`, [playthrough-dantooine.md](playthrough-dantooine.md)) 8 min |
 | Does it look right? | a screenshot (`--screenshot-at FRAME:PNG`), read with the Read tool | one run |
@@ -19,6 +20,7 @@ the 24-core development machine.
 | Does the reticle and target block follow a walking player (the nearest thing in front, no click), and do hover, click and Q / E work? | `sh kotor/tools/autotarget/run.sh NAME CHECKPOINT SCRIPT FRAMES [FRAME:SHOT]...` with `keydown w` / `mouse` lines in the scripts of `kotor/tools/autotarget/scripts/`; the log has one `target: OLD -> NEW (m, degrees)` line per change ([mechanics/controls.md](mechanics/controls.md)) | seconds |
 | Does stealth (the toggle, G, the solo-mode box, hiding past enemies) work as a player meets it? | `sh kotor/tools/stealth/run.sh NAME START SCRIPT FRAMES [FRAME:SHOT]...` with the scripts in `kotor/tools/stealth/scripts/`; `ui stealth [TAG]` prints the state ([mechanics/stealth.md](mechanics/stealth.md)) | seconds |
 | Do the companions fight (Trask in the Endar Spire's room 3 and before the bridge, Carth in the Upper City), and does a line of sight block one who should? | `sh kotor/tools/combat/companions.sh`, FAIL and exit 1 when a party member made no attack in its fight; `ui los TAG TAG` / `ui losaudit` say what blocks a line; every run ends with `party attack rounds:` and a `companion idle:` line (below) | about a minute |
+| Do creatures that die in a cut scene or a conversation stay down (the Endar Spire's room 3 and room 5 scenes, the Taris raid)? | `sh kotor/tools/combat/corpses.sh`, FAIL and exit 1 when a dead creature's trace line shows an animation but a die or dead one ([re/dialogue.md](re/dialogue.md) 8.1); `--screenshot-range` with `cam duel TAGA TAGB` on the bodies shows it | 20 s |
 | Do the leader and the party followers walk and run at the right gait and cycle rate, and do their feet keep up with the ground? | `EXE=kotor/out/kotor_gait.exe sh kotor/tools/gait/run.sh NAME CHECKPOINT SCRIPT FRAMES [--screenshot-range FROM:TO:DIR]` with the keys of `kotor/tools/gait/scripts/` (`--log gait`: one `gait` line per walking creature per frame: speed, rate, place, the leader's speed and distance), then `python kotor/tools/py/gait_check.py kotor/out/gait/NAME.log FROM TO STEP TAG...` tabulates it; `gait_cam.py` adds a camera that follows one creature to a script for the pictures ([re/movement.md](re/movement.md) 3.6 and 6.2) | seconds |
 
 ## The game headless, fast
@@ -141,6 +143,28 @@ the owner, and writes [dlgsweep.md](dlgsweep.md): faults, routines nothing imple
 speakers not found, dialogues that do not load. It does not play a conversation (no voice, camera or panels); that
 is what the replay and `talk` in an input script are for. Use it after changing a routine that scripts call, the
 VM, or `lib/dialog/core`.
+
+## Conversation shots
+
+`sh kotor/tools/camcheck/run.sh` (`EXE=PATH` for another executable; about 20 s) takes pictures of 17 conversation
+shots and fails, with a `FAIL` line each and exit 1, when one is mostly black or empty: Trask's first talk on the
+Endar Spire (close-ups and a shoulder shot), the wake-up cuts and framed shots of the talk with Carth in the Taris
+apartment (`tar02_carth022`, frames 32,700 to 34,100 of the replay), Bastila's shots at the landing court on
+Dantooine and the Council's static cameras (part 1 of the Dantooine playthrough). It plays the Endar Spire replay and
+the Dantooine part 1 headless and fast in parallel, with `--screenshot-at` at a frame in the middle of a line each,
+and `python kotor/tools/py/frame_check.py PNG...` measures each picture over its middle (rows 18% to 82%, columns 5%
+to 95%, outside the letterbox bars and the subtitle): the mean luminance (fail under 10 of 255), the share of pixels of
+luminance 6 or more (fail under 0.5) and the contrast (fail under 6). The Taris black screen measured mean 7.2 and lit
+0.12 (the check fails three of its shots on the build that had the bug: the wide shots and the shoulder shot); the
+darkest healthy picture, the wake-up cut from the bed, mean 13.8 and lit 0.80. The pictures are
+`kotor/out/pt/cc_es_*.png` and `cc_dan_*.png`, the logs `cc_es.log` and `cc_dan.log`; each shot has a
+`dialog camera:` line in them (mode, angle, eye, where it looks, the room under it, and the speaker's and listener's
+eye points it was built from): an eye hundreds of metres from the participants, or one of the eye points at the area's
+origin (0, 0), is the first thing to look for when a picture is black. A camera that goes through a wall or stands
+outside the rooms is not a black frame, so look at the pictures too (Read them). The frames are those of the replay at
+this build: when a conversation's timing moves they shift, and a frame that falls in a fade or between two lines needs
+moving. Run it after changing the dialogue view (`lib/dialog/view`), the camera (`lib/scene/camera.ctx`), the scene's
+visibility or the animation of a cutscene's actors.
 
 ## Adding a check
 

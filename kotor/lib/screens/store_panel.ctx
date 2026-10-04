@@ -149,7 +149,7 @@ namespace store_panel {
         let mut select: i32 = 0
         let mut k: usize = 0
         while k < n {
-            let row = try items::add_row{ &g, &w, &dev, panel = p, tag, id = order[k], equipped = false, icon_size = ICON }
+            let row = try items::add_row{ &g, &w, &dev, panel = p, tag, id = order[k], equipped = false, icon_size = ICON, rows = items::PLAIN }
             if order[k] == s.picked { select = row }
             k = k + 1
         }
