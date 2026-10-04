@@ -18,6 +18,22 @@ namespace rt_mod {
         return true
     }
 
+    // The outbox already holds this film. A second StartNewModule of the same module change (a dialog's last reply and its end script
+    // both run the same script: k_ren_starland on the way back from the Star Forge's approach) asks for what is already asked: the
+    // original keeps one request, so the film plays once.
+    fn film_posted { w: *world::World, name: []u8 } -> bool {
+        let notes = outbox::notes{ out = &w.out }
+        let mut i: usize = 0
+        while i < notes.len {
+            if notes[i] is movie{ name = posted } {
+                let mut r = posted
+                if ci::eq{ a = resref::bytes{ r = &r }, b = name } { return true }
+            }
+            i = i + 1
+        }
+        return false
+    }
+
     // void StartNewModule(string sModuleName, string sWayPoint = "", string sMovie1 = "", ... sMovie6)
     // (0x00544390): the transition request, which the game loop acts on at the end of the frame
     // (gameloop.md 5.1, 5.3), and the movies queued to play during the load. An empty module
@@ -29,7 +45,7 @@ namespace rt_mod {
         let mut k: usize = 0
         while k < 6 {
             let movie = try nwarg::string{ &vm, routine = r, argc, i = 2 + k }
-            if name.len > 0 and movie.len > 0 {
+            if name.len > 0 and movie.len > 0 and not (w.transition != null and film_posted{ w = &w, name = movie }) {
                 outbox::post{ out = &w.out, note = outbox::Note::movie{ name = resref::truncate{ name = movie } } }
             }
             k = k + 1
