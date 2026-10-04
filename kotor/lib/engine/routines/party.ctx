@@ -111,8 +111,27 @@ namespace rt_party {
         w.party.available[s] = true
         w.party.selectable[s] = true
         w.party.templates[s] = o.template
+        set_joining_xp{ &w, s, level = @as(i32, c.hit_dice) }
         join_party_side{ &w, o, c }
         return true
+    }
+
+    // JoiningXP (AddAvailableNPCByObject 0x00564300, re/party-items-saves.md 3.4): what a recruit of this level lacks of the
+    // XP its level implies once its share of the party's pool is counted; SpawnAvailableNPC catches it up.
+    fn set_joining_xp { mut w: world::World, s: usize, level: i32 } {
+        w.party.joining_xp[s] = rules::joining_xp{ tables = w.rules, level, pool = w.party.xp_pool, percent_xp = rules::npc_percent_xp{ tables = w.rules, row = @as(i32, s) } }
+    }
+
+    // The level of a UTC: its classes' levels added.
+    fn utc_level { doc: *gff::Doc } -> i32 {
+        let classes = gff::get_list{ doc = doc.*, s = gff::ROOT, label = "ClassList" } ifnull slice::empty(u32){}
+        let mut levels: i64 = 0
+        let mut k: usize = 0
+        while k < classes.len {
+            levels = levels + (gff::get_number{ doc = doc.*, s = classes[k], label = "ClassLevel" } ifnull 1)
+            k = k + 1
+        }
+        return @trunc(i32, levels)
     }
 
     // int AddAvailableNPCByObject(int nNPC, object oCreature)
@@ -131,12 +150,13 @@ namespace rt_party {
         let mut ok = false
         if party::valid_slot{ n } and template.len > 0 and not w.party.available[@as(usize, n)] {
             let found = world::read_gff{ &w, name = template, kind = restype::Type::utc } iferr { null }
-            if found != null {
+            if found is some{ value = doc } {
                 let s = @as(usize, n)
                 forget_slot_state{ &w, s }
                 w.party.available[s] = true
                 w.party.selectable[s] = true
                 w.party.templates[s] = resref::truncate{ name = template }
+                set_joining_xp{ &w, s, level = utc_level{ doc = &doc } }
                 ok = true
             }
         }
@@ -249,7 +269,22 @@ namespace rt_party {
         if o.ai_level < 1 { o.ai_level = 1 }
         let pc = world::object{ w = &w, id = w.pc }
         if pc != null { o.faction = pc.faction }
+        catch_up_xp{ &w, o, c, n }
         return id
+    }
+
+    // The XP catch-up of SpawnAvailableNPC (0x00565130, re/party-items-saves.md 3.4): a companion that has earned less than
+    // its share of the XP the party earned while it was away takes the difference (scaled by its PercentXP again, as an award
+    // is), and with "Auto Level Up NPCs" on takes the levels that allows.
+    fn catch_up_xp { mut w: world::World, o: *mut obj::Object, c: *mut obj::Creature, n: i32 } {
+        let f = fight::of{ o } ifnull { return }
+        if not f.loaded { return }
+        let share = rules::npc_percent_xp{ tables = w.rules, row = n }
+        let give = rules::catch_up_xp{ tables = w.rules, xp = f.c.xp, joining = w.party.joining_xp[@as(usize, n)], pool = w.party.xp_pool, percent_xp = share }
+        if give <= 0 { return }
+        _ = rules::add_experience{ tables = w.rules, c = &f.c, xp = give, percent_xp = share }
+        c.xp = @as(u32, f.c.xp)
+        if w.rules.settings.auto_level { _ = levelup::auto_level{ &w, id = o.id } }
     }
 
     // object SpawnAvailableNPC(int nNPC, location lPosition)
