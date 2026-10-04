@@ -8,6 +8,7 @@
 //   fight::apply{ &w, target, e = effect }          // an effect (scripts, attacks), events drained
 namespace fight {
     const ROUND_MS: i32 = 3000                  // a combat round (3.1)
+    const ATTACK_MS: i32 = 1500                 // an attack's animation, the pause it puts on the round: (3000 + g_nCombatActionTimeBias 0) / 2 (3.4)
     const DIE_MS: i32 = 3000                    // the die animation (2.97 s in the humanoid skeleton, 2.63 s a creature's) plays out before `dead`
     const CUTSCENE_READY_MS: i32 = 6000         // a designer's attack leaves the weapon up this long (ours)
     const COMBAT_MS: i32 = 8000                 // in combat this long after the last hostile act (3.6)
@@ -35,9 +36,11 @@ namespace fight {
         attack: bool,                   // carries an attack (a ranged shot may be only visual)
         hit: bool,
         result: i32,                    // rules::outcome
+        roll: rules::AttackRoll,        // the whole roll, for the combat log (fight_log)
         killing: bool,
         ranged: bool,
         reaction: i32,                  // the target's animations.2da reaction row, NO_ROW none
+        paired: bool,                   // an engaged melee blow: the target reacted when the attack began (3.3), not now
         cutscene: bool,
         damage: rules::DamageRoll,      // a hit's damage (the DAMAGE effects are made at impact)
         nfx: i32,
@@ -56,6 +59,13 @@ namespace fight {
         shots: usize,                   // bolts fired
         cutscene: bool,                 // a designer's round (CutsceneAttack): no OnEndRound, no combat
         feat: i32,                      // the combat feat of the round's attacks (0 none)
+        paused: bool,                   // RoundPaused +0x958: the timer stands still (an attack animation, or a partner's)
+        paused_by: u32,                 // RoundPausedBy +0x95c
+        pause_ms: i32,                  // PauseTimer +0x960: what is left of the pause (counts below 0 while infinite)
+        infinite: bool,                 // InfinitePause +0x964: until the master lets go (a slave while the master attacks)
+        attacks: i32,                   // +0x968: attacks started this round (the 0x3f dispatcher starts no second one)
+        atk_ms: i32,                    // ours: ms since this creature's own attack was resolved (impacts and shots are timed from it)
+        own_attack: bool,               // ours: the pause is this creature's own attack animation
         impacts: [MAX_IMPACTS]Impact,
     }
 
@@ -86,6 +96,14 @@ namespace fight {
         voice_ms: i32,                  // > 0: it has just grunted
         ready_ms: i32,                  // > 0: a cutscene attack was just made, so the weapon stays up
         item_ms: i32,                   // > 0 in combat: an item was used this round (the inventory allows one per round)
+        // The engaged pair (3.1): these outlive the round, as in the original, where only
+        // StartCombatRound sets them and a master's EndCombatRound clears its slave's.
+        engaged: bool,                  // Engaged +0x9b8: this round is paired with another creature's
+        master: bool,                   // Master +0x9bc: this creature drives the pair
+        master_id: u32,                 // MasterID +0x9c0 (a master's own id)
+        slave_id: u32,                  // +0x9c4, on the master's side
+        wait_ms: i32,                   // ours: how long an attack has waited for its round to be started
+        duel_last: i32,                 // the client's last duel attack variant (0..4), so two in a row differ
         knock: Knock,
         saber: SaberThrow,
     }
@@ -93,17 +111,18 @@ namespace fight {
     fn no_impact {} -> Impact {
         let mut fx: [rules::MAX_COMBAT_FX]rules::CombatEffect
         let mut damage: rules::DamageRoll
-        return Impact{ at_ms = 0, fire_ms = 0, hand = 0, target = obj::INVALID, attack = false, hit = false, result = 0, killing = false, ranged = false, reaction = NO_ROW, cutscene = false, damage, nfx = 0, fx }
+        let mut roll: rules::AttackRoll
+        return Impact{ at_ms = 0, fire_ms = 0, hand = 0, target = obj::INVALID, attack = false, hit = false, result = 0, roll, killing = false, ranged = false, reaction = NO_ROW, paired = false, cutscene = false, damage, nfx = 0, fx }
     }
 
     fn no_round {} -> Round {
-        return Round{ started = false, timer_ms = 0, length_ms = 0, target = obj::INVALID, anim_row = NO_ROW, anim_ms = 0, count = 0, fired = 0, shots = 0, cutscene = false, feat = 0, impacts = [no_impact{}; MAX_IMPACTS] }
+        return Round{ started = false, timer_ms = 0, length_ms = 0, target = obj::INVALID, anim_row = NO_ROW, anim_ms = 0, count = 0, fired = 0, shots = 0, cutscene = false, feat = 0, paused = false, paused_by = obj::INVALID, pause_ms = 0, infinite = false, attacks = 0, atk_ms = 0, own_attack = false, impacts = [no_impact{}; MAX_IMPACTS] }
     }
 
     fn new_fighter { heap: *mut heap::Heap } -> !*mut Fighter {
         let mut c: rules::Creature
         c.loaded_hp = -1
-        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0, voice_ms = 0, ready_ms = 0, knock = no_knock{}, saber = no_saber{}, item_ms = 0 }
+        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0, voice_ms = 0, ready_ms = 0, engaged = false, master = false, master_id = obj::INVALID, slave_id = obj::INVALID, wait_ms = 0, duel_last = -1, knock = no_knock{}, saber = no_saber{}, item_ms = 0 }
         return try alloc::new(Fighter, heap::Heap){ realloc = heap::alloc, heap, value = f }
     }
 
@@ -283,8 +302,10 @@ namespace fight {
         let o = world::object{ w = &w, id } ifnull { return }
         let k = e.kind
         if k == rules::ev::HEAL_HP {
+            let before = o.hp
             o.hp = o.hp + e.a
             if o.hp > o.hp_max { o.hp = o.hp_max }
+            fight_log::healed{ &w, target = id, amount = o.hp - before }
         } else if k == rules::ev::DAMAGE_HP {
             take_damage{ &w, id, amount = e.a, types = e.b, who = e.who }
         } else if k == rules::ev::DEATH {
@@ -555,7 +576,35 @@ namespace fight {
             if c.fighter is some{ value = f } { f.combat_ms = COMBAT_MS }
             if not was { bark{ &w, id, first = VOICE_BATTLE, count = 6, chance_in = 1, quiet = false } }
         }
-        _ = other
+        pull_in{ &w, id, other }
+    }
+
+    // SignalCombatWith (0x004fbbe0, 3.6): a creature in a fight with a hostile one brings its
+    // faction-mates that stand near and are hostile to the same one into combat too: within 30 m
+    // for the party, within its sight range for anyone else. So the leader is in combat (the
+    // combat bar, the auto-pause) when only a companion is attacked. Being in combat makes no one
+    // act: the AI acts on shouts, perception and its rounds.
+    fn pull_in { mut w: world::World, id: u32, other: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let foe = world::object{ w = &w, id = other } ifnull { return }
+        if foe.kind != obj::Kind::creature or world::standing{ w = &w, from = o.faction, toward = foe.faction } >= 11 { return }
+        let party = party::is_member{ w = &w, id }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let m = all[i]
+            i = i + 1
+            if m.id == id or m.id == other or m.destroyed or m.kind != obj::Kind::creature or m.area != o.area { continue }
+            let in_party = party::is_member{ w = &w, id = m.id }
+            if in_party != party or (not party and m.faction != o.faction) { continue }
+            let mc = obj::creature{ o = m } ifnull { continue }
+            if mc.dead or mc.in_combat { continue }
+            if world::standing{ w = &w, from = m.faction, toward = foe.faction } >= 11 { continue }
+            let range = if party { 30.0 } else { mc.sight_range }
+            if doors::distance_2d{ a = m.position, b = o.position } > range { continue }
+            mc.in_combat = true
+            if mc.fighter is some{ value = mf } { mf.combat_ms = COMBAT_MS }
+        }
     }
 
     // ---- animations
@@ -603,22 +652,34 @@ namespace fight {
         return rows[@as(usize, s)]
     }
 
-    // An attack animation row: melee duels (c sets) when both sides fight in melee, the general
-    // attacks (g sets) otherwise; ranged b sets.
-    fn attack_row { mut w: world::World, s: i32, duel: bool, ranged_beast: bool } -> i32 {
+    // An attack animation row: melee duels (c sets, `variant` 0..4) when the two are engaged and both
+    // fight in melee, the general attacks (g sets) otherwise; ranged b sets.
+    fn attack_row { mut w: world::World, s: i32, duel: bool, monster: bool, ranged_beast: bool, variant: i32 } -> i32 {
         let pick = world::random{ &w }
         if s == 0 {
             if ranged_beast { return if pick % 2 == 0 { 288 } else { 289 } }
             return if pick % 2 == 0 { 276 } else { 277 }
         }
         if s == 1 { return if pick % 2 == 0 { 87 } else { 88 } }
-        if s == 2 { return if duel { 94 + @as(i32, pick % 5) } else if pick % 2 == 0 { 122 } else { 123 } }
-        if s == 3 { return if duel { 135 + @as(i32, pick % 5) } else if pick % 2 == 0 { 163 } else { 164 } }
-        if s == 4 { return if duel { 176 + @as(i32, pick % 5) } else if pick % 2 == 0 { 204 } else { 205 } }
+        if s == 2 { return if duel { 94 + variant } else if monster { 125 + @as(i32, pick % 2) } else if pick % 2 == 0 { 122 } else { 123 } }
+        if s == 3 { return if duel { 135 + variant } else if monster { 166 + @as(i32, pick % 2) } else if pick % 2 == 0 { 163 } else { 164 } }
+        if s == 4 { return if duel { 176 + variant } else if monster { 207 + @as(i32, pick % 2) } else if pick % 2 == 0 { 204 } else { 205 } }
         if s == 5 { return if pick % 2 == 0 { 217 } else { 218 } }
         if s == 6 { return if pick % 2 == 0 { 231 } else { 232 } }
         if s == 7 { return if pick % 2 == 0 { 239 } else { 240 } }
         return if pick % 2 == 0 { 247 } else { 248 }
+    }
+
+    // The client picks a duel attack at random among five, never the one it picked last
+    // (0x0060d0e0).
+    fn duel_variant { mut w: world::World, last: i32 } -> i32 {
+        let mut v = @as(i32, world::random{ &w } % 5)
+        let mut tries = 0
+        while v == last and tries < 8 {
+            v = @as(i32, world::random{ &w } % 5)
+            tries = tries + 1
+        }
+        return v
     }
 
     fn play_row { mut w: world::World, o: *mut obj::Object, row: i32 } {
@@ -657,13 +718,28 @@ namespace fight {
 
     // ---- the round (3.1 - 3.5)
 
+    // Within the maximum range (reach + 0.5; a ranged weapon's maxattackrange) and, for a shot at
+    // a creature, with a clear line from 1.5 m above each foot (actions.md 3.13 steps 4-6,
+    // 0x0050c330).
     fn in_reach { w: *world::World, o: *obj::Object, t: *obj::Object, ranged: bool } -> bool {
         let d = doors::distance_2d{ a = o.position, b = t.position }
-        return d <= reach{ w, o, t, ranged } + 0.5
+        if d > reach{ w, o, t, ranged } + 0.5 { return false }
+        if ranged and t.kind == obj::Kind::creature { return perception::clear_line{ w, a = o.position, b = t.position } }
+        return true
+    }
+
+    // Where an approach stops: at reach, or for a shooter in range without a clear line, a few
+    // metres nearer each time until it has one.
+    fn approach_range { w: *world::World, o: *obj::Object, t: *obj::Object, ranged: bool } -> f32 {
+        let r = reach{ w, o, t, ranged }
+        if not ranged { return r }
+        let d = doors::distance_2d{ a = o.position, b = t.position }
+        if d <= r + 0.5 { return math::max{ a = d - 4.0, b = 1.5 } }
+        return r
     }
 
     // How near the attacker must stand (actions.md 3.13 step 4): melee both personal spaces + 0.7,
-    // ranged the weapon's maxattackrange (30 when 0), less a margin.
+    // ranged the weapon's maxattackrange (30 when 0).
     fn reach { w: *world::World, o: *obj::Object, t: *obj::Object, ranged: bool } -> f32 {
         let mut mine: f32 = 0.5
         let mut theirs: f32 = 0.5
@@ -677,7 +753,7 @@ namespace fight {
                     }
                 }
                 if range <= 0.0 { range = 30.0 }
-                return math::min{ a = range, b = 15.0 }
+                return range
             }
         }
         if obj::creature{ o = t } is some{ value = tc } { theirs = tc.perspace }
@@ -685,8 +761,141 @@ namespace fight {
         return mine + theirs + 0.7
     }
 
+    // ---- the engaged pair (3.1, 3.4)
+
+    // GetCanEngage 0x004d2c30: whether the target's round can be paired with this attack. It can
+    // when the target is idle (no round, no attempted target), already fights this creature, or
+    // runs a round without a target; never when it is helpless. The creature the player leads is
+    // paired only while it fights this one back (its spell targets are not kept here).
+    fn can_engage { w: *world::World, id: u32, target: u32 } -> bool {
+        let t = world::object{ w, id = target } ifnull { return false }
+        let tc = obj::creature{ o = t } ifnull { return false }
+        let tf = tc.fighter ifnull { return false }
+        let idle = tc.attempted_target == obj::INVALID
+        let mut can = false
+        if not tf.round.started and idle { can = true }
+        if tc.attempted_target == id { can = true }
+        if tf.round.started and idle { can = true }
+        if target == party::leader{ w } and tc.attempted_target != id { can = false }
+        if tc.dead or tf.dying_ms > 0 or rules::is_debilitated{ c = &tf.c } { can = false }
+        return can
+    }
+
+    // GetShouldBeMaster 0x004d2d60: the attacker drives the pair when the target has no attempted
+    // target, or attacks the attacker without being a master (its flag outlives its rounds); the
+    // party members, the player's own, always do.
+    fn should_be_master { w: *world::World, id: u32, target: u32, can: bool } -> bool {
+        if not can { return false }
+        let t = world::object{ w, id = target } ifnull { return false }
+        let tc = obj::creature{ o = t } ifnull { return false }
+        let tf = tc.fighter ifnull { return false }
+        if party::is_member{ w, id } { return true }
+        return tc.attempted_target == obj::INVALID or (tc.attempted_target == id and not tf.master)
+    }
+
+    // CheckActionLength 0x004d2970: whether a reaction of `len` ms still fits in the round, and
+    // does not clash with a pause somebody else put on it.
+    fn fits_round { r: *Round, by: u32, len: i32 } -> bool {
+        if r.paused and r.paused_by != by and r.pause_ms > 0 { return false }
+        if r.started { return len <= r.length_ms - r.timer_ms + 1000 }
+        return true
+    }
+
+    // DecrementRoundLength 0x004d3440: an animation of `len` ms takes that much of the round. An
+    // animation longer than what is left stretches the round to fit (by up to a second); the
+    // timer is rescaled to the round that remains. (OverlapAmount never changes in the original.)
+    fn shorten_round { r: *mut Round, len: i32 } {
+        if not r.started { return }
+        if r.length_ms - len < 0 and len - r.length_ms <= 1000 { r.length_ms = len + 1 }
+        let rl = r.length_ms
+        let left = rl - len
+        r.timer_ms = if rl == 0 { left } else { @as(i32, @as(i64, r.timer_ms) * @as(i64, left) / @as(i64, rl)) }
+        if left < 0 { r.length_ms = len }
+        r.length_ms = r.length_ms - len
+    }
+
+    // StartCombatRound 0x004d5f70: a new round of 3 s against `target`, paired or alone. A slave
+    // first ends the round it had (OnEndRound runs); a master tells its slave whose pair it is.
+    fn open_round { mut w: world::World, id: u32, target: u32, engaged: bool, master: bool, feat: i32, cutscene: bool } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        let f = c.fighter ifnull { return }
+        f.engaged = engaged
+        f.master = master
+        if engaged and not master and f.round.started { end_round{ &w, id, script = true } }
+        if master {
+            f.master_id = id
+            if engaged {
+                f.slave_id = target
+                if world::object{ w = &w, id = target } is some{ value = so } {
+                    if obj::creature{ o = so } is some{ value = sc } {
+                        if sc.fighter is some{ value = sf } {
+                            sf.master_id = id
+                            sf.slave_id = target
+                            sf.round.timer_ms = 0
+                        }
+                    }
+                }
+            }
+        } else {
+            f.master_id = target
+        }
+        f.round = no_round{}
+        f.round.started = true
+        f.round.length_ms = ROUND_MS
+        f.round.target = target
+        f.round.cutscene = cutscene
+        f.round.feat = if feat > 0 { feat } else { 0 }
+        // Face the target (SetInteractTarget).
+        if world::object{ w = &w, id = target } is some{ value = t } {
+            let dir = math::vec3::sub{ a = t.position, b = o.position }
+            if dir.x * dir.x + dir.y * dir.y > 0.0001 { world::set_orientation{ o, v = math::Vec3{ x = dir.x, y = dir.y, z = 0.0 } } }
+        }
+        if w.log.combat and engaged {
+            world::prefix{ w = &w }
+            let role: []u8 = if master { "master" } else { "slave" }
+            let other_tag: []u8 = if world::object{ w = &w, id = target } is some{ value = t } { t.tag } else { "" }
+            _ = @fmt(&w.io, "{} ({}) engages {} ({}) as {}\n", id, o.tag, target, other_tag, role)
+        }
+    }
+
+    // A master lets its slave go (the master's EndCombatRound): the slave's pause ends and it is no
+    // longer engaged. (Ours: only while the slave still has this master.)
+    fn release_slave { mut w: world::World, id: u32, f: *Fighter } {
+        let so = world::object{ w = &w, id = f.slave_id } ifnull { return }
+        let sc = obj::creature{ o = so } ifnull { return }
+        let sf = sc.fighter ifnull { return }
+        if sf.master_id != id { return }
+        sf.round.paused = false
+        sf.round.paused_by = obj::INVALID
+        sf.round.infinite = false
+        sf.round.pause_ms = 0
+        sf.engaged = false
+        sf.master_id = obj::INVALID
+    }
+
+    // IncrementTimer 0x004d4c10 on a round that is not paused: it ends when its timer reaches its
+    // length (a slave's as well), or when the timer went negative.
+    fn tick_round { mut w: world::World, id: u32, f: *mut Fighter, ms: i32 } {
+        f.round.timer_ms = f.round.timer_ms + ms
+        if not f.round.started { return }
+        if f.round.timer_ms >= f.round.length_ms or f.round.timer_ms < 0 { end_round{ &w, id, script = true } }
+    }
+
+    // FinishAttackPause 0x004f1250: the pause is over, and the time it overshot counts on the round.
+    fn finish_pause { mut w: world::World, id: u32, f: *mut Fighter, overshoot: i32 } {
+        f.round.paused = false
+        f.round.paused_by = obj::INVALID
+        f.round.infinite = false
+        f.round.pause_ms = 0
+        f.round.own_attack = false
+        tick_round{ &w, id, f, ms = overshoot }
+    }
+
     // ATTACKOBJECT (actions.md 3.13, combat.md 3.1): param 0 the target, 1 passive. Walks into
-    // reach, then starts one round and is done; the next round comes from OnEndRound's AI (or,
+    // reach, then, once its round is not paused, pairs it with the target's if they can engage
+    // (the master starts both rounds; a slave waits for its round to be started and then attacks
+    // in its turn), starts one round and is done; the next round comes from OnEndRound's AI (or,
     // for the player's own creature, from end_round).
     fn attack_object { mut w: world::World, id: u32, a: *mut actions::Action } -> actions::Status {
         let o = world::object{ w = &w, id } ifnull { return actions::Status::failed }
@@ -706,18 +915,18 @@ namespace fight {
         if f.c.down { return actions::Status::failed }
         if actions::int_param{ a, i = 3 } != 0 {
             // A cutscene attack (params 3 flag, 4 animation row, 5 result, 6 damage): the round
-            // starts at once with the designer's numbers.
-            f.round = no_round{}
+            // starts at once with the designer's numbers, alone.
+            open_round{ &w, id, target, engaged = false, master = false, feat = 0, cutscene = true }
             let forced = Forced{ on = true, animation = actions::int_param{ a, i = 4 }, result = actions::int_param{ a, i = 5 }, damage = actions::int_param{ a, i = 6 } }
-            start_round{ &w, id, target, s = stance{ w = &w, c }, ranged_in = false, feat = 0, forced }
+            start_round{ &w, id, target, s = stance{ w = &w, c }, ranged_in = false, feat = 0, forced, engaged = false }
             return actions::Status::done
         }
         if not rules::can_attack{ c = &f.c } { return actions::Status::failed }
         c.attempted_target = target
-        if f.round.started { return actions::Status::running }
         let s = stance{ w = &w, c }
         let ranged = is_ranged_stance{ s } or (s == 0 and is_ranged_item{ w = &w, item = c.equipped[obj::SLOT_RIGHT_WEAPON] })
         if not in_reach{ w = &w, o, t, ranged } {
+            if f.round.started { return actions::Status::running }
             if actions::int_param{ a, i = 1 } != 0 { return actions::Status::failed }
             if a.phase >= 40 { return actions::Status::failed }
             // Approach: a move in front of a copy of this action (actions.md 3.13).
@@ -728,20 +937,45 @@ namespace fight {
             let mut move = actions::make{ kind = actions::Kind::move_to_point }
             move.params[0] = actions::Param::vector{ v = t.position }
             move.params[1] = actions::Param::int{ v = 1 }
-            move.params[2] = actions::Param::float{ v = reach{ w = &w, o, t, ranged } }
+            move.params[2] = actions::Param::float{ v = approach_range{ w = &w, o, t, ranged } }
             move.params[3] = actions::Param::object{ id = target }
             move.params[4] = actions::Param::float{ v = 6.0 }
             actions::add_front{ &w, id, action = move }
             a.params = [actions::Param::none; 8]
             return actions::Status::done
         }
-        start_round{ &w, id, target, s, ranged_in = ranged, feat = actions::int_param{ a, i = 2 }, forced = not_forced{} }
+        // The round is paused (an attack animation, a partner's attack): wait. The dispatcher
+        // (action 0x3f) starts one attack a round, so a round that has attacked waits for its end.
+        if f.round.paused { return actions::Status::running }
+        if f.round.started and f.round.attacks > 0 { return actions::Status::running }
+        let can = can_engage{ w = &w, id, target }
+        let mut master = should_be_master{ w = &w, id, target, can }
+        // Ours: two creatures that both wait for the other to start the pair (each one's master
+        // flag from an earlier pair is still up) would wait for ever; after two rounds one drives.
+        if can and not master and not f.round.started and f.wait_ms >= 2 * ROUND_MS { master = true }
+        let feat = actions::int_param{ a, i = 2 }
+        if not can {
+            open_round{ &w, id, target, engaged = false, master = false, feat, cutscene = false }
+        } else if master {
+            open_round{ &w, id, target, engaged = true, master = true, feat, cutscene = false }
+            open_round{ &w, id = target, target = id, engaged = true, master = false, feat = 0, cutscene = false }
+        }
+        if not f.round.started {
+            // Engageable but not master: the pair's master starts this round, and this creature
+            // attacks in its turn.
+            f.wait_ms = f.wait_ms + @as(i32, w.clock.dt * 1000.0)
+            return actions::Status::running
+        }
+        f.wait_ms = 0
+        start_round{ &w, id, target, s, ranged_in = ranged, feat, forced = not_forced{}, engaged = can }
         return actions::Status::done
     }
 
-    // StartCombatRound and the attacks of the round resolved at once (3.1, 3.3): the impacts
-    // land later, at their hit times.
-    fn start_round { mut w: world::World, id: u32, target: u32, s: i32, ranged_in: bool, feat: i32, forced: Forced } {
+    // The attack of an opened round (AIActionAttackObject from the animation on, 3.1, 3.3, 3.4): the
+    // round's attacks resolved at once, the attack animation and the pause it puts on the round
+    // (and, when engaged, on the partner's: a master holds its slave still until it is done, a
+    // slave holds its master for its own animation); the impacts land later, at their hit times.
+    fn start_round { mut w: world::World, id: u32, target: u32, s: i32, ranged_in: bool, feat: i32, forced: Forced, engaged: bool } {
         let o = world::object{ w = &w, id } ifnull { return }
         let c = obj::creature{ o } ifnull { return }
         let f = c.fighter ifnull { return }
@@ -775,15 +1009,16 @@ namespace fight {
             ranged = discharge_row{ w = &w, appearance = c.appearance, row = forced.animation, into = probe[..] } != null
         }
         let flight_ms: i32 = if ranged { bolt_ms{ o, t } } else { 0 }
-        let duel = not ranged and not is_ranged_stance{ s = ts } and s != 8 and ts != 8
-        let row = if forced.on { forced.animation } else { attack_row{ &w, s, duel, ranged_beast = ranged and s == 0 } }
-        f.round = no_round{}
-        f.round.cutscene = forced.on
-        f.round.feat = if feat > 0 { feat } else { 0 }
+        // The animation (AIActionAttackObject, FUN_00613da0): the duel attacks (10109) when the two
+        // are engaged and both wield melee weapons, the monster-fighting ones against a creature's
+        // model, the general ones (10009) when the target is not engaged.
+        let both_melee = s >= 2 and s <= 4 and ts >= 2 and ts <= 4
+        let duel = engaged and not ranged and both_melee
+        let monster = engaged and not ranged and ts == 0 and s >= 2 and s <= 4
+        let variant = if duel and not forced.on { duel_variant{ &w, last = f.duel_last } } else { 0 }
+        let row = if forced.on { forced.animation } else { attack_row{ &w, s, duel, monster, ranged_beast = ranged and s == 0, variant } }
+        if duel and not forced.on { f.duel_last = variant }
         if forced.on { f.ready_ms = CUTSCENE_READY_MS }
-        f.round.started = true
-        f.round.length_ms = ROUND_MS
-        f.round.target = target
         f.round.anim_row = row
         c.attack_target = target
         c.last_hostile_target = target
@@ -860,7 +1095,34 @@ namespace fight {
                 n = n + 1
             }
         }
+        // The pause (AIActionAttackObject, once the animation is asked for): the round stands still
+        // while the attack plays. Engaged, the partner's round is held too: a master holds its
+        // slave until its own animation is over, a slave holds its master for the length of its own.
+        f.round.paused = true
+        f.round.paused_by = id
+        f.round.pause_ms = ATTACK_MS
+        f.round.infinite = false
+        f.round.own_attack = true
+        f.round.attacks = f.round.attacks + 1
+        f.round.atk_ms = 0
+        let mut pf: ?*mut Fighter = null
+        if engaged and not is_object {
+            if obj::creature{ o = t } is some{ value = pc } { pf = pc.fighter }
+        }
+        if pf is some{ value = p } {
+            p.round.paused = true
+            if f.master {
+                p.round.paused_by = p.master_id
+                p.round.pause_ms = ATTACK_MS
+                p.round.infinite = true
+            } else {
+                p.round.paused_by = p.slave_id
+                p.round.pause_ms = if p.round.pause_ms > 0 { p.round.pause_ms + ATTACK_MS } else { ATTACK_MS }
+                p.round.infinite = false
+            }
+        }
         // Resolve the attacks in order (the rules draw every die).
+        let mut last_reaction = NO_ROW
         let mut attack: i32 = 0
         let mut k: usize = 0
         while k < n {
@@ -878,6 +1140,7 @@ namespace fight {
                 drain{ &w, id = target }
                 imp.hit = res.hit
                 imp.result = res.roll.result
+                imp.roll = res.roll
                 imp.killing = res.killing_blow
                 imp.damage = res.damage
                 imp.nfx = res.effects.len
@@ -885,6 +1148,8 @@ namespace fight {
                 // The target's reaction (3.3): damage on a hit, else a parry (melee) or a dodge.
                 let column: []u8 = if res.hit { "damage" } else if ranged { "dodge" } else { "parry" }
                 imp.reaction = combat_cell{ w = &w, row, prefix = column, n = ts } ifnull NO_ROW
+                last_reaction = imp.reaction
+                imp.paired = engaged and not ranged and not is_object
                 attack = attack + 1
                 c.last_attack_result = res.roll.result
                 if w.log.combat {
@@ -896,10 +1161,29 @@ namespace fight {
             k = k + 1
         }
         f.round.count = n
-        // The attack animation plays until a little after the last impact.
-        let last = times[if n > 0 { n - 1 } else { 0 }]
-        f.round.anim_ms = if last + 600 < ROUND_MS - 200 { last + 600 } else { ROUND_MS - 200 }
+        f.round.anim_ms = ATTACK_MS
         play_row{ &w, o, row }
+        // ResolveMeleeAnimations 0x005b7470 / ResolveRangedAnimations 0x005b6c40: the attack takes
+        // its animation's time out of the round. Engaged, the target (not helpless, its round with
+        // room for it and not held by someone else) loses as much of its round, and in melee plays
+        // its reaction paired with this attack (the c2p / c2d row) at once; the reaction answers the
+        // last attack's result, and with no room the target does nothing.
+        shorten_round{ r = &f.round, len = ATTACK_MS }
+        if pf is some{ value = p } {
+            let mut helpless = false
+            if obj::creature{ o = t } is some{ value = hc } { helpless = hc.dead or p.dying_ms > 0 or rules::is_debilitated{ c = &p.c } }
+            if not helpless and fits_round{ r = &p.round, by = id, len = ATTACK_MS } {
+                shorten_round{ r = &p.round, len = ATTACK_MS }
+                if not ranged and last_reaction >= 0 {
+                    play_row{ &w, o = t, row = last_reaction }
+                    p.react_ms = 0
+                    if w.log.combat {
+                        world::prefix{ w = &w }
+                        _ = @fmt(&w.io, "{} answers with animation {}\n", target, last_reaction)
+                    }
+                }
+            }
+        }
         if not forced.on { bark{ &w, id, first = VOICE_ATTACK, count = 3, chance_in = 2, quiet = true } }
         if w.log.combat {
             world::prefix{ w = &w }
@@ -974,8 +1258,8 @@ namespace fight {
         let bc = obj::creature{ o = back } ifnull { return }
         if bc.dead { return }
         let bf = bc.fighter ifnull { return }
-        if bf.round.started and bf.round.anim_ms > bf.round.timer_ms { return }      // busy attacking
-        if imp.reaction >= 0 and not bf.c.down {
+        if bf.round.started and bf.round.own_attack { return }      // busy attacking
+        if imp.reaction >= 0 and not imp.paired and not bf.c.down {
             play_row{ &w, o = back, row = imp.reaction }
             bf.react_ms = 900
         }
@@ -989,10 +1273,31 @@ namespace fight {
         let c = obj::creature{ o } ifnull { return }
         let f = c.fighter ifnull { return }
         if not f.round.started { return }
+        // Ours: a blow still in flight lands first (the original drops the attack records here;
+        // the dice were rolled and the target saw the swing). A round cut short by a fight that
+        // stops (script false) drops them as before.
+        if script {
+            while f.round.fired < f.round.count {
+                let imp = f.round.impacts[f.round.fired]
+                f.round.fired = f.round.fired + 1
+                land{ &w, id, imp = &imp }
+                if not f.round.started { return }
+            }
+        }
         let target = f.round.target
         let cutscene_round = f.round.cutscene
+        // A master lets its slave go.
+        if f.master and f.engaged { release_slave{ &w, id, f } }
         f.round.started = false
         f.round.count = 0
+        f.round.timer_ms = 0
+        f.round.length_ms = 0
+        f.round.paused = false
+        f.round.paused_by = obj::INVALID
+        f.round.pause_ms = 0
+        f.round.infinite = false
+        f.round.own_attack = false
+        f.round.attacks = 0
         if c.dead or f.c.down { return }
         let mut target_alive = false
         if world::object{ w = &w, id = target } is some{ value = tv } {
@@ -1108,6 +1413,57 @@ namespace fight {
 
     // ---- every frame
 
+    // Whether the master of a paused slave still holds it: it is in its round, engaged, and has
+    // this creature for its slave.
+    fn master_holds { w: *world::World, id: u32, f: *Fighter } -> bool {
+        let mo = world::object{ w, id = f.master_id } ifnull { return false }
+        let mc = obj::creature{ o = mo } ifnull { return false }
+        let mf = mc.fighter ifnull { return false }
+        return not mc.dead and mf.round.started and mf.master and mf.engaged and mf.slave_id == id
+    }
+
+    // The round's clocks (UpdateCombat 0x004faf20). A round that is not paused counts its timer
+    // up and ends at its length. A paused one counts its pause down; a pause with no end (a slave
+    // held while its master attacks) waits for the master to let go. When a master's pause is
+    // over, the slave's goes with it, and a round whose target is gone ends.
+    fn update_clocks { mut w: world::World, id: u32, f: *mut Fighter, dt: i32 } {
+        if not f.round.paused {
+            tick_round{ &w, id, f, ms = dt }
+            return
+        }
+        if f.round.infinite {
+            f.round.pause_ms = f.round.pause_ms - dt
+            // Ours: never held by a master that has gone (the original ends the round when the
+            // master has left the world).
+            if not master_holds{ &w, id, f } { finish_pause{ &w, id, f, overshoot = 0 } }
+            return
+        }
+        let left = f.round.pause_ms - dt
+        if left >= 1 {
+            f.round.pause_ms = left
+            return
+        }
+        let over = -left
+        finish_pause{ &w, id, f, overshoot = over }
+        if f.round.started and f.master and f.engaged {
+            if world::object{ w = &w, id = f.slave_id } is some{ value = so } {
+                if obj::creature{ o = so } is some{ value = sc } {
+                    if sc.fighter is some{ value = sf } {
+                        if sf.master_id == id and sf.round.started { finish_pause{ &w, id = f.slave_id, f = sf, overshoot = over } }
+                    }
+                }
+            }
+        }
+        if not f.round.started { return }
+        // The round's target is dead or down: the round is over.
+        if world::object{ w = &w, id = f.round.target } is some{ value = tv } {
+            if obj::creature{ o = tv } is some{ value = tc } {
+                let down = if tc.fighter is some{ value = tf } { tf.c.down } else { false }
+                if tc.dead or down { end_round{ &w, id, script = true } }
+            }
+        }
+    }
+
     fn update { mut w: world::World, id: u32 } {
         let o = world::object{ w = &w, id } ifnull { return }
         let c = obj::creature{ o } ifnull { return }
@@ -1149,22 +1505,20 @@ namespace fight {
         if f.c.down { return }
         // The round: impacts at their times, the end after 3 s.
         if f.round.started {
-            f.round.timer_ms = f.round.timer_ms + dt
+            if f.round.attacks > 0 { f.round.atk_ms = f.round.atk_ms + dt }
             // Bolts leave the weapon at their shot times and land after their flight.
-            while f.round.shots < f.round.count and f.round.impacts[f.round.shots].fire_ms <= f.round.timer_ms {
+            while f.round.shots < f.round.count and f.round.impacts[f.round.shots].fire_ms <= f.round.atk_ms {
                 let shot = f.round.impacts[f.round.shots]
                 f.round.shots = f.round.shots + 1
                 if shot.ranged { fire_shot{ &w, id, imp = &shot, power = false } }
             }
-            while f.round.fired < f.round.count and f.round.impacts[f.round.fired].at_ms <= f.round.timer_ms {
+            while f.round.fired < f.round.count and f.round.impacts[f.round.fired].at_ms <= f.round.atk_ms {
                 let imp = f.round.impacts[f.round.fired]
                 f.round.fired = f.round.fired + 1
                 land{ &w, id, imp = &imp }
                 if not f.round.started { break }
             }
-            if f.round.started and f.round.timer_ms >= f.round.length_ms {
-                end_round{ &w, id, script = true }
-            }
+            update_clocks{ &w, id, f, dt }
         }
         let o3 = world::object{ w = &w, id } ifnull { return }
         let c3 = obj::creature{ o = o3 } ifnull { return }
@@ -1189,7 +1543,7 @@ namespace fight {
         if f.ready_ms > 0 { f.ready_ms = f.ready_ms - dt }
         if f.item_ms > 0 { f.item_ms = f.item_ms - dt }
         // Back to the ready stance (in combat) or standing when an attack or reaction is over.
-        let busy = (f.round.started and f.round.timer_ms < f.round.anim_ms) or action_holds_animation{ o = o3 }
+        let busy = (f.round.started and f.round.paused) or action_holds_animation{ o = o3 }
         if not busy and f.react_ms <= 0 and not c3.moving and row_of_animation{ id = o3.animation } >= 0 {
             if c3.in_combat or f.ready_ms > 0 { play_ready{ &w, o = o3, c = c3 } } else { world::set_animation{ o = o3, id = obj::ANIM_STAND, speed = 1.0 } }
         } else if c3.in_combat and not c3.moving and o3.animation == obj::ANIM_STAND {

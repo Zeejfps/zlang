@@ -21,10 +21,6 @@ checks, several agents). Each entry: what I wanted to write, what I wrote instea
 - **No `~`.** Clearing a bit is `x & ((1 << b) ^ 0xffffffff)` (4 places in the feat and power sets).
 - **No `match` on integers.** Effect kinds, damage slots, slot masks and class rows are dispatched
   with `if` chains (`game_effect_row` is 25 arms, `slot_index` 15). Known (kotor/FRICTION.md).
-- **A fallible function can't be a table entry.** The engine dispatches apply/remove handlers by
-  effect type through a function table; here `apply_leaf` is one long `if` chain on `e.kind` with
-  the handlers inline (~250 lines), because functions with inferred error sets are not values.
-  (The handlers here are infallible, but the rule applies to any `fn` whose body `try`s.)
 - **Read-only struct arguments are copied.** A creature is 30 KB, so every function takes
   `c: *Creature` and callers write `c = &c`; `Env`, `Versus` and `BonusQuery` are small enough to pass
   by value. Forgetting this is silent (a copy), so the rule had to be a convention.

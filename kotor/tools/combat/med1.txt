@@ -1,0 +1,8 @@
+20 ui heal
+30 ui foe g_sithtroop01 9 -4
+32 ui giveto g_sithtroop01 g_i_medeqpmnt01 3
+33 ui giveto g_sithtroop01 g_w_fraggren01 3
+34 ui damage g_sithtroop01 16
+35 cam toward g_sithtroop01
+40 ui clickon g_sithtroop01
+42 ui clickon g_sithtroop01

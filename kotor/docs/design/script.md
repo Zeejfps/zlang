@@ -134,9 +134,10 @@ script passed: old scripts pass fewer arguments than the shipped prototypes have
 sites), which `nwarg` fills with the defaults; four scripts pass more, and a handler that pops only
 its own leaves the rest, as the game's do.
 
-**Dispatch.** Because a ctxlang function that uses `try` can't be a function value, routines
-can't sit in a table of handlers; the engine's dispatcher is a chain of direct calls, which gcc
-turns into a jump table:
+**Dispatch.** The engine's dispatcher is a chain of direct calls, which gcc turns into a jump
+table (the game's, lib/engine/routines/dispatch.ctx, first finds the category file that has the
+routine, then keeps it in a table of function values by routine; a function that uses `try` is a
+value of a function type whose `!T` may fail with any error, spec §5):
 
 ```
 fn script_call { mut world: World, mut vm: nwvm::Vm, call: nwvm::Call } -> nwvm::Reply {

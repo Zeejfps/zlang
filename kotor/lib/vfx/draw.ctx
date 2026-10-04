@@ -18,6 +18,7 @@ namespace vfx {
             if not v.fx[slot].live { continue }
             draw_one{ v, sc, &frame, view, f = &v.fx[slot] }
         }
+        draw_auras{ v, sc, &frame, view }
     }
 
     fn draw_one { v: *Vfx, sc: *scene::Scene, mut frame: render::Frame, view: u32, f: *Fx } {

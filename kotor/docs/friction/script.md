@@ -4,14 +4,6 @@ Where ctxlang got in the way while writing the NCS decoder, the VM, the stub eng
 tools (about 3,700 lines, not counting the generated tables). Each entry: what I wanted to
 write, what I wrote instead, how often.
 
-- **A function returning `!T` can't be a function value** (spec §8, Errors, rule 12; a bind of
-  one neither). The engine interface wanted to be `&fn{ mut vm: Vm, call: Call } -> !` so a
-  routine handler could `try` its pops and fail; it is `-> Reply` (a union of `done`, `failed`,
-  `equal{ same }`) instead, and every engine needs a wrapper that turns its handlers' errors into
-  `Reply::failed` (nwstub::call, and the engine's own later). The same rule rules out a table of
-  772 handler functions that use `try`: dispatch has to be a chain of direct calls (docs/design/
-  script.md, "Dispatch"). A function value whose `!T` holds any error, accepting functions whose
-  inferred set is a subset, would do.
 - **`&fn` can't be a struct field** (spec §6). The engine bind travels as its own context field
   through `run`, `resume`, `exec`, `compare` and every tool function; ncsrun wanted a `Runner {
   opts, engine }` to pass as one (the compiler said "`&fn` can only be the type of a local or a

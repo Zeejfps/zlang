@@ -31,6 +31,14 @@ the 24-core development machine.
 Use `--no-render --speed 8` for anything you would run `--headless` for, unless you are looking at the pictures
 (then `--screenshot-at` still draws that frame). `FAST=1` does it in `run.sh`. Things that bite:
 
+- `--screenshot-range FROM:TO:DIR` writes every frame from FROM to TO as `DIR/fNNNNN.png` (with `--no-render` those frames
+  are drawn, the others are not; `--size 480x270` keeps them small, but not under 640 wide when the window is real). For
+  finding a flash between two cuts: `python kotor/tools/py/framediff.py DIR [THRESHOLD]` lists the frame steps whose picture
+  changes by more than the threshold and marks a frame that differs from two equal neighbours (BLIP) or a few
+  (FLASH); `kotor/tools/py/contact_sheet.py OUT.png FRAMES...` lays frames out to look at.
+- `--screenshot-loading DIR` writes every frame of the loading screen as `DIR/lNNNNN.png` (the stages of the load, then
+  one per tick behind it); `--no-render` draws the screen only for this. Menu clicks in the input script work in the
+  front end too (`mouse click 725 353` on a 1280x720 window is New Game).
 - Standard output is written in 64 KB blocks: a log that looks stuck is usually a run still going. To see how far a
   run got, give it fewer `--frames` (or `--screenshot-at`) instead of killing it and reading the file.
 - Processes that run at the same time need a `--saves DIR` each (`SAVES=` in `run.sh`): the game in progress is a file there.
@@ -64,6 +72,16 @@ timeouts, VM faults, script faults, load errors, missing routines, stuck actions
 With module names it runs those and writes `kotor/out/smoke/smoke.md`. `-r` rebuilds the table from the last run's logs.
 `FRAMES=` changes the length. A hang shows as a timeout in 180 s: bisect it as above. To see one module's story:
 `kotor.exe --module M --no-render --speed 8 --mute --input kotor/tools/smoke/input.txt --report routines --log scripts`.
+
+A run prints the loop pass time by tenth of its length (`frame tenths (ms each): ...`, for `--frames` of 1000 or more), and the
+table bolds a module whose last tenth is over twice its first (and over 0.1 ms). The frame time of a healthy module is flat, so a
+rising one is something piling up per tick: a creature that cannot move and plans afresh every frame, a list that only grows.
+Find out which by timing `ai::update` per object (a stuck mover tops that list) before suspecting a global list; in the case
+that prompted the check `w.objects`, the event queue, the outbox and the heap's live bytes were all flat. Stuck movers pile up
+and then level off (a few creatures get stuck, not all), so a flat tail proves nothing; and a module also warms up as the bot
+reaches its fights, so some runs are flagged that are not leaking (`kas_m25aa` and `unk_m41ac` go from 0.3 to 0.8 ms in the first
+quarter of the run and stay there; `kas_m25aa` without the bot is flat at 0.2 ms). Look at what the slowest objects and the
+loop's sections cost, not only at the curve.
 
 ## The conversation sweep
 

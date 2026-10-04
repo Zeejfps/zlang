@@ -1,0 +1,16 @@
+20 ui where end_door01
+20 ui pos
+25 ui relock end_door01 30
+26 ui plot end_door01 0
+30 cam toward end_door01
+40 ui clickon end_door01
+44 ui fight
+50 ui clicktag BTN_TARGETDOWN0
+52 ui fight
+54 ui clicktag BTN_TARGET0
+56 ui fight
+150 ui fight
+300 ui fight
+500 ui fight
+700 ui fight
+900 ui locks end_door01

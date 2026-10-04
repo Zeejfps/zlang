@@ -195,6 +195,10 @@ tags re/gui.md section 10.3 and 10.4 list.
   and `draw_panels`, as the main menu does.
 - **Loading screen**: `frontend::show_loading` before a module loads, `set_loading_progress` as
   it advances (draw a frame each time: `gui::update`, `gui::draw`, submit), `gui::close` when ready.
+  The picture is the row of loadscreens.2da labelled with the name (`classsel`, the minigames), else
+  the texture `load_<name>` (most modules have one), else the default row. The game's own use of it
+  (every way into an area, the settle rule) is in engine.md, "The frame"; the front end shows it for
+  the class selection (`begin_chargen`, drawn once before the work).
 - **Pause**: while `gui::is_modal_open` the world should not advance.
 
 ## The front end

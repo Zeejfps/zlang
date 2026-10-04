@@ -47,6 +47,8 @@ namespace play {
         let rate: u32 = match adev { some{ value } => { value.rate } null => { 44100 } }
         let mixer = try mix::make(heap::Heap){ realloc = heap::alloc, heap = w.heap, rate, voices_2d = 24, voices_3d = 16 }
         speed::mute_unheard{ mixer, opts }
+        // The loading screen (game/loading.ctx): up over every way into an area, behind which the area is assembled.
+        let ld = try loading::make{ &w, &dev, scratch = texture_scratch, opts, scale = disp.live.gui_scale }
         let script = try read_script{ &w, path = opts.input }
         let mut next_line: usize = 0
         let mut frame_no: u64 = 0
@@ -56,24 +58,44 @@ namespace play {
                 _ = @fmt(&w.io, "kotor: no save {}\n", opts.load)
                 return 1
             }
+            show_for_save{ ld, &w, &dev, &sdl, &frame, opts, folder }
             try save::load_game{ &w, &vm, engine, folder }
+            loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 40 }
             arena::reset{ heap = w.scratch }
         }
         // No module named: the front end (movies, main menu) until New Game.
         if w.module == obj::INVALID {
             let chosen = try front_end{ &sdl, &w, &dev, &frame, mixer, adev, scratch = texture_scratch, opts, script, &next_line, &frame_no, &disp }
+            ld.scale = disp.applied.gui_scale
             if chosen.len == 0 { return 0 }
             if chosen.len > 5 and slice::eq_bytes{ a = chosen[..5], b = "load:" } {
+                show_for_save{ ld, &w, &dev, &sdl, &frame, opts, folder = chosen[5..] }
                 try save::load_game{ &w, &vm, engine, folder = chosen[5..] }
             } else {
+                // After Play in character creation, or New Game: the story hints and the module's picture.
+                loading::show{ l = ld, &w, &dev, name = chosen, story = true }
+                loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 3 }
                 save::clear_store{ st = &w.gip }
                 try modload::enter{ &w, name = chosen }
             }
+            loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 40 }
             arena::reset{ heap = w.scratch }
+        }
+        // A module entered before the window (--module): the screen goes up over the rest of the start.
+        if not loading::is_up{ l = ld } {
+            let mo = world::object{ w = &w, id = w.module }
+            if mo != null {
+                if obj::module{ o = mo } is some{ value = m } {
+                    let mut mname = m.name
+                    loading::show{ l = ld, &w, &dev, name = resref::bytes{ r = &mname }, story = false }
+                    loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 40 }
+                }
+            }
         }
         let mut sc = scene::make{ arena = &scene_arena, heap = w.heap, scratch = texture_scratch, rm = w.rm.* }
         let mut vx = vfx::make{}
         try scene::load_area{ &sc, &w, &dev }
+        loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 75 }
         let mut camera = cam::new{}
         let mut test_camera: []u8 = ""       // `FRAME cam ...`: a camera for pictures (see place_test_camera)
         let mut camera_row: u32 = 0xFFFFFFFF    // the camerastyle.2da row the camera uses
@@ -103,6 +125,7 @@ namespace play {
         }
         if not opts.headless { _ = sdl::SDL_ShowCursor{ &sdl, toggle = 0 } }    // HOOK(ingame): the GUI draws the pointer
         ui.autopause = not opts.headless    // HOOK(ingame): a person is playing: the auto-pause options apply
+        loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 90 }
         let silent = try alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(i16){}, count = 44100 }
         let mut keys = ctl::no_keys{}
         let mut inputs = inject::new_inputs{}      // the scripted pointer and held modifiers
@@ -116,6 +139,8 @@ namespace play {
         let mut real_total: f64 = 0.0
         let mut real_worst: f32 = 0.0
         let mut timed: u64 = 0
+        let mut tenth_total: [10]f64 = [0.0; 10]       // the passes' wall time by tenth of a run of known length (--frames)
+        let mut tenth_count: [10]u64 = [0; 10]
         let mut owed = speed::Owed{ dt = 0.0, clock_dt = 0.0 }    // --speed: the presentation's time to catch up
         while not quit {
             frame_no = frame_no + 1
@@ -124,12 +149,13 @@ namespace play {
             ingame::begin_frame{ ui }    // HOOK(ingame)
             // 1. Input: the window's events, then the script's lines for this frame. A scripted key or click
             // is put on SDL's queue (game/inject.ctx) and read back at once, so it takes the path a real one does.
-            pump_events{ &sdl, &w, &dev, ui, &dview, &mg_mouse, &keys, &quit, &want_save, &want_load, &disp }
+            if ld.quit { quit = true }
+            pump_events{ &sdl, &w, &dev, ui, &dview, &mg_mouse, &keys, &quit, &want_save, &want_load, loading_up = loading::is_up{ l = ld }, &disp }
             while next_line < script.len and script[next_line].frame <= frame_no {
                 let s = script[next_line]
                 next_line = next_line + 1
                 if inject::handle_scripted{ &sdl, inp = &inputs, word = s.word, rest = s.rest } {
-                    pump_events{ &sdl, &w, &dev, ui, &dview, &mg_mouse, &keys, &quit, &want_save, &want_load, &disp }
+                    pump_events{ &sdl, &w, &dev, ui, &dview, &mg_mouse, &keys, &quit, &want_save, &want_load, loading_up = loading::is_up{ l = ld }, &disp }
                     continue
                 }
                 // One call per owner, in turn: the first that knows the word takes the line. A new owner adds
@@ -153,13 +179,13 @@ namespace play {
                 let changed = display::apply{ d = &disp, &dev, &sdl, s = &s }
                 disp.live = s
                 frontend::save_settings{ fs = &w.fs, heap = w.heap, path = opts.settings, s } iferr {}
-                options_changed{ &w, &dev, ui, &dview, &disp, changed }
+                options_changed{ &w, &dev, ui, &dview, &disp, ld, changed }
                 reload_scene = reload_scene or (changed & display::CHANGED_TEXTURES) != 0
             }
             if ingame::take_display_change{ ui } is some{ value = st } {
                 let changed = display::apply{ d = &disp, &dev, &sdl, s = st }
                 disp.live = st.*
-                options_changed{ &w, &dev, ui, &dview, &disp, changed }
+                options_changed{ &w, &dev, ui, &dview, &disp, ld, changed }
                 reload_scene = reload_scene or (changed & display::CHANGED_TEXTURES) != 0
             }
             sc.grass.on = disp.applied.grass     // the Grass option, every frame (a new area's scene starts with it on)
@@ -181,6 +207,12 @@ namespace play {
             if timed > 0 {
                 real_total = real_total + @as(f64, real)
                 if real > real_worst { real_worst = real }
+                if opts.frames > 0 and frame_no <= opts.frames {
+                    // `real` is the previous pass's time: pass number frame_no - 1 of `frames`, counted from 0 as frame_no - 2.
+                    let tenth = @as(usize, (frame_no - 2) * 10 / opts.frames)
+                    tenth_total[tenth] = tenth_total[tenth] + @as(f64, real)
+                    tenth_count[tenth] = tenth_count[tenth] + 1
+                }
             }
             timed = timed + 1
             let mut dt = if opts.dt > 0.0 { opts.dt } else { math::min{ a = real, b = 0.25 } }
@@ -191,6 +223,7 @@ namespace play {
                 if folder == null {
                     _ = @fmt(&w.io, "kotor: no such save\n")
                 } else {
+                    show_for_save{ ld, &w, &dev, &sdl, &frame, opts, folder }
                     // As a transition: no conversation survives the world it ran in.
                     dlg::abort{ &w, &vm, engine }
                     dlgview::leave{ v = &dview, w = &w, sc = &sc, g = &ui.gui }
@@ -204,8 +237,11 @@ namespace play {
                         _ = @fmt(&w.io, "kotor: load failed: {}\n", error)
                         return 1
                     }
+                    loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 40 }
                     sc = scene::make{ arena = &scene_arena, heap = w.heap, scratch = texture_scratch, rm = w.rm.* }
                     try scene::load_area{ &sc, &w, &dev }
+                    loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 80 }
+                    last = sdl::counter{ &sdl }
                     camera = cam::new{}
                     let loaded_area = world::object{ w = &w, id = w.area }
                     if loaded_area != null {
@@ -226,7 +262,7 @@ namespace play {
             // No saving between the party's fall and the main menu.
             if wipe.active { want_save = "" }
             // An autosave wanted by a transition or a script, once the area is in place.
-            if w.autosave_due and w.transition == null and w.arrival == 0 and want_save.len == 0 and not wipe.active {
+            if w.autosave_due and w.transition == null and w.arrival == 0 and want_save.len == 0 and not wipe.active and not loading::is_up{ l = ld } {
                 w.autosave_due = false
                 want_save = "AUTOSAVE"
             }
@@ -256,6 +292,11 @@ namespace play {
             dlg::update{ &w, &vm, engine }
             // 6. A transition: the next module, and a new scene and sound for it.
             if w.transition != null {
+                // The loading screen goes up over the change (gameloop.md 5.3: the client picks it, closes its panels and stops its sounds first).
+                let mut target = resref::empty{}
+                if w.transition is some{ value = t } { target = t.module }
+                loading::show{ l = ld, &w, &dev, name = resref::bytes{ r = &target }, story = false }
+                loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 3 }
                 // A conversation doesn't cross a module change (its objects go).
                 dlg::abort{ &w, &vm, engine }
                 dlgview::leave{ v = &dview, w = &w, sc = &sc, g = &ui.gui }
@@ -268,8 +309,11 @@ namespace play {
                     return 1
                 }
                 if moved {
+                    loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 40 }
                     sc = scene::make{ arena = &scene_arena, heap = w.heap, scratch = texture_scratch, rm = w.rm.* }
                     try scene::load_area{ &sc, &w, &dev }
+                    loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 80 }
+                    last = sdl::counter{ &sdl }
                     camera = cam::new{}
                     let next_area = world::object{ w = &w, id = w.area }
                     if next_area != null {
@@ -309,7 +353,7 @@ namespace play {
             }
             // --speed N: the presentation below steps once per N ticks, or sooner when something needs it (game/speed.ctx).
             let fresh_input = next_line > 0 and script[next_line - 1].frame >= frame_no
-            if not speed::due{ opts, frame_no, w = &w, fresh_input, shown = dview.up, busy = ingame::is_busy{ ui }, saving = want_save.len > 0 } {
+            if not speed::due{ opts, frame_no, w = &w, fresh_input, shown = dview.up, busy = ingame::is_busy{ ui } or loading::is_up{ l = ld }, saving = want_save.len > 0 } {
                 speed::owe{ &owed, dt, clock_dt = w.clock.dt }
                 ingame::step_bot{ ui, &w }    // HOOK(ingame)
                 arena::reset{ heap = w.scratch }
@@ -384,8 +428,24 @@ namespace play {
                     mix::render{ m = mixer, into = silent[..@as(usize, frames) * 2] }
                 }
             }
+            // The loading screen stays up while the new area's first ticks run behind it, until it is ready (a conversation
+            // its scripts started is on screen with its first line), and is drawn in the scene's place meanwhile.
+            if loading::is_up{ l = ld } {
+                loading::tick{ l = ld }
+                let line_up = dview.up and dview.seen_line == w.conversation.line.serial
+                if loading::settled{ l = ld, &w, line_shown = line_up } {
+                    if w.log.module {
+                        world::prefix{ w = &w }
+                        _ = @fmt(&w.io, "loading screen down after {} ticks (conversation {}, its line up {})\n", ld.ticks, w.conversation.active, line_up)
+                    }
+                    loading::hide{ l = ld }
+                    last = sdl::counter{ &sdl }
+                }
+            }
             // 12. Render (--no-render: only for a picture someone takes).
-            if speed::picture_wanted{ opts, frame_no, saving = want_save.len > 0 } {
+            if loading::is_up{ l = ld } {
+                loading::draw_frame{ l = ld, &w, &dev, &sdl, &frame, opts, present = false, picture_due = speed::picture_wanted{ opts, frame_no, saving = false } }
+            } else if speed::picture_wanted{ opts, frame_no, saving = want_save.len > 0 } {
                 let size = gpu::screen_size{ dev }
                 render::begin_frame{ &frame, time = sc.time }
                 let mut view = render::make_view{ camera = cam::render_camera{ c = &camera, aspect = @as(f32, size.width) / @as(f32, size.height) } }
@@ -413,6 +473,10 @@ namespace play {
                     }
                 }
                 s = s + 1
+            }
+            // --screenshot-range: every frame of a stretch, for finding the one that flashes.
+            if opts.range_to > 0 and frame_no >= opts.range_from and frame_no <= opts.range_to {
+                try screenshot_numbered{ &w, &dev, dir = opts.range_dir, letter = 'f', number = frame_no }
             }
             if want_save.len > 0 {
                 let size = gpu::screen_size{ dev }
@@ -443,6 +507,18 @@ namespace play {
         _ = @fmt(&w.io, "vfx: {} effects started, {} wanted while the pool was full\n", vx.started, vx.dropped)
         if timed > 1 {
             _ = @fmt(&w.io, "frames: {}, {} ms each on average, {} ms the slowest\n", timed, @as(f32, real_total * 1000.0 / @as(f64, timed - 1)), real_worst * 1000.0)
+        }
+        // A run that gets slower as it goes (something piling up per tick) shows in its tenths: the smoke test's
+        // report flags a last tenth over twice the first (tools/smoke/report.sh).
+        if opts.frames >= 1000 and timed >= opts.frames {
+            _ = @fmt(&w.io, "frame tenths (ms each):")
+            let mut k: usize = 0
+            while k < 10 {
+                let each = if tenth_count[k] > 0 { tenth_total[k] * 1000.0 / @as(f64, tenth_count[k]) } else { 0.0 }
+                _ = @fmt(&w.io, " {}", @as(f32, each))
+                k = k + 1
+            }
+            _ = @fmt(&w.io, "\n")
         }
         report::summary{ &w, routines = opts.report }
         return 0
@@ -475,7 +551,7 @@ namespace play {
         try frontend::begin{ &fe, &g, fs = &w.fs, &dev, &sdl, mixer }
         let freq = sdl::counter_frequency{ &sdl }
         let mut last = sdl::counter{ &sdl }
-        let mut inputs = inject::new_inputs{}      // the scripted pointer and held modifiers
+        let mut inputs = inject::new_inputs{}      // the scripted pointer and keys, for driving the menus in tests
         let mut chosen: []u8 = ""
         let mut done = false
         while not done {
@@ -490,6 +566,7 @@ namespace play {
                     forced = true
                     forced_player = text::first_word{ s = line.rest }
                 } else if inject::handle_scripted{ &sdl, inp = &inputs, word = line.word, rest = line.rest } {
+                    // keys and the mouse, read back with this frame's events
                 } else if display::handle_scripted{ d = &disp, word = line.word, rest = line.rest } {
                     // A `gfx` word: made real just below, with the changes the menu made.
                     fe.settings = disp.live
@@ -604,7 +681,8 @@ namespace play {
     }
 
     // The device agrees with new settings: the interface follows what changed, and the option screens show what is true.
-    fn options_changed { mut w: world::World, mut dev: gpu::Device, ui: *mut ingame::Ingame, mut dview: dlgview::View, mut disp: display::Display, changed: u32 } {
+    fn options_changed { mut w: world::World, mut dev: gpu::Device, ui: *mut ingame::Ingame, mut dview: dlgview::View, mut disp: display::Display, ld: *mut loading::Loading, changed: u32 } {
+        ld.scale = disp.applied.gui_scale
         if (changed & (display::CHANGED_SIZE | display::CHANGED_UI_SCALE)) != 0 { relayout_ui{ &w, &dev, ui, &dview, &disp } }
         if (changed & display::CHANGED_TEXTURES) != 0 { mount_packs{ &w, quality = disp.applied.texture_quality } }
         if ingame::options_front{ ui } is some{ value = fe } {
@@ -626,7 +704,7 @@ namespace play {
     // interface and then the world's own keys; the first that takes it ends its trip.
     fn pump_events {
         mut sdl: sdl::Sdl, mut w: world::World, mut dev: gpu::Device, ui: *mut ingame::Ingame, mut dview: dlgview::View,
-        mut mg_mouse: mg_game::Mouse, mut keys: ctl::Keys, mut quit: bool, mut want_save: []u8, mut want_load: []u8,
+        mut mg_mouse: mg_game::Mouse, mut keys: ctl::Keys, mut quit: bool, mut want_save: []u8, mut want_load: []u8, loading_up: bool,
         mut disp: display::Display,
     } {
         while true {
@@ -638,6 +716,12 @@ namespace play {
             }
             // Positions in render pixels (the window's units, a larger drawable, bars around a scaled picture undone).
             let e = display::map_event{ d = &disp, ev = polled }
+            // Behind the loading screen nothing is clicked or typed (a key let go still lets go of the walk).
+            if loading_up {
+                if e is quit | close { quit = true }
+                if e is key{ down, keycode } { if not down { apply_key{ keys = &keys, keycode, down = false, minigame = false } } }
+                continue
+            }
             // A key let go always lets go of the walk, whoever else sees the event (a menu opened while W
             // was down would otherwise keep the leader walking when it closes).
             if e is key{ down, keycode } {
@@ -990,6 +1074,36 @@ namespace play {
         let mut a = actions::make{ kind = actions::Kind::attack_object }
         a.params[0] = actions::Param::object{ id = best }
         _ = actions::add{ &w, id = me.id, action = a, force = false }
+    }
+
+    // The loading screen for loading a save: its module's picture, chosen before the load reads the save.
+    fn show_for_save {
+        mut ld: loading::Loading, mut w: world::World, mut dev: gpu::Device, mut sdl: sdl::Sdl, mut frame: render::Frame,
+        opts: options::Options, folder: []u8,
+    } {
+        let mut name: [24]u8
+        let n = save::last_module{ &w, folder, into = name[..] }
+        loading::show{ l = &ld, &w, &dev, name = name[..n], story = false }
+        loading::step{ l = &ld, &w, &dev, &sdl, &frame, opts, percent = 3 }
+    }
+
+    // DIR/<letter>NNNNN.png: a frame of --screenshot-range ('f') or --screenshot-loading ('l'); nothing is
+    // logged, there are hundreds.
+    fn screenshot_numbered { mut w: world::World, mut dev: gpu::Device, dir: []u8, letter: u8, number: u64 } -> ! {
+        let mut b = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } }
+        defer utf8::free{ &b }
+        try @fmt(&b, "{}/", dir)
+        try utf8::push_char{ &b, c = @as(u32, letter) }
+        try utf8::push_uint{ &b, n = number, width = 5, zero = true }
+        try @fmt(&b, ".png")
+        let size = gpu::screen_size{ dev }
+        // The heap, not the scene's arena: an arena gives nothing back, and hundreds of frames fill it.
+        let pixels = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = pixels, count = 0 }
+        _ = try gpu::read_screen{ &dev, into = pixels }
+        gpu::shade_pixels{ dev, pixels }
+        let image = png::Image{ width = size.width, height = size.height, rgba = pixels }
+        try png::save{ fs = &w.fs, realloc = heap::alloc, heap = w.heap, path = utf8::view{ b }.bytes, image, alpha = false, bottom_up = false }
     }
 
     fn screenshot { mut w: world::World, mut dev: gpu::Device, mut heap: arena::Arena, path: []u8, frame_no: u64 } -> ! {

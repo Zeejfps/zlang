@@ -222,6 +222,22 @@ N+1:
 | 11 | audio: listener at the camera, music/ambient/sound objects, `audio::update` | `ambience::update` |
 | 12 | render: `scene::draw` (rooms visible per VIS, objects, lights) into the frame, then `gui::draw`, `gpu::submit`, present or screenshot | game/main |
 
+**The loading screen** (game/loading.ctx, `lib/frontend/loading.ctx`; gameloop.md 5.3 to 5.6). Every way into an
+area puts it up first: Play in character creation and New Game, Load Game from the front end or the options menu,
+`--load`, and a module change (the transition branch of step 6). It is its own GUI (`loading::make`, built once), the
+picture of `frontend::show_loading` (the row of loadscreens.2da labelled with the module, else the module's own
+`load_<module>` texture, else the default row), a story hint for a new game and gameplay hints otherwise, and a bar
+that `loading::step` moves between the stages of the load (module entered 40, scene built 75, interface 90) with one
+GUI-only frame drawn each. The class selection has its own (the `classsel` row, `begin_chargen`). The world is not
+paused behind it: the loop runs on, ticks the new area and builds its presentation, and draws the screen in the
+scene's place until `loading::settled` says the area is ready, which is the PC placed, four ticks run, what the
+arrival scripts delayed (DelayCommand due within 0.3 s) fired, and a conversation they ordered begun with its first
+line on screen. At the start of a game that is the opening cutscene's first frame (black, its fade), not the ship
+assembling. Input is dropped behind it, an autosave waits for it, and nothing in the world changes: a replay is
+tick for tick the same. `--screenshot-loading DIR` writes each frame of it (`--no-render` draws it only for that).
+The GUI keeps a copy of the resource manager, so `show` refreshes it (a copy from before a module was mounted walks
+freed memory).
+
 `world::tick{ &w, &vm, engine }` does step 5 in the original's order (gameloop.md 2.2): events due
 at the frame's world time are delivered first (an event queued during the frame with no delay is
 delivered in the same frame, at the next delivery point), then each AI level's objects. There is
@@ -313,7 +329,7 @@ namespace per file**, each file owned by one agent at a time:
 
 | File | Namespace | Routines (by nwscript-routines.tsv's ranking) |
 |---|---|---|
-| `dispatch.ctx` | `routines` | the Engine function, the dispatch chain, counts; nobody else edits it except to add a category line |
+| `dispatch.ctx` | `routines` | the Engine function, the dispatch and its routes, counts; nobody else edits it except to add a category's `run` to `categories` |
 | `core.ctx` | `rt_core` | Random, d2..d100, Print*, IntToString, FloatToString, StringToInt, string functions, math |
 | `vars.ctx` | `rt_vars` | Get/SetLocalBoolean/Number, Get/SetGlobalBoolean/Number/String/Location |
 | `objects.ctx` | `rt_obj` | GetObjectByTag, GetWaypointByTag, GetIsObjectValid, GetTag, GetPosition, GetFacing, GetArea, GetModule, GetDistance*, GetNearest*, GetFirst/NextObjectInArea/Shape, GetObjectType, GetName, CreateObject, DestroyObject, Location functions |
@@ -351,12 +367,15 @@ namespace rt_vars {
 }
 ```
 
-and `routines::dispatch` asks each category in turn (`if try rt_vars::run{ &w, &vm, routine,
-argc } { return }`), and when none takes it, counts it in `w.stats.missing[routine]` and lets
-`nwstub::fallback` pop the arguments and push a zero result, so a script goes on. A function with
-an inferred error set can't be a function value, so this is a chain of direct calls, not a table;
-an `if` chain (or an integer `match routine { nwscript::GetHitDice => {...} else => { return false } }`)
-costs nothing next to a script's run. **The dispatcher checks every call's stack balance**: the
+and `routines::dispatch` calls the category that implements the routine: the routine's first
+call asks each category's `run` in turn (`routines::categories` lists them as values of one
+function type, spec §5), and `w.routes[routine]` keeps the one that took it for the later calls.
+When none takes it, it counts it in `w.stats.missing[routine]` and lets `nwstub::fallback` pop
+the arguments and push a zero result, so a script goes on. A new category file adds its `run` to
+that list. Inside a category an `if` chain (or an integer `match routine { nwscript::GetHitDice
+=> {...} else => { return false } }`) costs nothing next to a script's run; the routes save the
+walk through the categories before it (a dispatch costs about 50 ns whichever category takes it,
+where the chain took 40 ns for the first category and 100 for the last). **The dispatcher checks every call's stack balance**: the
 arguments the script passed must be gone and the result pushed, as the prototype says; a handler
 that slips is reported once as `BUG: routine X left N stack cells, wanted M` (one such slip,
 PlayRumblePattern's missing int, made a later DelayCommand fault in another script).
@@ -402,6 +421,16 @@ and its relatives in `movement`, with the acceleration and braking of movement.m
 path from `paths::plan` (the straight walk if clear, else A* over the area's PTH points, string
 pulled, else the farthest clear point; movement.md 4). FOLLOW, FOLLOWLEADER and RANDOMWALK push a
 move, a wait and themselves in front, as actions.md 3.3 has it.
+
+**What a step costs** (*ours*). The planner and the walk ask `walkmap::step_to` the same question, by samples every
+0.15 m: the floor under each (an AABB tree per room) and whether a placed walkmesh blocks it. The placed walkmeshes
+(a hundred doors and placeables in a Taris area) each keep the bounds of their vertices, and a step first collects
+the few whose bounds it touches, so a long step in the open tests no faces at all. Two rooms' walkmeshes can leave a
+seam of a few centimetres between them: a creature standing at its edge fails every short step into it, where the
+planner's longer spacing steps over it, so it never moved and planned afresh every frame for ever (about 5 ms a frame
+for one creature, a few more such creatures in a run: the frame time of `tar_m04aa` and `tar_m05aa` rose tenfold).
+A failed step is therefore tried again as one 0.15 m leap with samples every 3 cm that lets a gap of no floor pass
+when a floor follows and nothing blocks (`walkmap::step_across`, used by `movement::move_to_point`).
 
 **Perception** (`perception`, gameloop.md 2.4): each creature checks the party every update and
 everyone in its area every 4 s (0.2 s in combat); seen = within ranges.2da's sight range with a

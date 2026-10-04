@@ -277,6 +277,8 @@ namespace render {
         two_sided: bool,            // no back-face culling
         decal: bool,                // pulled toward the camera in depth, to sit on coplanar surfaces
         env_amount: f32,            // the reflection's strength: 1 normally
+        inflate: f32,               // metres each vertex is pushed out along its normal (after skinning): 0 normally;
+                                    //   a shell around a body, as the original's energy shields (re/render-gui.md, ProgFX)
         uv_scale: math::Vec2,       // uv0' = uv0 * scale + offset (scrolling UVs, flipbook cells)
         uv_offset: math::Vec2,
         uv_cell: bool,              // wrap uv0 into 0..1 first (a flipbook cell of an atlas)
@@ -287,7 +289,7 @@ namespace render {
         return Material{
             diffuse = null, lightmap = null, envmap = null, bumpmap = null,
             blend = Blend::opaque, color = white{}, selfillum = math::vec3::zero{},
-            lit = true, fog = true, two_sided = false, decal = false, env_amount = 1.0,
+            lit = true, fog = true, two_sided = false, decal = false, env_amount = 1.0, inflate = 0.0,
             uv_scale = math::Vec2{ x = 1.0, y = 1.0 }, uv_offset = math::Vec2{ x = 0.0, y = 0.0 }, uv_cell = false,
             sort = 0,
         }

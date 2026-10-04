@@ -1490,7 +1490,8 @@ namespace gpu {
         if palette_ok {
             dev.gl.uniform_matrix4fv{ location = dev.scene.bones, count = @as(i32, bones), transpose = gl::FALSE, value = &frame.bones[draw.bones].m[0] }
         }
-        dev.gl.uniform4f{ location = dev.scene.dangle, v0 = draw.dangle.x, v1 = draw.dangle.y, v2 = draw.dangle.z, v3 = 0.0 }
+        // u_dangle.w is the material's inflate: the vertex shader pushes the vertices out along their normals.
+        dev.gl.uniform4f{ location = dev.scene.dangle, v0 = draw.dangle.x, v1 = draw.dangle.y, v2 = draw.dangle.z, v3 = m.inflate }
 
         let has_diffuse = material_map{ &dev, t = m.diffuse, unit = 0, cube = false }
         let has_lightmap = material_map{ &dev, t = m.lightmap, unit = 1, cube = false }

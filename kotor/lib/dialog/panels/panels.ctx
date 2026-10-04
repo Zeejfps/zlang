@@ -332,6 +332,7 @@ namespace dlgpanel {
             if over > 0 { p.extra = min_i{ a = over, b = MAX_EXTRA } }
         }
         place_cinematic{ &p, &g }
+        show_what_is_set{ &p, &g }
     }
 
     // ---- the replies
@@ -385,6 +386,7 @@ namespace dlgpanel {
             gui::list_select{ &g, panel = p.main, tag = "LB_REPLIES", row = p.reply_first[@as(usize, p.selected)] }
         }
         p.shown = SHOWN_REPLIES
+        show_what_is_set{ &p, &g }
         tint_rows{ &p, &g }
     }
 

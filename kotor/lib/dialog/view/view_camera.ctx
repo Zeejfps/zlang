@@ -130,6 +130,9 @@ namespace dlgview {
         // computed shot of the speakers for a frame, from wherever the stunt bodies stand.
         let own_animation = v.camera_model.loaded and node.camera_anim >= 1000 and node.camera_anim < 1728
         if spoken_reply and angle != dlg::ANGLE_STATIC and v.mode == Mode::animated and (w.conversation.d.animated_cut or not own_animation) { return }
+        // Angle 5 keeps the shot as it is, built for the pair it was built for: the framed shots are rebuilt every
+        // frame from v.speaker and v.listener, so taking the line's pair would cut to the other side of the talk.
+        if angle == dlg::ANGLE_KEEP and v.mode != Mode::none and not own_animation { return }
         v.speaker = speaker
         v.listener = listener
         v.angle = angle

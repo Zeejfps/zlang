@@ -16,9 +16,13 @@ namespace walkmap {
 
     struct Placed { owner: u32, mesh: bwm::Walkmesh, active: bool }
 
+    // The bounds of a placed walkmesh's vertices: a point or a step far from them cannot meet any of its faces.
+    struct Box { lo: math::Vec3, hi: math::Vec3 }
+
     struct Map {
         rooms: list::List(Room, heap::Heap),
         placed: list::List(Placed, heap::Heap),
+        boxes: list::List(Box, heap::Heap),     // one per placed walkmesh, in the same order
         walkable: []mut bool,               // by surface material: surfacemat.2da Walk
         sees: []mut bool,                   // by surface material: surfacemat.2da LineOfSight
         grass: []mut bool,                  // by surface material: surfacemat.2da Grass (grass is drawn on it, lib/scene/grass.ctx)
@@ -30,6 +34,7 @@ namespace walkmap {
         return Map{
             rooms = list::new(Room, heap::Heap){ realloc = heap::alloc, heap },
             placed = list::new(Placed, heap::Heap){ realloc = heap::alloc, heap },
+            boxes = list::new(Box, heap::Heap){ realloc = heap::alloc, heap },
             walkable = slice::empty(bool){}, sees = slice::empty(bool){}, grass = slice::empty(bool){},
         }
     }
@@ -53,14 +58,32 @@ namespace walkmap {
     fn clear { mut m: Map } {
         list::clear{ list = &m.rooms }
         list::clear{ list = &m.placed }
+        list::clear{ list = &m.boxes }
     }
 
     fn add_room { mut m: Map, room: Room } -> ! { try list::push{ list = &m.rooms, item = room } }
 
     // Adds a placed walkmesh (already in area space); its index.
     fn add_placed { mut m: Map, placed: Placed } -> !i32 {
-        try list::push{ list = &m.placed, item = placed }
+        try list::push{ list = &m.boxes, item = box_of{ mesh = &placed.mesh } }
+        list::push{ list = &m.placed, item = placed } iferr err{ error } {
+            m.boxes.len = m.boxes.len - 1
+            return error
+        }
         return @as(i32, m.placed.len - 1)
+    }
+
+    fn box_of { mesh: *bwm::Walkmesh } -> Box {
+        let mut lo = math::Vec3{ x = 1000000000.0, y = 1000000000.0, z = 1000000000.0 }
+        let mut hi = math::Vec3{ x = -1000000000.0, y = -1000000000.0, z = -1000000000.0 }
+        let mut i: usize = 0
+        while i < mesh.vertices.len {
+            let v = mesh.vertices[i]
+            lo = math::Vec3{ x = math::min{ a = lo.x, b = v.x }, y = math::min{ a = lo.y, b = v.y }, z = math::min{ a = lo.z, b = v.z } }
+            hi = math::Vec3{ x = math::max{ a = hi.x, b = v.x }, y = math::max{ a = hi.y, b = v.y }, z = math::max{ a = hi.z, b = v.z } }
+            i = i + 1
+        }
+        return Box{ lo, hi }
     }
 
     fn set_active { mut m: Map, index: i32, active: bool } {
@@ -104,15 +127,23 @@ namespace walkmap {
     // anyone walk over (x, y) at about height z.
     fn blocked { m: *Map, x: f32, y: f32, z: f32 } -> bool {
         let placed = list::items{ list = m.placed }
+        let boxes = list::items{ list = m.boxes }
         let mut i: usize = 0
         while i < placed.len {
-            let p = placed[i]
+            let p = &placed[i]
+            let b = boxes[i]
             i = i + 1
             if not p.active { continue }
+            // over_blocking_face's own tests, on the whole mesh's bounds first (most are far away).
+            if x < b.lo.x - BOX_SLACK or x > b.hi.x + BOX_SLACK or y < b.lo.y - BOX_SLACK or y > b.hi.y + BOX_SLACK { continue }
+            if b.hi.z < z - 0.5 or b.lo.z > z + 2.0 { continue }
             if over_blocking_face{ w = &p.mesh, walkable = m.walkable, x, y, z } { return true }
         }
         return false
     }
+
+    // More than the face test's own slack (bwm EDGE_SLACK), so a bounds test never rejects what it would accept.
+    const BOX_SLACK: f32 = 0.01
 
     fn over_blocking_face { w: *bwm::Walkmesh, walkable: []bool, x: f32, y: f32, z: f32 } -> bool {
         let mut f: usize = 0
@@ -135,20 +166,71 @@ namespace walkmap {
     // height at `to`, or null if the walk leaves the walkmesh, climbs or drops too far, or meets
     // a blocking placed walkmesh.
     fn step_to { m: *Map, from: math::Vec3, to: math::Vec3 } -> ?f32 {
+        return walk_segment{ m, from, to, spacing = SAMPLE, bridge = false }
+    }
+
+    // A short step across a seam: the walkmeshes of two rooms can leave a gap of a few centimetres
+    // between them, which a creature standing at its edge cannot enter and so never leaves (step_to
+    // samples every SAMPLE and finds the gap with a short step but not with a long one). Like step_to,
+    // with the samples a fifth as far apart, and a sample over no floor at all let by when a
+    // floor follows: the far end must have one, and nothing may block on the way.
+    fn step_across { m: *Map, from: math::Vec3, to: math::Vec3 } -> ?f32 {
+        return walk_segment{ m, from, to, spacing = SAMPLE * 0.2, bridge = true }
+    }
+
+    fn walk_segment { m: *Map, from: math::Vec3, to: math::Vec3, spacing: f32, bridge: bool } -> ?f32 {
         let dx = to.x - from.x
         let dy = to.y - from.y
         let len = math::sqrtf{ x = dx * dx + dy * dy }
-        let n = if len <= SAMPLE { 1 } else { @as(u32, math::ceilf{ x = len / SAMPLE }) }
+        let n = if len <= spacing { 1 } else { @as(u32, math::ceilf{ x = len / spacing }) }
+        // The placed walkmeshes whose bounds the whole step can touch: the only ones its samples are
+        // tested against (a long step in the open meets none).
+        let placed = list::items{ list = m.placed }
+        let boxes = list::items{ list = m.boxes }
+        let lo_x = math::min{ a = from.x, b = to.x } - BOX_SLACK
+        let hi_x = math::max{ a = from.x, b = to.x } + BOX_SLACK
+        let lo_y = math::min{ a = from.y, b = to.y } - BOX_SLACK
+        let hi_y = math::max{ a = from.y, b = to.y } + BOX_SLACK
+        let mut near: [48]u32
+        let mut near_count: usize = 0
+        let mut too_many = false
+        let mut b: usize = 0
+        while b < placed.len {
+            let box = boxes[b]
+            if placed[b].active and box.hi.x >= lo_x and box.lo.x <= hi_x and box.hi.y >= lo_y and box.lo.y <= hi_y {
+                if near_count < 48 {
+                    near[near_count] = @as(u32, b)
+                    near_count = near_count + 1
+                } else {
+                    too_many = true
+                }
+            }
+            b = b + 1
+        }
         let mut z = from.z
         let mut i: u32 = 1
         while i <= n {
             let t = @as(f32, i) / @as(f32, n)
             let x = from.x + dx * t
             let y = from.y + dy * t
-            let f = floor{ m, x, y, z } ifnull { return null }
-            if f.z < z - STEP_DOWN { return null }
-            if blocked{ m, x, y, z = f.z } { return null }
-            z = f.z
+            let found = floor{ m, x, y, z }
+            let mut here_z = z
+            if found != null {
+                if found.z < z - STEP_DOWN { return null }
+                here_z = found.z
+            } else if not bridge or i == n {
+                return null
+            }
+            if too_many {
+                if blocked{ m, x, y, z = here_z } { return null }
+            } else {
+                let mut k: usize = 0
+                while k < near_count {
+                    if over_blocking_face{ w = &placed[@as(usize, near[k])].mesh, walkable = m.walkable, x, y, z = here_z } { return null }
+                    k = k + 1
+                }
+            }
+            z = here_z
             i = i + 1
         }
         return z
