@@ -32,5 +32,10 @@ expect props        bunk props_effects.txt     60 "fx : 3 effects" "fx : 0 effec
 expect medpac_tut   bunk medpac_tutorial.txt  220 "leader hp 18 of 22"
 expect container    bunk container_give.txt   120 "Medpac x2"
 expect slots        bunk slots_lists.txt      110
+expect bench_empty  module:ebo_m12aa bench_empty.txt   200 "ctl: LBL_RANGED .* visible false" "ctl: BTN_RANGED .* enabled false" "ctl: no shown control BTN_RANGED"
+expect bench_ranged module:ebo_m12aa bench_ranged.txt  330 "assembled, upgrades 589824 (were 0)" "Scope x1" "Improved Energy Cell x1"
+expect bench_saber  module:ebo_m12aa bench_saber.txt   400 "assembled, upgrades 2 (were 0)" "Crystal, Blue x1" "tag g_w_lghtsbr02"
+expect bench_dual   module:ebo_m12aa bench_dual.txt    350 "Sanasiki's Blade assembled, upgrades 8192" "Prototype Vibroblade assembled, upgrades 16384"
+expect bench_armour module:ebo_m12aa bench_armour.txt  280 "assembled, upgrades 3145728 (were 0)" "worn 1: .* Eriadu Prototype Armor"
 
 if [ "$fails" -eq 0 ]; then echo "all item checks passed"; else echo "$fails item checks failed"; exit 1; fi

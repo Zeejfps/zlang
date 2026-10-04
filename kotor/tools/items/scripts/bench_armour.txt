@@ -1,0 +1,18 @@
+# The upgrade bench for worn armour (two slots, in the second and third places of the four): both upgrades go in,
+# Assemble puts the armour back on and the party's stock is used up.
+#   LOG=actions sh kotor/tools/items/run.sh bench_armour module:ebo_m12aa kotor/tools/items/scripts/bench_armour.txt 340
+4 ui giveitem g_a_class5007 equip
+4 ui giveitem g_i_upgrade005
+4 ui giveitem g_i_upgrade006
+60 ui inv
+70 ui bench
+100 ui clickctl BTN_ARMOR
+130 ui clickctl LB_ITEMS 0
+160 ui ctl BTN_UPGRADE42
+160 ui ctl BTN_UPGRADE43
+160 ui ctl BTN_UPGRADE41
+180 ui clickctl BTN_UPGRADE42
+200 ui clickctl BTN_UPGRADE43
+220 ui clickctl BTN_ASSEMBLE
+250 ui inv
+260 ui bench

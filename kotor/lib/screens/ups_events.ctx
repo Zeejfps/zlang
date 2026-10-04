@@ -159,6 +159,10 @@ namespace ups {
     // Assemble makes the ledger true and puts the item back; Cancel puts it back as it was. The
     // bench then returns to the list it came from (or closes when a script gave the item).
     fn leave_bench { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, assemble: bool } -> ! {
+        if w.log.actions {
+            let how: []u8 = if assemble { "assembled" } else { "cancelled" }
+            _ = @fmt(&w.io, "upgrade bench: {} {}, upgrades {} (were {})\n", items::name_of{ w = &w, id = s.item }, how, if assemble { s.bits } else { s.orig_bits }, s.orig_bits)
+        }
         if assemble { settle{ &s, &g, &w } } else { set_bits{ &w, item = s.item, bits = s.orig_bits } }
         put_back_item{ &s, &w }
         let back = s.item

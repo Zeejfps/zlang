@@ -1,0 +1,23 @@
+# A dual wielder's weapon on the bench: the other hand's weapon comes off with it and both go back to their hands on
+# Assemble (the engine slid the left weapon into the right hand when the right one came off, and the upgraded weapon
+# then pushed it into the bag). Both hands are done in turn.
+#   LOG=actions sh kotor/tools/items/run.sh bench_dual module:ebo_m12aa kotor/tools/items/scripts/bench_dual.txt 330
+4 ui giveitem g_w_vbroshort04 equip
+4 ui giveitem g_w_vbroshort09
+4 ui giveitem g_i_upgrade007
+4 ui giveitem g_i_upgrade008
+60 ui key u
+80 ui clickctl BTN_INV_WEAP_L
+100 ui clickctl LB_ITEMS 1
+120 ui key escape
+140 ui inv
+150 ui bench
+170 ui clickctl BTN_MELEE
+190 ui clickctl LB_ITEMS 0
+210 ui clickctl BTN_UPGRADE31
+230 ui clickctl BTN_ASSEMBLE
+250 ui inv
+270 ui clickctl LB_ITEMS 1
+290 ui clickctl BTN_UPGRADE32
+310 ui clickctl BTN_ASSEMBLE
+330 ui inv
