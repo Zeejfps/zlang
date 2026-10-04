@@ -8,7 +8,7 @@ namespace hud {
     const HOSTILE_BELOW: i32 = 11
 
     // What a slot does when pressed.
-    enum Act: u8 { none, open, bash, use_place, open_place, talk, attack, unlock, throw, power, feat_attack }
+    enum Act: u8 { none, open, bash, use_place, open_place, talk, attack, unlock, throw, power, feat_attack, disarm_mine, recover_mine }
 
     // Why an entry cannot be used now (the original's reason codes, strings in REASON_TEXT).
     const R_OK: i32 = 0
@@ -75,6 +75,7 @@ namespace hud {
             // An area transition stays clickable once someone has opened it (the click walks the leader through).
             door{ d } => { return (d.state == obj::DoorState::closed or modload::link_of{ o } != null) and not d.static }
             placeable{ p } => { return (p.useable or p.has_inventory) and not p.static }
+            trigger{ t } => { return traps::is_known{ w, o } }
             else => { return false }
         }
     }
@@ -106,9 +107,30 @@ namespace hud {
                 if is_hostile{ w, id } { push_entry{ &l, e = entry{ act = Act::attack, icon = "i_attack", strref = 375 } } }
                 else { push_entry{ &l, e = entry{ act = Act::talk, icon = "i_dialog", strref = 371 } } }
             }
+            trigger{ t } => {
+                // A mine (BuildDefaultActions kind 2, movement.md 7.4; 0x00691f00): Disable when it is
+                // hostile to the leader, Recover on any, both only for a leader with Demolitions.
+                let leader = party::leader{ w }
+                if traps::can_disable{ w, who = leader, o } { push_entry{ &l, e = entry{ act = Act::disarm_mine, icon = "i_disablemine", strref = 370 } } }
+                if traps::can_recover{ w, who = leader, o } { push_entry{ &l, e = entry{ act = Act::recover_mine, icon = "i_recovermine", strref = 1531 } } }
+            }
             else => {}
         }
         return l
+    }
+
+    // A mine's Recover has the middle slot to itself (0x00691f00 fills the left slot with Disable,
+    // the middle with Recover): moved there out of the left list. Other targets keep theirs.
+    fn split_mine { mut left: ActionList, mut middle: ActionList, w: *world::World, id: u32 } {
+        let o = world::object{ w, id } ifnull { return }
+        if o.kind != obj::Kind::trigger { return }
+        let mut kept = empty_list{}
+        let mut i: usize = 0
+        while i < left.count {
+            if left.entries[i].act == Act::recover_mine { push_entry{ l = &middle, e = left.entries[i] } } else { push_entry{ l = &kept, e = left.entries[i] } }
+            i = i + 1
+        }
+        left = kept
     }
 
     // The reason a known power cannot be cast now (R_OK when it can): the rules' answer as the
@@ -204,6 +226,8 @@ namespace hud {
             unlock => { return gui::CURSOR_LOCK }
             talk => { return gui::CURSOR_TALK }
             attack => { return gui::CURSOR_KILL }
+            disarm_mine => { return gui::CURSOR_DISMINE }        // 0x3f4
+            recover_mine => { return gui::CURSOR_RECMINE }       // 0x402
             else => { return gui::CURSOR_INVALID }
         }
     }
@@ -221,7 +245,7 @@ namespace hud {
             let o = all[i]
             i = i + 1
             if o.destroyed { continue }
-            if o.kind != obj::Kind::creature and o.kind != obj::Kind::door and o.kind != obj::Kind::placeable { continue }
+            if o.kind != obj::Kind::creature and o.kind != obj::Kind::door and o.kind != obj::Kind::placeable and o.kind != obj::Kind::trigger { continue }
             if not is_selectable{ w, id = o.id } { continue }
             let b = box_on_screen{ p, o } ifnull { continue }
             if fx < b.x0 - 4.0 or fx > b.x1 + 4.0 or fy < b.y0 - 4.0 or fy > b.y1 + 4.0 { continue }
@@ -331,7 +355,15 @@ namespace hud {
             unlock => { actions::Kind::open_lock }
             talk => { actions::Kind::dialog_object }
             attack | bash => { actions::Kind::attack_object }
+            disarm_mine => { actions::Kind::disable_trap }
+            recover_mine => { actions::Kind::recover_trap }
             else => { return }
+        }
+        // The mine actions go through UseSkill, which refuses a trap that cannot be disarmed.
+        if kind == actions::Kind::disable_trap or kind == actions::Kind::recover_trap {
+            let o = world::object{ w = &w, id = target } ifnull { return }
+            let trap = traps::of{ o } ifnull { return }
+            if not trap.disarmable { return }
         }
         let mut a = actions::make{ kind }
         a.params[0] = actions::Param::object{ id = target }
@@ -344,7 +376,7 @@ namespace hud {
         if kind == actions::Kind::attack_object {
             if not make_room_to_fight{ &w, leader, queue } { return }
         } else if not queue {
-            actions::clear_all{ &w, id = leader }
+            actions::clear_for_player{ &w, id = leader }
         }
         _ = actions::add{ &w, id = leader, action = a, force = false }
     }
@@ -372,7 +404,7 @@ namespace hud {
     // before it, and is refused when four already wait. True when the order may be added.
     fn make_room_to_fight { mut w: world::World, leader: u32, queue: bool } -> bool {
         if queue { return pending_fights{ w = &w, leader } < 4 }
-        actions::clear_all{ &w, id = leader }
+        actions::clear_for_player{ &w, id = leader }
         return true
     }
 

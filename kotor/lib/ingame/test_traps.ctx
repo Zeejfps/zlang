@@ -1,0 +1,81 @@
+// Headless test commands for mines (lib/engine/traps.ctx): `FRAME ui COMMAND ARGS` lines the input
+// script does not know (lib/ingame/script.ctx) come here. They print and point; what is tested
+// (finding, selecting, disarming, laying, stepping on) goes through the pointer, the keys and the
+// HUD as the player has them.
+//
+//   FRAME ui mines                    prints every trap trigger: id, base, armed, found, flagged, who
+//                                     laid it, where, how far from the leader, its box on the screen
+//   FRAME ui moveobj ID [N]           the pointer to the centre of object ID's box on the screen (or
+//                                     of the Nth object, from 1, whose tag is ID), as a mouse move
+//   FRAME ui clickobj ID [N]          the same, then press and release the left button there: the
+//                                     world's own pick decides what the click hits
+namespace test_traps {
+    fn run { mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device, cmd: []u8, args: []u8 } -> bool {
+        if ci::eq{ a = cmd, b = "mines" } {
+            print_mines{ &ui, &w }
+        } else if ci::eq{ a = cmd, b = "moveobj" } or ci::eq{ a = cmd, b = "clickobj" } {
+            let mut words = text::words{ s = args }
+            let name = text::next_word{ &words } ifnull { return true }
+            let nth = if text::next_word{ &words } is some{ value = n } { @as(usize, text::scan_decimal{ s = n }) } else { 1 }
+            let id = find{ w = &w, name, nth }
+            point_at{ &ui, &w, &dev, id, click = ci::eq{ a = cmd, b = "clickobj" } }
+        } else {
+            return false
+        }
+        return true
+    }
+
+    // An object by its id, or the nth with the tag.
+    fn find { w: *world::World, name: []u8, nth: usize } -> u32 {
+        if name.len > 0 and name[0] >= '0' and name[0] <= '9' { return @as(u32, text::scan_decimal{ s = name }) }
+        let all = list::items{ list = w.objects.all }
+        let mut seen: usize = 0
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed or not ci::eq{ a = o.tag, b = name } { continue }
+            seen = seen + 1
+            if seen == nth { return o.id }
+        }
+        return obj::INVALID
+    }
+
+    fn point_at { mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device, id: u32, click: bool } {
+        let o = world::object{ w = &w, id } ifnull {
+            _ = @fmt(&w.io, "ui obj {}: no such object\n", id)
+            return
+        }
+        let b = hud::box_on_screen{ p = ui.hud.projector, o } ifnull {
+            _ = @fmt(&w.io, "ui obj {}: behind the camera\n", id)
+            return
+        }
+        let wx = @as(i32, (b.x0 + b.x1) / 2.0 * ui.gui.scale)
+        let wy = @as(i32, (b.y0 + b.y1) / 2.0 * ui.gui.scale)
+        _ = @fmt(&w.io, "ui obj {} ({}) at {} {}\n", id, o.tag, wx, wy)
+        ingame::send{ &ui, &w, &dev, ev = sdl::Event::mouse_motion{ x = wx, y = wy, dx = 0, dy = 0, buttons = 0 } }
+        if click {
+            ingame::send{ &ui, &w, &dev, ev = sdl::Event::mouse_button{ down = true, button = sdl::BUTTON_LEFT, clicks = 1, x = wx, y = wy } }
+            ingame::send{ &ui, &w, &dev, ev = sdl::Event::mouse_button{ down = false, button = sdl::BUTTON_LEFT, clicks = 1, x = wx, y = wy } }
+        }
+    }
+
+    fn print_mines { mut ui: ingame::Ingame, mut w: world::World } {
+        let leader = world::object{ w = &w, id = party::leader{ w = &w } }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed { continue }
+            let t = obj::trigger{ o } ifnull { continue }
+            if t.trigger_type != traps::TRIGGER_TYPE { continue }
+            let d = if leader == null { -1.0 } else { math::vec3::distance{ a = o.position, b = leader.position } }
+            _ = @fmt(&w.io, "mine {} {} base {} armed {} found {} flagged {} by {} faction {} at {} {} {} dist {} selectable {}",
+                o.id, o.tag, t.trap.base, t.trap.armed, t.trap.detected, t.trap.flagged, t.trap.creator, o.faction,
+                o.position.x, o.position.y, o.position.z, d, hud::is_selectable{ w = &w, id = o.id })
+            if hud::box_on_screen{ p = ui.hud.projector, o } is some{ value = b } { _ = @fmt(&w.io, " box {} {} {} {}", b.x0, b.y0, b.x1, b.y1) }
+            _ = @fmt(&w.io, "\n")
+        }
+    }
+}

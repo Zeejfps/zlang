@@ -85,6 +85,7 @@ namespace fight {
         dying_ms: i32,                  // > 0: the die animation plays, then dead
         voice_ms: i32,                  // > 0: it has just grunted
         ready_ms: i32,                  // > 0: a cutscene attack was just made, so the weapon stays up
+        item_ms: i32,                   // > 0 in combat: an item was used this round (the inventory allows one per round)
         knock: Knock,
         saber: SaberThrow,
     }
@@ -102,7 +103,7 @@ namespace fight {
     fn new_fighter { heap: *mut heap::Heap } -> !*mut Fighter {
         let mut c: rules::Creature
         c.loaded_hp = -1
-        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0, voice_ms = 0, ready_ms = 0, knock = no_knock{}, saber = no_saber{} }
+        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0, voice_ms = 0, ready_ms = 0, knock = no_knock{}, saber = no_saber{}, item_ms = 0 }
         return try alloc::new(Fighter, heap::Heap){ realloc = heap::alloc, heap, value = f }
     }
 
@@ -311,6 +312,8 @@ namespace fight {
             end_round{ &w, id, script = false }
         } else if k == rules::ev::COMMANDABLE {
             o.commandable = e.a != 0
+        } else if k == rules::ev::LEAVE_STEALTH {
+            stealth::leave{ &w, id }
         } else if k == rules::ev::VISUAL_ON {
             // A duration visual stays until its effect leaves; the others play once.
             if e.b == 0 and is_duration_visual{ w = &w, effect = e.a } { hold_visual{ &w, effect = e.a, target = id } }
@@ -546,6 +549,9 @@ namespace fight {
             if c.dead { return }
             let was = c.in_combat
             c.in_combat = true
+            // Combat ends stealth: the attacked leave it as their combat begins, attackers as
+            // their attack does (re/combat.md, AIUpdate and AIActionCombat).
+            stealth::leave{ &w, id }
             if c.fighter is some{ value = f } { f.combat_ms = COMBAT_MS }
             if not was { bark{ &w, id, first = VOICE_BATTLE, count = 6, chance_in = 1, quiet = false } }
         }
@@ -782,6 +788,8 @@ namespace fight {
         c.attack_target = target
         c.last_hostile_target = target
         c.last_attack_action = 3
+        stealth::attacked{ &w, attacker = id, target }
+        stealth::leave{ &w, id }
         if not forced.on {
             enter_combat{ &w, id, other = target }
             enter_combat{ &w, id = target, other = id }
@@ -1179,6 +1187,7 @@ namespace fight {
         if f.react_ms > 0 { f.react_ms = f.react_ms - dt }
         if f.voice_ms > 0 { f.voice_ms = f.voice_ms - dt }
         if f.ready_ms > 0 { f.ready_ms = f.ready_ms - dt }
+        if f.item_ms > 0 { f.item_ms = f.item_ms - dt }
         // Back to the ready stance (in combat) or standing when an attack or reaction is over.
         let busy = (f.round.started and f.round.timer_ms < f.round.anim_ms) or action_holds_animation{ o = o3 }
         if not busy and f.react_ms <= 0 and not c3.moving and row_of_animation{ id = o3.animation } >= 0 {
@@ -1189,13 +1198,17 @@ namespace fight {
     }
 
     // Whether the head of the queue plays an animations.2da row of its own, which this must not
-    // end as it ends an attack's: OPENLOCK and LOCK kneel at the lock for 1.5 s (doors.ctx).
+    // end as it ends an attack's: OPENLOCK and LOCK kneel at the lock for 1.5 s (doors.ctx), the trap
+    // actions over the mine (traps.ctx).
     fn action_holds_animation { o: *obj::Object } -> bool {
         if o.actions.len == 0 { return false }
         let head = list::items{ list = o.actions }[0]
         // A cast plays its conjure and cast animations (and a thrown saber keeps the pose) from its second phase.
         if head.kind == actions::Kind::cast_spell and head.phase >= 1 { return true }
-        return (head.kind == actions::Kind::open_lock or head.kind == actions::Kind::lock) and head.phase >= 2
+        let k = head.kind
+        let kneels = k == actions::Kind::open_lock or k == actions::Kind::lock or k == actions::Kind::disable_trap or k == actions::Kind::recover_trap or
+            k == actions::Kind::flag_trap or k == actions::Kind::examine_trap or k == actions::Kind::set_trap
+        return kneels and head.phase >= 2
     }
 
     fn play_ready { mut w: world::World, o: *mut obj::Object, c: *obj::Creature } {
@@ -1404,9 +1417,13 @@ namespace fight {
                     return actions::Status::failed
                 }
             }
-            // An item's ability needs the item (it is spent at the impact, below).
+            // An item's ability needs the item (it is spent at the impact, below). A power of the
+            // creature's own ends stealth; an item's does not (ClearActivities 1 against 2).
             let used = actions::object_param{ a, i = 6 }
             if used != obj::INVALID and not world::is_valid{ w = &w, id = used } { return actions::Status::failed }
+            if used == obj::INVALID { stealth::leave{ &w, id } }
+            a.unclearable = used != obj::INVALID
+            if used != obj::INVALID and of{ o } is some{ value = uf } { uf.item_ms = ROUND_MS }
             let dir = math::vec3::sub{ a = at, b = o.position }
             if dir.x * dir.x + dir.y * dir.y > 0.0001 { world::set_orientation{ o, v = math::Vec3{ x = dir.x, y = dir.y, z = 0.0 } } }
             if obj::creature{ o } is some{ value = c } {

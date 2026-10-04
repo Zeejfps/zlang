@@ -41,6 +41,7 @@ namespace world {
         weaponsounds: twoda::Table,
         appearancesndset: twoda::Table,
         soundset: twoda::Table,
+        traps: twoda::Table,
     }
 
     // A pending module change (gameloop.md 5.1).
@@ -251,6 +252,7 @@ namespace world {
             weaponsounds = try load_table{ &fs, heap, rm, name = "weaponsounds" },
             appearancesndset = try load_table{ &fs, heap, rm, name = "appearancesndset" },
             soundset = try load_table{ &fs, heap, rm, name = "soundset" },
+            traps = try load_table{ &fs, heap, rm, name = "traps" },
         }
     }
 
@@ -353,7 +355,7 @@ namespace world {
                     polygon = slice::empty(math::Vec3){}, trigger_type = 0, linked_to = slice::empty(u8){},
                     linked_to_module = resref::empty{}, linked_flags = 0,
                     transition_name = obj::Name{ strref = 0xFFFFFFFF, text = slice::empty(u8){} },
-                    inside = list::new(u32, heap::Heap){ realloc = heap::alloc, heap = h },
+                    inside = list::new(u32, heap::Heap){ realloc = heap::alloc, heap = h }, trap = traps::none{},
                 } } }
             }
             item => {
@@ -398,7 +400,7 @@ namespace world {
                     unescapable = false, is_night = false, dyn_ambient = 0, sun_ambient = 0, sun_diffuse = 0, fog_on = false,
                     fog_near = 99.0, fog_far = 100.0, fog_color = 0, load_screen = 0, last_heartbeat = 0,
                     transition_token = 0, transition_pending = 0,
-                    stealth_xp_max = 0, stealth_xp_current = 0, stealth_xp_decrement = 0, stealth_xp_enabled = false, minigame = null,
+                    stealth_xp_max = 0, stealth_xp_current = 0, stealth_xp_decrement = 0, stealth_xp_enabled = false, flags = 0, listen_mod = 0, minigame = null,
                 } } }
             }
             module => {

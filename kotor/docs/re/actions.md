@@ -173,8 +173,15 @@ Nearly every handler starts with the same three tests and fails (3) if any holds
    hit points are below 1 (KOTOR's knocked-out companions act on nothing until revived).
 
 Interaction handlers then call `ClearActivities(2)` (`0x004f87d0`), which drops the creature's
-combat/Force modes that are not locked (bits `0x100..0x2000` of `+0x9fc`), and many also clear
-stealth (`SetActivity(1, FALSE)`) — talking, opening, using all break stealth. (med)
+combat/Force modes that are not locked (bits `0x100..0x2000` of `+0x9fc`) and **keeps stealth**:
+opening doors and locks, using placeables, picking up, equipping, item abilities, traps and healing
+all leave a creature hiding (the Stealth skill's own description says so, 248). Stealth (activity
+bit 1, `SetActivity(1, FALSE)`) is dropped by `ClearActivities(1)` (a cast of the creature's own
+power) and `ClearActivities(4)` (counter spell, `ResolveAttack`), by SPEAK / SPEAKSTRREF, by the
+combat round's next scheduled action (AIActionCombat, below), by `Rest`, and by the party-wide
+`SetPartyStealthMode(0)` (conversations, transitions, solo mode off). USEOBJECT and DIALOGOBJECT
+call `SetActivity(4, FALSE)`, which leaves a conversation, not stealth. (high; corrected from an
+earlier "talking, opening, using all break stealth", docs/mechanics/stealth.md)
 
 **The approach pattern** (open/close door, lock, unlock, use, dialog, pick up, drop, traps, heal,
 give item): if the actor is a creature and `GetIsInUseRange(target, extra)` (`0x004f6000`) is
@@ -281,7 +288,7 @@ names)
 
 | Minor | Order | What it does |
 |---|---|---|
-| 1 | move (`0x005235b0`) | if the new destination equals the current one within 0.1 m only the path priority byte is updated; else (commandable only): stealth off, combat round notified, `PrepareForPlayerCommand(8)`, `AddMoveToPointAction(group 0xffff, or 0xfffe when +0x9f2 == 1, point, area, target, run flag, ...)` |
+| 1 | move (`0x005235b0`) | if the new destination equals the current one within 0.1 m only the path priority byte is updated; else (commandable only): the combat mode off (`SetCombatMode(0, 1)`; stealth stays), combat round notified, `PrepareForPlayerCommand(8)`, `AddMoveToPointAction(group 0xffff, or 0xfffe when +0x9f2 == 1, point, area, target, run flag, ...)` |
 | 2 | attack | `AddAttackActions(target, ..., player = 1)` ([combat.md](combat.md)); remembers the target at `+0x510` |
 | 3 | door | `PrepareForPlayerCommand(2)`, then `AddOpenDoorAction` when the message's word is 10021, else `AddCloseDoorAction` |
 | 4 | emote | play an animation: on self → PLAYANIMATION in front; on another object → FACEOBJECT (0x13) or, with no object, FACEPOINT (0x31), then PLAYANIMATION (speed 1, duration 0) in the same group; clears the queue first when mode bit 8 is on |
@@ -294,7 +301,7 @@ names)
 | 0xd | rest | REST action 0x2a (`0x004fd1e0`) unless the creature is in a state that forbids it; feedback 0xd5 when not commandable |
 | 0x12 / 0x23 | cast a power / use a talent | `PrepareForPlayerCommand(1)` then `AddCastSpellActions` / talent helpers ([combat.md](combat.md), [rules.md](rules.md)) |
 | 0x1c | turn | `SetOrientation` directly (no action) when commandable, alive and not down |
-| 0x1d | drive (keyboard / stick) | `0x00523450`: stealth off, `ClearAllActions(TRUE)`, `PrepareForPlayerCommand(8)`, queue 0x33 |
+| 0x1d | drive (keyboard / stick) | `0x00523450`: the combat mode off (stealth stays), `ClearAllActions(TRUE)`, `PrepareForPlayerCommand(8)`, queue 0x33 |
 | 0x24 | put an item into a container | `AddGiveItemAction` (0x22) with the placeable as recipient |
 
 Inventory-panel orders (equip, unequip, drop, pick up) come through `0x00523c20` and the
@@ -589,7 +596,7 @@ Param 0 = the object. In order (high unless marked):
 
 1. Preconditions; a party member may not use anything while a conversation is running (GUI
    `+0xb4`). The target must exist, be alive and (if a creature) not knocked out.
-2. Creature actor: modes and stealth off; if not `GetIsInUseRange(target, 0)` ⇒ the approach
+2. Creature actor: modes off and out of any conversation (`ClearActivities(2)`, `SetActivity(4, FALSE)`; stealth stays); if not `GetIsInUseRange(target, 0)` ⇒ the approach
    pattern of 1.4 (move, 0x11, face, wait 0.5 s, use), done.
 3. In range, placeable target:
    - not `Useable` (`+0x328`) ⇒ fail;
@@ -1041,15 +1048,62 @@ constants):
 
 1. Modes off; target gone ⇒ timer hidden, `+0x97c = 0`, fail.
 2. Not within use range + 0.25 m ⇒ approach.
-3. First arrival (`+0x97c` = 0): `+0x97c = 1`; push a fresh copy, PLAYANIMATION (10134 for a mine,
-   10135 for a placeable trap, 10132 otherwise, speed 1.0, **4.5 s**) and FACEOBJECT; show a 4500
-   ms action timer (type 3); done.
-4. Second pass: the Demolitions check ([rules.md](rules.md)): out of combat the roll is a 20 (take 20), in
-   combat d20 (`rank % 20 + 1` style roll from `rand`); a trap set by the actor himself is handled
-   apart; success disarms (OnDisarm), failure may trigger it.
+3. First arrival (`+0x97c` = 0): `+0x97c = 1`; push a fresh copy, PLAYANIMATION (10134 for a door,
+   10135 for a placeable, **10132 for a trigger (a mine)**, speed 1.0, **4.5 s**) and FACEOBJECT; show a
+   4500 ms action timer (type 3); done.
+4. Second pass: total Demolitions (`GetSkillRank(1)`) + 20 out of combat, `rand % 20 + 1` in combat,
+   against the stored DisarmDC (at least 1; nothing from traps.2da is added here: a trigger's DCs
+   already are traps.2da's, a laid mine's were baked in by SETTRAP); a DC above 35 cannot be beaten.
+   A trigger whose creator is the actor, or whose creator and the actor are both of the party (or the
+   PC), needs no roll. Success: script event 24 to the target at once (a trigger keeps the disarmer at
+   `+0x2a4` for GetLastDisarmed and runs OnDisarm `+0x26c`, then gets event 11 and is destroyed; a door or
+   placeable clears its trapped flag), delete reason 2 for the client (`0x004ce8a0`), the target leaves
+   the area's trap list (`area+0x12c`). Failure: sound set entry 0x18; a total below DC − 10 sets the
+   trap off under the actor (a trigger gets OBJECT_ENTER, a door or placeable event 26). Combat message
+   9 (`0x004ec700`): actor, target, 1529 "Disable Mine", roll, rank, DC, took-20, result (4 automatic,
+   1 success, 3 failed taking 20, 2 missed by more than 10, 0 failed), 324 "Demolitions"; the client
+   words 1 and 4 "success" (1392), the rest "failure" (1393). No XP. (high)
 
-RECOVERTRAP (0x1a), FLAGTRAP (0x1b), EXAMINETRAP (0x1c) and SETTRAP (0x1d, mines, `traps.2da`)
-follow the same approach-then-animate shape with their own flags and checks. (med)
+The other four, from their handlers (high unless marked):
+
+- **RECOVERTRAP** (0x1a, `0x00518c40`): animation 10060 (door, placeable) or 10141 (mine), 4.5 s,
+  timer type 2; DC = DisarmDC + 10 (no cap of 35), the same own-trap rule; success: a trigger is
+  destroyed (event 11, no OnDisarm; a door or placeable gets event 24), an item from traps.2da `ResRef`
+  of the trap type goes into the party's repository (stacks merged, marked new, possessor the actor);
+  failure below DC − 5 sets the trap off; no sound; message 1531 "Recover Mine".
+- **FLAGTRAP** (0x1b, `0x0050e400`) and **EXAMINETRAP** (0x1c, `0x0050e900`): use range with no slack,
+  animation 10060 (door, placeable) or 10059 (mine), 4.5 s, timer type 1 / 4; own trap automatic, no
+  consequence on failure. Flag: DC = DisarmDC − 5 (at least 1); success sets the flagged field (trigger
+  `+0x2c8`, door `+0x2f4`, placeable `+0x28c`), which detection then counts as found without a roll and
+  which keeps the mine shown; message 0x144 with no action name. Examine: DC = DisarmDC − 7, message
+  1532 "Examine Mine", changes nothing; sends the client (`0x0056f160`) the target, the success, the trap
+  type and a band: 0 if DisarmDC ≤ rank + 5, 1 if ≤ + 10, 2 if ≤ + 15, 3 if ≤ + 20, else (or not
+  disarmable, or DC above 35) 4. What the client shows for it was not traced.
+- **SETTRAP** (0x1d, `0x00519e30`): params item (`+0x38`), target (`+0x3c`, may be invalid), point
+  (`+0x40..`). P is the target's position, else the point; a zero point fails; an area with 15 or more
+  armed party-set mines refuses (`0x005089d0`). The stand spot is P − normalize(actor − P) (a zero vector
+  normalises to (1, 0, 0)); 1.5 m or more from it ⇒ FACEPOINT and a run there first. First pass:
+  animation 10140 for 2.0 s, timer 2000 ms type 5. Second pass: the traps.2da row is the item's first
+  property's subtype; total Demolitions, + 2 with 5 or more base ranks, + 20 or d20, against traps.2da
+  SetDC (at least 1). At or above it the trap is made; a miss by 10 or less (or any miss taking 20)
+  makes nothing and keeps the item; a worse miss (only in combat) still makes it, and it goes off only
+  when the target was a trigger, door or placeable. Made: a door or placeable target is trapped in
+  place; otherwise a new trigger, TrapFlag 1, at the actor's feet, a 4-vertex square of half-size 2.0 m
+  (heights from the walkmesh), faction = the actor's, CreatorId = the actor, SetByPlayerParty when the
+  actor is the PC or of the party, name strref traps.2da TrapName, OnTrapTriggered = TrapScript,
+  DetectDC = rank + roll + DetectDCMod, DisarmDC = rank + roll + DisarmDCMod, detectable and
+  disarmable; it joins the area and its trap list; no "found" flag is set (the party sees it because
+  its faction is theirs). The item is spent only when the trap is made (stack − 1 or destroyed).
+  Message 1530 "Set Mine" (results 1, 3, 2, 0); sound set 0x13 on success, 0x18 on failure; the
+  actor's activity bits 0xe end and invisibility and stealth effects (0x2f, 0x3f) go (med).
+
+Callers: UseSkill (`0x004fbe40`) for Demolitions queues FLAGTRAP for subskill 100, RECOVERTRAP 101,
+EXAMINETRAP 102, else DISABLETRAP, through `AddTrapActions` (`0x004f9da0`); disable and recover refuse a
+trapped target that is not disarmable; nothing checks that the trap was found. UseItem (`0x004fc210`)
+with property 0x2e (Trap): `+0xe8` set, the area cap not reached, Demolitions usable ⇒ SETTRAP with the
+item, the target and the point; the HUD's mine slot sends the leader as the target and a zero point, so
+the mine lands at the user's feet. The target block's mine actions (callbacks `0x00691900` Disable,
+subskill 0, and `0x00691950` Recover, subskill 101) send input message 0x12 to UseSkill.
 
 ## 4. Ranges and other constants
 

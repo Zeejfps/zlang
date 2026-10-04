@@ -1,5 +1,0 @@
-# The Endar Spire's module script k_pend_activate hears a medpac being used (GetItemActivated/Activator):
-# it moves END_TRASK_DLG on when it stands at the tutorial's medpac step.
-10 ui stat hp 6
-24 ui clickctl BTN_ACTION1
-200 ui hp

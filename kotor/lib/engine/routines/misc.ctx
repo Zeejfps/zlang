@@ -230,9 +230,13 @@ namespace rt_misc {
     fn stealth_set { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
         let n = try nwarg::int{ &vm, routine, argc, i = 0 }
         let a = current_area{ w = &w } ifnull { return }
+        // The current amount never exceeds the maximum (0x00506a80, 0x00506aa0).
         match routine {
-            nwscript::SetMaxStealthXP => { a.stealth_xp_max = n }
-            nwscript::SetCurrentStealthXP => { a.stealth_xp_current = n }
+            nwscript::SetMaxStealthXP => {
+                a.stealth_xp_max = n
+                if a.stealth_xp_current > n { a.stealth_xp_current = n }
+            }
+            nwscript::SetCurrentStealthXP => { a.stealth_xp_current = if n > a.stealth_xp_max { a.stealth_xp_max } else { n } }
             nwscript::SetStealthXPEnabled => { a.stealth_xp_enabled = n != 0 }
             else => { a.stealth_xp_decrement = n }
         }
@@ -262,6 +266,8 @@ namespace rt_misc {
         let a = current_area{ w = &w } ifnull { return }
         if not a.stealth_xp_enabled or a.stealth_xp_current == 0 { return }
         award_party_xp{ &w, amount = a.stealth_xp_current }
+        // The status summary's stealth XP event: the HUD's LBL_STEALTHXP icon.
+        outbox::post{ out = &w.out, note = outbox::Note::hud_notice{ kind = 3 } }
         a.stealth_xp_current = 0
         a.stealth_xp_enabled = false
     }

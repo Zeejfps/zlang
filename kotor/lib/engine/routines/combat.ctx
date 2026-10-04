@@ -337,7 +337,11 @@ namespace rt_combat {
         let restrict = try nwarg::int{ &vm, routine = nwscript::SetPlayerRestrictMode, argc, i = 0 }
         let ao = world::object{ w = &w, id = w.area } ifnull { return }
         let a = obj::area{ o = ao } ifnull { return }
-        a.restrict_mode = if restrict != 0 { 1 } else { 0 }
+        let mode: u32 = if restrict != 0 { 1 } else { 0 }
+        // Restricting the player takes the party out of stealth (0x00506b90).
+        let was = a.restrict_mode
+        a.restrict_mode = mode
+        if mode != 0 and was != mode { stealth::leave_party{ &w } }
     }
 
     // ---- what blocked a creature

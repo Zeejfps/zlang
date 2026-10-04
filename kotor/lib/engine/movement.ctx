@@ -38,7 +38,7 @@ namespace movement {
             let t = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
             goal = t.position
         }
-        let run = actions::int_param{ a, i = 1 } != 0
+        let run = actions::int_param{ a, i = 1 } != 0 and not stealth::walk_only{ c }
         let range = math::max{ a = actions::float_param{ a, i = 2 }, b = 0.1 }
         let timeout = actions::float_param{ a, i = 4 }
         let now = clock::now_ms{ c = w.clock }
@@ -263,7 +263,8 @@ namespace movement {
                 continue
             }
             let t = obj::trigger{ o } ifnull { continue }
-            let now_in = inside_polygon{ poly = t.polygon, x = to.x, y = to.y }
+            // A trap is stepped on within a metre of its centre, not over its outline (movement.md 5.1).
+            let now_in = if t.trigger_type == traps::TRIGGER_TYPE { traps::is_within{ o, at = to } } else { inside_polygon{ poly = t.polygon, x = to.x, y = to.y } }
             let was_in = contains{ l = &t.inside, id }
             if now_in and not was_in {
                 list::push{ list = &t.inside, item = id } iferr {}

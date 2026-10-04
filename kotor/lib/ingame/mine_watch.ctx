@@ -1,0 +1,38 @@
+// The "mine sighted" watch (CClientExoAppInternal::UpdateSelectableObjects 0x005fa5a0; docs/
+// mechanics/traps.md): when a mine hostile to the party is among what the leader can select and on
+// the screen, nothing is paused and the watch is not latched, the mine becomes the target and, out
+// of combat mode, the Mine Sighted auto-pause is asked for (autopause::request; the option decides).
+// The latch holds until no such mine has been in sight for 10 s.
+namespace ingame {
+    const MINE_LATCH_SECONDS: f32 = 10.0
+
+    fn watch_mines { mut ui: Ingame, mut w: world::World, dt: f32 } {
+        let id = sighted_mine{ w = &w, p = ui.hud.projector }
+        if id == obj::INVALID {
+            ui.mine_quiet = ui.mine_quiet + dt
+            return
+        }
+        if w.clock.pause_bits != 0 { return }
+        let latched = ui.mine_quiet < MINE_LATCH_SECONDS
+        ui.mine_quiet = 0.0
+        if latched { return }
+        w.target = id
+        if not ui.hud.combat { autopause::request{ &w, reason = autopause::MINE_SIGHTED } }
+    }
+
+    // A mine the leader can select, hostile to it, on the screen; INVALID for none.
+    fn sighted_mine { w: *world::World, p: hud::Projector } -> u32 {
+        let leader = party::leader{ w }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed or o.kind != obj::Kind::trigger or traps::of{ o } == null { continue }
+            if not hud::is_selectable{ w, id = o.id } or not traps::is_hostile_to{ w, o, who = leader } { continue }
+            if hud::box_on_screen{ p, o } == null { continue }
+            return o.id
+        }
+        return obj::INVALID
+    }
+}

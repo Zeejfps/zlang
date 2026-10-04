@@ -1,0 +1,11 @@
+// The HUD's stealth toggle, TB_STEALTH (docs/re/gui.md, CSWGuiMainInterface Update): shown while
+// the leader can hide (a stealth unit on, the Stealth skill, the area not restricted:
+// stealth::can_stealth, 0x00610ac0), checked while it hides. Its clicks are lib/ingame's.
+namespace hud {
+    fn update_stealth { mut h: Hud, mut g: gui::Gui, mut w: world::World } {
+        let id = party::leader{ w = &w }
+        let who = if id != obj::INVALID { id } else { w.pc }
+        gui::set_visible{ &g, panel = h.panel, tag = "TB_STEALTH", visible = stealth::can_stealth{ w = &w, id = who } }
+        gui::set_checked{ &g, panel = h.panel, tag = "TB_STEALTH", on = stealth::is_on{ w = &w, id = who } }
+    }
+}

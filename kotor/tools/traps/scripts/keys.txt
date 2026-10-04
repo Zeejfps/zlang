@@ -1,0 +1,13 @@
+# Mines with the keys (docs/mechanics/traps.md). Start: module:tar_m04aa, 330 frames.
+# Setup only: Awareness 10, Demolitions 8. The found mines are among the targets E and Q step through (out of
+# combat); the watch made mine 148 the target, E and Q step away and back, and R (DefaultAction) disables it.
+5 warpxy 302.2,237.6
+6 ui stat awareness 10
+6 ui stat demolitions 8
+60 ui info
+62 ui key e
+64 ui info
+66 ui key q
+68 ui info
+70 ui key r
+320 ui mines

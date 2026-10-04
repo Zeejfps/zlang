@@ -71,6 +71,7 @@ namespace scene {
         fog: render::Fog,
         drawn_rooms: u32,
         drawn_objects: u32,
+        look: Look,                     // a creature in stealth mode's texture (stealth_look.ctx)
     }
 
     fn make { arena: *mut arena::Arena, heap: *mut heap::Heap, scratch: alloc::Bytes, rm: res::Manager } -> Scene {
@@ -87,7 +88,7 @@ namespace scene {
             visuals = list::new(Visual, arena::Arena){ realloc = arena::alloc, heap = arena },
             by_id = map::new(u32, usize, arena::Arena){ realloc = arena::alloc, heap = arena, hash = map::hash_u32, eq = map::eq_u32 },
             time = 0.0, current_room = -1, ambient = math::Vec3{ x = 0.35, y = 0.35, z = 0.35 }, fog = render::no_fog{},
-            drawn_rooms = 0, drawn_objects = 0,
+            drawn_rooms = 0, drawn_objects = 0, look = no_look{},
         }
     }
 
@@ -310,6 +311,7 @@ namespace scene {
             i = i + 1
         }
         material::free_cache{ cache = &sc.materials, &dev }
+        sc.look = no_look{}
     }
 
     // ---- each frame
@@ -354,6 +356,7 @@ namespace scene {
             }
             let v = list::at{ list = sc.visuals, i = index }
             v.alive = true
+            if is_hiding{ o } { prepare_look{ &sc, &w, &dev } }
             visual::update{ &sc, &w, v, o, dt }
             o.dirty = 0
         }

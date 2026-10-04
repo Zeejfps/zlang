@@ -1,0 +1,15 @@
+# A mine the party lays, set off by the hostile creatures that chase the leader over it
+# (docs/mechanics/traps.md). Start: module:tar_m04aa, 510 frames.
+# Setup only: the leader near the Undercity's rakghouls with 500 hit points, Demolitions 8 and one trap kit.
+# The HUD's mine slot lays it (in combat: d20 + 8 + 2 against SetDC 15); the leader walks away north and a
+# rakghoul (not of the party's faction, hostile to the mine's layer) running after him sets it off.
+5 warpxy 150,215
+6 ui stat hpmax 500
+6 ui stat hp 500
+6 ui stat demolitions 8
+6 ui giveitem g_i_trapkit004
+60 ui clickctl BTN_ACTION3
+140 goto 150,224
+140 ui mines
+500 ui mines
+500 ui pos

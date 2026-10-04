@@ -56,6 +56,9 @@ namespace hud {
         // party's grenades (item_slots.ctx).
         h.lists[1] = middle_actions{ h = &h, w = &w, id }
         h.lists[2] = grenade_actions{ w = &w, target = id }
+        let mut middle = h.lists[1]
+        split_mine{ left = &h.lists[0], middle = &middle, w = &w, id }
+        h.lists[1] = middle
         let name = name_of{ w = &w, id }
         gui::set_text{ &g, panel = h.panel, tag = "LBL_NAME", text = name } iferr {}
         let mut k: usize = 0
@@ -69,6 +72,22 @@ namespace hud {
         let shows_health = o.hp_max > 0
         gui::set_visible{ &g, panel = h.panel, tag = "LBL_HEALTHBG", visible = shows_health }
         gui::set_visible{ &g, panel = h.panel, tag = "PB_HEALTH", visible = shows_health }
+    }
+
+    // What the left slot offers for `id`: the default actions, less a mine's Recover (split_mine).
+    fn left_actions { w: *world::World, id: u32 } -> ActionList {
+        let mut l = attack_slot{ w, id }
+        let mut middle = empty_list{}
+        split_mine{ left = &l, middle = &middle, w, id }
+        return l
+    }
+
+    // What the middle slot offers for `id`: the Force powers, or a mine's Recover (split_mine).
+    fn middle_list { h: *Hud, w: *world::World, id: u32 } -> ActionList {
+        let mut left = attack_slot{ w, id }
+        let mut middle = middle_actions{ h, w, id }
+        split_mine{ left = &left, middle = &middle, w, id }
+        return middle
     }
 
     // The middle slot: the leader's Force powers against a hostile creature, with the choice made
@@ -125,8 +144,8 @@ namespace hud {
         } else {
             // What the leader can do to the target changed under it (a lock picked or locked, a key found,
             // the last grenade thrown, Force points spent or regained, a power learned).
-            let first = same_actions{ a = attack_slot{ w = &w, id = w.target }, b = h.lists[0] }
-            let middle = same_actions{ a = middle_actions{ h = &h, w = &w, id = w.target }, b = h.lists[1] }
+            let first = same_actions{ a = left_actions{ w = &w, id = w.target }, b = h.lists[0] }
+            let middle = same_actions{ a = middle_list{ h = &h, w = &w, id = w.target }, b = h.lists[1] }
             let last = same_actions{ a = grenade_actions{ w = &w, target = w.target }, b = h.lists[2] }
             if not first or not last {
                 build_block{ &h, &g, &w, &dev, id = w.target }
@@ -263,6 +282,7 @@ namespace hud {
         h.pressed = obj::INVALID
         if id == obj::INVALID or id != began { return false }
         if id == w.target {
+            // The default action: entry 0 of BuildDefaultActions (a mine's Recover is in the middle slot).
             let l = default_actions{ w = &w, id }
             if l.count > 0 {
                 gui::play_sound{ &g, n = 6 }

@@ -75,6 +75,9 @@ namespace outbox {
         //     node `hook` of `object` for `life` seconds (0: its animation's length), or at
         //     `position` when `object` is OBJECT_INVALID
         effect_model{ model: resref::ResRef, object: u32, hook: resref::ResRef, position: math::Vec3, life: f32 },
+        // Appended by traps.ctx: a mine leaves the world, exploding (`activate`) or disarmed
+        // (`deactivate`): its model plays that at its place (the client's delete reasons 1 and 2).
+        mine_gone{ model: resref::ResRef, position: math::Vec3, exploded: bool },
     }
 
     // Text copied into the outbox's buffer, valid until the outbox is drained.

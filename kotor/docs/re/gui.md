@@ -1103,7 +1103,9 @@ counts down the combat message (`+0x7724`, total `+0x7720`; the message alpha is
 half and then falls linearly to 0; at the end the message reverts to strref 48208); sets
 `TB_SOLO` visible when the party has more than one member and checked when solo mode is on
 (party table `server+0x1b770`, `+400`); `TB_STEALTH` visible when the leader can stealth
-(`0x00610ac0`) and checked when stealthed (creature `+0x194` bit 0); `TB_PAUSE` checked when the
+(`0x00610ac0`: the area's player restrict mode `+0x2b0` is 0, the Stealth skill is usable (bought
+ranks), and an item whose base item has ItemType 44, a stealth unit, sits in the belt or the
+creature-hide cell; high) and checked when stealthed (creature `+0x194` bit 0); `TB_PAUSE` checked when the
 game is paused by the player; the menu buttons hidden by "Hide InGame GUI". (high)
 
 `Render` (`0x0068b4a0`) does the real refresh, only while the panel is visible and a party leader
@@ -1181,6 +1183,16 @@ up/down arrows show when the list has more than one entry. How the lists are bui
 items and targeted actions qualify) belongs to [actions.md](actions.md) and
 [combat.md](combat.md). (med)
 
+The mine slot (category 3, `0x00619db0` → `0x006197d0` with mask 2): three items on the client creature
+(likely worn, only where combat is allowed), then the leader's item repository (`GetItemRepository(1)`);
+`0x00616520` keeps an item whose baseitems `itemtype` is 28 (Trap_Kit) with a usable Trap property (46),
+for a creature that can use Demolitions (`0x005af880(stats, 1)`: not usable untrained, so a base rank of
+1 or more) and passes CanUseItem; non-plot items are dropped where the area forbids combat. The entry
+(`0x006193a0`) is labelled "<item name> (self)" (`"%s (%s)"`, 38005), shows the item's own icon, its id
+is the item's with bit 0x40000000, its target the leader, its count the stack ("%s (%d)" above 1), and it
+is never dimmed. Its callback (`0x0060f590`) sends input 9 (`0x00677bd0`): the item, the leader as the
+target and a zero point, which UseItem turns into SETTRAP ([actions.md](actions.md) 3.14). (high)
+
 Clicking a self slot (`UseSelfAction` `0x0068ad60`): if the entry is not usable, its reason code
 picks a message shown for 5 s in the combat message bar: 1 "Force Depleted" (38613), 2
 "Restricted by Armor" (38614), 3 "Missing Item" (38615), 4 "Target too Close" (42422), 5 "Full
@@ -1236,6 +1248,13 @@ alignment icon) and marks it new; their borders pulse. Called when the status su
   request 6 (`0x005edf40`). The pause logic is in [gameloop.md](gameloop.md). (high for the calls)
 - `TB_SOLO` (`0x00688610`): opens the solo-mode confirmation (below). (high)
 - `TB_STEALTH` (`0x00688640`): when the leader can stealth, toggles stealth (`0x0060f4b0`). (med)
+  The toggle (also key action 264, G, which first asks `0x00610ac0`): with solo mode off and more than
+  one in the client party it shows the solo-mode box for stealth (37890); otherwise it sends the
+  server an input message that runs `SetActivity` mode 1 on the leader (`0x004f2a50`), which leaves
+  stealth if in it, refuses in combat with feedback 0x3c (1452, "You cannot enter stealth mode while
+  in combat."), and otherwise enters it. The box's OK (`0x006c2400`) toggles solo mode
+  (`0x005f2a20`: `SetSoloMode(!solo, 1)`, then the script `k_sup_solo`, which the game does not ship)
+  and, for stealth, sends the same request. (high)
 
 #### CSWGuiTopMenu: the tab bar of the in-game menus (`top`)
 

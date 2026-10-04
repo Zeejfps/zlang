@@ -408,7 +408,8 @@ everyone in its area every 4 s (0.2 s in combat); seen = within ranges.2da's sig
 clear line at eye height through the rooms' walkmeshes (LineOfSight materials), heard = within
 the hearing range. Changes post script event 1 (PERCEPTION) with what changed in `ints[0]`
 (1 seen, 2 heard, 4 vanished, 8 inaudible); the object's `ctx` keeps them for
-GetLastPerception*. Stealth and the rules' checks are HOOK(rules).
+GetLastPerception*. A creature in stealth mode is seen and heard only when the viewer wins the
+original's two contests (lib/engine/stealth.ctx, [mechanics/stealth.md](../mechanics/stealth.md)).
 
 ## The scene
 
@@ -597,7 +598,7 @@ each frame:
 - Ids from 1, not 0; event times as world ms; no AI time budget; delta clamped to 0.25 s; the
   internal animation id → name table; arrows also move the leader.
 - A door's `trans` plane is never drawn; PLAYANIMATION's fire-and-forget length is 1.5 s until
-  the server reads model animation lengths; perception has no stealth yet; the player faces its
+  the server reads model animation lengths; the player faces its
   input from standstill at once; camera collision is one ray against the walkmeshes.
 - Combat (ours where combat.md leaves it open): the attack animation by stance (the digit of the
   names: 0 creature, 1 stun baton, 2 one melee weapon, 3 two-handed, 4 two weapons, 5 pistol,

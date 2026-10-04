@@ -556,8 +556,13 @@ always the default and the live follower's state restarts after every save or `S
   also turns stealth off for the PC and every member (`SetPartyStealthMode(0)` `0x00563c60`).
   Loading a party table with solo mode 0 does the same. It is switched off automatically when the
   last member is removed and whenever the party is placed after a transition (1.8); `AddPartyMember`
-  may switch it on (3.5). What solo mode changes in play (followers stay, Tab disabled) is
-  movement.md's and the GUI's. (high for the writes)
+  may switch it on (3.5). What solo mode changes in play is the party's own scripts': k_ai_master's
+  companion heartbeat queues `ActionFollowLeader` only while `GetSoloMode` is false, and clears a
+  companion's actions while it is true and the companion's current action is FOLLOWLEADER, so
+  companions stay where they are; the leader is still changed with Tab (`0x005f7960` and
+  `SetPartyLeader` do not read the flag), and the straggler teleport is off (gameloop.md 6.7). The
+  HUD's solo toggle runs `k_sup_solo` after the change, a script the game does not ship. (high for
+  the code paths read)
 - **AI style** (`+0xe4`) is only stored and read by scripts here (`PT_AISTATE`). (high)
 - **Follow state** (`+0xe8`) is reset to 0, and the client party table reset, when an area header
   is loaded (`0x00563a80`). (med)
