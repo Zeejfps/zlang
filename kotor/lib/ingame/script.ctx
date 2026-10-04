@@ -27,6 +27,23 @@ namespace ingame {
         if ci::eq{ a = cmd, b = "menu" } {
             let name = text::next_word{ &words } ifnull { return }
             open_menu{ &ui, &w, &dev, n = menu_by_name{ name } }
+        } else if ci::eq{ a = cmd, b = "hostiles" } {
+            // Test helper: the creatures hostile to the leader with whether the HUD can select them and whether the
+            // party has seen them (what enemy-sighted auto-pause looks at).
+            let all = list::items{ list = w.objects.all }
+            let lead = party::leader{ w = &w }
+            let mut i: usize = 0
+            while i < all.len {
+                let o = all[i]
+                i = i + 1
+                if o.destroyed or o.kind != obj::Kind::creature or o.id == lead or not hud::is_hostile{ w = &w, id = o.id } { continue }
+                let seen = if perception::entry_of{ w = &w, viewer = lead, target = o.id } is some{ value = e } { e.seen } else { false }
+                _ = @fmt(&w.io, "hostile {} {} selectable {} seen {} at {} {}\n", o.id, o.tag, hud::is_selectable{ w = &w, id = o.id }, seen, o.position.x, o.position.y)
+            }
+        } else if ci::eq{ a = cmd, b = "autopause" } {
+            // `ui autopause on|off`: the auto-pause triggers (enemy sighted, party member down, new target in
+            // combat), off in headless runs until a test asks.
+            ui.autopause = ci::eq{ a = text::next_word{ &words } ifnull "on", b = "on" }
         } else if ci::eq{ a = cmd, b = "close" } {
             close_menu{ &ui, &w }
         } else if ci::eq{ a = cmd, b = "target" } {
@@ -247,6 +264,7 @@ namespace ingame {
             let args = text::rest{ words }
             if test_items::run{ &ui, &w, &dev, cmd, args } { return }
             if test_sheet::run{ &ui, &w, &dev, cmd, args } { return }
+            if test_force::run{ &ui, &w, &dev, cmd, args } { return }
             if test_journal::run{ &ui, &w, &dev, cmd, args } { return }
             if test_map::run{ &ui, &w, &dev, cmd, args } { return }
             if test_screens::run{ &ui, &w, &dev, cmd, args } { return }

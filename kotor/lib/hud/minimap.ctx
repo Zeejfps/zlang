@@ -4,9 +4,16 @@
 // LBL_MAPVIEW, so the picture is clipped to the viewport and the HUD's frame goes over it.
 //
 // The ARE's `Map` struct places the picture: two world points and where they are in the picture
-// (0..1), and NorthAxis, which of the world's axes runs along the picture's. Each picture axis is
-// linear in one world coordinate, so two points are enough to solve it.
+// (0..1 of the map, which is 440 x 256 texels: the 512 x 256 texture holds the art in its left 440
+// columns and nothing in the rest, and the original's world-to-map conversion rejects anything
+// past 0x1b8 x 0x100, 0x00578e00), and NorthAxis, which of the world's axes runs along the
+// picture's. Each picture axis is linear in one world coordinate, so two points are enough to
+// solve it.
 namespace hud {
+    // The map's logical size in texels, from the picture's top-left corner.
+    const MAP_W: f32 = 440.0
+    const MAP_H: f32 = 256.0
+
     // How the world maps onto the picture: pixel = scale * (u or v of the position) + offset,
     // with (u, v) the world's x and y (or swapped, or negated) as NorthAxis says.
     struct MapInfo {
@@ -76,14 +83,14 @@ namespace hud {
         let v1 = map_v{ axis, x = w1x, y = w1y }
         let v2 = map_v{ axis, x = w2x, y = w2y }
         if math::abs{ x = u2 - u1 } < 0.001 or math::abs{ x = v2 - v1 } < 0.001 { return no_map{} }
-        let ax = (m2x - m1x) * img.w / (u2 - u1)
-        let ay = (m2y - m1y) * img.h / (v2 - v1)
+        let ax = (m2x - m1x) * MAP_W / (u2 - u1)
+        let ay = (m2y - m1y) * MAP_H / (v2 - v1)
         return MapInfo{
-            present = true, axis, ax, bx = m1x * img.w - ax * u1, ay, by = m1y * img.h - ay * v1, picture = img,
+            present = true, axis, ax, bx = m1x * MAP_W - ax * u1, ay, by = m1y * MAP_H - ay * v1, picture = img,
         }
     }
 
-    // Where a world position lies in the picture, in its pixels.
+    // Where a world position lies in the picture, in its texels (the map is MAP_W x MAP_H of them).
     fn map_point { info: MapInfo, x: f32, y: f32 } -> math::Vec2 {
         return math::Vec2{
             x = info.ax * map_u{ axis = info.axis, x, y } + info.bx,

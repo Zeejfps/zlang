@@ -444,7 +444,7 @@ namespace traps {
         if not can_use_demolitions{ w = &w, who } or kit_row{ w = &w, item } < 0 { return false }
         let me = world::object{ w = &w, id = who } ifnull { return false }
         if party_mines{ w = &w, area = me.area } >= MAX_PARTY_MINES { return false }
-        actions::clear_all{ &w, id = who }
+        actions::clear_for_player{ &w, id = who }
         let mut a = actions::make{ kind = actions::Kind::set_trap }
         a.params[0] = actions::Param::object{ id = item }
         a.params[1] = actions::Param::object{ id = who }

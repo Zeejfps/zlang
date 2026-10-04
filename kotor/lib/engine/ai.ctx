@@ -43,12 +43,30 @@ namespace ai {
         perception::update{ &w, id }
         traps::search{ &w, id }
         fight::update{ &w, id }
+        wake_follower{ &w, id }
         actions::run{ &w, &vm, engine, id }
         let after = world::object{ w = &w, id } ifnull { return }
         let ac = obj::creature{ o = after } ifnull { return }
         if not ac.moving and after.actions.len == 0 and after.animation != obj::ANIM_STAND and is_movement_animation{ id = after.animation } {
             world::set_animation{ o = after, id = obj::ANIM_STAND, speed = 1.0 }
         }
+    }
+
+    // A party member the leader has left behind follows at once (ours): in the original every member that
+    // is not the leader has FOLLOWLEADER at the head of its queue and the locomotion code walks it each
+    // frame (movement.md 6.1); here the action is queued when the queue is empty, the member is free
+    // to act and the leader is beyond 4 m, instead of waiting for the next heartbeat script. Solo mode
+    // leaves them where they stand.
+    fn wake_follower { mut w: world::World, id: u32 } {
+        let lead = party::leader{ w = &w }
+        if lead == obj::INVALID or lead == id or w.party.solo or w.conversation.active { return }
+        if not party::is_member{ w = &w, id } { return }
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        if o.actions.len > 0 or not o.commandable or c.dead or c.in_combat { return }
+        let l = world::object{ w = &w, id = lead } ifnull { return }
+        if l.area != o.area or movement::distance_2d{ a = o.position, b = l.position } <= 4.0 { return }
+        _ = actions::add{ &w, id, action = actions::make{ kind = actions::Kind::follow_leader }, force = false }
     }
 
     fn is_movement_animation { id: u32 } -> bool {

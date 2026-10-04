@@ -10,8 +10,16 @@ namespace autopause {
     const END_OF_ROUND: i32 = 12            // ours: the call site's reason was not traced
     const NEW_TARGET: i32 = 13              // ours
 
+    // The engine and the HUD say what happened; the interface (ingame::update) takes the first request of a
+    // frame and decides: the option for that reason, a person playing, nothing already paused.
     fn request { mut w: world::World, reason: i32 } {
-        _ = w
-        _ = reason
+        if w.autopause_asked == 0 { w.autopause_asked = reason }
+    }
+
+    // The reason asked since the last call, once; 0 for none.
+    fn take { mut w: world::World } -> i32 {
+        let r = w.autopause_asked
+        w.autopause_asked = 0
+        return r
     }
 }

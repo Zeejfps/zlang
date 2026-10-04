@@ -1,0 +1,10 @@
+4 ui stat class 4
+4 ui stat level 10
+4 ui stat wis 18
+4 ui stat cha 14
+5 ui powers all
+5 ui fp 150
+6 ui spawn g_sithtroop01 trp1 8
+12 ui target trp1
+30 ui list
+14 ui key 2

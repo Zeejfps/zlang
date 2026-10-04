@@ -251,6 +251,38 @@ punch-through cuts at 0.35. The env-map and bump-map paths (register combiners /
 not traced) evidently don't use the diffuse alpha as opacity: env-mapped droids and the
 bump-mapped rancor (`c_rancor01`, AlphaMean 0.76) are solid in the game. (inferred)
 
+### Environment maps
+
+How a mesh with an environment map is drawn (all *high* from the code, the unnamed functions are
+ours). The material (`0x0047b290`, texture names read by `0x0047abd0`) holds the bump map at
++0x10 and the environment map at +0x14 (`envmaptexture`, or `bumpyshinytexture` for a bump-mapped
+one); a creature's appearance.2da `envmap` is the part's own override (part +0x40 → +0x1a8) and wins
+over the texture's. The draw path is chosen per mesh by `0x00470d30` (the switch in `0x00477830`);
+it depends on the mesh's lightmap (dropped when the lightmap texture did not load), whether it has a
+bump or environment map, and the GL capability bits (NV register combiners, ATI fragment shader,
+ARB vertex programs). The environment map is sampled with texgen `REFLECTION_MAP` (`SPHERE_MAP`
+for a 2D texture) through a texture matrix made of the camera's orientation (`0x0046f780`), i.e. by
+the reflection vector in world space. A diffuse texture that is neither RGBA nor DXT5 has no
+alpha to mask with, and `0x0046ff70` draws it without the reflection.
+
+What the combination is, by path (the diffuse's alpha is `a`):
+
+| Path | Used for | Colour |
+|---|---|---|
+| lightmapped, fixed function (`0x0046fb10`): the diffuse lit with `ONE, ZERO`, the lightmap with `DST_COLOR, ZERO`, then the environment map with `ONE_MINUS_DST_ALPHA, ONE` | rooms with a lightmap and an environment map (on cards without the combiner path) | `diffuse * lightmap + env * (1 - a)` |
+| lightmapped, combiners (`0x00470590`): the diffuse times the lightmap, then the environment map drawn with `ONE, ONE` (combiner shader 0x15; its mask was not decoded) | the same on NV hardware | the same sum (*inferred*) |
+| unlightmapped, NV register combiners (`0x0046ff70`, shader 0x13, `0x0042e600`) | creatures and placeables on NVIDIA | `diffuse * light + env * (1 - a)` |
+| unlightmapped, ATI fragment shader (`0x0047a2f0`, `0x004794e0`) | the same on old Radeons | `lerp(a, diffuse * light, env)`, i.e. `a * diffuse * light + (1 - a) * env` |
+| unlightmapped, plain multipass (`0x0046ff70` without a texture shader) | everything else (Intel, current AMD) | the environment map (lit), then the diffuse over it by `SRC_ALPHA, ONE_MINUS_SRC_ALPHA`: `light * (a * diffuse + (1 - a) * env)` |
+
+So the two hardware-specific paths of the original disagree on a creature (the NV sum shows the
+diffuse in full plus the reflection, the other two blend by alpha); the data is made for blending
+by alpha, where a low alpha means a mirror: the Sith soldier's `N_SithSoldier03` has AlphaMean 0.55
+and a mid-grey diffuse, which is dark gunmetal that way and silver chrome as a sum. We follow the
+blend (unlit reflection, as the ATI shader): `lib/render_gl/shaders.ctx`, lightmapped meshes keep
+the sum. The material's opacity (`+0x84`, the alpha controller) goes to the combiner's constant
+colour alpha, not into the blend.
+
 ### Shadows, grass, frame-buffer effects, options
 
 The client options loader (0x0061dbe0, which reads `[Graphics Options]`) calls small setters:

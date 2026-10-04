@@ -1,8 +1,8 @@
 // The "mine sighted" watch (CClientExoAppInternal::UpdateSelectableObjects 0x005fa5a0; docs/
 // mechanics/traps.md): when a mine hostile to the party is among what the leader can select and on
-// the screen, nothing is paused and the watch is not latched, the mine becomes the target and, with
-// the Mine Sighted auto-pause option on and the HUD out of combat mode, the game pauses with its
-// banner (CSWGuiPause reason 11). The latch holds until no such mine has been in sight for 10 s.
+// the screen, nothing is paused and the watch is not latched, the mine becomes the target and, out
+// of combat mode, the Mine Sighted auto-pause is asked for (autopause::request; the option decides).
+// The latch holds until no such mine has been in sight for 10 s.
 namespace ingame {
     const MINE_LATCH_SECONDS: f32 = 10.0
 
@@ -12,16 +12,12 @@ namespace ingame {
             ui.mine_quiet = ui.mine_quiet + dt
             return
         }
-        if w.clock.pause_bits != 0 or ui.pause_reason != 0 { return }
+        if w.clock.pause_bits != 0 { return }
         let latched = ui.mine_quiet < MINE_LATCH_SECONDS
         ui.mine_quiet = 0.0
         if latched { return }
         w.target = id
-        if ui.hud.combat { return }
-        let wanted = if options_panel::settings{ s = &ui.menus.options } is some{ value = st } { st.pause_mine_sighted } else {
-            frontend::load_settings{ fs = &w.fs, heap = w.heap, path = "kotor/out/kotor-settings.ini" }.pause_mine_sighted
-        }
-        if wanted { ui.pause_reason = MINE_SIGHTED }
+        if not ui.hud.combat { autopause::request{ &w, reason = autopause::MINE_SIGHTED } }
     }
 
     // A mine the leader can select, hostile to it, on the screen; INVALID for none.

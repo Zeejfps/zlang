@@ -44,7 +44,9 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
   vitality bar is green, the Force bar blue; clicking the leader's portrait opens equipment, a
   companion's makes it the leader (as Tab does).
 - **Minimap** (`minimap.ctx`): the area's `lbl_map<area>` picture placed from the ARE's `Map`
-  (two world points and where they fall in the picture, `NorthAxis` for which world axis runs
+  (two world points and where they fall in the map, 0..1 of its 440 x 256 texels: the art fills
+  the left 440 columns of the 512 x 256 texture and the rest is padding, and the original's
+  conversion rejects points past 0x1b8 x 0x100; `NorthAxis` for which world axis runs
   along the picture's; checked against every ARE: axis 0 is (x, -y), 1 (-x, y), 2 (-y, -x),
   3 (y, x) with each picture axis linear in one of them), the leader at the centre of a viewport
   drawn into a render target each frame, an arrow turned by its facing. The target is the picture

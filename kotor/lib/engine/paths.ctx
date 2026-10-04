@@ -18,35 +18,41 @@ namespace paths {
         return math::Vec3{ x = p.x, y = p.y, z }
     }
 
-    // The nearest path point whose straight walk from `at` is clear (the 8 nearest tried).
-    fn nearest_point { w: *world::World, g: pth::Graph, at: math::Vec3 } -> ?u32 {
-        let mut tried: [8]u32
-        let mut n: usize = 0
-        while n < 8 {
-            let mut best: ?u32 = null
+    // The nearest path point whose straight walk from `at` is clear: the points in order of distance,
+    // up to LOOKED of them (the original looks in a square window of +-10 m that grows by 10 m up to 50
+    // times, FindNearestPathPoint 0x004bd770, so a creature in a walled-in ramp still finds the floor
+    // beyond the walls' end; trying only the nearest few found nothing there).
+    const LOOKED: usize = 64
+
+    fn nearest_point { mut w: world::World, g: pth::Graph, at: math::Vec3 } -> ?u32 {
+        let n = g.points.len
+        let skip = alloc::resize(bool, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(bool){}, count = n } iferr { return null }
+        let mut i: usize = 0
+        while i < n {
+            skip[i] = false
+            i = i + 1
+        }
+        let mut tried: usize = 0
+        while tried < LOOKED and tried < n {
+            let mut best: i32 = -1
             let mut best_d: f32 = 1000000000.0
-            let mut i: usize = 0
-            while i < g.points.len {
+            i = 0
+            while i < n {
                 let p = g.points[i]
                 let dx = p.x - at.x
                 let dy = p.y - at.y
                 let d = dx * dx + dy * dy
-                let mut skip = false
-                let mut k: usize = 0
-                while k < n {
-                    if tried[k] == @as(u32, i) { skip = true }
-                    k = k + 1
-                }
-                if not skip and d < best_d {
-                    best = @as(u32, i)
+                if not skip[i] and d < best_d {
+                    best = @as(i32, i)
                     best_d = d
                 }
                 i = i + 1
             }
-            let b = best ifnull { return null }
-            if clear{ w, a = at, b = point_at{ w, g, i = b, near_z = at.z } } { return b }
-            tried[n] = b
-            n = n + 1
+            if best < 0 { return null }
+            let b = @as(u32, best)
+            if clear{ w = &w, a = at, b = point_at{ w = &w, g, i = b, near_z = at.z } } { return b }
+            skip[@as(usize, best)] = true
+            tried = tried + 1
         }
         return null
     }
@@ -111,7 +117,7 @@ namespace paths {
             }
         }
         let t = t_found ifnull {
-            if w.log.actions { _ = @fmt(&w.io, "route: no clear path point near the goal ({} points)\n", g.points.len) }
+            if w.log.actions { _ = @fmt(&w.io, "route: no clear path point near the goal {} {} {} from {} {} {} ({} points)\n", goal.x, goal.y, goal.z, from.x, from.y, from.z, g.points.len) }
             return false
         }
         let n = g.points.len

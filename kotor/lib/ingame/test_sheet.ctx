@@ -56,14 +56,16 @@ namespace test_sheet {
         let n = @as(i32, text::scan_decimal{ s = value })
         let names: [6][]u8 = ["str", "dex", "con", "int", "wis", "cha"]
         let mut k: usize = 0
+        let mut is_ability = false
         while k < 6 {
             if ci::eq{ a = key, b = names[k] } {
                 c.abilities[k] = @trunc(u8, n)
-                return true
+                is_ability = true
             }
             k = k + 1
         }
-        if ci::eq{ a = key, b = "xp" } { c.xp = @as(u32, n) }
+        if is_ability { }
+        else if ci::eq{ a = key, b = "xp" } { c.xp = @as(u32, n) }
         else if ci::eq{ a = key, b = "align" } { c.good_evil = @as(u32, n) }
         else if ci::eq{ a = key, b = "hp" } { o.hp = n }
         else if ci::eq{ a = key, b = "hpmax" } { o.hp_max = n }
