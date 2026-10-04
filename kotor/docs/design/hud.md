@@ -55,9 +55,13 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
   creature, door or placeable whose projected box holds it (`w.hover`, and the pointer's picture
   from the default action); a click targets (`w.target`), a click on the target does its default
   action; Q and E cycle. The block with name, health and three action slots floats over the target;
-  the reticle is drawn under the panels. Models carry no usable bounds (the compiler's default
-  box), so the boxes are ours: creature height scaled by `PERSPACE`, typical door and placeable
-  sizes. Slot 1 holds the default actions (open/bash, use, talk, attack); the Force-power and item
+  the reticle is drawn under the panels. Both hang from the aim point the scene finds each frame (`w.aim`: a
+  creature's `head_g`, the `lookathook` of a door or placeable; the middle of the box when there is none): the
+  block 32 pixels above it, the reticle centred on it, 64 pixels square within 5 m of the leader and shrinking
+  to 16 (creature) or 32 (door, placeable, mine) at 30 m, whatever the object's size (UpdateReticles
+  `0x0068a310`; not modelled: the combat reticle's zoom-in and the edge arrows of an off-screen target).
+  Models carry no usable bounds (the compiler's default box), so the pick boxes are ours: creature height
+  scaled by `PERSPACE`, typical door and placeable sizes. Slot 1 holds the default actions (open/bash, use, talk, attack); the Force-power and item
   slots are empty until lib/rules gives the leader any (PLACEHOLDER).
 - **Combat** (`combat.ctx`): while the leader's `in_combat` flag is set the combat bar (queue
   icons from the leader's attack actions, Disengage, clear-one) and for six seconds the combat-mode
@@ -175,8 +179,8 @@ comment so the rules lead's merge finds it.
   the original shows nothing on sizes it has no file for (a bug, not a feature).
 - Menus are **non-modal** full-screen panels so the tab bar over them takes clicks; a modal panel
   (message box, party selection, option screens) opened by a menu takes input and Escape itself.
-- Models carry no usable bounds, so picking boxes and the reticle are built from `PERSPACE` and
-  typical sizes; picks are by projected box, not triangles.
+- Models carry no usable bounds, so picking boxes are built from `PERSPACE` and typical sizes; picks are by
+  projected box, not triangles. The reticle and the block use the model's own nodes instead (`w.aim`).
 - The leader is "the character" of every menu; BTN_CHANGE1/2 and Tab change the leader (`w.pc`
   follows), and a dead member cannot become leader.
 - Space pauses (keymap.2da action 241); Escape closes a menu or opens the options; the engine

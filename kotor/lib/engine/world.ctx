@@ -81,6 +81,8 @@ namespace world {
         party: party::Party,
         target: u32,                        // the selected object (HUD picking), obj::INVALID none
         hover: u32,                         // the object under the cursor
+        aim_id: u32,                        // the object `aim` belongs to: the target, once the scene has found where its reticle hangs
+        aim: math::Vec3,                    // that point in the world (the model's head_g / lookathook node), for the HUD's reticle
         repute: [32][32]u8,                 // repute.2da standings, faction by faction (0..100)
         repute_rows: usize,
         arrival: u32,                       // frames until the PC is placed (gameloop.md 5.5)
@@ -159,7 +161,7 @@ namespace world {
             clock = clock::new{},
             objects = obj::new_table{ heap },
             module = obj::INVALID, area = obj::INVALID, pc = obj::INVALID, arrival = 0,
-            party = party::new{}, target = obj::INVALID, hover = obj::INVALID,
+            party = party::new{}, target = obj::INVALID, hover = obj::INVALID, aim_id = obj::INVALID, aim = math::vec3::zero{},
             repute = [[50; 32]; 32], repute_rows = 0,
             queue = events::new_queue{ heap },
             scripts = scripts::new_cache{ heap },

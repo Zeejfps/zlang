@@ -376,6 +376,20 @@ namespace scene {
             if rooms[i].part >= 0 { advance_part{ &sc, &w, part = @as(usize, rooms[i].part), dt } }
             i = i + 1
         }
+        find_aim{ &sc, &w }
+    }
+
+    // Where the target's reticle hangs (UpdateReticles 0x0068a310 asks the client object for its screen
+    // position: a creature's head_g node, the lookathook of a door or placeable; the model's origin when it has
+    // none), left in w.aim for the HUD, which has no models.
+    fn find_aim { sc: *Scene, mut w: world::World } {
+        w.aim_id = obj::INVALID
+        let o = world::object{ w = &w, id = w.target } ifnull { return }
+        let mut m = hook_of{ sc, w = &w, id = o.id, hook = if o.kind == obj::Kind::creature { "head_g" } else { "lookathook" }, which = 0 }
+        if m == null { m = hook_of{ sc, w = &w, id = o.id, hook = "rootdummy", which = 0 } }
+        let found = m ifnull { return }
+        w.aim = math::mat4::get_translation{ m = found }
+        w.aim_id = o.id
     }
 
     fn advance_part { mut sc: Scene, mut w: world::World, part: usize, dt: f32 } {
