@@ -242,7 +242,7 @@ namespace tmpl {
     fn item_of { mut w: world::World, doc: *gff::Doc, s: u32, label: []u8, possessor: u32 } -> ?u32 {
         if gff::get_number{ doc = doc.*, s, label = "BaseItem" } != null {
             let saved_id = @trunc(u32, gff::get_number{ doc = doc.*, s, label = "ObjectId" } ifnull 0)
-            let fresh = saved_id != 0 and saved_id != obj::INVALID and world::object{ w = &w, id = saved_id } == null
+            let fresh = saved_id != 0 and saved_id != obj::INVALID and not world::id_taken{ w = &w, id = saved_id }
             let o = world::add_object{ &w, kind = obj::Kind::item, id = if fresh { saved_id } else { 0 }, character = false } iferr { return null }
             o.ai_level = -1
             read{ &w, o, doc, s } iferr { return null }

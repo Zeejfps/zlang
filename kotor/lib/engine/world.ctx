@@ -295,6 +295,10 @@ namespace world {
 
     fn is_valid { w: *World, id: u32 } -> bool { return object{ w, id } != null }
 
+    // Whether the id is in the table at all, a destroyed object waiting for the sweep included: it still owns its entry,
+    // so a new object made with that id would be swept away with it.
+    fn id_taken { w: *World, id: u32 } -> bool { return map::get{ m = w.objects.by_id, key = id } != null }
+
     // The `nth` (from 0) live object whose tag is `tag` (ignoring case), in creation order.
     fn object_by_tag { w: *World, tag: []u8, nth: i32 } -> u32 {
         // An empty tag is the player character's (its Tag is "" in the install's saves; the module
