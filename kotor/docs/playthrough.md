@@ -16,6 +16,15 @@ sh kotor/tools/playthrough/story.sh kotor/out/pt/NAME.log [FROM_FRAME]     # the
 `run.sh` stops a hung run after `TIMEOUT` seconds (default 240); `frames.sh SCRIPT N...` says which frame
 counts hang. A script's lines must be in frame order.
 
+`FAST=1 sh kotor/tools/playthrough/run.sh ...` plays with `--no-render --speed 8` (same log, a third of the time:
+the 34,000-frame Endar Spire takes 30 s, not 98 s). To start in the middle, load a checkpoint made from this replay
+(`sh kotor/tools/checkpoints/make.sh` writes `kotor/out/checkpoints/NAME/` for bunk, bridge, pod, apartment,
+uppercity and cantina, each with `NAME.txt`, the rest of the replay counted from the load):
+
+```
+FAST=1 LOAD=kotor/out/checkpoints/apartment SAVES=kotor/out/pt/saves_x sh kotor/tools/playthrough/run.sh upper kotor/out/checkpoints/apartment.txt 30000
+```
+
 The input script knows (play.ctx, lib/ingame/script.ctx, lib/dialog/view/view_notes.ctx):
 
 | Line | Does |

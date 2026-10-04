@@ -515,17 +515,19 @@ namespace mg_game {
                 mix::render{ m = mixer, into = silent[..@as(usize, frames) * 2] }
             }
         }
-        render::begin_frame{ &frame, time = sc.time }
-        let mut view = render::make_view{ camera = cam }
-        view.ambient = sc.ambient
-        view.fog = sc.fog
-        let vi = render::add_view{ &frame, view } ifnull { 0 }
-        scene::draw{ &sc, w = &w, &frame, view = vi }
-        draw_stage{ sc = &sc, &stage, &frame, view = vi }
-        dlgview::draw{ v = &dview, frame = &frame }
-        gpu::submit{ &dev, frame = &frame } iferr err{ error } {
-            _ = @fmt(&w.io, "kotor: submit failed: {}\n", error)
-            return true
+        if speed::picture_wanted{ opts, frame_no, saving = false } {
+            render::begin_frame{ &frame, time = sc.time }
+            let mut view = render::make_view{ camera = cam }
+            view.ambient = sc.ambient
+            view.fog = sc.fog
+            let vi = render::add_view{ &frame, view } ifnull { 0 }
+            scene::draw{ &sc, w = &w, &frame, view = vi }
+            draw_stage{ sc = &sc, &stage, &frame, view = vi }
+            dlgview::draw{ v = &dview, frame = &frame }
+            gpu::submit{ &dev, frame = &frame } iferr err{ error } {
+                _ = @fmt(&w.io, "kotor: submit failed: {}\n", error)
+                return true
+            }
         }
         let mut s: usize = 0
         while s < opts.shot_count {
