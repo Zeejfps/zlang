@@ -259,7 +259,17 @@ namespace selfslots {
         if not shown { return }
         let sl = &s.slots[@as(usize, k)]
         let e = sl.entries[index_of{ sl, id = sl.selected }]
-        gui::set_text{ &g, panel, tag = "LBL_ACTIONDESC", text = entry_name{ &w, k = @as(usize, k), e } } iferr {}
+        // "Name (N)" for a stack of two or more (0x00686e20: the format "%s (%d)").
+        let name = entry_name{ &w, k = @as(usize, k), e }
+        let stack = if k == 0 { 1 } else { items::stack_of{ w = &w, id = e.id } }
+        if stack > 1 {
+            let mut b = items::new_text{ w = &w }
+            defer list::free{ list = &b.bytes }
+            _ = @fmt(&b, "{} ({})", name, stack)
+            gui::set_text{ &g, panel, tag = "LBL_ACTIONDESC", text = utf8::view{ b }.bytes } iferr {}
+            return
+        }
+        gui::set_text{ &g, panel, tag = "LBL_ACTIONDESC", text = name } iferr {}
     }
 
     // ---- every frame
