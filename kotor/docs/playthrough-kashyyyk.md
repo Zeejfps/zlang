@@ -4,25 +4,18 @@ The main storyline of Kashyyyk played headless, step by step, checked against th
 crafted arrival after Dantooine (a Jedi, Bastila and Zaalbar in the party). The method is [playthrough.md](playthrough.md)'s
 and [playthrough-dantooine.md](playthrough-dantooine.md)'s; the scripts are in `kotor/tools/playthrough/kashyyyk/`.
 
-**Stopped (paused for the rendering work).** Played: the Czerka landing pad to the Star Map (parts 1 to 16, 0 script faults) and the
-climb back to the village (part 17). Not played: the end of Chuundar's plot (Freyyr's or Chuundar's side, the duel) and the leave-taking.
-To resume: `CKPT=mapped` (the Star Map given, the party at the computer in the Lower Shadowlands, journal `kas22_starmap` 70,
-`kas23_mainwookplot` 95) and `sh kotor/tools/playthrough/kashyyyk/run.sh NAME 17 3000` replay part 17, which ends at the guard of
-Chuundar's hall (`kas23_wookgua_01`, village door `kas23ad_door` 95 67). The next step is to find out how the hall opens now that
-Freyyr has gone to rally the Wookiees (`kas_HelpedFreyyr`): the guard keeps saying "return when the task is complete"
-(`k_pkas_chuundone` false) and the village's enter script destroys him only if `kas_ChuundarDead`. The scripts that start the
-hall (`k_pkas_backking`, `k_pkas_meetking2`, StartNewModule `kas_m23ad` at `kas23_MeetKing`) are named by a conversation of the Walkway:
-`kas22_chorraw_02` (Chorrawl, near the trigger `kas22_chorratrig` 210 75), so walk there first (`warp kas22_chorraw_01 party`), read
-`python kotor/tools/py/dlgtree.py kas22_chorraw_02`, then the hall's Chuundar conversation (`kas23_chuunda_01`, start branch E122,
-`k_pkas_freyyhelp`): Zaalbar returns, the side is chosen (journal 110/150 Freyyr's, 120/130 Chuundar's), then `k_pkas_chuundatk` or
-`k_pkas_freyyratk` starts the duel, then the credits of the story: `kas_ChuundReward`, `kas_FreyyrDead`, `kas_ChuundarDead`.
+**Played to the end of the planet** (parts 1 to 19, 0 script faults): the Czerka landing pad to the Star Map (parts 1 to 16), Chorrawl and the throne room, the party on
+Freyyr's side, the duel, Freyyr's thanks and Zaalbar's return to the party (parts 17 and 18), and the way out to the Ebon Hawk (part 19). Not played: Chuundar's side (the
+journal's 120/130: Freyyr is killed, Zaalbar sides with his brother), the Bandon/Calo ambush of the Upper Shadowlands, the side quests at the end. The checkpoints are
+in `kotor/out/pt/kas_ckpt` (ignored by the repository: `all.sh` rebuilds them, about 15 minutes); the Hawk and the trip to the next planet are played from the Tatooine side
+(`playthrough-tatooine.md`, "Travel").
 
 ## How to replay
 
 ```
 kotor/tools/ctxc exe kotor -o kotor/out/kotor_kas.exe
 sh kotor/tools/playthrough/kashyyyk/all.sh [FIRST_PART]       # the chain, about 25 minutes; each part loads the checkpoint the one before saved
-CKPT=mapped sh kotor/tools/playthrough/kashyyyk/run.sh NAME 17 FRAMES [FRAME:SHOT]...   # one part from its checkpoint
+CKPT=mapped sh kotor/tools/playthrough/kashyyyk/run.sh NAME 17 FRAMES [FRAME:SHOT]...   # one part from its checkpoint (the script's header says which)
 ```
 
 Logs are `kotor/out/pt/kNN.log`, checkpoints `kotor/out/pt/kas_ckpt/NAME` (the part's `save` line and `ckpt.sh`), pictures
@@ -66,7 +59,9 @@ State: **works** (checked), **fixed** (a commit of this branch), **open**.
 | 14 | Bacca's blade back to Freyyr, `kas23_mainwookplot` 95, he leaves (fade, `kas_HelpedFreyyr`) | works | `14_blade.txt` |
 | 15 | The ancient computer (`kas24_computer`, `kas25_comp_01`): the evaluation (a failed one: "purge the subject"), two Mark IV droids (750 XP each) | works | `15_starmap.txt` |
 | 16 | After the droids the computer gives the Star Map: `kas22_starmap` 70, `k_starforge` 30, `K_STAR_MAP` 10, `K_STAR_MAP_KASHYYYK` 1, the hologram cut scene, Jolee's remark | works (the droids' corpses must be gone first: the computer answers "no longer responds" otherwise, by timing) | `16_mapgiven.txt` |
-| 17 | The Exit trigger to the Upper Shadowlands, the basket (a placeable, `kas24_baskettalk`, the enter script destroys the trigger), the Walkway, the village, the hall's door: the guard refuses | works up to the guard; open | `17_return.txt` |
+| 17 | Back up (the Exit trigger, the basket `kas24_baskettalk`, the Walkway). The village door's guard keeps the hall shut while Freyyr rallies the Wookiees, so the way is Chorrawl (`kas22_chorraw_02`, his trigger `kas22_chorratrig` at 210 75: "Lead on. We should hurry."), who takes the party to the throne room behind the guards (`k_pkas_backking`, the module change to `kas_m23ad`). Chuundar's conversation (`kas23_chuunda_01`, start branch `k_pkas_freyyhelp`): Freyyr, Zaalbar and the party face him; Zaalbar asks what to do; "Side with Freyyr" and "Without doubt! Chuundar is a slaver!" (light side points `k_act_lightmed`), journal `kas23_mainwookplot` 110, `k_pkas_chuundatk` starts the duel | works | `17_return.txt` |
+| 18 | The duel: Freyyr, Zaalbar and the party (Jolee, Canderous) against Chuundar, his Wookiee guards and the Czerka mercenaries (the test player fights on its own; Chuundar falls to the party in about 1,200 frames, 1,790 XP in all). Freyyr talks (`kas23_freyyr_01`, `k_pkas_fightdone`, journal 150, END): Zaalbar keeps his life-debt, asks for Bacca's Sword and gets it (`k_pkas_givesword`: `G_w_Vbroswrd05` into the bag, Zaalbar selectable again); the party screen opens at the end of the talk (Zaalbar and Jolee by two clicks, OK). XP 53,780 | works | `18_duel.txt` |
+| 19 | Leaving: the hall's `KashyyykDoor2` into Rwookrrorro, its `KashyyykDoor3` to the Walkway, the Walkway's `KashyyykDoor3` to the pad; the pad's cut scenes on the way (the Wookiee rebels `kas22_rebelcut_1` and `_2`, Davin K's conversation `k_hdavin_dialog`, 34 nodes) and the trigger `EbonHawk` to `ebo_m12aa` (the party stays on the pad: only the player is in the Hawk) | works | `19_leave.txt` |
 
 Experience through the chain (the player; the party gets the same): 45,000 at the start (level 10), 45,450 after the first kinrath, 47,650 after
 the Walkway and the Dark Jedi, 49,490 after the poachers, 50,490 with the Great Beast, 51,990 after the droids. The journal entries award nothing
@@ -91,8 +86,19 @@ the Walkway and the Dark Jedi, 49,490 after the poachers, 50,490 with the Great 
    weapon stayed non-commandable (`ActionStartConversation(PC)` refuses such a target, which lost the talk in an earlier run). Freyyr's "Now die!" reply
    (`k_pkas_freyyrfin`) sends him back to Hostile_1 itself. Part 13 no longer touches him: his faction is 9 and nobody hits him.
 
+5. **The chain drifted** (found by rebuilding every checkpoint): the Great Beast (`kas25_wraid`) no longer charges (see the notes: part 13 walks the party up to it), part 13 and the
+   chain's frame counts moved with it (7,500 frames for the Beast and the conversation that follows its death), and the `savewhen` of part 14 of Tatooine now waits for the leader
+   to leave combat.
+
 ## Notes and open items
 
+- **The Great Beast does not charge.** `k_pkas_wraidattk` (the last reply of the ritual talk) queues a run to `kas25_wp_wraid3` for the Beast and makes it hostile; FreezeHostiles
+  (`CSWSDialog::FreezeHostiles`, run by every `UpdateDialog` before the talk can end: re/dialogue.md 4.9, read again this time with the decompilation) clears the actions of every non-party
+  creature whose standing toward the player is 10 or less, and the Beast is that from the moment the script runs. It stands 29 m from the vine, outside its 20 m perception
+  (ranges.2da PercepRngDefault) and fights only when the party is within about 12 m. The order of the calls is the original's, as far as it was read; how the original's Beast gets
+  out of it is not known. Part 13 puts the party 9 m from it.
+- **The test bot's route stops** are looked up in the area it is in when it reaches them: a stop named for a door of another area is skipped ("bot: no object"), and a tag has
+  three y's (`KashyyykDoor2`). Part 19 uses warps and the bot only on the pad.
 - **Journal XP.** `AddJournalQuestEntry` awards no quest XP here and the string `XP_Percentage` has no code reference in swkotor.exe, so the
   original most likely does not either; XP comes from `GivePlotXP`, the conversation nodes and kills.
 - **Companions joining** come from the blueprint at level 1 to 4 with XP 0; the crafted state sets level and XP by hand. The original's rule is not known.
@@ -100,6 +106,6 @@ the Walkway and the Dark Jedi, 49,490 after the poachers, 50,490 with the Great 
 - **The test player's god mode** lowers the maximum hit points by each hit it absorbs (130 to 60 over a long fight).
 - **Dialogue shots**: a speaker 15 m away (the Dark Jedi at the ambush) and over-the-shoulder shots with two companions in the foreground
   (Freyyr's talk) are as the data gives them; there is no obstruction test.
-- **Not played:** the Wookiee rebels and Czerka captain cut scenes on the pad, Eli and Dasol, Jaarak and Woorwill, Worrroz, the
+- **Not played:** the Mandalorian hunters' fights, Eli and Dasol, Jaarak and Woorwill, Worrroz, the
   Mandalorian hunters (`kas25_mandcut_01` plays; their fights were skipped), Mandalore's swoop bikes, the tach hunt, the sonic emitters
   solution of the poacher camp, Zaalbar's conversations as a party member (he is a hostage in this branch), the choice of sides and the duel.

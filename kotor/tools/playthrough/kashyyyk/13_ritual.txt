@@ -2,9 +2,9 @@
 # (about 1,500 frames); each leaves a body bag holding kas25_kinrathbod, the viper corpse the ritual needs. The bag has no tag to click
 # on, so the corpse is given by hand (`ui giveitem`). Then the vine (kas25_ritualvine at 188 44): Jolee's talk, the corpse hung
 # on it, and the Great Beast (kas25_wraid, spawned by k_pkas_spwnwraid) comes. From the checkpoint "freyyr" (CKPT=freyyr).
+# Freyyr surrendered in part 12 (SurrenderToEnemies moves him to the Surrender_1 faction): the party must leave him alone.
 3 ui stat hpmax 130
 3 ui stat hp 130
-# Freyyr surrendered in part 12 (SurrenderToEnemies moves him to the Surrender_1 faction): the party must leave him alone.
 4 ui where kas25_freyyr_01
 5 ui replies default 1
 10 ui bot god on
@@ -16,13 +16,16 @@
 1620 ui inv
 1630 warp kas25_ritualvine party
 1660 use kas25_ritualvine
-3460 ui bot on
+# The Great Beast does not charge: FreezeHostiles (every frame of a conversation) clears the run to kas25_wp_wraid3 that k_pkas_wraidattk queued as
+# the talk ends, and the beast stands 29 m from the vine, too far to notice the party (it fights at about 12 m). The party goes up to it.
+3460 warpxy 184.5,64 party
 3460 ui journal list
+3470 ui bot on
 4400 ui hostiles
-5500 ui journal list
-5500 ui hostiles
-5500 ui pos
-6600 ui journal list
-6600 ui inv
-6600 ui xp
-6650 save beast
+5000 ui journal list
+5000 ui hostiles
+5000 ui pos
+7450 ui journal list
+7450 ui inv
+7450 ui xp
+7500 save beast
