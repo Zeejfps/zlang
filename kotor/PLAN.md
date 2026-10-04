@@ -133,7 +133,9 @@ original.
 **Story QA** (docs/playthrough-*.md): Dantooine's side quests (the Sandral/Matale feud past Ahlan's
 demand, the Mandalorian raiders, the rest) and leaving on the Ebon Hawk; the ruins' Guardian
 Droids' shield (30 off every hit) holds a level-8 party for minutes, so check it against the
-original's droid and its shield item.
+original's droid and its shield item. Kashyyyk: Freyyr stays hostile after his surrender talk (part 13
+makes him neutral by hand), and Chuundar's plot end is unplayed. Tatooine: from the krayt dragon on.
+Taris: the Sith uniform route and the side quests.
 
 **Audio:** the sound-object scheduler, `prioritygroups.2da` limits, battle music, EAX-style
 reverb.
