@@ -88,6 +88,13 @@ State: **works** (checked, 0 faults), **fixed** (a commit of this branch), **ope
 | 32 | The galaxy map on the Hawk (`galaxymap`): five worlds, Manaan picked, "Travel": with `K_STAR_MAP` 40 the take-off is the Leviathan's capture (`stunt_16`, `ebo_m40aa`, Carth's talk about Saul Karath) | works | `32_galaxy.txt` |
 
 (Parts 16, 29 and 30 were scouting runs and are not in the chain.)
+**Asides** (each from a checkpoint of the chain, not part of `all.sh`; run with `CKPT=NAME sh .../run.sh NAME2 PATH-TO-SCRIPT FRAMES`):
+`26p_pillars.txt` (from `tomb`) the pillar puzzle in the tomb's southern branch: the computer `k39_plc_pillcomp` and `kor39_pillar`, four
+systems on three pillars, the 15 moves of the Tower of Hanoi as `ui replies ~from_the_left_pillar ~The_middle_pillar ...`; the read-out's
+`<CUSTOM10..12>` come out as "Active systems - left pillar: Base System, Mid-Lower System, ...", the rings move from pillar to pillar, no
+overload, and the talk ends normally after the last move (18,700 frames of lines). `28b_redeem.txt` (from `map`) the redemption ending below.
+`dark_shaardan.txt` (from `port`) and `dark_torture.txt` (from `code`) the dark replies. `disguise.txt` (from `dock`) the Jedi without
+robe and saber. `dustil.txt` (from `valley`) the attempt to spawn Carth's son.
 
 Experience and alignment through the chain (the player; Carth and Bastila hold the same XP from the party pool): 91,000 at the start
 (level 14), 91,270 after the thugs, 92,420 on joining, 93,545 after Yuthura's lessons, 93,670 the Code, 98,920 after the droid tomb and
@@ -139,7 +146,7 @@ the alignment (the rules' value and the engine's copy, which always agree here) 
   that." (`k39_yth_redeem`, journal `kor35_waysith` 60, alignment 98). The Valley's guards (`kor36_endsith1..3`, strip `k_kor_endacademy`) are only
   made for `KOR_FINAL_TEST` 4 or 7 (the chain's ending leaves it at 5): nobody waits at the Academy's exit.
 - **Not played**: the way into Ajunta Pall's tomb (mines, the heat and cold plates, the bridge droids, the lever) and the first
-  Shaardan scene at its door; Naga Sadow's tomb's southern branch (the pillar puzzle: four discs on three pillars) and its fire pillar; the rogue droid's peaceful repair puzzle; Jorak Uln's tomb and Mekel there; Kel Algwinn; Lashowe's holocron and the tuk'ata
+  Shaardan scene at its door; Naga Sadow's tomb's fire pillar and the room the pillar puzzle unseals; the rogue droid's peaceful repair puzzle; Jorak Uln's tomb and Mekel there; Kel Algwinn; Lashowe's holocron and the tuk'ata
   queen; the Mandalorian's weapon cache; the two endings where Yuthura dies; the poison plots (Yuthura's device and Adrenas, Uthar's
   datapad); the Academy after the test; Dustil, Carth's son (the Academy's enter script makes him when `KOR_DUSTIL_SPAWN` is set, and
   nothing in this chain sets it: it belongs to Carth's Hawk talk, `K_SWG_DUSTIL1`/`KOR_DANEL`; setting it by hand, `dustil.txt`, did not
