@@ -65,71 +65,56 @@ namespace ups {
             }
             return
         }
-        if ev.kind == gui::EventKind::hilight and not s.choosing {
-            let k = slot_of_tag{ s = &s, tag = ev.tag }
-            if k >= 0 { try describe_slot{ &s, &g, &w, k = @as(usize, k) } }
+        if s.choosing {
+            // The crystal list: pointing at a row describes it, a click chooses it.
+            if slice::eq_bytes{ a = ev.tag, b = "LB_ITEMS" } and ev.user >= 0 {
+                if ev.kind == gui::EventKind::row_hover or ev.kind == gui::EventKind::row_selected {
+                    try describe_choice{ &s, &g, &w, index = @as(usize, ev.user) }
+                } else if ev.kind == gui::EventKind::row_activated {
+                    try choose{ &s, &g, &w, &dev, index = @as(usize, ev.user) }
+                }
+            } else if ev.kind == gui::EventKind::activate and slice::eq_bytes{ a = ev.tag, b = "BTN_BACK" } {
+                s.choosing = false
+                try fill_bench{ &s, &g, &w, &dev }
+            }
             return
         }
-        if s.choosing and ev.kind == gui::EventKind::row_activated {
-            if slice::eq_bytes{ a = ev.tag, b = "LB_ITEMS" } and ev.user >= 0 { try choose{ &s, &g, &w, &dev, index = @as(usize, ev.user) } }
+        if ev.kind == gui::EventKind::hilight {
+            let k = slot_of_tag{ s = &s, tag = ev.tag }
+            if k >= 0 {
+                s.hot_slot = @as(usize, k)
+                try describe_slot{ &s, &g, &w, k = @as(usize, k) }
+            }
             return
         }
         if ev.kind != gui::EventKind::activate { return }
         if slice::eq_bytes{ a = ev.tag, b = "BTN_ASSEMBLE" } {
-            if s.choosing {
-                let row = gui::list_selected{ &g, panel = s.bench, tag = "LB_ITEMS" }
-                if row >= 0 { try choose{ &s, &g, &w, &dev, index = @as(usize, row) } }
-            } else {
-                try leave_bench{ &s, &g, &w, &dev, assemble = true }
-            }
+            try leave_bench{ &s, &g, &w, &dev, assemble = true }
         } else if slice::eq_bytes{ a = ev.tag, b = "BTN_BACK" } {
-            if s.choosing {
-                s.choosing = false
-                try fill_bench{ &s, &g, &w, &dev }
-            } else {
-                try leave_bench{ &s, &g, &w, &dev, assemble = false }
-            }
-        } else if not s.choosing {
+            try leave_bench{ &s, &g, &w, &dev, assemble = false }
+        } else {
             let k = slot_of_tag{ s = &s, tag = ev.tag }
             if k >= 0 { try slot_click{ &s, &g, &w, &dev, k = @as(usize, k) } }
         }
     }
 
-    // The hovered slot's name and the description of what is in it (or of the item).
-    fn describe_slot { mut s: State, mut g: gui::Gui, mut w: world::World, k: usize } -> ! {
-        let slot = s.slots[k]
-        let p = s.bench
-        let name = slot_name{ &s, &w, k }
-        try gui::set_text{ &g, panel = p, tag = if s.lightsaber { "LBL_LSSLOTNAME" } else { "LBL_SLOTNAME" }, text = name }
-        let row = if slot.row != NO_ROW { slot.row } else { slot.fixed }
-        let mut id = s.item
-        if slot.kind == KIND_COLOUR {
-            let c = if s.colour_new >= 0 { s.colour_new } else { s.colour_now }
-            if c >= 0 { id = preview_of_colour{ &s, &w, row = @as(usize, c) } }
-        } else if row >= 0 {
-            id = preview_of_row{ &s, &w, row = @as(usize, row) }
-        }
-        try items::show_description{ &g, &w, panel = p, tag = desc_tag{ s = &s }, id }
-    }
-
-    // OnSlotClicked: an installed upgrade comes out; an empty slot takes the upgrade that fits from
-    // the party's stock, or opens the list of crystals to choose from.
+    // OnSlotClicked (0x006c6500): a lightsaber slot always opens the list of crystals (None, the
+    // one it has, the ones the party can give). On the other items a filled slot gives its upgrade
+    // back and an empty one takes the upgrade of its kind from the party's stock.
     fn slot_click { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, k: usize } -> ! {
+        s.hot_slot = k
         let slot = s.slots[k]
-        if slot.kind == KIND_COLOUR {
+        if s.lightsaber {
             try start_choosing{ &s, &g, &w, &dev, k }
             return
         }
         if slot.row != NO_ROW {
             remove_row{ &s, row = @as(usize, slot.row) }
             gui::play_sound{ &g, n = 11 }
-        } else if slot.kind == KIND_TYPED {
+        } else {
             if slot.fixed < 0 or not upgrade_available{ s = &s, w = &w, row = @as(usize, slot.fixed) } { return }
             install_row{ &s, row = @as(usize, slot.fixed) }
             try check_wearer{ &s, &g, &w, &dev, row = @as(usize, slot.fixed) }
-        } else {
-            try start_choosing{ &s, &g, &w, &dev, k }
-            return
         }
         try fill_bench{ &s, &g, &w, &dev }
     }
@@ -141,25 +126,31 @@ namespace ups {
         s.ask = ASK_REEQUIP
     }
 
-    // A crystal picked from the list.
+    // A crystal picked from the list (OnUpgradeChosen 0x006c5510): the one it has already changes
+    // nothing, "None" gives the slot's crystal back, another replaces it.
     fn choose { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, index: usize } -> ! {
         if index >= s.nchoices { return }
         let row = s.choices[index]
         let slot = s.slots[s.choosing_slot]
         s.choosing = false
-        if slot.kind == KIND_COLOUR {
-            let old = if s.colour_new >= 0 { s.colour_new } else { s.colour_now }
-            // The old crystal goes back to the party, the new one comes out of its stock.
-            if old >= 0 {
-                if s.col_consume[@as(usize, old)] { s.col_consume[@as(usize, old)] = false } else { s.col_give[@as(usize, old)] = true }
+        if row != CHOICE_KEEP {
+            if slot.kind == KIND_COLOUR {
+                let old = if s.colour_new >= 0 { s.colour_new } else { s.colour_now }
+                // The old crystal goes back to the party, the new one comes out of its stock.
+                if old >= 0 {
+                    if s.col_consume[@as(usize, old)] { s.col_consume[@as(usize, old)] = false } else { s.col_give[@as(usize, old)] = true }
+                }
+                if s.col_give[@as(usize, row)] { s.col_give[@as(usize, row)] = false } else { s.col_consume[@as(usize, row)] = true }
+                s.colour_new = if row == s.colour_now { -1 } else { row }
+            } else {
+                if slot.row != NO_ROW { remove_row{ &s, row = @as(usize, slot.row) } }
+                if row >= 0 {
+                    install_row{ &s, row = @as(usize, row) }
+                    try check_wearer{ &s, &g, &w, &dev, row = @as(usize, row) }
+                }
             }
-            if s.col_give[@as(usize, row)] { s.col_give[@as(usize, row)] = false } else { s.col_consume[@as(usize, row)] = true }
-            s.colour_new = if row == s.colour_now { -1 } else { row }
-        } else {
-            install_row{ &s, row = @as(usize, row) }
-            try check_wearer{ &s, &g, &w, &dev, row = @as(usize, row) }
+            gui::play_sound{ &g, n = 11 }
         }
-        gui::play_sound{ &g, n = 11 }
         try fill_bench{ &s, &g, &w, &dev }
     }
 

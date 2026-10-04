@@ -68,6 +68,7 @@ namespace ups {
         lightsaber: bool,
         slots: [4]Slot,
         nslots: usize,
+        hot_slot: usize,                // the slot the pointer or the keys are on (what the left pane describes)
         // the ledger of the session: upgrade items to take from the party at Assemble and to give
         consume: [25]bool,
         give: [25]bool,
