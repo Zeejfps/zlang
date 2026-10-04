@@ -114,10 +114,32 @@ namespace dlgview {
         dlgpanel::start_fade{ p = &v.panels, out, delay = node.fade_delay, length = node.fade_length, color = node.fade_color }
     }
 
+    // The empty reply the engine speaks for the player (the "continue" link) when it has nothing of its
+    // own to show: no words, no camera of its own (an angle of 0 and no camera animation), no animations, no
+    // fade (a reply's sound is never played, and the data gives some a VO_ResRef that names no file). The original runs the next entry in the same breath as the reply, so the player
+    // never sees it; here the entry follows a tick later, and showing the reply would cut to a computed shot
+    // of the player, with the last line's text still up, for that one frame. Replies the player clicked
+    // have text, and a cutscene's replies that bring a camera animation or a static camera are real cuts.
+    fn is_pass_through { w: *world::World, node: *dlg::Node, line: dlg::Line } -> bool {
+        if not line.reply { return false }
+        if dlg::text_of{ w, n = node, gender = w.conversation.gender }.len > 0 { return false }
+        if node.camera_angle != dlg::ANGLE_AUTO { return false }
+        if node.camera_anim >= 1000 and node.camera_anim < 1728 { return false }
+        if node.fade_type != 0 or node.anims.len > 0 { return false }
+        return true
+    }
+
     // A new entry, or a reply the player's creature speaks.
     fn show_line { mut v: View, mut w: world::World, mut sc: scene::Scene, mut g: gui::Gui } {
         let line = w.conversation.line
         let node = dlg::current_node{ s = &w.conversation } ifnull { return }
+        if is_pass_through{ w = &w, node, line } {
+            if w.log.dialog {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "dialog view: line {} (continue, nothing shown)\n", line.serial)
+            }
+            return
+        }
         sync_tokens{ &w, &g }
         sync_computer{ &v, &w, &g }
         update_animations{ &v, &w, &sc, node, speaker = line.speaker, listener = line.listener }

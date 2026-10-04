@@ -169,6 +169,31 @@ the object's and the drawn root's place (steps over 0.15 m/frame outside walking
 What remains is a script's `AssignCommand(ActionJumpToLocation)` landing one frame after the line that ran it
 (AssignCommand queues for the next frame), which snaps and is off screen in the checked cutscenes.
 
+### No picture between two shots
+
+A cut shows the new shot in the frame it happens in and nothing else before it. Four things used to put an
+odd frame in between, found by writing every frame of a stretch to disk (`--screenshot-range`, testing.md) and
+looking at the ones that differ from both neighbours:
+
+- **The engine's empty reply.** An entry whose one reply is empty ("continue") is followed by the reply the engine
+  speaks for the player, and by the next entry a tick later. The reply's own shot (a computed one of the player
+  speaking, from the 19-entry cycle) and animations showed for that frame, with the last line's text still up; in a
+  cutscene with static cameras it was a wide shot of two actors between two fixed ones. `is_pass_through`
+  (view_line.ctx) shows nothing for such a reply: no text, angle 0, no camera animation, no fade, no animations. A
+  reply that has any of those is a real cut and is shown. (The original handles the reply and the entry in one client
+  frame; we have them a tick apart, so the view skips the first.)
+- **Angle 5 (keep).** The shot kept is the one built for the pair it was built for; `set_shot` took the line's pair
+  first, and a framed shot is rebuilt every frame from the pair, so "keep" cut to the other side of the talk.
+- **The panel's visibility.** `dlgpanel::update` shows the line or the replies that are set, but ran before this
+  frame's `set_line`, so the new text appeared a frame after the shot (a blank bar after picking a reply, the old
+  text over the new shot). `set_line` and `set_replies` now apply it themselves (`show_what_is_set`).
+- **A cutscene hands over to the next conversation.** The end script of an animated cutscene starts the next
+  conversation about 0.1 s later (`k_pend_cut09` delays it), and the picture between was the world's camera with
+  the HUD. When an animated cutscene ends the view holds its last shot, bars and stunt bodies for up to 0.4 s
+  (`HOLD_SECONDS`, `w.conversation.hold` keeps the HUD away); a conversation that begins meanwhile takes over with
+  the bars in already (`hand_over`), the hold runs out into the usual `finish` otherwise, and a module change lets go
+  at once (`leave`; the loading screen covers it).
+
 ### Voice and lips (7)
 
 One stream in the voice group, replaced only when the next voiced line starts, so it plays on over the
