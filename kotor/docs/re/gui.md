@@ -183,6 +183,13 @@ the top edge (textures are stored bottom-up); optional flips (bits 2–3 of a st
 rotations of 0/90/180/270 degrees permute the texture corners; a colour of (-1,-1,-1) means
 "untinted". The batch flushes on a texture, colour-mode or alpha change. (high)
 
+**Blending.** The batch's flush (`AurGui_FlushQuadBatch` `0x0045a170`) binds the texture and calls
+`0x0047b000`, which sets `glBlendFunc` from the texture's own blend pair (render-gui.md, Materials): the
+default (`SRC_ALPHA, ONE_MINUS_SRC_ALPHA`), or `SRC_ALPHA, ONE` for a TXI with `blending additive`. So
+the 44 GUI pictures that say so (the HUD's `lbl_mileft`, `lbl_mileftbk`, `lbl_miport1-3`, `lbl_mibox00`,
+`lbl_minimap`, `lbl_mirightbot`, the menu buttons `lbl_mimsg` and its kin, the four reticles and
+arrows, `menuborders`, `innermenu`) add their colour to the screen and their black is clear. (high)
+
 **Alpha.** Each viewport carries an alpha (the panel's `ALPHA`, 1 for nested viewports); the
 alpha a quad is drawn with is the product of all pushed viewport alphas times the element's own
 alpha. (high)

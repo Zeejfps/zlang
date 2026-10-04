@@ -196,7 +196,7 @@ namespace gui {
     // save's screenshot.
     fn set_picture { mut g: Gui, panel: u32, tag: []u8, texture: render::Texture, w: f32, h: f32 } {
         let c = find_control{ &g, panel, tag } ifnull { return }
-        c.override_fill = Img{ tex = texture, w, h, ok = true }
+        c.override_fill = Img{ tex = texture, w, h, ok = true, additive = false }
         if not c.border.present { c.border = no_border{}; c.border.present = true }
     }
 
@@ -424,7 +424,7 @@ namespace gui {
     fn list_set_icon { mut g: Gui, panel: u32, tag: []u8, row: i32, texture: render::Texture, w: f32, h: f32 } {
         let c = find_control{ &g, panel, tag } ifnull { return }
         if row < 0 or row >= @as(i32, c.row_count) { return }
-        c.rows[@as(usize, row)].icon = Img{ tex = texture, w, h, ok = true }
+        c.rows[@as(usize, row)].icon = Img{ tex = texture, w, h, ok = true, additive = false }
     }
 
     fn list_set_checked { mut g: Gui, panel: u32, tag: []u8, row: i32, checked: bool } {

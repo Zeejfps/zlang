@@ -198,6 +198,14 @@ namespace hud {
         return math::Vec2{ x = (b.x0 + b.x1) / 2.0, y = (b.y0 + b.y1) / 2.0 }
     }
 
+    // A picture over the world as its TXI asks: the reticles say `blending additive`, so their black is clear.
+    fn draw_picture { mut frame: render::Frame, rect: render::Rect, img: gui::Img, color: render::Color } {
+        let mut q = render::make_quad{ rect, color }
+        q.image = render::Image::texture{ t = img.tex }
+        q.blend = gui::quad_blend{ img }
+        render::add_quad{ &frame, quad = q }
+    }
+
     // The reticle around the target: blue for the friendly, red for the hostile, drawn under the panels,
     // centred on the aim point.
     fn draw_reticle { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame } {
@@ -220,7 +228,7 @@ namespace hud {
             _ = @fmt(&w.io, "reticle {} {} m side {} px at {} {} of {} {}\n", o.tag, math::sqrtf{ x = dx * dx + dy * dy + dz * dz }, side, cx, cy, h.projector.w, h.projector.h)
         }
         render::begin_ui{ &frame, width = h.projector.w, height = h.projector.h, target = null }
-        render::draw_image{ &frame, rect = render::Rect{ x = cx - side / 2.0, y = cy - side / 2.0, w = side, h = side }, texture = img.tex, color = render::white{} }
+        draw_picture{ &frame, rect = render::Rect{ x = cx - side / 2.0, y = cy - side / 2.0, w = side, h = side }, img, color = render::white{} }
     }
 
     // The highlight on the object under the pointer (FUN_006889c0 0x006889c0, called at the end of UpdateReticles):
@@ -244,7 +252,7 @@ namespace hud {
         let dz = leader.position.z - o.position.z
         let side = reticle_side{ distance = math::sqrtf{ x = dx * dx + dy * dy + dz * dz }, creature = o.kind == obj::Kind::creature }
         render::begin_ui{ &frame, width = h.projector.w, height = h.projector.h, target = null }
-        render::draw_image{ &frame, rect = render::Rect{ x = at.x - side / 2.0, y = at.y - side / 2.0, w = side, h = side }, texture = img.tex, color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = 0.5 } }
+        draw_picture{ &frame, rect = render::Rect{ x = at.x - side / 2.0, y = at.y - side / 2.0, w = side, h = side }, img, color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = 0.5 } }
     }
 
     // Does slot `k`'s selected choice on the target (UseAction, 0x00689610; the keys 1, 2, 3 and the

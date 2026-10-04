@@ -13,6 +13,12 @@ namespace gui {
         return render::Rect{ x = @as(f32, x), y = @as(f32, y), w = @as(f32, w), h = @as(f32, h) }
     }
 
+    // How a picture meets what is behind it: its TXI's `blending additive` adds, anything else blends
+    // by alpha (the original's default pair; `punchthrough` is not used by any GUI picture).
+    fn quad_blend { img: Img } -> render::Blend {
+        return if img.additive { render::Blend::additive } else { render::Blend::alpha }
+    }
+
     // A textured quad; `angle` turns it counterclockwise about its centre.
     fn put_image {
         mut frame: render::Frame, img: Img, x: f32, y: f32, w: f32, h: f32, color: render::Color, angle: f32, clip: render::Rect,
@@ -20,7 +26,7 @@ namespace gui {
         if not img.ok or w <= 0.0 or h <= 0.0 { return }
         render::add_quad{ &frame, quad = render::Quad{
             rect = render::Rect{ x, y, w, h }, uv = render::upright{}, color,
-            image = render::Image::texture{ t = img.tex }, blend = render::Blend::alpha, clip = clip, angle,
+            image = render::Image::texture{ t = img.tex }, blend = quad_blend{ img }, clip = clip, angle,
         } }
     }
 
