@@ -75,6 +75,22 @@ namespace display {
         s.texture_quality = d.texture_quality
         s.gui_scale = d.gui_scale
         s.frame_limit = d.frame_limit
+        s.fx_original = d.fx_original
+        s.fx_bloom = d.fx_bloom
+        s.fx_room_light = d.fx_room_light
+        s.fx_shadows = d.fx_shadows
+        s.fx_ao = d.fx_ao
+        s.fx_lightmaps = d.fx_lightmaps
+        s.fx_dof = d.fx_dof
+        s.fx_reflections = d.fx_reflections
+        s.fx_shafts = d.fx_shafts
+        s.fx_fog = d.fx_fog
+        s.fx_grade = d.fx_grade
+        s.fx_edges = d.fx_edges
+        s.fx_foliage = d.fx_foliage
+        s.fx_tessellation = d.fx_tessellation
+        s.fx_timing = d.fx_timing
+        s.fx_exposure = d.fx_exposure
     }
 
     // ---- what the display offers
@@ -206,6 +222,8 @@ namespace display {
         if first or s.shadows != a.shadows or s.soft_shadows != a.soft_shadows or s.emitters != a.emitters or s.frame_buffer != a.frame_buffer {
             gpu::set_effects{ &dev, shadows = s.shadows, soft_shadows = s.soft_shadows, particles = s.emitters, screen_effects = s.frame_buffer }
         }
+        // The Enhanced Graphics options are plain data the device reads each frame: always handed over.
+        gpu::set_enhance{ &dev, enhance = frontend::enhance_of{ s } }
         if first or s.grass != a.grass { changed = changed | CHANGED_GRASS }
         if first or s.texture_quality != a.texture_quality { changed = changed | CHANGED_TEXTURES }
         if first or s.gui_scale != a.gui_scale { changed = changed | CHANGED_UI_SCALE }
@@ -275,7 +293,9 @@ namespace display {
     // applied at the end of the frame's input and written to the settings file. The keys: size W H,
     // mode windowed|fullscreen|borderless, refresh, vsync, brightness, shadows, softshadows, grass,
     // emitters, framebuffer, aniso, aa, texture (levels as the panels' buttons count them, switches
-    // 0 or 1) and scale (the interface scale, 0 for auto).
+    // 0 or 1) and scale (the interface scale, 0 for auto). The Enhanced Graphics panel's: original, bloom,
+    // roomlight, shadowmaps, ao, lightmaps, dof, reflections, shafts, hfog, grade, edges, foliage, tess,
+    // timing (levels 0..2 or switches) and exposure (a factor).
     fn handle_scripted { mut d: Display, word: []u8, rest: []u8 } -> bool {
         if not ci::eq{ a = word, b = "gfx" } { return false }
         let mut ws = text::words{ s = rest }
@@ -304,6 +324,22 @@ namespace display {
         else if ci::eq{ a = key, b = "texture" } { s.texture_quality = n }
         else if ci::eq{ a = key, b = "scale" } { s.gui_scale = text::scan_f32{ s = first } ifnull 0.0 }
         else if ci::eq{ a = key, b = "limit" } { s.frame_limit = n }
+        else if ci::eq{ a = key, b = "original" } { s.fx_original = on }
+        else if ci::eq{ a = key, b = "bloom" } { s.fx_bloom = n }
+        else if ci::eq{ a = key, b = "roomlight" } { s.fx_room_light = n }
+        else if ci::eq{ a = key, b = "shadowmaps" } { s.fx_shadows = n }
+        else if ci::eq{ a = key, b = "ao" } { s.fx_ao = n }
+        else if ci::eq{ a = key, b = "lightmaps" } { s.fx_lightmaps = on }
+        else if ci::eq{ a = key, b = "dof" } { s.fx_dof = n }
+        else if ci::eq{ a = key, b = "reflections" } { s.fx_reflections = n }
+        else if ci::eq{ a = key, b = "shafts" } { s.fx_shafts = on }
+        else if ci::eq{ a = key, b = "hfog" } { s.fx_fog = on }
+        else if ci::eq{ a = key, b = "grade" } { s.fx_grade = on }
+        else if ci::eq{ a = key, b = "edges" } { s.fx_edges = n }
+        else if ci::eq{ a = key, b = "foliage" } { s.fx_foliage = on }
+        else if ci::eq{ a = key, b = "tess" } { s.fx_tessellation = n }
+        else if ci::eq{ a = key, b = "timing" } { s.fx_timing = on }
+        else if ci::eq{ a = key, b = "exposure" } { s.fx_exposure = text::scan_f32{ s = first } ifnull 1.0 }
         else if ci::eq{ a = key, b = "blur" } {
             d.test_blur = text::scan_f32{ s = first } ifnull 0.0
             return true

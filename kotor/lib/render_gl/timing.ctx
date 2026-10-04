@@ -1,0 +1,93 @@
+// GPU time per pass (Enhance.timing): a timestamp query after each pass of a frame, read back a few frames later
+// so the CPU never waits for the GPU. gpu::get_timings gives the last frame whose answers were in.
+namespace gpu {
+    const TIMER_SLOTS: usize = 32
+    const TIMER_RING: usize = 4
+
+    struct Timer {
+        made: bool,
+        ids: [128]u32,                  // TIMER_RING frames of TIMER_SLOTS queries
+        names: [128][]u8,               // what each mark ends (the first of a frame is its start)
+        used: [4]u32,                   // marks issued in each frame of the ring
+        at: u32,                        // the ring's frame being recorded
+        recording: bool,
+        result: render::Timings,
+    }
+
+    fn no_timer {} -> Timer {
+        return Timer{
+            made = false, ids = [0; 128], names = [""; 128], used = [0; 4], at = 0, recording = false,
+            result = render::Timings{ count = 0, names = [""; 24], ms = [0.0; 24], total = 0.0 },
+        }
+    }
+
+    // Starts a frame's measurements (at submit), first collecting the oldest frame of the ring if its answers are in.
+    fn timer_begin { mut dev: Device } {
+        dev.timer.recording = dev.enhance.timing
+        if not dev.timer.recording { return }
+        if not dev.timer.made {
+            dev.gl.gen_queries{ n = 128, ids = &dev.timer.ids[0] }
+            dev.timer.made = true
+        }
+        dev.timer.at = (dev.timer.at + 1) % @as(u32, TIMER_RING)
+        timer_collect{ &dev, ring = dev.timer.at }
+        dev.timer.used[dev.timer.at] = 0
+        timer_mark{ &dev, name = "start" }
+    }
+
+    // Marks the end of a pass called `name`.
+    fn timer_mark { mut dev: Device, name: []u8 } {
+        if not dev.timer.recording { return }
+        let r = dev.timer.at
+        let n = dev.timer.used[r]
+        if @as(usize, n) >= TIMER_SLOTS { return }
+        let slot = @as(usize, r) * TIMER_SLOTS + @as(usize, n)
+        dev.gl.query_counter{ id = dev.timer.ids[slot], target = gl::TIMESTAMP }
+        dev.timer.names[slot] = name
+        dev.timer.used[r] = n + 1
+    }
+
+    // Reads ring frame `ring`'s timestamps, if all are in, into the result: each pass the time since the mark before
+    // it, passes of the same name added together (several views).
+    fn timer_collect { mut dev: Device, ring: u32 } {
+        let n = @as(usize, dev.timer.used[ring])
+        if n < 2 { return }
+        let base = @as(usize, ring) * TIMER_SLOTS
+        let mut ready: i32 = 0
+        dev.gl.get_query_objectiv{ id = dev.timer.ids[base + n - 1], pname = gl::QUERY_RESULT_AVAILABLE, params = &ready }
+        if ready == 0 { return }
+        let mut out = render::Timings{ count = 0, names = [""; 24], ms = [0.0; 24], total = 0.0 }
+        let mut first: u64 = 0
+        let mut last: u64 = 0
+        dev.gl.get_query_objectui64v{ id = dev.timer.ids[base], pname = gl::QUERY_RESULT, params = &first }
+        let mut prev = first
+        let mut i: usize = 1
+        while i < n {
+            let mut t: u64 = 0
+            dev.gl.get_query_objectui64v{ id = dev.timer.ids[base + i], pname = gl::QUERY_RESULT, params = &t }
+            let ms = if t > prev { @as(f32, @as(f64, t - prev) / 1000000.0) } else { 0.0 }
+            prev = t
+            last = t
+            let name = dev.timer.names[base + i]
+            let mut k: u32 = 0
+            while k < out.count and not slice::eq_bytes{ a = out.names[k], b = name } { k = k + 1 }
+            if k == out.count and out.count < 24 {
+                out.names[k] = name
+                out.ms[k] = 0.0
+                out.count = out.count + 1
+            }
+            if k < out.count { out.ms[k] = out.ms[k] + ms }
+            i = i + 1
+        }
+        out.total = if last > first { @as(f32, @as(f64, last - first) / 1000000.0) } else { 0.0 }
+        dev.timer.result = out
+    }
+
+    // The GPU's time for each pass of the last frame measured (Enhance.timing on), in milliseconds.
+    fn get_timings { dev: Device } -> render::Timings { return dev.timer.result }
+
+    fn free_timer { mut dev: Device } {
+        if dev.timer.made { dev.gl.delete_queries{ n = 128, ids = &dev.timer.ids[0] } }
+        dev.timer.made = false
+    }
+}

@@ -144,6 +144,7 @@ namespace play {
         let mut tenth_count: [10]u64 = [0; 10]
         let mut owed = speed::Owed{ dt = 0.0, clock_dt = 0.0 }    // --speed: the presentation's time to catch up
         let mut speed_blur: f32 = 0.0              // the Frame Buffer Effects option's speed blur while the leader is hasted, eased in and out
+        let mut fxh = fxhud::make{}                 // the GPU Timing option's lines over the picture
         while not quit {
             frame_no = frame_no + 1
             if opts.frames > 0 and frame_no > opts.frames { break }
@@ -474,6 +475,7 @@ namespace play {
                 vfx::draw{ v = &vx, &sc, &frame, view = vi }
                 dlgview::draw{ v = &dview, frame = &frame }
                 ingame::draw{ ui, &w, &dev, &frame }    // HOOK(ingame)
+                if disp.applied.fx_timing { fxhud::draw{ h = &fxh, &w, &dev, &frame } }
                 gpu::submit{ &dev, frame = &frame } iferr err{ error } {
                     _ = @fmt(&w.io, "kotor: submit failed: {}\n", error)
                     return 1
@@ -484,6 +486,7 @@ namespace play {
                 if opts.shots[s].frame == frame_no {
                     try screenshot{ &w, &dev, heap = &scene_arena, path = opts.shots[s].path, frame_no }
                     _ = @fmt(&w.io, "  frame: {} draws, {} shadows, {} lights, {} emitters, {} particles\n", frame.draw_count, frame.shadow_count, frame.light_count, frame.emitter_count, frame.particle_count)
+                    fxhud::log{ &w, dev }
                     let p = world::object{ w = &w, id = w.pc }
                     if p != null {
                         _ = @fmt(&w.io, "  leader at {} {} {} (room {}), camera at {} {} {} looking at {} {} {}, blur {}, ambient {} {} {}, dialogue fade {}\n", p.position.x, p.position.y, p.position.z,

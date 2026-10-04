@@ -1,0 +1,422 @@
+// The enhanced renderer (docs/design/enhanced-render.md): what the GL backend does with render::Enhance and the
+// views' and draws' enhanced data. A view drawn to the screen that clears its colour, with Enhance.on, goes
+// through `draw_view_fx`: the scene into a floating-point (HDR) target with a second output for the view-space
+// normals, the passes that read them, then the post chain (bloom, tone curve, grade) into the screen, where
+// the GUI is drawn afterwards as always. Everything else, and every view with Enhance.on false, takes the
+// original path (gpu.ctx), untouched.
+namespace gpu {
+    const BLOOM_LEVELS: usize = 6
+
+    struct FxPrograms {
+        bloom_down: u32, bd_texel: i32, bd_params: i32,
+        bloom_up: u32, bu_texel: i32, bu_radius: i32,
+        composite: u32, co_params: i32, co_size: i32,
+    }
+
+    fn no_fx_programs {} -> FxPrograms {
+        return FxPrograms{
+            bloom_down = 0, bd_texel = -1, bd_params = -1, bloom_up = 0, bu_texel = -1, bu_radius = -1,
+            composite = 0, co_params = -1, co_size = -1,
+        }
+    }
+
+    // The enhanced views' targets, the size of the screen, made when first needed and again when it changes.
+    struct FxTargets {
+        made: bool, width: i32, height: i32, samples: i32,
+        color: u32,                 // RGBA16F: the scene's light, unclamped
+        normal: u32,                // RGB10_A2: view-space normal, alpha the share of the light occlusion darkens
+        depth: u32,                 // DEPTH24_STENCIL8
+        scene_fbo: u32,             // color, normal, depth: drawn into without multisampling; the resolved copy with it
+        color_fbo: u32,             // color alone: passes that blend into the picture
+        ms_fbo: u32, ms_color: u32, ms_normal: u32, ms_depth: u32,     // the multisampled twins (samples > 0)
+        bloom: [6]u32, bloom_fbo: [6]u32, bloom_w: [6]i32, bloom_h: [6]i32,
+        ldr: u32, ldr_fbo: u32,     // RGBA8: the tone-mapped picture, for the edge filter that follows
+    }
+
+    fn no_fx_targets {} -> FxTargets {
+        return FxTargets{
+            made = false, width = 0, height = 0, samples = 0, color = 0, normal = 0, depth = 0, scene_fbo = 0, color_fbo = 0,
+            ms_fbo = 0, ms_color = 0, ms_normal = 0, ms_depth = 0,
+            bloom = [0; 6], bloom_fbo = [0; 6], bloom_w = [0; 6], bloom_h = [0; 6], ldr = 0, ldr_fbo = 0,
+        }
+    }
+
+    // ---- the options
+
+    // The Enhanced Graphics options, from the next frame (render::Enhance).
+    fn set_enhance { mut dev: Device, enhance: render::Enhance } {
+        dev.enhance = enhance
+    }
+
+    // Whether a view goes through the enhanced path: the options on, drawn to the screen, clearing its colour
+    // (a 3D view over a panel blends into what the GUI drew, so it keeps the original look).
+    fn fx_view_applies { dev: Device, v: render::View } -> bool {
+        return dev.enhance.on and v.target == null and v.clear_color != null
+    }
+
+    // ---- programs
+
+    fn make_fx_programs { mut dev: Device } -> ! {
+        let post_vs = glsl::POST_VS
+        let mut n: usize = 0
+        let scene_fs: [1]c::String = [glsl::SCENE_FX_FS]
+        let scene_vs = glsl::SCENE_VS
+        let scene = try_link{ gl = &dev.gl, vertex = &scene_vs, fragment = scene_fs[..], log = dev.log, log_len = &n }
+        if scene == 0 { return shader_failed{ log = dev.log[..n] } }
+        let particle_vs = glsl::PARTICLE_VS
+        let particle_fs: [1]c::String = [glsl::PARTICLE_FX_FS]
+        let particle = try_link{ gl = &dev.gl, vertex = &particle_vs, fragment = particle_fs[..], log = dev.log, log_len = &n }
+        if particle == 0 { return shader_failed{ log = dev.log[..n] } }
+        let down_fs: [1]c::String = [glsl::BLOOM_DOWN_FS]
+        let down = try_link{ gl = &dev.gl, vertex = &post_vs, fragment = down_fs[..], log = dev.log, log_len = &n }
+        if down == 0 { return shader_failed{ log = dev.log[..n] } }
+        let up_fs: [1]c::String = [glsl::BLOOM_UP_FS]
+        let up = try_link{ gl = &dev.gl, vertex = &post_vs, fragment = up_fs[..], log = dev.log, log_len = &n }
+        if up == 0 { return shader_failed{ log = dev.log[..n] } }
+        let comp_fs: [1]c::String = [glsl::COMPOSITE_FS]
+        let comp = try_link{ gl = &dev.gl, vertex = &post_vs, fragment = comp_fs[..], log = dev.log, log_len = &n }
+        if comp == 0 { return shader_failed{ log = dev.log[..n] } }
+
+        bind_frame_block{ &dev, program = scene }
+        bind_frame_block{ &dev, program = particle }
+        dev.gl.use_program{ program = scene }
+        set_unit{ &dev, program = scene, name = "u_diffuse", unit = 0 }
+        set_unit{ &dev, program = scene, name = "u_lightmap", unit = 1 }
+        set_unit{ &dev, program = scene, name = "u_envcube", unit = 2 }
+        set_unit{ &dev, program = scene, name = "u_envsphere", unit = 3 }
+        set_unit{ &dev, program = scene, name = "u_bump", unit = 4 }
+        dev.gl.use_program{ program = particle }
+        set_unit{ &dev, program = particle, name = "u_tex", unit = 0 }
+        dev.gl.use_program{ program = down }
+        set_unit{ &dev, program = down, name = "u_tex", unit = 0 }
+        dev.gl.use_program{ program = up }
+        set_unit{ &dev, program = up, name = "u_tex", unit = 0 }
+        dev.gl.use_program{ program = comp }
+        set_unit{ &dev, program = comp, name = "u_hdr", unit = 0 }
+        set_unit{ &dev, program = comp, name = "u_bloom", unit = 1 }
+        set_unit{ &dev, program = comp, name = "u_grade", unit = 2 }
+        dev.gl.use_program{ program = 0 }
+
+        dev.scene_fx = scene_locations{ &dev, program = scene }
+        dev.particle_fx = particle_locations{ &dev, program = particle }
+        dev.fxp = FxPrograms{
+            bloom_down = down,
+            bd_texel = dev.gl.get_uniform_location{ program = down, name = "u_texel" },
+            bd_params = dev.gl.get_uniform_location{ program = down, name = "u_params" },
+            bloom_up = up,
+            bu_texel = dev.gl.get_uniform_location{ program = up, name = "u_texel" },
+            bu_radius = dev.gl.get_uniform_location{ program = up, name = "u_radius" },
+            composite = comp,
+            co_params = dev.gl.get_uniform_location{ program = comp, name = "u_params" },
+            co_size = dev.gl.get_uniform_location{ program = comp, name = "u_size" },
+        }
+    }
+
+    fn free_fx_programs { mut dev: Device } {
+        dev.gl.delete_program{ program = dev.scene_fx.id }
+        dev.gl.delete_program{ program = dev.particle_fx.id }
+        dev.gl.delete_program{ program = dev.fxp.bloom_down }
+        dev.gl.delete_program{ program = dev.fxp.bloom_up }
+        dev.gl.delete_program{ program = dev.fxp.composite }
+    }
+
+    // ---- targets
+
+    // A 2D texture of no data, clamped, filtered linearly or not, with one level.
+    fn make_plain_texture { mut gl: gl::Gl, internal: u32, format: u32, kind: u32, width: i32, height: i32, linear: bool } -> u32 {
+        let t = gl::gen_texture{ &gl }
+        gl.bind_texture{ target = gl::TEXTURE_2D, texture = t }
+        gl.tex_image_2d{ target = gl::TEXTURE_2D, level = 0, internal_format = @as(i32, internal), width, height, border = 0, format, kind, pixels = null }
+        let filter = @as(i32, if linear { gl::LINEAR } else { gl::NEAREST })
+        gl.tex_parameteri{ target = gl::TEXTURE_2D, pname = gl::TEXTURE_MIN_FILTER, param = filter }
+        gl.tex_parameteri{ target = gl::TEXTURE_2D, pname = gl::TEXTURE_MAG_FILTER, param = filter }
+        gl.tex_parameteri{ target = gl::TEXTURE_2D, pname = gl::TEXTURE_WRAP_S, param = @as(i32, gl::CLAMP_TO_EDGE) }
+        gl.tex_parameteri{ target = gl::TEXTURE_2D, pname = gl::TEXTURE_WRAP_T, param = @as(i32, gl::CLAMP_TO_EDGE) }
+        gl.tex_parameteri{ target = gl::TEXTURE_2D, pname = gl::TEXTURE_MAX_LEVEL, param = 0 }
+        return t
+    }
+
+    fn make_ms_buffer { mut gl: gl::Gl, internal: u32, width: i32, height: i32, samples: i32 } -> u32 {
+        let r = gl::gen_renderbuffer{ &gl }
+        gl.bind_renderbuffer{ target = gl::RENDERBUFFER, renderbuffer = r }
+        gl.renderbuffer_storage_multisample{ target = gl::RENDERBUFFER, samples, internal_format = internal, width, height }
+        return r
+    }
+
+    // A framebuffer of up to two colour textures (0: none) and a depth-stencil texture (0: none).
+    fn make_fbo { mut gl: gl::Gl, c0: u32, c1: u32, depth: u32 } -> !u32 {
+        let fbo = gl::gen_framebuffer{ &gl }
+        gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = fbo }
+        if c0 != 0 { gl.framebuffer_texture_2d{ target = gl::FRAMEBUFFER, attachment = gl::COLOR_ATTACHMENT0, textarget = gl::TEXTURE_2D, texture = c0, level = 0 } }
+        if c1 != 0 { gl.framebuffer_texture_2d{ target = gl::FRAMEBUFFER, attachment = gl::COLOR_ATTACHMENT1, textarget = gl::TEXTURE_2D, texture = c1, level = 0 } }
+        if depth != 0 { gl.framebuffer_texture_2d{ target = gl::FRAMEBUFFER, attachment = gl::DEPTH_STENCIL_ATTACHMENT, textarget = gl::TEXTURE_2D, texture = depth, level = 0 } }
+        let status = gl.check_framebuffer_status{ target = gl::FRAMEBUFFER }
+        if status != gl::FRAMEBUFFER_COMPLETE {
+            gl::delete_framebuffer{ &gl, id = fbo }
+            return gl::incomplete{ status }
+        }
+        return fbo
+    }
+
+    fn free_fx_targets { mut dev: Device } {
+        let t = dev.fxt
+        if not t.made { return }
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = 0 }
+        gl::delete_framebuffer{ gl = &dev.gl, id = t.scene_fbo }
+        gl::delete_framebuffer{ gl = &dev.gl, id = t.color_fbo }
+        forget_texture{ &dev, name = t.color }
+        forget_texture{ &dev, name = t.normal }
+        forget_texture{ &dev, name = t.depth }
+        if t.ms_fbo != 0 {
+            gl::delete_framebuffer{ gl = &dev.gl, id = t.ms_fbo }
+            gl::delete_renderbuffer{ gl = &dev.gl, id = t.ms_color }
+            gl::delete_renderbuffer{ gl = &dev.gl, id = t.ms_normal }
+            gl::delete_renderbuffer{ gl = &dev.gl, id = t.ms_depth }
+        }
+        let mut i: usize = 0
+        while i < BLOOM_LEVELS {
+            gl::delete_framebuffer{ gl = &dev.gl, id = t.bloom_fbo[i] }
+            forget_texture{ &dev, name = t.bloom[i] }
+            i = i + 1
+        }
+        gl::delete_framebuffer{ gl = &dev.gl, id = t.ldr_fbo }
+        forget_texture{ &dev, name = t.ldr }
+        dev.fxt = no_fx_targets{}
+    }
+
+    // Deletes a texture of ours and drops it from the cache of what is bound.
+    fn forget_texture { mut dev: Device, name: u32 } {
+        if name == 0 { return }
+        gl::delete_texture{ gl = &dev.gl, id = name }
+        let mut u: usize = 0
+        while u < dev.state.units.len {
+            if dev.state.units[u] == name { dev.state.units[u] = 0 }
+            u = u + 1
+        }
+    }
+
+    // The targets at the screen's size and the anti-aliasing option's samples.
+    fn ensure_fx_targets { mut dev: Device } -> ! {
+        let w = dev.screen.width
+        let h = dev.screen.height
+        let t = dev.fxt
+        if t.made and t.width == w and t.height == h and t.samples == dev.samples { return }
+        free_fx_targets{ &dev }
+        let mut n = no_fx_targets{}
+        n.width = w
+        n.height = h
+        n.samples = dev.samples
+        n.color = make_plain_texture{ gl = &dev.gl, internal = gl::RGBA16F, format = gl::RGBA, kind = gl::HALF_FLOAT, width = w, height = h, linear = true }
+        n.normal = make_plain_texture{ gl = &dev.gl, internal = gl::RGB10_A2, format = gl::RGBA, kind = gl::UNSIGNED_INT_2_10_10_10_REV, width = w, height = h, linear = false }
+        n.depth = make_plain_texture{ gl = &dev.gl, internal = gl::DEPTH24_STENCIL8, format = gl::DEPTH_STENCIL, kind = gl::UNSIGNED_INT_24_8, width = w, height = h, linear = false }
+        n.made = true
+        dev.fxt = n
+        dev.fxt.scene_fbo = try make_fbo{ gl = &dev.gl, c0 = n.color, c1 = n.normal, depth = n.depth }
+        dev.fxt.color_fbo = try make_fbo{ gl = &dev.gl, c0 = n.color, c1 = 0, depth = 0 }
+        if n.samples > 0 {
+            let s = n.samples
+            dev.fxt.ms_color = make_ms_buffer{ gl = &dev.gl, internal = gl::RGBA16F, width = w, height = h, samples = s }
+            dev.fxt.ms_normal = make_ms_buffer{ gl = &dev.gl, internal = gl::RGB10_A2, width = w, height = h, samples = s }
+            dev.fxt.ms_depth = make_ms_buffer{ gl = &dev.gl, internal = gl::DEPTH24_STENCIL8, width = w, height = h, samples = s }
+            let fbo = gl::gen_framebuffer{ gl = &dev.gl }
+            dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = fbo }
+            dev.gl.framebuffer_renderbuffer{ target = gl::FRAMEBUFFER, attachment = gl::COLOR_ATTACHMENT0, renderbuffer_target = gl::RENDERBUFFER, renderbuffer = dev.fxt.ms_color }
+            dev.gl.framebuffer_renderbuffer{ target = gl::FRAMEBUFFER, attachment = gl::COLOR_ATTACHMENT1, renderbuffer_target = gl::RENDERBUFFER, renderbuffer = dev.fxt.ms_normal }
+            dev.gl.framebuffer_renderbuffer{ target = gl::FRAMEBUFFER, attachment = gl::DEPTH_STENCIL_ATTACHMENT, renderbuffer_target = gl::RENDERBUFFER, renderbuffer = dev.fxt.ms_depth }
+            let status = dev.gl.check_framebuffer_status{ target = gl::FRAMEBUFFER }
+            dev.fxt.ms_fbo = fbo
+            if status != gl::FRAMEBUFFER_COMPLETE { return gl::incomplete{ status } }
+        }
+        let mut i: usize = 0
+        while i < BLOOM_LEVELS {
+            let shift = @as(i32, i) + 1
+            let bw = if (w >> shift) > 1 { w >> shift } else { 1 }
+            let bh = if (h >> shift) > 1 { h >> shift } else { 1 }
+            dev.fxt.bloom_w[i] = bw
+            dev.fxt.bloom_h[i] = bh
+            dev.fxt.bloom[i] = make_plain_texture{ gl = &dev.gl, internal = gl::R11F_G11F_B10F, format = gl::RGB, kind = gl::HALF_FLOAT, width = bw, height = bh, linear = true }
+            dev.fxt.bloom_fbo[i] = try make_fbo{ gl = &dev.gl, c0 = dev.fxt.bloom[i], c1 = 0, depth = 0 }
+            i = i + 1
+        }
+        dev.fxt.ldr = make_plain_texture{ gl = &dev.gl, internal = gl::RGBA8, format = gl::RGBA, kind = gl::UNSIGNED_BYTE, width = w, height = h, linear = true }
+        dev.fxt.ldr_fbo = try make_fbo{ gl = &dev.gl, c0 = dev.fxt.ldr, c1 = 0, depth = 0 }
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = 0 }
+        dev.state.units = [0; 5]
+    }
+
+    // Which colour outputs of the scene framebuffer are written: 1 the light alone (transparent surfaces,
+    // shadows, debug geometry), 2 the light and the normals (opaque surfaces).
+    fn set_outputs { mut dev: Device, n: u32 } {
+        let bufs: [2]u32 = [gl::COLOR_ATTACHMENT0, if n > 1 { gl::COLOR_ATTACHMENT1 } else { gl::NONE }]
+        dev.gl.draw_buffers{ n = 2, bufs = &bufs[0] }
+    }
+
+    // ---- per draw
+
+    // The enhanced program's uniforms of a draw: its kind, the smooth-lightmap switch, the light around it, and
+    // how much brighter than white emissive and additive light goes (only with bloom, which shows it).
+    fn set_fx_draw { mut dev: Device, frame: *render::Frame, draw: render::Draw } {
+        let e = dev.enhance
+        let cube = e.room_light > 0 and draw.ambient > 0 and draw.ambient <= frame.ambient_count
+        dev.gl.uniform4i{ location = dev.cur.fx, v0 = @as(i32, draw.kind), v1 = if e.smooth_lightmaps { 1 } else { 0 }, v2 = if cube { 1 } else { 0 }, v3 = 0 }
+        let glow = emissive_gain{ e }
+        dev.gl.uniform4f{ location = dev.cur.fx2, v0 = glow, v1 = glow * 1.5, v2 = 0.0, v3 = 0.0 }
+        if cube {
+            let c = frame.ambients[draw.ambient - 1]
+            let v: [18]f32 = [
+                c.pos_x.x, c.pos_x.y, c.pos_x.z, c.neg_x.x, c.neg_x.y, c.neg_x.z,
+                c.pos_y.x, c.pos_y.y, c.pos_y.z, c.neg_y.x, c.neg_y.y, c.neg_y.z,
+                c.pos_z.x, c.pos_z.y, c.pos_z.z, c.neg_z.x, c.neg_z.y, c.neg_z.z,
+            ]
+            dev.gl.uniform3fv{ location = dev.cur.cube, count = 6, value = &v[0] }
+        }
+    }
+
+    // The extra light self-illuminated surfaces give beyond the original's (additive ones half again), so the
+    // bloom finds them: none without bloom.
+    fn emissive_gain { e: render::Enhance } -> f32 {
+        return if e.bloom == 0 { 0.0 } else { 0.35 }
+    }
+
+    // ---- a view
+
+    fn draw_view_fx { mut dev: Device, frame: *render::Frame, index: u32 } -> ! {
+        let v = frame.views[index]
+        try ensure_fx_targets{ &dev }
+        let t = dev.fxt
+        dev.in_fx = true
+        dev.cur = dev.scene_fx
+        dev.cur_particle = dev.particle_fx
+        let fbo = if t.samples > 0 { t.ms_fbo } else { t.scene_fbo }
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = fbo }
+        let mut area = GlRect{ x = 0, y = 0, w = t.width, h = t.height }
+        if v.viewport != null { area = gl_rect{ r = v.viewport, height = t.height, sx = 1.0, sy = 1.0 } }
+        // The whole of the light target is cleared: the bloom reads past a viewport's edge.
+        set_outputs{ &dev, n = 2 }
+        dev.gl.disable{ cap = gl::SCISSOR_TEST }
+        dev.gl.color_mask{ red = gl::TRUE, green = gl::TRUE, blue = gl::TRUE, alpha = gl::TRUE }
+        set_depth{ &dev, test = true, write = true }
+        dev.gl.stencil_mask{ mask = 0xFF }
+        let c = v.clear_color ifnull render::Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 }
+        let clear0: [4]f32 = [c.r, c.g, c.b, c.a]
+        let clear1: [4]f32 = [0.5, 0.5, 1.0, 0.0]
+        dev.gl.clear_bufferfv{ buffer = gl::COLOR, drawbuffer = 0, value = &clear0[0] }
+        dev.gl.clear_bufferfv{ buffer = gl::COLOR, drawbuffer = 1, value = &clear1[0] }
+        dev.gl.clear_bufferfi{ buffer = gl::DEPTH_STENCIL, drawbuffer = 0, depth = 1.0, stencil = 0 }
+        dev.gl.viewport{ x = area.x, y = area.y, width = area.w, height = area.h }
+
+        let view_proj = math::mat4::mul{ a = v.camera.proj, b = v.camera.view }
+        upload_frame_block{ &dev, v, view_proj, time = frame.time }
+        let frustum = math::frustum::from_matrix{ m = view_proj }
+        draw_opaque{ &dev, frame, index, frustum }
+        timer_mark{ &dev, name = "opaque" }
+        set_outputs{ &dev, n = 1 }
+        if dev.enhance.shadows == 0 { try draw_shadows{ &dev, frame, index } }
+        try draw_transparent{ &dev, frame, index, frustum, eye = v.camera.eye }
+        try draw_debug{ &dev, frame, index }
+        set_offset{ &dev, on = false }
+        set_stencil{ &dev, on = false }
+        timer_mark{ &dev, name = "transparent" }
+
+        if t.samples > 0 {
+            dev.gl.bind_framebuffer{ target = gl::READ_FRAMEBUFFER, framebuffer = t.ms_fbo }
+            dev.gl.read_buffer{ src = gl::COLOR_ATTACHMENT0 }
+            dev.gl.bind_framebuffer{ target = gl::DRAW_FRAMEBUFFER, framebuffer = t.color_fbo }
+            dev.gl.blit_framebuffer{
+                src_x0 = 0, src_y0 = 0, src_x1 = t.width, src_y1 = t.height, dst_x0 = 0, dst_y0 = 0, dst_x1 = t.width, dst_y1 = t.height,
+                mask = gl::COLOR_BUFFER_BIT, filter = gl::NEAREST,
+            }
+            timer_mark{ &dev, name = "resolve" }
+        }
+        post_state{ &dev }
+        let e = dev.enhance
+        let levels: usize = if e.bloom >= 2 { BLOOM_LEVELS } else { 4 }
+        if e.bloom > 0 {
+            run_bloom{ &dev, levels }
+            timer_mark{ &dev, name = "bloom" }
+        }
+        let screen = screen_fbo{ &dev }
+        run_composite{ &dev, v, area, into = screen, levels }
+        timer_mark{ &dev, name = "composite" }
+        dev.in_fx = false
+        dev.cur = dev.scene
+        dev.cur_particle = dev.particle
+        dev.state = unknown_state{}
+        if v.blur > 0.01 and dev.screen_effects { try speed_blur{ &dev, strength = v.blur } }
+    }
+
+    // The GL state of full-screen passes: no blending, depth, culling or stencil.
+    fn post_state { mut dev: Device } {
+        dev.gl.disable{ cap = gl::SCISSOR_TEST }
+        dev.gl.disable{ cap = gl::BLEND }
+        dev.gl.disable{ cap = gl::DEPTH_TEST }
+        dev.gl.disable{ cap = gl::CULL_FACE }
+        dev.gl.disable{ cap = gl::STENCIL_TEST }
+        dev.gl.disable{ cap = gl::POLYGON_OFFSET_FILL }
+        dev.gl.depth_mask{ flag = gl::FALSE }
+        dev.state = unknown_state{}
+        dev.gl.bind_vertex_array{ array = dev.ui_vao }
+        dev.state.vao = dev.ui_vao
+    }
+
+    // One triangle over the viewport.
+    fn draw_fullscreen { mut dev: Device } {
+        dev.gl.draw_arrays{ mode = gl::TRIANGLES, first = 0, count = 3 }
+    }
+
+    // ---- bloom
+
+    // The bright part of the picture, blurred wide: down a chain of half-size levels (the first keeping only
+    // what is brighter than the threshold), then back up, each level adding the blurred one below it.
+    fn run_bloom { mut dev: Device, levels: usize } {
+        let t = dev.fxt
+        dev.gl.use_program{ program = dev.fxp.bloom_down }
+        let mut i: usize = 0
+        while i < levels {
+            dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = t.bloom_fbo[i] }
+            dev.gl.viewport{ x = 0, y = 0, width = t.bloom_w[i], height = t.bloom_h[i] }
+            let src = if i == 0 { t.color } else { t.bloom[i - 1] }
+            let sw = if i == 0 { t.width } else { t.bloom_w[i - 1] }
+            let sh = if i == 0 { t.height } else { t.bloom_h[i - 1] }
+            bind_unit{ &dev, unit = 0, target = gl::TEXTURE_2D, name = src }
+            dev.gl.uniform2f{ location = dev.fxp.bd_texel, v0 = 1.0 / @as(f32, sw), v1 = 1.0 / @as(f32, sh) }
+            dev.gl.uniform4f{ location = dev.fxp.bd_params, v0 = 0.9, v1 = 0.35, v2 = if i == 0 { 1.0 } else { 0.0 }, v3 = 0.0 }
+            draw_fullscreen{ &dev }
+            i = i + 1
+        }
+        dev.gl.use_program{ program = dev.fxp.bloom_up }
+        dev.gl.enable{ cap = gl::BLEND }
+        dev.gl.blend_func_separate{ sfactor_rgb = gl::ONE, dfactor_rgb = gl::ONE, sfactor_alpha = gl::ZERO, dfactor_alpha = gl::ONE }
+        i = levels - 1
+        while i > 0 {
+            dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = t.bloom_fbo[i - 1] }
+            dev.gl.viewport{ x = 0, y = 0, width = t.bloom_w[i - 1], height = t.bloom_h[i - 1] }
+            bind_unit{ &dev, unit = 0, target = gl::TEXTURE_2D, name = t.bloom[i] }
+            dev.gl.uniform2f{ location = dev.fxp.bu_texel, v0 = 1.0 / @as(f32, t.bloom_w[i]), v1 = 1.0 / @as(f32, t.bloom_h[i]) }
+            dev.gl.uniform1f{ location = dev.fxp.bu_radius, v0 = 1.0 }
+            draw_fullscreen{ &dev }
+            i = i - 1
+        }
+        dev.gl.disable{ cap = gl::BLEND }
+        dev.state.blend = -2
+    }
+
+    // ---- the finished picture
+
+    // The scene's light, the bloom, exposure, tone curve and grade, into `into` over the view's area.
+    fn run_composite { mut dev: Device, v: render::View, area: GlRect, into: u32, levels: usize } {
+        let t = dev.fxt
+        let e = dev.enhance
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = into }
+        dev.gl.viewport{ x = area.x, y = area.y, width = area.w, height = area.h }
+        dev.gl.use_program{ program = dev.fxp.composite }
+        bind_unit{ &dev, unit = 0, target = gl::TEXTURE_2D, name = t.color }
+        bind_unit{ &dev, unit = 1, target = gl::TEXTURE_2D, name = t.bloom[0] }
+        let graded = e.grade and material_map{ &dev, t = v.grade, unit = 2, cube = false } == 1
+        if not graded { _ = material_map{ &dev, t = null, unit = 2, cube = false } }
+        let strength = if e.bloom == 0 { 0.0 } else { 0.5 / @as(f32, levels) }
+        dev.gl.uniform4f{ location = dev.fxp.co_params, v0 = e.exposure * v.exposure, v1 = strength, v2 = if graded { 1.0 } else { 0.0 }, v3 = 1.0 }
+        dev.gl.uniform2f{ location = dev.fxp.co_size, v0 = 1.0 / @as(f32, t.width), v1 = 1.0 / @as(f32, t.height) }
+        draw_fullscreen{ &dev }
+    }
+}

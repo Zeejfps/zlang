@@ -437,7 +437,7 @@ namespace scene {
             let l = loaded_at{ sc = &sc, i = p.loaded }
             let instance = math::mat4::translation{ t = r.position }
             add_lights{ &frame, model = l.model, pose = p.pose, instance }
-            _ = mdl_render::add_draws{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = instance, materials = l.materials, time = sc.time }
+            _ = mdl_render::add_draws_look{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = instance, materials = l.materials, time = sc.time, look = null, cast = null, kind = render::DrawKind::room, ambient = 0 }
             sc.drawn_rooms = sc.drawn_rooms + 1
         }
         // Grass stands on the floor of the rooms it is seen in: it comes with them (the eye and the way it looks are the view's).

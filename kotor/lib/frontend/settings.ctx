@@ -19,6 +19,23 @@ namespace frontend {
         texture_quality: i32,       // 0 low .. 2 high
         gui_scale: f32,             // GUI Scale (ours): 0 fits the window (auto), 1 the original's pixel-for-pixel GUI, else a factor
         frame_limit: i32,           // Frame Limit (ours): frames per second at most, 0 none
+        // [Enhanced Graphics] (ours: docs/design/enhanced-render.md). Levels 0 off, 1 low, 2 high.
+        fx_original: bool,          // Original Look: every enhancement off, the original renderer's picture
+        fx_bloom: i32,
+        fx_room_light: i32,         // 0 or 1
+        fx_shadows: i32,            // 0 the original's planar shadows, 1 shadow maps, 2 soft shadow maps
+        fx_ao: i32,
+        fx_lightmaps: bool,         // smooth (bicubic) lightmaps
+        fx_dof: i32,
+        fx_reflections: i32,
+        fx_shafts: bool,
+        fx_fog: bool,               // height fog
+        fx_grade: bool,             // the planets' colour grades
+        fx_edges: i32,              // edge smoothing after the picture, without multisampling: 0 off, 1 FXAA, 2 high
+        fx_foliage: bool,           // alpha-to-coverage under multisampling
+        fx_tessellation: i32,
+        fx_timing: bool,            // GPU time per pass, shown over the game
+        fx_exposure: f32,           // not on the panel
         // [Sound Options]
         music: i32, voice: i32, effects: i32, movie: i32,       // 0..100
         eax: bool, force_software: bool,
@@ -43,6 +60,9 @@ namespace frontend {
             width = 1280, height = 720, window_mode = 0, refresh = 0, vsync = true, gamma = 57,
             shadows = true, soft_shadows = false, grass = true, frame_buffer = true, emitters = true,
             anisotropy = 3, antialias = 0, texture_quality = 2, gui_scale = 0.0, frame_limit = 0,
+            fx_original = false, fx_bloom = 2, fx_room_light = 1, fx_shadows = 2, fx_ao = 2, fx_lightmaps = true, fx_dof = 2,
+            fx_reflections = 2, fx_shafts = true, fx_fog = true, fx_grade = true, fx_edges = 1, fx_foliage = true,
+            fx_tessellation = 0, fx_timing = false, fx_exposure = 1.0,
             music = 85, voice = 85, effects = 85, movie = 100, eax = false, force_software = false,
             difficulty = 1, mouse_sensitivity = 33, reverse_buttons = false,
             mouse_look = false, auto_level_up = false, autosave = true, reverse_minigame_y = false, combat_movement = true,
@@ -83,6 +103,7 @@ namespace frontend {
         let s: []u8 = "Sound Options"
         let o: []u8 = "Game Options"
         let a: []u8 = "Autopause Options"
+        let x: []u8 = "Enhanced Graphics"
         return Settings{
             width = clamp_i{ v = get_int{ data, section = g, key = "Width", fallback = d.width }, lo = 640, hi = 16384 },
             height = clamp_i{ v = get_int{ data, section = g, key = "Height", fallback = d.height }, lo = 480, hi = 16384 },
@@ -101,6 +122,22 @@ namespace frontend {
             texture_quality = clamp_i{ v = get_int{ data, section = g, key = "Texture Quality", fallback = d.texture_quality }, lo = 0, hi = 2 },
             gui_scale = get_float{ data, section = g, key = "GUI Scale", fallback = d.gui_scale },
             frame_limit = clamp_i{ v = get_int{ data, section = g, key = "Frame Limit", fallback = d.frame_limit }, lo = 0, hi = 1000 },
+            fx_original = get_bool{ data, section = x, key = "Original Look", fallback = d.fx_original },
+            fx_bloom = clamp_i{ v = get_int{ data, section = x, key = "Bloom", fallback = d.fx_bloom }, lo = 0, hi = 2 },
+            fx_room_light = clamp_i{ v = get_int{ data, section = x, key = "Room Light", fallback = d.fx_room_light }, lo = 0, hi = 1 },
+            fx_shadows = clamp_i{ v = get_int{ data, section = x, key = "Shadow Maps", fallback = d.fx_shadows }, lo = 0, hi = 2 },
+            fx_ao = clamp_i{ v = get_int{ data, section = x, key = "Ambient Occlusion", fallback = d.fx_ao }, lo = 0, hi = 2 },
+            fx_lightmaps = get_bool{ data, section = x, key = "Smooth Lightmaps", fallback = d.fx_lightmaps },
+            fx_dof = clamp_i{ v = get_int{ data, section = x, key = "Depth Of Field", fallback = d.fx_dof }, lo = 0, hi = 2 },
+            fx_reflections = clamp_i{ v = get_int{ data, section = x, key = "Reflections", fallback = d.fx_reflections }, lo = 0, hi = 2 },
+            fx_shafts = get_bool{ data, section = x, key = "Light Shafts", fallback = d.fx_shafts },
+            fx_fog = get_bool{ data, section = x, key = "Height Fog", fallback = d.fx_fog },
+            fx_grade = get_bool{ data, section = x, key = "Colour Grade", fallback = d.fx_grade },
+            fx_edges = clamp_i{ v = get_int{ data, section = x, key = "Edge Smoothing", fallback = d.fx_edges }, lo = 0, hi = 2 },
+            fx_foliage = get_bool{ data, section = x, key = "Foliage AA", fallback = d.fx_foliage },
+            fx_tessellation = clamp_i{ v = get_int{ data, section = x, key = "Tessellation", fallback = d.fx_tessellation }, lo = 0, hi = 2 },
+            fx_timing = get_bool{ data, section = x, key = "GPU Timing", fallback = d.fx_timing },
+            fx_exposure = math::clamp{ x = get_float{ data, section = x, key = "Exposure", fallback = d.fx_exposure }, lo = 0.25, hi = 4.0 },
             music = clamp_i{ v = get_int{ data, section = s, key = "Music Volume", fallback = d.music }, lo = 0, hi = 100 },
             voice = clamp_i{ v = get_int{ data, section = s, key = "Voiceover Volume", fallback = d.voice }, lo = 0, hi = 100 },
             effects = clamp_i{ v = get_int{ data, section = s, key = "Sound Effects Volume", fallback = d.effects }, lo = 0, hi = 100 },
@@ -155,6 +192,23 @@ namespace frontend {
         return seen
     }
 
+    // What the Enhanced Graphics options ask of the renderer.
+    fn enhance_of { s: Settings } -> render::Enhance {
+        if s.fx_original {
+            // Timing still measures the original's passes, to compare.
+            let mut o = render::original_look{}
+            o.timing = s.fx_timing
+            return o
+        }
+        return render::Enhance{
+            on = true, bloom = @trunc(u8, s.fx_bloom), exposure = s.fx_exposure, room_light = @trunc(u8, s.fx_room_light),
+            shadows = @trunc(u8, s.fx_shadows), ao = @trunc(u8, s.fx_ao), smooth_lightmaps = s.fx_lightmaps, dof = @trunc(u8, s.fx_dof),
+            reflections = @trunc(u8, s.fx_reflections), shafts = s.fx_shafts, height_fog = s.fx_fog, grade = s.fx_grade,
+            post_aa = @trunc(u8, s.fx_edges), alpha_coverage = s.fx_foliage, tessellation = @trunc(u8, s.fx_tessellation),
+            timing = s.fx_timing,
+        }
+    }
+
     // Reads the options file at `path`; the defaults when there is none or it can't be read.
     fn load_settings { mut fs: Fs, heap: *mut heap::Heap, path: []u8 } -> Settings {
         let bytes = fs::read_all(heap::Heap){ &fs, heap, realloc = heap::alloc, path } iferr { return default_settings{} }
@@ -189,6 +243,23 @@ namespace frontend {
         try put_i{ &b, key = "Texture Quality", v = s.texture_quality }
         try @fmt(&b, "GUI Scale={}\n", s.gui_scale)
         try put_i{ &b, key = "Frame Limit", v = s.frame_limit }
+        try @fmt(&b, "\n[Enhanced Graphics]\n")
+        try put_b{ &b, key = "Original Look", v = s.fx_original }
+        try put_i{ &b, key = "Bloom", v = s.fx_bloom }
+        try put_i{ &b, key = "Room Light", v = s.fx_room_light }
+        try put_i{ &b, key = "Shadow Maps", v = s.fx_shadows }
+        try put_i{ &b, key = "Ambient Occlusion", v = s.fx_ao }
+        try put_b{ &b, key = "Smooth Lightmaps", v = s.fx_lightmaps }
+        try put_i{ &b, key = "Depth Of Field", v = s.fx_dof }
+        try put_i{ &b, key = "Reflections", v = s.fx_reflections }
+        try put_b{ &b, key = "Light Shafts", v = s.fx_shafts }
+        try put_b{ &b, key = "Height Fog", v = s.fx_fog }
+        try put_b{ &b, key = "Colour Grade", v = s.fx_grade }
+        try put_i{ &b, key = "Edge Smoothing", v = s.fx_edges }
+        try put_b{ &b, key = "Foliage AA", v = s.fx_foliage }
+        try put_i{ &b, key = "Tessellation", v = s.fx_tessellation }
+        try put_b{ &b, key = "GPU Timing", v = s.fx_timing }
+        try @fmt(&b, "Exposure={}\n", s.fx_exposure)
         try @fmt(&b, "\n[Sound Options]\n")
         try put_i{ &b, key = "Music Volume", v = s.music }
         try put_i{ &b, key = "Voiceover Volume", v = s.voice }

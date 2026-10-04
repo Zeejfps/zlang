@@ -160,6 +160,9 @@ namespace gl {
         renderbuffer_storage_multisample: extern fn{ target: u32, samples: i32, internal_format: u32, width: i32, height: i32 },
         blit_framebuffer: extern fn{ src_x0: i32, src_y0: i32, src_x1: i32, src_y1: i32, dst_x0: i32, dst_y0: i32, dst_x1: i32, dst_y1: i32, mask: u32, filter: u32 },
         draw_buffers: extern fn{ n: i32, bufs: *u32 },
+        clear_bufferfv: extern fn{ buffer: u32, drawbuffer: i32, value: *f32 },
+        clear_bufferfi: extern fn{ buffer: u32, drawbuffer: i32, depth: f32, stencil: i32 },
+        patch_parameteri: extern fn{ pname: u32, value: i32 },
         draw_buffer: extern fn{ buf: u32 },
         read_buffer: extern fn{ src: u32 },
         read_pixels: extern fn{ x: i32, y: i32, width: i32, height: i32, format: u32, kind: u32, pixels: *mut u8 },
@@ -314,6 +317,9 @@ namespace gl {
             renderbuffer_storage_multisample = @cast(_, try proc{ get_proc, name = "glRenderbufferStorageMultisample" }),
             blit_framebuffer = @cast(_, try proc{ get_proc, name = "glBlitFramebuffer" }),
             draw_buffers = @cast(_, try proc{ get_proc, name = "glDrawBuffers" }),
+            clear_bufferfv = @cast(_, try proc{ get_proc, name = "glClearBufferfv" }),
+            clear_bufferfi = @cast(_, try proc{ get_proc, name = "glClearBufferfi" }),
+            patch_parameteri = @cast(_, try proc{ get_proc, name = "glPatchParameteri" }),
             draw_buffer = @cast(_, try proc{ get_proc, name = "glDrawBuffer" }),
             read_buffer = @cast(_, try proc{ get_proc, name = "glReadBuffer" }),
             read_pixels = @cast(_, try proc{ get_proc, name = "glReadPixels" }),
@@ -493,6 +499,48 @@ namespace gl {
         return program
     }
 
+    // A program of any stages (vertex, tessellation control and evaluation, fragment), each from its sources.
+    struct Stage { kind: u32, source: []c::String }
+
+    fn link_stages { mut gl: Gl, stages: []Stage, log: []mut u8 } -> !u32 {
+        let mut shaders: [5]u32 = [0; 5]
+        let n = if stages.len < 5 { stages.len } else { 5 }
+        let mut i: usize = 0
+        while i < n {
+            shaders[i] = compile{ &gl, stage = stages[i].kind, source = stages[i].source, log } iferr err{ error } {
+                let mut k: usize = 0
+                while k < i {
+                    gl.delete_shader{ shader = shaders[k] }
+                    k = k + 1
+                }
+                return error
+            }
+            i = i + 1
+        }
+        let program = gl.create_program{}
+        i = 0
+        while i < n {
+            gl.attach_shader{ program, shader = shaders[i] }
+            i = i + 1
+        }
+        gl.link_program{ program }
+        i = 0
+        while i < n {
+            gl.detach_shader{ program, shader = shaders[i] }
+            gl.delete_shader{ shader = shaders[i] }
+            i = i + 1
+        }
+        let mut ok: i32 = 0
+        gl.get_programiv{ program, pname = LINK_STATUS, params = &ok }
+        if ok == 0 {
+            let mut len: i32 = 0
+            if log.len > 0 { gl.get_program_info_log{ program, buf_size = @as(i32, log.len), length = &len, info_log = log.ptr } }
+            gl.delete_program{ program }
+            return link_failed{ log_len = @as(usize, len) }
+        }
+        return program
+    }
+
     // One new name from a glGen* function.
     fn gen_buffer { mut gl: Gl } -> u32 { let mut id: u32 = 0; gl.gen_buffers{ n = 1, buffers = &id }; return id }
     fn gen_vertex_array { mut gl: Gl } -> u32 { let mut id: u32 = 0; gl.gen_vertex_arrays{ n = 1, arrays = &id }; return id }
@@ -646,6 +694,7 @@ namespace gl {
     const SCISSOR_TEST: u32 = 0x0C11
     const POLYGON_OFFSET_FILL: u32 = 0x8037
     const MULTISAMPLE: u32 = 0x809D
+    const SAMPLE_ALPHA_TO_COVERAGE: u32 = 0x809E
     const FRAMEBUFFER_SRGB: u32 = 0x8DB9
     const TEXTURE_CUBE_MAP_SEAMLESS: u32 = 0x884F
     const PROGRAM_POINT_SIZE: u32 = 0x8642
@@ -697,6 +746,10 @@ namespace gl {
     const VERTEX_SHADER: u32 = 0x8B31
     const FRAGMENT_SHADER: u32 = 0x8B30
     const GEOMETRY_SHADER: u32 = 0x8DD9
+    const TESS_CONTROL_SHADER: u32 = 0x8E88
+    const TESS_EVALUATION_SHADER: u32 = 0x8E87
+    const PATCHES: u32 = 0x000E
+    const PATCH_VERTICES: u32 = 0x8E72
     const COMPILE_STATUS: u32 = 0x8B81
     const LINK_STATUS: u32 = 0x8B82
     const VALIDATE_STATUS: u32 = 0x8B83
@@ -738,6 +791,8 @@ namespace gl {
     const TEXTURE_LOD_BIAS: u32 = 0x8501
     const TEXTURE_COMPARE_MODE: u32 = 0x884C
     const TEXTURE_COMPARE_FUNC: u32 = 0x884D
+    const COMPARE_REF_TO_TEXTURE: u32 = 0x884E
+    const TEXTURE_BORDER_COLOR: u32 = 0x1004
     const TEXTURE_SWIZZLE_R: u32 = 0x8E42
     const TEXTURE_SWIZZLE_G: u32 = 0x8E43
     const TEXTURE_SWIZZLE_B: u32 = 0x8E44
@@ -773,6 +828,10 @@ namespace gl {
     const R16F: u32 = 0x822D
     const R32F: u32 = 0x822E
     const RGBA16F: u32 = 0x881A
+    const RG16F: u32 = 0x822F
+    const R11F_G11F_B10F: u32 = 0x8C3A
+    const RGB10_A2: u32 = 0x8059
+    const UNSIGNED_INT_2_10_10_10_REV: u32 = 0x8368
     const RGBA32F: u32 = 0x8814
     const DEPTH_COMPONENT16: u32 = 0x81A5
     const DEPTH_COMPONENT24: u32 = 0x81A6
@@ -795,6 +854,10 @@ namespace gl {
     const RENDERBUFFER: u32 = 0x8D41
     const COLOR_ATTACHMENT0: u32 = 0x8CE0
     const COLOR_ATTACHMENT1: u32 = 0x8CE1
+    const COLOR_ATTACHMENT2: u32 = 0x8CE2
+    const COLOR: u32 = 0x1800
+    const DEPTH: u32 = 0x1801
+    const STENCIL: u32 = 0x1802
     const DEPTH_ATTACHMENT: u32 = 0x8D00
     const STENCIL_ATTACHMENT: u32 = 0x8D20
     const DEPTH_STENCIL_ATTACHMENT: u32 = 0x821A

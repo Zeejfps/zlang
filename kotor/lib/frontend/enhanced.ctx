@@ -1,0 +1,183 @@
+// The Enhanced Graphics panel (ours; docs/design/enhanced-render.md): opened from the Graphics panel as the
+// Advanced Graphics panel is, and built the same way, from the original's own panel (optgraphicsadv.gui):
+// its choice buttons, arrows and description pane, laid out again as one column of rows. Each row cycles
+// one option of Settings' [Enhanced Graphics]; every change applies at once (the engine's display::apply hands
+// the options to the device), Cancel puts back what the panel opened with, and closing it writes the file.
+namespace frontend {
+    const SCR_GRAPHICS_FX: u32 = 16
+
+    const FX_ROWS: usize = 15
+
+    const FX_TAGS: [15][]u8 = [
+        "BTN_FX0", "BTN_FX1", "BTN_FX2", "BTN_FX3", "BTN_FX4", "BTN_FX5", "BTN_FX6", "BTN_FX7",
+        "BTN_FX8", "BTN_FX9", "BTN_FX10", "BTN_FX11", "BTN_FX12", "BTN_FX13", "BTN_FX14",
+    ]
+    const FX_LEFT: [15][]u8 = [
+        "BTN_FX0LEFT", "BTN_FX1LEFT", "BTN_FX2LEFT", "BTN_FX3LEFT", "BTN_FX4LEFT", "BTN_FX5LEFT", "BTN_FX6LEFT", "BTN_FX7LEFT",
+        "BTN_FX8LEFT", "BTN_FX9LEFT", "BTN_FX10LEFT", "BTN_FX11LEFT", "BTN_FX12LEFT", "BTN_FX13LEFT", "BTN_FX14LEFT",
+    ]
+    const FX_RIGHT: [15][]u8 = [
+        "BTN_FX0RIGHT", "BTN_FX1RIGHT", "BTN_FX2RIGHT", "BTN_FX3RIGHT", "BTN_FX4RIGHT", "BTN_FX5RIGHT", "BTN_FX6RIGHT", "BTN_FX7RIGHT",
+        "BTN_FX8RIGHT", "BTN_FX9RIGHT", "BTN_FX10RIGHT", "BTN_FX11RIGHT", "BTN_FX12RIGHT", "BTN_FX13RIGHT", "BTN_FX14RIGHT",
+    ]
+    const FX_LABELS: [15][]u8 = [
+        "Original Look", "Bloom", "Room Light", "Shadows", "Occlusion", "Lightmaps", "Focus Blur", "Reflections",
+        "Light Shafts", "Height Fog", "Colour Grade", "Edge AA", "Foliage AA", "Tessellation", "GPU Timing",
+    ]
+    const FX_DESC: [15][]u8 = [
+        "ORIGINAL LOOK: Every enhancement off: the game as the original draws it, pixel for pixel. The other options keep their settings for when it is off again.",
+        "BLOOM: Light brighter than white glows: lightsaber blades, blaster bolts, holograms, screens, the Star Maps and bright lamps. The picture keeps the original's colours; only the brightest light is softened.\n\nLOW: a smaller glow, for slower graphics cards.",
+        "ROOM LIGHT: Characters and objects take the light of the room around them, as its lightmaps show it: darker in shadow, tinted by coloured walls and lit from below by a bright floor, instead of one flat light for the whole area.",
+        "SHADOWS: PLANAR is the original's shadow under each character. LOW: shadow maps from the sun and the strongest lights, cast by characters, placeables and doors onto the rooms and onto each other. SOFT: the same with soft edges that widen away from what casts them.",
+        "OCCLUSION: Corners, creases and the ground under characters darken softly where little light can reach (ambient occlusion). Light sources and glowing surfaces are left alone.\n\nLOW: at a quarter of the pixels.",
+        "LIGHTMAPS: SMOOTH filters the rooms' baked light so its pixels no longer show as blocks on walls and floors.",
+        "FOCUS BLUR: In conversations the speaker is sharp and the background softly blurred, changing focus smoothly with each cut. Normal play is not blurred.",
+        "REFLECTIONS: Shiny floors, armour and metal reflect what is on the screen around them; where nothing is, the original's reflection map shows.",
+        "LIGHT SHAFTS: Outdoors, rays of sunlight stream past trees and buildings toward the camera.",
+        "HEIGHT FOG: Mist that gathers low, in valleys and over the ground, layered with each area's own fog.",
+        "COLOUR GRADE: A subtle colour mood for each planet, kept close to the original's palette.",
+        "EDGE AA: Smooths jagged edges after the picture is drawn when Anti-Aliasing is off. FXAA is quick; HIGH searches further along each edge.",
+        "FOLIAGE AA: With Anti-Aliasing on, the edges of grass, leaves, hair and fences are smoothed too.",
+        "TESSELLATION: Rounder silhouettes for characters' heads and shoulders, subdividing their models near the camera.",
+        "GPU TIMING: Shows how long the graphics card spends on each step of the picture, in milliseconds.",
+    ]
+
+    fn fx_levels { row: usize } -> i32 {
+        return match row {
+            1 | 3 | 4 | 6 | 7 | 11 | 13 => { 3 }
+            else => { 2 }
+        }
+    }
+
+    fn fx_get { s: Settings, row: usize } -> i32 {
+        return match row {
+            0 => { if s.fx_original { 1 } else { 0 } }
+            1 => { s.fx_bloom }
+            2 => { s.fx_room_light }
+            3 => { s.fx_shadows }
+            4 => { s.fx_ao }
+            5 => { if s.fx_lightmaps { 1 } else { 0 } }
+            6 => { s.fx_dof }
+            7 => { s.fx_reflections }
+            8 => { if s.fx_shafts { 1 } else { 0 } }
+            9 => { if s.fx_fog { 1 } else { 0 } }
+            10 => { if s.fx_grade { 1 } else { 0 } }
+            11 => { s.fx_edges }
+            12 => { if s.fx_foliage { 1 } else { 0 } }
+            13 => { s.fx_tessellation }
+            else => { if s.fx_timing { 1 } else { 0 } }
+        }
+    }
+
+    fn fx_set { mut s: Settings, row: usize, v: i32 } {
+        let on = v != 0
+        match row {
+            0 => { s.fx_original = on }
+            1 => { s.fx_bloom = v }
+            2 => { s.fx_room_light = v }
+            3 => { s.fx_shadows = v }
+            4 => { s.fx_ao = v }
+            5 => { s.fx_lightmaps = on }
+            6 => { s.fx_dof = v }
+            7 => { s.fx_reflections = v }
+            8 => { s.fx_shafts = on }
+            9 => { s.fx_fog = on }
+            10 => { s.fx_grade = on }
+            11 => { s.fx_edges = v }
+            12 => { s.fx_foliage = on }
+            13 => { s.fx_tessellation = v }
+            else => { s.fx_timing = on }
+        }
+    }
+
+    fn fx_value_text { row: usize, v: i32 } -> []u8 {
+        if row == 3 { return if v == 0 { "Planar" } else if v == 1 { "Low" } else { "Soft" } }
+        if row == 5 { return if v == 0 { "Original" } else { "Smooth" } }
+        if row == 11 { return if v == 0 { "Off" } else if v == 1 { "FXAA" } else { "High" } }
+        if fx_levels{ row } == 3 { return if v == 0 { "Off" } else if v == 1 { "Low" } else { "High" } }
+        return if v == 0 { "Off" } else { "On" }
+    }
+
+    // "Bloom: High".
+    fn fx_row_text { s: Settings, row: usize, into: []mut u8 } -> []u8 {
+        let mut n = copy_into{ dst = into, src = FX_LABELS[row] }
+        n = n + copy_into{ dst = into[n..], src = ": " }
+        n = n + copy_into{ dst = into[n..], src = fx_value_text{ row, v = fx_get{ s, row } } }
+        return into[..n]
+    }
+
+    // Lays the panel out (once: Set Default binds it again) and shows the settings.
+    fn bind_enhanced { mut fe: Front, mut g: gui::Gui, p: u32 } -> ! {
+        if not gui::has_control{ &g, panel = p, tag = FX_TAGS[0] } {
+            // One column of rows where the original has six, the description pane where it was.
+            let mut r: usize = 0
+            while r < FX_ROWS {
+                let y = 88 + (41 * @as(i32, r)) / 2
+                _ = try gui::clone_control{ &g, panel = p, from = "BTN_ANTIALIASLEFT", tag = FX_LEFT[r], x = 60, y }
+                _ = try gui::clone_control{ &g, panel = p, from = "BTN_ANTIALIAS", tag = FX_TAGS[r], x = 80, y }
+                _ = try gui::clone_control{ &g, panel = p, from = "BTN_ANTIALIASRIGHT", tag = FX_RIGHT[r], x = 278, y }
+                gui::set_extent{ &g, panel = p, tag = FX_LEFT[r], x = 60, y, w = 20, h = 20 }
+                gui::set_extent{ &g, panel = p, tag = FX_TAGS[r], x = 80, y, w = 198, h = 20 }
+                gui::set_extent{ &g, panel = p, tag = FX_RIGHT[r], x = 278, y, w = 20, h = 20 }
+                r = r + 1
+            }
+            let originals: [12][]u8 = [
+                "BTN_TEXQUAL", "BTN_TEXQUALLEFT", "BTN_TEXQUALRIGHT", "BTN_ANTIALIAS", "BTN_ANTIALIASLEFT", "BTN_ANTIALIASRIGHT",
+                "BTN_ANISOTROPY", "BTN_ANISOTROPYLEFT", "BTN_ANISOTROPYRIGHT", "CB_FRAMEBUFF", "CB_SOFTSHADOWS", "CB_VSYNC",
+            ]
+            let mut k: usize = 0
+            while k < 12 {
+                gui::set_visible{ &g, panel = p, tag = originals[k], visible = false }
+                k = k + 1
+            }
+            try gui::set_text{ &g, panel = p, tag = "LBL_TITLE", text = "Enhanced Graphics Options" }
+        }
+        try sync_enhanced{ &fe, &g, p }
+    }
+
+    fn sync_enhanced { mut fe: Front, mut g: gui::Gui, p: u32 } -> ! {
+        let mut buf: [40]u8
+        let mut r: usize = 0
+        while r < FX_ROWS {
+            try gui::set_text{ &g, panel = p, tag = FX_TAGS[r], text = fx_row_text{ s = fe.settings, row = r, into = buf[..] } }
+            r = r + 1
+        }
+    }
+
+    // The row a tag of the panel belongs to, and which way it turns it: -1 the left arrow, 1 the button or the right arrow.
+    struct FxHit { row: usize, step: i32 }
+
+    fn fx_hit { tag: []u8 } -> ?FxHit {
+        let mut r: usize = 0
+        while r < FX_ROWS {
+            if slice::eq_bytes{ a = tag, b = FX_TAGS[r] } or slice::eq_bytes{ a = tag, b = FX_RIGHT[r] } { return FxHit{ row = r, step = 1 } }
+            if slice::eq_bytes{ a = tag, b = FX_LEFT[r] } { return FxHit{ row = r, step = -1 } }
+            r = r + 1
+        }
+        return null
+    }
+
+    // A click on the panel: the row's option turns one step, and applies.
+    fn enhanced_click { mut fe: Front, mut g: gui::Gui, p: u32, tag: []u8 } -> ! {
+        let hit = fx_hit{ tag } ifnull { return }
+        let count = fx_levels{ row = hit.row }
+        fx_set{ s = &fe.settings, row = hit.row, v = cycle{ v = fx_get{ s = fe.settings, row = hit.row }, count, step = hit.step } }
+        fe.display_pending = true
+        try sync_enhanced{ &fe, &g, p }
+    }
+
+    fn enhanced_description { tag: []u8 } -> ?[]u8 {
+        let hit = fx_hit{ tag } ifnull { return null }
+        return FX_DESC[hit.row]
+    }
+
+    fn enhanced_defaults { mut fe: Front } {
+        let d = default_settings{}
+        let mut r: usize = 0
+        while r < FX_ROWS {
+            fx_set{ s = &fe.settings, row = r, v = fx_get{ s = d, row = r } }
+            r = r + 1
+        }
+        fe.display_pending = true
+    }
+}
