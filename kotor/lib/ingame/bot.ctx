@@ -192,7 +192,22 @@ namespace bot {
                 }
             }
         }
+        // A stop to talk to is a click on the creature: the leader walks up to it by itself (round a counter, through a door)
+        // and talks, so the order is given once it is near.
+        if talk and not b.talked and dist < 8.0 and obj::creature{ o = t } != null {
+            b.talked = true
+            let mut a = actions::make{ kind = actions::Kind::dialog_object }
+            a.params[0] = actions::Param::object{ id = t.id }
+            actions::clear_all{ &w, id = lead }
+            _ = actions::add{ &w, id = lead, action = a, force = true }
+            return
+        }
         if me.actions.len > 0 { return }
+        // The conversation ordered above has been held (the top of this function waits out one that is on): the stop is done.
+        if talk and b.talked {
+            advance{ &b }
+            return
+        }
         if t.ext is door{ d } {
             if d.state == obj::DoorState::closed and b.seen_open and d.linked_flags == 0 {
                 advance{ &b }
