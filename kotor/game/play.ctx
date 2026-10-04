@@ -135,6 +135,7 @@ namespace play {
         let mut last = sdl::counter{ &sdl }
         let mut quit = false
         let mut wipe = death::make{}            // the party wipe's slow motion, camera, box and fade (game/death.ctx)
+        let mut movie_queue = movies::make{}    // the movies the frame's notes asked for (game/movies.ctx)
         let mut want_save: []u8 = ""            // a save asked for this frame: its folder name
         let mut sw_module: [24]u8 = [0; 24]     // `savewhen MODULE NAME`: the save waits for the story to be in MODULE and quiet for 2 s
         let mut sw_name: [24]u8 = [0; 24]
@@ -410,9 +411,15 @@ namespace play {
                 dlgview::take_note{ v = &dview, w = &w, g = &ui.gui, dev = &dev, note = notes[n] }
                 vfx::take{ v = &vx, &sc, &w, &dev, note = notes[n] }
                 if pz_game::request_of{ note = notes[n] } is some{ value = asked } { pazaak_asked = asked }
+                movies::take{ q = &movie_queue, note = notes[n] }
                 n = n + 1
             }
             outbox::clear{ out = &w.out }
+            // A script asked for movies (PlayMovie, StartNewModule's, PlayMovieQueue): they play over the frozen game (game/movies.ctx).
+            if movies::pending{ q = &movie_queue } {
+                if try movies::play_all{ &sdl, &w, &dev, &frame, ui, mixer, adev, silent, &disp, q = &movie_queue, headless = opts.headless, no_render = opts.no_render, game = opts.game } { quit = true }
+                last = sdl::counter{ &sdl }
+            }
             // HOOK(minigames): a script asked for a game of pazaak; the visit takes over the frame (game/pazaak.ctx).
             if pazaak_asked is some{ value = asked } {
                 if opts.headless {

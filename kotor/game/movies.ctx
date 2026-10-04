@@ -1,0 +1,168 @@
+// The movies of the game itself: PlayMovie, the movie arguments of StartNewModule (the Leviathan's capture,
+// the Revan revelation, the take-offs and landings) and QueueMovie/PlayMovieQueue post notes; this file
+// collects them as the frame's notes go by and plays them one after another over the frozen game before
+// the frame goes on, as the front end plays the start-up movies (lib/frontend/movie). The picture and sound are
+// the Bink player's (lib/frontend/movie, lib/video); Escape, Return, Space or a click skips a movie.
+//
+// A headless run (--headless, --no-render) has no one to show a movie to: it is decoded at once with a fixed step, so
+// the log says what each movie was (size, frames, how many were decoded and shown, the sound) and that it played to its end.
+namespace movies {
+    const MAX: usize = 8
+    const NAME: usize = 24
+
+    struct Queue {
+        names: [8][24]u8,           // the movies to play this frame, in order
+        lens: [8]usize,
+        count: usize,
+        held: [8][24]u8,            // QueueMovie's movies, until PlayMovieQueue
+        held_lens: [8]usize,
+        held_count: usize,
+        tables: ?*bink_tables::Tables,  // the codec's tables, read from binkw32.dll on the first movie (heap)
+    }
+
+    fn make {} -> Queue {
+        return Queue{
+            names = [[0; 24]; 8], lens = [0; 8], count = 0, held = [[0; 24]; 8], held_lens = [0; 8], held_count = 0, tables = null,
+        }
+    }
+
+    fn pending { q: *Queue } -> bool { return q.count > 0 }
+
+    fn copy_name { dst: []mut u8, src: []u8 } -> usize {
+        let n = if src.len > dst.len { dst.len } else { src.len }
+        let mut i: usize = 0
+        while i < n {
+            dst[i] = src[i]
+            i = i + 1
+        }
+        return n
+    }
+
+    // The outbox note of a movie: PlayMovie and StartNewModule's play at once, QueueMovie's wait for PlayMovieQueue.
+    fn take { mut q: Queue, note: outbox::Note } {
+        match note {
+            movie{ name } => {
+                if q.count < MAX {
+                    let mut n = name
+                    q.lens[q.count] = copy_name{ dst = q.names[q.count][..], src = resref::bytes{ r = &n } }
+                    q.count = q.count + 1
+                }
+            }
+            queue_movie{ name, skippable } => {
+                if q.held_count < MAX {
+                    let mut n = name
+                    q.held_lens[q.held_count] = copy_name{ dst = q.held[q.held_count][..], src = resref::bytes{ r = &n } }
+                    q.held_count = q.held_count + 1
+                }
+            }
+            play_movie_queue{ separate_skips } => {
+                let mut i: usize = 0
+                while i < q.held_count and q.count < MAX {
+                    q.lens[q.count] = copy_name{ dst = q.names[q.count][..], src = q.held[i][..q.held_lens[i]] }
+                    q.count = q.count + 1
+                    i = i + 1
+                }
+                q.held_count = 0
+            }
+            else => {}
+        }
+    }
+
+    // Plays the movies of the queue and empties it. True when the window was closed meanwhile.
+    fn play_all {
+        mut sdl: sdl::Sdl, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame, ui: *mut ingame::Ingame,
+        mixer: *mut mix::Mixer, adev: ?*mut audio::Device, silent: []mut i16, mut disp: display::Display, mut q: Queue, headless: bool, no_render: bool, game: []u8,
+    } -> !bool {
+        let mut k: usize = 0
+        let mut closed = false
+        while k < q.count and not closed {
+            let mut name: [24]u8 = q.names[k]
+            let len = q.lens[k]
+            k = k + 1
+            if len == 0 { continue }
+            closed = try play_one{ &sdl, &w, &dev, &frame, ui, mixer, adev, silent, &disp, &q, name = name[..len], headless, no_render, game }
+        }
+        q.count = 0
+        return closed
+    }
+
+    fn play_one {
+        mut sdl: sdl::Sdl, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame, ui: *mut ingame::Ingame,
+        mixer: *mut mix::Mixer, adev: ?*mut audio::Device, silent: []mut i16, mut disp: display::Display, mut q: Queue, name: []u8, headless: bool, no_render: bool, game: []u8,
+    } -> !bool {
+        if q.tables == null {
+            let loaded = movie::load_tables(heap::Heap){ fs = &w.fs, realloc = heap::alloc, heap = w.heap, game } iferr err{ error } {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "movie {}: no codec tables ({})\n", name, error)
+                return false
+            }
+            q.tables = alloc::new(bink_tables::Tables, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = loaded } iferr { return false }
+        }
+        let tables = q.tables ifnull { return false }
+        let mut p = movie::open(heap::Heap){ fs = &w.fs, &dev, realloc = heap::alloc, heap = w.heap, tables, mixer = mixer, game, name } iferr err{ error } {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "movie {}: cannot be opened ({})\n", name, error)
+            return false
+        }
+        let head = p.movie.header
+        world::prefix{ w = &w }
+        _ = @fmt(&w.io, "movie {}: {}x{}, {} frames at {} / {}, sound {} channels at {} Hz\n", name, head.width, head.height, head.frames, head.rate_num, head.rate_den, p.movie.audio_channels, p.movie.audio_rate)
+        // The game's own sound stops for the movie (docs/design/audio.md).
+        mix::set_group_paused{ m = mixer, group = mix::Group::music, paused = true }
+        mix::set_group_paused{ m = mixer, group = mix::Group::voice, paused = true }
+        mix::set_group_paused{ m = mixer, group = mix::Group::sfx, paused = true }
+        let freq = sdl::counter_frequency{ &sdl }
+        let mut last = sdl::counter{ &sdl }
+        let mut closed = false
+        let mut skipped = false
+        let mut guard: u32 = 0
+        while true {
+            if headless {
+                // Nobody watches: a fixed step, the sound's clock left out so the run repeats.
+                mix::render{ m = mixer, into = silent[..2944] }
+                if movie::update{ fs = &w.fs, &sdl, &dev, &p, output = null, dt = 1.0 / 30.0, audio_clock = false } == movie::State::finished { break }
+                guard = guard + 1
+                if guard > 200000 { break }
+                continue
+            }
+            while true {
+                let polled = sdl::poll{ &sdl } ifnull { break }
+                display::note_event{ d = &disp, ev = polled }
+                if polled is resized {
+                    if display::on_resized{ d = &disp, &dev, &sdl } {
+                        ingame::set_gui_scale{ ui, scale = disp.applied.gui_scale }
+                        ingame::relayout{ ui, &w, &dev, width = @as(i32, disp.render.width), height = @as(i32, disp.render.height) }
+                    }
+                    continue
+                }
+                if polled is key{ down, keycode } and down and (keycode == sdl::key::ESCAPE or keycode == sdl::key::RETURN or keycode == sdl::key::SPACE) { skipped = true }
+                if polled is mouse_button{ down } and down { skipped = true }
+                let e = display::map_event{ d = &disp, ev = polled }
+                if e is quit | close { closed = true }
+            }
+            if skipped or closed { movie::skip{ &p } }
+            let now = sdl::counter{ &sdl }
+            let dt = math::min{ a = @as(f32, @as(f64, now - last) / @as(f64, freq)), b = 0.25 }
+            last = now
+            match adev {
+                some{ value } => { audio::update{ &sdl, dev = value, m = mixer } iferr {} }
+                null => { mix::render{ m = mixer, into = silent[..2944] } }
+            }
+            let state = movie::update{ fs = &w.fs, &sdl, &dev, &p, output = adev, dt = @as(f64, dt), audio_clock = adev != null }
+            if state == movie::State::finished { break }
+            render::begin_frame{ &frame, time = 0.0 }
+            movie::draw{ &p, &frame, width = @as(f32, disp.render.width), height = @as(f32, disp.render.height) }
+            gpu::submit{ &dev, frame = &frame } iferr { closed = true }
+            gpu::present{ &dev, &sdl }
+        }
+        let s = p.stats
+        let how: []u8 = if skipped { "skipped" } else if p.failed { "failed" } else { "played" }
+        world::prefix{ w = &w }
+        _ = @fmt(&w.io, "movie {}: {} ({} frames decoded, {} shown, {} dropped, {} sound frames fed, {} dropped)\n", name, how, s.decoded, s.shown, s.dropped, s.audio_fed, s.audio_dropped)
+        movie::close(heap::Heap){ fs = &w.fs, &dev, realloc = heap::alloc, heap = w.heap, p = &p }
+        mix::set_group_paused{ m = mixer, group = mix::Group::music, paused = false }
+        mix::set_group_paused{ m = mixer, group = mix::Group::voice, paused = false }
+        mix::set_group_paused{ m = mixer, group = mix::Group::sfx, paused = false }
+        return closed
+    }
+}
