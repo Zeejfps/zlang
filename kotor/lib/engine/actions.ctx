@@ -328,6 +328,8 @@ namespace actions {
         let elapsed = @as(f32, clock::elapsed_since{ now = clock::now_ms{ c = w.clock }, then = a.started })
         if elapsed < length {
             world::set_animation{ o, id = anim, speed = if speed == 0.0 { 1.0 } else { speed } }
+            // A placeable's scene visual plays its state (the Star Map's dome, a computer's screen).
+            if obj::placeable{ o } is some{ value = p } { p.anim = anim }
             return Status::running
         }
         if o.kind == obj::Kind::creature { world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 } }

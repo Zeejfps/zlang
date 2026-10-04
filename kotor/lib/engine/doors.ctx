@@ -4,6 +4,9 @@ namespace doors {
     // How close the actor stands to act (ours, from GetUseRange: radius + 0.75).
     const USE_EXTRA: f32 = 0.75
 
+    // How many times an order walks up to its target before it is dropped.
+    const APPROACH_TRIES: i32 = 6
+
     // Where an actor stands to use `target`, and how near it must be (actions.md 1.4).
     struct UsePoint { point: math::Vec3, range: f32 }
 
@@ -48,10 +51,17 @@ namespace doors {
         let t = world::object{ w = &w, id = target } ifnull { return false }
         let mut up = use_point{ w = &w, actor, target = t }
         up.range = up.range + extra
-        if distance_2d{ a = actor.position, b = up.point } <= up.range + 0.1 or a.phase > 0 { return false }
+        if distance_2d{ a = actor.position, b = up.point } <= up.range + 0.1 or a.phase > 1 { return false }
+        // The copy that follows a move checks the range again, as CHECKINRANGEOFOBJECT does (a move
+        // that a closed door stopped, or that the planner could not finish, leaves the actor short of
+        // the target: it tries again, the door having opened by then). Param 7 counts the tries; after
+        // APPROACH_TRIES the order is dropped rather than carried out from afar.
+        let tries = actions::int_param{ a, i = 7 }
+        if tries >= APPROACH_TRIES { return true }
         let mut copy = a.*
         copy.phase = 1
         copy.has_started = false
+        copy.params[7] = actions::Param::int{ v = tries + 1 }
         actions::add_front{ &w, id, action = copy }
         let mut face = actions::make{ kind = actions::Kind::face_object }
         face.params[0] = actions::Param::object{ id = target }

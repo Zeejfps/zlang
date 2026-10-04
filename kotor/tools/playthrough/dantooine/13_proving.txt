@@ -1,0 +1,25 @@
+# Dantooine, part 13: the proving grounds. The west computer wants the three life-giving seed world types, the east
+# one the three death-giving ones; a wrong answer wakes the guardian droids. From the checkpoint "ruins2" (CKPT=ruins2:
+# the ancient droid's talk is over, dan_ruins 15).
+# The Guardian Droid at each computer is hostile on sight, wears an energy shield (forceshields.2da row 1: 30 off every
+# hit up to 300 absorbed) and flames the party for 30 a hit: the party's fight with it is a long one (see the notes), so
+# it is killed here with a forced hit (a test cutscene attack) to get on with the puzzle.
+# Replies, in the order the lists open. West (black) computer: "Talk to the computer", "Insert your datapad into the
+# receptacle", "Talk to the computer" (the datapad learns the script), then the questions: Oceanic, Grassland, Arboreal.
+# East (white) computer: the same three, then Desert, Volcanic, Barren (the three death-giving seed worlds).
+3 ui stat hpmax 130
+3 ui stat hp 130
+3 ui bot god on
+5 ui replies 3 5 3 1 1 3 3 5 3 3 3 4
+8 cutatk Carth dan15_guarda 239 1 400
+# The click on the west computer walks the party through the proving ground's door (RakataDoor1, closed, opens as the
+# leader walks into it) to the computer.
+10 use dan15_compb
+2900 ui journal list
+2900 ui pos
+# The east computer, across the hall.
+3000 cutatk Carth dan15_guardb 239 1 400
+3010 use dan15_compw
+7000 ui journal list
+7000 ui pos
+7010 save proved

@@ -32,3 +32,7 @@ step 7 600 third    grove
 step 8 7360 grove   fight
 step 9 4200 fight   redeemed
 step 10 2800 redeemed return
+step 11 6100 return ruins1
+step 12 11350 ruins1 ruins2
+step 13 7100 ruins2 proved
+step 14 5100 proved starmap
