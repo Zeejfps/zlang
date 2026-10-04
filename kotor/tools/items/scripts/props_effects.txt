@@ -1,0 +1,13 @@
+# Item properties become effects while the item is worn (equipped duration, the item as creator) and go
+# when it comes off. Gauntlets, a belt, an implant (needs the implant feat), a visor, armour.
+4 ui giveitem g_i_gauntlet01 1 equip
+4 ui giveitem g_i_belt001 1 equip
+4 ui giveitem g_i_mask01 1 equip
+4 ui giveitem g_a_class5001 1 equip
+4 ui giveitem g_w_vbroswrd01 1 equip
+30 ui fx
+30 ui inv
+40 ui unequip 3
+40 ui unequip 10
+40 ui unequip 0
+50 ui fx
