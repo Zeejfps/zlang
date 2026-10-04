@@ -1,0 +1,54 @@
+# Korriban, part 1: the arrival at Dreshdae's docking bay (korr_m33aa), the crafted state a Jedi brings from Dantooine.
+# Start: kotor.exe --module korr_m33aa (the module's entry point is the Ebon Hawk's transition waypoint).
+#
+# The state Dantooine, Tatooine and Kashyyyk leave: a Jedi Guardian of level 14, Bastila and Carth with the player, the
+# rest available (0 Bastila, 1 Canderous, 2 Carth, 3 HK-47, 4 Jolee, 5 Juhani, 6 Mission, 7 T3-M4, 8 Zaalbar), three Star
+# Maps found (K_STAR_MAP counts them in tens). Test cheats for setup only: join, avail, jedi, stat, giveitem, credits, global.
+4 join p_bastilla 0
+4 join p_carth 2
+4 ui avail 0 1 2 3 4 5 6 7 8
+4 ui jedi 3 14
+4 ui stat str 16
+4 ui stat dex 14
+4 ui stat con 14
+4 ui stat hpmax 160
+4 ui stat hp 160
+4 ui stat persuade 17
+4 ui stat awareness 10
+4 ui stat computer 10
+4 ui giveitem g_w_lghtsbr01 1 equip
+4 ui giveitem g_a_jedirobe01 1 equip
+4 ui giveitem g_i_medeqpmnt01 5
+4 ui giveitem g_i_adrnaline001 3
+4 ui credits 2000
+# Three maps: Dantooine (DAN_STARMAP_DONE), Tatooine and Kashyyyk.
+4 ui gbool DAN_STARMAP_DONE 1
+4 ui gbool K_STAR_MAP_TATOOINE 1
+4 ui gbool K_STAR_MAP_KASHYYYK 1
+4 ui global K_STAR_MAP 30
+# The galaxy map: what Dantooine's Star Map showed (Dantooine itself, Tatooine, Kashyyyk, Manaan, Korriban).
+4 ui planet 3
+4 ui planet 4
+4 ui planet 5
+4 ui planet 6
+4 ui planet 7
+5 ui replies default 1
+6 ui leader bastila
+6 ui jedi 5 14
+6 ui giveitem g_w_lghtsbr01 1 equip
+6 ui giveitem g_a_jedirobe01 1 equip
+6 ui stat hpmax 130
+6 ui stat hp 130
+7 ui leader carth
+7 ui stat class 0
+7 ui stat level 14
+7 ui stat xp 91000
+7 ui stat hpmax 160
+7 ui stat hp 160
+8 ui leader pc
+60 ui party
+60 ui pos
+60 ui rules
+60 ui globals star
+60 ui globals kor
+100 save dock

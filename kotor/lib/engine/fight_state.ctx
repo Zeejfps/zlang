@@ -18,6 +18,9 @@ namespace fight {
     const STATE_HORRIFIED: i32 = 8
     const STATE_WHIRLWIND: i32 = 10
 
+    // repute.2da's Surrender_1 row and column are all 50: neutral to everyone, and everyone to it.
+    const SURRENDER_FACTION: u32 = 9
+
     // The looping animation of a state (UpdateStateAnimation 0x004f28d0 picks one per state; the
     // client's table from state to name was not read, so these are the animations.2da rows that
     // carry the state's name: the humanoid set, then the creature set), NO_ROW for the states that
@@ -159,6 +162,59 @@ namespace fight {
         o.commandable = false
         actions::clear_all{ &w, id }
         end_round{ &w, id, script = false }
+    }
+
+    // What clearing a creature's effects does to a fall in progress (RemoveAllEffects 0x004d0940 makes it
+    // commandable again): the knock-back or knockdown ends at once and the creature stands.
+    fn release_knock { mut w: world::World, id: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        let f = c.fighter ifnull { return }
+        if not f.knock.active { return }
+        f.knock.active = false
+        o.commandable = true
+        world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
+    }
+
+    // CSWSCreature::SurrenderToEnemies (0x00518990, routines 476 and 762, action 0x41): the creature and every
+    // creature of its area within 250 m that it counts an enemy (its standing toward them is below 11) stop
+    // fighting and lose their effects, a knockdown included, so that whoever it speaks to next can be spoken to
+    // (the player's, after Freyyr's hit); `keep_own` leaves the effects a creature made on itself. The surrendering
+    // creature then joins the Surrender_1 faction, which everybody counts neutral: nobody takes up the fight again
+    // when the talk ends (Freyyr, k_pkas_freyyuser, never has his side reset; "Now die!" sends him back to
+    // Hostile_1 with k_pkas_freyyrfin). The standing of the others toward it is not changed.
+    fn surrender { mut w: world::World, id: u32, keep_own: bool } {
+        let me = world::object{ w = &w, id } ifnull { return }
+        if obj::creature{ o = me } == null { return }
+        let from = me.faction
+        let at = me.position
+        let area = me.area
+        calm{ &w, id, keep_creator = if keep_own { id } else { 0xFFFFFFFF } }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed or o.kind != obj::Kind::creature or o.id == id or o.area != area { continue }
+            if math::vec3::distance{ a = o.position, b = at } > 250.0 { continue }
+            if world::standing{ w = &w, from, toward = o.faction } >= 11 { continue }
+            calm{ &w, id = o.id, keep_creator = if keep_own { o.id } else { 0xFFFFFFFF } }
+        }
+        me.faction = SURRENDER_FACTION
+    }
+
+    // One creature's share of a surrender: its fight over, its effects off, on its feet.
+    fn calm { mut w: world::World, id: u32, keep_creator: u32 } {
+        stop_fighting{ &w, id, others = false }
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        let f = c.fighter ifnull { return }
+        sync_flags{ w = &w, o, f }
+        rules::clear_events{ ev = &w.rev }
+        rules::clear_effects_except{ tables = w.rules, c = &f.c, keep_creator, ev = &w.rev }
+        drain{ &w, id }
+        c.fx_cursor = 0
+        release_knock{ &w, id }
     }
 
     // A tick of the knock-back: the slide (fast, then slowing), the fall, the lying, the get-up; at

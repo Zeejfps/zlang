@@ -1,0 +1,22 @@
+# Kashyyyk, part 19: leaving (checkpoint "hall": Freyyr is Chieftain again, Zaalbar is in the party): out of the throne room (KashyyykDoor2) into Rwookrrorro, its door to the
+# Great Walkway, the Walkway's door to the Czerka pad (both named KashyyykDoor3) and the Ebon Hawk's ramp on the pad (the trigger EbonHawk). The walks are cut with
+# warps (the party stands beside the leader); the doors are the game's. A save in the Hawk ("hawk"). From the checkpoint "hall" (CKPT=hall).
+3 ui stat hpmax 130
+3 ui stat hp 130
+5 ui replies default 1
+30 warp kashyyykdoor2 party
+40 use kashyyykdoor2
+300 warp kashyyykdoor3 party
+310 use kashyyykdoor3
+600 warp kashyyykdoor3 party
+610 use kashyyykdoor3
+# the pad: the walk to the Hawk is the bot's, into the trigger EbonHawk (an area transition to ebo_m12aa)
+900 ui bot god on
+900 ui bot unlock on
+900 ui bot route ebonhawk
+901 ui bot on
+6000 ui pos
+6000 ui party
+6000 ui journal list
+6000 ui globals K_
+6050 save hawk

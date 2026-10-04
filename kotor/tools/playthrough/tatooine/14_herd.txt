@@ -1,0 +1,17 @@
+# Tatooine, part 14: the herd (checkpoint "komad2", at Komad's camp, the banthas spawned): along the dunes' interior to the first bantha (203,167); the
+# fodder in the bag makes the herd fall in step (tat18_bantha, k_ptat_banthcut1), the Sand People of the deep desert ambush.
+#   LOAD=kotor/out/tat_cp/komad2 sh kotor/tools/playthrough/tatooine/run.sh herd kotor/tools/playthrough/tatooine/14_herd.txt 9000
+4 ui heal
+4 ui stat hp 127
+5 ui bot god on
+5 ui bot unlock on
+5 ui replies default 1
+5 ui bot route 276,248 253,237 238,222 224,206 208,195 196,179 @tat18_bantha1
+6 ui bot on
+# the ambush (four Elite Warriors, 4 to 6,000 frames) must be over: the save waits for the leader to stop fighting
+7 savewhen tat_m18ac herd tat18ac_dragonhunt 50
+3000 ui where bantha
+3000 ui pos
+6000 ui where bantha
+6000 ui pos
+6000 ui journal list

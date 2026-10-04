@@ -1,0 +1,27 @@
+# Manaan, part 4: out of the Republic enclave to Ahto East (manm26ab) and the Sith Embassy's gate: the Sith Diplomat accepts the
+# passcode the prisoner gave ("Zeta 245698 Alpha"), his script unlocks the door, and the trigger behind it (`to27a`) takes the
+# party into the Sith base (manm27aa). From the checkpoint "prisoner" (CKPT=prisoner).
+#
+# The long promenade of Ahto East is not walked: the party is put at the invisible object in front of the gate (`man26_selcutobj`,
+# the Selkath arrest scene's mark) and walks up to the Diplomat; he is clicked like a player does. `goto X,Y` ends inside the
+# trigger's outline (a walk to its corner stops short of it).
+3 ui stat hpmax 150
+3 ui stat hp 150
+5 ui replies ~i_have_business ~i_know_the_pass_code ~zeta_245698_alpha default 1
+10 warp man26ae_to26ab
+40 use man26ae_to26ab
+300 warp man26_selcutobj party
+320 ui goto man26_sithdip
+440 hoveron man26_sithdip
+450 mouse click
+520 mouse click
+1500 ui pos
+1500 goto 45.0,18.0
+1700 goto 45.0,18.0
+1900 goto 45.0,18.0
+2700 ui bot on
+4300 ui bot off
+4350 ui party
+4350 ui xp
+4350 ui journal list
+4350 save lobby

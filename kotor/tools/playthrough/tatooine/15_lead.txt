@@ -1,0 +1,18 @@
+# Tatooine, part 15: after the ambush (checkpoint "herd": the Sand People are dead, the banthas stand where the cut scene left them, the hunt is at
+# tat18ac_dragonhunt 50). Talking to a bantha again (tat18_bantha.dlg, k_ptat_ambushed) brings the herd and the party to the camp (k_ptat_banthcut2); Komad
+# says the banthas are in position (k_ptat_banthabmp, quest 60) and the krayt dragon comes out of its lair (k_ptat_spwnkrayt, the cut scenes); the mines and Komad kill it, he gives a dragon pearl (k_ptat_give1pear) and leaves. A save at the camp ("dragon").
+#   LOAD=kotor/out/tat_cp/herd sh kotor/tools/playthrough/tatooine/run.sh lead kotor/tools/playthrough/tatooine/15_lead.txt 3300
+4 ui heal
+4 ui stat hp 127
+5 ui bot god on
+5 ui bot unlock on
+5 ui replies default 1
+5 ui bot route @tat18_bantha1 @tat18_11komad_01
+6 ui bot on
+200 ui where tat18_bantha1
+2000 ui where tat18_bantha1
+2000 ui pos
+3150 ui journal list
+3150 ui inv
+3150 ui xp
+3200 save dragon

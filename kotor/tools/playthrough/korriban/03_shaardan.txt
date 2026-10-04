@@ -1,0 +1,12 @@
+# Korriban, part 2: the dock to Shaardan and the three hopefuls he is tormenting (kor33_shaardan). From the checkpoint "dock".
+# The walk across Dreshdae is cut with a warp into the strip of the trigger that starts his talk (k33_sha_initconv).
+# His talk is long (about 3,900 frames of lines, then the choice: "Why? What did they do?", "Let them go.",
+# "[Persuade] They aren't worth your time."): the Jedi lets the hopefuls go (light side, three AdjustAlignment calls).
+5 ui replies 1 1 ~worth_your_time default 1
+8 ui rules
+10 warpxy 136,154.6 party
+200 ui pos
+200 ui party
+4700 ui rules
+4700 ui globals kor
+4710 save shaardan

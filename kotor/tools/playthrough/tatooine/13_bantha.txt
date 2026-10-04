@@ -1,0 +1,16 @@
+# Tatooine, part 13: back to Komad Fortuna with the Bantha Fodder (checkpoint "fodder", in the Sand People Enclave): out through the Territory and the Dune Sea
+# (the route of part 10) and along the one safe path of the Eastern Dune Sea (part 11) to the hunter, who sends the party to the herd; the banthas spawn
+# (k_ptat_spwnbanth). A save at his camp ("komad2").
+#   LOAD=kotor/out/tat_cp/fodder sh kotor/tools/playthrough/tatooine/run.sh bantha kotor/tools/playthrough/tatooine/13_bantha.txt 7100
+4 ui heal
+4 ui stat hp 127
+5 ui bot god on
+5 ui bot unlock on
+5 ui replies ~have_your_fodder ~see_what_I_can_do default 1
+5 ui bot route tatooinedoor3#5 areatransition#0 areatransition#1 97,227 97,223 97,219 93,220 85,220 84,209 82,199 89,200 96,201 101,195 104,191 112,183 118,183 124,183 131,183 141,183 151,184 161,184 167,190 172,195 179,201 197,210 215,216 221,228 238,222 245,229 249,232 253,237 276,248 292,257 @tat18_11komad_01
+6 ui bot on
+6950 ui pos
+6950 ui journal list
+6950 ui inv
+6950 ui where bantha
+7000 save komad2

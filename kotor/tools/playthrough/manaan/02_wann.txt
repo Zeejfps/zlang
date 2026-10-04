@@ -1,0 +1,22 @@
+# Manaan, part 2: Ahto City's West Central (manm26ac) to East Central (manm26ae) and the Republic Embassy: Roland Wann.
+# From the checkpoint "dock" (CKPT=dock). The walk across the plaza is cut with a warp to the door (the door, its
+# transition and the conversation are the game's); Wann is clicked like a player does (the first click selects him, the second
+# walks up and talks).
+#
+# Conversation replies, in the order the lists open: the Star Map ("I am on a mission from the Jedi Council", "I seek a Star
+# Map", "You know something?", "What do you want me to do?"), the droid in the Sith Embassy ("Where is the droid?"), "How do I
+# get in the Sith base?", then the three ways in: the prisoner (taken), the passcard, the landing bay (the card is given);
+# "I think I'll interrogate the prisoner."
+3 ui stat hpmax 150
+3 ui stat hp 150
+5 ui replies ~mission_from_the_jedi ~star_map ~know_something ~what_do_you_want ~where_is_the_droid ~how_do_i_get ~interrogating ~another_way ~interrogate_the_prisoner default 1
+10 warp man26ac_to26ae
+40 use man26ac_to26ae
+300 warp man26_repdip party
+330 hoveron man26_repdip
+340 mouse click
+400 mouse click
+5700 ui journal list
+5700 ui inv
+5700 ui xp
+5700 save wann

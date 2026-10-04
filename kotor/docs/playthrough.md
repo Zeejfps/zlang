@@ -4,7 +4,7 @@ What happens when the game is played from New Game, checked with logs and screen
 original does. Each step says whether it works, what fixed it (commit), or who has it. The input scripts
 are in `kotor/tools/playthrough/`; replay any of them to see the step again.
 
-Planets after Taris have their own logs: [playthrough-dantooine.md](playthrough-dantooine.md) (the arrival, the Council, the trials, Juhani, the ruins and the Star Map). [playthrough-tatooine.md](playthrough-tatooine.md) (the docks to the Krayt hunt: HK-47, the Sand People and the vaporators; paused before the Star Map). [playthrough-kashyyyk.md](playthrough-kashyyyk.md) (the Czerka pad to the Star Map in the Shadowlands).
+Planets after Taris have their own logs: [playthrough-dantooine.md](playthrough-dantooine.md) (the arrival, the Council, the trials, Juhani, the ruins and the Star Map). [playthrough-tatooine.md](playthrough-tatooine.md) (the docks to the Krayt hunt, the Star Map, Calo Nord, Czerka's reward, and the Ebon Hawk's galaxy map to Kashyyyk). [playthrough-kashyyyk.md](playthrough-kashyyyk.md) (the Czerka pad to the Star Map in the Shadowlands, Chuundar's hall and the duel on Freyyr's side, the way out to the Hawk). [playthrough-korriban.md](playthrough-korriban.md) (Dreshdae, the Sith Academy under Uthar Wynn and Yuthura Ban, the tombs, Naga Sadow's Star Map and the Leviathan).
 
 ## How to replay
 
@@ -178,7 +178,7 @@ last run, clicks at 5790), so if `t3` comes out with the wrong party, move them.
 stays on) and the run is 30,000 frames; `savewhen tar_m09ab codes tar_escape 25` saves when the codes are in the bag.
 `50_codes.txt` saves `davik` with `savewhen tar_m08aa davik tar_escape 40`. `51_davik.txt` (from `davik`, to the Dantooine
 landing) was not played again after the merges. The dice and the timing of the fights move the frames of these scripts
-whenever the engine changes; `savewhen MODULE NAME [QUEST ENTRY]` (play.ctx) saves when the story is quiet in MODULE and the
+whenever the engine changes; `savewhen MODULE NAME [QUEST ENTRY]` (play.ctx) saves when the story is quiet in MODULE (no conversation, transition or loading for 2 s, and the leader out of combat) and the
 journal quest has reached ENTRY, so a checkpoint does not depend on a frame. The Sith base camp's rancor (`tar05_stampy`, 90
 hit points) is only killed by the party when `40_sithbase.txt` lowers its hit points (`ui sethp tar05_stampy 8`): the level 7
 player and the companions hit it once in 2,000 frames.

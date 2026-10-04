@@ -1,0 +1,13 @@
+# Korriban, part 14: the first report to Master Uthar after the Mandalorian prisoner: "I know the location of the Mandalorian prisoner's weapon
+# cache." (k_pkor_cacheplot): his tier greeting by prestige, the cache turned in (journal kor35_mandalorian 50), prestige and XP.
+# From the checkpoint "mando".
+5 ui replies ~weapon_cache ~trap_door ~on_my_way default 1
+8 ui rules
+8 ui globals kor
+10 warp kor35_utharwynn party
+50 ui target kor35_utharwynn
+55 ui key 1
+1100 ui rules
+1100 ui globals kor
+1100 ui journal list
+1110 save report1
