@@ -107,6 +107,13 @@ committed kotor), the Endar Spire replay (`FAST=1`, 0 faults to tar_m02af),
 `kotor/tools/combat/companions.sh`, `kotor/tools/combat/corpses.sh` and `kotor/tools/camcheck/run.sh`
 (the last needs a Python with numpy first on PATH).
 
+**First, a likely regression:** `sh kotor/tools/stealth/check.sh` fails `attack_out` since 948e3bb
+(the star door fix: only scripted force moves jump). In end_m01ab the leader's attack approach to
+end_sithsol01 is blocked at (76.3, 81.7) on its way to (76.3, 77.6) and ends at its 6 s timeout
+without a swing; before, the timeout teleported the attacker, which hid the blockage. Find what blocks
+it (a door an attack approach doesn't open, a creature, a placeable) and what the original's approach
+does there; a player attacking past that point would stand short of the target.
+
 **Story QA** (docs/playthrough-*.md; each planet's log says where it stopped and how to resume):
 - One continuous playthrough from New Game to an ending, with real input and no crafted states.
 - Side quests on every planet: Taris (the Sith uniform route, side quests), Dantooine (the
