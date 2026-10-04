@@ -62,7 +62,8 @@ namespace bot {
                 b.count = b.count + 1
             }
         } else if ci::eq{ a = what, b = "tour" } {
-            tour_build{ &b, &w }
+            // `tour` builds the tour of the area and walks it; `tour off` leaves it (a route can take over).
+            if ci::eq{ a = text::next_word{ &words } ifnull "", b = "off" } { b.tour.on = false } else { tour_build{ &b, &w } }
         } else if ci::eq{ a = what, b = "on" } {
             b.on = true
         } else if ci::eq{ a = what, b = "off" } {

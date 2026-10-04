@@ -654,10 +654,18 @@ namespace modload {
                 world::prefix{ w = &w }
                 _ = @fmt(&w.io, "saving the module's state: {}\n", error)
             }
-            // The companions travel as AVAILNPC files (SavePlayerCharacters, party-items-saves.md 3.3).
-            save::keep_party{ &w } iferr err{ error } {
-                world::prefix{ w = &w }
-                _ = @fmt(&w.io, "keeping the party: {}\n", error)
+            // The companions travel as AVAILNPC files (SavePlayerCharacters, party-items-saves.md 3.3). A minigame's
+            // area spawns none of them (enter_area), so leaving it keeps what the module before it kept: the party
+            // that left Davik's estate boards the Ebon Hawk after the turret.
+            let mut minigame = false
+            if world::object{ w = &w, id = w.area } is some{ value = mao } {
+                if obj::area{ o = mao } is some{ value = ma } { minigame = ma.minigame != null }
+            }
+            if not minigame {
+                save::keep_party{ &w } iferr err{ error } {
+                    world::prefix{ w = &w }
+                    _ = @fmt(&w.io, "keeping the party: {}\n", error)
+                }
             }
         }
         let ao = world::object{ w = &w, id = w.area }

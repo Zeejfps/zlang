@@ -58,7 +58,9 @@ kotor/out/kotor.exe --load kotor/out/checkpoints/cantina --no-render --speed 8 -
   --input my_test.txt --frames 3000 --screenshot-at 2900:kotor/out/pt/cantina.png --log dialog
 ```
 
-`my_test.txt` counts its frames from the load (frame 1 is the first tick). To go on with the story instead, give the
+`sh kotor/tools/checkpoints/chain.sh` goes on from `sithbase` with the story scripts (`40_` to `50_`, [playthrough.md](playthrough.md)):
+`vulkar`, `garage`, `kandon`, `swoop`, `apt`, `cand`, `t3`, `codes`, `davik`, each with no resume script (the script that
+starts from it is the next `NN_`). `my_test.txt` counts its frames from the load (frame 1 is the first tick). To go on with the story instead, give the
 resume script: `FAST=1 LOAD=kotor/out/checkpoints/apartment SAVES=kotor/out/pt/saves_x sh kotor/tools/playthrough/run.sh
 upper kotor/out/checkpoints/apartment.txt 30000`. Make them again after the engine's timing changes (they are
 saves of this build; the frames in `make.sh` are the replay's).

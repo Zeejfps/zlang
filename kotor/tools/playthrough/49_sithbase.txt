@@ -1,0 +1,31 @@
+# From the t3 checkpoint (tar_m02ab, T3-M4 and Carth in the party): into the Sith base (tar_m09aa), its elevator up to
+# tar_m09ab, the Dark Jedi (his remains hold the Taris Launch Codes, opened with clicks: `hoveron =Remains`, tried again
+# every 1500 frames from the time the fight is usually over), the strongboxes.
+#   FAST=1 LOAD=kotor/out/checkpoints/t3 SAVES=kotor/out/pt/saves_sb2 LOG=dialog,module,combat sh kotor/tools/playthrough/run.sh sb2 kotor/tools/playthrough/49_sithbase.txt 20000
+3 ui replies default 1
+3 savewhen tar_m09ab codes tar_escape 25
+3 ui autolevel
+3 ui bot god on
+3 ui bot unlock on
+3 ui bot party on
+3 ui bot route tar02_sithdoor ptar_elevdoor tar09_stddoor darkjediap091
+4 ui bot on
+12500 ui bot off
+13000 hoveron =Remains
+13003 mouse click
+13006 mouse click
+13400 mouse click 640 452
+14500 hoveron =Remains
+14503 mouse click
+14506 mouse click
+14900 mouse click 640 452
+16000 hoveron =Remains
+16003 mouse click
+16006 mouse click
+16400 mouse click 640 452
+17500 hoveron =Remains
+17503 mouse click
+17506 mouse click
+17900 mouse click 640 452
+19000 ui journal list
+19000 ui inv
