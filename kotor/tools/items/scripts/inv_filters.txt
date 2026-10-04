@@ -1,0 +1,14 @@
+# The inventory's six filters, cycled with the button (it is the filter button despite its tag).
+4 ui giveitem g_i_adrnaline001 3
+4 ui giveitem g_i_pltuseitm01
+4 ui giveitem g_a_class4001
+4 ui giveitem g_i_datapad001
+4 ui giveitem g_w_fraggren01 2
+30 ui key i
+40 ui clickctl BTN_QUESTITEMS
+50 ui clickctl BTN_QUESTITEMS
+55 ui inv
+60 ui clickctl BTN_QUESTITEMS
+70 ui clickctl BTN_QUESTITEMS
+75 ui inv
+80 ui clickctl BTN_QUESTITEMS

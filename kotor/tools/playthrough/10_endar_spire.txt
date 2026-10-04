@@ -11,9 +11,10 @@
 # Lines must be in frame order. The frames are those of the 1/30 s headless run and shift if the engine's
 # timing of a cutscene or a voice changes: check the log's `dialog end` lines when a click misses.
 3 newgame
-4 ui replies 1 1 1 2 1 1 1 1 1 1 1 1 1 1 1 1 1 3 1 1 1 1 1 1 1 1 3 4 1 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9
+4 ui replies 1 1 1 2 1 1 1 1 1 1 1 1 1 1 1 1 1 3 1 1 1 1 1 1 1 1 3 4 1 default 9
 2900 use end_locker01
 2980 ui click 560 413
+2990 ui bot party on
 3020 ui click 640 452
 3100 ui menu equip
 3105 ui click 760 321
@@ -22,7 +23,6 @@
 3125 ui click 760 321
 3130 ui click 760 321
 3160 ui close
-3900 ui click 640 545
 3950 ui bot god on
 3950 ui bot unlock on
 3950 ui bot route end_door01 end_door02 end_door05 end_door10_cut2 end_jump_pc end_grenade end_door16 wp_end_room5_1 wp_end_room7_1 end_door08 wp_end_bridgesith1 carth end_door15 end_door19 wp_player01 end_door10 end_trig10 end_door06 end_door01 end_door05 end_door04 end_wp_carth01
@@ -38,7 +38,6 @@
 32040 use end_pod
 33000 ui pos
 39500 use tar02_aptdoor
-40250 ui click 640 545
 40400 ui party
 40400 ui pos
 40500 ui bot route bp_jump0_wp wp_01_01 wp_02_01 wp_02_04 ptar_stnddr p_exit k_exit
@@ -52,17 +51,17 @@
 58001 ui party
 58001 ui pos
 58001 ui inv
+58002 save QUICKSAVE
 58003 ui menu journal
 58006 ui click 515 302
 58020 ui close
-58002 save QUICKSAVE
 58100 warpxy 125,108
 58300 ui pos
 58400 load 000000 - QUICKSAVE
 58500 ui party
 58500 ui pos
 58500 ui inv
-58600 ui bot route ptar_stnddr tar02_bhtstr uppernorth tar02_lowdoor tar03_underdoor tar04_elevdoor tar04_reptlk tar04_goto05aa10
+58600 ui bot route ptar_stnddr tar02_bhtstr uppernorth tar02_lowdoor tar03_underdoor tar04_elevdoor tar04_reptlk tar04_maingate tar04_goto05aa10
 58601 ui bot on
 61000 ui bot status
 61000 ui pos
@@ -70,6 +69,7 @@
 66000 ui pos
 71000 ui bot status
 71000 ui pos
+72400 ui replies 1 1 2 1 1 1 default 9
 76000 ui bot status
 76000 ui pos
 81000 ui bot status

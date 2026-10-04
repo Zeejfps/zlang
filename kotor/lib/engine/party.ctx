@@ -208,6 +208,26 @@ namespace party {
         w.party.count = k
     }
 
+    // The player's way of changing the leader (Tab, a portrait): the party table turns until `id` is
+    // first and the others keep their order, so [A, B, C] becomes [B, C, A] and then [C, A, B]
+    // (CSWCParty::SetLeader, movement.md 6.3). set_leader below is the scripts' (the member jumps to
+    // the front). w.pc follows the leader; false when `id` is not a member.
+    fn rotate_to_front { mut w: world::World, id: u32 } -> bool {
+        if not is_member{ w = &w, id } { return false }
+        let mut guard: usize = 0
+        while w.party.members[0] != id and guard < w.party.count {
+            let first = w.party.members[0]
+            let mut i: usize = 1
+            while i < w.party.count {
+                w.party.members[i - 1] = w.party.members[i]
+                i = i + 1
+            }
+            w.party.members[w.party.count - 1] = first
+            guard = guard + 1
+        }
+        return w.party.members[0] == id
+    }
+
     // Makes a member the leader (first), the one keyboard control moves (w.pc follows it).
     fn set_leader { mut w: world::World, id: u32 } {
         if not is_member{ w = &w, id } { _ = add{ &w, id } }

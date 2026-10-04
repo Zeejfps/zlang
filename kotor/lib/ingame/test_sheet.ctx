@@ -8,7 +8,7 @@
 //                                xp  align  hp  hpmax        experience, alignment (0 dark .. 100 light), hit points
 //                                class level                 the first class slot (classes.2da row, class level)
 //                                security                    the Security skill's ranks
-//                                stealth awareness           the Stealth and Awareness skills' ranks
+//                                stealth awareness ...       any skill's ranks by its name (computer .. treat)
 //                                class2 level2               the second class slot (level2 0 removes it)
 //                                template RESREF             the UTC the skill ranks, feats and powers are read from
 //
@@ -39,6 +39,17 @@ namespace test_sheet {
         return false
     }
 
+    // The skills.2da row of a skill name used by `ui stat`, -1 for none.
+    fn skill_by_name { name: []u8 } -> i32 {
+        let names: [8][]u8 = ["computer", "demolitions", "stealth", "awareness", "persuade", "repair", "security", "treat"]
+        let mut k: usize = 0
+        while k < 8 {
+            if ci::eq{ a = name, b = names[k] } { return @as(i32, k) }
+            k = k + 1
+        }
+        return -1
+    }
+
     // Sets one number on the leader; false when the name is unknown or there is no leader.
     fn set_stat { mut w: world::World, key: []u8, value: []u8 } -> bool {
         let o = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return false }
@@ -64,11 +75,11 @@ namespace test_sheet {
             let f = c.fighter ifnull { return false }
             f.c.skills[@as(usize, rules::skill::SECURITY)] = n
         }
-        else if ci::eq{ a = key, b = "stealth" } or ci::eq{ a = key, b = "awareness" } {
-            // Stealth and Awareness ranks, for the stealth tests (docs/mechanics/stealth.md).
+        else if skill_by_name{ name = key } >= 0 {
+            // `ui stat computer 4`: ranks of any skill (computer, demolitions, stealth, awareness, persuade,
+            // repair, security, treat).
             let f = c.fighter ifnull { return false }
-            let sk = if ci::eq{ a = key, b = "stealth" } { rules::skill::STEALTH } else { rules::skill::AWARENESS }
-            f.c.skills[@as(usize, sk)] = n
+            f.c.skills[@as(usize, skill_by_name{ name = key })] = n
         }
         else if ci::eq{ a = key, b = "class2" } { c.classes[1] = @as(u32, n) }
         else if ci::eq{ a = key, b = "level2" } { c.class_levels[1] = @as(u32, n) }

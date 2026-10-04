@@ -14,6 +14,7 @@ namespace outbox {
         movie{ name: resref::ResRef },
         bark{ speaker: u32, strref: u32, text: Text, sound: resref::ResRef },
         feedback{ strref: u32, text: Text },
+        hud_notice{ kind: i32 },                    // a HUD notification icon lights for a few seconds (hud::NOTE_*: 1 credits, 7 item received, 8 item lost, ...)
         post_string{ text: Text, x: i32, y: i32, life: f32 },
         no_clicks{ seconds: f32 },
         conversation{ owner: u32, speaker: u32, dialog: resref::ResRef },
@@ -64,10 +65,6 @@ namespace outbox {
         //     node `hook` of `object` for `life` seconds (0: its animation's length), or at
         //     `position` when `object` is OBJECT_INVALID
         effect_model{ model: resref::ResRef, object: u32, hook: resref::ResRef, position: math::Vec3, life: f32 },
-        // Appended by stealth (lib/engine/stealth.ctx). notify: an event of the status summary
-        // (AddStatusSummaryEvent 0x0062eeb0): `which` is its kind, the HUD icon it lights (hud::NOTE_*:
-        // 0 journal, 1 credits, 2 plot XP, 3 stealth XP, ...), `amount` what it was worth.
-        notify{ which: i32, amount: i32 },
     }
 
     // Text copied into the outbox's buffer, valid until the outbox is drained.

@@ -61,13 +61,14 @@ namespace actions {
         has_started: bool,
         serial: u32,
         phase: u32,             // a handler's own progress (approach, then act)
+        unclearable: bool,      // an item's ability once begun (actions.md 3.13): the player's new orders wait behind it
     }
 
     enum Status: u8 { running, retry, done, failed }
 
     // An action of `kind` with its parameters (the rest none).
     fn make { kind: Kind } -> Action {
-        return Action{ kind, group = 0, params = [Param::none; 8], started = 0, has_started = false, serial = 0, phase = 0 }
+        return Action{ kind, group = 0, params = [Param::none; 8], started = 0, has_started = false, serial = 0, phase = 0, unclearable = false }
     }
 
     fn int_param { a: *Action, i: usize } -> i32 {
@@ -176,6 +177,26 @@ namespace actions {
         }
     }
 
+    // The player gives a creature a new order (the HUD's slots, the target block, Use Item): the
+    // queue is cleared as ClearAllActions does, except for an item's ability that has begun, which the
+    // original makes unclearable on its first frame; the order is queued behind it.
+    fn clear_for_player { mut w: world::World, id: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        if o.commandable and o.actions.len > 0 {
+            let items = list::items{ list = o.actions }
+            if items[0].unclearable and items[0].phase > 0 {
+                let mut i: usize = 1
+                while i < items.len {
+                    free_params{ &w, a = items[i] }
+                    i = i + 1
+                }
+                o.actions.len = 1
+                return
+            }
+        }
+        clear_all{ &w, id }
+    }
+
     // ClearAllActions (actions.md 1.5): nothing on a non-commandable object; else every action
     // goes, a creature stops walking and stands.
     fn clear_all { mut w: world::World, id: u32 } {
@@ -281,7 +302,7 @@ namespace actions {
     // WAIT (actions.md 3.10): seconds of world time since it started.
     fn wait { mut w: world::World, a: *mut Action } -> Status {
         let seconds = float_param{ a, i = 0 }
-        let elapsed = clock::now_ms{ c = w.clock } - a.started
+        let elapsed = clock::elapsed_since{ now = clock::now_ms{ c = w.clock }, then = a.started }
         if @as(f32, elapsed) < seconds * 1000.0 { return Status::running }
         return Status::done
     }
@@ -297,7 +318,7 @@ namespace actions {
         let mut length: f32 = 1000.0
         if animname::is_fire_forget{ w = &w, id = anim } { length = 1500.0 } else if duration > 0.0 { length = duration * 1000.0 }
         if speed != 0.0 and duration <= 0.0 { length = length / math::abs{ x = speed } }
-        let elapsed = @as(f32, clock::now_ms{ c = w.clock } - a.started)
+        let elapsed = @as(f32, clock::elapsed_since{ now = clock::now_ms{ c = w.clock }, then = a.started })
         if elapsed < length {
             world::set_animation{ o, id = anim, speed = if speed == 0.0 { 1.0 } else { speed } }
             return Status::running
@@ -403,6 +424,12 @@ namespace actions {
         if not t.commandable or w.conversation.active {
             w.conversation.pending = w.conversation.active
             return Status::failed
+        }
+        // The player's talk order (a click, the target block) names approach mode 1 and no ignored range:
+        // the leader first walks to within the use range + 1 m (scripts and tests leave the params out
+        // and start where they stand).
+        if int_param{ a, i = 3 } == 1 and int_param{ a, i = 4 } == 0 {
+            if doors::approach_within{ &w, id, target, a, extra = 1.0 } { return Status::done }
         }
         w.conversation.pending = true
         dlg::note_event{ &w, target, caller = id, name = dialog, private = int_param{ a, i = 2 } != 0 }

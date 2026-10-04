@@ -84,28 +84,7 @@ namespace items {
     // The item's icon texture name: `i` + baseitems ItemClass + `_` + the model variation as
     // three digits (checked against every UTI of the install: 1012 of 1055 resolve, the rest are
     // creature weapons and hides, which are never shown). `defaulticon` is the fallback.
-    fn icon_name { w: *world::World, id: u32, into: []mut u8 } -> []u8 {
-        let it = item_of{ w, id } ifnull { return into[..0] }
-        let class = twoda::get_string{ t = w.tables.baseitems, row = @as(usize, it.base), column = "itemclass" } ifnull { return into[..0] }
-        if class.len + 6 > into.len { return into[..0] }
-        let mut n: usize = 0
-        into[n] = 'i'
-        n = n + 1
-        slice::copy(u8){ dst = into[n..n + class.len], src = class }
-        let mut k: usize = 0
-        while k < class.len {
-            into[n + k] = ascii::to_lower{ c = into[n + k] }
-            k = k + 1
-        }
-        n = n + class.len
-        into[n] = '_'
-        n = n + 1
-        let v = if it.model_variation == 0 { 1 } else { it.model_variation }
-        into[n] = @trunc(u8, 48 + (v / 100) % 10)
-        into[n + 1] = @trunc(u8, 48 + (v / 10) % 10)
-        into[n + 2] = @trunc(u8, 48 + v % 10)
-        return into[..n + 3]
-    }
+    fn icon_name { w: *world::World, id: u32, into: []mut u8 } -> []u8 { return hud::item_icon_name{ w, id, into } }
 
     // The item's icon, with its size; not ok when the install has neither the variation's nor the
     // base item's default picture.
@@ -396,9 +375,11 @@ namespace items {
     }
 
     // Whether the item was picked up since the player last looked at it (the inventory's "New
-    // Items" filter). PLACEHOLDER: the engine's items have no "new" flag (party-items-saves.md
-    // 5.1, flag bit 7) and nothing sets it, so none is new.
-    fn is_new { w: *world::World, id: u32 } -> bool { return false }
+    // Items" filter; party-items-saves.md 5.1, flag bit 7). Not saved: a loaded game has none new.
+    fn is_new { w: *world::World, id: u32 } -> bool {
+        let it = item_of{ w, id } ifnull { return false }
+        return it.fresh
+    }
 
     // Whether the item has a use of its own: a CastSpell property (10) in its blueprint, the
     // "Useable" of the inventory screen's filter and button.
@@ -415,6 +396,34 @@ namespace items {
             k = k + 1
         }
         return false
+    }
+
+    // The self slot that lists the item for `who`, 0 when the item is not usable from the inventory or the
+    // HUD (docs/re/gui.md "Action menus"; the original's test is 0x00616520, called with every category by
+    // the inventory's Useable filter and its row click, and per category by the HUD's lists):
+    //   1 medical: ItemType 45 (medpacs), 47 (recovery kits), 26 (droid repair kits) with an ability;
+    //   2 other: stims (25), and any item with an ability whose power has `itemtargeting` 1 in spells.2da
+    //     (disguises, energy shields, droid devices, plot serums), a droid utility, droid shield or
+    //     forearm shield (12, 13, 20) only while worn; grenades and the rest are not usable from here;
+    //   3 mine: ItemType 28 with the Trap property, for a creature with the Demolitions skill.
+    // And CanUseItem passes (limits, proficiency): `can_use`, except that a mine has no ability.
+    fn self_slot_of { mut w: world::World, who: u32, id: u32, worn: bool } -> usize {
+        let kind = base_int{ w = &w, id, column = "itemtype", fallback = 0 }
+        if kind == 28 {
+            let ri = rules_item_of{ w = &w, id } ifnull { return 0 }
+            if not rules::has_property{ item = ri, name = rules::ip::TRAP } { return 0 }
+            let f = hud::ruled_of{ w = &w, id = who } ifnull { return 0 }
+            if not rt_talent::has_skill{ w = &w, f, skill = rules::skill::DEMOLITIONS } { return 0 }
+            return 3
+        }
+        let spell = rt_item::ability_of{ w = &w, id }
+        if spell < 0 or not can_use{ &w, who, id } { return 0 }
+        if kind == 45 or kind == 26 or kind == 47 { return 1 }
+        if kind == 25 { return 2 }
+        let targeted = twoda::get_int{ t = w.tables.spells, row = @as(usize, spell), column = "itemtargeting" } ifnull 0
+        if targeted != 1 { return 0 }
+        if (kind == 12 or kind == 13 or kind == 20) and not worn { return 0 }
+        return 2
     }
 
     // Whether `who` can use the item now: it has a use and CanUseItem passes (party-items-saves.md

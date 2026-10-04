@@ -109,7 +109,9 @@ namespace partysel_panel {
     // What the panel shows of a slot: from its creature when there is one, else from its blueprint
     // (the original reads the saved AVAILNPC<n> creature).
     fn slot_info { mut w: world::World, n: usize } -> Slot {
-        let id = slot_creature{ w = &w, n }
+        // The party table's creature, not one found by its tag: the Undercity's Mission, a placed creature of the
+        // same tag, is not the companion the player is offered.
+        let id = if world::is_valid{ w = &w, id = w.party.npcs[n] } { w.party.npcs[n] } else { if in_party{ w = &w, n } { slot_creature{ w = &w, n } } else { obj::INVALID } }
         if id != obj::INVALID {
             return Slot{ name = hud::name_of{ w = &w, id }, portrait = hud::portrait_of{ w = &w, id }, level = hud::level_of{ w = &w, id } }
         }
@@ -329,30 +331,25 @@ namespace partysel_panel {
         show_counts{ &s, &g }
     }
 
-    // Done: with no companion, or both forced, the party applies at once; otherwise the player is
-    // asked first (a short party gets the longer warning).
+    // Done: the party applies at once. The original's party screen asks nothing (CSWGuiPartySelection
+    // has no confirmation: the strings "Are you sure this is the party configuration..." are in the
+    // string table but no code refers to them), so a free companion left out is the player's choice.
     fn done { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } {
-        let count = picked_count{ &s }
-        let mut forced: i32 = 0
-        let mut n: usize = 0
-        while n < SLOTS {
-            if s.forced[n] { forced = forced + 1 }
-            n = n + 1
-        }
-        // Nothing left to pick (every companion the party can take is picked: the Endar Spire has only
-        // Trask) is as good as a full party. PLACEHOLDER for the original's counting, which is not traced.
-        let mut pickable: i32 = 0
-        n = 0
-        while n < SLOTS {
-            if slot_pickable{ w = &w, n } { pickable = pickable + 1 }
-            n = n + 1
-        }
-        if count == 0 or (count == MAX_COMPANIONS and forced == MAX_COMPANIONS) or count >= pickable {
-            apply{ &s, &g, &w, &dev }
+        apply{ &s, &g, &w, &dev }
+    }
+
+    // The test bot's way of pressing OK: the question's OK if the box is up, else the screen's OK.
+    fn auto_accept { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } {
+        if not s.opened { return }
+        if s.box != 0 {
+            let ask = s.confirming
+            gui::close{ &g, id = s.box }
+            s.box = 0
+            s.confirming = false
+            if ask { apply{ &s, &g, &w, &dev } }
             return
         }
-        say{ &s, &g, &w, &dev, strref = if count == 1 { 38329 } else { 38328 }, ask = true }
-        s.confirming = s.box != 0
+        done{ &s, &g, &w, &dev }
     }
 
     // ---- applying

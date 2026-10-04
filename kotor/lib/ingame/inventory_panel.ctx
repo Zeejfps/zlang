@@ -31,10 +31,12 @@ namespace inventory_panel {
         filter: i32,            // kept between openings, as the original keeps it
         picked: u32,            // the selected item, INVALID none
         box: u32,               // the refusal message box, 0 when none
+        seen: [64]u32,          // the new items whose description was shown: no longer new when the screen closes
+        nseen: usize,
     }
 
     fn new {} -> State {
-        return State{ opened = false, who = obj::INVALID, filter = FILTER_ALL, picked = obj::INVALID, box = 0 }
+        return State{ opened = false, who = obj::INVALID, filter = FILTER_ALL, picked = obj::INVALID, box = 0, seen = [obj::INVALID; 64], nseen = 0 }
     }
 
     // The panel was just added, or the leader changed and it must be filled again.
@@ -44,6 +46,7 @@ namespace inventory_panel {
         s.box = 0
         gui::set_visible{ &g, panel, tag = "BTN_CHARLEFT", visible = false }
         gui::set_visible{ &g, panel, tag = "BTN_CHARRIGHT", visible = false }
+        gui::set_click_rows{ &g, panel, tag = "LB_ITEMS" }
         items::show_portrait{ &g, &w, &dev, panel, tag = "LBL_PORT", who = s.who }
         try fill_numbers{ &s, &g, &w, panel }
         try fill_filter{ &s, &g, &w, panel }
@@ -61,7 +64,10 @@ namespace inventory_panel {
     fn on_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, ev: gui::Event } -> bool {
         if ev.panel != panel or s.box != 0 { return false }
         if slice::eq_bytes{ a = ev.tag, b = "LB_ITEMS" } {
-            if ev.kind == gui::EventKind::row_selected {
+            // The pointer over a row (or the keys on it) shows its description; a click on it does
+            // what the row does: uses the item or says why not (CSWGuiInventory::OnItemHilighted
+            // and the row's click callback, re/gui.md).
+            if ev.kind == gui::EventKind::row_selected or ev.kind == gui::EventKind::row_hover {
                 let r = pick{ &s, &g, &w, panel, user = ev.user }
                 report{ &w, what = r }
                 return true
@@ -90,6 +96,13 @@ namespace inventory_panel {
 
     // The panel is going away.
     fn close { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } {
+        // CSWGuiInventory::OnPanelRemoved hands the seen items to the party table, which clears their flag.
+        let mut k: usize = 0
+        while k < s.nseen {
+            if items::item_of{ w = &w, id = s.seen[k] } is some{ value = it } { it.fresh = false }
+            k = k + 1
+        }
+        s.nseen = 0
         if s.box != 0 { gui::close{ &g, id = s.box } }
         s.box = 0
         s.opened = false
@@ -133,6 +146,13 @@ namespace inventory_panel {
         try gui::set_text{ &g, panel, tag = "BTN_QUESTITEMS", text = utf8::view{ b }.bytes }
     }
 
+    // Whether the viewed creature can use the item from this screen (the original's test, items::self_slot_of): a
+    // grenade is not usable here, and clicking it says so.
+    fn usable { mut s: State, mut w: world::World, id: u32 } -> bool {
+        let worn = if items::item_of{ w = &w, id } is some{ value = it } { it.equipped_slot >= 0 } else { false }
+        return items::self_slot_of{ &w, who = s.who, id, worn } != 0
+    }
+
     // Whether the item shows under the current filter.
     fn passes { mut s: State, mut w: world::World, id: u32 } -> bool {
         if s.filter == FILTER_ALL { return true }
@@ -142,7 +162,7 @@ namespace inventory_panel {
         if s.filter == FILTER_QUEST { return o.plot }
         if s.filter == FILTER_EQUIPPABLE { return slots != 0 }
         if s.filter == FILTER_UTILITY { return not o.plot and slots == 0 }
-        return items::can_use{ &w, who = s.who, id }
+        return usable{ &s, &w, id }
     }
 
     // Rebuilds the list for the filter and the description for whatever is selected.
@@ -195,23 +215,36 @@ namespace inventory_panel {
     fn pick { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32, user: i64 } -> !bool {
         let id = if user > 0 { @as(u32, user) } else { obj::INVALID }
         s.picked = id
+        if id != obj::INVALID and items::is_new{ w = &w, id } and s.nseen < 64 {
+            s.seen[s.nseen] = id
+            s.nseen = s.nseen + 1
+        }
         try items::show_description{ &g, &w, panel, tag = "LB_DESCRIPTION", id = if id == obj::INVALID { 0 } else { id } }
-        let usable = id != obj::INVALID and items::can_use{ &w, who = s.who, id }
-        gui::set_text_color{ &g, panel, tag = "BTN_USEITEM", color = if usable { gui::color_menu{} } else { gui::color_disabled{} } }
+        let can = id != obj::INVALID and usable{ &s, &w, id }
+        gui::set_text_color{ &g, panel, tag = "BTN_USEITEM", color = if can { gui::color_menu{} } else { gui::color_disabled{} } }
         return true
     }
 
     // ---- using an item
 
-    // The Use Item button, or a second click on the row (party-items-saves.md and re/gui.md:
-    // the refusals are the original's, in its order).
+    // The Use Item button (the row the pointer last rested on), or a click on a row (party-items-saves.md
+    // and re/gui.md: the refusals are the original's, in its order).
     fn use_picked { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> !bool {
         let id = s.picked
         if id == obj::INVALID or not world::is_valid{ w = &w, id } { return false }
-        if not items::can_use{ &w, who = s.who, id } {
+        if not usable{ &s, &w, id } {
             let slots = items::equipable_slots{ w = &w, id }
             s.box = items::notice{ &g, &w, &dev, strref = if slots != 0 { 42485 } else { 42486 } }
             return false
+        }
+        // In combat only one item may be used each round (OnUseItem: 42409).
+        if hud::creature_of{ w = &w, id = s.who } is some{ value = c } {
+            if c.in_combat and hud::ruled_of{ w = &w, id = s.who } is some{ value = f } {
+                if f.item_ms > 0 {
+                    s.box = items::notice{ &g, &w, &dev, strref = 42409 }
+                    return false
+                }
+            }
         }
         let kind = items::base_int{ w = &w, id, column = "itemtype", fallback = 0 }
         if kind == TYPE_MEDPAC or kind == TYPE_REPAIR_KIT {

@@ -205,6 +205,7 @@ namespace dlgview {
             _ = @fmt(&w.io, "dialog panels: {}\n", error)
         }
         sync_tokens{ &w, &g }
+        sync_computer{ &v, &w, &g }
         start_ambient_track{ &v, &w, name = w.conversation.d.ambient_track }
         // A conversation that follows a fade to black fades the world in on its first line.
         if w.conversation.hold_fade_in {

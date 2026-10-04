@@ -1,0 +1,15 @@
+# A fresh Endar Spire: the player walks to the footlocker and uses it (the default action), the loot panel
+# opens, one click on an item takes it ("Acquired Item", the HUD's icon), Get Items takes the rest.
+3 warp end_locker01
+5 use end_locker01
+60 ui bag
+62 ui ctl LB_ITEMS
+64 ui clickctl LB_ITEMS 0
+68 ui bag
+70 ui clickctl BTN_OK
+80 ui bag
+90 ui stat hp 5
+100 ui clickctl BTN_ACTION1
+101 ui clickctl BTN_ACTION1
+400 ui log
+400 ui bag

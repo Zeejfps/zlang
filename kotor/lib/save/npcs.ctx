@@ -74,7 +74,7 @@ namespace save {
         o.position = math::Vec3{ x = tmpl::real{ doc = &doc, s = gff::ROOT, label = "XPosition", default = 0.0 }, y = tmpl::real{ doc = &doc, s = gff::ROOT, label = "YPosition", default = 0.0 }, z = tmpl::real{ doc = &doc, s = gff::ROOT, label = "ZPosition", default = 0.0 } }
         world::set_orientation{ o, v = math::Vec3{ x = tmpl::real{ doc = &doc, s = gff::ROOT, label = "XOrientation", default = 0.0 }, y = tmpl::real{ doc = &doc, s = gff::ROOT, label = "YOrientation", default = 1.0 }, z = 0.0 } }
         try tmpl::read{ &w, o, doc = &doc, s = gff::ROOT }
-        if obj::creature{ o } is some{ value = c } { c.spawn_fired = true }
+        if obj::creature{ o } is some{ value = c } { c.spawn_fired = tmpl::hench_spawn_fired{ o, c } }
         return o.id
     }
 
@@ -109,7 +109,7 @@ namespace save {
             o.area = w.area
             o.faction = pc.faction
             o.ai_level = 4
-            if obj::creature{ o } is some{ value = c } { c.spawn_fired = true }
+            if obj::creature{ o } is some{ value = c } { c.spawn_fired = tmpl::hench_spawn_fired{ o, c } }
             actions::clear_all{ &w, id }
             // Behind the player, one to each side (ours: the original fades them in where the
             // file says and lets them catch up).
