@@ -1,0 +1,13 @@
+# Leviathan, part 5: the bridge corridor and Saul Karath (lev_m40ad). From the checkpoint "bridgearr".
+5 ui heal
+6 ui replies default 1
+10 ui bot god on
+10 ui bot unlock on
+10 ui bot route lev40_bdgunlock lev40_bdgdoor @saulkarath402
+11 ui bot on
+5300 save saulfight
+12700 save saulend
+12700 ui rules
+12700 ui journal list
+12700 ui party
+12700 ui globals lev

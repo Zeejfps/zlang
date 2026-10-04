@@ -42,7 +42,7 @@ namespace save {
         try put_gff_value{ &b, owner = root, label = "PT_XP_POOL", value = gff::Value::int{ v = w.party.xp_pool } }
         try put_gff_value{ &b, owner = root, label = "PT_PLAYEDSECONDS", value = gff::Value::dword{ v = played_seconds } }
         // The engine writes PT_CONTROLLED_NPC; the GFF writer cuts labels to 16 characters.
-        try put_gff_value{ &b, owner = root, label = "PT_CONTROLLED_NP", value = gff::Value::int{ v = -1 } }
+        try put_gff_value{ &b, owner = root, label = "PT_CONTROLLED_NP", value = gff::Value::int{ v = w.party.controlled } }
         try put_gff_value{ &b, owner = root, label = "PT_SOLOMODE", value = gff::Value::byte{ v = if w.party.solo { 1 } else { 0 } } }
         try put_gff_value{ &b, owner = root, label = "PT_CHEAT_USED", value = gff::Value::byte{ v = 0 } }
         try put_gff_value{ &b, owner = root, label = "PT_NUM_MEMBERS", value = gff::Value::byte{ v = @trunc(u8, n_listed) } }
@@ -156,6 +156,9 @@ namespace save {
         w.party.gold = clamp_to_i32{ v = gold }
         w.party.xp_pool = clamp_to_i32{ v = gff::get_number{ doc = doc.*, s = gff::ROOT, label = "PT_XP_POOL" } ifnull 0 }
         w.party.solo = (gff::get_number{ doc = doc.*, s = gff::ROOT, label = "PT_SOLOMODE" } ifnull 0) != 0
+        // The slot SwitchPlayerCharacter made the player's character (the player in the save is that creature).
+        w.party.controlled = @trunc(i32, gff::get_number{ doc = doc.*, s = gff::ROOT, label = "PT_CONTROLLED_NP" } ifnull -1)
+        if w.party.controlled >= @as(i32, party::SLOTS) { w.party.controlled = -1 }
 
         let avail = gff::get_list{ doc = doc.*, s = gff::ROOT, label = "PT_AVAIL_NPCS" } ifnull none
         let mut slot: usize = 0

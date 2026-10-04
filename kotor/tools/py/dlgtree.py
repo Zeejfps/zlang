@@ -109,6 +109,7 @@ def main(argv):
     width = 110
     rest = []
     journal = None
+    module = None       # the copy that module's rim holds (a few conversations exist in several modules)
     i = 0
     while i < len(argv):
         if argv[i] == '--width':
@@ -116,6 +117,9 @@ def main(argv):
             i += 2
         elif argv[i] == '--journal':
             journal = argv[i + 1]
+            i += 2
+        elif argv[i] == '--module':
+            module = argv[i + 1].lower()
             i += 2
         else:
             rest.append(argv[i])
@@ -125,7 +129,10 @@ def main(argv):
         show_journal(journal, width)
         return
     for name in rest:
-        data = GAME.get(name.lower(), 'dlg')
+        found = GAME.find(name.lower(), 'dlg')
+        if module:
+            found = [e for e in found if os.path.basename(e.container).lower().startswith(module)]
+        data = kres.read_entry(found[-1]) if found else None
         if data is None:
             print(f'{name}: not found')
             continue

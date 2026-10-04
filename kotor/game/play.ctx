@@ -153,6 +153,7 @@ namespace play {
         let mut sw_module_len: usize = 0
         let mut sw_name_len: usize = 0
         let mut sw_quiet: u32 = 0
+        let mut sw_need: u32 = 60               // quiet ticks to wait: 60 (2 s), or 5 for `savewhen MODULE NAME soon`
         let mut sw_on = false
         let mut want_load: []u8 = ""            // a load asked for: a folder (ours, then the install's)
         let mut real_total: f64 = 0.0
@@ -181,6 +182,7 @@ namespace play {
                     continue
                 }
                 if ci::eq{ a = s.word, b = "savewhen" } {
+                    // `savewhen MODULE NAME soon`: as soon as MODULE has been entered (5 ticks, before the conversation that starts there).
                     // `savewhen MODULE NAME [QUEST ENTRY]`: a save of the game, called NAME, once the story is in MODULE (and the
                     // journal's QUEST has reached ENTRY) with no conversation, no transition, no loading and no fight of the leader's for 2 s: a checkpoint at an arrival that does not depend on how long the fights
                     // before it took (frames of a `save` line move whenever the dice or the timing do).
@@ -192,7 +194,8 @@ namespace play {
                     slice::copy(u8){ dst = sw_module[..sw_module_len], src = m[..sw_module_len] }
                     slice::copy(u8){ dst = sw_name[..sw_name_len], src = n[..sw_name_len] }
                     let q = text::next_word{ words = &sww } ifnull ""
-                    sw_quest_len = if q.len > 24 { 24 } else { q.len }
+                    sw_need = if ci::eq{ a = q, b = "soon" } { 5 } else { 60 }
+                    sw_quest_len = if q.len > 24 or sw_need == 5 { 0 } else { q.len }
                     slice::copy(u8){ dst = sw_quest[..sw_quest_len], src = q[..sw_quest_len] }
                     sw_entry = @as(i32, text::scan_decimal{ s = text::next_word{ words = &sww } ifnull "0" })
                     sw_on = true
@@ -337,8 +340,9 @@ namespace play {
                 if world::object{ w = &w, id = w.pc } is some{ value = po } {
                     if obj::creature{ o = po } is some{ value = pc } { fighting = pc.in_combat }
                 }
+                if sw_need == 5 { fighting = false }
                 if here and not fighting and w.transition == null and w.arrival == 0 and not w.conversation.active and not w.conversation.pending and not loading::is_up{ l = ld } { sw_quiet = sw_quiet + 1 } else { sw_quiet = 0 }
-                if sw_quiet >= 60 and want_save.len == 0 {
+                if sw_quiet >= sw_need and want_save.len == 0 {
                     want_save = sw_name[..sw_name_len]
                     sw_on = false
                 }

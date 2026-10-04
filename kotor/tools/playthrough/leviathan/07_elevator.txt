@@ -1,0 +1,17 @@
+# Leviathan, part 7: the elevator down to the hangar (lev_m40ac). From the checkpoint "backdeck" (docking bay doors open, journal 66).
+# The console asks the party to be within 15 m (k_plev_chkprox): the bot walks the leader, then waits for Carth and Bastila.
+5 ui heal
+6 ui replies ~Hangar default 1
+10 ui bot god on
+10 ui bot unlock on
+10 ui bot route plev_elevctrl
+11 ui bot on
+2400 ui bot off
+2800 ui party
+2800 ui pos
+2800 ui where carth
+2800 ui where bastila
+2900 use plev_elevctrl
+4600 ui party
+4600 ui pos
+4600 save hangar

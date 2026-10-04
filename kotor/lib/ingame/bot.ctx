@@ -32,6 +32,11 @@ namespace bot {
         tick: u32,
         waiting: u32,                           // decisions spent on the current stop
         foe: u32,                               // the one it last ordered an attack on
+        foe_dist: f32,                          // how far that one was at the last decision
+        foe_stalled: u32,                       // decisions in a row that left it no nearer the foe: a closed door between
+        far_pos: math::Vec3,                    // where the leader stood when a foe farther than eight metres was first the nearest
+        foe_skips: [8]u32,                      // the foes it gave up on (in another room: the walk to them fails), left alone from then on
+        foe_skip_n: usize,
         stalled: u32,                           // decisions in a row that left it no nearer the stop: a closed door in the way
         last_dist: f32,
         area: u32,                              // the area it last decided in (0 before the first decision)
@@ -44,7 +49,7 @@ namespace bot {
     }
 
     fn new {} -> Bot {
-        return Bot{ on = false, unlock = false, god = false, party = false, party_wait = 0, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false, stalled = 0, last_dist = 0.0, area = 0, talked = false, clicked = 0, trans_stop = false, best = 1000000.0, tour = new_tour{} }
+        return Bot{ on = false, unlock = false, god = false, party = false, party_wait = 0, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, foe_dist = 0.0, foe_stalled = 0, far_pos = math::Vec3{ x = 0.0, y = 0.0, z = 0.0 }, foe_skips = [obj::INVALID; 8], foe_skip_n = 0, seen_open = false, stalled = 0, last_dist = 0.0, area = 0, talked = false, clicked = 0, trans_stop = false, best = 1000000.0, tour = new_tour{} }
     }
 
     // The `bot ...` input line, after the word `bot`.
@@ -52,6 +57,7 @@ namespace bot {
         let mut words = text::words{ s = args }
         let what = text::next_word{ &words } ifnull { return }
         if ci::eq{ a = what, b = "route" } {
+            b.foe_skip_n = 0
             b.count = 0
             b.next = 0
             b.waiting = 0
@@ -118,6 +124,7 @@ namespace bot {
         // A new area: a stop that is an area-transition door has done its work (the door of the same tag on the
         // other side would send it straight back).
         if b.area != w.area {
+            b.foe_skip_n = 0
             let came = b.area != 0
             b.area = w.area
             // (Only when the stop is the door it clicked or a transition trigger: the stop may have been passed already.)
@@ -125,8 +132,45 @@ namespace bot {
             b.clicked = 0
         }
         // Something hostile and alive within sight: fight it, nearest first.
-        let foe = nearest_foe{ w = &w, me }
+        let foe = nearest_foe{ w = &w, me, skips = b.foe_skips[..b.foe_skip_n] }
         if foe != obj::INVALID and not tour_ignores{ &b, foe } {
+            // A foe the leader cannot get nearer to: a closed door between them (a move to the other side of it fails at once, so the
+            // fight never begins and the walk never goes on). The closest door within six metres is opened, as for a stop.
+            // The nearest foe is far (past eight metres) and the leader has not moved for a dozen decisions: whoever the nearest is
+            // (the pick flips between foes at the same distance), a fight is not what holds it.
+            if world::object{ w = &w, id = foe } is some{ value = fo } {
+                let fd = math::vec3::distance{ a = fo.position, b = me.position }
+                if fd > 8.0 and math::vec3::distance{ a = me.position, b = b.far_pos } < 1.0 { b.foe_stalled = b.foe_stalled + 1 } else {
+                    b.foe_stalled = 0
+                    b.far_pos = me.position
+                }
+                b.foe_dist = fd
+            }
+            if b.foe_stalled >= 12 {
+                // No door helped: it is behind something the walk cannot pass. It is left alone.
+                b.foe_stalled = 0
+                if b.foe_skip_n < 8 {
+                    b.foe_skips[b.foe_skip_n] = foe
+                    b.foe_skip_n = b.foe_skip_n + 1
+                }
+                _ = @fmt(&w.io, "bot: cannot get at foe {}, leaves it\n", foe)
+                actions::clear_all{ &w, id = lead }
+                return
+            }
+            if b.foe_stalled > 0 and b.foe_stalled % 8 == 0 {
+                let door = nearest_closed_door{ w = &w, me }
+                if door != obj::INVALID {
+                    _ = @fmt(&w.io, "bot: no nearer to its foe {} for a while, opens door {}\n", foe, door)
+                    if world::object{ w = &w, id = door } is some{ value = dob } {
+                        if dob.ext is door{ d } { if d.locked and b.unlock { d.locked = false } }
+                    }
+                    let mut a = actions::make{ kind = actions::Kind::open_door }
+                    a.params[0] = actions::Param::object{ id = door }
+                    actions::clear_all{ &w, id = lead }
+                    _ = actions::add{ &w, id = lead, action = a, force = true }
+                    return
+                }
+            }
             if foe != b.foe or me.actions.len == 0 {
                 b.foe = foe
                 let mut a = actions::make{ kind = actions::Kind::attack_object }
@@ -196,7 +240,7 @@ namespace bot {
             return
         }
         // No nearer than a few decisions ago while it walks: a closed door nobody told the bot about is in the way. The
-        // closest one within four metres is opened (its lock first, when the cheat is on).
+        // closest one within six metres is opened (its lock first, when the cheat is on).
         if b.next < b.count {
             // Best distance so far (the walk jitters by a metre); eight decisions without beating it by a metre.
             if b.last_dist <= 0.0 or dist < b.last_dist - 1.0 {
@@ -357,7 +401,7 @@ namespace bot {
     fn nearest_closed_door { w: *world::World, me: *obj::Object } -> u32 {
         let all = list::items{ list = w.objects.all }
         let mut best = obj::INVALID
-        let mut best_d: f32 = 4.0
+        let mut best_d: f32 = 6.0
         let mut i: usize = 0
         while i < all.len {
             let o = all[i]
@@ -387,7 +431,16 @@ namespace bot {
     }
 
     // The nearest live hostile creature within sight that the leader can see to attack.
-    fn nearest_foe { w: *world::World, me: *obj::Object } -> u32 {
+    fn is_skipped { skips: []u32, id: u32 } -> bool {
+        let mut i: usize = 0
+        while i < skips.len {
+            if skips[i] == id { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    fn nearest_foe { w: *world::World, me: *obj::Object, skips: []u32 } -> u32 {
         let all = list::items{ list = w.objects.all }
         let mut best = obj::INVALID
         let mut best_d: f32 = SIGHT
@@ -395,7 +448,7 @@ namespace bot {
         while i < all.len {
             let o = all[i]
             i = i + 1
-            if o.destroyed or o.kind != obj::Kind::creature or o.id == me.id or o.area != me.area { continue }
+            if o.destroyed or o.kind != obj::Kind::creature or o.id == me.id or o.area != me.area or is_skipped{ skips, id = o.id } { continue }
             let c = obj::creature{ o } ifnull { continue }
             if c.dead or o.plot or not hud::is_hostile{ w, id = o.id } { continue }    // a plot creature (the Enclave's turrets) takes no damage
             let d = math::vec3::distance{ a = o.position, b = me.position }

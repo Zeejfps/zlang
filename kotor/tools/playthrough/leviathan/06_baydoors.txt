@@ -1,0 +1,12 @@
+# Leviathan, part 6: the bridge computer opens the docking bay doors, and back to the elevator. From the checkpoint "saulend".
+5 ui heal
+6 ui replies ~Open_docking_bay ~Log_off default 1
+10 ui bot god on
+10 ui bot unlock on
+10 ui bot route @bridgecomputer lev40_cmddoor
+10 savewhen lev_m40ab backdeck soon
+11 ui bot on
+3000 ui bot route lev40_cmddoor
+3001 ui bot on
+4000 ui journal list
+4000 ui pos

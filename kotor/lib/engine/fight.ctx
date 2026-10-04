@@ -152,11 +152,11 @@ namespace fight {
     fn sync_flags { w: *world::World, o: *obj::Object, f: *mut Fighter } {
         let c = obj::creature{ o } ifnull { return }
         f.c.is_pc = c.is_pc
-        f.c.pc_rules = o.id == w.player
+        f.c.pc_rules = o.id == w.player and w.party.controlled < 0
         f.c.plot = o.plot
         f.c.min1hp = o.min_one_hp
         f.c.party = party::is_member{ w, id = o.id }
-        f.c.down = f.c.party and o.hp < 1
+        f.c.down = f.c.party and o.hp < 1 and not o.min_one_hp
     }
 
     // ---- reading
