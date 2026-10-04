@@ -36,7 +36,7 @@ are in `kotor/tools/combat/` (`sh kotor/tools/combat/run.sh CHECKPOINT TEST FRAM
 
 | # | Behaviour | Evidence | Status |
 |---|---|---|---|
-| 6 | One round = 3 s; attacks resolved at round start, impacts at the animation's hit times (melee `combatanimations.2da`, ranged `weapondischarge.2da` shots spread over the attacks) | combat.md 3.1-3.4 | matches (log: rounds 91 frames apart) |
+| 6 | One round = 3 s; attacks resolved at round start, impacts at the animation's hit times (melee `combatanimations.2da`, ranged `weapondischarge.2da` shots spread over the attacks) | combat.md 3.1-3.4 | matches (log: rounds 91 frames apart). Engaged pairs (GetCanEngage, GetShouldBeMaster, the master's pause on its slave, then the swap at 1.5 s; sub-agent, merged ffb6c89): checked on the Endar Spire, the Jedi duel and the player against end_sith03 alternate master and slave each round with the slave's paired reaction (`--log combat`: "engages ... as master", "answers with animation") |
 | 7 | Attacks per round: 1 + effect attacks (0..2) + 1 for Flurry/Rapid Shot lines; +1 off-hand with a second weapon or a double weapon | combat.md 3.2 | matches (Carth 2 attacks with two pistols) |
 | 8 | Hit/miss/critical: d20 + modifier vs defense; natural 1 misses, 20 hits; threat range by weapon, confirmation roll; the modifier and defense terms | combat.md 4, 5 | matches (rules library, `rulescheck`) |
 | 9 | Damage dice, STR (melee), Weapon Specialization, crit multiplier, difficulty scaling | combat.md 6 | matches (the difficulty option reaches the rules, row 31) |
