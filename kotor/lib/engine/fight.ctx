@@ -18,6 +18,10 @@ namespace fight {
     // same row plays again).
     const ROW_DIE: i32 = 80
     const ROW_DEAD: i32 = 81
+    const ROW_DIE1: i32 = 82
+    const ROW_DEAD1: i32 = 83
+    const ROW_GETUP: i32 = 381
+    const ROW_GETUP1: i32 = 382
     const ROW_CDIE: i32 = 274
     const ROW_CDEAD: i32 = 275
     const ROW_CREADY: i32 = 278
@@ -286,7 +290,17 @@ namespace fight {
         } else if k == rules::ev::RESURRECT {
             o.hp = e.a
             if obj::creature{ o } is some{ value = c } { c.dead = false }
-            world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
+            // One lying on the floor gets up with the get-up of the way it fell (getupdead after die
+            // and dead, getupdead1 after die1 and dead1; animations.2da rows 381, 382).
+            let row = row_of_animation{ id = o.animation }
+            let lying = row == ROW_DIE or row == ROW_DEAD or row == ROW_DIE1 or row == ROW_DEAD1
+            if lying and of{ o } is some{ value = f } {
+                f.dying_ms = 0
+                f.react_ms = GETUP_MS
+                play_row{ &w, o, row = if row == ROW_DIE1 or row == ROW_DEAD1 { ROW_GETUP1 } else { ROW_GETUP } }
+            } else {
+                world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
+            }
         } else if k == rules::ev::MAX_HP_CHANGED {
             o.hp = o.hp + (e.b - e.a)
             o.hp_max = e.b
@@ -388,7 +402,9 @@ namespace fight {
         bc.in_combat = false
         bc.attack_target = obj::INVALID
         clear_attackers{ &w, id }
-        play_row{ &w, o = back, row = if is_beast{ w = &w, c = bc } { ROW_CDIE } else { ROW_DIE } }
+        // OnApplyDeath picks one of the two ways to fall at random (animation states 3 and 4, 8.2).
+        let second = not is_beast{ w = &w, c = bc } and world::random{ &w } % 2 == 1
+        play_row{ &w, o = back, row = if is_beast{ w = &w, c = bc } { ROW_CDIE } else if second { ROW_DIE1 } else { ROW_DIE } }
         bark{ &w, id, first = VOICE_DEAD, count = 1, chance_in = 1, quiet = false }
         f.dying_ms = DIE_MS
         if f.c.party {
@@ -1016,7 +1032,7 @@ namespace fight {
         // Dying: the die animation, then the body lies dead.
         if f.dying_ms > 0 {
             f.dying_ms = f.dying_ms - dt
-            if f.dying_ms <= 0 { play_row{ &w, o = o2, row = if is_beast{ w = &w, c = c2 } { ROW_CDEAD } else { ROW_DEAD } } }
+            if f.dying_ms <= 0 { play_row{ &w, o = o2, row = if is_beast{ w = &w, c = c2 } { ROW_CDEAD } else if row_of_animation{ id = o2.animation } == ROW_DIE1 { ROW_DEAD1 } else { ROW_DEAD } } }
             return
         }
         if c2.dead { return }
@@ -1104,6 +1120,15 @@ namespace fight {
         let o = world::object{ w, id } ifnull { return false }
         if o.kind != obj::Kind::creature { return false }
         return o.hp < 1 and party::is_member{ w, id }
+    }
+
+    // Whether a creature is still getting up off the floor (the get-up of a revival).
+    fn getting_up { w: *world::World, id: u32 } -> bool {
+        let o = world::object{ w, id } ifnull { return false }
+        let f = of{ o } ifnull { return false }
+        if f.react_ms <= 0 { return false }
+        let row = row_of_animation{ id = o.animation }
+        return row == ROW_GETUP or row == ROW_GETUP1
     }
 
     fn first_member_up { w: *world::World } -> u32 {
