@@ -1,0 +1,9 @@
+# Unknown World, part 19: the Rakata computer on the summit (rakatcom, unk44_comp): the planetary disruptor field and the Temple energy shield are shut down, so the Ebon Hawk can leave. From "bastdone"; the save "fieldoff".
+5 ui replies ~Shut_down_planetary ~Shut_down_Temple ~Log_out default 1
+10 ui bot god on
+10 ui bot route @rakatcom
+11 ui bot on
+2500 save fieldoff
+3000 ui pos
+3000 ui journal list
+3000 ui globals UNK_

@@ -1,0 +1,17 @@
+# Unknown World, part 14: the Hawk's ramp again: the party screen with nobody chosen (the ritual of the Temple needs the player alone; Jolee and Juhani aboard will
+# follow anyway). From "alone1". The save "alone2" is the arrival on the beach, the party gone.
+5 ui replies default 1
+10 ui bot unlock on
+10 ui bot route ebn12_ebonexit
+10 savewhen unk_m41aa alone2 soon
+11 ui bot on
+1450 ui bot off
+1500 ui party
+1510 ui click 598 271
+1520 ui click 510 509
+1530 ui click 507 447
+1540 ui click 510 509
+1560 ui party
+1600 ui click 640 545
+3000 ui party
+3000 ui pos

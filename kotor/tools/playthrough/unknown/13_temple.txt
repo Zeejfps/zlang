@@ -1,0 +1,10 @@
+# Unknown World, part 13: out of the Elders' compound, the cave and the Temple approach (unk_m41ad) to the beach and the crashed Hawk (unk41_goebon) to leave the companions aboard:
+# the ritual needs the player alone (the guide's strip unk41_templecs fires once per trigger: the walk does not enter it with the party, which would spend it with the guide's refusal, E31).
+# From "eldersok" (journal unk_trapped 37); the save "alone1" is the arrival in the crashed Hawk.
+5 ui replies default 1
+10 ui bot unlock on
+10 ui bot god on
+10 ui bot route rakatadoor2#1 unk41_goto41aarc unk41_goto41aad unk41_goebon
+11 ui bot on
+10 savewhen ebo_m41aa alone1 soon
+8000 ui party

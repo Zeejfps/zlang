@@ -1,0 +1,13 @@
+# Unknown World, part 3: the beach (unk_m41aa): the cut scene of the ambush (newfight: the savages attack the stranded Duros), the Duros survivors thanking
+# the party (unk41_ithor01: the Mandalorians by the temple, the savages). From "beach". The save "duros" is after the talk.
+5 ui heal
+6 ui replies default 1
+10 ui bot god on
+10 ui bot unlock on
+10 ui bot route newfight
+11 ui bot on
+6300 save duros
+7000 ui pos
+7000 ui journal list
+7000 ui party
+7000 ui rules

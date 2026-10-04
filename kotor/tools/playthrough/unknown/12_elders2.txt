@@ -1,0 +1,9 @@
+# Unknown World, part 12: the Elders again (unk42_redelder): the scout is back, the Council keeps its word and offers the ritual that opens the Temple (journal
+# unk_trapped 37). From "elders2" (in front of the door). The first reply of every list.
+5 ui replies default 1
+10 ui bot unlock on
+10 ui bot route rakatadoor2#1
+11 ui bot on
+16000 ui journal list
+16000 ui party
+16000 save eldersok

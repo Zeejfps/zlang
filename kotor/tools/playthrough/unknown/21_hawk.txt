@@ -1,0 +1,10 @@
+# Unknown World, part 21: down the Temple approach and the beach to the crashed Ebon Hawk (the ship parts are in the pack: the hyperdrive talk, ebo41_tell/ebo41_hyper). From "templeout"; the save "hawkback".
+5 ui replies default 1
+10 savewhen ebo_m41aa hawkback soon
+10 ui bot god on
+10 ui bot unlock on
+10 ui bot route unk41_goto41aad unk41_goebon
+11 ui bot on
+6000 ui pos
+6000 ui where ebo41_
+6000 ui where galaxy

@@ -1,0 +1,14 @@
+# Unknown World, part 11: back to the Elders with the scout saved: out of the One's village (the gate RakataDoor2), the north shore, the beach, the Temple approach
+# and the cave (the bot, god mode), then the party is moved to the Elders' door (the barrier puzzle between is not played). From "scout"; the save "elders2" is
+# in front of the door.
+5 ui replies default 1
+10 ui bot unlock on
+10 ui bot god on
+10 ui bot route rakatadoor2#1 unk41_goto41aabr unk41_goto41ada unk41_goto41abd
+11 ui bot on
+10 savewhen unk_m41ab incave soon
+12000 ui bot off
+12100 warpxy 52,95 party
+12200 save elders2
+12200 ui party
+12200 ui journal list

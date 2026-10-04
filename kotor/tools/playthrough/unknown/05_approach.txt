@@ -1,0 +1,9 @@
+# Unknown World, part 5: the beach's east end to the Temple approach (unk_m41ad, trigger unk41_goto41ada). From "duros"; the save "approach" is the arrival.
+5 ui heal
+6 ui replies default 1
+10 ui bot god on
+10 ui bot unlock on
+10 ui bot route unk41_goto41ada
+11 ui bot on
+10 savewhen unk_m41ad approach soon
+3000 ui party

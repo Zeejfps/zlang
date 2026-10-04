@@ -1,0 +1,17 @@
+# Unknown World, part 1: from the Ebon Hawk after the Leviathan (the Leviathan chain's "hawkpost") to the galaxy map, the Unknown World picked and "Travel".
+# The crafted state is the fifth Star Map (Manaan's), as the story's scripts leave it (UT_StarMap1VariableSet): K_STAR_MAP 50, K_KOTOR_MASTER 30; with
+# them k_pebn_galaxy offers the Unknown World and k_sup_galaxymap plays the Bastila torture scene on the way.
+5 ui heal
+6 ui replies default 1
+6 gunner
+7 ui gbool K_STAR_MAP_MANAAN 1
+7 ui global K_STAR_MAP 50
+7 ui global K_KOTOR_MASTER 30
+7 ui global K_CURRENT_PLANET 25
+10 ui goto GalaxyMap
+10 savewhen ebo_m41aa crash
+1500 use GalaxyMap
+1800 ui ctl LBL_Planet_UnknownWorld
+1800 ui clickctl LBL_Planet_UnknownWorld
+2000 ui clickctl BTN_ACCEPT
+2000 ui globals K_

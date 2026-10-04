@@ -1,0 +1,9 @@
+# Unknown World, part 6: from the Temple approach to the gizka cave (unk_m41ab, trigger unk41_goto41abd) and its hologram. From "approach"; the save "cave" is the arrival.
+5 ui heal
+6 ui replies default 1
+10 ui bot god on
+10 ui bot unlock on
+10 ui bot route unk41_goto41abd
+11 ui bot on
+10 savewhen unk_m41ab cave soon
+4000 ui party

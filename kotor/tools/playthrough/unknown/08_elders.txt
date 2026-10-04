@@ -1,0 +1,10 @@
+# Unknown World, part 8: the Elders (unk42_redelder, at once on arrival): the Council recognises Revan and the talk asks what the party wants.
+# From "door": the click on the door as a player does it. The first reply of every list.
+5 ui heal
+6 ui replies default 1
+10 hoveron rakatadoor2 1
+13 mouse click
+16 mouse click
+12600 save eldertalk
+12600 ui journal list
+12600 ui party

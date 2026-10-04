@@ -1,0 +1,10 @@
+# Unknown World, part 18: the summit (unk_m44ac): the strip unk44_bastcs starts the talk with the dark Bastila (the party is Jolee and Juhani); the duel ends by itself when she has lost
+# 150 hit points (k_punk_bast_ud2 throws the party back, takes the companions out of the party and starts the talk again), then she flies away (journal unk_trapped 99). From "summit"; the save "bastdone".
+5 ui replies default 1
+10 ui bot god on
+10 ui bot route unk44_bastcs
+11 ui bot on
+10900 save bastdone
+11000 ui pos
+11000 ui party
+11000 ui journal list
