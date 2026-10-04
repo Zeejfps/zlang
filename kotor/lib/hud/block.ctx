@@ -128,7 +128,13 @@ namespace hud {
             let first = same_actions{ a = default_actions{ w = &w, id = w.target }, b = h.lists[0] }
             let middle = same_actions{ a = middle_actions{ h = &h, w = &w, id = w.target }, b = h.lists[1] }
             let last = same_actions{ a = grenade_actions{ w = &w, target = w.target }, b = h.lists[2] }
-            if not first or not middle or not last { build_block{ &h, &g, &w, &dev, id = w.target } }
+            if not first or not last {
+                build_block{ &h, &g, &w, &dev, id = w.target }
+            } else if not middle {
+                // Only the powers changed (Force points spent or regained): the other slots keep their choice.
+                h.lists[1] = middle_actions{ h = &h, w = &w, id = w.target }
+                refresh_slot{ &h, &g, &w, &dev, k = 1 }
+            }
         }
         let p = gui::find_panel{ &g, id = h.panel } ifnull { return }
         let mut x0 = @as(i32, on.top.x) - BLOCK_W / 2

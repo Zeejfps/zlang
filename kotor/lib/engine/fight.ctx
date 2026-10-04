@@ -1090,6 +1090,8 @@ namespace fight {
     fn action_holds_animation { o: *obj::Object } -> bool {
         if o.actions.len == 0 { return false }
         let head = list::items{ list = o.actions }[0]
+        // A cast plays its conjure and cast animations (and a thrown saber keeps the pose) from its second phase.
+        if head.kind == actions::Kind::cast_spell and head.phase >= 1 { return true }
         return (head.kind == actions::Kind::open_lock or head.kind == actions::Kind::lock) and head.phase >= 2
     }
 
