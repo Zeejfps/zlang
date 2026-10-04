@@ -65,8 +65,20 @@ namespace dlgview {
             while true {
                 let word = text::next_word{ &words } ifnull { break }
                 let c = &w.conversation
-                if c.scripted_count < 32 {
-                    c.scripted[c.scripted_count] = @trunc(u8, text::scan_decimal{ s = word })
+                if c.scripted_count < c.scripted.len {
+                    // `~some_words` (underscores are spaces) picks the reply that contains those words.
+                    let mut e = dlg::Scripted{ n = 0, len = 0, text = [0; 30] }
+                    if word.len > 0 and word[0] == '~' {
+                        let mut k: usize = 1
+                        while k < word.len and e.len < 30 {
+                            e.text[@as(usize, e.len)] = if word[k] == '_' { ' ' } else { word[k] }
+                            e.len = e.len + 1
+                            k = k + 1
+                        }
+                    } else {
+                        e.n = @trunc(u8, text::scan_decimal{ s = word })
+                    }
+                    c.scripted[c.scripted_count] = e
                     c.scripted_count = c.scripted_count + 1
                 }
             }
