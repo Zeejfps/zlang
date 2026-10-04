@@ -35,4 +35,5 @@
 7100 ui party
 7100 ui pos
 7300 ui inv
+7300 ui xp
 7300 save wake

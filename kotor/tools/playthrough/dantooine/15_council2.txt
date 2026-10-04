@@ -1,0 +1,22 @@
+# Dantooine, part 15: out of the ruins, across the courtyard to the Enclave and back to the Council: Vandar on the
+# Star Map. From the checkpoint "starmap" (CKPT=starmap: dan_ruins 20, DAN_STARMAP_DONE).
+# The doors are the game's; the long walks (the ruins' hall, the courtyard, the Enclave) are cut with warps next to them.
+3 ui stat hpmax 130
+3 ui stat hp 130
+3 ui bot god on
+5 ui replies default 1
+10 warp man15_door02
+30 use man15_door02
+# The courtyard (danm14aa): the Enclave's door.
+300 warp man14aa_door03
+320 use man14aa_door03
+# The Enclave: the way to the Council chamber is cut with a warp to the spot in front of it; walking into the chamber
+# runs its trigger (k_pdan_trig1303), which starts Vandar's talk by itself.
+600 ui pos
+620 warp wp_pc_start
+# Vandar sends the party back to the ship at about frame 6200 (Juhani joins; the party screen follows).
+7100 ui journal list
+7100 ui xp
+7100 ui party
+7100 ui pos
+7110 save council2

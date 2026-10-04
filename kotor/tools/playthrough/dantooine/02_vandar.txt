@@ -10,5 +10,6 @@
 10 warp wp_pc_start
 # About 9775: Zhar's conversation ends, the player is free in the training hall.
 9900 ui journal list
+9900 ui xp
 9900 ui pos
 9900 save trial1

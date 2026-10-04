@@ -1,0 +1,40 @@
+# Dantooine, part 12: out of the Enclave, across the courtyard to the ruins (danm15) and the first talk with the
+# ancient droid. From the checkpoint "ruins1" (CKPT=ruins1: Vandar's talk is over, Bastila and Carth are the party).
+# The doors are the game's; the walk across the Enclave and the courtyard is cut with warps next to them (part 7).
+3 ui stat hpmax 130
+3 ui stat hp 130
+# The crafted party is level 8 all round, as Taris leaves it: Carth a soldier, Bastila a Jedi Sentinel.
+3 ui leader Carth
+3 ui stat class 0
+3 ui stat level 8
+3 ui stat xp 29000
+3 ui stat hpmax 80
+3 ui stat hp 80
+3 ui leader bastila
+3 ui stat class 4
+3 ui stat level 8
+3 ui stat xp 29000
+3 ui stat hpmax 70
+3 ui stat hp 70
+3 ui giveitem g_w_lghtsbr01 1 equip
+3 ui giveitem g_a_jedirobe01 1 equip
+4 ui leader pc
+5 ui replies default 1
+10 warp dan13_door03
+20 use dan13_door03
+300 warp man14aa_door04
+320 use man14aa_door04
+# The ruins (danm15): the player stands at the south end; the ancient droid is in the middle hall.
+500 ui pos
+500 ui party
+520 ui goto dan15_ancientdrd
+700 ui pos
+900 ui pos
+1000 ui target dan15_ancientdrd
+1005 ui key 1
+# The droid's long talk (the languages, its purpose, Revan and Malak's visit, the proving grounds) ends at about
+# frame 11170 with dan_ruins 15.
+11300 ui journal list
+11300 ui xp
+11300 ui pos
+11310 save ruins2

@@ -6,4 +6,5 @@
 620 ui click 524 545
 900 ui inv
 900 ui journal list
+900 ui xp
 1000 save saber

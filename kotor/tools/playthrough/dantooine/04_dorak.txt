@@ -26,4 +26,5 @@
 4070 ui stat hpmax 130
 4070 ui stat hp 130
 4080 ui journal list
+4080 ui xp
 4100 save dorak

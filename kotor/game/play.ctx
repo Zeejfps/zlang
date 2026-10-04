@@ -1028,6 +1028,8 @@ namespace play {
         a.params[4] = actions::Param::int{ v = animation }
         a.params[5] = actions::Param::int{ v = result }
         a.params[6] = actions::Param::int{ v = damage }
+        // Ahead of a follower's endless follow order, which would hold the attack back for good.
+        actions::clear_for_player{ &w, id = from }
         _ = actions::add{ &w, id = from, action = a, force = false }
     }
 

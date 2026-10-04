@@ -4,6 +4,8 @@ What happens when the game is played from New Game, checked with logs and screen
 original does. Each step says whether it works, what fixed it (commit), or who has it. The input scripts
 are in `kotor/tools/playthrough/`; replay any of them to see the step again.
 
+Planets after Taris have their own logs: [playthrough-dantooine.md](playthrough-dantooine.md) (the arrival, the Council, the trials, Juhani, the ruins and the Star Map).
+
 ## How to replay
 
 ```

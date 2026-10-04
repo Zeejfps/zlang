@@ -15,4 +15,5 @@
 2230 ui click 638 378
 6000 ui party
 6000 ui journal list
+6000 ui xp
 6010 save ruins1
