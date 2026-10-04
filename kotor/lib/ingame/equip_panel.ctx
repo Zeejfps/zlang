@@ -39,6 +39,17 @@ namespace equip_panel {
     // where it and the slots are) and the slot's name. The numbers below stay and update.
     const SLOT_VIEW: [4][]u8 = ["LBL_PORT_BORD", "LBL_PORTRAIT", "LBL_TXTBAR", "LBL_SLOTNAME"]
 
+    // The numbers of the stats bar: the "cannot equip" text takes their place when the pointed-at item does not fit.
+    const NUMBERS: [8][]u8 = ["LBL_VITALITY", "LBL_DEF", "LBL_ATKL", "LBL_ATKR", "LBL_TOHITL", "LBL_TOHITR", "LBL_DAMAGE", "LBL_TOHIT"]
+
+    fn show_numbers { mut g: gui::Gui, panel: u32, visible: bool } {
+        let mut k: usize = 0
+        while k < NUMBERS.len {
+            gui::set_visible{ &g, panel, tag = NUMBERS[k], visible }
+            k = k + 1
+        }
+    }
+
     // The panel was just added, or the leader changed and it must be filled again.
     fn open { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> ! {
         s.who = party::leader{ w = &w }
@@ -180,6 +191,7 @@ namespace equip_panel {
         gui::set_visible{ &g, panel, tag = "LBL_SELECTTITLE", visible = selecting }
         gui::set_visible{ &g, panel, tag = "BTN_EQUIP", visible = selecting }
         gui::set_visible{ &g, panel, tag = "LBL_CANTEQUIP", visible = false }
+        show_numbers{ &g, panel, visible = true }
         gui::set_visible{ &g, panel, tag = "BTN_CHARLEFT", visible = false }
         gui::set_visible{ &g, panel, tag = "BTN_CHARRIGHT", visible = false }
     }
@@ -344,6 +356,7 @@ namespace equip_panel {
         try items::show_description{ &g, &w, panel, tag = "LB_DESC", id }
         let fits = id == 0 or items::can_equip{ w = &w, who = s.who, item = id, index = items::SLOT_OF[s.slot] }
         gui::set_visible{ &g, panel, tag = "LBL_CANTEQUIP", visible = not fits }
+        show_numbers{ &g, panel, visible = fits }
         gui::set_enabled{ &g, panel, tag = "BTN_EQUIP", enabled = fits and user != NO_PICK }
         if user != s.shown and user != NO_PICK {
             preview{ &s, &g, &w, &dev, panel, user, fits }
