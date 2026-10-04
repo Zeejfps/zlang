@@ -1231,6 +1231,7 @@ namespace fight {
             // An item's ability needs the item (it is spent at the impact, below).
             let used = actions::object_param{ a, i = 6 }
             if used != obj::INVALID and not world::is_valid{ w = &w, id = used } { return actions::Status::failed }
+            a.unclearable = used != obj::INVALID
             let dir = math::vec3::sub{ a = at, b = o.position }
             if dir.x * dir.x + dir.y * dir.y > 0.0001 { world::set_orientation{ o, v = math::Vec3{ x = dir.x, y = dir.y, z = 0.0 } } }
             if obj::creature{ o } is some{ value = c } {

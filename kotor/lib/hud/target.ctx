@@ -220,7 +220,7 @@ namespace hud {
             // A grenade: its ability cast at the target, in place of what the leader was doing.
             let spell = rt_item::ability_of{ w = &w, id = item }
             if spell < 0 { return }
-            actions::clear_all{ &w, id = leader }
+            actions::clear_for_player{ &w, id = leader }
             rt_item::signal_activation{ &w, who = leader, item, target }
             rt_talent::queue_cast{ &w, me = leader, spell, target, location = math::vec3::zero{}, cheat = 0, instant = 0, item }
             return
@@ -241,7 +241,7 @@ namespace hud {
             a.params[3] = actions::Param::int{ v = 1 }
             a.params[4] = actions::Param::int{ v = 0 }
         }
-        actions::clear_all{ &w, id = leader }
+        actions::clear_for_player{ &w, id = leader }
         _ = actions::add{ &w, id = leader, action = a, force = false }
     }
 }

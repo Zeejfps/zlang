@@ -346,7 +346,7 @@ namespace selfslots {
         }
         let leader = party::leader{ w = &w }
         if k == 0 {
-            actions::clear_all{ &w, id = leader }
+            actions::clear_for_player{ &w, id = leader }
             rt_talent::queue_cast{ &w, me = leader, spell = @as(i32, e.id), target = leader, location = math::vec3::zero{}, cheat = 0, instant = 0, item = obj::INVALID }
         } else {
             items::use_item{ &w, who = leader, item = e.id }
