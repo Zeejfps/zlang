@@ -359,11 +359,13 @@ namespace visual {
     fn draw { sc: *scene::Scene, v: *scene::Visual, o: *obj::Object, mut frame: render::Frame, view: u32 } {
         let mut transforms: [8]math::Mat4
         let n = part_transforms{ sc, v, o, out = transforms[..] }
+        // A creature in stealth mode, its weapons too, wears the stealth texture.
+        let look = if scene::is_hiding{ o } { scene::look_material{ sc } } else { null }
         let mut i: usize = 0
         while i < n {
             let p = scene::part_at{ sc, i = v.first + i }
             let l = scene::loaded_at{ sc, i = p.loaded }
-            _ = mdl_render::add_draws{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = transforms[i], materials = l.materials, time = sc.time }
+            _ = mdl_render::add_draws_look{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = transforms[i], materials = l.materials, time = sc.time, look }
             i = i + 1
         }
     }
