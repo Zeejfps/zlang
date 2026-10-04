@@ -1,0 +1,23 @@
+# Tatooine, part 3: out of the Czerka office (checkpoint "office") through Anchorhead (the conservationist who waits outside the office: the
+# peaceful way, a droid that speaks the Sand People's tongue and robes like theirs) to Yuka Laka's droid shop (tat_m17ac): the HK-47 he took
+# off a customer, the haggling over his price, and the purchase; a save there ("hk47").
+#   LOAD=kotor/out/tat_cp/office sh kotor/tools/playthrough/tatooine/run.sh hk47 kotor/tools/playthrough/tatooine/03_hk47.txt 12000
+2 ui bot god on
+2 ui bot unlock on
+2 ui gold 5000
+# replies in the order the lists open: the conservationist (what do you mean, the Sand People killed people, what would you suggest, a
+# capable droid, the enclave, robes, "I'll look into it"); Yuka Laka (what do you have, HK-47 questions, price, haggle, pay)
+2 ui replies ~What_do_you_mean ~Intelligent_or_not ~What_would_you_suggest ~capable_droid ~Where_would_that_enclave ~Where_would_you_get_robes ~look_into_it ~What_do_you_have_available ~questions_about_HK ~seem_to_know ~Why_haven ~interested ~Persuade ~pay_it ~Goodbye default 1
+2 ui bot route tatooinedoor1 tatooinetransition#5 @tat17_08yuka_01 @tat17_08hk47_01
+3 ui bot on
+# HK-47 joins (the party selection screen opens): HK-47 and Bastila, OK, and OK on "Are you sure this is the party configuration you want?"
+14700 ui click 416 358
+14710 ui click 416 271
+14730 ui click 639 545
+14760 ui click 638 378
+14900 ui party
+14900 ui journal list
+14900 ui xp
+14900 ui levels
+14900 ui inv
+14910 save hk47

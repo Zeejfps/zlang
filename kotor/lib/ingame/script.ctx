@@ -84,13 +84,14 @@ namespace ingame {
             // party has seen them (what enemy-sighted auto-pause looks at).
             let all = list::items{ list = w.objects.all }
             let lead = party::leader{ w = &w }
+            let lead_faction = if world::object{ w = &w, id = lead } is some{ value = lo } { lo.faction } else { 0 }
             let mut i: usize = 0
             while i < all.len {
                 let o = all[i]
                 i = i + 1
                 if o.destroyed or o.kind != obj::Kind::creature or o.id == lead or not hud::is_hostile{ w = &w, id = o.id } { continue }
                 let seen = if perception::entry_of{ w = &w, viewer = lead, target = o.id } is some{ value = e } { e.seen } else { false }
-                _ = @fmt(&w.io, "hostile {} {} selectable {} seen {} at {} {}\n", o.id, o.tag, hud::is_selectable{ w = &w, id = o.id }, seen, o.position.x, o.position.y)
+                _ = @fmt(&w.io, "hostile {} {} selectable {} seen {} at {} {} faction {} standing {}\n", o.id, o.tag, hud::is_selectable{ w = &w, id = o.id }, seen, o.position.x, o.position.y, o.faction, if lead_faction == 0 { w.repute[0][o.faction % 32] } else { w.repute[o.faction % 32][lead_faction % 32] })
             }
         } else if ci::eq{ a = cmd, b = "autopause" } {
             // `ui autopause on|off`: the auto-pause triggers (enemy sighted, party member down, new target in
@@ -185,7 +186,7 @@ namespace ingame {
                 if o.destroyed { continue }
                 let tag: []u8 = o.tag
                 if not has_part{ s = tag, part } { continue }
-                _ = @fmt(&w.io, "where {} k{} {} at {} {} {} hp {} facing {} {}\n", o.id, @as(u32, o.kind), tag, o.position.x, o.position.y, o.position.z, o.hp, o.orientation.x, o.orientation.y)
+                _ = @fmt(&w.io, "where {} k{} {} at {} {} {} hp {} facing {} {} faction {}\n", o.id, @as(u32, o.kind), tag, o.position.x, o.position.y, o.position.z, o.hp, o.orientation.x, o.orientation.y, o.faction)
                 if o.ext is creature{ c } { _ = @fmt(&w.io, "  portrait {}\n", c.portrait) }
                 if o.ext is door{ d } { _ = @fmt(&w.io, "  door state {} locked {} area {} link flags {} to {}\n", @as(u32, d.state), d.locked, o.area, d.linked_flags, d.linked_to) }
             }
