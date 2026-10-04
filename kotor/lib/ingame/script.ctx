@@ -304,7 +304,7 @@ namespace ingame {
             while i < ps.len {
                 let p = ps[i]
                 i = i + 1
-                _ = @fmt(&w.io, "panel {} {} at {} {} size {} {} shown {}\n", p.id, resref::bytes{ r = &p.name }, p.sx, p.sy, p.w, p.h, p.shown)
+                _ = @fmt(&w.io, "panel {} {} at {} {} size {} {} shown {} mode {} backdrop {} modal {}\n", p.id, resref::bytes{ r = &p.name }, p.sx, p.sy, p.w, p.h, p.shown, @as(u32, p.mode), p.backdrop, p.modal)
             }
             _ = @fmt(&w.io, "pointer {} {} window {}x{} ui {}x{} scale {}\n", ui.gui.mouse_x, ui.gui.mouse_y, ui.gui.win_w, ui.gui.win_h, ui.gui.ui_w, ui.gui.ui_h, ui.gui.scale)
             let h = ui.gui.hover
