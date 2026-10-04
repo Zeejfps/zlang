@@ -16,6 +16,7 @@ this page is our design on top. Decisions that aren't the original's are marked 
 | `lib/dialog/lipsync` | `lipsync` | a LIP and a time to a mouth pose on a head | lib/formats (lip), lib/mdl |
 | `lib/engine/routines/dialog.ctx` | `rt_dlg` | the routines | core |
 | `tools/dlgcheck` | | every DLG of the install through the loader; headless scripts (`scripts/`) | |
+| `tools/dlgsweep` | | every DLG walked node by node with its scripts run in a fresh module, in parallel: faults, missing routines and scripts, speakers not found ([../dlgsweep.md](../dlgsweep.md)) | |
 | `tools/dialogpanels`, `tools/lipcheck` | | the panels and the lip sync on their own, with PNGs / a corpus check | |
 
 The conversation's state is `w.conversation` (`dlg::State`, a World field). The loop calls
