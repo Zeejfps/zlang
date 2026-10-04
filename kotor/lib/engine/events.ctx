@@ -231,8 +231,10 @@ namespace events {
             if obj::area{ o } is some{ value = a } { a.last_heartbeat = now }
         }
         // A creature with no dialogue script, or "default", runs the stock one, which calls
-        // BeginConversation (re/dialogue.md 2.4).
-        if e.kind == DIALOGUE and o.kind == obj::Kind::creature {
+        // BeginConversation (re/dialogue.md 2.4). Placeables and doors that are made to start a
+        // conversation of their own do the same (tar05_celltalker has no OnDialog and the only
+        // DLG that names it, missdoor_dlg, starts through this event).
+        if e.kind == DIALOGUE and (o.kind == obj::Kind::creature or o.kind == obj::Kind::placeable or o.kind == obj::Kind::door) {
             let own = obj::script{ o, slot }
             if resref::is_empty{ r = own } or resref::matches{ r = own, name = "default" } {
                 _ = scripts::run{ &w, &vm, engine, name = resref::truncate{ name = "k_hen_dialogue01" }, self = id }
