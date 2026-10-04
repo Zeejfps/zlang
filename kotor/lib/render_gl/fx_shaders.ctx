@@ -9,7 +9,8 @@ namespace glsl {
     // surfaces (HDR), and a second output for the passes that follow: the view-space normal and the share
     // of the light that ambient occlusion may darken (alpha). Runs with glsl::SCENE_VS.
     //
-    // u_fx: x the draw's kind (render::DrawKind), y smooth lightmaps, z the ambient cube is set, w 0.
+    // u_fx: x the draw's kind (render::DrawKind), y smooth lightmaps, z the ambient cube is set, w 1 for a punch-through
+    // draw through alpha-to-coverage (the cut becomes a coverage alpha a pixel wide: fx_aa.ctx).
     // u_fx2: x the extra light of self-illumination, y the extra light of additive surfaces.
     const SCENE_FX_FS: c::String =
         \\#version 410 core
@@ -95,7 +96,13 @@ namespace glsl {
         \\        tex = texture(u_diffuse, uv);
         \\    }
         \\    float cut_alpha = tex.a * u_color.a * v_color.a;
-        \\    if ((u_mode.x == 1 && cut_alpha <= 0.35) || (u_mode.x == 4 && cut_alpha <= 0.0)) {
+        \\    float cover = 1.0;
+        \\    if (u_mode.x == 1 && u_fx.w == 1) {
+        \\        cover = clamp((cut_alpha - 0.35) / max(fwidth(cut_alpha), 0.0001) + 0.5, 0.0, 1.0);
+        \\        if (cover <= 0.0) {
+        \\            discard;
+        \\        }
+        \\    } else if ((u_mode.x == 1 && cut_alpha <= 0.35) || (u_mode.x == 4 && cut_alpha <= 0.0)) {
         \\        discard;
         \\    }
         \\    vec3 n = normalize(v_normal);
@@ -143,7 +150,7 @@ namespace glsl {
         \\        }
         \\    }
         \\    if (u_mode.x <= 1) {
-        \\        alpha = 1.0;
+        \\        alpha = cover;
         \\    }
         \\    if (u_mode.x == 3) {
         \\        rgb *= 1.0 + u_fx2.y;
@@ -164,6 +171,7 @@ namespace glsl {
         \\
 
     // Particles, enhanced: the original's, with additive ones brighter than white (u_gain), for the bloom.
+    // u_mode.w is 1 for a punch-through emitter through alpha-to-coverage (the cut becomes a coverage alpha, fx_aa.ctx).
     const PARTICLE_FX_FS: c::String =
         \\#version 410 core
         \\layout(std140) uniform Frame {
@@ -186,7 +194,12 @@ namespace glsl {
         \\    if (u_mode.z == 1) {
         \\        c *= texture(u_tex, v_uv);
         \\    }
-        \\    if ((u_mode.x == 1 && c.a <= 0.35) || (u_mode.x == 4 && c.a <= 0.0)) {
+        \\    if (u_mode.x == 1 && u_mode.w == 1) {
+        \\        c.a = clamp((c.a - 0.35) / max(fwidth(c.a), 0.0001) + 0.5, 0.0, 1.0);
+        \\        if (c.a <= 0.0) {
+        \\            discard;
+        \\        }
+        \\    } else if ((u_mode.x == 1 && c.a <= 0.35) || (u_mode.x == 4 && c.a <= 0.0)) {
         \\        discard;
         \\    }
         \\    if (u_mode.x == 3) {

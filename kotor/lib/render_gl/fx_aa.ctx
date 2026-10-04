@@ -60,4 +60,22 @@ namespace gpu {
         draw_fullscreen{ &dev }
         timer_mark{ &dev, name = "edge aa" }
     }
+
+    // ---- alpha-to-coverage (multisampling on)
+
+    // Whether a punch-through surface of `blend` goes through alpha-to-coverage: multisampling on and the option set.
+    // (The caller says it is in an enhanced view.)
+    fn coverage_wanted { samples: i32, e: render::Enhance, blend: render::Blend } -> bool {
+        return samples > 0 and e.alpha_coverage and blend == render::Blend::punch
+    }
+
+    // GL_SAMPLE_ALPHA_TO_COVERAGE on for punch-through draws that want it, off for everything else. It is left on
+    // between punch-through draws and turned off at the end of the opaque and the transparent passes, so the full-screen
+    // passes and shadows between them (whose alpha is not a coverage) never see it.
+    fn set_coverage { mut dev: Device, punch: bool } {
+        let on = punch and dev.samples > 0 and dev.enhance.alpha_coverage
+        let mut cached = dev.state.coverage
+        set_flag{ &dev, cap = gl::SAMPLE_ALPHA_TO_COVERAGE, on, &cached }
+        dev.state.coverage = cached
+    }
 }
