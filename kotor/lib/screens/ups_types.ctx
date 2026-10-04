@@ -63,6 +63,10 @@ namespace ups {
         original: u32,                  // the saber that was on the bench before a colour change
         owner: u32,                     // who wore it, OBJECT_INVALID when it came from the bag
         slot_worn: i32,                 // and in which equipment slot
+        partner: bool,                  // a dual wielder's other-hand weapon came off with it (OnUpgradeItem) and goes back with it
+        partner_slot: usize,            // the hand it was in
+        partner_template: resref::ResRef, // and which it is: it may merge into a stack of its twin in the bag
+        partner_bits: u32,
         orig_bits: u32,
         bits: u32,
         lightsaber: bool,

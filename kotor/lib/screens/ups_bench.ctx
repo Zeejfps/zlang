@@ -226,20 +226,45 @@ namespace ups {
 
     // ---- taking an item to the bench
 
-    // OnUpgradeItem: a worn item comes off, a stacked one gives one unit, a loose one leaves the
-    // bag; the bench opens on it.
+    // The other hand's weapon of a dual wielder comes off with the item, remembered by what it is (it
+    // may merge into a stack with its twin in the bag).
+    fn take_partner { mut s: State, mut w: world::World, owner: u32, hand: usize } {
+        let other: usize = if hand == obj::SLOT_RIGHT_WEAPON { obj::SLOT_LEFT_WEAPON } else { obj::SLOT_RIGHT_WEAPON }
+        let c = hud::creature_of{ w = &w, id = owner } ifnull { return }
+        let id = c.equipped[other]
+        if id == obj::INVALID { return }
+        let o = world::object{ w = &w, id } ifnull { return }
+        s.partner_template = o.template
+        s.partner_bits = bits_of{ w = &w, item = id }
+        s.partner_slot = other
+        if equip::unequip_item{ &w, id = owner, slot = other } { s.partner = true }
+    }
+
+    // OnUpgradeItem (0x006c2df0): a worn item comes off, a stacked one gives one unit, a loose one
+    // leaves the bag; the bench opens on it. A dual wielder's other weapon comes off with it (the
+    // left hand's first when the right is taken), to go back with it in ReturnItem.
     fn take_item { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, item: u32, owner: u32, slot: i32 } -> ! {
+        s.partner = false
+        let mut unit = obj::INVALID
         if owner != obj::INVALID and slot >= 0 {
-            if not equip::unequip_item{ &w, id = owner, slot = @as(usize, slot) } { return }
+            let hand = @as(usize, slot)
+            let mut template: resref::ResRef
+            if world::object{ w = &w, id = item } is some{ value = io } { template = io.template }
+            let bits = bits_of{ w = &w, item }
+            let two_hands = hand == obj::SLOT_RIGHT_WEAPON or hand == obj::SLOT_LEFT_WEAPON
+            if two_hands and hand == obj::SLOT_RIGHT_WEAPON { take_partner{ &s, &w, owner, hand } }
+            if not equip::unequip_item{ &w, id = owner, slot = hand } { return }
+            if two_hands and hand == obj::SLOT_LEFT_WEAPON { take_partner{ &s, &w, owner, hand } }
+            // Off the hand it went to the bag, where it may have merged into a stack of its twin.
+            unit = if world::is_valid{ w = &w, id = item } { xfer::take_one{ &w, item } } else { bag_unit_like{ &w, template, bits } }
+        } else {
+            unit = xfer::take_one{ &w, item }
         }
-        let unit = xfer::take_one{ &w, item }
         if unit == obj::INVALID { return }
-        if unit == item {
-            let pc = world::object{ w = &w, id = w.player } ifnull { return }
-            _ = rt_item::remove_from_inventory{ &w, o = pc, item }
-            if world::object{ w = &w, id = item } is some{ value = io } {
-                if obj::item{ o = io } is some{ value = it } { it.possessor = obj::INVALID }
-            }
+        let pc = world::object{ w = &w, id = w.player } ifnull { return }
+        _ = rt_item::remove_from_inventory{ &w, o = pc, item = unit }
+        if world::object{ w = &w, id = unit } is some{ value = io } {
+            if obj::item{ o = io } is some{ value = it } { it.possessor = obj::INVALID }
         }
         s.item = unit
         s.original = obj::INVALID

@@ -66,6 +66,21 @@ namespace ups {
         return false
     }
 
+    // One unit of the party's bag that is the item remembered by template and installed upgrades: a
+    // weapon that came off a dual wielder may have merged into a stack with its twin. OBJECT_INVALID
+    // when the bag has none.
+    fn bag_unit_like { mut w: world::World, template: resref::ResRef, bits: u32 } -> u32 {
+        let ids = list::items{ list = w.bag }
+        let mut k: usize = 0
+        while k < ids.len {
+            let id = ids[k]
+            k = k + 1
+            let o = world::object{ w = &w, id } ifnull { continue }
+            if resref::eq{ a = o.template, b = template } and bits_of{ w = &w, item = id } == bits { return xfer::take_one{ &w, item = id } }
+        }
+        return obj::INVALID
+    }
+
     // The item's upgrade bits (bit n = row n of upgrade.2da installed).
     fn bits_of { w: *world::World, item: u32 } -> u32 {
         let it = items::item_of{ w, id = item } ifnull { return 0 }
