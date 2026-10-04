@@ -7,12 +7,12 @@ submersible, the Hrakert Station, the environment suit and the walk on the sea f
 The method is [playthrough.md](playthrough.md)'s and [playthrough-dantooine.md](playthrough-dantooine.md)'s; the scripts are in
 `kotor/tools/playthrough/manaan/`.
 
-**Where it stops, and how to resume.** Played: everything above, 0 script faults, to Wann's debrief on the surface (the quest `man_planet`
-ends, journal 70) with the Star Map in the bag. Not played: leaving Manaan (the Ebon Hawk's trigger `man26ad_to12aa` in the docking bay),
-the galaxy map, and the optional quests (below). `CKPT=surface sh kotor/tools/playthrough/manaan/run.sh NAME SCRIPT FRAMES` starts at Wann's
-door in `manm26ae`, the party Bastila and Carth with the player, the Star Map in the bag, K_STAR_MAP 20, K_STAR_MAP_MANAAN 1; the next
-step is the walk to the bay (`man26ae_to26ac`, `man26ac_to26ad`) and the trigger to the Hawk. The overload ending and the Selkath's law have their own
-branches from checkpoints of the chain (14 and 15).
+**Where it stops, and how to resume.** Played: everything above, 0 script faults, to Wann's debrief on the surface (the quest `man_planet` ends, journal 70) with
+the Star Map in the bag, and the way out of the docking bay into the Ebon Hawk (part 16: the module changes to `ebo_m12aa`; the Hawk's entry script takes the companions
+off the party and the party screen asks for it again on the way out, as the original does). Not played: the galaxy map from the Hawk and the optional quests (below).
+`CKPT=surface sh kotor/tools/playthrough/manaan/run.sh NAME SCRIPT FRAMES` starts at Wann's door in `manm26ae`, with Bastila and Carth, the Star Map in the bag,
+K_STAR_MAP 20, K_STAR_MAP_MANAAN 1; `all.sh 16` walks it to the Hawk. The overload ending, the Selkath's law and the way out have their own parts (14 to 16) from
+checkpoints of the chain.
 
 ## How to replay
 
@@ -21,6 +21,7 @@ kotor/tools/ctxc exe kotor -o kotor/out/kotor_man.exe
 sh kotor/tools/playthrough/manaan/all.sh [FIRST_PART]       # the chain (parts 1 to 13), about 15 minutes; each part loads the checkpoint the one before saved
 sh kotor/tools/playthrough/manaan/all.sh 14                 # the other ending of the Rift (from the checkpoint "sci")
 sh kotor/tools/playthrough/manaan/all.sh 15                 # the Selkath's law (from "prisoner")
+sh kotor/tools/playthrough/manaan/all.sh 16                 # the way out to the Ebon Hawk (from "surface")
 CKPT=wann sh kotor/tools/playthrough/manaan/run.sh NAME 03 FRAMES [FRAME:SHOT]...   # one part from its checkpoint
 ```
 
@@ -70,12 +71,14 @@ State: **works** (checked, 0 faults), **fixed** (a commit of this branch), **ope
 | 13 | Back through the Rift's door to the station (the companions come back with the module's load script), the submersible up, Wann's report; `man_planet` 70 (the quest ends), a Cardio Power System | fixed b65b4ce (the companions), works | `13_surface.txt` |
 | 14 | The other ending: the two-pod pressure puzzle at the panel (fill the container, transfer to the injector, dump the injector, transfer, fill, transfer: 4 million sangen); the harvester destroys itself (`man_planet` 65: 1,500 XP, `MAN_PLANET_PLOT` 3, the movie `26a`), the great firaxan "allows you to pass" (`man28_safe`) | works | `14_overload.txt` |
 | 15 | The Selkath's law (below): a threat spoken to a Sith soldier makes her call a constable; "Your laws are nothing to me!": a 500 credit fine, the cell, deportation to the Ebon Hawk | works | `15_law.txt` |
+| 16 | The way out: the embassy's door, West Central, the bay (the "leaving the security zone" camera conversation `man26_exit5`), the trigger `man26ad_to12aa` to the Ebon Hawk (`ebo_m12aa`): the entry script stands every companion in the ship, the party is chosen again at the ramp | works | `16_leave.txt` |
 
-Experience through the chain (the player; Bastila's is the same, Carth's starts lower by the cheat): 66,000 at the start (level 12, set); 67,695 after the lobby
-fight (six kills); 69,140 after the Sith base; the trial and Wann's second talk add nothing (no plot XP on those nodes, no XP on the entries `man26_starmap` 20/30,
-`man_planet` 10/30); the Hrakert Station's kills and the sea floor's firaxa bring it to 76,345 by the Rift; the Star Map pays 2,000 and 1,200 (79,545), Wann's report
-900 (`man_planet` 70, 0.3 of 3,000: 80,445). The overload ending pays `man_planet` 65: 1,500 instead of 1,200 + 900. The player's portrait shows the level-up arrow
-at the Star Map (78,000 is level 13).
+Experience through the chain (the player; Bastila's is the same, Carth's starts lower by the cheat): 66,000 at the start (level 12, set); 67,695 after the lobby fight
+(six kills); 70,440 after the Sith base (the second room's troopers and war droids, the two Assault Droids); the trial adds nothing (no plot XP on its nodes, none on
+`man26_starmap` 20/30 and `man_planet` 10); Wann's second talk pays 600 (`man_planet` 30: 0.2 of 3,000), 71,040; the Hrakert Station's kills and `man_planet` 40 bring it to
+75,830, the sea floor's firaxa and Kolto Control's Selkath to 77,815, the Rift's two firaxa to 77,895; the Star Map pays 3,200 (`man26_starmap` 40: 2,000, `man_planet` 60:
+1,200), 81,095; Wann's report 900 (`man_planet` 70: 0.3), 81,995. The overload ending pays `man_planet` 65 (1,500 where the toxin pays 1,200) and its report the same 900. The
+player's portrait shows the level-up arrow at the Star Map (78,000 is level 13).
 
 ## Staging and cameras
 
