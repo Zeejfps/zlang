@@ -30,7 +30,15 @@ namespace ai {
         } else {
             let again = world::object{ w = &w, id } ifnull { return }
             let cc = obj::creature{ o = again } ifnull { return }
-            if now - cc.last_heartbeat >= @as(u64, cc.heartbeat_interval) { heartbeat{ &w, &vm, engine, id, now } }
+            if cc.last_heartbeat == 0 {
+                // Spawned already (restored from a save) but never beaten: the original runs a
+                // heartbeat only once a previous time exists (gameloop.md 2.4), so the first
+                // update only starts the timer. Without this the counter, which a load no longer
+                // restarts, would make every such creature beat at once.
+                cc.last_heartbeat = if now == 0 { 1 } else { now }
+            } else if clock::elapsed_since{ now, then = cc.last_heartbeat } >= @as(u64, cc.heartbeat_interval) {
+                heartbeat{ &w, &vm, engine, id, now }
+            }
         }
         perception::update{ &w, id }
         fight::update{ &w, id }
@@ -71,7 +79,7 @@ namespace ai {
             map::put{ m = &w.heartbeats, key = id, value = now } iferr {}
             return false
         }
-        if now - slot.* < OBJECT_HEARTBEAT_MS { return false }
+        if clock::elapsed_since{ now, then = slot.* } < OBJECT_HEARTBEAT_MS { return false }
         slot.* = now
         return true
     }
@@ -85,13 +93,13 @@ namespace ai {
         let o = world::object{ w = &w, id } ifnull { return }
         let mut due = false
         if obj::module{ o } is some{ value = m } {
-            if now - m.last_heartbeat >= OBJECT_HEARTBEAT_MS {
+            if clock::elapsed_since{ now, then = m.last_heartbeat } >= OBJECT_HEARTBEAT_MS {
                 due = m.last_heartbeat != 0
                 m.last_heartbeat = if now == 0 { 1 } else { now }
             }
         }
         if obj::area{ o } is some{ value = a } {
-            if now - a.last_heartbeat >= OBJECT_HEARTBEAT_MS {
+            if clock::elapsed_since{ now, then = a.last_heartbeat } >= OBJECT_HEARTBEAT_MS {
                 due = a.last_heartbeat != 0
                 a.last_heartbeat = if now == 0 { 1 } else { now }
             }
