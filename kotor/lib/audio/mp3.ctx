@@ -538,6 +538,7 @@ namespace mp3 {
     // with `prev` into `out`, the second half kept in `prev`.
     fn transform_long { x: []f32, block_type: u32, prev: []mut f32, out: []mut f32 } {
         let win = @as(usize, block_type) * 36
+        let window = WINDOWS[win..win + 36].ptr
         // Only 18 of the 36 outputs are distinct: y[17 - i] = -y[i] for i = 0..8, and
         // y[53 - i] = y[i] for i = 18..26 (the cosines' arguments add to pi and 2 pi times odd).
         let mut y: [36]f32
@@ -562,8 +563,10 @@ namespace mp3 {
         }
         i = 0
         while i < 18 {
-            out[i] = y[i] * WINDOWS[win + i] + prev[i]
-            prev[i] = y[18 + i] * WINDOWS[win + 18 + i]
+            // Keep the f32 product rounded before overlap-add.
+            let first = y[i] * window[i]
+            out[i] = first + prev[i]
+            prev[i] = y[18 + i] * window[18 + i]
             i = i + 1
         }
     }

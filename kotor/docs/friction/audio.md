@@ -12,12 +12,6 @@ language change belong in `kotor/FRICTION.md` too; the orchestrator merges them.
   writing `&m`). Nothing warns: the generated C shows `f173((*l0), l1)`. Passing large read-only
   structs by reference (above some size), or a warning, would remove a performance cliff that
   reads like idiomatic code.
-- **A const isn't a place, so a const table can't be sliced or pointed into.** The decoder's
-  tables (Huffman lookups, IMDCT cosines, windows, `x^(4/3)`) are consts, which is right: computed
-  while compiling, static in C. But a hot loop that wants `let row = COS36[a..a + 18].ptr` (one
-  bounds check, then unchecked reads) gets "`COS36` is a const, not a place", so every read is
-  `COS36[a + k]` with its own check; copying the table to a local per call costs more. 5 loops. A
-  read-only view of a const (`[]T`, which it already is in C) would do.
 - **A struct holding an enum has no zero value.** `snd::Stream` holds `wav::Info`, whose `codec`
   is an enum, so `let mut s: snd::Stream` is an error, and so is every struct around it
   (`mix::Voice`). Tools get one from `snd::make` (allocated, then opened in place) instead of a
@@ -44,3 +38,30 @@ language change belong in `kotor/FRICTION.md` too; the orchestrator merges them.
 - **Writers for `@fmt` by exact type** (already in kotor/FRICTION.md): sndcheck needed its own
   `Fixed`, `Right` and `Pad` writers for a table, and sndplay one for `c::String` (tools/common
   has none).
+
+## Resolved: read-only views of const arrays
+
+Since `549e1b5`, const arrays can be sliced, including array fields and nested arrays in a const. The view
+borrows immutable static storage without copying; it can outlive the function that made it.
+`&C` remains an error. Views can be used during compile-time computation, but the evaluator
+cannot retain them in another const's stored value (ctxlang spec §12, Slices, and §14).
+
+The long MP3 IMDCT now takes one checked view of its 36-entry window before the output loop.
+The intermediate product is explicit to preserve f32 rounding before overlap-add: simplifying
+an expression can otherwise let Clang fuse multiply-add and change a few PCM samples by one.
+
+Measured on macOS arm64 with Apple Clang at `-O2`, seven alternating runs after warmup:
+
+| Workload | Before, median | Window view, median | Speedup |
+|---|---:|---:|---:|
+| 20 million long IMDCT calls | 1.1224 s | 0.9526 s | 1.178× |
+| Six-second synthetic stereo MP3, decoded 128 times | 1.0843 s | 1.0708 s | 1.013× |
+
+All decoded PCM bytes matched. These are synthetic measurements, not the purchased game's
+audio corpus. A cosine-row view was also measured: Clang already removes those index checks;
+that rewrite slowed the isolated transform about 6.5% and gave no full-decoder improvement,
+so the cosine loop retains its array indexing.
+
+Reproduce with `python3 kotor/tools/py/constviewsbench.py --before 5ae1c76`. It generates its
+input with ffmpeg and saves sources, generated C, assembly, and individual timings under
+`kotor/out/constviewsbench/`; build time and PCM verification are outside the timed runs.
