@@ -357,6 +357,20 @@ namespace partysel_panel {
         s.confirming = s.box != 0
     }
 
+    // The test bot's way of pressing OK: the question's OK if the box is up, else the screen's OK.
+    fn auto_accept { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } {
+        if not s.opened { return }
+        if s.box != 0 {
+            let ask = s.confirming
+            gui::close{ &g, id = s.box }
+            s.box = 0
+            s.confirming = false
+            if ask { apply{ &s, &g, &w, &dev } }
+            return
+        }
+        done{ &s, &g, &w, &dev }
+    }
+
     // ---- applying
 
     // Rebuilds the party (party-items-saves.md 3.8): companions put back leave it and stay where

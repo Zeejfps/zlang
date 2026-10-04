@@ -3,9 +3,9 @@
 1 ui replies 1 1 2 1 1 1 default 9
 1 ui bot god on
 1 ui bot unlock on
+1 ui bot party on
 1 ui bot route tar04_reptlk tar04_maingate tar04_goto05aa10
 2 ui bot on
-3150 ui click 640 545
 3300 ui party
 3300 ui pos
 8000 ui bot status

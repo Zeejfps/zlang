@@ -7,7 +7,8 @@
 //   FRAME ui bot on | off        start / stop
 //   FRAME ui bot unlock on|off   open the lock of a door before opening it (the story's own way is
 //                                a key, a skill or a switch of the party leader)
-//   FRAME ui bot god on|off      the leader never drops below 1 hit point
+//   FRAME ui bot god on|off      the leader and the companions never drop below 1 hit point
+//   FRAME ui bot party on|off    a party selection screen is accepted (OK, and OK on the question) 0.7 s after it opens
 //   FRAME ui bot tour            a route made of the area's own waypoints, doors, placeables, triggers and talkers (bot_tour.ctx)
 //   FRAME ui bot status          where the route stands
 namespace bot {
@@ -22,6 +23,8 @@ namespace bot {
         on: bool,
         unlock: bool,
         god: bool,                              // keeps the leader at 1 hit point at least, module after module
+        party: bool,                            // accepts a party selection screen
+        party_wait: u32,                        // ticks it has been open
         route: [64][40]u8,
         lens: [64]u8,
         count: usize,
@@ -32,12 +35,13 @@ namespace bot {
         stalled: u32,                           // decisions in a row that left it no nearer the stop: a closed door in the way
         last_dist: f32,
         area: u32,                              // the area it last decided in (0 before the first decision)
+        clicked: usize,                         // 1 + the route index of the transition door it clicked last (0 none)
         seen_open: bool,                        // the door of the current stop has been seen open (one the story shuts again is passed, not opened twice)
         tour: Tour,                             // the area's own route, when `bot tour` made one
     }
 
     fn new {} -> Bot {
-        return Bot{ on = false, unlock = false, god = false, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false, stalled = 0, last_dist = 0.0, area = 0, tour = new_tour{} }
+        return Bot{ on = false, unlock = false, god = false, party = false, party_wait = 0, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false, stalled = 0, last_dist = 0.0, area = 0, clicked = 0, tour = new_tour{} }
     }
 
     // The `bot ...` input line, after the word `bot`.
@@ -63,6 +67,8 @@ namespace bot {
             b.on = false
         } else if ci::eq{ a = what, b = "unlock" } {
             b.unlock = on_word{ words = &words }
+        } else if ci::eq{ a = what, b = "party" } {
+            b.party = on_word{ words = &words }
         } else if ci::eq{ a = what, b = "god" } {
             b.god = on_word{ words = &words }
         } else if ci::eq{ a = what, b = "status" } {
@@ -110,14 +116,9 @@ namespace bot {
         if b.area != w.area {
             let came = b.area != 0
             b.area = w.area
-            if came and b.next < b.count {
-                let stop = b.route[b.next][..@as(usize, b.lens[b.next])]
-                if world::object{ w = &w, id = world::object_by_tag{ w = &w, tag = stop, nth = 0 } } is some{ value = so } {
-                    if so.ext is door{ d } {
-                        if d.linked_flags != 0 { advance{ &b } }
-                    }
-                }
-            }
+            // (Only when the stop is the door it clicked: the stop may have been passed already.)
+            if came and b.next < b.count and b.clicked == b.next + 1 { advance{ &b } }
+            b.clicked = 0
         }
         // Something hostile and alive within sight: fight it, nearest first.
         let foe = nearest_foe{ w = &w, me }
@@ -179,7 +180,7 @@ namespace bot {
         }
         if me.actions.len > 0 { return }
         if t.ext is door{ d } {
-            if d.state == obj::DoorState::closed and b.seen_open {
+            if d.state == obj::DoorState::closed and b.seen_open and d.linked_flags == 0 {
                 advance{ &b }
                 return
             }
@@ -188,9 +189,20 @@ namespace bot {
                 // is a player's pace, every decision would never let it finish.
                 if b.waiting % 6 != 1 { return }
                 if d.locked and b.unlock { d.locked = false }
+                if d.linked_flags != 0 { b.clicked = b.next + 1 }
                 let mut a = actions::make{ kind = actions::Kind::open_door }
                 a.params[0] = actions::Param::object{ id = t.id }
                 _ = actions::add{ &w, id = lead, action = a, force = true }
+                return
+            }
+            // An area-transition door that stands open (an NPC opened it) is not clicked into a transition by the engine;
+            // shut, it is: close it, and the next decision clicks it.
+            if d.linked_flags != 0 and dist < REACH + 3.0 {
+                if b.waiting % 6 == 1 {
+                    let mut a = actions::make{ kind = actions::Kind::close_door }
+                    a.params[0] = actions::Param::object{ id = t.id }
+                    _ = actions::add{ &w, id = lead, action = a, force = true }
+                }
                 return
             }
             if dist < REACH + 1.0 {

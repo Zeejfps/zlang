@@ -70,6 +70,7 @@ for p in $points; do
         else if ($4 == "off") on = 0
         else if ($4 == "god") god = ($5 == "off") ? 0 : 1
         else if ($4 == "unlock") unlock = ($5 == "off") ? 0 : 1
+        else if ($4 == "party") party = ($5 == "off") ? 0 : 1
       }
     }
     END {
@@ -79,6 +80,7 @@ for p in $points; do
       if (line != "") print "1 ui replies" line
       if (god) print "1 ui bot god on"
       if (unlock) print "1 ui bot unlock on"
+      if (party) print "1 ui bot party on"
       if (nstop > 0 && stop < nstop) {
         line = ""
         for (k = stop + 1; k <= nstop; k++) line = line " " stp[k]

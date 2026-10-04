@@ -119,7 +119,7 @@ namespace ingame {
                 if not has_part{ s = tag, part } { continue }
                 _ = @fmt(&w.io, "where {} k{} {} at {} {} {} hp {} facing {} {}\n", o.id, @as(u32, o.kind), tag, o.position.x, o.position.y, o.position.z, o.hp, o.orientation.x, o.orientation.y)
                 if o.ext is creature{ c } { _ = @fmt(&w.io, "  portrait {}\n", c.portrait) }
-                if o.ext is door{ d } { _ = @fmt(&w.io, "  door state {} locked {} area {}\n", @as(u32, d.state), d.locked, o.area) }
+                if o.ext is door{ d } { _ = @fmt(&w.io, "  door state {} locked {} area {} link flags {} to {}\n", @as(u32, d.state), d.locked, o.area, d.linked_flags, d.linked_to) }
             }
         } else if ci::eq{ a = cmd, b = "locks" } {
             // Test helper: the locked (or lockable) doors and placeables whose tag contains the word, with the lock's record.

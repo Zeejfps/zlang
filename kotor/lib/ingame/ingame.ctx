@@ -313,6 +313,14 @@ namespace ingame {
             }
         }
         partysel_panel::update{ s = &ui.menus.partysel, g = &ui.gui, &w, &dev, dt }
+        // The test bot accepts the screen after a short look at it (the picture a test takes is of the screen, not of the
+        // world behind it).
+        if ui.bot.party and partysel_panel::is_open{ s = &ui.menus.partysel } {
+            ui.bot.party_wait = ui.bot.party_wait + 1
+            if ui.bot.party_wait % 20 == 0 { partysel_panel::auto_accept{ s = &ui.menus.partysel, g = &ui.gui, &w, &dev } }
+        } else {
+            ui.bot.party_wait = 0
+        }
     }
 
     // The exit script of a party selection that was just applied, once: the owner of the VM runs it
