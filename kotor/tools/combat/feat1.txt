@@ -1,0 +1,20 @@
+20 ui heal
+21 ui grantfeat 8
+21 ui grantfeat 11
+21 ui grantfeat 28
+30 ui foe g_sithtroop01 6 -3
+31 cam toward g_sithtroop01
+40 ui clickon g_sithtroop01
+44 ui fight
+50 ui clicktag BTN_TARGET0
+52 ui fight
+55 ui clicktag BTN_TARGETDOWN0
+57 ui clicktag BTN_TARGET0
+59 ui fight
+62 ui clicktag BTN_TARGETDOWN0
+64 ui clicktag BTN_TARGET0
+66 ui fight
+120 ui fight
+200 ui fight
+300 ui fight
+400 ui fight

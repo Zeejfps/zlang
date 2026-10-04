@@ -11,13 +11,13 @@
 namespace rt_party {
     fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
         match routine {
-            nwscript::GetFirstPC => { try nwvm::push_object{ &vm, id = if world::is_valid{ w = &w, id = w.pc } { w.pc } else { obj::INVALID } } }
+            nwscript::GetFirstPC => { try nwvm::push_object{ &vm, id = if world::is_valid{ w = &w, id = w.player } { w.player } else { obj::INVALID } } }
             nwscript::GetNextPC => { try nwvm::push_object{ &vm, id = obj::INVALID } }
             nwscript::GetIsPC => { try get_is_pc{ &w, &vm, argc } }
             nwscript::GetPartyMemberByIndex => { try get_party_member_by_index{ &w, &vm, argc } }
             nwscript::IsObjectPartyMember => { try is_object_party_member{ &w, &vm, argc } }
             nwscript::GetPartyMemberCount => { try nwvm::push_int{ &vm, v = @as(i32, w.party.count) } }
-            nwscript::GetPCSpeaker => { try nwvm::push_object{ &vm, id = w.pc } }
+            nwscript::GetPCSpeaker => { try nwvm::push_object{ &vm, id = w.player } }
             // ---- the party table
             nwscript::AddPartyMember => { try add_party_member{ &w, &vm, argc } }
             nwscript::RemovePartyMember => { try remove_party_member{ &w, &vm, argc } }
@@ -50,6 +50,16 @@ namespace rt_party {
         if routine == nwscript::AddToParty { _ = try nwarg::object{ &vm, routine, argc, i = 1 } }
     }
 
+    // The server player keeps two creatures (CSWSPlayer): +0x38, the player's character, set at
+    // login and by SwitchPlayerCharacter only; +0x28, the creature the player controls, which the
+    // client's leader switch (Tab, a portrait: CSWCParty::SetLeader 0x00635480 -> 0x00561c40)
+    // moves to the new leader. GetFirstPC (0x0053c920 -> 0x004b4c50) and GetPCSpeaker
+    // (0x0053c9c0) read +0x38: the main character, whoever leads. GetIsPC (0x0053f1c0, a client
+    // object whose +0x28 is the creature) is true for the controlled creature only. Scripts rely
+    // on it: the Endar Spire's door 2 (k_pend_door18) takes GetFirstPC, gives the lead back with
+    // SetPartyLeader(NPC_PLAYER) and starts its cutscene with that creature, which must be the
+    // main character even when Trask opened the door; a trigger's GetIsPC(GetEnteringObject())
+    // fires for Trask when he leads.
     fn get_is_pc { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::GetIsPC, argc, i = 0 }
         try nwvm::push_int{ &vm, v = if id == w.pc and world::is_valid{ w = &w, id } { 1 } else { 0 } }

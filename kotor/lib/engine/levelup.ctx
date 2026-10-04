@@ -36,7 +36,10 @@ namespace levelup {
         let f = fight::of{ o } ifnull { return 0 }
         fight::sync_flags{ w = &w, o, f }
         let res = rules::auto_level_up{ tables = w.rules, c = &f.c, alive = o.hp > 0 }
-        if res.levels > 0 { settle{ &w, o, f, heal = true } }
+        if res.levels > 0 {
+            settle{ &w, o, f, heal = true }
+            fight_log::leveled{ &w, who = id, level = f.c.stats.level }
+        }
         return res.levels
     }
 

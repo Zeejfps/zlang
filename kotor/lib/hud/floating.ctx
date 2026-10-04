@@ -1,0 +1,153 @@
+// Floating numbers: the damage, healing, "miss", "XP n" and "Level n" labels that float over a
+// creature (docs/re/combat.md 10, CSWGuiMainInterface +0x5cb4). The original makes one label per
+// event (FUN_0068b7c0): a 200 px wide text in fnt_d16x16, centred on the creature's head and 32 px
+// above it, that follows the creature on the screen and fades linearly for 1.5 s (3 s for XP and
+// level). A new label for the same creature pushes the older ones up by a line, and a sixth drops
+// the oldest. Nothing is made when the "Floating Numbers" option is off.
+namespace hud {
+    const FLOAT_MAX: usize = 32
+    const FLOAT_TEXT: usize = 32
+    const FLOAT_STACK: u8 = 6           // labels of one creature on the screen at most
+    const FLOAT_ABOVE: f32 = 32.0       // pixels between the head and the label's bottom
+
+    struct Float {
+        object: u32,
+        text: [32]u8,
+        len: usize,
+        color: render::Color,
+        life: f32,                      // seconds left
+        total: f32,                     // seconds in all: the alpha is life / total
+        count: u8,                      // 1 for the newest, one more for each label added after it
+        lift: f32,                      // pixels the later labels have pushed it up
+    }
+
+    struct Floating {
+        items: [32]Float,
+        count: usize,
+        font: i32,                      // fnt_d16x16's slot, -1 none
+        enabled: bool,                  // the "Floating Numbers" option
+    }
+
+    fn new_floating { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> Floating {
+        let mut items: [32]Float
+        return Floating{ items, count = 0, font = gui::font_slot{ &g, fs = &w.fs, &dev, name = "fnt_d16x16" }, enabled = true }
+    }
+
+    // Writes a whole number at `at` of `into`; returns the end.
+    fn put_float_number { into: []mut u8, at: usize, v: i32 } -> usize {
+        let mut digits: [11]u8
+        let mut d: usize = 0
+        let mut x: u32 = if v < 0 { @as(u32, -v) } else { @as(u32, v) }
+        if x == 0 { digits[0] = '0'; d = 1 }
+        while x > 0 { digits[d] = @trunc(u8, '0' + x % 10); x = x / 10; d = d + 1 }
+        let mut n = at
+        if v < 0 and n < into.len { into[n] = '-'; n = n + 1 }
+        while d > 0 and n < into.len { d = d - 1; into[n] = digits[d]; n = n + 1 }
+        return n
+    }
+
+    fn put_float_text { into: []mut u8, at: usize, s: []u8 } -> usize {
+        let mut n = at
+        let mut i: usize = 0
+        while i < s.len and n < into.len { into[n] = s[i]; n = n + 1; i = i + 1 }
+        return n
+    }
+
+    // The colours of FUN_006027c0 (globals 0x007a23a8.. in the exe) and the strrefs of its words.
+    fn float_color { kind: i32 } -> render::Color {
+        if kind == 0 { return render::Color{ r = 0.74, g = 0.11, b = 0.0, a = 1.0 } }
+        if kind == 1 { return render::Color{ r = 0.28, g = 0.92, b = 0.11, a = 1.0 } }
+        if kind == 3 { return render::Color{ r = 0.95, g = 0.0, b = 0.85, a = 1.0 } }
+        if kind == 4 { return render::Color{ r = 0.98, g = 0.45, b = 0.0, a = 1.0 } }
+        return render::Color{ r = 1.0, g = 1.0, b = 1.0, a = 1.0 }
+    }
+
+    // Adds a label for an outbox floating_text note (nothing when the option is off).
+    fn add_float { mut h: Hud, mut g: gui::Gui, mut w: world::World, object: u32, kind: i32, amount: i32 } {
+        let f = &h.floating
+        if not f.enabled or f.font < 0 or kind < 0 or kind > 4 { return }
+        let mut item: Float
+        item.object = object
+        item.color = float_color{ kind }
+        item.life = if kind == 3 or kind == 4 { 3.0 } else { 1.5 }
+        item.total = item.life
+        item.count = 1
+        item.lift = 0.0
+        let mut n: usize = 0
+        if kind == 0 or kind == 1 {
+            n = put_float_number{ into = item.text[..], at = 0, v = amount }
+        } else if kind == 2 {
+            n = put_float_text{ into = item.text[..], at = 0, s = world::string_by_strref{ w = &w, strref = 1373 } }
+        } else {
+            n = put_float_text{ into = item.text[..], at = 0, s = world::string_by_strref{ w = &w, strref = if kind == 3 { 38551 } else { 32154 } } }
+            n = put_float_text{ into = item.text[..], at = n, s = " " }
+            n = put_float_number{ into = item.text[..], at = n, v = amount }
+        }
+        item.len = n
+        // The older labels of this creature move up a line; the sixth is dropped.
+        let line = gui::font_of{ g = &g, slot = f.font }.height
+        let mut i = f.count
+        while i > 0 {
+            i = i - 1
+            if f.items[i].object != object { continue }
+            f.items[i].count = f.items[i].count + 1
+            if f.items[i].count < FLOAT_STACK {
+                f.items[i].lift = f.items[i].lift + line
+            } else {
+                remove_float{ f, at = i }
+            }
+        }
+        if f.count == FLOAT_MAX { remove_float{ f, at = 0 } }
+        f.items[f.count] = item
+        f.count = f.count + 1
+    }
+
+    fn remove_float { mut f: Floating, at: usize } {
+        let mut i = at
+        while i + 1 < f.count {
+            f.items[i] = f.items[i + 1]
+            i = i + 1
+        }
+        f.count = f.count - 1
+    }
+
+    // Ages the labels.
+    fn tick_floats { mut h: Hud, dt: f32 } {
+        let f = &h.floating
+        let mut i = f.count
+        while i > 0 {
+            i = i - 1
+            f.items[i].life = f.items[i].life - dt
+            if f.items[i].life <= 0.0 { remove_float{ f, at = i } }
+        }
+    }
+
+    // Where a label hangs: the screen point at a creature's head (the original projects the model's
+    // head_g node, else the root; ours is 0.9 of the box the target block uses, 1.6 m for a person)
+    // or the top of a door's or placeable's box. Null when it is behind the eye.
+    fn float_anchor { p: Projector, o: *obj::Object } -> ?math::Vec2 {
+        let s = shape_of{ o }
+        let up = if obj::creature{ o } is some{ value = c } { s.height * 0.9 } else { s.height }
+        return project{ p, at = math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + up } }
+    }
+
+    // Draws the labels over their creatures.
+    fn draw_floats { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut frame: render::Frame } {
+        let f = &h.floating
+        if f.count == 0 or f.font < 0 { return }
+        let font = gui::font_of{ g = &g, slot = f.font }
+        render::begin_ui{ &frame, width = h.projector.w, height = h.projector.h, target = null }
+        let mut i: usize = 0
+        while i < f.count {
+            let it = &f.items[i]
+            i = i + 1
+            let o = world::object{ w = &w, id = it.object } ifnull { continue }
+            let at = float_anchor{ p = h.projector, o } ifnull { continue }
+            let text = it.text[..it.len]
+            let x = at.x - render::measure_text{ font, text, scale = 1.0 } / 2.0
+            let y = at.y - FLOAT_ABOVE - font.height - it.lift
+            let alpha = math::clamp{ x = it.life / it.total, lo = 0.0, hi = 1.0 }
+            _ = render::draw_text{ &frame, font, x, y, text, color = render::Color{ r = it.color.r, g = it.color.g, b = it.color.b, a = alpha }, scale = 1.0, clip = null }
+        }
+    }
+}
