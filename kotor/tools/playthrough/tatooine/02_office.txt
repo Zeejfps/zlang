@@ -1,0 +1,14 @@
+# Tatooine, part 2: from the Anchorhead gate (checkpoint "anchor") across town to the Czerka office door, the office tat_m17ag (the
+# conservationist who shouts on entering, then the Protocol Officer: hunting licenses, the bounty on the Sand People).
+#   LOAD=kotor/out/tat_cp/anchor sh kotor/tools/playthrough/tatooine/run.sh office kotor/tools/playthrough/tatooine/02_office.txt 6000
+2 ui bot god on
+2 ui bot unlock on
+2 ui replies 1 ~hunting_licenses ~no_way_to_get ~I_will_agree ~go_back_to_my_first ~Goodbye default 1
+2 ui bot route tatooinetransition#2 @tat17_10czerk_01
+3 ui bot on
+4200 ui pos
+4200 ui inv
+4200 ui journal list
+4200 ui xp
+4250 ui menu journal
+4210 save office

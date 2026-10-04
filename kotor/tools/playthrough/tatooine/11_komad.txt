@@ -1,0 +1,13 @@
+# Tatooine, part 11: the Eastern Dune Sea (checkpoint "east", just through the strip): along the one path through the dunes to the hunters' camp and
+# Komad Fortuna's offer, the hunt for the krayt dragon (the bantha fodder, the banthas led to the cave, the explosives).
+#   LOAD=kotor/out/tat_cp/east sh kotor/tools/playthrough/tatooine/run.sh komad kotor/tools/playthrough/tatooine/11_komad.txt 12000
+4 ui heal
+4 ui stat hp 127
+5 ui bot god on
+5 ui bot unlock on
+5 ui replies ~such_an_honor ~Why_should_we_kill ~more_information ~lead_the_banthas ~telling_me ~They_posed_no ~find_bantha_fodder default 1
+5 ui bot route 97,227 97,223 97,219 93,220 85,220 84,209 82,199 89,200 96,201 101,195 104,191 112,183 118,183 124,183 131,183 141,183 151,184 161,184 167,190 172,195 179,201 197,210 215,216 221,228 238,222 245,229 249,232 253,237 276,248 292,257 @tat18_11komad_01
+6 ui bot on
+13000 ui pos
+13000 ui journal list
+13050 save komad1

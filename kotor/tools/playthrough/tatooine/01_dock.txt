@@ -1,0 +1,39 @@
+# Tatooine, part 1: the arrival in the docking bay tat_m17ab (the module the Ebon Hawk lands in), the customs officer's
+# conversation (the docking fee: ask what it buys, try to talk him out of it, Persuade), Jorul's chatter, and out of the
+# bay to Anchorhead; a save at the Anchorhead gate (the checkpoint "anchor").
+#   sh kotor/tools/playthrough/tatooine/run.sh dock kotor/tools/playthrough/tatooine/01_dock.txt 3900 3750:arrive -- --module tat_m17ab
+#   sh kotor/tools/playthrough/tatooine/keep.sh anchor
+#
+# The state Dantooine leaves (docs/playthrough-tatooine.md, "The crafted state"): Carth and Bastila with the player, Canderous,
+# Juhani, Mission and Zaalbar available, credits for the shops; the player a Soldier 8 / Jedi Guardian 1 (37,500 XP) made by the
+# rules' own auto level-up, Carth a Soldier 7 and Bastila a Jedi Sentinel 7 (80% of the player's first 28,000).
+5 join p_carth 2
+6 join p_bastilla 0
+7 ui avail 1 5 6 8
+10 ui xp 28000
+11 ui autolevel
+12 ui addclass 3
+13 ui xp 9500
+14 ui autolevel
+15 ui giveitem g_w_lghtsbr01 1 equip
+15 ui giveitem g_a_jedirobe01 1 equip
+15 ui gold 3000
+16 ui leader Carth
+16 ui autolevel
+17 ui leader bastila
+17 ui autolevel
+17 ui giveitem g_w_lghtsbr01 1 equip
+17 ui giveitem g_a_jedirobe01 1 equip
+18 ui leader pc
+20 ui sheet
+20 ui levels
+20 ui party
+# customs: what do I get / reconsider the fee / Persuade / get going; Jorul's gizka delivery: excellent, fair enough
+30 ui replies ~what_do_i_get ~reconsider_the_fee ~[Persuade] ~Fine,_fine ~good_paying_work ~specific_things ~Star_Map ~really_need_to_get_going ~Excellent ~Fair_enough
+31 ui bot god on
+31 ui bot unlock on
+31 ui bot route tat17_customs tatooinedoor2#1
+32 ui bot on
+5700 ui pos
+5710 ui bot off
+5750 save anchor

@@ -1,0 +1,42 @@
+# Tatooine, part 6: at the strip to the Sand People Territory (checkpoint "strip"): the raiders who fell are looted body by body (the loot
+# panel's Get Items), the Sand People disguise (tat17_sandperdis) is among what they carried; it is put on from the inventory screen
+# (one click on its row uses it): the party looks like Sand People to the Sand People. A save ("disguised").
+#   LOAD=kotor/out/tat_cp/strip sh kotor/tools/playthrough/tatooine/run.sh loot kotor/tools/playthrough/tatooine/06_loot.txt 1200 100:panel
+4 ui bot off
+10 ui loot #969
+30 ui click 640 452
+40 ui loot #974
+60 ui click 640 452
+70 ui loot #975
+90 ui click 640 452
+100 ui loot #984
+120 ui click 640 452
+130 ui loot #985
+150 ui click 640 452
+160 ui loot #986
+180 ui click 640 452
+190 ui loot #964
+210 ui click 640 452
+220 ui bag
+# the inventory screen: the Sand People Clothing row (one click uses it)
+# the equip screen: the body slot lists what fits; the Sand People Clothing goes on
+240 ui key u
+260 ui clickctl BTN_INV_BODY
+280 ui clickctl LB_ITEMS ~Sand_People
+340 ui clickctl BTN_CHANGE1
+360 ui clickctl BTN_INV_BODY
+380 ui movectl LB_ITEMS ~Sand_People
+400 ui clickctl BTN_EQUIP
+420 ui inv
+440 ui key escape
+460 ui party
+462 ui leader pc
+464 ui inv
+466 ui leader bastila
+468 ui inv
+469 ui leader pc
+# the area's heartbeat sees the Sand People Clothing on the party and puts the Sand People's faction on friendly terms (tat_TuskenSuit)
+800 ui globals Tusken
+800 ui hostiles
+800 ui xp
+810 save disguised

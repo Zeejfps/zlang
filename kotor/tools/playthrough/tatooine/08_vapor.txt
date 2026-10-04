@@ -1,0 +1,28 @@
+# Tatooine, part 8: out of the Sand People's lands (checkpoint "vapor": the Chieftain wants two moisture vaporators; the disguise is gone, he
+# took the clothing off the party) back across the Dune Sea to Anchorhead and the Czerka office: the gaffi sticks the party carries are
+# redeemed for credits (the officer pays a bounty on them), and the store manager sells the vaporators. A save with them in the bag ("vapors").
+#   LOAD=kotor/out/tat_cp/vapor sh kotor/tools/playthrough/tatooine/run.sh vapor kotor/tools/playthrough/tatooine/08_vapor.txt 30000
+4 ui heal
+4 ui stat hp 127
+# the Jedi robes back on: the equip screen, the body slot, the robe's row (OK keeps it), the next member by his portrait
+10 ui key u
+20 ui clickctl BTN_INV_BODY
+40 ui clickctl LB_ITEMS ~Jedi_Robe
+60 ui clickctl BTN_CHANGE1
+80 ui clickctl BTN_INV_BODY
+100 ui clickctl LB_ITEMS ~Jedi_Robe
+120 ui inv
+140 ui key escape
+150 ui leader pc
+160 ui inv
+170 ui bot god on
+170 ui bot unlock on
+# replies: the officer (gaffi sticks, goodbye); the store manager (what do you have, vaporators, to exchange with Sand People, 400, pay)
+171 ui gold 100
+171 ui replies ~gaffi_sticks ~Just_the_regular ~Goodbye ~available_for_purchase ~moisture_vaporators ~exchange_with_Sand_People ~for_400 default 1
+171 ui bot route areatransition#0 areatransition#2 tat17ag_tat17aa tatooinetransition#2 @tat17_10czerk_01 @tat17_10greet_01
+172 ui bot on
+16000 ui bag
+16000 ui xp
+16000 ui journal list
+16010 save vapors

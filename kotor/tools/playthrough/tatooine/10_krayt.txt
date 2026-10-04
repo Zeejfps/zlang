@@ -1,0 +1,13 @@
+# Tatooine, part 10: from the Enclave (checkpoint "peace": the Chieftain's map to the Eastern Dune Sea is in the bag) out through the Territory
+# and across the Dune Sea to the Eastern Dune Sea's strip; the trigger there lets a party with the map through (tat_m18ac). A save on arrival ("east").
+#   LOAD=kotor/out/tat_cp/peace sh kotor/tools/playthrough/tatooine/run.sh krayt kotor/tools/playthrough/tatooine/10_krayt.txt 20000
+4 ui heal
+4 ui stat hp 127
+5 ui bot god on
+5 ui bot unlock on
+5 ui replies default 1
+5 ui bot route tatooinedoor3#5 areatransition#0 areatransition#1
+6 ui bot on
+5600 ui pos
+5600 ui inv
+5650 save east

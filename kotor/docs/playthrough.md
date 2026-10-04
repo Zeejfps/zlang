@@ -4,7 +4,7 @@ What happens when the game is played from New Game, checked with logs and screen
 original does. Each step says whether it works, what fixed it (commit), or who has it. The input scripts
 are in `kotor/tools/playthrough/`; replay any of them to see the step again.
 
-Planets after Taris have their own logs: [playthrough-dantooine.md](playthrough-dantooine.md) (the arrival, the Council, the trials, Juhani, the ruins and the Star Map).
+Planets after Taris have their own logs: [playthrough-dantooine.md](playthrough-dantooine.md) (the arrival, the Council, the trials, Juhani, the ruins and the Star Map). [playthrough-tatooine.md](playthrough-tatooine.md) (the docks to the Krayt hunt: HK-47, the Sand People and the vaporators; paused before the Star Map).
 
 ## How to replay
 
@@ -38,11 +38,11 @@ The input script knows (play.ctx, lib/ingame/script.ctx, lib/dialog/view/view_no
 | `FRAME ui menu NAME`, `close` | open or close a menu directly (not the key) |
 | `FRAME ui target TAG` then `ui key 1` | select an object and run the first action of the target block |
 | `FRAME ui goto TAG`, `where [PART]` (with each object's facing), `pos` (with the leader's facing), `party`, `inv`, `locals TAG` | walk the leader to an object; print objects by tag part, the leader's place and health, the party, the bag, an object's local variables |
-| `FRAME ui bot route TAG... / tour / on / off / god / unlock / status` | the test player (`lib/ingame/bot.ctx`): fights what is hostile in sight, walks the route of tagged stops, opens its doors; `god` keeps the leader at 1 hit point, `unlock` opens locked doors on the route; `tour` makes the route from the area itself (waypoints, triggers, doors, placeables, talkers: `bot_tour.ctx`, what the smoke test uses). Never on in a real game. |
+| `FRAME ui bot route STOP... / tour / on / off / god / unlock / status` | the test player (`lib/ingame/bot.ctx`): fights what is hostile in sight, walks the route of stops (`TAG`, `TAG#N` the Nth object of that tag, `@TAG` talk to it, `X,Y` a place on the floor), opens its doors; a stop that is a transition trigger is done when the area changes; `god` keeps the leader at 1 hit point, `unlock` opens locked doors on the route; `tour` makes the route from the area itself (waypoints, triggers, doors, placeables, talkers: `bot_tour.ctx`, what the smoke test uses). Never on in a real game. |
 | `FRAME cam duel TAGA TAGB [DIST]`, `cam at X,Y,Z X,Y,Z`, `cam off` | the camera at the side of two objects (`pc` for the player) or at a point, for pictures of a fight |
 | `FRAME fx visual ROW TAG`, `fx at ROW X,Y,Z`, `fx model MODEL TAG [HOOK]`, `fx cast SPELL TAG` | plays a visualeffects.2da row, an effect model or a power's cast visuals on the spot (docs/design/vfx.md); `--log trace` lists what fights and effects do |
 | `FRAME save NAME`, `load FOLDER` | saves go to `kotor/out/saves/00000N - GameK`; `load 000002 - Game1` |
-| `FRAME ui giveitem RESREF [N] [equip]`, `unlock TAG`, `global NAME N` | cheats for tests (not used by the real-flow scripts) |
+| `FRAME ui giveitem RESREF [N] [equip]`, `unlock TAG`, `global NAME N`, `ui clickctl TAG ~some_words` (the list row with those words) | cheats for tests (not used by the real-flow scripts) |
 
 Helper scripts: `dump.sh MODULE NAME EXT` (a resource as a GFF tree), `res.sh WORD [--module M --type EXT]` (the
 install's resources by name part), `ncsgrep.sh MODULE` (every script of a module disassembled into

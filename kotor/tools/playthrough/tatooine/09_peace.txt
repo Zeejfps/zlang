@@ -1,0 +1,18 @@
+# Tatooine, part 9: back to the Sand People with the two moisture vaporators (checkpoint "vapors", in the Czerka office): through the gate, across
+# the Dune Sea and the Territory to the Chieftain, who takes the vaporators, gives his gaffi stick for the Czerka bounty and the map to the
+# Eastern Dune Sea (HK-47 translating). A save at the Enclave's door ("peace").
+#   LOAD=kotor/out/tat_cp/vapors sh kotor/tools/playthrough/tatooine/run.sh peace kotor/tools/playthrough/tatooine/09_peace.txt 40000
+4 ui heal
+4 ui stat hp 127
+5 ui bot god on
+5 ui bot unlock on
+# replies in the order the lists open: the Sand People guard at the Territory's end (the vaporators); the chieftain (we have his vaporators, a few questions, the Star Map, what a krayt dragon is, farewell)
+5 ui replies ~moisture_converters ~have_his_vaporators ~few_questions ~Star_Map ~krayt_dragon ~farewell default 1
+5 ui bot route tatooinedoor1 @tat17_11guard_01 areatransition#0 tat20aa_tat18ab tatooinedoor3 tat20_wp_chief3
+6 ui bot on
+19000 ui pos
+19000 ui journal list
+19000 ui xp
+19000 ui inv
+19000 ui globals tat
+19050 save peace
