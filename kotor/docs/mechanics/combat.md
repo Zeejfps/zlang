@@ -45,7 +45,7 @@ d20, total and the defense it was against. The helpers are in `lib/ingame/test_c
 
 | # | Behaviour | Evidence | Status |
 |---|---|---|---|
-| 11 | Click a hostile: first click targets, second (or R) attacks; the leader walks into reach and fights | movement.md 7.4 | matches |
+| 11 | Click a hostile: first click targets, second (or R) attacks; the leader walks into reach (melee: both personal spaces + 0.7; ranged: the weapon's maxattackrange with a clear line) and fights | movement.md 7.4, actions.md 3.13 | matches; fixed e8c7a15 for ranged (we came within 15 m whatever the weapon; now a blaster fires from 18.6 m without moving) |
 | 12 | Target block slot 1 on a hostile creature: the best rank of Critical Strike / Flurry / Power Attack (melee weapon) or Power Blast / Rapid Shot / Sniper Shot (ranged), then Attack | `0x00619950`, `0x00619b10` | fixed 7713448 (checked by clicks: the block shows Critical Strike, Flurry, Power Attack, Attack with their icons; the arrows cycle; the choice is kept) |
 | 13 | Slot 2: hostile Force powers; slot 3: grenades and other items usable on the target | `0x006191f0`, `0x006198e0` | slot 3 grenades: the items owner (merged); slot 2 Force powers: the Force owner |
 | 14 | In combat a chosen action is added to the queue (at most 4 pending); out of combat it replaces the queue | actions.md 3.13 "Scheduled", `AddAttackActions` | fixed 7713448 (three feat attacks queued in combat, one per round) |
