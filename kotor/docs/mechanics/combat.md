@@ -76,8 +76,8 @@ d20, total and the defense it was against. The helpers are in `lib/ingame/test_c
 
 | # | Behaviour | Evidence | Status |
 |---|---|---|---|
-| 27 | Combat log in Messages > Feedback: attack summary ("X succeeds/fails with attack on Y"), breakdowns, damage, kills | combat.md 10, dialog.tlk 42042, 42119, 1403, 1407 | open: nothing is written |
-| 28 | Floating combat numbers (option "Floating Numbers") | gui.md HUD overlay `+0x5cb4` | open |
+| 27 | Combat log in Messages > Feedback: attack summary ("X succeeds/fails with attack on Y", red), attack / threat / defense / damage breakdowns, "X damages Y for N damage", "X killed Y: N XP"; sent for the player's side within 30 m | re/combat.md 10.1-10.3 (`FormatCombatFeedback` read case by case), dialog.tlk 42042, 42119, 42146..42150, 1403, 1407 | fixed: checked in Messages > Feedback after a fight (lines in the original's order, summary red, the rest blue; `--log combat` also prints each `log:` line). Open: the stun (0x19) and deflection (0x1a) breakdown lines, the exact tail of the damage breakdown, the numbered `feedbacktext` messages (immunity, resistance ...) |
+| 28 | Floating combat numbers (option "Floating Numbers"): red damage numbers over what the leader hits and over the leader when hurt, white "miss" for the leader's melee misses, magenta "XP n" over a kill, 1.5 s (XP 3 s), fading, stacking upward | re/combat.md 10.4 (`FUN_006027c0`, label `0x0068b7c0`) | fixed: checked over the target (damage, miss, XP) and with the option off (nothing). Open: the green healing and orange "Level n" kinds are drawn but nothing posts them (`fight_log::healed`, `leveled` wait for the heal and level-up code); the label hangs at 0.9 of the box height, not on the head bone |
 | 29 | HP bars of the target block and party portraits follow the damage | hud | to check |
 
 ### Options

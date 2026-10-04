@@ -46,9 +46,11 @@ namespace ingame {
         }
         try gui::load_defaults{ &g, fs = &w.fs, &dev }
         // The game options the rules read: Auto Level Up NPCs (the options menu keeps it current).
-        w.rules.settings.auto_level = frontend::load_settings{ fs = &w.fs, heap = w.heap, path = "kotor/out/kotor-settings.ini" }.auto_level_up
+        let saved = frontend::load_settings{ fs = &w.fs, heap = w.heap, path = "kotor/out/kotor-settings.ini" }
+        w.rules.settings.auto_level = saved.auto_level_up
         if mixer != null { gui::set_mixer{ &g, mixer } }
-        let h = try hud::open{ &g, &w, &dev }
+        let mut h = try hud::open{ &g, &w, &dev }
+        h.floating.enabled = saved.floating_numbers
         let ui = Ingame{
             heap = w.heap, cache, gui = g, hud = h, selfs = selfslots::new{},
             text = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } },
@@ -223,7 +225,12 @@ namespace ingame {
             feedback{ strref, text } => {
                 let sent = outbox::text_of{ out = &w.out, t = text }
                 let said = if sent.len > 0 { sent } else { world::string_by_strref{ w = &w, strref } }
-                if said.len > 0 { hud::log_add{ log = &ui.log, text = said, kind = hud::LOG_FEEDBACK } }
+                // The combat log's lines go to Messages only; the attack summary is red there.
+                let kind = if fight_log::is_summary{ strref } { messages_panel::KIND_FEEDBACK_RED } else if fight_log::is_combat_line{ strref } { fight_log::LOG_COMBAT } else { hud::LOG_FEEDBACK }
+                if said.len > 0 { hud::log_add{ log = &ui.log, text = said, kind } }
+            }
+            floating_text{ object, kind, amount } => {
+                hud::add_float{ h = &ui.hud, g = &ui.gui, &w, object, kind, amount }
             }
             else => {}
         }
@@ -269,7 +276,10 @@ namespace ingame {
         gui::update{ g = &ui.gui, dt }
         bot::step{ b = &ui.bot, &w }
         hud::log_tick{ log = &ui.log, dt }
-        if options_panel::settings{ s = &ui.menus.options } is some{ value = st } { w.rules.settings.auto_level = st.auto_level_up }
+        if options_panel::settings{ s = &ui.menus.options } is some{ value = st } {
+            w.rules.settings.auto_level = st.auto_level_up
+            ui.hud.floating.enabled = st.floating_numbers
+        }
         // A conversation or cutscene takes the screen: the HUD and any menu go away for it
         // (re/gui.md, "SetHudMode"), and the world is not picked.
         if w.conversation.active != ui.hud_hidden {

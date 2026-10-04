@@ -31,6 +31,7 @@ namespace fight {
         attack: bool,                   // carries an attack (a ranged shot may be only visual)
         hit: bool,
         result: i32,                    // rules::outcome
+        roll: rules::AttackRoll,        // the whole roll, for the combat log (fight_log)
         killing: bool,
         ranged: bool,
         reaction: i32,                  // the target's animations.2da reaction row, NO_ROW none
@@ -81,7 +82,8 @@ namespace fight {
     fn no_impact {} -> Impact {
         let mut fx: [rules::MAX_COMBAT_FX]rules::CombatEffect
         let mut damage: rules::DamageRoll
-        return Impact{ at_ms = 0, fire_ms = 0, hand = 0, target = obj::INVALID, attack = false, hit = false, result = 0, killing = false, ranged = false, reaction = NO_ROW, cutscene = false, damage, nfx = 0, fx }
+        let mut roll: rules::AttackRoll
+        return Impact{ at_ms = 0, fire_ms = 0, hand = 0, target = obj::INVALID, attack = false, hit = false, result = 0, roll, killing = false, ranged = false, reaction = NO_ROW, cutscene = false, damage, nfx = 0, fx }
     }
 
     fn no_round {} -> Round {
@@ -829,6 +831,7 @@ namespace fight {
                 drain{ &w, id = target }
                 imp.hit = res.hit
                 imp.result = res.roll.result
+                imp.roll = res.roll
                 imp.killing = res.killing_blow
                 imp.damage = res.damage
                 imp.nfx = res.effects.len
