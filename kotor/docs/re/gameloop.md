@@ -90,7 +90,7 @@ In order (high for the order, med for the roles of the smaller steps):
 | 7 | `Render_BeginFrame` | `0x0044ed90` | finishes queued texture uploads |
 | 8 | **Input** | `ProcessInput` (`0x006227e0`) | → `HandleInputAction` (`0x00621210`), GUI events; see 1.4 |
 | 9 | Slow motion | `UpdateSlowMotion` (`0x005f7330`) | section 6.6 |
-| 10 | Party-wipe countdown | `+0x1a8`, `+0x374` | when it runs out (and slow motion is over): destroy the server, main menu (combat.md) |
+| 10 | Party-wipe countdown | `+0x1a8`, `+0x374` | when it runs out (and slow motion is over): unload the module, destroy the server, main menu (6.6) |
 | 11 | Game speed | `SetGameSpeed` (`0x005f2f60`) | `1.0`, or `0.25` when the debug flag `0x0083291c` is set (never written: always 1.0) |
 | 12 | **Server → client messages** | `CNetLayer::ProcessReceivedFrames` | object updates, time of day, module state (1.5) |
 | 13 | Queued client script | `+0x32c` / `+0x330` | one script name run with no `OBJECT_SELF` |
@@ -828,11 +828,83 @@ it alone keeps acting. No KOTOR power uses it as far as found (med).
 
 ### 6.6 Slow motion and the party wipe
 
-`SetGameSpeed` (6 clocks, 1.6) is driven every client frame by `UpdateSlowMotion` (`0x005f7330`)
-while client `+0x2c0` is set: the speed follows a logarithmic curve of real time down to a floor
-of 0.2, then returns to 1.0 and clears the flag. `StartDeathCamera` (`0x005f7200`) sets it
-when the whole party is down: closes panels, shows the death panel, focuses the camera on the dead
-leader and fades to black after 12 s. Combat.md owns the death rules. (med)
+The whole party down is the one place the game ends without a script. The server notices it
+(`UpdatePartyDeath`, 1.3: every member of the client's party list is dying and no slow motion is
+running) and calls `CClientExoApp::StartDeathCamera` (`0x005edc40`, which forwards to
+`CClientExoAppInternal::StartDeathCamera` `0x005f7200`). The call repeats every server frame until
+it has set the slow-motion flag, and the server's party-death step is skipped while that flag is up,
+so nobody gets back up during the sequence. (high)
+
+**`StartDeathCamera`**, in order (high unless marked):
+
+1. Sets `+0x2c0` (slow motion on) and `+0x2c4` (the speed curve is to be fitted afresh).
+2. Deactivates every panel in the GUI manager's list (`0x0040c120`, `SetActive(0)` each): the HUD, a
+   menu and the pause banner all stop being shown and picked.
+3. Opens the in-game GUI's message box (`CGuiInGame+0x98`, set up by `0x00627260`): one button
+   (mode byte 2), modal, text dialog.tlk 42351, "Your entire party has been killed." with
+   "Return to Main Menu." on a second line. Its OK callback (`0x00625a60`) calls `0x005ede10(client,
+   1, 0, 1)`, which sets the wipe flag `+0x1a8` = 1, the countdown `+0x374` = 0.0 and `+0x1ac` = 1.
+4. Puts a `CSWCDeathCamera` (`0x0063bbd0`, 0x40 bytes) on the scene's camera, watching the leader
+   (the client creature at `+0x2d4`); see below.
+5. `StartGlobalFade(bFadeIn 0, wait 12.0, length 1.0, black)` (`0x0062abf0`): the fade layer waits
+   12 s and then goes to black over 1 s. The argument order is the script routine's
+   (`SetGlobalFadeOut(fWait, fLength, r, g, b)` pops its two floats into the same two slots,
+   `0x005460d0`).
+
+**`UpdateSlowMotion`** (`0x005f7330`, every client frame, step 9 of 1.2) times itself on the real
+high-resolution clock (`+0x2c8` the last reading, `+0x2cc` the seconds so far, t). While `+0x2c0`
+is set it calls `SetGameSpeed(speed)` with
+
+    speed(t) = 0.2 + 0.8 * ln(t / 4) / ln(t0 / 4)     for t <= 4 s   (1.0 at the first frame, t0)
+    speed(t) = 0.2                                     after that
+
+where t0 is the first frame's step (the curve is fitted to it when `+0x2c4` is set, then the flag
+clears). The world falls to a fifth of its pace in four real seconds, quickly at first. `SetGameSpeed`
+(1.6) scales the interface clock too, and the fade layer advances on that clock (`CSWGuiFade::Render`
+`0x00624570` adds the clock's step to its elapsed time `+0x6c`, which `Start` sets to 0.1; the layer is
+"busy" while that is non-zero and not past wait + length, `0x006244b0`, `GetIsFadePanelBusy`
+`0x0062ac60`). The 13 s of fade are therefore 13 s of slowed time: about 1.5 s in the first four real
+seconds, then 11.5 s at a fifth, some 61 s of real time in all (med: the second half rests on the
+interface clock being scaled).
+
+The slow motion ends when the fade is no longer busy, or at once when the wipe flag `+0x1a8` is set
+(the OK button), provided the countdown `+0x374` is not above zero: speed back to 1.0, `+0x2c0` off,
+`+0x2c4` on, the fade layer reset and removed, `+0x1a8` = 1, `+0x374` = 0, `+0x1ac` = 1, and the
+message box popped and removed. (high)
+
+**The countdown** (step 10 of 1.2, `0x006033b8`..`0x00603489`). With `+0x1a8` set and the in-game
+GUI's `+0xdc` clear: while `+0x374` is above zero it counts down by the frame delta (first showing the
+message box, if `+0x1ac` is set and the box is not up). Once `+0x374` is at or below zero and the
+slow-motion flag `+0x2c0` is clear, the client closes the in-game menu (`0x0062cba0`), unloads the
+module on the server (`0x004ae8a0`, `UnloadModule`), destroys the server (`0x00401280`), shows the
+main menu (`0x005fca30`), frees the in-game GUI's game state (`0x0062c310`), clears `+0x1a8` and
+`+0x374`, and sets the sound and HUD modes back for the menu. So OK and the end of the fade lead to
+the same place, the main menu with the game's state gone: no retry, no load prompt. The `EndGame`
+script routine (564, `0x00535570`) fills the same three fields (`+0x1a8` = 1, `+0x374` = 5.0 s, or 0
+when its argument is 0, `+0x1ac` = the argument), so the end of the story leaves through this block
+too. (high for the block; low for what the box shows after `EndGame`)
+
+**The death camera** (`CSWCDeathCamera`, a `CAurCameraController`; constructor `0x0063bbd0`,
+`SetTarget` `0x0063a770`, `Update` `0x0063a810`). Fields (med): `+0x14` the leader; `+0x18` the
+orbit heading in degrees, started as the heading from the camera's position to the leader; `+0x1c` =
+30 (degrees per second of the interface clock, that is of slowed time); `+0x20` = 90; `+0x24` = 3.0 m;
+easing rates `+0x28` = 0.5 (heading), `+0x2c` = 0.01 (pitch), `+0x30` = 0.5 (distance); `+0x34` = 0.75 m
+easing to `+0x38` = 0 at `+0x3c` = 0.01. Each frame (the easings are per frame, not per second): the
+orbit heading advances by 30 degrees times the step and wraps at 360; the camera's own heading moves
+half the way to it; its pitch moves 1 % of the way to `90 - (+0x20)` = 0, which in the pitch
+convention shared with the chase camera (90 is level; the style's 80 is ten degrees below level) is
+*straight down*; the look-at point is the leader's position plus a height `+0x34` that drains 1 % a
+frame to the feet; the camera stands at that point plus its backward axis times a distance that moves
+half the way to 3 m. A ray from the look-at point to the camera is cast against the area and the
+camera is kept 0.25 m off what it hits. So the picture swings in from the chase camera to 3 m over the
+leader and settles into a slowly turning view from straight above the body. (med: the geometry is
+read from a decompile that lost some stack slots)
+
+Ours (`game/death.ctx`, called from `play::run`): the same sequence. The world keeps ticking with
+`clock.speed` taken from the curve; the HUD goes away, the box opens (`msgbox::show_strref`), the fade
+is the dialogue layer's (an `outbox` fade note: wait 12, length 1, black), the camera is the orbit
+above, placed after the chase camera's update. The box's OK (or Escape) and the end of the fade end the
+loop, as the options menu's Exit Game does (a return to the front end is built for neither).
 
 ### 6.7 Solo mode
 

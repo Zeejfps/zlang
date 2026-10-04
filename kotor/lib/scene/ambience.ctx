@@ -16,6 +16,14 @@ namespace ambience {
         playing: bool,                  // a continuous loop is on
     }
 
+    // A creature stirred up by a hostile act (docs/re/combat.md 3.6, "Battle music"): the battle track plays
+    // until the first of these countdowns runs out.
+    struct Excited {
+        id: u32,
+        ms: i32,                        // left of excitedduration.2da's 10 s since its last hostile act
+        combat_ms: i32,                 // its fight state's combat timer when last looked at: a refresh shows as no decay
+    }
+
     struct Ambience {
         heap: *mut heap::Heap,
         m: *mut mix::Mixer,
@@ -33,6 +41,10 @@ namespace ambience {
         listener: math::Vec3,
         bg_off: bool,                   // a script stopped the background music (MusicBackgroundStop)
         battle: bool,                   // the battle track is the one playing (MusicBattlePlay)
+        stinger: mix::Handle,           // the stinger that closed the last battle
+        stinger_bytes: []mut u8,
+        excited: list::List(Excited, heap::Heap),
+        battle_clock: u64,              // the world clock (ms) when the creatures were last looked at
         ambient_off: bool,              // a script stopped the ambient bed (AmbientSoundStop)
     }
 
@@ -45,6 +57,8 @@ namespace ambience {
             waves = list::new([]mut u8, heap::Heap){ realloc = heap::alloc, heap },
             rng = 12345, started = 0, listener = math::vec3::zero{},
             bg_off = false, battle = false, ambient_off = false,
+            stinger = mix::Handle{ slot = 0, id = 0 }, stinger_bytes = slice::empty(u8){},
+            excited = list::new(Excited, heap::Heap){ realloc = heap::alloc, heap }, battle_clock = 0,
         }
     }
 
@@ -87,8 +101,11 @@ namespace ambience {
         a.music_bytes = slice::empty(u8){}
         stop_bytes{ &a, bytes = a.ambient_bytes }
         a.ambient_bytes = slice::empty(u8){}
+        stop_bytes{ &a, bytes = a.stinger_bytes }
+        a.stinger_bytes = slice::empty(u8){}
         a.music_wait = -1.0
         list::clear{ list = &a.placed }
+        list::clear{ list = &a.excited }
     }
 
     // The area's music and ambient bed, and a player for each sound object.
@@ -99,6 +116,8 @@ namespace ambience {
         a.bg_off = false
         a.battle = false
         a.ambient_off = false
+        list::clear{ list = &a.excited }
+        a.battle_clock = clock::now_ms{ c = w.clock }
         play_music{ &a, &w, row = background_row{ area } }
         start_ambient{ &a, &w }
         let all = list::items{ list = w.objects.all }
@@ -188,18 +207,204 @@ namespace ambience {
     }
 
     // MusicBattlePlay / MusicBattleStop: the area's battle track instead of the background one
-    // (an area without one keeps its background music), and the background one again after.
+    // (an area without one keeps its background music), and the background one again after, with the
+    // battle track's stinger over it (the client's 0x0068e610, re/combat.md 3.6).
     fn battle_music { mut a: Ambience, mut w: world::World, play: bool } {
         let area = area_of{ w = &w } ifnull { return }
         if play {
             if a.battle or area.music_battle <= 0 { return }
             a.battle = true
+            if w.log.module {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "battle music on\n")
+            }
             change_music{ &a, &w, row = area.music_battle }
             return
         }
         if not a.battle { return }
         a.battle = false
+        if w.log.module {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "battle music off\n")
+        }
         change_music{ &a, &w, row = if a.bg_off { 0 } else { background_row{ area } } }
+        play_stinger{ &a, &w, row = area.music_battle }
+    }
+
+    // One of the row's stingers (ambientmusic.2da stinger1..3, files of streamsounds/) at the music
+    // stingers' volume (prioritygroups.2da Music_Stingers: 64 of 127), picked at random among those
+    // the row names. One plays at a time.
+    fn play_stinger { mut a: Ambience, mut w: world::World, row: i32 } {
+        if row <= 0 { return }
+        let mut names: [3][]u8 = ["", "", ""]
+        let columns: [3][]u8 = ["stinger1", "stinger2", "stinger3"]
+        let mut n: usize = 0
+        let mut i: usize = 0
+        while i < 3 {
+            let name = twoda::get_string{ t = w.tables.ambientmusic, row = @as(usize, row), column = columns[i] } ifnull ""
+            if name.len > 0 and not slice::eq_bytes{ a = name, b = "****" } {
+                names[n] = name
+                n = n + 1
+            }
+            i = i + 1
+        }
+        if n == 0 { return }
+        let name = names[@as(usize, random{ &a } * @as(f32, n)) % n]
+        mix::stop{ m = a.m, h = a.stinger, fade = 0.0 }
+        stop_bytes{ &a, bytes = a.stinger_bytes }
+        a.stinger_bytes = read_stinger{ &a, &w, name }
+        if a.stinger_bytes.len == 0 { return }
+        a.stinger = mix::play{ m = a.m, bytes = a.stinger_bytes, p = mix::sound_2d{ group = mix::Group::music, volume = 0.5 } } iferr { mix::Handle{ slot = 0, id = 0 } }
+        a.started = a.started + 1
+        if w.log.module {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "stinger {} ({} bytes)\n", name, a.stinger_bytes.len)
+        }
+    }
+
+    // A file from streamsounds/ in the heap; empty if there is none.
+    fn read_stinger { mut a: Ambience, mut w: world::World, name: []u8 } -> []mut u8 {
+        let path = res::sound_path(heap::Heap){ rm = w.rm.*, name, realloc = heap::alloc, heap = a.heap } iferr { return slice::empty(u8){} }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = a.heap, mem = path, count = 0 }
+        return fs::read_all(heap::Heap){ fs = &w.fs, heap = a.heap, realloc = heap::alloc, path } iferr { slice::empty(u8){} }
+    }
+
+    // ---- the fights themselves (re/combat.md 3.6, "Battle music")
+    //
+    // Nothing in the scripts plays the battle track of an ordinary fight: the engine does. Every hostile
+    // act stirs the creatures it concerns up for excitedduration.2da's 10 s (CSWSCreature 0x004f3580,
+    // from SignalCombatWith and the attack events), and a creature that has a hostile creature within
+    // 30 m then turns the area's battle music on. When one such creature's 10 s run out, the battle music
+    // goes off (0x004ed110, from the creature's update), and with it a stinger; the next hostile act
+    // turns it on again. The fight state's combat timer (8 s, fight.ctx) is set by every hostile act and
+    // otherwise runs down, so a creature whose timer did not run down was just stirred up.
+
+    const EXCITED_MS: i32 = 10000
+    const HOSTILE_RANGE: f32 = 30.0
+    const BATTLE_REPLAY_S: f32 = 1.0    // the battle track starts over a second after it ends
+
+    // Whether a living creature hostile to `o` stands within 30 m of it (the original asks the
+    // creature's perception: GetNearestEnemy 0x004f2de0).
+    fn hostile_near { w: *world::World, o: *obj::Object } -> bool {
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let h = all[i]
+            i = i + 1
+            if h.id == o.id or h.kind != obj::Kind::creature or h.area != w.area or h.destroyed { continue }
+            let hc = obj::creature{ o = h } ifnull { continue }
+            if hc.dead or h.hp < 1 { continue }
+            if world::standing{ w, from = o.faction, toward = h.faction } >= 11 and world::standing{ w, from = h.faction, toward = o.faction } >= 11 { continue }
+            if math::vec3::distance{ a = o.position, b = h.position } <= HOSTILE_RANGE { return true }
+        }
+        return false
+    }
+
+    // Stirs creature `id` up for the full 10 s (a record for it if it has none).
+    fn excite { mut a: Ambience, id: u32, combat_ms: i32 } {
+        let recs = list::items{ list = a.excited }
+        let mut k: usize = 0
+        while k < recs.len {
+            if recs[k].id == id {
+                if recs[k].ms < EXCITED_MS { recs[k].ms = EXCITED_MS }
+                return
+            }
+            k = k + 1
+        }
+        list::push{ list = &a.excited, item = Excited{ id, ms = EXCITED_MS, combat_ms } } iferr {}
+    }
+
+    // SignalCombatWith (0x004fbbe0) pulls in every member of the creature's faction within 30 m (more for
+    // the player's party): they are stirred up too, whether or not the blow was theirs, so a fight
+    // that goes on keeps all of its side's countdowns from running out.
+    fn excite_faction { mut a: Ambience, w: *world::World, o: *obj::Object } {
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let h = all[i]
+            i = i + 1
+            if h.id == o.id or h.kind != obj::Kind::creature or h.area != w.area or h.destroyed or h.faction != o.faction { continue }
+            let hc = obj::creature{ o = h } ifnull { continue }
+            if hc.dead or math::vec3::distance{ a = o.position, b = h.position } > HOSTILE_RANGE { continue }
+            excite{ &a, id = h.id, combat_ms = if hc.fighter is some{ value = hf } { hf.combat_ms } else { 0 } }
+        }
+    }
+
+    // Drops a record (the last takes its place).
+    fn forget_excited { mut a: Ambience, index: usize } {
+        let n = a.excited.len
+        if index + 1 < n {
+            let items = list::items{ list = a.excited }
+            items[index] = items[n - 1]
+        }
+        _ = list::pop{ list = &a.excited }
+    }
+
+    // Once a frame: finds the creatures a hostile act stirred up since the last look, switches the
+    // battle music on for those with an enemy near, and runs the 10 s down.
+    fn update_battle { mut a: Ambience, mut w: world::World } {
+        let now = clock::now_ms{ c = w.clock }
+        let elapsed: i32 = if now > a.battle_clock { @as(i32, now - a.battle_clock) } else { 0 }
+        a.battle_clock = now
+        if elapsed <= 0 { return }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.kind != obj::Kind::creature or o.area != w.area or o.destroyed { continue }
+            let c = obj::creature{ o } ifnull { continue }
+            if c.dead { continue }
+            let f = c.fighter ifnull { continue }
+            // Its record, if it has one.
+            let recs = list::items{ list = a.excited }
+            let mut at: usize = recs.len
+            let mut k: usize = 0
+            while k < recs.len {
+                if recs[k].id == o.id { at = k }
+                k = k + 1
+            }
+            if f.combat_ms <= 0 and at == recs.len { continue }
+            // The timer fell by the elapsed time if nothing refreshed it (a margin for the tick's rounding).
+            let fresh = f.combat_ms > 0 and (at == recs.len or f.combat_ms > recs[at].combat_ms - elapsed + 50)
+            if at == recs.len {
+                list::push{ list = &a.excited, item = Excited{ id = o.id, ms = 0, combat_ms = f.combat_ms } } iferr { continue }
+            }
+            let now_recs = list::items{ list = a.excited }
+            now_recs[at].combat_ms = f.combat_ms
+            if not fresh { continue }
+            if now_recs[at].ms < EXCITED_MS { now_recs[at].ms = EXCITED_MS }
+            if hostile_near{ w = &w, o } {
+                battle_music{ &a, &w, play = true }
+                excite_faction{ &a, w = &w, o }
+            }
+        }
+        // The countdowns: a creature that is gone or dead no longer counts down (its update stops).
+        let mut r: usize = 0
+        while r < a.excited.len {
+            let recs = list::items{ list = a.excited }
+            let o = world::object{ w = &w, id = recs[r].id }
+            let mut alive = false
+            if o != null {
+                if obj::creature{ o } is some{ value = c } { alive = not o.destroyed and o.area == w.area and not c.dead }
+            }
+            if not alive {
+                forget_excited{ &a, index = r }
+                continue
+            }
+            if recs[r].ms > 0 {
+                recs[r].ms = recs[r].ms - elapsed
+                if recs[r].ms <= 0 {
+                    recs[r].ms = 0
+                    battle_music{ &a, &w, play = false }
+                }
+            }
+            if recs[r].ms <= 0 and recs[r].combat_ms <= 0 {
+                forget_excited{ &a, index = r }
+                continue
+            }
+            r = r + 1
+        }
     }
 
     // A music row of the area changed: the sound follows if that is the track it plays now.
@@ -288,13 +493,18 @@ namespace ambience {
         mix::set_listener{ m = a.m, position = eye, forward, up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } }
         a.listener = eye
         if a.music_bytes.len > 0 and not mix::is_playing{ m = a.m, h = a.music } {
-            if a.music_wait < 0.0 { a.music_wait = a.music_delay } else {
+            if a.music_wait < 0.0 { a.music_wait = if a.battle { BATTLE_REPLAY_S } else { a.music_delay } } else {
                 a.music_wait = a.music_wait - dt
                 if a.music_wait <= 0.0 {
                     a.music = mix::play{ m = a.m, bytes = a.music_bytes, p = mix::sound_2d{ group = mix::Group::music, volume = 0.5 } } iferr { mix::Handle{ slot = 0, id = 0 } }
                     a.music_wait = -1.0
                 }
             }
+        }
+        update_battle{ &a, &w }
+        if a.stinger_bytes.len > 0 and not mix::is_playing{ m = a.m, h = a.stinger } {
+            stop_bytes{ &a, bytes = a.stinger_bytes }
+            a.stinger_bytes = slice::empty(u8){}
         }
         let placed = list::items{ list = a.placed }
         let mut i: usize = 0

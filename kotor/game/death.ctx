@@ -1,0 +1,165 @@
+// The party wipe (docs/re/gameloop.md 6.6): every party member down. The original's
+// CClientExoApp::StartDeathCamera closes the panels, opens a one-button message box ("Your entire party
+// has been killed.", dialog.tlk 42351), puts an orbiting camera on the leader and starts a global fade to
+// black, while UpdateSlowMotion takes the game speed down to 0.2. The sequence ends when the box is
+// answered or the fade has run out, and the game goes to the main menu.
+//
+// play.ctx owns one `Death` and calls, per frame:
+//   death::start        the frame the whole party is first down (it checks nothing: the caller does)
+//   death::step_slow    before the world's clock advances, with the real step
+//   death::place_camera after the chase camera's update, with the same step
+//   death::after_ui     after the interface's update: the box's answer, the fade's end, the HUD kept away
+//   death::abort        a load replaces the world while the sequence runs
+namespace death {
+    const STRREF: u32 = 42351            // "Your entire party has been killed.\nReturn to Main Menu."
+
+    // UpdateSlowMotion (0x005f7330): the speed falls on a logarithmic curve of real time from 1.0 at the
+    // first frame to the floor 4 s later, and stays there.
+    const SLOW_FLOOR: f32 = 0.2
+    const SLOW_SPAN: f32 = 4.0
+
+    // StartDeathCamera's fade: out to black, waiting 12 s and then taking 1 s. Both run on the interface
+    // clock, which the slow motion slows too.
+    const FADE_WAIT: f32 = 12.0
+    const FADE_LENGTH: f32 = 1.0
+
+    // CSWCDeathCamera's constants (constructor 0x0063bbd0, Update 0x0063a810): the orbit turns 30 degrees
+    // of game time per second, the distance to the leader eases to 3 m (half the way every frame), and the
+    // view's pitch and the look-at height above the leader's feet (0.75 m at the start) settle at 1 % of the
+    // way every frame: the pitch to straight down (the original's pitch 0, 90 being level), the height to the
+    // feet. The easings are per frame of the original; ours count 30 to the second.
+    const ORBIT_DEGREES: f32 = 30.0
+    const ORBIT_DISTANCE: f32 = 3.0
+    const DISTANCE_EASE: f32 = 0.5
+    const PITCH_EASE: f32 = 0.01
+    const START_RISE: f32 = 0.75
+    const REFERENCE_FPS: f32 = 30.0
+
+    struct Death {
+        active: bool,
+        ended: bool,             // the box was answered or the fade is over: the game goes to the main menu
+        elapsed: f32,            // real seconds since the start (UpdateSlowMotion's +0x2cc)
+        first_step: f32,         // the first frame's step: the speed curve is 1.0 there
+        box: msgbox::Box,
+        fade_seen: bool,         // the fade has been seen running (it starts in the frame's outbox pass)
+        placed: bool,            // the camera has taken over
+        yaw: f32,                // the orbit's heading, radians (cam::forward's convention)
+        pitch: f32,              // downward angle of the view, radians (pi/2: straight down)
+        distance: f32,
+        rise: f32,
+    }
+
+    fn make {} -> Death {
+        return Death{
+            active = false, ended = false, elapsed = 0.0, first_step = 0.0, box = msgbox::blank{}, fade_seen = false,
+            placed = false, yaw = 0.0, pitch = 0.0, distance = ORBIT_DISTANCE, rise = START_RISE,
+        }
+    }
+
+    // A new world (a load) while the sequence ran: it is over, the box closes and the HUD returns.
+    fn abort { mut d: Death, mut ui: ingame::Ingame, mut w: world::World } {
+        if not d.active { return }
+        msgbox::close{ g = &ui.gui, b = &d.box }
+        ingame::set_hud_hidden{ &ui, hidden = false }
+        w.clock.speed = 1.0
+        d = make{}
+    }
+
+    // The sequence begins: menus close, the HUD goes, the box opens over the world and the fade starts. The
+    // world goes on, slowing down (step_slow).
+    fn start { mut d: Death, mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device } {
+        d = make{}
+        d.active = true
+        if ui.menu != ingame::NO_MENU { ingame::close_menu{ &ui, &w } }
+        ingame::set_hud_hidden{ &ui, hidden = true }
+        d.box = msgbox::show_strref{ g = &ui.gui, &w, &dev, strref = STRREF, cancel = false, what = 0, item = 0 }
+        outbox::post{ out = &w.out, note = outbox::Note::fade{ out = true, wait = FADE_WAIT, length = FADE_LENGTH, color = math::vec3::zero{} } }
+        if w.log.combat {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "party wiped: slow motion, death camera, box, fade over {} s\n", FADE_WAIT + FADE_LENGTH)
+        }
+    }
+
+    // The game speed for `elapsed` real seconds into the slow motion.
+    fn speed_at { elapsed: f32, first_step: f32 } -> f32 {
+        if elapsed >= SLOW_SPAN or first_step <= 0.0 or first_step >= SLOW_SPAN { return SLOW_FLOOR }
+        let s = SLOW_FLOOR + (1.0 - SLOW_FLOOR) * math::logf{ x = elapsed / SLOW_SPAN } / math::logf{ x = first_step / SLOW_SPAN }
+        return math::clamp{ x = s, lo = SLOW_FLOOR, hi = 1.0 }
+    }
+
+    // Before the world's clock advances by the real step `dt`: sets the world's speed.
+    fn step_slow { mut d: Death, mut w: world::World, dt: f32 } {
+        if not d.active { return }
+        if d.ended {
+            w.clock.speed = 1.0
+            return
+        }
+        if d.first_step <= 0.0 { d.first_step = dt }
+        d.elapsed = d.elapsed + dt
+        w.clock.speed = speed_at{ elapsed = d.elapsed, first_step = d.first_step }
+    }
+
+    // The fraction of the way an easing of `rate` per original frame goes in `dt` seconds.
+    fn eased { rate: f32, dt: f32 } -> f32 {
+        return 1.0 - math::powf{ x = 1.0 - rate, y = dt * REFERENCE_FPS }
+    }
+
+    // After the chase camera's update: the orbit around the leader replaces its view. It starts from the
+    // chase camera's heading, pitch and distance, so the picture does not jump.
+    fn place_camera { mut d: Death, mut c: cam::Camera, w: *world::World, sc: *scene::Scene, dt: f32 } {
+        if not d.active or d.ended { return }
+        let o = world::object{ w, id = w.pc } ifnull { return }
+        if not d.placed {
+            d.placed = true
+            d.yaw = c.yaw
+            d.pitch = math::asinf{ x = math::clamp{ x = -c.dir.z, lo = -1.0, hi = 1.0 } }
+            d.distance = math::vec3::length{ v = math::vec3::sub{ a = c.eye, b = o.position } }
+            d.rise = START_RISE
+        }
+        d.yaw = d.yaw + math::radians{ degrees = ORBIT_DEGREES } * dt * w.clock.speed
+        d.distance = d.distance + (ORBIT_DISTANCE - d.distance) * eased{ rate = DISTANCE_EASE, dt }
+        let settle = eased{ rate = PITCH_EASE, dt }
+        d.pitch = d.pitch + (math::PI * 0.5 - d.pitch) * settle
+        d.rise = d.rise - d.rise * settle
+        let look = math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + d.rise }
+        let f = cam::forward{ yaw = d.yaw }
+        let cp = math::cosf{ x = d.pitch }
+        let dir = math::Vec3{ x = f.x * cp, y = f.y * cp, z = -math::sinf{ x = d.pitch } }
+        let back = math::vec3::add_scaled{ a = look, b = dir, s = -d.distance }
+        // Held off the walls, as the chase camera is (the original casts a ray and stays 0.25 m short of what it hits).
+        let eye = cam::collide{ c = &c, w, sc, look, eye = back }
+        c.eye = eye
+        c.look = look
+        c.dir = dir
+        // The view's own up: straight down it is the orbit's heading, where +Z would be degenerate.
+        c.up = math::Vec3{ x = f.x * math::sinf{ x = d.pitch }, y = f.y * math::sinf{ x = d.pitch }, z = cp }
+    }
+
+    // After the interface's update: the HUD stays away (its update brings it back), the box's answer or
+    // the end of the fade ends the sequence. `fade_running` is the fade layer's state.
+    fn after_ui { mut d: Death, mut ui: ingame::Ingame, mut w: world::World, fade_running: bool } {
+        if not d.active or d.ended { return }
+        ingame::set_hud_hidden{ &ui, hidden = true }
+        let events = gui::take_events{ g = &ui.gui }
+        let mut i: usize = 0
+        while i < events.len {
+            // The box has one button: Escape answers it too.
+            if msgbox::answer{ b = d.box, ev = events[i] } != msgbox::Answer::none { d.ended = true }
+            i = i + 1
+        }
+        if fade_running { d.fade_seen = true }
+        if d.fade_seen and not fade_running { d.ended = true }
+        if d.ended {
+            msgbox::close{ g = &ui.gui, b = &d.box }
+            if w.log.combat {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "party wipe over after {} s: to the main menu\n", d.elapsed)
+            }
+        }
+    }
+
+    // Whether the player has been through the sequence to its end: the game should leave for the main menu.
+    fn is_over { d: Death } -> bool {
+        return d.ended
+    }
+}
