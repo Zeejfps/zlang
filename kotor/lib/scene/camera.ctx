@@ -163,6 +163,8 @@ namespace cam {
     // The camera never comes closer to the look-at point than this (ours: the original lets the whole
     // distance go, which puts the eye inside the head when a wall is right behind the leader).
     const MIN_DISTANCE: f32 = 0.3
+    // The room the camera wants round it, so the near plane cuts nothing (ours).
+    const ROOM: f32 = 0.15
 
     // CSWCChaseCamera::ResolveCollision (0x0063b050, movement.md 2.3): four rays from the look-at point L, to
     // the camera C moved 0.35 m to each side and 0.35 m up and down, go against the rooms and what is drawn.
@@ -215,6 +217,13 @@ namespace cam {
             let mut rise = (CLEARANCE + 0.15) * (len0 - keep) / len0
             let ceiling = nearest_hit{ c, w, sc, origin = out, dir = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, max_t = rise + CLEARANCE }
             if ceiling != null { rise = math::max{ a = 0.0, b = ceiling - CLEARANCE } }
+            // The lifted place must have room all round as well (a lever's alcove is rock on every side): half the
+            // rise, and half again, until it has, else none.
+            let mut tries: u32 = 0
+            while rise > 0.01 and clearance{ c, w, sc, eye = math::Vec3{ x = out.x, y = out.y, z = out.z + rise }, reach = ROOM } < ROOM - 0.001 {
+                tries = tries + 1
+                rise = if tries < 3 { rise * 0.5 } else { 0.0 }
+            }
             out.z = out.z + rise
         }
         // And out of the creatures' circles, where it ended up.
@@ -326,10 +335,10 @@ namespace cam {
         return p
     }
 
-    // How close the nearest surface is to `eye`, looking all round (26 directions, up to 1 m): what the near plane
-    // could cut through.
-    fn clearance { c: *Camera, w: *world::World, sc: *scene::Scene, eye: math::Vec3 } -> f32 {
-        let mut best: f32 = 1.0
+    // How close the nearest surface is to `eye`, looking all round (26 directions, up to `reach`): what the near
+    // plane could cut through.
+    fn clearance { c: *Camera, w: *world::World, sc: *scene::Scene, eye: math::Vec3, reach: f32 } -> f32 {
+        let mut best = reach
         let mut ix: i32 = -1
         while ix <= 1 {
             let mut iy: i32 = -1
@@ -366,7 +375,7 @@ namespace cam {
             let raw = math::Vec3{ x = look.x - f.x * c.style.distance, y = look.y - f.y * c.style.distance, z = look.z + c.style.height }
             let eye = collide{ c = &c, w = &w, sc, target, look, nominal = raw, reach = c.style.distance }.eye
             let left = overshoot{ c = &c, w = &w, sc, look, eye, margin = 0.0 }
-            let near = clearance{ c = &c, w = &w, sc, eye }
+            let near = clearance{ c = &c, w = &w, sc, eye, reach = 1.0 }
             let dist = math::vec3::distance{ a = eye, b = look }
             if left > 0.02 { bad = bad + 1 }
             if near < 0.15 { tight = tight + 1 }

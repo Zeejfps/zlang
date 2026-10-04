@@ -9,9 +9,11 @@
 400 ui click 640 452
 500 ui inv
 600 warp k37_statue party
+610 cam toward k37_statue
 650 hoveron k37_statue
 653 mouse click
 656 mouse click
+1100 cam off
 1200 warpxy 139,23 party
 2300 ui journal list
 2300 ui rules

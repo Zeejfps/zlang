@@ -140,6 +140,9 @@ the alignment (the rules' value and the engine's copy, which always agree here) 
    room mesh made the rays cheap enough to cast four of them (0.6 ms a frame on the bridge, from 0.9 ms with one brute-force ray).
 10. Test chain: part 28 looked for `kor35_waysith` 56 at frame 7950, and Yuthura's second talk ended at 8001 or later since the dice and the
    dialogue timing moved (the chain stopped there for the build before the fixes too); the check is at 8150 now (`all.sh` runs 8200 frames).
+   The click parts depend on where the camera stands, and the camera now keeps out of walls and bodies: part 23 turns it to the statue
+   (`cam toward`), and part 26 pulls the lever with `use` because the lever's alcove leaves the camera no room behind the leader (it
+   sits at his head, which hides the lever from a click; the old camera stood in the rock).
 
 ## Observations and open items
 
