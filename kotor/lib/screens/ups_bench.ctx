@@ -88,6 +88,10 @@ namespace ups {
             let tag = CAT_TAGS[@as(usize, c - 1)]
             gui::set_enabled{ &g, panel = s.sel, tag, enabled = n > 0 }
             gui::set_text_color{ &g, panel = s.sel, tag, color = if n > 0 { gui::color_menu{} } else { gui::color_disabled{} } }
+            // CSWGuiUpgradeSelect::OnPanelAdded also flips the visible bit of the category's picture
+            // (0x006c4520): a category the party has nothing for shows no picture, so nobody takes it
+            // for a button that does not answer.
+            gui::set_visible{ &g, panel = s.sel, tag = CAT_ICON_LABELS[@as(usize, c - 1)], visible = n > 0 }
             if n > 0 and first < 0 { first = c }
             c = c + 1
         }
@@ -161,22 +165,30 @@ namespace ups {
         s.list = try gui::open{ &g, fs = &w.fs, &dev, name = "upgradeitems", mode = gui::Mode::full_screen, modal = true }
         gui::ensure_backdrop{ &g, fs = &w.fs, &dev, kind = 0 }
         s.mode = MODE_ITEMS
-        try fill_items{ &s, &g, &w, &dev }
+        // The rows are buttons in the original (FillItemList 0x006c5b90 gives each the click handler
+        // OnUpgradeItem and the hilight handler that shows the description): one click takes the item
+        // to the bench, and pointing at a row describes it.
+        gui::set_click_rows{ &g, panel = s.list, tag = "LB_ITEMS" }
+        try fill_items{ &s, &g, &w, &dev, show = obj::INVALID }
     }
 
-    fn fill_items { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+    // The category's items, the one named `show` (when it is listed) selected, else the first
+    // (ReturnItem 0x006c5e90 selects and scrolls to the item that came back from the bench).
+    fn fill_items { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, show: u32 } -> ! {
         let p = s.list
         gui::list_clear{ &g, panel = p, tag = "LB_ITEMS" }
         _ = collect{ &s, w = &w, category = s.category }
         let mut k: usize = 0
+        let mut pick: usize = 0
         while k < s.nlisted {
             let l = s.listed[k]
             _ = try items::add_row{ &g, &w, &dev, panel = p, tag = "LB_ITEMS", id = l.item, equipped = l.owner != obj::INVALID, icon_size = ICON }
+            if l.item == show { pick = k }
             k = k + 1
         }
         if s.nlisted > 0 {
-            gui::list_select{ &g, panel = p, tag = "LB_ITEMS", row = 0 }
-            try items::show_description{ &g, &w, panel = p, tag = "LB_DESCRIPTION", id = s.listed[0].item }
+            gui::list_select{ &g, panel = p, tag = "LB_ITEMS", row = @as(i32, pick) }
+            try items::show_description{ &g, &w, panel = p, tag = "LB_DESCRIPTION", id = s.listed[pick].item }
         } else {
             try items::show_description{ &g, &w, panel = p, tag = "LB_DESCRIPTION", id = 0 }
         }
@@ -191,7 +203,7 @@ namespace ups {
             s.mode = MODE_CATEGORIES
             return
         }
-        if ev.kind == gui::EventKind::row_selected {
+        if ev.kind == gui::EventKind::row_selected or ev.kind == gui::EventKind::row_hover {
             try items::show_description{ &g, &w, panel = p, tag = "LB_DESCRIPTION", id = if ev.user > 0 { @as(u32, ev.user) } else { 0 } }
         } else if ev.kind == gui::EventKind::row_activated {
             try pick_row{ &s, &g, &w, &dev, row = ev.row }

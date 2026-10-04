@@ -170,13 +170,14 @@ namespace ups {
     fn leave_bench { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, assemble: bool } -> ! {
         if assemble { settle{ &s, &g, &w } } else { set_bits{ &w, item = s.item, bits = s.orig_bits } }
         put_back_item{ &s, &w }
+        let back = s.item
         s.item = obj::INVALID
         s.original = obj::INVALID
         gui::close{ &g, id = s.bench }
         s.bench = 0
         if s.list != 0 {
             s.mode = MODE_ITEMS
-            try fill_items{ &s, &g, &w, &dev }
+            try fill_items{ &s, &g, &w, &dev, show = back }
         } else if s.sel != 0 {
             s.mode = MODE_CATEGORIES
         } else {
