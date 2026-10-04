@@ -78,7 +78,7 @@ A function `g` of type `fn{Cg} -> Rg` (or `&fn`) is accepted where `fn{Cs} -> Rs
 2. for every field `n: T` in `Cg`, `Cs` has a field `n` with an identical type `T`, and
 3. if the field `n` is `mut` in `Cg`, it is `mut` in `Cs`.
 
-`Cs` may have fields that `Cg` lacks. Those fields are dropped when the value is called. A result of the second kind in rule 1 is **widened**: when `g` fails, the value's error is the same error, with its payload, in any error's numbering (§8, Errors, rule 13). Both happen in one step: calling the converted value calls `g` once with the fields it takes, and widens what it returns. The conversion applies wherever a value of the expected type is expected, the `T` of an implicit `T` to `?T` conversion included (§11, Widening).
+`Cs` may have fields that `Cg` lacks. Those fields are dropped when the value is called. A result of the second kind in rule 1 is **widened**: when `g` fails, the value's error is the same error, with its payload, in any error's numbering (§8, Errors, rule 13). Both happen in one step: calling the converted value calls `g` once with the fields it takes, and widens what it returns. It is implicit wherever widening is (§11, Widening, rule 1), the `T` of an implicit `T` to `?T` conversion included.
 
 ```
 fn number { s: []u8 } -> !u64 { ... }            // fails with number's set, inferred
