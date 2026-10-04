@@ -1,8 +1,693 @@
 // The light around dynamic objects (docs/design/enhanced-render.md, "Room light"): what a creature, placeable or
-// door standing somewhere takes from the room around it, for the enhanced renderer (render::AmbientCube).
+// door standing somewhere takes from the room around it, for the enhanced renderer's Room Light option.
+//
+// The rooms' baked light is in their lightmaps. A light probe is a point's ambient cube (render::AmbientCube): the
+// light arriving from each of six directions, found by casting rays from it at the rooms' geometry and taking what
+// each hit surface sends back, its lightmap times its texture's mean colour; rays that leave the area see the area's
+// ambient (the sky's share). Probes stand on a lattice of cells (1.5 m across, 2 m high), each made the first time
+// something stands near it and kept for the area; an object's cube is the mix of the four probes around it.
+//
+// The rays need the rooms' triangles in world space with their lightmap UVs, and the lightmaps' texels on the CPU
+// (at most 64x64: ambient light is smooth); a grid of 2 m cubes finds the triangles a ray passes. All of it is
+// built the first time an area's objects are lit, in the scene's arena.
 namespace scene {
-    // The light at `at` as an ambient cube in the frame; its Draw.ambient (0: the view's flat ambient).
-    fn ambient_at { sc: *Scene, mut frame: render::Frame, at: math::Vec3 } -> u32 {
-        return 0
+    const PROBE_CELL: f32 = 1.5
+    const PROBE_LAYER: f32 = 2.0
+    const PROBE_REACH: f32 = 30.0
+    const PROBE_RAYS: u32 = 12
+    const PROBE_MAP_SIZE: u32 = 64
+    const PROBE_GRID_CELLS: f32 = 4000000.0
+    const PROBE_MARGIN: f32 = 30.0
+    const PROBE_BACKDROP: f32 = 80.0
+    const NO_MAP: u32 = 0xFFFFFFFF
+
+    // A room triangle: a corner and two edges, the lightmap UV at the corner and its change along each edge, its
+    // lightmap (Field.maps) and the mean colour of its texture.
+    struct ProbeTri {
+        a: math::Vec3, e1: math::Vec3, e2: math::Vec3,
+        uv: math::Vec2, du1: math::Vec2, du2: math::Vec2,
+        map: u32,
+        albedo: math::Vec3,
+    }
+
+    struct Pixels { width: u32, height: u32, rgb: []mut u8 }
+
+    // A probe: its cube, and the share of its rays that saw the room from inside (0 for a point inside geometry).
+    struct Probe { cube: render::AmbientCube, weight: f32 }
+
+    struct Field {
+        state: u8,                      // 0 not built yet, 1 built, 2 nothing to build from
+        tris: list::List(ProbeTri, arena::Arena),
+        maps: list::List(Pixels, arena::Arena),
+        map_index: map::Map([]u8, u32, arena::Arena),
+        albedo: map::Map([]u8, math::Vec3, arena::Arena),
+        region: math::Aabb,             // what the triangles are kept from
+        min_x: f32, min_y: f32, min_z: f32, cell: f32, nx: u32, ny: u32, nz: u32,
+        starts: []mut u32,              // the grid: cell c's triangles are items[starts[c] .. starts[c + 1]]
+        items: []mut u32,
+        stamps: []mut u32,              // per triangle, the ray that last tested it
+        stamp: u32,
+        probes: map::Map(u64, Probe, arena::Arena),
+        sky: math::Vec3,                // what a ray that leaves the area sees
+        flat: math::Vec3,               // the light on a room surface without a lightmap
+    }
+
+    fn no_field { arena: *mut arena::Arena } -> Field {
+        return Field{
+            state = 0,
+            tris = list::new(ProbeTri, arena::Arena){ realloc = arena::alloc, heap = arena },
+            maps = list::new(Pixels, arena::Arena){ realloc = arena::alloc, heap = arena },
+            map_index = map::new([]u8, u32, arena::Arena){ realloc = arena::alloc, heap = arena, hash = map::hash_bytes, eq = slice::eq_bytes },
+            albedo = map::new([]u8, math::Vec3, arena::Arena){ realloc = arena::alloc, heap = arena, hash = map::hash_bytes, eq = slice::eq_bytes },
+            region = math::Aabb{ min = math::vec3::zero{}, max = math::vec3::zero{} },
+            min_x = 0.0, min_y = 0.0, min_z = 0.0, cell = 2.0, nx = 0, ny = 0, nz = 0,
+            starts = slice::empty(u32){}, items = slice::empty(u32){}, stamps = slice::empty(u32){}, stamp = 0,
+            probes = map::new(u64, Probe, arena::Arena){ realloc = arena::alloc, heap = arena, hash = mix_key, eq = map::eq_u64 },
+            sky = math::vec3::zero{}, flat = math::vec3::zero{},
+        }
+    }
+
+    fn mix_key { key: u64 } -> u64 {
+        let mut z = @wrap_add(key, 0x9E3779B97F4A7C15)
+        z = @wrap_mul(z ^ (z >> 30), 0xBF58476D1CE4E5B9)
+        z = @wrap_mul(z ^ (z >> 27), 0x94D049BB133111EB)
+        return z ^ (z >> 31)
+    }
+
+    // ---- each frame
+
+    // Gives every live visual the light around it (Visual.light), when the Room Light option is on (sc.room_light,
+    // set by the owner). The first call in an area builds what the probes are cast against.
+    fn update_light { mut sc: Scene, mut w: world::World } {
+        if not sc.room_light { return }
+        if sc.field.state == 0 { build_field{ &sc, &w } }
+        let visuals = list::items{ list = sc.visuals }
+        let rooms = list::items{ list = sc.rooms }
+        let mut i: usize = 0
+        while i < visuals.len {
+            let v = &visuals[i]
+            i = i + 1
+            v.lit = false
+            if not v.alive or sc.field.state != 1 { continue }
+            // Only what is drawn (scene::draw's test): the rest is lit when it comes into view.
+            if v.room >= 0 and @as(usize, v.room) < rooms.len and not rooms[@as(usize, v.room)].visible { continue }
+            let o = world::object{ w = &w, id = v.id } ifnull { continue }
+            let at = math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + 1.0 }
+            let mut cube = render::flat_ambient{ color = sc.ambient }
+            if light_at{ f = &sc.field, at, cube = &cube } {
+                v.light = keep_tint{ c = cube, ambient = sc.ambient }
+                v.lit = true
+            }
+        }
+    }
+
+    // Half of each face's colour comes back to the area's own ambient tint (DynAmbientColor), at the face's
+    // brightness: the room decides how much light and from where, the designers' tint still shows. The brightness
+    // stays between half and twice the area's ambient, so a character in a dark corner is darker, not lost.
+    fn keep_tint { c: render::AmbientCube, ambient: math::Vec3 } -> render::AmbientCube {
+        return render::AmbientCube{
+            pos_x = tinted{ v = c.pos_x, ambient }, neg_x = tinted{ v = c.neg_x, ambient },
+            pos_y = tinted{ v = c.pos_y, ambient }, neg_y = tinted{ v = c.neg_y, ambient },
+            pos_z = tinted{ v = c.pos_z, ambient }, neg_z = tinted{ v = c.neg_z, ambient },
+        }
+    }
+
+    fn tinted { v: math::Vec3, ambient: math::Vec3 } -> math::Vec3 {
+        let la = luma{ c = ambient }
+        if la < 0.001 { return v }
+        let lv = luma{ c = v }
+        let toward = math::vec3::scale{ v = ambient, s = lv / la }
+        let mixed = math::vec3::lerp{ a = v, b = toward, t = 0.5 }
+        let want = math::clamp{ x = lv, lo = la * 0.5, hi = la * 2.0 }
+        return if lv > 0.0001 { math::vec3::scale{ v = mixed, s = want / lv } } else { math::vec3::scale{ v = ambient, s = 0.5 } }
+    }
+
+    fn luma { c: math::Vec3 } -> f32 { return c.x * 0.299 + c.y * 0.587 + c.z * 0.114 }
+
+    // The light around object `id` as last updated, for the log; null when it has none.
+    fn light_of { sc: *Scene, id: u32 } -> ?render::AmbientCube {
+        let index = map::get{ m = sc.by_id, key = id } ifnull { return null }
+        if index == NO_VISUAL { return null }
+        let v = list::at{ list = sc.visuals, i = index }
+        if not v.lit { return null }
+        return v.light
+    }
+
+    // The cube at `at`: the four probes around it in x and y, mixed by distance and by how much of the room each
+    // saw. False when none did (inside a wall, outside the rooms).
+    fn light_at { mut f: Field, at: math::Vec3, mut cube: render::AmbientCube } -> bool {
+        let gx = at.x / PROBE_CELL - 0.5
+        let gy = at.y / PROBE_CELL - 0.5
+        let x0 = math::floorf{ x = gx }
+        let y0 = math::floorf{ x = gy }
+        let fx = gx - x0
+        let fy = gy - y0
+        let iz = @as(i32, math::floorf{ x = at.z / PROBE_LAYER })
+        let mut sum = render::flat_ambient{ color = math::vec3::zero{} }
+        let mut total: f32 = 0.0
+        let mut k: u32 = 0
+        while k < 4 {
+            let dx: i32 = if (k & 1) != 0 { 1 } else { 0 }
+            let dy: i32 = if (k & 2) != 0 { 1 } else { 0 }
+            let ix = @as(i32, x0) + dx
+            let iy = @as(i32, y0) + dy
+            let wx = if dx == 1 { fx } else { 1.0 - fx }
+            let wy = if dy == 1 { fy } else { 1.0 - fy }
+            let p = probe{ &f, ix, iy, iz }
+            let wgt = wx * wy * p.weight
+            if wgt > 0.0 {
+                add_cube{ into = &sum, c = p.cube, s = wgt }
+                total = total + wgt
+            }
+            k = k + 1
+        }
+        if total < 0.05 { return false }
+        cube = scale_cube{ c = sum, s = 1.0 / total }
+        return true
+    }
+
+    fn add_cube { mut into: render::AmbientCube, c: render::AmbientCube, s: f32 } {
+        into.pos_x = math::vec3::add_scaled{ a = into.pos_x, b = c.pos_x, s }
+        into.neg_x = math::vec3::add_scaled{ a = into.neg_x, b = c.neg_x, s }
+        into.pos_y = math::vec3::add_scaled{ a = into.pos_y, b = c.pos_y, s }
+        into.neg_y = math::vec3::add_scaled{ a = into.neg_y, b = c.neg_y, s }
+        into.pos_z = math::vec3::add_scaled{ a = into.pos_z, b = c.pos_z, s }
+        into.neg_z = math::vec3::add_scaled{ a = into.neg_z, b = c.neg_z, s }
+    }
+
+    fn scale_cube { c: render::AmbientCube, s: f32 } -> render::AmbientCube {
+        return render::AmbientCube{
+            pos_x = math::vec3::scale{ v = c.pos_x, s }, neg_x = math::vec3::scale{ v = c.neg_x, s },
+            pos_y = math::vec3::scale{ v = c.pos_y, s }, neg_y = math::vec3::scale{ v = c.neg_y, s },
+            pos_z = math::vec3::scale{ v = c.pos_z, s }, neg_z = math::vec3::scale{ v = c.neg_z, s },
+        }
+    }
+
+    // The probe of lattice cell (ix, iy, iz), made the first time it is asked for.
+    fn probe { mut f: Field, ix: i32, iy: i32, iz: i32 } -> Probe {
+        let key = (@as(u64, @as(u32, ix + 1048576)) << 42) | (@as(u64, @as(u32, iy + 1048576)) << 21) | @as(u64, @as(u32, iz + 1048576))
+        let have = map::get{ m = f.probes, key }
+        if have != null { return have }
+        let at = math::Vec3{ x = (@as(f32, ix) + 0.5) * PROBE_CELL, y = (@as(f32, iy) + 0.5) * PROBE_CELL, z = (@as(f32, iz) + 0.5) * PROBE_LAYER }
+        let p = cast_probe{ &f, at }
+        map::put{ m = &f.probes, key, value = p } iferr {}
+        return p
+    }
+
+    // ---- making a probe
+
+    // The six faces' light at `at`: PROBE_RAYS rays over each face's hemisphere, spread by the cosine (so their plain
+    // mean is what a surface facing that way receives). A ray that meets a surface from behind is inside geometry and
+    // counts for nothing.
+    fn cast_probe { mut f: Field, at: math::Vec3 } -> Probe {
+        let axes: [6]math::Vec3 = [
+            math::Vec3{ x = 1.0, y = 0.0, z = 0.0 }, math::Vec3{ x = -1.0, y = 0.0, z = 0.0 },
+            math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, math::Vec3{ x = 0.0, y = -1.0, z = 0.0 },
+            math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, math::Vec3{ x = 0.0, y = 0.0, z = -1.0 },
+        ]
+        let mut faces: [6]math::Vec3 = [math::vec3::zero{}; 6]
+        let mut seen: u32 = 0
+        let mut cast: u32 = 0
+        let mut k: usize = 0
+        while k < 6 {
+            let a = axes[k]
+            let helper = if math::abs{ x = a.z } < 0.9 { math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } } else { math::Vec3{ x = 1.0, y = 0.0, z = 0.0 } }
+            let t = math::vec3::normalize{ v = math::vec3::cross{ a = helper, b = a } }
+            let b = math::vec3::cross{ a, b = t }
+            let mut sum = math::vec3::zero{}
+            let mut n: u32 = 0
+            let mut r: u32 = 0
+            while r < PROBE_RAYS {
+                let radius = math::sqrtf{ x = (@as(f32, r) + 0.5) / @as(f32, PROBE_RAYS) }
+                let angle = @as(f32, r) * 2.3999632 + @as(f32, k) * 0.7
+                let lx = radius * math::cosf{ x = angle }
+                let ly = radius * math::sinf{ x = angle }
+                let lz = math::sqrtf{ x = math::max{ a = 0.0, b = 1.0 - radius * radius } }
+                let d = math::Vec3{ x = t.x * lx + b.x * ly + a.x * lz, y = t.y * lx + b.y * ly + a.y * lz, z = t.z * lx + b.z * ly + a.z * lz }
+                let hit = trace{ &f, o = at, d, max_t = PROBE_REACH }
+                cast = cast + 1
+                if hit.tri == NO_MAP {
+                    sum = math::vec3::add{ a = sum, b = f.sky }
+                    n = n + 1
+                } else if hit.front {
+                    sum = math::vec3::add{ a = sum, b = radiance{ f = &f, hit } }
+                    n = n + 1
+                }
+                r = r + 1
+            }
+            faces[k] = if n > 0 { math::vec3::scale{ v = sum, s = 1.0 / @as(f32, n) } } else { f.sky }
+            seen = seen + n
+            k = k + 1
+        }
+        let cube = render::AmbientCube{ pos_x = faces[0], neg_x = faces[1], pos_y = faces[2], neg_y = faces[3], pos_z = faces[4], neg_z = faces[5] }
+        let share = @as(f32, seen) / @as(f32, cast)
+        // A point that sees mostly the backs of walls is inside them: it doesn't count.
+        return Probe{ cube, weight = if share < 0.6 { 0.0 } else { share } }
+    }
+
+    struct Hit { tri: u32, t: f32, u: f32, v: f32, front: bool }
+
+    // What a surface sends back where a ray met it: its lightmap's light times its texture's mean colour.
+    fn radiance { f: *Field, hit: Hit } -> math::Vec3 {
+        let tri = list::items{ list = f.tris }[hit.tri]
+        if tri.map == NO_MAP { return math::vec3::mul{ a = f.flat, b = tri.albedo } }
+        let uv = math::Vec2{
+            x = tri.uv.x + tri.du1.x * hit.u + tri.du2.x * hit.v,
+            y = tri.uv.y + tri.du1.y * hit.u + tri.du2.y * hit.v,
+        }
+        let px = list::items{ list = f.maps }[tri.map]
+        return math::vec3::mul{ a = sample{ p = px, uv }, b = tri.albedo }
+    }
+
+    // A texel of a CPU lightmap (rows bottom first, as v counts), bilinear and wrapping.
+    fn sample { p: Pixels, uv: math::Vec2 } -> math::Vec3 {
+        let fx = (uv.x - math::floorf{ x = uv.x }) * @as(f32, p.width) - 0.5
+        let fy = (uv.y - math::floorf{ x = uv.y }) * @as(f32, p.height) - 0.5
+        let x0 = math::floorf{ x = fx }
+        let y0 = math::floorf{ x = fy }
+        let tx = fx - x0
+        let ty = fy - y0
+        let w = @as(i32, p.width)
+        let h = @as(i32, p.height)
+        let ax = wrap_i{ v = @as(i32, x0), n = w }
+        let bx = wrap_i{ v = @as(i32, x0) + 1, n = w }
+        let ay = wrap_i{ v = @as(i32, y0), n = h }
+        let by = wrap_i{ v = @as(i32, y0) + 1, n = h }
+        let c00 = texel{ p, x = ax, y = ay }
+        let c10 = texel{ p, x = bx, y = ay }
+        let c01 = texel{ p, x = ax, y = by }
+        let c11 = texel{ p, x = bx, y = by }
+        let top = math::vec3::lerp{ a = c00, b = c10, t = tx }
+        let bottom = math::vec3::lerp{ a = c01, b = c11, t = tx }
+        return math::vec3::lerp{ a = top, b = bottom, t = ty }
+    }
+
+    fn wrap_i { v: i32, n: i32 } -> i32 {
+        let m = v % n
+        return if m < 0 { m + n } else { m }
+    }
+
+    fn texel { p: Pixels, x: i32, y: i32 } -> math::Vec3 {
+        let i = (@as(usize, y) * @as(usize, p.width) + @as(usize, x)) * 3
+        return math::Vec3{ x = @as(f32, p.rgb[i]) / 255.0, y = @as(f32, p.rgb[i + 1]) / 255.0, z = @as(f32, p.rgb[i + 2]) / 255.0 }
+    }
+
+    // The nearest triangle a ray from `o` along unit `d` meets within max_t (tri NO_MAP: none), walking the grid's
+    // cells along the ray's course over x and y.
+    fn trace { mut f: Field, o: math::Vec3, d: math::Vec3, max_t: f32 } -> Hit {
+        let mut best = Hit{ tri = NO_MAP, t = max_t, u = 0.0, v = 0.0, front = false }
+        if f.nx == 0 { return best }
+        f.stamp = @wrap_add(f.stamp, 1)
+        if f.stamp == 0 {
+            let mut s: usize = 0
+            while s < f.stamps.len {
+                f.stamps[s] = 0
+                s = s + 1
+            }
+            f.stamp = 1
+        }
+        let cx = (o.x - f.min_x) / f.cell
+        let cy = (o.y - f.min_y) / f.cell
+        let cz = (o.z - f.min_z) / f.cell
+        if cx < 0.0 or cy < 0.0 or cz < 0.0 or cx >= @as(f32, f.nx) or cy >= @as(f32, f.ny) or cz >= @as(f32, f.nz) { return best }
+        let mut ix = @as(i32, cx)
+        let mut iy = @as(i32, cy)
+        let mut iz = @as(i32, cz)
+        let step_x: i32 = if d.x > 0.0 { 1 } else { -1 }
+        let step_y: i32 = if d.y > 0.0 { 1 } else { -1 }
+        let step_z: i32 = if d.z > 0.0 { 1 } else { -1 }
+        let delta_x = axis_delta{ d = d.x, cell = f.cell }
+        let delta_y = axis_delta{ d = d.y, cell = f.cell }
+        let delta_z = axis_delta{ d = d.z, cell = f.cell }
+        let mut next_x = first_crossing{ c = cx, d = d.x, cell = f.cell }
+        let mut next_y = first_crossing{ c = cy, d = d.y, cell = f.cell }
+        let mut next_z = first_crossing{ c = cz, d = d.z, cell = f.cell }
+        let tris = list::items{ list = f.tris }
+        let layer = @as(usize, f.nx) * @as(usize, f.ny)
+        while true {
+            let c = @as(usize, iz) * layer + @as(usize, iy) * @as(usize, f.nx) + @as(usize, ix)
+            let mut k = f.starts[c]
+            let end = f.starts[c + 1]
+            while k < end {
+                let ti = f.items[k]
+                k = k + 1
+                if f.stamps[ti] == f.stamp { continue }
+                f.stamps[ti] = f.stamp
+                intersect{ tri = tris[ti], index = ti, o, d, best = &best }
+            }
+            let exit = math::min{ a = next_x, b = math::min{ a = next_y, b = next_z } }
+            if best.t <= exit or exit >= max_t { break }
+            if next_x <= next_y and next_x <= next_z {
+                ix = ix + step_x
+                next_x = next_x + delta_x
+            } else if next_y <= next_z {
+                iy = iy + step_y
+                next_y = next_y + delta_y
+            } else {
+                iz = iz + step_z
+                next_z = next_z + delta_z
+            }
+            if ix < 0 or iy < 0 or iz < 0 or ix >= @as(i32, f.nx) or iy >= @as(i32, f.ny) or iz >= @as(i32, f.nz) { break }
+        }
+        return best
+    }
+
+    // How far along a unit ray one cell is on an axis, and where the ray first leaves its cell on it (cell units in, metres out).
+    fn axis_delta { d: f32, cell: f32 } -> f32 {
+        let a = math::abs{ x = d }
+        return if a > 0.000001 { cell / a } else { 1000000000.0 }
+    }
+
+    fn first_crossing { c: f32, d: f32, cell: f32 } -> f32 {
+        let a = math::abs{ x = d }
+        if a <= 0.000001 { return 1000000000.0 }
+        let into = if d > 0.0 { math::floorf{ x = c } + 1.0 - c } else { c - math::floorf{ x = c } }
+        return into * cell / a
+    }
+
+    // Moller-Trumbore, both sides: a nearer hit replaces `best`. Front: the side the triangle's counter-clockwise
+    // winding faces, the side the original draws.
+    fn intersect { tri: ProbeTri, index: u32, o: math::Vec3, d: math::Vec3, mut best: Hit } {
+        let p = math::vec3::cross{ a = d, b = tri.e2 }
+        let det = math::vec3::dot{ a = tri.e1, b = p }
+        if math::abs{ x = det } < 0.00000001 { return }
+        let inv = 1.0 / det
+        let s = math::vec3::sub{ a = o, b = tri.a }
+        let u = math::vec3::dot{ a = s, b = p } * inv
+        if u < 0.0 or u > 1.0 { return }
+        let q = math::vec3::cross{ a = s, b = tri.e1 }
+        let v = math::vec3::dot{ a = d, b = q } * inv
+        if v < 0.0 or u + v > 1.0 { return }
+        let t = math::vec3::dot{ a = tri.e2, b = q } * inv
+        if t <= 0.01 or t >= best.t { return }
+        best = Hit{ tri = index, t, u, v, front = det > 0.0 }
+    }
+
+    // ---- what the rays are cast against
+
+    // The rooms' opaque triangles in world space, their lightmaps and textures' mean colours, and the grid.
+    fn build_field { mut sc: Scene, mut w: world::World } {
+        sc.field.state = 2
+        sc.field.sky = sc.ambient
+        sc.field.flat = sc.ambient
+        // Where probes can be: the walkmeshes, and what a ray from there reaches (PROBE_MARGIN around them).
+        let walk = walk_bounds{ w = &w } ifnull { return }
+        sc.field.region = math::Aabb{
+            min = math::Vec3{ x = walk.min.x - PROBE_MARGIN, y = walk.min.y - PROBE_MARGIN, z = walk.min.z - 4.0 },
+            max = math::Vec3{ x = walk.max.x + PROBE_MARGIN, y = walk.max.y + PROBE_MARGIN, z = walk.max.z + PROBE_MARGIN },
+        }
+        let rooms = list::items{ list = sc.rooms }
+        let mut i: usize = 0
+        while i < rooms.len {
+            let r = rooms[i]
+            i = i + 1
+            if r.part < 0 { continue }
+            let p = part_at{ sc = &sc, i = @as(usize, r.part) }
+            let l = loaded_at{ sc = &sc, i = p.loaded }
+            let instance = math::mat4::translation{ t = r.position }
+            let mut m: usize = 0
+            while m < l.model.meshes.len and m < l.materials.len {
+                let mesh = &l.model.meshes[m]
+                let mat = l.materials[m]
+                m = m + 1
+                if not mdl_render::draws{ mesh = mesh.* } or mesh.skin != null or mesh.saber != null { continue }
+                if mat.blend == render::Blend::additive or mat.blend == render::Blend::alpha or mat.color.a < 0.5 { continue }
+                let world_m = math::mat4::mul{ a = instance, b = p.pose.world[mesh.node] }
+                let lightmap = if mesh.lightmapped and mesh.textures[1].len > 0 { map_of{ &sc, &w, name = mesh.textures[1] } } else { NO_MAP }
+                let albedo = albedo_of{ &sc, &w, name = mesh.textures[0] }
+                add_mesh{ f = &sc.field, mesh, m = world_m, lightmap, albedo }
+            }
+        }
+        if sc.field.tris.len == 0 { return }
+        build_grid{ f = &sc.field, arena = sc.arena } iferr { return }
+        sc.field.state = 1
+    }
+
+    // The bounds of the area's walkmeshes (their vertices are in the area's space), or null when it has none.
+    fn walk_bounds { w: *world::World } -> ?math::Aabb {
+        let rooms = list::items{ list = w.walk.rooms }
+        let mut lo = math::Vec3{ x = 1000000000.0, y = 1000000000.0, z = 1000000000.0 }
+        let mut hi = math::Vec3{ x = -1000000000.0, y = -1000000000.0, z = -1000000000.0 }
+        let mut any = false
+        let mut i: usize = 0
+        while i < rooms.len {
+            let mesh = rooms[i].mesh
+            i = i + 1
+            if mesh is some{ value = m } {
+                let mut k: usize = 0
+                while k < m.vertices.len {
+                    lo = math::vec3::min{ a = lo, b = m.vertices[k] }
+                    hi = math::vec3::max{ a = hi, b = m.vertices[k] }
+                    any = true
+                    k = k + 1
+                }
+            }
+        }
+        if not any { return null }
+        return math::Aabb{ min = lo, max = hi }
+    }
+
+    fn add_mesh { mut f: Field, mesh: *mdl::Mesh, m: math::Mat4, lightmap: u32, albedo: math::Vec3 } {
+        let has_uv = lightmap != NO_MAP and mesh.uv1.len >= @as(usize, mesh.vertex_count) * 2
+        let mut k: usize = 0
+        while k + 2 < mesh.indices.len {
+            let i0 = @as(usize, mesh.indices[k])
+            let i1 = @as(usize, mesh.indices[k + 1])
+            let i2 = @as(usize, mesh.indices[k + 2])
+            k = k + 3
+            if i0 >= @as(usize, mesh.vertex_count) or i1 >= @as(usize, mesh.vertex_count) or i2 >= @as(usize, mesh.vertex_count) { continue }
+            let a = vertex{ mesh, m, i = i0 }
+            let b = vertex{ mesh, m, i = i1 }
+            let c = vertex{ mesh, m, i = i2 }
+            // Outside what any probe's rays reach, or a backdrop (a sky dome, a distant planet): left out.
+            let lo = math::vec3::min{ a, b = math::vec3::min{ a = b, b = c } }
+            let hi = math::vec3::max{ a, b = math::vec3::max{ a = b, b = c } }
+            if hi.x < f.region.min.x or hi.y < f.region.min.y or hi.z < f.region.min.z { continue }
+            if lo.x > f.region.max.x or lo.y > f.region.max.y or lo.z > f.region.max.z { continue }
+            if hi.x - lo.x > PROBE_BACKDROP or hi.y - lo.y > PROBE_BACKDROP or hi.z - lo.z > PROBE_BACKDROP { continue }
+            let mut uv = math::Vec2{ x = 0.0, y = 0.0 }
+            let mut du1 = uv
+            let mut du2 = uv
+            if has_uv {
+                uv = math::Vec2{ x = mesh.uv1[i0 * 2], y = mesh.uv1[i0 * 2 + 1] }
+                du1 = math::Vec2{ x = mesh.uv1[i1 * 2] - uv.x, y = mesh.uv1[i1 * 2 + 1] - uv.y }
+                du2 = math::Vec2{ x = mesh.uv1[i2 * 2] - uv.x, y = mesh.uv1[i2 * 2 + 1] - uv.y }
+            }
+            list::push{ list = &f.tris, item = ProbeTri{
+                a, e1 = math::vec3::sub{ a = b, b = a }, e2 = math::vec3::sub{ a = c, b = a },
+                uv, du1, du2, map = if has_uv { lightmap } else { NO_MAP }, albedo,
+            } } iferr { return }
+        }
+    }
+
+    fn vertex { mesh: *mdl::Mesh, m: math::Mat4, i: usize } -> math::Vec3 {
+        return math::mat4::transform_point{ m, p = math::Vec3{ x = mesh.positions[i * 3], y = mesh.positions[i * 3 + 1], z = mesh.positions[i * 3 + 2] } }
+    }
+
+    // The grid: cubes of `cell` metres, each listing the triangles whose bounds overlap it.
+    fn build_grid { mut f: Field, arena: *mut arena::Arena } -> ! {
+        let tris = list::items{ list = f.tris }
+        let mut lo = math::Vec3{ x = 1000000000.0, y = 1000000000.0, z = 1000000000.0 }
+        let mut hi = math::Vec3{ x = -1000000000.0, y = -1000000000.0, z = -1000000000.0 }
+        let mut i: usize = 0
+        while i < tris.len {
+            let b = bounds{ t = tris[i] }
+            lo = math::vec3::min{ a = lo, b = b.min }
+            hi = math::vec3::max{ a = hi, b = b.max }
+            i = i + 1
+        }
+        // 2 m cubes, larger where the area is so big that there would be more than PROBE_GRID_CELLS of them.
+        let volume = math::max{ a = (hi.x - lo.x) * (hi.y - lo.y) * math::max{ a = hi.z - lo.z, b = 1.0 }, b = 1.0 }
+        f.cell = math::max{ a = 2.0, b = math::powf{ x = volume / PROBE_GRID_CELLS, y = 0.33333334 } }
+        f.min_x = lo.x - 0.01
+        f.min_y = lo.y - 0.01
+        f.min_z = lo.z - 0.01
+        f.nx = @as(u32, (hi.x - f.min_x) / f.cell) + 1
+        f.ny = @as(u32, (hi.y - f.min_y) / f.cell) + 1
+        f.nz = @as(u32, (hi.z - f.min_z) / f.cell) + 1
+        let layer = @as(usize, f.nx) * @as(usize, f.ny)
+        let cells = layer * @as(usize, f.nz)
+        f.starts = try alloc::resize(u32, arena::Arena){ realloc = arena::alloc, heap = arena, mem = slice::empty(u32){}, count = cells + 1 }
+        i = 0
+        while i <= cells {
+            f.starts[i] = 0
+            i = i + 1
+        }
+        // Count, then place.
+        let mut pass: u32 = 0
+        let mut total: usize = 0
+        while pass < 2 {
+            if pass == 1 {
+                let mut run: u32 = 0
+                let mut c: usize = 0
+                while c <= cells {
+                    let n = f.starts[c]
+                    f.starts[c] = run
+                    run = run + n
+                    c = c + 1
+                }
+                total = @as(usize, run)
+                f.items = try alloc::resize(u32, arena::Arena){ realloc = arena::alloc, heap = arena, mem = slice::empty(u32){}, count = total + 1 }
+            }
+            i = 0
+            while i < tris.len {
+                let b = bounds{ t = tris[i] }
+                let x0 = cell_of{ v = b.min.x - f.min_x, cell = f.cell, n = f.nx }
+                let x1 = cell_of{ v = b.max.x - f.min_x, cell = f.cell, n = f.nx }
+                let y0 = cell_of{ v = b.min.y - f.min_y, cell = f.cell, n = f.ny }
+                let y1 = cell_of{ v = b.max.y - f.min_y, cell = f.cell, n = f.ny }
+                let z0 = cell_of{ v = b.min.z - f.min_z, cell = f.cell, n = f.nz }
+                let z1 = cell_of{ v = b.max.z - f.min_z, cell = f.cell, n = f.nz }
+                let mut z = z0
+                while z <= z1 {
+                    let mut y = y0
+                    while y <= y1 {
+                        let mut x = x0
+                        while x <= x1 {
+                            let c = @as(usize, z) * layer + @as(usize, y) * @as(usize, f.nx) + @as(usize, x)
+                            if pass == 0 {
+                                f.starts[c] = f.starts[c] + 1
+                            } else {
+                                f.items[@as(usize, f.starts[c])] = @as(u32, i)
+                                f.starts[c] = f.starts[c] + 1
+                            }
+                            x = x + 1
+                        }
+                        y = y + 1
+                    }
+                    z = z + 1
+                }
+                i = i + 1
+            }
+            pass = pass + 1
+        }
+        // Placing advanced each start to the next cell's: shift them back.
+        let mut c = cells
+        while c > 0 {
+            f.starts[c] = f.starts[c - 1]
+            c = c - 1
+        }
+        f.starts[0] = 0
+        f.stamps = try alloc::resize(u32, arena::Arena){ realloc = arena::alloc, heap = arena, mem = slice::empty(u32){}, count = tris.len }
+        i = 0
+        while i < tris.len {
+            f.stamps[i] = 0
+            i = i + 1
+        }
+        f.stamp = 0
+    }
+
+    fn cell_of { v: f32, cell: f32, n: u32 } -> u32 {
+        let c = @as(i32, math::floorf{ x = v / cell })
+        if c < 0 { return 0 }
+        if c >= @as(i32, n) { return n - 1 }
+        return @as(u32, c)
+    }
+
+    fn bounds { t: ProbeTri } -> math::Aabb {
+        let b = math::vec3::add{ a = t.a, b = t.e1 }
+        let c = math::vec3::add{ a = t.a, b = t.e2 }
+        return math::Aabb{ min = math::vec3::min{ a = t.a, b = math::vec3::min{ a = b, b = c } }, max = math::vec3::max{ a = t.a, b = math::vec3::max{ a = b, b = c } } }
+    }
+
+    // ---- textures on the CPU
+
+    // The lightmap `name` as CPU texels (Field.maps index), read once; NO_MAP if it can't be read.
+    fn map_of { mut sc: Scene, mut w: world::World, name: []u8 } -> u32 {
+        let key = key_of{ &sc, a = name, b = "" } iferr { return NO_MAP }
+        let have = map::get{ m = sc.field.map_index, key }
+        if have != null { return have }
+        let px = read_pixels{ &sc, &w, name, max = PROBE_MAP_SIZE } ifnull {
+            map::put{ m = &sc.field.map_index, key, value = NO_MAP } iferr {}
+            return NO_MAP
+        }
+        list::push{ list = &sc.field.maps, item = px } iferr { return NO_MAP }
+        let index = @as(u32, sc.field.maps.len - 1)
+        map::put{ m = &sc.field.map_index, key, value = index } iferr {}
+        return index
+    }
+
+    // The mean colour of texture `name` (white when there is none or it can't be read).
+    fn albedo_of { mut sc: Scene, mut w: world::World, name: []u8 } -> math::Vec3 {
+        let white = math::Vec3{ x = 1.0, y = 1.0, z = 1.0 }
+        if name.len == 0 or ci::eq{ a = name, b = "NULL" } { return white }
+        let key = key_of{ &sc, a = name, b = "" } iferr { return white }
+        let have = map::get{ m = sc.field.albedo, key }
+        if have != null { return have }
+        let mut mean = white
+        let px = read_pixels{ &sc, &w, name, max = 4 }
+        if px != null {
+            let n = @as(usize, px.width) * @as(usize, px.height)
+            let mut s = math::vec3::zero{}
+            let mut i: usize = 0
+            while i < n {
+                s = math::vec3::add{ a = s, b = math::Vec3{ x = @as(f32, px.rgb[i * 3]), y = @as(f32, px.rgb[i * 3 + 1]), z = @as(f32, px.rgb[i * 3 + 2]) } }
+                i = i + 1
+            }
+            mean = math::vec3::scale{ v = s, s = 1.0 / (255.0 * @as(f32, n)) }
+        }
+        map::put{ m = &sc.field.albedo, key, value = mean } iferr {}
+        return mean
+    }
+
+    // A texture's texels at most `max` across (the largest mip level that fits, then averaged down), RGB, rows bottom
+    // first, in the scene's arena; null if it can't be read. Decoding goes through the material cache's scratch.
+    fn read_pixels { mut sc: Scene, mut w: world::World, name: []u8, max: u32 } -> ?Pixels {
+        let found = res::find_texture{ rm = w.rm.*, name } ifnull { return null }
+        defer arena::reset{ heap = &sc.materials.scratch }
+        let bytes = res::read{ fs = &w.fs, rm = w.rm.*, loc = found.loc, realloc = arena::alloc, heap = &sc.materials.scratch } iferr { return null }
+        let mut t: tex::Texture
+        if found.kind == restype::Type::tpc {
+            t = tex::read_tpc{ realloc = arena::alloc, heap = &sc.materials.scratch, bytes } iferr { return null }
+        } else if found.kind == restype::Type::tga {
+            t = tex::read_tga{ realloc = arena::alloc, heap = &sc.materials.scratch, bytes } iferr { return null }
+        } else {
+            return null
+        }
+        let mut level: u32 = 0
+        while level + 1 < t.levels and (tex::mip_dim{ n = t.width, k = level } > max or tex::mip_dim{ n = t.height, k = level } > max) { level = level + 1 }
+        let lw = tex::mip_dim{ n = t.width, k = level }
+        let lh = tex::mip_dim{ n = t.height, k = level }
+        let rgba = tex::decode_level{ realloc = arena::alloc, heap = &sc.materials.scratch, t, image = 0, level } iferr { return null }
+        let sx = if lw > max { (lw + max - 1) / max } else { 1 }
+        let sy = if lh > max { (lh + max - 1) / max } else { 1 }
+        let ow = if lw / sx > 0 { lw / sx } else { 1 }
+        let oh = if lh / sy > 0 { lh / sy } else { 1 }
+        let out = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(u8){}, count = @as(usize, ow) * @as(usize, oh) * 3 } iferr { return null }
+        let mut y: u32 = 0
+        while y < oh {
+            let mut x: u32 = 0
+            while x < ow {
+                let mut r: u32 = 0
+                let mut g: u32 = 0
+                let mut b: u32 = 0
+                let mut n: u32 = 0
+                let mut yy: u32 = 0
+                while yy < sy {
+                    let mut xx: u32 = 0
+                    while xx < sx {
+                        let px = x * sx + xx
+                        let py = y * sy + yy
+                        if px < lw and py < lh {
+                            let i = (@as(usize, py) * @as(usize, lw) + @as(usize, px)) * 4
+                            r = r + @as(u32, rgba[i])
+                            g = g + @as(u32, rgba[i + 1])
+                            b = b + @as(u32, rgba[i + 2])
+                            n = n + 1
+                        }
+                        xx = xx + 1
+                    }
+                    yy = yy + 1
+                }
+                let o = (@as(usize, y) * @as(usize, ow) + @as(usize, x)) * 3
+                let k = if n > 0 { n } else { 1 }
+                out[o] = @trunc(u8, r / k)
+                out[o + 1] = @trunc(u8, g / k)
+                out[o + 2] = @trunc(u8, b / k)
+                x = x + 1
+            }
+            y = y + 1
+        }
+        return Pixels{ width = ow, height = oh, rgb = out }
     }
 }

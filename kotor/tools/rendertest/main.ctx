@@ -242,9 +242,9 @@ fn draw_materials { mut dev: gpu::Device, mut frame: render::Frame, a: Assets, t
     view.fog = render::Fog{ on = true, color = v3{ x = 0.32, y = 0.36, z = 0.42 }, near = 12.0, far = 30.0 }
     let vi = render::add_view{ &frame, view } ifnull { return }
 
-    render::add_light{ &frame, light = render::Light{ position = v3{ x = -5.5, y = 0.5, z = 2.0 }, color = v3{ x = 1.4, y = 0.3, z = 0.2 }, radius = 6.0 } }
-    render::add_light{ &frame, light = render::Light{ position = v3{ x = -1.5, y = -0.5, z = 2.5 }, color = v3{ x = 0.3, y = 0.5, z = 1.6 }, radius = 6.0 } }
-    render::add_light{ &frame, light = render::Light{ position = v3{ x = 3.0, y = -3.0, z = 5.0 }, color = v3{ x = 0.9, y = 0.85, z = 0.75 }, radius = 14.0 } }
+    render::add_light{ &frame, light = render::Light{ position = v3{ x = -5.5, y = 0.5, z = 2.0 }, color = v3{ x = 1.4, y = 0.3, z = 0.2 }, radius = 6.0, shadow = false } }
+    render::add_light{ &frame, light = render::Light{ position = v3{ x = -1.5, y = -0.5, z = 2.5 }, color = v3{ x = 0.3, y = 0.5, z = 1.6 }, radius = 6.0, shadow = false } }
+    render::add_light{ &frame, light = render::Light{ position = v3{ x = 3.0, y = -3.0, z = 5.0 }, color = v3{ x = 0.9, y = 0.85, z = 0.75 }, radius = 14.0, shadow = false } }
 
     // The ground: lit, checkered, fogged into the distance.
     let mut ground = render::make_material{}
@@ -772,7 +772,7 @@ fn draw_bastila {
         // The frame's palettes are copied in, so the next pose can reuse the scratch.
         k = k + 1
         // Each view is submitted on its own: the poses are re-used for the next one.
-        render::add_light{ &frame, light = render::Light{ position = v3{ x = 3.0, y = 6.0, z = 5.0 }, color = v3{ x = 0.9, y = 0.88, z = 0.85 }, radius = 40.0 } }
+        render::add_light{ &frame, light = render::Light{ position = v3{ x = 3.0, y = 6.0, z = 5.0 }, color = v3{ x = 0.9, y = 0.88, z = 0.85 }, radius = 40.0, shadow = false } }
         try gpu::submit{ &dev, frame = &frame }
         render::begin_frame{ &frame, time = 0.0 }
         // Keep the previous views' pixels: later views clear only their own viewport.
@@ -806,7 +806,7 @@ fn draw_gallery {
             view.clear_color = render::rgba{ r = 0.15, g = 0.15, b = 0.18, a = 1.0 }
             view.ambient = v3{ x = 0.4, y = 0.4, z = 0.42 }
             let vi = render::add_view{ &frame, view } ifnull { return }
-            render::add_light{ &frame, light = render::Light{ position = v3{ x = 3.0, y = 6.0, z = 5.0 }, color = v3{ x = 0.9, y = 0.88, z = 0.85 }, radius = 40.0 } }
+            render::add_light{ &frame, light = render::Light{ position = v3{ x = 3.0, y = 6.0, z = 5.0 }, color = v3{ x = 0.9, y = 0.88, z = 0.85 }, radius = 40.0, shadow = false } }
             _ = kmodels::draw{ &frame, view = vi, model, pose, parts, instance = math::mat4::identity{}, palette }
             _ = @fmt(&io, "{}: {} meshes drawn of {}\n", names[k], parts.count, model.meshes.len)
         } else {

@@ -1,0 +1,18 @@
+// Atmosphere passes of the enhanced renderer (docs/design/enhanced-render.md): height fog over the opaque surfaces
+// and light shafts toward the view's sun. Called from draw_view_fx (fx.ctx).
+namespace gpu {
+    struct AtmosPrograms { made: bool }
+
+    fn no_atmos_programs {} -> AtmosPrograms { return AtmosPrograms{ made = false } }
+
+    fn make_atmos_programs { mut dev: Device } -> ! {}
+
+    fn free_atmos_programs { mut dev: Device } {}
+
+    // After the opaque surfaces, before the transparent ones: fog thickest low down (View.height_fog), blended into
+    // the scene's light (bind_light_target) by the depth (dev.fxt.depth, resolved).
+    fn run_height_fog { mut dev: Device, v: render::View, area: GlRect } {}
+
+    // After the scene is resolved, before the bloom: light shafts streaming from View.sun, added into dev.fxt.color.
+    fn run_shafts { mut dev: Device, v: render::View, area: GlRect } {}
+}

@@ -234,6 +234,7 @@ namespace play {
                 reload_scene = reload_scene or (changed & display::CHANGED_TEXTURES) != 0
             }
             sc.grass.on = disp.applied.grass     // the Grass option, every frame (a new area's scene starts with it on)
+            sc.room_light = not disp.applied.fx_original and disp.applied.fx_room_light > 0     // the Room Light option, likewise
             // Another texture pack: the area's textures are loaded again from it, as a load does (the world stays).
             if reload_scene and w.transition == null {
                 dlgview::leave{ v = &dview, w = &w, sc = &sc, g = &ui.gui }
@@ -513,7 +514,9 @@ namespace play {
                 view.blur = speed_blur
                 view.ambient = sc.ambient
                 view.fog = sc.fog
+                view.sun = scene::sun_of{ &sc, w = &w, at = camera.look }
                 let vi = render::add_view{ &frame, view } ifnull { 0 }
+                scene::update_light{ &sc, &w }
                 scene::draw{ &sc, w = &w, &frame, view = vi }
                 vfx::draw{ v = &vx, &sc, &frame, view = vi }
                 dlgview::draw{ v = &dview, frame = &frame }
@@ -530,6 +533,12 @@ namespace play {
                     try screenshot{ &w, &dev, heap = &scene_arena, path = opts.shots[s].path, frame_no }
                     _ = @fmt(&w.io, "  frame: {} draws, {} shadows, {} lights, {} emitters, {} particles\n", frame.draw_count, frame.shadow_count, frame.light_count, frame.emitter_count, frame.particle_count)
                     fxhud::log{ &w, dev }
+                    if frame.view_count > 0 { scene::log_sun{ sc = &sc, &w, sun = frame.views[0].sun } }
+                    if scene::light_of{ sc = &sc, id = w.pc } is some{ value = c } {
+                        _ = @fmt(&w.io, "  leader's room light: +x {} {} {} -x {} {} {} +y {} {} {} -y {} {} {} +z {} {} {} -z {} {} {}\n",
+                            c.pos_x.x, c.pos_x.y, c.pos_x.z, c.neg_x.x, c.neg_x.y, c.neg_x.z, c.pos_y.x, c.pos_y.y, c.pos_y.z,
+                            c.neg_y.x, c.neg_y.y, c.neg_y.z, c.pos_z.x, c.pos_z.y, c.pos_z.z, c.neg_z.x, c.neg_z.y, c.neg_z.z)
+                    }
                     let p = world::object{ w = &w, id = w.pc }
                     if p != null {
                         _ = @fmt(&w.io, "  leader at {} {} {} (room {}), camera at {} {} {} looking at {} {} {}, blur {}, ambient {} {} {}, dialogue fade {}\n", p.position.x, p.position.y, p.position.z,

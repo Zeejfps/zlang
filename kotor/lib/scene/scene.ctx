@@ -51,6 +51,8 @@ namespace scene {
         signature: u64,                 // what the models were made from (visual::signature_of)
         saber: u8,                      // the lightsaber's blade: 0 not looked at yet, 1 off, 2 lit, 3 this creature has none
         saber_force: u8,                // a script's SetLightsaberPowered override: 0 none, 1 off, 2 lit
+        light: render::AmbientCube,     // the light around it (probes.ctx), when `lit`
+        lit: bool,
     }
 
     struct Scene {
@@ -74,6 +76,12 @@ namespace scene {
         drawn_objects: u32,
         look: Look,                     // a creature in stealth mode's texture (stealth_look.ctx)
         grass: grass::Field,            // the area's grass (grass.ctx); `grass.on` is the Grass option, set by the owner
+        room_light: bool,               // the Room Light option (set by the owner): visuals take the light around them (probes.ctx)
+        field: Field,                   // what the probes are cast against, and the probes
+        sun_state: u8,                  // the area's sun (sun.ctx): 0 not looked for yet, 1 found, 2 none
+        sun_at: math::Vec3,
+        sun_color: math::Vec3,
+        shadow_opacity: f32,            // the ARE's ShadowOpacity, 0..1
     }
 
     fn make { arena: *mut arena::Arena, heap: *mut heap::Heap, scratch: alloc::Bytes, rm: res::Manager } -> Scene {
@@ -91,6 +99,8 @@ namespace scene {
             by_id = map::new(u32, usize, arena::Arena){ realloc = arena::alloc, heap = arena, hash = map::hash_u32, eq = map::eq_u32 },
             time = 0.0, current_room = -1, ambient = math::Vec3{ x = 0.35, y = 0.35, z = 0.35 }, fog = render::no_fog{},
             drawn_rooms = 0, drawn_objects = 0, look = no_look{}, grass = grass::none{},
+            room_light = false, field = no_field{ arena },
+            sun_state = 0, sun_at = math::vec3::zero{}, sun_color = math::vec3::zero{}, shadow_opacity = 0.5,
         }
     }
 
@@ -440,6 +450,7 @@ namespace scene {
             _ = mdl_render::add_draws_look{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = instance, materials = l.materials, time = sc.time, look = null, cast = null, kind = render::DrawKind::room, ambient = 0 }
             sc.drawn_rooms = sc.drawn_rooms + 1
         }
+        mark_sun{ sc = &sc, &frame, view }
         // Grass stands on the floor of the rooms it is seen in: it comes with them (the eye and the way it looks are the view's).
         let cam = frame.views[view].camera
         let forward = math::Vec3{ x = -cam.view.m[2], y = -cam.view.m[6], z = -cam.view.m[10] }
@@ -567,7 +578,7 @@ namespace scene {
             i = i + 1
             if l.ambient_only or p.radius <= 0.0 { continue }
             let at = math::mat4::transform_point{ m = math::mat4::mul{ a = instance, b = pose.world[l.node] }, p = math::vec3::zero{} }
-            render::add_light{ &frame, light = render::Light{ position = at, color = math::vec3::scale{ v = p.color, s = p.multiplier }, radius = p.radius } }
+            render::add_light{ &frame, light = render::Light{ position = at, color = math::vec3::scale{ v = p.color, s = p.multiplier }, radius = p.radius, shadow = l.shadow } }
         }
     }
 }

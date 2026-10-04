@@ -29,7 +29,7 @@ namespace frontend {
         "BLOOM: Light brighter than white glows: lightsaber blades, blaster bolts, holograms, screens, the Star Maps and bright lamps. The picture keeps the original's colours; only the brightest light is softened.\n\nLOW: a smaller glow, for slower graphics cards.",
         "ROOM LIGHT: Characters and objects take the light of the room around them, as its lightmaps show it: darker in shadow, tinted by coloured walls and lit from below by a bright floor, instead of one flat light for the whole area.",
         "SHADOWS: PLANAR is the original's shadow under each character. LOW: shadow maps from the sun and the strongest lights, cast by characters, placeables and doors onto the rooms and onto each other. SOFT: the same with soft edges that widen away from what casts them.",
-        "OCCLUSION: Corners, creases and the ground under characters darken softly where little light can reach (ambient occlusion). Light sources and glowing surfaces are left alone.\n\nLOW: at a quarter of the pixels.",
+        "OCCLUSION: Corners, creases and the ground under characters darken softly where little light can reach (ambient occlusion). Light sources and glowing surfaces are left alone.\n\nLOW: half the samples.",
         "LIGHTMAPS: SMOOTH filters the rooms' baked light so its pixels no longer show as blocks on walls and floors.",
         "FOCUS BLUR: In conversations the speaker is sharp and the background softly blurred, changing focus smoothly with each cut. Normal play is not blurred.",
         "REFLECTIONS: Shiny floors, armour and metal reflect what is on the screen around them; where nothing is, the original's reflection map shows.",

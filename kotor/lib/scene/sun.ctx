@@ -1,0 +1,74 @@
+// The area's sun, for the enhanced renderer (render::Sun: shadow maps, light shafts). The ARE has no sun direction;
+// the rooms' models carry the light their lightmaps were baked from: an outdoor area's rooms have one light that casts
+// shadows and reaches hundreds of metres from far overhead (Dantooine's grove: radius 2000 m, 270 m up; Kashyyyk's
+// Shadowlands: 800 m). That light is the sun; its light travels from where it hangs. Areas the ARE calls interior or
+// underground have none (the Star Map's ruins hold a large dim light that is no sun).
+namespace scene {
+    const SUN_REACH: f32 = 100.0        // a shadow-casting light that reaches this far is a sun
+
+    // The sun as seen from `at` (the camera's subject), found the first time it is asked for in an area.
+    fn sun_of { mut sc: Scene, w: *world::World, at: math::Vec3 } -> render::Sun {
+        if sc.sun_state == 0 { find_sun{ &sc, w } }
+        if sc.sun_state != 1 { return render::no_sun{} }
+        let d = math::vec3::sub{ a = at, b = sc.sun_at }
+        if math::vec3::length_sq{ v = d } < 1.0 { return render::no_sun{} }
+        return render::Sun{ on = true, direction = math::vec3::normalize{ v = d }, color = sc.sun_color, strength = sc.shadow_opacity, light = 0 }
+    }
+
+    // One log line, with a screenshot: the area's flags and sun.
+    fn log_sun { sc: *Scene, mut w: world::World, sun: render::Sun } {
+        let mut flags: u32 = 0
+        if world::object{ w = &w, id = w.area } is some{ value = ao } {
+            if obj::area{ o = ao } is some{ value = a } { flags = a.flags }
+        }
+        _ = @fmt(&w.io, "  sun: area flags {}, state {}, on {}, light {}, direction {} {} {}, strength {}\n", flags, sc.sun_state, sun.on, sun.light,
+            sun.direction.x, sun.direction.y, sun.direction.z, sun.strength)
+    }
+
+    // Tells the view which of the frame's lights is the sun (its shadows take that light away), once the rooms'
+    // lights are in the frame.
+    fn mark_sun { sc: *Scene, mut frame: render::Frame, view: u32 } {
+        if sc.sun_state != 1 or not frame.views[view].sun.on { return }
+        let mut k: u32 = 0
+        while k < frame.light_count {
+            let l = frame.lights[k]
+            if l.shadow and math::vec3::distance{ a = l.position, b = sc.sun_at } < 1.0 {
+                frame.views[view].sun.light = k + 1
+                return
+            }
+            k = k + 1
+        }
+    }
+
+    fn find_sun { mut sc: Scene, w: *world::World } {
+        sc.sun_state = 2
+        sc.shadow_opacity = 0.5
+        let ao = world::object{ w, id = w.area } ifnull { return }
+        let a = obj::area{ o = ao } ifnull { return }
+        sc.shadow_opacity = @as(f32, a.shadow_opacity) / 255.0
+        // Interior areas have none; underground ones only where they are natural (Kashyyyk's Shadowlands, under the trees).
+        if (a.flags & 1) != 0 or ((a.flags & 2) != 0 and (a.flags & 4) == 0) { return }
+        let rooms = list::items{ list = sc.rooms }
+        let mut best: f32 = 0.0
+        let mut i: usize = 0
+        while i < rooms.len {
+            let r = rooms[i]
+            i = i + 1
+            if r.part < 0 { continue }
+            let p = part_at{ sc = &sc, i = @as(usize, r.part) }
+            let model = loaded_at{ sc = &sc, i = p.loaded }.model
+            let instance = math::mat4::translation{ t = r.position }
+            let mut k: usize = 0
+            while k < model.lights.len {
+                let l = model.lights[k]
+                let props = p.pose.lights[k]
+                k = k + 1
+                if not l.shadow or l.ambient_only or props.radius < SUN_REACH or props.radius <= best { continue }
+                best = props.radius
+                sc.sun_at = math::mat4::transform_point{ m = math::mat4::mul{ a = instance, b = p.pose.world[l.node] }, p = math::vec3::zero{} }
+                sc.sun_color = math::vec3::scale{ v = props.color, s = props.multiplier }
+                sc.sun_state = 1
+            }
+        }
+    }
+}

@@ -1,0 +1,133 @@
+// GLSL 410 sources of the enhanced renderer's ambient occlusion (fx_ao.ctx). Each runs with glsl::POST_VS.
+namespace glsl {
+    // Occlusion at half resolution: around each pixel's view-space point, points of the depth buffer within
+    // u_params.x metres, on a spiral of u_params.z taps rotated per pixel, each counting by how far above the
+    // surface (the normal buffer's) it rises, fading with distance. Out: 1 open .. 0 closed.
+    // u_proj: the projection's m0, m5, m10, m14. u_area: the view's viewport in full-resolution pixels.
+    // u_params: x radius (m), y strength, z taps, w the depth texture's height (pixels).
+    const AO_FS: c::String =
+        \\#version 410 core
+        \\uniform sampler2D u_depth;
+        \\uniform sampler2D u_normal;
+        \\uniform vec4 u_proj;
+        \\uniform vec4 u_area;
+        \\uniform vec4 u_params;
+        \\in vec2 v_uv;
+        \\layout(location = 0) out vec4 o_ao;
+        \\vec3 view_at(vec2 at) {
+        \\    vec2 px = floor(at);
+        \\    float d = texelFetch(u_depth, ivec2(px), 0).r;
+        \\    float z = -u_proj.w / ((d * 2.0 - 1.0) + u_proj.z);
+        \\    vec2 ndc = (px + 0.5 - u_area.xy) / u_area.zw * 2.0 - 1.0;
+        \\    return vec3(ndc.x * -z / u_proj.x, ndc.y * -z / u_proj.y, z);
+        \\}
+        \\void main() {
+        \\    vec2 px = floor(gl_FragCoord.xy) * 2.0;
+        \\    float d0 = texelFetch(u_depth, ivec2(px), 0).r;
+        \\    if (d0 >= 1.0) {
+        \\        o_ao = vec4(1.0);
+        \\        return;
+        \\    }
+        \\    vec3 p = view_at(px);
+        \\    vec3 n = normalize(texelFetch(u_normal, ivec2(px), 0).xyz * 2.0 - 1.0);
+        \\    float radius = u_params.x;
+        \\    float screen = radius * u_proj.y * 0.5 * u_area.w / -p.z;
+        \\    screen = min(screen, 96.0);
+        \\    if (screen < 1.0) {
+        \\        o_ao = vec4(1.0);
+        \\        return;
+        \\    }
+        \\    float rot = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+        \\    int taps = int(u_params.z);
+        \\    float sum = 0.0;
+        \\    for (int i = 0; i < taps; i++) {
+        \\        float a = (float(i) + 0.5) / float(taps);
+        \\        float ang = a * 6.2831853 * 3.0 + rot;
+        \\        vec2 q = px + vec2(cos(ang), sin(ang)) * (a * screen);
+        \\        if (q.x < u_area.x || q.y < u_area.y || q.x >= u_area.x + u_area.z || q.y >= u_area.y + u_area.w) {
+        \\            continue;
+        \\        }
+        \\        vec3 v = view_at(q) - p;
+        \\        float vv = dot(v, v);
+        \\        float falloff = max(1.0 - vv / (radius * radius), 0.0);
+        \\        sum += falloff * max(dot(v, n) * inversesqrt(vv + 0.0001) - 0.15, 0.0);
+        \\    }
+        \\    float ao = max(1.0 - u_params.y * sum / float(taps) * 2.0, 0.0);
+        \\    o_ao = vec4(ao, ao, ao, 1.0);
+        \\}
+        \\
+
+    // A depth-aware blur of the half-resolution occlusion, along u_dir: taps across a depth edge count for little.
+    const AO_BLUR_FS: c::String =
+        \\#version 410 core
+        \\uniform sampler2D u_ao;
+        \\uniform sampler2D u_depth;
+        \\uniform vec4 u_proj;
+        \\uniform vec2 u_dir;
+        \\in vec2 v_uv;
+        \\layout(location = 0) out vec4 o_ao;
+        \\float view_z(ivec2 half_px) {
+        \\    float d = texelFetch(u_depth, half_px * 2, 0).r;
+        \\    return -u_proj.w / ((d * 2.0 - 1.0) + u_proj.z);
+        \\}
+        \\void main() {
+        \\    ivec2 c = ivec2(gl_FragCoord.xy);
+        \\    ivec2 size = textureSize(u_ao, 0);
+        \\    float z0 = view_z(c);
+        \\    float sum = 0.0;
+        \\    float wsum = 0.0;
+        \\    for (int i = -4; i <= 4; i++) {
+        \\        ivec2 q = clamp(c + ivec2(u_dir * float(i)), ivec2(0), size - 1);
+        \\        float z = view_z(q);
+        \\        float w = exp(-float(i * i) / 12.0) * max(0.0, 1.0 - abs(z - z0) / (abs(z0) * 0.05 + 0.02));
+        \\        sum += texelFetch(u_ao, q, 0).r * w;
+        \\        wsum += w;
+        \\    }
+        \\    float ao = wsum > 0.0001 ? sum / wsum : texelFetch(u_ao, c, 0).r;
+        \\    o_ao = vec4(ao, ao, ao, 1.0);
+        \\}
+        \\
+
+    // The occlusion onto the scene's light at full resolution, multiplied in (blending DST_COLOR, ZERO): the four
+    // half-resolution texels around the pixel, weighted by distance and by how close their depth is to its own, as
+    // much as the normal buffer's alpha says this surface's light is ambient or baked.
+    const AO_APPLY_FS: c::String =
+        \\#version 410 core
+        \\uniform sampler2D u_ao;
+        \\uniform sampler2D u_depth;
+        \\uniform sampler2D u_normal;
+        \\uniform vec4 u_proj;
+        \\in vec2 v_uv;
+        \\layout(location = 0) out vec4 o_color;
+        \\float view_z(ivec2 px) {
+        \\    float d = texelFetch(u_depth, px, 0).r;
+        \\    return -u_proj.w / ((d * 2.0 - 1.0) + u_proj.z);
+        \\}
+        \\void main() {
+        \\    ivec2 px = ivec2(gl_FragCoord.xy);
+        \\    float share = texelFetch(u_normal, px, 0).a;
+        \\    if (share <= 0.0 || texelFetch(u_depth, px, 0).r >= 1.0) {
+        \\        o_color = vec4(1.0);
+        \\        return;
+        \\    }
+        \\    float z0 = view_z(px);
+        \\    vec2 h = (gl_FragCoord.xy - 1.0) * 0.5;
+        \\    ivec2 b = ivec2(floor(h));
+        \\    vec2 f = h - vec2(b);
+        \\    ivec2 size = textureSize(u_ao, 0);
+        \\    float sum = 0.0;
+        \\    float wsum = 0.0;
+        \\    for (int k = 0; k < 4; k++) {
+        \\        ivec2 o = ivec2(k & 1, k >> 1);
+        \\        ivec2 q = clamp(b + o, ivec2(0), size - 1);
+        \\        float bw = (o.x == 1 ? f.x : 1.0 - f.x) * (o.y == 1 ? f.y : 1.0 - f.y);
+        \\        float z = view_z(q * 2);
+        \\        float w = bw * max(0.001, 1.0 - abs(z - z0) / (abs(z0) * 0.05 + 0.02));
+        \\        sum += texelFetch(u_ao, q, 0).r * w;
+        \\        wsum += w;
+        \\    }
+        \\    float ao = sum / wsum;
+        \\    o_color = vec4(vec3(mix(1.0, ao, share)), 1.0);
+        \\}
+        \\
+}

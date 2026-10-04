@@ -1,0 +1,135 @@
+// Ambient occlusion of the enhanced renderer (docs/design/enhanced-render.md, "Ambient occlusion"): after the opaque
+// surfaces, from their depth and view-space normals, at half resolution; blurred across the picture but not across
+// depth edges, then multiplied into the scene's light at full resolution as much as each pixel's light is ambient or
+// baked (the normal buffer's alpha: none for light sources and glowing surfaces). Transparent surfaces are drawn
+// after it, untouched.
+namespace gpu {
+    struct AoState {
+        made: bool, width: i32, height: i32,
+        tex: [2]u32, fbo: [2]u32,
+        ao: u32, ao_proj: i32, ao_area: i32, ao_params: i32,
+        blur: u32, blur_proj: i32, blur_dir: i32,
+        apply: u32, apply_proj: i32,
+    }
+
+    fn no_ao {} -> AoState {
+        return AoState{
+            made = false, width = 0, height = 0, tex = [0; 2], fbo = [0; 2],
+            ao = 0, ao_proj = -1, ao_area = -1, ao_params = -1, blur = 0, blur_proj = -1, blur_dir = -1, apply = 0, apply_proj = -1,
+        }
+    }
+
+    fn make_ao_programs { mut dev: Device } -> ! {
+        let vs = glsl::POST_VS
+        let mut n: usize = 0
+        let ao_fs: [1]c::String = [glsl::AO_FS]
+        let ao = try_link{ gl = &dev.gl, vertex = &vs, fragment = ao_fs[..], log = dev.log, log_len = &n }
+        if ao == 0 { return shader_failed{ log = dev.log[..n] } }
+        let blur_fs: [1]c::String = [glsl::AO_BLUR_FS]
+        let blur = try_link{ gl = &dev.gl, vertex = &vs, fragment = blur_fs[..], log = dev.log, log_len = &n }
+        if blur == 0 { return shader_failed{ log = dev.log[..n] } }
+        let apply_fs: [1]c::String = [glsl::AO_APPLY_FS]
+        let apply = try_link{ gl = &dev.gl, vertex = &vs, fragment = apply_fs[..], log = dev.log, log_len = &n }
+        if apply == 0 { return shader_failed{ log = dev.log[..n] } }
+        dev.gl.use_program{ program = ao }
+        set_unit{ &dev, program = ao, name = "u_depth", unit = 0 }
+        set_unit{ &dev, program = ao, name = "u_normal", unit = 1 }
+        dev.gl.use_program{ program = blur }
+        set_unit{ &dev, program = blur, name = "u_ao", unit = 2 }
+        set_unit{ &dev, program = blur, name = "u_depth", unit = 0 }
+        dev.gl.use_program{ program = apply }
+        set_unit{ &dev, program = apply, name = "u_ao", unit = 2 }
+        set_unit{ &dev, program = apply, name = "u_depth", unit = 0 }
+        set_unit{ &dev, program = apply, name = "u_normal", unit = 1 }
+        dev.gl.use_program{ program = 0 }
+        dev.aos.ao = ao
+        dev.aos.ao_proj = dev.gl.get_uniform_location{ program = ao, name = "u_proj" }
+        dev.aos.ao_area = dev.gl.get_uniform_location{ program = ao, name = "u_area" }
+        dev.aos.ao_params = dev.gl.get_uniform_location{ program = ao, name = "u_params" }
+        dev.aos.blur = blur
+        dev.aos.blur_proj = dev.gl.get_uniform_location{ program = blur, name = "u_proj" }
+        dev.aos.blur_dir = dev.gl.get_uniform_location{ program = blur, name = "u_dir" }
+        dev.aos.apply = apply
+        dev.aos.apply_proj = dev.gl.get_uniform_location{ program = apply, name = "u_proj" }
+    }
+
+    fn free_ao { mut dev: Device } {
+        free_ao_targets{ &dev }
+        dev.gl.delete_program{ program = dev.aos.ao }
+        dev.gl.delete_program{ program = dev.aos.blur }
+        dev.gl.delete_program{ program = dev.aos.apply }
+    }
+
+    fn free_ao_targets { mut dev: Device } {
+        if not dev.aos.made { return }
+        let mut i: usize = 0
+        while i < 2 {
+            gl::delete_framebuffer{ gl = &dev.gl, id = dev.aos.fbo[i] }
+            forget_texture{ &dev, name = dev.aos.tex[i] }
+            i = i + 1
+        }
+        dev.aos.made = false
+    }
+
+    fn ensure_ao_targets { mut dev: Device, width: i32, height: i32 } -> ! {
+        if dev.aos.made and dev.aos.width == width and dev.aos.height == height { return }
+        free_ao_targets{ &dev }
+        let mut i: usize = 0
+        while i < 2 {
+            dev.aos.tex[i] = make_plain_texture{ gl = &dev.gl, internal = gl::R8, format = gl::RED, kind = gl::UNSIGNED_BYTE, width, height, linear = false }
+            dev.aos.fbo[i] = try make_fbo{ gl = &dev.gl, c0 = dev.aos.tex[i], c1 = 0, depth = 0 }
+            i = i + 1
+        }
+        dev.aos.made = true
+        dev.aos.width = width
+        dev.aos.height = height
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = 0 }
+    }
+
+    // The occlusion of the opaque surfaces of view `v` (drawn over `area`), multiplied into its light.
+    fn run_ao { mut dev: Device, v: render::View, area: GlRect } -> ! {
+        let level = dev.enhance.ao
+        if level == 0 { return }
+        let t = dev.fxt
+        let hw = (t.width + 1) / 2
+        let hh = (t.height + 1) / 2
+        try ensure_ao_targets{ &dev, width = hw, height = hh }
+        post_state{ &dev }
+        let p = v.camera.proj
+        let half = GlRect{ x = area.x / 2, y = area.y / 2, w = (area.w + 1) / 2, h = (area.h + 1) / 2 }
+        // The occlusion.
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = dev.aos.fbo[0] }
+        dev.gl.viewport{ x = half.x, y = half.y, width = half.w, height = half.h }
+        dev.gl.use_program{ program = dev.aos.ao }
+        bind_unit{ &dev, unit = 0, target = gl::TEXTURE_2D, name = t.depth }
+        bind_unit{ &dev, unit = 1, target = gl::TEXTURE_2D, name = t.normal }
+        dev.gl.uniform4f{ location = dev.aos.ao_proj, v0 = p.m[0], v1 = p.m[5], v2 = p.m[10], v3 = p.m[14] }
+        dev.gl.uniform4f{ location = dev.aos.ao_area, v0 = @as(f32, area.x), v1 = @as(f32, area.y), v2 = @as(f32, area.w), v3 = @as(f32, area.h) }
+        let taps: f32 = if level >= 2 { 12.0 } else { 6.0 }
+        dev.gl.uniform4f{ location = dev.aos.ao_params, v0 = 0.9, v1 = 1.0, v2 = taps, v3 = @as(f32, t.height) }
+        draw_fullscreen{ &dev }
+        // Across, then down.
+        dev.gl.use_program{ program = dev.aos.blur }
+        dev.gl.uniform4f{ location = dev.aos.blur_proj, v0 = p.m[0], v1 = p.m[5], v2 = p.m[10], v3 = p.m[14] }
+        let mut pass: u32 = 0
+        while pass < 2 {
+            dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = dev.aos.fbo[1 - pass] }
+            bind_unit{ &dev, unit = 2, target = gl::TEXTURE_2D, name = dev.aos.tex[pass] }
+            dev.gl.uniform2f{ location = dev.aos.blur_dir, v0 = if pass == 0 { 1.0 } else { 0.0 }, v1 = if pass == 0 { 0.0 } else { 1.0 } }
+            draw_fullscreen{ &dev }
+            pass = pass + 1
+        }
+        // Into the light.
+        bind_light_only{ &dev }
+        dev.gl.viewport{ x = area.x, y = area.y, width = area.w, height = area.h }
+        dev.gl.enable{ cap = gl::BLEND }
+        dev.gl.blend_func_separate{ sfactor_rgb = gl::DST_COLOR, dfactor_rgb = gl::ZERO, sfactor_alpha = gl::ZERO, dfactor_alpha = gl::ONE }
+        dev.gl.use_program{ program = dev.aos.apply }
+        dev.gl.uniform4f{ location = dev.aos.apply_proj, v0 = p.m[0], v1 = p.m[5], v2 = p.m[10], v3 = p.m[14] }
+        bind_unit{ &dev, unit = 2, target = gl::TEXTURE_2D, name = dev.aos.tex[0] }
+        draw_fullscreen{ &dev }
+        dev.gl.disable{ cap = gl::BLEND }
+        dev.state = unknown_state{}
+        timer_mark{ &dev, name = "occlusion" }
+    }
+}

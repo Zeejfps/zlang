@@ -40,6 +40,7 @@ namespace gpu {
         maps: i32, mode: i32, color: i32, selfillum: i32, uv: i32, uv_cell: i32,
         light_count: i32, light_pos: i32, light_color: i32,
         fx: i32, fx2: i32, cube: i32,       // the enhanced program's own (fx.ctx); -1 in the original's
+        shadow_on: i32, sun_mat: i32, sun_dir: i32, shadow_params: i32, point_mat: i32, point_pos: i32, light_shadow: i32,
     }
     struct UiProgram { id: u32, screen: i32, image: i32 }
     struct ParticleProgram { id: u32, model: i32, emit: i32, axis: i32, mode: i32, gain: i32 }
@@ -54,6 +55,7 @@ namespace gpu {
         depth_test: i32, depth_write: i32, cull: i32, offset: i32, stencil: i32,
         units: [5]u32,          // the texture bound to units 0..4
         vao: u32,
+        coverage: i32,          // alpha-to-coverage (enhanced views, fx_aa.ctx)
     }
 
     // An item to sort: its key and which draw (or, with the top bit, which emitter) it is.
@@ -111,6 +113,10 @@ namespace gpu {
         cur_particle: ParticleProgram,
         in_fx: bool,                // the view being drawn is an enhanced one
         timer: Timer,               // GPU time per pass (timing.ctx)
+        atmos: AtmosPrograms,       // fx_atmos.ctx
+        aa: AaPrograms,             // fx_aa.ctx
+        shadow: ShadowState,        // fx_shadow.ctx
+        aos: AoState,               // fx_ao.ctx
     }
 
     // ---- opening and closing
@@ -175,11 +181,15 @@ namespace gpu {
             log = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = 8192 },
             enhance = render::original_look{}, scene_fx = no_scene_program{}, particle_fx = no_particle_program{},
             fxp = no_fx_programs{}, fxt = no_fx_targets{}, cur = no_scene_program{}, cur_particle = no_particle_program{},
-            in_fx = false, timer = no_timer{},
+            in_fx = false, timer = no_timer{}, atmos = no_atmos_programs{}, aa = no_aa_programs{}, shadow = no_shadows{}, aos = no_ao{},
         }
         clear_tables{ &dev }
         try make_programs{ &dev }
         try make_fx_programs{ &dev }
+        try make_atmos_programs{ &dev }
+        try make_aa_programs{ &dev }
+        try make_shadow_program{ &dev }
+        try make_ao_programs{ &dev }
         dev.cur = dev.scene
         dev.cur_particle = dev.particle
         make_buffers{ &dev }
@@ -192,6 +202,7 @@ namespace gpu {
             id = 0, model = -1, post = -1, normal = -1, bone_count = -1, bones = -1, dangle = -1, maps = -1, mode = -1,
             color = -1, selfillum = -1, uv = -1, uv_cell = -1, light_count = -1, light_pos = -1, light_color = -1,
             fx = -1, fx2 = -1, cube = -1,
+            shadow_on = -1, sun_mat = -1, sun_dir = -1, shadow_params = -1, point_mat = -1, point_pos = -1, light_shadow = -1,
         }
     }
 
@@ -205,7 +216,7 @@ namespace gpu {
     }
 
     fn unknown_state {} -> State {
-        return State{ program = 0, blend = -2, depth_test = -1, depth_write = -1, cull = -1, offset = -1, stencil = -1, units = [0; 5], vao = 0 }
+        return State{ program = 0, blend = -2, depth_test = -1, depth_write = -1, cull = -1, offset = -1, stencil = -1, units = [0; 5], vao = 0, coverage = -1 }
     }
 
     fn clear_tables { mut dev: Device } {
@@ -250,6 +261,10 @@ namespace gpu {
         dev.gl.delete_program{ program = dev.post.id }
         dev.gl.delete_program{ program = dev.blur.id }
         free_fx_programs{ &dev }
+        free_atmos_programs{ &dev }
+        free_aa_programs{ &dev }
+        free_shadows{ &dev }
+        free_ao{ &dev }
         free_fx_targets{ &dev }
         free_timer{ &dev }
         if dev.fx_made { gl::free_target{ gl = &dev.gl, t = dev.fx } }
@@ -612,6 +627,13 @@ namespace gpu {
             fx = dev.gl.get_uniform_location{ program, name = "u_fx" },
             fx2 = dev.gl.get_uniform_location{ program, name = "u_fx2" },
             cube = dev.gl.get_uniform_location{ program, name = "u_cube" },
+            shadow_on = dev.gl.get_uniform_location{ program, name = "u_shadow_on" },
+            sun_mat = dev.gl.get_uniform_location{ program, name = "u_sun_mat" },
+            sun_dir = dev.gl.get_uniform_location{ program, name = "u_sun_dir" },
+            shadow_params = dev.gl.get_uniform_location{ program, name = "u_shadow_params" },
+            point_mat = dev.gl.get_uniform_location{ program, name = "u_point_mat" },
+            point_pos = dev.gl.get_uniform_location{ program, name = "u_point_pos" },
+            light_shadow = dev.gl.get_uniform_location{ program, name = "u_light_shadow" },
         }
     }
 
@@ -1409,6 +1431,7 @@ namespace gpu {
             draw_mesh{ &dev, frame, draw = frame.draws[dev.sort[i].index] }
             i = i + 1
         }
+        if dev.in_fx { set_coverage{ &dev, punch = false } }
     }
 
     // A view's transparent surfaces and particles, far to near within each sort group.
@@ -1447,6 +1470,7 @@ namespace gpu {
             }
             i = i + 1
         }
+        if dev.in_fx { set_coverage{ &dev, punch = false } }
     }
 
     // The Frame Buffer Effects option's speed blur: the screen so far, copied, is drawn back sampled along the line to the
@@ -1610,7 +1634,10 @@ namespace gpu {
         } else {
             dev.gl.uniform1i{ location = dev.cur.light_count, v0 = 0 }
         }
-        if dev.in_fx { set_fx_draw{ &dev, frame, draw } }
+        if dev.in_fx {
+            set_fx_draw{ &dev, frame, draw }
+            set_coverage{ &dev, punch = m.blend == render::Blend::punch }
+        }
 
         let first = if draw.first < mesh.index_count { draw.first } else { mesh.index_count }
         let count = if draw.count == 0 or first + draw.count > mesh.index_count { mesh.index_count - first } else { draw.count }
@@ -1667,6 +1694,16 @@ namespace gpu {
         if n > 0 {
             dev.gl.uniform4fv{ location = dev.cur.light_pos, count = @as(i32, n), value = &pos[0] }
             dev.gl.uniform4fv{ location = dev.cur.light_color, count = @as(i32, n), value = &color[0] }
+            if dev.in_fx {
+                // Which shadow map takes away each light's share (fx_shadow.ctx).
+                let mut slots: [8]i32 = [-1; 8]
+                let mut k: usize = 0
+                while k < n {
+                    slots[k] = shadow_slot{ dev, light = chosen[k] }
+                    k = k + 1
+                }
+                dev.gl.uniform1iv{ location = dev.cur.light_shadow, count = @as(i32, n), value = &slots[0] }
+            }
         }
     }
 
@@ -1804,8 +1841,12 @@ namespace gpu {
         }
         dev.gl.uniform4i{ location = dev.cur_particle.emit, v0 = facing, v1 = @as(i32, em.grid_x), v2 = @as(i32, em.grid_y), v3 = 0 }
         dev.gl.uniform4f{ location = dev.cur_particle.axis, v0 = em.axis.x, v1 = em.axis.y, v2 = em.axis.z, v3 = 0.0 }
-        dev.gl.uniform4i{ location = dev.cur_particle.mode, v0 = @as(i32, em.blend), v1 = if em.fog { 1 } else { 0 }, v2 = textured, v3 = 0 }
-        if dev.in_fx { dev.gl.uniform1f{ location = dev.cur_particle.gain, v0 = emissive_gain{ e = dev.enhance } * 1.5 } }
+        let cover = dev.in_fx and coverage_wanted{ samples = dev.samples, e = dev.enhance, blend = em.blend }
+        dev.gl.uniform4i{ location = dev.cur_particle.mode, v0 = @as(i32, em.blend), v1 = if em.fog { 1 } else { 0 }, v2 = textured, v3 = if cover { 1 } else { 0 } }
+        if dev.in_fx {
+            dev.gl.uniform1f{ location = dev.cur_particle.gain, v0 = emissive_gain{ e = dev.enhance } * 1.5 }
+            set_coverage{ &dev, punch = em.blend == render::Blend::punch }
+        }
         let per: usize = 14
         let room = dev.scratch.len / per
         let mut done: u32 = 0

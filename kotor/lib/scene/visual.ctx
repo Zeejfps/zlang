@@ -44,6 +44,7 @@ namespace visual {
         try list::push{ list = &sc.visuals, item = scene::Visual{
             id = o.id, first, count = sc.parts.len - first, animation = 0xFFFFFFFF, cycles = 0.0, state = 0xFFFFFFFF,
             room = -1, creature_prefix = prefix, alive = true, stunt = false, signature = signature_of{ o }, saber = 0, saber_force = 0,
+            light = render::flat_ambient{ color = math::vec3::zero{} }, lit = false,
         } }
         let index = sc.visuals.len - 1
         try map::put{ m = &sc.by_id, key = o.id, value = index }
@@ -410,7 +411,7 @@ namespace visual {
         let look = if scene::is_hiding{ o } { scene::look_material{ sc } } else { null }
         let cast = shadow_of{ w, o, frame = &frame }
         let kind = if obj::creature{ o } != null { render::DrawKind::creature } else { render::DrawKind::object }
-        let ambient = scene::ambient_at{ sc, &frame, at = o.position }
+        let ambient = if v.lit { render::add_ambient{ &frame, cube = v.light } } else { 0 }
         let mut i: usize = 0
         while i < n {
             let p = scene::part_at{ sc, i = v.first + i }

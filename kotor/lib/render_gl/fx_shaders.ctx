@@ -9,7 +9,8 @@ namespace glsl {
     // surfaces (HDR), and a second output for the passes that follow: the view-space normal and the share
     // of the light that ambient occlusion may darken (alpha). Runs with glsl::SCENE_VS.
     //
-    // u_fx: x the draw's kind (render::DrawKind), y smooth lightmaps, z the ambient cube is set, w 0.
+    // u_fx: x the draw's kind (render::DrawKind), y smooth lightmaps, z the ambient cube is set, w 1 for a punch-through
+    // draw through alpha-to-coverage (the cut becomes a coverage alpha a pixel wide: fx_aa.ctx).
     // u_fx2: x the extra light of self-illumination, y the extra light of additive surfaces.
     const SCENE_FX_FS: c::String =
         \\#version 410 core
@@ -38,6 +39,15 @@ namespace glsl {
         \\uniform ivec4 u_fx;
         \\uniform vec4 u_fx2;
         \\uniform vec3 u_cube[6];
+        \\uniform sampler2DShadow u_shadow;
+        \\uniform sampler2D u_shadow_raw;
+        \\uniform ivec4 u_shadow_on;
+        \\uniform mat4 u_sun_mat[2];
+        \\uniform vec4 u_sun_dir;
+        \\uniform vec4 u_shadow_params;
+        \\uniform mat4 u_point_mat[18];
+        \\uniform vec4 u_point_pos[3];
+        \\uniform int u_light_shadow[8];
         \\in vec3 v_world;
         \\in vec3 v_normal;
         \\in vec3 v_tangent;
@@ -56,28 +66,100 @@ namespace glsl {
         \\    return vec4(x, y, z, 6.0 - x - y - z) * (1.0 / 6.0);
         \\}
         \\vec3 bicubic(sampler2D t, vec2 uv) {
-        \\    vec2 size = vec2(textureSize(t, 0));
-        \\    vec2 p = uv * size - 0.5;
+        \\    ivec2 size = textureSize(t, 0);
+        \\    vec2 p = uv * vec2(size) - 0.5;
         \\    vec2 f = fract(p);
-        \\    p -= f;
-        \\    vec4 xc = cubic(f.x);
-        \\    vec4 yc = cubic(f.y);
-        \\    vec4 c = p.xxyy + vec2(-0.5, 1.5).xyxy;
-        \\    vec4 s = vec4(xc.xz + xc.yw, yc.xz + yc.yw);
-        \\    vec4 o = (c + vec4(xc.yw, yc.yw) / s) / size.xxyy;
-        \\    vec3 s0 = texture(t, o.xz).rgb;
-        \\    vec3 s1 = texture(t, o.yz).rgb;
-        \\    vec3 s2 = texture(t, o.xw).rgb;
-        \\    vec3 s3 = texture(t, o.yw).rgb;
-        \\    float sx = s.x / (s.x + s.y);
-        \\    float sy = s.z / (s.z + s.w);
-        \\    return mix(mix(s3, s2, sx), mix(s1, s0, sx), sy);
+        \\    ivec2 b = ivec2(floor(p));
+        \\    f = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+        \\    ivec2 b0 = ((b % size) + size) % size;
+        \\    ivec2 b1 = ((b + 1) % size + size) % size;
+        \\    vec3 c00 = texelFetch(t, b0, 0).rgb;
+        \\    vec3 c10 = texelFetch(t, ivec2(b1.x, b0.y), 0).rgb;
+        \\    vec3 c01 = texelFetch(t, ivec2(b0.x, b1.y), 0).rgb;
+        \\    vec3 c11 = texelFetch(t, b1, 0).rgb;
+        \\    return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
         \\}
         \\vec3 cube_light(vec3 n) {
         \\    vec3 n2 = n * n;
         \\    return n2.x * (n.x >= 0.0 ? u_cube[0] : u_cube[1])
         \\         + n2.y * (n.y >= 0.0 ? u_cube[2] : u_cube[3])
         \\         + n2.z * (n.z >= 0.0 ? u_cube[4] : u_cube[5]);
+        \\}
+        \\float shadow_noise() {
+        \\    return 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+        \\}
+        \\float pcf(vec3 p, vec4 r) {
+        \\    float t = u_shadow_params.x;
+        \\    float s = 0.0;
+        \\    for (int y = -1; y <= 1; y++) {
+        \\        for (int x = -1; x <= 1; x++) {
+        \\            s += texture(u_shadow, vec3(clamp(p.xy + vec2(float(x), float(y)) * t, r.xy, r.zw), p.z));
+        \\        }
+        \\    }
+        \\    return s / 9.0;
+        \\}
+        \\float soft(vec3 p, vec4 r, float search, float per_depth) {
+        \\    float rot = shadow_noise();
+        \\    float sum = 0.0;
+        \\    float n = 0.0;
+        \\    for (int i = 0; i < 12; i++) {
+        \\        float a = float(i) * 2.39996 + rot;
+        \\        vec2 uv = clamp(p.xy + sqrt((float(i) + 0.5) / 12.0) * vec2(cos(a), sin(a)) * search, r.xy, r.zw);
+        \\        float d = texture(u_shadow_raw, uv).r;
+        \\        if (d < p.z) {
+        \\            sum += d;
+        \\            n += 1.0;
+        \\        }
+        \\    }
+        \\    if (n < 0.5) {
+        \\        return 1.0;
+        \\    }
+        \\    float w = clamp((p.z - sum / n) * per_depth, u_shadow_params.x, search * 1.5);
+        \\    float s = 0.0;
+        \\    for (int i = 0; i < 16; i++) {
+        \\        float a = float(i) * 2.39996 + rot;
+        \\        vec2 uv = clamp(p.xy + sqrt((float(i) + 0.5) / 16.0) * vec2(cos(a), sin(a)) * w, r.xy, r.zw);
+        \\        s += texture(u_shadow, vec3(uv, p.z));
+        \\    }
+        \\    return s / 16.0;
+        \\}
+        \\float sun_vis(int map, vec3 ng) {
+        \\    vec4 s = u_sun_mat[map] * vec4(v_world + ng * (u_shadow_params.y * 1.5), 1.0);
+        \\    vec3 p = s.xyz / s.w;
+        \\    float x0 = map == 0 ? 0.0 : 0.5;
+        \\    vec4 r = vec4(x0, 0.0, x0 + 0.5, 0.5) + vec4(1.5, 1.5, -1.5, -1.5) * u_shadow_params.x;
+        \\    vec2 e = min(p.xy - r.xy, r.zw - p.xy);
+        \\    float fade = clamp(min(e.x, e.y) / 0.05, 0.0, 1.0);
+        \\    if (fade <= 0.0 || p.z >= 1.0) {
+        \\        return 1.0;
+        \\    }
+        \\    float v = u_shadow_on.z >= 2 ? soft(p, r, 10.0 * u_shadow_params.x, u_sun_dir.w > 0.0 ? u_shadow_params.z : 0.0) : pcf(p, r);
+        \\    return mix(1.0, v, fade);
+        \\}
+        \\float point_vis(int k, vec3 ng) {
+        \\    vec3 l = u_point_pos[k].xyz;
+        \\    float far = u_point_pos[k].w;
+        \\    float dist = length(v_world - l);
+        \\    if (dist >= far) {
+        \\        return 1.0;
+        \\    }
+        \\    float tile_texel = u_shadow_params.x * 8.0;
+        \\    vec3 q = v_world + ng * (dist * 2.0 * tile_texel * 1.5);
+        \\    vec3 v = q - l;
+        \\    vec3 a = abs(v);
+        \\    int f = (a.x >= a.y && a.x >= a.z) ? (v.x > 0.0 ? 0 : 1) : (a.y >= a.z ? (v.y > 0.0 ? 2 : 3) : (v.z > 0.0 ? 4 : 5));
+        \\    int j = k * 6 + f;
+        \\    vec4 s = u_point_mat[j] * vec4(q, 1.0);
+        \\    vec3 p = s.xyz / s.w;
+        \\    vec2 t0 = vec2(float(j % 8) * 0.125, 0.5 + float(j / 8) * 0.125);
+        \\    vec4 r = vec4(t0, t0 + 0.125) + vec4(1.5, 1.5, -1.5, -1.5) * u_shadow_params.x;
+        \\    if (u_shadow_on.z >= 2) {
+        \\        float near = 0.05;
+        \\        float per_metre = dist * dist * (far - near) / (near * far);
+        \\        float per_depth = per_metre * 0.15 / max(dist * 0.5, 0.1) / (2.0 * max(dist, 0.1)) * 0.125;
+        \\        return soft(p, r, 3.0 * u_shadow_params.x, per_depth);
+        \\    }
+        \\    return pcf(p, r);
         \\}
         \\void main() {
         \\    if (u_mode.w == 1) {
@@ -95,7 +177,13 @@ namespace glsl {
         \\        tex = texture(u_diffuse, uv);
         \\    }
         \\    float cut_alpha = tex.a * u_color.a * v_color.a;
-        \\    if ((u_mode.x == 1 && cut_alpha <= 0.35) || (u_mode.x == 4 && cut_alpha <= 0.0)) {
+        \\    float cover = 1.0;
+        \\    if (u_mode.x == 1 && u_fx.w == 1) {
+        \\        cover = clamp((cut_alpha - 0.35) / max(fwidth(cut_alpha), 0.0001) + 0.5, 0.0, 1.0);
+        \\        if (cover <= 0.0) {
+        \\            discard;
+        \\        }
+        \\    } else if ((u_mode.x == 1 && cut_alpha <= 0.35) || (u_mode.x == 4 && cut_alpha <= 0.0)) {
         \\        discard;
         \\    }
         \\    vec3 n = normalize(v_normal);
@@ -106,9 +194,33 @@ namespace glsl {
         \\        vec3 bn = texture(u_bump, uv).xyz * 2.0 - 1.0;
         \\        n = normalize(normalize(v_tangent) * bn.x + normalize(v_bitangent) * bn.y + n * bn.z);
         \\    }
+        \\    vec3 ng = normalize(v_normal);
+        \\    if (!gl_FrontFacing) {
+        \\        ng = -ng;
+        \\    }
+        \\    bool shadows = u_shadow_on.x + u_shadow_on.y > 0;
         \\    vec3 light = vec3(1.0);
         \\    if (u_maps.y == 1) {
         \\        light = u_fx.y == 1 ? bicubic(u_lightmap, v_uv1) : texture(u_lightmap, v_uv1).rgb;
+        \\        if (shadows && u_fx.x == 1) {
+        \\            float dark = 0.0;
+        \\            if (u_shadow_on.x == 1) {
+        \\                float facing = clamp(dot(ng, -u_sun_dir.xyz) * 3.0, 0.0, 1.0);
+        \\                if (facing > 0.0) {
+        \\                    dark += u_sun_dir.w * facing * (1.0 - sun_vis(0, ng));
+        \\                }
+        \\            }
+        \\            for (int k = 0; k < u_shadow_on.y; k++) {
+        \\                vec3 d = u_point_pos[k].xyz - v_world;
+        \\                float dist = length(d);
+        \\                float att = clamp(1.0 - dist / u_point_pos[k].w, 0.0, 1.0);
+        \\                float w = min(att * 4.0, 1.0) * clamp(dot(ng, d / max(dist, 0.0001)) * 3.0, 0.0, 1.0);
+        \\                if (w > 0.01) {
+        \\                    dark += u_shadow_params.w * w * (1.0 - point_vis(k, ng));
+        \\                }
+        \\            }
+        \\            light *= 1.0 - min(dark, 0.85);
+        \\        }
         \\    } else if (u_mode.y == 1) {
         \\        light = u_fx.z == 1 ? cube_light(n) : u_ambient.rgb;
         \\        for (int i = 0; i < u_light_count; i++) {
@@ -116,7 +228,12 @@ namespace glsl {
         \\            float dist = length(d);
         \\            float att = clamp(1.0 - dist / u_light_pos[i].w, 0.0, 1.0);
         \\            float lambert = max(dot(n, d / max(dist, 0.0001)), 0.0);
-        \\            light += u_light_color[i].rgb * (att * att * lambert);
+        \\            float vis = 1.0;
+        \\            int slot = u_light_shadow[i];
+        \\            if (shadows && slot >= 0 && lambert * att > 0.0) {
+        \\                vis = slot == 0 ? (u_shadow_on.x == 1 ? sun_vis(1, ng) : 1.0) : point_vis(slot - 1, ng);
+        \\            }
+        \\            light += u_light_color[i].rgb * (att * att * lambert * vis);
         \\        }
         \\    }
         \\    vec4 base = tex * u_color * v_color;
@@ -143,7 +260,7 @@ namespace glsl {
         \\        }
         \\    }
         \\    if (u_mode.x <= 1) {
-        \\        alpha = 1.0;
+        \\        alpha = cover;
         \\    }
         \\    if (u_mode.x == 3) {
         \\        rgb *= 1.0 + u_fx2.y;
@@ -158,12 +275,36 @@ namespace glsl {
         \\    }
         \\    o_color = vec4(rgb, alpha);
         \\    float glow = clamp(max(u_selfillum.r, max(u_selfillum.g, u_selfillum.b)), 0.0, 1.0);
-        \\    float occludable = (u_mode.y == 1 || u_maps.y == 1) && u_fx.x != 4 ? 1.0 - glow : 0.0;
+        \\    float occludable = ((u_mode.y == 1 || u_maps.y == 1) && u_fx.x != 4) ? (1.0 - glow) * (u_maps.y == 1 ? 1.0 : 0.67) : 0.0;
         \\    o_normal = vec4(normalize(mat3(u_view) * n) * 0.5 + 0.5, occludable);
         \\}
         \\
 
+    // Shadow casters into the shadow atlas (fx_shadow.ctx), with glsl::SCENE_VS: depth only, alpha-tested and
+    // alpha-depth surfaces cut by their diffuse alpha. u_mode: x the blend, y a diffuse is bound.
+    const CASTER_FS: c::String =
+        \\#version 410 core
+        \\uniform sampler2D u_diffuse;
+        \\uniform ivec4 u_mode;
+        \\uniform vec4 u_uv;
+        \\uniform int u_uv_cell;
+        \\in vec2 v_uv0;
+        \\void main() {
+        \\    if (u_mode.y == 1) {
+        \\        vec2 uv = v_uv0;
+        \\        if (u_uv_cell == 1) {
+        \\            uv = fract(uv);
+        \\        }
+        \\        float a = texture(u_diffuse, uv * u_uv.xy + u_uv.zw).a;
+        \\        if ((u_mode.x == 1 && a <= 0.35) || (u_mode.x == 4 && a <= 0.05)) {
+        \\            discard;
+        \\        }
+        \\    }
+        \\}
+        \\
+
     // Particles, enhanced: the original's, with additive ones brighter than white (u_gain), for the bloom.
+    // u_mode.w is 1 for a punch-through emitter through alpha-to-coverage (the cut becomes a coverage alpha, fx_aa.ctx).
     const PARTICLE_FX_FS: c::String =
         \\#version 410 core
         \\layout(std140) uniform Frame {
@@ -186,7 +327,12 @@ namespace glsl {
         \\    if (u_mode.z == 1) {
         \\        c *= texture(u_tex, v_uv);
         \\    }
-        \\    if ((u_mode.x == 1 && c.a <= 0.35) || (u_mode.x == 4 && c.a <= 0.0)) {
+        \\    if (u_mode.x == 1 && u_mode.w == 1) {
+        \\        c.a = clamp((c.a - 0.35) / max(fwidth(c.a), 0.0001) + 0.5, 0.0, 1.0);
+        \\        if (c.a <= 0.0) {
+        \\            discard;
+        \\        }
+        \\    } else if ((u_mode.x == 1 && c.a <= 0.35) || (u_mode.x == 4 && c.a <= 0.0)) {
         \\        discard;
         \\    }
         \\    if (u_mode.x == 3) {

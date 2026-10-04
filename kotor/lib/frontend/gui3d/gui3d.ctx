@@ -169,7 +169,7 @@ namespace gui3d {
             i = i + 1
             if l.ambient_only or p.radius <= 0.0 { continue }
             let at = math::mat4::transform_point{ m = math::mat4::mul{ a = scene.instance, b = scene.pose.world[l.node] }, p = math::vec3::zero{} }
-            render::add_light{ &frame, light = render::Light{ position = at, color = math::vec3::scale{ v = p.color, s = p.multiplier }, radius = p.radius } }
+            render::add_light{ &frame, light = render::Light{ position = at, color = math::vec3::scale{ v = p.color, s = p.multiplier }, radius = p.radius, shadow = false } }
         }
         let first_draw = frame.draw_count
         scene.draws = mdl_render::add_draws{

@@ -52,7 +52,7 @@ namespace kmodels {
             let p = pose.lights[i]
             let at = math::mat4::transform_point{ m = math::mat4::mul{ a = instance, b = pose.world[l.node] }, p = math::vec3::zero{} }
             if not l.ambient_only and p.radius > 0.0 {
-                render::add_light{ &frame, light = render::Light{ position = at, color = math::vec3::scale{ v = p.color, s = p.multiplier }, radius = p.radius } }
+                render::add_light{ &frame, light = render::Light{ position = at, color = math::vec3::scale{ v = p.color, s = p.multiplier }, radius = p.radius, shadow = false } }
             }
             i = i + 1
         }
