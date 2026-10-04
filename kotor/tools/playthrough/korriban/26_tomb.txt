@@ -1,19 +1,31 @@
-# Korriban, part 26: Naga Sadow's tomb (korr_m39aa), alone (the companions are not permitted): the cold grenade that freezes the acid pool
-# in front of the Star Map room comes from the "Pillar of Ice" (k39_plc_coldpill 70,12; the fire pillar beside it holds the grenade that
-# makes the pool's fumes poison). The Terentatek corridor and the rancors on the way are not walked: the player is warped to the pedestal's
-# room. Then the acid room (strip k39_trg_initacid at 81,110, the door kor39_dooracid): "[Launch the special cold grenade at it.]" freezes
-# the pool. From the checkpoint "tomb".
+# Korriban, part 26: Naga Sadow's tomb (korr_m39aa), alone (the companions are not permitted). The cold grenade that freezes the acid pool in
+# front of the Star Map room is in the "Pillar of Ice" (k39_plc_coldpill 70,12) in the northern chambers: the test bot walks there in god mode
+# (the corridor to the junction at x 52, the wraids, the Terentatek's cut scene at the strip k39_trg_terentat, the rancors at 78,37..48), the
+# lever k_kor_openlever (80,35) opens the door k39_door_trap4 (70,27) and the pillar is opened with clicks (hover, two clicks, Get Items). The
+# pillar puzzle in the south and the fire pillar beside the ice one are not played. Then the acid room (strip k39_trg_initacid at 81,110, the
+# door kor39_dooracid): "[Launch the special cold grenade at it.]" freezes the pool. From the checkpoint "tomb".
+5 ui heal
 5 ui replies ~cold_grenade default 1
-10 ui unlock k39_door_trap4
-10 ui unlock k39_door_trap3
-30 warp k39_plc_coldpill party
-220 hoveron k39_plc_coldpill
-223 mouse click
-226 mouse click
-400 ui click 640 452
-500 ui inv
-600 warpxy 82,108 party
-900 ui pos
-1500 ui journal list
-1500 ui rules
-1510 save acid
+10 ui bot god on
+10 ui bot unlock on
+10 ui bot route 30,108 52,108 52,80 52,62 60,50 78,42 80,38
+11 ui bot on
+6000 ui bot off
+6010 warp k_kor_openlever party
+6050 hoveron k_kor_openlever
+6053 mouse click
+6056 mouse click
+6600 ui bot route 70,22 70,15
+6601 ui bot on
+8000 ui bot off
+8010 warp k39_plc_coldpill party
+8050 hoveron k39_plc_coldpill
+8053 mouse click
+8056 mouse click
+8400 ui click 640 452
+8500 ui inv
+8600 ui heal
+8700 warpxy 82,108 party
+9400 ui journal list
+9400 ui rules
+9410 save acid
