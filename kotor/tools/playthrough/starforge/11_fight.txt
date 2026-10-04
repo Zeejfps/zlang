@@ -1,0 +1,9 @@
+# Star Forge, part 11: the fight with Malak (sta_m45ad). He talks mid-fight (sta_firstjedi_co: the Jedi of the Academy he keeps
+# in force fields), drains one of the eight captives each time he is low (k_sta_jedi, the strips sta_malak_trig, k_psta_ud_mal7), and
+# is beaten after the last; then sta_walkaway and the way back to the docking bay (sta_m45aa at STA45A_WAY_45D). The Guardian is alone
+# (k_psta_door sent the party away), in god mode and strong (Strength 40: unboosted the fight is 26,000 frames), the bot fights.
+# From the checkpoint "fight"; saves "escape" in the docking bay.
+5 ui stat str 40
+5 ui bot god on
+5 ui replies ~power_of_redemption ~way_of_the_dark_side default 1
+10 ui bot on

@@ -92,7 +92,13 @@ namespace save {
         try put_resref{ &b, owner, label = "Conversation", v = o.conversation }
         try put_bool{ &b, owner, label = "Plot", v = o.plot }
         try put_bool{ &b, owner, label = "Min1HP", v = o.min_one_hp }
-        try put_bool{ &b, owner, label = "Commandable", v = o.commandable }
+        // A creature lying where it was thrown or knocked down is not commandable until it stands; the fall is not saved, so the
+        // flag must not be: a game loaded from that moment would keep its leader frozen for ever.
+        let mut commandable = o.commandable
+        if obj::creature{ o } is some{ value = knocked } {
+            if knocked.fighter is some{ value = kf } { if kf.knock.active { commandable = true } }
+        }
+        try put_bool{ &b, owner, label = "Commandable", v = commandable }
         if o.kind == obj::Kind::creature {
             try put_word{ &b, owner, label = "FactionID", v = o.faction }
         } else {

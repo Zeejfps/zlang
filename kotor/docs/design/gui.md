@@ -305,5 +305,5 @@ yellow; `draw_menu_check` puts the ring in a 25x25 square at the left and the la
 - The HUD on wide windows (above), and HUD controls the engine must hide per state.
 - Gamepad events (0x2d..0x38), key remapping (`optkeymapping`), the dragged inventory item.
 - The tooltip is a plain box with the dialog font, not `tooltipWxH.gui`.
-- The credits scroll: not started. The level-up panels, the store, container, upgrade bench and galaxy map are [screens.md](screens.md). Character generation is done (chargen.md). Pazaak: see minigames.md.
+- The credits (credits.2da's title cards, then its long list scrolling over black to credits.wav), the story's films (PlayMovie, StartNewModule's sMovie1..6, QueueMovie / PlayMovieQueue) and EndGame's way back to the main menu are game/cine.ctx; see [playthrough-star-forge.md](../playthrough-star-forge.md). The level-up panels, the store, container, upgrade bench and galaxy map are [screens.md](screens.md). Character generation is done (chargen.md). Pazaak: see minigames.md.
 - Text colour per list row exists (`list_set_color`); per-row fonts do not.

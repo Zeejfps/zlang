@@ -1,0 +1,14 @@
+# Star Forge, part 6: level 1 (sta_m45ab), east wing. Malak's talk with his apprentice (k_sta45_malak2, started by the strip
+# sta_trg_cutscne2 on the way in), then the turret computer (sta45_turretcomp, 136..150,-172..-177): "Slice the computer" (a spike),
+# "Deactivate sentry guns" (k_psta_turretoff), "Log out." The walk down the wing is cut with warps (the horde that the strips
+# k_sta_spawnstart start is fought in part 7). Spikes are a setup cheat. From the checkpoint "lvl1".
+5 ui giveitem g_i_progspike01 40
+5 ui bot party on
+5 ui bot god on
+5 ui replies ~Slice_the_computer ~Deactivate_sentry ~Log_out default 1
+2700 warp sta45_turretcomp party
+2800 use sta45_turretcomp
+3500 ui heal
+3600 warp sta45b_sta45c party
+3700 use sta45b_sta45c
+3800 savewhen sta_m45ac lvl2

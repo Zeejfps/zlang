@@ -1,0 +1,14 @@
+# Star Forge, part 10: through the elevator door (sta45c_sta45d, 119,1) to Malak's chamber (sta_m45ad). Walking into the closed door
+# opens it (the move ends there; the leader is told to walk again), the strip sta_malanim (200,303) moves Malak, the strip k45_init_malak
+# (the small U at 198.6..205.8 x 255.6..258.4) starts his talk (k_sta_darthmalak: the light replies "The light side is stronger than you
+# know", "I will never serve the dark side again", "I believe in the power of redemption"). The fight begins as the talk ends.
+# From the checkpoint "gens"; saves "fight".
+5 ui bot party on
+5 ui replies default 1
+10 warp sta45c_sta45d party
+60 use sta45c_sta45d
+120 ui goto sta_pc_start
+300 ui goto sta_pc_start
+500 warpxy 202,256.4
+3900 save fight
+3900 ui party

@@ -445,10 +445,28 @@ namespace actions {
         let mut dialog = resref::empty{}
         if a.params[1] is string{ s } { dialog = resref::truncate{ name = s } }
         let t = world::object{ w = &w, id = target } ifnull {
+            if w.log.actions {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "talk {} to {}: no such object\n", id, target)
+            }
             w.conversation.pending = false
             return Status::failed
         }
+        // A creature lying where it was thrown (EffectForcePushTargeted) is not commandable until it stands: the talk waits for it
+        // (k_punk_bast_ud2 throws the party back and starts the talk after the Bastila duel on a fixed delay that the fall's
+        // length can overrun by a frame).
+        let mut lying = false
+        if obj::creature{ o = t } is some{ value = c } {
+            if c.fighter is some{ value = f } { lying = f.knock.active }
+        }
+        if lying and not w.conversation.active { return Status::running }
         if not t.commandable or w.conversation.active {
+            if w.log.actions {
+                world::prefix{ w = &w }
+                let why1: []u8 = if t.commandable { "" } else { "not commandable" }
+                let why2: []u8 = if w.conversation.active { "a conversation is on" } else { "" }
+                _ = @fmt(&w.io, "talk {} to {}: refused ({}{})\n", id, target, why1, why2)
+            }
             w.conversation.pending = w.conversation.active
             return Status::failed
         }

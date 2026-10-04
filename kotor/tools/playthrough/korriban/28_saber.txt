@@ -11,8 +11,8 @@
 3900 ui bot god on
 3901 ui bot on
 7900 ui bot off
-7950 ui journal list
-7950 ui rules
-7950 ui where kor39_u
-7950 ui where kor39_y
-7960 save finale
+8150 ui journal list
+8150 ui rules
+8150 ui where kor39_u
+8150 ui where kor39_y
+8160 save finale

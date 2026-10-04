@@ -45,8 +45,15 @@ namespace rules {
         ev.lost = 0
     }
 
+    // The last slots of the list are kept for the events that free a creature from a crowd-control state. A stun that ends together with
+    // a crowd of visuals and icons (an effect list can hold 80) must not lose its own end to the full list: the creature stayed
+    // not commandable for ever, and a game saved in that state could not be played on.
+    const EVENTS_VITAL_ROOM: usize = 6
+
     fn emit { mut ev: Events, kind: i32, a: i32, b: i32, who: u32 } {
-        if @as(usize, ev.len) >= EVENTS_MAX {
+        let vital = kind == ev::CLEAR_ACTIONS or kind == ev::COMMANDABLE or kind == ev::COMBAT_ROUND_ABORT or kind == ev::STATE
+        let room = if vital { EVENTS_MAX } else { EVENTS_MAX - EVENTS_VITAL_ROOM }
+        if @as(usize, ev.len) >= room {
             ev.lost = ev.lost + 1
             return
         }

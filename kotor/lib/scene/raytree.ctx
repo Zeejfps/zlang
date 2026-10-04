@@ -1,0 +1,180 @@
+// A bounding-volume tree over a room mesh's triangles, for the camera's rays (cam::collide casts up to
+// two dozen of them a frame): without it each ray tests every triangle of every mesh its bounding
+// sphere touches, and a room's walls are one mesh of tens of thousands.
+//
+// The tree is in world space (a room does not move once placed) and keeps triangles by index into the
+// mesh, so it costs about 10 bytes a triangle. A leaf holds at most LEAF_TRIANGLES. It is built the
+// first frame after the area loads (update_visibility), in the scene's arena, and is used only while
+// the mesh's world matrix is still the one it was built with.
+namespace scene {
+    const LEAF_TRIANGLES: usize = 6
+    const RAY_STACK: usize = 64
+
+    // count > 0: a leaf over order[first .. first + count]; else an inner node whose left child is the
+    // next node and whose right child is `right`.
+    struct RayNode { box: math::Aabb, first: u32, count: u32, right: u32 }
+
+    struct RayTree { world: math::Mat4, nodes: []mut RayNode, order: []mut u32 }
+
+    fn no_ray_tree {} -> RayTree {
+        return RayTree{ world = math::mat4::identity{}, nodes = slice::empty(RayNode){}, order = slice::empty(u32){} }
+    }
+
+    // The trees of every room model's meshes that need one, in Scene.ray_trees; Room.trees is the index of
+    // its first (one per mesh of the model, an empty tree for a mesh too small or not drawn).
+    fn build_ray_trees { mut sc: Scene } {
+        if sc.ray_trees_built { return }
+        sc.ray_trees_built = true
+        let rooms = list::items{ list = sc.rooms }
+        let mut i: usize = 0
+        while i < rooms.len {
+            let r = rooms[i]
+            let at = i
+            i = i + 1
+            if r.part < 0 { continue }
+            let p = part_at{ sc = &sc, i = @as(usize, r.part) }
+            let model = loaded_at{ sc = &sc, i = p.loaded }.model
+            let first = sc.ray_trees.len
+            let instance = math::mat4::translation{ t = r.position }
+            let mut m: usize = 0
+            while m < model.meshes.len {
+                let mesh = &model.meshes[m]
+                m = m + 1
+                let mut tree = no_ray_tree{}
+                if mdl_render::draws{ mesh = mesh.* } and mesh.skin == null and mesh.indices.len >= LEAF_TRIANGLES * 3 * 2 {
+                    tree = build_ray_tree{ arena = sc.arena, heap = sc.heap, mesh, world = math::mat4::mul{ a = instance, b = p.pose.world[mesh.node] } } iferr { no_ray_tree{} }
+                }
+                list::push{ list = &sc.ray_trees, item = tree } iferr { return }
+            }
+            rooms[at].trees = @as(i32, first)
+        }
+    }
+
+    // The tree over `mesh`'s triangles with its vertices taken to the world by `world`.
+    fn build_ray_tree { arena: *mut arena::Arena, heap: *mut heap::Heap, mesh: *mdl::Mesh, world: math::Mat4 } -> !RayTree {
+        let vcount = @as(usize, mesh.vertex_count)
+        let ntri = mesh.indices.len / 3
+        if mesh.positions.len < vcount * 3 or ntri == 0 { return no_ray_tree{} }
+        let wv = try alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(math::Vec3){}, count = vcount }
+        defer _ = alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap, mem = wv, count = 0 }
+        let centers = try alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(math::Vec3){}, count = ntri }
+        defer _ = alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap, mem = centers, count = 0 }
+        let order = try alloc::resize(u32, arena::Arena){ realloc = arena::alloc, heap = arena, mem = slice::empty(u32){}, count = ntri }
+        let mut v: usize = 0
+        while v < vcount {
+            wv[v] = math::mat4::transform_point{ m = world, p = math::Vec3{ x = mesh.positions[v * 3], y = mesh.positions[v * 3 + 1], z = mesh.positions[v * 3 + 2] } }
+            v = v + 1
+        }
+        // Triangles whose indices name vertices; the rest are left out of the tree.
+        let mut n: usize = 0
+        let mut t: usize = 0
+        while t < ntri {
+            let a = @as(usize, mesh.indices[t * 3])
+            let b = @as(usize, mesh.indices[t * 3 + 1])
+            let c = @as(usize, mesh.indices[t * 3 + 2])
+            t = t + 1
+            if a >= vcount or b >= vcount or c >= vcount { continue }
+            centers[t - 1] = math::vec3::scale{ v = math::vec3::add{ a = math::vec3::add{ a = wv[a], b = wv[b] }, b = wv[c] }, s = 1.0 / 3.0 }
+            order[n] = @as(u32, t - 1)
+            n = n + 1
+        }
+        if n == 0 { return no_ray_tree{} }
+        // Leaves hold at least half a leaf's worth (median splits), so this many nodes are plenty.
+        let nodes = try alloc::resize(RayNode, arena::Arena){ realloc = arena::alloc, heap = arena, mem = slice::empty(RayNode){}, count = 2 * (n / (LEAF_TRIANGLES / 2) + 1) }
+        let mut next: usize = 0
+        _ = build_ray_node{ nodes, &next, items = order[..n], base = 0, centers, wv, indices = mesh.indices }
+        return RayTree{ world, nodes = nodes[..next], order = order[..n] }
+    }
+
+    // The subtree over `items` (which sit at order[base ..]) at nodes[next], and the nodes after it. Returns its index.
+    fn build_ray_node { nodes: []mut RayNode, mut next: usize, items: []mut u32, base: usize, centers: []math::Vec3, wv: []math::Vec3, indices: []u16 } -> u32 {
+        let at = next
+        next = next + 1
+        let mut lo = math::Vec3{ x = 1000000000.0, y = 1000000000.0, z = 1000000000.0 }
+        let mut hi = math::Vec3{ x = -1000000000.0, y = -1000000000.0, z = -1000000000.0 }
+        let mut i: usize = 0
+        while i < items.len {
+            let t = @as(usize, items[i]) * 3
+            i = i + 1
+            let mut k: usize = 0
+            while k < 3 {
+                let p = wv[@as(usize, indices[t + k])]
+                lo = math::vec3::min{ a = lo, b = p }
+                hi = math::vec3::max{ a = hi, b = p }
+                k = k + 1
+            }
+        }
+        let box = math::Aabb{ min = lo, max = hi }
+        if items.len <= LEAF_TRIANGLES {
+            nodes[at] = RayNode{ box, first = @as(u32, base), count = @as(u32, items.len), right = 0 }
+            return @as(u32, at)
+        }
+        let mut clo = centers[items[0]]
+        let mut chi = clo
+        i = 1
+        while i < items.len {
+            clo = math::vec3::min{ a = clo, b = centers[items[i]] }
+            chi = math::vec3::max{ a = chi, b = centers[items[i]] }
+            i = i + 1
+        }
+        let spread = math::vec3::sub{ a = chi, b = clo }
+        let mut axis: u32 = 0
+        if spread.y > spread.x and spread.y >= spread.z {
+            axis = 1
+        } else if spread.z > spread.x and spread.z > spread.y {
+            axis = 2
+        }
+        let mid = items.len / 2
+        bwm::select{ items, centers, axis, k = mid }
+        _ = build_ray_node{ nodes, &next, items = items[..mid], base, centers, wv, indices }
+        let right = build_ray_node{ nodes, &next, items = items[mid..], base = base + mid, centers, wv, indices }
+        nodes[at] = RayNode{ box, first = 0, count = 0, right }
+        return @as(u32, at)
+    }
+
+    // The nearest hit of a ray on a mesh through its tree, within max_t.
+    fn cast_ray_tree { tree: *RayTree, mesh: *mdl::Mesh, ray: math::Ray, max_t: f32 } -> ?f32 {
+        let mut best = max_t
+        let mut found = false
+        let mut stack: [RAY_STACK]u32
+        let mut sp: usize = 1
+        stack[0] = 0
+        while sp > 0 {
+            sp = sp - 1
+            let at = stack[sp]
+            let n = tree.nodes[@as(usize, at)]
+            if math::ray::intersect_aabb{ ray, box = n.box, max_t = best } == null { continue }
+            if n.count > 0 {
+                let mut j: usize = 0
+                while j < @as(usize, n.count) {
+                    let t = @as(usize, tree.order[@as(usize, n.first) + j]) * 3
+                    j = j + 1
+                    let a = corner{ mesh, m = tree.world, i = mesh.indices[t] }
+                    let b = corner{ mesh, m = tree.world, i = mesh.indices[t + 1] }
+                    let c = corner{ mesh, m = tree.world, i = mesh.indices[t + 2] }
+                    let hit = math::ray::intersect_triangle{ ray, a, b, c, max_t = best }
+                    if hit != null and hit.t < best {
+                        best = hit.t
+                        found = true
+                    }
+                }
+            } else if sp + 2 <= RAY_STACK {
+                stack[sp] = n.right
+                stack[sp + 1] = at + 1
+                sp = sp + 2
+            }
+        }
+        if not found { return null }
+        return best
+    }
+
+    // Whether two matrices are the same (the tree was built for this one).
+    fn same_matrix { a: math::Mat4, b: math::Mat4 } -> bool {
+        let mut i: usize = 0
+        while i < 16 {
+            if a.m[i] != b.m[i] { return false }
+            i = i + 1
+        }
+        return true
+    }
+}

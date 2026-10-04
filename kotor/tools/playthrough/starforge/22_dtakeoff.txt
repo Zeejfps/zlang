@@ -1,0 +1,11 @@
+# Star Forge, dark side, part 22: the Hawk's galaxy map (the console ebo41_galaxymap), the Star Forge picked, "Travel". With K_KOTOR_MASTER 50
+# k_sup_galaxymap plays the take-off from the Unknown World (ST_PlayUnknownWorldTakeOff): STUNT_44 for the dark side (G_FINALCHOICE 1),
+# then the approach (STUNT_34, Carth), and the landing on the Star Forge aboard the Hawk (ebo_m12aa). From the checkpoint "hawk".
+10 warp ebo41_galaxymap party
+50 use ebo41_galaxymap
+200 ui clickctl LBL_Planet_StarForge
+260 ui clickctl BTN_ACCEPT
+5300 save dlanded
+5300 ui party
+5300 ui pos
+5300 ui globals K_

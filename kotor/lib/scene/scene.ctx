@@ -35,6 +35,7 @@ namespace scene {
         position: math::Vec3,
         part: i32,                      // -1: no model
         visible: bool,
+        trees: i32,                     // the first of its meshes' ray trees in Scene.ray_trees, -1 until built
     }
 
     struct Visual {
@@ -66,6 +67,8 @@ namespace scene {
         missing_anims: map::Map([]u8, u32, arena::Arena),
         parts: list::List(Part, arena::Arena),
         rooms: list::List(Room, arena::Arena),
+        ray_trees: list::List(RayTree, arena::Arena),   // per room mesh, for the camera's rays (raytree.ctx)
+        ray_trees_built: bool,
         visuals: list::List(Visual, arena::Arena),
         by_id: map::Map(u32, usize, arena::Arena),
         time: f32,
@@ -99,6 +102,7 @@ namespace scene {
             missing_anims = map::new([]u8, u32, arena::Arena){ realloc = arena::alloc, heap = arena, hash = map::hash_bytes, eq = slice::eq_bytes },
             parts = list::new(Part, arena::Arena){ realloc = arena::alloc, heap = arena },
             rooms = list::new(Room, arena::Arena){ realloc = arena::alloc, heap = arena },
+            ray_trees = list::new(RayTree, arena::Arena){ realloc = arena::alloc, heap = arena }, ray_trees_built = false,
             visuals = list::new(Visual, arena::Arena){ realloc = arena::alloc, heap = arena },
             by_id = map::new(u32, usize, arena::Arena){ realloc = arena::alloc, heap = arena, hash = map::hash_u32, eq = map::eq_u32 },
             time = 0.0, current_room = -1, ambient = math::Vec3{ x = 0.35, y = 0.35, z = 0.35 }, fog = render::no_fog{},
@@ -287,7 +291,7 @@ namespace scene {
                 part = @as(i32, p)
                 _ = play{ &sc, &w, part = p, name = "animloop1", looping = true, speed = 1.0, transition = 0.0 }
             }
-            try list::push{ list = &sc.rooms, item = Room{ name = r.model, position = math::Vec3{ x = r.x, y = r.y, z = r.z }, part, visible = true } }
+            try list::push{ list = &sc.rooms, item = Room{ name = r.model, position = math::Vec3{ x = r.x, y = r.y, z = r.z }, part, visible = true, trees = -1 } }
         }
         let ao = world::object{ w = &w, id = w.area }
         if ao != null {
@@ -313,6 +317,7 @@ namespace scene {
 
     // Which rooms show from `room` (VIS; everything when there is no VIS, no entry, or no room).
     fn update_visibility { mut sc: Scene, w: *world::World, room: i32 } {
+        build_ray_trees{ &sc }
         sc.current_room = room
         let rooms = list::items{ list = sc.rooms }
         let v = w.vis
@@ -506,7 +511,7 @@ namespace scene {
             let r = rooms[i]
             i = i + 1
             if not r.visible or r.part < 0 { continue }
-            let t = part_hit{ sc, part = @as(usize, r.part), instance = math::mat4::translation{ t = r.position }, origin, dir, max_t = best }
+            let t = part_hit{ sc, part = @as(usize, r.part), instance = math::mat4::translation{ t = r.position }, trees = r.trees, origin, dir, max_t = best }
             if t != null {
                 best = t
                 found = true
@@ -525,7 +530,7 @@ namespace scene {
             let instance = math::mat4::from_rotation_translation{
                 r = math::quat::from_axis_angle{ axis = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, angle = obj::model_yaw{ orientation = o.orientation } }, t = o.position,
             }
-            let t = part_hit{ sc, part = v.first, instance, origin, dir, max_t = best }
+            let t = part_hit{ sc, part = v.first, instance, trees = -1, origin, dir, max_t = best }
             if t != null {
                 best = t
                 found = true
@@ -536,9 +541,10 @@ namespace scene {
     }
 
     // The nearest hit of a ray on one part's drawn, rigid meshes, within max_t.
-    fn part_hit { sc: *Scene, part: usize, instance: math::Mat4, origin: math::Vec3, dir: math::Vec3, max_t: f32 } -> ?f32 {
+    fn part_hit { sc: *Scene, part: usize, instance: math::Mat4, trees: i32, origin: math::Vec3, dir: math::Vec3, max_t: f32 } -> ?f32 {
         let p = part_at{ sc, i = part }
         let model = loaded_at{ sc, i = p.loaded }.model
+        let tlist = list::items{ list = sc.ray_trees }
         let mut best = max_t
         let mut found = false
         let mut m: usize = 0
@@ -547,13 +553,28 @@ namespace scene {
                 m = m + 1
                 if not mdl_render::draws{ mesh = mesh.* } or mesh.skin != null { continue }
                 if p.pose.alpha[mesh.node] < 0.5 { continue }
-                let world_m = math::mat4::mul{ a = instance, b = p.pose.world[mesh.node] }
-                let center = math::mat4::transform_point{ m = world_m, p = mesh.average }
-                // Sphere against the segment.
+                // A room's big meshes have a tree (raytree.ctx), good while the mesh is where it was built.
+                if trees >= 0 {
+                    let tree = &tlist[@as(usize, trees) + m - 1]
+                    if tree.nodes.len > 0 and same_matrix{ a = tree.world, b = math::mat4::mul{ a = instance, b = p.pose.world[mesh.node] } } {
+                        let t = cast_ray_tree{ tree, mesh, ray = math::Ray{ origin, dir }, max_t = best }
+                        if t != null {
+                            best = t
+                            found = true
+                        }
+                        continue
+                    }
+                }
+                // Sphere against the segment (the centre through the two transforms in turn: a matrix product
+                // per mesh would cost more than the rays do).
+                let center = math::mat4::transform_point{ m = instance, p = math::mat4::transform_point{ m = p.pose.world[mesh.node], p = mesh.average } }
                 let oc = math::vec3::sub{ a = center, b = origin }
                 let along = math::clamp{ x = math::vec3::dot{ a = oc, b = dir }, lo = 0.0, hi = best }
                 let closest = math::vec3::add_scaled{ a = origin, b = dir, s = along }
-                if math::vec3::distance{ a = closest, b = center } > mesh.radius + 0.01 { continue }
+                let off = math::vec3::sub{ a = closest, b = center }
+                let reach = mesh.radius + 0.01
+                if math::vec3::dot{ a = off, b = off } > reach * reach { continue }
+                let world_m = math::mat4::mul{ a = instance, b = p.pose.world[mesh.node] }
                 let mut k: usize = 0
                 while k + 2 < mesh.indices.len {
                     let a = corner{ mesh, m = world_m, i = mesh.indices[k] }

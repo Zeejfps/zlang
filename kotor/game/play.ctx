@@ -55,8 +55,12 @@ namespace play {
         let script = try read_script{ &w, path = opts.input }
         let mut next_line: usize = 0
         let mut frame_no: u64 = 0
+        // The game, from the front end to the main menu again: a story that ends (EndGame), a party that falls or the options menu's
+        // Exit Game leave for the main menu, and the next pass of this loop is a new session in the same window.
+        let mut first_pass = true
+        while true {
         // --load SAVE: the game starts from that save, as the front end's Load Game would.
-        if w.module == obj::INVALID and opts.load.len > 0 {
+        if first_pass and w.module == obj::INVALID and opts.load.len > 0 {
             let folder = save::find_save{ &w, game = opts.game, name = opts.load } ifnull {
                 _ = @fmt(&w.io, "kotor: no save {}\n", opts.load)
                 return 1
@@ -136,6 +140,9 @@ namespace play {
         let freq = sdl::counter_frequency{ &sdl }
         let mut last = sdl::counter{ &sdl }
         let mut quit = false
+        let mut to_menu = false                  // the pass ends for the main menu, not for the process
+        let menu_allowed = not opts.headless or opts.cinema     // a hidden run ends instead, unless --cinema
+        let mut cinema = cine::make{}            // the films, the credits and the end of the game that scripts asked for (game/cine.ctx)
         let mut wipe = death::make{}            // the party wipe's slow motion, camera, box and fade (game/death.ctx)
         let mut want_save: []u8 = ""            // a save asked for this frame: its folder name
         let mut sw_module: [24]u8 = [0; 24]     // `savewhen MODULE NAME`: the save waits for the story to be in MODULE and quiet for 2 s
@@ -209,6 +216,7 @@ namespace play {
                 // One call per owner, in turn: the first that knows the word takes the line. A new owner adds
                 // its call here (docs/testing.md, "Adding a scripted command").
                 let handled = handle_scripted{ &w, &vm, engine, &keys, &want_save, &want_load, word = s.word, rest = s.rest } or
+                    cine::handle_scripted{ c = &cinema, word = s.word, rest = s.rest } or
                     mg_game::handle_scripted{ m = &mg_mouse, word = s.word, rest = s.rest } or
                     handle_scripted_vfx{ &w, &test_camera, word = s.word, rest = s.rest } or
                     display::handle_scripted{ d = &disp, word = s.word, rest = s.rest } or
@@ -353,6 +361,13 @@ namespace play {
             ingame::set_move_speed{ ui, speed = math::max{ a = math::abs{ x = control.vx }, b = math::abs{ x = control.vy } } }    // HOOK(ingame)
             world::tick{ &w, &vm, engine }
             fight::trace{ &w }
+            // EndGame: after its wait the story is over, and the main menu is next.
+            if cine::end_due{ c = &cinema, dt = w.clock.dt } {
+                let where_to: []u8 = if menu_allowed { "to the main menu" } else { "the run ends (hidden run)" }
+                _ = @fmt(&w.io, "EndGame: {}\n", where_to)
+                quit = true
+                to_menu = menu_allowed
+            }
             // The whole party fallen: slow motion, the death camera, the "Your entire party has been killed." box and a
             // fade to black; answering the box or the end of the fade is the way to the main menu (game/death.ctx).
             if not wipe.active and w.arrival == 0 and w.transition == null and fight::party_fallen{ w = &w } {
@@ -362,6 +377,12 @@ namespace play {
             dlg::update{ &w, &vm, engine }
             // 6. A transition: the next module, and a new scene and sound for it.
             if w.transition != null {
+                // The movies StartNewModule named play first, before the module is loaded (gameloop.md 5.3: StartModuleTransition plays the queued movies).
+                cine::take_new{ c = &cinema, notes = outbox::notes{ out = &w.out } }
+                if cine::busy{ c = &cinema } {
+                    if try cine::show{ c = &cinema, &sdl, &w, &dev, &frame, ui, mixer, adev, rate, opts, script, &next_line, &frame_no, &inputs, &disp } { quit = true }
+                    last = sdl::counter{ &sdl }
+                }
                 // The loading screen goes up over the change (gameloop.md 5.3: the client picks it, closes its panels and stops its sounds first).
                 let mut target = resref::empty{}
                 if w.transition is some{ value = t } { target = t.module }
@@ -401,6 +422,7 @@ namespace play {
             }
             // 8. The outbox: sounds to the ambience (HOOK(gui): fades, movies, text).
             let notes = outbox::notes{ out = &w.out }
+            cine::take_new{ c = &cinema, notes }
             let mut n: usize = 0
             let mut pazaak_asked: ?pz_game::Request = null    // HOOK(minigames)
             while n < notes.len {
@@ -412,6 +434,12 @@ namespace play {
                 n = n + 1
             }
             outbox::clear{ out = &w.out }
+            cine::forget_notes{ c = &cinema }
+            // The films and the credits the scripts asked for are shown now, between two frames of the game.
+            if cine::busy{ c = &cinema } {
+                if try cine::show{ c = &cinema, &sdl, &w, &dev, &frame, ui, mixer, adev, rate, opts, script, &next_line, &frame_no, &inputs, &disp } { quit = true }
+                last = sdl::counter{ &sdl }
+            }
             // HOOK(minigames): a script asked for a game of pazaak; the visit takes over the frame (game/pazaak.ctx).
             if pazaak_asked is some{ value = asked } {
                 if opts.headless {
@@ -475,7 +503,18 @@ namespace play {
             }
             cam::update{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height, turn = if mouse.freelook { 0.0 } else if key_turn != 0.0 { key_turn } else { mouse.edge }, mouse_degrees = cam_yaw, pitch_degrees = mouse.pitch_degrees, dt = camera_dt }
             dlgview::apply_camera{ v = &dview, w = &w, sc = &sc, camera = &camera }
-            if test_camera.len > 0 { place_test_camera{ &w, spec = test_camera, &camera } }
+            if test_camera.len > 0 {
+                if ci::starts_with{ s = test_camera, prefix = "probe" } {
+                    cam::probe{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height }
+                    test_camera = ""
+                } else if ci::starts_with{ s = test_camera, prefix = "trace" } {
+                    // One line a camera update: where the eye is from the look-at point, for finding jitter.
+                    let pc = world::object{ w = &w, id = w.pc }
+                    if pc != null {
+                        _ = @fmt(&w.io, "camtrace {} {} {} {} {} {} {} {}\n", w.clock.frame, pc.position.x, pc.position.y, camera.eye.x - camera.look.x, camera.eye.y - camera.look.y, camera.eye.z - camera.look.z, camera.yaw, camera.h)
+                    }
+                } else { place_test_camera{ &w, spec = test_camera, &camera } }
+            }
             death::place_camera{ d = &wipe, c = &camera, w = &w, sc = &sc, dt = camera_dt }
             // The conversation's focus (game/focus.ctx), eased every tick so pictures taken without rendering see it too.
             let view_focus = focus::update{ f = &fcs, eye = camera.eye, at = dlgview::focus_point{ v = &dview, w = &w, sc = &sc, eye = camera.eye, forward = camera.dir, fov = camera.style.fov }, dt = camera_dt }
@@ -484,10 +523,16 @@ namespace play {
             let room = dlgview::view_room{ v = &dview, w = &w, player_room }
             scene::update_visibility{ &sc, w = &w, room }
             ingame::update{ ui, &w, &dev, sc, camera, dt = camera_dt }    // HOOK(ingame): under --speed the GUI's clocks (feedback fade, tooltips) get the ticks it skipped
-            if ingame::wants_quit{ ui } { quit = true }    // HOOK(ingame)
+            if ingame::wants_quit{ ui } {    // HOOK(ingame)
+                quit = true
+                to_menu = menu_allowed
+            }
             // The party wipe's box answered or its fade over: the options menu's Exit Game is the way out (the main menu).
             death::after_ui{ d = &wipe, ui, &w, fade_running = dlgpanel::fade_running{ p = dview.panels } }
-            if death::is_over{ d = wipe } { quit = true }
+            if death::is_over{ d = wipe } {
+                quit = true
+                to_menu = menu_allowed
+            }
             // The party selection screen was applied: its exit script (ShowPartySelectionGUI's), with no caller.
             if ingame::take_exit_script{ ui } is some{ value = exit_script } { _ = scripts::run{ &w, &vm, engine, name = exit_script, self = obj::INVALID } }    // HOOK(ingame)
             if ingame::take_script_request{ ui } is some{ value = script } { _ = scripts::run{ &w, &vm, engine, name = script, self = obj::INVALID } }    // HOOK(ingame)
@@ -611,8 +656,34 @@ namespace play {
             }
             _ = @fmt(&w.io, "\n")
         }
+        if not to_menu { break }
+        // The main menu: what the game showed and held is let go, a new world takes the old one's place and the front end opens the
+        // next pass (the original unloads the module, destroys the server and shows the menu: gameloop.md 6.6).
+        _ = @fmt(&w.io, "to the main menu\n")
+        dlg::abort{ &w, &vm, engine }
+        dlgview::leave{ v = &dview, w = &w, sc = &sc, g = &ui.gui }
+        ambience::stop_area{ a = &amb }
+        mix::stop_all{ m = mixer, group = null, fade = 0.5 }
+        scene::release{ &sc, &dev }
+        arena::reset{ heap = &scene_arena }
+        vfx::reset{ v = &vx }
+        death::abort{ d = &wipe, ui, &w }
+        try restart_world{ &w, opts }
+        first_pass = false
+        }
         report::summary{ &w, routines = opts.report }
         return 0
+    }
+
+    // A new world for the next session (the main menu after a story that ended): the tables and the session's capabilities are
+    // made again, the saves and the log options are kept, and the old world's memory is left to the arenas.
+    fn restart_world { mut w: world::World, opts: options::Options } -> ! {
+        arena::reset{ heap = w.mod_arena }
+        let fresh = try world::make{ fs = w.fs, io = w.io, heap = w.heap, rm = w.rm, module_arena = w.mod_arena, scratch = w.scratch, seed = opts.seed, saves = opts.saves }
+        try walkmap::load_materials{ m = &fresh.walk, heap = w.heap, table = fresh.tables.surfacemat }
+        fresh.log = w.log
+        fresh.tlk = w.tlk
+        w = fresh.*
     }
 
     // The front end (docs/design/gui.md, "The front end"): start-up movies and the main menu
@@ -960,6 +1031,10 @@ namespace play {
             let dx = t.position.x - pc.position.x
             let dy = t.position.y - pc.position.y
             if dx * dx + dy * dy > 0.01 { camera.yaw = math::atan2f{ y = -dx, x = dy } }
+            return
+        } else if ci::eq{ a = kind, b = "yaw" } {
+            // The follow camera at a heading in degrees (0 looks along +y, positive turns left), held.
+            camera.yaw = math::radians{ degrees = text::scan_f32{ s = text::next_word{ &words } ifnull "" } ifnull 0.0 }
             return
         } else if ci::eq{ a = kind, b = "at" } {
             let from = text::next_word{ &words } ifnull { return }

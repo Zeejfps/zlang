@@ -1,0 +1,16 @@
+# Star Forge, part 7: level 2 (sta_m45ac) on the light side. The way north is cut with warps next to the strips (k_sta_spawnreset stops
+# the horde that k_sta_spawnstart starts at the entrance), the strip sta_freezer (-3.7..2.1,-134.6..-138.8) freezes the three Sith at the door
+# (k_sta_freezeconv), and the bot fights them (k_boss_freeze guards, about 6,400 frames for a level 20 Guardian and two companions): the
+# door "held closed by some great power" (k_sta_door_ud) opens when all three are dead. God mode: the fight to look at is Bastila's.
+# From the checkpoint "lvl2"; saves "freeze".
+5 ui bot god on
+10 warpxy 66,-188 party
+100 warpxy 66,-162 party
+200 warpxy 35,-135 party
+300 warpxy -0.5,-136.5 party
+# The three Sith are fought by the bot (a Jedi Guardian of level 20 with two companions needs about 6,400 frames for them).
+310 ui bot route -12,-125
+320 ui bot on
+6600 ui bot off
+6650 ui heal
+6700 savewhen sta_m45ac freeze
