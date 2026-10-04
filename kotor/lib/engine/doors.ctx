@@ -91,8 +91,11 @@ namespace doors {
             return actions::Status::done
         }
         if d.state != obj::DoorState::closed { return actions::Status::done }
-        // A locked door opens to its key (UseKeyOnObject); otherwise the actor is told it is locked.
-        if d.locked and not use_key{ &w, who = id, target } {
+        // A locked door opens to its key (UseKeyOnObject); otherwise the actor is told it is locked. Only a creature
+        // is asked for the key: a door told to open itself (AssignCommand(door, ActionOpenDoor(door)), as the force
+        // field of Kolto Control does once its scientist is persuaded) sends OPEN_OBJECT with no lock test, 0x0057d490.
+        let by_creature = if world::object{ w = &w, id } is some{ value = actor } { actor.kind == obj::Kind::creature } else { false }
+        if by_creature and d.locked and not use_key{ &w, who = id, target } {
             tell{ &w, who = id, strref = FEEDBACK_LOCKED }
             events::post{ &w, delay_ms = 0, caller = id, target, payload = events::Payload::script{ e = events::script_event{ kind = events::FAIL_TO_OPEN, object = id } } }
             return actions::Status::failed
