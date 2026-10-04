@@ -33,6 +33,9 @@ namespace hud {
         // the target; they fill when lib/rules and the inventory give the leader any.
         h.lists[1] = empty_list{}
         h.lists[2] = empty_list{}
+        let mut middle = h.lists[1]
+        split_mine{ left = &h.lists[0], middle = &middle, w = &w, id }
+        h.lists[1] = middle
         let name = name_of{ w = &w, id }
         gui::set_text{ &g, panel = h.panel, tag = "LBL_NAME", text = name } iferr {}
         let mut k: usize = 0
@@ -46,6 +49,14 @@ namespace hud {
         let shows_health = o.hp_max > 0
         gui::set_visible{ &g, panel = h.panel, tag = "LBL_HEALTHBG", visible = shows_health }
         gui::set_visible{ &g, panel = h.panel, tag = "PB_HEALTH", visible = shows_health }
+    }
+
+    // What the left slot offers for `id`: the default actions, less a mine's Recover (split_mine).
+    fn left_actions { w: *world::World, id: u32 } -> ActionList {
+        let mut l = default_actions{ w, id }
+        let mut middle = empty_list{}
+        split_mine{ left = &l, middle = &middle, w, id }
+        return l
     }
 
     // Whether two lists offer the same choices in the same order.
@@ -80,7 +91,7 @@ namespace hud {
         if h.shown_target != w.target {
             build_block{ &h, &g, &w, &dev, id = w.target }
             h.shown_target = w.target
-        } else if not same_actions{ a = default_actions{ w = &w, id = w.target }, b = h.lists[0] } {
+        } else if not same_actions{ a = left_actions{ w = &w, id = w.target }, b = h.lists[0] } {
             // What the leader can do to the target changed under it (a lock picked or locked, a key found).
             build_block{ &h, &g, &w, &dev, id = w.target }
         }
@@ -134,7 +145,7 @@ namespace hud {
     // second click on it does. True when a choice was run.
     fn run_default { mut h: Hud, mut w: world::World } -> bool {
         if w.target == obj::INVALID { return false }
-        let l = h.lists[0]
+        let l = default_actions{ w = &w, id = w.target }
         if l.count == 0 { return false }
         run_act{ &w, act = l.entries[0].act, target = w.target }
         return true
@@ -181,7 +192,8 @@ namespace hud {
         h.pressed = obj::INVALID
         if id == obj::INVALID or id != began { return false }
         if id == w.target {
-            let l = h.lists[0]
+            // The default action: entry 0 of BuildDefaultActions (a mine's Recover is in the middle slot).
+            let l = default_actions{ w = &w, id }
             if l.count > 0 { run_act{ &w, act = l.entries[0].act, target = id } }
         } else {
             w.target = id

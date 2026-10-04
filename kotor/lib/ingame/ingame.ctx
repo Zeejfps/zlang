@@ -30,6 +30,8 @@ namespace ingame {
         psel_exit: resref::ResRef,          // its exit script, forced slots
         psel_force1: i32, psel_force2: i32,
         bot: bot::Bot,                      // the headless test player (bot.ctx); off unless a script turns it on
+        pause_reason: u32,                  // an auto-pause the world asked for (its banner's strref), 0 none
+        mine_quiet: f32,                    // seconds no hostile mine has been in sight (mine_watch.ctx)
     }
 
     // Opens the interface for a window of `width` x `height`. `scratch` is the texture decoder's
@@ -54,7 +56,7 @@ namespace ingame {
             text = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } },
             width, height, menu = NO_MENU, menu_panel = 0, top_panel = 0, menus = new_menus{}, log = hud::new_log{},
             pause_panel = 0, hud_hidden = false, screens = screens::new{}, bot = bot::new{},
-            psel_wait = false, psel_exit = resref::empty{}, psel_force1 = -1, psel_force2 = -1,
+            psel_wait = false, psel_exit = resref::empty{}, psel_force1 = -1, psel_force2 = -1, pause_reason = 0, mine_quiet = 1000.0,
         }
         let mut p = try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
         hud::set_tooltips{ h = &p.hud, g = &p.gui, &w, text = &p.text }
@@ -239,6 +241,21 @@ namespace ingame {
 
     // ---- pause
 
+    // dialog.tlk 49118: "MINE SIGHTED! Press the Pause button to continue".
+    const MINE_SIGHTED: u32 = 49118
+
+    // A pause the world asked for: the player's pause with its reason on the banner, which then
+    // needs no "press the pause button" line of its own (CSWGuiPause::SetReason).
+    fn auto_pause { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, strref: u32 } {
+        if ui.menu != NO_MENU or w.conversation.active { return }
+        set_player_pause{ &ui, &w, &dev, on = true }
+        if ui.pause_panel == 0 { return }
+        gui::set_strref{ g = &ui.gui, panel = ui.pause_panel, tag = "LBL_PAUSEREASON", strref } iferr {}
+        gui::set_visible{ g = &ui.gui, panel = ui.pause_panel, tag = "LBL_PRESS", visible = false }
+        // The reason's two lines take the room of the line it replaces (the original refits the banner).
+        if gui::find_control{ g = &ui.gui, panel = ui.pause_panel, tag = "LBL_PAUSEREASON" } is some{ value = c } { c.h = 60 }
+    }
+
     fn clock_paused_by_player { w: *world::World } -> bool {
         return (w.clock.pause_bits & clock::PAUSE_PLAYER) != 0
     }
@@ -287,6 +304,13 @@ namespace ingame {
             i = i + 1
             if ev.panel == ui.hud.panel { hud_event{ &ui, &w, &dev, ev } }
             else if ev.panel == ui.pause_panel and ev.kind == gui::EventKind::activate { set_player_pause{ &ui, &w, &dev, on = false } }
+        }
+        if not ui.hud_hidden { watch_mines{ &ui, &w, dt } }
+        if ui.pause_reason != 0 {
+            auto_pause{ &ui, &w, &dev, strref = ui.pause_reason }
+            ui.pause_reason = 0
+            // The test player goes on at once, as a player presses Space (bot.ctx).
+            if ui.bot.on { set_player_pause{ &ui, &w, &dev, on = false } }
         }
         // The pause banner follows the clock (a script or the toggle can change it).
         if ui.pause_panel != 0 and not clock_paused_by_player{ w = &w } {
