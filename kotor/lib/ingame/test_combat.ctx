@@ -1,0 +1,140 @@
+// Headless test commands for combat through the player's own input (docs/mechanics/combat.md): the
+// pointer goes where the player would put it and clicks, so a test exercises the HUD's picking, the
+// target block and the combat bar exactly as a mouse does. Only the pointer's place is computed.
+//
+//   FRAME ui clickon TAG [N]        the pointer to the middle of the N-th (0) object with the tag on
+//                                   the screen, and a left click there (twice selects and acts)
+//   FRAME ui clicktag TAG           a left click in the middle of the shown HUD control with the tag
+//                                   (BTN_TARGET0, BTN_TARGETDOWN0, BTN_CLEARALL, BTN_CLEARONE ...)
+//   FRAME ui fight                  prints the leader's combat state, its queue and the target block
+//   FRAME ui spawn TEMPLATE [DIST [SIDE]]  a creature (UTC) DIST m ahead of the leader, SIDE m to its right
+//   FRAME ui heal                 the party at full health, Min1HP off (test setup after the bot's god mode)
+//   FRAME ui grantfeat ID          gives the leader a feat (test setup: Power Attack 28, Flurry 11 ...)
+namespace test_combat {
+    fn run { mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device, cmd: []u8, args: []u8 } -> bool {
+        if ci::eq{ a = cmd, b = "clickon" } {
+            let mut words = text::words{ s = args }
+            let tag = text::next_word{ &words } ifnull { return true }
+            let nth = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+            let id = world::object_by_tag{ w = &w, tag, nth }
+            let o = world::object{ w = &w, id } ifnull {
+                _ = @fmt(&w.io, "clickon {}: no such object\n", tag)
+                return true
+            }
+            let b = hud::box_on_screen{ p = ui.hud.projector, o } ifnull {
+                _ = @fmt(&w.io, "clickon {}: not on the screen\n", tag)
+                return true
+            }
+            click_ui{ &ui, &w, &dev, x = @as(i32, (b.x0 + b.x1) / 2.0), y = @as(i32, (b.y0 + b.y1) / 2.0) }
+            return true
+        }
+        if ci::eq{ a = cmd, b = "clicktag" } {
+            let tag = text::first_word{ s = args }
+            let ps = list::items{ list = ui.gui.panels }
+            let mut i = ps.len
+            while i > 0 {
+                i = i - 1
+                let p = ps[i]
+                if not p.shown { continue }
+                let cs = list::items{ list = p.controls }
+                let mut k: usize = 0
+                while k < cs.len {
+                    let c = cs[k]
+                    k = k + 1
+                    if c.flags & gui::F_VISIBLE == 0 or not ci::eq{ a = c.tag, b = tag } { continue }
+                    click_ui{ &ui, &w, &dev, x = p.sx + c.x + c.w / 2, y = p.sy + c.y + c.h / 2 }
+                    return true
+                }
+            }
+            _ = @fmt(&w.io, "clicktag {}: not shown\n", tag)
+            return true
+        }
+        if ci::eq{ a = cmd, b = "fight" } {
+            print_fight{ ui = &ui, &w }
+            return true
+        }
+        if ci::eq{ a = cmd, b = "spawn" } {
+            // Test setup: a creature from a template DIST metres ahead of the leader (SIDE metres to its
+            // right), facing it, as a script's CreateObject would make it.
+            let mut words = text::words{ s = args }
+            let template = text::next_word{ &words } ifnull { return true }
+            let dist = text::scan_f32{ s = text::next_word{ &words } ifnull "8" } ifnull 8.0
+            let side = text::scan_f32{ s = text::next_word{ &words } ifnull "0" } ifnull 0.0
+            let lo = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return true }
+            let f = lo.orientation
+            let at = math::Vec3{ x = lo.position.x + f.x * dist + f.y * side, y = lo.position.y + f.y * dist - f.x * side, z = lo.position.z }
+            let id = tmpl::spawn{ &w, kind = obj::Kind::creature, template, position = at, orientation = math::Vec3{ x = -f.x, y = -f.y, z = 0.0 } } iferr {
+                _ = @fmt(&w.io, "spawn {}: failed\n", template)
+                return true
+            }
+            movement::place{ &w, id, at }
+            if world::object{ w = &w, id } is some{ value = o } {
+                o.ai_level = 1
+                _ = @fmt(&w.io, "spawn {} {} tag {} at {} {} hp {}\n", template, id, o.tag, o.position.x, o.position.y, o.hp)
+            }
+            return true
+        }
+        if ci::eq{ a = cmd, b = "heal" } {
+            // Test setup: the party at full health and mortal again (the bot's god mode leaves Min1HP set).
+            let ids = party::members{ w = &w }
+            let mut i: usize = 0
+            while i < ids.len {
+                let o = world::object{ w = &w, id = ids[i] }
+                i = i + 1
+                if o == null { continue }
+                o.min_one_hp = false
+                o.hp = o.hp_max
+            }
+            return true
+        }
+        if ci::eq{ a = cmd, b = "grantfeat" } {
+            let feat = @as(i32, text::scan_decimal{ s = text::first_word{ s = args } })
+            let o = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return true }
+            let f = fight::of{ o } ifnull { return true }
+            rules::grant_feat{ c = &f.c, feat }
+            rules::recompute{ tables = w.rules, c = &f.c }
+            return true
+        }
+        return false
+    }
+
+    // A left click at a point of the GUI's space, as the window would deliver it.
+    fn click_ui { mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device, x: i32, y: i32 } {
+        let wx = @as(i32, @as(f32, x) * ui.gui.scale)
+        let wy = @as(i32, @as(f32, y) * ui.gui.scale)
+        ingame::send{ &ui, &w, &dev, ev = sdl::Event::mouse_motion{ x = wx, y = wy, dx = 0, dy = 0, buttons = 0 } }
+        ingame::send{ &ui, &w, &dev, ev = sdl::Event::mouse_button{ down = true, button = sdl::BUTTON_LEFT, clicks = 1, x = wx, y = wy } }
+        ingame::send{ &ui, &w, &dev, ev = sdl::Event::mouse_button{ down = false, button = sdl::BUTTON_LEFT, clicks = 1, x = wx, y = wy } }
+        _ = @fmt(&w.io, "click {} {}\n", wx, wy)
+    }
+
+    fn print_fight { ui: *ingame::Ingame, mut w: world::World } {
+        let leader = party::leader{ w = &w }
+        let o = world::object{ w = &w, id = leader } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        _ = @fmt(&w.io, "fight leader {} hp {}/{} in_combat {} target {} attack_target {} queue", leader, o.hp, o.hp_max, c.in_combat, w.target, c.attack_target)
+        let q = list::items{ list = o.actions }
+        let mut i: usize = 0
+        while i < q.len {
+            _ = @fmt(&w.io, " {}:{}", @as(u32, q[i].kind), actions::int_param{ a = &q[i], i = 2 })
+            i = i + 1
+        }
+        _ = @fmt(&w.io, " block")
+        let mut k: usize = 0
+        while k < 3 {
+            let l = ui.hud.lists[k]
+            _ = @fmt(&w.io, " [")
+            let mut e: usize = 0
+            while e < l.count {
+                let en = l.entries[e]
+                let mark: []u8 = if e == l.selected { "*" } else { "" }
+                _ = @fmt(&w.io, "{}{}:{}", mark, @as(u32, en.act), en.icon[..en.icon_len])
+                e = e + 1
+                if e < l.count { _ = @fmt(&w.io, " ") }
+            }
+            _ = @fmt(&w.io, "]")
+            k = k + 1
+        }
+        _ = @fmt(&w.io, "\n")
+    }
+}
