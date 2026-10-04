@@ -438,10 +438,11 @@ namespace equip_panel {
         if s.picked == NO_PICK or s.slot >= items::SLOTS { return false }
         let index = items::SLOT_OF[s.slot]
         let c = hud::creature_of{ w = &w, id = s.who } ifnull { return false }
-        // What the pointer rested on is already on; a row chosen with the keys or the button may not be.
+        // What the pointer rested on is already on (one of a stack is a new item, so its id is not the row's); a row chosen
+        // with the keys may not be.
         if s.picked == 0 {
             if c.equipped[index] != obj::INVALID { _ = items::unequip{ &w, who = s.who, index } }
-        } else if c.equipped[index] != @as(u32, s.picked) {
+        } else if c.equipped[index] != @as(u32, s.picked) and s.shown != s.picked {
             let swap = items::equip{ &w, who = s.who, item = @as(u32, s.picked), index }
             if swap.equipped == obj::INVALID { return false }
         }

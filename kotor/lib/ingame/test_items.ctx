@@ -12,7 +12,7 @@
 //   FRAME ui credits N                          the leader's credits
 //   FRAME ui inv                                prints what the leader wears and carries
 //   FRAME ui movectl TAG [ROW]                  the pointer to the centre of the shown control with that tag (of the
-//                                              list box's row ROW), as a mouse move event
+//                                              list box's row ROW, or the first row with ~some_words in its text), as a mouse move event
 //   FRAME ui clickctl TAG [ROW]                 the same, then press and release the left button there: the click a
 //                                              player makes, with the panels' own hit test deciding what it hits
 //   FRAME ui ctl TAG                            prints where the control is (GUI pixels) and whether it is shown
@@ -94,8 +94,23 @@ namespace test_items {
         } else if ci::eq{ a = cmd, b = "movectl" } or ci::eq{ a = cmd, b = "clickctl" } or ci::eq{ a = cmd, b = "ctl" } {
             let mut words = text::words{ s = args }
             let tag = text::next_word{ &words } ifnull { return true }
-            let row = if text::next_word{ &words } is some{ value = n } { @as(i32, text::scan_decimal{ s = n }) } else { -1 }
-            point_at{ &ui, &w, &dev, tag, row, click = ci::eq{ a = cmd, b = "clickctl" }, print = ci::eq{ a = cmd, b = "ctl" } }
+            // The row is a number, or `~some_words` (underscores are spaces): the first row whose text has them.
+            let mut like_buf: [40]u8
+            let mut like: []u8 = ""
+            let mut row: i32 = -1
+            if text::next_word{ &words } is some{ value = n } {
+                if n.len > 1 and n[0] == '~' {
+                    let mut k: usize = 1
+                    while k < n.len and k - 1 < like_buf.len {
+                        like_buf[k - 1] = if n[k] == '_' { ' ' } else { n[k] }
+                        k = k + 1
+                    }
+                    like = like_buf[..k - 1]
+                } else {
+                    row = @as(i32, text::scan_decimal{ s = n })
+                }
+            }
+            point_at{ &ui, &w, &dev, tag, row, like, click = ci::eq{ a = cmd, b = "clickctl" }, print = ci::eq{ a = cmd, b = "ctl" } }
         } else {
             return false
         }
@@ -105,7 +120,7 @@ namespace test_items {
     // Moves the pointer to the centre of the control tagged `tag` in the topmost shown panel that has it
     // (of its row `row`, when a list box and row >= 0), and clicks when asked. The events are the
     // platform's own (motion, then the button), so the hit test is the panels'.
-    fn point_at { mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device, tag: []u8, row: i32, click: bool, print: bool } {
+    fn point_at { mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device, tag: []u8, row: i32, like: []u8, click: bool, print: bool } {
         let ps = list::items{ list = ui.gui.panels }
         let mut i: usize = ps.len
         while i > 0 {
@@ -117,7 +132,22 @@ namespace test_items {
             let c = list::at{ list = p.controls, i = @as(usize, found) }
             let mut x = p.sx + c.x + c.w / 2
             let mut y = p.sy + c.y + c.h / 2
+            let mut row = row
+            if like.len > 0 {
+                row = -1
+                let mut k: usize = 0
+                while k < @as(usize, c.row_count) and row < 0 {
+                    if ingame::has_part{ s = c.rows[k].text, part = like } { row = @as(i32, k) }
+                    k = k + 1
+                }
+                if row < 0 {
+                    _ = @fmt(&w.io, "ctl: {} has no row like '{}'\n", tag, like)
+                    return
+                }
+            }
             if row >= 0 {
+                // A row below the box's edge is scrolled into view first (as the player's wheel or keys would).
+                if gui::row_rect{ g = &ui.gui, panel = p.id, tag, row } == null { gui::list_select{ g = &ui.gui, panel = p.id, tag, row } }
                 let r = gui::row_rect{ g = &ui.gui, panel = p.id, tag, row } ifnull {
                     _ = @fmt(&w.io, "ctl: {} row {} is not visible\n", tag, row)
                     return
