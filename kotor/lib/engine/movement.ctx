@@ -42,7 +42,7 @@ namespace movement {
         let range = math::max{ a = actions::float_param{ a, i = 2 }, b = 0.1 }
         let timeout = actions::float_param{ a, i = 4 }
         let now = clock::now_ms{ c = w.clock }
-        if timeout > 0.0 and @as(f32, now - a.started) > timeout * 1000.0 {
+        if timeout > 0.0 and @as(f32, clock::elapsed_since{ now, then = a.started }) > timeout * 1000.0 {
             // Force moves jump when they time out (movement.md 3.2, step 4).
             stop{ &w, id }
             place{ &w, id, at = goal }
@@ -176,7 +176,7 @@ namespace movement {
         }
         if best == obj::INVALID { return false }
         // Told at most once a second; the move fails every time it is stopped by a closed door.
-        if c.blocked_ms != 0 and now - c.blocked_ms < 1000 { return true }
+        if c.blocked_ms != 0 and clock::elapsed_since{ now, then = c.blocked_ms } < 1000 { return true }
         c.blocked_ms = if now == 0 { 1 } else { now }
         events::post{ &w, delay_ms = 0, caller = best, target = id, payload = events::Payload::script{ e = events::script_event{ kind = events::PATH_BLOCKED, object = best } } }
         return true

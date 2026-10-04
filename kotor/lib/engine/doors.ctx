@@ -147,13 +147,13 @@ namespace doors {
             return actions::Status::running
         }
         // The player's own character is heard picking the lock a quarter second in (actions.md 3.9).
-        if a.phase == 2 and now - a.started >= 250 {
+        if a.phase == 2 and clock::elapsed_since{ now, then = a.started } >= 250 {
             a.phase = 3
             if is_player_side{ w = &w, id } {
                 outbox::post{ out = &w.out, note = outbox::Note::play_sound{ name = resref::truncate{ name = "gui_lockpick" }, object = id, position = me.position, positional = false } }
             }
         }
-        if now - a.started < 1500 { return actions::Status::running }
+        if clock::elapsed_since{ now, then = a.started } < 1500 { return actions::Status::running }
         world::set_animation{ o = me, id = obj::ANIM_STAND, speed = 1.0 }
         let mut opens = use_key{ &w, who = id, target }
         if not opens {
@@ -198,7 +198,7 @@ namespace doors {
             world::set_animation{ o = me, id = animname::ROW_BASE + (if o.kind == obj::Kind::door { @as(u32, 47) } else { @as(u32, 48) }), speed = 1.0 }
             return actions::Status::running
         }
-        if now - a.started < 1500 { return actions::Status::running }
+        if clock::elapsed_since{ now, then = a.started } < 1500 { return actions::Status::running }
         world::set_animation{ o = me, id = obj::ANIM_STAND, speed = 1.0 }
         let mut done = has_key{ &w, who = id, key = lock.key }
         if not done {

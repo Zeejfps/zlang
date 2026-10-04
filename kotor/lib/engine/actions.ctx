@@ -281,7 +281,7 @@ namespace actions {
     // WAIT (actions.md 3.10): seconds of world time since it started.
     fn wait { mut w: world::World, a: *mut Action } -> Status {
         let seconds = float_param{ a, i = 0 }
-        let elapsed = clock::now_ms{ c = w.clock } - a.started
+        let elapsed = clock::elapsed_since{ now = clock::now_ms{ c = w.clock }, then = a.started }
         if @as(f32, elapsed) < seconds * 1000.0 { return Status::running }
         return Status::done
     }
@@ -297,7 +297,7 @@ namespace actions {
         let mut length: f32 = 1000.0
         if animname::is_fire_forget{ w = &w, id = anim } { length = 1500.0 } else if duration > 0.0 { length = duration * 1000.0 }
         if speed != 0.0 and duration <= 0.0 { length = length / math::abs{ x = speed } }
-        let elapsed = @as(f32, clock::now_ms{ c = w.clock } - a.started)
+        let elapsed = @as(f32, clock::elapsed_since{ now = clock::now_ms{ c = w.clock }, then = a.started })
         if elapsed < length {
             world::set_animation{ o, id = anim, speed = if speed == 0.0 { 1.0 } else { speed } }
             return Status::running

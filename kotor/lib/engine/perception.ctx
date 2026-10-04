@@ -39,7 +39,7 @@ namespace perception {
         if c.sight_range <= 0.0 { ranges_of{ &w, c } }
         let now = clock::now_ms{ c = w.clock }
         let period = if c.in_combat { COMBAT_PASS_MS } else { FULL_PASS_MS }
-        let full = c.last_perception == 0 or now - c.last_perception >= period
+        let full = c.last_perception == 0 or clock::elapsed_since{ now, then = c.last_perception } >= period
         if full { c.last_perception = if now == 0 { 1 } else { now } }
         let all = list::items{ list = w.objects.all }
         let mut i: usize = 0
