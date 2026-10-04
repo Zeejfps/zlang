@@ -40,6 +40,8 @@ namespace hud {
         power_pick: i32,                    // the Force power chosen in the middle slot (a spells.2da row), kept from target to target
         refusal: f32,                       // seconds left of a refusal message in the message bar
         hover_slot: i32,                    // the target slot under the pointer, -1 none
+        look: i32,                          // the block's frames and health bar as set: 1 hostile, 2 poisoned, -1 not yet
+        arrows: [3]bool,                    // the target slots' arrows as the last list that had entries left them (see refresh_slot)
         pressed: u32,                       // the object under the pointer when the button went down
         sight_latch: bool,                  // an enemy in sight has been announced (autotarget.ctx)
         sight_quiet: f32,                   // seconds left before the latch lets go once none is in sight
@@ -90,7 +92,7 @@ namespace hud {
             block = [BlockPart{ index = -1, x = 0, y = 0 }; 16],
             minimap = open_minimap{ &g, &w, &dev, panel },
             font = gui::font_slot{ &g, fs = &w.fs, &dev, name = "dialogfont10x10" }, combat = false, combat_message = 0.0, notify = [0.0; 9], notify_shown = [false; 9],
-            shown_target = obj::INVALID, lists = [empty_list{}; 3], power_pick = -1, refusal = 0.0, hover_slot = -1, pressed = obj::INVALID, sight_latch = false, sight_quiet = 0.0, target_lost = 0.0, move_speed = 0.0, moving_for = 0.0, looking = false, swing_to = obj::INVALID, alternate = false, trans_panel = 0, trans_object = obj::INVALID,
+            shown_target = obj::INVALID, lists = [empty_list{}; 3], power_pick = -1, refusal = 0.0, hover_slot = -1, look = -1, arrows = [true; 3], pressed = obj::INVALID, sight_latch = false, sight_quiet = 0.0, target_lost = 0.0, move_speed = 0.0, moving_for = 0.0, looking = false, swing_to = obj::INVALID, alternate = false, trans_panel = 0, trans_object = obj::INVALID,
             projector = Projector{ vp = math::mat4::identity{}, eye = math::vec3::zero{}, w = 1.0, h = 1.0 },
             floating = new_floating{ &g, &w, &dev },
         }
@@ -99,6 +101,9 @@ namespace hud {
             gui::set_visible{ &g, panel, tag = STARTS_HIDDEN[i], visible = false }
             i = i + 1
         }
+        // The action slots' down arrows are the up arrow turned half way round (CSWGuiActionSlot::Init).
+        turn_down_arrows{ &g, panel }
+        adopt_slot_parts{ &g, panel }
         // The pause toggle and the menu buttons stay; the party widgets hide until a member fills them.
         hide_slots{ &g, panel }
         i = 0
@@ -143,6 +148,32 @@ namespace hud {
 
     // The self action slots (four) and their arrows and icons, all hidden until a list fills one.
     const SLOT_TAGS: [4][]u8 = ["BTN_ACTION", "BTN_ACTIONUP", "BTN_ACTIONDOWN", "LBL_ACTION"]
+
+    // The down arrows (BTN_ACTIONDOWN0..3, BTN_TARGETDOWN0..2) use the same picture as the up arrows, turned 180 degrees.
+    fn turn_down_arrows { mut g: gui::Gui, panel: u32 } {
+        let mut buf: [32]u8
+        let mut n: usize = 0
+        while n < 4 {
+            gui::set_fill_turns{ &g, panel, tag = tag_n{ into = buf[..], prefix = "BTN_ACTIONDOWN", n }, turns = 2 }
+            if n < 3 { gui::set_fill_turns{ &g, panel, tag = tag_n{ into = buf[..], prefix = "BTN_TARGETDOWN", n }, turns = 2 } }
+            n = n + 1
+        }
+    }
+
+    // The target slots' frame is the parent of its icon and arrows (CSWGuiActionSlot::Init, AddChild), so the
+    // pointer on any of them lights the frame.
+    fn adopt_slot_parts { mut g: gui::Gui, panel: u32 } {
+        let mut a: [24]u8
+        let mut b: [24]u8
+        let mut n: usize = 0
+        while n < 3 {
+            let frame = tag_n{ into = a[..], prefix = "BTN_TARGET", n }
+            gui::set_parent{ &g, panel, tag = tag_n{ into = b[..], prefix = "BTN_TARGETUP", n }, parent = frame }
+            gui::set_parent{ &g, panel, tag = tag_n{ into = b[..], prefix = "BTN_TARGETDOWN", n }, parent = frame }
+            gui::set_parent{ &g, panel, tag = tag_n{ into = b[..], prefix = "LBL_TARGET", n }, parent = frame }
+            n = n + 1
+        }
+    }
 
     fn hide_slots { mut g: gui::Gui, panel: u32 } {
         let mut buf: [32]u8

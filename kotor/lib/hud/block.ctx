@@ -3,49 +3,96 @@
 // HUD file at (0, 0); each frame they are moved as a whole to the object's head.
 namespace hud {
     const BLOCK_W: i32 = 200
-    const BLOCK_H: i32 = 96
+    const BLOCK_H: i32 = 94             // the slots' bottom edge in the file (top 35 + height 59)
+    const BAR_H: i32 = 33               // the health bar's (top 27 + height 6)
 
     // dialog.tlk: the target slots' tooltips (Activate Left, Middle, Right Action).
     const SLOT_TIPS: [3]u32 = [48303, 48307, 48311]
 
-    // The name of the hovered slot's selected entry in the description label above the self slots
-    // (SetActionDescription 0x00685560); hidden when the pointer is on no target slot.
-    fn show_slot_description { mut h: Hud, mut g: gui::Gui, mut w: world::World } {
+    // The block's name bar: the target's name, or the selected entry's name while the pointer is on one of the
+    // slots (FUN_00685cb0 0x00685cb0; the self slots' description label is the other slots' own).
+    fn block_name { mut h: Hud, mut w: world::World, id: u32 } -> []u8 {
         let k = h.hover_slot
-        let l = if k >= 0 and k < 3 { h.lists[@as(usize, k)] } else { empty_list{} }
-        let shown = l.count > 0
-        gui::set_visible{ &g, panel = h.panel, tag = "LBL_ACTIONDESC", visible = shown }
-        gui::set_visible{ &g, panel = h.panel, tag = "LBL_ACTIONDESCBG", visible = shown }
-        if not shown { return }
-        let e = l.entries[l.selected]
-        let name = if e.item != obj::INVALID { name_of{ w = &w, id = e.item } } else { world::string_by_strref{ w = &w, strref = e.strref } }
-        gui::set_text{ &g, panel = h.panel, tag = "LBL_ACTIONDESC", text = name } iferr {}
+        if k >= 0 and k < 3 and h.lists[@as(usize, k)].count > 0 {
+            let l = &h.lists[@as(usize, k)]
+            let e = l.entries[l.selected]
+            if e.item != obj::INVALID { return name_of{ w = &w, id = e.item } }
+            return world::string_by_strref{ w = &w, strref = e.strref }
+        }
+        return name_of{ w = &w, id }
     }
 
-    // The picture and the tooltip of slot `k` from its list's selected entry.
+    fn show_slot_description { mut h: Hud, mut g: gui::Gui, mut w: world::World } {
+        if h.shown_target == obj::INVALID { return }
+        gui::set_text{ &g, panel = h.panel, tag = "LBL_NAME", text = block_name{ &h, &w, id = h.shown_target } } iferr {}
+    }
+
+    // Whether `id` carries a poison effect (the health bar turns green).
+    fn is_poisoned { w: *world::World, id: u32 } -> bool {
+        let o = world::object{ w, id } ifnull { return false }
+        if o.kind != obj::Kind::creature { return false }
+        let f = fight::of{ o } ifnull { return false }
+        return rules::has_effect_kind{ c = &f.c, kind = rules::fx::POISON }
+    }
+
+    // The pictures of the block that follow what the target is (UpdateReticles calls FUN_006859e0 for any target
+    // every frame): the slots' frames are red for a hostile target and blue otherwise (lbl_miscroll_h / _f), the
+    // health bar red, blue, or green when poisoned (enemy_bar / friend_bar / poison_bar).
+    fn set_look { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, id: u32 } {
+        let hostile = is_hostile{ w = &w, id }
+        let poisoned = is_poisoned{ w = &w, id }
+        let look: i32 = (if hostile { 1 } else { 0 }) + (if poisoned { 2 } else { 0 })
+        if look == h.look { return }
+        h.look = look
+        let mut buf: [24]u8
+        let frame: []u8 = if hostile { "lbl_miscroll_h" } else { "lbl_miscroll_f" }
+        let mut k: usize = 0
+        while k < 3 {
+            gui::set_fill{ &g, fs = &w.fs, &dev, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = k }, name = frame }
+            k = k + 1
+        }
+        let bar: []u8 = if poisoned { "poison_bar" } else if hostile { "enemy_bar" } else { "friend_bar" }
+        gui::set_fill{ &g, fs = &w.fs, &dev, panel = h.panel, tag = "PB_HEALTH", name = bar }
+    }
+
+    // Whether any of the three lists has a choice. Then all three slots are drawn, an empty one as a blank frame;
+    // with none, only the name and the health bar (the block's viewport ends at the slots' bottom edge or at the
+    // health bar's, CSWGuiTargetInfo FUN_00686090 0x00686090).
+    fn has_slots { h: *Hud } -> bool {
+        return h.lists[0].count + h.lists[1].count + h.lists[2].count > 0
+    }
+
+    // The picture and the tooltip of slot `k` from its list's selected entry. The frame shows whenever any slot
+    // has a choice; the arrows are CSWGuiActionSlot::SetState's: set from "more than one choice" when the list
+    // has any, left as they were when it has none (they start shown, so a blank slot beside a full one has its
+    // arrows, until a slot with a single choice has hidden them).
     fn refresh_slot { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, k: usize } {
         let mut buf: [24]u8
         let l = &h.lists[k]
         let has = l.count > 0
-        let tag_btn = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = k }
-        gui::set_visible{ &g, panel = h.panel, tag = tag_btn, visible = has }
-        gui::set_visible{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = k }, visible = has }
-        let arrows = l.count > 1
+        if has { h.arrows[k] = l.count > 1 }
+        let drawn = has_slots{ &h }
+        gui::set_visible{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = k }, visible = drawn }
+        gui::set_visible{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = k }, visible = drawn }
+        let arrows = drawn and h.arrows[k]
         gui::set_visible{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "BTN_TARGETUP", n = k }, visible = arrows }
         gui::set_visible{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "BTN_TARGETDOWN", n = k }, visible = arrows }
-        if not has { return }
+        let tip = world::string_by_strref{ w = &w, strref = SLOT_TIPS[k] }
+        gui::set_tooltip{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = k }, text = tip } iferr {}
+        gui::set_tooltip{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = k }, text = tip } iferr {}
+        let tag_icon = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = k }
+        if not has {
+            gui::clear_picture{ &g, panel = h.panel, tag = tag_icon }
+            return
+        }
         let e = l.entries[l.selected]
         let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name = e.icon[..e.icon_len] }
-        let tag_icon = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = k }
         if img.ok { gui::set_picture{ &g, panel = h.panel, tag = tag_icon, texture = img.tex, w = img.w, h = img.h } } else { gui::clear_picture{ &g, panel = h.panel, tag = tag_icon } }
         // An entry that cannot be used now is dimmed (alpha 0.25 in the original).
         if gui::find_control{ &g, panel = h.panel, tag = tag_icon } is some{ value = c } {
             c.border.tinted = not e.usable
             c.border.color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = 0.25 }
         }
-        let tip = world::string_by_strref{ w = &w, strref = SLOT_TIPS[k] }
-        gui::set_tooltip{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = k }, text = tip } iferr {}
-        gui::set_tooltip{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = k }, text = tip } iferr {}
         if h.hover_slot == @as(i32, k) { show_slot_description{ &h, &g, &w } }
     }
 
@@ -59,13 +106,13 @@ namespace hud {
         let mut middle = h.lists[1]
         split_mine{ left = &h.lists[0], middle = &middle, w = &w, id }
         h.lists[1] = middle
-        let name = name_of{ w = &w, id }
-        gui::set_text{ &g, panel = h.panel, tag = "LBL_NAME", text = name } iferr {}
+        gui::set_text{ &g, panel = h.panel, tag = "LBL_NAME", text = block_name{ &h, &w, id } } iferr {}
         let mut k: usize = 0
         while k < 3 {
             refresh_slot{ &h, &g, &w, &dev, k }
             k = k + 1
         }
+        set_look{ &h, &g, &w, &dev, id }
         gui::set_visible{ &g, panel = h.panel, tag = "LBL_NAMEBG", visible = true }
         gui::set_visible{ &g, panel = h.panel, tag = "LBL_NAME", visible = true }
         let o = world::object{ w = &w, id } ifnull { return }
@@ -152,14 +199,21 @@ namespace hud {
             } else if not middle {
                 // Only the powers changed (Force points spent or regained): the other slots keep their choice.
                 h.lists[1] = middle_actions{ h = &h, w = &w, id = w.target }
-                refresh_slot{ &h, &g, &w, &dev, k = 1 }
+                // An empty middle list may be the last list with a choice, or the first: all three frames follow.
+                let mut k: usize = 0
+                while k < 3 {
+                    refresh_slot{ &h, &g, &w, &dev, k }
+                    k = k + 1
+                }
             }
+            set_look{ &h, &g, &w, &dev, id = w.target }
         }
         let p = gui::find_panel{ &g, id = h.panel } ifnull { return }
         // The block hangs 32 pixels over the point the reticle is centred on (CSWGuiTargetInfo 0x00686090).
         let at = aim_point{ h = &h, w = &w, o = target_object, b = on }
         let mut x0 = @as(i32, at.x) - BLOCK_W / 2
-        let mut y0 = @as(i32, at.y) - 32 - BLOCK_H
+        // The viewport reaches down to the slots' bottom edge when a slot has a choice, else to the health bar's.
+        let mut y0 = @as(i32, at.y) - 32 - (if has_slots{ &h } { BLOCK_H } else { BAR_H })
         if x0 > g.ui_w - BLOCK_W { x0 = g.ui_w - BLOCK_W }
         if x0 < 0 { x0 = 0 }
         if y0 < 4 { y0 = 4 }
@@ -304,7 +358,10 @@ namespace hud {
             let mut over: i32 = -1
             let mut s: usize = 0
             while s < 3 {
-                if slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = s } } or slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = s } } { over = @as(i32, s) }
+                // Any of the slot's four controls counts (FUN_00685840 asks each one's hilight flag).
+                let on_part = slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = s } } or slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = s } } or
+                    slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "BTN_TARGETUP", n = s } } or slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "BTN_TARGETDOWN", n = s } }
+                if on_part { over = @as(i32, s) }
                 s = s + 1
             }
             if over < 0 { return false }

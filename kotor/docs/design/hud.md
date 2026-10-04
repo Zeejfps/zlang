@@ -63,7 +63,13 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
   Models carry no usable bounds (the compiler's default box), so the pick boxes are ours: creature height
   scaled by `PERSPACE`, typical door and placeable sizes. Slot 1 holds, on a foe, the leader's best Critical
   Strike / Flurry / Power Attack (or Power Blast / Rapid Shot / Sniper Shot with a ranged weapon) and Attack
-  (`attack_slot`), else the default actions; slot 2 the hostile Force powers; slot 3 the party's grenades. A
+  (`attack_slot`), else the default actions; slot 2 the hostile Force powers; slot 3 the party's grenades. **Drawing**
+  (`block.ctx`, `refresh_slot`, `set_look`; re/gui.md "The target block's drawing"): when any slot has a choice all three
+  frames are drawn and an empty one is a blank frame; with none, only the name and the health bar (the block hangs 33
+  pixels high instead of 94 over the reticle). The frames are red (`lbl_miscroll_h`) on a hostile target and blue
+  (`_f`) otherwise, the health bar `enemy_bar` / `friend_bar` / green `poison_bar`; the arrows start shown and a slot
+  with no choice leaves them as they were; the down arrows are the up arrow turned 180 degrees (`gui::set_fill_turns`,
+  also the self slots'); the frame is the parent of its icon and arrows, so the pointer on any lights it yellow. A
   click on the target and R do the default list's first action (plain Attack on a foe).
 - **Combat** (`combat.ctx`): while the leader's `in_combat` flag is set the combat bar (the round
   being fought and up to three waiting fighting orders, each with its feat's, item's or power's
@@ -96,7 +102,7 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
   known power of the line with the highest priority, those that bar the target's race (`Exclusion`) left out. An
   entry the leader cannot pay for or wear dims and, pressed, says why in the message bar for five seconds
   (`hud::use_slot`, `say_reason`); the choice stays chosen from target to target (`power_pick`); hovering a slot
-  names its entry above the self slots (shared with `selfslots`). The cast is `rt_talent::queue_cast`, so the
+  names its entry in the block's name bar (the self slots' hover uses the label above them). The cast is `rt_talent::queue_cast`, so the
   key `2`, a click and the arrows are tested like any other input (`ui fclick`, `ui key 2`).
 - **Stealth toggle** `TB_STEALTH` (lib/hud/stealth.ctx, lib/ingame/stealth_ui.ctx): shown while the leader
   can hide, checked while it does; a click or G toggles it, through the solo-mode box when companions are

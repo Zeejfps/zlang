@@ -169,7 +169,7 @@ namespace gui {
             let fc = mul_alpha{ c = tint, a = a_fill }
             let style = if override.ok { FILL_STRETCHED } else { b.fill_style }
             if style == FILL_STRETCHED {
-                put_piece{ &frame, img = fill, grid, x0 = @as(f32, ax), y0 = @as(f32, ay), x1 = @as(f32, ax + aw), y1 = @as(f32, ay + ah), turns = 0, color = fc, clip }
+                put_piece{ &frame, img = fill, grid, x0 = @as(f32, ax), y0 = @as(f32, ay), x1 = @as(f32, ax + aw), y1 = @as(f32, ay + ah), turns = if override.ok { 0 } else { b.fill_turns & 3 }, color = fc, clip }
             } else if style == FILL_CENTRED {
                 let mut tw = @as(i32, fill.w)
                 let mut th = @as(i32, fill.h)

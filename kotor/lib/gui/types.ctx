@@ -56,6 +56,7 @@ namespace gui {
         present: bool,
         corner: Img, edge: Img, fill: Img,
         fill_style: i32,
+        fill_turns: i32,                // the stretched fill turned this many quarter turns (the HUD's down arrows are the up arrow turned 180 degrees)
         dimension: i32,
         inner_offset: i32,
         color: render::Color,           // a tint; untinted when `tinted` is false

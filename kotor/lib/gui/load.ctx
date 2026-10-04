@@ -110,7 +110,7 @@ namespace gui {
 
     fn no_border {} -> Border {
         return Border{
-            present = false, corner = no_img{}, edge = no_img{}, fill = no_img{}, fill_style = FILL_STRETCHED,
+            present = false, corner = no_img{}, edge = no_img{}, fill = no_img{}, fill_style = FILL_STRETCHED, fill_turns = 0,
             dimension = 0, inner_offset = 0, color = white_color{}, tinted = false, pulsing = 0,
         }
     }

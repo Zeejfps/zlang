@@ -1201,6 +1201,32 @@ is the item's with bit 0x40000000, its target the leader, its count the stack ("
 is never dimmed. Its callback (`0x0060f590`) sends input 9 (`0x00677bd0`): the item, the leader as the
 target and a zero point, which UseItem turns into SETTRAP ([actions.md](actions.md) 3.14). (high)
 
+##### The target block's drawing
+
+`CSWGuiTargetInfo::Render` (`0x00685ed0`) pushes a viewport over the block's rectangle and draws, in this order, the
+name background, the health background, the name label, the health bar, then each of the three slots
+(`CSWGuiActionSlot::Render` `0x00685870`: frame, up arrow, down arrow, icon, each only if its visible flag is set).
+`FUN_00686090` sets the rectangle every frame: its height is the first slot's `top + height` (35 + 59 = 94) when any of
+the three lists has an entry, else the health bar's `top + height` (27 + 6 = 33), its bottom 32 pixels above the point
+the reticle hangs from, so a target with nothing to offer shows only the name and the bar, closer to the reticle. The
+slots are never hidden one by one: `Refresh` (`0x00689410`, every frame, with a null target too) calls
+`CSWGuiActionSlot::SetState` (`0x00689280`) per slot, and an empty list only blanks the icon (`SetFill("")`) while a
+list with entries sets the arrows' visible bit to "more than one entry". The arrows start visible (a control's
+constructor sets the visible bits), so an empty slot is a blank frame, with its arrows unless an earlier slot with a
+single entry hid them. (high)
+
+`FUN_006859e0` (called by `UpdateReticles` for any target, every frame) sets the three frames' BORDER fill to `lbl_miscroll_h`
+(red) when the reticle is the hostile one and `lbl_miscroll_f` (blue) otherwise, and the health bar's PROGRESS fill to
+`ENEMY_BAR` / `FRIEND_BAR`, or `POISON_BAR` when the creature is poisoned (`creature+0x9e0`): `enemy_bar` is red,
+`friend_bar` blue, `poison_bar` green. The combat reticle swap is the reticle's only combat change; nothing tints the slots
+for combat mode. The hilight border stays `lbl_miscroll_hi` (yellow). (high)
+
+`CSWGuiActionSlot::Init` (`0x0068b9d0`, self and target slots) writes 180.0 into the fill rotation (border `+0x1c`) of the
+down button's BORDER and HILIGHT, so a down arrow is `lbl_miarr_1` / `_2` drawn half a turn round; for a target slot
+(`bTarget`) it also makes the frame the parent of the other three (`AddChild`), so the frame lights when the pointer is on
+any of them. `FUN_00685cb0` puts the name of the hovered slot's selected entry in `LBL_NAME` (the creature's name when no
+slot is hovered), not in `LBL_ACTIONDESC`, which belongs to the self slots (`OnSelfActionHilight`). (high)
+
 Clicking a self slot (`UseSelfAction` `0x0068ad60`): if the entry is not usable, its reason code
 picks a message shown for 5 s in the combat message bar: 1 "Force Depleted" (38613), 2
 "Restricted by Armor" (38614), 3 "Missing Item" (38615), 4 "Target too Close" (42422), 5 "Full
