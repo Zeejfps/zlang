@@ -953,18 +953,25 @@ namespace check {
         let rp = cb_hit{ tables, atk = &a, def = &red, seed = 777, critical = false }
         cb_eq{ &io, &r, name = "reduction: the best enhancement is the power", got = rp.power, want = 3 }
         cb_eq{ &io, &r, name = "reduction: power 3 passes a +2 reduction", got = rp.weapon_damage, want = raw }
-        // doors and placeables have no mitigation here
+        // doors and placeables: the object's Hardness is a resistance against every type, nothing else mitigates
         cb_check_door{ &io, &r, tables, a = &a }
     }
 
     fn cb_check_door { mut io: Io, mut r: Report, tables: *rules::Tables, a: *rules::Creature } {
-        let mut d: rules::Creature
-        cb_fighter{ tables, c = &d, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
-        cb_effect{ tables, c = &d, e = rules::fx::make_damage_immunity_increase{ types = rules::dmg::BLASTER, percent = 100 } }
         let mut door = rules::make_situation{}
         door.target_object = true
-        let x = cb_dmg{ tables, atk = a, def = &d, sit = &door, seed = 777, idx = 0, feat = 0, critical = false, sneak = false, simulate = false }
-        cb_eq{ &io, &r, name = "door: no mitigation", got = x.weapon_damage, want = x.weapon_raw }
+        // a stand-in with no Hardness takes the whole hit
+        let mut plain: rules::Creature
+        cb_fighter{ tables, c = &plain, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        let x = cb_dmg{ tables, atk = a, def = &plain, sit = &door, seed = 777, idx = 0, feat = 0, critical = false, sneak = false, simulate = false }
+        cb_eq{ &io, &r, name = "door: no hardness, no mitigation", got = x.weapon_damage, want = x.weapon_raw }
+        // Hardness 5 (fx type 2, every damage type, no limit) comes off each hit and never goes below 0
+        let mut hard: rules::Creature
+        cb_fighter{ tables, c = &hard, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_effect{ tables, c = &hard, e = rules::fx::make_damage_resistance{ types = 0x3fff, amount = 5, limit = 0 } }
+        let y = cb_dmg{ tables, atk = a, def = &hard, sit = &door, seed = 777, idx = 0, feat = 0, critical = false, sneak = false, simulate = false }
+        cb_eq{ &io, &r, name = "door: hardness 5 comes off the hit", got = y.weapon_damage, want = if x.weapon_raw - 5 < 0 { 0 } else { x.weapon_raw - 5 } }
+        cb_eq{ &io, &r, name = "door: the hardness stays for the next hit", got = hard.nfx, want = 1 }
     }
 
     // ---- energy shields in an attack (rules.md 1.13, combat.md 4.6)

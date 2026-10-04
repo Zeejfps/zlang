@@ -127,10 +127,12 @@ fight, the Dark Jedi, Malak's hangar). Alignment 97 to 98 (the reply "Take your 
   the Hawk (the original's `k_pebn_pophawk`); `ui stat` acts on the leader, so the order of the setup lines matters (the hit points after the classes);
   a mid-cut-scene checkpoint (a save while Malak and Bastila fight) loads without the scripted state and the player is killed: the chain saves
   before the hangar and plays the whole of it in one part.
-- **OPEN: door `Hardness` and `CurrentHP`.** The insane Rodians in the next cells break their doors in three hits (20 hit points, no hardness): the template
-  says `CurrentHP` 60 and `Hardness` 5 (`lev_cell010.utd`; gff-templates.md: damage reduction against physical attacks); the engine reads `HP` only for a door
-  and ignores `Hardness` (`fight::damage_object`). Not fixed (door damage is the combat lead's); in the original they do not get out (they bang on the
-  force fields), here Mission fights them through the opened cell door.
+- **Fixed: door `Hardness` and `CurrentHP`.** The insane Rodians in the next cells broke their doors in three hits: the engine read `HP` only, and the template
+  says `HP` 20, `CurrentHP` 60, `Hardness` 5 (`lev_cell010.utd`). The original's `LoadDoor` (`0x0058a1f0`) holds `CurrentHP` to `HP` for a template load (20 here) and,
+  after the load, applies `Hardness` as a permanent DAMAGE_RESISTANCE effect against every damage type (`FUN_00589d40` for doors, `FUN_00584870` for placeables;
+  combat.md 6.6): every weapon hit loses `Hardness` points (`GetDamageRoll` runs the target's immunity, resistance and reduction on any target), never below 0, and a
+  Plot or Static door takes none. Now the same: Mission's 6-point hit does 1 damage to a cell door. The Rodians' own hits (7 to 16) still break a 20-point door in a
+  few rounds when they bash it; whether the original's Rodians bash theirs at all is the AI's business, not checked.
 - **Staging audit**: the audit (`stage_audit.py`) lists only cut-scene staging (Saul 10.7 m from the player in
   the torture room, the bridge talk 22 m, Bastila 31 m from Carth in the hangar finale, Mission 9 m and Canderous 12 m in the Hawk's hold): the data's.
 - **The light** of the deck and the hangar is the red emergency light of the data; not compared with the original.

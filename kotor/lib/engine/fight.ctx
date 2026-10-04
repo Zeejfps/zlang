@@ -1003,6 +1003,11 @@ namespace fight {
             if t.kind != obj::Kind::door and t.kind != obj::Kind::placeable { return }
             rules::recompute{ tables = w.rules, c = &stand_in }
             is_object = true
+            // The Hardness of its UTD / UTP: a permanent resistance against every damage type (0x3fff) that
+            // takes that much off each hit.
+            if t.hardness > 0 {
+                _ = rules::insert_sorted{ c = &stand_in, e = rules::fx::make_damage_resistance{ types = 0x3fff, amount = t.hardness, limit = 0 } }
+            }
         }
         // Face the target.
         let dir = math::vec3::sub{ a = t.position, b = o.position }

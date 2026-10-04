@@ -54,7 +54,10 @@
 // Decision: DAMAGE_REDUCTION power = the weapon's enhancement bonus 0..5 (the NWN meaning); 0
 //   unarmed. The exe passes an unread stack value there.
 // Decision: doors and placeables are targets with AttackSituation.target_object: defense 0, no
-//   deflection, no sneak attack, no mitigation or difficulty scaling, no critical immunity.
+//   deflection, no sneak attack, no difficulty scaling, no critical immunity. Their damage still
+//   goes through the target's immunity, resistance and reduction (GetDamageRoll calls them on any
+//   target): the stand-in defender the engine passes carries the object's Hardness as a
+//   damage resistance (UTD/UTP Hardness, applied at load as a permanent type 0x3fff resistance).
 // Decision: AC damage-type filters 0x4007 and the script's 0x2007 both mean "all damage types";
 //   the exe's 1/2/4 against weapon flags 0/1/2 index mismatch is reproduced.
 // Decision: effect damage bonuses add to the total (the exe stores their sum apart in the record);

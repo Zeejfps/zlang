@@ -385,7 +385,7 @@ namespace rules {
 
         // 8: the effect bonuses (pushed through the defender's immunity and resistance per slot)
         let vs = if sit.target_object { no_versus{} } else { versus_creature{ c = &def } }
-        let fxd = combat_sum_effect_damage{ tables, &rng, atk, &def, &ev, vs, wtype = v.wtype, mult, mitigate = not sit.target_object, simulate }
+        let fxd = combat_sum_effect_damage{ tables, &rng, atk, &def, &ev, vs, wtype = v.wtype, mult, mitigate = true, simulate }
         r.effect_plus = fxd.plus
         r.effect_minus = fxd.minus
 
@@ -393,11 +393,9 @@ namespace rules {
         if weapon_dmg < 1 { weapon_dmg = 1 }
         r.weapon_raw = weapon_dmg
         r.power = if weapon != null and armed { weapon_enhancement{ tables, item = weapon } } else { 0 }
-        let mut after = weapon_dmg
-        if not sit.target_object {
-            r.absorbed_immunity = weapon_dmg - apply_damage_immunity{ c = &def, amount = weapon_dmg, flags = r.weapon_flags }
-            after = mitigate_damage{ c = &def, amount = weapon_dmg, flags = r.weapon_flags, power = r.power, simulate, ev = &ev }
-        }
+        // (A door's or placeable's stand-in defender carries only its Hardness, as a damage resistance.)
+        r.absorbed_immunity = weapon_dmg - apply_damage_immunity{ c = &def, amount = weapon_dmg, flags = r.weapon_flags }
+        let after = mitigate_damage{ c = &def, amount = weapon_dmg, flags = r.weapon_flags, power = r.power, simulate, ev = &ev }
         r.weapon_damage = after
 
         // the record: the weapon's damage in its slot and the effect increases in theirs (trimmed
