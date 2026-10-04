@@ -1,0 +1,6 @@
+20 ui stat hp 5
+24 ui combat 1
+38 ui ctl BTN_ACTION1
+40 ui clickctl BTN_ACTION1
+42 ui hover
+50 ui hp

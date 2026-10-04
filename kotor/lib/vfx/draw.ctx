@@ -10,6 +10,7 @@ namespace vfx {
     const STREAK_WIDTH: f32 = 1.6
 
     fn draw { v: *Vfx, sc: *scene::Scene, mut frame: render::Frame, view: u32 } {
+        draw_beams{ v, &frame, view }
         let mut i: usize = 0
         while i < MAX_FX {
             let slot = i

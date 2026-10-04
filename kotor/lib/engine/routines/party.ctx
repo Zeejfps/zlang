@@ -177,11 +177,12 @@ namespace rt_party {
         try nwvm::push_int{ &vm, v = 0 }
     }
 
-    // void SetSoloMode(int bActivate): the flag (what it changes in play is movement's and the GUI's).
-    // GetSoloMode is creature.ctx's and answers 0 for now: it should read w.party.solo.
+    // void SetSoloMode(int bActivate) (0x00547ce0, SetSoloMode 0x00565500): the flag; turning it off
+    // takes the party out of stealth. What it changes in play is the party's scripts' (k_ai_master
+    // keeps companions from following the leader while GetSoloMode answers TRUE).
     fn set_solo_mode { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let on = try nwarg::int{ &vm, routine = nwscript::SetSoloMode, argc, i = 0 }
-        w.party.solo = on != 0
+        stealth::set_solo{ &w, on = on != 0 }
     }
 
     // ---- creatures of the slots
@@ -267,8 +268,12 @@ namespace rt_party {
         let linked = w.party.npcs[s]
         if linked != id and party::is_member{ w = &w, id = linked } { release_member{ &w, id = linked } }
         if not party::is_member{ w = &w, id } {
+            // The first companion to join a player who is hiding puts the party in solo mode, so
+            // the stealth goes on (AddPartyMember 0x00565620).
+            let alone = w.party.count <= 1
             if not party::add{ &w, id } { return false }
             join_party_side{ &w, o, c }
+            if alone and stealth::is_on{ w = &w, id = w.player } { w.party.solo = true }
         }
         w.party.npcs[s] = id
         o.ai_level = 4
@@ -279,6 +284,8 @@ namespace rt_party {
     // 2, nothing queued: it was following the leader).
     fn release_member { mut w: world::World, id: u32 } {
         party::remove{ &w, id }
+        // No one left to leave behind: solo mode ends (RemovePartyMember 0x00565560).
+        if w.party.count <= 1 { w.party.solo = false }
         let o = world::object{ w = &w, id } ifnull { return }
         o.ai_level = 2
         actions::clear_all{ &w, id }

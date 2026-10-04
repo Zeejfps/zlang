@@ -41,6 +41,8 @@ namespace ai {
             }
         }
         perception::update{ &w, id }
+        traps::search{ &w, id }
+        stealth::update_xp{ &w, id }
         fight::update{ &w, id }
         // A party member who is down does nothing until it gets up: OnApplyDeath clears its actions
         // and the state flags every action needs (combat.md 8.2), so what its heartbeat queues (the

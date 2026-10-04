@@ -112,6 +112,21 @@ Blaster rifles shoot red bolts, ion weapons blue, disruptors white (ammunitionty
 - A creature that made a **cutscene attack** keeps its weapon up for 6 s (the ready stance),
   and a killed creature plays its `die` animation to the end before `dead` (3 s).
 
+## Force powers' presentation
+
+- **Cast**: `fight::spell_visuals` posts the conjure and cast models and, as the cast starts, the spell's cast sound
+  (`castsound`, `v_useforce`) at the caster; the impact script runs then (docs/mechanics/force.md).
+- **Duration visuals** (`visual_hold{ effect, target }` / `visual_release`): a visualeffects.2da row with Type_FD D
+  (the stun's stars, VFX_DUR_STUN 2002) is a model riding the object's `Impact` node with its animation looping,
+  kept until its effect leaves (`vfx::spawn_hold`, `vfx::release`); those without a model (programmed effects:
+  shields, auras, the hold cage, speed streaks) show nothing.
+- **Beams** (`lib/vfx/beam.ctx`, note `beam{ style, source, target, part, seconds }`, posted when an `EffectBeam` leaf
+  is applied): a jagged chain of `fx_lightning` streaks from the effector's hand (`handconjure`) to the target's
+  `impact_bolt`, reshaped every 45 ms, a wide dim glow under a narrow bright core, tinted by the beam's id
+  (lightning and shock blue-white, drain life and the death field red, the droid powers cyan, the storm purple).
+- **Thrown saber** (`saber_leg{ item, from, to, flight_ms }`): the saber item's model flies each leg as a bolt
+  (without its blade).
+
 ## Adding an effect later
 
 - A Force power or item ability: its `spells.2da` row names models (`conjheadvisual`,

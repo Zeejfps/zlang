@@ -52,6 +52,8 @@ namespace equip_panel {
 
     // The panel was just added, or the leader changed and it must be filled again.
     fn open { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> ! {
+        // Another member became the leader while a choice was open: the first one's worn items come back.
+        if s.selecting { restore{ &s, &w } }
         s.who = party::leader{ w = &w }
         s.selecting = false
         s.picked = NO_PICK

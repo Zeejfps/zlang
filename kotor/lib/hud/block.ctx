@@ -5,6 +5,23 @@ namespace hud {
     const BLOCK_W: i32 = 200
     const BLOCK_H: i32 = 96
 
+    // dialog.tlk: the target slots' tooltips (Activate Left, Middle, Right Action).
+    const SLOT_TIPS: [3]u32 = [48303, 48307, 48311]
+
+    // The name of the hovered slot's selected entry in the description label above the self slots
+    // (SetActionDescription 0x00685560); hidden when the pointer is on no target slot.
+    fn show_slot_description { mut h: Hud, mut g: gui::Gui, mut w: world::World } {
+        let k = h.hover_slot
+        let l = if k >= 0 and k < 3 { h.lists[@as(usize, k)] } else { empty_list{} }
+        let shown = l.count > 0
+        gui::set_visible{ &g, panel = h.panel, tag = "LBL_ACTIONDESC", visible = shown }
+        gui::set_visible{ &g, panel = h.panel, tag = "LBL_ACTIONDESCBG", visible = shown }
+        if not shown { return }
+        let e = l.entries[l.selected]
+        let name = if e.item != obj::INVALID { name_of{ w = &w, id = e.item } } else { world::string_by_strref{ w = &w, strref = e.strref } }
+        gui::set_text{ &g, panel = h.panel, tag = "LBL_ACTIONDESC", text = name } iferr {}
+    }
+
     // The picture and the tooltip of slot `k` from its list's selected entry.
     fn refresh_slot { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, k: usize } {
         let mut buf: [24]u8
@@ -26,9 +43,10 @@ namespace hud {
             c.border.tinted = not e.usable
             c.border.color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = 0.25 }
         }
-        let name = if e.item != obj::INVALID { name_of{ w = &w, id = e.item } } else { world::string_by_strref{ w = &w, strref = e.strref } }
-        gui::set_tooltip{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = k }, text = name } iferr {}
-        gui::set_tooltip{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = k }, text = name } iferr {}
+        let tip = world::string_by_strref{ w = &w, strref = SLOT_TIPS[k] }
+        gui::set_tooltip{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = k }, text = tip } iferr {}
+        gui::set_tooltip{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = k }, text = tip } iferr {}
+        if h.hover_slot == @as(i32, k) { show_slot_description{ &h, &g, &w } }
     }
 
     // Builds the block for a new target: its name, its health and the slots' lists.
@@ -38,6 +56,9 @@ namespace hud {
         // party's grenades (item_slots.ctx).
         h.lists[1] = middle_actions{ h = &h, w = &w, id }
         h.lists[2] = grenade_actions{ w = &w, target = id }
+        let mut middle = h.lists[1]
+        split_mine{ left = &h.lists[0], middle = &middle, w = &w, id }
+        h.lists[1] = middle
         let name = name_of{ w = &w, id }
         gui::set_text{ &g, panel = h.panel, tag = "LBL_NAME", text = name } iferr {}
         let mut k: usize = 0
@@ -51,6 +72,22 @@ namespace hud {
         let shows_health = o.hp_max > 0
         gui::set_visible{ &g, panel = h.panel, tag = "LBL_HEALTHBG", visible = shows_health }
         gui::set_visible{ &g, panel = h.panel, tag = "PB_HEALTH", visible = shows_health }
+    }
+
+    // What the left slot offers for `id`: the default actions, less a mine's Recover (split_mine).
+    fn left_actions { w: *world::World, id: u32 } -> ActionList {
+        let mut l = attack_slot{ w, id }
+        let mut middle = empty_list{}
+        split_mine{ left = &l, middle = &middle, w, id }
+        return l
+    }
+
+    // What the middle slot offers for `id`: the Force powers, or a mine's Recover (split_mine).
+    fn middle_list { h: *Hud, w: *world::World, id: u32 } -> ActionList {
+        let mut left = attack_slot{ w, id }
+        let mut middle = middle_actions{ h, w, id }
+        split_mine{ left = &left, middle = &middle, w, id }
+        return middle
     }
 
     // The middle slot: the leader's Force powers against a hostile creature, with the choice made
@@ -92,6 +129,10 @@ namespace hud {
             if h.shown_target != obj::INVALID {
                 hide_block{ &h, &g }
                 h.shown_target = obj::INVALID
+                if h.hover_slot >= 0 {
+                    h.hover_slot = -1
+                    show_slot_description{ &h, &g, &w }
+                }
             }
             return
         }
@@ -103,14 +144,22 @@ namespace hud {
         } else {
             // What the leader can do to the target changed under it (a lock picked or locked, a key found,
             // the last grenade thrown, Force points spent or regained, a power learned).
-            let first = same_actions{ a = attack_slot{ w = &w, id = w.target }, b = h.lists[0] }
-            let middle = same_actions{ a = middle_actions{ h = &h, w = &w, id = w.target }, b = h.lists[1] }
+            let first = same_actions{ a = left_actions{ w = &w, id = w.target }, b = h.lists[0] }
+            let middle = same_actions{ a = middle_list{ h = &h, w = &w, id = w.target }, b = h.lists[1] }
             let last = same_actions{ a = grenade_actions{ w = &w, target = w.target }, b = h.lists[2] }
-            if not first or not middle or not last { build_block{ &h, &g, &w, &dev, id = w.target } }
+            if not first or not last {
+                build_block{ &h, &g, &w, &dev, id = w.target }
+            } else if not middle {
+                // Only the powers changed (Force points spent or regained): the other slots keep their choice.
+                h.lists[1] = middle_actions{ h = &h, w = &w, id = w.target }
+                refresh_slot{ &h, &g, &w, &dev, k = 1 }
+            }
         }
         let p = gui::find_panel{ &g, id = h.panel } ifnull { return }
-        let mut x0 = @as(i32, on.top.x) - BLOCK_W / 2
-        let mut y0 = @as(i32, on.top.y) - BLOCK_H - 6
+        // The block hangs 32 pixels over the point the reticle is centred on (CSWGuiTargetInfo 0x00686090).
+        let at = aim_point{ h = &h, w = &w, o = target_object, b = on }
+        let mut x0 = @as(i32, at.x) - BLOCK_W / 2
+        let mut y0 = @as(i32, at.y) - 32 - BLOCK_H
         if x0 > g.ui_w - BLOCK_W { x0 = g.ui_w - BLOCK_W }
         if x0 < 0 { x0 = 0 }
         if y0 < 4 { y0 = 4 }
@@ -129,8 +178,28 @@ namespace hud {
         gui::set_value{ &g, panel = h.panel, tag = "PB_HEALTH", value = v.hp }
     }
 
-    // The reticle around the target: green for the friendly, red for the hostile, drawn under
-    // the panels.
+    // The reticle's side in GUI pixels (UpdateReticles 0x0068a310): the texture's own 64 within 5 m of the
+    // leader, then smaller in a straight line to 16 (a creature) or 32 (a door, placeable or mine) at 30 m
+    // and beyond. It does not depend on the object's size, only on how far the leader is.
+    fn reticle_side { distance: f32, creature: bool } -> f32 {
+        let far: f32 = if creature { 16.0 } else { 32.0 }
+        if distance >= 30.0 { return far }
+        if distance * distance <= 25.0 { return 64.0 }
+        // The original truncates (_ftol) the shrink to whole pixels.
+        return 64.0 - @as(f32, @as(i32, (distance - 5.0) * 0.04 * (64.0 - far)))
+    }
+
+    // The screen point a target's reticle and block hang from: where the scene found the model's head_g or
+    // lookathook node, else the middle of the object's box.
+    fn aim_point { h: *Hud, w: *world::World, o: *obj::Object, b: OnScreen } -> math::Vec2 {
+        if w.aim_id == o.id {
+            if project{ p = h.projector, at = w.aim } is some{ value = q } { return q }
+        }
+        return math::Vec2{ x = (b.x0 + b.x1) / 2.0, y = (b.y0 + b.y1) / 2.0 }
+    }
+
+    // The reticle around the target: blue for the friendly, red for the hostile, drawn under the panels,
+    // centred on the aim point.
     fn draw_reticle { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame } {
         if h.shown_target == obj::INVALID { return }
         let o = world::object{ w = &w, id = h.shown_target } ifnull { return }
@@ -138,9 +207,18 @@ namespace hud {
         let name: []u8 = if is_hostile{ w = &w, id = h.shown_target } { "hostilereticle2" } else { "friendlyreticle2" }
         let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name }
         if not img.ok { return }
-        let cx = (b.x0 + b.x1) / 2.0
-        let cy = (b.y0 + b.y1) / 2.0
-        let side = math::clamp{ x = math::max{ a = b.x1 - b.x0, b = b.y1 - b.y0 } * 1.3, lo = 40.0, hi = 220.0 }
+        let at = aim_point{ h = &h, w = &w, o, b }
+        let cx = at.x
+        let cy = at.y
+        let leader = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return }
+        let dx = leader.position.x - o.position.x
+        let dy = leader.position.y - o.position.y
+        let dz = leader.position.z - o.position.z
+        let side = reticle_side{ distance = math::sqrtf{ x = dx * dx + dy * dy + dz * dz }, creature = o.kind == obj::Kind::creature }
+        if w.log.trace and w.clock.frame % 4 == 0 {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "reticle {} {} m side {} px at {} {} of {} {}\n", o.tag, math::sqrtf{ x = dx * dx + dy * dy + dz * dz }, side, cx, cy, h.projector.w, h.projector.h)
+        }
         render::begin_ui{ &frame, width = h.projector.w, height = h.projector.h, target = null }
         render::draw_image{ &frame, rect = render::Rect{ x = cx - side / 2.0, y = cy - side / 2.0, w = side, h = side }, texture = img.tex, color = render::white{} }
     }
@@ -188,8 +266,21 @@ namespace hud {
 
     // What the block's buttons do. True when the event was one of theirs.
     fn block_event { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> bool {
-        if ev.kind != gui::EventKind::activate { return false }
         let mut buf: [24]u8
+        if ev.kind == gui::EventKind::hilight or ev.kind == gui::EventKind::unhilight {
+            // The pointer on a target slot names its selected entry above the self slots.
+            let mut over: i32 = -1
+            let mut s: usize = 0
+            while s < 3 {
+                if slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = s } } or slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = s } } { over = @as(i32, s) }
+                s = s + 1
+            }
+            if over < 0 { return false }
+            if ev.kind == gui::EventKind::hilight { h.hover_slot = over } else if h.hover_slot == over { h.hover_slot = -1 }
+            show_slot_description{ &h, &g, &w }
+            return true
+        }
+        if ev.kind != gui::EventKind::activate { return false }
         let mut k: usize = 0
         while k < 3 {
             // The icon label lies over the button and takes the pointer, so either one is the slot's.
@@ -222,6 +313,7 @@ namespace hud {
         h.pressed = obj::INVALID
         if id == obj::INVALID or id != began { return false }
         if id == w.target {
+            // The default action: entry 0 of BuildDefaultActions (a mine's Recover is in the middle slot).
             let l = default_actions{ w = &w, id }
             if l.count > 0 {
                 gui::play_sound{ &g, n = 6 }

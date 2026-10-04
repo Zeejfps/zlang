@@ -42,6 +42,7 @@ namespace scene {
         first: usize,                   // its parts: Scene.parts[first .. first + count], the root first
         count: usize,
         animation: u32,                 // the object's animation when last synced
+        cycles: f32,                    // and its anim_cycles (a walker's pace changes while the same cycle plays)
         state: u32,                     // a door's state, a placeable's animation, when last synced
         room: i32,                      // the room under it, -1 unknown
         creature_prefix: bool,          // S and L models name their animations with a `c` prefix
@@ -71,6 +72,7 @@ namespace scene {
         fog: render::Fog,
         drawn_rooms: u32,
         drawn_objects: u32,
+        look: Look,                     // a creature in stealth mode's texture (stealth_look.ctx)
     }
 
     fn make { arena: *mut arena::Arena, heap: *mut heap::Heap, scratch: alloc::Bytes, rm: res::Manager } -> Scene {
@@ -87,7 +89,7 @@ namespace scene {
             visuals = list::new(Visual, arena::Arena){ realloc = arena::alloc, heap = arena },
             by_id = map::new(u32, usize, arena::Arena){ realloc = arena::alloc, heap = arena, hash = map::hash_u32, eq = map::eq_u32 },
             time = 0.0, current_room = -1, ambient = math::Vec3{ x = 0.35, y = 0.35, z = 0.35 }, fog = render::no_fog{},
-            drawn_rooms = 0, drawn_objects = 0,
+            drawn_rooms = 0, drawn_objects = 0, look = no_look{},
         }
     }
 
@@ -243,6 +245,14 @@ namespace scene {
         return true
     }
 
+    // The length in seconds of animation `name` for a part's model (0 when the model's chain has none).
+    fn length_of { mut sc: Scene, mut w: world::World, part: usize, name: []u8 } -> f32 {
+        let p = part_at{ sc = &sc, i = part }
+        let model = loaded_at{ sc = &sc, i = p.loaded }.model
+        let b = binding_for{ &sc, &w, model, source = p.source, name } ifnull { return 0.0 }
+        return b.animation.length
+    }
+
     // ---- the area
 
     // The rooms of the area's layout, each with its model and looping animation.
@@ -310,6 +320,7 @@ namespace scene {
             i = i + 1
         }
         material::free_cache{ cache = &sc.materials, &dev }
+        sc.look = no_look{}
     }
 
     // ---- each frame
@@ -354,6 +365,7 @@ namespace scene {
             }
             let v = list::at{ list = sc.visuals, i = index }
             v.alive = true
+            if is_hiding{ o } { prepare_look{ &sc, &w, &dev } }
             visual::update{ &sc, &w, v, o, dt }
             o.dirty = 0
         }
@@ -364,6 +376,20 @@ namespace scene {
             if rooms[i].part >= 0 { advance_part{ &sc, &w, part = @as(usize, rooms[i].part), dt } }
             i = i + 1
         }
+        find_aim{ &sc, &w }
+    }
+
+    // Where the target's reticle hangs (UpdateReticles 0x0068a310 asks the client object for its screen
+    // position: a creature's head_g node, the lookathook of a door or placeable; the model's origin when it has
+    // none), left in w.aim for the HUD, which has no models.
+    fn find_aim { sc: *Scene, mut w: world::World } {
+        w.aim_id = obj::INVALID
+        let o = world::object{ w = &w, id = w.target } ifnull { return }
+        let mut m = hook_of{ sc, w = &w, id = o.id, hook = if o.kind == obj::Kind::creature { "head_g" } else { "lookathook" }, which = 0 }
+        if m == null { m = hook_of{ sc, w = &w, id = o.id, hook = "rootdummy", which = 0 } }
+        let found = m ifnull { return }
+        w.aim = math::mat4::get_translation{ m = found }
+        w.aim_id = o.id
     }
 
     fn advance_part { mut sc: Scene, mut w: world::World, part: usize, dt: f32 } {

@@ -15,7 +15,8 @@
 //     whose base item is medical (itemtype 45), droid repair (26) or a squad recovery kit (47);
 //   - items: the other carried items with such an ability the leader can use (stims, shields);
 //     grenades and the like (range L, M) are the target block's, not these;
-//   - mines: none yet: laying a mine needs the engine's trap action, which does not exist.
+//   - mines: the original's rule (0x00616520): trap kits (itemtype 28 with a Trap property) for a
+//     leader who can use Demolitions, named "<kit> (self)"; a click lays one (traps::lay_mine).
 // An entry shows dimmed with its reason when the leader cannot use it now: not enough Force
 // points, armour or a weapon the power forbids, a medical item at full vitality, a recovery kit
 // with the party unhurt, the leader dead.
@@ -62,6 +63,7 @@ namespace selfslots {
         blink: [4]f32,              // seconds left of each slot's blink
         hover: i32,                 // the slot under the pointer, -1 none
         shown_leader: u32,
+        labelled: bool,             // the description label shows one of these slots' entries
     }
 
     fn empty_entry {} -> Entry {
@@ -73,7 +75,7 @@ namespace selfslots {
     }
 
     fn new {} -> State {
-        return State{ slots = [empty_slot{}; 4], wait = 0.0, message = 0.0, blink = [0.0; 4], hover = -1, shown_leader = obj::INVALID }
+        return State{ slots = [empty_slot{}; 4], wait = 0.0, message = 0.0, blink = [0.0; 4], hover = -1, shown_leader = obj::INVALID, labelled = false }
     }
 
     // ---- the lists
@@ -140,29 +142,15 @@ namespace selfslots {
         return false
     }
 
-    // Which self slot lists the item, 0 for none (docs/re/gui.md "Action menus"; the original's test is
-    // 0x00616520, called for each of the party's items and for what is worn on the arms and belt):
-    // 1 for the medical ones (medpacs, recovery kits, droid repair kits: ItemType 45, 47, 26), 2 for
-    // stims (25) and for any item whose ability has `itemtargeting` 1 in spells.2da (disguises, energy
-    // shields, droid devices, plot serums), which are listed only while worn when their type is a droid
-    // utility, droid shield or forearm shield (12, 13, 20). Needs an ability with a use. A grenade is the
-    // target block's, not these.
-    fn slot_of_item { mut w: world::World, id: u32, worn: bool } -> usize {
-        let spell = items::ability_of{ w = &w, id }
-        if spell < 0 { return 0 }
-        let kind = items::base_int{ w = &w, id, column = "itemtype", fallback = 0 }
-        if kind == TYPE_MEDPAC or kind == TYPE_REPAIR_KIT or kind == TYPE_RECOVERY_KIT { return 1 }
-        if kind == TYPE_STIM { return 2 }
-        let targeted = twoda::get_int{ t = w.tables.spells, row = @as(usize, spell), column = "itemtargeting" } ifnull 0
-        if targeted != 1 { return 0 }
-        if (kind == 12 or kind == 13 or kind == 20) and not worn { return 0 }
-        return 2
+    // Which self slot lists the item for the leader, 0 for none: items::self_slot_of (the original's test).
+    fn slot_of_item { mut w: world::World, leader: u32, id: u32, worn: bool } -> usize {
+        return items::self_slot_of{ &w, who = leader, id, worn }
     }
 
     // One item's entry in its list, dimmed with the reason when the leader cannot use it now.
     fn add_item { mut w: world::World, leader: u32, id: u32, worn: bool, mut out: [4]Slot } {
-        let k = slot_of_item{ &w, id, worn }
-        if k == 0 or not items::can_use{ &w, who = leader, id } { return }
+        let k = slot_of_item{ &w, leader, id, worn }
+        if k == 0 or k == 3 { return }          // the mine slot is fill_mines' (the trap kits)
         let kind = items::base_int{ w = &w, id, column = "itemtype", fallback = 0 }
         let alive = not hud::is_down{ w = &w, id = leader }
         let mut reason = R_OK
@@ -196,11 +184,30 @@ namespace selfslots {
         }
     }
 
+    // Slot 3: the trap kits in the bag (0x006197d0 with 0x00616520: itemtype 28 with a Trap property,
+    // a leader who can use Demolitions and the item). Never dimmed: a kit that cannot be laid is not
+    // listed.
+    fn fill_mines { mut w: world::World, leader: u32, mut out: [4]Slot } {
+        if not traps::can_use_demolitions{ w = &w, who = leader } { return }
+        let ids = list::items{ list = w.bag }
+        let mut k: usize = 0
+        while k < ids.len {
+            let id = ids[k]
+            k = k + 1
+            // (CanUseItem passes for every kit: none has a limiting property, and items::can_use wants a CastSpell one.)
+            if not world::is_valid{ w = &w, id } or not traps::is_kit{ w = &w, item = id } { continue }
+            let mut buf: [40]u8
+            let icon = items::icon_name{ w = &w, id, into = buf[..] }
+            push{ sl = &out[3], id, icon, strref = 0, usable = true, reason = R_OK }
+        }
+    }
+
     // What the four lists are now for the leader.
     fn build { mut w: world::World, leader: u32, mut out: [4]Slot } {
         out = [empty_slot{}; 4]
         fill_powers{ w = &w, leader, out = &out }
         fill_items{ &w, leader, out = &out }
+        fill_mines{ &w, leader, out = &out }
     }
 
     // A number that changes when what a slot shows would.
@@ -261,12 +268,28 @@ namespace selfslots {
     fn show_description { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } {
         let k = s.hover
         let shown = k >= 0 and s.slots[@as(usize, k)].count > 0
+        // The label is shared with the target block's slots: only take it down when it was ours.
+        if not shown and not s.labelled { return }
+        s.labelled = shown
         gui::set_visible{ &g, panel, tag = "LBL_ACTIONDESC", visible = shown }
         gui::set_visible{ &g, panel, tag = "LBL_ACTIONDESCBG", visible = shown }
         if not shown { return }
         let sl = &s.slots[@as(usize, k)]
         let e = sl.entries[index_of{ sl, id = sl.selected }]
-        gui::set_text{ &g, panel, tag = "LBL_ACTIONDESC", text = entry_name{ &w, k = @as(usize, k), e } } iferr {}
+        // "Name (N)" for a stack of two or more (0x00686e20: the format "%s (%d)"); a mine's entry
+        // reads "<kit> (self)" before that (0x006193a0, dialog.tlk 38005).
+        let name = entry_name{ &w, k = @as(usize, k), e }
+        let stack = if k == 0 { 1 } else { items::stack_of{ w = &w, id = e.id } }
+        if stack > 1 or k == 3 {
+            let mut b = items::new_text{ w = &w }
+            defer list::free{ list = &b.bytes }
+            _ = @fmt(&b, "{}", name)
+            if k == 3 { _ = @fmt(&b, " ({})", world::string_by_strref{ w = &w, strref = 38005 }) }
+            if stack > 1 { _ = @fmt(&b, " ({})", stack) }
+            gui::set_text{ &g, panel, tag = "LBL_ACTIONDESC", text = utf8::view{ b }.bytes } iferr {}
+            return
+        }
+        gui::set_text{ &g, panel, tag = "LBL_ACTIONDESC", text = name } iferr {}
     }
 
     // ---- every frame
@@ -353,8 +376,11 @@ namespace selfslots {
         }
         let leader = party::leader{ w = &w }
         if k == 0 {
-            actions::clear_all{ &w, id = leader }
+            actions::clear_for_player{ &w, id = leader }
             rt_talent::queue_cast{ &w, me = leader, spell = @as(i32, e.id), target = leader, location = math::vec3::zero{}, cheat = 0, instant = 0, item = obj::INVALID }
+        } else if k == 3 {
+            // A mine is laid at the leader's feet (UseItem's trap branch, SETTRAP).
+            _ = traps::lay_mine{ &w, who = leader, item = e.id }
         } else {
             items::use_item{ &w, who = leader, item = e.id }
         }

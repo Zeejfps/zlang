@@ -65,16 +65,20 @@ namespace vfx {
         fx: [MAX_FX]Fx,
         time: f32,
         rng: u32,
+        beams: [12]Beam,                // lightning and the other beams (beam.ctx)
+        beam_tex: ?render::Texture,     // their streak texture, loaded with the first beam
         started: u32,                   // effects begun, for the report
         dropped: u32,                   // wanted while the pool was full
     }
 
     fn make {} -> Vfx {
-        return Vfx{ fx = [no_fx{}; MAX_FX], time = 0.0, rng = 0x2F6E2B1, started = 0, dropped = 0 }
+        return Vfx{ fx = [no_fx{}; MAX_FX], time = 0.0, rng = 0x2F6E2B1, beams = [no_beam{}; 12], beam_tex = null, started = 0, dropped = 0 }
     }
 
     // The scene was released: its parts and arrays are gone with the area's arena.
     fn reset { mut v: Vfx } {
+        v.beams = [no_beam{}; 12]
+        v.beam_tex = null
         let mut i: usize = 0
         while i < MAX_FX {
             v.fx[i] = no_fx{}
@@ -325,6 +329,7 @@ namespace vfx {
     // Moves every live effect on by `dt` seconds: its place, its animation, its particles.
     fn update { mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, dt: f32 } {
         v.time = v.time + dt
+        update_beams{ &v, sc, w, dt }
         let mut i: usize = 0
         while i < MAX_FX {
             let slot = i

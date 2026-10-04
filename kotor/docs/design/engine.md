@@ -403,12 +403,23 @@ path from `paths::plan` (the straight walk if clear, else A* over the area's PTH
 pulled, else the farthest clear point; movement.md 4). FOLLOW, FOLLOWLEADER and RANDOMWALK push a
 move, a wait and themselves in front, as actions.md 3.3 has it.
 
+**What a step costs** (*ours*). The planner and the walk ask `walkmap::step_to` the same question, by samples every
+0.15 m: the floor under each (an AABB tree per room) and whether a placed walkmesh blocks it. The placed walkmeshes
+(a hundred doors and placeables in a Taris area) each keep the bounds of their vertices, and a step first collects
+the few whose bounds it touches, so a long step in the open tests no faces at all. Two rooms' walkmeshes can leave a
+seam of a few centimetres between them: a creature standing at its edge fails every short step into it, where the
+planner's longer spacing steps over it, so it never moved and planned afresh every frame for ever (about 5 ms a frame
+for one creature, a few more such creatures in a run: the frame time of `tar_m04aa` and `tar_m05aa` rose tenfold).
+A failed step is therefore tried again as one 0.15 m leap with samples every 3 cm that lets a gap of no floor pass
+when a floor follows and nothing blocks (`walkmap::step_across`, used by `movement::move_to_point`).
+
 **Perception** (`perception`, gameloop.md 2.4): each creature checks the party every update and
 everyone in its area every 4 s (0.2 s in combat); seen = within ranges.2da's sight range with a
 clear line at eye height through the rooms' walkmeshes (LineOfSight materials), heard = within
 the hearing range. Changes post script event 1 (PERCEPTION) with what changed in `ints[0]`
 (1 seen, 2 heard, 4 vanished, 8 inaudible); the object's `ctx` keeps them for
-GetLastPerception*. Stealth and the rules' checks are HOOK(rules).
+GetLastPerception*. A creature in stealth mode is seen and heard only when the viewer wins the
+original's two contests (lib/engine/stealth.ctx, [mechanics/stealth.md](../mechanics/stealth.md)).
 
 ## The scene
 
@@ -597,7 +608,7 @@ each frame:
 - Ids from 1, not 0; event times as world ms; no AI time budget; delta clamped to 0.25 s; the
   internal animation id → name table; arrows also move the leader.
 - A door's `trans` plane is never drawn; PLAYANIMATION's fire-and-forget length is 1.5 s until
-  the server reads model animation lengths; perception has no stealth yet; the player faces its
+  the server reads model animation lengths; the player faces its
   input from standstill at once; camera collision is one ray against the walkmeshes.
 - Combat (ours where combat.md leaves it open): the attack animation by stance (the digit of the
   names: 0 creature, 1 stun baton, 2 one melee weapon, 3 two-handed, 4 two weapons, 5 pistol,

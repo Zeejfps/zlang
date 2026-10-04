@@ -25,6 +25,11 @@ namespace actions {
         close_door = 0x15,
         play_sound = 0x17,
         dialog_object = 0x18,
+        disable_trap = 0x19,
+        recover_trap = 0x1a,
+        flag_trap = 0x1b,
+        examine_trap = 0x1c,
+        set_trap = 0x1d,
         wait = 0x1e,
         resume_conversation = 0x20,
         speak_strref = 0x21,
@@ -61,13 +66,14 @@ namespace actions {
         has_started: bool,
         serial: u32,
         phase: u32,             // a handler's own progress (approach, then act)
+        unclearable: bool,      // an item's ability once begun (actions.md 3.13): the player's new orders wait behind it
     }
 
     enum Status: u8 { running, retry, done, failed }
 
     // An action of `kind` with its parameters (the rest none).
     fn make { kind: Kind } -> Action {
-        return Action{ kind, group = 0, params = [Param::none; 8], started = 0, has_started = false, serial = 0, phase = 0 }
+        return Action{ kind, group = 0, params = [Param::none; 8], started = 0, has_started = false, serial = 0, phase = 0, unclearable = false }
     }
 
     fn int_param { a: *Action, i: usize } -> i32 {
@@ -176,6 +182,26 @@ namespace actions {
         }
     }
 
+    // The player gives a creature a new order (the HUD's slots, the target block, Use Item): the
+    // queue is cleared as ClearAllActions does, except for an item's ability that has begun, which the
+    // original makes unclearable on its first frame; the order is queued behind it.
+    fn clear_for_player { mut w: world::World, id: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        if o.commandable and o.actions.len > 0 {
+            let items = list::items{ list = o.actions }
+            if items[0].unclearable and items[0].phase > 0 {
+                let mut i: usize = 1
+                while i < items.len {
+                    free_params{ &w, a = items[i] }
+                    i = i + 1
+                }
+                o.actions.len = 1
+                return
+            }
+        }
+        clear_all{ &w, id }
+    }
+
     // ClearAllActions (actions.md 1.5): nothing on a non-commandable object; else every action
     // goes, a creature stops walking and stands.
     fn clear_all { mut w: world::World, id: u32 } {
@@ -254,6 +280,8 @@ namespace actions {
             equip_item => { return equip::equip_action{ &w, id, a } }
             unequip_item => { return equip::unequip_action{ &w, id, a } }
             cast_spell => { return fight::cast_spell{ &w, &vm, engine, id, a } }
+            disable_trap | recover_trap | flag_trap | examine_trap => { return traps::work_on_trap{ &w, &vm, engine, id, a } }
+            set_trap => { return traps::set_trap{ &w, &vm, engine, id, a } }
             else => {
                 // Not written yet: done, so queues behind it keep moving.
                 if w.log.actions {
@@ -355,10 +383,15 @@ namespace actions {
         let copy = a.*
         a.params = [Param::none; 8]
         add_front{ &w, id, action = copy }
+        // The move and the wait are this action's steps, in its group: GetCurrentAction answers
+        // FOLLOWLEADER all along, as the original's one running action does (k_ai_master stops a
+        // companion that follows when solo mode is on by asking it).
         let mut pause = make{ kind = Kind::wait }
+        pause.group = copy.group
         pause.params[0] = Param::float{ v = 0.25 }
         add_front{ &w, id, action = pause }
         let mut move = make{ kind = Kind::move_to_point }
+        move.group = copy.group
         move.params[0] = Param::vector{ v = t.position }
         move.params[1] = Param::int{ v = 1 }
         move.params[2] = Param::float{ v = dist }

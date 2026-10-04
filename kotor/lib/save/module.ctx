@@ -150,6 +150,10 @@ namespace save {
             try put_int{ &b, owner = p, label = "MusicDelay", v = a.music_delay }
             try put_bool{ &b, owner = p, label = "Unescapable", v = a.unescapable }
             try put_dword{ &b, owner = p, label = "RestrictMode", v = a.restrict_mode }
+            try put_dword{ &b, owner = p, label = "StealthXPMax", v = @as(u32, if a.stealth_xp_max < 0 { 0 } else { a.stealth_xp_max }) }
+            try put_dword{ &b, owner = p, label = "StealthXPCurrent", v = @as(u32, if a.stealth_xp_current < 0 { 0 } else { a.stealth_xp_current }) }
+            try put_dword{ &b, owner = p, label = "StealthXPLoss", v = @as(u32, if a.stealth_xp_decrement < 0 { 0 } else { a.stealth_xp_decrement }) }
+            try put_bool{ &b, owner = p, label = "StealthXPEnabled", v = a.stealth_xp_enabled }
         }
         let labels: [9][]u8 = ["Creature List", "List", "Door List", "TriggerList", "Encounter List", "WaypointList", "SoundList", "Placeable List", "StoreList"]
         let kinds: [9]obj::Kind = [obj::Kind::creature, obj::Kind::item, obj::Kind::door, obj::Kind::trigger, obj::Kind::encounter,

@@ -618,9 +618,12 @@ Summed in this order (high unless marked):
 
 `GetIsHiddenFrom(defender)` (`0x00501950`) walks the attacker's invisibility effects (type 0x2f):
 the attacker is hidden unless the defender's `+0x8ec` bits see through that kind (1 and 4 by bits
-0x5, 2 by bits 0x6). A stealth-type effect (0x3f) against a hostile defender that has not spotted
-the attacker triggers an Awareness check; failing it leaves the defender flat-footed and marks
-combat between them. (med)
+0x5, 2 by bits 0x6). A SANCTUARY effect (0x3f, not stealth) on the attacker, against a hostile
+defender that has no perception entry of it, makes the defender roll a Will save against the
+effect's DC (int 4); failing it, the defender lets go of the attacker and the attacker counts as
+hidden. Stealth mode plays no part here: a hiding attacker is simply not perceived (perception's
+own contests, [rules.md](rules.md) 5.2), which already denies the defender its dodge. (high for
+the save, corrected from "a stealth-type effect ... Awareness check")
 
 Touch attacks (script `TouchAttackMelee/Ranged`, `0x00548ca0`) call this with bTouch = 1 and use
 the display bonuses `GetMeleeAttackBonus` (`0x005a7770`) / `GetRangedAttackBonus` (`0x005a7b60`).

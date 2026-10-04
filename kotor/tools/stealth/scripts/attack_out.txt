@@ -1,0 +1,13 @@
+# An attack out of stealth (start: module:end_m01ab, 700 frames): the leader walks up hidden, then the
+# target block's first action on end_sithsol01 (the click a player makes, then key 1). Expect: stealth
+# ends as the attack starts, the soldier does not perceive the attacker for that first swing (no dodge:
+# flat-footed), the area's stealth XP drops at once (it was attacked by someone it had not seen; the
+# soldier then sees the leader), the fight goes on.
+6 ui stat stealth 10
+6 ui giveitem g_i_belt010 1 equip
+40 hush
+60 ui clickctl TB_STEALTH
+70 ui goto end_sithsol01
+400 ui target end_sithsol01
+402 ui key 1
+600 ui stealth

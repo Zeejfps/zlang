@@ -5,7 +5,7 @@
 Builds an input script (kotor/out/frc/NAME.txt): the leader becomes a Jedi Consular of the given level
 who knows the given spells.2da rows only, creatures are spawned in front of it, the first is targeted and
 key 2 (the target block's middle slot) casts the one power, exactly as a player's key does. Arrows are
-clicked with `ui clickctl` when --pick N says which entry of the slot to choose first. Then it runs
+clicked with `ui fclick` when --pick N says which entry of the slot to choose first. Then it runs
 kotor_frc.exe headless and prints the log lines about the leader and the spawned creatures.
 
 Options: --powers ROWS (comma list, 'all')  --class N (3 guardian, 4 consular, 5 sentinel)  --level N
@@ -38,6 +38,7 @@ def main():
     ap.add_argument('--count', type=int, default=1)
     ap.add_argument('--dist', type=float, default=7.0)
     ap.add_argument('--extra', default='')
+    ap.add_argument('--angles', default='', help='degrees left of the leader facing for each spawned creature')
     ap.add_argument('--cast-at', type=int, default=60)
     ap.add_argument('--frames', type=int, default=240)
     ap.add_argument('--shots', default='')
@@ -75,22 +76,25 @@ def main():
     if a.fp > 0:
         at(5, 'ui fp %d' % a.fp)
     at(6, 'ui rules')
+    angles = [float(x) for x in a.angles.split(',')] if a.angles else []
     for i in range(a.count):
-        at(7 + i, 'ui spawn %s t%d %g' % (a.target, i + 1, a.dist + 1.5 * i))
+        deg = angles[i] if i < len(angles) else 0
+        step = 0 if angles else 1.5 * i
+        at(7 + i, 'ui fspawn %s t%d %g %g' % (a.target, i + 1, a.dist + step, deg))
     n = a.count
     if a.extra:
         for part in a.extra.split(','):
             tpl, _, cnt = part.partition(':')
             for i in range(int(cnt or 1)):
                 n += 1
-                at(7 + n, 'ui spawn %s t%d %g' % (tpl, n, a.dist + 1.5 * (n - 1)))
+                at(7 + n, 'ui fspawn %s t%d %g' % (tpl, n, a.dist + 1.5 * (n - 1)))
     if a.pre:
         for k, part in enumerate(a.pre.split(';')):
             f, _, rest = part.strip().partition(' ')
             at(int(f), rest)
     at(a.cast_at - 20, 'ui target t1')
     for k in range(a.pick):
-        at(a.cast_at - 10 + k, 'ui clickctl BTN_TARGETDOWN1')
+        at(a.cast_at - 10 + k, 'ui fclick BTN_TARGETDOWN1')
     at(a.cast_at, 'ui key %s' % a.key)
     for part in [x for x in a.watch.split(',') if x]:
         f, _, tag = part.partition(':')
@@ -129,7 +133,7 @@ def main():
         m = re.match(r'\[(\d+) ', ln)
         if m and int(m.group(1)) < 8:
             continue
-        if ln.startswith(('rules', 'spawn', 'clickctl', 'frame ', '  state')):
+        if ln.startswith(('rules', 'spawn', 'fclick', 'frame ', '  state')):
             print(ln)
         elif m and keep.search(ln):
             print(ln)

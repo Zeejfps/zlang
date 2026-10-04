@@ -52,6 +52,7 @@ namespace ingame {
         party_alive: i32,                   // party members on their feet last frame
         ap_cooldown: f32,                   // seconds before "Party Member Down" may pause again
         pause_reason: u32,                  // the banner's text (dialog.tlk) for the next pause
+        mine_quiet: f32,                    // seconds no hostile mine has been in sight (mine_watch.ctx)
     }
 
     // What the camera takes from the mouse each frame (CameraInputMouseYaw, movement.md 2.3).
@@ -88,6 +89,7 @@ namespace ingame {
             ap_target = saved.pause_triggers, ap_round = saved.pause_end_round, ap_action_menu = saved.pause_action_menu,
             enemy_noted = false, party_alive = 0, ap_cooldown = 0.0, pause_reason = REASON_PAUSED,
             psel_wait = false, psel_exit = resref::empty{}, psel_force1 = -1, psel_force2 = -1, psel_paused = false,
+            mine_quiet = 1000.0,
         }
         let mut p = try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
         hud::set_tooltips{ h = &p.hud, g = &p.gui, &w, text = &p.text }
@@ -319,7 +321,7 @@ namespace ingame {
             return true
         }
         if keycode == 'v' {
-            ask_solo{ &ui, &w, &dev }
+            ask_solo{ &ui, &w, &dev, for_stealth = false }
             return true
         }
         if keycode == 'f' {
@@ -330,13 +332,19 @@ namespace ingame {
             hud::clear_one{ &w }
             return true
         }
+        // keymap.2da: G stealth (action 264).
+        if keycode == 'g' {
+            request_stealth{ &ui, &w, &dev, from_key = true }
+            return true
+        }
         return false
     }
 
     // Solo mode (ShowSoloModeConfirm, re/gui.md): with more than one in the party, no conversation and a
     // leader who can act, the game pauses and a box asks whether to turn solo mode on or off; anything
-    // else is a refusal sound.
-    fn ask_solo { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device } {
+    // else is a refusal sound. Asked `for_stealth` (stealth_ui.ctx), it says stealth needs solo mode
+    // (SetMode 0x006c24a0 picks 37889 on, 37890 for stealth, 37891 off, 37892 off ending stealth).
+    fn ask_solo { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, for_stealth: bool } {
         if w.party.count < 2 or w.conversation.active or hud::is_down{ w = &w, id = party::leader{ w = &w } } or msgbox::is_open{ b = ui.solo_box } {
             gui::play_sound{ g = &ui.gui, n = 2 }
             return
@@ -345,19 +353,30 @@ namespace ingame {
             set_player_pause{ &ui, &w, &dev, on = true }
             ui.solo_pause = true
         }
-        ui.solo_box = msgbox::show_strref{ g = &ui.gui, &w, &dev, strref = if w.party.solo { 37891 } else { 37889 }, cancel = true, what = 0, item = 0 }
+        let mut strref: u32 = if w.party.solo { 37891 } else { 37889 }
+        if for_stealth { strref = 37890 }
+        else if w.party.solo and stealth::is_on{ w = &w, id = party::leader{ w = &w } } { strref = 37892 }
+        ui.solo_box = msgbox::show_strref{ g = &ui.gui, &w, &dev, strref, cancel = true, what = if for_stealth { SOLO_FOR_STEALTH } else { 0 }, item = 0 }
     }
 
-    // The box's answer: OK flips solo mode, either way the box goes and the game runs on again.
+    // The box's answer: OK flips solo mode (off takes the party out of stealth) and, asked for stealth,
+    // then toggles the leader's; either way the box goes and the game runs on again.
     fn answer_solo { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } {
         let a = msgbox::answer{ b = ui.solo_box, ev }
         if a == msgbox::Answer::none { return }
+        let for_stealth = ui.solo_box.what == SOLO_FOR_STEALTH
+        close_solo{ &ui, &w, &dev }
+        if a == msgbox::Answer::ok {
+            stealth::set_solo{ &w, on = not w.party.solo }
+            ui.run_script = resref::truncate{ name = "k_sup_solo" }
+            if for_stealth { stealth::toggle{ &w, id = party::leader{ w = &w } } }
+        }
+    }
+
+    // The box goes, and the game runs on again if it paused it.
+    fn close_solo { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device } {
         msgbox::close{ g = &ui.gui, b = &ui.solo_box }
         ui.solo_box = msgbox::blank{}
-        if a == msgbox::Answer::ok {
-            w.party.solo = not w.party.solo
-            ui.run_script = resref::truncate{ name = "k_sup_solo" }
-        }
         if ui.solo_pause { set_player_pause{ &ui, &w, &dev, on = false } }
         ui.solo_pause = false
     }
@@ -609,6 +628,8 @@ namespace ingame {
             if ev.panel == ui.hud.panel { hud_event{ &ui, &w, &dev, ev } }
             else if ev.panel == ui.pause_panel and ev.kind == gui::EventKind::activate { set_player_pause{ &ui, &w, &dev, on = false } }
         }
+        if not ui.hud_hidden { watch_mines{ &ui, &w, dt } }
+        check_solo_box{ &ui, &w, &dev }
         // The pause banner follows the clock (a script or the toggle can change it).
         if ui.pause_panel != 0 and not clock_paused_by_player{ w = &w } {
             gui::close{ g = &ui.gui, id = ui.pause_panel }
@@ -694,7 +715,10 @@ namespace ingame {
             set_player_pause{ &ui, &w, &dev, on = ev.value != 0 }
         } else if ev.kind == gui::EventKind::value_changed and slice::eq_bytes{ a = ev.tag, b = "TB_SOLO" } {
             // The toggle only asks (the box decides); the HUD sets the check mark from the party table.
-            ask_solo{ &ui, &w, &dev }
+            ask_solo{ &ui, &w, &dev, for_stealth = false }
+        } else if ev.kind == gui::EventKind::value_changed and slice::eq_bytes{ a = ev.tag, b = "TB_STEALTH" } {
+            // Stealth (stealth_ui.ctx); the check mark follows the leader next frame.
+            request_stealth{ &ui, &w, &dev, from_key = false }
         }
     }
 

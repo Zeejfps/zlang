@@ -167,6 +167,15 @@ namespace modload {
         a.fog_far = tmpl::real{ doc, s, label = "SunFogFar", default = 100.0 }
         a.fog_color = @trunc(u32, tmpl::number{ doc, s, label = "SunFogColor", default = 0 })
         a.load_screen = @trunc(u32, tmpl::number{ doc, s, label = "LoadScreenID", default = 0 })
+        // Stealth (lib/engine/stealth.ctx): the area's own pool of stealth XP starts full (the
+        // original reads the current amount with the maximum as its default), and what hearing
+        // a hiding creature needs.
+        a.flags = @trunc(u32, tmpl::number{ doc, s, label = "Flags", default = 0 })
+        a.listen_mod = @trunc(i32, tmpl::number{ doc, s, label = "ModListenCheck", default = 0 })
+        a.stealth_xp_enabled = tmpl::flag{ doc, s, label = "StealthXPEnabled", default = false }
+        a.stealth_xp_max = @trunc(i32, tmpl::number{ doc, s, label = "StealthXPMax", default = 0 })
+        a.stealth_xp_current = @trunc(i32, tmpl::number{ doc, s, label = "StealthXPCurrent", default = @as(i64, a.stealth_xp_max) })
+        a.stealth_xp_decrement = @trunc(i32, tmpl::number{ doc, s, label = "StealthXPLoss", default = 0 })
         // the four minigame areas carry a MiniGame struct (docs/design/minigames.md)
         a.minigame = null
         let setup = try mg::read_are(arena::Arena){ doc = doc.*, realloc = arena::alloc, heap = w.mod_arena }
@@ -223,6 +232,13 @@ namespace modload {
                 a.ambient_day_volume = @trunc(i32, tmpl::number{ doc, s = props, label = "AmbientSndDayVol", default = 0 })
                 a.ambient_night_volume = @trunc(i32, tmpl::number{ doc, s = props, label = "AmbientSndNitVol", default = 0 })
                 a.env_audio = @trunc(i32, tmpl::number{ doc, s = props, label = "EnvAudio", default = 0 })
+                // The stealth XP pool as saved (LoadProperties 0x00507490: the current amount
+                // never above the maximum).
+                a.stealth_xp_max = @trunc(i32, tmpl::number{ doc, s = props, label = "StealthXPMax", default = @as(i64, a.stealth_xp_max) })
+                let current = @trunc(i32, tmpl::number{ doc, s = props, label = "StealthXPCurrent", default = @as(i64, a.stealth_xp_max) })
+                a.stealth_xp_current = if current > a.stealth_xp_max { a.stealth_xp_max } else { current }
+                a.stealth_xp_decrement = @trunc(i32, tmpl::number{ doc, s = props, label = "StealthXPLoss", default = @as(i64, a.stealth_xp_decrement) })
+                a.stealth_xp_enabled = tmpl::flag{ doc, s = props, label = "StealthXPEnabled", default = a.stealth_xp_enabled }
             }
         }
         try read_list{ &w, doc, label = "Creature List", kind = obj::Kind::creature }
@@ -405,6 +421,12 @@ namespace modload {
                 world::prefix{ w = &w }
                 _ = @fmt(&w.io, "restoring the party: {}\n", error)
             }
+        }
+        // A party placed after a transition arrives out of stealth and out of solo mode; a loaded
+        // save keeps both (PlacePartyAroundLeader 0x00565b00).
+        if not from_save {
+            stealth::leave_party{ &w }
+            w.party.solo = false
         }
         let ao = world::object{ w = &w, id = w.area }
         if ao != null { raise_area{ &w } }

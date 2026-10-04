@@ -35,6 +35,7 @@ namespace hud {
             }
             door{ d } => { return Shape{ half_x = 1.3, half_y = 0.25, height = 3.2 } }
             placeable{ p } => { return Shape{ half_x = 0.55, half_y = 0.55, height = 1.1 } }
+            trigger{ t } => { return Shape{ half_x = 0.45, half_y = 0.45, height = 0.4 } }    // a mine on the floor
             else => { return Shape{ half_x = 0.4, half_y = 0.4, height = 1.0 } }
         }
     }

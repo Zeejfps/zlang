@@ -1,0 +1,15 @@
+# Stealth through the HUD, then a walk past the Sith of end_m01ab (start: module:end_m01ab, 600 frames).
+# Expect: TB_STEALTH shows once the belt is on, the click enters stealth (the "begin stealth" line,
+# the shimmer in the picture), the leader walks, and no Sith attacks; end_sith03 may hear it (heard,
+# not seen). walk_control.txt is the same walk without stealth: end_sith03 and the soldiers attack.
+# Setup only: the Stealth ranks and the stealth unit; `hush` ends Carth's comm call.
+6 ui stat stealth 10
+6 ui giveitem g_i_belt010 1 equip
+40 hush
+50 ui ctl TB_STEALTH
+60 ui clickctl TB_STEALTH
+64 ui stealth
+70 ui goto end_sithsol01
+300 ui stealth
+600 ui stealth
+600 ui pos

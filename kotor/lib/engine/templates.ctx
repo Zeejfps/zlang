@@ -152,6 +152,8 @@ namespace tmpl {
         // The Scripts button's AI style (ReadStatsFromGff: INT "AIState" into stats +0x13a, the old value as the default).
         c.ai_style = @trunc(i32, number{ doc, s, label = "AIState", default = @as(i64, c.ai_style) })
         c.spawn_fired = flag{ doc, s, label = "CreatnScrptFird", default = c.spawn_fired }
+        // A saved creature comes back hiding if it was (LoadCreature 0x00500350 sets the mode).
+        c.stealth = flag{ doc, s, label = "StealthMode", default = c.stealth }
         // A saved creature's SetListening and SetListenPattern list (CSWSCreature::LoadCreature
         // 0x00500350: Listening, ExpressionList of ExpressionId / ExpressionString): without them
         // a loaded companion no longer hears GEN_I_WAS_ATTACKED and stands out of every fight.
@@ -438,6 +440,7 @@ namespace tmpl {
         script{ doc, s, o, label = "OnTrapTriggered", slot = obj::Slot::trap_triggered }
         script{ doc, s, o, label = "OnDisarm", slot = obj::Slot::disarm }
         script{ doc, s, o, label = "OnClick", slot = obj::Slot::click }
+        traps::read{ doc, s, t = &t.trap, trigger_type = t.trigger_type, table = w.tables.traps }
     }
 
     // The GIT's Geometry list: points relative to the trigger's position, into area space.

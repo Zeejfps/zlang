@@ -117,6 +117,11 @@ Open items the leads left, by owner. Remove an item when it lands.
 (with the items owner's stealth), combat camera framing, the camera clipping through creatures,
 formation/trail following (followers use one follow action to 2 m).
 
+**Force** (docs/mechanics/force.md, open lines): the look of programmed effects (shields, auras,
+the hold cage), the thrown saber's missing blade, target-block lists for an off-screen target, the
+saber throw range (10 m vs RE's 15 m), our own cast/state animation names, companions' power
+choices beyond one checked cast.
+
 **Screens/HUD** (lib/screens, lib/hud): the original's hexagon item rows; the bench's 3D
 item models; arrow-key planet cycling; the level-up preview without armour and nothing for droids;
 the self action slots' mines slot (needs a trap action) and keys, and the original's rules for what each slot lists (ours, `lib/ingame/selfslots.ctx`).

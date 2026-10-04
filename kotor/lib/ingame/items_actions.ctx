@@ -132,7 +132,7 @@ namespace items {
         rt_item::signal_activation{ &w, who, item, target = obj::INVALID }
         let spell = ability_of{ w = &w, id = item }
         if not is_self_ability{ w = &w, spell } { return }
-        actions::clear_all{ &w, id = who }
+        actions::clear_for_player{ &w, id = who }
         rt_talent::queue_cast{ &w, me = who, spell, target = who, location = math::vec3::zero{}, cheat = 0, instant = 0, item }
     }
 }

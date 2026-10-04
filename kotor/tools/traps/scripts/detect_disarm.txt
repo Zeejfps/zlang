@@ -1,0 +1,14 @@
+# Mines, found and disabled through the pointer (docs/mechanics/traps.md). Start: module:tar_m04aa, 420 frames.
+# Setup only: the leader stands 2.7 m from the Undercity's mine 148 with Awareness 10 and Demolitions 8, and the
+# auto-pause runs as for a person playing. Then: the party finds the mines near it, the nearest hostile one on the
+# screen becomes the target and the game pauses (MINE SIGHTED); Space goes on; a click on the mine (the target) is
+# its default action, Disable: the leader kneels 4.5 s, takes 20 + 8 against DC 20, OnDisarm runs, the mine goes.
+1 ui autopause on
+5 warpxy 302.2,237.6
+6 ui stat awareness 10
+6 ui stat demolitions 8
+60 ui mines
+60 ui info
+61 ui key space
+70 ui clickobj 148
+400 ui mines

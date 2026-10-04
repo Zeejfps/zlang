@@ -397,7 +397,8 @@ The rates actually used (`GetWalkRate` `0x004f1b20`, `GetRunRate` `0x004f1be0`),
 
 - walk = clamp(`+0xa08`, 0.125, 1.5) · WALKRATE · 1000, and 0 when below 100 (an immobile
   creature never moves); in stealth mode (`+0x9fc` bit 0) the client creature's stealth speed is
-  used instead;
+  used instead (`+0x21c` block `+0x60`; nothing found writes it, so its value is open: we walk at the
+  walk rate);
 - run = clamp(`+0xa08`, 0.125, 1.5) · RUNRATE · 1000, at least 1000.
 
 `+0xa08` is the movement speed multiplier that the speed effects change (rules.md). (high)
@@ -438,8 +439,9 @@ The planned path is walked by one of two functions (high):
 4. **Timeout**: if the move has a deadline (path state `+0x26c`, world time `+0x270/+0x274`) and it
    has passed, the creature **jumps** to the destination, the MOVETOPOINT node is removed, the
    idle animation set; done (Force* moves, see actions.md).
-5. **Speed**: in stealth the walk rate; else the run rate if the action's run flag (`+0xa98`) is
-   set, walk otherwise; the walk (10002) or run (10004) animation is (re)set when the creature has
+5. **Speed**: in stealth the walk rate (entering stealth applies a walk-only LIMIT_MOVEMENT_SPEED
+   effect, +0x8e8 = 1, which clears the run flag when the move starts: `0x004f6d70`); else the run
+   rate if the action's run flag (`+0xa98`) is set, walk otherwise; the walk (10002) or run (10004) animation is (re)set when the creature has
    a client twin (`+0x9f0` bit 1). A party member following the leader overrides it (6.2).
 6. **Speed factor** `f` (`GetSpeedFactor` `0x00512f10`), 3.3. Distance this frame:
    `s = dt_ms · (f + f_prev) · speed_mm/s · 0.5 · 10⁻⁶` m (trapezoidal), `f_prev = f` stored at
@@ -532,9 +534,15 @@ room and face under the new point. (high)
 
 ### 3.6 Animations
 
-Movement picks server-side animation ids; the client blends them (`CSWCCreature::
-UpdateMovementAnimation` `0x00611f50` sets the walk/run playback rate from the actual speed and the
-appearance's `WALKDIST` / `RUNDIST`, the distance one cycle covers) (med):
+Movement picks server-side animation ids; the client blends them. `CSWCCreature::UpdateMovementAnimation`
+`0x00611f50` sets the walk or run cycle's playback rate to `S x A / D x f` (high for the shape, med for the
+details): S the creature's walk or run speed, A the length of the cycle that is playing, D the appearance's
+`WALKDIST` or `RUNDIST` (the **metres one cycle covers**, scaled by 1000 against the millisecond length in the
+code) and f the acceleration and braking factor of 3.3 (the client recomputes it, `0x0060bf60`; floor 0.1). The
+cycle's own pace is D / A; the data agrees: the humanoid run cycle is 0.733 s and RUNDIST 3.96 m (5.4 m/s, the
+Normal run rate), the walk 1.067 s and WALKDIST 1.813 m (1.7 m/s), and the stance foot of both moves back at
+about that speed. A cycle that replaces another starts at the same fraction of its length. (Not modelled: that, and a run
+case that reads WALKDIST while the animation is in its first half second.)
 
 | Id | Use |
 |---|---|
@@ -820,8 +828,17 @@ marked)
 
 - **OBJECT_ENTER (12)**: the entering object id goes to `+0x29c` (GetEnteringObject).
   - generic trigger: run `ScriptOnEnter` (`+0x24c`);
-  - **trap**: `CSWSTrigger::OnTrapEntered` (`0x0058d570`) fires it for an eligible creature
-    (faction and detection rules, effects: rules.md) (med);
+  - **trap**: `CSWSTrigger::OnTrapEntered` (`0x0058d570`): only creatures; unless the event's int 0
+    ("force") is set, the creature sets it off when it is not immune to traps (immunity type 5), not of
+    the trap's faction (`+0x2b8`) and its reputation toward the trap's creator (`+0x2e4`; the trap
+    itself without one) is 10 or less (`0x0058d4a0`); detection is not checked. A creature carrying an
+    item tagged KeyName disarms it instead (AutoRemoveKey takes the key; disarmer `+0x2a4`, OnDisarm,
+    event 11). Otherwise: feedback 0x52 (1461 "You triggered a Mine!") to the victim, OnTrapTriggered
+    (`+0x264`) at once as the trap (GetEnteringObject `+0x29c`), then ScriptOnEnter too; a one-shot
+    trap gets event 11 at 0 ms (IsDestroyable, removed from the area, deleted) and the client delete
+    reason 1 (`0x004ce8a0`: the mine plays `activate` and traps.2da ExplosionSound; reason 2,
+    disarmed, plays `deactivate`). Script event 26 is not handled by triggers (only by trapped doors
+    and placeables). (high)
   - **area transition** (movement side; the switch itself is gameloop.md's): if the area has no
     transition pending (`area+0x2c4`) and the creature is a player-party character: when the other
     party members are not gathered near the leader (`0x00635350` on the client party), the
@@ -930,11 +947,16 @@ bearings relative to the leader's facing. Selectable (`GetIsSelectableTarget` `0
 | Type | Selectable when | Hostile flag |
 |---|---|---|
 | creature | alive, not dying, and seen by the leader (perception list bit 0) or otherwise visible | reaction 2 (hostile) |
-| trigger | traps only: detected by the leader, or friendly to it (reputation > 89, e.g. its own mines), or of its faction | — |
+| trigger | traps only: detected by the leader, or friendly to it (reputation > 89, e.g. its own mines), or of its faction; the client can pick one only while it plays animation 10144 (`detect`: CSWSTrigger::AIUpdate `0x0058d760` sets 10144 when flagged, of the player's faction, reputation 90 or more, or the player is in its detected list, else 10143 `default`) | a trap of another faction with reputation below 90 (sent per player, `0x00577000`) |
 | placeable | useable (`+0x328`) | reputation < 11 with a hostile-capable flag (`+0x340`) |
 | door | closed (`+0x2cc` = 0) and not static (`+0x3c0` = 0) | — |
 
-Items are not selectable on their own (KOTOR keeps them in containers). If the current target
+Items are not selectable on their own (KOTOR keeps them in containers). The same pass watches for
+mines (`0x005fa83a`): a selectable trap with the hostile and trap flags that passes the leader's
+visibility test, while nothing is paused and no auto-pause waits and the "mine in sight" latch
+(`+0x328`) is clear, becomes the current target; with the Mine Sighted option (ini bit 0x2000) and out
+of combat mode (`+0x320`) the game also pauses with reason 11 (49118). The latch clears after 10 s
+(`+0x3a0`) with no such mine seen. (high) If the current target
 disappears from the list while hostiles are present in combat mode, a 1.5 s timer (`+0x378`) runs
 before a new target is picked automatically. (med)
 
@@ -968,7 +990,7 @@ behaviour)
 | 1 | door | open (`i_opendoor`, 365) unless `0x0061f790` or `+0x138` refuses it; bash (`i_attack`, 368) if not plot (`+0x104`) and bashable (`+0x108`) and the area allows combat | `0x3f2` / `0x3f5` | `CSWCDoor::DefaultActionOpen` `0x00683d90` sends (6,3) / `0x00683e90` |
 | 1 / 3 | placeable | use or open (`i_useplace` 366 / `i_openplace` 365) if it has an inventory or is useable; bash (368) if not plot and bashable | `0x3f7` / `0x3f5` | `0x00682660` / `0x006826a0` |
 | 3 | friendly creature | talk (`i_dialog`, 371) | `0x3ea` | `DefaultActionTalk` `0x0060f620`: cancel actions, face, send (6,8) |
-| 2 | mine | disable (`i_disablemine`, 370), recover (`i_recovermine`, 1531) if the leader can | `0x3f4` / `0x402` | `0x00691900` / `0x00691950` |
+| 2 | mine (any client trigger) | disable (`i_disablemine`, 370) when the mine is hostile, recover (`i_recovermine`, 1531) on any; both need the leader's Demolitions (`0x006477e0`). In the target block (`0x00691f00`) Disable is the left slot, Recover the middle, the right empty; no flag or examine | `0x3f4` / `0x402` | `0x00691900` / `0x00691950` (input message 0x12 to UseSkill, subskill 0 / 101) |
 | 4 | hostile creature (or any creature while the auto-target timer runs) | attack (`i_attack`, 375) unless the area forbids combat (`area+0x2b0`) | `0x3eb` | `0x00616800` |
 
 - **Mouse**: on left button up in the world (not over a GUI, not in mouse look), clicking the

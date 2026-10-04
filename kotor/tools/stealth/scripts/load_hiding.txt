@@ -1,0 +1,2 @@
+# After save_hiding.txt: the loaded leader is still in stealth mode (the picture shows the shimmer).
+5 ui stealth

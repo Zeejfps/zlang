@@ -8,6 +8,7 @@
 //                                xp  align  hp  hpmax        experience, alignment (0 dark .. 100 light), hit points
 //                                class level                 the first class slot (classes.2da row, class level)
 //                                security                    the Security skill's ranks
+//                                stealth awareness ...       any skill's ranks by its name (computer .. treat)
 //                                class2 level2               the second class slot (level2 0 removes it)
 //                                template RESREF             the UTC the skill ranks, feats and powers are read from
 //

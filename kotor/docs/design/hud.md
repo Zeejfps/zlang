@@ -55,12 +55,16 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
   creature, door or placeable whose projected box holds it (`w.hover`, and the pointer's picture
   from the default action); a click targets (`w.target`), a click on the target does its default
   action; Q and E cycle. The block with name, health and three action slots floats over the target;
-  the reticle is drawn under the panels. Models carry no usable bounds (the compiler's default
-  box), so the boxes are ours: creature height scaled by `PERSPACE`, typical door and placeable
-  sizes. Slot 1 holds, on a foe, the leader's best Critical Strike / Flurry / Power Attack (or
-  Power Blast / Rapid Shot / Sniper Shot with a ranged weapon) and Attack (`attack_slot`), else the
-  default actions; slot 2 the hostile Force powers; slot 3 the party's grenades. A click on the
-  target and R do the default list's first action (plain Attack on a foe).
+  the reticle is drawn under the panels. Both hang from the aim point the scene finds each frame (`w.aim`: a
+  creature's `head_g`, the `lookathook` of a door or placeable; the middle of the box when there is none): the
+  block 32 pixels above it, the reticle centred on it, 64 pixels square within 5 m of the leader and shrinking
+  to 16 (creature) or 32 (door, placeable, mine) at 30 m, whatever the object's size (UpdateReticles
+  `0x0068a310`; not modelled: the combat reticle's zoom-in and the edge arrows of an off-screen target).
+  Models carry no usable bounds (the compiler's default box), so the pick boxes are ours: creature height
+  scaled by `PERSPACE`, typical door and placeable sizes. Slot 1 holds, on a foe, the leader's best Critical
+  Strike / Flurry / Power Attack (or Power Blast / Rapid Shot / Sniper Shot with a ranged weapon) and Attack
+  (`attack_slot`), else the default actions; slot 2 the hostile Force powers; slot 3 the party's grenades. A
+  click on the target and R do the default list's first action (plain Attack on a foe).
 - **Combat** (`combat.ctx`): while the leader's `in_combat` flag is set the combat bar (the round
   being fought and up to three waiting fighting orders, each with its feat's, item's or power's
   icon; Disengage, clear-one) and for six seconds the combat-mode message show. Fighting orders
@@ -83,11 +87,21 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
   mines; the arrows cycle, a click casts on the leader in place of its queued actions (the cast
   action spends the item's use as it begins, `rt_item::spend_use`), an entry that cannot be used
   shows dimmed and says why in the message bar for five seconds (Force Depleted, Restricted by
-  Armor, Full Health, PC Dead), and the hovered slot's entry is named above the slots. Which
-  entries make up each list is ours (the original's list builder was not read): see the header of
-  the file. Mines are not listed (no trap action in the engine) and the keys (keymap.2da) are not
-  bound. `ui useitem RESREF [N]` is the headless test; `scripts/selfslots.txt` the run.
-- **Not built**: the leader-swap animation, effect-count icons, stealth toggle and bark bubbles
+  Armor, Full Health, PC Dead), and the hovered slot's entry is named above the slots. The friendly
+  powers are the original's list (one per `ForceFriendly` line, the highest `ForcePriority`:
+  [mechanics/force.md](../mechanics/force.md)); the item lists are the original's (docs/mechanics/items-skills.md); the mine slot lists trap kits and lays one
+  (lib/engine/traps.ctx, docs/mechanics/traps.md). The keys (keymap.2da) are not bound. `ui useitem RESREF [N]` is the headless test; `scripts/selfslots.txt` the run.
+- **The target block's Force powers** (`hud::power_actions` in `target.ctx`, used by `block.ctx`): against a hostile
+  creature the middle slot lists the leader's hostile powers, one per `ForceHostile` line (spells.2da), the
+  known power of the line with the highest priority, those that bar the target's race (`Exclusion`) left out. An
+  entry the leader cannot pay for or wear dims and, pressed, says why in the message bar for five seconds
+  (`hud::use_slot`, `say_reason`); the choice stays chosen from target to target (`power_pick`); hovering a slot
+  names its entry above the self slots (shared with `selfslots`). The cast is `rt_talent::queue_cast`, so the
+  key `2`, a click and the arrows are tested like any other input (`ui fclick`, `ui key 2`).
+- **Stealth toggle** `TB_STEALTH` (lib/hud/stealth.ctx, lib/ingame/stealth_ui.ctx): shown while the leader
+  can hide, checked while it does; a click or G toggles it, through the solo-mode box when companions are
+  about ([mechanics/stealth.md](../mechanics/stealth.md)).
+- **Not built**: the leader-swap animation, effect-count icons and bark bubbles
   (the dialogue lead's).
 
 ## Menus
@@ -168,8 +182,8 @@ comment so the rules lead's merge finds it.
   the original shows nothing on sizes it has no file for (a bug, not a feature).
 - Menus are **non-modal** full-screen panels so the tab bar over them takes clicks; a modal panel
   (message box, party selection, option screens) opened by a menu takes input and Escape itself.
-- Models carry no usable bounds, so picking boxes and the reticle are built from `PERSPACE` and
-  typical sizes; picks are by projected box, not triangles.
+- Models carry no usable bounds, so picking boxes are built from `PERSPACE` and typical sizes; picks are by
+  projected box, not triangles. The reticle and the block use the model's own nodes instead (`w.aim`).
 - The leader is "the character" of every menu; BTN_CHANGE1/2 and Tab change the leader (`w.pc`
   follows), and a dead member cannot become leader.
 - Space pauses (keymap.2da action 241); Escape closes a menu or opens the options; the engine
@@ -181,8 +195,8 @@ comment so the rules lead's merge finds it.
 
 ## Open
 
-- Self action slots: the mines slot and the keys; the leader-swap
-  animation, effect-count icons, the stealth toggle, bark bubbles (dialogue lead's).
+- Self action slots: the keys; the leader-swap
+  animation, effect-count icons, bark bubbles (dialogue lead's).
 - Item drag-and-drop; variable-height list rows (the journal splits long texts into rows);
   a scrolling description box.
 - The journal in `World`; the party's shared inventory and purse; equip actions in the engine.
