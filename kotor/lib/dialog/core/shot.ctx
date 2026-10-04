@@ -76,35 +76,41 @@ namespace dlgcam {
         return aim{ eye, h = v, target = t, fov }
     }
 
-    // Angle 2: over the listener's shoulder onto the speaker.
+    // Angle 2: over the listener's shoulder onto the speaker. The offsets are multiples of the
+    // vector between the eye points rotated 30 degrees, not of a unit vector (ComputeShot
+    // 0x006bb7b0 scales it by 0.8 and adds 0.15 of its direction): the camera backs off in
+    // proportion to how far apart the two stand, and so it still sees past the listener when
+    // they are four metres apart.
     fn shoulder { s: math::Vec3, l: math::Vec3, side: f32, cam_height: f32, tar_height: f32, fov: f32 } -> Rig {
-        let line = math::vec3::sub{ a = s, b = l }
-        let d = math::vec3::length{ v = line }
+        let d = math::vec3::distance{ a = s, b = l }
         if d < 0.001 { return close_up{ s, l, side, cam_height, tar_height, pull_back = 0.0, fov } }
         // The eye points sink with the distance between them.
         let sz = s.z - 0.1 * d
         let lz = l.z - 0.05 * d
-        let p = math::Vec3{ x = l.x + 0.3 * (s.x - l.x), y = l.y + 0.3 * (s.y - l.y), z = lz + 0.3 * (sz - lz) }
-        let v = heading_of{ v = rotate_z{ v = line, degrees = 30.0 * side } }
-        let u = heading_of{ v = line }
-        let mut eye = math::vec3::add_scaled{ a = p, b = v, s = -0.8 }
-        eye = math::vec3::add_scaled{ a = eye, b = u, s = -0.15 }
-        eye.z = eye.z + cam_height
+        let line = math::Vec3{ x = s.x - l.x, y = s.y - l.y, z = sz - lz }
+        let p = math::Vec3{ x = l.x + 0.3 * line.x, y = l.y + 0.3 * line.y, z = lz + 0.3 * line.z }
+        let rot = rotate_z{ v = line, degrees = 30.0 * side }
+        let n = math::vec3::normalize{ v = rot }
         let target = math::Vec3{ x = p.x, y = p.y, z = p.z + tar_height }
-        return aim{ eye, h = v, target, fov }
+        let eye = math::Vec3{
+            x = p.x - (0.8 * rot.x + 0.15 * n.x),
+            y = p.y - (0.8 * rot.y + 0.15 * n.y),
+            z = target.z - (0.8 * rot.z + 0.15 * n.z) + cam_height,
+        }
+        return aim{ eye, h = heading_of{ v = rot }, target, fov }
     }
 
-    // Angle 3: both of them from the side.
+    // Angle 3: both of them from the side, from 1.5 times the vector between them away (the
+    // same unnormalised vector as above, turned 90 degrees); the eye is 0.3 d above the target.
     fn wide { s: math::Vec3, l: math::Vec3, side: f32, cam_height: f32, tar_height: f32, fov: f32 } -> Rig {
         let line = math::vec3::sub{ a = s, b = l }
         let d = math::vec3::length{ v = line }
         if d < 0.001 { return close_up{ s, l, side, cam_height, tar_height, pull_back = 0.0, fov } }
         let p = math::vec3::scale{ v = math::vec3::add{ a = s, b = l }, s = 0.5 }
-        let v = heading_of{ v = rotate_z{ v = line, degrees = 90.0 * side } }
-        let mut eye = math::vec3::add_scaled{ a = p, b = v, s = -1.5 }
-        eye.z = eye.z + 0.3 * d + cam_height
+        let rot = rotate_z{ v = line, degrees = 90.0 * side }
         let target = math::Vec3{ x = p.x, y = p.y, z = p.z - 0.2 * d + tar_height }
-        return aim{ eye, h = v, target, fov }
+        let eye = math::Vec3{ x = p.x - 1.5 * rot.x, y = p.y - 1.5 * rot.y, z = target.z - 1.5 * rot.z + 0.3 * d + cam_height }
+        return aim{ eye, h = heading_of{ v = rot }, target, fov }
     }
 
     // Angle 6: a camera of the GIT (9.5). The orientation gives yaw, pitch and roll (as
