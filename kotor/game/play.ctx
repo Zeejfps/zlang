@@ -363,6 +363,10 @@ namespace play {
                 }
                 s = s + 1
             }
+            // --screenshot-range: every frame of a stretch, for finding the one that flashes.
+            if opts.range_to > 0 and frame_no >= opts.range_from and frame_no <= opts.range_to {
+                try screenshot_numbered{ &w, &dev, dir = opts.range_dir, frame_no }
+            }
             if want_save.len > 0 {
                 let size = gpu::screen_size{ dev }
                 let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &scene_arena, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
@@ -865,6 +869,22 @@ namespace play {
         let mut a = actions::make{ kind = actions::Kind::attack_object }
         a.params[0] = actions::Param::object{ id = best }
         _ = actions::add{ &w, id = me.id, action = a, force = false }
+    }
+
+    // DIR/fNNNNN.png for a frame of --screenshot-range (nothing logged: there are hundreds).
+    fn screenshot_numbered { mut w: world::World, mut dev: gpu::Device, dir: []u8, frame_no: u64 } -> ! {
+        let mut b = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } }
+        defer utf8::free{ &b }
+        try @fmt(&b, "{}/f", dir)
+        try utf8::push_uint{ &b, n = frame_no, width = 5, zero = true }
+        try @fmt(&b, ".png")
+        let size = gpu::screen_size{ dev }
+        // The heap, not the scene's arena: an arena gives nothing back, and hundreds of frames fill it.
+        let pixels = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = pixels, count = 0 }
+        _ = try gpu::read_screen{ &dev, into = pixels }
+        let image = png::Image{ width = size.width, height = size.height, rgba = pixels }
+        try png::save{ fs = &w.fs, realloc = heap::alloc, heap = w.heap, path = utf8::view{ b }.bytes, image, alpha = false, bottom_up = false }
     }
 
     fn screenshot { mut w: world::World, mut dev: gpu::Device, mut heap: arena::Arena, path: []u8, frame_no: u64 } -> ! {

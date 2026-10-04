@@ -1,7 +1,7 @@
 // The command line (docs/design/engine.md, "Headless and logs"):
 //
 //   kotor --module end_m01aa [--game DIR] [--headless] [--frames N] [--dt S] [--input FILE]
-//         [--screenshot-at FRAME:PATH]... [--log scripts,routines,events,actions,objects]
+//         [--screenshot-at FRAME:PATH]... [--screenshot-range FROM:TO:DIR] [--log scripts,routines,events,actions,objects]
 //         [--report routines] [--seed N] [--size WxH] [--no-render] [--speed N] [--mute] [--engine-only] [--load SAVE]
 namespace options {
     struct Shot { frame: u64, path: []u8 }
@@ -20,6 +20,9 @@ namespace options {
         input: []u8,            // the scripted input file, "" none
         shots: [16]Shot,
         shot_count: usize,
+        range_from: u64,        // --screenshot-range FROM:TO:DIR: every frame from FROM to TO is written to DIR/fNNNNN.png (tests of cuts and flashes)
+        range_to: u64,
+        range_dir: []u8,
         log: []u8,
         saves: []u8,            // our saves directory (never the install's)
         report: bool,
@@ -32,7 +35,7 @@ namespace options {
     fn defaults {} -> Options {
         return Options{
             module = "", game = "F:/Steam/steamapps/common/swkotor", headless = false, no_render = false, engine_only = false, mute = false, speed = 1, load = "",
-            frames = 0, dt = 0.0, input = "", shots = [Shot{ frame = 0, path = "" }; 16], shot_count = 0,
+            frames = 0, dt = 0.0, input = "", shots = [Shot{ frame = 0, path = "" }; 16], shot_count = 0, range_from = 0, range_to = 0, range_dir = "",
             log = "", saves = "kotor/out/saves", report = false, seed = 1, width = 1280, height = 720, run_script = "",
         }
     }
@@ -80,6 +83,14 @@ namespace options {
                     o.shots[o.shot_count] = Shot{ frame = @as(u64, text::scan_decimal{ s = args[i][..colon] }), path = args[i][colon + 1..] }
                     o.shot_count = o.shot_count + 1
                 }
+            } else if slice::eq_bytes{ a, b = "--screenshot-range" } and has {
+                i = i + 1
+                let c1 = text::find_byte{ s = args[i], c = ':' } ifnull { return usage{ &io } }
+                let rest = args[i][c1 + 1..]
+                let c2 = text::find_byte{ s = rest, c = ':' } ifnull { return usage{ &io } }
+                o.range_from = @as(u64, text::scan_decimal{ s = args[i][..c1] })
+                o.range_to = @as(u64, text::scan_decimal{ s = rest[..c2] })
+                o.range_dir = rest[c2 + 1..]
             } else if slice::eq_bytes{ a, b = "--saves" } and has {
                 i = i + 1
                 o.saves = args[i]
@@ -112,7 +123,7 @@ namespace options {
     }
 
     fn usage { mut io: Io } -> ?Options {
-        io::eprintln{ &io, s = "usage: kotor [--module M] [--game DIR] [--headless] [--no-render] [--speed N] [--mute] [--engine-only] [--load SAVE] [--frames N] [--dt S] [--input FILE] [--screenshot-at FRAME:PATH]... [--log LIST] [--report routines] [--seed N] [--size WxH] [--run-script NAME]" }
+        io::eprintln{ &io, s = "usage: kotor [--module M] [--game DIR] [--headless] [--no-render] [--speed N] [--mute] [--engine-only] [--load SAVE] [--frames N] [--dt S] [--input FILE] [--screenshot-at FRAME:PATH]... [--screenshot-range FROM:TO:DIR] [--log LIST] [--report routines] [--seed N] [--size WxH] [--run-script NAME]" }
         return null
     }
 }

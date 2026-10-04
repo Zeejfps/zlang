@@ -31,6 +31,11 @@ the 24-core development machine.
 Use `--no-render --speed 8` for anything you would run `--headless` for, unless you are looking at the pictures
 (then `--screenshot-at` still draws that frame). `FAST=1` does it in `run.sh`. Things that bite:
 
+- `--screenshot-range FROM:TO:DIR` writes every frame from FROM to TO as `DIR/fNNNNN.png` (with `--no-render` those frames
+  are drawn, the others are not; `--size 480x270` keeps them small, but not under 640 wide when the window is real). For
+  finding a flash between two cuts: `python kotor/tools/py/framediff.py DIR [THRESHOLD]` lists the frame steps whose picture
+  changes by more than the threshold and marks a frame that differs from two equal neighbours (BLIP) or a few
+  (FLASH); `kotor/tools/py/contact_sheet.py OUT.png FRAMES...` lays frames out to look at.
 - Standard output is written in 64 KB blocks: a log that looks stuck is usually a run still going. To see how far a
   run got, give it fewer `--frames` (or `--screenshot-at`) instead of killing it and reading the file.
 - Processes that run at the same time need a `--saves DIR` each (`SAVES=` in `run.sh`): the game in progress is a file there.
