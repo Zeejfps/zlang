@@ -1,4 +1,3 @@
-20 ui pos
-20 ui list
-20 ui where trooper
-20 ui where sith
+110 ui pos
+110 ui locks
+110 ui list

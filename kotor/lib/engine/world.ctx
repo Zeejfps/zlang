@@ -121,6 +121,9 @@ namespace world {
         tokens: tokens::Table,              // SetCustomToken: <CUSTOMnnn> texts, for the whole session
         last_acquired: u32,                 // GetModuleItemAcquired: the item the last transfer gave a creature
         last_acquired_from: u32,            // GetModuleItemAcquiredFrom: who had it (OBJECT_INVALID: the ground)
+        last_activated: u32,                // GetItemActivated: the item whose ability was last used (the module's OnActivateItem)
+        last_activator: u32,                // GetItemActivator: who used it
+        last_activated_target: u32,         // GetItemActivatedTarget: on whom (OBJECT_INVALID: on itself or the ground)
         // The rules (lib/rules): their tables, the dice (the C runtime's rand(), as the world's),
         // the effect id counter and the event buffer every rules call fills (fight::drain).
         rules: *mut rules::Tables,
@@ -173,6 +176,7 @@ namespace world {
             cursor_area = 0, cursor_shape = 0, minigame = null,
             conversation = dlg::new_state{},
             cursor_inside = 0, tokens = tokens::new{ heap }, last_acquired = obj::INVALID, last_acquired_from = obj::INVALID,
+            last_activated = obj::INVALID, last_activator = obj::INVALID, last_activated_target = obj::INVALID,
             rules = try alloc::new(rules::Tables, heap::Heap){ realloc = heap::alloc, heap, value = blank_rules },
             dice = rules::seed_rng{ seed }, fx_ids = rules::EffectIds{ next = 1 }, rev = blank_events,
             credits_running = false, button_mash = false, subscreen = 0,

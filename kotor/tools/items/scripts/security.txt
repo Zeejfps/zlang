@@ -1,0 +1,19 @@
+# Security re-verified through the mouse: a door at DC 12 and a 4-rank player (take 20 out of combat), the
+# target block's Security slot clicked, the leader kneels and the door opens; a DC 30 lock fails with the roll as the message.
+# end_m01ab opens with Carth's comm conversation: hush ends it. The player is walked to face the door first.
+60 hush
+80 ui stat security 4
+80 ui relock end_door07 12
+80 ui relock end_door06 30
+82 ui goto end_door07
+84 cam at 53.0,120.1,1.6 47.5,120.1,1.0
+130 ui pos
+132 ui target end_door07
+134 ui info
+136 ui list
+140 ui ctl BTN_TARGET0
+140 ui ctl BTN_TARGET1
+142 ui clickctl BTN_TARGET0
+170 ui locks end_door07
+400 ui locks end_door07
+400 ui log 4

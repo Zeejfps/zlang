@@ -129,9 +129,7 @@ namespace items {
     // place of whatever the user was doing (as the HUD's self slots and the inventory's Use Item
     // do); the cast action spends the item's use when it begins (rt_item::spend_use).
     fn use_item { mut w: world::World, who: u32, item: u32 } {
-        let module = w.module
-        let e = events::script_event{ kind = events::ACTIVATE_ITEM, object = item }
-        events::post{ &w, delay_ms = 0, caller = who, target = module, payload = events::Payload::script{ e } }
+        rt_item::signal_activation{ &w, who, item, target = obj::INVALID }
         let spell = ability_of{ w = &w, id = item }
         if not is_self_ability{ w = &w, spell } { return }
         actions::clear_all{ &w, id = who }

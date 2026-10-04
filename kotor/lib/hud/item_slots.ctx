@@ -38,11 +38,13 @@ namespace hud {
         return twoda::get_int{ t = w.tables.baseitems, row = @as(usize, it.base), column = "itemtype" } ifnull 0
     }
 
-    // The grenades the leader can throw at `target`: one choice for each item of the party's inventory
-    // that is a grenade and has an ability, in the inventory's order (the stack is one choice).
+    // The grenades the leader can throw at the creature `target` (a friend too: the builder does not
+    // ask): one choice for each item of the party's inventory that is a grenade and has an ability,
+    // in the inventory's order (the stack is one choice).
     fn grenade_actions { w: *world::World, target: u32 } -> ActionList {
         let mut l = empty_list{}
-        if not is_hostile{ w, id = target } { return l }
+        let to = world::object{ w, id = target } ifnull { return l }
+        if to.kind != obj::Kind::creature { return l }
         let ids = list::items{ list = w.bag }
         let mut k: usize = 0
         while k < ids.len {

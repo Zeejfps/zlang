@@ -64,6 +64,16 @@ namespace rt_item {
         return true
     }
 
+    // Using an item's ability: the module hears OnActivateItem (what GetItemActivated, GetItemActivator
+    // and GetItemActivatedTarget answer to it; the Endar Spire's tutorial waits for a medpac).
+    fn signal_activation { mut w: world::World, who: u32, item: u32, target: u32 } {
+        w.last_activated = item
+        w.last_activator = who
+        w.last_activated_target = target
+        let e = events::script_event{ kind = events::ACTIVATE_ITEM, object = item }
+        events::post{ &w, delay_ms = 0, caller = who, target = w.module, payload = events::Payload::script{ e } }
+    }
+
     // The spell of the item's first active CastSpell property (its ability), -1 when it has none.
     fn ability_of { w: *world::World, id: u32 } -> i32 {
         let io = world::object{ w, id } ifnull { return -1 }
