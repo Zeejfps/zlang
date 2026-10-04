@@ -160,6 +160,20 @@ namespace play {
                     pump_events{ &sdl, &w, &dev, ui, &dview, &mg_mouse, &keys, &quit, &want_save, &want_load, loading_up = loading::is_up{ l = ld }, &disp }
                     continue
                 }
+                if ci::eq{ a = s.word, b = "hoveron" } {
+                    // `hoveron TAG [N]`: the pointer moves to a point of the object that the HUD's pick gives to it
+                    // (ingame::click_point); a `mouse click` a frame or two later is then a click on the object.
+                    let mut hw = text::words{ s = s.rest }
+                    let tag = text::next_word{ words = &hw } ifnull ""
+                    let nth = @as(i32, text::scan_decimal{ s = text::next_word{ words = &hw } ifnull "0" })
+                    if ingame::click_point{ ui = ui.*, &w, tag, nth } is some{ value = at } {
+                        inject::push_move{ &sdl, inp = &inputs, x = at[0], y = at[1] }
+                    } else {
+                        _ = @fmt(&w.io, "kotor: input script: hoveron {}: nothing of it can be picked on the screen\n", tag)
+                    }
+                    pump_events{ &sdl, &w, &dev, ui, &dview, &mg_mouse, &keys, &quit, &want_save, &want_load, loading_up = loading::is_up{ l = ld }, &disp }
+                    continue
+                }
                 // One call per owner, in turn: the first that knows the word takes the line. A new owner adds
                 // its call here (docs/testing.md, "Adding a scripted command").
                 let handled = handle_scripted{ &w, &vm, engine, &keys, &want_save, &want_load, word = s.word, rest = s.rest } or
