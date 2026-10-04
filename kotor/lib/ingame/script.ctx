@@ -96,6 +96,7 @@ namespace ingame {
                 let tag: []u8 = o.tag
                 if not has_part{ s = tag, part } { continue }
                 _ = @fmt(&w.io, "where {} k{} {} at {} {} {} hp {} facing {} {}\n", o.id, @as(u32, o.kind), tag, o.position.x, o.position.y, o.position.z, o.hp, o.orientation.x, o.orientation.y)
+                if o.ext is door{ d } { _ = @fmt(&w.io, "  door state {} locked {} area {}\n", @as(u32, d.state), d.locked, o.area) }
             }
         } else if ci::eq{ a = cmd, b = "goto" } {
             // Test helper: the leader walks (runs) to the object with the tag, as a click on the floor there would.

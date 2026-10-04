@@ -1,15 +1,6 @@
-# New Game to Taris: the whole Endar Spire, driven by the test bot (lib/ingame/bot.ctx). The start is the
-# real flow (Trask's talk, the footlocker, the equipment screen, the party selection screen); then the
-# bot walks a route of tagged stops, fights what is hostile, opens doors (its cheats: the leader cannot
-# fall below 1 hit point, locked doors on the route are unlocked), Trask's and Carth's conversations are
-# answered by the queued replies. It ends in the apartment on Taris with Carth talking.
-#
-#   sh kotor/tools/playthrough/run.sh r10 kotor/tools/playthrough/10_endar_spire.txt 34000 32100:pod 33000:taris
-#   (about 5 minutes of wall time headless; LOG=dialog,combat adds the story to the log;
-#    sh kotor/tools/playthrough/story.sh kotor/out/pt/r10.log digests it)
-#
-# Lines must be in frame order. The frames are those of the 1/30 s headless run and shift if the engine's
-# timing of a cutscene or a voice changes: check the log's `dialog end` lines when a click misses.
+# The full replay of 10_endar_spire.txt with a save at each milestone; milestones.sh runs it and keeps the saves as
+# kotor/out/ms/NAME. Later checks start from a milestone (run.sh ... -- --module end_m01aa, `3 load kotor/out/ms/NAME`)
+# instead of replaying from New Game. Order of the saves (their folders in kotor/out/saves): trask room3 hall bridge m01ab pod apartment uppersouth larrim uppernorth cantina lowercity undercity crashsite sithbase
 3 newgame
 4 ui replies 1 1 1 2 1 1 1 1 1 1 1 1 1 1 1 1 1 3 1 1 1 1 1 1 1 1 3 4 1 default 9
 2900 use end_locker01
@@ -27,7 +18,13 @@
 3950 ui bot unlock on
 3950 ui bot route end_door01 end_door02 end_door05 end_door10_cut2 end_jump_pc end_grenade end_door16 wp_end_room5_1 wp_end_room7_1 end_door08 wp_end_bridgesith1 carth end_door15 end_door19 wp_player01 end_door10 end_trig10 end_door06 end_door01 end_door05 end_door04 end_wp_carth01
 3951 ui bot on
+4150 save ms_trask
+6200 save ms_room3
+11300 save ms_hall
+14700 save ms_bridge
+17600 save ms_m01ab
 30000 ui bot status
+32000 save ms_pod
 32000 ui bot off
 32002 ui menu journal
 32010 ui close
@@ -37,17 +34,22 @@
 32030 ui close
 32040 use end_pod
 33000 ui pos
+39100 save ms_apartment
 39500 use tar02_aptdoor
 40250 ui click 640 545
+40400 save ms_uppersouth
 40400 ui party
 40400 ui pos
 40500 ui bot route bp_jump0_wp wp_01_01 wp_02_01 wp_02_04 ptar_stnddr p_exit k_exit
 40501 ui bot on
+50300 save ms_larrim
 50320 ui click 783 545
 53100 ui bot route tar02_cantdoor ptar_spcander tar02_candtlk
 53101 ui bot on
+54200 save ms_uppernorth
 56000 ui bot status
 56000 ui pos
+58000 save ms_cantina
 58000 ui bot off
 58001 ui party
 58001 ui pos
@@ -68,14 +70,18 @@
 61000 ui pos
 66000 ui bot status
 66000 ui pos
+70400 save ms_lowercity
 71000 ui bot status
 71000 ui pos
 76000 ui bot status
 76000 ui pos
+78900 save ms_undercity
 81000 ui bot status
 81000 ui pos
+84000 save ms_crashsite
 86000 ui bot status
 86000 ui pos
+88950 save ms_sithbase
 91000 ui bot status
 91000 ui pos
 96000 ui bot status

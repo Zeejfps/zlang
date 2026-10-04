@@ -1,0 +1,13 @@
+# From the sithbase milestone (tar_m05aa, Carth with the player): walk to Zaalbar and Mission's door.
+#   sh kotor/tools/playthrough/from.sh sithbase sb kotor/tools/playthrough/40_sithbase.txt 30000 -- --module end_m01aa
+10 ui replies default 9
+10 ui bot god on
+10 ui bot unlock on
+10 ui bot route tar05_wpmiszal tar05_zaalbar tar05_wpmiscomp tar05_forcefield tar05_elevator
+11 ui bot on
+5000 ui bot status
+5000 ui pos
+10000 ui bot status
+10000 ui pos
+20000 ui bot status
+20000 ui pos
