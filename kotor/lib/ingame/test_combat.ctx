@@ -89,6 +89,26 @@ namespace test_combat {
             }
             return true
         }
+        if ci::eq{ a = cmd, b = "faction" } {
+            // Test setup: `ui faction TAG N` puts a creature into a standard faction (ChangeToStandardFaction: 1 hostile, 5 neutral).
+            let mut words = text::words{ s = args }
+            let tag = text::next_word{ &words } ifnull { return true }
+            let n = @as(u32, text::scan_decimal{ s = text::next_word{ &words } ifnull "1" })
+            if world::object{ w = &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } } is some{ value = o } { o.faction = n }
+            return true
+        }
+        if ci::eq{ a = cmd, b = "provoke" } {
+            // Test setup: what a conversation script does to a creature it turns on the party (the Star Forge's dark Sith):
+            // `ui provoke TAG SPELL` makes it hostile, clears its actions and orders it to cast SPELL at itself first.
+            let mut words = text::words{ s = args }
+            let tag = text::next_word{ &words } ifnull { return true }
+            let spell = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "22" })
+            let id = world::object_by_tag{ w = &w, tag, nth = 0 }
+            if world::object{ w = &w, id } is some{ value = o } { o.faction = 1 }
+            actions::clear_all{ &w, id }
+            rt_talent::queue_cast{ &w, me = id, spell, target = id, location = math::vec3::zero{}, cheat = 1, instant = 0, item = obj::INVALID }
+            return true
+        }
         if ci::eq{ a = cmd, b = "heal" } {
             // Test setup: the party at full health and mortal again (the bot's god mode leaves Min1HP set).
             let ids = party::members{ w = &w }

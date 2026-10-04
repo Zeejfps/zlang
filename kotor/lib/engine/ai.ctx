@@ -62,24 +62,37 @@ namespace ai {
         }
     }
 
-    // A party member the leader has left behind follows at once (ours): in the original every member that
+    // How long a member's queue stays empty before it follows by itself (ours).
+    const FOLLOW_IDLE_MS: u64 = 1000
+
+    // A party member the leader has left behind follows soon (ours): in the original every member that
     // is not the leader has FOLLOWLEADER at the head of its queue and the locomotion code walks it each
-    // frame (movement.md 6.1); here the action is queued when the queue is empty, the member is free
-    // to act and the leader is beyond 4 m, instead of waiting for the next heartbeat script. Solo mode
-    // leaves them where they stand.
+    // frame (movement.md 6.1), and a member whose queue was cleared gets it back from its next
+    // heartbeat script (k_hen_heartbt01, every 3 to 4.2 s). Here the action is queued once the queue has
+    // been empty for FOLLOW_IDLE_MS, the member is free to act and the leader is beyond 4 m, instead
+    // of waiting for the heartbeat. Solo mode leaves them where they stand.
+    //
+    // The wait matters: a script that clears a member's queue and orders it about a moment later
+    // (k_pend_cut1_end on the Endar Spire: ClearAllActions, then two frames later ActionMoveToObject,
+    // and ActionAttack 3 s on) would find a FOLLOWLEADER at the head if one were queued in between,
+    // and it never ends, so Trask watched the fight from the corridor.
     fn wake_follower { mut w: world::World, id: u32 } {
-        let lead = party::leader{ w = &w }
-        if lead == obj::INVALID or lead == id or w.party.solo or w.conversation.active { return }
-        if not party::is_member{ w = &w, id } { return }
         let o = world::object{ w = &w, id } ifnull { return }
         let c = obj::creature{ o } ifnull { return }
-        if o.actions.len > 0 or not o.commandable or c.dead or c.in_combat { return }
+        let lead = party::leader{ w = &w }
+        let idle = o.actions.len == 0 and not (lead == obj::INVALID or lead == id or w.party.solo or w.conversation.active)
+            and party::is_member{ w = &w, id } and o.commandable and not c.dead and not c.in_combat
+        if not idle {
+            c.idle_since = 0
+            return
+        }
+        let now = clock::now_ms{ c = w.clock }
+        if c.idle_since == 0 { c.idle_since = if now == 0 { 1 } else { now } }
+        if clock::elapsed_since{ now, then = c.idle_since } < FOLLOW_IDLE_MS { return }
         let l = world::object{ w = &w, id = lead } ifnull { return }
         if l.area != o.area or movement::distance_2d{ a = o.position, b = l.position } <= 4.0 { return }
-        // Not while it sees an enemy, as k_hen_heartbt01 (GetNearestCreature seen enemy): a script
-        // that clears a member's queue and orders it to fight a moment later (k_pend_cut1_end on
-        // the Endar Spire: ClearAllActions, then 0.1 s later ActionMoveToObject and ActionAttack)
-        // would otherwise find FOLLOWLEADER at the head, which never ends.
+        // Not while it sees an enemy, as k_hen_heartbt01 (GetNearestCreature seen enemy): the member is
+        // about to fight, or a script is about to send it to.
         if fight::nearest_enemy{ w = &w, o, range = 1000.0 } != obj::INVALID { return }
         _ = actions::add{ &w, id, action = actions::make{ kind = actions::Kind::follow_leader }, force = false }
     }

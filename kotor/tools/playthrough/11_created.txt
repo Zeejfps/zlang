@@ -2,7 +2,7 @@
 #   kotor/out/chargentest.exe --out kotor/out/chargen click:BTN_NEWGAME click:BTN_SEL5 click:QUICK_CHAR_BTN click:BTN_STEPNAME1 click:BTN_ARRR click:BTN_ACCEPT click:BTN_STEPNAME2 click:END_BTN click:BTN_STEPNAME3 verifyquick:kotor/out/chargen/player.utc
 #   sh kotor/tools/playthrough/run.sh created kotor/tools/playthrough/11_created.txt 4300 400:cut 700:talk 2990:locker 3150:equip 4200:trask
 3 newgame kotor/out/chargen/player.utc
-4 ui replies 1 1 1 2 1 1 1 1 1 1 1 1 1 1 1 1 1 3 1 1 1 1 1 1 1 1 3 4 1 9 9 9 9 9 9 9 9 9 9
+4 ui replies 1 1 1 2 1 1 1 1 1 1 1 1 1 1 1 1 3 1 1 1 1 1 1 1 1 3 4 1 9 9 9 9 9 9 9 9 9 9
 2900 use end_locker01
 2980 ui click 560 413
 3020 ui click 640 452

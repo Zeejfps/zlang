@@ -1167,6 +1167,7 @@ namespace fight {
         }
         f.round.count = n
         f.round.anim_ms = ATTACK_MS
+        if party::is_member{ w = &w, id } { party::count_round{ &w, id } }
         play_row{ &w, o, row }
         // ResolveMeleeAnimations 0x005b7470 / ResolveRangedAnimations 0x005b6c40: the attack takes
         // its animation's time out of the round. Engaged, the target (not helpless, its round with
@@ -1876,10 +1877,14 @@ namespace fight {
         }
         if elapsed < conj_ms + cast_ms + catch_ms { return actions::Status::running }
         // The cast was a combat round: OnEndRound gets the AI's next move; the player's own
-        // creature goes on with the fight.
+        // creature goes on with the fight. In the original every cast starts or joins a round
+        // (actions.md CASTSPELL), so a creature a script has just turned on the party, whose first
+        // order is a buff on itself (the dark Sith of the Star Forge's Bastila duel), is told the round
+        // is over and goes for its enemy; ours was not in combat yet, and with the enemy already
+        // in its perceived list no OnPerception came either, so it stood there until attacked.
         if world::object{ w = &w, id } is some{ value = done_o } {
             if obj::creature{ o = done_o } is some{ value = c } {
-                if c.in_combat and not c.dead and id != w.pc {
+                if (c.in_combat or nearest_enemy{ w = &w, o = done_o, range = 1000.0 } != obj::INVALID) and not c.dead and id != w.pc {
                     events::post{ &w, delay_ms = 0, caller = id, target = id, payload = events::Payload::script{ e = events::script_event{ kind = events::END_COMBAT_ROUND, object = target } } }
                 }
                 if c.in_combat { play_ready{ &w, o = done_o, c } } else { world::set_animation{ o = done_o, id = obj::ANIM_STAND, speed = 1.0 } }

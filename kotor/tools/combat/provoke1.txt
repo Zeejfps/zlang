@@ -1,0 +1,10 @@
+# A creature a script turns on the party whose first order is a buff on itself (the Star Forge dark Sith, k_psta_sithhosti): it must go for its enemy once the buff is cast, without being attacked first.
+20 ui heal
+21 ui sethp pc 300
+21 ui sethp carth 300
+30 ui foe g_darkjedi04 7 0
+30 ui faction g_darkjedi04 5
+150 ui provoke g_darkjedi04 22
+200 ui acts g_darkjedi04
+300 ui acts g_darkjedi04
+450 ui acts g_darkjedi04
