@@ -712,6 +712,12 @@ Both planners finish the same way (`FinishPathPointRoute` `0x004c17a0` time-slic
    that the straight walk between P + c·(A−P)/|A−P| and P + c·(B−P)/|B−P| is clear, and replace P
    by those two points (`CutCorner` `0x004be3a0`); then try to cut the two new corners once more.
 
+Ours (`paths::route`): A* over the graph in place of the iterative-deepening search, skipping an edge
+that an active placeable's walkmesh stands on (`walkmap::meets_placeable`; the original tests only its
+first and last legs, with the grid planner as the detour, so a placeable created after the PTH was
+authored, such as Calo Nord's landspeeders across the Tatooine camp road, would stop it too), then
+string pulling over the route, each shortcut tested with the walkmesh and every placed mesh.
+
 ### 4.8 Safe positions
 
 - `CSWSArea::IsPositionSafe(pos, info)` (`0x004be5e0`): the point (a ±0.01 m box, z ± 0.1) is on
