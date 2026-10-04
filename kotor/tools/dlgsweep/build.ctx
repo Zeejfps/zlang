@@ -1,0 +1,19 @@
+// dlgsweep: walks every node of the install's conversations and runs their scripts, with lib/engine
+// and lib/dialog/core only (no scene, no sound): `kotor/tools/ctxc run kotor/tools/dlgsweep -- --module
+// end_m01aa`, or all of them in parallel with `sh kotor/tools/dlgsweep/run.sh` (docs/testing.md).
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "dlgsweep", root = "." }
+    build::add_sources{ &b, exe, dir = "../../lib/base" }
+    build::add_sources{ &b, exe, dir = "../../lib/res" }
+    build::add_sources{ &b, exe, dir = "../../lib/formats" }
+    build::add_sources{ &b, exe, dir = "../../lib/mdl" }
+    build::add_sources{ &b, exe, dir = "../../lib/walk" }
+    build::add_sources{ &b, exe, dir = "../../lib/script" }
+    build::add_sources{ &b, exe, dir = "../../lib/engine" }
+    build::add_sources{ &b, exe, dir = "../../lib/dialog/core" }
+    build::add_sources{ &b, exe, dir = "../../lib/save" }
+    build::add_sources{ &b, exe, dir = "../../lib/rules" }
+    build::add_sources{ &b, exe, dir = "../../lib/minigame" }
+    build::add_sources{ &b, exe, dir = "../common" }
+    build::optimize{ &b, exe, level = 2 }
+}
