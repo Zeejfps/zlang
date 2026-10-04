@@ -2061,9 +2061,12 @@ namespace fight {
     }
 
     // A conversation that holds the fights still: an ordinary one. An animated cutscene's dialogue stages its own
-    // fights (the Sith killing the soldiers of the Endar Spire) and is left alone.
+    // fights (the Sith killing the soldiers of the Endar Spire) and is left alone. One that has run its last reply
+    // is over: the original ends it in the same call as that reply's script (HandleDialogReply, 0x004cb480), so
+    // what the script ordered (the Great Beast's run at the end of the ritual talk) is never cleared; ours lingers
+    // for the reply's duration, but holds nothing still.
     fn quiet_conversation { w: *world::World } -> bool {
-        return w.conversation.active and not w.conversation.d.animated_cut
+        return w.conversation.active and not w.conversation.ending and not w.conversation.d.animated_cut
     }
 
     // Whether FreezeHostiles (0x005a0940, re/dialogue.md 4.9) holds the creature: a conversation is on, the

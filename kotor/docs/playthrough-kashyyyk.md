@@ -55,7 +55,7 @@ State: **works** (checked), **fixed** (a commit of this branch), **open**.
 | 10 | Jolee joins (his forced slot on the party screen), `kas22_starmap` 50 | works | `10_jolee_joins.txt` |
 | 11 | The repulsor field (`kas24_force_01`): "Just shut it down", the Lower Shadowlands (`kas_m25aa`), `kas23_mainwookplot` 50 | works | `11_field.txt` |
 | 12 | Freyyr (`kas25_freyyr_01`): the first talk ends in his fight, he surrenders below a quarter of his hit points and talks again (journal 70, then 75: Bacca's blade) | fixed (`SurrenderToEnemies` as the original: see Bugs found, 4); works with any `--seed` | `12_freyyr.txt` |
-| 13 | The viper kinrath, the ritual vine (`kas25_ritualvine`), the Great Beast (`kas25_wraid`, 550 XP), the blade in its hide: `kas23_mainwookplot` 85, 87, 90 | fixed (OnAcquireItem for `CreateItemOnObject`); the corpse is given by hand | `13_ritual.txt` |
+| 13 | The viper kinrath, the ritual vine (`kas25_ritualvine`), the Great Beast (`kas25_wraid`, 550 XP) that charges the party at the vine by itself, the blade in its hide: `kas23_mainwookplot` 85, 87, 90 | fixed (OnAcquireItem for `CreateItemOnObject`; the Beast's charge: Bugs found, 6); the corpse is given by hand | `13_ritual.txt` |
 | 14 | Bacca's blade back to Freyyr, `kas23_mainwookplot` 95, he leaves (fade, `kas_HelpedFreyyr`) | works | `14_blade.txt` |
 | 15 | The ancient computer (`kas24_computer`, `kas25_comp_01`): the evaluation (a failed one: "purge the subject"), two Mark IV droids (750 XP each) | works | `15_starmap.txt` |
 | 16 | After the droids the computer gives the Star Map: `kas22_starmap` 70, `k_starforge` 30, `K_STAR_MAP` 10, `K_STAR_MAP_KASHYYYK` 1, the hologram cut scene, Jolee's remark | works (the droids' corpses must be gone first: the computer answers "no longer responds" otherwise, by timing) | `16_mapgiven.txt` |
@@ -86,17 +86,18 @@ the Walkway and the Dark Jedi, 49,490 after the poachers, 50,490 with the Great 
    weapon stayed non-commandable (`ActionStartConversation(PC)` refuses such a target, which lost the talk in an earlier run). Freyyr's "Now die!" reply
    (`k_pkas_freyyrfin`) sends him back to Hostile_1 itself. Part 13 no longer touches him: his faction is 9 and nobody hits him.
 
-5. **The chain drifted** (found by rebuilding every checkpoint): the Great Beast (`kas25_wraid`) no longer charges (see the notes: part 13 walks the party up to it), part 13 and the
-   chain's frame counts moved with it (7,500 frames for the Beast and the conversation that follows its death), and the `savewhen` of part 14 of Tatooine now waits for the leader
-   to leave combat.
+5. **The chain drifted** (found by rebuilding every checkpoint): the Great Beast (`kas25_wraid`) no longer charged (bug 6), part 13 and the
+   chain's frame counts moved with it, and the `savewhen` of part 14 of Tatooine now waits for the leader to leave combat.
+
+6. **The Great Beast did not charge** (this branch). `k_pkas_wraidattk`, the script of the ritual talk's last reply, has the Beast run to `kas25_wp_wraid3` (an `AssignCommand`,
+   delivered on the next update) and makes it hostile. FreezeHostiles (`0x005a0940`, re/dialogue.md 4.9) is only a per-frame `ClearAllActions` of the hostiles while a dialogue
+   runs, and the original ends a conversation whose last reply leads nowhere in the call that ran the reply (`HandleDialogReply`), so the freeze never sees the order. Ours
+   finished the conversation a frame later, after the freeze had cleared the run. A conversation that has run its last reply (`ending`) no longer freezes anything. Part 13 no
+   longer walks the party up to the Beast: it comes to the vine by itself and the first blow is its (about 185 frames after the talk). The kinrath must be dead before the
+   talk, or the leader runs off to the survivor in the middle of it (the script keeps the bot on for 2,200 frames).
 
 ## Notes and open items
 
-- **The Great Beast does not charge.** `k_pkas_wraidattk` (the last reply of the ritual talk) queues a run to `kas25_wp_wraid3` for the Beast and makes it hostile; FreezeHostiles
-  (`CSWSDialog::FreezeHostiles`, run by every `UpdateDialog` before the talk can end: re/dialogue.md 4.9, read again this time with the decompilation) clears the actions of every non-party
-  creature whose standing toward the player is 10 or less, and the Beast is that from the moment the script runs. It stands 29 m from the vine, outside its 20 m perception
-  (ranges.2da PercepRngDefault) and fights only when the party is within about 12 m. The order of the calls is the original's, as far as it was read; how the original's Beast gets
-  out of it is not known. Part 13 puts the party 9 m from it.
 - **The test bot's route stops** are looked up in the area it is in when it reaches them: a stop named for a door of another area is skipped ("bot: no object"), and a tag has
   three y's (`KashyyykDoor2`). Part 19 uses warps and the bot only on the pad.
 - **Journal XP.** `AddJournalQuestEntry` awards no quest XP here and the string `XP_Percentage` has no code reference in swkotor.exe, so the

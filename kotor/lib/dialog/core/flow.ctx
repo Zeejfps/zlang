@@ -644,7 +644,9 @@ namespace dlg {
     // creature that is not under the player's control and whose standing toward the PC is 10 or less has its
     // actions cleared and its walk stopped (fight::attack_object also refuses it a new attack). Davik's
     // guards (hostile by their template) stood by while the tour went on; without this they fell on Carth
-    // when the party was moved into the hangar.
+    // when the party was moved into the hangar. Once the last reply has run (`ending`) the conversation is
+    // over for this purpose: the original clears it in the call that ran the reply's script, so the order
+    // that script gave a hostile (the Great Beast's charge) stands (fight::quiet_conversation).
     fn freeze_hostiles { mut w: world::World } {
         let count = w.objects.all.len
         let mut i: usize = 0
