@@ -159,7 +159,15 @@ ALIGNMENT bits, vertical middle/bottom dropping leading lines when the text over
 code sets: hilighted menu text yellow `(0.98, 1, 0)`, disabled dim blue `(0, 0.33, 0.49)`, menu blue
 `(0, 0.66, 0.98)`. Borders follow CSWGuiBorder::Draw: corners and edges rotated by quarter turns
 from one top-left corner and one top edge, edges cut in whole segments, fill stretched, tiled or
-centred.
+centred. At a GUI scale that is not a whole number two things keep them even (`draw.ctx` `put_piece`, the
+UI fragment shader's `rim`): every piece's four boundaries sit on device pixels (the render size over the GUI's
+pixel space), so the one-texel line of an edge strip is as bright and as thick on all four sides; and a quad
+never samples past its picture's outermost texel centres, because the art is REPEAT unless its TXI says
+`clamp` and a strip drawn thicker than its 8 texels (1.5 times 6) let the linear filter reach round to the
+opposite side: the outer edge's line came back along the inner side of every button, and a side's line
+inside the ends. Seen on every bordered control at every scale above 1 (1.25 to 4 checked; at the whole
+numbers faintly, at the others also with a brighter side); a scale of 1 was always right.
+`python kotor/tools/py/gui_scales.py OUT.png EXE [BASE_EXE] WxH:SCALE ...` shows two buttons at the sizes you give.
 
 **Sounds** are guisounds.2da's rows: click (button activation), scroll (hover), open (message
 box). Pass a mixer with `gui::set_mixer`; without one the GUI is silent.
@@ -168,7 +176,8 @@ box). Pass a mixer with `gui::set_mixer`; without one the GUI is silent.
 down), drawn last; `gui::set_cursor{ &g, id }` picks `CURSOR_DEFAULT`, `ATTACK`, `BASH`, `DOOR`,
 `TALK`, `USE` ... (the install ships these 12 stems; the original's walk/examine/follow textures
 do not exist in the PC data). Only the default arrow has its hot spot at the corner; the rest are
-centred. `set_cursor_visible` hides it (and the engine should hide the OS pointer).
+centred. `set_cursor_visible` hides it. The OS pointer is the engine's to hide (`display::apply` does, in every window
+mode: [../mechanics/graphics.md](../mechanics/graphics.md), "The OS pointer").
 
 ## In-game panels (what the engine will do)
 

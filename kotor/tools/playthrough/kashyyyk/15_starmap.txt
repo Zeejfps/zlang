@@ -9,7 +9,9 @@
 30 use kas24_computer
 6100 ui hostiles
 6110 ui bot on
+# The checkpoint waits for the droids to be dead and the leader out of combat (a fixed frame fell in the middle of the fight, and the
+# computer answers "no longer responds" while a corpse lies about: the next part speaks to it again). Armed once the fight is on.
+6300 savewhen kas_m25aa droids kas22_starmap 55
 7500 ui hostiles
 7500 ui journal list
 7500 ui pos
-8350 save droids

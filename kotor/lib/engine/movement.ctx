@@ -281,8 +281,7 @@ namespace movement {
                 continue
             }
             let t = obj::trigger{ o } ifnull { continue }
-            // A trap is stepped on within a metre of its centre, not over its outline (movement.md 5.1).
-            let now_in = if t.trigger_type == traps::TRIGGER_TYPE { traps::is_within{ o, at = to } } else { inside_polygon{ poly = t.polygon, x = to.x, y = to.y } }
+            let now_in = in_trigger{ o, t, at = to }
             let was_in = contains{ l = &t.inside, id }
             if now_in and not was_in {
                 list::push{ list = &t.inside, item = id } iferr {}
@@ -292,6 +291,47 @@ namespace movement {
                 events::post{ &w, delay_ms = 0, caller = id, target = o.id, payload = events::Payload::script{ e = events::script_event{ kind = events::OBJECT_EXIT, object = id } } }
             }
         }
+    }
+
+    // Whether `at` is inside a trigger. A trap is stepped on within a metre of its centre, not
+    // over its outline (movement.md 5.1).
+    fn in_trigger { o: *obj::Object, t: *mut obj::Trigger, at: math::Vec3 } -> bool {
+        if t.trigger_type == traps::TRIGGER_TYPE { return traps::is_within{ o, at } }
+        return inside_polygon{ poly = t.polygon, x = at.x, y = at.y }
+    }
+
+    // A creature put where a loaded save had it: it is already inside the triggers around it, so
+    // their lists take it without an OBJECT_ENTER (movement.md 5.1, the save-loading case of
+    // UpdateVolumesAtPosition: it sends no events while the game is loading; the creature's
+    // volume list is not saved, but this recomputes it).
+    fn settle_volumes { mut w: world::World, id: u32 } {
+        let me = world::object{ w = &w, id } ifnull { return }
+        let at = me.position
+        let count = w.objects.all.len
+        let mut i: usize = 0
+        while i < count and i < w.objects.all.len {
+            let o = list::items{ list = w.objects.all }[i]
+            i = i + 1
+            if o.destroyed { continue }
+            let t = obj::trigger{ o } ifnull { continue }
+            let now_in = in_trigger{ o, t, at }
+            let was_in = contains{ l = &t.inside, id }
+            if now_in and not was_in {
+                list::push{ list = &t.inside, item = id } iferr {}
+            } else if was_in and not now_in {
+                remove{ l = &t.inside, id }
+            }
+        }
+    }
+
+    // `place` for a creature a loaded save put back: the same floor snap, no trigger events.
+    fn place_loaded { mut w: world::World, id: u32, at: math::Vec3 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let mut p = at
+        let f = walkmap::floor{ m = &w.walk, x = at.x, y = at.y, z = at.z + 0.5 }
+        if f != null { p.z = f.z }
+        world::set_position{ o, p }
+        settle_volumes{ &w, id }
     }
 
     // An encounter's creatures (ours, simplified: RecCreatures of them, at most MaxCreatures, the

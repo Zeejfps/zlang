@@ -8,8 +8,7 @@
 300 warp kor36_kor35 party
 320 use kor36_kor35
 700 warp kor35_utharwynn party
-740 ui target kor35_utharwynn
-745 ui key 1
+740 use kor35_utharwynn
 2400 ui rules
 2400 ui globals SITH_PRES
 2400 ui journal list

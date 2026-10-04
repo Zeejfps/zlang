@@ -77,7 +77,10 @@ namespace modload {
         while i < all.len {
             let o = all[i]
             i = i + 1
-            if o.kind != obj::Kind::creature or from_save or o.id == w.pc { continue }
+            if o.kind != obj::Kind::creature or o.id == w.pc { continue }
+            // A loaded save's creatures stand inside their triggers already (no OnEnter for them).
+            if w.restoring { movement::settle_volumes{ &w, id = o.id } }
+            if from_save { continue }
             events::post{ &w, delay_ms = 0, caller = o.id, target = w.area, payload = events::Payload::script{ e = events::script_event{ kind = events::OBJECT_ENTER, object = o.id } } }
         }
         events::post{ &w, delay_ms = 0, caller = w.module, target = w.module, payload = events::Payload::script{ e = events::script_event{ kind = events::MODULE_LOAD, object = obj::INVALID } } }
@@ -302,7 +305,7 @@ namespace modload {
         let saved_id = @trunc(u32, gff::get_number{ doc = doc.*, s, label = "ObjectId" } ifnull 0)
         let whole = saved_id != 0 and (gff::get_number{ doc = doc.*, s = gff::ROOT, label = "UseTemplates" } ifnull 1) == 0
         if whole {
-            let fresh = world::object{ w = &w, id = saved_id } == null and saved_id != obj::INVALID
+            let fresh = not world::id_taken{ w = &w, id = saved_id } and saved_id != obj::INVALID
             let o = try world::add_object{ &w, kind, id = if fresh { saved_id } else { 0 }, character = false }
             o.template = resref::truncate{ name = template }
             o.area = w.area
@@ -361,7 +364,7 @@ namespace modload {
         let bytes = try world::read_scratch{ &w, name = name_buf[..n], kind } ifnull { return }
         let raw = try bwm::parse(arena::Arena){ realloc = arena::alloc, heap = w.scratch, bytes }
         let placed = try bwm::transform_placed(arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, w = raw, at = bwm::Placement{ position = o.position, bearing } }
-        let index = try walkmap::add_placed{ m = &w.walk, placed = walkmap::Placed{ owner = id, mesh = placed, active = true } }
+        let index = try walkmap::add_placed{ m = &w.walk, placed = walkmap::Placed{ owner = id, mesh = placed, active = true, door = kind == restype::Type::dwk } }
         if obj::door{ o } is some{ value = d } {
             d.walk = index
             walkmap::set_active{ m = &w.walk, index, active = d.state == obj::DoorState::closed }
@@ -419,7 +422,8 @@ namespace modload {
             w.restoring = false
         }
         world::set_orientation{ o = pc, v = facing }
-        movement::place{ &w, id = w.pc, at }
+        // A loaded save's player is already inside the triggers around it: no OnEnter again.
+        if from_save { movement::place_loaded{ &w, id = w.pc, at } } else { movement::place{ &w, id = w.pc, at } }
         // A loaded save's party inventory (INVENTORY.res, RestoreParty step 3).
         if from_save {
             save::restore_inventory{ &w } iferr err{ error } {
@@ -464,7 +468,7 @@ namespace modload {
         let s = players[0]
         let saved_id = @trunc(u32, gff::get_number{ doc = doc.*, s, label = "ObjectId" } ifnull 0)
         if world::object{ w = &w, id = w.player } != null { world::destroy{ &w, id = w.player } ; world::sweep{ &w } }
-        let fresh = saved_id != 0 and world::object{ w = &w, id = saved_id } == null
+        let fresh = saved_id != 0 and not world::id_taken{ w = &w, id = saved_id }
         let o = try world::add_object{ &w, kind = obj::Kind::creature, id = if fresh { saved_id } else { 0 }, character = not fresh }
         // The player character before it is read: its rules use the level history (pc_rules).
         w.player = o.id

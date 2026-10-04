@@ -11,8 +11,7 @@
 10 warp kor33b_kor33a party
 30 use kor33b_kor33a
 400 warp kor33_yuthura party
-450 ui target kor33_yuthura
-455 ui key 1
+450 use kor33_yuthura
 9500 ui journal list
 9500 ui globals kor
 9500 ui party

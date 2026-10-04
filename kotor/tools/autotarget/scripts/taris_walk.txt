@@ -1,0 +1,16 @@
+# From `uppercity`: walk forward through the crowd. Every half second of walking the target is dropped and
+# the nearest visible creature in the front cone is picked again, so the reticle runs from droid to droid
+# to the locker as each becomes the nearest in front. Then the mouse: hover (the cursor and the hover
+# reticle), click (selects), E and Q (cycle by bearing).
+#   sh kotor/tools/autotarget/run.sh taris_walk uppercity kotor/tools/autotarget/scripts/taris_walk.txt 330 40:a 100:b 310:c
+1 ui bot off
+12 keydown w
+200 keyup w
+210 mouse move 760 380
+212 ui pick
+220 mouse click left 760 380
+226 ui info
+240 key e
+246 ui info
+260 key q
+266 ui info

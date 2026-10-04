@@ -985,10 +985,17 @@ this function (`bRetainBuffs` is 0 for 476 and 379):
    `GetReputation(caller, other) < 11`, i.e. everyone the caller counts an enemy: the player and the party, for Freyyr. A knocked
    down player is on his feet and commandable, so the `ActionStartConversation(PC)` that follows is not dropped.
 3. The caller is put into a faction through `FUN_005bfa70(faction, id, 0)`, the routine `ChangeToStandardFaction` and `AddToParty`
-   use; `OnApplyDeath` does the same for a dead non-player creature. Which faction `*factionManager` (the first field of
-   the manager at `CServerExoAppInternal+0x10054`) names was not found; ours uses Surrender_1 (row and column of repute.2da are
-   all 50, the nwscript comment says "sets the NPC's enemies within this range to be neutral towards the NPC"). A script that
-   wants the fight back sets a standard faction itself (`k_pkas_freyyrfin`, the "Now die!" branch of Freyyr's talk).
+   use; `OnApplyDeath` does the same for a dead non-player creature. The faction is `*factionManager`, the first field of
+   the manager at `CServerExoAppInternal+0x10054`. The manager keeps seven named pointers (fields 0 to 6) that
+   `0x0052b2a0` fills while the faction loader (`0x0052b490`, one faction per repute.2da row, in row order, so a
+   faction's id is its row) goes over the rows: it compares each row's LABEL, case-insensitively, with `"neutral"`
+   (field 0), `"insane"` (1), `"friendly_2"` (2), `"friendly_1"` (3), `"hostile_1"` (4), `"hostile_2"` (5) and
+   `"player"` (6). So the surrendering creature (and a creature that dies) moves into **Neutral, row 5**, not into
+   Surrender_1 (row 9, which nothing in the binary names): its row is 50 toward every standard faction but
+   Endar_Spire's (0), and theirs toward it is 50, so nobody takes the fight up again. (When repute.2da cannot be read
+   the fallback `0x0052bce0` makes the same seven factions with ids 0 to 6 in the order player, hostile_1, friendly_1,
+   hostile_2, friendly_2, neutral, insane, which agrees.) A script that wants the fight back sets a standard
+   faction itself (`k_pkas_freyyrfin`, the "Now die!" branch of Freyyr's talk). Ours: the dead keep their faction.
 
 Ours: `fight::surrender` (lib/engine/fight_state.ctx).
 

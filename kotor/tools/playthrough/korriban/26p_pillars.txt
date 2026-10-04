@@ -1,0 +1,12 @@
+# Korriban, an aside in Naga Sadow's tomb (from the checkpoint "tomb"): the pillar puzzle in the southern branch (the computer k39_plc_pillcomp at 50,170,
+# conversation kor39_pillar): four systems (Top, Mid-Upper, Mid-Lower, Base) on three pillars, all to move from the left to the right pillar by
+# "Move a system from the left pillar." and "The middle pillar." (the Tower of Hanoi: a larger system on a pillar with a smaller active one
+# overloads it). 15 moves; <CUSTOM10..12> show what each pillar holds; the last one unseals the room (k39_pil_opendoor).
+5 ui heal
+5 ui replies ~from_the_left_pillar ~The_middle_pillar ~from_the_left_pillar ~The_right_pillar ~from_the_middle_pillar ~The_right_pillar ~from_the_left_pillar ~The_middle_pillar ~from_the_right_pillar ~The_left_pillar ~from_the_right_pillar ~The_middle_pillar ~from_the_left_pillar ~The_middle_pillar ~from_the_left_pillar ~The_right_pillar ~from_the_middle_pillar ~The_right_pillar ~from_the_middle_pillar ~The_left_pillar ~from_the_right_pillar ~The_left_pillar ~from_the_middle_pillar ~The_right_pillar ~from_the_left_pillar ~The_middle_pillar ~from_the_left_pillar ~The_right_pillar ~from_the_middle_pillar ~The_right_pillar default 1
+10 ui unlock k39_door_trap1
+10 ui unlock k39_door_trap2
+20 warp k39_plc_pillcomp party
+60 hoveron k39_plc_pillcomp
+63 mouse click
+66 mouse click
