@@ -478,9 +478,13 @@ namespace render {
     // How an emitter's particles face.
     enum Facing: u8 {
         camera,                     // square to the view (`Normal`)
-        axis,                       // turn about `axis` toward the eye (`Billboard_to_World_Z`, `..._Local_Z`)
-        plane,                      // lie in the plane whose normal is `axis` (`Aligned_to_World_Z`)
-        velocity,                   // stretched along each particle's `dir` (`Motion_Blur`, `Aligned_to_Particle_Dir`)
+        axis,                       // stand along `axis` and turn about it toward the eye (grass)
+        plane,                      // lie in the plane whose normal is `axis`, its side horizontal
+        velocity,                   // stretched along each particle's `dir`, turned about it toward the eye (`Motion_Blur`)
+        emitter_plane,              // lie in the emitter's own X/Y plane (`Billboard_to_Local_Z`)
+        world_plane,                // lie flat in the world's X/Y plane (`Billboard_to_World_Z`)
+        upright,                    // vertical along `axis` (up, in the emitter's space), its side square to the view (`Aligned_to_World_Z`)
+        tangent,                    // lie in the plane of each particle's `dir` and the circle's tangent about `axis` (`Aligned_to_Particle_Dir`)
     }
 
     // One particle: a quad of `size` at `position` (in the emitter's space), turned by `angle`,

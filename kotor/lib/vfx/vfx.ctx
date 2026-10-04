@@ -328,8 +328,6 @@ namespace vfx {
         let mut n: usize = 0
         while @as(f32, n) < want and em.live < em.puffs.len {
             gui3d::spawn{ &em, e, props }
-            // lifeExp -1: the particle stays as long as the effect does.
-            if props.life_exp < 0.0 { em.puffs[em.live - 1].life = 1.0e9 }
             n = n + 1
         }
     }

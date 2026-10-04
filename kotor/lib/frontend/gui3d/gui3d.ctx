@@ -194,7 +194,7 @@ namespace gui3d {
         while i < scene.emitting.len {
             let e = &model.emitters[i]
             let props = scene.pose.emitters[i]
-            let n = fill_particles{ em = &scene.emitting[i], props }
+            let n = fill_particles{ em = &scene.emitting[i], e, props }
             i = i + 1
             if n == 0 { continue }
             let em = scene.emitting[i - 1]

@@ -263,8 +263,9 @@ namespace glsl {
     ]
 
     // Particles, one instance each: position, size, angle, colour, frame, direction.
-    // u_emit: facing (0 camera, 1 axis, 2 plane, 3 velocity), grid x, grid y.
-    const PARTICLE_VS: [55]c::String = [
+    // u_emit: facing (0 camera, 1 axis, 2 plane, 3 velocity, 4 emitter plane, 5 world plane, 6 upright,
+    // 7 tangent), grid x, grid y.
+    const PARTICLE_VS: [69]c::String = [
         "#version 410 core\n",
         "layout(std140) uniform Frame {\n",
         "    mat4 u_view_proj;\n",
@@ -289,8 +290,9 @@ namespace glsl {
         "void main() {\n",
         "    vec2 corner = vec2(float(gl_VertexID & 1), float((gl_VertexID >> 1) & 1));\n",
         "    vec2 local = (vec2(corner.x, 1.0 - corner.y) - 0.5) * a_size;\n",
-        "    float c = cos(a_angle);\n",
-        "    float s = sin(a_angle);\n",
+        "    float ang = u_emit.x == 7 ? 0.0 : a_angle;\n",
+        "    float c = cos(ang);\n",
+        "    float s = sin(ang);\n",
         "    local = vec2(local.x * c - local.y * s, local.x * s + local.y * c);\n",
         "    vec3 center = (u_model * vec4(a_position, 1.0)).xyz;\n",
         "    vec3 right = vec3(u_view[0][0], u_view[1][0], u_view[2][0]);\n",
@@ -309,6 +311,19 @@ namespace glsl {
         "        vec3 ref = abs(nrm.z) < 0.99 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);\n",
         "        right = normalize(cross(ref, nrm));\n",
         "        up = cross(nrm, right);\n",
+        "    } else if (u_emit.x == 4) {\n",
+        "        right = normalize(mat3(u_model)[0]);\n",
+        "        up = normalize(mat3(u_model)[1]);\n",
+        "    } else if (u_emit.x == 5) {\n",
+        "        right = vec3(1.0, 0.0, 0.0);\n",
+        "        up = vec3(0.0, 1.0, 0.0);\n",
+        "    } else if (u_emit.x == 6) {\n",
+        "        up = normalize(mat3(u_model) * u_axis.xyz);\n",
+        "    } else if (u_emit.x == 7) {\n",
+        "        vec3 tang = cross(u_axis.xyz, a_dir);\n",
+        "        if (dot(tang, tang) < 1e-6) { tang = vec3(1.0, 0.0, 0.0); }\n",
+        "        right = normalize(mat3(u_model) * tang);\n",
+        "        up = normalize(mat3(u_model) * a_dir);\n",
         "    }\n",
         "    vec3 world = center + right * local.x + up * local.y;\n",
         "    gl_Position = u_view_proj * vec4(world, 1.0);\n",
