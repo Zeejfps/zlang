@@ -104,14 +104,33 @@ frames, so setup and click are spaced out.
 | Repair on droids | repair kits (ItemType 26) heal a droid leader; the skill's rank enters the heal script | matches (script) |
 | Treat Injury | the medpac script adds the rank; the HEAL action (UseSkill, 0x00517a60) is queued only by scripts (no player button) | script for medpacs; the HEAL action is open (nothing in the player's UI calls it) |
 | Persuade, Awareness (outside traps) | dialogue scripts roll GetSkillRank + d20 or fixed | script |
-| Awareness / Demolitions on mines | [traps.md](traps.md) | see there |
-| Stealth | [stealth.md](stealth.md) | see there |
+| Awareness / Demolitions on mines | detection and the four trap actions, [traps.md](traps.md) | matches (section 8) |
+| Stealth | the toggle, the contests, [stealth.md](stealth.md) | matches (section 8) |
 | Skill rank = ranks + effects + key ability + best feat tier, 0 when untrained and not usable untrained | rules.md 5.1 | matches (lib/rules) |
 
 ## 8. Mines and stealth
 
-Summarised from [traps.md](traps.md) and [stealth.md](stealth.md) once those agents report; see them for the
-lines and statuses.
+Written by two sub-agents against the same rules (every line, evidence and test is in their docs):
+
+**Mines ([traps.md](traps.md); scenarios in `kotor/tools/traps/scripts/`, run with `tools/items/run.sh` on
+`module:tar_m04aa`).** Matches, through the pointer, keys and HUD: trap triggers load (TrapType to traps.2da, the
+type's script, the faction rule); detection is the original's always-on detect mode (Awareness + d10 + 10, every
+0.1 s within 20 m, a party find marks it for the party); a found mine shows its model, is picked with the mouse and
+Q/E, becomes the target with the MINE SIGHTED auto-pause; the target block offers Disable (left) and Recover
+(middle) to a leader with Demolitions, a second click and R take the default; the four trap actions walk up, kneel
+4.5 s and roll Demolitions + (20 or d20) against the DC (DC above 35 impossible, the setter succeeds); a hostile
+mine goes off under the party ("You triggered a Mine!", the type's script does the damage through the rules,
+explosion, one-shot removal); a party mine hurts only others; the HUD's mine slot lists trap kits and lays one
+(SetDC roll, kit spent). Open: no action-timer bar (the HUD has none; lock picking lacks it too), what the client
+shows for Examine, trap script routines nothing calls, the mine slot label wraps.
+
+**Stealth ([stealth.md](stealth.md); `sh kotor/tools/stealth/check.sh`).** Matches: TB_STEALTH and G (only with a
+stealth unit worn or Stealth ranks, in an area that allows it), the solo-mode box when companions are about,
+stealth walk speed and the shimmer, detection by the original's sight and hearing contests (Stealth against
+Awareness, no die), what ends it (attack, combat, one's own powers, taking off the belt, conversations and
+transitions; doors and using objects do not), the stealth XP pool and routines, save and load. Open: the exact
+client stealth speed (we use the walk rate), the frame-buffer distortion look, the combat log's spot line, rest
+ending stealth (no party rest), the straggler teleport that solo mode turns off.
 
 ## Open items
 
