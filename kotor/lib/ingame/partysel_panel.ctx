@@ -109,7 +109,9 @@ namespace partysel_panel {
     // What the panel shows of a slot: from its creature when there is one, else from its blueprint
     // (the original reads the saved AVAILNPC<n> creature).
     fn slot_info { mut w: world::World, n: usize } -> Slot {
-        let id = slot_creature{ w = &w, n }
+        // The party table's creature, not one found by its tag: the Undercity's Mission, a placed creature of the
+        // same tag, is not the companion the player is offered.
+        let id = if world::is_valid{ w = &w, id = w.party.npcs[n] } { w.party.npcs[n] } else { if in_party{ w = &w, n } { slot_creature{ w = &w, n } } else { obj::INVALID } }
         if id != obj::INVALID {
             return Slot{ name = hud::name_of{ w = &w, id }, portrait = hud::portrait_of{ w = &w, id }, level = hud::level_of{ w = &w, id } }
         }

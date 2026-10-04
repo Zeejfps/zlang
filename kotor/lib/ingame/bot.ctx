@@ -30,11 +30,12 @@ namespace bot {
         foe: u32,                               // the one it last ordered an attack on
         stalled: u32,                           // decisions in a row that left it no nearer the stop: a closed door in the way
         last_dist: f32,
+        area: u32,                              // the area it last decided in (0 before the first decision)
         seen_open: bool,                        // the door of the current stop has been seen open (one the story shuts again is passed, not opened twice)
     }
 
     fn new {} -> Bot {
-        return Bot{ on = false, unlock = false, god = false, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false, stalled = 0, last_dist = 0.0 }
+        return Bot{ on = false, unlock = false, god = false, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false, stalled = 0, last_dist = 0.0, area = 0 }
     }
 
     // The `bot ...` input line, after the word `bot`.
@@ -83,7 +84,30 @@ namespace bot {
         let me = world::object{ w = &w, id = lead } ifnull { return }
         let c = obj::creature{ o = me } ifnull { return }
         if c.dead { return }
-        if b.god { me.min_one_hp = true }
+        if b.god {
+            // The leader and every companion: a companion that goes down is a red cross on the HUD for the rest of the
+            // test.
+            let team = party::members{ w = &w }
+            let mut m: usize = 0
+            while m < team.len {
+                if world::object{ w = &w, id = team[m] } is some{ value = mo } { mo.min_one_hp = true }
+                m = m + 1
+            }
+        }
+        // A new area: a stop that is an area-transition door has done its work (the door of the same tag on the
+        // other side would send it straight back).
+        if b.area != w.area {
+            let came = b.area != 0
+            b.area = w.area
+            if came and b.next < b.count {
+                let stop = b.route[b.next][..@as(usize, b.lens[b.next])]
+                if world::object{ w = &w, id = world::object_by_tag{ w = &w, tag = stop, nth = 0 } } is some{ value = so } {
+                    if so.ext is door{ d } {
+                        if d.linked_flags != 0 { advance{ &b } }
+                    }
+                }
+            }
+        }
         // Something hostile and alive within sight: fight it, nearest first.
         let foe = nearest_foe{ w = &w, me }
         if foe != obj::INVALID {
@@ -125,8 +149,8 @@ namespace bot {
                 b.stalled = 0
                 b.last_dist = 0.0
                 let door = nearest_closed_door{ w = &w, me }
-                _ = @fmt(&w.io, "bot: no nearer to {} for a while ({} m), nearest closed door {}\n", tag, dist, door)
                 if door != obj::INVALID {
+                    _ = @fmt(&w.io, "bot: no nearer to {} for a while ({} m), opens door {}\n", tag, dist, door)
                     if world::object{ w = &w, id = door } is some{ value = dob } {
                         if dob.ext is door{ d } { if d.locked and b.unlock { d.locked = false } }
                     }
