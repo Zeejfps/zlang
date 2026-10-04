@@ -100,9 +100,26 @@ namespace perception {
         events::post{ &w, delay_ms = 0, caller = target, target = viewer, payload = events::Payload::script{ e } }
     }
 
-    // A clear line between two creatures' eyes through the rooms' walkmeshes (faces whose
-    // surface material blocks sight, surfacemat.2da LineOfSight).
+    // A clear line between two creatures' eyes (CSWSArea::ClearLineOfSight 0x0050c330): through the
+    // rooms' walkmeshes, whose faces stop it when their surface material has LineOfSight = 1
+    // (surfacemat.2da; Transparent, Door and Trigger let it through), and through the placed
+    // walkmeshes of the area's doors and placeables, where any face nobody can walk on stops it.
+    // A closed door is such a mesh (its closed DWK), an open one no longer is; the original tests
+    // the walkmesh of the door's current state, so an opened or bashed door lets sight through.
+    // This is the server's line: perception, the AI's target choice and ranged attacks.
     fn clear_line { w: *world::World, a: math::Vec3, b: math::Vec3 } -> bool {
+        return line_clear{ w, a, b, solids = true, ignore = obj::INVALID }
+    }
+
+    // The client's line from the leader to something it might target (CSWCCreature::GetIsTargetVisible
+    // 0x00617ad0): the rooms' walkmeshes and the closed doors stop it, a placeable does not, and
+    // the target's own mesh (a door seen from afar) is not in the way.
+    fn sight_line { w: *world::World, a: math::Vec3, b: math::Vec3, ignore: u32 } -> bool {
+        return line_clear{ w, a, b, solids = false, ignore }
+    }
+
+    // `solids` lets the placeables' meshes stop the line too; `ignore` is an object whose mesh does not.
+    fn line_clear { w: *world::World, a: math::Vec3, b: math::Vec3, solids: bool, ignore: u32 } -> bool {
         let from = math::Vec3{ x = a.x, y = a.y, z = a.z + EYE }
         let to = math::Vec3{ x = b.x, y = b.y, z = b.z + EYE }
         let d = math::vec3::sub{ a = to, b = from }
@@ -112,7 +129,7 @@ namespace perception {
         let mut blocks: [64]bool
         let mut m: usize = 0
         while m < 64 {
-            blocks[m] = m < w.walk.sees.len and not w.walk.sees[m]
+            blocks[m] = m < w.walk.sees.len and w.walk.sees[m]
             m = m + 1
         }
         let rooms = list::items{ list = w.walk.rooms }
@@ -123,7 +140,51 @@ namespace perception {
             if mesh == null { continue }
             if bwm::cast_ray{ w = mesh, ray, max_t = len, stops = blocks[..] } != null { return false }
         }
-        return true
+        return not placed_blocks{ w, from, to, ray, len, solids, ignore }
+    }
+
+    // Whether an active placed walkmesh (a closed door, a placeable that is still there) has a face
+    // that stops the segment: the faces a creature cannot stand on.
+    fn placed_blocks { w: *world::World, from: math::Vec3, to: math::Vec3, ray: math::Ray, len: f32, solids: bool, ignore: u32 } -> bool {
+        let placed = list::items{ list = w.walk.placed }
+        let boxes = list::items{ list = w.walk.boxes }
+        if placed.len == 0 { return false }
+        let lo = math::vec3::min{ a = from, b = to }
+        let hi = math::vec3::max{ a = from, b = to }
+        let mut stops: [64]bool
+        let mut m: usize = 0
+        while m < 64 {
+            stops[m] = m >= w.walk.walkable.len or not w.walk.walkable[m]
+            m = m + 1
+        }
+        let mut i: usize = 0
+        while i < placed.len {
+            let p = &placed[i]
+            let box = boxes[i]
+            i = i + 1
+            if not p.active or p.owner == ignore { continue }
+            // The mesh's bounds against the segment's (most doors and crates are far from it).
+            if box.hi.x < lo.x or box.lo.x > hi.x or box.hi.y < lo.y or box.lo.y > hi.y or box.hi.z < lo.z or box.lo.z > hi.z { continue }
+            let owner = world::object{ w, id = p.owner } ifnull { continue }
+            if not solids and owner.kind != obj::Kind::door { continue }
+            if bwm::cast_ray{ w = p.mesh, ray, max_t = len, stops = stops[..] } != null { return true }
+        }
+        return false
+    }
+
+    // Whether `viewer` could see `target` this instant: within its sight range with a clear line, and
+    // not in stealth mode unless the perception list says it was spotted (FUN_004f1fd0, the check the
+    // original's GetIsSelectableTarget falls back on when the list has not caught up).
+    fn sees_now { w: *world::World, viewer: u32, target: u32 } -> bool {
+        let v = world::object{ w, id = viewer } ifnull { return false }
+        let vc = obj::creature{ o = v } ifnull { return false }
+        let t = world::object{ w, id = target } ifnull { return false }
+        let tc = obj::creature{ o = t } ifnull { return false }
+        if v.area != t.area or math::vec3::distance{ a = v.position, b = t.position } > vc.sight_range { return false }
+        if not clear_line{ w, a = v.position, b = t.position } { return false }
+        let hidden = tc.stealth and not (party::is_member{ w, id = viewer } and party::is_member{ w, id = target })
+        if not hidden { return true }
+        return entry_of{ w, viewer, target } is some{ value = e } and e.seen
     }
 
     // Drops perceived creatures that were destroyed (the original's vanish on its full pass).
