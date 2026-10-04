@@ -230,6 +230,10 @@ namespace gui {
             draw_progress{ &g, &frame, c, x, y, alpha, clip }
             return
         }
+        if k == K_CHECK and (c.flags & F_MENU_CHECK) != 0 {
+            draw_menu_check{ &g, &frame, b = border_for{ c, hilighted = hl }, t = c.text, text = c.text.text, flags = c.flags, x, y, w = c.w, h = c.h, alpha, clip }
+            return
+        }
         let b = border_for{ c, hilighted = hl and (k == K_BUTTON or k == K_CHECK or k == K_PROTO or k == K_SLIDER or k == K_EDIT) }
         draw_border{ &g, &frame, b, x, y, w = c.w, h = c.h, alpha, clip, override = c.override_fill }
         if k == K_SLIDER { draw_slider_thumb{ &frame, c, x, y, alpha, clip } }
@@ -243,6 +247,42 @@ namespace gui {
             } else {
                 draw_text_in{ &g, &frame, t = c.text, text = c.text.text, color = col, x = a.x, y = a.y, w = a.w, h = a.h, clip }
             }
+        }
+    }
+
+    // ---- check boxes of the options panels
+
+    // Where an options check box puts its parts in its extent (FUN_006de000, the subclass's
+    // SetExtent): a square MENU_CHECK_SIZE wide at the left edge, two pixels below the vertical
+    // middle, and the text in the rest from MENU_CHECK_TEXT_X on. The control itself, its hit
+    // area, stays the whole extent.
+    const MENU_CHECK_SIZE: i32 = 25
+    const MENU_CHECK_TEXT_X: i32 = 30
+
+    fn menu_check_box_y { h: i32 } -> i32 { return 2 + (h - MENU_CHECK_SIZE) / 2 }
+
+    // The text colour the subclass's Render forces each frame (FUN_006de0e0): yellow and pulsing
+    // while hilighted, dim blue while disabled, else menu blue.
+    fn menu_check_text_color { mut g: Gui, flags: u32, alpha: f32 } -> render::Color {
+        let mut col = color_menu{}
+        if (flags & F_HILIGHT) != 0 {
+            col = mul_alpha{ c = color_hilight{}, a = g.pulse_border }
+        } else if (flags & F_ENABLED) == 0 {
+            col = color_disabled{}
+        }
+        return mul_alpha{ c = col, a = alpha }
+    }
+
+    // `b` is the border for the control's state (border_for) and `flags` its state; the text,
+    // when it has any, goes beside the bullet.
+    fn draw_menu_check {
+        mut g: Gui, mut frame: render::Frame, b: Border, t: Text, text: []u8, flags: u32,
+        x: i32, y: i32, w: i32, h: i32, alpha: f32, clip: render::Rect,
+    } {
+        draw_border{ &g, &frame, b, x, y = y + menu_check_box_y{ h }, w = MENU_CHECK_SIZE, h = MENU_CHECK_SIZE, alpha, clip, override = no_img{} }
+        if t.present and text.len > 0 {
+            let col = menu_check_text_color{ &g, flags, alpha }
+            draw_text_in{ &g, &frame, t, text, color = col, x = x + MENU_CHECK_TEXT_X, y, w = w - MENU_CHECK_TEXT_X, h, clip }
         }
     }
 
@@ -414,13 +454,24 @@ namespace gui {
         let lit = selected or hover
         // Hilighted rows swap borders; a row that is selected and hovered uses the combined one.
         let mut b = pc.border
+        // The options panels' rows are menu check boxes (style_menu_check): hilighted when hovered
+        // or selected (SetSelectedIndex sends the selected row the hilight event).
+        let menu_check = pc.kind == K_CHECK and (pc.flags & F_MENU_CHECK) != 0
         if pc.kind == K_CHECK {
+            let hot = if menu_check { lit } else { hover }
             if row.checked {
-                b = if hover and pc.hilight_selected.present { pc.hilight_selected } else if pc.selected.present { pc.selected } else { pc.border }
+                b = if hot and pc.hilight_selected.present { pc.hilight_selected } else if pc.selected.present { pc.selected } else { pc.border }
             } else {
-                b = if hover and pc.hilight.present { pc.hilight } else { pc.border }
+                b = if hot and pc.hilight.present { pc.hilight } else { pc.border }
             }
         } else if selected and hover and pc.hilight_selected.present { b = pc.hilight_selected } else if selected and pc.selected.present { b = pc.selected } else if lit and pc.hilight.present { b = pc.hilight }
+        if menu_check {
+            let mut fl = F_ENABLED
+            if lit { fl = fl | F_HILIGHT }
+            if not row.enabled { fl = clear_bits{ f = fl, bits = F_ENABLED } }
+            draw_menu_check{ &g, &frame, b, t = pc.text, text = row.text, flags = fl, x, y, w, h, alpha, clip }
+            return
+        }
         draw_border{ &g, &frame, b, x, y, w, h, alpha, clip, override = no_img{} }
         let a = text_area{ b = pc.border, x, y, w, h }
         let mut ax = a.x
