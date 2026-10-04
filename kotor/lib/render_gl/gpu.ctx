@@ -117,6 +117,7 @@ namespace gpu {
         aa: AaPrograms,             // fx_aa.ctx
         shadow: ShadowState,        // fx_shadow.ctx
         aos: AoState,               // fx_ao.ctx
+        dof: DofState,              // fx_dof.ctx
     }
 
     // ---- opening and closing
@@ -181,7 +182,7 @@ namespace gpu {
             log = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = 8192 },
             enhance = render::original_look{}, scene_fx = no_scene_program{}, particle_fx = no_particle_program{},
             fxp = no_fx_programs{}, fxt = no_fx_targets{}, cur = no_scene_program{}, cur_particle = no_particle_program{},
-            in_fx = false, timer = no_timer{}, atmos = no_atmos_programs{}, aa = no_aa_programs{}, shadow = no_shadows{}, aos = no_ao{},
+            in_fx = false, timer = no_timer{}, atmos = no_atmos_programs{}, aa = no_aa_programs{}, shadow = no_shadows{}, aos = no_ao{}, dof = no_dof{},
         }
         clear_tables{ &dev }
         try make_programs{ &dev }
@@ -190,6 +191,7 @@ namespace gpu {
         try make_aa_programs{ &dev }
         try make_shadow_program{ &dev }
         try make_ao_programs{ &dev }
+        try make_dof_programs{ &dev }
         dev.cur = dev.scene
         dev.cur_particle = dev.particle
         make_buffers{ &dev }
@@ -265,6 +267,7 @@ namespace gpu {
         free_aa_programs{ &dev }
         free_shadows{ &dev }
         free_ao{ &dev }
+        free_dof{ &dev }
         free_fx_targets{ &dev }
         free_timer{ &dev }
         if dev.fx_made { gl::free_target{ gl = &dev.gl, t = dev.fx } }

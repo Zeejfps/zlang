@@ -1,0 +1,93 @@
+// GLSL 410 sources of the enhanced renderer's depth of field (fx_dof.ctx). Each runs with glsl::POST_VS.
+namespace glsl {
+    // How blurred a point at view depth z is (0 sharp .. 1 the largest blur): nothing within half the focus range
+    // of the focus distance, growing to all of it one and a half focus distances past that; times the view's blur.
+    // u_focus: x distance, y range, z the largest blur in half-resolution pixels, w the view's blur (0..1).
+    const DOF_COC: c::String =
+        \\float view_z(sampler2D depth, ivec2 px, vec4 proj) {
+        \\    float d = texelFetch(depth, px, 0).r;
+        \\    return -proj.w / ((d * 2.0 - 1.0) + proj.z);
+        \\}
+        \\float coc_of(float z, vec4 focus) {
+        \\    float off = abs(-z - focus.x) - focus.y * 0.5;
+        \\    return focus.w * clamp(off / max(focus.x * 1.5, 0.5), 0.0, 1.0);
+        \\}
+        \\
+
+    // Half resolution: the light (mean of 2x2) and, in alpha, the largest blur of those four pixels.
+    const DOF_DOWN_FS: c::String =
+        \\uniform sampler2D u_color;
+        \\uniform sampler2D u_depth;
+        \\uniform vec4 u_proj;
+        \\uniform vec4 u_focus;
+        \\in vec2 v_uv;
+        \\layout(location = 0) out vec4 o_color;
+        \\void main() {
+        \\    ivec2 p = ivec2(gl_FragCoord.xy) * 2;
+        \\    ivec2 size = textureSize(u_color, 0) - 1;
+        \\    vec3 c = vec3(0.0);
+        \\    float coc = 0.0;
+        \\    for (int k = 0; k < 4; k++) {
+        \\        ivec2 q = min(p + ivec2(k & 1, k >> 1), size);
+        \\        c += min(texelFetch(u_color, q, 0).rgb, vec3(32.0));
+        \\        coc = max(coc, coc_of(view_z(u_depth, q, u_proj), u_focus));
+        \\    }
+        \\    o_color = vec4(c * 0.25, coc);
+        \\}
+        \\
+
+    // Half resolution: each pixel gathers a disc as wide as its own blur, on a spiral of u_params.y taps; a tap counts
+    // only if its own blur reaches this pixel (a sharp thing in front doesn't smear into what is behind it), and
+    // bright taps count more (u_params.z), so highlights open into discs, the camera's bokeh.
+    const DOF_BLUR_FS: c::String =
+        \\uniform sampler2D u_src;
+        \\uniform vec4 u_params;
+        \\in vec2 v_uv;
+        \\layout(location = 0) out vec4 o_color;
+        \\void main() {
+        \\    ivec2 p = ivec2(gl_FragCoord.xy);
+        \\    vec2 size = vec2(textureSize(u_src, 0));
+        \\    vec4 c0 = texelFetch(u_src, p, 0);
+        \\    float r = c0.a * u_params.x;
+        \\    if (r < 0.5) {
+        \\        o_color = c0;
+        \\        return;
+        \\    }
+        \\    vec3 sum = c0.rgb;
+        \\    float wsum = 1.0;
+        \\    int taps = int(u_params.y);
+        \\    for (int i = 0; i < taps; i++) {
+        \\        float a = (float(i) + 0.5) / float(taps);
+        \\        float ang = float(i) * 2.39996;
+        \\        vec2 off = vec2(cos(ang), sin(ang)) * sqrt(a) * r;
+        \\        vec4 s = texture(u_src, (gl_FragCoord.xy + off) / size);
+        \\        float reach = s.a * u_params.x;
+        \\        if (reach + 1.0 < length(off)) {
+        \\            continue;
+        \\        }
+        \\        float l = dot(s.rgb, vec3(0.299, 0.587, 0.114));
+        \\        float w = 1.0 + u_params.z * l * l;
+        \\        sum += s.rgb * w;
+        \\        wsum += w;
+        \\    }
+        \\    o_color = vec4(sum / wsum, c0.a);
+        \\}
+        \\
+
+    // Full resolution, blended over the light (SRC_ALPHA, ONE_MINUS_SRC_ALPHA): the blurred light, as opaque as the
+    // pixel's own blur. u_size: 1 / the full resolution.
+    const DOF_APPLY_FS: c::String =
+        \\uniform sampler2D u_blur;
+        \\uniform sampler2D u_depth;
+        \\uniform vec4 u_proj;
+        \\uniform vec4 u_focus;
+        \\uniform vec2 u_size;
+        \\in vec2 v_uv;
+        \\layout(location = 0) out vec4 o_color;
+        \\void main() {
+        \\    float coc = coc_of(view_z(u_depth, ivec2(gl_FragCoord.xy), u_proj), u_focus);
+        \\    vec3 b = texture(u_blur, gl_FragCoord.xy * u_size).rgb;
+        \\    o_color = vec4(b, smoothstep(0.0, 0.25, coc));
+        \\}
+        \\
+}

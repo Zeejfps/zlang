@@ -343,6 +343,7 @@ namespace gpu {
             timer_mark{ &dev, name = "resolve" }
         }
         post_state{ &dev }
+        try run_dof{ &dev, v, area }
         run_shafts{ &dev, v, area }
         let e = dev.enhance
         let levels: usize = if e.bloom >= 2 { BLOOM_LEVELS } else { 4 }

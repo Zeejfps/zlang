@@ -137,6 +137,23 @@ shadows, 0 pixels differ.
 - **Cost**: four fetches instead of one per lightmapped pixel; not measurable in the opaque pass.
 - **Pictures**: `kotor/out/fx/t/bridge_lm_cmp.png` (bilinear, smooth; 3x).
 
+### Depth of field (conversations)
+
+- **Inputs**: `Enhance.dof`; `View.focus` (`distance` along the view, `range` that stays sharp, `blur` 0..1). The
+  game sets it (`game/focus.ctx`): while a dialogue camera is up (`dlgview::focus_point`: the speaker's eyes, the
+  point the shots frame), the focus is the distance to them; the blur fades in over a third of a second when a
+  shot comes up and out when it ends, and a cut to the next speaker pulls focus in about a fifth of a second. In
+  normal play there is no focus. Eased every tick, so pictures taken with `--no-render` see the same.
+- **What**: after the scene is resolved, before the light shafts and the bloom: at half resolution the light and,
+  per pixel, its blur (none within half the range of the focus, growing to the largest one and a half focus
+  distances past that; the largest is 1/90 of the picture's height); a gather over a disc as wide as the pixel's
+  own blur (24 taps on a spiral, 12 low), each tap counting only if its own blur reaches the pixel, so a sharp
+  speaker never smears into the background, and bright taps counting more (high), so highlights open into discs;
+  then blended over the full-resolution light as much as each pixel is out of focus. The subtitles and panels are
+  drawn after, sharp.
+- **Cost**: 0.026 ms at 1280x720 (the Endar Spire, Trask's conversation).
+- **Pictures**: `kotor/out/fx/t/talk_dof_cmp.png` (off, high).
+
 ### Anti-aliasing
 
 - **Inputs**: `Enhance.post_aa` (the Edge AA row: 0 off, 1 FXAA, 2 High), `Enhance.alpha_coverage` (Foliage AA), the

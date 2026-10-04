@@ -200,6 +200,13 @@ namespace dlgview {
         camera.style.fov = rig.fov
     }
 
+    // What a shot of the conversation is focused on, for the enhanced renderer's depth of field: the speaker's eyes
+    // while a dialogue camera is up; null otherwise.
+    fn focus_point { v: *View, w: *world::World, sc: *scene::Scene } -> ?math::Vec3 {
+        if not v.overriding or not v.up { return null }
+        return eye_point{ w, sc, id = v.speaker }
+    }
+
     // The room the picture is seen from: the player's, unless a shot is up, then the room under
     // the camera (none, which shows every room, when it hangs outside the walkmeshes).
     fn view_room { v: *View, w: *world::World, player_room: i32 } -> i32 {

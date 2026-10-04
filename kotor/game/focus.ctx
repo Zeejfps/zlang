@@ -1,0 +1,24 @@
+// Where conversations are focused, for the enhanced renderer's depth of field (render::Focus; docs/design/enhanced-
+// render.md, "Depth of field"): on the speaker while a dialogue camera is up, nothing in normal play. The backend
+// eases nothing, so this does: the blur fades in over a third of a second when a shot comes up and out when it ends,
+// and the focus distance follows a cut to the next speaker in about a fifth of a second, a focus pull, not a jump.
+namespace focus {
+    struct Focus { distance: f32, amount: f32 }
+
+    fn make {} -> Focus { return Focus{ distance = 3.0, amount = 0.0 } }
+
+    // The view's focus this frame, the eye at `eye`, the conversation's subject (null: none) at `at`.
+    fn update { mut f: Focus, eye: math::Vec3, at: ?math::Vec3, dt: f32 } -> render::Focus {
+        let k = math::min{ a = 1.0, b = dt * 10.0 }
+        if at is some{ value = p } {
+            let want = math::max{ a = 0.3, b = math::vec3::distance{ a = eye, b = p } }
+            // The first frame of a shot takes the distance as it is: nothing is blurred yet to pull from.
+            f.distance = if f.amount < 0.01 { want } else { f.distance + (want - f.distance) * k }
+            f.amount = math::min{ a = 1.0, b = f.amount + dt * 3.0 }
+        } else {
+            f.amount = math::max{ a = 0.0, b = f.amount - dt * 3.0 }
+        }
+        if f.amount <= 0.0 { return render::no_focus{} }
+        return render::Focus{ on = true, distance = f.distance, range = math::max{ a = 0.8, b = f.distance * 0.3 }, blur = f.amount }
+    }
+}
