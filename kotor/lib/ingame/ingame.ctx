@@ -191,7 +191,14 @@ namespace ingame {
         }
         if keycode >= '1' and keycode <= '3' {
             // The target block's three slots (keymap.2da: TargetLeft/Middle/RightAct).
-            return hud::run_slot{ h = &ui.hud, &w, k = @as(usize, keycode - '1') }
+            return hud::use_slot{ h = &ui.hud, g = &ui.gui, &w, k = @as(usize, keycode - '1') }
+        }
+        if keycode >= '4' and keycode <= '7' {
+            // The self slots (keymap.2da: PersonalPowerAct 4, PersonalMedicalAct 5, PersonalOtherAct 6,
+            // PersonalMinesAct 7).
+            let k = @as(usize, keycode - '4')
+            selfslots::use_slot{ s = &ui.selfs, g = &ui.gui, &w, panel = ui.hud.panel, k }
+            return true
         }
         if keycode == sdl::key::SPACE {
             set_player_pause{ &ui, &w, &dev, on = not clock_paused_by_player{ w = &w } }

@@ -8,29 +8,44 @@ namespace hud {
     const HOSTILE_BELOW: i32 = 11
 
     // What a slot does when pressed.
-    enum Act: u8 { none, open, bash, use_place, open_place, talk, attack, unlock }
+    enum Act: u8 { none, open, bash, use_place, open_place, talk, attack, unlock, power }
+
+    // Why an entry cannot be used now (the original's reason codes, strings in REASON_TEXT).
+    const R_OK: i32 = 0
+    const R_FORCE: i32 = 1
+    const R_ARMOR: i32 = 2
+    const R_ITEM: i32 = 3
+    const R_FULL: i32 = 5
+    const R_DEAD: i32 = 6
+
+    // dialog.tlk: the refusal messages by reason code (shown for 5 seconds in the message bar).
+    const REASON_TEXT: [7]u32 = [0, 38613, 38614, 38615, 42422, 42498, 47936]
 
     // One choice in a slot: its icon (a texture in the GUI pack) and the dialog.tlk string that
-    // names it.
-    struct Entry { act: Act, icon: [16]u8, icon_len: usize, strref: u32 }
+    // names it. A power's `id` is its spells.2da row; it dims and says `reason` when `usable` is
+    // false.
+    struct Entry { act: Act, icon: [24]u8, icon_len: usize, strref: u32, id: i32, usable: bool, reason: i32 }
+
+    // The most choices a slot lists (the ten hostile power lines are the longest list).
+    const LIST_MAX: usize = 12
 
     // A slot's choices, cycled with its arrows.
-    struct ActionList { entries: [4]Entry, count: usize, selected: usize }
+    struct ActionList { entries: [12]Entry, count: usize, selected: usize }
 
     fn entry { act: Act, icon: []u8, strref: u32 } -> Entry {
-        let mut e = Entry{ act, icon = [0; 16], icon_len = 0, strref }
-        let n = if icon.len > 16 { 16 } else { icon.len }
+        let mut e = Entry{ act, icon = [0; 24], icon_len = 0, strref, id = -1, usable = true, reason = R_OK }
+        let n = if icon.len > 24 { 24 } else { icon.len }
         slice::copy(u8){ dst = e.icon[..n], src = icon[..n] }
         e.icon_len = n
         return e
     }
 
     fn empty_list {} -> ActionList {
-        return ActionList{ entries = [entry{ act = Act::none, icon = "", strref = 0 }; 4], count = 0, selected = 0 }
+        return ActionList{ entries = [entry{ act = Act::none, icon = "", strref = 0 }; 12], count = 0, selected = 0 }
     }
 
     fn push_entry { mut l: ActionList, e: Entry } {
-        if l.count >= 4 { return }
+        if l.count >= LIST_MAX { return }
         l.entries[l.count] = e
         l.count = l.count + 1
     }
@@ -91,6 +106,70 @@ namespace hud {
                 else { push_entry{ &l, e = entry{ act = Act::talk, icon = "i_dialog", strref = 371 } } }
             }
             else => {}
+        }
+        return l
+    }
+
+    // The reason a known power cannot be cast now (R_OK when it can): the rules' answer as the
+    // action menus' reason codes (re/gui.md "Action menus").
+    fn power_reason { w: *world::World, f: *fight::Fighter, spell: i32, alive: bool } -> i32 {
+        let r = rules::can_cast_spell{ tables = w.rules, c = &f.c, spell, alive, from_item = false }
+        if r == rules::cast::DEAD { return R_DEAD }
+        if r == rules::cast::NOT_ENOUGH_FP { return R_FORCE }
+        if r == rules::cast::FORBIDDEN_EQUIPMENT or r == rules::cast::MISSING_EQUIPMENT { return R_ARMOR }
+        return R_OK
+    }
+
+    // The spells.2da Exclusion bits that apply to a target (UpdateActionMenus' 0x006191f0): a
+    // droid (racialtypes row 5) excludes the powers that bar droids (bit 1), a human (row 6) those
+    // that bar humans (bit 0, the droid-only powers); any other race leaves both kinds.
+    fn target_exclusion { w: *world::World, target: u32 } -> i32 {
+        let t = ruled_of{ w, id = target } ifnull { return 0 }
+        if t.c.race == 5 { return 2 }
+        if t.c.race == 6 { return 1 }
+        return 0
+    }
+
+    // The Force powers the leader can cast at a hostile creature, as the middle slot of the target
+    // block lists them: one entry per hostile line (spells.2da ForceHostile: stun, choke, push...),
+    // the known power of that line with the highest ForcePriority (Stasis Field over Stasis; a line
+    // never lists its lower rungs), the lines in order. The powers that do not suit the target's
+    // race are left out.
+    fn power_actions { w: *world::World, target: u32 } -> ActionList {
+        let mut l = empty_list{}
+        let leader = party::leader{ w }
+        let f = ruled_of{ w, id = leader } ifnull { return l }
+        let alive = not is_down{ w, id = leader }
+        let exclude = target_exclusion{ w, target }
+        let mut best_row: [10]i32 = [-1; 10]
+        let mut best_pri: [10]i32 = [-1; 10]
+        let mut spell: usize = 0
+        let rows = twoda::rows{ t = w.tables.spells }
+        while spell < rows and spell < 256 {
+            let s = @as(i32, spell)
+            spell = spell + 1
+            if not rules::knows_power{ c = &f.c, spell = s } { continue }
+            let row = rules::get_spell{ tables = w.rules, row = s } ifnull { continue }
+            if not row.valid or row.user_type != 1 or row.line_hostile < 0 or row.line_hostile >= 10 { continue }
+            if (row.exclusion & exclude) != 0 { continue }
+            let line = @as(usize, row.line_hostile)
+            if row.priority > best_pri[line] {
+                best_pri[line] = row.priority
+                best_row[line] = s
+            }
+        }
+        let mut line: usize = 0
+        while line < 10 {
+            let s = best_row[line]
+            line = line + 1
+            if s < 0 { continue }
+            let row = rules::get_spell{ tables = w.rules, row = s } ifnull { continue }
+            let icon = twoda::get_string{ t = w.tables.spells, row = @as(usize, s), column = "iconresref" } ifnull ""
+            let mut e = entry{ act = Act::power, icon, strref = @as(u32, row.name) }
+            e.id = s
+            e.reason = power_reason{ w, f, spell = s, alive }
+            e.usable = e.reason == R_OK
+            push_entry{ &l, e }
         }
         return l
     }
@@ -202,8 +281,14 @@ namespace hud {
 
     // Does `act` on `target` for the leader: queues the matching action in place of whatever it
     // was doing (the player's choice replaces the queue, actions.md).
-    fn run_act { mut w: world::World, act: Act, target: u32 } {
+    fn run_act { mut w: world::World, act: Act, target: u32, id: i32 } {
         let leader = party::leader{ w = &w }
+        if act == Act::power {
+            // A Force power at the target; the cast walks into range itself.
+            actions::clear_all{ &w, id = leader }
+            rt_talent::queue_cast{ &w, me = leader, spell = id, target, location = math::vec3::zero{}, cheat = 0, instant = 0, item = obj::INVALID }
+            return
+        }
         let kind: actions::Kind = match act {
             open => { actions::Kind::open_door }
             use_place | open_place => { actions::Kind::use_object }

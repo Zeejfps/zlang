@@ -37,6 +37,8 @@ namespace hud {
         notify_shown: [9]bool,
         shown_target: u32,                  // the target the block was built for
         lists: [3]ActionList,               // the block's slots
+        power_pick: i32,                    // the Force power chosen in the middle slot (a spells.2da row), kept from target to target
+        refusal: f32,                       // seconds left of a refusal message in the message bar
         pressed: u32,                       // the object under the pointer when the button went down
         projector: Projector,               // this frame's, for picking and the reticle
     }
@@ -76,7 +78,7 @@ namespace hud {
             block = [BlockPart{ index = -1, x = 0, y = 0 }; 16],
             minimap = open_minimap{ &g, &w, &dev, panel },
             font = gui::font_slot{ &g, fs = &w.fs, &dev, name = "dialogfont10x10" }, combat = false, combat_message = 0.0, notify = [0.0; 9], notify_shown = [false; 9],
-            shown_target = obj::INVALID, lists = [empty_list{}; 3], pressed = obj::INVALID,
+            shown_target = obj::INVALID, lists = [empty_list{}; 3], power_pick = -1, refusal = 0.0, pressed = obj::INVALID,
             projector = Projector{ vp = math::mat4::identity{}, eye = math::vec3::zero{}, w = 1.0, h = 1.0 },
         }
         let mut i: usize = 0
