@@ -10,6 +10,7 @@
 #                SCRIPT is then the resume script kotor/out/checkpoints/pod.txt, or one of your own
 #   EXE=PATH     another executable (default kotor/out/kotor.exe)
 #   SAVES=DIR    the saves directory (default kotor/out/saves); runs in parallel need one each
+#   EXE=PATH     the executable (default kotor/out/kotor.exe)
 export PATH=/g/Dev/msys64/mingw64/bin:$PATH
 name=$1
 script=$2
