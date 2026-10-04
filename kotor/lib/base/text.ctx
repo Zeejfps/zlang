@@ -65,6 +65,12 @@ namespace text {
         return s[i..]
     }
 
+    // The first word of `s` ("" if it has none).
+    fn first_word { s: []u8 } -> []u8 {
+        let mut ws = words{ s }
+        return next_word{ words = &ws } ifnull ""
+    }
+
     // How many words `s` has.
     fn count_words { s: []u8 } -> usize {
         let mut ws = words{ s }

@@ -1,0 +1,60 @@
+// Drawing the live effects: their meshes and lights through the scene's pieces, their particles
+// through the seam's emitters.
+namespace vfx {
+    // A bolt's streak (ours; the original's Motion_Blur rule was not read): the particle stretches
+    // along its flight by `blurlength` seconds of it, which for the 0.01 s of the blaster models is
+    // 0.4 m at the bolts' 42 m/s, scaled up so a bolt reads at the distances of a fight, and a
+    // little wider than the model's size.
+    const MIN_STREAK: f32 = 0.2
+    const STREAK_LENGTH: f32 = 2.4
+    const STREAK_WIDTH: f32 = 1.6
+
+    fn draw { v: *Vfx, sc: *scene::Scene, mut frame: render::Frame, view: u32 } {
+        let mut i: usize = 0
+        while i < MAX_FX {
+            let slot = i
+            i = i + 1
+            if not v.fx[slot].live { continue }
+            draw_one{ v, sc, &frame, view, f = &v.fx[slot] }
+        }
+    }
+
+    fn draw_one { v: *Vfx, sc: *scene::Scene, mut frame: render::Frame, view: u32, f: *Fx } {
+        let p = scene::part_at{ sc, i = f.part }
+        let l = scene::loaded_at{ sc, i = f.loaded }
+        scene::add_lights{ &frame, model = l.model, pose = p.pose, instance = f.matrix }
+        if l.model.meshes.len > 0 {
+            _ = mdl_render::add_draws{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = f.matrix, materials = l.materials, time = sc.time }
+        }
+        let mut e: usize = 0
+        while e < l.model.emitters.len {
+            let ex = &l.model.emitters[e]
+            let em = &f.emitting[e]
+            let props = p.pose.emitters[e]
+            e = e + 1
+            let n = gui3d::fill_particles{ em, props }
+            if n == 0 { continue }
+            let node_world = math::mat4::mul{ a = f.matrix, b = p.pose.world[ex.node] }
+            let look = gui3d::look_of{ e = ex, world = node_world }
+            if f.kind == Kind::bolt and ex.render == mdl::EmitterRender::motion_blur {
+                // A bolt streaks along its flight: the particle's long axis is the way it flies (in the
+                // emitter's space), its length the distance covered in `blurlength`.
+                let local = math::vec3::normalize{ v = math::mat4::transform_dir{ m = math::mat4::inverse_affine{ m = node_world }, v = f.dir } }
+                let length = math::max{ a = f.speed * props.blur_length * STREAK_LENGTH, b = MIN_STREAK }
+                let mut k: u32 = 0
+                while k < n {
+                    em.out[k].dir = local
+                    em.out[k].angle = 0.0
+                    em.out[k].size.x = em.out[k].size.x * STREAK_WIDTH
+                    em.out[k].size.y = em.out[k].size.x + length
+                    k = k + 1
+                }
+            }
+            render::add_emitter{ &frame, emitter = render::Emitter{
+                view, texture = em.texture, blend = look.blend, grid_x = ex.x_grid, grid_y = ex.y_grid,
+                facing = look.facing, axis = look.axis, transform = node_world, first = 0, count = 0,
+                fog = true, sort = @as(i32, ex.render_order),
+            }, particles = em.out[..@as(usize, n)] }
+        }
+    }
+}

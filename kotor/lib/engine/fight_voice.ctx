@@ -1,0 +1,54 @@
+// Creatures' voices in a fight: a battle cry as it joins one, attack and pain grunts, the death
+// cry, a shout at a critical hit. The sound set (soundset.2da row of the creature, an SSF of
+// dialog.tlk string references whose voice-over resource is the sound) has them in numbered slots
+// (docs/formats/ssf.md). Which slot sounds when is ours (the client's choice was not read): the
+// game plays the set's entries 0x10 on a party member going down and 0x11 on a critical hit.
+namespace fight {
+    // Slots k of an SSF (ssf.md).
+    const VOICE_BATTLE: u32 = 1             // 1..6
+    const VOICE_ATTACK: u32 = 10            // 10..12
+    const VOICE_PAIN: u32 = 13              // 13..14
+    const VOICE_DEAD: u32 = 16
+    const VOICE_CRITICAL: u32 = 17
+
+    // A creature does not speak again for this long after a grunt (not a battle cry or death).
+    const VOICE_GAP_MS: i32 = 1500
+
+    // The same word for the same creature at the same time (sound must not use the game's dice,
+    // which the scene's pace would otherwise change).
+    fn voice_hash { w: *world::World, id: u32, salt: u32 } -> u32 {
+        return @wrap_add(@wrap_mul(id, 2654435761), @wrap_mul(@trunc(u32, w.clock.frame) + salt, 40503)) >> 7
+    }
+
+    // One of slots first .. first + count - 1 of the creature's sound set, played at the creature
+    // when `chance_in` is 1 or the hash hits one in `chance_in`. `quiet` ones wait out the gap.
+    fn bark { mut w: world::World, id: u32, first: u32, count: u32, chance_in: u32, quiet: bool } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        if c.soundset == 0 or c.soundset == 0xFFFFFFFF or @as(usize, c.soundset) >= twoda::rows{ t = w.tables.soundset } { return }
+        let f = c.fighter ifnull { return }
+        if quiet and f.voice_ms > 0 { return }
+        let h = voice_hash{ w = &w, id, salt = first }
+        if chance_in > 1 and h % chance_in != 0 { return }
+        let name = twoda::get_string{ t = w.tables.soundset, row = @as(usize, c.soundset), column = "resref" } ifnull ""
+        if name.len == 0 { return }
+        let got = world::read_scratch{ &w, name, kind = restype::Type::ssf } iferr { return }
+        let bytes = got ifnull { return }
+        let set = ssf::parse{ data = bytes } iferr { return }
+        let table = w.tlk ifnull { return }
+        let mut j: u32 = 0
+        while j < count {
+            let k = first + (h / 3 + j) % count
+            j = j + 1
+            let strref = ssf::get{ set, k } ifnull { continue }
+            let found = tlk::get{ t = table, strref } iferr { continue }
+            let entry = found ifnull { continue }
+            let mut sound = entry.sound
+            let bytes_of = resref::bytes{ r = &sound }
+            if bytes_of.len == 0 { continue }
+            say{ &w, name = bytes_of, at = chest_of{ o }, source = id }
+            if quiet { f.voice_ms = VOICE_GAP_MS }
+            return
+        }
+    }
+}

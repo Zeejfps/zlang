@@ -15,6 +15,14 @@
 //   FRAME ui anims             each party member's animation, moving flag and speed
 //   FRAME ui list | pick | info | party   print selectable objects / the pick under the pointer / the target / the party
 namespace ingame {
+    // The scripted `ui` line (play.ctx hands each line to every owner in turn; the conversation
+    // panels' `ui` lines come first). True if the word is `ui`.
+    fn handle_scripted { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, word: []u8, rest: []u8 } -> bool {
+        if not ci::eq{ a = word, b = "ui" } { return false }
+        run_command{ &ui, &w, &dev, text = rest }
+        return true
+    }
+
     fn run_command { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, text: []u8 } {
         let mut words = text::words{ s = text }
         let cmd = text::next_word{ &words } ifnull { return }

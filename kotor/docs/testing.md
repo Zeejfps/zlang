@@ -75,8 +75,33 @@ VM, or `lib/dialog/core`.
 ## Adding a check
 
 A new subsystem gets a corpus tool that runs it over every resource of its type (AGENTS.md rule 6). A new input-script
-command goes in `play.ctx` or `lib/ingame/script.ctx` and the table in [playthrough.md](playthrough.md). A new report
+command: see below, then its row in the table in [playthrough.md](playthrough.md). A new report
 line for the smoke test starts with a word its `report.sh` can match (`stuck`, `fault:`); keep it out of the default log.
+
+## Adding a scripted command
+
+A script line is `FRAME WORD ARGS...`, kept as `play::Scripted { frame, word, rest }`: the word and the rest of the
+line as text. Nothing central lists the words (no enum, no parser chain). Each owner file has one function that is
+asked in turn and answers whether the word was its own:
+
+```
+// in your file: its namespace may be new; the fields besides word and rest are what your commands need
+fn handle_scripted { mut w: world::World, word: []u8, rest: []u8 } -> bool {
+    if ci::eq{ a = word, b = "mycmd" } {
+        let tag = text::first_word{ s = rest }                       // or text::words/next_word, text::rest, text::scan_*
+        ...
+    } else if ci::eq{ a = word, b = "other" } { ... }
+    else { return false }
+    return true
+}
+```
+
+The one place to add the call is the `let handled = ... or ...` chain in `play::run` (`game/play.ctx`, "One call per
+owner"): add `or yourns::handle_scripted{ &w, word = s.word, rest = s.rest } or` as a line of its own (the order does
+not matter; on a merge conflict there, keep both lines). Pass what you need from `run`'s locals by `&local`. More words for an owner
+that has a function (play's keys and moves, `mg_game` minigames, `handle_scripted_vfx` cam/fx, `ingame` `ui`) go in that function. A
+new `ui` subcommand needs no call: add a branch to `ingame::run_command` (`lib/ingame/script.ctx`). A word no owner
+takes stops the run with `kotor: input script: no command 'WORD' in the line '...'` (exit 1).
 
 ## Known runaways in the original's own scripts
 
