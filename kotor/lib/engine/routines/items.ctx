@@ -74,6 +74,36 @@ namespace rt_item {
         events::post{ &w, delay_ms = 0, caller = who, target = w.module, payload = events::Payload::script{ e } }
     }
 
+    // The Security bonus of a security spike (property 37, ThievesTools: "+10 bonus to security skill";
+    // the bonus cost table's row is the value), 0 for an item that is not one.
+    fn spike_bonus_of { w: *world::World, id: u32 } -> i32 {
+        let io = world::object{ w, id } ifnull { return 0 }
+        let it = obj::item{ o = io } ifnull { return 0 }
+        let ri = it.rules ifnull { return 0 }
+        let mut k: usize = 0
+        while k < @as(usize, ri.nprops) {
+            let p = ri.props[k]
+            k = k + 1
+            if @as(i32, p.name) == rules::ip::THIEVES_TOOLS and rules::prop_active{ item = ri, p = &p } { return @as(i32, p.cost_value) }
+        }
+        return 0
+    }
+
+    // One unit of the item is used up (a spike): the stack is one smaller, the last one goes, and the
+    // party is told "Lost Item".
+    fn use_up_one { mut w: world::World, item: u32 } {
+        let io = world::object{ w = &w, id = item } ifnull { return }
+        let it = obj::item{ o = io } ifnull { return }
+        if it.stack > 1 {
+            it.stack = it.stack - 1
+            if it.rules is some{ value = ri } { ri.stack = @as(i32, it.stack) }
+            return
+        }
+        notices::item_lost{ &w, who = it.possessor, item }
+        forget_item{ &w, item }
+        world::destroy{ &w, id = item }
+    }
+
     // The spell of the item's first active CastSpell property (its ability), -1 when it has none.
     fn ability_of { w: *world::World, id: u32 } -> i32 {
         let io = world::object{ w, id } ifnull { return -1 }
