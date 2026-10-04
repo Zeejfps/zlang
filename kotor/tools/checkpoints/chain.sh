@@ -12,7 +12,7 @@ pt=kotor/tools/playthrough
 first=${1:-vulkar}
 started=
 # name : loaded checkpoint : script : frames : index of the script's manual save that is the checkpoint
-steps="vulkar:sithbase:40_sithbase:18000:2 garage:vulkar:43_elevator:27500:1 kandon:garage:44_kandon:19000:1 swoop:kandon:45_gadon:19500:1 apt:swoop:46_race:22100:1 cand:apt:47_canderous:19700:1 t3:cand:48_t3:6600:1"
+steps="vulkar:sithbase:40_sithbase:18000:2 garage:vulkar:43_elevator:27500:1 kandon:garage:44_kandon:19000:1 swoop:kandon:45_gadon:19500:1 apt:swoop:46_race:22100:1 cand:apt:47_canderous:19700:1 t3:cand:48_t3:6600:1 codes:t3:49_sithbase:13600:1"
 for s in $steps; do
   name=${s%%:*}; rest=${s#*:}
   from=${rest%%:*}; rest=${rest#*:}

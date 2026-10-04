@@ -26,7 +26,25 @@ namespace ingame {
     // in front of it, or the screen's edge, can hide the middle). Null when no point of it can be picked.
     // `FRAME clickon TAG [N] [right]` in play.ctx clicks there through the SDL queue.
     fn click_point { ui: Ingame, w: *world::World, tag: []u8, nth: i32 } -> ?[2]i32 {
-        let id = world::object_by_tag{ w, tag, nth }
+        // `=NAME` names the object by what the HUD calls it ("Remains" has no tag), the Nth of that name from 0.
+        let mut id = obj::INVALID
+        if tag.len > 1 and tag[0] == '=' {
+            let all = list::items{ list = w.objects.all }
+            let mut seen: i32 = 0
+            let mut i: usize = 0
+            while i < all.len {
+                let o = all[i]
+                i = i + 1
+                if o.destroyed or not ci::eq{ a = hud::name_of{ w, id = o.id }, b = tag[1..] } { continue }
+                if seen == nth {
+                    id = o.id
+                    break
+                }
+                seen = seen + 1
+            }
+        } else {
+            id = world::object_by_tag{ w, tag, nth }
+        }
         let o = world::object{ w, id } ifnull { return null }
         let b = hud::box_on_screen{ p = ui.hud.projector, o } ifnull { return null }
         let sw = @as(f32, ui.gui.ui_w)
