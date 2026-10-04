@@ -7,11 +7,19 @@ namespace autopause {
     const ACTION_MENU: i32 = 7
     const PARTY_MEMBER_DOWN: i32 = 9
     const MINE_SIGHTED: i32 = 11
-    const END_OF_ROUND: i32 = 12            // ours: the call site's reason was not traced
-    const NEW_TARGET: i32 = 13              // ours
+    const END_OF_ROUND: i32 = 5
+    const NEW_TARGET: i32 = 8               // only the target-cycling keys in combat ask it, not a click (gameloop.md 6.4)
 
+    // The engine and the HUD say what happened; the interface (ingame::update) takes the first request of a
+    // frame and decides: the option for that reason, a person playing, nothing already paused.
     fn request { mut w: world::World, reason: i32 } {
-        _ = w
-        _ = reason
+        if w.autopause_asked == 0 { w.autopause_asked = reason }
+    }
+
+    // The reason asked since the last call, once; 0 for none.
+    fn take { mut w: world::World } -> i32 {
+        let r = w.autopause_asked
+        w.autopause_asked = 0
+        return r
     }
 }

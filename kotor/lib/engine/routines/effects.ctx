@@ -636,10 +636,20 @@ namespace rt_fx {
         rules::fx::set_group_creator{ g = &g, creator, spell_id = spell }
         if obj::creature{ o } is some {
             let res = fight::apply_group{ &w, target, g = &g }
+            // A beam leaf shows as a beam from the effector to the target for the effect's duration.
+            let mut leaf: i32 = 0
+            while leaf < g.len {
+                let item = g.items[@as(usize, leaf)]
+                leaf = leaf + 1
+                if item.kind == rules::fx::LIGHTSABER_THROW and not res.refused { fight::start_saber_throw{ &w, id = target } }
+                if item.kind == rules::fx::BEAM and not res.refused {
+                    outbox::post{ out = &w.out, note = outbox::Note::beam{ style = item.ints[0], source = item.objects[0], target, part = item.ints[1], seconds = seconds } }
+                }
+            }
             if w.log.combat {
                 world::prefix{ w = &w }
                 let outcome: []u8 = if res.kept { "kept" } else if res.refused { "refused" } else { "done" }
-                _ = @fmt(&w.io, "effect {} ({} leaves, id {}, duration {}) on {}: {}\n", g.items[0].kind, g.len, g.items[0].id, kind, target, outcome)
+                _ = @fmt(&w.io, "effect {} ({} leaves, id {}, duration {} {} s, spell {}) on {}: {}\n", g.items[0].kind, g.len, g.items[0].id, kind, seconds, spell, target, outcome)
             }
         } else {
             if w.log.combat {

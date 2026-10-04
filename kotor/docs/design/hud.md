@@ -44,7 +44,9 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
   vitality bar is green, the Force bar blue; clicking the leader's portrait opens equipment, a
   companion's makes it the leader (as Tab does).
 - **Minimap** (`minimap.ctx`): the area's `lbl_map<area>` picture placed from the ARE's `Map`
-  (two world points and where they fall in the picture, `NorthAxis` for which world axis runs
+  (two world points and where they fall in the map, 0..1 of its 440 x 256 texels: the art fills
+  the left 440 columns of the 512 x 256 texture and the rest is padding, and the original's
+  conversion rejects points past 0x1b8 x 0x100; `NorthAxis` for which world axis runs
   along the picture's; checked against every ARE: axis 0 is (x, -y), 1 (-x, y), 2 (-y, -x),
   3 (y, x) with each picture axis linear in one of them), the leader at the centre of a viewport
   drawn into a render target each frame, an arrow turned by its facing. The target is the picture
@@ -78,10 +80,17 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
   mines; the arrows cycle, a click casts on the leader in place of its queued actions (the cast
   action spends the item's use as it begins, `rt_item::spend_use`), an entry that cannot be used
   shows dimmed and says why in the message bar for five seconds (Force Depleted, Restricted by
-  Armor, Full Health, PC Dead), and the hovered slot's entry is named above the slots. Which
-  entries make up each list is ours (the original's list builder was not read): see the header of
-  the file. Mines are not listed (no trap action in the engine) and the keys (keymap.2da) are not
+  Armor, Full Health, PC Dead), and the hovered slot's entry is named above the slots. The friendly
+  powers are the original's list (one per `ForceFriendly` line, the highest `ForcePriority`:
+  [mechanics/force.md](../mechanics/force.md)); the item lists are ours (the header of the file). Mines are not listed (no trap action in the engine) and the keys (keymap.2da) are not
   bound. `ui useitem RESREF [N]` is the headless test; `scripts/selfslots.txt` the run.
+- **The target block's Force powers** (`hud::power_actions` in `target.ctx`, used by `block.ctx`): against a hostile
+  creature the middle slot lists the leader's hostile powers, one per `ForceHostile` line (spells.2da), the
+  known power of the line with the highest priority, those that bar the target's race (`Exclusion`) left out. An
+  entry the leader cannot pay for or wear dims and, pressed, says why in the message bar for five seconds
+  (`hud::use_slot`, `say_reason`); the choice stays chosen from target to target (`power_pick`); hovering a slot
+  names its entry above the self slots (shared with `selfslots`). The cast is `rt_talent::queue_cast`, so the
+  key `2`, a click and the arrows are tested like any other input (`ui fclick`, `ui key 2`).
 - **Not built**: the leader-swap animation, effect-count icons, stealth toggle and bark bubbles
   (the dialogue lead's).
 

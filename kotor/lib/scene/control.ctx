@@ -11,12 +11,13 @@ namespace ctl {
         strafe_right: bool,
         turn_left: bool,            // camera rotate keys
         turn_right: bool,
+        freelook: bool,             // free look: the leader keeps its facing (the mouse turns it) and moves along the keys
         walk: bool,                 // the walk modifier (B) is held: half the input, the walk animation
         action: bool,               // a minigame's fire key went down this frame (Space)
     }
 
     fn no_keys {} -> Keys {
-        return Keys{ forward = false, back = false, strafe_left = false, strafe_right = false, turn_left = false, turn_right = false, walk = false, action = false }
+        return Keys{ forward = false, back = false, strafe_left = false, strafe_right = false, turn_left = false, turn_right = false, freelook = false, walk = false, action = false }
     }
 
     struct Control {
@@ -89,10 +90,13 @@ namespace ctl {
         let fy = math::cosf{ x = yaw }
         let ux = fx * iy + fy * ix
         let uy = fy * iy - fx * ix
-        let vmax = c2.run_rate
+        let scale = fight::speed_scale{ o = o2 }
+        let vmax = c2.run_rate * scale
         // Turning toward the desired heading, fast when slow (movement.md 1.2 step 5).
         let speed = math::sqrtf{ x = ctl.vx * ctl.vx + ctl.vy * ctl.vy }
-        if has_input and speed > 0.1 {
+        if keys.freelook {
+            // Free look: the mouse turns the leader, the keys only move him.
+        } else if has_input and speed > 0.1 {
             let want = math::atan2f{ y = uy, x = ux }
             let have = math::atan2f{ y = o2.orientation.y, x = o2.orientation.x }
             let mut delta = want - have
@@ -124,7 +128,13 @@ namespace ctl {
             // Move along the facing by |v| dt (movement.md 1.2 step 7), sliding along what blocks.
             let d = v * step
             let from = o2.position
-            let to = math::Vec3{ x = from.x + o2.orientation.x * d, y = from.y + o2.orientation.y * d, z = from.z }
+            let mut dx = o2.orientation.x
+            let mut dy = o2.orientation.y
+            if keys.freelook {
+                dx = ctl.vx / v
+                dy = ctl.vy / v
+            }
+            let to = math::Vec3{ x = from.x + dx * d, y = from.y + dy * d, z = from.z }
             let moved = slide{ &w, from, to }
             if moved != null {
                 world::set_position{ o = o2, p = moved }
@@ -139,8 +149,9 @@ namespace ctl {
             c2.moving = true
             // Walk below the midpoint of the creature's walk and run rates, run above (ours: the original
             // blends by speed, movement.md 3.6).
-            let run_from = (c2.walk_rate + c2.run_rate) * 0.5
-            world::set_animation{ o = o3, id = if v >= run_from { obj::ANIM_RUN } else { obj::ANIM_WALK }, speed = 1.0 }
+            let run_from = (c2.walk_rate + c2.run_rate) * 0.5 * scale
+            let run = v >= run_from
+            world::set_animation{ o = o3, id = if run { obj::ANIM_RUN } else { obj::ANIM_WALK }, speed = movement::anim_rate{ w = &w, c = c2, run, speed = v } }
         } else if o2.actions.len == 0 {
             c2.moving = false
             if o2.animation == obj::ANIM_RUN or o2.animation == obj::ANIM_WALK {

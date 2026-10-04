@@ -270,8 +270,8 @@ namespace rt_obj {
 
     // ---- searching by area, shape and nearness
     //
-    // The first/next pairs keep their place in w.cursor_area / w.cursor_shape (an index into the
-    // creation-ordered objects.all), so a loop's own calls move it and nothing else should.
+    // The first/next pairs keep their place in w.cursor_area (an index into the creation-ordered
+    // objects.all) and w.cursor_shape (the last object returned), so a loop's own calls move it and nothing else should.
 
     // Whether the object stands in an area: not on its way out, not the module or an area, and
     // not an item in someone's pack.
@@ -319,16 +319,39 @@ namespace rt_obj {
         try nwvm::push_object{ &vm, id = found }
     }
 
-    // Whether point `p` is in a spell shape (SHAPE_*): sphere 4 (radius `size`); cube 2 (half a
-    // side); spell cylinder 0 (radius `size` about the line from `origin` to `centre`, flat);
-    // cone 1 and spell cone 3 (from `origin` widening to radius `size` at `centre`, flat).
-    // The engine's own tests (0x0054a260) are more elaborate; these are the shapes they describe.
+    // Whether point `p` is in a spell shape (SHAPE_*), as ExecuteCommandGetFirstObjectInShape
+    // (0x0054a260) tests it: sphere 4 (radius `size` about `centre`); cube 2 (half a side); spell
+    // cylinder 0, a line from the caller through `centre` that is `size` long and 1.5 m either side
+    // (the point must be within `size` of the caller, in front of it, and 1.5 m of the line); spell
+    // cone 3, within `size` of the caller along the axis and within 30 degrees of it (cos >= 0.866);
+    // cone 1 (ours: from `origin` widening to radius `size` at `centre`, flat).
     fn in_shape { shape: i32, size: f32, centre: math::Vec3, origin: math::Vec3, p: math::Vec3 } -> bool {
         if shape == 2 {
             return math::abs{ x = p.x - centre.x } <= size and math::abs{ x = p.y - centre.y } <= size and
                 math::abs{ x = p.z - centre.z } <= size
         }
-        if shape == 0 or shape == 1 or shape == 3 {
+        if shape == 0 or shape == 3 {
+            let ax = centre.x - origin.x
+            let ay = centre.y - origin.y
+            let az = centre.z - origin.z
+            let alen = math::sqrtf{ x = ax * ax + ay * ay + az * az }
+            let dx = p.x - origin.x
+            let dy = p.y - origin.y
+            let dz = p.z - origin.z
+            let dlen2 = dx * dx + dy * dy + dz * dz
+            if alen < 0.001 { return false }
+            let along = (dx * ax + dy * ay + dz * az) / alen
+            if shape == 0 {
+                if dlen2 > size * size { return false }
+                if along < 0.0 { return false }
+                // How far the point is from the axis.
+                return dlen2 - along * along <= 2.25
+            }
+            let dlen = math::sqrtf{ x = dlen2 }
+            if dlen < 0.001 { return false }
+            return along / dlen >= 0.866 and along * along < size * size
+        }
+        if shape == 1 {
             let ax = centre.x - origin.x
             let ay = centre.y - origin.y
             let length = math::sqrtf{ x = ax * ax + ay * ay }
@@ -337,11 +360,6 @@ namespace rt_obj {
                 let dy = p.y - origin.y
                 let along = (dx * ax + dy * ay) / length
                 let side = math::abs{ x = (dx * ay - dy * ax) / length }
-                if shape == 0 {
-                    let t = if along < 0.0 { 0.0 } else if along > length { length } else { along }
-                    let s = along - t
-                    return s * s + side * side <= size * size
-                }
                 return along >= 0.0 and along <= length and side <= size * (along / length)
             }
         }
@@ -366,18 +384,44 @@ namespace rt_obj {
         if me != null { origin = me.position }
         let given = origin_arg.x != 0.0 or origin_arg.y != 0.0 or origin_arg.z != 0.0
         if shape == 1 and given { origin = vec{ v = origin_arg } }
+        // The original walks the area's creatures sorted by x (CSWSArea +0x190, gameloop.md 2.4),
+        // so the order is ascending x, then id; the cursor keeps the last object returned (its id
+        // + 1; 0 when the walk is over) and Next takes the smallest (x, id) after it. The AI's
+        // nested shape loops share this one cursor, as the original's do, and their results hang
+        // on that order (GN_RunGrenadeAIRoutine judges the first creature only).
+        let mut after_x: f32 = -1000000000.0
+        let mut after_id: u32 = 0
+        let mut any_before = false
+        if not first {
+            if w.cursor_shape == 0 {
+                try nwvm::push_object{ &vm, id = obj::INVALID }
+                return
+            }
+            let last = world::object{ w = &w, id = @trunc(u32, w.cursor_shape - 1) } ifnull {
+                w.cursor_shape = 0
+                try nwvm::push_object{ &vm, id = obj::INVALID }
+                return
+            }
+            after_x = last.position.x
+            after_id = last.id
+            any_before = true
+        }
         let all = list::items{ list = w.objects.all }
-        let mut i: usize = if first { 0 } else { w.cursor_shape }
         let mut found = obj::INVALID
+        let mut found_x: f32 = 0.0
+        let mut i: usize = 0
         while i < all.len {
             let o = all[i]
             i = i + 1
             if not placed{ o } or o.area != area or (obj::object_type{ kind = o.kind } & filter) == 0 { continue }
+            let x = o.position.x
+            if any_before and (x < after_x or (x == after_x and o.id <= after_id)) { continue }
+            if found != obj::INVALID and (x > found_x or (x == found_x and o.id > found)) { continue }
             if not in_shape{ shape, size, centre = l.position, origin, p = o.position } { continue }
             found = o.id
-            break
+            found_x = x
         }
-        w.cursor_shape = i
+        w.cursor_shape = if found == obj::INVALID { 0 } else { @as(usize, found) + 1 }
         try nwvm::push_object{ &vm, id = found }
     }
 

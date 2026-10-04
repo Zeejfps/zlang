@@ -37,7 +37,13 @@ namespace hud {
         notify_shown: [9]bool,
         shown_target: u32,                  // the target the block was built for
         lists: [3]ActionList,               // the block's slots
+        power_pick: i32,                    // the Force power chosen in the middle slot (a spells.2da row), kept from target to target
+        refusal: f32,                       // seconds left of a refusal message in the message bar
+        hover_slot: i32,                    // the target slot under the pointer, -1 none
         pressed: u32,                       // the object under the pointer when the button went down
+        alternate: bool,                    // Shift is held (AlternateActions): slot orders replace the queue in combat
+        trans_panel: u32,                   // the area transition label's panel while the pointer is on a transition, else 0
+        trans_object: u32,                  // the transition it names
         projector: Projector,               // this frame's, for picking and the reticle
     }
 
@@ -76,7 +82,7 @@ namespace hud {
             block = [BlockPart{ index = -1, x = 0, y = 0 }; 16],
             minimap = open_minimap{ &g, &w, &dev, panel },
             font = gui::font_slot{ &g, fs = &w.fs, &dev, name = "dialogfont10x10" }, combat = false, combat_message = 0.0, notify = [0.0; 9], notify_shown = [false; 9],
-            shown_target = obj::INVALID, lists = [empty_list{}; 3], pressed = obj::INVALID,
+            shown_target = obj::INVALID, lists = [empty_list{}; 3], power_pick = -1, refusal = 0.0, hover_slot = -1, pressed = obj::INVALID, alternate = false, trans_panel = 0, trans_object = obj::INVALID,
             projector = Projector{ vp = math::mat4::identity{}, eye = math::vec3::zero{}, w = 1.0, h = 1.0 },
         }
         let mut i: usize = 0
@@ -222,6 +228,7 @@ namespace hud {
         h.projector = make_projector{ camera, ui_w = g.ui_w, ui_h = g.ui_h, aspect }
         update_party{ &h, &g, &w, &dev, &text }
         update_hover{ &h, &g, &w, blocked }
+        update_transition{ &h, &g, &w, &dev, id = w.hover }
         update_block{ &h, &g, &w, &dev }
         update_combat{ &h, &g, &w, &dev, dt }
         // Solo mode: its toggle shows once there is someone to leave behind.
