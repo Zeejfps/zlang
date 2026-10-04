@@ -146,6 +146,7 @@ namespace play {
                 }
             }
             // 1b. Graphics options changed by a scripted `gfx` word or in the options menu are made real before this frame is drawn.
+            let mut reload_scene = false
             if disp.pending {
                 disp.pending = false
                 let mut s = disp.live
@@ -153,11 +154,25 @@ namespace play {
                 disp.live = s
                 frontend::save_settings{ fs = &w.fs, heap = w.heap, path = opts.settings, s } iferr {}
                 options_changed{ &w, &dev, ui, &dview, &disp, changed }
+                reload_scene = reload_scene or (changed & display::CHANGED_TEXTURES) != 0
             }
             if ingame::take_display_change{ ui } is some{ value = st } {
                 let changed = display::apply{ d = &disp, &dev, &sdl, s = st }
                 disp.live = st.*
                 options_changed{ &w, &dev, ui, &dview, &disp, changed }
+                reload_scene = reload_scene or (changed & display::CHANGED_TEXTURES) != 0
+            }
+            sc.grass.on = disp.applied.grass     // the Grass option, every frame (a new area's scene starts with it on)
+            // Another texture pack: the area's textures are loaded again from it, as a load does (the world stays).
+            if reload_scene and w.transition == null {
+                dlgview::leave{ v = &dview, w = &w, sc = &sc, g = &ui.gui }
+                ambience::stop_area{ a = &amb }
+                scene::release{ &sc, &dev }
+                arena::reset{ heap = &scene_arena }
+                vfx::reset{ v = &vx }
+                sc = scene::make{ arena = &scene_arena, heap = w.heap, scratch = texture_scratch, rm = w.rm.* }
+                try scene::load_area{ &sc, &w, &dev }
+                ambience::start_area{ a = &amb, &w }
             }
             // The step: fixed when headless, measured otherwise.
             let now = sdl::counter{ &sdl }
@@ -390,6 +405,7 @@ namespace play {
             while s < opts.shot_count {
                 if opts.shots[s].frame == frame_no {
                     try screenshot{ &w, &dev, heap = &scene_arena, path = opts.shots[s].path, frame_no }
+                    _ = @fmt(&w.io, "  frame: {} draws, {} shadows, {} lights, {} emitters, {} particles\n", frame.draw_count, frame.shadow_count, frame.light_count, frame.emitter_count, frame.particle_count)
                     let p = world::object{ w = &w, id = w.pc }
                     if p != null {
                         _ = @fmt(&w.io, "  leader at {} {} {} (room {}), camera at {} {} {} looking at {} {} {}\n", p.position.x, p.position.y, p.position.z,
@@ -574,6 +590,7 @@ namespace play {
     fn mount_packs { mut w: world::World, quality: i32 } {
         let q = @as(u32, quality)
         if w.rm.quality == q { return }
+        _ = @fmt(&w.io, "texture packs: quality {} (was {})\n", q, w.rm.quality)
         res::mount_texture_packs{ fs = &w.fs, rm = w.rm, quality = q } iferr err{ error } {
             _ = @fmt(&w.io, "kotor: texture packs: {}\n", error)
         }

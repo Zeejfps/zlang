@@ -21,6 +21,7 @@ namespace walkmap {
         placed: list::List(Placed, heap::Heap),
         walkable: []mut bool,               // by surface material: surfacemat.2da Walk
         sees: []mut bool,                   // by surface material: surfacemat.2da LineOfSight
+        grass: []mut bool,                  // by surface material: surfacemat.2da Grass (grass is drawn on it, lib/scene/grass.ctx)
     }
 
     struct Floor { room: i32, face: u32, z: f32 }
@@ -29,7 +30,7 @@ namespace walkmap {
         return Map{
             rooms = list::new(Room, heap::Heap){ realloc = heap::alloc, heap },
             placed = list::new(Placed, heap::Heap){ realloc = heap::alloc, heap },
-            walkable = slice::empty(bool){}, sees = slice::empty(bool){},
+            walkable = slice::empty(bool){}, sees = slice::empty(bool){}, grass = slice::empty(bool){},
         }
     }
 
@@ -38,10 +39,12 @@ namespace walkmap {
         let n = twoda::rows{ t = table }
         m.walkable = try alloc::resize(bool, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(bool){}, count = n }
         m.sees = try alloc::resize(bool, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(bool){}, count = n }
+        m.grass = try alloc::resize(bool, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(bool){}, count = n }
         let mut i: usize = 0
         while i < n {
             m.walkable[i] = (twoda::get_int{ t = table, row = i, column = "walk" } ifnull 0) != 0
             m.sees[i] = (twoda::get_int{ t = table, row = i, column = "lineofsight" } ifnull 1) != 0
+            m.grass[i] = (twoda::get_int{ t = table, row = i, column = "grass" } ifnull 0) != 0
             i = i + 1
         }
     }

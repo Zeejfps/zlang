@@ -1570,37 +1570,67 @@ namespace gpu {
 
     // Each shadow: its draw's mesh through the planar projection from its light, darkening each
     // pixel at most once (the stencil counts).
+    // Soft shadows (the Soft Shadows option) are the same projection from several points of an area light,
+    // each darkening by the share that makes the whole as dark as one hard shadow: where every pass lands the
+    // shadow is as dark as strength says, and at the edges, where fewer do, it fades. A limb far above the
+    // floor gets a wide penumbra and a foot on it a sharp one, as a real shadow does.
+    const SOFT_PASSES: u32 = 12
+    const SOFT_RADIUS: f32 = 0.5
+
+    fn soft_offset { pass: u32, radius: f32 } -> math::Vec3 {
+        let r = radius * math::sqrtf{ x = (@as(f32, pass) + 0.5) / @as(f32, SOFT_PASSES) }
+        let a = @as(f32, pass) * 2.3999632
+        return math::Vec3{ x = r * math::cosf{ x = a }, y = r * math::sinf{ x = a }, z = 0.0 }
+    }
+
     fn draw_shadows { mut dev: Device, frame: *render::Frame, index: u32 } -> ! {
         if not dev.shadows { return }
+        let passes: u32 = if dev.soft_shadows { SOFT_PASSES } else { 1 }
         let mut any = false
-        let mut s: u32 = 0
-        while s < frame.shadow_count {
-            let sh = frame.shadows[s]
-            s = s + 1
-            if sh.draw >= frame.draw_count { continue }
-            let draw = frame.draws[sh.draw]
-            if draw.view != index { continue }
-            if not any {
-                any = true
-                use_program{ &dev, program = dev.scene.id }
-                set_blend{ &dev, blend = render::Blend::alpha }
-                set_depth{ &dev, test = true, write = false }
-                set_cull{ &dev, on = false }
-                set_offset{ &dev, on = true }
-                dev.gl.polygon_offset{ factor = -1.0, units = -4.0 }
-                set_stencil{ &dev, on = true }
-                dev.gl.stencil_mask{ mask = 0xFF }
-                dev.gl.stencil_func{ func = gl::EQUAL, ref = 0, mask = 0xFF }
-                dev.gl.stencil_op{ fail = gl::KEEP, zfail = gl::KEEP, zpass = gl::INCR }
+        let mut pass: u32 = 0
+        while pass < passes {
+            // Each pass counts its pixels afresh: the stencil is cleared between them.
+            if pass > 0 and any {
+                dev.gl.clear_stencil{ s = 0 }
+                dev.gl.clear{ mask = gl::STENCIL_BUFFER_BIT }
             }
-            let post = shadow_matrix{ plane = sh.plane, light = sh.light, directional = sh.directional }
-            dev.gl.uniform_matrix4fv{ location = dev.scene.post, count = 1, transpose = gl::FALSE, value = &post.m[0] }
-            let mut d = draw
-            d.material.blend = render::Blend::alpha
-            d.material.color = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = sh.strength }
-            d.material.decal = false
-            d.material.two_sided = true
-            draw_shadow_mesh{ &dev, frame, draw = d }
+            let mut s: u32 = 0
+            while s < frame.shadow_count {
+                let sh = frame.shadows[s]
+                s = s + 1
+                if sh.draw >= frame.draw_count { continue }
+                let draw = frame.draws[sh.draw]
+                if draw.view != index { continue }
+                if not any {
+                    any = true
+                    use_program{ &dev, program = dev.scene.id }
+                    set_blend{ &dev, blend = render::Blend::alpha }
+                    set_depth{ &dev, test = true, write = false }
+                    set_cull{ &dev, on = false }
+                    set_offset{ &dev, on = true }
+                    dev.gl.polygon_offset{ factor = -1.0, units = -4.0 }
+                    set_stencil{ &dev, on = true }
+                    dev.gl.stencil_mask{ mask = 0xFF }
+                    dev.gl.stencil_func{ func = gl::EQUAL, ref = 0, mask = 0xFF }
+                    dev.gl.stencil_op{ fail = gl::KEEP, zfail = gl::KEEP, zpass = gl::INCR }
+                }
+                let mut light = sh.light
+                let mut strength = sh.strength
+                if passes > 1 {
+                    let o = soft_offset{ pass, radius = if sh.directional { SOFT_RADIUS * 0.15 } else { SOFT_RADIUS } }
+                    light = math::Vec3{ x = light.x + o.x, y = light.y + o.y, z = light.z + o.z }
+                    strength = 1.0 - math::powf{ x = 1.0 - math::min{ a = sh.strength, b = 0.999 }, y = 1.0 / @as(f32, passes) }
+                }
+                let post = shadow_matrix{ plane = sh.plane, light, directional = sh.directional }
+                dev.gl.uniform_matrix4fv{ location = dev.scene.post, count = 1, transpose = gl::FALSE, value = &post.m[0] }
+                let mut d = draw
+                d.material.blend = render::Blend::alpha
+                d.material.color = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = strength }
+                d.material.decal = false
+                d.material.two_sided = true
+                draw_shadow_mesh{ &dev, frame, draw = d }
+            }
+            pass = pass + 1
         }
         if any {
             set_identity_post{ &dev }

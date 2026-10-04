@@ -436,7 +436,7 @@ namespace render {
 
     fn default_capacity {} -> Capacity {
         return Capacity{
-            views = 16, steps = 64, draws = 16384, bones = 16384, lights = 128, shadows = 64,
+            views = 16, steps = 64, draws = 16384, bones = 16384, lights = 128, shadows = 512,
             emitters = 1024, particles = 32768, lines = 65536, tris = 65536, quads = 16384,
         }
     }

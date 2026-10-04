@@ -1,0 +1,2 @@
+1 gfx softshadows 1
+1 gfx grass 0

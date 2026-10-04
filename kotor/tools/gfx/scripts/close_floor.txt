@@ -1,0 +1,2 @@
+# A camera low over the floor of the apartment checkpoint, for texture detail (anisotropy, texture quality).
+2 cam at 88.0,143.5,0.45 92.0,143.5,0.0
