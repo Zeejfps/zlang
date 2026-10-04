@@ -318,28 +318,10 @@ uint64_t ctx_as_u(uint64_t v, uint64_t hi, const char *dst, CTX_POS) {
     return v;
 }
 
-_Noreturn static void f2i_fail(double v, const char *dst, CTX_POS) {
+_Noreturn void ctx_f2i_fail(double v, const char *dst, CTX_POS) {
     char text[64];
     repr_f64(v, text);
     ctx_panic_fmt(line, col, file, "@as: %s is not representable in %s", text, dst);
-}
-
-// Is trunc(v) at least lo? Exact: lo - 1 is a double for every lo but INT64_MIN, and no double
-// lies strictly between INT64_MIN - 1 and INT64_MIN.
-static int at_least(double v, int64_t lo) {
-    return lo == INT64_MIN ? v >= -9223372036854775808.0 : v > (double)lo - 1.0;
-}
-
-int64_t ctx_f2i_s(double v, int64_t lo, int64_t hi, const char *dst, CTX_POS) {
-    if (!(at_least(v, lo) && v < (double)hi + 1.0)) f2i_fail(v, dst, line, col, file);
-    return (int64_t)v;
-}
-
-uint64_t ctx_f2i_u(double v, uint64_t hi, const char *dst, CTX_POS) {
-    // hi + 1 is 2^8, 2^16, 2^32 or 2^64: exact as a double.
-    double limit = hi == UINT64_MAX ? 18446744073709551616.0 : (double)hi + 1.0;
-    if (!(v > -1.0 && v < limit)) f2i_fail(v, dst, line, col, file);
-    return (uint64_t)v;
 }
 
 // ---- statuses: >= 0 for a result and < 0 for an error, for proc's natives

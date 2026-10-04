@@ -7208,6 +7208,63 @@ fn main { mut io: Io } {
         self.assertEqual(out, '0.1\n0.10000000149011612\n1e+16\n0.0001\n1e-05\n-inf\n0\n-3\n'
                               '18446744073709551613\n44\n2\n')
 
+    def test_float_to_integer_boundaries(self):
+        # Every integer width, from both float types. In particular, a negative fraction is
+        # valid for unsigned destinations, and the float just below 2^64 still fits in u64.
+        for source, precision in [('f32', 24), ('f64', 53)]:
+            lines, expected = [], []
+            for dest in ['i8', 'i16', 'i32', 'i64', 'u8', 'u16', 'u32', 'u64', 'usize']:
+                signed = dest.startswith('i')
+                bits = 64 if dest == 'usize' else int(dest[1:])
+                upper = 2 ** (bits - int(signed))
+                below_upper = upper - 2.0 ** (bits - int(signed) - precision)
+                values = [0.0, -0.0, -0.75, 3.75, below_upper]
+                if signed:
+                    values += [-3.75, float(-upper)]
+                    # Fractional values below the minimum still truncate into range.
+                    if bits < precision:
+                        values.append(-upper - 0.75)
+                writer = 'i64' if signed else 'u64'
+                for value in values:
+                    lines.append(f'io::println_{writer}{{ &io, n = to_{dest}{{ x = {value!r} }} }}')
+                    expected.append(str(int(value)))
+            functions = '\n'.join(
+                f'fn to_{dest} {{ x: {source} }} -> {dest} {{ return @as({dest}, x) }}'
+                for dest in ['i8', 'i16', 'i32', 'i64', 'u8', 'u16', 'u32', 'u64', 'usize'])
+            with self.subTest(source=source):
+                self.assertOutput(functions + '\nfn main { mut io: Io } {\n' +
+                                  '\n'.join(lines) + '\n}', '\n'.join(expected) + '\n')
+
+    def test_float_to_integer_out_of_range(self):
+        for source in ['f32', 'f64']:
+            for dest in ['i8', 'i16', 'i32', 'i64', 'u8', 'u16', 'u32', 'u64', 'usize']:
+                signed = dest.startswith('i')
+                bits = 64 if dest == 'usize' else int(dest[1:])
+                upper = 2 ** (bits - int(signed))
+                # Small signed bounds have an exactly representable lo - 1. For large ones,
+                # use the next float below lo (spacing below a power of two is 2^(e-p+1)).
+                precision = 24 if source == 'f32' else 53
+                below_lower = -upper - max(1, 2 ** (bits - precision)) if signed else -1
+                values = [repr(float(upper)), repr(float(below_lower)),
+                          '0.0 / 0.0', '1.0 / 0.0', '-1.0 / 0.0']
+                for value in values:
+                    with self.subTest(source=source, dest=dest, value=value):
+                        self.assertPanic(
+                            f'fn convert {{ x: {source} }} -> {dest} {{ return @as({dest}, x) }}\n'
+                            f'fn main {{}} {{ _ = convert{{ x = {value} }} }}',
+                            f'is not representable in {dest}')
+
+    def test_float_to_integer_evaluates_once(self):
+        self.assertOutput('''
+fn next { mut calls: i32 } -> f64 { calls = calls + 1; return -0.75 }
+fn main { mut io: Io } {
+    let mut calls = 0
+    io::println_u64{ &io, n = @as(usize, next{ &calls }) }
+    io::println_i64{ &io, n = @as(i32, next{ &calls }) }
+    io::println_i64{ &io, n = calls }
+}
+''', '0\n0\n2\n')
+
     def test_panics(self):
         for body, msg in [
             ('let a = [1, 2]\n    let i: usize = 2\n    io::println_i64{ &io, n = a[i] }',
