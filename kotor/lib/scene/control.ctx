@@ -153,7 +153,7 @@ namespace ctl {
             // blends by speed, movement.md 3.6); in stealth always walk.
             let run_from = (c2.walk_rate + c2.run_rate) * 0.5 * scale
             let run = v >= run_from and not walking
-            world::set_animation{ o = o3, id = if run { obj::ANIM_RUN } else { obj::ANIM_WALK }, speed = movement::anim_rate{ w = &w, c = c2, run, speed = v } }
+            world::set_gait{ o = o3, id = if run { obj::ANIM_RUN } else { obj::ANIM_WALK }, cycles = movement::gait_cycles{ w = &w, c = c2, run, speed = v } }
         } else if o2.actions.len == 0 {
             c2.moving = false
             if o2.animation == obj::ANIM_RUN or o2.animation == obj::ANIM_WALK {

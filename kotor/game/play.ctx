@@ -96,6 +96,8 @@ namespace play {
         let mut real_total: f64 = 0.0
         let mut real_worst: f32 = 0.0
         let mut timed: u64 = 0
+        let mut tenth_total: [10]f64 = [0.0; 10]       // the passes' wall time by tenth of a run of known length (--frames)
+        let mut tenth_count: [10]u64 = [0; 10]
         let mut owed = speed::Owed{ dt = 0.0, clock_dt = 0.0 }    // --speed: the presentation's time to catch up
         while not quit {
             frame_no = frame_no + 1
@@ -131,6 +133,12 @@ namespace play {
             if timed > 0 {
                 real_total = real_total + @as(f64, real)
                 if real > real_worst { real_worst = real }
+                if opts.frames > 0 and frame_no <= opts.frames {
+                    // `real` is the previous pass's time: pass number frame_no - 1 of `frames`, counted from 0 as frame_no - 2.
+                    let tenth = @as(usize, (frame_no - 2) * 10 / opts.frames)
+                    tenth_total[tenth] = tenth_total[tenth] + @as(f64, real)
+                    tenth_count[tenth] = tenth_count[tenth] + 1
+                }
             }
             timed = timed + 1
             let mut dt = if opts.dt > 0.0 { opts.dt } else { math::min{ a = real, b = 0.25 } }
@@ -389,6 +397,18 @@ namespace play {
         _ = @fmt(&w.io, "vfx: {} effects started, {} wanted while the pool was full\n", vx.started, vx.dropped)
         if timed > 1 {
             _ = @fmt(&w.io, "frames: {}, {} ms each on average, {} ms the slowest\n", timed, @as(f32, real_total * 1000.0 / @as(f64, timed - 1)), real_worst * 1000.0)
+        }
+        // A run that gets slower as it goes (something piling up per tick) shows in its tenths: the smoke test's
+        // report flags a last tenth over twice the first (tools/smoke/report.sh).
+        if opts.frames >= 1000 and timed >= opts.frames {
+            _ = @fmt(&w.io, "frame tenths (ms each):")
+            let mut k: usize = 0
+            while k < 10 {
+                let each = if tenth_count[k] > 0 { tenth_total[k] * 1000.0 / @as(f64, tenth_count[k]) } else { 0.0 }
+                _ = @fmt(&w.io, " {}", @as(f32, each))
+                k = k + 1
+            }
+            _ = @fmt(&w.io, "\n")
         }
         report::summary{ &w, routines = opts.report }
         return 0
