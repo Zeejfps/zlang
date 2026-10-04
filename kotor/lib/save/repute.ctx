@@ -1,0 +1,46 @@
+// The faction standings in a save (the original's repute.fac, docs/formats/gff-schemas.md "FAC"): what AdjustReputation and the
+// faction routines changed stays changed across modules (the world keeps the table) and across a save and a load. The pairs are
+// written as the schema has them, `FactionID2` regarding `FactionID1` with `FactionRep`; the table is the one world::repute holds.
+namespace save {
+    const KIND_FAC: u16 = 2038
+
+    // Writes the standings into the game in progress, to go into SAVEGAME.sav with the rest.
+    fn keep_repute { mut w: world::World } -> ! {
+        let mut b = try gffw::new(arena::Arena){ realloc = arena::alloc, heap = w.scratch, tag = "FAC " }
+        let reps = try gffw::put_list{ &b, owner = gffw::ROOT, label = "RepList" }
+        let mut i: usize = 0
+        while i < w.repute_rows {
+            let mut j: usize = 0
+            while j < w.repute_rows {
+                if i != j {
+                    let e = try gffw::add_element{ &b, list = reps, id = 0 }
+                    _ = try gffw::add_value{ &b, owner = e, label = "FactionID1", value = gff::Value::dword{ v = @as(u32, j) } }
+                    _ = try gffw::add_value{ &b, owner = e, label = "FactionID2", value = gff::Value::dword{ v = @as(u32, i) } }
+                    _ = try gffw::add_value{ &b, owner = e, label = "FactionRep", value = gff::Value::dword{ v = @as(u32, w.repute[i][j]) } }
+                }
+                j = j + 1
+            }
+            i = i + 1
+        }
+        let bytes = try gffw::finish{ &b, layout = gffw::ENGINE }
+        try put{ st = &w.gip, name = "repute", kind = KIND_FAC, bytes }
+    }
+
+    // The standings of a loaded save: repute.2da's first, then the pairs the save has over them (a save without any, such as one
+    // from before they were kept, leaves the 2da's).
+    fn restore_repute { mut w: world::World } -> ! {
+        world::load_repute{ w = &w }
+        let bytes = get{ st = &w.gip, name = "repute", kind = KIND_FAC } ifnull { return }
+        let doc = try gff::parse{ data = bytes, realloc = arena::alloc, heap = w.scratch }
+        let reps = gff::get_list{ doc = doc, s = gff::ROOT, label = "RepList" } ifnull { return }
+        let mut k: usize = 0
+        while k < reps.len {
+            let col = gff::get_number{ doc = doc, s = reps[k], label = "FactionID1" } ifnull -1
+            let row = gff::get_number{ doc = doc, s = reps[k], label = "FactionID2" } ifnull -1
+            let rep = gff::get_number{ doc = doc, s = reps[k], label = "FactionRep" } ifnull 50
+            k = k + 1
+            if row < 0 or col < 0 or row >= @as(i64, w.repute_rows) or col >= @as(i64, w.repute_rows) { continue }
+            w.repute[@as(usize, row)][@as(usize, col)] = @trunc(u8, if rep < 0 { 0 } else if rep > 100 { 100 } else { rep })
+        }
+    }
+}

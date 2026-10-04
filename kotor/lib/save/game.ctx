@@ -115,6 +115,7 @@ namespace save {
         try save_module_state{ &w }
         try keep_party{ &w }
         try keep_inventory{ &w }
+        try keep_repute{ &w }
         w.party.saved_count = 0
         w.autosave_ms = 0.0
         let mut buf: [512]u8
@@ -265,6 +266,7 @@ namespace save {
         }
         w.party = party::new{}
         try read_store{ st = &w.gip, image }
+        try restore_repute{ &w }
         let globals_bytes = fs::read_all(arena::Arena){ fs = &w.fs, heap = w.scratch, realloc = arena::alloc, path = try file_in{ &w, folder, name = "GLOBALVARS.res" } } iferr { slice::empty(u8){} }
         if globals_bytes.len > 0 {
             let doc = try gff::parse{ data = globals_bytes, realloc = arena::alloc, heap = w.scratch }
