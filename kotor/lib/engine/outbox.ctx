@@ -60,6 +60,10 @@ namespace outbox {
         //     or at `position` when `target` is OBJECT_INVALID; `source` is the caster (for beams)
         shot{ attacker: u32, target: u32, ammo: i32, power: bool, hand: i32, flight_ms: i32, result: i32 },
         visual{ effect: i32, target: u32, source: u32, position: math::Vec3 },
+        //   visual_hold / visual_release: a duration visual (visualeffects.2da Type_FD D: a stun's stars, a
+        //     speed streak) stays on `target` until it is released
+        visual_hold{ effect: i32, target: u32 },
+        visual_release{ effect: i32, target: u32 },
         //   effect_model: an effect model by name (a power's cast visual in spells.2da) riding the
         //     node `hook` of `object` for `life` seconds (0: its animation's length), or at
         //     `position` when `object` is OBJECT_INVALID

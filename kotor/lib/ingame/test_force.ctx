@@ -60,6 +60,15 @@ namespace test_force {
             _ = @fmt(&w.io, "  state {} ai_mask {} commandable {} hp {}/{} effects {} anim {}\n", f.c.stats.state, f.c.stats.ai_mask, o.commandable, o.hp, o.hp_max, f.c.nfx, o.animation)
             return true
         }
+        if ci::eq{ a = cmd, b = "play" } {
+            // `ui play TAG ROW`: the creature plays animations.2da row ROW (to look at the state animations).
+            let mut words = text::words{ s = args }
+            let tag = text::next_word{ &words } ifnull { return true }
+            let row = @as(u32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+            let o = world::object{ w = &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } } ifnull { return true }
+            world::set_animation{ o, id = animname::ROW_BASE + row, speed = 1.0 }
+            return true
+        }
         if ci::eq{ a = cmd, b = "clickctl" } {
             // A click on the centre of a HUD control by tag (the target block's arrows move with the target,
             // so a script cannot name their pixels): the same mouse events as `ui click X Y`.

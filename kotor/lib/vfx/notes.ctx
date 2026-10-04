@@ -52,6 +52,16 @@ namespace vfx {
         _ = spawn_follow{ &v, &sc, &w, &dev, model, object, hook = effect_hook{ effect }, which = 0, anim = "impact", life = 0.0 } iferr { null }
     }
 
+    // A duration visual (visualeffects.2da Type_FD D) held on an object until it is released.
+    fn hold_on {
+        mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, effect: i32, object: u32,
+    } {
+        let row = effect_row{ t = w.tables.visualeffects, effect } ifnull { return }
+        let model = effect_model{ t = w.tables.visualeffects, row }
+        if model.len == 0 { return }
+        _ = spawn_hold{ &v, &sc, &w, &dev, model, object, hook = effect_hook{ effect }, effect } iferr { null }
+    }
+
     // A visualeffects.2da row playing at a point.
     fn visual_at {
         mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, effect: i32, at: math::Vec3, facing: math::Vec3,
@@ -73,6 +83,8 @@ namespace vfx {
                 if target != obj::INVALID { visual_on{ &v, &sc, &w, &dev, effect, object = target } }
                 else { visual_at{ &v, &sc, &w, &dev, effect, at = position, facing = math::vec3::zero{} } }
             }
+            visual_hold{ effect, target } => { hold_on{ &v, &sc, &w, &dev, effect, object = target } }
+            visual_release{ effect, target } => { release{ &v, effect, object = target } }
             effect_model{ model, object, hook, position, life } => {
                 var_model_fx{ &v, &sc, &w, &dev, model, object, hook, position, life }
             }

@@ -60,6 +60,10 @@ namespace fight {
 
     fn not_forced {} -> Forced { return Forced{ on = false, animation = NO_ROW, result = 0, damage = -1 } }
 
+    // A creature thrown back by a Force push or knocked down (fight_state.ctx): the slide and how
+    // long the fall, the lying and the get-up last.
+    struct Knock { active: bool, t_ms: i32, move_ms: i32, total_ms: i32, from: math::Vec3, to: math::Vec3 }
+
     // A creature's fighting state: the rules creature, its round, how long it stays in combat.
     struct Fighter {
         c: rules::Creature,
@@ -76,6 +80,7 @@ namespace fight {
         dying_ms: i32,                  // > 0: the die animation plays, then dead
         voice_ms: i32,                  // > 0: it has just grunted
         ready_ms: i32,                  // > 0: a cutscene attack was just made, so the weapon stays up
+        knock: Knock,
     }
 
     fn no_impact {} -> Impact {
@@ -91,7 +96,7 @@ namespace fight {
     fn new_fighter { heap: *mut heap::Heap } -> !*mut Fighter {
         let mut c: rules::Creature
         c.loaded_hp = -1
-        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0, voice_ms = 0, ready_ms = 0 }
+        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0, voice_ms = 0, ready_ms = 0, knock = no_knock{} }
         return try alloc::new(Fighter, heap::Heap){ realloc = heap::alloc, heap, value = f }
     }
 
@@ -291,7 +296,17 @@ namespace fight {
         } else if k == rules::ev::COMMANDABLE {
             o.commandable = e.a != 0
         } else if k == rules::ev::VISUAL_ON {
-            visual_effect{ &w, effect = e.a, target = id, source = e.who, position = math::vec3::zero{} }
+            // A duration visual stays until its effect leaves; the others play once.
+            if e.b == 0 and is_duration_visual{ w = &w, effect = e.a } { hold_visual{ &w, effect = e.a, target = id } }
+            else { visual_effect{ &w, effect = e.a, target = id, source = e.who, position = math::vec3::zero{} } }
+        } else if k == rules::ev::VISUAL_OFF {
+            outbox::post{ out = &w.out, note = outbox::Note::visual_release{ effect = e.a, target = id } }
+        } else if k == rules::ev::STATE {
+            state_changed{ &w, id, after = e.a, before = e.b }
+        } else if k == rules::ev::FORCE_PUSH {
+            push_creature{ &w, id }
+        } else if k == rules::ev::KNOCKDOWN {
+            knock_down{ &w, id }
         } else if k == rules::ev::FEEDBACK {
             if w.log.combat {
                 world::prefix{ w = &w }
@@ -970,6 +985,11 @@ namespace fight {
             return
         }
         if c2.dead { return }
+        // Thrown or knocked down: nothing else moves the creature until it is up.
+        if f.knock.active {
+            step_knock{ &w, o = o2, c = c2, f, dt }
+            return
+        }
         if f.c.down {
             // A downed party member gets up when the fight is over (ours: combat.md 12).
             if not any_hostile_in_combat{ w = &w } {
@@ -1001,6 +1021,12 @@ namespace fight {
         let o3 = world::object{ w = &w, id } ifnull { return }
         let c3 = obj::creature{ o = o3 } ifnull { return }
         if c3.dead { return }
+        // Held in a crowd-control state: its looping animation (a stunned creature keeps its stance).
+        if f.c.stats.state != 0 {
+            let row = state_row{ beast = is_beast{ w = &w, c = c3 }, state = f.c.stats.state }
+            if row >= 0 and row_of_animation{ id = o3.animation } != row { world::set_animation{ o = o3, id = animname::ROW_BASE + @as(u32, row), speed = 1.0 } }
+            if row >= 0 { return }
+        }
         // Combat state times out 8 s after the last hostile act.
         if f.combat_ms > 0 {
             f.combat_ms = f.combat_ms - dt
@@ -1049,6 +1075,14 @@ namespace fight {
             if world::standing{ w, from = pc.faction, toward = o.faction } <= 10 { return true }
         }
         return false
+    }
+
+    // The movement-rate factor the creature's speed effects give (Burst of Speed and the other
+    // hastes above 1, Slow and the speed decreases below; the rules clamp it to 0.125 .. 1.5).
+    fn speed_scale { o: *obj::Object } -> f32 {
+        let f = of{ o } ifnull { return 1.0 }
+        if not f.loaded { return 1.0 }
+        return f.c.stats.speed_factor
     }
 
     // ---- Force powers (actions.md 3.13, rules.md "Force powers")

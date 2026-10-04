@@ -71,7 +71,8 @@ namespace movement {
             }
         }
         c.moving = true
-        let rate = if run { c.run_rate } else { c.walk_rate }
+        let scale = fight::speed_scale{ o }
+        let rate = (if run { c.run_rate } else { c.walk_rate }) * scale
         // Acceleration and braking (movement.md 3.3): f rises to 1 over a second, and falls with
         // the square root of what is left over the last half second's worth of path.
         let left = remaining{ from = o.position, path = list::items{ list = c.path }, next = c.path_next } - range
@@ -86,7 +87,7 @@ namespace movement {
         let mut s = dt_ms * (f + c.speed_factor) * rate * 0.5 / 1000.0
         c.speed_factor = f
         c.speed = s / (dt_ms / 1000.0)
-        world::set_animation{ o, id = if run { obj::ANIM_RUN } else { obj::ANIM_WALK }, speed = 1.0 }
+        world::set_animation{ o, id = if run { obj::ANIM_RUN } else { obj::ANIM_WALK }, speed = scale }
         // Along the path's points (StepAlongPath, movement.md 3.4).
         let from = o.position
         let mut here = o.position
