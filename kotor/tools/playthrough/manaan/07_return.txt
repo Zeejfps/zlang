@@ -6,8 +6,7 @@
 # and the lost contact, and gives the Submersible Bay Key (w_repkey2): journal man_planet 30, man26_starmap 30. His
 # replies: "Yes, here it is." and the questions that lead to the submarine ("What has the Republic done?", "What sort of
 # deal?", "Why have you not investigated?", "How will I get down there?").
-3 ui stat hpmax 150
-3 ui stat hp 150
+3 ui stat hp 144
 8 ui replies ~yes,_here_it_is ~what_has_the_republic_done ~what_sort_of_deal ~why_have_you_not_investigated ~how_will_i_get_down_there default 1
 10 warp man26aa_door05
 40 use man26aa_door05

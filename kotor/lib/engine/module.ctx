@@ -302,7 +302,7 @@ namespace modload {
         let saved_id = @trunc(u32, gff::get_number{ doc = doc.*, s, label = "ObjectId" } ifnull 0)
         let whole = saved_id != 0 and (gff::get_number{ doc = doc.*, s = gff::ROOT, label = "UseTemplates" } ifnull 1) == 0
         if whole {
-            let fresh = world::object{ w = &w, id = saved_id } == null and saved_id != obj::INVALID
+            let fresh = not world::id_taken{ w = &w, id = saved_id } and saved_id != obj::INVALID
             let o = try world::add_object{ &w, kind, id = if fresh { saved_id } else { 0 }, character = false }
             o.template = resref::truncate{ name = template }
             o.area = w.area
@@ -464,7 +464,7 @@ namespace modload {
         let s = players[0]
         let saved_id = @trunc(u32, gff::get_number{ doc = doc.*, s, label = "ObjectId" } ifnull 0)
         if world::object{ w = &w, id = w.player } != null { world::destroy{ &w, id = w.player } ; world::sweep{ &w } }
-        let fresh = saved_id != 0 and world::object{ w = &w, id = saved_id } == null
+        let fresh = saved_id != 0 and not world::id_taken{ w = &w, id = saved_id }
         let o = try world::add_object{ &w, kind = obj::Kind::creature, id = if fresh { saved_id } else { 0 }, character = not fresh }
         // The player character before it is read: its rules use the level history (pc_rules).
         w.player = o.id

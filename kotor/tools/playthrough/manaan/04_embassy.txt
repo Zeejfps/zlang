@@ -5,8 +5,7 @@
 # The long promenade of Ahto East is not walked: the party is put at the invisible object in front of the gate (`man26_selcutobj`,
 # the Selkath arrest scene's mark) and walks up to the Diplomat; he is clicked like a player does. `goto X,Y` ends inside the
 # trigger's outline (a walk to its corner stops short of it).
-3 ui stat hpmax 150
-3 ui stat hp 150
+3 ui stat hp 144
 5 ui replies ~i_have_business ~i_know_the_pass_code ~zeta_245698_alpha default 1
 10 warp man26ae_to26ab
 40 use man26ae_to26ab

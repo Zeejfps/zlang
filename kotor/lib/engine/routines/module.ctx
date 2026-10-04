@@ -73,7 +73,7 @@ namespace rt_mod {
         _ = try nwarg::int{ &vm, routine = r, argc, i = 2 }
     }
 
-    // The journal has no system yet: entries are logged and not kept.
+    // The quests are the world's journal (engine/journal.ctx); rt_misc::set_quest_state moves one on and pays the step's XP.
 
     // void AddJournalQuestEntry(string szPlotID, int nState, int bAllowOverrideHigher = FALSE)
     fn add_journal_quest_entry { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
@@ -81,8 +81,7 @@ namespace rt_mod {
         let plot = try nwarg::string{ &vm, routine = r, argc, i = 0 }
         let state = try nwarg::int{ &vm, routine = r, argc, i = 1 }
         let allow_lower = try nwarg::int{ &vm, routine = r, argc, i = 2 }
-        let now = fight::time_now{ w = &w }
-        let changed = journal::set_state{ j = &w.journal, tag = plot, state, allow_lower = allow_lower != 0, day = now.day, time = now.ms }
+        let changed = rt_misc::set_quest_state{ &w, tag = plot, state, allow_lower = allow_lower != 0 }
         if w.log.scripts {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "journal: {} -> state {} ({})\n", plot, state, changed)

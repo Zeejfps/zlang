@@ -1,0 +1,25 @@
+# Manaan, part 13: back to the surface and to Roland Wann (manm26ae). From the checkpoint "starmap" (CKPT=starmap: the Star Map is in the bag,
+# the player is alone in the suit in the Rift, journal man_planet 60, man26_starmap 40).
+#
+# The Rift's door (ManaanDoor2) is the way back to the station: the companions left behind come back with it (the module's load
+# script k_pman_mod28a makes them again with SpawnAvailableNPC; fixed in this branch, see playthrough-manaan.md), the station's
+# submersible (man28_sub, k_pman_sub02) takes the party up to the embassy's bay, and Wann (waiting at the door of the enclave once
+# the Rift is done) is told what happened: the Selkath went insane, the shark, the survivors, the contaminated kolto
+# (journal man_planet 70, the quest ends) and rewards the party with a Cardio Power System implant. Replies are the first of each list.
+3 ui stat hp 144
+8 ui replies default 1
+10 warp from28d
+40 use ManaanDoor2
+300 ui party
+300 warp man28_sub party
+340 use man28_sub
+1300 ui pos
+1300 ui party
+1310 warp man26_repdip party
+1340 hoveron man26_repdip
+1350 mouse click
+1410 mouse click
+3300 ui journal list
+3300 ui xp
+3300 ui inv
+3310 save surface

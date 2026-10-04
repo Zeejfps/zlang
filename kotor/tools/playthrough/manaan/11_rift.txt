@@ -1,0 +1,26 @@
+# Manaan, part 11: the airlock to the Hrakert Rift (manm28ad) and the kolto harvester's control panel. From the checkpoint "sci"
+# (CKPT=sci: Kono and Sami have given the party the toxin, the Chemical Cannister is in the bag, journal man_planet 50).
+#
+# The north door of Kolto Control (28c) is the airlock to the Rift (man28_airlock01, k_pman_airlock03: the player alone, in the suit).
+# The test player (god mode) fights the two firaxa between the airlock and the harvester; at the Kolto Control Panel
+# (`man28d_comp`, man28_puzzle) the reply "Feed toxin into vents." runs k_pman_28d_cmp02 (MAN_PLANET_PLOT 4, the fish are removed,
+# the medpacs' prices change, the movie `26b`). The other reply, "Access fuel tank pressure control.", is a puzzle of two pods
+# (3 and 5 million sangen, to be filled to exactly 4): see 13_overload.txt.
+3 ui stat hp 144
+8 ui replies ~begin_airlock_sequence ~feed_toxin default 1
+10 warpxy 217.0,78.0 party
+60 ui pos
+60 use 28c
+1500 ui pos
+1500 ui party
+1500 ui bot god on
+1501 ui bot on
+1502 ui bot route man28d_comp
+3800 ui pos
+3800 ui bot off
+3810 use man28d_comp
+4500 ui pos
+4500 ui journal list
+4500 ui inv
+4500 ui xp
+4510 save rift

@@ -168,7 +168,8 @@ box). Pass a mixer with `gui::set_mixer`; without one the GUI is silent.
 down), drawn last; `gui::set_cursor{ &g, id }` picks `CURSOR_DEFAULT`, `ATTACK`, `BASH`, `DOOR`,
 `TALK`, `USE` ... (the install ships these 12 stems; the original's walk/examine/follow textures
 do not exist in the PC data). Only the default arrow has its hot spot at the corner; the rest are
-centred. `set_cursor_visible` hides it (and the engine should hide the OS pointer).
+centred. `set_cursor_visible` hides it. The OS pointer is the engine's to hide (`display::apply` does, in every window
+mode: [../mechanics/graphics.md](../mechanics/graphics.md), "The OS pointer").
 
 ## In-game panels (what the engine will do)
 
