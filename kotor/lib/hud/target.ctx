@@ -103,17 +103,28 @@ namespace hud {
         return rt_talent::has_skill{ w, f, skill = rules::skill::SECURITY }
     }
 
-    // The pointer's picture for what a click on `id` would do.
+    // The pointer's picture over `id` (SetHoverObject 0x006222f0, movement.md 7.2): over the current target it
+    // is the picture of its default action (GetCursorForAction 0x0061faa0: open door 0x3f2 the door, talk
+    // 0x3ea the talk bubble, use 0x3f7 the hand, attack 0x3eb the kill reticle, bash 0x3f5 the bash);
+    // over any other selectable object the select cursor; over nothing the arrow.
     fn cursor_for { w: *world::World, id: u32 } -> u32 {
+        if id == obj::INVALID { return gui::CURSOR_DEFAULT }
+        if id != w.target { return gui::CURSOR_SELECT }
+        return action_cursor{ w, id }
+    }
+
+    // The picture of what a click on the target `id` would do.
+    fn action_cursor { w: *world::World, id: u32 } -> u32 {
         let l = default_actions{ w, id }
-        if l.count == 0 { return gui::CURSOR_DEFAULT }
+        if l.count == 0 { return gui::CURSOR_INVALID }
         match l.entries[0].act {
             open => { return gui::CURSOR_DOOR }
             bash => { return gui::CURSOR_BASH }
-            use_place | open_place | unlock => { return gui::CURSOR_USE }
+            use_place | open_place => { return gui::CURSOR_USE }
+            unlock => { return gui::CURSOR_LOCK }
             talk => { return gui::CURSOR_TALK }
-            attack => { return gui::CURSOR_ATTACK }
-            else => { return gui::CURSOR_DEFAULT }
+            attack => { return gui::CURSOR_KILL }
+            else => { return gui::CURSOR_INVALID }
         }
     }
 
@@ -214,6 +225,12 @@ namespace hud {
         }
         let mut a = actions::make{ kind }
         a.params[0] = actions::Param::object{ id = target }
+        if act == Act::talk {
+            // The player's talk order: walk up first (DIALOGOBJECT's approach mode 1, ignore-range 0).
+            a.params[2] = actions::Param::int{ v = 0 }
+            a.params[3] = actions::Param::int{ v = 1 }
+            a.params[4] = actions::Param::int{ v = 0 }
+        }
         actions::clear_all{ &w, id = leader }
         _ = actions::add{ &w, id = leader, action = a, force = false }
     }

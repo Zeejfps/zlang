@@ -29,6 +29,7 @@ namespace ingame {
         psel_wait: bool,                    // ShowPartySelectionGUI asked: the screen opens when no conversation is up
         psel_exit: resref::ResRef,          // its exit script, forced slots
         psel_force1: i32, psel_force2: i32,
+        psel_paused: bool,                  // the party selection screen holds the menu pause (it is up even with no menu)
         bot: bot::Bot,                      // the headless test player (bot.ctx); off unless a script turns it on
         shift_held: bool,                   // Shift (AlternateActions): with a slot's key it steps through the slot's choices
         ctrl_held: bool,                    // Ctrl (Lookabout): the camera follows the mouse (lib/scene/camera, play.ctx)
@@ -60,7 +61,7 @@ namespace ingame {
             width, height, menu = NO_MENU, menu_panel = 0, top_panel = 0, menus = new_menus{}, log = hud::new_log{},
             pause_panel = 0, hud_hidden = false, screens = screens::new{}, bot = bot::new{},
             shift_held = false, ctrl_held = false, solo_box = msgbox::blank{}, solo_pause = false, run_script = resref::empty{},
-            psel_wait = false, psel_exit = resref::empty{}, psel_force1 = -1, psel_force2 = -1,
+            psel_wait = false, psel_exit = resref::empty{}, psel_force1 = -1, psel_force2 = -1, psel_paused = false,
         }
         let mut p = try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
         hud::set_tooltips{ h = &p.hud, g = &p.gui, &w, text = &p.text }
@@ -385,6 +386,16 @@ namespace ingame {
             }
         }
         partysel_panel::update{ s = &ui.menus.partysel, g = &ui.gui, &w, &dev, dt }
+        // The party selection screen stops the world while it is up, even when a script opened it with
+        // no menu behind it (the bot walked 20,000 frames under it).
+        let selecting = partysel_panel::is_open{ s = &ui.menus.partysel }
+        if selecting and not ui.psel_paused {
+            clock::set_pause{ c = &w.clock, bit = clock::PAUSE_MENU, on = true }
+            ui.psel_paused = true
+        } else if not selecting and ui.psel_paused {
+            ui.psel_paused = false
+            if ui.menu == NO_MENU and not screens::is_open{ s = &ui.screens } { clock::set_pause{ c = &w.clock, bit = clock::PAUSE_MENU, on = false } }
+        }
         // The test bot accepts the screen after a short look at it (the picture a test takes is of the screen, not of the
         // world behind it).
         if ui.bot.party and partysel_panel::is_open{ s = &ui.menus.partysel } {

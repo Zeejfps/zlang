@@ -187,7 +187,10 @@ namespace hud {
         if id == obj::INVALID or id != began { return false }
         if id == w.target {
             let l = h.lists[0]
-            if l.count > 0 { run_act{ &w, act = l.entries[0].act, target = id } }
+            if l.count > 0 {
+                gui::play_sound{ &g, n = 6 }
+                run_act{ &w, act = l.entries[0].act, target = id }
+            }
         } else {
             w.target = id
         }

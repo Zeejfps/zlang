@@ -240,7 +240,7 @@ namespace ingame {
             _ = @fmt(&w.io, "sweep: {} controls, {} hovered something else\n", total, wrong)
         } else if ci::eq{ a = cmd, b = "pick" } {
             let id = hud::pick_at{ p = ui.hud.projector, w = &w, x = ui.gui.mouse_x, y = ui.gui.mouse_y }
-            _ = @fmt(&w.io, "pick at {} {}: {} {}\n", ui.gui.mouse_x, ui.gui.mouse_y, id, hud::name_of{ w = &w, id })
+            _ = @fmt(&w.io, "pick at {} {}: {} {} (hover {} target {} cursor {})\n", ui.gui.mouse_x, ui.gui.mouse_y, id, hud::name_of{ w = &w, id }, w.hover, w.target, ui.gui.cursor)
         } else {
             // Commands of the panel owners (test_*.ctx): what a panel needs to show something the
             // game has not got yet.
