@@ -140,10 +140,12 @@ namespace bot {
         }
         if b.next >= b.count { return }
         let raw = b.route[b.next][..@as(usize, b.lens[b.next])]
-        // `@TAG`: walk up to it and talk to it (the leader's click on a creature).
+        // `@TAG`: walk up to it and talk to it (the leader's click on a creature). `TAG#N`: the Nth object of that tag.
         let talk = raw.len > 1 and raw[0] == '@'
-        let tag = if talk { raw[1..] } else { raw }
-        let t = world::object{ w = &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } } ifnull {
+        let stop = if talk { raw[1..] } else { raw }
+        let nth = stop_nth{ stop }
+        let tag = stop_tag{ stop }
+        let t = world::object{ w = &w, id = world::object_by_tag{ w = &w, tag, nth } } ifnull {
             _ = @fmt(&w.io, "bot: no object {}, skipped\n", tag)
             advance{ &b }
             return
@@ -213,7 +215,7 @@ namespace bot {
                 advance{ &b }
                 return
             }
-        } else if dist < REACH {
+        } else if dist < REACH + 0.25 {
             if talk and not b.talked {
                 b.talked = true
                 let mut a = actions::make{ kind = actions::Kind::dialog_object }
@@ -236,8 +238,29 @@ namespace bot {
     // Notes that the door of the current stop was open at some tick (even in a cutscene).
     fn watch_door { mut b: Bot, w: *world::World } {
         if b.next >= b.count { return }
-        let t = world::object{ w, id = world::object_by_tag{ w, tag = b.route[b.next][..@as(usize, b.lens[b.next])], nth = 0 } } ifnull { return }
+        let mut stop = b.route[b.next][..@as(usize, b.lens[b.next])]
+        if stop.len > 1 and stop[0] == '@' { stop = stop[1..] }
+        let t = world::object{ w, id = world::object_by_tag{ w, tag = stop_tag{ stop }, nth = stop_nth{ stop } } } ifnull { return }
         if t.ext is door{ d } { if d.state != obj::DoorState::closed { b.seen_open = true } }
+    }
+
+    // A stop's tag and, after a `#`, which object of that tag (counting from 0) it names.
+    fn stop_tag { stop: []u8 } -> []u8 {
+        let mut i: usize = 0
+        while i < stop.len {
+            if stop[i] == '#' { return stop[..i] }
+            i = i + 1
+        }
+        return stop
+    }
+
+    fn stop_nth { stop: []u8 } -> i32 {
+        let mut i: usize = 0
+        while i < stop.len {
+            if stop[i] == '#' { return @as(i32, text::scan_decimal{ s = stop[i + 1..] }) }
+            i = i + 1
+        }
+        return 0
     }
 
     // The closest closed door within four metres of `me`, or OBJECT_INVALID.
