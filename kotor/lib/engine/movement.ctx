@@ -97,7 +97,7 @@ namespace movement {
         let mut s = dt_ms * (f + c.speed_factor) * rate * 0.5 / 1000.0
         c.speed_factor = f
         c.speed = s / (dt_ms / 1000.0)
-        world::set_animation{ o, id = if run { obj::ANIM_RUN } else { obj::ANIM_WALK }, speed = anim_rate{ w = &w, c, run, speed = c.speed } }
+        world::set_gait{ o, id = if run { obj::ANIM_RUN } else { obj::ANIM_WALK }, cycles = gait_cycles{ w = &w, c, run, speed = c.speed } }
         // Along the path's points (StepAlongPath, movement.md 3.4).
         let from = o.position
         let mut here = o.position
@@ -183,15 +183,15 @@ namespace movement {
         return true
     }
 
-    // The playback rate of the walk or run cycle for a creature moving at `speed` m/s: the cycle looks right
-    // at the appearance's WALKDIST or RUNDIST (m/s) and plays faster or slower in proportion, so the feet
-    // keep up with the ground (CSWCCreature::UpdateMovementAnimation, movement.md 3.6). Quantised so a
-    // creature speeding up does not re-send its animation every frame.
-    fn anim_rate { w: *world::World, c: *obj::Creature, run: bool, speed: f32 } -> f32 {
+    // How many walk or run cycles a second a creature moving at `speed` m/s makes: the appearance's WALKDIST
+    // or RUNDIST is the ground one cycle covers (metres, not m/s), so the feet keep up with the ground when
+    // the cycle plays at speed / dist cycles a second (CSWCCreature::UpdateMovementAnimation,
+    // movement.md 3.6). The playback rate is that times the cycle's length, which the scene knows
+    // (visual::cycle_rate); 0 when the appearance has no distance.
+    fn gait_cycles { w: *world::World, c: *obj::Creature, run: bool, speed: f32 } -> f32 {
         let dist = twoda::get_float{ t = w.tables.appearance, row = @as(usize, c.appearance), column = if run { "rundist" } else { "walkdist" } } ifnull 0.0
-        if dist < 0.1 { return 1.0 }
-        let r = math::clamp{ x = speed / dist, lo = 0.3, hi = 2.5 }
-        return @as(f32, @as(i32, r * 20.0 + 0.5)) / 20.0
+        if dist < 0.1 { return 0.0 }
+        return speed / dist
     }
 
     fn distance_2d { a: math::Vec3, b: math::Vec3 } -> f32 {

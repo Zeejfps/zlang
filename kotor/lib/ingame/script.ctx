@@ -5,7 +5,7 @@
 //                              puts them on SDL's queue as the events they stand for
 //   FRAME ui menu NAME|N       open a menu: equip inventory character abilities messages journal map options
 //   FRAME ui close             close the open menu
-//   FRAME ui target TAG        select the object with the tag;  ui join TAG: it joins the party
+//   FRAME ui target TAG [N]    select the object with the tag (the Nth of several, counting from 0);  ui join TAG: it joins the party
 //   FRAME ui unlock TAG | ui global NAME N | ui gbool NAME 0|1 | ui goto TAG | ui where [PART]     test helpers: unlock a door or placeable;
 //                              set a number global; the leader walks to a tagged object; print objects by tag part
 //   FRAME ui hover             print the panels' places and the control under the pointer
@@ -48,7 +48,8 @@ namespace ingame {
             close_menu{ &ui, &w }
         } else if ci::eq{ a = cmd, b = "target" } {
             let tag = text::next_word{ &words } ifnull { return }
-            w.target = world::object_by_tag{ w = &w, tag, nth = 0 }
+            let nth = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+            w.target = world::object_by_tag{ w = &w, tag, nth }
         } else if ci::eq{ a = cmd, b = "combat" } {
             // Puts the leader in combat mode (there is no combat yet) and queues an attack on TAG.
             let c = hud::creature_of{ w = &w, id = party::leader{ w = &w } } ifnull { return }

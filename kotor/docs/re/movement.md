@@ -534,9 +534,15 @@ room and face under the new point. (high)
 
 ### 3.6 Animations
 
-Movement picks server-side animation ids; the client blends them (`CSWCCreature::
-UpdateMovementAnimation` `0x00611f50` sets the walk/run playback rate from the actual speed and the
-appearance's `WALKDIST` / `RUNDIST`, the distance one cycle covers) (med):
+Movement picks server-side animation ids; the client blends them. `CSWCCreature::UpdateMovementAnimation`
+`0x00611f50` sets the walk or run cycle's playback rate to `S x A / D x f` (high for the shape, med for the
+details): S the creature's walk or run speed, A the length of the cycle that is playing, D the appearance's
+`WALKDIST` or `RUNDIST` (the **metres one cycle covers**, scaled by 1000 against the millisecond length in the
+code) and f the acceleration and braking factor of 3.3 (the client recomputes it, `0x0060bf60`; floor 0.1). The
+cycle's own pace is D / A; the data agrees: the humanoid run cycle is 0.733 s and RUNDIST 3.96 m (5.4 m/s, the
+Normal run rate), the walk 1.067 s and WALKDIST 1.813 m (1.7 m/s), and the stance foot of both moves back at
+about that speed. A cycle that replaces another starts at the same fraction of its length. (Not modelled: that, and a run
+case that reads WALKDIST while the animation is in its first half second.)
 
 | Id | Use |
 |---|---|

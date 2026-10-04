@@ -42,7 +42,7 @@ namespace visual {
         }
         if sc.parts.len == first { return null }
         try list::push{ list = &sc.visuals, item = scene::Visual{
-            id = o.id, first, count = sc.parts.len - first, animation = 0xFFFFFFFF, state = 0xFFFFFFFF,
+            id = o.id, first, count = sc.parts.len - first, animation = 0xFFFFFFFF, cycles = 0.0, state = 0xFFFFFFFF,
             room = -1, creature_prefix = prefix, alive = true, stunt = false, signature = signature_of{ o }, saber = 0, saber_force = 0,
         } }
         let index = sc.visuals.len - 1
@@ -172,6 +172,7 @@ namespace visual {
         match o.ext {
             creature{ c } => {
                 animate_creature{ &sc, &w, v, o }
+                if w.log.trace and w.clock.frame % 4 == 0 { trace_gait{ &sc, &w, v, o, c } }
                 if v.count > 1 and v.saber != 3 { animate_sabers{ &sc, &w, v, o, c } }
             }
             door{ d } => { animate_door{ &sc, &w, v, state = @as(u32, d.state) } }
@@ -186,11 +187,37 @@ namespace visual {
         }
     }
 
+    // The gait trace (`--log trace`, every fourth frame): a walking or running creature's cycles a second on the ground
+    // (speed / WALKDIST or RUNDIST) and on its feet (the player's rate / the cycle's length). They are equal
+    // unless the rate hit its clamp: when they differ the feet slide.
+    fn trace_gait { mut sc: scene::Scene, mut w: world::World, v: *scene::Visual, o: *obj::Object, c: *obj::Creature } {
+        if o.animation != obj::ANIM_RUN and o.animation != obj::ANIM_WALK { return }
+        let p0 = scene::part_at{ sc = &sc, i = v.first }
+        let mut rate: f32 = 0.0
+        if p0.player.current is some{ value = tr } { rate = tr.speed }
+        let len = scene::length_of{ &sc, &w, part = v.first, name = p0.anim[..p0.anim_len] }
+        let ground = movement::gait_cycles{ w = &w, c, run = o.animation == obj::ANIM_RUN, speed = c.speed }
+        world::prefix{ w = &w }
+        _ = @fmt(&w.io, "gait {} anim {} speed {} rate {} cycle {} s feet {} ground {} cycles/s\n", o.tag, o.animation, c.speed, rate, len, if len > 0.0 { rate / len } else { 0.0 }, ground)
+    }
+
+    // The playback rate of animation `name` on a creature: its anim_speed, or for a walk or run cycle the cycles
+    // a second the ground speed asks for times the cycle's length, so the feet keep up with the ground
+    // (CSWCCreature::UpdateMovementAnimation: speed x length / WALKDIST or RUNDIST). The floor is the
+    // original's: a walker starting off crawls at a tenth of the pace.
+    fn cycle_rate { mut sc: scene::Scene, mut w: world::World, v: *scene::Visual, o: *obj::Object, name: []u8 } -> f32 {
+        if o.anim_cycles <= 0.0 { return o.anim_speed }
+        let length = scene::length_of{ &sc, &w, part = v.first, name }
+        if length <= 0.0 { return 1.0 }
+        return math::clamp{ x = o.anim_cycles * length, lo = 0.1, hi = 2.5 }
+    }
+
     // The body plays the object's animation (with the `c` prefix for S and L models; pause1 when
     // the model lacks it); a head plays the same name when its model has it.
     fn animate_creature { mut sc: scene::Scene, mut w: world::World, v: *mut scene::Visual, o: *obj::Object } {
-        if v.animation == o.animation { return }
+        if v.animation == o.animation and v.cycles == o.anim_cycles { return }
         v.animation = o.animation
+        v.cycles = o.anim_cycles
         let mut named: [34]u8
         let mut base = animname::name_of{ id = o.animation }
         let mut looping = animname::loops{ id = o.animation }
@@ -219,14 +246,15 @@ namespace visual {
         let name = with_prefix{ into = buf[..], name = if base.len > 0 { base } else { "pause1" }, prefix = prefixed }
         let mut fallback: [34]u8
         let pause = with_prefix{ into = fallback[..], name = "pause1", prefix = v.creature_prefix }
-        if not scene::play{ &sc, &w, part = v.first, name, looping, speed = o.anim_speed, transition } {
+        let rate = cycle_rate{ &sc, &w, v, o, name }
+        if not scene::play{ &sc, &w, part = v.first, name, looping, speed = rate, transition } {
             _ = scene::play{ &sc, &w, part = v.first, name = pause, looping = true, speed = 1.0, transition }
         }
         // The head part (a B body's second part hangs at the headhook).
         if v.count > 1 {
             let head = scene::part_at{ sc = &sc, i = v.first + 1 }
             if slice::eq_bytes{ a = head.hook, b = mdl_anim::HOOK_HEAD } {
-                if not scene::play{ &sc, &w, part = v.first + 1, name, looping, speed = o.anim_speed, transition = 0.25 } {
+                if not scene::play{ &sc, &w, part = v.first + 1, name, looping, speed = rate, transition = 0.25 } {
                     _ = scene::play{ &sc, &w, part = v.first + 1, name = "pause1", looping = true, speed = 1.0, transition = 0.25 }
                 }
             }
