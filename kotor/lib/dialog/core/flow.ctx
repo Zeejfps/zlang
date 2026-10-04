@@ -63,6 +63,11 @@ namespace dlg {
     // Orders a conversation (ActionStartConversation / the player's click): false if one is
     // already ordered or running.
     fn order { mut w: world::World } -> bool {
+        // A conversation on its last step ends in this frame's pump, and an event its last node
+        // signalled (the Jedi Council's training montage tells Zhar to talk to the player) is
+        // handled before that: the order is taken, queued behind the speaker's ActionWait, and
+        // the action finds the conversation over. The flag stays down for `finish` to clear.
+        if w.conversation.active and w.conversation.ending { return true }
         if w.conversation.pending or w.conversation.active { return false }
         w.conversation.pending = true
         w.conversation.pending_since = now_ms{ w = &w }
@@ -654,6 +659,26 @@ namespace dlg {
         }
     }
 
+    // The number (from 1) of the first offered reply whose text contains `text`, ignoring case; the first reply, with a
+    // line in the log, when none does.
+    fn find_scripted_reply { mut w: world::World, text: []u8 } -> usize {
+        let mut k: usize = 0
+        while k < w.conversation.choices.count {
+            if w.conversation.choices.enabled[k] {
+                let rn = choice_node{ s = &w.conversation, i = k }
+                if rn != null {
+                    if ci::find{ s = text_of{ w = &w, n = rn, gender = w.conversation.gender }, needle = text } != null { return k + 1 }
+                }
+            }
+            k = k + 1
+        }
+        if w.log.dialog {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog scripted reply: no reply has '{}', taking the first\n", text)
+        }
+        return 1
+    }
+
     // UpdateDialog (4.5): once a frame, runs the pending step when the node is over, or leaves
     // when the conversation is finished.
     fn update { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } {
@@ -680,13 +705,18 @@ namespace dlg {
         freeze_hostiles{ &w }
         // A test script's queued replies (`ui replies 1 2`) answer each list as it opens.
         if w.conversation.pick < 0 and w.conversation.choices.open and w.conversation.scripted_pos >= w.conversation.scripted_count and w.conversation.scripted_default > 0 {
-            // The queue is spent: the default reply (a number past the list picks the last).
             let want = @as(usize, w.conversation.scripted_default)
             w.conversation.pick = @as(i32, if want > w.conversation.choices.count { w.conversation.choices.count } else { want }) - 1
+            if w.log.dialog {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "dialog default reply {}\n", w.conversation.pick + 1)
+            }
         }
         if w.conversation.pick < 0 and w.conversation.choices.open and w.conversation.scripted_pos < w.conversation.scripted_count {
-            // A number past the list picks the last reply (a test script cannot know how long a list is).
-            let want = @as(usize, w.conversation.scripted[w.conversation.scripted_pos])
+            // A number past the list picks the last reply (a test script cannot know how long a list is); a phrase
+            // picks the first reply that has it in its text.
+            let s = w.conversation.scripted[w.conversation.scripted_pos]
+            let want = if s.len > 0 { find_scripted_reply{ w = &w, text = s.text[..@as(usize, s.len)] } } else { @as(usize, s.n) }
             w.conversation.pick = @as(i32, if want > w.conversation.choices.count { w.conversation.choices.count } else { want }) - 1
             w.conversation.scripted_pos = w.conversation.scripted_pos + 1
             if w.log.dialog {

@@ -211,8 +211,11 @@ namespace partysel_panel {
     }
 
     // Puts the panel on the screen. `force1` and `force2` are NPC slots (or -1) that must be in
-    // the party (ShowPartySelectionGUI's nForce arguments).
-    fn open_modal { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, force1: i32, force2: i32, exit_script: resref::ResRef } -> ! {
+    // the party (ShowPartySelectionGUI's nForce arguments). The map's Party Selection starts with
+    // the party as it is; a script's screen (`from_script`) starts with the forced slots only and
+    // the player picks the rest again (OnPanelAdded 0x006beeb0 selects the members only when a
+    // script did not ask for the screen), so Bastila forced on Dantooine leaves one free slot.
+    fn open_modal { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, force1: i32, force2: i32, from_script: bool, exit_script: resref::ResRef } -> ! {
         if s.opened { return }
         let id = try gui::open{ g = &g, fs = &w.fs, &dev, name = "partyselection", mode = gui::Mode::full_screen, modal = true }
         gui::set_backdrop{ g = &g, fs = &w.fs, &dev, panel = id, kind = 0 }
@@ -227,15 +230,7 @@ namespace partysel_panel {
         let mut n: usize = 0
         while n < SLOTS {
             s.forced[n] = (force1 >= 0 and @as(usize, force1) == n) or (force2 >= 0 and @as(usize, force2) == n)
-            s.selected[n] = s.forced[n]
-            n = n + 1
-        }
-        // The forced ones come first; the party's other companions keep the places left, in slot order (a
-        // forced Canderous with Carth and T3-M4 along would be three companions for two places, and the
-        // party table refuses the third: Canderous stayed out of the party).
-        n = 0
-        while n < SLOTS {
-            if in_party{ w = &w, n } and picked_count{ &s } < MAX_COMPANIONS { s.selected[n] = true }
+            s.selected[n] = (not from_script and in_party{ w = &w, n }) or s.forced[n]
             n = n + 1
         }
         fill{ &s, &g, &w, &dev }

@@ -1,0 +1,39 @@
+# Dantooine, part 1: the arrival at the Ebon Hawk's landing court, Bastila leading the way to the Jedi
+# Council, the Council's first meeting, the night on the Ebon Hawk, and the morning party selection.
+# Start: kotor.exe --module danm13 (the module's entry point is the Hawk's transition waypoint).
+#
+# The state Taris leaves: Carth and Bastila with the player, Canderous, Mission and Zaalbar available.
+# These lines come at frame 1, before the module's load script (k_pdan_13_load) first runs: it takes
+# Carth and Bastila out of the party and stands them at the landing court's waypoints.
+1 join p_carth 2
+1 join p_bastilla 0
+1 ui avail 0 1 2 6 8
+# A soldier of level 8 (the ending Taris level) in the armour and weapon `stock` puts on (the player
+# exists from frame 2; commands that need it come after).
+4 ui stat class 0
+4 ui stat level 8
+4 ui stat xp 29000
+4 ui stat str 16
+4 ui stat dex 14
+4 ui stat con 14
+4 ui stat hpmax 80
+4 ui stat hp 80
+4 ui stock
+# Conversation replies, in the order the lists open: Bastila's "[Until you have talked with the Council...]",
+# then Zhar's Council: "What do you want from me?", "Nothing would give me greater honor...",
+# "I am willing to try my best."; the morning after, Carth's "Did she say anything else?", "I had a rough night... Let's go."
+5 ui replies 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+# Bastila leads the party through the Enclave (about 2100 frames); the player is taken to her at the Council.
+2250 warp wp_pc_start
+2300 ui pos
+# The morning after: Carth wakes the player and the party screen opens (Bastila stays with the Council).
+# Carth and Mission are picked, OK, and OK on "Are you sure this is the party configuration you want?".
+6910 ui click 597 272
+6920 ui click 416 447
+6940 ui click 640 545
+6960 ui click 638 378
+7100 ui party
+7100 ui pos
+7300 ui inv
+7300 ui xp
+7300 save wake

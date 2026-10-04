@@ -232,6 +232,49 @@ namespace ingame {
             }
             _ = @fmt(&w.io, " numbers: {} {} {} {} {} {} {} {}", o.locals.numbers[0], o.locals.numbers[1], o.locals.numbers[2], o.locals.numbers[3], o.locals.numbers[4], o.locals.numbers[5], o.locals.numbers[6], o.locals.numbers[7])
             _ = @fmt(&w.io, "\n")
+        } else if ci::eq{ a = cmd, b = "xp" } and text::rest{ words }.len == 0 {
+            // Test helper: each party member's experience points (`ui xp N` gives the party N: test_screens.ctx).
+            let ids = party::members{ w = &w }
+            let mut i: usize = 0
+            while i < ids.len {
+                if world::object{ w = &w, id = ids[i] } is some{ value = m } {
+                    if obj::creature{ o = m } is some{ value = c } {
+                        // The rules creature holds it when there is one (the sheet reads it from there).
+                        let xp = if c.fighter is some{ value = f } { f.c.xp } else { @as(i32, c.xp) }
+                        _ = @fmt(&w.io, "xp {} {}: {}\n", ids[i], hud::name_of{ w = &w, id = ids[i] }, xp)
+                    }
+                }
+                i = i + 1
+            }
+        } else if ci::eq{ a = cmd, b = "ai" } {
+            // Test helper: an object's AI level, whether it takes orders, and its action queue (kinds in order).
+            let tag = text::next_word{ &words } ifnull { return }
+            let id = world::object_by_tag{ w = &w, tag, nth = 0 }
+            let o = world::object{ w = &w, id } ifnull { return }
+            _ = @fmt(&w.io, "ai {} {}: level {} commandable {} destroyed {} area {} queue", id, o.tag, o.ai_level, o.commandable, o.destroyed, o.area)
+            let q = list::items{ list = o.actions }
+            let mut k: usize = 0
+            while k < q.len {
+                _ = @fmt(&w.io, " {}", @as(u32, q[k].kind))
+                k = k + 1
+            }
+            _ = @fmt(&w.io, "\n")
+        } else if ci::eq{ a = cmd, b = "fx" } {
+            // Test helper: the effects on the creature with the tag (none given: the leader): kind, duration
+            // type, the seconds it was given, when it expires (day, ms) against now, and who made it.
+            let tag = text::next_word{ &words } ifnull ""
+            let id = if tag.len == 0 { w.pc } else { world::object_by_tag{ w = &w, tag, nth = 0 } }
+            let o = world::object{ w = &w, id } ifnull { return }
+            let c = obj::creature{ o } ifnull { return }
+            let f = c.fighter ifnull { return }
+            let now = fight::time_now{ w = &w }
+            _ = @fmt(&w.io, "fx {} {}: {} effects, now {} {} (clock {} min per hour, rules day {} ms)\n", id, o.tag, f.c.nfx, now.day, now.ms, w.clock.min_per_hour, w.rules.settings.ms_per_day)
+            let mut k: i32 = 0
+            while k < f.c.nfx {
+                let e = &f.c.fx[@as(usize, k)]
+                k = k + 1
+                _ = @fmt(&w.io, "  fx kind {} dur {} {} s expires {} {} creator {} spell {} ints {} {} {}\n", e.kind, e.dur, e.duration, e.expire.day, e.expire.ms, e.creator, e.spell_id, e.ints[0], e.ints[1], e.ints[2])
+            }
         } else if ci::eq{ a = cmd, b = "bot" } {
             bot::run_command{ b = &ui.bot, &w, args = text::rest{ words } }
         } else if ci::eq{ a = cmd, b = "party" } {
@@ -279,7 +322,7 @@ namespace ingame {
             while i < ps.len {
                 let p = ps[i]
                 i = i + 1
-                _ = @fmt(&w.io, "panel {} {} at {} {} size {} {} shown {}\n", p.id, resref::bytes{ r = &p.name }, p.sx, p.sy, p.w, p.h, p.shown)
+                _ = @fmt(&w.io, "panel {} {} at {} {} size {} {} shown {} mode {} backdrop {} modal {}\n", p.id, resref::bytes{ r = &p.name }, p.sx, p.sy, p.w, p.h, p.shown, @as(u32, p.mode), p.backdrop, p.modal)
             }
             _ = @fmt(&w.io, "pointer {} {} window {}x{} ui {}x{} scale {}\n", ui.gui.mouse_x, ui.gui.mouse_y, ui.gui.win_w, ui.gui.win_h, ui.gui.ui_w, ui.gui.ui_h, ui.gui.scale)
             let h = ui.gui.hover

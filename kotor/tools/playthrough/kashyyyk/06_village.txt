@@ -1,0 +1,25 @@
+# Kashyyyk, part 6: out of Chuundar's hall into Rwookrrorro (kas_m23aa), across the village and back out to the Great Walkway.
+# From the checkpoint "king1" (CKPT=king1): Chuundar has ordered the Shadowlands hunt, Zaalbar stays as his hostage, the
+# party is the player with Canderous and Carth.
+3 ui stat hpmax 130
+3 ui stat hp 130
+4 ui leader cand
+4 ui stat level 10
+4 ui stat xp 47650
+4 ui stat hpmax 150
+4 ui stat hp 150
+5 ui leader carth
+5 ui stat level 10
+5 ui stat xp 47650
+5 ui stat hpmax 120
+5 ui stat hp 120
+6 ui leader pc
+6 ui replies default 1
+10 ui bot god on
+# The village square and its Wookiee crowd, then the way out (KashyyykDoor3, 70 132).
+60 ui pos
+300 use kashyyykdoor3
+1500 ui pos
+1500 ui party
+1500 ui xp
+1900 save walk3

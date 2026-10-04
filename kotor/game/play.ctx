@@ -486,8 +486,8 @@ namespace play {
                     _ = @fmt(&w.io, "  frame: {} draws, {} shadows, {} lights, {} emitters, {} particles\n", frame.draw_count, frame.shadow_count, frame.light_count, frame.emitter_count, frame.particle_count)
                     let p = world::object{ w = &w, id = w.pc }
                     if p != null {
-                        _ = @fmt(&w.io, "  leader at {} {} {} (room {}), camera at {} {} {} looking at {} {} {}\n", p.position.x, p.position.y, p.position.z,
-                            room, camera.eye.x, camera.eye.y, camera.eye.z, camera.look.x, camera.look.y, camera.look.z)
+                        _ = @fmt(&w.io, "  leader at {} {} {} (room {}), camera at {} {} {} looking at {} {} {}, blur {}, ambient {} {} {}, dialogue fade {}\n", p.position.x, p.position.y, p.position.z,
+                            room, camera.eye.x, camera.eye.y, camera.eye.z, camera.look.x, camera.look.y, camera.look.z, speed_blur, sc.ambient.x, sc.ambient.y, sc.ambient.z, dview.panels.fade_alpha)
                     }
                 }
                 s = s + 1
@@ -810,8 +810,13 @@ namespace play {
         mut want_save: []u8, mut want_load: []u8, word: []u8, rest: []u8,
     } -> bool {
         let arg = text::first_word{ s = rest }
-        if ci::eq{ a = word, b = "warp" } { warp_to{ &w, tag = arg } }
-        else if ci::eq{ a = word, b = "warpxy" } { warp_xy{ &w, at = arg } }
+        if ci::eq{ a = word, b = "warp" } or ci::eq{ a = word, b = "warpxy" } {
+            if ci::eq{ a = word, b = "warp" } { warp_to{ &w, tag = arg } } else { warp_xy{ &w, at = arg } }
+            // `warp TAG party`, `warpxy X,Y party`: the followers stand beside the leader too, as after a door.
+            let mut words = text::words{ s = rest }
+            _ = text::next_word{ &words }
+            if ci::eq{ a = text::next_word{ &words } ifnull "", b = "party" } { gather_party{ &w } }
+        }
         else if ci::eq{ a = word, b = "use" } { use_tagged{ &w, tag = arg } }
         else if ci::eq{ a = word, b = "attack" } { attack_tagged{ &w, tag = arg } }
         else if ci::eq{ a = word, b = "newgame" } {}    // the front end's (front_end above)
@@ -971,6 +976,18 @@ namespace play {
         _ = @fmt(&w.io, "warp: to {} ({} {} {})\n", tag, pc.position.x, pc.position.y, pc.position.z)
     }
 
+    // The followers onto their formation points beside the leader (a test jump across the area).
+    fn gather_party { mut w: world::World } {
+        let members = party::members{ w = &w }
+        let mut k: usize = 1
+        while k < members.len {
+            let l = rt_party::formation_point{ w = &w, index = k }
+            movement::place{ &w, id = members[k], at = l.position }
+            if world::object{ w = &w, id = members[k] } is some{ value = o } { world::set_orientation{ o, v = obj::direction_of{ degrees = l.facing } } }
+            k = k + 1
+        }
+    }
+
     // `FRAME warpxy X,Y`: the leader onto the walkmesh at (X, Y).
     fn warp_xy { mut w: world::World, at: []u8 } {
         let comma = text::find_byte{ s = at, c = ',' } ifnull { return }
@@ -1028,6 +1045,8 @@ namespace play {
         a.params[4] = actions::Param::int{ v = animation }
         a.params[5] = actions::Param::int{ v = result }
         a.params[6] = actions::Param::int{ v = damage }
+        // Ahead of a follower's endless follow order, which would hold the attack back for good.
+        actions::clear_for_player{ &w, id = from }
         _ = actions::add{ &w, id = from, action = a, force = false }
     }
 

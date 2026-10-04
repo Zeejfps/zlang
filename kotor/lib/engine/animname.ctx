@@ -13,7 +13,7 @@ namespace animname {
     fn is_row { id: u32 } -> bool { return id >= ROW_BASE }
     fn row_of { id: u32 } -> usize { return @as(usize, (id - ROW_BASE) & 0xFFFF) }
 
-    const TABLE: [44]Entry = [
+    const TABLE: [54]Entry = [
         Entry{ id = 10000, name = "pause1", looping = true },
         Entry{ id = 10001, name = "pause1", looping = true },
         Entry{ id = 10002, name = "walk", looping = true },
@@ -48,6 +48,18 @@ namespace animname {
         Entry{ id = 10074, name = "off", looping = false },
         Entry{ id = 10075, name = "open", looping = false },
         Entry{ id = 10076, name = "close", looping = false },
+        // A placeable's ANIMATION_PLACEABLE_ANIMLOOP01..10 (204..213, from_script): the Star Map's
+        // dome plays animloop01, a computer's screen another.
+        Entry{ id = 10106, name = "animloop01", looping = true },
+        Entry{ id = 10107, name = "animloop02", looping = true },
+        Entry{ id = 10108, name = "animloop03", looping = true },
+        Entry{ id = 10110, name = "animloop04", looping = true },
+        Entry{ id = 10111, name = "animloop05", looping = true },
+        Entry{ id = 10112, name = "animloop06", looping = true },
+        Entry{ id = 10113, name = "animloop07", looping = true },
+        Entry{ id = 10114, name = "animloop08", looping = true },
+        Entry{ id = 10115, name = "animloop09", looping = true },
+        Entry{ id = 10116, name = "animloop10", looping = true },
         Entry{ id = 10118, name = "ready", looping = false },
         Entry{ id = 10120, name = "flirt", looping = true },
         Entry{ id = 10121, name = "usecomp", looping = false },

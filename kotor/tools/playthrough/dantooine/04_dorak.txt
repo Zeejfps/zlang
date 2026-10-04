@@ -1,0 +1,30 @@
+# Dantooine, part 4: the second test, Master Dorak: the history of the Order (skipped), the lightsaber
+# crystal, the Guardian/Sentinel/Consular choice and the first Jedi level. From the checkpoint "code" (CKPT=code).
+#
+# The player has not spent the XP for level 9 (the original's players are advised to hold a level back for
+# the first Jedi one): ShowLevelUpGUI at the end of Dorak's talk (k_pdan_makejedi) offers it only then.
+3 ui stat xp 37000
+# Replies: "What colors are there?", "I want to be a Jedi Guardian!", then the three questions (the first
+# answer each) and "Blue. The path of the Jedi Guardian."
+5 ui replies 1 1 1 1 1 1 1 1 1 1 1 1
+10 talk dan13_dorak dan13_dorak
+# The Level Up panels open at about 3720 (Jedi Guardian, level 9): Skills, Feats and Powers each get "Recommended" and
+# OK, then Accept on the steps list. (The soldier has no hit point history, so the hit points are set after.)
+3760 ui click 793 313
+3770 ui click 500 545
+3780 ui click 638 545
+3790 ui click 794 345
+3810 ui click 491 545
+3820 ui click 639 545
+3830 ui click 794 376
+3850 ui click 491 545
+3860 ui click 639 545
+3880 ui click 794 407
+4000 ui pos
+4000 ui menu character
+4060 ui close
+4070 ui stat hpmax 130
+4070 ui stat hp 130
+4080 ui journal list
+4080 ui xp
+4100 save dorak

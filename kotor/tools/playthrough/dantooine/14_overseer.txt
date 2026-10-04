@@ -1,0 +1,22 @@
+# Dantooine, part 14: both seals are broken, and the party walks to the sealed door: the trigger in front of it
+# (dan15_opendoor, k_pdan_door1505-like) unlocks it and destroys the two Guardian Droids once DAN_LIFE_DONE and
+# DAN_DEATH_DONE are set. The Overseer's talk then says the door is open (its start entry tests GetIsOpen). From the
+# checkpoint "proved" (CKPT=proved: the party stands at the east computer).
+3 ui stat hpmax 130
+3 ui stat hp 130
+3 ui bot god on
+5 ui replies default 1
+10 use man15_door03
+600 ui pos
+600 ui where man15_door03
+600 ui where dan15_guard
+# The door is open: on to the Star Map in the chamber beyond.
+700 ui goto dan15_starmap
+1100 ui goto dan15_starmap
+1500 ui goto dan15_starmap
+2000 ui pos
+5000 ui journal list
+5000 ui xp
+5000 ui pos
+5000 ui party
+5010 save starmap

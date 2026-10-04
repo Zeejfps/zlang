@@ -2,7 +2,7 @@
 // the input script does not know (lib/ingame/script.ctx) come here. The default player has no
 // attributes, no XP and no feats, so these give a creature numbers worth looking at:
 //
-//   FRAME ui leader TAG        the party member with TAG leads (it joins first if it is not in the party)
+//   FRAME ui leader TAG        the party member with TAG leads (it joins first if it is not in the party); `pc`: the player
 //   FRAME ui stat NAME VALUE   set one number on the leader; NAME is one of
 //                                str dex con int wis cha     the attribute scores
 //                                xp  align  hp  hpmax        experience, alignment (0 dark .. 100 light), hit points
@@ -18,7 +18,8 @@ namespace test_sheet {
         if ci::eq{ a = cmd, b = "leader" } {
             let mut words = text::words{ s = args }
             let tag = text::next_word{ &words } ifnull { return true }
-            let id = world::object_by_tag{ w = &w, tag, nth = 0 }
+            // The player's own creature has no tag: `pc` names it.
+            let id = if ci::eq{ a = tag, b = "pc" } { w.player } else { world::object_by_tag{ w = &w, tag, nth = 0 } }
             if id == obj::INVALID {
                 _ = @fmt(&w.io, "ui leader: no object tagged {}\n", tag)
                 return true
@@ -66,7 +67,10 @@ namespace test_sheet {
             k = k + 1
         }
         if is_ability { }
-        else if ci::eq{ a = key, b = "xp" } { c.xp = @as(u32, n) }
+        else if ci::eq{ a = key, b = "xp" } {
+            c.xp = @as(u32, n)
+            if c.fighter is some{ value = f } { f.c.xp = n }
+        }
         else if ci::eq{ a = key, b = "align" } { c.good_evil = @as(u32, n) }
         else if ci::eq{ a = key, b = "hp" } { o.hp = n }
         else if ci::eq{ a = key, b = "hpmax" } { o.hp_max = n }
@@ -91,7 +95,10 @@ namespace test_sheet {
         }
         else { return false }
         c.hit_dice = c.class_levels[0] + c.class_levels[1] + c.class_levels[2]
-        sync_rules{ &w, o, c }
+        // Only a class command writes the classes: the rules' creature may have a class the engine's
+        // fields do not (a level gained through AddMultiClass and the Level Up panels).
+        let classes_set = ci::eq{ a = key, b = "class" } or ci::eq{ a = key, b = "level" } or ci::eq{ a = key, b = "class2" } or ci::eq{ a = key, b = "level2" }
+        sync_rules{ &w, o, c, classes = classes_set }
         return true
     }
 
@@ -110,7 +117,7 @@ namespace test_sheet {
 
     // The engine fields this command set writes (abilities, classes, XP, alignment) copied into the
     // rules creature, which then rebuilds its stats.
-    fn sync_rules { mut w: world::World, o: *mut obj::Object, c: *mut obj::Creature } {
+    fn sync_rules { mut w: world::World, o: *mut obj::Object, c: *mut obj::Creature, classes: bool } {
         let f = c.fighter ifnull { return }
         if not f.loaded { return }
         let mut k: usize = 0
@@ -118,11 +125,14 @@ namespace test_sheet {
             f.c.abil[k] = @as(i32, c.abilities[k])
             k = k + 1
         }
-        f.c.xp = @as(i32, c.xp)
+        // (The experience is the rules creature's own; only `ui stat xp` sets it, above: a load leaves the
+        // object's copy at 0, and copying that back wiped the real number.)
         f.c.good_evil = @as(i32, c.good_evil)
-        f.c.classes[0] = rules::ClassSlot{ class = @as(i32, c.classes[0]), level = @as(i32, c.class_levels[0]) }
-        f.c.classes[1] = rules::ClassSlot{ class = @as(i32, c.classes[1]), level = @as(i32, c.class_levels[1]) }
-        f.c.nclasses = if c.class_levels[1] > 0 { 2 } else { 1 }
+        if classes {
+            f.c.classes[0] = rules::ClassSlot{ class = @as(i32, c.classes[0]), level = @as(i32, c.class_levels[0]) }
+            f.c.classes[1] = rules::ClassSlot{ class = @as(i32, c.classes[1]), level = @as(i32, c.class_levels[1]) }
+            f.c.nclasses = if c.class_levels[1] > 0 { 2 } else { 1 }
+        }
         rules::recompute{ tables = w.rules, c = &f.c }
         f.c.fp = f.c.stats.max_fp
     }
