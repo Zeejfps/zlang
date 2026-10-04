@@ -33,7 +33,7 @@ namespace hud {
 
     // Builds the block for a new target: its name, its health and the slots' lists.
     fn build_block { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, id: u32 } {
-        h.lists[0] = default_actions{ w = &w, id }
+        h.lists[0] = keep_choice{ old = h.lists[0], new = attack_slot{ w = &w, id } }
         // The middle slot holds the leader's Force powers against a hostile creature; the right one the
         // party's grenades (item_slots.ctx).
         h.lists[1] = middle_actions{ h = &h, w = &w, id }
@@ -103,7 +103,7 @@ namespace hud {
         } else {
             // What the leader can do to the target changed under it (a lock picked or locked, a key found,
             // the last grenade thrown, Force points spent or regained, a power learned).
-            let first = same_actions{ a = default_actions{ w = &w, id = w.target }, b = h.lists[0] }
+            let first = same_actions{ a = attack_slot{ w = &w, id = w.target }, b = h.lists[0] }
             let middle = same_actions{ a = middle_actions{ h = &h, w = &w, id = w.target }, b = h.lists[1] }
             let last = same_actions{ a = grenade_actions{ w = &w, target = w.target }, b = h.lists[2] }
             if not first or not middle or not last { build_block{ &h, &g, &w, &dev, id = w.target } }
@@ -163,11 +163,12 @@ namespace hud {
         return true
     }
 
-    // The R key (DefaultAction, movement.md 7.4): the first choice of the first slot on the target, as a
+    // The R key (DefaultAction, movement.md 7.4): the first of the target's default actions (plain Attack on a
+    // foe, not the first slot's combat feats), as a
     // second click on it does. True when a choice was run.
     fn run_default { mut h: Hud, mut w: world::World } -> bool {
         if w.target == obj::INVALID { return false }
-        let l = h.lists[0]
+        let l = default_actions{ w = &w, id = w.target }
         if l.count == 0 { return false }
         run_act{ &w, act = l.entries[0].act, target = w.target, item = l.entries[0].item, spell = l.entries[0].id, queue = false }
         return true
@@ -221,7 +222,7 @@ namespace hud {
         h.pressed = obj::INVALID
         if id == obj::INVALID or id != began { return false }
         if id == w.target {
-            let l = h.lists[0]
+            let l = default_actions{ w = &w, id }
             if l.count > 0 {
                 gui::play_sound{ &g, n = 6 }
                 run_act{ &w, act = l.entries[0].act, target = id, item = l.entries[0].item, spell = l.entries[0].id, queue = false }

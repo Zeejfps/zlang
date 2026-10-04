@@ -15,12 +15,21 @@ namespace hud {
         return c.in_combat
     }
 
-    // The icon a queued action shows (a texture of the GUI pack), "" for one the queue hides.
-    fn queue_icon { kind: actions::Kind } -> []u8 {
-        match kind {
-            attack_object => { return "i_attack" }
-            else => { return "" }
+    // The picture a fighting order shows in the queue: an attack's combat feat (feat.2da ICON) or
+    // i_attack, a cast's item or Force power; "" for an action the queue does not show.
+    fn order_icon { w: *world::World, a: actions::Action, feat: i32, into: []mut u8 } -> []u8 {
+        if a.kind == actions::Kind::attack_object {
+            if feat > 0 { return twoda::get_string{ t = w.tables.feat, row = @as(usize, feat), column = "icon" } ifnull "i_attack" }
+            return "i_attack"
         }
+        if a.kind == actions::Kind::cast_spell {
+            let item = actions::object_param{ a = &a, i = 6 }
+            if item != obj::INVALID { return item_icon_name{ w, id = item, into } }
+            let spell = actions::int_param{ a = &a, i = 0 }
+            if spell < 0 { return "" }
+            return twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "iconresref" } ifnull ""
+        }
+        return ""
     }
 
     // A refusal in the message bar (UseAction's reason codes): "Force Depleted", "Restricted by Armor"...,
@@ -79,16 +88,39 @@ namespace hud {
                 gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMODEMSG", visible = false }
             }
         }
-        // The queue: the leader's attack actions, the current one big.
+        // The queue (UpdateCombatQueue 0x0068a010): the round the leader is fighting, then its
+        // waiting fighting orders, each with its feat's, item's or power's picture.
         let leader = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return }
         let queue = list::items{ list = leader.actions }
         let mut buf: [16]u8
-        let mut slot: usize = 0
-        let mut i: usize = 0
-        while i < queue.len and slot < 4 {
-            let icon = queue_icon{ kind = queue[i].kind }
-            i = i + 1
+        let mut names: [4][24]u8 = [[0; 24]; 4]
+        let mut lens: [4]usize = [0; 4]
+        let mut n: usize = 0
+        if fight::of{ o = leader } is some{ value = lf } {
+            if lf.round.started and not lf.round.cutscene {
+                let mut ib: [40]u8
+                let icon = order_icon{ w = &w, a = actions::make{ kind = actions::Kind::attack_object }, feat = lf.round.feat, into = ib[..] }
+                let m = if icon.len > 24 { 24 } else { icon.len }
+                slice::copy(u8){ dst = names[n][..m], src = icon[..m] }
+                lens[n] = m
+                n = n + 1
+            }
+        }
+        let mut q: usize = 0
+        while q < queue.len and n < 4 {
+            let a = queue[q]
+            q = q + 1
+            let mut ib: [40]u8
+            let icon = order_icon{ w = &w, a, feat = actions::int_param{ a = &a, i = 2 }, into = ib[..] }
             if icon.len == 0 { continue }
+            let m = if icon.len > 24 { 24 } else { icon.len }
+            slice::copy(u8){ dst = names[n][..m], src = icon[..m] }
+            lens[n] = m
+            n = n + 1
+        }
+        let mut slot: usize = 0
+        while slot < n {
+            let icon = names[slot][..lens[slot]]
             let tag = tag_n{ into = buf[..], prefix = "LBL_QUEUE", n = slot }
             let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name = icon }
             if img.ok { gui::set_picture{ &g, panel = h.panel, tag, texture = img.tex, w = img.w, h = img.h } }

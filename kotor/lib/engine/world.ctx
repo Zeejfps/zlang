@@ -31,6 +31,7 @@ namespace world {
         dialoganimations: twoda::Table,
         combatanimations: twoda::Table,
         weapondischarge: twoda::Table,
+        feat: twoda::Table,                 // the combat feats' names and icons for the target block and the combat queue
         spells: twoda::Table,
         bodybag: twoda::Table,
         modulesave: twoda::Table,
@@ -240,6 +241,7 @@ namespace world {
             dialoganimations = try load_table{ &fs, heap, rm, name = "dialoganimations" },
             combatanimations = try load_table{ &fs, heap, rm, name = "combatanimations" },
             weapondischarge = try load_table{ &fs, heap, rm, name = "weapondischarge" },
+            feat = try load_table{ &fs, heap, rm, name = "feat" },
             spells = try load_table{ &fs, heap, rm, name = "spells" },
             bodybag = try load_table{ &fs, heap, rm, name = "bodybag" },
             modulesave = try load_table{ &fs, heap, rm, name = "modulesave" },
