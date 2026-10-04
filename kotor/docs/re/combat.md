@@ -171,6 +171,7 @@ fields, med for the action types)
 | `+0x4e0` | in combat (GetIsInCombat) | high |
 | `+0x4e4` | combat timeout, 8000 ms (section 3.6) | high |
 | `+0x504` / `+0x50c` | attack target (GetAttackTarget) / attempted attack target (GetAttemptedAttackTarget) | high |
+| `+0x510` | the player's queued click target: set by the player's attack command (`0x005254c0`) when it differs from `+0x50c`, cleared when the order is scheduled; read by `GetCanEngage` | med |
 | `+0x524` / `+0x528` | attempted spell target / spell target (see actions.md) | med |
 | `+0x53c` / `+0x544` / `+0x554` | last hostile target, last attack action, last combat feat used (copied at round end) | high |
 | `+0x540` | kind of the current round's action: 3 attack, 4 cast | med |
@@ -217,38 +218,69 @@ WeaponWield, `+0x09` WeaponType, `+0x0c` DamageFlags, `+0x18` ModelType, `+0x1a`
    itself; return "done" if the target is dead, a downed party member, or not a valid attack
    target (`0x005b48f0`: doors and placeables always are; a non-player-controlled attacker must
    perceive a creature target).
-3. **Engagement.** `GetCanEngage` (`0x004d2c30`) says the target can be paired when its round has
-   not started and it has no attempted attack target, or it is already attacking this creature
-   (attempted attack or spell target), or its round runs without a target; never when the target
-   is debilitated, and with extra conditions when the target is the party member the player is
-   controlling. `GetShouldBeMaster` (`0x004d2d60`) makes the attacker the master when the target
-   has no attempted attack target, or attacks the attacker but is not itself a master; a
-   player-controlled attacker is always master. (med for the exact conditions)
-4. **Animation request.** 10009 for an unengaged round. When engaged, 10109 if both sides hold
-   non-ranged weapons whose WeaponWield is not 1 or 8 (`GetBothWieldMelee` `0x004d2b70`) or
-   either creature's appearance `MODELTYPE` starts with S or L (`0x005b47c0`); otherwise the
-   action's own animation parameter. These are engine animation numbers the client maps to model
-   animations. (med)
-5. **Start.** Not engageable: `StartCombatRound(target, engaged = 0, master)`. Engageable and
-   master: `StartCombatRound(target, 1, 1)` on the attacker and `StartCombatRound(attacker, 1, 0)`
-   on the target (which becomes the slave; its `+0x4dc` = 1). Engageable but not master: the
-   attacker does nothing new this frame (the target's own round drives the pair).
+3. **Engagement.** `GetCanEngage(target)` (`0x004d2c30`) is true when the target is a creature and
+   - its round has not started and it has no attempted attack target (`+0x50c`: it is idle), or
+   - it is attacking this creature (its `+0x50c`, or its attempted spell target `+0x524`, is this
+     creature), or
+   - its round runs without a target (a cast);
+
+   and never when the target is helpless (`GetIsHelpless` `0x005b4880`: debilitated `+0x8ed`, or
+   dying). When the target is the creature the player leads (the client party's first member) it
+   is true only while that creature is attacking (or casting at) this one and its queued click
+   target (`+0x510`, which the player's attack command sets while the creature is busy with
+   something else) is empty or this one: an idle leader is never engaged, so enemies attack it
+   with solo rounds and it does not react. `GetShouldBeMaster(target, canEngage)` (`0x004d2d60`)
+   is false when it cannot engage; otherwise true when the target has no attempted attack target,
+   or has this creature for it and its own Master flag (`+0x9bc`) is 0; and true whenever the
+   attacker is player-controlled (`+0xa88`: the player character and every party member). The
+   Master flag is **not** cleared when a round ends, only by the creature's next
+   `StartCombatRound` (a solo round writes 0), so two creatures that keep fighting each other keep
+   the same master. Two creatures that both carry a stale flag cannot start a pair: each waits
+   for the other (no timeout was found). (high)
+4. **Animation request.** Before the engagement test the action sets 10109 when
+   `GetBothWieldMelee` (`0x004d2b70`) holds: both sides have a right-hand weapon that is not a
+   ranged weapon and whose WeaponWield is not 1 or 8. A creature that cannot engage is reset to
+   10009 (the plain attack). An engaged one keeps 10109 when `GetBothWieldMelee` held or either
+   creature's appearance `MODELTYPE` starts with S or L (`0x005b47c0`), else the action's own
+   animation (10009). The client maps the request to a row of `animations.2da` from the
+   attacker's stance digit (FUN_005f32e0 / FUN_00613da0): 10009 gives the general attacks `g<d>a1/2`
+   (rows 122/123 one-handed, 163/164 two-handed or double, 204/205 two weapons, 87/88 stun baton,
+   247/248 bare hands); 10109 against a creature with a weapon gives the duel attacks `c<d>a1..5`
+   (94-98, 135-139, 176-180), the variant drawn at random, never the one the creature drew last
+   (FUN_0060d0e0, a field of the client creature); 10109 against a simple model gives the
+   monster-fighting `m<d>a1/2` (125/126, 166/167, 207/208). (high for the table, med for which
+   side the client takes `<d>` from)
+5. **Start.** Not engageable: `StartCombatRound(target, bEngaged = 0, bMaster = 0)` on the attacker
+   alone (every run of the action restarts the round; the dispatcher 0x3f keeps a second attack
+   from being started in the same round). Engageable and master: `StartCombatRound(target, 1, 1)`
+   on the attacker, then `StartCombatRound(attacker, 1, 0)` on the target, which becomes the slave
+   (its `+0x4dc` = 1). **Engageable but not master: no round is started; the action returns "still
+   running" for as long as the attacker's own round has not been started, so the slave waits for
+   its master to start it.** (high)
 6. If the round started: store the combat feat in the current attack record (`AttackType`) when
-   the attacker holds a right-hand weapon, `+0x8e0` is 0 and the action's parameters ask for it; play the requested animation; set the
-   attempted attack target; pause the round by the attacker for the animation (`SetRoundPaused`
-   `0x004d28f0`, `SetPauseTimer` `0x004d2920`); count the action (`+0x968`). With a combat feat,
-   the partner's round is paused too (infinitely for a slave, until the master releases it).
+   the attacker holds a right-hand weapon, `+0x8e0` is 0 and the action's parameters ask for it;
+   play the requested animation; set the attempted attack target (`+0x50c`); pause the round, paused
+   by the attacker (`SetRoundPaused` `0x004d28f0`), for the action's duration
+   (`SetPauseTimer` `0x004d2920`; parameter 4 of the node, **1500 ms** for every attack: the
+   scheduled entry's AnimationTime is (g_nCombatActionTimeBias 0 + 3000) / 2); count the action
+   (`+0x968`). **When the pair is engaged** (the `GetCanEngage` result, whatever the feat) the
+   partner's round is paused too, before the attack is resolved: a master holds its slave with an
+   infinite pause (paused by the master, `SetPauseTimer(duration, bInfinite = 1)`), a slave holds
+   its master for the same duration with an ordinary pause (paused by the slave). (high; this
+   corrects an earlier reading in which only a combat feat did this)
 7. A pending `NewAttackTarget` replaces the target; then `ResolveAttack` (`0x005bba80`); return
    "done". The attack action lasts one round; the next round's attack comes from outside
    (section 9).
 
-`StartCombatRound(target, bEngaged, bMaster, nCombatFeat, bCutscene)` (`0x004d5f70`): a slave first
-ends its current round; MasterID is the master's id (the attacker's own id on the master side, the
-partner's on the slave side), and the master copies MasterID and its slave id into the slave's round
-and zeroes the slave's timer; then RoundStarted = 1, Timer = 0, unpaused, PausedBy = INVALID,
-SpellCastRound = 0, RoundLength = **3000 ms**, the five attack records are reset, the attack
-counts are computed (3.2), OffHandTaken = ExtraTaken = 0, the round target and DodgeTarget = the
-target, DeflectArrow = 1, WeaponSucks = 0, the creature's look-at target is set (`0x004f34a0`)
+`StartCombatRound(target, bEngaged, bMaster, nCombatFeat, bCutscene)` (`0x004d5f70`): Engaged and
+Master are written first; a slave then ends its current round (`EndCombatRound` with bRunScript =
+RoundStarted: its OnEndRound runs if it had one, and the attack records are cleared, so a blow it
+had in flight is lost). MasterID is the master's id (the attacker's own on the master side, the
+partner's on the slave side); the master also writes MasterID and its slave's id into the slave's
+round and zeroes the slave's timer. Then RoundStarted = 1, Timer = 0, unpaused, PausedBy =
+INVALID, SpellCastRound = 0, RoundLength = **3000 ms**, the five attack records are reset, the
+attack counts are computed (3.2), OffHandTaken = ExtraTaken = 0, the round target and DodgeTarget =
+the target, DeflectArrow = 1, WeaponSucks = 0, the creature's look-at target is set (`0x004f34a0`)
 and its `+0x540` = 3. (high)
 
 Spell rounds start the same way from the cast actions (`AIActionCastSpell` `0x00514af0`,
@@ -301,11 +333,22 @@ by the right weapon's RangedWeapon. (high)
 7. Queue the impact at that hit time (`AddMeleeImpact` `0x004d5a50`) and update `+0x558`
    (`0x005b7400`).
 
-Afterwards `ResolveMeleeAnimations` (`0x005b7470`) stores the animation length, shortens the round
-(3.4), chooses the target's reaction (10014 when hit, 10012 after a deflection, 10011 after a
-miss) and, when the attacker's round is engaged and the target is not debilitated and its own
-round has room (`CheckActionLength` `0x004d2970`), makes the target play it and shortens the
-target's round too; otherwise the reaction is 10001 (none). (high)
+Afterwards `ResolveMeleeAnimations` (`0x005b7470`; its length argument is the action's 1500 ms)
+stores the length in the attack record and takes it out of the attacker's round
+(`DecrementRoundLength`, 3.4). It then chooses the target's reaction from the result in the
+current attack record, which holds the **last** attack of the round (the loop overwrites one
+record): 10014 on a hit, 10012 after a deflection, 10011 after a miss, else 10001. When the
+target is not debilitated or dying, **the attacker's round is engaged** and the target's round has
+room for the animation (`CheckActionLength` `0x004d2970`, 3.4), the target's animation is set to
+the reaction **at once**, when the attack begins and not at the hit time, and its round is
+shortened by the same length. Otherwise the reaction is 10001 (none). The client turns 10014 /
+10011 into the row that `combatanimations.2da` pairs with the attacker's row (`damage<d>` /
+`parry<d>`, d = the defender's weapon class): the reaction animations `c2d1..5` / `c2p1..5` are
+1.47 s long like the duel attacks `c2a1..5`, and carry the same swing times (their swings play
+the `Swingshort` / `Swinglong` sounds, then `Contact` and `HitParry`), so the pair is a
+choreographed exchange. A target busy with its own attack animation (paused by itself) fails
+`CheckActionLength` and does not react; a slave's reaction therefore only shows because its
+master holds it while its own attack waits. (high)
 
 **Ranged** (`ResolveRangedAttack` `0x005bb590`): the attack animation selects a row of
 `weapondischarge.2da` (`shots`, `hits`, `switchmask`, `shot1..shot12` in ms). The round's attacks
@@ -317,33 +360,71 @@ an energy shield (results 8/10, section 4.6). Hits run `ResolveDamage` and
 `ResolvePostRangedDamage` (`0x005b8c20`). Each shot is queued as an impact at its `shotN` time,
 fired from the hand given by the `switchmask` digit (`AddRangedImpact` `0x004d5b60`); the bolt's
 travel time (≈ distance × 23.8 ms per metre, constant `0x0074b2ec`) becomes ReaxnDelay. The
-`hits` column is read but not used. `ResolveRangedAnimations` (`0x005b6c40`) then mirrors the melee
-step. (high for the selection rule, med for travel time)
+`hits` column is read but not used. `ResolveRangedAnimations` (`0x005b6c40`) shortens the
+attacker's round and the (engaged, not helpless, roomy) target's by the action's 1500 ms as in
+melee, but the only reaction it asks for is a dodge (10011) when the attack missed, the attacker is
+engaged and the target holds no lightsaber and is not in one of a few reaction states
+(`0x005b55a0`); a hit asks for none. The flinch of a ranged (or any) hit comes from
+`OnApplyDamage`: an unpaused target whose animation is 10000 / 10001 pauses its round for the
+damage animation and plays 10023. (high for the selection rule, med for travel time)
 
 ### 3.4 Timing inside the 3 seconds
 
-The round has two clocks. (high unless marked)
+A round has a timer, a length and a pause, and the three are what make a pair take turns. (high
+unless marked)
 
 - **Round timer.** `IncrementTimer` (`0x004d4c10`) adds the frame time (creature `+0xcc`, ms) to
-  Timer while the round is not paused. When Timer ≥ RoundLength the round ends
-  (`EndCombatRound(1)`), except that an engaged master's slave is reset first, and a spell round
-  only ends once the head of the action queue is no longer a cast (action 0xf). A negative timer
-  or a vanished master also ends it (log strings at `0x00746418..0x007464e0`).
-- **Animation pause.** While an attack animation plays the round is paused and PauseTimer counts
-  down (`DecrementPauseTimer` `0x004d4e80`, which ends the round if the master has vanished).
-  Each frame `UpdateCombat` (`0x004faf20`) fires the next impact of the current record when its
-  time has come (impact time < AnimationLength − PauseTimer, `0x004d45e0`), via
-  `ApplyAttackImpact` (`0x005b8050`). When PauseTimer reaches 0 it fires any impacts left,
-  unpauses (`FinishAttackPause` `0x004f1250`: clear pause, advance the round timer by the
-  overshoot, return to the combat-ready animation), does the same for the slave, and ends the round
-  if the round's target is now dead or a downed party member.
-- **Shortening.** `DecrementRoundLength(animLen, bForce)` (`0x004d3440`): if the animation is longer
-  than the time left and the excess is ≤ 1000 − OverlapAmount, the round is first stretched to
-  animLen + 1 (OverlapAmount is meant to record this but the arithmetic leaves it unchanged); with
-  bForce the round is set to animLen. Timer and the pending scheduled actions' timers are rescaled
-  by (RoundLength − animLen) / RoundLength, and RoundLength becomes RoundLength − animLen (at
-  least 0). In effect the attack animation consumes round time instead of running on top of it.
-  (med)
+  Timer, and runs only while the round is not paused. When Timer ≥ RoundLength the round ends
+  (`EndCombatRound(1)`; a slave's the same, the code only logs whether its master is still found),
+  except that a spell round ends only once the head of the action queue is no longer a cast
+  (action 0xf). A negative timer ends it too (log strings at `0x00746418..0x007464e0`).
+- **Pause.** `UpdateCombat` (`0x004faf20`), every frame, by the round's state: not paused,
+  `IncrementTimer`; paused with `InfinitePause`, only `DecrementPauseTimer` (`0x004d4e80`: the
+  pause stays, and the round ends only if the master has left the world); paused otherwise,
+  PauseTimer − dt; while it stays ≥ 1 the next impact of the current record is applied when its
+  time has come (impact time < AnimationLength − PauseTimer, `0x004d45e0`, via `ApplyAttackImpact`
+  `0x005b8050`); when it falls below 1 every impact left is applied and `FinishAttackPause`
+  (`0x004f1250`) runs with the overshoot: unpause (which also ends an infinite pause), PauseTimer =
+  0, `IncrementTimer(overshoot)`, `+0x4dc` = 0, and the idle animation (combat ready) if the
+  current one is a combat animation and the creature is not helpless. A **master** then does the
+  same `FinishAttackPause` for its slave, which is how the slave is let go; and the round ends
+  if its target is now dead or down.
+- **Shortening.** `DecrementRoundLength(len, bForce)` (`0x004d3440`), exactly: if RoundLength − len
+  < 0 and len − RoundLength ≤ 1000 − OverlapAmount (always 1000: the arithmetic leaves it
+  unchanged), RoundLength = len + 1; every scheduled action's timer and the Timer become
+  trunc(timer × (RoundLength − len) / RoundLength), and with RoundLength 0 the Timer becomes
+  −len (the round then ends at its next tick); if RoundLength − len < 0 RoundLength is set to len;
+  last, RoundLength −= len. So an attack of 1500 ms takes RoundLength from 3000 to 1500, and a
+  second 1500 ms to 0.
+- **`CheckActionLength(by, len, 0)`** (`0x004d2970`): false when the round is paused by someone
+  other than `by` and its PauseTimer is above 0; otherwise, for a started round, whether
+  `len` ≤ RoundLength − OverlapAmount − Timer + 1000.
+
+**An engaged pair, step by step** (A the master, B its slave, both with melee weapons; all of it
+read from the code above, the frame by frame order of two creatures' updates left open):
+
+1. t = 0, A's action starts the pair. A: round of 3000, paused by A for 1500. B: round of 3000
+   started as a slave, paused by A with no end. A's attack is resolved; B's reaction paired with
+   it starts (`c2p` or `c2d`, 1.47 s long) and B's RoundLength becomes 1500; A's too.
+2. A's hits are applied at their combatanimations times (500..1267 ms). B's timer does not move.
+3. t ≈ 1500: A's pause is over. A's timer starts at the overshoot (its length 1500 is left), and
+   B is let go the same moment. B's waiting action (it returned "still running" while B was
+   paused) now runs: B is engaged and not master, so it starts nothing; it plays its own attack,
+   pauses itself for 1500 and **pauses A for 1500**; A reacts with the animation paired with B's
+   attack and its RoundLength becomes 0 (B's, shortened once, too).
+4. t ≈ 3000: both pauses are over (A's `FinishAttackPause` makes its timer reach its length, so
+   `EndCombatRound` runs for A, which lets B go and runs A's OnEndRound; B's ends the same way).
+5. Each OnEndRound makes its creature attack again. A drives again: B's Master flag is 0, so
+   `GetShouldBeMaster` favours A, whereas B (A's flag is still up) can only wait.
+
+So each fighter attacks once per 3 s round, as when each had its own round, but the master first
+and the slave 1.5 s later, and each swing is answered by the other's paired parry or damage
+animation. A slave without an attack waiting (a victim that does nothing) only reacts, then runs
+its shortened round out. A solo round (ranged attackers, doors, an idle party leader, a helpless
+target) is 1500 ms of paused attack and 1500 ms of timer. The player's creatures are always the
+master when the target can engage; when an NPC has begun a pair with the leader, the leader's own
+attack takes the master's place and restarts the NPC's round as the slave. (high for the
+mechanism, med for the order of the events within one frame)
 
 Global pause (`0x004ae980(2)` on the server) freezes everything. (high)
 
@@ -354,7 +435,9 @@ Global pause (`0x004ae980(2)` on the server) freezes everything. (high)
 1. Clear RoundStarted, Timer, RoundLength, pause state, DodgeTarget, AdditAttacks and `+0x968`.
 2. If creature `+0xa9c` is set, refill current Force points to the maximum (med: which state sets
    it is unknown).
-3. A master releases its slave: unpause, clear its Engaged and MasterID.
+3. A master releases its slave (when its Master flag is up, whether or not it is still in a pair):
+   the slave's pause (paused flag, paused-by, PauseTimer, InfinitePause) is cleared, and so are its
+   Engaged flag and MasterID. The master's own Engaged and Master flags and its slave's id stay.
 4. If the round's target is dead or down (doors: open; placeables: destroyed) clear it, and pick the
    creature's current attack (or spell) target as the "next" target.
 5. Animation 10001 (combat ready); reset the five attack records; clear the creature's attack,
@@ -368,6 +451,22 @@ Global pause (`0x004ae980(2)` on the server) freezes everything. (high)
 
 `IncrementTimer` and `UpdateCombat` call it with bRunScript = 1. Because ATTACKOBJECT returns
 "done" after resolving one round, the next round depends on who re-issues an attack (section 9).
+Resetting the attack records (step 5) also empties their impact lists: a blow not yet applied when
+a round is ended, or restarted by a master, is lost. (high)
+
+**What `lib/engine/fight.ctx` does with this** (ours): `can_engage`, `should_be_master`,
+`open_round` (StartCombatRound), `start_round` (the attack from the animation on),
+`update_clocks` (UpdateCombat), `fits_round`, `shorten_round`, `finish_pause`, `release_slave`
+are the functions above; the pair's flags live in `Fighter` and survive the round, the pause in
+`Round`. The differences: impacts and bolts are timed by the creature's own attack clock rather than
+PauseTimer (the same 0..1500 ms, but a ranged impact after its bolt's flight may land after the
+pause); a round ended with `script` true applies its impacts still in flight first instead of
+dropping them; a master lets go of a slave only while the slave still has it as master, and a
+slave held by a master that is gone is let go; a creature that has waited two rounds for a master
+becomes one (two stale Master flags would otherwise wait for ever); cutscene attacks are always
+solo; spell rounds (Force powers) do not use rounds; a ranged attack's dodge reaction is still
+played at the impact. Looked at with `--log combat` (`A (tag) engages B (tag) as master`,
+`B answers with animation ROW`) and `--log trace` (animation names every 6 frames).
 
 ### 3.6 Combat state
 
