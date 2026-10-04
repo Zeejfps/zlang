@@ -1,0 +1,10 @@
+# Dantooine, part 3: the first test, the Jedi Code, and Zhar's word on lightsabers. From the checkpoint
+# "trial1" (CKPT=trial1): Zhar's first talk is over, it ended with "return when you feel you are ready"
+# (the first visit to the Code is always refused, k_pdan_temp03), so this is the second talk.
+# Replies: "I am ready to continue my training.", "I am ready for the tests, Master Zhar.", then the five
+# precepts (no emotion: peace, no ignorance: knowledge, no passion: serenity, no chaos: harmony, no death:
+# the Force).
+5 ui replies 1 1 6 3 2 6 4 1 1 1 1 1 1
+10 talk dan13_zhar dan13_zhar
+3700 ui journal list
+3700 save code

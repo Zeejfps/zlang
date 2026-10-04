@@ -1,0 +1,11 @@
+1 join p_carth 2
+1 join p_bastilla 0
+4 ui pos
+4 ui stat class 0
+4 ui stat level 8
+4 ui pos
+4 ui stat xp 29000
+4 ui stat hpmax 80
+4 ui stat hp 80
+5 ui pos
+100 ui pos

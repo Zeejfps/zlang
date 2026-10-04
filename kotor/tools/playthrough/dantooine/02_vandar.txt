@@ -1,0 +1,14 @@
+# Dantooine, part 2: the second Council meeting (Vandar: the ruins, and training first), the training
+# montage, and Master Zhar's first conversation (the three tests). From part 1's checkpoint "wake":
+#   kotor.exe --load kotor/out/pt/dan_ckpt/wake; frames count from the load.
+# Replies, in the order the lists open: "Yes... they seemed to be searching for something", "I am having visions
+# now?", "Are you saying I'm... joined with her?", "Yes. I'm ready for whatever awaits me.", "Jedi are turning
+# to the dark side?", "I'm ready now. I accept this mission.", "We don't have time for this!" (Vandar); after the
+# montage Zhar's "What must I do to prove myself?", "I am ready for the tests, Master Zhar."
+3 ui replies 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+# Back at the Council (part 1 ends in the landing court): the trigger at the Council room starts Vandar.
+10 warp wp_pc_start
+# About 9775: Zhar's conversation ends, the player is free in the training hall.
+9900 ui journal list
+9900 ui pos
+9900 save trial1
