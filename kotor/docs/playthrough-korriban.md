@@ -128,11 +128,15 @@ the alignment (the rules' value and the engine's copy, which always agree here) 
 - **Staging audit** (`audit.sh`): only the strip-started talks are far (Shaardan's group 9 to 13 m from the player who enters the
   strip's corner, the murder scene's victims 9 m); the Mandalorian room's `rooms -1` is the warp's; the Star Map speaks to the trigger
   that owns it; the Leviathan scene is a cut scene.
+- **The other ending, played** (`28b_redeem.txt`, from `map`): with `KOR_YUTHURA2 3` set by hand (`k_pkor_knyuth02`; her personal talks in
+  the Academy would set it over several visits) the yielding Yuthura offers the friendship branch: "You ask for mercy? You, a Sith?", "I can't
+  talk about that.", "Tell me why you tried to kill me, first.", "[Persuade] Maybe you *should* think about it.", "There's still time to change
+  that." (`k39_yth_redeem`, journal `kor35_waysith` 60, alignment 98). The Valley's guards (`kor36_endsith1..3`, strip `k_kor_endacademy`) are only
+  made for `KOR_FINAL_TEST` 4 or 7 (the chain's ending leaves it at 5): nobody waits at the Academy's exit.
 - **Not played**: the way into Ajunta Pall's tomb (mines, the heat and cold plates, the bridge droids, the lever) and the first
   Shaardan scene at its door; Naga Sadow's tomb before the pool (the Terentatek and rancors, the pillar puzzle: four discs on three
   pillars); the rogue droid's peaceful repair puzzle; Jorak Uln's tomb and Mekel there; Kel Algwinn; Lashowe's holocron and the tuk'ata
-  queen; the Mandalorian's weapon cache; Yuthura's redemption ending (needs her "Tell me about yourself" talks; the replay takes her
-  yield at `kor39_yuthura` E17, "Go on", ending 56) and the other three endings; the poison plots (Yuthura's device and Adrenas, Uthar's
-  datapad); the Valley guards at the Academy's exit (`kor36_endsith1`); the Academy after the test; Dustil, Carth's son (the Academy's
-  enter script makes him when `KOR_DUSTIL_SPAWN` is set, and nothing in this chain sets it: it belongs to Carth's Hawk talk,
-  `K_SWG_DUSTIL1`/`KOR_DANEL`); Belaya (needs a Juhani who died on Dantooine); the Xor ambush; shops; the swoop point.
+  queen; the Mandalorian's weapon cache; the two endings where Yuthura dies; the poison plots (Yuthura's device and Adrenas, Uthar's
+  datapad); the Academy after the test; Dustil, Carth's son (the Academy's enter script makes him when `KOR_DUSTIL_SPAWN` is set, and
+  nothing in this chain sets it: it belongs to Carth's Hawk talk, `K_SWG_DUSTIL1`/`KOR_DANEL`; setting it by hand, `dustil.txt`, did not
+  make him); Belaya (needs a Juhani who died on Dantooine); the Xor ambush; shops; the swoop point.
