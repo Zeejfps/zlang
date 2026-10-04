@@ -142,6 +142,35 @@ namespace bot {
         }
         if b.next >= b.count { return }
         let raw = b.route[b.next][..@as(usize, b.lens[b.next])]
+        // `X,Y`: a place on the floor (the hidden path through the Eastern Dune Sea is a row of them).
+        if point_stop{ stop = raw } is some{ value = pt } {
+            let f = walkmap::floor_anywhere{ m = &w.walk, x = pt[0], y = pt[1] }
+            let at = math::Vec3{ x = pt[0], y = pt[1], z = if f != null { f.z } else { me.position.z } }
+            let dist = math::vec3::distance{ a = at, b = me.position }
+            b.waiting = b.waiting + 1
+            if dist < b.best - 2.0 {
+                b.best = dist
+                b.waiting = 0
+            }
+            if b.waiting > STUCK_TICKS {
+                _ = @fmt(&w.io, "bot: stuck {} m from {} {}, skipped\n", dist, pt[0], pt[1])
+                advance{ &b }
+                return
+            }
+            if dist < 2.0 {
+                advance{ &b }
+                return
+            }
+            if me.actions.len > 0 { return }
+            let mut a = actions::make{ kind = actions::Kind::move_to_point }
+            a.params[0] = actions::Param::vector{ v = at }
+            a.params[1] = actions::Param::int{ v = 1 }
+            a.params[2] = actions::Param::float{ v = 1.0 }
+            a.params[3] = actions::Param::object{ id = obj::INVALID }
+            a.params[4] = actions::Param::float{ v = 0.0 }
+            _ = actions::add{ &w, id = lead, action = a, force = true }
+            return
+        }
         // `@TAG`: walk up to it and talk to it (the leader's click on a creature). `TAG#N`: the Nth object of that tag.
         let talk = raw.len > 1 and raw[0] == '@'
         let stop = if talk { raw[1..] } else { raw }
@@ -289,6 +318,17 @@ namespace bot {
             }
         }
         return t.position
+    }
+
+    // A stop that is a place, `X,Y` (digits and a comma, no tag starts that way), as the two numbers.
+    fn point_stop { stop: []u8 } -> ?[2]f32 {
+        if stop.len < 3 { return null }
+        let c = stop[0]
+        if not ((c >= '0' and c <= '9') or c == '-') { return null }
+        let comma = text::find_byte{ s = stop, c = ',' } ifnull { return null }
+        let x = text::scan_f32{ s = stop[..comma] } ifnull { return null }
+        let y = text::scan_f32{ s = stop[comma + 1..] } ifnull { return null }
+        return [x, y]
     }
 
     // A stop's tag and, after a `#`, which object of that tag (counting from 0) it names.
