@@ -105,6 +105,17 @@ namespace test_combat {
             _ = fight::apply{ &w, target = id, e = rules::fx::make_damage{ amount = n, types = 1, power = 0 } }
             return true
         }
+        if ci::eq{ a = cmd, b = "giveto" } {
+            // Test setup: `ui giveto TAG RESREF [N]` puts an item (a stack of N) in a creature's inventory.
+            let mut words = text::words{ s = args }
+            let tag = text::next_word{ &words } ifnull { return true }
+            let name = text::next_word{ &words } ifnull { return true }
+            let n = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "1" })
+            let who = world::object_by_tag{ w = &w, tag, nth = 0 }
+            let id = rt_item::create_item{ &w, template = name, target = who, stack = if n > 0 { n } else { 1 } }
+            _ = @fmt(&w.io, "giveto {} {}: item {}\n", tag, name, id)
+            return true
+        }
         if ci::eq{ a = cmd, b = "plot" } {
             // Test setup: `ui plot TAG 0|1` sets an object's Plot flag (a bashable door is not plot).
             let mut words = text::words{ s = args }

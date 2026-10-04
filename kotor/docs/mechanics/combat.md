@@ -60,7 +60,7 @@ d20, total and the defense it was against. The helpers are in `lib/ingame/test_c
 |---|---|---|---|
 | 19 | OnAttacked runs for every creature hit, the player's too: the leader's `k_hen_attacked01` shouts GEN_I_WAS_ATTACKED and the companions join | `0x004fece0` event 15 runs ScriptAttacked with no player check; k_ai_master 2005 | fixed: the player's OnAttacked runs, and saves keep the listen patterns (Listening, ExpressionList) without which no loaded companion heard the shout; checked at the Vulkar base (Carth and Mission join 3 s after the first shot at the leader). Open (movement): against Kandon, Carth's approach fails to plan a path from (85.4, 54.2) and he never reaches the fight |
 | 20 | OnDamaged runs for everyone but the player character (the main PC, not the leader) | combat.md 6.6 step 5 | fixed |
-| 21 | Creature AI by `k_ai_master` (scripts); party AI styles via SetPartyAIStyle / SetNPCAIStyle | scripts | to check |
+| 21 | Creature AI by `k_ai_master` (scripts); party AI styles via SetPartyAIStyle / SetNPCAIStyle | scripts | matches for what the fights showed: targets by GN_DetermineAttackTarget (downed members left out), switches to its melee weapon at close range, a wounded trooper uses a medpac (spell 64) under half health, Vulkar droids fire their carbonite projectors; party members join on the leader's shout. The Scripts button (AI style) panel: a sub-agent |
 
 ### Death, going down, recovery
 
