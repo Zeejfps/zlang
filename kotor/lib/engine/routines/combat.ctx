@@ -286,7 +286,7 @@ namespace rt_combat {
     // table, party.ctx, has no field for it: HOOK(party)).
     // int GetPartyAIStyle()
     fn get_party_ai_style { mut w: world::World, mut vm: nwvm::Vm } -> ! {
-        let c = creature_of{ w = &w, id = w.pc } ifnull {
+        let c = creature_of{ w = &w, id = w.player } ifnull {
             try nwvm::push_int{ &vm, v = nwconst::PARTY_AISTYLE_AGGRESSIVE }
             return
         }
@@ -296,7 +296,7 @@ namespace rt_combat {
     // void SetPartyAIStyle(int nStyle)
     fn set_party_ai_style { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let style = try nwarg::int{ &vm, routine = nwscript::SetPartyAIStyle, argc, i = 0 }
-        let c = creature_of{ w = &w, id = w.pc } ifnull { return }
+        let c = creature_of{ w = &w, id = w.player } ifnull { return }
         c.party_ai_style = style
     }
 
@@ -436,13 +436,21 @@ namespace rt_combat {
 
     // ---- the party and its actions
 
-    // int SetPartyLeader(int nNPC): NPC_PLAYER or a companion's slot. The party's order changes,
-    // not w.pc (which stays the player's character). TRUE when the leader was set; a companion
-    // who is not in the party answers FALSE.
+    // int SetPartyLeader(int nNPC): NPC_PLAYER or a companion's slot (0x00545a70). The client
+    // party's leader changes and the player controls it from then on (CSWCParty::SetLeader), so
+    // w.pc, the controlled creature GetIsPC answers, follows (GetFirstPC stays the player's
+    // character, routines/party.ctx). NPC_PLAYER gives the lead
+    // back to the player character (w.player), first getting it up if it is down. TRUE when the
+    // leader was set; a companion who is not in the party answers FALSE.
     fn set_party_leader { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let n = try nwarg::int{ &vm, routine = nwscript::SetPartyLeader, argc, i = 0 }
         if n == nwconst::NPC_PLAYER {
-            if party::is_member{ w = &w, id = w.pc } { party::set_leader{ &w, id = w.pc } }
+            let me = w.player
+            if party::is_member{ w = &w, id = me } {
+                if fight::is_down{ w = &w, id = me } { _ = fight::apply{ &w, target = me, e = rules::fx::make_resurrection{} } }
+                party::set_leader{ &w, id = me }
+                w.pc = me
+            }
             try nwvm::push_int{ &vm, v = 1 }
             return
         }
@@ -456,6 +464,7 @@ namespace rt_combat {
             return
         }
         party::set_leader{ &w, id }
+        w.pc = id
         try nwvm::push_int{ &vm, v = 1 }
     }
 
