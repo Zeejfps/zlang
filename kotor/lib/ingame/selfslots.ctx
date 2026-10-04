@@ -62,6 +62,7 @@ namespace selfslots {
         blink: [4]f32,              // seconds left of each slot's blink
         hover: i32,                 // the slot under the pointer, -1 none
         shown_leader: u32,
+        labelled: bool,             // the description label shows one of these slots' entries
     }
 
     fn empty_entry {} -> Entry {
@@ -73,7 +74,7 @@ namespace selfslots {
     }
 
     fn new {} -> State {
-        return State{ slots = [empty_slot{}; 4], wait = 0.0, message = 0.0, blink = [0.0; 4], hover = -1, shown_leader = obj::INVALID }
+        return State{ slots = [empty_slot{}; 4], wait = 0.0, message = 0.0, blink = [0.0; 4], hover = -1, shown_leader = obj::INVALID, labelled = false }
     }
 
     // ---- the lists
@@ -261,6 +262,9 @@ namespace selfslots {
     fn show_description { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32 } {
         let k = s.hover
         let shown = k >= 0 and s.slots[@as(usize, k)].count > 0
+        // The label is shared with the target block's slots: only take it down when it was ours.
+        if not shown and not s.labelled { return }
+        s.labelled = shown
         gui::set_visible{ &g, panel, tag = "LBL_ACTIONDESC", visible = shown }
         gui::set_visible{ &g, panel, tag = "LBL_ACTIONDESCBG", visible = shown }
         if not shown { return }

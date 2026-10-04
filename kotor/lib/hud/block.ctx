@@ -5,6 +5,23 @@ namespace hud {
     const BLOCK_W: i32 = 200
     const BLOCK_H: i32 = 96
 
+    // dialog.tlk: the target slots' tooltips (Activate Left, Middle, Right Action).
+    const SLOT_TIPS: [3]u32 = [48303, 48307, 48311]
+
+    // The name of the hovered slot's selected entry in the description label above the self slots
+    // (SetActionDescription 0x00685560); hidden when the pointer is on no target slot.
+    fn show_slot_description { mut h: Hud, mut g: gui::Gui, mut w: world::World } {
+        let k = h.hover_slot
+        let l = if k >= 0 and k < 3 { h.lists[@as(usize, k)] } else { empty_list{} }
+        let shown = l.count > 0
+        gui::set_visible{ &g, panel = h.panel, tag = "LBL_ACTIONDESC", visible = shown }
+        gui::set_visible{ &g, panel = h.panel, tag = "LBL_ACTIONDESCBG", visible = shown }
+        if not shown { return }
+        let e = l.entries[l.selected]
+        let name = if e.item != obj::INVALID { name_of{ w = &w, id = e.item } } else { world::string_by_strref{ w = &w, strref = e.strref } }
+        gui::set_text{ &g, panel = h.panel, tag = "LBL_ACTIONDESC", text = name } iferr {}
+    }
+
     // The picture and the tooltip of slot `k` from its list's selected entry.
     fn refresh_slot { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, k: usize } {
         let mut buf: [24]u8
@@ -26,9 +43,10 @@ namespace hud {
             c.border.tinted = not e.usable
             c.border.color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = 0.25 }
         }
-        let name = if e.item != obj::INVALID { name_of{ w = &w, id = e.item } } else { world::string_by_strref{ w = &w, strref = e.strref } }
-        gui::set_tooltip{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = k }, text = name } iferr {}
-        gui::set_tooltip{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = k }, text = name } iferr {}
+        let tip = world::string_by_strref{ w = &w, strref = SLOT_TIPS[k] }
+        gui::set_tooltip{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = k }, text = tip } iferr {}
+        gui::set_tooltip{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = k }, text = tip } iferr {}
+        if h.hover_slot == @as(i32, k) { show_slot_description{ &h, &g, &w } }
     }
 
     // Builds the block for a new target: its name, its health and the slots' lists.
@@ -92,6 +110,10 @@ namespace hud {
             if h.shown_target != obj::INVALID {
                 hide_block{ &h, &g }
                 h.shown_target = obj::INVALID
+                if h.hover_slot >= 0 {
+                    h.hover_slot = -1
+                    show_slot_description{ &h, &g, &w }
+                }
             }
             return
         }
@@ -187,8 +209,21 @@ namespace hud {
 
     // What the block's buttons do. True when the event was one of theirs.
     fn block_event { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> bool {
-        if ev.kind != gui::EventKind::activate { return false }
         let mut buf: [24]u8
+        if ev.kind == gui::EventKind::hilight or ev.kind == gui::EventKind::unhilight {
+            // The pointer on a target slot names its selected entry above the self slots.
+            let mut over: i32 = -1
+            let mut s: usize = 0
+            while s < 3 {
+                if slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = s } } or slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = s } } { over = @as(i32, s) }
+                s = s + 1
+            }
+            if over < 0 { return false }
+            if ev.kind == gui::EventKind::hilight { h.hover_slot = over } else if h.hover_slot == over { h.hover_slot = -1 }
+            show_slot_description{ &h, &g, &w }
+            return true
+        }
+        if ev.kind != gui::EventKind::activate { return false }
         let mut k: usize = 0
         while k < 3 {
             // The icon label lies over the button and takes the pointer, so either one is the slot's.

@@ -47,7 +47,7 @@ powers (the HUD lists rebuild every 0.2 s of presented time, and `--speed 8` pre
 | 7 | Using a power puts a hostile target in combat and replaces what the leader was doing (queues behind it in combat mode unless Shift) | UseAction; controls owner's queue rule | matches |
 | 8 | Out of range the leader runs toward the target until it is within the range, then casts | actions.md 3.13: range = `ranges.2da` PrimaryRange of the Range letter (P and T 2.25, S 10, M 15, L 28, W) + both creatures' personal space less 0.1 | matches (checked from 19 m; the range of `W` is 10, the RE page says 15: unread) |
 | 9 | The block's lists only exist while the target is on the screen | ours (the HUD builds the block over the visible target) | open (the original builds the lists from the selection; keys on an off-screen target do nothing here) |
-| 10 | Hovering a target slot shows the entry's description in `LBL_ACTIONDESC`; the tooltips are "Activate Left/Middle/Right Action" | gui.md | open (the tooltip is the entry's name; no description label for the target slots) |
+| 10 | Hovering a target slot names its selected entry above the self slots (`LBL_ACTIONDESC`); the tooltips are "Activate Left/Middle/Right Action" (48303/48307/48311) | gui.md | fixed (the tooltip was the entry's name and nothing showed in the label) |
 | 11 | A droid leader's middle slot lists the droid utilities of its equipment (`FUN_00618c20`) | gui.md | open (T3-M4 and HK-47 are not Force users; their device lists are the items owner's) |
 
 ## The cast
@@ -154,7 +154,7 @@ Learn levels are `spells.2da` guardian/consular/sentinel; "Jedi" means the first
 
 - The look of a cast and of the programmed effects (auras, shields, the hold cage, the beams' exact look, the saber's
   blade in flight) is ours or missing; there is no reference but the data.
-- The hover description of the target block's slots, and the block's lists for an off-screen target (rows 9, 10).
+- The block's lists for an off-screen target (row 9).
 - Companions in the party did not fight or cast in the test arenas (their OnPerception ran but they never
   attacked the hostile troopers); that is the party AI, not the powers. Bastila/Jolee casting through
   `k_ai_master` is therefore unchecked.
