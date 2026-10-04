@@ -12,6 +12,9 @@
 //   apply-names EXPORT_DIR NAMES_TSV STATE_TSV [all]
 //                                          apply rows of NAMES_TSV that changed since STATE_TSV,
 //                                          then re-export the functions that show the new names
+//   noreturn-report EXPORT_DIR OUT_TSV     every function marked as not returning, with the
+//                                          evidence for and against, and how much of .text is
+//                                          code (writes OUT_TSV, OUT_TSV.sites, .overrides)
 //
 // This file holds no code or data from the game; it only reads the analyzed program.
 // @category KOTOR
@@ -66,7 +69,9 @@ public class KotorRE extends GhidraScript {
         String mode = args[0];
         exportDir = Paths.get(args[1]);
         fnDir = exportDir.resolve("functions");
-        Files.createDirectories(fnDir);
+        if (!mode.equals("noreturn-report")) {
+            Files.createDirectories(fnDir);
+        }
         listing = currentProgram.getListing();
         fm = currentProgram.getFunctionManager();
         rm = currentProgram.getReferenceManager();
@@ -98,6 +103,9 @@ public class KotorRE extends GhidraScript {
                 break;
             case "decompile":
                 decompileSome(resolveFunctions(Arrays.copyOfRange(args, 2, args.length)));
+                break;
+            case "noreturn-report":
+                noReturnReport(Paths.get(args[2]));
                 break;
             case "apply-names":
                 applyNames(Paths.get(args[2]), Paths.get(args[3]),
@@ -1471,6 +1479,245 @@ public class KotorRE extends GhidraScript {
         println("KOTOR: " + f.getName(true) + " returns; re-disassembled after " + touched.size()
             + " calling functions");
         return touched;
+    }
+
+    // ---------------------------------------------------------------- no-return audit
+
+    static boolean isReturn(Instruction ins) {
+        String m = ins.getMnemonicString();
+        return m.equals("RET") || m.equals("RETN") || m.equals("RETF");
+    }
+
+    // Where the code after a call stands: "code" (an instruction is defined there and it is not
+    // another function's entry, so something else flows into it), "undef" (bytes that look like
+    // code but were never disassembled) or "end" (padding, another function, the end of .text:
+    // the call really is the last thing).
+    String afterCall(Instruction call) {
+        Address next = call.getMaxAddress().next();
+        if (next == null || !textSet.contains(next) || fm.getFunctionAt(next) != null) {
+            return "end";
+        }
+        if (listing.getInstructionAt(next) != null) {
+            return "code";
+        }
+        if (listing.getDefinedDataAt(next) != null) {
+            return "end";
+        }
+        try {
+            int b = mem.getByte(next) & 0xff;
+            if (b == 0xcc || b == 0x00) {
+                return "end";
+            }
+            if (b == 0x90) {
+                // alignment NOPs; real code after a NOP run is still code
+                Address q = next;
+                for (int i = 0; i < 16 && q != null; i++, q = q.next()) {
+                    int c = mem.getByte(q) & 0xff;
+                    if (c == 0xcc) {
+                        return "end";
+                    }
+                    if (c != 0x90) {
+                        break;
+                    }
+                }
+            }
+        }
+        catch (MemoryAccessException e) {
+            return "end";
+        }
+        return "undef";
+    }
+
+    // Ghidra marks a function as not returning when its analysis thinks every path ends in a
+    // non-returning call, and then stops disassembling after every call to it. A wrong flag
+    // silently cuts the callers' decompiled code short. One row per flagged function:
+    //   ret      RET instructions in its own body (a function that returns has one)
+    //   calls    call sites; after_code/after_undef/after_end classify the code after each one
+    //   ends     the non-returning calls inside it (the usual reason it was flagged itself)
+    // and a second file (OUT.sites) with one row per call site whose follow-up is not "end".
+    void noReturnReport(Path out) throws Exception {
+        Files.createDirectories(out.toAbsolutePath().getParent());
+        List<String> rows = new ArrayList<>();
+        List<String> sites = new ArrayList<>();
+        rows.add("addr\tname\tsize\tsource\tthunk\tret\tcalls\tjumps\tafter_code\tafter_undef"
+            + "\tafter_end\tends\tsample_site");
+        sites.add("callee\tcallee_name\tcaller\tsite\tafter\tnext_bytes");
+        int n = 0;
+        for (Function f : fm.getFunctions(true)) {
+            if (!f.hasNoReturn()) {
+                continue;
+            }
+            n++;
+            int ret = 0;
+            TreeSet<String> ends = new TreeSet<>();
+            for (Instruction ins : listing.getInstructions(f.getBody(), true)) {
+                if (isReturn(ins)) {
+                    ret++;
+                }
+                else if (ins.getFlowType().isCall()) {
+                    for (Reference r : ins.getReferencesFrom()) {
+                        Function g = r.getToAddress().isMemoryAddress()
+                            ? fm.getFunctionAt(r.getToAddress()) : null;
+                        if (g != null && g.hasNoReturn()) {
+                            ends.add(g.getName(true));
+                        }
+                        else if (g != null && g.isThunk()) {
+                            Function t = g.getThunkedFunction(true);
+                            if (t != null && t.hasNoReturn()) {
+                                ends.add(g.getName(true));
+                            }
+                        }
+                    }
+                }
+                else if (ins.getFlowType().isTerminal()) {
+                    ends.add(ins.getMnemonicString().toLowerCase());
+                }
+            }
+            int calls = 0, jumps = 0, code = 0, undef = 0, end = 0;
+            String sample = "";
+            for (Reference ref : rm.getReferencesTo(f.getEntryPoint())) {
+                RefType t = ref.getReferenceType();
+                Instruction ins = listing.getInstructionAt(ref.getFromAddress());
+                if (ins == null) {
+                    continue;
+                }
+                if (t.isJump()) {
+                    Function g = fm.getFunctionContaining(ins.getAddress());
+                    if (g != null && !g.equals(f)) {
+                        jumps++;
+                    }
+                    continue;
+                }
+                if (!t.isCall()) {
+                    continue;
+                }
+                calls++;
+                String k = afterCall(ins);
+                switch (k) {
+                    case "code": code++; break;
+                    case "undef": undef++; break;
+                    default: end++;
+                }
+                if (!k.equals("end")) {
+                    if (sample.isEmpty()) {
+                        sample = hex(ins.getAddress());
+                    }
+                    Function g = fm.getFunctionContaining(ins.getAddress());
+                    StringBuilder nb = new StringBuilder();
+                    Address q = ins.getMaxAddress().next();
+                    for (int i = 0; i < 8 && q != null; i++, q = q.next()) {
+                        try {
+                            nb.append(String.format("%02x", mem.getByte(q) & 0xff));
+                        }
+                        catch (MemoryAccessException e) {
+                            break;
+                        }
+                    }
+                    sites.add(String.join("\t", hex(f.getEntryPoint()), f.getName(true),
+                        g != null ? hex(g.getEntryPoint()) : "-", hex(ins.getAddress()), k,
+                        nb.toString()));
+                }
+            }
+            rows.add(String.join("\t", hex(f.getEntryPoint()), f.getName(true),
+                Long.toString(f.getBody().getNumAddresses()),
+                f.getSymbol().getSource().toString(), f.isThunk() ? "thunk" : "",
+                Integer.toString(ret), Integer.toString(calls), Integer.toString(jumps),
+                Integer.toString(code), Integer.toString(undef), Integer.toString(end),
+                String.join(",", ends), sample));
+        }
+        // Instructions whose flow someone overrode (a call that "does not return" at one site,
+        // say) cut the code after them without any function being flagged.
+        List<String> overrides = new ArrayList<>();
+        overrides.add("site\tfunction\tmnemonic\tflow_override\tfallthrough_overridden\ttarget"
+            + "\ttarget_name\ttarget_noreturn\ttarget_ret\tafter");
+        for (Instruction ins : listing.getInstructions(true)) {
+            if (ins.getFlowOverride() != FlowOverride.NONE || ins.isFallThroughOverridden()) {
+                Function g = fm.getFunctionContaining(ins.getAddress());
+                Address[] fl = ins.getFlows();
+                Function t = fl.length > 0 ? fm.getFunctionAt(fl[0]) : null;
+                int tret = 0;
+                if (t != null) {
+                    for (Instruction x : listing.getInstructions(t.getBody(), true)) {
+                        if (isReturn(x)) {
+                            tret++;
+                        }
+                    }
+                }
+                overrides.add(String.join("\t", hex(ins.getAddress()),
+                    g != null ? g.getName(true) : "-", ins.getMnemonicString().toLowerCase(),
+                    ins.getFlowOverride().toString(),
+                    Boolean.toString(ins.isFallThroughOverridden()),
+                    fl.length > 0 ? hex(fl[0]) : "-", t != null ? t.getName(true) : "-",
+                    t != null ? Boolean.toString(t.hasNoReturn()) : "-", Integer.toString(tret),
+                    afterCall(ins)));
+            }
+        }
+        Files.write(Paths.get(out.toString() + ".overrides"),
+            (String.join("\n", overrides) + "\n").getBytes(StandardCharsets.UTF_8));
+        Files.write(out, (String.join("\n", rows) + "\n").getBytes(StandardCharsets.UTF_8));
+        Files.write(Paths.get(out.toString() + ".sites"),
+            (String.join("\n", sites) + "\n").getBytes(StandardCharsets.UTF_8));
+        println("KOTOR: " + n + " functions marked as not returning -> " + out);
+        textCoverage();
+    }
+
+
+    // How much of .text is code. A wrong analysis can wipe code (clearing the "flow damage"
+    // after calls it takes for non-returning, it once removed 116,000 correct instructions in
+    // one step), so count the bytes that are no instruction, no defined data and no padding.
+    void textCoverage() throws Exception {
+        long gaps = 0, bytes = 0, insns = listing.getNumInstructions();
+        List<long[]> big = new ArrayList<>();
+        for (MemoryBlock b : mem.getBlocks()) {
+            if (!b.isExecute() || !b.getName().equals(".text")) {
+                continue;
+            }
+            Address a = b.getStart();
+            Address runStart = null;
+            long runLen = 0;
+            while (a != null && a.compareTo(b.getEnd()) <= 0) {
+                CodeUnit cu = listing.getCodeUnitContaining(a);
+                if (cu == null) {
+                    a = a.next();
+                    continue;
+                }
+                boolean undef = cu instanceof Data && !((Data) cu).isDefined();
+                if (undef) {
+                    if (runStart == null) {
+                        runStart = cu.getMinAddress();
+                        runLen = 0;
+                    }
+                    runLen += cu.getLength();
+                }
+                if ((!undef || cu.getMaxAddress().compareTo(b.getEnd()) >= 0) && runStart != null) {
+                    boolean padding = true;
+                    for (long i = 0; i < runLen && padding; i++) {
+                        int v = mem.getByte(runStart.add(i)) & 0xff;
+                        padding = v == 0xcc || v == 0x00 || v == 0x90;
+                    }
+                    if (!padding) {
+                        gaps++;
+                        bytes += runLen;
+                        big.add(new long[] { runStart.getOffset(), runLen });
+                    }
+                    runStart = null;
+                }
+                a = cu.getMaxAddress().next();
+            }
+        }
+        TreeMap<Long, Long> perRange = new TreeMap<>();
+        for (long[] g : big) {
+            perRange.merge(g[0] >> 16, g[1], Long::sum);
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<Long, Long> e : perRange.entrySet()) {
+            if (e.getValue() >= 5000) {
+                sb.append(String.format(" 0x%x:%d", e.getKey() << 16, e.getValue()));
+            }
+        }
+        println("KOTOR: .text has " + insns + " instructions in the listing; " + bytes
+            + " bytes in " + gaps + " runs are neither code, data nor padding (64K ranges with at "
+            + "least 5000:" + sb + ")");
     }
 
     boolean applyPrototype(Function f, String qualified, String proto) {
