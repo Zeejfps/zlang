@@ -4,9 +4,8 @@
 # on it, and the Great Beast (kas25_wraid, spawned by k_pkas_spwnwraid) comes. From the checkpoint "freyyr" (CKPT=freyyr).
 3 ui stat hpmax 130
 3 ui stat hp 130
-# Freyyr is still the hostile faction his fight script gave him (nothing in the conversation resets it): made neutral by hand,
-# see the open items of docs/playthrough-kashyyyk.md.
-4 ui faction kas25_freyyr_01 5
+# Freyyr surrendered in part 12 (SurrenderToEnemies moves him to the Surrender_1 faction): the party must leave him alone.
+4 ui where kas25_freyyr_01
 5 ui replies default 1
 10 ui bot god on
 10 warp kas25_kinrath party

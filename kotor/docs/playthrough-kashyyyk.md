@@ -61,7 +61,7 @@ State: **works** (checked), **fixed** (a commit of this branch), **open**.
 | 9 | The Czerka poachers (`kas24_poffice_01`): the threat that makes them hostile, the fight, journal `kas24_removepoachers` 40 | works | `09_poachers.txt` |
 | 10 | Jolee joins (his forced slot on the party screen), `kas22_starmap` 50 | works | `10_jolee_joins.txt` |
 | 11 | The repulsor field (`kas24_force_01`): "Just shut it down", the Lower Shadowlands (`kas_m25aa`), `kas23_mainwookplot` 50 | works | `11_field.txt` |
-| 12 | Freyyr (`kas25_freyyr_01`): the first talk ends in his fight, he surrenders below a quarter of his hit points and talks again (journal 70, then 75: Bacca's blade) | works with `--seed 3`; open | `12_freyyr.txt` |
+| 12 | Freyyr (`kas25_freyyr_01`): the first talk ends in his fight, he surrenders below a quarter of his hit points and talks again (journal 70, then 75: Bacca's blade) | fixed (`SurrenderToEnemies` as the original: see Bugs found, 4); works with any `--seed` | `12_freyyr.txt` |
 | 13 | The viper kinrath, the ritual vine (`kas25_ritualvine`), the Great Beast (`kas25_wraid`, 550 XP), the blade in its hide: `kas23_mainwookplot` 85, 87, 90 | fixed (OnAcquireItem for `CreateItemOnObject`); the corpse is given by hand | `13_ritual.txt` |
 | 14 | Bacca's blade back to Freyyr, `kas23_mainwookplot` 95, he leaves (fade, `kas_HelpedFreyyr`) | works | `14_blade.txt` |
 | 15 | The ancient computer (`kas24_computer`, `kas25_comp_01`): the evaluation (a failed one: "purge the subject"), two Mark IV droids (750 XP each) | works | `15_starmap.txt` |
@@ -83,18 +83,16 @@ the Walkway and the Dark Jedi, 49,490 after the poachers, 50,490 with the Great 
    moved by `k_pkas25aa_acqui`: it stayed at "search the remains".
 3. Test tools: `ui credits` wrote the creature's gold, not the party purse that `GetGold` reads, so the docking fee could not be paid (488d5ee);
    `warp TAG party` and `warpxy X,Y party` stand the followers beside the leader (18671af; a plain warp left them 200 m away).
+4. **`SurrenderToEnemies` only stopped the fight** (this branch). The original (`CSWSCreature::SurrenderToEnemies`, 0x00518990, re/combat.md 8.5)
+   cancels combat and clears the effects of the caller and of every creature within 250 m that the caller counts an
+   enemy (standing below 11), which also makes them commandable again, and then moves the caller into a faction everybody is
+   neutral to (repute.2da's Surrender_1, all 50). Ours cleared actions within 10 m and left Freyyr in Hostile_1: the party went
+   on beating the one-hit-point immortal after the talk (part 13 made him neutral by hand), and a player knocked down by his
+   weapon stayed non-commandable (`ActionStartConversation(PC)` refuses such a target, which lost the talk in an earlier run). Freyyr's "Now die!" reply
+   (`k_pkas_freyyrfin`) sends him back to Hostile_1 itself. Part 13 no longer touches him: his faction is 9 and nobody hits him.
 
 ## Notes and open items
 
-- **Freyyr's surrender talk can be lost.** `k_pkas_freyyuser` (OnUserDefined 1006) calls `SurrenderToEnemies` and `ActionStartConversation(PC)` when his
-  hit points are below a quarter. The action fails when the target is not commandable (as the original's: re/dialogue.md 2.3), and Freyyr's
-  weapon knocks the player down: in the default run the player is on the ground at that moment, the action is dropped, the flag that
-  prevents a second try is set and the party beats a one-hit-point immortal Freyyr for ever. `--seed 3` avoids it. The original may have the same
-  weakness; nothing was changed.
-- **Freyyr stays hostile after the talk.** `k_pkas_freyyratk` makes him hostile and nothing in the conversation resets it (`k_pkas_freyyrsur`,
-  which would, is referenced by no resource); at the end of the talk he and the party fight again. Part 13 makes him neutral by hand
-  (`ui faction kas25_freyyr_01 5`). `SurrenderToEnemies` in the original cancels combat for everyone within 250 m that hates the creature and
-  clears their effects (0x00518990); ours does it within 10 m for every creature. How the original keeps the party off him is not found.
 - **Journal XP.** `AddJournalQuestEntry` awards no quest XP here and the string `XP_Percentage` has no code reference in swkotor.exe, so the
   original most likely does not either; XP comes from `GivePlotXP`, the conversation nodes and kills.
 - **Companions joining** come from the blueprint at level 1 to 4 with XP 0; the crafted state sets level and XP by hand. The original's rule is not known.
