@@ -1,0 +1,11 @@
+# From `bridge` (Endar Spire, Trask follows): the leader runs by the keys, stops, runs again with the walk modifier (B)
+# held for the second half, stops. (The checkpoint's bot finishes the leg it was on by frame 70: the keys start after.)
+#   EXE=kotor/out/kotor_gait.exe sh kotor/tools/gait/run.sh endar bridge kotor/tools/gait/scripts/endar_corridor.txt 520
+#   python kotor/tools/py/gait_check.py kotor/out/gait/endar.log 100 520 8 "(player)" end_trask
+1 ui bot off
+120 keydown w
+180 keyup w
+260 keydown w
+275 keydown b
+295 keyup b
+305 keyup w
