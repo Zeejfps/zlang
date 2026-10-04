@@ -665,12 +665,22 @@ in the action. (high)
    `gui_lockpick` 250 ms in (3.9).
 3. Second pass: trap check as for doors (event 26). `UseKeyOnObject(target, 0)` succeeds ⇒ door:
    `CSWSDoor::Open` (`0x00589c70`, the door opens away from the user); placeable: push USEOBJECT; done.
-4. KeyRequired (placeable `+0x26c`) ⇒ event 34 FAIL_TO_OPEN, feedback 15, done.
+   (`UseKeyOnObject` is true at once for a lock that is not locked, false without a KeyName, else true
+   when an item tagged KeyName is in the creature's inventory or a slot; it unlocks, removes the key when
+   AutoRemoveKey, and sends feedback 16 "You used a key.")
+4. Not locked ⇒ feedback 14 "That object is not locked.". KeyRequired (door `+0x2d8`, placeable `+0x26c`)
+   ⇒ event 34 FAIL_TO_OPEN, feedback 15 "This object cannot be opened through conventional means.", a
+   combat log entry with result 5, sound-set entry 0x18, done.
 5. Security check ([rules.md](rules.md)): skill roll + item bonus against the OpenLockDC (placeable `+0x274`,
-   door `+0x2bf`). Success: Locked = 0, door opened by the user and event 12 UNLOCK_OBJECT; a
+   door `+0x2bf`; 0 counts as 1). Success: Locked = 0, door opened by the user and event 12 UNLOCK_OBJECT; a
    placeable then gets USEOBJECT pushed; the item's charges (`+0x28c`) drop by one, the item is
-   destroyed (event 11) at the last charge; a sound-set entry (0x19 / 0x18) is played. A combat
-   log entry (id 0x149) shows the roll. Failure: feedback 14.
+   destroyed (event 11) at the last charge; sound-set entry 0x19 is played (0x18 on failure). A combat
+   log entry (id 0x149, dialog.tlk 1405 "<CUSTOM0> attempts <CUSTOM1> on <CUSTOM2> : *<CUSTOM3>* :
+   (<CUSTOM4> <CUSTOM5> <CUSTOM6> = <CUSTOM7><CUSTOM8>)") shows the roll, with result code 1 success, 0
+   failure in combat, 3 failure taking 20 below DC 60, 5 taking 20 at DC 60 or more ("success not
+   possible", 1397). A failed roll gives no feedback message and the action is done, not failed.
+   The feedback messages (`FormatFeedbackMessage` `0x005fcd10`): 13 "Locked" (1439, with the actor's
+   sound-set bark), 14 1430, 15 1431, 16 1432.
 6. Timer hidden, flags `+0x980/+0x9a4` cleared.
 
 **LOCK (0x27, `0x0057bec0`)**: the mirror: approach, first arrival plays 10128 or 10131 for 1.5 s

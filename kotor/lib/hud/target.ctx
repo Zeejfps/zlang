@@ -75,10 +75,12 @@ namespace hud {
                     push_entry{ &l, e = entry{ act = Act::unlock, icon = "isk_security", strref = 329 } }
                 }
                 push_entry{ &l, e = entry{ act = Act::open, icon = "i_opendoor", strref = 365 } }
-                push_entry{ &l, e = entry{ act = Act::bash, icon = "i_attack", strref = 368 } }
+                // Only a locked door that is not plot can be bashed (movement.md 7.4).
+                if d.locked and not o.plot { push_entry{ &l, e = entry{ act = Act::bash, icon = "i_attack", strref = 368 } } }
             }
             placeable{ p } => {
-                if p.locked and p.key.len == 0 and can_pick_locks{ w } {
+                // A locked container offers the skill even when it wants a key: the attempt says so.
+                if p.locked and p.has_inventory and can_pick_locks{ w } {
                     push_entry{ &l, e = entry{ act = Act::unlock, icon = "isk_security", strref = 329 } }
                 }
                 if p.has_inventory { push_entry{ &l, e = entry{ act = Act::open_place, icon = "i_openplace", strref = 365 } } }

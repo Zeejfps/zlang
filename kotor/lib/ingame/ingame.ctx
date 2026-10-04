@@ -186,6 +186,9 @@ namespace ingame {
             hud::cycle_target{ &w, forward = keycode == 'e' }
             return true
         }
+        if keycode == 'r' {
+            return hud::run_default{ h = &ui.hud, &w }
+        }
         if keycode >= '1' and keycode <= '3' {
             // The target block's three slots (keymap.2da: TargetLeft/Middle/RightAct).
             return hud::run_slot{ h = &ui.hud, &w, k = @as(usize, keycode - '1') }

@@ -23,6 +23,7 @@ namespace hud {
         if img.ok { gui::set_picture{ &g, panel = h.panel, tag = tag_icon, texture = img.tex, w = img.w, h = img.h } } else { gui::clear_picture{ &g, panel = h.panel, tag = tag_icon } }
         let name = world::string_by_strref{ w = &w, strref = e.strref }
         gui::set_tooltip{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = k }, text = name } iferr {}
+        gui::set_tooltip{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = k }, text = name } iferr {}
     }
 
     // Builds the block for a new target: its name, its health and the slots' lists.
@@ -47,6 +48,17 @@ namespace hud {
         gui::set_visible{ &g, panel = h.panel, tag = "PB_HEALTH", visible = shows_health }
     }
 
+    // Whether two lists offer the same choices in the same order.
+    fn same_actions { a: ActionList, b: ActionList } -> bool {
+        if a.count != b.count { return false }
+        let mut i: usize = 0
+        while i < a.count {
+            if a.entries[i].act != b.entries[i].act { return false }
+            i = i + 1
+        }
+        return true
+    }
+
     // Keeps the block over the target: builds it for a new target, hides it when there is none or
     // it is off screen, otherwise moves it above the head and updates the health bar.
     fn update_block { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } {
@@ -68,6 +80,9 @@ namespace hud {
         if h.shown_target != w.target {
             build_block{ &h, &g, &w, &dev, id = w.target }
             h.shown_target = w.target
+        } else if not same_actions{ a = default_actions{ w = &w, id = w.target }, b = h.lists[0] } {
+            // What the leader can do to the target changed under it (a lock picked or locked, a key found).
+            build_block{ &h, &g, &w, &dev, id = w.target }
         }
         let p = gui::find_panel{ &g, id = h.panel } ifnull { return }
         let mut x0 = @as(i32, on.top.x) - BLOCK_W / 2
@@ -115,13 +130,25 @@ namespace hud {
         return true
     }
 
+    // The R key (DefaultAction, movement.md 7.4): the first choice of the first slot on the target, as a
+    // second click on it does. True when a choice was run.
+    fn run_default { mut h: Hud, mut w: world::World } -> bool {
+        if w.target == obj::INVALID { return false }
+        let l = h.lists[0]
+        if l.count == 0 { return false }
+        run_act{ &w, act = l.entries[0].act, target = w.target }
+        return true
+    }
+
     // What the block's buttons do. True when the event was one of theirs.
     fn block_event { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> bool {
         if ev.kind != gui::EventKind::activate { return false }
         let mut buf: [24]u8
         let mut k: usize = 0
         while k < 3 {
-            if slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = k } } {
+            // The icon label lies over the button and takes the pointer, so either one is the slot's.
+            let over_button = slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = k } }
+            if over_button or slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = k } } {
                 let l = h.lists[k]
                 if l.count > 0 and w.target != obj::INVALID { run_act{ &w, act = l.entries[l.selected].act, target = w.target } }
                 return true
