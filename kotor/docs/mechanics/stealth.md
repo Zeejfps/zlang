@@ -38,7 +38,8 @@ shows, solo mode, combat, the area's stealth XP, and who sees or hears the creat
 | `solo_box.txt` | uppercity | the toggle without a belt does nothing; with it the click asks 37890 and pauses, OK: solo mode on and hidden; Carth stays 14 m behind as the leader walks off (`solo_control.txt`: he follows to 3 m); TB_SOLO asks 37892, OK ends both; V asks 37889, Cancel changes nothing (`solo_box_box.png`, `solo_box_off.png`) |
 | `save_hiding.txt`, `load_hiding.txt` | module:end_m01ab, then the save | a save made while hiding loads hiding, with the area's stealth XP pool |
 
-Pictures: `walk_past_walk.png` and `key_unequip_walk.png` show the shimmer.
+`sh kotor/tools/stealth/check.sh` runs them all and checks the lines each must (or must not) log. Pictures
+(`run.sh ... FRAME:SHOT`): `walk_past_walk.png` (frame 150) and `key_unequip_walk.png` (100) show the shimmer.
 
 ## 1. Hiding and stopping
 

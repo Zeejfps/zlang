@@ -8,3 +8,4 @@
 300 ui stealth
 301 ui key g
 303 ui stealth
+305 ui log 3
