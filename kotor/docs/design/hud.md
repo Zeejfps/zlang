@@ -82,8 +82,8 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
   shows dimmed and says why in the message bar for five seconds (Force Depleted, Restricted by
   Armor, Full Health, PC Dead), and the hovered slot's entry is named above the slots. Which
   entries make up each list is ours (the original's list builder was not read): see the header of
-  the file. Mines are not listed (no trap action in the engine) and the keys (keymap.2da) are not
-  bound. `ui useitem RESREF [N]` is the headless test; `scripts/selfslots.txt` the run.
+  the file. The mine slot lists trap kits and lays one (lib/engine/traps.ctx, docs/mechanics/traps.md);
+  the keys (keymap.2da) are not bound. `ui useitem RESREF [N]` is the headless test; `scripts/selfslots.txt` the run.
 - **Not built**: the leader-swap animation, effect-count icons, stealth toggle and bark bubbles
   (the dialogue lead's).
 
@@ -178,7 +178,7 @@ comment so the rules lead's merge finds it.
 
 ## Open
 
-- Self action slots: the mines slot and the keys; the leader-swap
+- Self action slots: the keys; the leader-swap
   animation, effect-count icons, the stealth toggle, bark bubbles (dialogue lead's).
 - Item drag-and-drop; variable-height list rows (the journal splits long texts into rows);
   a scrolling description box.

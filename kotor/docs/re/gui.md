@@ -1181,6 +1181,16 @@ up/down arrows show when the list has more than one entry. How the lists are bui
 items and targeted actions qualify) belongs to [actions.md](actions.md) and
 [combat.md](combat.md). (med)
 
+The mine slot (category 3, `0x00619db0` → `0x006197d0` with mask 2): three items on the client creature
+(likely worn, only where combat is allowed), then the leader's item repository (`GetItemRepository(1)`);
+`0x00616520` keeps an item whose baseitems `itemtype` is 28 (Trap_Kit) with a usable Trap property (46),
+for a creature that can use Demolitions (`0x005af880(stats, 1)`: not usable untrained, so a base rank of
+1 or more) and passes CanUseItem; non-plot items are dropped where the area forbids combat. The entry
+(`0x006193a0`) is labelled "<item name> (self)" (`"%s (%s)"`, 38005), shows the item's own icon, its id
+is the item's with bit 0x40000000, its target the leader, its count the stack ("%s (%d)" above 1), and it
+is never dimmed. Its callback (`0x0060f590`) sends input 9 (`0x00677bd0`): the item, the leader as the
+target and a zero point, which UseItem turns into SETTRAP ([actions.md](actions.md) 3.14). (high)
+
 Clicking a self slot (`UseSelfAction` `0x0068ad60`): if the entry is not usable, its reason code
 picks a message shown for 5 s in the combat message bar: 1 "Force Depleted" (38613), 2
 "Restricted by Armor" (38614), 3 "Missing Item" (38615), 4 "Target too Close" (42422), 5 "Full
