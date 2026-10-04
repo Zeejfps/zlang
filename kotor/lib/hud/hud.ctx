@@ -227,6 +227,7 @@ namespace hud {
         // Solo mode: its toggle shows once there is someone to leave behind.
         gui::set_visible{ &g, panel = h.panel, tag = "TB_SOLO", visible = w.party.count > 1 }
         gui::set_checked{ &g, panel = h.panel, tag = "TB_SOLO", on = w.party.solo }
+        update_stealth{ &h, &g, &w }
         update_notify{ &h, &g, dt }
     }
 

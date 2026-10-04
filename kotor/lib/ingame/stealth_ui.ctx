@@ -1,0 +1,81 @@
+// Stealth and solo mode from the HUD (docs/mechanics/stealth.md): the TB_STEALTH toggle and the G
+// key, the TB_SOLO toggle and the V key, and the solo-mode box between them (re/gui.md,
+// CSWGuiSoloModeBox): with companions about, stealth needs solo mode, and the box asks first.
+namespace ingame {
+    // What the open solo-mode box was asked for (its msgbox `what`).
+    const SOLO_FOR_SOLO: i32 = 1
+    const SOLO_FOR_STEALTH: i32 = 2
+
+    // The questions (CSWGuiSoloModeBox::SetMode 0x006c24a0).
+    const STRREF_SOLO_ON: u32 = 37889            // "Do you wish to turn Solo Mode on?"
+    const STRREF_SOLO_FOR_STEALTH: u32 = 37890   // "To use Stealth, you must turn Solo Mode on. ..."
+    const STRREF_SOLO_OFF: u32 = 37891           // "Do you wish to turn Solo Mode off?"
+    const STRREF_SOLO_OFF_STEALTH: u32 = 37892   // "Turning off Solo Mode will take you out of Stealth Mode. ..."
+
+    const GUI_SOUND_REFUSED: i32 = 2
+
+    // TB_STEALTH and the G key (0x0060f4b0, HandleInputAction 264): the leader's stealth toggles,
+    // unless companions are about and solo mode is off, when the box asks to turn it on first.
+    // The key works only when the toggle would show.
+    fn request_stealth { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, from_key: bool } {
+        let leader = party::leader{ w = &w }
+        if from_key and not stealth::can_stealth{ w = &w, id = leader } { return }
+        if not w.party.solo and w.party.count > 1 {
+            show_solo_box{ &ui, &w, &dev, for_stealth = true }
+            return
+        }
+        stealth::toggle{ &w, id = leader }
+    }
+
+    // ShowSoloModeConfirm (0x0062e550): only with a companion, no conversation, and the leader on
+    // its feet, else the refusal sound. The game pauses while it is up.
+    fn show_solo_box { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, for_stealth: bool } {
+        if msgbox::is_open{ b = ui.solo_box } { return }
+        let leader = party::leader{ w = &w }
+        if w.party.count <= 1 or w.conversation.active or not standing{ w = &w, id = leader } {
+            gui::play_sound{ g = &ui.gui, n = GUI_SOUND_REFUSED }
+            return
+        }
+        let mut strref = STRREF_SOLO_OFF
+        if for_stealth { strref = STRREF_SOLO_FOR_STEALTH }
+        else if not w.party.solo { strref = STRREF_SOLO_ON }
+        else if stealth::is_on{ w = &w, id = leader } { strref = STRREF_SOLO_OFF_STEALTH }
+        let what = if for_stealth { SOLO_FOR_STEALTH } else { SOLO_FOR_SOLO }
+        ui.solo_box = msgbox::show_strref{ g = &ui.gui, &w, &dev, strref, cancel = true, what, item = 0 }
+        if msgbox::is_open{ b = ui.solo_box } { clock::set_pause{ c = &w.clock, bit = clock::PAUSE_MENU, on = true } }
+    }
+
+    fn standing { w: *world::World, id: u32 } -> bool {
+        let o = world::object{ w, id } ifnull { return false }
+        let c = obj::creature{ o } ifnull { return false }
+        if c.dead { return false }
+        let f = c.fighter ifnull { return true }
+        return not f.c.down
+    }
+
+    // The box's answer, if the event is its: OK turns solo mode over (off takes the party out of
+    // stealth) and, asked for stealth, then the leader's stealth.
+    fn solo_box_event { mut ui: Ingame, mut w: world::World, ev: gui::Event } -> bool {
+        let a = msgbox::answer{ b = ui.solo_box, ev }
+        if a == msgbox::Answer::none { return false }
+        let for_stealth = ui.solo_box.what == SOLO_FOR_STEALTH
+        close_solo_box{ &ui, &w }
+        if a == msgbox::Answer::ok {
+            stealth::set_solo{ &w, on = not w.party.solo }
+            if for_stealth { stealth::toggle{ &w, id = party::leader{ w = &w } } }
+        }
+        return true
+    }
+
+    fn close_solo_box { mut ui: Ingame, mut w: world::World } {
+        if not msgbox::is_open{ b = ui.solo_box } { return }
+        msgbox::close{ g = &ui.gui, b = &ui.solo_box }
+        clock::set_pause{ c = &w.clock, bit = clock::PAUSE_MENU, on = false }
+    }
+
+    // The box closes by itself when a conversation starts or the leader falls (its Render).
+    fn check_solo_box { mut ui: Ingame, mut w: world::World } {
+        if not msgbox::is_open{ b = ui.solo_box } { return }
+        if w.conversation.active or not standing{ w = &w, id = party::leader{ w = &w } } { close_solo_box{ &ui, &w } }
+    }
+}
