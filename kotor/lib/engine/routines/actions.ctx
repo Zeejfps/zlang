@@ -104,6 +104,7 @@ namespace rt_act {
         a.params[2] = actions::Param::float{ v = range }
         a.params[3] = actions::Param::object{ id = target }
         a.params[4] = actions::Param::float{ v = timeout }
+        a.params[5] = actions::Param::int{ v = if force { 1 } else { 0 } }
         _ = actions::add{ &w, id = self_of{ vm = &vm }, action = a, force = false }
     }
 
@@ -120,6 +121,7 @@ namespace rt_act {
         a.params[1] = actions::Param::int{ v = run }
         a.params[2] = actions::Param::float{ v = 0.1 }
         a.params[4] = actions::Param::float{ v = timeout }
+        a.params[5] = actions::Param::int{ v = if force { 1 } else { 0 } }
         _ = actions::add{ &w, id = self_of{ vm = &vm }, action = a, force = true }
     }
 

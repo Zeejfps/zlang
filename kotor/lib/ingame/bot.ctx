@@ -8,6 +8,8 @@
 //   FRAME ui bot unlock on|off   open the lock of a door before opening it (the story's own way is
 //                                a key, a skill or a switch of the party leader)
 //   FRAME ui bot god on|off      the leader and the companions never drop below 1 hit point
+//   FRAME ui bot sight on|off    pick fights only with hostiles in clear line (perception::clear_line), as a person does: one behind a
+//                                locked door or a wall is not walked at, and the route goes on
 //   FRAME ui bot party on|off    a party selection screen is accepted (OK, and OK on the question) 0.7 s after it opens
 //   FRAME ui bot tour            a route made of the area's own waypoints, doors, placeables, triggers and talkers (bot_tour.ctx)
 //   FRAME ui bot status          where the route stands
@@ -23,6 +25,7 @@ namespace bot {
         on: bool,
         unlock: bool,
         god: bool,                              // keeps the leader at 1 hit point at least, module after module
+        sight: bool,                            // fights only what it has a clear line to
         party: bool,                            // accepts a party selection screen
         party_wait: u32,                        // ticks it has been open
         route: [64][40]u8,
@@ -49,7 +52,7 @@ namespace bot {
     }
 
     fn new {} -> Bot {
-        return Bot{ on = false, unlock = false, god = false, party = false, party_wait = 0, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, foe_dist = 0.0, foe_stalled = 0, far_pos = math::Vec3{ x = 0.0, y = 0.0, z = 0.0 }, foe_skips = [obj::INVALID; 8], foe_skip_n = 0, seen_open = false, stalled = 0, last_dist = 0.0, area = 0, talked = false, clicked = 0, trans_stop = false, best = 1000000.0, tour = new_tour{} }
+        return Bot{ on = false, unlock = false, god = false, sight = false, party = false, party_wait = 0, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, foe_dist = 0.0, foe_stalled = 0, far_pos = math::Vec3{ x = 0.0, y = 0.0, z = 0.0 }, foe_skips = [obj::INVALID; 8], foe_skip_n = 0, seen_open = false, stalled = 0, last_dist = 0.0, area = 0, talked = false, clicked = 0, trans_stop = false, best = 1000000.0, tour = new_tour{} }
     }
 
     // The `bot ...` input line, after the word `bot`.
@@ -81,6 +84,8 @@ namespace bot {
             b.party = on_word{ words = &words }
         } else if ci::eq{ a = what, b = "god" } {
             b.god = on_word{ words = &words }
+        } else if ci::eq{ a = what, b = "sight" } {
+            b.sight = on_word{ words = &words }
         } else if ci::eq{ a = what, b = "status" } {
             if b.tour.on {
                 _ = @fmt(&w.io, "bot: tour of {} stops, at {}", b.tour.count, b.tour.next)
@@ -132,15 +137,18 @@ namespace bot {
             b.clicked = 0
         }
         // Something hostile and alive within sight: fight it, nearest first.
-        let foe = nearest_foe{ w = &w, me, skips = b.foe_skips[..b.foe_skip_n] }
+        let foe = nearest_foe{ w = &w, me, skips = b.foe_skips[..b.foe_skip_n], lined = b.sight }
         if foe != obj::INVALID and not tour_ignores{ &b, foe } {
             // A foe the leader cannot get nearer to: a closed door between them (a move to the other side of it fails at once, so the
             // fight never begins and the walk never goes on). The closest door within six metres is opened, as for a stop.
-            // The nearest foe is far (past eight metres) and the leader has not moved for a dozen decisions: whoever the nearest is
-            // (the pick flips between foes at the same distance), a fight is not what holds it.
+            // The nearest foe is far (past eight metres) or out of sight (a closed door or a wall between: a move to it has stopped
+            // short of it, and an attack's approach no longer jumps to its goal when its timeout runs out) and the leader has not
+            // moved for a dozen decisions: whoever the nearest is (the pick flips between foes at the same distance), a fight is not
+            // what holds it.
             if world::object{ w = &w, id = foe } is some{ value = fo } {
                 let fd = math::vec3::distance{ a = fo.position, b = me.position }
-                if fd > 8.0 and math::vec3::distance{ a = me.position, b = b.far_pos } < 1.0 { b.foe_stalled = b.foe_stalled + 1 } else {
+                let hidden = fd > 2.5 and not perception::clear_line{ w = &w, a = math::Vec3{ x = me.position.x, y = me.position.y, z = me.position.z + 1.5 }, b = math::Vec3{ x = fo.position.x, y = fo.position.y, z = fo.position.z + 1.5 } }
+                if (fd > 8.0 or hidden) and math::vec3::distance{ a = me.position, b = b.far_pos } < 1.0 { b.foe_stalled = b.foe_stalled + 1 } else {
                     b.foe_stalled = 0
                     b.far_pos = me.position
                 }
@@ -440,7 +448,7 @@ namespace bot {
         return false
     }
 
-    fn nearest_foe { w: *world::World, me: *obj::Object, skips: []u32 } -> u32 {
+    fn nearest_foe { w: *world::World, me: *obj::Object, skips: []u32, lined: bool } -> u32 {
         let all = list::items{ list = w.objects.all }
         let mut best = obj::INVALID
         let mut best_d: f32 = SIGHT
@@ -453,6 +461,8 @@ namespace bot {
             if c.dead or o.plot or not hud::is_hostile{ w, id = o.id } { continue }    // a plot creature (the Enclave's turrets) takes no damage
             let d = math::vec3::distance{ a = o.position, b = me.position }
             if d < best_d {
+                // With `sight` on, only a foe the leader could see from its head to the foe's: not through a closed door or a wall.
+                if lined and not perception::clear_line{ w, a = math::Vec3{ x = me.position.x, y = me.position.y, z = me.position.z + 1.5 }, b = math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + 1.5 } } { continue }
                 best_d = d
                 best = o.id
             }
