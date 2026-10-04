@@ -41,6 +41,9 @@ frames, so setup and click are spaced out.
 | Using an item fires the module's OnActivateItem; GetItemActivated, GetItemActivator, GetItemActivatedTarget answer (the Endar Spire's k_pend_activate waits for a medpac) | module script, nwscript | matches (the getters returned OBJECT_INVALID; `rt_item::signal_activation`) | `medpac_tutorial.txt` (the script runs) |
 | Uses of an item: single use takes one from the stack and the item goes with the last one ("Lost Item: ..." and the HUD's lost icon); n charges per use take 7 - row charges; unlimited rows (13) are free; per-day rows (8-12) are not in the data of any shipped CastSpell property; per-minute rows (14, 16: one droid shield) are not counted | party-items-saves.md 5.10; a scan of every UTI | matches except per-minute (open, one item) | |
 | Droid repair kits and energy shields with a droid as leader | CanUseItem race rule | matches (hp 5 to 22 by both kits) | `consumables2.txt` |
+| The Useable Items filter, the Use Item button's colour and a row click use one test (0x00616520 with every category): medical items, stims, items whose power has `itemtargeting` 1 (shields and droid devices only worn), mines for a creature with Demolitions. **A grenade is not usable from the inventory**: it is absent from Useable and a click says "This is not a useable or equipable item" (42486) | the test's callers (gui.md Filters and Row click) | matches (a click on a grenade did nothing; Useable listed grenades) | `inv_filters.txt` |
+| The slot description names a stack: "Medpac (2)" | 0x00686e20, format `%s (%d)` | matches | `slots_lists.txt` |
+| Security spikes (property 37, "+10 bonus to Security", one use): the weakest spike in the bag that makes the roll succeed is used up | OPENLOCK takes the spike as an action parameter (the player's choice in the original; which one a player picks was not traced) | matches in effect, the selection is ours | `security_spike.txt` (32 vs DC 28, Tunneler x2 to x1) |
 
 ## 2. Equipping
 
@@ -64,7 +67,8 @@ frames, so setup and click are spaced out.
 | Identical items stack up to `baseitems.stacking`; a list shows "Name xN" | 5.2, 5.3 | matches | `equip_preview.txt` (Blaster Pistol x2) |
 | New items (loot taken, purchases, pick-ups, CreateItemOnObject) are magenta and listed by the New Items filter until their description has been shown, then ordinary when the screen closes | CSWGuiInventory.OnItemHilighted / OnPanelRemoved, SetItem colours | matches (not saved: a load makes none new) | `new_items.txt` |
 | "Acquired Item: <name>", "Lost Item: <name>", "Acquired N Credits" in the message log and the HUD's item/credits icons light for 4 s | feedback 50/51, notices 7/8 (SetPossessor, AddItem), dialog.tlk 1449, 1450, 1493, 1494 | matches (nothing was logged or lit) | `loot_click.txt` |
-| Plot items are in the Quest Items filter, cannot be sold, cannot be given to a container | 5.8, 5.7 | matches (store/containers by the screens lead) | |
+| Plot items are in the Quest Items filter and cannot be sold | 5.8 | matches (the stores are the screens lead's) | |
+| Script gold (GiveGoldToCreature, TakeGoldFromCreature) logs "Acquired/Lost N Credits" and lights the credits icon | feedback 148/149, notice 1 | matches | |
 | Item values, prices, the stores | 5.8 | not in this scope (screens lead) | |
 
 ## 4. Picking up, containers, giving
