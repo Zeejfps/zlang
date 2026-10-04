@@ -238,6 +238,13 @@ namespace gui {
     fn clear_picture { mut g: Gui, panel: u32, tag: []u8 } {
         let c = find_control{ &g, panel, tag } ifnull { return }
         c.override_fill = no_img{}
+        c.picture_alpha = 1.0
+    }
+
+    // The alpha the control's picture is drawn with (1.0 normally); the next set_picture keeps it.
+    fn set_picture_alpha { mut g: Gui, panel: u32, tag: []u8, alpha: f32 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.picture_alpha = alpha
     }
 
     fn set_tooltip { mut g: Gui, panel: u32, tag: []u8, text: []u8 } -> ! {
@@ -444,7 +451,7 @@ namespace gui {
             c.rows = try alloc::resize(Row, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = c.rows, count = n }
         }
         let copy = try copy_string{ &g, s = text }
-        c.rows[@as(usize, c.row_count)] = Row{ text = copy, user, color = white_color{}, has_color = false, icon = no_img{}, enabled = true, checked = false }
+        c.rows[@as(usize, c.row_count)] = Row{ text = copy, user, color = white_color{}, has_color = false, icon = no_img{}, enabled = true, checked = false, frame = 0 }
         c.row_count = c.row_count + 1
         return @as(i32, c.row_count) - 1
     }
@@ -454,6 +461,20 @@ namespace gui {
         if row < 0 or row >= @as(i32, c.row_count) { return }
         c.rows[@as(usize, row)].color = color
         c.rows[@as(usize, row)].has_color = true
+    }
+
+    // How an item row's frames are tinted (FRAME_*): the original's item entry paints its frame, hilight frame
+    // and icon frame in the menu blue / yellow, or magenta for a new item, or red for one that cannot be worn.
+    fn list_set_frame { mut g: Gui, panel: u32, tag: []u8, row: i32, frame: u8 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        if row < 0 or row >= @as(i32, c.row_count) { return }
+        c.rows[@as(usize, row)].frame = frame
+    }
+
+    // The alpha of the normal frame of the list's item rows (0 hides it; the hilight frame is not touched).
+    fn list_set_frame_alpha { mut g: Gui, panel: u32, tag: []u8, alpha: f32 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.row_frame_alpha = alpha
     }
 
     fn list_set_icon { mut g: Gui, panel: u32, tag: []u8, row: i32, texture: render::Texture, w: f32, h: f32 } {

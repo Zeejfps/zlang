@@ -39,10 +39,18 @@ loads the model once; slots are reused for the same model), one `gui3d::Emitting
 An effect lives for `life` seconds (its animation's length unless told) and then the particles
 die out; a bolt ends on arrival and may play a `visualeffects.2da` row where it ends.
 
-Particles are drawn as the seam's `render::Emitter`s: `Motion_Blur` and `Aligned_to_Particle_Dir`
-stretch along `Particle.dir`. A bolt's emitter is turned to the direction of flight and its
-quad made `speed * blurlength * 2.4` long and 1.6 times as wide as its `sizeStart` (ours: the
-original's Motion_Blur rule was not read; the factors make a bolt read at fight distances).
+Particles are drawn as the seam's `render::Emitter`s, one facing per MDL render mode (gui3d `look_of`; what
+each does in the original is in [../re/particles.md](../re/particles.md)): `Normal` and `Linked` face the camera,
+`Billboard_to_Local_Z` lies in the emitter's own X/Y plane (the scorch mark on the floor, a muzzle flash's crossed
+sheets), `Billboard_to_World_Z` lies flat on the ground, `Aligned_to_World_Z` stands upright, `Aligned_to_Particle_Dir`
+lies in the plane of the direction it was sent in, and `Motion_Blur` is a streak from the particle's tail (which
+eases to its head over `blurlength` seconds) to its head, 2 x `sizeStart` wide. A bolt's emitter is turned to the
+direction of flight and its quad made `speed * blurlength * 2.4` long (ours: its tail would not trail in the emitter's
+own space; the factor makes a bolt read at fight distances). The simulation is the original's where it was read:
+gravity is the controller `mass` (smoke and flames have a negative one and rise), a particle starts turned to 0
+and spins by `particleRot`, a `Single` emitter keeps exactly one particle while `birthrate` is at least 1, and a
+sprite sheet steps through its cells at `fps`. Not done: chunk models (debris), `bounce`, wind, particles that stay in
+the world when their emitter moves (ours move with it, as `inherit` does), point-to-point emitters.
 Model lights (a bolt's red one, radius 2.5) are added as frame lights, so a bolt lights the
 creatures it passes.
 
@@ -199,7 +207,7 @@ EXE=kotor/out/kotor_combat.exe FAST=1 SPEED=1 LOG=combat,trace LOAD=kotor/out/ch
 
 ## Decisions (ours) and open items
 
-- Bolt speed is the engine's 23.8 ms/m (42 m/s); the streak's length and width factors are ours.
+- Bolt speed is the engine's 23.8 ms/m (42 m/s); the streak's length factor is ours.
 - A shot of the round's animation that carries no attack is drawn as a bolt that misses.
 - `switchmask` digit `1` is the right (on-hand) weapon and `0` the left: unconfirmed.
 - Impact effects attach to `impact_bolt` (blasters), `DeflectHook` (deflection) or `Impact`

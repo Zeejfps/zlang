@@ -1,0 +1,43 @@
+# The equipment screen's damage and attack numbers as the original prints them (UpdateStats): damage as
+# "lowest-highest" (dice at their lowest and highest, plus the Strength modifier for a melee weapon), the
+# attack bonus "+N" above zero and "N" otherwise, green when it is above the base attack bonus. Strength
+# 18, 10, 8 and 6 give modifiers +4, 0, -1 and -2; the left hand holds the long sword (1d12) and the
+# right the short sword (1d6); a bare right hand shows the unarmed numbers.
+4 ui giveitem g_w_lngswrd01
+4 ui giveitem g_w_shortswrd01
+5 ui stat str 18
+10 ui key u
+20 ui clickctl BTN_INV_WEAP_L
+30 ui clickctl LB_ITEMS ~Long
+40 ui ctl LBL_ATKL
+40 ui ctl LBL_ATKR
+40 ui ctl LBL_TOHITL
+40 ui ctl LBL_TOHITR
+50 ui stat str 10
+60 ui ctl LBL_ATKL
+60 ui ctl LBL_ATKR
+60 ui ctl LBL_TOHITL
+60 ui ctl LBL_TOHITR
+70 ui stat str 8
+80 ui ctl LBL_ATKL
+80 ui ctl LBL_ATKR
+80 ui ctl LBL_TOHITL
+80 ui ctl LBL_TOHITR
+90 ui stat str 6
+100 ui ctl LBL_ATKL
+100 ui ctl LBL_ATKR
+100 ui ctl LBL_TOHITL
+100 ui ctl LBL_TOHITR
+110 ui clickctl BTN_INV_WEAP_R
+120 ui clickctl LB_ITEMS 0
+130 ui clickctl BTN_INV_WEAP_R
+140 ui clickctl LB_ITEMS 0
+150 ui ctl LBL_ATKL
+150 ui ctl LBL_ATKR
+150 ui ctl LBL_TOHITR
+160 ui stat str 8
+170 ui ctl LBL_ATKR
+170 ui ctl LBL_TOHITR
+180 ui stat str 14
+190 ui ctl LBL_ATKR
+190 ui ctl LBL_TOHITR

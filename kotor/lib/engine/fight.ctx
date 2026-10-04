@@ -700,6 +700,26 @@ namespace fight {
         return @as(i32, (id - animname::ROW_BASE) & 0xFFFF)
     }
 
+    // The lying animations, the only ones a dead creature takes: CSWSCreature::SetAnimation
+    // (0x004f0d70) drops every other animation on a creature that is dead or dying, so a script's
+    // PlayAnimation, a conversation's stand or an idle reset leave the corpse where it fell.
+    fn is_dead_pose { id: u32 } -> bool {
+        if id == obj::ANIM_DEAD { return true }
+        let row = row_of_animation{ id }
+        return row == ROW_DEAD or row == ROW_DEAD1 or row == ROW_CDEAD
+    }
+
+    // Whether a conversation may change a participant's animation (CGuiInGame::CanAnimateParticipant,
+    // 0x0062f0e0, which the AnimList, the talk and listen loops and the stand at the end all ask):
+    // not a dead creature, nor one that is helpless (held in a crowd-control state) or downed.
+    fn can_animate_participant { w: *world::World, id: u32 } -> bool {
+        let o = world::object{ w, id } ifnull { return true }
+        let c = obj::creature{ o } ifnull { return true }
+        if c.dead or is_down{ w, id } { return false }
+        let f = c.fighter ifnull { return true }
+        return not rules::is_debilitated{ c = &f.c }
+    }
+
     // The column `<prefix><n>` of combatanimations.2da's row for an attack animation, as an int.
     fn combat_cell { w: *world::World, row: i32, prefix: []u8, n: i32 } -> ?i32 {
         let mut label: [8]u8

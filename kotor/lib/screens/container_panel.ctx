@@ -92,7 +92,7 @@ namespace container_panel {
             let id = source[k]
             k = k + 1
             if not world::is_valid{ w = &w, id } { continue }
-            _ = try items::add_row{ &g, &w, &dev, panel = p, tag = "LB_ITEMS", id, equipped = false, icon_size = ICON }
+            _ = try items::add_row{ &g, &w, &dev, panel = p, tag = "LB_ITEMS", id, equipped = false, icon_size = ICON, rows = items::ENTRY }
         }
         if gui::list_count{ &g, panel = p, tag = "LB_ITEMS" } > 0 { gui::list_select{ &g, panel = p, tag = "LB_ITEMS", row = 0 } }
     }

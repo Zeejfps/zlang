@@ -6,8 +6,10 @@
 // Particles live in their emitter's space, so a moving emitter carries them. One Emitting is one
 // emitter node of one model; the Scene owns them.
 namespace gui3d {
-    // One live particle.
-    struct Puff { pos: math::Vec3, vel: math::Vec3, age: f32, life: f32, angle: f32, frame: f32 }
+    // One live particle. `aim` is the unit direction it was sent in (the +Z of the particle's own
+    // orientation in the original), which does not follow its velocity; `tail` is where a
+    // Motion_Blur particle's streak ends, trailing behind `pos`.
+    struct Puff { pos: math::Vec3, vel: math::Vec3, age: f32, life: f32, angle: f32, frame: f32, aim: math::Vec3, tail: math::Vec3 }
 
     // The most particles one emitter keeps alive, whatever its birth rate and life say.
     const MAX_PUFFS: usize = 4096
@@ -69,26 +71,47 @@ namespace gui3d {
         }
     }
 
-    // One step of `dt` seconds: the old die, the rest move, new ones are born.
+    // One step of `dt` seconds: the old die, the rest move, new ones are born. A Single emitter keeps
+    // one particle while its birth rate is at least 1 (whole particles: the original truncates),
+    // which ages to the end of its curves and stays there; the others give birth `birthrate` times a
+    // second.
     fn step_emitting { mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, dt: f32 } {
         if dt <= 0.0 { return }
+        let single = e.update == mdl::EmitterUpdate::single
+        let blur = e.render == mdl::EmitterRender::motion_blur
         let mut i: u32 = 0
         while i < em.live {
             let mut p = em.puffs[i]
             p.age = p.age + dt
-            if p.age >= p.life {
+            if p.age >= p.life and not single {
                 em.puffs[i] = em.puffs[em.live - 1]
                 em.live = em.live - 1
                 continue
             }
-            p.vel.z = p.vel.z - props.grav * dt
+            // The streak's tail eases toward the head over `blurlength` seconds (a frame at least),
+            // measured from where the head was before this step.
+            if blur {
+                let t = if props.blur_length > 0.000001 { math::min{ a = dt, b = props.blur_length } / props.blur_length } else { 1.0 }
+                p.tail = math::vec3::lerp{ a = p.tail, b = p.pos, t }
+            }
+            // The original moves a particle and then lets gravity (the controller `mass`, in g) pull
+            // its velocity down: a negative mass rises (smoke, flames).
             p.pos = math::vec3::add_scaled{ a = p.pos, b = p.vel, s = dt }
+            p.vel.z = p.vel.z - props.mass * GRAVITY * dt
             p.angle = p.angle + props.particle_rot * dt
             em.puffs[i] = p
             i = i + 1
         }
         // Lightning is drawn as a strip of its own, which is not done: such an emitter stays quiet.
         if e.update == mdl::EmitterUpdate::lightning { return }
+        if single {
+            if props.birthrate < 1.0 {
+                em.live = 0
+            } else if em.live == 0 and em.puffs.len > 0 {
+                spawn{ &em, e, props }
+            }
+            return
+        }
         let mut rate = props.birthrate
         if props.random_birthrate > 0.0 {
             rate = rate + (2.0 * rng_unit{ s = &em.rng } - 1.0) * props.random_birthrate
@@ -101,9 +124,13 @@ namespace gui3d {
         }
     }
 
+    // Metres per second squared that a `mass` of 1 pulls with.
+    const GRAVITY: f32 = 9.81
+
     // One new particle: somewhere within xsize/100 metres of the emitter along its X axis and
     // ysize/100 along Y (the original draws an offset of up to that, either way), moving along
-    // +Z within `spread` radians at velocity plus or minus up to randvel.
+    // +Z within `spread` radians at velocity plus or minus up to randvel. It starts turned to 0
+    // and spins by `particleRot` a second.
     fn spawn { mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps } {
         let x = (2.0 * rng_unit{ s = &em.rng } - 1.0) * props.x_size * 0.01
         let y = (2.0 * rng_unit{ s = &em.rng } - 1.0) * props.y_size * 0.01
@@ -122,11 +149,12 @@ namespace gui3d {
             let span = math::max{ a = props.frame_end - props.frame_start + 1.0, b = 1.0 }
             frame = props.frame_start + math::floorf{ x = rng_unit{ s = &em.rng } * span }
         }
+        let at = math::Vec3{ x, y, z = 0.0 }
+        // lifeExp -1: the particle stays as long as the effect does, at its starting size and colour.
+        let life = if props.life_exp < 0.0 { 1.0e9 } else { math::max{ a = props.life_exp, b = 0.01 } }
         em.puffs[em.live] = Puff{
-            pos = math::Vec3{ x, y, z = 0.0 },
-            vel = math::vec3::scale{ v = dir, s = speed },
-            age = 0.0, life = math::max{ a = props.life_exp, b = 0.01 },
-            angle = rng_unit{ s = &em.rng } * math::TAU, frame,
+            pos = at, vel = math::vec3::scale{ v = dir, s = speed },
+            age = 0.0, life, angle = 0.0, frame, aim = dir, tail = at,
         }
         em.live = em.live + 1
     }
@@ -135,6 +163,21 @@ namespace gui3d {
     const EMIT_RANDOM: u32 = 0x20
 
     // ---- drawing
+
+    // The sprite cell a particle shows: with `fps` set it steps from its first cell one a 1/fps seconds, to
+    // `frameEnd` and stays there, or round again when the emitter picks its cells at random (the original
+    // counts the cells from the first it was given; frameStart is 0 where that matters).
+    fn cell_of { e: *mdl::Emitter, props: mdl::EmitterProps, p: Puff } -> f32 {
+        let count = math::floorf{ x = props.frame_end - props.frame_start + 0.5 } + 1.0
+        if props.fps <= 0.0 or count < 2.0 { return p.frame }
+        let steps = math::floorf{ x = p.age * props.fps }
+        if (e.flags & EMIT_RANDOM) != 0 {
+            let from = p.frame - props.frame_start
+            let total = from + steps
+            return props.frame_start + (total - count * math::floorf{ x = total / count })
+        }
+        return math::min{ a = p.frame + steps, b = props.frame_end }
+    }
 
     // Where a curve with three values stands at life fraction t: `a` from percent `ps`, `b` at
     // `pm`, `c` at `pe`, linear between, held outside.
@@ -146,8 +189,17 @@ namespace gui3d {
     }
 
     // The live particles as seam rows (valid until the next call), in the emitter's space.
-    // Returns how many.
-    fn fill_particles { mut em: Emitting, props: mdl::EmitterProps } -> u32 {
+    // Returns how many. What `size` and `dir` mean depends on how the emitter draws (look_of):
+    //   Motion_Blur: a streak from the particle's tail to its head, centred between them, `dir` along it,
+    //     twice `sizeStart` wide (the original's width is the size on each side of the line) and as long
+    //     as the tail is behind plus a cap of a quarter of the height at each end;
+    //   Aligned_to_Particle_Dir: `dir` is the direction it was sent in, kept as it flies;
+    //   the others: `dir` is the way it moves now.
+    fn fill_particles { mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps } -> u32 {
+        let blur = e.render == mdl::EmitterRender::motion_blur
+        let aimed = e.render == mdl::EmitterRender::aligned_to_particle_dir
+        // The height is the width unless some key of it is set (a key left at 0 then means 0).
+        let tall = props.size_start_y != 0.0 or props.size_mid_y != 0.0 or props.size_end_y != 0.0
         let mut i: u32 = 0
         while i < em.live {
             let p = em.puffs[i]
@@ -158,11 +210,23 @@ namespace gui3d {
             let a = curve{ t, ps = props.percent_start, pm = props.percent_mid, pe = props.percent_end, a = props.alpha_start, b = props.alpha_mid, c = props.alpha_end }
             let sx = curve{ t, ps = props.percent_start, pm = props.percent_mid, pe = props.percent_end, a = props.size_start, b = props.size_mid, c = props.size_end }
             let sy = curve{ t, ps = props.percent_start, pm = props.percent_mid, pe = props.percent_end, a = props.size_start_y, b = props.size_mid_y, c = props.size_end_y }
+            let high = if tall { sy } else { sx }
             let mut dir = math::vec3::normalize{ v = p.vel }
             if math::vec3::length_sq{ v = dir } < 0.5 { dir = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } }
+            let mut at = p.pos
+            let mut size = math::Vec2{ x = sx, y = high }
+            if aimed {
+                dir = p.aim
+            } else if blur {
+                let d = math::vec3::sub{ a = p.pos, b = p.tail }
+                let len = math::vec3::length{ v = d }
+                if len > 0.00001 { dir = math::vec3::scale{ v = d, s = 1.0 / len } }
+                at = math::vec3::scale{ v = math::vec3::add{ a = p.pos, b = p.tail }, s = 0.5 }
+                size = math::Vec2{ x = 2.0 * sx, y = len + high * 0.5 }
+            }
             em.out[i] = render::Particle{
-                position = p.pos, size = math::Vec2{ x = sx, y = if sy > 0.0 { sy } else { sx } }, angle = p.angle,
-                color = render::Color{ r = r, g = g, b = b, a = a }, frame = @as(u32, p.frame), dir,
+                position = at, size, angle = p.angle,
+                color = render::Color{ r = r, g = g, b = b, a = a }, frame = @as(u32, cell_of{ e, props, p }), dir,
             }
             i = i + 1
         }
@@ -170,7 +234,16 @@ namespace gui3d {
     }
 
     // How the emitter's particles face and which axis that turns about, in the emitter's space
-    // (`world`: its node's matrix to world, to bring Z up into it).
+    // (`world`: its node's matrix to world, to bring Z up into it). The original's seven render
+    // modes (a particle's quad is spanned by two axes):
+    //   Normal, Linked   the view's right and up: a square-on billboard (a Linked emitter's particles
+    //                    are drawn so too; its chain of beams is the vfx beams');
+    //   Billboard_to_Local_Z  the emitter's own X and Y: it lies in the emitter's plane, so a scorch
+    //                    on the floor lies on the floor, a muzzle flash is crossed sheets;
+    //   Billboard_to_World_Z  the world's X and Y: flat on the ground whatever the emitter's turn;
+    //   Aligned_to_World_Z    the view's right and world Z: upright, a flare standing up;
+    //   Aligned_to_Particle_Dir  the direction it was sent and the tangent about the emitter's Z;
+    //   Motion_Blur      a streak from tail to head (fill_particles).
     struct Look { facing: render::Facing, axis: math::Vec3, blend: render::Blend }
 
     fn look_of { e: *mdl::Emitter, world: math::Mat4 } -> Look {
@@ -179,14 +252,15 @@ namespace gui3d {
         let mut l = Look{ facing = render::Facing::camera, axis = local_z, blend = render::Blend::alpha }
         let r = e.render
         if r == mdl::EmitterRender::billboard_to_local_z {
-            l.facing = render::Facing::axis
+            l.facing = render::Facing::emitter_plane
         } else if r == mdl::EmitterRender::billboard_to_world_z {
-            l.facing = render::Facing::axis
-            l.axis = up_local
+            l.facing = render::Facing::world_plane
         } else if r == mdl::EmitterRender::aligned_to_world_z {
-            l.facing = render::Facing::plane
+            l.facing = render::Facing::upright
             l.axis = up_local
-        } else if r == mdl::EmitterRender::aligned_to_particle_dir or r == mdl::EmitterRender::motion_blur {
+        } else if r == mdl::EmitterRender::aligned_to_particle_dir {
+            l.facing = render::Facing::tangent
+        } else if r == mdl::EmitterRender::motion_blur {
             l.facing = render::Facing::velocity
         }
         if e.blend == mdl::EmitterBlend::lighten {

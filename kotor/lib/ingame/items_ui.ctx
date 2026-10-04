@@ -3,8 +3,18 @@
 namespace items {
     // Appends a row for item `id` to the list `tag`: "Name", " (Equipped)" when it is worn, " xN"
     // for a stack; the item's icon at `icon_size`; `user` is the item id. Returns the row.
+    //
+    // `rows` says how its frames are painted. ENTRY: the original's item entry (the inventory,
+    // equipment and loot lists, 0x006b6710): menu blue, yellow under the pointer. ENTRY_NEW: the
+    // same, but a new item's frames are magenta until its description has been shown; only the
+    // inventory passes the flag, the equipment and loot lists never do. PLAIN: the file's colours.
+    const PLAIN: u8 = 0
+    const ENTRY: u8 = 1
+    const ENTRY_NEW: u8 = 2
+
     fn add_row {
         mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, tag: []u8, id: u32, equipped: bool, icon_size: f32,
+        rows: u8,
     } -> !i32 {
         let mut b = new_text{ w = &w }
         defer list::free{ list = &b.bytes }
@@ -15,8 +25,10 @@ namespace items {
         let n = stack_of{ w = &w, id }
         if n > 1 { try @fmt(&b, " x{}", n) }
         let row = try gui::list_add{ &g, panel, tag, text = utf8::view{ b }.bytes, user = @as(i64, id) }
-        // A new item's name is magenta (0.95, 0, 0.85) until the screen has shown its description.
-        if is_new{ w = &w, id } { gui::list_set_color{ &g, panel, tag, row, color = render::Color{ r = 0.95, g = 0.0, b = 0.85, a = 1.0 } } }
+        if rows != PLAIN {
+            let fresh = rows == ENTRY_NEW and is_new{ w = &w, id }
+            gui::list_set_frame{ &g, panel, tag, row, frame = if fresh { gui::FRAME_NEW } else { gui::FRAME_ITEM } }
+        }
         let img = icon_of{ &g, &w, &dev, id }
         if img.ok { gui::list_set_icon{ &g, panel, tag, row, texture = img.tex, w = icon_size, h = icon_size } }
         return row
@@ -26,6 +38,7 @@ namespace items {
     fn add_none_row { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, tag: []u8, icon_size: f32 } -> !i32 {
         let text = world::string_by_strref{ w = &w, strref = 363 }
         let row = try gui::list_add{ &g, panel, tag, text, user = 0 }
+        gui::list_set_frame{ &g, panel, tag, row, frame = gui::FRAME_ITEM }
         let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name = "inone" }
         if img.ok { gui::list_set_icon{ &g, panel, tag, row, texture = img.tex, w = icon_size, h = icon_size } }
         return row
@@ -54,11 +67,6 @@ namespace items {
     // the original shortens the text when it does not fit; how is not known).
     fn push_vitality { mut b: utf8::Builder(heap::Heap), hp: i32, hp_max: i32 } -> ! {
         if hp_max >= 1000 or hp >= 1000 or (hp_max >= 100 and hp >= 100) { try @fmt(&b, "{}", hp) } else { try @fmt(&b, "{}/{}", hp, hp_max) }
-    }
-
-    // "+3" or "-1".
-    fn push_signed { mut b: utf8::Builder(heap::Heap), n: i32 } -> ! {
-        if n >= 0 { try @fmt(&b, "+{}", n) } else { try @fmt(&b, "{}", n) }
     }
 
     // ---- refusals

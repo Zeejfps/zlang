@@ -182,7 +182,7 @@ namespace ups {
         let mut pick: usize = 0
         while k < s.nlisted {
             let l = s.listed[k]
-            _ = try items::add_row{ &g, &w, &dev, panel = p, tag = "LB_ITEMS", id = l.item, equipped = l.owner != obj::INVALID, icon_size = ICON }
+            _ = try items::add_row{ &g, &w, &dev, panel = p, tag = "LB_ITEMS", id = l.item, equipped = l.owner != obj::INVALID, icon_size = ICON, rows = items::PLAIN }
             if l.item == show { pick = k }
             k = k + 1
         }
