@@ -70,9 +70,10 @@ table bolds a module whose last tenth is over twice its first (and over 0.1 ms).
 rising one is something piling up per tick: a creature that cannot move and plans afresh every frame, a list that only grows.
 Find out which by timing `ai::update` per object (a stuck mover tops that list) before suspecting a global list; in the case
 that prompted the check `w.objects`, the event queue, the outbox and the heap's live bytes were all flat. Stuck movers pile up
-and then level off (a few creatures get stuck, not all), so a flat tail proves nothing: a module also warms up as the bot reaches
-its fights (`kas_m25aa` goes from 0.3 to 0.9 ms and stays; without the bot it is flat at 0.2 ms), so look at what the slowest
-objects and the loop's sections cost, not only at the curve.
+and then level off (a few creatures get stuck, not all), so a flat tail proves nothing; and a module also warms up as the bot
+reaches its fights, so some runs are flagged that are not leaking (`kas_m25aa` and `unk_m41ac` go from 0.3 to 0.8 ms in the first
+quarter of the run and stay there; `kas_m25aa` without the bot is flat at 0.2 ms). Look at what the slowest objects and the
+loop's sections cost, not only at the curve.
 
 ## The conversation sweep
 
