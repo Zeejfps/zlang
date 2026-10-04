@@ -7,7 +7,7 @@
 //   FRAME ui clicktag TAG           a left click in the middle of the shown HUD control with the tag
 //                                   (BTN_TARGET0, BTN_TARGETDOWN0, BTN_CLEARALL, BTN_CLEARONE ...)
 //   FRAME ui fight                  prints the leader's combat state, its queue and the target block
-//   FRAME ui spawn TEMPLATE [DIST [SIDE]]  a creature (UTC) DIST m ahead of the leader, SIDE m to its right
+//   FRAME ui foe TEMPLATE [DIST [SIDE]]    a creature (UTC) DIST m ahead of the leader, SIDE m to its right
 //   FRAME ui heal                 the party at full health, Min1HP off (test setup after the bot's god mode)
 //   FRAME ui grantfeat ID          gives the leader a feat (test setup: Power Attack 28, Flurry 11 ...)
 namespace test_combat {
@@ -53,7 +53,7 @@ namespace test_combat {
             print_fight{ ui = &ui, &w }
             return true
         }
-        if ci::eq{ a = cmd, b = "spawn" } {
+        if ci::eq{ a = cmd, b = "foe" } {
             // Test setup: a creature from a template DIST metres ahead of the leader (SIDE metres to its
             // right), facing it, as a script's CreateObject would make it.
             let mut words = text::words{ s = args }

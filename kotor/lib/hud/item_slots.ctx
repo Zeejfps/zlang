@@ -31,13 +31,6 @@ namespace hud {
         return into[..n + 3]
     }
 
-    // The item's base item ItemType (baseitems.2da), 0 when it is not an item.
-    fn item_type_of { w: *world::World, id: u32 } -> i32 {
-        let io = world::object{ w, id } ifnull { return 0 }
-        let it = obj::item{ o = io } ifnull { return 0 }
-        return twoda::get_int{ t = w.tables.baseitems, row = @as(usize, it.base), column = "itemtype" } ifnull 0
-    }
-
     // The grenades the leader can throw at the creature `target` (a friend too: the builder does not
     // ask): one choice for each item of the party's inventory that is a grenade and has an ability,
     // in the inventory's order (the stack is one choice).
@@ -50,7 +43,7 @@ namespace hud {
         while k < ids.len {
             let id = ids[k]
             k = k + 1
-            if item_type_of{ w, id } != TYPE_GRENADE or rt_item::ability_of{ w, id } < 0 { continue }
+            if rt_item::item_type_of{ w, id } != TYPE_GRENADE or rt_item::ability_of{ w, id } < 0 { continue }
             let mut buf: [40]u8
             let mut e = entry{ act = Act::throw, icon = item_icon_name{ w, id, into = buf[..] }, strref = 0 }
             e.item = id

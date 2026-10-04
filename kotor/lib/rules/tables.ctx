@@ -150,6 +150,14 @@ namespace rules {
         impact: resref::ResRef,
         light_recom: i32,               // auto-level order for a light-side character, 0 unranked (the engine reads blank as 0)
         dark_recom: i32,
+        // The action menus' lines (re/gui.md "Action menus", docs/mechanics/force.md): the line a power
+        // belongs to in the target block (forcehostile) or the self slots (forcefriendly), -1 for
+        // none, and its priority within the line (the highest known one is shown).
+        line_hostile: i32,
+        line_friendly: i32,
+        priority: i32,
+        exclusion: i32,                 // bit 0: not on a human, bit 1: not on a droid (the target's race)
+        range: u8,                      // spells.2da Range letter: P, T, S, M, L, W; 0 none
     }
 
     struct BaseItemRow {
@@ -456,6 +464,12 @@ namespace rules {
             s.impact = resref::truncate{ name = cell_text{ t = sp.t, row = i, col = "impactscript" } }
             s.light_recom = cell_int{ t = sp.t, row = i, col = "light_recom", dflt = 0 }
             s.dark_recom = cell_int{ t = sp.t, row = i, col = "dark_recom", dflt = 0 }
+            s.line_hostile = cell_int{ t = sp.t, row = i, col = "forcehostile", dflt = -1 }
+            s.line_friendly = cell_int{ t = sp.t, row = i, col = "forcefriendly", dflt = -1 }
+            s.priority = cell_int{ t = sp.t, row = i, col = "forcepriority", dflt = 0 }
+            s.exclusion = cell_int{ t = sp.t, row = i, col = "exclusion", dflt = 0 }
+            let range = cell_text{ t = sp.t, row = i, col = "range" }
+            s.range = if range.len > 0 and range[0] != '*' { range[0] } else { 0 }
             i = i + 1
         }
     }

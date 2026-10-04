@@ -36,7 +36,23 @@ namespace ingame {
         solo_box: msgbox::Box,              // "Do you wish to turn Solo Mode on?", up while the question is asked
         solo_pause: bool,                   // the box paused the game and must unpause it
         run_script: resref::ResRef,         // a script the loop should run when it can (no caller), empty when none
+        right_held: bool,                   // the right mouse button is down (Lookabout too)
+        look_x: i32,                        // mouse counts since the camera last asked, while the mouse turns it
+        looking: bool,                      // the mouse is turning the camera (cursor hidden)
+        turn_to: u32,                       // Q or E picked this object: the camera should swing round to it
+        mouse_look: bool,                   // the "Mouse Look" option: Lookabout then gives the cursor back
+        mouse_sens: i32,                    // "Mouse Sensitivity", 0..100
+        reverse_buttons: bool,              // "Reverse Mouse Buttons": left and right swap
+        autopause: bool,                    // the auto-pause triggers run (a person is playing: off in headless runs)
+        ap_enemy: bool, ap_mine: bool, ap_party: bool, ap_target: bool, ap_round: bool, ap_action_menu: bool,    // [Autopause Options]
+        enemy_noted: bool,                  // an enemy in sight has been announced; clears when none is in sight
+        party_alive: i32,                   // party members on their feet last frame
+        ap_cooldown: f32,                   // seconds before "Party Member Down" may pause again
+        pause_reason: u32,                  // the banner's text (dialog.tlk) for the next pause
     }
+
+    // What the camera takes from the mouse each frame (CameraInputMouseYaw, movement.md 2.3).
+    struct CameraInput { yaw_degrees: f32, edge: f32, looking: bool }
 
     // Opens the interface for a window of `width` x `height`. `scratch` is the texture decoder's
     // working memory (the scene's may be shared: loads never overlap).
@@ -52,7 +68,8 @@ namespace ingame {
         }
         try gui::load_defaults{ &g, fs = &w.fs, &dev }
         // The game options the rules read: Auto Level Up NPCs (the options menu keeps it current).
-        w.rules.settings.auto_level = frontend::load_settings{ fs = &w.fs, heap = w.heap, path = "kotor/out/kotor-settings.ini" }.auto_level_up
+        let saved = frontend::load_settings{ fs = &w.fs, heap = w.heap, path = "kotor/out/kotor-settings.ini" }
+        w.rules.settings.auto_level = saved.auto_level_up
         if mixer != null { gui::set_mixer{ &g, mixer } }
         let h = try hud::open{ &g, &w, &dev }
         let ui = Ingame{
@@ -61,6 +78,10 @@ namespace ingame {
             width, height, menu = NO_MENU, menu_panel = 0, top_panel = 0, menus = new_menus{}, log = hud::new_log{},
             pause_panel = 0, hud_hidden = false, screens = screens::new{}, bot = bot::new{},
             shift_held = false, ctrl_held = false, solo_box = msgbox::blank{}, solo_pause = false, run_script = resref::empty{},
+            right_held = false, look_x = 0, looking = false, turn_to = obj::INVALID, mouse_look = saved.mouse_look, mouse_sens = saved.mouse_sensitivity, reverse_buttons = saved.reverse_buttons,
+            autopause = false, ap_enemy = saved.pause_enemy_sighted, ap_mine = saved.pause_mine_sighted, ap_party = saved.pause_party_killed,
+            ap_target = saved.pause_triggers, ap_round = saved.pause_end_round, ap_action_menu = saved.pause_action_menu,
+            enemy_noted = false, party_alive = 0, ap_cooldown = 0.0, pause_reason = REASON_PAUSED,
             psel_wait = false, psel_exit = resref::empty{}, psel_force1 = -1, psel_force2 = -1, psel_paused = false,
         }
         let mut p = try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
@@ -142,10 +163,31 @@ namespace ingame {
     // Offers a platform event to the interface; true when it used it, so the game does not also
     // treat it as a key or a world click.
     fn handle_event { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, ev: sdl::Event, scale_x: f32, scale_y: f32 } -> bool {
+        // "Reverse Mouse Buttons" swaps what left and right do, for everything downstream.
+        let mut turned = ev
+        if ui.reverse_buttons and ev is mouse_button{ down, button, clicks, x, y } {
+            if button == sdl::BUTTON_LEFT { turned = sdl::Event::mouse_button{ down, button = sdl::BUTTON_RIGHT, clicks, x, y } }
+            else if button == sdl::BUTTON_RIGHT { turned = sdl::Event::mouse_button{ down, button = sdl::BUTTON_LEFT, clicks, x, y } }
+        }
+        // The mouse turns the camera while Lookabout (Ctrl or the right button) is held, or all the time
+        // with the Mouse Look option and Lookabout gives the cursor back.
+        if turned is mouse_button{ down, button } {
+            if button == sdl::BUTTON_RIGHT { ui.right_held = down }
+        }
+        if turned is mouse_motion{ dx } {
+            if ui.looking { ui.look_x = ui.look_x + dx }
+        }
+        return handle_turned{ &ui, &w, &dev, ev = turned, scale_x, scale_y }
+    }
+
+    fn handle_turned { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, ev: sdl::Event, scale_x: f32, scale_y: f32 } -> bool {
         // Keys first: the menu keys, Escape and pause work with or without a menu open, and a menu
         // (a full-screen panel) would otherwise take every key.
         if ev is key{ down, repeat, keycode } {
-            if keycode == sdl::key::LSHIFT or keycode == sdl::key::RSHIFT { ui.shift_held = down }
+            if keycode == sdl::key::LSHIFT or keycode == sdl::key::RSHIFT {
+                ui.shift_held = down
+                ui.hud.alternate = down
+            }
             if keycode == sdl::key::LCTRL or keycode == sdl::key::RCTRL { ui.ctrl_held = down }
             if down and not repeat {
                 if handle_key{ &ui, &w, &dev, keycode } { return true }
@@ -159,7 +201,7 @@ namespace ingame {
         if is_blocked{ &ui } { return false }
         // Past the GUI: the pointer on the world's objects.
         if ev is mouse_button{ down, button, x, y } {
-            if button != sdl::BUTTON_LEFT { return false }
+            if button != sdl::BUTTON_LEFT or ui.looking { return false }
             let ux = gui::to_ui{ v = x, s = scale_x, scale = ui.gui.scale }
             let uy = gui::to_ui{ v = y, s = scale_y, scale = ui.gui.scale }
             return hud::world_click{ h = &ui.hud, g = &ui.gui, &w, x = ux, y = uy, down }
@@ -203,6 +245,7 @@ namespace ingame {
         }
         if keycode == 'q' or keycode == 'e' {
             hud::cycle_target{ &w, forward = keycode == 'e' }
+            ui.turn_to = w.target
             return true
         }
         if keycode == 'r' {
@@ -215,7 +258,7 @@ namespace ingame {
                 hud::cycle_slot{ h = &ui.hud, g = &ui.gui, &w, &dev, k, forward = true }
                 return true
             }
-            return hud::run_slot{ h = &ui.hud, &w, k }
+            return hud::use_slot{ h = &ui.hud, g = &ui.gui, &w, k }
         }
         if keycode >= '4' and keycode <= '7' {
             // The four self slots: 4 friendly powers, 5 medical items, 6 other items, 7 mines.
@@ -312,6 +355,42 @@ namespace ingame {
         hud::flash_icon{ h = &ui.hud, which }
     }
 
+    // ---- the camera's share of the mouse
+
+    // Called once a frame by the loop before the camera updates: the yaw the mouse asks for this frame
+    // (mouse counts / 100 clamped to one, times 10 + 0.45 * the sensitivity slider, degrees; the mouse
+    // moving right turns the view right), and the screen-edge turn (a cursor within max(2, width / 1000)
+    // pixels of the left or right edge acts as the rotate key: +1 turns left) when the mouse is not
+    // turning the camera. UpdateCameraInput 0x005f5e10, movement.md 2.3.
+    fn camera_input { mut ui: Ingame } -> CameraInput {
+        let held = ui.ctrl_held or ui.right_held
+        let usable = not is_blocked{ &ui }
+        let looking = usable and (if ui.mouse_look { not held } else { held })
+        ui.looking = looking
+        gui::set_cursor_visible{ g = &ui.gui, visible = not looking }
+        let counts = ui.look_x
+        ui.look_x = 0
+        let mut yaw: f32 = 0.0
+        if looking {
+            let dx = math::clamp{ x = @as(f32, counts) / 100.0, lo = -1.0, hi = 1.0 }
+            yaw = -dx * (10.0 + 0.45 * @as(f32, ui.mouse_sens))
+        }
+        let mut edge: f32 = 0.0
+        if usable and not looking {
+            let margin: i32 = if ui.width / 1000 > 2 { ui.width / 1000 } else { 2 }
+            if ui.gui.mouse_x <= margin { edge = 1.0 }
+            else if ui.gui.mouse_x >= ui.width - margin { edge = -1.0 }
+        }
+        return CameraInput{ yaw_degrees = yaw, edge, looking }
+    }
+
+    // The object Q or E just picked, once: the loop tells the camera to swing round to it.
+    fn take_turn_to { mut ui: Ingame } -> u32 {
+        let id = ui.turn_to
+        ui.turn_to = obj::INVALID
+        return id
+    }
+
     // ---- pause
 
     fn clock_paused_by_player { w: *world::World } -> bool {
@@ -329,11 +408,104 @@ namespace ingame {
             pp.x = (ui.gui.ui_w - pp.w) / 2
             pp.y = ui.gui.ui_h / 6
             gui::place{ g = &ui.gui, p = pp }
-            gui::set_strref{ g = &ui.gui, panel = p, tag = "LBL_PAUSEREASON", strref = 1508 } iferr {}
+            if ui.pause_reason == REASON_PAUSED {
+                gui::set_strref{ g = &ui.gui, panel = p, tag = "LBL_PAUSEREASON", strref = ui.pause_reason } iferr {}
+            } else {
+                // An automatic pause says why, and its text carries the instruction itself, so the panel's own
+                // "press the pause button" line goes and the box grows to hold the text (CSWGuiPause::SetReason);
+                // "<Pause>" is the key's name.
+                let raw = world::string_by_strref{ w = &w, strref = ui.pause_reason }
+                ui.text.bytes.len = 0
+                let token: []u8 = "<Pause>"
+                let mut at: usize = 0
+                while at < raw.len {
+                    if at + token.len <= raw.len and slice::eq_bytes{ a = raw[at..at + token.len], b = token } {
+                        _ = @fmt(&ui.text, "Space")
+                        at = at + token.len
+                    } else {
+                        list::push{ list = &ui.text.bytes, item = raw[at] } iferr {}
+                        at = at + 1
+                    }
+                }
+                gui::set_text{ g = &ui.gui, panel = p, tag = "LBL_PAUSEREASON", text = utf8::view{ b = ui.text }.bytes } iferr {}
+                gui::set_visible{ g = &ui.gui, panel = p, tag = "LBL_PRESS", visible = false }
+                let reason_label = gui::find_control{ g = &ui.gui, panel = p, tag = "LBL_PAUSEREASON" }
+                if reason_label != null { reason_label.h = 80 }
+                let button = gui::find_control{ g = &ui.gui, panel = p, tag = "BTN_UNPAUSE" }
+                if button != null { button.h = 86 }
+                pp.h = 90
+            }
+            ui.pause_reason = REASON_PAUSED
         } else if not on and ui.pause_panel != 0 {
             gui::close{ g = &ui.gui, id = ui.pause_panel }
             ui.pause_panel = 0
         }
+    }
+
+    // ---- auto-pause (re/gameloop.md 6.4, [Autopause Options])
+
+    // The banner texts (dialog.tlk) by reason.
+    const REASON_PAUSED: u32 = 1508
+    const REASON_ENEMY: u32 = 48212          // "ENEMY SIGHTED! Press the Pause key to continue"
+    const REASON_PARTY_DOWN: u32 = 42397     // "Party Member Down"
+    const REASON_TARGET: u32 = 42481         // "Target Changed"
+    const REASON_MENU: u32 = 42482           // "Menu Used"
+    const REASON_ROUND: u32 = 42432          // "End of Combat Round"
+    const REASON_MINE: u32 = 49118           // "MINE SIGHTED! Press the Pause button to continue"
+
+    // Pauses for `reason` unless the game is already paused, a conversation or a menu has the screen, or
+    // a module change is coming (RequestAutoPause 0x005f3f10).
+    fn auto_pause { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, reason: u32 } {
+        if clock_paused_by_player{ w = &w } or w.conversation.active or ui.menu != NO_MENU or ui.hud_hidden { return }
+        if w.transition != null or w.arrival > 0 or is_blocked{ &ui } { return }
+        ui.pause_reason = reason
+        set_player_pause{ &ui, &w, &dev, on = true }
+    }
+
+    // Every frame: an enemy coming into sight is the first thing the interface notices itself (the first
+    // of a group; the next announcement waits until none is in sight); then the first request of the frame
+    // from the engine and the HUD (autopause::request: a party member down, a slot's choice stepped, the
+    // end of a round, a new target) is weighed against the options and a person playing.
+    fn update_autopause { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, dt: f32 } {
+        if ui.ap_cooldown > 0.0 { ui.ap_cooldown = ui.ap_cooldown - dt }
+        let lead = party::leader{ w = &w }
+        if ui.autopause and lead != obj::INVALID and not w.conversation.active {
+            let members = party::members{ w = &w }
+            let mut sighted = false
+            let all = list::items{ list = w.objects.all }
+            let mut i: usize = 0
+            while i < all.len and not sighted {
+                let o = all[i]
+                i = i + 1
+                if o.destroyed or o.kind != obj::Kind::creature or o.id == lead or party::is_member{ w = &w, id = o.id } { continue }
+                if not hud::is_selectable{ w = &w, id = o.id } or not hud::is_hostile{ w = &w, id = o.id } { continue }
+                let mut k: usize = 0
+                while k < members.len and not sighted {
+                    if perception::entry_of{ w = &w, viewer = members[k], target = o.id } is some{ value = e } { if e.seen { sighted = true } }
+                    k = k + 1
+                }
+            }
+            if sighted and not ui.enemy_noted {
+                ui.enemy_noted = true
+                if not hud::leader_in_combat{ w = &w } { autopause::request{ &w, reason = autopause::ENEMY_SIGHTED } }
+            } else if not sighted {
+                ui.enemy_noted = false
+            }
+        }
+        let asked = autopause::take{ &w }
+        if asked == 0 or not ui.autopause { return }
+        // The option of each reason ([Autopause Options]); a new target only counts in combat mode
+        // (HandleInputAction 0xcc/0xcd), and a member down pauses once a second or two.
+        let mut text: u32 = 0
+        if asked == autopause::ENEMY_SIGHTED { if ui.ap_enemy { text = REASON_ENEMY } }
+        else if asked == autopause::ACTION_MENU { if ui.ap_action_menu { text = REASON_MENU } }
+        else if asked == autopause::PARTY_MEMBER_DOWN { if ui.ap_party and ui.ap_cooldown <= 0.0 { text = REASON_PARTY_DOWN } }
+        else if asked == autopause::MINE_SIGHTED { if ui.ap_mine { text = REASON_MINE } }
+        else if asked == autopause::END_OF_ROUND { if ui.ap_round { text = REASON_ROUND } }
+        else if asked == autopause::NEW_TARGET { if ui.ap_target and hud::leader_in_combat{ w = &w } { text = REASON_TARGET } }
+        if text == 0 { return }
+        if asked == autopause::PARTY_MEMBER_DOWN { ui.ap_cooldown = 2.0 }
+        auto_pause{ &ui, &w, &dev, reason = text }
     }
 
     // ---- the frame
@@ -344,7 +516,19 @@ namespace ingame {
         gui::update{ g = &ui.gui, dt }
         bot::step{ b = &ui.bot, &w }
         hud::log_tick{ log = &ui.log, dt }
-        if options_panel::settings{ s = &ui.menus.options } is some{ value = st } { w.rules.settings.auto_level = st.auto_level_up }
+        if options_panel::settings{ s = &ui.menus.options } is some{ value = st } {
+            w.rules.settings.auto_level = st.auto_level_up
+            ui.mouse_look = st.mouse_look
+            ui.mouse_sens = st.mouse_sensitivity
+            ui.reverse_buttons = st.reverse_buttons
+            ui.ap_enemy = st.pause_enemy_sighted
+            ui.ap_mine = st.pause_mine_sighted
+            ui.ap_party = st.pause_party_killed
+            ui.ap_target = st.pause_triggers
+            ui.ap_round = st.pause_end_round
+            ui.ap_action_menu = st.pause_action_menu
+        }
+        update_autopause{ &ui, &w, &dev, dt }
         // A conversation or cutscene takes the screen: the HUD and any menu go away for it
         // (re/gui.md, "SetHudMode"), and the world is not picked.
         if w.conversation.active != ui.hud_hidden {

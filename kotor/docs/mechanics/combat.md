@@ -12,7 +12,7 @@ fixed on this branch, then checked), **open** (wrong or missing, with the reason
 
 Real input only for the fight itself: the pointer is moved onto the object and clicked (`ui clickon TAG`, which
 computes where the object is on the screen and sends SDL motion/button events through the HUD), HUD buttons are
-clicked where they are drawn (`ui clicktag TAG`), keys are SDL key events (`ui key 1`). Setup may cheat: `ui spawn
+clicked where they are drawn (`ui clicktag TAG`), keys are SDL key events (`ui key 1`). Setup may cheat: `ui foe
 TEMPLATE DIST [SIDE]` puts a creature ahead of the leader, `ui heal` undoes the bot's god mode, `ui grantfeat N`
 gives the leader a combat feat, `cam toward TAG` turns the follow camera as the player does with the keys. `ui fight`
 prints the leader's combat state, its queue and the target block's slots. `--log combat` prints every attack's

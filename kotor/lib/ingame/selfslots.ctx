@@ -92,31 +92,38 @@ namespace selfslots {
         sl.count = sl.count + 1
     }
 
-    // The reason a known power cannot be cast now (R_OK when it can).
-    fn power_reason { w: *world::World, f: *fight::Fighter, spell: i32, alive: bool } -> i32 {
-        let r = rules::can_cast_spell{ tables = w.rules, c = &f.c, spell, alive, from_item = false }
-        if r == rules::cast::DEAD { return R_DEAD }
-        if r == rules::cast::NOT_ENOUGH_FP { return R_FORCE }
-        if r == rules::cast::FORBIDDEN_EQUIPMENT or r == rules::cast::MISSING_EQUIPMENT { return R_ARMOR }
-        return R_OK
-    }
-
-    // Slot 0: the leader's friendly powers.
+    // Slot 0: the leader's friendly powers, one per friendly line (spells.2da ForceFriendly: Cure and
+    // Heal, the three armour powers, the speeds, the valors, Force resistance and immunity, the energy
+    // resistances), the known power of the line with the highest ForcePriority, the lines in order
+    // (UpdateActionMenus' 0x00616230: the same pick as the target block's hostile lines).
     fn fill_powers { w: *world::World, leader: u32, mut out: [4]Slot } {
         let f = hud::ruled_of{ w, id = leader } ifnull { return }
         let alive = not hud::is_down{ w, id = leader }
         let t = w.tables.spells
         let rows = twoda::rows{ t }
+        let mut best_row: [8]i32 = [-1; 8]
+        let mut best_pri: [8]i32 = [-1; 8]
         let mut r: usize = 0
         while r < rows and r < 256 {
             let spell = @as(i32, r)
             r = r + 1
             if not rules::knows_power{ c = &f.c, spell } { continue }
             let row = rules::get_spell{ tables = w.rules, row = spell } ifnull { continue }
-            if not row.valid or row.user_type != 1 or row.hostile { continue }
-            if not items::is_self_ability{ w, spell } { continue }
-            let icon = twoda::get_string{ t, row = r - 1, column = "iconresref" } ifnull { continue }
-            let reason = power_reason{ w, f, spell, alive }
+            if not row.valid or row.user_type != 1 or row.line_friendly < 0 or row.line_friendly >= 8 { continue }
+            let line = @as(usize, row.line_friendly)
+            if row.priority > best_pri[line] {
+                best_pri[line] = row.priority
+                best_row[line] = spell
+            }
+        }
+        let mut line: usize = 0
+        while line < 8 {
+            let spell = best_row[line]
+            line = line + 1
+            if spell < 0 { continue }
+            let row = rules::get_spell{ tables = w.rules, row = spell } ifnull { continue }
+            let icon = twoda::get_string{ t, row = @as(usize, spell), column = "iconresref" } ifnull { continue }
+            let reason = hud::power_reason{ w, f, spell, alive }
             push{ sl = &out[0], id = @as(u32, spell), icon, strref = @as(u32, row.name), usable = reason == R_OK, reason }
         }
     }

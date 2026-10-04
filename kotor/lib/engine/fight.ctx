@@ -61,6 +61,10 @@ namespace fight {
 
     fn not_forced {} -> Forced { return Forced{ on = false, animation = NO_ROW, result = 0, damage = -1 } }
 
+    // A creature thrown back by a Force push or knocked down (fight_state.ctx): the slide and how
+    // long the fall, the lying and the get-up last.
+    struct Knock { active: bool, t_ms: i32, move_ms: i32, total_ms: i32, from: math::Vec3, to: math::Vec3 }
+
     // A creature's fighting state: the rules creature, its round, how long it stays in combat.
     struct Fighter {
         c: rules::Creature,
@@ -77,6 +81,7 @@ namespace fight {
         dying_ms: i32,                  // > 0: the die animation plays, then dead
         voice_ms: i32,                  // > 0: it has just grunted
         ready_ms: i32,                  // > 0: a cutscene attack was just made, so the weapon stays up
+        knock: Knock,
     }
 
     fn no_impact {} -> Impact {
@@ -92,7 +97,7 @@ namespace fight {
     fn new_fighter { heap: *mut heap::Heap } -> !*mut Fighter {
         let mut c: rules::Creature
         c.loaded_hp = -1
-        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0, voice_ms = 0, ready_ms = 0 }
+        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0, voice_ms = 0, ready_ms = 0, knock = no_knock{} }
         return try alloc::new(Fighter, heap::Heap){ realloc = heap::alloc, heap, value = f }
     }
 
@@ -292,7 +297,17 @@ namespace fight {
         } else if k == rules::ev::COMMANDABLE {
             o.commandable = e.a != 0
         } else if k == rules::ev::VISUAL_ON {
-            visual_effect{ &w, effect = e.a, target = id, source = e.who, position = math::vec3::zero{} }
+            // A duration visual stays until its effect leaves; the others play once.
+            if e.b == 0 and is_duration_visual{ w = &w, effect = e.a } { hold_visual{ &w, effect = e.a, target = id } }
+            else { visual_effect{ &w, effect = e.a, target = id, source = e.who, position = math::vec3::zero{} } }
+        } else if k == rules::ev::VISUAL_OFF {
+            outbox::post{ out = &w.out, note = outbox::Note::visual_release{ effect = e.a, target = id } }
+        } else if k == rules::ev::STATE {
+            state_changed{ &w, id, after = e.a, before = e.b }
+        } else if k == rules::ev::FORCE_PUSH {
+            push_creature{ &w, id }
+        } else if k == rules::ev::KNOCKDOWN {
+            knock_down{ &w, id }
         } else if k == rules::ev::FEEDBACK {
             if w.log.combat {
                 world::prefix{ w = &w }
@@ -982,6 +997,13 @@ namespace fight {
         let f = c.fighter ifnull { return }
         let dt = @as(i32, w.clock.dt * 1000.0)
         if dt <= 0 { return }
+        // The Force pool of a party member refills at 1 % a second out of combat and not at all in
+        // combat (regeneration.2da; rules.md 3.8: CSWSCreature::AIUpdate).
+        if f.loaded and not c.dead and f.c.stats.max_fp > 0 and f.c.fp < f.c.stats.max_fp {
+            f.c.party = party::is_member{ w = &w, id }
+            let gain = rules::regenerate_pools{ tables = w.rules, c = &f.c, dt_ms = dt, in_combat = c.in_combat, alive = o.hp > 0 }
+            if gain > 0 { o.hp = if o.hp + gain > o.hp_max { o.hp_max } else { o.hp + gain } }
+        }
         // The effects' timers (UpdateEffectList): regeneration, poison, expiry.
         if f.c.nfx > 0 and not c.dead {
             sync_flags{ w = &w, o, f }
@@ -998,6 +1020,11 @@ namespace fight {
             return
         }
         if c2.dead { return }
+        // Thrown or knocked down: nothing else moves the creature until it is up.
+        if f.knock.active {
+            step_knock{ &w, o = o2, c = c2, f, dt }
+            return
+        }
         // A downed party member lies still; update_party gets it up when the fight is over.
         sync_flags{ w = &w, o = o2, f }
         if f.c.down { return }
@@ -1023,6 +1050,12 @@ namespace fight {
         let o3 = world::object{ w = &w, id } ifnull { return }
         let c3 = obj::creature{ o = o3 } ifnull { return }
         if c3.dead { return }
+        // Held in a crowd-control state: its looping animation (a stunned creature keeps its stance).
+        if f.c.stats.state != 0 {
+            let row = state_row{ beast = is_beast{ w = &w, c = c3 }, state = f.c.stats.state }
+            if row >= 0 and row_of_animation{ id = o3.animation } != row { world::set_animation{ o = o3, id = animname::ROW_BASE + @as(u32, row), speed = 1.0 } }
+            if row >= 0 { return }
+        }
         // Combat state times out 8 s after the last hostile act.
         if f.combat_ms > 0 {
             f.combat_ms = f.combat_ms - dt
@@ -1106,6 +1139,14 @@ namespace fight {
         return false
     }
 
+    // The movement-rate factor the creature's speed effects give (Burst of Speed and the other
+    // hastes above 1, Slow and the speed decreases below; the rules clamp it to 0.125 .. 1.5).
+    fn speed_scale { o: *obj::Object } -> f32 {
+        let f = of{ o } ifnull { return 1.0 }
+        if not f.loaded { return 1.0 }
+        return f.c.stats.speed_factor
+    }
+
     // While a member is down, once 5 s pass with no hostile creature seeing any member (checked
     // once a second), every downed member gets up with 1 hit point (a RESURRECTION effect). The
     // whole party down is the end of the game (play's party_fallen).
@@ -1162,13 +1203,20 @@ namespace fight {
 
     // ---- Force powers (actions.md 3.13, rules.md "Force powers")
 
-    // The approximate range of a spells.2da range letter (ranges.2da's spell rows).
-    fn spell_range { w: *world::World, spell: i32 } -> f32 {
+    // CSWSCreature::GetSpellRange (actions.md 3.13): ranges.2da's PrimaryRange of the spell's Range
+    // letter (P and T touch 2.25, S 10, M 15, L 28, W the short weapon range) plus the caster's
+    // personal space and the target's, each less 0.1.
+    fn spell_range { w: *world::World, spell: i32, caster: *obj::Object, target: u32 } -> f32 {
         let r = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "range" } ifnull ""
-        if r.len == 0 { return 2.25 }
-        let row: usize = if r[0] == 'P' { 0 } else if r[0] == 'T' { 1 } else if r[0] == 'S' { 2 } else if r[0] == 'M' { 3 } else if r[0] == 'L' { 4 } else { 2 }
-        let v = twoda::get_float{ t = w.tables.ranges, row, column = "primaryrange" } ifnull 10.0
-        return if v < 2.25 { 2.25 } else { v }
+        let row: usize = if r.len == 0 { 1 } else if r[0] == 'P' or r[0] == 'T' { 1 } else if r[0] == 'S' { 2 } else if r[0] == 'M' { 3 } else if r[0] == 'L' { 4 } else if r[0] == 'W' { 5 } else { 2 }
+        let base = twoda::get_float{ t = w.tables.ranges, row, column = "primaryrange" } ifnull 10.0
+        let mut mine: f32 = 0.0
+        if obj::creature{ o = caster } is some{ value = c } { mine = c.perspace - 0.1 }
+        let mut theirs: f32 = 0.0
+        if world::object{ w, id = target } is some{ value = t } {
+            if obj::creature{ o = t } is some{ value = tc } { theirs = tc.perspace - 0.1 }
+        }
+        return base + mine + theirs
     }
 
     // The animation rows of a spells.2da conjure or cast animation name (ours: the client's
@@ -1182,9 +1230,13 @@ namespace fight {
         return if looping { 63 } else { 62 }
     }
 
-    // CASTSPELL (0xf): params 0 spell, 1 target, 2 location, 3 cheat, 4 instant, 5 feat talent,
-    // 6 item. Approach to the power's range, pay (begin_cast), conjure, cast; at the end of the
-    // cast the impact script runs as the caster with the spell context set; then the catch time.
+    // CASTSPELL (0xf, actions.md 3.13): params 0 spell, 1 target, 2 location, 3 cheat, 4 instant,
+    // 5 feat talent, 6 item. Walks into the power's range, faces the target and conjures (phase 1,
+    // `conj` ms). At the end of the conjuration the Force points are paid (item and feat talents pay
+    // nothing; an entangled caster loses them and the cast breaks), the cast animation starts and
+    // the impact script runs at once: nothing of the Force powers flies (spells.2da Proj is 0 for
+    // them; only grenades have a flight), so the effect lands at that moment and the cast animation
+    // plays out after it (phase 2, `cast` ms), then the catch time (phase 3).
     fn cast_spell { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut actions::Action } -> actions::Status {
         let o = world::object{ w = &w, id } ifnull { return actions::Status::failed }
         let spell = actions::int_param{ a, i = 0 }
@@ -1195,10 +1247,11 @@ namespace fight {
             at = t.position
         }
         let now = clock::now_ms{ c = w.clock }
+        let free = actions::int_param{ a, i = 3 } != 0 or actions::int_param{ a, i = 5 } != 0 or actions::object_param{ a, i = 6 } != obj::INVALID
         if a.phase == 0 {
             // In range first (creatures walk; others cast from where they are).
             if o.kind == obj::Kind::creature and target != id {
-                let range = spell_range{ w = &w, spell }
+                let range = spell_range{ w = &w, spell, caster = o, target }
                 if doors::distance_2d{ a = o.position, b = at } > range + 0.5 {
                     if a.serial > 0 and a.started + 20000 < now { return actions::Status::failed }
                     let mut copy = a.*
@@ -1215,24 +1268,23 @@ namespace fight {
                     return actions::Status::done
                 }
             }
-            // Pay (PayForcePowerCost): not for a cheat, a feat's power or an item's.
-            let free = actions::int_param{ a, i = 3 } != 0 or actions::int_param{ a, i = 5 } != 0 or actions::object_param{ a, i = 6 } != obj::INVALID
+            // The action fails at once when the caster is dead or its equipment forbids the power
+            // (the Force points are paid later, at the end of the conjuration).
             if of{ o } is some{ value = f } {
                 sync_flags{ w = &w, o, f }
                 let alive = if obj::creature{ o } is some{ value = c } { not c.dead } else { true }
-                let start = rules::begin_cast{ tables = w.rules, c = &f.c, spell, alive, from_item = free }
-                if start.reason != rules::cast::OK and start.reason != rules::cast::ENTANGLED {
+                let reason = rules::can_cast_spell{ tables = w.rules, c = &f.c, spell, alive, from_item = free }
+                if reason != rules::cast::OK and reason != rules::cast::ENTANGLED {
                     if w.log.combat {
                         world::prefix{ w = &w }
-                        _ = @fmt(&w.io, "{} cannot cast {}: reason {}\n", id, spell, start.reason)
+                        _ = @fmt(&w.io, "{} cannot cast {}: reason {}\n", id, spell, reason)
                     }
                     return actions::Status::failed
                 }
-                if start.interrupted { return actions::Status::failed }
             }
-            // An item's ability spends one of the item's uses as the cast begins.
+            // An item's ability needs the item (it is spent at the impact, below).
             let used = actions::object_param{ a, i = 6 }
-            if used != obj::INVALID { rt_item::spend_use{ &w, item = used, spell } }
+            if used != obj::INVALID and not world::is_valid{ w = &w, id = used } { return actions::Status::failed }
             let dir = math::vec3::sub{ a = at, b = o.position }
             if dir.x * dir.x + dir.y * dir.y > 0.0001 { world::set_orientation{ o, v = math::Vec3{ x = dir.x, y = dir.y, z = 0.0 } } }
             if obj::creature{ o } is some{ value = c } {
@@ -1247,46 +1299,129 @@ namespace fight {
                 }
                 c.last_force_power = spell
             }
-            let conj = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "conjanim" } ifnull ""
-            play_row{ &w, o, row = cast_row{ name = conj, looping = true } }
+            if used != obj::INVALID {
+                play_item_use{ &w, o, item = used, near = doors::distance_2d{ a = o.position, b = at } < 10.0 }
+            } else {
+                let conj = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "conjanim" } ifnull ""
+                play_row{ &w, o, row = cast_row{ name = conj, looping = true } }
+            }
             spell_visuals{ &w, id, spell, cast = false }
             a.phase = 1
             a.started = now
             if w.log.combat {
                 world::prefix{ w = &w }
-                _ = @fmt(&w.io, "{} casts {} at {}\n", id, spell, target)
+                _ = @fmt(&w.io, "{} conjures {} at {}\n", id, spell, target)
             }
         }
         let times = rules::spell_phase_times{ tables = w.rules, spell }
         let instant = actions::int_param{ a, i = 4 } != 0
-        let conj_ms = if instant { 0 } else { @as(u64, @as(u32, if times.conj_ms > 0 { times.conj_ms } else { 0 })) }
-        let cast_ms = if instant { 0 } else { @as(u64, @as(u32, if times.cast_ms > 0 { times.cast_ms } else { 0 })) }
-        let catch_ms = if instant { 0 } else { @as(u64, @as(u32, if times.catch_ms > 0 { times.catch_ms } else { 0 })) }
+        // An item's ability has its own timing by kind of item (actions.md 3.13, ITEMCASTSPELL): the
+        // impact lands part way through a 1.5 s action, and the item's use is spent with it.
+        let used_item = actions::object_param{ a, i = 6 }
+        let by_item = used_item != obj::INVALID
+        let item_ms = item_cast_ms{ w = &w, item = used_item, near = doors::distance_2d{ a = o.position, b = at } < 10.0 }
+        let conj_ms = if instant or by_item { 0 } else { @as(u64, @as(u32, if times.conj_ms > 0 { times.conj_ms } else { 0 })) }
+        let cast_ms = if instant { 0 } else if by_item { item_ms.impact } else { @as(u64, @as(u32, if times.cast_ms > 0 { times.cast_ms } else { 0 })) }
+        let catch_ms = if instant { 0 } else if by_item { item_ms.total - item_ms.impact } else { @as(u64, @as(u32, if times.catch_ms > 0 { times.catch_ms } else { 0 })) }
         let elapsed = clock::elapsed_since{ now, then = a.started }
         if a.phase == 1 {
             if elapsed < conj_ms { return actions::Status::running }
-            let anim = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "castanim" } ifnull ""
-            let back = world::object{ w = &w, id } ifnull { return actions::Status::failed }
-            play_row{ &w, o = back, row = cast_row{ name = anim, looping = false } }
+            // The first frame past the conjuration: pay, then cast and let the power land.
+            if of{ o } is some{ value = f } {
+                sync_flags{ w = &w, o, f }
+                let alive = if obj::creature{ o } is some{ value = c } { not c.dead } else { true }
+                let start = rules::begin_cast{ tables = w.rules, c = &f.c, spell, alive, from_item = free }
+                if start.reason != rules::cast::OK and start.reason != rules::cast::ENTANGLED {
+                    if w.log.combat {
+                        world::prefix{ w = &w }
+                        _ = @fmt(&w.io, "{} cannot pay for {}: reason {}\n", id, spell, start.reason)
+                    }
+                    return actions::Status::failed
+                }
+                if w.log.combat and start.paid {
+                    world::prefix{ w = &w }
+                    _ = @fmt(&w.io, "{} pays {} Force points for {} ({} left)\n", id, rules::force_point_cost{ tables = w.rules, c = &f.c, spell }, spell, f.c.fp)
+                }
+                if start.interrupted { return actions::Status::failed }
+            }
+            if not by_item {
+                let anim = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "castanim" } ifnull ""
+                let back = world::object{ w = &w, id } ifnull { return actions::Status::failed }
+                play_row{ &w, o = back, row = cast_row{ name = anim, looping = false } }
+            }
             spell_visuals{ &w, id, spell, cast = true }
+            if w.log.combat {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "{} casts {} at {}\n", id, spell, target)
+            }
+            // A Force power lands as the cast animation starts (an item's ability a moment later, below).
+            if not by_item { impact{ &w, &vm, engine, id, spell, target, at } }
             a.phase = 2
         }
         if a.phase == 2 {
             if elapsed < conj_ms + cast_ms { return actions::Status::running }
-            impact{ &w, &vm, engine, id, spell, target, at }
+            if by_item {
+                impact{ &w, &vm, engine, id, spell, target, at }
+                rt_item::spend_use{ &w, item = used_item, spell }
+            }
             a.phase = 3
         }
         if elapsed < conj_ms + cast_ms + catch_ms { return actions::Status::running }
-        // The cast was a combat round: OnEndRound gets the AI's next move.
+        // The cast was a combat round: OnEndRound gets the AI's next move; the player's own
+        // creature goes on with the fight.
         if world::object{ w = &w, id } is some{ value = done_o } {
             if obj::creature{ o = done_o } is some{ value = c } {
                 if c.in_combat and not c.dead and id != w.pc {
                     events::post{ &w, delay_ms = 0, caller = id, target = id, payload = events::Payload::script{ e = events::script_event{ kind = events::END_COMBAT_ROUND, object = target } } }
                 }
                 if c.in_combat { play_ready{ &w, o = done_o, c } } else { world::set_animation{ o = done_o, id = obj::ANIM_STAND, speed = 1.0 } }
+                if id == party::leader{ w = &w } and done_o.actions.len == 0 and is_live_enemy{ w = &w, who = done_o, target } {
+                    resume_attack{ &w, id, target }
+                }
             }
         }
         return actions::Status::done
+    }
+
+    // Whether `target` is a live creature hostile to `who`.
+    fn is_live_enemy { w: *world::World, who: *obj::Object, target: u32 } -> bool {
+        let t = world::object{ w, id = target } ifnull { return false }
+        let tc = obj::creature{ o = t } ifnull { return false }
+        if tc.dead { return false }
+        if tc.fighter is some{ value = tf } { if tf.c.down { return false } }
+        return world::standing{ w, from = who.faction, toward = t.faction } <= 10
+    }
+
+    // After a cast the player's creature turns back to the fight (the original's client keeps an
+    // attack on the target going; ours: the combat round of the cast ends, then the attack).
+    fn resume_attack { mut w: world::World, id: u32, target: u32 } {
+        let mut a = actions::make{ kind = actions::Kind::attack_object }
+        a.params[0] = actions::Param::object{ id = target }
+        _ = actions::add{ &w, id, action = a, force = false }
+    }
+
+    struct ItemTimes { impact: u64, total: u64 }
+
+    // When an item's ability lands and when its action ends, by the base item's ItemType (actions.md 3.13,
+    // AIActionItemCastSpell): grenades 700 ms (800 when thrown from 10 m or more) of 1.5 s, droid utility
+    // devices 300 of 1.5 s, forearm shields 600 of 1 s, stims, repair kits and medpacs 750 of 1.5 s, the
+    // squad recovery kit 750 of 1.5 s; the rest land at once.
+    fn item_cast_ms { w: *world::World, item: u32, near: bool } -> ItemTimes {
+        let kind = rt_item::item_type_of{ w, id = item }
+        if kind == 6 { return ItemTimes{ impact = if near { 700 } else { 800 }, total = 1500 } }
+        if kind == 12 { return ItemTimes{ impact = 300, total = 1500 } }
+        if kind == 20 { return ItemTimes{ impact = 600, total = 1000 } }
+        if kind == 25 or kind == 26 or kind == 45 or kind == 47 { return ItemTimes{ impact = 750, total = 1500 } }
+        return ItemTimes{ impact = 1, total = 1500 }
+    }
+
+    // The animation of using an item: the injection for stims, repair kits and medpacs, the throw
+    // for a grenade (the short one from under 10 m), the device's activation for the rest.
+    fn play_item_use { mut w: world::World, o: *mut obj::Object, item: u32, near: bool } {
+        let kind = rt_item::item_type_of{ w = &w, id = item }
+        if kind == 6 { play_row{ &w, o, row = if near { 57 } else { 58 } }; return }
+        if kind == 25 or kind == 26 or kind == 45 { world::set_animation{ o, id = 10070, speed = 1.0 }; return }
+        world::set_animation{ o, id = 10127, speed = 1.0 }
     }
 
     // The impact: the power's script (spells.2da impactscript) as the caster, with the spell

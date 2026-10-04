@@ -105,4 +105,23 @@ echo
 echo "| Module | ms per loop pass | slowest pass ms | wall s |"
 echo "|---|--:|--:|--:|"
 sort -t "$tab" -k10,10nr "$tmp" | head -8 | awk -F "$tab" '{ printf "| %s | %.2f | %.0f | %s |\n", $1, $10, $12, $11 }'
+
+# The textures the scene asked for and the install does not have (the run prints one `texture missing: NAME (WHAT)` each).
+if grep -a -q '^texture missing: ' "$out"/*.log 2>/dev/null; then
+  echo
+  echo "## Missing textures"
+  echo
+  echo "None of these is a lookup bug: \`resls --module M --texture NAME\` finds no TPC or TGA of the name in any container the module sees, and the whole texture extraction (the three quality packs, the GUI pack, patch, every BIF) holds no file of that name either. They are references the data makes to textures it does not ship, and the original skips them the same way (nothing is drawn with it). A mesh flagged lightmapped whose lightmap is missing is drawn lit by the dynamic lights, as the original's draw-path choice does (0x00470d30 drops the lightmap path when the lightmap texture is not usable)."
+  echo
+  echo "- **lightmap**: stale lightmap names of the form \`mNNxx_NN_aNNNNN\` on a few meshes of room and door models (the neighbouring meshes of the same room name \`..._lm0\`); \`dor_lhr02_a00004\` is a mesh of the Endar Spire's door model."
+  echo "- **diffuse**: typos in cutscene stunt models (\`m13aa_c01_char*\` of danm13, \`m41ad_c01_char*\` of unk_m41ad, reused by STUNT_56a and STUNT_57): \`p_BastillaH01\` (the real head is \`p_bastilah04\`), \`PHeyea\`, \`h_f_lo01headtest\` (a TXI without an image), \`w_Vbroswrd01\` (the real texture is \`w_vbroswrd_001\`)."
+  echo "- **environment map**: \`mycubemap\`, named by \`mgf_glass01\`'s TXI (its sibling \`lts_win01\` names the existing \`CM_mycubemap\`)."
+  echo "- **particle texture**: \`fxp_aurabesh01\`, an emitter of the Ebon Hawk turret minigame (M12ab) and the cutscenes that lead to it."
+  echo
+  echo "| Texture | Asked for as | Modules |"
+  echo "|---|---|---|"
+  grep -a -H '^texture missing: ' "$out"/*.log | sed -n 's|^.*/\([^/]*\)\.log:texture missing: \(.*\) (\(.*\))$|\2\t\3\t\1|p' | sort -u | awk -F "$tab" '
+    { key = $1 "\t" $2; if (key != last) { if (last != "") print line; split(key, k, "\t"); line = "| `" k[1] "` | " (k[2] == "" ? "an emitter" : k[2]) " | " $3; last = key } else line = line ", " $3 }
+    END { if (last != "") print line }' | sed 's/$/ |/'
+fi
 rm -f "$tmp" "$tmp.unsorted"

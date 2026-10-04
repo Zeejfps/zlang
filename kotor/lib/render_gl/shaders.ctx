@@ -83,7 +83,7 @@ namespace glsl {
 
     // u_maps: diffuse, lightmap, envmap (1 cube, 2 sphere), bumpmap.
     // u_mode: blend (0 opaque, 1 punch, 2 alpha, 3 additive, 4 alpha_depth), lit, fog, shadow.
-    const SCENE_FS: [102]c::String = [
+    const SCENE_FS: [105]c::String = [
         "#version 410 core\n",
         "layout(std140) uniform Frame {\n",
         "    mat4 u_view_proj;\n",
@@ -171,11 +171,17 @@ namespace glsl {
         "            env = texture(u_envsphere, e.xy / m + 0.5).rgb;\n",
         "        }\n",
         "        float amount = u_selfillum.a;\n",
-        // Opaque surfaces keep their diffuse alpha as the reflection mask: less alpha, more shine.
-        "        if (u_mode.x <= 1) {\n",
-        "            amount *= 1.0 - tex.a;\n",
+        // On an opaque surface the diffuse alpha is the reflection mask (re/render-gui.md, "Environment
+        // maps"): a lightmapped surface adds the reflection where alpha is low; any other surface
+        // (creatures, placeables) blends lit diffuse and reflection by alpha, so a low-alpha armour
+        // plate shows the dark environment, not the light diffuse plus a mirror.
+        "        if (u_mode.x > 1) {\n",
+        "            rgb += env * amount;\n",
+        "        } else if (u_maps.y == 1) {\n",
+        "            rgb += env * (amount * (1.0 - tex.a));\n",
+        "        } else {\n",
+        "            rgb = mix(env * amount, rgb, tex.a);\n",
         "        }\n",
-        "        rgb += env * amount;\n",
         "    }\n",
         "    if (u_mode.x <= 1) {\n",
         "        alpha = 1.0;\n",
