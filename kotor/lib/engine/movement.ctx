@@ -24,6 +24,7 @@ namespace movement {
         c.path_next = 0
         c.moving = false
         c.speed = 0.0
+        c.follow_speed = 0.0
     }
 
     // MOVETOPOINT (actions.md 3.1): params 0 the point, 1 run (int), 2 range, 3 the target object
@@ -83,21 +84,39 @@ namespace movement {
         c.moving = true
         let scale = fight::speed_scale{ o }
         let rate = (if run { c.run_rate } else { c.walk_rate }) * scale
-        // Acceleration and braking (movement.md 3.3): f rises to 1 over a second, and falls with
-        // the square root of what is left over the last half second's worth of path.
-        let left = remaining{ from = o.position, path = list::items{ list = c.path }, next = c.path_next } - range
-        let brake = 0.5 * rate
-        let mut f: f32 = 1.0
-        if left < brake {
-            f = if left / brake < 0.01 { 0.1 } else { math::sqrtf{ x = math::max{ a = left, b = 0.0 } / brake } }
-            f = f - dt_ms / 1000.0
+        // A party member following the leader (FOLLOWLEADER, movement.md 6.2) sets its own pace each frame:
+        // no acceleration ramp, no braking, and the gait follows the pace.
+        let follower = actions::int_param{ a, i = 5 } != 0 and target != obj::INVALID
+        let mut pace = Pace{ speed = 0.0, base = 0.0 }
+        let mut s: f32 = 0.0
+        if follower {
+            let lead = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
+            let mut lead_speed: f32 = 0.0
+            if obj::creature{ o = lead } is some{ value = lc } { lead_speed = lc.speed }
+            let to_go = math::max{ a = remaining{ from = o.position, path = list::items{ list = c.path }, next = c.path_next } - range, b = 0.0 }
+            pace = follow_pace{ c, lead_speed, to_go, scale }
+            if stealth::walk_only{ c } {
+                pace.speed = math::min{ a = pace.speed, b = c.walk_rate * scale }
+                pace.base = math::min{ a = pace.base, b = c.walk_rate * scale }
+            }
+            s = pace.speed * dt_ms / 1000.0
+        } else {
+            // Acceleration and braking (movement.md 3.3): f rises to 1 over a second, and falls with
+            // the square root of what is left over the last half second's worth of path.
+            let left = remaining{ from = o.position, path = list::items{ list = c.path }, next = c.path_next } - range
+            let brake = 0.5 * rate
+            let mut f: f32 = 1.0
+            if left < brake {
+                f = if left / brake < 0.01 { 0.1 } else { math::sqrtf{ x = math::max{ a = left, b = 0.0 } / brake } }
+                f = f - dt_ms / 1000.0
+            }
+            if c.speed_factor < 1.0 { f = math::min{ a = f, b = c.speed_factor + dt_ms / 1000.0 } }
+            f = math::max{ a = f, b = 0.1 }
+            s = dt_ms * (f + c.speed_factor) * rate * 0.5 / 1000.0
+            c.speed_factor = f
+            c.speed = s / (dt_ms / 1000.0)
+            world::set_gait{ o, id = if run { obj::ANIM_RUN } else { obj::ANIM_WALK }, cycles = gait_cycles{ w = &w, c, run, speed = c.speed, drive = false } }
         }
-        if c.speed_factor < 1.0 { f = math::min{ a = f, b = c.speed_factor + dt_ms / 1000.0 } }
-        f = math::max{ a = f, b = 0.1 }
-        let mut s = dt_ms * (f + c.speed_factor) * rate * 0.5 / 1000.0
-        c.speed_factor = f
-        c.speed = s / (dt_ms / 1000.0)
-        world::set_gait{ o, id = if run { obj::ANIM_RUN } else { obj::ANIM_WALK }, cycles = gait_cycles{ w = &w, c, run, speed = c.speed } }
         // Along the path's points (StepAlongPath, movement.md 3.4).
         let from = o.position
         let mut here = o.position
@@ -166,7 +185,58 @@ namespace movement {
         }
         world::set_position{ o, p = here }
         cross_volumes{ &w, id, from, to = here }
+        if follower { settle_follow_gait{ &w, o, c, moved = distance_2d{ a = from, b = here }, dt = dt_ms / 1000.0, pace, scale } }
         return actions::Status::running
+    }
+
+    // The pace of a party member following the leader (CSWSCreature::UpdateFollowLeader, movement.md 6.2). `to_go` is
+    // how far the member still has to walk to where it will stand (the original's distance from its place
+    // on the leader's trail to the follow point; ours: the path to the leader less the follow range).
+    // Far (4 m): run after a standing leader, or at the leader's own speed if that is more than the
+    // run rate. Near: the leader's speed while it moves; while it stands, whatever pace the member
+    // has, at least 0.9 of the walk rate. Then by the distance: under 1 m it slows to 0.9, up to 15 m it
+    // hurries at 1.2, beyond that 1.5. `base` is the pace before that factor: the smoothed speed (and so
+    // the animation) never exceeds it.
+    struct Pace { speed: f32, base: f32 }
+
+    const FOLLOW_CATCH_UP: f32 = 4.0
+
+    fn follow_pace { c: *obj::Creature, lead_speed: f32, to_go: f32, scale: f32 } -> Pace {
+        let run = c.run_rate * scale
+        let walk = c.walk_rate * scale
+        let moving = lead_speed > 0.1
+        let mut base: f32 = 0.0
+        if to_go >= FOLLOW_CATCH_UP {
+            base = if moving { math::max{ a = lead_speed, b = run } } else { run }
+        } else if moving {
+            base = lead_speed
+        } else {
+            base = if c.follow_speed <= walk * 0.9 { walk * 0.9 } else { c.follow_speed }
+        }
+        let factor: f32 = if to_go * to_go <= 1.0 { 0.9 } else if to_go * to_go <= 225.0 { 1.2 } else { 1.5 }
+        return Pace{ speed = base * factor, base }
+    }
+
+    // After a follower's step: its smoothed speed (the mean of the speed it just made and the last one,
+    // 0 under 1 cm/s, never above the pace's base) picks the cycle: walk below 0.6 of the run rate, run from
+    // there (CSWCCreature's party follower animation, movement.md 3.6); the cycle plays at that speed
+    // over the appearance's DriveAnimWalk or DriveAnimRun.
+    fn settle_follow_gait { mut w: world::World, o: *mut obj::Object, c: *mut obj::Creature, moved: f32, dt: f32, pace: Pace, scale: f32 } {
+        let made = moved / dt
+        c.speed = made
+        let mut smooth = if made > 0.0000001 { (c.follow_speed + made) * 0.5 } else { made }
+        if smooth < 0.01 { smooth = 0.0 }
+        smooth = math::min{ a = smooth, b = pace.base }
+        c.follow_speed = smooth
+        if smooth <= 0.0 {
+            world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
+            return
+        }
+        // A 5 % band round the line (ours): a follower whose pace flips between 0.9 and 1.2 of the leader's, right on
+        // the line, would otherwise change cycles every other frame.
+        let line = c.run_rate * scale * 0.6 * (if o.animation == obj::ANIM_RUN { 0.95 } else { 1.05 })
+        let run = smooth >= line and not stealth::walk_only{ c }
+        world::set_gait{ o, id = if run { obj::ANIM_RUN } else { obj::ANIM_WALK }, cycles = gait_cycles{ w = &w, c, run, speed = smooth, drive = true } }
     }
 
     // A step that a closed door's walkmesh stopped: the nearest closed door within reach of the
@@ -206,8 +276,15 @@ namespace movement {
     // the cycle plays at speed / dist cycles a second (CSWCCreature::UpdateMovementAnimation,
     // movement.md 3.6). The playback rate is that times the cycle's length, which the scene knows
     // (visual::cycle_rate); 0 when the appearance has no distance.
-    fn gait_cycles { w: *world::World, c: *obj::Creature, run: bool, speed: f32 } -> f32 {
-        let dist = twoda::get_float{ t = w.tables.appearance, row = @as(usize, c.appearance), column = if run { "rundist" } else { "walkdist" } } ifnull 0.0
+    //
+    // A creature that something drives by its speed (the leader under the keys, a follower: `drive`) plays
+    // the cycle over the appearance's DriveAnimWalk or DriveAnimRun, which are 2 and 4 when the row has
+    // none; one that walks a planned path (MOVETOPOINT), over WALKDIST or RUNDIST. The rows say the same
+    // for the humanoids; they differ for the Envirosuit (0.75 and 1.25 against 1.2 and 2.3).
+    fn gait_cycles { w: *world::World, c: *obj::Creature, run: bool, speed: f32, drive: bool } -> f32 {
+        let row = @as(usize, if c.disguise != 0 { c.disguise } else { c.appearance })
+        let mut dist = twoda::get_float{ t = w.tables.appearance, row, column = if drive { if run { "driveanimrun" } else { "driveanimwalk" } } else { if run { "rundist" } else { "walkdist" } } } ifnull 0.0
+        if drive and dist == 0.0 { dist = if run { 4.0 } else { 2.0 } }
         if dist < 0.1 { return 0.0 }
         return speed / dist
     }
