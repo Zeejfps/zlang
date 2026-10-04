@@ -1,0 +1,19 @@
+# Korriban, part 23: the three swords from the sarcophagus (Get Items), the statue (k37_statue: "[The notched steel sword.]" is the riddle's
+# blade) and the spirit's thanks; the Jedi urges him back to the light side ("[Persuade] I don't believe the light side would turn you away").
+# From the checkpoint "ajunta".
+5 ui replies ~notched_steel ~no_need_to_remain ~return_to_the_light ~[Persuade]_I_don default 1
+10 warp kor37_sithsarc party
+50 hoveron kor37_sithsarc
+53 mouse click
+56 mouse click
+400 ui click 640 452
+500 ui inv
+600 warp k37_statue party
+650 hoveron k37_statue
+653 mouse click
+656 mouse click
+1200 warpxy 139,23 party
+2300 ui journal list
+2300 ui rules
+2300 ui inv
+2310 save sword

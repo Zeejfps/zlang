@@ -1,0 +1,29 @@
+# Tatooine, part 20: off the planet on the Ebon Hawk (checkpoint "hawk", the party alone at the ramp): to the galaxy map (the console GalaxyMap; the first approach
+# starts ebo_galcam and Bastila's vision, ebo_bast_vision), Kashyyyk picked on the map and Travel clicked (k_sup_galaxymap: the vision's flight cut scene stunt_00,
+# back in the Hawk, a second vision), then down the ramp: the exit trigger asks which two companions come (k_pebn_leavhawk, the party screen: Bastila and HK-47)
+# and k_pebn_exithawk starts kas_m22aa at the Hawk's pad. K_KOTOR_MASTER (20, where Dantooine leaves the plot: the galaxy map then offers Tatooine, Kashyyyk, Manaan and Korriban) and K_CURRENT_PLANET (35, Tatooine)
+# are set here, not in part 1: with K_KOTOR_MASTER 20 the companions ask to be talked to on the pad and all along the chain.
+#   LOAD=kotor/out/tat_cp/hawk sh kotor/tools/playthrough/tatooine/run.sh travel kotor/tools/playthrough/tatooine/20_travel.txt 8000 3950:map 4050:picked
+4 ui heal
+5 ui replies default 1
+6 ui global K_KOTOR_MASTER 20
+6 ui global K_CURRENT_PLANET 35
+20 ui goto GalaxyMap
+1300 use GalaxyMap
+3850 use GalaxyMap
+3900 ui pos
+# the map's buttons, as a player clicks them: the planet, then Travel
+4000 ui clickctl LBL_Planet_Kashyyyk
+4100 ui clickctl BTN_ACCEPT
+# the ramp; the exit trigger opens the party screen
+6000 ui bot unlock on
+6000 ui bot god on
+6000 ui bot route K_EBN_RAMP_ENTRANCE 66.6,51.2
+6001 ui bot on
+6650 ui click 417 271
+6670 ui click 417 359
+6690 ui party
+6700 ui click 640 545
+7500 ui pos
+7500 ui party
+7500 ui globals K_

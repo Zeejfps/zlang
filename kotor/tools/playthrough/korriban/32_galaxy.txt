@@ -1,0 +1,10 @@
+# Korriban, part 32: on the Ebon Hawk, the galaxy map (the console "galaxymap"): the worlds the Star Maps unlock (the crafted start of
+# part 1 set the planet flags the story's scripts would have set: Dantooine, Tatooine, Kashyyyk, Manaan, Korriban). With the fourth Star Map
+# in the bag (K_STAR_MAP 40) the next flight is the Leviathan's capture of the Hawk (k_sup_galaxymap): Manaan is picked, "Travel", the
+# take-off cut scene (stunt_16), the Hawk captured (ebo_m40aa) and Carth's talk about Saul Karath. From the checkpoint "hawk".
+10 warp galaxymap party
+50 hoveron galaxymap
+53 mouse click
+56 mouse click
+700 ui clickctl LBL_Planet_Manaan
+800 ui clickctl BTN_ACCEPT

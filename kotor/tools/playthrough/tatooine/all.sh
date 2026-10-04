@@ -35,3 +35,11 @@ step 9  09_peace.txt   19100 vapors    peace
 step 10 10_krayt.txt   5700  peace     east
 step 11 11_komad.txt   13100 east      komad1
 step 12 12_fodder.txt  5600  komad1    fodder
+step 13 13_bantha.txt  7100  fodder  komad2
+step 14 14_herd.txt    9000  komad2  herd
+step 15 15_lead.txt    3300  herd    dragon
+step 16 16_cave.txt    3100  dragon  starmap
+step 17 17_calo.txt    6100  starmap calo
+step 18 18_back.txt    9100  calo    czerka
+step 19 19_hawk.txt    1000  czerka  hawk
+step 20 20_travel.txt  8000  hawk    kas_arrival

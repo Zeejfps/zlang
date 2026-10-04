@@ -17,6 +17,8 @@
 180 ui click 640 452
 190 ui loot #964
 210 ui click 640 452
+212 hush
+216 ui close
 220 ui bag
 # the inventory screen: the Sand People Clothing row (one click uses it)
 # the equip screen: the body slot lists what fits; the Sand People Clothing goes on

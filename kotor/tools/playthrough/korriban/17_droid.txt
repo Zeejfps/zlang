@@ -1,0 +1,16 @@
+# Korriban, part 17: the second tomb (korr_m38aa), where the rogue Sith assassin droid has holed up (kor38_roguedroid). From the
+# checkpoint "valley". The war droids along the corridor (x 0 to 164, mines and rockfalls) are fought by the test bot on its route, in
+# god mode (a level 14 party without a player's healing dies to the Mark IV droids and the assassin droid, as the game-over box shows
+# when the bot is not in god mode). The droid's talk: "You are... the 'master'...?", then "I don't appreciate being attacked. Time to die,
+# droid." (the quest's destroy outcome, journal kor38_roguedroid 30; the peaceful way is a long repair puzzle in the same talk).
+5 ui replies ~master ~Time_to_die default 1
+10 warp kor36_kor38a party
+30 use kor36_kor38a
+200 ui bot god on
+200 ui bot unlock on
+200 ui bot route 30,75 60,75 90,75 120,74 143,75
+201 ui bot on
+6000 ui pos
+9000 ui journal list
+9000 ui rules
+9010 save droid

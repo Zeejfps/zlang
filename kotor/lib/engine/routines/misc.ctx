@@ -733,25 +733,13 @@ namespace rt_misc {
     }
 
     // void SurrenderToEnemies() and void ActionSurrenderToEnemies(): a creature (never the
-    // player) stops the fight for itself and every creature within 10 m: combat flags and queues
-    // cleared. The enemies' attitude toward it stays the factions' business.
+    // player) stops the fight for itself and every enemy of it within 250 m, their effects come
+    // off, and it joins the faction that everybody counts neutral (fight::surrender).
     fn surrender_to_enemies { mut w: world::World, mut vm: nwvm::Vm } -> ! {
         let me = world::object{ w = &w, id = nwvm::self_object{ vm } } ifnull { return }
         let c = obj::creature{ o = me } ifnull { return }
         if c.is_pc or me.id == w.pc { return }
-        let all = list::items{ list = w.objects.all }
-        let mut i: usize = 0
-        while i < all.len {
-            let o = all[i]
-            i = i + 1
-            if o.destroyed or o.kind != obj::Kind::creature or o.area != me.area { continue }
-            if math::vec3::distance{ a = o.position, b = me.position } > 10.0 { continue }
-            let oc = obj::creature{ o } ifnull { continue }
-            oc.in_combat = false
-            oc.attack_target = obj::INVALID
-            oc.attempted_target = obj::INVALID
-            actions::clear_all{ &w, id = o.id }
-        }
+        fight::surrender{ &w, id = me.id, keep_own = false }
     }
 
     // ---- screens for the HUD

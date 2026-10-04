@@ -1,0 +1,14 @@
+# Korriban, part 9: back to the gate of the Academy Entrance with the medallion in the bag (k33_academyguard, k33_acg_medalion): the guard
+# takes the Jedi for a new student ("Yes. Today, in fact."), asks about the party ("They are my slaves.": Carth and Bastila answer, the
+# lines of the party members that are with the player), sends the player to Yuthura Ban in the cantina (journal kor33_enteracademy 46).
+# From the checkpoint "lashowe".
+5 ui replies ~Yes._Today ~They_are_my_slaves default 1
+8 ui rules
+10 warp kor33a_kor33b party
+30 use kor33a_kor33b
+450 warp k33_academyguard party
+500 ui target k33_academyguard
+505 ui key 1
+3500 ui journal list
+3500 ui globals kor
+3510 save guard2

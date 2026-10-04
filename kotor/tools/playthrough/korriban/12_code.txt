@@ -1,0 +1,14 @@
+# Korriban, part 12: Master Uthar Wynn's Code test (kor35_utharwynn, the hub "I know the Code of the Sith."): he speaks the Code and the
+# player finishes each line (Passion, Strength, Power, Victory, "...my chains are broken."), then a true/false question that the
+# script picks with Random: in the replay it is "there is nothing worse than love" (False); the other two are "it is our passion that
+# fuels the Force" (True) and one about victory proving superiority. A right answer is one prestige (k35_uth_prescode, KOR_SITH_PRESTIGE 1,
+# XP, journal Category000 30). From the checkpoint "yuthura".
+5 ui replies ~I_know_the_Code ~Passion ~Strength ~Power ~Victory ~chains_are_broken ~False ~on_my_way default 1
+8 ui rules
+10 warp kor35_utharwynn party
+50 ui target kor35_utharwynn
+55 ui key 1
+1500 ui rules
+1500 ui globals kor
+1500 ui journal list
+1510 save code

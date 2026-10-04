@@ -253,6 +253,9 @@ namespace save {
         try put_byte{ &b, owner = s, label = "Charges", v = @trunc(u8, i.charges) }
         try put_bool{ &b, owner = s, label = "Identified", v = i.identified }
         try put_bool{ &b, owner = s, label = "NonEquippable", v = i.non_equippable }
+        // Whether the item goes into its owner's body bag (gff-save.md "ItemList/Dropable"): without it every
+        // creature in a loaded game dies with its loot gone.
+        try put_bool{ &b, owner = s, label = "Dropable", v = i.droppable }
         // The rules' view of it: cost, flags, installed upgrades and every property.
         if i.rules is some{ value = ri } {
             try put_dword{ &b, owner = s, label = "Cost", v = bits{ v = ri.cost } }
@@ -319,6 +322,7 @@ namespace save {
         try put_dword{ &b, owner = s, label = "Appearance", v = p.appearance }
         try put_bool{ &b, owner = s, label = "Useable", v = p.useable }
         try put_bool{ &b, owner = s, label = "HasInventory", v = p.has_inventory }
+        try put_bool{ &b, owner = s, label = "DieWhenEmpty", v = p.die_when_empty }
         try put_bool{ &b, owner = s, label = "PartyInteract", v = p.party_interact }
         try put_bool{ &b, owner = s, label = "Static", v = p.static }
         try put_bool{ &b, owner = s, label = "Locked", v = p.locked }

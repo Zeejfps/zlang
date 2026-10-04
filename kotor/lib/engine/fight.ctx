@@ -2019,6 +2019,8 @@ namespace fight {
             p.appearance = @as(u32, look)
             p.useable = true
             p.has_inventory = true
+            // DieWhenEmpty = not corpse (party-items-saves.md 5.7): an emptied bag of loot goes away when closed.
+            p.die_when_empty = not corpse
             let model = twoda::get_string{ t = w.tables.placeables, row = @as(usize, look), column = "modelname" } ifnull ""
             p.model = resref::truncate{ name = model }
             k = 0

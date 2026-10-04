@@ -1,0 +1,24 @@
+# Kashyyyk, part 18: the duel in Chuundar's hall (checkpoint "duel", Chuundar attacking: k_pkas_chuundatk). Freyyr, Zaalbar and the party fight Chuundar,
+# his Wookiee guards and the Czerka mercenaries (the test player fights on its own: ui bot on, god mode); when the last one falls Freyyr talks to the party
+# (kas23_freyyr_01, k_pkas_fightdone, journal kas23_mainwookplot 150): Zaalbar's place at his side (he keeps his life-debt), the reward, and Bacca's Sword for
+# Zaalbar (k_pkas_givesword). A save when it is over ("hall").
+# From the checkpoint "duel" (CKPT=duel).
+3 ui stat hpmax 130
+3 ui stat hp 130
+# the replies in the order the lists open: Freyyr asks for the next business (only one reply), leave (the reward follows), Zaalbar asks for the sword
+5 ui replies 1 ~was_leaving ~That_would_be_fitting default 1
+10 ui bot god on
+10 ui bot on
+2600 ui journal list
+2600 ui party
+2600 ui xp
+2600 ui where kas23_
+# k_pkas_givesword makes Zaalbar selectable again and opens the party screen: Zaalbar and Jolee, OK
+5300 ui click 598 447
+5320 ui click 507 359
+5340 ui click 640 545
+5400 ui journal list
+5400 ui party
+5400 ui xp
+5400 ui inv
+5450 save hall

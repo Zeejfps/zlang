@@ -18,7 +18,7 @@
 170 ui bot god on
 170 ui bot unlock on
 # replies: the officer (gaffi sticks, goodbye); the store manager (what do you have, vaporators, to exchange with Sand People, 400, pay)
-171 ui gold 100
+171 ui gold 200
 171 ui replies ~gaffi_sticks ~Just_the_regular ~Goodbye ~available_for_purchase ~moisture_vaporators ~exchange_with_Sand_People ~for_400 default 1
 171 ui bot route areatransition#0 areatransition#2 tat17ag_tat17aa tatooinetransition#2 @tat17_10czerk_01 @tat17_10greet_01
 172 ui bot on

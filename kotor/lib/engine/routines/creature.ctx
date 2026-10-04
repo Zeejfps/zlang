@@ -135,7 +135,11 @@ namespace rt_crea {
     fn get_creature_field { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, none: i32 } -> ! {
         let id = try nwarg::object{ &vm, routine, argc, i = 0 }
         let c = creature_of{ w = &w, id } ifnull {
-            try nwvm::push_int{ &vm, v = none }
+            // GetIsDead of an object that is not there is TRUE (0x0053ecb0 starts from 1 and only an object found
+            // that is alive changes it): k_pkor_webclear asks whether the beast kor34_monster, long since
+            // destroyed with its body, is dead.
+            let gone = routine == nwscript::GetIsDead and not world::is_valid{ w = &w, id }
+            try nwvm::push_int{ &vm, v = if gone { 1 } else { none } }
             return
         }
         let v: i32 = match routine {
