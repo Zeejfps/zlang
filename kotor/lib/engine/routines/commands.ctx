@@ -63,7 +63,13 @@ namespace rt_cmd {
         let name = try nwarg::string{ &vm, routine = r, argc, i = 0 }
         let target = try nwarg::object{ &vm, routine = r, argc, i = 1 }
         let var = try nwarg::int{ &vm, routine = r, argc, i = 2 }
-        let program = scripts::program{ &w, name = resref::truncate{ name } } ifnull { return }
+        let program = scripts::program{ &w, name = resref::truncate{ name } } ifnull {
+            if w.log.scripts {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "execute {} self={}: no such script\n", name, target)
+            }
+            return
+        }
         let o = world::object{ w = &w, id = target }
         if o != null { o.ctx.run_script_var = var }
         let wp: *mut world::World = &w
@@ -103,6 +109,10 @@ namespace rt_cmd {
         let value = try nwarg::int{ &vm, routine = nwscript::SetCommandable, argc, i = 0 }
         let id = try nwarg::object{ &vm, routine = nwscript::SetCommandable, argc, i = 1 }
         let o = world::object{ w = &w, id } ifnull { return }
+        if w.log.scripts {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "SetCommandable({}) on {}\n", value, id)
+        }
         o.commandable = value != 0
     }
 

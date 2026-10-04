@@ -32,6 +32,13 @@ the 24-core development machine.
 | `--no-render --speed 8 --mute` | also leaves music and effects out of the mixer | no: a voice-over mixed alone ends up to 2 ticks sooner; 6x faster. For smoke runs, not for replays whose clicks are timed |
 | `--engine-only` | lib/engine's loop alone: no scene, no conversation view, no input script | n/a: the quickest way to run scripts |
 
+A hidden run (`--headless`, `--no-render`) does not show the story's films and credits, and ends where a window would go back to the main menu (EndGame,
+the party's fall, Exit Game); its log says what was asked (`movie NAME (not shown: hidden run)`). `--cinema` makes it show them: each film is decoded
+with its sound into the mixer at the run's fixed step (`movie NAME start/end` lines with the pictures shown and dropped), `--screenshot-at` frames count
+through a film or the credits, a scripted `key escape` or `mouse click` skips one as a person's Escape or click does, the credits run to the length of
+credits.wav, and the main menu comes up after an EndGame (a `newgame` line then starts the next session). The input script also has `FRAME movie NAME...`
+and `FRAME credits` to show one on its own.
+
 Use `--no-render --speed 8` for anything you would run `--headless` for, unless you are looking at the pictures
 (then `--screenshot-at` still draws that frame). `FAST=1` does it in `run.sh`. Things that bite:
 

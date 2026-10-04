@@ -1,0 +1,12 @@
+# Star Forge, part 5: the hall's south end. The two wings (east and west) each end in a door to the next level (sta45a_east_45b and
+# sta45a_west_45b); the strips sta_trg_lockwest (151,-6) and sta_trg_lockeast (-18,-5) shut the other wing's door behind the party.
+# The bot takes the east door. From the checkpoint "hall".
+5 ui bot party on
+5 ui bot god on
+5 ui bot route sta45a_east_45b
+10 ui bot on
+7300 ui bot off
+7310 ui heal
+7500 save lvl1
+7500 ui party
+7500 ui pos
