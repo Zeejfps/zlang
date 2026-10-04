@@ -258,7 +258,7 @@ namespace ingame {
                 hud::cycle_slot{ h = &ui.hud, g = &ui.gui, &w, &dev, k, forward = true }
                 return true
             }
-            return hud::run_slot{ h = &ui.hud, &w, k }
+            return hud::use_slot{ h = &ui.hud, g = &ui.gui, &w, k }
         }
         if keycode >= '4' and keycode <= '7' {
             // The four self slots: 4 friendly powers, 5 medical items, 6 other items, 7 mines.

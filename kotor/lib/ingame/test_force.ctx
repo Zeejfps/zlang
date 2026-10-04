@@ -1,0 +1,199 @@
+// Headless test commands for the Force powers (docs/mechanics/force.md): they set the scene, the
+// casting itself goes through the HUD's slots and keys like a player's. `FRAME ui COMMAND ARGS`
+// lines the input script does not know come here (lib/ingame/script.ctx).
+//
+//   FRAME ui powers all|ROW[,ROW...]|none   the leader knows every Force power (usertype 1) or just these spells.2da rows
+//   FRAME ui fp N                           the leader's Force points (also the maximum when it is lower)
+//   FRAME ui spawn TEMPLATE TAG DIST        a creature from the blueprint, tagged TAG, DIST metres in front of the leader
+//   FRAME ui feat ROW[,ROW...]              the leader gains these feats
+namespace test_force {
+    fn run { mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device, cmd: []u8, args: []u8 } -> bool {
+        if ci::eq{ a = cmd, b = "powers" } {
+            let mut words = text::words{ s = args }
+            let what = text::next_word{ &words } ifnull { return true }
+            grant_powers{ &w, what }
+            return true
+        }
+        if ci::eq{ a = cmd, b = "fp" } {
+            let mut words = text::words{ s = args }
+            let n = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+            let f = hud::ruled_of{ w = &w, id = party::leader{ w = &w } } ifnull { return true }
+            if f.c.stats.max_fp < n { f.c.stats.max_fp = n }
+            f.c.fp = n
+            return true
+        }
+        if ci::eq{ a = cmd, b = "spawn" } {
+            let mut words = text::words{ s = args }
+            let template = text::next_word{ &words } ifnull { return true }
+            let tag = text::next_word{ &words } ifnull { return true }
+            let dist = text::scan_f32{ s = text::next_word{ &words } ifnull "6" } ifnull 6.0
+            spawn_ahead{ &w, template, tag, dist }
+            return true
+        }
+        if ci::eq{ a = cmd, b = "jedi" } {
+            // A Jedi from the level-up rules: `ui jedi CLASS LEVEL [dark]` blanks the leader's progression, takes the
+            // first level in the class (3 guardian, 4 consular, 5 sentinel) and the rest from the XP, along the
+            // class's light or dark power order, as the automatic level-up does (rules.md 4.4).
+            let mut words = text::words{ s = args }
+            let class = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "4" })
+            let level = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "10" })
+            let side = text::next_word{ &words } ifnull "light"
+            make_jedi{ &w, class, level, light = not ci::eq{ a = side, b = "dark" } }
+            return true
+        }
+        if ci::eq{ a = cmd, b = "rules" } {
+            // The rules' view of a creature (the leader, or the object with the tag): what the Force powers read.
+            let mut words = text::words{ s = args }
+            let tag = text::next_word{ &words } ifnull ""
+            let id = if tag.len == 0 { party::leader{ w = &w } } else { world::object_by_tag{ w = &w, tag, nth = 0 } }
+            let f = hud::ruled_of{ w = &w, id } ifnull {
+                _ = @fmt(&w.io, "rules: {} has no rules creature\n", id)
+                return true
+            }
+            _ = @fmt(&w.io, "rules {}: race {} classes {}/{} {}/{} abil {} {} {} {} {} {} fp {}/{} (temp {}) dc {} caster level {} fr {} ac {} fort {} ref {} will {}\n",
+                id, f.c.race, f.c.classes[0].class, f.c.classes[0].level, f.c.classes[1].class, f.c.classes[1].level,
+                f.c.abil[0], f.c.abil[1], f.c.abil[2], f.c.abil[3], f.c.abil[4], f.c.abil[5],
+                f.c.fp, f.c.stats.max_fp, f.c.temp_fp, rules::force_power_dc{ c = &f.c },
+                rules::caster_level{ tables = w.rules, c = &f.c, spell = 23, override_level = -1, from_class = true },
+                f.c.stats.force_resistance, f.c.stats.speed_factor, f.c.stats.save_base[0], f.c.stats.save_base[1], f.c.stats.save_base[2])
+            let o = world::object{ w = &w, id } ifnull { return true }
+            _ = @fmt(&w.io, "  state {} ai_mask {} commandable {} hp {}/{} effects {} anim {} gear {}\n", f.c.stats.state, f.c.stats.ai_mask, o.commandable, o.hp, o.hp_max, f.c.nfx, o.animation, rules::equipped_type_mask{ tables = w.rules, c = &f.c })
+            return true
+        }
+        if ci::eq{ a = cmd, b = "play" } {
+            // `ui play TAG ROW`: the creature plays animations.2da row ROW (to look at the state animations).
+            let mut words = text::words{ s = args }
+            let tag = text::next_word{ &words } ifnull { return true }
+            let row = @as(u32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+            let o = world::object{ w = &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } } ifnull { return true }
+            world::set_animation{ o, id = animname::ROW_BASE + row, speed = 1.0 }
+            return true
+        }
+        if ci::eq{ a = cmd, b = "clickctl" } {
+            // A click on the centre of a HUD control by tag (the target block's arrows move with the target,
+            // so a script cannot name their pixels): the same mouse events as `ui click X Y`.
+            let mut words = text::words{ s = args }
+            let tag = text::next_word{ &words } ifnull { return true }
+            let p = gui::find_panel{ g = &ui.gui, id = ui.hud.panel } ifnull { return true }
+            let c = gui::find_control{ g = &ui.gui, panel = ui.hud.panel, tag } ifnull {
+                _ = @fmt(&w.io, "clickctl: no control {}\n", tag)
+                return true
+            }
+            let x = p.sx + c.x + c.w / 2
+            let y = p.sy + c.y + c.h / 2
+            ingame::send{ &ui, &w, &dev, ev = sdl::Event::mouse_motion{ x, y, dx = 0, dy = 0, buttons = 0 } }
+            ingame::send{ &ui, &w, &dev, ev = sdl::Event::mouse_button{ down = true, button = sdl::BUTTON_LEFT, clicks = 1, x, y } }
+            ingame::send{ &ui, &w, &dev, ev = sdl::Event::mouse_button{ down = false, button = sdl::BUTTON_LEFT, clicks = 1, x, y } }
+            _ = @fmt(&w.io, "clickctl: {} at {} {}\n", tag, x, y)
+            return true
+        }
+        if ci::eq{ a = cmd, b = "feat" } {
+            let mut words = text::words{ s = args }
+            let list = text::next_word{ &words } ifnull { return true }
+            let f = hud::ruled_of{ w = &w, id = party::leader{ w = &w } } ifnull { return true }
+            let mut rest = list
+            while rest.len > 0 {
+                let comma = text::find_byte{ s = rest, c = ',' } ifnull rest.len
+                rules::grant_feat{ c = &f.c, feat = @as(i32, text::scan_decimal{ s = rest[..comma] }) }
+                rest = if comma < rest.len { rest[comma + 1..] } else { rest[rest.len..] }
+            }
+            rules::recompute{ tables = w.rules, c = &f.c }
+            return true
+        }
+        return false
+    }
+
+    // The leader as a Jedi of `level` levels in `class` made by the level-up rules (docs/mechanics/force.md,
+    // "Test setup"): the history, the class slot, Force points, feats and powers as a player would have them.
+    fn make_jedi { mut w: world::World, class: i32, level: i32, light: bool } {
+        let o = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        let f = c.fighter ifnull { return }
+        fight::sync_flags{ w = &w, o, f }
+        f.c.nclasses = 0
+        f.c.nhistory = 0
+        f.c.classes = [rules::ClassSlot{ class = 0, level = 0 }; rules::MAX_CLASSES]
+        f.c.feats = [0; 8]
+        f.c.powers = [0; 8]
+        f.c.skills = [0; rules::NUM_SKILLS]
+        f.c.hp_base = 0
+        f.c.fp_base = 0
+        f.c.skill_points = 0
+        f.c.xp = 0
+        f.c.good_evil = if light { 85 } else { 15 }
+        c.good_evil = @as(u32, f.c.good_evil)
+        let first = rules::take_first_level{ tables = w.rules, c = &f.c, class }
+        if not first.ok {
+            _ = @fmt(&w.io, "jedi: the first level in class {} was refused\n", class)
+            return
+        }
+        if level > 1 {
+            f.c.xp = rules::xp_to_reach_level{ tables = w.rules, level }
+            let res = rules::auto_level_up{ tables = w.rules, c = &f.c, alive = true }
+            _ = @fmt(&w.io, "jedi: {} levels more\n", res.levels)
+        }
+        // The engine's own copies of what the rules hold.
+        c.xp = @as(u32, f.c.xp)
+        c.classes[0] = @as(u32, f.c.classes[0].class)
+        c.class_levels[0] = @as(u32, f.c.classes[0].level)
+        c.classes[1] = 0
+        c.class_levels[1] = 0
+        c.hit_dice = @as(u32, f.c.stats.level)
+        copy_abilities{ c, f }
+        o.hp_max = f.c.stats.max_hp
+        o.hp = o.hp_max
+        f.c.fp = f.c.stats.max_fp
+    }
+
+    fn copy_abilities { c: *mut obj::Creature, f: *fight::Fighter } {
+        let mut k: usize = 0
+        while k < 6 {
+            c.abilities[k] = @trunc(u8, f.c.abil[k])
+            k = k + 1
+        }
+    }
+
+    // Every Force power (usertype 1), a list of rows, or none.
+    fn grant_powers { mut w: world::World, what: []u8 } {
+        let f = hud::ruled_of{ w = &w, id = party::leader{ w = &w } } ifnull { return }
+        let mut k: usize = 0
+        while k < 8 {
+            f.c.powers[k] = 0
+            k = k + 1
+        }
+        if ci::eq{ a = what, b = "none" } { return }
+        if ci::eq{ a = what, b = "all" } {
+            let rows = twoda::rows{ t = w.tables.spells }
+            let mut r: usize = 0
+            while r < rows and r < 256 {
+                if rules::get_spell{ tables = w.rules, row = @as(i32, r) } is some{ value = row } {
+                    if row.valid and row.user_type == 1 { f.c.powers[r >> 5] = f.c.powers[r >> 5] | (@as(u32, 1) << @trunc(u32, r & 31)) }
+                }
+                r = r + 1
+            }
+            return
+        }
+        let mut rest = what
+        while rest.len > 0 {
+            let comma = text::find_byte{ s = rest, c = ',' } ifnull rest.len
+            let r = @as(usize, text::scan_decimal{ s = rest[..comma] })
+            if r < 256 { f.c.powers[r >> 5] = f.c.powers[r >> 5] | (@as(u32, 1) << @trunc(u32, r & 31)) }
+            rest = if comma < rest.len { rest[comma + 1..] } else { rest[rest.len..] }
+        }
+    }
+
+    // A creature from a blueprint in front of the leader, facing it.
+    fn spawn_ahead { mut w: world::World, template: []u8, tag: []u8, dist: f32 } {
+        let lo = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return }
+        let at = math::vec3::add_scaled{ a = lo.position, b = lo.orientation, s = dist }
+        let face = math::vec3::negate{ v = lo.orientation }
+        let id = tmpl::spawn{ &w, kind = obj::Kind::creature, template, position = at, orientation = face } iferr {
+            _ = @fmt(&w.io, "spawn: no creature {}\n", template)
+            return
+        }
+        let o = world::object{ w = &w, id } ifnull { return }
+        world::set_tag{ &w, o, tag } iferr {}
+        movement::place{ &w, id, at }
+        _ = @fmt(&w.io, "spawn: {} as {} at {} {} {}\n", template, id, at.x, at.y, at.z)
+    }
+}

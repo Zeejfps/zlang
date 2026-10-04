@@ -1,0 +1,190 @@
+// What the crowd-control states and the Force push do to a creature's body and look
+// (docs/mechanics/force.md; docs/re/rules.md 1.10): the looping state animation, the duration
+// visuals (a stun's stars), the knock-back of a Force push or a knockdown and the get-up, and the
+// creature's AI picking up again when it is over. The rules library only says what happened
+// (events); this is what the engine makes of it.
+namespace fight {
+    // The visuals the original's SETSTATE_INTERNAL children carry (rules.md 1.10): VFX_DUR_STUN for
+    // a stunned creature, a spark (VFX_IMP_DROID_DISABLE) when a droid is stunned.
+    const VFX_DUR_STUN: i32 = 2002
+    const VFX_DROID_STUN: i32 = 1007
+
+    // States (rules::fx::STATE_*).
+    const STATE_DROID_STUN: i32 = 3
+    const STATE_STUNNED: i32 = 4
+    const STATE_PARALYZED: i32 = 5
+    const STATE_SLEEP: i32 = 6
+    const STATE_CHOKE: i32 = 7
+    const STATE_HORRIFIED: i32 = 8
+    const STATE_WHIRLWIND: i32 = 10
+
+    // The looping animation of a state (UpdateStateAnimation 0x004f28d0 picks one per state; the
+    // client's table from state to name was not read, so these are the animations.2da rows that
+    // carry the state's name: the humanoid set, then the creature set), NO_ROW for the states that
+    // keep the ready stance (a stunned or droid-stunned creature stands where it is).
+    fn state_row { beast: bool, state: i32 } -> i32 {
+        if state == STATE_PARALYZED { return if beast { 269 } else { 78 } }
+        if state == STATE_SLEEP { return if beast { 267 } else { 76 } }
+        if state == STATE_CHOKE { return if beast { 264 } else { 72 } }
+        if state == STATE_HORRIFIED { return if beast { 265 } else { 74 } }
+        if state == STATE_WHIRLWIND { return if beast { 266 } else { 75 } }
+        return NO_ROW
+    }
+
+    // The crowd-control state changed (rules event STATE): the stun's lasting visual and the droid
+    // stun's spark; when it ends the creature's AI gets its turn again (SETSTATE_INTERNAL's removal
+    // runs OnEndCombatRound).
+    fn state_changed { mut w: world::World, id: u32, after: i32, before: i32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        if after == STATE_STUNNED and before != STATE_STUNNED { hold_visual{ &w, effect = VFX_DUR_STUN, target = id } }
+        if before == STATE_STUNNED and after != STATE_STUNNED { outbox::post{ out = &w.out, note = outbox::Note::visual_release{ effect = VFX_DUR_STUN, target = id } } }
+        if after == STATE_DROID_STUN and before != STATE_DROID_STUN { visual_effect{ &w, effect = VFX_DROID_STUN, target = id, source = obj::INVALID, position = math::vec3::zero{} } }
+        if after == 0 and before != 0 and not c.dead and id != w.pc {
+            events::post{ &w, delay_ms = 0, caller = id, target = id, payload = events::Payload::script{ e = events::script_event{ kind = events::END_COMBAT_ROUND, object = obj::INVALID } } }
+        }
+    }
+
+    // A duration visual (visualeffects.2da Type_FD D) stays on the target until released; the row's
+    // impact sound plays once as it starts.
+    fn hold_visual { mut w: world::World, effect: i32, target: u32 } {
+        outbox::post{ out = &w.out, note = outbox::Note::visual_hold{ effect, target } }
+        let mut digits: [12]u8
+        let mut d: usize = 0
+        let mut x = if effect < 0 { 0 } else { effect }
+        if x == 0 { digits[0] = '0'; d = 1 }
+        while x > 0 and d < 12 { digits[d] = @trunc(u8, '0' + @as(u32, x % 10)); x = x / 10; d = d + 1 }
+        let mut label: [12]u8
+        let mut n: usize = 0
+        while d > 0 { d = d - 1; label[n] = digits[d]; n = n + 1 }
+        let row = twoda::find_row{ t = w.tables.visualeffects, label = label[..n] } ifnull { return }
+        let sound = twoda::get_string{ t = w.tables.visualeffects, row, column = "soundimpact" } ifnull ""
+        if world::object{ w = &w, id = target } is some{ value = o } { say{ &w, name = sound, at = chest_of{ o }, source = target } }
+    }
+
+    // Whether visualeffects.2da's id is a duration visual (Type_FD D) and not a fire-and-forget one.
+    fn is_duration_visual { w: *world::World, effect: i32 } -> bool {
+        let mut digits: [12]u8
+        let mut d: usize = 0
+        let mut x = if effect < 0 { 0 } else { effect }
+        if x == 0 { digits[0] = '0'; d = 1 }
+        while x > 0 and d < 12 { digits[d] = @trunc(u8, '0' + @as(u32, x % 10)); x = x / 10; d = d + 1 }
+        let mut label: [12]u8
+        let mut n: usize = 0
+        while d > 0 { d = d - 1; label[n] = digits[d]; n = n + 1 }
+        let row = twoda::find_row{ t = w.tables.visualeffects, label = label[..n] } ifnull { return false }
+        let t = twoda::get_string{ t = w.tables.visualeffects, row, column = "type_fd" } ifnull ""
+        return t.len > 0 and t[0] == 'D'
+    }
+
+    // ---- the knock-back (EffectForcePushed 0x3c, EffectKnockdown 0x14)
+
+    // How the thrown creature falls and gets up: 'die1', 'dead1', 'getupdead1' of the humanoid
+    // set; the creature set's knockdown pair (ours: the client's animation for the push was not read).
+    const FALL_MS: i32 = 700
+    const GETUP_MS: i32 = 1100
+    const PUSH_SLIDE_MS: i32 = 600
+    // The original keeps a pushed creature from acting for 2.55 s (its push's removal applies the
+    // AI state 0xfea1 for that long, 0x004de400).
+    const PUSH_DOWN_MS: i32 = 2550
+    const PUSH_RANGE: f32 = 5.0
+
+    fn no_knock {} -> Knock {
+        return Knock{ active = false, t_ms = 0, move_ms = 0, total_ms = 0, from = math::vec3::zero{}, to = math::vec3::zero{} }
+    }
+
+    // The newest effect of `kind` on the creature, or null.
+    fn newest_effect { f: *Fighter, kind: i32 } -> ?rules::Effect {
+        let mut i: i32 = f.c.nfx - 1
+        while i >= 0 {
+            if f.c.fx[@as(usize, i)].kind == kind { return f.c.fx[@as(usize, i)] }
+            i = i - 1
+        }
+        return null
+    }
+
+    // The farthest point along the push that the walkmesh lets the creature reach.
+    fn clear_end { w: *world::World, from: math::Vec3, to: math::Vec3 } -> math::Vec3 {
+        let span = math::vec3::sub{ a = to, b = from }
+        let length = math::vec3::length{ v = span }
+        if length < 0.01 { return from }
+        let step: f32 = 0.25
+        let mut here = from
+        let mut walked: f32 = 0.0
+        while walked < length {
+            let next_at = math::min{ a = walked + step, b = length }
+            let probe = math::vec3::add_scaled{ a = from, b = span, s = next_at / length }
+            let z = walkmap::step_to{ m = &w.walk, from = here, to = probe } ifnull { return here }
+            here = math::Vec3{ x = probe.x, y = probe.y, z }
+            walked = next_at
+        }
+        return here
+    }
+
+    // The creature is thrown (rules event FORCE_PUSH): 5 m away from the pusher (or from the centre
+    // of EffectForcePushTargeted), facing it, stopping where the walkmesh ends, then lying until it
+    // can act again.
+    fn push_creature { mut w: world::World, id: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        let f = c.fighter ifnull { return }
+        if c.dead { return }
+        let e = newest_effect{ f, kind = rules::fx::FORCE_PUSH } ifnull { return }
+        let pusher = world::object{ w = &w, id = e.creator } ifnull { return }
+        let origin = if e.ints[0] != 0 { math::Vec3{ x = e.floats[0], y = e.floats[1], z = e.floats[2] } } else { pusher.position }
+        let away = math::Vec3{ x = o.position.x - origin.x, y = o.position.y - origin.y, z = 0.0 }
+        let length = math::vec3::length{ v = away }
+        let dir = if length < 0.01 { math::Vec3{ x = pusher.orientation.x, y = pusher.orientation.y, z = 0.0 } } else { math::vec3::scale{ v = away, s = 1.0 / length } }
+        let dest = math::vec3::add_scaled{ a = o.position, b = dir, s = PUSH_RANGE }
+        let end = if e.ints[1] != 0 { dest } else { clear_end{ w = &w, from = o.position, to = dest } }
+        world::set_orientation{ o, v = math::vec3::negate{ v = dir } }
+        f.knock = Knock{ active = true, t_ms = 0, move_ms = PUSH_SLIDE_MS, total_ms = PUSH_DOWN_MS, from = o.position, to = end }
+        o.commandable = false
+        actions::clear_all{ &w, id }
+        end_round{ &w, id, script = false }
+        if w.log.combat {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "{} is thrown from {} {} to {} {}\n", id, o.position.x, o.position.y, end.x, end.y)
+        }
+    }
+
+    // The creature falls and lies for the effect's duration and 1.5 s more (rules.md 1.10).
+    fn knock_down { mut w: world::World, id: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        let f = c.fighter ifnull { return }
+        if c.dead or f.knock.active { return }
+        let e = newest_effect{ f, kind = rules::fx::KNOCKDOWN } ifnull { return }
+        f.knock = Knock{ active = true, t_ms = 0, move_ms = 0, total_ms = @as(i32, e.duration * 1000.0) + 1500, from = o.position, to = o.position }
+        o.commandable = false
+        actions::clear_all{ &w, id }
+        end_round{ &w, id, script = false }
+    }
+
+    // A tick of the knock-back: the slide (fast, then slowing), the fall, the lying, the get-up; at
+    // the end the creature may act and its AI gets its turn.
+    fn step_knock { mut w: world::World, o: *mut obj::Object, c: *mut obj::Creature, f: *mut Fighter, dt: i32 } {
+        let k = &f.knock
+        k.t_ms = k.t_ms + dt
+        if k.move_ms > 0 and k.t_ms - dt < k.move_ms {
+            let s = math::min{ a = @as(f32, k.t_ms) / @as(f32, k.move_ms), b = 1.0 }
+            let eased = 1.0 - (1.0 - s) * (1.0 - s)
+            movement::place{ &w, id = o.id, at = math::vec3::lerp{ a = k.from, b = k.to, t = eased } }
+        }
+        let beast = is_beast{ w = &w, c }
+        let fall: i32 = if beast { 272 } else { 82 }
+        let lying: i32 = if beast { 271 } else { 83 }
+        let rising: i32 = if beast { 273 } else { 382 }
+        let row = if k.t_ms < FALL_MS { fall } else if k.t_ms < k.total_ms - GETUP_MS { lying } else { rising }
+        let back = world::object{ w = &w, id = o.id } ifnull { return }
+        if row_of_animation{ id = back.animation } != row { world::set_animation{ o = back, id = animname::ROW_BASE + @as(u32, row), speed = 1.0 } }
+        if k.t_ms >= k.total_ms {
+            k.active = false
+            back.commandable = true
+            if c.in_combat { play_ready{ &w, o = back, c } } else { world::set_animation{ o = back, id = obj::ANIM_STAND, speed = 1.0 } }
+            if back.id != w.pc and not c.dead {
+                events::post{ &w, delay_ms = 0, caller = back.id, target = back.id, payload = events::Payload::script{ e = events::script_event{ kind = events::END_COMBAT_ROUND, object = obj::INVALID } } }
+            }
+        }
+    }
+}

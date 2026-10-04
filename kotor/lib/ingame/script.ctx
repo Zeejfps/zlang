@@ -264,6 +264,7 @@ namespace ingame {
             let args = text::rest{ words }
             if test_items::run{ &ui, &w, &dev, cmd, args } { return }
             if test_sheet::run{ &ui, &w, &dev, cmd, args } { return }
+            if test_force::run{ &ui, &w, &dev, cmd, args } { return }
             if test_journal::run{ &ui, &w, &dev, cmd, args } { return }
             if test_map::run{ &ui, &w, &dev, cmd, args } { return }
             if test_screens::run{ &ui, &w, &dev, cmd, args } { return }

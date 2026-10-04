@@ -23,6 +23,16 @@ namespace hud {
         }
     }
 
+    // A refusal in the message bar (UseAction's reason codes): "Force Depleted", "Restricted by Armor"...,
+    // for five seconds.
+    fn say_reason { mut h: Hud, mut g: gui::Gui, reason: i32 } {
+        if reason <= 0 or reason >= 7 { return }
+        gui::set_strref{ &g, panel = h.panel, tag = "LBL_CMBTMODEMSG", strref = REASON_TEXT[@as(usize, reason)] } iferr {}
+        gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMSGBG", visible = true }
+        gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMODEMSG", visible = true }
+        h.refusal = 5.0
+    }
+
     fn show_combat_controls { mut h: Hud, mut g: gui::Gui, on: bool } {
         let mut i: usize = 0
         while i < COMBAT_TAGS.len {
@@ -39,6 +49,17 @@ namespace hud {
 
     // Shows the controls when combat starts, hides them when it ends, and fills the queue icons.
     fn update_combat { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, dt: f32 } {
+        if h.refusal > 0.0 {
+            h.refusal = h.refusal - dt
+            if h.refusal <= 0.0 {
+                if h.combat_message > 0.0 {
+                    gui::set_strref{ &g, panel = h.panel, tag = "LBL_CMBTMODEMSG", strref = 48208 } iferr {}
+                } else {
+                    gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMSGBG", visible = false }
+                    gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMODEMSG", visible = false }
+                }
+            }
+        }
         let on = leader_in_combat{ w = &w }
         if on != h.combat {
             h.combat = on
@@ -53,7 +74,7 @@ namespace hud {
         if not on { return }
         if h.combat_message > 0.0 {
             h.combat_message = h.combat_message - dt
-            if h.combat_message <= 0.0 {
+            if h.combat_message <= 0.0 and h.refusal <= 0.0 {
                 gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMSGBG", visible = false }
                 gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMODEMSG", visible = false }
             }
