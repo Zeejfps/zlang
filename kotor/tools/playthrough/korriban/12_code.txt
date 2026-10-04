@@ -6,8 +6,7 @@
 5 ui replies ~I_know_the_Code ~Passion ~Strength ~Power ~Victory ~chains_are_broken ~False ~on_my_way default 1
 8 ui rules
 10 warp kor35_utharwynn party
-50 ui target kor35_utharwynn
-55 ui key 1
+50 use kor35_utharwynn
 1500 ui rules
 1500 ui globals kor
 1500 ui journal list

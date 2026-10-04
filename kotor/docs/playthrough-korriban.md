@@ -75,7 +75,7 @@ State: **works** (checked, 0 faults), **fixed** (a commit of this branch), **ope
 | 17 | The rogue droid's tomb (`korr_m38aa`, a corridor of 164 m with mines, rockfalls and Mark IV war droids): the bot walks it in god mode; the assassin droid ("Too much audio input! Audio systems overloading!": the party's noise makes it hostile), journal `kor38_roguedroid` 30. Not in god mode the three die in about 6,000 frames and the "entire party has been killed" box shows | works | `17_droid.txt` |
 | 18 | The shyrack caves (`korr_m34aa`, strip `k36_trg_k34`): Thalia May and the renegades, "Slow down and tell me what you're doing here", "Maybe I can help you", [Persuade], "I can try." (journal `kor35_renegadesith` 20) | works | `18_caves.txt` |
 | 19 | The beast at the passage (`kor34_monster`) is killed by the bot in god mode | works (the camera: see Observations) | `19_beast.txt` |
-| 20 | Thalia again: "It's clear. You're free to go." needed `k_pkor_webclear` = `GetIsDead(GetObjectByTag("kor34_monster"))` of a body that is gone: the renegades attacked instead. Journal 40, +960 XP, alignment 92 to 94 | fixed e2a06c8 | `20_free.txt` |
+| 20 | Thalia again: "It's clear. You're free to go." needed `k_pkor_webclear` = `GetIsDead(GetObjectByTag("kor34_monster"))` of a body that is gone: the renegades attacked instead. Journal 40, +1,950 XP with the beast, alignment 92 to 94 | fixed e2a06c8 | `20_free.txt` |
 | 21 | Second report: the droid ("I dealt with the rogue droid in the tombs.": 40) and the renegades ("[Lie] It's done. They are... gone.": 60): prestige 4 | works | `21_report2.txt` |
 | 22 | Ajunta Pall's tomb (`korr_m37aa`), the burial chamber (the way in is not played): the sarcophagus opened with clicks (the world fades out for the loot panel; closing it shows the spirit standing at the door), the strip `k37_trg_ajunta` starts his talk, his riddle of the sword, journal `kor37_ajuntapall` 10 | works | `22_sword.txt` |
 | 23 | The three swords (Get Items), the statue (`k37_statue`: "[The notched steel sword.]"), the spirit's thanks: the Jedi urges him back to the light ("[Persuade] I don't believe the light side would turn you away"), alignment 94 to 96, journal 30, +1,000 XP; Ajunta Pall's Blade in the bag | works | `23_statue.txt` |
@@ -98,8 +98,9 @@ robe and saber. `dustil.txt` (from `valley`) the attempt to spawn Carth's son.
 
 Experience and alignment through the chain (the player; Carth and Bastila hold the same XP from the party pool): 91,000 at the start
 (level 14), 91,270 after the thugs, 92,420 on joining, 93,545 after Yuthura's lessons, 93,670 the Code, 98,920 after the droid tomb and
-the caves' fights, 101,570 the renegades freed, 102,770 the spirit, 103,070 prestige 5, 103,320 the Star Map, 104,970 the end of the
-test. Alignment (0 dark, 100 light): 85 at the start, 90 Shaardan's mercy, 91 the murderer, 92 the cache, 94 the renegades, 96 the spirit,
+the caves' fights, 100,870 the renegades freed, 102,070 the spirit, 102,370 prestige 5, 104,565 the Star Map, 106,215 the end of the
+test (the quest steps' own XP is paid since the merge of 72f22f0; before it the same points were 101,570, 102,770, 103,070, 103,320 and
+104,970). Alignment (0 dark, 100 light): 85 at the start, 90 Shaardan's mercy, 91 the murderer, 92 the cache, 94 the renegades, 96 the spirit,
 97 the end. The dark choices checked: Shaardan "Kill them" 85 to 77; the serum console twice at a high dose 91 to 85. `ui rules` now prints
 the alignment (the rules' value and the engine's copy, which always agree here) and XP.
 

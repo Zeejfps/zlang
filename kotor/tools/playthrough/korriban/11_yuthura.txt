@@ -5,8 +5,7 @@
 5 ui replies ~Your_favorite_prospect ~Absolutely ~What's_so_important ~Quiet ~kill_Master_Uthar ~And_what's_your_part ~Very_well ~Code_of_the_Sith ~Peace_is_a_lie ~Through_passion ~I_see ~Through_strength ~Through_power ~Through_victory ~Sith'ari ~Force_shall_free ~I_think_I_got_it ~I'll_be_going default 1
 8 ui rules
 10 warp kor35_yuthura party
-50 ui target kor35_yuthura
-55 ui key 1
+50 use kor35_yuthura
 9300 ui journal list
 9300 ui globals kor
 9300 ui rules
