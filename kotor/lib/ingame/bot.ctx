@@ -265,9 +265,12 @@ namespace bot {
                     i = i + 1
                 }
                 let mid = math::vec3::scale{ v = sum, s = 1.0 / @as(f32, tr.polygon.len) }
-                // The polygon's heights are not the floor's: the floor under the middle, as the leader would find it.
-                let f = walkmap::floor{ m = &w.walk, x = mid.x, y = mid.y, z = near_z + 2.0 }
-                return math::Vec3{ x = mid.x, y = mid.y, z = if f != null { f.z } else { near_z } }
+                // The polygon's heights are not the floor's: the floor under the middle, as the leader would find it from the
+                // polygon's own height (a stop on the far side of a hilly area is not at the leader's), else from the leader's.
+                let f = walkmap::floor{ m = &w.walk, x = mid.x, y = mid.y, z = mid.z + 2.0 }
+                if f != null { return math::Vec3{ x = mid.x, y = mid.y, z = f.z } }
+                let f2 = walkmap::floor{ m = &w.walk, x = mid.x, y = mid.y, z = near_z + 2.0 }
+                return math::Vec3{ x = mid.x, y = mid.y, z = if f2 != null { f2.z } else { near_z } }
             }
         }
         return t.position
