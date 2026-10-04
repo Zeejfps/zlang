@@ -17,7 +17,7 @@ exe=${EXE:-kotor/out/kotor.exe}
 out=kotor/out/checkpoints
 
 # name:frame. Each frame is between two of the replay's steps, with no menu open and no conversation up.
-points="bunk:3940 bridge:13950 pod:31900 apartment:39450 uppercity:40450 cantina:56800"
+points="bunk:3940 bridge:13950 pod:31900 apartment:39450 uppercity:40450 cantina:56800 lowercity:65000 undercity:70400 mission:74000 gate:77300 sithbase:79900"
 
 rm -rf $out/work
 mkdir -p $out/work/saves
@@ -70,6 +70,7 @@ for p in $points; do
         else if ($4 == "off") on = 0
         else if ($4 == "god") god = ($5 == "off") ? 0 : 1
         else if ($4 == "unlock") unlock = ($5 == "off") ? 0 : 1
+        else if ($4 == "party") party = ($5 == "off") ? 0 : 1
       }
     }
     END {
@@ -79,6 +80,7 @@ for p in $points; do
       if (line != "") print "1 ui replies" line
       if (god) print "1 ui bot god on"
       if (unlock) print "1 ui bot unlock on"
+      if (party) print "1 ui bot party on"
       if (nstop > 0 && stop < nstop) {
         line = ""
         for (k = stop + 1; k <= nstop; k++) line = line " " stp[k]

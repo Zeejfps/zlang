@@ -8,7 +8,7 @@
 //   FRAME ui menu NAME|N       open a menu: equip inventory character abilities messages journal map options
 //   FRAME ui close             close the open menu
 //   FRAME ui target TAG        select the object with the tag;  ui join TAG: it joins the party
-//   FRAME ui unlock TAG | ui global NAME N | ui goto TAG | ui where [PART]     test helpers: unlock a door or placeable;
+//   FRAME ui unlock TAG | ui global NAME N | ui gbool NAME 0|1 | ui goto TAG | ui where [PART]     test helpers: unlock a door or placeable;
 //                              set a number global; the leader walks to a tagged object; print objects by tag part
 //   FRAME ui hover             print the panels' places and the control under the pointer
 //   FRAME ui sweep             the pointer to the centre of each control: a hover test of every shown panel
@@ -114,6 +114,11 @@ namespace ingame {
             let name = text::next_word{ &words } ifnull { return }
             let v = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
             globals::set_number{ g = &w.globals, name, value = v }
+        } else if ci::eq{ a = cmd, b = "gbool" } {
+            // Test helper: a boolean global (`ui gbool Tar_GadonMission 1`).
+            let name = text::next_word{ &words } ifnull { return }
+            let v = text::scan_decimal{ s = text::next_word{ &words } ifnull "0" }
+            globals::set_boolean{ g = &w.globals, name, value = v != 0 }
         } else if ci::eq{ a = cmd, b = "where" } {
             // Test helper: every object whose tag contains the word (none given: all), with its place.
             let part = text::next_word{ &words } ifnull ""
@@ -126,6 +131,8 @@ namespace ingame {
                 let tag: []u8 = o.tag
                 if not has_part{ s = tag, part } { continue }
                 _ = @fmt(&w.io, "where {} k{} {} at {} {} {} hp {} facing {} {}\n", o.id, @as(u32, o.kind), tag, o.position.x, o.position.y, o.position.z, o.hp, o.orientation.x, o.orientation.y)
+                if o.ext is creature{ c } { _ = @fmt(&w.io, "  portrait {}\n", c.portrait) }
+                if o.ext is door{ d } { _ = @fmt(&w.io, "  door state {} locked {} area {} link flags {} to {}\n", @as(u32, d.state), d.locked, o.area, d.linked_flags, d.linked_to) }
             }
         } else if ci::eq{ a = cmd, b = "locks" } {
             // Test helper: the locked (or lockable) doors and placeables whose tag contains the word, with the lock's record.

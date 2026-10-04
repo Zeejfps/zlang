@@ -19,7 +19,7 @@ counts hang. A script's lines must be in frame order.
 `FAST=1 sh kotor/tools/playthrough/run.sh ...` plays with `--no-render --speed 8` (same log, a third of the time:
 the 34,000-frame Endar Spire takes 30 s, not 98 s). To start in the middle, load a checkpoint made from this replay
 (`sh kotor/tools/checkpoints/make.sh` writes `kotor/out/checkpoints/NAME/` for bunk, bridge, pod, apartment,
-uppercity and cantina, each with `NAME.txt`, the rest of the replay counted from the load):
+uppercity, cantina, lowercity, undercity, mission, gate and sithbase, each with `NAME.txt`, the rest of the replay counted from the load):
 
 ```
 FAST=1 LOAD=kotor/out/checkpoints/apartment SAVES=kotor/out/pt/saves_x sh kotor/tools/playthrough/run.sh upper kotor/out/checkpoints/apartment.txt 30000
@@ -81,13 +81,37 @@ engine lead, merged), **open**.
 | 27 | Upper City North (`tar_m02ab`): the Sith guard's conversation at the lower city door; Lower City (`tar_m03aa`): the Black Vulkar fight, Canderous's conversation `tar03_cand032`, a Sith patrol; the door to the Undercity | works | `10_endar_spire.txt` |
 | 28 | The Undercity (`tar_m04aa`, 466 objects): arrival at the elevator, the outcast woman's gate conversation | works up to the panic below | `10_endar_spire.txt` |
 | 29 | About 30 minutes in: `actions.ctx:102 panic: integer overflow` (a u16 action group wrapped by a polling script) | reported to engine | `10_endar_spire.txt` |
-| 30 | Every Taris module loads headless with 0 script faults (`smoke.sh tar_m02aa ... tar_m11ab`) | works | `smoke.sh` |
+| 30 | Every module of the install (115: Endar Spire, Taris, Dantooine, Kashyyyk, Tatooine, Manaan, Korriban, Lehon, the Ebon Hawk, the Star Forge, the stunt cutscene modules) loads headless for 100 frames with 0 script faults, 0 missing routines and a picture (`smoke.sh MODULE...`, pictures `kotor/out/pt/smoke_MODULE.png`); the default player alone in a hostile module can die in seconds (`tar_m09aa`) | works | `smoke.sh` |
 | 31 | Trask's entry: after the dream cutscene he opens the bunk room door himself, runs in and stops 1 m from the player, facing him, before "We've been ambushed..." (the user found him speaking through the closed door: `GetObjectByTag("")` is the player, k_pend_traskdl40) | engine (7ab46dc); checked by `13_trask_entry.txt` + `kotor/tools/py/check_trask_entry.py` | `13_trask_entry.txt` |
 | 32 | Staging audit of every conversation of the route (`dialog stage:` log lines per line, `kotor/tools/py/stage_audit.py LOG`): who stands how far from whom, in which rooms; remote comm conversations (Carth) and cutscene scene objects are far by design | works (nothing else far or behind walls in the ordinary conversations) | `10_endar_spire.txt` with LOG=dialog |
 | 33 | The fights are seen: room 3 (soldier and Sith with blasters), room 5, the Jedi duel. Bolts fly from the weapon's `bullethook` and a miss flies on to the wall, muzzle flashes, impact sparks, lit lightsabers with clashes and sparks, swing/shot/hit sounds, grunts and death cries; ranged damage lands when the bolt arrives (the user: "I didn't see any combat" past the locked door) | fixed (lib/vfx, docs/design/vfx.md); checked with `--log trace`, `cam duel` and `fx` test input | `10_endar_spire.txt` (replay: 0 faults, tar_m02af) |
+| 34 | The test bot grew up: it opens the closed door that stalls a walk (8 decisions without getting a metre nearer; the lock first with `unlock on`), clicks an area-transition door once in two seconds (every click restarts the transition token, so a click every decision never let one finish) and passes the stop it took through a transition once the area changed (the door of the same tag on the other side sent it back), and `god` keeps every companion at 1 HP (a downed companion is a red cross on the HUD for the rest of the test) | works | `lib/ingame/bot.ctx` |
+| 35 | Lower City to the Undercity (`tar03_underdoor`, `tar04_elevdoor`), the outcast woman, Mission (`tar04_mission`: she runs to the player, asks for Zaalbar; the reply queue `1 1 2 1 1 1` makes her join, `[MISSION has joined your party.]`, then the party screen, whose portrait slot showed Carth's face for Mission because it found the Undercity's placed Mission by tag: fixed, the panel uses the party table's creature, else the blueprint), the Republic soldier (`tar04_republicso`), the main gate to the Sith base `tar_m05aa` | works | `10_endar_spire.txt`, `42_mission.txt` |
+| 36 | Sith base camp (`tar_m05aa`): Gamorrean guards, the cell door trigger. Mission and Zaalbar's "door talk" (`missdoor_dlg`, 54 nodes) is started by a script on a placeable with no OnDialog script, which got no conversation | engine (stock dialogue script for placeables and doors, fixed on the engine branch eb4cf75); with it: Mission examines the lock, Zaalbar answers from the cell, the door opens, `[ZAALBAR joined]`, the party screen offers him (a confirmation box asks "Are you sure..." when a free companion is left out) | `40_sithbase.txt` |
+| 37 | Walking into a closed unlocked door never sent PATH_BLOCKED, so followers could not pass doors and the bot's moves hung | engine (d80cf7d on the engine branch); the bot's stall detector works around it | `40_sithbase.txt` |
+| 38 | The force field to `tar_m05ab` (rakghouls, kath hounds, Gamorrean guards), the long walk to the elevator, `tar05_elevator` to the Vulkar base `tar_m10aa` (Vulkar thugs and droids fight in the bar, the surrendering Vulkar's conversation `tar10_vulksur2`), the elevator `tar10_elev02` to the garage `tar_m10ac` (swoop bikes, Kandon Ark) | works | `43_elevator.txt` |
+| 39 | Every fight showed a bark box with the raw text "GEN_I_WAS_ATTACKED": `SpeakString` with a silent talk volume (3, 4) posted a bark | engine (fixed on the engine branch, with the listening side) | any fight |
+| 40 | Davik's estate (`tar_m08aa`): the arrival conversation `tar08_davik081` (Davik, Calo), camera, fade-in | works (the staging is the cutscene's: Davik 4.6 m from the player) | `50_davik.txt` |
+| 41 | Sweep of all 24 Taris modules (`sweep.sh`, one picture each after 400 frames): the Upper City, apartments, cantina, Lower City, Javyar's cantina (a Hutt), the swoop garage, the swoop minigame `tar_m03mg` (cockpit, timer, radar), the Undercity, the Sith base, the Vulkar base, the Beks base, Davik's estate | all load and render with 0 faults; 0-3 textures missing per module (names are not logged) | `sweep.sh` |
+| 42 | An area-transition door that an NPC opened (the bullied merchant, through PATH_BLOCKED) was never taken by the leader again: `open_door` returned before CLICKED | engine (fixed on the engine branch 13cedce: the leader's click always runs the transition, and walking through an open one does); the bot shuts an open transition door before clicking it | `cantina` checkpoint |
+| 43 | The Undercity door talk, Zaalbar, the force field, the elevator into the Vulkar base, its fights, the garage elevator: one chain from the sithbase checkpoint (`40_sithbase.txt`, `43_elevator.txt`), the party screens accepted by `ui bot party on` | works | `40_sithbase.txt`, `43_elevator.txt` |
+| 44 | Kandon Ark in the garage (`tar10_kandon01`, 46 entries): the reply queue `2 2 3` refuses his offer, `k_ptar_karkatk` turns him and his guards hostile, the fight, the Swoop Accelerator is picked up from `tar10_accelerator` | works | `44_kandon.txt` |
+| 45 | The Beks base (`tar_m11aa`) from the Lower City: Zaerdra's challenge, the assault droid that fights the Beks (the bot kills it first: left alone it kills Gadon, 8 hit points, during his conversation and the dialogue aborts), Gadon's conversation: with `Tar_GadonMission` set (`ui gbool`) the second visit takes the accelerator, `tar_bastsearch` entry 50, `k_ptar_bekrace` starts `tar_m03af`, the mechanic's conversation, `Tar_SwoopStatus` | works up to the race | `45_gadon.txt` |
+| 46 | The race itself, Davik's estate beyond the arrival conversation, Bastila's cage and the Leviathan escape | not played: story QA was paused (the swoop checkpoint is in `kotor/out/checkpoints/swoop`, `tar_m03af` with the mechanic done: the trigger `tar03_racefirst` starts the race) | |
+
 
 The whole Endar Spire plays from New Game to the Taris apartment with `10_endar_spire.txt` (34000 frames,
-about 5 minutes of wall time), with 0 script faults.
+about 5 minutes of wall time), with 0 script faults. The whole route to the Sith base (`10_endar_spire.txt`, 80,000
+frames, about 12 minutes with `FAST=1`) makes the checkpoints; each of `40_` to `50_` starts from one:
+
+```
+FAST=1 LOAD=kotor/out/checkpoints/sithbase SAVES=kotor/out/pt/saves_x sh kotor/tools/playthrough/run.sh sb kotor/tools/playthrough/40_sithbase.txt 30000
+sh kotor/tools/playthrough/sweep.sh sweep.png tar_m02aa tar_m03aa ...     # a picture of each module, side by side
+sh kotor/tools/playthrough/wheremod.sh mission                             # which modules hold an object, and where
+```
+
+`--module X` plus `warp TAG` and `ui global NAME N` is the way to test what needs no story state (the surrendering
+Vulkar, Davik's hall, the elevator): seconds, not minutes.
 
 ## Lock picking by the player
 
@@ -116,3 +140,12 @@ scripts do), DoDoorAction's unlock is still instant.
 - The yellow arrow over the leader's portrait after the Security tutorial: looks like the switch-leader
   hint; check against the original.
 - Dialogue reply texts begin with the tutorial's "[Left-click this answer...]" line as the data has it.
+- Not played through by the story (only loaded and looked at): the swoop race itself (`tar_m03mg` renders; its input is the minigame lead's), Davik's estate beyond the arrival conversation, Bastila's rescue and the Leviathan escape. The bot cannot yet do a conversation-driven quest chain (it walks, fights and opens doors; a story step that needs a particular reply needs its own `ui replies` line, as Mission's does).
+- Wide dialogue shots (angle 3) for a speaker and listener 9 m apart look down at the floor; that is the RE'd formula (camera 0.3 d up, target 0.2 d down), kept. In the Undercity base the listener of Zaalbar's lines is the invisible placeable that owns the door talk, so every such shot is of that kind.
+- 0 to 3 textures per module are missing (the count is in the `scene:` line; the names are not logged: a `--log` word that lists them would say which).
+- The test player of `--module X` runs has a dead second companion slot in some modules (a red cross on the HUD); `god on` now keeps a real party alive.
+
+## Known and benign
+
+- Scripts that run out of instructions: at the end of a conversation in the Upper City, 14 creatures' `k_def_endconv` -> `k_ai_master` hit the VM's 131,072-instruction budget (`fault: k_ai_master ... the instruction budget ran out`). The loop in `k_ai_master` ("Commoner AI": nearest enemy by reputation, `GetStandardFaction` hostile, `GetDistanceBetween <= 20`) never advances when the nearest enemy is farther than 20 m; the original has the same budget (vm.md) and the same script, so this is BioWare's bug and the original aborts the script the same way. Counted in the run's "faults".
+- The conversation reply queue holds 128 numbers; `ui replies default N` answers every list after it.
