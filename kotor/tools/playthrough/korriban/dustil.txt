@@ -1,8 +1,12 @@
-# Korriban, Carth's son (scouting, from the checkpoint "valley"): KOR_DUSTIL_SPAWN is read by the Academy's area enter script
-# (kor35_enter), which makes kor35_dustil at k35_way_dustil. Nothing in the chain sets it (it belongs to Carth's talk on the Hawk, K_SWG_DUSTIL1,
-# KOR_DANEL), so it is set by hand here.
-5 ui gbool KOR_DUSTIL_SPAWN 1
+# Korriban, Carth's son (from the checkpoint "valley"): the Academy's area enter script (kor35_enter) makes kor35_dustil at
+# k35_way_dustil when KOR_DANEL is 2 (Carth's talk on the Hawk sets it: k_swg_carth17) and KOR_DUSTIL_SPAWN is still false; the script
+# sets KOR_DUSTIL_SPAWN itself, the flag that it has made him (setting it by hand first, as an earlier version of this script did,
+# is what kept him from appearing). Then the talk with Dustil (k_hdustil_dialog).
+5 ui global KOR_DANEL 2
 10 warp kor36_kor35 party
 30 use kor36_kor35
-600 ui where dustil
-600 ui pos
+300 ui where dustil
+300 ui globals KOR_D
+320 warp kor35_dustil party
+330 use kor35_dustil
+1500 ui pos
