@@ -298,6 +298,119 @@ Frame-buffer effects copy the screen into a rectangle or 2D texture and run 256x
 (0x0042b370-0x0042d9a0, 0x00432780-0x00435bd0; each makes the pbuffer current, draws, glFlush, then
 switches back). Stage setup is a switch in 0x004299c0.
 
+### Engine-coded visual effects (the ProgFX columns of visualeffects.2da)
+
+A visualeffects.2da row names models to hang on a creature (the `imp_*_node` columns), and three
+numbers for effects the engine draws in code: `progfx_impact`, `progfx_duration`,
+`progfx_cessation` (the energy shields, 2040-2048, have only a duration code, 1413-1421). All of
+this is the client's visual effect record, `CSWCVisualEffect` in our words: a 0xf8-byte plain
+struct (no vtable) made by `FUN_0063d970` (a method of the client object that owns the list of
+effects at +0x6c) and filled by `FUN_006a1880` (`0x006a1880`, the Ghidra listing stops after its
+first 2DA read, as for `OnApplyForceShield`; the rest is `0x006a19d0`-`0x006a2aed`, read from the
+disassembly). (high)
+
+**Reading the row.** `FUN_006a1880` reads `Type_FD`, the three node-model columns, and
+**only when no root model was found** the three ProgFX columns (`0x006a2133`-`0x006a2227`, the
+strings at `0x007554f0`, `0x007554e0`, `0x007554cc`). The models: `Imp_HeadCon_Node` (hung on
+the target's head-hit node: `talkdummy`, `hhit` for other objects), `Imp_Impact_Node` (its
+`Impact` node, `impc`) and one of `Imp_Root_H_Node`, `Imp_Root_L_Node`, `Imp_Root_M_Node` by the
+target's size category (an appearance.2da column: 5 or more takes H, 4 L, anything else M; the
+`LowQuality` and `LowViolence` columns can replace them on low settings). A root model is hung
+on the target's ground node (`<model>_ground` for a creature, `grnd` for others, else `root`;
+a creature's models have no such node, so it stands at the model's origin: the feet). The codes
+go into the record as 16-bit values: impact at +0xa0, duration at +0xa2, cessation at +0xa4,
+0xffff for a column that is `****`. The duration and cessation codes are kept only when the
+caller's second argument is 0 (the effect is applied as a lasting one); the impact code always.
+(high; rows that have a root model and a code do not exist, so the condition cannot be told from
+"no model at all" in the data)
+
+**Starting.** `FUN_006a5fc0` (called right after the record is queued) picks the state
+(+0xc6): 1 if there is an impact code, else 2 if a duration code, else 3 for a cessation code,
+runs the code's *prepare* (`FUN_006a5890`, for the model-bearing buckets) and *start*
+(`FUN_006a54d0`) and, for state 1, gives the effect the length of the `impact` animation of its
+model (`FUN_006a0620`; code 1201 only) or **1000 ms**. A state-2 effect has no end of its own:
+the object's remove call (`FUN_006a6590`, which the list walker `FUN_0063daa0` also uses to end
+every effect) ends it when the server's effect leaves, through the *stop* dispatcher
+`FUN_006a56f0`. The row's `soundimpact` is played once and `soundduration` as a looping sound
+source tied to the record (+0xec; freed with it). (high for the structure, med for the sounds
+and for which function ends the effect)
+
+**The code is a bucket of a hundred.** `FUN_006a54d0` (start) and `FUN_006a56f0` (stop) are the
+same ladder of range tests; the code's hundred picks the handler:
+
+| Codes | Start / stop | What | In the 2DA | Conf. |
+|---|---|---|---|---|
+| 0-99, 100-199, 200-299 | `0x006a3660` / `0x006a47b0`, `0x006a3740` / `0x006a47f0` | creature-model changes (a `vdu_envmap%03u` environment map; a creature-wide effect) | none | low |
+| 300-399 | `0x006a38e0` / `0x006a4830` | the player's vision modes (`Ultra_Vision`, `Low_Light_Vision`, `Blind_Vision`, `Dark_Vision`, `darkness`, `Gren_5m`..`Gren_20m`: lights and fog) | none | med |
+| 400-499 | `0x006a3e80` / `0x006a4920` | a creature-model call (`0x0063cb50` for 401 and 404); priority 1 | none | low |
+| 600-699 | prepare `0x006a0680`, start `0x006a3fd0` / stop `0x006a05b0` | a beam model, hung on the target as `fxbeam`: 608 `v_lightns_dur`, 609 `v_lightnx_dur`, 610 `v_drddisab_dur`, 611 `v_drdkill_dur`, 612 `v_deathfld_dur`, 613 `v_drain_dur`, 614 `v_flame_dur`, 615 `v_stunray_dur`, 616 `v_coldray_dur`, 617 `v_ionray01_dur`, 618 `v_ionray02_dur`, 619 `v_fstorm_dur`, 620 `v_drdstun_dur`, 621 `v_fshock_dur` | 2026-2029, 2037, 2038, 2049-2053, 2061, 2065, 2066 (the beam, lightning, ray and drain durations; 608-621) | high |
+| 1000-1099 | `0x006a34b0` | creature texture swaps for polymorphs (`vdu_tex_shade`, `_bark`, `_grstone`, `_stone`) | none | med |
+| 1100-1199 | `0x006a2af0` | something placed on the target with a sound (plays `c_cow_atk1` through the voice-stream player; the polymorph effects, low) | none | low |
+| 1200-1299 | prepare `0x006a0800`, start `0x006a2e10` | 1201 `v_fizzle_imp` ("fxfail"), 1202 `v_fresist_imp` ("fxresist"): a power failing / being resisted, a model turned to face the caster | 4036-4038 | high |
+| 1300-1399 | `0x006a30e0` | a hit between two objects that carry weapons (`rhand`, `lhand`; three object ids): the saber/weapon impact | 6000, 6001 | low |
+| **1400-1499** | **start and stop `0x006a1220` / `0x006a1470`** | **a texture layer over the creature**: 1401-1412 `fx_tex_01`..`fx_tex_12`, **1413-1425 `fx_tex_14`..`fx_tex_26`** (there is no 13 in the switch), 1426 `fx_tex_stealth`; priority 0x14 | impact 1402, 1403, 1405-1407, 1409-1412; duration 1401, 1404, **1413-1421 (the shields)**, 1422-1424, 1426 | high |
+| 1500-1599 | `0x006a4580` | player only: a camera call with (135.0, 0.75, 0) that lasts 4750 ms (+0x9c = 0x128e): knight speed's camera push | 1020, 1022 | med |
+| 1600-1699 | `0x006a14e0` | player only (and only the first one): a full-screen effect of strength 0.75 (`FUN_0044f130`, `FUN_0044f0a0`) for 1601 and 1602 | 2004 | low |
+| 1700-1799 | prepare `0x006a0860`, start `0x006a4680` | 1700 `v_medal_dur` on `medalhook`, 1701 `v_revmask1_dur` on `revmask1hook`, 1702 `v_revmask2_dur` on `revmask2hook`: a model on a hook the row cannot name | 7000-7002 | high |
+| 1800-1899 | `0x006a15d0` / `0x006a1610` | 1800 calls a flag-setter on the creature's model (`0x00449af0` sets +0x17c; hides it, med) | 8000, 8001 | low |
+| 1900 and up | none | the ladder ends at 1899: 2000 and 2001 do nothing | 2000, 2001 | high |
+
+(Other `progfx_impact` codes the table uses: 1300 (6000, 6001), 1401-1412 as above, 1423 (8001),
+1500 (1020, 1022); there are no cessation codes.)
+
+**1400-1499, the texture layer** (what the shields are). `FUN_006a1220` chooses a texture name
+from the code, puts `0x14` in the record's priority byte (+0xd8), and calls `FUN_0063d440` twice
+with it: on the creature's model and on the object its slot 11 gives (the head). That is
+`appearance->vtable[10]` (`0x0069dd90`, lower-cases the name) and then the **model's** slot 84
+(`0x00448130`) with two arguments, the texture name and a float, **0.02** (`push 0x3ca3d70a` at
+`0x006a1371`). What `0x00448130` does, for every mesh part with a material: requests the
+texture, reads its TXI for `blending additive` (SRC_ALPHA, ONE) or `punchthrough`, puts the
+texture in the material's second texture slot (+0xc, the lightmap's) with the blend of a **second
+layer** (arrays at +0x28 and +0x34, entry 1), and stores the 0.02 at **model +0x11c**. Slot 85
+(`0x004485c0`) undoes it, which is the stop (`0x006a1470` calls it through `FUN_0063d460`).
+(high for the effect, med for "the model's slot 84" naming)
+
+The draw: after the normal draw of a mesh (`0x00477830`, the switch over the draw paths), if the
+card can run vertex programs and the owning model's +0x11c is not 0, the mesh is **drawn a second
+time** with the vertex program `DAT_00828014` ("the bumped-out program", ARB text at
+`0x00797488`, the NV one at `0x007a0b10`), the second texture bound, the second layer's blend
+applied (`0x0047af70`, entry 1: additive, depth writes off), all index lists of the mesh. The
+program moves each vertex along its normal by `program.env[12].x` (the 0.02 from +0x11c, set with
+`GL_SetProgramEnvParam(12, x, 0, 0, 1)`), passes uv0 and uv1 through, outputs the fog distance and
+colour **(1, 1, 1, 1)**: no lighting. So an energy shield is a second, unlit, 2 cm fatter copy of
+the creature's meshes (body and head, not the weapons), textured with an additive flipbook.
+(high; the program's text and the draw call are read; which UV set the layer-1 texture is
+sampled with is the program's `texcoord[0]` and the bind of unit 0: uv0, med)
+
+The textures are TPC flipbooks, 32 by 512 (16 frames of 32 by 32; `fx_tex_22` is 128 by 512, 4 of
+128 by 128), TXI `proceduretype cycle`, `numx 1`, `numy 16` (4), `fps 16` (`fx_tex_19` and
+`fx_tex_22`: 8), `blending additive`. All are dim, deliberately (the brightest pixel of
+`fx_tex_14` is 44 of 255): a shimmer over the body, not a glow. By shield row:
+
+| Rows | Code | Texture | Colour (mean RGB of its frames) |
+|---|---|---|---|
+| 2040 | 1413 | `fx_tex_14` | blue (0, 0, 21) |
+| 2044 | 1414 | `fx_tex_15` | green (4, 16, 8) |
+| 2045 | 1415 | `fx_tex_16` | red (13, 0, 0) |
+| 2041 | 1416 | `fx_tex_17` | blue (0, 2, 40) |
+| 2047 | 1417 | `fx_tex_18` | purple (14, 0, 26) |
+| 2048 | 1418 | `fx_tex_19` | purple (31, 0, 36), 8 fps |
+| 2042 | 1419 | `fx_tex_20` | blue (0, 2, 41) |
+| 2043 | 1420 | `fx_tex_21` | blue (1, 0, 27) |
+| 2046 | 1421 | `fx_tex_22` | orange (39, 15, 0), 8 fps, a circuit-like pattern |
+
+Several texture effects on one creature do not add up. Each record has a *kind* byte (+0xd9,
+`FUN_006a0930` from the code's hundred; its last tests compare with 0x72 and 0x74, not with
+1400 and 1700, so every code from 1300 to 1599 is kind 0xf and every code from 1600 up is
+kind 0) and the object's list manager `FUN_0063db90(kind)` runs after every effect
+is added: of the records of that kind that have a nonzero priority byte it keeps only the
+lowest one running (the newest on a tie) and turns the others off (`FUN_006a0c70`). So a 1 s
+impact flash (1401-1412, priority 0x14 as the shield's) shows over a running shield and the shield
+comes back when it ends. Sound: the row's `soundimpact` once, `soundduration`
+(`v_dur_shldblue` / `v_dur_shldred`) looping while the effect lasts. (med)
+
+Our version: `lib/vfx/aura.ctx` and docs/design/vfx.md, "Texture auras".
+
 ### Console overlay
 
 A Quake-style console is built into the renderer library. `Console_ExecFile` 0x0044c980 runs

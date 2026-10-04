@@ -63,6 +63,8 @@ namespace vfx {
 
     struct Vfx {
         fx: [MAX_FX]Fx,
+        auras: [MAX_AURAS]Aura,         // texture shells over creatures (aura.ctx)
+        aura_count: u32,                // auras begun, which also orders them
         time: f32,
         rng: u32,
         beams: [12]Beam,                // lightning and the other beams (beam.ctx)
@@ -72,7 +74,7 @@ namespace vfx {
     }
 
     fn make {} -> Vfx {
-        return Vfx{ fx = [no_fx{}; MAX_FX], time = 0.0, rng = 0x2F6E2B1, beams = [no_beam{}; 12], beam_tex = null, started = 0, dropped = 0 }
+        return Vfx{ fx = [no_fx{}; MAX_FX], auras = [no_aura{}; MAX_AURAS], aura_count = 0, time = 0.0, rng = 0x2F6E2B1, beams = [no_beam{}; 12], beam_tex = null, started = 0, dropped = 0 }
     }
 
     // The scene was released: its parts and arrays are gone with the area's arena.
@@ -82,6 +84,11 @@ namespace vfx {
         let mut i: usize = 0
         while i < MAX_FX {
             v.fx[i] = no_fx{}
+            i = i + 1
+        }
+        i = 0
+        while i < MAX_AURAS {
+            v.auras[i] = no_aura{}
             i = i + 1
         }
     }
@@ -304,7 +311,8 @@ namespace vfx {
         let hook = f.hook[..f.hook_len]
         if scene::hook_of{ sc, w, id = f.object, hook, which = f.which } is some{ value = m } { return m }
         let o = world::object{ w, id = f.object } ifnull { return f.matrix }
-        return math::mat4::translation{ t = math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + 1.2 } }
+        let height = if ci::eq{ a = hook, b = "rootdummy" } { 0.0 } else { 1.2 }
+        return math::mat4::translation{ t = math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + height } }
     }
 
     // ---- each step
@@ -330,6 +338,7 @@ namespace vfx {
     fn update { mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, dt: f32 } {
         v.time = v.time + dt
         update_beams{ &v, sc, w, dt }
+        step_auras{ &v, &sc, &w, dt }
         let mut i: usize = 0
         while i < MAX_FX {
             let slot = i
