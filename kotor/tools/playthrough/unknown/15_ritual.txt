@@ -1,0 +1,15 @@
+# Unknown World, part 15: the ritual at the Temple shield (unk_m41ad), the player alone: the Elders' guide (unk41_guide_dlg) begins it when the player comes near him;
+# Jolee and Juhani follow from the Hawk against the Rakata's tradition (journal unk_trapped 45; a [Persuade] reply makes the guide lower the shield for them), the cut scene
+# of the Star Forge (stunt_19: Malak and his preparations) and back at the Temple the shield is down: the walk to the Temple door (AreaTransition, unk_m44aa).
+# From "alone2". The bot's stall rule opens a closed door by itself, so the walk to the Temple starts only after the ritual (9,000 frames).
+5 ui replies default 1
+10 ui bot unlock on
+10 ui bot god on
+10 ui bot route unk41_goto41ada 216,124
+11 ui bot on
+10 savewhen unk_m44aa temple soon
+9000 ui bot route AreaTransition
+9001 ui bot on
+15000 ui party
+15000 ui journal list
+15000 ui rules

@@ -1,0 +1,15 @@
+# Unknown World, part 2: down the Hawk's ramp: the exit trigger (ebn12_ebonexit) opens the party screen (two free places, Bastila gone): Carth and T3-M4
+# by two clicks, then OK (k_pebn_exithawk starts unk_m41aa, the beach). From "crash" (the Hawk crashed, Carth has talked); the save "beach" is the arrival.
+5 ui heal
+6 ui replies default 1
+10 ui bot unlock on
+10 ui bot route ebn12_ebonexit
+11 ui bot on
+10 savewhen unk_m41aa beach
+1450 ui bot off
+1500 ui click 598 271
+1520 ui click 507 447
+1560 ui party
+1600 ui click 640 545
+3000 ui party
+3000 ui pos

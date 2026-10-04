@@ -1,0 +1,13 @@
+# Unknown World, part 10: the One's village (unk_m43aa): the bot (god mode) crosses the Black Rakata camp to the Elders' scout in the cage (unk43_redpris); the One
+# attacks at his trigger (unk43_battle) and dies by the party's hands (journal unk_trapped 32). Once the camp is quiet the scout is talked to ("I was sent by the
+# Council to save you": unk_trapped 33; his line needs the leader out of combat, k_punk_pris02). From "onecamp".
+5 ui replies default 1
+10 ui bot unlock on
+10 ui bot god on
+10 ui bot route unk43_redpris
+11 ui bot on
+14200 ui bot off
+15000 use unk43_redpris
+17000 ui journal list
+17000 ui party
+17000 save scout

@@ -1,0 +1,10 @@
+# Unknown World, part 9: from the Elders to the One's village, the bot in god mode: back through the cave (the hologram's talk, unk41_holo), the Temple approach,
+# the beach and the north shore to the Black Rakata gate (unk41_blkdoor, unk_m43aa). From "eldertalk" (journal unk_trapped 15: free the Elders' scout).
+5 ui replies default 1
+10 ui bot unlock on
+10 ui bot god on
+10 ui bot route rakatadoor2#1 unk41_goto41aarc unk41_goto41aad unk41_goto41ac unk41_blkdoor
+11 ui bot on
+10 savewhen unk_m43aa onecamp soon
+16000 ui party
+16000 ui pos

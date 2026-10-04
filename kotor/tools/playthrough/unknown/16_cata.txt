@@ -1,0 +1,23 @@
+# Unknown World, part 16: the catacombs of the Temple (unk_m44ab): the door down from the hall, the switch to the player alone (unk44_sparty, SetSoloMode), the floor panel puzzle (the player
+# steps on panels 1, 3, 5, 7 and 9 of the 3 x 3 grid: k_punk_floor01..09 toggle a panel and its neighbours, all nine lit opens unk44_massdoor), then the Rakata database (unk44_lib_dlg: genetic data
+# for unk_research, the way to the upper levels, k_punk_givestar). The panels are entered by warps (the bot cannot walk a 0.5 m gap exactly). From "temple"; the save "library".
+5 ui replies ~genetic ~How_can_I_shut ~upper_levels ~going_now default 1
+10 warpxy 89.94,57.9 party
+80 use unk44_basedoor
+200 ui bot god on
+200 ui bot route tempdoor switchparty
+201 ui bot on
+1325 ui bot off
+1410 warpxy 71.08,88.14
+1500 warpxy 75.33,88.13
+1600 warpxy 73.18,90.22
+1700 warpxy 75.13,92.15
+1800 warpxy 71.07,92.35
+1900 ui globals UNK_TILES
+2000 ui bot route unk44_massdoor @unk44_rakcomp
+2001 ui bot on
+6000 save library
+6900 ui pos
+6900 ui party
+6900 ui globals punk
+6900 ui journal list

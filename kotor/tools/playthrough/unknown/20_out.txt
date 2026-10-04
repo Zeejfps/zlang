@@ -1,0 +1,13 @@
+# Unknown World, part 20: out of the summit (door unk44_tpldoor, back into unk_m44aa at unk44_sw44aa24) and through the Temple to its way out (unk44_exitdoor, back to the approach unk_m41ad). The
+# shield droids and turrets of the hall are made friendly by the test cheat as in part 16. From "fieldoff"; the save "templeout".
+5 ui replies default 1
+10 savewhen unk_m41ad templeout soon
+10 ui bot god on
+10 ui bot route unk44_tpllckdoor unk44_tpldoor
+11 ui bot on
+900 ui bot route unk44_exitdoor
+900 ui faction unk44_shielddrd 2
+900 ui faction unk44_turret 2
+900 ui faction unk44_turret2 2
+901 ui bot on
+2600 ui pos
