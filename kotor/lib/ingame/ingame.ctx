@@ -183,7 +183,10 @@ namespace ingame {
         // Keys first: the menu keys, Escape and pause work with or without a menu open, and a menu
         // (a full-screen panel) would otherwise take every key.
         if ev is key{ down, repeat, keycode } {
-            if keycode == sdl::key::LSHIFT or keycode == sdl::key::RSHIFT { ui.shift_held = down }
+            if keycode == sdl::key::LSHIFT or keycode == sdl::key::RSHIFT {
+                ui.shift_held = down
+                ui.hud.alternate = down
+            }
             if keycode == sdl::key::LCTRL or keycode == sdl::key::RCTRL { ui.ctrl_held = down }
             if down and not repeat {
                 if handle_key{ &ui, &w, &dev, keycode } { return true }

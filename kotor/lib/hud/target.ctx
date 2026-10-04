@@ -214,7 +214,11 @@ namespace hud {
 
     // Does `act` on `target` for the leader: queues the matching action in place of whatever it
     // was doing (the player's choice replaces the queue, actions.md).
-    fn run_act { mut w: world::World, act: Act, target: u32 } {
+    //
+    // `queue` adds the order behind the leader's others instead of replacing them: the slot keys and buttons
+    // in combat mode queue, and Shift makes them replace (UseSelfAction 0x0068ad60, OnActionButton
+    // 0x0068b970); out of combat an order replaces what the leader was doing.
+    fn run_act { mut w: world::World, act: Act, target: u32, queue: bool } {
         let leader = party::leader{ w = &w }
         let kind: actions::Kind = match act {
             open => { actions::Kind::open_door }
@@ -232,7 +236,12 @@ namespace hud {
             a.params[3] = actions::Param::int{ v = 1 }
             a.params[4] = actions::Param::int{ v = 0 }
         }
-        actions::clear_all{ &w, id = leader }
+        if not queue { actions::clear_all{ &w, id = leader } }
         _ = actions::add{ &w, id = leader, action = a, force = false }
+    }
+
+    // Whether a slot order goes behind the leader's queue: in combat mode, unless Shift is held.
+    fn queues_orders { h: *Hud, w: *world::World } -> bool {
+        return leader_in_combat{ w } and not h.alternate
     }
 }

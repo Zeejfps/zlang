@@ -126,7 +126,7 @@ namespace hud {
         if k >= 3 or w.target == obj::INVALID { return false }
         let l = h.lists[k]
         if l.count == 0 { return false }
-        run_act{ &w, act = l.entries[l.selected].act, target = w.target }
+        run_act{ &w, act = l.entries[l.selected].act, target = w.target, queue = queues_orders{ h = &h, w = &w } }
         return true
     }
 
@@ -136,7 +136,7 @@ namespace hud {
         if w.target == obj::INVALID { return false }
         let l = h.lists[0]
         if l.count == 0 { return false }
-        run_act{ &w, act = l.entries[0].act, target = w.target }
+        run_act{ &w, act = l.entries[0].act, target = w.target, queue = false }
         return true
     }
 
@@ -159,7 +159,7 @@ namespace hud {
             let over_button = slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = k } }
             if over_button or slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = k } } {
                 let l = h.lists[k]
-                if l.count > 0 and w.target != obj::INVALID { run_act{ &w, act = l.entries[l.selected].act, target = w.target } }
+                if l.count > 0 and w.target != obj::INVALID { run_act{ &w, act = l.entries[l.selected].act, target = w.target, queue = queues_orders{ h = &h, w = &w } } }
                 return true
             }
             let up = slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "BTN_TARGETUP", n = k } }
@@ -189,7 +189,7 @@ namespace hud {
             let l = h.lists[0]
             if l.count > 0 {
                 gui::play_sound{ &g, n = 6 }
-                run_act{ &w, act = l.entries[0].act, target = id }
+                run_act{ &w, act = l.entries[0].act, target = id, queue = false }
             }
         } else {
             w.target = id
