@@ -35,13 +35,60 @@ shadows, 0 pixels differ.
 
 ## The frame of an enhanced view
 
-1. The scene into floating-point targets the size of the screen: the light (RGBA16F, unclamped), the view-space
-   normal and the share of the light that occlusion may darken (RGB10_A2, a second output of the same draws), depth
-   and stencil (a texture). Multisampled twins when Anti-Aliasing is on, resolved by blits. Opaque surfaces write
-   both outputs; shadows, transparent surfaces, particles and debug geometry the light alone.
-2. (Effects that read depth and normals go between the opaque and the transparent surfaces: height fog.)
-3. The post chain: light shafts, bloom, then the composite (exposure, tone curve, grade, a little noise against banding) into
-   the screen over the view's viewport. The speed blur (Frame Buffer Effects) follows as before.
+1. Shadow maps (the sun's and the chosen lights', one depth atlas).
+2. The scene into floating-point targets the size of the screen: the light (RGBA16F, unclamped), the view-space
+   normal and the share of the light that occlusion may darken (RGB10_A2, a second output of the same draws), with
+   reflections the environment map's share (RGBA16F, a third output), depth and stencil (a texture). Multisampled
+   twins when Anti-Aliasing is on, resolved by blits. Opaque surfaces write every output; shadows, transparent
+   surfaces, particles and debug geometry the light alone.
+3. Between the opaque and the transparent surfaces, the passes that read depth and normals and blend into the light:
+   ambient occlusion, reflections, height fog.
+4. The transparent surfaces and particles, then the post chain: depth of field, light shafts, bloom, the composite
+   (exposure, tone curve, grade, a little noise against banding) into the screen over the view's viewport (through
+   the edge filter when it is on). The speed blur (Frame Buffer Effects) follows as before; then the GUI.
+
+## Cost, all of it
+
+RTX 4090, Tatooine's Anchorhead (the sun's shadows, 30 draws of creatures and objects, an environment-mapped
+square), every option at its default (high, tessellation off, FXAA), GPU timestamps per pass (`gfx timing 1`; the
+opaque and transparent passes partly measure the CPU's pace of issuing draws):
+
+| | 1920x1080 | 2560x1440 | 3840x2160 |
+|---|---|---|---|
+| shadow maps | 0.10 | 0.18 | 0.12 |
+| opaque (with shadows received, room light, smooth lightmaps) | 0.30 | 0.23 | 0.31 |
+| occlusion | 0.10 | 0.17 | 0.39 |
+| reflections | 0.12 | 0.19 | 0.46 |
+| height fog | 0.01 | 0.02 | 0.06 |
+| transparent | 0.01 | 0.01 | 0.02 |
+| bloom | 0.06 | 0.07 | 0.11 |
+| composite (tone curve, grade) | 0.01 | 0.02 | 0.05 |
+| edge AA (FXAA) | 0.04 | 0.07 | 0.14 |
+| **3D total** | **0.75** | **0.96** | **1.66** |
+| the original renderer's 3D view, same scene | | 0.10 | |
+
+Under the 3 ms aim at 1440p with room to spare. Depth of field (conversations, +0.03 ms at 720p) and light shafts
+(toward the sun, 0.07 ms at 1440p) add only when they apply. For a weaker GPU (a Mac): every effect has a low
+level or a switch; the heaviest at 4K are reflections and occlusion (low halves their taps), shadows (low: one
+light, 2048² atlas, PCF), bloom (low: 4 levels).
+
+## The fixed scene set
+
+| Scene | Pictures (in `kotor/out/fx/`, from this branch's runs) |
+|---|---|
+| Endar Spire corridor, a lightsaber fight (the Jedi duel cutscene from the `bunk` checkpoint) | `duel_saber_cmp.png` (original above, enhanced below: blades glow, focus on the duel, the floor reflects, soft shadows); `bolt_crop_before_after.png` (a blaster bolt) |
+| Endar Spire bridge | `t/bridge_sm_cmp.png` (shadows), `t/bridge_ao_cmp.png`, `t/bridge_ssr_cmp.png`, `t/bridge_lm_cmp.png`, `aa/edges_cmp_bridge.png` |
+| Taris apartment | `t/apt_rl_cmp.png` (room light), `t/apt_ao_d.png` (occlusion) |
+| Taris Upper City | `t/up_sm_cmp.png` (planar, low, soft shadows), `atmos/taris_before.png` / `taris_after.png` |
+| Dantooine grove (outdoor sun) | `t/grove_rl_cmp.png`, `t/grove_all.png`, `atmos/grove_cmp.png`, `atmos/sun_cmp.png`, `aa/foliage_cmp_grove.png` |
+| Tatooine Anchorhead (sun shadows) | `t/tat_sm_cmp.png`, `t/tat_lm_cmp.png` |
+| Kashyyyk Shadowlands (foliage) | `atmos/kashyyyk_before.png` / `kashyyyk_after.png`, `aa/foliage_cmp_kashyyyk_grass.png` |
+| A conversation (Trask on the Endar Spire) | `t/talk_dof_cmp.png`, `t/tess_cmp.png` |
+| The main menu's 3D scene | `t/menu_fx3d.png`, `aa/edges_cmp_menu.png`; the panel: `t/menu_fx.png` |
+| Planet grades | `p/sheet1.png` .. `sheet4.png` |
+
+Not captured: the Star Map (its dome is sealed until the story opens it); self-illumination's glow shows on the
+Endar Spire's screens and lamps instead.
 
 ## The effects
 
