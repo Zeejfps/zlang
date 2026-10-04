@@ -330,7 +330,7 @@ namespace equip {
         let elapsed = now - a.started
         if a.phase == 1 and elapsed >= 750 {
             a.phase = 2
-            if not rt_misc::move_item{ &w, item, to = id } { return actions::Status::failed }
+            if not xfer::acquire{ &w, item, to = id } { return actions::Status::failed }
         }
         if elapsed < 1500 { return actions::Status::running }
         world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }

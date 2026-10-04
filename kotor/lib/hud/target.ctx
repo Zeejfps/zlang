@@ -8,18 +8,18 @@ namespace hud {
     const HOSTILE_BELOW: i32 = 11
 
     // What a slot does when pressed.
-    enum Act: u8 { none, open, bash, use_place, open_place, talk, attack, unlock }
+    enum Act: u8 { none, open, bash, use_place, open_place, talk, attack, unlock, throw }
 
     // One choice in a slot: its icon (a texture in the GUI pack) and the dialog.tlk string that
-    // names it.
-    struct Entry { act: Act, icon: [16]u8, icon_len: usize, strref: u32 }
+    // names it; an item's (a grenade to throw) is named by the item, which `item` says.
+    struct Entry { act: Act, icon: [24]u8, icon_len: usize, strref: u32, item: u32 }
 
     // A slot's choices, cycled with its arrows.
     struct ActionList { entries: [4]Entry, count: usize, selected: usize }
 
     fn entry { act: Act, icon: []u8, strref: u32 } -> Entry {
-        let mut e = Entry{ act, icon = [0; 16], icon_len = 0, strref }
-        let n = if icon.len > 16 { 16 } else { icon.len }
+        let mut e = Entry{ act, icon = [0; 24], icon_len = 0, strref, item = obj::INVALID }
+        let n = if icon.len > 24 { 24 } else { icon.len }
         slice::copy(u8){ dst = e.icon[..n], src = icon[..n] }
         e.icon_len = n
         return e
@@ -202,8 +202,17 @@ namespace hud {
 
     // Does `act` on `target` for the leader: queues the matching action in place of whatever it
     // was doing (the player's choice replaces the queue, actions.md).
-    fn run_act { mut w: world::World, act: Act, target: u32 } {
+    fn run_act { mut w: world::World, act: Act, target: u32, item: u32 } {
         let leader = party::leader{ w = &w }
+        if act == Act::throw {
+            // A grenade: its ability cast at the target, in place of what the leader was doing.
+            let spell = rt_item::ability_of{ w = &w, id = item }
+            if spell < 0 { return }
+            actions::clear_all{ &w, id = leader }
+            events::post{ &w, delay_ms = 0, caller = leader, target = w.module, payload = events::Payload::script{ e = events::script_event{ kind = events::ACTIVATE_ITEM, object = item } } }
+            rt_talent::queue_cast{ &w, me = leader, spell, target, location = math::vec3::zero{}, cheat = 0, instant = 0, item }
+            return
+        }
         let kind: actions::Kind = match act {
             open => { actions::Kind::open_door }
             use_place | open_place => { actions::Kind::use_object }

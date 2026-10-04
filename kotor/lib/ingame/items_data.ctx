@@ -84,28 +84,7 @@ namespace items {
     // The item's icon texture name: `i` + baseitems ItemClass + `_` + the model variation as
     // three digits (checked against every UTI of the install: 1012 of 1055 resolve, the rest are
     // creature weapons and hides, which are never shown). `defaulticon` is the fallback.
-    fn icon_name { w: *world::World, id: u32, into: []mut u8 } -> []u8 {
-        let it = item_of{ w, id } ifnull { return into[..0] }
-        let class = twoda::get_string{ t = w.tables.baseitems, row = @as(usize, it.base), column = "itemclass" } ifnull { return into[..0] }
-        if class.len + 6 > into.len { return into[..0] }
-        let mut n: usize = 0
-        into[n] = 'i'
-        n = n + 1
-        slice::copy(u8){ dst = into[n..n + class.len], src = class }
-        let mut k: usize = 0
-        while k < class.len {
-            into[n + k] = ascii::to_lower{ c = into[n + k] }
-            k = k + 1
-        }
-        n = n + class.len
-        into[n] = '_'
-        n = n + 1
-        let v = if it.model_variation == 0 { 1 } else { it.model_variation }
-        into[n] = @trunc(u8, 48 + (v / 100) % 10)
-        into[n + 1] = @trunc(u8, 48 + (v / 10) % 10)
-        into[n + 2] = @trunc(u8, 48 + v % 10)
-        return into[..n + 3]
-    }
+    fn icon_name { w: *world::World, id: u32, into: []mut u8 } -> []u8 { return hud::item_icon_name{ w, id, into } }
 
     // The item's icon, with its size; not ok when the install has neither the variation's nor the
     // base item's default picture.

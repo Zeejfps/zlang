@@ -1,0 +1,59 @@
+// The items the HUD offers: the picture of an item, and the target block's item slot, which lists the
+// party's grenades against a hostile creature (docs/re/gui.md "Action menus": the builder at
+// 0x006198e0 walks the party inventory and keeps the items whose base item has ItemType 6).
+namespace hud {
+    const TYPE_GRENADE: i32 = 6
+
+    // The name of an item's icon texture: `i` + the base item's ItemClass + `_` + the model variation in
+    // three digits (checked against every UTI of the install: 1012 of 1055 resolve, the rest are
+    // creature weapons and hides, which are never shown). Empty for a thing that is not an item.
+    fn item_icon_name { w: *world::World, id: u32, into: []mut u8 } -> []u8 {
+        let io = world::object{ w, id } ifnull { return into[..0] }
+        let it = obj::item{ o = io } ifnull { return into[..0] }
+        let class = twoda::get_string{ t = w.tables.baseitems, row = @as(usize, it.base), column = "itemclass" } ifnull { return into[..0] }
+        if class.len + 6 > into.len { return into[..0] }
+        let mut n: usize = 0
+        into[n] = 'i'
+        n = n + 1
+        slice::copy(u8){ dst = into[n..n + class.len], src = class }
+        let mut k: usize = 0
+        while k < class.len {
+            into[n + k] = ascii::to_lower{ c = into[n + k] }
+            k = k + 1
+        }
+        n = n + class.len
+        into[n] = '_'
+        n = n + 1
+        let v = if it.model_variation == 0 { 1 } else { it.model_variation }
+        into[n] = @trunc(u8, 48 + (v / 100) % 10)
+        into[n + 1] = @trunc(u8, 48 + (v / 10) % 10)
+        into[n + 2] = @trunc(u8, 48 + v % 10)
+        return into[..n + 3]
+    }
+
+    // The item's base item ItemType (baseitems.2da), 0 when it is not an item.
+    fn item_type_of { w: *world::World, id: u32 } -> i32 {
+        let io = world::object{ w, id } ifnull { return 0 }
+        let it = obj::item{ o = io } ifnull { return 0 }
+        return twoda::get_int{ t = w.tables.baseitems, row = @as(usize, it.base), column = "itemtype" } ifnull 0
+    }
+
+    // The grenades the leader can throw at `target`: one choice for each item of the party's inventory
+    // that is a grenade and has an ability, in the inventory's order (the stack is one choice).
+    fn grenade_actions { w: *world::World, target: u32 } -> ActionList {
+        let mut l = empty_list{}
+        if not is_hostile{ w, id = target } { return l }
+        let ids = list::items{ list = w.bag }
+        let mut k: usize = 0
+        while k < ids.len {
+            let id = ids[k]
+            k = k + 1
+            if item_type_of{ w, id } != TYPE_GRENADE or rt_item::ability_of{ w, id } < 0 { continue }
+            let mut buf: [40]u8
+            let mut e = entry{ act = Act::throw, icon = item_icon_name{ w, id, into = buf[..] }, strref = 0 }
+            e.item = id
+            push_entry{ &l, e }
+        }
+        return l
+    }
+}

@@ -115,16 +115,7 @@ namespace items {
     }
 
     // The spell of the item's first active CastSpell property (its ability), -1 when it has none.
-    fn ability_of { w: *world::World, id: u32 } -> i32 {
-        let ri = rules_item_of{ w, id } ifnull { return -1 }
-        let mut k: usize = 0
-        while k < @as(usize, ri.nprops) {
-            let p = ri.props[k]
-            k = k + 1
-            if @as(i32, p.name) == rules::ip::CAST_SPELL and rules::prop_active{ item = ri, p = &p } { return @as(i32, p.subtype) }
-        }
-        return -1
-    }
+    fn ability_of { w: *world::World, id: u32 } -> i32 { return rt_item::ability_of{ w, id } }
 
     // Whether the ability is cast on the user: a power of touch or personal range (medpacs, stims,
     // shields). The thrown and aimed ones (grenades, flame throwers) need a target.

@@ -1,0 +1,4 @@
+20 ui pos
+20 ui list
+20 ui where trooper
+20 ui where sith

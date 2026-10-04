@@ -64,6 +64,20 @@ namespace rt_item {
         return true
     }
 
+    // The spell of the item's first active CastSpell property (its ability), -1 when it has none.
+    fn ability_of { w: *world::World, id: u32 } -> i32 {
+        let io = world::object{ w, id } ifnull { return -1 }
+        let it = obj::item{ o = io } ifnull { return -1 }
+        let ri = it.rules ifnull { return -1 }
+        let mut k: usize = 0
+        while k < @as(usize, ri.nprops) {
+            let p = ri.props[k]
+            k = k + 1
+            if @as(i32, p.name) == rules::ip::CAST_SPELL and rules::prop_active{ item = ri, p = &p } { return @as(i32, p.subtype) }
+        }
+        return -1
+    }
+
     // Puts `item` in the inventory of `o`, joining a stack of the same blueprint that has room for
     // all of it (AddItem with merge, party-items-saves.md 5.2: same base item, variations, charges,
     // blueprint). The id of the item that now holds it; INVALID when it could not be added.
@@ -155,6 +169,8 @@ namespace rt_item {
                     it.stack = it.stack - 1
                     ri.stack = @as(i32, it.stack)
                 } else {
+                    // The last of the stack: DECREMENT_STACKSIZE destroys it, and the party is told.
+                    notices::item_lost{ &w, who = it.possessor, item }
                     forget_item{ &w, item }
                     world::destroy{ &w, id = item }
                 }
@@ -388,7 +404,14 @@ namespace rt_item {
         let template = try nwarg::string{ &vm, routine = r, argc, i = 0 }
         let target = try nwarg::object{ &vm, routine = r, argc, i = 1 }
         let stack = try nwarg::int{ &vm, routine = r, argc, i = 2 }
-        try nwvm::push_object{ &vm, id = create_item{ &w, template, target, stack } }
+        let id = create_item{ &w, template, target, stack }
+        // AcquireItem with feedback: the party is told ("Acquired Item: ...", the HUD's icon).
+        if id != obj::INVALID {
+            notices::item_gained{ &w, who = target, item = id }
+        } else if stack > 0 and template.len >= 11 and ci::eq{ a = template[..11], b = "g_i_credits" } {
+            notices::credits_changed{ &w, who = target, n = @as(i64, stack) }
+        }
+        try nwvm::push_object{ &vm, id }
     }
 
     // ---- gold

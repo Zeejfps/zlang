@@ -220,6 +220,9 @@ namespace ingame {
                 ui.psel_force1 = force1
                 ui.psel_force2 = force2
             }
+            hud_notice{ kind } => {
+                if kind >= 0 { notify{ &ui, which = @as(usize, kind) } }
+            }
             feedback{ strref, text } => {
                 let sent = outbox::text_of{ out = &w.out, t = text }
                 let said = if sent.len > 0 { sent } else { world::string_by_strref{ w = &w, strref } }
