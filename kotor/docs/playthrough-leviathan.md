@@ -80,7 +80,7 @@ State: **works** (checked, 0 faults), **fixed** (a commit of this branch), **ope
 (The numbers are the frames of the chain: the capture at 3,200, the interrogation at 8,150-20,260, Mission's scene to 23,300, the party freed at 3,300 of
 part 2, the bridge at about 3,000 of part 5, Malak's talk at 6,500 and 9,200 of part 8, the Hawk's talk 8,500 frames long.)
 
-## The movies (every one decoded to its end, `movie NAME: played (N frames decoded, N shown, 0 dropped, ...)` in the log)
+## The movies (every one played to its end once, with `CINEMA=1`: `movie NAME end: finished after S s, N pictures shown, 0 dropped`)
 
 `05_7c` (Korriban's take-off, 517 frames), `08` (hyperspace, 489), `17` (the Leviathan takes the Hawk, 717), `31a` (the Revan flashback: Bastila
 and the Council's judgement of the captured prisoner, 2,856 frames = 95 s), `05r` (the return to the hangar, 615), `17a` (the Leviathan's hull as the Hawk
@@ -107,9 +107,12 @@ fight, the Dark Jedi, Malak's hangar). Alignment 97 to 98 (the reply "Take your 
    and read (a module change and a save between the switches work); back (-1) the character is made again from the file.
 2. **A Min1HP party member was "down"** (a5b1662). Malak's Force Choke took the god-mode player to 0 hit points for a moment inside a tick and the
    rules copy kept `down = true`: "Your entire party has been killed." with the player at 1 hit point.
-3. **No movie ever played in the game** (0079e39). `PlayMovie`, the movie arguments of `StartNewModule` and `QueueMovie`/`PlayMovieQueue` posted
-   outbox notes that nothing took; the cut scenes between modules were black. `game/movies.ctx` now plays them over the frozen game with
-   the front end's Bink player (the game's own sound paused, Escape/Return/Space/click skips); a headless run decodes each movie at once and logs it.
+3. **No movie ever played in the game** (found here; the player that now plays them is the Star Forge QA's `game/cine.ctx`, 6128da6, which this
+   branch's own `game/movies.ctx` (0079e39) was folded into and dropped for). `PlayMovie`, the movie arguments of `StartNewModule` and
+   `QueueMovie`/`PlayMovieQueue` posted outbox notes that nothing took; the cut scenes between modules were black. A hidden run logs
+   `movie NAME (not shown: hidden run)`; with `CINEMA=1` (the `--cinema` flag) the chain's run.sh plays each film through the player and the log says
+   `movie NAME start: WxH, N frames, sound true` and `movie NAME end: finished after S s, N pictures shown, 0 dropped` once per film (the films then take
+   loop frames, so the chain runs without it). Checked this way: `05_7c`, `08`, `17` (part 1), `31a`, `05r`, `17a`, `11a`, `11b` (part 8) each play once.
 4. **The test bot stood still after the merge of the path work** (the commit of this log's last change). Since a closed door no longer lets the planner walk
    through it, a hostile in another room (the deck's 13 guards in their rooms, 15 m off behind doors) became unreachable: the bot attacks the nearest
    hostile in sight before it follows its route, the approach failed at once, and the party stood 5 m before a closed door for ever. The bot now opens the
@@ -124,9 +127,10 @@ fight, the Dark Jedi, Malak's hangar). Alignment 97 to 98 (the reply "Take your 
   the Hawk (the original's `k_pebn_pophawk`); `ui stat` acts on the leader, so the order of the setup lines matters (the hit points after the classes);
   a mid-cut-scene checkpoint (a save while Malak and Bastila fight) loads without the scripted state and the player is killed: the chain saves
   before the hangar and plays the whole of it in one part.
-- **The Rodians in the next cells** break their doors in three hits (20 hit points, no hardness): the template says `CurrentHP` 60 and `Hardness` 5
-  (`lev_cell010.utd`); the engine reads `HP` only for a door and ignores `Hardness`. Not fixed (door damage is the combat lead's); in the
-  original they do not get out (they bang on the force fields), here Mission fights them through the opened cell door.
+- **OPEN: door `Hardness` and `CurrentHP`.** The insane Rodians in the next cells break their doors in three hits (20 hit points, no hardness): the template
+  says `CurrentHP` 60 and `Hardness` 5 (`lev_cell010.utd`; gff-templates.md: damage reduction against physical attacks); the engine reads `HP` only for a door
+  and ignores `Hardness` (`fight::damage_object`). Not fixed (door damage is the combat lead's); in the original they do not get out (they bang on the
+  force fields), here Mission fights them through the opened cell door.
 - **Staging audit**: the audit (`stage_audit.py`) lists only cut-scene staging (Saul 10.7 m from the player in
   the torture room, the bridge talk 22 m, Bastila 31 m from Carth in the hangar finale, Mission 9 m and Canderous 12 m in the Hawk's hold): the data's.
 - **The light** of the deck and the hangar is the red emergency light of the data; not compared with the original.

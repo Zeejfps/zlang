@@ -20,7 +20,7 @@ export SAVES=${SAVES:-kotor/out/pt/saves_lev}
 export FAST=1
 if [ -n "$CKPT" ]; then
   export LOAD=kotor/out/pt/lev_ckpt/$CKPT
-  sh kotor/tools/playthrough/run.sh $name $script $frames "$@" -- --settings kotor/tools/playthrough/leviathan/play.ini
+  sh kotor/tools/playthrough/run.sh $name $script $frames "$@" -- --settings kotor/tools/playthrough/leviathan/play.ini ${CINEMA:+--cinema}
 else
-  sh kotor/tools/playthrough/run.sh $name $script $frames "$@" -- --module ${MODULE:-korr_m33aa} --settings kotor/tools/playthrough/leviathan/play.ini
+  sh kotor/tools/playthrough/run.sh $name $script $frames "$@" -- --module ${MODULE:-korr_m33aa} --settings kotor/tools/playthrough/leviathan/play.ini ${CINEMA:+--cinema}
 fi
