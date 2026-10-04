@@ -87,7 +87,7 @@ namespace play {
         let freq = sdl::counter_frequency{ &sdl }
         let mut last = sdl::counter{ &sdl }
         let mut quit = false
-        let mut game_over = false
+        let mut wipe = death::make{}            // the party wipe's slow motion, camera, box and fade (game/death.ctx)
         let mut want_save: []u8 = ""            // a save asked for this frame: its folder name
         let mut want_load: []u8 = ""            // a load asked for: a folder (ours, then the install's)
         let mut real_total: f64 = 0.0
@@ -162,7 +162,7 @@ namespace play {
                     scene::release{ &sc, &dev }
                     arena::reset{ heap = &scene_arena }
                     vfx::reset{ v = &vx }
-                    game_over = false
+                    death::abort{ d = &wipe, ui, &w }
                     clock::set_pause{ c = &w.clock, bit = clock::PAUSE_ENGINE, on = false }
                     save::load_game{ &w, &vm, engine, folder } iferr err{ error } {
                         _ = @fmt(&w.io, "kotor: load failed: {}\n", error)
@@ -187,8 +187,10 @@ namespace play {
             let lived = if opts.dt > 0.0 { dt } else { real }
             w.played_seconds = w.played_seconds + @as(f64, lived)
             w.autosave_ms = w.autosave_ms + @as(f64, lived) * 1000.0
+            // No saving between the party's fall and the main menu.
+            if wipe.active { want_save = "" }
             // An autosave wanted by a transition or a script, once the area is in place.
-            if w.autosave_due and w.transition == null and w.arrival == 0 and want_save.len == 0 {
+            if w.autosave_due and w.transition == null and w.arrival == 0 and want_save.len == 0 and not wipe.active {
                 w.autosave_due = false
                 want_save = "AUTOSAVE"
             }
@@ -201,20 +203,18 @@ namespace play {
                 let leaving = try mg_game::frame{ &sdl, &w, &vm, engine, &dev, &frame, &sc, stage = &mg_stage, &amb, mixer, adev, silent, rate, opts, keys, mouse = &mg_mouse, dt, frame_no, shot_heap = &scene_arena, dview = &dview, g = &ui.gui }
                 if not leaving { continue }
             }
-            // 3-6. The world.
+            // 3-6. The world. The party wipe's slow motion sets the game speed first (gameloop.md 6.6).
+            death::step_slow{ d = &wipe, &w, dt }
             clock::advance{ c = &w.clock, seconds = dt }
             // The player doesn't walk while a conversation runs (re/dialogue.md 4.9).
             if w.conversation.active { keys = ctl::no_keys{} }
             ctl::update{ ctl = &control, &w, keys, yaw = camera.yaw, dt = w.clock.dt }
             world::tick{ &w, &vm, engine }
             fight::trace{ &w }
-            // The whole party fallen: the game is over (ours: the world stops, the options menu's
-            // Load Game is the way on; the original's death camera and panel are not built).
-            if not game_over and w.arrival == 0 and w.transition == null and fight::party_fallen{ w = &w } {
-                game_over = true
-                clock::set_pause{ c = &w.clock, bit = clock::PAUSE_ENGINE, on = true }
-                world::prefix{ w = &w }
-                _ = @fmt(&w.io, "kotor: {}\n", world::string_by_strref{ w = &w, strref = 42351 })
+            // The whole party fallen: slow motion, the death camera, the "Your entire party has been killed." box and a
+            // fade to black; answering the box or the end of the fade is the way to the main menu (game/death.ctx).
+            if not wipe.active and w.arrival == 0 and w.transition == null and fight::party_fallen{ w = &w } {
+                death::start{ d = &wipe, ui, &w, &dev }
             }
             // 7. The conversation's pump: the next line, the replies, the end.
             dlg::update{ &w, &vm, engine }
@@ -306,12 +306,16 @@ namespace play {
             cam::update{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height, turn = ctl::turn_input{ keys }, dt = camera_dt }
             dlgview::apply_camera{ v = &dview, w = &w, sc = &sc, camera = &camera }
             if test_camera.len > 0 { place_test_camera{ &w, spec = test_camera, &camera } }
+            death::place_camera{ d = &wipe, c = &camera, w = &w, sc = &sc, dt = camera_dt }
             let pc = world::object{ w = &w, id = w.pc }
             let player_room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
             let room = dlgview::view_room{ v = &dview, w = &w, player_room }
             scene::update_visibility{ &sc, w = &w, room }
             ingame::update{ ui, &w, &dev, sc, camera, dt }    // HOOK(ingame)
             if ingame::wants_quit{ ui } { quit = true }    // HOOK(ingame)
+            // The party wipe's box answered or its fade over: the options menu's Exit Game is the way out (the main menu).
+            death::after_ui{ d = &wipe, ui, &w, fade_running = dlgpanel::fade_running{ p = dview.panels } }
+            if death::is_over{ d = wipe } { quit = true }
             // The party selection screen was applied: its exit script (ShowPartySelectionGUI's), with no caller.
             if ingame::take_exit_script{ ui } is some{ value = exit_script } { _ = scripts::run{ &w, &vm, engine, name = exit_script, self = obj::INVALID } }    // HOOK(ingame)
             // The options menu's Save Game and Load Game (the menus have closed themselves).
