@@ -197,13 +197,20 @@ namespace visual {
             looping = animname::loops_in{ w = &w, id = o.animation }
         }
         // Cutscene models name theirs `cutNNNw` whatever their kind.
-        if ci::starts_with{ s = base, prefix = "cut" } { prefixed = false }
+        let cut = ci::starts_with{ s = base, prefix = "cut" }
+        if cut { prefixed = false }
+        // A scene animation is authored in area space and the body's own are not, so a blend into or out
+        // of one (or between two shots') would carry the body from wherever the other left it: the stunt
+        // body glided in from the origin at every camera cut. A cut changes the pose at once.
+        let first = scene::part_at{ sc = &sc, i = v.first }
+        let was_cut = ci::starts_with{ s = first.anim[..first.anim_len], prefix = "cut" }
+        let transition: f32 = if cut or was_cut { 0.0 } else { 0.25 }
         let mut buf: [34]u8
         let name = with_prefix{ into = buf[..], name = if base.len > 0 { base } else { "pause1" }, prefix = prefixed }
         let mut fallback: [34]u8
         let pause = with_prefix{ into = fallback[..], name = "pause1", prefix = v.creature_prefix }
-        if not scene::play{ &sc, &w, part = v.first, name, looping, speed = o.anim_speed, transition = 0.25 } {
-            _ = scene::play{ &sc, &w, part = v.first, name = pause, looping = true, speed = 1.0, transition = 0.25 }
+        if not scene::play{ &sc, &w, part = v.first, name, looping, speed = o.anim_speed, transition } {
+            _ = scene::play{ &sc, &w, part = v.first, name = pause, looping = true, speed = 1.0, transition }
         }
         // The head part (a B body's second part hangs at the headhook).
         if v.count > 1 {
