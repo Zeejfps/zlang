@@ -237,6 +237,15 @@ namespace inventory_panel {
             s.box = items::notice{ &g, &w, &dev, strref = if slots != 0 { 42485 } else { 42486 } }
             return false
         }
+        // In combat only one item may be used each round (OnUseItem: 42409).
+        if hud::creature_of{ w = &w, id = s.who } is some{ value = c } {
+            if c.in_combat and hud::ruled_of{ w = &w, id = s.who } is some{ value = f } {
+                if f.item_ms > 0 {
+                    s.box = items::notice{ &g, &w, &dev, strref = 42409 }
+                    return false
+                }
+            }
+        }
         let kind = items::base_int{ w = &w, id, column = "itemtype", fallback = 0 }
         if kind == TYPE_MEDPAC or kind == TYPE_REPAIR_KIT {
             let v = hud::vitality_of{ w = &w, id = s.who }

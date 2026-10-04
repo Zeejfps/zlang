@@ -31,7 +31,7 @@ frames, so setup and click are spaced out.
 | An equippable item clicked in the inventory: "You cannot equip items from the INVENTORY screen..." (42485); other non-usable: 42486 | OnEquippableItemClicked / OnUnusableItemClicked | matches | `inv_click.txt` |
 | A medpac or repair kit at full vitality: 42499; a recovery kit with nobody hurt: 48494 | gui.md Row click 3, 4 | matches | `inv_click.txt` |
 | Using an item while the menu is up pauses the world: the item is used when the menu closes (actions wait for the clock) | gameloop.md 6.2 | matches | `inv_click.txt` (hp 6 until closed, then 18) |
-| Only one item per combat round from the inventory: "can only use one item per round" (42409) | OnUseItem, creature +0xab0 | open (low): the round model keeps no per-round item flag | |
+| Only one item per combat round from the inventory (42409: "Each party member can only use one item per round during combat") | OnUseItem, creature +0xab0 | matches (a 3 s window after an item ability begins, `Fighter.item_ms`) | `one_item_round3.txt` |
 | HUD self slots (bottom right), best first: friendly power, **medical** (ItemType 45 medpacs, 47 recovery kit, 26 repair kits), **other** (stims, ItemType 25, and any item whose power has `itemtargeting` 1 in spells.2da: disguises, energy shields, droid devices, plot serums; a forearm shield or droid device only while worn), mines. Grenades are not here | list builder 0x006197d0 and the item test 0x00616520 (the arm and belt cells are offered with the bag) | matches (items); mines and powers: see traps.md and the Force owner | `slots_lists.txt` |
 | A slot's arrows cycle its entries; an unusable one shows dimmed and a click says why for 5 s (Force Depleted, Restricted by Armor, Missing Item, Full Health, PC Dead) | UseSelfAction 0x0068ad60 | matches | `selfslots.txt` (earlier lead) |
 | A click replaces the leader's queued actions; once an item's ability has begun it is **unclearable**, a second order waits behind it | actions.md 3.13 (ITEMCASTSPELL "unclearable on its first frame") | matches (`actions::clear_for_player`; was cleared, so two quick uses lost the first) | `consumables2.txt` |
@@ -115,7 +115,6 @@ lines and statuses.
 
 ## Open items
 
-- One item per combat round (inventory message 42409).
 - An equip in combat as a combat-round entry; OnEquipItem (no module uses it).
 - Per-minute item uses (one droid shield).
 - The HEAL action for scripts; stack counts on the HUD slots (the original keeps the stack size in the

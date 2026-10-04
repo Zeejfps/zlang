@@ -76,6 +76,7 @@ namespace fight {
         dying_ms: i32,                  // > 0: the die animation plays, then dead
         voice_ms: i32,                  // > 0: it has just grunted
         ready_ms: i32,                  // > 0: a cutscene attack was just made, so the weapon stays up
+        item_ms: i32,                   // > 0 in combat: an item was used this round (the inventory allows one per round)
     }
 
     fn no_impact {} -> Impact {
@@ -91,7 +92,7 @@ namespace fight {
     fn new_fighter { heap: *mut heap::Heap } -> !*mut Fighter {
         let mut c: rules::Creature
         c.loaded_hp = -1
-        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0, voice_ms = 0, ready_ms = 0 }
+        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0, voice_ms = 0, ready_ms = 0, item_ms = 0 }
         return try alloc::new(Fighter, heap::Heap){ realloc = heap::alloc, heap, value = f }
     }
 
@@ -1033,6 +1034,7 @@ namespace fight {
         if f.react_ms > 0 { f.react_ms = f.react_ms - dt }
         if f.voice_ms > 0 { f.voice_ms = f.voice_ms - dt }
         if f.ready_ms > 0 { f.ready_ms = f.ready_ms - dt }
+        if f.item_ms > 0 { f.item_ms = f.item_ms - dt }
         // Back to the ready stance (in combat) or standing when an attack or reaction is over.
         let busy = (f.round.started and f.round.timer_ms < f.round.anim_ms) or action_holds_animation{ o = o3 }
         if not busy and f.react_ms <= 0 and not c3.moving and row_of_animation{ id = o3.animation } >= 0 {
@@ -1232,6 +1234,7 @@ namespace fight {
             let used = actions::object_param{ a, i = 6 }
             if used != obj::INVALID and not world::is_valid{ w = &w, id = used } { return actions::Status::failed }
             a.unclearable = used != obj::INVALID
+            if used != obj::INVALID and of{ o } is some{ value = uf } { uf.item_ms = ROUND_MS }
             let dir = math::vec3::sub{ a = at, b = o.position }
             if dir.x * dir.x + dir.y * dir.y > 0.0001 { world::set_orientation{ o, v = math::Vec3{ x = dir.x, y = dir.y, z = 0.0 } } }
             if obj::creature{ o } is some{ value = c } {
