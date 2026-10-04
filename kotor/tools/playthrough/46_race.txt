@@ -4,6 +4,7 @@
 3 ui bot off
 3 ui autolevel
 3 ui replies default 1
+3 savewhen tar_m02af apt k_swg_bastilatalk 5
 5 racer
 5 ui goto tar03_wpmechanic
 300 hoveron raceannoun031
@@ -22,4 +23,3 @@
 15013 mouse click
 15016 mouse click
 17900 ui party
-22000 save apt

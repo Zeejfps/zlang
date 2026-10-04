@@ -26,6 +26,8 @@ namespace party {
         // SpawnAvailableNPC makes it from, and the XP pool is PT_XP_POOL.
         templates: [12]resref::ResRef,
         xp_pool: i32,
+        // JoiningXP (creature +0x22c, re/party-items-saves.md 3.4) per slot: set when the NPC becomes available, read by the XP catch-up when it is spawned.
+        joining_xp: [12]i32,
         // pazaak (docs/re/pazaak.md): the cards owned by id, the side deck chosen last, the last result
         pazaak_cards: [18]i32,
         pazaak_deck: [10]i32,
@@ -59,7 +61,7 @@ namespace party {
             members = [obj::INVALID; 3], count = 0, npcs = [obj::INVALID; 12], available = [false; 12],
             selectable = [false; 12], gold = 0, solo = false,
             saved_slots = [-1; 3], saved_count = 0, saved_leader = -1,
-            templates = [resref::empty{}; 12], xp_pool = 0,
+            templates = [resref::empty{}; 12], xp_pool = 0, joining_xp = [0; 12],
             pazaak_cards = [2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], pazaak_deck = [-1; 10], pazaak_won = false, cost_mult = [1.0; 160],
             planet_mask = 0, planet_selected = -1,
         }

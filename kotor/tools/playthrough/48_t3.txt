@@ -8,7 +8,7 @@
 3 ui bot party off
 3 ui bot route tarisdoor2 tar04_elevdoor#1 droidshop @janice021
 4 ui bot on
-5790 mouse click 416 271
+5790 mouse click 598 271
 5805 mouse click 507 447
 5820 ui party
 5825 mouse click 639 545

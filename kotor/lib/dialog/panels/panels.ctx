@@ -96,6 +96,7 @@ namespace dlgpanel {
         fade_on: bool, fade_out: bool,
         fade_delay: f32, fade_length: f32, fade_time: f32,
         fade_color: math::Vec3, fade_alpha: f32,
+        fade_node: bool,            // the fade is a node's (FadeType), which ends with the conversation; a script's global fade stays
         // the bark bubble
         bark_on: bool, bark_time: f32,
     }

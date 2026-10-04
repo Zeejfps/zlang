@@ -10,7 +10,7 @@ the 24-core development machine.
 | Does a script, routine or the VM do the right thing in a module? | `kotor.exe --engine-only --module M --frames N --log routines --report routines`, or `tools/enginetest` | well under a second |
 | Does any module fault, hang, crash or lack a routine, with a party that walks it? | the module smoke test, `sh kotor/tools/smoke/run.sh` → [smoke.md](smoke.md) | 4 minutes for all 117 |
 | Does every conversation's graph and scripts run? | the conversation sweep, `sh kotor/tools/dlgsweep/run.sh` → [dlgsweep.md](dlgsweep.md) | 45 s for all 1,262 |
-| Does the story still play from here to there? | the playthrough replay, from a checkpoint if it can start in the middle ([playthrough.md](playthrough.md)) | 30 s for the Endar Spire, 1-2 min to the Undercity from the apartment |
+| Does the story still play from here to there? | the playthrough replay, from a checkpoint if it can start in the middle ([playthrough.md](playthrough.md)) | 30 s for the Endar Spire, 1-2 min to the Undercity from the apartment; Dantooine (`sh kotor/tools/playthrough/dantooine/all.sh`, [playthrough-dantooine.md](playthrough-dantooine.md)) 8 min |
 | Does it look right? | a screenshot (`--screenshot-at FRAME:PNG`), read with the Read tool | one run |
 | Does a graphics option, a window size or the GUI scale work? | `FRAME gfx KEY VALUE` input lines (`--gfx --settings FILE` to read an options file headless), `sh kotor/tools/gfx/sizes.sh EXE` for four scenes at five sizes, the scripts in `kotor/tools/gfx/scripts/` ([mechanics/graphics.md](mechanics/graphics.md)) | seconds |
 | Does an item, a skill or a panel work when clicked like a player does? | `sh kotor/tools/items/run.sh NAME CHECKPOINT SCRIPT FRAMES [FRAME:SHOT]...` with `ui clickctl TAG [ROW]` / `ui movectl` in the script ([mechanics/items-skills.md](mechanics/items-skills.md)) | seconds |
@@ -58,7 +58,9 @@ kotor/out/kotor.exe --load kotor/out/checkpoints/cantina --no-render --speed 8 -
   --input my_test.txt --frames 3000 --screenshot-at 2900:kotor/out/pt/cantina.png --log dialog
 ```
 
-`my_test.txt` counts its frames from the load (frame 1 is the first tick). To go on with the story instead, give the
+`sh kotor/tools/checkpoints/chain.sh` goes on from `sithbase` with the story scripts (`40_` to `50_`, [playthrough.md](playthrough.md)):
+`vulkar`, `garage`, `kandon`, `swoop`, `apt`, `cand`, `t3`, `codes`, `davik`, each with no resume script (the script that
+starts from it is the next `NN_`). `my_test.txt` counts its frames from the load (frame 1 is the first tick). To go on with the story instead, give the
 resume script: `FAST=1 LOAD=kotor/out/checkpoints/apartment SAVES=kotor/out/pt/saves_x sh kotor/tools/playthrough/run.sh
 upper kotor/out/checkpoints/apartment.txt 30000`. Make them again after the engine's timing changes (they are
 saves of this build; the frames in `make.sh` are the replay's).

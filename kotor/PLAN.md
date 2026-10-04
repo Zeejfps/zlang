@@ -130,6 +130,11 @@ the self action slots' mines slot (needs a trap action) and keys, and the origin
 particle simulation, stencil shadows, light falloff and env-map strength checked against the
 original.
 
+**Story QA** (docs/playthrough-*.md): Dantooine's side quests (the Sandral/Matale feud past Ahlan's
+demand, the Mandalorian raiders, the rest) and leaving on the Ebon Hawk; the ruins' Guardian
+Droids' shield (30 off every hit) holds a level-8 party for minutes, so check it against the
+original's droid and its shield item.
+
 **Audio:** the sound-object scheduler, `prioritygroups.2da` limits, battle music, EAX-style
 reverb.
 

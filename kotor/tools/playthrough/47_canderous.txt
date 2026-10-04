@@ -3,6 +3,7 @@
 #   FAST=1 LOAD=kotor/out/checkpoints/apt SAVES=kotor/out/pt/saves_cd LOG=dialog,module sh kotor/tools/playthrough/run.sh cd kotor/tools/playthrough/47_canderous.txt 6000
 3 ui bot off
 3 ui replies default 1
+3 savewhen tar_m03ae cand tar_buydroid 50
 5 ui goto tar02_aptdoor
 320 hoveron tar02_aptdoor
 323 mouse click
@@ -18,4 +19,3 @@
 501 ui bot on
 3000 ui bot status
 6000 ui bot status
-19500 save cand

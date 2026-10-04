@@ -38,11 +38,12 @@ namespace bot {
         talked: bool,                           // the current stop is a `@TAG` and the leader has been told to talk to it
         clicked: usize,                         // 1 + the route index of the transition door it clicked last (0 none)
         seen_open: bool,                        // the door of the current stop has been seen open (one the story shuts again is passed, not opened twice)
+        best: f32,                              // the nearest the leader has been to the current stop: a long walk is not a stuck one
         tour: Tour,                             // the area's own route, when `bot tour` made one
     }
 
     fn new {} -> Bot {
-        return Bot{ on = false, unlock = false, god = false, party = false, party_wait = 0, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false, stalled = 0, last_dist = 0.0, area = 0, talked = false, clicked = 0, tour = new_tour{} }
+        return Bot{ on = false, unlock = false, god = false, party = false, party_wait = 0, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false, stalled = 0, last_dist = 0.0, area = 0, talked = false, clicked = 0, best = 1000000.0, tour = new_tour{} }
     }
 
     // The `bot ...` input line, after the word `bot`.
@@ -61,7 +62,8 @@ namespace bot {
                 b.count = b.count + 1
             }
         } else if ci::eq{ a = what, b = "tour" } {
-            tour_build{ &b, &w }
+            // `tour` builds the tour of the area and walks it; `tour off` leaves it (a route can take over).
+            if ci::eq{ a = text::next_word{ &words } ifnull "", b = "off" } { b.tour.on = false } else { tour_build{ &b, &w } }
         } else if ci::eq{ a = what, b = "on" } {
             b.on = true
         } else if ci::eq{ a = what, b = "off" } {
@@ -150,8 +152,13 @@ namespace bot {
             advance{ &b }
             return
         }
-        let dist = math::vec3::distance{ a = t.position, b = me.position }
+        let at = stop_point{ w = &w, t, near_z = me.position.z }
+        let dist = math::vec3::distance{ a = at, b = me.position }
         b.waiting = b.waiting + 1
+        if dist < b.best - 2.0 {
+            b.best = dist
+            b.waiting = 0
+        }
         if b.waiting > STUCK_TICKS {
             _ = @fmt(&w.io, "bot: stuck {} m from {}, skipped\n", dist, tag)
             advance{ &b }
@@ -215,7 +222,7 @@ namespace bot {
                 advance{ &b }
                 return
             }
-        } else if dist < REACH + 0.25 {
+        } else if dist < (if obj::trigger{ o = t } is some{ value = tr } { 0.6 } else { REACH + 0.25 }) {    // a trigger counts only when stood in, near its middle
             if talk and not b.talked {
                 b.talked = true
                 let mut a = actions::make{ kind = actions::Kind::dialog_object }
@@ -227,10 +234,11 @@ namespace bot {
             return
         }
         let mut a = actions::make{ kind = actions::Kind::move_to_point }
-        a.params[0] = actions::Param::vector{ v = t.position }
+        a.params[0] = actions::Param::vector{ v = at }
         a.params[1] = actions::Param::int{ v = 1 }
-        a.params[2] = actions::Param::float{ v = 1.0 }
-        a.params[3] = actions::Param::object{ id = t.id }
+        a.params[2] = actions::Param::float{ v = if obj::trigger{ o = t } is some{ value = tr } { 0.2 } else { 1.0 } }
+        // A trigger is entered at the middle of its polygon, not at its origin, which the move would head for if it were told the object.
+        a.params[3] = actions::Param::object{ id = if obj::trigger{ o = t } is some{ value = tr } { obj::INVALID } else { t.id } }
         a.params[4] = actions::Param::float{ v = 0.0 }
         _ = actions::add{ &w, id = lead, action = a, force = true }
     }
@@ -242,6 +250,26 @@ namespace bot {
         if stop.len > 1 and stop[0] == '@' { stop = stop[1..] }
         let t = world::object{ w, id = world::object_by_tag{ w, tag = stop_tag{ stop }, nth = stop_nth{ stop } } } ifnull { return }
         if t.ext is door{ d } { if d.state != obj::DoorState::closed { b.seen_open = true } }
+    }
+
+    // Where to walk for a stop: the object's place, or the middle of a trigger's polygon (a transition trigger is a thin
+    // strip some way from its origin, and standing near the origin is not standing in it).
+    fn stop_point { w: *world::World, t: *obj::Object, near_z: f32 } -> math::Vec3 {
+        if obj::trigger{ o = t } is some{ value = tr } {
+            if tr.polygon.len > 0 {
+                let mut sum = math::vec3::zero{}
+                let mut i: usize = 0
+                while i < tr.polygon.len {
+                    sum = math::vec3::add{ a = sum, b = tr.polygon[i] }
+                    i = i + 1
+                }
+                let mid = math::vec3::scale{ v = sum, s = 1.0 / @as(f32, tr.polygon.len) }
+                // The polygon's heights are not the floor's: the floor under the middle, as the leader would find it.
+                let f = walkmap::floor{ m = &w.walk, x = mid.x, y = mid.y, z = near_z + 2.0 }
+                return math::Vec3{ x = mid.x, y = mid.y, z = if f != null { f.z } else { near_z } }
+            }
+        }
+        return t.position
     }
 
     // A stop's tag and, after a `#`, which object of that tag (counting from 0) it names.
@@ -290,6 +318,7 @@ namespace bot {
         b.waiting = 0
         b.seen_open = false
         b.talked = false
+        b.best = 1000000.0
         b.stalled = 0
         b.last_dist = 0.0
     }
@@ -305,7 +334,7 @@ namespace bot {
             i = i + 1
             if o.destroyed or o.kind != obj::Kind::creature or o.id == me.id or o.area != me.area { continue }
             let c = obj::creature{ o } ifnull { continue }
-            if c.dead or not hud::is_hostile{ w, id = o.id } { continue }
+            if c.dead or o.plot or not hud::is_hostile{ w, id = o.id } { continue }    // a plot creature (the Enclave's turrets) takes no damage
             let d = math::vec3::distance{ a = o.position, b = me.position }
             if d < best_d {
                 best_d = d

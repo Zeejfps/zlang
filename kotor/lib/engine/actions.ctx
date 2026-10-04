@@ -207,7 +207,20 @@ namespace actions {
     fn clear_all { mut w: world::World, id: u32 } {
         let o = world::object{ w = &w, id } ifnull { return }
         if not o.commandable { return }
+        // A paused conversation waits for its ActionResumeConversation. A hit that lands on the conversation's
+        // owner in the middle of a fight runs the AI's ClearAllActions, which would lose it and leave the
+        // conversation waiting for ever (Calo Nord's grenade throw): the resume stays in the queue.
+        let mut resume = false
+        if w.conversation.paused and w.conversation.active {
+            let items = list::items{ list = o.actions }
+            let mut i: usize = 0
+            while i < items.len {
+                if items[i].kind == Kind::resume_conversation { resume = true }
+                i = i + 1
+            }
+        }
         clear_queue{ &w, o }
+        if resume { _ = add{ &w, id, action = make{ kind = Kind::resume_conversation }, force = false } }
         let c = obj::creature{ o } ifnull { return }
         if c.moving {
             movement::stop{ &w, id }

@@ -32,8 +32,8 @@ The input script knows (play.ctx, lib/ingame/script.ctx, lib/dialog/view/view_no
 | Line | Does |
 |---|---|
 | `FRAME newgame [FILE]` | New Game from the front end (a created player's UTC from FILE, else the default soldier) |
-| `FRAME ui replies 1 2 1...` | queues conversation replies: each list that opens takes the next number (1 is the first reply); the queue outlives conversations |
 | `FRAME use TAG`, `attack TAG`, `warp TAG [party]`, `warpxy X,Y [party]` (`party`: the followers stand beside the leader), `talk RESREF [TAG]`, `hush` | the leader's default action on an object, attack, test teleports, start a conversation, end it |
+| `FRAME ui replies 1 2 ~hunting_licenses...` | queues conversation replies (256 at most): each list that opens takes the next entry, a number (1 is the first reply) or `~words` (underscores are spaces: the first reply whose text contains them, ignoring case; the first reply, with a log line, if none does). Words survive a change of the player's state that a number does not (a new reply appears when the player has the credits); the queue outlives conversations |
 | `FRAME key NAME`, `keydown NAME`, `keyup NAME` (`down`/`up`), `mouse move X Y`, `mouse down|up|click [left|right] [X Y]`, `mouse wheel DY` (also `ui click X Y`, `ui move X Y`, `ui key NAME`, `ui type TEXT`) | the keyboard and mouse as the player has them: each is an SDL event put on SDL's own queue (`game/inject.ctx`) and read back by the loop with every other event, so it goes through the conversation panels, the HUD and menus and then the world's keys (the panel is 640x480 centred in the 1280x720 window). NAME: a letter or digit, up down left right space tab escape return backspace f1..f12 ctrl shift caps |
 | `FRAME ui menu NAME`, `close` | open or close a menu directly (not the key) |
 | `FRAME ui target TAG` then `ui key 1` | select an object and run the first action of the target block |
@@ -42,7 +42,11 @@ The input script knows (play.ctx, lib/ingame/script.ctx, lib/dialog/view/view_no
 | `FRAME cam duel TAGA TAGB [DIST]`, `cam at X,Y,Z X,Y,Z`, `cam off` | the camera at the side of two objects (`pc` for the player) or at a point, for pictures of a fight |
 | `FRAME fx visual ROW TAG`, `fx at ROW X,Y,Z`, `fx model MODEL TAG [HOOK]`, `fx cast SPELL TAG` | plays a visualeffects.2da row, an effect model or a power's cast visuals on the spot (docs/design/vfx.md); `--log trace` lists what fights and effects do |
 | `FRAME save NAME`, `load FOLDER` | saves go to `kotor/out/saves/00000N - GameK`; `load 000002 - Game1` |
-| `FRAME ui giveitem RESREF [N] [equip]`, `unlock TAG`, `global NAME N` | cheats for tests (not used by the real-flow scripts) |
+| `FRAME ui giveitem RESREF [N] [equip]`, `unlock TAG`, `global NAME N`, `autolevel` | cheats for tests (not used by the real-flow scripts): `autolevel` takes every level the leader's XP allows (the bot never spends XP; the story's fights need a level 7 player) |
+| `FRAME hoveron TAG [N]` (or `hoveron =NAME`: by the name the HUD shows, for objects without a tag such as "Remains") | the pointer moves onto a point of the object that the HUD's pick gives to it; `mouse click` a frame later selects it, a second click runs its default action (the leader walks up, talks, opens): a player's click on a creature, door, container or the ramp. `use TAG` skips the walk and starts where the leader stands |
+| `FRAME ui globals PART`, `ui journal list` | the number and boolean globals whose name has PART and are not zero; every journal quest with its entry (the state of the story) |
+| `FRAME racer`, `gunner` | the swoop racer bot (shifts, steers between the obstacles, takes the pads) and the turret's gunner bot play the minigame (`lib/minigame/racer.ctx`); they make the same `Input` the keys do |
+| `FRAME ui bot route TAG#N`, `bot tour off` | a route stop may name the Nth object of a tag (the Lower City has two `tar04_elevdoor`); a route takes over from a tour with `tour off` |
 
 Helper scripts: `dump.sh MODULE NAME EXT` (a resource as a GFF tree), `res.sh WORD [--module M --type EXT]` (the
 install's resources by name part), `ncsgrep.sh MODULE` (every script of a module disassembled into
@@ -100,7 +104,14 @@ engine lead, merged), **open**.
 | 43 | The Undercity door talk, Zaalbar, the force field, the elevator into the Vulkar base, its fights, the garage elevator: one chain from the sithbase checkpoint (`40_sithbase.txt`, `43_elevator.txt`), the party screens accepted by `ui bot party on` | works | `40_sithbase.txt`, `43_elevator.txt` |
 | 44 | Kandon Ark in the garage (`tar10_kandon01`, 46 entries): the reply queue `2 2 3` refuses his offer, `k_ptar_karkatk` turns him and his guards hostile, the fight, the Swoop Accelerator is picked up from `tar10_accelerator` | works | `44_kandon.txt` |
 | 45 | The Beks base (`tar_m11aa`) from the Lower City: Zaerdra's challenge, the assault droid that fights the Beks (the bot kills it first: left alone it kills Gadon, 8 hit points, during his conversation and the dialogue aborts), Gadon's conversation: with `Tar_GadonMission` set (`ui gbool`) the second visit takes the accelerator, `tar_bastsearch` entry 50, `k_ptar_bekrace` starts `tar_m03af`, the mechanic's conversation, `Tar_SwoopStatus` | works up to the race | `45_gadon.txt` |
-| 46 | The race itself, Davik's estate beyond the arrival conversation, Bastila's cage and the Leviathan escape | not played: story QA was paused (the swoop checkpoint is in `kotor/out/checkpoints/swoop`, `tar_m03af` with the mechanic done: the trigger `tar03_racefirst` starts the race) | |
+| 46 | The swoop race from the `swoop` checkpoint (`tar_m03af`, the party left outside by `k_ptar_03af_en`, as in the original): the announcer by a click on him (the first click selects, the second walks the leader up and talks), the lights, the heats ridden by the racer bot (`racer`: 26.7 s against the 38.4 s to beat; the first win counts double, so the second heat is the third win), the mechanic's talk after each heat, the finale (`tar03_brejik031`: Brejik refuses Bastila, she breaks the cage), the fight (Redros, Brejik and guards; Bastila fights beside the player; the player needs `ui autolevel`: XP is not spent by the bot, a level 1 soldier cannot hurt Brejik), journal `tar_bastsearch` 60/99, Bastila's conversation `tar03_bastila` | works | `46_race.txt` |
+| 47 | Bastila never joined: `k_ptar_bastpart` puts her in NPC slot 0, which still held the Endar Spire's Trask (AVAILNPC0), so the apartment got Trask and the Carth and Bastila reunion (`tar02_carbast`, started by AssignCommand to the object tagged "bastila") never began | fixed f06c5b1 (the AddAvailableNPC routines forget the slot's old file); with it: the reunion, `tar02_bastvision`, the party screen (clicks on the portraits add and remove; the right panel's 3D model is not drawn: open) | `46_race.txt`, `47_canderous.txt` |
+| 48 | The Rodian messenger (`tar02_messenger`, journal `tar_escape` 10), the Lower City cantina, Canderous (`tar03_cand031`: a trigger starts it with Canderous 7 m away; journal `tar_escape` 20, `tar_buydroid` 50), Janice Nall in the Upper City North (the T3-M4 droid: "I can't afford that", then the Persuade reply gets it free, `tar_buydroid` 99), the party screen (T3-M4 and Carth) | works | `47_canderous.txt`, `48_t3.txt` |
+| 49 | The Sith base `tar_m09aa`: the door in the Upper City North, troopers, turrets and droids fought by the party in god mode (the doors unlocked by the bot's cheat, T3-M4's skill and the terminals not played), the elevator to `tar_m09ab`, the Dark Jedi (`tar09_darkjedi91`, 148 hit points, killed by Carth), his remains (opened with clicks: `hoveron =Remains`) hold the Taris Launch Codes: journal `tar_escape` 25; the strongboxes hold 500 credits and armour and spikes | works | `49_sithbase.txt` |
+| 50 | Back to Canderous with the codes (`tar03_cand031` again: reply 2 "let's join up"), `[CANDEROUS has joined your party.]`, `k_ptar_davikest` opens the party screen with Canderous forced: it opened with Canderous, Carth and T3-M4 selected for two places, the party table refused the third and Canderous stayed out, so Davik's conversation lost its "Cand" speaker and ended after two lines | fixed 3b948f5 (the forced one is picked first); Malak's scene `m40ab_c01` (stunt_03a) then `tar_m08aa` | `50_codes.txt` |
+| 51 | Davik's estate: the tour (the party is moved to the hangar and the guest rooms while the conversation goes on). Davik's guards are hostile by their template; they fell on Carth in the middle of the conversation and Carth killed the guest wing's guards | fixed 991c32c: FreezeHostiles (re/dialogue.md 4.9) was not built; an ordinary conversation now stops its hostiles | `50_codes.txt` |
+| 52 | The estate: Hudrow's conversation gives the codes (`tar_escape` 50), the terminal (use access card / "Disable hangar security", free with the codes, `k_ptar_openhang`), the hangar door (locked, DC 100: only the terminal opens it), Davik and Calo Nord (`tar08_davik082`, the Sith bombing; Calo's grenade dialogue never ended: a hit in flight ran his OnAttacked and the AI's ClearAllActions took the queued resume), the ramp (`tar08_ramp`: `tar_escape` 99, `tar_planetinfo` 99) | works; the Calo hang fixed in 991c32c (ClearAllActions keeps a paused conversation's resume) | `51_davik.txt` |
+| 53 | The escape: Malak's scene `stunt_06`, `stunt_07` (the Hawk over Taris), the turret `m12ab` (the gunner bot clears the six fighters in 16 s), `ebo_m12aa` (Bastila's vision `ebo_bast_vision`), the landing on Dantooine (`danm13`: Bastila's conversation, Carth and Bastila walk to the Council). Leaving the turret's area wiped the kept party (a minigame's area spawns none, `keep_party` saved an empty one) | fixed fbf0799; `k_pebn_pophawk` destroys the NPC objects present on the Hawk and spawns every available one at its waypoint, and `k_pdan_13_load` takes Bastila and Carth out of the party at Dantooine: the player arrives alone, as the scripts say | `51_davik.txt` |
 
 
 The whole Endar Spire plays from New Game to the Taris apartment with `10_endar_spire.txt` (34000 frames,
@@ -133,7 +144,47 @@ a key in the bag opens the lock. The engine's own log line (`--log actions`) has
 roll, DC). Not modelled: the sound-set barks (unlock success and failure, "locked"), AutoRemoveKey, XP (the engine gives none;
 scripts do), DoDoorAction's unlock is still instant.
 
+## Taris after the swoop race: checkpoints and how to play on
+
+`sh kotor/tools/checkpoints/make.sh` makes the checkpoints up to `sithbase`; `sh kotor/tools/checkpoints/chain.sh` (about
+10 minutes) plays the story scripts from there and keeps `vulkar`, `garage`, `kandon`, `swoop` (40, 43, 44, 45), `apt`
+(46: Bastila and Carth reunited), `cand` (47: Canderous's offer), `t3` (48: the droid bought, T3-M4 and Carth in the
+party), `codes` (49: the launch codes in the bag) and `davik` (50: Davik's tour over, the guest wing fought). Each of
+`46_race.txt` to `51_davik.txt` starts from the checkpoint before it; the header of each says the command. Things a
+script has to know: the reply queue is consumed only by lists with a choice (a line that continues takes none), so set
+`ui replies` just before the conversation it is meant for; the lines of a script must be in frame order (a later line
+with an earlier frame waits for the lines before it); the camera of Calo Nord's last conversation is a low tilted shot
+(the data's, not a bug that was found).
+
+## Where story QA stopped (paused for rendering) and how to resume
+
+The story was played from the swoop race to the Dantooine landing (steps 46-53 above) and every step worked, with the
+engine of commit 6036766. After merging `kotor` at 75e8167 the scripts no longer line up, and the checkpoints made by
+`chain.sh` after that merge are **not all good**; `chain.sh` says so ("WRONG MODULE" / "no save"). State of the chain with the
+merged engine (the last run): `vulkar`, `garage`, `kandon`, `swoop`, `apt` are good; **`cand` has no save**: in
+`47_canderous.txt` the bot walks to the Lower City cantina but the Canderous conversation (`tar03_cand031`) did not start
+in 21,000 frames (after Bastila's own talk `k_hbas_dialog` it stalls: look at `ui bot status`, `ui pos` and the screenshot
+at 14000-20000; the trigger `tar02_candtlk` or a door on the way is the suspect); `t3`, `codes` and `davik` came from a
+stale `cand`, so they are wrong too. To resume: `sh kotor/tools/checkpoints/make.sh` then `chain.sh` (EXE=your exe), fix
+`47_canderous.txt` until `cand` is made (`savewhen tar_m03ae cand tar_buydroid 50`), then `48_t3.txt` (the party screen now
+opens empty: click Carth `598 271` and T3-M4 `507 447`, then OK; the click frames follow the end of Janice's conversation),
+`49_sithbase.txt` (the Dark Jedi's remains are tried every 1500 frames from 13000), `50_codes.txt` (`savewhen ... davik
+tar_escape 40`) and `51_davik.txt` (from `davik`, to the Dantooine landing). The dice and the timing of the fights move the
+frames of these scripts whenever the engine changes; `savewhen MODULE NAME [QUEST ENTRY]` (play.ctx) saves when the story is
+quiet in MODULE and the journal quest has reached ENTRY, so a checkpoint does not depend on a frame. The Sith base camp's
+rancor (`tar05_stampy`, 90 hit points) is only killed by the party when `40_sithbase.txt` lowers its hit points
+(`ui sethp tar05_stampy 8`): the level 7 player and the companions hit it once in 2,000 frames.
+
 ## Open items (not blocking)
+
+- The party screen's right panel (the 3D model of the highlighted companion) is empty.
+- The player arrives on Dantooine alone, as in the original: `k_pdan_13_load` removes Bastila and Carth from the party
+  and spawns them at the landing (`dan13_wp_bast_halk`, `dan13_wp_carth_halk`), and `k_pdan_bastila11` walks them to
+  the Council.
+- The Sith base was played with the bot's door cheat and a god-mode party: T3-M4's use on the doors and the terminals'
+  turret, droid and gas options (`tar09_aacompdlg`), the Sith uniform route and the base's gas rooms are not played.
+- The estate's guards stay hostile and the guest wing's fight starts when the tour's conversation ends (the guards hear
+  the party at 20 m); the original's mechanism (if guests are safe in their rooms) is not known.
 
 - `end_carth001` and the other cutscene dialogues end "aborted" when the next module starts from their own
   script (`cut00_convers`). Harmless so far; the original runs the end script before the change.
@@ -143,7 +194,7 @@ scripts do), DoDoorAction's unlock is still instant.
 - The yellow arrow over the leader's portrait after the Security tutorial: looks like the switch-leader
   hint; check against the original.
 - Dialogue reply texts begin with the tutorial's "[Left-click this answer...]" line as the data has it.
-- Not played through by the story (only loaded and looked at): the swoop race itself (`tar_m03mg` renders; its input is the minigame lead's), Davik's estate beyond the arrival conversation, Bastila's rescue and the Leviathan escape. The bot cannot yet do a conversation-driven quest chain (it walks, fights and opens doors; a story step that needs a particular reply needs its own `ui replies` line, as Mission's does).
+- The bot cannot do a conversation-driven quest chain on its own (it walks, fights and opens doors; a story step that needs a particular reply needs its own `ui replies` line, as Mission's and Canderous's do). The story is played with it from New Game to the Dantooine landing; the optional Taris quests (the duel ring, the bounties, the outcasts' Promised Land, the Sith party) and the Sith uniform route are not.
 - Wide dialogue shots (angle 3) for a speaker and listener 9 m apart look down at the floor; that is the RE'd formula (camera 0.3 d up, target 0.2 d down), kept. In the Undercity base the listener of Zaalbar's lines is the invisible placeable that owns the door talk, so every such shot is of that kind.
 - 0 to 3 textures per module are missing (the count is in the `scene:` line; the names are not logged: a `--log` word that lists them would say which).
 - The test player of `--module X` runs has a dead second companion slot in some modules (a red cross on the HUD); `god on` now keeps a real party alive.
