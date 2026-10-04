@@ -8,18 +8,18 @@ namespace hud {
     const HOSTILE_BELOW: i32 = 11
 
     // What a slot does when pressed.
-    enum Act: u8 { none, open, bash, use_place, open_place, talk, attack, unlock }
+    enum Act: u8 { none, open, bash, use_place, open_place, talk, attack, unlock, throw }
 
     // One choice in a slot: its icon (a texture in the GUI pack) and the dialog.tlk string that
-    // names it.
-    struct Entry { act: Act, icon: [16]u8, icon_len: usize, strref: u32 }
+    // names it; an item's (a grenade to throw) is named by the item, which `item` says.
+    struct Entry { act: Act, icon: [24]u8, icon_len: usize, strref: u32, item: u32 }
 
     // A slot's choices, cycled with its arrows.
     struct ActionList { entries: [4]Entry, count: usize, selected: usize }
 
     fn entry { act: Act, icon: []u8, strref: u32 } -> Entry {
-        let mut e = Entry{ act, icon = [0; 16], icon_len = 0, strref }
-        let n = if icon.len > 16 { 16 } else { icon.len }
+        let mut e = Entry{ act, icon = [0; 24], icon_len = 0, strref, item = obj::INVALID }
+        let n = if icon.len > 24 { 24 } else { icon.len }
         slice::copy(u8){ dst = e.icon[..n], src = icon[..n] }
         e.icon_len = n
         return e
@@ -210,6 +210,7 @@ namespace hud {
         }
         let next = if at == n { if forward { 0 } else { n - 1 } } else if forward { (at + 1) % n } else { (at + n - 1) % n }
         w.target = ids[next]
+        autopause::request{ &w, reason = autopause::NEW_TARGET }
     }
 
     // Does `act` on `target` for the leader: queues the matching action in place of whatever it
@@ -218,8 +219,17 @@ namespace hud {
     // `queue` adds the order behind the leader's others instead of replacing them: the slot keys and buttons
     // in combat mode queue, and Shift makes them replace (UseSelfAction 0x0068ad60, OnActionButton
     // 0x0068b970); out of combat an order replaces what the leader was doing.
-    fn run_act { mut w: world::World, act: Act, target: u32, queue: bool } {
+    fn run_act { mut w: world::World, act: Act, target: u32, item: u32, queue: bool } {
         let leader = party::leader{ w = &w }
+        if act == Act::throw {
+            // A grenade: its ability cast at the target, in place of what the leader was doing.
+            let spell = rt_item::ability_of{ w = &w, id = item }
+            if spell < 0 { return }
+            actions::clear_all{ &w, id = leader }
+            rt_item::signal_activation{ &w, who = leader, item, target }
+            rt_talent::queue_cast{ &w, me = leader, spell, target, location = math::vec3::zero{}, cheat = 0, instant = 0, item }
+            return
+        }
         let kind: actions::Kind = match act {
             open => { actions::Kind::open_door }
             use_place | open_place => { actions::Kind::use_object }

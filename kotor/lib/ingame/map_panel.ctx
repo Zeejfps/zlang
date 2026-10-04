@@ -323,9 +323,12 @@ namespace map_panel {
         render::fill_rect{ &frame, rect = render::Rect{ x = 0.0, y = 0.0, w = width, h = height }, color = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 } }
         if s.info.present {
             let pic = s.info.picture
-            let v = fit{ pw = pic.w, ph = pic.h, width, height }
-            let mut q = render::make_quad{ rect = render::Rect{ x = v.x, y = v.y, w = pic.w * v.k, h = pic.h * v.k }, color = render::white{} }
+            // The map is the left MAP_W x MAP_H texels of the picture (the rest of the texture is
+            // padding), so the quad shows that part and the markers use the same texels.
+            let v = fit{ pw = hud::MAP_W, ph = hud::MAP_H, width, height }
+            let mut q = render::make_quad{ rect = render::Rect{ x = v.x, y = v.y, w = hud::MAP_W * v.k, h = hud::MAP_H * v.k }, color = render::white{} }
             q.image = render::Image::texture{ t = pic.tex }
+            q.uv = render::UvRect{ u0 = 0.0, v0 = 1.0, u1 = hud::MAP_W / pic.w, v1 = 1.0 - hud::MAP_H / pic.h }
             render::add_quad{ &frame, quad = q }
             // Notes under the arrows; the selected one has a ring.
             let mut i: usize = 0
@@ -335,7 +338,7 @@ namespace map_panel {
                 i = i + 1
                 if o == null { continue }
                 let at = hud::map_point{ info = s.info, x = o.position.x, y = o.position.y }
-                if at.x < 0.0 or at.y < 0.0 or at.x > pic.w or at.y > pic.h { continue }
+                if at.x < 0.0 or at.y < 0.0 or at.x > hud::MAP_W or at.y > hud::MAP_H { continue }
                 let x = v.x + at.x * v.k
                 let y = v.y + at.y * v.k
                 // The selected note is bigger and in the menu's yellow (hilight colour).

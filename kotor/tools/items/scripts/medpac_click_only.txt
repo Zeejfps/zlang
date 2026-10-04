@@ -1,0 +1,4 @@
+5 ui stat hp 6
+24 ui clickctl BTN_ACTION1
+26 ui hover
+200 ui hp

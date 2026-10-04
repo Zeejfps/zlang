@@ -71,7 +71,8 @@ namespace equip {
         }
         let io = world::object{ w = &w, id } ifnull { return }
         if obj::item{ o = io } is some{ value = it } { it.equipped_slot = -1 }
-        _ = rt_item::add_to_inventory{ &w, o, item = id }
+        // AddItem merges: a pistol taken off joins the pistols in the bag.
+        _ = rt_item::add_merged{ &w, o, item = id }
     }
 
     // After the rules recomputed: the maximum hit points follow (the deficit stays).
@@ -329,7 +330,7 @@ namespace equip {
         let elapsed = clock::elapsed_since{ now, then = a.started }
         if a.phase == 1 and elapsed >= 750 {
             a.phase = 2
-            if not rt_misc::move_item{ &w, item, to = id } { return actions::Status::failed }
+            if not xfer::acquire{ &w, item, to = id } { return actions::Status::failed }
         }
         if elapsed < 1500 { return actions::Status::running }
         world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }

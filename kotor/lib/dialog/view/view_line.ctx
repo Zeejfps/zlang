@@ -119,6 +119,7 @@ namespace dlgview {
         let line = w.conversation.line
         let node = dlg::current_node{ s = &w.conversation } ifnull { return }
         sync_tokens{ &w, &g }
+        sync_computer{ &v, &w, &g }
         update_animations{ &v, &w, &sc, node, speaker = line.speaker, listener = line.listener }
         v.pull_back = 0.0
         if node.anims.len > 0 {

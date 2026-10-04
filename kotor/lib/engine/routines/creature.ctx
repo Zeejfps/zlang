@@ -797,7 +797,7 @@ namespace rt_crea {
                 if v == nwconst::REPUTATION_TYPE_ENEMY { return rep <= 10 }
                 return rep > 10 and rep < 90
             }
-            nwconst::CREATURE_TYPE_IS_ALIVE => { return if v != 0 { not c.dead } else { c.dead } }
+            nwconst::CREATURE_TYPE_IS_ALIVE => { return if v != 0 { is_alive{ w, o, c } } else { not is_alive{ w, o, c } } }
             nwconst::CREATURE_TYPE_HAS_SPELL_EFFECT => { return false }
             nwconst::CREATURE_TYPE_DOES_NOT_HAVE_SPELL_EFFECT => { return true }
             nwconst::CREATURE_TYPE_PERCEPTION => {
@@ -818,6 +818,14 @@ namespace rt_crea {
             }
             else => { return true }
         }
+    }
+
+    // Neither dead nor a party member who is down (GetDead, GetIsDying): what GetNearestCreature
+    // returns unless CREATURE_TYPE_IS_ALIVE asks otherwise (0x0054b550 tests both after the criteria),
+    // so the AI does not pick a downed companion as its target.
+    fn is_alive { w: *world::World, o: *obj::Object, c: *obj::Creature } -> bool {
+        if c.dead { return false }
+        return not (o.hp < 1 and party::is_member{ w, id = o.id })
     }
 
     // object GetNearestCreature(int nFirstCriteriaType, int nFirstCriteriaValue,
@@ -841,6 +849,8 @@ namespace rt_crea {
         let wants_reputation = t1 == nwconst::CREATURE_TYPE_REPUTATION or t2 == nwconst::CREATURE_TYPE_REPUTATION
             or t3 == nwconst::CREATURE_TYPE_REPUTATION
         let repute: ?twoda::Table = if wants_reputation { repute_table{ &w } } else { null }
+        let asks_alive = t1 == nwconst::CREATURE_TYPE_IS_ALIVE or t2 == nwconst::CREATURE_TYPE_IS_ALIVE
+            or t3 == nwconst::CREATURE_TYPE_IS_ALIVE
         let all = list::items{ list = w.objects.all }
         let mut last: f32 = -1.0
         let mut last_id: u32 = 0
@@ -857,6 +867,7 @@ namespace rt_crea {
                 if not meets{ w = &w, repute, from, o, c, t = t1, v = v1 } { continue }
                 if not meets{ w = &w, repute, from, o, c, t = t2, v = v2 } { continue }
                 if not meets{ w = &w, repute, from, o, c, t = t3, v = v3 } { continue }
+                if not asks_alive and not is_alive{ w = &w, o, c } { continue }
                 let d = rt_obj::distance{ a = o.position, b = from.position, flat = false }
                 // Strictly after the previous pick in (distance, id) order.
                 if d < last or (d == last and o.id <= last_id) { continue }

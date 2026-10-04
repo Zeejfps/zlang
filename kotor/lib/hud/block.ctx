@@ -21,7 +21,7 @@ namespace hud {
         let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name = e.icon[..e.icon_len] }
         let tag_icon = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = k }
         if img.ok { gui::set_picture{ &g, panel = h.panel, tag = tag_icon, texture = img.tex, w = img.w, h = img.h } } else { gui::clear_picture{ &g, panel = h.panel, tag = tag_icon } }
-        let name = world::string_by_strref{ w = &w, strref = e.strref }
+        let name = if e.item != obj::INVALID { name_of{ w = &w, id = e.item } } else { world::string_by_strref{ w = &w, strref = e.strref } }
         gui::set_tooltip{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = k }, text = name } iferr {}
         gui::set_tooltip{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = k }, text = name } iferr {}
     }
@@ -29,10 +29,10 @@ namespace hud {
     // Builds the block for a new target: its name, its health and the slots' lists.
     fn build_block { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, id: u32 } {
         h.lists[0] = default_actions{ w = &w, id }
-        // PLACEHOLDER: the middle slot is for Force powers and feats, the right for items used on
-        // the target; they fill when lib/rules and the inventory give the leader any.
+        // PLACEHOLDER: the middle slot is for Force powers and feats (the Force powers' owner fills it);
+        // the right one holds the party's grenades against a hostile creature (item_slots.ctx).
         h.lists[1] = empty_list{}
-        h.lists[2] = empty_list{}
+        h.lists[2] = grenade_actions{ w = &w, target = id }
         let name = name_of{ w = &w, id }
         gui::set_text{ &g, panel = h.panel, tag = "LBL_NAME", text = name } iferr {}
         let mut k: usize = 0
@@ -53,7 +53,7 @@ namespace hud {
         if a.count != b.count { return false }
         let mut i: usize = 0
         while i < a.count {
-            if a.entries[i].act != b.entries[i].act { return false }
+            if a.entries[i].act != b.entries[i].act or a.entries[i].item != b.entries[i].item { return false }
             i = i + 1
         }
         return true
@@ -80,8 +80,10 @@ namespace hud {
         if h.shown_target != w.target {
             build_block{ &h, &g, &w, &dev, id = w.target }
             h.shown_target = w.target
-        } else if not same_actions{ a = default_actions{ w = &w, id = w.target }, b = h.lists[0] } {
-            // What the leader can do to the target changed under it (a lock picked or locked, a key found).
+        } else if not same_actions{ a = default_actions{ w = &w, id = w.target }, b = h.lists[0] } or
+            not same_actions{ a = grenade_actions{ w = &w, target = w.target }, b = h.lists[2] } {
+            // What the leader can do to the target changed under it (a lock picked or locked, a key found,
+            // the last grenade thrown).
             build_block{ &h, &g, &w, &dev, id = w.target }
         }
         let p = gui::find_panel{ &g, id = h.panel } ifnull { return }
@@ -126,7 +128,7 @@ namespace hud {
         if k >= 3 or w.target == obj::INVALID { return false }
         let l = h.lists[k]
         if l.count == 0 { return false }
-        run_act{ &w, act = l.entries[l.selected].act, target = w.target, queue = queues_orders{ h = &h, w = &w } }
+        run_act{ &w, act = l.entries[l.selected].act, target = w.target, item = l.entries[l.selected].item, queue = queues_orders{ h = &h, w = &w } }
         return true
     }
 
@@ -136,7 +138,7 @@ namespace hud {
         if w.target == obj::INVALID { return false }
         let l = h.lists[0]
         if l.count == 0 { return false }
-        run_act{ &w, act = l.entries[0].act, target = w.target, queue = false }
+        run_act{ &w, act = l.entries[0].act, target = w.target, item = l.entries[0].item, queue = false }
         return true
     }
 
@@ -145,6 +147,7 @@ namespace hud {
         let l = &h.lists[k]
         if l.count > 1 {
             l.selected = if forward { (l.selected + 1) % l.count } else { (l.selected + l.count - 1) % l.count }
+            autopause::request{ &w, reason = autopause::ACTION_MENU }
             refresh_slot{ &h, &g, &w, &dev, k }
         }
     }
@@ -159,7 +162,7 @@ namespace hud {
             let over_button = slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = k } }
             if over_button or slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = k } } {
                 let l = h.lists[k]
-                if l.count > 0 and w.target != obj::INVALID { run_act{ &w, act = l.entries[l.selected].act, target = w.target, queue = queues_orders{ h = &h, w = &w } } }
+                if l.count > 0 and w.target != obj::INVALID { run_act{ &w, act = l.entries[l.selected].act, target = w.target, item = l.entries[l.selected].item, queue = queues_orders{ h = &h, w = &w } } }
                 return true
             }
             let up = slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "BTN_TARGETUP", n = k } }
@@ -189,10 +192,11 @@ namespace hud {
             let l = h.lists[0]
             if l.count > 0 {
                 gui::play_sound{ &g, n = 6 }
-                run_act{ &w, act = l.entries[0].act, target = id, queue = false }
+                run_act{ &w, act = l.entries[0].act, target = id, item = l.entries[0].item, queue = false }
             }
         } else {
             w.target = id
+            autopause::request{ &w, reason = autopause::NEW_TARGET }
         }
         return true
     }

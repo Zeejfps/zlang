@@ -44,7 +44,7 @@ namespace ingame {
         mouse_sens: i32,                    // "Mouse Sensitivity", 0..100
         reverse_buttons: bool,              // "Reverse Mouse Buttons": left and right swap
         autopause: bool,                    // the auto-pause triggers run (a person is playing: off in headless runs)
-        ap_enemy: bool, ap_mine: bool, ap_party: bool, ap_target: bool,    // [Autopause Options]
+        ap_enemy: bool, ap_mine: bool, ap_party: bool, ap_target: bool, ap_round: bool, ap_action_menu: bool,    // [Autopause Options]
         enemy_noted: bool,                  // an enemy in sight has been announced; clears when none is in sight
         party_alive: i32,                   // party members on their feet last frame
         ap_cooldown: f32,                   // seconds before "Party Member Down" may pause again
@@ -80,7 +80,8 @@ namespace ingame {
             shift_held = false, ctrl_held = false, solo_box = msgbox::blank{}, solo_pause = false, run_script = resref::empty{},
             right_held = false, look_x = 0, looking = false, turn_to = obj::INVALID, mouse_look = saved.mouse_look, mouse_sens = saved.mouse_sensitivity, reverse_buttons = saved.reverse_buttons,
             autopause = false, ap_enemy = saved.pause_enemy_sighted, ap_mine = saved.pause_mine_sighted, ap_party = saved.pause_party_killed,
-            ap_target = saved.pause_triggers, enemy_noted = false, party_alive = 0, ap_cooldown = 0.0, pause_reason = REASON_PAUSED,
+            ap_target = saved.pause_triggers, ap_round = saved.pause_end_round, ap_action_menu = saved.pause_action_menu,
+            enemy_noted = false, party_alive = 0, ap_cooldown = 0.0, pause_reason = REASON_PAUSED,
             psel_wait = false, psel_exit = resref::empty{}, psel_force1 = -1, psel_force2 = -1, psel_paused = false,
         }
         let mut p = try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
@@ -245,9 +246,6 @@ namespace ingame {
         if keycode == 'q' or keycode == 'e' {
             hud::cycle_target{ &w, forward = keycode == 'e' }
             ui.turn_to = w.target
-            if ui.autopause and ui.ap_target and w.target != obj::INVALID and hud::leader_in_combat{ w = &w } {
-                auto_pause{ &ui, &w, &dev, reason = REASON_TARGET }
-            }
             return true
         }
         if keycode == 'r' {
@@ -336,6 +334,9 @@ namespace ingame {
                 ui.psel_exit = exit_script
                 ui.psel_force1 = force1
                 ui.psel_force2 = force2
+            }
+            hud_notice{ kind } => {
+                if kind >= 0 { notify{ &ui, which = @as(usize, kind) } }
             }
             feedback{ strref, text } => {
                 let sent = outbox::text_of{ out = &w.out, t = text }
@@ -448,6 +449,9 @@ namespace ingame {
     const REASON_ENEMY: u32 = 48212          // "ENEMY SIGHTED! Press the Pause key to continue"
     const REASON_PARTY_DOWN: u32 = 42397     // "Party Member Down"
     const REASON_TARGET: u32 = 42481         // "Target Changed"
+    const REASON_MENU: u32 = 42482           // "Menu Used"
+    const REASON_ROUND: u32 = 42432          // "End of Combat Round"
+    const REASON_MINE: u32 = 49118           // "MINE SIGHTED! Press the Pause button to continue"
 
     // Pauses for `reason` unless the game is already paused, a conversation or a menu has the screen, or
     // a module change is coming (RequestAutoPause 0x005f3f10).
@@ -458,48 +462,50 @@ namespace ingame {
         set_player_pause{ &ui, &w, &dev, on = true }
     }
 
-    // Every frame while a person plays: an enemy comes into sight (the first of a group; the next
-    // announcement waits until none is in sight), a party member goes down while others stand.
+    // Every frame: an enemy coming into sight is the first thing the interface notices itself (the first
+    // of a group; the next announcement waits until none is in sight); then the first request of the frame
+    // from the engine and the HUD (autopause::request: a party member down, a slot's choice stepped, the
+    // end of a round, a new target) is weighed against the options and a person playing.
     fn update_autopause { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, dt: f32 } {
-        if not ui.autopause { return }
         if ui.ap_cooldown > 0.0 { ui.ap_cooldown = ui.ap_cooldown - dt }
         let lead = party::leader{ w = &w }
-        if lead == obj::INVALID or w.conversation.active { return }
-        let members = party::members{ w = &w }
-        // Enemies in sight: hostile, alive, near, and seen by someone in the party. Not once the leader fights.
-        let in_combat = hud::leader_in_combat{ w = &w }
-        let mut sighted = false
-        let all = list::items{ list = w.objects.all }
-        let mut i: usize = 0
-        while i < all.len and not sighted {
-            let o = all[i]
-            i = i + 1
-            if o.destroyed or o.kind != obj::Kind::creature or o.id == lead or party::is_member{ w = &w, id = o.id } { continue }
-            if not hud::is_selectable{ w = &w, id = o.id } or not hud::is_hostile{ w = &w, id = o.id } { continue }
-            let mut k: usize = 0
-            while k < members.len and not sighted {
-                if perception::entry_of{ w = &w, viewer = members[k], target = o.id } is some{ value = e } { if e.seen { sighted = true } }
-                k = k + 1
+        if ui.autopause and lead != obj::INVALID and not w.conversation.active {
+            let members = party::members{ w = &w }
+            let mut sighted = false
+            let all = list::items{ list = w.objects.all }
+            let mut i: usize = 0
+            while i < all.len and not sighted {
+                let o = all[i]
+                i = i + 1
+                if o.destroyed or o.kind != obj::Kind::creature or o.id == lead or party::is_member{ w = &w, id = o.id } { continue }
+                if not hud::is_selectable{ w = &w, id = o.id } or not hud::is_hostile{ w = &w, id = o.id } { continue }
+                let mut k: usize = 0
+                while k < members.len and not sighted {
+                    if perception::entry_of{ w = &w, viewer = members[k], target = o.id } is some{ value = e } { if e.seen { sighted = true } }
+                    k = k + 1
+                }
+            }
+            if sighted and not ui.enemy_noted {
+                ui.enemy_noted = true
+                if not hud::leader_in_combat{ w = &w } { autopause::request{ &w, reason = autopause::ENEMY_SIGHTED } }
+            } else if not sighted {
+                ui.enemy_noted = false
             }
         }
-        if sighted and not ui.enemy_noted {
-            ui.enemy_noted = true
-            if ui.ap_enemy and not in_combat { auto_pause{ &ui, &w, &dev, reason = REASON_ENEMY } }
-        } else if not sighted {
-            ui.enemy_noted = false
-        }
-        // A member down while another stands (with a short cool-down so a wipe pauses once).
-        let mut alive: i32 = 0
-        let mut m: usize = 0
-        while m < members.len {
-            if not hud::is_down{ w = &w, id = members[m] } { alive = alive + 1 }
-            m = m + 1
-        }
-        if ui.party_alive > alive and alive > 0 and ui.ap_party and ui.ap_cooldown <= 0.0 {
-            ui.ap_cooldown = 2.0
-            auto_pause{ &ui, &w, &dev, reason = REASON_PARTY_DOWN }
-        }
-        ui.party_alive = alive
+        let asked = autopause::take{ &w }
+        if asked == 0 or not ui.autopause { return }
+        // The option of each reason ([Autopause Options]); a new target only counts in combat mode
+        // (HandleInputAction 0xcc/0xcd), and a member down pauses once a second or two.
+        let mut text: u32 = 0
+        if asked == autopause::ENEMY_SIGHTED { if ui.ap_enemy { text = REASON_ENEMY } }
+        else if asked == autopause::ACTION_MENU { if ui.ap_action_menu { text = REASON_MENU } }
+        else if asked == autopause::PARTY_MEMBER_DOWN { if ui.ap_party and ui.ap_cooldown <= 0.0 { text = REASON_PARTY_DOWN } }
+        else if asked == autopause::MINE_SIGHTED { if ui.ap_mine { text = REASON_MINE } }
+        else if asked == autopause::END_OF_ROUND { if ui.ap_round { text = REASON_ROUND } }
+        else if asked == autopause::NEW_TARGET { if ui.ap_target and hud::leader_in_combat{ w = &w } { text = REASON_TARGET } }
+        if text == 0 { return }
+        if asked == autopause::PARTY_MEMBER_DOWN { ui.ap_cooldown = 2.0 }
+        auto_pause{ &ui, &w, &dev, reason = text }
     }
 
     // ---- the frame
@@ -519,6 +525,8 @@ namespace ingame {
             ui.ap_mine = st.pause_mine_sighted
             ui.ap_party = st.pause_party_killed
             ui.ap_target = st.pause_triggers
+            ui.ap_round = st.pause_end_round
+            ui.ap_action_menu = st.pause_action_menu
         }
         update_autopause{ &ui, &w, &dev, dt }
         // A conversation or cutscene takes the screen: the HUD and any menu go away for it

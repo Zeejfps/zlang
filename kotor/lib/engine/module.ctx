@@ -435,7 +435,7 @@ namespace modload {
         try tmpl::read{ &w, o, doc, s }
         if obj::creature{ o } is some{ value = c } {
             c.is_pc = true
-            c.spawn_fired = true
+            c.spawn_fired = tmpl::hench_spawn_fired{ o, c }
             c.walk_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "walkrate" } ifnull 3.2
             c.run_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "runrate" } ifnull 5.4
         }
@@ -490,7 +490,7 @@ namespace modload {
             try world::set_tag{ &w, o, tag = "" }
             if obj::creature{ o } is some{ value = c } {
                 c.is_pc = true
-                c.spawn_fired = true
+                c.spawn_fired = tmpl::hench_spawn_fired{ o, c }
                 c.walk_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "walkrate" } ifnull 3.2
                 c.run_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "runrate" } ifnull 5.4
             }
@@ -529,6 +529,7 @@ namespace modload {
         obj::set_script{ o, slot = obj::Slot::spawn, name = resref::truncate{ name = "k_hen_spawn01" } }
         obj::set_script{ o, slot = obj::Slot::user_defined, name = resref::truncate{ name = "k_def_userdef01" } }
         obj::set_script{ o, slot = obj::Slot::blocked, name = resref::truncate{ name = "k_def_blocked01" } }
+        c.spawn_fired = tmpl::hench_spawn_fired{ o, c }
         fight::default_stats{ &w, o, c }
         o.area = w.area
         o.ai_level = 4

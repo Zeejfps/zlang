@@ -1,0 +1,12 @@
+# A computer terminal in end_m01ab: use it, the computer panel opens with the terminal's lines and the
+# replies the player's skills allow; the reply is chosen with the mouse.
+60 hush
+62 ui stat computer 4
+80 warp end_comp02
+82 ui giveitem g_i_progspike01 3
+83 ui stat repair 3
+90 use end_comp02
+200 ui ctl LB_REPLIES
+200 ui ctl LB_MESSAGE
+230 ui clickctl LB_REPLIES 0
+300 ui inv

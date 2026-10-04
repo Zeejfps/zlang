@@ -1,0 +1,22 @@
+# The equipment screen's selection mode: pointing at a row puts the item on (the numbers follow),
+# Cancel takes it off again, a click on a row keeps it.
+4 ui giveitem g_a_class4001
+4 ui giveitem g_a_class5001
+4 ui giveitem g_w_blstrpstl001
+4 ui giveitem g_w_blstrpstl001
+10 ui key u
+20 ui clickctl BTN_INV_BODY
+30 ui movectl LB_ITEMS 3
+40 ui inv
+45 ui movectl LB_ITEMS 2
+55 ui inv
+60 ui clickctl BTN_BACK
+70 ui inv
+80 ui clickctl BTN_INV_BODY
+90 ui clickctl LB_ITEMS 3
+100 ui inv
+110 ui clickctl BTN_INV_WEAP_L
+120 ui movectl LB_ITEMS 2
+125 ui movectl LB_ITEMS 1
+130 ui key escape
+140 ui inv

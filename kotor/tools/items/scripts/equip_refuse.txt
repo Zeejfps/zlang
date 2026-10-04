@@ -1,0 +1,17 @@
+# A soldier cannot wear a Jedi robe or hold a lightsaber: the rows are red, pointing at one shows the
+# "cannot equip" text instead of the numbers, and a click changes nothing.
+4 ui giveitem g_a_jedirobe01
+4 ui giveitem g_w_lghtsbr01
+4 ui giveitem g_i_implant101
+4 ui giveitem g_i_drdshld001
+10 ui key u
+30 ui clickctl BTN_INV_BODY
+50 ui movectl LB_ITEMS 2
+60 ui inv
+70 ui clickctl LB_ITEMS 2
+80 ui inv
+90 ui clickctl BTN_BACK
+110 ui clickctl BTN_INV_WEAP_R
+130 ui movectl LB_ITEMS 2
+150 ui clickctl LB_ITEMS 2
+160 ui inv

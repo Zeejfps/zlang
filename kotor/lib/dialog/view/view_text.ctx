@@ -5,6 +5,35 @@ namespace dlgview {
         gui::set_token{ g = &g, name, value } iferr {}
     }
 
+    // The computer panel's four counters (CSWGuiDialogComputer, FUN_006a8240): the leader's Computer Use
+    // and Repair ranks and how many programming spikes (items tagged k_computer_spike) and repair parts
+    // (k_repair_part) the party holds, counted by stack. Set with each line, as spikes are used up.
+    fn sync_computer { mut v: View, mut w: world::World, mut g: gui::Gui } {
+        if v.panels.main == 0 or not v.panels.computer { return }
+        let mut computer_skill: i32 = 0
+        let mut repair_skill: i32 = 0
+        if world::object{ w = &w, id = party::leader{ w = &w } } is some{ value = o } {
+            if fight::of{ o } is some{ value = f } {
+                computer_skill = rules::skill_rank{ tables = w.rules, c = &f.c, skill = rules::skill::COMPUTER_USE, vs = rules::no_versus{}, base_only = false }
+                repair_skill = rules::skill_rank{ tables = w.rules, c = &f.c, skill = rules::skill::REPAIR, vs = rules::no_versus{}, base_only = false }
+            }
+        }
+        let mut spikes: i32 = 0
+        let mut parts: i32 = 0
+        let ids = list::items{ list = w.bag }
+        let mut k: usize = 0
+        while k < ids.len {
+            if world::object{ w = &w, id = ids[k] } is some{ value = io } {
+                if obj::item{ o = io } is some{ value = it } {
+                    if ci::eq{ a = io.tag, b = "k_computer_spike" } { spikes = spikes + @as(i32, it.stack) }
+                    else if ci::eq{ a = io.tag, b = "k_repair_part" } { parts = parts + @as(i32, it.stack) }
+                }
+            }
+            k = k + 1
+        }
+        dlgpanel::set_computer_stats{ p = &v.panels, g = &g, skill = computer_skill, spikes, repair_skill, repair_parts = parts } iferr {}
+    }
+
     // Gives the GUI the tokens a line may use. The player's name splits at its first space.
     fn sync_tokens { mut w: world::World, mut g: gui::Gui } {
         let pc = world::object{ w = &w, id = w.conversation.other }
