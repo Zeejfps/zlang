@@ -832,8 +832,13 @@ gates a client call when the PC uses a stim (ItemType 25) in `AIActionItemCastSp
      (`0x0062b150`).
 
 What brings a downed party member back up, and the "Your entire party has been killed" end
-(strref 42351): `UpdatePartyDeath` (gameloop.md 1.3) gets the downed up after 5 s in which no hostile
-creature perceives a party member, and starts the party-wipe sequence when every member is down
+(strref 42351): `UpdatePartyDeath` (`0x004b6da0`, gameloop.md 1.3) gets the downed up after 5 s in which no hostile
+creature perceives a party member (real time; while anyone is down a 1 s scan of the area's
+creatures looks for one that is not player-controlled, has reputation < 11 toward a member and a
+seen perception entry of a party member, `IsPerceivingPartyMember` `0x004f7650`; finding one resets
+the 5 s), then moves each downed member to a free spot within 5 m, applies a RESURRECTION effect
+(type 4: HP 1) and sets `+0xf0`; unless solo mode, members more than 40 m from the first are moved
+back to their formation places (high). It starts the party-wipe sequence when every member is down
 (slow motion, death camera, message box and fade, then the main menu: gameloop.md 6.6). Party members up and out of combat
 regenerate in `AIUpdate` using `regeneration.2da` (InCombat/OutOfCombat × health/Force, per
 second as a percentage of the maximum); the shipped table gives only out-of-combat Force
@@ -881,6 +886,19 @@ The engine (high):
   applied (6.6), then **OnDeath** (8.2); **OnEndRound** at the end of every round (3.5);
 - for the player: `ActionAttack` (routine 37) queues a scheduled attack for one round plus the
   combat-step action (see actions.md); the player's own clicks go through `AddAttackActions` too.
+- for the client party's leader, at the end of each round after OnEndRound (unless a cutscene
+  round; `EndCombatRound` calls `0x005b6980(targetDied, spellRound, nextTarget)`): while the round's
+  target lives, is hostile (reputation < 11) and nothing else is scheduled, it schedules another
+  plain attack on it (`AddAttackAction`, 1500 ms) — this is what keeps the player's character
+  fighting; when the target died (or nothing valid is left), it looks for the nearest enemy
+  (`0x004f2de0`: a creature hostile to it, alive, not dying, seen, with a clear line of sight from
+  1.5 m up, nearest by distance between their edges) within `GetMaxAttackRange` + 2 m
+  (`0x004ffad0`), makes it the attempted attack target and the client's selected target
+  (`0x005edd70`), turns the retargettable scheduled attacks on it
+  (`UpdateAttackTargetForAllActions` `0x004d3e50`) and schedules an attack; with none it stands
+  (animation 10000) and leaves combat mode. The same tail asks for the "End Of Combat Round"
+  auto-pause (reason 5, option bit 0x800) when the leader is in combat mode. (high for the flow,
+  med for the arguments' meaning)
 
 The shipped AI (`k_ai_master` with event numbers 1003/1005/1006/1007 from the default
 `k_def_*` scripts) decides what happens next: on end of round and when attacked it calls
@@ -954,10 +972,6 @@ suggest `GetFeatRemainingUses` and `HasFeatInLists`, for the lead to decide.
 
 ## 12. Open questions
 
-- **Party members getting back up and game over.** Downed members (HP < 1) get the death effect,
-  HP −11 and the module OnPlayerDeath; nothing found yet restores them after combat or ends the
-  game with strref 42351 ("Your entire party has been killed"). Look in the client party code
-  (`0x005f7960` and around), the in-game GUI update, and `CSWPartyTable`.
 - The server difficulty value used for `diffsettings.2da` (`(internal+0x10004)+0x108`) versus the
   client option used for `difficultyopt.2da`: which column each KOTOR setting selects.
 - The exact pause time set by ATTACKOBJECT (a local the decompiler confused) and the client half of
