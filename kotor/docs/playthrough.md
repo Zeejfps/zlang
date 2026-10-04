@@ -4,7 +4,7 @@ What happens when the game is played from New Game, checked with logs and screen
 original does. Each step says whether it works, what fixed it (commit), or who has it. The input scripts
 are in `kotor/tools/playthrough/`; replay any of them to see the step again.
 
-Planets after Taris have their own logs: [playthrough-dantooine.md](playthrough-dantooine.md) (the arrival, the Council, the trials, Juhani, the ruins and the Star Map). [playthrough-tatooine.md](playthrough-tatooine.md) (the docks to the Krayt hunt: HK-47, the Sand People and the vaporators; paused before the Star Map). [playthrough-kashyyyk.md](playthrough-kashyyyk.md) (the Czerka pad to the Star Map in the Shadowlands).
+Planets after Taris have their own logs: [playthrough-dantooine.md](playthrough-dantooine.md) (the arrival, the Council, the trials, Juhani, the ruins and the Star Map). [playthrough-tatooine.md](playthrough-tatooine.md) (the docks to the Krayt hunt: HK-47, the Sand People and the vaporators; paused before the Star Map). [playthrough-kashyyyk.md](playthrough-kashyyyk.md) (the Czerka pad to the Star Map in the Shadowlands). [playthrough-korriban.md](playthrough-korriban.md) (Dreshdae, the Sith Academy under Uthar Wynn and Yuthura Ban, the tombs, Naga Sadow's Star Map and the Leviathan).
 
 ## How to replay
 
