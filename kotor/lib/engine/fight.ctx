@@ -993,7 +993,7 @@ namespace fight {
     fn action_holds_animation { o: *obj::Object } -> bool {
         if o.actions.len == 0 { return false }
         let head = list::items{ list = o.actions }[0]
-        return (head.kind == actions::Kind::open_lock or head.kind == actions::Kind::lock) and head.phase == 2
+        return (head.kind == actions::Kind::open_lock or head.kind == actions::Kind::lock) and head.phase >= 2
     }
 
     fn play_ready { mut w: world::World, o: *mut obj::Object, c: *obj::Creature } {

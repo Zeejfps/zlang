@@ -59,7 +59,7 @@ engine lead, merged), **open**.
 | 7 | Door 1 opens for the party, Carth's comm message (trigger), journal entry "Attack on the Endar Spire" and its text in the journal screen | fixed 6a68036 (journal and plot XP of dialogue nodes: lib/dialog) | `10_endar_spire.txt` |
 | 8 | Room 3: the Sith kill the Republic soldiers in a cutscene (Pause, CutsceneAttack, death-driven resume), then the fight; kill XP | engine (CutsceneAttack was a stub: it applied no hit, so the cutscene never ended) | `10_endar_spire.txt` |
 | 9 | The long corridors: room 5 cutscene (soldiers and Sith kill each other), reinforcements, the Jedi duel cutscene `end_cut04`, combat with Trask beside the player, doors opened by the route | works | `10_endar_spire.txt` |
-| 10 | The locked bridge door: Trask's Security tutorial, the target block offers Security first on a locked door, OPENLOCK walks up, kneels 1.5 s, rolls, opens | fixed 8fee1c6 (target block) + engine (OPENLOCK) | `10_endar_spire.txt` |
+| 10 | The locked bridge door: Trask's Security tutorial, the target block offers Security first on a locked door, OPENLOCK walks up, kneels 1.5 s, rolls, opens | fixed 8fee1c6 (target block) + engine (OPENLOCK); the player's own path (click the icon, kneel, the roll line, keys, containers, the messages) was broken in several places and is fixed: see Lock picking below | `10_endar_spire.txt` |
 | 11 | The bridge: Carth, dead crew, Taris through the viewport | works (minimap of the bridge area is black: see open items) | `10_endar_spire.txt` |
 | 12 | Door 15 and 19: Trask holds off the Dark Jedi (`end_cut01`), the door to end_m01ab | works | `10_endar_spire.txt` |
 | 13 | Module change to end_m01ab, Carth's comm `end_carth001`, Sith and assault droid, the pod room, journal and XP (1,975 at the pod) | works | `10_endar_spire.txt` |
@@ -86,6 +86,23 @@ engine lead, merged), **open**.
 
 The whole Endar Spire plays from New Game to the Taris apartment with `10_endar_spire.txt` (34000 frames,
 about 5 minutes of wall time), with 0 script faults.
+
+## Lock picking by the player
+
+Checked through the real input path (hover, click, the target block, the 1-2-3 and R keys) with scripted input and
+the test commands `ui stat security N` (ranks), `ui relock TAG DC [KEYTAG|required]`, `ui locks [PART]`,
+`ui target TAG` + `ui key 1`, `ui click X Y` on the block's icon (the block hangs over the door: about (600, 68) from
+the Endar Spire door02 checkpoint). What was broken: the icon label took the click, so the block's Security slot did
+nothing by mouse; the unlock animation was reset by the fighter one frame in (no kneel); a container's OpenLockDC,
+KeyRequired and KeyName were never read (every locked container opened at DC 1); the failure and key messages were
+sound-set placeholders ("Attack Grunt - not actual text to be translated"); keys did nothing; the block kept a stale
+Security icon once the lock was open. Now: a Security character walks up, works the lock for 1.5 s with the lockpick
+sound, the roll is on the feedback log ("Leia Tana attempts Security on Footlocker : *success* : (Take 20 + 5 = 25
+vs. DC 8)", a d20 in combat), the door opens or the container shows its loot; a failed roll leaves it locked with the
+roll as the only message; a key-only lock says so; a 0-rank character is not offered Security and hears "Locked";
+a key in the bag opens the lock. The engine's own log line (`--log actions`) has the parts (ranks, key ability, feat,
+roll, DC). Not modelled: the sound-set barks (unlock success and failure, "locked"), AutoRemoveKey, XP (the engine gives none;
+scripts do), DoDoorAction's unlock is still instant.
 
 ## Open items (not blocking)
 
