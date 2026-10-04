@@ -35,6 +35,8 @@ The input script knows (play.ctx, lib/ingame/script.ctx, lib/dialog/view/view_no
 | `FRAME ui click X Y`, `move X Y`, `key NAME`, `menu NAME`, `close` | the pointer and keys as the player has them (the panel is 640x480 centred in the 1280x720 window) |
 | `FRAME ui target TAG` then `ui key 1` | select an object and run the first action of the target block |
 | `FRAME ui goto TAG`, `where [PART]` (with each object's facing), `pos` (with the leader's facing), `party`, `inv`, `locals TAG` | walk the leader to an object; print objects by tag part, the leader's place and health, the party, the bag, an object's local variables |
+| `FRAME cam duel TAGA TAGB [DIST]`, `cam at X,Y,Z X,Y,Z`, `cam off` | the camera at the side of two objects (`pc` for the player) or at a point, for pictures of a fight |
+| `FRAME fx visual ROW TAG`, `fx at ROW X,Y,Z`, `fx model MODEL TAG [HOOK]`, `fx cast SPELL TAG` | plays a visualeffects.2da row, an effect model or a power's cast visuals on the spot (docs/design/vfx.md); `--log trace` lists what fights and effects do |
 | `FRAME ui bot route TAG... / on / off / god / unlock / status` | the test player (`lib/ingame/bot.ctx`): fights what is hostile in sight, walks the route of tagged stops, opens its doors; `god` keeps the leader at 1 hit point, `unlock` opens locked doors on the route. Never on in a real game. |
 | `FRAME save NAME`, `load FOLDER` | saves go to `kotor/out/saves/00000N - GameK`; `load 000002 - Game1` |
 | `FRAME ui giveitem RESREF [N] [equip]`, `unlock TAG`, `global NAME N` | cheats for tests (not used by the real-flow scripts) |
@@ -82,7 +84,7 @@ engine lead, merged), **open**.
 | 30 | Every Taris module loads headless with 0 script faults (`smoke.sh tar_m02aa ... tar_m11ab`) | works | `smoke.sh` |
 | 31 | Trask's entry: after the dream cutscene he opens the bunk room door himself, runs in and stops 1 m from the player, facing him, before "We've been ambushed..." (the user found him speaking through the closed door: `GetObjectByTag("")` is the player, k_pend_traskdl40) | engine (7ab46dc); checked by `13_trask_entry.txt` + `kotor/tools/py/check_trask_entry.py` | `13_trask_entry.txt` |
 | 32 | Staging audit of every conversation of the route (`dialog stage:` log lines per line, `kotor/tools/py/stage_audit.py LOG`): who stands how far from whom, in which rooms; remote comm conversations (Carth) and cutscene scene objects are far by design | works (nothing else far or behind walls in the ordinary conversations) | `10_endar_spire.txt` with LOG=dialog |
-
+| 33 | The fights are seen: room 3 (soldier and Sith with blasters), room 5, the Jedi duel. Bolts fly from the weapon's `bullethook` and a miss flies on to the wall, muzzle flashes, impact sparks, lit lightsabers with clashes and sparks, swing/shot/hit sounds, grunts and death cries; ranged damage lands when the bolt arrives (the user: "I didn't see any combat" past the locked door) | fixed (lib/vfx, docs/design/vfx.md); checked with `--log trace`, `cam duel` and `fx` test input | `10_endar_spire.txt` (replay: 0 faults, tar_m02af) |
 
 The whole Endar Spire plays from New Game to the Taris apartment with `10_endar_spire.txt` (34000 frames,
 about 5 minutes of wall time), with 0 script faults.

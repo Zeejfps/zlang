@@ -13,7 +13,7 @@
 // such as a weapon's muzzlehook or a creature's impact_bolt) and bolt (a projectile flying from
 // one point to another over a time, which a miss lets fly on past its target).
 namespace vfx {
-    const MAX_FX: usize = 96
+    const MAX_FX: usize = 128
 
     // Room for particles per emitter: an Explosion bursts `birthrate` of them at once.
     const PUFFS: usize = 96

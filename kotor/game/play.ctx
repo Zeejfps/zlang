@@ -390,6 +390,7 @@ namespace play {
         _ = @fmt(&w.io, "scene: {} rooms drawn of {}, {} objects drawn, {} visuals; textures {} loaded, {} missing\n",
             sc.drawn_rooms, sc.rooms.len, sc.drawn_objects, sc.visuals.len, sc.materials.loaded, sc.materials.missing)
         _ = @fmt(&w.io, "sound: {} sounds started\n", amb.started)
+        _ = @fmt(&w.io, "vfx: {} effects started, {} wanted while the pool was full\n", vx.started, vx.dropped)
         if timed > 1 {
             _ = @fmt(&w.io, "frames: {}, {} ms each on average, {} ms the slowest\n", timed, @as(f32, real_total * 1000.0 / @as(f64, timed - 1)), real_worst * 1000.0)
         }
