@@ -1,7 +1,0 @@
-10 ui stat hp 6
-12 ui hp
-24 ui hp
-24 ui clickctl BTN_ACTION1
-26 ui hover
-40 ui hp
-200 ui hp
