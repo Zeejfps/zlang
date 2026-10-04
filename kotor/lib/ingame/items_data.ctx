@@ -322,35 +322,105 @@ namespace items {
         return m.total
     }
 
-    // The attack bonus with the weapon in `item` (the left hand's, when it is in the left slot).
-    // The fallback is the character level plus Strength (Dexterity for a ranged weapon).
-    fn attack_bonus_of { w: *world::World, who: u32, item: u32 } -> i32 {
-        if hud::ruled_of{ w, id = who } is some{ value = f } {
-            let c = hud::creature_of{ w, id = who } ifnull { return 0 }
-            return attack_with{ w, f, off_hand = c.equipped[obj::SLOT_LEFT_WEAPON] == item }
-        }
+    // The attack bonus with the weapon in `item` (`off_hand`: it is in the left hand; a bare hand
+    // is INVALID). The fallback is the character level plus Strength (Dexterity for a ranged weapon).
+    fn attack_bonus_of { w: *world::World, who: u32, item: u32, off_hand: bool } -> i32 {
+        if hud::ruled_of{ w, id = who } is some{ value = f } { return attack_with{ w, f, off_hand } }
         let level = hud::level_of{ w, id = who }
         let k: usize = if is_ranged{ w, id = item } { 1 } else { 0 }
         return level + ability_mod{ w, who, k }
     }
 
-    // A weapon's damage as text: its dice ("2d6") and the wielder's flat bonus ("+2": Strength for a
-    // melee weapon, Weapon Specialization) from the rules creature; empty when it has no dice.
-    fn damage_text { mut b: utf8::Builder(heap::Heap), w: *world::World, who: u32, item: u32 } -> ! {
-        let dice = base_int{ w, id = item, column = "numdice", fallback = 0 }
-        let die = base_int{ w, id = item, column = "dietoroll", fallback = 0 }
-        if dice <= 0 or die <= 0 { return }
-        let mut bonus: i32 = 0
-        if hud::ruled_of{ w, id = who } is some{ value = f } {
-            if not is_ranged{ w, id = item } { bonus = f.c.stats.abil_mod[0] }
-            let it = item_of{ w, id = item } ifnull { return }
-            if rules::get_baseitem{ tables = w.rules, row = @as(i32, it.base) } is some{ value = bi } {
-                if bi.spec_feat > 0 and rules::has_feat{ c = &f.c, feat = bi.spec_feat } { bonus = bonus + 2 }
-            }
+    // Whether the shown attack bonus is above the creature's base attack bonus (the number is green then).
+    fn attack_boosted { w: *world::World, who: u32, n: i32 } -> bool {
+        if hud::ruled_of{ w, id = who } is some{ value = f } { return n > f.c.stats.bab }
+        return false
+    }
+
+    // A signed number as the equipment screen prints it: "+3", "0", "-1" (the original's "+%d" for
+    // a positive one and "%d" for the rest, so zero has no sign).
+    fn push_signed { mut b: utf8::Builder(heap::Heap), n: i32 } -> ! {
+        if n > 0 { try @fmt(&b, "+{}", n) } else { try @fmt(&b, "{}", n) }
+    }
+
+    // The damage a hand does, lowest and highest, as the equipment screen counts it
+    // (CSWGuiEquip::UpdateStats and FUN_005a9e10): the weapon's dice at their lowest (one a die)
+    // and highest, the wielder's Strength modifier for a melee weapon, Weapon Specialization +2,
+    // then the damage effects (item properties and spells), each end at least 1. A bare hand does
+    // 1 to 2 for a small creature, 1 to 1 for a medium one, plus Strength. `boosted`: the effects
+    // raised an end (the numbers are green).
+    struct DamageRange { lo: i32, hi: i32, boosted: bool }
+
+    fn damage_range { w: *world::World, who: u32, item: u32, off_hand: bool } -> DamageRange {
+        let mut lo: i32 = 1
+        let mut hi: i32 = 1
+        if item != obj::INVALID {
+            let dice = base_int{ w, id = item, column = "numdice", fallback = 0 }
+            lo = dice
+            hi = dice * base_int{ w, id = item, column = "dietoroll", fallback = 0 }
         }
-        try @fmt(&b, "{}d{}", dice, die)
-        if bonus > 0 { try @fmt(&b, "+{}", bonus) }
-        if bonus < 0 { try @fmt(&b, "{}", bonus) }
+        let mut gain_lo: i32 = 0
+        let mut gain_hi: i32 = 0
+        if hud::ruled_of{ w, id = who } is some{ value = f } {
+            if item == obj::INVALID { hi = if f.c.stats.size < 3 { 2 } else { 1 } }
+            if item == obj::INVALID or not is_ranged{ w, id = item } {
+                lo = lo + f.c.stats.abil_mod[0]
+                hi = hi + f.c.stats.abil_mod[0]
+            }
+            if item != obj::INVALID {
+                let it = item_of{ w, id = item } ifnull { return DamageRange{ lo = 1, hi = 1, boosted = false } }
+                if rules::get_baseitem{ tables = w.rules, row = @as(i32, it.base) } is some{ value = bi } {
+                    if bi.spec_feat > 0 and rules::has_feat{ c = &f.c, feat = bi.spec_feat } {
+                        lo = lo + 2
+                        hi = hi + 2
+                    }
+                }
+            }
+            // The effects: increases add their amount (a flat 1 to 5, or the dice of a larger
+            // iprp_damagecost row), decreases take away theirs, each side capped at 36.
+            let wtype: i32 = if off_hand { 2 } else { 1 }
+            let mut up_lo: i32 = 0
+            let mut up_hi: i32 = 0
+            let mut down: i32 = 0
+            let mut i: usize = 0
+            while i < @as(usize, f.c.nfx) {
+                let e = &f.c.fx[i]
+                i = i + 1
+                let is_up = e.kind == rules::fx::DAMAGE_INCREASE
+                if not is_up and e.kind != rules::fx::DAMAGE_DECREASE { continue }
+                if e.ints[1] == 0 or not rules::combat_hand_admits{ hand = e.ints[5], wtype } { continue }
+                let row = e.ints[0]
+                if not is_up {
+                    down = down + row
+                    continue
+                }
+                let d = rules::damage_row_dice{ tables = w.rules, row }
+                if d.count > 0 {
+                    up_lo = up_lo + d.count
+                    up_hi = up_hi + d.count * d.die
+                } else {
+                    up_lo = up_lo + row
+                    up_hi = up_hi + row
+                }
+            }
+            if up_lo > 36 { up_lo = 36 }
+            if up_hi > 36 { up_hi = 36 }
+            if down > 36 { down = 36 }
+            gain_lo = up_lo - down
+            gain_hi = up_hi - down
+        }
+        let plain_lo = if lo < 1 { 1 } else { lo }
+        let plain_hi = if hi < 1 { 1 } else { hi }
+        let with_lo = if lo + gain_lo < 1 { 1 } else { lo + gain_lo }
+        let with_hi = if hi + gain_hi < 1 { 1 } else { hi + gain_hi }
+        return DamageRange{ lo = with_lo, hi = with_hi, boosted = with_lo > plain_lo or with_hi > plain_hi }
+    }
+
+    // The damage text of a hand, "3-8" (the original's "%d-%d"); returns whether it is boosted.
+    fn push_damage { mut b: utf8::Builder(heap::Heap), w: *world::World, who: u32, item: u32, off_hand: bool } -> !bool {
+        let r = damage_range{ w, who, item, off_hand }
+        try @fmt(&b, "{}-{}", r.lo, r.hi)
+        return r.boosted
     }
 
     // ---- text

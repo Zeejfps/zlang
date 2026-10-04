@@ -69,11 +69,6 @@ namespace items {
         if hp_max >= 1000 or hp >= 1000 or (hp_max >= 100 and hp >= 100) { try @fmt(&b, "{}", hp) } else { try @fmt(&b, "{}/{}", hp, hp_max) }
     }
 
-    // "+3" or "-1".
-    fn push_signed { mut b: utf8::Builder(heap::Heap), n: i32 } -> ! {
-        if n >= 0 { try @fmt(&b, "+{}", n) } else { try @fmt(&b, "{}", n) }
-    }
-
     // ---- refusals
 
     // Opens the message box the original shows for a refusal ("You cannot equip ..."): modal,

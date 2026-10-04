@@ -130,6 +130,7 @@ namespace gui {
         first_row: i32,                 // the top visible row
         selected_row: i32,              // -1 none
         text_mode: bool,                // a list box showing one wrapped text (message boxes) instead of rows
+        picture_alpha: f32,             // the alpha of a picture put on the control with set_picture (the equipment screen draws the left hand's ghost of a two-handed weapon at 0.25)
         row_frame_alpha: f32,           // item rows: the alpha of a row's normal frame (the equipment screen's slot view draws none)
         click_rows: bool,               // item lists: a click on a row activates it (the rows are buttons in the original) and hovering one says so (row_hover)
         hover_row: i32,                 // -1 none

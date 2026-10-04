@@ -294,7 +294,7 @@ namespace gui {
             return
         }
         let b = border_for{ c, hilighted = hl and (k == K_BUTTON or k == K_CHECK or k == K_PROTO or k == K_SLIDER or k == K_EDIT) }
-        draw_border{ &g, &frame, b, x, y, w = c.w, h = c.h, alpha, clip, override = c.override_fill }
+        draw_border{ &g, &frame, b, x, y, w = c.w, h = c.h, alpha = if c.override_fill.ok { alpha * c.picture_alpha } else { alpha }, clip, override = c.override_fill }
         if k == K_SLIDER { draw_slider_thumb{ &frame, c, x, y, alpha, clip } }
         if c.text.present and c.text.text.len > 0 or k == K_EDIT {
             let a = text_area{ b = c.border, x, y, w = c.w, h = c.h }

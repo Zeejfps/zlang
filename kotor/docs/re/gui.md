@@ -1771,12 +1771,24 @@ hilighted), `OnSlotHilighted` to rebuild the list, clear the title, make the lis
 the same with `CSWSCreature::AddUnequipActions`. Equip rules and the action itself:
 party-items-saves.md and actions.md. (high)
 
-**Stats** (`UpdateStats`, every frame): attack bonus and damage per hand from the creature stats
-(0x005a9e10 attack modifier, 0x005a7770 / 0x005a7b60 damage), defense (0x004ed1d0), vitality
-"current/max"; a hand's labels go blank (colour 0x007a23b4) when the hand is empty; when the
-right hand holds a two-handed weapon (base item +0x1b == 4) or one of wield type 3, the left
-weapon slot shows the same icon. The slot icons are refreshed here too, so equipping elsewhere
-shows at once. The formulas are combat.md's. (med)
+**Stats** (`UpdateStats`, every frame). Per hand, **damage is a range** and the attack bonus a
+signed number. `FUN_005a9e10(stats, creature, item, &lo, &hi, offhand, withEffects)` gives the
+range: with an item `lo` = the base item's number of dice (+0x1c), `hi` = dice x die (+0x1d); a
+melee item (+0x1a clear) adds the Strength modifier (stats +0xea, a signed byte) to both; a base
+item whose specialization feat (+0xb0) the creature has adds 2 to both; with no item `lo` = 1 and
+`hi` = 2 for a creature of size below 3, else 1, both plus Strength. With effects asked,
+`GetTotalEffectBonus(damage, ...)` adds its sum to both ends (and a `lo` correction for dice), and
+each end is at least 1. The label text is `Format("%d-%d", lo, hi)` (0x00756a10); the attack
+bonus is `GetMeleeAttackBonus` / `GetRangedAttackBonus` (0x005a7770 / 0x005a7b60) formatted `+%d`
+(0x00748ec0) above zero and `%d` (0x0073d720) otherwise. The text is the menu colour
+(0x007a23b4), or green (0.28/0.92/0.11, 0x007a23e4) when the range with effects is above the range
+without, or the attack bonus is above `GetBaseAttackBonus`. The left weapon slot's labels are
+cleared when it is empty, the right one's show the unarmed numbers (no item), and a right-hand
+item of wield type 3 (a double weapon) also fills the left labels with its off-hand numbers
+(`offhand` 1). Defense is 0x004ed1d0, vitality "current/max". When the right hand holds a
+two-handed weapon (base item +0x1b == 4) or one of wield type 3, the left weapon slot shows the
+same icon, at alpha 0.25 (+0x10c8). The slot icons are refreshed here too, so equipping
+elsewhere shows at once. (high for the formats and the range, med for the effect sum)
 
 #### CSWGuiCharacter (character.gui)
 

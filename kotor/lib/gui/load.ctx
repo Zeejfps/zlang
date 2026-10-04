@@ -207,6 +207,7 @@ namespace gui {
         c.text_mode = false
         c.click_rows = false
         c.row_frame_alpha = 1.0
+        c.picture_alpha = 1.0
         c.click_sound = 0
         c.hover_sound = 1
         c.tooltip = ""
