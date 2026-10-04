@@ -3,7 +3,7 @@
 # The bag is taken with the clicks of a player; the gear is put back on by the test cheat (the equipment screen is checked elsewhere).
 5 ui heal
 6 ui replies ~Bridge default 1
-20 warp lev40_ptylocker party
+20 warpxy 14,70 party
 40 hoveron lev40_ptylocker
 43 mouse click
 46 mouse click
@@ -20,9 +20,10 @@
 360 ui leader pc
 400 ui bot god on
 400 ui bot unlock on
-400 ui bot route @plev_elevctrl
+400 ui bot route plev_elevctrl
+400 savewhen lev_m40ab deck soon
 401 ui bot on
-2400 ui bot off
-2500 ui party
-2500 ui pos
-2500 save deck
+3300 ui bot off
+3600 use plev_elevctrl
+4300 ui party
+4300 ui pos

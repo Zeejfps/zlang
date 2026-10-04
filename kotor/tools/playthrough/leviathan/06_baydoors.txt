@@ -4,7 +4,9 @@
 10 ui bot god on
 10 ui bot unlock on
 10 ui bot route @bridgecomputer lev40_cmddoor
+10 savewhen lev_m40ab backdeck soon
 11 ui bot on
-1500 save backdeck
-1500 ui journal list
-1500 ui pos
+3000 ui bot route lev40_cmddoor
+3001 ui bot on
+4000 ui journal list
+4000 ui pos

@@ -110,7 +110,12 @@ fight, the Dark Jedi, Malak's hangar). Alignment 97 to 98 (the reply "Take your 
 3. **No movie ever played in the game** (0079e39). `PlayMovie`, the movie arguments of `StartNewModule` and `QueueMovie`/`PlayMovieQueue` posted
    outbox notes that nothing took; the cut scenes between modules were black. `game/movies.ctx` now plays them over the frozen game with
    the front end's Bink player (the game's own sound paused, Escape/Return/Space/click skips); a headless run decodes each movie at once and logs it.
-4. Test tools: `savewhen MODULE NAME soon` (a save 5 ticks after a module is entered, for places where a conversation starts at once), `dlgtree.py
+4. **The test bot stood still after the merge of the path work** (the commit of this log's last change). Since a closed door no longer lets the planner walk
+   through it, a hostile in another room (the deck's 13 guards in their rooms, 15 m off behind doors) became unreachable: the bot attacks the nearest
+   hostile in sight before it follows its route, the approach failed at once, and the party stood 5 m before a closed door for ever. The bot now opens the
+   closest closed door within 6 m when it gets no nearer (as it did for a stop), and leaves a foe farther than 8 m that it has not got nearer to
+   in 12 decisions (`bot: cannot get at foe N, leaves it`). Real fights (a foe within 8 m) are not left.
+5. Test tools: `savewhen MODULE NAME soon` (a save 5 ticks after a module is entered, for places where a conversation starts at once), `dlgtree.py
    --module`, `nss.sh`, `objs.sh`.
 
 ## Observations and open items
