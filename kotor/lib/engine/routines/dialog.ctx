@@ -14,8 +14,15 @@ namespace rt_dlg {
         else if routine == nwscript::BarkString { try bark_string{ &w, &vm, argc } }
         else if routine == nwscript::ActionBarkString { try action_bark_string{ &w, &vm, argc } }
         else if routine == nwscript::SpeakString { try speak_string{ &w, &vm, argc } }
-        else if routine == nwscript::ActionSpeakString { try speak_string{ &w, &vm, argc } }
-        else if routine == nwscript::ActionSpeakStringByStrRef { try speak_string_by_strref{ &w, &vm, argc } }
+        else if routine == nwscript::ActionSpeakString {
+            // The SPEAK actions take the speaker out of stealth (actions.md 3.11); SpeakString does not.
+            stealth::leave{ &w, id = self_of{ vm = &vm } }
+            try speak_string{ &w, &vm, argc }
+        }
+        else if routine == nwscript::ActionSpeakStringByStrRef {
+            stealth::leave{ &w, id = self_of{ vm = &vm } }
+            try speak_string_by_strref{ &w, &vm, argc }
+        }
         else if routine == nwscript::SpeakOneLinerConversation { try speak_one_liner{ &w, &vm, argc } }
         else if routine == nwscript::SetDialogPlaceableCamera { try set_dialog_placeable_camera{ &w, &vm, argc } }
         else if routine == nwscript::SetLockOrientationInDialog { try lock_in_dialog{ &w, &vm, argc, routine, head = false } }
