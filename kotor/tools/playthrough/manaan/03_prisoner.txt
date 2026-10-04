@@ -1,0 +1,25 @@
+# Manaan, part 3: the Republic enclave behind Wann (manm26ae) and the Sith prisoner's interrogation. From the checkpoint "wann"
+# (CKPT=wann: Wann's talk is done, journal man_planet 10, the Republic Enclave Key in the bag).
+#
+# The door (man26ac_door03) is clicked like a player does: the key in the bag opens it ("You used a key."). The Intelligence
+# Officer's talk (man26_repint) hands the party the interrogation: the prisoner's mind is a counter (MAN_THRESHOLD, scripts
+# k_pman_planet52 to 59), and the passcode comes out only on a successful Persuade when the counter is exactly 9:
+# "Relax" (+1), "We know about your companion" (+2), then the three Persuade/Lie lines of that branch (+2 each).
+# Test cheat for setup only: `ui stat persuade 30` (the Persuade roll is a d100 against rank / (level + 5)).
+3 ui stat hpmax 150
+3 ui stat hp 150
+3 ui stat persuade 30
+5 ui replies ~what_did_they_do ~yes ~what_do_i_have ~a_catch ~i_detect ~yes ~interrogate_him ~relax ~let's_try_something_else ~we_know_about_your_companion ~we_don't_really_need_you ~if_you_don't_tell_us ~perhaps_we_would_give default 1
+10 warpxy 77.6,78.2 party
+40 hoveron man26ac_door03
+50 mouse click
+110 mouse click
+400 ui goto man26_repint
+1300 hoveron man26_repint
+1310 mouse click
+1370 mouse click
+5300 ui pos
+6100 ui journal list
+6100 ui globals MAN_
+6100 ui xp
+6100 save prisoner

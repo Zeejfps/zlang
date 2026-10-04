@@ -1,0 +1,28 @@
+# Manaan, part 9: the airlock, the underwater walk on the sea floor (manm28ab) and the way into Kolto Control (manm28ac). From the
+# checkpoint "suit" (CKPT=suit: the Envirosuit is in the bag, the party is at the Environmental suit in manm28aa).
+#
+# The west airlock door (28aw) is a conversation (man28_airlock, a computer panel's lines): "[You only have one envirosuit
+# available. If you proceed through the airlock, all party members will have to stay behind.]" and the last reply "Leave party
+# members and begin airlock sequence." takes the player alone to the sea floor in the suit (EffectDisguise, appearance 181). The
+# test player (god mode) follows the waypoints of the survivor's corridor, the survivor's talk (man28_sur2, then the scene where a
+# firaxa takes him), the firaxa along the route to the north door (28bn), which opens at a touch to Kolto Control.
+3 ui stat hpmax 150
+3 ui stat hp 150
+8 ui replies ~begin_airlock_sequence default 1
+10 warp from28bw party
+60 ui pos
+60 use 28aw
+1500 ui pos
+1500 ui party
+1500 ui bot god on
+1501 ui bot on
+1502 ui bot route 152.1,71.1 153.9,51.0 145.6,38.7 193.4,41.3 218.1,39.8 232.2,36.7 245.7,53.8 28bn
+# Kolto Control: the Insane Selkath at the arrival (the player is alone in the suit and takes them one at a time, the maximum
+# hit points drained to 72 and back) are cleared before the scientists behind the force door are spoken to.
+14000 ui hostiles
+14000 ui pos
+14000 ui party
+14000 ui journal list
+14000 ui xp
+14010 ui bot off
+14020 save kolto
