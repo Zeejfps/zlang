@@ -90,9 +90,11 @@ The license (`k_ptat_bountyset`) and the bounty gave none at level 9: the script
    the Territory's edge turned into a war and the Chieftain died (journal 126). Part 8: the party's purse is 350 after the bounty on the sticks and the vaporators cost 400
    (`ui gold 200`). Part 14: the ambush takes 4,000 to 8,000 frames, so its checkpoint is a `savewhen` that now also waits for the leader to leave combat (game/play.ctx).
 10. **A save in the middle of the ambush** is what `savewhen` without that wait gave: the bot walked out through the dune edge and the "lost in the dunes" talk jumped it back.
-11. The test bot cannot leave the hunters' camp by itself after Calo Nord's fight: his landspeeders (`ambush_speeder2`, a 3 x 8.75 m footprint each, plc_lndspdr3.pwk) stand on the
-    camp road, the path graph's edge runs through them (`paths::route` string pulling pushes the next graph point without testing the walk to it), and the leader stands at the
-    footprint's edge for ever ("move: blocked"). Part 18 warps the party past them. A player would walk round; the planner would need to.
+11. **The planner ran into Calo Nord's landspeeders** (fixed in this branch). His vehicles (`ambush_speeder2`, a 3 x 8.75 m footprint each, plc_lndspdr3.pwk) stand on the camp
+    road, and the path graph's shortest edge (point 220 to 215 of the area's PTH) runs through them: the graph was authored without them. The planner searched the graph
+    without asking whether an edge was walkable and string pulling pushed the next graph point untested, so the leader walked into the footprint and stood at its edge for ever
+    ("move: blocked"). The search now skips an edge that an active placeable's walkmesh stands on (`walkmap::meets_placeable`, a door's does not count: it is opened on arrival),
+    which sends the route round them (219, 218, 212). Part 18 no longer warps the party past them.
 
 ## Notes and open items
 

@@ -1,9 +1,10 @@
 // Path planning for server-side moves (docs/re/movement.md 4.3-4.7), simplified: the straight
 // walk when it is clear; otherwise the area's PTH graph from the path point nearest the start
 // (reachable in a straight walk) to the one nearest the goal, searched with A* (ours: the
-// original's iterative-deepening depth-first search finds the same kind of route), then string
-// pulling (skip route points while the straight walk past them is clear). Without PTH points or
-// a route, the farthest clear point along the straight line (the original's fallback, 4.3 step 6).
+// original's iterative-deepening depth-first search finds the same kind of route) over the edges that
+// no placeable stands on, then string pulling (skip route points while the straight walk past them is
+// clear). Without PTH points or a route, the farthest clear point along the straight line (the
+// original's fallback, 4.3 step 6).
 namespace paths {
     // Whether a creature can walk straight from `a` to `b` on the walkmesh.
     fn clear { w: *world::World, a: math::Vec3, b: math::Vec3 } -> bool {
@@ -16,6 +17,18 @@ namespace paths {
         let f = walkmap::floor{ m = &w.walk, x = p.x, y = p.y, z = near_z + 2.0 }
         if f != null { z = f.z }
         return math::Vec3{ x = p.x, y = p.y, z }
+    }
+
+    const NO_Z: f32 = -1000000.0
+
+    // Whether the graph edge between points `a` and `b` runs into an active placeable. The points' heights
+    // (a floor lookup each) are found once per route, in `zs`.
+    fn meets_placeable { mut w: world::World, g: pth::Graph, zs: []mut f32, a: usize, b: usize, near_z: f32 } -> bool {
+        if zs[a] == NO_Z { zs[a] = point_at{ w = &w, g, i = @as(u32, a), near_z }.z }
+        if zs[b] == NO_Z { zs[b] = point_at{ w = &w, g, i = @as(u32, b), near_z }.z }
+        let pa = g.points[a]
+        let pb = g.points[b]
+        return walkmap::meets_placeable{ m = &w.walk, from = math::Vec3{ x = pa.x, y = pa.y, z = zs[a] }, to = math::Vec3{ x = pb.x, y = pb.y, z = zs[b] } }
     }
 
     // The nearest path point whose straight walk from `at` is clear: the points in order of distance,
@@ -124,11 +137,13 @@ namespace paths {
         let cost = alloc::resize(f32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(f32){}, count = n } iferr { return false }
         let prev = alloc::resize(i32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(i32){}, count = n } iferr { return false }
         let done = alloc::resize(bool, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(bool){}, count = n } iferr { return false }
+        let zs = alloc::resize(f32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(f32){}, count = n } iferr { return false }
         let mut i: usize = 0
         while i < n {
             cost[i] = 1000000000.0
             prev[i] = -1
             done[i] = false
+            zs[i] = NO_Z
             i = i + 1
         }
         cost[@as(usize, s)] = 0.0
@@ -163,6 +178,13 @@ namespace paths {
                 let q = g.points[to]
                 let c = cost[b] + math::sqrtf{ x = (q.x - bp.x) * (q.x - bp.x) + (q.y - bp.y) * (q.y - bp.y) }
                 if c < cost[to] {
+                    // The graph was authored without the placeables a script creates later (Calo Nord's
+                    // landspeeders across the camp road): an edge one stands on is no way through. Asked only
+                    // of an edge that would improve the route. A closed door does not count (it is opened on
+                    // arrival).
+                    if walkmap::placeable_near{ m = &w.walk, ax = bp.x, ay = bp.y, bx = q.x, by = q.y } {
+                        if meets_placeable{ w = &w, g, zs, a = b, b = to, near_z = from.z } { continue }
+                    }
                     cost[to] = c
                     prev[to] = @as(i32, b)
                 }
