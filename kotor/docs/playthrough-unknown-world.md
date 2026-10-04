@@ -29,7 +29,7 @@ takes it from there (from a crafted arrival of its own: a Jedi of level 20, the 
 ```
 kotor/tools/ctxc exe kotor -o kotor/out/kotor_lev.exe
 sh kotor/tools/playthrough/leviathan/all.sh                   # first: the checkpoint "hawkpost" that part 1 starts from (about 3 minutes)
-sh kotor/tools/playthrough/unknown/all.sh [FIRST_PART]        # the chain (parts 1-3, 5-22: part 4 is a look), each part loads the checkpoint the one before saved
+sh kotor/tools/playthrough/unknown/all.sh [FIRST_PART]        # the chain, about 2 minutes (parts 1-3, 5-22: part 4 is a look); each part loads the checkpoint the one before saved
 CKPT=temple sh kotor/tools/playthrough/unknown/run.sh NAME 16 FRAMES [FRAME:SHOT]...      # one part from its checkpoint (CINEMA=1 plays the films)
 sh kotor/tools/playthrough/korriban/sum.sh kotor/out/pt/NAME.log [FIRST_FRAME]             # the story lines of a log
 python kotor/tools/py/stage_audit.py kotor/out/pt/uN.log                                   # the staging audit
