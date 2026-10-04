@@ -27,7 +27,31 @@ namespace hud {
         return a
     }
 
+    // One frame of the auto-target, with a line in the objects log whenever the target changes: what it
+    // was, what it is, how far away, and the angle from the leader's facing it lies at.
     fn update_target { mut h: Hud, mut w: world::World, dt: f32 } {
+        let before = w.target
+        pick_target{ &h, &w, dt }
+        if w.target != before and w.log.objects {
+            let lo = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return }
+            let mut bt: []u8 = "none"
+            if world::object{ w = &w, id = before } is some{ value = bo } { bt = bo.tag }
+            let mut at: []u8 = "none"
+            let mut dist: f32 = 0.0
+            let mut bearing: f32 = 0.0
+            if world::object{ w = &w, id = w.target } is some{ value = no } {
+                at = no.tag
+                let dx = no.position.x - lo.position.x
+                let dy = no.position.y - lo.position.y
+                dist = math::sqrtf{ x = dx * dx + dy * dy }
+                bearing = measure_bearing{ lo, p = no.position } * 57.29578
+            }
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "target: {} -> {} ({} m, {} deg ccw of facing)\n", bt, at, dist, bearing)
+        }
+    }
+
+    fn pick_target { mut h: Hud, mut w: world::World, dt: f32 } {
         let leader = party::leader{ w = &w }
         let lo = world::object{ w = &w, id = leader } ifnull { return }
         let mut fx = lo.orientation.x
