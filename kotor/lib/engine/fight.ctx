@@ -1167,6 +1167,7 @@ namespace fight {
         }
         f.round.count = n
         f.round.anim_ms = ATTACK_MS
+        if party::is_member{ w = &w, id } { party::count_round{ &w, id } }
         play_row{ &w, o, row }
         // ResolveMeleeAnimations 0x005b7470 / ResolveRangedAnimations 0x005b6c40: the attack takes
         // its animation's time out of the round. Engaged, the target (not helpless, its round with
