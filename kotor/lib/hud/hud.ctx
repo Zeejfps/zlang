@@ -44,6 +44,10 @@ namespace hud {
         sight_latch: bool,                  // an enemy in sight has been announced (autotarget.ctx)
         sight_quiet: f32,                   // seconds left before the latch lets go once none is in sight
         target_lost: f32,                   // seconds the target has been out of sight
+        move_speed: f32,                    // the keys' velocity, the larger component, m/s (set by the loop after the control's step)
+        moving_for: f32,                    // seconds the leader has been moving by the keys, out of combat mode (autotarget.ctx)
+        looking: bool,                      // the mouse turns the camera: the pointer is hidden and nothing is hovered
+        swing_to: u32,                      // an object the auto-target wants the camera to swing round to (taken by the loop), obj::INVALID none
         alternate: bool,                    // Shift is held (AlternateActions): slot orders replace the queue in combat
         trans_panel: u32,                   // the area transition label's panel while the pointer is on a transition, else 0
         trans_object: u32,                  // the transition it names
@@ -86,7 +90,7 @@ namespace hud {
             block = [BlockPart{ index = -1, x = 0, y = 0 }; 16],
             minimap = open_minimap{ &g, &w, &dev, panel },
             font = gui::font_slot{ &g, fs = &w.fs, &dev, name = "dialogfont10x10" }, combat = false, combat_message = 0.0, notify = [0.0; 9], notify_shown = [false; 9],
-            shown_target = obj::INVALID, lists = [empty_list{}; 3], power_pick = -1, refusal = 0.0, hover_slot = -1, pressed = obj::INVALID, sight_latch = false, sight_quiet = 0.0, target_lost = 0.0, alternate = false, trans_panel = 0, trans_object = obj::INVALID,
+            shown_target = obj::INVALID, lists = [empty_list{}; 3], power_pick = -1, refusal = 0.0, hover_slot = -1, pressed = obj::INVALID, sight_latch = false, sight_quiet = 0.0, target_lost = 0.0, move_speed = 0.0, moving_for = 0.0, looking = false, swing_to = obj::INVALID, alternate = false, trans_panel = 0, trans_object = obj::INVALID,
             projector = Projector{ vp = math::mat4::identity{}, eye = math::vec3::zero{}, w = 1.0, h = 1.0 },
             floating = new_floating{ &g, &w, &dev },
         }

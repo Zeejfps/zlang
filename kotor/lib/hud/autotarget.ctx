@@ -1,11 +1,16 @@
-// The target the leader has without asking (CClientExoAppInternal::UpdateSelectableObjects 0x005fa5a0,
-// docs/re/movement.md 7.1): every frame the game works out what the leader can select within 30 m
-// and keeps the HUD target on something. A target that is still selectable and in view stays; one that
-// is out of sight for a second goes. With none, the pick is the nearest object in front of the leader
-// (within 30 degrees of its facing, measured from a point 4 m behind it), so the reticle and the target
-// block follow the player down a corridor without a click; in combat mode with enemies about, the
-// nearest hostile in front, else any hostile in sight. The first enemy to come into sight (none has been
-// in sight for 10 s) becomes the target and asks for the "enemy sighted" auto-pause out of combat mode.
+// The target the leader has without asking (CClientExoAppInternal::UpdateSelectableObjects 0x005fa5a0 and
+// the target drop in ProcessInput 0x006227e0, docs/re/movement.md 7.1). Every frame the game works out what
+// the leader can select within 30 m and keeps the HUD target on something:
+//   - a target that is still in that list and in view stays, whoever picked it (a click, Q / E, the last
+//     frame's pick); one out of sight for a second goes;
+//   - a leader the keys keep moving (control speed 0.25 m/s or more), out of combat mode, loses its target
+//     after half a second of that, so a player on the move gets the nearest thing in front every half
+//     second and a player standing still keeps what he has;
+//   - with no target, the pick is the nearest visible object in front of the leader (within 30 degrees of
+//     its facing, seen from a point 4 m behind it); in combat mode with enemies about, the nearest hostile
+//     in front, else the first hostile in sight by bearing, else the nearest object in front;
+//   - the first enemy to come into sight (none has been in sight for 10 s) becomes the target and, out of
+//     combat mode, asks for the "enemy sighted" auto-pause.
 namespace hud {
     // cos 30 degrees, and how far behind the leader the cone's point is.
     const FRONT_COS: f32 = 0.866
@@ -14,7 +19,11 @@ namespace hud {
     // sight before it is dropped.
     const SIGHT_LATCH_S: f32 = 10.0
     const LOST_S: f32 = 1.0
-    const NEAR_MAX: usize = 64
+    // The leader moving this fast (the control's larger velocity component, m/s) for this long without
+    // a break drops the target.
+    const MOVING_MIN: f32 = 0.25
+    const MOVING_DROP_S: f32 = 0.5
+    const NEAR_MAX: usize = 128
     const TWO_PI: f32 = 6.2831855
 
     // The counter-clockwise angle from the leader's facing to the direction of `p`, in [0, 2 pi): the
@@ -31,6 +40,7 @@ namespace hud {
     // was, what it is, how far away, and the angle from the leader's facing it lies at.
     fn update_target { mut h: Hud, mut w: world::World, dt: f32 } {
         let before = w.target
+        drop_while_moving{ &h, &w, dt }
         pick_target{ &h, &w, dt }
         if w.target != before and w.log.objects {
             let lo = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return }
@@ -49,6 +59,29 @@ namespace hud {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "target: {} -> {} ({} m, {} deg ccw of facing)\n", bt, at, dist, bearing)
         }
+    }
+
+    // ProcessInput's timer (client+0x36c): outside combat mode, a target and a leader moving by the keys
+    // for half a second on end, and the target is gone (the pick below then finds the nearest in front).
+    // Standing still, or any slower frame, starts the half second again.
+    fn drop_while_moving { mut h: Hud, mut w: world::World, dt: f32 } {
+        if w.target == obj::INVALID or h.move_speed < MOVING_MIN or leader_in_combat{ w = &w } {
+            h.moving_for = 0.0
+            return
+        }
+        h.moving_for = h.moving_for + dt
+        if h.moving_for >= MOVING_DROP_S {
+            h.moving_for = 0.0
+            w.target = obj::INVALID
+        }
+    }
+
+    // Whether the leader sees entry `k` of the list, asked once per entry per frame and only for entries
+    // the pick looks at (the original caches it per entry too: GetIsTargetVisible 0x00617ad0 is a pair of
+    // ray casts).
+    fn is_entry_seen { w: *world::World, ids: [NEAR_MAX]u32, mut seen: [NEAR_MAX]u8, k: usize } -> bool {
+        if seen[k] == 0 { seen[k] = if is_in_view{ w, id = ids[k] } { 1 } else { 2 } }
+        return seen[k] == 1
     }
 
     fn pick_target { mut h: Hud, mut w: world::World, dt: f32 } {
@@ -72,12 +105,15 @@ namespace hud {
         let py = lo.position.y - BEHIND * fy
         let pz = lo.position.z - BEHIND * fz
 
-        let mut ids: [64]u32
-        let mut d2: [64]f32
-        let mut bearing: [64]f32
-        let mut vis: [64]bool
-        let mut hostile: [64]bool
-        let mut front: [64]bool
+        // The selectable objects within 30 m (GetNearbySelectableObjects 0x004fc4c0), with the squared
+        // distance and bearing the two orders are made of, whether each is in the front cone, and whether
+        // the leader sees it (0 not asked yet, 1 yes, 2 no).
+        let mut ids: [NEAR_MAX]u32
+        let mut d2: [NEAR_MAX]f32
+        let mut bearing: [NEAR_MAX]f32
+        let mut seen: [NEAR_MAX]u8
+        let mut hostile: [NEAR_MAX]bool
+        let mut front: [NEAR_MAX]bool
         let mut n: usize = 0
         let mut hostile_near = false
         let all = list::items{ list = w.objects.all }
@@ -94,7 +130,7 @@ namespace hud {
             ids[n] = o.id
             d2[n] = dx * dx + dy * dy + dz * dz
             bearing[n] = measure_bearing{ lo, p = o.position }
-            vis[n] = is_in_view{ w = &w, id = o.id }
+            seen[n] = 0
             hostile[n] = o.kind == obj::Kind::creature and is_hostile{ w = &w, id = o.id }
             let mut in_front = false
             if dx * fx + dy * fy + dz * fz >= 0.0 {
@@ -109,14 +145,14 @@ namespace hud {
             n = n + 1
         }
 
-        // The current target: kept while selectable and in view, dropped a second after it goes out of view.
+        // The current target: kept while it is on the list and in view, dropped a second after it leaves view.
         let mut have = false
         if w.target != obj::INVALID {
             let mut k: usize = 0
             while k < n {
                 if ids[k] == w.target {
                     have = true
-                    if vis[k] {
+                    if is_entry_seen{ w = &w, ids, &seen, k } {
                         h.target_lost = 0.0
                     } else {
                         h.target_lost = h.target_lost + dt
@@ -133,17 +169,18 @@ namespace hud {
             h.target_lost = 0.0
         }
 
-        // An enemy coming into sight: the first of the visible hostile creatures round the leader.
+        // An enemy coming into sight: the first of the visible hostile creatures round the leader by bearing.
         let combat = leader_in_combat{ w = &w }
         let mut first_hostile: usize = n
         let mut k: usize = 0
         while k < n {
-            if hostile[k] and vis[k] and (first_hostile == n or bearing[k] < bearing[first_hostile]) { first_hostile = k }
+            if hostile[k] and (first_hostile == n or bearing[k] < bearing[first_hostile]) and is_entry_seen{ w = &w, ids, &seen, k } { first_hostile = k }
             k = k + 1
         }
         let sighted = first_hostile < n
         if sighted and not h.sight_latch and w.clock.pause_bits == 0 {
             w.target = ids[first_hostile]
+            h.swing_to = w.target
             have = true
             if w.log.objects {
                 world::prefix{ w = &w }
@@ -166,29 +203,41 @@ namespace hud {
         }
 
         if have { return }
-        // No target: the nearest in front; in combat mode with enemies about, the nearest hostile in front, else
-        // the first hostile in sight, else the nearest in front.
-        let hostile_only = combat and hostile_near
+        // No target: the nearest visible one in front. In combat mode with a hostile creature about, the
+        // nearest visible hostile in front, else the first visible hostile by bearing, else the first
+        // object in front that is not hostile (that last one without a look at whether it is seen).
         let mut pick: usize = n
-        k = 0
-        while k < n {
-            if front[k] and vis[k] and (not hostile_only or hostile[k]) and (pick == n or d2[k] < d2[pick]) { pick = k }
-            k = k + 1
-        }
-        if pick == n and hostile_only {
+        if combat and hostile_near {
             k = 0
             while k < n {
-                if hostile[k] and vis[k] and (pick == n or bearing[k] < bearing[pick]) { pick = k }
+                if front[k] and hostile[k] and (pick == n or d2[k] < d2[pick]) and is_entry_seen{ w = &w, ids, &seen, k } { pick = k }
                 k = k + 1
             }
             if pick == n {
                 k = 0
                 while k < n {
-                    if front[k] and vis[k] and (pick == n or d2[k] < d2[pick]) { pick = k }
+                    if hostile[k] and (pick == n or bearing[k] < bearing[pick]) and is_entry_seen{ w = &w, ids, &seen, k } { pick = k }
                     k = k + 1
                 }
             }
+            if pick == n {
+                k = 0
+                while k < n {
+                    if front[k] and not hostile[k] and (pick == n or d2[k] < d2[pick]) { pick = k }
+                    k = k + 1
+                }
+            }
+        } else {
+            k = 0
+            while k < n {
+                if front[k] and (pick == n or d2[k] < d2[pick]) and is_entry_seen{ w = &w, ids, &seen, k } { pick = k }
+                k = k + 1
+            }
         }
-        if pick < n { w.target = ids[pick] }
+        if pick < n {
+            w.target = ids[pick]
+            // SelectTarget swings the camera toward a pick only in combat mode.
+            if combat { h.swing_to = w.target }
+        }
     }
 }
