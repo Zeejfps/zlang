@@ -30,6 +30,7 @@ namespace vfx {
         age: f32,                       // seconds since its first step (that one shows it as born)
         fresh: bool,                    // not stepped yet: its first frame is its birth, however long the step was
         life: f32,                      // seconds the emitters keep being fed
+        hold: i32,                      // a duration visual (visualeffects.2da id) kept until it is released, 0 none
         stopped: bool,                  // past its life: the particles die out
         detonate: bool,                 // the animation's `detonate` event fired this step
         // still
@@ -53,7 +54,7 @@ namespace vfx {
 
     fn no_fx {} -> Fx {
         return Fx{
-            live = false, used = false, loaded = 0, part = 0, emitting = slice::empty(gui3d::Emitting){}, kind = Kind::still, age = 0.0, fresh = false, life = 0.0,
+            live = false, used = false, loaded = 0, part = 0, emitting = slice::empty(gui3d::Emitting){}, kind = Kind::still, age = 0.0, fresh = false, life = 0.0, hold = 0,
             stopped = false, detonate = false, at = math::vec3::zero{}, facing = math::vec3::zero{}, object = obj::INVALID, hook = [0; 24], hook_len = 0,
             which = 0, from = math::vec3::zero{}, to = math::vec3::zero{}, flight = 0.0, end_effect = 0, matrix = math::mat4::identity{},
             dir = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, speed = 0.0,
@@ -146,7 +147,7 @@ namespace vfx {
 
     // Starts the slot's animation (`anim`, else `impact`, else `default`) and fixes how long it
     // lives: `life` seconds, or the animation's length (at least a moment) when `life` is 0.
-    fn begin { mut v: Vfx, mut sc: scene::Scene, mut w: world::World, slot: usize, anim: []u8, life: f32, kind: Kind } {
+    fn begin { mut v: Vfx, mut sc: scene::Scene, mut w: world::World, slot: usize, anim: []u8, life: f32, kind: Kind, looping: bool } {
         let f = &v.fx[slot]
         let model = scene::loaded_at{ sc = &sc, i = f.loaded }.model
         f.kind = kind
@@ -155,6 +156,7 @@ namespace vfx {
         f.fresh = true
         f.stopped = false
         f.detonate = false
+        f.hold = 0
         let p = scene::part_at{ sc = &sc, i = f.part }
         p.anim_len = 0
         let mut length: f32 = 0.0
@@ -164,7 +166,7 @@ namespace vfx {
         while n < 3 and not played {
             if names[n].len > 0 and mdl::find_animation{ model, name = names[n] } is some{ value = ai } {
                 length = model.animations[ai].length
-                played = scene::play{ &sc, &w, part = f.part, name = names[n], looping = false, speed = 1.0, transition = 0.0 }
+                played = scene::play{ &sc, &w, part = f.part, name = names[n], looping, speed = 1.0, transition = 0.0 }
             }
             n = n + 1
         }
@@ -194,7 +196,7 @@ namespace vfx {
         f.at = at
         f.facing = facing
         f.matrix = placed{ at, facing }
-        begin{ &v, &sc, &w, slot, anim, life, kind = Kind::still }
+        begin{ &v, &sc, &w, slot, anim, life, kind = Kind::still, looping = false }
         return slot
     }
 
@@ -214,9 +216,45 @@ namespace vfx {
             i = i + 1
         }
         f.hook_len = n
-        begin{ &v, &sc, &w, slot, anim, life, kind = Kind::follow }
+        begin{ &v, &sc, &w, slot, anim, life, kind = Kind::follow, looping = false }
         f.matrix = follow_matrix{ sc = &sc, w = &w, f }
         return slot
+    }
+
+    // A duration visual riding an object until `release` ends it: the model of visualeffects.2da id
+    // `effect` on its hook, its animation looping.
+    fn spawn_hold {
+        mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device,
+        model: []u8, object: u32, hook: []u8, effect: i32,
+    } -> !?usize {
+        let slot = try acquire{ &v, &sc, &w, &dev, name = model } ifnull { return null }
+        let f = &v.fx[slot]
+        f.object = object
+        f.which = 0
+        let n = if hook.len < 24 { hook.len } else { 24 }
+        let mut i: usize = 0
+        while i < n {
+            f.hook[i] = hook[i]
+            i = i + 1
+        }
+        f.hook_len = n
+        begin{ &v, &sc, &w, slot, anim = "impact", life = 1.0e9, kind = Kind::follow, looping = true }
+        f.hold = effect
+        f.matrix = follow_matrix{ sc = &sc, w = &w, f }
+        return slot
+    }
+
+    // Ends the duration visuals `effect` on `object`: their particles die out.
+    fn release { mut v: Vfx, effect: i32, object: u32 } {
+        let mut i: usize = 0
+        while i < MAX_FX {
+            let f = &v.fx[i]
+            i = i + 1
+            if f.live and f.hold == effect and f.object == object {
+                f.hold = 0
+                f.life = f.age
+            }
+        }
     }
 
     // A projectile model flying from `from` to `to` in `flight` seconds; `end_effect` (a
@@ -236,7 +274,7 @@ namespace vfx {
         f.dir = if length > 0.001 { math::vec3::scale{ v = span, s = 1.0 / length } } else { math::Vec3{ x = 0.0, y = 1.0, z = 0.0 } }
         f.speed = length / f.flight
         f.matrix = placed{ at = from, facing = f.dir }
-        begin{ &v, &sc, &w, slot, anim = "travel01", life = f.flight, kind = Kind::bolt }
+        begin{ &v, &sc, &w, slot, anim = "travel01", life = f.flight, kind = Kind::bolt, looping = false }
         return slot
     }
 

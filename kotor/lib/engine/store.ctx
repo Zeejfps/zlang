@@ -83,7 +83,7 @@ namespace store {
         party::add_gold{ &w, n = -@as(i64, price) }
         let unit = if it.infinite { xfer::copy_item{ &w, item, stack = 1 } } else { xfer::take_one{ &w, item } }
         if unit == obj::INVALID { return Sale::gone }
-        _ = xfer::to_party{ &w, item = unit }
+        _ = xfer::acquire{ &w, item = unit, to = w.player }
         return Sale::done
     }
 

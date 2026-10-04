@@ -7,7 +7,7 @@
 //   FRAME ui clicktag TAG           a left click in the middle of the shown HUD control with the tag
 //                                   (BTN_TARGET0, BTN_TARGETDOWN0, BTN_CLEARALL, BTN_CLEARONE ...)
 //   FRAME ui fight                  prints the leader's combat state, its queue and the target block
-//   FRAME ui spawn TEMPLATE [DIST [SIDE]]  a creature (UTC) DIST m ahead of the leader, SIDE m to its right
+//   FRAME ui foe TEMPLATE [DIST [SIDE]]    a creature (UTC) DIST m ahead of the leader, SIDE m to its right
 //   FRAME ui heal                 the party at full health, Min1HP off (test setup after the bot's god mode)
 //   FRAME ui grantfeat ID          gives the leader a feat (test setup: Power Attack 28, Flurry 11 ...)
 namespace test_combat {
@@ -53,7 +53,7 @@ namespace test_combat {
             print_fight{ ui = &ui, &w }
             return true
         }
-        if ci::eq{ a = cmd, b = "spawn" } {
+        if ci::eq{ a = cmd, b = "foe" } {
             // Test setup: a creature from a template DIST metres ahead of the leader (SIDE metres to its
             // right), facing it, as a script's CreateObject would make it.
             let mut words = text::words{ s = args }
@@ -103,6 +103,34 @@ namespace test_combat {
             let n = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "1" })
             let id = if ci::eq{ a = tag, b = "pc" } { w.player } else { world::object_by_tag{ w = &w, tag, nth = 0 } }
             _ = fight::apply{ &w, target = id, e = rules::fx::make_damage{ amount = n, types = 1, power = 0 } }
+            return true
+        }
+        if ci::eq{ a = cmd, b = "giveto" } {
+            // Test setup: `ui giveto TAG RESREF [N]` puts an item (a stack of N) in a creature's inventory.
+            let mut words = text::words{ s = args }
+            let tag = text::next_word{ &words } ifnull { return true }
+            let name = text::next_word{ &words } ifnull { return true }
+            let n = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "1" })
+            let who = world::object_by_tag{ w = &w, tag, nth = 0 }
+            let id = rt_item::create_item{ &w, template = name, target = who, stack = if n > 0 { n } else { 1 } }
+            _ = @fmt(&w.io, "giveto {} {}: item {}\n", tag, name, id)
+            return true
+        }
+        if ci::eq{ a = cmd, b = "aistyle" } {
+            // Test setup: `ui aistyle TAG N` (0 default, 4 grenadier, 5 Jedi/droid support), as the Scripts panel sets it.
+            let mut words = text::words{ s = args }
+            let tag = text::next_word{ &words } ifnull { return true }
+            let n = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+            let id = world::object_by_tag{ w = &w, tag, nth = 0 }
+            if hud::creature_of{ w = &w, id } is some{ value = c } { c.ai_style = n }
+            return true
+        }
+        if ci::eq{ a = cmd, b = "plot" } {
+            // Test setup: `ui plot TAG 0|1` sets an object's Plot flag (a bashable door is not plot).
+            let mut words = text::words{ s = args }
+            let tag = text::next_word{ &words } ifnull { return true }
+            let on = text::scan_decimal{ s = text::next_word{ &words } ifnull "1" } != 0
+            if world::object{ w = &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } } is some{ value = o } { o.plot = on }
             return true
         }
         if ci::eq{ a = cmd, b = "grantfeat" } {

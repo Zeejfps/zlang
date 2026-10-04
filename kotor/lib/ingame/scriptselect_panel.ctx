@@ -1,0 +1,158 @@
+// The AI style panel (scriptselect.gui, docs/re/gui.md "CSWGuiScriptSelect"): the character sheet's
+// Scripts button opens it on top of the sheet as a modal panel. `LST_AIState` lists the rows of
+// aiscripts.2da (Default attack, Grenadier, Jedi/Droid support), `LB_DESC` the description of the
+// row the pointer is over or the keys are on, and choosing a row writes its `aistate` into the
+// creature's AI state (stats +0x13a, our `obj::Creature.ai_style`, which GetNPCAIStyle answers and
+// k_inc_generic's party AI reads). The creature's own style is the row checked (and selected) when it
+// opens.
+//
+// Not a menu: the framework does not know it. The character sheet keeps a `State`, opens it with
+// `open_modal` and calls `update` every frame while `is_open`, as the party selection is used
+// from the map.
+//
+// In the original a row is a button whose activation is the Select button's, so one click on a row
+// (or Enter on it) chooses it and closes the panel; the description follows the hilighted row
+// (hover or the up and down keys). Select takes the selected row, Cancel and Escape close it.
+//
+//   open_modal{ s, g, w, dev, who }   put it on the screen for creature `who`
+//   update{ s, g, w, dev }            every frame: takes the panel's events from the GUI
+//   close{ s, g, w }                  take it away (also when the sheet goes away under it)
+namespace scriptselect_panel {
+    const MAX_ROWS: usize = 8
+    const LIST: []u8 = "LST_AIState"
+    const DESC: []u8 = "LB_DESC"
+
+    struct State {
+        opened: bool,
+        panel: u32,
+        who: u32,                           // the creature whose style is being chosen
+        count: usize,                       // rows of aiscripts.2da in the list
+        aistate: [8]i32,                    // each row's `aistate`
+        desc: [8]u32,                       // each row's `description_strref`
+    }
+
+    fn new {} -> State {
+        return State{ opened = false, panel = 0, who = obj::INVALID, count = 0, aistate = [0; 8], desc = [0; 8] }
+    }
+
+    fn is_open { s: *State } -> bool { return s.opened }
+
+    // The AI style of a creature (the stats field the panel edits); 0, Default attack, for none.
+    fn style_of { w: *world::World, id: u32 } -> i32 {
+        let c = hud::creature_of{ w, id } ifnull { return 0 }
+        return c.ai_style
+    }
+
+    fn strref_at { t: twoda::Table, row: usize, column: []u8 } -> u32 {
+        return @trunc(u32, twoda::get_int{ t, row, column } ifnull -1)
+    }
+
+    // Puts the panel on the screen for `who`: the rows of aiscripts.2da by name, the one that matches
+    // the creature's style selected and its description shown (CSWGuiScriptSelect::SetCreature).
+    fn open_modal { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, who: u32 } -> ! {
+        if s.opened { return }
+        let id = try gui::open{ &g, fs = &w.fs, &dev, name = "scriptselect", mode = gui::Mode::full_screen, modal = true }
+        gui::set_backdrop{ &g, fs = &w.fs, &dev, panel = id, kind = 0 }
+        s.opened = true
+        s.panel = id
+        s.who = who
+        s.count = 0
+        // The rows are item buttons in the original: a click does what the row does (re/gui.md, ScriptSelect).
+        gui::set_click_rows{ &g, panel = id, tag = LIST }
+        try fill{ &s, &g, &w }
+        gui::set_focus{ &g, panel = id, tag = LIST }
+        try select_current{ &s, &g, &w }
+    }
+
+    // One row per line of aiscripts.2da (a table with more than MAX_ROWS lines is cut).
+    fn fill { mut s: State, mut g: gui::Gui, mut w: world::World } -> ! {
+        let t = sheet::table_of{ &w, name = "aiscripts" } ifnull { return }
+        let n = twoda::rows{ t }
+        let mut r: usize = 0
+        while r < n and r < MAX_ROWS {
+            let name = sheet::tlk_text{ w = &w, strref = strref_at{ t, row = r, column = "name_strref" } }
+            _ = try gui::list_add{ &g, panel = s.panel, tag = LIST, text = name, user = @as(i64, r) }
+            s.aistate[r] = twoda::get_int{ t, row = r, column = "aistate" } ifnull 0
+            s.desc[r] = strref_at{ t, row = r, column = "description_strref" }
+            s.count = s.count + 1
+            r = r + 1
+        }
+    }
+
+    // The row whose aistate is the creature's selected, with its description; none matching leaves
+    // the list unselected and the description empty.
+    fn select_current { mut s: State, mut g: gui::Gui, mut w: world::World } -> ! {
+        let style = style_of{ &w, id = s.who }
+        let mut found: i32 = -1
+        let mut r: usize = 0
+        while r < s.count {
+            // The rows are check boxes in the original: the creature's own style is the one checked.
+            let mine = s.aistate[r] == style
+            gui::list_set_checked{ &g, panel = s.panel, tag = LIST, row = @as(i32, r), checked = mine }
+            if mine { found = @as(i32, r) }
+            r = r + 1
+        }
+        if found >= 0 { gui::list_select{ &g, panel = s.panel, tag = LIST, row = found } }
+        try show_row{ &s, &g, &w, row = found }
+    }
+
+    // The description of row `row` in LB_DESC (empty for none).
+    fn show_row { mut s: State, mut g: gui::Gui, mut w: world::World, row: i32 } -> ! {
+        let text = if row >= 0 and @as(usize, row) < s.count { sheet::tlk_text{ w = &w, strref = s.desc[@as(usize, row)] } } else { "" }
+        try gui::set_list_text{ &g, panel = s.panel, tag = DESC, text }
+    }
+
+    // Closes the panel; the style stays as it was unless `choose` ran first.
+    fn close { mut s: State, mut g: gui::Gui, mut w: world::World } {
+        if not s.opened { return }
+        gui::close{ &g, id = s.panel }
+        gui::play_sound{ &g, n = 0 }
+        s.opened = false
+        s.panel = 0
+    }
+
+    // Row `row` is chosen: its aistate becomes the creature's AI state (HandleInputEvent 0x006e9bc0),
+    // and the panel closes. A row that does not exist changes nothing.
+    fn choose { mut s: State, mut g: gui::Gui, mut w: world::World, row: i32 } {
+        if row >= 0 and @as(usize, row) < s.count {
+            if hud::creature_of{ w = &w, id = s.who } is some{ value = c } {
+                if w.log.combat {
+                    _ = @fmt(&w.io, "ai style: {} {} -> {}\n", hud::name_of{ w = &w, id = s.who }, c.ai_style, s.aistate[@as(usize, row)])
+                }
+                c.ai_style = s.aistate[@as(usize, row)]
+            }
+        }
+        close{ &s, &g, &w }
+    }
+
+    // Every frame while the panel is open: its events are in the GUI's list until the next frame begins.
+    fn update { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } {
+        if not s.opened { return }
+        let n = gui::take_events{ &g }.len
+        let mut i: usize = 0
+        while i < n and s.opened {
+            let evs = gui::take_events{ &g }
+            if i >= evs.len { break }
+            let ev = evs[i]
+            i = i + 1
+            if ev.panel != s.panel { continue }
+            if ev.kind == gui::EventKind::cancel {
+                close{ &s, &g, &w }
+            } else if ev.kind == gui::EventKind::activate {
+                if slice::eq_bytes{ a = ev.tag, b = "BTN_Accept" } {
+                    choose{ &s, &g, &w, row = gui::list_selected{ &g, panel = s.panel, tag = LIST } }
+                } else if slice::eq_bytes{ a = ev.tag, b = "BTN_Back" } {
+                    close{ &s, &g, &w }
+                }
+            } else if ev.kind == gui::EventKind::row_activated and slice::eq_bytes{ a = ev.tag, b = LIST } {
+                choose{ &s, &g, &w, row = ev.row }
+            } else if (ev.kind == gui::EventKind::row_hover or ev.kind == gui::EventKind::row_selected) and slice::eq_bytes{ a = ev.tag, b = LIST } {
+                // A row the keys moved to is hilighted like one under the pointer (SetSelectedIndex's event 0).
+                if ev.kind == gui::EventKind::row_selected {
+                    if gui::find_control{ &g, panel = s.panel, tag = LIST } is some{ value = c } { c.hover_row = ev.row }
+                }
+                show_row{ &s, &g, &w, row = ev.row } iferr err{ error } { _ = @fmt(&w.io, "kotor: script select: {}\n", error) }
+            }
+        }
+    }
+}

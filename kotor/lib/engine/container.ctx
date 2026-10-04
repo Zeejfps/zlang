@@ -43,7 +43,7 @@ namespace container {
         let mut at: usize = 0
         while at < ids.len and ids[at] != item { at = at + 1 }
         if at == ids.len { return false }
-        if not xfer::to_party{ &w, item } { return false }
+        if not xfer::acquire{ &w, item, to = w.player } { return false }
         disturbed{ &w, o, p, item, kind = DISTURB_REMOVED }
         return true
     }

@@ -244,7 +244,7 @@ one; the rest come from a constructor or the script mapping.
 | 0x66 / 0x67 | FORCE_JUMP / its internal step | 77 / — | `0x004ddf40` / `0x004de0a0` | — | med |
 | 0x68 | ASSURED_DEFLECTION | 78 | `0x004d8420` / `0x004d8490` | creature flags +0x8dc (and +0x8d8 when int0 ≠ 0) | high |
 | 0x69 / 0x6a | FORCE_RESISTED / FORCE_FIZZLE | — | `0x004ded00` / `0x004dede0` | instant visual child only | high |
-| 0x6b | FORCE_SHIELD | — | `0x004df540` | forceshields.2da visuals and resistances | med |
+| 0x6b | FORCE_SHIELD | — | `0x004df540` / folded return-1 `0x004df410` | builds an aura child and a limited DAMAGE_RESISTANCE child from forceshields.2da, after taking off the old shield (1.13) | high |
 | 0x6c / 0x6d | LIGHT_SIDE / DARK_SIDE_MASTERY | — | `0x004dee90` / `0x004df160` | 3.8 | high |
 
 Types 0x42, 0x44, 0x45, 0x4d–0x51, 0x53, 0x54, 0x56–0x59, 0x5e, 0x61 have handlers but no script
@@ -534,6 +534,87 @@ effects with duration type 3 and the item as creator, and applies them. That is 
 obey the per-item "largest wins" rule of 1.7 and survive ClearAllEffects and death. Property
 types are in itempropdef.2da; the per-property handlers (`0x004e5490`…`0x004ea800`) were not
 read one by one. (high for the mechanism)
+
+### 1.13 Energy shields (`EffectForceShield`)
+
+The forearm bands, the droid utility and hazard shields and the plot shields all apply
+`EffectForceShield(row)` (routine 459, `0x00532690`: type 0x6b, int0 = a row of forceshields.2da,
+no range check). The impact script of the item abilities (`k_sup_bands`: spells.2da 99-107, the
+bands, are rows 6-14; 110-115, the droid shields, rows 0-5) links an effect icon to it
+(`SetEffectIcon`, icons 45-54) and applies it for 200 s to the spell's target. (high)
+
+**`OnApplyForceShield` (`0x004df540`).** Ghidra's listing stops after the first 2DA read, because it
+takes the string destructor for a call that never returns; the rest (`0x004df69c`-`0x004dfa28`) is
+read from the disassembly. In order (high):
+
+1. Anything but a creature is kept as it is (no children).
+2. **The old shield goes.** The creature's first type-0x6b effect is looked up by a client-side
+   helper (`0x00616890`: the row of the creature's FORCE_SHIELD effect, 0 for none); if it is
+   **not 0**, that effect is removed by id, which takes everything sharing its id with it: the old
+   marker, aura, resistance and the effect icon of the same link. So a shield of row 0 (the
+   weakest droid shield) is invisible to this check, and a second shield simply stacks on it.
+3. The row is read by its label (the decimal text of int0; the labels equal the row numbers):
+   `VisualEffectDef`; then `Appearance_01`..`Appearance_04` in turn, the first whose value equals
+   the creature's appearance (16 bits, creature +0xa60) replaces the aura column by the matching
+   `VisualEffect_0N`; `DamageFlags`, `VulnerFlags`, `Resistance`, `Amount`, and `Permanent`.
+   `Permanent` is read into a local nothing uses, and `DefaultRadius` and `Radius_0N` are not
+   named anywhere in the exe: both are dead columns (every row has Permanent 0).
+4. Two children are made with `CGameEffectFromParent` (the shield's id, duration kind and
+   length, expiry, spell id; not exposed), their creator set to the creature itself, and applied
+   with `ApplyEffect`: a **VISUALEFFECT** (0x1e) with int0 = the aura, and a **DAMAGE_RESISTANCE**
+   (0x02) whose subtype is forced to magical, with int0 = DamageFlags, int1 = Resistance,
+   int2 = Amount, int3 = VulnerFlags.
+5. It returns 0: the marker (0x6b) stays in the list, a plain passive effect.
+
+The remove handler is the shared "return 1" stub (`0x004df410`): nothing happens on removal beyond
+the children's own (the aura is taken off, 1.11). Since all four leaves have one id, the shield
+ends as a unit: when its time is up (`UpdateEffectList`, 1.6), on death (1.9), by ClearAllEffects,
+or when its points are used up. On loading a save the non-exposed children are skipped
+(1.1) and the marker rebuilds them, so a half-used shield comes back with its full Amount (med:
+inferred from `SkipOnLoad`, not observed).
+
+**What it stops.** Everything is the limited resistance of `DoDamageResistance` (`0x004d0e40`,
+combat.md 6.4); the numbers of the rows are:
+
+| Column | Meaning | Values |
+|---|---|---|
+| DamageFlags | the damage types it stops | 6208 = blaster 4096 + ion 2048 + light side 64 (the plain shields, rows 0-2, 6, 12, 13, 16-18); 7232 adds sonic (Sith, Echani); 7520 adds sonic, fire, cold (hazard shields, Arkanian, Verpine, antique droid); 2055 = ion + bludgeoning, piercing, slashing (Mandalorian melee, row 10); 6215 = 6208 + the three physical (Mandalorian power, row 11) |
+| VulnerFlags | types that wear the points down twice as fast | 2048 (ion) in every row |
+| Resistance | the most one hit's damage can lose to it | 300 in every row: a hit is absorbed whole |
+| Amount | the points the shield holds | 20, 30, 50 for the droid shields (rows 0-2 energy, 3-5 hazard), 20 the band (row 6), 30 Sith, 40 Arkanian, 50 Echani, 20 Mandalorian melee, 30 Mandalorian power, 60 and 100 the dueling shields, 120 Verpine, 110 antique droid, 300 / 400 / 300 the plot shields |
+
+How a hit meets it: the strongest matching resistance (largest int1, the first on a tie) is chosen
+by the damage's type mask; if **any** DAMAGE_RESISTANCE effect lists one of the types in its int3
+the hit counts double (`drain = 2 x damage`). With Amount (int2) above 0: if `Amount - drain < 1`
+the shield absorbs what is left of its Amount and is removed by id (the rest of the damage goes
+through); otherwise Amount drops by `drain` and the damage is absorbed up to Resistance. The
+points therefore count down by the **whole damage** of each hit, not by what was absorbed (an
+ion hit by twice that), and the hit that breaks the shield is absorbed only by what remained.
+Types outside DamageFlags (electrical, dark side, acid, universal for every row) pass untouched.
+Immunity is applied before and reduction after, as for any resistance (combat.md 6.1). The
+combat log gets feedback 0x42 with the points absorbed and the points left (0x3f when the
+resistance has no limit); we do not print it. (high for the arithmetic, med for the messages)
+
+**A missed bolt.** `GetCanDeflectProjectile` (`0x005b78e0`) has a second branch, taken by
+`ResolveRangedAttack` for a ranged attack that missed (result 4-6) and whose defender is not a
+Jedi guarding himself (no Jedi Defense feat, or debilitated, or dying): if the defender wears a
+shield by the helper above (row != 0) and the weapon in the shooting hand (slot 0x10, or 0x20 for
+the left hand) has an ammunition type whose `ShieldHit` (ammunitiontypes.2da; 1 for the red,
+`_s` and `_bc` bolts, 0 for blue and white) is set, the attack result becomes 10 and the bolt is
+drawn flying to the target (`SetRangedHitPoint`) with no damage. The same helper picks the
+"forcefield" column of weaponsounds.2da for the hit sound on a shielded creature
+(`0x00617470`, med). (high for the branch, med for the sound)
+
+**Aura.** The aura is a duration visual (visualeffects.2da `Type_FD` D). The default one of every
+row but 15 is an engine-coded effect (`progfx_duration` 1413-1421, no model in the 2DA); row 15 and
+the four droid appearances (59, 60, 61 and 65, for rows 0-5 and 15-18) get a model on the root node
+(`v_fieldmrk*_dur`, `v_fieldmk*b_dur`, `v_fieldsp*_dur`). The 2DA's `soundimpact` /
+`soundduration` / `soundcessastion` give the sounds of putting it on, keeping it and taking it
+off. (high for the structure, low for what the engine-coded effects draw)
+
+Our library (`lib/rules/shield.ctx`, `effects.ctx`): the same two children, one id (the creator
+of the children stays the caster: the library does not know its creature's object id), removal
+of the spent resistance by id, the miss branch in `combat_finish_miss`.
 
 ## 2. Saving throws
 
@@ -968,8 +1049,9 @@ All of this was read from the decompiled functions named; it refines 4.4 and 6. 
 
 - Internal types without constructors (0x2b, 0x42, 0x44, 0x45, 0x4d–0x51, 0x53, 0x54,
   0x56–0x59, 0x5e, 0x61) and the exact behaviour of curse, silence, deaf, dispel, sanctuary,
-  timestop, force push, lightsaber throw, force jump, force shield, disease and the per-property
-  item handlers.
+  timestop, force push, lightsaber throw, force jump, disease and the per-property item handlers.
+- What the engine-coded shield auras (`progfx_duration` 1413-1421) draw, and the combat-log
+  lines for a shield that absorbs (feedback 0x3f / 0x42).
 - AI state bits 8, 0x10, 0x40 and 0x100: what each one gates.
 - `GetFirstEffect`/`GetNextEffect`: whether unexposed engine sub-effects are hidden from scripts
   (NWN hides them).

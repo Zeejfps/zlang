@@ -44,7 +44,7 @@ namespace frontend {
             tooltips = true, tutorial_popups = true, subtitles = true, minimap = true, floating_numbers = true,
             status_summary = true, hide_ingame_gui = false, small_fonts = false, hide_unequippable = false,
             pause_end_round = false, pause_enemy_sighted = true, pause_mine_sighted = true, pause_party_killed = true,
-            pause_action_menu = false, pause_triggers = false,
+            pause_action_menu = false, pause_triggers = true,
             disable_movies = false, movies_seen = [false; 64],
         }
     }
@@ -115,12 +115,12 @@ namespace frontend {
             hide_ingame_gui = get_bool{ data, section = o, key = "Hide InGame GUI", fallback = d.hide_ingame_gui },
             small_fonts = get_bool{ data, section = o, key = "Use Small Fonts", fallback = d.small_fonts },
             hide_unequippable = get_bool{ data, section = o, key = "Hide Unequippable", fallback = d.hide_unequippable },
-            pause_end_round = get_bool{ data, section = a, key = "End Of Round", fallback = d.pause_end_round },
+            pause_end_round = get_bool{ data, section = a, key = "End Of Combat Round", fallback = d.pause_end_round },
             pause_enemy_sighted = get_bool{ data, section = a, key = "Enemy Sighted", fallback = d.pause_enemy_sighted },
             pause_mine_sighted = get_bool{ data, section = a, key = "Mine Sighted", fallback = d.pause_mine_sighted },
             pause_party_killed = get_bool{ data, section = a, key = "Party Killed", fallback = d.pause_party_killed },
             pause_action_menu = get_bool{ data, section = a, key = "Action Menu", fallback = d.pause_action_menu },
-            pause_triggers = get_bool{ data, section = a, key = "Triggers", fallback = d.pause_triggers },
+            pause_triggers = get_bool{ data, section = a, key = "New Target Selected", fallback = d.pause_triggers },
             disable_movies = get_bool{ data, section = "Movies", key = "Disable Movies", fallback = d.disable_movies },
             movies_seen = read_seen{ data },
         }
@@ -203,12 +203,12 @@ namespace frontend {
         try put_b{ &b, key = "Use Small Fonts", v = s.small_fonts }
         try put_b{ &b, key = "Hide Unequippable", v = s.hide_unequippable }
         try @fmt(&b, "\n[Autopause Options]\n")
-        try put_b{ &b, key = "End Of Round", v = s.pause_end_round }
+        try put_b{ &b, key = "End Of Combat Round", v = s.pause_end_round }
         try put_b{ &b, key = "Enemy Sighted", v = s.pause_enemy_sighted }
         try put_b{ &b, key = "Mine Sighted", v = s.pause_mine_sighted }
         try put_b{ &b, key = "Party Killed", v = s.pause_party_killed }
         try put_b{ &b, key = "Action Menu", v = s.pause_action_menu }
-        try put_b{ &b, key = "Triggers", v = s.pause_triggers }
+        try put_b{ &b, key = "New Target Selected", v = s.pause_triggers }
         try @fmt(&b, "\n[Movies]\n")
         try put_b{ &b, key = "Disable Movies", v = s.disable_movies }
         try @fmt(&b, "\n[Movies Shown]\n")

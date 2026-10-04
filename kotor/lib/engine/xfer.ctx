@@ -61,6 +61,31 @@ namespace xfer {
         return rt_misc::move_item{ &w, item, to = w.player }
     }
 
+    // AcquireItem with feedback (loot taken, a purchase, an item picked up): `item` goes to `to`, and
+    // when that is the player's party the log says "Acquired Item: ..." (or the credits) and the HUD's
+    // icon lights (notices.ctx). Another creature just takes it.
+    fn acquire { mut w: world::World, item: u32, to: u32 } -> bool {
+        if not notices::is_party{ w = &w, id = to } { return rt_misc::move_item{ &w, item, to } }
+        let o = world::object{ w = &w, id = item } ifnull { return false }
+        let it = obj::item{ o } ifnull { return false }
+        if rt_item::is_credits{ w = &w, base = it.base } {
+            notices::credits_changed{ &w, who = to, n = @as(i64, it.stack) }
+        } else {
+            notices::item_gained{ &w, who = to, item }
+        }
+        if not to_party{ &w, item } { return false }
+        mark_new{ &w, item = w.last_acquired }
+        return true
+    }
+
+    // The party has not seen the item yet: the inventory shows its name in magenta and the "New Items"
+    // filter lists it until the screen has shown its description (party-items-saves.md 5.1, flag bit 7).
+    fn mark_new { mut w: world::World, item: u32 } {
+        let o = world::object{ w = &w, id = item } ifnull { return }
+        let it = obj::item{ o } ifnull { return }
+        it.fresh = true
+    }
+
     // AddItem's merge (party-items-saves.md 5.2) for `item`, just read into the holder of the
     // list `l` (a store's stock, a creature's or a container's items; not yet in it): an item of
     // `l` that stacks with it and has room takes its units, up to baseitems Stacking, and the rest

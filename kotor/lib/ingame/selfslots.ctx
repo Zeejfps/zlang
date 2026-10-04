@@ -41,6 +41,7 @@ namespace selfslots {
     const REASON_TEXT: [7]u32 = [0, 38613, 38614, 38615, 42422, 42498, 47936]
 
     const TYPE_REPAIR_KIT: i32 = 26
+    const TYPE_STIM: i32 = 25
     const TYPE_MEDPAC: i32 = 45
     const TYPE_RECOVERY_KIT: i32 = 47
 
@@ -91,31 +92,38 @@ namespace selfslots {
         sl.count = sl.count + 1
     }
 
-    // The reason a known power cannot be cast now (R_OK when it can).
-    fn power_reason { w: *world::World, f: *fight::Fighter, spell: i32, alive: bool } -> i32 {
-        let r = rules::can_cast_spell{ tables = w.rules, c = &f.c, spell, alive, from_item = false }
-        if r == rules::cast::DEAD { return R_DEAD }
-        if r == rules::cast::NOT_ENOUGH_FP { return R_FORCE }
-        if r == rules::cast::FORBIDDEN_EQUIPMENT or r == rules::cast::MISSING_EQUIPMENT { return R_ARMOR }
-        return R_OK
-    }
-
-    // Slot 0: the leader's friendly powers.
+    // Slot 0: the leader's friendly powers, one per friendly line (spells.2da ForceFriendly: Cure and
+    // Heal, the three armour powers, the speeds, the valors, Force resistance and immunity, the energy
+    // resistances), the known power of the line with the highest ForcePriority, the lines in order
+    // (UpdateActionMenus' 0x00616230: the same pick as the target block's hostile lines).
     fn fill_powers { w: *world::World, leader: u32, mut out: [4]Slot } {
         let f = hud::ruled_of{ w, id = leader } ifnull { return }
         let alive = not hud::is_down{ w, id = leader }
         let t = w.tables.spells
         let rows = twoda::rows{ t }
+        let mut best_row: [8]i32 = [-1; 8]
+        let mut best_pri: [8]i32 = [-1; 8]
         let mut r: usize = 0
         while r < rows and r < 256 {
             let spell = @as(i32, r)
             r = r + 1
             if not rules::knows_power{ c = &f.c, spell } { continue }
             let row = rules::get_spell{ tables = w.rules, row = spell } ifnull { continue }
-            if not row.valid or row.user_type != 1 or row.hostile { continue }
-            if not items::is_self_ability{ w, spell } { continue }
-            let icon = twoda::get_string{ t, row = r - 1, column = "iconresref" } ifnull { continue }
-            let reason = power_reason{ w, f, spell, alive }
+            if not row.valid or row.user_type != 1 or row.line_friendly < 0 or row.line_friendly >= 8 { continue }
+            let line = @as(usize, row.line_friendly)
+            if row.priority > best_pri[line] {
+                best_pri[line] = row.priority
+                best_row[line] = spell
+            }
+        }
+        let mut line: usize = 0
+        while line < 8 {
+            let spell = best_row[line]
+            line = line + 1
+            if spell < 0 { continue }
+            let row = rules::get_spell{ tables = w.rules, row = spell } ifnull { continue }
+            let icon = twoda::get_string{ t, row = @as(usize, spell), column = "iconresref" } ifnull { continue }
+            let reason = hud::power_reason{ w, f, spell, alive }
             push{ sl = &out[0], id = @as(u32, spell), icon, strref = @as(u32, row.name), usable = reason == R_OK, reason }
         }
     }
@@ -132,31 +140,58 @@ namespace selfslots {
         return false
     }
 
-    // Slots 1 and 2: the carried items with an ability on the user, medical ones apart.
-    fn fill_items { mut w: world::World, leader: u32, mut out: [4]Slot } {
+    // Which self slot lists the item, 0 for none (docs/re/gui.md "Action menus"; the original's test is
+    // 0x00616520, called for each of the party's items and for what is worn on the arms and belt):
+    // 1 for the medical ones (medpacs, recovery kits, droid repair kits: ItemType 45, 47, 26), 2 for
+    // stims (25) and for any item whose ability has `itemtargeting` 1 in spells.2da (disguises, energy
+    // shields, droid devices, plot serums), which are listed only while worn when their type is a droid
+    // utility, droid shield or forearm shield (12, 13, 20). Needs an ability with a use. A grenade is the
+    // target block's, not these.
+    fn slot_of_item { mut w: world::World, id: u32, worn: bool } -> usize {
+        let spell = items::ability_of{ w = &w, id }
+        if spell < 0 { return 0 }
+        let kind = items::base_int{ w = &w, id, column = "itemtype", fallback = 0 }
+        if kind == TYPE_MEDPAC or kind == TYPE_REPAIR_KIT or kind == TYPE_RECOVERY_KIT { return 1 }
+        if kind == TYPE_STIM { return 2 }
+        let targeted = twoda::get_int{ t = w.tables.spells, row = @as(usize, spell), column = "itemtargeting" } ifnull 0
+        if targeted != 1 { return 0 }
+        if (kind == 12 or kind == 13 or kind == 20) and not worn { return 0 }
+        return 2
+    }
+
+    // One item's entry in its list, dimmed with the reason when the leader cannot use it now.
+    fn add_item { mut w: world::World, leader: u32, id: u32, worn: bool, mut out: [4]Slot } {
+        let k = slot_of_item{ &w, id, worn }
+        if k == 0 or not items::can_use{ &w, who = leader, id } { return }
+        let kind = items::base_int{ w = &w, id, column = "itemtype", fallback = 0 }
         let alive = not hud::is_down{ w = &w, id = leader }
+        let mut reason = R_OK
+        if not alive { reason = R_DEAD }
+        else if kind == TYPE_MEDPAC or kind == TYPE_REPAIR_KIT {
+            let v = hud::vitality_of{ w = &w, id = leader }
+            if v.hp >= v.hp_max { reason = R_FULL }
+        } else if kind == TYPE_RECOVERY_KIT and not any_injured{ w = &w } { reason = R_FULL }
+        let mut buf: [40]u8
+        let icon = items::icon_name{ w = &w, id, into = buf[..] }
+        push{ sl = &out[k], id, icon, strref = 0, usable = reason == R_OK, reason }
+    }
+
+    // Slots 1 and 2: the party's items with such an ability, and what the leader wears on the arms and belt.
+    fn fill_items { mut w: world::World, leader: u32, mut out: [4]Slot } {
         let ids = list::items{ list = w.bag }
         let mut k: usize = 0
         while k < ids.len {
             let id = ids[k]
             k = k + 1
-            if not world::is_valid{ w = &w, id } { continue }
-            let spell = items::ability_of{ w = &w, id }
-            if not items::is_self_ability{ w = &w, spell } or not items::can_use{ &w, who = leader, id } { continue }
-            let kind = items::base_int{ w = &w, id, column = "itemtype", fallback = 0 }
-            let is_medical = kind == TYPE_MEDPAC or kind == TYPE_REPAIR_KIT or kind == TYPE_RECOVERY_KIT
-            let mut reason = R_OK
-            if not alive { reason = R_DEAD }
-            else if kind == TYPE_MEDPAC or kind == TYPE_REPAIR_KIT {
-                let v = hud::vitality_of{ w = &w, id = leader }
-                if v.hp >= v.hp_max { reason = R_FULL }
-            } else if kind == TYPE_RECOVERY_KIT and not any_injured{ w = &w } { reason = R_FULL }
-            let mut buf: [40]u8
-            let icon = items::icon_name{ w = &w, id, into = buf[..] }
-            if is_medical {
-                push{ sl = &out[1], id, icon, strref = 0, usable = reason == R_OK, reason }
-            } else {
-                push{ sl = &out[2], id, icon, strref = 0, usable = reason == R_OK, reason }
+            if world::is_valid{ w = &w, id } { add_item{ &w, leader, id, worn = false, out = &out } }
+        }
+        if hud::creature_of{ w = &w, id = leader } is some{ value = c } {
+            let cells: [3]usize = [obj::SLOT_LEFT_ARM, obj::SLOT_RIGHT_ARM, obj::SLOT_BELT]
+            k = 0
+            while k < cells.len {
+                let id = c.equipped[cells[k]]
+                k = k + 1
+                if id != obj::INVALID and world::is_valid{ w = &w, id } { add_item{ &w, leader, id, worn = true, out = &out } }
             }
         }
     }
@@ -356,15 +391,20 @@ namespace selfslots {
         let down = slot_of{ tag = ev.tag, prefix = "BTN_ACTIONDOWN" }
         let k = if up >= 0 { up } else { down }
         if k < 0 { return false }
-        let sl = &s.slots[@as(usize, k)]
+        cycle{ &s, &g, &w, &dev, panel, k = @as(usize, k), forward = down >= 0 }
+        return true
+    }
+
+    // Slot `k`'s next (or previous) choice, wrapping: its arrows, and Shift with the slot's key.
+    fn cycle { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, k: usize, forward: bool } {
+        let sl = &s.slots[k]
         if sl.count > 1 {
             let at = index_of{ sl, id = sl.selected }
-            let to = if down >= 0 { (at + 1) % sl.count } else { (at + sl.count - 1) % sl.count }
+            let to = if forward { (at + 1) % sl.count } else { (at + sl.count - 1) % sl.count }
             sl.selected = sl.entries[to].id
             gui::play_sound{ &g, n = 7 }
-            show_slot{ &s, &g, &w, &dev, panel, k = @as(usize, k) }
+            show_slot{ &s, &g, &w, &dev, panel, k }
             show_description{ &s, &g, &w, panel }
         }
-        return true
     }
 }

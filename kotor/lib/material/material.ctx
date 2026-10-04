@@ -41,6 +41,9 @@ namespace material {
         props: Props,
     }
 
+    // A texture that was asked for and isn't in the install, and what it was asked for.
+    struct Missing { name: resref::ResRef, use: []u8 }
+
     struct Cache {
         heap: *mut heap::Heap,
         entries: list::List(Entry, heap::Heap),
@@ -48,6 +51,8 @@ namespace material {
         scratch: arena::Arena,      // decoding space, emptied after each texture
         loaded: u32,
         missing: u32,
+        missing_names: list::List(Missing, heap::Heap),    // the names `missing` counts, in the order asked
+        use: []u8,                  // what the next `get` is for ("lightmap", ...), for the log of missing textures
         bytes: usize,               // uploaded
     }
 
@@ -58,6 +63,7 @@ namespace material {
             index = map::new(resref::ResRef, u32, heap::Heap){ realloc = heap::alloc, heap, hash = resref::hash, eq = resref::eq },
             scratch = arena::new{ buf = scratch },
             loaded = 0, missing = 0, bytes = 0,
+            missing_names = list::new(Missing, heap::Heap){ realloc = heap::alloc, heap }, use = "",
         }
     }
 
@@ -71,6 +77,7 @@ namespace material {
             i = i + 1
         }
         list::free{ list = &cache.entries }
+        list::free{ list = &cache.missing_names }
         map::free{ m = &cache.index }
     }
 
@@ -128,10 +135,18 @@ namespace material {
     // missing or can't be read.
     fn get { mut cache: Cache, mut fs: Fs, mut dev: gpu::Device, rm: res::Manager, name: []u8 } -> Entry {
         let key = resref::truncate{ name }
+        // No name is no texture, not a missing one: the original asks for nothing (an emitter
+        // without a texture, a mesh with NULL).
+        if is_none{ name } { return missing_entry{ key } }
         let found = map::get{ m = cache.index, key }
         if found != null { return list::get{ list = cache.entries, i = @as(usize, found) } ifnull { missing_entry{ key } } }
         let entry = load{ &cache, &fs, &dev, rm, key, name } iferr { missing_entry{ key } }
-        if entry.texture == null { cache.missing = cache.missing + 1 } else { cache.loaded = cache.loaded + 1 }
+        if entry.texture == null {
+            cache.missing = cache.missing + 1
+            list::push{ list = &cache.missing_names, item = Missing{ name = key, use = cache.use } } iferr {}
+        } else {
+            cache.loaded = cache.loaded + 1
+        }
         arena::reset{ heap = &cache.scratch }
         let at = @as(u32, cache.entries.len)
         list::push{ list = &cache.entries, item = entry } iferr { return entry }
@@ -268,6 +283,7 @@ namespace material {
         let mut has_diffuse = false
         let mut alpha_mean: f32 = 1.0
         if not is_none{ name = desc.diffuse } {
+            cache.use = "diffuse"
             let d = get{ &cache, &fs, &dev, rm, name = desc.diffuse }
             if d.texture != null {
                 m.diffuse = d.texture
@@ -280,6 +296,7 @@ namespace material {
             }
         }
         if desc.lightmapped and not is_none{ name = desc.lightmap } {
+            cache.use = "lightmap"
             let l = get{ &cache, &fs, &dev, rm, name = desc.lightmap }
             if l.texture != null { m.lightmap = l.texture }
         }
@@ -288,13 +305,16 @@ namespace material {
         let mut env_name = resref::bytes{ r = &props.envmap }
         if desc.envmap.len > 0 and not ci::eq{ a = desc.envmap, b = "DEFAULT" } { env_name = desc.envmap }
         if not is_none{ name = env_name } {
+            cache.use = "environment map"
             let e = get{ &cache, &fs, &dev, rm, name = env_name }
             if e.texture != null { m.envmap = e.texture }
         }
         if not resref::is_empty{ r = props.bumpmap } {
+            cache.use = "bump map"
             let b = get{ &cache, &fs, &dev, rm, name = resref::bytes{ r = &props.bumpmap } }
             if b.texture != null and b.normal_map { m.bumpmap = b.texture }
         }
+        cache.use = ""
         // Water: blended at its opacity.
         if props.water_alpha >= 0.0 {
             m.blend = render::Blend::alpha

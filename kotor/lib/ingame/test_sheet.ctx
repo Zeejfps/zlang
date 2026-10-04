@@ -38,6 +38,17 @@ namespace test_sheet {
         return false
     }
 
+    // The skills.2da row of a skill name used by `ui stat`, -1 for none.
+    fn skill_by_name { name: []u8 } -> i32 {
+        let names: [8][]u8 = ["computer", "demolitions", "stealth", "awareness", "persuade", "repair", "security", "treat"]
+        let mut k: usize = 0
+        while k < 8 {
+            if ci::eq{ a = name, b = names[k] } { return @as(i32, k) }
+            k = k + 1
+        }
+        return -1
+    }
+
     // Sets one number on the leader; false when the name is unknown or there is no leader.
     fn set_stat { mut w: world::World, key: []u8, value: []u8 } -> bool {
         let o = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return false }
@@ -45,14 +56,16 @@ namespace test_sheet {
         let n = @as(i32, text::scan_decimal{ s = value })
         let names: [6][]u8 = ["str", "dex", "con", "int", "wis", "cha"]
         let mut k: usize = 0
+        let mut is_ability = false
         while k < 6 {
             if ci::eq{ a = key, b = names[k] } {
                 c.abilities[k] = @trunc(u8, n)
-                return true
+                is_ability = true
             }
             k = k + 1
         }
-        if ci::eq{ a = key, b = "xp" } { c.xp = @as(u32, n) }
+        if is_ability { }
+        else if ci::eq{ a = key, b = "xp" } { c.xp = @as(u32, n) }
         else if ci::eq{ a = key, b = "align" } { c.good_evil = @as(u32, n) }
         else if ci::eq{ a = key, b = "hp" } { o.hp = n }
         else if ci::eq{ a = key, b = "hpmax" } { o.hp_max = n }
@@ -62,6 +75,12 @@ namespace test_sheet {
             // The Security skill's ranks (rules.md 5.1), for the lock-picking tests.
             let f = c.fighter ifnull { return false }
             f.c.skills[@as(usize, rules::skill::SECURITY)] = n
+        }
+        else if skill_by_name{ name = key } >= 0 {
+            // `ui stat computer 4`: ranks of any skill (computer, demolitions, stealth, awareness, persuade,
+            // repair, security, treat).
+            let f = c.fighter ifnull { return false }
+            f.c.skills[@as(usize, skill_by_name{ name = key })] = n
         }
         else if ci::eq{ a = key, b = "class2" } { c.classes[1] = @as(u32, n) }
         else if ci::eq{ a = key, b = "level2" } { c.class_levels[1] = @as(u32, n) }

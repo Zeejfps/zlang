@@ -79,8 +79,13 @@ namespace rt_misc {
             nwscript::GetSpellTarget => { try get_spell_target{ &w, &vm, argc } }
             nwscript::GetInventoryDisturbType => { try nwvm::push_int{ &vm, v = self_ctx_of{ w = &w, vm = &vm }.disturb_type } }
             nwscript::GetInventoryDisturbItem => { try nwvm::push_object{ &vm, id = live_or_invalid{ w = &w, id = self_ctx_of{ w = &w, vm = &vm }.last_disturbed } } }
-            nwscript::GetItemActivated => { try nwvm::push_object{ &vm, id = obj::INVALID } }
-            nwscript::GetItemActivator => { try nwvm::push_object{ &vm, id = obj::INVALID } }
+            nwscript::GetItemActivated => { try nwvm::push_object{ &vm, id = w.last_activated } }
+            nwscript::GetItemActivator => { try nwvm::push_object{ &vm, id = w.last_activator } }
+            nwscript::GetItemActivatedTarget => { try nwvm::push_object{ &vm, id = w.last_activated_target } }
+            nwscript::GetItemActivatedTargetLocation => {
+                let at = if world::object{ w = &w, id = w.last_activated_target } is some{ value = t } { t.position } else if world::object{ w = &w, id = w.last_activator } is some{ value = a } { a.position } else { math::vec3::zero{} }
+                try rt_obj::push_location{ &w, &vm, l = values::Location{ position = at, facing = 0.0, area = w.area } }
+            }
             // ---- cutscene verbs
             nwscript::CutsceneAttack => { try cutscene_attack{ &w, &vm, argc } }
             nwscript::ActionCastFakeSpellAtObject => { try action_cast_fake_spell{ &w, &vm, argc, routine } }

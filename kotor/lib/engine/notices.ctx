@@ -1,0 +1,68 @@
+// What the party is told when it gains or loses an item or credits (party-items-saves.md 5.6: the
+// feedback numbers 50 and 51 and the HUD notices 7 and 8; dialog.tlk 1449 "Acquired Item:
+// <CUSTOM0>", 1450 "Lost Item: <CUSTOM0>", 1493 "Acquired <CUSTOM0> Credits", 1494 "Lost <CUSTOM0>
+// Credits"): a line on the HUD's feedback log and the matching notification icon for a few
+// seconds. Only the player's party is told. The callers are the moves that carry feedback in the
+// original (AcquireItem with bFeedback: loot, pick-ups, purchases, CreateItemOnObject), not
+// GiveItem.
+namespace notices {
+    // The HUD's notification icons (hud::NOTE_*, gui.md "Notification icons").
+    const CREDITS: i32 = 1
+    const ITEM_RECEIVED: i32 = 7
+    const ITEM_LOST: i32 = 8
+
+    // Whether `id` is on the player's side.
+    fn is_party { w: *world::World, id: u32 } -> bool {
+        return id == w.pc or id == w.player or party::is_member{ w, id }
+    }
+
+    // `template` (a dialog.tlk string with a <CUSTOM0> hole) with `value` in the hole, to the log.
+    fn say_with { mut w: world::World, strref: u32, value: []u8 } {
+        let template = world::string_by_strref{ w = &w, strref }
+        if template.len == 0 { return }
+        let mut b = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } }
+        defer list::free{ list = &b.bytes }
+        let mut i: usize = 0
+        while i < template.len {
+            if i + 9 <= template.len and slice::eq_bytes{ a = template[i..i + 9], b = "<CUSTOM0>" } {
+                _ = @fmt(&b, "{}", value)
+                i = i + 9
+                continue
+            }
+            _ = list::push{ list = &b.bytes, item = template[i] }
+            i = i + 1
+        }
+        let line = utf8::view{ b }
+        outbox::post{ out = &w.out, note = outbox::Note::feedback{ strref = 0xFFFFFFFF, text = outbox::keep_text{ out = &w.out, s = line.bytes } } }
+    }
+
+    // `item`'s name as the log shows it.
+    fn name_of { w: *world::World, item: u32 } -> []u8 {
+        let o = world::object{ w, id = item } ifnull { return "" }
+        return doors::name_text{ w, o }
+    }
+
+    // The party got the item (call before the move: a stack that merges destroys the object).
+    fn item_gained { mut w: world::World, who: u32, item: u32 } {
+        if not is_party{ w = &w, id = who } { return }
+        say_with{ &w, strref = 1449, value = name_of{ w = &w, item } }
+        outbox::post{ out = &w.out, note = outbox::Note::hud_notice{ kind = ITEM_RECEIVED } }
+    }
+
+    // The party lost the item.
+    fn item_lost { mut w: world::World, who: u32, item: u32 } {
+        if not is_party{ w = &w, id = who } { return }
+        say_with{ &w, strref = 1450, value = name_of{ w = &w, item } }
+        outbox::post{ out = &w.out, note = outbox::Note::hud_notice{ kind = ITEM_LOST } }
+    }
+
+    // The party's purse changed by `n` credits.
+    fn credits_changed { mut w: world::World, who: u32, n: i64 } {
+        if n == 0 or not is_party{ w = &w, id = who } { return }
+        let mut b = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } }
+        defer list::free{ list = &b.bytes }
+        _ = @fmt(&b, "{}", if n < 0 { -n } else { n })
+        say_with{ &w, strref = if n > 0 { 1493 } else { 1494 }, value = utf8::view{ b }.bytes }
+        outbox::post{ out = &w.out, note = outbox::Note::hud_notice{ kind = CREDITS } }
+    }
+}
