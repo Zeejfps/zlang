@@ -480,6 +480,7 @@ namespace rt_item {
         // The party has one purse (party-items-saves.md, 3.6); anyone else keeps their own.
         if party::is_member{ w = &w, id } {
             party::add_gold{ &w, n = @as(i64, n) }
+            notices::credits_changed{ &w, who = id, n = @as(i64, n) }       // feedback and the HUD's credits icon
             return
         }
         c.gold = add_gold{ have = c.gold, n = @as(i64, n) }
@@ -499,13 +500,17 @@ namespace rt_item {
         let have: u32 = if shared { @as(u32, w.party.gold) } else { c.gold }
         let amount: u32 = if n < 1 { 0 } else if @as(u32, n) > have { have } else { @as(u32, n) }
         if amount == 0 { return }
-        if shared { party::add_gold{ &w, n = 0 - @as(i64, amount) } } else { c.gold = c.gold - amount }
+        if shared {
+            party::add_gold{ &w, n = 0 - @as(i64, amount) }
+            notices::credits_changed{ &w, who = id, n = 0 - @as(i64, amount) }
+        } else { c.gold = c.gold - amount }
         if destroy != 0 { return }
         let me = nwvm::self_object{ vm }
         let caller = world::object{ w = &w, id = me } ifnull { return }
         if obj::creature{ o = caller } is some{ value = cc } {
             if party::is_member{ w = &w, id = me } {
                 party::add_gold{ &w, n = @as(i64, amount) }
+                notices::credits_changed{ &w, who = me, n = @as(i64, amount) }
             } else {
                 cc.gold = add_gold{ have = cc.gold, n = @as(i64, amount) }
             }
