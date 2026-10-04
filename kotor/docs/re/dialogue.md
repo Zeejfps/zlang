@@ -704,11 +704,19 @@ where d = |S − L|.
   (S − L) by ±30° about z and normalise to v. Camera = T − (0.5 + pull-back)·v, then z +=
   `CamHeightOffset` + 0.2 × pull-back. Pull-back = the speaker's AnimList animation's
   `cu_pb_range` (`dialoganimations.2da`, default animation 10038 → 0), kept while it stays > 0.
-- **Angle 2 (over the shoulder)**: P = L + 0.3·(S − L) (after the z tweaks above), target z =
-  P.z + `TarHeightOffset`; v = (S − L) rotated ±30°; camera = P − 0.8·v − 0.15·normalise(S − L),
-  z += `CamHeightOffset`.
-- **Angle 3 (wide)**: P = midpoint; v = (S − L) rotated ±90°; camera = P − 1.5·v; target z =
-  P.z − 0.2·d + `TarHeightOffset`; camera z += 0.3·d + `CamHeightOffset`.
+- **Angle 2 (over the shoulder)**: P = L + 0.3·(S − L) (after the z tweaks above), the look-at
+  point T = P with z + `TarHeightOffset`; v = (S − L) rotated ±30° **about z, not normalised and
+  with its z** (so |v| = d, the distance between them); camera = T − 0.8·v − 0.15·normalise(v)
+  (normalised in 3D), then z += `CamHeightOffset`. The camera backs off by 0.8 of the distance
+  between them plus 15 cm: 1.75 m for two creatures 2 m apart.
+- **Angle 3 (wide)**: P = midpoint; v = (S − L) rotated ±90° about z, **not normalised** (|v| = d);
+  T = P with z − 0.2·d + `TarHeightOffset`; camera = T − 1.5·v, then z += 0.3·d +
+  `CamHeightOffset`. The camera stands 1.5 distances to the side (3 m for 2 m apart, 13.5 m for 9 m
+  apart) and 0.1·d over their eyes, looking 0.2·d under them. (Both come from the decompile, which
+  normalises v only in angle 1 and in angle 2's 0.15 term; this page used to say v was unit
+  length, which put a wide shot of two creatures 9 m apart 1.5 m to the side and 2.7 m up, looking
+  at the floor.) The camera's z starts from the look-at point's z in every angle, so
+  `TarHeightOffset` raises the camera as well.
 - If S and L coincide, L is replaced by S + (1.5, 1.5, 0.1) and the close-up formula is used.
 - Orientation: yaw = heading of v (`atan2(−x, y)`), pitch = elevation of (target − camera) +
   90°, roll 0, built as Rz(yaw)·Rx(pitch) (`Quaternion_FromEulerDegrees` `0x004acac0`; the camera

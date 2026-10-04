@@ -224,7 +224,11 @@ namespace scene {
     // has no such animation.
     fn play { mut sc: Scene, mut w: world::World, part: usize, name: []u8, looping: bool, speed: f32, transition: f32 } -> bool {
         let p = part_at{ sc = &sc, i = part }
-        if p.anim_len == name.len and ci::eq{ a = p.anim[..p.anim_len], b = name } { return true }
+        if p.anim_len == name.len and ci::eq{ a = p.anim[..p.anim_len], b = name } {
+            // Already playing: a new rate (a walker speeding up) changes the pace, not the cycle.
+            mdl_anim::set_speed{ player = &p.player, speed }
+            return true
+        }
         let model = loaded_at{ sc = &sc, i = p.loaded }.model
         let b = binding_for{ &sc, &w, model, source = p.source, name } ifnull { return false }
         mdl_anim::play{ player = &p.player, binding = b, looping, speed, transition }

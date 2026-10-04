@@ -42,7 +42,7 @@ namespace movement {
         let range = math::max{ a = actions::float_param{ a, i = 2 }, b = 0.1 }
         let timeout = actions::float_param{ a, i = 4 }
         let now = clock::now_ms{ c = w.clock }
-        if timeout > 0.0 and @as(f32, now - a.started) > timeout * 1000.0 {
+        if timeout > 0.0 and @as(f32, clock::elapsed_since{ now, then = a.started }) > timeout * 1000.0 {
             // Force moves jump when they time out (movement.md 3.2, step 4).
             stop{ &w, id }
             place{ &w, id, at = goal }
@@ -57,10 +57,20 @@ namespace movement {
         }
         let dt_ms = w.clock.dt * 1000.0
         if dt_ms <= 0.0 { return actions::Status::running }
+        // A path to the nearest reachable point of a goal that cannot be stood on ends there: arrived.
+        if c.path_adjusted and c.path.len > 0 and c.path_next >= c.path.len and distance_2d{ a = c.path_goal, b = goal } < 2.0 {
+            stop{ &w, id }
+            world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
+            return actions::Status::done
+        }
         if c.path.len == 0 or c.path_next >= c.path.len or distance_2d{ a = c.path_goal, b = goal } >= 2.0 {
             c.path_next = 0
             c.path_goal = goal
-            if not paths::plan{ &w, from = o.position, goal, out = &c.path } {
+            if not paths::plan{ &w, from = o.position, goal, out = &c.path, adjusted = &c.path_adjusted } {
+                if w.log.actions {
+                    world::prefix{ w = &w }
+                    _ = @fmt(&w.io, "move {}: no route from {} {} to {} {} (try {})\n", id, o.position.x, o.position.y, goal.x, goal.y, a.phase + 1)
+                }
                 a.phase = a.phase + 1
                 if a.phase >= GIVE_UP {
                     stop{ &w, id }
@@ -87,7 +97,7 @@ namespace movement {
         let mut s = dt_ms * (f + c.speed_factor) * rate * 0.5 / 1000.0
         c.speed_factor = f
         c.speed = s / (dt_ms / 1000.0)
-        world::set_animation{ o, id = if run { obj::ANIM_RUN } else { obj::ANIM_WALK }, speed = scale }
+        world::set_animation{ o, id = if run { obj::ANIM_RUN } else { obj::ANIM_WALK }, speed = anim_rate{ w = &w, c, run, speed = c.speed } }
         // Along the path's points (StepAlongPath, movement.md 3.4).
         let from = o.position
         let mut here = o.position
@@ -116,6 +126,10 @@ namespace movement {
                     return actions::Status::failed
                 }
                 // Blocked: plan again next frame, give up after six times in a row.
+                if w.log.actions {
+                    world::prefix{ w = &w }
+                    _ = @fmt(&w.io, "move {}: blocked at {} {} going to {} {} (goal {} {}, try {})\n", id, here.x, here.y, p.x, p.y, goal.x, goal.y, a.phase + 1)
+                }
                 c.path_next = c.path.len
                 a.phase = a.phase + 1
                 if a.phase >= GIVE_UP {
@@ -163,10 +177,21 @@ namespace movement {
         }
         if best == obj::INVALID { return false }
         // Told at most once a second; the move fails every time it is stopped by a closed door.
-        if c.blocked_ms != 0 and now - c.blocked_ms < 1000 { return true }
+        if c.blocked_ms != 0 and clock::elapsed_since{ now, then = c.blocked_ms } < 1000 { return true }
         c.blocked_ms = if now == 0 { 1 } else { now }
         events::post{ &w, delay_ms = 0, caller = best, target = id, payload = events::Payload::script{ e = events::script_event{ kind = events::PATH_BLOCKED, object = best } } }
         return true
+    }
+
+    // The playback rate of the walk or run cycle for a creature moving at `speed` m/s: the cycle looks right
+    // at the appearance's WALKDIST or RUNDIST (m/s) and plays faster or slower in proportion, so the feet
+    // keep up with the ground (CSWCCreature::UpdateMovementAnimation, movement.md 3.6). Quantised so a
+    // creature speeding up does not re-send its animation every frame.
+    fn anim_rate { w: *world::World, c: *obj::Creature, run: bool, speed: f32 } -> f32 {
+        let dist = twoda::get_float{ t = w.tables.appearance, row = @as(usize, c.appearance), column = if run { "rundist" } else { "walkdist" } } ifnull 0.0
+        if dist < 0.1 { return 1.0 }
+        let r = math::clamp{ x = speed / dist, lo = 0.3, hi = 2.5 }
+        return @as(f32, @as(i32, r * 20.0 + 0.5)) / 20.0
     }
 
     fn distance_2d { a: math::Vec3, b: math::Vec3 } -> f32 {
@@ -222,6 +247,18 @@ namespace movement {
                 if id == w.pc and e.active and not e.spawned and inside_polygon{ poly = e.polygon, x = to.x, y = to.y } {
                     encounter_spawn{ &w, id = o.id }
                     events::post{ &w, delay_ms = 0, caller = id, target = o.id, payload = events::Payload::script{ e = events::script_event{ kind = events::OBJECT_ENTER, object = id } } }
+                }
+                continue
+            }
+            // The party leader walking through an open transition door raises CLICKED on it
+            // (movement.md 5.1: a transition door's volume); other doors have none.
+            if id == w.pc and o.kind == obj::Kind::door {
+                if obj::door{ o } is some{ value = door } {
+                    if door.state != obj::DoorState::closed and modload::link_of{ o } != null {
+                        if distance_2d{ a = o.position, b = to } < 0.7 and distance_2d{ a = o.position, b = from } >= 0.7 {
+                            events::post{ &w, delay_ms = 0, caller = id, target = o.id, payload = events::Payload::script{ e = events::script_event{ kind = events::CLICKED, object = id } } }
+                        }
+                    }
                 }
                 continue
             }

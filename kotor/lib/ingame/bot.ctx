@@ -3,11 +3,12 @@
 // with a place), opening doors on the way. It stands in for a person with a mouse; it never
 // runs in a real game (it starts off and only the input script turns it on).
 //
-//   FRAME ui bot route TAG...    the route (objects by tag, in order; a door is opened when reached)
+//   FRAME ui bot route TAG...    the route (objects by tag, in order; a door is opened when reached; @TAG: talk to it when reached)
 //   FRAME ui bot on | off        start / stop
 //   FRAME ui bot unlock on|off   open the lock of a door before opening it (the story's own way is
 //                                a key, a skill or a switch of the party leader)
-//   FRAME ui bot god on|off      the leader never drops below 1 hit point
+//   FRAME ui bot god on|off      the leader and the companions never drop below 1 hit point
+//   FRAME ui bot party on|off    a party selection screen is accepted (OK, and OK on the question) 0.7 s after it opens
 //   FRAME ui bot tour            a route made of the area's own waypoints, doors, placeables, triggers and talkers (bot_tour.ctx)
 //   FRAME ui bot status          where the route stands
 namespace bot {
@@ -22,6 +23,8 @@ namespace bot {
         on: bool,
         unlock: bool,
         god: bool,                              // keeps the leader at 1 hit point at least, module after module
+        party: bool,                            // accepts a party selection screen
+        party_wait: u32,                        // ticks it has been open
         route: [64][40]u8,
         lens: [64]u8,
         count: usize,
@@ -29,12 +32,17 @@ namespace bot {
         tick: u32,
         waiting: u32,                           // decisions spent on the current stop
         foe: u32,                               // the one it last ordered an attack on
+        stalled: u32,                           // decisions in a row that left it no nearer the stop: a closed door in the way
+        last_dist: f32,
+        area: u32,                              // the area it last decided in (0 before the first decision)
+        talked: bool,                           // the current stop is a `@TAG` and the leader has been told to talk to it
+        clicked: usize,                         // 1 + the route index of the transition door it clicked last (0 none)
         seen_open: bool,                        // the door of the current stop has been seen open (one the story shuts again is passed, not opened twice)
         tour: Tour,                             // the area's own route, when `bot tour` made one
     }
 
     fn new {} -> Bot {
-        return Bot{ on = false, unlock = false, god = false, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false, tour = new_tour{} }
+        return Bot{ on = false, unlock = false, god = false, party = false, party_wait = 0, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false, stalled = 0, last_dist = 0.0, area = 0, talked = false, clicked = 0, tour = new_tour{} }
     }
 
     // The `bot ...` input line, after the word `bot`.
@@ -60,6 +68,8 @@ namespace bot {
             b.on = false
         } else if ci::eq{ a = what, b = "unlock" } {
             b.unlock = on_word{ words = &words }
+        } else if ci::eq{ a = what, b = "party" } {
+            b.party = on_word{ words = &words }
         } else if ci::eq{ a = what, b = "god" } {
             b.god = on_word{ words = &words }
         } else if ci::eq{ a = what, b = "status" } {
@@ -92,7 +102,25 @@ namespace bot {
         let me = world::object{ w = &w, id = lead } ifnull { return }
         let c = obj::creature{ o = me } ifnull { return }
         if c.dead { return }
-        if b.god { me.min_one_hp = true }
+        if b.god {
+            // The leader and every companion: a companion that goes down is a red cross on the HUD for the rest of the
+            // test.
+            let team = party::members{ w = &w }
+            let mut m: usize = 0
+            while m < team.len {
+                if world::object{ w = &w, id = team[m] } is some{ value = mo } { mo.min_one_hp = true }
+                m = m + 1
+            }
+        }
+        // A new area: a stop that is an area-transition door has done its work (the door of the same tag on the
+        // other side would send it straight back).
+        if b.area != w.area {
+            let came = b.area != 0
+            b.area = w.area
+            // (Only when the stop is the door it clicked: the stop may have been passed already.)
+            if came and b.next < b.count and b.clicked == b.next + 1 { advance{ &b } }
+            b.clicked = 0
+        }
         // Something hostile and alive within sight: fight it, nearest first.
         let foe = nearest_foe{ w = &w, me }
         if foe != obj::INVALID and not tour_ignores{ &b, foe } {
@@ -111,7 +139,10 @@ namespace bot {
             return
         }
         if b.next >= b.count { return }
-        let tag = b.route[b.next][..@as(usize, b.lens[b.next])]
+        let raw = b.route[b.next][..@as(usize, b.lens[b.next])]
+        // `@TAG`: walk up to it and talk to it (the leader's click on a creature).
+        let talk = raw.len > 1 and raw[0] == '@'
+        let tag = if talk { raw[1..] } else { raw }
         let t = world::object{ w = &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } } ifnull {
             _ = @fmt(&w.io, "bot: no object {}, skipped\n", tag)
             advance{ &b }
@@ -124,17 +155,58 @@ namespace bot {
             advance{ &b }
             return
         }
+        // No nearer than a few decisions ago while it walks: a closed door nobody told the bot about is in the way. The
+        // closest one within four metres is opened (its lock first, when the cheat is on).
+        if b.next < b.count {
+            // Best distance so far (the walk jitters by a metre); eight decisions without beating it by a metre.
+            if b.last_dist <= 0.0 or dist < b.last_dist - 1.0 {
+                b.last_dist = dist
+                b.stalled = 0
+            } else {
+                b.stalled = b.stalled + 1
+            }
+            if b.stalled >= 8 {
+                b.stalled = 0
+                b.last_dist = 0.0
+                let door = nearest_closed_door{ w = &w, me }
+                if door != obj::INVALID {
+                    _ = @fmt(&w.io, "bot: no nearer to {} for a while ({} m), opens door {}\n", tag, dist, door)
+                    if world::object{ w = &w, id = door } is some{ value = dob } {
+                        if dob.ext is door{ d } { if d.locked and b.unlock { d.locked = false } }
+                    }
+                    let mut a = actions::make{ kind = actions::Kind::open_door }
+                    a.params[0] = actions::Param::object{ id = door }
+                    actions::clear_all{ &w, id = lead }
+                    _ = actions::add{ &w, id = lead, action = a, force = true }
+                    return
+                }
+            }
+        }
         if me.actions.len > 0 { return }
         if t.ext is door{ d } {
-            if d.state == obj::DoorState::closed and b.seen_open {
+            if d.state == obj::DoorState::closed and b.seen_open and d.linked_flags == 0 {
                 advance{ &b }
                 return
             }
             if d.state == obj::DoorState::closed {
+                // A click on an area-transition door starts its transition afresh (a new token); once in two seconds
+                // is a player's pace, every decision would never let it finish.
+                if b.waiting % 6 != 1 { return }
                 if d.locked and b.unlock { d.locked = false }
+                if d.linked_flags != 0 { b.clicked = b.next + 1 }
                 let mut a = actions::make{ kind = actions::Kind::open_door }
                 a.params[0] = actions::Param::object{ id = t.id }
                 _ = actions::add{ &w, id = lead, action = a, force = true }
+                return
+            }
+            // An area-transition door that stands open (an NPC opened it) is not clicked into a transition by the engine;
+            // shut, it is: close it, and the next decision clicks it.
+            if d.linked_flags != 0 and dist < REACH + 3.0 {
+                if b.waiting % 6 == 1 {
+                    let mut a = actions::make{ kind = actions::Kind::close_door }
+                    a.params[0] = actions::Param::object{ id = t.id }
+                    _ = actions::add{ &w, id = lead, action = a, force = true }
+                }
                 return
             }
             if dist < REACH + 1.0 {
@@ -142,6 +214,13 @@ namespace bot {
                 return
             }
         } else if dist < REACH {
+            if talk and not b.talked {
+                b.talked = true
+                let mut a = actions::make{ kind = actions::Kind::dialog_object }
+                a.params[0] = actions::Param::object{ id = t.id }
+                _ = actions::add{ &w, id = lead, action = a, force = true }
+                return
+            }
             advance{ &b }
             return
         }
@@ -161,10 +240,35 @@ namespace bot {
         if t.ext is door{ d } { if d.state != obj::DoorState::closed { b.seen_open = true } }
     }
 
+    // The closest closed door within four metres of `me`, or OBJECT_INVALID.
+    fn nearest_closed_door { w: *world::World, me: *obj::Object } -> u32 {
+        let all = list::items{ list = w.objects.all }
+        let mut best = obj::INVALID
+        let mut best_d: f32 = 4.0
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed or o.kind != obj::Kind::door { continue }
+            if o.ext is door{ d } {
+                if d.state != obj::DoorState::closed { continue }
+            } else { continue }
+            let dist = math::vec3::distance{ a = o.position, b = me.position }
+            if dist < best_d {
+                best_d = dist
+                best = o.id
+            }
+        }
+        return best
+    }
+
     fn advance { mut b: Bot } {
         b.next = b.next + 1
         b.waiting = 0
         b.seen_open = false
+        b.talked = false
+        b.stalled = 0
+        b.last_dist = 0.0
     }
 
     // The nearest live hostile creature within sight that the leader can see to attack.

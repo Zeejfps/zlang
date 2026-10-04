@@ -1,0 +1,12 @@
+# Items the party just got are magenta in the inventory and listed by the "New Items" filter until
+# their description has been shown; the screen closed, they are ordinary.
+4 ui giveitem g_i_adrnaline001 3
+4 ui giveitem g_w_blstrpstl001
+30 ui key i
+50 ui clickctl BTN_QUESTITEMS
+60 ui inv
+70 ui movectl LB_ITEMS 0
+80 ui key escape
+90 ui key i
+100 ui clickctl BTN_QUESTITEMS
+110 ui ctl LB_ITEMS

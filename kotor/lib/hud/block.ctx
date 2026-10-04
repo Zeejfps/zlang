@@ -26,7 +26,7 @@ namespace hud {
             c.border.tinted = not e.usable
             c.border.color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = 0.25 }
         }
-        let name = world::string_by_strref{ w = &w, strref = e.strref }
+        let name = if e.item != obj::INVALID { name_of{ w = &w, id = e.item } } else { world::string_by_strref{ w = &w, strref = e.strref } }
         gui::set_tooltip{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = k }, text = name } iferr {}
         gui::set_tooltip{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = k }, text = name } iferr {}
     }
@@ -34,10 +34,10 @@ namespace hud {
     // Builds the block for a new target: its name, its health and the slots' lists.
     fn build_block { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, id: u32 } {
         h.lists[0] = default_actions{ w = &w, id }
+        // The middle slot holds the leader's Force powers against a hostile creature; the right one the
+        // party's grenades (item_slots.ctx).
         h.lists[1] = middle_actions{ h = &h, w = &w, id }
-        // PLACEHOLDER: the right slot is for items used on the target (grenades, stims on others);
-        // they fill when the inventory's owner gives the leader any.
-        h.lists[2] = empty_list{}
+        h.lists[2] = grenade_actions{ w = &w, target = id }
         let name = name_of{ w = &w, id }
         gui::set_text{ &g, panel = h.panel, tag = "LBL_NAME", text = name } iferr {}
         let mut k: usize = 0
@@ -72,7 +72,8 @@ namespace hud {
         if a.count != b.count { return false }
         let mut i: usize = 0
         while i < a.count {
-            if a.entries[i].act != b.entries[i].act or a.entries[i].id != b.entries[i].id or a.entries[i].usable != b.entries[i].usable { return false }
+            if a.entries[i].act != b.entries[i].act or a.entries[i].item != b.entries[i].item { return false }
+            if a.entries[i].id != b.entries[i].id or a.entries[i].usable != b.entries[i].usable { return false }
             i = i + 1
         }
         return true
@@ -100,11 +101,12 @@ namespace hud {
             build_block{ &h, &g, &w, &dev, id = w.target }
             h.shown_target = w.target
         } else {
-            // What the leader can do to the target changed under it (a lock picked or locked, a key
-            // found, Force points spent or regained, a power learned).
+            // What the leader can do to the target changed under it (a lock picked or locked, a key found,
+            // the last grenade thrown, Force points spent or regained, a power learned).
             let first = same_actions{ a = default_actions{ w = &w, id = w.target }, b = h.lists[0] }
             let middle = same_actions{ a = middle_actions{ h = &h, w = &w, id = w.target }, b = h.lists[1] }
-            if not first or not middle { build_block{ &h, &g, &w, &dev, id = w.target } }
+            let last = same_actions{ a = grenade_actions{ w = &w, target = w.target }, b = h.lists[2] }
+            if not first or not middle or not last { build_block{ &h, &g, &w, &dev, id = w.target } }
         }
         let p = gui::find_panel{ &g, id = h.panel } ifnull { return }
         let mut x0 = @as(i32, on.top.x) - BLOCK_W / 2
@@ -145,7 +147,8 @@ namespace hud {
 
     // Does slot `k`'s selected choice on the target (UseAction, 0x00689610; the keys 1, 2, 3 and the
     // buttons). A choice that cannot be used says why in the message bar and makes the refusal
-    // sound; one that can is done in place of what the leader was doing. True when the slot had a choice.
+    // sound; one that can is done in place of what the leader was doing (or behind it, in combat mode).
+    // True when the slot had a choice.
     fn use_slot { mut h: Hud, mut g: gui::Gui, mut w: world::World, k: usize } -> bool {
         if k >= 3 or w.target == obj::INVALID { return false }
         let l = h.lists[k]
@@ -156,8 +159,7 @@ namespace hud {
             gui::play_sound{ &g, n = 2 }
             return true
         }
-        gui::play_sound{ &g, n = 6 }
-        run_act{ &w, act = e.act, target = w.target, id = e.id }
+        run_act{ &w, act = e.act, target = w.target, item = e.item, spell = e.id, queue = queues_orders{ h = &h, w = &w } }
         return true
     }
 
@@ -167,8 +169,20 @@ namespace hud {
         if w.target == obj::INVALID { return false }
         let l = h.lists[0]
         if l.count == 0 { return false }
-        run_act{ &w, act = l.entries[0].act, target = w.target, id = -1 }
+        run_act{ &w, act = l.entries[0].act, target = w.target, item = l.entries[0].item, spell = l.entries[0].id, queue = false }
         return true
+    }
+
+    // Target slot `k`'s next (or previous) choice, wrapping: its arrows, and Shift with the slot's key.
+    fn cycle_slot { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, k: usize, forward: bool } {
+        let l = &h.lists[k]
+        if l.count > 1 {
+            l.selected = if forward { (l.selected + 1) % l.count } else { (l.selected + l.count - 1) % l.count }
+            if k == 1 { h.power_pick = l.entries[l.selected].id }
+            gui::play_sound{ &g, n = 7 }
+            autopause::request{ &w, reason = autopause::ACTION_MENU }
+            refresh_slot{ &h, &g, &w, &dev, k }
+        }
     }
 
     // What the block's buttons do. True when the event was one of theirs.
@@ -186,13 +200,7 @@ namespace hud {
             let up = slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "BTN_TARGETUP", n = k } }
             let down = slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "BTN_TARGETDOWN", n = k } }
             if up or down {
-                let l = &h.lists[k]
-                if l.count > 1 {
-                    l.selected = if down { (l.selected + 1) % l.count } else { (l.selected + l.count - 1) % l.count }
-                    if k == 1 { h.power_pick = l.entries[l.selected].id }
-                    gui::play_sound{ &g, n = 7 }
-                    refresh_slot{ &h, &g, &w, &dev, k }
-                }
+                cycle_slot{ &h, &g, &w, &dev, k, forward = down }
                 return true
             }
             k = k + 1
@@ -214,9 +222,13 @@ namespace hud {
         if id == obj::INVALID or id != began { return false }
         if id == w.target {
             let l = h.lists[0]
-            if l.count > 0 { run_act{ &w, act = l.entries[0].act, target = id, id = -1 } }
+            if l.count > 0 {
+                gui::play_sound{ &g, n = 6 }
+                run_act{ &w, act = l.entries[0].act, target = id, item = l.entries[0].item, spell = l.entries[0].id, queue = false }
+            }
         } else {
             w.target = id
+            autopause::request{ &w, reason = autopause::NEW_TARGET }
         }
         return true
     }

@@ -151,3 +151,59 @@ Columns: **VM** faults are the VM's own invariants broken (stack underflow or ov
 | manm27aa | 1.84 | 203 | 36 |
 | unk_m42aa | 1.79 | 254 | 34 |
 | lev_m40aa | 1.70 | 209 | 32 |
+
+## Missing textures
+
+None of these is a lookup bug: `resls --module M --texture NAME` finds no TPC or TGA of the name in any container the module sees, and the whole texture extraction (the three quality packs, the GUI pack, patch, every BIF) holds no file of that name either. They are references the data makes to textures it does not ship, and the original skips them the same way (nothing is drawn with it). A mesh flagged lightmapped whose lightmap is missing is drawn lit by the dynamic lights, as the original's draw-path choice does (0x00470d30 drops the lightmap path when the lightmap texture is not usable).
+
+- **lightmap**: stale lightmap names of the form `mNNxx_NN_aNNNNN` on a few meshes of room and door models (the neighbouring meshes of the same room name `..._lm0`); `dor_lhr02_a00004` is a mesh of the Endar Spire's door model.
+- **diffuse**: typos in cutscene stunt models (`m13aa_c01_char*` of danm13, `m41ad_c01_char*` of unk_m41ad, reused by STUNT_56a and STUNT_57): `p_BastillaH01` (the real head is `p_bastilah04`), `PHeyea`, `h_f_lo01headtest` (a TXI without an image), `w_Vbroswrd01` (the real texture is `w_vbroswrd_001`).
+- **environment map**: `mycubemap`, named by `mgf_glass01`'s TXI (its sibling `lts_win01` names the existing `CM_mycubemap`).
+- **particle texture**: `fxp_aurabesh01`, an emitter of the Ebon Hawk turret minigame (M12ab) and the cutscenes that lead to it.
+
+| Texture | Asked for as | Modules |
+|---|---|---|
+| `dor_lhr02_a00004` | lightmap | end_m01aa, end_m01ab |
+| `fxp_aurabesh01` | an emitter | M12ab, STUNT_06, STUNT_07, STUNT_18, STUNT_34 |
+| `h_f_lo01headtest` | diffuse | STUNT_56a, STUNT_57, danm13 |
+| `m01aa_04a_a0002t` | lightmap | end_m01aa |
+| `m02aa_01a_a0005a` | lightmap | tar_m02aa |
+| `m02aa_02a_a0004o` | lightmap | tar_m02aa |
+| `m02aa_03a_a00060` | lightmap | tar_m02aa |
+| `m03ab_02a_a00074` | lightmap | tar_m03aa, tar_m03ab |
+| `m04aa_04a_a0002i` | lightmap | tar_m04aa, tar_m05aa |
+| `m08aa_10a_a0005j` | lightmap | STUNT_03a, tar_m08aa |
+| `m10aa_06a_a0000p` | lightmap | tar_m10aa, tar_m10ab |
+| `m10aa_06a_a0001g` | lightmap | tar_m10aa, tar_m10ab |
+| `m10ac_33a_a0009b` | lightmap | tar_m10ac |
+| `m12ab_01a_a00000` | lightmap | M12ab, STUNT_06, STUNT_07, STUNT_18, STUNT_34 |
+| `m12ab_01a_a00001` | lightmap | M12ab, STUNT_06, STUNT_07, STUNT_18, STUNT_34 |
+| `m17ae_00a_a001lv` | lightmap | tat_m17ae, tat_m17ag |
+| `m17af_00a_a002ik` | lightmap | tat_m17af |
+| `m17af_00a_a002j1` | lightmap | tat_m17af |
+| `m17af_00a_a002jh` | lightmap | tat_m17af |
+| `m17af_00a_a002jw` | lightmap | tat_m17af |
+| `m17af_00a_a002ka` | lightmap | tat_m17af |
+| `m17af_00a_a002kn` | lightmap | tat_m17af |
+| `m17af_00a_a002kz` | lightmap | tat_m17af |
+| `m17af_00a_a002la` | lightmap | tat_m17af |
+| `m17af_00a_a002lk` | lightmap | tat_m17af |
+| `m17af_00a_a002lt` | lightmap | tat_m17af |
+| `m17af_00a_a002m1` | lightmap | tat_m17af |
+| `m17af_00a_a002m8` | lightmap | tat_m17af |
+| `m17af_00a_a002me` | lightmap | tat_m17af |
+| `m17af_00a_a002mj` | lightmap | tat_m17af |
+| `m17af_00a_a002mn` | lightmap | tat_m17af |
+| `m17af_00a_a002mq` | lightmap | tat_m17af |
+| `m17af_00a_a002ms` | lightmap | tat_m17af |
+| `m23ac_01a_a00042` | lightmap | kas_m23ac |
+| `m26ad_grz_a0000y` | lightmap | manm26ad |
+| `m28ab_13a_a000r1` | lightmap | manm28ab |
+| `m28ab_13a_a000r2` | lightmap | manm28ab |
+| `m36aa_01_a000pj` | lightmap | korr_m36aa, korr_m39aa |
+| `m36aa_01_a000pk` | lightmap | korr_m36aa, korr_m39aa |
+| `m38ab_08_a00049` | lightmap | korr_m38aa |
+| `mycubemap` | environment map | M12ab, STUNT_06, STUNT_07, STUNT_18, STUNT_34 |
+| `p_bastillah01` | diffuse | STUNT_56a, STUNT_57, danm13 |
+| `pheyea` | diffuse | STUNT_56a, STUNT_57, danm13 |
+| `w_vbroswrd01` | diffuse | danm13 |

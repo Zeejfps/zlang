@@ -325,6 +325,49 @@ namespace sdl {
         return Event::other{ kind }
     }
 
+    // Puts an event on SDL's own queue, so it comes out of `poll` as a real one does: the scripted
+    // input of a headless run goes through the same door as the keyboard and mouse. False for an
+    // event that has no raw form here (quit, focus, ...).
+    fn push { mut sdl: Sdl, ev: Event } -> bool {
+        let mut raw: RawEvent
+        match ev {
+            key{ down, repeat, scancode, keycode, mods } => {
+                raw = RawEvent{ key = KeyboardEvent{
+                    kind = if down { KEYDOWN } else { KEYUP }, timestamp = 0, window_id = 0, state = if down { 1 } else { 0 },
+                    repeat = if repeat { 1 } else { 0 }, padding2 = 0, padding3 = 0, keysym = Keysym{ scancode, sym = keycode, mods, unused = 0 },
+                } }
+            }
+            mouse_motion{ x, y, dx, dy, buttons } => {
+                raw = RawEvent{ motion = MouseMotionEvent{
+                    kind = MOUSEMOTION, timestamp = 0, window_id = 0, which = 0, state = buttons, x, y, xrel = dx, yrel = dy,
+                } }
+            }
+            mouse_button{ down, button, clicks, x, y } => {
+                raw = RawEvent{ button = MouseButtonEvent{
+                    kind = if down { MOUSEBUTTONDOWN } else { MOUSEBUTTONUP }, timestamp = 0, window_id = 0, which = 0,
+                    button, state = if down { 1 } else { 0 }, clicks, padding1 = 0, x, y,
+                } }
+            }
+            mouse_wheel{ dx, dy } => {
+                raw = RawEvent{ wheel = MouseWheelEvent{
+                    kind = MOUSEWHEEL, timestamp = 0, window_id = 0, which = 0, x = 0, y = 0, direction = 0,
+                    precise_x = dx, precise_y = dy, mouse_x = 0, mouse_y = 0,
+                } }
+            }
+            text{ bytes, len } => {
+                raw = RawEvent{ text = TextInputEvent{ kind = TEXTINPUT, timestamp = 0, window_id = 0, text = bytes } }
+            }
+            resized{ width, height } => {
+                raw = RawEvent{ window = WindowEvent{
+                    kind = WINDOWEVENT, timestamp = 0, window_id = 0, event = WINDOWEVENT_SIZE_CHANGED,
+                    padding1 = 0, padding2 = 0, padding3 = 0, data1 = width, data2 = height,
+                } }
+            }
+            else => { return false }
+        }
+        return SDL_PushEvent{ &sdl, event = &raw } >= 0
+    }
+
     // Whether this file's structs have SDL's sizes on this target. Checked once, at start.
     fn check_layout {} -> bool {
         return @size_of(RawEvent) == 56 and @align_of(RawEvent) == 8
@@ -598,6 +641,11 @@ namespace sdl {
         const DOWN: i32 = 0x40000051
         const UP: i32 = 0x40000052
         const LSHIFT: i32 = 0x400000E1
+        const LCTRL: i32 = 0x400000E0
+        const RCTRL: i32 = 0x400000E4
+        const RSHIFT: i32 = 0x400000E5
+        const CAPSLOCK: i32 = 0x40000039
+        const PAUSE: i32 = 0x40000048
 
         fn of_scancode { scancode: i32 } -> i32 { return scancode | 0x40000000 }
     }

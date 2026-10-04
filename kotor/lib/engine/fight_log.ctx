@@ -1,0 +1,27 @@
+// What a fight tells the player (docs/re/combat.md 10): the combat log's lines in Messages >
+// Feedback and the floating numbers over the creatures. fight.ctx calls these at the moments the
+// original sends its CC messages: an attack's impact, damage taken, a kill's experience.
+namespace fight_log {
+    // An attack landed or missed (ApplyAttackImpact: the attack summary and breakdowns).
+    fn attack { mut w: world::World, attacker: u32, imp: *fight::Impact } {
+        _ = w
+        _ = attacker
+        _ = imp
+    }
+
+    // A creature took damage (OnApplyDamage's feedback).
+    fn damaged { mut w: world::World, target: u32, amount: i32, who: u32 } {
+        _ = w
+        _ = target
+        _ = amount
+        _ = who
+    }
+
+    // A kill's experience (AwardKillXP: "<killer> killed <victim>: N XP").
+    fn killed { mut w: world::World, victim: u32, killer: u32, xp: i32 } {
+        _ = w
+        _ = victim
+        _ = killer
+        _ = xp
+    }
+}

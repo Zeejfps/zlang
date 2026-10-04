@@ -1,0 +1,14 @@
+# The inventory screen: the pointer over a row shows its description, one click on a row does what
+# the row does (uses a medpac, says why an equippable item cannot be used from here).
+5 ui stat hp 6
+10 ui key i
+20 ui movectl LB_ITEMS 3
+30 ui inv
+40 ui clickctl LB_ITEMS 4
+50 ui ctl LBL_NOTICE
+60 ui key return
+70 ui clickctl LB_ITEMS 3
+80 ui inv
+90 ui key escape
+200 ui hp
+200 ui inv

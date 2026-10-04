@@ -75,9 +75,10 @@ namespace dlg {
         end_ran: bool,              // the normal end's scripts have run
         skip: bool,                 // the player asked to skip the line (+0x1f4)
         pick: i32,                  // the reply the player picked, for the next pump; -1 none
-        scripted: [32]u8,           // headless tests: replies (from 1) to pick, in order, as lists open
+        scripted: [128]u8,           // headless tests: replies (from 1) to pick, in order, as lists open
         scripted_count: usize,
         scripted_pos: usize,
+        scripted_default: u8,       // when the queue is spent: this reply number (0: wait for a person)
         vo_cut: bool,
         // The presentation's side.
         client: bool,               // a view is attached and answers the flags below
@@ -131,7 +132,7 @@ namespace dlg {
             event_pending = false, event_resref = resref::empty{}, event_private = false, pending = false, pending_since = 0,
             last_resref = resref::empty{},
             entry = -1, chosen = -1, step = Step::none, step_entry = 0, node_end_ms = 0, wait_flags = 0,
-            paused = false, end_flag = false, ending = false, end_ran = false, skip = false, pick = -1, scripted = [0; 32], scripted_count = 0, scripted_pos = 0, vo_cut = false,
+            paused = false, end_flag = false, ending = false, end_ran = false, skip = false, pick = -1, scripted = [0; 128], scripted_count = 0, scripted_pos = 0, scripted_default = 0, vo_cut = false,
             client = false, scene_ready = false, vo_playing = false, vo_stop = false, vo_virtual_end = 0,
             anim_busy = false, camera_busy = false, fade_busy = false,
             line = no_line{}, choices = no_choices{},
