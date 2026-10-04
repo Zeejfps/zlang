@@ -1,0 +1,26 @@
+// Stealth from the HUD (docs/mechanics/stealth.md): the TB_STEALTH toggle and the G key. With
+// companions about, stealth needs solo mode, and the solo-mode box (ingame.ctx ask_solo, re/gui.md
+// CSWGuiSoloModeBox) asks first.
+namespace ingame {
+    // The solo-mode box's `what` when it was asked for stealth.
+    const SOLO_FOR_STEALTH: i32 = 2
+
+    // TB_STEALTH and the G key (0x0060f4b0, HandleInputAction 264): the leader's stealth toggles,
+    // unless companions are about and solo mode is off, when the box asks to turn it on first.
+    // The key works only when the toggle would show.
+    fn request_stealth { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, from_key: bool } {
+        let leader = party::leader{ w = &w }
+        if from_key and not stealth::can_stealth{ w = &w, id = leader } { return }
+        if not w.party.solo and w.party.count > 1 {
+            ask_solo{ &ui, &w, &dev, for_stealth = true }
+            return
+        }
+        stealth::toggle{ &w, id = leader }
+    }
+
+    // The box closes by itself when a conversation starts or the leader falls (its Render).
+    fn check_solo_box { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device } {
+        if not msgbox::is_open{ b = ui.solo_box } { return }
+        if w.conversation.active or hud::is_down{ w = &w, id = party::leader{ w = &w } } { close_solo{ &ui, &w, &dev } }
+    }
+}

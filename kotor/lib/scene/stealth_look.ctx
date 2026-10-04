@@ -1,0 +1,44 @@
+// How a creature in stealth mode looks (docs/mechanics/stealth.md): the original puts the visual
+// effect VFX_DUR_STEALTH_FIELD (visualeffects.2da 8002) on it as it hides (0x00613930), whose
+// programmed effect 1426 lays the texture fx_tex_stealth over the creature's model (0x006a1220):
+// a 2x2 flipbook cycling at 8 frames a second, blended additively (its TXI), so the creature
+// shows as a moving shimmer with the room through it. With frame-buffer effects on, the original
+// takes VFX_DUR_DISTORTION (8000) instead, a screen-space ripple we do not draw.
+namespace scene {
+    const LOOK_TEXTURE: []u8 = "fx_tex_stealth"
+
+    struct Look { tried: bool, entry: material::Entry }
+
+    fn no_look {} -> Look {
+        return Look{ tried = false, entry = material::missing_entry{ key = resref::truncate{ name = LOOK_TEXTURE } } }
+    }
+
+    // Loads the texture the first time a creature hides in the area (sync has the device).
+    fn prepare_look { mut sc: Scene, mut w: world::World, mut dev: gpu::Device } {
+        if sc.look.tried { return }
+        sc.look.tried = true
+        sc.look.entry = material::get{ cache = &sc.materials, fs = &w.fs, &dev, rm = w.rm.*, name = LOOK_TEXTURE }
+    }
+
+    // The material a hiding creature is drawn with this frame; none when the texture is missing.
+    fn look_material { sc: *Scene } -> ?render::Material {
+        let e = sc.look.entry
+        if e.texture == null { return null }
+        let mut m = render::make_material{}
+        m.diffuse = e.texture
+        m.blend = render::Blend::additive
+        m.lit = false
+        if e.frames_x * e.frames_y > 1 {
+            let fps = if e.props.fps > 0.0 { e.props.fps } else { 8.0 }
+            let frame = @as(u32, math::floorf{ x = sc.time * fps })
+            render::set_flipbook_frame{ &m, cols = e.frames_x, rows = e.frames_y, frame }
+        }
+        return m
+    }
+
+    // Whether the object is a creature in stealth mode.
+    fn is_hiding { o: *obj::Object } -> bool {
+        let c = obj::creature{ o } ifnull { return false }
+        return c.stealth
+    }
+}

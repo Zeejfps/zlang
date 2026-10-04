@@ -173,8 +173,15 @@ Nearly every handler starts with the same three tests and fails (3) if any holds
    hit points are below 1 (KOTOR's knocked-out companions act on nothing until revived).
 
 Interaction handlers then call `ClearActivities(2)` (`0x004f87d0`), which drops the creature's
-combat/Force modes that are not locked (bits `0x100..0x2000` of `+0x9fc`), and many also clear
-stealth (`SetActivity(1, FALSE)`) — talking, opening, using all break stealth. (med)
+combat/Force modes that are not locked (bits `0x100..0x2000` of `+0x9fc`) and **keeps stealth**:
+opening doors and locks, using placeables, picking up, equipping, item abilities, traps and healing
+all leave a creature hiding (the Stealth skill's own description says so, 248). Stealth (activity
+bit 1, `SetActivity(1, FALSE)`) is dropped by `ClearActivities(1)` (a cast of the creature's own
+power) and `ClearActivities(4)` (counter spell, `ResolveAttack`), by SPEAK / SPEAKSTRREF, by the
+combat round's next scheduled action (AIActionCombat, below), by `Rest`, and by the party-wide
+`SetPartyStealthMode(0)` (conversations, transitions, solo mode off). USEOBJECT and DIALOGOBJECT
+call `SetActivity(4, FALSE)`, which leaves a conversation, not stealth. (high; corrected from an
+earlier "talking, opening, using all break stealth", docs/mechanics/stealth.md)
 
 **The approach pattern** (open/close door, lock, unlock, use, dialog, pick up, drop, traps, heal,
 give item): if the actor is a creature and `GetIsInUseRange(target, extra)` (`0x004f6000`) is
@@ -281,7 +288,7 @@ names)
 
 | Minor | Order | What it does |
 |---|---|---|
-| 1 | move (`0x005235b0`) | if the new destination equals the current one within 0.1 m only the path priority byte is updated; else (commandable only): stealth off, combat round notified, `PrepareForPlayerCommand(8)`, `AddMoveToPointAction(group 0xffff, or 0xfffe when +0x9f2 == 1, point, area, target, run flag, ...)` |
+| 1 | move (`0x005235b0`) | if the new destination equals the current one within 0.1 m only the path priority byte is updated; else (commandable only): the combat mode off (`SetCombatMode(0, 1)`; stealth stays), combat round notified, `PrepareForPlayerCommand(8)`, `AddMoveToPointAction(group 0xffff, or 0xfffe when +0x9f2 == 1, point, area, target, run flag, ...)` |
 | 2 | attack | `AddAttackActions(target, ..., player = 1)` ([combat.md](combat.md)); remembers the target at `+0x510` |
 | 3 | door | `PrepareForPlayerCommand(2)`, then `AddOpenDoorAction` when the message's word is 10021, else `AddCloseDoorAction` |
 | 4 | emote | play an animation: on self → PLAYANIMATION in front; on another object → FACEOBJECT (0x13) or, with no object, FACEPOINT (0x31), then PLAYANIMATION (speed 1, duration 0) in the same group; clears the queue first when mode bit 8 is on |
@@ -294,7 +301,7 @@ names)
 | 0xd | rest | REST action 0x2a (`0x004fd1e0`) unless the creature is in a state that forbids it; feedback 0xd5 when not commandable |
 | 0x12 / 0x23 | cast a power / use a talent | `PrepareForPlayerCommand(1)` then `AddCastSpellActions` / talent helpers ([combat.md](combat.md), [rules.md](rules.md)) |
 | 0x1c | turn | `SetOrientation` directly (no action) when commandable, alive and not down |
-| 0x1d | drive (keyboard / stick) | `0x00523450`: stealth off, `ClearAllActions(TRUE)`, `PrepareForPlayerCommand(8)`, queue 0x33 |
+| 0x1d | drive (keyboard / stick) | `0x00523450`: the combat mode off (stealth stays), `ClearAllActions(TRUE)`, `PrepareForPlayerCommand(8)`, queue 0x33 |
 | 0x24 | put an item into a container | `AddGiveItemAction` (0x22) with the placeable as recipient |
 
 Inventory-panel orders (equip, unequip, drop, pick up) come through `0x00523c20` and the
@@ -589,7 +596,7 @@ Param 0 = the object. In order (high unless marked):
 
 1. Preconditions; a party member may not use anything while a conversation is running (GUI
    `+0xb4`). The target must exist, be alive and (if a creature) not knocked out.
-2. Creature actor: modes and stealth off; if not `GetIsInUseRange(target, 0)` ⇒ the approach
+2. Creature actor: modes off and out of any conversation (`ClearActivities(2)`, `SetActivity(4, FALSE)`; stealth stays); if not `GetIsInUseRange(target, 0)` ⇒ the approach
    pattern of 1.4 (move, 0x11, face, wait 0.5 s, use), done.
 3. In range, placeable target:
    - not `Useable` (`+0x328`) ⇒ fail;

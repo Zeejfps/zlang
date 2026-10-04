@@ -270,6 +270,7 @@ namespace ingame {
             if test_screens::run{ &ui, &w, &dev, cmd, args } { return }
             if test_traps::run{ &ui, &w, &dev, cmd, args } { return }
             if test_combat::run{ &ui, &w, &dev, cmd, args } { return }
+            if test_stealth::run{ &ui, &w, &dev, cmd, args } { return }
             _ = @fmt(&w.io, "ui: unknown command {}\n", cmd)
         }
     }

@@ -1,0 +1,360 @@
+// Stealth mode (docs/mechanics/stealth.md; re/rules.md 5.2, re/actions.md 1.4). A creature in
+// stealth mode walks, and the others perceive it only when their Awareness beats its Stealth: one
+// contest for sight, another for hearing, each side's roll kept for 20 s. Its own Stealth ranks
+// are what hide it: a creature without them is perceived as if it were not hiding.
+//
+//   stealth::toggle{ &w, id }                  UseSkill(Stealth), the HUD's toggle and the G key
+//   stealth::leave{ &w, id }                   what ends it: an attack, a cast, combat, the unit off
+//   stealth::leave_party{ &w }                 a conversation, a transition, solo mode off
+//   stealth::spots / hears{ &w, viewer, target } perception's two contests (perception::check)
+//
+// The original keeps the mode in CSWSCreature +0x4d1 (SetStealthMode 0x0050ee50) with the activity
+// bit +0x9fc bit 0, and the four rolls at +0x91c..+0x91f.
+namespace stealth {
+    const REROLL_MS: u64 = 20000
+    const XP_COUNTDOWN_MS: i64 = 6000
+    const XP_AT_ONCE: i64 = -1
+    const ITEM_TYPE_STEALTH_UNIT: i32 = 44
+    const VOICE_BEGIN_STEALTH: u32 = 21          // the sound set's "begin stealth" (ssf.md)
+    const VFX_CLOAK_REMOVAL: i32 = 8001          // visualeffects.2da: its sound is v_dur_cloakoff
+    const STRREF_IN_COMBAT: u32 = 1452           // "You cannot enter stealth mode while in combat."
+
+    // A creature's own rolls and their age (+0x91c..+0x91f, +0x37c), and its stealth-XP countdown
+    // (+0xaa4): 0 none, XP_AT_ONCE to charge at the next update, else milliseconds left.
+    struct Rolls {
+        hide_sight: i32,            // d10 + 10 while it hides, against others' sight
+        hide_hearing: i32,          // d10 + 10, against others' hearing
+        spot: i32,                  // d20 (d10 out of detect mode, which no creature leaves)
+        listen: i32,
+        rolled: bool,
+        rolled_ms: u64,
+        xp_ms: i64,
+    }
+
+    fn no_rolls {} -> Rolls {
+        return Rolls{ hide_sight = 1, hide_hearing = 1, spot = 1, listen = 1, rolled = false, rolled_ms = 0, xp_ms = 0 }
+    }
+
+    // ---- the mode
+
+    // Whether the creature is in stealth mode.
+    fn is_on { w: *world::World, id: u32 } -> bool {
+        let o = world::object{ w, id } ifnull { return false }
+        let c = obj::creature{ o } ifnull { return false }
+        return c.stealth
+    }
+
+    // The Stealth skill usable (0x005af880): Stealth is trained only, so it takes bought ranks; a
+    // stealth unit's bonus alone does not.
+    fn has_skill { w: *world::World, f: *fight::Fighter } -> bool {
+        let sk = @as(usize, rules::skill::STEALTH)
+        return f.c.skills[sk] > 0 or w.rules.skills[sk].untrained
+    }
+
+    // A stealth unit (baseitems.2da ItemType 44) worn on the belt or as the creature hide, the two
+    // slots its EquipableSlots allow.
+    fn has_unit { w: *world::World, c: *obj::Creature } -> bool {
+        return is_unit{ w, item = c.equipped[obj::SLOT_BELT] } or is_unit{ w, item = c.equipped[obj::SLOT_HIDE] }
+    }
+
+    fn is_unit { w: *world::World, item: u32 } -> bool {
+        if item == obj::INVALID { return false }
+        let io = world::object{ w, id = item } ifnull { return false }
+        let it = obj::item{ o = io } ifnull { return false }
+        let bi = rules::get_baseitem{ tables = w.rules, row = @as(i32, it.base) } ifnull { return false }
+        return bi.item_type == ITEM_TYPE_STEALTH_UNIT
+    }
+
+    // What the HUD's stealth toggle asks of the leader before it shows (0x00610ac0): the area not
+    // restricted, the skill, and a stealth unit on.
+    fn can_stealth { w: *world::World, id: u32 } -> bool {
+        let o = world::object{ w, id } ifnull { return false }
+        let c = obj::creature{ o } ifnull { return false }
+        if c.dead { return false }
+        let f = c.fighter ifnull { return false }
+        if world::object{ w, id = w.area } is some{ value = ao } {
+            if obj::area{ o = ao } is some{ value = a } {
+                if a.restrict_mode != 0 { return false }
+            }
+        }
+        return has_skill{ w, f } and has_unit{ w, c }
+    }
+
+    // SetStealthMode (0x0050ee50) and the client's half (0x00613930): the flag, the "begin stealth"
+    // line of the creature's sound set going in, the cloak-removal effect (a sound) coming out. The
+    // walk-only limit and the look are read from the flag (movement, the scene).
+    fn set_mode { mut w: world::World, id: u32, on: bool } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        if c.stealth == on { return }
+        c.stealth = on
+        let at = o.position
+        if w.log.actions {
+            world::prefix{ w = &w }
+            let what: []u8 = if on { "enters" } else { "leaves" }
+            _ = @fmt(&w.io, "stealth: {} ({}) {} stealth mode\n", o.tag, id, what)
+        }
+        if on {
+            fight::bark{ &w, id, first = VOICE_BEGIN_STEALTH, count = 1, chance_in = 1, quiet = false }
+        } else {
+            fight::visual_effect{ &w, effect = VFX_CLOAK_REMOVAL, target = id, source = id, position = at }
+        }
+    }
+
+    // Whether the creature may only walk: in stealth mode (the original applies a walk-only
+    // LIMIT_MOVEMENT_SPEED effect tagged as stealth's, 0x004f6d70) or under such an effect of its
+    // own. Walking in stealth is at the walk rate (the client's own stealth speed, +0x60 of its
+    // movement block, was not traced to its source).
+    fn walk_only { c: *obj::Creature } -> bool {
+        if c.stealth { return true }
+        let f = c.fighter ifnull { return false }
+        return f.c.stats.walk_only
+    }
+
+    // Out of stealth mode (SetActivity(1, FALSE)), if it was in it.
+    fn leave { mut w: world::World, id: u32 } {
+        if is_on{ w = &w, id } { set_mode{ &w, id, on = false } }
+    }
+
+    // SetPartyStealthMode(0) (0x00563c60): the player's character and every party member out.
+    fn leave_party { mut w: world::World } {
+        leave{ &w, id = w.player }
+        let mut i: usize = 0
+        while i < w.party.count {
+            leave{ &w, id = w.party.members[i] }
+            i = i + 1
+        }
+    }
+
+    // Solo mode as a script (SetSoloMode) or the solo-mode box sets it (0x00565500): turning it off
+    // takes the party out of stealth.
+    fn set_solo { mut w: world::World, on: bool } {
+        if not on { leave_party{ &w } }
+        w.party.solo = on
+    }
+
+    // UseSkill(Stealth) and the HUD's request (SetActivity mode 1, 0x004f2a50): out if in, in if
+    // out, unless dead, down, without the skill, or in combat (then the player is told).
+    fn toggle { mut w: world::World, id: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        if c.dead { return }
+        let f = c.fighter ifnull { return }
+        if f.c.down { return }
+        if not has_skill{ w = &w, f } { return }
+        if c.stealth {
+            set_mode{ &w, id, on = false }
+            return
+        }
+        if c.in_combat {
+            if id == w.player or party::is_member{ w = &w, id } {
+                outbox::post{ out = &w.out, note = outbox::Note::feedback{ strref = STRREF_IN_COMBAT, text = outbox::keep_text{ out = &w.out, s = "" } } }
+            }
+            return
+        }
+        set_mode{ &w, id, on = true }
+    }
+
+    // ---- being perceived (perception::check)
+
+    // The creature's own rolls, made again every 20 s of world time as its perception runs (the
+    // hiding ones only while it hides). Ours: from a hash of the creature and the time, not the
+    // world's dice, so hiding does not change what every later roll of the game comes out as.
+    fn reroll { mut w: world::World, id: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        let now = clock::now_ms{ c = w.clock }
+        if c.stealth_rolls.rolled and now - c.stealth_rolls.rolled_ms < REROLL_MS { return }
+        c.stealth_rolls.rolled = true
+        c.stealth_rolls.rolled_ms = now
+        if c.stealth {
+            c.stealth_rolls.hide_sight = roll{ id, at = now, salt = 1, sides = 10 } + 10
+            c.stealth_rolls.hide_hearing = roll{ id, at = now, salt = 2, sides = 10 } + 10
+        }
+        c.stealth_rolls.spot = roll{ id, at = now, salt = 3, sides = 20 }
+        c.stealth_rolls.listen = roll{ id, at = now, salt = 4, sides = 20 }
+    }
+
+    fn roll { id: u32, at: u64, salt: u32, sides: u32 } -> i32 {
+        let mut h = @wrap_add(@wrap_mul(id, 2654435761), @wrap_mul(@trunc(u32, at / 1000), 2246822519))
+        h = @wrap_add(h, @wrap_mul(salt, 3266489917))
+        h = h ^ (h >> 15)
+        h = @wrap_mul(h, 2246822519)
+        h = h ^ (h >> 13)
+        h = @wrap_mul(h, 3266489917)
+        h = h ^ (h >> 16)
+        return @as(i32, h % sides) + 1
+    }
+
+    // The animations of a creature on the move (0x004cae60): walking, running and their variants.
+    fn is_moving { animation: u32 } -> bool {
+        match animation {
+            10002 | 10003 | 10004 | 10078 | 10079 | 10084 | 10085 | 10086 | 10087 | 10093 | 10094 | 10133 => { return true }
+            else => { return false }
+        }
+    }
+
+    // The target's Stealth rank against the viewer when it hides, 0 when it does not: in stealth
+    // mode and with a rank to hide with (both contests start there).
+    fn hiding_rank { w: *world::World, vf: *fight::Fighter, tc: *obj::Creature } -> i32 {
+        if not tc.stealth { return 0 }
+        let tf = tc.fighter ifnull { return 0 }
+        return rules::skill_rank{ tables = w.rules, c = &tf.c, skill = rules::skill::STEALTH, vs = rules::versus_creature{ c = &vf.c }, base_only = false }
+    }
+
+    fn awareness { w: *world::World, vf: *fight::Fighter, tf: *fight::Fighter } -> i32 {
+        return rules::skill_rank{ tables = w.rules, c = &vf.c, skill = rules::skill::AWARENESS, vs = rules::versus_creature{ c = &tf.c }, base_only = false }
+    }
+
+    // Whether `viewer`, which has the target in sight range with a clear line, sees it (0x004f1fd0).
+    // Its Awareness counts in full (every creature is in detect mode), plus its spot roll, against
+    // the target's Stealth plus its hiding roll; 5 less behind the back of a viewer outside the
+    // party watching the leader, 10 less in combat, 5 less while the target stands still, 5 more
+    // while the viewer does, and a point less per 3 m beyond 6 m. Seen at 1 or more.
+    fn spots { mut w: world::World, viewer: u32, target: u32 } -> bool {
+        let v = world::object{ w = &w, id = viewer } ifnull { return true }
+        let vc = obj::creature{ o = v } ifnull { return true }
+        let vf = vc.fighter ifnull { return true }
+        let t = world::object{ w = &w, id = target } ifnull { return true }
+        let tc = obj::creature{ o = t } ifnull { return true }
+        let tf = tc.fighter ifnull { return true }
+        // See-invisible sees through it.
+        if (vf.c.stats.vision & 4) != 0 { return true }
+        let rank = hiding_rank{ w = &w, vf, tc }
+        if rank == 0 { return true }
+        let mut score = awareness{ w = &w, vf, tf } + vc.stealth_rolls.spot - rank - tc.stealth_rolls.hide_sight
+        if not party::is_member{ w = &w, id = viewer } and (target == w.pc or target == w.player) {
+            let dx = t.position.x - v.position.x
+            let dy = t.position.y - v.position.y
+            let len = math::sqrtf{ x = dx * dx + dy * dy }
+            let cos = if len > 0.001 { (dx * v.orientation.x + dy * v.orientation.y) / len } else { 1.0 }
+            if cos < -0.707 { score = score - 5 }
+        }
+        if vc.in_combat { score = score - 10 }
+        if not is_moving{ animation = t.animation } { score = score - 5 }
+        if not is_moving{ animation = v.animation } { score = score + 5 }
+        let third = math::vec3::distance{ a = v.position, b = t.position } / 3.0
+        if third > 2.0 { score = score - @as(i32, math::floorf{ x = third }) }
+        return score >= 1
+    }
+
+    // Whether `viewer`, which has the target in hearing range, hears it (0x004fb4b0, the routine the
+    // original names GetCanSeeStealthed). As sight, with the listen and hiding-from-hearing rolls,
+    // no facing and no 6 m grace, plus: what stands between them (outdoors 5 a metre of it,
+    // indoors 2), the area's ModListenCheck, and the target's size (tiny -8 .. huge +8).
+    fn hears { mut w: world::World, viewer: u32, target: u32 } -> bool {
+        let v = world::object{ w = &w, id = viewer } ifnull { return true }
+        let vc = obj::creature{ o = v } ifnull { return true }
+        let vf = vc.fighter ifnull { return true }
+        let t = world::object{ w = &w, id = target } ifnull { return true }
+        let tc = obj::creature{ o = t } ifnull { return true }
+        let tf = tc.fighter ifnull { return true }
+        let rank = hiding_rank{ w = &w, vf, tc }
+        if rank == 0 { return true }
+        let mut flags: u32 = 0
+        let mut listen_mod: i32 = 0
+        if world::object{ w = &w, id = v.area } is some{ value = ao } {
+            if obj::area{ o = ao } is some{ value = a } {
+                flags = a.flags
+                listen_mod = a.listen_mod
+            }
+        }
+        let mut score = obstruction{ w = &w, a = v.position, b = t.position, indoors = (flags & 3) != 0 }
+        score = score - rank - tc.stealth_rolls.hide_hearing + awareness{ w = &w, vf, tf } + listen_mod + vc.stealth_rolls.listen
+        if vc.in_combat { score = score - 10 }
+        if not is_moving{ animation = t.animation } { score = score - 5 }
+        if not is_moving{ animation = v.animation } { score = score + 5 }
+        score = score - @as(i32, math::floorf{ x = math::vec3::distance{ a = v.position, b = t.position } / 3.0 })
+        let size = rules::creature_size{ tables = w.rules, c = &tf.c }
+        if size == 1 { score = score - 8 } else if size == 2 { score = score - 4 } else if size == 4 { score = score + 4 } else if size == 5 { score = score + 8 }
+        return score >= 1
+    }
+
+    // What lies between two creatures' heads for the hearing contest: nothing 0; in an interior or
+    // underground area (ARE Flags 1, 2) 2; outdoors 5 for each whole metre between where the line
+    // first meets a wall from either end.
+    fn obstruction { w: *world::World, a: math::Vec3, b: math::Vec3, indoors: bool } -> i32 {
+        let from = math::Vec3{ x = a.x, y = a.y, z = a.z + perception::EYE }
+        let to = math::Vec3{ x = b.x, y = b.y, z = b.z + perception::EYE }
+        let len = math::vec3::distance{ a = from, b = to }
+        if len < 0.01 { return 0 }
+        let near_a = first_wall{ w, from, to, len } ifnull { return 0 }
+        let near_b = first_wall{ w, from = to, to = from, len } ifnull { return 0 }
+        let thick = len - near_a - near_b
+        if thick <= 0.0 { return 0 }
+        if indoors { return -2 }
+        return -5 * @as(i32, math::floorf{ x = thick })
+    }
+
+    // How far along from `from` toward `to` the line first meets a face that blocks sight.
+    fn first_wall { w: *world::World, from: math::Vec3, to: math::Vec3, len: f32 } -> ?f32 {
+        let d = math::vec3::sub{ a = to, b = from }
+        let ray = math::ray::make{ origin = from, dir = math::vec3::scale{ v = d, s = 1.0 / len } }
+        let mut blocks: [64]bool
+        let mut m: usize = 0
+        while m < 64 {
+            blocks[m] = m < w.walk.sees.len and not w.walk.sees[m]
+            m = m + 1
+        }
+        let mut best: f32 = len
+        let mut found = false
+        let rooms = list::items{ list = w.walk.rooms }
+        let mut i: usize = 0
+        while i < rooms.len {
+            let mesh = rooms[i].mesh
+            i = i + 1
+            if mesh == null { continue }
+            if bwm::cast_ray{ w = mesh, ray, max_t = best, stops = blocks[..] } is some{ value = hit } {
+                if hit.t < best {
+                    best = hit.t
+                    found = true
+                }
+            }
+        }
+        if not found { return null }
+        return best
+    }
+
+    // ---- stealth XP (re/gameloop.md 2.3 step 16)
+
+    // A creature newly seeing the player's character or the party leader starts its 6 s countdown
+    // (0x00502ac0); when it runs out, the area's stealth XP loses the area's StealthXPLoss.
+    fn noticed { mut w: world::World, viewer: u32, target: u32 } {
+        if target != w.player and target != party::leader{ w = &w } { return }
+        let o = world::object{ w = &w, id = viewer } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        c.stealth_rolls.xp_ms = XP_COUNTDOWN_MS
+    }
+
+    // An attack on the player's character or the leader by a creature whose countdown runs charges
+    // at once (ResolveAttack 0x005bba80).
+    fn attacked { mut w: world::World, attacker: u32, target: u32 } {
+        if target != w.player and target != party::leader{ w = &w } { return }
+        let o = world::object{ w = &w, id = attacker } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        if c.stealth_rolls.xp_ms != 0 { c.stealth_rolls.xp_ms = XP_AT_ONCE }
+    }
+
+    // The countdown, from the creature's AI update, while its area pays stealth XP.
+    fn update_xp { mut w: world::World, id: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        if c.stealth_rolls.xp_ms == 0 { return }
+        let ao = world::object{ w = &w, id = o.area } ifnull { return }
+        let a = obj::area{ o = ao } ifnull { return }
+        if not a.stealth_xp_enabled { return }
+        let step = @as(i64, math::floorf{ x = w.clock.dt * 1000.0 })
+        if c.stealth_rolls.xp_ms != XP_AT_ONCE and c.stealth_rolls.xp_ms > step {
+            c.stealth_rolls.xp_ms = c.stealth_rolls.xp_ms - step
+            return
+        }
+        c.stealth_rolls.xp_ms = 0
+        let was = a.stealth_xp_current
+        let left = if a.stealth_xp_current < a.stealth_xp_decrement { 0 } else { a.stealth_xp_current - a.stealth_xp_decrement }
+        a.stealth_xp_current = if left > a.stealth_xp_max { a.stealth_xp_max } else { left }
+        if w.log.actions and was != a.stealth_xp_current {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "stealth: {} ({}) noticed the party: stealth XP {} -> {}\n", o.tag, id, was, a.stealth_xp_current)
+        }
+    }
+}

@@ -91,7 +91,10 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
   (`hud::use_slot`, `say_reason`); the choice stays chosen from target to target (`power_pick`); hovering a slot
   names its entry above the self slots (shared with `selfslots`). The cast is `rt_talent::queue_cast`, so the
   key `2`, a click and the arrows are tested like any other input (`ui fclick`, `ui key 2`).
-- **Not built**: the leader-swap animation, effect-count icons, stealth toggle and bark bubbles
+- **Stealth toggle** `TB_STEALTH` (lib/hud/stealth.ctx, lib/ingame/stealth_ui.ctx): shown while the leader
+  can hide, checked while it does; a click or G toggles it, through the solo-mode box when companions are
+  about ([mechanics/stealth.md](../mechanics/stealth.md)).
+- **Not built**: the leader-swap animation, effect-count icons and bark bubbles
   (the dialogue lead's).
 
 ## Menus
@@ -186,7 +189,7 @@ comment so the rules lead's merge finds it.
 ## Open
 
 - Self action slots: the keys; the leader-swap
-  animation, effect-count icons, the stealth toggle, bark bubbles (dialogue lead's).
+  animation, effect-count icons, bark bubbles (dialogue lead's).
 - Item drag-and-drop; variable-height list rows (the journal splits long texts into rows);
   a scrolling description box.
 - The journal in `World`; the party's shared inventory and purse; equip actions in the engine.

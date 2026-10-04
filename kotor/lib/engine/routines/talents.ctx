@@ -485,6 +485,9 @@ namespace rt_talent {
                 world::prefix{ w = &w }
                 _ = @fmt(&w.io, "feat {} used by {}: only the combat feats do anything yet\n", feat, me)
             }
+        } else if t.id == rules::skill::STEALTH {
+            // A skill talent is UseSkill: Stealth toggles stealth mode (actions.md 3.13).
+            stealth::toggle{ &w, id = me }
         } else if w.log.actions {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "skill {} used by {}: skill use is not implemented\n", t.id, me)

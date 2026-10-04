@@ -125,6 +125,9 @@ namespace dlg {
             return false
         }
         w.conversation.d = d
+        // A conversation in the letterbox panel takes the party out of stealth; a computer's
+        // does not (LoadDialog 0x005a2ae0).
+        if d.conversation_type != TYPE_COMPUTER { stealth::leave_party{ &w } }
         w.conversation.active = true
         w.conversation.name = resname
         w.conversation.last_resref = resname

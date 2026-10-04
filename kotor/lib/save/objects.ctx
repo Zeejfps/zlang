@@ -162,6 +162,7 @@ namespace save {
         // The AI style the Scripts button sets (WriteStatsToGff: INT "AIState" from stats +0x13a).
         try put_int{ &b, owner = s, label = "AIState", v = c.ai_style }
         try put_bool{ &b, owner = s, label = "CreatnScrptFird", v = c.spawn_fired }
+        try put_bool{ &b, owner = s, label = "StealthMode", v = c.stealth }
         // SetListening and the listen patterns (SaveCreature's Listening and ExpressionList).
         try put_bool{ &b, owner = s, label = "Listening", v = c.listening }
         let exprs = try gffw::put_list{ &b, owner = s, label = "ExpressionList" }

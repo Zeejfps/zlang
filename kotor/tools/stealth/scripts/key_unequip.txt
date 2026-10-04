@@ -1,0 +1,21 @@
+# The G key, a walk on the keyboard, and the stealth unit taken off in the equipment screen (start:
+# module:end_m01ab, 200 frames). Expect: G enters stealth; W held for 2 s moves about 5.8 m (walking;
+# 9.1 m running without stealth); taking the belt off (U, the belt slot, the None row, Equip) ends
+# stealth and hides TB_STEALTH; G then does nothing.
+6 ui stat stealth 10
+6 ui giveitem g_i_belt010 1 equip
+40 hush
+60 ui key g
+62 ui stealth
+69 ui pos
+70 down w
+130 up w
+131 ui pos
+140 ui key u
+150 ui clickctl BTN_INV_BELT
+160 ui clickctl LB_ITEMS 0
+170 ui clickctl BTN_EQUIP
+175 ui key escape
+185 ui stealth
+190 ui key g
+195 ui stealth

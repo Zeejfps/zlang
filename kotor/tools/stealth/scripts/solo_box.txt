@@ -1,0 +1,26 @@
+# Stealth with a companion: the solo-mode box (start: uppercity, Carth in the party, 360 frames).
+# Expect: TB_STEALTH clicked without a stealth unit does nothing (it is not shown); with the belt the click
+# opens the box "To use Stealth, you must turn Solo Mode on..." (37890) and pauses; OK turns solo mode on
+# and the leader hides; Carth stays where he was while the leader walks off (k_ai_master stops a companion
+# that follows in solo mode); TB_SOLO asks "Turning off Solo Mode will take you out of Stealth Mode..."
+# (37892), OK ends both; V asks "Do you wish to turn Solo Mode on?" (37889), Cancel changes nothing.
+5 ui stat stealth 10
+6 ui stealth
+7 ui clickctl TB_STEALTH
+9 ui stealth
+10 ui giveitem g_i_belt010 1 equip
+12 ui stealth
+14 ui clickctl TB_STEALTH
+18 ui stealth
+20 ui clickctl BTN_OK
+24 ui stealth
+24 ui stealth carth
+30 goto 80,110
+200 ui stealth
+200 ui stealth carth
+210 ui clickctl TB_SOLO
+216 ui clickctl BTN_OK
+220 ui stealth
+230 ui key v
+236 ui clickctl BTN_CANCEL
+240 ui stealth

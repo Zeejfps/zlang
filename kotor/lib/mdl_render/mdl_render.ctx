@@ -179,6 +179,15 @@ namespace mdl_render {
         mut frame: render::Frame, view: u32, model: *mdl::Model, pose: mdl_anim::Pose, g: Gpu,
         transform: math::Mat4, materials: []render::Material, time: f32,
     } -> u32 {
+        return add_draws_look{ &frame, view, model, pose, g, transform, materials, time, look = null }
+    }
+
+    // The same with `look`, when there is one, in place of every mesh's own material (a creature
+    // in stealth mode wears one shimmering texture over all of it).
+    fn add_draws_look {
+        mut frame: render::Frame, view: u32, model: *mdl::Model, pose: mdl_anim::Pose, g: Gpu,
+        transform: math::Mat4, materials: []render::Material, time: f32, look: ?render::Material,
+    } -> u32 {
         let mut palette: [32]math::Mat4
         let mut added: u32 = 0
         let mut i: usize = 0
@@ -189,6 +198,12 @@ namespace mdl_render {
             if handle == null { continue }
             let node: usize = mesh.node
             let mut mat = materials[i - 1]
+            if look is some{ value = l } {
+                // Keep what decides whether the mesh shows at all (a hidden node's alpha).
+                let mut worn = l
+                worn.color.a = mat.color.a
+                mat = worn
+            }
             let alpha = pose.alpha[node]
             if alpha < 0.999 {
                 mat.color.a = mat.color.a * math::max{ a = alpha, b = 0.0 }

@@ -1,0 +1,44 @@
+// Headless test commands for stealth (docs/mechanics/stealth.md). They only look: hiding, solo mode
+// and the clicks that change them go through the HUD (`ui clickctl TB_STEALTH`, `ui key g`, the
+// solo-mode box's BTN_OK), as the player does.
+//
+//   FRAME ui stealth            prints the leader's stealth mode, whether the toggle would show, solo
+//                               mode, the party, the area's stealth XP and who perceives the leader
+//   FRAME ui stealth TAG        the same about the creature with TAG
+namespace test_stealth {
+    fn run { mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device, cmd: []u8, args: []u8 } -> bool {
+        _ = ui
+        _ = dev
+        if not ci::eq{ a = cmd, b = "stealth" } { return false }
+        let tag = text::first_word{ s = args }
+        let id = if tag.len > 0 { world::object_by_tag{ w = &w, tag, nth = 0 } } else { party::leader{ w = &w } }
+        let o = world::object{ w = &w, id } ifnull {
+            _ = @fmt(&w.io, "stealth: no creature {}\n", tag)
+            return true
+        }
+        let c = obj::creature{ o } ifnull { return true }
+        let mut xp_max: i32 = 0
+        let mut xp_now: i32 = 0
+        let mut xp_on = false
+        if world::object{ w = &w, id = o.area } is some{ value = ao } {
+            if obj::area{ o = ao } is some{ value = a } {
+                xp_max = a.stealth_xp_max
+                xp_now = a.stealth_xp_current
+                xp_on = a.stealth_xp_enabled
+            }
+        }
+        _ = @fmt(&w.io, "stealth: {} on {} toggle {} solo {} party {} combat {} xp {}/{} enabled {} at {} {}\n", id, c.stealth,
+            stealth::can_stealth{ w = &w, id }, w.party.solo, w.party.count, c.in_combat, xp_now, xp_max, xp_on, o.position.x, o.position.y)
+        // Who has it in sight or hearing now.
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let v = all[i]
+            i = i + 1
+            if v.kind != obj::Kind::creature or v.id == id or v.destroyed { continue }
+            let e = perception::entry_of{ w = &w, viewer = v.id, target = id } ifnull { continue }
+            _ = @fmt(&w.io, "stealth:   {} ({}) seen {} heard {}\n", v.tag, v.id, e.seen, e.heard)
+        }
+        return true
+    }
+}
