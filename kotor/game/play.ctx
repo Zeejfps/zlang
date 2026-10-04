@@ -1056,7 +1056,7 @@ namespace play {
 
     // `FRAME fx visual ROW TAG` plays visualeffects.2da effect ROW on the tagged object (`pc` for the
     // player's character); `fx at ROW X,Y,Z` at a point; `fx model MODEL TAG [HOOK]` an effect model
-    // on an object's node; `fx cast SPELL TAG` a Force power's conjure and cast visuals. For looking
+    // on an object's node; `fx mine MODEL X,Y,Z` a mine's blast; `fx cast SPELL TAG` a Force power's conjure and cast visuals. For looking
     // at effects (lib/vfx, docs/design/vfx.md).
     fn test_effect { mut w: world::World, text: []u8 } {
         let mut words = text::words{ s = text }
@@ -1074,6 +1074,9 @@ namespace play {
                 model = resref::truncate{ name = first }, object = tagged{ w = &w, word = second }, hook = resref::truncate{ name = hook },
                 position = math::vec3::zero{}, life = 0.0,
             } }
+        } else if ci::eq{ a = kind, b = "mine" } {
+            // `fx mine MODEL X,Y,Z`: a mine's explosion (its model's `activate` animation) where it lay.
+            outbox::post{ out = &w.out, note = outbox::Note::mine_gone{ model = resref::truncate{ name = first }, position = vec_of{ s = second }, exploded = true } }
         } else if ci::eq{ a = kind, b = "cast" } {
             let spell = @trunc(i32, text::scan_decimal{ s = first })
             let id = tagged{ w = &w, word = second }
