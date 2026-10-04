@@ -65,6 +65,15 @@ With module names it runs those and writes `kotor/out/smoke/smoke.md`. `-r` rebu
 `FRAMES=` changes the length. A hang shows as a timeout in 180 s: bisect it as above. To see one module's story:
 `kotor.exe --module M --no-render --speed 8 --mute --input kotor/tools/smoke/input.txt --report routines --log scripts`.
 
+A run prints the loop pass time by tenth of its length (`frame tenths (ms each): ...`, for `--frames` of 1000 or more), and the
+table bolds a module whose last tenth is over twice its first (and over 0.1 ms). The frame time of a healthy module is flat, so a
+rising one is something piling up per tick: a creature that cannot move and plans afresh every frame, a list that only grows.
+Find out which by timing `ai::update` per object (a stuck mover tops that list) before suspecting a global list; in the case
+that prompted the check `w.objects`, the event queue, the outbox and the heap's live bytes were all flat. Stuck movers pile up
+and then level off (a few creatures get stuck, not all), so a flat tail proves nothing: a module also warms up as the bot reaches
+its fights (`kas_m25aa` goes from 0.3 to 0.9 ms and stays; without the bot it is flat at 0.2 ms), so look at what the slowest
+objects and the loop's sections cost, not only at the curve.
+
 ## The conversation sweep
 
 `sh kotor/tools/dlgsweep/run.sh` (or `kotor/tools/ctxc run kotor/tools/dlgsweep -- --module M [--dlg NAME]` for one
