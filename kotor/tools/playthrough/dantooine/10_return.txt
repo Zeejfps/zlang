@@ -1,0 +1,22 @@
+# Dantooine, part 10: back from the grove through the Matale grounds and the courtyard to the Enclave, and
+# Zhar's word that the third trial is passed. From the checkpoint "redeemed" (CKPT=redeemed). As in part 7,
+# the transitions are the game's and the long walks between them are warps.
+3 ui stat hpmax 130
+3 ui stat hp 130
+3 ui bot god on
+5 ui replies 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+# The grove's west gate to the Matale grounds.
+10 warp FROM14BW
+30 ui goto to14bw
+# Matale grounds: the south gate to the courtyard.
+300 warp FROM14AW
+320 warpxy 147,173
+# The courtyard: the Enclave's door.
+600 warp man14aa_door03
+620 use man14aa_door03
+700 ui locks man14aa_door03
+700 ui where man14aa_door03
+# The Enclave: Zhar.
+900 ui pos
+900 ui journal list
+1000 talk dan13_zhar dan13_zhar
