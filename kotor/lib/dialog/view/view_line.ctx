@@ -18,7 +18,7 @@ namespace dlgview {
     fn play_animation { mut v: View, mut w: world::World, id: u32, number: u32, mut mark: [16]u32, mut marked: usize } {
         if id == obj::INVALID or number == NO_ANIMATION { return }
         let o = world::object{ w = &w, id } ifnull { return }
-        if obj::creature{ o } is some{ value = c } { if c.dead { return } }
+        if not fight::can_animate_participant{ w = &w, id } { return }
         world::set_animation{ o, id = number, speed = 1.0 }
         if marked < 16 {
             mark[marked] = id
@@ -96,7 +96,7 @@ namespace dlgview {
             }
             if still { continue }
             let o = world::object{ w = &w, id } ifnull { continue }
-            world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
+            if fight::can_animate_participant{ w = &w, id } { world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 } }
         }
     }
 
