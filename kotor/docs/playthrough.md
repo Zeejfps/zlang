@@ -111,7 +111,7 @@ engine lead, merged), **open**.
 | 50 | Back to Canderous with the codes (`tar03_cand031` again: reply 2 "let's join up"), `[CANDEROUS has joined your party.]`, `k_ptar_davikest` opens the party screen with Canderous forced: it opened with Canderous, Carth and T3-M4 selected for two places, the party table refused the third and Canderous stayed out, so Davik's conversation lost its "Cand" speaker and ended after two lines | fixed 3b948f5 (the forced one is picked first); Malak's scene `m40ab_c01` (stunt_03a) then `tar_m08aa` | `50_codes.txt` |
 | 51 | Davik's estate: the tour (the party is moved to the hangar and the guest rooms while the conversation goes on). Davik's guards are hostile by their template; they fell on Carth in the middle of the conversation and Carth killed the guest wing's guards | fixed 991c32c: FreezeHostiles (re/dialogue.md 4.9) was not built; an ordinary conversation now stops its hostiles | `50_codes.txt` |
 | 52 | The estate: Hudrow's conversation gives the codes (`tar_escape` 50), the terminal (use access card / "Disable hangar security", free with the codes, `k_ptar_openhang`), the hangar door (locked, DC 100: only the terminal opens it), Davik and Calo Nord (`tar08_davik082`, the Sith bombing; Calo's grenade dialogue never ended: a hit in flight ran his OnAttacked and the AI's ClearAllActions took the queued resume), the ramp (`tar08_ramp`: `tar_escape` 99, `tar_planetinfo` 99) | works; the Calo hang fixed in 991c32c (ClearAllActions keeps a paused conversation's resume) | `51_davik.txt` |
-| 53 | The escape: Malak's scene `stunt_06`, `stunt_07` (the Hawk over Taris), the turret `m12ab` (the gunner bot clears the six fighters in 16 s), `ebo_m12aa` (Bastila's vision `ebo_bast_vision`), the landing on Dantooine (`danm13`: Bastila's conversation, Carth and Bastila walk to the Council). Leaving the turret's area wiped the kept party (a minigame's area spawns none, `keep_party` saved an empty one) | fixed fbf0799; `k_pebn_pophawk` destroys the NPC objects present on the Hawk and spawns every available one at its waypoint, so the player arrives on Dantooine with no party (the original's? see open items) | `51_davik.txt` |
+| 53 | The escape: Malak's scene `stunt_06`, `stunt_07` (the Hawk over Taris), the turret `m12ab` (the gunner bot clears the six fighters in 16 s), `ebo_m12aa` (Bastila's vision `ebo_bast_vision`), the landing on Dantooine (`danm13`: Bastila's conversation, Carth and Bastila walk to the Council). Leaving the turret's area wiped the kept party (a minigame's area spawns none, `keep_party` saved an empty one) | fixed fbf0799; `k_pebn_pophawk` destroys the NPC objects present on the Hawk and spawns every available one at its waypoint, and `k_pdan_13_load` takes Bastila and Carth out of the party at Dantooine: the player arrives alone, as the scripts say | `51_davik.txt` |
 
 
 The whole Endar Spire plays from New Game to the Taris apartment with `10_endar_spire.txt` (34000 frames,
@@ -156,13 +156,31 @@ script has to know: the reply queue is consumed only by lists with a choice (a l
 with an earlier frame waits for the lines before it); the camera of Calo Nord's last conversation is a low tilted shot
 (the data's, not a bug that was found).
 
+## Where story QA stopped (paused for rendering) and how to resume
+
+The story was played from the swoop race to the Dantooine landing (steps 46-53 above) and every step worked, with the
+engine of commit 6036766. After merging `kotor` at 75e8167 the scripts no longer line up, and the checkpoints made by
+`chain.sh` after that merge are **not all good**; `chain.sh` says so ("WRONG MODULE" / "no save"). State of the chain with the
+merged engine (the last run): `vulkar`, `garage`, `kandon`, `swoop`, `apt` are good; **`cand` has no save**: in
+`47_canderous.txt` the bot walks to the Lower City cantina but the Canderous conversation (`tar03_cand031`) did not start
+in 21,000 frames (after Bastila's own talk `k_hbas_dialog` it stalls: look at `ui bot status`, `ui pos` and the screenshot
+at 14000-20000; the trigger `tar02_candtlk` or a door on the way is the suspect); `t3`, `codes` and `davik` came from a
+stale `cand`, so they are wrong too. To resume: `sh kotor/tools/checkpoints/make.sh` then `chain.sh` (EXE=your exe), fix
+`47_canderous.txt` until `cand` is made (`savewhen tar_m03ae cand tar_buydroid 50`), then `48_t3.txt` (the party screen now
+opens empty: click Carth `598 271` and T3-M4 `507 447`, then OK; the click frames follow the end of Janice's conversation),
+`49_sithbase.txt` (the Dark Jedi's remains are tried every 1500 frames from 13000), `50_codes.txt` (`savewhen ... davik
+tar_escape 40`) and `51_davik.txt` (from `davik`, to the Dantooine landing). The dice and the timing of the fights move the
+frames of these scripts whenever the engine changes; `savewhen MODULE NAME [QUEST ENTRY]` (play.ctx) saves when the story is
+quiet in MODULE and the journal quest has reached ENTRY, so a checkpoint does not depend on a frame. The Sith base camp's
+rancor (`tar05_stampy`, 90 hit points) is only killed by the party when `40_sithbase.txt` lowers its hit points
+(`ui sethp tar05_stampy 8`): the level 7 player and the companions hit it once in 2,000 frames.
+
 ## Open items (not blocking)
 
 - The party screen's right panel (the 3D model of the highlighted companion) is empty.
-- The player arrives on Dantooine alone: `k_pebn_pophawk` destroys the NPC objects of the Hawk (the party's restored
-  members too, whose tags it finds) and spawns each available NPC at its waypoint; whether the original keeps the party
-  through that or has the Dantooine scripts add Carth and Bastila is not decided (`k_pdan_bastila11` only walks them to
-  the Council).
+- The player arrives on Dantooine alone, as in the original: `k_pdan_13_load` removes Bastila and Carth from the party
+  and spawns them at the landing (`dan13_wp_bast_halk`, `dan13_wp_carth_halk`), and `k_pdan_bastila11` walks them to
+  the Council.
 - The Sith base was played with the bot's door cheat and a god-mode party: T3-M4's use on the doors and the terminals'
   turret, droid and gas options (`tar09_aacompdlg`), the Sith uniform route and the base's gas rooms are not played.
 - The estate's guards stay hostile and the guest wing's fight starts when the tour's conversation ends (the guards hear

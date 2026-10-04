@@ -1,6 +1,8 @@
 # From the sithbase checkpoint (tar_m05aa, Carth and Mission with the player): the Gamorrean camp, Zaalbar cell, the force field.
 #   FAST=1 LOAD=kotor/out/checkpoints/sithbase SAVES=kotor/out/pt/saves_sb sh kotor/tools/playthrough/run.sh sb kotor/tools/playthrough/40_sithbase.txt 20000 4000:a
 3 ui replies default 1
+3 savewhen tar_m10aa vulkar
+3 ui autolevel
 3 ui bot god on
 3 ui bot unlock on
 3 ui bot party on
@@ -10,7 +12,6 @@
 5000 ui pos
 10000 ui bot status
 10000 ui pos
-15000 save m05ab
-17300 save vulkar
+12000 ui sethp tar05_stampy 8
 20000 ui bot status
 20000 ui pos
