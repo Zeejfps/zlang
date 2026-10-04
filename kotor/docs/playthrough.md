@@ -30,12 +30,12 @@ The input script knows (play.ctx, lib/ingame/script.ctx, lib/dialog/view/view_no
 | Line | Does |
 |---|---|
 | `FRAME newgame [FILE]` | New Game from the front end (a created player's UTC from FILE, else the default soldier) |
-| `FRAME ui replies 1 2 1...` | queues conversation replies: each list that opens takes the next number (1 is the first reply); the queue outlives conversations |
+| `FRAME ui replies 1 2 ~hunting_licenses...` | queues conversation replies (256 at most): each list that opens takes the next entry, a number (1 is the first reply) or `~words` (underscores are spaces: the first reply whose text contains them, ignoring case; the first reply, with a log line, if none does). Words survive a change of the player's state that a number does not (a new reply appears when the player has the credits); the queue outlives conversations |
 | `FRAME use TAG`, `attack TAG`, `warp TAG`, `warpxy X,Y`, `talk RESREF [TAG]`, `hush` | the leader's default action on an object, attack, test teleports, start a conversation, end it |
 | `FRAME ui click X Y`, `move X Y`, `key NAME`, `menu NAME`, `close` | the pointer and keys as the player has them (the panel is 640x480 centred in the 1280x720 window) |
 | `FRAME ui target TAG` then `ui key 1` | select an object and run the first action of the target block |
 | `FRAME ui goto TAG`, `where [PART]` (with each object's facing), `pos` (with the leader's facing), `party`, `inv`, `locals TAG` | walk the leader to an object; print objects by tag part, the leader's place and health, the party, the bag, an object's local variables |
-| `FRAME ui bot route TAG... / tour / on / off / god / unlock / status` | the test player (`lib/ingame/bot.ctx`): fights what is hostile in sight, walks the route of tagged stops, opens its doors; `god` keeps the leader at 1 hit point, `unlock` opens locked doors on the route; `tour` makes the route from the area itself (waypoints, triggers, doors, placeables, talkers: `bot_tour.ctx`, what the smoke test uses). Never on in a real game. |
+| `FRAME ui bot route TAG... / tour / on / off / god / unlock / status` | the test player (`lib/ingame/bot.ctx`): fights what is hostile in sight, walks the route of tagged stops (`TAG#N` is the Nth object with that tag: a pair of doors shares one), opens its doors; `god` keeps the leader at 1 hit point, `unlock` opens locked doors on the route; `tour` makes the route from the area itself (waypoints, triggers, doors, placeables, talkers: `bot_tour.ctx`, what the smoke test uses). Never on in a real game. |
 | `FRAME save NAME`, `load FOLDER` | saves go to `kotor/out/saves/00000N - GameK`; `load 000002 - Game1` |
 | `FRAME ui giveitem RESREF [N] [equip]`, `unlock TAG`, `global NAME N` | cheats for tests (not used by the real-flow scripts) |
 

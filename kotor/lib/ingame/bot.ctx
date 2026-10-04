@@ -3,7 +3,7 @@
 // with a place), opening doors on the way. It stands in for a person with a mouse; it never
 // runs in a real game (it starts off and only the input script turns it on).
 //
-//   FRAME ui bot route TAG...    the route (objects by tag, in order; a door is opened when reached)
+//   FRAME ui bot route TAG...    the route (objects by tag, in order; a door is opened when reached; TAG#N the Nth with that tag)
 //   FRAME ui bot on | off        start / stop
 //   FRAME ui bot unlock on|off   open the lock of a door before opening it (the story's own way is
 //                                a key, a skill or a switch of the party leader)
@@ -30,11 +30,12 @@ namespace bot {
         waiting: u32,                           // decisions spent on the current stop
         foe: u32,                               // the one it last ordered an attack on
         seen_open: bool,                        // the door of the current stop has been seen open (one the story shuts again is passed, not opened twice)
+        opened: u32,                            // decisions to wait after ordering a door open: a door that leads to another module needs its 0.5 s fade, and a new order would restart it
         tour: Tour,                             // the area's own route, when `bot tour` made one
     }
 
     fn new {} -> Bot {
-        return Bot{ on = false, unlock = false, god = false, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false, tour = new_tour{} }
+        return Bot{ on = false, unlock = false, god = false, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false, opened = 0, tour = new_tour{} }
     }
 
     // The `bot ...` input line, after the word `bot`.
@@ -112,7 +113,7 @@ namespace bot {
         }
         if b.next >= b.count { return }
         let tag = b.route[b.next][..@as(usize, b.lens[b.next])]
-        let t = world::object{ w = &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } } ifnull {
+        let t = world::object{ w = &w, id = stop_object{ w = &w, stop = tag } } ifnull {
             _ = @fmt(&w.io, "bot: no object {}, skipped\n", tag)
             advance{ &b }
             return
@@ -125,6 +126,10 @@ namespace bot {
             return
         }
         if me.actions.len > 0 { return }
+        if b.opened > 0 {
+            b.opened = b.opened - 1
+            return
+        }
         if t.ext is door{ d } {
             if d.state == obj::DoorState::closed and b.seen_open {
                 advance{ &b }
@@ -135,6 +140,7 @@ namespace bot {
                 let mut a = actions::make{ kind = actions::Kind::open_door }
                 a.params[0] = actions::Param::object{ id = t.id }
                 _ = actions::add{ &w, id = lead, action = a, force = true }
+                b.opened = 6
                 return
             }
             if dist < REACH + 1.0 {
@@ -157,14 +163,23 @@ namespace bot {
     // Notes that the door of the current stop was open at some tick (even in a cutscene).
     fn watch_door { mut b: Bot, w: *world::World } {
         if b.next >= b.count { return }
-        let t = world::object{ w, id = world::object_by_tag{ w, tag = b.route[b.next][..@as(usize, b.lens[b.next])], nth = 0 } } ifnull { return }
+        let t = world::object{ w, id = stop_object{ w, stop = b.route[b.next][..@as(usize, b.lens[b.next])] } } ifnull { return }
         if t.ext is door{ d } { if d.state != obj::DoorState::closed { b.seen_open = true } }
+    }
+
+    // The object of a route stop: its tag, or `TAG#N` for the Nth (from 0) object with that tag (a pair of doors shares one).
+    fn stop_object { w: *world::World, stop: []u8 } -> u32 {
+        let mut at: usize = 0
+        while at < stop.len and stop[at] != '#' { at = at + 1 }
+        let nth = if at < stop.len { @as(i32, text::scan_decimal{ s = stop[at + 1..] }) } else { 0 }
+        return world::object_by_tag{ w, tag = stop[..at], nth }
     }
 
     fn advance { mut b: Bot } {
         b.next = b.next + 1
         b.waiting = 0
         b.seen_open = false
+        b.opened = 0
     }
 
     // The nearest live hostile creature within sight that the leader can see to attack.
