@@ -3,6 +3,7 @@
 #
 #   sh kotor/tools/playthrough/dantooine/all.sh [FIRST_PART]        (run from the repository root; about 6 minutes)
 #
+# Each part takes a picture 30 frames before its end (kotor/out/pt/dN_end.png): a black world after a conversation shows there.
 # Needs kotor/out/kotor_dan.exe (kotor/tools/ctxc exe kotor -o kotor/out/kotor_dan.exe). The logs are
 # kotor/out/pt/dNN.log, the checkpoints kotor/out/pt/dan_ckpt/NAME. Starting at a later part reuses the
 # checkpoints already there. docs/playthrough-dantooine.md says what each part does and what it shows.
@@ -14,9 +15,9 @@ step() {   # PART FRAMES CKPT_IN CKPT_OUT [EXTRA RUN.SH ARGS]
   part=$1; frames=$2; from=$3; to=$4; shift 4
   if [ "$part" -lt "$first" ]; then return; fi
   if [ -n "$from" ]; then
-    CKPT=$from sh $d/run.sh d$part $(printf '%02d' $part) $frames "$@"
+    CKPT=$from sh $d/run.sh d$part $(printf '%02d' $part) $frames $((frames - 30)):end "$@"
   else
-    sh $d/run.sh d$part $(printf '%02d' $part) $frames "$@"
+    sh $d/run.sh d$part $(printf '%02d' $part) $frames $((frames - 30)):end "$@"
   fi
   if [ -n "$to" ]; then sh $d/ckpt.sh $to; fi
 }
