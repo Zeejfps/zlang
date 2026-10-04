@@ -32,7 +32,7 @@ The columns say which input class the row works in: world (ICPC), menus (ICPCGUI
 | Q / E | previous / next target (204, 205); in menus previous / next menu (243, 244) | yes | yes | matches |
 | Tab | change leader (206) | yes | yes | matches |
 | V | solo mode (207) | yes | | matches |
-| Caps Lock | free look (208) | yes | | open (see Camera) |
+| Caps Lock | free look (208) | yes (leader idle, game running) | | matches (see Camera) |
 | U I P K J L M O | equipment, inventory, character, abilities, messages, journal, map, options (209-216) | yes | yes | matches |
 | Escape | the options menu / close the open menu (223) | yes | yes | matches |
 | F4 / F5 | quick save / quick load (218, 263) | yes | | matches (`play.ctx`) |
@@ -83,7 +83,7 @@ Reverse Mouse Buttons (options) swaps left and right: matches.
 | Leader change keeps the yaw and retargets | `SetPartyLeader` | matches |
 | Collision: four rays (L to C +- 0.35 sideways and up), creatures' CAMERASPACE circles clip it | 2.3 "Collision" | partly: one ray against the walkmeshes and the drawn rooms; creatures do not clip it (open: low value) |
 | Combat camera frames the leader and its target | 2.4 | open: the combat style row is used, the framing is not (the original's helpers were not read) |
-| Free look (Caps Lock): eye at the head, mouse turns the creature, HUD hidden | 2.5 | open: not built |
+| Free look (Caps Lock): eye at the head, the mouse turns the leader (yaw) and pitches the view within -20 and +15 degrees, A / D turn him at 200 deg/s, W S Z C still move him, the HUD is hidden; the same key, a menu key, Escape, Pause, Q or E, or an order given to the leader ends it | 2.5, `HandleInputAction` 0xd0 | matches (the screen effect of the appearance's FreeLookEffect is not drawn) |
 | No zoom; the wheel goes to the GUI | 2.3 | matches |
 | Dialogue camera, death camera, shake | 2.1, 2.6 | dialogue: the dialogue lead's; death camera and shake: open |
 
@@ -123,8 +123,9 @@ Reverse Mouse Buttons (options) swaps left and right: matches.
 | Space or Pause/Break toggles the player pause with GUI sound 6; the banner says PAUSED; the world clock stops (no movement, no timers) while the GUI and camera keep running | `HandleInputAction` 0xe0/0xf1, 6.2 | matches |
 | Orders given while paused are queued (they begin, make no progress) and run on unpausing | 6.2 | matches (tested: a talk order with a walk) |
 | Opening a menu pauses (the menu bit) and closing it resumes | 6.3 | matches |
-| Auto-pause (install defaults: enemy sighted, mine sighted, party killed, new target selected on; end of combat round, action menu off): the first hostile seen within 30 m, a party member going down while others stand (2 s cool-down), a new target by Q / E in combat mode; the banner carries the reason's text | 6.4, `UpdateSelectableObjects` 0x005fa5a0 | matches for enemy sighted, party member down and new target; mine sighted, end of round and action menu: open (no mines or round hook). Runs only when a person plays: headless runs and replays keep it off (`ui autopause on` turns it on) |
+| Auto-pause (install defaults: enemy sighted, mine sighted, party killed, new target selected on; end of combat round, action menu off): the first hostile seen within 30 m, a party member going down while others stand (2 s cool-down), a slot's choice stepped (action menu), the end of a combat round, a new target in combat mode; the banner carries the reason's text | 6.4, `UpdateSelectableObjects` 0x005fa5a0 | matches. The engine and the HUD call `autopause::request{reason}` (`lib/engine/autopause.ctx`); `ingame::update` takes the frame's first request and weighs it against the option, a person playing, a conversation or menu up and a pause already on. Mine sighted: nothing calls it yet (no mines). Runs only when a person plays: headless runs and replays keep it off (`ui autopause on` turns it on) |
 | The banner button unpauses by click | gui.md | matches |
+| Switching to another window pauses; coming back resumes unless the game was paused already | `OnAppDeactivate` 0x00401d90, `OnAppActivate` 0x00401e00 | matches (only when a person plays) |
 
 ## Minimap and HUD buttons
 
@@ -142,6 +143,15 @@ the target: door (open door), talk (creature with a conversation), use (placeabl
 bash (bashable locked door), lock (Security first, ours), invalid (target with no action). Cursor ids 11-92
 of the original (walk, follow, examine, transition, magic, heal, create, run and walk arrows) are never chosen by the
 client's mouse code in the world and are not used.
+
+## Moving to a point (the planner under every order)
+
+| Behaviour | Original | State |
+|---|---|---|
+| The straight walk when clear, else the area's path points: the nearest point with a clear walk to the start and to the goal, a search between them, string pulling | 4.3, 4.5 | matches (A*; the original's depth-first search finds the same kind of route) |
+| The nearest clear path point is looked for in a window that grows by 10 m | `FindNearestPathPoint` 0x004bd770 | matches: every point by distance, up to 64 (trying only the 8 nearest left a creature on a walled-in ramp, Carth in the Kandon garage, with no route) |
+| A goal nobody can stand on (the middle of a closed door) becomes the nearest safe point | 4.8 | ours: backs off toward the start up to 3 m to a point a path point reaches; the move ends there |
+| A step into a closed door sends PATH_BLOCKED (OnBlocked opens it); six blocked steps end the move | 4.9 | matches |
 
 ## Found and fixed while testing
 

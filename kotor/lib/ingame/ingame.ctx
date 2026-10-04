@@ -35,10 +35,13 @@ namespace ingame {
         ctrl_held: bool,                    // Ctrl (Lookabout): the camera follows the mouse (lib/scene/camera, play.ctx)
         solo_box: msgbox::Box,              // "Do you wish to turn Solo Mode on?", up while the question is asked
         solo_pause: bool,                   // the box paused the game and must unpause it
+        focus_paused: bool,                 // the window lost the focus and the game was running: it resumes on return
         run_script: resref::ResRef,         // a script the loop should run when it can (no caller), empty when none
         right_held: bool,                   // the right mouse button is down (Lookabout too)
         look_x: i32,                        // mouse counts since the camera last asked, while the mouse turns it
         looking: bool,                      // the mouse is turning the camera (cursor hidden)
+        freelook: bool,                     // free look (Caps Lock): the eye in the leader's head, the HUD hidden
+        look_y: i32,                        // mouse counts up and down since the camera last asked (free look's pitch)
         turn_to: u32,                       // Q or E picked this object: the camera should swing round to it
         mouse_look: bool,                   // the "Mouse Look" option: Lookabout then gives the cursor back
         mouse_sens: i32,                    // "Mouse Sensitivity", 0..100
@@ -52,7 +55,7 @@ namespace ingame {
     }
 
     // What the camera takes from the mouse each frame (CameraInputMouseYaw, movement.md 2.3).
-    struct CameraInput { yaw_degrees: f32, edge: f32, looking: bool }
+    struct CameraInput { yaw_degrees: f32, pitch_degrees: f32, edge: f32, looking: bool, freelook: bool }
 
     // Opens the interface for a window of `width` x `height`. `scratch` is the texture decoder's
     // working memory (the scene's may be shared: loads never overlap).
@@ -67,9 +70,10 @@ namespace ingame {
             gui::set_tlk{ &g, table = t }
         }
         try gui::load_defaults{ &g, fs = &w.fs, &dev }
-        // The game options the rules read: Auto Level Up NPCs (the options menu keeps it current).
+        // The game options the rules read: Auto Level Up NPCs and the difficulty (the options menu keeps them current).
         let saved = frontend::load_settings{ fs = &w.fs, heap = w.heap, path = "kotor/out/kotor-settings.ini" }
         w.rules.settings.auto_level = saved.auto_level_up
+        w.rules.settings.difficulty = saved.difficulty
         if mixer != null { gui::set_mixer{ &g, mixer } }
         let h = try hud::open{ &g, &w, &dev }
         let ui = Ingame{
@@ -77,8 +81,8 @@ namespace ingame {
             text = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } },
             width, height, menu = NO_MENU, menu_panel = 0, top_panel = 0, menus = new_menus{}, log = hud::new_log{},
             pause_panel = 0, hud_hidden = false, screens = screens::new{}, bot = bot::new{},
-            shift_held = false, ctrl_held = false, solo_box = msgbox::blank{}, solo_pause = false, run_script = resref::empty{},
-            right_held = false, look_x = 0, looking = false, turn_to = obj::INVALID, mouse_look = saved.mouse_look, mouse_sens = saved.mouse_sensitivity, reverse_buttons = saved.reverse_buttons,
+            shift_held = false, ctrl_held = false, solo_box = msgbox::blank{}, solo_pause = false, focus_paused = false, run_script = resref::empty{},
+            right_held = false, look_x = 0, look_y = 0, looking = false, freelook = false, turn_to = obj::INVALID, mouse_look = saved.mouse_look, mouse_sens = saved.mouse_sensitivity, reverse_buttons = saved.reverse_buttons,
             autopause = false, ap_enemy = saved.pause_enemy_sighted, ap_mine = saved.pause_mine_sighted, ap_party = saved.pause_party_killed,
             ap_target = saved.pause_triggers, ap_round = saved.pause_end_round, ap_action_menu = saved.pause_action_menu,
             enemy_noted = false, party_alive = 0, ap_cooldown = 0.0, pause_reason = REASON_PAUSED,
@@ -174,13 +178,35 @@ namespace ingame {
         if turned is mouse_button{ down, button } {
             if button == sdl::BUTTON_RIGHT { ui.right_held = down }
         }
-        if turned is mouse_motion{ dx } {
-            if ui.looking { ui.look_x = ui.look_x + dx }
+        if turned is mouse_motion{ dx, dy } {
+            if ui.looking {
+                ui.look_x = ui.look_x + dx
+                ui.look_y = ui.look_y + dy
+            }
         }
         return handle_turned{ &ui, &w, &dev, ev = turned, scale_x, scale_y }
     }
 
     fn handle_turned { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, ev: sdl::Event, scale_x: f32, scale_y: f32 } -> bool {
+        // Switching to another window pauses the game, coming back resumes it unless it was already paused
+        // (OnAppDeactivate 0x00401d90, OnAppActivate 0x00401e00). Held keys and buttons are let go: their
+        // key-up goes to the other window.
+        if ev is focus{ gained } {
+            if not gained {
+                ui.shift_held = false
+                ui.hud.alternate = false
+                ui.ctrl_held = false
+                ui.right_held = false
+                if ui.autopause and not clock_paused_by_player{ w = &w } and w.transition == null {
+                    set_player_pause{ &ui, &w, &dev, on = true }
+                    ui.focus_paused = true
+                }
+            } else if ui.focus_paused {
+                ui.focus_paused = false
+                if clock_paused_by_player{ w = &w } { set_player_pause{ &ui, &w, &dev, on = false } }
+            }
+            return false
+        }
         // Keys first: the menu keys, Escape and pause work with or without a menu open, and a menu
         // (a full-screen panel) would otherwise take every key.
         if ev is key{ down, repeat, keycode } {
@@ -215,6 +241,22 @@ namespace ingame {
     // self slots' choices (with Shift they step to the next choice), R the target's default action, F leaves
     // combat, Y drops the last queued action. True when the key was used.
     fn handle_key { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, keycode: i32 } -> bool {
+        // Free look (Caps Lock, only with nothing queued for the leader and the game running) and the keys that
+        // leave it: the same key, a menu key, Escape, pause, Q and E (HandleInputAction 0xd0, 0xd1-0xd8, 0xe0,
+        // 0xcc/0xcd, 0xdf).
+        if keycode == sdl::key::CAPSLOCK {
+            if ui.freelook {
+                ui.freelook = false
+            } else if not ui.hud_hidden and ui.menu == NO_MENU and not gui::is_modal_open{ g = &ui.gui } and not clock_paused_by_player{ w = &w } {
+                let lead = world::object{ w = &w, id = party::leader{ w = &w } }
+                if lead != null and lead.actions.len == 0 { ui.freelook = true }
+            }
+            return true
+        }
+        if ui.freelook and (menu_of_key{ keycode } >= 0 or keycode == sdl::key::ESCAPE or keycode == sdl::key::PAUSE or keycode == 'q' or keycode == 'e') {
+            ui.freelook = false
+            set_hud_hidden{ &ui, hidden = w.conversation.active }
+        }
         if ui.hud_hidden or gui::is_modal_open{ g = &ui.gui } { return false }
         if keycode == sdl::key::ESCAPE {
             // A panel in a sub-mode (the equipment's slot selection) takes Escape as its Cancel.
@@ -364,16 +406,21 @@ namespace ingame {
     // turning the camera. UpdateCameraInput 0x005f5e10, movement.md 2.3.
     fn camera_input { mut ui: Ingame } -> CameraInput {
         let held = ui.ctrl_held or ui.right_held
-        let usable = not is_blocked{ &ui }
-        let looking = usable and (if ui.mouse_look { not held } else { held })
+        // Free look hides the HUD itself, so that does not count as the interface being in the way.
+        let usable = not (ui.menu != NO_MENU or gui::is_modal_open{ g = &ui.gui } or screens::is_open{ s = &ui.screens } or (ui.hud_hidden and not ui.freelook))
+        let looking = usable and (ui.freelook or (if ui.mouse_look { not held } else { held }))
         ui.looking = looking
         gui::set_cursor_visible{ g = &ui.gui, visible = not looking }
         let counts = ui.look_x
+        let counts_y = ui.look_y
         ui.look_x = 0
+        ui.look_y = 0
         let mut yaw: f32 = 0.0
+        let mut pitch: f32 = 0.0
         if looking {
-            let dx = math::clamp{ x = @as(f32, counts) / 100.0, lo = -1.0, hi = 1.0 }
-            yaw = -dx * (10.0 + 0.45 * @as(f32, ui.mouse_sens))
+            let scale = 10.0 + 0.45 * @as(f32, ui.mouse_sens)
+            yaw = -math::clamp{ x = @as(f32, counts) / 100.0, lo = -1.0, hi = 1.0 } * scale
+            pitch = -math::clamp{ x = @as(f32, counts_y) / 100.0, lo = -1.0, hi = 1.0 } * scale
         }
         let mut edge: f32 = 0.0
         if usable and not looking {
@@ -381,7 +428,7 @@ namespace ingame {
             if ui.gui.mouse_x <= margin { edge = 1.0 }
             else if ui.gui.mouse_x >= ui.width - margin { edge = -1.0 }
         }
-        return CameraInput{ yaw_degrees = yaw, edge, looking }
+        return CameraInput{ yaw_degrees = yaw, pitch_degrees = pitch, edge, looking, freelook = ui.freelook and usable }
     }
 
     // The object Q or E just picked, once: the loop tells the camera to swing round to it.
@@ -518,6 +565,7 @@ namespace ingame {
         hud::log_tick{ log = &ui.log, dt }
         if options_panel::settings{ s = &ui.menus.options } is some{ value = st } {
             w.rules.settings.auto_level = st.auto_level_up
+            w.rules.settings.difficulty = st.difficulty
             ui.mouse_look = st.mouse_look
             ui.mouse_sens = st.mouse_sensitivity
             ui.reverse_buttons = st.reverse_buttons
@@ -531,9 +579,15 @@ namespace ingame {
         update_autopause{ &ui, &w, &dev, dt }
         // A conversation or cutscene takes the screen: the HUD and any menu go away for it
         // (re/gui.md, "SetHudMode"), and the world is not picked.
-        if w.conversation.active != ui.hud_hidden {
+        // Free look leaves when the leader is given something to do (it needs an empty queue to start).
+        if ui.freelook {
+            let lead = world::object{ w = &w, id = party::leader{ w = &w } }
+            if lead == null or lead.actions.len > 0 or w.conversation.active { ui.freelook = false }
+        }
+        let wants_hidden = w.conversation.active or ui.freelook
+        if wants_hidden != ui.hud_hidden {
             if w.conversation.active and ui.menu != NO_MENU { close_menu{ &ui, &w } }
-            set_hud_hidden{ &ui, hidden = w.conversation.active }
+            set_hud_hidden{ &ui, hidden = wants_hidden }
         }
         let aspect = @as(f32, ui.width) / @as(f32, ui.height)
         // A conversation covers the screen with its own panels.

@@ -18,6 +18,10 @@ namespace fight {
     // same row plays again).
     const ROW_DIE: i32 = 80
     const ROW_DEAD: i32 = 81
+    const ROW_DIE1: i32 = 82
+    const ROW_DEAD1: i32 = 83
+    const ROW_GETUP: i32 = 381
+    const ROW_GETUP1: i32 = 382
     const ROW_CDIE: i32 = 274
     const ROW_CDEAD: i32 = 275
     const ROW_CREADY: i32 = 278
@@ -51,6 +55,7 @@ namespace fight {
         fired: usize,                   // impacts landed
         shots: usize,                   // bolts fired
         cutscene: bool,                 // a designer's round (CutsceneAttack): no OnEndRound, no combat
+        feat: i32,                      // the combat feat of the round's attacks (0 none)
         impacts: [MAX_IMPACTS]Impact,
     }
 
@@ -91,7 +96,7 @@ namespace fight {
     }
 
     fn no_round {} -> Round {
-        return Round{ started = false, timer_ms = 0, length_ms = 0, target = obj::INVALID, anim_row = NO_ROW, anim_ms = 0, count = 0, fired = 0, shots = 0, cutscene = false, impacts = [no_impact{}; MAX_IMPACTS] }
+        return Round{ started = false, timer_ms = 0, length_ms = 0, target = obj::INVALID, anim_row = NO_ROW, anim_ms = 0, count = 0, fired = 0, shots = 0, cutscene = false, feat = 0, impacts = [no_impact{}; MAX_IMPACTS] }
     }
 
     fn new_fighter { heap: *mut heap::Heap } -> !*mut Fighter {
@@ -286,7 +291,17 @@ namespace fight {
         } else if k == rules::ev::RESURRECT {
             o.hp = e.a
             if obj::creature{ o } is some{ value = c } { c.dead = false }
-            world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
+            // One lying on the floor gets up with the get-up of the way it fell (getupdead after die
+            // and dead, getupdead1 after die1 and dead1; animations.2da rows 381, 382).
+            let row = row_of_animation{ id = o.animation }
+            let lying = row == ROW_DIE or row == ROW_DEAD or row == ROW_DIE1 or row == ROW_DEAD1
+            if lying and of{ o } is some{ value = f } {
+                f.dying_ms = 0
+                f.react_ms = GETUP_MS
+                play_row{ &w, o, row = if row == ROW_DIE1 or row == ROW_DEAD1 { ROW_GETUP1 } else { ROW_GETUP } }
+            } else {
+                world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
+            }
         } else if k == rules::ev::MAX_HP_CHANGED {
             o.hp = o.hp + (e.b - e.a)
             o.hp_max = e.b
@@ -395,7 +410,9 @@ namespace fight {
         bc.in_combat = false
         bc.attack_target = obj::INVALID
         clear_attackers{ &w, id }
-        play_row{ &w, o = back, row = if is_beast{ w = &w, c = bc } { ROW_CDIE } else { ROW_DIE } }
+        // OnApplyDeath picks one of the two ways to fall at random (animation states 3 and 4, 8.2).
+        let second = not is_beast{ w = &w, c = bc } and world::random{ &w } % 2 == 1
+        play_row{ &w, o = back, row = if is_beast{ w = &w, c = bc } { ROW_CDIE } else if second { ROW_DIE1 } else { ROW_DIE } }
         bark{ &w, id, first = VOICE_DEAD, count = 1, chance_in = 1, quiet = false }
         f.dying_ms = DIE_MS
         if f.c.party {
@@ -756,6 +773,7 @@ namespace fight {
         let row = if forced.on { forced.animation } else { attack_row{ &w, s, duel, ranged_beast = ranged and s == 0 } }
         f.round = no_round{}
         f.round.cutscene = forced.on
+        f.round.feat = if feat > 0 { feat } else { 0 }
         if forced.on { f.ready_ms = CUTSCENE_READY_MS }
         f.round.started = true
         f.round.length_ms = ROUND_MS
@@ -987,12 +1005,97 @@ namespace fight {
             _ = @fmt(&w.io, "{} ends its round (target {} {})\n", id, target, state)
         }
         if id == party::leader{ w = &w } { autopause::request{ &w, reason = autopause::END_OF_ROUND } }
-        if id == party::leader{ w = &w } and target_alive and o.actions.len == 0 {
+        if id == party::leader{ w = &w } { continue_fight{ &w, id, target, target_alive } }
+        events::post{ &w, delay_ms = 0, caller = id, target = id, payload = events::Payload::script{ e = events::script_event{ kind = events::END_COMBAT_ROUND, object = target } } }
+    }
+
+    // What the leader does when its round ends (EndCombatRound calls 0x005b6980 for the client
+    // party's leader, after OnEndRound): while its hostile target lives and nothing else waits, it
+    // attacks it again (a plain attack); when the target died, it takes the nearest enemy it sees
+    // within its attack range + 2 m (0x004f2de0, the range 0x004ffad0), which becomes the HUD's
+    // target too (0x005edd70), and its waiting attacks turn on it (UpdateAttackTargetForAllActions);
+    // with no such enemy it stands down.
+    fn continue_fight { mut w: world::World, id: u32, target: u32, target_alive: bool } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        if target_alive {
+            let t = world::object{ w = &w, id = target } ifnull { return }
+            if t.kind != obj::Kind::creature { return }
+            if world::standing{ w = &w, from = o.faction, toward = t.faction } >= 11 { return }
+            if o.actions.len > 0 { return }
             let mut a = actions::make{ kind = actions::Kind::attack_object }
             a.params[0] = actions::Param::object{ id = target }
             _ = actions::add{ &w, id, action = a, force = false }
+            return
         }
-        events::post{ &w, delay_ms = 0, caller = id, target = id, payload = events::Payload::script{ e = events::script_event{ kind = events::END_COMBAT_ROUND, object = target } } }
+        let next = nearest_enemy{ w = &w, o, range = retarget_range{ w = &w, o } }
+        if next == obj::INVALID { return }
+        // The waiting attacks on the dead turn on the new target; with none waiting, one is made.
+        let mut turned = false
+        let q = list::items{ list = o.actions }
+        let mut i: usize = 0
+        while i < q.len {
+            if q[i].kind == actions::Kind::attack_object and actions::object_param{ a = &q[i], i = 0 } == target {
+                q[i].params[0] = actions::Param::object{ id = next }
+                turned = true
+            }
+            i = i + 1
+        }
+        if world::object{ w = &w, id } is some{ value = back } {
+            if obj::creature{ o = back } is some{ value = c } { c.attempted_target = next }
+        }
+        if w.target == target or w.target == obj::INVALID { w.target = next }
+        if w.log.combat {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "{} turns on {}\n", id, next)
+        }
+        if turned or o.actions.len > 0 { return }
+        let mut a = actions::make{ kind = actions::Kind::attack_object }
+        a.params[0] = actions::Param::object{ id = next }
+        _ = actions::add{ &w, id, action = a, force = false }
+    }
+
+    // GetMaxAttackRange + 2 m (0x004ffad0): a ranged weapon's maxattackrange (30 when 0), else the
+    // melee reach (both personal spaces + 0.7) + 0.5.
+    fn retarget_range { w: *world::World, o: *obj::Object } -> f32 {
+        let c = obj::creature{ o } ifnull { return 2.0 }
+        let s = stance{ w, c }
+        if is_ranged_stance{ s } or (s == 0 and is_ranged_item{ w, item = c.equipped[obj::SLOT_RIGHT_WEAPON] }) {
+            let mut range: f32 = 0.0
+            if world::object{ w, id = c.equipped[obj::SLOT_RIGHT_WEAPON] } is some{ value = iv } {
+                if obj::item{ o = iv } is some{ value = it } {
+                    range = twoda::get_float{ t = w.tables.baseitems, row = @as(usize, it.base), column = "maxattackrange" } ifnull 0.0
+                }
+            }
+            if range <= 0.0 { range = 30.0 }
+            return range + 2.0
+        }
+        return c.perspace * 2.0 + 0.7 + 0.5 + 2.0
+    }
+
+    // The nearest living, standing creature hostile to `o` that it sees, within `range` metres
+    // between their edges (0x004f2de0, the line-of-sight test left to the perception's seen bit).
+    fn nearest_enemy { w: *world::World, o: *obj::Object, range: f32 } -> u32 {
+        let me = obj::creature{ o } ifnull { return obj::INVALID }
+        let all = list::items{ list = w.objects.all }
+        let mut best = obj::INVALID
+        let mut best_d = range
+        let mut i: usize = 0
+        while i < all.len {
+            let t = all[i]
+            i = i + 1
+            if t.id == o.id or t.destroyed or t.kind != obj::Kind::creature or t.area != o.area { continue }
+            let tc = obj::creature{ o = t } ifnull { continue }
+            if tc.dead or is_down{ w, id = t.id } { continue }
+            if world::standing{ w, from = o.faction, toward = t.faction } >= 11 { continue }
+            let seen = perception::entry_of{ w, viewer = o.id, target = t.id } ifnull { continue }
+            if not seen.seen { continue }
+            let d = doors::distance_2d{ a = o.position, b = t.position } - me.perspace - tc.perspace
+            if d < best_d {
+                best_d = d
+                best = t.id
+            }
+        }
+        return best
     }
 
     // ---- every frame
@@ -1024,7 +1127,7 @@ namespace fight {
         // Dying: the die animation, then the body lies dead.
         if f.dying_ms > 0 {
             f.dying_ms = f.dying_ms - dt
-            if f.dying_ms <= 0 { play_row{ &w, o = o2, row = if is_beast{ w = &w, c = c2 } { ROW_CDEAD } else { ROW_DEAD } } }
+            if f.dying_ms <= 0 { play_row{ &w, o = o2, row = if is_beast{ w = &w, c = c2 } { ROW_CDEAD } else if row_of_animation{ id = o2.animation } == ROW_DIE1 { ROW_DEAD1 } else { ROW_DEAD } } }
             return
         }
         if c2.dead { return }
@@ -1114,6 +1217,15 @@ namespace fight {
         let o = world::object{ w, id } ifnull { return false }
         if o.kind != obj::Kind::creature { return false }
         return o.hp < 1 and party::is_member{ w, id }
+    }
+
+    // Whether a creature is still getting up off the floor (the get-up of a revival).
+    fn getting_up { w: *world::World, id: u32 } -> bool {
+        let o = world::object{ w, id } ifnull { return false }
+        let f = of{ o } ifnull { return false }
+        if f.react_ms <= 0 { return false }
+        let row = row_of_animation{ id = o.animation }
+        return row == ROW_GETUP or row == ROW_GETUP1
     }
 
     fn first_member_up { w: *world::World } -> u32 {

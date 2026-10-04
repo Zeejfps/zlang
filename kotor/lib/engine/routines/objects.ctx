@@ -270,8 +270,8 @@ namespace rt_obj {
 
     // ---- searching by area, shape and nearness
     //
-    // The first/next pairs keep their place in w.cursor_area / w.cursor_shape (an index into the
-    // creation-ordered objects.all), so a loop's own calls move it and nothing else should.
+    // The first/next pairs keep their place in w.cursor_area (an index into the creation-ordered
+    // objects.all) and w.cursor_shape (the last object returned), so a loop's own calls move it and nothing else should.
 
     // Whether the object stands in an area: not on its way out, not the module or an area, and
     // not an item in someone's pack.
@@ -384,18 +384,44 @@ namespace rt_obj {
         if me != null { origin = me.position }
         let given = origin_arg.x != 0.0 or origin_arg.y != 0.0 or origin_arg.z != 0.0
         if shape == 1 and given { origin = vec{ v = origin_arg } }
+        // The original walks the area's creatures sorted by x (CSWSArea +0x190, gameloop.md 2.4),
+        // so the order is ascending x, then id; the cursor keeps the last object returned (its id
+        // + 1; 0 when the walk is over) and Next takes the smallest (x, id) after it. The AI's
+        // nested shape loops share this one cursor, as the original's do, and their results hang
+        // on that order (GN_RunGrenadeAIRoutine judges the first creature only).
+        let mut after_x: f32 = -1000000000.0
+        let mut after_id: u32 = 0
+        let mut any_before = false
+        if not first {
+            if w.cursor_shape == 0 {
+                try nwvm::push_object{ &vm, id = obj::INVALID }
+                return
+            }
+            let last = world::object{ w = &w, id = @trunc(u32, w.cursor_shape - 1) } ifnull {
+                w.cursor_shape = 0
+                try nwvm::push_object{ &vm, id = obj::INVALID }
+                return
+            }
+            after_x = last.position.x
+            after_id = last.id
+            any_before = true
+        }
         let all = list::items{ list = w.objects.all }
-        let mut i: usize = if first { 0 } else { w.cursor_shape }
         let mut found = obj::INVALID
+        let mut found_x: f32 = 0.0
+        let mut i: usize = 0
         while i < all.len {
             let o = all[i]
             i = i + 1
             if not placed{ o } or o.area != area or (obj::object_type{ kind = o.kind } & filter) == 0 { continue }
+            let x = o.position.x
+            if any_before and (x < after_x or (x == after_x and o.id <= after_id)) { continue }
+            if found != obj::INVALID and (x > found_x or (x == found_x and o.id > found)) { continue }
             if not in_shape{ shape, size, centre = l.position, origin, p = o.position } { continue }
             found = o.id
-            break
+            found_x = x
         }
-        w.cursor_shape = i
+        w.cursor_shape = if found == obj::INVALID { 0 } else { @as(usize, found) + 1 }
         try nwvm::push_object{ &vm, id = found }
     }
 

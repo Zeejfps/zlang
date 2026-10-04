@@ -967,6 +967,73 @@ namespace check {
         cb_eq{ &io, &r, name = "door: no mitigation", got = x.weapon_damage, want = x.weapon_raw }
     }
 
+    // ---- energy shields in an attack (rules.md 1.13, combat.md 4.6)
+
+    // Puts the forearm band's EffectForceShield(row) on a creature as the engine would: 200 s, one id.
+    fn cb_shield { tables: *rules::Tables, mut c: rules::Creature, row: i32, id: u64 } {
+        let mut rng = rules::seed_rng{ seed = 1 }
+        let mut ev: rules::Events
+        let mut e = rules::fx::make_force_shield{ shield = row }
+        e.dur = rules::dur::TEMPORARY
+        e.duration = 200.0
+        e.id = id
+        let env = rules::Env{ tables, now = rules::Time{ day = 0, ms = 0 }, hp = 30 }
+        _ = rules::apply_effect{ env, c = &c, e, rng = &rng, ev = &ev }
+    }
+
+    fn cb_test_shield { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        // a shooter with a ranged weapon (base item 12), and a melee one for contrast
+        let mut b: rules::Creature
+        cb_fighter{ tables, c = &b, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 14 }
+        cb_wield{ tables, c = &b, mask = rules::slot::RIGHT, base_item = 12 }
+        let mut m: rules::Creature
+        cb_fighter{ tables, c = &m, class = rules::cls::SOLDIER, level = 1, strength = 14, dexterity = 10 }
+        cb_wield{ tables, c = &m, mask = rules::slot::RIGHT, base_item = 8 }
+        let mut d: rules::Creature
+        cb_fighter{ tables, c = &d, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        let sit = rules::make_situation{}
+        // a natural 1 always misses
+        let miss = cb_find_seed{ d1 = 1, lo2 = 1, hi2 = 20 }
+        cb_eq{ &io, &r, name = "shield: a miss without a shield", got = cb_attack{ tables, atk = &b, def = &d, sit = &sit, seed = miss, idx = 0, feat = 0 }.result, want = rules::outcome::MISS }
+        // row 0 is no shield to the shot code
+        let mut z = d
+        cb_shield{ tables, c = &z, row = 0, id = 100 }
+        cb_eq{ &io, &r, name = "shield: row 0 does not stop a missed bolt", got = cb_attack{ tables, atk = &b, def = &z, sit = &sit, seed = miss, idx = 0, feat = 0 }.result, want = rules::outcome::MISS }
+        // a worn shield absorbs it: result 10, no damage
+        let mut s = d
+        cb_shield{ tables, c = &s, row = 6, id = 101 }
+        let ab = cb_attack{ tables, atk = &b, def = &s, sit = &sit, seed = miss, idx = 0, feat = 0 }
+        cb_eq{ &io, &r, name = "shield: a missed bolt is absorbed", got = ab.result, want = rules::outcome::SHIELD }
+        cb_eq{ &io, &r, name = "shield: a melee swing is just a miss", got = cb_attack{ tables, atk = &m, def = &s, sit = &sit, seed = miss, idx = 0, feat = 0 }.result, want = rules::outcome::MISS }
+        // a defender who guards himself with Jedi Defense (and is not debilitated) does not use the shield
+        let mut j = s
+        cb_feat{ c = &j, feat = rules::feat::JEDI_DEFENSE }
+        cb_eq{ &io, &r, name = "shield: a Jedi with Jedi Defense leaves it to his saber", got = cb_attack{ tables, atk = &b, def = &j, sit = &sit, seed = miss, idx = 0, feat = 0 }.result, want = rules::outcome::MISS }
+        j.down = true
+        cb_eq{ &io, &r, name = "shield: ... unless he is down", got = cb_attack{ tables, atk = &b, def = &j, sit = &sit, seed = miss, idx = 0, feat = 0 }.result, want = rules::outcome::SHIELD }
+        // the engine can also say so in the situation (a creature it knows to be shielded)
+        cb_check_told_shield{ &io, &r, tables, b = &b, d = &d, miss }
+
+        // a hit meets the shield in the damage roll: blaster damage is absorbed and the points run down
+        let raw = cb_hit{ tables, atk = &b, def = &d, seed = 777, critical = false }.weapon_raw
+        let mut h = d
+        cb_shield{ tables, c = &h, row = 6, id = 102 }
+        let dealt = cb_hit{ tables, atk = &b, def = &h, seed = 777, critical = false }
+        if raw < 20 {
+            cb_eq{ &io, &r, name = "shield: a hit is absorbed", got = dealt.weapon_damage, want = 0 }
+            cb_eq{ &io, &r, name = "shield: the points left", got = h.fx[0].ints[2], want = 20 - raw }
+        } else {
+            cb_eq{ &io, &r, name = "shield: a hit past the points", got = dealt.weapon_damage, want = raw - 20 }
+            cb_eq{ &io, &r, name = "shield: ... ends it", got = h.nfx, want = 0 }
+        }
+    }
+
+    fn cb_check_told_shield { mut io: Io, mut r: Report, tables: *rules::Tables, b: *rules::Creature, d: *rules::Creature, miss: u32 } {
+        let mut told = rules::make_situation{}
+        told.shield_absorbs = true
+        cb_eq{ &io, &r, name = "shield: the situation's word counts", got = cb_attack{ tables, atk = b, def = d, sit = &told, seed = miss, idx = 0, feat = 0 }.result, want = rules::outcome::SHIELD }
+    }
+
     // ---- effect damage bonuses (rules.md 1.7)
 
     fn cb_damage_effect { amount: i32, types: i32, hand: i32, spell: i32, decrease: bool } -> rules::Effect {
@@ -1585,6 +1652,7 @@ namespace check {
         cb_test_deflection{ &io, &r, tables }
         cb_test_damage{ &io, &r, tables }
         cb_test_mitigation{ &io, &r, tables }
+        cb_test_shield{ &io, &r, tables }
         cb_test_effect_damage{ &io, &r, tables }
         cb_test_difficulty{ &io, &r, tables }
         cb_test_resolve{ &io, &r, tables }

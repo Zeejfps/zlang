@@ -101,30 +101,37 @@ namespace rules {
 
     // DoDamageResistance: the largest matching DAMAGE_RESISTANCE absorbs up to its amount; a
     // limited one (int2 > 0) loses what it absorbed and is removed when it is spent. `simulate`
-    // leaves the effect alone.
+    // leaves the effect alone. A damage type in the int3 mask of any resistance (an energy
+    // shield's VulnerFlags: ion) drains the limit twice as fast.
     fn apply_damage_resistance { mut c: Creature, amount: i32, flags: i32, simulate: bool, mut ev: Events } -> i32 {
         let mut best = -1
         let mut best_amount = 0
+        let mut vulnerable = false
         let mut i: usize = 0
         while i < @as(usize, c.nfx) {
             let e = &c.fx[i]
-            if e.kind == fx::DAMAGE_RESISTANCE and (e.ints[0] & flags) != 0 and e.ints[1] > best_amount {
-                best = @as(i32, i)
-                best_amount = e.ints[1]
+            if e.kind == fx::DAMAGE_RESISTANCE {
+                if (e.ints[0] & flags) != 0 and e.ints[1] > best_amount {
+                    best = @as(i32, i)
+                    best_amount = e.ints[1]
+                }
+                if (e.ints[3] & flags) != 0 { vulnerable = true }
             }
             i = i + 1
         }
         if best < 0 { return amount }
-        // A limited resistance (int2 > 0) counts down by the whole damage, not by what it absorbed;
-        // when the damage reaches the limit it absorbs what limit is left and goes (0x004d0e40).
+        // A limited resistance (int2 > 0) counts down by the whole damage (twice that when the
+        // type is a vulnerability), not by what it absorbed; when that reaches the limit it
+        // absorbs what limit is left and goes (0x004d0e40).
         let mut absorbed = best_amount
         let limit = c.fx[@as(usize, best)].ints[2]
+        let drain = if vulnerable { 2 * amount } else { amount }
         if limit > 0 {
-            if limit - amount < 1 {
+            if limit - drain < 1 {
                 absorbed = limit
-                if not simulate { remove_one{ c = &c, index = @as(usize, best), ev = &ev } }
+                if not simulate { remove_spent{ c = &c, index = @as(usize, best), ev = &ev } }
             } else if not simulate {
-                c.fx[@as(usize, best)].ints[2] = limit - amount
+                c.fx[@as(usize, best)].ints[2] = limit - drain
             }
         }
         if absorbed > amount { absorbed = amount }
@@ -282,6 +289,19 @@ namespace rules {
             i = i + 1
         }
         c.nfx = c.nfx - 1
+    }
+
+    // An effect that has used itself up (a limited resistance): RemoveEffectById, so whatever shares
+    // its id goes with it (an energy shield's aura, icon and shield record). An effect without an
+    // id (made by hand, never applied through a group) goes alone.
+    fn remove_spent { mut c: Creature, index: usize, mut ev: Events } {
+        if index >= @as(usize, c.nfx) { return }
+        let id = c.fx[index].id
+        if id == 0 {
+            remove_one{ c = &c, index, ev = &ev }
+            return
+        }
+        _ = remove_by_id_quiet{ c = &c, id, ev = &ev }
     }
 
     // Inserts after the last effect of the same or a lower type (the engine's order). Returns
@@ -468,6 +488,9 @@ namespace rules {
         if e.kind == fx::REGENERATE {
             e.ints[2] = @as(i32, env.now.day)
             e.ints[3] = @as(i32, env.now.ms)
+        }
+        if e.kind == fx::FORCE_SHIELD {
+            apply_force_shield{ env, c = &c, e = &e, rng = &rng, ev = &ev }
         }
         if e.kind == fx::VISUALEFFECT {
             emit{ ev = &ev, kind = ev::VISUAL_ON, a = e.ints[0], b = if e.dur == dur::INSTANT { 1 } else { 0 }, who = e.creator }

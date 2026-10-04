@@ -15,6 +15,8 @@ namespace cam {
         dir: math::Vec3,
         up: math::Vec3,         // +Z, except while a conversation camera rolls it (lib/dialog)
         stops: [64]bool,        // surface materials a camera ray stops at: all but triggers (30)
+        freelook: bool,         // the eye is in the leader's head (free look): yaw is the leader's, pitch the mouse's
+        fl_pitch: f32,          // free look's pitch in degrees, up positive
         turn_to: u32,           // an object the camera is swinging round to show (target cycling), obj::INVALID when none
         turn_rate: f32,         // that swing's easing rate per second, 2.5 to 7.5
     }
@@ -29,7 +31,7 @@ namespace cam {
         stops[30] = false
         return Camera{
             style = Style{ distance = 6.25, pitch = 80.0, height = 3.5, fov = 55.0 }, yaw = 0.0, rate = 0.0, h = 3.2,
-            started = false, turn_to = obj::INVALID, turn_rate = 2.5, eye = math::vec3::zero{}, look = math::vec3::zero{}, dir = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, stops,
+            started = false, freelook = false, fl_pitch = 0.0, turn_to = obj::INVALID, turn_rate = 2.5, eye = math::vec3::zero{}, look = math::vec3::zero{}, dir = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, stops,
         }
     }
 
@@ -56,7 +58,7 @@ namespace cam {
 
     // One update: `turn` is the rotate keys' input (-1..1, positive turns left), `target` the
     // leader, `look_height` its head height above its feet.
-    fn update { mut c: Camera, w: *world::World, sc: *scene::Scene, target: u32, look_height: f32, turn: f32, mouse_degrees: f32, dt: f32 } {
+    fn update { mut c: Camera, w: *world::World, sc: *scene::Scene, target: u32, look_height: f32, turn: f32, mouse_degrees: f32, pitch_degrees: f32, dt: f32 } {
         let o = world::object{ w, id = target } ifnull { return }
         let look = math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + look_height }
         if not c.started {
@@ -65,6 +67,25 @@ namespace cam {
             c.h = c.style.distance
             c.started = true
         }
+        // Free look (movement.md 2.5): the eye at the head looking along the leader's facing, pitched by the
+        // mouse within the style's FL_LOOKDOWN and FL_LOOKUP (20 and 15 degrees by default). The chase camera
+        // starts again from close in and swings out.
+        if c.freelook {
+            c.yaw = math::atan2f{ y = -o.orientation.x, x = o.orientation.y }
+            c.fl_pitch = math::clamp{ x = c.fl_pitch + pitch_degrees, lo = -20.0, hi = 15.0 }
+            let f = forward{ yaw = c.yaw }
+            let up = math::radians{ degrees = c.fl_pitch }
+            let cp = math::cosf{ x = up }
+            c.eye = math::Vec3{ x = o.position.x + f.x * 0.15, y = o.position.y + f.y * 0.15, z = o.position.z + look_height }
+            c.dir = math::Vec3{ x = f.x * cp, y = f.y * cp, z = math::sinf{ x = up } }
+            c.look = math::vec3::add{ a = c.eye, b = c.dir }
+            c.up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }
+            c.h = 0.2
+            c.rate = 0.0
+            c.turn_to = obj::INVALID
+            return
+        }
+        c.fl_pitch = 0.0
         // The rate integrator (CRateIntegrator), dt clamped to 0.2 s.
         let step = math::min{ a = dt, b = 0.2 }
         // Swinging round to a cycled target: with no turn by hand, the yaw eases toward the heading from the

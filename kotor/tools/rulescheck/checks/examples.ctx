@@ -387,5 +387,128 @@ namespace check {
         expect_eq{ &io, &r, name = "rand() #1 for seed 1", got = @as(i64, rules::next_rand{ rng = &m }), want = 41 }
         expect_eq{ &io, &r, name = "rand() #2 for seed 1", got = @as(i64, rules::next_rand{ rng = &m }), want = 18467 }
         expect_eq{ &io, &r, name = "rand() #3 for seed 1", got = @as(i64, rules::next_rand{ rng = &m }), want = 6334 }
+
+        run_shield_examples{ &io, &r, tables }
+    }
+
+    // Whether the creature's effects all carry one id (and there are some).
+    fn all_fx_have_id { c: *rules::Creature, id: u64 } -> bool {
+        let mut i: usize = 0
+        while i < @as(usize, c.nfx) {
+            if c.fx[i].id != id { return false }
+            i = i + 1
+        }
+        return c.nfx > 0
+    }
+
+    // A level 1 soldier with nothing on.
+    fn plain_soldier { tables: *rules::Tables } -> rules::Creature {
+        return build_creature{ tables, class = rules::cls::SOLDIER, level = 1, str = 10, dex = 10, con = 10, wis = 10, cha = 10 }
+    }
+
+    // Energy shields (rules.md 1.13): the forearm bands' EffectForceShield(row) and forceshields.2da.
+    // Row 6 (SHIELD_ENERGY, the plain band): aura 2040, DamageFlags 6208 (blaster 4096 + ion 2048 + light side 64),
+    // VulnerFlags 2048 (ion), Resistance 300, Amount 20. Row 7: aura 2044, flags 7232, Amount 30.
+    // Row 10 (SHIELD_MANDALORIAN_MELEE): flags 2055 (ion + bludgeoning, piercing, slashing), Amount 20.
+    fn run_shield_examples { mut io: Io, mut r: Report, tables: *rules::Tables } {
+        let mut rng = rules::seed_rng{ seed = 5 }
+        let mut ev: rules::Events
+        let env = rules::Env{ tables, now = zero_time{}, hp = 30 }
+        let mpd = 2880000
+        let temp = rules::dur::TEMPORARY
+
+        // Applying the shield: the marker, the aura and a limited resistance, one id, 200 s.
+        let mut sh = plain_soldier{ tables }
+        rules::clear_events{ &ev }
+        expect_true{ &io, &r, name = "shield: row 6 applied", cond = apply_timed{ env, c = &sh, e = rules::fx::make_force_shield{ shield = 6 }, dur = temp, seconds = 200.0, spell = 99, id = 70, rng = &rng, ev = &ev } }
+        expect_eq{ &io, &r, name = "shield: three effects", got = @as(i64, sh.nfx), want = 3 }
+        expect_eq{ &io, &r, name = "shield: the list is in type order, resistance first", got = @as(i64, sh.fx[0].kind), want = @as(i64, rules::fx::DAMAGE_RESISTANCE) }
+        expect_eq{ &io, &r, name = "shield: the aura second", got = @as(i64, sh.fx[1].kind), want = @as(i64, rules::fx::VISUALEFFECT) }
+        expect_eq{ &io, &r, name = "shield: the marker last", got = @as(i64, sh.fx[2].kind), want = @as(i64, rules::fx::FORCE_SHIELD) }
+        expect_true{ &io, &r, name = "shield: one id for all three", cond = all_fx_have_id{ c = &sh, id = 70 } }
+        expect_eq{ &io, &r, name = "shield: resistance types are the row's DamageFlags", got = @as(i64, sh.fx[0].ints[0]), want = 6208 }
+        expect_eq{ &io, &r, name = "shield: Resistance 300", got = @as(i64, sh.fx[0].ints[1]), want = 300 }
+        expect_eq{ &io, &r, name = "shield: Amount 20 is the limit", got = @as(i64, sh.fx[0].ints[2]), want = 20 }
+        expect_eq{ &io, &r, name = "shield: VulnerFlags 2048 in int3", got = @as(i64, sh.fx[0].ints[3]), want = 2048 }
+        expect_eq{ &io, &r, name = "shield: the aura is VisualEffectDef 2040", got = event_value{ ev, kind = rules::ev::VISUAL_ON }, want = 2040 }
+        expect_eq{ &io, &r, name = "shield: the resistance is magical", got = @as(i64, sh.fx[0].sub), want = @as(i64, rules::sub::MAGICAL) }
+        expect_true{ &io, &r, name = "shield: the children are not exposed to scripts", cond = not sh.fx[0].exposed and not sh.fx[1].exposed and sh.fx[2].exposed }
+        expect_eq{ &io, &r, name = "shield: the children last 200 s too", got = @as(i64, sh.fx[0].expire.ms), want = 200000 }
+        expect_eq{ &io, &r, name = "shield: row seen by the shot code", got = @as(i64, rules::force_shield_row{ c = &sh }), want = 6 }
+
+        // Blaster damage is absorbed whole, and the points run down by the whole damage.
+        let blaster = rules::dmg::BLASTER
+        expect_eq{ &io, &r, name = "shield: 7 blaster damage is absorbed", got = @as(i64, rules::mitigate_damage{ c = &sh, amount = 7, flags = blaster, power = 0, simulate = false, ev = &ev }), want = 0 }
+        expect_eq{ &io, &r, name = "shield: 13 points left", got = @as(i64, sh.fx[0].ints[2]), want = 13 }
+        expect_eq{ &io, &r, name = "shield: a preview takes nothing", got = @as(i64, rules::mitigate_damage{ c = &sh, amount = 5, flags = blaster, power = 0, simulate = true, ev = &ev }), want = 0 }
+        expect_eq{ &io, &r, name = "shield: ... still 13", got = @as(i64, sh.fx[0].ints[2]), want = 13 }
+        expect_eq{ &io, &r, name = "shield: slashing damage goes through", got = @as(i64, rules::mitigate_damage{ c = &sh, amount = 9, flags = rules::dmg::SLASHING, power = 0, simulate = false, ev = &ev }), want = 9 }
+        expect_eq{ &io, &r, name = "shield: ... and costs it nothing", got = @as(i64, sh.fx[0].ints[2]), want = 13 }
+        expect_eq{ &io, &r, name = "shield: a second 7", got = @as(i64, rules::mitigate_damage{ c = &sh, amount = 7, flags = blaster, power = 0, simulate = false, ev = &ev }), want = 0 }
+        expect_eq{ &io, &r, name = "shield: 6 points left", got = @as(i64, sh.fx[0].ints[2]), want = 6 }
+        // The hit that reaches the limit absorbs what is left (6 of 7) and ends the shield whole.
+        rules::clear_events{ &ev }
+        expect_eq{ &io, &r, name = "shield: a third 7 gets 1 through", got = @as(i64, rules::mitigate_damage{ c = &sh, amount = 7, flags = blaster, power = 0, simulate = false, ev = &ev }), want = 1 }
+        expect_eq{ &io, &r, name = "shield: used up, all three effects gone", got = @as(i64, sh.nfx), want = 0 }
+        expect_eq{ &io, &r, name = "shield: the aura is taken off", got = count_events{ ev, kind = rules::ev::VISUAL_OFF }, want = 1 }
+        expect_true{ &io, &r, name = "shield: nothing left for the shot code", cond = not rules::has_force_shield{ c = &sh } }
+
+        // Ion damage (VulnerFlags) wears the points down twice as fast, and a hit that empties them
+        // is absorbed whole when the points left exceed the damage.
+        let mut ion = plain_soldier{ tables }
+        _ = apply_timed{ env, c = &ion, e = rules::fx::make_force_shield{ shield = 6 }, dur = temp, seconds = 200.0, spell = 99, id = 71, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "shield: 8 ion damage is absorbed", got = @as(i64, rules::mitigate_damage{ c = &ion, amount = 8, flags = rules::dmg::ION, power = 0, simulate = false, ev = &ev }), want = 0 }
+        expect_eq{ &io, &r, name = "shield: ... at double cost, 4 left", got = @as(i64, ion.fx[0].ints[2]), want = 4 }
+        expect_eq{ &io, &r, name = "shield: 3 ion damage empties it", got = @as(i64, rules::mitigate_damage{ c = &ion, amount = 3, flags = rules::dmg::ION, power = 0, simulate = false, ev = &ev }), want = 0 }
+        expect_eq{ &io, &r, name = "shield: ... and it is gone", got = @as(i64, ion.nfx), want = 0 }
+
+        // A melee shield (row 10) stops slashing but not fire.
+        let mut ml = plain_soldier{ tables }
+        _ = apply_timed{ env, c = &ml, e = rules::fx::make_force_shield{ shield = 10 }, dur = temp, seconds = 200.0, spell = 106, id = 72, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "shield: row 10 stops slashing", got = @as(i64, rules::mitigate_damage{ c = &ml, amount = 6, flags = rules::dmg::SLASHING, power = 0, simulate = false, ev = &ev }), want = 0 }
+        expect_eq{ &io, &r, name = "shield: row 10 does not stop fire", got = @as(i64, rules::mitigate_damage{ c = &ml, amount = 6, flags = 256, power = 0, simulate = false, ev = &ev }), want = 6 }
+
+        // A new shield replaces the old one: its effects go with their id, the new ones arrive.
+        let mut rp = plain_soldier{ tables }
+        _ = apply_timed{ env, c = &rp, e = rules::fx::make_force_shield{ shield = 6 }, dur = temp, seconds = 200.0, spell = 99, id = 80, rng = &rng, ev = &ev }
+        rules::clear_events{ &ev }
+        _ = apply_timed{ env, c = &rp, e = rules::fx::make_force_shield{ shield = 7 }, dur = temp, seconds = 200.0, spell = 100, id = 81, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "shield replaced: still three effects", got = @as(i64, rp.nfx), want = 3 }
+        expect_true{ &io, &r, name = "shield replaced: all of the new id", cond = all_fx_have_id{ c = &rp, id = 81 } }
+        expect_eq{ &io, &r, name = "shield replaced: the new Amount 30", got = @as(i64, rp.fx[0].ints[2]), want = 30 }
+        expect_eq{ &io, &r, name = "shield replaced: the old aura off", got = count_events{ ev, kind = rules::ev::VISUAL_OFF }, want = 1 }
+        expect_eq{ &io, &r, name = "shield replaced: the new aura 2044", got = event_value{ ev, kind = rules::ev::VISUAL_ON }, want = 2044 }
+        // Row 0 is invisible to the replacement check (as to the shot code): a second shield stacks.
+        let mut z = plain_soldier{ tables }
+        _ = apply_timed{ env, c = &z, e = rules::fx::make_force_shield{ shield = 0 }, dur = temp, seconds = 200.0, spell = 110, id = 90, rng = &rng, ev = &ev }
+        expect_true{ &io, &r, name = "shield row 0: not a shield to the shot code", cond = not rules::has_force_shield{ c = &z } }
+        _ = apply_timed{ env, c = &z, e = rules::fx::make_force_shield{ shield = 7 }, dur = temp, seconds = 200.0, spell = 100, id = 91, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "shield row 0: not replaced, both stay", got = @as(i64, z.nfx), want = 6 }
+
+        // The aura follows the wearer's appearance (Appearance_0N picks VisualEffect_0N); a row beyond the table is empty.
+        expect_eq{ &io, &r, name = "aura: row 0 default", got = @as(i64, rules::read_shield_row{ tables, row = 0, appearance = 1 }.visual), want = 2045 }
+        expect_eq{ &io, &r, name = "aura: row 0, appearance 60", got = @as(i64, rules::read_shield_row{ tables, row = 0, appearance = 60 }.visual), want = 2032 }
+        expect_eq{ &io, &r, name = "aura: row 0, appearance 61", got = @as(i64, rules::read_shield_row{ tables, row = 0, appearance = 61 }.visual), want = 2034 }
+        expect_eq{ &io, &r, name = "aura: row 0, appearance 59", got = @as(i64, rules::read_shield_row{ tables, row = 0, appearance = 59 }.visual), want = 2035 }
+        expect_eq{ &io, &r, name = "aura: row 0, appearance 65", got = @as(i64, rules::read_shield_row{ tables, row = 0, appearance = 65 }.visual), want = 2063 }
+        expect_eq{ &io, &r, name = "aura: row 6 has no overrides", got = @as(i64, rules::read_shield_row{ tables, row = 6, appearance = 60 }.visual), want = 2040 }
+        expect_true{ &io, &r, name = "aura: row 99 is not in the table", cond = not rules::read_shield_row{ tables, row = 99, appearance = 1 }.valid }
+        let mut dr = plain_soldier{ tables }
+        dr.appearance = 60
+        rules::clear_events{ &ev }
+        _ = apply_timed{ env, c = &dr, e = rules::fx::make_force_shield{ shield = 1 }, dur = temp, seconds = 200.0, spell = 111, id = 92, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "aura: applied to appearance 60", got = event_value{ ev, kind = rules::ev::VISUAL_ON }, want = 2032 }
+
+        // Time runs out: the whole shield goes at the next update.
+        let mut tm = plain_soldier{ tables }
+        _ = apply_timed{ env, c = &tm, e = rules::fx::make_force_shield{ shield = 6 }, dur = temp, seconds = 200.0, spell = 99, id = 93, rng = &rng, ev = &ev }
+        let early = rules::Env{ tables, now = rules::time_add_seconds{ t = zero_time{}, seconds = 199.0, ms_per_day = mpd }, hp = 30 }
+        rules::update_effects{ env = early, c = &tm, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "shield: still there at 199 s", got = @as(i64, tm.nfx), want = 3 }
+        let late = rules::Env{ tables, now = rules::time_add_seconds{ t = zero_time{}, seconds = 201.0, ms_per_day = mpd }, hp = 30 }
+        rules::clear_events{ &ev }
+        rules::update_effects{ env = late, c = &tm, rng = &rng, ev = &ev }
+        expect_eq{ &io, &r, name = "shield: gone at 201 s", got = @as(i64, tm.nfx), want = 0 }
+        expect_eq{ &io, &r, name = "shield: the aura is taken off at the end", got = count_events{ ev, kind = rules::ev::VISUAL_OFF }, want = 1 }
     }
 }
