@@ -606,6 +606,13 @@ namespace sdl {
         return WindowKind::windowed
     }
 
+    // The operating system's pointer. A game that draws its own hides it: SDL applies the state to every
+    // window of the app, in any mode, and holds it across mode switches, focus changes and minimising.
+    fn hide_cursor { mut sdl: Sdl } { _ = SDL_ShowCursor{ &sdl, toggle = 0 } }
+
+    // SDL_ShowCursor(SDL_QUERY) is -1: the state without changing it (0 hidden, 1 shown).
+    fn cursor_hidden { mut sdl: Sdl } -> bool { return SDL_ShowCursor{ &sdl, toggle = -1 } == 0 }
+
     // Relative mode hides the cursor and reports only motion, for mouse look.
     fn set_relative_mouse { mut sdl: Sdl, on: bool } -> ! {
         if SDL_SetRelativeMouseMode{ &sdl, enabled = if on { 1 } else { 0 } } != 0 {
