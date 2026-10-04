@@ -154,6 +154,23 @@ shadows, 0 pixels differ.
 - **Cost**: 0.026 ms at 1280x720 (the Endar Spire, Trask's conversation).
 - **Pictures**: `kotor/out/fx/t/talk_dof_cmp.png` (off, high).
 
+### Reflections (screen space)
+
+- **Inputs**: `Enhance.reflections`; materials with an `envmap` (KOTOR's TXI `envmaptexture` / `bumpyshinytexture`,
+  appearance.2da `envmap`), whose diffuse alpha masks the reflection.
+- **What**: the scene's third output (with reflections on) holds, per opaque pixel, the environment map's share of its
+  colour (`env × amount × (1 − alpha)`, after fog) and that share's weight. After the occlusion pass, the opaque
+  light is copied (resolved when multisampled) and, for every pixel with a weight, the view ray reflected off its
+  normal (the bump-mapped one) is marched through view space: 48 steps (24 low) over 24 m, quadratically spaced,
+  a step landing up to 0.6 m behind the depth buffer is a hit, refined by four halvings. The pass adds
+  `(what the ray met × weight − the environment map's share) × confidence` (blending ONE, ONE into the float light),
+  so a hit replaces the cube map's reflection and a miss leaves it: the original's environment map is the fallback.
+  Confidence fades over the last 8% of the screen's edges, past 60% of the reach, and as the ray turns toward the camera.
+  Transparent surfaces keep their cube-map reflection only.
+- **Cost**: 0.06 ms at 1280x720 on the Endar Spire bridge (its floor is environment-mapped); pixels without a weight
+  return at once.
+- **Pictures**: `kotor/out/fx/t/bridge_ssr_cmp.png` (the bridge floor under a console: cube map, then screen space).
+
 ### Anti-aliasing
 
 - **Inputs**: `Enhance.post_aa` (the Edge AA row: 0 off, 1 FXAA, 2 High), `Enhance.alpha_coverage` (Foliage AA), the

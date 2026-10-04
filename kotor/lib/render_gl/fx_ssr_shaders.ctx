@@ -1,0 +1,93 @@
+// GLSL 410 source of the enhanced renderer's screen-space reflections (fx_ssr.ctx), run with glsl::POST_VS.
+namespace glsl {
+    // Per pixel whose environment-map weight (u_refl.a) is above zero: the view ray reflected off its normal is marched
+    // through view space (u_params.x steps over u_params.y metres, longer steps farther out); a step
+    // that lands behind the depth buffer by less than u_params.z metres is a hit, refined by halving four times. The
+    // output, added to the light, swaps the environment map's share (u_refl.rgb) for what the ray met times the same
+    // weight, faded at the screen's edges, with distance, and where the ray turns back toward the camera.
+    const SSR_FS: c::String =
+        \\#version 410 core
+        \\uniform sampler2D u_depth;
+        \\uniform sampler2D u_normal;
+        \\uniform sampler2D u_refl;
+        \\uniform sampler2D u_light;
+        \\uniform vec4 u_proj;
+        \\uniform vec4 u_area;
+        \\uniform vec4 u_params;
+        \\in vec2 v_uv;
+        \\layout(location = 0) out vec4 o_color;
+        \\float z_at(vec2 px) {
+        \\    float d = texelFetch(u_depth, ivec2(px), 0).r;
+        \\    return -u_proj.w / ((d * 2.0 - 1.0) + u_proj.z);
+        \\}
+        \\vec2 to_pixel(vec3 p) {
+        \\    vec2 ndc = vec2(u_proj.x * p.x, u_proj.y * p.y) / -p.z;
+        \\    return (ndc * 0.5 + 0.5) * u_area.zw + u_area.xy;
+        \\}
+        \\bool inside(vec2 px) {
+        \\    return px.x >= u_area.x && px.y >= u_area.y && px.x < u_area.x + u_area.z && px.y < u_area.y + u_area.w;
+        \\}
+        \\void main() {
+        \\    vec2 px = floor(gl_FragCoord.xy);
+        \\    vec4 rf = texelFetch(u_refl, ivec2(px), 0);
+        \\    if (rf.a <= 0.001) {
+        \\        o_color = vec4(0.0);
+        \\        return;
+        \\    }
+        \\    float z = z_at(px);
+        \\    vec2 ndc = (px + 0.5 - u_area.xy) / u_area.zw * 2.0 - 1.0;
+        \\    vec3 p = vec3(ndc.x * -z / u_proj.x, ndc.y * -z / u_proj.y, z);
+        \\    vec3 n = normalize(texelFetch(u_normal, ivec2(px), 0).xyz * 2.0 - 1.0);
+        \\    vec3 r = reflect(normalize(p), n);
+        \\    float back = 1.0 - smoothstep(0.1, 0.5, r.z);
+        \\    if (back <= 0.0) {
+        \\        o_color = vec4(0.0);
+        \\        return;
+        \\    }
+        \\    int steps = int(u_params.x);
+        \\    float jitter = 0.5;
+        \\    vec3 start = p + n * 0.02;
+        \\    float prev = 0.0;
+        \\    float hit = -1.0;
+        \\    for (int i = 1; i <= steps; i++) {
+        \\        float a = (float(i) + jitter - 1.0) / float(steps);
+        \\        float t = a * a * u_params.y + 0.05;
+        \\        vec3 q = start + r * t;
+        \\        if (q.z > -0.05) {
+        \\            break;
+        \\        }
+        \\        vec2 s = to_pixel(q);
+        \\        if (!inside(s)) {
+        \\            break;
+        \\        }
+        \\        float behind = z_at(s) - q.z;
+        \\        if (behind > 0.0 && behind < u_params.z) {
+        \\            float lo = prev;
+        \\            float hi = t;
+        \\            for (int k = 0; k < 4; k++) {
+        \\                float mid = (lo + hi) * 0.5;
+        \\                vec3 m = start + r * mid;
+        \\                if (z_at(to_pixel(m)) - m.z > 0.0) {
+        \\                    hi = mid;
+        \\                } else {
+        \\                    lo = mid;
+        \\                }
+        \\            }
+        \\            hit = hi;
+        \\            break;
+        \\        }
+        \\        prev = t;
+        \\    }
+        \\    if (hit < 0.0) {
+        \\        o_color = vec4(0.0);
+        \\        return;
+        \\    }
+        \\    vec2 s = to_pixel(start + r * hit);
+        \\    vec2 e = min(s - u_area.xy, u_area.xy + u_area.zw - s) / u_area.zw;
+        \\    float edge = clamp(min(e.x, e.y) / 0.08, 0.0, 1.0);
+        \\    float conf = edge * back * (1.0 - smoothstep(0.6, 1.0, hit / u_params.y));
+        \\    vec3 seen = min(texelFetch(u_light, ivec2(s), 0).rgb, vec3(16.0));
+        \\    o_color = vec4((seen * rf.a - rf.rgb) * conf, 0.0);
+        \\}
+        \\
+}
