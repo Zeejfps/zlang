@@ -1,0 +1,18 @@
+// Anti-aliasing of the enhanced renderer (docs/design/enhanced-render.md): an edge filter over the finished picture
+// when multisampling is off (Enhance.post_aa), and alpha-to-coverage for alpha-tested surfaces when it is on
+// (Enhance.alpha_coverage). Called from draw_view_fx and draw_mesh.
+namespace gpu {
+    struct AaPrograms { made: bool }
+
+    fn no_aa_programs {} -> AaPrograms { return AaPrograms{ made = false } }
+
+    fn make_aa_programs { mut dev: Device } -> ! {}
+
+    fn free_aa_programs { mut dev: Device } {}
+
+    // Whether the composite goes to dev.fxt.ldr first, for run_edge_aa to filter into the screen.
+    fn edge_aa_wanted { dev: Device } -> bool { return false }
+
+    // The edge filter: dev.fxt.ldr (tone-mapped, luma in alpha) into `into` over the view's area.
+    fn run_edge_aa { mut dev: Device, area: GlRect, into: u32 } {}
+}

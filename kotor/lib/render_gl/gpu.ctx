@@ -111,6 +111,8 @@ namespace gpu {
         cur_particle: ParticleProgram,
         in_fx: bool,                // the view being drawn is an enhanced one
         timer: Timer,               // GPU time per pass (timing.ctx)
+        atmos: AtmosPrograms,       // fx_atmos.ctx
+        aa: AaPrograms,             // fx_aa.ctx
     }
 
     // ---- opening and closing
@@ -175,11 +177,13 @@ namespace gpu {
             log = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = 8192 },
             enhance = render::original_look{}, scene_fx = no_scene_program{}, particle_fx = no_particle_program{},
             fxp = no_fx_programs{}, fxt = no_fx_targets{}, cur = no_scene_program{}, cur_particle = no_particle_program{},
-            in_fx = false, timer = no_timer{},
+            in_fx = false, timer = no_timer{}, atmos = no_atmos_programs{}, aa = no_aa_programs{},
         }
         clear_tables{ &dev }
         try make_programs{ &dev }
         try make_fx_programs{ &dev }
+        try make_atmos_programs{ &dev }
+        try make_aa_programs{ &dev }
         dev.cur = dev.scene
         dev.cur_particle = dev.particle
         make_buffers{ &dev }
@@ -250,6 +254,8 @@ namespace gpu {
         dev.gl.delete_program{ program = dev.post.id }
         dev.gl.delete_program{ program = dev.blur.id }
         free_fx_programs{ &dev }
+        free_atmos_programs{ &dev }
+        free_aa_programs{ &dev }
         free_fx_targets{ &dev }
         free_timer{ &dev }
         if dev.fx_made { gl::free_target{ gl = &dev.gl, t = dev.fx } }

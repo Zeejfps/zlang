@@ -310,6 +310,14 @@ namespace gpu {
         let frustum = math::frustum::from_matrix{ m = view_proj }
         draw_opaque{ &dev, frame, index, frustum }
         timer_mark{ &dev, name = "opaque" }
+        // ---- passes that read the opaque surfaces' depth and normals, and blend into their light
+        resolve_depth{ &dev }
+        run_height_fog{ &dev, v, area }
+        // The passes above set GL's state themselves: what the draws below assume is set afresh.
+        dev.state = unknown_state{}
+        upload_frame_block{ &dev, v, view_proj, time = frame.time }
+        bind_light_target{ &dev }
+        dev.gl.viewport{ x = area.x, y = area.y, width = area.w, height = area.h }
         set_outputs{ &dev, n = 1 }
         // The original's planar shadows until shadow maps take their place.
         try draw_shadows{ &dev, frame, index }
@@ -330,6 +338,7 @@ namespace gpu {
             timer_mark{ &dev, name = "resolve" }
         }
         post_state{ &dev }
+        run_shafts{ &dev, v, area }
         let e = dev.enhance
         let levels: usize = if e.bloom >= 2 { BLOOM_LEVELS } else { 4 }
         if e.bloom > 0 {
@@ -337,13 +346,60 @@ namespace gpu {
             timer_mark{ &dev, name = "bloom" }
         }
         let screen = screen_fbo{ &dev }
-        run_composite{ &dev, v, area, into = screen, levels }
+        let edges = edge_aa_wanted{ dev }
+        run_composite{ &dev, v, area, into = if edges { t.ldr_fbo } else { screen }, levels }
         timer_mark{ &dev, name = "composite" }
+        if edges { run_edge_aa{ &dev, area, into = screen } }
         dev.in_fx = false
         dev.cur = dev.scene
         dev.cur_particle = dev.particle
         dev.state = unknown_state{}
         if v.blur > 0.01 and dev.screen_effects { try speed_blur{ &dev, strength = v.blur } }
+    }
+
+    // With multisampling, the opaque surfaces' depth and normals copied to the textures passes read (a blit takes one
+    // sample of each pixel's depth); without, they are those textures already.
+    fn resolve_depth { mut dev: Device } {
+        let t = dev.fxt
+        if t.samples == 0 { return }
+        dev.gl.disable{ cap = gl::SCISSOR_TEST }
+        dev.gl.bind_framebuffer{ target = gl::READ_FRAMEBUFFER, framebuffer = t.ms_fbo }
+        dev.gl.bind_framebuffer{ target = gl::DRAW_FRAMEBUFFER, framebuffer = t.scene_fbo }
+        dev.gl.blit_framebuffer{
+            src_x0 = 0, src_y0 = 0, src_x1 = t.width, src_y1 = t.height, dst_x0 = 0, dst_y0 = 0, dst_x1 = t.width, dst_y1 = t.height,
+            mask = gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT, filter = gl::NEAREST,
+        }
+        dev.gl.read_buffer{ src = gl::COLOR_ATTACHMENT1 }
+        let bufs: [2]u32 = [gl::NONE, gl::COLOR_ATTACHMENT1]
+        dev.gl.draw_buffers{ n = 2, bufs = &bufs[0] }
+        dev.gl.blit_framebuffer{
+            src_x0 = 0, src_y0 = 0, src_x1 = t.width, src_y1 = t.height, dst_x0 = 0, dst_y0 = 0, dst_x1 = t.width, dst_y1 = t.height,
+            mask = gl::COLOR_BUFFER_BIT, filter = gl::NEAREST,
+        }
+        dev.gl.read_buffer{ src = gl::COLOR_ATTACHMENT0 }
+        let back: [2]u32 = [gl::COLOR_ATTACHMENT0, gl::COLOR_ATTACHMENT1]
+        dev.gl.draw_buffers{ n = 2, bufs = &back[0] }
+        timer_mark{ &dev, name = "resolve depth" }
+    }
+
+    // Binds the framebuffer of the scene's light for drawing more into it mid-view (the multisampled one when
+    // anti-aliasing is on): a pass that blends into the light, or the transparent surfaces after it.
+    fn bind_light_target { mut dev: Device } {
+        let t = dev.fxt
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = if t.samples > 0 { t.ms_fbo } else { t.scene_fbo } }
+    }
+
+    // Binds the scene's light alone, for a full-screen pass that blends into it mid-view and reads the depth or normal
+    // textures (which must not be attached while they are read): the multisampled framebuffer writing only its light,
+    // or the light texture's own framebuffer.
+    fn bind_light_only { mut dev: Device } {
+        let t = dev.fxt
+        if t.samples > 0 {
+            dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = t.ms_fbo }
+            set_outputs{ &dev, n = 1 }
+        } else {
+            dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = t.color_fbo }
+        }
     }
 
     // The GL state of full-screen passes: no blending, depth, culling or stencil.
