@@ -80,9 +80,20 @@ defer list::free{ list = &xs }                    // runs at block exit
 `error name{ field: T }` declares one. A function returning `!T` infers its error set from
 what it returns and `try`s. `try! e` panics on error (for out-of-memory and invariants).
 `match r { ok{ value } => {} gff::truncated{ at } => {} err{ error } => {} }`. Parsers return
-errors on bad data, never panic. A function whose error set is inferred **can't be used as a
-function value**, so dispatch tables of fallible functions don't work: dispatch with a chain of
-direct calls.
+errors on bad data, never panic. A fallible function is a value of a function type whose `!T` has
+the same T (§5): `let run: fn{ s: []u8 } -> !u64 = parse_number`, in a struct field, an array, a
+`?fn`, or an argument. Calling through it fails with any error, so a `match` on the error needs
+`else`; its errors keep their payloads (`parse::bad_digit{ at } => ...`). A local inferred from a
+function (`let f = parse_number`) keeps the function's own set and takes no other function.
+```
+// before: a chain of direct calls
+if try rt_core::run{ &w, &vm, routine, argc } { return true }
+if try rt_vars::run{ &w, &vm, routine, argc } { return true }
+// after: function values (lib/engine/routines/dispatch.ctx)
+type Category = fn{ mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool
+let all: [21]Category = [rt_core::run, rt_vars::run, ...]
+if try all[i]{ &w, &vm, routine, argc } { w.routes[r] = all[i] }
+```
 
 ## Memory (§14, std alloc/list/map/arena)
 
