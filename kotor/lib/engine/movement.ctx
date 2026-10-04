@@ -210,10 +210,11 @@ namespace movement {
     // OBJECT_ENTER to those it entered (movement.md 5.1; the crossing of a whole volume between
     // two samples is milestone 2's).
     fn cross_volumes { mut w: world::World, id: u32, from: math::Vec3, to: math::Vec3 } {
-        let all = list::items{ list = w.objects.all }
+        // An encounter's spawn grows the object list (and may move it): re-read it for each object.
+        let count = w.objects.all.len
         let mut i: usize = 0
-        while i < all.len {
-            let o = all[i]
+        while i < count and i < w.objects.all.len {
+            let o = list::items{ list = w.objects.all }[i]
             i = i + 1
             if o.destroyed { continue }
             if obj::encounter{ o } is some{ value = e } {
