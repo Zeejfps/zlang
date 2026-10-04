@@ -1,6 +1,7 @@
 # From the kandon checkpoint (tar_m10ac, Kandon and his guards dead, the Swoop Accelerator carried): out of the Vulkar base, to the Beks base and Gadon Thek.
 #   FAST=1 LOAD=kotor/out/checkpoints/kandon SAVES=kotor/out/pt/saves_gd LOG=dialog,combat,module sh kotor/tools/playthrough/run.sh gd kotor/tools/playthrough/45_gadon.txt 40000
 3 ui replies 9 2 1 1 default 9
+3 savewhen tar_m03af swoop
 3 ui gbool Tar_GadonMission 1
 3 ui bot god on
 3 ui bot unlock on
@@ -10,5 +11,4 @@
 5000 ui bot status
 10000 ui bot status
 15000 ui bot status
-18700 save swoop
 20000 ui bot status

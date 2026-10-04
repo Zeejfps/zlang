@@ -352,6 +352,13 @@ namespace partysel_panel {
             if ask { apply{ &s, &g, &w, &dev } }
             return
         }
+        // A script's screen opens with the forced companions only; the bot, as a player would, keeps the ones it
+        // had in the places left (the story scripts were made with Carth along).
+        let mut n: usize = 0
+        while n < SLOTS {
+            if in_party{ w = &w, n } and not s.selected[n] and picked_count{ &s } < MAX_COMPANIONS { s.selected[n] = true }
+            n = n + 1
+        }
         done{ &s, &g, &w, &dev }
     }
 

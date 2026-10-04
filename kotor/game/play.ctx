@@ -136,6 +136,15 @@ namespace play {
         let mut quit = false
         let mut wipe = death::make{}            // the party wipe's slow motion, camera, box and fade (game/death.ctx)
         let mut want_save: []u8 = ""            // a save asked for this frame: its folder name
+        let mut sw_module: [24]u8 = [0; 24]     // `savewhen MODULE NAME`: the save waits for the story to be in MODULE and quiet for 2 s
+        let mut sw_name: [24]u8 = [0; 24]
+        let mut sw_quest: [24]u8 = [0; 24]      // ... and the journal quest in it has reached this entry
+        let mut sw_quest_len: usize = 0
+        let mut sw_entry: i32 = 0
+        let mut sw_module_len: usize = 0
+        let mut sw_name_len: usize = 0
+        let mut sw_quiet: u32 = 0
+        let mut sw_on = false
         let mut want_load: []u8 = ""            // a load asked for: a folder (ours, then the install's)
         let mut real_total: f64 = 0.0
         let mut real_worst: f32 = 0.0
@@ -159,6 +168,25 @@ namespace play {
                 next_line = next_line + 1
                 if inject::handle_scripted{ &sdl, inp = &inputs, word = s.word, rest = s.rest } {
                     pump_events{ &sdl, &w, &dev, ui, &dview, &mg_mouse, &keys, &quit, &want_save, &want_load, loading_up = loading::is_up{ l = ld }, &disp }
+                    continue
+                }
+                if ci::eq{ a = s.word, b = "savewhen" } {
+                    // `savewhen MODULE NAME [QUEST ENTRY]`: a save of the game, called NAME, once the story is in MODULE (and the
+                    // journal's QUEST has reached ENTRY) with no conversation, no transition and no loading for 2 s: a checkpoint at an arrival that does not depend on how long the fights
+                    // before it took (frames of a `save` line move whenever the dice or the timing do).
+                    let mut sww = text::words{ s = s.rest }
+                    let m = text::next_word{ words = &sww } ifnull ""
+                    let n = text::next_word{ words = &sww } ifnull ""
+                    sw_module_len = if m.len > 24 { 24 } else { m.len }
+                    sw_name_len = if n.len > 24 { 24 } else { n.len }
+                    slice::copy(u8){ dst = sw_module[..sw_module_len], src = m[..sw_module_len] }
+                    slice::copy(u8){ dst = sw_name[..sw_name_len], src = n[..sw_name_len] }
+                    let q = text::next_word{ words = &sww } ifnull ""
+                    sw_quest_len = if q.len > 24 { 24 } else { q.len }
+                    slice::copy(u8){ dst = sw_quest[..sw_quest_len], src = q[..sw_quest_len] }
+                    sw_entry = @as(i32, text::scan_decimal{ s = text::next_word{ words = &sww } ifnull "0" })
+                    sw_on = true
+                    sw_quiet = 0
                     continue
                 }
                 if ci::eq{ a = s.word, b = "hoveron" } {
@@ -282,6 +310,21 @@ namespace play {
             if w.autosave_due and w.transition == null and w.arrival == 0 and want_save.len == 0 and not wipe.active and not loading::is_up{ l = ld } {
                 w.autosave_due = false
                 want_save = "AUTOSAVE"
+            }
+            if sw_on {
+                let mut here = false
+                if world::object{ w = &w, id = w.module } is some{ value = mo } {
+                    if obj::module{ o = mo } is some{ value = mm } {
+                        let mut nm = mm.name
+                        here = ci::eq{ a = resref::bytes{ r = &nm }, b = sw_module[..sw_module_len] }
+                    }
+                }
+                if sw_quest_len > 0 and journal::state_of{ j = w.journal, tag = sw_quest[..sw_quest_len] } < sw_entry { here = false }
+                if here and w.transition == null and w.arrival == 0 and not w.conversation.active and not w.conversation.pending and not loading::is_up{ l = ld } { sw_quiet = sw_quiet + 1 } else { sw_quiet = 0 }
+                if sw_quiet >= 60 and want_save.len == 0 {
+                    want_save = sw_name[..sw_name_len]
+                    sw_on = false
+                }
             }
             // HOOK(minigames): in a minigame area the frame is the minigame's, until a module change is pending.
             if mg_game::active{ w = &w } {
