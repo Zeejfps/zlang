@@ -18,8 +18,10 @@
 //
 // `appearance` is an appearance.2da row, `head` a heads.2da row (-1: the appearance's own
 // `normalhead`), `female` picks the portrait camera's hook, `alignment` (0..100) the main panel's
-// pose and light. A player's creature is a B body: modela with texa + 01 (no armour), the head on
-// its `headhook`, idle `pause1` (the main panel: `evil`, `neutral` or `good`).
+// pose and light. A player's creature is a B-type body in the clothes the original puts on every
+// chargen creature (body variation 2, texture variation 1: modelb with texb + 01, the basic
+// clothing's body, not modela's underwear), the head on its `headhook`, idle `pause1` (the main
+// panel: `evil`, `neutral` or `good`).
 //
 // Who owns what: `buf` (4 MB is plenty: the light scene takes 0.1 MB, a creature 0.15 MB; memory
 // from mem::reserve stays uncommitted until used) belongs to the preview, split in two arenas: one
@@ -158,9 +160,10 @@ namespace preview3d {
         return twoda::get_string{ t, row, column } ifnull ""
     }
 
-    // The body of appearance row `appearance` (an armour-less B body: modela with texa and
-    // variation 01, as lib/scene/visual.ctx builds it), its head, their idle, and the camera
-    // height that goes with them.
+    // The body of appearance row `appearance` (a B body in the basic clothing's letter: modelb with
+    // texb and variation 01, which is what the class selection hands the appearance builder and
+    // what every later chargen screen keeps), its head, their idle, and the camera height that goes
+    // with them.
     fn build_creature {
         mut preview: Preview, mut fs: Fs, mut dev: gpu::Device, rm: res::Manager,
         mut models: mdl_cache::Cache, mut mats: material::Cache, appearance: i32, head: i32,
@@ -174,8 +177,8 @@ namespace preview3d {
         let texture = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &preview.creature, mem = slice::empty(u8){}, count = 24 }
         let mut texture_len: usize = 0
         if is_b {
-            body_name = cell{ t, row, column = "modela" }
-            let base = cell{ t, row, column = "texa" }
+            body_name = cell{ t, row, column = "modelb" }
+            let base = cell{ t, row, column = "texb" }
             if base.len > 0 and base.len < 20 {
                 put_bytes{ into = texture, at = &texture_len, s = base }
                 put_bytes{ into = texture, at = &texture_len, s = "01" }

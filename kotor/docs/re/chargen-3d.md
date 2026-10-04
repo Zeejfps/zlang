@@ -124,10 +124,21 @@ class from the creature's stats), and changing the portrait re-applies the appea
 (`FUN_006134c0`) with the new row, which also changes the head: heads.2da row `normalhead` of
 appearance.2da. (high)
 
-The appearance is not equipped: a B-type body is `modela` with the texture `texa` + `01`, no
-armour, which for a player is a grey-and-orange jumpsuit (male `pmbam`, `pmbal`, `pmbas`; female
-`pfbam`...), and the head model (heads.2da `head`, e.g. `pmha01`) sits at the body's `headhook`.
-(high; lib/scene/visual.ctx builds the same with `armor == null`)
+No item is equipped, but the body is **not the unarmoured one**. The constructor builds the 15-dword
+appearance record that `FUN_006134c0` takes on the stack with its first byte (the body variation) 2,
+its second (the texture variation) 1 and the dword at `+0x14` (the "armoured" flag) 1, then the
+appearance row at `+0x18` (the record is the creature's own `+0x21c` visual, three fields changed).
+`CSWCCreatureAppearance::CreateBTypeBody` (`0x00697ce0`) asks `FUN_00697610` for the column names:
+with the flag set they are `Model` and `Tex` plus the letter `'@' + variation` (variation 0 reads as 1, above
+10 as 10), without it always `ModelA` / `TexA`. So the chargen body is **letter B**, the one the basic
+clothing (`baseitems` row 85, `BodyVar` B) gives: `modelb` with `texb` + `01`, e.g. `pmbbm` and `pmbbm01`
+(vest, shirt, trousers and boots; small, medium and large builds `pmbbs`, `pmbbm`, `pmbbl`; female `pfbb*`), and
+the head model (heads.2da `head`, e.g. `pmha01`) sits at the body's `headhook`. The underwear body (`modela`
+with `texa`, bare arms and legs) is only what a creature with no armour shows in play. The same
+creature stays for the whole of character generation: the main panel takes it from the class selection
+(`classsel+0x68`), and the portrait step (`FUN_006f8ad0`) copies its record and changes only the appearance
+row, so the variation and flag carry over. The three builds are why the six figures look like three outfits:
+Scoundrel (small) a red jacket, Scout (medium) the vest, Soldier (large) blue-grey and orange armour. (high)
 
 ### Idle (`FUN_0060f7c0`)
 
