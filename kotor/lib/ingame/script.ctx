@@ -162,6 +162,14 @@ namespace ingame {
             let name = text::next_word{ &words } ifnull { return }
             let v = text::scan_decimal{ s = text::next_word{ &words } ifnull "0" }
             globals::set_boolean{ g = &w.globals, name, value = v != 0 }
+        } else if ci::eq{ a = cmd, b = "planet" } {
+            // Test helper for a crafted start: the planet is on the galaxy map and can be travelled to
+            // (`ui planet 7 1`; planetary.2da: 1 Taris, 3 Dantooine, 4 Tatooine, 5 Kashyyyk, 6 Manaan, 7 Korriban,
+            // 10 Star Forge). The story's own scripts do it (SetPlanetAvailable) as the planets are reached.
+            let planet = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull { return } })
+            let on = text::scan_decimal{ s = text::next_word{ &words } ifnull "1" } != 0
+            party::set_planet_flag{ &w, planet, bit = party::PLANET_AVAILABLE_SHIFT, on }
+            party::set_planet_flag{ &w, planet, bit = party::PLANET_SELECTABLE_SHIFT, on }
         } else if ci::eq{ a = cmd, b = "globals" } {
             // Test helper: the number and boolean globals whose name contains the word and are not zero
             // (`ui globals tar_` lists the Taris story's state).

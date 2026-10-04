@@ -1,0 +1,10 @@
+# Korriban, part 8: Lashowe and her two friends, hopefuls who hunt newcomers in the market (kor33_lashowe, the trigger
+# k33_las_initconv). The Jedi talks to them ("no need for hostilities"), then the joke about the two Mandalorians, a Persuade that
+# amuses her (k33_las_like): she leaves without a fight. From the checkpoint "murder".
+5 ui replies ~no_need_for_hostilities ~Mandalorians default 1
+8 ui rules
+10 warpxy 180,203 party
+4000 ui rules
+4000 ui globals kor
+4000 ui journal list
+4010 save lashowe

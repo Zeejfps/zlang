@@ -1,0 +1,13 @@
+# Korriban, part 5: back from the Academy Entrance into Dreshdae. The arrival waypoint (k33_way_k33b) lies inside the strips of
+# k33b_trg_spwnthg and k33b_trg_spwnmrd: with KOR33_MEDALLION set they make the Sith thugs, the murderer and his victims, and
+# Yuthura Ban. From the checkpoint "guard".
+8 ui rules
+10 warp kor33b_kor33a party
+30 use kor33b_kor33a
+500 ui pos
+500 ui where k33b_sththug
+500 ui where k33b_siththug
+500 ui where murder
+500 ui where victim
+500 ui where yuthura
+520 save back

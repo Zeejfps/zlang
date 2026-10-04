@@ -1,0 +1,21 @@
+# Korriban, part 22: Ajunta Pall's tomb (korr_m37aa): the burial chamber with the sarcophagus, the statue and Ajunta Pall's spirit.
+# From the checkpoint "report2". The puzzles of the way in (mines, heat and cold plates, the bridge droids, the lever) are not played:
+# the party is warped into the chamber (its doors are not locked), the sarcophagus is opened with clicks (k37_opensarc: the world
+# fades out for the loot panel, the panel is closed, the spirit stands at k37_way_freedon), and a step into the strip k37_trg_ajunta
+# starts the spirit's talk (kor37_freedonnad): "Er... no, I don't think we have ever met", who he is, how the Sith fell, why he stays,
+# "I feel sorry for you", "Fine. I'll gladly take it out of here.", the riddle of his sword (journal kor37_ajuntapall 10).
+5 ui heal
+5 ui replies ~I_don't_think_we_have ~Who...or_what ~How_did_you_fall ~The_Sith_fled ~Why_do_you_remain ~I_feel_sorry ~Fine ~How_will_I_know default 1
+10 warp kor35_kor36 party
+30 use kor35_kor36
+300 warp kor36_kor37 party
+320 use kor36_kor37
+500 warp kor37_sithsarc party
+600 hoveron kor37_sithsarc
+603 mouse click
+606 mouse click
+1000 ui click 640 502
+1400 warpxy 139,23 party
+8300 ui journal list
+8300 ui rules
+8310 save ajunta

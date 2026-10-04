@@ -1,0 +1,19 @@
+# Korriban, part 26: Naga Sadow's tomb (korr_m39aa), alone (the companions are not permitted): the cold grenade that freezes the acid pool
+# in front of the Star Map room comes from the "Pillar of Ice" (k39_plc_coldpill 70,12; the fire pillar beside it holds the grenade that
+# makes the pool's fumes poison). The Terentatek corridor and the rancors on the way are not walked: the player is warped to the pedestal's
+# room. Then the acid room (strip k39_trg_initacid at 81,110, the door kor39_dooracid): "[Launch the special cold grenade at it.]" freezes
+# the pool. From the checkpoint "tomb".
+5 ui replies ~cold_grenade default 1
+10 ui unlock k39_door_trap4
+10 ui unlock k39_door_trap3
+30 warp k39_plc_coldpill party
+220 hoveron k39_plc_coldpill
+223 mouse click
+226 mouse click
+400 ui click 640 452
+500 ui inv
+600 warpxy 82,108 party
+900 ui pos
+1500 ui journal list
+1500 ui rules
+1510 save acid

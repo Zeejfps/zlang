@@ -1,0 +1,10 @@
+# Korriban, part 19: the beast that blocks the passage out of the shyrack caves (kor34_monster at 227,136; the passage strip
+# k34_trg_passage at 255,141). The test bot walks the caves to it and fights it (god mode: the shyrack swarm along the way).
+# From the checkpoint "thalia".
+10 ui bot god on
+10 ui bot route kor34_monster
+11 ui bot on
+4000 ui pos
+4400 ui journal list
+4400 ui rules
+4410 save beast

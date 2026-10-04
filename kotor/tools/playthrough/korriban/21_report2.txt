@@ -1,0 +1,16 @@
+# Korriban, part 21: out of the caves (the strip k34_trg_k36), through the Valley to the Academy, and the second report to Master Uthar:
+# "I dealt with the rogue droid in the tombs." (it was destroyed: prestige, journal kor38_roguedroid 40) and "I dealt with those renegade
+# students." with "[Lie] It's done. They are... gone." (the Jedi freed them: journal kor35_renegadesith 60, prestige, light-side
+# lie costs nothing here). From the checkpoint "freed".
+5 ui replies ~rogue_droid ~renegade_students ~It's_done ~on_my_way default 1
+8 ui rules
+10 warpxy 2.5,151 party
+300 warp kor36_kor35 party
+320 use kor36_kor35
+700 warp kor35_utharwynn party
+740 ui target kor35_utharwynn
+745 ui key 1
+2400 ui rules
+2400 ui globals SITH_PRES
+2400 ui journal list
+2410 save report2

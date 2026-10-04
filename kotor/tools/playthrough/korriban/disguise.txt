@@ -1,0 +1,10 @@
+# Korriban, the disguise check (from the checkpoint "dock"): the Jedi takes off the robe and the lightsaber (slots 1 and 4) before the
+# Port Authority and Shaardan. k_pkor_lookjedi / k_pkor_hasrobes / k_pkor_hassaber read the worn items: the Czerka official no longer
+# knows a Jedi ("A pleasure to see the owner of the Ebon Hawk") and Shaardan does not single the player out.
+5 ui replies default 1
+6 ui unequip 1
+6 ui unequip 4
+8 ui inv
+10 warpxy 123.7,161.8 party
+400 ui hush
+420 warpxy 136,154.6 party

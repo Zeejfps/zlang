@@ -1,0 +1,21 @@
+# Korriban, part 10: Yuthura Ban in the cantina of Dreshdae (kor33_yuthura, k33_acg_medalion). She asks where the medallion came from
+# ("I took it from another student, actually."), whether the Jedi wants to join the Sith ("Yes, that's exactly why I'm here."), sees
+# through the robe and the saber ("Obviously you are a Jedi"; the Jedi denies it) and asks again; the Jedi lies ("[Lie] Yes, it does.").
+# She asks about the companions ("They are slaves.") and takes the party to the Academy: "Yes, I am." (k_pkor_start35 starts korr_m35aa).
+# There Master Uthar Wynn greets the five hopefuls (kor35_utharwynn starts by itself): Lashowe, Mekel, Shaardan and the player; his
+# question about the Sith ("I've killed too many Sith to have preconceptions"), "I am ready to learn more.", Yuthura is the teacher
+# (journal kor35_waysith 10) and the player is taken to the hopefuls' room (k_pkor_joinsith).
+# From the checkpoint "guard2": the gate and the area change back to Dreshdae are the game's, the walk to the cantina is a warp.
+5 ui replies ~took_it_from_another_student ~exactly_why_I'm_here ~I_don't_know_what ~[Lie]_Yes ~They_are_slaves ~Yes,_I_am ~too_many_Sith ~I_am_ready_to_learn_more default 1
+8 ui rules
+10 warp kor33b_kor33a party
+30 use kor33b_kor33a
+400 warp kor33_yuthura party
+450 ui target kor33_yuthura
+455 ui key 1
+9500 ui journal list
+9500 ui globals kor
+9500 ui party
+9500 ui rules
+9500 ui pos
+9600 save academy
