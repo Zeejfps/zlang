@@ -78,6 +78,10 @@ namespace scene {
         grass: grass::Field,            // the area's grass (grass.ctx); `grass.on` is the Grass option, set by the owner
         room_light: bool,               // the Room Light option (set by the owner): visuals take the light around them (probes.ctx)
         field: Field,                   // what the probes are cast against, and the probes
+        sun_state: u8,                  // the area's sun (sun.ctx): 0 not looked for yet, 1 found, 2 none
+        sun_at: math::Vec3,
+        sun_color: math::Vec3,
+        shadow_opacity: f32,            // the ARE's ShadowOpacity, 0..1
     }
 
     fn make { arena: *mut arena::Arena, heap: *mut heap::Heap, scratch: alloc::Bytes, rm: res::Manager } -> Scene {
@@ -96,6 +100,7 @@ namespace scene {
             time = 0.0, current_room = -1, ambient = math::Vec3{ x = 0.35, y = 0.35, z = 0.35 }, fog = render::no_fog{},
             drawn_rooms = 0, drawn_objects = 0, look = no_look{}, grass = grass::none{},
             room_light = false, field = no_field{ arena },
+            sun_state = 0, sun_at = math::vec3::zero{}, sun_color = math::vec3::zero{}, shadow_opacity = 0.5,
         }
     }
 
@@ -572,7 +577,7 @@ namespace scene {
             i = i + 1
             if l.ambient_only or p.radius <= 0.0 { continue }
             let at = math::mat4::transform_point{ m = math::mat4::mul{ a = instance, b = pose.world[l.node] }, p = math::vec3::zero{} }
-            render::add_light{ &frame, light = render::Light{ position = at, color = math::vec3::scale{ v = p.color, s = p.multiplier }, radius = p.radius } }
+            render::add_light{ &frame, light = render::Light{ position = at, color = math::vec3::scale{ v = p.color, s = p.multiplier }, radius = p.radius, shadow = l.shadow } }
         }
     }
 }

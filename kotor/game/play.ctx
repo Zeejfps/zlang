@@ -514,6 +514,7 @@ namespace play {
                 view.blur = speed_blur
                 view.ambient = sc.ambient
                 view.fog = sc.fog
+                view.sun = scene::sun_of{ &sc, w = &w, at = camera.look }
                 let vi = render::add_view{ &frame, view } ifnull { 0 }
                 scene::update_light{ &sc, &w }
                 scene::draw{ &sc, w = &w, &frame, view = vi }

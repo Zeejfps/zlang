@@ -105,7 +105,7 @@ fn draw_tile {
     view.ambient = math::vec3::splat{ s = 0.3 }
     let vi = render::add_view{ &frame, view } ifnull { return }
     let light_dir = math::vec3::normalize{ v = math::Vec3{ x = 0.3, y = 1.2, z = 0.6 } }
-    render::add_light{ &frame, light = render::Light{ position = math::vec3::scale{ v = light_dir, s = 100.0 }, color = math::vec3::splat{ s = 0.6 }, radius = 10000.0 } }
+    render::add_light{ &frame, light = render::Light{ position = math::vec3::scale{ v = light_dir, s = 100.0 }, color = math::vec3::splat{ s = 0.6 }, radius = 10000.0, shadow = false } }
     _ = mdl_render::add_draws{ &frame, view = vi, model = h.model, pose = h.work, g = g.gpu, transform = math::mat4::identity{}, materials = g.materials, time = 0.0 }
     try gpu::submit{ &dev, frame = &frame }
     _ = try gpu::read_screen{ &dev, into }

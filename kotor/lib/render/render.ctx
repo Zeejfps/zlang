@@ -438,8 +438,9 @@ namespace render {
     }
 
     // A point light. Its light falls off smoothly to nothing at `radius`. The backend lights each
-    // surface with the strongest few that reach it.
-    struct Light { position: math::Vec3, color: math::Vec3, radius: f32 }
+    // surface with the strongest few that reach it. `shadow`: it casts shadows (the MDL light's
+    // shadow flag), which the enhanced renderer's shadow maps take from the strongest of them.
+    struct Light { position: math::Vec3, color: math::Vec3, radius: f32, shadow: bool }
 
     // One mesh drawn once.
     struct Draw {

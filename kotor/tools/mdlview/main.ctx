@@ -127,7 +127,7 @@ fn draw_and_save { mut io: Io, mut fs: Fs, mut dev: gpu::Device, mut frame: rend
     let vi = render::add_view{ &frame, view } ifnull { return }
     // One light far off on the camera's side, so it falls off hardly at all across the model.
     let light_dir = math::vec3::normalize{ v = math::vec3::add{ a = dir, b = math::Vec3{ x = 0.3, y = 0.2, z = 0.6 } } }
-    render::add_light{ &frame, light = render::Light{ position = math::vec3::add_scaled{ a = center, b = light_dir, s = 100.0 * radius }, color = math::vec3::splat{ s = 0.6 }, radius = 10000.0 * radius } }
+    render::add_light{ &frame, light = render::Light{ position = math::vec3::add_scaled{ a = center, b = light_dir, s = 100.0 * radius }, color = math::vec3::splat{ s = 0.6 }, radius = 10000.0 * radius, shadow = false } }
     i = 0
     while i < parts.len {
         let p = parts[i]
