@@ -141,11 +141,14 @@ namespace bot {
         if foe != obj::INVALID and not tour_ignores{ &b, foe } {
             // A foe the leader cannot get nearer to: a closed door between them (a move to the other side of it fails at once, so the
             // fight never begins and the walk never goes on). The closest door within six metres is opened, as for a stop.
-            // The nearest foe is far (past eight metres) and the leader has not moved for a dozen decisions: whoever the nearest is
-            // (the pick flips between foes at the same distance), a fight is not what holds it.
+            // The nearest foe is far (past eight metres) or out of sight (a closed door or a wall between: a move to it has stopped
+            // short of it, and an attack's approach no longer jumps to its goal when its timeout runs out) and the leader has not
+            // moved for a dozen decisions: whoever the nearest is (the pick flips between foes at the same distance), a fight is not
+            // what holds it.
             if world::object{ w = &w, id = foe } is some{ value = fo } {
                 let fd = math::vec3::distance{ a = fo.position, b = me.position }
-                if fd > 8.0 and math::vec3::distance{ a = me.position, b = b.far_pos } < 1.0 { b.foe_stalled = b.foe_stalled + 1 } else {
+                let hidden = fd > 2.5 and not perception::clear_line{ w = &w, a = math::Vec3{ x = me.position.x, y = me.position.y, z = me.position.z + 1.5 }, b = math::Vec3{ x = fo.position.x, y = fo.position.y, z = fo.position.z + 1.5 } }
+                if (fd > 8.0 or hidden) and math::vec3::distance{ a = me.position, b = b.far_pos } < 1.0 { b.foe_stalled = b.foe_stalled + 1 } else {
                     b.foe_stalled = 0
                     b.far_pos = me.position
                 }
