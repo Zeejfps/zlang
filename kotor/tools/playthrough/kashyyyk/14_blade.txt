@@ -1,0 +1,14 @@
+# Kashyyyk, part 14: Bacca's blade back to Freyyr (kas25_freyyr_01 at 186 157): his talk takes it (k_pkas_takeblade), journal 95, and
+# he goes to rally the Wookiees (k_pkas_freyyrgo: the fade, the walk to kas25_freyyrexit, kas_HelpedFreyyr). From the checkpoint
+# "beast" (CKPT=beast); the walk from the ritual (188 44) is cut with a warp.
+3 ui stat hpmax 130
+3 ui stat hp 130
+5 ui replies 2 default 1
+10 ui bot god on
+10 warp kas25_freyyr_01 party
+30 use kas25_freyyr_01
+5000 ui journal list
+5000 ui party
+5000 ui pos
+5000 ui where kas25_freyyr
+5050 save blade

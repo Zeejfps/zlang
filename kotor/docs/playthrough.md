@@ -4,7 +4,7 @@ What happens when the game is played from New Game, checked with logs and screen
 original does. Each step says whether it works, what fixed it (commit), or who has it. The input scripts
 are in `kotor/tools/playthrough/`; replay any of them to see the step again.
 
-Planets after Taris have their own logs: [playthrough-dantooine.md](playthrough-dantooine.md) (the arrival, the Council, the trials, Juhani, the ruins and the Star Map). [playthrough-tatooine.md](playthrough-tatooine.md) (the docks to the Krayt hunt: HK-47, the Sand People and the vaporators; paused before the Star Map).
+Planets after Taris have their own logs: [playthrough-dantooine.md](playthrough-dantooine.md) (the arrival, the Council, the trials, Juhani, the ruins and the Star Map). [playthrough-tatooine.md](playthrough-tatooine.md) (the docks to the Krayt hunt: HK-47, the Sand People and the vaporators; paused before the Star Map). [playthrough-kashyyyk.md](playthrough-kashyyyk.md) (the Czerka pad to the Star Map in the Shadowlands).
 
 ## How to replay
 
@@ -32,8 +32,8 @@ The input script knows (play.ctx, lib/ingame/script.ctx, lib/dialog/view/view_no
 | Line | Does |
 |---|---|
 | `FRAME newgame [FILE]` | New Game from the front end (a created player's UTC from FILE, else the default soldier) |
+| `FRAME use TAG`, `attack TAG`, `warp TAG [party]`, `warpxy X,Y [party]` (`party`: the followers stand beside the leader), `talk RESREF [TAG]`, `hush` | the leader's default action on an object, attack, test teleports, start a conversation, end it |
 | `FRAME ui replies 1 2 ~hunting_licenses...` | queues conversation replies (256 at most): each list that opens takes the next entry, a number (1 is the first reply) or `~words` (underscores are spaces: the first reply whose text contains them, ignoring case; the first reply, with a log line, if none does). Words survive a change of the player's state that a number does not (a new reply appears when the player has the credits); the queue outlives conversations |
-| `FRAME use TAG`, `attack TAG`, `warp TAG`, `warpxy X,Y`, `talk RESREF [TAG]`, `hush` | the leader's default action on an object, attack, test teleports, start a conversation, end it |
 | `FRAME key NAME`, `keydown NAME`, `keyup NAME` (`down`/`up`), `mouse move X Y`, `mouse down|up|click [left|right] [X Y]`, `mouse wheel DY` (also `ui click X Y`, `ui move X Y`, `ui key NAME`, `ui type TEXT`) | the keyboard and mouse as the player has them: each is an SDL event put on SDL's own queue (`game/inject.ctx`) and read back by the loop with every other event, so it goes through the conversation panels, the HUD and menus and then the world's keys (the panel is 640x480 centred in the 1280x720 window). NAME: a letter or digit, up down left right space tab escape return backspace f1..f12 ctrl shift caps |
 | `FRAME ui menu NAME`, `close` | open or close a menu directly (not the key) |
 | `FRAME ui target TAG` then `ui key 1` | select an object and run the first action of the target block |

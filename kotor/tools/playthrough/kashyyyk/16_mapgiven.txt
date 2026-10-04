@@ -1,0 +1,13 @@
+# Kashyyyk, part 16: after the droids the computer is spoken to again (kas25_comp_01, the branch k_pkas_compudone): it gives the Star Map
+# (journal kas22_starmap 70, K_STAR_MAP_KASHYYYK) and the hologram cut scene plays. From the checkpoint "droids" (CKPT=droids).
+3 ui stat hpmax 130
+3 ui stat hp 130
+5 ui replies default 1
+10 ui bot god on
+300 use kas24_computer
+2500 ui journal list
+2500 ui xp
+2500 ui pos
+2500 ui getglobal K_STAR_MAP
+2500 ui globals K_STAR
+2700 save mapped

@@ -34,3 +34,8 @@ step 9 3500 camp    poached
 step 10 2900 poached jolee
 step 11 1500 jolee  lower1
 step 12 10100 lower1 freyyr -- --seed 3
+step 13 6700 freyyr beast
+step 14 5100 beast  blade
+step 15 8400 blade  droids
+step 16 2800 droids mapped
+step 17 3000 mapped ""
