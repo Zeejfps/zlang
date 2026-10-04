@@ -27,6 +27,8 @@ namespace play {
         }
         let mut config = render::make_config{ title = "kotor", width = live.width, height = live.height, hidden = opts.headless }
         config.vsync = live.vsync
+        // The game draws its own pointer: Windows' stays hidden from the window's first moment (display::apply keeps it so).
+        if not opts.headless { sdl::hide_cursor{ &sdl } }
         let mut dev = try gpu::open(arena::Arena){ &sdl, realloc = arena::alloc, heap = &device_arena, config }
         defer gpu::close{ &dev, &sdl }
         let mut disp = display::make{ hidden = opts.headless, path = opts.settings }
