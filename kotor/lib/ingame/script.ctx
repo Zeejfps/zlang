@@ -214,8 +214,8 @@ namespace ingame {
             }
             _ = @fmt(&w.io, " numbers: {} {} {} {} {} {} {} {}", o.locals.numbers[0], o.locals.numbers[1], o.locals.numbers[2], o.locals.numbers[3], o.locals.numbers[4], o.locals.numbers[5], o.locals.numbers[6], o.locals.numbers[7])
             _ = @fmt(&w.io, "\n")
-        } else if ci::eq{ a = cmd, b = "xp" } {
-            // Test helper: each party member's experience points, and the party's pool.
+        } else if ci::eq{ a = cmd, b = "xp" } and text::rest{ words }.len == 0 {
+            // Test helper: each party member's experience points (`ui xp N` gives the party N: test_screens.ctx).
             let ids = party::members{ w = &w }
             let mut i: usize = 0
             while i < ids.len {
