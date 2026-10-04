@@ -88,9 +88,9 @@ namespace gpu {
         dev.atmos.half_fbo = 0
     }
 
-    // The shafts are summed at a fraction of the screen's size: half, or a quarter past 1440p (they are soft, and the
+    // The shafts are summed at a fraction of the screen's size: half, or a quarter past 1080p (they are soft, and the
     // march's reads scatter across a larger picture).
-    fn shaft_scale { dev: Device } -> i32 { return if dev.fxt.width > 2560 { 4 } else { 2 } }
+    fn shaft_scale { dev: Device } -> i32 { return if dev.fxt.width > 1920 { 4 } else { 2 } }
 
     // The shafts' target, a half or a quarter of the size of the enhanced targets (rounded up), made when first
     // needed and again when they change; false when it could not be made.
