@@ -308,6 +308,13 @@ namespace rt_item {
         return if n < 1 { 1 } else { @as(u32, n) }
     }
 
+    // The item's base item ItemType (baseitems.2da), 0 when it is not an item.
+    fn item_type_of { w: *world::World, id: u32 } -> i32 {
+        let io = world::object{ w, id } ifnull { return 0 }
+        let it = obj::item{ o = io } ifnull { return 0 }
+        return twoda::get_int{ t = w.tables.baseitems, row = @as(usize, it.base), column = "itemtype" } ifnull 0
+    }
+
     fn is_credits { w: *world::World, base: u32 } -> bool {
         let t = twoda::get_int{ t = w.tables.baseitems, row = @as(usize, base), column = "itemtype" } ifnull 0
         return t == ITEM_TYPE_CREDITS

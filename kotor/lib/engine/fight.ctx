@@ -1228,9 +1228,9 @@ namespace fight {
                 }
                 if start.interrupted { return actions::Status::failed }
             }
-            // An item's ability spends one of the item's uses as the cast begins.
+            // An item's ability needs the item (it is spent at the impact, below).
             let used = actions::object_param{ a, i = 6 }
-            if used != obj::INVALID { rt_item::spend_use{ &w, item = used, spell } }
+            if used != obj::INVALID and not world::is_valid{ w = &w, id = used } { return actions::Status::failed }
             let dir = math::vec3::sub{ a = at, b = o.position }
             if dir.x * dir.x + dir.y * dir.y > 0.0001 { world::set_orientation{ o, v = math::Vec3{ x = dir.x, y = dir.y, z = 0.0 } } }
             if obj::creature{ o } is some{ value = c } {
@@ -1245,8 +1245,12 @@ namespace fight {
                 }
                 c.last_force_power = spell
             }
-            let conj = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "conjanim" } ifnull ""
-            play_row{ &w, o, row = cast_row{ name = conj, looping = true } }
+            if used != obj::INVALID {
+                play_item_use{ &w, o, item = used, near = doors::distance_2d{ a = o.position, b = at } < 10.0 }
+            } else {
+                let conj = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "conjanim" } ifnull ""
+                play_row{ &w, o, row = cast_row{ name = conj, looping = true } }
+            }
             spell_visuals{ &w, id, spell, cast = false }
             a.phase = 1
             a.started = now
@@ -1257,21 +1261,29 @@ namespace fight {
         }
         let times = rules::spell_phase_times{ tables = w.rules, spell }
         let instant = actions::int_param{ a, i = 4 } != 0
-        let conj_ms = if instant { 0 } else { @as(u64, @as(u32, if times.conj_ms > 0 { times.conj_ms } else { 0 })) }
-        let cast_ms = if instant { 0 } else { @as(u64, @as(u32, if times.cast_ms > 0 { times.cast_ms } else { 0 })) }
-        let catch_ms = if instant { 0 } else { @as(u64, @as(u32, if times.catch_ms > 0 { times.catch_ms } else { 0 })) }
+        // An item's ability has its own timing by kind of item (actions.md 3.13, ITEMCASTSPELL): the
+        // impact lands part way through a 1.5 s action, and the item's use is spent with it.
+        let used_item = actions::object_param{ a, i = 6 }
+        let by_item = used_item != obj::INVALID
+        let item_ms = item_cast_ms{ w = &w, item = used_item, near = doors::distance_2d{ a = o.position, b = at } < 10.0 }
+        let conj_ms = if instant or by_item { 0 } else { @as(u64, @as(u32, if times.conj_ms > 0 { times.conj_ms } else { 0 })) }
+        let cast_ms = if instant { 0 } else if by_item { item_ms.impact } else { @as(u64, @as(u32, if times.cast_ms > 0 { times.cast_ms } else { 0 })) }
+        let catch_ms = if instant { 0 } else if by_item { item_ms.total - item_ms.impact } else { @as(u64, @as(u32, if times.catch_ms > 0 { times.catch_ms } else { 0 })) }
         let elapsed = clock::elapsed_since{ now, then = a.started }
         if a.phase == 1 {
             if elapsed < conj_ms { return actions::Status::running }
-            let anim = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "castanim" } ifnull ""
-            let back = world::object{ w = &w, id } ifnull { return actions::Status::failed }
-            play_row{ &w, o = back, row = cast_row{ name = anim, looping = false } }
+            if not by_item {
+                let anim = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "castanim" } ifnull ""
+                let back = world::object{ w = &w, id } ifnull { return actions::Status::failed }
+                play_row{ &w, o = back, row = cast_row{ name = anim, looping = false } }
+            }
             spell_visuals{ &w, id, spell, cast = true }
             a.phase = 2
         }
         if a.phase == 2 {
             if elapsed < conj_ms + cast_ms { return actions::Status::running }
             impact{ &w, &vm, engine, id, spell, target, at }
+            if by_item { rt_item::spend_use{ &w, item = used_item, spell } }
             a.phase = 3
         }
         if elapsed < conj_ms + cast_ms + catch_ms { return actions::Status::running }
@@ -1285,6 +1297,30 @@ namespace fight {
             }
         }
         return actions::Status::done
+    }
+
+    struct ItemTimes { impact: u64, total: u64 }
+
+    // When an item's ability lands and when its action ends, by the base item's ItemType (actions.md 3.13,
+    // AIActionItemCastSpell): grenades 700 ms (800 when thrown from 10 m or more) of 1.5 s, droid utility
+    // devices 300 of 1.5 s, forearm shields 600 of 1 s, stims, repair kits and medpacs 750 of 1.5 s, the
+    // squad recovery kit 750 of 1.5 s; the rest land at once.
+    fn item_cast_ms { w: *world::World, item: u32, near: bool } -> ItemTimes {
+        let kind = rt_item::item_type_of{ w, id = item }
+        if kind == 6 { return ItemTimes{ impact = if near { 700 } else { 800 }, total = 1500 } }
+        if kind == 12 { return ItemTimes{ impact = 300, total = 1500 } }
+        if kind == 20 { return ItemTimes{ impact = 600, total = 1000 } }
+        if kind == 25 or kind == 26 or kind == 45 or kind == 47 { return ItemTimes{ impact = 750, total = 1500 } }
+        return ItemTimes{ impact = 1, total = 1500 }
+    }
+
+    // The animation of using an item: the injection for stims, repair kits and medpacs, the throw
+    // for a grenade (the short one from under 10 m), the device's activation for the rest.
+    fn play_item_use { mut w: world::World, o: *mut obj::Object, item: u32, near: bool } {
+        let kind = rt_item::item_type_of{ w = &w, id = item }
+        if kind == 6 { play_row{ &w, o, row = if near { 57 } else { 58 } }; return }
+        if kind == 25 or kind == 26 or kind == 45 { world::set_animation{ o, id = 10070, speed = 1.0 }; return }
+        world::set_animation{ o, id = 10127, speed = 1.0 }
     }
 
     // The impact: the power's script (spells.2da impactscript) as the caster, with the spell
