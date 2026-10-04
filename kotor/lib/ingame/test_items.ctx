@@ -51,7 +51,10 @@ namespace test_items {
         } else if ci::eq{ a = cmd, b = "combat" } {
             if hud::creature_of{ w = &w, id = leader } is some{ value = c } { c.in_combat = text::scan_decimal{ s = args } != 0 }
         } else if ci::eq{ a = cmd, b = "credits" } {
-            if hud::creature_of{ w = &w, id = leader } is some{ value = c } { c.gold = @trunc(u32, text::scan_decimal{ s = args }) }
+            // A party member's credits are the party purse (GetGold reads it), not the creature's own field.
+            let n = text::scan_decimal{ s = args }
+            if party::is_member{ w = &w, id = leader } { w.party.gold = @trunc(i32, n) }
+            else if hud::creature_of{ w = &w, id = leader } is some{ value = c } { c.gold = @trunc(u32, n) }
         } else if ci::eq{ a = cmd, b = "inv" } {
             dump{ &w, leader }
         } else if ci::eq{ a = cmd, b = "getglobal" } {

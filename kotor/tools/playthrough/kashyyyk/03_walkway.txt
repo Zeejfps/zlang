@@ -1,0 +1,16 @@
+# Kashyyyk, part 3: the Great Walkway (kas_m22ab). From the checkpoint "walk1" (CKPT=walk1): the kinrath at the lift are
+# dead. Walking into the triggers starts the talks: Zaalbar's second (kas22_zaaltrig2, about 220 to 2400) and Patrol
+# Captain Dehno's (kas22_dehnotrig; the default replies end in his fight with the Czerka guards).
+3 ui stat hpmax 130
+3 ui stat hp 130
+5 ui replies default 1
+10 ui bot god on
+10 ui goto kas22_zaaltrig2
+2450 ui goto kas22_dehnotrig
+2600 ui pos
+5100 ui bot on
+6200 ui bot off
+6200 ui pos
+6200 ui xp
+6200 ui hostiles
+6250 save walk2

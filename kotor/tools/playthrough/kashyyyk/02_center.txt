@@ -1,0 +1,30 @@
+# Kashyyyk, part 2: the companions are made Jedi and warriors of the player's level, then the walk to Czerka's information
+# center. From the checkpoint "pad1" (CKPT=pad1): Janos' arrival talk and Zaalbar's talk are done.
+3 ui leader bastila
+3 ui jedi 5 10
+3 ui giveitem g_w_lghtsbr01 1 equip
+3 ui giveitem g_a_jedirobe01 1 equip
+3 ui stat hpmax 110
+3 ui stat hp 110
+4 ui leader zaalbar
+4 ui stat level 10
+4 ui stat str 18
+4 ui stat hpmax 150
+4 ui stat hp 150
+5 ui leader pc
+5 ui replies 4 default 1
+10 ui party
+30 ui goto kas_janosstore
+# Out of the information center to the gate (KashyyykDoor3, 167.6 141.6) and the Great Walkway.
+900 use KashyyykDoor3
+1500 ui pos
+2500 ui pos
+2100 use KashyyykDoor3
+# The Great Walkway opens in a fight: the Wookiee warriors and turrets against Forest Kinrath at the lift.
+3000 ui hostiles
+4000 ui hostiles
+4000 ui pos
+4000 ui party
+4000 ui xp
+4000 ui journal list
+4100 save walk1

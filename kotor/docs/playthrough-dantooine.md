@@ -16,7 +16,8 @@ CKPT=wake sh kotor/tools/playthrough/dantooine/run.sh NAME 02 FRAMES [FRAME:SHOT
 Logs are `kotor/out/pt/dNN.log`, the checkpoints `kotor/out/pt/dan_ckpt/NAME` (made by the part's `save` line and
 `ckpt.sh`), the pictures `kotor/out/pt/NAME_SHOT.png`. `run.sh` takes a part number or a path to any input script, so a
 one-off check starts from a checkpoint the same way. Everything runs with `FAST=1` (`--no-render --speed 8`), the
-dialogue log on; `LOG=dialog,combat,routines,actions,scripts` adds the rest.
+dialogue log on; `LOG=dialog,combat,routines,actions,scripts` adds the rest. `all.sh` takes a picture 30 frames before the end of each part
+(`kotor/out/pt/dN_end.png`), where a black world after a conversation would show.
 
 ### The crafted state
 
@@ -49,7 +50,7 @@ State: **works** (checked, 0 faults), **fixed** (a commit of this branch).
 | 3 | The second Council meeting (Vandar: the visions, the ruins, "training first"), the training montage (`k_player_dialog`), Zhar's first talk, `dan_trials` 10 | works | `02_vandar.txt` |
 | 4 | The first test: the Jedi Code (the five precepts), `dan_trials` 20 | works | `03_code.txt` |
 | 5 | The second test, Master Dorak: the lightsaber colours, the three questions, "Blue. The path of the Jedi Guardian", the blue crystal, `dan_trials` 25; `ShowLevelUpGUI`: Jedi Guardian, level 9, with skills, feats and powers taken by Recommended (Force Push, Stun; Force 46) | works (the sheet reads Soldier 8 / Jedi Guardian 1) | `04_dorak.txt` |
-| 6 | Zhar and the player build the lightsaber at the upgrade bench (crystal in, Assemble); the saber is worn | works | `05_saber.txt` |
+| 6 | Zhar and the player build the lightsaber at the upgrade bench (crystal in, Assemble); the saber is worn; the screen was black from the end of the talk on | fixed e0723ff (a node's fade) | `05_saber.txt` |
 | 7 | The third trial named: the meditation grove, `dan_trials` 30 | works | `06_third.txt` |
 | 8 | Out of the Enclave (`dan13_door03`), the courtyard, the Matale grounds, the grove (three module transitions by the game's doors) | works | `07_courtyard.txt` |
 | 9 | The grove: Bolook's greeting (the murder case, cut short), the kath hounds (2,000 XP for the party), the cut scene `dan14_cutjuh` and the duel with Juhani; she asks for the talk when below 50 hit points and the fight stops | fixed 523f4a3 | `08_grove.txt` |
@@ -89,7 +90,13 @@ trials and of Juhani's redemption award nothing either (no plot XP on them).
    the scene plays, and `animloop01` to `animloop10` (ANIMATION_PLACEABLE_ANIMLOOP, constants 204 to 213) had no names, so
    the Star Map's dome (`animloop01` of `plc_starmap`) never appeared, nor any other computer or console animation a script
    starts. Both are in now; the dome shows during Bastila's talk.
-5. Test tools: `ui stat` pushed the object's XP (0 after a load) over the rules creature's, so every cheat after a load wiped
+5. **The world stayed black after Zhar's lightsaber scene** (e0723ff). The last node of the scene fades to black (FadeType 4,
+   one second) and the talk ends with the Upgrade Bench; the dialogue's fade layer stayed at full black, over the bench's world
+   and over the game after it, until the next conversation's fade. The in-game GUI's end-of-dialogue function (0x006332b0)
+   removes the three letterbox panels and resets their fades, so a node's fade now ends with its conversation
+   (`Panels.fade_node`); a script's global fade (SetGlobalFadeOut, the module transitions) shares the layer and stays. The
+   montage after the training (`k_player_dialog`) is such a global fade, undone by Zhar's `k_pdan_zhar12`.
+6. Test tools: `ui stat` pushed the object's XP (0 after a load) over the rules creature's, so every cheat after a load wiped
    the player's experience; `cutatk` queued behind a follower's endless follow order and never ran.
 
 ## Notes and open items

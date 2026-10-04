@@ -1,0 +1,25 @@
+# Kashyyyk, part 5: the Wookiee guards at the village door (kas22_wookg2_01): with Zaalbar in the party they take both
+# before Chuundar (k_pkas_meetking, module kas_m23ad). From the checkpoint "gate1" (CKPT=gate1): the Dark Jedi are dead.
+# The walk from the ambush to the door crosses the guards' triggers (kas22_guardtrig2 and 3, strips 220,314 to 226,318).
+3 ui stat hpmax 130
+3 ui stat hp 130
+5 ui replies default 1
+10 ui bot god on
+10 ui goto kas22_wookg2_01
+900 ui pos
+900 ui party
+# The Wookiees take Zaalbar (k_pkas_meetking removes him, makes him unselectable) and the party screen opens (k_pkas_sendking
+# follows it): Canderous and Carth are picked and OK applies the party at once (the original asks nothing).
+2100 ui click 507 271
+2110 ui click 598 271
+2130 ui click 640 545
+# Chuundar (kas23_chuunda_01, 155 entries) in his hall kas_m23ad: the first replies all the way, to his order to kill the mad
+# Wookiee in the Shadowlands, Zaalbar kept as a hostage; k_pkas_leavechun sends the party back to the village.
+2300 ui party
+2300 ui pos
+2300 ui where kas23
+10150 ui journal list
+10150 ui xp
+10150 ui party
+10150 ui pos
+10200 save king1

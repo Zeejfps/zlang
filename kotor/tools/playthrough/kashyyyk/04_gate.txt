@@ -1,0 +1,17 @@
+# Kashyyyk, part 4: the Dark Jedi ambush on the Great Walkway (trigger kas22_sithattk, a thin strip 163,312 to 178,308: the
+# walk goes into its middle) and the fight, then the gate of Rwookrrorro. From the checkpoint "walk2" (CKPT=walk2): Dehno and the
+# Czerka guards are dead. The kinrath of the long walk are skipped with a warp (the party stands beside the leader);
+# the trigger, the talks and the fights are the game's.
+3 ui stat hpmax 130
+3 ui stat hp 130
+5 ui replies default 1
+10 ui bot god on
+10 warp kas22_sithattk party
+60 goto 172,309.1
+# The Dark Jedi talk (kas22_darkjedi01, about 140 to 450 frames after) and attack with Force Stun and sabers.
+760 ui bot on
+2400 ui bot off
+2400 ui pos
+2400 ui xp
+2400 ui hostiles
+2450 save gate1

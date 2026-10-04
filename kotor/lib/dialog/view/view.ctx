@@ -272,6 +272,10 @@ namespace dlgview {
         stop_voice{ &v, &w, fade = 0.3 }
         stop_ambient_track{ &v }
         dlgpanel::close{ p = &v.panels, g = &g }
+        // The dialogue's fade layer goes with its panels (the in-game GUI's end-of-dialogue function,
+        // 0x006332b0, removes the three letterbox panels and resets their fades): Zhar's lightsaber
+        // scene fades to black on its last line and the world is back for the bench and after it.
+        if v.panels.fade_node { dlgpanel::clear_fade{ p = &v.panels } }
         v.mode = Mode::none
         v.have_rig = false
         v.up = false

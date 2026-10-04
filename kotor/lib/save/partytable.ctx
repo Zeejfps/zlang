@@ -62,6 +62,13 @@ namespace save {
             let e = try gffw::add_element{ &b, list = avail, id = 0 }
             try put_gff_value{ &b, owner = e, label = "PT_NPC_AVAIL", value = gff::Value::byte{ v = if w.party.available[k] { 1 } else { 0 } } }
             try put_gff_value{ &b, owner = e, label = "PT_NPC_SELECT", value = gff::Value::byte{ v = if w.party.selectable[k] { 1 } else { 0 } } }
+            // Ours: the blueprint of a companion that is available but was never put in the world (Juhani after her
+            // redemption, a companion a script added); AVAILNPC<n> exists only for the spawned ones, so without this the
+            // party screen would list the portrait and fail to make the creature after a load.
+            if w.party.available[k] and not resref::is_empty{ r = w.party.templates[k] } {
+                let mut blueprint = w.party.templates[k]
+                try put_gff_value{ &b, owner = e, label = "PT_NPC_TEMPLATE", value = gff::Value::resref{ v = resref::bytes{ r = &blueprint } } }
+            }
             k = k + 1
         }
 
@@ -159,6 +166,8 @@ namespace save {
                 let e = avail[slot]
                 w.party.available[slot] = (gff::get_number{ doc = doc.*, s = e, label = "PT_NPC_AVAIL" } ifnull 0) != 0
                 w.party.selectable[slot] = (gff::get_number{ doc = doc.*, s = e, label = "PT_NPC_SELECT" } ifnull 1) != 0
+                w.party.templates[slot] = resref::empty{}
+                if gff::get_resref{ doc = doc.*, s = e, label = "PT_NPC_TEMPLATE" } is some{ value = name } { w.party.templates[slot] = resref::truncate{ name } }
             }
             slot = slot + 1
         }
