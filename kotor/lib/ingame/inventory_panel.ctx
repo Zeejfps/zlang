@@ -183,7 +183,7 @@ namespace inventory_panel {
             let id = c.equipped[slot]
             slot = slot + 1
             if id == obj::INVALID or not world::is_valid{ w = &w, id } or not passes{ &s, &w, id } { continue }
-            let row = try items::add_row{ &g, &w, &dev, panel, tag = "LB_ITEMS", id, equipped = true, icon_size = ICON }
+            let row = try items::add_row{ &g, &w, &dev, panel, tag = "LB_ITEMS", id, equipped = true, icon_size = ICON, rows = items::ENTRY_NEW }
             if id == s.picked { select = row }
         }
         let mut order: [512]u32
@@ -193,7 +193,7 @@ namespace inventory_panel {
             let id = carried[k]
             k = k + 1
             if not world::is_valid{ w = &w, id } or not passes{ &s, &w, id } { continue }
-            let row = try items::add_row{ &g, &w, &dev, panel, tag = "LB_ITEMS", id, equipped = false, icon_size = ICON }
+            let row = try items::add_row{ &g, &w, &dev, panel, tag = "LB_ITEMS", id, equipped = false, icon_size = ICON, rows = items::ENTRY_NEW }
             if id == s.picked { select = row }
         }
         if gui::list_count{ &g, panel, tag = "LB_ITEMS" } == 0 {

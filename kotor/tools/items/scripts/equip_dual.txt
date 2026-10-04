@@ -1,0 +1,19 @@
+# Dual wielding through the equipment screen: a long sword in the left hand beside the short sword in the
+# right is allowed (both WeaponWield 2); a blaster pistol in the left hand is not (the other hand's weapon
+# does not pair, 42271: the row is marked and a click on it puts nothing on).
+4 ui giveitem g_w_blstrpstl001
+4 ui giveitem g_w_lngswrd01
+10 ui key u
+30 ui clickctl BTN_INV_WEAP_L
+40 ui movectl LB_ITEMS 1
+45 ui movectl LB_ITEMS 1
+50 ui inv
+60 ui clickctl LB_ITEMS 1
+70 ui inv
+80 ui clickctl BTN_INV_WEAP_R
+90 ui movectl LB_ITEMS 3
+95 ui movectl LB_ITEMS 3
+100 ui ctl LBL_CANTEQUIP
+105 ui inv
+110 ui key escape
+120 ui inv

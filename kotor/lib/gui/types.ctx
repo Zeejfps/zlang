@@ -34,6 +34,12 @@ namespace gui {
     const FILL_CENTRED: i32 = 1
     const FILL_STRETCHED: i32 = 2
 
+    // How an item row's frames are tinted (Row.frame): the item entry sets them when it is filled with an item.
+    const FRAME_FILE: u8 = 0            // the file's colours (every other list)
+    const FRAME_ITEM: u8 = 1            // menu blue, yellow when hilighted
+    const FRAME_NEW: u8 = 2             // magenta, the normal frame half transparent
+    const FRAME_REFUSED: u8 = 3         // the creature cannot wear it: red-orange, hilighted or not
+
     // ---- text alignment bits
     const A_LEFT: u32 = 1
     const A_CENTRE: u32 = 2
@@ -87,6 +93,7 @@ namespace gui {
         icon: Img,                      // drawn at the row's left, when ok
         enabled: bool,
         checked: bool,                  // rows of check-box prototypes
+        frame: u8,                      // item rows (CSWGuiItemEntry): FRAME_*, how the row's frames are tinted; 0 keeps the file's colours
     }
 
     struct Control {
@@ -123,6 +130,7 @@ namespace gui {
         first_row: i32,                 // the top visible row
         selected_row: i32,              // -1 none
         text_mode: bool,                // a list box showing one wrapped text (message boxes) instead of rows
+        row_frame_alpha: f32,           // item rows: the alpha of a row's normal frame (the equipment screen's slot view draws none)
         click_rows: bool,               // item lists: a click on a row activates it (the rows are buttons in the original) and hovering one says so (row_hover)
         hover_row: i32,                 // -1 none
         // sounds (indices into guisounds.2da)
