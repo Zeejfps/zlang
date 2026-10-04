@@ -93,7 +93,15 @@ namespace ctl {
         let scale = fight::speed_scale{ o = o2 }
         // In stealth (or another walk-only limit) the leader walks (movement.md 1.2, GetMaxSpeed).
         let walking = stealth::walk_only{ c = c2 }
-        let vmax = (if walking { c2.walk_rate } else { c2.run_rate }) * scale
+        let rated = (if walking { c2.walk_rate } else { c2.run_rate }) * scale
+        // The leader is driven by the keys, and its top speed and push come from the appearance it shows (the
+        // client creature's block, GetMaxSpeed 0x00679510: appearance.2da DriveMaxSpeed and DriveAccl), not from its
+        // rate: every humanoid row says 5.4 and 50, the Envirosuit (row 181, EffectDisguise in the airlocks of
+        // Manaan) 1.5 and 5, which is how the underwater walk is slow. Faster than the rate is not taken.
+        let shown = if c2.disguise != 0 { c2.disguise } else { c2.appearance }
+        let drive = twoda::get_float{ t = w.tables.appearance, row = @as(usize, shown), column = "drivemaxspeed" } ifnull 0.0
+        let accl = twoda::get_float{ t = w.tables.appearance, row = @as(usize, shown), column = "driveaccl" } ifnull 50.0
+        let vmax = if drive > 0.0 and drive * scale < rated { drive * scale } else { rated }
         // Turning toward the desired heading, fast when slow (movement.md 1.2 step 5).
         let speed = math::sqrtf{ x = ctl.vx * ctl.vx + ctl.vy * ctl.vy }
         if keys.freelook {
@@ -119,7 +127,11 @@ namespace ctl {
             ctl.vx = 0.0
             ctl.vy = 0.0
         } else {
-            let k: f32 = 15.0
+            // K = 15 is ours for DriveAccl 50 (the humanoids'); a smaller DriveAccl pushes less, and below 1.8 m/s
+            // the original scales K by vmax / 1.8 (movement.md 1.2).
+            let mut k: f32 = 15.0
+            if accl > 0.0 and accl < 50.0 { k = k * accl / 50.0 }
+            if vmax < 1.8 { k = k * vmax / 1.8 }
             let decay = math::expf{ x = -step * k / vmax }
             ctl.vx = ux * vmax + (ctl.vx - ux * vmax) * decay
             ctl.vy = uy * vmax + (ctl.vy - uy * vmax) * decay

@@ -5,14 +5,11 @@
 # The party is not left to die: `ui bot god on` keeps the leader up (without it the party is wiped in the second room by the
 # two Assault Droids' flame throwers, step 14 of docs/playthrough-manaan.md). Test cheats for setup only: hit points per member
 # (a loaded companion keeps the maximum the rules gave its level), `ui bot`.
-3 ui stat hpmax 150
-3 ui stat hp 150
+3 ui stat hp 144
 4 ui leader carth
-4 ui stat hpmax 160
-4 ui stat hp 160
+4 ui stat hp 52
 5 ui leader bastila
-5 ui stat hpmax 130
-5 ui stat hp 130
+5 ui stat hp 108
 6 ui leader pc
 8 ui replies default 1
 10 ui bot god on
@@ -25,7 +22,12 @@
 3310 use BroknDrd
 3500 ui click 640 452
 3560 ui inv
-3600 ui journal list
-3600 ui xp
-3600 ui party
-3610 save droid
+# The two Assault Droids of the corridor have followed the party into the room by now: the bot (god mode) fights on until they are
+# down, so that the next part does not start in their fire.
+3700 ui bot on
+14400 ui hostiles
+14400 ui party
+14400 ui xp
+14400 ui journal list
+14410 ui bot off
+14420 save droid

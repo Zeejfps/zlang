@@ -1,0 +1,22 @@
+# Manaan, part 15: the Selkath's peace of Ahto City (manm26ab, Ahto East). From the checkpoint "prisoner" (CKPT=prisoner, before the
+# Sith base; nothing of the arrest has happened). No script of the install, no routine and no area flag makes the drawing of a
+# weapon punishable (the party walks the city armed, a lightsaber at the hip, and a blow struck at a Sith soldier or a Selkath
+# guard with `attack` is not answered by anyone: the soldier has 8 hit points and dies); what the Selkath punish is violence
+# spoken or done in conversation, and the data does it in conversations. A Sith soldier on the promenade (man26_sithyell) goads the
+# party: first the toll ("Fine, here's your 20 credits."), then, the second time, the taunt, and the reply that threatens her ("You
+# better change your attitude, or the Selkath might find your body floating in the ocean!") makes her call a constable
+# (man26_selauth2) who asks if it is true. "[Persuade] I'm sorry, constable" is overlooked; "Your laws are nothing to me!" earns "a 500
+# credit fine and a stint in the Ahto City jails": k_pman_jail01 takes the player to the warden of manm26aa (man26_selauth), who has
+# no money to take and has the player deported to the Ebon Hawk (k_pman_jail05, ebo_m12aa). This file takes the defiant way.
+3 ui stat hp 144
+8 ui replies ~fine,_here ~you_better_change_your_attitude ~she_started_it ~your_laws_are_nothing_to_me default 1
+10 warp man26ae_to26ab
+40 use man26ae_to26ab
+300 warp man26_sithyell party
+330 hoveron man26_sithyell
+340 mouse click
+400 mouse click
+800 hoveron man26_sithyell
+810 mouse click
+870 mouse click
+4000 ui pos

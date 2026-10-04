@@ -386,8 +386,7 @@ namespace dlg {
     // down), and a plot index with a percentage gives the party that part of plot.2da's XP.
     fn apply_quest { mut w: world::World, n: *Node } {
         if n.quest.len > 0 {
-            let now = fight::time_now{ w = &w }
-            let changed = journal::set_state{ j = &w.journal, tag = n.quest, state = @as(i32, n.quest_entry), allow_lower = false, day = now.day, time = now.ms }
+            let changed = rt_misc::set_quest_state{ &w, tag = n.quest, state = @as(i32, n.quest_entry), allow_lower = false }
             let how: []u8 = if changed { "changed" } else { "kept" }
             if w.log.dialog {
                 world::prefix{ w = &w }
