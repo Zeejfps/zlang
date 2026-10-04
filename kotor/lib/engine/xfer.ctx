@@ -73,7 +73,17 @@ namespace xfer {
         } else {
             notices::item_gained{ &w, who = to, item }
         }
-        return to_party{ &w, item }
+        if not to_party{ &w, item } { return false }
+        mark_new{ &w, item = w.last_acquired }
+        return true
+    }
+
+    // The party has not seen the item yet: the inventory shows its name in magenta and the "New Items"
+    // filter lists it until the screen has shown its description (party-items-saves.md 5.1, flag bit 7).
+    fn mark_new { mut w: world::World, item: u32 } {
+        let o = world::object{ w = &w, id = item } ifnull { return }
+        let it = obj::item{ o } ifnull { return }
+        it.fresh = true
     }
 
     // AddItem's merge (party-items-saves.md 5.2) for `item`, just read into the holder of the

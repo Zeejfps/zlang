@@ -418,6 +418,7 @@ namespace rt_item {
         // AcquireItem with feedback: the party is told ("Acquired Item: ...", the HUD's icon).
         if id != obj::INVALID {
             notices::item_gained{ &w, who = target, item = id }
+            if notices::is_party{ w = &w, id = target } { xfer::mark_new{ &w, item = id } }
         } else if stack > 0 and template.len >= 11 and ci::eq{ a = template[..11], b = "g_i_credits" } {
             notices::credits_changed{ &w, who = target, n = @as(i64, stack) }
         }

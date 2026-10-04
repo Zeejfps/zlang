@@ -275,6 +275,7 @@ namespace obj {
         rules: ?*mut rules::Item,           // the item as the rules see it (heap; fight::read_item)
         droppable: bool,                    // Dropable: it goes into the body bag when its owner dies
         infinite: bool,                     // a store's stock that never runs out (item flag bit 2)
+        fresh: bool,                        // the party got it and has not looked at it yet (item flag bit 7, "new")
     }
 
     enum DoorState: u8 { closed, open1, open2, destroyed }

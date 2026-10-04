@@ -375,9 +375,11 @@ namespace items {
     }
 
     // Whether the item was picked up since the player last looked at it (the inventory's "New
-    // Items" filter). PLACEHOLDER: the engine's items have no "new" flag (party-items-saves.md
-    // 5.1, flag bit 7) and nothing sets it, so none is new.
-    fn is_new { w: *world::World, id: u32 } -> bool { return false }
+    // Items" filter; party-items-saves.md 5.1, flag bit 7). Not saved: a loaded game has none new.
+    fn is_new { w: *world::World, id: u32 } -> bool {
+        let it = item_of{ w, id } ifnull { return false }
+        return it.fresh
+    }
 
     // Whether the item has a use of its own: a CastSpell property (10) in its blueprint, the
     // "Useable" of the inventory screen's filter and button.
