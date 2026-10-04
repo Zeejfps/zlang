@@ -322,6 +322,7 @@ namespace save {
         try put_dword{ &b, owner = s, label = "Appearance", v = p.appearance }
         try put_bool{ &b, owner = s, label = "Useable", v = p.useable }
         try put_bool{ &b, owner = s, label = "HasInventory", v = p.has_inventory }
+        try put_bool{ &b, owner = s, label = "DieWhenEmpty", v = p.die_when_empty }
         try put_bool{ &b, owner = s, label = "PartyInteract", v = p.party_interact }
         try put_bool{ &b, owner = s, label = "Static", v = p.static }
         try put_bool{ &b, owner = s, label = "Locked", v = p.locked }
