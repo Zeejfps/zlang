@@ -118,13 +118,23 @@ namespace perception {
         return is_line_clear{ w, a, b, solids = false, ignore }
     }
 
+    // What stops a line: `what` 0 for nothing, 1 for a face of a room's walkmesh (`index` the room, `material` the
+    // face's surface), 2 for a door's or placeable's walkmesh (`index` its place in walk.placed); `t` how far along.
+    struct Block { what: u32, index: usize, face: u32, material: u32, t: f32 }
+
     // `solids` lets the placeables' meshes stop the line too; `ignore` is an object whose mesh does not.
     fn is_line_clear { w: *world::World, a: math::Vec3, b: math::Vec3, solids: bool, ignore: u32 } -> bool {
+        return find_block{ w, a, b, solids, ignore }.what == 0
+    }
+
+    // The first thing between two creatures' eyes (EYE above each foot), rooms before placed meshes.
+    fn find_block { w: *world::World, a: math::Vec3, b: math::Vec3, solids: bool, ignore: u32 } -> Block {
+        let mut none = Block{ what = 0, index = 0, face = 0, material = 0, t = 0.0 }
         let from = math::Vec3{ x = a.x, y = a.y, z = a.z + EYE }
         let to = math::Vec3{ x = b.x, y = b.y, z = b.z + EYE }
         let d = math::vec3::sub{ a = to, b = from }
         let len = math::vec3::length{ v = d }
-        if len < 0.01 { return true }
+        if len < 0.01 { return none }
         let ray = math::ray::make{ origin = from, dir = math::vec3::scale{ v = d, s = 1.0 / len } }
         let mut blocks: [64]bool
         let mut m: usize = 0
@@ -138,17 +148,21 @@ namespace perception {
             let mesh = rooms[i].mesh
             i = i + 1
             if mesh == null { continue }
-            if bwm::cast_ray{ w = mesh, ray, max_t = len, stops = blocks[..] } != null { return false }
+            if bwm::cast_ray{ w = mesh, ray, max_t = len, stops = blocks[..] } is some{ value = hit } {
+                return Block{ what = 1, index = i - 1, face = hit.face, material = mesh.materials[@as(usize, hit.face)], t = hit.t }
+            }
         }
-        return not does_placed_block{ w, from, to, ray, len, solids, ignore }
+        let placed = placed_block{ w, from, to, ray, len, solids, ignore }
+        if placed >= 0 { none.what = 2; none.index = @as(usize, placed) }
+        return none
     }
 
-    // Whether an active placed walkmesh (a closed door, a placeable that is still there) has a face
-    // that stops the segment: the faces a creature cannot stand on.
-    fn does_placed_block { w: *world::World, from: math::Vec3, to: math::Vec3, ray: math::Ray, len: f32, solids: bool, ignore: u32 } -> bool {
+    // The first active placed walkmesh (a closed door, a placeable that is still there) with a face
+    // that stops the segment, the faces a creature cannot stand on; its place in walk.placed, or -1.
+    fn placed_block { w: *world::World, from: math::Vec3, to: math::Vec3, ray: math::Ray, len: f32, solids: bool, ignore: u32 } -> i32 {
         let placed = list::items{ list = w.walk.placed }
         let boxes = list::items{ list = w.walk.boxes }
-        if placed.len == 0 { return false }
+        if placed.len == 0 { return -1 }
         let lo = math::vec3::min{ a = from, b = to }
         let hi = math::vec3::max{ a = from, b = to }
         let mut stops: [64]bool
@@ -167,9 +181,9 @@ namespace perception {
             if box.hi.x < lo.x or box.lo.x > hi.x or box.hi.y < lo.y or box.lo.y > hi.y or box.hi.z < lo.z or box.lo.z > hi.z { continue }
             let owner = world::object{ w, id = p.owner } ifnull { continue }
             if not solids and owner.kind != obj::Kind::door { continue }
-            if bwm::cast_ray{ w = p.mesh, ray, max_t = len, stops = stops[..] } != null { return true }
+            if bwm::cast_ray{ w = p.mesh, ray, max_t = len, stops = stops[..] } != null { return @as(i32, i - 1) }
         }
-        return false
+        return -1
     }
 
     // Whether `viewer` could see `target` this instant: within its sight range with a clear line, and

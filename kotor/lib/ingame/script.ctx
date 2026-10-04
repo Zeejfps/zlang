@@ -93,6 +93,45 @@ namespace ingame {
                 let seen = if perception::entry_of{ w = &w, viewer = lead, target = o.id } is some{ value = e } { e.seen } else { false }
                 _ = @fmt(&w.io, "hostile {} {} selectable {} seen {} at {} {} faction {} standing {}\n", o.id, o.tag, hud::is_selectable{ w = &w, id = o.id }, seen, o.position.x, o.position.y, o.faction, if lead_faction == 0 { w.repute[0][o.faction % 32] } else { w.repute[o.faction % 32][lead_faction % 32] })
             }
+        } else if ci::eq{ a = cmd, b = "losaudit" } {
+            // `ui losaudit [METRES]`: every companion (not the leader) against every living hostile creature of
+            // its area within METRES (12): the distance, whether a clear line joins them, whether the companion
+            // perceives it, and what blocks the line. A companion that stands 5 m from an enemy it cannot see
+            // is how a fight goes by without it (docs/mechanics/combat.md, "Companions in a fight").
+            let reach = if text::next_word{ &words } is some{ value = word } { text::scan_f32{ s = word } ifnull 12.0 } else { 12.0 }
+            let team = party::members{ w = &w }
+            let lead = party::leader{ w = &w }
+            let all = list::items{ list = w.objects.all }
+            let mut m: usize = 0
+            while m < team.len {
+                let mid = team[m]
+                m = m + 1
+                if mid == lead { continue }
+                let me = world::object{ w = &w, id = mid } ifnull { continue }
+                let mc = obj::creature{ o = me } ifnull { continue }
+                let mut i: usize = 0
+                while i < all.len {
+                    let o = all[i]
+                    i = i + 1
+                    if o.destroyed or o.kind != obj::Kind::creature or o.area != me.area or o.id == mid { continue }
+                    let oc = obj::creature{ o } ifnull { continue }
+                    if oc.dead or world::standing{ w = &w, from = me.faction, toward = o.faction } < 11 { continue }
+                    let d = math::vec3::distance{ a = me.position, b = o.position }
+                    if d > reach { continue }
+                    let blk = perception::find_block{ w = &w, a = me.position, b = o.position, solids = true, ignore = obj::INVALID }
+                    let seen = if perception::entry_of{ w = &w, viewer = mid, target = o.id } is some{ value = e } { e.seen } else { false }
+                    _ = @fmt(&w.io, "audit {} sees {} at {} m: clear {} perceived {} sight range {}", me.tag, o.tag, d, blk.what == 0, seen, mc.sight_range)
+                    if blk.what == 1 {
+                        _ = @fmt(&w.io, " blocked by room {} face {} material {} at {} m", blk.index, blk.face, blk.material, blk.t)
+                    } else if blk.what == 2 {
+                        let owner = world::object{ w = &w, id = list::items{ list = w.walk.placed }[blk.index].owner } ifnull { continue }
+                        let mut note: []u8 = ""
+                        if owner.ext is door{ d } { note = if d.state == obj::DoorState::closed { " (closed)" } else { " (open)" } }
+                        _ = @fmt(&w.io, " blocked by the mesh of {}{}", owner.tag, note)
+                    }
+                    _ = @fmt(&w.io, "\n")
+                }
+            }
         } else if ci::eq{ a = cmd, b = "los" } {
             // `ui los TAG1 TAG2`: whether the first object sees the second along a clear line (perception::clear_line:
             // the rooms' walkmeshes and the doors' and placeables'), and whether it perceives it now.
@@ -104,6 +143,14 @@ namespace ingame {
             let ob = world::object{ w = &w, id = ib } ifnull { return }
             let seen = if perception::entry_of{ w = &w, viewer = ia, target = ib } is some{ value = e } { e.seen } else { false }
             _ = @fmt(&w.io, "los {} {}: clear {} sight {} seen {} distance {} (leader's view: selectable kind {} in view {})\n", ta, tb, perception::clear_line{ w = &w, a = oa.position, b = ob.position }, perception::is_sight_clear{ w = &w, a = oa.position, b = ob.position, ignore = ib }, seen, math::vec3::distance{ a = oa.position, b = ob.position }, hud::is_selectable_kind{ w = &w, id = ib }, hud::is_in_view{ w = &w, id = ib })
+            // What stops the line, if anything: a room's face with its surface material, or a door's or placeable's mesh.
+            let blk = perception::find_block{ w = &w, a = oa.position, b = ob.position, solids = true, ignore = obj::INVALID }
+            if blk.what == 1 {
+                _ = @fmt(&w.io, "  blocked by room {} face {} material {} at {} m\n", blk.index, blk.face, blk.material, blk.t)
+            } else if blk.what == 2 {
+                let owner = world::object{ w = &w, id = list::items{ list = w.walk.placed }[blk.index].owner } ifnull { return }
+                _ = @fmt(&w.io, "  blocked by the mesh of {} ({})\n", owner.tag, owner.id)
+            }
         } else if ci::eq{ a = cmd, b = "autopause" } {
             // `ui autopause on|off`: the auto-pause triggers (enemy sighted, party member down, new target in
             // combat), off in headless runs until a test asks.
