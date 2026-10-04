@@ -643,13 +643,28 @@ namespace fight {
 
     // ---- the round (3.1 - 3.5)
 
+    // Within the maximum range (reach + 0.5; a ranged weapon's maxattackrange) and, for a shot at
+    // a creature, with a clear line from 1.5 m above each foot (actions.md 3.13 steps 4-6,
+    // 0x0050c330).
     fn in_reach { w: *world::World, o: *obj::Object, t: *obj::Object, ranged: bool } -> bool {
         let d = doors::distance_2d{ a = o.position, b = t.position }
-        return d <= reach{ w, o, t, ranged } + 0.5
+        if d > reach{ w, o, t, ranged } + 0.5 { return false }
+        if ranged and t.kind == obj::Kind::creature { return perception::clear_line{ w, a = o.position, b = t.position } }
+        return true
+    }
+
+    // Where an approach stops: at reach, or for a shooter in range without a clear line, a few
+    // metres nearer each time until it has one.
+    fn approach_range { w: *world::World, o: *obj::Object, t: *obj::Object, ranged: bool } -> f32 {
+        let r = reach{ w, o, t, ranged }
+        if not ranged { return r }
+        let d = doors::distance_2d{ a = o.position, b = t.position }
+        if d <= r + 0.5 { return math::max{ a = d - 4.0, b = 1.5 } }
+        return r
     }
 
     // How near the attacker must stand (actions.md 3.13 step 4): melee both personal spaces + 0.7,
-    // ranged the weapon's maxattackrange (30 when 0), less a margin.
+    // ranged the weapon's maxattackrange (30 when 0).
     fn reach { w: *world::World, o: *obj::Object, t: *obj::Object, ranged: bool } -> f32 {
         let mut mine: f32 = 0.5
         let mut theirs: f32 = 0.5
@@ -663,7 +678,7 @@ namespace fight {
                     }
                 }
                 if range <= 0.0 { range = 30.0 }
-                return math::min{ a = range, b = 15.0 }
+                return range
             }
         }
         if obj::creature{ o = t } is some{ value = tc } { theirs = tc.perspace }
@@ -714,7 +729,7 @@ namespace fight {
             let mut move = actions::make{ kind = actions::Kind::move_to_point }
             move.params[0] = actions::Param::vector{ v = t.position }
             move.params[1] = actions::Param::int{ v = 1 }
-            move.params[2] = actions::Param::float{ v = reach{ w = &w, o, t, ranged } }
+            move.params[2] = actions::Param::float{ v = approach_range{ w = &w, o, t, ranged } }
             move.params[3] = actions::Param::object{ id = target }
             move.params[4] = actions::Param::float{ v = 6.0 }
             actions::add_front{ &w, id, action = move }
