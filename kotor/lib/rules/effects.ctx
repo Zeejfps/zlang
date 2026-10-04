@@ -685,11 +685,16 @@ namespace rules {
 
     // ClearAllEffects (RemoveAllEffects 0x004d0940): everything but the equipped and innate ones.
     fn clear_effects { tables: *Tables, mut c: Creature, mut ev: Events } {
+        clear_effects_except{ tables, c = &c, keep_creator = 0xFFFFFFFF, ev = &ev }
+    }
+
+    // The same with bKeepSelfCreated: the effects `keep_creator` made stay (SurrenderRetainBuffs).
+    fn clear_effects_except { tables: *Tables, mut c: Creature, keep_creator: u32, mut ev: Events } {
         let before = take_snapshot{ c = &c }
         let mut i: usize = 0
         while i < @as(usize, c.nfx) {
             let d = c.fx[i].dur
-            if d == dur::EQUIPPED or d == dur::INNATE {
+            if d == dur::EQUIPPED or d == dur::INNATE or c.fx[i].creator == keep_creator {
                 i = i + 1
                 continue
             }

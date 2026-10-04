@@ -1,0 +1,23 @@
+# Tatooine, part 17: out of the lair with the Star Map (checkpoint "starmap"): the trigger tat_test at the cave mouth (320 312) starts Calo Nord's talk (the invisible talker,
+# TAT_CALO_TRIGGER_SET was set by the trigger at the Star Map) and his gang, spawned back at the hunters' camp by k_trg_calonord2, fight the party (Calo Nord and four thugs: 900 and 50 to 500 XP). A save at the camp ("calo").
+#   LOAD=kotor/out/tat_cp/starmap sh kotor/tools/playthrough/tatooine/run.sh calo kotor/tools/playthrough/tatooine/17_calo.txt 6100
+4 ui heal
+4 ui stat hp 127
+5 ui bot god on
+5 ui bot unlock on
+5 ui replies default 1
+5 ui bot route 372,342 367,333 353,325 339,315 322,300 315,280 314,267 292,257
+6 ui bot on
+1000 ui pos
+2000 ui pos
+3000 ui pos
+4000 ui pos
+5000 ui pos
+6000 ui pos
+6000 ui where calo
+6000 ui where ambush
+6000 ui journal list
+6000 ui globals CALO
+6000 ui globals BANDON
+6000 ui xp
+6050 save calo

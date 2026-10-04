@@ -173,7 +173,7 @@ namespace play {
                 }
                 if ci::eq{ a = s.word, b = "savewhen" } {
                     // `savewhen MODULE NAME [QUEST ENTRY]`: a save of the game, called NAME, once the story is in MODULE (and the
-                    // journal's QUEST has reached ENTRY) with no conversation, no transition and no loading for 2 s: a checkpoint at an arrival that does not depend on how long the fights
+                    // journal's QUEST has reached ENTRY) with no conversation, no transition, no loading and no fight of the leader's for 2 s: a checkpoint at an arrival that does not depend on how long the fights
                     // before it took (frames of a `save` line move whenever the dice or the timing do).
                     let mut sww = text::words{ s = s.rest }
                     let m = text::next_word{ words = &sww } ifnull ""
@@ -322,7 +322,12 @@ namespace play {
                     }
                 }
                 if sw_quest_len > 0 and journal::state_of{ j = w.journal, tag = sw_quest[..sw_quest_len] } < sw_entry { here = false }
-                if here and w.transition == null and w.arrival == 0 and not w.conversation.active and not w.conversation.pending and not loading::is_up{ l = ld } { sw_quiet = sw_quiet + 1 } else { sw_quiet = 0 }
+                // ... and the leader is not fighting (an ambush that is still going on is not a place to keep)
+                let mut fighting = false
+                if world::object{ w = &w, id = w.pc } is some{ value = po } {
+                    if obj::creature{ o = po } is some{ value = pc } { fighting = pc.in_combat }
+                }
+                if here and not fighting and w.transition == null and w.arrival == 0 and not w.conversation.active and not w.conversation.pending and not loading::is_up{ l = ld } { sw_quiet = sw_quiet + 1 } else { sw_quiet = 0 }
                 if sw_quiet >= 60 and want_save.len == 0 {
                     want_save = sw_name[..sw_name_len]
                     sw_on = false
@@ -472,7 +477,7 @@ namespace play {
             let player_room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
             let room = dlgview::view_room{ v = &dview, w = &w, player_room }
             scene::update_visibility{ &sc, w = &w, room }
-            ingame::update{ ui, &w, &dev, sc, camera, dt }    // HOOK(ingame)
+            ingame::update{ ui, &w, &dev, sc, camera, dt = camera_dt }    // HOOK(ingame): under --speed the GUI's clocks (feedback fade, tooltips) get the ticks it skipped
             if ingame::wants_quit{ ui } { quit = true }    // HOOK(ingame)
             // The party wipe's box answered or its fade over: the options menu's Exit Game is the way out (the main menu).
             death::after_ui{ d = &wipe, ui, &w, fade_running = dlgpanel::fade_running{ p = dview.panels } }

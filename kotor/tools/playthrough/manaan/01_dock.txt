@@ -1,0 +1,62 @@
+# Manaan, part 1: the landing in the Docking Bay (manm26ad). Start: kotor.exe --module manm26ad.
+#
+# The state Dantooine leaves (what a checkpoint of the Dantooine chain holds, read with `ui globals _`): one Star Map found
+# (K_STAR_MAP 10, K_KOTOR_MASTER 15, DAN_STARMAP_DONE), Bastila and Carth in the party, Canderous, Juhani, Mission and Zaalbar
+# available; a Jedi Guardian of level 12 with a saber and a robe, Bastila a Sentinel and Carth a soldier of the same level.
+# (Test cheats for setup only: join, avail, global, jedi, stat, leader, giveitem, credits.)
+4 join p_bastilla 0
+4 join p_carth 2
+4 ui avail 0 1 2 5 6 8
+4 ui global K_STAR_MAP 10
+4 ui global K_KOTOR_MASTER 15
+4 ui gbool DAN_STARMAP_DONE 1
+4 ui jedi 3 12
+4 ui stat str 16
+4 ui stat dex 14
+4 ui stat con 14
+4 ui stat hpmax 150
+4 ui stat hp 150
+4 ui giveitem g_w_lghtsbr01 1 equip
+4 ui giveitem g_a_jedirobe01 1 equip
+4 ui giveitem g_i_medeqpmnt01 5
+4 ui giveitem g_i_adrnaline001 3
+4 ui credits 500
+5 ui leader bastila
+5 ui jedi 5 12
+5 ui giveitem g_w_lghtsbr01 1 equip
+5 ui giveitem g_a_jedirobe01 1 equip
+5 ui stat hpmax 130
+5 ui stat hp 130
+6 ui leader carth
+6 ui stat level 12
+6 ui stat str 14
+6 ui stat dex 16
+6 ui stat hpmax 160
+6 ui stat hp 160
+7 ui leader pc
+8 ui replies default 1
+20 ui party
+20 ui globals _
+20 ui journal list
+# The Ebon Hawk door (three doors of the bay share a tag: the second is this one), then out into the bay, where a Sith and a
+# Republic soldier argue at the first corner (a conversation that starts by itself as the party comes near; its last script
+# removes the Sith soldier and the Republic soldier stays).
+30 hoveron man26ad_door01 1
+40 mouse click
+80 mouse click
+120 ui goto man26_reparg
+2100 ui goto man26_reparg
+2400 ui pos
+2400 ui replies ~never_mind default 1
+2410 hoveron man26_reparg
+2420 mouse click
+2480 mouse click
+# Out along the bay to the door of the city (West Central, manm26ac). A closed door stops the walk once and opens (PATH_BLOCKED):
+# the player clicks the floor again, here `goto` again.
+3500 ui goto man26ad_to26ac
+3900 ui goto man26ad_to26ac
+4300 ui goto man26ad_to26ac
+4800 ui pos
+4800 ui party
+4800 ui journal list
+4800 save dock

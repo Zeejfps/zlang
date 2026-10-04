@@ -112,21 +112,11 @@ namespace rt_fight {
         }
     }
 
-    // void SurrenderRetainBuffs(): as SurrenderToEnemies (the caller and everyone within 10 m stop
-    // fighting), keeping the effects they put on themselves.
+    // void SurrenderRetainBuffs(): as SurrenderToEnemies, keeping the effects the creatures put on
+    // themselves.
     fn surrender_retain_buffs { mut w: world::World, mut vm: nwvm::Vm } {
         let me = world::object{ w = &w, id = nwvm::self_object{ vm } } ifnull { return }
         if me.id == w.pc or me.id == w.player { return }
-        let at = me.position
-        let area = me.area
-        let all = list::items{ list = w.objects.all }
-        let mut i: usize = 0
-        while i < all.len {
-            let o = all[i]
-            i = i + 1
-            if o.destroyed or o.kind != obj::Kind::creature or o.area != area { continue }
-            if math::vec3::distance{ a = o.position, b = at } > 10.0 { continue }
-            fight::stop_fighting{ &w, id = o.id, others = false }
-        }
+        fight::surrender{ &w, id = me.id, keep_own = true }
     }
 }

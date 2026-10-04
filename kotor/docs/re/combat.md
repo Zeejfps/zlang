@@ -974,6 +974,24 @@ it at the creature's position and facing, and queue SPAWN_BODY_BAG (event 17) to
 500 ms. `SetIsDestroyable` (routine 323) queues a destroy after 3000 ms when a dead creature
 becomes destroyable.
 
+### 8.5 Surrender (`CSWSCreature::SurrenderToEnemies` `0x00518990`)
+
+Routines 476 `SurrenderToEnemies`, 762 `SurrenderRetainBuffs` and the action `0x41` (`ActionSurrenderToEnemies`, 379) end in
+this function (`bRetainBuffs` is 0 for 476 and 379):
+
+1. `CancelCombat` and `CSWSObject::RemoveAllEffects(bRetainBuffs)` (`0x004d0940`: every effect but the equipped, innate and
+   SETSTATE_INTERNAL ones, and with the flag those the object made itself; it also sets the object commandable again) on the caller.
+2. The same on every creature of the caller's area within 250 m (a squared distance of 62,500) for which
+   `GetReputation(caller, other) < 11`, i.e. everyone the caller counts an enemy: the player and the party, for Freyyr. A knocked
+   down player is on his feet and commandable, so the `ActionStartConversation(PC)` that follows is not dropped.
+3. The caller is put into a faction through `FUN_005bfa70(faction, id, 0)`, the routine `ChangeToStandardFaction` and `AddToParty`
+   use; `OnApplyDeath` does the same for a dead non-player creature. Which faction `*factionManager` (the first field of
+   the manager at `CServerExoAppInternal+0x10054`) names was not found; ours uses Surrender_1 (row and column of repute.2da are
+   all 50, the nwscript comment says "sets the NPC's enemies within this range to be neutral towards the NPC"). A script that
+   wants the fight back sets a standard faction itself (`k_pkas_freyyrfin`, the "Now die!" branch of Freyyr's talk).
+
+Ours: `fight::surrender` (lib/engine/fight_state.ctx).
+
 ## 9. What the engine does, what the scripts do
 
 The engine (high):
