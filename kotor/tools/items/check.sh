@@ -1,0 +1,36 @@
+#!/bin/sh
+# Runs the item and skill scenarios through the mouse and keys and checks what they log
+# (docs/mechanics/items-skills.md). Run it from the repository root after building EXE (default
+# kotor/out/kotor_itm.exe) and making the checkpoints with it (`EXE=... sh kotor/tools/checkpoints/make.sh`).
+#
+#   sh kotor/tools/items/check.sh
+export PATH=/g/Dev/msys64/mingw64/bin:$PATH
+fails=0
+dir=kotor/tools/items/scripts
+
+# expect NAME START SCRIPT FRAMES "pattern that must appear in the log"...
+expect() {
+  name=$1; start=$2; script=$3; frames=$4; shift 4
+  res=$(LOG=${LOG:-actions} sh kotor/tools/items/run.sh "$name" "$start" "$dir/$script" "$frames")
+  case "$res" in *" 0 faults"*) ;; *) echo "FAIL $name: $res"; fails=$((fails + 1)) ;; esac
+  for pat in "$@"; do
+    if ! grep -a -q -- "$pat" "kotor/out/items/$name.log"; then
+      echo "FAIL $name: no line matching '$pat'"
+      fails=$((fails + 1))
+    fi
+  done
+  echo "ran $name"
+}
+
+expect inv_click    bunk inv_click.txt        220 "leader hp 18 of 22" "Medpac x1"
+expect equip_prev   bunk equip_preview.txt    160 "worn 1: 202 Clothing" "worn 1: 288 Combat Suit" "worn 1: 289 Heavy Combat Suit"
+expect grenade      uppercity grenade.txt     300 "hp -11" "Frag Grenade x3"
+expect security     bunk security2.txt        260 "\*success\* : (Take 20 + 5 = 25 vs. DC 12)"
+expect security_sp  bunk security_spike.txt   260 "\*success\* : (Take 20 + 12 = 32 vs. DC 28)" "Security Spike Tunneler x1"
+expect consumables  bunk consumables2.txt     620 "fx : 7 effects" "leader hp 22 of 22"
+expect props        bunk props_effects.txt     60 "fx : 3 effects" "fx : 0 effects"
+expect medpac_tut   bunk medpac_tutorial.txt  220 "leader hp 18 of 22"
+expect container    bunk container_give.txt   120 "Medpac x2"
+expect slots        bunk slots_lists.txt      110
+
+if [ "$fails" -eq 0 ]; then echo "all item checks passed"; else echo "$fails item checks failed"; exit 1; fi

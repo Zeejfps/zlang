@@ -14,7 +14,7 @@ Mines and traps are [traps.md](traps.md), stealth [stealth.md](stealth.md); thei
 
 `sh kotor/tools/items/run.sh NAME START SCRIPT FRAMES [FRAME:SHOT]...` runs an input script from a checkpoint
 (`docs/testing.md`) with `--no-render --speed 8` and keeps the log and the pictures under `kotor/out/items/`.
-The scripts are in `kotor/tools/items/scripts/`. They click controls by tag with `ui clickctl TAG [ROW]` and
+The scripts are in `kotor/tools/items/scripts/`; `sh kotor/tools/items/check.sh` runs the ones with a checkable log line (10 scenarios, about a minute). They click controls by tag with `ui clickctl TAG [ROW]` and
 `ui movectl`, which find the control (or the list row) in the topmost shown panel and send the platform's own
 pointer events to its centre, so the panels' hit test decides what happens, as for a player. Test-only commands
 are used only for setup (`ui giveitem`, `ui stat KEY N`, `ui relock`, `ui faction`, `ui hp`); reading helpers:
