@@ -1098,7 +1098,8 @@ strref to 48208 and calls `SetCombatMode(0)`.
 
 ##### Per-frame order
 
-`Update` (`0x00686ba0`) only: updates the floating overlay list (`+0x5cb4`, objects' slot `+0xa0`);
+`Update` (`0x00686ba0`) only: updates the floating labels (damage numbers and the like, list `+0x5cb4`, each
+label's slot `+0xa0`; combat.md 10.4);
 counts down the combat message (`+0x7724`, total `+0x7720`; the message alpha is 1 for the first
 half and then falls linearly to 0; at the end the message reverts to strref 48208); sets
 `TB_SOLO` visible when the party has more than one member and checked when solo mode is on
@@ -1265,9 +1266,9 @@ proto rows each; `LBL_MESSAGES` (title); `BTN_SHOW` (toggle, sends event `0x29`)
 1. Input (`0x00628260`): events `0x28`, `0x2d`, `0x2e`, `0xdf` close the menu
 (`HideInGameMenu`) and return to the game input class; `0x29` toggles the view. The panel also
 watches the event sequence `0x29, 0x2f, 0x27, 0x29` and then shows a hidden feedback line and
-sets a flag (`0x008338e8`) that the free-camera key reads: an easter egg, safe to skip. How the
-log lines are filled is not traced (the log lives in the client). All tags verified. (high /
-low for the filling)
+sets a flag (`0x008338e8`) that the free-camera key reads: an easter egg, safe to skip. The
+feedback lines are added by the client's combat-feedback formatter and copied into the list when the
+panel opens (combat.md section 10.1). All tags verified. (high)
 
 #### CSWGuiMessageBox: the confirm/OK box (`confirm`) and its variants
 
@@ -2068,10 +2069,14 @@ addresses)
 - `UseSelfAction` clears the leader's actions after queuing outside combat; the order relative to
   the callback looks odd and should be checked in the disassembly.
 - `CGuiInGame+0xb4` (blocks menus) is set by conversation/cutscene code not traced here.
-- The overlay list at HUD `+0x5cb4` (updated and drawn every frame) is not identified; likely the
-  floating combat numbers ("Floating Numbers" option, bit 4).
+- The overlay list at HUD `+0x5cb4` (updated and drawn every frame) is the floating labels:
+  damage, healing, "miss", "XP n" and "Level n" over the creatures (the "Floating Numbers" option,
+  bit `0x10` of the client options' dword at `+0x14`). Solved: [combat.md](combat.md) section 10.4.
 - `LBLH_INV` pulsing condition (quest item repository count) is a guess.
-- How the message log lines reach `LB_MESSAGES`/`LB_DIALOG` was not traced.
+- How the message log lines reach `LB_MESSAGES`: the client formatter adds each line to the in-game GUI's
+  array at `+0xf8` with `0x0062b5c0`; `OnPanelAdded` copies it into the list (`0x00626920`, red rows
+  for kind byte 1). Solved: [combat.md](combat.md) section 10.1. How `LB_DIALOG` is filled (the
+  array at `+0xfc`, `0x00626b10`) is still not traced.
 - `CSWGuiMessageBox` slot 32 (`0x006252a0`) runs on close; not read.
 
 **In-game menus (§10.4)**

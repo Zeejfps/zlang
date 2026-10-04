@@ -846,30 +846,187 @@ GetAttemptedAttackTarget `+0x50c`, GetLastAttackType `+0x16c`, GetLastAttackMode
 GetLastWeaponUsed `+0x170`, GetLastCombatFeatUsed `+0x554`, GetLastHostileTarget `+0x53c`,
 GetLastAttackAction `+0x544`, GetLastAttackResult `+0x55c`, GetIsInCombat `+0x4e0`. (high)
 
-## 10. Combat-log messages
+## 10. Combat-log messages and floating numbers
 
-The server sends combat details as "CC messages" (`CSWCCMessageData`, the `CScriptEvent` layout:
-ints, then object ids) to every player whose creature is in the same area within 30 m
-(`SendCombatMessageToNearbyPlayers` `0x004ecae0` → `0x00568570`). Each attack sends a pair: the
-attacker's and the target's view. The client formats them in `0x00656d20` (a switch on the
-message type) with `dialog.tlk` tokens. (high for the server side, med for the formatting)
+What a fight tells the player: lines in Messages > Feedback and numbers floating over the
+creatures. Read case by case from the client formatter (jump table and case bodies disassembled;
+the decompiler gives up after the first string destructor), checked against the senders. Our build:
+`lib/engine/fight_log.ctx`, `lib/hud/floating.ctx`.
 
-| Type | Sender | Ints sent | Text (strrefs) |
-|---|---|---|---|
-| 0x12 | `SendAttackSummary` `0x005b5ea0` via `0x004ec9e0` | result, combat feat, d20 + mod, defense, damage (× the difficulty multiplier when the target is a party member), confirmed crit, sneak, coup de grace, stun state, `+0x138`, natural 20, natural 1; objects attacker, target | 42119 "<CUSTOM0> with <CUSTOM1> vs. Defense <CUSTOM2> for damage <CUSTOM3>.", 42042, 42133 Hit / 42134 Miss, 1511 Critical Hit!, 1459 Sneak Attack!, 42303 Death Blow!, 42390/42391 Automatic Hit/Miss!, 42411 Deflected!, 42421 Returned!, 42315 Offhand |
-| 0x14 | `0x004ecbe0` | total, d20, mod, STR part, DEX part, feat, special to-hit, off-hand, light bonus, two-weapon feat bonus and id, Dueling bonus and id, close-range, melee-vs-ranged, Weapon Focus, effects, BAB, dual-wield penalty, natural 20, natural 1 | 42146 "Attack Breakdown: <CUSTOM0> <CUSTOM1> =", 42316 roll, 42419 base attack bonus, 42333 Dual Wield Penalty, 42334 Small Offhand Bonus, 42330 Close Proximity Ranged Bonus, 42317 melee on ranged, 42331 Weapon Focus Bonus, 42332 Effect Bonus, 42375 dexterity mod … |
-| 0x15 | `0x004ecc20` | d20, threat range, is threat, confirm total, defense, `+0xf0`, confirmed | 42148 "Threat Breakdown: Roll … vs. required … - 20, threat … with Attack … vs. Defense …" |
-| 0x16 | `0x004ecc60` | defense, armour, DEX part, DEX mod, class, natural, dodge + effects, Dueling, debilitated | 42149 "Defense Breakdown: <CUSTOM0> = base 10", 42338 armor, 42339 dex mod, 42340 class, 42341 natural, 42342 feats and effects mod, 42427 debilitated penalty |
-| 0x17 | `0x004ecca0` | the 15 damage values, base dice, STR, feat, special bonus, —, sneak, Weapon Specialization, crit multiplier, `+0x104..+0x108` | 42150 "Damage Breakdown: <CUSTOM0> = <CUSTOM1>", 42386 Critical x, 42387 base, 42154 strength mod, 42155 bonus damage, 42156 sneak attack damage, 42363 weapon specialization, 1440–1448 damage-type words |
-| 0x19 | `0x004ecce0` | the stun report bytes `+0x12c..+0x134` | (special-attack stun) |
-| 0x1a | `0x004ecd20` | deflection bytes `+0x140..+0x148` | 42417 "Deflection Breakdown: <CUSTOM0> deflects projectile with <CUSTOM1> = <CUSTOM2> vs. attack <CUSTOM3>" |
+### 10.1 From the server to the list
 
-Other combat messages go through the creature's feedback channel (`0x004ede10`, numbered
-messages): 0x3e/0x3f damage immunity/resistance absorbed, 0x7e immune to critical hits, 0x7f
-immune (death), 0x86 immune to sneak attacks, 0xbb cannot attack a friendly target; damage
-summaries "<CUSTOM0> damages <CUSTOM1> for <CUSTOM2> damage" (1403), kills (1407).
-`feedbacktext.2da` holds Resisted/Immune/Saved (36847–36849). The client's feedback options
-(`optfeedback.gui`) choose which of these are shown (gui.md). (med)
+The server sends "CC messages" (`CSWCCMessageData`, 0x34 bytes, the `CScriptEvent` layout: ints,
+then object ids) as the client-side-message major `0x12` (`CSWCMessage::HandleServerToPlayerMessage`
+`0x0066a640` names it "ClientSideMessage") with a minor type `1..0x1b`. The client side is
+`CClientExoApp::FormatCombatFeedback` `0x00656d20` (misnamed: its `this` is the message), a switch on
+the type through the jump table at `0x00662f34` (entry = type - 1; type 3 `0x0065799d`, 4
+`0x0065ac7e`, 0x12 `0x0065f56c`, 0x14 `0x006603d9`, 0x15 `0x00661134`, 0x16 `0x00661379`, 0x17
+`0x006619e1`, 0x1a `0x00662a10`). Ghidra ends the function after 118 bytes; the cases are
+separate fragments. Each case:
+
+1. reads its fields from the message: object ids (`0x00692630`), ints in the bit width the sender
+   wrote (`0x004d6780` 32 bits, `0x004d6750` 16, `0x004d66f0` 8), and gives up if a read ran out
+   (`0x004d6230`);
+2. names objects (`0x005ed350` → `0x005f6640`: a creature's first and last name, a placeable's or
+   door's name) and fills `<CUSTOMn>` with `CTlkTable::SetCustomToken(n, text)` (`0x0041db50`);
+3. takes the template with the tokens expanded (`FUN_005ee390`, dialog.tlk by strref) and joins the
+   pieces with `CExoString::operator+` (`0x005e5d10`);
+4. adds the line to the in-game GUI's feedback list with `0x0062b5c0` (`AddFeedbackMessage(text,
+   0x80, kind)`, `this` = `CClientExoApp::GetInGameGui` `0x005ed690`).
+
+The list is the in-game GUI's array at `+0xf8` (16-byte entries: the text, a dword that is always
+`0x80`, a kind byte), count at `+0x100`, at most 64: the 65th line pushes the oldest out. The
+dialogue history is a second array at `+0xfc` (count `+0x104`). **Only the Messages screen reads
+them**: `CSWGuiMessages::OnPanelAdded` `0x00626d90` → `0x0062ad60` → `0x00626920` fills
+`LB_MESSAGES` (one row per line, the newest selected). `0x00626920` colours a row red
+`(0.74, 0.11, 0.0)` (globals `0x007a23d8..e0`) when its kind byte is 1, else the menu blue
+`(0, 0.66, 0.98)` (`g_vGuiMenuTextColor`). Nothing else touches the arrays (no other reference to
+`+0xf8`/`+0x100`), so **the original HUD has no short-lived feedback lines**, and the Feedback
+options (`optfeedback`: Floating Numbers, Tutorial Popups, Status Summary, Subtitles, Mini Map,
+Tooltips) do not filter combat lines. Kind 1 (red) is the attack summary (0x12), the "<CUSTOM0>
+uses <CUSTOM1>." line (type 8, strref 32292, with "Force Points spent:" 42006), type 0x10 and the
+awareness detections (type 0x13); every other line is kind 0. (high)
+
+### 10.2 Who receives a message
+
+`SendCombatMessageToNearbyPlayers` `0x004ecae0` (types 0x14..0x1a), `SendAttackSummaryToNearbyPlayers`
+`0x004ec9e0` (0x12), `0x004ec400` (types 2 and 3) and `0x004ec500` (type 4) share one rule: walk the
+member list of the sending creature's **faction** (`GetFaction` `0x00513fc0`; `+0` array, `+4`
+count), take the members that are clients' creatures (`GetClientObjectByObjectId`), and send to a
+client when its creature is in the same area (`+0x8c`) and the squared distance to the sending
+creature is below 900 (30 m). In a one-player game that is: the player's creature belongs to the
+faction of the creature the message is about, and is within 30 m of it. An attack sends the summary
+for the attacker's faction and again for the target's, so a fight between a hostile and a party
+member reaches the player once (the hostile's faction has no client) and two party members fighting
+each other twice. Damage (type 3) goes to the damaged creature's faction, and also to the damager's
+when the two factions differ. The kill line goes to the killer's faction. (high)
+
+### 10.3 The lines
+
+All ids are dialog.tlk strrefs; "tok n" is the `<CUSTOMn>` hole. Common words: 42043 succeeds,
+42044 fails, 42133 Hit, 42134 Miss, 42314 Mainhand, 42315 Offhand.
+
+**Type 0x12, the attack summary** (`ApplyAttackImpact` `0x005b8050` → `SendAttackSummary`
+`0x005b5ea0`, once per attack that carries a roll; red). Fields, in the order the client reads: the
+attacker, the target, the result (`ATTACK_RESULT_*`, 32 bits), the combat feat (16), the attack
+total (d20 + modifier), the defense, the damage (the attack's total, times the `MULTIPLIER` of
+`difficultyopt.2da` for the client's difficulty when the target is a party member), confirmed
+critical, sneak attack, coup de grace, a stun state (1..10), a flag that the stun was resisted
+(byte), natural 20 (byte), natural 1 (byte). The line, built in this order:
+
+1. `42042` tok0 the attacker's name, tok1 succeeds if the result is 1, 2 or 3 else fails, tok2 the
+   target's name ("<A> succeeds with attack on <T>"), then `". "`;
+2. when a combat feat is set: `42046` ("<feat name> used", feat.2da NAME) and `". "`;
+3. `42119` tok0 Hit (result 1..3) or Miss, tok1 the attack total, tok2 the defense, tok3 the damage
+   (never below 0): "Hit with 21 vs. Defense 19 for damage 7. " (the template ends in a space);
+4. each of these that applies, followed by `" "`: `1511` Critical Hit! (confirmed critical),
+   `1459` Sneak Attack!, `42303` Death Blow! (coup de grace), `42390` Automatic Hit! (natural 20)
+   or else `42391` Automatic Miss! (natural 1), `42411` Deflected! (result 8), `42421` Returned!
+   (result 9);
+5. when the stun state is set: `42030` with the target's name and a state word (`42031..42040`: is
+   confused, stunned, choked, Force Pushed, frightened, droid stunned, held, sleeping, caught in a
+   whirlwind, horrified; with the resisted flag the "is not ..." versions, 41 strrefs higher).
+
+Sent when the attack is not ranged or the shot carries the attack (`attack+0x40 == 0 || attack+4
+!= 0`). (high)
+
+**Type 0x14, attack breakdown** (always sent with the summary). Fields (21 ints): total, d20,
+modifier (unused by the client), STR part, DEX part, combat feat, the feat's to-hit, off-hand
+flag, light off-hand bonus, two-weapon feat bonus, its feat id (unused), Dueling bonus, its feat
+id, close-range bonus, melee-vs-ranged bonus, Weapon Focus bonus, effect bonus, base attack bonus,
+dual-wield penalty, natural 20, natural 1. Line: `42146` tok0 Mainhand/Offhand, tok1 the total,
+then `42316` " roll <d20>", then on a natural 20 or 1 only " Automatic Hit!" / " Automatic
+Miss!", otherwise (every part is a template starting with " + ", printed when its value is not 0
+except the base): `42392` " + base <bab>" (always), `42333` Dual Wield Penalty (penalty plus feat
+bonus), `42334` Small Offhand Bonus, `42318` " + <feat name> <value>" for the combat feat's to-hit
+and again for Dueling (name of its feat id), `42330` Close Proximity Ranged Bonus, `42317` melee
+on ranged, `42375` dexterity mod or else `42154` strength mod, `42331` Weapon Focus Bonus,
+`42332` Effect Bonus. "Attack Breakdown: Mainhand 21 = roll 8 + base 1 + melee on ranged 10 +
+strength mod 2". (high)
+
+**Type 0x15, threat breakdown** (always sent; the client prints only when the is-threat int is not
+0): `42148` tok0 d20, tok1 the threat range's lower end, tok2 `1392` success or `1393` failure (the
+confirmation), tok3 the confirmation d20 + modifier, tok4 the defense. (high)
+
+**Type 0x16, defense breakdown** (always sent; printed when the total is not 0): `42149` tok0 total
+("= base 10") then, for each non-zero: `42338` armor, `42339` dex mod, `42340` class, `42341`
+natural, `42342` feats and effects mod (dodge, conditional dodge and deflection), `42343` " + feat
+<n>" (Dueling), `42427` debilitated penalty. (high)
+
+**Type 0x17, damage breakdown** (sent when the hit has damage): the 15 damage slots (the three
+physical ones are added into one), dice, STR part, feat, special bonus, sneak, Weapon
+Specialization, critical multiplier, toughness terms. `42150` tok0 the total, tok1 the parts:
+`42386` "Critical x<n> for " first when the multiplier is above 1; then each non-zero slot by its
+word ("physical <n>" 1423, universal 1422, acid 1440, cold 1441, light side 1442, electrical 1443,
+fire 1444, dark side 1445, sonic 1446, ion 1447, energy 1448, poison 41902) joined with " + ";
+then `42154` strength mod, `42363` weapon specialization, " + " `42155` bonus damage, " + " `42156`
+sneak attack damage, and the Toughness terms (`42433`, `42434`). The joining of the tail was not
+followed to the last branch. (med)
+
+**Types 0x19 (stun report of a special attack) and 0x1a (`42417` deflection breakdown)**: sent by
+`ApplyAttackImpact` after the damage breakdown (0x19 when a special attack stuns, 0x1a for results
+8..10); their formatting was not read. (open)
+
+**Type 3, damage** (`OnApplyDamage` `0x004dfa40` through `0x004ec400`, for every damage effect
+applied to a creature, door or placeable, not only weapon hits): `1403` tok0 the damager's name,
+tok1 the damaged one's, tok2 the damage (the 15th slot of the message, which holds the total after
+mitigation). **Type 2**, the same without a known damager: `1402` tok0 the damaged, tok2 the
+damage. **Type 4, experience** (`AwardKillXP` `0x004fb1e0`, after `AddExperience`): `1407` tok0 the
+killer's name (the player's creature when the killer is not a creature), tok1 the victim's, tok2
+the XP. (high)
+
+**Type 0xb, numbered feedback** (`CSWSCreature::SendFeedbackMessage` `0x004ede10`, `feedbacktext.2da`
+rows; the 62 callers are immunity, resistance, trap, lock and inventory messages) has its own inner
+switch (the message id) and is not covered here.
+
+### 10.4 Floating numbers
+
+Up to seven kinds of label float over a creature. The entry is `FUN_006027c0` (reached through the
+jump `0x005edea0`: object id, kind byte, int value), which first reads the client options: **when
+the options exist and bit `0x10` of the dword at `+0x14` ("Floating Numbers", swkotor.ini
+`[Game Options] Floating Numbers`, default 1) is clear it does nothing**. Then a jump table on the
+kind (`0x00602acc`) picks the text, colour and lifetime, and `0x0062b080` hands the label to the
+main interface (`CSWGuiMainInterface` `0x0068b7c0`).
+
+| Kind | Text | Colour (globals) | Lifetime | Who calls it (all seven call sites of `0x005edea0`) |
+|---|---|---|---|---|
+| 0 | the damage as a number | red `(0.74, 0.11, 0)` | 1.5 s | `OnApplyDamage` (twice: creatures with damage above 0, and doors and placeables) when the damager is the client's player creature, over the damaged object; `TakeDamage` `0x004f3830` when the damaged creature is the player's creature and the damager is not, over it, with the damage after the difficulty multiplier, temporary hit points and Min1HP |
+| 1 | the healing as a number | green `(0.28, 0.92, 0.11)` | 1.5 s | `OnApplyHeal` `0x004e0750` when the healed creature is the client's player creature or any party member |
+| 2 | "miss" (1373) | white | 1.5 s | `SignalMeleeDamage` `0x005b75d0`, per melee attack of the player creature whose result is not 1..3 (a parry included); **ranged attacks never show it** |
+| 3 | "XP <n>" (38551, `%s %d`) | magenta `(0.95, 0, 0.85)` | 3 s | `AwardKillXP`, over the victim, for everyone |
+| 4 | "Level <n>" (32154) | orange `(0.98, 0.45, 0)` | 3 s | `CSWSCreatureStats::AutoLevelUp` `0x005b27e0`, over the creature that levelled |
+| 5, 6 | "Sneak Attack" (1391), "Spotted" (42403) | white | 1.5 s | nobody in this executable |
+
+"The client's player creature" is `CClientExoApp +0x20` (`FUN_005ed550`): the creature the player
+controls (med). A damage number needs the player to have dealt the damage or taken it: damage
+between companions and enemies shows nothing, and neither do the companions' misses.
+
+The label (0x154 bytes, vtable `0x00753ea8`, made by `FUN_00688e10`, updated every frame by
+`FUN_00688ff0` through the vtable's `+0xa0`, drawn from the interface's `Render` after the panel and
+the target block, inside its viewport, so only while the HUD is shown): text in `fnt_d16x16`,
+alignment `0x12` (centred both ways), a 200 px wide box as high as the text. Its place is the
+creature's head projected on the screen (`0x0060fd80`: the `head_g` node, else `rootdummy`), x =
+sx - 100, y = sy - 32 - height. While it lives it follows the creature (it moves by the change of the
+projected point), hides when the point is behind the camera, and fades: the text alpha is time
+left over total, a straight line from 1 to 0. It does not rise by itself; instead a new label for
+the same object pushes each older one up by one line height, and the sixth drops the oldest (the
+count byte at `+0x14c`). The list is `CSWGuiMainInterface +0x5cb4` (count `+0x5cb8`, capacity
+`+0x5cbc`, doubling from 16). (high)
+
+### 10.5 What our build does
+
+`fight_log::attack` (called by `fight::land` for every impact that carries a roll), `damaged`
+(`take_damage`, `damage_object`) and `killed` (`award_xp`) build the lines above from the rules
+library's own numbers (`fight::Impact.roll` and `.damage`) and post them as outbox `feedback` notes
+whose strref names the template; `ingame::take` files them: the summary red, the rest in Messages
+only (`fight_log::LOG_COMBAT`: the HUD's young-feedback lines, which the original does not have,
+stay for other feedback). Recipients follow 10.2 with the party and the player's faction as "the
+client's faction" and the leader as "the client's creature". `fight_log::floating` posts the
+`floating_text` note for kinds 0 (damage dealt or taken by the leader), 2 (the leader's melee
+misses) and 3 (kills), and `hud/floating.ctx` draws it. Differences: the label sits at 0.9 of the
+box height (the HUD has no head node), the 0x17 tail and the 0x19/0x1a lines are approximate or
+missing, and kinds 1 and 4 are drawn when posted (`fight_log::healed`, `leveled`) but nothing
+posts them yet (the heal and level-up code is outside `fight_log`'s reach).
 
 ## 11. Names
 
@@ -922,6 +1079,7 @@ suggest `GetFeatRemainingUses` and `HasFeatInLists`, for the lead to decide.
 - Stats bytes `+0x16c/+0x16d` in the deflection roll; the energy-shield path (result 10) and its
   client function `0x00616890`.
 - Damage reduction details (slot 41) and resistance bookkeeping (slot 42) are only skimmed.
-- The client formatter `0x00656d20` was mapped by its strrefs, not read case by case; the exact
-  token order of each line is still to be read.
+- The client formatter `0x00656d20` is read for the attack summary, the breakdowns 0x14..0x16, the
+  damage, damage-without-damager and kill lines (section 10); still to read: types 0x17's tail, 0x19,
+  0x1a, 0xb and the other types (1, 5..7, 9..0x11, 0x13, 0x1b).
 - Seven attack records are constructed but only five are used.
