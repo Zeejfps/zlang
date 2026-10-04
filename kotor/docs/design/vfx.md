@@ -11,6 +11,7 @@ the game's data, how the engine tells the screen, and how to add an effect.
 | `lib/vfx/vfx.ctx` | `vfx::Vfx`, a pool of 128 effects: making them, placing them, stepping them |
 | `lib/vfx/draw.ctx` | the live effects' lights, meshes and particles into a `render::Frame` |
 | `lib/vfx/notes.ctx` | outbox notes into effects: shots, `visual` rows, effect models |
+| `lib/vfx/aura.ctx` | texture auras: the shells the original draws in code (energy shields), no model |
 | `lib/engine/fight_fx.ctx` | the fight's side: when a bolt leaves and lands, the sounds, `fight::visual_effect`, power visuals |
 | `lib/engine/fight_voice.ctx` | creatures' battle cries, grunts and death cries |
 | `lib/engine/fight_trace.ctx` | `--log trace`: one line per fighting creature every 6 frames |
@@ -44,6 +45,36 @@ quad made `speed * blurlength * 2.4` long and 1.6 times as wide as its `sizeStar
 original's Motion_Blur rule was not read; the factors make a bolt read at fight distances).
 Model lights (a bolt's red one, radius 2.5) are added as frame lights, so a bolt lights the
 creatures it passes.
+
+## Texture auras (no model)
+
+Some rows have no model at all, only an engine-coded `progfx_duration` or `progfx_impact` code
+(visualeffects.2da; the codes and what the original does with each: re/render-gui.md, "Engine-coded
+visual effects"). The codes 1401-1426 are a **texture layer**: the energy shields of the forearm
+bands and the droid shields (rows 2040-2048, codes 1413-1421), the impact flashes of some powers
+(1401-1412) and a few durations (hold, carbonite, stealth). The original draws every mesh of the
+creature's body and head a second time, 2 cm fatter along their normals, unlit, with an additive
+flipbook (`fx_tex_NN`, a TPC of 16 or 4 frames) over the picture; it lasts as long as the effect,
+and only the newest texture effect of a creature shows.
+
+`vfx::Aura` (lib/vfx/aura.ctx) does the same with the seam's pieces:
+
+- `hold_on` (a `visual_hold` note: a lasting row) and `visual_on` (a flash, or a duration row played
+  once: 3 s, what `fx visual 2040 pc` shows) call `aura_for_row`, which reads the row's code and
+  starts an aura on the object. `release_aura` ends it (`visual_release`, the shield's expiry or
+  removal). The same row again on the same object begins anew; 16 auras at most.
+- `update` (`step_auras`) finds the object's visual in the scene, the body part and the head part
+  (not the weapons) and their world matrices, which `draw` has not the world to do.
+- `draw_auras` adds `mdl_render::add_draws` of those parts with a material of its own for every
+  mesh: the flipbook atlas with its cell for the clock (`render::set_flipbook_frame`, `fps` from
+  the TXI), the texture's own blend (additive), unlit, and `Material.inflate` = 0.02, the one
+  addition to the seam (render.md): the vertex shader pushes the vertices out along their
+  (skinned) normals. Of two auras on an object only the newer is drawn.
+
+The shields are dim by design (the brightest pixel of `fx_tex_14` is 44 of 255): a shimmer that
+pulses once a second over the body, brightest where the body texture's UVs map the bright part of
+the frame. Rows with a **root model** (the field markers, 2032-2035, 2056-2064) now hang it at the
+creature's feet (`rootdummy`) instead of the chest; a head model at `talkdummy`.
 
 ## The outbox notes
 
@@ -125,8 +156,9 @@ Blaster rifles shoot red bolts, ion weapons blue, disruptors white (ammunitionty
   and run the impact script when it arrives.
 - A beam (`EffectBeam`, lightning): `vfx` has no beam kind; `Lightning` emitters are skipped by
   `gui3d::step_emitting`.
-- A duration effect (`type_fd` D, a Force shield): one `follow` effect kept until the effect
-  leaves the creature. `visual_on` plays every row once for now.
+- A duration effect (`type_fd` D): a model of the row is one `follow` effect kept until the
+  effect leaves the creature (`visual_hold` / `visual_release`); a row with only a code is an
+  aura (above). `visual_on` plays every other row once.
 - A new placement is a `Kind`, a case in `vfx::step`, and a constructor like `spawn_follow`.
 
 ## Looking at it
@@ -162,6 +194,14 @@ EXE=kotor/out/kotor_combat.exe FAST=1 SPEED=1 LOG=combat,trace LOAD=kotor/out/ch
   arena until the area is left.
 - Animations a model lacks fall back to `pause1` silently (the trace says which): `g2r2` on the
   humanoid skeleton and `cdodgeg` on the humans' (their reaction rows in combatanimations.2da).
-- Not done: footsteps, melee blood (the game has none), beams, duration effects, thrown grenades
-  and Force projectiles in flight (above), the Jedi's blade colours by crystal (blades show the
-  model's own).
+- Auras: UV0 of the mesh addresses the flipbook (the original's vertex program passes uv0 through
+  and binds the texture on unit 0, so it should be the same; not compared against the game).
+  The aura's loop sound (`soundduration`) and its cessation sound (`soundcessastion`, `gen_shieldbluoff`)
+  are the engine's (`hold_visual` plays the impact sound only). A hold row with both an impact and a
+  duration code starts with its duration code (the original shows the impact one for a second first:
+  only row 1003, both 1401). The engine-coded codes other than 1401-1426 (beams 608-621, the fizzle
+  and resist models 1201/1202, the medal and Revan masks 1700-1702, the player's camera and
+  full-screen effects, the vision modes) are not drawn.
+- Not done: footsteps, melee blood (the game has none), beams, thrown grenades and Force
+  projectiles in flight (above), the Jedi's blade colours by crystal (blades show the model's
+  own).

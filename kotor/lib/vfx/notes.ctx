@@ -42,24 +42,46 @@ namespace vfx {
         return "Impact"
     }
 
+    // The node the row's model (effect_model's choice) hangs on: an impact model at the chest
+    // (effect_hook), a root model at the creature's feet (the original hangs it on the ground node,
+    // which a creature's model lacks, so it stands at the model's origin, `rootdummy`), a head
+    // model at the head-hit node (`talkdummy`). re/render-gui.md, "Engine-coded visual effects".
+    fn effect_node { t: twoda::Table, row: usize, effect: i32 } -> []u8 {
+        let impact = twoda::get_string{ t, row, column = "imp_impact_node" } ifnull ""
+        if impact.len > 0 { return effect_hook{ effect } }
+        let roots: [4][]u8 = ["imp_root_m_node", "imp_root_s_node", "imp_root_l_node", "imp_root_h_node"]
+        let mut c: usize = 0
+        while c < 4 {
+            let m = twoda::get_string{ t, row, column = roots[c] } ifnull ""
+            if m.len > 0 { return "rootdummy" }
+            c = c + 1
+        }
+        return "talkdummy"
+    }
+
     // A visualeffects.2da row playing on an object (riding its node) for the effect model's animation.
     fn visual_on {
         mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, effect: i32, object: u32,
     } {
         let row = effect_row{ t = w.tables.visualeffects, effect } ifnull { return }
         let model = effect_model{ t = w.tables.visualeffects, row }
-        if model.len == 0 { return }
-        _ = spawn_follow{ &v, &sc, &w, &dev, model, object, hook = effect_hook{ effect }, which = 0, anim = "impact", life = 0.0 } iferr { null }
+        if model.len > 0 {
+            _ = spawn_follow{ &v, &sc, &w, &dev, model, object, hook = effect_node{ t = w.tables.visualeffects, row, effect }, which = 0, anim = "impact", life = 0.0 } iferr { null }
+        }
+        aura_for_row{ &v, &sc, &w, &dev, row, effect, object, lasting = false }
     }
 
-    // A duration visual (visualeffects.2da Type_FD D) held on an object until it is released.
+    // A duration visual (visualeffects.2da Type_FD D) held on an object until it is released: its
+    // model, or the texture shell its engine-coded duration code asks for (aura.ctx).
     fn hold_on {
         mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, effect: i32, object: u32,
     } {
         let row = effect_row{ t = w.tables.visualeffects, effect } ifnull { return }
         let model = effect_model{ t = w.tables.visualeffects, row }
-        if model.len == 0 { return }
-        _ = spawn_hold{ &v, &sc, &w, &dev, model, object, hook = effect_hook{ effect }, effect } iferr { null }
+        if model.len > 0 {
+            _ = spawn_hold{ &v, &sc, &w, &dev, model, object, hook = effect_node{ t = w.tables.visualeffects, row, effect }, effect } iferr { null }
+        }
+        aura_for_row{ &v, &sc, &w, &dev, row, effect, object, lasting = true }
     }
 
     // A visualeffects.2da row playing at a point.
@@ -84,7 +106,10 @@ namespace vfx {
                 else { visual_at{ &v, &sc, &w, &dev, effect, at = position, facing = math::vec3::zero{} } }
             }
             visual_hold{ effect, target } => { hold_on{ &v, &sc, &w, &dev, effect, object = target } }
-            visual_release{ effect, target } => { release{ &v, effect, object = target } }
+            visual_release{ effect, target } => {
+                release{ &v, effect, object = target }
+                release_aura{ &v, &w, effect, object = target }
+            }
             effect_model{ model, object, hook, position, life } => {
                 var_model_fx{ &v, &sc, &w, &dev, model, object, hook, position, life }
             }
