@@ -130,8 +130,24 @@ static inline void ctx_range(uint64_t lo, uint64_t hi, uint64_t n, CTX_POS) {
 int64_t ctx_as_s(int64_t v, int64_t lo, int64_t hi, const char *dst, CTX_POS);
 uint64_t ctx_as_u(uint64_t v, uint64_t hi, const char *dst, CTX_POS);
 // A float, truncated toward zero, into [lo, hi]. NaN and infinities panic.
-int64_t ctx_f2i_s(double v, int64_t lo, int64_t hi, const char *dst, CTX_POS);
-uint64_t ctx_f2i_u(double v, uint64_t hi, const char *dst, CTX_POS);
+// Keep the checks visible to the caller's optimizer; only a failed conversion needs the
+// runtime's number formatting and diagnostics.
+_Noreturn void ctx_f2i_fail(double v, const char *dst, CTX_POS);
+
+static inline int64_t ctx_f2i_s(double v, int64_t lo, int64_t hi, const char *dst, CTX_POS) {
+    // Is trunc(v) at least lo? lo - 1 is exact except for INT64_MIN, with no double between
+    // INT64_MIN - 1 and INT64_MIN. The comparisons also reject NaN before the C cast.
+    int low_ok = lo == INT64_MIN ? v >= -9223372036854775808.0 : v > (double)lo - 1.0;
+    if (!(low_ok && v < (double)hi + 1.0)) ctx_f2i_fail(v, dst, line, col, file);
+    return (int64_t)v;
+}
+
+static inline uint64_t ctx_f2i_u(double v, uint64_t hi, const char *dst, CTX_POS) {
+    // hi + 1 is 2^8, 2^16, 2^32 or 2^64: exact as a double. Values in (-1, 0) truncate to 0.
+    double limit = hi == UINT64_MAX ? 18446744073709551616.0 : (double)hi + 1.0;
+    if (!(v > -1.0 && v < limit)) ctx_f2i_fail(v, dst, line, col, file);
+    return (uint64_t)v;
+}
 
 // ---- natives: std's extern fns over the runtime (std/io.ctx, fs.ctx, ascii.ctx, proc.ctx,
 // build.ctx). A capability isn't passed, and a slice is a ctx_slice. std declares them for
