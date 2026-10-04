@@ -52,10 +52,10 @@
 58001 ui party
 58001 ui pos
 58001 ui inv
+58002 save QUICKSAVE
 58003 ui menu journal
 58006 ui click 515 302
 58020 ui close
-58002 save QUICKSAVE
 58100 warpxy 125,108
 58300 ui pos
 58400 load 000000 - QUICKSAVE
@@ -70,6 +70,8 @@
 66000 ui pos
 71000 ui bot status
 71000 ui pos
+72400 ui replies 1 1 2 1 1 1 default 9
+75950 ui click 640 545
 76000 ui bot status
 76000 ui pos
 81000 ui bot status

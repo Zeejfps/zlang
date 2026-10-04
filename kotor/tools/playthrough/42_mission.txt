@@ -1,0 +1,13 @@
+# From the mission checkpoint (tar_m04aa, before the Mission conversation): Mission joins, the Republic soldier, the gate to the Sith base.
+#   FAST=1 LOAD=kotor/out/checkpoints/mission SAVES=kotor/out/pt/saves_ms sh kotor/tools/playthrough/run.sh ms kotor/tools/playthrough/42_mission.txt 12000 3120:party 3400:talk
+1 ui replies 1 1 2 1 1 1 default 9
+1 ui bot god on
+1 ui bot unlock on
+1 ui bot route tar04_reptlk tar04_maingate tar04_goto05aa10
+2 ui bot on
+3150 ui click 640 545
+3300 ui party
+3300 ui pos
+8000 ui bot status
+8000 ui party
+8000 ui pos

@@ -1,0 +1,13 @@
+3 ui replies default 9
+3 ui bot god on
+3 ui bot unlock on
+5 warp tar05_sw05ab17
+10 ui bot route tar05_elevator tar10_mnrecroom tar10_mnarmory tar10_mncontrol tar10_mnelevator tar10_elev02
+11 ui bot on
+3000 ui pos
+6000 ui pos
+9000 ui pos
+12000 ui pos
+12000 save vulkar
+15000 ui pos
+18000 ui pos
