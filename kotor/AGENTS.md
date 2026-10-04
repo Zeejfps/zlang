@@ -147,6 +147,11 @@ Planned subsystems (namespace in brackets):
 holds the Ghidra install, project and exports, which git doesn't track and can't restore. In a
 worktree, `rex.py` finds the main checkout's `kotor/re` by itself; don't rebuild it elsewhere.
 
+The exports were rebuilt after Ghidra had wrongly marked `CExoString::~CExoString` non-returning and
+cut off the code after its 2,347 calls (`docs/re/noreturn-fix.md`). Before relying on an older RE
+note about a function listed in `docs/re/noreturn-fix-recheck.tsv`, recheck it against the new
+decompile, and correct the note if it no longer holds.
+
 `kotor/re/` (git-ignored) holds the Ghidra install, the analyzed project for `swkotor.exe` and text
 exports (decompiled functions, strings, RTTI class names, the NWScript routine table). See
 `kotor/docs/re/README.md` for how to search them. When you learn something from the binary, write
