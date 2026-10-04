@@ -86,6 +86,7 @@ namespace fight {
         voice_ms: i32,                  // > 0: it has just grunted
         ready_ms: i32,                  // > 0: a cutscene attack was just made, so the weapon stays up
         knock: Knock,
+        saber: SaberThrow,
     }
 
     fn no_impact {} -> Impact {
@@ -101,7 +102,7 @@ namespace fight {
     fn new_fighter { heap: *mut heap::Heap } -> !*mut Fighter {
         let mut c: rules::Creature
         c.loaded_hp = -1
-        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0, voice_ms = 0, ready_ms = 0, knock = no_knock{} }
+        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0, voice_ms = 0, ready_ms = 0, knock = no_knock{}, saber = no_saber{} }
         return try alloc::new(Fighter, heap::Heap){ realloc = heap::alloc, heap, value = f }
     }
 
@@ -322,6 +323,13 @@ namespace fight {
             push_creature{ &w, id }
         } else if k == rules::ev::KNOCKDOWN {
             knock_down{ &w, id }
+        } else if k == rules::ev::FEEDBACK and e.a >= 0x1000 and e.a < 0x1006 {
+            // A poison tick's ability drain (poison.2da dam_str..dam_chr, lasting abil_dur seconds):
+            // the rules leave the penalty to the engine, which applies it as a temporary decrease.
+            let mut drain_fx = rules::fx::make_ability_decrease{ ability = e.a - 0x1000, amount = 1 }
+            rules::fx::set_timing{ e = &drain_fx, dur = rules::dur::TEMPORARY, seconds = @as(f32, e.b) }
+            rules::fx::set_creator{ e = &drain_fx, creator = e.who, spell_id = -1 }
+            _ = apply{ &w, target = id, e = drain_fx }
         } else if k == rules::ev::FEEDBACK {
             if w.log.combat {
                 world::prefix{ w = &w }
@@ -1098,6 +1106,8 @@ namespace fight {
         let f = c.fighter ifnull { return }
         let dt = @as(i32, w.clock.dt * 1000.0)
         if dt <= 0 { return }
+        // A thrown lightsaber is in the air.
+        if f.saber.active and not c.dead { step_saber{ &w, o, f, dt } }
         // The Force pool of a party member refills at 1 % a second out of combat and not at all in
         // combat (regeneration.2da; rules.md 3.8: CSWSCreature::AIUpdate).
         if f.loaded and not c.dead and f.c.stats.max_fp > 0 and f.c.fp < f.c.stats.max_fp {
@@ -1183,6 +1193,8 @@ namespace fight {
     fn action_holds_animation { o: *obj::Object } -> bool {
         if o.actions.len == 0 { return false }
         let head = list::items{ list = o.actions }[0]
+        // A cast plays its conjure and cast animations (and a thrown saber keeps the pose) from its second phase.
+        if head.kind == actions::Kind::cast_spell and head.phase >= 1 { return true }
         return (head.kind == actions::Kind::open_lock or head.kind == actions::Kind::lock) and head.phase >= 2
     }
 
