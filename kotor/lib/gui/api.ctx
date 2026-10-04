@@ -192,6 +192,32 @@ namespace gui {
         return (c.flags & F_CHECKED) != 0
     }
 
+    // CSWGuiBorderInfo::SetFill: the control's fill (its progress fill for a progress bar) becomes the
+    // texture `name`, as the engine does for the target block's frames and health bar.
+    fn set_fill { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, panel: u32, tag: []u8, name: []u8 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        let img = resolve_img{ &g, &fs, &dev, name }
+        if c.kind == K_PROGRESS { c.progress.fill = img } else { c.border.fill = img }
+    }
+
+    // AddChild: `tag`'s control becomes a child of `parent`, so the pointer on the child lights the parent too (the
+    // engine makes a target slot's frame the parent of its icon and arrows).
+    fn set_parent { mut g: Gui, panel: u32, tag: []u8, parent: []u8 } {
+        let p = find_panel{ &g, id = panel } ifnull { return }
+        let pi = find_by_tag{ p, tag = parent }
+        let ci = find_by_tag{ p, tag }
+        if pi < 0 or ci < 0 { return }
+        list::at{ list = p.controls, i = @as(usize, ci) }.parent = list::at{ list = p.controls, i = @as(usize, pi) }.id
+    }
+
+    // Turns a control's stretched fill, and its hilight's, by `turns` quarter turns. The engine gives the
+    // action slots' down arrows 180 degrees of the one arrow picture (CSWGuiActionSlot::Init, 0x0068b9d0).
+    fn set_fill_turns { mut g: Gui, panel: u32, tag: []u8, turns: i32 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.border.fill_turns = turns
+        c.hilight.fill_turns = turns
+    }
+
     // Shows `texture` (w x h pixels) as the control's fill in place of the file's: a portrait, a
     // save's screenshot.
     fn set_picture { mut g: Gui, panel: u32, tag: []u8, texture: render::Texture, w: f32, h: f32 } {
