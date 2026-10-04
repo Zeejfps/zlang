@@ -125,6 +125,18 @@ shadows, 0 pixels differ.
 - **Cost**: 0.05-0.12 ms at 1280x720 (the apartment, the bridge).
 - **Pictures**: `kotor/out/fx/t/bridge_ao_cmp.png` (off, high), `apt_ao_d.png` (the difference, times 8).
 
+### Smooth lightmaps
+
+- **Inputs**: `Enhance.smooth_lightmaps`; lightmapped materials.
+- **What**: the lightmap is read texel by texel (four `texelFetch`, wrapping as the original's sampler does) and
+  mixed with quintic weights (6t⁵ − 15t⁴ + 10t³) instead of linear ones: the light's slope is continuous across
+  texels, so bilinear's diamond grid and stepped gradients on walls and floors smooth out. Decision: a B-spline
+  bicubic (4x4 texels) was tried first; KOTOR's lightmap charts have no padding, so its wider footprint pulled
+  dark texels across every chart border and drew each floor triangle as a block (`kotor/out/fx/t/tat_lm_d.png`
+  shows that version's difference). The quintic filter keeps bilinear's 2x2 footprint and never bleeds.
+- **Cost**: four fetches instead of one per lightmapped pixel; not measurable in the opaque pass.
+- **Pictures**: `kotor/out/fx/t/bridge_lm_cmp.png` (bilinear, smooth; 3x).
+
 ## Settings
 
 The panel is the Advanced Graphics panel's file (`optgraphicsadv.gui`) laid out again: one column of fifteen
