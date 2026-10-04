@@ -408,6 +408,13 @@ pass uses the larger as a radius, scanning the area's x-sorted creature list `+0
 
 The individual check (`0x00502ac0`: line of sight, stealth, the ON_PERCEPTION event) is
 rules.md's/combat.md's.
+In it (read from the disassembly): the PC (`GetPlayerCreatureId`) gets *seen* for every creature of its
+area with no range or line test; any other viewer needs the target within the larger of its two ranges
+and `ClearLineOfSight` (`0x0050c330`) clear, from 1.5 m above each foot: the room walkmeshes (materials
+with LineOfSight 1) and, through `TestSegmentAgainstObjects` (`0x00506650`), the walkmeshes of every
+door and placeable of the area in their current state (a closed door's DWK blocks, an open one's does not),
+the two creatures themselves excluded. Hearing needs only the range. So a closed door keeps the other side
+from perceiving and from a ranged attack's line (actions.md 3.13 step 5).
 
 ### 2.5 Other object types
 

@@ -434,8 +434,8 @@ when a floor follows and nothing blocks (`walkmap::step_across`, used by `moveme
 
 **Perception** (`perception`, gameloop.md 2.4): each creature checks the party every update and
 everyone in its area every 4 s (0.2 s in combat); seen = within ranges.2da's sight range with a
-clear line at eye height through the rooms' walkmeshes (LineOfSight materials), heard = within
-the hearing range. Changes post script event 1 (PERCEPTION) with what changed in `ints[0]`
+clear line at eye height through the rooms' walkmeshes (faces whose material has LineOfSight 1) and the
+walkmeshes of closed doors and of placeables, heard = within the hearing range (through walls). Changes post script event 1 (PERCEPTION) with what changed in `ints[0]`
 (1 seen, 2 heard, 4 vanished, 8 inaudible); the object's `ctx` keeps them for
 GetLastPerception*. A creature in stealth mode is seen and heard only when the viewer wins the
 original's two contests (lib/engine/stealth.ctx, [mechanics/stealth.md](../mechanics/stealth.md)).
