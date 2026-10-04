@@ -1,0 +1,136 @@
+// What a fight tells the presentation (docs/design/vfx.md): a ranged attack's bolt leaves and
+// arrives, a hit's impact effect, the sounds of shots, swings and hits. Nothing here changes the
+// fight: the notes go to the outbox and lib/vfx and the mixer make something of them.
+namespace fight {
+    // A bolt's flight takes about 23.8 ms per metre of distance (combat.md 3.3, ReaxnDelay; med).
+    const BOLT_MS_PER_M: f32 = 23.8
+    const MIN_FLIGHT_MS: i32 = 40
+    const MAX_FLIGHT_MS: i32 = 1500
+
+    // Visual effect ids the combat uses (visualeffects.2da labels).
+    const VFX_BLASTER_DEFLECTION: i32 = 4023
+    const VFX_BLASTER_IMPACT: i32 = 4024
+
+    // How long a bolt from `o` takes to reach `t`.
+    fn bolt_ms { o: *obj::Object, t: *obj::Object } -> i32 {
+        let dx = t.position.x - o.position.x
+        let dy = t.position.y - o.position.y
+        let ms = @as(i32, math::sqrtf{ x = dx * dx + dy * dy } * BOLT_MS_PER_M)
+        return if ms < MIN_FLIGHT_MS { MIN_FLIGHT_MS } else if ms > MAX_FLIGHT_MS { MAX_FLIGHT_MS } else { ms }
+    }
+
+    // The item in one of the creature's weapon hands (hand 1 is the left; a missing left hand
+    // shoots from the right).
+    fn hand_item { c: *obj::Creature, hand: i32 } -> u32 {
+        if hand == 1 and c.equipped[obj::SLOT_LEFT_WEAPON] != obj::INVALID { return c.equipped[obj::SLOT_LEFT_WEAPON] }
+        return c.equipped[obj::SLOT_RIGHT_WEAPON]
+    }
+
+    // The ammunitiontypes.2da row of a ranged weapon (0 none).
+    fn ammo_of { w: *world::World, item: u32 } -> i32 {
+        let io = world::object{ w, id = item } ifnull { return 0 }
+        let it = obj::item{ o = io } ifnull { return 0 }
+        return twoda::get_int{ t = w.tables.baseitems, row = @as(usize, it.base), column = "ammunitiontype" } ifnull 0
+    }
+
+    // Plays a sound resource at a point (the mixer finds it by name).
+    fn say { mut w: world::World, name: []u8, at: math::Vec3, source: u32 } {
+        if name.len == 0 or name.len > 16 { return }
+        outbox::post{ out = &w.out, note = outbox::Note::play_sound{ name = resref::truncate{ name }, object = source, position = at, positional = true } }
+    }
+
+    fn chest_of { o: *obj::Object } -> math::Vec3 {
+        return math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + 1.2 }
+    }
+
+    // A bolt leaves the weapon at its shot time: the shot note for the bolt and muzzle flash,
+    // the weapon's firing sound.
+    fn fire_shot { mut w: world::World, id: u32, imp: *Impact, power: bool } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        let ammo = ammo_of{ w = &w, item = hand_item{ c, hand = imp.hand } }
+        if ammo <= 0 { return }
+        let result = if imp.attack { imp.result } else { rules::outcome::MISS }
+        outbox::post{ out = &w.out, note = outbox::Note::shot{
+            attacker = id, target = imp.target, ammo, power, hand = imp.hand, flight_ms = imp.at_ms - imp.fire_ms, result,
+        } }
+        let sound = twoda::get_string{ t = w.tables.ammunitiontypes, row = @as(usize, ammo), column = if power { "shotsound1" } else { "shotsound0" } } ifnull ""
+        say{ &w, name = sound, at = chest_of{ o }, source = id }
+    }
+
+    // The first damagehitvisual.2da effect of a damage type that did damage (ranged column).
+    fn ranged_hit_effect { w: *world::World, damage: *rules::DamageRoll } -> i32 {
+        let mut slot: usize = 0
+        while slot < 15 {
+            if damage.slots[slot] > 0 {
+                let v = twoda::get_int{ t = w.tables.damagehitvisual, row = slot, column = "rangedeffect" } ifnull 0
+                if v > 0 { return v }
+            }
+            slot = slot + 1
+        }
+        return 0
+    }
+
+    // A bolt arrives: the impact effect and sound on a hit, the deflection effect on a bolt
+    // that was knocked away. (A miss flew on; lib/vfx ends it where it hits.)
+    fn land_ranged_fx { mut w: world::World, id: u32, imp: *Impact, power: bool } {
+        let t = world::object{ w = &w, id = imp.target } ifnull { return }
+        if not imp.attack { return }
+        if imp.hit {
+            let mut effect = ranged_hit_effect{ w = &w, damage = &imp.damage }
+            if effect == 0 and imp.damage.total > 0 { effect = VFX_BLASTER_IMPACT }
+            if effect > 0 {
+                outbox::post{ out = &w.out, note = outbox::Note::visual{ effect, target = imp.target, source = id, position = math::vec3::zero{} } }
+            }
+            let o = world::object{ w = &w, id } ifnull { return }
+            let c = obj::creature{ o } ifnull { return }
+            let ammo = ammo_of{ w = &w, item = hand_item{ c, hand = imp.hand } }
+            if ammo > 0 {
+                let sound = twoda::get_string{ t = w.tables.ammunitiontypes, row = @as(usize, ammo), column = if power { "impactsound1" } else { "impactsound0" } } ifnull ""
+                say{ &w, name = sound, at = chest_of{ o = t }, source = imp.target }
+            }
+        } else if imp.result == rules::outcome::DEFLECTED or imp.result == rules::outcome::RETURNED {
+            outbox::post{ out = &w.out, note = outbox::Note::visual{ effect = VFX_BLASTER_DEFLECTION, target = imp.target, source = id, position = math::vec3::zero{} } }
+        }
+    }
+
+    // weaponsounds.2da's column for the material a hit lands on: the worn armour's type, else
+    // leather (cloth and leather share their sounds).
+    fn hit_column { w: *world::World, t: *obj::Object, into: []mut u8 } -> []u8 {
+        let mut kind: []u8 = "leather"
+        if obj::creature{ o = t } is some{ value = tc } {
+            if world::object{ w, id = tc.equipped[obj::SLOT_BODY] } is some{ value = armor } {
+                if obj::item{ o = armor } is some{ value = it } {
+                    let s = twoda::get_string{ t = w.tables.baseitems, row = @as(usize, it.base), column = "armortype" } ifnull ""
+                    if s.len > 0 and s.len < 12 { kind = s }
+                }
+            }
+        }
+        let mut n: usize = 0
+        while n < kind.len { into[n] = kind[n]; n = n + 1 }
+        into[n] = '0'
+        return into[..n + 1]
+    }
+
+    // weaponsounds.2da's row for the attacker's weapon: its material type, unarmed 0.
+    fn weapon_sound_row { w: *world::World, c: *obj::Creature } -> usize {
+        let item = c.equipped[obj::SLOT_RIGHT_WEAPON]
+        let io = world::object{ w, id = item } ifnull { return 0 }
+        let it = obj::item{ o = io } ifnull { return 0 }
+        return @as(usize, twoda::get_int{ t = w.tables.baseitems, row = @as(usize, it.base), column = "weaponmattype" } ifnull 0)
+    }
+
+    // A melee attack lands: the weapon's hit sound on the target's material, or the parry sound
+    // when the blow was turned.
+    fn land_melee_fx { mut w: world::World, id: u32, imp: *Impact } {
+        let t = world::object{ w = &w, id = imp.target } ifnull { return }
+        if not imp.attack { return }
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        let row = weapon_sound_row{ w = &w, c }
+        let mut col: [16]u8
+        let column: []u8 = if imp.hit { hit_column{ w = &w, t, into = col[..] } } else { "parry0" }
+        let sound = twoda::get_string{ t = w.tables.weaponsounds, row, column } ifnull ""
+        say{ &w, name = sound, at = chest_of{ o = t }, source = imp.target }
+    }
+}

@@ -22,7 +22,9 @@ namespace fight {
 
     // One impact of a round: when it lands, on whom, what the rules decided (3.3).
     struct Impact {
-        at_ms: i32,
+        at_ms: i32,                     // when it lands (a ranged shot: after its bolt's flight)
+        fire_ms: i32,                   // ranged: when the bolt leaves the weapon
+        hand: i32,                      // ranged: 0 right hand, 1 left (weapondischarge.2da switchmask)
         target: u32,
         attack: bool,                   // carries an attack (a ranged shot may be only visual)
         hit: bool,
@@ -44,7 +46,8 @@ namespace fight {
         anim_row: i32,                  // the attack animation (animations.2da row)
         anim_ms: i32,                   // until then the attack animation plays
         count: usize,
-        fired: usize,
+        fired: usize,                   // impacts landed
+        shots: usize,                   // bolts fired
         cutscene: bool,                 // a designer's round (CutsceneAttack): no OnEndRound, no combat
         impacts: [MAX_IMPACTS]Impact,
     }
@@ -74,11 +77,11 @@ namespace fight {
     fn no_impact {} -> Impact {
         let mut fx: [rules::MAX_COMBAT_FX]rules::CombatEffect
         let mut damage: rules::DamageRoll
-        return Impact{ at_ms = 0, target = obj::INVALID, attack = false, hit = false, result = 0, killing = false, ranged = false, reaction = NO_ROW, cutscene = false, damage, nfx = 0, fx }
+        return Impact{ at_ms = 0, fire_ms = 0, hand = 0, target = obj::INVALID, attack = false, hit = false, result = 0, killing = false, ranged = false, reaction = NO_ROW, cutscene = false, damage, nfx = 0, fx }
     }
 
     fn no_round {} -> Round {
-        return Round{ started = false, timer_ms = 0, length_ms = 0, target = obj::INVALID, anim_row = NO_ROW, anim_ms = 0, count = 0, fired = 0, cutscene = false, impacts = [no_impact{}; MAX_IMPACTS] }
+        return Round{ started = false, timer_ms = 0, length_ms = 0, target = obj::INVALID, anim_row = NO_ROW, anim_ms = 0, count = 0, fired = 0, shots = 0, cutscene = false, impacts = [no_impact{}; MAX_IMPACTS] }
     }
 
     fn new_fighter { heap: *mut heap::Heap } -> !*mut Fighter {
@@ -696,6 +699,7 @@ namespace fight {
             let mut probe: [12]u8
             ranged = discharge_row{ w = &w, appearance = c.appearance, row = forced.animation, into = probe[..] } != null
         }
+        let flight_ms: i32 = if ranged { bolt_ms{ o, t } } else { 0 }
         let duel = not ranged and not is_ranged_stance{ s = ts } and s != 8 and ts != 8
         let row = if forced.on { forced.animation } else { attack_row{ &w, s, duel, ranged_beast = ranged and s == 0 } }
         f.round = no_round{}
@@ -736,6 +740,7 @@ namespace fight {
         // When the attacks land: melee hit times from combatanimations.2da (hit1..3), ranged shots
         // from weapondischarge.2da, spread over the attacks at random (3.3).
         let mut times: [MAX_IMPACTS]i32 = [0; MAX_IMPACTS]
+        let mut hands: [MAX_IMPACTS]i32 = [0; MAX_IMPACTS]
         let mut carries: [MAX_IMPACTS]bool = [false; MAX_IMPACTS]
         let mut n: usize = 0
         if ranged {
@@ -751,6 +756,11 @@ namespace fight {
                 if u + 1 >= 10 { col[cl] = '1'; cl = cl + 1; col[cl] = @trunc(u8, '0' + @as(u32, u + 1 - 10)) } else { col[cl] = @trunc(u8, '0' + @as(u32, u + 1)) }
                 cl = cl + 1
                 times[n] = if lr != null { twoda::get_int{ t = w.tables.weapondischarge, row = lrow, column = col[..cl] } ifnull 500 } else { 500 }
+                if lr != null {
+                    // switchmask: one digit per shot, 1 the on-hand weapon and 0 the off-hand one.
+                    let mask = twoda::get_string{ t = w.tables.weapondischarge, row = lrow, column = "switchmask" } ifnull ""
+                    if @as(usize, u) < mask.len and mask[@as(usize, u)] == '0' { hands[n] = 1 }
+                }
                 let remaining = @as(u32, shots - u)
                 carries[n] = left > 0 and (world::random{ &w } % remaining) < @as(u32, left)
                 if forced.on { carries[n] = u + 1 == shots }            // the designer's one hit: on the last shot
@@ -776,7 +786,9 @@ namespace fight {
         let mut k: usize = 0
         while k < n {
             let mut imp = no_impact{}
-            imp.at_ms = times[k]
+            imp.at_ms = times[k] + flight_ms
+            imp.fire_ms = times[k]
+            imp.hand = hands[k]
             imp.target = target
             imp.ranged = ranged
             imp.cutscene = forced.on
@@ -849,6 +861,7 @@ namespace fight {
         let tc = obj::creature{ o = t } ifnull { return }
         if tc.dead { return }
         if not imp.attack { return }
+        if imp.ranged { land_ranged_fx{ &w, id, imp, power = false } } else { land_melee_fx{ &w, id, imp } }
         t.ctx.last_attacker = id
         tc.last_hostile_actor = id
         if not imp.cutscene { enter_combat{ &w, id = imp.target, other = id } }
@@ -956,6 +969,12 @@ namespace fight {
         // The round: impacts at their times, the end after 3 s.
         if f.round.started {
             f.round.timer_ms = f.round.timer_ms + dt
+            // Bolts leave the weapon at their shot times and land after their flight.
+            while f.round.shots < f.round.count and f.round.impacts[f.round.shots].fire_ms <= f.round.timer_ms {
+                let shot = f.round.impacts[f.round.shots]
+                f.round.shots = f.round.shots + 1
+                if shot.ranged { fire_shot{ &w, id, imp = &shot, power = false } }
+            }
             while f.round.fired < f.round.count and f.round.impacts[f.round.fired].at_ms <= f.round.timer_ms {
                 let imp = f.round.impacts[f.round.fired]
                 f.round.fired = f.round.fired + 1

@@ -58,6 +58,7 @@ namespace play {
             arena::reset{ heap = w.scratch }
         }
         let mut sc = scene::make{ arena = &scene_arena, heap = w.heap, scratch = texture_scratch, rm = w.rm.* }
+        let mut vx = vfx::make{}
         try scene::load_area{ &sc, &w, &dev }
         let mut camera = cam::new{}
         let mut test_camera: []u8 = ""       // `FRAME cam ...`: a camera for pictures (see place_test_camera)
@@ -178,6 +179,7 @@ namespace play {
                     ambience::stop_area{ a = &amb }
                     scene::release{ &sc, &dev }
                     arena::reset{ heap = &scene_arena }
+                    vfx::reset{ v = &vx }
                     game_over = false
                     clock::set_pause{ c = &w.clock, bit = clock::PAUSE_ENGINE, on = false }
                     save::load_game{ &w, &vm, engine, folder } iferr err{ error } {
@@ -242,6 +244,7 @@ namespace play {
                 ambience::stop_area{ a = &amb }
                 scene::release{ &sc, &dev }
                 arena::reset{ heap = &scene_arena }
+                vfx::reset{ v = &vx }
                 let moved = modload::take_transition{ &w, &vm, engine } iferr err{ error } {
                     _ = @fmt(&w.io, "kotor: transition failed: {}\n", error)
                     return 1
@@ -272,6 +275,7 @@ namespace play {
                 ambience::take{ a = &amb, &w, note = notes[n] }
                 ingame::take{ ui, &w, note = notes[n] }    // HOOK(ingame)
                 dlgview::take_note{ v = &dview, w = &w, g = &ui.gui, dev = &dev, note = notes[n] }
+                vfx::take{ v = &vx, &sc, &w, &dev, note = notes[n] }
                 if pz_game::request_of{ note = notes[n] } is some{ value = asked } { pazaak_asked = asked }
                 n = n + 1
             }
@@ -297,6 +301,7 @@ namespace play {
             // presentation starts anything new (a voice that starts now plays one tick, not N); the camera takes it with its step.
             if owed.dt > 0.0 {
                 scene::sync{ &sc, &w, &dev, dt = owed.clock_dt }
+                vfx::update{ v = &vx, &sc, &w, &dev, dt = owed.clock_dt }
                 if adev == null { speed::mix_seconds{ mixer, silent, rate, seconds = owed.dt } }
             }
             let camera_dt = dt + owed.dt
@@ -305,6 +310,7 @@ namespace play {
             if w.arrival > 0 { camera.started = false }
             dlgview::pre_sync{ v = &dview, w = &w, sc = &sc, dev = &dev, g = &ui.gui, dt = w.clock.dt }
             scene::sync{ &sc, &w, &dev, dt = w.clock.dt }
+            vfx::update{ v = &vx, &sc, &w, &dev, dt = w.clock.dt }
             dlgview::post_sync{ v = &dview, w = &w, sc = &sc, dt = w.clock.dt }
             let look_height = leader_height{ w = &w }
             // Combat mode: the combat camera's style (camerastyle.2da row 8) while the leader
@@ -347,6 +353,7 @@ namespace play {
                 view.fog = sc.fog
                 let vi = render::add_view{ &frame, view } ifnull { 0 }
                 scene::draw{ &sc, w = &w, &frame, view = vi }
+                vfx::draw{ v = &vx, &sc, &frame, view = vi }
                 dlgview::draw{ v = &dview, frame = &frame }
                 ingame::draw{ ui, &w, &dev, &frame }    // HOOK(ingame)
                 gpu::submit{ &dev, frame = &frame } iferr err{ error } {

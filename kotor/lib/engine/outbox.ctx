@@ -52,6 +52,14 @@ namespace outbox {
         queue_movie{ name: resref::ResRef, skippable: bool },
         play_movie_queue{ separate_skips: bool },
         music_volume{ volume: f32 },
+        // Combat and effects for lib/vfx (docs/design/vfx.md).
+        //   shot: a ranged attack fires one bolt: from the attacker's weapon `hand` (0 right, 1 left) to
+        //     the target, arriving `flight_ms` later; `ammo` is the ammunitiontypes.2da row, `power` the
+        //     power-blast model; `result` is rules::outcome (a miss flies on past the target)
+        //   visual: visualeffects.2da row `effect` (the VFX_* id) plays on `target` at its impact node,
+        //     or at `position` when `target` is OBJECT_INVALID; `source` is the caster (for beams)
+        shot{ attacker: u32, target: u32, ammo: i32, power: bool, hand: i32, flight_ms: i32, result: i32 },
+        visual{ effect: i32, target: u32, source: u32, position: math::Vec3 },
     }
 
     // Text copied into the outbox's buffer, valid until the outbox is drained.

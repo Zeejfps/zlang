@@ -34,6 +34,10 @@ namespace world {
         spells: twoda::Table,
         bodybag: twoda::Table,
         modulesave: twoda::Table,
+        ammunitiontypes: twoda::Table,
+        visualeffects: twoda::Table,
+        damagehitvisual: twoda::Table,
+        weaponsounds: twoda::Table,
     }
 
     // A pending module change (gameloop.md 5.1).
@@ -231,6 +235,10 @@ namespace world {
             spells = try load_table{ &fs, heap, rm, name = "spells" },
             bodybag = try load_table{ &fs, heap, rm, name = "bodybag" },
             modulesave = try load_table{ &fs, heap, rm, name = "modulesave" },
+            ammunitiontypes = try load_table{ &fs, heap, rm, name = "ammunitiontypes" },
+            visualeffects = try load_table{ &fs, heap, rm, name = "visualeffects" },
+            damagehitvisual = try load_table{ &fs, heap, rm, name = "damagehitvisual" },
+            weaponsounds = try load_table{ &fs, heap, rm, name = "weaponsounds" },
         }
     }
 

@@ -282,18 +282,18 @@ namespace visual {
     }
 
     // The visual's draws: each part under its parent's hook.
-    fn draw { sc: *scene::Scene, v: *scene::Visual, o: *obj::Object, mut frame: render::Frame, view: u32 } {
+    // The world transform of each of a visual's parts (the root's at the object, an attachment's
+    // at its parent's hook): `out[i]` for part `v.first + i`, as many as `out` holds (8).
+    fn part_transforms { sc: *scene::Scene, v: *scene::Visual, o: *obj::Object, out: []mut math::Mat4 } -> usize {
         let yaw = obj::model_yaw{ orientation = o.orientation }
         let mut instance = math::mat4::from_rotation_translation{
             r = math::quat::from_axis_angle{ axis = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, angle = yaw }, t = o.position,
         }
         // A cutscene's stunt model is authored in area space: its animation moves it from the origin.
         if v.stunt { instance = math::mat4::identity{} }
-        let mut transforms: [8]math::Mat4
         let mut i: usize = 0
-        while i < v.count and i < 8 {
+        while i < v.count and i < out.len {
             let p = scene::part_at{ sc, i = v.first + i }
-            let l = scene::loaded_at{ sc, i = p.loaded }
             let mut t = instance
             if p.parent >= 0 {
                 let parent_index = @as(usize, p.parent) - v.first
@@ -301,12 +301,44 @@ namespace visual {
                     let parent = scene::part_at{ sc, i = @as(usize, p.parent) }
                     let parent_model = scene::loaded_at{ sc, i = parent.loaded }.model
                     let hook = mdl_anim::hook_transform{ model = parent_model, pose = parent.pose, name = p.hook } ifnull { math::mat4::identity{} }
-                    t = math::mat4::mul{ a = transforms[parent_index], b = hook }
+                    t = math::mat4::mul{ a = out[parent_index], b = hook }
                 }
             }
-            transforms[i] = t
-            _ = mdl_render::add_draws{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = t, materials = l.materials, time = sc.time }
+            out[i] = t
             i = i + 1
         }
+        return i
+    }
+
+    fn draw { sc: *scene::Scene, v: *scene::Visual, o: *obj::Object, mut frame: render::Frame, view: u32 } {
+        let mut transforms: [8]math::Mat4
+        let n = part_transforms{ sc, v, o, out = transforms[..] }
+        let mut i: usize = 0
+        while i < n {
+            let p = scene::part_at{ sc, i = v.first + i }
+            let l = scene::loaded_at{ sc, i = p.loaded }
+            _ = mdl_render::add_draws{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = transforms[i], materials = l.materials, time = sc.time }
+            i = i + 1
+        }
+    }
+
+    // Where a visual puts the node called `hook` in world space, looked for in its parts in order
+    // (the body's `Impact` or `headhook`, then a weapon's `bullethook`); `which` picks the nth part
+    // that has one (0: the first, so a second weapon's hook is 1). The matrix's position is the node.
+    fn hook_world { sc: *scene::Scene, v: *scene::Visual, o: *obj::Object, hook: []u8, which: usize } -> ?math::Mat4 {
+        let mut transforms: [8]math::Mat4
+        let n = part_transforms{ sc, v, o, out = transforms[..] }
+        let mut seen: usize = 0
+        let mut i: usize = 0
+        while i < n {
+            let p = scene::part_at{ sc, i = v.first + i }
+            let l = scene::loaded_at{ sc, i = p.loaded }
+            if mdl_anim::hook_transform{ model = l.model, pose = p.pose, name = hook } is some{ value = local } {
+                if seen == which { return math::mat4::mul{ a = transforms[i], b = local } }
+                seen = seen + 1
+            }
+            i = i + 1
+        }
+        return null
     }
 }

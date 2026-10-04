@@ -401,6 +401,16 @@ namespace scene {
         }
     }
 
+    // The world transform of the node `hook` on object `id`'s visual (see visual::hook_world);
+    // null if the object shows nothing or no part has the node.
+    fn hook_of { sc: *Scene, w: *world::World, id: u32, hook: []u8, which: usize } -> ?math::Mat4 {
+        let index = map::get{ m = sc.by_id, key = id } ifnull { return null }
+        if index == NO_VISUAL { return null }
+        let v = list::at{ list = sc.visuals, i = index }
+        let o = world::object{ w, id } ifnull { return null }
+        return visual::hook_world{ sc, v, o, hook, which }
+    }
+
     // Where a ray first meets the visible rooms' drawn geometry (the camera's collision; ours: the
     // original's ray test, movement.md 2.3, meets geometry the walkmeshes lack, such as building
     // fronts above the floor). Meshes are culled by their bounding spheres first.
