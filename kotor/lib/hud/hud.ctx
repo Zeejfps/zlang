@@ -44,6 +44,7 @@ namespace hud {
         trans_panel: u32,                   // the area transition label's panel while the pointer is on a transition, else 0
         trans_object: u32,                  // the transition it names
         projector: Projector,               // this frame's, for picking and the reticle
+        floating: Floating,                 // the damage, miss and XP labels over creatures (floating.ctx)
     }
 
     // The HUD controls of the floating target block.
@@ -83,6 +84,7 @@ namespace hud {
             font = gui::font_slot{ &g, fs = &w.fs, &dev, name = "dialogfont10x10" }, combat = false, combat_message = 0.0, notify = [0.0; 9], notify_shown = [false; 9],
             shown_target = obj::INVALID, lists = [empty_list{}; 3], power_pick = -1, refusal = 0.0, pressed = obj::INVALID, alternate = false, trans_panel = 0, trans_object = obj::INVALID,
             projector = Projector{ vp = math::mat4::identity{}, eye = math::vec3::zero{}, w = 1.0, h = 1.0 },
+            floating = new_floating{ &g, &w, &dev },
         }
         let mut i: usize = 0
         while i < STARTS_HIDDEN.len {
@@ -216,6 +218,7 @@ namespace hud {
         draw_minimap{ mm = &h.minimap, &g, &w, &dev, &frame, panel = h.panel }
         draw_reticle{ &h, &g, &w, &dev, &frame }
         draw_feedback{ &h, &g, log, &frame }
+        draw_floats{ &h, &g, &w, &frame }
     }
 
     // One frame: everything the HUD shows that the world decides. `blocked` says a menu or
@@ -234,6 +237,7 @@ namespace hud {
         gui::set_visible{ &g, panel = h.panel, tag = "TB_SOLO", visible = w.party.count > 1 }
         gui::set_checked{ &g, panel = h.panel, tag = "TB_SOLO", on = w.party.solo }
         update_notify{ &h, &g, dt }
+        tick_floats{ &h, dt }
     }
 
     // Portraits, vitality and Force bars, level-up and down marks of the party members.
