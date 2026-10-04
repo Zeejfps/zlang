@@ -16,8 +16,9 @@ clicked where they are drawn (`ui clicktag TAG`), keys are SDL key events (`ui k
 TEMPLATE DIST [SIDE]` puts a creature ahead of the leader, `ui heal` undoes the bot's god mode, `ui grantfeat N`
 gives the leader a combat feat, `cam toward TAG` turns the follow camera as the player does with the keys. `ui fight`
 prints the leader's combat state, its queue and the target block's slots. `--log combat` prints every attack's
-d20, total and the defense it was against. The helpers are in `lib/ingame/test_combat.ctx`; test scripts in
-`kotor/tools/combat/`.
+d20, total and the defense it was against. The helpers are in `lib/ingame/test_combat.ctx` (also `ui damage TAG N`,
+`ui sethp TAG N`, `ui giveto TAG RESREF N`, `ui aistyle TAG N`, `ui plot TAG 0|1`); the test scripts and their runner
+are in `kotor/tools/combat/` (`sh kotor/tools/combat/run.sh CHECKPOINT TEST FRAMES`, the list in run.sh).
 
 ## Checklist
 
