@@ -200,13 +200,101 @@ namespace rt_party {
         _ = try nwarg::int{ &vm, routine = nwscript::SaveNPCState, argc, i = 0 }
     }
 
-    // int SwitchPlayerCharacter(int nNPC): playing as a companion is not here yet; logged, and
-    // answered FALSE so the script knows nothing changed.
+    // int SwitchPlayerCharacter(int nNPC): the player plays a companion (the Leviathan's prison break: Mission or
+    // whoever the player chose slips out of her cell), or, with -1, the character comes back.
     fn switch_player_character { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let n = try nwarg::int{ &vm, routine = nwscript::SwitchPlayerCharacter, argc, i = 0 }
+        let ok = try switch_player{ &w, n }
+        try nwvm::push_int{ &vm, v = flag{ b = ok } }
+    }
+
+    // CSWPartyTable::SwitchPlayerCharacter (0x005667c0, re/party-items-saves.md 3.5). To an NPC (available, and not the
+    // character already): the player's own character is put aside as "pc" (park_player; an NPC that was the character is kept
+    // as its AVAILNPC file and despawned), the NPC is taken or made at the character's place, becomes the player's character
+    // and the only one in the party; the others in the party are kept the same way and despawned (the script spawns them again
+    // and AddPartyMember's them). Back to the PC (-1, while an NPC is): the NPC is kept and despawned, the PC made again at
+    // its place. AddPartyMember and RemovePartyMember refuse while an NPC is the character. The party's inventory goes with
+    // the player.
+    fn switch_player { mut w: world::World, n: i32 } -> !bool {
+        party::prune{ &w }
+        let cur = w.party.controlled
+        if n == cur or n < -1 or n >= @as(i32, party::SLOTS) { return false }
+        if n < 0 and not save::has_parked_player{ w = &w } { return false }
+        if n >= 0 and not w.party.available[@as(usize, n)] { return false }
+        let from = world::object{ w = &w, id = w.player } ifnull { return false }
+        let at = from.position
+        let facing = from.orientation
+        let old = w.player
+        // The new character, before the old one goes.
+        let mut next = obj::INVALID
+        if n >= 0 {
+            let s = @as(usize, n)
+            next = spawn_available{ &w, n, l = values::Location{ position = at, facing = obj::facing_degrees{ o = from }, area = w.area } }
+            if next == obj::INVALID { return false }
+            // The slot's creature may have been another member of the party: it is the character now.
+            if party::is_member{ w = &w, id = next } { release_member{ &w, id = next } }
+            w.party.npcs[s] = next
+        }
+        // The old character goes: the PC is put aside, an NPC is kept as its AVAILNPC file and despawned.
+        if cur < 0 {
+            try save::park_player{ &w }
+        } else {
+            try save::save_npc{ &w, slot = @as(usize, cur) }
+            if obj::creature{ o = from } is some{ value = fc } { fc.is_pc = false }
+            w.party.npcs[@as(usize, cur)] = obj::INVALID
+        }
+        // Every other member is kept and despawned.
+        let mem = party::members{ w = &w }
+        let mut k: usize = 0
+        while k < mem.len {
+            let id = mem[k]
+            k = k + 1
+            if id == old or id == next { continue }
+            let slot = party::slot_of{ w = &w, id }
+            if slot >= 0 {
+                try save::save_npc{ &w, slot = @as(usize, slot) }
+                w.party.npcs[@as(usize, slot)] = obj::INVALID
+            }
+            world::destroy{ &w, id }
+        }
+        // The old character's equipment goes with it (the file keeps it; the objects come back with the character).
+        if cur < 0 and obj::creature{ o = from } is some{ value = pcc } {
+            let mut e: usize = 0
+            while e < pcc.equipped.len {
+                if pcc.equipped[e] != obj::INVALID { world::destroy{ &w, id = pcc.equipped[e] } }
+                e = e + 1
+            }
+        }
+        world::destroy{ &w, id = old }
+        if n < 0 {
+            next = (try save::pc_from_store{ &w, at, facing }) ifnull { return false }
+            w.party.npcs[@as(usize, cur)] = obj::INVALID
+        }
+        let no = world::object{ w = &w, id = next } ifnull { return false }
+        let nc = obj::creature{ o = no } ifnull { return false }
+        w.party.count = 0
+        w.party.members = [obj::INVALID; 3]
+        _ = party::add{ &w, id = next }
+        w.party.solo = false
+        w.player = next
+        w.pc = next
+        w.party.controlled = n
+        nc.is_pc = true
+        no.ai_level = 4
+        no.commandable = true
+        actions::clear_all{ &w, id = next }
+        // The party's items belong to the new character.
+        let bag = list::items{ list = w.bag }
+        let mut b: usize = 0
+        while b < bag.len {
+            if world::object{ w = &w, id = bag[b] } is some{ value = bo } {
+                if obj::item{ o = bo } is some{ value = bi } { bi.possessor = next }
+            }
+            b = b + 1
+        }
         world::prefix{ w = &w }
-        _ = @fmt(&w.io, "SwitchPlayerCharacter {}: not implemented\n", n)
-        try nwvm::push_int{ &vm, v = 0 }
+        _ = @fmt(&w.io, "SwitchPlayerCharacter {}: the player is {} ({})\n", n, next, no.tag)
+        return true
     }
 
     // void SetSoloMode(int bActivate) (0x00547ce0, SetSoloMode 0x00565500): the flag; turning it off
@@ -304,7 +392,7 @@ namespace rt_party {
     // joins the player's side.
     fn join_party { mut w: world::World, n: i32, id: u32 } -> bool {
         party::prune{ &w }
-        if not party::valid_slot{ n } { return false }
+        if w.party.controlled >= 0 or not party::valid_slot{ n } { return false }
         let s = @as(usize, n)
         if not w.party.available[s] { return false }
         let o = world::object{ w = &w, id } ifnull { return false }
@@ -351,7 +439,7 @@ namespace rt_party {
         let n = try nwarg::int{ &vm, routine = nwscript::RemovePartyMember, argc, i = 0 }
         party::prune{ &w }
         let mut ok = false
-        if party::valid_slot{ n } and w.party.available[@as(usize, n)] {
+        if w.party.controlled < 0 and party::valid_slot{ n } and w.party.available[@as(usize, n)] {
             let id = w.party.npcs[@as(usize, n)]
             if party::is_member{ w = &w, id } {
                 release_member{ &w, id }

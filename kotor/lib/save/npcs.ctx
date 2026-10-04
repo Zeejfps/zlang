@@ -78,6 +78,46 @@ namespace save {
         return o.id
     }
 
+    // SwitchPlayerCharacter puts the player's own character aside (CSWPartyTable::SwitchPlayerCharacter 0x005667c0 writes it
+    // to GAMEINPROGRESS:PC): the whole creature, its equipment too, as "pc" in the game in progress, so a module change and
+    // a save carry it. The caller removes the object.
+    fn park_player { mut w: world::World } -> ! {
+        let o = world::object{ w = &w, id = w.player } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        let mut b = try gffw::new(arena::Arena){ realloc = arena::alloc, heap = w.scratch, tag = "UTC " }
+        try write_creature{ &b, &w, s = gffw::ROOT, o, c }
+        let bytes = try gffw::finish{ &b, layout = gffw::ENGINE }
+        try put{ st = &w.gip, name = "pc", kind = KIND_UTC, bytes }
+    }
+
+    // Whether a character is parked (park_player), and forgetting it.
+    fn has_parked_player { w: *world::World } -> bool { return get{ st = &w.gip, name = "pc", kind = KIND_UTC } != null }
+
+    // The parked player character made again at `at`, facing `facing` (null: none is parked). It is the player's character
+    // from the moment it is read, as restore_player has it: its rules use the level history.
+    fn pc_from_store { mut w: world::World, at: math::Vec3, facing: math::Vec3 } -> !?u32 {
+        let bytes = get{ st = &w.gip, name = "pc", kind = KIND_UTC } ifnull { return null }
+        let doc = try gff::parse{ data = bytes, realloc = arena::alloc, heap = w.scratch }
+        let saved_id = @trunc(u32, gff::get_number{ doc, s = gff::ROOT, label = "ObjectId" } ifnull 0)
+        let fresh = saved_id != 0 and saved_id != obj::INVALID and world::object{ w = &w, id = saved_id } == null
+        let o = try world::add_object{ &w, kind = obj::Kind::creature, id = if fresh { saved_id } else { 0 }, character = not fresh }
+        w.player = o.id
+        o.area = w.area
+        o.position = at
+        world::set_orientation{ o, v = facing }
+        try tmpl::read{ &w, o, doc = &doc, s = gff::ROOT }
+        if obj::creature{ o } is some{ value = c } {
+            c.is_pc = true
+            c.spawn_fired = tmpl::hench_spawn_fired{ o, c }
+            c.walk_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "walkrate" } ifnull 3.2
+            c.run_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "runrate" } ifnull 5.4
+        }
+        o.ai_level = 4
+        movement::place{ &w, id = o.id, at }
+        remove{ st = &w.gip, name = "pc", kind = KIND_UTC }
+        return o.id
+    }
+
     // RestoreParty: the remembered members come back, from their AVAILNPC files (else their
     // blueprints), next to the player (or where the file says, for a loaded save), joined to the
     // party under the player's control.

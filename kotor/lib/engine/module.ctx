@@ -481,6 +481,8 @@ namespace modload {
         o.ai_level = 4
         w.pc = o.id
         w.player = o.id
+        // SwitchPlayerCharacter had made a companion the player's character: the save's player is that slot's creature.
+        if w.party.controlled >= 0 { w.party.npcs[@as(usize, w.party.controlled)] = o.id }
         save::read_actions{ &w, doc, s, id = o.id }
     }
 
