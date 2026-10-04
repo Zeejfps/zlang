@@ -111,7 +111,7 @@ match parse_with{ table = parsers[..], kind = 0, s } {
 
 1. `&fn{C} -> R` may only be the type of a local or of a read-only context field. It can't be a return type, a struct field type, a union payload type, an array element type, the `T` of `?T` or `*T`, or the type of a `mut` context field.
 2. A bound function can't be assigned to a local declared in a scope outside that of any place it holds (§3.1.3, including places held through nested binds).
-3. A bound function may be stored in a local and passed as a call argument.
+3. A bound function may be stored in a local and passed as a call argument. Its capture record lives until the invocation that creates it exits. Each executed bind creates a distinct record, including repeated loop executions. Records are reclaimed after deferred statements, on both normal returns and `try` returns. A never-returning invocation retains all its records; records are not reclaimed at their last use. Function adapters and records of escaping `fn` values may still use permanent allocation.
 4. Code that only calls a function value should take `&fn`, which accepts both kinds. Code that stores one must take `fn`, which rejects bound functions.
 
 ## 7. Structs
@@ -701,7 +701,7 @@ namespace utf8 {
 
 ### Escape check
 
-The compiler checks, within each function, that the address of a local doesn't outlive it. Nothing crosses function boundaries except through the call rule in 2.
+The compiler checks that the address of a local does not outlive it. Direct calls use inferred borrowing summaries; indirect calls remain conservative. This checks stack-local origins, not allocator ownership, arena resets or explicit frees.
 
 1. A **stack pointer** to `L` is `&p` where `p` doesn't go through a deref and its root is `L`, a local or a read-only context field. `&x` for a `mut` context field `x` is not a stack pointer, because it points into the caller.
 2. A value is **derived from** `L` if it is a stack pointer to `L`, or is produced from a value derived from `L` by:
@@ -709,12 +709,15 @@ The compiler checks, within each function, that the address of a local doesn't o
    - a struct, union or array literal, or an error with a payload (`name{ field = e }`)
    - pointer arithmetic, `@cast` or `@slice`
    - converting a `*[N]T` to a slice, slicing (`s[lo..hi]`), or `s.ptr`
-   - a call, whose result is derived from everything its read-only arguments are derived from, or a bind (§4), which copies them. Arguments passed to `mut` fields don't count.
+   - a direct call, whose result is derived from the read-only parameters that may flow into that output. Success and error outputs have separate summaries: `try` propagates only error origins and yields only success origins. A fresh copy or static error need not borrow an input that only controls its contents or selection.
+   - an indirect call, whose outputs conservatively derive from all read-only arguments and the callee's captured origins; a bind (§4) copies all read-only arguments and the callee's captured origins. Arguments passed to `mut` fields do not count.
+
+   Summaries track parameters as whole values, not individual fields. Reads through pointers and slices preserve their input origins. Pointer-bearing stores through mutable caller storage or dereferences conservatively taint pointer-bearing outputs and propagate through calls, even if a call's result is discarded. Generic store types are substituted at direct calls, so copying bytes does not count as storing pointers. Unknown calls conservatively may store their read-only inputs and captured origins. Calls inside recursion retain conservative dependencies. Only a declared top-level `!T` result has separate output channels; generic results and projections or aggregates containing errors conservatively merge their origins. Local `!T` values and pattern payloads may also combine success and error origins; no written function type carries a borrowing contract.
 
    Only values whose type contains a pointer carry this. An error type (§8, Errors) contains one if an error of its set has a payload that does, and a `!T` if its `T` or its error type does. A `&fn` contains one; the places it holds follow §6. A string literal view or a view into const array storage is derived from nothing.
 3. It is a compile error to:
    - `return` a value derived from any local or read-only context field of the function
-   - `try e` (§8, Errors) for an `e` derived from any local or read-only context field of the function, if `e`'s error type contains a pointer: `try` may return the error
+   - `try e` (§8, Errors) when the error output is derived from a local or read-only context field of the function: `try` may return the error
    - assign a value derived from `L` to a local declared in a scope outside `L`'s
    - assign a value derived from `L` to a `mut` context field or any part of one
    - assign a value derived from `L` to a place that goes through a deref
@@ -766,7 +769,7 @@ clear{ &gl }                                      // a Gl2_0 includes a Gl1_1
 
 Settled questions are removed, and the rest keep their numbers.
 
-- **1. Dangling pointers across calls:** the escape check (§14) is intraprocedural. Would inferred per-function summaries be worth it?
+- **1. Dangling pointers across calls:** direct calls have inferred success/error and pointer-store origins (§14); indirect calls remain conservative, and origins through mutable arguments remain outside the check.
 - **3. Allocator instance mismatch:** `alloc::resize`, `new` and `free` take the allocator's state on each call, and passing a different `S` instance of the same type than the memory came from isn't caught. Brands would close this. Lists, maps and builders keep a pointer to their state, so they can't mix instances.
 - **4. Method sugar:** should `x.f{...}` mean `f{ first = &x, ... }`?
 - **5. File = namespace:** should each file implicitly be a namespace?

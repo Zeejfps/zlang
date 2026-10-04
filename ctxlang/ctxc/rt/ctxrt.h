@@ -60,7 +60,16 @@ int ctx_exit(int32_t code);                // flushes output, closes files; retu
 typedef struct ctx_fn { void (*code)(void); } ctx_fn;
 typedef struct { ctx_fn base; ctx_fn *inner; } ctx_adapter;
 
-void *ctx_alloc(size_t n);                 // zeroed, never freed, like ctxi's bound functions
+void *ctx_alloc(size_t n);                 // zeroed permanent storage for escaping records/adapters
+// Each invocation owns its borrowed records. Separate allocations preserve loop snapshots;
+// cleanup runs on every C return, after the emitter has evaluated returns and run defers.
+typedef struct ctx_bind_node ctx_bind_node;
+typedef struct { ctx_bind_node *head; } ctx_bind_scope;
+void *ctx_borrow_alloc(ctx_bind_scope *scope, size_t n);
+void ctx_bind_release(ctx_bind_scope *scope);
+static inline void ctx_bind_cleanup(ctx_bind_scope *scope) {
+    if (scope->head) ctx_bind_release(scope);
+}
 static inline ctx_fn *ctx_adapt(ctx_fn *inner, void (*code)(void)) {
     ctx_adapter *a = ctx_alloc(sizeof *a);
     a->base.code = code;

@@ -218,6 +218,11 @@ namespace check {
         sets:      map::Map(u32, []u32, Heap),        // by function, once inferred
         pending:   list::List(Pending, Heap),         // matches on errors, finished once they are
         pat_errs:  map::Map(u64, u32, Heap),          // the error a pattern names, by its name's key
+        borrow_ready: bool,
+        borrows: map::Map(u32, Borrow, Heap),
+        borrow_busy: map::Map(u32, bool, Heap),
+        borrow_error: bool,
+        borrow_success: bool,
         escapes:   list::List(Escape, Heap),          // escape errors that wait on the sets
         sites:     list::List(Site, Heap),            // every @fmt, whose set is owned by SITE + its index
         fault_writers: map::Map(u64, []Writer, Heap), // an error hole's field writers, by fault_key
@@ -394,6 +399,9 @@ namespace check {
             sets = map::new(u32, []u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             pending = list::new(Pending){ realloc = arena::alloc, &heap },
             pat_errs = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
+            borrow_ready = false, borrow_error = false, borrow_success = false,
+            borrows = map::new(u32, Borrow){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            borrow_busy = map::new(u32, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             escapes = list::new(Escape){ realloc = arena::alloc, &heap },
             sites = list::new(Site){ realloc = arena::alloc, &heap },
             fault_writers = map::new(u64, []Writer){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
@@ -426,6 +434,13 @@ namespace check {
         each{ &c, xs = c.consts, what = Phase::const_values }
         each{ &c, xs = c.consts, what = Phase::fold }
         attributes{ &c }
+        // First resolve body types and inferred error sets; escape diagnostics wait for
+        // direct-call summaries. The second body check replaces the body side tables.
+        each{ &c, xs = c.fns, what = Phase::bodies }
+        infer_sets{ &c }
+        finish_matches{ &c }
+        infer_borrows{ &c }
+        c.borrow_ready = true
         each{ &c, xs = c.fns, what = Phase::bodies }
         infer_sets{ &c }
         finish_matches{ &c }
@@ -4800,6 +4815,438 @@ namespace check {
         }
     }
 
+    // Direct-call summaries use parameter indexes, never stack-local indexes. Pointer stores
+    // are a deliberately broad effect: their origins taint every pointer-bearing output and
+    // every later caller output, without trying to model aliases or heap lifetimes.
+    struct BorrowWrite { ty: Id, origins: []u32 }
+    struct Borrow { ok: []u32, err: []u32, writes: []BorrowWrite }
+    struct BorrowValue { ok: []u32, err: []u32 }
+    struct BorrowBody {
+        env: map::Map(u32, []u32, Heap),
+        ok: []u32, err: []u32,
+        writes: list::List(BorrowWrite, Heap),
+        changed: bool,
+    }
+
+    fn borrow_all { c: Checker, fields: []types::Field } -> []u32 {
+        let mut out = no_vars{}
+        let mut i: usize = 0
+        while i < fields.len {
+            if not fields[i].mutable { out = set_add{ c, xs = out, n = @as(u32, i) } }
+            i = i + 1
+        }
+        return out
+    }
+
+    // STRLIT is a sentinel for an unknown pointer-bearing store type.
+    fn borrow_unknown { c: Checker, fields: []types::Field } -> Borrow {
+        let all = borrow_all{ c, fields }
+        let mut writes = list::new(BorrowWrite){ realloc = arena::alloc, heap = c.heap }
+        try! list::push{ list = &writes, item = BorrowWrite{ ty = types::STRLIT, origins = all } }
+        return Borrow{ ok = all, err = all, writes = list::items{ list = writes } }
+    }
+
+    fn infer_borrows { mut c: Checker } {
+        let fs = list::items{ list = c.fns }
+        let mut i: usize = 0
+        while i < fs.len {
+            _ = borrow_fn{ &c, d = fs[i] }
+            i = i + 1
+        }
+    }
+
+    fn borrow_fn { mut c: Checker, d: u32 } -> Borrow {
+        let known = map::get{ m = c.borrows, key = d }
+        if known != null { return known }
+        let x = get_decl{ c, d }
+        if x.kind != Kind::func or map::has{ m = c.borrow_busy, key = d } { return borrow_unknown{ c, fields = x.fields } }
+        let func{ body } = x.syn.k else { return borrow_unknown{ c, fields = x.fields } }
+        try! map::put{ m = &c.borrow_busy, key = d, value = true }
+        let mut b = BorrowBody{
+            env = map::new(u32, []u32){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 },
+            ok = no_vars{}, err = no_vars{},
+            writes = list::new(BorrowWrite){ realloc = arena::alloc, heap = c.heap }, changed = false,
+        }
+        let first = map::get{ m = c.first_var, key = d }
+        if first == null { return borrow_unknown{ c, fields = x.fields } }
+        let mut i: usize = 0
+        while i < x.fields.len {
+            if not x.fields[i].mutable { borrow_put{ &c, &b, v = first + @as(u32, i), xs = one_id{ c, n = @as(u32, i) } } }
+            i = i + 1
+        }
+        // Monotone local sets also cover values carried around loops. Control dependencies
+        // do not borrow: looking up a key does not make the selected cell borrow that key.
+        b.changed = true
+        while b.changed {
+            b.changed = false
+            borrow_block{ &c, &b, block = body }
+        }
+        let mut taint = no_vars{}
+        let ws = list::items{ list = b.writes }
+        i = 0
+        while i < ws.len {
+            taint = set_union{ c, a = taint, b = ws[i].origins }
+            i = i + 1
+        }
+        let mut out = Borrow{ ok = b.ok, err = b.err, writes = ws }
+        let ret = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = x.ret } }
+        match ret {
+            res{ ok, errs } => {
+                if contains_ptr{ &c, t = ok, seen = no_vars{} } { out.ok = set_union{ c, a = out.ok, b = taint } }
+                if contains_ptr{ &c, t = errs, seen = no_vars{} } { out.err = set_union{ c, a = out.err, b = taint } }
+            }
+            else => { if contains_ptr{ &c, t = x.ret, seen = no_vars{} } { out.ok = set_union{ c, a = out.ok, b = taint } } }
+        }
+        try! map::put{ m = &c.borrows, key = d, value = out }
+        return out
+    }
+
+    fn borrow_put { mut c: Checker, mut b: BorrowBody, v: u32, xs: []u32 } {
+        let v = root_var{ c, v }
+        let old = map::get{ m = b.env, key = v } ifnull { no_vars{} }
+        let now = set_union{ c, a = old, b = xs }
+        if now.len > old.len { b.changed = true }
+        try! map::put{ m = &b.env, key = v, value = now }
+    }
+
+    fn borrow_write { mut c: Checker, mut b: BorrowBody, t: Id, xs: []u32 } {
+        if xs.len == 0 or not contains_ptr{ &c, t, seen = no_vars{} } { return }
+        let ws = list::items{ list = b.writes }
+        let mut i: usize = 0
+        while i < ws.len {
+            if ws[i].ty == t {
+                let now = set_union{ c, a = ws[i].origins, b = xs }
+                list::at{ list = b.writes, i }.origins = now
+                return
+            }
+            i = i + 1
+        }
+        try! list::push{ list = &b.writes, item = BorrowWrite{ ty = t, origins = xs } }
+    }
+
+    fn borrow_origins { c: Checker, v: BorrowValue } -> []u32 { return set_union{ c, a = v.ok, b = v.err } }
+    fn borrow_empty {} -> BorrowValue { return BorrowValue{ ok = no_vars{}, err = no_vars{} } }
+
+    fn borrow_binders { mut c: Checker, mut b: BorrowBody, binders: []syntax::Binder, xs: []u32 } {
+        let mut i: usize = 0
+        while i < binders.len {
+            let v = map::get{ m = c.local_of, key = name_key{ n = binders[i].field } }
+            if v != null { borrow_put{ &c, &b, v, xs } }
+            i = i + 1
+        }
+    }
+
+    fn borrow_if { mut c: Checker, mut b: BorrowBody, x: syntax::If } {
+        _ = borrow_expr{ &c, &b, e = x.c.* }
+        borrow_block{ &c, &b, block = x.then }
+        if x.els != null { borrow_block{ &c, &b, block = x.els } }
+    }
+
+    fn borrow_match { mut c: Checker, mut b: BorrowBody, x: syntax::Match } {
+        let scrut = borrow_expr{ &c, &b, e = x.scrut.* }
+        let mut i: usize = 0
+        while i < x.arms.len {
+            let a = x.arms[i]
+            let mut j: usize = 0
+            while j < a.pats.len {
+                borrow_binders{ &c, &b, binders = a.pats[j].binders, xs = borrow_origins{ c, v = scrut } }
+                j = j + 1
+            }
+            borrow_block{ &c, &b, block = a.body }
+            i = i + 1
+        }
+    }
+
+    fn borrow_block { mut c: Checker, mut b: BorrowBody, block: syntax::Block } {
+        let mut i: usize = 0
+        while i < block.stmts.len {
+            let s = block.stmts[i]
+            match s.k {
+                local{ init } => {
+                    if init != null {
+                        let xs = borrow_origins{ c, v = borrow_expr{ &c, &b, e = init } }
+                        let v = map::get{ m = c.local_of, key = stmt_key{ s } }
+                        if v != null { borrow_put{ &c, &b, v, xs } }
+                    }
+                }
+                let_else{ init, binders, els_binders, els } => {
+                    let xs = borrow_origins{ c, v = borrow_expr{ &c, &b, e = init } }
+                    borrow_binders{ &c, &b, binders, xs }
+                    borrow_binders{ &c, &b, binders = els_binders, xs }
+                    borrow_block{ &c, &b, block = els }
+                }
+                assign{ place, value } => {
+                    let xs = borrow_origins{ c, v = borrow_expr{ &c, &b, e = value } }
+                    _ = borrow_expr{ &c, &b, e = place }
+                    let p = place_path{ c, e = place }
+                    if p != null and not get_var{ c, v = p.root }.indirect {
+                        borrow_put{ &c, &b, v = p.root, xs }
+                    } else { borrow_write{ &c, &b, t = value_ty{ c, k = expr_key{ e = value } }, xs } }
+                }
+                eval{ e } | discard{ e } => { _ = borrow_expr{ &c, &b, e } }
+                ret{ value } => {
+                    if value != null {
+                        let v = borrow_expr{ &c, &b, e = value }
+                        b.ok = set_union{ c, a = b.ok, b = v.ok }
+                        b.err = set_union{ c, a = b.err, b = v.err }
+                    }
+                }
+                cond{ x } => { borrow_if{ &c, &b, x } }
+                choose{ x } => { borrow_match{ &c, &b, x } }
+                loop{ c = test, body } => {
+                    _ = borrow_expr{ &c, &b, e = test }
+                    borrow_block{ &c, &b, block = body }
+                }
+                deferred{ body } => { borrow_block{ &c, &b, block = body } }
+                else => {}
+            }
+            i = i + 1
+        }
+    }
+
+    fn borrow_branch { mut c: Checker, mut b: BorrowBody, block: syntax::Block } -> BorrowValue {
+        if block.stmts.len == 0 { return borrow_empty{} }
+        let v = branch_value{ s = block.stmts[block.stmts.len - 1] }
+        match v {
+            expr{ e } => { return borrow_expr{ &c, &b, e } }
+            nested{ s } => {
+                match s.k {
+                    cond{ x } => { return borrow_if_value{ &c, &b, x } }
+                    choose{ x } => { return borrow_match_value{ &c, &b, x } }
+                    else => {}
+                }
+            }
+            else => {}
+        }
+        return borrow_empty{}
+    }
+    fn borrow_merge { c: Checker, a: BorrowValue, b: BorrowValue } -> BorrowValue {
+        return BorrowValue{ ok = set_union{ c, a = a.ok, b = b.ok }, err = set_union{ c, a = a.err, b = b.err } }
+    }
+    fn borrow_if_value { mut c: Checker, mut b: BorrowBody, x: syntax::If } -> BorrowValue {
+        borrow_if{ &c, &b, x }
+        let mut out = borrow_branch{ &c, &b, block = x.then }
+        if x.els != null { out = borrow_merge{ c, a = out, b = borrow_branch{ &c, &b, block = x.els } } }
+        return out
+    }
+    fn borrow_match_value { mut c: Checker, mut b: BorrowBody, x: syntax::Match } -> BorrowValue {
+        borrow_match{ &c, &b, x }
+        let mut out = borrow_empty{}
+        let mut i: usize = 0
+        while i < x.arms.len {
+            out = borrow_merge{ c, a = out, b = borrow_branch{ &c, &b, block = x.arms[i].body } }
+            i = i + 1
+        }
+        return out
+    }
+
+    fn borrow_map_args { mut c: Checker, xs: []u32, actual: [][]u32 } -> []u32 {
+        let mut out = no_vars{}
+        let mut i: usize = 0
+        while i < xs.len {
+            if xs[i] < actual.len { out = set_union{ c, a = out, b = actual[xs[i]] } }
+            i = i + 1
+        }
+        return out
+    }
+
+    fn borrow_call { mut c: Checker, mut b: BorrowBody, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, bind: bool } -> BorrowValue {
+        let captured = borrow_origins{ c, v = borrow_expr{ &c, &b, e = callee } }
+        let fields = callee_fields{ c, e }
+        let mut actual = list::new([]u32){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < fields.len {
+            try! list::push{ list = &actual, item = no_vars{} }
+            i = i + 1
+        }
+        let mut aggregate = captured
+        i = 0
+        while i < items.len {
+            let xs = borrow_origins{ c, v = borrow_expr{ &c, &b, e = items[i].value } }
+            if not field_is_mut{ fields, name = items[i].name.text } { aggregate = set_union{ c, a = aggregate, b = xs } }
+            let mut j: usize = 0
+            while j < fields.len {
+                if slice::eq_bytes{ a = fields[j].name, b = items[i].name.text } and not fields[j].mutable {
+                    list::items{ list = actual }[j] = xs
+                }
+                j = j + 1
+            }
+            i = i + 1
+        }
+        let fw = map::get{ m = c.forwards, key = expr_key{ e } }
+        if fw != null {
+            i = 0
+            while i < fw.len {
+                let f = fw[i]
+                let xs = map::get{ m = b.env, key = root_var{ c, v = f.var } } ifnull { no_vars{} }
+                if not f.mutable { aggregate = set_union{ c, a = aggregate, b = xs } }
+                let mut j: usize = 0
+                while j < fields.len {
+                    if slice::eq_bytes{ a = fields[j].name, b = f.name } and not f.mutable {
+                        list::items{ list = actual }[j] = xs
+                    }
+                    j = j + 1
+                }
+                i = i + 1
+            }
+        }
+        let literal = map::get{ m = c.literal, key = expr_key{ e } }
+        if bind or (literal != null and literal) { return BorrowValue{ ok = aggregate, err = aggregate } }
+        let mut summary = borrow_unknown{ c, fields }
+        let mut d = NONE
+        let mut targs: []Id = slice::empty(Id){}
+        if map::get{ m = c.refs, key = expr_key{ e = callee } } is func{ decl, targs = ts } {
+            d = decl
+            targs = ts
+            summary = borrow_fn{ &c, d }
+        }
+        if d == NONE { borrow_write{ &c, &b, t = types::STRLIT, xs = captured } }
+        let args = list::items{ list = actual }
+        i = 0
+        while i < summary.writes.len {
+            let w = summary.writes[i]
+            let t = if d == NONE { w.ty } else { types::subst{ s = &c.ty, t = w.ty, decl = d, args = targs } }
+            borrow_write{ &c, &b, t, xs = borrow_map_args{ &c, xs = w.origins, actual = args } }
+            i = i + 1
+        }
+        let out = BorrowValue{
+            ok = set_union{ c, a = captured, b = borrow_map_args{ &c, xs = summary.ok, actual = args } },
+            err = set_union{ c, a = captured, b = borrow_map_args{ &c, xs = summary.err, actual = args } },
+        }
+        // Only a declared !T summary distinguishes success from failure. A generic T
+        // instantiated as !U carries an ordinary value, which may itself be either variant.
+        if d != NONE and not borrow_result{ c, d } { return borrow_project{ c, value = out } }
+        return out
+    }
+
+    fn borrow_result { c: Checker, d: u32 } -> bool {
+        return types::get{ s = c.ty, id = types::prune{ s = c.ty, t = get_decl{ c, d }.ret } } is res
+    }
+
+    // A projection may select an embedded !T from an ordinary aggregate. Whole-value
+    // summaries cannot tell its two payload channels apart, so retain both conservatively.
+    fn borrow_project { c: Checker, value: BorrowValue } -> BorrowValue {
+        let origins = borrow_origins{ c, v = value }
+        return BorrowValue{ ok = origins, err = origins }
+    }
+
+    fn borrow_address { mut c: Checker, mut b: BorrowBody, e: syntax::Expr } -> []u32 {
+        match e.k {
+            path => {
+                if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } {
+                    return map::get{ m = b.env, key = root_var{ c, v = var } } ifnull { no_vars{} }
+                }
+            }
+            field{ base } | deref{ base } => { return borrow_address{ &c, &b, e = base.* } }
+            index{ base, i } => {
+                _ = borrow_expr{ &c, &b, e = i.* }
+                return borrow_address{ &c, &b, e = base.* }
+            }
+            else => { return borrow_origins{ c, v = borrow_expr{ &c, &b, e } } }
+        }
+        return no_vars{}
+    }
+
+    fn borrow_expr { mut c: Checker, mut b: BorrowBody, e: syntax::Expr } -> BorrowValue {
+        let mut out = borrow_empty{}
+        match e.k {
+            path => {
+                if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } {
+                    out.ok = map::get{ m = b.env, key = root_var{ c, v = var } } ifnull { no_vars{} }
+                    out.err = out.ok
+                }
+            }
+            field{ base } | deref{ base } => { out = borrow_project{ c, value = borrow_expr{ &c, &b, e = base.* } } }
+            index{ base, i } => {
+                out = borrow_project{ c, value = borrow_expr{ &c, &b, e = base.* } }
+                _ = borrow_expr{ &c, &b, e = i.* }
+            }
+            range{ base, lo, hi } => {
+                out.ok = borrow_address{ &c, &b, e = base.* }
+                if lo != null { _ = borrow_expr{ &c, &b, e = lo.* } }
+                if hi != null { _ = borrow_expr{ &c, &b, e = hi.* } }
+            }
+            addr{ e = x } => { out.ok = borrow_address{ &c, &b, e = x.* } }
+            neg{ e = x } | lnot{ e = x } => { out = borrow_expr{ &c, &b, e = x.* } }
+            binary{ a, b = rhs } => {
+                out = borrow_expr{ &c, &b, e = a.* }
+                _ = borrow_expr{ &c, &b, e = rhs.* }
+            }
+            braced{ callee, items, bind } => { out = borrow_call{ &c, &b, e, callee = callee.*, items, bind } }
+            array{ elems } => {
+                let mut i: usize = 0
+                while i < elems.len {
+                    out = borrow_merge{ c, a = out, b = borrow_expr{ &c, &b, e = elems[i] } }
+                    i = i + 1
+                }
+            }
+            repeat{ elem, count } => {
+                out = borrow_expr{ &c, &b, e = elem.* }
+                _ = borrow_expr{ &c, &b, e = count.* }
+            }
+            builtin{ args } => {
+                let mut i: usize = 0
+                while i < args.len {
+                    out = borrow_merge{ c, a = out, b = borrow_expr{ &c, &b, e = args[i] } }
+                    i = i + 1
+                }
+            }
+            ifx{ x } => { out = borrow_if_value{ &c, &b, x } }
+            matchx{ x } => { out = borrow_match_value{ &c, &b, x } }
+            trye{ e = x, panics } => {
+                out = borrow_expr{ &c, &b, e = x.* }
+                if not panics { b.err = set_union{ c, a = b.err, b = out.err } }
+                out.err = no_vars{}
+            }
+            isx{ e = x, pats } => {
+                let xs = borrow_origins{ c, v = borrow_expr{ &c, &b, e = x.* } }
+                let mut i: usize = 0
+                while i < pats.len {
+                    borrow_binders{ &c, &b, binders = pats[i].binders, xs }
+                    i = i + 1
+                }
+            }
+            else => {}
+        }
+        // Use the expression's own type, before a success/error injection into !T.
+        let t = type_of_expr{ c, e }
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
+            res{ ok, errs } => {
+                // `try` can yield another !U as its success value. That ordinary inner
+                // result may hold either variant of the extracted success origins.
+                if e.k is trye { out = borrow_project{ c, value = out } }
+                if not contains_ptr{ &c, t = ok, seen = no_vars{} } { out.ok = no_vars{} }
+                if not contains_ptr{ &c, t = errs, seen = no_vars{} } { out.err = no_vars{} }
+            }
+            errs | eset => {
+                out.err = borrow_origins{ c, v = out }
+                out.ok = no_vars{}
+            }
+            else => {
+                out.ok = if contains_ptr{ &c, t, seen = no_vars{} } { borrow_origins{ c, v = out } } else { no_vars{} }
+                out.err = no_vars{}
+            }
+        }
+        return out
+    }
+
+    fn direct_borrow { mut c: Checker, callee: syntax::Expr } -> ?Borrow {
+        if map::get{ m = c.refs, key = expr_key{ e = callee } } is func{ decl } { return map::get{ m = c.borrows, key = decl } }
+        return null
+    }
+    fn borrow_field { fields: []types::Field, summary: ?Borrow, name: []u8, err: bool, success: bool } -> bool {
+        if summary == null { return true }
+        let mut i: usize = 0
+        while i < fields.len {
+            if slice::eq_bytes{ a = fields[i].name, b = name } {
+                return (not success and has_id{ xs = summary.err, n = @as(u32, i) }) or (not err and has_id{ xs = summary.ok, n = @as(u32, i) })
+            }
+            i = i + 1
+        }
+        return true
+    }
+
+
     // ---- safety: escape analysis (§14), bound-function scope (§6) and exclusivity (§3.1)
 
     fn new_derived { mut c: Checker, xs: []u32 } -> u32 {
@@ -4937,6 +5384,7 @@ namespace check {
     // or, if only a function's error set can make it hold one, once the sets are inferred
     // (finish_escapes).
     fn escape_error { mut c: Checker, t: Id, at: source::Span, msg: utf8::String } {
+        if not c.borrow_ready and c.fn_decl != NONE { return }
         if holds_ptr{ &c, t, seen = no_vars{}, unknown = false } {
             flow_error{ &c, at, msg }
             return
@@ -4979,6 +5427,18 @@ namespace check {
         return derives_raw{ &c, e }
     }
 
+    // Inputs are ordinary values even when the containing call selects its error output.
+    fn derives_input { mut c: Checker, e: syntax::Expr } -> []u32 {
+        let err = c.borrow_error
+        let success = c.borrow_success
+        c.borrow_error = false
+        c.borrow_success = false
+        let out = derives{ &c, e }
+        c.borrow_error = err
+        c.borrow_success = success
+        return out
+    }
+
     fn derives_raw { mut c: Checker, e: syntax::Expr } -> []u32 {
         if map::get{ m = c.convs, key = expr_key{ e } } is addr_slice { return derive_addr{ &c, x = e } }
         match e.k {
@@ -5009,15 +5469,20 @@ namespace check {
                     return out
                 }
             }
-            braced{ items, bind } => {
+            braced{ callee, items, bind } => {
                 let lit = map::get{ m = c.literal, key = expr_key{ e } }
                 let is_lit = lit != null and lit
                 let fields = callee_fields{ c, e }
-                let mut out = no_vars{}
+                let summary = if c.borrow_ready and not is_lit and not bind { direct_borrow{ &c, callee = callee.* } } else { null }
+                let mut select = false
+                if map::get{ m = c.refs, key = expr_key{ e = callee.* } } is func{ decl } { select = borrow_result{ c, d = decl } }
+                let err = select and c.borrow_error
+                let success = select and c.borrow_success
+                let mut out = if is_lit { no_vars{} } else { derives_input{ &c, e = callee.* } }
                 let mut i: usize = 0
                 while i < items.len {
-                    if is_lit or not field_is_mut{ fields, name = items[i].name.text } {
-                        out = set_union{ c, a = out, b = derives{ &c, e = items[i].value } }
+                    if is_lit or (not field_is_mut{ fields, name = items[i].name.text } and borrow_field{ fields, summary, name = items[i].name.text, err, success }) {
+                        out = set_union{ c, a = out, b = derives_input{ &c, e = items[i].value } }
                     }
                     i = i + 1
                 }
@@ -5026,7 +5491,7 @@ namespace check {
                     i = 0
                     while i < fw.len {
                         let f = fw[i]
-                        if not f.mutable {
+                        if not f.mutable and borrow_field{ fields, summary, name = f.name, err, success } {
                             let conv_to = if f.conv == null { f.ty } else { conv_target{ conv = f.conv } }
                             if contains_ptr{ &c, t = conv_to, seen = no_vars{} } { out = set_union{ c, a = out, b = derived_of{ c, v = f.var } } }
                         }
@@ -5050,7 +5515,16 @@ namespace check {
             repeat{ elem } => { return derives{ &c, e = elem.* } }
             ifx{ x } => { return derives_if{ &c, x } }
             matchx{ x } => { return derives_match{ &c, x } }
-            trye{ e = x } => { return derives_raw{ &c, e = x.* } }
+            trye{ e = x } => {
+                let saved = c.borrow_error
+                let saved_success = c.borrow_success
+                c.borrow_error = false
+                c.borrow_success = true
+                let out = derives_raw{ &c, e = x.* }
+                c.borrow_error = saved
+                c.borrow_success = saved_success
+                return out
+            }
             else => {}
         }
         return no_vars{}
@@ -6055,7 +6529,9 @@ namespace check {
         }
         // Like `return`, `try` can't hand the caller an error that holds the address of a local.
         if contains_ptr{ &c, t = errs, seen = no_vars{} } {
+            c.borrow_error = true
             let found = derives_raw{ &c, e = x }
+            c.borrow_error = false
             if found.len > 0 {
                 let ds = vars_in_order{ c, xs = found }
                 let mut b = message{ c }

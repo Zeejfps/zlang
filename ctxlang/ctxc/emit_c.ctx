@@ -1214,8 +1214,20 @@ namespace emit {
         }
         nl{ &e }
         put{ &e, a = "CTX_STACK_CHECK();" }
+        // Emit once into a buffer to see whether this body creates records, including
+        // records in defer copies. Functions without binds need no cleanup attribute.
+        let head = e.o
+        let sites = e.sites
+        e.o = ir_print::out{ heap = e.heap, types = e.p.types }
         nl{ &e }
         block{ &e, b = f.body }
+        let body = list::items{ list = e.o.bytes }
+        e.o = head
+        if e.sites != sites {
+            nl{ &e }
+            put{ &e, a = "ctx_bind_scope _ctx_binds __attribute__((cleanup(ctx_bind_cleanup))) = {0};" }
+        }
+        raw{ &e, b = body }
         if not is_void{ e, t = f.ret } {
             nl{ &e }
             put{ &e, a = "__builtin_unreachable();" }
@@ -2503,7 +2515,7 @@ namespace emit {
         forward{ &e, target = f.params, ext = f.symbol.len > 0, args, given = params }
         put{ &e, a = ");\n}\n\n" }
         to_aux{ &e }
-        new_record{ &e, k, inner = null, args }
+        new_record{ &e, k, inner = null, args, borrowed = func_bound{ e, t } }
     }
 
     // A bound function value: like bind, calling the callee value through its code.
@@ -2524,7 +2536,7 @@ namespace emit {
         forward{ &e, target, ext = false, args, given = params }
         put{ &e, a = ");\n}\n\n" }
         to_aux{ &e }
-        new_record{ &e, k, inner = callee, args }
+        new_record{ &e, k, inner = callee, args, borrowed = func_bound{ e, t } }
     }
 
     //   struct bK *s = (struct bK *)self;
@@ -2556,14 +2568,19 @@ namespace emit {
         to_aux{ &e }
     }
 
-    // Allocates record bK and fills it, in the IR's order: the callee value, then the args.
-    fn new_record { mut e: E, k: u32, inner: ?ir::Expr, args: []ir::Arg } {
+    // Allocates record bK and fills it, in IR order: callee, then args. Borrowed records
+    // belong to this invocation; escaping fn records retain permanent storage.
+    fn func_bound { e: E, t: ir::TypeId } -> bool {
+        return ty{ e, id = t } is func{ bound } and bound
+    }
+
+    fn new_record { mut e: E, k: u32, inner: ?ir::Expr, args: []ir::Arg, borrowed: bool } {
         let kr = fresh{ &e }
         put{ &e, a = "({ struct " }
         mark_id{ &e, kind = 'b', id = k }
         put{ &e, a = " *" }
         tmp{ &e, k = kr }
-        put{ &e, a = " = ctx_alloc(sizeof(struct " }
+        put{ &e, a = if borrowed { " = ctx_borrow_alloc(&_ctx_binds, sizeof(struct " } else { " = ctx_alloc(sizeof(struct " } }
         mark_id{ &e, kind = 'b', id = k }
         put{ &e, a = ")); " }
         tmp{ &e, k = kr }

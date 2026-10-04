@@ -27,8 +27,9 @@ interpreter ctxc replaced, is at `8436f4d`.
    shorthand for `let some{ value = p } = e else { ... }`.
 2. **Errors' remaining gap:** matching through a pointer to a `!T`.
 
-*Later, for `@fmt`* (spec §13): a writer's record is leaked from `ctx_alloc`, one per `@fmt`
-passed on, as every bind's is (Open decisions). An error hole is the only piece the compiler writes
+*Later, for `@fmt`* (spec §13): a borrowed writer's capture record is reclaimed when its
+creating invocation exits. Any separate function adapter still uses permanent `ctx_alloc`
+storage (Open decisions). An error hole is the only piece the compiler writes
 itself; a field with no writer is `_`, and std's padded writers keep their `push_` names.
 
 *Later, if wanted:* if patterns nest (a payload's fields, literal values), `_` comes in as a
@@ -385,7 +386,7 @@ program asks for one (spec §19).
 | `a[i]` on arrays | index with a bounds check | Panics, as the spec requires. |
 | `fn{C} -> R` | pointer to a record whose first member is the code | Called with the record and the fields in name order. Conversion to a type with more fields wraps the value in an adapter. Conversion to one whose `!T` may fail with any error (spec §5) is a widening thunk that lowering writes as a function (lower.ctx, `widen_fn`): a named function's is its static record, a bind's binds the thunk instead, and any other value is held by a bind of a thunk calling it. |
 | read-only param of a struct, union or array over 32 bytes | `T *`, used as `(*lN)` | Spec §14.6: the caller passes its place, or a copy where another argument or the callee could change it (emit_c.ctx, `pass`). Not to extern fns. A 300 KB struct passed 20,000 times: 0.89 s to 0.06 s; `ctxc build` of ctxc, 451 ms to 317 ms. |
-| `&fn{C} -> R` | a bind record from `ctx_alloc` | Never freed. |
+| `&fn{C} -> R` | a distinct `ctx_borrow_alloc` record per execution | Reclaimed at invocation exit after defers, including early `try` returns. |
 | `defer` | copied to each exit | Innermost first. `return e` evaluates `e` into a temporary first. |
 | const of array, struct or union type | `static const qvN = VALUE;` | The checker folds the value to literals; `[x; N]` is a GNU range designator. A scalar const is its value at each use. Const array slices borrow this static storage read-only, without copying; each C unit may have its own copy. |
 | `if`/`match` expressions | GNU statement expressions | A branch that leaves uses `return`, `break` or `continue`. |
@@ -426,23 +427,26 @@ program asks for one (spec §19).
 
 - **Panic stack traces.** Printing the function frames with each panic needs a shadow stack in C,
   which costs time on every call. *Recommendation:* a debug flag, off by default. **Deferred.**
-- **Where bound-function records live.** Leaked from `ctx_alloc` for now. §6 already keeps an
-  `&fn` from outliving the frame that made it (it can't be returned, stored in a field, or put
-  in a `mut` field), so a record could live in that frame. `@fmt` writers (spec §13) leak one
-  per `@fmt` passed on. Diagnostics are capped at 100, so ctxc doesn't mind, but a language server
-  (stage 5) running for hours would.
-  - One slot per site is unsound in a loop: §6.2 lets a bind that holds no places be assigned to
-    a local declared outside the loop, so two live values would share the slot. It needs a rule
-    (a bound function made in a loop can't be assigned to a local outside it), or `ctx_alloc`
-    for those binds.
-  - The slot must be hoisted to the top of the C function, since `new_record` is a statement
-    expression, whose variables die at its end. `defer` copies need a slot each.
-  - Adapters (`ctx_adapt`) stay on the heap, since a converted `fn` can be stored. So do the
-    binds lowering makes to widen a function value (lower.ctx, `widen_fn`), whose IR type is
-    then an unbound `fn`.
-  - The interpreter needn't change.
-
-  *Recommendation:* do it before stage 5, as its own change in emit_c's `bind`.
+- **Borrowed bind storage.** Each executed borrowed bind uses a separate invocation-owned
+  allocation. GNU C cleanup releases that invocation's list after defers on every return,
+  including early `try` returns. Separate records preserve simultaneous loop snapshots and
+  nested/reentrant callbacks. A long-running or never-returning invocation still retains every
+  record it creates until exit. Last-use reclamation and frame slots are deferred.
+  - Adapters (`ctx_adapt`) and binds whose IR type is escaping `fn` still use permanent
+    `ctx_alloc` storage. No borrowed-to-`fn` promotion is added. A widening bind with `&fn`
+    type is reclaimed with the other borrowed records.
+  - The interpreter keeps its existing representation.
+- **Direct borrowing summaries.** A checked-AST pass infers whole-parameter success/error
+  origins plus pointer-store effects, then bodies are checked again for escapes. Recursion and
+  indirect calls are conservative; effects carry stored types through generic substitution so
+  byte-copy helpers stay precise. Outputs conservatively include possible stored origins;
+  this does not model memory aliases or allocation lifetimes. Actual KOTOR `copy_bytes`,
+  `copy_lower` and `twoda::get_string` with a local column key pass focused probes.
+  - An indirect hash/equality callback may conservatively retain a map key as a possible store
+    origin. Written function types have no borrowing contracts. Local result values and
+    pattern payloads may merge success/error provenance. `derived` and `held` remain separate.
+  - The extra body check increases front-end work; a safety-only replay can replace it later
+    if profiling justifies the additional machinery.
 
 ## Risks
 

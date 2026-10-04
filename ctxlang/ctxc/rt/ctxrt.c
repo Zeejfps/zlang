@@ -169,7 +169,7 @@ _Noreturn void ctx_panic_fmt(uint32_t line, uint32_t col, uint32_t file, const c
     ctx_panic(line, col, file, msg);
 }
 
-// ---- memory for closures: a bump allocator over chunks that are never freed
+// ---- escaping callable records: permanent bump allocation
 
 void *ctx_alloc(size_t n) {
     static char *chunk;
@@ -185,6 +185,32 @@ void *ctx_alloc(size_t n) {
     chunk += n;
     left -= n;
     return p;
+}
+
+// Borrowed records live until their creating invocation exits, including nested calls.
+// A long-running invocation retains every record until exit, rather than reusing a site.
+struct ctx_bind_node {
+    struct ctx_bind_node *next;
+    max_align_t alignment;
+    unsigned char data[];
+};
+
+void *ctx_borrow_alloc(ctx_bind_scope *scope, size_t n) {
+    ctx_bind_node *node = calloc(1, sizeof *node + n);
+    if (!node) ctx_panic_nopos("out of memory");
+    node->next = scope->head;
+    scope->head = node;
+    return node->data;
+}
+
+void ctx_bind_release(ctx_bind_scope *scope) {
+    ctx_bind_node *node = scope->head;
+    while (node) {
+        ctx_bind_node *next = node->next;
+        free(node);
+        node = next;
+    }
+    scope->head = NULL;
 }
 
 // ---- floats as text, exactly as Python writes them (ctxi's f64_digits and f32_digits)
