@@ -316,6 +316,7 @@ namespace gpu {
         timer_mark{ &dev, name = "opaque" }
         // ---- passes that read the opaque surfaces' depth and normals, and blend into their light
         resolve_depth{ &dev }
+        try run_ao{ &dev, v, area }
         run_height_fog{ &dev, v, area }
         // The passes above set GL's state themselves: what the draws below assume is set afresh.
         dev.state = unknown_state{}

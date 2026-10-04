@@ -272,7 +272,7 @@ namespace glsl {
         \\    }
         \\    o_color = vec4(rgb, alpha);
         \\    float glow = clamp(max(u_selfillum.r, max(u_selfillum.g, u_selfillum.b)), 0.0, 1.0);
-        \\    float occludable = (u_mode.y == 1 || u_maps.y == 1) && u_fx.x != 4 ? 1.0 - glow : 0.0;
+        \\    float occludable = ((u_mode.y == 1 || u_maps.y == 1) && u_fx.x != 4) ? (1.0 - glow) * (u_maps.y == 1 ? 1.0 : 0.67) : 0.0;
         \\    o_normal = vec4(normalize(mat3(u_view) * n) * 0.5 + 0.5, occludable);
         \\}
         \\

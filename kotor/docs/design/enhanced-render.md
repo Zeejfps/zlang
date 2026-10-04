@@ -110,6 +110,21 @@ shadows, 0 pixels differ.
 - **Pictures**: `kotor/out/fx/t/tat_sm_cmp.png` (Anchorhead: planar, low, soft), `up_sm_cmp.png` (Upper City),
   `bridge_sm_cmp.png` (the Endar Spire bridge: the planar shadows' dark band gone).
 
+### Ambient occlusion
+
+- **Inputs**: `Enhance.ao`; the opaque surfaces' depth and view-space normals (the scene's second output), whose
+  alpha is the share of a pixel's light that occlusion may darken: 1 for lightmapped surfaces, 2/3 for lit creatures
+  and objects (their light is part direct), less as self-illumination rises, 0 for unlit, additive and effect draws.
+- **What**: after the opaque surfaces (their depth resolved from the multisampled buffers), at half resolution: for
+  each pixel's view-space point, 12 taps (6 low) of the depth buffer on a spiral within 0.9 m (in screen space by
+  the depth, at most 96 half-pixels), rotated per pixel; each counts by how far above the surface it rises (the
+  normal), fading with distance, less a 0.15 bias. Then a depth-aware 9-tap blur across and down, and a joint
+  bilateral upsample (the four half-resolution texels weighted by distance and depth likeness) multiplied into the
+  light (blending DST_COLOR, ZERO) as much as the pixel's share says. Transparent surfaces and particles are drawn
+  after it.
+- **Cost**: 0.05-0.12 ms at 1280x720 (the apartment, the bridge).
+- **Pictures**: `kotor/out/fx/t/bridge_ao_cmp.png` (off, high), `apt_ao_d.png` (the difference, times 8).
+
 ## Settings
 
 The panel is the Advanced Graphics panel's file (`optgraphicsadv.gui`) laid out again: one column of fifteen
