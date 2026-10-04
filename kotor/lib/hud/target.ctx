@@ -100,7 +100,7 @@ namespace hud {
             creature{ c } => { return not c.dead and o.hp > 0 }
             // An area transition stays clickable once someone has opened it (the click walks the leader through).
             door{ d } => { return (d.state == obj::DoorState::closed or modload::link_of{ o } != null) and not d.static }
-            placeable{ p } => { return (p.useable or p.has_inventory) and not p.static }
+            placeable{ p } => { return p.useable }
             trigger{ t } => { return traps::is_known{ w, o } }
             else => { return false }
         }

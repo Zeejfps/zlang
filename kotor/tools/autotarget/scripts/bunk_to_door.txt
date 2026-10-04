@@ -1,0 +1,11 @@
+# From `bunk`: turn the camera east with D, then walk with W to the closed door at the end of the room.
+# The footlocker the player starts beside is the first target; after half a second of walking the target
+# must be end_door01, the nearest object in front, with no click (the original's ProcessInput drop).
+#   sh kotor/tools/autotarget/run.sh bunk_door bunk kotor/tools/autotarget/scripts/bunk_to_door.txt 110 60:a 105:b
+1 ui bot off
+10 keydown d
+38 keyup d
+40 keydown w
+50 ui pos
+80 ui pos
+110 ui pos

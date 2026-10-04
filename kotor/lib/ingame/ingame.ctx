@@ -482,6 +482,13 @@ namespace ingame {
         return CameraInput{ yaw_degrees = yaw, pitch_degrees = pitch, edge, looking, freelook = ui.freelook and usable }
     }
 
+    // How fast the keys move the leader after this tick's control step: the larger of the velocity's two
+    // components (CSWCPlayerControl::GetCurrentSpeed 0x00679750). The HUD drops a target a leader on the move
+    // has kept for half a second (hud/autotarget.ctx).
+    fn set_move_speed { mut ui: Ingame, speed: f32 } {
+        ui.hud.move_speed = speed
+    }
+
     // The object Q or E just picked, once: the loop tells the camera to swing round to it.
     fn take_turn_to { mut ui: Ingame } -> u32 {
         let id = ui.turn_to
@@ -623,7 +630,13 @@ namespace ingame {
         }
         let aspect = @as(f32, ui.width) / @as(f32, ui.height)
         // A conversation covers the screen with its own panels.
+        ui.hud.looking = ui.looking
         hud::update{ h = &ui.hud, g = &ui.gui, &w, &dev, text = &ui.text, camera, aspect, blocked = is_blocked{ &ui }, dt }
+        // The auto-target's picks that turn the camera (an enemy coming into sight, a pick in combat mode) go the way Q and E do.
+        if ui.hud.swing_to != obj::INVALID {
+            ui.turn_to = ui.hud.swing_to
+            ui.hud.swing_to = obj::INVALID
+        }
         selfslots::update{ s = &ui.selfs, g = &ui.gui, &w, &dev, panel = ui.hud.panel, dt, combat_message = ui.hud.combat and ui.hud.combat_message > 0.0 }
         let events = gui::take_events{ g = &ui.gui }
         let mut i: usize = 0

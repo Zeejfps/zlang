@@ -223,6 +223,30 @@ namespace hud {
         render::draw_image{ &frame, rect = render::Rect{ x = cx - side / 2.0, y = cy - side / 2.0, w = side, h = side }, texture = img.tex, color = render::white{} }
     }
 
+    // The highlight on the object under the pointer (FUN_006889c0 0x006889c0, called at the end of UpdateReticles):
+    // the target reticle's smaller sibling, the plain "friendlyreticle" / "hostilereticle" at half strength,
+    // sized by the leader's distance the same way and hung on the same point. Not while the mouse looks about
+    // (the pointer is hidden), not within 32 pixels of the screen's edge, and not on the target itself unless
+    // its block has a left slot to offer.
+    fn draw_hover_reticle { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame } {
+        if h.looking or w.hover == obj::INVALID { return }
+        if w.hover == w.target and (h.shown_target != w.target or h.lists[0].count == 0) { return }
+        let o = world::object{ w = &w, id = w.hover } ifnull { return }
+        let b = box_on_screen{ p = h.projector, o } ifnull { return }
+        let name: []u8 = if is_hostile{ w = &w, id = w.hover } { "hostilereticle" } else { "friendlyreticle" }
+        let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name }
+        if not img.ok { return }
+        let at = aim_point{ h = &h, w = &w, o, b }
+        if at.x < 32.0 or at.x > @as(f32, h.projector.w) - 32.0 or at.y < 32.0 or at.y > @as(f32, h.projector.h) - 32.0 { return }
+        let leader = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return }
+        let dx = leader.position.x - o.position.x
+        let dy = leader.position.y - o.position.y
+        let dz = leader.position.z - o.position.z
+        let side = reticle_side{ distance = math::sqrtf{ x = dx * dx + dy * dy + dz * dz }, creature = o.kind == obj::Kind::creature }
+        render::begin_ui{ &frame, width = h.projector.w, height = h.projector.h, target = null }
+        render::draw_image{ &frame, rect = render::Rect{ x = at.x - side / 2.0, y = at.y - side / 2.0, w = side, h = side }, texture = img.tex, color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = 0.5 } }
+    }
+
     // Does slot `k`'s selected choice on the target (UseAction, 0x00689610; the keys 1, 2, 3 and the
     // buttons). A choice that cannot be used says why in the message bar and makes the refusal
     // sound; one that can is done in place of what the leader was doing (or behind it, in combat mode).

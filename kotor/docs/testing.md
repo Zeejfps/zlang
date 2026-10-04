@@ -16,6 +16,7 @@ the 24-core development machine.
 | Do the GUI's borders look even at this window size and GUI scale? | `python kotor/tools/py/gui_scales.py OUT.png EXE [BASE_EXE] 1440x1080:1.5 3840x2160:0 ...` (two buttons per size, a base build beside it) | seconds |
 | Is Windows' pointer hidden over the game's real window, through mode switches, minimise and focus moves? | `python kotor/tools/py/pointer_probe.py EXE SETTINGS INPUT SECONDS` with `FRAME gfx mode ...` lines in INPUT (Windows, a real window) | 10 s |
 | Does an item, a skill or a panel work when clicked like a player does? | `sh kotor/tools/items/run.sh NAME CHECKPOINT SCRIPT FRAMES [FRAME:SHOT]...` with `ui clickctl TAG [ROW]` / `ui movectl` in the script ([mechanics/items-skills.md](mechanics/items-skills.md)) | seconds |
+| Does the reticle and target block follow a walking player (the nearest thing in front, no click), and do hover, click and Q / E work? | `sh kotor/tools/autotarget/run.sh NAME CHECKPOINT SCRIPT FRAMES [FRAME:SHOT]...` with `keydown w` / `mouse` lines in the scripts of `kotor/tools/autotarget/scripts/`; the log has one `target: OLD -> NEW (m, degrees)` line per change ([mechanics/controls.md](mechanics/controls.md)) | seconds |
 | Does stealth (the toggle, G, the solo-mode box, hiding past enemies) work as a player meets it? | `sh kotor/tools/stealth/run.sh NAME START SCRIPT FRAMES [FRAME:SHOT]...` with the scripts in `kotor/tools/stealth/scripts/`; `ui stealth [TAG]` prints the state ([mechanics/stealth.md](mechanics/stealth.md)) | seconds |
 
 ## The game headless, fast

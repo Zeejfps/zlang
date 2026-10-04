@@ -350,6 +350,7 @@ namespace play {
             // The player doesn't walk while a conversation runs (re/dialogue.md 4.9).
             if w.conversation.active { keys = ctl::no_keys{} }
             ctl::update{ ctl = &control, &w, keys, yaw = camera.yaw, dt = w.clock.dt }
+            ingame::set_move_speed{ ui, speed = math::max{ a = math::abs{ x = control.vx }, b = math::abs{ x = control.vy } } }    // HOOK(ingame)
             world::tick{ &w, &vm, engine }
             fight::trace{ &w }
             // The whole party fallen: slow motion, the death camera, the "Your entire party has been killed." box and a
