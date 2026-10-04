@@ -1,0 +1,15 @@
+# Tatooine, part 7: from the strip (checkpoint "disguised": the party wears the Sand People Clothing, HK-47 is the translator) across the
+# Sand People Territory (tat_m18ab) to the Enclave (tat_m20aa) and the Chieftain: the first conversation, HK-47 translating, asks for
+# moisture vaporators as the price of peace. A save in front of the chieftain ("chief1").
+#   LOAD=kotor/out/tat_cp/disguised sh kotor/tools/playthrough/tatooine/run.sh chief kotor/tools/playthrough/tatooine/07_chief.txt 16000
+4 ui bot god on
+4 ui bot unlock on
+# the chieftain: "Tell him we want a peaceful solution", then whatever the list offers first
+5 ui replies ~peaceful_solution default 1
+5 ui bot route areatransition#0 tat20aa_tat18ab tatooinedoor3 tat20_wp_chief3 @tat20_09chief_01
+6 ui bot on
+9400 ui pos
+9400 ui journal list
+9400 ui xp
+9400 ui globals tat
+9450 save vapor

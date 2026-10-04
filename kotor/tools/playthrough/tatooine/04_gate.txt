@@ -1,0 +1,16 @@
+# Tatooine, part 4: out of Yuka Laka's shop (checkpoint "hk47": the player, Bastila and HK-47), Iziz the Jawa near the gate (his people were
+# taken by the Sand People; the Star Map question), and the gate guard, who lets a license holder through to the Dune Sea (tat_m18aa);
+# a save there ("dune").
+#   LOAD=kotor/out/tat_cp/hk47 sh kotor/tools/playthrough/tatooine/run.sh gate kotor/tools/playthrough/tatooine/04_gate.txt 12000
+4 ui heal
+4 ui stat hp 127
+2 ui bot god on
+2 ui bot unlock on
+# replies in the order the lists open: Iziz (what is it that you want, the Sand People, what do you want me to do, the Star Map, "you'll tell
+# me after I help you?", goodbye); the guard (authorization, the license)
+2 ui replies ~What_is_it_that_you_want ~Sand_People ~what_do_you_want_me_to_do ~Star_Map ~You'll_tell_me ~Goodbye ~proper_authorization ~hunting_license default 1
+2 ui bot route tatooinedoor1 @tat17_11iziz_01 @tat17_11guard_01
+3 ui bot on
+3900 ui pos
+3900 ui journal list
+3910 save dune

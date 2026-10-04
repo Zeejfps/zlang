@@ -1,0 +1,19 @@
+# Tatooine, part 5: across the Dune Sea (checkpoint "dune") to the strip that leads to the Sand People Territory. The bot fights what attacks
+# (the wraids, the Sand People raiders: they are hostile until the party wears the disguise, tat17_sandperdis, which some of them carry);
+# at the strip it stops. The next part loots the raiders who fell there.
+#   LOAD=kotor/out/tat_cp/dune sh kotor/tools/playthrough/tatooine/run.sh dune kotor/tools/playthrough/tatooine/05_dune.txt 9500
+4 ui heal
+4 ui stat hp 127
+5 ui bot god on
+5 ui bot unlock on
+5 ui replies default 1
+5 ui bot route tat18ab_tat18aa
+6 ui bot on
+2000 ui pos
+4000 ui pos
+6000 ui pos
+8000 ui pos
+11000 ui pos
+11000 ui hostiles
+11000 ui containers
+11100 save strip

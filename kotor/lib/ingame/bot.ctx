@@ -38,12 +38,13 @@ namespace bot {
         talked: bool,                           // the current stop is a `@TAG` and the leader has been told to talk to it
         clicked: usize,                         // 1 + the route index of the transition door it clicked last (0 none)
         seen_open: bool,                        // the door of the current stop has been seen open (one the story shuts again is passed, not opened twice)
+        trans_stop: bool,                       // the current stop is a trigger that starts an area transition (crossing it is reaching it)
         best: f32,                              // the nearest the leader has been to the current stop: a long walk is not a stuck one
         tour: Tour,                             // the area's own route, when `bot tour` made one
     }
 
     fn new {} -> Bot {
-        return Bot{ on = false, unlock = false, god = false, party = false, party_wait = 0, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false, stalled = 0, last_dist = 0.0, area = 0, talked = false, clicked = 0, best = 1000000.0, tour = new_tour{} }
+        return Bot{ on = false, unlock = false, god = false, party = false, party_wait = 0, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false, stalled = 0, last_dist = 0.0, area = 0, talked = false, clicked = 0, trans_stop = false, best = 1000000.0, tour = new_tour{} }
     }
 
     // The `bot ...` input line, after the word `bot`.
@@ -119,8 +120,8 @@ namespace bot {
         if b.area != w.area {
             let came = b.area != 0
             b.area = w.area
-            // (Only when the stop is the door it clicked: the stop may have been passed already.)
-            if came and b.next < b.count and b.clicked == b.next + 1 { advance{ &b } }
+            // (Only when the stop is the door it clicked or a transition trigger: the stop may have been passed already.)
+            if came and b.next < b.count and (b.clicked == b.next + 1 or b.trans_stop) { advance{ &b } }
             b.clicked = 0
         }
         // Something hostile and alive within sight: fight it, nearest first.
@@ -142,6 +143,35 @@ namespace bot {
         }
         if b.next >= b.count { return }
         let raw = b.route[b.next][..@as(usize, b.lens[b.next])]
+        // `X,Y`: a place on the floor (the hidden path through the Eastern Dune Sea is a row of them).
+        if point_stop{ stop = raw } is some{ value = pt } {
+            let f = walkmap::floor_anywhere{ m = &w.walk, x = pt[0], y = pt[1] }
+            let at = math::Vec3{ x = pt[0], y = pt[1], z = if f != null { f.z } else { me.position.z } }
+            let dist = math::vec3::distance{ a = at, b = me.position }
+            b.waiting = b.waiting + 1
+            if dist < b.best - 2.0 {
+                b.best = dist
+                b.waiting = 0
+            }
+            if b.waiting > STUCK_TICKS {
+                _ = @fmt(&w.io, "bot: stuck {} m from {} {}, skipped\n", dist, pt[0], pt[1])
+                advance{ &b }
+                return
+            }
+            if dist < 2.0 {
+                advance{ &b }
+                return
+            }
+            if me.actions.len > 0 { return }
+            let mut a = actions::make{ kind = actions::Kind::move_to_point }
+            a.params[0] = actions::Param::vector{ v = at }
+            a.params[1] = actions::Param::int{ v = 1 }
+            a.params[2] = actions::Param::float{ v = 1.0 }
+            a.params[3] = actions::Param::object{ id = obj::INVALID }
+            a.params[4] = actions::Param::float{ v = 0.0 }
+            _ = actions::add{ &w, id = lead, action = a, force = true }
+            return
+        }
         // `@TAG`: walk up to it and talk to it (the leader's click on a creature). `TAG#N`: the Nth object of that tag.
         let talk = raw.len > 1 and raw[0] == '@'
         let stop = if talk { raw[1..] } else { raw }
@@ -153,6 +183,7 @@ namespace bot {
             return
         }
         let at = stop_point{ w = &w, t, near_z = me.position.z }
+        b.trans_stop = if obj::trigger{ o = t } is some{ value = tr } { tr.linked_to.len > 0 } else { false }
         let dist = math::vec3::distance{ a = at, b = me.position }
         b.waiting = b.waiting + 1
         if dist < b.best - 2.0 {
@@ -191,7 +222,22 @@ namespace bot {
                 }
             }
         }
+        // A stop to talk to is a click on the creature: the leader walks up to it by itself (round a counter, through a door)
+        // and talks, so the order is given once it is near.
+        if talk and not b.talked and dist < 8.0 and obj::creature{ o = t } != null {
+            b.talked = true
+            let mut a = actions::make{ kind = actions::Kind::dialog_object }
+            a.params[0] = actions::Param::object{ id = t.id }
+            actions::clear_all{ &w, id = lead }
+            _ = actions::add{ &w, id = lead, action = a, force = true }
+            return
+        }
         if me.actions.len > 0 { return }
+        // The conversation ordered above has been held (the top of this function waits out one that is on): the stop is done.
+        if talk and b.talked {
+            advance{ &b }
+            return
+        }
         if t.ext is door{ d } {
             if d.state == obj::DoorState::closed and b.seen_open and d.linked_flags == 0 {
                 advance{ &b }
@@ -266,12 +312,26 @@ namespace bot {
         if obj::trigger{ o = t } is some{ value = tr } {
             if tr.polygon.len > 0 {
                 let mid = polygon_middle{ poly = tr.polygon }
-                // The polygon's heights are not the floor's: the floor under the middle, as the leader would find it.
-                let f = walkmap::floor{ m = &w.walk, x = mid.x, y = mid.y, z = near_z + 2.0 }
-                return math::Vec3{ x = mid.x, y = mid.y, z = if f != null { f.z } else { near_z } }
+                // The polygon's heights are not the floor's: the floor under the middle, as the leader would find it from the
+                // polygon's own height (a stop on the far side of a hilly area is not at the leader's), else from the leader's.
+                let f = walkmap::floor{ m = &w.walk, x = mid.x, y = mid.y, z = mid.z + 2.0 }
+                if f != null { return math::Vec3{ x = mid.x, y = mid.y, z = f.z } }
+                let f2 = walkmap::floor{ m = &w.walk, x = mid.x, y = mid.y, z = near_z + 2.0 }
+                return math::Vec3{ x = mid.x, y = mid.y, z = if f2 != null { f2.z } else { near_z } }
             }
         }
         return t.position
+    }
+
+    // A stop that is a place, `X,Y` (digits and a comma, no tag starts that way), as the two numbers.
+    fn point_stop { stop: []u8 } -> ?[2]f32 {
+        if stop.len < 3 { return null }
+        let c = stop[0]
+        if not ((c >= '0' and c <= '9') or c == '-') { return null }
+        let comma = text::find_byte{ s = stop, c = ',' } ifnull { return null }
+        let x = text::scan_f32{ s = stop[..comma] } ifnull { return null }
+        let y = text::scan_f32{ s = stop[comma + 1..] } ifnull { return null }
+        return [x, y]
     }
 
     // A stop's tag and, after a `#`, which object of that tag (counting from 0) it names.
@@ -320,6 +380,7 @@ namespace bot {
         b.waiting = 0
         b.seen_open = false
         b.talked = false
+        b.trans_stop = false
         b.best = 1000000.0
         b.stalled = 0
         b.last_dist = 0.0

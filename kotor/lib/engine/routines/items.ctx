@@ -293,6 +293,20 @@ namespace rt_item {
                 break
             }
         }
+        // A creature's worn and wielded items count too, after the inventory (0x0053a390 asks the 18 equipment slots in turn).
+        if found == obj::INVALID {
+            if obj::creature{ o } is some{ value = c } {
+                let mut slot: usize = 0
+                while slot < obj::EQUIP_SLOTS {
+                    let worn = world::object{ w = &w, id = c.equipped[slot] }
+                    slot = slot + 1
+                    if worn != null and ci::eq{ a = worn.tag, b = tag } {
+                        found = worn.id
+                        break
+                    }
+                }
+            }
+        }
         try nwvm::push_object{ &vm, id = found }
     }
 
@@ -454,6 +468,9 @@ namespace rt_item {
         let id = create_item{ &w, template, target, stack }
         // AcquireItem with feedback: the party is told ("Acquired Item: ...", the HUD's icon).
         if id != obj::INVALID {
+            // The module's OnAcquireItem hears it like any other transfer to a creature (AcquireItem 0x005158e0,
+            // party-items-saves.md 5.4): Kashyyyk's journal entry for Bacca's blade is set by that script.
+            rt_misc::announce_move{ &w, item = id, from = obj::INVALID, to = target, old_is_creature = false }
             notices::item_gained{ &w, who = target, item = id }
             if notices::is_party{ w = &w, id = target } { xfer::mark_new{ &w, item = id } }
         } else if stack > 0 and template.len >= 11 and ci::eq{ a = template[..11], b = "g_i_credits" } {

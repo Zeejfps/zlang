@@ -1,0 +1,18 @@
+# Kashyyyk, part 17: back up from the Lower Shadowlands: the exit trigger (186 245) to the Upper Shadowlands, the elevator basket
+# (the placeable kas24_baskettalk; the enter script destroyed the trigger kas24_basketup) to the Great Walkway. From the checkpoint "mapped"
+# (CKPT=mapped); the long walks are cut with warps (the party stands beside the leader).
+3 ui stat hpmax 130
+3 ui stat hp 130
+5 ui replies default 1
+10 ui bot god on
+10 warp kas25aa_exit party
+40 ui goto exit
+# The Upper Shadowlands again; Gorwooken waits at the basket.
+200 warp kas24_gorwook_01 party
+# The basket here is a placeable the enter script put in the trigger's place (kas24_baskettalk, conversation kas24_xbasket_01).
+260 use kas24_baskettalk
+# On the Walkway the way to the village is cut with a warp to its door; the village door to Chuundar's hall is the game's.
+1100 warp kas22_towndoor party
+1120 use kas22_towndoor
+1500 warp kas23ad_door party
+1520 use kas23ad_door

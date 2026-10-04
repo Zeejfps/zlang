@@ -1,0 +1,29 @@
+# Kashyyyk, part 13: the ritual of the Great Beast (kas_m25aa). The viper kinrath (kas25_kinrath, three at 102 96) die to the party
+# (about 1,500 frames); each leaves a body bag holding kas25_kinrathbod, the viper corpse the ritual needs. The bag has no tag to click
+# on, so the corpse is given by hand (`ui giveitem`). Then the vine (kas25_ritualvine at 188 44): Jolee's talk, the corpse hung
+# on it, and the Great Beast (kas25_wraid, spawned by k_pkas_spwnwraid) comes. From the checkpoint "freyyr" (CKPT=freyyr).
+3 ui stat hpmax 130
+3 ui stat hp 130
+# Freyyr is still the hostile faction his fight script gave him (nothing in the conversation resets it): made neutral by hand,
+# see the open items of docs/playthrough-kashyyyk.md.
+4 ui faction kas25_freyyr_01 5
+5 ui replies default 1
+10 ui bot god on
+10 warp kas25_kinrath party
+20 ui bot on
+1600 ui bot off
+1610 ui giveitem kas25_kinrathbod
+1620 ui journal list
+1620 ui inv
+1630 warp kas25_ritualvine party
+1660 use kas25_ritualvine
+3460 ui bot on
+3460 ui journal list
+4400 ui hostiles
+5500 ui journal list
+5500 ui hostiles
+5500 ui pos
+6600 ui journal list
+6600 ui inv
+6600 ui xp
+6650 save beast
