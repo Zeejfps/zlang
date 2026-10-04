@@ -437,11 +437,38 @@ frames later (no stall), drawn at the top right over the game and written to the
 draws the CPU issues slower than the GPU runs them (the scene's own) shows the CPU's pace; the full-screen
 passes show the GPU's. Use `--headless` (with `--no-render` most frames are not drawn).
 
-**The GUI pass (for later, not changed).** The overlay shows the `ui` pass at 1.2-2.2 ms, more than every 3D effect
-together. Two things in `draw_ui` (gpu.ctx) make it slow, both outside the enhanced renderer: every run of quads that
-shares an image, blend and clip is its own draw, and each one calls `stream`, which orphans the whole 1 MB stream
-buffer (`buffer_data` of STREAM_FLOATS × 4 bytes) before uploading a few hundred bytes. A HUD and an open panel
-make a few hundred such runs a frame, so the driver allocates hundreds of megabytes of buffer a frame. A ring over
-the stream buffer (orphan only when it wraps; `map_buffer_range` with UNSYNCHRONIZED and INVALIDATE_RANGE), and
-sorting runs of the same font texture together, would likely bring it under 0.2 ms. Part of the time is also the
-GPU waiting for the CPU to build the quads, which a timestamp counts as the pass's.
+**The GUI pass.** `draw_ui` (gpu.ctx) used to cost more than every 3D effect together, because each run of quads
+that shares an image, blend and clip called `stream`, which orphaned the whole 1 MB stream buffer (`buffer_data`)
+before uploading a few hundred bytes. Now:
+
+- The stream buffer is a 4 MB ring (`STREAM_RING`, `dev.stream_at`). `stream` appends a draw's vertices after the
+  last draw's and returns their byte offset; the buffer is orphaned only when the ring is used up. The upload is
+  `map_buffer_range` with WRITE | UNSYNCHRONIZED | INVALIDATE_RANGE on just the new part (nothing in flight reads it;
+  it measured 7-12 us faster than `buffer_sub_data` here, and is the way macOS's driver is meant to be fed), with
+  `buffer_sub_data` as the fallback when the map fails. GL 4.1 has no base instance, so each draw points its vertex
+  attributes at its offset (`aim_quads`, `aim_particles`, `aim_debug`); particles and debug geometry use the ring too.
+- `draw_ui` builds a whole step's quads into the scratch (as many as fit), uploads them once, and draws the runs from
+  that upload. It sets the image uniform and the scissor only when they change.
+- The batching of consecutive quads with the same image, blend and clip was already there (`same_batch`), and draw
+  order is untouched: the scenes below are 16-53 draws for 300-900 quads (`ui: N quads in M draws` in the log next to
+  `gpu:`), so merging across other runs would save little and could only be done by reordering.
+
+GPU time of the `ui` pass (RTX 4090, headless, `gfx timing 1`, median of 10-12 frames; the apartment on Taris for the
+HUD and inventory, the Endar Spire's opening conversation for the dialogue, the main menu):
+
+| Scene | 1080p before | 1080p after | 4K before | 4K after |
+|---|---|---|---|---|
+| HUD in the apartment (297 quads, 33 draws) | 0.139 ms | 0.012 | 0.139 | 0.015 |
+| Inventory (754 quads, 45 draws) | 0.184 (up to 2.4) | 0.014 | 0.223 (up to 1.3) | 0.063 |
+| Dialogue reply list (546 quads, 25 draws) | 0.112 (up to 1.1) | 0.003 | 0.099 | 0.007 |
+| Main menu (38 quads, 5 draws) | 0.023 | 0.014 | 0.051 | 0.043 |
+
+The other panels (character, abilities, journal, map, options, equip, messages; 313-901 quads in 16-53 draws) went from
+0.19-0.40 ms to 0.014-0.05 ms at 1080p. What is left at 4K is fill (the inventory's big panel), not the driver. A
+first frame after a panel opens can still show 0.2 ms or a millisecond (textures being made), before and after.
+
+**Checked** with `--screenshot-at` of the same frame before and after, at 1080p and 4K, of the four scenes with
+Original Look off and on: 0 pixels differ in all 16 pairs (at 1080p a 1 MB ring, which wraps every 25 frames or so, also gave
+0). Headless runs without screenshots every frame can run the CPU ahead of the GPU, so the timing readback (four
+frames behind) comes back empty; two screenshots a few frames apart (a readback waits for the GPU) fix that, which
+is what the main menu rows used.

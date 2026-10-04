@@ -725,7 +725,10 @@ namespace play {
             gpu::submit{ &dev, frame = &frame } iferr { done = true }
             let mut s: usize = 0
             while s < opts.shot_count {
-                if opts.shots[s].frame == frame_no { try screenshot{ &w, &dev, heap = w.scratch, path = opts.shots[s].path, frame_no } }
+                if opts.shots[s].frame == frame_no {
+                    try screenshot{ &w, &dev, heap = w.scratch, path = opts.shots[s].path, frame_no }
+                    fxhud::log{ &w, dev }
+                }
                 s = s + 1
             }
             if not opts.headless {

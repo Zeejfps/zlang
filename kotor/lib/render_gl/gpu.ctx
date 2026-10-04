@@ -19,8 +19,11 @@ namespace gpu {
     const NO_SLOT: u32 = 0xFFFFFFFF
     const MAX_BONES: u32 = 32
     const MAX_LIGHTS: u32 = 8
-    // Bytes of streamed vertex data (quads, particles, debug geometry) sent in one draw call.
+    // Floats of streamed vertex data (quads, particles, debug geometry) sent in one draw call.
     const STREAM_FLOATS: usize = 262144
+    // The stream buffer is a ring of this many bytes: each draw's vertices are appended after the last one's, and the
+    // buffer is orphaned only when the ring is used up, not before every draw. At least STREAM_FLOATS * 4.
+    const STREAM_RING: usize = 4194304
     const SORT_ITEMS: usize = 65536
     const FRAME_FLOATS: usize = 48
 
@@ -92,7 +95,8 @@ namespace gpu {
         frame_ubo: u32,
         white: u32,                 // a 1x1 white 2D texture and a black cube, bound where a material
         black_cube: u32,            //   has no map, so every sampler has something complete
-        stream: u32,                // the vertex buffer streamed data goes through
+        stream: u32,                // the vertex buffer streamed data goes through, a ring of STREAM_RING bytes
+        stream_at: usize,           // where the next streamed draw's data goes in it
         ui_vao: u32,
         particle_vao: u32,
         debug_vao: u32,
@@ -176,12 +180,12 @@ namespace gpu {
             debug = DebugProgram{ id = 0 },
             post = PostProgram{ id = 0, exponent = -1 },
             blur = BlurProgram{ id = 0, strength = -1 }, fx = screen, fx_made = false,
-            frame_ubo = 0, white = 0, black_cube = 0, stream = 0, ui_vao = 0, particle_vao = 0, debug_vao = 0,
+            frame_ubo = 0, white = 0, black_cube = 0, stream = 0, stream_at = 0, ui_vao = 0, particle_vao = 0, debug_vao = 0,
             scratch = try alloc::resize(f32, S){ realloc, &heap, mem = slice::empty(f32){}, count = STREAM_FLOATS },
             sort = try alloc::resize(SortItem, S){ realloc, &heap, mem = slice::empty(SortItem){}, count = SORT_ITEMS },
             sort_tmp = try alloc::resize(SortItem, S){ realloc, &heap, mem = slice::empty(SortItem){}, count = SORT_ITEMS },
             state = unknown_state{},
-            stats = render::Stats{ draws = 0, triangles = 0, culled = 0, state_changes = 0, quads = 0, particles = 0 },
+            stats = render::Stats{ draws = 0, triangles = 0, culled = 0, state_changes = 0, quads = 0, particles = 0, ui_draws = 0 },
             anisotropy = if aniso { math::min{ a = 8.0, b = max_aniso } } else { 0.0 }, max_anisotropy = max_aniso,
             log = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = 8192 },
             enhance = render::original_look{}, scene_fx = no_scene_program{}, particle_fx = no_particle_program{},
@@ -685,7 +689,7 @@ namespace gpu {
         dev.frame_ubo = gl::make_buffer{ gl = &dev.gl, target = gl::UNIFORM_BUFFER, bytes = gl::bytes_of(f32){ s = frame[..] }, usage = gl::DYNAMIC_DRAW }
         dev.stream = gl::gen_buffer{ gl = &dev.gl }
         dev.gl.bind_buffer{ target = gl::ARRAY_BUFFER, buffer = dev.stream }
-        dev.gl.buffer_data{ target = gl::ARRAY_BUFFER, size = @as(i64, STREAM_FLOATS * 4), data = null, usage = gl::STREAM_DRAW }
+        dev.gl.buffer_data{ target = gl::ARRAY_BUFFER, size = @as(i64, STREAM_RING), data = null, usage = gl::STREAM_DRAW }
 
         // Quads: rect 4, uv 4, colour 4, angle 1 = 13 floats per instance.
         dev.ui_vao = gl::gen_vertex_array{ gl = &dev.gl }
@@ -1324,7 +1328,7 @@ namespace gpu {
     // shadows, then transparent surfaces and particles back to front, then debug geometry; and
     // the UI runs over them.
     fn submit { mut dev: Device, frame: *render::Frame } -> ! {
-        dev.stats = render::Stats{ draws = 0, triangles = 0, culled = 0, state_changes = 0, quads = 0, particles = 0 }
+        dev.stats = render::Stats{ draws = 0, triangles = 0, culled = 0, state_changes = 0, quads = 0, particles = 0, ui_draws = 0 }
         dev.state = unknown_state{}
         dev.cur = dev.scene
         dev.cur_particle = dev.particle
@@ -1903,7 +1907,8 @@ namespace gpu {
                 f[13] = p.dir.z
                 i = i + 1
             }
-            stream{ &dev, floats = n * per }
+            let at = stream{ &dev, floats = n * per }
+            aim_particles{ &dev, at }
             dev.gl.draw_arrays_instanced{ mode = gl::TRIANGLE_STRIP, first = 0, count = 4, instance_count = @as(i32, n) }
             dev.stats.draws = dev.stats.draws + 1
             dev.stats.particles = dev.stats.particles + @as(u32, n)
@@ -1911,12 +1916,53 @@ namespace gpu {
         }
     }
 
-    // Sends scratch[..floats] to the stream buffer, for the next streamed draw.
-    fn stream { mut dev: Device, floats: usize } {
+    // Appends scratch[..floats] to the stream ring and returns the byte offset it went to, which the draw's vertex
+    // pointers start at (GL 4.1 has no base instance). The ring is orphaned only when it wraps: until then every
+    // draw writes a part no earlier draw reads, so the driver never waits for one and never allocates.
+    fn stream { mut dev: Device, floats: usize } -> usize {
+        let bytes = floats * 4
         dev.gl.bind_buffer{ target = gl::ARRAY_BUFFER, buffer = dev.stream }
-        // A fresh store each time, so the driver needn't wait for the draw before.
-        dev.gl.buffer_data{ target = gl::ARRAY_BUFFER, size = @as(i64, STREAM_FLOATS * 4), data = null, usage = gl::STREAM_DRAW }
-        dev.gl.buffer_sub_data{ target = gl::ARRAY_BUFFER, offset = 0, size = @as(i64, floats * 4), data = @cast(*u8, dev.scratch.ptr) }
+        if dev.stream_at + bytes > STREAM_RING {
+            dev.gl.buffer_data{ target = gl::ARRAY_BUFFER, size = @as(i64, STREAM_RING), data = null, usage = gl::STREAM_DRAW }
+            dev.stream_at = 0
+        }
+        let at = dev.stream_at
+        if not map_upload{ &dev, at, floats } {
+            dev.gl.buffer_sub_data{ target = gl::ARRAY_BUFFER, offset = @as(i64, at), size = @as(i64, bytes), data = @cast(*u8, dev.scratch.ptr) }
+        }
+        dev.stream_at = at + (bytes + 15) / 16 * 16
+        return at
+    }
+
+    // Copies scratch[..floats] into the ring at `at` through an unsynchronized map of just that part, which nothing in
+    // flight reads, so the driver neither waits nor copies the data again. False when GL would not map it.
+    fn map_upload { mut dev: Device, at: usize, floats: usize } -> bool {
+        let access = gl::MAP_WRITE_BIT | gl::MAP_UNSYNCHRONIZED_BIT | gl::MAP_INVALIDATE_RANGE_BIT
+        let mapped = dev.gl.map_buffer_range{ target = gl::ARRAY_BUFFER, offset = @as(i64, at), length = @as(i64, floats * 4), access } ifnull { return false }
+        slice::copy(f32){ dst = @slice(@cast(*mut f32, mapped), floats), src = dev.scratch[..floats] }
+        return dev.gl.unmap_buffer{ target = gl::ARRAY_BUFFER } != 0
+    }
+
+    // Points the bound vertex array's attributes at streamed data that starts `at` bytes into the ring.
+    fn aim_quads { mut dev: Device, at: usize } {
+        dev.gl.vertex_attrib_pointer{ index = 0, size = 4, kind = gl::FLOAT, normalized = gl::FALSE, stride = 52, offset = at }
+        dev.gl.vertex_attrib_pointer{ index = 1, size = 4, kind = gl::FLOAT, normalized = gl::FALSE, stride = 52, offset = at + 16 }
+        dev.gl.vertex_attrib_pointer{ index = 2, size = 4, kind = gl::FLOAT, normalized = gl::FALSE, stride = 52, offset = at + 32 }
+        dev.gl.vertex_attrib_pointer{ index = 3, size = 1, kind = gl::FLOAT, normalized = gl::FALSE, stride = 52, offset = at + 48 }
+    }
+
+    fn aim_particles { mut dev: Device, at: usize } {
+        dev.gl.vertex_attrib_pointer{ index = 0, size = 3, kind = gl::FLOAT, normalized = gl::FALSE, stride = 56, offset = at }
+        dev.gl.vertex_attrib_pointer{ index = 1, size = 2, kind = gl::FLOAT, normalized = gl::FALSE, stride = 56, offset = at + 12 }
+        dev.gl.vertex_attrib_pointer{ index = 2, size = 1, kind = gl::FLOAT, normalized = gl::FALSE, stride = 56, offset = at + 20 }
+        dev.gl.vertex_attrib_pointer{ index = 3, size = 4, kind = gl::FLOAT, normalized = gl::FALSE, stride = 56, offset = at + 24 }
+        dev.gl.vertex_attrib_pointer{ index = 4, size = 1, kind = gl::FLOAT, normalized = gl::FALSE, stride = 56, offset = at + 40 }
+        dev.gl.vertex_attrib_pointer{ index = 5, size = 3, kind = gl::FLOAT, normalized = gl::FALSE, stride = 56, offset = at + 44 }
+    }
+
+    fn aim_debug { mut dev: Device, at: usize } {
+        dev.gl.vertex_attrib_pointer{ index = 0, size = 3, kind = gl::FLOAT, normalized = gl::FALSE, stride = 28, offset = at }
+        dev.gl.vertex_attrib_pointer{ index = 1, size = 4, kind = gl::FLOAT, normalized = gl::FALSE, stride = 28, offset = at + 12 }
     }
 
     // Debug triangles, then lines; depth-tested ones first.
@@ -1977,7 +2023,8 @@ namespace gpu {
 
     fn flush_debug { mut dev: Device, mode: u32, vertices: usize } {
         if vertices == 0 { return }
-        stream{ &dev, floats = vertices * 7 }
+        let at = stream{ &dev, floats = vertices * 7 }
+        aim_debug{ &dev, at }
         dev.gl.draw_arrays{ mode, first = 0, count = @as(i32, vertices) }
         dev.stats.draws = dev.stats.draws + 1
     }
@@ -2000,16 +2047,22 @@ namespace gpu {
         let sx = @as(f32, b.width) / ui_w
         let sy = @as(f32, b.height) / ui_h
         let per: usize = 13
-        let room = dev.scratch.len / per
+        let room = @as(u32, dev.scratch.len / per)
         let end = step.first + step.count
+        // What the program and the scissor were last given in this pass, so a run that repeats it sends nothing.
+        let mut image_set: i32 = -1
+        let mut clip_set = GlRect{ x = 0, y = 0, w = -1, h = -1 }
+        let mut clip_on = false
+        dev.gl.disable{ cap = gl::SCISSOR_TEST }
         let mut q = step.first
         while q < end {
-            // A run of quads that share an image, a blend and a clip goes in one draw.
-            let head = frame.quads[q]
-            let mut n: usize = 0
-            while q < end and n < room and same_batch{ a = head, b = frame.quads[q] } {
-                let quad = frame.quads[q]
-                let f = dev.scratch[n * per..(n + 1) * per]
+            // As many quads as the scratch holds go to the ring in one upload; the runs of it are drawn from there.
+            let base = q
+            let stop = if end - q < room { end } else { q + room }
+            let mut i = q
+            while i < stop {
+                let quad = frame.quads[i]
+                let f = dev.scratch[@as(usize, i - base) * per..@as(usize, i - base + 1) * per]
                 f[0] = quad.rect.x
                 f[1] = quad.rect.y
                 f[2] = quad.rect.w
@@ -2023,40 +2076,59 @@ namespace gpu {
                 f[10] = quad.color.b
                 f[11] = quad.color.a
                 f[12] = quad.angle
-                n = n + 1
-                q = q + 1
+                i = i + 1
             }
-            let blend = if head.blend == render::Blend::additive { render::Blend::additive } else { render::Blend::alpha }
-            set_blend{ &dev, blend }
-            let image: i32 = match head.image {
-                none => {
-                    _ = material_map{ &dev, t = null, unit = 0, cube = false }
-                    _ = material_map{ &dev, t = null, unit = 1, cube = false }
-                    _ = material_map{ &dev, t = null, unit = 2, cube = false }
-                    0
+            let at = stream{ &dev, floats = @as(usize, stop - base) * per }
+            while q < stop {
+                // A run of quads that share an image, a blend and a clip goes in one draw.
+                let head = frame.quads[q]
+                let mut next = q + 1
+                while next < stop and same_batch{ a = head, b = frame.quads[next] } { next = next + 1 }
+                let n = next - q
+                let blend = if head.blend == render::Blend::additive { render::Blend::additive } else { render::Blend::alpha }
+                set_blend{ &dev, blend }
+                let image: i32 = match head.image {
+                    none => {
+                        _ = material_map{ &dev, t = null, unit = 0, cube = false }
+                        _ = material_map{ &dev, t = null, unit = 1, cube = false }
+                        _ = material_map{ &dev, t = null, unit = 2, cube = false }
+                        0
+                    }
+                    texture{ t } => {
+                        _ = material_map{ &dev, t = null, unit = 1, cube = false }
+                        _ = material_map{ &dev, t = null, unit = 2, cube = false }
+                        material_map{ &dev, t, unit = 0, cube = false }
+                    }
+                    yuv{ y, u, v } => {
+                        let ok = material_map{ &dev, t = y, unit = 0, cube = false } + material_map{ &dev, t = u, unit = 1, cube = false } + material_map{ &dev, t = v, unit = 2, cube = false }
+                        if ok == 3 { 2 } else { 0 }
+                    }
                 }
-                texture{ t } => {
-                    _ = material_map{ &dev, t = null, unit = 1, cube = false }
-                    _ = material_map{ &dev, t = null, unit = 2, cube = false }
-                    material_map{ &dev, t, unit = 0, cube = false }
+                if image != image_set {
+                    dev.gl.uniform1i{ location = dev.ui.image, v0 = image }
+                    image_set = image
                 }
-                yuv{ y, u, v } => {
-                    let ok = material_map{ &dev, t = y, unit = 0, cube = false } + material_map{ &dev, t = u, unit = 1, cube = false } + material_map{ &dev, t = v, unit = 2, cube = false }
-                    if ok == 3 { 2 } else { 0 }
+                if head.clip != null {
+                    let r = gl_rect{ r = head.clip, height = b.height, sx, sy }
+                    if not clip_on {
+                        dev.gl.enable{ cap = gl::SCISSOR_TEST }
+                        clip_on = true
+                    }
+                    if r.x != clip_set.x or r.y != clip_set.y or r.w != clip_set.w or r.h != clip_set.h {
+                        dev.gl.scissor{ x = r.x, y = r.y, width = r.w, height = r.h }
+                        clip_set = r
+                    }
+                } else if clip_on {
+                    dev.gl.disable{ cap = gl::SCISSOR_TEST }
+                    clip_on = false
                 }
+                aim_quads{ &dev, at = at + @as(usize, q - base) * per * 4 }
+                dev.gl.draw_arrays_instanced{ mode = gl::TRIANGLE_STRIP, first = 0, count = 4, instance_count = @as(i32, n) }
+                dev.stats.draws = dev.stats.draws + 1
+                dev.stats.ui_draws = dev.stats.ui_draws + 1
+                dev.stats.quads = dev.stats.quads + n
+                q = next
             }
-            dev.gl.uniform1i{ location = dev.ui.image, v0 = image }
-            if head.clip != null {
-                let r = gl_rect{ r = head.clip, height = b.height, sx, sy }
-                dev.gl.enable{ cap = gl::SCISSOR_TEST }
-                dev.gl.scissor{ x = r.x, y = r.y, width = r.w, height = r.h }
-            } else {
-                dev.gl.disable{ cap = gl::SCISSOR_TEST }
-            }
-            stream{ &dev, floats = n * per }
-            dev.gl.draw_arrays_instanced{ mode = gl::TRIANGLE_STRIP, first = 0, count = 4, instance_count = @as(i32, n) }
-            dev.stats.draws = dev.stats.draws + 1
-            dev.stats.quads = dev.stats.quads + @as(u32, n)
         }
         dev.gl.disable{ cap = gl::SCISSOR_TEST }
     }
