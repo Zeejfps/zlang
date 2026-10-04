@@ -139,8 +139,7 @@ the alignment (the rules' value and the engine's copy, which always agree here) 
   that." (`k39_yth_redeem`, journal `kor35_waysith` 60, alignment 98). The Valley's guards (`kor36_endsith1..3`, strip `k_kor_endacademy`) are only
   made for `KOR_FINAL_TEST` 4 or 7 (the chain's ending leaves it at 5): nobody waits at the Academy's exit.
 - **Not played**: the way into Ajunta Pall's tomb (mines, the heat and cold plates, the bridge droids, the lever) and the first
-  Shaardan scene at its door; Naga Sadow's tomb before the pool (the Terentatek and rancors, the pillar puzzle: four discs on three
-  pillars); the rogue droid's peaceful repair puzzle; Jorak Uln's tomb and Mekel there; Kel Algwinn; Lashowe's holocron and the tuk'ata
+  Shaardan scene at its door; Naga Sadow's tomb's southern branch (the pillar puzzle: four discs on three pillars) and its fire pillar; the rogue droid's peaceful repair puzzle; Jorak Uln's tomb and Mekel there; Kel Algwinn; Lashowe's holocron and the tuk'ata
   queen; the Mandalorian's weapon cache; the two endings where Yuthura dies; the poison plots (Yuthura's device and Adrenas, Uthar's
   datapad); the Academy after the test; Dustil, Carth's son (the Academy's enter script makes him when `KOR_DUSTIL_SPAWN` is set, and
   nothing in this chain sets it: it belongs to Carth's Hawk talk, `K_SWG_DUSTIL1`/`KOR_DANEL`; setting it by hand, `dustil.txt`, did not
