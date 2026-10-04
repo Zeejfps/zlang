@@ -11,6 +11,11 @@ namespace paths {
         return walkmap::step_to{ m = &w.walk, from = a, to = b } != null
     }
 
+    // The same from a place that is only being tried as a goal: one inside a blocking footprint does not count.
+    fn clear_from_goal { w: *world::World, a: math::Vec3, b: math::Vec3 } -> bool {
+        return walkmap::step_to_strict{ m = &w.walk, from = a, to = b } != null
+    }
+
     fn point_at { w: *world::World, g: pth::Graph, i: u32, near_z: f32 } -> math::Vec3 {
         let p = g.points[@as(usize, i)]
         let mut z = near_z
@@ -37,7 +42,7 @@ namespace paths {
     // beyond the walls' end; trying only the nearest few found nothing there).
     const LOOKED: usize = 64
 
-    fn nearest_point { mut w: world::World, g: pth::Graph, at: math::Vec3 } -> ?u32 {
+    fn nearest_point { mut w: world::World, g: pth::Graph, at: math::Vec3, goal: bool } -> ?u32 {
         let n = g.points.len
         let skip = alloc::resize(bool, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(bool){}, count = n } iferr { return null }
         let mut i: usize = 0
@@ -63,7 +68,8 @@ namespace paths {
             }
             if best < 0 { return null }
             let b = @as(u32, best)
-            if clear{ w = &w, a = at, b = point_at{ w = &w, g, i = b, near_z = at.z } } { return b }
+            let p = point_at{ w = &w, g, i = b, near_z = at.z }
+            if (if goal { clear_from_goal{ w = &w, a = at, b = p } } else { clear{ w = &w, a = at, b = p } }) { return b }
             skip[@as(usize, best)] = true
             tried = tried + 1
         }
@@ -104,11 +110,11 @@ namespace paths {
 
     fn route { mut w: world::World, g: pth::Graph, from: math::Vec3, goal_asked: math::Vec3, out: *mut list::List(math::Vec3, heap::Heap), adjusted: *mut bool } -> bool {
         let mut goal = goal_asked
-        let s = nearest_point{ w = &w, g, at = from } ifnull {
+        let s = nearest_point{ w = &w, g, at = from, goal = false } ifnull {
             if w.log.actions { _ = @fmt(&w.io, "route: no clear path point near the start ({} points)\n", g.points.len) }
             return false
         }
-        let mut t_found = nearest_point{ w = &w, g, at = goal }
+        let mut t_found = nearest_point{ w = &w, g, at = goal, goal = true }
         if t_found == null {
             let dx = from.x - goal.x
             let dy = from.y - goal.y
@@ -120,7 +126,7 @@ namespace paths {
                 let f = walkmap::floor{ m = &w.walk, x = cx, y = cy, z = from.z + 2.0 }
                 if f != null {
                     let c = math::Vec3{ x = cx, y = cy, z = f.z }
-                    t_found = nearest_point{ w = &w, g, at = c }
+                    t_found = nearest_point{ w = &w, g, at = c, goal = true }
                     if t_found != null {
                         goal = c
                         adjusted.* = true
