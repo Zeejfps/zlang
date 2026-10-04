@@ -1,0 +1,10 @@
+# A store's stock survives a save. Run it twice: the first time with line 4 (the merchant loses three
+# items) active it saves, the second time (line 4 commented out, FOLDER the save's folder under
+# kotor/out/saves) it loads that save and counts 52 where a fresh module counts 55.
+#   kotor.exe --module danm13 --headless --frames 40 --input kotor/tools/ingame/scripts/store_save.txt
+3 ui storecount dan_general
+4 ui stockdrop dan_general 3
+5 ui storecount dan_general
+8 save storetest
+#20 load FOLDER
+#26 ui storecount dan_general

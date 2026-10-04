@@ -980,12 +980,20 @@ namespace fight {
         }
         if f.react_ms > 0 { f.react_ms = f.react_ms - dt }
         // Back to the ready stance (in combat) or standing when an attack or reaction is over.
-        let busy = f.round.started and f.round.timer_ms < f.round.anim_ms
+        let busy = (f.round.started and f.round.timer_ms < f.round.anim_ms) or action_holds_animation{ o = o3 }
         if not busy and f.react_ms <= 0 and not c3.moving and row_of_animation{ id = o3.animation } >= 0 {
             if c3.in_combat { play_ready{ &w, o = o3, c = c3 } } else { world::set_animation{ o = o3, id = obj::ANIM_STAND, speed = 1.0 } }
         } else if c3.in_combat and not c3.moving and o3.animation == obj::ANIM_STAND {
             play_ready{ &w, o = o3, c = c3 }
         }
+    }
+
+    // Whether the head of the queue plays an animations.2da row of its own, which this must not
+    // end as it ends an attack's: OPENLOCK and LOCK kneel at the lock for 1.5 s (doors.ctx).
+    fn action_holds_animation { o: *obj::Object } -> bool {
+        if o.actions.len == 0 { return false }
+        let head = list::items{ list = o.actions }[0]
+        return (head.kind == actions::Kind::open_lock or head.kind == actions::Kind::lock) and head.phase >= 2
     }
 
     fn play_ready { mut w: world::World, o: *mut obj::Object, c: *obj::Creature } {
@@ -1079,6 +1087,9 @@ namespace fight {
                 }
                 if start.interrupted { return actions::Status::failed }
             }
+            // An item's ability spends one of the item's uses as the cast begins.
+            let used = actions::object_param{ a, i = 6 }
+            if used != obj::INVALID { rt_item::spend_use{ &w, item = used, spell } }
             let dir = math::vec3::sub{ a = at, b = o.position }
             if dir.x * dir.x + dir.y * dir.y > 0.0001 { world::set_orientation{ o, v = math::Vec3{ x = dir.x, y = dir.y, z = 0.0 } } }
             if obj::creature{ o } is some{ value = c } {

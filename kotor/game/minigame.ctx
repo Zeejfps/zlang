@@ -31,6 +31,8 @@ namespace mg_game {
                 }
                 continue
             }
+            // an OnDamage script asks for the change it is about to take (GetLastHPChange)
+            if e.slot == mg::ON_DAMAGE { run.last_hp_change = e.value }
             _ = scripts::run{ &w, &vm, engine, name = script, self = e.object }
         }
     }

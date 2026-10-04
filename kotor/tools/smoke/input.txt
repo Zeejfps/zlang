@@ -1,0 +1,4 @@
+2 join p_carth 2
+3 join p_bastilla 0
+10 ui bot god on
+11 ui bot on

@@ -96,6 +96,8 @@ namespace preview3d {
             kind, female, alignment, appearance_2da, heads_2da, light, fixed, creature,
             body = null, head = null, camera_height = 0.0, yaw = 0.0,
         }
+        // The original's 3D controls fill no colour (docs/re/gui3d.md): the panel shows around the scene.
+        p.light.clear = null
         build_creature{ preview = &p, &fs, &dev, rm, &models, &mats, appearance, head } iferr err{ error } {
             free{ preview = &p, &dev }
             return error
@@ -191,9 +193,9 @@ namespace preview3d {
         }
         preview.body = try load_part{
             &fs, &dev, heap = &preview.creature, rm, &models, &mats, name = body_name,
-            body_texture = texture[..texture_len], animation = idle,
+            body_texture = texture[..texture_len], animation = idle, parent = null,
         }
-        if preview.body == null { return no_body }
+        let body = preview.body ifnull { return no_body }
         if is_b {
             let mut head_row = head
             if head_row < 0 {
@@ -205,7 +207,7 @@ namespace preview3d {
                 if head_name.len > 0 {
                     preview.head = try load_part{
                         &fs, &dev, heap = &preview.creature, rm, &models, &mats, name = head_name,
-                        body_texture = "", animation = idle,
+                        body_texture = "", animation = idle, parent = body.model,
                     }
                 }
             }
@@ -229,14 +231,17 @@ namespace preview3d {
     // A model on the GPU with its materials, pose and idle looping. `body_texture`, when it is
     // not empty, replaces the diffuse texture of meshes whose texture starts with its first four
     // letters (the way lib/scene does a B body's tex<L>NN). A model that is not there is null; an
-    // animation it lacks leaves the bind pose.
+    // animation it lacks leaves the bind pose. A head passes its `parent` body: the head's copies
+    // of the body's top nodes stay at their bind state (mdl_anim::hold_shared), because the
+    // headhook's transform already carries what the body's idle does to them.
     fn load_part {
         mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, rm: res::Manager,
         mut models: mdl_cache::Cache, mut mats: material::Cache,
-        name: []u8, body_texture: []u8, animation: []u8,
+        name: []u8, body_texture: []u8, animation: []u8, parent: ?*mdl::Model,
     } -> !?Part {
         let m = mdl_cache::get{ &fs, cache = &models, name } ifnull { return null }
         let pose = try mdl_anim::make_pose{ realloc = arena::alloc, heap = &heap, model = m }
+        if parent != null { mdl_anim::hold_shared{ model = m, pose, parent, hook = mdl_anim::HOOK_HEAD } }
         let mut player = mdl_anim::new_player{}
         // S and L models name their animations with a `c` in front.
         let mut with_c: [34]u8

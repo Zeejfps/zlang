@@ -95,8 +95,8 @@ namespace character_panel {
         gui::set_visible{ &g, panel, tag = "BTN_LEVELUP", visible = v.can_level }
         gui::set_visible{ &g, panel, tag = "BTN_AUTO", visible = v.can_level }
         if v.can_level {
-            try gui::set_tooltip{ &g, panel, tag = "BTN_LEVELUP", text = "PLACEHOLDER: the level-up screen is not built yet." }
-            try gui::set_tooltip{ &g, panel, tag = "BTN_AUTO", text = "PLACEHOLDER: automatic level-up is not built yet." }
+            try gui::set_tooltip{ &g, panel, tag = "BTN_LEVELUP", text = "Level Up" }
+            try gui::set_tooltip{ &g, panel, tag = "BTN_AUTO", text = "Auto Level Up" }
         }
         try gui::set_tooltip{ &g, panel, tag = "BTN_SCRIPTS", text = "PLACEHOLDER: the script-select panel is not built yet." }
 
@@ -183,10 +183,20 @@ namespace character_panel {
             open{ &s, &g, &w, &dev, panel } iferr err{ error } { _ = @fmt(&w.io, "kotor: character sheet: {}\n", error) }
             return true
         }
-        let level_up = slice::eq_bytes{ a = ev.tag, b = "BTN_LEVELUP" } or slice::eq_bytes{ a = ev.tag, b = "BTN_AUTO" }
+        // Level Up asks for the level-up panels (lib/screens, through the outbox as ShowLevelUpGUI
+        // does); Auto takes the levels the auto-leveller would and shows the sheet again.
+        if slice::eq_bytes{ a = ev.tag, b = "BTN_LEVELUP" } {
+            outbox::post{ out = &w.out, note = outbox::Note::level_up{ who = party::leader{ w = &w } } }
+            return true
+        }
+        if slice::eq_bytes{ a = ev.tag, b = "BTN_AUTO" } {
+            _ = levelup::auto_level{ &w, id = party::leader{ w = &w } }
+            open{ &s, &g, &w, &dev, panel } iferr err{ error } { _ = @fmt(&w.io, "kotor: character sheet: {}\n", error) }
+            return true
+        }
         let scripts = slice::eq_bytes{ a = ev.tag, b = "BTN_SCRIPTS" }
-        if (level_up or scripts) and s.box == 0 {
-            // PLACEHOLDER: the level-up flow and the script-select panel belong to other owners.
+        if scripts and s.box == 0 {
+            // PLACEHOLDER: the script-select panel belongs to another owner.
             s.box = gui::message_box{ &g, fs = &w.fs, &dev, text = "This part of the game is not built yet.", cancel = false } iferr { 0 }
             return true
         }

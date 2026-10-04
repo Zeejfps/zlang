@@ -1,0 +1,3 @@
+# New Game, then the cutscene and Trask's first conversation (always the first reply).
+3 newgame
+4 ui replies 1 1 1 1 1 1

@@ -109,6 +109,37 @@ namespace rt_item {
         _ = remove_from_inventory{ &w, o = holder, item }
     }
 
+    // The item's use of `spell` is spent as the cast begins (party-items-saves.md 5.10): a single-use
+    // property (iprp_chargecost row 1: medpacs, stims, grenades) takes one from the stack and the
+    // item goes with the last one; an "n charges per use" row (2..6) takes 7 - row charges. Uses per
+    // day and per minute are not counted, so those items stay free (HOOK: the property's UsesPerDay
+    // is read but never spent).
+    fn spend_use { mut w: world::World, item: u32, spell: i32 } {
+        let io = world::object{ w = &w, id = item } ifnull { return }
+        let it = obj::item{ o = io } ifnull { return }
+        let ri = it.rules ifnull { return }
+        let mut k: usize = 0
+        while k < @as(usize, ri.nprops) {
+            let p = ri.props[k]
+            k = k + 1
+            if @as(i32, p.name) != rules::ip::CAST_SPELL or @as(i32, p.subtype) != spell or not rules::prop_active{ item = ri, p = &p } { continue }
+            if p.cost_value == 1 {
+                if it.stack > 1 {
+                    it.stack = it.stack - 1
+                    ri.stack = @as(i32, it.stack)
+                } else {
+                    forget_item{ &w, item }
+                    world::destroy{ &w, id = item }
+                }
+            } else if p.cost_value >= 2 and p.cost_value <= 6 {
+                let spent = @as(u32, 7 - p.cost_value)
+                it.charges = if it.charges > spent { it.charges - spent } else { 0 }
+                ri.charges = @as(i32, it.charges)
+            }
+            return
+        }
+    }
+
     fn cursor_of { w: *world::World, o: *obj::Object } -> usize {
         if o.ext is creature{ c } { return c.inv_cursor }
         return @as(usize, map::get{ m = w.heartbeats, key = CURSOR_KEY | o.id } ifnull 0)

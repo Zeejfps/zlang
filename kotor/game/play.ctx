@@ -2,8 +2,10 @@
 // camera, the frame drawn; live, or headless with a fixed step, scripted input and screenshots.
 namespace play {
     // One scripted input line: `FRAME down KEY`, `FRAME up KEY`, and for tests `FRAME warp TAG`
-    // (the leader jumps next to the object) and `FRAME use TAG` (the leader's default action on it).
-    enum Command: u8 { down, up, warp, warpxy, use, newgame, ui, save, load, attack, talk, hush, drop, join, cutatk, pick, goto }
+    // (the leader jumps next to the object), `FRAME use TAG` (the leader's default action on it) and
+    // `FRAME gunner` (a bot aims and fires the turret) and `FRAME mouse DX DY` (the mouse moves by
+    // those counts, aiming the turret) and `FRAME pause` (Escape in a minigame: game/minigame_scene.ctx).
+    enum Command: u8 { down, up, warp, warpxy, use, newgame, ui, save, load, attack, talk, hush, drop, join, cutatk, pick, gunner, mouse, pause, goto }
     struct Scripted { frame: u64, command: Command, key: []u8 }
 
     fn run { mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut mem: Mem, opts: options::Options } -> !i32 {
@@ -30,9 +32,19 @@ namespace play {
         }
         let rate: u32 = match adev { some{ value } => { value.rate } null => { 44100 } }
         let mixer = try mix::make(heap::Heap){ realloc = heap::alloc, heap = w.heap, rate, voices_2d = 24, voices_3d = 16 }
+        speed::mute_unheard{ mixer, opts }
         let script = try read_script{ &w, path = opts.input }
         let mut next_line: usize = 0
         let mut frame_no: u64 = 0
+        // --load SAVE: the game starts from that save, as the front end's Load Game would.
+        if w.module == obj::INVALID and opts.load.len > 0 {
+            let folder = save::find_save{ &w, game = opts.game, name = opts.load } ifnull {
+                _ = @fmt(&w.io, "kotor: no save {}\n", opts.load)
+                return 1
+            }
+            try save::load_game{ &w, &vm, engine, folder }
+            arena::reset{ heap = w.scratch }
+        }
         // No module named: the front end (movies, main menu) until New Game.
         if w.module == obj::INVALID {
             let chosen = try front_end{ &sdl, &w, &dev, &frame, mixer, adev, scratch = texture_scratch, opts, script, &next_line, &frame_no }
@@ -65,6 +77,7 @@ namespace play {
         let mut mg_models = mdl_cache::new{ rm = w.rm.*, keep = w.mod_arena }
         _ = try mg_game::enter{ &w, models = &mg_models }
         let mut mg_stage = mg_game::make_stage{}
+        let mut mg_mouse = mg_game::make_mouse{}
         // HOOK(ingame): the HUD and the in-game menus (docs/design/hud.md).
         let ui = try ingame::make{ &w, &dev, mixer, scratch = texture_scratch, width = @as(i32, opts.width), height = @as(i32, opts.height) }
         if not opts.headless { _ = sdl::SDL_ShowCursor{ &sdl, toggle = 0 } }    // HOOK(ingame): the GUI draws the pointer
@@ -79,6 +92,7 @@ namespace play {
         let mut real_total: f64 = 0.0
         let mut real_worst: f32 = 0.0
         let mut timed: u64 = 0
+        let mut owed = speed::Owed{ dt = 0.0, clock_dt = 0.0 }    // --speed: the presentation's time to catch up
         while not quit {
             frame_no = frame_no + 1
             if opts.frames > 0 and frame_no > opts.frames { break }
@@ -87,6 +101,15 @@ namespace play {
             // 1. Input: the window's events, or the script's lines for this frame.
             while true {
                 let e = sdl::poll{ &sdl } ifnull { break }
+                // HOOK(minigames): a minigame has no HUD, menus or quick saves: the mouse and Escape are
+                // its own, the other keys go straight to the game's keys.
+                if mg_game::active{ w = &w } {
+                    if mg_game::handle_event{ m = &mg_mouse, ev = e } { continue }
+                    if e is key{ down, repeat, keycode } {
+                        if not repeat { apply_key{ keys = &keys, keycode, down } }
+                        continue
+                    }
+                }
                 if dlgview::handle_event{ v = &dview, g = &ui.gui, ev = e, scale_x = 1.0, scale_y = 1.0 } { continue }
                 if ingame::handle_event{ ui, &w, &dev, ev = e, scale_x = 1.0, scale_y = 1.0 } { continue }    // HOOK(ingame)
                 match e {
@@ -110,10 +133,17 @@ namespace play {
                     use => { use_tagged{ &w, tag = s.key } }
                     attack => { attack_tagged{ &w, tag = s.key } }
                     newgame => {}
+                    gunner => { mg_mouse.auto = true }
+                    pause => { mg_mouse.paused = not mg_mouse.paused }
+                    mouse => {
+                        let mut words = text::words{ s = s.key }
+                        mg_mouse.dx = mg_mouse.dx + @trunc(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+                        mg_mouse.dy = mg_mouse.dy + @trunc(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+                    }
                     talk => { talk_to{ &w, &vm, engine, text = s.key } }
                     hush => { dlg::abort{ &w, &vm, engine } }
                     drop => { drop_item{ &w, template = s.key } }
-                    join => { join_template{ &w, template = s.key } }
+                    join => { join_template{ &w, text = s.key } }
                     pick => { pick_lock{ &w, tag = s.key } }
                     goto => { goto_xy{ &w, at = s.key } }
                     cutatk => { cut_attack{ &w, text = s.key } }
@@ -133,7 +163,7 @@ namespace play {
                 if real > real_worst { real_worst = real }
             }
             timed = timed + 1
-            let dt = if opts.dt > 0.0 { opts.dt } else { math::min{ a = real, b = 0.25 } }
+            let mut dt = if opts.dt > 0.0 { opts.dt } else { math::min{ a = real, b = 0.25 } }
             // A load replaces the world's game, then the presentation starts over (as a transition).
             if want_load.len > 0 {
                 let folder = save::find_save{ &w, game = opts.game, name = want_load }
@@ -168,8 +198,10 @@ namespace play {
                     outbox::post{ out = &w.out, note = outbox::Note::fade{ out = false, wait = 0.5, length = 1.0, color = math::vec3::zero{} } }
                 }
             }
-            w.played_seconds = w.played_seconds + @as(f64, real)
-            w.autosave_ms = w.autosave_ms + @as(f64, real) * 1000.0
+            // Headless the step is fixed, so the play time and the autosave timer follow the world's clock, not the wall's.
+            let lived = if opts.dt > 0.0 { dt } else { real }
+            w.played_seconds = w.played_seconds + @as(f64, lived)
+            w.autosave_ms = w.autosave_ms + @as(f64, lived) * 1000.0
             // An autosave wanted by a transition or a script, once the area is in place.
             if w.autosave_due and w.transition == null and w.arrival == 0 and want_save.len == 0 {
                 w.autosave_due = false
@@ -180,7 +212,8 @@ namespace play {
                 // No saving in a minigame (modulesave.2da keeps none of them).
                 want_save = ""
                 w.autosave_due = false
-                let leaving = try mg_game::frame{ &sdl, &w, &vm, engine, &dev, &frame, &sc, stage = &mg_stage, &amb, mixer, adev, silent, rate, opts, keys, dt, frame_no, shot_heap = &scene_arena }
+                if mg_stage.ended { quit = true }
+                let leaving = try mg_game::frame{ &sdl, &w, &vm, engine, &dev, &frame, &sc, stage = &mg_stage, &amb, mixer, adev, silent, rate, opts, keys, mouse = &mg_mouse, dt, frame_no, shot_heap = &scene_arena, dview = &dview, g = &ui.gui }
                 if not leaving { continue }
             }
             // 3-6. The world.
@@ -250,6 +283,22 @@ namespace play {
                 }
                 last = sdl::counter{ &sdl }
             }
+            // --speed N: the presentation below steps once per N ticks, or sooner when something needs it (game/speed.ctx).
+            let fresh_input = next_line > 0 and script[next_line - 1].frame >= frame_no
+            if not speed::due{ opts, frame_no, w = &w, fresh_input, shown = dview.up, busy = ingame::is_busy{ ui }, saving = want_save.len > 0 } {
+                speed::owe{ &owed, dt, clock_dt = w.clock.dt }
+                ingame::step_bot{ ui, &w }    // HOOK(ingame)
+                arena::reset{ heap = w.scratch }
+                continue
+            }
+            // The skipped ticks' time: the scene's animations and the mixer's voices advance by it before this tick's own
+            // presentation starts anything new (a voice that starts now plays one tick, not N); the camera takes it with its step.
+            if owed.dt > 0.0 {
+                scene::sync{ &sc, &w, &dev, dt = owed.clock_dt }
+                if adev == null { speed::mix_seconds{ mixer, silent, rate, seconds = owed.dt } }
+            }
+            let camera_dt = dt + owed.dt
+            owed = speed::Owed{ dt = 0.0, clock_dt = 0.0 }
             // 9-10. Scene and camera (which snaps behind the leader again once it is placed).
             if w.arrival > 0 { camera.started = false }
             dlgview::pre_sync{ v = &dview, w = &w, sc = &sc, dev = &dev, g = &ui.gui, dt = w.clock.dt }
@@ -264,7 +313,7 @@ namespace play {
                 cam::set_style{ c = &camera, t = w.tables.camerastyle, row = wanted_row }
                 ctl::set_style{ ctl = &control, t = w.tables.camerastyle, row = wanted_row }
             }
-            cam::update{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height, turn = ctl::turn_input{ keys }, dt }
+            cam::update{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height, turn = ctl::turn_input{ keys }, dt = camera_dt }
             dlgview::apply_camera{ v = &dview, w = &w, sc = &sc, camera = &camera }
             let pc = world::object{ w = &w, id = w.pc }
             let player_room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
@@ -272,6 +321,8 @@ namespace play {
             scene::update_visibility{ &sc, w = &w, room }
             ingame::update{ ui, &w, &dev, sc, camera, dt }    // HOOK(ingame)
             if ingame::wants_quit{ ui } { quit = true }    // HOOK(ingame)
+            // The party selection screen was applied: its exit script (ShowPartySelectionGUI's), with no caller.
+            if ingame::take_exit_script{ ui } is some{ value = exit_script } { _ = scripts::run{ &w, &vm, engine, name = exit_script, self = obj::INVALID } }    // HOOK(ingame)
             // The options menu's Save Game and Load Game (the menus have closed themselves).
             if ingame::take_save_request{ ui } is some{ value = n } { want_save = n }    // HOOK(ingame)
             if ingame::take_load_request{ ui } is some{ value = n } { want_load = n }    // HOOK(ingame)
@@ -284,19 +335,21 @@ namespace play {
                     mix::render{ m = mixer, into = silent[..@as(usize, frames) * 2] }
                 }
             }
-            // 12. Render.
-            let size = gpu::screen_size{ dev }
-            render::begin_frame{ &frame, time = sc.time }
-            let mut view = render::make_view{ camera = cam::render_camera{ c = &camera, aspect = @as(f32, size.width) / @as(f32, size.height) } }
-            view.ambient = sc.ambient
-            view.fog = sc.fog
-            let vi = render::add_view{ &frame, view } ifnull { 0 }
-            scene::draw{ &sc, w = &w, &frame, view = vi }
-            dlgview::draw{ v = &dview, frame = &frame }
-            ingame::draw{ ui, &w, &dev, &frame }    // HOOK(ingame)
-            gpu::submit{ &dev, frame = &frame } iferr err{ error } {
-                _ = @fmt(&w.io, "kotor: submit failed: {}\n", error)
-                return 1
+            // 12. Render (--no-render: only for a picture someone takes).
+            if speed::picture_wanted{ opts, frame_no, saving = want_save.len > 0 } {
+                let size = gpu::screen_size{ dev }
+                render::begin_frame{ &frame, time = sc.time }
+                let mut view = render::make_view{ camera = cam::render_camera{ c = &camera, aspect = @as(f32, size.width) / @as(f32, size.height) } }
+                view.ambient = sc.ambient
+                view.fog = sc.fog
+                let vi = render::add_view{ &frame, view } ifnull { 0 }
+                scene::draw{ &sc, w = &w, &frame, view = vi }
+                dlgview::draw{ v = &dview, frame = &frame }
+                ingame::draw{ ui, &w, &dev, &frame }    // HOOK(ingame)
+                gpu::submit{ &dev, frame = &frame } iferr err{ error } {
+                    _ = @fmt(&w.io, "kotor: submit failed: {}\n", error)
+                    return 1
+                }
             }
             let mut s: usize = 0
             while s < opts.shot_count {
@@ -482,9 +535,10 @@ namespace play {
                 else if ci::eq{ a = what, b = "use" } { Command::use } else if ci::eq{ a = what, b = "newgame" } { Command::newgame }
                 else if ci::eq{ a = what, b = "ui" } { Command::ui } else if ci::eq{ a = what, b = "save" } { Command::save } else if ci::eq{ a = what, b = "talk" } { Command::talk }
                 else if ci::eq{ a = what, b = "load" } { Command::load } else if ci::eq{ a = what, b = "attack" } { Command::attack }
-                else if ci::eq{ a = what, b = "hush" } { Command::hush } else if ci::eq{ a = what, b = "drop" } { Command::drop } else if ci::eq{ a = what, b = "join" } { Command::join } else if ci::eq{ a = what, b = "cutatk" } { Command::cutatk } else if ci::eq{ a = what, b = "pick" } { Command::pick } else if ci::eq{ a = what, b = "goto" } { Command::goto } else { Command::up }
-            // `ui`, `talk`, `load` and `save` take the rest of the line; the others one word.
-            let key = if command == Command::ui or command == Command::load or command == Command::save or command == Command::talk or command == Command::cutatk { text::rest{ words } } else { text::next_word{ &words } ifnull "" }
+                else if ci::eq{ a = what, b = "hush" } { Command::hush } else if ci::eq{ a = what, b = "drop" } { Command::drop } else if ci::eq{ a = what, b = "join" } { Command::join } else if ci::eq{ a = what, b = "cutatk" } { Command::cutatk } else if ci::eq{ a = what, b = "pick" } { Command::pick }
+                else if ci::eq{ a = what, b = "gunner" } { Command::gunner } else if ci::eq{ a = what, b = "mouse" } { Command::mouse } else if ci::eq{ a = what, b = "pause" } { Command::pause } else if ci::eq{ a = what, b = "goto" } { Command::goto } else { Command::up }
+            // `ui`, `talk`, `load`, `save`, `cutatk` and `mouse` take the rest of the line; the others one word.
+            let key = if command == Command::ui or command == Command::load or command == Command::save or command == Command::talk or command == Command::cutatk or command == Command::mouse or command == Command::join { text::rest{ words } } else { text::next_word{ &words } ifnull "" }
             try list::push{ list = &out, item = Scripted{ frame = @as(u64, text::scan_decimal{ s = f }), command, key } }
         }
         return list::items{ list = out }
@@ -609,13 +663,19 @@ namespace play {
         _ = actions::add{ &w, id = if lead == obj::INVALID { w.pc } else { lead }, action = a, force = false }
     }
 
-    // `join TEMPLATE`: the creature of that blueprint becomes available in slot 1 and joins the
-    // party next to the leader (what the party selection screen does on Done).
-    fn join_template { mut w: world::World, template: []u8 } {
-        w.party.available[1] = true
-        w.party.selectable[1] = true
-        w.party.templates[1] = resref::truncate{ name = template }
-        _ = rt_party::bring_member{ &w, n = 1 }
+    // `join TEMPLATE [SLOT]`: the creature of that blueprint becomes available in the party table's slot
+    // SLOT (1 by default; the game's own: 0 Bastila, 1 Canderous, 2 Carth, ...) and joins the party next to
+    // the leader (what the party selection screen does on Done).
+    fn join_template { mut w: world::World, text: []u8 } {
+        let mut words = text::words{ s = text }
+        let template = text::next_word{ &words } ifnull { return }
+        let slot = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "1" })
+        if not party::valid_slot{ n = slot } { return }
+        let s = @as(usize, slot)
+        w.party.available[s] = true
+        w.party.selectable[s] = true
+        w.party.templates[s] = resref::truncate{ name = template }
+        _ = rt_party::bring_member{ &w, n = slot }
     }
 
     fn camera_row_now { w: *world::World } -> u32 {

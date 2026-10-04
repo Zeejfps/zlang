@@ -50,6 +50,7 @@ namespace chargen {
         try refresh_abilities{ st, &g, p }
         try show_ability_focus{ st, &g, p }
         gui::set_focus{ &g, panel = p, tag = "STR_POINTS_BTN" }
+        gui::set_key_events{ &g, panel = p, on = true }      // left and right: minus and plus on the focused row
     }
 
     fn refresh_abilities { st: *mut State, mut g: gui::Gui, p: u32 } -> ! {

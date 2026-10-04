@@ -22,6 +22,8 @@ namespace tmpl {
             if world::object{ w = &w, id = item } is some{ value = io } {
                 if obj::item{ o = io } is some{ value = it } { it.infinite = (gff::get_number{ doc = doc.*, s = e, label = "Infinite" } ifnull 0) != 0 }
             }
+            // AddItem merges identical items into one stack (an infinite one stays single).
+            if xfer::absorb{ &w, l = &st.stock, item } { continue }
             insert_by_value{ &w, l = &st.stock, item }
         }
     }
@@ -37,6 +39,7 @@ namespace tmpl {
             let e = entries[k]
             k = k + 1
             let item = item_of{ &w, doc, s = e, label = "InventoryRes", possessor = o.id } ifnull { continue }
+            if xfer::absorb{ &w, l = &p.inventory, item } { continue }
             list::push{ list = &p.inventory, item } iferr {}
         }
     }

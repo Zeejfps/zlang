@@ -88,6 +88,11 @@ namespace tmpl {
     fn read_common { mut w: world::World, o: *mut obj::Object, doc: *gff::Doc, s: u32, name_label: []u8 } -> ! {
         let tag = gff::get_string{ doc = doc.*, s, label = "Tag" }
         if tag != null { try world::set_tag{ &w, o, tag } }
+        // A saved object names the blueprint it came from (items are copied and compared by it).
+        if resref::is_empty{ r = o.template } {
+            let made_from = gff::get_resref{ doc = doc.*, s, label = "TemplateResRef" }
+            if made_from != null { o.template = resref::truncate{ name = made_from } }
+        }
         try read_name{ &w, doc, s, label = name_label, into = &o.name }
         let conv = gff::get_resref{ doc = doc.*, s, label = "Conversation" }
         if conv != null { o.conversation = resref::truncate{ name = conv } }
@@ -191,6 +196,7 @@ namespace tmpl {
             let e = carried[k]
             k = k + 1
             let item = item_of{ &w, doc, s = e, label = "InventoryRes", possessor = o.id } ifnull { continue }
+            if xfer::absorb{ &w, l = &c.inventory, item } { continue }
             list::push{ list = &c.inventory, item } iferr {}
         }
         fight::equip_loaded{ &w, o, c }
@@ -286,6 +292,7 @@ namespace tmpl {
         d.lockable = flag{ doc, s, label = "Lockable", default = d.lockable }
         d.key_required = flag{ doc, s, label = "KeyRequired", default = d.key_required }
         d.open_dc = @trunc(u32, number{ doc, s, label = "OpenLockDC", default = @as(i64, d.open_dc) })
+        d.close_dc = @trunc(u32, number{ doc, s, label = "CloseLockDC", default = @as(i64, d.close_dc) })
         d.static = flag{ doc, s, label = "Static", default = d.static }
         let key = gff::get_string{ doc = doc.*, s, label = "KeyName" }
         if key != null {
@@ -345,6 +352,16 @@ namespace tmpl {
         p.party_interact = flag{ doc, s, label = "PartyInteract", default = p.party_interact }
         p.static = flag{ doc, s, label = "Static", default = p.static }
         p.locked = flag{ doc, s, label = "Locked", default = p.locked }
+        p.lockable = flag{ doc, s, label = "Lockable", default = p.lockable }
+        p.key_required = flag{ doc, s, label = "KeyRequired", default = p.key_required }
+        p.open_dc = @trunc(u32, number{ doc, s, label = "OpenLockDC", default = @as(i64, p.open_dc) })
+        p.close_dc = @trunc(u32, number{ doc, s, label = "CloseLockDC", default = @as(i64, p.close_dc) })
+        let key = gff::get_string{ doc = doc.*, s, label = "KeyName" }
+        if key != null {
+            let copy = try obj::copy_bytes{ heap = w.heap, s = key }
+            obj::free_bytes{ heap = w.heap, s = p.key }
+            p.key = copy
+        }
         o.hp_max = @trunc(i32, number{ doc, s, label = "HP", default = @as(i64, o.hp_max) })
         o.hp = @trunc(i32, number{ doc, s, label = "CurrentHP", default = @as(i64, o.hp_max) })
         let state = number{ doc, s, label = "AnimationState", default = 0 }

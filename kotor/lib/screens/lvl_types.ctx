@@ -1,0 +1,96 @@
+// The level-up panels (docs/design/screens.md, docs/re/gui.md 10.2): the state of one level being
+// taken. The panels are the character generation's own files (maincg shows the character with
+// old and new numbers, leveluppnl lists the steps, abchrgen, skchrgen, ftchrgen and pwrlvlup take
+// the choices); the logic is here because it works on a living creature through the rules'
+// level_up_options and apply_level_up, where chargen builds one from nothing.
+namespace lvl {
+    // The steps, in the order leveluppnl lists them.
+    const STEP_ATTRIBUTES: i32 = 0
+    const STEP_SKILLS: i32 = 1
+    const STEP_FEATS: i32 = 2
+    const STEP_POWERS: i32 = 3
+    const STEP_ACCEPT: i32 = 4
+    const STEPS: usize = 5
+    const NO_STEP: i32 = -1
+
+    const SKILLS: usize = 8
+    const MAX_FEAT_ROWS: usize = 96
+    const MAX_POWER_ROWS: usize = 64
+
+    // What a message box over the panels asks.
+    const ASK_NOTHING: i32 = 0
+    const ASK_INFO: i32 = 1
+    const ASK_SKILLS_LEFT: i32 = 2
+    const ASK_CANCEL: i32 = 3
+
+    // Row states of the feat and power lists.
+    const FS_SELECTABLE: u8 = 0
+    const FS_CHOSEN: u8 = 1
+    const FS_GRANTED: u8 = 2
+    const FS_KNOWN: u8 = 3
+    const FS_UNAVAILABLE: u8 = 4
+
+    struct Row { id: i32, state: u8 }
+
+    // The numbers maincg shows old and new.
+    struct Numbers {
+        level: i32,
+        abil: [6]i32,               // scores, rules order
+        hp: i32,
+        defense: i32,
+        save: [3]i32,               // fortitude, reflex, will
+    }
+
+    struct State {
+        open: bool,
+        who: u32,
+        class: i32,                 // the class taking the level: the creature's last class slot
+        main: u32,                  // maincg, under everything
+        list: u32,                  // leveluppnl, the steps
+        step: u32,                  // the open step panel, 0 none
+        step_kind: i32,
+        box: msgbox::Box,
+        ask: i32,
+        opts: rules::LevelUpOptions,
+        rec: rules::LevelRecord,    // what has been chosen so far
+        done: [5]bool,              // steps taken (or not needed)
+        needed: [5]bool,
+        // abilities (rows in the panel's order: STR DEX CON WIS INT CHA)
+        ab: [6]i32,
+        ab_start: [6]i32,
+        ab_points: i32,
+        ab_focus: usize,
+        // skills (ranks bought this level, in skills.2da order)
+        sk: [8]i32,
+        sk_points: i32,
+        sk_focus: usize,
+        // feats
+        frows: [96]Row,
+        fcount: usize,
+        fsel: i32,
+        fchosen: [8]i32,
+        fnchosen: usize,
+        fpicks: i32,
+        // powers
+        prows: [64]Row,
+        pcount: usize,
+        psel: i32,
+        pchosen: [8]i32,
+        pnchosen: usize,
+        ppicks: i32,
+        // feat.2da, for the descriptions the rules do not keep
+        feat_table: twoda::Table,
+        has_feat_table: bool,
+        view: ?*mut View,                // the creature on MODEL_LBL
+    }
+
+    fn new {} -> State {
+        let mut s: State
+        s.open = false
+        s.who = obj::INVALID
+        s.view = null
+        s.box = msgbox::blank{}
+        s.step_kind = NO_STEP
+        return s
+    }
+}

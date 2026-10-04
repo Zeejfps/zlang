@@ -70,7 +70,9 @@ namespace doors {
             events::post{ &w, delay_ms = 0, caller = id, target, payload = events::Payload::script{ e = events::script_event{ kind = events::CLICKED, object = id } } }
             return actions::Status::done
         }
-        if d.locked {
+        // A locked door opens to its key (UseKeyOnObject); otherwise the actor is told it is locked.
+        if d.locked and not use_key{ &w, who = id, target } {
+            tell{ &w, who = id, strref = FEEDBACK_LOCKED }
             events::post{ &w, delay_ms = 0, caller = id, target, payload = events::Payload::script{ e = events::script_event{ kind = events::FAIL_TO_OPEN, object = id } } }
             return actions::Status::failed
         }
@@ -99,6 +101,10 @@ namespace doors {
         let p = obj::placeable{ o } ifnull { return actions::Status::failed }
         if not p.useable { return actions::Status::failed }
         if approach{ &w, id, target, a } { return actions::Status::done }
+        // A locked container opens to its key; else the actor is told it is locked and OnUsed still runs (3.5).
+        if p.has_inventory and p.locked and not use_key{ &w, who = id, target } {
+            tell{ &w, who = id, strref = FEEDBACK_LOCKED }
+        }
         // A container the party opens shows its contents (actions.md 3.5): OnOpen, not OnUsed.
         if p.has_inventory and not p.locked and (id == w.pc or id == w.player or party::is_member{ w = &w, id }) {
             _ = container::open{ &w, placeable = target, user = id }
@@ -109,24 +115,16 @@ namespace doors {
     }
 
     // OPENLOCK (actions.md 3.7): params 0 the door or placeable, 1 a security spike (or OBJECT_INVALID),
-    // 2 unused. Walk up, kneel at the lock for 1.5 s (unlockdr/unlockcntr), then the Security check
-    // against the lock's DC: success unlocks it (UNLOCKED) and the user opens it (a door opens, a
-    // container is used); failure shows feedback 14 and leaves it locked. A key-locked object
-    // tells the user it fails to open (FAIL_TO_OPEN, feedback 15).
+    // 2 unused. Walk up, work at the lock for 1.5 s (unlockdr/unlockcntr), then, in the original's order:
+    // the key if the user carries it (UseKeyOnObject), "cannot be opened through conventional means" for
+    // a lock that wants one, else the Security check against the lock's DC. Success unlocks it (UNLOCKED)
+    // and the user opens it (a door opens, a container is used); failure leaves it locked and the
+    // roll is the only thing said.
     fn open_lock { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut actions::Action } -> actions::Status {
         let target = actions::object_param{ a, i = 0 }
         let o = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
         let me = world::object{ w = &w, id } ifnull { return actions::Status::failed }
-        let mut locked = false
-        let mut needs_key = false
-        if obj::door{ o } is some{ value = d } {
-            locked = d.locked
-            needs_key = d.key_required
-        } else if obj::placeable{ o } is some{ value = p } {
-            locked = p.locked
-            needs_key = p.key.len > 0
-        } else { return actions::Status::failed }
-        if not locked { return actions::Status::done }
+        let lock = lock_of{ o } ifnull { return actions::Status::failed }
         if approach{ &w, id, target, a } { return actions::Status::done }
         let now = clock::now_ms{ c = w.clock }
         if a.phase < 2 {
@@ -137,22 +135,135 @@ namespace doors {
             world::set_animation{ o = me, id = animname::ROW_BASE + (if o.kind == obj::Kind::door { @as(u32, 47) } else { @as(u32, 48) }), speed = 1.0 }
             return actions::Status::running
         }
+        // The player's own character is heard picking the lock a quarter second in (actions.md 3.9).
+        if a.phase == 2 and now - a.started >= 250 {
+            a.phase = 3
+            if is_player_side{ w = &w, id } {
+                outbox::post{ out = &w.out, note = outbox::Note::play_sound{ name = resref::truncate{ name = "gui_lockpick" }, object = id, position = me.position, positional = false } }
+            }
+        }
         if now - a.started < 1500 { return actions::Status::running }
         world::set_animation{ o = me, id = obj::ANIM_STAND, speed = 1.0 }
-        if needs_key {
-            outbox::post{ out = &w.out, note = outbox::Note::feedback{ strref = 36847 + 15, text = outbox::keep_text{ out = &w.out, s = "" } } }
-            events::post{ &w, delay_ms = 0, caller = id, target, payload = events::Payload::script{ e = events::script_event{ kind = events::FAIL_TO_OPEN, object = id } } }
-            return actions::Status::failed
+        let mut opens = use_key{ &w, who = id, target }
+        if not opens {
+            if lock.key_required {
+                tell{ &w, who = id, strref = FEEDBACK_NO_KEY }
+                events::post{ &w, delay_ms = 0, caller = id, target, payload = events::Payload::script{ e = events::script_event{ kind = events::FAIL_TO_OPEN, object = id } } }
+                return actions::Status::done
+            }
+            opens = rt_act::unlock_attempt{ &w, who = id, target, spike_bonus = 0 }
         }
-        if not rt_act::unlock_attempt{ &w, who = id, target, spike_bonus = 0 } {
-            outbox::post{ out = &w.out, note = outbox::Note::feedback{ strref = 36847 + 14, text = outbox::keep_text{ out = &w.out, s = "" } } }
-            return actions::Status::failed
-        }
+        if not opens { return actions::Status::done }
         // Unlocked: the user goes on to open it.
         let mut next = actions::make{ kind = if o.kind == obj::Kind::door { actions::Kind::open_door } else { actions::Kind::use_object } }
         next.params[0] = actions::Param::object{ id = target }
         actions::add_front{ &w, id, action = next }
         return actions::Status::done
+    }
+
+    // ---- locks (actions.md 3.6, 3.7)
+
+    // dialog.tlk lines the original shows for the lock actions (feedbacktext messages 13 to 16).
+    const FEEDBACK_LOCKED: u32 = 1439       // "Locked"
+    const FEEDBACK_NOT_LOCKED: u32 = 1430   // "That object is not locked."
+    const FEEDBACK_NO_KEY: u32 = 1431       // "This object cannot be opened through conventional means."
+    const FEEDBACK_USED_KEY: u32 = 1432     // "You used a key."
+
+    // What a door's or placeable's lock holds, for the code that treats the two alike.
+    struct Lock { locked: bool, key_required: bool, key: []u8, dc: i32 }
+
+    fn lock_of { o: *obj::Object } -> ?Lock {
+        if o.ext is door{ d } { return Lock{ locked = d.locked, key_required = d.key_required, key = d.key, dc = @as(i32, d.open_dc) } }
+        if o.ext is placeable{ p } { return Lock{ locked = p.locked, key_required = p.key_required, key = p.key, dc = @as(i32, p.open_dc) } }
+        return null
+    }
+
+    fn set_locked { o: *obj::Object, locked: bool } {
+        if o.ext is door{ d } { d.locked = locked } else if o.ext is placeable{ p } { p.locked = locked }
+    }
+
+    // Whether `id` is one of the player's party, whose screen the feedback goes to.
+    fn is_player_side { w: *world::World, id: u32 } -> bool {
+        return id == w.pc or id == w.player or party::is_member{ w, id }
+    }
+
+    // A line of dialog.tlk text on the HUD's feedback log, when the one who acted is the player's.
+    fn tell { mut w: world::World, who: u32, strref: u32 } {
+        if not is_player_side{ w = &w, id = who } { return }
+        outbox::post{ out = &w.out, note = outbox::Note::feedback{ strref, text = outbox::keep_text{ out = &w.out, s = "" } } }
+    }
+
+    // The roll of a Security check as the original's combat log words it (dialog.tlk 1405, "<CUSTOM0>
+    // attempts <CUSTOM1> on <CUSTOM2> : *<CUSTOM3>* : (<CUSTOM4> <CUSTOM5> <CUSTOM6> = <CUSTOM7><CUSTOM8>)"):
+    // "Leia Tana attempts Security on Door : *success* : (Take 20 + 5 = 25 vs. DC 1)". Said to the player
+    // when the one who rolled is the player's.
+    fn say_roll { mut w: world::World, me: *obj::Object, target: *obj::Object, check: rules::SkillCheck, in_combat: bool } {
+        if not is_player_side{ w = &w, id = me.id } { return }
+        let mut b = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } }
+        defer list::free{ list = &b.bytes }
+        let template = world::string_by_strref{ w = &w, strref = 1405 }
+        let mut i: usize = 0
+        while i < template.len {
+            if i + 9 <= template.len and template[i] == 60 and template[i + 8] == 62 and slice::eq_bytes{ a = template[i..i + 7], b = "<CUSTOM" } {
+                let hole = template[i + 7]
+                i = i + 9
+                if hole == 48 { _ = @fmt(&b, "{}", name_text{ w = &w, o = me }) }
+                else if hole == 49 { _ = @fmt(&b, "{}", world::string_by_strref{ w = &w, strref = 329 }) }
+                else if hole == 50 { _ = @fmt(&b, "{}", name_text{ w = &w, o = target }) }
+                else if hole == 51 { _ = @fmt(&b, "{}", world::string_by_strref{ w = &w, strref = result_strref{ check, in_combat } }) }
+                else if hole == 52 {
+                    if in_combat { _ = @fmt(&b, "{}", check.roll) } else { _ = @fmt(&b, "{}", world::string_by_strref{ w = &w, strref = 1409 }) }
+                }
+                else if hole == 53 { _ = @fmt(&b, "+") }
+                else if hole == 54 { _ = @fmt(&b, "{}", check.total - check.roll) }
+                else if hole == 55 { _ = @fmt(&b, "{}", check.total) }
+                else if hole == 56 { _ = @fmt(&b, " {} DC {}", world::string_by_strref{ w = &w, strref = 1395 }, check.dc) }
+                continue
+            }
+            _ = list::push{ list = &b.bytes, item = template[i] }
+            i = i + 1
+        }
+        let line = utf8::view{ b }
+        outbox::post{ out = &w.out, note = outbox::Note::feedback{ strref = 0xFFFFFFFF, text = outbox::keep_text{ out = &w.out, s = line.bytes } } }
+    }
+
+    // The word for a Security check's outcome: success, failure, or (taking 20 against a DC of 60 or
+    // more, which nothing can beat) "success not possible" (AIActionOpenLock's result codes 1, 3, 5).
+    fn result_strref { check: rules::SkillCheck, in_combat: bool } -> u32 {
+        if check.success { return 1392 }
+        if not in_combat and check.dc >= 60 { return 1397 }
+        return 1393
+    }
+
+    // An object's name as the player reads it.
+    fn name_text { w: *world::World, o: *obj::Object } -> []u8 {
+        if o.name.strref != 0xFFFFFFFF {
+            let text = world::string_by_strref{ w, strref = o.name.strref }
+            if text.len > 0 { return text }
+        }
+        return o.name.text
+    }
+
+    // CSWSCreature::UseKeyOnObject (0x004f0b20) for opening: true when the lock is open already, or the
+    // creature (or the party's bag it shares) carries an item tagged with the lock's KeyName, in which
+    // case the lock is opened and the creature told it used a key. (AutoRemoveKey is not modelled.)
+    fn use_key { mut w: world::World, who: u32, target: u32 } -> bool {
+        let o = world::object{ w = &w, id = target } ifnull { return false }
+        let lock = lock_of{ o } ifnull { return false }
+        if not lock.locked { return true }
+        if lock.key.len == 0 { return false }
+        let me = world::object{ w = &w, id = who } ifnull { return false }
+        let ids = rt_item::inventory_of{ &w, o = me }
+        let mut k: usize = 0
+        while k < ids.len {
+            let it = world::object{ w = &w, id = ids[k] }
+            k = k + 1
+            if it == null or not ci::eq{ a = it.tag, b = lock.key } { continue }
+            set_locked{ o, locked = false }
+            tell{ &w, who, strref = FEEDBACK_USED_KEY }
+            return true
+        }
+        return false
     }
 
     // A door's state: its walkmesh blocks only while closed; the scene animates the change.

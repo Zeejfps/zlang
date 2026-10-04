@@ -2,9 +2,9 @@
 
 Pazaak is built and plays through (rules, the original's opponent, the three screens, the engine
 hooks). The three swoop races run with the original's own scripts (rails, steering, pads and
-obstacles, the HUD, the camera, the start and the finish); the Ebon Hawk turret is surveyed and
-planned but not built (the last section). What the original does is in [re/pazaak.md](../re/pazaak.md) and
-[re/minigames-swoop-turret.md](../re/minigames-swoop-turret.md).
+obstacles, the HUD, the camera, the start and the finish), and so does the Ebon Hawk turret (aim,
+guns, fighters, hits, the HUD, winning and losing: "The turret", last section). What the original
+does is in [re/pazaak.md](../re/pazaak.md) and [re/minigames-swoop-turret.md](../re/minigames-swoop-turret.md).
 
 | Directory | Namespace | What |
 |---|---|---|
@@ -20,10 +20,11 @@ planned but not built (the last section). What the original does is in [re/pazaa
 | `tools/pazaaksim` | | thousands of AI-vs-AI matches; `--selftest` |
 | `lib/minigame/area.ctx` | `mg` | the ARE's `MiniGame` struct read into plain structs (`mg::Area`, `Follower`, `Bank`) |
 | `lib/minigame/rail.ctx` | `mg` | a track model's `track` animation sampled into a `Rail` |
-| `lib/minigame/run.ctx` | `mg` | `Run`: the objects of a race, the player's speed and steering, collisions, script events |
+| `lib/minigame/run.ctx` | `mg` | `Run`: the objects of a race or the turret, the player's speed and steering, collisions, script events |
+| `lib/minigame/turret.ctx` | `mg` | the turret: the aim, gun mounts read from the models, shots, bullets, enemy fire, hits, the gunner bot |
 | `lib/engine/routines/swmg.ctx` | `rt_swmg` | the 97 `SWMG_*` routines over `w.minigame` |
-| `game/minigame*.ctx` | `mg_game` | the run's scripts, the scene (models, animation layers, camera) and the minigame frame |
-| `tools/mgdump`, `tools/mgrun` | | the four areas' setup dumped; the physics alone, without scripts or window |
+| `game/minigame*.ctx` | `mg_game` | the run's scripts, the scene (models, guns, bullets, particles, animation layers, camera, sounds) and the minigame frame |
+| `tools/mgdump`, `tools/mgrun` | | the four areas' setup dumped; the physics alone (a race, or `--gunner` on `M12ab`), without scripts or window |
 
 `lib/pazaak/core` needs `base res formats` only (the engine and the simulation take it alone);
 `lib/pazaak` as a whole adds the GUI libraries (`tex material platform render render_gl audio gui`).
@@ -93,8 +94,8 @@ appear only when the script asks for them.
   frame with a session over the in-game GUI (`ui.gui`) until it is done. `conclude` then adds or
   takes the wager from `party.gold` (not below 0), keeps the side deck if complete, sets
   `pazaak_won` and runs the end script with OBJECT_INVALID as owner, as the original does. Headless
-  (`--headless`, `--no-render`) `visit_auto` lets the AI play both sides with the default deck, so
-  a script that asks for pazaak completes in tests: `kotor --module end_m01aa --no-render --frames
+  (`--headless`, `--engine-only`) `visit_auto` lets the AI play both sides with the default deck, so
+  a script that asks for pazaak completes in tests: `kotor --module end_m01aa --engine-only --frames
   60 --run-script k_act_mispaz --log routines`.
 - **Cards found**: `rt_mg::take_card{ w, base, variation, stack }`; an item of ItemType 42
   entering the party's inventory is counted at `(variation + 11) mod 18` instead of kept (the item
@@ -188,7 +189,7 @@ starting). The shape of what we found:
 3. Pads and obstacles: collisions, `OnHitFollower`/`OnHitObstacle`, invulnerability, death;
    finishing and returning to the home module.
 4. The other routines (field accessors), written against the structs.
-5. The turret: aim and mouse, bullets, enemy tracks and fire, damage, the HUD animations.
+5. The turret: aim and mouse, bullets, enemy tracks and fire, damage, the HUD animations (done: "The turret" below).
 6. Polish: blur, distortion, particles, pause, the Manaan wake.
 
 ### Status
@@ -209,23 +210,119 @@ world's generic routines answer "no such object" for them.
 - The unmodified `oncreate`, `heartbeat`, `onfire`, `accelpad` and `obstacle` scripts of all three
   races run against the routines with no fault: the start lights, gear shifts, the timer, the speed
   gauge and the finish (a fade, the time into the `*_SWOOP_*` globals and `StartNewModule` back
-  home) all happen. Headless (`--no-render`) the fire key is pressed twice a second; windowed it is
+  home) all happen. Headless (`--engine-only`) the fire key is pressed twice a second; windowed it is
   Space, steering is A/D or the arrows.
 - The picture: the bike, pads and obstacles as scene parts, the camera on the camera model's
   `camerahook` (so the shake animations move it), the HUD models with their animations layered
   per model (`game/minigame_anim.ctx`), screenshots with `--screenshot-at` and scripted keys:
   `kotor --module tar_m03mg --headless --frames 700 --input FILE --screenshot-at 690:out.png`.
 
-**Not done:**
+**Not done (the swoop's):**
 
-- The turret (step 5): aiming and the mouse, the rotating models, bullets, enemy fire, the HUD
-  animations of `k_heartbeat`; `rt_swmg` already covers its routines.
 - The bike's lean (`BankL_01..10`) and the speed blur and heat distortion (`blur_on` is recorded,
   nothing draws it); particle emitters in the models; the gear sounds on the bike's own models.
-- Pauses and the pause menu (Escape quits the game, as in the ordinary loop).
+- The pause menu (Escape pauses and resumes, nothing more).
 - The Tatooine ground near the bike is black in `tat_m17mg` (the far desert is right): a room
   material, not the minigame; the missing engine routines the race scripts call
   (`SoundObjectSetVolume`, `SoundObjectSetFixedVariance`, `ShowTutorialWindow`) are the engine
   lead's: with them missing the engine sounds do not follow the gears.
 - Obstacle hit geometry is the model's bounding box (the original tests its AABB tree), the
   invulnerability after a bump is `Invince_Period`: both ours.
+
+## The turret
+
+`M12ab` (the Ebon Hawk's gunner turret, entered from `k_ren_taris03`, `k_ren_levescape`,
+`k_ren_unkturret`, `k_ren_turretload`, `k_ren_turretld02` and `k_act_hk47simul`) plays from the
+original's unmodified scripts: `k_pebo_mgload`, `k_pebo_skybox` (the sky of the planet), the six
+fighters' `k_pebo_sthcreate` and `k_pebo_sthdeath2..7`, the player's `k_heartbeat` (compass and
+radar) and `k_pebo_hawkhit` (the health gauge, losing the Hawk), and the module heartbeat
+`k_pebo_mgheart`, which leaves for `ebo_m12aa` (or the next story module) two seconds after the
+sixth fighter dies. A whole sequence runs with no script fault, won and lost.
+
+### The view and the aim
+
+The player does not move: its track `m12ab_mgt01` is a point, and the offset is two angles in
+degrees, `x` the pitch (clamped to 2..45 by the tunnel, starting at 7) and `z` the yaw (infinite:
+it wraps at 360). Every model flagged `RotatingModel` (`mgf_turret` with its crosshair mesh
+`target`, `mgf_turretwk`, the HUD models `mgf_hud01` radar and compass and `mgf_hud02` health
+gauge, and the camera model `m12ab_camera`, which is the ARE's `Camera` field and not in
+`Models`) is turned by `Rz(yaw) Rx(pitch)` about the track's hook; `mgf_ebonhawk` is not. The camera
+is the camera model's node `camerahook` (`mg::part_matrix` gives every model's place, the swoop's
+included). Keys turn at `MovementPerSec` (100 degrees a second) with the lateral model's inertia
+(W/S or up/down tilt, A/D or left/right turn); the mouse is held in the window (SDL relative mode)
+and adds its counts per frame divided by 20 and clamped to 1, of a full-speed turn (the original's
+rule), on the axes the ARE's `Mouse` struct names (x for yaw, y for pitch). Our choices: moving the
+mouse right turns right and up aims up (the original's sign is not in the survey); `Reverse
+Minigame YAxis` is not read.
+
+### Guns, bullets and hits
+
+A bank's gun model hangs on the vehicle's node `gunbank<BankID>` (the turret's two banks sit at
+x = +-1.3, tilted 5 degrees down and 0.5 degrees in, so the shots cross at 149 units); the muzzle is
+the gun model's `bullethook` node and a shot leaves along its +Y. Both banks fire together: the
+trigger (Space, the left mouse button, or the keys of a script) starts the gun's `fire` animation
+and the bullet leaves when the animation reaches its `fire<N>` event, 0.3 s apart
+(`Rate_Of_Fire`); a held trigger repeats at that rate (the original wants one press per shot; ours
+is easier on the hand). Bullets travel `Speed` units a second for `Lifespan` seconds and are tested
+each step as a segment against the target's `hitbullet` mesh (its box, grown by 1 unit; the
+original tests the mesh's AABB tree): the player's against the live fighters (`Target_Type` bit 2),
+the fighters' against the Hawk's hit mesh (bit 1). A hit bursts the bullet (its `explode`
+animation, 2.3 s of particles), plays the bank's hit sound and runs the target's `OnHitBullet`
+script or the default, `damage_object`: the `OnDamage` script (`k_pebo_hawkhit`) or the default,
+`SWMG_OnDamage`, which at zero hit points raises `OnDeath` and otherwise plays `damage` then
+`Ready_01` on the models. A fighter's `OnDeath` script calls `SWMG_OnDeath`: the death sound
+(`mgs_sith_expl`), `die` on its models (the explosion, parts and smoke are the models' emitters),
+and the object leaves after the animation (2.3 s).
+
+Fighters follow their rails for ever (the `mgt02..07` Bezier tracks, 43 to 84 seconds, facing along
+the path, 15 to 380 units from the turret). A bank fires when the Hawk is within `Sensing_Radius`
+(200) of the gun mount and inside `Horiz_Spread` and `Vert_Spread` (70 degrees) of the way the mount
+points; the bullet goes at the middle of the Hawk's hit mesh with an error of `Inaccuracy` (0.01)
+times the distance. Left alone, the fighters take the Hawk from 3000 to the 2000 that ends the
+sequence in about 36 seconds; the gunner bot clears all six in 16.
+
+### The stage
+
+`mg_game` builds one scene part per model of every object (a race's bike and HUD, the turret's
+cockpit, each fighter), the gun models on their banks' nodes, and a part per bullet slot and model
+the first time a shot of it is seen (96 slots). Every part with emitters keeps its particles (the
+main menu's `gui3d` simulation): this is also what gives the swoop's bikes their exhaust and the
+turret its explosions and bullet plumes. The HUD is the models' one-frame and looping animations
+the scripts ask for (`HudRot_NNN`, `SithLoopNN`, `Health<n>`), layered as the swoop's.
+Sounds (`mgs_ebon_fire`, `mgs_sith_fire` at the fighter, the hits, the explosions) go to the
+mixer through the ambience's wave cache; the ARE's music (`mus_bat_sithbs`) loops. The fade of
+`SetGlobalFadeOut` is drawn by the dialogue view's overlay. The creature the engine places in the
+area is not drawn.
+
+### Engine hooks this needed (small, marked `HOOK(minigames)`)
+
+- A minigame object's `DelayCommand` runs (`lib/engine/routines/commands.ctx`,
+  `lib/engine/events.ctx`): losing the Hawk delays `EndGame` on the player object, which is not a
+  world object.
+- `game/play.ctx`: the mouse, Escape (pause) and the other keys go straight to the game's keys in a
+  minigame (no HUD shortcuts or quick saves), and `FRAME gunner`, `FRAME mouse DX DY` and
+  `FRAME pause` are input script lines.
+- `EndGame` ends the loop (there is no start screen to return to yet).
+
+### Checking it
+
+```
+kotor/tools/ctxc run kotor/tools/mgrun -- --module M12ab --area m12ab --seconds 60 --gunner
+echo "5 gunner" > kotor/out/turret.in
+kotor --module end_m01aa --run-script k_act_hk47simul --headless --frames 1500 --input kotor/out/turret.in
+kotor --module m12ab --headless --frames 2400 --input kotor/out/empty.in      # nobody plays: the Hawk falls
+```
+
+The first is the physics alone. The second is the whole sequence from the story's entry: the bot
+kills the six fighters in 16 s, the module leaves two seconds later (`StartNewModule ebo_m12aa at
+K_MINI_GAME`) and the Hawk's hold loads, 0 faults. The third loses it: at 36.5 s the script fades
+out and at 40.5 s calls `EndGame`. `FRAME mouse` and `down left` / `down w` / `down space` lines aim
+and fire by hand, `FRAME pause` pauses (the picture holds).
+
+### Not done
+
+- The original's bark text during the sequence (the HUD is hidden in a minigame, so "Incoming
+  fighters!" shows nowhere), the `Alarm01` sound's positioning, `Reverse Minigame YAxis`.
+- The hit tests are boxes, not the mesh's AABB tree; a held trigger repeats; the turn rate of the
+  mouse has no setting.
+- A start screen for `EndGame`.

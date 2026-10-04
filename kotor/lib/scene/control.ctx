@@ -23,13 +23,23 @@ namespace ctl {
         vy: f32,
         min_turn: f32,              // degrees per second (camerastyle MinTurnRate, MaxTurnRate)
         max_turn: f32,
+        last: u32,                  // the creature moved last frame: when the leader changes, the old one stops
     }
 
-    fn new {} -> Control { return Control{ vx = 0.0, vy = 0.0, min_turn = 150.0, max_turn = 1500.0 } }
+    fn new {} -> Control { return Control{ vx = 0.0, vy = 0.0, min_turn = 150.0, max_turn = 1500.0, last = obj::INVALID } }
 
     fn set_style { mut ctl: Control, t: twoda::Table, row: u32 } {
         ctl.min_turn = twoda::get_float{ t, row = @as(usize, row), column = "minturnrate" } ifnull 150.0
         ctl.max_turn = twoda::get_float{ t, row = @as(usize, row), column = "maxturnrate" } ifnull 1500.0
+    }
+
+    // Gives up a creature the keys were moving: standing, unless an action has it now.
+    fn release { mut w: world::World, id: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        if o.actions.len > 0 or not c.moving { return }
+        movement::stop{ &w, id }
+        world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
     }
 
     // The camera's rotate input for these keys (positive turns left).
@@ -43,6 +53,12 @@ namespace ctl {
     // One frame of control: `yaw` is the camera's (radians, 0 along +y).
     fn update { mut ctl: Control, mut w: world::World, keys: Keys, yaw: f32, dt: f32 } {
         let id = w.pc
+        if ctl.last != id {
+            // A creature that was walking when control passed on would run on in place: nothing
+            // else resets what the keys started.
+            release{ &w, id = ctl.last }
+            ctl.last = id
+        }
         let o = world::object{ w = &w, id } ifnull { return }
         let c = obj::creature{ o } ifnull { return }
         if c.dead or dt <= 0.0 { return }
@@ -113,9 +129,15 @@ namespace ctl {
                 ctl.vy = 0.0
             }
             let o3 = world::object{ w = &w, id } ifnull { return }
+            // The creature walks or runs for the AI update that follows (ai::update_creature puts a
+            // creature that is not `moving` and has no action back to standing).
+            c2.moving = true
             world::set_animation{ o = o3, id = if v > 2.5 { obj::ANIM_RUN } else { obj::ANIM_WALK }, speed = 1.0 }
-        } else if o2.actions.len == 0 and (o2.animation == obj::ANIM_RUN or o2.animation == obj::ANIM_WALK) {
-            world::set_animation{ o = o2, id = obj::ANIM_STAND, speed = 1.0 }
+        } else if o2.actions.len == 0 {
+            c2.moving = false
+            if o2.animation == obj::ANIM_RUN or o2.animation == obj::ANIM_WALK {
+                world::set_animation{ o = o2, id = obj::ANIM_STAND, speed = 1.0 }
+            }
         }
     }
 

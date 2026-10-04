@@ -2,6 +2,11 @@
 // rail at a given speed and steers, and the run reports where it is and what it hits.
 //
 //   kotor/tools/ctxc run kotor/tools/mgrun -- [--module tar_m03mg --area m03mg] [--speed 150] [--steer -1] [--seconds 30]
+//   kotor/tools/ctxc run kotor/tools/mgrun -- --module M12ab --area m12ab --seconds 120 --gunner [--all]
+//
+// The turret (M12ab) has no speed or steering to set: --gunner lets a bot aim at the nearest
+// fighter and fire, --all prints where each fighter is, and the engine's default damage and death
+// stand in for the module's scripts.
 //
 // Prints one line a second (time, rail seconds, position, lateral offset, speed) and each script
 // event the run raises (OnHitFollower, OnHitObstacle, ...).
@@ -14,7 +19,15 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let mut speed: f32 = 150.0
     let mut steer: f32 = 0.0
     let mut seconds: f32 = 30.0
+    let mut all = false
+    let mut gunner = false
     let mut i: usize = 0
+    while i < args.len {
+        if slice::eq_bytes{ a = args[i], b = "--all" } { all = true }
+        if slice::eq_bytes{ a = args[i], b = "--gunner" } { gunner = true }
+        i = i + 1
+    }
+    i = 0
     while i + 1 < args.len {
         if slice::eq_bytes{ a = args[i], b = "--game" } { game = args[i + 1] }
         else if slice::eq_bytes{ a = args[i], b = "--module" } { module = args[i + 1] }
@@ -27,7 +40,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let pages = mem::pages{ &mem, size = 268435456 } ifnull { return 1 }
     let mut arena_ = arena::new{ buf = pages }
     let mut h = heap::new{ &mem }
-    run{ &io, &fs, &h, keep = &arena_, game, module, area, speed, steer, seconds } iferr err{ error } {
+    run{ &io, &fs, &h, keep = &arena_, game, module, area, speed, steer, seconds, all, gunner } iferr err{ error } {
         _ = @fmt(&io, "mgrun: {}\n", error)
         io::flush{ &io }
         return 1
@@ -61,7 +74,7 @@ fn number { s: []u8 } -> f32 {
 
 fn run {
     mut io: Io, mut fs: Fs, mut h: heap::Heap, mut keep: arena::Arena, game: []u8, module: []u8, area: []u8,
-    speed: f32, steer: f32, seconds: f32,
+    speed: f32, steer: f32, seconds: f32, all: bool, gunner: bool,
 } -> ! {
     let mut rm = try res::open{ &fs, heap = &h, game }
     defer res::close{ &fs, &rm }
@@ -77,29 +90,71 @@ fn run {
     let lookup = mdl_cache::get{ fs = &fs, cache = &models, _ }
     let r = try mg::make_run(arena::Arena){ realloc = arena::alloc, heap = &keep, area = area_ptr, layout, lookup }
     // what the race's own scripts do at the green light: speed limits and the gear
-    r.speed = speed
-    r.min_speed = speed
-    r.max_speed = speed
-    r.accel = 0.0
-    r.tunnel_pos = math::Vec3{ x = 20.0, y = 0.0, z = 0.0 }
-    r.tunnel_neg = math::Vec3{ x = -20.0, y = 0.0, z = 0.0 }
+    if area_ptr.kind == mg::SWOOP {
+        r.speed = speed
+        r.min_speed = speed
+        r.max_speed = speed
+        r.accel = 0.0
+        r.tunnel_pos = math::Vec3{ x = 20.0, y = 0.0, z = 0.0 }
+        r.tunnel_neg = math::Vec3{ x = -20.0, y = 0.0, z = 0.0 }
+    }
     r.input.x = steer
     _ = @fmt(&io, "{} objects, {} rails; the player's rail is {} s long\n", r.count, r.rails.len, if r.objs[0].rail >= 0 { r.rails[@as(usize, r.objs[0].rail)].length } else { 0.0 })
     let dt: f32 = 1.0 / 30.0
     let mut t: f32 = 0.0
     let mut next_report: f32 = 0.0
     while t < seconds {
+        if area_ptr.kind == mg::TURRET and gunner { r.input = mg::gunner_input{ run = r } }
         mg::step_run{ run = r, dt }
         t = t + dt
         while true {
             let e = mg::take_event{ run = r } ifnull { break }
+            // no scripts here: the engine's defaults stand in for the module's
+            if area_ptr.kind == mg::TURRET {
+                if mg::slot_of{ run = r, id = e.object } is some{ value = k } {
+                    if e.slot == mg::ON_DAMAGE {
+                        r.last_hp_change = e.value
+                        mg::default_damage{ run = r, n = k }
+                    } else if e.slot == mg::ON_DEATH {
+                        mg::default_death{ run = r, n = k }
+                        _ = @fmt(&io, "{} fighter {} destroyed\n", t, k)
+                    }
+                }
+                continue
+            }
             if e.slot != mg::ON_HEARTBEAT and e.slot != mg::ON_CREATE {
                 _ = @fmt(&io, "{} event: slot {} on object {} (last hit {} {})\n", t, e.slot, e.object - mg::ID_BASE, @wrap_sub(r.last_follower_hit, mg::ID_BASE), @wrap_sub(r.last_obstacle_hit, mg::ID_BASE))
             }
         }
         if t >= next_report {
             let p = r.objs[0].position
-            _ = @fmt(&io, "t {}  rail {}  at {} {} {}  offset {}  speed {}\n", t, r.objs[0].t, p.x, p.y, p.z, r.offset.x, r.speed)
+            if area_ptr.kind == mg::TURRET {
+                let mut live: i32 = 0
+                let mut k: usize = 1
+                while k < r.count {
+                    if r.objs[k].kind == mg::ObjKind::enemy and not r.objs[k].dead { live = live + 1 }
+                    k = k + 1
+                }
+                let mut flying: i32 = 0
+                k = 0
+                while k < mg::MAX_BULLETS {
+                    if r.bullets[k].live { flying = flying + 1 }
+                    k = k + 1
+                }
+                _ = @fmt(&io, "t {}  aim pitch {} yaw {}  hawk {}  fighters {}  bullets {}\n", t, r.offset.x, r.offset.z, r.objs[0].hit_points, live, flying)
+            } else {
+                _ = @fmt(&io, "t {}  rail {}  at {} {} {}  offset {}  speed {}\n", t, r.objs[0].t, p.x, p.y, p.z, r.offset.x, r.speed)
+            }
+            if all {
+                let mut k: usize = 1
+                while k < r.count and r.objs[k].kind == mg::ObjKind::enemy {
+                    let m = mg::follower_matrix{ run = r, o = &r.objs[k] }
+                    let q = math::mat4::get_translation{ m }
+                    let f = math::mat4::transform_dir{ m, v = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 } }
+                    _ = @fmt(&io, "   enemy {} at {} {} {} facing {} {} {}\n", k, q.x, q.y, q.z, f.x, f.y, f.z)
+                    k = k + 1
+                }
+            }
             next_report = next_report + 1.0
         }
     }

@@ -124,6 +124,24 @@ namespace gui {
         return "back"
     }
 
+    // The size a resolution's backdrop pictures were drawn for: the pictures of `store`, `pazaak`
+    // and `map` have the 640x480 panel's art in the middle of this rectangle (the 800x600 ones
+    // serve every size the original has no picture set for).
+    fn design_w { id: i32 } -> i32 {
+        if id == 1 { return 1024 }
+        if id == 2 or id == 3 { return 1280 }
+        if id == 4 { return 1600 }
+        return 800
+    }
+
+    fn design_h { id: i32 } -> i32 {
+        if id == 1 { return 768 }
+        if id == 2 { return 960 }
+        if id == 3 { return 1024 }
+        if id == 4 { return 1200 }
+        return 600
+    }
+
     // Loads the backdrop picture `kind` (0 back, 1 store, 2 pazaak, 3 map, 4 comp) for the
     // current resolution if it isn't yet. Panels call it when opened.
     fn ensure_backdrop { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, kind: u32 } {
@@ -185,13 +203,19 @@ namespace gui {
         p.removing = true
     }
 
-    // Removes closed panels and drops what pointed into them. Called by `update`.
+    // Removes closed panels and drops what pointed into them. Called by `update`. A pointer that
+    // rested on a removed panel is tested again afterwards (as RemovePanel does), so the tab bar a
+    // click replaced lights its tab under the resting pointer without waiting for a mouse move.
     fn reap { mut g: Gui } {
+        let mut lost_hover = false
         let mut i: usize = 0
         while i < g.panels.len {
             let p = list::items{ list = g.panels }[i]
             if p.removing {
-                if g.hover.panel == p.id { g.hover = Ref{ panel = 0, control = -1 } }
+                if g.hover.panel == p.id {
+                    g.hover = Ref{ panel = 0, control = -1 }
+                    lost_hover = true
+                }
                 if g.capture.panel == p.id { g.capture = Ref{ panel = 0, control = -1 } }
                 if g.tooltip_ref.panel == p.id { g.tooltip_ref = Ref{ panel = 0, control = -1 } }
                 destroy_panel{ &g, p }
@@ -206,6 +230,7 @@ namespace gui {
                 i = i + 1
             }
         }
+        if lost_hover and g.capture.panel == 0 { on_motion{ &g, x = g.mouse_x, y = g.mouse_y } }
     }
 
     // Whether any modal panel is open (the world pauses on it, docs/re/gameloop.md).
@@ -320,7 +345,8 @@ namespace gui {
     }
 
     // A UI pass with the panels from the back, modal ones after the rest, then the tooltip and
-    // the pointer.
+    // the pointer. Controls a panel holds back (set_overlay_after) wait for draw_overlay, which
+    // then also draws the tooltip and the pointer.
     fn draw_panels { mut g: Gui, mut frame: render::Frame } {
         if g.hidden { return }
         update_visibility{ &g }
@@ -332,37 +358,81 @@ namespace gui {
             let mut i: usize = 0
             while i < ps.len {
                 let p = ps[i]
-                if p.shown and (p.modal == (pass == 1)) { draw_panel{ &g, &frame, p, screen } }
+                if p.shown and (p.modal == (pass == 1)) { draw_panel{ &g, &frame, p, screen, overlay = false } }
                 i = i + 1
             }
             pass = pass + 1
+        }
+        if has_overlay{ &g } { return }
+        draw_tooltip{ &g, &frame, screen }
+        draw_cursor{ &g, &frame, screen }
+    }
+
+    fn has_overlay { mut g: Gui } -> bool {
+        let ps = list::items{ list = g.panels }
+        let mut i: usize = 0
+        while i < ps.len {
+            if ps[i].shown and ps[i].overlay_from >= 0 { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // The controls draw_panels held back, in a UI pass of their own over what the caller drew since,
+    // then the tooltip and the pointer. Nothing happens when no panel holds any back.
+    fn draw_overlay { mut g: Gui, mut frame: render::Frame } {
+        if g.hidden or not has_overlay{ &g } { return }
+        render::begin_ui{ &frame, width = @as(f32, g.ui_w), height = @as(f32, g.ui_h), target = null }
+        let screen = rect_of{ x = 0, y = 0, w = g.ui_w, h = g.ui_h }
+        let ps = list::items{ list = g.panels }
+        let mut i: usize = 0
+        while i < ps.len {
+            let p = ps[i]
+            if p.shown and p.overlay_from >= 0 { draw_panel{ &g, &frame, p, screen, overlay = true } }
+            i = i + 1
         }
         draw_tooltip{ &g, &frame, screen }
         draw_cursor{ &g, &frame, screen }
     }
 
-    // Black behind, the resolution's picture stretched over the whole screen.
+    // Black behind, the resolution's picture stretched over the whole screen. The original does just
+    // that, at the sizes it has pictures for (800x600, 1024x768, 1280x960, 1280x1024, 1600x1200), where
+    // the 640x480 panel in the middle covers most of the picture and the rest is the frame around
+    // it; the store, pazaak and map pictures even hold the art that goes under the panel (the
+    // frame, the table, the map's bars). On any other window the stretched picture is the wrong
+    // shape and size for the panel: a second, larger frame around it, art that no longer lines up
+    // with the controls. So the picture is drawn at the size it was made for (the 800x600 one for
+    // a size the original has none for), centred, with black around it. The loading screen's
+    // picture (kind 5) is a whole picture and stays stretched.
     fn draw_backdrop { mut g: Gui, mut frame: render::Frame, kind: u32 } {
         let screen = rect_of{ x = 0, y = 0, w = g.ui_w, h = g.ui_h }
         put_fill{ &frame, x = 0.0, y = 0.0, w = @as(f32, g.ui_w), h = @as(f32, g.ui_h), color = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 }, clip = screen }
-        if kind < 6 {
-            let img = g.backdrops[kind]
-            put_image{ &frame, img, x = 0.0, y = 0.0, w = @as(f32, g.ui_w), h = @as(f32, g.ui_h), color = white_color{}, angle = 0.0, clip = screen }
+        if kind >= 6 { return }
+        let img = g.backdrops[kind]
+        let id = resolution_id{ w = g.ui_w, h = g.ui_h }
+        let mut w = g.ui_w
+        let mut h = g.ui_h
+        if kind <= 4 {
+            if w > design_w{ id } { w = design_w{ id } }
+            if h > design_h{ id } { h = design_h{ id } }
         }
+        put_image{ &frame, img, x = @as(f32, (g.ui_w - w) / 2), y = @as(f32, (g.ui_h - h) / 2), w = @as(f32, w), h = @as(f32, h), color = white_color{}, angle = 0.0, clip = screen }
     }
 
-    fn draw_panel { mut g: Gui, mut frame: render::Frame, p: *mut Panel, screen: render::Rect } {
+    // `overlay`: only the controls the panel held back, none of its own background.
+    fn draw_panel { mut g: Gui, mut frame: render::Frame, p: *mut Panel, screen: render::Rect, overlay: bool } {
         if p.w <= 0 or p.h <= 0 { return }
         let clip = rect_of{ x = p.sx, y = p.sy, w = p.w, h = p.h }
-        if p.has_color and p.background {
+        if p.has_color and p.background and not overlay {
             put_fill{ &frame, x = clip.x, y = clip.y, w = clip.w, h = clip.h, color = render::Color{ r = p.color.r, g = p.color.g, b = p.color.b, a = p.alpha }, clip }
         }
-        if p.background {
+        if p.background and not overlay {
             draw_border{ &g, &frame, b = p.border, x = p.sx, y = p.sy, w = p.w, h = p.h, alpha = p.alpha, clip, override = no_img{} }
         }
         let cs = list::items{ list = p.controls }
-        let mut i: usize = 0
-        while i < cs.len {
+        let mut i: usize = if overlay { @as(usize, p.overlay_from) } else { 0 }
+        let end: usize = if not overlay and p.overlay_from >= 0 { @as(usize, p.overlay_from) } else { cs.len }
+        while i < end {
             let c = &cs[i]
             if (c.flags & F_VISIBLE) != 0 and (c.flags & F_INTERNAL) == 0 {
                 draw_control{ &g, &frame, p, c, alpha = p.alpha, clip }

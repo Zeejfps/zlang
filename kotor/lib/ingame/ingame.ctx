@@ -15,6 +15,7 @@ namespace ingame {
         cache: *mut material::Cache,        // the GUI's textures: panels, portraits, icons
         gui: gui::Gui,                      // shared with whoever else shows panels in game
         hud: hud::Hud,
+        selfs: selfslots::State,            // the HUD's four self action slots
         text: utf8::Builder(heap::Heap),    // scratch for formatted text
         width: i32, height: i32,
         menu: i32,                          // the open menu (MENU_*), NO_MENU
@@ -25,6 +26,10 @@ namespace ingame {
         pause_panel: u32,                   // the "PAUSED" banner, 0 when not shown
         screens: screens::State,            // the store, loot, level-up, workbench and galaxy map panels (lib/screens)
         hud_hidden: bool,
+        psel_wait: bool,                    // ShowPartySelectionGUI asked: the screen opens when no conversation is up
+        psel_exit: resref::ResRef,          // its exit script, forced slots
+        psel_force1: i32, psel_force2: i32,
+        bot: bot::Bot,                      // the headless test player (bot.ctx); off unless a script turns it on
     }
 
     // Opens the interface for a window of `width` x `height`. `scratch` is the texture decoder's
@@ -40,13 +45,16 @@ namespace ingame {
             gui::set_tlk{ &g, table = t }
         }
         try gui::load_defaults{ &g, fs = &w.fs, &dev }
+        // The game options the rules read: Auto Level Up NPCs (the options menu keeps it current).
+        w.rules.settings.auto_level = frontend::load_settings{ fs = &w.fs, heap = w.heap, path = "kotor/out/kotor-settings.ini" }.auto_level_up
         if mixer != null { gui::set_mixer{ &g, mixer } }
         let h = try hud::open{ &g, &w, &dev }
         let ui = Ingame{
-            heap = w.heap, cache, gui = g, hud = h,
+            heap = w.heap, cache, gui = g, hud = h, selfs = selfslots::new{},
             text = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } },
             width, height, menu = NO_MENU, menu_panel = 0, top_panel = 0, menus = new_menus{}, log = hud::new_log{},
-            pause_panel = 0, hud_hidden = false, screens = screens::new{},
+            pause_panel = 0, hud_hidden = false, screens = screens::new{}, bot = bot::new{},
+            psel_wait = false, psel_exit = resref::empty{}, psel_force1 = -1, psel_force2 = -1,
         }
         let mut p = try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
         hud::set_tooltips{ h = &p.hud, g = &p.gui, &w, text = &p.text }
@@ -56,6 +64,7 @@ namespace ingame {
     // Closes every panel and frees the interface (a module change makes a new one).
     fn free { mut ui: Ingame, mut dev: gpu::Device } {
         gui::free{ g = &ui.gui }
+        screens::free{ s = &ui.screens, heap = ui.heap }
         list::free{ list = &ui.text.bytes }
         material::free_cache{ cache = ui.cache, &dev }
     }
@@ -75,6 +84,7 @@ namespace ingame {
             return
         }
         ui.hud = h
+        ui.selfs = selfslots::new{}
         hud::set_tooltips{ h = &ui.hud, g = &ui.gui, &w, text = &ui.text }
         set_hud_hidden{ &ui, hidden = was_hidden }
     }
@@ -89,6 +99,16 @@ namespace ingame {
     // is hidden.
     fn is_blocked { mut ui: Ingame } -> bool {
         return ui.menu != NO_MENU or ui.hud_hidden or gui::is_modal_open{ g = &ui.gui } or screens::is_open{ s = &ui.screens }
+    }
+
+    // Whether the UI is in the middle of something (--speed lets an idle UI skip ticks, not this one).
+    fn is_busy { mut ui: Ingame } -> bool {
+        return ui.psel_wait or screens::is_waiting{ s = &ui.screens } or is_blocked{ &ui }
+    }
+
+    // The test player's step alone: --speed runs the rest of the UI once per N ticks, the bot decides every tick.
+    fn step_bot { mut ui: Ingame, mut w: world::World } {
+        bot::step{ b = &ui.bot, &w }
     }
 
     // Whether the player confirmed Exit Game in the options menu: the loop should end.
@@ -166,6 +186,9 @@ namespace ingame {
             hud::cycle_target{ &w, forward = keycode == 'e' }
             return true
         }
+        if keycode == 'r' {
+            return hud::run_default{ h = &ui.hud, &w }
+        }
         if keycode >= '1' and keycode <= '3' {
             // The target block's three slots (keymap.2da: TargetLeft/Middle/RightAct).
             return hud::run_slot{ h = &ui.hud, &w, k = @as(usize, keycode - '1') }
@@ -191,6 +214,12 @@ namespace ingame {
     fn take { mut ui: Ingame, mut w: world::World, note: outbox::Note } {
         screens::take{ s = &ui.screens, &w, note }
         match note {
+            party_selection{ exit_script, force1, force2 } => {
+                ui.psel_wait = true
+                ui.psel_exit = exit_script
+                ui.psel_force1 = force1
+                ui.psel_force2 = force2
+            }
             feedback{ strref, text } => {
                 let sent = outbox::text_of{ out = &w.out, t = text }
                 let said = if sent.len > 0 { sent } else { world::string_by_strref{ w = &w, strref } }
@@ -238,7 +267,9 @@ namespace ingame {
     // said.
     fn update { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, sc: scene::Scene, camera: cam::Camera, dt: f32 } {
         gui::update{ g = &ui.gui, dt }
+        bot::step{ b = &ui.bot, &w }
         hud::log_tick{ log = &ui.log, dt }
+        if options_panel::settings{ s = &ui.menus.options } is some{ value = st } { w.rules.settings.auto_level = st.auto_level_up }
         // A conversation or cutscene takes the screen: the HUD and any menu go away for it
         // (re/gui.md, "SetHudMode"), and the world is not picked.
         if w.conversation.active != ui.hud_hidden {
@@ -248,6 +279,7 @@ namespace ingame {
         let aspect = @as(f32, ui.width) / @as(f32, ui.height)
         // A conversation covers the screen with its own panels.
         hud::update{ h = &ui.hud, g = &ui.gui, &w, &dev, text = &ui.text, camera, aspect, blocked = is_blocked{ &ui }, dt }
+        selfslots::update{ s = &ui.selfs, g = &ui.gui, &w, &dev, panel = ui.hud.panel, dt, combat_message = ui.hud.combat and ui.hud.combat_message > 0.0 }
         let events = gui::take_events{ g = &ui.gui }
         let mut i: usize = 0
         while i < events.len {
@@ -272,11 +304,27 @@ namespace ingame {
         // by a script closes the menu first.
         if screens::is_waiting{ s = &ui.screens } and ui.menu != NO_MENU { close_menu{ &ui, &w } }
         screens::update{ s = &ui.screens, g = &ui.gui, &w, &dev, events, dt }
+        // The party selection screen (a script's ShowPartySelectionGUI), once the conversation that asked is over.
+        if ui.psel_wait and not w.conversation.active and not gui::is_modal_open{ g = &ui.gui } {
+            ui.psel_wait = false
+            if ui.menu != NO_MENU { close_menu{ &ui, &w } }
+            partysel_panel::open_modal{ s = &ui.menus.partysel, g = &ui.gui, &w, &dev, force1 = ui.psel_force1, force2 = ui.psel_force2, exit_script = ui.psel_exit } iferr err{ error } {
+                _ = @fmt(&w.io, "kotor: party selection: {}\n", error)
+            }
+        }
+        partysel_panel::update{ s = &ui.menus.partysel, g = &ui.gui, &w, &dev, dt }
+    }
+
+    // The exit script of a party selection that was just applied, once: the owner of the VM runs it
+    // (scripts::run with no caller).
+    fn take_exit_script { mut ui: Ingame } -> ?resref::ResRef {
+        return partysel_panel::take_exit_script{ s = &ui.menus.partysel }
     }
 
     // What the HUD's own controls ask for: a menu, the pause toggle, a party portrait, the target
     // block's slots.
     fn hud_event { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } {
+        if selfslots::event{ s = &ui.selfs, g = &ui.gui, &w, &dev, panel = ui.hud.panel, ev } { return }
         if hud::block_event{ h = &ui.hud, g = &ui.gui, &w, &dev, ev } { return }
         if hud::combat_event{ h = &ui.hud, g = &ui.gui, &w, ev } { return }
         if ev.kind == gui::EventKind::activate {
@@ -307,6 +355,9 @@ namespace ingame {
         if ui.menu == NO_MENU and not ui.hud_hidden { hud::draw{ h = &ui.hud, g = &ui.gui, &w, &dev, &frame, log = &ui.log } }
         // A menu that draws into a render target before the panels (the map's picture with its arrows).
         if ui.menu == MENU_MAP { map_panel::draw{ s = &ui.menus.map, g = &ui.gui, &w, &dev, &frame, panel = ui.menu_panel } }
-        gui::draw{ g = &ui.gui, &frame }
+        gui::draw_backdrop_pass{ g = &ui.gui, &frame }
+        screens::draw_views{ s = &ui.screens, g = &ui.gui, &frame, target = gpu::screen_size{ dev } }
+        gui::draw_panels{ g = &ui.gui, &frame }
+        screens::draw_over{ s = &ui.screens, g = &ui.gui, &frame, target = gpu::screen_size{ dev } }
     }
 }

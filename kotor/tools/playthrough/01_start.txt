@@ -1,0 +1,2 @@
+# New Game with the default player into the Endar Spire.
+3 newgame

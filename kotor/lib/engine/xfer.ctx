@@ -61,6 +61,50 @@ namespace xfer {
         return rt_misc::move_item{ &w, item, to = w.player }
     }
 
+    // AddItem's merge (party-items-saves.md 5.2) for `item`, just read into the holder of the
+    // list `l` (a store's stock, a creature's or a container's items; not yet in it): an item of
+    // `l` that stacks with it and has room takes its units, up to baseitems Stacking, and the rest
+    // stays a stack of its own. True when it was taken whole; the new object is then destroyed.
+    // A store's infinite stock never runs out, so it swallows an identical item and stays one unit
+    // (and a finite stack that meets an infinite item turns infinite): the amount reads "Infinite",
+    // never a count.
+    fn absorb { mut w: world::World, l: *list::List(u32, heap::Heap), item: u32 } -> bool {
+        let io = world::object{ w = &w, id = item } ifnull { return false }
+        let it = obj::item{ o = io } ifnull { return false }
+        let most = rt_item::max_stack{ w = &w, base = it.base }
+        if most <= 1 { return false }
+        let ids = list::items{ list = l.* }
+        let mut k: usize = 0
+        while k < ids.len {
+            let other = ids[k]
+            k = k + 1
+            if other == item or not stacks_together{ w = &w, a = other, b = item } { continue }
+            let oo = world::object{ w = &w, id = other } ifnull { continue }
+            let oi = obj::item{ o = oo } ifnull { continue }
+            if oi.infinite or it.infinite {
+                oi.infinite = true
+                set_stack{ it = oi, n = 1 }
+                world::destroy{ &w, id = item }
+                return true
+            }
+            if oi.stack >= most { continue }
+            let room = most - oi.stack
+            if it.stack <= room {
+                set_stack{ it = oi, n = oi.stack + it.stack }
+                world::destroy{ &w, id = item }
+                return true
+            }
+            set_stack{ it = oi, n = most }
+            set_stack{ it, n = it.stack - room }
+        }
+        return false
+    }
+
+    fn set_stack { it: *mut obj::Item, n: u32 } {
+        it.stack = n
+        if it.rules is some{ value = ri } { ri.stack = @as(i32, n) }
+    }
+
     // Whether two items would share a stack (CSWSItem::CompareItem).
     fn stacks_together { w: *world::World, a: u32, b: u32 } -> bool {
         let ao = world::object{ w, id = a } ifnull { return false }

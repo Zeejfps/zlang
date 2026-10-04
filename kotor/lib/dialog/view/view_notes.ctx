@@ -5,6 +5,10 @@ namespace dlgview {
     fn take_note { mut v: View, mut w: world::World, mut g: gui::Gui, mut dev: gpu::Device, note: outbox::Note } {
         match note {
             fade{ out, wait, length, color } => {
+                if w.log.dialog {
+                    world::prefix{ w = &w }
+                    _ = @fmt(&w.io, "dialog fade out {} after {} s over {} s\n", out, wait, length)
+                }
                 dlgpanel::start_fade{ p = &v.panels, out, delay = wait, length, color }
             }
             bark{ speaker, text, sound } => {
@@ -46,7 +50,7 @@ namespace dlgview {
     }
 
     // The headless input script's lines for the panels (play.ctx `ui` commands): `reply N` picks
-    // reply N (from 1) at once; `key NAME`, `move X Y` and `click X Y` go through the panels
+    // reply N (from 1) at once, `replies N...` queues picks for the lists that open; `key NAME`, `move X Y` and `click X Y` go through the panels
     // while they are up. False if the line is not for them.
     fn run_command { mut v: View, mut w: world::World, mut g: gui::Gui, text: []u8 } -> bool {
         let mut words = text::words{ s = text }
@@ -54,6 +58,18 @@ namespace dlgview {
         if ci::eq{ a = cmd, b = "reply" } {
             let n = text::scan_decimal{ s = text::next_word{ &words } ifnull "1" }
             if n >= 1 { w.conversation.pick = @as(i32, @trunc(i32, n - 1)) }
+            return true
+        }
+        if ci::eq{ a = cmd, b = "replies" } {
+            // `replies 1 2 1`: queues replies, each picked when a list opens (the queue outlives conversations).
+            while true {
+                let word = text::next_word{ &words } ifnull { break }
+                let c = &w.conversation
+                if c.scripted_count < 32 {
+                    c.scripted[c.scripted_count] = @trunc(u8, text::scan_decimal{ s = word })
+                    c.scripted_count = c.scripted_count + 1
+                }
+            }
             return true
         }
         if not dlgpanel::is_open{ p = v.panels } { return false }

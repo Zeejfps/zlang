@@ -1,0 +1,109 @@
+// The attributes step of a level-up (abchrgen with the level-up flag set, docs/re/chargen.md F):
+// every fourth level one point, costing 1, on any score; no ceiling, and the floor is the score the
+// panel opened with.
+namespace lvl {
+    fn open_abilities { mut s: State, mut g: gui::Gui, mut w: world::World } -> ! {
+        let f = creature_of{ w = &w, id = s.who } ifnull { return }
+        let mut r: usize = 0
+        while r < 6 {
+            s.ab[r] = f.c.abil[chargen::UI_STAT[r]]
+            s.ab_start[r] = s.ab[r]
+            r = r + 1
+        }
+        s.ab_points = 1
+        s.ab_focus = 0
+        try refresh_abilities{ &s, &g }
+        gui::set_focus{ &g, panel = s.step, tag = "STR_POINTS_BTN" }
+    }
+
+    fn refresh_abilities { mut s: State, mut g: gui::Gui } -> ! {
+        let p = s.step
+        let mut r: usize = 0
+        while r < 6 {
+            let mut b1: [24]u8
+            try chargen::set_number{ &g, panel = p, tag = chargen::ability_tag{ into = b1[..], row = r, suffix = "_POINTS_BTN" }, n = s.ab[r] }
+            let mut b2: [24]u8
+            gui::set_enabled{ &g, panel = p, tag = chargen::ability_tag{ into = b2[..], row = r, suffix = "_PLUS_BTN" }, enabled = s.ab_points > 0 }
+            let mut b3: [24]u8
+            gui::set_enabled{ &g, panel = p, tag = chargen::ability_tag{ into = b3[..], row = r, suffix = "_MINUS_BTN" }, enabled = s.ab[r] > s.ab_start[r] }
+            r = r + 1
+        }
+        try chargen::set_number{ &g, panel = p, tag = "REMAINING_SELECTIONS_LBL", n = s.ab_points }
+        try show_ability_focus{ &s, &g }
+    }
+
+    fn show_ability_focus { mut s: State, mut g: gui::Gui } -> ! {
+        let p = s.step
+        let r = s.ab_focus
+        try chargen::set_number{ &g, panel = p, tag = "COST_POINTS_LBL", n = 1 }
+        let m = chargen::modifier_of{ score = s.ab[r] }
+        if m == 0 {
+            try gui::set_text{ &g, panel = p, tag = "LBL_ABILITY_MOD", text = "-" }
+        } else {
+            try chargen::set_modifier{ &g, panel = p, tag = "LBL_ABILITY_MOD", n = m }
+        }
+        try chargen::set_description{ &g, panel = p, tag = "LB_DESC", strref = chargen::AB_DESC[r] }
+    }
+
+    fn abilities_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> ! {
+        if ev.kind == gui::EventKind::cancel {
+            close_step{ &s, &g }
+            return
+        }
+        let row = chargen::ability_row_of{ tag = ev.tag }
+        if ev.kind == gui::EventKind::hilight and row >= 0 {
+            if s.ab_focus != @as(usize, row) {
+                s.ab_focus = @as(usize, row)
+                try show_ability_focus{ &s, &g }
+            }
+        } else if ev.kind == gui::EventKind::activate {
+            if row >= 0 and slice::eq_bytes{ a = ev.tag[4..], b = "PLUS_BTN" } {
+                s.ab_focus = @as(usize, row)
+                if s.ab_points > 0 {
+                    s.ab[@as(usize, row)] = s.ab[@as(usize, row)] + 1
+                    s.ab_points = s.ab_points - 1
+                }
+                try refresh_abilities{ &s, &g }
+            } else if row >= 0 and slice::eq_bytes{ a = ev.tag[4..], b = "MINUS_BTN" } {
+                s.ab_focus = @as(usize, row)
+                let r = @as(usize, row)
+                if s.ab[r] > s.ab_start[r] {
+                    s.ab[r] = s.ab[r] - 1
+                    s.ab_points = s.ab_points + 1
+                }
+                try refresh_abilities{ &s, &g }
+            } else if slice::eq_bytes{ a = ev.tag, b = "BTN_RECOMMENDED" } {
+                // The class's preferred ability gets the point (classes.2da primaryabil).
+                if s.ab_points > 0 {
+                    let primary = rules::get_class{ tables = w.rules, row = s.class } ifnull { return }
+                    let mut r: usize = 0
+                    while r < 6 {
+                        if chargen::UI_STAT[r] == @as(usize, primary.primary) {
+                            s.ab[r] = s.ab[r] + 1
+                            s.ab_points = 0
+                            s.ab_focus = r
+                        }
+                        r = r + 1
+                    }
+                    try refresh_abilities{ &s, &g }
+                }
+            } else if slice::eq_bytes{ a = ev.tag, b = "BTN_ACCEPT" } {
+                if s.ab_points > 0 {
+                    // "You must spend all of your points."
+                    try say{ &s, &g, &w, &dev, strref = 48217, ask = ASK_INFO }
+                    return
+                }
+                s.rec.ability = -1
+                let mut r: usize = 0
+                while r < 6 {
+                    if s.ab[r] != s.ab_start[r] { s.rec.ability = @as(i32, chargen::UI_STAT[r]) }
+                    r = r + 1
+                }
+                close_step{ &s, &g }
+                step_taken{ &s, &g, &w, step = STEP_ATTRIBUTES }
+            } else if slice::eq_bytes{ a = ev.tag, b = "BTN_BACK" } {
+                close_step{ &s, &g }
+            }
+        }
+    }
+}

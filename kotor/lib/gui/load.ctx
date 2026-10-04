@@ -271,7 +271,7 @@ namespace gui {
             id = g.next_panel, name = resref::truncate{ name }, mode, modal, removing = false,
             x = 0, y = 0, w = 0, h = 0, border = no_border{}, color = white_color{}, has_color = false, alpha = 1.0,
             controls = list::new(Control, heap::Heap){ realloc = heap::alloc, heap = g.heap },
-            bytes, doc, focus = -1, open_sound = -1, sx = 0, sy = 0, shown = true, background = true, backdrop = 0,
+            bytes, doc, focus = -1, open_sound = -1, sx = 0, sy = 0, shown = true, background = true, backdrop = 0, key_events = false, overlay_from = -1,
         } }
         g.next_panel = g.next_panel + 1
         read_panel{ &g, &fs, &dev, p } iferr err{ error } {
@@ -308,17 +308,20 @@ namespace gui {
         p.color = pc
         p.has_color = pc.r >= 0.0
         let items = gff::get_list{ doc, s = r, label = "CONTROLS" } ifnull { slice::empty(u32){} }
+        let menu_checks = ci::starts_with{ s = resref::bytes{ r = &p.name }, prefix = "opt" }
         let mut internals = list::new(Control, heap::Heap){ realloc = heap::alloc, heap = g.heap }
         defer list::free{ list = &internals }
         let mut i: usize = 0
         while i < items.len {
             let cs = items[i]
             let mut c = read_control{ &g, &fs, &dev, doc, s = cs }
+            if menu_checks and c.kind == K_CHECK { style_menu_check{ &c } }
             try list::push{ list = &p.controls, item = c }
             if c.kind == K_LIST {
                 let ps = gff::get_struct{ doc, s = cs, label = "PROTOITEM" }
                 if ps != null {
                     let mut pc2 = read_control{ &g, &fs, &dev, doc, s = ps }
+                    if menu_checks and pc2.kind == K_CHECK { style_menu_check{ c = &pc2 } }
                     pc2.parent = c.id
                     pc2.flags = pc2.flags | F_INTERNAL
                     pc2.id = -1
@@ -337,6 +340,17 @@ namespace gui {
             i = i + 1
         }
         sort_controls{ items = list::items{ list = p.controls } }
+        // A frame label that other controls name as their parent (a tab of the top menu bar, under its
+        // button) is not under the pointer itself, so it lights and clicks exactly where its button does.
+        let all = list::items{ list = p.controls }
+        let mut m: usize = 0
+        while m < all.len {
+            if all[m].parent >= 0 {
+                let up = find_by_id{ p, id = all[m].parent }
+                if up >= 0 and all[@as(usize, up)].kind == K_PROTO { all[@as(usize, up)].flags = all[@as(usize, up)].flags | F_NO_HIT }
+            }
+            m = m + 1
+        }
         // Internals go after the sorted controls; each list box then points at its own.
         let ins = list::items{ list = internals }
         let mut k: usize = 0
@@ -350,6 +364,23 @@ namespace gui {
             }
             k = k + 1
         }
+    }
+
+    // The check boxes of the options panels (optgameplay, optfeedback, optgraphics ...) are a
+    // subclass in the engine (vtable 0x00758258): its SetExtent puts the four borders in a 25x25
+    // square at the left of the extent and the text beside it (draw.ctx), and its loader tints
+    // BORDER and SELECTED menu blue, HILIGHT and HILIGHTSELECTED yellow whatever the file says
+    // (the files say white). The art, a ring and a ringed dot, is made for that square.
+    fn style_menu_check { c: *mut Control } {
+        c.flags = c.flags | F_MENU_CHECK
+        c.border.color = color_menu{}
+        c.border.tinted = true
+        c.selected.color = color_menu{}
+        c.selected.tinted = true
+        c.hilight.color = color_hilight{}
+        c.hilight.tinted = true
+        c.hilight_selected.color = color_hilight{}
+        c.hilight_selected.tinted = true
     }
 
     // The index of the control with file ID `id` (not an internal one), or -1.

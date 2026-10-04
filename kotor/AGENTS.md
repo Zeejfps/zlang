@@ -141,6 +141,10 @@ Planned subsystems (namespace in brackets):
 
 ## Reverse engineering
 
+**Never run `git clean` (or delete ignored files) in the main checkout**: `G:\Dev\zlang\kotor\re`
+holds the Ghidra install, project and exports, which git doesn't track and can't restore. In a
+worktree, `rex.py` finds the main checkout's `kotor/re` by itself; don't rebuild it elsewhere.
+
 `kotor/re/` (git-ignored) holds the Ghidra install, the analyzed project for `swkotor.exe` and text
 exports (decompiled functions, strings, RTTI class names, the NWScript routine table). See
 `kotor/docs/re/README.md` for how to search them. When you learn something from the binary, write

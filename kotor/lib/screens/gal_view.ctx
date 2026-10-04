@@ -1,0 +1,124 @@
+// The galaxy map's two 3D views (docs/re/gui.md "CSWGuiGalaxyMap", docs/re/gui3d.md): `galaxy`, the
+// spiral of particles behind the planet buttons, and the planet model of the selected planet, which
+// zooms in (`zoomin`) and then turns (`rotate`). Each is a gui3d::Scene drawn into the rectangle of
+// a control of the panel, between the backdrop and the panel.
+namespace galview {
+    const MEMORY_GALAXY: usize = 33554432
+    const MEMORY_PLANET: usize = 16777216
+    const GALAXY_FOV: f32 = 42.0
+    const PLANET_FOV: f32 = 30.0
+
+    // A scene with its arena and the models cache that keeps its model there. Heap-allocated so
+    // the pointers between the parts stay put.
+    struct Shown {
+        mem: alloc::Bytes,
+        arena: *mut arena::Arena,
+        models: *mut mdl_cache::Cache,
+        scene: gui3d::Scene,
+    }
+
+    struct View {
+        heap: *mut heap::Heap,
+        galaxy: ?*mut Shown,
+        planet: ?*mut Shown,
+        planet_model: [32]u8,
+        planet_model_len: usize,
+        planet_time: f32,
+        zoom_length: f32,
+        turning: bool,              // zoomin has finished and rotate plays
+    }
+
+    // Loads `model` into a scene of its own, looking through `camerahook`.
+    fn load_shown {
+        mut w: world::World, mut g: gui::Gui, mut dev: gpu::Device, model: []u8, size: usize, fov: f32, animation: []u8, warm_up: f32,
+    } -> ?*mut Shown {
+        let heap = w.heap
+        let mem = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(u8){}, count = size } iferr { return null }
+        let ar = alloc::new(arena::Arena, heap::Heap){ realloc = heap::alloc, heap, value = arena::new{ buf = mem } } iferr { return null }
+        let models = alloc::new(mdl_cache::Cache, heap::Heap){ realloc = heap::alloc, heap, value = mdl_cache::new{ rm = w.rm.*, keep = ar } } iferr { return null }
+        let scene = gui3d::load{
+            fs = &w.fs, &dev, heap = ar, rm = w.rm.*, models, mats = g.cache, model, camera_node = "camerahook",
+            fov_degrees = fov, animation, warm_up,
+        } iferr { return null }
+        return alloc::new(Shown, heap::Heap){ realloc = heap::alloc, heap, value = Shown{ mem, arena = ar, models, scene } } iferr { return null }
+    }
+
+    fn free_shown { mut v: View, mut dev: gpu::Device, sh: *mut Shown } {
+        gui3d::free{ scene = &sh.scene, &dev }
+        alloc::free(mdl_cache::Cache, heap::Heap){ realloc = heap::alloc, heap = v.heap, p = sh.models }
+        alloc::free(arena::Arena, heap::Heap){ realloc = heap::alloc, heap = v.heap, p = sh.arena }
+        _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = sh.mem, count = 0 }
+        alloc::free(Shown, heap::Heap){ realloc = heap::alloc, heap = v.heap, p = sh }
+    }
+
+    // The views for a panel; the galaxy is loaded now, a planet when one is chosen. The galaxy may
+    // be missing (the map then works as flat buttons).
+    fn make { mut w: world::World, mut g: gui::Gui, mut dev: gpu::Device } -> ?*mut View {
+        let galaxy = load_shown{ &w, &g, &dev, model = "galaxy", size = MEMORY_GALAXY, fov = GALAXY_FOV, animation = "default", warm_up = 4.0 }
+        let v = alloc::new(View, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = View{
+            heap = w.heap, galaxy, planet = null, planet_model = [0; 32], planet_model_len = 0, planet_time = 0.0, zoom_length = 0.0, turning = false,
+        } } iferr { return null }
+        return v
+    }
+
+    fn free { mut v: View, mut dev: gpu::Device } {
+        if v.galaxy is some{ value = sh } { free_shown{ &v, &dev, sh } }
+        drop_planet{ &v, &dev }
+        alloc::free(View, heap::Heap){ realloc = heap::alloc, heap = v.heap, p = &v }
+    }
+
+    fn drop_planet { mut v: View, mut dev: gpu::Device } {
+        if v.planet is some{ value = sh } { free_shown{ &v, &dev, sh } }
+        v.planet = null
+        v.planet_model_len = 0
+    }
+
+    // Shows planetary.2da's `model` for the selected planet: zooming in, then turning. An empty
+    // name shows nothing.
+    fn set_planet { mut v: View, mut w: world::World, mut g: gui::Gui, mut dev: gpu::Device, model: []u8 } {
+        if v.planet != null and model.len == v.planet_model_len and slice::eq_bytes{ a = model, b = v.planet_model[..v.planet_model_len] } { return }
+        drop_planet{ &v, &dev }
+        if model.len == 0 or model.len > 31 { return }
+        slice::copy(u8){ dst = v.planet_model[..model.len], src = model }
+        v.planet_model_len = model.len
+        let sh = load_shown{ &w, &g, &dev, model, size = MEMORY_PLANET, fov = PLANET_FOV, animation = "zoomin", warm_up = 0.0 } ifnull { return }
+        v.planet = sh
+        v.planet_time = 0.0
+        v.turning = false
+        v.zoom_length = 0.0
+        if mdl_anim::find{ model = sh.scene.model, name = "zoomin", lookup = mdl_cache::get{ fs = &w.fs, cache = sh.models, _ } } is some{ value = found } {
+            v.zoom_length = found.animation.length
+        }
+    }
+
+    fn update { mut v: View, mut w: world::World, dt: f32 } {
+        if v.galaxy is some{ value = sh } { gui3d::update{ scene = &sh.scene, dt } }
+        let sh = v.planet ifnull { return }
+        gui3d::update{ scene = &sh.scene, dt }
+        v.planet_time = v.planet_time + dt
+        if not v.turning and v.planet_time >= v.zoom_length {
+            v.turning = true
+            let m = sh.scene.model
+            let found = mdl_anim::find{ model = m, name = "rotate", lookup = mdl_cache::get{ fs = &w.fs, cache = sh.models, _ } } ifnull { return }
+            let b = mdl_anim::bind{ realloc = arena::alloc, heap = sh.arena, model = m, animation = found.animation } iferr { return }
+            // The planet turns with the camera where the zoom left it (rotate moves only the planet).
+            mdl_anim::play_after{ player = &sh.scene.player, binding = b, looping = true, speed = 1.0, transition = 0.0 }
+        }
+    }
+
+    // The views over the panel's `3D_PlanetDisplay` and `3D_PlanetModel` rectangles.
+    fn draw { mut v: View, mut g: gui::Gui, mut frame: render::Frame, panel: u32, target: render::Size } {
+        let sx = @as(f32, target.width) / @as(f32, g.ui_w)
+        let sy = @as(f32, target.height) / @as(f32, g.ui_h)
+        if v.galaxy is some{ value = sh } {
+            if gui::control_rect{ &g, panel, tag = "3D_PlanetDisplay" } is some{ value = r } {
+                _ = gui3d::add_to_frame{ scene = &sh.scene, &frame, viewport = render::Rect{ x = r.x * sx, y = r.y * sy, w = r.w * sx, h = r.h * sy } }
+            }
+        }
+        if v.planet is some{ value = sh } {
+            if gui::control_rect{ &g, panel, tag = "3D_PlanetModel" } is some{ value = r } {
+                _ = gui3d::add_to_frame{ scene = &sh.scene, &frame, viewport = render::Rect{ x = r.x * sx, y = r.y * sy, w = r.w * sx, h = r.h * sy } }
+            }
+        }
+    }
+}

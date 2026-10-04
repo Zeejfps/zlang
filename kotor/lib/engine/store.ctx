@@ -21,9 +21,11 @@ namespace store {
         return if n < 1 { 1 } else { n }
     }
 
-    // The multiplier ChangeItemCost left on a base item row. PLACEHOLDER: always 1.0, the routine
-    // is not implemented and no shipped script is known to rely on it.
-    fn cost_multiplier { w: *world::World, base: u32 } -> f64 { return 1.0 }
+    // The multiplier ChangeItemCost left on a base item row (1.0 until it ran).
+    fn cost_multiplier { w: *world::World, base: u32 } -> f64 {
+        if @as(usize, base) >= w.party.cost_mult.len { return 1.0 }
+        return @as(f64, w.party.cost_mult[@as(usize, base)])
+    }
 
     fn data_of { w: *world::World, store: u32 } -> ?*mut obj::Store {
         let o = world::object{ w, id = store } ifnull { return null }

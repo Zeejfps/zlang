@@ -27,6 +27,7 @@ namespace gui {
     const F_NO_HIT: u32 = 32            // pointer events pass through it
     const F_PULSE_TEXT: u32 = 64        // the text pulses (hilighted buttons, PULSING in the file)
     const F_FOCUS_ONLY: u32 = 128       // never takes the pointer's hover as focus
+    const F_MENU_CHECK: u32 = 256       // an options panel's check box: a square bullet at the left, the text beside it (draw.ctx)
 
     // ---- border fill styles (CSWGuiBorder::Draw; the .gui schema doc has 0 and 1 the other way round)
     const FILL_TILED: i32 = 0
@@ -159,6 +160,8 @@ namespace gui {
         shown: bool,                    // not hidden by a full-screen panel above it
         background: bool,               // draw the panel's own COLOR and BORDER (a 3D view behind needs it off)
         backdrop: u32,                  // 0 back, 1 store, 2 pazaak, 3 map, 4 comp
+        key_events: bool,               // arrow keys also go to the owner as `arrow` events, before they move the focus
+        overlay_from: i32,              // controls from this index on are drawn by draw_overlay, after the caller's 3D views; -1 none
     }
 
     // What a panel tells its owner (take_events).
@@ -173,6 +176,7 @@ namespace gui {
         text_accepted,                  // Enter in an edit box
         right_click,                    // 0x44
         scrolled,                       // a list scrolled (wheel, scroll bar)
+        arrow,                          // an arrow key, to a panel that asked (set_key_events); `value` 0 up, 1 down, 2 left, 3 right
     }
 
     struct Event {

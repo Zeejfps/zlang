@@ -1,0 +1,14 @@
+# Staging check: after the dream cutscene Trask opens the bunk room door, walks in to the player and
+# speaks to them there (k_pend_traskdl40: AssignCommand(door, ActionOpenDoor), ActionPauseConversation,
+# ActionMoveToObject(GetObjectByTag(""), TRUE, 1.0) - the player has the empty tag -, ActionResumeConversation).
+#   sh kotor/tools/playthrough/run.sh trask kotor/tools/playthrough/13_trask_entry.txt 760 549:cut_end 556:door 575:walk 620:arrived 700:talk
+3 newgame
+548 ui where end_trask
+548 ui pos
+551 ui where end_door01
+560 ui where end_trask
+580 ui where end_trask
+600 ui where end_trask
+620 ui where end_trask
+620 ui pos
+700 ui where end_trask

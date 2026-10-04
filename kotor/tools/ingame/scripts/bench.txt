@@ -1,0 +1,21 @@
+# The upgrade bench: the lightsaber with a power crystal put in and its colour crystal changed,
+# Assemble, and the party's stock after.
+#   MODULE=danm13 sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/bench.txt 70 22:bn_bench 28:bn_power 36:bn_power2 42:bn_colour 50:bn_colour2 58:bn_done
+3 ui stock
+3 ui giveitem g_w_sbrcrstl01
+3 ui giveitem g_w_sbrcrstl02
+3 ui giveitem g_w_sbrcrstl16
+3 ui giveitem g_i_upgrade001
+3 ui giveitem g_i_upgrade007
+3 ui bag
+4 ui bench
+10 ui click 568 288
+16 ui click 523 545
+24 ui click 412 477
+30 ui click 520 215
+31 ui click 520 215
+38 ui click 479 477
+44 ui click 520 215
+45 ui click 520 215
+52 ui click 523 545
+60 ui bag

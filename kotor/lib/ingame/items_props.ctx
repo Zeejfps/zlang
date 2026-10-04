@@ -1,0 +1,139 @@
+// The property lines of an item's description: under the text the original lists what the item
+// does, a line for each property it has. A UTI's PropertiesList entry names a row of
+// itempropdef.2da (the property's name, and the 2DA its subtype indexes), a row of iprp_costtable.2da
+// (naming the 2DA its cost value indexes) and a row of iprp_paramtable.2da (the parameter's name
+// and the 2DA its value indexes): docs/formats/2da-catalog.md, "itempropdef".
+namespace items {
+    // The UTI CostTable rows with a reading of their own: the melee table's rows are plain numbers
+    // ("1") for the attack, damage, defense and enhancement bonuses, which read as "+1"; the charge
+    // table's ("Single Use", "3 Charges/Use") qualify an activated item.
+    const COST_MELEE: u16 = 2
+    const COST_CHARGE: u16 = 3
+    const NO_PARAM: u16 = 255
+
+    // Writes the row's name: the `name` column's dialog.tlk string, else the `label` column with its
+    // underscores read as spaces. False (nothing written) for a row that has neither.
+    fn push_row_name { mut b: utf8::Builder(heap::Heap), w: *world::World, t: twoda::Table, row: usize } -> !bool {
+        if twoda::get_string{ t, row, column = "name" } is some{ value = cell } {
+            if text::scan_int{ s = cell } is some{ value = strref } {
+                let text = if strref >= 0 { world::string_by_strref{ w, strref = @as(u32, strref) } } else { "" }
+                if text.len > 0 {
+                    try utf8::push{ &b, s = utf8::String{ bytes = text } }
+                    return true
+                }
+            } else {
+                try utf8::push{ &b, s = utf8::String{ bytes = cell } }
+                return true
+            }
+        }
+        let label = twoda::get_string{ t, row, column = "label" } ifnull { return false }
+        let mut i: usize = 0
+        while i < label.len {
+            try list::push{ list = &b.bytes, item = if label[i] == '_' { ' ' } else { label[i] } }
+            i = i + 1
+        }
+        return true
+    }
+
+    // Whether `s` is only digits, "7" and not "+7" or "1d6".
+    fn is_plain_number { s: []u8 } -> bool {
+        if s.len == 0 { return false }
+        let mut i: usize = 0
+        while i < s.len {
+            if not (s[i] >= '0' and s[i] <= '9') { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    // ": part" for the first part of a line (nothing written since `start`), " part" for the
+    // next ones.
+    fn add_part { mut b: utf8::Builder(heap::Heap), start: usize, text: []u8 } -> ! {
+        try utf8::push{ &b, s = utf8::String{ bytes = if b.bytes.len == start { ": " } else { " " } } }
+        try utf8::push{ &b, s = utf8::String{ bytes = text } }
+    }
+
+    // One property as a line: "Name: Subtype Cost (Parameter: Value)", each part when the property
+    // has it ("Attribute Bonus: Strength +2", "Damage Bonus: Energy 1d6", "Attack Bonus: +1"). False
+    // (nothing written) for a property with no name.
+    fn push_property { mut b: utf8::Builder(heap::Heap), mut w: world::World, p: rules::Prop } -> !bool {
+        let defs = rules::raw_table{ tables = w.rules, which = rules::Tab::itempropdef }
+        let row = @as(usize, p.name)
+        let strref = twoda::get_int{ t = defs, row, column = "name" } ifnull { return false }
+        let name = if strref >= 0 { world::string_by_strref{ w = &w, strref = @as(u32, strref) } } else { "" }
+        if name.len == 0 { return false }
+        try utf8::push{ &b, s = utf8::String{ bytes = name } }
+        let start = b.bytes.len
+        let mut word = new_text{ w = &w }
+        defer list::free{ list = &word.bytes }
+        let mut part = new_text{ w = &w }
+        defer list::free{ list = &part.bytes }
+
+        if twoda::get_string{ t = defs, row, column = "subtyperesref" } is some{ value = table } {
+            if sheet::table_of{ &w, name = table } is some{ value = t } {
+                if try push_row_name{ b = &word, &w, t, row = @as(usize, p.subtype) } {
+                    try add_part{ &b, start, text = utf8::view{ b = word }.bytes }
+                }
+            }
+        }
+
+        let costs = rules::raw_table{ tables = w.rules, which = rules::Tab::iprp_costtable }
+        if twoda::get_string{ t = costs, row = @as(usize, p.cost_table), column = "name" } is some{ value = table } {
+            if sheet::table_of{ &w, name = table } is some{ value = t } {
+                list::clear{ list = &word.bytes }
+                if try push_row_name{ b = &word, &w, t, row = @as(usize, p.cost_value) } {
+                    let cost = utf8::view{ b = word }.bytes
+                    if p.cost_table == COST_CHARGE {
+                        try @fmt(&part, "({})", cost)
+                    } else if p.cost_table == COST_MELEE and is_plain_number{ s = cost } {
+                        try @fmt(&part, "+{}", cost)
+                    } else {
+                        try utf8::push{ b = &part, s = utf8::String{ bytes = cost } }
+                    }
+                    try add_part{ &b, start, text = utf8::view{ b = part }.bytes }
+                }
+            }
+        }
+
+        if p.param1 != NO_PARAM {
+            let params = rules::raw_table{ tables = w.rules, which = rules::Tab::iprp_paramtable }
+            let label = twoda::get_int{ t = params, row = @as(usize, p.param1), column = "name" } ifnull -1
+            if twoda::get_string{ t = params, row = @as(usize, p.param1), column = "tableresref" } is some{ value = table } {
+                if sheet::table_of{ &w, name = table } is some{ value = t } {
+                    list::clear{ list = &word.bytes }
+                    list::clear{ list = &part.bytes }
+                    if try push_row_name{ b = &word, &w, t, row = @as(usize, p.param1_value) } {
+                        let value = utf8::view{ b = word }.bytes
+                        if label >= 0 {
+                            try @fmt(&part, "({}: {})", world::string_by_strref{ w = &w, strref = @as(u32, label) }, value)
+                        } else {
+                            try @fmt(&part, "({})", value)
+                        }
+                        try add_part{ &b, start, text = utf8::view{ b = part }.bytes }
+                    }
+                }
+            }
+        }
+        return true
+    }
+
+    // The item's properties under its description: a line for each active property (the upgrade
+    // rule: native, or its upgrade installed), after a blank line when there is text above.
+    fn push_properties { mut b: utf8::Builder(heap::Heap), mut w: world::World, id: u32 } -> ! {
+        let ri = rules_item_of{ w = &w, id } ifnull { return }
+        let mut k: usize = 0
+        let mut any = false
+        while k < @as(usize, ri.nprops) {
+            let p = ri.props[k]
+            k = k + 1
+            if not rules::prop_active{ item = ri, p = &p } { continue }
+            let mark = b.bytes.len
+            try utf8::push{ &b, s = utf8::String{ bytes = if any { "\n" } else if mark > 0 { "\n\n" } else { "" } } }
+            if try push_property{ &b, &w, p } {
+                any = true
+            } else {
+                b.bytes.len = mark
+            }
+        }
+    }
+}

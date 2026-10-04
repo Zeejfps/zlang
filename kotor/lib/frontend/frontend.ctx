@@ -154,7 +154,7 @@ namespace frontend {
         }
         update_scene{ &fe, dt }
         let cg_active = fe.cg
-        if cg_active != null { chargen::update{ st = cg_active, dt } }
+        if cg_active != null { chargen::update{ st = cg_active, &g, dt } }
         start_music{ &fe, &g, &fs, mixer }
         let n = g.events.len
         let mut i: usize = 0
@@ -189,7 +189,10 @@ namespace frontend {
         draw_scene{ &fe, &g, &frame, target }
         gui::draw_panels{ &g, &frame }
         let cg_active = fe.cg
-        if cg_active != null { chargen::draw_views{ st = cg_active, &g, &frame, target } }
+        if cg_active != null {
+            chargen::draw_views{ st = cg_active, &g, &frame, target }
+            gui::draw_overlay{ &g, &frame }
+        }
     }
 
     // ---- music

@@ -50,6 +50,9 @@ size, so drawing needs no file system and no device. Textures come through the s
 **Hover and keyboard focus are one thing**, as in the engine: the control under the pointer becomes
 its panel's focus (hilighted, hover sound); arrow keys move it along the file's MOVETO links. A
 button's text turns yellow and pulses while it has the focus; a disabled control's goes dim blue.
+The focus hilights the control's ancestors too (the Obj_Parent chain): the top menu bar's invisible
+tab buttons sit on `LBLH_*` frame labels, and the label's lit picture is what shows on hover (the
+label itself takes no pointer, so a tab lights and clicks over its button's rectangle).
 
 **Events go to the owner, polled.** Controls have no handlers. An action puts an `Event` in a queue
 (`activate`, `cancel`, `hilight`, `unhilight`, `row_selected`, `row_activated`, `value_changed`,
@@ -103,7 +106,14 @@ else to the front-most shown panel with a control under the pointer.
 
 `gui::close{ &g, id }` removes it after the frame (events its controls made stay valid until
 `update`). `gui::set_backdrop{ ..., kind }` picks the picture (0 back, 1 store, 2 pazaak, 3 map,
-4 comp, 5 load). `gui::message_box{ &g, &fs, &dev, text, cancel } -> !u32` opens `confirm.gui`
+4 comp, 5 load). The original stretches the picture over the screen, which is right at the five
+sizes it has pictures for (the 640x480 panel then sits in the middle of art made for it: the
+store's frame, the pazaak table, the galaxy map's bars under its name bar and buttons). On any
+other window (a 16:9 one) the stretch makes a second, larger frame around the panel and art that
+no longer lines up with the controls, so kinds 0 to 4 are drawn at their resolution's size
+(800x600 for an unlisted one), centred, with black around (`draw_backdrop`); the loading screen's
+picture (5) stays stretched. Each of these panels has one .gui file (no resolution variants).
+`gui::message_box{ &g, &fs, &dev, text, cancel } -> !u32` opens `confirm.gui`
 sized to its text; take the `activate` events of `BTN_OK` and `BTN_CANCEL` and close it.
 
 ## Defining a screen over a .gui
@@ -246,7 +256,10 @@ if frontend::take_display_change{ &fe } { apply fe.settings (resolution, full sc
   has seen (`[Movies Shown]` in our settings file); activating one plays it over the menu.
 - **Options**: `optionsmain` opens `optgameplay`, `optfeedback`, `optautopause`, `optgraphics`
   (+ `optresolution`, `optgraphicsadv`), `optsound` (+ `optsoundadv`) and `optmouse`. They edit
-  `fe.settings` live and write the file when a panel closes. Sound sliders apply to the mixer's
+  `fe.settings` live and write the file when a panel closes. Their check boxes (and the Feedback
+list's rows) are the engine's menu check box (re/gui.md, "Menu check box"): the loader marks every
+check box of a panel whose name starts with `opt` (`F_MENU_CHECK`) and tints its borders blue and
+yellow; `draw_menu_check` puts the ring in a 25x25 square at the left and the label beside it. Sound sliders apply to the mixer's
   groups at once; graphics changes set `take_display_change` for the engine to act on. The
   resolution list is a fixed table of common modes (the platform layer can't list display modes
   yet). Key mapping is not built (its button is disabled). The `LB_DESC` description pane the
@@ -276,5 +289,5 @@ if frontend::take_display_change{ &fe } { apply fe.settings (resolution, full sc
 - The HUD on wide windows (above), and HUD controls the engine must hide per state.
 - Gamepad events (0x2d..0x38), key remapping (`optkeymapping`), the dragged inventory item.
 - The tooltip is a plain box with the dialog font, not `tooltipWxH.gui`.
-- The level-up panels (`leveluppnl`, `pwrlvlup` and the shared `maincg`), the credits scroll: not started. Character generation is done (chargen.md). Pazaak: see minigames.md.
+- The credits scroll: not started. The level-up panels, the store, container, upgrade bench and galaxy map are [screens.md](screens.md). Character generation is done (chargen.md). Pazaak: see minigames.md.
 - Text colour per list row exists (`list_set_color`); per-row fonts do not.

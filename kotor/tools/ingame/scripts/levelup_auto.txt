@@ -1,0 +1,10 @@
+# The "Auto Level Up NPCs" option: Carth joins, the party gets 3000 XP; with the option off nobody
+# levels, with it on Carth does (the player waits for the panels). Prints each member's level.
+#   sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/levelup_auto.txt 12
+3 ui join carth
+4 ui levels
+5 ui xp 3000
+6 ui levels
+7 ui autoopt 1
+8 ui xp 100
+9 ui levels

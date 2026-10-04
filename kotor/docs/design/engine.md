@@ -389,7 +389,10 @@ use the creatures' PERSPACE circles.
 turning at the camerastyle rates, moved by `ctl::move_leader` with up to six slide attempts; the
 leader's new position goes straight into the world object (as the original writes the server
 creature) with the trigger bookkeeping (`movement::cross_volumes`). The leader's animation is set
-from its speed (10000 stand, 10002 walk, 10004 run). **NPC movement** is server side: MOVETOPOINT
+from its speed (10000 stand, 10002 walk, 10004 run) and it is `moving` while under way, which the AI
+update needs to leave the animation alone (`ai::update_creature` stands a creature that is neither moving
+nor busy). Strafing and backing are the same walk or run: the creature turns to the input and moves
+along its facing (movement.md 1.2), and the camera keys (A/D) turn only the camera. **NPC movement** is server side: MOVETOPOINT
 and its relatives in `movement`, with the acceleration and braking of movement.md 3.3, along a
 path from `paths::plan` (the straight walk if clear, else A* over the area's PTH points, string
 pulled, else the farthest clear point; movement.md 4). FOLLOW, FOLLOWLEADER and RANDOMWALK push a
@@ -544,18 +547,36 @@ each frame:
 
 ## Headless and logs
 
-`kotor [--module end_m01aa] [--game DIR] [--headless] [--no-render] [--frames N] [--dt S]
-[--input FILE] [--screenshot-at FRAME:PATH]... [--log scripts,routines,events,actions,objects]
-[--report routines] [--seed N] [--size WxH]` (no `--module`: the front end first):
+`kotor [--module end_m01aa] [--game DIR] [--headless] [--no-render] [--speed N] [--mute] [--load SAVE]
+[--engine-only] [--frames N] [--dt S] [--input FILE] [--screenshot-at FRAME:PATH]...
+[--log scripts,routines,events,actions,objects] [--report routines] [--seed N] [--size WxH] [--saves DIR]`
+(no `--module`: the front end first):
 
 - `--headless`: a hidden window (the GL backend renders the same pixels offscreen), a fixed time
   step (`--dt`, default 1/30 s), the rng seeded (`--seed`, default 1), so a run is reproducible.
+- `--no-render` (implies `--headless`): the whole loop, scene and UI and conversations included, but a
+  frame is drawn only when a `--screenshot-at` is due at it or a save needs its picture. The log is
+  byte for byte the `--headless` run's (checked on the Endar Spire replay) and the run takes half the time.
+- `--speed N` (with `--no-render`): N world ticks per loop iteration. The world, the conversation pump, the
+  test bot and the outbox run every tick; the scene's sync, the camera, the UI and the mixer catch up once
+  per N ticks with the time they owe, unless something reads them sooner (a conversation is shown, a menu or
+  screen is open, an input line was applied, a module is arriving, a picture is due: `game/speed.ctx`).
+  Same log as `--speed 1` (checked at N = 4, 8, 16; only the `sounds started` count and a heap-bytes figure
+  differ). A picture taken between catch-ups shows a camera that has stepped N ticks at once.
+- `--mute` (with `--no-render`): the mixer skips the music and the effects. Faster still, but not the same
+  log: a voice-over mixed alone ends up to two ticks sooner than one mixed beside another stream.
+- `--load SAVE`: start from a save instead of a module or the front end: a folder name under `--saves`
+  (default `kotor/out/saves`), one of the install's saves, or a path (docs/testing.md, "Checkpoints").
+  Each process keeps its game-in-progress file in its saves directory: parallel runs need one each.
+- `--engine-only`: just lib/engine's world loop (the old `--no-render`): no scene, no conversation view,
+  no input script. The fastest way to run scripts; `tools/enginetest` is the same without the presentation.
 - `--input FILE`: one command per line, applied at the start of that frame: `FRAME down KEY` /
   `FRAME up KEY` (a letter, `up`, `down`, `left`, `right`, `space`, `escape`), and for tests
   `FRAME warp TAG` (the leader 1.5 m in front of the object), `FRAME use TAG` (the leader's default
   action on it), `FRAME attack TAG` (the leader attacks the nearest live one), `FRAME save NAME`,
   `FRAME load FOLDER`, `FRAME hush` (ends the running conversation), `FRAME newgame` (the front
-  end's New Game). Keys: W/S or arrows forward and back,
+  end's New Game), and in a minigame `FRAME gunner` (a bot aims and fires the turret), `FRAME mouse DX DY`
+  (the mouse moves by those counts) and `FRAME pause` (Escape). Keys: W/S or arrows forward and back,
   Z/C strafe, A/D or arrows turn the camera, R or Space the default action (the nearest door,
   useable placeable or creature with a conversation in front, within 3 m).
 - `--screenshot-at F:PATH` (repeatable) reads the screen after frame F's render and writes a PNG.
