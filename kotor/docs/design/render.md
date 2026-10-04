@@ -224,6 +224,14 @@ files name `fnt_d16x16`, whose table doesn't fit its pixels, and `fnt_d16x16b`'s
 - Streamed data (quads, particles, debug geometry) goes through one orphaned vertex buffer in
   chunks; the vertex arrays for it are made once.
 
+## The enhanced renderer
+
+`render::Enhance` (set on the device with `gpu::set_enhance`), `View.sun`, `focus`, `grade`, `height_fog` and
+`exposure`, `Draw.kind`, `casts` and `ambient`, `frame.ambients` and `gpu::get_timings` are the inputs of the
+modern effects (HDR and bloom, room light on creatures, shadow maps, occlusion, ...): every effect, its inputs,
+cost and pictures are in [enhanced-render.md](enhanced-render.md). With `Enhance.on` false a backend draws
+exactly what this document describes. The GL backend's enhanced passes are `lib/render_gl/fx*.ctx`.
+
 ## Checking it
 
 `kotor/tools/ctxc run kotor/tools/rendertest` writes, in `kotor/out/render/`: `materials.png`

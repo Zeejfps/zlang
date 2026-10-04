@@ -179,7 +179,7 @@ namespace mdl_render {
         mut frame: render::Frame, view: u32, model: *mdl::Model, pose: mdl_anim::Pose, g: Gpu,
         transform: math::Mat4, materials: []render::Material, time: f32,
     } -> u32 {
-        return add_draws_look{ &frame, view, model, pose, g, transform, materials, time, look = null, cast = null }
+        return add_draws_look{ &frame, view, model, pose, g, transform, materials, time, look = null, cast = null, kind = render::DrawKind::other, ambient = 0 }
     }
 
     // The same with `look`, when there is one, in place of every mesh's own material (a creature
@@ -187,9 +187,14 @@ namespace mdl_render {
     //
     // `cast`, when there is one, makes each mesh the model says casts a shadow (mdl::Mesh.shadow) cast it: the
     // draw is shadowed on the plane from the light (cast.draw is replaced by the draw's index).
+    //
+    // `kind` and `ambient` are what the enhanced renderer is told of the draws (render::DrawKind, Draw.ambient): a
+    // lightsaber's blade is an effect whatever carries it, and the meshes that cast a shadow (mdl::Mesh.shadow) of a
+    // creature or an object cast one from the sun and the lights that cast shadows.
     fn add_draws_look {
         mut frame: render::Frame, view: u32, model: *mdl::Model, pose: mdl_anim::Pose, g: Gpu,
         transform: math::Mat4, materials: []render::Material, time: f32, look: ?render::Material, cast: ?render::Shadow,
+        kind: render::DrawKind, ambient: u32,
     } -> u32 {
         let mut palette: [32]math::Mat4
         let mut added: u32 = 0
@@ -233,6 +238,9 @@ namespace mdl_render {
                 d.radius = mesh.radius
             }
             if mesh.dangly != null and i - 1 < pose.swings.len { d.dangle = pose.swings[i - 1].offset }
+            d.kind = if mesh.saber != null { render::DrawKind::effect } else { kind }
+            d.casts = mesh.shadow and mesh.saber == null and (kind == render::DrawKind::creature or kind == render::DrawKind::object)
+            d.ambient = ambient
             if render::add_draw{ &frame, draw = d } is some{ value = index } {
                 added = added + 1
                 if cast is some{ value = c } and mesh.shadow {

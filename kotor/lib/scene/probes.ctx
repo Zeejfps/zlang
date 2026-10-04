@@ -1,0 +1,8 @@
+// The light around dynamic objects (docs/design/enhanced-render.md, "Room light"): what a creature, placeable or
+// door standing somewhere takes from the room around it, for the enhanced renderer (render::AmbientCube).
+namespace scene {
+    // The light at `at` as an ambient cube in the frame; its Draw.ambient (0: the view's flat ambient).
+    fn ambient_at { sc: *Scene, mut frame: render::Frame, at: math::Vec3 } -> u32 {
+        return 0
+    }
+}

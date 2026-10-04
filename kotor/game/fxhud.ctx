@@ -1,0 +1,94 @@
+// The GPU Timing option of the Enhanced Graphics panel (docs/design/enhanced-render.md): the time the GPU spent on
+// each pass of the picture, drawn over everything at the top right, and written to the log with each screenshot.
+namespace fxhud {
+    struct Hud { font: ?render::Font, glyphs: []mut render::Glyph, tried: bool }
+
+    fn make {} -> Hud { return Hud{ font = null, glyphs = slice::empty(render::Glyph){}, tried = false } }
+
+    // Adds a UI pass with one line per pass: "bloom 0.21 ms", and the total. Nothing when there are no timings yet.
+    fn draw { mut h: Hud, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame } {
+        let t = gpu::get_timings{ dev }
+        if t.count == 0 { return }
+        if not h.tried {
+            h.tried = true
+            h.glyphs = alloc::resize(render::Glyph, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(render::Glyph){}, count = 256 } iferr { return }
+            h.font = font::load{ fs = &w.fs, &dev, h = w.heap, rm = w.rm.*, name = "fnt_console", variant = false, glyphs = h.glyphs } iferr { null }
+            if h.font == null { h.font = font::load{ fs = &w.fs, &dev, h = w.heap, rm = w.rm.*, name = "fnt_d16x16", variant = true, glyphs = h.glyphs } iferr { null } }
+        }
+        let f = h.font ifnull { return }
+        let size = gpu::screen_size{ dev }
+        let sw = @as(f32, size.width)
+        render::begin_ui{ &frame, width = sw, height = @as(f32, size.height), target = null }
+        let lines = @as(f32, t.count + 1)
+        let x = sw - 260.0
+        let y0: f32 = 60.0
+        render::fill_rect{ &frame, rect = render::rect{ x = x - 8.0, y = y0 - 6.0, w = 260.0, h = lines * (f.height + 2.0) + 12.0 }, color = render::rgba{ r = 0.0, g = 0.0, b = 0.0, a = 0.6 } }
+        let mut buf: [64]u8
+        let mut i: u32 = 0
+        while i < t.count {
+            let text = line_of{ name = t.names[i], ms = t.ms[i], into = buf[..] }
+            _ = render::draw_text{ &frame, font = f, x, y = y0 + @as(f32, i) * (f.height + 2.0), text, color = render::rgba{ r = 0.6, g = 0.9, b = 1.0, a = 1.0 }, scale = 1.0, clip = null }
+            i = i + 1
+        }
+        let total = line_of{ name = "total", ms = t.total, into = buf[..] }
+        _ = render::draw_text{ &frame, font = f, x, y = y0 + @as(f32, t.count) * (f.height + 2.0), text = total, color = render::rgba{ r = 1.0, g = 0.9, b = 0.4, a = 1.0 }, scale = 1.0, clip = null }
+    }
+
+    // "bloom 0.214 ms".
+    fn line_of { name: []u8, ms: f32, into: []mut u8 } -> []u8 {
+        let mut n: usize = 0
+        while n < name.len and n < 20 {
+            into[n] = name[n]
+            n = n + 1
+        }
+        while n < 14 {
+            into[n] = ' '
+            n = n + 1
+        }
+        let micro = @as(i32, ms * 1000.0 + 0.5)
+        n = put_digits{ into, at = n, v = micro / 1000 }
+        into[n] = '.'
+        n = n + 1
+        let frac = micro % 1000
+        into[n] = '0' + @trunc(u8, frac / 100)
+        into[n + 1] = '0' + @trunc(u8, (frac / 10) % 10)
+        into[n + 2] = '0' + @trunc(u8, frac % 10)
+        n = n + 3
+        into[n] = ' '
+        into[n + 1] = 'm'
+        into[n + 2] = 's'
+        return into[..n + 3]
+    }
+
+    fn put_digits { into: []mut u8, at: usize, v: i32 } -> usize {
+        let mut digits: [10]u8
+        let mut k: usize = 0
+        let mut x = if v < 0 { 0 } else { v }
+        while true {
+            digits[k] = '0' + @trunc(u8, x % 10)
+            k = k + 1
+            x = x / 10
+            if x == 0 { break }
+        }
+        let mut n = at
+        while k > 0 {
+            k = k - 1
+            into[n] = digits[k]
+            n = n + 1
+        }
+        return n
+    }
+
+    // The timings as one log line, with a screenshot.
+    fn log { mut w: world::World, dev: gpu::Device } {
+        let t = gpu::get_timings{ dev }
+        if t.count == 0 { return }
+        _ = @fmt(&w.io, "  gpu: {} ms in all:", t.total)
+        let mut i: u32 = 0
+        while i < t.count {
+            _ = @fmt(&w.io, " {} {}", t.names[i], t.ms[i])
+            i = i + 1
+        }
+        _ = @fmt(&w.io, "\n")
+    }
+}

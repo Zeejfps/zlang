@@ -251,6 +251,8 @@ namespace frontend {
             fe.settings.emitters = d.emitters
             fe.settings.gui_scale = d.gui_scale
             fe.display_pending = true
+        } else if screen == SCR_GRAPHICS_FX {
+            enhanced_defaults{ &fe }
         } else if screen == SCR_GRAPHICS_ADV {
             fe.settings.antialias = d.antialias
             fe.settings.texture_quality = d.texture_quality
@@ -277,6 +279,7 @@ namespace frontend {
     const DESC_DISPLAY_MODE: []u8 = "WINDOWED: Play in a window you can move and resize.\n\nBORDERLESS: A window over the whole desktop, with no border, so switching to another program is instant. A smaller resolution is scaled up to fit.\n\nFULLSCREEN: The display changes to the chosen resolution and refresh rate."
     const DESC_UI_SCALE: []u8 = "AUTO: The menus, the HUD and the conversations are scaled to the window, so text stays readable at 1080p, 1440p and 4K.\n\n100%: The original's pixel-for-pixel interface.\n\nThe other steps make everything that much larger or smaller."
     const DESC_BRIGHTNESS: []u8 = "Brightness lightens or darkens everything on the screen, movies included."
+    const DESC_ENHANCED: []u8 = "ENHANCED GRAPHICS: Modern lighting and effects over the original's art: glow, room light on characters, shadow maps, occlusion, reflections, depth of field and more, each one a switch, and an Original Look that turns them all off."
 
     fn starts_with { s: []u8, prefix: []u8 } -> bool {
         return s.len >= prefix.len and slice::eq_bytes{ a = s[..prefix.len], b = prefix }
@@ -303,7 +306,16 @@ namespace frontend {
     // The description pane on the right of the graphics panels shows what the control under the pointer
     // does. Our own two buttons have no string in the original's file, so their text is here.
     fn describe_option { mut g: gui::Gui, p: u32, screen: u32, tag: []u8 } -> ! {
-        if screen != SCR_GRAPHICS and screen != SCR_GRAPHICS_ADV { return }
+        if screen != SCR_GRAPHICS and screen != SCR_GRAPHICS_ADV and screen != SCR_GRAPHICS_FX { return }
+        if screen == SCR_GRAPHICS_FX {
+            let text = enhanced_description{ tag } ifnull { return }
+            try gui::set_list_text{ &g, panel = p, tag = "LB_DESC", text }
+            return
+        }
+        if tag_eq{ tag, other = "BTN_ENHANCED" } {
+            try gui::set_list_text{ &g, panel = p, tag = "LB_DESC", text = DESC_ENHANCED }
+            return
+        }
         if tag_eq{ tag, other = "BTN_DISPLAYMODE" } {
             try gui::set_list_text{ &g, panel = p, tag = "LB_DESC", text = DESC_DISPLAY_MODE }
             return
@@ -564,7 +576,7 @@ namespace frontend {
             return Outcome::running
         }
         if ev.kind != gui::EventKind::activate { return Outcome::running }
-        if tag_is{ ev, tag = "BTN_CANCEL" } and (screen == SCR_GRAPHICS_ADV or screen == SCR_SOUND_ADV) {
+        if tag_is{ ev, tag = "BTN_CANCEL" } and (screen == SCR_GRAPHICS_ADV or screen == SCR_SOUND_ADV or screen == SCR_GRAPHICS_FX) {
             fe.settings = fe.snapshot
             fe.display_pending = true
             fe.sound_pending = true
@@ -592,6 +604,7 @@ namespace frontend {
         } else if screen == SCR_GRAPHICS {
             if tag_is{ ev, tag = "BTN_RESOLUTION" } { open_screen{ &fe, &g, &fs, &dev, screen = SCR_RESOLUTION } iferr {} }
             else if tag_is{ ev, tag = "BTN_ADVANCED" } { open_screen{ &fe, &g, &fs, &dev, screen = SCR_GRAPHICS_ADV } iferr {} }
+            else if tag_is{ ev, tag = "BTN_ENHANCED" } { open_screen{ &fe, &g, &fs, &dev, screen = SCR_GRAPHICS_FX } iferr {} }
             else if tag_is{ ev, tag = "BTN_DISPLAYMODE" } {
                 // Windowed, borderless, full screen: the order of how little each changes.
                 let m = fe.settings.window_mode
@@ -614,6 +627,8 @@ namespace frontend {
             if tag_is{ ev, tag = "BTN_ADVANCED" } { open_screen{ &fe, &g, &fs, &dev, screen = SCR_SOUND_ADV } iferr {} }
         } else if screen == SCR_GRAPHICS_ADV or screen == SCR_SOUND_ADV {
             change_choice{ &fe, &g, p, screen, tag = ev.tag } iferr {}
+        } else if screen == SCR_GRAPHICS_FX {
+            enhanced_click{ &fe, &g, p, tag = ev.tag } iferr {}
         }
         return Outcome::running
     }

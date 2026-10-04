@@ -26,7 +26,7 @@ namespace vfx {
         let l = scene::loaded_at{ sc, i = f.loaded }
         scene::add_lights{ &frame, model = l.model, pose = p.pose, instance = f.matrix }
         if l.model.meshes.len > 0 {
-            _ = mdl_render::add_draws{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = f.matrix, materials = l.materials, time = sc.time }
+            _ = mdl_render::add_draws_look{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = f.matrix, materials = l.materials, time = sc.time, look = null, cast = null, kind = render::DrawKind::effect, ambient = 0 }
         }
         let mut e: usize = 0
         while e < l.model.emitters.len {

@@ -39,9 +39,10 @@ namespace gpu {
         model: i32, post: i32, normal: i32, bone_count: i32, bones: i32, dangle: i32,
         maps: i32, mode: i32, color: i32, selfillum: i32, uv: i32, uv_cell: i32,
         light_count: i32, light_pos: i32, light_color: i32,
+        fx: i32, fx2: i32, cube: i32,       // the enhanced program's own (fx.ctx); -1 in the original's
     }
     struct UiProgram { id: u32, screen: i32, image: i32 }
-    struct ParticleProgram { id: u32, model: i32, emit: i32, axis: i32, mode: i32 }
+    struct ParticleProgram { id: u32, model: i32, emit: i32, axis: i32, mode: i32, gain: i32 }
     struct DebugProgram { id: u32 }
     struct PostProgram { id: u32, exponent: i32 }
     struct BlurProgram { id: u32, strength: i32 }
@@ -100,6 +101,16 @@ namespace gpu {
         anisotropy: f32,            // the anisotropic filtering level textures get (0: the driver has none)
         max_anisotropy: f32,
         log: []mut u8,              // for the driver's shader logs
+        // The enhanced renderer (fx.ctx): the options, its programs and targets, and which programs draw now.
+        enhance: render::Enhance,
+        scene_fx: ScenePrograms,
+        particle_fx: ParticleProgram,
+        fxp: FxPrograms,
+        fxt: FxTargets,
+        cur: ScenePrograms,         // the scene program of the view being drawn: `scene`, or `scene_fx` for an enhanced view
+        cur_particle: ParticleProgram,
+        in_fx: bool,                // the view being drawn is an enhanced one
+        timer: Timer,               // GPU time per pass (timing.ctx)
     }
 
     // ---- opening and closing
@@ -148,12 +159,9 @@ namespace gpu {
             targets = try alloc::resize(TargetSlot, S){ realloc, &heap, mem = slice::empty(TargetSlot){}, count = config.max_targets },
             screen, screen_ms = no_ms{}, samples = 0, max_samples = if max_samples > 8 { 8 } else { max_samples }, gamma = 1.0,
             shadows = true, soft_shadows = false, particles = true, screen_effects = true,
-            scene = ScenePrograms{
-                id = 0, model = -1, post = -1, normal = -1, bone_count = -1, bones = -1, dangle = -1, maps = -1, mode = -1,
-                color = -1, selfillum = -1, uv = -1, uv_cell = -1, light_count = -1, light_pos = -1, light_color = -1,
-            },
+            scene = no_scene_program{},
             ui = UiProgram{ id = 0, screen = -1, image = -1 },
-            particle = ParticleProgram{ id = 0, model = -1, emit = -1, axis = -1, mode = -1 },
+            particle = no_particle_program{},
             debug = DebugProgram{ id = 0 },
             post = PostProgram{ id = 0, exponent = -1 },
             blur = BlurProgram{ id = 0, strength = -1 }, fx = screen, fx_made = false,
@@ -165,12 +173,30 @@ namespace gpu {
             stats = render::Stats{ draws = 0, triangles = 0, culled = 0, state_changes = 0, quads = 0, particles = 0 },
             anisotropy = if aniso { math::min{ a = 8.0, b = max_aniso } } else { 0.0 }, max_anisotropy = max_aniso,
             log = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = 8192 },
+            enhance = render::original_look{}, scene_fx = no_scene_program{}, particle_fx = no_particle_program{},
+            fxp = no_fx_programs{}, fxt = no_fx_targets{}, cur = no_scene_program{}, cur_particle = no_particle_program{},
+            in_fx = false, timer = no_timer{},
         }
         clear_tables{ &dev }
         try make_programs{ &dev }
+        try make_fx_programs{ &dev }
+        dev.cur = dev.scene
+        dev.cur_particle = dev.particle
         make_buffers{ &dev }
         try gl::check{ gl = &dev.gl, what = "gpu::open" }
         return dev
+    }
+
+    fn no_scene_program {} -> ScenePrograms {
+        return ScenePrograms{
+            id = 0, model = -1, post = -1, normal = -1, bone_count = -1, bones = -1, dangle = -1, maps = -1, mode = -1,
+            color = -1, selfillum = -1, uv = -1, uv_cell = -1, light_count = -1, light_pos = -1, light_color = -1,
+            fx = -1, fx2 = -1, cube = -1,
+        }
+    }
+
+    fn no_particle_program {} -> ParticleProgram {
+        return ParticleProgram{ id = 0, model = -1, emit = -1, axis = -1, mode = -1, gain = -1 }
     }
 
     fn empty_log {} -> gl::DebugLog {
@@ -223,6 +249,9 @@ namespace gpu {
         dev.gl.delete_program{ program = dev.debug.id }
         dev.gl.delete_program{ program = dev.post.id }
         dev.gl.delete_program{ program = dev.blur.id }
+        free_fx_programs{ &dev }
+        free_fx_targets{ &dev }
+        free_timer{ &dev }
         if dev.fx_made { gl::free_target{ gl = &dev.gl, t = dev.fx } }
         free_ms{ gl = &dev.gl, ms = &dev.screen_ms }
         gl::delete_buffer{ gl = &dev.gl, id = dev.frame_ubo }
@@ -549,39 +578,52 @@ namespace gpu {
         set_unit{ &dev, program = blur, name = "u_tex", unit = 0 }
         dev.gl.use_program{ program = 0 }
 
-        dev.scene = ScenePrograms{
-            id = scene,
-            model = dev.gl.get_uniform_location{ program = scene, name = "u_model" },
-            post = dev.gl.get_uniform_location{ program = scene, name = "u_post" },
-            normal = dev.gl.get_uniform_location{ program = scene, name = "u_normal" },
-            bone_count = dev.gl.get_uniform_location{ program = scene, name = "u_bone_count" },
-            bones = dev.gl.get_uniform_location{ program = scene, name = "u_bones" },
-            dangle = dev.gl.get_uniform_location{ program = scene, name = "u_dangle" },
-            maps = dev.gl.get_uniform_location{ program = scene, name = "u_maps" },
-            mode = dev.gl.get_uniform_location{ program = scene, name = "u_mode" },
-            color = dev.gl.get_uniform_location{ program = scene, name = "u_color" },
-            selfillum = dev.gl.get_uniform_location{ program = scene, name = "u_selfillum" },
-            uv = dev.gl.get_uniform_location{ program = scene, name = "u_uv" },
-            uv_cell = dev.gl.get_uniform_location{ program = scene, name = "u_uv_cell" },
-            light_count = dev.gl.get_uniform_location{ program = scene, name = "u_light_count" },
-            light_pos = dev.gl.get_uniform_location{ program = scene, name = "u_light_pos" },
-            light_color = dev.gl.get_uniform_location{ program = scene, name = "u_light_color" },
-        }
+        dev.scene = scene_locations{ &dev, program = scene }
         dev.ui = UiProgram{
             id = ui,
             screen = dev.gl.get_uniform_location{ program = ui, name = "u_screen" },
             image = dev.gl.get_uniform_location{ program = ui, name = "u_image" },
         }
-        dev.particle = ParticleProgram{
-            id = particle,
-            model = dev.gl.get_uniform_location{ program = particle, name = "u_model" },
-            emit = dev.gl.get_uniform_location{ program = particle, name = "u_emit" },
-            axis = dev.gl.get_uniform_location{ program = particle, name = "u_axis" },
-            mode = dev.gl.get_uniform_location{ program = particle, name = "u_mode" },
-        }
+        dev.particle = particle_locations{ &dev, program = particle }
         dev.debug = DebugProgram{ id = debug }
         dev.post = PostProgram{ id = post, exponent = dev.gl.get_uniform_location{ program = post, name = "u_exponent" } }
         dev.blur = BlurProgram{ id = blur, strength = dev.gl.get_uniform_location{ program = blur, name = "u_strength" } }
+    }
+
+    // A scene program's uniforms (the original's or the enhanced one's: names a program lacks are -1).
+    fn scene_locations { mut dev: Device, program: u32 } -> ScenePrograms {
+        return ScenePrograms{
+            id = program,
+            model = dev.gl.get_uniform_location{ program, name = "u_model" },
+            post = dev.gl.get_uniform_location{ program, name = "u_post" },
+            normal = dev.gl.get_uniform_location{ program, name = "u_normal" },
+            bone_count = dev.gl.get_uniform_location{ program, name = "u_bone_count" },
+            bones = dev.gl.get_uniform_location{ program, name = "u_bones" },
+            dangle = dev.gl.get_uniform_location{ program, name = "u_dangle" },
+            maps = dev.gl.get_uniform_location{ program, name = "u_maps" },
+            mode = dev.gl.get_uniform_location{ program, name = "u_mode" },
+            color = dev.gl.get_uniform_location{ program, name = "u_color" },
+            selfillum = dev.gl.get_uniform_location{ program, name = "u_selfillum" },
+            uv = dev.gl.get_uniform_location{ program, name = "u_uv" },
+            uv_cell = dev.gl.get_uniform_location{ program, name = "u_uv_cell" },
+            light_count = dev.gl.get_uniform_location{ program, name = "u_light_count" },
+            light_pos = dev.gl.get_uniform_location{ program, name = "u_light_pos" },
+            light_color = dev.gl.get_uniform_location{ program, name = "u_light_color" },
+            fx = dev.gl.get_uniform_location{ program, name = "u_fx" },
+            fx2 = dev.gl.get_uniform_location{ program, name = "u_fx2" },
+            cube = dev.gl.get_uniform_location{ program, name = "u_cube" },
+        }
+    }
+
+    fn particle_locations { mut dev: Device, program: u32 } -> ParticleProgram {
+        return ParticleProgram{
+            id = program,
+            model = dev.gl.get_uniform_location{ program, name = "u_model" },
+            emit = dev.gl.get_uniform_location{ program, name = "u_emit" },
+            axis = dev.gl.get_uniform_location{ program, name = "u_axis" },
+            mode = dev.gl.get_uniform_location{ program, name = "u_mode" },
+            gain = dev.gl.get_uniform_location{ program, name = "u_gain" },
+        }
     }
 
     // gl::link's program, or 0 with the length of the driver's log in `log`. (Its error would be
@@ -1240,6 +1282,10 @@ namespace gpu {
     fn submit { mut dev: Device, frame: *render::Frame } -> ! {
         dev.stats = render::Stats{ draws = 0, triangles = 0, culled = 0, state_changes = 0, quads = 0, particles = 0 }
         dev.state = unknown_state{}
+        dev.cur = dev.scene
+        dev.cur_particle = dev.particle
+        dev.in_fx = false
+        timer_begin{ &dev }
         dev.gl.front_face{ mode = gl::CCW }
         dev.gl.cull_face{ mode = gl::BACK }
         dev.gl.depth_func{ func = gl::LEQUAL }
@@ -1252,10 +1298,12 @@ namespace gpu {
                     try draw_view{ &dev, frame, index = step.view }
                     // A target other passes sample is resolved as soon as it is drawn; the screen waits for the last pass.
                     resolve_target{ &dev, target = frame.views[step.view].target }
+                    timer_mark{ &dev, name = "view" }
                 }
                 ui => {
                     try draw_ui{ &dev, frame, step }
                     resolve_target{ &dev, target = step.target }
+                    timer_mark{ &dev, name = "ui" }
                 }
             }
             s = s + 1
@@ -1298,6 +1346,7 @@ namespace gpu {
 
     fn draw_view { mut dev: Device, frame: *render::Frame, index: u32 } -> ! {
         let v = frame.views[index]
+        if fx_view_applies{ dev, v } { return draw_view_fx{ &dev, frame, index } }
         let b = try bind_target{ &dev, target = v.target }
         let mut area = GlRect{ x = 0, y = 0, w = b.width, h = b.height }
         if v.viewport != null { area = gl_rect{ r = v.viewport, height = b.height, sx = 1.0, sy = 1.0 } }
@@ -1325,10 +1374,18 @@ namespace gpu {
         let view_proj = math::mat4::mul{ a = v.camera.proj, b = v.camera.view }
         upload_frame_block{ &dev, v, view_proj, time = frame.time }
         let frustum = math::frustum::from_matrix{ m = view_proj }
+        draw_opaque{ &dev, frame, index, frustum }
+        try draw_shadows{ &dev, frame, index }
+        try draw_transparent{ &dev, frame, index, frustum, eye = v.camera.eye }
+        try draw_debug{ &dev, frame, index }
+        set_offset{ &dev, on = false }
+        set_stencil{ &dev, on = false }
+        if v.target == null and v.blur > 0.01 and dev.screen_effects { try speed_blur{ &dev, strength = v.blur } }
+    }
 
-        // Opaque and punch-through surfaces, sorted by state.
+    // A view's opaque and punch-through surfaces, sorted by state, with the program of the view (dev.cur).
+    fn draw_opaque { mut dev: Device, frame: *render::Frame, index: u32, frustum: math::Frustum } {
         let mut n: usize = 0
-        let mut transparent: usize = 0
         let mut d: u32 = 0
         while d < frame.draw_count {
             let draw = frame.draws[d]
@@ -1340,32 +1397,30 @@ namespace gpu {
                         dev.sort[n] = SortItem{ key = opaque_key{ dev, draw }, index = d }
                         n = n + 1
                     }
-                } else {
-                    transparent = transparent + 1
                 }
             }
             d = d + 1
         }
         sort_items{ items = dev.sort[..n], tmp = dev.sort_tmp[..n] }
-        use_program{ &dev, program = dev.scene.id }
+        use_program{ &dev, program = dev.cur.id }
         set_identity_post{ &dev }
         let mut i: usize = 0
         while i < n {
             draw_mesh{ &dev, frame, draw = frame.draws[dev.sort[i].index] }
             i = i + 1
         }
+    }
 
-        try draw_shadows{ &dev, frame, index }
-
-        // Transparent surfaces and particles, far to near within each sort group.
-        n = 0
-        d = 0
+    // A view's transparent surfaces and particles, far to near within each sort group.
+    fn draw_transparent { mut dev: Device, frame: *render::Frame, index: u32, frustum: math::Frustum, eye: math::Vec3 } -> ! {
+        let mut n: usize = 0
+        let mut d: u32 = 0
         while d < frame.draw_count {
             let draw = frame.draws[d]
             let blended = is_sorted{ blend = draw.material.blend }
             if draw.view == index and blended and (draw.radius <= 0.0 or visible{ draw, frustum }) and n < dev.sort.len {
                 let world = math::mat4::transform_point{ m = draw.transform, p = draw.center }
-                dev.sort[n] = SortItem{ key = depth_key{ sort = draw.material.sort, eye = v.camera.eye, at = world }, index = d }
+                dev.sort[n] = SortItem{ key = depth_key{ sort = draw.material.sort, eye, at = world }, index = d }
                 n = n + 1
             }
             d = d + 1
@@ -1375,28 +1430,23 @@ namespace gpu {
             let em = frame.emitters[e]
             if em.view == index and em.count > 0 and n < dev.sort.len {
                 let world = math::mat4::get_translation{ m = em.transform }
-                dev.sort[n] = SortItem{ key = depth_key{ sort = em.sort, eye = v.camera.eye, at = world }, index = e | 0x80000000 }
+                dev.sort[n] = SortItem{ key = depth_key{ sort = em.sort, eye, at = world }, index = e | 0x80000000 }
                 n = n + 1
             }
             e = e + 1
         }
         sort_items{ items = dev.sort[..n], tmp = dev.sort_tmp[..n] }
-        i = 0
+        let mut i: usize = 0
         while i < n {
             let item = dev.sort[i]
             if (item.index & 0x80000000) != 0 {
                 try draw_emitter{ &dev, frame, em = frame.emitters[item.index & 0x7FFFFFFF] }
             } else {
-                use_program{ &dev, program = dev.scene.id }
+                use_program{ &dev, program = dev.cur.id }
                 draw_mesh{ &dev, frame, draw = frame.draws[item.index] }
             }
             i = i + 1
         }
-
-        try draw_debug{ &dev, frame, index }
-        set_offset{ &dev, on = false }
-        set_stencil{ &dev, on = false }
-        if v.target == null and v.blur > 0.01 and dev.screen_effects { try speed_blur{ &dev, strength = v.blur } }
     }
 
     // The Frame Buffer Effects option's speed blur: the screen so far, copied, is drawn back sampled along the line to the
@@ -1497,7 +1547,7 @@ namespace gpu {
 
     fn set_identity_post { mut dev: Device } {
         let id = math::mat4::identity{}
-        dev.gl.uniform_matrix4fv{ location = dev.scene.post, count = 1, transpose = gl::FALSE, value = &id.m[0] }
+        dev.gl.uniform_matrix4fv{ location = dev.cur.post, count = 1, transpose = gl::FALSE, value = &id.m[0] }
     }
 
     // Binds a material's texture to `unit` and returns 1, or binds the default (white, or a black
@@ -1531,17 +1581,17 @@ namespace gpu {
         set_stencil{ &dev, on = false }
         bind_vao{ &dev, vao = mesh.vao }
 
-        dev.gl.uniform_matrix4fv{ location = dev.scene.model, count = 1, transpose = gl::FALSE, value = &draw.transform.m[0] }
+        dev.gl.uniform_matrix4fv{ location = dev.cur.model, count = 1, transpose = gl::FALSE, value = &draw.transform.m[0] }
         let nm = math::mat3::normal_matrix{ m = draw.transform }
-        dev.gl.uniform_matrix3fv{ location = dev.scene.normal, count = 1, transpose = gl::FALSE, value = &nm.m[0] }
+        dev.gl.uniform_matrix3fv{ location = dev.cur.normal, count = 1, transpose = gl::FALSE, value = &nm.m[0] }
         let bones = if draw.bone_count > MAX_BONES { MAX_BONES } else { draw.bone_count }
         let palette_ok = bones > 0 and draw.bones + bones <= frame.bone_count
-        dev.gl.uniform1i{ location = dev.scene.bone_count, v0 = if palette_ok { @as(i32, bones) } else { 0 } }
+        dev.gl.uniform1i{ location = dev.cur.bone_count, v0 = if palette_ok { @as(i32, bones) } else { 0 } }
         if palette_ok {
-            dev.gl.uniform_matrix4fv{ location = dev.scene.bones, count = @as(i32, bones), transpose = gl::FALSE, value = &frame.bones[draw.bones].m[0] }
+            dev.gl.uniform_matrix4fv{ location = dev.cur.bones, count = @as(i32, bones), transpose = gl::FALSE, value = &frame.bones[draw.bones].m[0] }
         }
         // u_dangle.w is the material's inflate: the vertex shader pushes the vertices out along their normals.
-        dev.gl.uniform4f{ location = dev.scene.dangle, v0 = draw.dangle.x, v1 = draw.dangle.y, v2 = draw.dangle.z, v3 = m.inflate }
+        dev.gl.uniform4f{ location = dev.cur.dangle, v0 = draw.dangle.x, v1 = draw.dangle.y, v2 = draw.dangle.z, v3 = m.inflate }
 
         let has_diffuse = material_map{ &dev, t = m.diffuse, unit = 0, cube = false }
         let has_lightmap = material_map{ &dev, t = m.lightmap, unit = 1, cube = false }
@@ -1549,17 +1599,18 @@ namespace gpu {
         let env_flat = material_map{ &dev, t = m.envmap, unit = 3, cube = false }
         let env = if env_cube == 1 { 1 } else if env_flat == 1 { 2 } else { 0 }
         let has_bump = material_map{ &dev, t = m.bumpmap, unit = 4, cube = false }
-        dev.gl.uniform4i{ location = dev.scene.maps, v0 = has_diffuse, v1 = has_lightmap, v2 = env, v3 = has_bump }
-        dev.gl.uniform4i{ location = dev.scene.mode, v0 = @as(i32, m.blend), v1 = if m.lit { 1 } else { 0 }, v2 = if m.fog { 1 } else { 0 }, v3 = 0 }
-        dev.gl.uniform4f{ location = dev.scene.color, v0 = m.color.r, v1 = m.color.g, v2 = m.color.b, v3 = m.color.a }
-        dev.gl.uniform4f{ location = dev.scene.selfillum, v0 = m.selfillum.x, v1 = m.selfillum.y, v2 = m.selfillum.z, v3 = m.env_amount }
-        dev.gl.uniform4f{ location = dev.scene.uv, v0 = m.uv_scale.x, v1 = m.uv_scale.y, v2 = m.uv_offset.x, v3 = m.uv_offset.y }
-        dev.gl.uniform1i{ location = dev.scene.uv_cell, v0 = if m.uv_cell { 1 } else { 0 } }
+        dev.gl.uniform4i{ location = dev.cur.maps, v0 = has_diffuse, v1 = has_lightmap, v2 = env, v3 = has_bump }
+        dev.gl.uniform4i{ location = dev.cur.mode, v0 = @as(i32, m.blend), v1 = if m.lit { 1 } else { 0 }, v2 = if m.fog { 1 } else { 0 }, v3 = 0 }
+        dev.gl.uniform4f{ location = dev.cur.color, v0 = m.color.r, v1 = m.color.g, v2 = m.color.b, v3 = m.color.a }
+        dev.gl.uniform4f{ location = dev.cur.selfillum, v0 = m.selfillum.x, v1 = m.selfillum.y, v2 = m.selfillum.z, v3 = m.env_amount }
+        dev.gl.uniform4f{ location = dev.cur.uv, v0 = m.uv_scale.x, v1 = m.uv_scale.y, v2 = m.uv_offset.x, v3 = m.uv_offset.y }
+        dev.gl.uniform1i{ location = dev.cur.uv_cell, v0 = if m.uv_cell { 1 } else { 0 } }
         if m.lit and has_lightmap == 0 {
             set_lights{ &dev, frame, at = math::mat4::transform_point{ m = draw.transform, p = draw.center }, reach = draw.radius }
         } else {
-            dev.gl.uniform1i{ location = dev.scene.light_count, v0 = 0 }
+            dev.gl.uniform1i{ location = dev.cur.light_count, v0 = 0 }
         }
+        if dev.in_fx { set_fx_draw{ &dev, frame, draw } }
 
         let first = if draw.first < mesh.index_count { draw.first } else { mesh.index_count }
         let count = if draw.count == 0 or first + draw.count > mesh.index_count { mesh.index_count - first } else { draw.count }
@@ -1612,10 +1663,10 @@ namespace gpu {
             color[i * 4 + 2] = light.color.z
             i = i + 1
         }
-        dev.gl.uniform1i{ location = dev.scene.light_count, v0 = @as(i32, n) }
+        dev.gl.uniform1i{ location = dev.cur.light_count, v0 = @as(i32, n) }
         if n > 0 {
-            dev.gl.uniform4fv{ location = dev.scene.light_pos, count = @as(i32, n), value = &pos[0] }
-            dev.gl.uniform4fv{ location = dev.scene.light_color, count = @as(i32, n), value = &color[0] }
+            dev.gl.uniform4fv{ location = dev.cur.light_pos, count = @as(i32, n), value = &pos[0] }
+            dev.gl.uniform4fv{ location = dev.cur.light_color, count = @as(i32, n), value = &color[0] }
         }
     }
 
@@ -1654,7 +1705,7 @@ namespace gpu {
                 if draw.view != index { continue }
                 if not any {
                     any = true
-                    use_program{ &dev, program = dev.scene.id }
+                    use_program{ &dev, program = dev.cur.id }
                     set_blend{ &dev, blend = render::Blend::alpha }
                     set_depth{ &dev, test = true, write = false }
                     set_cull{ &dev, on = false }
@@ -1673,7 +1724,7 @@ namespace gpu {
                     strength = 1.0 - math::powf{ x = 1.0 - math::min{ a = sh.strength, b = 0.999 }, y = 1.0 / @as(f32, passes) }
                 }
                 let post = shadow_matrix{ plane = sh.plane, light, directional = sh.directional }
-                dev.gl.uniform_matrix4fv{ location = dev.scene.post, count = 1, transpose = gl::FALSE, value = &post.m[0] }
+                dev.gl.uniform_matrix4fv{ location = dev.cur.post, count = 1, transpose = gl::FALSE, value = &post.m[0] }
                 let mut d = draw
                 d.material.blend = render::Blend::alpha
                 d.material.color = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = strength }
@@ -1696,16 +1747,16 @@ namespace gpu {
         if mi == NO_SLOT { return }
         let mesh = dev.meshes[mi]
         bind_vao{ &dev, vao = mesh.vao }
-        dev.gl.uniform_matrix4fv{ location = dev.scene.model, count = 1, transpose = gl::FALSE, value = &draw.transform.m[0] }
+        dev.gl.uniform_matrix4fv{ location = dev.cur.model, count = 1, transpose = gl::FALSE, value = &draw.transform.m[0] }
         let bones = if draw.bone_count > MAX_BONES { MAX_BONES } else { draw.bone_count }
         let palette_ok = bones > 0 and draw.bones + bones <= frame.bone_count
-        dev.gl.uniform1i{ location = dev.scene.bone_count, v0 = if palette_ok { @as(i32, bones) } else { 0 } }
+        dev.gl.uniform1i{ location = dev.cur.bone_count, v0 = if palette_ok { @as(i32, bones) } else { 0 } }
         if palette_ok {
-            dev.gl.uniform_matrix4fv{ location = dev.scene.bones, count = @as(i32, bones), transpose = gl::FALSE, value = &frame.bones[draw.bones].m[0] }
+            dev.gl.uniform_matrix4fv{ location = dev.cur.bones, count = @as(i32, bones), transpose = gl::FALSE, value = &frame.bones[draw.bones].m[0] }
         }
-        dev.gl.uniform4f{ location = dev.scene.dangle, v0 = draw.dangle.x, v1 = draw.dangle.y, v2 = draw.dangle.z, v3 = 0.0 }
-        dev.gl.uniform4i{ location = dev.scene.mode, v0 = 2, v1 = 0, v2 = 0, v3 = 1 }
-        dev.gl.uniform4f{ location = dev.scene.color, v0 = 0.0, v1 = 0.0, v2 = 0.0, v3 = draw.material.color.a }
+        dev.gl.uniform4f{ location = dev.cur.dangle, v0 = draw.dangle.x, v1 = draw.dangle.y, v2 = draw.dangle.z, v3 = 0.0 }
+        dev.gl.uniform4i{ location = dev.cur.mode, v0 = 2, v1 = 0, v2 = 0, v3 = 1 }
+        dev.gl.uniform4f{ location = dev.cur.color, v0 = 0.0, v1 = 0.0, v2 = 0.0, v3 = draw.material.color.a }
         let first = if draw.first < mesh.index_count { draw.first } else { mesh.index_count }
         let count = if draw.count == 0 or first + draw.count > mesh.index_count { mesh.index_count - first } else { draw.count }
         if count == 0 or mesh.mode != gl::TRIANGLES { return }
@@ -1736,7 +1787,7 @@ namespace gpu {
     fn draw_emitter { mut dev: Device, frame: *render::Frame, em: render::Emitter } -> ! {
         if not dev.particles and em.effect { return }
         if em.first + em.count > frame.particle_count { return }
-        use_program{ &dev, program = dev.particle.id }
+        use_program{ &dev, program = dev.cur_particle.id }
         set_blend{ &dev, blend = em.blend }
         set_depth{ &dev, test = true, write = writes_depth{ blend = em.blend } }
         set_cull{ &dev, on = false }
@@ -1744,16 +1795,17 @@ namespace gpu {
         set_stencil{ &dev, on = false }
         bind_vao{ &dev, vao = dev.particle_vao }
         let textured = material_map{ &dev, t = em.texture, unit = 0, cube = false }
-        dev.gl.uniform_matrix4fv{ location = dev.particle.model, count = 1, transpose = gl::FALSE, value = &em.transform.m[0] }
+        dev.gl.uniform_matrix4fv{ location = dev.cur_particle.model, count = 1, transpose = gl::FALSE, value = &em.transform.m[0] }
         let facing: i32 = match em.facing {
             camera => { 0 }
             axis => { 1 }
             plane => { 2 }
             velocity => { 3 }
         }
-        dev.gl.uniform4i{ location = dev.particle.emit, v0 = facing, v1 = @as(i32, em.grid_x), v2 = @as(i32, em.grid_y), v3 = 0 }
-        dev.gl.uniform4f{ location = dev.particle.axis, v0 = em.axis.x, v1 = em.axis.y, v2 = em.axis.z, v3 = 0.0 }
-        dev.gl.uniform4i{ location = dev.particle.mode, v0 = @as(i32, em.blend), v1 = if em.fog { 1 } else { 0 }, v2 = textured, v3 = 0 }
+        dev.gl.uniform4i{ location = dev.cur_particle.emit, v0 = facing, v1 = @as(i32, em.grid_x), v2 = @as(i32, em.grid_y), v3 = 0 }
+        dev.gl.uniform4f{ location = dev.cur_particle.axis, v0 = em.axis.x, v1 = em.axis.y, v2 = em.axis.z, v3 = 0.0 }
+        dev.gl.uniform4i{ location = dev.cur_particle.mode, v0 = @as(i32, em.blend), v1 = if em.fog { 1 } else { 0 }, v2 = textured, v3 = 0 }
+        if dev.in_fx { dev.gl.uniform1f{ location = dev.cur_particle.gain, v0 = emissive_gain{ e = dev.enhance } * 1.5 } }
         let per: usize = 14
         let room = dev.scratch.len / per
         let mut done: u32 = 0

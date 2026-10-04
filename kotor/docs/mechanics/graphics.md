@@ -19,8 +19,14 @@ A window run reads the file for its size, mode and options (`--size` overrides t
 (`--headless`, `--no-render`) uses the defaults for the graphics keys, so logs and pictures repeat whatever file
 is lying about, unless `--gfx` asks for the file. `FRAME gfx KEY VALUE` input lines set an option from a script
 (`size W H`, `mode windowed|borderless|fullscreen`, `refresh`, `vsync`, `brightness`, `shadows`, `softshadows`,
-`grass`, `emitters`, `framebuffer`, `aniso`, `aa`, `texture`, `scale`, `limit`, `blur`); they work in the front end
+`grass`, `emitters`, `framebuffer`, `aniso`, `aa`, `texture`, `scale`, `limit`, `blur`, and the Enhanced Graphics
+panel's words in [../design/enhanced-render.md](../design/enhanced-render.md)); they work in the front end
 and in a game and never write the file.
+
+The **Enhanced Graphics** panel (ours, under Advanced Options on the Graphics panel) switches the modern effects:
+bloom, room light on characters, shadow maps, occlusion, smooth lightmaps, depth of field, reflections, light
+shafts, height fog, colour grades, edge smoothing, foliage anti-aliasing, tessellation, and an Original Look that
+turns them all off. See [../design/enhanced-render.md](../design/enhanced-render.md).
 
 ## The panels, option by option
 

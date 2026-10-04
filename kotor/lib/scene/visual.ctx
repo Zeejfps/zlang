@@ -409,11 +409,13 @@ namespace visual {
         // A creature in stealth mode, its weapons too, wears the stealth texture.
         let look = if scene::is_hiding{ o } { scene::look_material{ sc } } else { null }
         let cast = shadow_of{ w, o, frame = &frame }
+        let kind = if obj::creature{ o } != null { render::DrawKind::creature } else { render::DrawKind::object }
+        let ambient = scene::ambient_at{ sc, &frame, at = o.position }
         let mut i: usize = 0
         while i < n {
             let p = scene::part_at{ sc, i = v.first + i }
             let l = scene::loaded_at{ sc, i = p.loaded }
-            _ = mdl_render::add_draws_look{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = transforms[i], materials = l.materials, time = sc.time, look, cast }
+            _ = mdl_render::add_draws_look{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = transforms[i], materials = l.materials, time = sc.time, look, cast, kind, ambient }
             i = i + 1
         }
     }

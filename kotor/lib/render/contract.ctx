@@ -31,6 +31,9 @@ namespace render_contract {
         let set_gamma: fn{ mut dev: gpu::Device, exponent: f32 } = gpu::set_gamma
         let set_effects: fn{ mut dev: gpu::Device, shadows: bool, soft_shadows: bool, particles: bool, screen_effects: bool } = gpu::set_effects
         let shade_pixels: fn{ dev: gpu::Device, pixels: []mut u8 } = gpu::shade_pixels
+        // The enhanced renderer (docs/design/enhanced-render.md).
+        let set_enhance: fn{ mut dev: gpu::Device, enhance: render::Enhance } = gpu::set_enhance
+        let get_timings: fn{ dev: gpu::Device } -> render::Timings = gpu::get_timings
         let present_rect: fn{ mut sdl: sdl::Sdl, dev: gpu::Device } -> render::Rect = gpu::present_rect
 
         let create_texture: fn{ mut dev: gpu::Device, desc: render::TextureDesc, data: []u8 } -> !render::Texture = gpu::create_texture

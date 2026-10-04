@@ -321,6 +321,96 @@ namespace render {
 
     fn no_fog {} -> Fog { return Fog{ on = false, color = math::vec3::zero{}, near = 0.0, far = 1.0 } }
 
+    // ---- the enhanced renderer (docs/design/enhanced-render.md)
+    //
+    // Effects the original never had, asked for as data: the player's Enhanced Graphics options (an
+    // Enhance, given to the device with gpu::set_enhance, live like the other options), what each view
+    // knows of its scene (a sun, a focus, a colour grade, height fog), and what each draw is (its kind,
+    // whether it casts a shadow, the light around it). How each is drawn is the backend's business; the
+    // design doc lists every effect's inputs. They apply to views drawn to the screen that clear their
+    // colour: a GUI's 3D view into a target or over a panel keeps the original look.
+
+    // The Enhanced Graphics options. `on` false is the original look: every view is drawn exactly as the
+    // original renderer draws it, whatever the rest says. Levels: 0 off, 1 low (for a laptop's GPU), 2 high.
+    struct Enhance {
+        on: bool,
+        bloom: u8,                  // HDR: what is brighter than white glows (emissive, additive, particles, bright lights)
+        exposure: f32,              // the scene's light before the tone curve; 1 keeps the original's mid-tones
+        room_light: u8,             // creatures and objects take the light around them (Draw.ambient), not the area's flat ambient
+        shadows: u8,                // 0 the original's planar creature shadows (the Shadows option); 1 shadow maps, 2 with soft penumbras
+        ao: u8,                     // ambient occlusion on the ambient and lightmap light
+        smooth_lightmaps: bool,     // lightmaps sampled bicubically, not bilinearly
+        dof: u8,                    // depth of field, for views with a focus (conversations)
+        reflections: u8,            // screen-space reflections on environment-mapped surfaces
+        shafts: bool,               // light shafts toward the view's sun
+        height_fog: bool,           // the view's height fog
+        grade: bool,                // the view's colour grade
+        post_aa: u8,                // 0 none, 1 FXAA, 2 a sharper edge filter (SMAA-like): when multisampling is off
+        alpha_coverage: bool,       // alpha-tested surfaces through alpha-to-coverage when multisampling is on
+        tessellation: u8,           // smoother creature silhouettes (PN triangles)
+        timing: bool,               // measure each pass on the GPU (gpu::get_timings)
+    }
+
+    // Everything off: the original renderer.
+    fn original_look {} -> Enhance {
+        return Enhance{
+            on = false, bloom = 0, exposure = 1.0, room_light = 0, shadows = 0, ao = 0, smooth_lightmaps = false, dof = 0,
+            reflections = 0, shafts = false, height_fog = false, grade = false, post_aa = 0, alpha_coverage = false,
+            tessellation = 0, timing = false,
+        }
+    }
+
+    // Every effect on at its high level: what a new settings file starts with.
+    fn full_enhance {} -> Enhance {
+        return Enhance{
+            on = true, bloom = 2, exposure = 1.0, room_light = 2, shadows = 2, ao = 2, smooth_lightmaps = true, dof = 2,
+            reflections = 2, shafts = true, height_fog = true, grade = true, post_aa = 1, alpha_coverage = true,
+            tessellation = 0, timing = false,
+        }
+    }
+
+    // The area's sun, for outdoor views: shadows are cast away from it and light shafts stream from it.
+    struct Sun {
+        on: bool,
+        direction: math::Vec3,      // the way its light travels (unit length, pointing down)
+        color: math::Vec3,          // its light (the ARE's SunDiffuseColor)
+        strength: f32,              // how dark the shadows it casts are, 0..1 (the ARE's ShadowOpacity)
+    }
+
+    fn no_sun {} -> Sun { return Sun{ on = false, direction = math::Vec3{ x = 0.0, y = 0.0, z = -1.0 }, color = math::vec3::zero{}, strength = 0.0 } }
+
+    // Depth of field: what is in focus. Things nearer or farther than `range` from `distance` (metres along the
+    // view) blur, up to `blur` (0..1 of the effect's largest blur). A cut of the camera changes it at once; the
+    // backend eases nothing, so the caller eases what should move smoothly.
+    struct Focus { on: bool, distance: f32, range: f32, blur: f32 }
+
+    fn no_focus {} -> Focus { return Focus{ on = false, distance = 10.0, range = 2.0, blur = 0.0 } }
+
+    // Fog that is thicker the lower it is: `density` per metre at height `base` (world z), thinning by e every
+    // `falloff` metres above it. Layered over the view's linear `fog`.
+    struct HeightFog { on: bool, color: math::Vec3, base: f32, density: f32, falloff: f32 }
+
+    fn no_height_fog {} -> HeightFog { return HeightFog{ on = false, color = math::vec3::zero{}, base = 0.0, density = 0.0, falloff = 1.0 } }
+
+    // What a draw is, for the effects that treat surfaces differently. `room`: static, its light baked in a
+    // lightmap; it receives shadows and occlusion and is what light probes are made from. `creature`: a
+    // character (skinned or not), lit by the light around it, casting shadows; tessellated. `object`: a
+    // placeable, door or item: lit by the light around it, casting shadows. `effect`: a visual effect, a blade,
+    // a particle mesh: emissive, no occlusion, no shadows. `other`: anything else (a GUI's model).
+    enum DrawKind: u8 { other, room, creature, object, effect }
+
+    // The light arriving at a point from six directions (world space, Z up), as a creature standing there
+    // would take it: what the lightmaps around it say, bounced. A surface facing n gets
+    // n.x² · (n.x > 0 ? pos_x : neg_x) + n.y² · ... + n.z² · ...
+    struct AmbientCube { pos_x: math::Vec3, neg_x: math::Vec3, pos_y: math::Vec3, neg_y: math::Vec3, pos_z: math::Vec3, neg_z: math::Vec3 }
+
+    fn flat_ambient { color: math::Vec3 } -> AmbientCube {
+        return AmbientCube{ pos_x = color, neg_x = color, pos_y = color, neg_y = color, pos_z = color, neg_z = color }
+    }
+
+    // What the GPU spent on each pass of the last measured frame, when Enhance.timing is on (milliseconds).
+    struct Timings { count: u32, names: [24][]u8, ms: [24]f32, total: f32 }
+
     // One rendering of the world through a camera, into the screen or a target.
     struct View {
         target: ?Target,            // null: the screen
@@ -331,12 +421,19 @@ namespace render {
         ambient: math::Vec3,        // light every lit surface gets
         fog: Fog,
         blur: f32,                  // 0..1: a radial speed blur over the finished picture of a view of the screen (the Frame Buffer Effects option)
+        // What the enhanced renderer knows of the scene (Enhance): ignored by the original look.
+        sun: Sun,
+        focus: Focus,
+        grade: ?Texture,            // a colour grade: a 32x32x32 lookup table as 32 slices of 32x32 side by side (1024 x 32, rgb8, slice b at x = 32 b)
+        height_fog: HeightFog,
+        exposure: f32,              // this view's exposure, times Enhance.exposure; 1 normally
     }
 
     fn make_view { camera: Camera } -> View {
         return View{
             target = null, viewport = null, clear_color = Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 }, clear_depth = true,
             camera, ambient = math::Vec3{ x = 0.3, y = 0.3, z = 0.3 }, fog = no_fog{}, blur = 0.0,
+            sun = no_sun{}, focus = no_focus{}, grade = null, height_fog = no_height_fog{}, exposure = 1.0,
         }
     }
 
@@ -357,12 +454,17 @@ namespace render {
         dangle: math::Vec3,         // how far a constraint-255 vertex is displaced now, in mesh space
         center: math::Vec3,         // bounding sphere in mesh space: lights, sorting, and culling when
         radius: f32,                //   radius > 0
+        // For the enhanced renderer (Enhance), ignored by the original look:
+        kind: DrawKind,
+        casts: bool,                // throws a shadow from the sun and shadow-casting lights (the MDL mesh's shadow flag)
+        ambient: u32,               // the light around it: 0 the view's ambient, else frame.ambients[ambient - 1]
     }
 
     fn make_draw { view: u32, mesh: Mesh, transform: math::Mat4, material: Material } -> Draw {
         return Draw{
             view, mesh, first = 0, count = 0, transform, material, bones = 0, bone_count = 0,
             dangle = math::vec3::zero{}, center = math::vec3::zero{}, radius = 0.0,
+            kind = DrawKind::other, casts = false, ambient = 0,
         }
     }
 
@@ -435,13 +537,13 @@ namespace render {
     // How many of each thing a frame can hold. What doesn't fit is dropped and counted.
     struct Capacity {
         views: u32, steps: u32, draws: u32, bones: u32, lights: u32, shadows: u32,
-        emitters: u32, particles: u32, lines: u32, tris: u32, quads: u32,
+        emitters: u32, particles: u32, lines: u32, tris: u32, quads: u32, ambients: u32,
     }
 
     fn default_capacity {} -> Capacity {
         return Capacity{
             views = 16, steps = 64, draws = 16384, bones = 16384, lights = 128, shadows = 512,
-            emitters = 1024, particles = 32768, lines = 65536, tris = 65536, quads = 16384,
+            emitters = 1024, particles = 32768, lines = 65536, tris = 65536, quads = 16384, ambients = 1024,
         }
     }
 
@@ -460,6 +562,7 @@ namespace render {
         lines: []mut Line, line_count: u32,
         tris: []mut Tri, tri_count: u32,
         quads: []mut Quad, quad_count: u32,
+        ambients: []mut AmbientCube, ambient_count: u32,     // the light around dynamic draws (Draw.ambient)
         dropped: u32,               // items that didn't fit since begin_frame
     }
 
@@ -478,6 +581,7 @@ namespace render {
             lines = try alloc::resize(Line, S){ realloc, &heap, mem = slice::empty(Line){}, count = cap.lines }, line_count = 0,
             tris = try alloc::resize(Tri, S){ realloc, &heap, mem = slice::empty(Tri){}, count = cap.tris }, tri_count = 0,
             quads = try alloc::resize(Quad, S){ realloc, &heap, mem = slice::empty(Quad){}, count = cap.quads }, quad_count = 0,
+            ambients = try alloc::resize(AmbientCube, S){ realloc, &heap, mem = slice::empty(AmbientCube){}, count = cap.ambients }, ambient_count = 0,
             dropped = 0,
         }
     }
@@ -496,6 +600,7 @@ namespace render {
         frame.line_count = 0
         frame.tri_count = 0
         frame.quad_count = 0
+        frame.ambient_count = 0
         frame.dropped = 0
     }
 
@@ -538,6 +643,18 @@ namespace render {
         slice::copy(math::Mat4){ dst = frame.bones[@as(usize, first)..], src = palette }
         frame.bone_count = first + @as(u32, palette.len)
         return first
+    }
+
+    // Adds the light around a dynamic object; returns the value its draws put in Draw.ambient (0, the view's
+    // ambient, when the frame is full).
+    fn add_ambient { mut frame: Frame, cube: AmbientCube } -> u32 {
+        if frame.ambient_count >= frame.ambients.len {
+            frame.dropped = frame.dropped + 1
+            return 0
+        }
+        frame.ambients[frame.ambient_count] = cube
+        frame.ambient_count = frame.ambient_count + 1
+        return frame.ambient_count
     }
 
     fn add_light { mut frame: Frame, light: Light } {

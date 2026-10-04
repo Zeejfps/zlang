@@ -1,0 +1,337 @@
+// GLSL 410 sources of the enhanced renderer (fx.ctx; docs/design/enhanced-render.md). The original's
+// programs (shaders.ctx) are left as they are, so the original look draws exactly what it always did.
+//
+// Full-screen passes run glsl::POST_VS (one triangle, v_uv 0..1 over the destination) with one of the
+// fragment programs here. Samplers' units are set after linking (GLSL 410 has no layout(binding)).
+namespace glsl {
+    // The scene's meshes, enhanced: the original's lighting and blending, plus the light around a dynamic
+    // draw (an ambient cube), smooth lightmaps, light brighter than white from emissive and additive
+    // surfaces (HDR), and a second output for the passes that follow: the view-space normal and the share
+    // of the light that ambient occlusion may darken (alpha). Runs with glsl::SCENE_VS.
+    //
+    // u_fx: x the draw's kind (render::DrawKind), y smooth lightmaps, z the ambient cube is set, w 0.
+    // u_fx2: x the extra light of self-illumination, y the extra light of additive surfaces.
+    const SCENE_FX_FS: c::String =
+        \\#version 410 core
+        \\layout(std140) uniform Frame {
+        \\    mat4 u_view_proj;
+        \\    mat4 u_view;
+        \\    vec4 u_eye;
+        \\    vec4 u_ambient;
+        \\    vec4 u_fog_color;
+        \\    vec4 u_fog;
+        \\};
+        \\uniform sampler2D u_diffuse;
+        \\uniform sampler2D u_lightmap;
+        \\uniform samplerCube u_envcube;
+        \\uniform sampler2D u_envsphere;
+        \\uniform sampler2D u_bump;
+        \\uniform ivec4 u_maps;
+        \\uniform ivec4 u_mode;
+        \\uniform vec4 u_color;
+        \\uniform vec4 u_selfillum;
+        \\uniform vec4 u_uv;
+        \\uniform int u_uv_cell;
+        \\uniform int u_light_count;
+        \\uniform vec4 u_light_pos[8];
+        \\uniform vec4 u_light_color[8];
+        \\uniform ivec4 u_fx;
+        \\uniform vec4 u_fx2;
+        \\uniform vec3 u_cube[6];
+        \\in vec3 v_world;
+        \\in vec3 v_normal;
+        \\in vec3 v_tangent;
+        \\in vec3 v_bitangent;
+        \\in vec2 v_uv0;
+        \\in vec2 v_uv1;
+        \\in vec4 v_color;
+        \\layout(location = 0) out vec4 o_color;
+        \\layout(location = 1) out vec4 o_normal;
+        \\vec4 cubic(float v) {
+        \\    vec4 n = vec4(1.0, 2.0, 3.0, 4.0) - v;
+        \\    vec4 s = n * n * n;
+        \\    float x = s.x;
+        \\    float y = s.y - 4.0 * s.x;
+        \\    float z = s.z - 4.0 * s.y + 6.0 * s.x;
+        \\    return vec4(x, y, z, 6.0 - x - y - z) * (1.0 / 6.0);
+        \\}
+        \\vec3 bicubic(sampler2D t, vec2 uv) {
+        \\    vec2 size = vec2(textureSize(t, 0));
+        \\    vec2 p = uv * size - 0.5;
+        \\    vec2 f = fract(p);
+        \\    p -= f;
+        \\    vec4 xc = cubic(f.x);
+        \\    vec4 yc = cubic(f.y);
+        \\    vec4 c = p.xxyy + vec2(-0.5, 1.5).xyxy;
+        \\    vec4 s = vec4(xc.xz + xc.yw, yc.xz + yc.yw);
+        \\    vec4 o = (c + vec4(xc.yw, yc.yw) / s) / size.xxyy;
+        \\    vec3 s0 = texture(t, o.xz).rgb;
+        \\    vec3 s1 = texture(t, o.yz).rgb;
+        \\    vec3 s2 = texture(t, o.xw).rgb;
+        \\    vec3 s3 = texture(t, o.yw).rgb;
+        \\    float sx = s.x / (s.x + s.y);
+        \\    float sy = s.z / (s.z + s.w);
+        \\    return mix(mix(s3, s2, sx), mix(s1, s0, sx), sy);
+        \\}
+        \\vec3 cube_light(vec3 n) {
+        \\    vec3 n2 = n * n;
+        \\    return n2.x * (n.x >= 0.0 ? u_cube[0] : u_cube[1])
+        \\         + n2.y * (n.y >= 0.0 ? u_cube[2] : u_cube[3])
+        \\         + n2.z * (n.z >= 0.0 ? u_cube[4] : u_cube[5]);
+        \\}
+        \\void main() {
+        \\    if (u_mode.w == 1) {
+        \\        o_color = vec4(0.0, 0.0, 0.0, u_color.a);
+        \\        o_normal = vec4(0.5, 0.5, 1.0, 0.0);
+        \\        return;
+        \\    }
+        \\    vec2 uv = v_uv0;
+        \\    if (u_uv_cell == 1) {
+        \\        uv = fract(uv);
+        \\    }
+        \\    uv = uv * u_uv.xy + u_uv.zw;
+        \\    vec4 tex = vec4(1.0);
+        \\    if (u_maps.x == 1) {
+        \\        tex = texture(u_diffuse, uv);
+        \\    }
+        \\    float cut_alpha = tex.a * u_color.a * v_color.a;
+        \\    if ((u_mode.x == 1 && cut_alpha <= 0.35) || (u_mode.x == 4 && cut_alpha <= 0.0)) {
+        \\        discard;
+        \\    }
+        \\    vec3 n = normalize(v_normal);
+        \\    if (!gl_FrontFacing) {
+        \\        n = -n;
+        \\    }
+        \\    if (u_maps.w == 1) {
+        \\        vec3 bn = texture(u_bump, uv).xyz * 2.0 - 1.0;
+        \\        n = normalize(normalize(v_tangent) * bn.x + normalize(v_bitangent) * bn.y + n * bn.z);
+        \\    }
+        \\    vec3 light = vec3(1.0);
+        \\    if (u_maps.y == 1) {
+        \\        light = u_fx.y == 1 ? bicubic(u_lightmap, v_uv1) : texture(u_lightmap, v_uv1).rgb;
+        \\    } else if (u_mode.y == 1) {
+        \\        light = u_fx.z == 1 ? cube_light(n) : u_ambient.rgb;
+        \\        for (int i = 0; i < u_light_count; i++) {
+        \\            vec3 d = u_light_pos[i].xyz - v_world;
+        \\            float dist = length(d);
+        \\            float att = clamp(1.0 - dist / u_light_pos[i].w, 0.0, 1.0);
+        \\            float lambert = max(dot(n, d / max(dist, 0.0001)), 0.0);
+        \\            light += u_light_color[i].rgb * (att * att * lambert);
+        \\        }
+        \\    }
+        \\    vec4 base = tex * u_color * v_color;
+        \\    vec3 rgb = base.rgb * min(light + u_selfillum.rgb, vec3(1.0));
+        \\    rgb += base.rgb * u_selfillum.rgb * u_fx2.x;
+        \\    float alpha = base.a;
+        \\    if (u_maps.z != 0) {
+        \\        vec3 r = reflect(normalize(v_world - u_eye.xyz), n);
+        \\        vec3 env;
+        \\        if (u_maps.z == 1) {
+        \\            env = texture(u_envcube, r).rgb;
+        \\        } else {
+        \\            vec3 e = mat3(u_view) * r;
+        \\            float m = 2.0 * sqrt(e.x * e.x + e.y * e.y + (e.z + 1.0) * (e.z + 1.0));
+        \\            env = texture(u_envsphere, e.xy / m + 0.5).rgb;
+        \\        }
+        \\        float amount = u_selfillum.a;
+        \\        if (u_mode.x > 1) {
+        \\            rgb += env * amount;
+        \\        } else if (u_maps.y == 1) {
+        \\            rgb += env * (amount * (1.0 - tex.a));
+        \\        } else {
+        \\            rgb = mix(env * amount, rgb, tex.a);
+        \\        }
+        \\    }
+        \\    if (u_mode.x <= 1) {
+        \\        alpha = 1.0;
+        \\    }
+        \\    if (u_mode.x == 3) {
+        \\        rgb *= 1.0 + u_fx2.y;
+        \\    }
+        \\    if (u_mode.z == 1 && u_fog.z > 0.5) {
+        \\        float f = clamp((length(v_world - u_eye.xyz) - u_fog.x) / max(u_fog.y - u_fog.x, 0.0001), 0.0, 1.0);
+        \\        if (u_mode.x == 3) {
+        \\            rgb *= 1.0 - f;
+        \\        } else {
+        \\            rgb = mix(rgb, u_fog_color.rgb, f);
+        \\        }
+        \\    }
+        \\    o_color = vec4(rgb, alpha);
+        \\    float glow = clamp(max(u_selfillum.r, max(u_selfillum.g, u_selfillum.b)), 0.0, 1.0);
+        \\    float occludable = (u_mode.y == 1 || u_maps.y == 1) && u_fx.x != 4 ? 1.0 - glow : 0.0;
+        \\    o_normal = vec4(normalize(mat3(u_view) * n) * 0.5 + 0.5, occludable);
+        \\}
+        \\
+
+    // Particles, enhanced: the original's, with additive ones brighter than white (u_gain), for the bloom.
+    const PARTICLE_FX_FS: c::String =
+        \\#version 410 core
+        \\layout(std140) uniform Frame {
+        \\    mat4 u_view_proj;
+        \\    mat4 u_view;
+        \\    vec4 u_eye;
+        \\    vec4 u_ambient;
+        \\    vec4 u_fog_color;
+        \\    vec4 u_fog;
+        \\};
+        \\uniform sampler2D u_tex;
+        \\uniform ivec4 u_mode;
+        \\uniform float u_gain;
+        \\in vec2 v_uv;
+        \\in vec4 v_color;
+        \\in vec3 v_world;
+        \\layout(location = 0) out vec4 o_color;
+        \\void main() {
+        \\    vec4 c = v_color;
+        \\    if (u_mode.z == 1) {
+        \\        c *= texture(u_tex, v_uv);
+        \\    }
+        \\    if ((u_mode.x == 1 && c.a <= 0.35) || (u_mode.x == 4 && c.a <= 0.0)) {
+        \\        discard;
+        \\    }
+        \\    if (u_mode.x == 3) {
+        \\        c.rgb *= 1.0 + u_gain;
+        \\    }
+        \\    if (u_mode.y == 1 && u_fog.z > 0.5) {
+        \\        float f = clamp((length(v_world - u_eye.xyz) - u_fog.x) / max(u_fog.y - u_fog.x, 0.0001), 0.0, 1.0);
+        \\        if (u_mode.x == 3) {
+        \\            c.rgb *= 1.0 - f;
+        \\        } else {
+        \\            c.rgb = mix(c.rgb, u_fog_color.rgb, f);
+        \\        }
+        \\    }
+        \\    o_color = c;
+        \\}
+        \\
+
+    // Bloom, down: the 13-tap filter (four overlapping 2x2 boxes and the centre box) from a level twice the
+    // size. The first step keeps only what is brighter than the threshold (a soft knee), each group weighted
+    // by 1 / (1 + brightness) so single bright pixels don't flicker.
+    // u_texel: one texel of the source. u_params: x threshold, y knee, z 1 for the first step.
+    const BLOOM_DOWN_FS: c::String =
+        \\#version 410 core
+        \\uniform sampler2D u_tex;
+        \\uniform vec2 u_texel;
+        \\uniform vec4 u_params;
+        \\in vec2 v_uv;
+        \\layout(location = 0) out vec4 o_color;
+        \\vec3 tap(vec2 o) {
+        \\    return min(texture(u_tex, v_uv + o * u_texel).rgb, vec3(64.0));
+        \\}
+        \\vec3 bright(vec3 c) {
+        \\    float m = max(c.r, max(c.g, c.b));
+        \\    float k = u_params.y;
+        \\    float soft = clamp(m - u_params.x + k, 0.0, 2.0 * k);
+        \\    soft = soft * soft / (4.0 * k + 0.0001);
+        \\    return c * (max(soft, m - u_params.x) / max(m, 0.0001));
+        \\}
+        \\vec3 group(vec3 a, vec3 b, vec3 c, vec3 d) {
+        \\    if (u_params.z < 0.5) {
+        \\        return (a + b + c + d) * 0.25;
+        \\    }
+        \\    a = bright(a);
+        \\    b = bright(b);
+        \\    c = bright(c);
+        \\    d = bright(d);
+        \\    float wa = 1.0 / (1.0 + max(a.r, max(a.g, a.b)));
+        \\    float wb = 1.0 / (1.0 + max(b.r, max(b.g, b.b)));
+        \\    float wc = 1.0 / (1.0 + max(c.r, max(c.g, c.b)));
+        \\    float wd = 1.0 / (1.0 + max(d.r, max(d.g, d.b)));
+        \\    return (a * wa + b * wb + c * wc + d * wd) / (wa + wb + wc + wd);
+        \\}
+        \\void main() {
+        \\    vec3 a = tap(vec2(-2.0, -2.0));
+        \\    vec3 b = tap(vec2(0.0, -2.0));
+        \\    vec3 c = tap(vec2(2.0, -2.0));
+        \\    vec3 d = tap(vec2(-1.0, -1.0));
+        \\    vec3 e = tap(vec2(1.0, -1.0));
+        \\    vec3 f = tap(vec2(-2.0, 0.0));
+        \\    vec3 g = tap(vec2(0.0, 0.0));
+        \\    vec3 h = tap(vec2(2.0, 0.0));
+        \\    vec3 i = tap(vec2(-1.0, 1.0));
+        \\    vec3 j = tap(vec2(1.0, 1.0));
+        \\    vec3 k = tap(vec2(-2.0, 2.0));
+        \\    vec3 l = tap(vec2(0.0, 2.0));
+        \\    vec3 m = tap(vec2(2.0, 2.0));
+        \\    vec3 sum = group(d, e, i, j) * 0.5
+        \\             + group(a, b, f, g) * 0.125 + group(b, c, g, h) * 0.125
+        \\             + group(f, g, k, l) * 0.125 + group(g, h, l, m) * 0.125;
+        \\    o_color = vec4(sum, 1.0);
+        \\}
+        \\
+
+    // Bloom, up: a 3x3 tent over the smaller level, added (by blending) onto the larger one.
+    // u_texel: one texel of the source; u_radius: the tent's reach in texels.
+    const BLOOM_UP_FS: c::String =
+        \\#version 410 core
+        \\uniform sampler2D u_tex;
+        \\uniform vec2 u_texel;
+        \\uniform float u_radius;
+        \\in vec2 v_uv;
+        \\layout(location = 0) out vec4 o_color;
+        \\void main() {
+        \\    vec2 t = u_texel * u_radius;
+        \\    vec3 s = texture(u_tex, v_uv).rgb * 4.0;
+        \\    s += (texture(u_tex, v_uv + vec2(t.x, 0.0)).rgb + texture(u_tex, v_uv - vec2(t.x, 0.0)).rgb
+        \\        + texture(u_tex, v_uv + vec2(0.0, t.y)).rgb + texture(u_tex, v_uv - vec2(0.0, t.y)).rgb) * 2.0;
+        \\    s += texture(u_tex, v_uv + t).rgb + texture(u_tex, v_uv - t).rgb
+        \\       + texture(u_tex, v_uv + vec2(t.x, -t.y)).rgb + texture(u_tex, v_uv + vec2(-t.x, t.y)).rgb;
+        \\    o_color = vec4(s / 16.0, 1.0);
+        \\}
+        \\
+
+    // The finished picture of a view: the scene's light (HDR, read pixel for pixel), the bloom, the exposure,
+    // the tone curve, the colour grade, and a little noise against banding. Alpha is the brightness, for FXAA.
+    //
+    // The tone curve leaves everything up to 0.9 as it is (the original's colours) and bends the brightest
+    // channel smoothly to 1 at 1.1 (white itself shows at 0.975); colours scale with it, keeping their hue,
+    // and what is far past white fades toward white as film does (a lightsaber's core).
+    // u_params: x exposure, y bloom strength, z grade on, w noise on. u_size: 1 / the screen's size.
+    const COMPOSITE_FS: c::String =
+        \\#version 410 core
+        \\uniform sampler2D u_hdr;
+        \\uniform sampler2D u_bloom;
+        \\uniform sampler2D u_grade;
+        \\uniform vec4 u_params;
+        \\uniform vec2 u_size;
+        \\in vec2 v_uv;
+        \\layout(location = 0) out vec4 o_color;
+        \\vec3 tone(vec3 c) {
+        \\    float m = max(c.r, max(c.g, c.b));
+        \\    if (m <= 0.9) {
+        \\        return c;
+        \\    }
+        \\    float t = min(m, 1.1) - 0.9;
+        \\    float mt = 0.9 + t - t * t / 0.4;
+        \\    vec3 r = c * (mt / m);
+        \\    float w = smoothstep(1.1, 4.0, m) * 0.85;
+        \\    return mix(r, vec3(mt), w);
+        \\}
+        \\vec3 grade(vec3 c) {
+        \\    c = clamp(c, 0.0, 1.0);
+        \\    float b = c.b * 31.0;
+        \\    float b0 = floor(b);
+        \\    float b1 = min(b0 + 1.0, 31.0);
+        \\    vec2 rg = c.rg * 31.0 + 0.5;
+        \\    vec3 g0 = texture(u_grade, vec2((b0 * 32.0 + rg.x) / 1024.0, rg.y / 32.0)).rgb;
+        \\    vec3 g1 = texture(u_grade, vec2((b1 * 32.0 + rg.x) / 1024.0, rg.y / 32.0)).rgb;
+        \\    return mix(g0, g1, b - b0);
+        \\}
+        \\void main() {
+        \\    vec3 c = texelFetch(u_hdr, ivec2(gl_FragCoord.xy), 0).rgb * u_params.x;
+        \\    if (u_params.y > 0.0) {
+        \\        c += texture(u_bloom, gl_FragCoord.xy * u_size).rgb * u_params.y;
+        \\    }
+        \\    c = tone(max(c, vec3(0.0)));
+        \\    if (u_params.z > 0.5) {
+        \\        c = grade(c);
+        \\    }
+        \\    if (u_params.w > 0.5) {
+        \\        float n = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+        \\        c += (n - 0.5) / 255.0;
+        \\    }
+        \\    c = clamp(c, 0.0, 1.0);
+        \\    o_color = vec4(c, dot(c, vec3(0.299, 0.587, 0.114)));
+        \\}
+        \\
+}
