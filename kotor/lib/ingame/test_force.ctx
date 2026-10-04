@@ -4,7 +4,7 @@
 //
 //   FRAME ui powers all|ROW[,ROW...]|none   the leader knows every Force power (usertype 1) or just these spells.2da rows
 //   FRAME ui fp N                           the leader's Force points (also the maximum when it is lower)
-//   FRAME ui spawn TEMPLATE TAG DIST        a creature from the blueprint, tagged TAG, DIST metres in front of the leader
+//   FRAME ui spawn TEMPLATE TAG DIST [DEG]  a creature from the blueprint, tagged TAG, DIST metres from the leader, DEG degrees left of its facing
 //   FRAME ui feat ROW[,ROW...]              the leader gains these feats
 namespace test_force {
     fn run { mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device, cmd: []u8, args: []u8 } -> bool {
@@ -27,7 +27,8 @@ namespace test_force {
             let template = text::next_word{ &words } ifnull { return true }
             let tag = text::next_word{ &words } ifnull { return true }
             let dist = text::scan_f32{ s = text::next_word{ &words } ifnull "6" } ifnull 6.0
-            spawn_ahead{ &w, template, tag, dist }
+            let degrees = text::scan_f32{ s = text::next_word{ &words } ifnull "0" } ifnull 0.0
+            spawn_ahead{ &w, template, tag, dist, degrees }
             return true
         }
         if ci::eq{ a = cmd, b = "jedi" } {
@@ -183,9 +184,15 @@ namespace test_force {
     }
 
     // A creature from a blueprint in front of the leader, facing it.
-    fn spawn_ahead { mut w: world::World, template: []u8, tag: []u8, dist: f32 } {
+    fn spawn_ahead { mut w: world::World, template: []u8, tag: []u8, dist: f32, degrees: f32 } {
         let lo = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return }
-        let at = math::vec3::add_scaled{ a = lo.position, b = lo.orientation, s = dist }
+        // `degrees` turns the direction to the left of the leader's facing.
+        let a = math::radians{ degrees }
+        let dir = math::Vec3{
+            x = lo.orientation.x * math::cosf{ x = a } - lo.orientation.y * math::sinf{ x = a },
+            y = lo.orientation.x * math::sinf{ x = a } + lo.orientation.y * math::cosf{ x = a }, z = 0.0,
+        }
+        let at = math::vec3::add_scaled{ a = lo.position, b = dir, s = dist }
         let face = math::vec3::negate{ v = lo.orientation }
         let id = tmpl::spawn{ &w, kind = obj::Kind::creature, template, position = at, orientation = face } iferr {
             _ = @fmt(&w.io, "spawn: no creature {}\n", template)

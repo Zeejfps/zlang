@@ -38,6 +38,7 @@ def main():
     ap.add_argument('--count', type=int, default=1)
     ap.add_argument('--dist', type=float, default=7.0)
     ap.add_argument('--extra', default='')
+    ap.add_argument('--angles', default='', help='degrees left of the leader facing for each spawned creature')
     ap.add_argument('--cast-at', type=int, default=60)
     ap.add_argument('--frames', type=int, default=240)
     ap.add_argument('--shots', default='')
@@ -75,8 +76,11 @@ def main():
     if a.fp > 0:
         at(5, 'ui fp %d' % a.fp)
     at(6, 'ui rules')
+    angles = [float(x) for x in a.angles.split(',')] if a.angles else []
     for i in range(a.count):
-        at(7 + i, 'ui spawn %s t%d %g' % (a.target, i + 1, a.dist + 1.5 * i))
+        deg = angles[i] if i < len(angles) else 0
+        step = 0 if angles else 1.5 * i
+        at(7 + i, 'ui spawn %s t%d %g %g' % (a.target, i + 1, a.dist + step, deg))
     n = a.count
     if a.extra:
         for part in a.extra.split(','):
