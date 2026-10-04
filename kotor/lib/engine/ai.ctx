@@ -74,6 +74,11 @@ namespace ai {
         if o.actions.len > 0 or not o.commandable or c.dead or c.in_combat { return }
         let l = world::object{ w = &w, id = lead } ifnull { return }
         if l.area != o.area or movement::distance_2d{ a = o.position, b = l.position } <= 4.0 { return }
+        // Not while it sees an enemy, as k_hen_heartbt01 (GetNearestCreature seen enemy): a script
+        // that clears a member's queue and orders it to fight a moment later (k_pend_cut1_end on
+        // the Endar Spire: ClearAllActions, then 0.1 s later ActionMoveToObject and ActionAttack)
+        // would otherwise find FOLLOWLEADER at the head, which never ends.
+        if fight::nearest_enemy{ w = &w, o, range = 1000.0 } != obj::INVALID { return }
         _ = actions::add{ &w, id, action = actions::make{ kind = actions::Kind::follow_leader }, force = false }
     }
 
