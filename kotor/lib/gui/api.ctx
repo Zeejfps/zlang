@@ -200,6 +200,15 @@ namespace gui {
         if c.kind == K_PROGRESS { c.progress.fill = img } else { c.border.fill = img }
     }
 
+    // The alpha a control's frame (its BORDER and its HILIGHT) is drawn with: the engine's border alpha field,
+    // which SetState sets to 0.5 on a slot with nothing in it (the tint of the file stays).
+    fn set_frame_alpha { mut g: Gui, panel: u32, tag: []u8, alpha: f32 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.border.color.a = alpha
+        c.hilight.color.a = alpha
+        if alpha < 1.0 { c.border.tinted = true; c.hilight.tinted = true }
+    }
+
     // AddChild: `tag`'s control becomes a child of `parent`, so the pointer on the child lights the parent too (the
     // engine makes a target slot's frame the parent of its icon and arrows).
     fn set_parent { mut g: Gui, panel: u32, tag: []u8, parent: []u8 } {
