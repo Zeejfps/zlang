@@ -436,10 +436,13 @@ namespace play {
                 if adev == null { speed::mix_seconds{ mixer, silent, rate, seconds = owed.dt } }
             }
             let camera_dt = dt + owed.dt
+            let owed_clock_dt = owed.clock_dt
             owed = speed::Owed{ dt = 0.0, clock_dt = 0.0 }
             // 9-10. Scene and camera (which snaps behind the leader again once it is placed).
             if w.arrival > 0 { camera.started = false }
-            dlgview::pre_sync{ v = &dview, w = &w, sc = &sc, dev = &dev, g = &ui.gui, dt = w.clock.dt }
+            // The dialogue layer's fade, bars and bark clocks take the skipped ticks' time too: a script's fade after a conversation ran 8
+            // times too slowly under --speed 8 (a 2 s fade-in still black 15 s later in the pictures).
+            dlgview::pre_sync{ v = &dview, w = &w, sc = &sc, dev = &dev, g = &ui.gui, dt = w.clock.dt + owed_clock_dt }
             scene::sync{ &sc, &w, &dev, dt = w.clock.dt }
             vfx::update{ v = &vx, &sc, &w, &dev, dt = w.clock.dt }
             dlgview::post_sync{ v = &dview, w = &w, sc = &sc, dt = w.clock.dt }

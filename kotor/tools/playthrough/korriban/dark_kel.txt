@@ -1,0 +1,13 @@
+# Korriban, dark side check 3 (from the checkpoint "code"): Kel Algwinn, the student with doubts (kor35_kelal). The way to kill him is
+# "You're no Sith. I've never seen anyone so pathetic!" (k_act_darkmed, kor25_doubtsith 50), a reply guarded by k_con_dark: a light Jedi
+# (alignment 91) is not offered it, only "Alright. Suit yourself." (what the run takes; journal kor25_doubtsith 10, alignment unchanged).
+# Put `ui stat align 20` first to see the dark reply taken.
+5 ui replies ~Is_something_wrong ~Are_you_sure ~But_I'm_not_a_Sith ~And_you're_not ~Well,_how_did_you ~[Persuade]_Sure ~wouldn't_like_to_hear ~pathetic default 1
+8 ui rules
+10 warp kor35_kelalgwinn party
+50 use kor35_kelalgwinn
+60 ui bot god on
+61 ui bot on
+7000 ui bot off
+7000 ui rules
+7000 ui journal list

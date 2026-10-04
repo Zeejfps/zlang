@@ -9,7 +9,7 @@ is [playthrough.md](playthrough.md)'s and [playthrough-dantooine.md](playthrough
 the Academy (Master Uthar Wynn's welcome, Yuthura's plot and the Code of the Sith, the Code test, the Mandalorian prisoner, the rogue
 assassin droid, the renegades in the shyrack caves, Ajunta Pall's sword), five prestige and the night, Naga Sadow's tomb (the cold
 grenade, the Star Map, the sword's sarcophagus, the end of the test: Uthar killed, Yuthura spared), the way out through Dreshdae to the
-Ebon Hawk, the galaxy map and the Leviathan's capture of the Hawk (the fourth Star Map). 0 script faults in the 29 parts.
+Ebon Hawk, the galaxy map and the Leviathan's capture of the Hawk (the fourth Star Map). 0 script faults in the 29 parts, except that part 6 can show one (the commoner AI's loop below).
 
 **Stopped** at the capture cut scene (`ebo_m40aa`, Carth's talk about Saul Karath), where the story leaves Korriban. To resume:
 `CKPT=hawk sh kotor/tools/playthrough/korriban/run.sh NAME 32 2500` replays the take-off from the Hawk's galaxy map; `CKPT=finale`
@@ -75,24 +75,32 @@ State: **works** (checked, 0 faults), **fixed** (a commit of this branch), **ope
 | 17 | The rogue droid's tomb (`korr_m38aa`, a corridor of 164 m with mines, rockfalls and Mark IV war droids): the bot walks it in god mode; the assassin droid ("Too much audio input! Audio systems overloading!": the party's noise makes it hostile), journal `kor38_roguedroid` 30. Not in god mode the three die in about 6,000 frames and the "entire party has been killed" box shows | works | `17_droid.txt` |
 | 18 | The shyrack caves (`korr_m34aa`, strip `k36_trg_k34`): Thalia May and the renegades, "Slow down and tell me what you're doing here", "Maybe I can help you", [Persuade], "I can try." (journal `kor35_renegadesith` 20) | works | `18_caves.txt` |
 | 19 | The beast at the passage (`kor34_monster`) is killed by the bot in god mode | works (the camera: see Observations) | `19_beast.txt` |
-| 20 | Thalia again: "It's clear. You're free to go." needed `k_pkor_webclear` = `GetIsDead(GetObjectByTag("kor34_monster"))` of a body that is gone: the renegades attacked instead. Journal 40, +960 XP, alignment 92 to 94 | fixed e2a06c8 | `20_free.txt` |
+| 20 | Thalia again: "It's clear. You're free to go." needed `k_pkor_webclear` = `GetIsDead(GetObjectByTag("kor34_monster"))` of a body that is gone: the renegades attacked instead. Journal 40, +1,950 XP with the beast, alignment 92 to 94 | fixed e2a06c8 | `20_free.txt` |
 | 21 | Second report: the droid ("I dealt with the rogue droid in the tombs.": 40) and the renegades ("[Lie] It's done. They are... gone.": 60): prestige 4 | works | `21_report2.txt` |
 | 22 | Ajunta Pall's tomb (`korr_m37aa`), the burial chamber (the way in is not played): the sarcophagus opened with clicks (the world fades out for the loot panel; closing it shows the spirit standing at the door), the strip `k37_trg_ajunta` starts his talk, his riddle of the sword, journal `kor37_ajuntapall` 10 | works | `22_sword.txt` |
 | 23 | The three swords (Get Items), the statue (`k37_statue`: "[The notched steel sword.]"), the spirit's thanks: the Jedi urges him back to the light ("[Persuade] I don't believe the light side would turn you away"), alignment 94 to 96, journal 30, +1,000 XP; Ajunta Pall's Blade in the bag | works | `23_statue.txt` |
 | 24 | Third report ("I have the sword of Ajunta Pall."): prestige 5, Uthar declares the final test (journal `kor35_waysith` 30); `k_pkor_nightcut`: the fade, the party in the hopefuls' room | works | `24_report3.txt` |
 | 25 | "I am ready to go." The Hawk's companions are not permitted ("[A day passes in preparation...]"): Naga Sadow's tomb (`korr_m39aa`) alone with Uthar and Yuthura, the test explained, "Find the Star Map. Return with the lightsaber." | works | `25_final.txt` |
-| 26 | The tomb: the Pillar of Ice holds the cold grenade (the Terentatek corridor, the rancors and the pillar puzzle are not played); the acid room (`k39_plc_acidpool`): "[Launch the special cold grenade at it.]" freezes the pool | works (the talk ends "aborted": the last script destroys the wall that owns it) | `26_tomb.txt` |
+| 26 | The tomb, alone (9,600 frames): the bot walks the northern branch in god mode (wraids, the Terentatek's cut scene `kor39_cut_terent`, two rancors), the lever `k_kor_openlever` opens the door `k39_door_trap4`, the Pillar of Ice holds the cold grenade (clicks, Get Items); the acid room (`k39_plc_acidpool`): "[Launch the special cold grenade at it.]" freezes the pool. The pillar puzzle in the south and the fire pillar are not played | works (the acid talk ends "aborted": the last script destroys the wall that owns it; the camera: see Observations) | `26_tomb.txt` |
 | 27 | The Star Map room (strip `k_kor_star_map`): the hologram sphere over the pedestal (a picture), `K_STAR_MAP 40`, `K_STAR_MAP_KORRIBAN`, journal `kor33_findstarmap` 40 and `k_starforge` 10, +250 XP | works | `27_starmap.txt` |
 | 28 | The Sith lightsaber from the sarcophagus beyond (`k39_itm_cersaber`); passing the strip `k_kor_uthar_move` brings Uthar and Yuthura to 89,106-109 (`k_pkor_utharmove`), the strip `k_kor_utharcut` starts the end of the test (`kor39_utharwynn`: "I'm with Yuthura on this one"), Uthar's fight (bot, god mode; a solo level 14 Jedi without god mode is down in 400 frames), Yuthura turns, yields, "Go on. Get out of here." (journal `kor35_waysith` 56, alignment 97, XP 104,970) | works | `28_saber.txt` |
 | 31 | Leaving: tomb door, the Valley (the party waits at the Academy's exit and rejoins), the Academy, the Entrance, Dreshdae, the strip `k33_trg_ebonhawk`: aboard the Ebon Hawk (`ebo_m12aa`) | works | `31_hawk.txt` |
 | 32 | The galaxy map on the Hawk (`galaxymap`): five worlds, Manaan picked, "Travel": with `K_STAR_MAP` 40 the take-off is the Leviathan's capture (`stunt_16`, `ebo_m40aa`, Carth's talk about Saul Karath) | works | `32_galaxy.txt` |
 
 (Parts 16, 29 and 30 were scouting runs and are not in the chain.)
+**Asides** (each from a checkpoint of the chain, not part of `all.sh`; run with `CKPT=NAME sh .../run.sh NAME2 PATH-TO-SCRIPT FRAMES`):
+`26p_pillars.txt` (from `tomb`) the pillar puzzle in the tomb's southern branch: the computer `k39_plc_pillcomp` and `kor39_pillar`, four
+systems on three pillars, the 15 moves of the Tower of Hanoi as `ui replies ~from_the_left_pillar ~The_middle_pillar ...`; the read-out's
+`<CUSTOM10..12>` come out as "Active systems - left pillar: Base System, Mid-Lower System, ...", the rings move from pillar to pillar, no
+overload, and the talk ends normally after the last move (18,700 frames of lines). `28b_redeem.txt` (from `map`) the redemption ending below.
+`dark_shaardan.txt` (from `port`), `dark_torture.txt` and `dark_kel.txt` (from `code`) the dark replies (Kel's "You're no Sith" is guarded by `k_con_dark`: a light Jedi is not offered it). `disguise.txt` (from `dock`) the Jedi without
+robe and saber. `dustil.txt` (from `valley`) the attempt to spawn Carth's son.
 
 Experience and alignment through the chain (the player; Carth and Bastila hold the same XP from the party pool): 91,000 at the start
 (level 14), 91,270 after the thugs, 92,420 on joining, 93,545 after Yuthura's lessons, 93,670 the Code, 98,920 after the droid tomb and
-the caves' fights, 101,570 the renegades freed, 102,770 the spirit, 103,070 prestige 5, 103,320 the Star Map, 104,970 the end of the
-test. Alignment (0 dark, 100 light): 85 at the start, 90 Shaardan's mercy, 91 the murderer, 92 the cache, 94 the renegades, 96 the spirit,
+the caves' fights, 100,870 the renegades freed, 102,070 the spirit, 102,370 prestige 5, 104,565 the Star Map, 106,215 the end of the
+test (the quest steps' own XP is paid since the merge of 72f22f0; before it the same points were 101,570, 102,770, 103,070, 103,320 and
+104,970). Alignment (0 dark, 100 light): 85 at the start, 90 Shaardan's mercy, 91 the murderer, 92 the cache, 94 the renegades, 96 the spirit,
 97 the end. The dark choices checked: Shaardan "Kill them" 85 to 77; the serum console twice at a high dose 91 to 85. `ui rules` now prints
 the alignment (the rules' value and the engine's copy, which always agree here) and XP.
 
@@ -107,17 +115,29 @@ the alignment (the rules' value and the engine's copy, which always agree here) 
 3. **`GetIsDead` of an object that is not there is TRUE** (e2a06c8). The original's handler (`0x0053ecb0`) starts from 1; ours gave 0
    for a missing object. `k_pkor_webclear` asks that of the cave beast, whose body is destroyed after its death: the renegades never
    believed the passage clear and attacked.
-4. Test tools: `ui rules` prints the alignment and XP; `ui planet N [0|1]` puts a world on the galaxy map in a crafted start.
+4. **Under `--speed 8` a script's fade after a conversation ran 8 times too slowly** (play.ctx). The dialogue layer's fade, bars and bark
+   clocks stepped by one tick's time per presentation step instead of the skipped ticks' as well: the 2 s fade-in after joining the Sith
+   was still black 15 s later in the pictures (`k10_end.png` was black; at `--speed 1` it is clear 50 ticks after the conversation). The log
+   was the same, only the pictures lied. Fixed: the owed time goes to `dlgview::pre_sync`; the Endar Spire replay is unchanged.
+5. Test tools: `ui rules` prints the alignment and XP; `ui planet N [0|1]` puts a world on the galaxy map in a crafted start.
 
 ## Observations and open items
 
+- **BioWare's commoner AI can loop forever** (`k_ai_master`, the "Start Commoner AI" sub at 0x13d43, run by every Citizen): it walks the
+  neutral creatures nearest first, and when one has a hostile standard faction (1, 3 or 6) but stands farther than 20 m it jumps back to
+  the loop test without taking the next creature (the `nth` increment is only on the faction-miss path), so the same creature is tested
+  until the instruction budget (131,072) ends the script. In the thugs fight (part 6, a Sith thug 20.05 m from a Citizen) it shows as
+  `fault: k_ai_master ... the instruction budget ran out`, once; the script is simply dropped and the fight goes on. A bug of the
+  original script, not of the engine (the log shows the same creature, distance 20.054, at every turn of the loop); whether the original
+  engine's own limit is the same is not known. The fault comes and goes with where the fight puts the thugs.
 - **The conversation is "aborted" when its last node destroys the owner** (Shaardan's last reply destroys him and the hopefuls, the acid
   wall's `k_pkor_destacid`): `dialog aborted: owner N valid false` and the end-of-dialogue scripts of the area's creatures are not run.
   The original's `DestroyObject` is a queued event; whether the conversation there ends normally is not known. Harmless so far.
 - **A loaded save re-runs the OnEnter of the strips the party stands in** (`k33_sha_initconv` three times at frame 3, `k33b_murder_init`
   at frame 1 after loading a checkpoint saved inside them). The scripts that guard themselves with a local flag are unaffected; the
   original restores the occupant lists with the save (not verified).
-- **The camera in the caves' beast fight** has the creature's body fill half the picture (no obstruction test, as in the Dantooine log).
+- **The camera inside big creatures**: in the caves' beast fight and in the tomb's rancor fights the creature's body fills the picture (the camera has
+  no obstruction test by creatures, as in the Dantooine log).
 - **Naga Sadow's tomb and the Valley's lit rooms**: the player reads as a nearly black silhouette against the lit door (room light
   0.07 to 0.16 and ambient 0.13/0.13/0.22 on him). Not compared with the original.
 - **Data, not ours**: `kor33_murderer`'s entry 8 names `kor33_czerkagrd` as the listener (a typo for the victim): the shot looks
@@ -128,11 +148,14 @@ the alignment (the rules' value and the engine's copy, which always agree here) 
 - **Staging audit** (`audit.sh`): only the strip-started talks are far (Shaardan's group 9 to 13 m from the player who enters the
   strip's corner, the murder scene's victims 9 m); the Mandalorian room's `rooms -1` is the warp's; the Star Map speaks to the trigger
   that owns it; the Leviathan scene is a cut scene.
+- **The other ending, played** (`28b_redeem.txt`, from `map`): with `KOR_YUTHURA2 3` set by hand (`k_pkor_knyuth02`; her personal talks in
+  the Academy would set it over several visits) the yielding Yuthura offers the friendship branch: "You ask for mercy? You, a Sith?", "I can't
+  talk about that.", "Tell me why you tried to kill me, first.", "[Persuade] Maybe you *should* think about it.", "There's still time to change
+  that." (`k39_yth_redeem`, journal `kor35_waysith` 60, alignment 98). The Valley's guards (`kor36_endsith1..3`, strip `k_kor_endacademy`) are only
+  made for `KOR_FINAL_TEST` 4 or 7 (the chain's ending leaves it at 5): nobody waits at the Academy's exit.
 - **Not played**: the way into Ajunta Pall's tomb (mines, the heat and cold plates, the bridge droids, the lever) and the first
-  Shaardan scene at its door; Naga Sadow's tomb before the pool (the Terentatek and rancors, the pillar puzzle: four discs on three
-  pillars); the rogue droid's peaceful repair puzzle; Jorak Uln's tomb and Mekel there; Kel Algwinn; Lashowe's holocron and the tuk'ata
-  queen; the Mandalorian's weapon cache; Yuthura's redemption ending (needs her "Tell me about yourself" talks; the replay takes her
-  yield at `kor39_yuthura` E17, "Go on", ending 56) and the other three endings; the poison plots (Yuthura's device and Adrenas, Uthar's
-  datapad); the Valley guards at the Academy's exit (`kor36_endsith1`); the Academy after the test; Dustil, Carth's son (the Academy's
-  enter script makes him when `KOR_DUSTIL_SPAWN` is set, and nothing in this chain sets it: it belongs to Carth's Hawk talk,
-  `K_SWG_DUSTIL1`/`KOR_DANEL`); Belaya (needs a Juhani who died on Dantooine); the Xor ambush; shops; the swoop point.
+  Shaardan scene at its door; Naga Sadow's tomb's fire pillar and the room the pillar puzzle unseals; the rogue droid's peaceful repair puzzle; Jorak Uln's tomb and Mekel there; Kel Algwinn; Lashowe's holocron and the tuk'ata
+  queen; the Mandalorian's weapon cache; the two endings where Yuthura dies; the poison plots (Yuthura's device and Adrenas, Uthar's
+  datapad); the Academy after the test; Dustil, Carth's son (the Academy's enter script makes him when `KOR_DUSTIL_SPAWN` is set, and
+  nothing in this chain sets it: it belongs to Carth's Hawk talk, `K_SWG_DUSTIL1`/`KOR_DANEL`; setting it by hand, `dustil.txt`, did not
+  make him); Belaya (needs a Juhani who died on Dantooine); the Xor ambush; shops; the swoop point.
