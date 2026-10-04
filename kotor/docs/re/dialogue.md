@@ -619,6 +619,18 @@ file sets it. (high)
 - Participants without an entry: the **speaker loops 10038 (`Talk_Normal`)** and the **listener
   loops 10030 (`Listen`)**; a creature under 20 % HP (`0x004eff30`, `0x007a1b38` = 0.2) uses
   10154 `Talk_Injured` / 10155 `Listen_Injured`. Dead creatures are left alone.
+- **`CanAnimateParticipant` (`0x0062f0e0`, med) gates every one of these**: the AnimList entries, the
+  back-to-10000 of the previous line's cast, the talk and listen loops, and the stand-up of
+  everyone at the end of the conversation (`0x00631b70`, `0x00631c60`, reached from the
+  in-game GUI's end-of-dialogue function `0x006332b0`). It answers no for a creature that is
+  dead, helpless (`GetIsHelpless`: held in a SETSTATE, or dying) or a downed party member, so a
+  creature that died during the conversation lies where it fell through every later line and
+  the end. Ours: `fight::can_animate_participant`, asked by `lib/dialog/view`.
+- The server side agrees: `CSWSCreature::SetAnimation` (`0x004f0d70`) drops any animation but the
+  three dead ones (10006, 10008, 10156) on a dead or dying creature, and turns 10000 into the dead
+  pose of the way it fell (animation state `+0x4c4`: 4 gives 10006, 3 gives 10008, 14 gives
+  10156), so a script's `ActionPlayAnimation` or an idle reset cannot stand a corpse up either.
+  Ours: `world::set_animation` ignores everything but `fight::is_dead_pose` on a dead creature.
 
 Animation numbers (`GetCutsceneAnimationName` `0x006288f0` and the tests above, high):
 

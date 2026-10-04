@@ -265,7 +265,7 @@ namespace dlgview {
         let mut i: usize = 0
         while i < v.cast_count {
             let o = world::object{ w = &w, id = v.cast[i] }
-            if o != null { world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 } }
+            if o != null and fight::can_animate_participant{ w = &w, id = v.cast[i] } { world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 } }
             i = i + 1
         }
         v.cast_count = 0
@@ -297,7 +297,7 @@ namespace dlgview {
         let mut i: usize = 0
         while i < v.cast_count {
             let o = world::object{ w = &w, id = v.cast[i] }
-            if o != null { world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 } }
+            if o != null and fight::can_animate_participant{ w = &w, id = v.cast[i] } { world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 } }
             i = i + 1
         }
         v.cast_count = 0
