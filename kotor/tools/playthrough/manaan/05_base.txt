@@ -5,14 +5,11 @@
 # The party is not left to die: `ui bot god on` keeps the leader up (without it the party is wiped in the second room by the
 # two Assault Droids' flame throwers, step 14 of docs/playthrough-manaan.md). Test cheats for setup only: hit points per member
 # (a loaded companion keeps the maximum the rules gave its level), `ui bot`.
-3 ui stat hpmax 150
-3 ui stat hp 150
+3 ui stat hp 144
 4 ui leader carth
-4 ui stat hpmax 160
-4 ui stat hp 160
+4 ui stat hp 52
 5 ui leader bastila
-5 ui stat hpmax 130
-5 ui stat hp 130
+5 ui stat hp 108
 6 ui leader pc
 8 ui replies default 1
 10 ui bot god on
