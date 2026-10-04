@@ -315,7 +315,7 @@ namespace world {
             door => {
                 return obj::Ext::door{ d = try alloc::new(obj::Door, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Door{
                     appearance = 0, state = obj::DoorState::closed, locked = false, lockable = false, key_required = false,
-                    key = slice::empty(u8){}, open_dc = 0, linked_to = slice::empty(u8){}, linked_to_module = resref::empty{},
+                    key = slice::empty(u8){}, open_dc = 0, close_dc = 0, auto_remove_key = false, linked_to = slice::empty(u8){}, linked_to_module = resref::empty{},
                     linked_flags = 0, transition_name = obj::Name{ strref = 0xFFFFFFFF, text = slice::empty(u8){} },
                     static = false, walk = -1, model = resref::empty{},
                 } } }
@@ -323,7 +323,7 @@ namespace world {
             placeable => {
                 return obj::Ext::placeable{ p = try alloc::new(obj::Placeable, heap::Heap){ realloc = heap::alloc, heap = h, value = obj::Placeable{
                     appearance = 0, open = false, on = false, useable = false, has_inventory = false, party_interact = false,
-                    static = false, locked = false, key = slice::empty(u8){},
+                    static = false, locked = false, lockable = false, key_required = false, key = slice::empty(u8){}, open_dc = 0, close_dc = 0, auto_remove_key = false,
                     inventory = list::new(u32, heap::Heap){ realloc = heap::alloc, heap = h }, walk = -1,
                     model = resref::empty{}, anim = obj::ANIM_STAND, die_when_empty = false, user = obj::INVALID,
                 } } }

@@ -257,14 +257,20 @@ namespace rt_act {
         let me = self_of{ vm = &vm }
         if not door_possible{ &w, who = me, door, action } { return }
         if action == DOOR_UNLOCK {
-            _ = unlock_with_security{ &w, who = me, target = door }
+            // OPENLOCK in front of what the creature was doing (walk up, Security, then open).
+            let mut u = actions::make{ kind = actions::Kind::open_lock }
+            u.params[0] = actions::Param::object{ id = door }
+            u.params[1] = actions::Param::object{ id = obj::INVALID }
+            u.params[2] = actions::Param::int{ v = 0 }
+            actions::add_front{ &w, id = me, action = u }
             return
         }
         if action != DOOR_OPEN and action != DOOR_BASH { return }        // ignore does nothing, knock cannot be possible
         let mut a = actions::make{ kind = if action == DOOR_BASH { actions::Kind::attack_object } else { actions::Kind::open_door } }
         a.params[0] = actions::Param::object{ id = door }
         if action == DOOR_BASH { a.params[1] = actions::Param::int{ v = 0 } }
-        _ = actions::add{ &w, id = me, action = a, force = false }
+        // In front of what the creature was doing: this is how OnBlocked frees a follower's way.
+        actions::add_front{ &w, id = me, action = a }
     }
 
     // The Security skill on a locked door or placeable: the skill roll against the lock's DC
@@ -284,9 +290,20 @@ namespace rt_act {
             if not d.locked or d.key_required { return false }
             dc = @as(i32, d.open_dc)
         } else if t.ext is placeable{ p } {
-            if not p.locked or p.key.len > 0 { return false }
+            if not p.locked or p.key_required { return false }
+            dc = @as(i32, p.open_dc)
         } else { return false }
         let check = rules::open_lock_check{ tables = w.rules, c = &f.c, lock_dc = dc, spike_bonus, in_combat = c.in_combat, rng = &w.dice }
+        if w.log.actions {
+            let sk = rules::skill::SECURITY
+            let mode: []u8 = if c.in_combat { "d20" } else { "take-20" }
+            let verdict: []u8 = if check.success { "unlocked" } else { "failed" }
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "security: {} on {} ({}): ranks {} key-ability {} feat {} spike {} + {} {} = {} against DC {}: {}\n", me.tag, t.tag, t.id, f.c.skills[@as(usize, sk)],
+                f.c.stats.abil_mod[@as(usize, w.rules.skills[@as(usize, sk)].key_ability)], rules::skill_feat_bonus{ c = &f.c, skill = sk }, spike_bonus,
+                mode, check.roll, check.total, check.dc, verdict)
+        }
+        doors::say_roll{ &w, me, target = t, check, in_combat = c.in_combat }
         if not check.success { return false }
         if t.ext is door{ d } { d.locked = false } else if t.ext is placeable{ p } { p.locked = false }
         events::post{ &w, delay_ms = 0, caller = who, target, payload = events::Payload::script{ e = events::script_event{ kind = events::UNLOCKED, object = who } } }

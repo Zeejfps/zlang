@@ -1,0 +1,270 @@
+// The walk (tools/dlgsweep): one dialogue, every node reachable by links from its starting list, with
+// the scripts the flow would run, and a line saying what happened.
+//
+// The conversation state is set up as dlg::start does (the dialogue loaded, the owner and the
+// player), without the flow's pump, so nothing waits for a voice or a camera. Then each node is
+// visited once, whatever its conditions said: a link's Active script is run (its answer counted),
+// and the walk goes on through the link as if it had passed ("forced true"). An entry's and a reply's
+// action script run when the node is visited; then the abort script, and the normal end
+// (the end script and every end-of-dialogue script of the area). A few frames of the world follow,
+// for what the scripts delayed.
+//
+// Output, per dialogue (the engine's own `fault:` lines come between):
+//   BEGIN name
+//   [f t] fault: script @ ...                      (from the engine, as in any run)
+//   END name module owner=TAG(kind|standin|none) entries=N replies=N reached=E/R scripts=S true=T false=F
+//       faults=K missing_scripts=a,b missing_routines=NAME:calls,... speakers_missing=N:tag,... link_errors=N
+//   LOADFAIL name error                            (instead of END, when the dialogue cannot be read)
+// Which object a dialogue's owner should be: one that names it (a creature first), else null.
+fn find_owner { w: *world::World, name: resref::ResRef } -> u32 {
+    let all = list::items{ list = w.objects.all }
+    let mut best = obj::INVALID
+    let mut i: usize = 0
+    while i < all.len {
+        let o = all[i]
+        i = i + 1
+        if o.destroyed or o.id == w.pc or not resref::eq{ a = o.conversation, b = name } { continue }
+        if party::is_member{ w, id = o.id } { continue }
+        if o.kind == obj::Kind::creature { return o.id }
+        if best == obj::INVALID { best = o.id }
+    }
+    return best
+}
+
+// A creature that is not the player or a party member, alive and in the player's area.
+fn standin_owner { w: *world::World } -> u32 {
+    let pc = world::object{ w, id = w.pc } ifnull { return obj::INVALID }
+    let all = list::items{ list = w.objects.all }
+    let mut i: usize = 0
+    while i < all.len {
+        let o = all[i]
+        i = i + 1
+        if o.destroyed or o.kind != obj::Kind::creature or o.id == pc.id or o.area != pc.area { continue }
+        if party::is_member{ w, id = o.id } { continue }
+        let c = obj::creature{ o } ifnull { continue }
+        if c.dead { continue }
+        return o.id
+    }
+    return obj::INVALID
+}
+
+fn script_missing { mut w: world::World, name: resref::ResRef } -> bool {
+    if resref::is_empty{ r = name } { return false }
+    return res::find_ref{ rm = w.rm.*, name, kind = restype::Type::ncs } == null
+}
+
+struct Tally {
+    scripts: u32,
+    yes: u32,
+    no: u32,
+    missing: [8]resref::ResRef,
+    missing_count: usize,
+    link_errors: u32,
+}
+
+// A script the walk is about to use: counted once as missing if the install has no such NCS.
+fn note_script { mut w: world::World, t: *mut Tally, name: resref::ResRef } {
+    if not script_missing{ &w, name } { return }
+    let mut i: usize = 0
+    while i < t.missing_count {
+        if resref::eq{ a = t.missing[i], b = name } { return }
+        i = i + 1
+    }
+    if t.missing_count < 8 {
+        t.missing[t.missing_count] = name
+        t.missing_count = t.missing_count + 1
+    }
+}
+
+// A link's Active script, run as the flow would; its answer is counted and the walk goes on anyway.
+fn try_link { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, t: *mut Tally, link: dlg::Link } {
+    if resref::is_empty{ r = link.active } { return }
+    note_script{ &w, t, name = link.active }
+    t.scripts = t.scripts + 1
+    if dlg::check_condition{ &w, &vm, engine, name = link.active } { t.yes = t.yes + 1 } else { t.no = t.no + 1 }
+}
+
+fn run_node_script { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, t: *mut Tally, name: resref::ResRef, what: []u8 } {
+    if resref::is_empty{ r = name } { return }
+    note_script{ &w, t, name }
+    t.scripts = t.scripts + 1
+    dlg::run_script{ &w, &vm, engine, name, what }
+}
+
+fn sweep_one { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, name: resref::ResRef, module: []u8, settle_frames: u32 } -> ! {
+    // Whoever the last dialogue's scripts left in charge goes; the player may have been moved or lost.
+    w.transition = null
+    w.conversation.pending = false
+    if world::object{ w = &w, id = w.pc } == null {
+        _ = @fmt(&w.io, "LOADFAIL {} no player\n", name)
+        return
+    }
+    let mut owner = find_owner{ w = &w, name }
+    let mut how: []u8 = "object"
+    if owner == obj::INVALID {
+        owner = standin_owner{ w = &w }
+        how = "standin"
+    }
+    if owner == obj::INVALID {
+        owner = w.pc
+        how = "player"
+    }
+    let oo = world::object{ w = &w, id = owner } ifnull { return }
+    // The owner's tag for the line at the end: its scripts may destroy it.
+    let mut owner_tag: [32]u8 = [0; 32]
+    let mut owner_len: usize = 0
+    while owner_len < oo.tag.len and owner_len < 32 {
+        owner_tag[owner_len] = oo.tag[owner_len]
+        owner_len = owner_len + 1
+    }
+    _ = @fmt(&w.io, "BEGIN {}\n", name)
+    let loaded = dlg::load{ &w, name } iferr err{ error } {
+        _ = @fmt(&w.io, "LOADFAIL {} {}\n", name, error)
+        return
+    }
+    // As dlg::start sets it up, without the pump.
+    w.conversation.d = loaded
+    w.conversation.active = true
+    w.conversation.name = name
+    w.conversation.last_resref = name
+    w.conversation.owner = owner
+    w.conversation.other = w.pc
+    w.conversation.private = false
+    w.conversation.gender = dlg::gender_of{ w = &w, id = w.pc }
+    w.conversation.pending = false
+    w.conversation.entry = -1
+    w.conversation.chosen = -1
+    w.conversation.step = dlg::Step::none
+    w.conversation.end_flag = false
+    w.conversation.ending = false
+    w.conversation.end_ran = false
+    w.conversation.scripts_run = 0
+    w.conversation.participant_count = 0
+    w.conversation.tag_count = 0
+    w.conversation.saved_ai_level = oo.ai_level
+    w.conversation.outcome = dlg::Outcome::running
+    dlg::join{ &w, id = owner }
+    dlg::join{ &w, id = w.pc }
+
+    let faults_before = w.stats.faults
+    let missing_before = w.stats.missing
+    let ne = w.conversation.d.entries.len
+    let nr = w.conversation.d.replies.len
+    let mut t = Tally{ scripts = 0, yes = 0, no = 0, missing = [resref::empty{}; 8], missing_count = 0, link_errors = 0 }
+    let seen_e = try alloc::resize(bool, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(bool){}, count = ne + 1 }
+    let seen_r = try alloc::resize(bool, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(bool){}, count = nr + 1 }
+    let mut i: usize = 0
+    while i <= ne { seen_e[i] = false; i = i + 1 }
+    i = 0
+    while i <= nr { seen_r[i] = false; i = i + 1 }
+    let mut todo = list::new(u32, arena::Arena){ realloc = arena::alloc, heap = w.scratch }
+    let mut reached_e: u32 = 0
+    let mut reached_r: u32 = 0
+    let mut bad_speakers: u32 = 0
+    let mut bad_tags: [3]usize = [0; 3]       // entry indexes of the first few unavailable speakers
+
+    // The starting list.
+    i = 0
+    while i < w.conversation.d.starting.len {
+        let link = w.conversation.d.starting[i]
+        i = i + 1
+        if @as(usize, link.index) >= ne { t.link_errors = t.link_errors + 1; continue }
+        try_link{ &w, &vm, engine, &t, link }
+        try list::push{ list = &todo, item = link.index << 1 }
+    }
+    // Entries are encoded as index * 2, replies as index * 2 + 1.
+    while todo.len > 0 {
+        let code = list::items{ list = todo }[todo.len - 1]
+        todo.len = todo.len - 1
+        let idx = @as(usize, code >> 1)
+        if code & 1 == 0 {
+            if seen_e[idx] { continue }
+            seen_e[idx] = true
+            reached_e = reached_e + 1
+            if not dlg::speaker_available{ &w, entry = idx } {
+                if bad_speakers < 3 { bad_tags[@as(usize, bad_speakers)] = idx }
+                bad_speakers = bad_speakers + 1
+            }
+            run_node_script{ &w, &vm, engine, &t, name = w.conversation.d.entries[idx].script, what = "entry" }
+            let links = w.conversation.d.entries[idx].links
+            let mut k: usize = 0
+            while k < links.len {
+                let link = links[k]
+                k = k + 1
+                if @as(usize, link.index) >= nr { t.link_errors = t.link_errors + 1; continue }
+                try_link{ &w, &vm, engine, &t, link }
+                try list::push{ list = &todo, item = (link.index << 1) | 1 }
+            }
+        } else {
+            if seen_r[idx] { continue }
+            seen_r[idx] = true
+            reached_r = reached_r + 1
+            run_node_script{ &w, &vm, engine, &t, name = w.conversation.d.replies[idx].script, what = "reply" }
+            let links = w.conversation.d.replies[idx].links
+            let mut k: usize = 0
+            while k < links.len {
+                let link = links[k]
+                k = k + 1
+                if @as(usize, link.index) >= ne { t.link_errors = t.link_errors + 1; continue }
+                try_link{ &w, &vm, engine, &t, link }
+                try list::push{ list = &todo, item = link.index << 1 }
+            }
+        }
+    }
+    // The ends: abort first (finish with normal runs the end script and the area's end-of-dialogue scripts).
+    note_script{ &w, &t, name = w.conversation.d.abort_script }
+    note_script{ &w, &t, name = w.conversation.d.end_script }
+    if not resref::is_empty{ r = w.conversation.d.abort_script } { t.scripts = t.scripts + 1 }
+    if not resref::is_empty{ r = w.conversation.d.end_script } { t.scripts = t.scripts + 1 }
+    dlg::run_script{ &w, &vm, engine, name = w.conversation.d.abort_script, what = "abort" }
+    // The speakers' tags, while the dialogue's bytes are still there.
+    let mut who: [96]u8 = [0; 96]
+    let mut who_len: usize = 0
+    i = 0
+    while i < 3 and i < @as(usize, bad_speakers) {
+        let tag = w.conversation.d.entries[bad_tags[i]].speaker
+        if i > 0 and who_len < 96 {
+            who[who_len] = ','
+            who_len = who_len + 1
+        }
+        let mut k: usize = 0
+        while k < tag.len and who_len < 96 {
+            who[who_len] = tag[k]
+            who_len = who_len + 1
+            k = k + 1
+        }
+        i = i + 1
+    }
+    dlg::finish{ &w, &vm, engine, normal = true }
+    w.transition = null
+    settle{ &w, &vm, engine, frames = settle_frames }
+    w.transition = null
+
+    // The line.
+    _ = @fmt(&w.io, "END {} {} owner=", name, module)
+    if owner_len == 0 { _ = @fmt(&w.io, "-") } else { _ = @fmt(&w.io, "{}", owner_tag[..owner_len]) }
+    _ = @fmt(&w.io, "({}) entries={} replies={} reached={}/{} scripts={} true={} false={} faults={} missing_scripts=",
+        how, ne, nr, reached_e, reached_r, t.scripts, t.yes, t.no, w.stats.faults - faults_before)
+    i = 0
+    while i < t.missing_count {
+        if i > 0 { _ = @fmt(&w.io, ",") }
+        _ = @fmt(&w.io, "{}", t.missing[i])
+        i = i + 1
+    }
+    if t.missing_count == 0 { _ = @fmt(&w.io, "-") }
+    _ = @fmt(&w.io, " missing_routines=")
+    let mut shown: u32 = 0
+    let mut r: usize = 0
+    while r < 772 {
+        if w.stats.missing[r] > missing_before[r] {
+            if shown > 0 { _ = @fmt(&w.io, ",") }
+            _ = @fmt(&w.io, "{}:{}", nwscript::ROUTINES[r].name, w.stats.missing[r] - missing_before[r])
+            shown = shown + 1
+        }
+        r = r + 1
+    }
+    if shown == 0 { _ = @fmt(&w.io, "-") }
+    _ = @fmt(&w.io, " speakers_missing={}:", bad_speakers)
+    if who_len == 0 { _ = @fmt(&w.io, "-") } else { _ = @fmt(&w.io, "{}", who[..who_len]) }
+    _ = @fmt(&w.io, " link_errors={}\n", t.link_errors)
+}

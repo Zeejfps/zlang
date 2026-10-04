@@ -106,6 +106,14 @@ namespace movement {
             }
             let to = math::Vec3{ x = here.x + (p.x - here.x) / d * step, y = here.y + (p.y - here.y) / d * step, z = here.z }
             let z = walkmap::step_to{ m = &w.walk, from = here, to } ifnull {
+                // Blocked by a closed door: its OnBlocked script may open it (movement.md 4.9).
+                if tell_door_blocked{ &w, id, at = to } {
+                    // The step failed (CheckStepCollision): the move is over, whatever the script
+                    // queues (open the door) runs next and a follower's follow action tries again.
+                    stop{ &w, id }
+                    world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
+                    return actions::Status::failed
+                }
                 // Blocked: plan again next frame, give up after six times in a row.
                 c.path_next = c.path.len
                 a.phase = a.phase + 1
@@ -126,6 +134,38 @@ namespace movement {
         world::set_position{ o, p = here }
         cross_volumes{ &w, id, from, to = here }
         return actions::Status::running
+    }
+
+    // A step that a closed door's walkmesh stopped: the nearest closed door within reach of the
+    // step sends the mover PATH_BLOCKED (caller the door, GetBlockingDoor), at most once a second
+    // (CheckStepCollision: the OnBlocked script runs on every blocked step in the original; ours
+    // is throttled so it can open the door before the next try).
+    fn tell_door_blocked { mut w: world::World, id: u32, at: math::Vec3 } -> bool {
+        let o = world::object{ w = &w, id } ifnull { return false }
+        let c = obj::creature{ o } ifnull { return false }
+        let now = clock::now_ms{ c = w.clock }
+        let all = list::items{ list = w.objects.all }
+        let mut best = obj::INVALID
+        let mut best_d: f32 = 2.2
+        let mut i: usize = 0
+        while i < all.len {
+            let d = all[i]
+            i = i + 1
+            if d.destroyed or d.kind != obj::Kind::door or d.area != o.area { continue }
+            let door = obj::door{ o = d } ifnull { continue }
+            if door.state != obj::DoorState::closed or door.static { continue }
+            let dist = distance_2d{ a = d.position, b = at }
+            if dist < best_d {
+                best = d.id
+                best_d = dist
+            }
+        }
+        if best == obj::INVALID { return false }
+        // Told at most once a second; the move fails every time it is stopped by a closed door.
+        if c.blocked_ms != 0 and now - c.blocked_ms < 1000 { return true }
+        c.blocked_ms = if now == 0 { 1 } else { now }
+        events::post{ &w, delay_ms = 0, caller = best, target = id, payload = events::Payload::script{ e = events::script_event{ kind = events::PATH_BLOCKED, object = best } } }
+        return true
     }
 
     fn distance_2d { a: math::Vec3, b: math::Vec3 } -> f32 {
@@ -170,10 +210,11 @@ namespace movement {
     // OBJECT_ENTER to those it entered (movement.md 5.1; the crossing of a whole volume between
     // two samples is milestone 2's).
     fn cross_volumes { mut w: world::World, id: u32, from: math::Vec3, to: math::Vec3 } {
-        let all = list::items{ list = w.objects.all }
+        // An encounter's spawn grows the object list (and may move it): re-read it for each object.
+        let count = w.objects.all.len
         let mut i: usize = 0
-        while i < all.len {
-            let o = all[i]
+        while i < count and i < w.objects.all.len {
+            let o = list::items{ list = w.objects.all }[i]
             i = i + 1
             if o.destroyed { continue }
             if obj::encounter{ o } is some{ value = e } {

@@ -292,6 +292,8 @@ namespace tmpl {
         d.lockable = flag{ doc, s, label = "Lockable", default = d.lockable }
         d.key_required = flag{ doc, s, label = "KeyRequired", default = d.key_required }
         d.open_dc = @trunc(u32, number{ doc, s, label = "OpenLockDC", default = @as(i64, d.open_dc) })
+        d.close_dc = @trunc(u32, number{ doc, s, label = "CloseLockDC", default = @as(i64, d.close_dc) })
+        d.auto_remove_key = flag{ doc, s, label = "AutoRemoveKey", default = d.auto_remove_key }
         d.static = flag{ doc, s, label = "Static", default = d.static }
         let key = gff::get_string{ doc = doc.*, s, label = "KeyName" }
         if key != null {
@@ -351,6 +353,17 @@ namespace tmpl {
         p.party_interact = flag{ doc, s, label = "PartyInteract", default = p.party_interact }
         p.static = flag{ doc, s, label = "Static", default = p.static }
         p.locked = flag{ doc, s, label = "Locked", default = p.locked }
+        p.lockable = flag{ doc, s, label = "Lockable", default = p.lockable }
+        p.key_required = flag{ doc, s, label = "KeyRequired", default = p.key_required }
+        p.open_dc = @trunc(u32, number{ doc, s, label = "OpenLockDC", default = @as(i64, p.open_dc) })
+        p.close_dc = @trunc(u32, number{ doc, s, label = "CloseLockDC", default = @as(i64, p.close_dc) })
+        p.auto_remove_key = flag{ doc, s, label = "AutoRemoveKey", default = p.auto_remove_key }
+        let key = gff::get_string{ doc = doc.*, s, label = "KeyName" }
+        if key != null {
+            let copy = try obj::copy_bytes{ heap = w.heap, s = key }
+            obj::free_bytes{ heap = w.heap, s = p.key }
+            p.key = copy
+        }
         o.hp_max = @trunc(i32, number{ doc, s, label = "HP", default = @as(i64, o.hp_max) })
         o.hp = @trunc(i32, number{ doc, s, label = "CurrentHP", default = @as(i64, o.hp_max) })
         let state = number{ doc, s, label = "AnimationState", default = 0 }

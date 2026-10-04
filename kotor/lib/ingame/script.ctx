@@ -79,6 +79,28 @@ namespace ingame {
             let o = world::object{ w = &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } } ifnull { return }
             if o.ext is door{ d } { d.locked = false }
             else if o.ext is placeable{ p } { p.locked = false }
+        } else if ci::eq{ a = cmd, b = "relock" } {
+            // Test helper: `ui relock TAG DC [KEYTAG|required]` locks a door or placeable that opens to a Security
+            // roll against DC, or, with a key tag, to that key; `required` makes it key-only with no key to find.
+            let tag = text::next_word{ &words } ifnull { return }
+            let dc = @as(u32, text::scan_decimal{ s = text::next_word{ &words } ifnull "10" })
+            let key = text::next_word{ &words } ifnull ""
+            let o = world::object{ w = &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } } ifnull { return }
+            let required = ci::eq{ a = key, b = "required" }
+            let copy = obj::copy_bytes{ heap = w.heap, s = if required { "" } else { key } } iferr { return }
+            if o.ext is door{ d } {
+                d.locked = true
+                d.lockable = true
+                d.key_required = required
+                d.open_dc = dc
+                d.key = copy
+            } else if o.ext is placeable{ p } {
+                p.locked = true
+                p.lockable = true
+                p.key_required = required
+                p.open_dc = dc
+                p.key = copy
+            }
         } else if ci::eq{ a = cmd, b = "global" } {
             // Test helper: a number global (`ui global K_SWG_TELEPORT 1`).
             let name = text::next_word{ &words } ifnull { return }
@@ -98,6 +120,21 @@ namespace ingame {
                 _ = @fmt(&w.io, "where {} k{} {} at {} {} {} hp {} facing {} {}\n", o.id, @as(u32, o.kind), tag, o.position.x, o.position.y, o.position.z, o.hp, o.orientation.x, o.orientation.y)
                 if o.ext is creature{ c } { _ = @fmt(&w.io, "  portrait {}\n", c.portrait) }
                 if o.ext is door{ d } { _ = @fmt(&w.io, "  door state {} locked {} area {}\n", @as(u32, d.state), d.locked, o.area) }
+            }
+        } else if ci::eq{ a = cmd, b = "locks" } {
+            // Test helper: the locked (or lockable) doors and placeables whose tag contains the word, with the lock's record.
+            let part = text::next_word{ &words } ifnull ""
+            let all = list::items{ list = w.objects.all }
+            let mut i: usize = 0
+            while i < all.len {
+                let o = all[i]
+                i = i + 1
+                if o.destroyed or not has_part{ s = o.tag, part } { continue }
+                if o.ext is door{ d } {
+                    if d.locked or d.lockable { _ = @fmt(&w.io, "lock door {} {} locked {} lockable {} key-required {} key '{}' open-dc {} close-dc {} plot {} state {} at {} {}\n", o.id, o.tag, d.locked, d.lockable, d.key_required, d.key, d.open_dc, d.close_dc, o.plot, @as(u32, d.state), o.position.x, o.position.y) }
+                } else if o.ext is placeable{ p } {
+                    if p.locked or p.lockable { _ = @fmt(&w.io, "lock placeable {} {} locked {} lockable {} key-required {} key '{}' open-dc {} close-dc {} plot {} inventory {} at {} {}\n", o.id, o.tag, p.locked, p.lockable, p.key_required, p.key, p.open_dc, p.close_dc, o.plot, p.inventory.len, o.position.x, o.position.y) }
+                }
             }
         } else if ci::eq{ a = cmd, b = "goto" } {
             // Test helper: the leader walks (runs) to the object with the tag, as a click on the floor there would.

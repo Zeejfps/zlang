@@ -16,6 +16,7 @@ this page is our design on top. Decisions that aren't the original's are marked 
 | `lib/dialog/lipsync` | `lipsync` | a LIP and a time to a mouth pose on a head | lib/formats (lip), lib/mdl |
 | `lib/engine/routines/dialog.ctx` | `rt_dlg` | the routines | core |
 | `tools/dlgcheck` | | every DLG of the install through the loader; headless scripts (`scripts/`) | |
+| `tools/dlgsweep` | | every DLG walked node by node with its scripts run in a fresh module, in parallel: faults, missing routines and scripts, speakers not found ([../dlgsweep.md](../dlgsweep.md)) | |
 | `tools/dialogpanels`, `tools/lipcheck` | | the panels and the lip sync on their own, with PNGs / a corpus check | |
 
 The conversation's state is `w.conversation` (`dlg::State`, a World field). The loop calls
@@ -152,6 +153,21 @@ visual draws at the origin (`Visual.stunt`) and `cutscenedummy`'s position keys 
 body's `anim_scale`** (that put the sleeping player a metre off his bed). All of this was found on
 `m01aa_c01` (the Endar Spire's opening: four camera animations over the sleeping player) and checked
 on `STUNT_07`'s `scene_start` (three stunt participants, voiced lines, an AmbientTrack).
+
+**A cut changes the pose at once.** A scene animation is in area space and the body's own animations are not,
+so the usual 0.25 s blend into or out of one (or from one shot's `cutNNNw` to the next) lerped the root from
+wherever the other left it: the stunt body glided in from the origin (or off screen) at every camera cut, for
+8 frames, and a stale `cutscenedummy` position hung on for the blend after a body animation. So
+`visual::animate_creature` uses no transition when the animation it starts, or the one it replaces, is a `cut`
+one, and a swap or restore of the stunt model resets the part's player (nothing to blend from). The dialogue's
+defaults leave a running scene animation alone as well: the empty reply the engine speaks between two shots
+would play the player's talk loop for a frame (the real creature at its own place, mid-cut), so
+`update_animations` skips the talk and listen loops for a stunt body that runs one, and `set_shot` keeps the
+running camera animation through such a reply unless the reply starts its own. Found with a per-frame log of
+the object's and the drawn root's place (steps over 0.15 m/frame outside walking), checked on `m01aa_c01`
+(the dream), `cut00_convers` and `tar02_carth022` (the apartment wake-up): no multi-frame glide is left.
+What remains is a script's `AssignCommand(ActionJumpToLocation)` landing one frame after the line that ran it
+(AssignCommand queues for the next frame), which snaps and is off screen in the checked cutscenes.
 
 ### Voice and lips (7)
 

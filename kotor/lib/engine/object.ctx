@@ -250,6 +250,7 @@ namespace obj {
         ai_style: i32,                      // GetNPCAIStyle (NPC_AISTYLE_*)
         party_ai_style: i32,                // GetPartyAIStyle, kept on the player's character (the party table is HOOK(party))
         fighter: ?*mut fight::Fighter,      // the rules creature and the combat round (heap; lib/engine/fight.ctx)
+        blocked_ms: u64,                    // when a closed door last sent it PATH_BLOCKED (movement.ctx)
         // Appended by routines/effects.ctx.
         fx_cursor: usize,                   // GetFirstEffect/GetNextEffect: the next index into the rules' effect list
         // Appended by routines/creature.ctx and actions.ctx.
@@ -285,7 +286,9 @@ namespace obj {
         lockable: bool,
         key_required: bool,
         key: []mut u8,                          // the key item's tag
-        open_dc: u32,
+        open_dc: u32,                       // OpenLockDC: the Security skill's difficulty to pick it
+        close_dc: u32,                      // CloseLockDC
+        auto_remove_key: bool,              // AutoRemoveKey: the key is taken from whoever opens it
         linked_to: []mut u8,
         linked_to_module: resref::ResRef,
         linked_flags: u8,                   // 0 none, 1 door, 2 waypoint
@@ -304,7 +307,12 @@ namespace obj {
         party_interact: bool,
         static: bool,
         locked: bool,
+        lockable: bool,
+        key_required: bool,                 // only its key opens it; Security cannot
         key: []mut u8,
+        open_dc: u32,                       // OpenLockDC / CloseLockDC, as on a door
+        close_dc: u32,
+        auto_remove_key: bool,
         inventory: list::List(u32, heap::Heap),
         walk: i32,
         model: resref::ResRef,              // placeables modelname
@@ -608,7 +616,7 @@ namespace obj {
             attack_target = INVALID, attempted_target = INVALID, last_hostile_actor = INVALID,
             last_hostile_target = INVALID, last_attack_action = 65535, last_force_power = -1,
             last_combat_feat = -1, last_attack_result = 0, force_power_ok = false, ai_style = 0,
-            party_ai_style = 0, fighter = null, fx_cursor = 0, head = -1, stealth = false,
+            party_ai_style = 0, blocked_ms = 0, fighter = null, fx_cursor = 0, head = -1, stealth = false,
         }
     }
 }

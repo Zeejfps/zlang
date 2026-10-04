@@ -72,6 +72,8 @@ namespace dlgview {
         let index = made ifnull { return true }
         part.source = scene::loaded_at{ sc = &sc, i = index }.model
         part.anim_len = 0
+        // A new model: nothing of the body's pose to blend away from (it is not in area space).
+        part.player = mdl_anim::new_player{}
         vis.stunt = true
         vis.animation = 0xFFFFFFFF
         v.swaps[v.swap_count] = Swap{ id, visual = vi, original = 0, active = true }
@@ -81,6 +83,17 @@ namespace dlgview {
             _ = @fmt(&w.io, "dialog stunt model {} on {}\n", model, id)
         }
         return true
+    }
+
+    // Whether `id` is a stunt participant whose scene animation (`cutNNNw`) is running on its body now.
+    fn runs_scene_animation { v: View, mut sc: scene::Scene, id: u32 } -> bool {
+        let mut i: usize = 0
+        while i < v.swap_count {
+            let s = v.swaps[i]
+            i = i + 1
+            if s.active and s.id == id { return list::at{ list = sc.visuals, i = s.visual }.stunt }
+        }
+        return false
     }
 
     // The participants back as they were.
@@ -94,6 +107,7 @@ namespace dlgview {
             let part = scene::part_at{ sc = &sc, i = vis.first }
             part.source = null
             part.anim_len = 0
+            part.player = mdl_anim::new_player{}
             vis.stunt = false
             vis.animation = 0xFFFFFFFF
         }

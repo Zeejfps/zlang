@@ -38,9 +38,21 @@ namespace dlgview {
         }
     }
 
+    // The animation a participant has is not replaced by the default talk or listen loop: it stays marked
+    // as animated by this line.
+    fn keep_animation { id: u32, mut mark: [16]u32, mut marked: usize } {
+        if marked < 16 {
+            mark[marked] = id
+            marked = marked + 1
+        }
+    }
+
     // UpdateDialogAnimations: the node's AnimList, then the talk and listen loops for the speaker
     // and listener it doesn't name; whoever was animated for the last line and isn't now stands.
-    fn update_animations { mut v: View, mut w: world::World, node: *dlg::Node, speaker: u32, listener: u32 } {
+    // A stunt body running its scene animation keeps it through the loops (and the standing): the
+    // cutscenes chain their shots through empty replies spoken by the player, whose default talk loop
+    // would show the real creature for a frame in the middle of the cut.
+    fn update_animations { mut v: View, mut w: world::World, mut sc: scene::Scene, node: *dlg::Node, speaker: u32, listener: u32 } {
         let mut mark: [16]u32 = [obj::INVALID; 16]
         let mut marked: usize = 0
         let mut speaker_named = false
@@ -56,12 +68,20 @@ namespace dlgview {
             play_animation{ &v, &w, id, number = a.animation, mark = &mark, marked = &marked }
         }
         if not speaker_named and speaker != obj::INVALID {
-            let n = if injured{ w = &w, id = speaker } { TALK_INJURED } else { TALK }
-            play_animation{ &v, &w, id = speaker, number = n, mark = &mark, marked = &marked }
+            if runs_scene_animation{ v, &sc, id = speaker } {
+                keep_animation{ id = speaker, mark = &mark, marked = &marked }
+            } else {
+                let n = if injured{ w = &w, id = speaker } { TALK_INJURED } else { TALK }
+                play_animation{ &v, &w, id = speaker, number = n, mark = &mark, marked = &marked }
+            }
         }
         if not listener_named and listener != obj::INVALID and listener != speaker {
-            let n = if injured{ w = &w, id = listener } { LISTEN_INJURED } else { LISTEN }
-            play_animation{ &v, &w, id = listener, number = n, mark = &mark, marked = &marked }
+            if runs_scene_animation{ v, &sc, id = listener } {
+                keep_animation{ id = listener, mark = &mark, marked = &marked }
+            } else {
+                let n = if injured{ w = &w, id = listener } { LISTEN_INJURED } else { LISTEN }
+                play_animation{ &v, &w, id = listener, number = n, mark = &mark, marked = &marked }
+            }
         }
         // Back to standing for those the last line animated and this one doesn't.
         let mut k: usize = 0
@@ -99,7 +119,7 @@ namespace dlgview {
         let line = w.conversation.line
         let node = dlg::current_node{ s = &w.conversation } ifnull { return }
         sync_tokens{ &w, &g }
-        update_animations{ &v, &w, node, speaker = line.speaker, listener = line.listener }
+        update_animations{ &v, &w, &sc, node, speaker = line.speaker, listener = line.listener }
         v.pull_back = 0.0
         if node.anims.len > 0 {
             let mut i: usize = 0
@@ -142,7 +162,7 @@ namespace dlgview {
         // The shot shows the player's creature speaking to the last speaker, with the first
         // reply's camera (4.6).
         let first = dlg::choice_node{ s = &w.conversation, i = 0 } ifnull { return }
-        update_animations{ &v, &w, node = first, speaker = ch.speaker, listener = ch.listener }
+        update_animations{ &v, &w, &sc, node = first, speaker = ch.speaker, listener = ch.listener }
         v.pull_back = 0.0
         set_shot{ &v, &w, &sc, node = first, speaker = ch.speaker, listener = ch.listener, angle = ch.angle, spoken_reply = false }
         let mut texts: [32][]u8

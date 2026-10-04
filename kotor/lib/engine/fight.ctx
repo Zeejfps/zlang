@@ -980,12 +980,20 @@ namespace fight {
         }
         if f.react_ms > 0 { f.react_ms = f.react_ms - dt }
         // Back to the ready stance (in combat) or standing when an attack or reaction is over.
-        let busy = f.round.started and f.round.timer_ms < f.round.anim_ms
+        let busy = (f.round.started and f.round.timer_ms < f.round.anim_ms) or action_holds_animation{ o = o3 }
         if not busy and f.react_ms <= 0 and not c3.moving and row_of_animation{ id = o3.animation } >= 0 {
             if c3.in_combat { play_ready{ &w, o = o3, c = c3 } } else { world::set_animation{ o = o3, id = obj::ANIM_STAND, speed = 1.0 } }
         } else if c3.in_combat and not c3.moving and o3.animation == obj::ANIM_STAND {
             play_ready{ &w, o = o3, c = c3 }
         }
+    }
+
+    // Whether the head of the queue plays an animations.2da row of its own, which this must not
+    // end as it ends an attack's: OPENLOCK and LOCK kneel at the lock for 1.5 s (doors.ctx).
+    fn action_holds_animation { o: *obj::Object } -> bool {
+        if o.actions.len == 0 { return false }
+        let head = list::items{ list = o.actions }[0]
+        return (head.kind == actions::Kind::open_lock or head.kind == actions::Kind::lock) and head.phase >= 2
     }
 
     fn play_ready { mut w: world::World, o: *mut obj::Object, c: *obj::Creature } {

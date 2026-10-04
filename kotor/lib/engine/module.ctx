@@ -351,6 +351,16 @@ namespace modload {
         // the party, save::restore_party).
         w.pc = w.player
         party::merge_into_party{ &w, id = w.player }
+        // Items that joined the bag before the player existed (a companion joining on the first
+        // tick) belong to it now.
+        let bag = list::items{ list = w.bag }
+        let mut bi: usize = 0
+        while bi < bag.len {
+            if world::object{ w = &w, id = bag[bi] } is some{ value = bo } {
+                if obj::item{ o = bo } is some{ value = bit } { bit.possessor = w.player }
+            }
+            bi = bi + 1
+        }
         let mo = world::object{ w = &w, id = w.module } ifnull { return }
         let m = obj::module{ o = mo } ifnull { return }
         let mut at = m.entry_position
@@ -508,6 +518,17 @@ namespace modload {
         c.walk_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "walkrate" } ifnull 3.2
         c.run_rate = twoda::get_float{ t = w.tables.creaturespeed, row = 0, column = "runrate" } ifnull 5.4
         c.abilities = [14, 14, 14, 12, 12, 12]
+        // The scripts the original's player has (the henchman set; chargen writes the same).
+        obj::set_script{ o, slot = obj::Slot::heartbeat, name = resref::truncate{ name = "k_hen_heartbt01" } }
+        obj::set_script{ o, slot = obj::Slot::notice, name = resref::truncate{ name = "k_hen_percept01" } }
+        obj::set_script{ o, slot = obj::Slot::spell_at, name = resref::truncate{ name = "k_def_spellat01" } }
+        obj::set_script{ o, slot = obj::Slot::attacked, name = resref::truncate{ name = "k_hen_attacked01" } }
+        obj::set_script{ o, slot = obj::Slot::damaged, name = resref::truncate{ name = "k_def_damage01" } }
+        obj::set_script{ o, slot = obj::Slot::end_round, name = resref::truncate{ name = "k_hen_combend01" } }
+        obj::set_script{ o, slot = obj::Slot::dialogue, name = resref::truncate{ name = "k_hen_dialogue01" } }
+        obj::set_script{ o, slot = obj::Slot::spawn, name = resref::truncate{ name = "k_hen_spawn01" } }
+        obj::set_script{ o, slot = obj::Slot::user_defined, name = resref::truncate{ name = "k_def_userdef01" } }
+        obj::set_script{ o, slot = obj::Slot::blocked, name = resref::truncate{ name = "k_def_blocked01" } }
         fight::default_stats{ &w, o, c }
         o.area = w.area
         o.ai_level = 4

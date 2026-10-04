@@ -388,9 +388,7 @@ namespace rt_combat {
         else if o.ext is placeable{ p } { p.locked = locked != 0 }
     }
 
-    // The `int GetX(object oObject)` routines on a door's or placeable's lock; 0 for anything
-    // else. A placeable has no lock record of its own yet, so it is lockable when it is locked,
-    // needs a key when it names one, and has no difficulty class.
+    // The `int GetX(object oObject)` routines on a door's or placeable's lock; 0 for anything else.
     fn get_lock_flag { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
         let id = try nwarg::object{ &vm, routine, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull {
@@ -410,9 +408,9 @@ namespace rt_combat {
             v = match routine {
                 nwscript::GetLocked => { flag{ b = p.locked } }
                 nwscript::GetIsOpen => { flag{ b = p.open } }
-                nwscript::GetLockKeyRequired => { flag{ b = p.key.len > 0 } }
-                nwscript::GetLockLockable => { flag{ b = p.locked } }
-                else => { 0 }
+                nwscript::GetLockKeyRequired => { flag{ b = p.key_required } }
+                nwscript::GetLockLockable => { flag{ b = p.lockable } }
+                else => { @as(i32, p.open_dc) }                // GetLockUnlockDC
             }
         }
         try nwvm::push_int{ &vm, v }
