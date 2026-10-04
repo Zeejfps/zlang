@@ -91,11 +91,13 @@ namespace rt_dlg {
     }
 
     // void SpeakString(string sStringToSpeak, int nTalkVolume = TALKVOLUME_TALK): ours shows the
-    // text as a bubble over OBJECT_SELF (10.2).
+    // text as a bubble over OBJECT_SELF (10.2). Listeners (SetListening, SetListenPattern) are not told yet.
     fn speak_string { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let text = try nwarg::string{ &vm, routine = nwscript::SpeakString, argc, i = 0 }
         let volume = try nwarg::int{ &vm, routine = nwscript::SpeakString, argc, i = 1 }
-        if volume == 2 or volume == 3 { return }
+        // SILENT_TALK (3) and SILENT_SHOUT (4) are for listeners only; nobody sees the text (re/dialogue.md 10.2). The
+        // creatures' "GEN_I_WAS_ATTACKED" shouts are silent ones, and showed up as text boxes in every fight.
+        if volume == 3 or volume == 4 { return }
         dlg::post_bark{ &w, speaker = self_of{ vm = &vm }, strref = 0xFFFFFFFF, text, sound = resref::empty{} }
     }
 
