@@ -186,20 +186,31 @@ Endar Spire's screens and lamps instead.
 
 ### Depth of field (conversations)
 
-- **Inputs**: `Enhance.dof`; `View.focus` (`distance` along the view, `range` that stays sharp, `blur` 0..1). The
-  game sets it (`game/focus.ctx`): while a dialogue camera is up (`dlgview::focus_point`: the speaker's eyes, the
-  point the shots frame), the focus is the distance to them; the blur fades in over a third of a second when a
-  shot comes up and out when it ends, and a cut to the next speaker pulls focus in about a fifth of a second. In
-  normal play there is no focus. Eased every tick, so pictures taken with `--no-render` see the same.
-- **What**: after the scene is resolved, before the light shafts and the bloom: at half resolution the light and,
-  per pixel, its blur (none within half the range of the focus, growing to the largest one and a half focus
-  distances past that; the largest is 1/90 of the picture's height); a gather over a disc as wide as the pixel's
-  own blur (24 taps on a spiral, 12 low), each tap counting only if its own blur reaches the pixel, so a sharp
-  speaker never smears into the background, and bright taps counting more (high), so highlights open into discs;
-  then blended over the full-resolution light as much as each pixel is out of focus. The subtitles and panels are
-  drawn after, sharp.
-- **Cost**: 0.026 ms at 1280x720 (the Endar Spire, Trask's conversation).
-- **Pictures**: `kotor/out/fx/t/talk_dof_cmp.png` (off, high).
+- **Inputs**: `Enhance.dof`; `View.focus` (`distance` along the view, `range` kept sharp, `blur` 0..1); the view's
+  projection (its field of view is the lens's focal length). The game sets the focus (`game/focus.ctx`): while a
+  dialogue camera is up, the speaker's eyes if they are in the shot, else the listener's, else none (a cutscene's
+  shot of something else stays sharp); the blur fades in over a third of a second when a shot comes up and out
+  when it ends, and a cut to the next speaker pulls focus in about a fifth of a second; `range` is 0.3 m, a face's
+  depth. In normal play there is no focus. Eased every tick, so pictures taken with `--no-render` see the same.
+- **What**: a thin lens. Each pixel's circle of confusion is `A f |d − s| / (d (s − f))`, with `f` the focal length
+  the view's vertical field of view gives a 24 mm tall sensor (55° is 23 mm; a close-up's 30° is 45 mm), `A = f / N`
+  at f/2 (f/2.8 low) and `s` the focus distance, measured on that sensor and capped at a radius of 1/108 of the
+  picture's height (10 pixels at 1080p; 1/144 low). So a wide shot focused a few metres away blurs its background
+  by a pixel or two, a close-up with a long lens by several, as a camera would. The sky and anything far take the
+  lens's far limit `A f / (s − f)`, a finite blur. After the scene is resolved, before the light shafts and the
+  bloom: at half resolution the light, the 2x2 pixels weighted by brightness (1 + 4 l², so a one-pixel star keeps
+  its light), and the largest blur of the four; a gather over a disc as wide as the pixel's own blur (24 taps on a
+  spiral, 12 low), each tap counting only if its own blur reaches the pixel (a sharp speaker never smears into the
+  background) and bright taps counting more (1 + 4 l², 2 low), so stars and lamps open into soft discs instead of
+  being averaged away; then blended over the full-resolution light from a blur radius of half a pixel (nothing)
+  to two (all of it). The subtitles and panels are drawn after, sharp.
+- **Decision** (tuning after the first pictures read as a miniature): the first version blurred by a fixed share of
+  the focus distance up to 1/90 of the height whatever the lens, so wide shots blurred as hard as close-ups and the
+  starfield's points were averaged away. Now the field of view and the focus set the blur, and points survive.
+- **Cost**: 0.02-0.03 ms at 1280x720 (the Endar Spire, Trask's conversation).
+- **Pictures**: `kotor/out/fx/t/talk_dof_cmp.png` (a medium shot, off above, on below: Trask sharp, the stars kept,
+  the player's head in front soft), `t/talk_closeup_cmp.png` (a close-up: the window and its stars as soft discs),
+  `duel_saber_cmp.png` (the wide duel shot: its subject isn't a speaker in the shot, so no blur).
 
 ### Reflections (screen space)
 
@@ -425,3 +436,12 @@ frames later (no stall), drawn at the top right over the game and written to the
 (`gpu: 0.43 ms in all: opaque ... bloom ...`). A pass's time is GPU time from the mark before it, so a pass whose
 draws the CPU issues slower than the GPU runs them (the scene's own) shows the CPU's pace; the full-screen
 passes show the GPU's. Use `--headless` (with `--no-render` most frames are not drawn).
+
+**The GUI pass (for later, not changed).** The overlay shows the `ui` pass at 1.2-2.2 ms, more than every 3D effect
+together. Two things in `draw_ui` (gpu.ctx) make it slow, both outside the enhanced renderer: every run of quads that
+shares an image, blend and clip is its own draw, and each one calls `stream`, which orphans the whole 1 MB stream
+buffer (`buffer_data` of STREAM_FLOATS × 4 bytes) before uploading a few hundred bytes. A HUD and an open panel
+make a few hundred such runs a frame, so the driver allocates hundreds of megabytes of buffer a frame. A ring over
+the stream buffer (orphan only when it wraps; `map_buffer_range` with UNSYNCHRONIZED and INVALIDATE_RANGE), and
+sorting runs of the same font texture together, would likely bring it under 0.2 ms. Part of the time is also the
+GPU waiting for the CPU to build the quads, which a timestamp counts as the pass's.

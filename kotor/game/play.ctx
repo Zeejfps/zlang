@@ -467,7 +467,7 @@ namespace play {
             if test_camera.len > 0 { place_test_camera{ &w, spec = test_camera, &camera } }
             death::place_camera{ d = &wipe, c = &camera, w = &w, sc = &sc, dt = camera_dt }
             // The conversation's focus (game/focus.ctx), eased every tick so pictures taken without rendering see it too.
-            let view_focus = focus::update{ f = &fcs, eye = camera.eye, at = dlgview::focus_point{ v = &dview, w = &w, sc = &sc }, dt = camera_dt }
+            let view_focus = focus::update{ f = &fcs, eye = camera.eye, at = dlgview::focus_point{ v = &dview, w = &w, sc = &sc, eye = camera.eye, forward = camera.dir, fov = camera.style.fov }, dt = camera_dt }
             let pc = world::object{ w = &w, id = w.pc }
             let player_room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
             let room = dlgview::view_room{ v = &dview, w = &w, player_room }

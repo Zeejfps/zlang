@@ -6,16 +6,16 @@ namespace gpu {
     struct DofState {
         made: bool, width: i32, height: i32,
         tex: [2]u32, fbo: [2]u32,
-        down: u32, down_proj: i32, down_focus: i32,
+        down: u32, down_proj: i32, down_focus: i32, down_lens: i32,
         blur: u32, blur_params: i32,
-        apply: u32, apply_proj: i32, apply_focus: i32, apply_size: i32,
+        apply: u32, apply_proj: i32, apply_focus: i32, apply_size: i32, apply_lens: i32,
     }
 
     fn no_dof {} -> DofState {
         return DofState{
             made = false, width = 0, height = 0, tex = [0; 2], fbo = [0; 2],
-            down = 0, down_proj = -1, down_focus = -1, blur = 0, blur_params = -1,
-            apply = 0, apply_proj = -1, apply_focus = -1, apply_size = -1,
+            down = 0, down_proj = -1, down_focus = -1, down_lens = -1, blur = 0, blur_params = -1,
+            apply = 0, apply_proj = -1, apply_focus = -1, apply_size = -1, apply_lens = -1,
         }
     }
 
@@ -47,12 +47,14 @@ namespace gpu {
         dev.dof.down = down
         dev.dof.down_proj = dev.gl.get_uniform_location{ program = down, name = "u_proj" }
         dev.dof.down_focus = dev.gl.get_uniform_location{ program = down, name = "u_focus" }
+        dev.dof.down_lens = dev.gl.get_uniform_location{ program = down, name = "u_lens" }
         dev.dof.blur = blur
         dev.dof.blur_params = dev.gl.get_uniform_location{ program = blur, name = "u_params" }
         dev.dof.apply = apply
         dev.dof.apply_proj = dev.gl.get_uniform_location{ program = apply, name = "u_proj" }
         dev.dof.apply_focus = dev.gl.get_uniform_location{ program = apply, name = "u_focus" }
         dev.dof.apply_size = dev.gl.get_uniform_location{ program = apply, name = "u_size" }
+        dev.dof.apply_lens = dev.gl.get_uniform_location{ program = apply, name = "u_lens" }
     }
 
     fn free_dof { mut dev: Device } {
@@ -99,8 +101,14 @@ namespace gpu {
         try ensure_dof_targets{ &dev, width = hw, height = hh }
         post_state{ &dev }
         let p = v.camera.proj
-        // The largest blur: 1/90 of the picture's height (12 half-resolution pixels at 1080p), less at the low level.
-        let largest = @as(f32, area.h) / 180.0 * (if level >= 2 { 1.0 } else { 0.75 })
+        // A lens: a 24 mm tall sensor behind the focal length the view's field of view gives (p.m[5] is 1 / tan(fov/2)),
+        // at f/2 (f/2.8 low). A wide shot focused far blurs little, a close two-shot with a long lens more. The blur's
+        // radius stops at 1/108 of the picture's height (10 pixels at 1080p; 1/144 low), in half-resolution pixels.
+        let sensor: f32 = 0.024
+        let focal = sensor * p.m[5] * 0.5
+        let stops: f32 = if level >= 2 { 2.0 } else { 2.8 }
+        let per_metre = @as(f32, area.h) / (4.0 * sensor)
+        let largest = @as(f32, area.h) / (if level >= 2 { 216.0 } else { 288.0 })
         let half = GlRect{ x = area.x / 2, y = area.y / 2, w = (area.w + 1) / 2, h = (area.h + 1) / 2 }
         dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = dev.dof.fbo[0] }
         dev.gl.viewport{ x = half.x, y = half.y, width = half.w, height = half.h }
@@ -109,11 +117,12 @@ namespace gpu {
         bind_unit{ &dev, unit = 1, target = gl::TEXTURE_2D, name = t.depth }
         dev.gl.uniform4f{ location = dev.dof.down_proj, v0 = p.m[0], v1 = p.m[5], v2 = p.m[10], v3 = p.m[14] }
         dev.gl.uniform4f{ location = dev.dof.down_focus, v0 = f.distance, v1 = f.range, v2 = largest, v3 = math::clamp{ x = f.blur, lo = 0.0, hi = 1.0 } }
+        dev.gl.uniform4f{ location = dev.dof.down_lens, v0 = focal, v1 = focal / stops, v2 = per_metre, v3 = 0.0 }
         draw_fullscreen{ &dev }
         dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = dev.dof.fbo[1] }
         dev.gl.use_program{ program = dev.dof.blur }
         bind_unit{ &dev, unit = 2, target = gl::TEXTURE_2D, name = dev.dof.tex[0] }
-        dev.gl.uniform4f{ location = dev.dof.blur_params, v0 = largest, v1 = if level >= 2 { 24.0 } else { 12.0 }, v2 = if level >= 2 { 2.0 } else { 0.0 }, v3 = 0.0 }
+        dev.gl.uniform4f{ location = dev.dof.blur_params, v0 = largest, v1 = if level >= 2 { 24.0 } else { 12.0 }, v2 = if level >= 2 { 4.0 } else { 2.0 }, v3 = 0.0 }
         draw_fullscreen{ &dev }
         dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = t.color_fbo }
         dev.gl.viewport{ x = area.x, y = area.y, width = area.w, height = area.h }
@@ -124,6 +133,7 @@ namespace gpu {
         dev.gl.uniform4f{ location = dev.dof.apply_proj, v0 = p.m[0], v1 = p.m[5], v2 = p.m[10], v3 = p.m[14] }
         dev.gl.uniform4f{ location = dev.dof.apply_focus, v0 = f.distance, v1 = f.range, v2 = largest, v3 = math::clamp{ x = f.blur, lo = 0.0, hi = 1.0 } }
         dev.gl.uniform2f{ location = dev.dof.apply_size, v0 = 1.0 / @as(f32, t.width), v1 = 1.0 / @as(f32, t.height) }
+        dev.gl.uniform4f{ location = dev.dof.apply_lens, v0 = focal, v1 = focal / stops, v2 = per_metre, v3 = 0.0 }
         draw_fullscreen{ &dev }
         dev.gl.disable{ cap = gl::BLEND }
         dev.state = unknown_state{}

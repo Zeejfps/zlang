@@ -201,10 +201,23 @@ namespace dlgview {
     }
 
     // What a shot of the conversation is focused on, for the enhanced renderer's depth of field: the speaker's eyes
-    // while a dialogue camera is up; null otherwise.
-    fn focus_point { v: *View, w: *world::World, sc: *scene::Scene } -> ?math::Vec3 {
+    // while a dialogue camera is up and they are in the shot (within the camera's field of view), else the
+    // listener's; null when neither is in it (a cutscene's shot of something else) or no dialogue camera is up.
+    fn focus_point { v: *View, w: *world::World, sc: *scene::Scene, eye: math::Vec3, forward: math::Vec3, fov: f32 } -> ?math::Vec3 {
         if not v.overriding or not v.up { return null }
-        return eye_point{ w, sc, id = v.speaker }
+        let s = eye_point{ w, sc, id = v.speaker }
+        if s != null and in_shot{ at = s, eye, forward, fov } { return s }
+        let l = eye_point{ w, sc, id = v.listener }
+        if l != null and in_shot{ at = l, eye, forward, fov } { return l }
+        return null
+    }
+
+    fn in_shot { at: math::Vec3, eye: math::Vec3, forward: math::Vec3, fov: f32 } -> bool {
+        let d = math::vec3::sub{ a = at, b = eye }
+        let len = math::vec3::length{ v = d }
+        if len < 0.05 { return false }
+        let c = math::vec3::dot{ a = d, b = math::vec3::normalize{ v = forward } } / len
+        return c > math::cosf{ x = math::radians{ degrees = fov * 0.5 } }
     }
 
     // The room the picture is seen from: the player's, unless a shot is up, then the room under

@@ -1,5 +1,6 @@
 // Where conversations are focused, for the enhanced renderer's depth of field (render::Focus; docs/design/enhanced-
-// render.md, "Depth of field"): on the speaker while a dialogue camera is up, nothing in normal play. The backend
+// render.md, "Depth of field"): on the speaker while a dialogue camera is up and they are in the shot (else the
+// listener; else nothing: a cutscene's shot of something else stays sharp), nothing in normal play. The backend
 // eases nothing, so this does: the blur fades in over a third of a second when a shot comes up and out when it ends,
 // and the focus distance follows a cut to the next speaker in about a fifth of a second, a focus pull, not a jump.
 namespace focus {
@@ -19,6 +20,7 @@ namespace focus {
             f.amount = math::max{ a = 0.0, b = f.amount - dt * 3.0 }
         }
         if f.amount <= 0.0 { return render::no_focus{} }
-        return render::Focus{ on = true, distance = f.distance, range = math::max{ a = 0.8, b = f.distance * 0.3 }, blur = f.amount }
+        // How much blurs is the lens's business (the backend's circle of confusion); the range only keeps a face's depth sharp.
+        return render::Focus{ on = true, distance = f.distance, range = 0.3, blur = f.amount }
     }
 }

@@ -1,44 +1,60 @@
 // GLSL 410 sources of the enhanced renderer's depth of field (fx_dof.ctx). Each runs with glsl::POST_VS.
 namespace glsl {
-    // How blurred a point at view depth z is (0 sharp .. 1 the largest blur): nothing within half the focus range
-    // of the focus distance, growing to all of it one and a half focus distances past that; times the view's blur.
-    // u_focus: x distance, y range, z the largest blur in half-resolution pixels, w the view's blur (0..1).
+    // How blurred a point at view depth z is, as a share (0..1) of the largest blur, times the view's blur: a thin
+    // lens's circle of confusion, c = A f |d - s| / (d (s - f)), with f the focal length the projection's field of
+    // view gives a 24 mm tall sensor, A the aperture's diameter (f over the f-number) and s the focus distance; d
+    // within half the focus range of s is sharp. The sky and anything past the far plane take the far limit,
+    // A f / (s - f): a finite blur, so stars stay points that only soften.
+    // u_focus: x distance s, y range, z the largest blur radius in half-resolution pixels, w the view's blur (0..1).
+    // u_lens: x focal length (m), y aperture diameter (m), z half-resolution pixels of radius per metre on the sensor.
     const DOF_COC: c::String =
         \\float view_z(sampler2D depth, ivec2 px, vec4 proj) {
         \\    float d = texelFetch(depth, px, 0).r;
         \\    return -proj.w / ((d * 2.0 - 1.0) + proj.z);
         \\}
-        \\float coc_of(float z, vec4 focus) {
-        \\    float off = abs(-z - focus.x) - focus.y * 0.5;
-        \\    return focus.w * clamp(off / max(focus.x * 1.5, 0.5), 0.0, 1.0);
+        \\float coc_of(float z, vec4 focus, vec4 lens) {
+        \\    float d = max(-z, 0.01);
+        \\    float s = focus.x;
+        \\    if (abs(d - s) < focus.y * 0.5) {
+        \\        return 0.0;
+        \\    }
+        \\    float c = lens.y * lens.x * abs(d - s) / (d * max(s - lens.x, 0.01));
+        \\    return focus.w * clamp(c * lens.z / focus.z, 0.0, 1.0);
         \\}
         \\
 
-    // Half resolution: the light (mean of 2x2) and, in alpha, the largest blur of those four pixels.
+    // Half resolution: the light of 2x2 pixels, the bright ones weighing more (a star of one pixel keeps its light
+    // instead of being averaged away), and in alpha the largest blur of the four.
     const DOF_DOWN_FS: c::String =
         \\uniform sampler2D u_color;
         \\uniform sampler2D u_depth;
         \\uniform vec4 u_proj;
         \\uniform vec4 u_focus;
+        \\uniform vec4 u_lens;
         \\in vec2 v_uv;
         \\layout(location = 0) out vec4 o_color;
         \\void main() {
         \\    ivec2 p = ivec2(gl_FragCoord.xy) * 2;
         \\    ivec2 size = textureSize(u_color, 0) - 1;
         \\    vec3 c = vec3(0.0);
+        \\    float wsum = 0.0;
         \\    float coc = 0.0;
         \\    for (int k = 0; k < 4; k++) {
         \\        ivec2 q = min(p + ivec2(k & 1, k >> 1), size);
-        \\        c += min(texelFetch(u_color, q, 0).rgb, vec3(32.0));
-        \\        coc = max(coc, coc_of(view_z(u_depth, q, u_proj), u_focus));
+        \\        vec3 s = min(texelFetch(u_color, q, 0).rgb, vec3(32.0));
+        \\        float l = dot(s, vec3(0.299, 0.587, 0.114));
+        \\        float w = 1.0 + 4.0 * l * l;
+        \\        c += s * w;
+        \\        wsum += w;
+        \\        coc = max(coc, coc_of(view_z(u_depth, q, u_proj), u_focus, u_lens));
         \\    }
-        \\    o_color = vec4(c * 0.25, coc);
+        \\    o_color = vec4(c / wsum, coc);
         \\}
         \\
 
     // Half resolution: each pixel gathers a disc as wide as its own blur, on a spiral of u_params.y taps; a tap counts
     // only if its own blur reaches this pixel (a sharp thing in front doesn't smear into what is behind it), and
-    // bright taps count more (u_params.z), so highlights open into discs, the camera's bokeh.
+    // bright taps count more (u_params.z), so points of light open into discs, the camera's bokeh, rather than fade.
     const DOF_BLUR_FS: c::String =
         \\uniform sampler2D u_src;
         \\uniform vec4 u_params;
@@ -53,8 +69,10 @@ namespace glsl {
         \\        o_color = c0;
         \\        return;
         \\    }
-        \\    vec3 sum = c0.rgb;
-        \\    float wsum = 1.0;
+        \\    float l0 = dot(c0.rgb, vec3(0.299, 0.587, 0.114));
+        \\    float w0 = 1.0 + u_params.z * l0 * l0;
+        \\    vec3 sum = c0.rgb * w0;
+        \\    float wsum = w0;
         \\    int taps = int(u_params.y);
         \\    for (int i = 0; i < taps; i++) {
         \\        float a = (float(i) + 0.5) / float(taps);
@@ -74,20 +92,23 @@ namespace glsl {
         \\}
         \\
 
-    // Full resolution, blended over the light (SRC_ALPHA, ONE_MINUS_SRC_ALPHA): the blurred light, as opaque as the
-    // pixel's own blur. u_size: 1 / the full resolution.
+    // Full resolution, blended over the light (SRC_ALPHA, ONE_MINUS_SRC_ALPHA): the blurred light where the pixel's
+    // own blur is wider than a pixel (from half a pixel's radius to two), the sharp picture below that.
+    // u_size: 1 / the full resolution.
     const DOF_APPLY_FS: c::String =
         \\uniform sampler2D u_blur;
         \\uniform sampler2D u_depth;
         \\uniform vec4 u_proj;
         \\uniform vec4 u_focus;
+        \\uniform vec4 u_lens;
         \\uniform vec2 u_size;
         \\in vec2 v_uv;
         \\layout(location = 0) out vec4 o_color;
         \\void main() {
-        \\    float coc = coc_of(view_z(u_depth, ivec2(gl_FragCoord.xy), u_proj), u_focus);
+        \\    float coc = coc_of(view_z(u_depth, ivec2(gl_FragCoord.xy), u_proj), u_focus, u_lens);
+        \\    float radius = coc * u_focus.z * 2.0;
         \\    vec3 b = texture(u_blur, gl_FragCoord.xy * u_size).rgb;
-        \\    o_color = vec4(b, smoothstep(0.0, 0.25, coc));
+        \\    o_color = vec4(b, smoothstep(0.5, 2.0, radius));
         \\}
         \\
 }
