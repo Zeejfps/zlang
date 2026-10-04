@@ -117,7 +117,9 @@ namespace ingame {
                 if o.destroyed { continue }
                 let tag: []u8 = o.tag
                 if not has_part{ s = tag, part } { continue }
-                _ = @fmt(&w.io, "where {} k{} {} at {} {} {} hp {} facing {} {}\n", o.id, @as(u32, o.kind), tag, o.position.x, o.position.y, o.position.z, o.hp, o.orientation.x, o.orientation.y)
+                _ = @fmt(&w.io, "where {} k{} {} at {} {} {} hp {} facing {} {}", o.id, @as(u32, o.kind), tag, o.position.x, o.position.y, o.position.z, o.hp, o.orientation.x, o.orientation.y)
+                if o.ext is door{ d } { _ = @fmt(&w.io, " door state {}", @as(u32, d.state)) }
+                _ = @fmt(&w.io, "\n")
             }
         } else if ci::eq{ a = cmd, b = "locks" } {
             // Test helper: the locked (or lockable) doors and placeables whose tag contains the word, with the lock's record.
