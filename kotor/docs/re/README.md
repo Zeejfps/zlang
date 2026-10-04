@@ -16,6 +16,7 @@ is ignored.
 | [objects.md](objects.md) | server-side game objects: classes, vtables, templates, events, actions |
 | [app.md](app.md) | start-up, main loop, input, audio, movies |
 | [render-gui.md](render-gui.md) | the OpenGL renderer and the GUI system |
+| [particles.md](particles.md) | MDL emitters in the original: the update types, the particle step, the seven render modes and how each draws its quad |
 | [noreturn-fix.md](noreturn-fix.md) | the "does not return" bug of the first analysis: what it cut, what the rebuild changed, earlier conclusions to recheck ([every function that changed](noreturn-fix-functions.tsv), [per doc](noreturn-fix-recheck.tsv)) |
 
 The file formats themselves are described in [../formats/](../formats/); these pages are about
