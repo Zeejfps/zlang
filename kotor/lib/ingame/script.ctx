@@ -8,8 +8,8 @@
 //   FRAME ui menu NAME|N       open a menu: equip inventory character abilities messages journal map options
 //   FRAME ui close             close the open menu
 //   FRAME ui target TAG        select the object with the tag;  ui join TAG: it joins the party
-//   FRAME ui unlock TAG | ui global NAME N | ui goto TAG | ui where [PART]     test helpers: unlock a door or placeable;
-//                              set a number global; the leader walks to a tagged object; print objects by tag part
+//   FRAME ui unlock TAG | ui global NAME N | ui globals [PART] | ui goto TAG | ui where [PART]     test helpers: unlock a door or placeable;
+//                              set a number or boolean global, print the globals that are set; the leader walks to a tagged object; print objects by tag part
 //   FRAME ui hover             print the panels' places and the control under the pointer
 //   FRAME ui sweep             the pointer to the centre of each control: a hover test of every shown panel
 //   FRAME ui anims             each party member's animation, moving flag and speed
@@ -106,6 +106,17 @@ namespace ingame {
             let name = text::next_word{ &words } ifnull { return }
             let v = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
             globals::set_number{ g = &w.globals, name, value = v }
+            globals::set_boolean{ g = &w.globals, name, value = v != 0 }    // each setter leaves a global of the other kind alone
+        } else if ci::eq{ a = cmd, b = "globals" } {
+            // Test helper: the globals that are set (a number or boolean other than 0) whose name contains the word (none: all).
+            let part = text::next_word{ &words } ifnull ""
+            let all = list::items{ list = w.globals.all }
+            let mut i: usize = 0
+            while i < all.len {
+                let g = all[i]
+                i = i + 1
+                if g.number != 0 and has_part{ s = g.name, part } { _ = @fmt(&w.io, "global {} = {}\n", g.name, g.number) }
+            }
         } else if ci::eq{ a = cmd, b = "where" } {
             // Test helper: every object whose tag contains the word (none given: all), with its place.
             let part = text::next_word{ &words } ifnull ""

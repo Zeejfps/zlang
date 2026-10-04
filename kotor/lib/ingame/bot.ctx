@@ -229,7 +229,7 @@ namespace bot {
             i = i + 1
             if o.destroyed or o.kind != obj::Kind::creature or o.id == me.id or o.area != me.area { continue }
             let c = obj::creature{ o } ifnull { continue }
-            if c.dead or not hud::is_hostile{ w, id = o.id } { continue }
+            if c.dead or o.plot or not hud::is_hostile{ w, id = o.id } { continue }    // a plot creature (the Enclave's turrets) takes no damage
             let d = math::vec3::distance{ a = o.position, b = me.position }
             if d < best_d {
                 best_d = d
