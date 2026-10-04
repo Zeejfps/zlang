@@ -178,6 +178,10 @@ namespace vfx {
         // The pose at time zero, so the first frame already shows the animation's start.
         mdl_anim::evaluate{ model, player = p.player, pose = p.pose }
         v.started = v.started + 1
+        if w.log.trace {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "vfx {} ({}) life {} at {} {} {}\n", model.name, slot, f.life, f.matrix.m[12], f.matrix.m[13], f.matrix.m[14])
+        }
     }
 
     // An effect model standing at a point (`facing` zero: unrotated).

@@ -10,6 +10,8 @@ namespace fight {
     // Visual effect ids the combat uses (visualeffects.2da labels).
     const VFX_BLASTER_DEFLECTION: i32 = 4023
     const VFX_BLASTER_IMPACT: i32 = 4024
+    const VFX_SPARKS_LIGHTSABER: i32 = 4004
+    const VFX_SPARKS_PARRY_METAL: i32 = 4011
 
     // How long a bolt from `o` takes to reach `t`.
     fn bolt_ms { o: *obj::Object, t: *obj::Object } -> i32 {
@@ -36,6 +38,10 @@ namespace fight {
     // Plays a sound resource at a point (the mixer finds it by name).
     fn say { mut w: world::World, name: []u8, at: math::Vec3, source: u32 } {
         if name.len == 0 or name.len > 16 { return }
+        if w.log.trace {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "sound {} for {}\n", name, source)
+        }
         outbox::post{ out = &w.out, note = outbox::Note::play_sound{ name = resref::truncate{ name }, object = source, position = at, positional = true } }
     }
 
@@ -94,11 +100,22 @@ namespace fight {
         }
     }
 
-    // weaponsounds.2da's column for the material a hit lands on: the worn armour's type, else
-    // leather (cloth and leather share their sounds).
+    // The creature's appearancesndset.2da row (appearance.soundapptype), -1 if it has none.
+    fn sound_type_of { w: *world::World, c: *obj::Creature } -> i32 {
+        return twoda::get_int{ t = w.tables.appearance, row = @as(usize, c.appearance), column = "soundapptype" } ifnull -1
+    }
+
+    // weaponsounds.2da's column for the material a hit lands on: the worn armour's type, else the
+    // creature's own (appearancesndset.2da: droids "armor", beasts "leather"), else leather (cloth
+    // and leather share their sounds).
     fn hit_column { w: *world::World, t: *obj::Object, into: []mut u8 } -> []u8 {
         let mut kind: []u8 = "leather"
         if obj::creature{ o = t } is some{ value = tc } {
+            let st = sound_type_of{ w, c = tc }
+            if st >= 0 {
+                let own = twoda::get_string{ t = w.tables.appearancesndset, row = @as(usize, st), column = "armortype" } ifnull ""
+                if own.len > 0 and own.len < 12 { kind = own }
+            }
             if world::object{ w, id = tc.equipped[obj::SLOT_BODY] } is some{ value = armor } {
                 if obj::item{ o = armor } is some{ value = it } {
                     let s = twoda::get_string{ t = w.tables.baseitems, row = @as(usize, it.base), column = "armortype" } ifnull ""
@@ -112,12 +129,18 @@ namespace fight {
         return into[..n + 1]
     }
 
-    // weaponsounds.2da's row for the attacker's weapon: its material type, unarmed 0.
+    // weaponsounds.2da's row for the attacker's weapon: its material type; with none, the
+    // creature's own weapon sounds (appearancesndset.2da, 0 unarmed).
     fn weapon_sound_row { w: *world::World, c: *obj::Creature } -> usize {
         let item = c.equipped[obj::SLOT_RIGHT_WEAPON]
-        let io = world::object{ w, id = item } ifnull { return 0 }
-        let it = obj::item{ o = io } ifnull { return 0 }
-        return @as(usize, twoda::get_int{ t = w.tables.baseitems, row = @as(usize, it.base), column = "weaponmattype" } ifnull 0)
+        if world::object{ w, id = item } is some{ value = io } {
+            if obj::item{ o = io } is some{ value = it } {
+                return @as(usize, twoda::get_int{ t = w.tables.baseitems, row = @as(usize, it.base), column = "weaponmattype" } ifnull 0)
+            }
+        }
+        let st = sound_type_of{ w, c }
+        if st < 0 { return 0 }
+        return @as(usize, twoda::get_int{ t = w.tables.appearancesndset, row = @as(usize, st), column = "weapon" } ifnull 0)
     }
 
     // A melee attack lands: the weapon's hit sound on the target's material, or the parry sound
@@ -129,8 +152,71 @@ namespace fight {
         let c = obj::creature{ o } ifnull { return }
         let row = weapon_sound_row{ w = &w, c }
         let mut col: [16]u8
-        let column: []u8 = if imp.hit { hit_column{ w = &w, t, into = col[..] } } else { "parry0" }
+        // A blow that missed was turned by the defender's weapon: sparks where the blades meet
+        // (blue for a lightsaber, metal sparks for two plain blades), and the clash of two sabers.
+        let mut parried = false
+        let mut clash = false
+        if not imp.hit and obj::creature{ o = t } is some{ value = tc } {
+            parried = holds_weapon{ w = &w, c = tc } and holds_weapon{ w = &w, c }
+            clash = parried and row == 1 and weapon_sound_row{ w = &w, c = tc } == 1
+        }
+        let column: []u8 = if imp.hit { hit_column{ w = &w, t, into = col[..] } } else if clash { "clash0" } else { "parry0" }
         let sound = twoda::get_string{ t = w.tables.weaponsounds, row, column } ifnull ""
         say{ &w, name = sound, at = chest_of{ o = t }, source = imp.target }
+        if parried {
+            let mid = math::vec3::lerp{ a = chest_of{ o }, b = chest_of{ o = t }, t = 0.5 }
+            let effect = if row == 1 or weapon_sound_row{ w = &w, c = obj::creature{ o = t } ifnull c } == 1 { VFX_SPARKS_LIGHTSABER } else { VFX_SPARKS_PARRY_METAL }
+            outbox::post{ out = &w.out, note = outbox::Note::visual{ effect, target = obj::INVALID, source = id, position = mid } }
+        }
+    }
+
+    // Whether the creature holds a weapon in its right hand.
+    fn holds_weapon { w: *world::World, c: *obj::Creature } -> bool {
+        return world::object{ w, id = c.equipped[obj::SLOT_RIGHT_WEAPON] } != null
+    }
+
+    // A lightsaber lights or goes out: the item's powerup or powerdown sound (baseitems.2da).
+    fn saber_sound { mut w: world::World, id: u32, lit: bool } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        let item = world::object{ w = &w, id = hand_item{ c, hand = 0 } } ifnull { return }
+        let it = obj::item{ o = item } ifnull { return }
+        let sound = twoda::get_string{ t = w.tables.baseitems, row = @as(usize, it.base), column = if lit { "powerupsnd" } else { "powerdownsnd" } } ifnull ""
+        say{ &w, name = sound, at = chest_of{ o }, source = id }
+    }
+
+    // The surface material under a point (surfacemat.2da row), 0 off the walkmesh.
+    fn surface_at { w: *world::World, at: math::Vec3 } -> u32 {
+        let f = walkmap::floor{ m = &w.walk, x = at.x, y = at.y, z = at.z } ifnull { return 0 }
+        let rooms = list::items{ list = w.walk.rooms }
+        if f.room < 0 or @as(usize, f.room) >= rooms.len { return 0 }
+        let mesh = rooms[@as(usize, f.room)].mesh ifnull { return 0 }
+        if @as(usize, f.face) >= mesh.materials.len { return 0 }
+        return mesh.materials[@as(usize, f.face)]
+    }
+
+    // An event of a creature's animation (the model's own: `Swingshort`, `Swinglong`, `Swingtwirl`
+    // a weapon whooshes, `snd_hitground` a body lands): its sound from weaponsounds.2da and
+    // appearancesndset.2da, at the creature.
+    fn animation_event { mut w: world::World, id: u32, name: []u8 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        if ci::starts_with{ s = name, prefix = "swing" } {
+            let base: []u8 = if ci::eq{ a = name, b = "swinglong" } { "swinglong" } else if ci::eq{ a = name, b = "swingtwirl" } { "swingtwirl" } else { "swingshort" }
+            let mut col: [16]u8
+            let mut n: usize = 0
+            while n < base.len { col[n] = base[n]; n = n + 1 }
+            col[n] = @trunc(u8, '0' + @wrap_add(@wrap_mul(id, 2654435761), @trunc(u32, w.clock.frame)) / 7 % 3)      // not the world's dice: sound must not change the game
+            let sound = twoda::get_string{ t = w.tables.weaponsounds, row = weapon_sound_row{ w = &w, c }, column = col[..n + 1] } ifnull ""
+            say{ &w, name = sound, at = chest_of{ o }, source = id }
+        } else if ci::eq{ a = name, b = "snd_hitground" } {
+            // dirt, hard ground, metal or water by the surface it lands on.
+            let st = sound_type_of{ w = &w, c }
+            if st < 0 { return }
+            let surface = surface_at{ w = &w, at = o.position }
+            let column: []u8 = if surface == 10 { "fallmetal" } else if surface == 1 or surface == 3 or surface == 12 or surface == 13 or surface == 14 { "falldirt" } else if surface == 6 or surface == 17 { "fallwater" } else { "fallhard" }
+            let sound = twoda::get_string{ t = w.tables.appearancesndset, row = @as(usize, st), column } ifnull ""
+            say{ &w, name = sound, at = o.position, source = id }
+        }
     }
 }

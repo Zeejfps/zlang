@@ -37,7 +37,7 @@ namespace visual {
         if sc.parts.len == first { return null }
         try list::push{ list = &sc.visuals, item = scene::Visual{
             id = o.id, first, count = sc.parts.len - first, animation = 0xFFFFFFFF, state = 0xFFFFFFFF,
-            room = -1, creature_prefix = prefix, alive = true, stunt = false, signature = signature_of{ o },
+            room = -1, creature_prefix = prefix, alive = true, stunt = false, signature = signature_of{ o }, saber = 0, saber_force = 0,
         } }
         let index = sc.visuals.len - 1
         try map::put{ m = &sc.by_id, key = o.id, value = index }
@@ -164,14 +164,17 @@ namespace visual {
             v.room = walkmap::room_at{ m = &w.walk, x = o.position.x, y = o.position.y, z = o.position.z + 0.5 }
         }
         match o.ext {
-            creature => { animate_creature{ &sc, &w, v, o } }
+            creature{ c } => {
+                animate_creature{ &sc, &w, v, o }
+                if v.count > 1 and v.saber != 3 { animate_sabers{ &sc, &w, v, o, c } }
+            }
             door{ d } => { animate_door{ &sc, &w, v, state = @as(u32, d.state) } }
             placeable{ p } => { animate_placeable{ &sc, &w, v, anim = p.anim } }
             else => {}
         }
         let mut i: usize = 0
         while i < v.count {
-            scene::advance_part{ &sc, &w, part = v.first + i, dt }
+            scene::advance_owned{ &sc, &w, part = v.first + i, dt, owner = if i == 0 and o.kind == obj::Kind::creature { o.id } else { obj::INVALID } }
             i = i + 1
         }
     }
@@ -221,6 +224,49 @@ namespace visual {
                 }
             }
         }
+    }
+
+    // Whether the creature's blades should be lit: a script's override, else while it fights.
+    fn saber_wanted { w: *world::World, v: *scene::Visual, o: *obj::Object, c: *obj::Creature } -> bool {
+        if v.saber_force != 0 { return v.saber_force == 2 }
+        if c.dead { return false }
+        if c.in_combat { return true }
+        if fight::of{ o } is some{ value = f } { return f.round.started }
+        return false
+    }
+
+    // A lightsaber (a weapon model with a `powered` animation) is lit while its wielder fights and
+    // dark otherwise: `powerup` then `powered` when it lights, `powerdown` then `off` when it goes
+    // out, with the item's sound; a creature met already fighting has it lit at once.
+    fn animate_sabers { mut sc: scene::Scene, mut w: world::World, v: *mut scene::Visual, o: *obj::Object, c: *obj::Creature } {
+        let want = saber_wanted{ w = &w, v, o, c }
+        let known = v.saber
+        if known == (if want { 2 } else { 1 }) { return }
+        let mut blades: usize = 0
+        let mut i: usize = 1
+        while i < v.count {
+            let part = v.first + i
+            i = i + 1
+            let p = scene::part_at{ sc = &sc, i = part }
+            let model = scene::loaded_at{ sc = &sc, i = p.loaded }.model
+            if mdl::find_animation{ model, name = "powered" } == null { continue }
+            blades = blades + 1
+            if known == 0 {
+                _ = scene::play{ &sc, &w, part, name = if want { "powered" } else { "off" }, looping = true, speed = 1.0, transition = 0.0 }
+            } else if want {
+                _ = scene::play{ &sc, &w, part, name = "powerup", looping = false, speed = 1.0, transition = 0.0 }
+                set_next{ sc = &sc, part, name = "powered" }
+            } else {
+                _ = scene::play{ &sc, &w, part, name = "powerdown", looping = false, speed = 1.0, transition = 0.0 }
+                set_next{ sc = &sc, part, name = "off" }
+            }
+        }
+        if blades == 0 {
+            v.saber = 3
+            return
+        }
+        v.saber = if want { 2 } else { 1 }
+        if known != 0 { fight::saber_sound{ &w, id = o.id, lit = want } }
     }
 
     fn with_prefix { into: []mut u8, name: []u8, prefix: bool } -> []u8 {

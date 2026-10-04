@@ -72,6 +72,7 @@ namespace fight {
         file_hp: i32,                   // the GFF's CurrentHitPoints, adopted by equip_loaded
         has_file_hp: bool,
         dying_ms: i32,                  // > 0: the die animation plays, then dead
+        voice_ms: i32,                  // > 0: it has just grunted
     }
 
     fn no_impact {} -> Impact {
@@ -87,7 +88,7 @@ namespace fight {
     fn new_fighter { heap: *mut heap::Heap } -> !*mut Fighter {
         let mut c: rules::Creature
         c.loaded_hp = -1
-        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0 }
+        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0, voice_ms = 0 }
         return try alloc::new(Fighter, heap::Heap){ realloc = heap::alloc, heap, value = f }
     }
 
@@ -323,6 +324,7 @@ namespace fight {
         if id != w.pc {
             events::post{ &w, delay_ms = 0, caller = who, target = id, payload = events::Payload::script{ e = events::script_event{ kind = events::DAMAGED, object = who } } }
         }
+        if amount > 0 and o.hp > 0 { bark{ &w, id, first = VOICE_PAIN, count = 2, chance_in = 2, quiet = true } }
         lethal_check{ &w, id, who, melee = true }
     }
 
@@ -364,6 +366,7 @@ namespace fight {
         bc.attack_target = obj::INVALID
         clear_attackers{ &w, id }
         play_row{ &w, o = back, row = if is_beast{ w = &w, c = bc } { ROW_CDIE } else { ROW_DIE } }
+        bark{ &w, id, first = VOICE_DEAD, count = 1, chance_in = 1, quiet = false }
         f.dying_ms = 1800
         if f.c.party {
             // A party member goes down: never dead (8.1); it gets up when the fight is over. The
@@ -480,8 +483,10 @@ namespace fight {
         let o = world::object{ w = &w, id } ifnull { return }
         if obj::creature{ o } is some{ value = c } {
             if c.dead { return }
+            let was = c.in_combat
             c.in_combat = true
             if c.fighter is some{ value = f } { f.combat_ms = COMBAT_MS }
+            if not was { bark{ &w, id, first = VOICE_BATTLE, count = 6, chance_in = 1, quiet = false } }
         }
         _ = other
     }
@@ -821,6 +826,7 @@ namespace fight {
         let last = times[if n > 0 { n - 1 } else { 0 }]
         f.round.anim_ms = if last + 600 < ROUND_MS - 200 { last + 600 } else { ROUND_MS - 200 }
         play_row{ &w, o, row }
+        if not forced.on { bark{ &w, id, first = VOICE_ATTACK, count = 3, chance_in = 2, quiet = true } }
         if w.log.combat {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "{} attacks {}: {} attacks, animation {}\n", id, target, attack, row)
@@ -862,6 +868,7 @@ namespace fight {
         if tc.dead { return }
         if not imp.attack { return }
         if imp.ranged { land_ranged_fx{ &w, id, imp, power = false } } else { land_melee_fx{ &w, id, imp } }
+        if imp.result == rules::outcome::CRITICAL { bark{ &w, id, first = VOICE_CRITICAL, count = 1, chance_in = 1, quiet = false } }
         t.ctx.last_attacker = id
         tc.last_hostile_actor = id
         if not imp.cutscene { enter_combat{ &w, id = imp.target, other = id } }
@@ -998,6 +1005,7 @@ namespace fight {
             }
         }
         if f.react_ms > 0 { f.react_ms = f.react_ms - dt }
+        if f.voice_ms > 0 { f.voice_ms = f.voice_ms - dt }
         // Back to the ready stance (in combat) or standing when an attack or reaction is over.
         let busy = f.round.started and f.round.timer_ms < f.round.anim_ms
         if not busy and f.react_ms <= 0 and not c3.moving and row_of_animation{ id = o3.animation } >= 0 {

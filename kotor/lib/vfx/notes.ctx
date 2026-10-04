@@ -68,6 +68,7 @@ namespace vfx {
             shot{ attacker, target, ammo, power, hand, flight_ms, result } => {
                 shoot{ &v, &sc, &w, &dev, attacker, target, ammo, power, hand, flight = @as(f32, flight_ms) / 1000.0, result }
             }
+            lightsaber{ id, forced, powered, transition } => { scene::set_saber{ sc = &sc, id, forced, powered } }
             visual{ effect, target, source, position } => {
                 if target != obj::INVALID { visual_on{ &v, &sc, &w, &dev, effect, object = target } }
                 else { visual_at{ &v, &sc, &w, &dev, effect, at = position, facing = math::vec3::zero{} } }
