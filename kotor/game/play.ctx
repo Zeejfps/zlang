@@ -5,7 +5,7 @@ namespace play {
     // (the leader jumps next to the object), `FRAME use TAG` (the leader's default action on it) and
     // `FRAME gunner` (a bot aims and fires the turret) and `FRAME mouse DX DY` (the mouse moves by
     // those counts, aiming the turret) and `FRAME pause` (Escape in a minigame: game/minigame_scene.ctx).
-    enum Command: u8 { down, up, warp, warpxy, use, newgame, ui, save, load, attack, talk, hush, drop, join, cutatk, pick, gunner, mouse, pause, cam }
+    enum Command: u8 { down, up, warp, warpxy, use, newgame, ui, save, load, attack, talk, hush, drop, join, cutatk, pick, gunner, mouse, pause, cam, fx }
     struct Scripted { frame: u64, command: Command, key: []u8 }
 
     fn run { mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut mem: Mem, opts: options::Options } -> !i32 {
@@ -149,6 +149,7 @@ namespace play {
                     pick => { pick_lock{ &w, tag = s.key } }
                     cutatk => { cut_attack{ &w, text = s.key } }
                     cam => { test_camera = s.key }
+                    fx => { test_effect{ &w, text = s.key } }
                     ui => {
                         if not dlgview::run_command{ v = &dview, w = &w, g = &ui.gui, text = s.key } { ingame::run_command{ ui, &w, &dev, text = s.key } }    // HOOK(ingame)
                     }
@@ -546,9 +547,9 @@ namespace play {
                 else if ci::eq{ a = what, b = "ui" } { Command::ui } else if ci::eq{ a = what, b = "save" } { Command::save } else if ci::eq{ a = what, b = "talk" } { Command::talk }
                 else if ci::eq{ a = what, b = "load" } { Command::load } else if ci::eq{ a = what, b = "attack" } { Command::attack }
                 else if ci::eq{ a = what, b = "hush" } { Command::hush } else if ci::eq{ a = what, b = "drop" } { Command::drop } else if ci::eq{ a = what, b = "join" } { Command::join } else if ci::eq{ a = what, b = "cutatk" } { Command::cutatk } else if ci::eq{ a = what, b = "pick" } { Command::pick }
-                else if ci::eq{ a = what, b = "gunner" } { Command::gunner } else if ci::eq{ a = what, b = "mouse" } { Command::mouse } else if ci::eq{ a = what, b = "pause" } { Command::pause } else if ci::eq{ a = what, b = "cam" } { Command::cam } else { Command::up }
+                else if ci::eq{ a = what, b = "gunner" } { Command::gunner } else if ci::eq{ a = what, b = "mouse" } { Command::mouse } else if ci::eq{ a = what, b = "pause" } { Command::pause } else if ci::eq{ a = what, b = "cam" } { Command::cam } else if ci::eq{ a = what, b = "fx" } { Command::fx } else { Command::up }
             // `ui`, `talk`, `load`, `save`, `cutatk` and `mouse` take the rest of the line; the others one word.
-            let key = if command == Command::ui or command == Command::load or command == Command::save or command == Command::talk or command == Command::cutatk or command == Command::mouse or command == Command::join or command == Command::cam { text::rest{ words } } else { text::next_word{ &words } ifnull "" }
+            let key = if command == Command::ui or command == Command::load or command == Command::save or command == Command::talk or command == Command::cutatk or command == Command::mouse or command == Command::join or command == Command::cam or command == Command::fx { text::rest{ words } } else { text::next_word{ &words } ifnull "" }
             try list::push{ list = &out, item = Scripted{ frame = @as(u64, text::scan_decimal{ s = f }), command, key } }
         }
         return list::items{ list = out }
@@ -584,6 +585,34 @@ namespace play {
         camera.look = look
         camera.dir = math::vec3::normalize{ v = math::vec3::sub{ a = look, b = eye } }
         camera.up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }
+    }
+
+    // `FRAME fx visual ROW TAG` plays visualeffects.2da effect ROW on the tagged object (`pc` for the
+    // player's character); `fx at ROW X,Y,Z` at a point; `fx model MODEL TAG [HOOK]` an effect model
+    // on an object's node; `fx cast SPELL TAG` a Force power's conjure and cast visuals. For looking
+    // at effects (lib/vfx, docs/design/vfx.md).
+    fn test_effect { mut w: world::World, text: []u8 } {
+        let mut words = text::words{ s = text }
+        let kind = text::next_word{ &words } ifnull { return }
+        let first = text::next_word{ &words } ifnull { return }
+        let second = text::next_word{ &words } ifnull ""
+        if ci::eq{ a = kind, b = "visual" } {
+            let id = tagged{ w = &w, word = second }
+            fight::visual_effect{ &w, effect = @trunc(i32, text::scan_decimal{ s = first }), target = id, source = w.pc, position = math::vec3::zero{} }
+        } else if ci::eq{ a = kind, b = "at" } {
+            fight::visual_effect{ &w, effect = @trunc(i32, text::scan_decimal{ s = first }), target = obj::INVALID, source = w.pc, position = vec_of{ s = second } }
+        } else if ci::eq{ a = kind, b = "model" } {
+            let hook = text::next_word{ &words } ifnull "Impact"
+            outbox::post{ out = &w.out, note = outbox::Note::effect_model{
+                model = resref::truncate{ name = first }, object = tagged{ w = &w, word = second }, hook = resref::truncate{ name = hook },
+                position = math::vec3::zero{}, life = 0.0,
+            } }
+        } else if ci::eq{ a = kind, b = "cast" } {
+            let spell = @trunc(i32, text::scan_decimal{ s = first })
+            let id = tagged{ w = &w, word = second }
+            fight::spell_visuals{ &w, id, spell, cast = false }
+            fight::spell_visuals{ &w, id, spell, cast = true }
+        }
     }
 
     // The object a test script names: `pc` is the player's character, else a tag.

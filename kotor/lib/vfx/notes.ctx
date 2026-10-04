@@ -73,10 +73,27 @@ namespace vfx {
                 if target != obj::INVALID { visual_on{ &v, &sc, &w, &dev, effect, object = target } }
                 else { visual_at{ &v, &sc, &w, &dev, effect, at = position, facing = math::vec3::zero{} } }
             }
+            effect_model{ model, object, hook, position, life } => {
+                var_model_fx{ &v, &sc, &w, &dev, model, object, hook, position, life }
+            }
             area_effect{ effect, position, area } => {
                 visual_at{ &v, &sc, &w, &dev, effect, at = position, facing = math::vec3::zero{} }
             }
             else => {}
+        }
+    }
+
+    // An effect model by name: riding a node of an object, or standing at a point.
+    fn var_model_fx {
+        mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device,
+        model: resref::ResRef, object: u32, hook: resref::ResRef, position: math::Vec3, life: f32,
+    } {
+        let mut m = model
+        let mut h = hook
+        if object != obj::INVALID {
+            _ = spawn_follow{ &v, &sc, &w, &dev, model = resref::bytes{ r = &m }, object, hook = resref::bytes{ r = &h }, which = 0, anim = "impact", life } iferr { null }
+        } else {
+            _ = spawn_still{ &v, &sc, &w, &dev, model = resref::bytes{ r = &m }, at = position, facing = math::vec3::zero{}, anim = "impact", life } iferr { null }
         }
     }
 

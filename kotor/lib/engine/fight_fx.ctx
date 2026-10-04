@@ -64,6 +64,48 @@ namespace fight {
         say{ &w, name = sound, at = chest_of{ o }, source = id }
     }
 
+    // A visualeffects.2da effect on an object, or at a point when `target` is OBJECT_INVALID: the
+    // note for lib/vfx and the row's impact sound. Scripts' EffectVisualEffect, a power's cast and
+    // impact, a grenade's blast all come here.
+    fn visual_effect { mut w: world::World, effect: i32, target: u32, source: u32, position: math::Vec3 } {
+        outbox::post{ out = &w.out, note = outbox::Note::visual{ effect, target, source, position } }
+        let mut digits: [12]u8
+        let mut d: usize = 0
+        let mut x = if effect < 0 { 0 } else { effect }
+        if x == 0 { digits[0] = '0'; d = 1 }
+        while x > 0 and d < 12 { digits[d] = @trunc(u8, '0' + @as(u32, x % 10)); x = x / 10; d = d + 1 }
+        let mut label: [12]u8
+        let mut n: usize = 0
+        while d > 0 { d = d - 1; label[n] = digits[d]; n = n + 1 }
+        let row = twoda::find_row{ t = w.tables.visualeffects, label = label[..n] } ifnull { return }
+        let sound = twoda::get_string{ t = w.tables.visualeffects, row, column = "soundimpact" } ifnull ""
+        let mut at = position
+        if world::object{ w = &w, id = target } is some{ value = o } { at = chest_of{ o } }
+        say{ &w, name = sound, at, source = target }
+    }
+
+    // A Force power's visuals as it is conjured (`cast` false) or cast (spells.2da: the
+    // conj*/cast* head, hand and ground models), on the caster's head, hands and feet.
+    fn spell_visuals { mut w: world::World, id: u32, spell: i32, cast: bool } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let head: []u8 = if cast { "castheadvisual" } else { "conjheadvisual" }
+        let hand: []u8 = if cast { "casthandvisual" } else { "conjhandvisual" }
+        let ground: []u8 = if cast { "castgrndvisual" } else { "conjgrndvisual" }
+        let columns: [3][]u8 = [head, hand, ground]
+        let hooks: [3][]u8 = ["headhook", "handconjure", ""]
+        let mut k: usize = 0
+        while k < 3 {
+            let model = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = columns[k] } ifnull ""
+            if model.len > 0 and model.len <= 16 and not ci::eq{ a = model, b = "****" } {
+                outbox::post{ out = &w.out, note = outbox::Note::effect_model{
+                    model = resref::truncate{ name = model }, object = if hooks[k].len > 0 { id } else { obj::INVALID }, hook = resref::truncate{ name = hooks[k] },
+                    position = o.position, life = 0.0,
+                } }
+            }
+            k = k + 1
+        }
+    }
+
     // The first damagehitvisual.2da effect of a damage type that did damage (ranged column).
     fn ranged_hit_effect { w: *world::World, damage: *rules::DamageRoll } -> i32 {
         let mut slot: usize = 0
@@ -85,9 +127,7 @@ namespace fight {
         if imp.hit {
             let mut effect = ranged_hit_effect{ w = &w, damage = &imp.damage }
             if effect == 0 and imp.damage.total > 0 { effect = VFX_BLASTER_IMPACT }
-            if effect > 0 {
-                outbox::post{ out = &w.out, note = outbox::Note::visual{ effect, target = imp.target, source = id, position = math::vec3::zero{} } }
-            }
+            if effect > 0 { visual_effect{ &w, effect, target = imp.target, source = id, position = math::vec3::zero{} } }
             let o = world::object{ w = &w, id } ifnull { return }
             let c = obj::creature{ o } ifnull { return }
             let ammo = ammo_of{ w = &w, item = hand_item{ c, hand = imp.hand } }
@@ -96,7 +136,7 @@ namespace fight {
                 say{ &w, name = sound, at = chest_of{ o = t }, source = imp.target }
             }
         } else if imp.result == rules::outcome::DEFLECTED or imp.result == rules::outcome::RETURNED {
-            outbox::post{ out = &w.out, note = outbox::Note::visual{ effect = VFX_BLASTER_DEFLECTION, target = imp.target, source = id, position = math::vec3::zero{} } }
+            visual_effect{ &w, effect = VFX_BLASTER_DEFLECTION, target = imp.target, source = id, position = math::vec3::zero{} }
         }
     }
 
@@ -166,7 +206,7 @@ namespace fight {
         if parried {
             let mid = math::vec3::lerp{ a = chest_of{ o }, b = chest_of{ o = t }, t = 0.5 }
             let effect = if row == 1 or weapon_sound_row{ w = &w, c = obj::creature{ o = t } ifnull c } == 1 { VFX_SPARKS_LIGHTSABER } else { VFX_SPARKS_PARRY_METAL }
-            outbox::post{ out = &w.out, note = outbox::Note::visual{ effect, target = obj::INVALID, source = id, position = mid } }
+            visual_effect{ &w, effect, target = obj::INVALID, source = id, position = mid }
         }
     }
 

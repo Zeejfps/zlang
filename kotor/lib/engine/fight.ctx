@@ -8,6 +8,8 @@
 //   fight::apply{ &w, target, e = effect }          // an effect (scripts, attacks), events drained
 namespace fight {
     const ROUND_MS: i32 = 3000                  // a combat round (3.1)
+    const DIE_MS: i32 = 3000                    // the die animation (2.97 s in the humanoid skeleton, 2.63 s a creature's) plays out before `dead`
+    const CUTSCENE_READY_MS: i32 = 6000         // a designer's attack leaves the weapon up this long (ours)
     const COMBAT_MS: i32 = 8000                 // in combat this long after the last hostile act (3.6)
     const MAX_IMPACTS: usize = 12               // ranged animations fire up to 12 shots
     const NO_ROW: i32 = -1
@@ -73,6 +75,7 @@ namespace fight {
         has_file_hp: bool,
         dying_ms: i32,                  // > 0: the die animation plays, then dead
         voice_ms: i32,                  // > 0: it has just grunted
+        ready_ms: i32,                  // > 0: a cutscene attack was just made, so the weapon stays up
     }
 
     fn no_impact {} -> Impact {
@@ -88,7 +91,7 @@ namespace fight {
     fn new_fighter { heap: *mut heap::Heap } -> !*mut Fighter {
         let mut c: rules::Creature
         c.loaded_hp = -1
-        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0, voice_ms = 0 }
+        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0, voice_ms = 0, ready_ms = 0 }
         return try alloc::new(Fighter, heap::Heap){ realloc = heap::alloc, heap, value = f }
     }
 
@@ -287,6 +290,8 @@ namespace fight {
             end_round{ &w, id, script = false }
         } else if k == rules::ev::COMMANDABLE {
             o.commandable = e.a != 0
+        } else if k == rules::ev::VISUAL_ON {
+            visual_effect{ &w, effect = e.a, target = id, source = e.who, position = math::vec3::zero{} }
         } else if k == rules::ev::FEEDBACK {
             if w.log.combat {
                 world::prefix{ w = &w }
@@ -367,7 +372,7 @@ namespace fight {
         clear_attackers{ &w, id }
         play_row{ &w, o = back, row = if is_beast{ w = &w, c = bc } { ROW_CDIE } else { ROW_DIE } }
         bark{ &w, id, first = VOICE_DEAD, count = 1, chance_in = 1, quiet = false }
-        f.dying_ms = 1800
+        f.dying_ms = DIE_MS
         if f.c.party {
             // A party member goes down: never dead (8.1); it gets up when the fight is over. The
             // module's OnPlayerDeath runs (GetLastPlayerDied, 8.2).
@@ -709,6 +714,7 @@ namespace fight {
         let row = if forced.on { forced.animation } else { attack_row{ &w, s, duel, ranged_beast = ranged and s == 0 } }
         f.round = no_round{}
         f.round.cutscene = forced.on
+        if forced.on { f.ready_ms = CUTSCENE_READY_MS }
         f.round.started = true
         f.round.length_ms = ROUND_MS
         f.round.target = target
@@ -1006,10 +1012,11 @@ namespace fight {
         }
         if f.react_ms > 0 { f.react_ms = f.react_ms - dt }
         if f.voice_ms > 0 { f.voice_ms = f.voice_ms - dt }
+        if f.ready_ms > 0 { f.ready_ms = f.ready_ms - dt }
         // Back to the ready stance (in combat) or standing when an attack or reaction is over.
         let busy = f.round.started and f.round.timer_ms < f.round.anim_ms
         if not busy and f.react_ms <= 0 and not c3.moving and row_of_animation{ id = o3.animation } >= 0 {
-            if c3.in_combat { play_ready{ &w, o = o3, c = c3 } } else { world::set_animation{ o = o3, id = obj::ANIM_STAND, speed = 1.0 } }
+            if c3.in_combat or f.ready_ms > 0 { play_ready{ &w, o = o3, c = c3 } } else { world::set_animation{ o = o3, id = obj::ANIM_STAND, speed = 1.0 } }
         } else if c3.in_combat and not c3.moving and o3.animation == obj::ANIM_STAND {
             play_ready{ &w, o = o3, c = c3 }
         }
@@ -1125,6 +1132,7 @@ namespace fight {
             }
             let conj = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "conjanim" } ifnull ""
             play_row{ &w, o, row = cast_row{ name = conj, looping = true } }
+            spell_visuals{ &w, id, spell, cast = false }
             a.phase = 1
             a.started = now
             if w.log.combat {
@@ -1143,6 +1151,7 @@ namespace fight {
             let anim = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "castanim" } ifnull ""
             let back = world::object{ w = &w, id } ifnull { return actions::Status::failed }
             play_row{ &w, o = back, row = cast_row{ name = anim, looping = false } }
+            spell_visuals{ &w, id, spell, cast = true }
             a.phase = 2
         }
         if a.phase == 2 {
