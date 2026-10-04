@@ -241,7 +241,7 @@ namespace walkmap {
                 let z = if found != null { found.z } else { hint }
                 k = 0
                 while k < near_count {
-                    if over_blocking_face{ w = &placed[@as(usize, near[k])].mesh, walkable = m.walkable, x, y, z } { return true }
+                    if over_blocking_face{ w = &placed[@as(usize, near[k])].mesh, walkable = m.walkable, x, y, z, mesh_lo = boxes[@as(usize, near[k])].lo.z, mesh_hi = boxes[@as(usize, near[k])].hi.z } { return true }
                     k = k + 1
                 }
             }
