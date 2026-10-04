@@ -176,7 +176,7 @@ namespace visual {
         match o.ext {
             creature{ c } => {
                 animate_creature{ &sc, &w, v, o }
-                if w.log.trace and w.clock.frame % 4 == 0 { trace_gait{ &sc, &w, v, o, c } }
+                if w.log.gait or (w.log.trace and w.clock.frame % 4 == 0) { trace_gait{ &sc, &w, v, o, c } }
                 if v.count > 1 and v.saber != 3 { animate_sabers{ &sc, &w, v, o, c } }
             }
             door{ d } => { animate_door{ &sc, &w, v, state = @as(u32, d.state) } }
@@ -200,9 +200,19 @@ namespace visual {
         let mut rate: f32 = 0.0
         if p0.player.current is some{ value = tr } { rate = tr.speed }
         let len = scene::length_of{ &sc, &w, part = v.first, name = p0.anim[..p0.anim_len] }
-        let ground = movement::gait_cycles{ w = &w, c, run = o.animation == obj::ANIM_RUN, speed = c.speed }
+        // The leader's speed and the distance to it say what a follower is reacting to.
+        let lead = party::leader{ w = &w }
+        let ground = movement::gait_cycles{ w = &w, c, run = o.animation == obj::ANIM_RUN, speed = c.speed, drive = lead == o.id or c.follow_speed > 0.0 }
+        let mut lead_speed: f32 = 0.0
+        let mut lead_dist: f32 = 0.0
+        if lead != o.id and lead != obj::INVALID {
+            if world::object{ w = &w, id = lead } is some{ value = l } {
+                lead_dist = movement::distance_2d{ a = o.position, b = l.position }
+                if obj::creature{ o = l } is some{ value = lc } { lead_speed = lc.speed }
+            }
+        }
         world::prefix{ w = &w }
-        _ = @fmt(&w.io, "gait {} anim {} speed {} rate {} cycle {} s feet {} ground {} cycles/s\n", o.tag, o.animation, c.speed, rate, len, if len > 0.0 { rate / len } else { 0.0 }, ground)
+        _ = @fmt(&w.io, "gait {} anim {} speed {} rate {} cycle {} s feet {} ground {} cycles/s at {} {} lead {} m/s {} m smooth {}\n", o.tag, o.animation, c.speed, rate, len, if len > 0.0 { rate / len } else { 0.0 }, ground, o.position.x, o.position.y, lead_speed, lead_dist, c.follow_speed)
     }
 
     // The playback rate of animation `name` on a creature: its anim_speed, or for a walk or run cycle the cycles

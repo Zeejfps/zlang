@@ -215,6 +215,7 @@ namespace obj {
         // Movement (movement.md 3).
         speed: f32,                         // current speed, m/s: drives walk/run animation
         speed_factor: f32,                  // GetSpeedFactor's f_prev
+        follow_speed: f32,                  // a follower's smoothed speed, m/s (UpdateFollowLeader's +0x48): picks its walk or run cycle and sets the cycle's pace
         path: list::List(math::Vec3, heap::Heap),   // waypoints still to walk
         path_next: usize,
         path_goal: math::Vec3,                      // where the path was planned to
@@ -623,7 +624,7 @@ namespace obj {
             inventory = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
             abilities = [10; 6], hit_dice = 1, disguise = 0, classes = [0; 3], class_levels = [0; 3], good_evil = 50,
             perception_range = 11, spawn_fired = false, last_heartbeat = 0, heartbeat_interval = 3000,
-            speed = 0.0, speed_factor = 0.1,
+            speed = 0.0, speed_factor = 0.1, follow_speed = 0.0,
             path = list::new(math::Vec3, heap::Heap){ realloc = heap::alloc, heap },
             path_next = 0, path_goal = math::vec3::zero{}, path_adjusted = false, moving = false, in_combat = false, dead = false,
             triggers = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },

@@ -19,6 +19,7 @@ the 24-core development machine.
 | Does the reticle and target block follow a walking player (the nearest thing in front, no click), and do hover, click and Q / E work? | `sh kotor/tools/autotarget/run.sh NAME CHECKPOINT SCRIPT FRAMES [FRAME:SHOT]...` with `keydown w` / `mouse` lines in the scripts of `kotor/tools/autotarget/scripts/`; the log has one `target: OLD -> NEW (m, degrees)` line per change ([mechanics/controls.md](mechanics/controls.md)) | seconds |
 | Does stealth (the toggle, G, the solo-mode box, hiding past enemies) work as a player meets it? | `sh kotor/tools/stealth/run.sh NAME START SCRIPT FRAMES [FRAME:SHOT]...` with the scripts in `kotor/tools/stealth/scripts/`; `ui stealth [TAG]` prints the state ([mechanics/stealth.md](mechanics/stealth.md)) | seconds |
 | Do the companions fight (Trask in the Endar Spire's room 3 and before the bridge, Carth in the Upper City), and does a line of sight block one who should? | `sh kotor/tools/combat/companions.sh`, FAIL and exit 1 when a party member made no attack in its fight; `ui los TAG TAG` / `ui losaudit` say what blocks a line; every run ends with `party attack rounds:` and a `companion idle:` line (below) | about a minute |
+| Do the leader and the party followers walk and run at the right gait and cycle rate, and do their feet keep up with the ground? | `EXE=kotor/out/kotor_gait.exe sh kotor/tools/gait/run.sh NAME CHECKPOINT SCRIPT FRAMES [--screenshot-range FROM:TO:DIR]` with the keys of `kotor/tools/gait/scripts/` (`--log gait`: one `gait` line per walking creature per frame: speed, rate, place, the leader's speed and distance), then `python kotor/tools/py/gait_check.py kotor/out/gait/NAME.log FROM TO STEP TAG...` tabulates it; `gait_cam.py` adds a camera that follows one creature to a script for the pictures ([re/movement.md](re/movement.md) 3.6 and 6.2) | seconds |
 
 ## The game headless, fast
 
@@ -113,8 +114,9 @@ its next order can keep one out. Three checks, from cheapest:
   `room3` (from `bunk`, the bot leads: Trask must make an attack round before frame 3,000: the cut scene's `k_pend_cut1_end`
   clears his queue, orders him about 2 frames later and to attack 3 s on; a FOLLOWLEADER queued in between, which never ends,
   kept him in the corridor from the day the line of sight stopped letting him "see" the Sith through the walls);
-  `bridge` (the same run, the bot off at frame 7,690: Trask must attack the reinforcements before the bridge in 7,600-8,500; the
-  bot's leader would kill them in a few rounds on its own); `carth` (from `uppercity`, `retarget1.txt`: three troopers 4 to 5 m
+  `bridge` (the same run, the bot off at frame 6,900, before the reinforcements: Trask must attack them in 6,900-8,500; the
+  bot's leader would kill them in a few rounds on its own, and how soon depends on the run's dice: with the bot off at 7,690 the
+  reinforcements were already dead in the run after the followers' gait change); `carth` (from `uppercity`, `retarget1.txt`: three troopers 4 to 5 m
   ahead, Carth must attack in 900 frames); `provoke` (from `uppercity`, `provoke1.txt`, not a companion: a dark Jedi turned
   hostile with a buff on itself as its first order must go for its enemy when the buff is cast, as the Star Forge's dark Sith
   after `k_psta_sithhosti` must). A FAIL means a companion made no attack where the original's does; read

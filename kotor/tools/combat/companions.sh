@@ -41,19 +41,21 @@ check() {
 }
 
 # The Endar Spire from the bunk: the replay's own resume lines up to the bot's start (they hold the reply queue, the
-# bot's cheats and its route), then probes; the bot is switched off at 7690 for the bridge fight.
+# bot's cheats and its route), then probes; the bot is switched off at 6900 for the bridge fight (before the
+# reinforcements come: how long the first of them lives depends on the run's dice, so a window after the bot's last kill
+# can have nothing left for Trask to fight).
 {
   grep -v '^#' $ck/bunk.txt | grep -v '^[[:space:]]*$' | awk '$1 <= 11'
   echo "50 ui party"
-  echo "7690 ui bot off"
-  echo "7700 use end_door08"
+  echo "6900 ui bot off"
+  echo "6910 use end_door08"
 } | sort -s -n -k1,1 > $out/companions_endar.txt
 rm -rf $out/saves_companions
 $exe --load $ck/bunk --no-render --speed 8 --saves $out/saves_companions --input $out/companions_endar.txt --frames 8500 \
   --log combat > $out/companions_room3.log 2>&1
 cp $out/companions_room3.log $out/companions_bridge.log
 check room3 Trask 1 3000
-check bridge Trask 7600 8500
+check bridge Trask 6900 8500
 
 # Carth in the Upper City.
 {
