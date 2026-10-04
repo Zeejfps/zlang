@@ -377,4 +377,32 @@ namespace glsl {
         "    o_color = v_color;\n",
         "}\n",
     ]
+
+    // The last step, screen to window: one triangle that covers the viewport. u_exponent is the
+    // brightness option's gamma curve (the original loads it into the display's gamma ramp,
+    // out = in ^ exponent, so it darkens or lightens everything on screen, movies included).
+    const POST_VS: [9]c::String = [
+        "#version 410 core\n",
+        "out vec2 v_uv;\n",
+        "void main() {\n",
+        "    vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));\n",
+        "    v_uv = p;\n",
+        "    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n",
+        "}\n",
+        "\n",
+        "\n",
+    ]
+
+    const POST_FS: [10]c::String = [
+        "#version 410 core\n",
+        "uniform sampler2D u_tex;\n",
+        "uniform float u_exponent;\n",
+        "in vec2 v_uv;\n",
+        "layout(location = 0) out vec4 o_color;\n",
+        "void main() {\n",
+        "    vec3 c = texture(u_tex, v_uv).rgb;\n",
+        "    o_color = vec4(pow(c, vec3(u_exponent)), 1.0);\n",
+        "}\n",
+        "\n",
+    ]
 }

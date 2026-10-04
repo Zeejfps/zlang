@@ -389,6 +389,11 @@ namespace obj {
 
     struct Aoe { creator: u32, radius: f32 }
 
+    // The area's grass (ARE Grass_*): quads of one texture's four quarters, `density` of them per square metre of
+    // walkmesh whose surface material has the grass flag, each `quad_size` metres across. `prob` is the chance of
+    // each quarter: lower left, lower right, upper left, upper right. Empty `texture`: none.
+    struct Grass { texture: resref::ResRef, density: f32, quad_size: f32, prob: [4]f32, wind: i32 }
+
     struct Area {
         resref: resref::ResRef,
         name: Name,
@@ -412,6 +417,8 @@ namespace obj {
         fog_near: f32,
         fog_far: f32,
         fog_color: u32,
+        grass: Grass,
+        shadow_opacity: u32,                // ShadowOpacity, 0..255: how dark creatures' shadows are
         load_screen: u32,
         last_heartbeat: u64,
         transition_token: u8,               // gameloop.md 5.2

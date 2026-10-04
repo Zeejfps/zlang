@@ -7,13 +7,18 @@
 namespace frontend {
     struct Settings {
         // [Graphics Options]
-        width: i32, height: i32, fullscreen: bool, vsync: bool,
-        gamma: i32,                 // 0..100, the brightness slider
+        width: i32, height: i32,
+        window_mode: i32,           // FullScreen: 0 windowed, 1 full screen (the display switches mode), 2 borderless over the desktop (ours)
+        refresh: i32,               // Refresh Rate (ours): Hz for full screen, 0 the display's highest
+        vsync: bool,
+        gamma: i32,                 // Brightness: 0..100, the brightness slider (57 leaves the picture as it is)
         shadows: bool, soft_shadows: bool, grass: bool, frame_buffer: bool,
-        anisotropy: i32,            // 0 off .. 3
-        antialias: i32,             // 0 off .. 3
+        emitters: bool,             // Emitters: particle effects (in the original's strings, not on its panels)
+        anisotropy: i32,            // 0 off .. 3 (2x, 4x, 8x)
+        antialias: i32,             // 0 off .. 3 (2x, 4x, 8x samples)
         texture_quality: i32,       // 0 low .. 2 high
-        gui_scale: f32,             // 1: the original's pixel-for-pixel GUI
+        gui_scale: f32,             // GUI Scale (ours): 0 fits the window (auto), 1 the original's pixel-for-pixel GUI, else a factor
+        frame_limit: i32,           // Frame Limit (ours): frames per second at most, 0 none
         // [Sound Options]
         music: i32, voice: i32, effects: i32, movie: i32,       // 0..100
         eax: bool, force_software: bool,
@@ -35,9 +40,9 @@ namespace frontend {
     // The original's defaults (swkotor.ini as the install ships it).
     fn default_settings {} -> Settings {
         return Settings{
-            width = 1280, height = 960, fullscreen = false, vsync = true, gamma = 50,
-            shadows = true, soft_shadows = false, grass = true, frame_buffer = true,
-            anisotropy = 0, antialias = 0, texture_quality = 2, gui_scale = 1.0,
+            width = 1280, height = 720, window_mode = 0, refresh = 0, vsync = true, gamma = 57,
+            shadows = true, soft_shadows = false, grass = true, frame_buffer = true, emitters = true,
+            anisotropy = 3, antialias = 0, texture_quality = 2, gui_scale = 0.0, frame_limit = 0,
             music = 85, voice = 85, effects = 85, movie = 100, eax = false, force_software = false,
             difficulty = 1, mouse_sensitivity = 33, reverse_buttons = false,
             mouse_look = false, auto_level_up = false, autosave = true, reverse_minigame_y = false, combat_movement = true,
@@ -81,17 +86,21 @@ namespace frontend {
         return Settings{
             width = clamp_i{ v = get_int{ data, section = g, key = "Width", fallback = d.width }, lo = 640, hi = 16384 },
             height = clamp_i{ v = get_int{ data, section = g, key = "Height", fallback = d.height }, lo = 480, hi = 16384 },
-            fullscreen = get_bool{ data, section = g, key = "FullScreen", fallback = d.fullscreen },
+            window_mode = clamp_i{ v = get_int{ data, section = g, key = "FullScreen", fallback = d.window_mode }, lo = 0, hi = 2 },
+            refresh = clamp_i{ v = get_int{ data, section = g, key = "Refresh Rate", fallback = d.refresh }, lo = 0, hi = 1000 },
             vsync = get_bool{ data, section = g, key = "V-Sync", fallback = d.vsync },
-            gamma = clamp_i{ v = get_int{ data, section = g, key = "Gamma", fallback = d.gamma }, lo = 0, hi = 100 },
+            // The original's key is Brightness; "Gamma" is what this file said before.
+            gamma = clamp_i{ v = get_int{ data, section = g, key = "Brightness", fallback = get_int{ data, section = g, key = "Gamma", fallback = d.gamma } }, lo = 0, hi = 100 },
             shadows = get_bool{ data, section = g, key = "Shadows", fallback = d.shadows },
             soft_shadows = get_bool{ data, section = g, key = "Soft Shadows", fallback = d.soft_shadows },
             grass = get_bool{ data, section = g, key = "Grass", fallback = d.grass },
-            frame_buffer = get_bool{ data, section = g, key = "Frame Buffer Effects", fallback = d.frame_buffer },
+            frame_buffer = get_bool{ data, section = g, key = "Frame Buffer", fallback = get_bool{ data, section = g, key = "Frame Buffer Effects", fallback = d.frame_buffer } },
+            emitters = get_bool{ data, section = g, key = "Emitters", fallback = d.emitters },
             anisotropy = clamp_i{ v = get_int{ data, section = g, key = "Anisotropy", fallback = d.anisotropy }, lo = 0, hi = 3 },
             antialias = clamp_i{ v = get_int{ data, section = g, key = "Anti Aliasing", fallback = d.antialias }, lo = 0, hi = 3 },
             texture_quality = clamp_i{ v = get_int{ data, section = g, key = "Texture Quality", fallback = d.texture_quality }, lo = 0, hi = 2 },
             gui_scale = get_float{ data, section = g, key = "GUI Scale", fallback = d.gui_scale },
+            frame_limit = clamp_i{ v = get_int{ data, section = g, key = "Frame Limit", fallback = d.frame_limit }, lo = 0, hi = 1000 },
             music = clamp_i{ v = get_int{ data, section = s, key = "Music Volume", fallback = d.music }, lo = 0, hi = 100 },
             voice = clamp_i{ v = get_int{ data, section = s, key = "Voiceover Volume", fallback = d.voice }, lo = 0, hi = 100 },
             effects = clamp_i{ v = get_int{ data, section = s, key = "Sound Effects Volume", fallback = d.effects }, lo = 0, hi = 100 },
@@ -166,17 +175,20 @@ namespace frontend {
         try @fmt(&b, "; kotor options: written by the game's options screens\n[Graphics Options]\n")
         try put_i{ &b, key = "Width", v = s.width }
         try put_i{ &b, key = "Height", v = s.height }
-        try put_b{ &b, key = "FullScreen", v = s.fullscreen }
+        try put_i{ &b, key = "FullScreen", v = s.window_mode }
+        try put_i{ &b, key = "Refresh Rate", v = s.refresh }
         try put_b{ &b, key = "V-Sync", v = s.vsync }
-        try put_i{ &b, key = "Gamma", v = s.gamma }
+        try put_i{ &b, key = "Brightness", v = s.gamma }
         try put_b{ &b, key = "Shadows", v = s.shadows }
         try put_b{ &b, key = "Soft Shadows", v = s.soft_shadows }
         try put_b{ &b, key = "Grass", v = s.grass }
-        try put_b{ &b, key = "Frame Buffer Effects", v = s.frame_buffer }
+        try put_b{ &b, key = "Frame Buffer", v = s.frame_buffer }
+        try put_b{ &b, key = "Emitters", v = s.emitters }
         try put_i{ &b, key = "Anisotropy", v = s.anisotropy }
         try put_i{ &b, key = "Anti Aliasing", v = s.antialias }
         try put_i{ &b, key = "Texture Quality", v = s.texture_quality }
         try @fmt(&b, "GUI Scale={}\n", s.gui_scale)
+        try put_i{ &b, key = "Frame Limit", v = s.frame_limit }
         try @fmt(&b, "\n[Sound Options]\n")
         try put_i{ &b, key = "Music Volume", v = s.music }
         try put_i{ &b, key = "Voiceover Volume", v = s.voice }

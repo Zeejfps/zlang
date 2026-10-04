@@ -400,18 +400,52 @@ namespace visual {
         return i
     }
 
-    fn draw { sc: *scene::Scene, v: *scene::Visual, o: *obj::Object, mut frame: render::Frame, view: u32 } {
+    fn draw { sc: *scene::Scene, w: *world::World, v: *scene::Visual, o: *obj::Object, mut frame: render::Frame, view: u32 } {
         let mut transforms: [8]math::Mat4
         let n = part_transforms{ sc, v, o, out = transforms[..] }
         // A creature in stealth mode, its weapons too, wears the stealth texture.
         let look = if scene::is_hiding{ o } { scene::look_material{ sc } } else { null }
+        let cast = shadow_of{ w, o, frame = &frame }
         let mut i: usize = 0
         while i < n {
             let p = scene::part_at{ sc, i = v.first + i }
             let l = scene::loaded_at{ sc, i = p.loaded }
-            _ = mdl_render::add_draws_look{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = transforms[i], materials = l.materials, time = sc.time, look }
+            _ = mdl_render::add_draws_look{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = transforms[i], materials = l.materials, time = sc.time, look, cast }
             i = i + 1
         }
+    }
+
+    // The shadow a creature casts (the Shadows option draws it, the Soft Shadows option softens it): onto the floor
+    // under it, from the nearest light of the room that reaches it, else from the sun overhead and a little to one
+    // side. The area's ShadowOpacity is how dark it is. Null: not a creature, or no floor under it.
+    fn shadow_of { w: *world::World, o: *obj::Object, frame: *render::Frame } -> ?render::Shadow {
+        if obj::creature{ o } == null { return null }
+        let f = walkmap::floor{ m = &w.walk, x = o.position.x, y = o.position.y, z = o.position.z } ifnull { return null }
+        let room = list::at{ list = w.walk.rooms, i = @as(usize, f.room) }
+        let mesh = room.mesh ifnull { return null }
+        if @as(usize, f.face) >= mesh.planes.len { return null }
+        let plane = mesh.planes[@as(usize, f.face)]
+        let mut opacity: f32 = 0.5
+        if world::object{ w, id = w.area } is some{ value = ao } {
+            if obj::area{ o = ao } is some{ value = a } { opacity = @as(f32, a.shadow_opacity) / 255.0 }
+        }
+        // The nearest light that reaches the creature.
+        let mut best: i32 = -1
+        let mut best_d: f32 = 1000000.0
+        let mut k: u32 = 0
+        while k < frame.light_count {
+            let l = frame.lights[k]
+            let d = math::vec3::length{ v = math::vec3::sub{ a = l.position, b = o.position } }
+            if d < l.radius and d < best_d and l.position.z > o.position.z + 0.5 {
+                best = @as(i32, k)
+                best_d = d
+            }
+            k = k + 1
+        }
+        if best >= 0 {
+            return render::Shadow{ draw = 0, light = frame.lights[@as(u32, best)].position, directional = false, plane, strength = opacity }
+        }
+        return render::Shadow{ draw = 0, light = math::Vec3{ x = 0.5, y = 0.35, z = -0.8 }, directional = true, plane, strength = opacity }
     }
 
     // Where a visual puts the node called `hook` in world space, looked for in its parts in order

@@ -1,0 +1,2 @@
+1 gfx shadows 0
+1 gfx grass 0

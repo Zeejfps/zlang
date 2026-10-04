@@ -29,12 +29,14 @@ namespace loading {
         ticks: u32,                     // loop iterations since `show` (the area's ticks, behind the screen)
         frames: u32,                    // loading frames drawn, for the numbering of --screenshot-loading
         quit: bool,                     // the window was closed meanwhile
+        scale: f32,                     // the GUI Scale option (0 fits the window): the panel is placed again at each show
     }
 
     // The loading screen's GUI, built once at start-up (fonts, the dialog.tlk for the hints).
-    fn make { mut w: world::World, mut dev: gpu::Device, scratch: alloc::Bytes, opts: options::Options } -> !*mut Loading {
+    fn make { mut w: world::World, mut dev: gpu::Device, scratch: alloc::Bytes, opts: options::Options, scale: f32 } -> !*mut Loading {
+        let size = gpu::screen_size{ dev }
         let cache = try alloc::new(material::Cache, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = material::new_cache{ heap = w.heap, scratch } }
-        let mut g = try gui::make{ heap = w.heap, rm = w.rm.*, cache, width = @as(i32, opts.width), height = @as(i32, opts.height) }
+        let mut g = try gui::make{ heap = w.heap, rm = w.rm.*, cache, width = @as(i32, size.width), height = @as(i32, size.height) }
         if w.tlk != null {
             let tb = w.tlk ifnull { return gui::no_such_gui{ name = "dialog.tlk" } }
             let t = try alloc::new(tlk::Table, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = tb }
@@ -42,9 +44,9 @@ namespace loading {
         }
         try gui::load_defaults{ &g, fs = &w.fs, &dev }
         gui::set_cursor_visible{ &g, visible = false }
-        let fe = frontend::make{ fs = &w.fs, heap = w.heap, game = opts.game, config_path = "kotor/out/kotor-settings.ini" }
-        gui::set_screen{ &g, fs = &w.fs, &dev, width = @as(i32, opts.width), height = @as(i32, opts.height), scale = fe.settings.gui_scale }
-        let l = Loading{ cache, g, fe, panel = 0, ticks = 0, frames = 0, quit = false }
+        let fe = frontend::make{ fs = &w.fs, heap = w.heap, game = opts.game, config_path = opts.settings }
+        gui::set_screen{ &g, fs = &w.fs, &dev, width = @as(i32, size.width), height = @as(i32, size.height), scale }
+        let l = Loading{ cache, g, fe, panel = 0, ticks = 0, frames = 0, quit = false, scale }
         return try alloc::new(Loading, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = l }
     }
 
@@ -58,6 +60,9 @@ namespace loading {
         // The GUI holds a copy of the resource manager, and a module mounted since the copy was made has moved
         // the manager's source list: a stale copy walks freed memory (the first show after a transition hung in it).
         l.g.rm = w.rm.*
+        // The window may have changed size or the GUI scale since the last time.
+        let size = gpu::screen_size{ dev }
+        gui::set_screen{ g = &l.g, fs = &w.fs, &dev, width = @as(i32, size.width), height = @as(i32, size.height), scale = l.scale }
         l.panel = frontend::show_loading{ fe = &l.fe, g = &l.g, fs = &w.fs, dev = &dev, name, story, saving = false } iferr err{ error } {
             _ = @fmt(&w.io, "kotor: loading screen: {}\n", error)
             0

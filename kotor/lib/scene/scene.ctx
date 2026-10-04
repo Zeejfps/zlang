@@ -73,6 +73,7 @@ namespace scene {
         drawn_rooms: u32,
         drawn_objects: u32,
         look: Look,                     // a creature in stealth mode's texture (stealth_look.ctx)
+        grass: grass::Field,            // the area's grass (grass.ctx); `grass.on` is the Grass option, set by the owner
     }
 
     fn make { arena: *mut arena::Arena, heap: *mut heap::Heap, scratch: alloc::Bytes, rm: res::Manager } -> Scene {
@@ -89,7 +90,7 @@ namespace scene {
             visuals = list::new(Visual, arena::Arena){ realloc = arena::alloc, heap = arena },
             by_id = map::new(u32, usize, arena::Arena){ realloc = arena::alloc, heap = arena, hash = map::hash_u32, eq = map::eq_u32 },
             time = 0.0, current_room = -1, ambient = math::Vec3{ x = 0.35, y = 0.35, z = 0.35 }, fog = render::no_fog{},
-            drawn_rooms = 0, drawn_objects = 0, look = no_look{},
+            drawn_rooms = 0, drawn_objects = 0, look = no_look{}, grass = grass::none{},
         }
     }
 
@@ -281,6 +282,7 @@ namespace scene {
                 if a.fog_on {
                     sc.fog = render::Fog{ on = true, color = color_of{ bgr = a.fog_color }, near = a.fog_near, far = a.fog_far }
                 }
+                sc.grass = try grass::plant{ arena = sc.arena, walk = &w.walk, grass = a.grass, cache = &sc.materials, fs = &w.fs, &dev, rm = w.rm.* }
             }
         }
     }
@@ -438,6 +440,10 @@ namespace scene {
             _ = mdl_render::add_draws{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = instance, materials = l.materials, time = sc.time }
             sc.drawn_rooms = sc.drawn_rooms + 1
         }
+        // Grass stands on the floor of the rooms it is seen in: it comes with them (the eye and the way it looks are the view's).
+        let cam = frame.views[view].camera
+        let forward = math::Vec3{ x = -cam.view.m[2], y = -cam.view.m[6], z = -cam.view.m[10] }
+        grass::draw{ f = &sc.grass, &frame, view, eye = cam.eye, forward, ambient = sc.ambient, time = sc.time }
         let visuals = list::items{ list = sc.visuals }
         i = 0
         while i < visuals.len {
@@ -446,7 +452,7 @@ namespace scene {
             if not v.alive { continue }
             if v.room >= 0 and @as(usize, v.room) < rooms.len and not rooms[@as(usize, v.room)].visible { continue }
             let o = world::object{ w, id = v.id } ifnull { continue }
-            visual::draw{ sc = &sc, v = &v, o, &frame, view }
+            visual::draw{ sc = &sc, w, v = &v, o, &frame, view }
             sc.drawn_objects = sc.drawn_objects + 1
         }
     }

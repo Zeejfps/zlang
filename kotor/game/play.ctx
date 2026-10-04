@@ -15,9 +15,24 @@ namespace play {
         let device_pages = mem::pages{ &mem, size = 134217728 } ifnull { return 1 }
         let mut device_arena = arena::new{ buf = device_pages }
         let texture_scratch = mem::pages{ &mem, size = 100663296 } ifnull { return 1 }
-        let config = render::make_config{ title = "kotor", width = @as(i32, opts.width), height = @as(i32, opts.height), hidden = opts.headless }
+        // The graphics options: a window run reads the options file (the size from --size if it is given); an offscreen run
+        // keeps the defaults, so its logs and pictures repeat, unless --gfx asks for the file (a picture of an option).
+        let mut live = frontend::load_settings{ fs = &w.fs, heap = w.heap, path = opts.settings }
+        if opts.headless and not opts.gfx { display::use_default_graphics{ s = &live } }
+        if opts.headless or opts.size_given {
+            live.width = @as(i32, opts.width)
+            live.height = @as(i32, opts.height)
+            if opts.size_given and not opts.headless { live.window_mode = 0 }
+            if opts.headless { live.window_mode = 0 }
+        }
+        let mut config = render::make_config{ title = "kotor", width = live.width, height = live.height, hidden = opts.headless }
+        config.vsync = live.vsync
         let mut dev = try gpu::open(arena::Arena){ &sdl, realloc = arena::alloc, heap = &device_arena, config }
         defer gpu::close{ &dev, &sdl }
+        let mut disp = display::make{ hidden = opts.headless, path = opts.settings }
+        let first_change = display::apply{ d = &disp, &dev, &sdl, s = &live }
+        disp.live = live
+        if (first_change & display::CHANGED_TEXTURES) != 0 { mount_packs{ &w, quality = live.texture_quality } }
         let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, heap = &device_arena, cap = render::default_capacity{} }
         // Sound: a device when there is a window; headless, the mixer runs on without one (as the
         // original does with no sound device, audio.md), so sounds still start and end.
@@ -33,7 +48,7 @@ namespace play {
         let mixer = try mix::make(heap::Heap){ realloc = heap::alloc, heap = w.heap, rate, voices_2d = 24, voices_3d = 16 }
         speed::mute_unheard{ mixer, opts }
         // The loading screen (game/loading.ctx): up over every way into an area, behind which the area is assembled.
-        let ld = try loading::make{ &w, &dev, scratch = texture_scratch, opts }
+        let ld = try loading::make{ &w, &dev, scratch = texture_scratch, opts, scale = disp.live.gui_scale }
         let script = try read_script{ &w, path = opts.input }
         let mut next_line: usize = 0
         let mut frame_no: u64 = 0
@@ -50,7 +65,8 @@ namespace play {
         }
         // No module named: the front end (movies, main menu) until New Game.
         if w.module == obj::INVALID {
-            let chosen = try front_end{ &sdl, &w, &dev, &frame, mixer, adev, scratch = texture_scratch, opts, script, &next_line, &frame_no }
+            let chosen = try front_end{ &sdl, &w, &dev, &frame, mixer, adev, scratch = texture_scratch, opts, script, &next_line, &frame_no, &disp }
+            ld.scale = disp.applied.gui_scale
             if chosen.len == 0 { return 0 }
             if chosen.len > 5 and slice::eq_bytes{ a = chosen[..5], b = "load:" } {
                 show_for_save{ ld, &w, &dev, &sdl, &frame, opts, folder = chosen[5..] }
@@ -101,7 +117,12 @@ namespace play {
         let mut mg_stage = mg_game::make_stage{}
         let mut mg_mouse = mg_game::make_mouse{}
         // HOOK(ingame): the HUD and the in-game menus (docs/design/hud.md).
-        let ui = try ingame::make{ &w, &dev, mixer, scratch = texture_scratch, width = @as(i32, opts.width), height = @as(i32, opts.height) }
+        let screen_now = gpu::screen_size{ dev }
+        let ui = try ingame::make{ &w, &dev, mixer, scratch = texture_scratch, width = @as(i32, screen_now.width), height = @as(i32, screen_now.height), settings = opts.settings, gui_scale = disp.live.gui_scale }
+        if ingame::options_front{ ui } is some{ value = fe } {
+            fe.settings = disp.live
+            display::tell{ d = &disp, fe }
+        }
         if not opts.headless { _ = sdl::SDL_ShowCursor{ &sdl, toggle = 0 } }    // HOOK(ingame): the GUI draws the pointer
         ui.autopause = not opts.headless    // HOOK(ingame): a person is playing: the auto-pause options apply
         loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 90 }
@@ -129,12 +150,12 @@ namespace play {
             // 1. Input: the window's events, then the script's lines for this frame. A scripted key or click
             // is put on SDL's queue (game/inject.ctx) and read back at once, so it takes the path a real one does.
             if ld.quit { quit = true }
-            pump_events{ &sdl, &w, &dev, ui, &dview, &mg_mouse, &keys, &quit, &want_save, &want_load, loading_up = loading::is_up{ l = ld } }
+            pump_events{ &sdl, &w, &dev, ui, &dview, &mg_mouse, &keys, &quit, &want_save, &want_load, loading_up = loading::is_up{ l = ld }, &disp }
             while next_line < script.len and script[next_line].frame <= frame_no {
                 let s = script[next_line]
                 next_line = next_line + 1
                 if inject::handle_scripted{ &sdl, inp = &inputs, word = s.word, rest = s.rest } {
-                    pump_events{ &sdl, &w, &dev, ui, &dview, &mg_mouse, &keys, &quit, &want_save, &want_load, loading_up = loading::is_up{ l = ld } }
+                    pump_events{ &sdl, &w, &dev, ui, &dview, &mg_mouse, &keys, &quit, &want_save, &want_load, loading_up = loading::is_up{ l = ld }, &disp }
                     continue
                 }
                 // One call per owner, in turn: the first that knows the word takes the line. A new owner adds
@@ -142,12 +163,42 @@ namespace play {
                 let handled = handle_scripted{ &w, &vm, engine, &keys, &want_save, &want_load, word = s.word, rest = s.rest } or
                     mg_game::handle_scripted{ m = &mg_mouse, word = s.word, rest = s.rest } or
                     handle_scripted_vfx{ &w, &test_camera, word = s.word, rest = s.rest } or
+                    display::handle_scripted{ d = &disp, word = s.word, rest = s.rest } or
                     dlgview::handle_scripted{ v = &dview, w = &w, g = &ui.gui, word = s.word, rest = s.rest } or
                     ingame::handle_scripted{ ui, &w, &dev, word = s.word, rest = s.rest }    // HOOK(ingame)
                 if not handled {
                     _ = @fmt(&w.io, "kotor: input script: no command '{}' in the line '{} {} {}'\n", s.word, s.frame, s.word, s.rest)
                     return 1
                 }
+            }
+            // 1b. Graphics options changed by a scripted `gfx` word or in the options menu are made real before this frame is drawn.
+            let mut reload_scene = false
+            if disp.pending {
+                disp.pending = false
+                let mut s = disp.live
+                let changed = display::apply{ d = &disp, &dev, &sdl, s = &s }
+                disp.live = s
+                frontend::save_settings{ fs = &w.fs, heap = w.heap, path = opts.settings, s } iferr {}
+                options_changed{ &w, &dev, ui, &dview, &disp, ld, changed }
+                reload_scene = reload_scene or (changed & display::CHANGED_TEXTURES) != 0
+            }
+            if ingame::take_display_change{ ui } is some{ value = st } {
+                let changed = display::apply{ d = &disp, &dev, &sdl, s = st }
+                disp.live = st.*
+                options_changed{ &w, &dev, ui, &dview, &disp, ld, changed }
+                reload_scene = reload_scene or (changed & display::CHANGED_TEXTURES) != 0
+            }
+            sc.grass.on = disp.applied.grass     // the Grass option, every frame (a new area's scene starts with it on)
+            // Another texture pack: the area's textures are loaded again from it, as a load does (the world stays).
+            if reload_scene and w.transition == null {
+                dlgview::leave{ v = &dview, w = &w, sc = &sc, g = &ui.gui }
+                ambience::stop_area{ a = &amb }
+                scene::release{ &sc, &dev }
+                arena::reset{ heap = &scene_arena }
+                vfx::reset{ v = &vx }
+                sc = scene::make{ arena = &scene_arena, heap = w.heap, scratch = texture_scratch, rm = w.rm.* }
+                try scene::load_area{ &sc, &w, &dev }
+                ambience::start_area{ a = &amb, &w }
             }
             // The step: fixed when headless, measured otherwise.
             let now = sdl::counter{ &sdl }
@@ -414,6 +465,7 @@ namespace play {
             while s < opts.shot_count {
                 if opts.shots[s].frame == frame_no {
                     try screenshot{ &w, &dev, heap = &scene_arena, path = opts.shots[s].path, frame_no }
+                    _ = @fmt(&w.io, "  frame: {} draws, {} shadows, {} lights, {} emitters, {} particles\n", frame.draw_count, frame.shadow_count, frame.light_count, frame.emitter_count, frame.particle_count)
                     let p = world::object{ w = &w, id = w.pc }
                     if p != null {
                         _ = @fmt(&w.io, "  leader at {} {} {} (room {}), camera at {} {} {} looking at {} {} {}\n", p.position.x, p.position.y, p.position.z,
@@ -436,7 +488,10 @@ namespace play {
                 _ = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &scene_arena, mem = pixels, count = 0 }
                 want_save = ""
             }
-            if not opts.headless { gpu::present{ &dev, &sdl } }
+            if not opts.headless {
+                gpu::present{ &dev, &sdl }
+                display::limit_frame{ d = &disp, &sdl, fps = disp.applied.frame_limit }
+            }
             arena::reset{ heap = w.scratch }
         }
         _ = @fmt(&w.io, "scene: {} rooms drawn of {}, {} objects drawn, {} visuals; textures {} loaded, {} missing\n",
@@ -475,46 +530,59 @@ namespace play {
     fn front_end {
         mut sdl: sdl::Sdl, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame, mixer: *mut mix::Mixer,
         adev: ?*mut audio::Device, scratch: alloc::Bytes, opts: options::Options, script: []Scripted,
-        mut next_line: usize, mut frame_no: u64,
+        mut next_line: usize, mut frame_no: u64, mut disp: display::Display,
     } -> ![]u8 {
         let mut cache = material::new_cache{ heap = w.heap, scratch }
         defer material::free_cache{ &cache, &dev }
-        let mut g = try gui::make{ heap = w.heap, rm = w.rm.*, cache = &cache, width = @as(i32, opts.width), height = @as(i32, opts.height) }
+        let size = gpu::screen_size{ dev }
+        let mut g = try gui::make{ heap = w.heap, rm = w.rm.*, cache = &cache, width = @as(i32, size.width), height = @as(i32, size.height) }
         defer gui::free{ &g }
         let table = w.tlk
         if table != null { gui::set_tlk{ &g, table = &table } }
         try gui::load_defaults{ &g, fs = &w.fs, &dev }
         gui::set_cursor_visible{ &g, visible = not opts.headless }
         gui::set_mixer{ &g, mixer }
-        let mut fe = frontend::make{ fs = &w.fs, heap = w.heap, game = opts.game, config_path = "kotor/out/kotor-settings.ini" }
+        let mut fe = frontend::make{ fs = &w.fs, heap = w.heap, game = opts.game, config_path = opts.settings }
         frontend::set_own_saves{ &fe, dir = opts.saves }
+        fe.settings = disp.live
         fe.settings.disable_movies = fe.settings.disable_movies or opts.headless
-        gui::set_screen{ &g, fs = &w.fs, &dev, width = @as(i32, opts.width), height = @as(i32, opts.height), scale = fe.settings.gui_scale }
+        display::tell{ d = &disp, fe = &fe }
+        gui::set_screen{ &g, fs = &w.fs, &dev, width = @as(i32, size.width), height = @as(i32, size.height), scale = fe.settings.gui_scale }
         try frontend::begin{ &fe, &g, fs = &w.fs, &dev, &sdl, mixer }
         let freq = sdl::counter_frequency{ &sdl }
         let mut last = sdl::counter{ &sdl }
+        let mut inputs = inject::new_inputs{}      // the scripted pointer and keys, for driving the menus in tests
         let mut chosen: []u8 = ""
         let mut done = false
-        let mut inputs = inject::new_inputs{}      // the scripted pointer and keys, for driving the menus in tests
         while not done {
             frame_no = frame_no + 1
             if opts.frames > 0 and frame_no > opts.frames { break }
-            while true {
-                let ev = sdl::poll{ &sdl } ifnull { break }
-                if ev is quit | close { done = true }
-                _ = frontend::handle_event{ &fe, &g, ev, scale_x = 1.0, scale_y = 1.0 }
-            }
+            // The script's lines for this frame first: a scripted click is put on SDL's queue and read back below.
             let mut forced = false
             let mut forced_player: []u8 = ""            // `newgame FILE`: the player blueprint to start with (tests)
             while next_line < script.len and script[next_line].frame <= frame_no {
-                if ci::eq{ a = script[next_line].word, b = "newgame" } {
+                let line = script[next_line]
+                if ci::eq{ a = line.word, b = "newgame" } {
                     forced = true
-                    forced_player = text::first_word{ s = script[next_line].rest }
-                } else {
-                    // keys and the mouse, read back with the next frame's events
-                    _ = inject::handle_scripted{ &sdl, inp = &inputs, word = script[next_line].word, rest = script[next_line].rest }
+                    forced_player = text::first_word{ s = line.rest }
+                } else if inject::handle_scripted{ &sdl, inp = &inputs, word = line.word, rest = line.rest } {
+                    // keys and the mouse, read back with this frame's events
+                } else if display::handle_scripted{ d = &disp, word = line.word, rest = line.rest } {
+                    // A `gfx` word: made real just below, with the changes the menu made.
+                    fe.settings = disp.live
+                    fe.display_pending = true
                 }
                 next_line = next_line + 1
+            }
+            while true {
+                let polled = sdl::poll{ &sdl } ifnull { break }
+                if polled is quit | close { done = true }
+                if polled is resized {
+                    if display::on_resized{ d = &disp, &dev, &sdl } { front_resized{ &w, &dev, &g, &fe, &disp } }
+                    continue
+                }
+                let ev = display::map_event{ d = &disp, ev = polled }
+                _ = frontend::handle_event{ &fe, &g, ev, scale_x = 1.0, scale_y = 1.0 }
             }
             let now = sdl::counter{ &sdl }
             let real = @as(f32, @as(f64, now - last) / @as(f64, freq))
@@ -526,6 +594,16 @@ namespace play {
             }
             gui::update{ &g, dt }
             let mut out = frontend::step{ &fe, &g, fs = &w.fs, &dev, &sdl, output = adev, mixer, dt }
+            // An option of the Graphics panels (or a scripted `gfx` word) changed: the device follows at once, as the original's does.
+            if frontend::take_display_change{ &fe } {
+                disp.pending = false
+                let changed = display::apply{ d = &disp, &dev, &sdl, s = &fe.settings }
+                disp.live = fe.settings
+                if (changed & (display::CHANGED_SIZE | display::CHANGED_UI_SCALE)) != 0 { front_resized{ &w, &dev, &g, &fe, &disp } }
+                if (changed & display::CHANGED_TEXTURES) != 0 { mount_packs{ &w, quality = disp.applied.texture_quality } }
+                display::tell{ d = &disp, fe = &fe }
+                frontend::refresh_display_texts{ &fe, &g }
+            }
             if forced {
                 let blueprint = if forced_player.len > 0 {
                     fs::read_all(heap::Heap){ fs = &w.fs, heap = w.heap, realloc = heap::alloc, path = forced_player } iferr { slice::empty(u8){} }
@@ -569,10 +647,48 @@ namespace play {
                 if opts.shots[s].frame == frame_no { try screenshot{ &w, &dev, heap = w.scratch, path = opts.shots[s].path, frame_no } }
                 s = s + 1
             }
-            if not opts.headless { gpu::present{ &dev, &sdl } }
+            if not opts.headless {
+                gpu::present{ &dev, &sdl }
+                display::limit_frame{ d = &disp, &sdl, fps = disp.applied.frame_limit }
+            }
         }
         frontend::leave{ &fe, &g, &dev, mixer }
         return chosen
+    }
+
+    // The render size or the GUI scale changed while the front end runs: its panels are placed again.
+    fn front_resized { mut w: world::World, mut dev: gpu::Device, mut g: gui::Gui, mut fe: frontend::Front, disp: *display::Display } {
+        gui::set_screen{ &g, fs = &w.fs, &dev, width = @as(i32, disp.render.width), height = @as(i32, disp.render.height), scale = disp.applied.gui_scale }
+        display::tell{ d = disp, fe = &fe }
+    }
+
+    // Another texture pack for the Texture Quality option (the original mounts the packs again as the option changes, 0x005f14a0):
+    // textures already loaded stay as they are until they are loaded again.
+    fn mount_packs { mut w: world::World, quality: i32 } {
+        let q = @as(u32, quality)
+        if w.rm.quality == q { return }
+        _ = @fmt(&w.io, "texture packs: quality {} (was {})\n", q, w.rm.quality)
+        res::mount_texture_packs{ fs = &w.fs, rm = w.rm, quality = q } iferr err{ error } {
+            _ = @fmt(&w.io, "kotor: texture packs: {}\n", error)
+        }
+    }
+
+    // The render size or the GUI scale changed: the interface is laid out again at the new size.
+    fn relayout_ui { mut w: world::World, mut dev: gpu::Device, ui: *mut ingame::Ingame, mut dview: dlgview::View, disp: *display::Display } {
+        ingame::set_gui_scale{ ui, scale = disp.applied.gui_scale }
+        ingame::relayout{ ui, &w, &dev, width = @as(i32, disp.render.width), height = @as(i32, disp.render.height) }
+        dlgpanel::resize{ p = &dview.panels, g = &ui.gui, fs = &w.fs, &dev }
+    }
+
+    // The device agrees with new settings: the interface follows what changed, and the option screens show what is true.
+    fn options_changed { mut w: world::World, mut dev: gpu::Device, ui: *mut ingame::Ingame, mut dview: dlgview::View, mut disp: display::Display, ld: *mut loading::Loading, changed: u32 } {
+        ld.scale = disp.applied.gui_scale
+        if (changed & (display::CHANGED_SIZE | display::CHANGED_UI_SCALE)) != 0 { relayout_ui{ &w, &dev, ui, &dview, &disp } }
+        if (changed & display::CHANGED_TEXTURES) != 0 { mount_packs{ &w, quality = disp.applied.texture_quality } }
+        if ingame::options_front{ ui } is some{ value = fe } {
+            display::tell{ d = &disp, fe }
+            frontend::refresh_display_texts{ fe, g = &ui.gui }
+        }
     }
 
     // How high above the leader's feet the camera looks (ours: a humanoid's head; the original
@@ -589,9 +705,17 @@ namespace play {
     fn pump_events {
         mut sdl: sdl::Sdl, mut w: world::World, mut dev: gpu::Device, ui: *mut ingame::Ingame, mut dview: dlgview::View,
         mut mg_mouse: mg_game::Mouse, mut keys: ctl::Keys, mut quit: bool, mut want_save: []u8, mut want_load: []u8, loading_up: bool,
+        mut disp: display::Display,
     } {
         while true {
-            let e = sdl::poll{ &sdl } ifnull { break }
+            let polled = sdl::poll{ &sdl } ifnull { break }
+            // The window changed shape: the device follows the drawable, the interface the device.
+            if polled is resized {
+                if display::on_resized{ d = &disp, &dev, &sdl } { relayout_ui{ &w, &dev, ui, &dview, &disp } }
+                continue
+            }
+            // Positions in render pixels (the window's units, a larger drawable, bars around a scaled picture undone).
+            let e = display::map_event{ d = &disp, ev = polled }
             // Behind the loading screen nothing is clicked or typed (a key let go still lets go of the walk).
             if loading_up {
                 if e is quit | close { quit = true }
@@ -977,6 +1101,7 @@ namespace play {
         let pixels = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
         defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = pixels, count = 0 }
         _ = try gpu::read_screen{ &dev, into = pixels }
+        gpu::shade_pixels{ dev, pixels }
         let image = png::Image{ width = size.width, height = size.height, rgba = pixels }
         try png::save{ fs = &w.fs, realloc = heap::alloc, heap = w.heap, path = utf8::view{ b }.bytes, image, alpha = false, bottom_up = false }
     }
@@ -986,6 +1111,7 @@ namespace play {
         let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
         defer _ = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, &heap, mem = pixels, count = 0 }
         _ = try gpu::read_screen{ &dev, into = pixels }
+        gpu::shade_pixels{ dev, pixels }    // as the window shows it: the brightness curve is applied in present
         let image = png::Image{ width = size.width, height = size.height, rgba = pixels }
         try png::save{ fs = &w.fs, realloc = arena::alloc, &heap, path, image, alpha = false, bottom_up = false }
         _ = @fmt(&w.io, "frame {}: wrote {} ({}x{})\n", frame_no, path, size.width, size.height)

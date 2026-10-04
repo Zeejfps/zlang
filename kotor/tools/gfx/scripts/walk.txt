@@ -1,0 +1,3 @@
+# The leader walks west across the apartment checkpoint's floor: where it is at fixed world times says whether
+# movement is frame-rate independent (kotor/tools/gfx/fps.sh).
+1 goto 80.0,143.5

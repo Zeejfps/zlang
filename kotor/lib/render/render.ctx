@@ -57,6 +57,13 @@ namespace render {
         dxt: bool,              // DXT1/DXT5 upload as they are (else decode to rgba8 first)
     }
 
+    // A size and refresh rate (Hz, 0 unknown) the display can be set to.
+    struct DisplayMode { width: i32, height: i32, refresh: i32 }
+
+    // How the window sits on the display: an ordinary window, a full-screen switch of the display's
+    // mode, or a borderless window over the desktop.
+    enum WindowMode: u8 { windowed, fullscreen, borderless }
+
     // What the last submit drew.
     struct Stats { draws: u32, triangles: u32, culled: u32, state_changes: u32, quads: u32, particles: u32 }
 
@@ -431,7 +438,7 @@ namespace render {
 
     fn default_capacity {} -> Capacity {
         return Capacity{
-            views = 16, steps = 64, draws = 16384, bones = 16384, lights = 128, shadows = 64,
+            views = 16, steps = 64, draws = 16384, bones = 16384, lights = 128, shadows = 512,
             emitters = 1024, particles = 32768, lines = 65536, tris = 65536, quads = 16384,
         }
     }

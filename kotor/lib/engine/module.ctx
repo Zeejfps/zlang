@@ -167,6 +167,19 @@ namespace modload {
         a.fog_far = tmpl::real{ doc, s, label = "SunFogFar", default = 100.0 }
         a.fog_color = @trunc(u32, tmpl::number{ doc, s, label = "SunFogColor", default = 0 })
         a.load_screen = @trunc(u32, tmpl::number{ doc, s, label = "LoadScreenID", default = 0 })
+        a.shadow_opacity = @trunc(u32, tmpl::number{ doc, s, label = "ShadowOpacity", default = 128 })
+        // Grass (docs/mechanics/graphics.md): drawn by lib/scene on the faces whose surface material has the grass flag.
+        let grass_tex = gff::get_resref{ doc = doc.*, s, label = "Grass_TexName" } ifnull ""
+        a.grass = obj::Grass{
+            texture = resref::truncate{ name = grass_tex },
+            density = tmpl::real{ doc, s, label = "Grass_Density", default = 0.0 },
+            quad_size = tmpl::real{ doc, s, label = "Grass_QuadSize", default = 1.0 },
+            prob = [
+                tmpl::real{ doc, s, label = "Grass_Prob_LL", default = 0.25 }, tmpl::real{ doc, s, label = "Grass_Prob_LR", default = 0.25 },
+                tmpl::real{ doc, s, label = "Grass_Prob_UL", default = 0.25 }, tmpl::real{ doc, s, label = "Grass_Prob_UR", default = 0.25 },
+            ],
+            wind = @trunc(i32, tmpl::number{ doc, s, label = "WindPower", default = 0 }),
+        }
         // Stealth (lib/engine/stealth.ctx): the area's own pool of stealth XP starts full (the
         // original reads the current amount with the maximum as its default), and what hearing
         // a hiding creature needs.
