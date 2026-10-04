@@ -19,7 +19,7 @@ namespace hud {
 
     // The counter-clockwise angle from the leader's facing to the direction of `p`, in [0, 2 pi): the
     // order Q and E walk the selectable objects in.
-    fn bearing_to { lo: *obj::Object, p: math::Vec3 } -> f32 {
+    fn measure_bearing { lo: *obj::Object, p: math::Vec3 } -> f32 {
         let facing = math::atan2f{ y = lo.orientation.y, x = lo.orientation.x }
         let mut a = math::atan2f{ y = p.y - lo.position.y, x = p.x - lo.position.x } - facing
         while a < 0.0 { a = a + TWO_PI }
@@ -63,14 +63,14 @@ namespace hud {
             i = i + 1
             if o.destroyed { continue }
             if o.kind != obj::Kind::creature and o.kind != obj::Kind::door and o.kind != obj::Kind::placeable and o.kind != obj::Kind::trigger { continue }
-            if not selectable_kind{ w = &w, id = o.id } { continue }
+            if not is_selectable_kind{ w = &w, id = o.id } { continue }
             let dx = o.position.x - lo.position.x
             let dy = o.position.y - lo.position.y
             let dz = o.position.z - lo.position.z
             ids[n] = o.id
             d2[n] = dx * dx + dy * dy + dz * dz
-            bearing[n] = bearing_to{ lo, p = o.position }
-            vis[n] = in_view{ w = &w, id = o.id }
+            bearing[n] = measure_bearing{ lo, p = o.position }
+            vis[n] = is_in_view{ w = &w, id = o.id }
             hostile[n] = o.kind == obj::Kind::creature and is_hostile{ w = &w, id = o.id }
             let mut in_front = false
             if dx * fx + dy * fy + dz * fz >= 0.0 {

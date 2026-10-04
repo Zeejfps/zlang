@@ -94,7 +94,7 @@ namespace hud {
     // on the last hostile target still chosen when it is in this list (the original keeps the
     // selected entry's id per kind of target).
     fn middle_actions { h: *Hud, w: *world::World, id: u32 } -> ActionList {
-        if not is_hostile{ w, id } { return slot_actions{ w, id, k = 1 } }
+        if not is_hostile{ w, id } { return build_slot_actions{ w, id, k = 1 } }
         let mut l = power_actions{ w, target = id }
         let mut i: usize = 0
         while i < l.count {
@@ -120,7 +120,7 @@ namespace hud {
     // it is off screen, otherwise moves it above the head and updates the health bar.
     fn update_block { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } {
         let t = w.target
-        if t != obj::INVALID and not selectable_kind{ w = &w, id = t } {
+        if t != obj::INVALID and not is_selectable_kind{ w = &w, id = t } {
             w.target = obj::INVALID
         }
         let o = world::object{ w = &w, id = w.target }

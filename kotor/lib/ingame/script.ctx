@@ -103,7 +103,7 @@ namespace ingame {
             let oa = world::object{ w = &w, id = ia } ifnull { return }
             let ob = world::object{ w = &w, id = ib } ifnull { return }
             let seen = if perception::entry_of{ w = &w, viewer = ia, target = ib } is some{ value = e } { e.seen } else { false }
-            _ = @fmt(&w.io, "los {} {}: clear {} sight {} seen {} distance {} (leader's view: selectable kind {} in view {})\n", ta, tb, perception::clear_line{ w = &w, a = oa.position, b = ob.position }, perception::sight_line{ w = &w, a = oa.position, b = ob.position, ignore = ib }, seen, math::vec3::distance{ a = oa.position, b = ob.position }, hud::selectable_kind{ w = &w, id = ib }, hud::in_view{ w = &w, id = ib })
+            _ = @fmt(&w.io, "los {} {}: clear {} sight {} seen {} distance {} (leader's view: selectable kind {} in view {})\n", ta, tb, perception::clear_line{ w = &w, a = oa.position, b = ob.position }, perception::is_sight_clear{ w = &w, a = oa.position, b = ob.position, ignore = ib }, seen, math::vec3::distance{ a = oa.position, b = ob.position }, hud::is_selectable_kind{ w = &w, id = ib }, hud::is_in_view{ w = &w, id = ib })
         } else if ci::eq{ a = cmd, b = "autopause" } {
             // `ui autopause on|off`: the auto-pause triggers (enemy sighted, party member down, new target in
             // combat), off in headless runs until a test asks.

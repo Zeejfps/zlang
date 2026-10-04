@@ -60,34 +60,34 @@ namespace hud {
 
     // Whether the pointer can pick `id` and the leader can target it: close enough, by kind
     // (movement.md 7.1) a living creature other than the leader, a closed door that isn't scenery,
-    // a placeable that can be used, and in view (in_view).
+    // a placeable that can be used, and in view (is_in_view).
     fn is_selectable { w: *world::World, id: u32 } -> bool {
-        return selectable_kind{ w, id } and in_view{ w, id }
+        return is_selectable_kind{ w, id } and is_in_view{ w, id }
     }
 
     // Whether the leader can see `id` from where it stands (CSWCCreature::GetIsTargetVisible 0x00617ad0, which
     // the pointer, Q and E and the auto-target all ask): a creature is in the leader's perception list as seen,
     // or seen this instant (GetIsSelectableTarget's own fallback), and the line from the leader's eyes meets no
     // wall and no closed door. A closed door in the way hides what is behind it.
-    fn in_view { w: *world::World, id: u32 } -> bool {
+    fn is_in_view { w: *world::World, id: u32 } -> bool {
         let lo = world::object{ w, id = party::leader{ w } } ifnull { return false }
         let o = world::object{ w, id } ifnull { return false }
         if o.kind == obj::Kind::creature {
             let listed = perception::entry_of{ w, viewer = lo.id, target = id } is some{ value = e } and e.seen
             if not listed and not perception::sees_now{ w, viewer = lo.id, target = id } { return false }
         }
-        return perception::sight_line{ w, a = lo.position, b = o.position, ignore = id }
+        return perception::is_sight_clear{ w, a = lo.position, b = o.position, ignore = id }
     }
 
     // Whether the area allows combat (RestrictMode 0, `area+0x2b0`): Attack and Bash are offered only then.
-    fn combat_allowed { w: *world::World } -> bool {
+    fn allows_combat { w: *world::World } -> bool {
         let ao = world::object{ w, id = w.area } ifnull { return true }
         let a = obj::area{ o = ao } ifnull { return true }
         return a.restrict_mode == 0
     }
 
     // GetIsSelectableTarget's own tests (0x004f2c30) within the 30 m of GetNearbySelectableObjects.
-    fn selectable_kind { w: *world::World, id: u32 } -> bool {
+    fn is_selectable_kind { w: *world::World, id: u32 } -> bool {
         let leader = party::leader{ w }
         if id == leader { return false }
         let o = world::object{ w, id } ifnull { return false }
@@ -109,23 +109,23 @@ namespace hud {
     // What the leader does to `id` when it clicks the target or presses R (BuildDefaultActions 0x00620620,
     // movement.md 7.4); the first is the default action. A door: Open (the server refuses a locked one with
     // the locked message and OnFailToOpen), then Bash when it is locked, not plot and the area allows combat.
-    // The unlock is never the default: it is in the block's middle slot (slot_actions).
+    // The unlock is never the default: it is in the block's middle slot (build_slot_actions).
     fn default_actions { w: *world::World, id: u32 } -> ActionList {
         let mut l = empty_list{}
         let o = world::object{ w, id } ifnull { return l }
         match o.ext {
             door{ d } => {
                 push_entry{ &l, e = entry{ act = Act::open, icon = "i_opendoor", strref = 365 } }
-                if d.locked and not o.plot and combat_allowed{ w } { push_entry{ &l, e = entry{ act = Act::bash, icon = "i_attack", strref = 368 } } }
+                if d.locked and not o.plot and allows_combat{ w } { push_entry{ &l, e = entry{ act = Act::bash, icon = "i_attack", strref = 368 } } }
             }
             placeable{ p } => {
                 if p.has_inventory { push_entry{ &l, e = entry{ act = Act::open_place, icon = "i_openplace", strref = 365 } } }
                 else { push_entry{ &l, e = entry{ act = Act::use_place, icon = "i_useplace", strref = 366 } } }
-                if p.locked and not o.plot and combat_allowed{ w } { push_entry{ &l, e = entry{ act = Act::bash, icon = "i_attack", strref = 368 } } }
+                if p.locked and not o.plot and allows_combat{ w } { push_entry{ &l, e = entry{ act = Act::bash, icon = "i_attack", strref = 368 } } }
             }
             creature{ c } => {
                 if is_hostile{ w, id } {
-                    if combat_allowed{ w } { push_entry{ &l, e = entry{ act = Act::attack, icon = "i_attack", strref = 375 } } }
+                    if allows_combat{ w } { push_entry{ &l, e = entry{ act = Act::attack, icon = "i_attack", strref = 375 } } }
                 } else { push_entry{ &l, e = entry{ act = Act::talk, icon = "i_dialog", strref = 371 } } }
             }
             trigger{ t } => {
@@ -144,7 +144,7 @@ namespace hud {
     // one Bash when it is locked, not plot and the area allows combat; the middle one Security (the unlock)
     // when it is locked and the leader has the skill, a door also only when it wants no key. Open, Use and
     // Talk are in no slot: they are what a click does.
-    fn slot_actions { w: *world::World, id: u32, k: usize } -> ActionList {
+    fn build_slot_actions { w: *world::World, id: u32, k: usize } -> ActionList {
         let mut l = empty_list{}
         let o = world::object{ w, id } ifnull { return l }
         let mut locked = false
@@ -158,7 +158,7 @@ namespace hud {
             else => { return l }
         }
         if not locked { return l }
-        if k == 0 and not o.plot and combat_allowed{ w } {
+        if k == 0 and not o.plot and allows_combat{ w } {
             push_entry{ &l, e = entry{ act = Act::bash, icon = "i_attack", strref = 368 } }
         }
         if k == 1 and not wants_key and can_pick_locks{ w } {
@@ -326,7 +326,7 @@ namespace hud {
             let mut in_combat = false
             if lo.ext is creature{ c = lc } { in_combat = lc.in_combat }
             if in_combat and not is_hostile{ w = &w, id = o.id } { continue }
-            let a = bearing_to{ lo, p = o.position }
+            let a = measure_bearing{ lo, p = o.position }
             ids[n] = o.id
             bearing[n] = a
             n = n + 1
@@ -485,7 +485,7 @@ namespace hud {
         if not is_hostile{ w, id } {
             // A mine's Disable and Recover; a locked door's or placeable's Bash; nothing on a friendly creature.
             if world::object{ w, id } is some{ value = o } { if o.kind == obj::Kind::trigger { return plain } }
-            return slot_actions{ w, id, k = 0 }
+            return build_slot_actions{ w, id, k = 0 }
         }
         let lo = world::object{ w, id = party::leader{ w } } ifnull { return plain }
         let lc = obj::creature{ o = lo } ifnull { return plain }
