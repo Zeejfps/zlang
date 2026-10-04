@@ -922,6 +922,8 @@ namespace fight {
             return actions::Status::done
         }
         if not rules::can_attack{ c = &f.c } { return actions::Status::failed }
+        // No fight starts while an ordinary conversation is on: its hostiles are frozen (frozen_hostile).
+        if frozen_hostile{ w = &w, o } { return actions::Status::failed }
         c.attempted_target = target
         let s = stance{ w = &w, c }
         let ranged = is_ranged_stance{ s } or (s == 0 and is_ranged_item{ w = &w, item = c.equipped[obj::SLOT_RIGHT_WEAPON] })
@@ -2043,6 +2045,23 @@ namespace fight {
         let io = world::object{ w, id = item } ifnull { return false }
         let it = obj::item{ o = io } ifnull { return false }
         return it.droppable
+    }
+
+    // A conversation that holds the fights still: an ordinary one. An animated cutscene's dialogue stages its own
+    // fights (the Sith killing the soldiers of the Endar Spire) and is left alone.
+    fn quiet_conversation { w: *world::World } -> bool {
+        return w.conversation.active and not w.conversation.d.animated_cut
+    }
+
+    // Whether FreezeHostiles (0x005a0940, re/dialogue.md 4.9) holds the creature: a conversation is on, the
+    // creature is not under the player's control and its standing toward the PC is 10 or less.
+    fn frozen_hostile { w: *world::World, o: *obj::Object } -> bool {
+        if not quiet_conversation{ w } or o.kind != obj::Kind::creature { return false }
+        if o.id == w.pc or o.id == w.player or party::is_member{ w, id = o.id } { return false }
+        // The conversation's own sides run their scripts' actions (Calo's grenade, the pause and resume).
+        if o.id == w.conversation.owner or o.id == w.conversation.other { return false }
+        let pc = world::object{ w, id = w.pc } ifnull { return false }
+        return world::standing{ w, from = o.faction, toward = pc.faction } <= 10
     }
 
     // A creature stops fighting (surrender, CancelCombat): its round ends without OnEndRound, its

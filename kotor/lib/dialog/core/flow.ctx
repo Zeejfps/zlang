@@ -635,6 +635,25 @@ namespace dlg {
         return now < w.conversation.node_end_ms
     }
 
+    // FreezeHostiles (0x005a0940, re/dialogue.md 4.9), every frame of a conversation (paused or not): each
+    // creature that is not under the player's control and whose standing toward the PC is 10 or less has its
+    // actions cleared and its walk stopped (fight::attack_object also refuses it a new attack). Davik's
+    // guards (hostile by their template) stood by while the tour went on; without this they fell on Carth
+    // when the party was moved into the hangar.
+    fn freeze_hostiles { mut w: world::World } {
+        let count = w.objects.all.len
+        let mut i: usize = 0
+        while i < count and i < w.objects.all.len {
+            let o = list::items{ list = w.objects.all }[i]
+            i = i + 1
+            if o.destroyed or o.area != w.area or o.hp <= 0 or not fight::frozen_hostile{ w = &w, o } { continue }
+            let c = obj::creature{ o } ifnull { continue }
+            if o.actions.len == 0 and not c.moving and not c.in_combat { continue }
+            fight::stop_fighting{ &w, id = o.id, others = false }
+            movement::stop{ &w, id = o.id }
+        }
+    }
+
     // UpdateDialog (4.5): once a frame, runs the pending step when the node is over, or leaves
     // when the conversation is finished.
     fn update { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine } {
@@ -658,6 +677,7 @@ namespace dlg {
             finish{ &w, &vm, engine, normal = false }
             return
         }
+        freeze_hostiles{ &w }
         // A test script's queued replies (`ui replies 1 2`) answer each list as it opens.
         if w.conversation.pick < 0 and w.conversation.choices.open and w.conversation.scripted_pos >= w.conversation.scripted_count and w.conversation.scripted_default > 0 {
             // The queue is spent: the default reply (a number past the list picks the last).
