@@ -9,3 +9,4 @@
 4 ui bot on
 10000 ui journal list
 10000 ui party
+20000 save davik
