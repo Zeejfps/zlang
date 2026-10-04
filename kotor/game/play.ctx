@@ -143,7 +143,7 @@ namespace play {
                     talk => { talk_to{ &w, &vm, engine, text = s.key } }
                     hush => { dlg::abort{ &w, &vm, engine } }
                     drop => { drop_item{ &w, template = s.key } }
-                    join => { join_template{ &w, template = s.key } }
+                    join => { join_template{ &w, text = s.key } }
                     pick => { pick_lock{ &w, tag = s.key } }
                     cutatk => { cut_attack{ &w, text = s.key } }
                     ui => {
@@ -537,7 +537,7 @@ namespace play {
                 else if ci::eq{ a = what, b = "hush" } { Command::hush } else if ci::eq{ a = what, b = "drop" } { Command::drop } else if ci::eq{ a = what, b = "join" } { Command::join } else if ci::eq{ a = what, b = "cutatk" } { Command::cutatk } else if ci::eq{ a = what, b = "pick" } { Command::pick }
                 else if ci::eq{ a = what, b = "gunner" } { Command::gunner } else if ci::eq{ a = what, b = "mouse" } { Command::mouse } else if ci::eq{ a = what, b = "pause" } { Command::pause } else { Command::up }
             // `ui`, `talk`, `load`, `save`, `cutatk` and `mouse` take the rest of the line; the others one word.
-            let key = if command == Command::ui or command == Command::load or command == Command::save or command == Command::talk or command == Command::cutatk or command == Command::mouse { text::rest{ words } } else { text::next_word{ &words } ifnull "" }
+            let key = if command == Command::ui or command == Command::load or command == Command::save or command == Command::talk or command == Command::cutatk or command == Command::mouse or command == Command::join { text::rest{ words } } else { text::next_word{ &words } ifnull "" }
             try list::push{ list = &out, item = Scripted{ frame = @as(u64, text::scan_decimal{ s = f }), command, key } }
         }
         return list::items{ list = out }
@@ -649,13 +649,19 @@ namespace play {
         _ = actions::add{ &w, id = if lead == obj::INVALID { w.pc } else { lead }, action = a, force = false }
     }
 
-    // `join TEMPLATE`: the creature of that blueprint becomes available in slot 1 and joins the
-    // party next to the leader (what the party selection screen does on Done).
-    fn join_template { mut w: world::World, template: []u8 } {
-        w.party.available[1] = true
-        w.party.selectable[1] = true
-        w.party.templates[1] = resref::truncate{ name = template }
-        _ = rt_party::bring_member{ &w, n = 1 }
+    // `join TEMPLATE [SLOT]`: the creature of that blueprint becomes available in the party table's slot
+    // SLOT (1 by default; the game's own: 0 Bastila, 1 Canderous, 2 Carth, ...) and joins the party next to
+    // the leader (what the party selection screen does on Done).
+    fn join_template { mut w: world::World, text: []u8 } {
+        let mut words = text::words{ s = text }
+        let template = text::next_word{ &words } ifnull { return }
+        let slot = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "1" })
+        if not party::valid_slot{ n = slot } { return }
+        let s = @as(usize, slot)
+        w.party.available[s] = true
+        w.party.selectable[s] = true
+        w.party.templates[s] = resref::truncate{ name = template }
+        _ = rt_party::bring_member{ &w, n = slot }
     }
 
     fn camera_row_now { w: *world::World } -> u32 {

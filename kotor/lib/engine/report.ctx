@@ -16,6 +16,7 @@ namespace report {
         }
         _ = @fmt(&w.io, "routines called: {} implemented, {} missing\n", implemented, missing)
         if not routines { return }
+        stuck{ &w }
         // Missing routines by calls, most first (a selection sort over a copy of the counts).
         let mut counts = w.stats.missing
         while true {
@@ -28,6 +29,30 @@ namespace report {
             if best == 772 { break }
             _ = @fmt(&w.io, "  missing {} {} x{}\n", best, nwscript::ROUTINES[best].name, counts[best])
             counts[best] = 0
+        }
+    }
+
+    // Actions at the head of a queue that began more than STUCK_MS ago and are of a kind that should
+    // soon be over (a walk, a door, a pick-up...), one line each: `stuck ID TAG ACTION-KIND SECONDS at X Y` (the same line, same place, a while later: stuck).
+    // The kinds that run until told otherwise (random walk, follow, wait, dialogue, attack, ...) are not listed.
+    const STUCK_MS: u64 = 20000
+
+    fn stuck { mut w: world::World } {
+        let now = clock::now_ms{ c = w.clock }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed or o.actions.len == 0 { continue }
+            let a = list::items{ list = o.actions }[0]
+            if not a.has_started or now - a.started < STUCK_MS { continue }
+            let short = match a.kind {
+                move_to_point | open_door | close_door | open_lock | lock | use_object | pickup_item | give_item | take_item | face_object | face_point | move_away_from_location | equip_item | unequip_item | drop_item => { true }
+                else => { false }
+            }
+            if not short { continue }
+            _ = @fmt(&w.io, "stuck {} {} {} {} at {} {}\n", o.id, o.tag, @as(u32, a.kind), (now - a.started) / 1000, o.position.x, o.position.y)
         }
     }
 }
