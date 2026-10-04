@@ -38,12 +38,13 @@ namespace bot {
         talked: bool,                           // the current stop is a `@TAG` and the leader has been told to talk to it
         clicked: usize,                         // 1 + the route index of the transition door it clicked last (0 none)
         seen_open: bool,                        // the door of the current stop has been seen open (one the story shuts again is passed, not opened twice)
+        trans_stop: bool,                       // the current stop is a trigger that starts an area transition (crossing it is reaching it)
         best: f32,                              // the nearest the leader has been to the current stop: a long walk is not a stuck one
         tour: Tour,                             // the area's own route, when `bot tour` made one
     }
 
     fn new {} -> Bot {
-        return Bot{ on = false, unlock = false, god = false, party = false, party_wait = 0, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false, stalled = 0, last_dist = 0.0, area = 0, talked = false, clicked = 0, best = 1000000.0, tour = new_tour{} }
+        return Bot{ on = false, unlock = false, god = false, party = false, party_wait = 0, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false, stalled = 0, last_dist = 0.0, area = 0, talked = false, clicked = 0, trans_stop = false, best = 1000000.0, tour = new_tour{} }
     }
 
     // The `bot ...` input line, after the word `bot`.
@@ -118,8 +119,8 @@ namespace bot {
         if b.area != w.area {
             let came = b.area != 0
             b.area = w.area
-            // (Only when the stop is the door it clicked: the stop may have been passed already.)
-            if came and b.next < b.count and b.clicked == b.next + 1 { advance{ &b } }
+            // (Only when the stop is the door it clicked or a transition trigger: the stop may have been passed already.)
+            if came and b.next < b.count and (b.clicked == b.next + 1 or b.trans_stop) { advance{ &b } }
             b.clicked = 0
         }
         // Something hostile and alive within sight: fight it, nearest first.
@@ -152,6 +153,7 @@ namespace bot {
             return
         }
         let at = stop_point{ w = &w, t, near_z = me.position.z }
+        b.trans_stop = if obj::trigger{ o = t } is some{ value = tr } { tr.linked_to.len > 0 } else { false }
         let dist = math::vec3::distance{ a = at, b = me.position }
         b.waiting = b.waiting + 1
         if dist < b.best - 2.0 {
@@ -317,6 +319,7 @@ namespace bot {
         b.waiting = 0
         b.seen_open = false
         b.talked = false
+        b.trans_stop = false
         b.best = 1000000.0
         b.stalled = 0
         b.last_dist = 0.0
