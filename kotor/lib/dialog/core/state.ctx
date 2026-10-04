@@ -82,6 +82,7 @@ namespace dlg {
         scripted: [256]Scripted,    // headless tests: replies to pick, in order, as lists open (`ui replies 1 ~hunting_licenses`)
         scripted_count: usize,
         scripted_pos: usize,
+        scripted_default: u8,       // headless tests: the reply to pick once the queue is used up (`ui autoreply 1`); 0 waits for the player
         vo_cut: bool,
         // The presentation's side.
         client: bool,               // a view is attached and answers the flags below
@@ -135,7 +136,7 @@ namespace dlg {
             event_pending = false, event_resref = resref::empty{}, event_private = false, pending = false, pending_since = 0,
             last_resref = resref::empty{},
             entry = -1, chosen = -1, step = Step::none, step_entry = 0, node_end_ms = 0, wait_flags = 0,
-            paused = false, end_flag = false, ending = false, end_ran = false, skip = false, pick = -1, scripted = [Scripted{ n = 0, len = 0, text = [0; 30] }; 256], scripted_count = 0, scripted_pos = 0, vo_cut = false,
+            paused = false, end_flag = false, ending = false, end_ran = false, skip = false, pick = -1, scripted = [Scripted{ n = 0, len = 0, text = [0; 30] }; 256], scripted_count = 0, scripted_pos = 0, scripted_default = 0, vo_cut = false,
             client = false, scene_ready = false, vo_playing = false, vo_stop = false, vo_virtual_end = 0,
             anim_busy = false, camera_busy = false, fade_busy = false,
             line = no_line{}, choices = no_choices{},

@@ -50,7 +50,7 @@ namespace dlgview {
     }
 
     // The headless input script's lines for the panels (play.ctx `ui` commands): `reply N` picks
-    // reply N (from 1) at once, `replies N...` queues picks for the lists that open; `key NAME`, `move X Y` and `click X Y` go through the panels
+    // reply N (from 1) at once, `replies N...` queues picks for the lists that open, `autoreply N` the pick for the lists after the queue is used up; `key NAME`, `move X Y` and `click X Y` go through the panels
     // while they are up. False if the line is not for them.
     fn run_command { mut v: View, mut w: world::World, mut g: gui::Gui, text: []u8 } -> bool {
         let mut words = text::words{ s = text }
@@ -58,6 +58,11 @@ namespace dlgview {
         if ci::eq{ a = cmd, b = "reply" } {
             let n = text::scan_decimal{ s = text::next_word{ &words } ifnull "1" }
             if n >= 1 { w.conversation.pick = @as(i32, @trunc(i32, n - 1)) }
+            return true
+        }
+        if ci::eq{ a = cmd, b = "autoreply" } {
+            // `autoreply 1`: once the queued replies are used up, every list takes reply 1 (0: wait for the player again).
+            w.conversation.scripted_default = @trunc(u8, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
             return true
         }
         if ci::eq{ a = cmd, b = "replies" } {

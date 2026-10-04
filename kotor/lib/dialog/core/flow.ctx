@@ -671,6 +671,14 @@ namespace dlg {
             return
         }
         // A test script's queued replies (`ui replies 1 2`) answer each list as it opens.
+        if w.conversation.pick < 0 and w.conversation.choices.open and w.conversation.scripted_pos >= w.conversation.scripted_count and w.conversation.scripted_default > 0 {
+            let want = @as(usize, w.conversation.scripted_default)
+            w.conversation.pick = @as(i32, if want > w.conversation.choices.count { w.conversation.choices.count } else { want }) - 1
+            if w.log.dialog {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "dialog default reply {}\n", w.conversation.pick + 1)
+            }
+        }
         if w.conversation.pick < 0 and w.conversation.choices.open and w.conversation.scripted_pos < w.conversation.scripted_count {
             // A number past the list picks the last reply (a test script cannot know how long a list is); a phrase
             // picks the first reply that has it in its text.

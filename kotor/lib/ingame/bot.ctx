@@ -30,12 +30,13 @@ namespace bot {
         waiting: u32,                           // decisions spent on the current stop
         foe: u32,                               // the one it last ordered an attack on
         seen_open: bool,                        // the door of the current stop has been seen open (one the story shuts again is passed, not opened twice)
+        best: f32,                              // the nearest the leader has been to the current stop: a long walk is not a stuck one
         opened: u32,                            // decisions to wait after ordering a door open: a door that leads to another module needs its 0.5 s fade, and a new order would restart it
         tour: Tour,                             // the area's own route, when `bot tour` made one
     }
 
     fn new {} -> Bot {
-        return Bot{ on = false, unlock = false, god = false, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false, opened = 0, tour = new_tour{} }
+        return Bot{ on = false, unlock = false, god = false, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false, best = 1000000.0, opened = 0, tour = new_tour{} }
     }
 
     // The `bot ...` input line, after the word `bot`.
@@ -46,6 +47,7 @@ namespace bot {
             b.count = 0
             b.next = 0
             b.waiting = 0
+            b.best = 1000000.0
             while b.count < MAX_ROUTE {
                 let tag = text::next_word{ &words } ifnull { break }
                 let n = if tag.len > TAG_BYTES { TAG_BYTES } else { tag.len }
@@ -72,7 +74,14 @@ namespace bot {
                 _ = @fmt(&w.io, "\n")
             }
             _ = @fmt(&w.io, "bot: {} stops, at {}", b.count, b.next)
-            if b.next < b.count { _ = @fmt(&w.io, " ({})", b.route[b.next][..@as(usize, b.lens[b.next])]) }
+            if b.next < b.count {
+                _ = @fmt(&w.io, " ({})", b.route[b.next][..@as(usize, b.lens[b.next])])
+                if world::object{ w = &w, id = stop_object{ w = &w, stop = b.route[b.next][..@as(usize, b.lens[b.next])] } } is some{ value = t } {
+                    let me = world::object{ w = &w, id = party::leader{ w = &w } }
+                    let at = stop_point{ w = &w, t, near_z = if me != null { me.position.z } else { t.position.z } }
+                    _ = @fmt(&w.io, " aims at {} {} {}", at.x, at.y, at.z)
+                }
+            }
             _ = @fmt(&w.io, "\n")
         }
     }
@@ -118,8 +127,13 @@ namespace bot {
             advance{ &b }
             return
         }
-        let dist = math::vec3::distance{ a = t.position, b = me.position }
+        let at = stop_point{ w = &w, t, near_z = me.position.z }
+        let dist = math::vec3::distance{ a = at, b = me.position }
         b.waiting = b.waiting + 1
+        if dist < b.best - 2.0 {
+            b.best = dist
+            b.waiting = 0
+        }
         if b.waiting > STUCK_TICKS {
             _ = @fmt(&w.io, "bot: stuck {} m from {}, skipped\n", dist, tag)
             advance{ &b }
@@ -147,15 +161,16 @@ namespace bot {
                 advance{ &b }
                 return
             }
-        } else if dist < REACH {
+        } else if dist < (if obj::trigger{ o = t } is some{ value = tr } { 0.6 } else { REACH }) {    // a trigger counts only when stood in, near its middle
             advance{ &b }
             return
         }
         let mut a = actions::make{ kind = actions::Kind::move_to_point }
-        a.params[0] = actions::Param::vector{ v = t.position }
+        a.params[0] = actions::Param::vector{ v = at }
         a.params[1] = actions::Param::int{ v = 1 }
-        a.params[2] = actions::Param::float{ v = 1.0 }
-        a.params[3] = actions::Param::object{ id = t.id }
+        a.params[2] = actions::Param::float{ v = if obj::trigger{ o = t } is some{ value = tr } { 0.2 } else { 1.0 } }
+        // A trigger is entered at the middle of its polygon, not at its origin, which the move would head for if it were told the object.
+        a.params[3] = actions::Param::object{ id = if obj::trigger{ o = t } is some{ value = tr } { obj::INVALID } else { t.id } }
         a.params[4] = actions::Param::float{ v = 0.0 }
         _ = actions::add{ &w, id = lead, action = a, force = true }
     }
@@ -165,6 +180,26 @@ namespace bot {
         if b.next >= b.count { return }
         let t = world::object{ w, id = stop_object{ w, stop = b.route[b.next][..@as(usize, b.lens[b.next])] } } ifnull { return }
         if t.ext is door{ d } { if d.state != obj::DoorState::closed { b.seen_open = true } }
+    }
+
+    // Where to walk for a stop: the object's place, or the middle of a trigger's polygon (a transition trigger is a thin
+    // strip some way from its origin, and standing near the origin is not standing in it).
+    fn stop_point { w: *world::World, t: *obj::Object, near_z: f32 } -> math::Vec3 {
+        if obj::trigger{ o = t } is some{ value = tr } {
+            if tr.polygon.len > 0 {
+                let mut sum = math::vec3::zero{}
+                let mut i: usize = 0
+                while i < tr.polygon.len {
+                    sum = math::vec3::add{ a = sum, b = tr.polygon[i] }
+                    i = i + 1
+                }
+                let mid = math::vec3::scale{ v = sum, s = 1.0 / @as(f32, tr.polygon.len) }
+                // The polygon's heights are not the floor's: the floor under the middle, as the leader would find it.
+                let f = walkmap::floor{ m = &w.walk, x = mid.x, y = mid.y, z = near_z + 2.0 }
+                return math::Vec3{ x = mid.x, y = mid.y, z = if f != null { f.z } else { near_z } }
+            }
+        }
+        return t.position
     }
 
     // The object of a route stop: its tag, or `TAG#N` for the Nth (from 0) object with that tag (a pair of doors shares one).
@@ -179,6 +214,7 @@ namespace bot {
         b.next = b.next + 1
         b.waiting = 0
         b.seen_open = false
+        b.best = 1000000.0
         b.opened = 0
     }
 

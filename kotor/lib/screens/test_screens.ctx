@@ -4,7 +4,7 @@
 //   FRAME ui gold N                  the party's credits
 //   FRAME ui store RESREF [UP DOWN]  a merchant made from a UTM blueprint and opened (OpenStore's
 //                                    bonuses UP and DOWN, percent)
-//   FRAME ui loot TAG                the container with that tag opened as if the leader used it
+//   FRAME ui loot TAG|#ID            the container with that tag (or object id, from `ui containers`) opened as if the leader used it
 //   FRAME ui bag                     prints the party's inventory and credits
 //   FRAME ui xp N                    gives the party N experience points
 //   FRAME ui describe RESREF...      prints the description of each item blueprint, property lines included
@@ -39,8 +39,10 @@ namespace test_screens {
             let tag = text::next_word{ &words } ifnull { return true }
             // The first object with the tag that holds items (a tag can be shared with a waypoint).
             let mut id = world::object_by_tag{ w = &w, tag, nth = 0 }
+            // `#N` names the container by its object id (`ui containers`): a body bag has no tag.
+            if tag[0] == '#' { id = @as(u32, text::scan_decimal{ s = tag[1..] }) }
             let mut nth: i32 = 0
-            while nth < 8 {
+            while nth < 8 and tag[0] != '#' {
                 let found = world::object_by_tag{ w = &w, tag, nth }
                 nth = nth + 1
                 if found == obj::INVALID { break }
