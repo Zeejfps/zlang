@@ -225,6 +225,7 @@ namespace hud {
     fn draw { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame, log: *MessageLog } {
         draw_minimap{ mm = &h.minimap, &g, &w, &dev, &frame, panel = h.panel }
         draw_reticle{ &h, &g, &w, &dev, &frame }
+        draw_hover_reticle{ &h, &g, &w, &dev, &frame }
         draw_feedback{ &h, &g, log, &frame }
         draw_floats{ &h, &g, &w, &frame }
     }
