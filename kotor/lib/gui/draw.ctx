@@ -32,6 +32,49 @@ namespace gui {
         } }
     }
 
+    // How many device pixels one GUI pixel spans along each axis: the render size over the GUI's pixel
+    // space. 1 in the original's; 1.5 at 1440x1080 with the scale on 1.5; not exactly the scale when
+    // the window does not divide by it (the pixel space is whole pixels).
+    struct Grid { sx: f32, sy: f32 }
+
+    fn grid_of { g: Gui } -> Grid {
+        if g.ui_w <= 0 or g.ui_h <= 0 or g.win_w <= 0 or g.win_h <= 0 { return Grid{ sx = 1.0, sy = 1.0 } }
+        return Grid{ sx = @as(f32, g.win_w) / @as(f32, g.ui_w), sy = @as(f32, g.win_h) / @as(f32, g.ui_h) }
+    }
+
+    // A GUI coordinate moved to the nearest device pixel boundary, as a GUI coordinate again. A
+    // border's pieces that start between device pixels would cover a row of pixels more, or less,
+    // than their neighbours do and have the edge's one-texel line fall on a pixel centre exactly
+    // (where the rasteriser's tie rule decides): one side of a button thick and bright, the
+    // opposite thin and dim. On a whole boundary the pieces tile exactly and every side looks alike.
+    fn snap { v: f32, s: f32 } -> f32 {
+        return math::floorf{ x = v * s + 0.5 } / s
+    }
+
+    // A picture over the GUI rectangle (x0, y0) to (x1, y1) with its boundaries on device pixels,
+    // turned `turns` quarter turns counterclockwise about its centre. The rectangle is the one the
+    // picture fills after turning; the quad itself is laid out before it, so an odd number of turns
+    // swaps its width and height.
+    fn put_piece {
+        mut frame: render::Frame, img: Img, grid: Grid, x0: f32, y0: f32, x1: f32, y1: f32, turns: i32,
+        color: render::Color, clip: render::Rect,
+    } {
+        let a = snap{ v = x0, s = grid.sx }
+        let b = snap{ v = x1, s = grid.sx }
+        let c = snap{ v = y0, s = grid.sy }
+        let d = snap{ v = y1, s = grid.sy }
+        let w = b - a
+        let h = d - c
+        let angle = if turns == 0 { 0.0 } else if turns == 1 { HALF_PI } else if turns == 2 { PI } else { PI + HALF_PI }
+        if (turns & 1) == 0 {
+            put_image{ &frame, img, x = a, y = c, w, h, color, angle, clip }
+        } else {
+            let cx = (a + b) / 2.0
+            let cy = (c + d) / 2.0
+            put_image{ &frame, img, x = cx - h / 2.0, y = cy - w / 2.0, w = h, h = w, color, angle, clip }
+        }
+    }
+
     // How thick a border is: the corner size, the edge thickness and the length of one edge
     // segment, in pixels (CSWGuiBorder::Draw: DIMENSION when set, else the textures' own sizes).
     struct Metrics { corner: i32, thick: i32, seg: i32 }
@@ -91,22 +134,23 @@ namespace gui {
         let fy = @as(f32, y)
         let fw = @as(f32, w)
         let fh = @as(f32, h)
+        let grid = grid_of{ g }
         if b.corner.ok and csz > 0 {
             let c = @as(f32, csz)
-            put_image{ &frame, img = b.corner, x = fx, y = fy, w = c, h = c, color = ct, angle = 0.0, clip }
-            put_image{ &frame, img = b.corner, x = fx, y = fy + fh - c, w = c, h = c, color = ct, angle = HALF_PI, clip }
-            put_image{ &frame, img = b.corner, x = fx + fw - c, y = fy + fh - c, w = c, h = c, color = ct, angle = PI, clip }
-            put_image{ &frame, img = b.corner, x = fx + fw - c, y = fy, w = c, h = c, color = ct, angle = PI + HALF_PI, clip }
+            put_piece{ &frame, img = b.corner, grid, x0 = fx, y0 = fy, x1 = fx + c, y1 = fy + c, turns = 0, color = ct, clip }
+            put_piece{ &frame, img = b.corner, grid, x0 = fx, y0 = fy + fh - c, x1 = fx + c, y1 = fy + fh, turns = 1, color = ct, clip }
+            put_piece{ &frame, img = b.corner, grid, x0 = fx + fw - c, y0 = fy + fh - c, x1 = fx + fw, y1 = fy + fh, turns = 2, color = ct, clip }
+            put_piece{ &frame, img = b.corner, grid, x0 = fx + fw - c, y0 = fy, x1 = fx + fw, y1 = fy + c, turns = 3, color = ct, clip }
         }
         if b.edge.ok and m.thick > 0 {
             let t = m.thick
             // Horizontal edges: the gap between the corners cut into whole segments.
             let gap_h = w - 2 * csz
             let gap_v = h - 2 * csz
-            draw_edge_run{ &frame, img = b.edge, x0 = x + csz, y0 = y, gap = gap_h, seg = m.seg, thick = t, side = 0, color = ct, clip }
-            draw_edge_run{ &frame, img = b.edge, x0 = x + csz, y0 = y + h - t, gap = gap_h, seg = m.seg, thick = t, side = 2, color = ct, clip }
-            draw_edge_run{ &frame, img = b.edge, x0 = x, y0 = y + csz, gap = gap_v, seg = m.seg, thick = t, side = 1, color = ct, clip }
-            draw_edge_run{ &frame, img = b.edge, x0 = x + w - t, y0 = y + csz, gap = gap_v, seg = m.seg, thick = t, side = 3, color = ct, clip }
+            draw_edge_run{ &frame, img = b.edge, grid, x0 = x + csz, y0 = y, gap = gap_h, seg = m.seg, thick = t, side = 0, color = ct, clip }
+            draw_edge_run{ &frame, img = b.edge, grid, x0 = x + csz, y0 = y + h - t, gap = gap_h, seg = m.seg, thick = t, side = 2, color = ct, clip }
+            draw_edge_run{ &frame, img = b.edge, grid, x0 = x, y0 = y + csz, gap = gap_v, seg = m.seg, thick = t, side = 1, color = ct, clip }
+            draw_edge_run{ &frame, img = b.edge, grid, x0 = x + w - t, y0 = y + csz, gap = gap_v, seg = m.seg, thick = t, side = 3, color = ct, clip }
         }
         // The fill: inside the corners, or the whole extent without a corner texture.
         let inset = if b.corner.ok { csz } else { 0 }
@@ -119,13 +163,15 @@ namespace gui {
             let fc = mul_alpha{ c = tint, a = a_fill }
             let style = if override.ok { FILL_STRETCHED } else { b.fill_style }
             if style == FILL_STRETCHED {
-                put_image{ &frame, img = fill, x = @as(f32, ax), y = @as(f32, ay), w = @as(f32, aw), h = @as(f32, ah), color = fc, angle = 0.0, clip }
+                put_piece{ &frame, img = fill, grid, x0 = @as(f32, ax), y0 = @as(f32, ay), x1 = @as(f32, ax + aw), y1 = @as(f32, ay + ah), turns = 0, color = fc, clip }
             } else if style == FILL_CENTRED {
                 let mut tw = @as(i32, fill.w)
                 let mut th = @as(i32, fill.h)
                 if tw > aw { tw = aw }
                 if th > ah { th = ah }
-                put_image{ &frame, img = fill, x = @as(f32, ax + (aw - tw) / 2), y = @as(f32, ay + (ah - th) / 2), w = @as(f32, tw), h = @as(f32, th), color = fc, angle = 0.0, clip }
+                let tx = ax + (aw - tw) / 2
+                let ty = ay + (ah - th) / 2
+                put_piece{ &frame, img = fill, grid, x0 = @as(f32, tx), y0 = @as(f32, ty), x1 = @as(f32, tx + tw), y1 = @as(f32, ty + th), turns = 0, color = fc, clip }
             } else {
                 // Tiled: whole tiles of the texture's size, each stretched to fill exactly.
                 let tw = if fill.w < 1.0 { 1 } else { @as(i32, fill.w) }
@@ -140,7 +186,12 @@ namespace gui {
                 while j < ny {
                     let mut i: i32 = 0
                     while i < nx {
-                        put_image{ &frame, img = fill, x = @as(f32, ax) + cw * @as(f32, i), y = @as(f32, ay) + chh * @as(f32, j), w = cw, h = chh, color = fc, angle = 0.0, clip }
+                        // Each tile's far side is the next one's near side, worked out the same way so the two meet.
+                        let tx0 = @as(f32, ax) + cw * @as(f32, i)
+                        let ty0 = @as(f32, ay) + chh * @as(f32, j)
+                        let tx1 = @as(f32, ax) + cw * @as(f32, i + 1)
+                        let ty1 = @as(f32, ay) + chh * @as(f32, j + 1)
+                        put_piece{ &frame, img = fill, grid, x0 = tx0, y0 = ty0, x1 = tx1, y1 = ty1, turns = 0, color = fc, clip }
                         i = i + 1
                     }
                     j = j + 1
@@ -152,7 +203,7 @@ namespace gui {
     // A run of edge segments along one side. `side`: 0 top, 1 left, 2 bottom, 3 right; the art is
     // the top edge and turns a quarter for each step. (x0, y0) is the run's first pixel.
     fn draw_edge_run {
-        mut frame: render::Frame, img: Img, x0: i32, y0: i32, gap: i32, seg: i32, thick: i32, side: i32,
+        mut frame: render::Frame, img: Img, grid: Grid, x0: i32, y0: i32, gap: i32, seg: i32, thick: i32, side: i32,
         color: render::Color, clip: render::Rect,
     } {
         if gap <= 0 { return }
@@ -166,14 +217,16 @@ namespace gui {
         while k < n {
             let len = base + (if k < extra { 1 } else { 0 })
             if side == 0 or side == 2 {
-                let angle = if side == 0 { 0.0 } else { PI }
-                put_image{ &frame, img, x = @as(f32, x0 + off), y = @as(f32, y0), w = @as(f32, len), h = @as(f32, thick), color, angle, clip }
+                put_piece{
+                    &frame, img, grid, x0 = @as(f32, x0 + off), y0 = @as(f32, y0), x1 = @as(f32, x0 + off + len), y1 = @as(f32, y0 + thick),
+                    turns = (if side == 0 { 0 } else { 2 }), color, clip,
+                }
             } else {
-                // Vertical: draw the segment as laid horizontally about the same centre, turned.
-                let cx = @as(f32, x0) + @as(f32, thick) / 2.0
-                let cy = @as(f32, y0 + off) + @as(f32, len) / 2.0
-                let angle = if side == 1 { HALF_PI } else { PI + HALF_PI }
-                put_image{ &frame, img, x = cx - @as(f32, len) / 2.0, y = cy - @as(f32, thick) / 2.0, w = @as(f32, len), h = @as(f32, thick), color, angle, clip }
+                // The art is the top edge turned a quarter (left) or three (right).
+                put_piece{
+                    &frame, img, grid, x0 = @as(f32, x0), y0 = @as(f32, y0 + off), x1 = @as(f32, x0 + thick), y1 = @as(f32, y0 + off + len),
+                    turns = (if side == 1 { 1 } else { 3 }), color, clip,
+                }
             }
             off = off + len
             k = k + 1
