@@ -8,6 +8,8 @@
 //   fight::apply{ &w, target, e = effect }          // an effect (scripts, attacks), events drained
 namespace fight {
     const ROUND_MS: i32 = 3000                  // a combat round (3.1)
+    const DIE_MS: i32 = 3000                    // the die animation (2.97 s in the humanoid skeleton, 2.63 s a creature's) plays out before `dead`
+    const CUTSCENE_READY_MS: i32 = 6000         // a designer's attack leaves the weapon up this long (ours)
     const COMBAT_MS: i32 = 8000                 // in combat this long after the last hostile act (3.6)
     const MAX_IMPACTS: usize = 12               // ranged animations fire up to 12 shots
     const NO_ROW: i32 = -1
@@ -22,7 +24,9 @@ namespace fight {
 
     // One impact of a round: when it lands, on whom, what the rules decided (3.3).
     struct Impact {
-        at_ms: i32,
+        at_ms: i32,                     // when it lands (a ranged shot: after its bolt's flight)
+        fire_ms: i32,                   // ranged: when the bolt leaves the weapon
+        hand: i32,                      // ranged: 0 right hand, 1 left (weapondischarge.2da switchmask)
         target: u32,
         attack: bool,                   // carries an attack (a ranged shot may be only visual)
         hit: bool,
@@ -44,7 +48,8 @@ namespace fight {
         anim_row: i32,                  // the attack animation (animations.2da row)
         anim_ms: i32,                   // until then the attack animation plays
         count: usize,
-        fired: usize,
+        fired: usize,                   // impacts landed
+        shots: usize,                   // bolts fired
         cutscene: bool,                 // a designer's round (CutsceneAttack): no OnEndRound, no combat
         impacts: [MAX_IMPACTS]Impact,
     }
@@ -69,22 +74,24 @@ namespace fight {
         file_hp: i32,                   // the GFF's CurrentHitPoints, adopted by equip_loaded
         has_file_hp: bool,
         dying_ms: i32,                  // > 0: the die animation plays, then dead
+        voice_ms: i32,                  // > 0: it has just grunted
+        ready_ms: i32,                  // > 0: a cutscene attack was just made, so the weapon stays up
     }
 
     fn no_impact {} -> Impact {
         let mut fx: [rules::MAX_COMBAT_FX]rules::CombatEffect
         let mut damage: rules::DamageRoll
-        return Impact{ at_ms = 0, target = obj::INVALID, attack = false, hit = false, result = 0, killing = false, ranged = false, reaction = NO_ROW, cutscene = false, damage, nfx = 0, fx }
+        return Impact{ at_ms = 0, fire_ms = 0, hand = 0, target = obj::INVALID, attack = false, hit = false, result = 0, killing = false, ranged = false, reaction = NO_ROW, cutscene = false, damage, nfx = 0, fx }
     }
 
     fn no_round {} -> Round {
-        return Round{ started = false, timer_ms = 0, length_ms = 0, target = obj::INVALID, anim_row = NO_ROW, anim_ms = 0, count = 0, fired = 0, cutscene = false, impacts = [no_impact{}; MAX_IMPACTS] }
+        return Round{ started = false, timer_ms = 0, length_ms = 0, target = obj::INVALID, anim_row = NO_ROW, anim_ms = 0, count = 0, fired = 0, shots = 0, cutscene = false, impacts = [no_impact{}; MAX_IMPACTS] }
     }
 
     fn new_fighter { heap: *mut heap::Heap } -> !*mut Fighter {
         let mut c: rules::Creature
         c.loaded_hp = -1
-        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0 }
+        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0, voice_ms = 0, ready_ms = 0 }
         return try alloc::new(Fighter, heap::Heap){ realloc = heap::alloc, heap, value = f }
     }
 
@@ -283,6 +290,8 @@ namespace fight {
             end_round{ &w, id, script = false }
         } else if k == rules::ev::COMMANDABLE {
             o.commandable = e.a != 0
+        } else if k == rules::ev::VISUAL_ON {
+            visual_effect{ &w, effect = e.a, target = id, source = e.who, position = math::vec3::zero{} }
         } else if k == rules::ev::FEEDBACK {
             if w.log.combat {
                 world::prefix{ w = &w }
@@ -320,6 +329,7 @@ namespace fight {
         if id != w.pc {
             events::post{ &w, delay_ms = 0, caller = who, target = id, payload = events::Payload::script{ e = events::script_event{ kind = events::DAMAGED, object = who } } }
         }
+        if amount > 0 and o.hp > 0 { bark{ &w, id, first = VOICE_PAIN, count = 2, chance_in = 2, quiet = true } }
         lethal_check{ &w, id, who, melee = true }
     }
 
@@ -361,7 +371,8 @@ namespace fight {
         bc.attack_target = obj::INVALID
         clear_attackers{ &w, id }
         play_row{ &w, o = back, row = if is_beast{ w = &w, c = bc } { ROW_CDIE } else { ROW_DIE } }
-        f.dying_ms = 1800
+        bark{ &w, id, first = VOICE_DEAD, count = 1, chance_in = 1, quiet = false }
+        f.dying_ms = DIE_MS
         if f.c.party {
             // A party member goes down: never dead (8.1); it gets up when the fight is over. The
             // module's OnPlayerDeath runs (GetLastPlayerDied, 8.2).
@@ -477,8 +488,10 @@ namespace fight {
         let o = world::object{ w = &w, id } ifnull { return }
         if obj::creature{ o } is some{ value = c } {
             if c.dead { return }
+            let was = c.in_combat
             c.in_combat = true
             if c.fighter is some{ value = f } { f.combat_ms = COMBAT_MS }
+            if not was { bark{ &w, id, first = VOICE_BATTLE, count = 6, chance_in = 1, quiet = false } }
         }
         _ = other
     }
@@ -696,10 +709,12 @@ namespace fight {
             let mut probe: [12]u8
             ranged = discharge_row{ w = &w, appearance = c.appearance, row = forced.animation, into = probe[..] } != null
         }
+        let flight_ms: i32 = if ranged { bolt_ms{ o, t } } else { 0 }
         let duel = not ranged and not is_ranged_stance{ s = ts } and s != 8 and ts != 8
         let row = if forced.on { forced.animation } else { attack_row{ &w, s, duel, ranged_beast = ranged and s == 0 } }
         f.round = no_round{}
         f.round.cutscene = forced.on
+        if forced.on { f.ready_ms = CUTSCENE_READY_MS }
         f.round.started = true
         f.round.length_ms = ROUND_MS
         f.round.target = target
@@ -736,6 +751,7 @@ namespace fight {
         // When the attacks land: melee hit times from combatanimations.2da (hit1..3), ranged shots
         // from weapondischarge.2da, spread over the attacks at random (3.3).
         let mut times: [MAX_IMPACTS]i32 = [0; MAX_IMPACTS]
+        let mut hands: [MAX_IMPACTS]i32 = [0; MAX_IMPACTS]
         let mut carries: [MAX_IMPACTS]bool = [false; MAX_IMPACTS]
         let mut n: usize = 0
         if ranged {
@@ -751,6 +767,11 @@ namespace fight {
                 if u + 1 >= 10 { col[cl] = '1'; cl = cl + 1; col[cl] = @trunc(u8, '0' + @as(u32, u + 1 - 10)) } else { col[cl] = @trunc(u8, '0' + @as(u32, u + 1)) }
                 cl = cl + 1
                 times[n] = if lr != null { twoda::get_int{ t = w.tables.weapondischarge, row = lrow, column = col[..cl] } ifnull 500 } else { 500 }
+                if lr != null {
+                    // switchmask: one digit per shot, 1 the on-hand weapon and 0 the off-hand one.
+                    let mask = twoda::get_string{ t = w.tables.weapondischarge, row = lrow, column = "switchmask" } ifnull ""
+                    if @as(usize, u) < mask.len and mask[@as(usize, u)] == '0' { hands[n] = 1 }
+                }
                 let remaining = @as(u32, shots - u)
                 carries[n] = left > 0 and (world::random{ &w } % remaining) < @as(u32, left)
                 if forced.on { carries[n] = u + 1 == shots }            // the designer's one hit: on the last shot
@@ -776,7 +797,9 @@ namespace fight {
         let mut k: usize = 0
         while k < n {
             let mut imp = no_impact{}
-            imp.at_ms = times[k]
+            imp.at_ms = times[k] + flight_ms
+            imp.fire_ms = times[k]
+            imp.hand = hands[k]
             imp.target = target
             imp.ranged = ranged
             imp.cutscene = forced.on
@@ -809,6 +832,7 @@ namespace fight {
         let last = times[if n > 0 { n - 1 } else { 0 }]
         f.round.anim_ms = if last + 600 < ROUND_MS - 200 { last + 600 } else { ROUND_MS - 200 }
         play_row{ &w, o, row }
+        if not forced.on { bark{ &w, id, first = VOICE_ATTACK, count = 3, chance_in = 2, quiet = true } }
         if w.log.combat {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "{} attacks {}: {} attacks, animation {}\n", id, target, attack, row)
@@ -849,6 +873,8 @@ namespace fight {
         let tc = obj::creature{ o = t } ifnull { return }
         if tc.dead { return }
         if not imp.attack { return }
+        if imp.ranged { land_ranged_fx{ &w, id, imp, power = false } } else { land_melee_fx{ &w, id, imp } }
+        if imp.result == rules::outcome::CRITICAL { bark{ &w, id, first = VOICE_CRITICAL, count = 1, chance_in = 1, quiet = false } }
         t.ctx.last_attacker = id
         tc.last_hostile_actor = id
         if not imp.cutscene { enter_combat{ &w, id = imp.target, other = id } }
@@ -956,6 +982,12 @@ namespace fight {
         // The round: impacts at their times, the end after 3 s.
         if f.round.started {
             f.round.timer_ms = f.round.timer_ms + dt
+            // Bolts leave the weapon at their shot times and land after their flight.
+            while f.round.shots < f.round.count and f.round.impacts[f.round.shots].fire_ms <= f.round.timer_ms {
+                let shot = f.round.impacts[f.round.shots]
+                f.round.shots = f.round.shots + 1
+                if shot.ranged { fire_shot{ &w, id, imp = &shot, power = false } }
+            }
             while f.round.fired < f.round.count and f.round.impacts[f.round.fired].at_ms <= f.round.timer_ms {
                 let imp = f.round.impacts[f.round.fired]
                 f.round.fired = f.round.fired + 1
@@ -979,10 +1011,12 @@ namespace fight {
             }
         }
         if f.react_ms > 0 { f.react_ms = f.react_ms - dt }
+        if f.voice_ms > 0 { f.voice_ms = f.voice_ms - dt }
+        if f.ready_ms > 0 { f.ready_ms = f.ready_ms - dt }
         // Back to the ready stance (in combat) or standing when an attack or reaction is over.
         let busy = (f.round.started and f.round.timer_ms < f.round.anim_ms) or action_holds_animation{ o = o3 }
         if not busy and f.react_ms <= 0 and not c3.moving and row_of_animation{ id = o3.animation } >= 0 {
-            if c3.in_combat { play_ready{ &w, o = o3, c = c3 } } else { world::set_animation{ o = o3, id = obj::ANIM_STAND, speed = 1.0 } }
+            if c3.in_combat or f.ready_ms > 0 { play_ready{ &w, o = o3, c = c3 } } else { world::set_animation{ o = o3, id = obj::ANIM_STAND, speed = 1.0 } }
         } else if c3.in_combat and not c3.moving and o3.animation == obj::ANIM_STAND {
             play_ready{ &w, o = o3, c = c3 }
         }
@@ -1106,6 +1140,7 @@ namespace fight {
             }
             let conj = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "conjanim" } ifnull ""
             play_row{ &w, o, row = cast_row{ name = conj, looping = true } }
+            spell_visuals{ &w, id, spell, cast = false }
             a.phase = 1
             a.started = now
             if w.log.combat {
@@ -1124,6 +1159,7 @@ namespace fight {
             let anim = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "castanim" } ifnull ""
             let back = world::object{ w = &w, id } ifnull { return actions::Status::failed }
             play_row{ &w, o = back, row = cast_row{ name = anim, looping = false } }
+            spell_visuals{ &w, id, spell, cast = true }
             a.phase = 2
         }
         if a.phase == 2 {

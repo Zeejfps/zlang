@@ -1,0 +1,44 @@
+// The fight trace (`--log trace`): every few frames, one line per creature that is fighting or
+// dying near the player: where it stands, the animation the world asks for, its hit points, its
+// target and its round. Pair it with --screenshot-at to read a fight frame by frame.
+namespace fight {
+    const TRACE_EVERY: u64 = 6
+
+    // The animation's name: an animations.2da row's, a table entry's, or the number.
+    fn trace_anim { w: *world::World, id: u32, into: []mut u8 } -> []u8 {
+        if animname::is_row{ id } {
+            return twoda::get_string{ t = w.tables.animations, row = animname::row_of{ id }, column = "name" } ifnull "?"
+        }
+        let n = animname::name_of{ id }
+        if n.len > 0 { return n }
+        return animname::name_in{ w, id, into }
+    }
+
+    fn trace { mut w: world::World } {
+        if not w.log.trace or w.clock.frame % TRACE_EVERY != 0 { return }
+        let pc = world::object{ w = &w, id = w.pc } ifnull { return }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed or o.area != pc.area { continue }
+            let c = obj::creature{ o } ifnull { continue }
+            let f = c.fighter ifnull { continue }
+            let near = math::vec3::distance{ a = o.position, b = pc.position }
+            let busy = f.round.started or f.combat_ms > 0 or f.dying_ms > 0 or c.dead
+            if not busy or near > 60.0 { continue }
+            let mut buf: [34]u8
+            let name = trace_anim{ w = &w, id = o.animation, into = buf[..] }
+            let front: u32 = if o.actions.len > 0 { @as(u32, list::items{ list = o.actions }[0].kind) } else { 0 }
+            let state: []u8 = if c.dead { " dead" } else if f.dying_ms > 0 { " dying" } else if f.c.down { " down" } else { "" }
+            let scripted: []u8 = if f.round.cutscene { " cutscene" } else { "" }
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "trace {} {} at {} {} anim {} ({}) hp {}/{} target {} act {} round {}/{} fired {}/{}{}{}\n",
+                o.id, o.tag, o.position.x, o.position.y, o.animation, name, o.hp, o.hp_max, c.attack_target, front,
+                f.round.timer_ms, f.round.anim_ms, f.round.fired, f.round.count,
+                state,
+                scripted)
+        }
+    }
+}

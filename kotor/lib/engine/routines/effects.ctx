@@ -656,9 +656,19 @@ namespace rt_fx {
     fn apply_effect_at_location { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let r = nwscript::ApplyEffectAtLocation
         _ = try nwarg::int{ &vm, routine = r, argc, i = 0 }
-        _ = try nwarg::engine{ &vm, routine = r, argc, i = 1, kind = nwvm::EngineType::effect }
-        _ = try nwarg::engine{ &vm, routine = r, argc, i = 2, kind = nwvm::EngineType::location }
+        let h = try nwarg::engine{ &vm, routine = r, argc, i = 1, kind = nwvm::EngineType::effect }
+        let lh = try nwarg::engine{ &vm, routine = r, argc, i = 2, kind = nwvm::EngineType::location }
         _ = try nwarg::float{ &vm, routine = r, argc, i = 3 }
+        // A visual effect among the leaves plays at the place (a grenade's blast, a scorch mark).
+        let g = values::effect{ s = &w.values, handle = h }
+        let l = values::location{ s = &w.values, handle = lh }
+        let mut i: usize = 0
+        while i < @as(usize, g.len) {
+            if g.items[i].kind == rules::fx::VISUALEFFECT {
+                fight::visual_effect{ &w, effect = g.items[i].ints[0], target = obj::INVALID, source = nwvm::self_object{ vm }, position = l.position }
+            }
+            i = i + 1
+        }
     }
 
     // An object without a rules creature (a door, a placeable) takes the instant kinds on its

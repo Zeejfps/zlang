@@ -25,6 +25,7 @@ fn build { mut b: Build } {
     build::add_sources{ &b, exe, dir = "lib/rules" }
     build::add_sources{ &b, exe, dir = "lib/minigame" }
     build::add_sources{ &b, exe, dir = "lib/scene" }
+    build::add_sources{ &b, exe, dir = "lib/vfx" }
     build::add_sources{ &b, exe, dir = "lib/dialog/core" }
     build::add_sources{ &b, exe, dir = "lib/dialog/view" }
     build::add_sources{ &b, exe, dir = "lib/dialog/panels" }

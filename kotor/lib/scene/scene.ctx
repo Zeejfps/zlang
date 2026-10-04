@@ -48,6 +48,8 @@ namespace scene {
         alive: bool,
         stunt: bool,                    // a cutscene stunt model: drawn at the origin, its animation places it (lib/dialog)
         signature: u64,                 // what the models were made from (visual::signature_of)
+        saber: u8,                      // the lightsaber's blade: 0 not looked at yet, 1 off, 2 lit, 3 this creature has none
+        saber_force: u8,                // a script's SetLightsaberPowered override: 0 none, 1 off, 2 lit
     }
 
     struct Scene {
@@ -207,6 +209,10 @@ namespace scene {
         if found == null { found = mdl_anim::find{ model, name, lookup = mdl_cache::get{ fs = &w.fs, cache = &sc.models, _ } } }
         let hit = found ifnull {
             map::put{ m = &sc.missing_anims, key, value = 1 } iferr {}
+            if w.log.trace {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "scene: no animation {} on {}\n", name, model.name)
+            }
             return null
         }
         let b = mdl_anim::bind(arena::Arena){ realloc = arena::alloc, heap = sc.arena, model, animation = hit.animation } iferr { return null }
@@ -357,8 +363,22 @@ namespace scene {
     }
 
     fn advance_part { mut sc: Scene, mut w: world::World, part: usize, dt: f32 } {
+        advance_owned{ &sc, &w, part, dt, owner = obj::INVALID }
+    }
+
+    // The animation's events of a creature's body (a swing, a body hitting the ground) are the
+    // creature's: fight::animation_event makes their sounds.
+    fn animation_event { mut w: world::World, owner: u32, event: mdl::Event } {
+        fight::animation_event{ &w, id = owner, name = event.name }
+    }
+
+    fn advance_owned { mut sc: Scene, mut w: world::World, part: usize, dt: f32, owner: u32 } {
         let p = part_at{ sc = &sc, i = part }
-        mdl_anim::advance{ player = &p.player, dt, on_event = mdl_anim::ignore_event }
+        if owner != obj::INVALID {
+            mdl_anim::advance{ player = &p.player, dt, on_event = animation_event{ &w, owner, _ } }
+        } else {
+            mdl_anim::advance{ player = &p.player, dt, on_event = mdl_anim::ignore_event }
+        }
         if p.next_len > 0 and mdl_anim::is_done{ player = p.player } {
             let mut next: [32]u8 = p.next
             let n = p.next_len
@@ -399,6 +419,25 @@ namespace scene {
             visual::draw{ sc = &sc, v = &v, o, &frame, view }
             sc.drawn_objects = sc.drawn_objects + 1
         }
+    }
+
+    // SetLightsaberPowered: `forced` fixes the blade lit or dark whatever the creature is doing,
+    // otherwise it follows combat again.
+    fn set_saber { sc: *Scene, id: u32, forced: bool, powered: bool } {
+        let index = map::get{ m = sc.by_id, key = id } ifnull { return }
+        if index == NO_VISUAL { return }
+        let v = list::at{ list = sc.visuals, i = index }
+        v.saber_force = if not forced { 0 } else if powered { 2 } else { 1 }
+    }
+
+    // The world transform of the node `hook` on object `id`'s visual (see visual::hook_world);
+    // null if the object shows nothing or no part has the node.
+    fn hook_of { sc: *Scene, w: *world::World, id: u32, hook: []u8, which: usize } -> ?math::Mat4 {
+        let index = map::get{ m = sc.by_id, key = id } ifnull { return null }
+        if index == NO_VISUAL { return null }
+        let v = list::at{ list = sc.visuals, i = index }
+        let o = world::object{ w, id } ifnull { return null }
+        return visual::hook_world{ sc, v, o, hook, which }
     }
 
     // Where a ray first meets the visible rooms' drawn geometry (the camera's collision; ours: the

@@ -1,0 +1,344 @@
+// Transient visual effects (docs/design/vfx.md): a pool of effect instances, each one of the game's
+// effect models (a blaster bolt, a muzzle flash, an impact spark, later a Force power's glow) put
+// somewhere in the world for a while. An effect is an MDL with emitters, lights and perhaps an
+// animation; the scene supplies the model on the GPU and its pose, gui3d::Emitting the particles.
+//
+//   let mut vx = vfx::make{}
+//   each tick, for each outbox note:   vfx::take{ &vx, &sc, &w, &dev, note }
+//   each presentation step:            vfx::update{ &vx, &sc, &w, dt }
+//   each frame, after scene::draw:     vfx::draw{ &vx, &sc, &frame, view }
+//   leaving an area (scene released):  vfx::reset{ &vx }
+//
+// Three ways to place an effect: still (at a point), follow (riding a node of an object's visual,
+// such as a weapon's muzzlehook or a creature's impact_bolt) and bolt (a projectile flying from
+// one point to another over a time, which a miss lets fly on past its target).
+namespace vfx {
+    const MAX_FX: usize = 128
+
+    // Room for particles per emitter: an Explosion bursts `birthrate` of them at once.
+    const PUFFS: usize = 96
+
+    enum Kind: u8 { still, follow, bolt }
+
+    struct Fx {
+        live: bool,
+        used: bool,                     // the slot holds a part and particle arrays (reusable for the same model)
+        loaded: usize,                  // scene.loaded: the model
+        part: usize,                    // scene.parts: its pose and animation
+        emitting: []mut gui3d::Emitting,
+        kind: Kind,
+        age: f32,                       // seconds since its first step (that one shows it as born)
+        fresh: bool,                    // not stepped yet: its first frame is its birth, however long the step was
+        life: f32,                      // seconds the emitters keep being fed
+        stopped: bool,                  // past its life: the particles die out
+        detonate: bool,                 // the animation's `detonate` event fired this step
+        // still
+        at: math::Vec3,
+        facing: math::Vec3,             // the way +Y points (zero: unrotated)
+        // follow
+        object: u32,
+        hook: [24]u8,
+        hook_len: usize,
+        which: usize,                   // the nth part with that node (a second weapon's hook)
+        // bolt
+        from: math::Vec3,
+        to: math::Vec3,
+        flight: f32,
+        end_effect: i32,                // a visualeffects.2da row played where the bolt ends, 0 none
+        // where it stands this frame
+        matrix: math::Mat4,
+        dir: math::Vec3,                // a bolt's direction of flight
+        speed: f32,                     // a bolt's metres per second
+    }
+
+    fn no_fx {} -> Fx {
+        return Fx{
+            live = false, used = false, loaded = 0, part = 0, emitting = slice::empty(gui3d::Emitting){}, kind = Kind::still, age = 0.0, fresh = false, life = 0.0,
+            stopped = false, detonate = false, at = math::vec3::zero{}, facing = math::vec3::zero{}, object = obj::INVALID, hook = [0; 24], hook_len = 0,
+            which = 0, from = math::vec3::zero{}, to = math::vec3::zero{}, flight = 0.0, end_effect = 0, matrix = math::mat4::identity{},
+            dir = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, speed = 0.0,
+        }
+    }
+
+    struct Vfx {
+        fx: [MAX_FX]Fx,
+        time: f32,
+        rng: u32,
+        started: u32,                   // effects begun, for the report
+        dropped: u32,                   // wanted while the pool was full
+    }
+
+    fn make {} -> Vfx {
+        return Vfx{ fx = [no_fx{}; MAX_FX], time = 0.0, rng = 0x2F6E2B1, started = 0, dropped = 0 }
+    }
+
+    // The scene was released: its parts and arrays are gone with the area's arena.
+    fn reset { mut v: Vfx } {
+        let mut i: usize = 0
+        while i < MAX_FX {
+            v.fx[i] = no_fx{}
+            i = i + 1
+        }
+    }
+
+    fn random { mut v: Vfx } -> f32 {
+        return gui3d::rng_unit{ s = &v.rng }
+    }
+
+    fn live_count { v: *Vfx } -> u32 {
+        let mut n: u32 = 0
+        let mut i: usize = 0
+        while i < MAX_FX {
+            if v.fx[i].live { n = n + 1 }
+            i = i + 1
+        }
+        return n
+    }
+
+    // ---- making an instance
+
+    // A slot for model `name`: a finished one that held the same model (its part and arrays are
+    // reused), else a fresh one, else the oldest finished slot taken over. Null if the model is
+    // missing or every slot is live.
+    fn acquire { mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, name: []u8 } -> !?usize {
+        let loaded = try scene::load_model{ &sc, &w, &dev, name, body_texture = "", envmap = "", hide_null = false } ifnull { return null }
+        let mut pick: ?usize = null
+        let mut fresh: ?usize = null
+        let mut spare: ?usize = null
+        let mut i: usize = 0
+        while i < MAX_FX {
+            let f = &v.fx[i]
+            if not f.live {
+                if f.used and f.loaded == loaded { pick = i; break }
+                if not f.used and fresh == null { fresh = i }
+                if f.used and spare == null { spare = i }
+            }
+            i = i + 1
+        }
+        if pick != null { return pick }
+        let slot = if fresh != null { fresh } else { spare }
+        if slot == null {
+            v.dropped = v.dropped + 1
+            return null
+        }
+        let f = &v.fx[slot]
+        let model = scene::loaded_at{ sc = &sc, i = loaded }.model
+        f.loaded = loaded
+        f.part = try scene::add_part{ &sc, loaded, parent = -1, hook = "" }
+        f.emitting = try alloc::resize(gui3d::Emitting, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(gui3d::Emitting){}, count = model.emitters.len }
+        let mut e: usize = 0
+        while e < model.emitters.len {
+            f.emitting[e] = try make_emitting{ &sc, &w, &dev, model, index = @as(u32, e) }
+            e = e + 1
+        }
+        f.used = true
+        return slot
+    }
+
+    // The particle arrays of emitter `index`, with room for a burst.
+    fn make_emitting { mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, model: *mdl::Model, index: u32 } -> !gui3d::Emitting {
+        let e = &model.emitters[index]
+        let puffs = try alloc::resize(gui3d::Puff, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(gui3d::Puff){}, count = PUFFS }
+        let out = try alloc::resize(render::Particle, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(render::Particle){}, count = PUFFS }
+        let t = material::get{ cache = &sc.materials, fs = &w.fs, &dev, rm = w.rm.*, name = e.texture }
+        return gui3d::Emitting{ emitter = index, texture = t.texture, puffs, live = 0, owed = 0.0, rng = 0x2545F491 + 7919 * (index + 1), out }
+    }
+
+    // Starts the slot's animation (`anim`, else `impact`, else `default`) and fixes how long it
+    // lives: `life` seconds, or the animation's length (at least a moment) when `life` is 0.
+    fn begin { mut v: Vfx, mut sc: scene::Scene, mut w: world::World, slot: usize, anim: []u8, life: f32, kind: Kind } {
+        let f = &v.fx[slot]
+        let model = scene::loaded_at{ sc = &sc, i = f.loaded }.model
+        f.kind = kind
+        f.live = true
+        f.age = 0.0
+        f.fresh = true
+        f.stopped = false
+        f.detonate = false
+        let p = scene::part_at{ sc = &sc, i = f.part }
+        p.anim_len = 0
+        let mut length: f32 = 0.0
+        let mut played = false
+        let names: [3][]u8 = [anim, "impact", "default"]
+        let mut n: usize = 0
+        while n < 3 and not played {
+            if names[n].len > 0 and mdl::find_animation{ model, name = names[n] } is some{ value = ai } {
+                length = model.animations[ai].length
+                played = scene::play{ &sc, &w, part = f.part, name = names[n], looping = false, speed = 1.0, transition = 0.0 }
+            }
+            n = n + 1
+        }
+        f.life = if life > 0.0 { life } else if length > 0.3 { length } else { 0.3 }
+        let mut e: usize = 0
+        while e < f.emitting.len {
+            f.emitting[e].live = 0
+            f.emitting[e].owed = 0.0
+            e = e + 1
+        }
+        // The pose at time zero, so the first frame already shows the animation's start.
+        mdl_anim::evaluate{ model, player = p.player, pose = p.pose }
+        v.started = v.started + 1
+        if w.log.trace {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "vfx {} ({}) life {} at {} {} {}\n", model.name, slot, f.life, f.matrix.m[12], f.matrix.m[13], f.matrix.m[14])
+        }
+    }
+
+    // An effect model standing at a point (`facing` zero: unrotated).
+    fn spawn_still {
+        mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device,
+        model: []u8, at: math::Vec3, facing: math::Vec3, anim: []u8, life: f32,
+    } -> !?usize {
+        let slot = try acquire{ &v, &sc, &w, &dev, name = model } ifnull { return null }
+        let f = &v.fx[slot]
+        f.at = at
+        f.facing = facing
+        f.matrix = placed{ at, facing }
+        begin{ &v, &sc, &w, slot, anim, life, kind = Kind::still }
+        return slot
+    }
+
+    // An effect model riding a node of an object's visual for a while.
+    fn spawn_follow {
+        mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device,
+        model: []u8, object: u32, hook: []u8, which: usize, anim: []u8, life: f32,
+    } -> !?usize {
+        let slot = try acquire{ &v, &sc, &w, &dev, name = model } ifnull { return null }
+        let f = &v.fx[slot]
+        f.object = object
+        f.which = which
+        let n = if hook.len < 24 { hook.len } else { 24 }
+        let mut i: usize = 0
+        while i < n {
+            f.hook[i] = hook[i]
+            i = i + 1
+        }
+        f.hook_len = n
+        begin{ &v, &sc, &w, slot, anim, life, kind = Kind::follow }
+        f.matrix = follow_matrix{ sc = &sc, w = &w, f }
+        return slot
+    }
+
+    // A projectile model flying from `from` to `to` in `flight` seconds; `end_effect` (a
+    // visualeffects.2da row, 0 none) plays where it ends.
+    fn spawn_bolt {
+        mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device,
+        model: []u8, from: math::Vec3, to: math::Vec3, flight: f32, end_effect: i32,
+    } -> !?usize {
+        let slot = try acquire{ &v, &sc, &w, &dev, name = model } ifnull { return null }
+        let f = &v.fx[slot]
+        let span = math::vec3::sub{ a = to, b = from }
+        let length = math::vec3::length{ v = span }
+        f.from = from
+        f.to = to
+        f.flight = math::max{ a = flight, b = 0.02 }
+        f.end_effect = end_effect
+        f.dir = if length > 0.001 { math::vec3::scale{ v = span, s = 1.0 / length } } else { math::Vec3{ x = 0.0, y = 1.0, z = 0.0 } }
+        f.speed = length / f.flight
+        f.matrix = placed{ at = from, facing = f.dir }
+        begin{ &v, &sc, &w, slot, anim = "travel01", life = f.flight, kind = Kind::bolt }
+        return slot
+    }
+
+    // ---- placing
+
+    // A matrix at `at` with +Y along `facing` (+Z kept up); `facing` zero: just the translation.
+    fn placed { at: math::Vec3, facing: math::Vec3 } -> math::Mat4 {
+        if math::vec3::length_sq{ v = facing } < 0.0001 { return math::mat4::translation{ t = at } }
+        let fwd = math::vec3::normalize{ v = facing }
+        let up = if math::abs{ x = fwd.z } > 0.99 { math::Vec3{ x = 1.0, y = 0.0, z = 0.0 } } else { math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } }
+        let right = math::vec3::normalize{ v = math::vec3::cross{ a = fwd, b = up } }
+        let top = math::vec3::cross{ a = right, b = fwd }
+        return math::mat4::from_array{ a = [
+            right.x, right.y, right.z, 0.0,
+            fwd.x, fwd.y, fwd.z, 0.0,
+            top.x, top.y, top.z, 0.0,
+            at.x, at.y, at.z, 1.0,
+        ] }
+    }
+
+    // The node an effect rides, now; the object's chest when the object or node is missing.
+    fn follow_matrix { sc: *scene::Scene, w: *world::World, f: *Fx } -> math::Mat4 {
+        let hook = f.hook[..f.hook_len]
+        if scene::hook_of{ sc, w, id = f.object, hook, which = f.which } is some{ value = m } { return m }
+        let o = world::object{ w, id = f.object } ifnull { return f.matrix }
+        return math::mat4::translation{ t = math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + 1.2 } }
+    }
+
+    // ---- each step
+
+    // The animation's `detonate` event: the Explosion emitters burst.
+    fn on_event { mut f: Fx, event: mdl::Event } {
+        if ci::eq{ a = event.name, b = "detonate" } { f.detonate = true }
+    }
+
+    // Births `birthrate` particles (at least one) at once from an Explosion emitter.
+    fn burst { mut em: gui3d::Emitting, e: *mdl::Emitter, props: mdl::EmitterProps } {
+        let want = math::max{ a = props.birthrate, b = 1.0 }
+        let mut n: usize = 0
+        while @as(f32, n) < want and em.live < em.puffs.len {
+            gui3d::spawn{ &em, e, props }
+            // lifeExp -1: the particle stays as long as the effect does.
+            if props.life_exp < 0.0 { em.puffs[em.live - 1].life = 1.0e9 }
+            n = n + 1
+        }
+    }
+
+    // Moves every live effect on by `dt` seconds: its place, its animation, its particles.
+    fn update { mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, dt: f32 } {
+        v.time = v.time + dt
+        let mut i: usize = 0
+        while i < MAX_FX {
+            let slot = i
+            i = i + 1
+            if not v.fx[slot].live { continue }
+            step{ &v, &sc, &w, &dev, slot, dt }
+        }
+    }
+
+    fn step { mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, slot: usize, dt: f32 } {
+        let f = &v.fx[slot]
+        let dt_eff = if f.fresh { 0.0 } else { dt }
+        f.fresh = false
+        f.age = f.age + dt_eff
+        let age = f.age
+        if f.kind == Kind::bolt {
+            if age >= f.flight {
+                f.live = false
+                if f.end_effect > 0 {
+                    let at = f.to
+                    visual_at{ &v, &sc, &w, &dev, effect = f.end_effect, at, facing = math::vec3::negate{ v = f.dir } }
+                }
+                return
+            }
+            f.matrix = placed{ at = math::vec3::lerp{ a = f.from, b = f.to, t = age / f.flight }, facing = f.dir }
+        } else if f.kind == Kind::follow {
+            f.matrix = follow_matrix{ sc = &sc, w = &w, f }
+        }
+        let p = scene::part_at{ sc = &sc, i = f.part }
+        let model = scene::loaded_at{ sc = &sc, i = f.loaded }.model
+        mdl_anim::advance{ player = &p.player, dt = dt_eff, on_event = on_event{ f, _ } }
+        mdl_anim::evaluate{ model, player = p.player, pose = p.pose }
+        if age >= f.life and f.kind != Kind::bolt { f.stopped = true }
+        let mut all_quiet = true
+        let mut e: usize = 0
+        while e < model.emitters.len {
+            let ex = &model.emitters[e]
+            let em = &f.emitting[e]
+            let mut props = p.pose.emitters[e]
+            e = e + 1
+            let explodes = ex.update == mdl::EmitterUpdate::explosion
+            if explodes or f.stopped {
+                props.birthrate = 0.0
+                props.random_birthrate = 0.0
+            }
+            gui3d::step_emitting{ em, e = ex, props, dt = dt_eff }
+            // A burst after the step, so its particles are seen at least once even when they
+            // live less than a frame (a muzzle flash lives 0.02 s).
+            if explodes and f.detonate { burst{ em, e = ex, props = p.pose.emitters[e - 1] } }
+            if em.live > 0 { all_quiet = false }
+        }
+        f.detonate = false
+        if f.stopped and all_quiet { f.live = false }
+    }
+}

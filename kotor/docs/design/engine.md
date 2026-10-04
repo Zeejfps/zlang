@@ -512,6 +512,10 @@ each frame:
   spells.2da times, the impact script as the caster with `ctx.spell_*` set, the catch time, then
   OnEndRound. Combat animations are animations.2da rows (`animname::ROW_BASE + row`; the scene
   plays the row's name). The combat camera is camerastyle row 8 while the leader is in combat.
+  What a fight looks and sounds like (bolts, muzzle flashes, impacts, lightsaber blades, swings,
+  voices) is the outbox's `shot`, `visual` and `effect_model` notes and `play_sound`, made in
+  `fight_fx.ctx` / `fight_voice.ctx` and shown by `lib/vfx`: [vfx.md](vfx.md). A ranged shot's
+  damage lands after its bolt's flight (23.8 ms per metre), not at the shot time.
 - **Dialogue** (lib/dialog: `dlg`, `dlgview`, routines `rt_dlg`; agreed with the dialogue lead):
   DIALOGOBJECT posts script event 7 (DIALOGUE) to the target with the resref; `events` calls
   `dlg::note_event` before the slot runs, and an empty OnDialogue runs `k_hen_dialogue01`, which
