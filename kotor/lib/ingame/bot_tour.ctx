@@ -1,0 +1,236 @@
+// The bot's tour (tools/smoke): a route made from the area itself instead of an input script's tags.
+// `FRAME ui bot tour` picks stops from the leader's area, an even spread of at most a few dozen per
+// kind: waypoints, generic and trap triggers (walked into, so their OnEnter runs), doors that stay in
+// the module (opened), useable placeables without an inventory (used) and peaceful creatures with a
+// conversation (talked to), and visits them nearest first. Module doors and transition triggers are
+// left alone, so the tour stays in its module; containers are, because their loot panel waits for a
+// person. A stop that takes too long is dropped, like a route stop the bot cannot reach.
+namespace bot {
+    const TOUR_MAX: usize = 96
+    const TOUR_PATIENCE: u32 = 150                  // decisions on one stop before it is dropped (50 s of world time)
+    const TOUR_FIGHT: u32 = 120                     // decisions on one foe before it is left alone (40 s: it cannot be reached, or cannot be killed)
+    const TOUR_STILL: u32 = 15                      // decisions without getting half a metre closer before it is dropped (5 s)
+
+    struct Tour {
+        on: bool,
+        ids: [96]u32,
+        at: [96]math::Vec3,                         // where to walk for each stop
+        count: usize,
+        next: usize,
+        waiting: u32,
+        best: f32,                                  // the nearest the leader has been to this stop
+        still: u32,                                 // decisions since it last got closer
+        foe: u32,                                   // the foe the leader has been fighting
+        fought: u32,                                // decisions spent on it
+        ignore: u32,                                // a foe given up on
+        acted: bool,                                // the door of this stop was ordered open, the placeable used, the creature spoken to
+    }
+
+    fn new_tour {} -> Tour {
+        return Tour{ on = false, ids = [obj::INVALID; 96], at = [math::vec3::zero{}; 96], count = 0, next = 0, waiting = 0, best = 1000000.0, still = 0, foe = obj::INVALID, fought = 0, ignore = obj::INVALID, acted = false }
+    }
+
+    // What kind of stop an object makes: 0 waypoint, 1 trigger, 2 door, 3 placeable, 4 creature; -1 none.
+    fn stop_class { w: *world::World, o: *obj::Object, me: *obj::Object } -> i32 {
+        if o.destroyed or o.id == me.id or o.area != me.area { return -1 }
+        match o.ext {
+            waypoint => { return 0 }
+            trigger{ t } => {
+                if t.trigger_type == 1 or t.polygon.len < 3 or not resref::is_empty{ r = t.linked_to_module } { return -1 }
+                return 1
+            }
+            door{ d } => {
+                if d.static or not resref::is_empty{ r = d.linked_to_module } or d.state == obj::DoorState::destroyed { return -1 }
+                return 2
+            }
+            placeable{ p } => {
+                if p.useable and not p.static and not p.has_inventory { return 3 }
+                return -1
+            }
+            creature{ c } => {
+                if c.dead or party::is_member{ w, id = o.id } or resref::is_empty{ r = o.conversation } or hud::is_hostile{ w, id = o.id } { return -1 }
+                return 4
+            }
+            else => { return -1 }
+        }
+    }
+
+    fn stop_cap { class: i32 } -> usize {
+        return match class {
+            0 => { 24 }
+            1 => { 16 }
+            2 => { 16 }
+            3 => { 24 }
+            else => { 16 }
+        }
+    }
+
+    // Where to walk for a stop: a trigger's middle, an object's place.
+    fn stop_place { o: *obj::Object } -> math::Vec3 {
+        if o.ext is trigger{ t } {
+            let mut sum = math::vec3::zero{}
+            let mut i: usize = 0
+            while i < t.polygon.len {
+                sum = math::vec3::add{ a = sum, b = t.polygon[i] }
+                i = i + 1
+            }
+            return math::vec3::scale{ v = sum, s = 1.0 / @as(f32, t.polygon.len) }
+        }
+        return o.position
+    }
+
+    // Picks the stops and orders them nearest first from the leader.
+    fn tour_build { mut b: Bot, w: *world::World } {
+        b.tour = new_tour{}
+        let me = world::object{ w, id = party::leader{ w } } ifnull { return }
+        let all = list::items{ list = w.objects.all }
+        let mut total: [5]usize = [0; 5]
+        let mut i: usize = 0
+        while i < all.len {
+            let c = stop_class{ w, o = all[i], me }
+            if c >= 0 { total[@as(usize, c)] = total[@as(usize, c)] + 1 }
+            i = i + 1
+        }
+        let mut seen: [5]usize = [0; 5]
+        let mut ids: [96]u32 = [obj::INVALID; 96]
+        let mut at: [96]math::Vec3 = [math::vec3::zero{}; 96]
+        let mut n: usize = 0
+        i = 0
+        while i < all.len and n < TOUR_MAX {
+            let o = all[i]
+            i = i + 1
+            let c = stop_class{ w, o, me }
+            if c < 0 { continue }
+            let k = @as(usize, c)
+            let stride = (total[k] + stop_cap{ class = c } - 1) / stop_cap{ class = c }
+            seen[k] = seen[k] + 1
+            if (seen[k] - 1) % stride != 0 { continue }
+            ids[n] = o.id
+            at[n] = stop_place{ o }
+            n = n + 1
+        }
+        // Nearest first.
+        let mut here = me.position
+        let mut done: [96]bool = [false; 96]
+        let mut m: usize = 0
+        while m < n {
+            let mut best: usize = n
+            let mut best_d: f32 = 1000000.0
+            let mut j: usize = 0
+            while j < n {
+                if not done[j] {
+                    let d = math::vec3::distance{ a = at[j], b = here }
+                    if d < best_d {
+                        best_d = d
+                        best = j
+                    }
+                }
+                j = j + 1
+            }
+            if best == n { break }
+            done[best] = true
+            b.tour.ids[m] = ids[best]
+            b.tour.at[m] = at[best]
+            here = at[best]
+            m = m + 1
+        }
+        b.tour.count = m
+        b.tour.on = true
+    }
+
+    // Whether the tour leaves this foe alone: it has taken the leader longer than TOUR_FIGHT decisions.
+    fn tour_ignores { mut b: Bot, foe: u32 } -> bool {
+        if not b.tour.on { return false }
+        if foe == b.tour.ignore { return true }
+        if foe != b.tour.foe {
+            b.tour.foe = foe
+            b.tour.fought = 0
+        }
+        b.tour.fought = b.tour.fought + 1
+        if b.tour.fought > TOUR_FIGHT {
+            b.tour.ignore = foe
+            return true
+        }
+        return false
+    }
+
+    fn tour_advance { mut b: Bot } {
+        b.tour.next = b.tour.next + 1
+        b.tour.waiting = 0
+        b.tour.best = 1000000.0
+        b.tour.still = 0
+        b.tour.acted = false
+    }
+
+    // One decision of the tour, when nothing hostile is near: the leader walks to the stop, and
+    // opens, uses or talks to it.
+    fn tour_step { mut b: Bot, mut w: world::World, lead: u32, me: *obj::Object } {
+        if b.tour.next >= b.tour.count { return }
+        let t = world::object{ w = &w, id = b.tour.ids[b.tour.next] } ifnull {
+            tour_advance{ &b }
+            return
+        }
+        if t.destroyed {
+            tour_advance{ &b }
+            return
+        }
+        let dist = math::vec3::distance{ a = b.tour.at[b.tour.next], b = me.position }
+        b.tour.waiting = b.tour.waiting + 1
+        if b.tour.waiting > TOUR_PATIENCE {
+            tour_advance{ &b }
+            return
+        }
+        // Not getting anywhere (a stop off the walkmesh, behind a wall): on to the next.
+        if not b.tour.acted {
+            if dist < b.tour.best - 0.5 {
+                b.tour.best = dist
+                b.tour.still = 0
+            } else {
+                b.tour.still = b.tour.still + 1
+            }
+            if b.tour.still > TOUR_STILL {
+                tour_advance{ &b }
+                return
+            }
+        }
+        if me.actions.len > 0 { return }
+        if t.ext is door{ d } {
+            if d.state == obj::DoorState::closed {
+                if b.tour.acted {
+                    tour_advance{ &b }
+                    return
+                }
+                b.tour.acted = true
+                if d.locked and b.unlock { d.locked = false }
+                let mut a = actions::make{ kind = actions::Kind::open_door }
+                a.params[0] = actions::Param::object{ id = t.id }
+                _ = actions::add{ &w, id = lead, action = a, force = true }
+                return
+            }
+            if dist < REACH + 1.0 {
+                tour_advance{ &b }
+                return
+            }
+        } else if t.ext is placeable | creature {
+            if b.tour.acted {
+                tour_advance{ &b }
+                return
+            }
+            b.tour.acted = true
+            let mut a = actions::make{ kind = if t.kind == obj::Kind::creature { actions::Kind::dialog_object } else { actions::Kind::use_object } }
+            a.params[0] = actions::Param::object{ id = t.id }
+            _ = actions::add{ &w, id = lead, action = a, force = true }
+            return
+        } else if dist < REACH {
+            tour_advance{ &b }
+            return
+        }
+        let mut a = actions::make{ kind = actions::Kind::move_to_point }
+        a.params[0] = actions::Param::vector{ v = b.tour.at[b.tour.next] }
+        a.params[1] = actions::Param::int{ v = 1 }
+        a.params[2] = actions::Param::float{ v = 1.0 }
+        a.params[3] = actions::Param::object{ id = t.id }
+        a.params[4] = actions::Param::float{ v = 0.0 }
+        _ = actions::add{ &w, id = lead, action = a, force = true }
+    }
+}

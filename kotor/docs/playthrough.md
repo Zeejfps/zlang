@@ -35,7 +35,7 @@ The input script knows (play.ctx, lib/ingame/script.ctx, lib/dialog/view/view_no
 | `FRAME ui click X Y`, `move X Y`, `key NAME`, `menu NAME`, `close` | the pointer and keys as the player has them (the panel is 640x480 centred in the 1280x720 window) |
 | `FRAME ui target TAG` then `ui key 1` | select an object and run the first action of the target block |
 | `FRAME ui goto TAG`, `where [PART]` (with each object's facing), `pos` (with the leader's facing), `party`, `inv`, `locals TAG` | walk the leader to an object; print objects by tag part, the leader's place and health, the party, the bag, an object's local variables |
-| `FRAME ui bot route TAG... / on / off / god / unlock / status` | the test player (`lib/ingame/bot.ctx`): fights what is hostile in sight, walks the route of tagged stops, opens its doors; `god` keeps the leader at 1 hit point, `unlock` opens locked doors on the route. Never on in a real game. |
+| `FRAME ui bot route TAG... / tour / on / off / god / unlock / status` | the test player (`lib/ingame/bot.ctx`): fights what is hostile in sight, walks the route of tagged stops, opens its doors; `god` keeps the leader at 1 hit point, `unlock` opens locked doors on the route; `tour` makes the route from the area itself (waypoints, triggers, doors, placeables, talkers: `bot_tour.ctx`, what the smoke test uses). Never on in a real game. |
 | `FRAME save NAME`, `load FOLDER` | saves go to `kotor/out/saves/00000N - GameK`; `load 000002 - Game1` |
 | `FRAME ui giveitem RESREF [N] [equip]`, `unlock TAG`, `global NAME N` | cheats for tests (not used by the real-flow scripts) |
 

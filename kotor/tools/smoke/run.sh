@@ -1,12 +1,12 @@
 #!/bin/sh
 # The module smoke test: every module of the install, started headless with a default party and left
-# running for 60 s of world time, in parallel (one process per core), then one table in kotor/docs/smoke.md.
+# touring its area for 10 minutes of world time, in parallel (one process per core), then one table in kotor/docs/smoke.md.
 #
 #   sh kotor/tools/smoke/run.sh [-j JOBS] [-o OUTDIR] [-r] [MODULE...]     (run from the repository root)
 #
 # MODULE... limits the run to those modules (the table is then written to OUTDIR/smoke.md, not the docs).
 # -j: processes at once (default: the cores); -r: only rebuild the table from OUTDIR's logs. Environment:
-# FRAMES (ticks of 1/30 s per run, default 1800), EXE (kotor/out/kotor.exe), GAME (the install),
+# FRAMES (ticks of 1/30 s per run, default 18000), EXE (kotor/out/kotor.exe), GAME (the install),
 # TIMEOUT (seconds a run may take, 180).  The pieces: modules.sh, one.sh (a run), report.sh (the table).
 export PATH=/g/Dev/msys64/mingw64/bin:$PATH
 here=$(dirname "$0")
