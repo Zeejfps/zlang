@@ -136,6 +136,8 @@ ending stealth (no party rest), the straggler teleport that solo mode turns off.
 
 - An equip in combat as a combat-round entry; OnEquipItem (no module uses it).
 - Per-minute item uses (one droid shield).
-- The HEAL action for scripts; stack counts on the HUD slots (the original keeps the stack size in the
-  entry; whether and where the slot draws it was not traced).
-- The new flag is not saved.
+- The HEAL action (Treat Injury as an action): only scripts can queue it and none of the shipped ones was found
+  to; medpacs add the rank through their own script.
+- The new flag is not saved. The action timer over the portrait (lock picking and the trap actions) is not drawn.
+- Which security spike a player would choose (ours: the weakest that makes the roll).
+- Mines, stealth: see their docs.
