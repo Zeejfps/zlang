@@ -42,7 +42,7 @@ step 3 4500 freed deck "module lev_m40ab: area m40ab" || exit 1
 step 4 40000 deck bridgearr "module lev_m40ad: area m40ad" || exit 1
 step 5 12800 bridgearr saulend "global LEV_SAULDEAD 1" || exit 1
 step 6 6000 saulend backdeck "journal: lev_captured state 66 " || exit 1
-step 7 4700 backdeck hangar "module lev_m40ac: area m40ac" || exit 1
+step 7 6800 backdeck hangar "module lev_m40ac: area m40ac" || exit 1
 step 8 26000 hangar hawkarr "module ebo_m40ad: area m12aa" || exit 1
 step 9 14000 hawkarr hawkpost "dialog end ebo_carth (normal)" || exit 1
 echo "the Leviathan chain is done"
