@@ -106,6 +106,7 @@ namespace dlgpanel {
 
     // Takes the layer away at once.
     fn clear_fade { mut p: Panels } {
+        p.fade_node = false
         p.fade_on = false
         p.fade_alpha = 0.0
     }

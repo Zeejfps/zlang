@@ -486,8 +486,8 @@ namespace play {
                     _ = @fmt(&w.io, "  frame: {} draws, {} shadows, {} lights, {} emitters, {} particles\n", frame.draw_count, frame.shadow_count, frame.light_count, frame.emitter_count, frame.particle_count)
                     let p = world::object{ w = &w, id = w.pc }
                     if p != null {
-                        _ = @fmt(&w.io, "  leader at {} {} {} (room {}), camera at {} {} {} looking at {} {} {}\n", p.position.x, p.position.y, p.position.z,
-                            room, camera.eye.x, camera.eye.y, camera.eye.z, camera.look.x, camera.look.y, camera.look.z)
+                        _ = @fmt(&w.io, "  leader at {} {} {} (room {}), camera at {} {} {} looking at {} {} {}, blur {}, ambient {} {} {}, dialogue fade {}\n", p.position.x, p.position.y, p.position.z,
+                            room, camera.eye.x, camera.eye.y, camera.eye.z, camera.look.x, camera.look.y, camera.look.z, speed_blur, sc.ambient.x, sc.ambient.y, sc.ambient.z, dview.panels.fade_alpha)
                     }
                 }
                 s = s + 1

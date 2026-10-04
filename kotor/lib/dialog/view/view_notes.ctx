@@ -10,6 +10,7 @@ namespace dlgview {
                     _ = @fmt(&w.io, "dialog fade out {} after {} s over {} s\n", out, wait, length)
                 }
                 dlgpanel::start_fade{ p = &v.panels, out, delay = wait, length, color }
+                v.panels.fade_node = false
             }
             bark{ speaker, text, sound } => {
                 let t = outbox::text_of{ out = &w.out, t = text }

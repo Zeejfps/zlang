@@ -112,6 +112,7 @@ namespace dlgview {
         if node.fade_type == 0 { return }
         let out = node.fade_type == 4 or node.fade_type == 1
         dlgpanel::start_fade{ p = &v.panels, out, delay = node.fade_delay, length = node.fade_length, color = node.fade_color }
+        v.panels.fade_node = true
     }
 
     // The empty reply the engine speaks for the player (the "continue" link) when it has nothing of its
