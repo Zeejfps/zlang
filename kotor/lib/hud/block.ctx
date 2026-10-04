@@ -28,7 +28,7 @@ namespace hud {
 
     // Builds the block for a new target: its name, its health and the slots' lists.
     fn build_block { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, id: u32 } {
-        h.lists[0] = default_actions{ w = &w, id }
+        h.lists[0] = keep_choice{ old = h.lists[0], new = attack_slot{ w = &w, id } }
         // PLACEHOLDER: the middle slot is for Force powers and feats (the Force powers' owner fills it);
         // the right one holds the party's grenades against a hostile creature (item_slots.ctx).
         h.lists[1] = empty_list{}
@@ -53,7 +53,7 @@ namespace hud {
         if a.count != b.count { return false }
         let mut i: usize = 0
         while i < a.count {
-            if a.entries[i].act != b.entries[i].act or a.entries[i].item != b.entries[i].item { return false }
+            if a.entries[i].act != b.entries[i].act or a.entries[i].item != b.entries[i].item or a.entries[i].feat != b.entries[i].feat { return false }
             i = i + 1
         }
         return true
@@ -80,7 +80,7 @@ namespace hud {
         if h.shown_target != w.target {
             build_block{ &h, &g, &w, &dev, id = w.target }
             h.shown_target = w.target
-        } else if not same_actions{ a = default_actions{ w = &w, id = w.target }, b = h.lists[0] } or
+        } else if not same_actions{ a = attack_slot{ w = &w, id = w.target }, b = h.lists[0] } or
             not same_actions{ a = grenade_actions{ w = &w, target = w.target }, b = h.lists[2] } {
             // What the leader can do to the target changed under it (a lock picked or locked, a key found,
             // the last grenade thrown).
@@ -128,7 +128,7 @@ namespace hud {
         if k >= 3 or w.target == obj::INVALID { return false }
         let l = h.lists[k]
         if l.count == 0 { return false }
-        run_act{ &w, act = l.entries[l.selected].act, target = w.target, item = l.entries[l.selected].item }
+        run_entry{ &w, e = l.entries[l.selected], target = w.target }
         return true
     }
 
@@ -136,7 +136,7 @@ namespace hud {
     // second click on it does. True when a choice was run.
     fn run_default { mut h: Hud, mut w: world::World } -> bool {
         if w.target == obj::INVALID { return false }
-        let l = h.lists[0]
+        let l = default_actions{ w = &w, id = w.target }
         if l.count == 0 { return false }
         run_act{ &w, act = l.entries[0].act, target = w.target, item = l.entries[0].item }
         return true
@@ -162,7 +162,7 @@ namespace hud {
             let over_button = slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = k } }
             if over_button or slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = k } } {
                 let l = h.lists[k]
-                if l.count > 0 and w.target != obj::INVALID { run_act{ &w, act = l.entries[l.selected].act, target = w.target, item = l.entries[l.selected].item } }
+                if l.count > 0 and w.target != obj::INVALID { run_entry{ &w, e = l.entries[l.selected], target = w.target } }
                 return true
             }
             let up = slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "BTN_TARGETUP", n = k } }
@@ -189,7 +189,7 @@ namespace hud {
         h.pressed = obj::INVALID
         if id == obj::INVALID or id != began { return false }
         if id == w.target {
-            let l = h.lists[0]
+            let l = default_actions{ w = &w, id }
             if l.count > 0 {
                 gui::play_sound{ &g, n = 6 }
                 run_act{ &w, act = l.entries[0].act, target = id, item = l.entries[0].item }

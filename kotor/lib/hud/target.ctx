@@ -8,17 +8,17 @@ namespace hud {
     const HOSTILE_BELOW: i32 = 11
 
     // What a slot does when pressed.
-    enum Act: u8 { none, open, bash, use_place, open_place, talk, attack, unlock, throw }
+    enum Act: u8 { none, open, bash, use_place, open_place, talk, attack, unlock, throw, feat_attack }
 
     // One choice in a slot: its icon (a texture in the GUI pack) and the dialog.tlk string that
     // names it; an item's (a grenade to throw) is named by the item, which `item` says.
-    struct Entry { act: Act, icon: [24]u8, icon_len: usize, strref: u32, item: u32 }
+    struct Entry { act: Act, icon: [24]u8, icon_len: usize, strref: u32, item: u32, feat: i32 }
 
     // A slot's choices, cycled with its arrows.
     struct ActionList { entries: [4]Entry, count: usize, selected: usize }
 
     fn entry { act: Act, icon: []u8, strref: u32 } -> Entry {
-        let mut e = Entry{ act, icon = [0; 24], icon_len = 0, strref, item = obj::INVALID }
+        let mut e = Entry{ act, icon = [0; 24], icon_len = 0, strref, item = obj::INVALID, feat = -1 }
         let n = if icon.len > 24 { 24 } else { icon.len }
         slice::copy(u8){ dst = e.icon[..n], src = icon[..n] }
         e.icon_len = n
@@ -217,10 +217,10 @@ namespace hud {
     fn run_act { mut w: world::World, act: Act, target: u32, item: u32 } {
         let leader = party::leader{ w = &w }
         if act == Act::throw {
-            // A grenade: its ability cast at the target, in place of what the leader was doing.
+            // A grenade: its ability cast at the target (a fighting order: queue_fight).
             let spell = rt_item::ability_of{ w = &w, id = item }
             if spell < 0 { return }
-            actions::clear_all{ &w, id = leader }
+            if not make_room_to_fight{ &w, leader } { return }
             rt_item::signal_activation{ &w, who = leader, item, target }
             rt_talent::queue_cast{ &w, me = leader, spell, target, location = math::vec3::zero{}, cheat = 0, instant = 0, item }
             return
@@ -241,7 +241,122 @@ namespace hud {
             a.params[3] = actions::Param::int{ v = 1 }
             a.params[4] = actions::Param::int{ v = 0 }
         }
-        actions::clear_all{ &w, id = leader }
+        if kind == actions::Kind::attack_object {
+            if not make_room_to_fight{ &w, leader } { return }
+        } else {
+            actions::clear_all{ &w, id = leader }
+        }
         _ = actions::add{ &w, id = leader, action = a, force = false }
+    }
+
+    // Does a target block entry: a combat feat's attack (the feat in ATTACKOBJECT's param 2, as the
+    // original's 0x00617dd0 sends it with the attack), else the entry's action.
+    fn run_entry { mut w: world::World, e: Entry, target: u32 } {
+        if e.act != Act::feat_attack {
+            run_act{ &w, act = e.act, target, item = e.item }
+            return
+        }
+        let leader = party::leader{ w = &w }
+        if not make_room_to_fight{ &w, leader } { return }
+        let mut a = actions::make{ kind = actions::Kind::attack_object }
+        a.params[0] = actions::Param::object{ id = target }
+        a.params[2] = actions::Param::int{ v = e.feat }
+        _ = actions::add{ &w, id = leader, action = a, force = false }
+    }
+
+    // The fighting orders waiting in the leader's queue (attacks and casts).
+    fn pending_fights { w: *world::World, leader: u32 } -> usize {
+        let o = world::object{ w, id = leader } ifnull { return 0 }
+        let q = list::items{ list = o.actions }
+        let mut n: usize = 0
+        let mut i: usize = 0
+        while i < q.len {
+            if q[i].kind == actions::Kind::attack_object or q[i].kind == actions::Kind::cast_spell { n = n + 1 }
+            i = i + 1
+        }
+        return n
+    }
+
+    // A fighting order is scheduled (AddAttackActions' scheduled path, actions.md 3.13): out of
+    // combat it replaces whatever the leader was doing; in combat it waits its turn behind the
+    // round in progress and the orders before it, and is refused when four already wait. True
+    // when the order may be added.
+    fn make_room_to_fight { mut w: world::World, leader: u32 } -> bool {
+        let c = creature_of{ w = &w, id = leader } ifnull { return false }
+        if c.in_combat { return pending_fights{ w = &w, leader } < 4 }
+        actions::clear_all{ &w, id = leader }
+        return true
+    }
+
+    // A slot's new list keeps the choice the player made in it, when the new list has it (the
+    // original remembers each slot's selected entry by its id, CSWGuiTargetInfo::Refresh).
+    fn keep_choice { old: ActionList, new: ActionList } -> ActionList {
+        let mut l = new
+        if old.count == 0 { return l }
+        let was = old.entries[old.selected]
+        let mut i: usize = 0
+        while i < l.count {
+            let e = l.entries[i]
+            if e.act == was.act and e.feat == was.feat and e.item == was.item { l.selected = i }
+            i = i + 1
+        }
+        return l
+    }
+
+    // ---- the target block's attack slot
+
+    // The first of three feats (best rank first) the creature has, -1 for none (0x00616140).
+    fn best_feat { c: *rules::Creature, a: i32, b: i32, cc: i32 } -> i32 {
+        if rules::has_feat{ c, feat = a } { return a }
+        if rules::has_feat{ c, feat = b } { return b }
+        if rules::has_feat{ c, feat = cc } { return cc }
+        return -1
+    }
+
+    // A feat's choice: feat.2da's NAME and ICON (the original's 0x00618a30).
+    fn push_feat { w: *world::World, mut l: ActionList, feat: i32 } {
+        if feat < 0 { return }
+        let row = @as(usize, feat)
+        let icon = twoda::get_string{ t = w.tables.feat, row, column = "icon" } ifnull ""
+        let name = twoda::get_int{ t = w.tables.feat, row, column = "name" } ifnull 0
+        let mut e = entry{ act = Act::feat_attack, icon, strref = @as(u32, name) }
+        e.feat = feat
+        push_entry{ &l, e }
+    }
+
+    // The target block's first slot (UpdateActionMenus -> CSWGuiTargetInfo::Refresh 0x00689410 ->
+    // 0x00619c20 by the target's kind). On a hostile creature: the leader's best rank of each
+    // combat feat for the weapon in its right hand, then Attack (0x00619950, 0x00619b10): Critical
+    // Strike, Flurry, Power Attack for melee; Power Blast, Rapid Shot, Sniper Shot for a ranged
+    // weapon. On anything else the default actions. (The click on the target and R take the default
+    // actions' first, plain Attack: BuildDefaultActions, movement.md 7.4.)
+    fn attack_slot { w: *world::World, id: u32 } -> ActionList {
+        let plain = default_actions{ w, id }
+        if not is_hostile{ w, id } { return plain }
+        let lo = world::object{ w, id = party::leader{ w } } ifnull { return plain }
+        let lc = obj::creature{ o = lo } ifnull { return plain }
+        let f = lc.fighter ifnull { return plain }
+        let mut ranged = false
+        if world::object{ w, id = lc.equipped[obj::SLOT_RIGHT_WEAPON] } is some{ value = io } {
+            if obj::item{ o = io } is some{ value = it } {
+                ranged = (twoda::get_int{ t = w.tables.baseitems, row = @as(usize, it.base), column = "rangedweapon" } ifnull 0) != 0
+            }
+        }
+        let mut l = empty_list{}
+        if ranged {
+            push_feat{ w, &l, feat = best_feat{ c = &f.c, a = 82, b = 18, cc = 29 } }
+            push_feat{ w, &l, feat = best_feat{ c = &f.c, a = 26, b = 92, cc = 30 } }
+            push_feat{ w, &l, feat = best_feat{ c = &f.c, a = 77, b = 20, cc = 31 } }
+        } else {
+            push_feat{ w, &l, feat = best_feat{ c = &f.c, a = 81, b = 19, cc = 8 } }
+            push_feat{ w, &l, feat = best_feat{ c = &f.c, a = 53, b = 91, cc = 11 } }
+            push_feat{ w, &l, feat = best_feat{ c = &f.c, a = 83, b = 17, cc = 28 } }
+        }
+        let mut i: usize = 0
+        while i < plain.count {
+            push_entry{ &l, e = plain.entries[i] }
+            i = i + 1
+        }
+        return l
     }
 }
