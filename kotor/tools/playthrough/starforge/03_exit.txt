@@ -1,0 +1,10 @@
+# Star Forge, part 3: out of the Hawk (the ramp strip ebn12_ebonexit, 64.4..68.8 x 47.5..51.5, k_pebn_leavhawk) into the docking bay.
+# The party screen opens (ShowPartySelectionGUI): Jolee and Juhani, as on the temple summit. From the checkpoint "landed".
+10 warpxy 66.5,49.5 party
+60 ui clickctl BTN_NPC4
+70 ui clickctl BTN_NPC5
+80 ui clickctl BTN_DONE
+90 ui clickctl BTN_OK
+1000 save bay
+1000 ui party
+1000 ui where sta_ 2

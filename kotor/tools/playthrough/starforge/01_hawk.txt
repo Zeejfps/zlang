@@ -1,0 +1,59 @@
+# Star Forge, part 1: the Ebon Hawk on the Unknown World (ebo_m41aa), the crafted state the temple's light-side end leaves:
+# a Jedi Guardian of level 20 (alignment 90+), Jolee and Juhani with the player (k_punk_bastatt05 puts them in the party for
+# Bastila's talk), Carth, Canderous, HK-47, Mission, T3-M4 and Zaalbar available, Bastila not (she is Malak's apprentice now),
+# G_FINALCHOICE 2 (k_punk_bastesc), K_KOTOR_MASTER 50, K_STAR_MAP 50. Start: kotor.exe --module ebo_m41aa.
+# Test cheats for setup only: join, avail, jedi, stat, giveitem, credits, global, gbool, planet.
+4 join p_jolee 4
+4 join p_juhani 5
+4 ui avail 1 2 3 4 5 6 7 8
+4 ui jedi 3 20
+4 ui stat class 0
+4 ui stat level 7
+4 ui stat class2 3
+4 ui stat level2 13
+4 ui stat str 18
+4 ui stat dex 16
+4 ui stat con 16
+4 ui stat hpmax 260
+4 ui stat hp 260
+4 ui stat persuade 20
+4 ui stat awareness 12
+4 ui stat computer 14
+4 ui stat security 12
+4 ui giveitem g_w_lghtsbr01 1 equip
+4 ui giveitem g_a_jedirobe01 1 equip
+4 ui giveitem g_i_medeqpmnt01 8
+4 ui giveitem g_i_adrnaline001 5
+4 ui credits 6000
+4 ui global K_STAR_MAP 50
+4 ui global K_KOTOR_MASTER 50
+4 ui global K_CURRENT_PLANET 45
+4 ui global G_FINALCHOICE 2
+4 ui global K_SWG_CARTH 16
+4 ui gbool UNK_DISRUPT_OFF 1
+4 ui gbool EBO_HYPER_FIXED 1
+4 ui global K_CAPTURED_LEV 10
+# The galaxy map: the worlds the Star Maps unlocked (the temple's disruptor field is off), and the Star Forge.
+4 ui planet 3
+4 ui planet 4
+4 ui planet 5
+4 ui planet 6
+4 ui planet 7
+4 ui planet 10
+6 ui leader jolee
+6 ui jedi 4 18
+6 ui giveitem g_w_lghtsbr01 1 equip
+6 ui giveitem g_a_jedirobe01 1 equip
+6 ui stat hpmax 200
+6 ui stat hp 200
+7 ui leader juhani
+7 ui jedi 5 18
+7 ui giveitem g_w_lghtsbr01 1 equip
+7 ui giveitem g_a_jedirobe01 1 equip
+7 ui stat hpmax 200
+7 ui stat hp 200
+8 ui leader pc
+60 ui party
+60 ui pos
+60 ui rules
+100 save hawk

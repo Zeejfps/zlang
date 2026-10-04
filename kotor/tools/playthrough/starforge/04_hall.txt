@@ -1,0 +1,12 @@
+# Star Forge, part 4: down the docking bay (sta_m45aa) from the Hawk to the Malak scene: the bot walks the middle of the hall and
+# fights what is hostile (the ambush at the elevator, Malak's scene at the cross corridor, the four assault droids through the blown
+# doors). God mode keeps the party up (the fight to look at is Malak's). From the checkpoint "bay".
+5 ui bot party on
+5 ui bot god on
+5 ui bot route 69,125 69,100 69,75 69,45
+10 ui bot on
+5500 ui bot off
+5510 ui heal
+5600 save hall
+5600 ui party
+5600 ui pos

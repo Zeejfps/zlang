@@ -1,0 +1,19 @@
+# Star Forge, part 8: Bastila's confrontation on the light side (level 2, sta_m45ac). The leader walks into the door k45_door_bast1
+# (-16,-82): it opens by itself, OnOpen k_psta_bast_wor starts k_sta_bastila, her stasis, then the duel; the bot fights her (a hostile
+# in sight) as a person clicking on her would, since her AI does not start the fight by itself (see the doc). God mode keeps the
+# player up: the duel is lost without it (the Guardian has no armour, no medpacs used). The replies redeem her (conviction
+# k_sta_bastcon+N must reach 100): "never give up", the three fight talks, then the persuasion and "You won't, Bastila.".
+# From the checkpoint "freeze".
+5 ui heal
+5 ui bot god on
+10 warpxy -16,-96 party
+60 ui replies ~never_give_up ~as_strong_in_the_light ~Malak_will_never ~dooming_yourself ~Remember_the_Jedi_code ~dark_side_is_not_stronger ~no_need_for_me_to_kill ~reject_the_dark_side ~Turn_to_the_Jedi_code ~I_was_redeemed ~protect_someone ~Look_into_your_heart ~Help_us_defeat ~leave_myself_open ~still_serve_the_light default 1
+60 ui goto sta_way_party0
+1600 ui bot on
+11800 savewhen sta_m45ac bastsaved
+12400 ui party
+12400 ui pos
+12400 ui globals STA
+12400 ui globals K_PSTA
+12400 ui rules
+12400 ui journal list

@@ -1,0 +1,23 @@
+# Star Forge, dark side, part 28: level 2 past the freeze door (opened when its three Sith are dead). Walking into the door k45_door_bast1
+# opens it (its OnOpen needs the light side's sta_bastila: nothing happens), the strip k45_init_sith (-18.2..-13.4 x -80..-77.3)
+# starts the Sith apprentices' talk (they are Malak's new successors, sent for Revan: k_psta_sithhosti) and they fight; their deaths
+# are counted (STA_SITH_DEAD) and the chamber's east door k45_door_bast2 (25,-41) then starts Bastila's goodbye (k_psta_initbas2x:
+# she goes to meditate, k_psta_bastopen2, STUNT_51a with movie 54, back with movie 51b). From the checkpoint "dfreeze".
+5 ui stat hpmax 700
+5 ui stat hp 700
+5 ui stat str 40
+5 ui bot party on
+10 warpxy -16,-96 party
+60 ui replies default 1
+60 ui goto sta_way_party0
+300 ui goto sta_way_evilbast
+400 ui goto sta_way_evilbast
+1300 ui bot route -16,-72
+1310 ui bot on
+3400 ui bot off
+3410 ui heal
+3500 ui goto k45_door_bast2
+3900 ui goto k45_door_bast2
+4300 ui goto k45_door_bast2
+4500 use k45_door_bast2
+8000 savewhen sta_m45ac dsith
