@@ -15,6 +15,8 @@ namespace items {
         let n = stack_of{ w = &w, id }
         if n > 1 { try @fmt(&b, " x{}", n) }
         let row = try gui::list_add{ &g, panel, tag, text = utf8::view{ b }.bytes, user = @as(i64, id) }
+        // A new item's name is magenta (0.95, 0, 0.85) until the screen has shown its description.
+        if is_new{ w = &w, id } { gui::list_set_color{ &g, panel, tag, row, color = render::Color{ r = 0.95, g = 0.0, b = 0.85, a = 1.0 } } }
         let img = icon_of{ &g, &w, &dev, id }
         if img.ok { gui::list_set_icon{ &g, panel, tag, row, texture = img.tex, w = icon_size, h = icon_size } }
         return row

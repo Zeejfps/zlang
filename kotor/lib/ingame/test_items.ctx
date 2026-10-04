@@ -148,6 +148,7 @@ namespace test_items {
             _ = @fmt(&w.io, "giveitem {}: nothing made\n", name)
             return
         }
+        xfer::mark_new{ &w, item = id }
         if not equip { return }
         let mask = items::equipable_slots{ w = &w, id }
         let mut index: usize = 0
