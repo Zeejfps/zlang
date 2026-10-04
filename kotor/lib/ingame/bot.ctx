@@ -3,7 +3,7 @@
 // with a place), opening doors on the way. It stands in for a person with a mouse; it never
 // runs in a real game (it starts off and only the input script turns it on).
 //
-//   FRAME ui bot route TAG...    the route (objects by tag, in order; a door is opened when reached)
+//   FRAME ui bot route TAG...    the route (objects by tag, in order; a door is opened when reached; @TAG: talk to it when reached)
 //   FRAME ui bot on | off        start / stop
 //   FRAME ui bot unlock on|off   open the lock of a door before opening it (the story's own way is
 //                                a key, a skill or a switch of the party leader)
@@ -35,13 +35,14 @@ namespace bot {
         stalled: u32,                           // decisions in a row that left it no nearer the stop: a closed door in the way
         last_dist: f32,
         area: u32,                              // the area it last decided in (0 before the first decision)
+        talked: bool,                           // the current stop is a `@TAG` and the leader has been told to talk to it
         clicked: usize,                         // 1 + the route index of the transition door it clicked last (0 none)
         seen_open: bool,                        // the door of the current stop has been seen open (one the story shuts again is passed, not opened twice)
         tour: Tour,                             // the area's own route, when `bot tour` made one
     }
 
     fn new {} -> Bot {
-        return Bot{ on = false, unlock = false, god = false, party = false, party_wait = 0, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false, stalled = 0, last_dist = 0.0, area = 0, clicked = 0, tour = new_tour{} }
+        return Bot{ on = false, unlock = false, god = false, party = false, party_wait = 0, route = [[0; 40]; 64], lens = [0; 64], count = 0, next = 0, tick = 0, waiting = 0, foe = obj::INVALID, seen_open = false, stalled = 0, last_dist = 0.0, area = 0, talked = false, clicked = 0, tour = new_tour{} }
     }
 
     // The `bot ...` input line, after the word `bot`.
@@ -138,7 +139,10 @@ namespace bot {
             return
         }
         if b.next >= b.count { return }
-        let tag = b.route[b.next][..@as(usize, b.lens[b.next])]
+        let raw = b.route[b.next][..@as(usize, b.lens[b.next])]
+        // `@TAG`: walk up to it and talk to it (the leader's click on a creature).
+        let talk = raw.len > 1 and raw[0] == '@'
+        let tag = if talk { raw[1..] } else { raw }
         let t = world::object{ w = &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } } ifnull {
             _ = @fmt(&w.io, "bot: no object {}, skipped\n", tag)
             advance{ &b }
@@ -210,6 +214,13 @@ namespace bot {
                 return
             }
         } else if dist < REACH {
+            if talk and not b.talked {
+                b.talked = true
+                let mut a = actions::make{ kind = actions::Kind::dialog_object }
+                a.params[0] = actions::Param::object{ id = t.id }
+                _ = actions::add{ &w, id = lead, action = a, force = true }
+                return
+            }
             advance{ &b }
             return
         }
@@ -255,6 +266,7 @@ namespace bot {
         b.next = b.next + 1
         b.waiting = 0
         b.seen_open = false
+        b.talked = false
         b.stalled = 0
         b.last_dist = 0.0
     }

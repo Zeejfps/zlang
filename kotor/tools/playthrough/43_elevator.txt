@@ -1,13 +1,9 @@
+# From the vulkar checkpoint (tar_m10aa, just arrived by the sewer elevator, Carth and Mission): fights through the Vulkar base to the garage elevator (tar10_elev02).
+#   FAST=1 LOAD=kotor/out/checkpoints/vulkar SAVES=kotor/out/pt/saves_el sh kotor/tools/playthrough/run.sh el kotor/tools/playthrough/43_elevator.txt 22000
 3 ui replies default 9
 3 ui bot god on
 3 ui bot unlock on
-5 warp tar05_sw05ab17
-10 ui bot route tar05_elevator tar10_mnrecroom tar10_mnarmory tar10_mncontrol tar10_mnelevator tar10_elev02
-11 ui bot on
-3000 ui pos
-6000 ui pos
-9000 ui pos
-12000 ui pos
-12000 save vulkar
-15000 ui pos
-18000 ui pos
+3 ui bot party on
+3 ui bot route tar10_mnrecroom tar10_mnarmory tar10_mncontrol tar10_mnelevator tar10_elev02
+4 ui bot on
+26900 save garage
