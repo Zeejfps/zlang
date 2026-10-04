@@ -568,6 +568,10 @@ namespace world {
 
     fn set_animation { o: *mut obj::Object, id: u32, speed: f32 } {
         if o.animation == id and o.anim_speed == speed and o.anim_cycles == 0.0 { return }
+        // A dead creature keeps to its dead pose (CSWSCreature::SetAnimation, fight::is_dead_pose).
+        if obj::creature{ o } is some{ value = c } {
+            if c.dead and not fight::is_dead_pose{ id } { return }
+        }
         o.animation = id
         o.anim_speed = speed
         o.anim_cycles = 0.0
