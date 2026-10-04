@@ -107,7 +107,11 @@ the alignment (the rules' value and the engine's copy, which always agree here) 
 3. **`GetIsDead` of an object that is not there is TRUE** (e2a06c8). The original's handler (`0x0053ecb0`) starts from 1; ours gave 0
    for a missing object. `k_pkor_webclear` asks that of the cave beast, whose body is destroyed after its death: the renegades never
    believed the passage clear and attacked.
-4. Test tools: `ui rules` prints the alignment and XP; `ui planet N [0|1]` puts a world on the galaxy map in a crafted start.
+4. **Under `--speed 8` a script's fade after a conversation ran 8 times too slowly** (play.ctx). The dialogue layer's fade, bars and bark
+   clocks stepped by one tick's time per presentation step instead of the skipped ticks' as well: the 2 s fade-in after joining the Sith
+   was still black 15 s later in the pictures (`k10_end.png` was black; at `--speed 1` it is clear 50 ticks after the conversation). The log
+   was the same, only the pictures lied. Fixed: the owed time goes to `dlgview::pre_sync`; the Endar Spire replay is unchanged.
+5. Test tools: `ui rules` prints the alignment and XP; `ui planet N [0|1]` puts a world on the galaxy map in a crafted start.
 
 ## Observations and open items
 
