@@ -1872,6 +1872,10 @@ namespace gpu {
             axis => { 1 }
             plane => { 2 }
             velocity => { 3 }
+            emitter_plane => { 4 }
+            world_plane => { 5 }
+            upright => { 6 }
+            tangent => { 7 }
         }
         dev.gl.uniform4i{ location = dev.cur_particle.emit, v0 = facing, v1 = @as(i32, em.grid_x), v2 = @as(i32, em.grid_y), v3 = 0 }
         dev.gl.uniform4f{ location = dev.cur_particle.axis, v0 = em.axis.x, v1 = em.axis.y, v2 = em.axis.z, v3 = 0.0 }

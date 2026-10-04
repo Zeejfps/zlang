@@ -191,11 +191,15 @@ same way) projected onto the plane along the light, darkening each pixel once (t
 counts). The game picks the plane (the walkmesh face under the creature) and the light. The
 original uses stencil shadow volumes and soft shadows (re/render-gui.md); this is the first step.
 
-**Particles**: one emitter is one batch. Facing: `camera` (MDL `Normal`), `axis` (turn about an
-axis toward the eye: `Billboard_to_World_Z`, `Billboard_to_Local_Z`), `plane` (lie flat:
-`Aligned_to_World_Z`), `velocity` (along each particle's `dir`: `Motion_Blur`,
-`Aligned_to_Particle_Dir`). The simulation (birth, life, colour and size curves) belongs to the
-game; the frame gets the live particles. Emitters sort with transparent draws.
+**Particles**: one emitter is one batch. Facing: `camera` (MDL `Normal`, `Linked`), `emitter_plane` (lie in the
+emitter's own X/Y plane: `Billboard_to_Local_Z`), `world_plane` (lie flat in the world's X/Y plane:
+`Billboard_to_World_Z`), `upright` (stand along `axis`, its side square to the view: `Aligned_to_World_Z`),
+`tangent` (lie in the plane of each particle's `dir` and the tangent about `axis`: `Aligned_to_Particle_Dir`),
+`velocity` (a streak along each particle's `dir`, turned about it toward the eye: `Motion_Blur`; the game
+sets the quad's length and centre), and two the MDL has no name for: `axis` (stand along `axis`, turn about it
+toward the eye: grass) and `plane` (lie in the plane whose normal is `axis`). What the modes are in the
+original: [../re/particles.md](../re/particles.md). The simulation (birth, life, colour and size curves) belongs
+to the game; the frame gets the live particles. Emitters sort with transparent draws.
 
 **Text**: `render::Font` is a texture and a glyph box per byte (a font TXI's `upperleftcoords` and
 `lowerrightcoords`; v of the upper corner is the larger), with `fontheight`, `baselineheight` and

@@ -162,8 +162,8 @@ finds the BIF copy; no special case. Another model, `mainmenu_model`, is in the 
   texture as it is. Other values still go through the seam's rule. Worth a fix in the seam's
   shader (`rgb = base.rgb * (light + selfillum)`) for the render lead;
 - emitters are simulated per the notes above on the CPU, in the emitter node's space, drawn one
-  batch per emitter (`Billboard_to_World_Z` as `Facing::axis` about world Z, `Normal` as camera
-  facing), sorted by `render_order`;
+  batch per emitter in the facing of their render mode (`Billboard_to_World_Z` lies flat on the ground, which
+  is what the original does: re/particles.md), sorted by `render_order`;
 - not done: the room model, fog, the shadow of `AuroraLight01`, `p2p` / `inherit` flags,
   non-fountain emitters, bounce.
 

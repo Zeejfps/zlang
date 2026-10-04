@@ -1,13 +1,12 @@
 // Drawing the live effects: their meshes and lights through the scene's pieces, their particles
 // through the seam's emitters.
 namespace vfx {
-    // A bolt's streak (ours; the original's Motion_Blur rule was not read): the particle stretches
-    // along its flight by `blurlength` seconds of it, which for the 0.01 s of the blaster models is
-    // 0.4 m at the bolts' 42 m/s, scaled up so a bolt reads at the distances of a fight, and a
-    // little wider than the model's size.
+    // A bolt's streak: the original trails a Motion_Blur particle's tail behind it by `blurlength`
+    // seconds of flight (a frame's at least), which for the 0.01 s of the blaster models is 0.4 to 0.7 m
+    // at the bolts' 42 m/s; ours is stretched to 2.4 times that so a bolt reads at the distances of a
+    // fight. Its width is the original's (fill_particles: twice `sizeStart`).
     const MIN_STREAK: f32 = 0.2
     const STREAK_LENGTH: f32 = 2.4
-    const STREAK_WIDTH: f32 = 1.6
 
     fn draw { v: *Vfx, sc: *scene::Scene, mut frame: render::Frame, view: u32 } {
         draw_beams{ v, &frame, view }
@@ -34,7 +33,7 @@ namespace vfx {
             let em = &f.emitting[e]
             let props = p.pose.emitters[e]
             e = e + 1
-            let n = gui3d::fill_particles{ em, props }
+            let n = gui3d::fill_particles{ em, e = ex, props }
             if n == 0 { continue }
             let node_world = math::mat4::mul{ a = f.matrix, b = p.pose.world[ex.node] }
             let look = gui3d::look_of{ e = ex, world = node_world }
@@ -47,7 +46,6 @@ namespace vfx {
                 while k < n {
                     em.out[k].dir = local
                     em.out[k].angle = 0.0
-                    em.out[k].size.x = em.out[k].size.x * STREAK_WIDTH
                     em.out[k].size.y = em.out[k].size.x + length
                     k = k + 1
                 }
