@@ -115,16 +115,7 @@ namespace items {
     }
 
     // The spell of the item's first active CastSpell property (its ability), -1 when it has none.
-    fn ability_of { w: *world::World, id: u32 } -> i32 {
-        let ri = rules_item_of{ w, id } ifnull { return -1 }
-        let mut k: usize = 0
-        while k < @as(usize, ri.nprops) {
-            let p = ri.props[k]
-            k = k + 1
-            if @as(i32, p.name) == rules::ip::CAST_SPELL and rules::prop_active{ item = ri, p = &p } { return @as(i32, p.subtype) }
-        }
-        return -1
-    }
+    fn ability_of { w: *world::World, id: u32 } -> i32 { return rt_item::ability_of{ w, id } }
 
     // Whether the ability is cast on the user: a power of touch or personal range (medpacs, stims,
     // shields). The thrown and aimed ones (grenades, flame throwers) need a target.
@@ -138,9 +129,7 @@ namespace items {
     // place of whatever the user was doing (as the HUD's self slots and the inventory's Use Item
     // do); the cast action spends the item's use when it begins (rt_item::spend_use).
     fn use_item { mut w: world::World, who: u32, item: u32 } {
-        let module = w.module
-        let e = events::script_event{ kind = events::ACTIVATE_ITEM, object = item }
-        events::post{ &w, delay_ms = 0, caller = who, target = module, payload = events::Payload::script{ e } }
+        rt_item::signal_activation{ &w, who, item, target = obj::INVALID }
         let spell = ability_of{ w = &w, id = item }
         if not is_self_ability{ w = &w, spell } { return }
         actions::clear_all{ &w, id = who }

@@ -119,6 +119,7 @@ namespace gui {
         first_row: i32,                 // the top visible row
         selected_row: i32,              // -1 none
         text_mode: bool,                // a list box showing one wrapped text (message boxes) instead of rows
+        click_rows: bool,               // item lists: a click on a row activates it (the rows are buttons in the original) and hovering one says so (row_hover)
         hover_row: i32,                 // -1 none
         // sounds (indices into guisounds.2da)
         click_sound: i32,
@@ -171,6 +172,7 @@ namespace gui {
         hilight,                        // the control gained hover or focus (0)
         unhilight,                      // and lost it (1)
         row_selected,                   // a list row was clicked or chosen with the keys (0x1f8); `row`, `user`
+        row_hover,                      // the pointer moved onto a row of a click_rows list (the original's hilight event 0); `row`, `user`
         row_activated,                  // and activated (0x27 on the list)
         value_changed,                  // slider moved, check box toggled (`value`)
         text_accepted,                  // Enter in an edit box

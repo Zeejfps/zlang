@@ -1,0 +1,18 @@
+# Upper City: the player targets a hostile, the target block's right slot offers the party's grenades,
+# one click throws one (the leader walks into range, throws; the blast hurts what stands near).
+3 ui giveitem g_w_fraggren01 4
+4 ui faction trooper1 1
+5 ui target trooper1
+12 ui ctl BTN_TARGET0
+12 ui ctl BTN_TARGET1
+12 ui ctl BTN_TARGET2
+14 ui movectl BTN_TARGET2
+16 ui clickctl BTN_TARGET2
+60 ui pos
+60 ui where trooper1
+120 ui pos
+120 ui where trooper1
+120 ui bag
+120 ui log 5
+250 ui where trooper1
+250 ui log 5

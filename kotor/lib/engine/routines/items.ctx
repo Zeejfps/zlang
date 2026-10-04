@@ -64,6 +64,57 @@ namespace rt_item {
         return true
     }
 
+    // Using an item's ability: the module hears OnActivateItem (what GetItemActivated, GetItemActivator
+    // and GetItemActivatedTarget answer to it; the Endar Spire's tutorial waits for a medpac).
+    fn signal_activation { mut w: world::World, who: u32, item: u32, target: u32 } {
+        w.last_activated = item
+        w.last_activator = who
+        w.last_activated_target = target
+        let e = events::script_event{ kind = events::ACTIVATE_ITEM, object = item }
+        events::post{ &w, delay_ms = 0, caller = who, target = w.module, payload = events::Payload::script{ e } }
+    }
+
+    // The spell of the item's first active CastSpell property (its ability), -1 when it has none.
+    fn ability_of { w: *world::World, id: u32 } -> i32 {
+        let io = world::object{ w, id } ifnull { return -1 }
+        let it = obj::item{ o = io } ifnull { return -1 }
+        let ri = it.rules ifnull { return -1 }
+        let mut k: usize = 0
+        while k < @as(usize, ri.nprops) {
+            let p = ri.props[k]
+            k = k + 1
+            if @as(i32, p.name) == rules::ip::CAST_SPELL and rules::prop_active{ item = ri, p = &p } { return @as(i32, p.subtype) }
+        }
+        return -1
+    }
+
+    // Puts `item` in the inventory of `o`, joining a stack of the same blueprint that has room for
+    // all of it (AddItem with merge, party-items-saves.md 5.2: same base item, variations, charges,
+    // blueprint). The id of the item that now holds it; INVALID when it could not be added.
+    fn add_merged { mut w: world::World, o: *mut obj::Object, item: u32 } -> u32 {
+        let io = world::object{ w = &w, id = item } ifnull { return obj::INVALID }
+        let it = obj::item{ o = io } ifnull { return obj::INVALID }
+        let most = max_stack{ w = &w, base = it.base }
+        if most > 1 {
+            let ids = inventory_of{ &w, o }
+            let mut k: usize = 0
+            while k < ids.len {
+                let other = world::object{ w = &w, id = ids[k] }
+                k = k + 1
+                if other == null or other.id == item or other.plot != io.plot or not resref::eq{ a = other.template, b = io.template } { continue }
+                let oi = obj::item{ o = other } ifnull { continue }
+                if oi.base != it.base or oi.model_variation != it.model_variation or oi.charges != it.charges { continue }
+                if oi.stack + it.stack > most { continue }
+                oi.stack = oi.stack + it.stack
+                if oi.rules is some{ value = ri } { ri.stack = @as(i32, oi.stack) }
+                world::destroy{ &w, id = item }
+                return other.id
+            }
+        }
+        if not add_to_inventory{ &w, o, item } { return obj::INVALID }
+        return item
+    }
+
     // Takes `item` out of the inventory; false if it was not there.
     fn remove_from_inventory { mut w: world::World, o: *mut obj::Object, item: u32 } -> bool {
         let l = party::inventory_of{ &w, id = o.id } ifnull { return false }
@@ -128,6 +179,8 @@ namespace rt_item {
                     it.stack = it.stack - 1
                     ri.stack = @as(i32, it.stack)
                 } else {
+                    // The last of the stack: DECREMENT_STACKSIZE destroys it, and the party is told.
+                    notices::item_lost{ &w, who = it.possessor, item }
                     forget_item{ &w, item }
                     world::destroy{ &w, id = item }
                 }
@@ -361,7 +414,14 @@ namespace rt_item {
         let template = try nwarg::string{ &vm, routine = r, argc, i = 0 }
         let target = try nwarg::object{ &vm, routine = r, argc, i = 1 }
         let stack = try nwarg::int{ &vm, routine = r, argc, i = 2 }
-        try nwvm::push_object{ &vm, id = create_item{ &w, template, target, stack } }
+        let id = create_item{ &w, template, target, stack }
+        // AcquireItem with feedback: the party is told ("Acquired Item: ...", the HUD's icon).
+        if id != obj::INVALID {
+            notices::item_gained{ &w, who = target, item = id }
+        } else if stack > 0 and template.len >= 11 and ci::eq{ a = template[..11], b = "g_i_credits" } {
+            notices::credits_changed{ &w, who = target, n = @as(i64, stack) }
+        }
+        try nwvm::push_object{ &vm, id }
     }
 
     // ---- gold

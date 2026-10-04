@@ -281,6 +281,13 @@ namespace gui {
         return rect_of{ x = p.sx + l.ax + c.padding, y = p.sy + l.ay + s.y, w = l.aw - 2 * c.padding, h = s.h }
     }
 
+    // Makes the rows of the list box act as buttons: a click on a row activates it (row_activated) at
+    // once, and the pointer over one sends row_hover. The item lists (inventory, equipment, loot) are such.
+    fn set_click_rows { mut g: Gui, panel: u32, tag: []u8 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.click_rows = true
+    }
+
     // Makes the list box show one wrapped text instead of rows (message boxes, descriptions).
     fn set_list_text { mut g: Gui, panel: u32, tag: []u8, text: []u8 } -> ! {
         let c = find_control{ &g, panel, tag } ifnull { return }
