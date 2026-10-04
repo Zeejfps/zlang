@@ -84,7 +84,7 @@ d20, total and the defense it was against. The helpers are in `lib/ingame/test_c
 
 | # | Behaviour | Evidence | Status |
 |---|---|---|---|
-| 30 | Auto-pause: end of round, enemy sighted, mine sighted, party member down, action menu, new target | gameloop.md 6.4 | open: the options are saved but nothing pauses |
+| 30 | Auto-pause: end of round, enemy sighted, mine sighted, party member down, action menu, new target | gameloop.md 6.4 | matches for enemy sighted, party member down, new target (the controls owner, docs/mechanics/controls.md); end of round and action menu requests come from fight.ctx and the target block; mine sighted waits for the items owner's mines. RE (gameloop.md 6.4): the reasons are 5 end of round and 8 new target, new target only on the cycling keys in combat |
 | 31 | Difficulty: easy/normal/difficult change damage (difficultyopt, diffsettings) | combat.md 6.1, 6.7 | fixed: the Difficulty Level option reaches `rules.settings.difficulty` when the game starts (from the settings file) and every frame once the in-game options panel has been opened, so changing it there takes effect at once. Checked with `--log combat` on the same seeded fight (trooper vs the player): the first hit rolls 7 on normal and takes 7; on difficult it takes 10 (x1.5); on easy the roll is 3 (diffsettings MaxNPCDamagePercent 50: roll minus 50 % of the die maximum) and the player takes 1 (3 x 0.5, truncated), so easy is both scalings in a row, as combat.md 6.1 and 6.7 describe them. Changed in game (options, Gameplay, Difficulty arrow) from normal to easy gives the same 3 and 1. Open (combat.md 12): whether the exe applies both scalings on easy (the server difficulty value for diffsettings is not established). |
 
 ### Items in combat

@@ -229,7 +229,6 @@ namespace hud {
             }
         } else {
             w.target = id
-            autopause::request{ &w, reason = autopause::NEW_TARGET }
         }
         return true
     }
