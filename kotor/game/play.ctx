@@ -1,12 +1,11 @@
 // The loop with a window (docs/design/engine.md, "The frame"): input, the world, the scene, the
 // camera, the frame drawn; live, or headless with a fixed step, scripted input and screenshots.
 namespace play {
-    // One scripted input line: `FRAME down KEY`, `FRAME up KEY`, and for tests `FRAME warp TAG`
-    // (the leader jumps next to the object), `FRAME use TAG` (the leader's default action on it) and
-    // `FRAME gunner` (a bot aims and fires the turret) and `FRAME mouse DX DY` (the mouse moves by
-    // those counts, aiming the turret) and `FRAME pause` (Escape in a minigame: game/minigame_scene.ctx).
-    enum Command: u8 { down, up, warp, warpxy, use, newgame, ui, save, load, attack, talk, hush, drop, join, cutatk, pick, gunner, mouse, pause, goto, cam, fx }
-    struct Scripted { frame: u64, command: Command, key: []u8 }
+    // One scripted input line, `FRAME WORD ARGS...`: the word and the rest of the line as text. Each
+    // owner parses its own words' arguments (handle_scripted below, and one per owner file); nothing
+    // central lists the words. `FRAME down KEY`, `FRAME up KEY` and for tests `FRAME warp TAG` (the
+    // leader jumps next to the object), `FRAME use TAG` (the leader's default action on it) are play's.
+    struct Scripted { frame: u64, word: []u8, rest: []u8 }
 
     fn run { mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut mem: Mem, opts: options::Options } -> !i32 {
         try sdl::init{ &sdl, flags = sdl::INIT_VIDEO | sdl::INIT_EVENTS }
@@ -127,35 +126,16 @@ namespace play {
             while next_line < script.len and script[next_line].frame <= frame_no {
                 let s = script[next_line]
                 next_line = next_line + 1
-                match s.command {
-                    down => { apply_key{ keys = &keys, keycode = keycode_of{ name = s.key }, down = true } }
-                    up => { apply_key{ keys = &keys, keycode = keycode_of{ name = s.key }, down = false } }
-                    warp => { warp_to{ &w, tag = s.key } }
-                    warpxy => { warp_xy{ &w, at = s.key } }
-                    use => { use_tagged{ &w, tag = s.key } }
-                    attack => { attack_tagged{ &w, tag = s.key } }
-                    newgame => {}
-                    gunner => { mg_mouse.auto = true }
-                    pause => { mg_mouse.paused = not mg_mouse.paused }
-                    mouse => {
-                        let mut words = text::words{ s = s.key }
-                        mg_mouse.dx = mg_mouse.dx + @trunc(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
-                        mg_mouse.dy = mg_mouse.dy + @trunc(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
-                    }
-                    talk => { talk_to{ &w, &vm, engine, text = s.key } }
-                    hush => { dlg::abort{ &w, &vm, engine } }
-                    drop => { drop_item{ &w, template = s.key } }
-                    join => { join_template{ &w, text = s.key } }
-                    pick => { pick_lock{ &w, tag = s.key } }
-                    goto => { goto_xy{ &w, at = s.key } }
-                    cutatk => { cut_attack{ &w, text = s.key } }
-                    cam => { test_camera = s.key }
-                    fx => { test_effect{ &w, text = s.key } }
-                    ui => {
-                        if not dlgview::run_command{ v = &dview, w = &w, g = &ui.gui, text = s.key } { ingame::run_command{ ui, &w, &dev, text = s.key } }    // HOOK(ingame)
-                    }
-                    save => { want_save = s.key }
-                    load => { want_load = s.key }
+                // One call per owner, in turn: the first that knows the word takes the line. A new owner adds
+                // its call here (docs/testing.md, "Adding a scripted command").
+                let handled = handle_scripted{ &w, &vm, engine, &keys, &want_save, &want_load, word = s.word, rest = s.rest } or
+                    mg_game::handle_scripted{ m = &mg_mouse, word = s.word, rest = s.rest } or
+                    handle_scripted_vfx{ &w, &test_camera, word = s.word, rest = s.rest } or
+                    dlgview::handle_scripted{ v = &dview, w = &w, g = &ui.gui, word = s.word, rest = s.rest } or
+                    ingame::handle_scripted{ ui, &w, &dev, word = s.word, rest = s.rest }    // HOOK(ingame)
+                if not handled {
+                    _ = @fmt(&w.io, "kotor: input script: no command '{}' in the line '{} {} {}'\n", s.word, s.frame, s.word, s.rest)
+                    return 1
                 }
             }
             // The step: fixed when headless, measured otherwise.
@@ -436,9 +416,9 @@ namespace play {
             let mut forced = false
             let mut forced_player: []u8 = ""            // `newgame FILE`: the player blueprint to start with (tests)
             while next_line < script.len and script[next_line].frame <= frame_no {
-                if script[next_line].command == Command::newgame {
+                if ci::eq{ a = script[next_line].word, b = "newgame" } {
                     forced = true
-                    forced_player = script[next_line].key
+                    forced_player = text::first_word{ s = script[next_line].rest }
                 }
                 next_line = next_line + 1
             }
@@ -532,7 +512,42 @@ namespace play {
         return 0
     }
 
-    // The input script (`FRAME down KEY` / `FRAME up KEY` per line, # comments), in frame order.
+    // Play's own scripted words: keys, the leader's moves, saves and loads, and the conversation and
+    // fight helpers below. True if `word` is one of them, else nothing happened.
+    fn handle_scripted {
+        mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut keys: ctl::Keys,
+        mut want_save: []u8, mut want_load: []u8, word: []u8, rest: []u8,
+    } -> bool {
+        let arg = text::first_word{ s = rest }
+        if ci::eq{ a = word, b = "down" } { apply_key{ keys = &keys, keycode = keycode_of{ name = arg }, down = true } }
+        else if ci::eq{ a = word, b = "up" } { apply_key{ keys = &keys, keycode = keycode_of{ name = arg }, down = false } }
+        else if ci::eq{ a = word, b = "warp" } { warp_to{ &w, tag = arg } }
+        else if ci::eq{ a = word, b = "warpxy" } { warp_xy{ &w, at = arg } }
+        else if ci::eq{ a = word, b = "use" } { use_tagged{ &w, tag = arg } }
+        else if ci::eq{ a = word, b = "attack" } { attack_tagged{ &w, tag = arg } }
+        else if ci::eq{ a = word, b = "newgame" } {}    // the front end's (front_end above)
+        else if ci::eq{ a = word, b = "talk" } { talk_to{ &w, &vm, engine, text = rest } }
+        else if ci::eq{ a = word, b = "hush" } { dlg::abort{ &w, &vm, engine } }
+        else if ci::eq{ a = word, b = "drop" } { drop_item{ &w, template = arg } }
+        else if ci::eq{ a = word, b = "join" } { join_template{ &w, text = rest } }
+        else if ci::eq{ a = word, b = "pick" } { pick_lock{ &w, tag = arg } }
+        else if ci::eq{ a = word, b = "goto" } { goto_xy{ &w, at = arg } }
+        else if ci::eq{ a = word, b = "cutatk" } { cut_attack{ &w, text = rest } }
+        else if ci::eq{ a = word, b = "save" } { want_save = rest }
+        else if ci::eq{ a = word, b = "load" } { want_load = rest }
+        else { return false }
+        return true
+    }
+
+    // The scripted words for pictures: `cam ...` and `fx ...` (place_test_camera and test_effect below).
+    fn handle_scripted_vfx { mut w: world::World, mut test_camera: []u8, word: []u8, rest: []u8 } -> bool {
+        if ci::eq{ a = word, b = "cam" } { test_camera = rest }
+        else if ci::eq{ a = word, b = "fx" } { test_effect{ &w, text = rest } }
+        else { return false }
+        return true
+    }
+
+    // The input script (`FRAME WORD ARGS...` per line, # comments), in frame order.
     fn read_script { mut w: world::World, path: []u8 } -> ![]Scripted {
         if path.len == 0 { return slice::empty(Scripted){} }
         let bytes = try fs::read_all(heap::Heap){ fs = &w.fs, heap = w.heap, realloc = heap::alloc, path }
@@ -543,17 +558,8 @@ namespace play {
             let mut words = text::Words{ s = line, pos = 0 }
             let f = text::next_word{ &words } ifnull { continue }
             if f.len == 0 or f[0] == '#' { continue }
-            let what = text::next_word{ &words } ifnull { continue }
-            let command = if ci::eq{ a = what, b = "down" } { Command::down } else if ci::eq{ a = what, b = "warp" } { Command::warp } else if ci::eq{ a = what, b = "warpxy" } { Command::warpxy }
-                else if ci::eq{ a = what, b = "use" } { Command::use } else if ci::eq{ a = what, b = "newgame" } { Command::newgame }
-                else if ci::eq{ a = what, b = "ui" } { Command::ui } else if ci::eq{ a = what, b = "save" } { Command::save } else if ci::eq{ a = what, b = "talk" } { Command::talk }
-                else if ci::eq{ a = what, b = "load" } { Command::load } else if ci::eq{ a = what, b = "attack" } { Command::attack }
-                else if ci::eq{ a = what, b = "hush" } { Command::hush } else if ci::eq{ a = what, b = "drop" } { Command::drop } else if ci::eq{ a = what, b = "join" } { Command::join } else if ci::eq{ a = what, b = "cutatk" } { Command::cutatk } else if ci::eq{ a = what, b = "pick" } { Command::pick }
-                else if ci::eq{ a = what, b = "gunner" } { Command::gunner } else if ci::eq{ a = what, b = "mouse" } { Command::mouse } else if ci::eq{ a = what, b = "pause" } { Command::pause } else if ci::eq{ a = what, b = "goto" } { Command::goto }
-                else if ci::eq{ a = what, b = "cam" } { Command::cam } else if ci::eq{ a = what, b = "fx" } { Command::fx } else { Command::up }
-            // `ui`, `talk`, `load`, `save`, `cutatk` and `mouse` take the rest of the line; the others one word.
-            let key = if command == Command::ui or command == Command::load or command == Command::save or command == Command::talk or command == Command::cutatk or command == Command::mouse or command == Command::join or command == Command::cam or command == Command::fx { text::rest{ words } } else { text::next_word{ &words } ifnull "" }
-            try list::push{ list = &out, item = Scripted{ frame = @as(u64, text::scan_decimal{ s = f }), command, key } }
+            let word = text::next_word{ &words } ifnull { continue }
+            try list::push{ list = &out, item = Scripted{ frame = @as(u64, text::scan_decimal{ s = f }), word, rest = text::rest{ words } } }
         }
         return list::items{ list = out }
     }

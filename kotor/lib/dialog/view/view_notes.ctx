@@ -49,6 +49,12 @@ namespace dlgview {
         return dlgpanel::handle_event{ p = &v.panels, g = &g, ev, scale_x, scale_y }
     }
 
+    // The scripted `ui` line, when it is for the panels (run_command below); else ingame's turn.
+    fn handle_scripted { mut v: View, mut w: world::World, mut g: gui::Gui, word: []u8, rest: []u8 } -> bool {
+        if not ci::eq{ a = word, b = "ui" } { return false }
+        return run_command{ &v, &w, &g, text = rest }
+    }
+
     // The headless input script's lines for the panels (play.ctx `ui` commands): `reply N` picks
     // reply N (from 1) at once, `replies N...` queues picks for the lists that open; `key NAME`, `move X Y` and `click X Y` go through the panels
     // while they are up. False if the line is not for them.

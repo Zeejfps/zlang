@@ -46,6 +46,19 @@ namespace mg_game {
 
     fn make_mouse {} -> Mouse { return Mouse{ dx = 0, dy = 0, fire_key = false, fire_button = false, auto = false, paused = false } }
 
+    // The input script's lines for a minigame (play.ctx hands each line to every owner in turn):
+    // `gunner`, `mouse DX DY` (the mouse moves by those counts) and `pause`. True if `word` is one.
+    fn handle_scripted { mut m: Mouse, word: []u8, rest: []u8 } -> bool {
+        if ci::eq{ a = word, b = "gunner" } { m.auto = true }
+        else if ci::eq{ a = word, b = "pause" } { m.paused = not m.paused }
+        else if ci::eq{ a = word, b = "mouse" } {
+            let mut words = text::words{ s = rest }
+            m.dx = m.dx + @trunc(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+            m.dy = m.dy + @trunc(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+        } else { return false }
+        return true
+    }
+
     // Takes the events that are the turret's: relative mouse motion, the left button and the fire
     // key held. True if it used the event.
     fn handle_event { mut m: Mouse, ev: sdl::Event } -> bool {
