@@ -256,7 +256,10 @@ if frontend::take_display_change{ &fe } { apply fe.settings (resolution, full sc
   has seen (`[Movies Shown]` in our settings file); activating one plays it over the menu.
 - **Options**: `optionsmain` opens `optgameplay`, `optfeedback`, `optautopause`, `optgraphics`
   (+ `optresolution`, `optgraphicsadv`), `optsound` (+ `optsoundadv`) and `optmouse`. They edit
-  `fe.settings` live and write the file when a panel closes. Sound sliders apply to the mixer's
+  `fe.settings` live and write the file when a panel closes. Their check boxes (and the Feedback
+list's rows) are the engine's menu check box (re/gui.md, "Menu check box"): the loader marks every
+check box of a panel whose name starts with `opt` (`F_MENU_CHECK`) and tints its borders blue and
+yellow; `draw_menu_check` puts the ring in a 25x25 square at the left and the label beside it. Sound sliders apply to the mixer's
   groups at once; graphics changes set `take_display_change` for the engine to act on. The
   resolution list is a fixed table of common modes (the platform layer can't list display modes
   yet). Key mapping is not built (its button is disabled). The `LB_DESC` description pane the

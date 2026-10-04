@@ -392,6 +392,24 @@ colour. Disabled controls ignore clicks (no 0x27, §7) and are skipped by keyboa
 **Check box.** Holds its state at +0x1c8 bit 0; it toggles on the event stored at +0x1c4 (the
 activate event, 0x27, med) before the normal button handling (0x0041adb0). (high)
 
+**Menu check box** (vtable 0x00758258, a subclass of the check box that the options panels
+create: the check boxes of `optgameplay`, `optautopause`, `optgraphics`, `optgraphicsadv`,
+`optsoundadv`, `optmouse`, and the rows of `optfeedback`'s list; the HUD's toggles and the party
+selection's slots are the plain class). Three overrides turn the file's full-width control into a
+bullet with a label (high):
+
+- `SetExtent` (0x006de000): the control keeps the whole extent (so the whole row is the click
+  target), but the four borders (`BORDER`, `HILIGHT`, `SELECTED`, `HILIGHTSELECTED`) are put in a
+  **25 x 25 square at the extent's left edge**, top = `y + 2 + (height - 25) / 2`, and the text
+  gets `(x + 30, y, width - 30, height)`. Without it the 32x32 ring art (`i_checkbox01`, the dotted
+  `i_checkbox02` when on) is stretched over the 240x40 extent into a huge ellipse.
+- `LoadFromGFF` (0x006de160): after the base load it overwrites the tint of `BORDER` and `SELECTED`
+  with the menu text colour (0, 0.66, 0.98) and of `HILIGHT` and `HILIGHTSELECTED` with the
+  hilight colour (0.98, 1, 0), whatever the file says (the options panels' files say white).
+- `Render` (0x006de0e0): each frame it sets the text colour from the state, then draws as the base
+  class: hilighted, the hilight colour with the text pulsing; disabled (flag 0x08 clear), dim blue
+  (0, 0.33, 0.49); else menu blue.
+
 **Progress bar** (0x00419300): with `MAXVALUE` > 0, `frac = CURVALUE / MAXVALUE`; the
 `PROGRESS` rectangle is the `BORDER`'s inner rectangle cut down along its long axis (vertical when
 taller than wide): the filled length is `trunc(frac * length)`; with `STARTFROMLEFT` = 1 it is
