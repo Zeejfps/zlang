@@ -332,8 +332,12 @@ relative to the walkmesh node, and absolute (in model space), plus the node's po
 
 - **Walkable** = `walk = 1`: ids 1, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14, 18, 30. This is the
   set that decides the WOK face order and adjacency (exact on all 980 WOKs).
-- `lineofsight` **(inferred)**: 1 = the face blocks sight. Obscuring blocks it; Transparent,
-  Door and Trigger (0) let it through. Most Obscuring faces are vertical (11,504 of 15,869).
+- `lineofsight` **(confirmed in the executable)**: 1 = the face blocks sight. The room walkmesh keeps one
+  bit mask of the materials it tests a line of sight against (`CSWWalkMesh` +0xd8, as +0xe0 is the walk
+  mask `FindFaceUnderPoint` uses) and `QueryAABB` skips a face whose material bit is clear. Obscuring and
+  Nonwalk block it; Transparent, Door and Trigger (0) let it through. A door's or placeable's walkmesh
+  is tested differently: `CheckSegmentClearance` stops the line at any face nobody can walk on, in the
+  door's current open state (closed DWK, or the open one), whatever its material. Most Obscuring faces are vertical (11,504 of 15,869).
 - `walkcheck` **(inferred)**: 1 = the face takes part in movement collision. 0 only for
   NotDefined, Obscuring and the CRAP placeholders, so obscuring faces block sight but not
   movement.
