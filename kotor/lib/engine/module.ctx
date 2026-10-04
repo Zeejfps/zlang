@@ -361,7 +361,7 @@ namespace modload {
         let bytes = try world::read_scratch{ &w, name = name_buf[..n], kind } ifnull { return }
         let raw = try bwm::parse(arena::Arena){ realloc = arena::alloc, heap = w.scratch, bytes }
         let placed = try bwm::transform_placed(arena::Arena){ realloc = arena::alloc, heap = w.mod_arena, w = raw, at = bwm::Placement{ position = o.position, bearing } }
-        let index = try walkmap::add_placed{ m = &w.walk, placed = walkmap::Placed{ owner = id, mesh = placed, active = true } }
+        let index = try walkmap::add_placed{ m = &w.walk, placed = walkmap::Placed{ owner = id, mesh = placed, active = true, door = kind == restype::Type::dwk } }
         if obj::door{ o } is some{ value = d } {
             d.walk = index
             walkmap::set_active{ m = &w.walk, index, active = d.state == obj::DoorState::closed }
