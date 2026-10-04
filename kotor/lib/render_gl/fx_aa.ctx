@@ -2,17 +2,62 @@
 // when multisampling is off (Enhance.post_aa), and alpha-to-coverage for alpha-tested surfaces when it is on
 // (Enhance.alpha_coverage). Called from draw_view_fx and draw_mesh.
 namespace gpu {
-    struct AaPrograms { made: bool }
+    struct AaPrograms { made: bool, edge: u32, size: i32, area: i32, cfg: i32 }
 
-    fn no_aa_programs {} -> AaPrograms { return AaPrograms{ made = false } }
+    fn no_aa_programs {} -> AaPrograms {
+        return AaPrograms{ made = false, edge = 0, size = -1, area = -1, cfg = -1 }
+    }
 
-    fn make_aa_programs { mut dev: Device } -> ! {}
+    fn make_aa_programs { mut dev: Device } -> ! {
+        let post_vs = glsl::POST_VS
+        let mut n: usize = 0
+        let edge_fs: [1]c::String = [glsl::AA_FS]
+        let edge = try_link{ gl = &dev.gl, vertex = &post_vs, fragment = edge_fs[..], log = dev.log, log_len = &n }
+        if edge == 0 { return shader_failed{ log = dev.log[..n] } }
+        dev.gl.use_program{ program = edge }
+        set_unit{ &dev, program = edge, name = "u_ldr", unit = 0 }
+        dev.gl.use_program{ program = 0 }
+        dev.aa = AaPrograms{
+            made = true, edge,
+            size = dev.gl.get_uniform_location{ program = edge, name = "u_size" },
+            area = dev.gl.get_uniform_location{ program = edge, name = "u_area" },
+            cfg = dev.gl.get_uniform_location{ program = edge, name = "u_cfg" },
+        }
+    }
 
-    fn free_aa_programs { mut dev: Device } {}
+    fn free_aa_programs { mut dev: Device } {
+        if dev.aa.made { dev.gl.delete_program{ program = dev.aa.edge } }
+        dev.aa = no_aa_programs{}
+    }
+
+    // ---- the edge filter (multisampling off)
 
     // Whether the composite goes to dev.fxt.ldr first, for run_edge_aa to filter into the screen.
-    fn edge_aa_wanted { dev: Device } -> bool { return false }
+    fn edge_aa_wanted { dev: Device } -> bool {
+        return dev.aa.made and dev.samples == 0 and dev.enhance.on and dev.enhance.post_aa > 0
+    }
 
-    // The edge filter: dev.fxt.ldr (tone-mapped, luma in alpha) into `into` over the view's area.
-    fn run_edge_aa { mut dev: Device, area: GlRect, into: u32 } {}
+    // The edge filter: dev.fxt.ldr (tone-mapped, luma in alpha) into `into` over the view's area. Level 1 (post_aa 1)
+    // follows an edge for ten steps, level 2 for twenty and handles sub-pixel detail more strongly (fx_aa_shaders.ctx).
+    fn run_edge_aa { mut dev: Device, area: GlRect, into: u32 } {
+        let t = dev.fxt
+        let high = dev.enhance.post_aa >= 2
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = into }
+        dev.gl.viewport{ x = area.x, y = area.y, width = area.w, height = area.h }
+        dev.gl.use_program{ program = dev.aa.edge }
+        bind_unit{ &dev, unit = 0, target = gl::TEXTURE_2D, name = t.ldr }
+        dev.gl.uniform2f{ location = dev.aa.size, v0 = 1.0 / @as(f32, t.width), v1 = 1.0 / @as(f32, t.height) }
+        dev.gl.uniform4f{
+            location = dev.aa.area,
+            v0 = @as(f32, area.x), v1 = @as(f32, area.y), v2 = @as(f32, area.x + area.w), v3 = @as(f32, area.y + area.h),
+        }
+        // Contrast floor and share (below both, a pixel is left alone), sub-pixel strength, the level.
+        dev.gl.uniform4f{
+            location = dev.aa.cfg,
+            v0 = 0.0312, v1 = 0.125, v2 = if high { 1.0 } else { 0.75 },
+            v3 = if high { 2.0 } else { 1.0 },
+        }
+        draw_fullscreen{ &dev }
+        timer_mark{ &dev, name = "edge aa" }
+    }
 }
