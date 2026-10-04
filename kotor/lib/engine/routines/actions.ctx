@@ -257,7 +257,12 @@ namespace rt_act {
         let me = self_of{ vm = &vm }
         if not door_possible{ &w, who = me, door, action } { return }
         if action == DOOR_UNLOCK {
-            _ = unlock_with_security{ &w, who = me, target = door }
+            // OPENLOCK in front of what the creature was doing (walk up, Security, then open).
+            let mut u = actions::make{ kind = actions::Kind::open_lock }
+            u.params[0] = actions::Param::object{ id = door }
+            u.params[1] = actions::Param::object{ id = obj::INVALID }
+            u.params[2] = actions::Param::int{ v = 0 }
+            actions::add_front{ &w, id = me, action = u }
             return
         }
         if action != DOOR_OPEN and action != DOOR_BASH { return }        // ignore does nothing, knock cannot be possible

@@ -293,6 +293,7 @@ namespace tmpl {
         d.key_required = flag{ doc, s, label = "KeyRequired", default = d.key_required }
         d.open_dc = @trunc(u32, number{ doc, s, label = "OpenLockDC", default = @as(i64, d.open_dc) })
         d.close_dc = @trunc(u32, number{ doc, s, label = "CloseLockDC", default = @as(i64, d.close_dc) })
+        d.auto_remove_key = flag{ doc, s, label = "AutoRemoveKey", default = d.auto_remove_key }
         d.static = flag{ doc, s, label = "Static", default = d.static }
         let key = gff::get_string{ doc = doc.*, s, label = "KeyName" }
         if key != null {
@@ -356,6 +357,7 @@ namespace tmpl {
         p.key_required = flag{ doc, s, label = "KeyRequired", default = p.key_required }
         p.open_dc = @trunc(u32, number{ doc, s, label = "OpenLockDC", default = @as(i64, p.open_dc) })
         p.close_dc = @trunc(u32, number{ doc, s, label = "CloseLockDC", default = @as(i64, p.close_dc) })
+        p.auto_remove_key = flag{ doc, s, label = "AutoRemoveKey", default = p.auto_remove_key }
         let key = gff::get_string{ doc = doc.*, s, label = "KeyName" }
         if key != null {
             let copy = try obj::copy_bytes{ heap = w.heap, s = key }

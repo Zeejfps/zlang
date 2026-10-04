@@ -513,16 +513,17 @@ namespace rt_misc {
         try nwvm::push_object{ &vm, id }
     }
 
-    // void ActionUnlockObject(object oTarget) / ActionLockObject(object oTarget): a door or
-    // placeable; at once (ours: the original walks there and works at it), and the object hears
-    // UNLOCKED / LOCKED from the caller.
+    // void ActionUnlockObject(object oTarget) / ActionLockObject(object oTarget): the OPENLOCK / LOCK
+    // action on a door or placeable (walk up, work at the lock, key or Security; doors.ctx).
     fn lock_object { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, locked: bool } -> ! {
         let id = try nwarg::object{ &vm, routine, argc, i = 0 }
         let o = world::object{ w = &w, id } ifnull { return }
-        if o.ext is door{ d } { d.locked = locked } else if o.ext is placeable{ p } { p.locked = locked } else { return }
-        let me = nwvm::self_object{ vm }
-        let kind = if locked { events::LOCKED } else { events::UNLOCKED }
-        events::post{ &w, delay_ms = 0, caller = me, target = id, payload = events::Payload::script{ e = events::script_event{ kind, object = me } } }
+        if o.kind != obj::Kind::door and o.kind != obj::Kind::placeable { return }
+        let mut a = actions::make{ kind = if locked { actions::Kind::lock } else { actions::Kind::open_lock } }
+        a.params[0] = actions::Param::object{ id }
+        a.params[1] = actions::Param::object{ id = obj::INVALID }
+        a.params[2] = actions::Param::int{ v = 0 }
+        _ = actions::add{ &w, id = nwvm::self_object{ vm }, action = a, force = false }
     }
 
     // ---- what an event script asks about
