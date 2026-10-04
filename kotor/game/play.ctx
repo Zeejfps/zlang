@@ -298,7 +298,15 @@ namespace play {
             let swing_to = ingame::take_turn_to{ ui }    // HOOK(ingame)
             if swing_to != obj::INVALID { cam::turn_toward{ c = &camera, id = swing_to } }
             let key_turn = ctl::turn_input{ keys }
-            cam::update{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height, turn = if key_turn != 0.0 { key_turn } else { mouse.edge }, mouse_degrees = mouse.yaw_degrees, dt = camera_dt }
+            // Free look: the mouse and the rotate keys turn the leader himself, the camera is his eyes.
+            camera.freelook = mouse.freelook
+            keys.freelook = mouse.freelook
+            let mut cam_yaw = mouse.yaw_degrees
+            if mouse.freelook {
+                turn_leader{ &w, degrees = mouse.yaw_degrees + key_turn * cam::DPS * camera_dt }
+                cam_yaw = 0.0
+            }
+            cam::update{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height, turn = if mouse.freelook { 0.0 } else if key_turn != 0.0 { key_turn } else { mouse.edge }, mouse_degrees = cam_yaw, pitch_degrees = mouse.pitch_degrees, dt = camera_dt }
             dlgview::apply_camera{ v = &dview, w = &w, sc = &sc, camera = &camera }
             if test_camera.len > 0 { place_test_camera{ &w, spec = test_camera, &camera } }
             let pc = world::object{ w = &w, id = w.pc }
@@ -532,6 +540,15 @@ namespace play {
     // The held keys the world reads each frame (keymap.2da's ICPC rows): W and S forward and back, Z and C
     // strafe, A and D turn the camera, B walks. The arrows, R and Space are a minigame's (ICMiniGame) and
     // nothing in the world's: there R runs the target's default action and Space pauses (lib/ingame).
+    // Turns the leader on the spot by `degrees` (positive to the left), for free look.
+    fn turn_leader { mut w: world::World, degrees: f32 } {
+        let o = world::object{ w = &w, id = w.pc } ifnull { return }
+        let a = math::radians{ degrees }
+        let c = math::cosf{ x = a }
+        let s = math::sinf{ x = a }
+        world::set_orientation{ o, v = math::Vec3{ x = o.orientation.x * c - o.orientation.y * s, y = o.orientation.x * s + o.orientation.y * c, z = 0.0 } }
+    }
+
     fn apply_key { mut keys: ctl::Keys, keycode: i32, down: bool, minigame: bool } {
         if keycode == 'w' or (minigame and keycode == sdl::key::UP) { keys.forward = down }
         else if keycode == 's' or (minigame and keycode == sdl::key::DOWN) { keys.back = down }
