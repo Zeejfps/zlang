@@ -35,13 +35,60 @@ shadows, 0 pixels differ.
 
 ## The frame of an enhanced view
 
-1. The scene into floating-point targets the size of the screen: the light (RGBA16F, unclamped), the view-space
-   normal and the share of the light that occlusion may darken (RGB10_A2, a second output of the same draws), depth
-   and stencil (a texture). Multisampled twins when Anti-Aliasing is on, resolved by blits. Opaque surfaces write
-   both outputs; shadows, transparent surfaces, particles and debug geometry the light alone.
-2. (Effects that read depth and normals go between the opaque and the transparent surfaces.)
-3. The post chain: bloom, then the composite (exposure, tone curve, grade, a little noise against banding) into
-   the screen over the view's viewport. The speed blur (Frame Buffer Effects) follows as before.
+1. Shadow maps (the sun's and the chosen lights', one depth atlas).
+2. The scene into floating-point targets the size of the screen: the light (RGBA16F, unclamped), the view-space
+   normal and the share of the light that occlusion may darken (RGB10_A2, a second output of the same draws), with
+   reflections the environment map's share (RGBA16F, a third output), depth and stencil (a texture). Multisampled
+   twins when Anti-Aliasing is on, resolved by blits. Opaque surfaces write every output; shadows, transparent
+   surfaces, particles and debug geometry the light alone.
+3. Between the opaque and the transparent surfaces, the passes that read depth and normals and blend into the light:
+   ambient occlusion, reflections, height fog.
+4. The transparent surfaces and particles, then the post chain: depth of field, light shafts, bloom, the composite
+   (exposure, tone curve, grade, a little noise against banding) into the screen over the view's viewport (through
+   the edge filter when it is on). The speed blur (Frame Buffer Effects) follows as before; then the GUI.
+
+## Cost, all of it
+
+RTX 4090, Tatooine's Anchorhead (the sun's shadows, 30 draws of creatures and objects, an environment-mapped
+square), every option at its default (high, tessellation off, FXAA), GPU timestamps per pass (`gfx timing 1`; the
+opaque and transparent passes partly measure the CPU's pace of issuing draws):
+
+| | 1920x1080 | 2560x1440 | 3840x2160 |
+|---|---|---|---|
+| shadow maps | 0.10 | 0.18 | 0.12 |
+| opaque (with shadows received, room light, smooth lightmaps) | 0.30 | 0.23 | 0.31 |
+| occlusion | 0.10 | 0.17 | 0.39 |
+| reflections | 0.12 | 0.19 | 0.46 |
+| height fog | 0.01 | 0.02 | 0.06 |
+| transparent | 0.01 | 0.01 | 0.02 |
+| bloom | 0.06 | 0.07 | 0.11 |
+| composite (tone curve, grade) | 0.01 | 0.02 | 0.05 |
+| edge AA (FXAA) | 0.04 | 0.07 | 0.14 |
+| **3D total** | **0.75** | **0.96** | **1.66** |
+| the original renderer's 3D view, same scene | | 0.10 | |
+
+Under the 3 ms aim at 1440p with room to spare. Depth of field (conversations, +0.03 ms at 720p) and light shafts
+(toward the sun, 0.07 ms at 1440p) add only when they apply. For a weaker GPU (a Mac): every effect has a low
+level or a switch; the heaviest at 4K are reflections and occlusion (low halves their taps), shadows (low: one
+light, 2048² atlas, PCF), bloom (low: 4 levels).
+
+## The fixed scene set
+
+| Scene | Pictures (in `kotor/out/fx/`, from this branch's runs) |
+|---|---|
+| Endar Spire corridor, a lightsaber fight (the Jedi duel cutscene from the `bunk` checkpoint) | `duel_saber_cmp.png` (original above, enhanced below: blades glow, focus on the duel, the floor reflects, soft shadows); `bolt_crop_before_after.png` (a blaster bolt) |
+| Endar Spire bridge | `t/bridge_sm_cmp.png` (shadows), `t/bridge_ao_cmp.png`, `t/bridge_ssr_cmp.png`, `t/bridge_lm_cmp.png`, `aa/edges_cmp_bridge.png` |
+| Taris apartment | `t/apt_rl_cmp.png` (room light), `t/apt_ao_d.png` (occlusion) |
+| Taris Upper City | `t/up_sm_cmp.png` (planar, low, soft shadows), `atmos/taris_before.png` / `taris_after.png` |
+| Dantooine grove (outdoor sun) | `t/grove_rl_cmp.png`, `t/grove_all.png`, `atmos/grove_cmp.png`, `atmos/sun_cmp.png`, `aa/foliage_cmp_grove.png` |
+| Tatooine Anchorhead (sun shadows) | `t/tat_sm_cmp.png`, `t/tat_lm_cmp.png` |
+| Kashyyyk Shadowlands (foliage) | `atmos/kashyyyk_before.png` / `kashyyyk_after.png`, `aa/foliage_cmp_kashyyyk_grass.png` |
+| A conversation (Trask on the Endar Spire) | `t/talk_dof_cmp.png`, `t/tess_cmp.png` |
+| The main menu's 3D scene | `t/menu_fx3d.png`, `aa/edges_cmp_menu.png`; the panel: `t/menu_fx.png` |
+| Planet grades | `p/sheet1.png` .. `sheet4.png` |
+
+Not captured: the Star Map (its dome is sealed until the story opens it); self-illumination's glow shows on the
+Endar Spire's screens and lamps instead.
 
 ## The effects
 
@@ -137,6 +184,61 @@ shadows, 0 pixels differ.
 - **Cost**: four fetches instead of one per lightmapped pixel; not measurable in the opaque pass.
 - **Pictures**: `kotor/out/fx/t/bridge_lm_cmp.png` (bilinear, smooth; 3x).
 
+### Depth of field (conversations)
+
+- **Inputs**: `Enhance.dof`; `View.focus` (`distance` along the view, `range` that stays sharp, `blur` 0..1). The
+  game sets it (`game/focus.ctx`): while a dialogue camera is up (`dlgview::focus_point`: the speaker's eyes, the
+  point the shots frame), the focus is the distance to them; the blur fades in over a third of a second when a
+  shot comes up and out when it ends, and a cut to the next speaker pulls focus in about a fifth of a second. In
+  normal play there is no focus. Eased every tick, so pictures taken with `--no-render` see the same.
+- **What**: after the scene is resolved, before the light shafts and the bloom: at half resolution the light and,
+  per pixel, its blur (none within half the range of the focus, growing to the largest one and a half focus
+  distances past that; the largest is 1/90 of the picture's height); a gather over a disc as wide as the pixel's
+  own blur (24 taps on a spiral, 12 low), each tap counting only if its own blur reaches the pixel, so a sharp
+  speaker never smears into the background, and bright taps counting more (high), so highlights open into discs;
+  then blended over the full-resolution light as much as each pixel is out of focus. The subtitles and panels are
+  drawn after, sharp.
+- **Cost**: 0.026 ms at 1280x720 (the Endar Spire, Trask's conversation).
+- **Pictures**: `kotor/out/fx/t/talk_dof_cmp.png` (off, high).
+
+### Reflections (screen space)
+
+- **Inputs**: `Enhance.reflections`; materials with an `envmap` (KOTOR's TXI `envmaptexture` / `bumpyshinytexture`,
+  appearance.2da `envmap`), whose diffuse alpha masks the reflection.
+- **What**: the scene's third output (with reflections on) holds, per opaque pixel, the environment map's share of its
+  colour (`env × amount × (1 − alpha)`, after fog) and that share's weight. After the occlusion pass, the opaque
+  light is copied (resolved when multisampled) and, for every pixel with a weight, the view ray reflected off its
+  normal (the bump-mapped one) is marched through view space: 48 steps (24 low) over 24 m, quadratically spaced,
+  a step landing up to 0.6 m behind the depth buffer is a hit, refined by four halvings. The pass adds
+  `(what the ray met × weight − the environment map's share) × confidence` (blending ONE, ONE into the float light),
+  so a hit replaces the cube map's reflection and a miss leaves it: the original's environment map is the fallback.
+  Confidence fades over the last 8% of the screen's edges, past 60% of the reach, and as the ray turns toward the camera.
+  Transparent surfaces keep their cube-map reflection only.
+- **Cost**: 0.06 ms at 1280x720 on the Endar Spire bridge (its floor is environment-mapped); pixels without a weight
+  return at once.
+- **Pictures**: `kotor/out/fx/t/bridge_ssr_cmp.png` (the bridge floor under a console: cube map, then screen space).
+
+### Tessellation (smoother silhouettes)
+
+- **Inputs**: `Enhance.tessellation` (0 off, 1 low, 2 high); `Draw.kind` creature with a bone palette; nothing else:
+  the smooth normals are the backend's own.
+- **What**: skinned creature draws (opaque, alpha-tested, alpha-depth) go through PN triangles (GL 4.0 tessellation
+  control and evaluation stages): the vertex stage skins as before but stays in world space; each patch's cubic control
+  points come from its corners and their *smooth* normals, made at `create_mesh` for every skinned mesh (the normals of
+  all vertices at the same place, to the millimetre, averaged; opposite normals keep their own). MDX splits a vertex
+  wherever its UV or normal changes, and a PN surface curved by split normals opens along those seams; with smooth
+  normals both sides of a seam curve alike. Shading still uses each corner's own normal, tangents and UVs,
+  interpolated, and the same fragment program as everything else. Each edge is cut by its midpoint's distance from the
+  eye (both triangles of an edge agree): up to 4 (2 low) from 2 m, falling to 1, flat and identical to the
+  untessellated mesh, at 12 m (8 low). Shadow casters are not tessellated.
+- **Decision: off by default.** Within a mesh it is crack-free; across separate meshes of one body (KOTOR splits
+  heads, hands and some armour pieces into meshes of their own) each mesh's border curves by its own normals, so a
+  hairline gap can open where two meshes meet, and the rounder silhouettes are a modest gain on characters this
+  low-poly (they also round off a few deliberately hard edges, belts and armour rims). Worth turning on to look at;
+  not clean enough to be the default.
+- **Cost**: within the opaque pass's noise at 1280x720 (+0.01-0.02 ms with two characters near the camera).
+- **Pictures**: `kotor/out/fx/t/tess_cmp.png` (off, high: shoulders and arms), `talk_tess_d.png` (only silhouettes change).
+
 ### Anti-aliasing
 
 - **Inputs**: `Enhance.post_aa` (the Edge AA row: 0 off, 1 FXAA, 2 High), `Enhance.alpha_coverage` (Foliage AA), the
@@ -200,6 +302,94 @@ shadows, 0 pixels differ.
   High); Foliage AA, 4x multisampling, off / on: `foliage_cmp_grove.png` (grass stems),
   `foliage_cmp_kashyyyk_grass.png` (a Shadowlands flower), `foliage_cmp_kashyyyk_mesh.png` (a lattice of holes in a
   mesh, brightened 3x). Whole pictures: `bridge_e0/e1/e2.png`, `grove_e0/e1/e2.png`, `grove_a2f0/a2f1.png`.
+
+### Light shafts
+
+- **Inputs**: `Enhance.shafts`; `View.sun` (`on`, `direction`: the way its light travels, `color`) and the view's camera;
+  the opaque surfaces' depth (resolved) and the normal target's alpha, which finds the sky (below). The game gives
+  nothing else: `lib/scene/sun.ctx` already finds the sun of an open-air area.
+- **What**: the sun is a point at infinity, `-direction` through the view's projection and view matrices. Behind the
+  camera (clip w under 0.05) there are no shafts; they are full while the sun is on the screen or up to 0.25 screen
+  heights past its edge, and fade out by 1.1 heights (the follow camera mostly looks level and the sun hangs high, so
+  they show when the player turns toward it). A first pass at half the screen's size (a quarter past 1080p: the
+  shafts are soft and the reads scatter) marches each pixel 28 steps toward the sun's place on the screen, at most
+  0.6 view heights, starting a random part of a step in (interleaved gradient noise), and adds up the *sky* it sees,
+  weighted by a glow around the sun (`(1 - r / 0.9)^2`, r the distance from the sun in view heights) and by 0.955 per
+  step. What stands in front of the sky leaves its shadow in the sum, so the light streams from its silhouette. A
+  sample past the view's edge takes the edge pixel. The sum, `^1.35 x 0.35 x fade`, is added to the light at full size
+  (bilinear), tinted by the sun's hue (`0.3 + 0.7 colour / its largest channel`: a warm sun gives warm shafts without
+  changing their brightness), and weighted by the pixel's distance (the light is gathered along the whole ray from the
+  eye): half at 12 m, nearly all by 60 m; the sky itself gets a quarter, so its colour stays the artists'. After the
+  scene is resolved (transparent surfaces included), before the bloom.
+- **The sky**: a surface the scene's lights do not light writes alpha 0 to the normal target (the scene shader's
+  `occludable`): the cleared background, the sky dome (Dantooine's is a model among the rooms, about 220 m away, so the
+  far plane does not find it) and what glows by itself. Any of them is a source, near the sun only. A backend that
+  stores its targets another way must supply the same mask.
+- **Settings**: Light Shafts, Off / On (`gfx shafts`). The pass is skipped when the view has no sun, or the sun is
+  behind the camera or far off the screen.
+- **Cost** (RTX 4090, the Dantooine grove looking at the sun, shafts alone): 0.061 ms at 1080p, 0.067 ms at 1440p,
+  0.18 ms at 4K (quarter size past 1080p; at half size 1440p took 0.13 ms and 4K 0.40 ms).
+- **Pictures**: `kotor/out/fx/atmos/sun_cmp.png` (before, after: the grove and the crash site toward the sun, all three
+  effects), `sun_before.png` / `sun_shafts.png` (shafts alone), `sun4k_crop.png` (4K, quarter-size sum).
+
+### Height fog
+
+- **Inputs**: `Enhance.height_fog`; `View.height_fog` (`on`, `color`, `base` height, `density` per metre at the base,
+  `falloff`: it thins by e every `falloff` metres up); the camera; the opaque surfaces' depth and the normal target's
+  alpha.
+- **What**: a full-screen pass after the opaque surfaces and before the transparent ones, blending `(fog colour, share)`
+  into the light. It turns the depth back into a world position (the inverse of projection x view, made on the CPU)
+  and integrates an exponential fog along the ray from the eye to it in closed form: the density is
+  `d0 exp(-(z - base) / falloff)` (heights below the base count as the base); z is linear along the ray, so the fog
+  crossed is `d0 x length x (e^(-k h0) - e^(-k h1)) / (k (h1 - h0))` between the ends' heights h0 and h1. The share
+  is `1 - e^-tau`, at most 0.85, gone toward the far plane (0.8 to 0.9 of its distance). The sky (alpha 0 in the
+  normal target, or depth 1) gets none. It lies over the area's linear fog (`View.fog`, which the scene shader
+  applied already), so a fogged area gets both; the transparent surfaces drawn later (glass, particles, planar
+  shadows) take only the linear fog.
+- **The game's side** (`lib/scene/atmosphere.ctx`, found the first time a view asks in an area): on in open-air areas
+  only, by the ARE's Flags: not interior (1), and not underground (2) unless natural (4) (the Kashyyyk Shadowlands are
+  underground and natural, and get a forest-floor mist; the Endar Spire and other interiors get none). `base` is the
+  lowest point of the rooms' walkable faces; `density` 0.006 per metre; `falloff` 4 m plus 0.4 per metre between the
+  walkmesh's lowest and highest points, 5 to 14 m (the Dantooine grove spans 14 m: 9.6 m). `color` is the ARE's fog
+  colour where it has one (the grove's is its sky's pink, so the far hills dissolve into the sky), else the area's
+  ambient colour times 1.5 plus 0.05 (the Taris upper city's pale blue).
+- **Settings**: Height Fog, Off / On (`gfx hfog`).
+- **Cost** (RTX 4090): 0.011 ms at 1080p, 0.017 ms at 1440p, 0.043 ms at 4K.
+- **Pictures**: `kotor/out/fx/atmos/grove_cmp.png` (before, all three, fog alone, grade alone),
+  `kashyyyk_before.png` / `kashyyyk_after.png`, `taris_before.png` / `taris_after.png`.
+
+### Colour grades
+
+- **Inputs**: `Enhance.grade`; `View.grade`, a texture: a 32x32x32 lookup table as a 1024x32 rgb8 strip, slice b (blue)
+  at x = 32 b, red along a slice's row, green up its rows, bottom row first, filtered linearly, clamped, no mips. The
+  composite reads it after the tone curve (it did already) and blends between the two nearest slices. `View.grade`
+  null: the picture as it is.
+- **The game's side** (`lib/scene/atmosphere.ctx`): the planet comes from the module's name (`end_` Endar Spire, `tar_`
+  Taris, `danm` Dantooine, `tat_` Tatooine, `kas_` Kashyyyk, `manm` Manaan, `korr` Korriban, `lev_` Leviathan, `unk_`
+  Unknown World, `sta_` Star Forge, `ebo_` Ebon Hawk; the others have none, so no table). The table is computed in code
+  the first time a view asks in an area (32,768 colours, a few milliseconds), uploaded with `gpu::create_texture`,
+  freed with the scene (`scene::release`) and given to every view of the area. A grade does, in order, to each colour:
+  contrast (toward a smoothstep S curve), gamma, lift (raises the blacks) and gain (scales the whites), split toning (a
+  colour added in the shadows and one in the highlights, by `(1 - luma)^2` and `luma^2`), saturation.
+- **Choices**, all small (a few per cent at most, so the artists' colours stay what they are; the numbers are in the
+  code): Endar Spire: clean steel, cold shadows, 0.97 saturation. Taris: smog, sickly green shadows, yellow highlights,
+  0.93 saturation, mid-tones a little darker. Dantooine: warm gold, 1.06 saturation, mid-tones lifted a little.
+  Tatooine: sun-bleached, warm shadows and orange highlights, firmer contrast, 0.96 saturation. Kashyyyk: deeper green
+  in the shadows, a little darker, 1.04 saturation. Manaan: sea and glass, teal in the shadows and the lights.
+  Korriban: ochre and dried blood, deeper darks, red shadows. Leviathan: cold, dim and sickly, 0.94 saturation.
+  Unknown World: dust and ancient stone, warm gold with cool shade. Star Forge: hard contrast, cold blue-teal
+  shadows. Ebon Hawk: a hair warm.
+- **Settings**: Colour Grade, Off / On (`gfx grade`).
+- **Cost** (RTX 4090): the composite takes 0.003 ms more at 1080p, 0.005 ms at 1440p, 0.008 ms at 4K with a grade.
+- **Pictures**: `kotor/out/fx/p/sheet1.png` to `sheet4.png` (off on the left, on on the right: Endar Spire, Taris,
+  Dantooine / Tatooine, Kashyyyk, Manaan / Korriban, Leviathan, Unknown World / Star Forge, Ebon Hawk),
+  `kotor/out/fx/atmos/bridge_before.png` / `bridge_after.png` (the Endar Spire bridge: an interior, no shafts, no fog,
+  the grade alone).
+
+All three together (RTX 4090, shafts and fog active): 0.09 ms at 1440p, 0.075 ms at 1080p, 0.23 ms at 4K. Original
+Look (`gfx original 1`) against the build before the enhanced renderer: 0 pixels differ in the Dantooine grove and on
+the Endar Spire bridge at 1280x720. With Enhance.on false none of these passes runs; the game's side only keeps a
+table and a few numbers.
 
 ## Settings
 

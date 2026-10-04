@@ -31,6 +31,8 @@ namespace gpu {
         ms_fbo: u32, ms_color: u32, ms_normal: u32, ms_depth: u32,     // the multisampled twins (samples > 0)
         bloom: [6]u32, bloom_fbo: [6]u32, bloom_w: [6]i32, bloom_h: [6]i32,
         ldr: u32, ldr_fbo: u32,     // RGBA8: the tone-mapped picture, for the edge filter that follows
+        refl: u32, ms_refl: u32,    // RGBA16F: the environment map's share of each opaque pixel (rgb) and its weight (a), for reflections
+        copy: u32, copy_fbo: u32,   // RGBA16F: the opaque surfaces' light, copied for the reflections to read
     }
 
     fn no_fx_targets {} -> FxTargets {
@@ -38,6 +40,7 @@ namespace gpu {
             made = false, width = 0, height = 0, samples = 0, color = 0, normal = 0, depth = 0, scene_fbo = 0, color_fbo = 0,
             ms_fbo = 0, ms_color = 0, ms_normal = 0, ms_depth = 0,
             bloom = [0; 6], bloom_fbo = [0; 6], bloom_w = [0; 6], bloom_h = [0; 6], ldr = 0, ldr_fbo = 0,
+            refl = 0, ms_refl = 0, copy = 0, copy_fbo = 0,
         }
     }
 
@@ -174,7 +177,11 @@ namespace gpu {
             gl::delete_renderbuffer{ gl = &dev.gl, id = t.ms_color }
             gl::delete_renderbuffer{ gl = &dev.gl, id = t.ms_normal }
             gl::delete_renderbuffer{ gl = &dev.gl, id = t.ms_depth }
+            gl::delete_renderbuffer{ gl = &dev.gl, id = t.ms_refl }
         }
+        forget_texture{ &dev, name = t.refl }
+        gl::delete_framebuffer{ gl = &dev.gl, id = t.copy_fbo }
+        forget_texture{ &dev, name = t.copy }
         let mut i: usize = 0
         while i < BLOOM_LEVELS {
             gl::delete_framebuffer{ gl = &dev.gl, id = t.bloom_fbo[i] }
@@ -213,18 +220,24 @@ namespace gpu {
         n.depth = make_plain_texture{ gl = &dev.gl, internal = gl::DEPTH24_STENCIL8, format = gl::DEPTH_STENCIL, kind = gl::UNSIGNED_INT_24_8, width = w, height = h, linear = false }
         n.made = true
         dev.fxt = n
+        dev.fxt.refl = make_plain_texture{ gl = &dev.gl, internal = gl::RGBA16F, format = gl::RGBA, kind = gl::HALF_FLOAT, width = w, height = h, linear = false }
         dev.fxt.scene_fbo = try make_fbo{ gl = &dev.gl, c0 = n.color, c1 = n.normal, depth = n.depth }
+        try attach_third{ gl = &dev.gl, fbo = dev.fxt.scene_fbo, texture = dev.fxt.refl, renderbuffer = 0 }
+        dev.fxt.copy = make_plain_texture{ gl = &dev.gl, internal = gl::RGBA16F, format = gl::RGBA, kind = gl::HALF_FLOAT, width = w, height = h, linear = true }
+        dev.fxt.copy_fbo = try make_fbo{ gl = &dev.gl, c0 = dev.fxt.copy, c1 = 0, depth = 0 }
         dev.fxt.color_fbo = try make_fbo{ gl = &dev.gl, c0 = n.color, c1 = 0, depth = 0 }
         if n.samples > 0 {
             let s = n.samples
             dev.fxt.ms_color = make_ms_buffer{ gl = &dev.gl, internal = gl::RGBA16F, width = w, height = h, samples = s }
             dev.fxt.ms_normal = make_ms_buffer{ gl = &dev.gl, internal = gl::RGB10_A2, width = w, height = h, samples = s }
             dev.fxt.ms_depth = make_ms_buffer{ gl = &dev.gl, internal = gl::DEPTH24_STENCIL8, width = w, height = h, samples = s }
+            dev.fxt.ms_refl = make_ms_buffer{ gl = &dev.gl, internal = gl::RGBA16F, width = w, height = h, samples = s }
             let fbo = gl::gen_framebuffer{ gl = &dev.gl }
             dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = fbo }
             dev.gl.framebuffer_renderbuffer{ target = gl::FRAMEBUFFER, attachment = gl::COLOR_ATTACHMENT0, renderbuffer_target = gl::RENDERBUFFER, renderbuffer = dev.fxt.ms_color }
             dev.gl.framebuffer_renderbuffer{ target = gl::FRAMEBUFFER, attachment = gl::COLOR_ATTACHMENT1, renderbuffer_target = gl::RENDERBUFFER, renderbuffer = dev.fxt.ms_normal }
             dev.gl.framebuffer_renderbuffer{ target = gl::FRAMEBUFFER, attachment = gl::DEPTH_STENCIL_ATTACHMENT, renderbuffer_target = gl::RENDERBUFFER, renderbuffer = dev.fxt.ms_depth }
+            dev.gl.framebuffer_renderbuffer{ target = gl::FRAMEBUFFER, attachment = gl::COLOR_ATTACHMENT2, renderbuffer_target = gl::RENDERBUFFER, renderbuffer = dev.fxt.ms_refl }
             let status = dev.gl.check_framebuffer_status{ target = gl::FRAMEBUFFER }
             dev.fxt.ms_fbo = fbo
             if status != gl::FRAMEBUFFER_COMPLETE { return gl::incomplete{ status } }
@@ -247,10 +260,23 @@ namespace gpu {
     }
 
     // Which colour outputs of the scene framebuffer are written: 1 the light alone (transparent surfaces,
-    // shadows, debug geometry), 2 the light and the normals (opaque surfaces).
+    // shadows, debug geometry), 2 the light and the normals (opaque surfaces), 3 also the environment map's share
+    // (opaque surfaces, with reflections on).
     fn set_outputs { mut dev: Device, n: u32 } {
-        let bufs: [2]u32 = [gl::COLOR_ATTACHMENT0, if n > 1 { gl::COLOR_ATTACHMENT1 } else { gl::NONE }]
-        dev.gl.draw_buffers{ n = 2, bufs = &bufs[0] }
+        let bufs: [3]u32 = [gl::COLOR_ATTACHMENT0, if n > 1 { gl::COLOR_ATTACHMENT1 } else { gl::NONE }, if n > 2 { gl::COLOR_ATTACHMENT2 } else { gl::NONE }]
+        dev.gl.draw_buffers{ n = 3, bufs = &bufs[0] }
+    }
+
+    // A third colour attachment on a framebuffer: a texture, or a (multisampled) renderbuffer.
+    fn attach_third { mut gl: gl::Gl, fbo: u32, texture: u32, renderbuffer: u32 } -> ! {
+        gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = fbo }
+        if texture != 0 {
+            gl.framebuffer_texture_2d{ target = gl::FRAMEBUFFER, attachment = gl::COLOR_ATTACHMENT2, textarget = gl::TEXTURE_2D, texture, level = 0 }
+        } else {
+            gl.framebuffer_renderbuffer{ target = gl::FRAMEBUFFER, attachment = gl::COLOR_ATTACHMENT2, renderbuffer_target = gl::RENDERBUFFER, renderbuffer }
+        }
+        let status = gl.check_framebuffer_status{ target = gl::FRAMEBUFFER }
+        if status != gl::FRAMEBUFFER_COMPLETE { return gl::incomplete{ status } }
     }
 
     // ---- per draw
@@ -291,12 +317,20 @@ namespace gpu {
         dev.cur_particle = dev.particle_fx
         let mapped = try render_shadows{ &dev, frame, index }
         set_shadow_uniforms{ &dev, on = mapped }
+        if dev.enhance.tessellation > 0 and dev.scene_tess.id != 0 {
+            // The tessellated program draws creatures with the same shadows (fx_tess.ctx).
+            dev.cur = dev.scene_tess
+            set_shadow_uniforms{ &dev, on = mapped }
+            set_tess_uniforms{ &dev }
+            dev.cur = dev.scene_fx
+        }
         let fbo = if t.samples > 0 { t.ms_fbo } else { t.scene_fbo }
         dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = fbo }
         let mut area = GlRect{ x = 0, y = 0, w = t.width, h = t.height }
         if v.viewport != null { area = gl_rect{ r = v.viewport, height = t.height, sx = 1.0, sy = 1.0 } }
         // The whole of the light target is cleared: the bloom reads past a viewport's edge.
-        set_outputs{ &dev, n = 2 }
+        let reflect = dev.enhance.reflections > 0
+        set_outputs{ &dev, n = if reflect { 3 } else { 2 } }
         dev.gl.disable{ cap = gl::SCISSOR_TEST }
         dev.gl.color_mask{ red = gl::TRUE, green = gl::TRUE, blue = gl::TRUE, alpha = gl::TRUE }
         set_depth{ &dev, test = true, write = true }
@@ -306,6 +340,10 @@ namespace gpu {
         let clear1: [4]f32 = [0.5, 0.5, 1.0, 0.0]
         dev.gl.clear_bufferfv{ buffer = gl::COLOR, drawbuffer = 0, value = &clear0[0] }
         dev.gl.clear_bufferfv{ buffer = gl::COLOR, drawbuffer = 1, value = &clear1[0] }
+        if reflect {
+            let clear2: [4]f32 = [0.0, 0.0, 0.0, 0.0]
+            dev.gl.clear_bufferfv{ buffer = gl::COLOR, drawbuffer = 2, value = &clear2[0] }
+        }
         dev.gl.clear_bufferfi{ buffer = gl::DEPTH_STENCIL, drawbuffer = 0, depth = 1.0, stencil = 0 }
         dev.gl.viewport{ x = area.x, y = area.y, width = area.w, height = area.h }
 
@@ -315,8 +353,9 @@ namespace gpu {
         draw_opaque{ &dev, frame, index, frustum }
         timer_mark{ &dev, name = "opaque" }
         // ---- passes that read the opaque surfaces' depth and normals, and blend into their light
-        resolve_depth{ &dev }
+        resolve_depth{ &dev, refl = reflect }
         try run_ao{ &dev, v, area }
+        try run_ssr{ &dev, v, area }
         run_height_fog{ &dev, v, area }
         // The passes above set GL's state themselves: what the draws below assume is set afresh.
         dev.state = unknown_state{}
@@ -343,6 +382,7 @@ namespace gpu {
             timer_mark{ &dev, name = "resolve" }
         }
         post_state{ &dev }
+        try run_dof{ &dev, v, area }
         run_shafts{ &dev, v, area }
         let e = dev.enhance
         let levels: usize = if e.bloom >= 2 { BLOOM_LEVELS } else { 4 }
@@ -364,7 +404,7 @@ namespace gpu {
 
     // With multisampling, the opaque surfaces' depth and normals copied to the textures passes read (a blit takes one
     // sample of each pixel's depth); without, they are those textures already.
-    fn resolve_depth { mut dev: Device } {
+    fn resolve_depth { mut dev: Device, refl: bool } {
         let t = dev.fxt
         if t.samples == 0 { return }
         dev.gl.disable{ cap = gl::SCISSOR_TEST }
@@ -380,6 +420,15 @@ namespace gpu {
         dev.gl.blit_framebuffer{
             src_x0 = 0, src_y0 = 0, src_x1 = t.width, src_y1 = t.height, dst_x0 = 0, dst_y0 = 0, dst_x1 = t.width, dst_y1 = t.height,
             mask = gl::COLOR_BUFFER_BIT, filter = gl::NEAREST,
+        }
+        if refl {
+            dev.gl.read_buffer{ src = gl::COLOR_ATTACHMENT2 }
+            let third: [3]u32 = [gl::NONE, gl::NONE, gl::COLOR_ATTACHMENT2]
+            dev.gl.draw_buffers{ n = 3, bufs = &third[0] }
+            dev.gl.blit_framebuffer{
+                src_x0 = 0, src_y0 = 0, src_x1 = t.width, src_y1 = t.height, dst_x0 = 0, dst_y0 = 0, dst_x1 = t.width, dst_y1 = t.height,
+                mask = gl::COLOR_BUFFER_BIT, filter = gl::NEAREST,
+            }
         }
         dev.gl.read_buffer{ src = gl::COLOR_ATTACHMENT0 }
         let back: [2]u32 = [gl::COLOR_ATTACHMENT0, gl::COLOR_ATTACHMENT1]

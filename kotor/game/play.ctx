@@ -154,6 +154,7 @@ namespace play {
         let mut owed = speed::Owed{ dt = 0.0, clock_dt = 0.0 }    // --speed: the presentation's time to catch up
         let mut speed_blur: f32 = 0.0              // the Frame Buffer Effects option's speed blur while the leader is hasted, eased in and out
         let mut fxh = fxhud::make{}                 // the GPU Timing option's lines over the picture
+        let mut fcs = focus::make{}                 // depth of field in conversations (game/focus.ctx)
         while not quit {
             frame_no = frame_no + 1
             if opts.frames > 0 and frame_no > opts.frames { break }
@@ -465,6 +466,8 @@ namespace play {
             dlgview::apply_camera{ v = &dview, w = &w, sc = &sc, camera = &camera }
             if test_camera.len > 0 { place_test_camera{ &w, spec = test_camera, &camera } }
             death::place_camera{ d = &wipe, c = &camera, w = &w, sc = &sc, dt = camera_dt }
+            // The conversation's focus (game/focus.ctx), eased every tick so pictures taken without rendering see it too.
+            let view_focus = focus::update{ f = &fcs, eye = camera.eye, at = dlgview::focus_point{ v = &dview, w = &w, sc = &sc }, dt = camera_dt }
             let pc = world::object{ w = &w, id = w.pc }
             let player_room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
             let room = dlgview::view_room{ v = &dview, w = &w, player_room }
@@ -515,6 +518,9 @@ namespace play {
                 view.ambient = sc.ambient
                 view.fog = sc.fog
                 view.sun = scene::sun_of{ &sc, w = &w, at = camera.look }
+                view.focus = view_focus
+                view.grade = scene::grade_of{ &sc, &w, &dev }
+                view.height_fog = scene::height_fog_of{ &sc, w = &w }
                 let vi = render::add_view{ &frame, view } ifnull { 0 }
                 scene::update_light{ &sc, &w }
                 scene::draw{ &sc, w = &w, &frame, view = vi }

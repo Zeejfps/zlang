@@ -1,0 +1,66 @@
+// Screen-space reflections of the enhanced renderer (docs/design/enhanced-render.md, "Reflections"): on the surfaces
+// KOTOR gives an environment map (TXI envmaptexture, bumpyshinytexture; appearance.2da envmap), after the opaque
+// surfaces. The scene's third output holds, per opaque pixel, the environment map's share of its colour and that
+// share's weight; where a ray reflected off the pixel meets something on screen, that share is replaced by what the
+// ray meets, and where it doesn't the original's environment map stays.
+namespace gpu {
+    struct SsrState { program: u32, proj: i32, area: i32, params: i32 }
+
+    fn no_ssr {} -> SsrState { return SsrState{ program = 0, proj = -1, area = -1, params = -1 } }
+
+    fn make_ssr_program { mut dev: Device } -> ! {
+        let vs = glsl::POST_VS
+        let mut n: usize = 0
+        let fs: [1]c::String = [glsl::SSR_FS]
+        let p = try_link{ gl = &dev.gl, vertex = &vs, fragment = fs[..], log = dev.log, log_len = &n }
+        if p == 0 { return shader_failed{ log = dev.log[..n] } }
+        dev.gl.use_program{ program = p }
+        set_unit{ &dev, program = p, name = "u_depth", unit = 0 }
+        set_unit{ &dev, program = p, name = "u_normal", unit = 1 }
+        set_unit{ &dev, program = p, name = "u_refl", unit = 2 }
+        set_unit{ &dev, program = p, name = "u_light", unit = 3 }
+        dev.gl.use_program{ program = 0 }
+        dev.ssr = SsrState{
+            program = p,
+            proj = dev.gl.get_uniform_location{ program = p, name = "u_proj" },
+            area = dev.gl.get_uniform_location{ program = p, name = "u_area" },
+            params = dev.gl.get_uniform_location{ program = p, name = "u_params" },
+        }
+    }
+
+    fn free_ssr { mut dev: Device } { dev.gl.delete_program{ program = dev.ssr.program } }
+
+    // The reflections of view `v`'s opaque surfaces, added into its light.
+    fn run_ssr { mut dev: Device, v: render::View, area: GlRect } -> ! {
+        let level = dev.enhance.reflections
+        if level == 0 { return }
+        let t = dev.fxt
+        // What the rays read: the opaque surfaces' light so far, copied (resolved when multisampled).
+        dev.gl.disable{ cap = gl::SCISSOR_TEST }
+        dev.gl.bind_framebuffer{ target = gl::READ_FRAMEBUFFER, framebuffer = if t.samples > 0 { t.ms_fbo } else { t.color_fbo } }
+        dev.gl.read_buffer{ src = gl::COLOR_ATTACHMENT0 }
+        dev.gl.bind_framebuffer{ target = gl::DRAW_FRAMEBUFFER, framebuffer = t.copy_fbo }
+        dev.gl.blit_framebuffer{
+            src_x0 = 0, src_y0 = 0, src_x1 = t.width, src_y1 = t.height, dst_x0 = 0, dst_y0 = 0, dst_x1 = t.width, dst_y1 = t.height,
+            mask = gl::COLOR_BUFFER_BIT, filter = gl::NEAREST,
+        }
+        post_state{ &dev }
+        bind_light_only{ &dev }
+        dev.gl.viewport{ x = area.x, y = area.y, width = area.w, height = area.h }
+        dev.gl.enable{ cap = gl::BLEND }
+        dev.gl.blend_func_separate{ sfactor_rgb = gl::ONE, dfactor_rgb = gl::ONE, sfactor_alpha = gl::ZERO, dfactor_alpha = gl::ONE }
+        dev.gl.use_program{ program = dev.ssr.program }
+        bind_unit{ &dev, unit = 0, target = gl::TEXTURE_2D, name = t.depth }
+        bind_unit{ &dev, unit = 1, target = gl::TEXTURE_2D, name = t.normal }
+        bind_unit{ &dev, unit = 2, target = gl::TEXTURE_2D, name = t.refl }
+        bind_unit{ &dev, unit = 3, target = gl::TEXTURE_2D, name = t.copy }
+        let p = v.camera.proj
+        dev.gl.uniform4f{ location = dev.ssr.proj, v0 = p.m[0], v1 = p.m[5], v2 = p.m[10], v3 = p.m[14] }
+        dev.gl.uniform4f{ location = dev.ssr.area, v0 = @as(f32, area.x), v1 = @as(f32, area.y), v2 = @as(f32, area.w), v3 = @as(f32, area.h) }
+        dev.gl.uniform4f{ location = dev.ssr.params, v0 = if level >= 2 { 48.0 } else { 24.0 }, v1 = 24.0, v2 = 0.6, v3 = 0.0 }
+        draw_fullscreen{ &dev }
+        dev.gl.disable{ cap = gl::BLEND }
+        dev.state = unknown_state{}
+        timer_mark{ &dev, name = "reflections" }
+    }
+}

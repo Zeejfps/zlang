@@ -57,6 +57,7 @@ namespace glsl {
         \\in vec4 v_color;
         \\layout(location = 0) out vec4 o_color;
         \\layout(location = 1) out vec4 o_normal;
+        \\layout(location = 2) out vec4 o_refl;
         \\vec4 cubic(float v) {
         \\    vec4 n = vec4(1.0, 2.0, 3.0, 4.0) - v;
         \\    vec4 s = n * n * n;
@@ -165,6 +166,7 @@ namespace glsl {
         \\    if (u_mode.w == 1) {
         \\        o_color = vec4(0.0, 0.0, 0.0, u_color.a);
         \\        o_normal = vec4(0.5, 0.5, 1.0, 0.0);
+        \\        o_refl = vec4(0.0);
         \\        return;
         \\    }
         \\    vec2 uv = v_uv0;
@@ -240,6 +242,8 @@ namespace glsl {
         \\    vec3 rgb = base.rgb * min(light + u_selfillum.rgb, vec3(1.0));
         \\    rgb += base.rgb * u_selfillum.rgb * u_fx2.x;
         \\    float alpha = base.a;
+        \\    vec3 env_part = vec3(0.0);
+        \\    float env_weight = 0.0;
         \\    if (u_maps.z != 0) {
         \\        vec3 r = reflect(normalize(v_world - u_eye.xyz), n);
         \\        vec3 env;
@@ -258,6 +262,10 @@ namespace glsl {
         \\        } else {
         \\            rgb = mix(env * amount, rgb, tex.a);
         \\        }
+        \\        if (u_mode.x <= 1) {
+        \\            env_weight = amount * (1.0 - tex.a);
+        \\            env_part = env * env_weight;
+        \\        }
         \\    }
         \\    if (u_mode.x <= 1) {
         \\        alpha = cover;
@@ -272,8 +280,11 @@ namespace glsl {
         \\        } else {
         \\            rgb = mix(rgb, u_fog_color.rgb, f);
         \\        }
+        \\        env_part *= 1.0 - f;
+        \\        env_weight *= 1.0 - f;
         \\    }
         \\    o_color = vec4(rgb, alpha);
+        \\    o_refl = vec4(env_part, env_weight);
         \\    float glow = clamp(max(u_selfillum.r, max(u_selfillum.g, u_selfillum.b)), 0.0, 1.0);
         \\    float occludable = ((u_mode.y == 1 || u_maps.y == 1) && u_fx.x != 4) ? (1.0 - glow) * (u_maps.y == 1 ? 1.0 : 0.67) : 0.0;
         \\    o_normal = vec4(normalize(mat3(u_view) * n) * 0.5 + 0.5, occludable);

@@ -26,7 +26,8 @@ namespace gpu {
 
     // `filtered`: a mipmapped, linearly filtered flat texture, which the anisotropy option applies to.
     struct TexSlot { name: u32, target: u32, width: u32, height: u32, cube: bool, filtered: bool, gen: u32, live: bool }
-    struct MeshSlot { vao: u32, vbo: u32, ibo: u32, vertex_count: u32, index_count: u32, mode: u32, gen: u32, live: bool }
+    // `smooth`: a skinned mesh's smooth normals (fx_tess.ctx), 0 none.
+    struct MeshSlot { vao: u32, vbo: u32, ibo: u32, smooth: u32, vertex_count: u32, index_count: u32, mode: u32, gen: u32, live: bool }
     // The multisampled twin of a render target: drawing goes here when anti-aliasing is on, and
     // `resolve` copies it into the target's own texture. `fbo` 0: not made yet.
     struct MsBuffers { fbo: u32, color: u32, depth: u32, width: i32, height: i32, samples: i32, dirty: bool }
@@ -116,7 +117,11 @@ namespace gpu {
         atmos: AtmosPrograms,       // fx_atmos.ctx
         aa: AaPrograms,             // fx_aa.ctx
         shadow: ShadowState,        // fx_shadow.ctx
+        scene_tess: ScenePrograms,  // fx_tess.ctx: the scene program with PN-triangle tessellation
+        tess_level: i32,
         aos: AoState,               // fx_ao.ctx
+        dof: DofState,              // fx_dof.ctx
+        ssr: SsrState,              // fx_ssr.ctx
     }
 
     // ---- opening and closing
@@ -181,7 +186,7 @@ namespace gpu {
             log = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = 8192 },
             enhance = render::original_look{}, scene_fx = no_scene_program{}, particle_fx = no_particle_program{},
             fxp = no_fx_programs{}, fxt = no_fx_targets{}, cur = no_scene_program{}, cur_particle = no_particle_program{},
-            in_fx = false, timer = no_timer{}, atmos = no_atmos_programs{}, aa = no_aa_programs{}, shadow = no_shadows{}, aos = no_ao{},
+            in_fx = false, timer = no_timer{}, atmos = no_atmos_programs{}, aa = no_aa_programs{}, shadow = no_shadows{}, scene_tess = no_scene_program{}, tess_level = -1, aos = no_ao{}, dof = no_dof{}, ssr = no_ssr{},
         }
         clear_tables{ &dev }
         try make_programs{ &dev }
@@ -190,6 +195,9 @@ namespace gpu {
         try make_aa_programs{ &dev }
         try make_shadow_program{ &dev }
         try make_ao_programs{ &dev }
+        try make_dof_programs{ &dev }
+        try make_ssr_program{ &dev }
+        try make_tess_program{ &dev }
         dev.cur = dev.scene
         dev.cur_particle = dev.particle
         make_buffers{ &dev }
@@ -227,7 +235,7 @@ namespace gpu {
         }
         i = 0
         while i < dev.meshes.len {
-            dev.meshes[i] = MeshSlot{ vao = 0, vbo = 0, ibo = 0, vertex_count = 0, index_count = 0, mode = 0, gen = 1, live = false }
+            dev.meshes[i] = MeshSlot{ vao = 0, vbo = 0, ibo = 0, smooth = 0, vertex_count = 0, index_count = 0, mode = 0, gen = 1, live = false }
             i = i + 1
         }
         i = 0
@@ -265,6 +273,9 @@ namespace gpu {
         free_aa_programs{ &dev }
         free_shadows{ &dev }
         free_ao{ &dev }
+        free_dof{ &dev }
+        free_ssr{ &dev }
+        dev.gl.delete_program{ program = dev.scene_tess.id }
         free_fx_targets{ &dev }
         free_timer{ &dev }
         if dev.fx_made { gl::free_target{ gl = &dev.gl, t = dev.fx } }
@@ -963,12 +974,21 @@ namespace gpu {
         }
         byte_attrib{ &dev, index = 8, stride = if l.planar { 4 } else { row }, offset = l.color, normalized = true }
         float_attrib{ &dev, index = 9, size = 1, stride = if l.planar { 4 } else { row }, offset = l.constraint }
+        // A skinned mesh's smooth normals, for the enhanced renderer's tessellation (attribute 10, read by no other program).
+        let mut smooth: u32 = 0
+        if l.weights >= 0 and desc.primitive == render::Primitive::triangles and smooth_normals{ &dev, desc, vertices } {
+            let n = @as(usize, desc.vertex_count) * 3
+            smooth = gl::make_buffer{ gl = &dev.gl, target = gl::ARRAY_BUFFER, bytes = gl::bytes_of(f32){ s = dev.scratch[..n] }, usage = gl::STATIC_DRAW }
+            dev.gl.enable_vertex_attrib_array{ index = 10 }
+            dev.gl.vertex_attrib_pointer{ index = 10, size = 3, kind = gl::FLOAT, normalized = gl::FALSE, stride = 12, offset = 0 }
+        }
         dev.gl.bind_vertex_array{ array = 0 }
         dev.state.vao = 0
         let slot = &dev.meshes[index]
         slot.vao = vao
         slot.vbo = vbo
         slot.ibo = ibo
+        slot.smooth = smooth
         slot.vertex_count = desc.vertex_count
         slot.index_count = desc.index_count
         slot.mode = if desc.primitive == render::Primitive::lines { gl::LINES } else { gl::TRIANGLES }
@@ -1013,6 +1033,8 @@ namespace gpu {
         gl::delete_vertex_array{ gl = &dev.gl, id = slot.vao }
         gl::delete_buffer{ gl = &dev.gl, id = slot.vbo }
         gl::delete_buffer{ gl = &dev.gl, id = slot.ibo }
+        if slot.smooth != 0 { gl::delete_buffer{ gl = &dev.gl, id = slot.smooth } }
+        slot.smooth = 0
         slot.live = false
         slot.gen = next_gen{ gen = slot.gen }
     }
@@ -1597,6 +1619,12 @@ namespace gpu {
         if mi == NO_SLOT { return }
         let mesh = dev.meshes[mi]
         let m = draw.material
+        // A creature to tessellate goes through its own program (fx_tess.ctx), the rest through the view's.
+        let tess = tess_wanted{ dev, draw, mesh }
+        let saved = dev.cur
+        defer restore_program{ &dev, saved }
+        if tess { dev.cur = dev.scene_tess }
+        if dev.in_fx { use_program{ &dev, program = dev.cur.id } }
         set_blend{ &dev, blend = m.blend }
         set_depth{ &dev, test = true, write = writes_depth{ blend = m.blend } and not m.decal }
         set_cull{ &dev, on = not m.two_sided }
@@ -1642,10 +1670,12 @@ namespace gpu {
         let first = if draw.first < mesh.index_count { draw.first } else { mesh.index_count }
         let count = if draw.count == 0 or first + draw.count > mesh.index_count { mesh.index_count - first } else { draw.count }
         if count == 0 { return }
-        dev.gl.draw_elements{ mode = mesh.mode, count = @as(i32, count), kind = gl::UNSIGNED_SHORT, offset = @as(usize, first) * 2 }
+        dev.gl.draw_elements{ mode = if tess { gl::PATCHES } else { mesh.mode }, count = @as(i32, count), kind = gl::UNSIGNED_SHORT, offset = @as(usize, first) * 2 }
         dev.stats.draws = dev.stats.draws + 1
         if mesh.mode == gl::TRIANGLES { dev.stats.triangles = dev.stats.triangles + count / 3 }
     }
+
+    fn restore_program { mut dev: Device, saved: ScenePrograms } { dev.cur = saved }
 
     // The frame's lights that reach a sphere at `at`, strongest first, at most MAX_LIGHTS.
     fn set_lights { mut dev: Device, frame: *render::Frame, at: math::Vec3, reach: f32 } {
