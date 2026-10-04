@@ -27,7 +27,27 @@ namespace doors {
             if obj::creature{ o = target } is some{ value = c } { other = c.perspace }
             return UsePoint{ point = target.position, range = radius + other + 0.3 }
         }
+        // A placeable with a use hook in its PWK is used from the nearer hook, at the plain radius + 0.75 (GetUseRange,
+        // actions.md 1.4). The hooks stand where the footprint leaves room: the Ebon Hawk's hyperdrive fills the neck
+        // of the engine room, its centre 2.5 m beyond where anyone can stand, and only its hooks are on the near side.
+        if obj::placeable{ o = target } is some{ value = p } {
+            if nearest_hook{ w, p, from = actor.position } is some{ value = h } {
+                return UsePoint{ point = h, range = radius + USE_EXTRA }
+            }
+        }
         return UsePoint{ point = target.position, range = radius + USE_EXTRA + 0.5 }
+    }
+
+    // The placeable's use hook (0x00584c20) nearer to `from`, in area space; the first when it is the only one, null
+    // when its walkmesh has none. The z is the placeable's own, which the move's floor lookup follows.
+    fn nearest_hook { w: *world::World, p: *obj::Placeable, from: math::Vec3 } -> ?math::Vec3 {
+        if p.walk < 0 or @as(usize, p.walk) >= w.walk.placed.len { return null }
+        let placed = list::items{ list = w.walk.placed }
+        let mesh = &placed[@as(usize, p.walk)].mesh
+        let first = bwm::hook_point{ w = mesh.*, hook = 0 } ifnull { return null }
+        let second = bwm::hook_point{ w = mesh.*, hook = 1 } ifnull { return first }
+        if distance_2d{ a = from, b = second } < distance_2d{ a = from, b = first } { return second }
+        return first
     }
 
     fn distance_2d { a: math::Vec3, b: math::Vec3 } -> f32 {
