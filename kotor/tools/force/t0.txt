@@ -1,0 +1,6 @@
+2 join p_bastilla 0
+3 ui stat class 3
+3 ui stat level 8
+5 ui party
+6 ui list
+7 ui pos
