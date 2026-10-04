@@ -217,7 +217,7 @@ namespace ingame {
                 i = i + 1
                 if o.destroyed or not has_part{ s = o.tag, part } { continue }
                 if o.ext is door{ d } {
-                    if d.locked or d.lockable { _ = @fmt(&w.io, "lock door {} {} locked {} lockable {} key-required {} key '{}' open-dc {} close-dc {} plot {} state {} at {} {}\n", o.id, o.tag, d.locked, d.lockable, d.key_required, d.key, d.open_dc, d.close_dc, o.plot, @as(u32, d.state), o.position.x, o.position.y) }
+                    if d.locked or d.lockable or part.len > 0 { _ = @fmt(&w.io, "lock door {} {} locked {} lockable {} key-required {} key '{}' open-dc {} close-dc {} plot {} state {} static {} walk {} at {} {}\n", o.id, o.tag, d.locked, d.lockable, d.key_required, d.key, d.open_dc, d.close_dc, o.plot, @as(u32, d.state), d.static, d.walk, o.position.x, o.position.y) }
                 } else if o.ext is placeable{ p } {
                     if p.locked or p.lockable { _ = @fmt(&w.io, "lock placeable {} {} locked {} lockable {} key-required {} key '{}' open-dc {} close-dc {} plot {} inventory {} at {} {}\n", o.id, o.tag, p.locked, p.lockable, p.key_required, p.key, p.open_dc, p.close_dc, o.plot, p.inventory.len, o.position.x, o.position.y) }
                 }

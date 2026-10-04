@@ -137,7 +137,7 @@ namespace walkmap {
             // over_blocking_face's own tests, on the whole mesh's bounds first (most are far away).
             if x < b.lo.x - BOX_SLACK or x > b.hi.x + BOX_SLACK or y < b.lo.y - BOX_SLACK or y > b.hi.y + BOX_SLACK { continue }
             if b.hi.z < z - 0.5 or b.lo.z > z + 2.0 { continue }
-            if over_blocking_face{ w = &p.mesh, walkable = m.walkable, x, y, z } { return true }
+            if over_blocking_face{ w = &p.mesh, walkable = m.walkable, x, y, z, mesh_lo = b.lo.z, mesh_hi = b.hi.z } { return true }
         }
         return false
     }
@@ -145,7 +145,12 @@ namespace walkmap {
     // More than the face test's own slack (bwm EDGE_SLACK), so a bounds test never rejects what it would accept.
     const BOX_SLACK: f32 = 0.01
 
-    fn over_blocking_face { w: *bwm::Walkmesh, walkable: []bool, x: f32, y: f32, z: f32 } -> bool {
+    // The original sweeps a door's or placeable's walkmesh through all heights (TestSegmentAgainstObjects, movement.md 4.4),
+    // so a face blocks by where it stands on the floor plan; the heights count for the mesh as a whole (mesh_lo, mesh_hi):
+    // a closed Star Forge door is a box that reaches from below the floor to above a head, and none of its flat faces is
+    // within a walker's height (a per-face test let everyone through it).
+    fn over_blocking_face { w: *bwm::Walkmesh, walkable: []bool, x: f32, y: f32, z: f32, mesh_lo: f32, mesh_hi: f32 } -> bool {
+        if mesh_hi < z - 0.5 or mesh_lo > z + 2.0 { return false }
         let mut f: usize = 0
         while f < w.faces.len {
             let face = f
@@ -154,10 +159,7 @@ namespace walkmap {
             let mat = w.materials[face]
             if mat < walkable.len and walkable[mat] { continue }
             let c = bwm::face_corners{ w = w.*, face }
-            if not bwm::is_over_triangle{ c, x, y } { continue }
-            let lo = math::min{ a = math::min{ a = c[0].z, b = c[1].z }, b = c[2].z }
-            let hi = math::max{ a = math::max{ a = c[0].z, b = c[1].z }, b = c[2].z }
-            if hi >= z - 0.5 and lo <= z + 2.0 { return true }
+            if bwm::is_over_triangle{ c, x, y } { return true }
         }
         return false
     }
@@ -226,7 +228,7 @@ namespace walkmap {
             } else {
                 let mut k: usize = 0
                 while k < near_count {
-                    if over_blocking_face{ w = &placed[@as(usize, near[k])].mesh, walkable = m.walkable, x, y, z = here_z } { return null }
+                    if over_blocking_face{ w = &placed[@as(usize, near[k])].mesh, walkable = m.walkable, x, y, z = here_z, mesh_lo = boxes[@as(usize, near[k])].lo.z, mesh_hi = boxes[@as(usize, near[k])].hi.z } { return null }
                     k = k + 1
                 }
             }
