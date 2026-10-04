@@ -8,6 +8,7 @@
 //                                xp  align  hp  hpmax        experience, alignment (0 dark .. 100 light), hit points
 //                                class level                 the first class slot (classes.2da row, class level)
 //                                security                    the Security skill's ranks
+//                                demolitions awareness       the mine skills' ranks
 //                                class2 level2               the second class slot (level2 0 removes it)
 //                                template RESREF             the UTC the skill ranks, feats and powers are read from
 //
@@ -62,6 +63,11 @@ namespace test_sheet {
             // The Security skill's ranks (rules.md 5.1), for the lock-picking tests.
             let f = c.fighter ifnull { return false }
             f.c.skills[@as(usize, rules::skill::SECURITY)] = n
+        }
+        else if ci::eq{ a = key, b = "demolitions" } or ci::eq{ a = key, b = "awareness" } {
+            // The mine skills' ranks, for the trap tests (lib/engine/traps.ctx).
+            let f = c.fighter ifnull { return false }
+            f.c.skills[@as(usize, if ci::eq{ a = key, b = "demolitions" } { rules::skill::DEMOLITIONS } else { rules::skill::AWARENESS })] = n
         }
         else if ci::eq{ a = key, b = "class2" } { c.classes[1] = @as(u32, n) }
         else if ci::eq{ a = key, b = "level2" } { c.class_levels[1] = @as(u32, n) }
