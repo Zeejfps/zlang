@@ -27,6 +27,7 @@ namespace gui {
     const F_NO_HIT: u32 = 32            // pointer events pass through it
     const F_PULSE_TEXT: u32 = 64        // the text pulses (hilighted buttons, PULSING in the file)
     const F_FOCUS_ONLY: u32 = 128       // never takes the pointer's hover as focus
+    const F_MENU_CHECK: u32 = 256       // an options panel's check box: a square bullet at the left, the text beside it (draw.ctx)
 
     // ---- border fill styles (CSWGuiBorder::Draw; the .gui schema doc has 0 and 1 the other way round)
     const FILL_TILED: i32 = 0
