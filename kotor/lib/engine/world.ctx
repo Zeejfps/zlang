@@ -113,6 +113,7 @@ namespace world {
         arrival_waypoint_len: usize,
         rng: Rng,
         stats: Stats,
+        routes: [772]?routines::Category,   // each routine's category file, found by its first call (routines::categories)
         log: elog::Log,
         doomed: list::List(u32, heap::Heap),   // destroyed this frame, removed by sweep
         module_frame: bool,                 // module and area heartbeats alternate frames
@@ -175,6 +176,7 @@ namespace world {
             arrival_waypoint = [0; 64], arrival_waypoint_len = 0,
             rng = Rng{ state = seed },
             stats = Stats{ calls = [0; 772], missing = [0; 772], unbalanced = [false; 772], script_runs = 0, faults = 0, events = 0, objects_made = 0 },
+            routes = [null; 772],
             log = elog::quiet{},
             doomed = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
             module_frame = false, autopause_asked = 0,

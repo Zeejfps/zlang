@@ -313,7 +313,7 @@ namespace per file**, each file owned by one agent at a time:
 
 | File | Namespace | Routines (by nwscript-routines.tsv's ranking) |
 |---|---|---|
-| `dispatch.ctx` | `routines` | the Engine function, the dispatch chain, counts; nobody else edits it except to add a category line |
+| `dispatch.ctx` | `routines` | the Engine function, the dispatch and its routes, counts; nobody else edits it except to add a category's `run` to `categories` |
 | `core.ctx` | `rt_core` | Random, d2..d100, Print*, IntToString, FloatToString, StringToInt, string functions, math |
 | `vars.ctx` | `rt_vars` | Get/SetLocalBoolean/Number, Get/SetGlobalBoolean/Number/String/Location |
 | `objects.ctx` | `rt_obj` | GetObjectByTag, GetWaypointByTag, GetIsObjectValid, GetTag, GetPosition, GetFacing, GetArea, GetModule, GetDistance*, GetNearest*, GetFirst/NextObjectInArea/Shape, GetObjectType, GetName, CreateObject, DestroyObject, Location functions |
@@ -351,12 +351,15 @@ namespace rt_vars {
 }
 ```
 
-and `routines::dispatch` asks each category in turn (`if try rt_vars::run{ &w, &vm, routine,
-argc } { return }`), and when none takes it, counts it in `w.stats.missing[routine]` and lets
-`nwstub::fallback` pop the arguments and push a zero result, so a script goes on. A function with
-an inferred error set can't be a function value, so this is a chain of direct calls, not a table;
-an `if` chain (or an integer `match routine { nwscript::GetHitDice => {...} else => { return false } }`)
-costs nothing next to a script's run. **The dispatcher checks every call's stack balance**: the
+and `routines::dispatch` calls the category that implements the routine: the routine's first
+call asks each category's `run` in turn (`routines::categories` lists them as values of one
+function type, spec §5), and `w.routes[routine]` keeps the one that took it for the later calls.
+When none takes it, it counts it in `w.stats.missing[routine]` and lets `nwstub::fallback` pop
+the arguments and push a zero result, so a script goes on. A new category file adds its `run` to
+that list. Inside a category an `if` chain (or an integer `match routine { nwscript::GetHitDice
+=> {...} else => { return false } }`) costs nothing next to a script's run; the routes save the
+walk through the categories before it (a dispatch costs about 50 ns whichever category takes it,
+where the chain took 40 ns for the first category and 100 for the last). **The dispatcher checks every call's stack balance**: the
 arguments the script passed must be gone and the result pushed, as the prototype says; a handler
 that slips is reported once as `BUG: routine X left N stack cells, wanted M` (one such slip,
 PlayRumblePattern's missing int, made a later DelayCommand fault in another script).

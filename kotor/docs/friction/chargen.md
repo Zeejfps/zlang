@@ -17,7 +17,3 @@ Where ctxlang got in the way. Each entry: what we wanted, what we wrote instead,
   hand is `*mut Heap`. Both are logical; the second only turned up by trying `&heap`, `heap` and
   `&heap.*` in turn. A line in the quick reference ("`&p.*` passes the pointee of a pointer") would
   have saved the three tries.
-- **A function whose error set is inferred can't be passed as a callback**, so the screens' events
-  are a chain of `if tag_is{ ... }` instead of a table of handlers (the same note as docs/design/gui.md,
-  "Events go to the owner, polled"); the dispatch in `lib/chargen/events.ctx` is about 300 lines
-  of it. It reads fine; a table would have had to wrap every handler in a non-failing function.

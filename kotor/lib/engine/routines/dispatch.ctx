@@ -1,13 +1,17 @@
 // The engine as the NWScript VM sees it (docs/design/engine.md, "Routines: many hands, one
-// dispatcher"): `call` is the nwvm::Engine, bound once to the world; `dispatch` asks each
-// category file in turn whether it implements the routine. One file per category, one namespace
-// per file (rt_*), each with
+// dispatcher"): `call` is the nwvm::Engine, bound once to the world; `dispatch` calls the
+// category file that implements the routine, found by asking each in turn the first time it is
+// called. One file per category, one namespace per file (rt_*), each with
 //
 //   fn run { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool
 //
-// returning false for routines it doesn't have. To add a category, add its line below; to add a
-// routine, add it to its category's `run` (see engine.md for the checklist).
+// returning false for routines it doesn't have. To add a category, add its `run` to
+// `categories`; to add a routine, add it to its category's `run` (see engine.md for the
+// checklist).
 namespace routines {
+    // A category file's `run`.
+    type Category = fn{ mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool
+
     // The nwvm::Engine: `let engine = routines::call{ w = world_ptr, _ }`.
     fn call { mut w: world::World, mut vm: nwvm::Vm, call: nwvm::Call } -> nwvm::Reply {
         match call {
@@ -64,31 +68,33 @@ namespace routines {
         }
     }
 
-    // Each category in turn. Add a line for a new category file.
+    // The category file that implements the routine. Its first call asks each in turn, and
+    // w.routes keeps the one that took it (or `none`) for its later calls.
     fn categories { mut w: world::World, mut vm: nwvm::Vm, routine: u16, argc: u8 } -> !bool {
-        if try rt_core::run{ &w, &vm, routine, argc } { return true }
-        if try rt_vars::run{ &w, &vm, routine, argc } { return true }
-        if try rt_obj::run{ &w, &vm, routine, argc } { return true }
-        if try rt_cmd::run{ &w, &vm, routine, argc } { return true }
-        if try rt_act::run{ &w, &vm, routine, argc } { return true }
-        if try rt_party::run{ &w, &vm, routine, argc } { return true }
-        if try rt_pres::run{ &w, &vm, routine, argc } { return true }
-        if try rt_perc::run{ &w, &vm, routine, argc } { return true }
-        if try rt_time::run{ &w, &vm, routine, argc } { return true }
-        if try rt_mod::run{ &w, &vm, routine, argc } { return true }
-        if try rt_galaxy::run{ &w, &vm, routine, argc } { return true }
-        if try rt_crea::run{ &w, &vm, routine, argc } { return true }
-        if try rt_item::run{ &w, &vm, routine, argc } { return true }
-        if try rt_fx::run{ &w, &vm, routine, argc } { return true }
-        if try rt_fight::run{ &w, &vm, routine, argc } { return true }
-        if try rt_dlg::run{ &w, &vm, routine, argc } { return true }
-        if try rt_talent::run{ &w, &vm, routine, argc } { return true }
-        if try rt_combat::run{ &w, &vm, routine, argc } { return true }
-        if try rt_misc::run{ &w, &vm, routine, argc } { return true }
-        if try rt_mg::run{ &w, &vm, routine, argc } { return true }
-        if try rt_swmg::run{ &w, &vm, routine, argc } { return true }
+        let r = @as(usize, routine)
+        let known = w.routes[r]
+        if known != null { return known{ &w, &vm, routine, argc } }
+        // Add a new category file's `run` here.
+        let all: [21]Category = [
+            rt_core::run, rt_vars::run, rt_obj::run, rt_cmd::run, rt_act::run, rt_party::run,
+            rt_pres::run, rt_perc::run, rt_time::run, rt_mod::run, rt_galaxy::run, rt_crea::run,
+            rt_item::run, rt_fx::run, rt_fight::run, rt_dlg::run, rt_talent::run, rt_combat::run,
+            rt_misc::run, rt_mg::run, rt_swmg::run,
+        ]
+        let mut i: usize = 0
+        while i < all.len {
+            if try all[i]{ &w, &vm, routine, argc } {
+                w.routes[r] = all[i]
+                return true
+            }
+            i = i + 1
+        }
+        w.routes[r] = none
         return false
     }
+
+    // The category of the routines no file implements.
+    fn none {} -> !bool { return false }
 
     // `routine Name/argc -> result` (the result as the routine left it on the stack).
     fn log_call { mut w: world::World, vm: *nwvm::Vm, routine: u16, argc: u8, sp: u32, done: bool } {

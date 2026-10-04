@@ -44,7 +44,3 @@ language change belong in `kotor/FRICTION.md` too; the orchestrator merges them.
 - **Writers for `@fmt` by exact type** (already in kotor/FRICTION.md): sndcheck needed its own
   `Fixed`, `Right` and `Pad` writers for a table, and sndplay one for `c::String` (tools/common
   has none).
-- **Error-set inference keeps functions from being callbacks** (spec §8 rule 12). The first design
-  had `audio::update` take a `&fn{ frames: []i16 } -> !` to queue samples; `sdl::queue_audio{ &sdl,
-  out, _ }` can't be one because its error set is inferred. Returning the frames to queue, or
-  having `audio` call SDL itself, is cleaner anyway, so this cost nothing here.
