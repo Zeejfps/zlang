@@ -293,6 +293,20 @@ namespace rt_item {
                 break
             }
         }
+        // A creature's worn and wielded items count too, after the inventory (0x0053a390 asks the 18 equipment slots in turn).
+        if found == obj::INVALID {
+            if obj::creature{ o } is some{ value = c } {
+                let mut slot: usize = 0
+                while slot < obj::EQUIP_SLOTS {
+                    let worn = world::object{ w = &w, id = c.equipped[slot] }
+                    slot = slot + 1
+                    if worn != null and ci::eq{ a = worn.tag, b = tag } {
+                        found = worn.id
+                        break
+                    }
+                }
+            }
+        }
         try nwvm::push_object{ &vm, id = found }
     }
 
