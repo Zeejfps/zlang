@@ -27,7 +27,8 @@ namespace movement {
     }
 
     // MOVETOPOINT (actions.md 3.1): params 0 the point, 1 run (int), 2 range, 3 the target object
-    // (the point follows it), 4 timeout seconds (0 none). The path comes from lib/engine/paths.ctx
+    // (the point follows it), 4 timeout seconds (0 none), 5 force (int: a script's ActionForceMoveTo*, whose timeout
+    // jumps to the goal; any other move gives up when its timeout runs out). The path comes from lib/engine/paths.ctx
     // and is planned again when the goal moves 2 m or more (movement.md 3.2 step 12).
     fn move_to_point { mut w: world::World, id: u32, a: *mut actions::Action } -> actions::Status {
         let o = world::object{ w = &w, id } ifnull { return actions::Status::failed }
@@ -43,8 +44,14 @@ namespace movement {
         let timeout = actions::float_param{ a, i = 4 }
         let now = clock::now_ms{ c = w.clock }
         if timeout > 0.0 and @as(f32, clock::elapsed_since{ now, then = a.started }) > timeout * 1000.0 {
-            // Force moves jump when they time out (movement.md 3.2, step 4).
+            // Force moves jump when they time out (movement.md 3.2, step 4). A combat approach that carries a timeout
+            // of its own only gives up: it jumped to its target through whatever stood between (a locked door, a
+            // wall of the walkmesh), 6 s after it began.
             stop{ &w, id }
+            if actions::int_param{ a, i = 5 } == 0 {
+                world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
+                return actions::Status::failed
+            }
             place{ &w, id, at = goal }
             let back = world::object{ w = &w, id } ifnull { return actions::Status::done }
             world::set_animation{ o = back, id = obj::ANIM_STAND, speed = 1.0 }
