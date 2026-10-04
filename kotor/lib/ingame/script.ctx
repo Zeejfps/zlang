@@ -93,6 +93,17 @@ namespace ingame {
                 let seen = if perception::entry_of{ w = &w, viewer = lead, target = o.id } is some{ value = e } { e.seen } else { false }
                 _ = @fmt(&w.io, "hostile {} {} selectable {} seen {} at {} {} faction {} standing {}\n", o.id, o.tag, hud::is_selectable{ w = &w, id = o.id }, seen, o.position.x, o.position.y, o.faction, if lead_faction == 0 { w.repute[0][o.faction % 32] } else { w.repute[o.faction % 32][lead_faction % 32] })
             }
+        } else if ci::eq{ a = cmd, b = "los" } {
+            // `ui los TAG1 TAG2`: whether the first object sees the second along a clear line (perception::clear_line:
+            // the rooms' walkmeshes and the doors' and placeables'), and whether it perceives it now.
+            let ta = text::next_word{ &words } ifnull { return }
+            let tb = text::next_word{ &words } ifnull { return }
+            let ia = world::object_by_tag{ w = &w, tag = ta, nth = 0 }
+            let ib = world::object_by_tag{ w = &w, tag = tb, nth = 0 }
+            let oa = world::object{ w = &w, id = ia } ifnull { return }
+            let ob = world::object{ w = &w, id = ib } ifnull { return }
+            let seen = if perception::entry_of{ w = &w, viewer = ia, target = ib } is some{ value = e } { e.seen } else { false }
+            _ = @fmt(&w.io, "los {} {}: clear {} sight {} seen {} distance {} (leader's view: selectable kind {} in view {})\n", ta, tb, perception::clear_line{ w = &w, a = oa.position, b = ob.position }, perception::is_sight_clear{ w = &w, a = oa.position, b = ob.position, ignore = ib }, seen, math::vec3::distance{ a = oa.position, b = ob.position }, hud::is_selectable_kind{ w = &w, id = ib }, hud::is_in_view{ w = &w, id = ib })
         } else if ci::eq{ a = cmd, b = "autopause" } {
             // `ui autopause on|off`: the auto-pause triggers (enemy sighted, party member down, new target in
             // combat), off in headless runs until a test asks.

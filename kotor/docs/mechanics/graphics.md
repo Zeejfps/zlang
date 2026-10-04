@@ -83,6 +83,19 @@ original lacks.
   end, the HUD, the conversation panels, the pazaak table, the loading screen) lays itself out again; the GL context
   and every resource are kept (the window is never remade). A minimised window is not drawn into and the loop rests.
   The game already pauses when focus is lost.
+- **The OS pointer** (The original hides Windows' cursor and draws its own, `SetHardwareCursorHidden`, re/app.md; it
+  does not confine the pointer in a window.) `display::apply` hides the OS pointer (`SDL_ShowCursor(0)`) the first
+  time it runs, so the front end, the loading screens and a game all start without it; SDL holds the state through
+  mode switches (windowed, borderless, full screen, both ways), minimise and restore. The pointer shows again over a
+  windowed window's title bar and border (the frame is the OS's) and wherever it leaves the window; it is never
+  confined, so a second monitor stays reachable from a borderless window. (Before this the front end never hid it:
+  the main menu and every options panel showed Windows' arrow under the game's own, in every mode; only a game in
+  progress hid it.) The log's `display:` line says `OS pointer hidden`. `kotor/tools/py/pointer_probe.py` watches
+  what Windows draws over a real window through mode switches, minimise and focus moves. SDL moves the real pointer to
+  the same window-relative place when a window changes size or place, so the game's pointer stays under it;
+  `display::map_event` undoes the window, the drawable and the bars of a borderless window that renders below the
+  desktop's size (checked with the real pointer: 2176,1332 on a 3840x2160 desktop with a 1440x1080 render is 848,666,
+  the Options button).
 - **Frame rate**: the simulation runs on the measured frame time, clamped to 0.25 s, never on a count of frames. Checked
   with `--dt` at 1/30, 1/60, 1/144 and 1/240 s (below).
 
