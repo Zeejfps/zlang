@@ -227,7 +227,15 @@ namespace partysel_panel {
         let mut n: usize = 0
         while n < SLOTS {
             s.forced[n] = (force1 >= 0 and @as(usize, force1) == n) or (force2 >= 0 and @as(usize, force2) == n)
-            s.selected[n] = in_party{ w = &w, n } or s.forced[n]
+            s.selected[n] = s.forced[n]
+            n = n + 1
+        }
+        // The forced ones come first; the party's other companions keep the places left, in slot order (a
+        // forced Canderous with Carth and T3-M4 along would be three companions for two places, and the
+        // party table refuses the third: Canderous stayed out of the party).
+        n = 0
+        while n < SLOTS {
+            if in_party{ w = &w, n } and picked_count{ &s } < MAX_COMPANIONS { s.selected[n] = true }
             n = n + 1
         }
         fill{ &s, &g, &w, &dev }
