@@ -65,16 +65,66 @@ namespace bot {
         }
     }
 
+    // A point to stand on inside a trigger's polygon. The mean of the corners is the natural one, but a narrow bent
+    // polygon (the Lower City cantina's talk trigger is an L a metre wide) has its mean outside it, and a bot that
+    // "stood in the middle" there never fired the trigger. When the mean is outside, the middle of the widest stretch
+    // of nine horizontal lines through the polygon is inside by construction (the same even-odd rule as the engine's).
+    fn polygon_middle { poly: []math::Vec3 } -> math::Vec3 {
+        let mut sum = math::vec3::zero{}
+        let mut lo: f32 = 1000000.0
+        let mut hi: f32 = -1000000.0
+        let mut i: usize = 0
+        while i < poly.len {
+            sum = math::vec3::add{ a = sum, b = poly[i] }
+            lo = math::min{ a = lo, b = poly[i].y }
+            hi = math::max{ a = hi, b = poly[i].y }
+            i = i + 1
+        }
+        if poly.len == 0 { return sum }
+        let mean = math::vec3::scale{ v = sum, s = 1.0 / @as(f32, poly.len) }
+        if poly.len < 3 or movement::inside_polygon{ poly, x = mean.x, y = mean.y } { return mean }
+        let mut best = mean
+        let mut best_width: f32 = 0.0
+        let mut line: usize = 0
+        while line < 9 {
+            let y = lo + (hi - lo) * (@as(f32, line) + 0.5) / 9.0
+            line = line + 1
+            // Where the polygon's edges cross this line, left to right.
+            let mut xs: [32]f32 = [0.0; 32]
+            let mut n: usize = 0
+            let mut j = poly.len - 1
+            i = 0
+            while i < poly.len {
+                let a = poly[i]
+                let b = poly[j]
+                j = i
+                i = i + 1
+                if (a.y > y) == (b.y > y) or n >= 32 { continue }
+                let x = a.x + (y - a.y) * (b.x - a.x) / (b.y - a.y)
+                let mut k = n
+                while k > 0 and xs[k - 1] > x {
+                    xs[k] = xs[k - 1]
+                    k = k - 1
+                }
+                xs[k] = x
+                n = n + 1
+            }
+            let mut p: usize = 0
+            while p + 1 < n {
+                if xs[p + 1] - xs[p] > best_width {
+                    best_width = xs[p + 1] - xs[p]
+                    best = math::Vec3{ x = (xs[p] + xs[p + 1]) * 0.5, y, z = mean.z }
+                }
+                p = p + 2
+            }
+        }
+        return best
+    }
+
     // Where to walk for a stop: a trigger's middle, an object's place.
     fn stop_place { o: *obj::Object } -> math::Vec3 {
         if o.ext is trigger{ t } {
-            let mut sum = math::vec3::zero{}
-            let mut i: usize = 0
-            while i < t.polygon.len {
-                sum = math::vec3::add{ a = sum, b = t.polygon[i] }
-                i = i + 1
-            }
-            return math::vec3::scale{ v = sum, s = 1.0 / @as(f32, t.polygon.len) }
+            return polygon_middle{ poly = t.polygon }
         }
         return o.position
     }

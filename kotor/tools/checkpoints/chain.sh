@@ -16,7 +16,9 @@ pt=kotor/tools/playthrough
 first=${1:-vulkar}
 started=
 # name : loaded checkpoint : script : frames : index of the script's manual save that is the checkpoint : its module
-steps="vulkar:sithbase:40_sithbase:22000:1:tar_m10aa garage:vulkar:43_elevator:30000:1:tar_m10ac kandon:garage:44_kandon:20000:1:tar_m10ac swoop:kandon:45_gadon:30000:1:tar_m03af apt:swoop:46_race:24000:1:tar_m02af cand:apt:47_canderous:21000:1:tar_m03ae t3:cand:48_t3:7000:1:tar_m02ab codes:t3:49_sithbase:20000:1:tar_m09ab davik:codes:50_codes:26000:1:tar_m08aa"
+steps="vulkar:sithbase:40_sithbase:22000:1:tar_m10aa garage:vulkar:43_elevator:30000:1:tar_m10ac kandon:garage:44_kandon:20000:1:tar_m10ac swoop:kandon:45_gadon:30000:1:tar_m03af apt:swoop:46_race:24000:1:tar_m02af cand:apt:47_canderous:21000:1:tar_m03ae t3:cand:48_t3:7000:1:tar_m02ab codes:t3:49_sithbase:30000:1:tar_m09ab davik:codes:50_codes:26000:1:tar_m08aa"
+# name:the companion that must be in the party at that save
+members="cand:Bastila t3:T3-M4 codes:T3-M4 davik:Canderous"
 for s in $steps; do
   name=${s%%:*}; rest=${s#*:}
   from=${rest%%:*}; rest=${rest#*:}
@@ -35,5 +37,12 @@ for s in $steps; do
   rm -rf $out/work_verify; mkdir -p $out/work_verify
   where=$($exe --load $out/$name --no-render --frames 2 --saves $out/work_verify --log module 2>&1 | grep -a '^\[.*loaded ' | sed 's/.*(\(.*\))$/\1/')
   if [ "$where" = "$module" ]; then ok="in $module"; else ok="WRONG MODULE: in '$where', expected $module"; fi
+  # The companion a later script relies on: a party screen clicked at fixed frames can leave the wrong party in a save that
+  # is in the right module.
+  want=$(echo " $members " | sed -n "s/.* $name:\([^ ]*\) .*/\1/p")
+  if [ -n "$want" ]; then
+    echo "8 ui party" > $out/work_verify/party.txt
+    if $exe --load $out/$name --no-render --frames 12 --saves $out/work_verify --input $out/work_verify/party.txt 2>&1 | grep -a -q "^party .*$want"; then ok="$ok, $want in the party"; else ok="$ok, WRONG PARTY: $want is not in it"; fi
+  fi
   echo "$name: from $from, save '$folder', $ok, $(grep -a -c '^fault:' $out/$name.log) faults"
 done

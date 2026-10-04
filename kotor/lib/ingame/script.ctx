@@ -189,6 +189,15 @@ namespace ingame {
                 _ = @fmt(&w.io, "where {} k{} {} at {} {} {} hp {} facing {} {} faction {}\n", o.id, @as(u32, o.kind), tag, o.position.x, o.position.y, o.position.z, o.hp, o.orientation.x, o.orientation.y, o.faction)
                 if o.ext is creature{ c } { _ = @fmt(&w.io, "  portrait {}\n", c.portrait) }
                 if o.ext is door{ d } { _ = @fmt(&w.io, "  door state {} locked {} area {} link flags {} to {}\n", @as(u32, d.state), d.locked, o.area, d.linked_flags, d.linked_to) }
+                if obj::trigger{ o } is some{ value = tr } {
+                    _ = @fmt(&w.io, "  trigger type {} polygon", tr.trigger_type)
+                    let mut k: usize = 0
+                    while k < tr.polygon.len {
+                        _ = @fmt(&w.io, " ({} {} {})", tr.polygon[k].x, tr.polygon[k].y, tr.polygon[k].z)
+                        k = k + 1
+                    }
+                    _ = @fmt(&w.io, " inside {}\n", tr.inside.len)
+                }
             }
         } else if ci::eq{ a = cmd, b = "locks" } {
             // Test helper: the locked (or lockable) doors and placeables whose tag contains the word, with the lock's record.
