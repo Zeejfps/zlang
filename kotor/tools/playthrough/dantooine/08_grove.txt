@@ -22,3 +22,4 @@
 7339 ui locals dan14_juhani
 7340 save fight
 7360 ui bot status
+7360 ui xp

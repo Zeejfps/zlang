@@ -19,8 +19,10 @@
 # The Enclave: Zhar.
 900 ui pos
 900 ui journal list
+900 ui xp
 1000 talk dan13_zhar dan13_zhar
 # Zhar is done at about frame 2580: the third trial is passed (dan_trials 50, dan_council 20).
 2700 ui journal list
+2700 ui xp
 2700 ui pos
 2710 save return

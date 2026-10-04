@@ -167,6 +167,29 @@ namespace ingame {
             }
             _ = @fmt(&w.io, " numbers: {} {} {} {} {} {} {} {}", o.locals.numbers[0], o.locals.numbers[1], o.locals.numbers[2], o.locals.numbers[3], o.locals.numbers[4], o.locals.numbers[5], o.locals.numbers[6], o.locals.numbers[7])
             _ = @fmt(&w.io, "\n")
+        } else if ci::eq{ a = cmd, b = "xp" } {
+            // Test helper: each party member's experience points, and the party's pool.
+            let ids = party::members{ w = &w }
+            let mut i: usize = 0
+            while i < ids.len {
+                if world::object{ w = &w, id = ids[i] } is some{ value = m } {
+                    if obj::creature{ o = m } is some{ value = c } { _ = @fmt(&w.io, "xp {} {}: {}\n", ids[i], hud::name_of{ w = &w, id = ids[i] }, c.xp) }
+                }
+                i = i + 1
+            }
+        } else if ci::eq{ a = cmd, b = "ai" } {
+            // Test helper: an object's AI level, whether it takes orders, and its action queue (kinds in order).
+            let tag = text::next_word{ &words } ifnull { return }
+            let id = world::object_by_tag{ w = &w, tag, nth = 0 }
+            let o = world::object{ w = &w, id } ifnull { return }
+            _ = @fmt(&w.io, "ai {} {}: level {} commandable {} destroyed {} area {} queue", id, o.tag, o.ai_level, o.commandable, o.destroyed, o.area)
+            let q = list::items{ list = o.actions }
+            let mut k: usize = 0
+            while k < q.len {
+                _ = @fmt(&w.io, " {}", @as(u32, q[k].kind))
+                k = k + 1
+            }
+            _ = @fmt(&w.io, "\n")
         } else if ci::eq{ a = cmd, b = "fx" } {
             // Test helper: the effects on the creature with the tag (none given: the leader): kind, duration
             // type, the seconds it was given, when it expires (day, ms) against now, and who made it.

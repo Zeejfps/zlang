@@ -11,6 +11,7 @@
 10 ui bot god on
 10 ui bot on
 3900 ui journal list
+3900 ui xp
 3900 ui pos
 3950 ui menu character
 4000 save redeemed

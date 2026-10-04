@@ -7,4 +7,5 @@
 5 ui replies 1 1 6 3 2 6 4 1 1 1 1 1 1
 10 talk dan13_zhar dan13_zhar
 3700 ui journal list
+3700 ui xp
 3700 save code

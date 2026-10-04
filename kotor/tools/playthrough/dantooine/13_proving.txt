@@ -16,10 +16,12 @@
 # leader walks into it) to the computer.
 10 use dan15_compb
 2900 ui journal list
+2900 ui xp
 2900 ui pos
 # The east computer, across the hall.
 3000 cutatk Carth dan15_guardb 239 1 400
 3010 use dan15_compw
 7000 ui journal list
+7000 ui xp
 7000 ui pos
 7010 save proved

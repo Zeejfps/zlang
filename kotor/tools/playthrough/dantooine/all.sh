@@ -36,3 +36,4 @@ step 11 6100 return ruins1
 step 12 11350 ruins1 ruins2
 step 13 7100 ruins2 proved
 step 14 5100 proved starmap
+step 15 7200 starmap council2

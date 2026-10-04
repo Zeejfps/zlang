@@ -16,6 +16,7 @@
 1500 ui goto dan15_starmap
 2000 ui pos
 5000 ui journal list
+5000 ui xp
 5000 ui pos
 5000 ui party
 5010 save starmap

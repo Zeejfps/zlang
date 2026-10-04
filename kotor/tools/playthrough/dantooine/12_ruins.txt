@@ -35,5 +35,6 @@
 # The droid's long talk (the languages, its purpose, Revan and Malak's visit, the proving grounds) ends at about
 # frame 11170 with dan_ruins 15.
 11300 ui journal list
+11300 ui xp
 11300 ui pos
 11310 save ruins2
