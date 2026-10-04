@@ -1,18 +1,198 @@
 // Atmosphere passes of the enhanced renderer (docs/design/enhanced-render.md): height fog over the opaque surfaces
-// and light shafts toward the view's sun. Called from draw_view_fx (fx.ctx).
+// and light shafts toward the view's sun. Called from draw_view_fx (fx.ctx). Their GLSL is fx_atmos_shaders.ctx.
 namespace gpu {
-    struct AtmosPrograms { made: bool }
+    // How much light the shafts add (times the sun colour's tint and the sky's brightness near the sun); the longest
+    // march, in view heights; the decay per step; the sun's glow radius, in view heights.
+    const SHAFT_STRENGTH: f32 = 0.35
+    const SHAFT_REACH: f32 = 0.6
+    const SHAFT_DECAY: f32 = 0.955
+    const SHAFT_GLOW: f32 = 0.9
+    // The height fog thins out to nothing at this share of the far plane's distance, so the far plane shows no edge.
+    const FOG_REACH: f32 = 0.9
 
-    fn no_atmos_programs {} -> AtmosPrograms { return AtmosPrograms{ made = false } }
+    struct AtmosPrograms {
+        made: bool,
+        shaft: u32, sh_area: i32, sh_sun: i32, sh_params: i32,
+        shaft_add: u32, sa_params: i32, sa_proj: i32, sa_inv_size: i32, sa_color: i32,
+        hfog: u32, hf_inv_vp: i32, hf_eye: i32, hf_fog: i32, hf_color: i32,
+        half: u32, half_fbo: u32, half_w: i32, half_h: i32,     // the shafts' target, half the screen's size
+    }
 
-    fn make_atmos_programs { mut dev: Device } -> ! {}
+    fn no_atmos_programs {} -> AtmosPrograms {
+        return AtmosPrograms{
+            made = false,
+            shaft = 0, sh_area = -1, sh_sun = -1, sh_params = -1,
+            shaft_add = 0, sa_params = -1, sa_proj = -1, sa_inv_size = -1, sa_color = -1,
+            hfog = 0, hf_inv_vp = -1, hf_eye = -1, hf_fog = -1, hf_color = -1,
+            half = 0, half_fbo = 0, half_w = 0, half_h = 0,
+        }
+    }
 
-    fn free_atmos_programs { mut dev: Device } {}
+    fn make_atmos_programs { mut dev: Device } -> ! {
+        let post_vs = glsl::POST_VS
+        let mut n: usize = 0
+        let shaft_fs: [1]c::String = [glsl::SHAFT_FS]
+        let shaft = try_link{ gl = &dev.gl, vertex = &post_vs, fragment = shaft_fs[..], log = dev.log, log_len = &n }
+        if shaft == 0 { return shader_failed{ log = dev.log[..n] } }
+        let add_fs: [1]c::String = [glsl::SHAFT_ADD_FS]
+        let add = try_link{ gl = &dev.gl, vertex = &post_vs, fragment = add_fs[..], log = dev.log, log_len = &n }
+        if add == 0 { return shader_failed{ log = dev.log[..n] } }
+        let fog_fs: [1]c::String = [glsl::HEIGHT_FOG_FS]
+        let fog = try_link{ gl = &dev.gl, vertex = &post_vs, fragment = fog_fs[..], log = dev.log, log_len = &n }
+        if fog == 0 { return shader_failed{ log = dev.log[..n] } }
+        dev.gl.use_program{ program = shaft }
+        set_unit{ &dev, program = shaft, name = "u_normal", unit = 0 }
+        dev.gl.use_program{ program = add }
+        set_unit{ &dev, program = add, name = "u_depth", unit = 0 }
+        set_unit{ &dev, program = add, name = "u_shafts", unit = 1 }
+        set_unit{ &dev, program = add, name = "u_normal", unit = 2 }
+        dev.gl.use_program{ program = fog }
+        set_unit{ &dev, program = fog, name = "u_depth", unit = 0 }
+        set_unit{ &dev, program = fog, name = "u_normal", unit = 1 }
+        dev.gl.use_program{ program = 0 }
+        dev.atmos = AtmosPrograms{
+            made = true,
+            shaft, sh_area = dev.gl.get_uniform_location{ program = shaft, name = "u_area" },
+            sh_sun = dev.gl.get_uniform_location{ program = shaft, name = "u_sun" },
+            sh_params = dev.gl.get_uniform_location{ program = shaft, name = "u_params" },
+            shaft_add = add,
+            sa_params = dev.gl.get_uniform_location{ program = add, name = "u_params" },
+            sa_proj = dev.gl.get_uniform_location{ program = add, name = "u_proj" },
+            sa_inv_size = dev.gl.get_uniform_location{ program = add, name = "u_inv_size" },
+            sa_color = dev.gl.get_uniform_location{ program = add, name = "u_color" },
+            hfog = fog,
+            hf_inv_vp = dev.gl.get_uniform_location{ program = fog, name = "u_inv_vp" },
+            hf_eye = dev.gl.get_uniform_location{ program = fog, name = "u_eye" },
+            hf_fog = dev.gl.get_uniform_location{ program = fog, name = "u_fog" },
+            hf_color = dev.gl.get_uniform_location{ program = fog, name = "u_color" },
+            half = 0, half_fbo = 0, half_w = 0, half_h = 0,
+        }
+    }
+
+    fn free_atmos_programs { mut dev: Device } {
+        let a = dev.atmos
+        if not a.made { return }
+        dev.gl.delete_program{ program = a.shaft }
+        dev.gl.delete_program{ program = a.shaft_add }
+        dev.gl.delete_program{ program = a.hfog }
+        free_shaft_target{ &dev }
+        dev.atmos = no_atmos_programs{}
+    }
+
+    fn free_shaft_target { mut dev: Device } {
+        if dev.atmos.half == 0 { return }
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = 0 }
+        gl::delete_framebuffer{ gl = &dev.gl, id = dev.atmos.half_fbo }
+        forget_texture{ &dev, name = dev.atmos.half }
+        dev.atmos.half = 0
+        dev.atmos.half_fbo = 0
+    }
+
+    // The shafts are summed at a fraction of the screen's size: half, or a quarter past 1080p (they are soft, and the
+    // march's reads scatter across a larger picture).
+    fn shaft_scale { dev: Device } -> i32 { return if dev.fxt.width > 1920 { 4 } else { 2 } }
+
+    // The shafts' target, a half or a quarter of the size of the enhanced targets (rounded up), made when first
+    // needed and again when they change; false when it could not be made.
+    fn ensure_shaft_target { mut dev: Device } -> bool {
+        let t = dev.fxt
+        let scale = shaft_scale{ dev }
+        let w = (t.width + scale - 1) / scale
+        let h = (t.height + scale - 1) / scale
+        if dev.atmos.half != 0 and dev.atmos.half_w == w and dev.atmos.half_h == h { return true }
+        free_shaft_target{ &dev }
+        let tex = make_plain_texture{ gl = &dev.gl, internal = gl::R11F_G11F_B10F, format = gl::RGB, kind = gl::HALF_FLOAT, width = w, height = h, linear = true }
+        let fbo = make_fbo{ gl = &dev.gl, c0 = tex, c1 = 0, depth = 0 } iferr {
+            forget_texture{ &dev, name = tex }
+            return false
+        }
+        dev.atmos.half = tex
+        dev.atmos.half_fbo = fbo
+        dev.atmos.half_w = w
+        dev.atmos.half_h = h
+        dev.state.units = [0; 5]
+        return true
+    }
 
     // After the opaque surfaces, before the transparent ones: fog thickest low down (View.height_fog), blended into
     // the scene's light (bind_light_target) by the depth (dev.fxt.depth, resolved).
-    fn run_height_fog { mut dev: Device, v: render::View, area: GlRect } {}
+    fn run_height_fog { mut dev: Device, v: render::View, area: GlRect } {
+        let hf = v.height_fog
+        if not dev.enhance.height_fog or not hf.on or dev.atmos.hfog == 0 or hf.density <= 0.0 { return }
+        let t = dev.fxt
+        let a = dev.atmos
+        let view_proj = math::mat4::mul{ a = v.camera.proj, b = v.camera.view }
+        let inv = math::mat4::inverse{ m = view_proj } ifnull { return }
+        let far = v.camera.proj.m[14] / (v.camera.proj.m[10] + 1.0)
+        bind_light_only{ &dev }
+        post_state{ &dev }
+        dev.gl.viewport{ x = area.x, y = area.y, width = area.w, height = area.h }
+        dev.gl.enable{ cap = gl::BLEND }
+        dev.gl.blend_func_separate{ sfactor_rgb = gl::SRC_ALPHA, dfactor_rgb = gl::ONE_MINUS_SRC_ALPHA, sfactor_alpha = gl::ZERO, dfactor_alpha = gl::ONE }
+        dev.gl.use_program{ program = a.hfog }
+        bind_unit{ &dev, unit = 0, target = gl::TEXTURE_2D, name = t.depth }
+        bind_unit{ &dev, unit = 1, target = gl::TEXTURE_2D, name = t.normal }
+        dev.gl.uniform_matrix4fv{ location = a.hf_inv_vp, count = 1, transpose = gl::FALSE, value = &inv.m[0] }
+        dev.gl.uniform4f{ location = a.hf_eye, v0 = v.camera.eye.x, v1 = v.camera.eye.y, v2 = v.camera.eye.z, v3 = hf.base }
+        dev.gl.uniform4f{ location = a.hf_fog, v0 = hf.density, v1 = 1.0 / math::max{ a = hf.falloff, b = 0.01 }, v2 = 0.85, v3 = far * FOG_REACH }
+        dev.gl.uniform3f{ location = a.hf_color, v0 = hf.color.x, v1 = hf.color.y, v2 = hf.color.z }
+        draw_fullscreen{ &dev }
+        dev.gl.disable{ cap = gl::BLEND }
+        dev.state.blend = -2
+        timer_mark{ &dev, name = "height fog" }
+    }
 
     // After the scene is resolved, before the bloom: light shafts streaming from View.sun, added into dev.fxt.color.
-    fn run_shafts { mut dev: Device, v: render::View, area: GlRect } {}
+    fn run_shafts { mut dev: Device, v: render::View, area: GlRect } {
+        if not dev.enhance.shafts or not v.sun.on or dev.atmos.shaft == 0 or area.w < 2 or area.h < 2 { return }
+        let view_proj = math::mat4::mul{ a = v.camera.proj, b = v.camera.view }
+        // The sun is far away: a point at infinity, the way its light comes from.
+        let s = math::mat4::transform{ m = view_proj, v = math::Vec4{ x = -v.sun.direction.x, y = -v.sun.direction.y, z = -v.sun.direction.z, w = 0.0 } }
+        if s.w < 0.05 { return }
+        let aspect = @as(f32, area.w) / @as(f32, area.h)
+        let sx = s.x / s.w * 0.5 + 0.5
+        let sy = s.y / s.w * 0.5 + 0.5
+        // Fades out as the sun leaves the view: gone a screen height beyond the edge.
+        let ex = math::max{ a = math::max{ a = -sx, b = sx - 1.0 }, b = 0.0 } * aspect
+        let ey = math::max{ a = math::max{ a = -sy, b = sy - 1.0 }, b = 0.0 }
+        let off = math::sqrtf{ x = ex * ex + ey * ey }
+        let u = math::min{ a = math::max{ a = (off - 0.25) / 0.85, b = 0.0 }, b = 1.0 }
+        let fade = 1.0 - u * u * (3.0 - 2.0 * u)
+        if fade < 0.01 { return }
+        if not ensure_shaft_target{ &dev } { return }
+        let t = dev.fxt
+        let a = dev.atmos
+        // The sun's colour as a tint on white: the hue and saturation it has, not its brightness.
+        let c = v.sun.color
+        let top = math::max{ a = math::max{ a = c.x, b = c.y }, b = c.z }
+        let tint = if top > 0.001 { math::Vec3{ x = 0.3 + 0.7 * c.x / top, y = 0.3 + 0.7 * c.y / top, z = 0.3 + 0.7 * c.z / top } } else { math::Vec3{ x = 1.0, y = 1.0, z = 1.0 } }
+
+        // The sum, at a fraction of the size.
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = a.half_fbo }
+        dev.gl.viewport{ x = 0, y = 0, width = a.half_w, height = a.half_h }
+        dev.gl.use_program{ program = a.shaft }
+        bind_unit{ &dev, unit = 0, target = gl::TEXTURE_2D, name = t.normal }
+        dev.gl.uniform4f{ location = a.sh_area, v0 = @as(f32, area.x), v1 = @as(f32, area.y), v2 = @as(f32, area.w), v3 = @as(f32, area.h) }
+        dev.gl.uniform4f{ location = a.sh_sun, v0 = sx, v1 = sy, v2 = SHAFT_STRENGTH * fade, v3 = aspect }
+        dev.gl.uniform4f{ location = a.sh_params, v0 = SHAFT_REACH, v1 = SHAFT_DECAY, v2 = SHAFT_GLOW, v3 = @as(f32, shaft_scale{ dev }) }
+        draw_fullscreen{ &dev }
+
+        // Added to the scene's light, full size.
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = t.color_fbo }
+        dev.gl.viewport{ x = area.x, y = area.y, width = area.w, height = area.h }
+        dev.gl.enable{ cap = gl::BLEND }
+        dev.gl.blend_func_separate{ sfactor_rgb = gl::ONE, dfactor_rgb = gl::ONE, sfactor_alpha = gl::ZERO, dfactor_alpha = gl::ONE }
+        dev.gl.use_program{ program = a.shaft_add }
+        bind_unit{ &dev, unit = 0, target = gl::TEXTURE_2D, name = t.depth }
+        bind_unit{ &dev, unit = 1, target = gl::TEXTURE_2D, name = a.half }
+        bind_unit{ &dev, unit = 2, target = gl::TEXTURE_2D, name = t.normal }
+        dev.gl.uniform4f{ location = a.sa_params, v0 = 12.0, v1 = 0.25, v2 = 0.0, v3 = 0.0 }
+        dev.gl.uniform2f{ location = a.sa_proj, v0 = v.camera.proj.m[10], v1 = v.camera.proj.m[14] }
+        dev.gl.uniform2f{ location = a.sa_inv_size, v0 = 1.0 / @as(f32, t.width), v1 = 1.0 / @as(f32, t.height) }
+        dev.gl.uniform3f{ location = a.sa_color, v0 = tint.x, v1 = tint.y, v2 = tint.z }
+        draw_fullscreen{ &dev }
+        dev.gl.disable{ cap = gl::BLEND }
+        dev.state.blend = -2
+        timer_mark{ &dev, name = "shafts" }
+    }
 }

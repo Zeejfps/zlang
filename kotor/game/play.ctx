@@ -519,6 +519,8 @@ namespace play {
                 view.fog = sc.fog
                 view.sun = scene::sun_of{ &sc, w = &w, at = camera.look }
                 view.focus = view_focus
+                view.grade = scene::grade_of{ &sc, &w, &dev }
+                view.height_fog = scene::height_fog_of{ &sc, w = &w }
                 let vi = render::add_view{ &frame, view } ifnull { 0 }
                 scene::update_light{ &sc, &w }
                 scene::draw{ &sc, w = &w, &frame, view = vi }

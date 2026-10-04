@@ -82,6 +82,10 @@ namespace scene {
         sun_at: math::Vec3,
         sun_color: math::Vec3,
         shadow_opacity: f32,            // the ARE's ShadowOpacity, 0..1
+        grade: ?render::Texture,        // the planet's colour grade (atmosphere.ctx): a lookup table on the GPU, made when first asked for
+        grade_state: u8,                // 0 not made yet, 1 made, 2 none
+        hfog: render::HeightFog,        // the area's height fog (atmosphere.ctx)
+        hfog_state: u8,                 // 0 not looked for yet, 1 found, 2 none
     }
 
     fn make { arena: *mut arena::Arena, heap: *mut heap::Heap, scratch: alloc::Bytes, rm: res::Manager } -> Scene {
@@ -101,6 +105,7 @@ namespace scene {
             drawn_rooms = 0, drawn_objects = 0, look = no_look{}, grass = grass::none{},
             room_light = false, field = no_field{ arena },
             sun_state = 0, sun_at = math::vec3::zero{}, sun_color = math::vec3::zero{}, shadow_opacity = 0.5,
+            grade = null, grade_state = 0, hfog = render::no_height_fog{}, hfog_state = 0,
         }
     }
 
@@ -333,6 +338,8 @@ namespace scene {
         }
         material::free_cache{ cache = &sc.materials, &dev }
         sc.look = no_look{}
+        if sc.grade is some{ value = t } { gpu::free_texture{ &dev, t } }
+        sc.grade = null
     }
 
     // ---- each frame
