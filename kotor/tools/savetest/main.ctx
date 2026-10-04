@@ -54,8 +54,28 @@ fn run {
     try test_globals{ &io, &fs, &h, &r, w, save_dir, out_dir }
     try test_party{ &io, &fs, &h, &r, w, save_dir, out_dir }
     try test_screenshot{ &io, &fs, &h, &r, save_dir, out_dir }
+    test_clock{ &io, &r, w }
     _ = @fmt(&io, "savetest: {} checks, {} failed\n", r.checks, r.failures)
     return r.failures
+}
+
+// A load moves the calendar and leaves the world clock's counter alone, and an elapsed time taken
+// from a stamp in the future is 0 (a clock discontinuity must never underflow).
+fn test_clock { mut io: Io, mut r: Report, w: *mut world::World } {
+    check{ &io, &r, ok = clock::elapsed_since{ now = 10, then = 4 } == 6, what = "elapsed_since: 10 since 4" }
+    check{ &io, &r, ok = clock::elapsed_since{ now = 4, then = 10 } == 0, what = "elapsed_since: a stamp in the future is 0" }
+    check{ &io, &r, ok = clock::elapsed_since{ now = 0, then = 1 } == 0, what = "elapsed_since: from 1 at time 0" }
+    let mut c = clock::new{}
+    c.now_us = 123456789
+    let before = c.now_us
+    let per_day = clock::ms_per_day{ c }
+    let saved = 450438 * per_day + 7 * 60000
+    clock::set_calendar{ c = &c, at = saved }
+    check{ &io, &r, ok = c.now_us == before, what = "set_calendar leaves the counter alone" }
+    check{ &io, &r, ok = clock::calendar_ms{ c } + clock::now_ms{ c } == saved, what = "set_calendar: the calendar now reads the save's time" }
+    // A save older than the counter's age (a hand-made one) starts the calendar at 0, no panic.
+    clock::set_calendar{ c = &c, at = 5 }
+    check{ &io, &r, ok = c.now_us == before and clock::calendar_ms{ c } == 0, what = "set_calendar: a time before the counter's age" }
 }
 
 fn check { mut io: Io, mut r: Report, ok: bool, what: []u8 } {

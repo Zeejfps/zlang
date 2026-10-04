@@ -1,7 +1,8 @@
 // The world timer (docs/re/gameloop.md 1.6, 7): game time in microseconds, advanced once a frame
 // unless paused, and the calendar the IFO starts it at. Every time-based system reads it: events,
 // heartbeats, actions, effect durations. Event times are absolute world milliseconds (ours: the
-// original keeps (day, ms) pairs; saves convert).
+// original keeps (day, ms) pairs; saves convert). The counter never goes back: a load moves the
+// calendar (set_calendar), not the counter, and elapsed times are taken with elapsed_since.
 namespace clock {
     // Longest frame step the world takes (ours: the original never clamps, gameloop.md 1.1).
     const MAX_STEP: f32 = 0.25
@@ -58,6 +59,15 @@ namespace clock {
 
     fn now_ms { c: Clock } -> u64 { return c.now_us / 1000 }
 
+    // Milliseconds from `then` to `now`; 0 when `then` is in the future. Every "how long since
+    // X" in the engine goes through this: unsigned subtraction below 0 panics, and a stamp from
+    // another time base (a clock set back, an object that outlived a discontinuity) must cost a
+    // wrong answer at worst, never the game.
+    fn elapsed_since { now: u64, then: u64 } -> u64 {
+        if then > now { return 0 }
+        return now - then
+    }
+
     // Milliseconds in a game hour and a game day.
     fn ms_per_hour { c: Clock } -> u64 {
         let m: u64 = if c.min_per_hour == 0 { 5 } else { c.min_per_hour }
@@ -92,9 +102,15 @@ namespace clock {
 
     fn calendar_now { c: Clock } -> Calendar { return calendar_of{ c, at = calendar_ms{ c } + now_ms{ c } } }
 
-    // Starts the clock over at an absolute calendar time (a save's Mod_PauseDay/Mod_PauseTime).
+    // Sets the calendar so that it reads the absolute calendar time `at` now (a save's
+    // Mod_PauseDay/Mod_PauseTime). Only the origin moves: the counter goes on, as the original's
+    // SetWorldTime moves the origin and not the timer (gameloop.md 1.6), so every stamp in
+    // counter time (heartbeats, action starts, event dues) stays valid across a load, and what is
+    // kept in calendar time (effect expiry, saved events) is rebased by the new origin. A time
+    // before the counter's own age (a hand-made save) starts the calendar at 0.
     fn set_calendar { mut c: Clock, at: u64 } {
-        let cal = calendar_of{ c, at }
+        let origin = elapsed_since{ now = at, then = now_ms{ c } }
+        let cal = calendar_of{ c, at = origin }
         c.year = cal.year
         c.month = cal.month
         c.day = cal.day
@@ -102,7 +118,6 @@ namespace clock {
         c.minute = cal.minute
         c.second = cal.second
         c.millisecond = cal.millisecond
-        c.now_us = 0
     }
 
     // The time of day: hours, minutes, seconds, milliseconds since midnight of the game day.

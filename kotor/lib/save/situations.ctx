@@ -240,11 +240,13 @@ namespace save {
     }
 
     // The saved queue back into the world, due times relative to the restored clock (events that
-    // came due while away fire at once, gameloop.md 4.5).
+    // came due while away fire at once, gameloop.md 4.5). The saved times are calendar times and
+    // the counter has run on since the calendar was set, so the wait left is measured from the
+    // calendar now (events::post counts from the counter's now).
     fn read_event_queue { mut w: world::World, doc: *gff::Doc, s: u32 } {
         let list = gff::get_list{ doc = doc.*, s, label = "EventQueue" } ifnull { return }
         let per_day = clock::ms_per_day{ c = w.clock }
-        let origin = clock::calendar_ms{ c = w.clock }
+        let here = clock::calendar_ms{ c = w.clock } + clock::now_ms{ c = w.clock }
         let mut i: usize = 0
         while i < list.len {
             let e = list[i]
@@ -252,7 +254,7 @@ namespace save {
             let day = @as(u64, @trunc(u32, number_at{ doc, s = e, label = "Day", default = 0 }))
             let time = @as(u64, @trunc(u32, number_at{ doc, s = e, label = "Time", default = 0 }))
             let at = day * per_day + time
-            let due = if at > origin { at - origin } else { 0 }
+            let due = clock::elapsed_since{ now = at, then = here }
             let target = @trunc(u32, number_at{ doc, s = e, label = "ObjectId", default = 0x7F000000 })
             let caller = @trunc(u32, number_at{ doc, s = e, label = "CallerId", default = 0x7F000000 })
             let id = number_at{ doc, s = e, label = "EventId", default = 0 }

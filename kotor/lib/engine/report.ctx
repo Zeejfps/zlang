@@ -46,13 +46,13 @@ namespace report {
             i = i + 1
             if o.destroyed or o.actions.len == 0 { continue }
             let a = list::items{ list = o.actions }[0]
-            if not a.has_started or now - a.started < STUCK_MS { continue }
+            if not a.has_started or clock::elapsed_since{ now, then = a.started } < STUCK_MS { continue }
             let short = match a.kind {
                 move_to_point | open_door | close_door | open_lock | lock | use_object | pickup_item | give_item | take_item | face_object | face_point | move_away_from_location | equip_item | unequip_item | drop_item => { true }
                 else => { false }
             }
             if not short { continue }
-            _ = @fmt(&w.io, "stuck {} {} {} {} at {} {}\n", o.id, o.tag, @as(u32, a.kind), (now - a.started) / 1000, o.position.x, o.position.y)
+            _ = @fmt(&w.io, "stuck {} {} {} {} at {} {}\n", o.id, o.tag, @as(u32, a.kind), clock::elapsed_since{ now, then = a.started } / 1000, o.position.x, o.position.y)
         }
     }
 }

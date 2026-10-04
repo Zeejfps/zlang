@@ -639,7 +639,7 @@ namespace dlg {
         // give it up after five seconds (ours; the original clears the flag where it clears the
         // action).
         if w.conversation.pending and not w.conversation.active {
-            if now_ms{ w = &w } - w.conversation.pending_since > 5000 {
+            if clock::elapsed_since{ now = now_ms{ w = &w }, then = w.conversation.pending_since } > 5000 {
                 w.conversation.pending = false
                 w.conversation.event_pending = false
             }

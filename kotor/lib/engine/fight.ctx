@@ -1153,7 +1153,7 @@ namespace fight {
         let conj_ms = if instant { 0 } else { @as(u64, @as(u32, if times.conj_ms > 0 { times.conj_ms } else { 0 })) }
         let cast_ms = if instant { 0 } else { @as(u64, @as(u32, if times.cast_ms > 0 { times.cast_ms } else { 0 })) }
         let catch_ms = if instant { 0 } else { @as(u64, @as(u32, if times.catch_ms > 0 { times.catch_ms } else { 0 })) }
-        let elapsed = now - a.started
+        let elapsed = clock::elapsed_since{ now, then = a.started }
         if a.phase == 1 {
             if elapsed < conj_ms { return actions::Status::running }
             let anim = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "castanim" } ifnull ""
