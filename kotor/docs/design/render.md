@@ -135,8 +135,9 @@ textures with alpha), colour (tint; its alpha is the opacity of the alpha contro
 `wateralpha`), self-illumination (the original's GL_EMISSION, 0x00473900: added to the light, the
 sum clamped to 1 as the fixed-function pipeline clamps the lit colour, then modulated by the
 texture), `lit`, `fog`, `two_sided`, `decal` (depth bias, no depth
-write), `env_amount`, and `sort` (the MDL transparency hint: lower draws first among transparent
-surfaces). With an envmap on an opaque or punch surface, the diffuse alpha is the reflection
+write), `env_amount`, `inflate` (metres each vertex is pushed out along its normal, after skinning:
+a shell drawn over a body, the original's energy shield; 0 for everything else) and `sort` (the
+MDL transparency hint: lower draws first among transparent surfaces). With an envmap on an opaque or punch surface, the diffuse alpha is the reflection
 mask and the surface stays opaque (re/render-gui.md, "Environment maps"): on a lightmapped surface
 the reflection is added, `lit + reflection × (1 − alpha)`; on any other (creatures, placeables,
 doors) the two are blended by alpha, `mix(reflection, lit diffuse, alpha)`, so low-alpha armour
