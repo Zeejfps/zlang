@@ -1,0 +1,584 @@
+// Traps and mines (docs/mechanics/traps.md; docs/re/actions.md 3.14, rules.md 5.2, movement.md 5.2
+// and 7): the trap a trap trigger carries, how the party finds it (Awareness), what the leader can
+// do to it (disable, recover, flag, examine: Demolitions), what sets it off, and laying one from a
+// trap kit. Only triggers carry traps in the shipped data (no door or placeable blueprint has
+// TrapFlag set), so only triggers have one here.
+namespace traps {
+    // A trigger's Type for a trap.
+    const TRIGGER_TYPE: u32 = 2
+    // A creature is on a trap within this distance of the trigger's position, in 3D
+    // (g_fTrapTriggerRadius 0x007a206c, movement.md 5.1).
+    const TRIGGER_RADIUS: f32 = 1.0
+
+    // The trap of a trap trigger (CSWSTrigger::LoadTrigger 0x0058da80). A trigger of Type 2 is a
+    // trap: TrapFlag, TrapDetectDC and DisarmDC are not read for triggers, the DCs are the trap
+    // type's (traps.2da DetectDCMod, DisarmDCMod).
+    struct Trap {
+        armed: bool,                // a live trap (Type 2); a disarmed or spent one is gone
+        base: i32,                  // TrapType: the traps.2da row (-1 none)
+        detectable: bool,           // TrapDetectable
+        detect_dc: i32,             // traps.2da DetectDCMod
+        disarmable: bool,           // TrapDisarmable
+        disarm_dc: i32,             // traps.2da DisarmDCMod
+        one_shot: bool,             // TrapOneShot: gone once it went off
+        creator: u32,               // CreatorId: who laid it (SETTRAP); INVALID for the module's own
+        party_set: bool,            // SetByPlayerParty: laid by the player's party
+        detected: bool,             // found by the party (one member's success is the party's)
+        flagged: bool,              // FLAGTRAP: everyone near finds it, the party sees it
+    }
+
+    fn none {} -> Trap {
+        return Trap{
+            armed = false, base = -1, detectable = true, detect_dc = 0, disarmable = true, disarm_dc = 0,
+            one_shot = true, creator = obj::INVALID, party_set = false, detected = false, flagged = false,
+        }
+    }
+
+    // A blueprint's, GIT instance's or saved trigger's trap fields over what the trap holds.
+    // PartyDetected and TrapFlagged are ours: the original keeps neither in a save (a reload forgets
+    // which traps the party had found), we keep both.
+    fn read { doc: *gff::Doc, s: u32, t: *mut Trap, trigger_type: u32, table: twoda::Table } {
+        t.armed = trigger_type == TRIGGER_TYPE
+        t.base = @trunc(i32, gff::get_number{ doc = doc.*, s, label = "TrapType" } ifnull @as(i64, t.base))
+        t.detectable = flag{ doc, s, label = "TrapDetectable", default = t.detectable }
+        t.disarmable = flag{ doc, s, label = "TrapDisarmable", default = t.disarmable }
+        t.one_shot = flag{ doc, s, label = "TrapOneShot", default = t.one_shot }
+        t.creator = @trunc(u32, gff::get_number{ doc = doc.*, s, label = "CreatorId" } ifnull @as(i64, t.creator))
+        t.party_set = flag{ doc, s, label = "SetByPlayerParty", default = t.party_set }
+        t.detected = flag{ doc, s, label = "PartyDetected", default = t.detected }
+        t.flagged = flag{ doc, s, label = "TrapFlagged", default = t.flagged }
+        if t.base == 255 { t.base = -1 }        // the BYTE's "none"
+        if t.base >= 0 and @as(usize, t.base) < twoda::rows{ t = table } {
+            t.detect_dc = twoda::get_int{ t = table, row = @as(usize, t.base), column = "detectdcmod" } ifnull 0
+            t.disarm_dc = twoda::get_int{ t = table, row = @as(usize, t.base), column = "disarmdcmod" } ifnull 0
+        }
+    }
+
+    // The armed trap of trigger `o`, or null for any other object.
+    fn of { o: *obj::Object } -> ?*mut Trap {
+        let t = obj::trigger{ o } ifnull { return null }
+        if t.trigger_type != TRIGGER_TYPE or not t.trap.armed { return null }
+        return &t.trap
+    }
+
+    // Whether the trap shows to the party and can be picked (CSWSTrigger::AIUpdate 0x0058d760 shows
+    // it, GetIsSelectableTarget 0x004f2c30, movement.md 7.1): flagged, found by the party, of the
+    // leader's faction or friendly to it (reputation 90 or more: the party's own mines).
+    fn is_known { w: *world::World, o: *obj::Object } -> bool {
+        let trap = of{ o } ifnull { return false }
+        if trap.detected or trap.flagged { return true }
+        let leader = world::object{ w, id = party::leader{ w } } ifnull { return false }
+        if leader.faction == o.faction { return true }
+        return world::standing{ w, from = leader.faction, toward = o.faction } >= 90
+    }
+
+    // The mine model of a trap (traps.2da `model`, v_mnfrag when blank): the client loads it for
+    // every trap and plays `default` (its marks unseen) until the party knows of it, then `detect`.
+    fn model_of { w: *world::World, o: *obj::Object } -> ?[]u8 {
+        let trap = of{ o } ifnull { return null }
+        if trap.base < 0 { return "v_mnfrag" }
+        let name = twoda::get_string{ t = w.tables.traps, row = @as(usize, trap.base), column = "model" } ifnull ""
+        if name.len == 0 { return "v_mnfrag" }
+        return name
+    }
+
+    // Whether a creature at `at` stands on the trap trigger `o` (CSWSTrigger::InTrigger 0x0058ce40).
+    fn is_within { o: *obj::Object, at: math::Vec3 } -> bool {
+        return math::vec3::distance{ a = o.position, b = at } <= TRIGGER_RADIUS
+    }
+
+    fn flag { doc: *gff::Doc, s: u32, label: []u8, default: bool } -> bool {
+        let n = gff::get_number{ doc = doc.*, s, label } ifnull { return default }
+        return n != 0
+    }
+
+    fn is_party { w: *world::World, id: u32 } -> bool { return id == w.pc or id == w.player or party::is_member{ w, id } }
+
+    // The traps.2da cell of a trap type ("" for none).
+    fn cell { w: *world::World, row: i32, column: []u8 } -> []u8 {
+        if row < 0 or @as(usize, row) >= twoda::rows{ t = w.tables.traps } { return "" }
+        return twoda::get_string{ t = w.tables.traps, row = @as(usize, row), column } ifnull ""
+    }
+
+    // ---- finding (DoTrapDetection 0x004fa390, rules.md 5.2)
+
+    // Every creature's detect mode is on from its creation and nothing turns it off, so the search
+    // always runs at its fast pace: every 100 ms, out to 20 m, d10 + 10. (The slow one, every 3 s
+    // within 3 m with a plain d10, is never reached.)
+    const SEARCH_MS: u64 = 100
+    const SEARCH_RANGE: f32 = 20.0
+
+    // A party member looks for traps: each detectable trap within 20 m of its outline, of another
+    // faction and not friendly to it (reputation below 90), that the party has not found yet: its
+    // Awareness + d10 + 10 against the trap's detect DC, or found without a roll when it is flagged.
+    // A party member's find is the party's. The original runs this for every creature and keeps who
+    // found what; only the party's finds show (and no script reads the rest), so only the party looks.
+    fn search { mut w: world::World, id: u32 } {
+        if not is_party{ w = &w, id } { return }
+        let me = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o = me } ifnull { return }
+        if c.dead { return }
+        let now = clock::now_ms{ c = w.clock }
+        if now - c.trap_search_ms < SEARCH_MS { return }
+        c.trap_search_ms = now
+        let f = c.fighter ifnull { return }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed or o.area != me.area { continue }
+            let trap = of{ o } ifnull { continue }
+            if trap.detected or not trap.detectable { continue }
+            if o.faction == me.faction or world::standing{ w = &w, from = o.faction, toward = me.faction } >= 90 { continue }
+            if outline_distance{ o, at = me.position } > SEARCH_RANGE { continue }
+            if trap.flagged {
+                trap.detected = true
+                continue
+            }
+            let check = rules::detect_trap_check{ tables = w.rules, c = &f.c, detect_dc = trap.detect_dc, detect_mode = true, always_detected = false, rng = &w.dice }
+            if not check.success { continue }
+            trap.detected = true
+            // The finder's two lines in the feedback log (combat message 0x13).
+            say_line{ &w, strref = 42132, holes = [Hole::text{ s = doors::name_text{ w = &w, o = me } }, Hole::text{ s = doors::name_text{ w = &w, o } }, Hole::number{ n = check.total }, Hole::number{ n = check.dc }] }
+            say_line{ &w, strref = 42123, holes = [Hole::text{ s = doors::name_text{ w = &w, o = me } }, Hole::number{ n = check.total }, Hole::number{ n = check.roll }, Hole::number{ n = check.total - check.roll }] }
+        }
+    }
+
+    // How far `at` is from the trap's outline seen from above (0 inside it); from its centre when it
+    // has no outline.
+    fn outline_distance { o: *obj::Object, at: math::Vec3 } -> f32 {
+        let t = obj::trigger{ o } ifnull { return 1000000.0 }
+        let poly = t.polygon
+        if poly.len < 3 { return movement::distance_2d{ a = o.position, b = at } }
+        if movement::inside_polygon{ poly, x = at.x, y = at.y } { return 0.0 }
+        let mut best: f32 = 1000000.0
+        let mut j = poly.len - 1
+        let mut k: usize = 0
+        while k < poly.len {
+            let d = segment_distance{ a = poly[j], b = poly[k], at }
+            if d < best { best = d }
+            j = k
+            k = k + 1
+        }
+        return best
+    }
+
+    fn segment_distance { a: math::Vec3, b: math::Vec3, at: math::Vec3 } -> f32 {
+        let dx = b.x - a.x
+        let dy = b.y - a.y
+        let len2 = dx * dx + dy * dy
+        let mut s: f32 = 0.0
+        if len2 > 0.000001 { s = math::clamp{ x = ((at.x - a.x) * dx + (at.y - a.y) * dy) / len2, lo = 0.0, hi = 1.0 } }
+        let px = a.x + dx * s - at.x
+        let py = a.y + dy * s - at.y
+        return math::sqrtf{ x = px * px + py * py }
+    }
+
+    // A <CUSTOMn> hole of a dialog.tlk line.
+    union Hole { text{ s: []u8 }, number{ n: i32 } }
+
+    // A dialog.tlk line with its <CUSTOM0..3> holes filled, on the HUD's feedback log.
+    fn say_line { mut w: world::World, strref: u32, holes: [4]Hole } {
+        let mut b = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } }
+        defer list::free{ list = &b.bytes }
+        let template = world::string_by_strref{ w = &w, strref }
+        let mut i: usize = 0
+        while i < template.len {
+            if i + 9 <= template.len and template[i] == 60 and template[i + 8] == 62 and slice::eq_bytes{ a = template[i..i + 7], b = "<CUSTOM" } {
+                let k = template[i + 7]
+                i = i + 9
+                if k >= 48 and k <= 51 {
+                    match holes[@as(usize, k - 48)] {
+                        text{ s } => { _ = @fmt(&b, "{}", s) }
+                        number{ n } => { _ = @fmt(&b, "{}", n) }
+                    }
+                }
+                continue
+            }
+            _ = list::push{ list = &b.bytes, item = template[i] }
+            i = i + 1
+        }
+        let line = utf8::view{ b }
+        outbox::post{ out = &w.out, note = outbox::Note::feedback{ strref = 0xFFFFFFFF, text = outbox::keep_text{ out = &w.out, s = line.bytes } } }
+    }
+
+    // ---- going off (CSWSTrigger::OnTrapEntered 0x0058d570)
+
+    // dialog.tlk 1461, feedback message 0x52: "You triggered a Mine!"
+    const FEEDBACK_TRIGGERED: u32 = 1461
+
+    // A creature stepped on the trap (OBJECT_ENTER within a metre of it). It goes off unless the
+    // creature is immune to traps, of the trap's faction, or not hostile to the one who laid it (the
+    // trap itself when nobody did): reputation 10 or less sets it off. Whether anyone had found the
+    // trap does not matter. A trap with a KeyName is disarmed by a creature carrying its key: no
+    // shipped trap has one, so that branch is not here.
+    fn entered { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, who: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let trap = of{ o } ifnull { return }
+        let victim = world::object{ w = &w, id = who } ifnull { return }
+        let c = obj::creature{ o = victim } ifnull { return }
+        if c.dead { return }
+        if c.fighter is some{ value = f } {
+            if rules::has_immunity{ c = &f.c, kind = rules::imm::TRAP, vs = rules::no_versus{} } { return }
+        }
+        let source = world::object{ w = &w, id = trap.creator } ifnull o
+        if victim.faction == o.faction or world::standing{ w = &w, from = victim.faction, toward = source.faction } > 10 { return }
+        spring{ &w, &vm, engine, id, who }
+    }
+
+    // The trap goes off under `who`: the victim is told, OnTrapTriggered runs as the trap (the type's
+    // TrapScript when it has none, as LoadTrigger sets it) with `who` as the entering object, then
+    // OnEnter, and a one-shot trap is gone in its explosion.
+    fn spring { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, who: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let trap = of{ o } ifnull { return }
+        let one_shot = trap.one_shot
+        let base = trap.base
+        let position = o.position
+        if one_shot { trap.armed = false }
+        o.ctx.entering = who
+        let name = trap_script{ w = &w, o, base }
+        if w.log.events {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "trap {} ({}) set off by {}: {}\n", id, o.tag, who, resref::bytes{ r = &name })
+        }
+        doors::tell{ &w, who, strref = FEEDBACK_TRIGGERED }
+        if not resref::is_empty{ r = name } { _ = scripts::run{ &w, &vm, engine, name, self = id } }
+        _ = scripts::run_slot{ &w, &vm, engine, id, slot = obj::Slot::enter }
+        if one_shot { remove{ &w, id, base, position, exploded = true } }
+    }
+
+    fn trap_script { w: *world::World, o: *obj::Object, base: i32 } -> resref::ResRef {
+        let own = obj::script{ o, slot = obj::Slot::trap_triggered }
+        if not resref::is_empty{ r = own } and not resref::matches{ r = own, name = "default" } { return own }
+        return resref::truncate{ name = cell{ w, row = base, column = "trapscript" } }
+    }
+
+    // A trap leaves the world (event 11 at once, after whatever was posted to it): its mine plays its
+    // going where it was, exploding (`activate` and the type's ExplosionSound) or disarmed
+    // (`deactivate`): the client's delete reasons 1 and 2.
+    fn remove { mut w: world::World, id: u32, base: i32, position: math::Vec3, exploded: bool } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        if obj::trigger{ o } is some{ value = t } { t.trap.armed = false }
+        let model = cell{ w = &w, row = base, column = "model" }
+        outbox::post{ out = &w.out, note = outbox::Note::mine_gone{ model = resref::truncate{ name = if model.len == 0 { "v_mnfrag" } else { model } }, position, exploded } }
+        let sound = cell{ w = &w, row = base, column = "explosionsound" }
+        if exploded and sound.len > 0 {
+            outbox::post{ out = &w.out, note = outbox::Note::play_sound{ name = resref::truncate{ name = sound }, object = obj::INVALID, position, positional = true } }
+        }
+        events::post{ &w, delay_ms = 0, caller = id, target = id, payload = events::Payload::destroy }
+    }
+
+    // ---- what the party can do to a trap (actions.md 3.14)
+
+    // Whether `who` can use Demolitions (it is not usable untrained): the trap actions and laying
+    // mines want it.
+    fn can_use_demolitions { w: *world::World, who: u32 } -> bool {
+        let o = world::object{ w, id = who } ifnull { return false }
+        let c = obj::creature{ o } ifnull { return false }
+        let f = c.fighter ifnull { return false }
+        return rt_talent::has_skill{ w, f, skill = rules::skill::DEMOLITIONS }
+    }
+
+    // The client's hostile flag of a trap for `who`: another faction and a reputation below 90.
+    fn is_hostile_to { w: *world::World, o: *obj::Object, who: u32 } -> bool {
+        let p = world::object{ w, id = who } ifnull { return false }
+        if p.faction == o.faction { return false }
+        return world::standing{ w, from = o.faction, toward = p.faction } < 90
+    }
+
+    // The target block's mine actions (0x00691f00, BuildDefaultActions kind 2): Disable on a mine
+    // hostile to the leader, Recover on any; both only for a leader who can use Demolitions.
+    fn can_disable { w: *world::World, who: u32, o: *obj::Object } -> bool {
+        return of{ o } != null and can_use_demolitions{ w, who } and is_hostile_to{ w, o, who }
+    }
+
+    fn can_recover { w: *world::World, who: u32, o: *obj::Object } -> bool {
+        return of{ o } != null and can_use_demolitions{ w, who }
+    }
+
+    // A trap its creator works on, or a party trap a party member works on, needs no roll.
+    fn is_own { w: *world::World, trap: *Trap, who: u32 } -> bool {
+        if trap.creator == who { return true }
+        return (trap.party_set or is_party{ w, id = trap.creator }) and trap.creator != obj::INVALID and is_party{ w, id = who }
+    }
+
+    // How long the trap actions take and what the worker does meanwhile: disable and recover kneel over
+    // the mine (animations 10132 and 10141: disablemine) and the player's side is heard at it 750 ms in
+    // (gui_minedisarm); flag and examine pick at it (10059). Laying one plays setmine (10140) for 2 s
+    // with gui_minearm 750 ms in.
+    const WORK_MS: u64 = 4500
+    const SET_MS: u64 = 2000
+    const SOUND_MS: u64 = 750
+    const ANIM_DISABLE: u32 = animname::ROW_BASE + 51
+    const ANIM_SET: u32 = animname::ROW_BASE + 52
+    const ANIM_LOOK: u32 = 10059
+
+    // dialog.tlk names of the actions in the combat log.
+    const NAME_DISABLE: u32 = 1529
+    const NAME_SET: u32 = 1530
+    const NAME_RECOVER: u32 = 1531
+    const NAME_EXAMINE: u32 = 1532
+    const NAME_NONE: u32 = 0xFFFFFFFF          // flagging names none
+
+    // The worker's sound set entries for a mine laid and for a failure.
+    const VOICE_MINE_SET: u32 = 0x13
+    const VOICE_FAILED: u32 = 0x18
+
+    // DISABLETRAP, RECOVERTRAP, FLAGTRAP, EXAMINETRAP (0x00519570, 0x00518c40, 0x0050e400, 0x0050e900):
+    // param 0 the trap. Walk up, work at it for 4.5 s, then Demolitions + (20, or d20 in combat)
+    // against the trap's disarm DC: as it is to disable (a DC above 35 cannot be beaten), + 10 to
+    // recover, - 5 to flag, - 7 to examine (at least 1). One's own trap needs no roll. Disabling
+    // runs OnDisarm and the mine goes; recovering gives its trap kit (traps.2da ResRef) to the party
+    // and the mine goes; flagging marks it (everyone near finds it, the party sees it); examining
+    // changes nothing. A disable that misses by more than 10, or a recovery by more than 5, sets the
+    // trap off under the worker.
+    fn work_on_trap { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut actions::Action } -> actions::Status {
+        let target = actions::object_param{ a, i = 0 }
+        let o = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
+        if of{ o } == null { return actions::Status::failed }
+        let me = world::object{ w = &w, id } ifnull { return actions::Status::failed }
+        let kind = a.kind
+        let kneels = kind == actions::Kind::disable_trap or kind == actions::Kind::recover_trap
+        if doors::approach{ &w, id, target, a } { return actions::Status::done }
+        let now = clock::now_ms{ c = w.clock }
+        if a.phase < 2 {
+            a.phase = 2
+            a.started = now
+            let dir = math::vec3::sub{ a = o.position, b = me.position }
+            if dir.x * dir.x + dir.y * dir.y > 0.0001 { world::set_orientation{ o = me, v = math::Vec3{ x = dir.x, y = dir.y, z = 0.0 } } }
+            world::set_animation{ o = me, id = if kneels { ANIM_DISABLE } else { ANIM_LOOK }, speed = 1.0 }
+            return actions::Status::running
+        }
+        if a.phase == 2 and now - a.started >= SOUND_MS {
+            a.phase = 3
+            if kneels and is_party{ w = &w, id } {
+                outbox::post{ out = &w.out, note = outbox::Note::play_sound{ name = resref::truncate{ name = "gui_minedisarm" }, object = id, position = me.position, positional = false } }
+            }
+        }
+        if now - a.started < WORK_MS { return actions::Status::running }
+        world::set_animation{ o = me, id = obj::ANIM_STAND, speed = 1.0 }
+        let c = obj::creature{ o = me } ifnull { return actions::Status::failed }
+        let f = c.fighter ifnull { return actions::Status::failed }
+        let trap = of{ o } ifnull { return actions::Status::failed }
+        let own = is_own{ w = &w, trap, who = id }
+        let dc = if kind == actions::Kind::recover_trap { trap.disarm_dc + 10 } else if kind == actions::Kind::flag_trap { trap.disarm_dc - 5 } else if kind == actions::Kind::examine_trap { trap.disarm_dc - 7 } else { trap.disarm_dc }
+        let mut check = rules::disarm_trap_check{ tables = w.rules, c = &f.c, disarm_dc = dc, own_trap = own, in_combat = c.in_combat, rng = &w.dice }
+        // Only disabling has the cap of 35.
+        if kind != actions::Kind::disable_trap { check.success = check.auto or check.total >= check.dc }
+        let what = if kind == actions::Kind::disable_trap { NAME_DISABLE } else if kind == actions::Kind::recover_trap { NAME_RECOVER } else if kind == actions::Kind::examine_trap { NAME_EXAMINE } else { NAME_NONE }
+        if w.log.actions {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "demolitions: {} works ({}) on {} ({}): {} against DC {} (own {}): {}\n", me.tag, @as(u32, kind), target, o.tag, check.total, check.dc, own, check.success)
+        }
+        doors::say_skill_roll{ &w, me, target = o, check, in_combat = c.in_combat, what }
+        let base = trap.base
+        let position = o.position
+        if check.success {
+            if kind == actions::Kind::disable_trap {
+                events::post{ &w, delay_ms = 0, caller = id, target, payload = events::Payload::script{ e = events::script_event{ kind = events::DISARM, object = id } } }
+                remove{ &w, id = target, base, position, exploded = false }
+            } else if kind == actions::Kind::recover_trap {
+                let kit = cell{ w = &w, row = base, column = "resref" }
+                if kit.len > 0 { _ = rt_item::create_item{ &w, template = kit, target = id, stack = 1 } }
+                remove{ &w, id = target, base, position, exploded = false }
+            } else if kind == actions::Kind::flag_trap {
+                trap.flagged = true
+            }
+            return actions::Status::done
+        }
+        if kind == actions::Kind::disable_trap { fight::bark{ &w, id, first = VOICE_FAILED, count = 1, chance_in = 1, quiet = false } }
+        let blows = (kind == actions::Kind::disable_trap and check.total < check.dc - 10) or (kind == actions::Kind::recover_trap and check.total < check.dc - 5)
+        if blows {
+            events::post{ &w, delay_ms = 0, caller = id, target, payload = events::Payload::script{ e = events::script_event{ kind = events::OBJECT_ENTER, object = id } } }
+        }
+        return actions::Status::done
+    }
+
+    // ---- laying mines (SETTRAP 0x00519e30, UseItem 0x004fc210)
+
+    // The party may have this many armed mines of its own in an area (0x005089d0).
+    const MAX_PARTY_MINES: usize = 15
+    // A laid mine's outline: a square this far out from its centre (4 x 4 m).
+    const LAID_HALF: f32 = 2.0
+    // baseitems.2da itemtype of a trap kit.
+    const ITEMTYPE_TRAP_KIT: i32 = 28
+
+    // The traps.2da row a trap kit lays (its Trap property's subtype), -1 for anything else.
+    fn kit_row { w: *world::World, item: u32 } -> i32 {
+        let io = world::object{ w, id = item } ifnull { return -1 }
+        let it = obj::item{ o = io } ifnull { return -1 }
+        let ri = it.rules ifnull { return -1 }
+        let p = rules::find_property{ item = ri, name = rules::ip::TRAP } ifnull { return -1 }
+        return @as(i32, p.subtype)
+    }
+
+    // Whether the item is a trap kit (itemtype 28 with a Trap property): the HUD's mine slot lists
+    // these (0x00616520).
+    fn is_kit { w: *world::World, item: u32 } -> bool {
+        let io = world::object{ w, id = item } ifnull { return false }
+        let it = obj::item{ o = io } ifnull { return false }
+        let kind = twoda::get_int{ t = w.tables.baseitems, row = @as(usize, it.base), column = "itemtype" } ifnull 0
+        return kind == ITEMTYPE_TRAP_KIT and kit_row{ w, item } >= 0
+    }
+
+    // The armed mines the party laid in an area.
+    fn party_mines { w: *world::World, area: u32 } -> usize {
+        let all = list::items{ list = w.objects.all }
+        let mut n: usize = 0
+        let mut i: usize = 0
+        while i < all.len {
+            let o = all[i]
+            i = i + 1
+            if o.destroyed or o.area != area { continue }
+            if of{ o } is some{ value = t } { if t.party_set { n = n + 1 } }
+        }
+        return n
+    }
+
+    // UseItem with a trap kit (the HUD's mine slot): `who` lays the mine at its feet (SETTRAP with
+    // itself as the target and no point), in place of what it was doing. Refused when it cannot use
+    // Demolitions or the area holds 15 of the party's mines. True when queued.
+    fn lay_mine { mut w: world::World, who: u32, item: u32 } -> bool {
+        if not can_use_demolitions{ w = &w, who } or kit_row{ w = &w, item } < 0 { return false }
+        let me = world::object{ w = &w, id = who } ifnull { return false }
+        if party_mines{ w = &w, area = me.area } >= MAX_PARTY_MINES { return false }
+        actions::clear_all{ &w, id = who }
+        let mut a = actions::make{ kind = actions::Kind::set_trap }
+        a.params[0] = actions::Param::object{ id = item }
+        a.params[1] = actions::Param::object{ id = who }
+        a.params[2] = actions::Param::vector{ v = math::vec3::zero{} }
+        return actions::add{ &w, id = who, action = a, force = false }
+    }
+
+    // SETTRAP: params 0 the trap kit, 1 the target (the setter itself from the HUD), 2 a point used
+    // when there is no target. The setter stands a metre off the spot (walking there when 1.5 m or
+    // more away), lays it for 2 s, then Demolitions (+2 with more than 4 base ranks) + (20, or d20
+    // in combat) against the type's SetDC. A success lays the mine at the setter's feet; a miss by 10
+    // or less (or any miss while taking 20) lays nothing and keeps the kit; a worse miss (only in
+    // combat) still lays it. A laid mine is the setter's: its faction, its creator, the type's name
+    // and script, and DCs of the roll's total + the type's DetectDCMod and DisarmDCMod. The kit is
+    // spent only when a mine is laid.
+    fn set_trap { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut actions::Action } -> actions::Status {
+        let item = actions::object_param{ a, i = 0 }
+        let target = actions::object_param{ a, i = 1 }
+        let me = world::object{ w = &w, id } ifnull { return actions::Status::failed }
+        let mut at = actions::vector_param{ a, i = 2 }
+        if world::object{ w = &w, id = target } is some{ value = t } { at = t.position }
+        if at.x == 0.0 and at.y == 0.0 and at.z == 0.0 { return actions::Status::failed }
+        let row = kit_row{ w = &w, item }
+        if row < 0 { return actions::Status::failed }
+        if a.phase == 0 {
+            // Where to stand: a metre off the spot, away from the setter ((1, 0, 0) when on it).
+            let away = math::vec3::sub{ a = me.position, b = at }
+            let len = math::sqrtf{ x = away.x * away.x + away.y * away.y }
+            let dir = if len < 0.0001 { math::Vec3{ x = 1.0, y = 0.0, z = 0.0 } } else { math::Vec3{ x = away.x / len, y = away.y / len, z = 0.0 } }
+            let spot = math::Vec3{ x = at.x - dir.x, y = at.y - dir.y, z = at.z }
+            if movement::distance_2d{ a = me.position, b = spot } >= 1.5 {
+                let mut copy = a.*
+                copy.phase = 1
+                copy.has_started = false
+                actions::add_front{ &w, id, action = copy }
+                let mut face = actions::make{ kind = actions::Kind::face_point }
+                face.params[0] = actions::Param::vector{ v = at }
+                actions::add_front{ &w, id, action = face }
+                let mut move = actions::make{ kind = actions::Kind::move_to_point }
+                move.params[0] = actions::Param::vector{ v = spot }
+                move.params[1] = actions::Param::int{ v = 1 }
+                move.params[2] = actions::Param::float{ v = 0.3 }
+                actions::add_front{ &w, id, action = move }
+                a.params = [actions::Param::none; 8]
+                return actions::Status::done
+            }
+        }
+        let now = clock::now_ms{ c = w.clock }
+        if a.phase < 2 {
+            a.phase = 2
+            a.started = now
+            world::set_animation{ o = me, id = ANIM_SET, speed = 1.0 }
+            return actions::Status::running
+        }
+        if a.phase == 2 and now - a.started >= SOUND_MS {
+            a.phase = 3
+            if is_party{ w = &w, id } {
+                outbox::post{ out = &w.out, note = outbox::Note::play_sound{ name = resref::truncate{ name = "gui_minearm" }, object = id, position = me.position, positional = false } }
+            }
+        }
+        if now - a.started < SET_MS { return actions::Status::running }
+        world::set_animation{ o = me, id = obj::ANIM_STAND, speed = 1.0 }
+        let c = obj::creature{ o = me } ifnull { return actions::Status::failed }
+        let f = c.fighter ifnull { return actions::Status::failed }
+        if party_mines{ w = &w, area = me.area } >= MAX_PARTY_MINES { return actions::Status::failed }
+        let set_dc = twoda::get_int{ t = w.tables.traps, row = @as(usize, row), column = "setdc" } ifnull 1
+        let check = rules::set_trap_check{ tables = w.rules, c = &f.c, set_dc, in_combat = c.in_combat, rng = &w.dice }
+        if w.log.actions {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "demolitions: {} sets a mine (row {}): {} against DC {}: {}\n", me.tag, row, check.total, check.dc, check.success)
+        }
+        doors::say_skill_roll{ &w, me, target = me, check, in_combat = c.in_combat, what = NAME_SET }
+        let lays = check.success or check.total < check.dc - 10
+        if not lays {
+            fight::bark{ &w, id, first = VOICE_FAILED, count = 1, chance_in = 1, quiet = false }
+            return actions::Status::done
+        }
+        c.stealth = false
+        let feet = me.position
+        let made = lay{ &w, setter = id, row, at = feet, score = check.total }
+        if made == obj::INVALID { return actions::Status::failed }
+        spend_kit{ &w, item }
+        fight::bark{ &w, id, first = if check.success { VOICE_MINE_SET } else { VOICE_FAILED }, count = 1, chance_in = 1, quiet = false }
+        return actions::Status::done
+    }
+
+    // A new mine of traps.2da row `row` at `at`, laid by `setter` (its faction, its party's), with
+    // DCs of the setting roll's total `score` + the type's mods. Its id, INVALID when none was made.
+    fn lay { mut w: world::World, setter: u32, row: i32, at: math::Vec3, score: i32 } -> u32 {
+        let me = world::object{ w = &w, id = setter } ifnull { return obj::INVALID }
+        let faction = me.faction
+        let area = me.area
+        let party_set = is_party{ w = &w, id = setter }
+        let poly = alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(math::Vec3){}, count = 4 } iferr { return obj::INVALID }
+        poly[0] = math::Vec3{ x = at.x - LAID_HALF, y = at.y - LAID_HALF, z = at.z }
+        poly[1] = math::Vec3{ x = at.x + LAID_HALF, y = at.y - LAID_HALF, z = at.z }
+        poly[2] = math::Vec3{ x = at.x + LAID_HALF, y = at.y + LAID_HALF, z = at.z }
+        poly[3] = math::Vec3{ x = at.x - LAID_HALF, y = at.y + LAID_HALF, z = at.z }
+        let o = world::add_object{ &w, kind = obj::Kind::trigger, id = 0, character = false } iferr {
+            _ = alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = poly, count = 0 }
+            return obj::INVALID
+        }
+        o.area = area
+        o.position = at
+        o.faction = faction
+        o.name.strref = @as(u32, twoda::get_int{ t = w.tables.traps, row = @as(usize, row), column = "trapname" } ifnull -1)
+        o.ctx.trap_type = row
+        obj::set_script{ o, slot = obj::Slot::trap_triggered, name = resref::truncate{ name = cell{ w = &w, row, column = "trapscript" } } }
+        let t = obj::trigger{ o } ifnull { return obj::INVALID }
+        t.trigger_type = TRIGGER_TYPE
+        t.polygon = poly
+        let detect_mod = twoda::get_int{ t = w.tables.traps, row = @as(usize, row), column = "detectdcmod" } ifnull 0
+        let disarm_mod = twoda::get_int{ t = w.tables.traps, row = @as(usize, row), column = "disarmdcmod" } ifnull 0
+        t.trap = Trap{
+            armed = true, base = row, detectable = true, detect_dc = score + detect_mod, disarmable = true, disarm_dc = score + disarm_mod,
+            one_shot = true, creator = setter, party_set, detected = false, flagged = false,
+        }
+        if w.log.objects {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "mine {} laid by {} (row {}) at {} {} {}\n", o.id, setter, row, at.x, at.y, at.z)
+        }
+        return o.id
+    }
+
+    // A trap kit is spent: one off the stack, or the kit goes.
+    fn spend_kit { mut w: world::World, item: u32 } {
+        let io = world::object{ w = &w, id = item } ifnull { return }
+        let it = obj::item{ o = io } ifnull { return }
+        if it.stack > 1 {
+            it.stack = it.stack - 1
+            if it.rules is some{ value = ri } { ri.stack = @as(i32, it.stack) }
+            return
+        }
+        rt_item::forget_item{ &w, item }
+        world::destroy{ &w, id = item }
+    }
+}

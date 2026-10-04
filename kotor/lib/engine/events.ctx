@@ -224,6 +224,12 @@ namespace events {
         if e.kind == OBJECT_ENTER and o.kind == obj::Kind::trigger and modload::link_of{ o } != null {
             modload::begin_transition{ &w, id, actor = e.objects[0] }
         }
+        // A trap trigger decides itself whether what entered sets it off; its OnEnter runs only when
+        // it does (CSWSTrigger::EventHandler 0x0058f140, movement.md 5.2; lib/engine/traps.ctx).
+        if e.kind == OBJECT_ENTER and traps::of{ o } != null {
+            traps::entered{ &w, &vm, engine, id, who = e.objects[0] }
+            return
+        }
         if (o.kind == obj::Kind::module or o.kind == obj::Kind::area) and e.kind == HEARTBEAT {
             // A SIGNAL_EVENT heartbeat to the module or area also restarts its timer (gameloop.md 2.6).
             let now = clock::now_ms{ c = w.clock }

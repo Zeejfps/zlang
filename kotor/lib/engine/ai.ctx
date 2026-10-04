@@ -33,6 +33,7 @@ namespace ai {
             if now - cc.last_heartbeat >= @as(u64, cc.heartbeat_interval) { heartbeat{ &w, &vm, engine, id, now } }
         }
         perception::update{ &w, id }
+        traps::search{ &w, id }
         fight::update{ &w, id }
         actions::run{ &w, &vm, engine, id }
         let after = world::object{ w = &w, id } ifnull { return }

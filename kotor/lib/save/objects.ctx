@@ -363,6 +363,7 @@ namespace save {
         try put_script{ &b, owner = s, o, label = "OnTrapTriggered", slot = obj::Slot::trap_triggered }
         try put_script{ &b, owner = s, o, label = "OnDisarm", slot = obj::Slot::disarm }
         try put_script{ &b, owner = s, o, label = "OnClick", slot = obj::Slot::click }
+        try put_trap{ &b, owner = s, t = &t.trap }
         let geometry = try gffw::put_list{ &b, owner = s, label = "Geometry" }
         let mut k: usize = 0
         while k < t.polygon.len {
@@ -372,6 +373,19 @@ namespace save {
             try put_float{ &b, owner = e, label = "PointZ", v = t.polygon[k].z - o.position.z }
             k = k + 1
         }
+    }
+
+    // A trap trigger's trap, with the fields the original's trigger save writes (its DCs come back
+    // from traps.2da) and ours: whether the party had found or flagged it (traps::read).
+    fn put_trap { mut b: Builder, owner: u32, t: *traps::Trap } -> ! {
+        try put_byte{ &b, owner, label = "TrapType", v = @trunc(u8, if t.base < 0 { 255 } else { t.base }) }
+        try put_bool{ &b, owner, label = "TrapOneShot", v = t.one_shot }
+        try put_dword{ &b, owner, label = "CreatorId", v = t.creator }
+        try put_bool{ &b, owner, label = "SetByPlayerParty", v = t.party_set }
+        try put_bool{ &b, owner, label = "TrapDisarmable", v = t.disarmable }
+        try put_bool{ &b, owner, label = "TrapDetectable", v = t.detectable }
+        try put_bool{ &b, owner, label = "PartyDetected", v = t.detected }
+        try put_bool{ &b, owner, label = "TrapFlagged", v = t.flagged }
     }
 
     fn write_waypoint { mut b: Builder, mut w: world::World, s: u32, o: *obj::Object, wp: *obj::Waypoint } -> ! {

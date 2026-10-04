@@ -79,6 +79,12 @@ namespace vfx {
             area_effect{ effect, position, area } => {
                 visual_at{ &v, &sc, &w, &dev, effect, at = position, facing = math::vec3::zero{} }
             }
+            mine_gone{ model, position, exploded } => {
+                // The mine's last moments where it lay: its explosion, or its light going out (lib/engine/traps.ctx).
+                let mut m = model
+                let anim: []u8 = if exploded { "activate" } else { "deactivate" }
+                _ = spawn_still{ &v, &sc, &w, &dev, model = resref::bytes{ r = &m }, at = position, facing = math::vec3::zero{}, anim, life = 0.0 } iferr { null }
+            }
             else => {}
         }
     }

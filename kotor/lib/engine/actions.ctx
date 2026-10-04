@@ -25,6 +25,11 @@ namespace actions {
         close_door = 0x15,
         play_sound = 0x17,
         dialog_object = 0x18,
+        disable_trap = 0x19,
+        recover_trap = 0x1a,
+        flag_trap = 0x1b,
+        examine_trap = 0x1c,
+        set_trap = 0x1d,
         wait = 0x1e,
         resume_conversation = 0x20,
         speak_strref = 0x21,
@@ -254,6 +259,8 @@ namespace actions {
             equip_item => { return equip::equip_action{ &w, id, a } }
             unequip_item => { return equip::unequip_action{ &w, id, a } }
             cast_spell => { return fight::cast_spell{ &w, &vm, engine, id, a } }
+            disable_trap | recover_trap | flag_trap | examine_trap => { return traps::work_on_trap{ &w, &vm, engine, id, a } }
+            set_trap => { return traps::set_trap{ &w, &vm, engine, id, a } }
             else => {
                 // Not written yet: done, so queues behind it keep moving.
                 if w.log.actions {

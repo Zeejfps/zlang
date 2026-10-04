@@ -261,6 +261,12 @@ namespace doors {
     // "Leia Tana attempts Security on Door : *success* : (Take 20 + 5 = 25 vs. DC 1)". Said to the player
     // when the one who rolled is the player's.
     fn say_roll { mut w: world::World, me: *obj::Object, target: *obj::Object, check: rules::SkillCheck, in_combat: bool } {
+        say_skill_roll{ &w, me, target, check, in_combat, what = 329 }
+    }
+
+    // The same line for another use of a skill, named by dialog.tlk `what` (the trap actions name
+    // theirs: 1529 "Disable Mine", 1531 "Recover Mine", 1530 "Set Mine", 1532 "Examine Mine").
+    fn say_skill_roll { mut w: world::World, me: *obj::Object, target: *obj::Object, check: rules::SkillCheck, in_combat: bool, what: u32 } {
         if not is_player_side{ w = &w, id = me.id } { return }
         let mut b = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } }
         defer list::free{ list = &b.bytes }
@@ -271,7 +277,7 @@ namespace doors {
                 let hole = template[i + 7]
                 i = i + 9
                 if hole == 48 { _ = @fmt(&b, "{}", name_text{ w = &w, o = me }) }
-                else if hole == 49 { _ = @fmt(&b, "{}", world::string_by_strref{ w = &w, strref = 329 }) }
+                else if hole == 49 { _ = @fmt(&b, "{}", world::string_by_strref{ w = &w, strref = what }) }
                 else if hole == 50 { _ = @fmt(&b, "{}", name_text{ w = &w, o = target }) }
                 else if hole == 51 { _ = @fmt(&b, "{}", world::string_by_strref{ w = &w, strref = result_strref{ check, in_combat } }) }
                 else if hole == 52 {

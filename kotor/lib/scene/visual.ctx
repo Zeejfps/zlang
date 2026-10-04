@@ -32,6 +32,12 @@ namespace visual {
                 let loaded = try scene::load_model{ &sc, &w, &dev, name = resref::bytes{ r = &m }, body_texture = "", envmap = "", hide_null = false } ifnull { return null }
                 _ = try scene::add_part{ &sc, loaded, parent = -1, hook = "" }
             }
+            trigger{ t } => {
+                // A trap is its mine (traps.2da `model`), unseen until the party knows of it (animate_mine).
+                let name = traps::model_of{ w = &w, o } ifnull { return null }
+                let loaded = try scene::load_model{ &sc, &w, &dev, name, body_texture = "", envmap = "", hide_null = false } ifnull { return null }
+                _ = try scene::add_part{ &sc, loaded, parent = -1, hook = "" }
+            }
             else => { return null }
         }
         if sc.parts.len == first { return null }
@@ -170,6 +176,7 @@ namespace visual {
             }
             door{ d } => { animate_door{ &sc, &w, v, state = @as(u32, d.state) } }
             placeable{ p } => { animate_placeable{ &sc, &w, v, anim = p.anim } }
+            trigger{ t } => { animate_mine{ &sc, &w, v, shown = traps::is_known{ w = &w, o } } }
             else => {}
         }
         let mut i: usize = 0
@@ -312,6 +319,15 @@ namespace visual {
             i = i + 1
         }
         p.next_len = i
+    }
+
+    // A mine plays `default` (its marks at alpha 0) until the party knows of it, then `detect` (the
+    // marks fade in, lit red): the original's animations 10143 and 10144 (re/movement.md 7.1).
+    fn animate_mine { mut sc: scene::Scene, mut w: world::World, v: *mut scene::Visual, shown: bool } {
+        let state: u32 = if shown { 1 } else { 0 }
+        if v.state == state { return }
+        v.state = state
+        _ = scene::play{ &sc, &w, part = v.first, name = if shown { "detect" } else { "default" }, looping = not shown, speed = 1.0, transition = 0.0 }
     }
 
     // A placeable plays `default` (or nothing), or the animation its state names (on, off, open,
