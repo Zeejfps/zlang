@@ -310,6 +310,7 @@ namespace fight {
         o.hp = o.hp - amount
         if o.min_one_hp and o.hp < 1 { o.hp = 1 }
         f.last_damage = amount
+        fight_log::damaged{ &w, target = id, amount, who }
         f.damage_types = [0; 15]
         let mut slot: u32 = 0
         while slot < 15 {
@@ -385,6 +386,8 @@ namespace fight {
                 mo.ctx.last_player_died = id
                 events::post{ &w, delay_ms = 0, caller = id, target = w.module, payload = events::Payload::script{ e = events::script_event{ kind = events::DEATH, object = killer } } }
             }
+            // "Party Member Down" auto-pause, while another member is up (8.2).
+            if first_member_up{ w = &w } != obj::INVALID { autopause::request{ &w, reason = autopause::PARTY_MEMBER_DOWN } }
             // The one the player controls went down: control passes to the next member who is up
             // (0x005edf80 -> 0x005f7960).
             if id == party::leader{ w = &w } {
@@ -419,6 +422,7 @@ namespace fight {
         if o.plot or o.hp < 1 or amount <= 0 { return }
         o.hp = o.hp - amount
         o.ctx.last_damager = who
+        fight_log::damaged{ &w, target = id, amount, who }
         if w.log.combat {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "{} ({}) takes {} damage from {}: {}/{}\n", id, o.tag, amount, who, o.hp, o.hp_max)
@@ -490,6 +494,7 @@ namespace fight {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "{} XP for killing {}\n", xp, victim)
         }
+        fight_log::killed{ &w, victim, killer, xp }
     }
 
     // ---- combat state (3.6)
@@ -881,12 +886,14 @@ namespace fight {
     fn land { mut w: world::World, id: u32, imp: *Impact } {
         let t = world::object{ w = &w, id = imp.target } ifnull { return }
         if t.kind == obj::Kind::door or t.kind == obj::Kind::placeable {
+            if imp.attack { fight_log::attack{ &w, attacker = id, imp } }
             if imp.attack and imp.hit { damage_object{ &w, id = imp.target, amount = imp.damage.total, who = id } }
             return
         }
         let tc = obj::creature{ o = t } ifnull { return }
         if tc.dead { return }
         if not imp.attack { return }
+        fight_log::attack{ &w, attacker = id, imp }
         if imp.ranged { land_ranged_fx{ &w, id, imp, power = false } } else { land_melee_fx{ &w, id, imp } }
         if imp.result == rules::outcome::CRITICAL { bark{ &w, id, first = VOICE_CRITICAL, count = 1, chance_in = 1, quiet = false } }
         t.ctx.last_attacker = id
@@ -956,6 +963,7 @@ namespace fight {
             let state: []u8 = if target_alive { "alive" } else { "gone" }
             _ = @fmt(&w.io, "{} ends its round (target {} {})\n", id, target, state)
         }
+        if id == party::leader{ w = &w } { autopause::request{ &w, reason = autopause::END_OF_ROUND } }
         if id == party::leader{ w = &w } and target_alive and o.actions.len == 0 {
             let mut a = actions::make{ kind = actions::Kind::attack_object }
             a.params[0] = actions::Param::object{ id = target }

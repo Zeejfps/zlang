@@ -159,6 +159,7 @@ namespace hud {
                 let l = &h.lists[k]
                 if l.count > 1 {
                     l.selected = if down { (l.selected + 1) % l.count } else { (l.selected + l.count - 1) % l.count }
+                    autopause::request{ &w, reason = autopause::ACTION_MENU }
                     refresh_slot{ &h, &g, &w, &dev, k }
                 }
                 return true
@@ -185,6 +186,7 @@ namespace hud {
             if l.count > 0 { run_act{ &w, act = l.entries[0].act, target = id } }
         } else {
             w.target = id
+            autopause::request{ &w, reason = autopause::NEW_TARGET }
         }
         return true
     }

@@ -87,6 +87,24 @@ namespace test_combat {
             }
             return true
         }
+        if ci::eq{ a = cmd, b = "sethp" } {
+            // Test setup: `ui sethp TAG N` (TAG `pc` for the player).
+            let mut words = text::words{ s = args }
+            let tag = text::next_word{ &words } ifnull { return true }
+            let hp = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "1" })
+            let id = if ci::eq{ a = tag, b = "pc" } { w.player } else { world::object_by_tag{ w = &w, tag, nth = 0 } }
+            if world::object{ w = &w, id } is some{ value = o } { o.hp = hp }
+            return true
+        }
+        if ci::eq{ a = cmd, b = "damage" } {
+            // Test setup: `ui damage TAG N`, an EffectDamage of N (bludgeoning) as a script applies it.
+            let mut words = text::words{ s = args }
+            let tag = text::next_word{ &words } ifnull { return true }
+            let n = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "1" })
+            let id = if ci::eq{ a = tag, b = "pc" } { w.player } else { world::object_by_tag{ w = &w, tag, nth = 0 } }
+            _ = fight::apply{ &w, target = id, e = rules::fx::make_damage{ amount = n, types = 1, power = 0 } }
+            return true
+        }
         if ci::eq{ a = cmd, b = "grantfeat" } {
             let feat = @as(i32, text::scan_decimal{ s = text::first_word{ s = args } })
             let o = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return true }
