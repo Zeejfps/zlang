@@ -25,11 +25,7 @@ interpreter ctxc replaced, is at `8436f4d`.
 
 1. **Unwrap in a `let`, by leaving.** `let p = e else { ... }` with a plain name: for `e: ?T`,
    shorthand for `let some{ value = p } = e else { ... }`.
-2. **Errors' remaining gaps.**
-   - A function whose result's set is inferred can't be a value of a function type, whose `!T`
-     holds any error: that needs the thunk that widens a function value to also renumber its
-     result.
-   - Matching through a pointer to a `!T`.
+2. **Errors' remaining gap:** matching through a pointer to a `!T`.
 
 *Later, for `@fmt`* (spec §13): a writer's record is leaked from `ctx_alloc`, one per `@fmt`
 passed on, as every bind's is (Open decisions). An error hole is the only piece the compiler writes
@@ -387,7 +383,7 @@ program asks for one (spec §19).
 | `capability Gl { f: extern fn{C} -> R, ... }` | struct of function pointers | `x.f{ ... }` calls the pointer; dropped from extern and `cfn` params, as other capabilities are. |
 | `*T`, `q + n`, `q[i]` | `T*`, pointer arithmetic | Not checked. §12.7 calls a bad pointer UB. |
 | `a[i]` on arrays | index with a bounds check | Panics, as the spec requires. |
-| `fn{C} -> R` | pointer to a record whose first member is the code | Called with the record and the fields in name order. Conversion to a type with more fields wraps the value in an adapter. |
+| `fn{C} -> R` | pointer to a record whose first member is the code | Called with the record and the fields in name order. Conversion to a type with more fields wraps the value in an adapter. Conversion to one whose `!T` may fail with any error (spec §5) is a widening thunk that lowering writes as a function (lower.ctx, `widen_fn`): a named function's is its static record, a bind's binds the thunk instead, and any other value is held by a bind of a thunk calling it. |
 | read-only param of a struct, union or array over 32 bytes | `T *`, used as `(*lN)` | Spec §14.6: the caller passes its place, or a copy where another argument or the callee could change it (emit_c.ctx, `pass`). Not to extern fns. A 300 KB struct passed 20,000 times: 0.89 s to 0.06 s; `ctxc build` of ctxc, 451 ms to 317 ms. |
 | `&fn{C} -> R` | a bind record from `ctx_alloc` | Never freed. |
 | `defer` | copied to each exit | Innermost first. `return e` evaluates `e` into a temporary first. |
@@ -441,7 +437,9 @@ program asks for one (spec §19).
     for those binds.
   - The slot must be hoisted to the top of the C function, since `new_record` is a statement
     expression, whose variables die at its end. `defer` copies need a slot each.
-  - Adapters (`ctx_adapt`) stay on the heap, since a converted `fn` can be stored.
+  - Adapters (`ctx_adapt`) stay on the heap, since a converted `fn` can be stored. So do the
+    binds lowering makes to widen a function value (lower.ctx, `widen_fn`), whose IR type is
+    then an unbound `fn`.
   - The interpreter needn't change.
 
   *Recommendation:* do it before stage 5, as its own change in emit_c's `bind`.

@@ -74,11 +74,38 @@ fn{ field: T, mut field: T, ... } -> R      // unbound: a plain function
 
 A function `g` of type `fn{Cg} -> Rg` (or `&fn`) is accepted where `fn{Cs} -> Rs` (or `&fn`, per rule 2) is expected iff:
 
-1. `Rg` is identical to `Rs`, and
+1. `Rg` is identical to `Rs`, or `Rg` is a `!T` that fails with an error set (a function's, §8, Errors, rule 5) and `Rs` is a `!T` of an identical `T`, which may fail with any error, and
 2. for every field `n: T` in `Cg`, `Cs` has a field `n` with an identical type `T`, and
 3. if the field `n` is `mut` in `Cg`, it is `mut` in `Cs`.
 
-`Cs` may have fields that `Cg` lacks. Those fields are dropped when the value is called.
+`Cs` may have fields that `Cg` lacks. Those fields are dropped when the value is called. A result of the second kind in rule 1 is **widened**: when `g` fails, the value's error is the same error, with its payload, in any error's numbering (§8, Errors, rule 13). Both happen in one step: calling the converted value calls `g` once with the fields it takes, and widens what it returns. The conversion applies wherever a value of the expected type is expected, the `T` of an implicit `T` to `?T` conversion included (§11, Widening).
+
+```
+fn number { s: []u8 } -> !u64 { ... }            // fails with number's set, inferred
+fn word { s: []u8 } -> !u64 { ... }
+
+// Before: a function with an inferred set wasn't a value, so a table of parsers was a chain
+// of calls.
+fn parse_with { kind: u8, s: []u8 } -> !u64 {
+    if kind == 0 { return number{ s } }
+    return word{ s }
+}
+
+// Now: each converts to the table's type, whose `!T` may fail with any error.
+fn parse_with { table: []fn{ s: []u8 } -> !u64, kind: u8, s: []u8 } -> !u64 {
+    return table[@as(usize, kind)]{ s }
+}
+let parsers: [2]fn{ s: []u8 } -> !u64 = [number, word]
+match parse_with{ table = parsers[..], kind = 0, s } {
+    ok{ value } => { ... }
+    err{ error } => {
+        match error {
+            parse::bad_digit{ at } => { ... }     // number's error, with its payload
+            else => { ... }                       // any error: `else` is needed (§8, Errors, rule 10)
+        }
+    }
+}
+```
 
 ## 6. Bound functions
 
@@ -245,8 +272,8 @@ match pair{ a, b } {
 9. A `match` on a `!T` has the arms `ok{ value }` (`ok` for a bare `!`) and `err{ error }`, where `error` has the `!T`'s error type. `let ok{ value } = e else err{ error } { ... }` takes one apart (§11, Let-else). The arms may instead list errors next to `ok`: then `ok` must be listed, and a last `err{ error }`, or `else`, takes the errors not listed. A `match` on an error lists errors, with `else` for the rest. An arm doesn't mix `ok` or `err` with errors.
 10. A listed error must be one the value can be, and without `else` or `err` every one it can be must be listed: adding an error to a function breaks the matches that listed all of its errors. With `else` or `err`, at least one must be left for it. These are checked once the sets are inferred. A value of `error`, or of a function type's `!T`, may be any error of the program, so a match on one needs `else` or `err`.
 11. An error type or a `!T` isn't a C type (§18) and can't be held by a const (§14). Neither has a zero value. `match` doesn't go through a pointer to one.
-12. A function whose result's set is inferred can't be a value of a function type: that type's `!T` may be any error, and the function's result holds only its own.
-13. Representation: `!T` is a tagged union of `ok{ value: T }` and `err{ error: E }`. An error type is a tagged union of its set's errors, in the order they are declared in the program, sized for the largest payload; passing an error into a larger set renumbers it. Two error types with the same errors are the same type.
+12. A function whose result's set is inferred is a value of a function type whose `!T`, of the same `T`, may be any error (§5): its error is widened into any error's numbering. A bind of it (§4), and a generic one's instance, convert the same way. A value called through that type fails with any error, so a match on its result needs `else` or `err` (rule 10), and lists the function's errors to get them back with their payloads. Any error takes every set, so the conversion is allowed while the sets are still inferred, in a function that converts itself included. A call through the value is a call (§14, Escape check): its error may hold what its read-only arguments are derived from, if any error of the program has a payload that holds a pointer. No written type names a function's set: a local inferred from the function (`let g = f`) has it, as `f{}`'s result does, and takes no other function's (rule 6). Neither changes for an `extern fn`, which can't return a `!T` (§18), nor for consts, which hold no function value (§14).
+13. Representation: `!T` is a tagged union of `ok{ value: T }` and `err{ error: E }`. An error type is a tagged union of its set's errors, in the order they are declared in the program, sized for the largest payload; passing an error into a larger set renumbers it. Two error types with the same errors are the same type. A function value widened by §5 is a thunk the compiler writes, which calls the function and renumbers its error, copying the payload: for a named function, or a bind of one, it calls the function directly and is no more a record than the function or the bind was; any other value it holds in a record of its own, made when the value converts. A function whose set is already every error needs none.
 
 ## 9. Generics
 
