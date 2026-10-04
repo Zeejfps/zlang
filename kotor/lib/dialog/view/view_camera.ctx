@@ -125,8 +125,11 @@ namespace dlgview {
     // moves the camera for angle 6.
     fn set_shot { mut v: View, mut w: world::World, mut sc: scene::Scene, node: *dlg::Node, speaker: u32, listener: u32, angle: u32, spoken_reply: bool } {
         let computer = w.conversation.d.conversation_type == dlg::TYPE_COMPUTER
-        // Cutscene replies picked by the engine don't cut away from the camera that is running.
-        if spoken_reply and w.conversation.d.animated_cut and angle != dlg::ANGLE_STATIC and v.mode == Mode::animated { return }
+        // Cutscene replies picked by the engine don't cut away from the camera that is running, unless the
+        // reply brings a camera animation of its own: an empty reply between two shots otherwise shows a
+        // computed shot of the speakers for a frame, from wherever the stunt bodies stand.
+        let own_animation = v.camera_model.loaded and node.camera_anim >= 1000 and node.camera_anim < 1728
+        if spoken_reply and angle != dlg::ANGLE_STATIC and v.mode == Mode::animated and (w.conversation.d.animated_cut or not own_animation) { return }
         v.speaker = speaker
         v.listener = listener
         v.angle = angle
