@@ -73,10 +73,9 @@ namespace rt_combat {
     fn cancel_combat { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
         let id = try nwarg::object{ &vm, routine = nwscript::CancelCombat, argc, i = 0 }
         let c = creature_of{ w = &w, id } ifnull { return }
-        c.attack_target = obj::INVALID
-        c.attempted_target = obj::INVALID
-        c.in_combat = false
-        actions::clear_all{ &w, id }
+        // The round ends too (without OnEndRound): left running it ended later and its end-of-round AI cleared the queue
+        // that the script had given the creature since (Bastila's talk after the Rakata summit duel, k_punk_bast_ud2).
+        fight::stop_fighting{ &w, id, others = false }
     }
 
     // void ActionAttack(object oAttackee, int bPassive = FALSE): the attack action is queued;
