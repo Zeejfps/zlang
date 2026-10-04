@@ -163,10 +163,23 @@ namespace walkmap {
     // height at `to`, or null if the walk leaves the walkmesh, climbs or drops too far, or meets
     // a blocking placed walkmesh.
     fn step_to { m: *Map, from: math::Vec3, to: math::Vec3 } -> ?f32 {
+        return walk_segment{ m, from, to, spacing = SAMPLE, bridge = false }
+    }
+
+    // A short step across a seam: the walkmeshes of two rooms can leave a gap of a few centimetres
+    // between them, which a creature standing at its edge cannot enter and so never leaves (step_to
+    // samples every SAMPLE and finds the gap with a short step but not with a long one). Like step_to,
+    // with the samples a fifth as far apart, and a sample over no floor at all let by when a
+    // floor follows: the far end must have one, and nothing may block on the way.
+    fn step_across { m: *Map, from: math::Vec3, to: math::Vec3 } -> ?f32 {
+        return walk_segment{ m, from, to, spacing = SAMPLE * 0.2, bridge = true }
+    }
+
+    fn walk_segment { m: *Map, from: math::Vec3, to: math::Vec3, spacing: f32, bridge: bool } -> ?f32 {
         let dx = to.x - from.x
         let dy = to.y - from.y
         let len = math::sqrtf{ x = dx * dx + dy * dy }
-        let n = if len <= SAMPLE { 1 } else { @as(u32, math::ceilf{ x = len / SAMPLE }) }
+        let n = if len <= spacing { 1 } else { @as(u32, math::ceilf{ x = len / spacing }) }
         // The placed walkmeshes whose bounds the whole step can touch: the only ones its samples are
         // tested against (a long step in the open meets none).
         let placed = list::items{ list = m.placed }
@@ -197,18 +210,24 @@ namespace walkmap {
             let t = @as(f32, i) / @as(f32, n)
             let x = from.x + dx * t
             let y = from.y + dy * t
-            let f = floor{ m, x, y, z } ifnull { return null }
-            if f.z < z - STEP_DOWN { return null }
+            let found = floor{ m, x, y, z }
+            let mut here_z = z
+            if found != null {
+                if found.z < z - STEP_DOWN { return null }
+                here_z = found.z
+            } else if not bridge or i == n {
+                return null
+            }
             if too_many {
-                if blocked{ m, x, y, z = f.z } { return null }
+                if blocked{ m, x, y, z = here_z } { return null }
             } else {
                 let mut k: usize = 0
                 while k < near_count {
-                    if over_blocking_face{ w = &placed[@as(usize, near[k])].mesh, walkable = m.walkable, x, y, z = f.z } { return null }
+                    if over_blocking_face{ w = &placed[@as(usize, near[k])].mesh, walkable = m.walkable, x, y, z = here_z } { return null }
                     k = k + 1
                 }
             }
-            z = f.z
+            z = here_z
             i = i + 1
         }
         return z
