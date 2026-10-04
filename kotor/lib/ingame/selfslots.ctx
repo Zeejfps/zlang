@@ -384,15 +384,20 @@ namespace selfslots {
         let down = slot_of{ tag = ev.tag, prefix = "BTN_ACTIONDOWN" }
         let k = if up >= 0 { up } else { down }
         if k < 0 { return false }
-        let sl = &s.slots[@as(usize, k)]
+        cycle{ &s, &g, &w, &dev, panel, k = @as(usize, k), forward = down >= 0 }
+        return true
+    }
+
+    // Slot `k`'s next (or previous) choice, wrapping: its arrows, and Shift with the slot's key.
+    fn cycle { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, k: usize, forward: bool } {
+        let sl = &s.slots[k]
         if sl.count > 1 {
             let at = index_of{ sl, id = sl.selected }
-            let to = if down >= 0 { (at + 1) % sl.count } else { (at + sl.count - 1) % sl.count }
+            let to = if forward { (at + 1) % sl.count } else { (at + sl.count - 1) % sl.count }
             sl.selected = sl.entries[to].id
             gui::play_sound{ &g, n = 7 }
-            show_slot{ &s, &g, &w, &dev, panel, k = @as(usize, k) }
+            show_slot{ &s, &g, &w, &dev, panel, k }
             show_description{ &s, &g, &w, panel }
         }
-        return true
     }
 }

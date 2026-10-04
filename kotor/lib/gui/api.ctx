@@ -15,6 +15,11 @@ namespace gui {
     const CURSOR_SELECT: u32 = 9
     const CURSOR_TALK: u32 = 10
     const CURSOR_USE: u32 = 11
+    const CURSOR_LOCK: u32 = 12
+    const CURSOR_TRANS: u32 = 13
+    const CURSOR_MAGIC: u32 = 14
+    const CURSOR_WALK: u32 = 15
+    const CURSOR_COUNT: u32 = 16
 
     fn cursor_stem { id: u32 } -> []u8 {
         if id == CURSOR_ATTACK { return "attack" }
@@ -28,6 +33,10 @@ namespace gui {
         if id == CURSOR_SELECT { return "select" }
         if id == CURSOR_TALK { return "talk" }
         if id == CURSOR_USE { return "use" }
+        if id == CURSOR_LOCK { return "lock" }
+        if id == CURSOR_TRANS { return "trans" }
+        if id == CURSOR_MAGIC { return "magic" }
+        if id == CURSOR_WALK { return "walk" }
         return "default"
     }
 
@@ -35,7 +44,7 @@ namespace gui {
     // ones are skipped.
     fn load_defaults { mut g: Gui, mut fs: Fs, mut dev: gpu::Device } -> ! {
         let mut id: u32 = 0
-        while id < 12 {
+        while id < CURSOR_COUNT {
             let stem = cursor_stem{ id }
             let mut up: u32 = 0
             while up < 2 {
@@ -67,7 +76,7 @@ namespace gui {
     }
 
     // Which cursor the pointer shows (a CURSOR_* id).
-    fn set_cursor { mut g: Gui, id: u32 } { g.cursor = if id < 12 { id } else { 0 } }
+    fn set_cursor { mut g: Gui, id: u32 } { g.cursor = if id < CURSOR_COUNT { id } else { 0 } }
 
     fn set_cursor_visible { mut g: Gui, visible: bool } { g.cursor_visible = visible }
 

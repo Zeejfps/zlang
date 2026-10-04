@@ -1,14 +1,12 @@
 // The headless input script's `ui` lines (play.ctx): synthetic pointer and key events and a few
 // test helpers, so a run can open every panel and look at it.
 //
-//   FRAME ui move X Y          the pointer (window pixels)
-//   FRAME ui click X Y         press and release the left button there
-//   FRAME ui key NAME          a key (escape, return, space, up, down, left, right, backspace, a letter)
-//   FRAME ui type TEXT         typed text, for an edit box with the focus (the save name box)
+//   FRAME ui move X Y | click X Y | key NAME | type TEXT     the pointer, clicks, keys and typed text: game/inject.ctx
+//                              puts them on SDL's queue as the events they stand for
 //   FRAME ui menu NAME|N       open a menu: equip inventory character abilities messages journal map options
 //   FRAME ui close             close the open menu
 //   FRAME ui target TAG        select the object with the tag;  ui join TAG: it joins the party
-//   FRAME ui unlock TAG | ui global NAME N | ui goto TAG | ui where [PART]     test helpers: unlock a door or placeable;
+//   FRAME ui unlock TAG | ui global NAME N | ui gbool NAME 0|1 | ui goto TAG | ui where [PART]     test helpers: unlock a door or placeable;
 //                              set a number global; the leader walks to a tagged object; print objects by tag part
 //   FRAME ui hover             print the panels' places and the control under the pointer
 //   FRAME ui sweep             the pointer to the centre of each control: a hover test of every shown panel
@@ -26,33 +24,7 @@ namespace ingame {
     fn run_command { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, text: []u8 } {
         let mut words = text::words{ s = text }
         let cmd = text::next_word{ &words } ifnull { return }
-        if ci::eq{ a = cmd, b = "move" } or ci::eq{ a = cmd, b = "click" } {
-            let x = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
-            let y = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
-            send{ &ui, &w, &dev, ev = sdl::Event::mouse_motion{ x, y, dx = 0, dy = 0, buttons = 0 } }
-            if ci::eq{ a = cmd, b = "click" } {
-                send{ &ui, &w, &dev, ev = sdl::Event::mouse_button{ down = true, button = sdl::BUTTON_LEFT, clicks = 1, x, y } }
-                send{ &ui, &w, &dev, ev = sdl::Event::mouse_button{ down = false, button = sdl::BUTTON_LEFT, clicks = 1, x, y } }
-            }
-        } else if ci::eq{ a = cmd, b = "key" } {
-            let name = text::next_word{ &words } ifnull { return }
-            let code = key_code{ name }
-            if code != 0 {
-                send{ &ui, &w, &dev, ev = sdl::Event::key{ down = true, repeat = false, scancode = 0, keycode = code, mods = 0 } }
-                send{ &ui, &w, &dev, ev = sdl::Event::key{ down = false, repeat = false, scancode = 0, keycode = code, mods = 0 } }
-            }
-        } else if ci::eq{ a = cmd, b = "type" } {
-            // Typed text for a focused edit box (the save name), in the pieces the platform delivers.
-            let typed = text::rest{ words }
-            let mut at: usize = 0
-            while at < typed.len {
-                let n = if typed.len - at > 32 { 32 } else { typed.len - at }
-                let mut piece: [32]u8
-                slice::copy(u8){ dst = piece[..n], src = typed[at..at + n] }
-                send{ &ui, &w, &dev, ev = sdl::Event::text{ bytes = piece, len = n } }
-                at = at + n
-            }
-        } else if ci::eq{ a = cmd, b = "menu" } {
+        if ci::eq{ a = cmd, b = "menu" } {
             let name = text::next_word{ &words } ifnull { return }
             open_menu{ &ui, &w, &dev, n = menu_by_name{ name } }
         } else if ci::eq{ a = cmd, b = "close" } {
@@ -114,6 +86,11 @@ namespace ingame {
             let name = text::next_word{ &words } ifnull { return }
             let v = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
             globals::set_number{ g = &w.globals, name, value = v }
+        } else if ci::eq{ a = cmd, b = "gbool" } {
+            // Test helper: a boolean global (`ui gbool Tar_GadonMission 1`).
+            let name = text::next_word{ &words } ifnull { return }
+            let v = text::scan_decimal{ s = text::next_word{ &words } ifnull "0" }
+            globals::set_boolean{ g = &w.globals, name, value = v != 0 }
         } else if ci::eq{ a = cmd, b = "where" } {
             // Test helper: every object whose tag contains the word (none given: all), with its place.
             let part = text::next_word{ &words } ifnull ""
@@ -126,6 +103,8 @@ namespace ingame {
                 let tag: []u8 = o.tag
                 if not has_part{ s = tag, part } { continue }
                 _ = @fmt(&w.io, "where {} k{} {} at {} {} {} hp {} facing {} {}\n", o.id, @as(u32, o.kind), tag, o.position.x, o.position.y, o.position.z, o.hp, o.orientation.x, o.orientation.y)
+                if o.ext is creature{ c } { _ = @fmt(&w.io, "  portrait {}\n", c.portrait) }
+                if o.ext is door{ d } { _ = @fmt(&w.io, "  door state {} locked {} area {} link flags {} to {}\n", @as(u32, d.state), d.locked, o.area, d.linked_flags, d.linked_to) }
             }
         } else if ci::eq{ a = cmd, b = "locks" } {
             // Test helper: the locked (or lockable) doors and placeables whose tag contains the word, with the lock's record.
@@ -261,7 +240,7 @@ namespace ingame {
             _ = @fmt(&w.io, "sweep: {} controls, {} hovered something else\n", total, wrong)
         } else if ci::eq{ a = cmd, b = "pick" } {
             let id = hud::pick_at{ p = ui.hud.projector, w = &w, x = ui.gui.mouse_x, y = ui.gui.mouse_y }
-            _ = @fmt(&w.io, "pick at {} {}: {} {}\n", ui.gui.mouse_x, ui.gui.mouse_y, id, hud::name_of{ w = &w, id })
+            _ = @fmt(&w.io, "pick at {} {}: {} {} (hover {} target {} cursor {})\n", ui.gui.mouse_x, ui.gui.mouse_y, id, hud::name_of{ w = &w, id }, w.hover, w.target, ui.gui.cursor)
         } else {
             // Commands of the panel owners (test_*.ctx): what a panel needs to show something the
             // game has not got yet.
@@ -271,6 +250,7 @@ namespace ingame {
             if test_journal::run{ &ui, &w, &dev, cmd, args } { return }
             if test_map::run{ &ui, &w, &dev, cmd, args } { return }
             if test_screens::run{ &ui, &w, &dev, cmd, args } { return }
+            if test_combat::run{ &ui, &w, &dev, cmd, args } { return }
             _ = @fmt(&w.io, "ui: unknown command {}\n", cmd)
         }
     }

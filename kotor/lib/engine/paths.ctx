@@ -53,7 +53,12 @@ namespace paths {
 
     // A route from `from` to `goal` into `out` (the points to walk to, `goal` last); false when
     // even the fallback has nowhere to go. Scratch memory for the search comes from w.scratch.
-    fn plan { mut w: world::World, from: math::Vec3, goal: math::Vec3, out: *mut list::List(math::Vec3, heap::Heap) } -> bool {
+    //
+    // A goal nobody can walk up to (the middle of a closed door, a placeable) is replaced by the nearest
+    // point toward `from` that a path point reaches, up to 3 m back (the original's nearest safe position,
+    // movement.md 4.8); `adjusted` says so, and the route then ends at that point.
+    fn plan { mut w: world::World, from: math::Vec3, goal: math::Vec3, out: *mut list::List(math::Vec3, heap::Heap), adjusted: *mut bool } -> bool {
+        adjusted.* = false
         list::clear{ list = out }
         if clear{ w = &w, a = from, b = goal } {
             list::push{ list = out, item = goal } iferr { return false }
@@ -61,7 +66,7 @@ namespace paths {
         }
         let g = w.paths
         if g != null and g.points.len > 0 {
-            if route{ &w, g, from, goal, out } { return true }
+            if route{ &w, g, from, goal_asked = goal, out, adjusted } { return true }
         }
         // The farthest clear point along the straight line, by bisection.
         let mut lo: f32 = 0.0
@@ -78,9 +83,37 @@ namespace paths {
         return true
     }
 
-    fn route { mut w: world::World, g: pth::Graph, from: math::Vec3, goal: math::Vec3, out: *mut list::List(math::Vec3, heap::Heap) } -> bool {
-        let s = nearest_point{ w = &w, g, at = from } ifnull { return false }
-        let t = nearest_point{ w = &w, g, at = goal } ifnull { return false }
+    fn route { mut w: world::World, g: pth::Graph, from: math::Vec3, goal_asked: math::Vec3, out: *mut list::List(math::Vec3, heap::Heap), adjusted: *mut bool } -> bool {
+        let mut goal = goal_asked
+        let s = nearest_point{ w = &w, g, at = from } ifnull {
+            if w.log.actions { _ = @fmt(&w.io, "route: no clear path point near the start ({} points)\n", g.points.len) }
+            return false
+        }
+        let mut t_found = nearest_point{ w = &w, g, at = goal }
+        if t_found == null {
+            let dx = from.x - goal.x
+            let dy = from.y - goal.y
+            let d = math::sqrtf{ x = dx * dx + dy * dy }
+            let mut back: f32 = 0.5
+            while t_found == null and back <= 3.0 and d > back {
+                let cx = goal.x + dx / d * back
+                let cy = goal.y + dy / d * back
+                let f = walkmap::floor{ m = &w.walk, x = cx, y = cy, z = from.z + 2.0 }
+                if f != null {
+                    let c = math::Vec3{ x = cx, y = cy, z = f.z }
+                    t_found = nearest_point{ w = &w, g, at = c }
+                    if t_found != null {
+                        goal = c
+                        adjusted.* = true
+                    }
+                }
+                back = back + 0.5
+            }
+        }
+        let t = t_found ifnull {
+            if w.log.actions { _ = @fmt(&w.io, "route: no clear path point near the goal ({} points)\n", g.points.len) }
+            return false
+        }
         let n = g.points.len
         let cost = alloc::resize(f32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(f32){}, count = n } iferr { return false }
         let prev = alloc::resize(i32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(i32){}, count = n } iferr { return false }

@@ -137,6 +137,7 @@ namespace world {
         credits_running: bool,              // StartCreditSequence ran and the credits are not over (IsCreditSequenceInProgress)
         button_mash: bool,                  // SetButtonMashCheck / GetButtonMashCheck (the combat tutorial)
         subscreen: i32,                     // GetSubScreenID: SUBSCREEN_ID_* of the in-game screen showing (0: none)
+        party_watch: fight::PartyWatch,     // UpdatePartyDeath's clocks: downed members get up after the fight (fight.ctx)
         // HOOK(party): the party table
     }
 
@@ -179,7 +180,7 @@ namespace world {
             last_activated = obj::INVALID, last_activator = obj::INVALID, last_activated_target = obj::INVALID,
             rules = try alloc::new(rules::Tables, heap::Heap){ realloc = heap::alloc, heap, value = blank_rules },
             dice = rules::seed_rng{ seed }, fx_ids = rules::EffectIds{ next = 1 }, rev = blank_events,
-            credits_running = false, button_mash = false, subscreen = 0,
+            credits_running = false, button_mash = false, subscreen = 0, party_watch = fight::new_party_watch{},
         }
         let p = try alloc::new(World, heap::Heap){ realloc = heap::alloc, heap, value = w }
         try rules::load_tables{ fs = &f, rm = rm.*, heap = heap, out = p.rules }
@@ -573,6 +574,7 @@ namespace world {
             level = level - 1
         }
         ai::update_module_and_area{ &w, &vm, engine }
+        fight::update_party{ &w }
         events::deliver_due{ &w, &vm, engine }
         if w.arrival > 0 {
             w.arrival = w.arrival - 1

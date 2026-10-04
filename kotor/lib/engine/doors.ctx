@@ -37,10 +37,17 @@ namespace doors {
     // turn to face the target and a copy of `a` (actions.md 1.4), and says so. Non-creatures act
     // from where they are.
     fn approach { mut w: world::World, id: u32, target: u32, a: *mut actions::Action } -> bool {
+        return approach_within{ &w, id, target, a, extra = 0.0 }
+    }
+
+    // The same with the stopping range widened by `extra` (a player's talk order stops 1 m beyond the
+    // use range: DIALOGOBJECT's approach mode 1, actions.md 3.12).
+    fn approach_within { mut w: world::World, id: u32, target: u32, a: *mut actions::Action, extra: f32 } -> bool {
         let actor = world::object{ w = &w, id } ifnull { return false }
         if actor.kind != obj::Kind::creature { return false }
         let t = world::object{ w = &w, id = target } ifnull { return false }
-        let up = use_point{ w = &w, actor, target = t }
+        let mut up = use_point{ w = &w, actor, target = t }
+        up.range = up.range + extra
         if distance_2d{ a = actor.position, b = up.point } <= up.range + 0.1 or a.phase > 0 { return false }
         let mut copy = a.*
         copy.phase = 1
@@ -64,12 +71,16 @@ namespace doors {
         let target = actions::object_param{ a, i = 0 }
         let o = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
         let d = obj::door{ o } ifnull { return actions::Status::failed }
-        if d.state != obj::DoorState::closed { return actions::Status::done }
+        // A click on an area-transition door always runs the transition for the party leader,
+        // whatever state the door is in (an NPC may have opened it already).
+        let transition = id == w.pc and modload::link_of{ o } != null
+        if d.state != obj::DoorState::closed and not transition { return actions::Status::done }
         if approach{ &w, id, target, a } { return actions::Status::done }
-        if id == w.pc and modload::link_of{ o } != null {
+        if transition {
             events::post{ &w, delay_ms = 0, caller = id, target, payload = events::Payload::script{ e = events::script_event{ kind = events::CLICKED, object = id } } }
             return actions::Status::done
         }
+        if d.state != obj::DoorState::closed { return actions::Status::done }
         // A locked door opens to its key (UseKeyOnObject); otherwise the actor is told it is locked.
         if d.locked and not use_key{ &w, who = id, target } {
             tell{ &w, who = id, strref = FEEDBACK_LOCKED }
@@ -136,13 +147,13 @@ namespace doors {
             return actions::Status::running
         }
         // The player's own character is heard picking the lock a quarter second in (actions.md 3.9).
-        if a.phase == 2 and now - a.started >= 250 {
+        if a.phase == 2 and clock::elapsed_since{ now, then = a.started } >= 250 {
             a.phase = 3
             if is_player_side{ w = &w, id } {
                 outbox::post{ out = &w.out, note = outbox::Note::play_sound{ name = resref::truncate{ name = "gui_lockpick" }, object = id, position = me.position, positional = false } }
             }
         }
-        if now - a.started < 1500 { return actions::Status::running }
+        if clock::elapsed_since{ now, then = a.started } < 1500 { return actions::Status::running }
         world::set_animation{ o = me, id = obj::ANIM_STAND, speed = 1.0 }
         let mut opens = use_key{ &w, who = id, target }
         if not opens {
@@ -187,7 +198,7 @@ namespace doors {
             world::set_animation{ o = me, id = animname::ROW_BASE + (if o.kind == obj::Kind::door { @as(u32, 47) } else { @as(u32, 48) }), speed = 1.0 }
             return actions::Status::running
         }
-        if now - a.started < 1500 { return actions::Status::running }
+        if clock::elapsed_since{ now, then = a.started } < 1500 { return actions::Status::running }
         world::set_animation{ o = me, id = obj::ANIM_STAND, speed = 1.0 }
         let mut done = has_key{ &w, who = id, key = lock.key }
         if not done {

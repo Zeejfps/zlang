@@ -1,0 +1,17 @@
+// Auto-pause (docs/re/gameloop.md 6.4): the options the player ticks in Options > Auto-pause
+// pause the game when something happens. The engine says what happened; whether it pauses is the
+// options' and RequestAutoPause's business (0x005f3f10: not while paused or in a conversation).
+namespace autopause {
+    // Reasons, as RequestAutoPause numbers them.
+    const ENEMY_SIGHTED: i32 = 1
+    const ACTION_MENU: i32 = 7
+    const PARTY_MEMBER_DOWN: i32 = 9
+    const MINE_SIGHTED: i32 = 11
+    const END_OF_ROUND: i32 = 12            // ours: the call site's reason was not traced
+    const NEW_TARGET: i32 = 13              // ours
+
+    fn request { mut w: world::World, reason: i32 } {
+        _ = w
+        _ = reason
+    }
+}
