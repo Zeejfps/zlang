@@ -224,6 +224,18 @@ namespace movement {
                 }
                 continue
             }
+            // The party leader walking through an open transition door raises CLICKED on it
+            // (movement.md 5.1: a transition door's volume); other doors have none.
+            if id == w.pc and o.kind == obj::Kind::door {
+                if obj::door{ o } is some{ value = door } {
+                    if door.state != obj::DoorState::closed and modload::link_of{ o } != null {
+                        if distance_2d{ a = o.position, b = to } < 0.7 and distance_2d{ a = o.position, b = from } >= 0.7 {
+                            events::post{ &w, delay_ms = 0, caller = id, target = o.id, payload = events::Payload::script{ e = events::script_event{ kind = events::CLICKED, object = id } } }
+                        }
+                    }
+                }
+                continue
+            }
             let t = obj::trigger{ o } ifnull { continue }
             let now_in = inside_polygon{ poly = t.polygon, x = to.x, y = to.y }
             let was_in = contains{ l = &t.inside, id }
