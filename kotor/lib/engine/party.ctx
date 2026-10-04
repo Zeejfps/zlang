@@ -136,10 +136,26 @@ namespace party {
     }
 
     // Adds a member (at the end); false when the party is full or it is one already.
+    // Where a member's attack rounds are counted (world.stats): its NPC slot, or SLOTS for the player character.
+    fn stat_slot { w: *world::World, id: u32 } -> usize {
+        let slot = slot_of{ w, id }
+        return if slot >= 0 { @as(usize, slot) } else { SLOTS }
+    }
+
+    // A round of attacks by a member of the party, for the end-of-run report (report::party_fights).
+    fn count_round { mut w: world::World, id: u32 } {
+        w.stats.party_rounds = w.stats.party_rounds + 1
+        let slot = stat_slot{ w = &w, id }
+        w.stats.member_rounds[slot] = w.stats.member_rounds[slot] + 1
+    }
+
     fn add { mut w: world::World, id: u32 } -> bool {
         if is_member{ w = &w, id } or w.party.count >= 3 { return false }
         w.party.members[w.party.count] = id
         w.party.count = w.party.count + 1
+        let slot = stat_slot{ w = &w, id }
+        w.stats.member_joined[slot] = w.stats.party_rounds
+        w.stats.member_joined_own[slot] = w.stats.member_rounds[slot]
         merge_into_party{ &w, id }
         return true
     }

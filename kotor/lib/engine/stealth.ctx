@@ -293,7 +293,7 @@ namespace stealth {
         let mut blocks: [64]bool
         let mut m: usize = 0
         while m < 64 {
-            blocks[m] = m < w.walk.sees.len and not w.walk.sees[m]
+            blocks[m] = m < w.walk.sees.len and w.walk.sees[m]
             m = m + 1
         }
         let mut best: f32 = len

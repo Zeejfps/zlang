@@ -64,6 +64,10 @@ namespace world {
         faults: u32,
         events: u32,
         objects_made: u32,
+        party_rounds: u32,          // attack rounds the party's members made (fight.ctx), for report::party_fights
+        member_rounds: [13]u32,     // attack rounds by NPC slot (party::SLOTS is the player character's), which outlive the creature
+        member_joined: [13]u32,     // party_rounds when the member last joined
+        member_joined_own: [13]u32, // its member_rounds then
     }
 
     struct World {
@@ -175,7 +179,7 @@ namespace world {
             transition = null,
             arrival_waypoint = [0; 64], arrival_waypoint_len = 0,
             rng = Rng{ state = seed },
-            stats = Stats{ calls = [0; 772], missing = [0; 772], unbalanced = [false; 772], script_runs = 0, faults = 0, events = 0, objects_made = 0 },
+            stats = Stats{ calls = [0; 772], missing = [0; 772], unbalanced = [false; 772], script_runs = 0, faults = 0, events = 0, objects_made = 0, party_rounds = 0, member_rounds = [0; 13], member_joined = [0; 13], member_joined_own = [0; 13] },
             routes = [null; 772],
             log = elog::quiet{},
             doomed = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },

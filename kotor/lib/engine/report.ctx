@@ -15,6 +15,7 @@ namespace report {
             i = i + 1
         }
         _ = @fmt(&w.io, "routines called: {} implemented, {} missing\n", implemented, missing)
+        party_fights{ &w }
         if not routines { return }
         stuck{ &w }
         // Missing routines by calls, most first (a selection sort over a copy of the counts).
@@ -29,6 +30,45 @@ namespace report {
             if best == 772 { break }
             _ = @fmt(&w.io, "  missing {} {} x{}\n", best, nwscript::ROUTINES[best].name, counts[best])
             counts[best] = 0
+        }
+    }
+
+    // A member of the party who made no attack round while the others made this many since it joined has sat out
+    // the fights (a run of the Endar Spire where Trask watched; docs/testing.md, "Companions in a fight").
+    const IDLE_AFTER_ROUNDS: u32 = 10
+
+    // `party attack rounds: NAME N, ...` for the party at the end of the run, and a `companion idle:` line for each
+    // member who sat out IDLE_AFTER_ROUNDS or more of the others' rounds.
+    fn party_fights { mut w: world::World } {
+        let team = party::members{ w = &w }
+        if team.len < 2 { return }
+        _ = @fmt(&w.io, "party attack rounds:")
+        let mut i: usize = 0
+        while i < team.len {
+            if world::object{ w = &w, id = team[i] } is some{ value = o } {
+                if obj::creature{ o } is some{ value = c } {
+                    let mut name: []u8 = o.tag
+                    if name.len == 0 { name = "player" }
+                    if i > 0 { _ = @fmt(&w.io, ",") }
+                    _ = @fmt(&w.io, " {} {}", name, w.stats.member_rounds[party::stat_slot{ w = &w, id = team[i] }])
+                }
+            }
+            i = i + 1
+        }
+        _ = @fmt(&w.io, "\n")
+        i = 0
+        while i < team.len {
+            if world::object{ w = &w, id = team[i] } is some{ value = o } {
+                if obj::creature{ o } is some{ value = c } {
+                    let slot = party::stat_slot{ w = &w, id = team[i] }
+                    let own = w.stats.member_rounds[slot] - w.stats.member_joined_own[slot]
+                    let others = w.stats.party_rounds - w.stats.member_joined[slot] - own
+                    let mut name: []u8 = o.tag
+                    if name.len == 0 { name = "player" }
+                    if own == 0 and others >= IDLE_AFTER_ROUNDS { _ = @fmt(&w.io, "companion idle: {} made no attack round while the rest of the party made {} since it joined\n", name, others) }
+                }
+            }
+            i = i + 1
         }
     }
 
