@@ -159,6 +159,8 @@ namespace save {
         try put_byte{ &b, owner = s, label = "GoodEvil", v = @trunc(u8, c.good_evil) }
         try put_byte{ &b, owner = s, label = "PerceptionRange", v = @trunc(u8, c.perception_range) }
         try put_bool{ &b, owner = s, label = "IsPC", v = c.is_pc }
+        // The AI style the Scripts button sets (WriteStatsToGff: INT "AIState" from stats +0x13a).
+        try put_int{ &b, owner = s, label = "AIState", v = c.ai_style }
         try put_bool{ &b, owner = s, label = "CreatnScrptFird", v = c.spawn_fired }
         // SetListening and the listen patterns (SaveCreature's Listening and ExpressionList).
         try put_bool{ &b, owner = s, label = "Listening", v = c.listening }
