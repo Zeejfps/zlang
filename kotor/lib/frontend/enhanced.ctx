@@ -113,12 +113,14 @@ namespace frontend {
             let mut r: usize = 0
             while r < FX_ROWS {
                 let y = 88 + (41 * @as(i32, r)) / 2
-                _ = try gui::clone_control{ &g, panel = p, from = "BTN_ANTIALIASLEFT", tag = FX_LEFT[r], x = 60, y }
-                _ = try gui::clone_control{ &g, panel = p, from = "BTN_ANTIALIAS", tag = FX_TAGS[r], x = 80, y }
-                _ = try gui::clone_control{ &g, panel = p, from = "BTN_ANTIALIASRIGHT", tag = FX_RIGHT[r], x = 278, y }
-                gui::set_extent{ &g, panel = p, tag = FX_LEFT[r], x = 60, y, w = 20, h = 20 }
-                gui::set_extent{ &g, panel = p, tag = FX_TAGS[r], x = 80, y, w = 198, h = 20 }
-                gui::set_extent{ &g, panel = p, tag = FX_RIGHT[r], x = 278, y, w = 20, h = 20 }
+                // The row is 218 wide, arrow to arrow (the original's is 198): the longest label, "Lightmaps: Original", is 176
+                // pixels, which leaves 21 either side, as the original's buttons leave (17 to 25).
+                _ = try gui::clone_control{ &g, panel = p, from = "BTN_ANTIALIASLEFT", tag = FX_LEFT[r], x = 50, y }
+                _ = try gui::clone_control{ &g, panel = p, from = "BTN_ANTIALIAS", tag = FX_TAGS[r], x = 70, y }
+                _ = try gui::clone_control{ &g, panel = p, from = "BTN_ANTIALIASRIGHT", tag = FX_RIGHT[r], x = 288, y }
+                gui::set_extent{ &g, panel = p, tag = FX_LEFT[r], x = 50, y, w = 20, h = 20 }
+                gui::set_extent{ &g, panel = p, tag = FX_TAGS[r], x = 70, y, w = 218, h = 20 }
+                gui::set_extent{ &g, panel = p, tag = FX_RIGHT[r], x = 288, y, w = 20, h = 20 }
                 r = r + 1
             }
             let originals: [12][]u8 = [
