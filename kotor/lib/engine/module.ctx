@@ -569,6 +569,9 @@ namespace modload {
         if link_of{ o } == null { return }
         let ao = world::object{ w = &w, id = w.area } ifnull { return }
         let a = obj::area{ o = ao } ifnull { return }
+        // One transition at a time: the door ordered open again while the fade runs (gameloop.md
+        // 5.1) must not restart the fade and the half second.
+        if a.transition_pending != 0 { return }
         a.transition_token = if a.transition_token == 255 { 1 } else { a.transition_token + 1 }
         a.transition_pending = a.transition_token
         events::post{ &w, delay_ms = 500, caller = actor, target = id, payload = events::Payload::transition{ token = a.transition_token } }
