@@ -1,0 +1,2832 @@
+kind	addr	name	lines_before	lines_after	cited_in	note
+changed	0x00401000	FUN_00401000	15	20	re/README.md	
+new	0x00401080	WriteSaveScreenshot		17	re/names.tsv re/party-items-saves.md	USER_DEFINED
+new	0x004010a0	FUN_004010a0		11		DEFAULT
+new	0x004010c0	CModuleTransition::CModuleTransition		29	re/names.tsv	USER_DEFINED
+new	0x00401160	CAppManager::CAppManager		68	re/app.md re/names.tsv	USER_DEFINED
+new	0x004012c0	CAppManager::~CAppManager		49	re/app.md re/names.tsv	USER_DEFINED
+new	0x00401380	CAppManager::CreateServer		43	re/app.md re/names.tsv	USER_DEFINED
+changed	0x00401440	UpdateWindowTitle	27	40	re/names.tsv	
+new	0x00401700	ParseCommandLine		68	re/app.md re/names.tsv	USER_DEFINED
+new	0x00401bb0	GL_SetDefaultState		16	re/names.tsv re/render-gui.md	USER_DEFINED
+changed	0x00402240	HandleCharMessage	89	114	re/app.md re/names.tsv re/render-gui.md	
+changed	0x004024f0	HandleKeyDownMessage	88	87	re/app.md re/names.tsv	
+new	0x00402800	MainWndProc		442	re/app.md re/names.tsv	USER_DEFINED
+gone	0x0040288d	switchD_00402846::caseD_8	17			now inside 0x00402800 MainWndProc
+gone	0x004028c6	switchD_00402846::caseD_7	14			now inside 0x00402800 MainWndProc
+gone	0x004028f8	switchD_00402846::caseD_46	25			now inside 0x00402800 MainWndProc
+gone	0x00402951	switchD_00402846::caseD_1c	84			now inside 0x00402800 MainWndProc
+gone	0x00402af3	switchD_00402846::caseD_20	17			now inside 0x00402800 MainWndProc
+gone	0x00402b2c	switchD_00402846::caseD_1f	14			now inside 0x00402800 MainWndProc
+gone	0x00402b48	switchD_00402846::caseD_10	6			now inside 0x00402800 MainWndProc
+gone	0x00402bde	switchD_00402bd7::caseD_104	30			now inside 0x00402800 MainWndProc
+gone	0x00402c42	switchD_00402bd7::caseD_105	29			now inside 0x00402800 MainWndProc
+gone	0x00402cac	switchD_00402bd7::caseD_106	15			now inside 0x00402800 MainWndProc
+gone	0x00402ccc	switchD_00402bd7::caseD_100	27			now inside 0x00402800 MainWndProc
+gone	0x00402d31	switchD_00402bd7::caseD_102	20			now inside 0x00402800 MainWndProc
+gone	0x00402d64	switchD_00402bd7::caseD_10d	20			now inside 0x00402800 MainWndProc
+gone	0x00402d99	switchD_00402bd7::caseD_10e	20			now inside 0x00402800 MainWndProc
+gone	0x00402e44	switchD_00402e3d::caseD_200	18			now inside 0x00402800 MainWndProc
+gone	0x00402e98	switchD_00402e3d::caseD_201	31			now inside 0x00402800 MainWndProc
+gone	0x00402ef0	switchD_00402e3d::caseD_203	30			now inside 0x00402800 MainWndProc
+gone	0x00402f73	switchD_00402e3d::caseD_202	30			now inside 0x00402800 MainWndProc
+gone	0x00402fdb	switchD_00402e3d::caseD_206	31			now inside 0x00402800 MainWndProc
+gone	0x0040306a	switchD_00402e3d::caseD_204	26			now inside 0x00402800 MainWndProc
+gone	0x004030fa	switchD_00402e3d::caseD_205	25			now inside 0x00402800 MainWndProc
+gone	0x00403244	switchD_0040323d::caseD_20a	21			now inside 0x00402800 MainWndProc
+gone	0x004032ba	switchD_0040323d::caseD_282	22			now inside 0x00402800 MainWndProc
+gone	0x00403347	switchD_00402bd7::caseD_51	17			now inside 0x00402800 MainWndProc
+gone	0x004034b4	switchD_00402bf1::switchdataD_004034b4	367			
+new	0x004036f0	CreateRenderWindow		60	re/app.md re/names.tsv	USER_DEFINED
+changed	0x00403800	SetVideoMode	77	199	mechanics/graphics.md re/app.md re/names.tsv re/render-gui.md	
+new	0x00403f20	CreateMainWindow		122	re/app.md re/names.tsv	USER_DEFINED
+changed	0x004041f0	WinMain	41	328	re/README.md re/app.md re/gameloop.md re/names.tsv re/render-gui.md	
+new	0x00404bb0	CExoMoviePlayerInternal::CloseMovie		24	re/app.md re/names.tsv	USER_DEFINED
+new	0x00404c20	FUN_00404c20		9	re/app.md	DEFAULT
+new	0x00404c80	CExoMoviePlayerInternal::PlayFrames		49	re/app.md re/names.tsv	USER_DEFINED
+new	0x00404de0	FUN_00404de0		7		DEFAULT
+new	0x00404f40	FUN_00404f40		19	re/app.md	DEFAULT
+new	0x00404f80	FUN_00404f80		28	re/app.md	DEFAULT
+new	0x00405190	CExoMoviePlayerInternal::MovieWndProc		87	re/app.md re/names.tsv	USER_DEFINED
+new	0x004053e0	CExoMoviePlayerInternal::OpenMovie		197	re/app.md re/names.tsv	USER_DEFINED
+new	0x004058f0	FUN_004058f0		11		DEFAULT
+changed	0x004059a0	FUN_004059a0	30	31		
+new	0x00405a50	CExoMoviePlayerInternal::~CExoMoviePlayerInternal		42	re/app.md re/names.tsv	USER_DEFINED
+new	0x00405b30	CExoMoviePlayerInternal::MovieThreadProc		97	re/README.md re/app.md re/names.tsv	USER_DEFINED
+new	0x00405d70	CExoMoviePlayerInternal::CExoMoviePlayerInternal		46	re/app.md re/names.tsv	USER_DEFINED
+new	0x00405faf	FUN_00405faf		10		DEFAULT
+new	0x00406040	CResRef::GetLength		20	re/names.tsv	USER_DEFINED
+changed	0x00406300	FUN_00406300	35	78		
+new	0x004064f0	CExoResMan::StartModuleLoad		18	re/modules.md re/names.tsv re/resman.md re/resources.md	USER_DEFINED
+changed	0x004065a0	CExoResMan::GetResRefFromFile	34	35	re/names.tsv re/resman.md re/resources.md	
+changed	0x00406650	CExoResMan::GetResTypeFromFile	33	40	re/names.tsv re/resman.md re/resources.md	
+new	0x00406720	CExoKeyTable::IsModuleBlueprintType		57	re/names.tsv	USER_DEFINED
+gone	0x00406773	switchD_0040673f::caseD_7db	5			now inside 0x00406720 CExoKeyTable::IsModuleBlueprintType
+changed	0x004067b0	CExoResMan::GetFreeDiskSpace	26	59	re/names.tsv re/resources.md	
+changed	0x004068c0	CExoResMan::CreateDirectory	26	43	re/names.tsv re/resources.md	
+new	0x00406990	CExoResMan::CopyFile		74	re/names.tsv re/resources.md	USER_DEFINED
+changed	0x00406b20	CExoResMan::RemoveFile	26	59	re/names.tsv re/resources.md	
+changed	0x00406c70	FUN_00406c70	20	21		
+new	0x00406cf0	FUN_00406cf0		26		DEFAULT
+changed	0x00406e20	CExoResMan::AddKeyTable	101	102	re/README.md re/names.tsv re/resman.md re/resources.md	
+new	0x004072e0	CExoResMan::ListResourcesOfTypeInTableList		34	re/names.tsv	USER_DEFINED
+new	0x00407390	CExoResMan::ListResourcesOfType		55	re/names.tsv re/resources.md	USER_DEFINED
+changed	0x004074d0	CExoResMan::GetResObject	78	83	re/names.tsv re/resources.md re/vm.md	
+new	0x00407780	CExoResMan::GetTableCount		15	re/names.tsv	USER_DEFINED
+changed	0x004078f0	CExoResMan::ServiceFromDirectory	56	119	re/names.tsv re/resources.md	
+changed	0x00408080	CExoResMan::ReadRawFromDirectory	54	99	re/names.tsv re/resources.md	
+new	0x00408450	CExoResMan::ReadRawFromResFile		45	re/names.tsv re/resources.md	USER_DEFINED
+new	0x00408670	CExoResMan::~CExoResMan		63	re/names.tsv	USER_DEFINED
+new	0x004087a0	CExoResMan::AddEncapsulatedResourceFile		8	re/names.tsv re/resman.md re/resources.md	USER_DEFINED
+new	0x004087e0	CExoResMan::AddKeyTableFile		8	re/names.tsv re/resman.md re/resources.md	USER_DEFINED
+new	0x004088c0	CExoResMan::RemoveKeyTableFile		8	re/names.tsv re/resources.md	USER_DEFINED
+new	0x00408c60	CExoResMan::ListTableResourcesOfType		15	re/names.tsv re/resources.md	USER_DEFINED
+new	0x00408e30	CExoResMan::ReadRaw		24	re/names.tsv re/resources.md	USER_DEFINED
+gone	0x00408e46	switchD_00408e3f::caseD_3	10			now inside 0x00408e30 CExoResMan::ReadRaw
+gone	0x00408e4f	switchD_00408e3f::caseD_2	8			now inside 0x00408e30 CExoResMan::ReadRaw
+gone	0x00408e58	switchD_00408e3f::caseD_1	8			now inside 0x00408e30 CExoResMan::ReadRaw
+changed	0x00408e90	CExoResMan::CleanDirectoryRecursive	134	219	re/names.tsv re/resources.md	
+new	0x004094a0	CExoResMan::LoadModuleResources		230	re/modules.md re/names.tsv re/resman.md re/resources.md	USER_DEFINED
+new	0x00409b20	CRes::ReadRaw		10	re/names.tsv	USER_DEFINED
+new	0x00409b90	CExoResMan::LoaderThreadProc		14	re/names.tsv re/resources.md	USER_DEFINED
+new	0x00409bf0	CExoResMan::CExoResMan		61	re/names.tsv re/resources.md	USER_DEFINED
+new	0x00409f00	CSWGuiManager::LoadGuiSounds		92	re/gui.md re/names.tsv re/render-gui.md	USER_DEFINED
+new	0x0040a0d0	CSWGuiManager::UnloadGuiSounds		27	re/names.tsv	USER_DEFINED
+changed	0x0040a680	CSWGuiPanel::LoadGui	73	80	re/README.md re/gui.md re/names.tsv re/render-gui.md	
+changed	0x0040a900	CSWGuiPanel::GetResolutionTag	27	31	re/gui.md re/names.tsv re/render-gui.md	
+new	0x0040aaa0	CSWGuiManager::~CSWGuiManager		43	re/names.tsv re/render-gui.md	USER_DEFINED
+changed	0x0040acc0	CSWGuiManager::UpdateTopPanel	59	69	re/gui.md re/names.tsv	
+changed	0x0040ae80	CSWGuiManager::DrawBackdrop	93	92	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x0040b060	CSWGuiManager::CreateCursorModel	50	73	re/gui.md re/names.tsv	
+new	0x0040bad0	CSWGuiManager::CSWGuiManager		85	re/app.md re/names.tsv re/render-gui.md	USER_DEFINED
+changed	0x0040bec0	CSWGuiManager::DrawDebugOverlay	119	118	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x0040c8e0	CSWGuiManager::HandleInputEvent	175	175	re/app.md re/gui.md re/names.tsv re/render-gui.md re/resman.md	
+changed	0x0040d0d0	CExoKeyTable::DeleteTableList	52	53	re/names.tsv	
+new	0x0040d1a0	CExoKeyTable::GetEntryCount		27	re/names.tsv	USER_DEFINED
+new	0x0040d200	CExoKeyTable::LocateBifFile		46	re/names.tsv re/resources.md	USER_DEFINED
+changed	0x0040d2e0	CExoKeyTable::DestroyTable	82	83	re/names.tsv	
+changed	0x0040d560	CExoBaseResFile::~CExoBaseResFile	9	9	re/names.tsv	
+changed	0x0040d6f0	CExoResFile::OpenFile	57	56	re/names.tsv	
+changed	0x0040d800	CExoResFile::OpenAsyncFile	56	55	re/names.tsv	
+changed	0x0040dc30	CExoEncapsulatedFile::OpenFile	133	128	re/names.tsv	
+changed	0x0040df10	CExoEncapsulatedFile::OpenAsyncFile	133	128	re/names.tsv	
+changed	0x0040e1f0	CExoEncapsulatedFile::LoadHeader	189	198	re/names.tsv re/resources.md	
+changed	0x0040e790	CExoResourceImageFile::OpenFile	106	104	re/names.tsv re/resources.md	
+new	0x0040ed20	CExoKeyTable::ListKeysOfType		70	re/names.tsv	USER_DEFINED
+new	0x0040ee80	CExoResFile::CExoResFile		35	re/names.tsv	USER_DEFINED
+changed	0x0040ef00	CExoResFile::~CExoResFile	31	32	re/names.tsv	
+changed	0x0040f010	CExoEncapsulatedFile::~CExoEncapsulatedFile	32	33	re/names.tsv	
+changed	0x0040f0a0	CExoResourceImageFile::~CExoResourceImageFile	27	28	re/names.tsv	
+changed	0x0040f200	CExoKeyTable::AddDirectoryContents	78	80	re/names.tsv re/resman.md re/resources.md	
+changed	0x0040f3c0	CExoKeyTable::AddEncapsulatedContents	249	279	re/names.tsv re/resman.md re/resources.md	
+changed	0x0040fb80	CExoKeyTable::AddKeyTableContents	111	239	re/README.md re/names.tsv re/resources.md	
+new	0x00410520	InitCRC32Table		28	re/names.tsv	USER_DEFINED
+changed	0x00411260	CResGFF::CreateGFFFile	51	53	re/names.tsv re/resources.md	
+new	0x004113d0	CResGFF::WriteGFFData		57	re/names.tsv re/resources.md	USER_DEFINED
+new	0x00411540	CResGFF::GetTotalSize		15	re/names.tsv	USER_DEFINED
+changed	0x00411fd0	CResGFF::ReadFieldCExoLocString	77	88	re/names.tsv re/resources.md	
+new	0x004128c0	CResGFF::WriteFieldCResRef		45	re/names.tsv re/resources.md	USER_DEFINED
+new	0x00412a10	CResGFF::WriteFieldCExoLocString		104	re/names.tsv re/resources.md	USER_DEFINED
+new	0x00412ca0	CResGFF::WriteFieldQuaternion		35	re/names.tsv re/resources.md	USER_DEFINED
+new	0x00412d30	CResGFF::WriteFieldVector		32	re/names.tsv re/resources.md	USER_DEFINED
+new	0x00412db0	CResGFF::Pack		127	re/names.tsv re/resources.md	USER_DEFINED
+changed	0x00413030	CResGFF::WriteGFFFile	23	36	re/README.md re/names.tsv re/resources.md	
+changed	0x00413d80	C2DA::~C2DA	20	23	re/names.tsv	
+changed	0x00415e50	CSWGuiTextInfo::SetStrRef	41	40	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x00415ff0	CSWGuiText::~CSWGuiText	23	25	re/names.tsv	
+changed	0x00416050	CSWGuiText::LoadFromGFF	49	74	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x004162e0	CSWGuiEditText::Backspace	34	42	re/names.tsv re/render-gui.md	
+changed	0x004163a0	CSWGuiEditText::AppendText	38	46	re/chargen.md re/names.tsv re/render-gui.md	
+changed	0x00416490	FUN_00416490	28	29		
+changed	0x00416530	CSWGuiEditText::SetFocused	30	31	re/names.tsv	
+changed	0x004165e0	FUN_004165e0	57	57	re/resman.md	
+new	0x004173d0	CSWGuiEditText::CSWGuiEditText		25	re/names.tsv re/render-gui.md	USER_DEFINED
+changed	0x00417440	FUN_00417440	9	9		
+changed	0x00417460	FUN_00417460	15	18		
+new	0x00417ec0	FUN_00417ec0		12		DEFAULT
+new	0x00417fe0	CSWGuiProgressBar::SetStartFromLeft		17	re/names.tsv	USER_DEFINED
+new	0x00418270	CSWGuiListBox::SetLeftScrollBar		14	re/names.tsv	USER_DEFINED
+changed	0x00418840	CSWGuiControl::LoadFromPanelGFF	44	57	re/names.tsv re/render-gui.md	
+changed	0x00418a90	CSWGuiControl::GetTooltipText	71	93	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x00419a20	CSWGuiControl::~CSWGuiControl	21	25	re/names.tsv re/render-gui.md	
+changed	0x00419ee0	CSWGuiListBox::LayoutText	160	161	re/gui.md re/names.tsv	
+changed	0x0041b960	CSWGuiLabel::LoadFromGFF	23	31	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x0041ba20	CSWGuiProtoItem::LoadFromGFF	23	26	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x0041bbc0	CSWGuiProgressBar::LoadFromGFF	23	45	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x0041bcd0	CSWGuiScrollBar::LoadFromGFF	23	58	re/gui.md re/names.tsv re/render-gui.md	
+new	0x0041c6b0	CSWGuiEditBox::CSWGuiEditBox		25	re/names.tsv re/render-gui.md	USER_DEFINED
+changed	0x0041c740	FUN_0041c740	16	25		
+changed	0x0041c7d0	CSWGuiEditBox::LoadFromGFF	23	31	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x0041c930	CSWGuiButton::LoadFromGFF	23	39	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x0041cb40	CSWGuiCheckBox::LoadFromGFF	23	40	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x0041cc30	CSWGuiSlider::LoadFromGFF	23	51	re/gui.md re/names.tsv re/render-gui.md	
+new	0x0041d3e0	CSWGuiListBox::LoadProtoItem		80	re/gui.md re/names.tsv re/render-gui.md	USER_DEFINED
+gone	0x0041d49d	switchD_0041d469::caseD_5	28			now inside 0x0041d3e0 CSWGuiListBox::LoadProtoItem
+gone	0x0041d4c3	switchD_0041d469::caseD_6	28			now inside 0x0041d3e0 CSWGuiListBox::LoadProtoItem
+gone	0x0041d4e9	switchD_0041d469::caseD_7	28			now inside 0x0041d3e0 CSWGuiListBox::LoadProtoItem
+gone	0x0041d50f	switchD_0041d469::caseD_8	28			now inside 0x0041d3e0 CSWGuiListBox::LoadProtoItem
+changed	0x0041d5b0	CSWGuiListBox::LoadFromGFF	23	52	re/gui.md re/names.tsv re/render-gui.md	
+new	0x0041d810	CTlkFile::CTlkFile		28	re/names.tsv re/resources.md	USER_DEFINED
+new	0x0041d890	CTlkFile::ReadHeader		15	re/names.tsv re/resources.md	USER_DEFINED
+new	0x0041d8d0	CTlkTable::CTlkTable		21	re/names.tsv	USER_DEFINED
+new	0x0041d920	CTlkTable::OpenFile		123	re/names.tsv re/resources.md	USER_DEFINED
+changed	0x0041dd30	CTlkTable::ParseStr	194	208	re/names.tsv re/resources.md	
+new	0x0041e0f0	CTlkTable::GetLanguageID		12	re/names.tsv re/resources.md	USER_DEFINED
+changed	0x0041e1a0	CTlkTable::FetchInternal	135	150	re/README.md re/names.tsv re/resources.md	
+new	0x0041e5a0	CTlkTable::SetTlkFile		161	re/names.tsv re/resources.md	USER_DEFINED
+changed	0x0041e8f0	CTlkTable::GetSimpleString	31	32	re/names.tsv re/resources.md	
+new	0x0041e9b0	FUN_0041e9b0		8		DEFAULT
+new	0x00421d50	FUN_00421d50		15		DEFAULT
+new	0x0044ecd0	CAurGLDisplay::GetInstance		22	re/app.md re/names.tsv re/render-gui.md	USER_DEFINED
+new	0x0044ed60	CAurGLDisplay::GetInstance		20		DEFAULT
+new	0x0044ed70	CAurGLDisplay::GetInstance		20		DEFAULT
+new	0x0044ee30	Render_EnableGrass		8	re/names.tsv re/render-gui.md	USER_DEFINED
+new	0x0044ee40	Render_DisableGrass		8	re/names.tsv re/render-gui.md	USER_DEFINED
+new	0x0044eec0	FUN_0044eec0		6		DEFAULT
+new	0x0044ef00	FUN_0044ef00		17	re/app.md	DEFAULT
+new	0x0044ef60	Render_DisableVBO		8	re/names.tsv re/render-gui.md	USER_DEFINED
+new	0x0044ef70	Render_DisableWriteOnlyVBO		8	re/names.tsv re/render-gui.md	USER_DEFINED
+new	0x0044ef80	Render_EnableWriteOnlyVBO		8	re/names.tsv re/render-gui.md	USER_DEFINED
+new	0x0044ef90	FUN_0044ef90		7		DEFAULT
+new	0x0044f0c0	FUN_0044f0c0		6		DEFAULT
+new	0x0044f0e0	FUN_0044f0e0		6		DEFAULT
+new	0x0044f100	FUN_0044f100		12		DEFAULT
+new	0x0044f760	FUN_0044f760		6		DEFAULT
+new	0x0044f770	FUN_0044f770		6		DEFAULT
+new	0x0045fa20	FUN_0045fa20		29		DEFAULT
+new	0x0046d130	FUN_0046d130		28		DEFAULT
+new	0x0049db30	FUN_0049db30		47		DEFAULT
+new	0x0049df10	FUN_0049df10		385		DEFAULT
+new	0x0049e630	FUN_0049e630		247		DEFAULT
+new	0x004a6870	FUN_004a6870		19		DEFAULT
+new	0x004a6c70	FUN_004a6c70		59		DEFAULT
+new	0x004a74f0	FUN_004a74f0		94		DEFAULT
+new	0x004adba0	CWorldTimer::SetMinutesPerHour		14	re/gameloop.md re/names.tsv	USER_DEFINED
+new	0x004ae3e0	CWorldTimer::SetCalendarTime		31	re/gameloop.md re/names.tsv	USER_DEFINED
+new	0x004ae4c0	CWorldTimer::CWorldTimer		27	re/app.md re/gameloop.md re/names.tsv	USER_DEFINED
+new	0x004ae5d0	FUN_004ae5d0		14		DEFAULT
+new	0x004ae640	thunk_FUN_004ae5f0		22		DEFAULT
+new	0x004ae6e0	CServerExoApp::RequestSaveGame		10	re/names.tsv	USER_DEFINED
+new	0x004ae6f0	CServerExoApp::LoadGame		15	re/names.tsv	USER_DEFINED
+new	0x004ae850	FUN_004ae850		6		DEFAULT
+changed	0x004ae8d0	FUN_004ae8d0	6	6		
+new	0x004ae8f0	CServerExoApp::Initialize		8	re/app.md re/names.tsv	USER_DEFINED
+new	0x004ae9e0	FUN_004ae9e0		6		DEFAULT
+new	0x004aebd0	CServerExoApp::GetStoredGameTime		13	re/names.tsv	USER_DEFINED
+new	0x004aebf0	FUN_004aebf0		7		DEFAULT
+new	0x004aec00	CServerExoApp::CServerExoApp		29	re/app.md re/names.tsv	USER_DEFINED
+new	0x004aecf0	CServerExoApp::GetModuleLoadInProgress		7	re/names.tsv	USER_DEFINED
+new	0x004aed00	CServerExoApp::SetModuleLoadInProgress		8	re/names.tsv	USER_DEFINED
+new	0x004aed20	CServerExoApp::GetAutoSavePending		7	re/gameloop.md re/names.tsv	USER_DEFINED
+new	0x004aed40	CServerExoApp::GetMoveToModuleWaypoint		8	re/names.tsv	USER_DEFINED
+new	0x004aedf0	CServerExoApp::GetTimeStopTimer		7	re/names.tsv	USER_DEFINED
+new	0x004aefd0	FUN_004aefd0		6		DEFAULT
+new	0x004af040	CServerExoApp::GetDialogEventFlag		7	re/names.tsv	USER_DEFINED
+new	0x004af090	CServerExoApp::SetModuleTransitionFlag		8	re/names.tsv	USER_DEFINED
+new	0x004af0b0	CServerExoApp::GetStoredPauseDay		7	re/names.tsv	USER_DEFINED
+new	0x004af0d0	CServerExoApp::GetStoredPauseTime		7	re/names.tsv	USER_DEFINED
+new	0x004af0e0	CServerExoApp::SetSaveGameName		8	re/names.tsv re/party-items-saves.md	USER_DEFINED
+changed	0x004af150	FUN_004af150	6	6		
+new	0x004af260	FUN_004af260		26		DEFAULT
+changed	0x004af630	CServerAIMaster::DebugPrintEvent	253	266	re/names.tsv re/objects.md	
+new	0x004afea0	CServerAIMaster::SaveEvent		118	re/names.tsv re/vm.md	USER_DEFINED
+gone	0x004aff1c	switchD_004aff15::caseD_5	15			now inside 0x004afea0 CServerAIMaster::SaveEvent
+gone	0x004aff57	switchD_004aff15::caseD_f	15			now inside 0x004afea0 CServerAIMaster::SaveEvent
+gone	0x004aff92	switchD_004aff15::caseD_4	14			now inside 0x004afea0 CServerAIMaster::SaveEvent
+gone	0x004affd6	switchD_004aff15::caseD_14	14			now inside 0x004afea0 CServerAIMaster::SaveEvent
+gone	0x004b0018	switchD_004aff15::caseD_16	14			now inside 0x004afea0 CServerAIMaster::SaveEvent
+gone	0x004b0053	switchD_004aff15::caseD_9	13			now inside 0x004afea0 CServerAIMaster::SaveEvent
+gone	0x004b0068	switchD_004aff15::caseD_a	15			now inside 0x004afea0 CServerAIMaster::SaveEvent
+gone	0x004b00a3	switchD_004aff15::caseD_12	14			now inside 0x004afea0 CServerAIMaster::SaveEvent
+gone	0x004b00de	switchD_004aff15::caseD_11	14			now inside 0x004afea0 CServerAIMaster::SaveEvent
+gone	0x004b0119	switchD_004aff15::caseD_8	14			now inside 0x004afea0 CServerAIMaster::SaveEvent
+gone	0x004b018b	switchD_004aff15::caseD_18	15			now inside 0x004afea0 CServerAIMaster::SaveEvent
+gone	0x004b01c6	switchD_004aff15::caseD_1a	15			now inside 0x004afea0 CServerAIMaster::SaveEvent
+gone	0x004b01fd	switchD_004aff15::caseD_1b	11			now inside 0x004afea0 CServerAIMaster::SaveEvent
+new	0x004b0770	FUN_004b0770		9		DEFAULT
+new	0x004b0780	CServerAIMaster::CServerAIMaster		46	re/names.tsv re/objects.md	USER_DEFINED
+new	0x004b0970	CServerAIMaster::SaveEventQueue		23	re/names.tsv re/objects.md	USER_DEFINED
+changed	0x004b1200	FUN_004b1200	54	63		
+changed	0x004b1360	FUN_004b1360	15	24		
+new	0x004b1400	FUN_004b1400		31		DEFAULT
+new	0x004b1650	CServerExoAppInternal::LoadGlobalVariableCatalogue		11	re/names.tsv re/party-items-saves.md	USER_DEFINED
+new	0x004b1b00	FUN_004b1b00		49	re/party-items-saves.md	DEFAULT
+new	0x004b1c40	FUN_004b1c40		22		DEFAULT
+changed	0x004b20e0	GetModuleIncludeInSave	52	58	re/names.tsv re/party-items-saves.md	
+new	0x004b2230	CAutoSaveParams::~CAutoSaveParams		32	re/names.tsv	USER_DEFINED
+new	0x004b2320	CServerExoAppInternal::GetStoredGameTime		17	re/names.tsv	USER_DEFINED
+new	0x004b2380	DeleteModuleSaveGroup		68	re/gameloop.md re/names.tsv	USER_DEFINED
+changed	0x004b2520	CServerExoAppInternal::HasDiskSpaceForSave	26	31	re/names.tsv	
+changed	0x004b2640	FUN_004b2640	24	31		
+new	0x004b26c0	FUN_004b26c0		20		DEFAULT
+new	0x004b2840	CAutoSaveParams::CAutoSaveParams		35	re/names.tsv re/party-items-saves.md	USER_DEFINED
+new	0x004b28e0	CAutoSaveParams::Save		29	re/gameloop.md re/names.tsv re/party-items-saves.md	USER_DEFINED
+new	0x004b2ba0	CServerExoAppInternal::SavePlayerCharacters		106	re/gameloop.md re/names.tsv re/party-items-saves.md	USER_DEFINED
+changed	0x004b2e70	CServerExoAppInternal::SaveCurrentModuleToGameInProgress	29	68	re/gameloop.md re/names.tsv re/party-items-saves.md	
+changed	0x004b3000	CServerExoAppInternal::ProcessPendingPlayerUpdates	23	23	re/gameloop.md re/names.tsv	
+new	0x004b30d0	FUN_004b30d0		12		DEFAULT
+changed	0x004b3110	CServerExoAppInternal::DoSaveGame	113	310	re/gameloop.md re/names.tsv re/party-items-saves.md	
+changed	0x004b3a90	CServerExoAppInternal::PrepareAreaForPlayer	106	112	re/gameloop.md re/names.tsv	
+changed	0x004b41c0	FUN_004b41c0	37	170		
+new	0x004b4960	FUN_004b4960		59		DEFAULT
+new	0x004b4f50	CServerExoAppInternal::RunAreaExitScripts		26	re/gameloop.md re/names.tsv	USER_DEFINED
+new	0x004b5050	CServerExoAppInternal::ShouldAutoSaveOnEnter		73	re/gameloop.md re/names.tsv	USER_DEFINED
+changed	0x004b51a0	FUN_004b51a0	61	158		
+new	0x004b55e0	CServerExoAppInternal::CServerExoAppInternal		124	re/app.md re/names.tsv	USER_DEFINED
+changed	0x004b58a0	CServerExoAppInternal::RequestSaveGame	33	131	re/gameloop.md re/names.tsv re/party-items-saves.md	
+changed	0x004b5c50	CServerExoAppInternal::SignalPlayerEnterModule	138	140	re/chargen-creature.md re/gameloop.md re/names.tsv	
+changed	0x004b5f90	FUN_004b5f90	29	122		
+changed	0x004b6270	CServerExoAppInternal::StartModuleRunning	58	60	re/gameloop.md re/names.tsv re/party-items-saves.md	
+new	0x004b63e0	CServerExoAppInternal::Initialize		245	re/app.md re/names.tsv re/objects.md re/vm.md	USER_DEFINED
+changed	0x004b7230	FUN_004b7230	89	108		
+changed	0x004b7470	CServerExoAppInternal::PlayerLoginToModule	148	179	re/chargen-creature.md re/gameloop.md re/names.tsv	
+changed	0x004b78f0	FUN_004b78f0	145	145		
+changed	0x004b7c60	CServerExoAppInternal::ShutDownServer	79	155	re/app.md re/modules.md re/names.tsv re/vm.md	
+new	0x004b8300	CServerExoAppInternal::WriteTransitionAutoSave		472	re/gameloop.md re/modules.md re/names.tsv re/party-items-saves.md	USER_DEFINED
+changed	0x004b9240	CServerExoAppInternal::UnloadModule	156	157	re/gameloop.md re/names.tsv	
+changed	0x004b95b0	CServerExoAppInternal::LoadModule	60	467	re/README.md re/modules.md re/names.tsv re/resman.md	
+new	0x004ba640	CServerExoAppInternal::LoadGame		71	re/names.tsv re/party-items-saves.md	USER_DEFINED
+new	0x004ba820	CServerExoAppInternal::BeginLoadModule		40	re/gameloop.md re/names.tsv re/party-items-saves.md	USER_DEFINED
+changed	0x004ba920	CServerExoAppInternal::StartModuleTransition	44	119	re/gameloop.md re/names.tsv	
+changed	0x004babb0	CServerExoAppInternal::MainLoop	307	311	re/app.md re/gameloop.md re/modules.md re/names.tsv re/objects.md	
+new	0x004c3060	FUN_004c3060		22	re/modules.md	DEFAULT
+new	0x004c30c0	CResIFO::CResIFO		10	re/names.tsv re/resources.md	USER_DEFINED
+changed	0x004c3170	FUN_004c3170	27	32		
+new	0x004c3960	CSWSModule::SaveReputeFile		71	re/names.tsv re/party-items-saves.md	USER_DEFINED
+new	0x004c3b10	CSWSModule::SaveAreaGIT		57	re/names.tsv re/party-items-saves.md	USER_DEFINED
+changed	0x004c3c70	CSWSModule::ExportPlayerBic	39	86	re/names.tsv	
+changed	0x004c4030	FUN_004c4030	15	18		
+new	0x004c4150	CSWSModule::AddModuleResources		119	re/modules.md re/names.tsv re/resman.md	USER_DEFINED
+gone	0x004c444d	FUN_004c444d	50			now inside 0x004c4150 CSWSModule::AddModuleResources
+changed	0x004c44d0	CSWSModule::RemoveModuleResources	41	216	re/modules.md re/names.tsv re/resman.md	
+changed	0x004c4b80	CSWSModule::GetNameWithoutAlias	37	38	re/names.tsv	
+new	0x004c4cc0	CSWSModule::SetResRef		70	re/modules.md re/names.tsv re/resources.md	USER_DEFINED
+new	0x004c5980	CSWSModule::DemandModuleResourcesOfType		107	re/names.tsv	USER_DEFINED
+new	0x004c5bb0	FUN_004c5bb0		29		DEFAULT
+changed	0x004c5c70	FUN_004c5c70	27	49		
+changed	0x004c5ef0	FUN_004c5ef0	43	45		
+changed	0x004c5fe0	FUN_004c5fe0	32	37		
+changed	0x004c60b0	FUN_004c60b0	51	56		
+new	0x004c61d0	FUN_004c61d0		20		DEFAULT
+changed	0x004c65e0	FUN_004c65e0	44	47		
+changed	0x004c68a0	CSWSModule::~CSWSModule	85	136	re/modules.md re/names.tsv re/objects.md	
+new	0x004c7050	CSWSModule::SaveModuleIFOStart		192	re/gameloop.md re/modules.md re/names.tsv	USER_DEFINED
+new	0x004c7870	FUN_004c7870		200		DEFAULT
+changed	0x004c7de0	CSWSModule::AddObjectToLookupTable	64	65	re/modules.md re/names.tsv re/objects.md	
+changed	0x004c7ed0	FUN_004c7ed0	57	60		
+changed	0x004c8030	FUN_004c8030	56	59		
+changed	0x004c84a0	CSWSModule::CSWSModule	112	186	re/modules.md re/names.tsv re/objects.md	
+new	0x004c8960	CSWSModule::SaveModuleIFO		99	re/modules.md re/names.tsv re/party-items-saves.md	USER_DEFINED
+new	0x004c8b90	FUN_004c8b90		37		DEFAULT
+changed	0x004c8e90	FUN_004c8e90	81	82		
+changed	0x004c9050	CSWSModule::LoadModuleStart	37	661	re/README.md re/modules.md re/names.tsv	
+new	0x004ca680	CSWSModule::FinishModuleSave		46	re/names.tsv re/party-items-saves.md	USER_DEFINED
+changed	0x004cad20	CSWSObject::SetPortraitId	39	54	re/names.tsv re/objects.md	
+changed	0x004cbc00	FUN_004cbc00	175	175		
+new	0x004cc490	CSWSDialog::AddPlayer		11	re/names.tsv	USER_DEFINED
+changed	0x004cc4d0	CSWSObjectActionNode::~CSWSObjectActionNode	30	33	re/actions.md re/names.tsv	
+new	0x004cc7e0	CSWSObject::SaveActionQueue		60	re/actions.md re/names.tsv re/objects.md re/vm.md	USER_DEFINED
+gone	0x004cc907	switchD_004cc8ea::caseD_2	61		re/names.tsv re/objects.md	now inside 0x004cc7e0 CSWSObject::SaveActionQueue
+gone	0x004cc9b0	switchD_004cc8ea::switchdataD_004cc9b0	9			
+new	0x004cc9d0	CSWSObject::SaveEffectList		23	re/names.tsv re/objects.md	USER_DEFINED
+new	0x004cca50	FUN_004cca50		25		DEFAULT
+changed	0x004cdf50	CSWSObject::SpellCastAndImpact	126	127	mechanics/force.md re/actions.md re/names.tsv re/rules.md	
+changed	0x004ce220	CSWSObject::SpawnBodyBag	168	194	re/combat.md re/names.tsv re/party-items-saves.md	
+new	0x004ce9a0	FUN_004ce9a0		27	re/combat.md	DEFAULT
+new	0x004cec50	CSWSObject::SaveObjectState		12	re/names.tsv re/objects.md	USER_DEFINED
+changed	0x004cecb0	CSWSObject::LoadActionQueue	183	188	re/actions.md re/names.tsv re/objects.md re/vm.md	
+new	0x004cf390	FUN_004cf390		24	re/rules.md	DEFAULT
+changed	0x004cf490	CSWSObject::StartConversation	111	212	re/dialogue.md re/names.tsv	
+new	0x004cf9b0	FUN_004cf9b0		39		DEFAULT
+changed	0x004cfa50	FUN_004cfa50	25	26		
+changed	0x004d0220	CSWSObject::~CSWSObject	86	110	re/names.tsv re/objects.md	
+changed	0x004d0480	FUN_004d0480	43	54		
+new	0x004d08d0	CSWSObject::RemoveEffectsBySpellTypeAndValue		24	re/names.tsv	USER_DEFINED
+changed	0x004d1730	CSWSObject::UpdateEffectList	187	188	re/gameloop.md re/names.tsv re/rules.md	
+new	0x004d1dd0	CSWSCombatRoundAction::SaveData		17	re/combat.md re/names.tsv	USER_DEFINED
+changed	0x004d2450	CSWSCombatAttackData::LoadData	100	115	re/combat.md re/names.tsv re/objects.md	
+new	0x004d3ec0	CSWSCombatRound::SaveCombatRound		89	re/combat.md re/names.tsv re/objects.md	USER_DEFINED
+changed	0x004d4480	FUN_004d4480	32	35		
+changed	0x004d4620	CSWSCombatRound::EndCombatRound	236	237	re/combat.md re/gameloop.md re/names.tsv re/objects.md	
+changed	0x004d4c10	CSWSCombatRound::IncrementTimer	84	86	re/combat.md re/names.tsv re/objects.md	
+changed	0x004d4e80	CSWSCombatRound::DecrementPauseTimer	40	41	re/combat.md re/names.tsv re/objects.md	
+new	0x004d63e0	FUN_004d63e0		24		DEFAULT
+changed	0x004d67e0	FUN_004d67e0	37	38		
+changed	0x004d6b10	FUN_004d6b10	149	170		
+changed	0x004d79b0	CScriptEvent::LoadEvent	157	165	re/names.tsv re/objects.md re/vm.md	
+changed	0x004d8680	CSWSEffectListHandler::OnApplySummonCreature	71	159	re/names.tsv re/rules.md	
+changed	0x004d8a40	CSWSEffectListHandler::OnApplySummonInternal	52	108	re/names.tsv	
+gone	0x004d8e59	switchD_004d8e3c::caseD_1	15			now inside 0x004d8d80 CSWSEffectListHandler::OnApplyACIncrease
+gone	0x004d8e9c	switchD_004d8e3c::caseD_2	15			now inside 0x004d8d80 CSWSEffectListHandler::OnApplyACIncrease
+gone	0x004d8edf	switchD_004d8e3c::caseD_3	15			now inside 0x004d8d80 CSWSEffectListHandler::OnApplyACIncrease
+gone	0x004d8f1e	switchD_004d8e3c::caseD_4	14			now inside 0x004d8d80 CSWSEffectListHandler::OnApplyACIncrease
+gone	0x004d906e	switchD_004d9051::caseD_1	12			now inside 0x004d8f80 CSWSEffectListHandler::OnApplyACDecrease
+gone	0x004d908f	switchD_004d9051::caseD_2	12			now inside 0x004d8f80 CSWSEffectListHandler::OnApplyACDecrease
+gone	0x004d90b0	switchD_004d9051::caseD_3	12			now inside 0x004d8f80 CSWSEffectListHandler::OnApplyACDecrease
+gone	0x004d90d1	switchD_004d9051::caseD_4	12			now inside 0x004d8f80 CSWSEffectListHandler::OnApplyACDecrease
+changed	0x004d9320	CSWSEffectListHandler::OnRemoveTemporaryHitpoints	117	150	re/names.tsv re/rules.md	
+changed	0x004da330	CSWSEffectListHandler::OnApplySetStateInternal	218	218	re/names.tsv re/rules.md	
+gone	0x004da3d1	switchD_004da3ca::caseD_4	58			now inside 0x004da330 CSWSEffectListHandler::OnApplySetStateInternal
+gone	0x004da4b6	switchD_004da3ca::caseD_7	45			now inside 0x004da330 CSWSEffectListHandler::OnApplySetStateInternal
+gone	0x004da4e6	switchD_004da3ca::caseD_9	45			now inside 0x004da330 CSWSEffectListHandler::OnApplySetStateInternal
+gone	0x004da534	switchD_004da3ca::caseD_2	46			now inside 0x004da330 CSWSEffectListHandler::OnApplySetStateInternal
+gone	0x004da5ab	switchD_004da3ca::caseD_3	72			now inside 0x004da330 CSWSEffectListHandler::OnApplySetStateInternal
+gone	0x004da6ba	switchD_004da3ca::caseD_5	45			now inside 0x004da330 CSWSEffectListHandler::OnApplySetStateInternal
+gone	0x004da6f1	switchD_004da3ca::caseD_6	45			now inside 0x004da330 CSWSEffectListHandler::OnApplySetStateInternal
+gone	0x004da742	switchD_004da3ca::caseD_a	45			now inside 0x004da330 CSWSEffectListHandler::OnApplySetStateInternal
+gone	0x004da78d	switchD_004da3ca::caseD_8	45			now inside 0x004da330 CSWSEffectListHandler::OnApplySetStateInternal
+gone	0x004da8bb	switchD_004da89c::caseD_c	12			now inside 0x004da870 CSWSEffectListHandler::OnRemoveSetStateInternal
+changed	0x004daa40	CSWSEffectListHandler::OnApplyVisualEffect	61	136	re/names.tsv re/rules.md	
+changed	0x004dade0	CSWSEffectListHandler::OnApplyAreaOfEffect	47	90	re/names.tsv re/rules.md	
+new	0x004dae1f	FUN_004dae1f		75		DEFAULT
+changed	0x004db320	CSWSEffectListHandler::OnApplyPoison	146	199	re/names.tsv re/rules.md	
+changed	0x004dc7a0	CSWSEffectListHandler::OnRemoveHitPointChangeWhenDying	88	121	re/names.tsv re/rules.md	
+changed	0x004dd270	CSWSEffectListHandler::OnRemoveType4F	71	71	re/names.tsv	
+changed	0x004ddac0	CSWSEffectListHandler::OnRemoveType54	39	117	re/names.tsv	
+changed	0x004df420	FUN_004df420	27	45	re/combat.md re/rules.md	
+changed	0x004df540	CSWSEffectListHandler::OnApplyForceShield	72	187	mechanics/combat.md re/names.tsv re/rules.md	
+changed	0x004dfa40	CSWSEffectListHandler::OnApplyDamage	522	522	re/README.md re/combat.md re/names.tsv re/rules.md	
+changed	0x004e0ac0	CSWSEffectListHandler::OnApplyDeath	238	388	re/combat.md re/gameloop.md re/names.tsv re/rules.md	
+gone	0x004e1672	switchD_004e1650::caseD_4	8			now inside 0x004e14d0 CSWSEffectListHandler::OnRemoveACIncrease
+gone	0x004e168d	switchD_004e1650::caseD_2	8			now inside 0x004e14d0 CSWSEffectListHandler::OnRemoveACIncrease
+gone	0x004e16a8	switchD_004e1650::caseD_3	8			now inside 0x004e14d0 CSWSEffectListHandler::OnRemoveACIncrease
+gone	0x004e1867	switchD_004e1847::caseD_2	8			now inside 0x004e16e0 CSWSEffectListHandler::OnRemoveACDecrease
+gone	0x004e1880	switchD_004e1847::caseD_3	8			now inside 0x004e16e0 CSWSEffectListHandler::OnRemoveACDecrease
+gone	0x004e1899	switchD_004e1847::caseD_4	8			now inside 0x004e16e0 CSWSEffectListHandler::OnRemoveACDecrease
+changed	0x004e2720	CSWSEffectListHandler::OnApplyDisease	112	166	re/names.tsv re/rules.md	
+changed	0x004e4790	CSWSEffectListHandler::OnApplyIcon	73	120	re/names.tsv re/rules.md	
+changed	0x004e5490	CSWSItemPropertyHandler::ApplyEnhancementBonus	39	203	re/names.tsv re/party-items-saves.md re/rules.md	
+changed	0x004e58c0	CSWSItemPropertyHandler::ApplyEnhancementPenalty	45	160	re/names.tsv re/party-items-saves.md	
+changed	0x004e5e80	CSWSItemPropertyHandler::ApplyAttackBonus	30	117	re/names.tsv re/party-items-saves.md	
+changed	0x004e60c0	CSWSItemPropertyHandler::ApplyAttackPenalty	37	99	re/names.tsv re/party-items-saves.md	
+changed	0x004e6390	CSWSItemPropertyHandler::ApplyAbilityBonus	31	76	re/names.tsv re/party-items-saves.md	
+gone	0x004e648b	switchD_004e647b::caseD_1	16			now inside 0x004e6390 CSWSItemPropertyHandler::ApplyAbilityBonus
+gone	0x004e6493	switchD_004e647b::caseD_2	16			now inside 0x004e6390 CSWSItemPropertyHandler::ApplyAbilityBonus
+gone	0x004e649b	switchD_004e647b::caseD_3	16			now inside 0x004e6390 CSWSItemPropertyHandler::ApplyAbilityBonus
+gone	0x004e64a4	switchD_004e647b::caseD_4	16			now inside 0x004e6390 CSWSItemPropertyHandler::ApplyAbilityBonus
+gone	0x004e64ac	switchD_004e647b::caseD_5	16			now inside 0x004e6390 CSWSItemPropertyHandler::ApplyAbilityBonus
+changed	0x004e6510	CSWSItemPropertyHandler::ApplyACBonus	37	81	re/names.tsv re/party-items-saves.md	
+changed	0x004e66b0	CSWSItemPropertyHandler::ApplyForceResistance	31	51	re/names.tsv re/party-items-saves.md	
+new	0x004e67d0	CSWSItemPropertyHandler::ApplySavingThrowEffect		58	re/names.tsv re/party-items-saves.md	USER_DEFINED
+changed	0x004e6e20	CSWSItemPropertyHandler::ApplyDamageImmunity	33	54	re/names.tsv re/party-items-saves.md	
+changed	0x004e6f60	CSWSItemPropertyHandler::ApplyDamagePenalty	38	107	re/names.tsv re/party-items-saves.md	
+changed	0x004e7190	CSWSItemPropertyHandler::ApplyDamageReduction	44	50	re/names.tsv re/party-items-saves.md	
+changed	0x004e72b0	CSWSItemPropertyHandler::ApplyDamageResistance	44	50	re/names.tsv re/party-items-saves.md	
+changed	0x004e73d0	CSWSItemPropertyHandler::ApplyDamageVulnerability	42	50	re/names.tsv re/party-items-saves.md	
+changed	0x004e74f0	CSWSItemPropertyHandler::ApplyDecreaseAbility	31	77	re/names.tsv re/party-items-saves.md	
+gone	0x004e75ed	switchD_004e75de::caseD_1	16			now inside 0x004e74f0 CSWSItemPropertyHandler::ApplyDecreaseAbility
+gone	0x004e75f6	switchD_004e75de::caseD_2	16			now inside 0x004e74f0 CSWSItemPropertyHandler::ApplyDecreaseAbility
+gone	0x004e75fe	switchD_004e75de::caseD_3	16			now inside 0x004e74f0 CSWSItemPropertyHandler::ApplyDecreaseAbility
+gone	0x004e7606	switchD_004e75de::caseD_4	16			now inside 0x004e74f0 CSWSItemPropertyHandler::ApplyDecreaseAbility
+gone	0x004e760f	switchD_004e75de::caseD_5	16			now inside 0x004e74f0 CSWSItemPropertyHandler::ApplyDecreaseAbility
+changed	0x004e7670	CSWSItemPropertyHandler::ApplyDecreaseAC	31	55	re/names.tsv re/party-items-saves.md	
+changed	0x004e77c0	CSWSItemPropertyHandler::ApplyDecreaseSkill	31	54	re/names.tsv re/party-items-saves.md	
+changed	0x004e7900	CSWSItemPropertyHandler::ApplyImmunity	97	97	re/names.tsv re/party-items-saves.md	
+gone	0x004e7942	switchD_004e7933::caseD_1	51			now inside 0x004e7900 CSWSItemPropertyHandler::ApplyImmunity
+gone	0x004e795c	switchD_004e7933::caseD_2	49			now inside 0x004e7900 CSWSItemPropertyHandler::ApplyImmunity
+gone	0x004e7964	switchD_004e7933::caseD_3	49			now inside 0x004e7900 CSWSItemPropertyHandler::ApplyImmunity
+gone	0x004e796c	switchD_004e7933::caseD_4	49			now inside 0x004e7900 CSWSItemPropertyHandler::ApplyImmunity
+gone	0x004e7974	switchD_004e7933::caseD_5	49			now inside 0x004e7900 CSWSItemPropertyHandler::ApplyImmunity
+gone	0x004e797c	switchD_004e7933::caseD_6	49			now inside 0x004e7900 CSWSItemPropertyHandler::ApplyImmunity
+gone	0x004e7984	switchD_004e7933::caseD_7	49			now inside 0x004e7900 CSWSItemPropertyHandler::ApplyImmunity
+gone	0x004e798c	switchD_004e7933::caseD_8	49			now inside 0x004e7900 CSWSItemPropertyHandler::ApplyImmunity
+gone	0x004e7994	switchD_004e7933::caseD_9	49			now inside 0x004e7900 CSWSItemPropertyHandler::ApplyImmunity
+changed	0x004e7f40	CSWSItemPropertyHandler::RemoveEnhancementBonus	24	173	re/names.tsv re/party-items-saves.md	
+changed	0x004e83a0	CSWSItemPropertyHandler::RemoveEnhancementPenalty	31	124	re/names.tsv re/party-items-saves.md	
+changed	0x004e8950	CSWSItemPropertyHandler::RemoveAttackBonus	24	106	re/names.tsv re/party-items-saves.md	
+changed	0x004e8bc0	CSWSItemPropertyHandler::RemoveAttackPenalty	31	83	re/names.tsv re/party-items-saves.md	
+changed	0x004e8db0	CSWSItemPropertyHandler::RemoveAbilityBonus	31	80	re/names.tsv re/party-items-saves.md	
+gone	0x004e8ebf	switchD_004e8ea7::caseD_1	62		re/names.tsv re/party-items-saves.md	now inside 0x004e8db0 CSWSItemPropertyHandler::RemoveAbilityBonus
+gone	0x004e8f4c	switchD_004e8ea7::switchdataD_004e8f4c	88			
+changed	0x004e8f70	CSWSItemPropertyHandler::RemoveACBonus	32	85	re/names.tsv re/party-items-saves.md	
+changed	0x004e9110	CSWSItemPropertyHandler::RemoveForceResistance	31	48	re/names.tsv re/party-items-saves.md	
+changed	0x004e9230	CSWSItemPropertyHandler::ApplyImprovedSavingThrow	31	37	re/names.tsv re/party-items-saves.md	
+changed	0x004e92e0	CSWSItemPropertyHandler::ApplyReducedSavingThrow	31	37	re/names.tsv re/party-items-saves.md	
+new	0x004e9390	FUN_004e9390		51		DEFAULT
+changed	0x004e97a0	CSWSItemPropertyHandler::RemoveDamageImmunity	35	104	re/names.tsv re/party-items-saves.md	
+gone	0x004e9858	switchD_004e9849::caseD_1	30			now inside 0x004e97a0 CSWSItemPropertyHandler::RemoveDamageImmunity
+gone	0x004e9860	switchD_004e9849::caseD_2	30			now inside 0x004e97a0 CSWSItemPropertyHandler::RemoveDamageImmunity
+gone	0x004e9868	switchD_004e9849::caseD_3	30			now inside 0x004e97a0 CSWSItemPropertyHandler::RemoveDamageImmunity
+gone	0x004e9870	switchD_004e9849::caseD_4	31			now inside 0x004e97a0 CSWSItemPropertyHandler::RemoveDamageImmunity
+gone	0x004e9878	switchD_004e9849::caseD_5	31			now inside 0x004e97a0 CSWSItemPropertyHandler::RemoveDamageImmunity
+gone	0x004e9880	switchD_004e9849::caseD_6	31			now inside 0x004e97a0 CSWSItemPropertyHandler::RemoveDamageImmunity
+gone	0x004e9888	switchD_004e9849::caseD_7	31			now inside 0x004e97a0 CSWSItemPropertyHandler::RemoveDamageImmunity
+gone	0x004e9890	switchD_004e9849::caseD_8	31			now inside 0x004e97a0 CSWSItemPropertyHandler::RemoveDamageImmunity
+gone	0x004e9898	switchD_004e9849::caseD_9	31			now inside 0x004e97a0 CSWSItemPropertyHandler::RemoveDamageImmunity
+gone	0x004e98a0	switchD_004e9849::caseD_a	31			now inside 0x004e97a0 CSWSItemPropertyHandler::RemoveDamageImmunity
+gone	0x004e98a8	switchD_004e9849::caseD_b	31			now inside 0x004e97a0 CSWSItemPropertyHandler::RemoveDamageImmunity
+gone	0x004e98b0	switchD_004e9849::caseD_c	31			now inside 0x004e97a0 CSWSItemPropertyHandler::RemoveDamageImmunity
+gone	0x004e98b8	switchD_004e9849::caseD_d	31			now inside 0x004e97a0 CSWSItemPropertyHandler::RemoveDamageImmunity
+changed	0x004e9990	CSWSItemPropertyHandler::RemoveDamagePenalty	31	83	re/names.tsv re/party-items-saves.md	
+changed	0x004e9bb0	CSWSItemPropertyHandler::RemoveDamageReduction	31	51	re/names.tsv re/party-items-saves.md	
+changed	0x004e9cf0	CSWSItemPropertyHandler::RemoveDamageResistance	32	53	re/names.tsv re/party-items-saves.md	
+changed	0x004e9e30	CSWSItemPropertyHandler::RemoveDamageVulnerability	32	54	re/names.tsv re/party-items-saves.md	
+changed	0x004e9f60	CSWSItemPropertyHandler::RemoveDecreaseAbility	31	81	re/names.tsv re/party-items-saves.md	
+gone	0x004ea07f	switchD_004ea067::caseD_1	62		re/names.tsv re/party-items-saves.md	now inside 0x004e9f60 CSWSItemPropertyHandler::RemoveDecreaseAbility
+gone	0x004ea10c	switchD_004ea067::switchdataD_004ea10c	37			
+changed	0x004ea130	CSWSItemPropertyHandler::RemoveDecreaseAC	31	55	re/names.tsv re/party-items-saves.md	
+changed	0x004ea290	CSWSItemPropertyHandler::RemoveDecreaseSkill	31	55	re/names.tsv re/party-items-saves.md	
+gone	0x004ea42c	switchD_004ea41d::caseD_1	36			now inside 0x004ea3f0 CSWSItemPropertyHandler::RemoveImmunity
+gone	0x004ea446	switchD_004ea41d::caseD_2	32			now inside 0x004ea3f0 CSWSItemPropertyHandler::RemoveImmunity
+gone	0x004ea44e	switchD_004ea41d::caseD_3	32			now inside 0x004ea3f0 CSWSItemPropertyHandler::RemoveImmunity
+gone	0x004ea456	switchD_004ea41d::caseD_4	32			now inside 0x004ea3f0 CSWSItemPropertyHandler::RemoveImmunity
+gone	0x004ea45e	switchD_004ea41d::caseD_5	32			now inside 0x004ea3f0 CSWSItemPropertyHandler::RemoveImmunity
+gone	0x004ea466	switchD_004ea41d::caseD_6	33			now inside 0x004ea3f0 CSWSItemPropertyHandler::RemoveImmunity
+gone	0x004ea46e	switchD_004ea41d::caseD_7	32			now inside 0x004ea3f0 CSWSItemPropertyHandler::RemoveImmunity
+gone	0x004ea476	switchD_004ea41d::caseD_8	33			now inside 0x004ea3f0 CSWSItemPropertyHandler::RemoveImmunity
+gone	0x004ea47e	switchD_004ea41d::caseD_9	33			now inside 0x004ea3f0 CSWSItemPropertyHandler::RemoveImmunity
+changed	0x004ea890	CSWSItemPropertyHandler::RemoveImprovedSavingThrow	31	35	re/names.tsv re/party-items-saves.md	
+changed	0x004ea940	CSWSItemPropertyHandler::RemoveReducedSavingThrow	31	35	re/names.tsv re/party-items-saves.md	
+new	0x004eaf70	FUN_004eaf70		14		DEFAULT
+changed	0x004eb3a0	CSWSCreature::GetSpellRange	35	70	re/actions.md re/names.tsv	
+changed	0x004eb6e0	CSWSCreature::RunHeartbeat	179	187	re/gameloop.md re/names.tsv re/objects.md	
+changed	0x004ebf20	CSWSCreature::ReadScriptsFromGff	97	98	re/names.tsv re/objects.md	
+new	0x004ec500	FUN_004ec500		49	re/combat.md	DEFAULT
+new	0x004ecd60	FUN_004ecd60		43		DEFAULT
+changed	0x004ed4c0	CSWSCreature::SetPortraitId	39	49	re/names.tsv re/objects.md	
+changed	0x004ed850	FUN_004ed850	22	76		
+changed	0x004ee010	FUN_004ee010	51	53		
+changed	0x004ee150	FUN_004ee150	28	28		
+changed	0x004ee2e0	FUN_004ee2e0	38	48		
+changed	0x004ee770	CSWSCreature::ApplyPoisonTick	32	322	re/names.tsv re/rules.md	
+changed	0x004ef2e0	CSWSCreature::GetBodyBagAppearance	25	50	re/names.tsv	
+new	0x004ef560	FUN_004ef560		48		DEFAULT
+new	0x004ef640	FUN_004ef640		27		DEFAULT
+changed	0x004ef930	CSWSCreature::AddExperience	53	55	re/names.tsv re/rules.md	
+changed	0x004efc70	CSWSCreature::GetSightRange	37	36	re/gameloop.md re/names.tsv	
+changed	0x004efd20	CSWSCreature::GetHearingRange	37	36	re/gameloop.md re/names.tsv	
+new	0x004efe30	FUN_004efe30		30	re/gui.md re/names.tsv	DEFAULT
+changed	0x004f00a0	CSWSCreature::SetActivity	83	83	re/names.tsv	
+changed	0x004f1310	CSWSCreature::GetMeleeAttackRange	53	53	re/actions.md re/names.tsv	
+changed	0x004f17d0	FUN_004f17d0	50	77		
+changed	0x004f19e0	CSWSCreature::GetKillXPValue	61	62	re/combat.md re/names.tsv re/rules.md	
+changed	0x004f1c40	CSWSCreature::PostProcess	120	121	re/chargen-creature.md re/names.tsv re/objects.md	
+changed	0x004f1fd0	CSWSCreature::GetCanSeeStealthedBySight	206	211	mechanics/stealth.md re/movement.md re/names.tsv re/rules.md	
+changed	0x004f2610	CSWSCreature::SetCombatState	100	101	re/combat.md re/names.tsv re/party-items-saves.md	
+changed	0x004f2a50	CSWSCreature::SetActivityMode	90	93	mechanics/stealth.md re/gui.md re/names.tsv re/party-items-saves.md	
+changed	0x004f2c30	CSWSCreature::GetIsSelectableTarget	71	71	mechanics/traps.md re/movement.md re/names.tsv	
+changed	0x004f3580	FUN_004f3580	22	40	re/combat.md	
+new	0x004f3770	FUN_004f3770		34	re/combat.md	DEFAULT
+changed	0x004f3830	CSWSCreature::TakeDamage	98	102	re/combat.md re/names.tsv	
+changed	0x004f3fe0	CSWSCreature::GetTotalEffectBonus	1291	1439	re/combat.md re/names.tsv re/rules.md	
+changed	0x004f6000	CSWSCreature::GetIsInUseRange	50	91	re/actions.md re/movement.md re/names.tsv	
+changed	0x004f6390	CSWSCreature::PushCreatureAside	150	152	re/movement.md re/names.tsv	
+changed	0x004f6790	FUN_004f6790	34	213	re/rules.md	
+changed	0x004f6d70	CSWSCreature::ApplyStealthEffects	68	71	mechanics/stealth.md re/movement.md re/names.tsv	
+new	0x004f7780	FUN_004f7780		28		DEFAULT
+changed	0x004f8410	CSWSCreature::~CSWSCreature	142	157	re/names.tsv re/objects.md	
+changed	0x004f87d0	CSWSCreature::ClearActivities	77	77	re/actions.md re/names.tsv	
+changed	0x004fa100	CSWSCreature::AddToArea	97	97	re/actions.md re/gameloop.md re/names.tsv	
+changed	0x004faa70	CSWSCreature::UnequipItem	27	27	mechanics/stealth.md re/gui.md re/names.tsv re/party-items-saves.md	
+changed	0x004fb1e0	CSWSCreature::AwardKillXP	49	131	re/combat.md re/names.tsv re/rules.md	
+changed	0x004fb4b0	CSWSCreature::GetCanSeeStealthed	215	216	mechanics/stealth.md re/names.tsv re/rules.md	
+changed	0x004fbbe0	CSWSCreature::SignalCombatWith	124	124	re/combat.md re/names.tsv	
+changed	0x004fbe40	CSWSCreature::UseSkill	115	115	mechanics/stealth.md mechanics/traps.md re/actions.md re/names.tsv	
+changed	0x004fd1e0	CSWSCreature::Rest	120	121	re/actions.md re/names.tsv	
+changed	0x004fe210	CSWSCreature::AIUpdate	380	380	mechanics/stealth.md re/actions.md re/combat.md re/gameloop.md re/names.tsv re/objects.md re/rules.md	
+changed	0x004fece0	CSWSCreature::EventHandler	524	564	mechanics/combat.md re/combat.md re/dialogue.md re/names.tsv re/objects.md re/rules.md	
+changed	0x00500350	CSWSCreature::LoadCreature	105	104	mechanics/stealth.md re/names.tsv re/objects.md	
+new	0x00500610	CSWSCreature::SaveCreature		131	re/names.tsv re/objects.md re/party-items-saves.md	USER_DEFINED
+changed	0x00500c00	CSWSCreature::GetPerceives	34	37	re/names.tsv	
+changed	0x005014a0	FUN_005014a0	187	201		
+changed	0x00501c40	CSWSCreature::EquipDefaultClothes	30	66	re/chargen-creature.md re/names.tsv re/party-items-saves.md	
+changed	0x005026d0	CSWSCreature::LoadFromTemplate	139	136	re/README.md re/names.tsv re/objects.md	
+changed	0x00502ac0	CSWSCreature::DoPerceptionCheck	394	397	mechanics/stealth.md re/gameloop.md re/movement.md re/names.tsv re/rules.md	
+changed	0x00503790	CGameEffect::SaveEffect	65	80	re/names.tsv re/rules.md re/vm.md	
+changed	0x005043a0	CGameEffect::LoadEffect	146	155	re/names.tsv re/rules.md re/vm.md	
+changed	0x005057a0	CSWSArea::LoadStores	124	124	re/modules.md re/names.tsv re/objects.md	
+new	0x00506090	FUN_00506090		17		DEFAULT
+new	0x005061d0	FUN_005061d0		26		DEFAULT
+new	0x005062a0	FUN_005062a0		30		DEFAULT
+changed	0x00506400	CSWSArea::IsWalkablePoint	31	32	re/movement.md re/names.tsv	
+new	0x00506910	FUN_00506910		49		DEFAULT
+changed	0x00506a80	CSWSArea::SetStealthXPMax	9	11	mechanics/stealth.md re/names.tsv re/rules.md	
+changed	0x00506aa0	CSWSArea::SetStealthXPCurrent	10	12	mechanics/stealth.md re/gameloop.md re/names.tsv re/rules.md	
+new	0x00507680	CSWSArea::SaveCreatures		31	re/names.tsv re/objects.md re/party-items-saves.md	USER_DEFINED
+new	0x00507750	CSWSArea::SaveItems		31	re/names.tsv re/objects.md	USER_DEFINED
+new	0x00507810	CSWSArea::SaveDoors		31	re/names.tsv re/objects.md	USER_DEFINED
+new	0x005078d0	CSWSArea::SaveTriggers		31	re/names.tsv re/objects.md	USER_DEFINED
+new	0x00507990	CSWSArea::SaveEncounters		31	re/names.tsv re/objects.md	USER_DEFINED
+new	0x00507a50	CSWSArea::SaveWaypoints		31	re/names.tsv re/objects.md	USER_DEFINED
+new	0x00507b10	CSWSArea::SaveSounds		31	re/names.tsv re/objects.md	USER_DEFINED
+new	0x00507bd0	CSWSArea::SavePlaceables		31	re/names.tsv re/objects.md	USER_DEFINED
+new	0x00507ca0	CSWSArea::SaveStores		31	re/names.tsv re/objects.md	USER_DEFINED
+new	0x00507d60	CSWSArea::SaveAreaEffects		31	re/names.tsv re/objects.md	USER_DEFINED
+changed	0x00507e20	FUN_00507e20	23	74		
+changed	0x00508770	CSWSArea::AwardStealthXP	32	36	mechanics/stealth.md re/names.tsv re/rules.md	
+new	0x00508820	FUN_00508820		51		DEFAULT
+changed	0x00508c50	CSWSArea::LoadAreaHeader	37	589	re/modules.md re/names.tsv	
+changed	0x0050a350	CSWSArea::LoadTriggers	118	142	re/modules.md re/names.tsv re/objects.md	
+changed	0x0050a7b0	CSWSArea::LoadPlaceables	97	97	re/modules.md re/names.tsv re/objects.md	
+new	0x0050aaa0	FUN_0050aaa0		483		DEFAULT
+new	0x0050ba00	CSWSArea::SaveGIT		310	re/names.tsv re/objects.md	USER_DEFINED
+changed	0x0050c1e0	FUN_0050c1e0	43	58		
+changed	0x0050c6b0	FUN_0050c6b0	89	121		
+changed	0x0050d370	CSWSArea::~CSWSArea	110	129	re/modules.md re/names.tsv re/objects.md	
+changed	0x0050d6c0	CSWSArea::EventHandler	157	216	re/gameloop.md re/names.tsv re/objects.md	
+changed	0x0050e400	CSWSCreature::AIActionFlagTrap	175	189	mechanics/traps.md re/actions.md re/names.tsv re/objects.md re/rules.md	
+changed	0x0050e900	CSWSCreature::AIActionExamineTrap	180	195	mechanics/traps.md re/actions.md re/names.tsv re/objects.md re/rules.md	
+changed	0x0050ee30	FUN_0050ee30	9	9	mechanics/traps.md re/names.tsv	
+changed	0x0050ee50	CSWSCreature::SetStealthMode	10	13	re/names.tsv	
+changed	0x0050f170	CSWSCreature::AIActionItemCastSpell	212	420	mechanics/items-skills.md re/actions.md re/combat.md re/names.tsv re/objects.md	
+gone	0x0050f596	switchD_0050f58f::caseD_19	161			now inside 0x0050f170 CSWSCreature::AIActionItemCastSpell
+gone	0x0050f5b6	switchD_0050f58f::caseD_2f	161			now inside 0x0050f170 CSWSCreature::AIActionItemCastSpell
+gone	0x0050f66c	switchD_0050f58f::caseD_14	161			now inside 0x0050f170 CSWSCreature::AIActionItemCastSpell
+gone	0x0050f68c	switchD_0050f58f::caseD_c	171			now inside 0x0050f170 CSWSCreature::AIActionItemCastSpell
+gone	0x0050f6ca	switchD_0050f58f::caseD_7	163			now inside 0x0050f170 CSWSCreature::AIActionItemCastSpell
+changed	0x005101a0	CSWSCreature::AIActionCheckMoveToObject	44	88	re/actions.md re/names.tsv re/objects.md	
+changed	0x005103b0	CSWSCreature::AIActionCheckInRangeOfObject	59	103	re/actions.md re/names.tsv	
+changed	0x00514700	FUN_00514700	87	88		
+changed	0x005149b0	FUN_005149b0	55	56		
+changed	0x00514af0	CSWSCreature::AIActionCastSpell	394	399	mechanics/combat.md mechanics/force.md re/actions.md re/combat.md re/names.tsv re/objects.md re/rules.md	
+changed	0x00516630	CSWSCreature::StepAlongPath	400	456	re/movement.md re/names.tsv	
+changed	0x00517a60	CSWSCreature::AIActionHeal	277	303	mechanics/items-skills.md re/actions.md re/names.tsv re/objects.md re/rules.md	
+changed	0x00518c40	CSWSCreature::AIActionRecoverTrap	311	367	mechanics/traps.md re/actions.md re/names.tsv re/objects.md re/rules.md	
+changed	0x00519570	CSWSCreature::AIActionDisableTrap	357	372	mechanics/traps.md re/actions.md re/names.tsv re/objects.md re/rules.md	
+changed	0x00519e30	CSWSCreature::AIActionSetTrap	175	455	mechanics/traps.md re/actions.md re/names.tsv re/objects.md re/rules.md	
+new	0x0051afd0	FUN_0051afd0		36		DEFAULT
+changed	0x0051b050	CSWSCreature::UpdatePerception	119	119	re/gameloop.md re/names.tsv re/rules.md	
+changed	0x0051f4f0	CSWSCreature::AIActionMoveToPoint	630	683	re/README.md re/actions.md re/movement.md re/names.tsv re/objects.md	
+new	0x00520980	FUN_00520980		7		DEFAULT
+changed	0x00520a10	FUN_00520a10	50	91		
+gone	0x00520b5f	switchD_00520b2f::caseD_5	9			now inside 0x00520a10 FUN_00520a10
+changed	0x00520bf0	CSWSMessage::HandlePlayerToServerCheatMessage	714	1033	re/names.tsv	
+changed	0x005228d0	FUN_005228d0	375	377		
+changed	0x00523c20	CSWSMessage::HandlePlayerToServerInventoryMessage	381	380	re/actions.md re/names.tsv	
+changed	0x005246f0	FUN_005246f0	45	48		
+changed	0x00524800	CSWSMessage::HandlePlayerToServerModuleMessage	78	149	re/names.tsv	
+changed	0x00524944	FUN_00524944	14	54		
+changed	0x00524c70	FUN_00524c70	48	91		
+changed	0x00524f10	FUN_00524f10	51	53		
+changed	0x00525080	FUN_00525080	45	80		
+changed	0x00525350	FUN_00525350	18	18		
+changed	0x005254c0	CSWSMessage::HandlePlayerToServerInputMessage	795	799	re/actions.md re/combat.md re/dialogue.md re/gameloop.md re/movement.md re/names.tsv	
+changed	0x00526910	FUN_00526910	489	496		
+changed	0x00527380	FUN_00527380	19	19		
+new	0x00527490	FUN_00527490		50		DEFAULT
+changed	0x005278d0	FUN_005278d0	75	113		
+changed	0x00527b20	CSWSMessage::HandlePlayerToServerMessage	165	174	re/actions.md re/gameloop.md re/names.tsv	
+changed	0x00528090	FUN_00528090	27	28		
+changed	0x005281b0	FUN_005281b0	37	83		
+changed	0x00528380	CSWSMessage::HandleServerAdminMessage	284	367	re/gameloop.md re/names.tsv	
+new	0x00528de0	CSWGlobalVariableTable::~CSWGlobalVariableTable		20	re/names.tsv	USER_DEFINED
+new	0x00528ec0	CSWGlobalVariableTable::InsertName		44	re/names.tsv	USER_DEFINED
+new	0x00528f70	CSWGlobalVariableTable::AddBoolean		14	re/names.tsv	USER_DEFINED
+new	0x00528fa0	CSWGlobalVariableTable::AddNumber		14	re/names.tsv	USER_DEFINED
+new	0x00528fd0	CSWGlobalVariableTable::AddLocation		14	re/names.tsv	USER_DEFINED
+new	0x00529000	CSWGlobalVariableTable::AddString		14	re/names.tsv	USER_DEFINED
+changed	0x00529110	CSWGlobalVariableTable::GetValueBoolean	45	47	re/names.tsv	
+changed	0x00529240	CSWGlobalVariableTable::GetValueNumber	42	44	re/names.tsv	
+changed	0x00529350	CSWGlobalVariableTable::GetValueLocation	49	51	re/names.tsv	
+changed	0x00529460	CSWGlobalVariableTable::GetValueString	43	45	re/names.tsv	
+changed	0x00529570	CSWGlobalVariableTable::SetValueBoolean	41	43	re/names.tsv	
+changed	0x00529680	CSWGlobalVariableTable::SetValueNumber	42	44	re/names.tsv	
+changed	0x00529790	CSWGlobalVariableTable::SetValueLocation	49	51	re/names.tsv	
+changed	0x005298a0	CSWGlobalVariableTable::SetValueString	44	46	re/names.tsv	
+new	0x005299b0	CSWGlobalVariableTable::WriteTable		197	re/names.tsv re/party-items-saves.md	USER_DEFINED
+gone	0x00529c8b	switchD_00529c2c::caseD_1	115		re/names.tsv re/party-items-saves.md	now inside 0x005299b0 CSWGlobalVariableTable::WriteTable
+new	0x00529ef0	CSWGlobalVariableTable::ReadTableNoCat		150	re/names.tsv re/party-items-saves.md	USER_DEFINED
+gone	0x0052a133	switchD_0052a12c::caseD_0	83		re/names.tsv re/party-items-saves.md	now inside 0x00529ef0 CSWGlobalVariableTable::ReadTableNoCat
+new	0x0052a280	ReadTableWithCat		318	re/names.tsv re/party-items-saves.md	USER_DEFINED
+new	0x0052abe0	CSWGlobalVariableTable::ReadTable		53	re/names.tsv	USER_DEFINED
+changed	0x0052ad10	CSWGlobalVariableTable::SaveToDirectory	31	39	re/names.tsv re/party-items-saves.md	
+new	0x0052ade0	CSWGlobalVariableTable::LoadFromSaveDirectory		24	re/names.tsv re/party-items-saves.md	USER_DEFINED
+new	0x0052ae50	CSWGlobalVariableTable::LoadCatalogue		130	re/names.tsv re/party-items-saves.md	USER_DEFINED
+new	0x0052b170	CSWGlobalVariableTable::CSWGlobalVariableTable		78	re/names.tsv re/party-items-saves.md	USER_DEFINED
+new	0x0052b2a0	FUN_0052b2a0		48	re/combat.md	DEFAULT
+changed	0x0052b370	FUN_0052b370	13	14		
+changed	0x0052b490	FUN_0052b490	35	51	re/combat.md re/modules.md	
+changed	0x0052b5c0	FUN_0052b5c0	41	80		
+new	0x0052b790	FUN_0052b790		26		DEFAULT
+new	0x0052b830	FUN_0052b830		36		DEFAULT
+changed	0x0052b950	FUN_0052b950	35	34		
+changed	0x0052bfc0	FUN_0052bfc0	28	33		
+changed	0x0052d5b0	CSWVirtualMachineCommands::ExecuteCommandActionStartConversation	130	136	re/actions.md re/dialogue.md re/names.tsv	
+changed	0x0052dcd0	CSWVirtualMachineCommands::ExecuteCommandAddAvailableNPCByTemplate	46	49	re/names.tsv re/party-items-saves.md	
+changed	0x0052e430	CSWVirtualMachineCommands::ExecuteCommandApplyEffectAtLocation	65	65	re/names.tsv re/rules.md	
+changed	0x0052e9f0	CSWVirtualMachineCommands::ExecuteCommandBeginConversation	197	200	re/actions.md re/dialogue.md re/names.tsv	
+changed	0x0052f570	CSWVirtualMachineCommands::ExecuteCommandCreateItemOnObject	151	154	re/names.tsv re/party-items-saves.md	
+changed	0x0052f820	CSWVirtualMachineCommands::ExecuteCommandCreateObject	233	241	re/names.tsv	
+changed	0x00530170	CSWVirtualMachineCommands::ExecuteCommandDisplayFeedBackText	48	70	re/names.tsv	
+changed	0x00530ce0	CSWVirtualMachineCommands::ExecuteCommandEffectAreaOfEffect	85	100	re/names.tsv re/rules.md	
+changed	0x00535b70	CSWVirtualMachineCommands::ExecuteCommandExecuteScript	44	46	re/gameloop.md re/names.tsv re/vm.md	
+changed	0x00535c90	CSWVirtualMachineCommands::ExecuteCommandFindSubString	42	51	re/names.tsv	
+changed	0x00535db0	CSWVirtualMachineCommands::ExecuteCommandFloatingTextStrRefOnCreature	97	99	re/names.tsv	
+changed	0x00536000	CSWVirtualMachineCommands::ExecuteCommandFloatToString	64	73	re/names.tsv	
+changed	0x005366a0	CSWVirtualMachineCommands::ExecuteCommandGetArea	58	61	re/names.tsv	
+changed	0x00538cd0	CSWVirtualMachineCommands::ExecuteCommandGetGlobalLocation	49	51	re/names.tsv re/party-items-saves.md	
+changed	0x00538dc0	CSWVirtualMachineCommands::ExecuteCommandGetGlobalBoolean	54	56	re/names.tsv re/party-items-saves.md	
+changed	0x00538ed0	CSWVirtualMachineCommands::ExecuteCommandGetGlobalString	45	51	re/names.tsv re/party-items-saves.md	
+changed	0x0053a390	CSWVirtualMachineCommands::ExecuteCommandGetItemPossessedBy	103	115	re/names.tsv re/party-items-saves.md	
+changed	0x0053a680	CSWVirtualMachineCommands::ExecuteCommandGetJournalQuestExperience	82	93	re/journal.md re/names.tsv	
+changed	0x0053ba10	CSWVirtualMachineCommands::ExecuteCommandGetLockKeyRequired	137	139	re/names.tsv	
+changed	0x0053bec0	CSWVirtualMachineCommands::ExecuteCommandGetModuleFileName	58	59	re/names.tsv	
+changed	0x0053c080	CSWVirtualMachineCommands::ExecuteCommandGetName	57	60	re/names.tsv	
+changed	0x0053c280	CSWVirtualMachineCommands::ExecuteCommandGetObjectByTag	41	52	re/names.tsv	
+changed	0x0053c390	CSWVirtualMachineCommands::ExecuteCommandGetFirstObjectInArea	107	120	re/names.tsv	
+changed	0x0053d610	CSWVirtualMachineCommands::ExecuteCommandGetStringByStrRef	44	50	re/names.tsv	
+changed	0x0053d720	CSWVirtualMachineCommands::ExecuteCommandGetStringLeft	42	58	re/names.tsv	
+changed	0x0053d860	CSWVirtualMachineCommands::ExecuteCommandGetStringLength	36	39	re/names.tsv	
+changed	0x0053d920	CSWVirtualMachineCommands::ExecuteCommandGetStringLowerCase	38	54	re/names.tsv	
+changed	0x0053da40	CSWVirtualMachineCommands::ExecuteCommandGetStringRight	42	58	re/names.tsv	
+changed	0x0053db80	CSWVirtualMachineCommands::ExecuteCommandGetStringUpperCase	38	54	re/names.tsv	
+changed	0x0053dca0	CSWVirtualMachineCommands::ExecuteCommandGetStrRefSoundDuration	46	49	re/names.tsv	
+changed	0x0053dda0	CSWVirtualMachineCommands::ExecuteCommandGetSubString	46	62	re/names.tsv	
+changed	0x0053df00	CSWVirtualMachineCommands::ExecuteCommandGetTag	56	59	re/names.tsv re/objects.md	
+changed	0x0053e2b0	CSWVirtualMachineCommands::ExecuteCommandGetWaypointByTag	49	53	re/names.tsv	
+changed	0x0053e960	CSWVirtualMachineCommands::ExecuteCommandInsertString	46	55	re/names.tsv	
+changed	0x0053eaf0	CSWVirtualMachineCommands::ExecuteCommandIntToHexString	37	40	re/names.tsv	
+changed	0x0053ebc0	CSWVirtualMachineCommands::ExecuteCommandIntToString	35	45	re/names.tsv	
+changed	0x0053f010	CSWVirtualMachineCommands::ExecuteCommandGetLastConversation	25	27	re/dialogue.md re/names.tsv	
+changed	0x0053fb00	CSWVirtualMachineCommands::ExecuteCommandActionMoveToObject	79	144	re/actions.md re/names.tsv	
+changed	0x00540170	CSWVirtualMachineCommands::ExecuteCommandObjectToString	39	47	re/names.tsv	
+changed	0x00540300	CSWVirtualMachineCommands::ExecuteCommandOpenStore	108	109	re/gui.md re/names.tsv re/party-items-saves.md	
+changed	0x00540550	CSWVirtualMachineCommands::ExecuteCommandActionPlayAnimation	404	419	re/actions.md re/names.tsv	
+changed	0x00540dd0	CSWVirtualMachineCommands::ExecuteCommandPlayRoomAnimation	47	51	re/names.tsv	
+changed	0x00540ed0	CSWVirtualMachineCommands::ExecuteCommandPlayMovie	37	39	re/app.md re/dialogue.md re/names.tsv	
+changed	0x00540fd0	CSWVirtualMachineCommands::ExecuteCommandPlayPazaak	61	62	re/names.tsv re/pazaak.md	
+changed	0x00541170	CSWVirtualMachineCommands::ExecuteCommandPlaySound	46	48	re/actions.md re/names.tsv	
+changed	0x00541280	CSWVirtualMachineCommands::ExecuteCommandPlayVisualAreaEffect	37	37	re/names.tsv	
+changed	0x00541320	CSWVirtualMachineCommands::ExecuteCommandPopUpGUIPanel	81	84	re/names.tsv	
+changed	0x005414d0	CSWVirtualMachineCommands::ExecuteCommandPrintFloat	73	74	re/names.tsv	
+changed	0x00541690	CSWVirtualMachineCommands::ExecuteCommandWriteTimestampedLogEntry	38	42	re/names.tsv	
+changed	0x005417c0	CSWVirtualMachineCommands::ExecuteCommandPrintString	59	61	re/names.tsv	
+changed	0x00541a30	CSWVirtualMachineCommands::ExecuteCommandRandomName	30	51	re/names.tsv	
+changed	0x00542300	CSWVirtualMachineCommands::ExecuteCommandSendMessageToPC	55	57	re/names.tsv	
+changed	0x00542410	CSWVirtualMachineCommands::ExecuteCommandSetAreaTransitionBMP	40	42	re/names.tsv	
+changed	0x00542a50	CSWVirtualMachineCommands::ExecuteCommandSetGlobalLocation	51	54	re/names.tsv re/party-items-saves.md	
+changed	0x00542b60	CSWVirtualMachineCommands::ExecuteCommandSetGlobalBoolean	49	51	re/names.tsv re/party-items-saves.md	
+changed	0x00542c60	CSWVirtualMachineCommands::ExecuteCommandSetGlobalString	43	49	re/names.tsv re/party-items-saves.md	
+changed	0x00543030	CSWVirtualMachineCommands::ExecuteCommandSetListenPattern	47	49	re/names.tsv	
+changed	0x005438b0	CSWVirtualMachineCommands::ExecuteCommandShowPartySelectionGUI	46	48	re/names.tsv re/party-items-saves.md	
+changed	0x00543f70	CSWVirtualMachineCommands::ExecuteCommandSpeakOneLinerConversation	57	59	re/actions.md re/dialogue.md re/names.tsv	
+changed	0x00544090	CSWVirtualMachineCommands::ExecuteCommandActionSpeakString	89	90	re/actions.md re/dialogue.md re/names.tsv	
+changed	0x00544390	CSWVirtualMachineCommands::ExecuteCommandStartNewModule	116	134	re/gameloop.md re/names.tsv	
+changed	0x00544710	CSWVirtualMachineCommands::ExecuteCommandStringToInt	53	57	re/names.tsv	
+changed	0x00544ef0	CSWVirtualMachineCommands::ExecuteCommandTestStringAgainstPattern	55	64	re/names.tsv	
+changed	0x00545e20	CSWVirtualMachineCommands::ExecuteCommandGivePlotXP	42	45	re/names.tsv	
+changed	0x00546b70	CSWVirtualMachineCommands::ExecuteCommandSetMaxStealthXP	30	30	re/names.tsv	
+changed	0x00546c20	CSWVirtualMachineCommands::ExecuteCommandSetCurrentStealthXP	30	30	re/names.tsv	
+changed	0x00546c80	CSWVirtualMachineCommands::ExecuteCommandAwardStealthXP	27	27	re/names.tsv	
+changed	0x00546f90	CSWVirtualMachineCommands::ExecuteCommandDuplicateHeadAppearance	61	61	re/names.tsv	
+changed	0x005473e0	CSWVirtualMachineCommands::ExecuteCommandStartCreditSequence	50	52	re/names.tsv	
+changed	0x005474f0	CSWVirtualMachineCommands::ExecuteCommandGetDifficultyModifier	31	33	re/names.tsv	
+changed	0x00547970	CSWVirtualMachineCommands::ExecuteCommandChangeItemCost	64	67	re/names.tsv re/party-items-saves.md	
+changed	0x00547ab0	CSWVirtualMachineCommands::ExecuteCommandGetIsLiveContentAvailable	47	50	re/names.tsv	
+changed	0x00547f60	CSWVirtualMachineCommands::ExecuteCommandCreateItemOnFloor	89	95	re/names.tsv	
+changed	0x00548210	CSWVirtualMachineCommands::ExecuteCommandQueueMovie	35	37	re/dialogue.md re/names.tsv	
+changed	0x005483f0	CSWVirtualMachineCommands::ExecuteCommandAddJournalQuestEntry	108	112	re/journal.md re/names.tsv	
+changed	0x00548640	CSWVirtualMachineCommands::ExecuteCommandAddJournalWorldEntry	68	76	re/names.tsv	
+changed	0x00548900	CSWVirtualMachineCommands::ExecuteCommandBarkString	76	77	re/actions.md re/dialogue.md re/names.tsv	
+changed	0x00549f30	CSWVirtualMachineCommands::ExecuteCommandGetJournalEntry	67	71	re/names.tsv	
+changed	0x0054af60	CSWVirtualMachineCommands::ExecuteCommandRemoveJournalQuestEntry	56	59	re/names.tsv	
+changed	0x0054b090	CSWVirtualMachineCommands::ExecuteCommandSetCustomToken	51	53	re/names.tsv	
+changed	0x0054b1e0	CSWVirtualMachineCommands::ExecuteCommandSetJournalQuestEntryPicture	96	107	re/names.tsv	
+changed	0x0054b550	CSWVirtualMachineCommands::ExecuteCommandGetNearestCreature	450	471	mechanics/combat.md re/names.tsv	
+gone	0x0054bfae	FUN_0054bfae	13			now inside 0x0054b550 CSWVirtualMachineCommands::ExecuteCommandGetNearestCreature
+changed	0x0054c0e0	CSWVirtualMachineCommands::ExecuteCommandGetTrapDisarmable	341	343	mechanics/traps.md re/names.tsv	
+changed	0x0054c830	CSWVirtualMachineCommands::ExecuteCommandGetMatchedSubstring	55	58	re/names.tsv	
+new	0x0054ea70	FUN_0054ea70		13		DEFAULT
+new	0x0054eaa0	FUN_0054eaa0		24		DEFAULT
+new	0x0054eb10	FUN_0054eb10		290		DEFAULT
+new	0x0054f2c0	FUN_0054f2c0		339	re/chargen.md re/resources.md	DEFAULT
+new	0x0054fec0	FUN_0054fec0		197	re/README.md re/resources.md	DEFAULT
+new	0x00550590	FUN_00550590		192	re/resources.md	DEFAULT
+new	0x00550c50	CSWRules::LoadDiffSettings		56	re/combat.md re/names.tsv	USER_DEFINED
+changed	0x00550e00	FUN_00550e00	72	80		
+new	0x00550f30	FUN_00550f30		82		DEFAULT
+changed	0x005515e0	FUN_005515e0	131	383	re/resources.md	
+changed	0x00552350	FUN_00552350	82	215		
+new	0x00552c50	CSWRules::CSWRules		185	re/names.tsv re/resources.md re/rules.md	USER_DEFINED
+changed	0x00553040	CSWSObject::SetTag	23	24	re/names.tsv re/objects.md	
+new	0x00553900	CSWSItem::IsUsablePropertyType		16	re/names.tsv re/party-items-saves.md	USER_DEFINED
+gone	0x00553923	switchD_00553914::caseD_b	5			now inside 0x00553900 CSWSItem::IsUsablePropertyType
+changed	0x00554080	CSWSItem::GetItemLevel	30	48	re/names.tsv re/party-items-saves.md	
+changed	0x005541c0	CSWSItem::GetUpgradeCategory	82	120	re/names.tsv re/party-items-saves.md	
+gone	0x0055427a	switchD_0055426f::caseD_4	72			now inside 0x005541c0 CSWSItem::GetUpgradeCategory
+gone	0x0055427e	switchD_0055426f::caseD_1	72			now inside 0x005541c0 CSWSItem::GetUpgradeCategory
+gone	0x00554282	switchD_0055426f::caseD_8	72			now inside 0x005541c0 CSWSItem::GetUpgradeCategory
+gone	0x0055433a	switchD_0055432f::caseD_4	41			now inside 0x005541c0 CSWSItem::GetUpgradeCategory
+gone	0x0055433e	switchD_0055432f::caseD_1	41			now inside 0x005541c0 CSWSItem::GetUpgradeCategory
+gone	0x00554342	switchD_0055432f::caseD_8	41			now inside 0x005541c0 CSWSItem::GetUpgradeCategory
+changed	0x005543b0	FUN_005543b0	33	49		
+changed	0x005544f0	FUN_005544f0	36	41		
+new	0x005545d0	FUN_005545d0		283		DEFAULT
+changed	0x00554e00	FUN_00554e00	23	197		
+changed	0x00554e45	FUN_00554e45	10	155		
+gone	0x00555345	FUN_00555345	9			now inside 0x00554e45 FUN_00554e45
+changed	0x00555380	FUN_00555380	24	49		
+changed	0x005554d0	FUN_005554d0	22	46		
+new	0x00555790	CSWSItem::SaveProperties		64	re/names.tsv	USER_DEFINED
+gone	0x00555bac	switchD_00555aaf::switchdataD_00555bac	55			
+gone	0x00555c7c	switchD_00555c40::switchdataD_00555c7c	115			
+changed	0x005562d0	FUN_005562d0	32	82		
+changed	0x00556490	FUN_00556490	161	292		
+changed	0x00556de0	FUN_00556de0	34	685		
+changed	0x005584c0	FUN_005584c0	120	152		
+changed	0x00558950	FUN_00558950	34	101		
+changed	0x00558c10	FUN_00558c10	166	400		
+changed	0x005599d0	FUN_005599d0	247	336		
+changed	0x0055a510	FUN_0055a510	534	1049		
+gone	0x0055adb9	switchD_0055adb2::caseD_1a	23			now inside 0x0055a510 FUN_0055a510
+gone	0x0055aec5	switchD_0055adb2::caseD_21	29			now inside 0x0055a510 FUN_0055a510
+gone	0x0055b02a	switchD_0055adb2::caseD_1c	73			now inside 0x0055a510 FUN_0055a510
+new	0x0055ccd0	CSWSItem::SaveItem		53	re/names.tsv re/objects.md re/party-items-saves.md	USER_DEFINED
+new	0x0055cfa0	CSWSItem::SaveContainerItems		28	re/names.tsv	USER_DEFINED
+gone	0x0055d268	switchD_0055d09f::switchdataD_0055d268	10			
+changed	0x0055d330	CItemRepository::AddItem	227	229	re/gui.md re/names.tsv re/party-items-saves.md	
+gone	0x0055e144	switchD_0055de84::switchdataD_0055e144	46			
+changed	0x0055e180	FUN_0055e180	31	271		
+changed	0x0055e930	FUN_0055e930	120	137		
+new	0x0055f0f0	CSWSItem::LoadContainerItems		66	re/names.tsv	USER_DEFINED
+changed	0x0055f340	CSWSItem::GetDescription	69	74	re/gui.md re/names.tsv	
+changed	0x0055f510	FUN_0055f510	174	238		
+changed	0x0055fcd0	CSWSItem::LoadDataFromGff	29	428	re/names.tsv re/objects.md re/party-items-saves.md	
+gone	0x00560491	switchD_0056025d::caseD_b	293			now inside 0x0055fcd0 CSWSItem::LoadDataFromGff
+gone	0x0056087c	switchD_0056055b::switchdataD_0056087c	59			
+new	0x00560cc0	FUN_00560cc0		5		DEFAULT
+changed	0x00560e60	FUN_00560e60	76	74	re/chargen-creature.md	
+changed	0x00561870	FUN_00561870	35	156		
+changed	0x00561e30	CSWSPlayer::LoadCharacter	145	170	re/gameloop.md re/names.tsv re/party-items-saves.md	
+changed	0x00562380	FUN_00562380	35	52		
+changed	0x005624c0	FUN_005624c0	95	266		
+changed	0x00563040	FUN_00563040	92	95		
+new	0x00563200	CSWPartyTable::Reset		75	re/names.tsv re/party-items-saves.md	USER_DEFINED
+changed	0x00563430	CSWPartyTable::LoadJournal	51	74	re/names.tsv	
+changed	0x00563620	CSWPartyTable::GetNPCResRef	23	24	re/names.tsv	
+changed	0x005638d0	CSWPartyTable::MountGameInProgress	27	26	re/modules.md re/names.tsv re/party-items-saves.md	
+changed	0x00563950	CSWPartyTable::UnmountGameInProgress	29	28	re/modules.md re/names.tsv re/party-items-saves.md	
+new	0x00563a40	CSWPartyTable::SetLeaderByCreature		23	re/names.tsv re/party-items-saves.md	USER_DEFINED
+new	0x00563a80	CSWPartyTable::ResetFollowState		12	re/names.tsv re/party-items-saves.md	USER_DEFINED
+new	0x00563b90	CSWPartyTable::AutoLevelUpMembers		28	re/names.tsv	USER_DEFINED
+new	0x00563bf0	CSWPartyTable::GetPlayedSeconds		21	re/names.tsv re/party-items-saves.md	USER_DEFINED
+new	0x00563d20	CSWPartyTable::CSWPartyTable		10	re/names.tsv re/party-items-saves.md	USER_DEFINED
+new	0x00563d40	CSWPartyTable::FreeInventoryAndJournal		22	re/names.tsv	USER_DEFINED
+new	0x00563d90	CSWPartyTable::SaveJournal		32	re/names.tsv re/party-items-saves.md	USER_DEFINED
+changed	0x00563e80	CSWPartyTable::SaveNPCState	49	72	re/names.tsv re/party-items-saves.md	
+changed	0x00564030	CSWPartyTable::SaveInventory	40	80	re/names.tsv re/party-items-saves.md	
+changed	0x00564300	CSWPartyTable::AddAvailableNPCByObject	31	114	re/names.tsv re/party-items-saves.md	
+changed	0x00564700	CSWPartyTable::GetNPCObject	50	80	re/gui.md re/names.tsv re/party-items-saves.md	
+changed	0x005648c0	CSWPartyTable::SavePartyTable	37	252	re/names.tsv re/party-items-saves.md	
+changed	0x00565130	CSWPartyTable::SpawnAvailableNPC	85	104	re/names.tsv re/party-items-saves.md	
+new	0x00565d20	CSWPartyTable::LoadPartyTable		267	re/names.tsv re/party-items-saves.md	USER_DEFINED
+changed	0x00566600	CSWPartyTable::GivePlotXP	30	43	re/names.tsv re/rules.md	
+changed	0x005666e0	CSWPartyTable::GivePlotXPByRow	30	43	re/dialogue.md re/names.tsv	
+changed	0x005667c0	CSWPartyTable::SwitchPlayerCharacter	232	254	re/names.tsv re/party-items-saves.md	
+changed	0x00566df0	FUN_00566df0	37	38		
+changed	0x00568030	FUN_00568030	95	98		
+changed	0x00568570	FUN_00568570	666	693		
+new	0x00569c40	FUN_00569c40		56		DEFAULT
+new	0x0056a740	FUN_0056a740		29		DEFAULT
+changed	0x0056ac20	FUN_0056ac20	47	53		
+changed	0x0056b090	FUN_0056b090	42	42		
+changed	0x0056b140	FUN_0056b140	41	43		
+new	0x0056c8b0	FUN_0056c8b0		16		DEFAULT
+changed	0x0056cac0	FUN_0056cac0	17	17		
+new	0x0056cb10	FUN_0056cb10		25		DEFAULT
+new	0x0056cbf0	FUN_0056cbf0		25		DEFAULT
+changed	0x0056cd20	FUN_0056cd20	78	144		
+new	0x0056d140	FUN_0056d140		21		DEFAULT
+new	0x0056d2d0	FUN_0056d2d0		49		DEFAULT
+changed	0x0056fe40	FUN_0056fe40	120	119		
+changed	0x00570230	FUN_00570230	116	117		
+changed	0x00570c60	FUN_00570c60	156	334		
+changed	0x00571960	CSWSMessage::SendSpeakMessage	181	183	re/actions.md re/dialogue.md re/names.tsv	
+changed	0x00576360	FUN_00576360	43	443		
+changed	0x005785c0	FUN_005785c0	92	93		
+changed	0x00578870	FUN_00578870	57	70		
+changed	0x00578a20	FUN_00578a20	60	70		
+changed	0x00579920	FUN_00579920	36	52		
+changed	0x00579a80	FUN_00579a80	28	34		
+changed	0x00579b50	FUN_00579b50	35	202		
+new	0x0057a1f0	FUN_0057a1f0		7		DEFAULT
+changed	0x0057a470	CSWSObject::AIActionDialogObject	438	498	re/actions.md re/dialogue.md re/names.tsv re/objects.md	
+changed	0x0057b430	CSWSObject::AIActionSpeak	52	55	re/actions.md re/dialogue.md re/names.tsv re/objects.md	
+changed	0x0057b6a0	CSWSObject::AIActionGiveItem	136	189	re/actions.md re/names.tsv	
+changed	0x0057bbf0	CSWSObject::AIActionCloseDoor	87	195	re/actions.md re/names.tsv re/objects.md	
+changed	0x0057bec0	CSWSObject::AIActionLock	387	449	re/actions.md re/names.tsv re/objects.md	
+changed	0x0057ce00	CSWSObject::AIActionBarkString	44	47	re/actions.md re/dialogue.md re/names.tsv re/objects.md	
+changed	0x0057cf00	CSWSObject::AIActionPlaySound	56	57	re/actions.md re/names.tsv re/objects.md	
+changed	0x0057d080	CSWSObject::AIActionPlayAnimation	177	176	re/actions.md re/names.tsv re/objects.md	
+changed	0x0057d490	CSWSObject::AIActionOpenDoor	102	380	re/actions.md re/names.tsv re/objects.md	
+changed	0x0057d9d0	CSWSObject::AIActionOpenLock	561	656	re/actions.md re/names.tsv re/objects.md re/rules.md	
+changed	0x0057e8c0	CSWSObject::AIActionUseObject	233	435	re/actions.md re/names.tsv re/objects.md	
+changed	0x0057f4a0	CSWSObject::RunActions	630	630	re/README.md re/actions.md re/gameloop.md re/names.tsv re/objects.md re/vm.md	
+changed	0x00582ae0	FUN_00582ae0	57	99		
+changed	0x00582d70	FUN_00582d70	658	695		
+changed	0x00584220	CSWWalkMesh::WalkSegment	255	255	re/movement.md re/names.tsv	
+changed	0x00584544	FUN_00584544	206	204		
+changed	0x00585080	FUN_00585080	25	31		
+changed	0x00585130	FUN_00585130	22	30		
+changed	0x005851e0	CSWSPlaceable::GetBodyBagAppearance	25	50	re/names.tsv	
+changed	0x005854b0	CSWSPlaceable::~CSWSPlaceable	57	64	re/names.tsv re/objects.md	
+changed	0x00585670	CSWSPlaceable::LoadPlaceable	30	380	re/names.tsv re/objects.md re/party-items-saves.md	
+gone	0x005862a7	switchD_005862a0::caseD_1	8			now inside 0x00585670 CSWSPlaceable::LoadPlaceable
+gone	0x005862ae	switchD_005862a0::caseD_2	8			now inside 0x00585670 CSWSPlaceable::LoadPlaceable
+gone	0x005862b5	switchD_005862a0::caseD_3	8			now inside 0x00585670 CSWSPlaceable::LoadPlaceable
+gone	0x005862bc	switchD_005862a0::caseD_4	8			now inside 0x00585670 CSWSPlaceable::LoadPlaceable
+gone	0x005862c3	switchD_005862a0::caseD_5	8			now inside 0x00585670 CSWSPlaceable::LoadPlaceable
+gone	0x005862cf	FUN_005862cf	82			now inside 0x00585670 CSWSPlaceable::LoadPlaceable
+changed	0x005864b0	CSWSPlaceable::InitBodyBag	30	181	re/names.tsv re/party-items-saves.md	
+new	0x00586a70	CSWSPlaceable::SavePlaceable		131	re/names.tsv re/objects.md	USER_DEFINED
+changed	0x00587170	FUN_00587170	31	98		
+changed	0x00587a70	CSWSPlaceable::LoadFromTemplate	45	48	re/names.tsv re/objects.md	
+changed	0x00587ba0	CSWSPlaceable::EventHandler	397	432	re/actions.md re/names.tsv re/objects.md	
+new	0x00588ad0	CSWSDoor::SaveDoor		103	re/names.tsv re/objects.md	USER_DEFINED
+changed	0x00589d40	FUN_00589d40	53	64		
+changed	0x0058a1f0	CSWSDoor::LoadDoor	104	446	re/names.tsv re/objects.md	
+changed	0x0058b550	CSWSDoor::~CSWSDoor	55	67	re/names.tsv re/objects.md	
+changed	0x0058b850	CSWSDoor::EventHandler	495	529	re/actions.md re/names.tsv re/objects.md	
+changed	0x0058c5f0	CSWSDoor::LoadFromGITEntry	59	76	re/names.tsv re/objects.md	
+changed	0x0058c8a0	CSWSTrigger::GetNearestPointOnGeometry	104	129	re/actions.md re/names.tsv	
+new	0x0058d060	CSWSTrigger::LoadGeometry		73	re/movement.md re/names.tsv	USER_DEFINED
+changed	0x0058da80	CSWSTrigger::LoadTrigger	120	343	mechanics/traps.md re/movement.md re/names.tsv re/objects.md	
+new	0x0058e660	CSWSTrigger::SaveTrigger		108	mechanics/traps.md re/names.tsv re/objects.md	USER_DEFINED
+changed	0x0058eae0	CSWSTrigger::CSWSTrigger	49	97	re/names.tsv re/objects.md	
+changed	0x0058eef0	CSWSTrigger::~CSWSTrigger	41	52	re/names.tsv re/objects.md	
+changed	0x0058f030	FUN_0058f030	57	56		
+changed	0x0058f140	CSWSTrigger::EventHandler	232	233	mechanics/traps.md re/movement.md re/names.tsv re/objects.md	
+changed	0x00590580	FUN_00590580	102	103		
+changed	0x00590820	CSWSEncounter::ReadEncounterScriptsFromGff	31	67	re/names.tsv re/objects.md	
+changed	0x00590a60	FUN_00590a60	33	32		
+changed	0x00590b10	FUN_00590b10	35	101		
+new	0x00591350	CSWSEncounter::SaveEncounter		148	re/names.tsv re/objects.md	USER_DEFINED
+changed	0x00591ca0	FUN_00591ca0	162	201	re/gameloop.md	
+changed	0x00592430	CSWSEncounter::ReadEncounterFromGff	80	421	re/names.tsv re/objects.md	
+changed	0x00593270	FUN_00593270	39	60		
+changed	0x005935d0	FUN_005935d0	119	119		
+changed	0x00593830	CSWSEncounter::LoadEncounter	100	102	re/names.tsv re/objects.md	
+changed	0x00593a90	CSWSEncounter::LoadFromTemplate	51	54	re/names.tsv re/objects.md	
+changed	0x005947b0	CSWSAreaOfEffectObject::LoadEffect	28	114	re/names.tsv re/objects.md	
+changed	0x00594b00	CSWSAreaOfEffectObject::LoadAreaEffect	28	77	re/names.tsv re/objects.md	
+new	0x00594d80	CSWSAreaOfEffectObject::SaveAreaEffect		60	re/names.tsv re/objects.md	USER_DEFINED
+new	0x00595560	FUN_00595560		19		DEFAULT
+new	0x005955a0	FUN_005955a0		35		DEFAULT
+changed	0x0059a040	FUN_0059a040	97	96		
+changed	0x0059a2a0	FUN_0059a2a0	34	35		
+changed	0x0059a390	FUN_0059a390	74	75		
+new	0x0059a530	FUN_0059a530		11		DEFAULT
+new	0x0059a560	FUN_0059a560		11		DEFAULT
+changed	0x0059a590	FUN_0059a590	25	26		
+new	0x0059a620	FUN_0059a620		11		DEFAULT
+changed	0x0059a6f0	FUN_0059a6f0	34	78		
+new	0x0059a8c0	FUN_0059a8c0		9		DEFAULT
+new	0x0059a8e0	FUN_0059a8e0		9		DEFAULT
+new	0x0059a900	FUN_0059a900		9		DEFAULT
+changed	0x0059a980	FUN_0059a980	44	44		
+changed	0x0059aa80	CSWSScriptVarTable::LoadVarTable	54	120	re/modules.md re/names.tsv re/objects.md	
+gone	0x0059abb8	switchD_0059abb1::caseD_2	14			now inside 0x0059aa80 CSWSScriptVarTable::LoadVarTable
+gone	0x0059ac1c	switchD_0059abb1::caseD_5	25			now inside 0x0059aa80 CSWSScriptVarTable::LoadVarTable
+gone	0x0059ac6b	switchD_0059abb1::caseD_4	14			now inside 0x0059aa80 CSWSScriptVarTable::LoadVarTable
+gone	0x0059ac9d	switchD_0059abb1::caseD_3	18			now inside 0x0059aa80 CSWSScriptVarTable::LoadVarTable
+gone	0x0059ad24	switchD_0059abb1::default	30			now inside 0x0059aa80 CSWSScriptVarTable::LoadVarTable
+new	0x0059adb0	CSWSScriptVarTable::SaveVarTable		98	re/names.tsv re/objects.md	USER_DEFINED
+gone	0x0059ae65	switchD_0059ae5e::caseD_2	18			now inside 0x0059adb0 CSWSScriptVarTable::SaveVarTable
+gone	0x0059aea2	switchD_0059ae5e::caseD_1	18			now inside 0x0059adb0 CSWSScriptVarTable::SaveVarTable
+gone	0x0059af7c	switchD_0059ae5e::default	88			now inside 0x0059adb0 CSWSScriptVarTable::SaveVarTable
+new	0x0059b250	CSWVarTable::SaveVarTable		27	re/names.tsv re/objects.md	USER_DEFINED
+changed	0x0059b5b0	CSWSpell::~CSWSpell	21	32	re/names.tsv	
+new	0x0059b700	FUN_0059b700		48		DEFAULT
+new	0x0059b7d0	FUN_0059b7d0		48		DEFAULT
+changed	0x0059b940	FUN_0059b940	24	25		
+changed	0x0059ba20	CSWSpellArray::Load	64	868	re/names.tsv re/rules.md	
+changed	0x0059d7c0	FUN_0059d7c0	6	6		
+changed	0x0059d9e0	FUN_0059d9e0	41	45		
+changed	0x0059dab0	FUN_0059dab0	300	306		
+changed	0x0059e170	FUN_0059e170	341	362		
+new	0x0059e920	FUN_0059e920		22		DEFAULT
+changed	0x0059ea20	FUN_0059ea20	6	6		
+changed	0x0059eaa0	CSWSDialog::ReadNodeCamera	28	54	re/dialogue.md re/names.tsv	
+changed	0x0059ec90	CSWSDialog::CheckCondition	34	43	re/dialogue.md re/names.tsv re/vm.md	
+changed	0x0059ed70	CSWSDialog::RunScript	29	28	re/dialogue.md re/names.tsv	
+changed	0x0059ef00	CSWSDialog::UpdateJournal	121	123	re/dialogue.md re/names.tsv	
+changed	0x0059f220	FUN_0059f220	50	51		
+changed	0x0059f320	CSWSDialog::GetNodeText	29	30	re/dialogue.md re/names.tsv	
+new	0x0059f430	CSWSDialog::SetOwner		17	re/dialogue.md re/names.tsv	USER_DEFINED
+changed	0x0059f550	FUN_0059f550	20	23		
+changed	0x0059f5e0	thunk_FUN_0059f550	6	6		
+changed	0x0059f5f0	CSWSDialog::ReadNode	45	183	re/dialogue.md re/names.tsv	
+changed	0x0059ff50	CSWSDialog::SetNodeDuration	43	45	re/README.md re/dialogue.md re/names.tsv	
+changed	0x005a03c0	CSWSDialog::HandleReply	231	233	re/dialogue.md re/names.tsv	
+new	0x005a1050	CSWSDialog::PlayOneLiner		145	re/dialogue.md re/names.tsv	USER_DEFINED
+changed	0x005a13d0	CSWSDialog::SendEntry	320	360	re/dialogue.md re/names.tsv	
+changed	0x005a1c00	CSWSDialog::SendRepliesToPlayer	288	465	re/dialogue.md re/names.tsv	
+changed	0x005a2ae0	CSWSDialog::LoadDialog	352	367	mechanics/stealth.md re/dialogue.md re/names.tsv	
+new	0x005a3640	CSWSDialog::GetStartingEntry		89	re/dialogue.md re/names.tsv	USER_DEFINED
+changed	0x005a3820	CSWSDialog::SendReplies	321	322	re/dialogue.md re/names.tsv	
+changed	0x005a4010	CSWSDialog::RunEntry	304	334	re/dialogue.md re/names.tsv re/resman.md	
+changed	0x005a4c60	FUN_005a4c60	21	22		
+new	0x005a53b0	FUN_005a53b0		14		DEFAULT
+changed	0x005a5680	CSWSCreatureStats::SetMovementRate	45	86	re/movement.md re/names.tsv re/party-items-saves.md	
+changed	0x005a5df0	FUN_005a5df0	37	44		
+changed	0x005a7ea0	CSWSCreatureStats::GetAttackModifierVersus	449	476	re/combat.md re/names.tsv	
+changed	0x005a8be0	CSWSCreatureStats::GetDamageBonus	153	165	re/combat.md re/names.tsv	
+changed	0x005a9050	CSWSCreatureStats::GetDamageRoll	435	507	re/combat.md re/names.tsv	
+changed	0x005ab9e0	FUN_005ab9e0	92	142		
+changed	0x005abd00	FUN_005abd00	267	267		
+changed	0x005ac370	FUN_005ac370	69	111		
+changed	0x005acf40	FUN_005acf40	56	79		
+changed	0x005ad0e0	CSWSCreatureStats::GetArmorClassVersus	423	439	re/combat.md re/names.tsv	
+changed	0x005aeb30	CSWSCreatureStats::ReadSpellsFromGff	63	62	re/names.tsv re/objects.md	
+new	0x005aec90	CSWSCreatureStats::SaveClassInfo		294	re/names.tsv re/objects.md	USER_DEFINED
+changed	0x005af480	CSWSCreatureStats::SetExperience	79	81	re/names.tsv re/rules.md	
+changed	0x005afce0	CSWSCreatureStats::ReadStatsFromGff	63	1093	re/README.md re/chargen-creature.md re/gui.md re/names.tsv re/objects.md re/party-items-saves.md	
+new	0x005b1b90	CSWSCreatureStats::SaveStats		216	re/gui.md re/names.tsv re/objects.md	USER_DEFINED
+changed	0x005b23a0	FUN_005b23a0	65	71		
+changed	0x005b2fc0	FUN_005b2fc0	19	26		
+changed	0x005b31d0	CSWBaseItemArray::Load	63	546	re/combat.md re/names.tsv re/resources.md	
+changed	0x005b4690	FUN_005b4690	24	25		
+changed	0x005b47c0	CSWSCreature::GetIsSimpleModel	29	40	re/combat.md re/names.tsv	
+changed	0x005b4f30	CSWSCreature::GetCombatAnimationHitTime	24	27	re/combat.md re/names.tsv	
+changed	0x005b4fb0	CSWSCreature::GetWeaponDischargeRowLabel	28	91	re/names.tsv	
+changed	0x005b5230	CSWSCreature::GetWeaponDischargeShots	27	32	re/names.tsv	
+changed	0x005b52e0	CSWSCreature::GetWeaponDischargeHits	27	32	re/names.tsv	
+changed	0x005b5390	CSWSCreature::GetWeaponDischargeShotTime	24	27	re/names.tsv	
+changed	0x005b5420	CSWSCreature::GetWeaponDischargeHand	29	40	re/names.tsv	
+changed	0x005b5ea0	CSWSCreature::SendAttackSummary	85	85	re/combat.md re/names.tsv	
+changed	0x005b6210	CSWSCreature::AIActionCombat	225	232	mechanics/stealth.md re/actions.md re/combat.md re/names.tsv re/objects.md re/party-items-saves.md	
+changed	0x005b78e0	CSWSCreature::GetCanDeflectProjectile	93	96	re/combat.md re/names.tsv re/rules.md	
+changed	0x005b7d10	FUN_005b7d10	98	108	re/combat.md	
+changed	0x005b9040	CSWSCreature::ResolveDamageVisualEffects	106	107	re/combat.md re/names.tsv	
+changed	0x005bafa0	CSWSCreature::ResolveOnHitEffect	77	199	re/combat.md re/names.tsv	
+changed	0x005bbbf0	CSWSCreature::AIActionAttackObject	474	498	re/actions.md re/combat.md re/names.tsv re/objects.md	
+new	0x005bcac0	FUN_005bcac0		68		DEFAULT
+changed	0x005bcbb0	FUN_005bcbb0	47	48		
+new	0x005bcda0	CSWClass::LoadAttackBonusTable		85	re/combat.md re/names.tsv re/rules.md	USER_DEFINED
+new	0x005bcf70	CSWClass::LoadFeatGain		75	re/names.tsv re/rules.md	USER_DEFINED
+new	0x005bd0f0	CSWClass::LoadFeatTable		143	re/names.tsv re/rules.md	USER_DEFINED
+gone	0x005bd335	switchD_005bd321::caseD_1	23			now inside 0x005bd0f0 CSWClass::LoadFeatTable
+gone	0x005bd342	switchD_005bd321::caseD_2	23			now inside 0x005bd0f0 CSWClass::LoadFeatTable
+gone	0x005bd34f	switchD_005bd321::caseD_3	23			now inside 0x005bd0f0 CSWClass::LoadFeatTable
+gone	0x005bd431	switchD_005bd321::caseD_4	42		re/names.tsv re/rules.md	now inside 0x005bd0f0 CSWClass::LoadFeatTable
+new	0x005bd480	CSWClass::LoadSavingThrowTable		94	re/names.tsv re/rules.md	USER_DEFINED
+new	0x005bd6c0	CSWClass::LoadSkillsTable		102	re/names.tsv re/rules.md	USER_DEFINED
+new	0x005bd900	CSWClass::LoadSpellGainTable		134	re/names.tsv re/rules.md	USER_DEFINED
+new	0x005bdbe0	CSWClass::LoadSpellKnownTable		119	re/names.tsv	USER_DEFINED
+new	0x005bde80	CSWClass::LoadArmorClassTable		82	re/combat.md re/names.tsv	USER_DEFINED
+changed	0x005be0e0	FUN_005be0e0	24	25		
+changed	0x005be180	FUN_005be180	24	25		
+new	0x005be4c0	CSWClass::LoadSpellsTable		93	re/names.tsv	USER_DEFINED
+changed	0x005be830	FUN_005be830	20	23		
+changed	0x005be8a0	FUN_005be8a0	15	19		
+changed	0x005c0270	C2DAs::LoadAppearance	51	243	re/names.tsv re/resources.md	
+changed	0x005c08f0	C2DAs::LoadAppearanceSndSet	50	89	re/names.tsv re/resources.md	
+changed	0x005c0ae0	C2DAs::LoadGENDER	50	51	re/names.tsv re/resources.md	
+changed	0x005c0bb0	C2DAs::LoadSURFACEMAT	50	51	re/names.tsv re/resources.md	
+changed	0x005c0c80	C2DAs::LoadVisualeffects	50	137	re/names.tsv re/resources.md	
+changed	0x005c1010	C2DAs::LoadVFXPersistent	50	207	re/names.tsv re/resources.md	
+changed	0x005c1580	C2DAs::LoadCreatureSpeed	50	60	re/names.tsv re/resources.md	
+changed	0x005c1690	C2DAs::LoadDoorTypes	50	51	re/names.tsv re/resources.md	
+changed	0x005c1760	C2DAs::LoadGenericDoors	50	51	re/names.tsv re/resources.md	
+changed	0x005c1830	C2DAs::LoadPlaceables	50	67	re/names.tsv re/resources.md	
+changed	0x005c1980	C2DAs::LoadPlaceableobjsnds	50	81	re/names.tsv re/resources.md	
+changed	0x005c2180	C2DAs::LoadFootstepSounds	50	60	re/names.tsv re/resources.md	
+changed	0x005c2290	C2DAs::LoadWeaponSounds	50	51	re/names.tsv re/resources.md	
+changed	0x005c2c20	C2DAs::LoadRegeneration	50	60	re/names.tsv re/resources.md	
+changed	0x005c32e0	C2DAs::LoadAnimations	50	145	re/names.tsv re/resources.md	
+changed	0x005c3710	C2DAs::LoadForceAdjust	50	60	re/names.tsv re/resources.md	
+changed	0x005c3bf0	C2DAs::LoadDialogAnimations	50	74	re/names.tsv re/resources.md	
+changed	0x005c4730	C2DAs::LoadIPRPCostTables	75	106	re/names.tsv re/resources.md	
+changed	0x005c49c0	C2DAs::LoadIPRPParamTables	61	88	re/names.tsv re/resources.md	
+changed	0x005c5500	FUN_005c5500	15	20		
+changed	0x005c5740	FUN_005c5740	61	61		
+changed	0x005c5920	FUN_005c5920	31	31		
+new	0x005c59a0	FUN_005c59a0		33		DEFAULT
+changed	0x005c5a40	FUN_005c5a40	125	348	re/journal.md	
+changed	0x005c63f0	FUN_005c63f0	87	127		
+changed	0x005c6650	FUN_005c6650	87	127		
+changed	0x005c68b0	FUN_005c68b0	91	102		
+new	0x005c6cd0	CSWSStore::SaveStore		46	re/names.tsv re/objects.md re/party-items-saves.md	USER_DEFINED
+changed	0x005c7180	CSWSStore::LoadStore	27	193	re/names.tsv re/objects.md re/party-items-saves.md	
+changed	0x005c7760	CSWSStore::LoadFromTemplate	45	48	re/names.tsv re/objects.md	
+new	0x005c7890	FUN_005c7890		19		DEFAULT
+new	0x005c78f0	FUN_005c78f0		25		DEFAULT
+changed	0x005c7990	FUN_005c7990	24	25		
+changed	0x005c7a30	FUN_005c7a30	24	25		
+new	0x005c7ad0	CSWRace::LoadFeatTable		93	re/names.tsv	USER_DEFINED
+changed	0x005c7dc0	FUN_005c7dc0	43	42		
+changed	0x005c7f30	CSWSWaypoint::LoadWaypoint	42	99	re/names.tsv re/objects.md	
+new	0x005c8230	CSWSWaypoint::SaveWaypoint		27	re/names.tsv re/objects.md	USER_DEFINED
+changed	0x005c83b0	CSWSWaypoint::LoadFromTemplate	45	48	re/names.tsv re/objects.md	
+changed	0x005c8580	FUN_005c8580	38	37		
+new	0x005c86d0	CSWSSoundObject::SaveSound		53	re/names.tsv re/objects.md	USER_DEFINED
+changed	0x005c9040	CSWSSoundObject::LoadSound	32	137	re/names.tsv re/objects.md	
+new	0x005c96e0	FUN_005c96e0		13		DEFAULT
+new	0x005c9780	FUN_005c9780		16		DEFAULT
+changed	0x005ca6a0	FUN_005ca6a0	15	26		
+changed	0x005cb350	CSWVirtualMachineCommands::ExecuteCommandAurPostString	46	49	re/names.tsv	
+changed	0x005cb480	CSWVirtualMachineCommands::ExecuteCommandSWMG_GetLastEvent	40	49	re/minigames-swoop-turret.md re/names.tsv	
+changed	0x005cb560	CSWVirtualMachineCommands::ExecuteCommandSWMG_GetLastEventModelName	41	50	re/names.tsv	
+changed	0x005cb650	CSWVirtualMachineCommands::ExecuteCommandSWMG_GetObjectByName	45	48	re/names.tsv	
+changed	0x005cb730	CSWVirtualMachineCommands::ExecuteCommandSWMG_PlayAnimation	61	63	re/names.tsv	
+changed	0x005cbb80	CSWVirtualMachineCommands::ExecuteCommandSWMG_GetObjectName	52	53	re/names.tsv	
+changed	0x005cbdb0	CSWVirtualMachineCommands::ExecuteCommandSWMG_RemoveAnimation	51	53	re/names.tsv	
+changed	0x005cc450	CSWVirtualMachineCommands::ExecuteCommandSWMG_GetGunBankBulletModel	62	65	re/names.tsv	
+changed	0x005cc7f0	CSWVirtualMachineCommands::ExecuteCommandSWMG_SetGunBankBulletModel	54	56	re/names.tsv	
+changed	0x005ccbb0	CSWVirtualMachineCommands::ExecuteCommandSWMG_GetLastBulletHitPart	40	42	re/names.tsv	
+changed	0x005cd760	FUN_005cd760	24	25		
+changed	0x005cd800	FUN_005cd800	24	25		
+new	0x005cd8a0	FUN_005cd8a0		9		DEFAULT
+new	0x005cd8d0	FUN_005cd8d0		25		DEFAULT
+new	0x005cd970	FUN_005cd970		25		DEFAULT
+changed	0x005ce8b0	FUN_005ce8b0	27	30		
+changed	0x005d0840	CPathAvoidance::ResolveBlockingCreature	200	210	re/movement.md re/names.tsv	
+new	0x005d0f40	CVirtualMachine::CVirtualMachine		27	re/names.tsv re/vm.md	USER_DEFINED
+new	0x005d0ff0	CVirtualMachine::SetCommandImplementer		9	re/names.tsv re/vm.md	USER_DEFINED
+changed	0x005d1140	FUN_005d1140	15	18		
+changed	0x005d1190	FUN_005d1190	15	18		
+changed	0x005d1260	FUN_005d1260	45	50		
+new	0x005d1370	FUN_005d1370		18		DEFAULT
+changed	0x005d14d0	FUN_005d14d0	19	32	re/vm.md	
+new	0x005d1a40	CVirtualMachineInternal::SetCommandImplementer		13	re/names.tsv re/vm.md	USER_DEFINED
+changed	0x005d1c40	CVirtualMachineStack::AssignLocationToLocation	62	62	re/names.tsv re/vm.md	
+gone	0x005d1ed4	switchD_005d1e2b::switchdataD_005d1ed4	87			
+new	0x005d1ef0	CVirtualMachineStack::LoadStack		91	re/names.tsv re/vm.md	USER_DEFINED
+gone	0x005d200d	switchD_005d1fe4::caseD_4	65		re/names.tsv re/vm.md	now inside 0x005d1ef0 CVirtualMachineStack::LoadStack
+gone	0x005d212c	switchD_005d1fe4::switchdataD_005d212c	41			
+changed	0x005d2140	CVirtualMachineStack::ClearStack	41	41	re/names.tsv re/vm.md	
+changed	0x005d21f0	CVirtualMachineStack::SetStackPointer	29	29	re/names.tsv re/vm.md	
+changed	0x005d26f0	CVirtualMachineInternal::LoadScriptSituation	67	89	re/names.tsv re/vm.md	
+changed	0x005d2bd0	CVirtualMachineInternal::ExecuteCode	801	797	re/README.md re/names.tsv re/vm.md	
+changed	0x005d4270	CVirtualMachineInternal::RunScriptFile	51	49	re/names.tsv re/vm.md	
+changed	0x005d4550	CVirtualMachineScript::~CVirtualMachineScript	29	30	re/names.tsv re/vm.md	
+new	0x005d4900	CVirtualMachineInternal::CVirtualMachineInternal		40	re/names.tsv re/vm.md	USER_DEFINED
+changed	0x005d4cb0	CNetLayer::SendMessageToPlayer	79	78	re/gameloop.md re/names.tsv	
+new	0x005d4fb0	FUN_005d4fb0		13		DEFAULT
+new	0x005d5040	FUN_005d5040		52	re/chargen-creature.md	DEFAULT
+changed	0x005d5180	FUN_005d5180	39	118		
+new	0x005d5440	FUN_005d5440		22		DEFAULT
+new	0x005d54a0	CNetLayer::CNetLayer		31	re/app.md re/names.tsv	USER_DEFINED
+new	0x005d5550	CNetLayer::Initialize		35	re/app.md re/names.tsv	USER_DEFINED
+changed	0x005d5720	FUN_005d5720	18	29		
+new	0x005d5bb0	FUN_005d5bb0		9		DEFAULT
+new	0x005d5cd0	FUN_005d5cd0		19	re/app.md	DEFAULT
+new	0x005d5d50	FUN_005d5d50		19	re/app.md	DEFAULT
+new	0x005d6320	FUN_005d6320		21		DEFAULT
+new	0x005d6380	FUN_005d6380		8		DEFAULT
+new	0x005d63a0	FUN_005d63a0		11		DEFAULT
+new	0x005d63b0	FUN_005d63b0		11		DEFAULT
+new	0x005d6430	FUN_005d6430		8		DEFAULT
+new	0x005d6440	FUN_005d6440		8		DEFAULT
+new	0x005d6460	FUN_005d6460		8		DEFAULT
+changed	0x005d6d30	CExoSoundInternal::ShutDown	104	102	re/app.md re/names.tsv	
+changed	0x005d7bd0	FUN_005d7bd0	70	164		
+changed	0x005d9140	FUN_005d9140	68	130		
+changed	0x005d9400	FUN_005d9400	39	77		
+changed	0x005da6d0	CExoSoundInternal::Choose3DProvider	96	100	re/app.md re/names.tsv	
+changed	0x005db4d0	CExoSoundSourceInternal::Play	137	139	re/app.md re/names.tsv	
+new	0x005dbb90	FUN_005dbb90		9		DEFAULT
+changed	0x005dbca0	CExoStreamingSoundSourceInternal::Close	31	32	re/names.tsv	
+changed	0x005dbd30	CExoStreamingSoundSourceInternal::Open	158	224	re/app.md re/names.tsv	
+changed	0x005dc3c0	CExoStreamingSoundSourceInternal::Stop	39	40	re/app.md re/names.tsv	
+changed	0x005dca30	CExoStreamingSoundSourceInternal::Play	120	139	re/app.md re/names.tsv re/resman.md	
+new	0x005dce30	CERFFile::SetFileType		9	re/names.tsv re/resources.md	USER_DEFINED
+new	0x005dce50	CERFFile::ReadHeader		44	re/names.tsv re/resources.md	USER_DEFINED
+new	0x005dcfc0	CERFFile::Create		37	re/names.tsv re/resources.md	USER_DEFINED
+new	0x005dd080	CERFFile::WriteHeader		21	re/names.tsv re/resources.md	USER_DEFINED
+new	0x005dd0e0	CERFFile::Finish		17	re/names.tsv re/resources.md	USER_DEFINED
+new	0x005dd120	CERFFile::WriteKey		11	re/names.tsv	USER_DEFINED
+new	0x005dd170	FUN_005dd170		24		DEFAULT
+new	0x005dd1e0	FUN_005dd1e0		14		DEFAULT
+new	0x005dd240	FUN_005dd240		33		DEFAULT
+new	0x005dd2b0	CERFFile::ReadLocString		26	re/names.tsv	USER_DEFINED
+new	0x005dd350	FUN_005dd350		26		DEFAULT
+new	0x005dd3c0	CERFFile::ReadLists		93	re/names.tsv re/resources.md	USER_DEFINED
+new	0x005dd5a0	CERFFile::WriteStringList		44	re/names.tsv	USER_DEFINED
+new	0x005dd710	CERFFile::ExtractAll		108	re/modules.md re/names.tsv re/resources.md	USER_DEFINED
+new	0x005dd9c0	CERFFile::CERFFile		34	re/names.tsv re/resources.md	USER_DEFINED
+new	0x005dda50	CERFFile::SetNumEntries		65	re/names.tsv re/resources.md	USER_DEFINED
+new	0x005ddbc0	CERFFile::AddFile		137	re/names.tsv re/resources.md	USER_DEFINED
+new	0x005ddf30	CERFFile::AddResource		112	re/names.tsv re/resources.md	USER_DEFINED
+new	0x005de1a0	CERFFile::AddDirectory		52	re/names.tsv re/resources.md	USER_DEFINED
+new	0x005de2c0	CERFFile::Reset		65	re/names.tsv	USER_DEFINED
+new	0x005de3a0	CERFFile::~CERFFile		39	re/names.tsv	USER_DEFINED
+changed	0x005df140	CLayout::LoadLayout	23	25	re/modules.md re/names.tsv	
+new	0x005df3f0	CExoInput::CExoInput		29	re/app.md re/names.tsv	USER_DEFINED
+new	0x005df490	CExoInput::SetEventRepeat		10	re/app.md re/names.tsv	USER_DEFINED
+new	0x005df5a0	CExoInput::SetHardwareCursorHidden		8	re/app.md re/names.tsv	USER_DEFINED
+new	0x005df640	FUN_005df640		6		DEFAULT
+new	0x005df6e0	FUN_005df6e0		6		DEFAULT
+new	0x005df6f0	FUN_005df6f0		9		DEFAULT
+changed	0x005df800	FUN_005df800	52	56		
+changed	0x005df9d0	FUN_005df9d0	49	60		
+changed	0x005dfb40	FUN_005dfb40	45	44		
+gone	0x005dfca8	switchD_005dfc4f::switchdataD_005dfca8	21			
+new	0x005e0320	FUN_005e0320		7		DEFAULT
+new	0x005e0350	FUN_005e0350		26		DEFAULT
+new	0x005e0520	FUN_005e0520		35		DEFAULT
+changed	0x005e0810	FUN_005e0810	25	24		
+new	0x005e0a80	FUN_005e0a80		23		DEFAULT
+changed	0x005e0af0	FUN_005e0af0	27	28		
+gone	0x005e170c	switchD_005e12bb::switchdataD_005e170c	5			
+new	0x005e1740	CExoInputInternal::SetHardwareCursorHidden		33	re/app.md re/names.tsv	USER_DEFINED
+new	0x005e1880	CExoInputInternal::CExoInputInternal		234	re/app.md re/names.tsv	USER_DEFINED
+new	0x005e3d10	FUN_005e3d10		34		DEFAULT
+new	0x005e3e80	CExoDirectInput::CExoDirectInput		61	re/app.md re/names.tsv	USER_DEFINED
+new	0x005e50c0	DINPUT8.DLL::DirectInput8Create		8		DEFAULT
+new	0x005e5500	FUN_005e5500		51		DEFAULT
+new	0x005e5950	FUN_005e5950		95		DEFAULT
+changed	0x005e6270	CExoString::SubString	52	51	re/names.tsv	
+changed	0x005e6640	CExoBase::GetDirectoryList	8	8	re/names.tsv	
+new	0x005e6650	FUN_005e6650		6		DEFAULT
+new	0x005e6670	CExoBase::GetResTypeFromExtension		10	re/names.tsv re/resources.md	USER_DEFINED
+new	0x005e6690	FUN_005e6690		6		DEFAULT
+new	0x005e66a0	CExoBase::~CExoBase		46	re/app.md re/names.tsv	USER_DEFINED
+new	0x005e6880	FUN_005e6880		6		DEFAULT
+new	0x005e6940	FUN_005e6940		6		DEFAULT
+new	0x005e6970	FUN_005e6970		6		DEFAULT
+new	0x005e69b0	FUN_005e69b0		13		DEFAULT
+new	0x005e6a40	FUN_005e6a40		14		DEFAULT
+new	0x005e6ad0	CExoFile::SeekBeginning		14	re/names.tsv	USER_DEFINED
+new	0x005e6af0	FUN_005e6af0		11		DEFAULT
+new	0x005e6b10	FUN_005e6b10		81	re/app.md	DEFAULT
+changed	0x005e6d20	CExoResTypes::InitResourceTypes	218	218	re/README.md re/names.tsv re/resman.md re/resources.md	
+changed	0x005e7760	FUN_005e7760	23	31		
+new	0x005e7820	FUN_005e7820		78		DEFAULT
+new	0x005e7a40	CExoResTypes::GetResTypeFromExtension		23	re/names.tsv re/resman.md re/resources.md	USER_DEFINED
+changed	0x005e7a90	FUN_005e7a90	31	454		
+new	0x005e8b20	FUN_005e8b20		33		DEFAULT
+new	0x005e8bb0	FUN_005e8bb0		15		DEFAULT
+changed	0x005e8c60	FUN_005e8c60	31	32		
+changed	0x005e8cf0	FUN_005e8cf0	38	247		
+new	0x005e9270	FUN_005e9270		12		DEFAULT
+new	0x005e93f0	FUN_005e93f0		9		DEFAULT
+new	0x005e9430	FUN_005e9430		24		DEFAULT
+new	0x005e9550	FUN_005e9550		14		DEFAULT
+changed	0x005e9590	FUN_005e9590	20	21		
+changed	0x005e9860	FUN_005e9860	22	22		
+new	0x005e9980	FUN_005e9980		65		DEFAULT
+new	0x005e9f00	CExoLocString::GetStringLength		10	re/names.tsv re/resources.md	USER_DEFINED
+changed	0x005ea050	CExoLocString::GetStringNoCache	38	45	re/names.tsv re/resources.md	
+changed	0x005ea130	CExoLocString::GetString	45	52	re/names.tsv re/resources.md	
+changed	0x005ea270	CExoLocString::GetDisplayTime	30	32	re/dialogue.md re/names.tsv	
+changed	0x005ea340	CExoLocString::AddString	34	36	re/names.tsv re/resources.md	
+new	0x005ea4a0	FUN_005ea4a0		13		DEFAULT
+changed	0x005ea5a0	FUN_005ea5a0	22	23		
+changed	0x005ea650	FUN_005ea650	33	31		
+changed	0x005ea6c0	FUN_005ea6c0	196	211		
+changed	0x005eab00	FUN_005eab00	284	411		
+changed	0x005eb500	FUN_005eb500	17	25		
+new	0x005eb600	FUN_005eb600		18		DEFAULT
+changed	0x005eb6b0	CExoAliasListInternal::ResolveFileName	57	59	re/names.tsv	
+changed	0x005eb840	FUN_005eb840	28	36		
+changed	0x005eb900	FUN_005eb900	19	22		
+new	0x005eb970	FUN_005eb970		11		DEFAULT
+new	0x005eb9f0	FUN_005eb9f0		16		DEFAULT
+new	0x005ebf30	FUN_005ebf30		85		DEFAULT
+new	0x005ec0e0	FUN_005ec0e0		30		DEFAULT
+changed	0x005ec2b0	FUN_005ec2b0	65	109		
+new	0x005ec5c0	FUN_005ec5c0		46		DEFAULT
+new	0x005ec680	thunk_FUN_005ec5c0		46		DEFAULT
+changed	0x005ec7f0	FUN_005ec7f0	84	84		
+new	0x005eca20	FUN_005eca20		29		DEFAULT
+new	0x005ecc80	FUN_005ecc80		9		DEFAULT
+new	0x005ecd40	FUN_005ecd40		40		DEFAULT
+changed	0x005ecea0	FUN_005ecea0	121	122	re/app.md	
+changed	0x005ed0e0	FUN_005ed0e0	45	91		
+new	0x005ed300	CClientExoApp::PlayLegalMovies		8	re/app.md re/names.tsv	USER_DEFINED
+new	0x005ed340	FUN_005ed340		6		DEFAULT
+changed	0x005ed350	FUN_005ed350	6	6	re/combat.md	
+changed	0x005ed360	FUN_005ed360	29	30		
+new	0x005ed410	FUN_005ed410		6		DEFAULT
+new	0x005ed490	FUN_005ed490		6		DEFAULT
+new	0x005ed680	FUN_005ed680		6		DEFAULT
+new	0x005ed710	FUN_005ed710		5		DEFAULT
+new	0x005ed770	FUN_005ed770		6		DEFAULT
+new	0x005ed7b0	CClientExoApp::PostInitialize		8	re/app.md re/names.tsv	USER_DEFINED
+new	0x005ed7c0	FUN_005ed7c0		5		DEFAULT
+new	0x005ed7d0	CClientExoApp::MainLoop		8	re/app.md re/names.tsv	USER_DEFINED
+new	0x005ed810	CClientExoApp::ShutDownClient		8	re/app.md re/names.tsv	USER_DEFINED
+new	0x005ed860	CClientExoApp::Initialize		10	re/app.md re/names.tsv	USER_DEFINED
+new	0x005ed870	FUN_005ed870		6		DEFAULT
+new	0x005ed880	CClientExoApp::ShutDown		8	re/app.md re/names.tsv	USER_DEFINED
+new	0x005ed970	FUN_005ed970		5		DEFAULT
+new	0x005eda20	FUN_005eda20		6		DEFAULT
+new	0x005edaa0	FUN_005edaa0		6	re/chargen-creature.md	DEFAULT
+new	0x005edbe0	FUN_005edbe0		6		DEFAULT
+new	0x005edd00	FUN_005edd00		6		DEFAULT
+new	0x005edd30	FUN_005edd30		6		DEFAULT
+changed	0x005ede60	FUN_005ede60	6	6	re/gui.md	
+changed	0x005edf60	FUN_005edf60	6	6		
+new	0x005edfc0	FUN_005edfc0		6		DEFAULT
+new	0x005edfd0	FUN_005edfd0		6		DEFAULT
+new	0x005ee010	FUN_005ee010		6		DEFAULT
+new	0x005ee020	FUN_005ee020		5		DEFAULT
+new	0x005ee050	FUN_005ee050		6		DEFAULT
+new	0x005ee060	FUN_005ee060		6		DEFAULT
+new	0x005ee070	FUN_005ee070		6		DEFAULT
+new	0x005ee080	FUN_005ee080		6		DEFAULT
+new	0x005ee0c0	FUN_005ee0c0		6		DEFAULT
+new	0x005ee130	FUN_005ee130		6		DEFAULT
+new	0x005ee150	FUN_005ee150		6		DEFAULT
+new	0x005ee1f0	CClientExoApp::CheckMovieFinished		8	re/app.md re/names.tsv	USER_DEFINED
+new	0x005ee280	FUN_005ee280		6		DEFAULT
+new	0x005ee2b0	FUN_005ee2b0		6		DEFAULT
+new	0x005ee2c0	FUN_005ee2c0		5		DEFAULT
+new	0x005ee2f0	CClientExoApp::CClientExoApp		28	re/app.md re/names.tsv	USER_DEFINED
+new	0x005ee360	CClientExoApp::~CClientExoApp		15	re/names.tsv	USER_DEFINED
+new	0x005ee3e0	FUN_005ee3e0		6		DEFAULT
+new	0x005ee400	FUN_005ee400		22		DEFAULT
+changed	0x005ee5c0	FUN_005ee5c0	34	47		
+changed	0x005ee700	CClientExoAppInternal::HandleMessage	60	62	re/names.tsv	
+new	0x005ee920	FUN_005ee920		28		DEFAULT
+new	0x005ee990	FUN_005ee990		28	re/app.md	DEFAULT
+new	0x005eea00	FUN_005eea00		9		DEFAULT
+new	0x005eeab0	FUN_005eeab0		12		DEFAULT
+changed	0x005eeb10	CClientExoAppInternal::SetupKeymapping	148	888	re/README.md re/app.md re/movement.md re/names.tsv	
+new	0x005f0ad0	FUN_005f0ad0		83		DEFAULT
+new	0x005f0c60	FUN_005f0c60		23		DEFAULT
+changed	0x005f0ce0	CClientExoAppInternal::ReadDisplaySettings	35	120	re/names.tsv	
+new	0x005f1020	FUN_005f1020		20		DEFAULT
+changed	0x005f1090	FUN_005f1090	15	20		
+changed	0x005f14a0	FUN_005f14a0	79	153	mechanics/graphics.md re/app.md re/resman.md	
+new	0x005f1a90	FUN_005f1a90		33		DEFAULT
+new	0x005f1c20	FUN_005f1c20		109	re/app.md	DEFAULT
+new	0x005f1f70	CClientExoAppInternal::InitializeSound		306	re/app.md re/names.tsv	USER_DEFINED
+changed	0x005f2a20	CClientExoAppInternal::ToggleSoloMode	28	31	mechanics/stealth.md re/gui.md re/names.tsv	
+new	0x005f2b00	FUN_005f2b00		7		DEFAULT
+new	0x005f2bf0	CClientExoAppInternal::CreateMoviePlayer		30	re/app.md re/names.tsv	USER_DEFINED
+changed	0x005f3480	CClientExoAppInternal::SetLoadScreenImage	36	64	re/gui.md re/names.tsv	
+new	0x005f3650	FUN_005f3650		55		DEFAULT
+new	0x005f4180	FUN_005f4180		83	re/app.md	DEFAULT
+new	0x005f4710	FUN_005f4710		19		DEFAULT
+changed	0x005f4760	CClientExoAppInternal::PickLoadScreenHint	70	106	re/gui.md re/names.tsv	
+new	0x005f49b0	FUN_005f49b0		18		DEFAULT
+new	0x005f4ae0	FUN_005f4ae0		17		DEFAULT
+changed	0x005f4b50	CClientExoAppInternal::QuickSave	25	28	re/names.tsv re/party-items-saves.md	
+changed	0x005f4c60	FUN_005f4c60	52	52		
+new	0x005f4db0	CClientExoAppInternal::CheckMovieFinished		17	re/names.tsv	USER_DEFINED
+new	0x005f4df0	FUN_005f4df0		10		DEFAULT
+new	0x005f4f40	FUN_005f4f40		26		DEFAULT
+new	0x005f5020	FUN_005f5020		50		DEFAULT
+new	0x005f50f0	FUN_005f50f0		33		DEFAULT
+new	0x005f51c0	CClientExoAppInternal::PostInitialize		75	re/app.md re/gui.md re/names.tsv	USER_DEFINED
+changed	0x005f5720	FUN_005f5720	83	84		
+changed	0x005f5910	FUN_005f5910	78	78		
+new	0x005f5ab0	CClientExoAppInternal::SetDisplayMode		87	re/app.md re/names.tsv	USER_DEFINED
+changed	0x005f5e10	CClientExoAppInternal::UpdateCameraInput	187	186	mechanics/controls.md re/gameloop.md re/movement.md re/names.tsv	
+changed	0x005f6480	FUN_005f6480	51	71		
+changed	0x005f6640	FUN_005f6640	98	127	re/combat.md	
+new	0x005f7190	CClientExoAppInternal::DestroyMoviePlayer		24	re/names.tsv	USER_DEFINED
+changed	0x005f7710	CClientExoAppInternal::EnableVideoEffect	44	80	re/dialogue.md re/names.tsv	
+changed	0x005f7b20	CClientExoAppInternal::UpdateLoadScreenHint	44	43	re/gui.md re/names.tsv	
+new	0x005f7c10	FUN_005f7c10		27		DEFAULT
+new	0x005f7d00	FUN_005f7d00		45		DEFAULT
+new	0x005f8470	CClientExoAppInternal::ShutDownClient		44	re/app.md re/names.tsv	USER_DEFINED
+new	0x005f8550	CClientExoAppInternal::Initialize		558	re/app.md re/names.tsv re/render-gui.md re/resman.md	USER_DEFINED
+changed	0x005f9af0	FUN_005f9af0	75	76		
+changed	0x005f9c60	CClientExoAppInternal::SelectTarget	348	346	re/movement.md re/names.tsv	
+changed	0x005fb3f0	CClientExoAppInternal::SetLoadProgress	32	31	re/gui.md re/names.tsv	
+changed	0x005fb540	FUN_005fb540	64	84		
+new	0x005fb6e0	FUN_005fb6e0		141		DEFAULT
+changed	0x005fb960	FUN_005fb960	45	103		
+changed	0x005fbbf0	FUN_005fbbf0	26	130		
+changed	0x005fbf50	FUN_005fbf50	20	20		
+new	0x005fbfe0	CClientExoAppInternal::CClientExoAppInternal		313	re/app.md re/names.tsv	USER_DEFINED
+new	0x005fc6f0	FUN_005fc6f0		133		DEFAULT
+changed	0x005fcd10	CClientExoAppInternal::FormatFeedbackMessage	2309	2491	mechanics/stealth.md re/actions.md re/names.tsv re/party-items-saves.md	
+changed	0x006027a0	FUN_006027a0	6	6		
+changed	0x006027c0	FUN_006027c0	93	121		
+changed	0x00602cf0	FUN_00602cf0	16	16		
+new	0x00602dc0	CClientExoAppInternal::PlayLegalMovies		37	re/app.md re/names.tsv	USER_DEFINED
+new	0x00602eb0	CClientExoAppInternal::MainLoop		698	re/README.md re/app.md re/dialogue.md re/gameloop.md re/names.tsv re/render-gui.md	USER_DEFINED
+new	0x00604130	CClientExoAppInternal::ShutDown		280	re/app.md re/names.tsv	USER_DEFINED
+new	0x00604790	FUN_00604790		6		DEFAULT
+new	0x00604a40	FUN_00604a40		50		DEFAULT
+new	0x00604b20	FUN_00604b20		8	re/app.md	DEFAULT
+new	0x00604b40	FUN_00604b40		6		DEFAULT
+changed	0x00604db0	FUN_00604db0	159	167		
+changed	0x00605090	FUN_00605090	30	32		
+changed	0x00605510	FUN_00605510	43	54		
+new	0x006057b0	FUN_006057b0		21		DEFAULT
+new	0x00605bf0	FUN_00605bf0		19		DEFAULT
+new	0x00606d90	FUN_00606d90		19		DEFAULT
+changed	0x00606e30	FUN_00606e30	50	159		
+changed	0x006072d0	FUN_006072d0	68	118		
+new	0x00607610	CSWCArea::LoadArea		1001	re/minigames-swoop-turret.md re/modules.md re/movement.md re/names.tsv re/render-gui.md	USER_DEFINED
+changed	0x0060a0f0	FUN_0060a0f0	78	85		
+changed	0x0060a300	FUN_0060a300	37	60		
+changed	0x0060af50	FUN_0060af50	48	48	re/gameloop.md	
+changed	0x0060b060	FUN_0060b060	55	54		
+changed	0x0060b400	FUN_0060b400	83	83		
+changed	0x0060c1e0	FUN_0060c1e0	122	124		
+new	0x0060c540	FUN_0060c540		81		DEFAULT
+changed	0x0060c910	FUN_0060c910	26	26		
+new	0x0060d070	FUN_0060d070		23		DEFAULT
+gone	0x0060d081	switchD_0060d07a::caseD_1	6			now inside 0x0060d070 FUN_0060d070
+gone	0x0060d08e	switchD_0060d07a::caseD_2	6			now inside 0x0060d070 FUN_0060d070
+gone	0x0060d09b	switchD_0060d07a::caseD_3	5			now inside 0x0060d070 FUN_0060d070
+gone	0x0060d0a4	switchD_0060d07a::caseD_4	5			now inside 0x0060d070 FUN_0060d070
+gone	0x0060d0ad	switchD_0060d07a::caseD_5	5			now inside 0x0060d070 FUN_0060d070
+changed	0x0060d140	FUN_0060d140	68	80		
+changed	0x0060d320	FUN_0060d320	26	37		
+new	0x0060d460	FUN_0060d460		38		DEFAULT
+new	0x0060d600	FUN_0060d600		50	re/chargen-creature.md re/chargen.md	DEFAULT
+changed	0x0060d730	FUN_0060d730	52	174		
+changed	0x0060dc50	FUN_0060dc50	49	66		
+changed	0x0060ded0	FUN_0060ded0	45	51		
+changed	0x0060e010	FUN_0060e010	46	50		
+changed	0x0060e2f0	FUN_0060e2f0	59	62		
+changed	0x0060e7d0	FUN_0060e7d0	267	266		
+changed	0x0060f330	FUN_0060f330	50	76		
+changed	0x0060f4b0	CSWCCreature::RequestStealthToggle	21	24	mechanics/stealth.md re/gui.md re/movement.md re/names.tsv	
+new	0x0060f620	CSWCCreature::DefaultActionTalk		60	re/movement.md re/names.tsv	USER_DEFINED
+new	0x0060f780	FUN_0060f780		22		DEFAULT
+changed	0x0060f7c0	FUN_0060f7c0	172	174		
+new	0x006100f0	FUN_006100f0		193		DEFAULT
+changed	0x00610490	CSWCCreature::GetFreeLookEffect	29	37	re/names.tsv	
+new	0x00610550	FUN_00610550		21		DEFAULT
+changed	0x006105b0	FUN_006105b0	81	84		
+changed	0x00610ac0	CSWCCreature::GetCanStealth	54	57	mechanics/stealth.md re/gui.md re/names.tsv	
+changed	0x00610c90	FUN_00610c90	27	28		
+changed	0x00610d10	FUN_00610d10	27	28		
+changed	0x00610d90	FUN_00610d90	27	28		
+changed	0x00610e10	FUN_00610e10	27	28		
+changed	0x00610ec0	FUN_00610ec0	27	28		
+changed	0x00610f40	FUN_00610f40	61	214		
+changed	0x00611470	FUN_00611470	115	116		
+new	0x006123e0	FUN_006123e0		430	re/chargen-creature.md re/chargen.md	DEFAULT
+changed	0x006134c0	FUN_006134c0	102	102	re/chargen.md	
+changed	0x00613930	CSWCCreature::SetStealthLook	53	56	mechanics/stealth.md re/names.tsv	
+changed	0x006142f0	FUN_006142f0	85	118		
+changed	0x006146e0	FUN_006146e0	139	145		
+changed	0x00616310	CSWCCreature::PlayLipSync	92	94	re/dialogue.md re/names.tsv	
+changed	0x006170d0	FUN_006170d0	122	124		
+changed	0x00617330	FUN_00617330	44	44		
+changed	0x00617470	FUN_00617470	168	186	re/rules.md	
+changed	0x00617eb0	FUN_00617eb0	155	160		
+changed	0x00618a30	FUN_00618a30	68	77		
+changed	0x00618c20	FUN_00618c20	218	273		
+changed	0x006191f0	FUN_006191f0	75	75	mechanics/combat.md mechanics/force.md mechanics/items-skills.md	
+changed	0x006193a0	FUN_006193a0	38	124	mechanics/traps.md re/gui.md	
+changed	0x006196a0	FUN_006196a0	55	54	mechanics/items-skills.md	
+changed	0x006197d0	FUN_006197d0	48	48	mechanics/items-skills.md mechanics/traps.md re/gui.md	
+changed	0x00619b10	FUN_00619b10	37	47	mechanics/combat.md	
+changed	0x00619e10	FUN_00619e10	176	179		
+changed	0x0061a2d0	FUN_0061a2d0	119	123		
+new	0x0061b710	FUN_0061b710		9		DEFAULT
+new	0x0061b740	FUN_0061b740		14		DEFAULT
+changed	0x0061b780	FUN_0061b780	33	643	re/app.md re/gui.md re/render-gui.md	
+new	0x0061d1c0	FUN_0061d1c0		10		DEFAULT
+new	0x0061d230	FUN_0061d230		75		DEFAULT
+new	0x0061d3d0	FUN_0061d3d0		40		DEFAULT
+new	0x0061d520	FUN_0061d520		12		DEFAULT
+new	0x0061d540	FUN_0061d540		9		DEFAULT
+new	0x0061d550	FUN_0061d550		17		DEFAULT
+new	0x0061d670	FUN_0061d670		9		DEFAULT
+new	0x0061d6f0	FUN_0061d6f0		11		DEFAULT
+new	0x0061d950	FUN_0061d950		11		DEFAULT
+new	0x0061d9a0	FUN_0061d9a0		11		DEFAULT
+new	0x0061d9d0	FUN_0061d9d0		7		DEFAULT
+new	0x0061d9e0	CClientOptions::SetKeyboardCameraDefaults		19	re/movement.md re/names.tsv	USER_DEFINED
+new	0x0061da60	FUN_0061da60		42		DEFAULT
+new	0x0061db60	CClientOptions::SetDefaults		28	re/gui.md re/names.tsv	USER_DEFINED
+new	0x0061dbe0	FUN_0061dbe0		838	re/app.md re/gameloop.md re/gui.md re/render-gui.md	DEFAULT
+new	0x0061f7c0	FUN_0061f7c0		6		DEFAULT
+changed	0x00620620	CClientExoAppInternal::BuildDefaultActions	234	411	mechanics/controls.md mechanics/traps.md re/movement.md re/names.tsv	
+changed	0x00621210	CClientExoAppInternal::HandleInputAction	654	654	mechanics/controls.md re/app.md re/gameloop.md re/gui.md re/movement.md re/names.tsv re/render-gui.md	
+changed	0x006227e0	CClientExoAppInternal::ProcessInput	888	888	mechanics/controls.md mechanics/traps.md re/app.md re/gameloop.md re/gui.md re/minigames-swoop-turret.md re/movement.md re/names.tsv re/render-gui.md	
+changed	0x006246c0	CSWGuiFade::SetMessageStrRef	34	40	re/gui.md re/names.tsv	
+changed	0x00624810	CSWGuiFade::CSWGuiFade	34	41	re/gui.md re/names.tsv re/render-gui.md	
+new	0x00624c00	CSWGuiTopMenu::OnPrevMenu		13	re/gui.md re/names.tsv	USER_DEFINED
+new	0x00624c30	CSWGuiTopMenu::OnNextMenu		13	re/gui.md re/names.tsv	USER_DEFINED
+new	0x00624cf0	CSWGuiTopMenu::OnEquip		13	re/gui.md re/names.tsv	USER_DEFINED
+new	0x00624d10	CSWGuiTopMenu::OnInventory		13	re/gui.md re/names.tsv	USER_DEFINED
+new	0x00624d30	CSWGuiTopMenu::OnCharacter		13	re/gui.md re/names.tsv	USER_DEFINED
+new	0x00624d50	CSWGuiTopMenu::OnMap		13	re/gui.md re/names.tsv	USER_DEFINED
+new	0x00624d70	CSWGuiTopMenu::OnAbilities		13	re/gui.md re/names.tsv	USER_DEFINED
+new	0x00624d90	CSWGuiTopMenu::OnJournal		13	re/gui.md re/names.tsv	USER_DEFINED
+new	0x00624db0	CSWGuiTopMenu::OnOptions		13	re/gui.md re/names.tsv	USER_DEFINED
+new	0x00624dd0	CSWGuiTopMenu::OnMessages		13	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x00624df0	CSWGuiMessages::ShowDialogLog	45	58	re/gui.md re/names.tsv	
+changed	0x00624f70	CSWGuiMessages::ShowFeedbackLog	45	58	re/gui.md re/names.tsv	
+new	0x00625a80	CSWGuiMessageBox::OnOk		8	re/gui.md re/names.tsv	USER_DEFINED
+new	0x00625aa0	CSWGuiMessageBox::OnCancel		8	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x00625c60	CSWGuiStatusSummary::OnPanelAdded	238	291	re/gui.md re/names.tsv	
+changed	0x00626400	CSWGuiMessages::CSWGuiMessages	46	128	re/gui.md re/names.tsv re/render-gui.md	
+gone	0x00626546	FUN_00626546	10			now inside 0x00626400 CSWGuiMessages::CSWGuiMessages
+changed	0x00626b10	FUN_00626b10	92	100	re/gui.md re/journal.md	
+changed	0x00626df0	CSWGuiMessageBox::CSWGuiMessageBox	47	93	re/gui.md re/names.tsv re/render-gui.md	
+new	0x00627160	CSWGuiMessageBox::SetIcon		15	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x006271a0	CSWGuiMessageBox::SetMessageText	22	23	re/gui.md re/names.tsv	
+changed	0x006272a0	CSWGuiStatusSummary::CSWGuiStatusSummary	40	143	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x006277c0	CSWGuiToolTip::CSWGuiToolTip	56	58	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x00627874	FUN_00627874	18	22		
+changed	0x00627980	CSWGuiTopMenu::CSWGuiTopMenu	59	188	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x00628260	CSWGuiMessages::HandleInputEvent	90	94	re/gui.md re/names.tsv	
+new	0x006285b0	FUN_006285b0		18		DEFAULT
+new	0x00628600	FUN_00628600		18		DEFAULT
+changed	0x006288f0	GetCutsceneAnimationName	1562	1563	re/dialogue.md re/names.tsv	
+new	0x0062a970	FUN_0062a970		22		DEFAULT
+new	0x0062a9e0	FUN_0062a9e0		5		DEFAULT
+new	0x0062a9f0	FUN_0062a9f0		5		DEFAULT
+changed	0x0062ab30	CGuiInGame::ShowBarkBubble	12	12	re/names.tsv	
+new	0x0062ab70	IsLoopingCutsceneAnimation		10	re/names.tsv	USER_DEFINED
+new	0x0062ad30	FUN_0062ad30		8		DEFAULT
+changed	0x0062add0	FUN_0062add0	30	109		
+new	0x0062b150	FUN_0062b150		27	re/combat.md	DEFAULT
+new	0x0062b470	FUN_0062b470		7		DEFAULT
+new	0x0062b510	FUN_0062b510		26		DEFAULT
+new	0x0062b730	CGuiInGame::ShowConversationPanel		49	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x0062bf70	CGuiInGame::TryAnimatedDialogCamera	37	37	re/dialogue.md re/names.tsv	
+changed	0x0062c6f0	FUN_0062c6f0	136	134		
+changed	0x0062c9b0	CGuiInGame::ShowInGameMenu	77	76	re/gameloop.md re/gui.md re/names.tsv	
+new	0x0062ccd0	CGuiInGame::NextInGameMenu		58	re/gui.md re/names.tsv	USER_DEFINED
+new	0x0062cdf0	CGuiInGame::PrevInGameMenu		58	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x0062cf10	CGuiInGame::SwitchInGameMenu	56	55	re/gui.md re/names.tsv	
+changed	0x0062d040	CGuiInGame::ShowGalaxyMap	40	64	re/gameloop.md re/gui.md re/names.tsv	
+new	0x0062d280	FUN_0062d280		10		DEFAULT
+new	0x0062d320	FUN_0062d320		11		DEFAULT
+new	0x0062d990	FUN_0062d990		28		DEFAULT
+changed	0x0062e100	FUN_0062e100	38	39		
+changed	0x0062e310	CGuiInGame::OpenStore	38	58	re/gameloop.md re/gui.md re/names.tsv re/party-items-saves.md	
+new	0x0062f040	FUN_0062f040		28		DEFAULT
+new	0x0062f0a0	FUN_0062f0a0		16		DEFAULT
+changed	0x0062f8b0	FUN_0062f8b0	21	20		
+new	0x0062f9a0	FUN_0062f9a0		30		DEFAULT
+new	0x0062fbe0	CGuiInGame::ExtractSaveToFutureGame		106	re/names.tsv	USER_DEFINED
+new	0x0062fed0	CGuiInGame::CGuiInGame		222	re/app.md re/gui.md re/names.tsv re/render-gui.md	USER_DEFINED
+new	0x006303b0	FUN_006303b0		73		DEFAULT
+changed	0x00630560	FUN_00630560	34	35		
+changed	0x006306e0	CGuiInGame::SetDialogCamera	448	460	re/dialogue.md re/names.tsv	
+changed	0x00631d80	CGuiInGame::ShowDialogEntry	77	162	re/dialogue.md re/names.tsv	
+new	0x006323a0	CGuiInGame::PrepareGameInProgress		122	re/names.tsv	USER_DEFINED
+changed	0x006332b0	FUN_006332b0	151	151		
+changed	0x006339c0	CGuiInGame::SelectDialogReply	100	100	re/dialogue.md re/gameloop.md re/names.tsv	
+changed	0x00633c50	CGuiInGame::QuickLoad	31	163	re/names.tsv	
+changed	0x00634340	FUN_00634340	120	119		
+new	0x00634760	FUN_00634760		69		DEFAULT
+changed	0x00634a70	FUN_00634a70	44	43	re/actions.md	
+changed	0x00634cc0	CSWCPartyTrail::GetFormationSlot	26	25	re/movement.md re/names.tsv	
+changed	0x00635480	CSWCParty::SetLeader	113	207	mechanics/combat.md mechanics/controls.md re/names.tsv re/party-items-saves.md	
+new	0x00635a90	FUN_00635a90		32		DEFAULT
+new	0x00636170	FUN_00636170		128		DEFAULT
+changed	0x006364c0	FUN_006364c0	122	153	re/actions.md	
+new	0x006369d0	FUN_006369d0		28		DEFAULT
+gone	0x006369f8	switchD_006369e9::caseD_2	31			now inside 0x006369d0 FUN_006369d0
+changed	0x00637050	FUN_00637050	130	208	re/gameloop.md	
+changed	0x00637475	FUN_00637475	85	87		
+changed	0x00638070	CSWCChaseCamera::LoadCameraStyle	42	102	re/movement.md re/names.tsv	
+changed	0x006383c0	CSWCFreeLookCamera::LoadCameraStyle	34	59	re/movement.md re/names.tsv	
+new	0x00638e80	CSWCChaseCamera::FaceTarget		42	re/names.tsv re/party-items-saves.md	USER_DEFINED
+changed	0x0063cb70	FUN_0063cb70	52	56		
+changed	0x0063ccc0	FUN_0063ccc0	53	57		
+changed	0x0063d330	FUN_0063d330	26	31		
+new	0x0063d700	FUN_0063d700		24		DEFAULT
+changed	0x0063d970	FUN_0063d970	49	51		
+changed	0x0063e800	FUN_0063e800	41	54		
+changed	0x0063e930	FUN_0063e930	394	451		
+changed	0x0063f660	CSWCModule::LoadFromMessage	59	149	re/gameloop.md re/movement.md re/names.tsv re/render-gui.md	
+changed	0x00640f70	CSWCModule::LoadDialogCameraModel	38	37	re/names.tsv	
+changed	0x00641010	CSWCModule::PlayCameraAnimation	86	122	re/dialogue.md re/names.tsv	
+changed	0x00641cd0	FUN_00641cd0	33	42		
+new	0x00644730	CSWGuiPanel::OnButtonZ		10	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x00644a40	CSWGuiJournal::CSWGuiJournal	59	206	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x00645100	FUN_00645100	67	87	re/journal.md	
+changed	0x00645330	CSWGuiJournal::RebuildQuestList	125	129	re/gui.md re/journal.md re/names.tsv	
+changed	0x006456e0	CSWGuiJournal::HandleInputEvent	159	223	re/gui.md re/journal.md re/names.tsv	
+changed	0x00645e00	CSWGuiJournal::OnPanelAdded	53	98	re/gui.md re/journal.md re/names.tsv	
+changed	0x006460c0	FUN_006460c0	42	45		
+changed	0x00646142	FUN_00646142	14	18		
+new	0x00646180	FUN_00646180		34		DEFAULT
+new	0x00646660	FUN_00646660		13		DEFAULT
+new	0x00646880	FUN_00646880		34		DEFAULT
+changed	0x00646cd0	FUN_00646cd0	43	48		
+changed	0x00646e70	FUN_00646e70	60	66		
+changed	0x00647660	FUN_00647660	22	31		
+new	0x00647790	FUN_00647790		8		DEFAULT
+changed	0x00647ce0	FUN_00647ce0	46	48		
+new	0x00647dd0	FUN_00647dd0		30		DEFAULT
+changed	0x00647e80	FUN_00647e80	71	94		
+changed	0x00648470	FUN_00648470	79	98		
+changed	0x00648710	FUN_00648710	24	25		
+new	0x00648800	FUN_00648800		8		DEFAULT
+new	0x00649a70	FUN_00649a70		55		DEFAULT
+changed	0x00649e40	FUN_00649e40	33	55		
+changed	0x0064a870	FUN_0064a870	278	321	mechanics/force.md	
+changed	0x0064af10	FUN_0064af10	30	30	mechanics/force.md	
+changed	0x0064b540	FUN_0064b540	117	123		
+changed	0x0064bab0	CSWCMessage::HandleServerToPlayerAreaLoad	126	177	re/gameloop.md re/modules.md re/names.tsv	
+changed	0x0064bf30	FUN_0064bf30	59	61		
+changed	0x0064cc90	FUN_0064cc90	69	82		
+changed	0x0064cf30	FUN_0064cf30	43	178		
+changed	0x0064d500	FUN_0064d500	127	209		
+changed	0x0064dcf0	FUN_0064dcf0	64	63	re/gameloop.md	
+changed	0x0064dee0	FUN_0064dee0	226	227		
+changed	0x0064e3d0	FUN_0064e3d0	49	162		
+changed	0x0064e7b0	FUN_0064e7b0	115	115		
+changed	0x0064ec00	FUN_0064ec00	84	90		
+changed	0x0064edd0	FUN_0064edd0	120	118		
+changed	0x0064f280	FUN_0064f280	70	72	re/chargen-creature.md	
+changed	0x0064f4b0	FUN_0064f4b0	38	204	mechanics/traps.md	
+changed	0x0064f960	FUN_0064f960	69	71	mechanics/traps.md	
+changed	0x006500b0	FUN_006500b0	28	39		
+changed	0x006501b0	FUN_006501b0	210	346		
+changed	0x00650b90	FUN_00650b90	328	332		
+changed	0x006514c0	FUN_006514c0	30	32		
+changed	0x00651ed0	FUN_00651ed0	33	43		
+changed	0x00651fb0	FUN_00651fb0	33	45		
+changed	0x006520a0	FUN_006520a0	37	63		
+changed	0x00652380	FUN_00652380	65	183		
+changed	0x006526e0	FUN_006526e0	37	53		
+changed	0x006529f0	FUN_006529f0	38	44		
+changed	0x00652ad0	FUN_00652ad0	9	9		
+changed	0x00652b00	FUN_00652b00	74	93		
+changed	0x00652d60	FUN_00652d60	45	79		
+changed	0x00652f20	FUN_00652f20	36	307		
+changed	0x00653850	FUN_00653850	45	275		
+changed	0x00654230	FUN_00654230	51	64		
+changed	0x00654700	FUN_00654700	53	95		
+changed	0x00654970	FUN_00654970	39	41		
+changed	0x00654cc0	CSWCMessage::HandleServerToPlayerChatMessage	112	556	re/names.tsv	
+gone	0x006553c8	switchD_006553c1::caseD_c	17			now inside 0x00654cc0 CSWCMessage::HandleServerToPlayerChatMessage
+gone	0x00655449	switchD_006553c1::caseD_2	23			now inside 0x00654cc0 CSWCMessage::HandleServerToPlayerChatMessage
+gone	0x0065553b	switchD_006553c1::caseD_3	23			now inside 0x00654cc0 CSWCMessage::HandleServerToPlayerChatMessage
+gone	0x00655636	switchD_006553c1::caseD_4	23			now inside 0x00654cc0 CSWCMessage::HandleServerToPlayerChatMessage
+gone	0x00655731	switchD_006553c1::caseD_6	23			now inside 0x00654cc0 CSWCMessage::HandleServerToPlayerChatMessage
+gone	0x0065581a	switchD_006553c1::caseD_7	188			now inside 0x00654cc0 CSWCMessage::HandleServerToPlayerChatMessage
+changed	0x00655e40	FUN_00655e40	496	527		
+changed	0x00656d20	CClientExoApp::FormatCombatFeedback	2490	5896	re/combat.md re/names.tsv	
+gone	0x00656d96	FUN_00656d96	33			now inside 0x00656d20 CClientExoApp::FormatCombatFeedback
+gone	0x00656ecc	FUN_00656ecc	60			now inside 0x00656d20 CClientExoApp::FormatCombatFeedback
+gone	0x0065724c	FUN_0065724c	32			now inside 0x00656d20 CClientExoApp::FormatCombatFeedback
+gone	0x00657261	thunk_FUN_0065724c	31			now inside 0x00656d20 CClientExoApp::FormatCombatFeedback
+gone	0x00657475	FUN_00657475	12			now inside 0x00656d20 CClientExoApp::FormatCombatFeedback
+changed	0x0065766d	FUN_0065766d	128	198		
+gone	0x006577fd	FUN_006577fd	6			now inside 0x0065766d FUN_0065766d
+changed	0x0065799d	switchD_00656d8f::caseD_3	70	318	re/combat.md	
+changed	0x00658693	switchD_00656d8f::caseD_5	160	329		
+changed	0x006594ec	switchD_00656d8f::caseD_6	165	312		
+changed	0x0065a213	switchD_00656d8f::caseD_a	48	72		
+changed	0x0065a422	switchD_00656d8f::caseD_11	38	71		
+changed	0x0065a659	switchD_00656d8f::caseD_7	95	139		
+changed	0x0065ac7e	switchD_00656d8f::caseD_4	45	71	re/combat.md	
+changed	0x0065af21	switchD_00656d8f::caseD_8	74	121		
+changed	0x0065b4a0	switchD_00656d8f::caseD_9	42	194	mechanics/traps.md	
+gone	0x0065b699	switchD_0065b692::caseD_1	10			now inside 0x0065b4a0 switchD_00656d8f::caseD_9
+gone	0x0065b6d5	switchD_0065b692::caseD_0	10			now inside 0x0065b4a0 switchD_00656d8f::caseD_9
+gone	0x0065b996	switchD_0065b98f::caseD_0	24			now inside 0x0065b4a0 switchD_00656d8f::caseD_9
+gone	0x0065ba1b	switchD_0065b98f::caseD_1	23			now inside 0x0065b4a0 switchD_00656d8f::caseD_9
+gone	0x0065ba99	switchD_0065b98f::caseD_3	25			now inside 0x0065b4a0 switchD_00656d8f::caseD_9
+gone	0x0065bb4a	switchD_0065b98f::caseD_5	24			now inside 0x0065b4a0 switchD_00656d8f::caseD_9
+gone	0x0065bbf5	switchD_0065b98f::caseD_2	6			now inside 0x0065b4a0 switchD_00656d8f::caseD_9
+changed	0x0065bc59	switchD_00656d8f::caseD_d	57	178		
+changed	0x0065c35d	switchD_00656d8f::caseD_e	40	71		
+changed	0x0065c5ac	switchD_00656d8f::caseD_b	720	845		
+changed	0x0065e143	switchD_00656d8f::caseD_f	39	87		
+changed	0x0065e46d	switchD_00656d8f::caseD_10	58	211		
+changed	0x0065f018	switchD_00656d8f::caseD_13	34	81		
+changed	0x0065f368	switchD_00656d8f::caseD_c	28	47		
+changed	0x0065f56c	switchD_00656d8f::caseD_12	68	288	re/combat.md	
+gone	0x00660201	switchD_006601e8::caseD_4	12			now inside 0x0065f56c switchD_00656d8f::caseD_12
+gone	0x00660210	switchD_006601e8::caseD_7	12			now inside 0x0065f56c switchD_00656d8f::caseD_12
+gone	0x0066021f	switchD_006601e8::caseD_9	12			now inside 0x0065f56c switchD_00656d8f::caseD_12
+gone	0x0066022e	switchD_006601e8::caseD_2	12			now inside 0x0065f56c switchD_00656d8f::caseD_12
+gone	0x0066023d	switchD_006601e8::caseD_3	12			now inside 0x0065f56c switchD_00656d8f::caseD_12
+gone	0x0066024c	switchD_006601e8::caseD_5	12			now inside 0x0065f56c switchD_00656d8f::caseD_12
+gone	0x0066025b	switchD_006601e8::caseD_6	12			now inside 0x0065f56c switchD_00656d8f::caseD_12
+gone	0x0066026a	switchD_006601e8::caseD_a	12			now inside 0x0065f56c switchD_00656d8f::caseD_12
+gone	0x00660279	switchD_006601e8::caseD_8	12			now inside 0x0065f56c switchD_00656d8f::caseD_12
+gone	0x00660377	FUN_00660377	6			now inside 0x0065f56c switchD_00656d8f::caseD_12
+gone	0x00660387	FUN_00660387	6			now inside 0x0065f56c switchD_00656d8f::caseD_12
+changed	0x006603d9	switchD_00656d8f::caseD_14	50	232	re/combat.md	
+changed	0x00661134	switchD_00656d8f::caseD_15	25	57	re/combat.md	
+changed	0x00661379	switchD_00656d8f::caseD_16	30	117	re/combat.md	
+changed	0x006619e1	switchD_00656d8f::caseD_17	152	290	re/combat.md	
+changed	0x00662767	switchD_00656d8f::caseD_19	27	106		
+gone	0x006628da	switchD_006628cc::caseD_4	8			now inside 0x00662767 switchD_00656d8f::caseD_19
+gone	0x006628e1	switchD_006628cc::caseD_7	8			now inside 0x00662767 switchD_00656d8f::caseD_19
+gone	0x006628e8	switchD_006628cc::caseD_9	8			now inside 0x00662767 switchD_00656d8f::caseD_19
+gone	0x006628ef	switchD_006628cc::caseD_2	8			now inside 0x00662767 switchD_00656d8f::caseD_19
+gone	0x006628f6	switchD_006628cc::caseD_3	8			now inside 0x00662767 switchD_00656d8f::caseD_19
+gone	0x006628fd	switchD_006628cc::caseD_5	8			now inside 0x00662767 switchD_00656d8f::caseD_19
+gone	0x00662904	switchD_006628cc::caseD_6	8			now inside 0x00662767 switchD_00656d8f::caseD_19
+gone	0x0066290b	switchD_006628cc::caseD_a	8			now inside 0x00662767 switchD_00656d8f::caseD_19
+gone	0x00662912	switchD_006628cc::caseD_8	8			now inside 0x00662767 switchD_00656d8f::caseD_19
+changed	0x00662a10	switchD_00656d8f::caseD_1a	57	83	re/combat.md	
+changed	0x00662da4	switchD_00656d8f::caseD_1b	26	45		
+changed	0x006632a0	FUN_006632a0	42	96		
+changed	0x006634a0	FUN_006634a0	43	130		
+changed	0x00663840	FUN_00663840	41	799		
+changed	0x006655e0	FUN_006655e0	1415	1497		
+changed	0x00666667	FUN_00666667	784	855		
+changed	0x00667265	FUN_00667265	26	415		
+changed	0x00668640	FUN_00668640	120	232		
+changed	0x00668bb0	FUN_00668bb0	941	929		
+changed	0x0066a410	FUN_0066a410	38	38		
+changed	0x0066a640	CSWCMessage::HandleServerToPlayerMessage	208	218	re/combat.md re/gameloop.md re/names.tsv	
+new	0x0066bf10	FUN_0066bf10		13		DEFAULT
+changed	0x0066bfb0	FUN_0066bfb0	35	38		
+changed	0x0066c0a0	FUN_0066c0a0	32	31	re/minigames-swoop-turret.md	
+changed	0x0066c190	FUN_0066c190	47	48	re/minigames-swoop-turret.md	
+changed	0x0066c2d0	FUN_0066c2d0	31	30	re/minigames-swoop-turret.md	
+changed	0x0066c370	FUN_0066c370	37	36		
+changed	0x0066c610	FUN_0066c610	20	26		
+changed	0x0066e2a0	FUN_0066e2a0	85	86	re/minigames-swoop-turret.md	
+changed	0x0066e5c0	FUN_0066e5c0	44	45	re/minigames-swoop-turret.md	
+changed	0x0066e7a0	FUN_0066e7a0	56	57	re/minigames-swoop-turret.md	
+changed	0x0066fe50	FUN_0066fe50	65	61	re/minigames-swoop-turret.md	
+changed	0x006723d0	FUN_006723d0	356	382		
+changed	0x006738d0	FUN_006738d0	35	34		
+changed	0x00674b90	FUN_00674b90	344	354	re/minigames-swoop-turret.md re/resources.md	
+gone	0x00674c39	switchD_00674bfb::caseD_1	16			now inside 0x00674b90 FUN_00674b90
+gone	0x00674c6f	switchD_00674bfb::caseD_2	160		re/minigames-swoop-turret.md	now inside 0x00674b90 FUN_00674b90
+gone	0x00675065	switchD_00674bfb::caseD_f	13			now inside 0x00674b90 FUN_00674b90
+gone	0x006750a1	switchD_00674bfb::caseD_11	13			now inside 0x00674b90 FUN_00674b90
+gone	0x006750dc	switchD_00674bfb::caseD_10	13			now inside 0x00674b90 FUN_00674b90
+gone	0x00675129	switchD_00674bfb::caseD_12	34			now inside 0x00674b90 FUN_00674b90
+gone	0x006751c5	switchD_00674bfb::caseD_13	14			now inside 0x00674b90 FUN_00674b90
+gone	0x006751df	switchD_00674bfb::caseD_14	12			now inside 0x00674b90 FUN_00674b90
+gone	0x006751f9	switchD_00674bfb::caseD_16	11			now inside 0x00674b90 FUN_00674b90
+gone	0x00675212	switchD_00674bfb::caseD_17	23			now inside 0x00674b90 FUN_00674b90
+gone	0x0067526d	switchD_00674bfb::caseD_18	9			now inside 0x00674b90 FUN_00674b90
+gone	0x00675287	switchD_00674bfb::caseD_19	16			now inside 0x00674b90 FUN_00674b90
+gone	0x0067536c	switchD_00674bfb::caseD_1a	54			now inside 0x00674b90 FUN_00674b90
+gone	0x006753ef	switchD_00674bfb::caseD_d	9			now inside 0x00674b90 FUN_00674b90
+gone	0x00675420	switchD_00674bfb::switchdataD_00675420	160			
+gone	0x0067547c	switchD_00674d03::switchdataD_0067547c	97			
+gone	0x006754b0	switchD_0067538a::switchdataD_006754b0	57			
+gone	0x006754c0	switchD_00675396::switchdataD_006754c0	53			
+new	0x006754d0	FUN_006754d0		84		DEFAULT
+new	0x00675690	CSWCMessage::SendAdminCommand		40	re/gameloop.md re/names.tsv	USER_DEFINED
+changed	0x00675710	CSWCMessage::HandleServerStatusMessage	31	236	re/gameloop.md re/names.tsv	
+new	0x00675de0	FUN_00675de0		50		DEFAULT
+changed	0x00675f10	FUN_00675f10	40	49		
+new	0x00676260	FUN_00676260		47		DEFAULT
+new	0x006764a0	FUN_006764a0		34		DEFAULT
+changed	0x00676610	FUN_00676610	208	242		
+new	0x00676c20	FUN_00676c20		75		DEFAULT
+new	0x00676da0	FUN_00676da0		20		DEFAULT
+new	0x00676de0	FUN_00676de0		25		DEFAULT
+new	0x006770c0	FUN_006770c0		32		DEFAULT
+changed	0x00677130	FUN_00677130	76	83		
+new	0x00677300	FUN_00677300		61		DEFAULT
+new	0x00677560	FUN_00677560		18		DEFAULT
+new	0x006775e0	FUN_006775e0		24		DEFAULT
+new	0x00677820	FUN_00677820		24		DEFAULT
+new	0x00677a20	FUN_00677a20		17		DEFAULT
+new	0x00677d10	CSWCMessage::SendPlayerToServerInput_UseObject		19	re/gameloop.md re/movement.md re/names.tsv	USER_DEFINED
+new	0x00677d70	CSWCMessage::SendPlayerToServerInput_Door		21	re/gameloop.md re/movement.md re/names.tsv	USER_DEFINED
+new	0x00677de0	CSWCMessage::SendPlayerToServerInput_Unlock		21	re/gameloop.md re/movement.md re/names.tsv	USER_DEFINED
+new	0x00677ea0	CSWCMessage::SendPlayerToServerInput_Dialog		24	re/gameloop.md re/movement.md re/names.tsv	USER_DEFINED
+new	0x00677fa0	FUN_00677fa0		23	re/chargen-creature.md	DEFAULT
+changed	0x00678080	FUN_00678080	42	88	re/chargen-creature.md	
+new	0x00678280	FUN_00678280		304		DEFAULT
+new	0x00678c10	FUN_00678c10		126		DEFAULT
+changed	0x00678ef0	FUN_00678ef0	81	82		
+changed	0x006790d0	FUN_006790d0	43	69		
+changed	0x006793c0	CSWCPlayerControl::LoadSettings	28	53	re/movement.md re/names.tsv	
+changed	0x0067a710	CSWGuiLoadScreen::CSWGuiLoadScreen	39	93	re/app.md re/gui.md re/names.tsv re/render-gui.md	
+changed	0x0067a9c0	CSWGuiLoadScreen::SetHint	34	37	re/names.tsv	
+changed	0x0067aa80	FUN_0067aa80	26	27		
+changed	0x0067ace0	CSWGuiMainMenu::InitPanel	27	80	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x0067afb0	CSWGuiMainMenu::OnNewGame	37	73	re/chargen-creature.md re/chargen.md re/gui.md re/names.tsv re/render-gui.md	
+changed	0x0067b2f0	CSWGuiMainMenu::OnOptions	34	33	re/gui.md re/names.tsv re/render-gui.md	
+new	0x0067b490	CSWGuiMainMenu::OnDiskSpaceQuit		8	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x0067b6c0	CSWGuiMainMenu::OnPanelAdded	23	82	re/gui.md re/names.tsv	
+new	0x0067b930	FUN_0067b930		32		DEFAULT
+new	0x0067b9d0	FUN_0067b9d0		93	re/app.md	DEFAULT
+changed	0x0067bc40	FUN_0067bc40	74	279		
+changed	0x0067c4c0	CSWGuiMainMenu::CSWGuiMainMenu	130	161	re/app.md re/gui.md re/gui3d.md re/names.tsv re/render-gui.md re/resman.md	
+new	0x0067cb40	CSWGuiPanel::OnButtonPrev		8	re/gui.md re/names.tsv	USER_DEFINED
+new	0x0067cb50	CSWGuiPanel::OnButtonNext		8	re/gui.md re/names.tsv	USER_DEFINED
+new	0x0067cb60	CSWGuiPanel::OnButtonAlternateAccept		8	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x0067cd00	FUN_0067cd00	7	7		
+changed	0x0067cd30	FUN_0067cd30	36	105		
+gone	0x0067ce3d	switchD_0067ce36::caseD_0	6			now inside 0x0067cd30 FUN_0067cd30
+gone	0x0067ce48	switchD_0067ce36::caseD_6	12			now inside 0x0067cd30 FUN_0067cd30
+gone	0x0067ce54	switchD_0067ce36::caseD_c	17			now inside 0x0067cd30 FUN_0067cd30
+gone	0x0067ce6f	switchD_0067ce36::caseD_12	12			now inside 0x0067cd30 FUN_0067cd30
+gone	0x0067ce93	FUN_0067ce93	13			now inside 0x0067cd30 FUN_0067cd30
+changed	0x0067d340	FUN_0067d340	20	21		
+changed	0x0067d4b0	FUN_0067d4b0	236	234		
+new	0x0067dc90	FUN_0067dc90		10		DEFAULT
+new	0x0067dcc0	FUN_0067dcc0		10		DEFAULT
+new	0x0067dcf0	FUN_0067dcf0		20		DEFAULT
+new	0x0067dd80	FUN_0067dd80		13		DEFAULT
+new	0x0067dda0	FUN_0067dda0		11		DEFAULT
+new	0x0067e530	FUN_0067e530		6	re/gui.md	DEFAULT
+new	0x0067ea10	FUN_0067ea10		69		DEFAULT
+gone	0x0067eab5	switchD_0067ea62::caseD_96ec	16			now inside 0x0067ea10 FUN_0067ea10
+gone	0x0067eaf1	switchD_0067ea62::caseD_96f0	11			now inside 0x0067ea10 FUN_0067ea10
+gone	0x0067eb1d	switchD_0067ea62::caseD_96f2	14			now inside 0x0067ea10 FUN_0067ea10
+gone	0x0067eb83	switchD_0067ea62::caseD_96f9	12			now inside 0x0067ea10 FUN_0067ea10
+gone	0x0067ebe1	switchD_0067ea62::caseD_96ea	5			now inside 0x0067ea10 FUN_0067ea10
+new	0x0067ec20	FUN_0067ec20		27		DEFAULT
+new	0x0067ed00	FUN_0067ed00		27		DEFAULT
+new	0x0067ede0	FUN_0067ede0		32		DEFAULT
+new	0x0067ef00	FUN_0067ef00		34		DEFAULT
+new	0x0067ef80	FUN_0067ef80		9		DEFAULT
+changed	0x0067f000	CSWGuiPazaakWager::CSWGuiPazaakWager	58	193	re/gui.md re/names.tsv re/pazaak.md re/render-gui.md	
+changed	0x0067f750	FUN_0067f750	135	134		
+changed	0x0067fb10	FUN_0067fb10	44	84		
+changed	0x0067fd10	FUN_0067fd10	31	49		
+new	0x0067fe80	FUN_0067fe80		16		DEFAULT
+new	0x0067fed0	FUN_0067fed0		38		DEFAULT
+changed	0x0067ffa0	FUN_0067ffa0	28	31		
+new	0x00680790	FUN_00680790		15		DEFAULT
+new	0x006808a0	CSWGuiPazaakGame::CSWGuiPazaakGame		344	re/gui.md re/names.tsv re/pazaak.md re/render-gui.md	USER_DEFINED
+new	0x00681890	FUN_00681890		49	re/gui.md	DEFAULT
+new	0x006819e0	FUN_006819e0		24	re/gui.md	DEFAULT
+changed	0x00681a90	CSWGuiPazaakSetup::CSWGuiPazaakSetup	143	231	re/gui.md re/names.tsv re/pazaak.md re/render-gui.md	
+new	0x00682270	FUN_00682270		56		DEFAULT
+changed	0x006823f0	FUN_006823f0	55	100		
+new	0x00682660	CSWCPlaceable::DefaultActionUse		18	re/movement.md re/names.tsv	USER_DEFINED
+new	0x006826e0	FUN_006826e0		158		DEFAULT
+changed	0x00682c60	FUN_00682c60	30	64		
+new	0x00682dd0	FUN_00682dd0		11		DEFAULT
+new	0x00682e20	FUN_00682e20		40		DEFAULT
+changed	0x00682f20	FUN_00682f20	35	38		
+changed	0x00683200	FUN_00683200	25	32		
+changed	0x006832a0	FUN_006832a0	100	147		
+changed	0x006837d0	FUN_006837d0	77	141		
+new	0x00683bb0	FUN_00683bb0		51		DEFAULT
+new	0x00683cc0	FUN_00683cc0		14		DEFAULT
+new	0x00683d00	FUN_00683d00		14		DEFAULT
+new	0x00683d90	CSWCDoor::DefaultActionOpen		23	mechanics/controls.md re/gameloop.md re/movement.md re/names.tsv	USER_DEFINED
+new	0x00683e50	FUN_00683e50		13	re/gameloop.md	DEFAULT
+changed	0x00683f90	FUN_00683f90	24	31		
+changed	0x00684030	FUN_00684030	123	125		
+changed	0x00684410	FUN_00684410	69	91		
+changed	0x00684f50	CSWGuiPartyButton::BuildTooltipText	61	72	re/gui.md re/names.tsv	
+changed	0x006859e0	FUN_006859e0	52	53		
+changed	0x00685cb0	FUN_00685cb0	88	89		
+changed	0x00686920	CSWGuiNotifyLabel::Init	61	62	re/gui.md re/names.tsv	
+changed	0x00686b00	FUN_00686b00	15	18		
+changed	0x00686b50	CSWGuiPartyButton::ScalarDeletingDestructor	12	12	re/names.tsv	
+changed	0x00686ba0	CSWGuiMainInterface::Update	86	87	mechanics/stealth.md re/gui.md re/names.tsv re/render-gui.md	
+changed	0x00686e20	FUN_00686e20	67	75	mechanics/items-skills.md	
+changed	0x00687700	CSWGuiMainInterface::ShowCombatMessage	71	71	re/names.tsv	
+changed	0x00687860	CSWGuiMainInterface::UpdatePartyPortraits	273	273	mechanics/controls.md re/gui.md re/names.tsv	
+changed	0x00687e40	CSWGuiMainInterface::LoadMiniMapTexture	70	73	re/gui.md re/names.tsv	
+new	0x00688590	CSWGuiMainInterface::OnPauseToggle		20	re/gameloop.md re/gui.md re/names.tsv	USER_DEFINED
+new	0x00688610	CSWGuiMainInterface::OnSoloToggle		15	re/gui.md re/names.tsv	USER_DEFINED
+new	0x00688640	CSWGuiMainInterface::OnStealthToggle		20	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x00689280	CSWGuiActionSlot::SetState	43	52	re/names.tsv	
+changed	0x006898a0	CSWGuiPartyMemberSlot::Init	86	87	re/gui.md re/names.tsv	
+changed	0x00689cc0	CSWGuiPartyMemberSlot::~CSWGuiPartyMemberSlot	27	30	re/names.tsv	
+changed	0x0068a010	CSWGuiMainInterface::UpdateCombatQueue	109	112	re/gui.md re/names.tsv	
+new	0x0068b050	CSWGuiMainInterface::OnClearOneAction		16	re/names.tsv	USER_DEFINED
+new	0x0068b0a0	CSWGuiMainInterface::OnClearAllActions		10	re/names.tsv	USER_DEFINED
+changed	0x0068b9d0	CSWGuiActionSlot::Init	132	137	re/gui.md re/names.tsv	
+changed	0x0068bf50	CSWGuiTargetInfo::Init	31	56	re/names.tsv	
+changed	0x0068c100	CSWGuiMainInterface::CSWGuiMainInterface	207	492	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x0068d430	FUN_0068d430	15	22		
+changed	0x0068d530	FUN_0068d530	39	40		
+changed	0x0068d5e0	FUN_0068d5e0	39	40		
+changed	0x0068d690	FUN_0068d690	71	74		
+changed	0x0068d860	FUN_0068d860	35	106		
+changed	0x0068e0d0	FUN_0068e0d0	40	40		
+changed	0x0068e490	FUN_0068e490	39	41		
+changed	0x0068e550	FUN_0068e550	39	41		
+changed	0x0068e610	FUN_0068e610	131	132	re/combat.md	
+changed	0x0068e940	FUN_0068e940	44	45		
+changed	0x0068ed00	FUN_0068ed00	38	40		
+changed	0x0068edc0	FUN_0068edc0	38	40		
+new	0x0068ee80	FUN_0068ee80		43		DEFAULT
+changed	0x0068f0e0	CSWGuiCredits::~CSWGuiCredits	46	55	re/gui.md re/names.tsv	
+changed	0x0068f3a0	FUN_0068f3a0	80	96		
+changed	0x0068f8d0	CSWGuiCredits::CSWGuiCredits	39	150	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x00690010	FUN_00690010	121	127		
+changed	0x00690510	FUN_00690510	51	141		
+new	0x00690910	FUN_00690910		16		DEFAULT
+new	0x006911e0	FUN_006911e0		44		DEFAULT
+changed	0x006912f0	FUN_006912f0	32	37		
+new	0x00691470	FUN_00691470		14		DEFAULT
+new	0x006914d0	FUN_006914d0		27		DEFAULT
+new	0x00691900	CSWCTrigger::DefaultActionDisarm		19	re/actions.md re/movement.md re/names.tsv	USER_DEFINED
+new	0x00691950	CSWCTrigger::DefaultActionRecover		8	re/actions.md re/movement.md re/names.tsv	USER_DEFINED
+new	0x00691cc0	FUN_00691cc0		35		DEFAULT
+new	0x00691e00	FUN_00691e00		38		DEFAULT
+changed	0x00691f00	FUN_00691f00	51	77	mechanics/traps.md re/movement.md	
+changed	0x006925b0	FUN_006925b0	16	19		
+changed	0x00692660	FUN_00692660	58	62		
+new	0x006927b0	CSWGuiMap::OnNoteUp		8	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006927c0	CSWGuiMap::OnNoteDown		8	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x006929b0	CSWGuiMap::ShowMapNote	47	58	re/gui.md re/names.tsv	
+changed	0x00692b00	FUN_00692b00	35	34		
+changed	0x00692c70	FUN_00692c70	67	68		
+changed	0x00692e80	FUN_00692e80	81	82		
+changed	0x00693090	FUN_00693090	81	82		
+new	0x006932a0	FUN_006932a0		18		DEFAULT
+changed	0x006933a0	CSWGuiGalaxyMap::ShowPlanet	74	74	re/gui.md re/names.tsv	
+new	0x006935a0	CSWGuiGalaxyMap::OnPlanetClicked		24	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x00693650	CSWGuiMap::OnPanelAdded	61	221	re/gui.md re/names.tsv	
+changed	0x00693bc0	CSWGuiMap::HandleInputEvent	101	103	re/gui.md re/names.tsv	
+new	0x00693e70	FUN_00693e70		47		DEFAULT
+changed	0x00693f60	FUN_00693f60	151	159		
+changed	0x006943d0	FUN_006943d0	272	296		
+changed	0x00694d50	CSWGuiMap::CSWGuiMap	49	124	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x00695180	CSWGuiGalaxyMap::CSWGuiGalaxyMap	72	220	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x00695980	CSWGuiGalaxyMap::HandleInputEvent	68	67	re/gui.md re/names.tsv	
+changed	0x00695f30	FUN_00695f30	113	114		
+changed	0x006964c0	FUN_006964c0	84	252		
+changed	0x00696ca0	FUN_00696ca0	25	31		
+changed	0x00696d40	FUN_00696d40	26	41		
+new	0x00696e10	FUN_00696e10		47		DEFAULT
+changed	0x00696f60	FUN_00696f60	31	132		
+new	0x00697547	FUN_00697547		10		DEFAULT
+changed	0x00697610	FUN_00697610	65	92	re/party-items-saves.md	
+changed	0x00697a20	FUN_00697a20	32	35	re/chargen.md	
+changed	0x00697b00	FUN_00697b00	29	30		
+changed	0x00697bc0	FUN_00697bc0	29	30		
+new	0x00697c80	FUN_00697c80		12		DEFAULT
+changed	0x00697ce0	CSWCCreatureAppearance::CreateBTypeBody	40	177	re/chargen.md re/names.tsv	
+changed	0x00698150	FUN_00698150	130	147		
+changed	0x00698550	FUN_00698550	32	197		
+changed	0x00698a40	FUN_00698a40	25	44		
+changed	0x00698b10	FUN_00698b10	110	122		
+changed	0x00699420	FUN_00699420	22	23		
+changed	0x00699ae0	FUN_00699ae0	29	30		
+changed	0x00699ed0	FUN_00699ed0	41	44		
+changed	0x0069a3e0	FUN_0069a3e0	101	101		
+changed	0x0069a6b0	FUN_0069a6b0	100	101		
+changed	0x0069c940	FUN_0069c940	56	55		
+changed	0x0069ca70	FUN_0069ca70	57	69		
+changed	0x0069d180	FUN_0069d180	36	40		
+changed	0x0069d250	FUN_0069d250	36	40		
+changed	0x0069d320	FUN_0069d320	35	38		
+changed	0x0069d3e0	FUN_0069d3e0	35	37		
+changed	0x0069d910	FUN_0069d910	25	48		
+changed	0x0069e1f0	CSWCAnimBase::LoadModel	65	63	re/names.tsv	
+changed	0x0069e420	FUN_0069e420	49	88		
+changed	0x0069e620	FUN_0069e620	100	108		
+changed	0x0069e8d0	FUN_0069e8d0	77	81		
+changed	0x006a03c0	FUN_006a03c0	9	9		
+changed	0x006a0680	FUN_006a0680	86	89	re/render-gui.md	
+changed	0x006a0df0	FUN_006a0df0	143	158		
+changed	0x006a1220	CSWCVisualEffect::ApplyTextureEffect	132	136	mechanics/stealth.md re/names.tsv re/render-gui.md	
+changed	0x006a1650	FUN_006a1650	26	66		
+changed	0x006a1810	FUN_006a1810	20	23		
+changed	0x006a1880	FUN_006a1880	54	625	re/render-gui.md	
+changed	0x006a2af0	FUN_006a2af0	117	119	re/render-gui.md	
+changed	0x006a30e0	FUN_006a30e0	157	150	re/render-gui.md	
+changed	0x006a34b0	FUN_006a34b0	66	67	re/render-gui.md	
+changed	0x006a3660	FUN_006a3660	34	35	re/render-gui.md	
+changed	0x006a38e0	FUN_006a38e0	235	236	re/render-gui.md	
+changed	0x006a4060	FUN_006a4060	68	74		
+changed	0x006a4240	FUN_006a4240	141	143		
+changed	0x006a5000	FUN_006a5000	194	205	mechanics/stealth.md	
+changed	0x006a54d0	FUN_006a54d0	96	96		
+changed	0x006a5a40	FUN_006a5a40	169	184		
+changed	0x006a5fc0	FUN_006a5fc0	221	226		
+changed	0x006a6590	FUN_006a6590	118	148		
+changed	0x006a6a50	FUN_006a6a50	149	150		
+changed	0x006a6e20	CSWGuiDialogComputer::GetResolutionTag	34	42	re/gui.md re/names.tsv	
+new	0x006a6f20	FUN_006a6f20		8		DEFAULT
+changed	0x006a6f30	FUN_006a6f30	15	24		
+new	0x006a6fc0	CSWGuiDialog::OnReplyHilight		11	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006a6fe0	CSWGuiDialog::OnReplyUnhilight		11	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x006a7160	FUN_006a7160	26	35		
+new	0x006a74b0	CSWGuiLetterbox::InitTopBar		31	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006a7540	CSWGuiLetterbox::InitBottomBar		32	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006a78c0	FUN_006a78c0		99		DEFAULT
+changed	0x006a7c20	FUN_006a7c20	22	22		
+changed	0x006a7e20	CSWGuiDialogLetterbox::SelectReply	35	39	re/gui.md re/names.tsv	
+changed	0x006a7ef0	CSWGuiDialogLetterbox::Layout	59	61	re/gui.md re/names.tsv	
+changed	0x006a8110	FUN_006a8110	31	31		
+changed	0x006a8240	FUN_006a8240	47	68	mechanics/items-skills.md	
+changed	0x006a8400	FUN_006a8400	50	54		
+changed	0x006a8520	FUN_006a8520	26	26		
+changed	0x006a8680	FUN_006a8680	9	9		
+changed	0x006a86a0	FUN_006a86a0	92	113		
+changed	0x006a89f0	CSWGuiLetterbox::ScalarDeletingDestructor	11	11	re/names.tsv	
+changed	0x006a8a10	FUN_006a8a10	15	18		
+new	0x006a8a60	FUN_006a8a60		21		DEFAULT
+changed	0x006a8b40	CSWGuiDialogLetterbox::CSWGuiDialogLetterbox	34	97	re/dialogue.md re/gui.md re/names.tsv re/render-gui.md	
+changed	0x006a8eb0	CSWGuiDialogComputer::CSWGuiDialogComputer	67	182	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x006a95f0	CSWGuiDialogComputerCamera::CSWGuiDialogComputerCamera	44	53	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x006a9770	CSWGuiBarkBubble::CSWGuiBarkBubble	34	45	re/dialogue.md re/gui.md re/names.tsv re/render-gui.md	
+changed	0x006a9920	CSWGuiBarkBubble::ShowBark	42	103	re/gui.md re/names.tsv	
+new	0x006a9c60	FUN_006a9c60		23		DEFAULT
+changed	0x006aa040	CSWGuiTutorialBox::SetMessageStrRef	24	25	re/names.tsv	
+changed	0x006aa1a0	FUN_006aa1a0	22	24		
+changed	0x006aa670	CSWGuiTutorialBox::NextPage	53	63	re/gui.md re/names.tsv	
+new	0x006aaaf0	CSWGuiOptionsInGame::OnLoadGame		33	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006aab80	CSWGuiOptionsInGame::OnSaveGame		33	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006aac10	CSWGuiOptionsInGame::OnGameplay		31	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006aac90	CSWGuiOptionsInGame::OnFeedback		32	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006aad10	CSWGuiOptionsInGame::OnAutoPause		32	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006aad90	CSWGuiOptionsInGame::OnGraphics		32	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006aae10	CSWGuiOptionsInGame::OnSound		32	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006aae90	FUN_006aae90		11		DEFAULT
+changed	0x006ab000	FUN_006ab000	50	51		
+new	0x006ab1b0	CSWGuiOptionsInGame::OnQuit		19	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006ab220	FUN_006ab220		47		DEFAULT
+gone	0x006ab271	switchD_006ab24c::caseD_2	6			now inside 0x006ab220 FUN_006ab220
+gone	0x006ab280	switchD_006ab24c::caseD_3	6			now inside 0x006ab220 FUN_006ab220
+gone	0x006ab28f	switchD_006ab24c::caseD_4	6			now inside 0x006ab220 FUN_006ab220
+gone	0x006ab29e	switchD_006ab24c::caseD_5	6			now inside 0x006ab220 FUN_006ab220
+gone	0x006ab2ad	switchD_006ab24c::caseD_6	6			now inside 0x006ab220 FUN_006ab220
+gone	0x006ab2bc	switchD_006ab24c::caseD_7	6			now inside 0x006ab220 FUN_006ab220
+changed	0x006ab2f0	CSWGuiOptionsInGame::CSWGuiOptionsInGame	51	128	re/gui.md re/names.tsv re/render-gui.md	
+new	0x006abdc0	FUN_006abdc0		28		DEFAULT
+new	0x006ac3e0	FUN_006ac3e0		111		DEFAULT
+new	0x006ac660	FUN_006ac660		111		DEFAULT
+new	0x006ac8d0	CSWGuiAbilities::KeepTabHilighted		25	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x006acce0	FUN_006acce0	130	166		
+new	0x006ad180	CSWGuiAbilities::OnRowHilighted		102	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x006ad410	FUN_006ad410	26	28		
+new	0x006ad4b0	CSWGuiAbilities::OnSelectionChanged		25	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x006ad560	CSWGuiAbilities::RebuildList	31	142	re/gui.md re/names.tsv	
+new	0x006ada70	CSWGuiAbilities::OnFeatsTab		12	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006adaa0	CSWGuiAbilities::OnPowersTab		12	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006adad0	CSWGuiAbilities::OnSkillsTab		12	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x006adb00	CSWGuiAbilities::SetCreature	47	47	re/gui.md re/names.tsv	
+new	0x006adc80	CSWGuiAbilities::OnChangeCharacter		64	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x006adda0	CSWGuiAbilities::CSWGuiAbilities	84	235	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x006ae5f0	CSWGuiAbilities::HandleInputEvent	167	167	re/gui.md re/names.tsv	
+new	0x006ae990	FUN_006ae990		52		DEFAULT
+new	0x006aec80	FUN_006aec80		18		DEFAULT
+new	0x006aecd0	FUN_006aecd0		14		DEFAULT
+new	0x006aed90	CSWGuiCharacter::RotateModelLeft		19	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006aede0	CSWGuiCharacter::RotateModelRight		19	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006af450	CSWGuiCharacter::OnPreviousCharacter		111	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006af6d0	CSWGuiCharacter::OnNextCharacter		111	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x006afda0	CSWGuiCharacter::UpdateStats	54	565	re/gui.md re/names.tsv	
+changed	0x006b0bb0	CSWGuiCharacter::StartLevelUp	44	45	re/gui.md re/names.tsv	
+changed	0x006b0cb0	CSWGuiCharacter::AutoLevelUp	40	65	re/gui.md re/names.tsv	
+changed	0x006b0e40	CSWGuiCharacter::CSWGuiCharacter	161	551	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x006b2250	CSWGuiCharacter::HandleInputEvent	114	114	re/gui.md re/names.tsv	
+new	0x006b25e0	CSWGuiInventory::OnUseItem		38	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006b26e0	CSWGuiInventory::OnEquippableItemClicked		18	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006b2740	CSWGuiInventory::OnUnusableItemClicked		18	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006b27a0	CSWGuiInventory::OnItemClickedViewOnly		18	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006b2800	CSWGuiInventory::OnMedpacFullHealth		18	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006b2860	CSWGuiInventory::OnSquadMedpacNoInjured		18	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x006b28c0	CSWGuiInventory::UpdateStats	55	68	re/gui.md re/names.tsv	
+changed	0x006b2a80	CSWGuiInventory::CycleFilter	48	85	re/gui.md re/names.tsv	
+new	0x006b2c90	CSWGuiInventory::PassesFilter		52	re/gui.md re/names.tsv re/party-items-saves.md	USER_DEFINED
+gone	0x006b2cd3	switchD_006b2cc0::caseD_1	7			now inside 0x006b2c90 CSWGuiInventory::PassesFilter
+gone	0x006b2ce6	switchD_006b2cc0::caseD_2	7			now inside 0x006b2c90 CSWGuiInventory::PassesFilter
+gone	0x006b2cf3	switchD_006b2cc0::caseD_3	13			now inside 0x006b2c90 CSWGuiInventory::PassesFilter
+gone	0x006b2d1c	switchD_006b2cc0::caseD_4	19			now inside 0x006b2c90 CSWGuiInventory::PassesFilter
+gone	0x006b2d48	switchD_006b2cc0::caseD_5	28			now inside 0x006b2c90 CSWGuiInventory::PassesFilter
+new	0x006b2ec0	CSWGuiInventory::OnChangeCharacter		61	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006b2fd0	CSWGuiInventory::OnPreviousCharacter		111	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006b3250	CSWGuiInventory::OnNextCharacter		111	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x006b34c0	CSWGuiInventory::CSWGuiInventory	76	236	re/gui.md re/names.tsv re/render-gui.md	
+new	0x006b3d10	CSWGuiInventory::OnItemHilighted		81	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x006b3ed0	CSWGuiInventory::HandleInputEvent	58	58	re/gui.md re/names.tsv	
+new	0x006b44d0	CSWGuiInventory::AddItemRow		141	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x006b4810	CSWGuiInventory::RebuildItemList	54	156	re/gui.md re/names.tsv	
+changed	0x006b4bb0	CSWGuiInventory::Render	29	29	re/gui.md re/names.tsv	
+changed	0x006b4c30	CSWGuiInventory::OnPanelAdded	16	16	re/gui.md re/names.tsv	
+changed	0x006b4fe0	FUN_006b4fe0	24	27		
+changed	0x006b5600	CSWGuiEquip::GetEmptySlotIcon	23	24	re/gui.md re/names.tsv	
+changed	0x006b59f0	FUN_006b59f0	42	46		
+new	0x006b60f0	CSWGuiEquip::OnPreviousCharacter		111	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006b6370	CSWGuiEquip::OnNextCharacter		111	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x006b6710	CSWGuiItemEntry::SetItem	154	203	re/gui.md re/names.tsv	
+changed	0x006b6dc0	CSWGuiContainer::CSWGuiContainer	48	109	re/gui.md re/names.tsv re/party-items-saves.md re/render-gui.md	
+changed	0x006b7270	FUN_006b7270	89	102	re/party-items-saves.md	
+changed	0x006b7590	CSWGuiEquip::SetCreature	39	48	re/gui.md re/names.tsv	
+changed	0x006b7680	CSWGuiEquip::SetSelectionMode	36	105	re/gui.md re/names.tsv	
+changed	0x006b7920	CSWGuiEquip::OnRowHilighted	72	199	re/gui.md re/names.tsv	
+gone	0x006b7b78	switchD_006b7b71::caseD_0	105			now inside 0x006b7920 CSWGuiEquip::OnRowHilighted
+gone	0x006b7dee	switchD_006b7b71::caseD_2	12			now inside 0x006b7920 CSWGuiEquip::OnRowHilighted
+changed	0x006b7e30	CSWGuiEquip::EndSelection	25	28	re/gui.md re/names.tsv	
+changed	0x006b8130	CSWGuiContainer::ShowContainerItems	101	125	re/gui.md re/names.tsv	
+changed	0x006b8410	CSWGuiContainer::ShowGiveItems	99	136	re/gui.md re/names.tsv	
+changed	0x006b8770	CSWGuiContainer::Update	18	18	re/gui.md re/names.tsv	
+new	0x006b8eb0	CSWGuiEquip::OnSlotClicked		100	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x006b92f0	CSWGuiContainer::HandleInputEvent	63	63	re/gui.md re/names.tsv	
+changed	0x006b9470	CSWGuiEquip::OnSlotHilighted	193	197	re/gui.md re/names.tsv re/party-items-saves.md	
+changed	0x006b9970	CSWGuiEquip::UpdateStats	27	367	re/gui.md re/names.tsv	
+gone	0x006ba234	switchD_006ba22d::caseD_10	18			now inside 0x006b9970 CSWGuiEquip::UpdateStats
+gone	0x006ba28a	switchD_006ba22d::caseD_2	11			now inside 0x006b9970 CSWGuiEquip::UpdateStats
+gone	0x006ba2fc	switchD_006ba22d::caseD_1	22			now inside 0x006b9970 CSWGuiEquip::UpdateStats
+new	0x006ba820	CSWGuiEquip::OnChangeCharacter		75	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x006ba980	CSWGuiEquip::CSWGuiEquip	103	327	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x006bb510	CSWGuiEquip::Render	9	9	re/gui.md re/names.tsv	
+new	0x006bda90	FUN_006bda90		53		DEFAULT
+new	0x006bdba0	FUN_006bdba0		13		DEFAULT
+new	0x006bdbe0	FUN_006bdbe0		23		DEFAULT
+changed	0x006bdc60	CSWGuiDebugMenu2::CSWGuiDebugMenu2	40	58	re/gui.md re/names.tsv	
+new	0x006bdea0	FUN_006bdea0		165		DEFAULT
+changed	0x006be4e0	FUN_006be4e0	21	22		
+new	0x006bec90	CSWGuiPartySelection::OnConfirmed		13	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006bf3b0	CSWGuiPartySelection::OnDone		118	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x006bf5b0	CSWGuiPartySelection::OnNPCHilighted	70	150	re/gui.md re/names.tsv	
+changed	0x006bfa40	CSWGuiPartySelection::CSWGuiPartySelection	78	150	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x006bff90	CSWGuiPartySelection::ScalarDeletingDestructor	12	12	re/names.tsv	
+changed	0x006bffb0	FUN_006bffb0	33	36		
+changed	0x006c00c0	CSWGuiPause::SetReason	104	105	re/gameloop.md re/gui.md re/names.tsv	
+new	0x006c0350	CSWGuiPause::OnUnpause		18	re/gameloop.md re/gui.md re/names.tsv	USER_DEFINED
+changed	0x006c03b0	CSWGuiPause::CSWGuiPause	33	62	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x006c0610	CSWGuiStore::UpdateCredits	35	34	re/gui.md re/names.tsv	
+new	0x006c0690	CSWGuiStore::SetDescription		37	re/names.tsv	USER_DEFINED
+changed	0x006c0850	CSWGuiStore::FillPlayerItems	104	116	re/gui.md re/names.tsv re/party-items-saves.md	
+changed	0x006c0aa0	CSWGuiStore::OnItemHilighted	44	60	re/gui.md re/names.tsv re/party-items-saves.md	
+changed	0x006c0be0	CSWGuiStore::DoBuy	57	56	re/gui.md re/names.tsv re/party-items-saves.md	
+new	0x006c0d20	FUN_006c0d20		19		DEFAULT
+changed	0x006c0d80	CSWGuiStore::DoSell	65	64	re/gui.md re/names.tsv re/party-items-saves.md	
+new	0x006c0ee0	FUN_006c0ee0		19		DEFAULT
+changed	0x006c0f40	CSWGuiStore::OnSell	64	85	re/gui.md re/names.tsv re/party-items-saves.md	
+changed	0x006c1130	CSWGuiStore::OnBuy	73	93	re/gui.md re/names.tsv re/party-items-saves.md	
+changed	0x006c1840	CSWGuiStore::FillStoreItems	88	99	re/gui.md re/names.tsv re/party-items-saves.md	
+changed	0x006c1c00	CSWGuiStore::CSWGuiStore	79	162	re/gui.md re/names.tsv re/party-items-saves.md re/render-gui.md	
+new	0x006c2b60	CSWGuiUpgradeSelect::OnCategory		19	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006c2bd0	FUN_006c2bd0		26		DEFAULT
+changed	0x006c3460	FUN_006c3460	35	71		
+changed	0x006c3630	FUN_006c3630	137	166		
+changed	0x006c3aa0	FUN_006c3aa0	82	85		
+changed	0x006c3c30	CSWGuiUpgrade::OnSlotHilighted	67	74	re/names.tsv	
+changed	0x006c3ea0	FUN_006c3ea0	116	160		
+changed	0x006c4880	FUN_006c4880	47	46		
+changed	0x006c4d70	CSWGuiUpgrade::OnPanelAdded	142	255	re/names.tsv re/party-items-saves.md	
+changed	0x006c5370	FUN_006c5370	68	66		
+changed	0x006c5510	CSWGuiUpgrade::OnUpgradeChosen	159	168	re/names.tsv re/party-items-saves.md	
+new	0x006c6190	CSWGuiUpgrade::OnAssemble		21	re/gui.md re/names.tsv re/party-items-saves.md	USER_DEFINED
+changed	0x006c6500	CSWGuiUpgrade::OnSlotClicked	141	192	re/gui.md re/names.tsv re/party-items-saves.md	
+new	0x006c6b60	CSWGuiUpgrade::CSWGuiUpgrade		314	re/gui.md re/names.tsv re/party-items-saves.md re/render-gui.md	USER_DEFINED
+changed	0x006c726a	FUN_006c726a	100	114		
+new	0x006c7630	CSWGuiUpgradeItems::CSWGuiUpgradeItems		90	re/gui.md re/names.tsv re/party-items-saves.md re/render-gui.md	USER_DEFINED
+changed	0x006c78d0	CSWGuiUpgradeSelect::CSWGuiUpgradeSelect	39	133	re/gui.md re/names.tsv re/party-items-saves.md re/render-gui.md	
+changed	0x006c7d50	CSWGuiAreaTransition::CSWGuiAreaTransition	37	52	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x006c7ec0	CSWGuiAreaTransition::SetTransitionObject	59	69	mechanics/controls.md re/gui.md re/names.tsv	
+new	0x006c8200	FUN_006c8200		16		DEFAULT
+new	0x006c8250	FUN_006c8250		22		DEFAULT
+new	0x006c8470	CSWGuiSaveName::OnCancel		9	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006c8490	FUN_006c8490		52		DEFAULT
+new	0x006c8750	FUN_006c8750		12		DEFAULT
+changed	0x006c8790	CSWGuiSaveLoad::DoSave	57	58	re/names.tsv re/party-items-saves.md	
+new	0x006c8900	FUN_006c8900		42		DEFAULT
+new	0x006c89d0	FUN_006c89d0		160		DEFAULT
+new	0x006c8e50	CSWGuiSaveLoadEntry::ReadSaveInfo		267	re/names.tsv re/party-items-saves.md	USER_DEFINED
+new	0x006c9780	FUN_006c9780		92		DEFAULT
+new	0x006c9a90	CSWGuiSaveLoad::ExtractSaveToFutureGame		106	re/names.tsv re/party-items-saves.md	USER_DEFINED
+changed	0x006c9d50	CSWGuiSaveName::OnOk	22	25	re/gui.md re/names.tsv	
+changed	0x006c9dd0	thunk_FUN_0041c740	16	25		
+new	0x006c9de0	CAutoSaveParams::Load		90	re/names.tsv re/party-items-saves.md	USER_DEFINED
+changed	0x006ca110	FUN_006ca110	21	49		
+new	0x006ca250	CSWGuiSaveLoad::LoadTransitionAutoSave		232	re/gameloop.md re/modules.md re/names.tsv re/party-items-saves.md	USER_DEFINED
+new	0x006caa90	CSWGuiSaveLoad::OnDelete		18	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006caaf0	CSWGuiSaveLoad::PrepareGameInProgress		123	re/names.tsv re/party-items-saves.md	USER_DEFINED
+new	0x006cae70	CSWGuiSaveName::CSWGuiSaveName		60	re/gui.md re/names.tsv re/render-gui.md	USER_DEFINED
+new	0x006cb0e0	CSWGuiSaveLoad::LoadSelectedGame		229	re/app.md re/names.tsv re/party-items-saves.md	USER_DEFINED
+new	0x006cb820	FUN_006cb820		53		DEFAULT
+new	0x006cb940	FUN_006cb940		50		DEFAULT
+changed	0x006cba70	FUN_006cba70	9	9		
+changed	0x006cba90	FUN_006cba90	15	33		
+new	0x006cbb60	CSWGuiSaveLoad::OnSave		150	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006cc0e0	CSWGuiSaveLoad::OnLoad		24	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006cc160	CSWGuiSaveLoad::PopulateList		233	re/gui.md re/names.tsv re/party-items-saves.md	USER_DEFINED
+changed	0x006cc680	CSWGuiSaveLoad::CSWGuiSaveLoad	50	155	re/gui.md re/names.tsv re/render-gui.md	
+new	0x006cd1c0	FUN_006cd1c0		23	re/gui.md	DEFAULT
+new	0x006ce570	FUN_006ce570		101	re/chargen.md re/gui.md	DEFAULT
+changed	0x006ce7c0	CSWGuiSkillInfo::CSWGuiSkillInfo	38	73	re/gui.md re/names.tsv re/render-gui.md	
+new	0x006ceba0	FUN_006ceba0		28		DEFAULT
+new	0x006cec40	FUN_006cec40		26		DEFAULT
+new	0x006cecd0	FUN_006cecd0		32		DEFAULT
+new	0x006ced60	FUN_006ced60		78		DEFAULT
+new	0x006cef00	FUN_006cef00		24		DEFAULT
+new	0x006cef80	FUN_006cef80		32		DEFAULT
+new	0x006cf020	FUN_006cf020		8		DEFAULT
+changed	0x006cf040	FUN_006cf040	68	88		
+new	0x006cf220	FUN_006cf220		82		DEFAULT
+new	0x006cf3f0	FUN_006cf3f0		8		DEFAULT
+changed	0x006cf410	FUN_006cf410	37	68		
+changed	0x006cf5a0	CSWGuiDebugMenu::CSWGuiDebugMenu	31	50	re/gui.md re/names.tsv	
+changed	0x006cf770	FUN_006cf770	15	15		
+new	0x006cf890	FUN_006cf890		53		DEFAULT
+new	0x006cf9d0	FUN_006cf9d0		27	re/gameloop.md	DEFAULT
+changed	0x006cfa70	CSWGuiDebugModules::CSWGuiDebugModules	36	280	re/gui.md re/names.tsv	
+new	0x006d0490	FUN_006d0490		53		DEFAULT
+new	0x006d05a0	FUN_006d05a0		13		DEFAULT
+new	0x006d05e0	FUN_006d05e0		15		DEFAULT
+changed	0x006d0620	CSWGuiDebugItems::CSWGuiDebugItems	34	146	re/gui.md re/names.tsv	
+changed	0x006d12b0	CSWCCombatCamera::CSWCCombatCamera	37	82	re/movement.md re/names.tsv	
+changed	0x006d2580	CSWGuiQuestItems::OnItemHilighted	61	60	re/gui.md re/names.tsv	
+changed	0x006d26c0	CSWGuiQuestItems::CSWGuiQuestItems	41	72	re/gui.md re/names.tsv	
+changed	0x006d29f0	CSWGuiQuestItems::RebuildList	96	98	re/gui.md re/names.tsv	
+changed	0x006d2c20	CSWGuiQuestItems::OnPanelAdded	9	9	re/gui.md re/names.tsv	
+changed	0x006d42d0	FUN_006d42d0	61	66		
+new	0x006d4440	FUN_006d4440		26		DEFAULT
+changed	0x006d5a40	FUN_006d5a40	31	34		
+changed	0x006d70d0	FUN_006d70d0	161	164		
+changed	0x006d7475	FUN_006d7475	152	161		
+changed	0x006d7bc0	FUN_006d7bc0	314	317		
+changed	0x006d8490	FUN_006d8490	353	388		
+changed	0x006d9350	FUN_006d9350	25	67		
+changed	0x006d9590	FUN_006d9590	58	60		
+changed	0x006d96e0	FUN_006d96e0	56	58		
+changed	0x006da9b0	FUN_006da9b0	128	169		
+new	0x006db6d0	FUN_006db6d0		18		DEFAULT
+changed	0x006db720	FUN_006db720	35	70		
+changed	0x006db8f0	FUN_006db8f0	20	26	re/chargen.md	
+changed	0x006dba70	CSWGuiClassSelection::OnHoverClass	45	108	re/chargen.md re/gui.md re/names.tsv	
+new	0x006dbdf0	CSWGuiClassSelection::StartGame		89	re/app.md re/chargen-creature.md re/chargen.md re/gui.md re/names.tsv	USER_DEFINED
+new	0x006dc350	FUN_006dc350		21		DEFAULT
+new	0x006dc3c0	CSWGuiClassSelection::CSWGuiClassSelection		368	re/chargen-3d.md re/chargen-creature.md re/chargen.md re/gui.md re/names.tsv re/render-gui.md re/resman.md	USER_DEFINED
+new	0x006dcf10	FUN_006dcf10		37		DEFAULT
+changed	0x006dcfe0	FUN_006dcfe0	52	54		
+new	0x006dd100	FUN_006dd100		311		DEFAULT
+changed	0x006dd910	CSWGuiTitleMovies::CSWGuiTitleMovies	37	65	re/gui.md re/names.tsv re/render-gui.md	
+new	0x006ddb10	FUN_006ddb10		7	re/gui.md	DEFAULT
+new	0x006ddb30	FUN_006ddb30		9	re/gui.md	DEFAULT
+new	0x006ddb60	FUN_006ddb60		6	re/gui.md	DEFAULT
+new	0x006ddb80	FUN_006ddb80		9	re/gui.md	DEFAULT
+new	0x006ddc80	FUN_006ddc80		41		DEFAULT
+new	0x006ddd70	FUN_006ddd70		50		DEFAULT
+new	0x006dde50	FUN_006dde50		41		DEFAULT
+new	0x006ddf40	FUN_006ddf40		15		DEFAULT
+new	0x006ddfa0	FUN_006ddfa0		14		DEFAULT
+new	0x006ddff0	FUN_006ddff0		9	re/gui.md	DEFAULT
+changed	0x006de160	FUN_006de160	18	18	re/gui.md	
+new	0x006de200	FUN_006de200		12		DEFAULT
+new	0x006de240	CSWGuiOptionsMain::OnGameplay		31	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006de2c0	CSWGuiOptionsMain::OnAutoPause		32	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006de340	FUN_006de340		41		DEFAULT
+new	0x006de7c0	FUN_006de7c0		60		DEFAULT
+changed	0x006de9b0	FUN_006de9b0	40	41		
+changed	0x006deae0	FUN_006deae0	49	94		
+new	0x006ded90	FUN_006ded90		9		DEFAULT
+new	0x006dedb0	FUN_006dedb0		14	re/gui.md	DEFAULT
+new	0x006dee00	FUN_006dee00		15	re/gui.md	DEFAULT
+new	0x006dee40	FUN_006dee40		41		DEFAULT
+new	0x006df070	FUN_006df070		65		DEFAULT
+new	0x006df1c0	FUN_006df1c0		54		DEFAULT
+gone	0x006df1dd	switchD_006df1cf::caseD_2	36			now inside 0x006df1c0 FUN_006df1c0
+gone	0x006df1e4	switchD_006df1cf::caseD_4	36			now inside 0x006df1c0 FUN_006df1c0
+gone	0x006df1eb	switchD_006df1cf::caseD_6	36			now inside 0x006df1c0 FUN_006df1c0
+gone	0x006df1f2	switchD_006df1cf::caseD_8	36			now inside 0x006df1c0 FUN_006df1c0
+new	0x006df2c0	FUN_006df2c0		41		DEFAULT
+gone	0x006df2e5	switchD_006df2d7::caseD_2	23			now inside 0x006df2c0 FUN_006df2c0
+gone	0x006df2ec	switchD_006df2d7::caseD_4	23			now inside 0x006df2c0 FUN_006df2c0
+gone	0x006df2f3	switchD_006df2d7::caseD_8	23			now inside 0x006df2c0 FUN_006df2c0
+gone	0x006df2fa	switchD_006df2d7::caseD_10	23			now inside 0x006df2c0 FUN_006df2c0
+new	0x006df390	FUN_006df390		41		DEFAULT
+new	0x006df480	FUN_006df480		92		DEFAULT
+changed	0x006df690	CSWGuiOptionsResolution::OnOk	67	102	mechanics/graphics.md re/gui.md re/names.tsv	
+new	0x006df9b0	FUN_006df9b0		37	re/gui.md	DEFAULT
+new	0x006dfaa0	FUN_006dfaa0		10		DEFAULT
+new	0x006dfad0	FUN_006dfad0		18		DEFAULT
+new	0x006dfbb0	FUN_006dfbb0		11		DEFAULT
+new	0x006dfbf0	FUN_006dfbf0		22		DEFAULT
+new	0x006dfc50	FUN_006dfc50		13		DEFAULT
+new	0x006dfc90	FUN_006dfc90		20		DEFAULT
+new	0x006dfd10	FUN_006dfd10		50		DEFAULT
+new	0x006dfe60	FUN_006dfe60		6		DEFAULT
+new	0x006dfe70	FUN_006dfe70		18		DEFAULT
+new	0x006dfee0	FUN_006dfee0		13		DEFAULT
+new	0x006e0010	FUN_006e0010		6		DEFAULT
+new	0x006e00d0	FUN_006e00d0		7		DEFAULT
+new	0x006e0100	FUN_006e0100		12	re/gui.md	DEFAULT
+new	0x006e0140	FUN_006e0140		6		DEFAULT
+new	0x006e0150	FUN_006e0150		12		DEFAULT
+new	0x006e0190	FUN_006e0190		12	re/gui.md	DEFAULT
+changed	0x006e01c0	FUN_006e01c0	62	112		
+new	0x006e0460	FUN_006e0460		6		DEFAULT
+new	0x006e0470	FUN_006e0470		12	re/gui.md	DEFAULT
+new	0x006e04a0	FUN_006e04a0		10	re/gui.md	DEFAULT
+new	0x006e04e0	FUN_006e04e0		11	re/gui.md	DEFAULT
+new	0x006e0520	FUN_006e0520		42	re/gui.md	DEFAULT
+new	0x006e05e0	FUN_006e05e0		43	re/gui.md	DEFAULT
+new	0x006e0680	FUN_006e0680		16	re/gui.md	DEFAULT
+new	0x006e06d0	FUN_006e06d0		17	re/gui.md	DEFAULT
+new	0x006e0710	CSWGuiOptionsResolution::CSWGuiOptionsResolution		173	re/gui.md re/names.tsv re/render-gui.md	USER_DEFINED
+changed	0x006e0cf0	FUN_006e0cf0	48	93		
+new	0x006e0f50	FUN_006e0f50		12	re/gui.md	DEFAULT
+changed	0x006e0f80	FUN_006e0f80	68	98		
+new	0x006e1270	FUN_006e1270		13	re/gui.md	DEFAULT
+new	0x006e12b0	FUN_006e12b0		12	re/gui.md	DEFAULT
+new	0x006e1300	FUN_006e1300		128		DEFAULT
+gone	0x006e1406	switchD_006e13cf::caseD_1	116		re/gui.md	now inside 0x006e1300 FUN_006e1300
+gone	0x006e1618	switchD_006e13cf::switchdataD_006e1618	46			
+new	0x006e1660	FUN_006e1660		30	re/gui.md	DEFAULT
+new	0x006e16e0	CSWGuiOptionsGraphicsAdvanced::CSWGuiOptionsGraphicsAdvanced		220	re/gui.md re/names.tsv re/render-gui.md	USER_DEFINED
+new	0x006e20a0	CSWGuiOptionsSoundAdvanced::CSWGuiOptionsSoundAdvanced		122	re/gui.md re/names.tsv re/render-gui.md	USER_DEFINED
+changed	0x006e2600	CSWGuiOptionsMouse::CSWGuiOptionsMouse	45	105	re/gui.md re/names.tsv re/render-gui.md	
+new	0x006e2a70	CSWGuiOptionsFeedback::CSWGuiOptionsFeedback		84	re/gui.md re/names.tsv re/render-gui.md	USER_DEFINED
+new	0x006e2cf0	FUN_006e2cf0		31	re/gui.md	DEFAULT
+new	0x006e2d70	FUN_006e2d70		31	re/gui.md	DEFAULT
+new	0x006e2df0	CSWGuiOptionsMain::OnFeedback		32	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006e2e70	CSWGuiOptionsGraphics::CSWGuiOptionsGraphics		152	re/gui.md re/names.tsv re/render-gui.md	USER_DEFINED
+gone	0x006e31b4	FUN_006e31b4	21			now inside 0x006e2e70 CSWGuiOptionsGraphics::CSWGuiOptionsGraphics
+new	0x006e3550	CSWGuiOptionsSound::CSWGuiOptionsSound		177	re/gui.md re/names.tsv re/render-gui.md	USER_DEFINED
+new	0x006e3d80	CSWGuiOptionsMain::OnGraphics		32	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006e3e00	CSWGuiOptionsMain::OnSound		32	re/gui.md re/names.tsv	USER_DEFINED
+changed	0x006e3e80	CSWGuiOptionsMain::CSWGuiOptionsMain	39	126	re/gui.md re/names.tsv re/render-gui.md	
+new	0x006e4840	FUN_006e4840		5		DEFAULT
+changed	0x006e4a40	FUN_006e4a40	62	61		
+changed	0x006e4f30	FUN_006e4f30	98	100		
+changed	0x006e51a0	FUN_006e51a0	92	100		
+changed	0x006e57b0	FUN_006e57b0	79	80		
+changed	0x006e59c0	CSWCAnimBaseDoor::GetAnimationName	44	45	re/names.tsv	
+changed	0x006e5e60	FUN_006e5e60	29	40		
+changed	0x006e6040	FUN_006e6040	31	33		
+new	0x006e62a0	FUN_006e62a0		15		DEFAULT
+changed	0x006e6520	FUN_006e6520	22	38		
+changed	0x006e6620	FUN_006e6620	40	41		
+new	0x006e6710	FUN_006e6710		9		DEFAULT
+new	0x006e6750	FUN_006e6750		7		DEFAULT
+new	0x006e68e0	FUN_006e68e0		16	re/gui.md	DEFAULT
+new	0x006e6930	FUN_006e6930		18	re/gui.md	DEFAULT
+gone	0x006e694d	FUN_006e694d	17			now inside 0x006e6930 FUN_006e6930
+new	0x006e69a0	CSWGuiOptionsGameplay::CSWGuiOptionsGameplay		197	re/gui.md re/names.tsv re/render-gui.md	USER_DEFINED
+new	0x006e75a0	FUN_006e75a0		41		DEFAULT
+new	0x006e7690	FUN_006e7690		6		DEFAULT
+new	0x006e76a0	CSWGuiOptionsAutoPause::CSWGuiOptionsAutoPause		114	re/gui.md re/names.tsv re/render-gui.md	USER_DEFINED
+changed	0x006e7b70	FUN_006e7b70	21	86		
+changed	0x006e7dd0	FUN_006e7dd0	21	41		
+new	0x006e7ec0	FUN_006e7ec0		25		DEFAULT
+changed	0x006e7f70	FUN_006e7f70	30	142		
+new	0x006e88a0	FUN_006e88a0		34		DEFAULT
+changed	0x006e8ef0	CSWGuiLevelUpMain::CSWGuiLevelUpMain	129	348	re/gui.md re/names.tsv	
+new	0x006e9d50	FUN_006e9d50		46	re/gui.md	DEFAULT
+new	0x006e9e70	FUN_006e9e70		22	re/gui.md	DEFAULT
+new	0x006e9f10	FUN_006e9f10		33	re/gui.md	DEFAULT
+new	0x006e9fe0	FUN_006e9fe0		9	re/gui.md	DEFAULT
+changed	0x006ea000	CSWGuiScriptSelect::CSWGuiScriptSelect	46	172	re/gui.md re/names.tsv re/render-gui.md	
+changed	0x006ea910	FUN_006ea910	21	32	re/chargen.md	
+new	0x006ea9b0	FUN_006ea9b0		8	re/chargen.md	DEFAULT
+changed	0x006ea9f0	FUN_006ea9f0	23	81	re/chargen.md	
+changed	0x006eac30	FUN_006eac30	23	103	re/chargen-creature.md re/chargen.md	
+changed	0x006eb010	CSWGuiCharGenMain::ResetCharacter	22	84	re/chargen.md re/names.tsv	
+new	0x006eb320	CSWGuiCharGenMain::Finish		9	re/chargen-creature.md re/chargen.md re/gui.md re/names.tsv	USER_DEFINED
+changed	0x006eb420	CSWGuiCharGenMain::CSWGuiCharGenMain	102	329	re/chargen-3d.md re/chargen-creature.md re/chargen.md re/gui.md re/names.tsv	
+changed	0x006ebee0	FUN_006ebee0	9	9		
+changed	0x006ebf00	FUN_006ebf00	15	76		
+changed	0x006ec120	FUN_006ec120	40	44		
+new	0x006ec580	FUN_006ec580		37		DEFAULT
+new	0x006ec630	FUN_006ec630		34		DEFAULT
+new	0x006ec770	FUN_006ec770		13		DEFAULT
+changed	0x006ec7d0	FUN_006ec7d0	22	186		
+new	0x006eccc0	FUN_006eccc0		59		DEFAULT
+new	0x006ece60	FUN_006ece60		55		DEFAULT
+new	0x006ecfd0	FUN_006ecfd0		109		DEFAULT
+new	0x006ed1e0	FUN_006ed1e0		48		DEFAULT
+new	0x006ed2d0	FUN_006ed2d0		18		DEFAULT
+new	0x006ed310	FUN_006ed310		23		DEFAULT
+new	0x006ed390	FUN_006ed390		10		DEFAULT
+new	0x006ed3e0	FUN_006ed3e0		10		DEFAULT
+new	0x006ed430	FUN_006ed430		10		DEFAULT
+new	0x006ed5c0	FUN_006ed5c0		6		DEFAULT
+new	0x006ed5e0	FUN_006ed5e0		9		DEFAULT
+new	0x006ed610	FUN_006ed610		108		DEFAULT
+new	0x006ed930	FUN_006ed930		84		DEFAULT
+changed	0x006eda80	FUN_006eda80	27	50		
+changed	0x006edbd0	FUN_006edbd0	29	30		
+changed	0x006edc90	CSWGuiOptionsKeyMapping::CSWGuiOptionsKeyMapping	53	111	re/gui.md re/names.tsv	
+new	0x006ee350	CSWGuiLevelUpPanel::OnPowers		34	re/chargen.md re/gui.md re/names.tsv	USER_DEFINED
+new	0x006ee3d0	CSWGuiLevelUpPanel::OnFeats		39	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006ee480	CSWGuiLevelUpPanel::OnSkills		34	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006ee500	CSWGuiLevelUpPanel::OnAbilities		34	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006ee5f0	CSWGuiLevelUpPanel::OnCancel		15	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006ee780	CSWGuiLevelUpPanel::OnFinish		15	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006ee7d0	CSWGuiLevelUpPanel::CSWGuiLevelUpPanel		198	re/gui.md re/names.tsv re/render-gui.md	USER_DEFINED
+new	0x006eef60	FUN_006eef60		6		DEFAULT
+new	0x006eef70	FUN_006eef70		23	re/chargen.md	DEFAULT
+new	0x006ef120	CSWGuiCharGenCustomPanel::OnPortrait		45	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006ef220	CSWGuiCharGenCustomPanel::OnPlay		10	re/chargen-creature.md re/chargen.md re/gui.md re/names.tsv	USER_DEFINED
+new	0x006ef240	CSWGuiCharGenCustomPanel::OnName		32	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006ef2d0	CSWGuiCharGenCustomPanel::OnFeats		34	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006ef360	CSWGuiCharGenCustomPanel::OnSkills		34	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006ef3f0	CSWGuiCharGenCustomPanel::OnAbilities		34	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006ef4e0	FUN_006ef4e0		7	re/chargen.md	DEFAULT
+new	0x006ef5b0	FUN_006ef5b0		18	re/chargen.md	DEFAULT
+new	0x006ef6a0	CSWGuiCharGenCustomPanel::OnCancel		27	re/chargen.md re/gui.md re/names.tsv	USER_DEFINED
+new	0x006ef730	CSWGuiCharGenCustomPanel::CSWGuiCharGenCustomPanel		106	re/chargen.md re/gui.md re/names.tsv re/render-gui.md	USER_DEFINED
+new	0x006efd60	CSWGuiCharGenQuickPanel::OnPlay		10	re/chargen-creature.md re/chargen.md re/gui.md re/names.tsv	USER_DEFINED
+new	0x006efd80	CSWGuiCharGenQuickPanel::OnName		32	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006efe10	CSWGuiCharGenQuickPanel::OnPortrait		45	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006eff80	FUN_006eff80		7	re/chargen.md	DEFAULT
+new	0x006f0220	FUN_006f0220		15	re/chargen.md	DEFAULT
+new	0x006f0310	CSWGuiCharGenQuickPanel::OnCancel		24	re/chargen.md re/gui.md re/names.tsv	USER_DEFINED
+new	0x006f0390	CSWGuiCharGenQuickPanel::CSWGuiCharGenQuickPanel		97	re/chargen.md re/gui.md re/names.tsv re/render-gui.md	USER_DEFINED
+new	0x006f0800	CSWGuiCharGenQuickOrCustom::OnQuick		12	re/chargen.md re/gui.md re/names.tsv	USER_DEFINED
+new	0x006f0830	CSWGuiCharGenQuickOrCustom::OnCustom		12	re/chargen.md re/gui.md re/names.tsv	USER_DEFINED
+new	0x006f0860	FUN_006f0860		56	re/chargen.md	DEFAULT
+new	0x006f09d0	CSWGuiCharGenQuickOrCustom::OnHoverQuick		8	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006f09e0	CSWGuiCharGenQuickOrCustom::OnHoverCustom		8	re/gui.md re/names.tsv	USER_DEFINED
+new	0x006f09f0	CSWGuiCharGenQuickOrCustom::CSWGuiCharGenQuickOrCustom		99	re/chargen.md re/gui.md re/names.tsv re/render-gui.md	USER_DEFINED
+changed	0x006f0ee0	FUN_006f0ee0	30	67		
+changed	0x006f1320	FUN_006f1320	44	46		
+changed	0x006f15a0	FUN_006f15a0	66	67		
+changed	0x006f1730	FUN_006f1730	85	107		
+new	0x006f1940	FUN_006f1940		12		DEFAULT
+new	0x006f1990	FUN_006f1990		143		DEFAULT
+changed	0x006f1c90	FUN_006f1c90	80	92		
+new	0x006f2110	FUN_006f2110		22		DEFAULT
+new	0x006f2180	CSWGuiCharGenPowers::CSWGuiCharGenPowers		217	re/chargen.md re/gui.md re/names.tsv re/render-gui.md	USER_DEFINED
+changed	0x006f2a50	FUN_006f2a50	21	70		
+changed	0x006f2df0	FUN_006f2df0	44	46		
+changed	0x006f30f0	FUN_006f30f0	62	63		
+changed	0x006f3290	FUN_006f3290	86	87	re/chargen.md	
+new	0x006f3420	CSWGuiCharGenFeats::OnFeatClicked		14	re/chargen.md re/gui.md re/names.tsv	USER_DEFINED
+new	0x006f3460	FUN_006f3460		180	re/chargen.md re/gui.md	DEFAULT
+changed	0x006f37e0	FUN_006f37e0	79	88		
+new	0x006f3cf0	CSWGuiCharGenFeats::OnFeatPressed		24	re/chargen.md re/gui.md re/names.tsv	USER_DEFINED
+changed	0x006f3d60	CSWGuiCharGenFeats::CSWGuiCharGenFeats	88	219	re/chargen.md re/gui.md re/names.tsv re/render-gui.md	
+new	0x006f4a80	FUN_006f4a80		11		DEFAULT
+changed	0x006f4bf0	FUN_006f4bf0	76	77		
+changed	0x006f4e20	FUN_006f4e20	60	124		
+new	0x006f51d0	CSWGuiCharGenSkills::CSWGuiCharGenSkills		480	re/chargen.md re/gui.md re/names.tsv re/render-gui.md	USER_DEFINED
+changed	0x006f6370	FUN_006f6370	64	65	re/chargen.md	
+changed	0x006f6570	FUN_006f6570	131	143	re/chargen.md	
+new	0x006f6e40	CSWGuiCharGenAbilities::OnUnhoverAbility		11	re/names.tsv	USER_DEFINED
+changed	0x006f6fa0	FUN_006f6fa0	44	46		
+changed	0x006f70e0	CSWGuiCharGenAbilities::OnHoverAbility	85	93	re/chargen.md re/names.tsv	
+changed	0x006f7390	CSWGuiCharGenAbilities::Recommended	66	92	re/chargen.md re/names.tsv	
+new	0x006f7600	CSWGuiCharGenAbilities::CSWGuiCharGenAbilities		389	re/chargen.md re/gui.md re/names.tsv re/render-gui.md	USER_DEFINED
+changed	0x006f8480	CSWGuiCharGenAbilities::DecreaseAbility	82	83	re/names.tsv	
+changed	0x006f8670	CSWGuiCharGenAbilities::IncreaseAbility	82	83	re/chargen.md re/gui.md re/names.tsv	
+changed	0x006f8880	CSWGuiCharGenAbilities::HandleInputEvent	65	65	re/gui.md re/names.tsv	
+new	0x006f8a00	FUN_006f8a00		7		DEFAULT
+changed	0x006f8c60	FUN_006f8c60	134	135		
+new	0x006f90f0	FUN_006f90f0		152	re/chargen-creature.md re/chargen.md	DEFAULT
+new	0x006f9430	CSWGuiCharGenPortrait::CSWGuiCharGenPortrait		185	re/chargen-3d.md re/chargen.md re/gui.md re/names.tsv	USER_DEFINED
+new	0x006f9b80	FUN_006f9b80		7		DEFAULT
+changed	0x006f9bf0	FUN_006f9bf0	30	39	re/chargen.md	
+new	0x006f9cd0	CSWGuiCharGenName::OnAccept		67	re/chargen-creature.md re/chargen.md re/gui.md re/names.tsv	USER_DEFINED
+new	0x006f9e70	CSWGuiCharGenName::CSWGuiCharGenName		89	re/README.md re/chargen.md re/gui.md re/names.tsv re/render-gui.md	USER_DEFINED
+changed	0x006fa140	FUN_006fa140	45	45	re/chargen.md	
+new	0x006fa8b2	FID_conflict:__time32		21		ANALYSIS
+changed	0x006fb38d	entry	95	95	re/README.md re/app.md re/names.tsv	
+new	0x006fb788	FUN_006fb788		19		DEFAULT
+new	0x006fc5f8	FUN_006fc5f8		40		DEFAULT
+new	0x006fc636	__itoa		20		ANALYSIS
+changed	0x006fcbcb	__CxxThrowException@8	29	27	re/names.tsv	
+new	0x006fd83e	FUN_006fd83e		13		DEFAULT
+new	0x006fdbe6	__strcats		22		ANALYSIS
+new	0x006fdc0a	FUN_006fdc0a		61		DEFAULT
+new	0x006fdcdc	___lc_lctostr		17		ANALYSIS
+new	0x006fdd65	FUN_006fdd65		35		DEFAULT
+new	0x006fde24	FUN_006fde24		56		DEFAULT
+new	0x006fdf50	FUN_006fdf50		114		DEFAULT
+new	0x006fe16e	FUN_006fe16e		96		DEFAULT
+new	0x006fe34d	_setlocale		72		ANALYSIS
+new	0x006fe496	FUN_006fe496		6		DEFAULT
+new	0x006fe4a7	FUN_006fe4a7		17		DEFAULT
+new	0x006fe5c6	FUN_006fe5c6		19		DEFAULT
+changed	0x006fee5f	terminate	19	16	re/names.tsv	
+changed	0x006fee94	_inconsistency	16	15		
+new	0x00706a25	_TranslateName		37		ANALYSIS
+new	0x00706a85	_GetLcidFromDefault		13		ANALYSIS
+new	0x00706a9f	FUN_00706a9f		30		DEFAULT
+new	0x00706b1b	FUN_00706b1b		14		DEFAULT
+new	0x00706b39	FUN_00706b39		52		DEFAULT
+new	0x00706c1c	_LcidFromHexString		26		ANALYSIS
+new	0x00706c51	_GetPrimaryLen		20		ANALYSIS
+new	0x00706c6e	FUN_00706c6e		33		DEFAULT
+new	0x00706d08	FUN_00706d08		34		DEFAULT
+new	0x00706d7f	FUN_00706d7f		80		DEFAULT
+new	0x00706f9f	FUN_00706f9f		39		DEFAULT
+new	0x00707070	_GetLcidFromCountry		18		ANALYSIS
+new	0x007070a7	_GetLcidFromLangCountry		30		ANALYSIS
+new	0x0070712d	_GetLcidFromLanguage		26		ANALYSIS
+new	0x00707182	___get_qualified_locale		92		ANALYSIS
+new	0x00707340	_memcmp		94		ANALYSIS
+new	0x007075c0	_strpbrk		60		ANALYSIS
+changed	0x0070c0a0	FUN_0070c0a0	13	13		
+changed	0x0070c0e0	FUN_0070c0e0	13	13		
+new	0x0070c132	VERSION.DLL::VerQueryValueA		10		DEFAULT
+new	0x0070c138	VERSION.DLL::GetFileVersionInfoA		10		DEFAULT
+new	0x0070c13e	VERSION.DLL::GetFileVersionInfoSizeA		10		DEFAULT
+new	0x0070c170	CExoMoviePlayer::CExoMoviePlayer		27	re/app.md re/names.tsv	USER_DEFINED
+new	0x0070c250	CExoMoviePlayer::~CExoMoviePlayer		15	re/names.tsv	USER_DEFINED
+changed	0x0070c590	CLIPFile::Load	44	46	re/names.tsv	
+new	0x0070c6e0	FUN_0070c6e0		36	re/names.tsv re/render-gui.md	DEFAULT
+new	0x0070c790	Render_LoadTGAResource		38	re/names.tsv re/render-gui.md	USER_DEFINED
+new	0x0070c850	FUN_0070c850		6		DEFAULT
+new	0x0070c870	FUN_0070c870		38		DEFAULT
+new	0x0070c920	FUN_0070c920		173		DEFAULT
+new	0x0070cbd0	FUN_0070cbd0		36		DEFAULT
+new	0x0070cc60	FUN_0070cc60		37	re/render-gui.md	DEFAULT
+new	0x0070cd10	FUN_0070cd10		36	re/render-gui.md	DEFAULT
+new	0x0070cdd0	FUN_0070cdd0		36	re/render-gui.md	DEFAULT
+new	0x0070ce80	FUN_0070ce80		38	re/render-gui.md	DEFAULT
+new	0x0070cf30	FUN_0070cf30		19	re/resman.md	DEFAULT
+new	0x0070cf80	FUN_0070cf80		40	re/resman.md	DEFAULT
+new	0x0070d060	FUN_0070d060		10		DEFAULT
+new	0x0070d0a0	FUN_0070d0a0		81		DEFAULT
+new	0x0070d220	FUN_0070d220		41		DEFAULT
+new	0x0070d380	FUN_0070d380		72	re/names.tsv re/render-gui.md	DEFAULT
+new	0x0070d510	FUN_0070d510		67	re/render-gui.md re/resman.md	DEFAULT
+new	0x0070d6b0	FUN_0070d6b0		65	re/render-gui.md	DEFAULT
+new	0x0070d800	FUN_0070d800		38	re/resman.md	DEFAULT
+changed	0x0070d8d0	FUN_0070d8d0	23	33		
+new	0x0070d9c0	Render_InstallResourceCallbacks		23	re/names.tsv re/render-gui.md re/resman.md	USER_DEFINED
+new	0x0070da60	FUN_0070da60		16		DEFAULT
+new	0x0070daa0	FUN_0070daa0		24		DEFAULT
+new	0x0070db10	FUN_0070db10		27		DEFAULT
+new	0x0070dbf0	CResHelperPLT::SetResRef		70	re/names.tsv re/resources.md	USER_DEFINED
+new	0x0070dd60	FUN_0070dd60		25		DEFAULT
+changed	0x0070de20	FUN_0070de20	27	132		
+changed	0x0070e080	FUN_0070e080	19	19		
+new	0x0070e0e0	FUN_0070e0e0		20		DEFAULT
+new	0x0070e130	FUN_0070e130		61		DEFAULT
+new	0x0070e220	FUN_0070e220		61		DEFAULT
+new	0x0070e310	FUN_0070e310		61		DEFAULT
+new	0x0070e400	FUN_0070e400		61		DEFAULT
+new	0x0070e4f0	FUN_0070e4f0		61		DEFAULT
+new	0x0070e5e0	FUN_0070e5e0		61		DEFAULT
+new	0x0070e6d0	FUN_0070e6d0		61		DEFAULT
+new	0x0070e7c0	FUN_0070e7c0		61		DEFAULT
+new	0x0070e8b0	thunk_FUN_0070e130		61		DEFAULT
+new	0x0070e8c0	FUN_0070e8c0		19		DEFAULT
+new	0x0070e910	thunk_FUN_0070e220		61		DEFAULT
+new	0x0070e920	FUN_0070e920		20		DEFAULT
+new	0x0070e970	thunk_FUN_0070e310		61		DEFAULT
+new	0x0070e980	FUN_0070e980		19		DEFAULT
+new	0x0070e9d0	thunk_FUN_0070e400		61		DEFAULT
+new	0x0070e9e0	FUN_0070e9e0		20		DEFAULT
+new	0x0070ea30	thunk_FUN_0070e4f0		61		DEFAULT
+new	0x0070ea40	FUN_0070ea40		20		DEFAULT
+new	0x0070ea90	thunk_FUN_0070e5e0		61		DEFAULT
+new	0x0070eaa0	FUN_0070eaa0		20		DEFAULT
+new	0x0070eaf0	thunk_FUN_0070e6d0		61		DEFAULT
+new	0x0070eb00	FUN_0070eb00		20		DEFAULT
+new	0x0070eb50	thunk_FUN_0070e7c0		61		DEFAULT
+new	0x0070eb60	FUN_0070eb60		20		DEFAULT
+new	0x0070ebb0	FUN_0070ebb0		15		DEFAULT
+new	0x0070ebf0	FUN_0070ebf0		26		DEFAULT
+new	0x0070ec70	FUN_0070ec70		24		DEFAULT
+new	0x0070ece0	FUN_0070ece0		20		DEFAULT
+new	0x0070ed40	FUN_0070ed40		27		DEFAULT
+new	0x0070ee30	CResHelperTGA::SetResRef		70	re/names.tsv re/resources.md	USER_DEFINED
+new	0x0070efa0	FUN_0070efa0		25		DEFAULT
+new	0x0070f060	FUN_0070f060		16		DEFAULT
+new	0x0070f0f0	CResHelperVIS::SetResRef		70	re/names.tsv re/resources.md	USER_DEFINED
+new	0x0070f270	FUN_0070f270		25		DEFAULT
+new	0x0070f330	FUN_0070f330		18		DEFAULT
+new	0x0070f380	FUN_0070f380		15		DEFAULT
+new	0x0070f3b0	FUN_0070f3b0		15		DEFAULT
+new	0x0070f3e0	FUN_0070f3e0		15		DEFAULT
+new	0x0070f410	FUN_0070f410		15		DEFAULT
+new	0x0070f440	FUN_0070f440		67		DEFAULT
+new	0x0070f590	FUN_0070f590		60		DEFAULT
+new	0x0070f690	FUN_0070f690		49		DEFAULT
+new	0x0070f800	CResHelperTPC::SetResRef		70	re/names.tsv re/resources.md	USER_DEFINED
+new	0x0070f980	FUN_0070f980		25		DEFAULT
+new	0x0070fa20	FUN_0070fa20		28		DEFAULT
+new	0x0070fac0	FUN_0070fac0		16		DEFAULT
+new	0x0070fb90	CResHelperTXI::SetResRef		70	re/names.tsv re/resources.md	USER_DEFINED
+new	0x0070fd10	FUN_0070fd10		25		DEFAULT
+new	0x0070fdd0	FUN_0070fdd0		16		DEFAULT
+new	0x0070fe60	CResHelperMDX::SetResRef		70	re/names.tsv re/resources.md	USER_DEFINED
+new	0x0070ffe0	FUN_0070ffe0		25		DEFAULT
+new	0x007100a0	FUN_007100a0		14		DEFAULT
+new	0x007103c0	FUN_007103c0		17		DEFAULT
+new	0x00710400	FUN_00710400		16		DEFAULT
+new	0x00710430	FUN_00710430		25		DEFAULT
+new	0x00710490	FUN_00710490		21		DEFAULT
+new	0x00710530	CResHelperDDS::SetResRef		70	re/names.tsv re/resources.md	USER_DEFINED
+new	0x007106b0	FUN_007106b0		25		DEFAULT
+new	0x00710770	FUN_00710770		17		DEFAULT
+new	0x007107b0	FUN_007107b0		15		DEFAULT
+new	0x007107e0	FUN_007107e0		16		DEFAULT
+new	0x00710810	FUN_00710810		23		DEFAULT
+new	0x00710870	FUN_00710870		21		DEFAULT
+new	0x00710910	CResHelper4PC::SetResRef		70	re/names.tsv re/resources.md	USER_DEFINED
+new	0x00710a90	FUN_00710a90		25		DEFAULT
+new	0x00710b50	CResPLT::CResPLT		17	re/names.tsv re/resources.md	USER_DEFINED
+new	0x00710b90	FUN_00710b90		12		DEFAULT
+new	0x00710d50	CResVIS::CResVIS		13	re/names.tsv re/resources.md	USER_DEFINED
+new	0x00710db0	CResTXI::CResTXI		13	re/names.tsv re/resources.md	USER_DEFINED
+new	0x00710e10	CResMDX::CResMDX		13	re/names.tsv re/resources.md	USER_DEFINED
+new	0x00710ea0	CResDDS::CResDDS		14	re/names.tsv re/resources.md	USER_DEFINED
+new	0x00710ee0	FUN_00710ee0		15		DEFAULT
+new	0x00710f90	CRes4PC::CRes4PC		14	re/names.tsv re/resources.md	USER_DEFINED
+new	0x00710fd0	FUN_00710fd0		14		DEFAULT
+new	0x00711090	FUN_00711090		10		DEFAULT
+changed	0x00711390	FUN_00711390	249	262		
+changed	0x007118c0	FUN_007118c0	250	325	re/chargen.md	
+new	0x007129a0	CResTGA::CResTGA		19	re/names.tsv re/resources.md	USER_DEFINED
+new	0x007129f0	FUN_007129f0		11		DEFAULT
+new	0x00712ea0	CResTPC::CResTPC		18	re/names.tsv re/resources.md	USER_DEFINED
+new	0x00712ef0	FUN_00712ef0		31		DEFAULT
+new	0x00712fa0	FUN_00712fa0		5		DEFAULT
+new	0x00712fb0	FUN_00712fb0		8		DEFAULT
+new	0x00713190	FUN_00713190		23		DEFAULT
+new	0x007131d1	___dtoxmode		42		ANALYSIS
+new	0x0071328e	_IsRootUNCName		42		ANALYSIS
+new	0x007132fb	FUN_007132fb		115		DEFAULT
+new	0x0071382f	FUN_0071382f		84		DEFAULT
+new	0x0071397a	__mbsrchr		59		ANALYSIS
+new	0x007139e5	___loctotime_t		36		ANALYSIS
+new	0x00713af3	__fullpath		47		ANALYSIS
+new	0x00713b9d	FUN_00713b9d		21		DEFAULT
+new	0x00713bf6	__mbctolower		38		ANALYSIS
+new	0x00713c7b	___mbspbrk_mt		44		ANALYSIS
+new	0x00713cf7	__mbspbrk		20		ANALYSIS
+new	0x00713d1e	FUN_00713d1e		16		DEFAULT
+new	0x00713d55	FUN_00713d55		56		DEFAULT
+new	0x00713e43	__getcwd		17		ANALYSIS
+new	0x00713e80	FUN_00713e80		6		DEFAULT
+new	0x00713edc	FUN_00713edc		7		DEFAULT
+new	0x00713efb	FUN_00713efb		7		DEFAULT
+new	0x00713f50	FUN_00713f50		7		DEFAULT
+new	0x00713fe8	FUN_00713fe8		7		DEFAULT
+new	0x007140a6	FUN_007140a6		7		DEFAULT
+new	0x0071410b	FUN_0071410b		7		DEFAULT
+new	0x0071417a	FUN_0071417a		7		DEFAULT
+new	0x00714240	FUN_00714240		7		DEFAULT
+new	0x007142ab	FUN_007142ab		7		DEFAULT
+new	0x0071441d	FUN_0071441d		7		DEFAULT
+new	0x007145a0	FUN_007145a0		7		DEFAULT
+new	0x00714608	FUN_00714608		7		DEFAULT
+new	0x00714646	FUN_00714646		7		DEFAULT
+new	0x007146f7	FUN_007146f7		7		DEFAULT
+new	0x007147ea	FUN_007147ea		7		DEFAULT
+new	0x00714b16	FUN_00714b16		7		DEFAULT
+new	0x00714de8	FUN_00714de8		7		DEFAULT
+new	0x00715073	FUN_00715073		7		DEFAULT
+new	0x00715353	FUN_00715353		7		DEFAULT
+new	0x0071543f	FUN_0071543f		7		DEFAULT
+new	0x00715480	FUN_00715480		7		DEFAULT
+new	0x007154d4	FUN_007154d4		7		DEFAULT
+new	0x007155b1	FUN_007155b1		7		DEFAULT
+new	0x00717d0d	FUN_00717d0d		7		DEFAULT
+new	0x00717d3e	FUN_00717d3e		7		DEFAULT
+new	0x00717d6e	FUN_00717d6e		7		DEFAULT
+new	0x0071837b	FUN_0071837b		7		DEFAULT
+new	0x0071839b	FUN_0071839b		7		DEFAULT
+new	0x00718508	FUN_00718508		7		DEFAULT
+new	0x007185aa	FUN_007185aa		7		DEFAULT
+new	0x007185f0	FUN_007185f0		7		DEFAULT
+new	0x00718695	FUN_00718695		7		DEFAULT
+new	0x007186ed	FUN_007186ed		7		DEFAULT
+new	0x00718920	FUN_00718920		7		DEFAULT
+new	0x00718940	FUN_00718940		7		DEFAULT
+new	0x00718a5a	FUN_00718a5a		7		DEFAULT
+new	0x00718c4f	FUN_00718c4f		7		DEFAULT
+new	0x00719028	FUN_00719028		7		DEFAULT
+new	0x007192b8	FUN_007192b8		7		DEFAULT
+new	0x007193ab	FUN_007193ab		7		DEFAULT
+new	0x007193d8	FUN_007193d8		7		DEFAULT
+new	0x007194b8	FUN_007194b8		7		DEFAULT
+new	0x00719696	FUN_00719696		7		DEFAULT
+new	0x00719850	FUN_00719850		7		DEFAULT
+new	0x00719893	FUN_00719893		7		DEFAULT
+new	0x00719a39	FUN_00719a39		7		DEFAULT
+new	0x00719a68	FUN_00719a68		7		DEFAULT
+new	0x0071a369	FUN_0071a369		7		DEFAULT
+new	0x0071a524	FUN_0071a524		7		DEFAULT
+new	0x0071a5fc	FUN_0071a5fc		7		DEFAULT
+new	0x0071abe9	FUN_0071abe9		7		DEFAULT
+new	0x0071b950	FUN_0071b950		7		DEFAULT
+new	0x0071bad3	FUN_0071bad3		7		DEFAULT
+new	0x0071bb6a	FUN_0071bb6a		7		DEFAULT
+new	0x0071c6eb	FUN_0071c6eb		7		DEFAULT
+new	0x0071c868	FUN_0071c868		7		DEFAULT
+new	0x0071c91c	FUN_0071c91c		7		DEFAULT
+new	0x0071c972	FUN_0071c972		7		DEFAULT
+new	0x0071ca51	FUN_0071ca51		7		DEFAULT
+new	0x0071ca6b	FUN_0071ca6b		7		DEFAULT
+new	0x0071cab8	FUN_0071cab8		7		DEFAULT
+new	0x0071cb27	FUN_0071cb27		7		DEFAULT
+new	0x0071d37c	FUN_0071d37c		7		DEFAULT
+new	0x0071d4cc	FUN_0071d4cc		7		DEFAULT
+new	0x0071d5a3	FUN_0071d5a3		7		DEFAULT
+new	0x0071d62e	FUN_0071d62e		7		DEFAULT
+new	0x0071d64b	FUN_0071d64b		7		DEFAULT
+new	0x0071d8af	FUN_0071d8af		7		DEFAULT
+new	0x0071dba8	FUN_0071dba8		7		DEFAULT
+new	0x0071f6db	FUN_0071f6db		7		DEFAULT
+new	0x00721180	FUN_00721180		7		DEFAULT
+new	0x00721920	FUN_00721920		7		DEFAULT
+new	0x00722161	FUN_00722161		7		DEFAULT
+new	0x00722298	FUN_00722298		7		DEFAULT
+new	0x00722af3	FUN_00722af3		7		DEFAULT
+new	0x00722b2b	FUN_00722b2b		7		DEFAULT
+new	0x00722b9b	FUN_00722b9b		7		DEFAULT
+new	0x00722bfb	FUN_00722bfb		7		DEFAULT
+new	0x00722c4b	FUN_00722c4b		7		DEFAULT
+new	0x00722cbe	FUN_00722cbe		7		DEFAULT
+new	0x00722d0b	FUN_00722d0b		7		DEFAULT
+new	0x00722d4b	FUN_00722d4b		7		DEFAULT
+new	0x00722dd3	FUN_00722dd3		7		DEFAULT
+new	0x00723388	FUN_00723388		7		DEFAULT
+new	0x007236ab	FUN_007236ab		7		DEFAULT
+new	0x00723bb7	FUN_00723bb7		7		DEFAULT
+new	0x00723c3b	FUN_00723c3b		7		DEFAULT
+new	0x00723deb	FUN_00723deb		7		DEFAULT
+new	0x00723edc	FUN_00723edc		7		DEFAULT
+new	0x00723f8b	FUN_00723f8b		7		DEFAULT
+new	0x00724372	FUN_00724372		7		DEFAULT
+new	0x00724388	FUN_00724388		7		DEFAULT
+new	0x007243ab	FUN_007243ab		7		DEFAULT
+new	0x007243d0	FUN_007243d0		7		DEFAULT
+new	0x0072442a	FUN_0072442a		7		DEFAULT
+new	0x0072446a	FUN_0072446a		7		DEFAULT
+new	0x00724488	FUN_00724488		7		DEFAULT
+new	0x007244fa	FUN_007244fa		7		DEFAULT
+new	0x00724528	FUN_00724528		7		DEFAULT
+new	0x00724550	FUN_00724550		7		DEFAULT
+new	0x00724598	FUN_00724598		7		DEFAULT
+new	0x0072468b	FUN_0072468b		7		DEFAULT
+new	0x0072474b	FUN_0072474b		7		DEFAULT
+new	0x007248bd	FUN_007248bd		7		DEFAULT
+new	0x007249fc	FUN_007249fc		7		DEFAULT
+new	0x00724a7c	FUN_00724a7c		7		DEFAULT
+new	0x00724eb8	FUN_00724eb8		7		DEFAULT
+new	0x00724ee6	FUN_00724ee6		7		DEFAULT
+new	0x00725223	FUN_00725223		7		DEFAULT
+new	0x00725240	FUN_00725240		7		DEFAULT
+new	0x007253ab	FUN_007253ab		7		DEFAULT
+new	0x00725796	FUN_00725796		7		DEFAULT
+new	0x0072583c	FUN_0072583c		7		DEFAULT
+new	0x00725998	FUN_00725998		7		DEFAULT
+new	0x00725b3b	FUN_00725b3b		7		DEFAULT
+new	0x00725bb7	FUN_00725bb7		7		DEFAULT
+new	0x00725bf0	FUN_00725bf0		7		DEFAULT
+new	0x00725c6b	FUN_00725c6b		7		DEFAULT
+new	0x00725c88	FUN_00725c88		7		DEFAULT
+new	0x00725cbe	FUN_00725cbe		7		DEFAULT
+new	0x00725d66	FUN_00725d66		7		DEFAULT
+new	0x00725eb8	FUN_00725eb8		7		DEFAULT
+new	0x0072611b	FUN_0072611b		7		DEFAULT
+new	0x007261d8	FUN_007261d8		7		DEFAULT
+new	0x00726404	FUN_00726404		7		DEFAULT
+new	0x00726548	FUN_00726548		7		DEFAULT
+new	0x00727368	FUN_00727368		7		DEFAULT
+new	0x007273a8	FUN_007273a8		7		DEFAULT
+new	0x00727426	FUN_00727426		7		DEFAULT
+new	0x0072743b	FUN_0072743b		7		DEFAULT
+changed	0x00727453	CExoString::~CExoString	10	6		
+new	0x0072773b	FUN_0072773b		7		DEFAULT
+new	0x007279b7	FUN_007279b7		7		DEFAULT
+new	0x00727a4b	FUN_00727a4b		7		DEFAULT
+new	0x00727a88	FUN_00727a88		7		DEFAULT
+new	0x00727c28	FUN_00727c28		7		DEFAULT
+new	0x00727d94	FUN_00727d94		7		DEFAULT
+new	0x007284c0	FUN_007284c0		7		DEFAULT
+new	0x007284d8	FUN_007284d8		7		DEFAULT
+new	0x00728910	FUN_00728910		7		DEFAULT
+new	0x007291d8	FUN_007291d8		7		DEFAULT
+new	0x007292bb	FUN_007292bb		7		DEFAULT
+new	0x0072941b	FUN_0072941b		7		DEFAULT
+new	0x00729496	FUN_00729496		7		DEFAULT
+new	0x007294f0	FUN_007294f0		7		DEFAULT
+new	0x00729600	FUN_00729600		7		DEFAULT
+new	0x0072dcb8	FUN_0072dcb8		7		DEFAULT
+new	0x0072dd2b	FUN_0072dd2b		7		DEFAULT
+new	0x0072dd68	FUN_0072dd68		7		DEFAULT
+new	0x0072de2b	FUN_0072de2b		7		DEFAULT
+new	0x0072de48	FUN_0072de48		7		DEFAULT
+new	0x0072de68	FUN_0072de68		7		DEFAULT
+new	0x0072dea3	FUN_0072dea3		7		DEFAULT
+new	0x0072df18	FUN_0072df18		7		DEFAULT
+new	0x0072dfa0	FUN_0072dfa0		7		DEFAULT
+new	0x0072e051	FUN_0072e051		7		DEFAULT
+new	0x0072e468	FUN_0072e468		7		DEFAULT
+new	0x0072ef24	FUN_0072ef24		7		DEFAULT
+new	0x0072ef3b	FUN_0072ef3b		7		DEFAULT
+new	0x0072f120	FUN_0072f120		7		DEFAULT
+new	0x0072f160	FUN_0072f160		7		DEFAULT
+new	0x00730198	FUN_00730198		7		DEFAULT
+new	0x007308a0	FUN_007308a0		7		DEFAULT
+new	0x007313bf	FUN_007313bf		7		DEFAULT
+new	0x0073186b	FUN_0073186b		7		DEFAULT
+new	0x00731c10	FUN_00731c10		7		DEFAULT
+new	0x00731d08	FUN_00731d08		7		DEFAULT
+new	0x00731fcc	FUN_00731fcc		7		DEFAULT
+new	0x00732c30	FUN_00732c30		7		DEFAULT
+new	0x00732e2b	FUN_00732e2b		7		DEFAULT
+new	0x00733a4b	FUN_00733a4b		7		DEFAULT
+new	0x00733b7b	FUN_00733b7b		7		DEFAULT
+new	0x0073485b	FUN_0073485b		7		DEFAULT
+new	0x00734b7a	FUN_00734b7a		7		DEFAULT
+new	0x00734c1c	FUN_00734c1c		7		DEFAULT
+new	0x00734def	FUN_00734def		7		DEFAULT
+new	0x00734e68	FUN_00734e68		7		DEFAULT
+new	0x00734fc6	FUN_00734fc6		7		DEFAULT
+new	0x00735030	FUN_00735030		7		DEFAULT
+new	0x007350ab	FUN_007350ab		7		DEFAULT
+new	0x00735120	FUN_00735120		7		DEFAULT
+new	0x007352d5	FUN_007352d5		7		DEFAULT
+new	0x00735360	FUN_00735360		7		DEFAULT
+new	0x007353cd	FUN_007353cd		7		DEFAULT
+new	0x00735450	FUN_00735450		7		DEFAULT
+new	0x0073547b	FUN_0073547b		7		DEFAULT
+new	0x00735508	FUN_00735508		7		DEFAULT
+new	0x00735600	FUN_00735600		7		DEFAULT
+new	0x00735696	FUN_00735696		7		DEFAULT
+new	0x00735a9b	FUN_00735a9b		7		DEFAULT
+new	0x00735ab8	FUN_00735ab8		7		DEFAULT
+new	0x00735c2b	FUN_00735c2b		7		DEFAULT
+new	0x007361e8	FUN_007361e8		7		DEFAULT
+changed	0x00736363	CExoString::~CExoString	6	6		
+new	0x007363c8	FUN_007363c8		7		DEFAULT
+new	0x007363f0	FUN_007363f0		7		DEFAULT
+new	0x00736540	FUN_00736540		7		DEFAULT
+new	0x00736558	FUN_00736558		7		DEFAULT
+new	0x00736579	FUN_00736579		7		DEFAULT
+new	0x007366b4	FUN_007366b4		7		DEFAULT
+new	0x00736728	FUN_00736728		7		DEFAULT
+new	0x0073674b	FUN_0073674b		7		DEFAULT
+new	0x00736773	FUN_00736773		7		DEFAULT
+new	0x007367ab	FUN_007367ab		7		DEFAULT
+new	0x00736878	FUN_00736878		7		DEFAULT
+new	0x0073699a	FUN_0073699a		7		DEFAULT
+new	0x00736a53	FUN_00736a53		7		DEFAULT
+new	0x00736be9	FUN_00736be9		7		DEFAULT
+new	0x00736dd9	FUN_00736dd9		7		DEFAULT
+new	0x00737041	FUN_00737041		7		DEFAULT
+new	0x0073716b	FUN_0073716b		7		DEFAULT
+gone	0x0073736e	FUN_0073736e	34			
+new	0x00737371	FUN_00737371		7		DEFAULT
+new	0x00737903	FUN_00737903		7		DEFAULT
+new	0x00737a08	FUN_00737a08		7		DEFAULT
+new	0x00737ad7	FUN_00737ad7		7		DEFAULT
+new	0x00737d68	FUN_00737d68		7		DEFAULT
+new	0x00738160	FUN_00738160		7		DEFAULT
+new	0x0073817b	FUN_0073817b		7		DEFAULT
+new	0x007388a6	FUN_007388a6		7		DEFAULT
+new	0x00738948	FUN_00738948		7		DEFAULT
+new	0x00738988	FUN_00738988		7		DEFAULT
+new	0x007389a8	FUN_007389a8		7		DEFAULT
+new	0x00738a1b	FUN_00738a1b		7		DEFAULT
+new	0x00738b4b	FUN_00738b4b		7		DEFAULT
+new	0x00738b6b	FUN_00738b6b		7		DEFAULT
+new	0x00738c50	FUN_00738c50		7		DEFAULT
+new	0x00738ce8	FUN_00738ce8		7		DEFAULT
+new	0x00738d0b	FUN_00738d0b		7		DEFAULT
+new	0x00738dc1	FUN_00738dc1		7		DEFAULT
+new	0x00738e5b	FUN_00738e5b		7		DEFAULT
+new	0x00738f30	FUN_00738f30		7		DEFAULT
+new	0x00738fd0	FUN_00738fd0		7		DEFAULT
+new	0x0073908d	FUN_0073908d		7		DEFAULT
+new	0x00739509	FUN_00739509		7		DEFAULT
+new	0x007396c8	FUN_007396c8		7		DEFAULT
+new	0x00739df5	FUN_00739df5		7		DEFAULT
+new	0x0073a2db	FUN_0073a2db		7		DEFAULT
+new	0x0073a37b	FUN_0073a37b		7		DEFAULT
+new	0x0073a4ca	FUN_0073a4ca		7		DEFAULT
+new	0x0073a5b8	FUN_0073a5b8		7		DEFAULT
+new	0x0073a66f	FUN_0073a66f		7		DEFAULT
+new	0x0073a73b	FUN_0073a73b		7		DEFAULT
+new	0x0073a7c6	FUN_0073a7c6		7		DEFAULT
+new	0x0073a7d8	FUN_0073a7d8		7		DEFAULT
+new	0x0073a7f8	FUN_0073a7f8		7		DEFAULT
+new	0x0073a818	FUN_0073a818		7		DEFAULT
+new	0x0073a838	FUN_0073a838		7		DEFAULT
+new	0x0073a878	FUN_0073a878		7		DEFAULT
+new	0x0073a8bb	FUN_0073a8bb		7		DEFAULT
+new	0x0073a8d8	FUN_0073a8d8		7		DEFAULT
+new	0x0073a93b	FUN_0073a93b		7		DEFAULT
+new	0x0073a95b	FUN_0073a95b		7		DEFAULT
+new	0x0073a978	FUN_0073a978		7		DEFAULT
+new	0x0073a99b	FUN_0073a99b		7		DEFAULT
+new	0x0073a9b8	FUN_0073a9b8		7		DEFAULT
+new	0x0073a9db	FUN_0073a9db		7		DEFAULT
+new	0x0073a9f8	FUN_0073a9f8		7		DEFAULT
+new	0x0073aa1b	FUN_0073aa1b		7		DEFAULT
+new	0x0073aa38	FUN_0073aa38		7		DEFAULT
+new	0x0073aa5b	FUN_0073aa5b		7		DEFAULT
+new	0x0073aa78	FUN_0073aa78		7		DEFAULT
+new	0x0073aadb	FUN_0073aadb		7		DEFAULT
+new	0x0073aaf8	FUN_0073aaf8		7		DEFAULT
+new	0x0073ab1b	FUN_0073ab1b		7		DEFAULT
+new	0x0073ab38	FUN_0073ab38		7		DEFAULT
+changed	0x0073b720	FUN_0073b720	6	6		
+changed	0x0073b730	FUN_0073b730	6	6		
+changed	0x0073b740	FUN_0073b740	6	6		
+changed	0x0073b750	FUN_0073b750	6	6		
+changed	0x0073b760	FUN_0073b760	6	6		
+changed	0x0073bef0	FUN_0073bef0	6	6		
+changed	0x0073c140	FUN_0073c140	6	6		
+changed	0x0073c150	FUN_0073c150	6	6		
+changed	0x0073c160	FUN_0073c160	6	6		
