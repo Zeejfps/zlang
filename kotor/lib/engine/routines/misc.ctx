@@ -342,6 +342,57 @@ namespace rt_misc {
         rt_crea::give_party_xp{ &w, amount }
     }
 
+    // What a journal entry is worth, given to the party when a quest moves on to it (AddJournalQuestEntry,
+    // 0x005483f0 reads it back from the journal after setting the state and calls CSWPartyTable::AddExperience;
+    // CSWVirtualMachineCommands::ExecuteCommandGetJournalQuestExperience asks the same thing): global.jrl's category
+    // names a plot.2da row (PlotIndex), the entry a share of its XP (XP_Percentage), rounded up like a plot XP.
+    // Quest steps of every planet carry it: the Manaan Star Map (man26_starmap 40) is the whole 2,000 of tat_starmap.
+    fn journal_entry_xp { mut w: world::World, tag: []u8, state: i32 } -> !i32 {
+        let doc = try world::read_gff{ &w, name = "global", kind = restype::Type::jrl } ifnull { return 0 }
+        let cats = gff::get_list{ doc, s = gff::ROOT, label = "Categories" } ifnull { return 0 }
+        let mut i: usize = 0
+        while i < cats.len {
+            let c = cats[i]
+            i = i + 1
+            let ctag = gff::get_string{ doc, s = c, label = "Tag" } ifnull ""
+            if not ci::eq{ a = ctag, b = tag } { continue }
+            let plot = @trunc(i32, gff::get_number{ doc, s = c, label = "PlotIndex" } ifnull -1)
+            if plot < 0 { return 0 }
+            let es = gff::get_list{ doc, s = c, label = "EntryList" } ifnull { return 0 }
+            let mut k: usize = 0
+            while k < es.len {
+                let e = es[k]
+                k = k + 1
+                if @trunc(i32, gff::get_number{ doc, s = e, label = "ID" } ifnull -1) != state { continue }
+                let share = gff::get_float{ doc, s = e, label = "XP_Percentage" } ifnull 0.0
+                if share <= 0.0 { return 0 }
+                let table = scratch_table{ &w, name = "plot" } ifnull { return 0 }
+                let xp = twoda::get_int{ t = table, row = @as(usize, plot), column = "xp" } ifnull { return 0 }
+                let percent = @as(i64, share * 100.0 + 0.5)
+                return @trunc(i32, (@as(i64, xp) * percent + 99) / 100)
+            }
+            return 0
+        }
+        return 0
+    }
+
+    // Moves a quest on and pays for the step (the routine and the conversations' journal updates).
+    fn set_quest_state { mut w: world::World, tag: []u8, state: i32, allow_lower: bool } -> bool {
+        let now = fight::time_now{ w = &w }
+        let changed = journal::set_state{ j = &w.journal, tag, state, allow_lower, day = now.day, time = now.ms }
+        if changed {
+            let amount = journal_entry_xp{ &w, tag, state } iferr { 0 }
+            if amount > 0 {
+                if w.log.scripts {
+                    world::prefix{ w = &w }
+                    _ = @fmt(&w.io, "journal xp: {} {} -> {}\n", tag, state, amount)
+                }
+                award_party_xp{ &w, amount }
+            }
+        }
+        return changed
+    }
+
     // void GivePlotXP(string sPlotName, int nPercentage): plot.2da's XP for the plot, that
     // percentage of it (rounded up), to the party.
     fn give_plot_xp { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {

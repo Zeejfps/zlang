@@ -67,3 +67,14 @@ element should replace the best so far, so the list ends up with:
   a red used for combat results.
 - Each row is sized to its wrapped text (height from the text plus the border), and the list selects the
   last row, so the newest line shows.
+
+## Quest steps pay experience (`AddJournalQuestEntry` `0x005483f0`)
+
+Setting a quest to a higher state (or any state with the script's `bAllowOverrideHigher`) records the date and time, then
+reads the quest's experience back out of the journal (`0x005c5850`, the field `0x005c5a40` filled from global.jrl while setting
+the state) and gives it to the party (`CSWPartyTable::AddExperience(xp, 1)`): the category's `PlotIndex` names a plot.2da
+row and the entry's `XP_Percentage` is the share of that row's XP the step pays. `GetJournalQuestExperience` (`0x0053a680`)
+asks the same question. The Manaan Star Map (`man26_starmap` 40, `PlotIndex` 64, the row `tat_starmap`, 2,000 XP at 1.0)
+and the end of its quest (`man_planet` 60: 3,000 at 0.4) are paid this way; no script or dialogue node names them. Categories
+with `PlotIndex` -1 (`k_starforge`) pay nothing. `rt_misc::set_quest_state` does it for the routine and for a conversation
+node's `Quest`/`QuestEntry` (the rounding is the plot XP's: up).
