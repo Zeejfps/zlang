@@ -85,6 +85,10 @@ namespace test_map {
         if n < 0 or n >= 9 { return }
         w.party.available[@as(usize, n)] = true
         w.party.selectable[@as(usize, n)] = true
+        // The blueprint the party screen spawns the companion from (AddAvailableNPCByTemplate keeps it).
+        if resref::is_empty{ r = w.party.templates[@as(usize, n)] } {
+            w.party.templates[@as(usize, n)] = resref::truncate{ name = partysel_panel::TEMPLATES[@as(usize, n)] }
+        }
     }
 
     // A waypoint with a map note at (x, y) in the current area.

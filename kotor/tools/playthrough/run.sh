@@ -8,6 +8,7 @@
 #   FAST=1       --no-render --speed 8 instead of --headless: the same log in a third of the time (SPEED=N)
 #   LOAD=SAVE    start from a save, e.g. LOAD=kotor/out/checkpoints/pod (docs/testing.md, "Checkpoints");
 #                SCRIPT is then the resume script kotor/out/checkpoints/pod.txt, or one of your own
+#   EXE=PATH     another executable (default kotor/out/kotor.exe)
 #   SAVES=DIR    the saves directory (default kotor/out/saves); runs in parallel need one each
 export PATH=/g/Dev/msys64/mingw64/bin:$PATH
 name=$1
