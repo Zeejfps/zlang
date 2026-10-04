@@ -16,9 +16,10 @@ namespace loading {
     // that is never going to start must not keep the screen up).
     const MIN_TICKS: u32 = 4
     const MAX_TICKS: u32 = 90
-    // A delayed command of the area's scripts due within DELAY_MS is waited for, for DELAY_TICKS ticks at most.
+    // What the arrival scripts have just set going (a conversation ordered, a command delayed by up to DELAY_MS) is
+    // waited for, for WAIT_TICKS ticks at most.
     const DELAY_MS: u64 = 300
-    const DELAY_TICKS: u32 = 12
+    const WAIT_TICKS: u32 = 8
 
     struct Loading {
         cache: *mut material::Cache,
@@ -81,13 +82,13 @@ namespace loading {
     fn step { mut l: Loading, mut w: world::World, mut dev: gpu::Device, mut sdl: sdl::Sdl, mut frame: render::Frame, opts: options::Options, percent: i32 } {
         if l.panel == 0 { return }
         frontend::set_loading_progress{ g = &l.g, panel = l.panel, percent }
-        draw_frame{ &l, &w, &dev, &sdl, &frame, opts, present = true }
+        draw_frame{ &l, &w, &dev, &sdl, &frame, opts, present = true, picture_due = false }
     }
 
     // Draws the screen: a GUI-only frame (headless runs with --no-render draw it only when its pictures are asked
-    // for with --screenshot-loading DIR). `present` swaps it to the window; the game loop does that itself at the
-    // end of its frame, after any screenshot it takes of it.
-    fn draw_frame { mut l: Loading, mut w: world::World, mut dev: gpu::Device, mut sdl: sdl::Sdl, mut frame: render::Frame, opts: options::Options, present: bool } {
+    // for with --screenshot-loading DIR, or a screenshot of this frame is due: `picture_due`). `present` swaps it to the
+    // window; the game loop does that itself at the end of its frame, after any screenshot it takes of it.
+    fn draw_frame { mut l: Loading, mut w: world::World, mut dev: gpu::Device, mut sdl: sdl::Sdl, mut frame: render::Frame, opts: options::Options, present: bool, picture_due: bool } {
         if l.panel == 0 { return }
         l.frames = l.frames + 1
         let shots = opts.loading_dir.len > 0
@@ -98,7 +99,7 @@ namespace loading {
                 if e is quit | close { l.quit = true }
             }
         }
-        if opts.no_render and not shots { return }
+        if opts.no_render and not shots and not picture_due { return }
         gui::update{ g = &l.g, dt = 1.0 / 30.0 }
         render::begin_frame{ &frame, time = 0.0 }
         gui::draw_backdrop_pass{ g = &l.g, &frame }
@@ -136,20 +137,19 @@ namespace loading {
         return false
     }
 
-    // Whether the area behind the screen is ready to be seen: the PC is placed, the area has run a few ticks, what
-    // its scripts have just delayed has fired, and a conversation they ordered has begun and its first line is up
-    // (`line_shown`: the view has put it on screen), so the opening cutscene is what appears when the screen goes,
-    // not the world assembling. The waits are capped (a script that delays something every half second must not
-    // keep the screen up).
+    // Whether the area behind the screen is ready to be seen: the PC is placed, the area has run a few ticks, and
+    // a conversation its scripts started has its first line on screen, so the opening cutscene is what appears
+    // when the screen goes, not the world assembling. What the arrival scripts have only just set going (a
+    // conversation ordered, a command delayed by under 0.3 s) is waited for a little longer, to WAIT_TICKS;
+    // a conversation that starts after a second or so is a game event, not part of the arrival.
     fn settled { l: *Loading, mut w: world::World, line_shown: bool } -> bool {
         if l.panel == 0 { return true }
         if w.arrival > 0 or w.transition != null { return false }
         if l.ticks >= MAX_TICKS { return true }
         if l.ticks < MIN_TICKS { return false }
-        // (`pending` stays set while the conversation runs, to its end.)
-        if (w.conversation.pending or w.conversation.event_pending) and not w.conversation.active { return false }
-        if w.conversation.active and not (w.conversation.scene_ready and line_shown) { return false }
-        if l.ticks < MIN_TICKS + DELAY_TICKS and not w.conversation.active and delayed_soon{ w = &w, ms = DELAY_MS } { return false }
+        if w.conversation.active { return w.conversation.scene_ready and line_shown }
+        // (`pending` stays set while the conversation runs, to its end: only before it starts does it mean "ordered".)
+        if l.ticks < MIN_TICKS + WAIT_TICKS and (w.conversation.pending or w.conversation.event_pending or delayed_soon{ w = &w, ms = DELAY_MS }) { return false }
         return true
     }
 }

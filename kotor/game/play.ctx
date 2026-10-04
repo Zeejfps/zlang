@@ -385,7 +385,7 @@ namespace play {
             }
             // 12. Render (--no-render: only for a picture someone takes).
             if loading::is_up{ l = ld } {
-                loading::draw_frame{ l = ld, &w, &dev, &sdl, &frame, opts, present = false }
+                loading::draw_frame{ l = ld, &w, &dev, &sdl, &frame, opts, present = false, picture_due = speed::picture_wanted{ opts, frame_no, saving = false } }
             } else if speed::picture_wanted{ opts, frame_no, saving = want_save.len > 0 } {
                 let size = gpu::screen_size{ dev }
                 render::begin_frame{ &frame, time = sc.time }
