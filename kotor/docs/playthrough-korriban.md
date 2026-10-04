@@ -9,7 +9,7 @@ is [playthrough.md](playthrough.md)'s and [playthrough-dantooine.md](playthrough
 the Academy (Master Uthar Wynn's welcome, Yuthura's plot and the Code of the Sith, the Code test, the Mandalorian prisoner, the rogue
 assassin droid, the renegades in the shyrack caves, Ajunta Pall's sword), five prestige and the night, Naga Sadow's tomb (the cold
 grenade, the Star Map, the sword's sarcophagus, the end of the test: Uthar killed, Yuthura spared), the way out through Dreshdae to the
-Ebon Hawk, the galaxy map and the Leviathan's capture of the Hawk (the fourth Star Map). 0 script faults in the 29 parts.
+Ebon Hawk, the galaxy map and the Leviathan's capture of the Hawk (the fourth Star Map). 0 script faults in the 29 parts, except that part 6 can show one (the commoner AI's loop below).
 
 **Stopped** at the capture cut scene (`ebo_m40aa`, Carth's talk about Saul Karath), where the story leaves Korriban. To resume:
 `CKPT=hawk sh kotor/tools/playthrough/korriban/run.sh NAME 32 2500` replays the take-off from the Hawk's galaxy map; `CKPT=finale`
@@ -123,6 +123,13 @@ the alignment (the rules' value and the engine's copy, which always agree here) 
 
 ## Observations and open items
 
+- **BioWare's commoner AI can loop forever** (`k_ai_master`, the "Start Commoner AI" sub at 0x13d43, run by every Citizen): it walks the
+  neutral creatures nearest first, and when one has a hostile standard faction (1, 3 or 6) but stands farther than 20 m it jumps back to
+  the loop test without taking the next creature (the `nth` increment is only on the faction-miss path), so the same creature is tested
+  until the instruction budget (131,072) ends the script. In the thugs fight (part 6, a Sith thug 20.05 m from a Citizen) it shows as
+  `fault: k_ai_master ... the instruction budget ran out`, once; the script is simply dropped and the fight goes on. A bug of the
+  original script, not of the engine (the log shows the same creature, distance 20.054, at every turn of the loop); whether the original
+  engine's own limit is the same is not known. The fault comes and goes with where the fight puts the thugs.
 - **The conversation is "aborted" when its last node destroys the owner** (Shaardan's last reply destroys him and the hopefuls, the acid
   wall's `k_pkor_destacid`): `dialog aborted: owner N valid false` and the end-of-dialogue scripts of the area's creatures are not run.
   The original's `DestroyObject` is a queued event; whether the conversation there ends normally is not known. Harmless so far.
