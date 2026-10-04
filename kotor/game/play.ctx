@@ -3,7 +3,7 @@
 namespace play {
     // One scripted input line: `FRAME down KEY`, `FRAME up KEY`, and for tests `FRAME warp TAG`
     // (the leader jumps next to the object) and `FRAME use TAG` (the leader's default action on it).
-    enum Command: u8 { down, up, warp, warpxy, use, newgame, ui, save, load, attack, talk, hush, drop, join, cutatk, pick }
+    enum Command: u8 { down, up, warp, warpxy, use, newgame, ui, save, load, attack, talk, hush, drop, join, cutatk, pick, goto }
     struct Scripted { frame: u64, command: Command, key: []u8 }
 
     fn run { mut sdl: sdl::Sdl, mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, mut mem: Mem, opts: options::Options } -> !i32 {
@@ -115,6 +115,7 @@ namespace play {
                     drop => { drop_item{ &w, template = s.key } }
                     join => { join_template{ &w, template = s.key } }
                     pick => { pick_lock{ &w, tag = s.key } }
+                    goto => { goto_xy{ &w, at = s.key } }
                     cutatk => { cut_attack{ &w, text = s.key } }
                     ui => {
                         if not dlgview::run_command{ v = &dview, w = &w, g = &ui.gui, text = s.key } { ingame::run_command{ ui, &w, &dev, text = s.key } }    // HOOK(ingame)
@@ -481,7 +482,7 @@ namespace play {
                 else if ci::eq{ a = what, b = "use" } { Command::use } else if ci::eq{ a = what, b = "newgame" } { Command::newgame }
                 else if ci::eq{ a = what, b = "ui" } { Command::ui } else if ci::eq{ a = what, b = "save" } { Command::save } else if ci::eq{ a = what, b = "talk" } { Command::talk }
                 else if ci::eq{ a = what, b = "load" } { Command::load } else if ci::eq{ a = what, b = "attack" } { Command::attack }
-                else if ci::eq{ a = what, b = "hush" } { Command::hush } else if ci::eq{ a = what, b = "drop" } { Command::drop } else if ci::eq{ a = what, b = "join" } { Command::join } else if ci::eq{ a = what, b = "cutatk" } { Command::cutatk } else if ci::eq{ a = what, b = "pick" } { Command::pick } else { Command::up }
+                else if ci::eq{ a = what, b = "hush" } { Command::hush } else if ci::eq{ a = what, b = "drop" } { Command::drop } else if ci::eq{ a = what, b = "join" } { Command::join } else if ci::eq{ a = what, b = "cutatk" } { Command::cutatk } else if ci::eq{ a = what, b = "pick" } { Command::pick } else if ci::eq{ a = what, b = "goto" } { Command::goto } else { Command::up }
             // `ui`, `talk`, `load` and `save` take the rest of the line; the others one word.
             let key = if command == Command::ui or command == Command::load or command == Command::save or command == Command::talk or command == Command::cutatk { text::rest{ words } } else { text::next_word{ &words } ifnull "" }
             try list::push{ list = &out, item = Scripted{ frame = @as(u64, text::scan_decimal{ s = f }), command, key } }
@@ -581,6 +582,19 @@ namespace play {
         a.params[5] = actions::Param::int{ v = result }
         a.params[6] = actions::Param::int{ v = damage }
         _ = actions::add{ &w, id = from, action = a, force = false }
+    }
+
+    // `goto X,Y`: the leader walks (runs) to the point.
+    fn goto_xy { mut w: world::World, at: []u8 } {
+        let comma = text::find_byte{ s = at, c = ',' } ifnull { return }
+        let x = text::scan_f32{ s = at[..comma] } ifnull { return }
+        let y = text::scan_f32{ s = at[comma + 1..] } ifnull { return }
+        let lead = party::leader{ w = &w }
+        let mut a = actions::make{ kind = actions::Kind::move_to_point }
+        a.params[0] = actions::Param::vector{ v = math::Vec3{ x, y, z = 0.0 } }
+        a.params[1] = actions::Param::int{ v = 1 }
+        a.params[2] = actions::Param::float{ v = 0.5 }
+        _ = actions::add{ &w, id = if lead == obj::INVALID { w.pc } else { lead }, action = a, force = false }
     }
 
     // `pick TAG`: the leader uses Security on the locked door or container (OPENLOCK).

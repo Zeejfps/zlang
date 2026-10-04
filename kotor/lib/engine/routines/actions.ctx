@@ -264,7 +264,8 @@ namespace rt_act {
         let mut a = actions::make{ kind = if action == DOOR_BASH { actions::Kind::attack_object } else { actions::Kind::open_door } }
         a.params[0] = actions::Param::object{ id = door }
         if action == DOOR_BASH { a.params[1] = actions::Param::int{ v = 0 } }
-        _ = actions::add{ &w, id = me, action = a, force = false }
+        // In front of what the creature was doing: this is how OnBlocked frees a follower's way.
+        actions::add_front{ &w, id = me, action = a }
     }
 
     // The Security skill on a locked door or placeable: the skill roll against the lock's DC
