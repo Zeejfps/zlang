@@ -12,12 +12,13 @@ namespace glsl {
     //    x or along y; the steeper neighbour across it says which side the edge lies on.
     // 3. Reach. Standing on the edge line half a pixel to that side, walk both ways along it (bilinear taps whose
     //    stride grows with each step) until the luma there has moved a quarter of the edge's step away from the
-    //    average of the two sides, or the walk runs out (10 steps at level 1, 20 at level 2). The edge is
-    //    both distances long and the pixel sits `distance to the nearer end / length` from that end.
+    //    average of the two sides, or the walk runs out (10 steps at level 1, 20 at level 2). The edge's length is
+    //    the sum of the two distances, and the pixel sits `nearer distance / length` from its nearer end.
     // 4. Offset. Only when the nearer end bends the right way (the pixel is on the side the edge cuts into) is the
     //    sample moved, by 0.5 - nearer / length pixels across the edge. Where there is no edge to follow (single
     //    bright pixels, thin lines) the 3x3 low-pass says how far the pixel is from its surroundings, and the
-    //    larger of the two offsets wins. Level 2 also mixes in the low-pass itself by that amount.
+    //    larger of the two offsets wins. Level 2 handles specks (a pixel brighter or darker than its four neighbours
+    //    over a luma range above 0.25) harder: the offset unsquared, and the low-pass itself mixed in.
     //
     // u_ldr: the picture (unit 0). u_size: 1 / its size. u_area: the view's pixels, x0 y0 x1 y1: taps stay inside it.
     // u_cfg: x contrast floor, y contrast share, z sub-pixel strength, w the level (1 or 2).
@@ -110,10 +111,11 @@ namespace glsl {
         \\    vec4 low = (2.0 * (cn + cs + ce + cw) + (cne + cnw + cse + csw) + 4.0 * cm) * (1.0 / 16.0);
         \\    float away = clamp(abs(low.a - lm) / range, 0.0, 1.0);
         \\    float sub = smoothstep(0.0, 1.0, away);
-        \\    sub = sub * sub * u_cfg.z;
+        \\    bool speck = range > 0.25 && (lm > max(max(ln, ls), max(le, lw)) || lm < min(min(ln, ls), min(le, lw)));
+        \\    sub = (high && speck ? sub : sub * sub) * u_cfg.z;
         \\    vec4 c = tap(p + dir * max(shift, sub));
         \\    vec3 rgb = c.rgb;
-        \\    if (high) {
+        \\    if (high && speck) {
         \\        rgb = mix(rgb, low.rgb, sub * 0.5);
         \\    }
         \\    o_color = vec4(rgb, 1.0);
