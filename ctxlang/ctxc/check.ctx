@@ -6067,14 +6067,26 @@ namespace check {
         return ok
     }
 
-    // `base[lo..hi]`. An array place is sliced through its address, a `*[N]T` directly.
+    // An array in immutable const storage, including a field or element of a const. This
+    // permits a read-only slice without making consts places for assignment or explicit `&`.
+    fn const_storage { c: Checker, e: syntax::Expr } -> bool {
+        match e.k {
+            path => { return map::get{ m = c.refs, key = expr_key{ e } } is constant }
+            field{ base } => { return access_of{ c, e } is field and const_storage{ c, e = base.* } }
+            index{ base } => { return access_of{ c, e } is arr and const_storage{ c, e = base.* } }
+            else => { return false }
+        }
+    }
+
+    // `base[lo..hi]`. An array place or const is sliced through its address, a `*[N]T` directly.
     fn range_expr { mut c: Checker, e: syntax::Expr, base: syntax::Expr, lo: ?*syntax::Expr, hi: ?*syntax::Expr } -> Id {
         let mut bt = typed{ &c, e = base }
         let mut addr = types::NO_TYPE
         let mut ok = true
         if types::get{ s = c.ty, id = bt } is array {
-            if check_place{ &c, e = base } {
-                let m = place_mutable{ c, e = base }
+            let constant = const_storage{ c, e = base }
+            if constant or check_place{ &c, e = base } {
+                let m = not constant and place_mutable{ c, e = base }
                 addr = types::ptr{ s = &c.ty, elem = bt, mutable = m }
                 bt = addr
             } else {

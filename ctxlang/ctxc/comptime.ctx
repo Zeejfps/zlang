@@ -386,7 +386,10 @@ namespace comptime {
         let mut what: []u8 = "a pointer"
         if region == @as(u64, eval::STACK) {
             what = "a pointer to the stack"
-        } else if region > @as(u64, eval::STACK) and region < @as(u64, regions.len) and regions[@as(usize, region)].writable {
+        } else if region > @as(u64, eval::STACK) and region < @as(u64, regions.len) {
+            if not regions[@as(usize, region)].writable {
+                return cannot{ &c, r, what = "a pointer into const storage: const values cannot retain array views" }
+            }
             what = "a pointer to the heap"
         }
         let mut b = check::message{ c }

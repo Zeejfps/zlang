@@ -621,6 +621,7 @@ A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are buil
 2. `s[i]` is the element at `i`, bounds-checked: `i >= s.len` panics. It is a place through a deref (§11), mutable only for a `[]mut T`. `s.ptr[i]` is the same element without the check.
 3. `s[lo..hi]` is the slice of elements `lo` up to but not including `hi`, of `s`'s type. `lo` defaults to 0 and `hi` to `s.len`, so `s[..]` is `s`. `lo > hi` or `hi > s.len` panics. `lo` and `hi` are `usize`.
 4. `a[lo..hi]` on an array place `a` means `(&a)[lo..hi]`, and on a `*[N]T` or `*mut [N]T` it slices the array it points to. The result is `[]mut T` if the place is mutable (§11), `[]T` otherwise.
+   - An array const, or an array reached by fields and array indexes from a const, may also be sliced. The result is always `[]T`, backed by immutable static storage (§14), with the same bounds checks. No array is copied to make the view. This does not make the const a place: `&C` and `&C[i]` remain errors.
 5. `@slice(p, n)` makes the slice of `n` elements starting at pointer `p` (§13). It isn't checked.
 6. Slices have no built-in equality.
 
@@ -681,11 +682,11 @@ namespace utf8 {
 
 ## 14. Memory
 
-1. The only static memory is the bytes of string literals, with the hidden zero after them (§11 Literals), which are read-only. `const NAME: T = e` declares a constant, whose value is computed while compiling. `e` may be any expression of type `T`, calls included. A const has no context, so it holds no capability (§15), and nothing it runs reaches outside the program. `const` data is immutable and its location is unobservable: a const is a value, not a place, so `&C` is an error.
+1. Static memory holds read-only string literal bytes, with the hidden zero after them (§11 Literals), and the immutable backing storage of const array views (§12, Slices). `const NAME: T = e` declares a constant, whose value is computed while compiling. `e` may be any expression of type `T`, calls included. A const has no context, so it holds no capability (§15), and nothing it runs reaches outside the program. A const is a value, not a place, so `&C` is an error. Slicing an array in a const exposes read-only storage that lives until the program ends. The compiler may duplicate that storage; pointer identity between separately obtained const views is not guaranteed.
    - An `e` made of literals, folded consts, enum values, operators, `@size_of`, `@align_of`, `@offset_of`, and struct, union and array literals of these is **folded** before the bodies are checked. What would panic at run time is an error at the operation.
    - Any other `e`, one that uses a const that isn't folded included, is **run** once every body is checked and the error sets are inferred, the first time its value is needed. What stops it is an error at the const: a panic, with its message and position; too many steps, or too deep a recursion; or calling an extern fn (§18), since none can run while compiling.
    - A const whose value needs its own, directly or through the functions it calls, is an error.
-   - The value may hold no pointer, slice or function value, except a `[]u8`, a `strlit` or a `*u8` that points into a string literal's bytes (part of them is fine; a `*u8` is followed by the rest of them and the hidden zero), or a struct over one, such as `utf8::String` or `c::String`. Anything else would point to memory that doesn't outlive compiling.
+   - The value may hold no pointer, slice or function value, except a `[]u8`, a `strlit` or a `*u8` that points into a string literal's bytes (part of them is fine; a `*u8` is followed by the rest of them and the hidden zero), or a struct over one, such as `utf8::String` or `c::String`. Const array views may be consumed during compile-time evaluation, but cannot themselves be stored in a const's value: the evaluator does not preserve references to their backing storage in its result.
    - An array length (§12) or an enum's value can use only a folded const: they are needed before anything can run.
 2. Locals and context fields live on the stack.
 3. Memory not on the stack comes from `mem::pages`, which needs the `Mem` capability (§15), or from an allocator function over memory the caller provides. It is accessed only through pointers and slices.
@@ -710,7 +711,7 @@ The compiler checks, within each function, that the address of a local doesn't o
    - converting a `*[N]T` to a slice, slicing (`s[lo..hi]`), or `s.ptr`
    - a call, whose result is derived from everything its read-only arguments are derived from, or a bind (§4), which copies them. Arguments passed to `mut` fields don't count.
 
-   Only values whose type contains a pointer carry this. An error type (§8, Errors) contains one if an error of its set has a payload that does, and a `!T` if its `T` or its error type does. A `&fn` contains one; the places it holds follow §6. A string literal view is derived from nothing.
+   Only values whose type contains a pointer carry this. An error type (§8, Errors) contains one if an error of its set has a payload that does, and a `!T` if its `T` or its error type does. A `&fn` contains one; the places it holds follow §6. A string literal view or a view into const array storage is derived from nothing.
 3. It is a compile error to:
    - `return` a value derived from any local or read-only context field of the function
    - `try e` (§8, Errors) for an `e` derived from any local or read-only context field of the function, if `e`'s error type contains a pointer: `try` may return the error

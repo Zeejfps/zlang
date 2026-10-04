@@ -1684,6 +1684,87 @@ fn main {} -> i32 { return f{ n = 2 } }
 class ConstData(Base):
     """Consts of array, struct and union type are IR items that each use refers to."""
 
+    def test_array_views_live_past_the_call(self):
+        self.assertOutput("""
+namespace tables {
+    const NUMS: [4]i32 = [10, 20, 30, 40]
+    fn view { lo: usize, hi: usize } -> []i32 { return NUMS[lo..hi] }
+    fn pointer {} -> *i32 { return NUMS[1..].ptr }
+}
+fn save { mut out: []i32 } { out = tables::NUMS[..] }
+fn main { mut io: Io } {
+    let xs = tables::view{ lo = 1, hi = 3 }
+    let mut saved: []i32
+    save{ out = &saved }
+    io::println_i64{ &io, n = xs[0] + xs.ptr[1] + tables::pointer{}.* + saved[3] }
+    io::println_u64{ &io, n = tables::NUMS[..0].len + tables::NUMS[4..].len }
+}
+""", '110\n0\n')
+
+    def test_nested_and_computed_array_views(self):
+        self.assertOutput("""
+struct Table { rows: [2][3]i32 }
+fn make {} -> Table { return Table{ rows = [[1, 2, 3], [4, 5, 6]] } }
+const TABLE: Table = make{}
+const BYTES: [3]u8 = "abc"
+fn row { i: usize } -> []i32 { return TABLE.rows[i][1..] }
+fn sum {} -> i32 {
+    let xs = row{ i = 1 }
+    return xs[0] + xs[1]
+}
+const SUM: i32 = sum{}
+fn main { mut io: Io } {
+    let xs = row{ i = 0 }
+    io::println_i64{ &io, n = xs[0] + xs[1] + SUM }
+    io::println_u64{ &io, n = BYTES[1..].ptr[0] }
+}
+""", '16\n98\n')
+
+    def test_array_view_bounds(self):
+        for expr, message in [
+            ('C[1..4]', 'range 1..4 out of bounds for length 3'),
+            ('C[2..1]', 'range 2..1 out of bounds for length 3'),
+            ('C[4..]', 'range 4..3 out of bounds for length 3'),
+            ('C[..][3]', 'index 3 out of bounds for length 3'),
+            ('ROWS[2][..]', 'index 2 out of bounds for length 2'),
+        ]:
+            with self.subTest(expr=expr):
+                self.assertPanic('const C: [3]i32 = [1, 2, 3]\n'
+                                 'const ROWS: [2][3]i32 = [C, C]\n'
+                                 'fn main {} { _ = ' + expr + ' }', message)
+
+    def test_array_views_are_read_only(self):
+        for body, message in [
+            ('C[..][0] = 9', 'cannot write through []i32'),
+            ('C[..].ptr[0] = 9', 'cannot write through *i32'),
+            ('let xs: []mut i32 = C[..]', 'expected []mut i32, got []i32'),
+            ('let p: *mut i32 = C[..].ptr', 'expected *mut i32, got *i32'),
+            ('_ = &C', 'is a const, not a place'),
+            ('_ = &C[0]', 'is a const, not a place'),
+            ('ROWS[0][..][0] = 9', 'cannot write through []i32'),
+        ]:
+            with self.subTest(body=body):
+                self.assertCompileError('const C: [3]i32 = [1, 2, 3]\n'
+                                        'const ROWS: [2][3]i32 = [C, C]\n'
+                                        'fn main {} { ' + body + ' }', message)
+
+    def test_array_views_preserve_stack_escape_checks(self):
+        self.assertCompileError('const C: [3]i32 = [1, 2, 3]\n'
+                                'fn bad {} -> []i32 { let copy = C; return copy[..] }\n'
+                                'fn main {} {}', 'returned value holds the address of local `copy`')
+        self.assertCompileError('fn make {} -> [2]i32 { return [1, 2] }\n'
+                                'fn main {} { _ = make{}[..] }', 'expression is not a place')
+
+    def test_array_views_in_const_evaluation(self):
+        self.assertCompileError('const C: [3]i32 = [1, 2, 3]\n'
+                                'const BAD: i32 = C[..4][0]\n'
+                                'fn main {} {}', 'range 0..4 out of bounds for length 3')
+        # Const initializers can consume a view, but their stored values still cannot contain
+        # pointers other than the existing string-literal views (spec section 14).
+        self.assertCompileError('const C: [3]i32 = [1, 2, 3]\n'
+                                'const VIEW: []i32 = C[..]\n'
+                                'fn main {} {}', 'const values cannot retain array views')
+
     def test_tables(self):
         self.assertOutput("""
 struct Point { x: i32, y: i32 }
@@ -8492,6 +8573,25 @@ fn main { mut io: Io, args: Args } -> i32 {
         code, out, err = self.ctxc('run', d, env=env)
         self.assertEqual((code, out), (5, '9 7 4 2\nsame callback: true\n7 and 44\n'), err)
         self.assertEqual(len([line for line in logged() if ' -c ' in line and 'CTX_PROGRAM_NAME="split"' in line]), 1)
+
+    def test_const_array_views_across_units(self):
+        d = self.project({
+            'tables.ctx': '''
+namespace tables {
+    const C: [3]i32 = [10, 20, 30]
+    fn view {} -> []i32 { return C[1..] }
+    fn pointer {} -> *i32 { return C[..].ptr }
+}
+''',
+            'main.ctx': '''
+fn main { mut io: Io } {
+    let xs = tables::view{}
+    io::println_i64{ &io, n = xs[0] + tables::pointer{}[2] }
+}
+''',
+        })
+        code, out, err = self.ctxc('run', d, env={'CTX_UNIT_SIZE': '1'})
+        self.assertEqual((code, out), (0, '50\n'), err)
 
     def test_optimization_level(self):
         d = self.project({'build.ctx': 'fn build { mut b: Build } { build::optimize{ &b, exe = build::exe{ &b, name = "t", root = "src" }, level = 2 } }\n',
