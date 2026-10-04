@@ -1966,13 +1966,70 @@ details)
 
 #### CSWGuiScriptSelect (scriptselect.gui)
 
-Ctor 0x006ea000 (vtable 0x007590a8, 0xc40 bytes), owned by the character sheet (+0x59f4).
-Controls `LST_AIState` (list of AI behaviours), `LB_DESC`, `LBL_TITLE`, `BTN_Accept`, `BTN_Back`.
-Rows come from `aiscripts.2da` (`name_strref`, `description_strref`, `aistate`).
-`CSWGuiScriptSelect::SetCreature` (0x006e9ca0) stores the creature and selects the row whose
-`aistate` equals the creature's AI state (creature stats +0x13a, a short). Accept (0x27/0x2d,
-0x006e9bc0) writes the selected row's `aistate` into stats +0x13a and closes; 0x28/0x2e close
-without change. (high)
+The party AI style panel: the character sheet's Scripts button (BTN_SCRIPTS, event 0x29) opens it
+as a modal (flags 3) for the character the sheet shows. Ctor 0x006ea000 (vtable 0x007590a8, 0xc40
+bytes), owned by the character sheet (+0x59f4). Ghidra cuts the ctor at 0x006ea0fd (an exception
+frame); the rest, to the `ret` at 0x006ea46a, was read from the bytes. (high)
+
+Controls (file `scriptselect.gui`, 640x480): `LST_AIState` (+0x70, the rows), `LB_DESC` (+0x350, the
+description), `LBL_TITLE` (+0x770, "Script Selection", strref 42293), `BTN_Back` (+0x8b0, "Cancel",
+1581), `BTN_Accept` (+0xa74, "Select", 236). The label at +0x630 is the description list's
+prototype item. The ctor reads `aiscripts.2da` (label, `name_strref`, `description_strref`,
+`aistate`; shipped rows DEFAULT 1116/1109/0 "Default attack", GRENADE 1120/1112/4 "Grenadier",
+JEDI 1121/1114/5 "Jedi/Droid support", the values of NPC_AISTYLE_*) and, for each row, builds a
+list item (0x006e9f10: a 0x2b4-byte check-box control with the name as its text) and keeps
+`{description strref, aistate}` in an 8-byte-per-row table at +0x64 (count +0x68). Each item has
+two handlers: event 0 (hilight, from the pointer or the up/down keys) 0x006e9fe0 -> 0x006e9d50,
+which clears `LB_DESC` and puts the row's description in it; event 0x27 0x006e9e70, which is
+Accept. (high)
+
+`CSWGuiScriptSelect::SetCreature` (0x006e9ca0) stores the creature id (+0xc3c) and walks the rows:
+the one whose `aistate` equals the creature's AI state (creature stats +0x13a, a short) gets its
+check box state (+0x1c8 bit 0) set and `SetSelectedIndex` (so event 0 shows its description), the
+others are cleared. No match: nothing is selected and the description stays empty. Accept
+(`HandleInputEvent` 0x006e9bc0: 0x27/0x2d, and the item handler 0x006e9e70) writes the selected row's
+`aistate` into stats +0x13a, plays GUI sound 0, pops the modal and marks the panel for removal;
+0x28/0x2e (BTN_Back through `OnButtonCancel`, Escape) do the last three only. BTN_Accept is the
+`OnButtonAccept` thunk, i.e. the same 0x27 sent to the panel. `OnPanelAdded` 0x006e9b90 asks for
+tutorial popup 10 (`ShowTutorialPopup`; ours has no tutorial popups). (high)
+
+So the list is a set of one-click buttons: a click on a row (or Enter on the selected one) chooses
+it and closes the panel; Select takes the selected row, which opens as the creature's own. The
+description follows the hilighted row.
+
+**Is it saved?** Yes. `CSWSCreatureStats::ReadStatsFromGff` (it runs on well past the 431 bytes
+Ghidra gives it, which is why the string had no cross reference) reads the INT `AIState` at
+0x005b067a with the stats value as its default, and the stats writer writes it back at 0x005b22a5,
+both next to `ChallengeRating`. Found by scanning the unpacked image for the immediate 0x0074ae30.
+A UTC may carry it too. Ours: `lib/save/objects.ctx` `write_creature` and `lib/engine/templates.ctx`
+`read_creature` (INT `AIState` <-> `obj::Creature.ai_style`). (high)
+
+What the style does: `k_inc_generic`'s `GN_DetermineCombatRound` reads `GetNPCAIStyle(OBJECT_SELF)`
+(stats +0x13a) for a party member who does not lead (`GetPartyMemberByIndex(0)`) outside restrict
+mode: 4 runs `GN_RunGrenadeAIRoutine` (`GN_FindGrenadeTarget`: a seen creature with at least two
+enemies and no friend within 4 m, then `GN_GetGrenadeTalent`, talents 87..95, used through
+`ActionUseTalentOnObject`), 5 `GN_RunJediSupportAIRoutine`, 0 the default attack.
+
+Ours: `lib/ingame/scriptselect_panel.ctx`, opened by the sheet (`character_panel`) as a modal
+over it, with the rows as click rows (`gui::set_click_rows`: press selects and shows the
+description, release activates); the check box state is the row's `checked`. `--log combat`
+prints `ai style: NAME old -> new` when a row is chosen. Checked headless on the Upper City
+checkpoint: the panel with the description of the selected row, the description following the
+pointer and the down key, a click, Enter and Select choosing, Cancel and Escape leaving the style,
+`GetNPCAIStyle` answering 4 in Carth's combat rounds (`--log routines`), and the style surviving a
+save and load.
+
+Found while testing a Grenadier with two Sith troopers close together (open, for the combat
+owner): the grenade is not thrown because of the shape iteration. The original keeps the cursor
+of `GetFirstObjectInShape`/`GetNextObjectInShape` in the area (`ExecuteCommandGetFirstObjectInShape`
+0x0054a260: index in +0x19c) and walks the area's array of creatures (+0x190, count +0x194),
+which is kept sorted by position X (the first call binary-searches it, 0x00506f20, for the shape's
+lowest X, and the walk stops at its highest X). `GN_FindGrenadeTarget` runs two more shape loops
+inside its own, so in the original too its outer loop ends after the first seen creature in
+ascending-X order; ours walks `objects.all` in creation order (`routines/objects.ctx`
+`get_in_shape`), so the first seen creature is the oldest bystander (the Upper City's id 481), a
+friend (Carth) stands within 4 m of it, and the routine falls through to the default attack. The
+ordering of the shape iteration is the thing to match.
 
 ### 10.5 Conversation and pazaak panels
 
