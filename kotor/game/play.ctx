@@ -33,6 +33,7 @@ namespace play {
         let first_change = display::apply{ d = &disp, &dev, &sdl, s = &live }
         disp.live = live
         if (first_change & display::CHANGED_TEXTURES) != 0 { mount_packs{ &w, quality = live.texture_quality } }
+        if not opts.headless { display::report{ d = &disp, io = &w.io } }
         let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, heap = &device_arena, cap = render::default_capacity{} }
         // Sound: a device when there is a window; headless, the mixer runs on without one (as the
         // original does with no sound device, audio.md), so sounds still start and end.
@@ -178,9 +179,9 @@ namespace play {
                 let mut s = disp.live
                 let changed = display::apply{ d = &disp, &dev, &sdl, s = &s }
                 disp.live = s
-                frontend::save_settings{ fs = &w.fs, heap = w.heap, path = opts.settings, s } iferr {}
                 options_changed{ &w, &dev, ui, &dview, &disp, ld, changed }
                 reload_scene = reload_scene or (changed & display::CHANGED_TEXTURES) != 0
+                if (changed & display::CHANGED_SIZE) != 0 and not opts.headless { display::report{ d = &disp, io = &w.io } }
             }
             if ingame::take_display_change{ ui } is some{ value = st } {
                 let changed = display::apply{ d = &disp, &dev, &sdl, s = st }
@@ -346,7 +347,7 @@ namespace play {
             if pazaak_asked is some{ value = asked } {
                 if opts.headless {
                     try pz_game::visit_auto{ &w, &vm, engine, r = asked }
-                } else if try pz_game::visit{ &sdl, &w, &vm, engine, &dev, &frame, ui, mixer, adev, r = asked } {
+                } else if try pz_game::visit{ &sdl, &w, &vm, engine, &dev, &frame, ui, mixer, adev, r = asked, &disp } {
                     quit = true
                 }
                 last = sdl::counter{ &sdl }
@@ -491,6 +492,7 @@ namespace play {
             if not opts.headless {
                 gpu::present{ &dev, &sdl }
                 display::limit_frame{ d = &disp, &sdl, fps = disp.applied.frame_limit }
+                display::rest{ d = &disp, &sdl }
             }
             arena::reset{ heap = w.scratch }
         }
@@ -576,6 +578,7 @@ namespace play {
             }
             while true {
                 let polled = sdl::poll{ &sdl } ifnull { break }
+                display::note_event{ d = &disp, ev = polled }
                 if polled is quit | close { done = true }
                 if polled is resized {
                     if display::on_resized{ d = &disp, &dev, &sdl } { front_resized{ &w, &dev, &g, &fe, &disp } }
@@ -650,6 +653,7 @@ namespace play {
             if not opts.headless {
                 gpu::present{ &dev, &sdl }
                 display::limit_frame{ d = &disp, &sdl, fps = disp.applied.frame_limit }
+                display::rest{ d = &disp, &sdl }
             }
         }
         frontend::leave{ &fe, &g, &dev, mixer }
@@ -709,6 +713,7 @@ namespace play {
     } {
         while true {
             let polled = sdl::poll{ &sdl } ifnull { break }
+            display::note_event{ d = &disp, ev = polled }
             // The window changed shape: the device follows the drawable, the interface the device.
             if polled is resized {
                 if display::on_resized{ d = &disp, &dev, &sdl } { relayout_ui{ &w, &dev, ui, &dview, &disp } }

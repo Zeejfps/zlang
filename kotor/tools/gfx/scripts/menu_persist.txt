@@ -1,0 +1,8 @@
+# Changes Shadows, Grass and Emitters in the Graphics panel and closes it: the settings file must then say 0 for each
+# (run with --gfx --settings FILE; 1280x720, GUI scale 1).
+10 mouse click 724 445
+20 mouse click 511 385
+30 mouse click 392 375
+35 mouse click 392 412
+40 mouse click 392 449
+45 mouse click 785 545

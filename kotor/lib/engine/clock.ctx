@@ -54,7 +54,8 @@ namespace clock {
         let mut s = seconds * c.speed
         if s > MAX_STEP { s = MAX_STEP }
         c.dt = s
-        c.now_us = c.now_us + @as(u64, s * 1000000.0)
+        // Rounded, not cut: at 1000 frames a second a cut loses 0.05 % of the time at every frame.
+        c.now_us = c.now_us + @as(u64, s * 1000000.0 + 0.5)
     }
 
     fn now_ms { c: Clock } -> u64 { return c.now_us / 1000 }
