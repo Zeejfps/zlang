@@ -5816,6 +5816,8 @@ namespace check {
                     else => {}
                 }
                 if types::unify{ s = &c.ty, a = x, b = ee } or types::widens{ s = &c.ty, a = x, b = ee } or includes_cap{ c, a = x, b = ee } { return Coercion::some }
+                // A function value converts as it would to the `?`'s function type (§5).
+                if tx is func and types::get{ s = c.ty, id = types::prune{ s = c.ty, t = ee } } is func and coerce{ &c, a = x, e = ee } is same { return Coercion::some }
                 return Coercion::fail
             }
             cap => {
@@ -5850,13 +5852,29 @@ namespace check {
                             if h == null or h.mutable != f.mutable or not types::unify{ s = &c.ty, a = f.ty, b = h.ty } { return false }
                             i = i + 1
                         }
-                        return types::unify{ s = &c.ty, a = gr, b = sr }
+                        return types::unify{ s = &c.ty, a = gr, b = sr } or widens_result{ &c, from = gr, into = sr }
                     }
                     else => { return false }
                 }
             }
             else => { return false }
         }
+    }
+
+    // §5: whether a function's result `from` becomes `into` by a thunk that widens its error: a
+    // `!T` that fails with a set (a function's, inferred) as a `!T` of the same T that may fail
+    // with any error, a function type's. Lowering writes the thunk (lower::widen_fn), once the
+    // sets are inferred; until then any set will do, since any error takes them all.
+    fn widens_result { mut c: Checker, from: Id, into: Id } -> bool {
+        let res{ ok = a, errs = fe } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = from } } else { return false }
+        let res{ ok = b, errs = te } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = into } } else { return false }
+        if not any_error{ c, t = te } or any_error{ c, t = fe } { return false }
+        return types::unify{ s = &c.ty, a, b }
+    }
+
+    // Whether errs type t may be any error: `error`, or a function type's `!T`.
+    fn any_error { c: Checker, t: Id } -> bool {
+        return types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is errs{ owner, one } and owner == NONE and one == NONE
     }
 
     fn mismatch { mut c: Checker, a: Id, e: Id, mut b: utf8::Builder(Heap) } -> ! {
@@ -5890,17 +5908,13 @@ namespace check {
                 }
             }
         }
-        // Two results, or two functions returning one, whose errors differ.
+        // Two results, or two functions returning one, whose errors differ. Any error takes
+        // every set, so a mismatch there is something else.
         let xr = result_of{ c, t = x }
         let yr = result_of{ c, t = y }
         if types::get{ s = c.ty, id = xr } is res{ ok = xo, errs = xe } {
             if types::get{ s = c.ty, id = yr } is res{ ok = yo, errs = ye } {
-                if types::prune{ s = c.ty, t = xo } == types::prune{ s = c.ty, t = yo } and xe != ye {
-                    if xr != x {
-                        try @fmt(&b, "a function whose `!T` fails with its body's errors can't be a value of type ")
-                        try write_type{ c, t = y, &b }
-                        return @fmt(&b, ", whose `!T` fails with any error")
-                    }
+                if types::prune{ s = c.ty, t = xo } == types::prune{ s = c.ty, t = yo } and xe != ye and not any_error{ c, t = ye } {
                     try @fmt(&b, "expected ")
                     try write_type{ c, t = y, &b }
                     try @fmt(&b, " failing with ")

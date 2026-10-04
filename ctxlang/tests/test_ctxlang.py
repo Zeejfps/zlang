@@ -6018,8 +6018,29 @@ fn main { mut io: Io } {
              'cannot `try` in a defer: it may return', (2, 17)),
             ('fn g {} -> !u64 { return 1 }\nfn main {} {\n    let mut r = number{ s = "1" }\n    r = g{}\n}',
              'expected !u64 failing with the errors of `number`, got one failing with the errors of `g`', (4, 10)),
-            ('fn main {} { let f: fn{ s: []u8 } -> !u64 = number }',
-             "a function whose `!T` fails with its body's errors can't be a value of type fn{ s: []u8 } -> !u64", (1, 45)),
+            # A function with an inferred set converts to a function type (§5) only as any
+            # function does: the fields, their mutability and the `!T`'s T must agree.
+            ('fn main {} { let f: fn{ t: []u8 } -> !u64 = number }',
+             "function needs `s`, which fn{ t: []u8 } -> !u64 doesn't provide", (1, 45)),
+            ('fn main {} { let f: fn{ s: []u8 } -> !u32 = number }',
+             'expected fn{ s: []u8 } -> !u32, got fn{ s: []u8 } -> !u64', (1, 45)),
+            ('fn main {} { let f: ?fn{ s: []u8 } -> u64 = number }',
+             'expected ?fn{ s: []u8 } -> u64, got fn{ s: []u8 } -> !u64', (1, 45)),
+            ('fn bump { mut n: i32 } -> !i32 { return n }\nfn main {} { let f: fn{ n: i32 } -> !i32 = bump }',
+             'expected fn{ n: i32 } -> !i32, got fn{ mut n: i32 } -> !i32', (2, 44)),
+            ('fn main {} { let f: fn{} -> !u64 = number{ s = "1", _ } }',
+             'expected fn{} -> !u64, got &fn{} -> !u64', (1, 42)),
+            # A local inferred from a function has its set, which takes no other function's.
+            ('fn g { s: []u8 } -> !u64 { return 1 }\nfn main {} {\n    let mut f = number\n    f = g\n}',
+             'expected fn{ s: []u8 } -> !u64 failing with the errors of `number`, got one failing with the errors of `g`', (4, 9)),
+            ('const C: fn{ s: []u8 } -> !u64 = number\nfn main {} {}',
+             "const `C` can't hold a function value", (1, 34)),
+            # Calling through the value is a call: its error may hold the address it was given.
+            ('error bad{ text: []u8 }\nfn g { s: []u8 } -> !u64 {\n    if s.len == 0 { return bad{ text = s } }\n    return 1\n}\n'
+             'fn f {} -> !u64 {\n    let buf: [4]u8 = [1; 4]\n    let h: fn{ s: []u8 } -> !u64 = g\n    return try h{ s = buf[..] }\n}\nfn main {} {}',
+             '`try` would return an error that may hold the address of local `buf`', (9, 12)),
+            ('fn main {} -> i32 {\n    let f: fn{ s: []u8 } -> !u64 = number\n    match f{ s = "" } { ok => { return 0 } parse::empty => { return 1 } parse::bad_digit => { return 2 } parse::too_big => { return 3 } }\n}',
+             "match isn't exhaustive: missing ", (3, 5)),
             ('fn f {} -> !i32 { return parse::bad_digit }\nfn main {} {}',
              'error `parse::bad_digit` has a payload; construct it with `parse::bad_digit{ ... }`', (1, 26)),
             ('fn f {} -> !i32 { return parse::empty{} }\nfn main {} {}',
@@ -6047,6 +6068,170 @@ fn main { mut io: Io } {
             line = self.PARSE.count('\n')
             self.assertIn(msg, cm.exception.msg, body)
             self.assertEqual(cm.exception.pos[:2], (pos[0] + line, pos[1]), body)
+
+    FN_VALUES = """
+error named{ text: []u8 }
+
+fn other { s: []u8 } -> !u64 {
+    if s.len > 3 { return named{ text = s[1..] } }
+    return 7
+}
+
+fn report { mut io: Io, r: !u64 } {
+    match r {
+        ok{ value } => { _ = @fmt(&io, "ok {}\\n", value) }
+        err{ error } => {
+            match error {
+                parse::bad_digit{ at } => { _ = @fmt(&io, "bad digit at {}\\n", at) }
+                named{ text } => { _ = @fmt(&io, "named {}\\n", utf8::of{ chars = text }) }
+                else => { _ = @fmt(&io, "err {}\\n", error) }
+            }
+        }
+    }
+}
+"""
+
+    def test_function_values(self):
+        # A function whose set is inferred is a value of a function type whose `!T` may fail
+        # with any error (§5): in a local, a struct field, an array, a `?`, an argument and a
+        # list, whose errors come back with their payloads.
+        self.assertOutput(self.PARSE + self.FN_VALUES + """
+struct Parser { run: fn{ s: []u8 } -> !u64, name: []u8 }
+
+fn apply { f: &fn{ s: []u8 } -> !u64, s: []u8 } -> !u64 {
+    let n = try f{ s }
+    return n + 1
+}
+
+fn main { mut io: Io } {
+    let f: fn{ s: []u8 } -> !u64 = number
+    report{ &io, r = f{ s = "42" } }
+    report{ &io, r = f{ s = "" } }
+    report{ &io, r = f{ s = "4x" } }
+    let ps: [2]Parser = [Parser{ run = number, name = "number" }, Parser{ run = other, name = "other" }]
+    let mut i: usize = 0
+    while i < ps.len {
+        report{ &io, r = ps[i].run{ s = "abcd" } }
+        i = i + 1
+    }
+    let o: ?fn{ s: []u8 } -> !u64 = other
+    if o != null { report{ &io, r = o{ s = "wxyz" } } }
+    report{ &io, r = apply{ f = number, s = "9" } }
+    report{ &io, r = apply{ f = number, s = "9q" } }
+    let g = number                          // number's own type, its set: held by a thunk
+    report{ &io, r = apply{ f = g, s = "19" } }
+    let wide: fn{ s: []u8, extra: i32 } -> !u64 = number
+    report{ &io, r = wide{ s = "5", extra = 3 } }
+    let table: [3]fn{ s: []u8 } -> !u64 = [other; 3]
+    report{ &io, r = table[2]{ s = "12345" } }
+    let mut mem: [1024]u8 = [0; 1024]
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut fs = list::new(fn{ s: []u8 } -> !u64){ realloc = arena::alloc, &heap }
+    try! list::push{ list = &fs, item = number }
+    report{ &io, r = list::items{ list = fs }[0]{ s = "1234567" } }
+    match f{ s = "" } {
+        ok => { _ = @fmt(&io, "ok\\n") }
+        parse::empty => { _ = @fmt(&io, "empty\\n") }
+        else => { _ = @fmt(&io, "else\\n") }
+    }
+}
+""", 'ok 42\nerr parse::empty\nbad digit at 1\nbad digit at 0\nnamed bcd\nnamed xyz\nok 10\n'
+            'bad digit at 1\nok 20\nok 5\nnamed 2345\nerr parse::too_big\nempty\n')
+
+    def test_function_values_bind_generic_recursive(self):
+        # Binds, `mut` fields, a generic function, a bare `!`, and functions that convert
+        # themselves or each other while their sets are inferred.
+        self.assertOutput("""
+error empty
+error too_big{ n: i32 }
+error deep{ depth: u32 }
+
+fn bump { mut n: i32, by: i32 } -> !i32 {
+    if by > 10 { return too_big{ n = by } }
+    n = n + by
+    return n
+}
+
+fn first(T) { xs: []T } -> !T {
+    if xs.len == 0 { return empty }
+    return xs[0]
+}
+
+fn say { mut io: Io, text: []u8 } -> ! {
+    if text.len == 0 { return empty }
+    _ = @fmt(&io, "say {}\\n", utf8::of{ chars = text })
+}
+
+fn walk { n: u32 } -> !u32 {
+    if n > 5 { return deep{ depth = n } }
+    if n == 0 { return 100 }
+    let me: fn{ n: u32 } -> !u32 = walk
+    return try me{ n = n - 1 }
+}
+
+fn down { n: u32 } -> !u32 {
+    if n == 0 { return deep{ depth = 0 } }
+    let up: fn{ n: u32 } -> !u32 = up_again
+    return try up{ n = n - 1 }
+}
+
+fn up_again { n: u32 } -> !u32 {
+    if n == 7 { return empty }
+    return try down{ n }
+}
+
+fn report { mut io: Io, r: !i32 } {
+    match r {
+        ok{ value } => { _ = @fmt(&io, "ok {}\\n", value) }
+        err{ error } => {
+            match error {
+                too_big{ n } => { _ = @fmt(&io, "too big {}\\n", n) }
+                else => { _ = @fmt(&io, "err {}\\n", error) }
+            }
+        }
+    }
+}
+
+fn twice { f: &fn{ by: i32 } -> !i32 } -> !i32 {
+    _ = try f{ by = 1 }
+    return f{ by = 2 }
+}
+
+fn main { mut io: Io } {
+    let mut n: i32 = 1
+    let b: fn{ mut n: i32, by: i32 } -> !i32 = bump
+    report{ &io, r = b{ &n, by = 2 } }
+    report{ &io, r = b{ &n, by = 20 } }
+    let bb = bump{ &n, _ }
+    report{ &io, r = twice{ f = bb } }
+    report{ &io, r = twice{ f = bump{ &n, _ } } }
+    let wide: &fn{ by: i32, z: u8 } -> !i32 = bump{ &n, _ }
+    report{ &io, r = wide{ by = 4, z = 0 } }
+    let dup: &fn{ by: i32, n: i32 } -> !i32 = bump{ &n, _ }      // its `n` is dropped
+    report{ &io, r = dup{ by = 5, n = 99 } }
+    let xs: [2]i32 = [7, 8]
+    let fi: fn{ xs: []i32 } -> !i32 = first(i32)
+    report{ &io, r = fi{ xs = xs[..] } }
+    report{ &io, r = fi{ xs = xs[0..0] } }
+    let fj: fn{ xs: []i32 } -> !i32 = first
+    report{ &io, r = fj{ xs = xs[1..] } }
+    let s: fn{ mut io: Io, text: []u8 } -> ! = say
+    s{ &io, text = "hi" } iferr { _ = @fmt(&io, "say failed\\n") }
+    s{ &io, text = "" } iferr err{ error } { _ = @fmt(&io, "say failed: {}\\n", error) }
+    let w: fn{ n: u32 } -> !u32 = walk
+    _ = @fmt(&io, "walk {}\\n", w{ n = 3 } iferr 0)
+    match w{ n = 9 } {
+        ok{ value } => { _ = @fmt(&io, "walk {}\\n", value) }
+        err{ error } => { _ = @fmt(&io, "walk err {}\\n", error) }
+    }
+    let d: fn{ n: u32 } -> !u32 = down
+    match d{ n = 3 } {
+        ok{ value } => { _ = @fmt(&io, "down {}\\n", value) }
+        err{ error } => { _ = @fmt(&io, "down err {}\\n", error) }
+    }
+}
+""", 'ok 3\ntoo big 20\nok 6\nok 9\nok 13\nok 18\nok 7\nerr empty\nok 8\nsay hi\n'
+            'say failed: empty\nwalk 100\nwalk err deep{ depth = 9 }\ndown err deep{ depth = 0 }\n')
 
     def test_error_needs_a_name(self):
         # `error` begins a declaration only before a name: elsewhere it is a name itself.

@@ -18,8 +18,14 @@ namespace lower {
 
     // A function instance: a declaration and its generic arguments. The hidden fn of an @fmt
     // without a sink is an instance too, under the declaration it is in: site is its Site,
-    // NONE for any other.
-    struct Inst { decl: u32, targs: []Id, site: u32 }
+    // NONE for any other. So is a widening thunk (widen), under the declaration whose file it
+    // goes in.
+    struct Inst { decl: u32, targs: []Id, site: u32, widen: ?Widen }
+
+    // A thunk of function type `to` whose `!T` may fail with any error (spec §5): it calls
+    // instance callee, or with callee NONE its first param, a function value of type frm, and
+    // renumbers the error into to's (widening).
+    struct Widen { callee: u32, frm: Id, to: Id }
 
     struct Lower {
         c:         *mut check::Checker,
@@ -92,7 +98,9 @@ namespace lower {
         while i < l.queue.len {
             let inst = list::items{ list = l.queue }[i]
             let kind = check::get_decl{ c = l.c.*, d = inst.decl }.kind
-            let f = if inst.site != NONE {
+            let f = if inst.widen != null {
+                widening{ &l, id = @as(u32, i), inst }
+            } else if inst.site != NONE {
                 hidden{ &l, id = @as(u32, i), inst }
             } else if kind == check::Kind::external {
                 external{ &l, id = @as(u32, i), d = inst.decl }
@@ -126,7 +134,7 @@ namespace lower {
         if known != null { return known }
         let i = @as(u32, l.queue.len)
         try! map::put{ m = &l.fn_ids, key = k, value = i }
-        try! list::push{ list = &l.queue, item = Inst{ decl, targs, site = NONE } }
+        try! list::push{ list = &l.queue, item = Inst{ decl, targs, site = NONE, widen = null } }
         return i
     }
 
@@ -146,7 +154,7 @@ namespace lower {
         if known != null { return known }
         let id = @as(u32, l.queue.len)
         try! map::put{ m = &l.fn_ids, key, value = id }
-        try! list::push{ list = &l.queue, item = Inst{ decl = l.decl, targs = l.targs, site } }
+        try! list::push{ list = &l.queue, item = Inst{ decl = l.decl, targs = l.targs, site, widen = null } }
         return id
     }
 
@@ -1092,6 +1100,148 @@ namespace lower {
         return mk{ ty, k = ir::ExprKind::matchx{ scrut = box{ l, e = x }, through = false, arms = list::items{ list = out } } }
     }
 
+    // Whether function type a becomes b by widening its result's error (spec §5): the checker
+    // allows that or the same result, which have one IR type.
+    fn widens { mut l: Lower, a: Id, b: Id } -> bool {
+        let func{ ret = ra } = get{ l, t = a } else { return false }
+        let func{ ret = rb } = get{ l, t = b } else { return false }
+        return norm{ &l, t = ra } != norm{ &l, t = rb }
+    }
+
+    // Function value x, of type frm, as a `to` whose `!T` may fail with any error (spec §5): a
+    // thunk calls it and renumbers its error (widening). A named function, or a bind of one,
+    // gets a thunk that calls it directly and takes to's other fields too: it is a value with no
+    // record of its own, as the function was, or the bind of it. Any other value is held by a
+    // bind of a thunk that calls it through its code.
+    fn widen_fn { mut l: Lower, x: ir::Expr, frm: Id, to: Id } -> ir::Expr {
+        let ty = tid{ &l, t = to }
+        match x.k {
+            fnref{ callee } => {
+                if direct{ l, callee } { return mk{ ty, k = ir::ExprKind::fnref{ callee = widen_id{ &l, callee, frm, to } } } }
+            }
+            bind{ callee, args } => {
+                if direct{ l, callee } and not supplies{ l, callee, args, to } {
+                    return mk{ ty, k = ir::ExprKind::bind{ callee = widen_id{ &l, callee, frm, to }, args } }
+                }
+            }
+            else => {}
+        }
+        let w = widen_id{ &l, callee = NONE, frm, to }
+        return mk{ ty, k = ir::ExprKind::bind{ callee = w, args = one_arg{ l, v = x } } }
+    }
+
+    // Whether instance callee is a declared function's, which a widening thunk can call by name.
+    fn direct { l: Lower, callee: u32 } -> bool {
+        let q = list::items{ list = l.queue }[callee]
+        return q.site == NONE and q.widen == null and check::get_decl{ c = l.c.*, d = q.decl }.kind == check::Kind::func
+    }
+
+    // Whether a bind of callee supplies a field that function type `to` has too: the thunk that
+    // calls callee then can't take both.
+    fn supplies { l: Lower, callee: u32, args: []ir::Arg, to: Id } -> bool {
+        let func{ fields } = get{ l, t = to } else { return false }
+        let own = check::get_decl{ c = l.c.*, d = list::items{ list = l.queue }[callee].decl }.fields
+        let mut i: usize = 0
+        while i < args.len {
+            if types::find_field{ fields, name = own[@as(usize, args[i].index)].name } != null { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // The id of a widening thunk (Widen), queued the first time it is met: one per callee and
+    // type, or per value type and type.
+    fn widen_id { mut l: Lower, callee: u32, frm: Id, to: Id } -> u32 {
+        let mut b = list::new(u8){ realloc = arena::alloc, heap = l.heap }
+        put_u32{ xs = &b, n = NONE }         // no declaration's id: no other key starts with it
+        put_u32{ xs = &b, n = callee }
+        put_u32{ xs = &b, n = if callee == NONE { norm{ &l, t = frm } } else { 0 } }
+        put_u32{ xs = &b, n = norm{ &l, t = to } }
+        let key = list::items{ list = b }
+        let known = map::get{ m = l.fn_ids, key }
+        if known != null { return known }
+        let id = @as(u32, l.queue.len)
+        try! map::put{ m = &l.fn_ids, key, value = id }
+        let decl = if callee == NONE { l.decl } else { list::items{ list = l.queue }[callee].decl }
+        try! list::push{ list = &l.queue, item = Inst{ decl, targs = no_ids{}, site = NONE, widen = Widen{ callee, frm, to } } }
+        return id
+    }
+
+    // Widening thunk inst.widen as a function. Its context is to's fields after its callee's
+    // own, or after the value it calls (`fn`, which no field can be named). It passes its callee
+    // the fields it takes, by name, and returns the result with the error renumbered.
+    fn widening { mut l: Lower, id: u32, inst: Inst } -> ir::Func {
+        let w = inst.widen ifnull { @panic("lower: a widening thunk that isn't one") }
+        let d = check::get_decl{ c = l.c.*, d = inst.decl }
+        l.decl = inst.decl
+        l.targs = no_ids{}
+        map::clear{ m = &l.slots }
+        l.locals = list::new(ir::Local){ realloc = arena::alloc, heap = l.heap }
+        let func{ fields = tf, ret = tr } = get{ l, t = w.to } else { @panic("lower: a widening to a non-function") }
+        l.ret = tr
+        let mut ctx = list::new(types::Field){ realloc = arena::alloc, heap = l.heap }
+        let mut takes: []types::Field = slice::empty(types::Field){}     // what it calls takes
+        let mut cr = types::VOID
+        let mut b = message{ l }
+        if w.callee == NONE {
+            let func{ fields = ff, ret = fr } = get{ l, t = w.frm } else { @panic("lower: a widening of a non-function") }
+            add_field{ xs = &ctx, f = types::Field{ name = "fn", mutable = false, ty = w.frm } }
+            takes = sorted_fields{ l, fields = ff }
+            cr = fr
+            try! @fmt(&b, "({})", str{ s = type_name{ l, t = w.frm } })
+        } else {
+            let q = list::items{ list = l.queue }[w.callee]
+            let x = check::get_decl{ c = l.c.*, d = q.decl }
+            takes = check::subst_fields{ c = l.c, fields = x.fields, decl = q.decl, args = q.targs }
+            cr = if q.targs.len == 0 { x.ret } else { types::subst{ s = &l.c.ty, t = x.ret, decl = q.decl, args = q.targs } }
+            let mut i: usize = 0
+            while i < takes.len {
+                add_field{ xs = &ctx, f = takes[i] }
+                i = i + 1
+            }
+            try! utf8::push{ &b, s = str{ s = inst_name{ l, x, targs = q.targs } } }
+        }
+        try! @fmt(&b, " as {}", str{ s = type_name{ l, t = w.to } })
+        let mut i: usize = 0
+        while i < tf.len {
+            if types::find_field{ fields = list::items{ list = ctx }, name = tf[i].name } == null { add_field{ xs = &ctx, f = tf[i] } }
+            i = i + 1
+        }
+        let fs = list::items{ list = ctx }
+        let mut params = list::new(ir::Param){ realloc = arena::alloc, heap = l.heap }
+        i = 0
+        while i < fs.len {
+            let f = fs[i]
+            try! list::push{ list = &params, item = ir::Param{ name = f.name, mutable = f.mutable, ty = tid{ &l, t = f.ty } } }
+            let st = tid{ &l, t = arg_type{ &l, f, ptrs = true } }
+            try! list::push{ list = &l.locals, item = ir::Local{ name = f.name, ty = st } }
+            i = i + 1
+        }
+        let mut args = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+        i = 0
+        while i < takes.len {
+            let s = types::field_index{ fields = fs, name = takes[i].name } ifnull { @panic("lower: a widening thunk without a field its callee takes") }
+            let at = tid{ &l, t = arg_type{ &l, f = takes[i], ptrs = true } }
+            add_arg{ xs = &args, a = ir::Arg{ index = @as(u32, i), value = mk{ ty = at, k = ir::ExprKind::local{ slot = @as(u32, s) } } } }
+            i = i + 1
+        }
+        let ct = tid{ &l, t = cr }
+        let call = if w.callee == NONE {
+            let inner = mk{ ty = tid{ &l, t = w.frm }, k = ir::ExprKind::local{ slot = 0 } }
+            mk{ ty = ct, k = ir::ExprKind::dcall{ callee = box{ l, e = inner }, args = list::items{ list = args } } }
+        } else {
+            mk{ ty = ct, k = ir::ExprKind::call{ callee = w.callee, args = list::items{ list = args } } }
+        }
+        let r = res_remap{ &l, x = call, frm = types::prune{ s = l.c.ty, t = cr }, to = types::prune{ s = l.c.ty, t = tr } }
+        let mut body = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+        try! list::push{ list = &body, item = ir::Stmt::ret{ value = r } }
+        return ir::Func{
+            id, name = utf8::view{ b }.bytes, symbol = "", params = list::items{ list = params }, ret = tid{ &l, t = tr },
+            locals = list::items{ list = l.locals }, body = ir::Block{ stmts = list::items{ list = body }, result = null },
+            unit = unit_of{ l, x = d }, at = d.syn.span.start,
+        }
+    }
+
     struct Scrut { through: bool, vs: []check::Variant, enum_decl: u32 }
 
     fn scrut_type { mut l: Lower, x: syntax::Match } -> Scrut {
@@ -1360,7 +1510,10 @@ namespace lower {
         }
         match get{ l, t = a } {
             func => {
-                if get{ l, t = b } is func { return mk{ ty = tid{ &l, t = b }, k = ir::ExprKind::fnconv{ e = box{ l, e = x } } } }
+                if get{ l, t = b } is func {
+                    if widens{ &l, a, b } { return widen_fn{ &l, x, frm = a, to = b } }
+                    return mk{ ty = tid{ &l, t = b }, k = ir::ExprKind::fnconv{ e = box{ l, e = x } } }
+                }
             }
             cap => {
                 if get{ l, t = b } is cap { return cap_copy{ &l, x, frm = a, to = b } }
