@@ -139,7 +139,8 @@ namespace obj {
         plot: bool,
         min_one_hp: bool,
         animation: u32,                     // internal animation id; 10000 stands
-        anim_speed: f32,
+        anim_speed: f32,                    // the playback rate of `animation`
+        anim_cycles: f32,                   // walk and run only: cycles a second the ground speed asks for (world::set_gait); 0 plays at anim_speed
         dirty: u32,
         ai_level: i32,                      // 0..4; -1: not updated
         conversation: resref::ResRef,
@@ -597,7 +598,7 @@ namespace obj {
             scripts = [resref::empty{}; 42], locals = Locals{ bools = [0; 3], numbers = [0; 8] },
             actions = list::new(actions::Action, heap::Heap){ realloc = heap::alloc, heap },
             action_group = 0, commandable = true, hp = 1, hp_max = 1, hp_temp = 0, plot = false,
-            min_one_hp = false, animation = ANIM_STAND, anim_speed = 1.0, dirty = 7,
+            min_one_hp = false, animation = ANIM_STAND, anim_speed = 1.0, anim_cycles = 0.0, dirty = 7,
             ai_level = 0, conversation = resref::empty{}, faction = 0, ctx = no_context{},
             destroyed = false, ext = Ext::none,
         }

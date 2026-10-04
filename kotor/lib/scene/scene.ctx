@@ -42,6 +42,7 @@ namespace scene {
         first: usize,                   // its parts: Scene.parts[first .. first + count], the root first
         count: usize,
         animation: u32,                 // the object's animation when last synced
+        cycles: f32,                    // and its anim_cycles (a walker's pace changes while the same cycle plays)
         state: u32,                     // a door's state, a placeable's animation, when last synced
         room: i32,                      // the room under it, -1 unknown
         creature_prefix: bool,          // S and L models name their animations with a `c` prefix
@@ -242,6 +243,14 @@ namespace scene {
         p.anim_len = n
         p.next_len = 0
         return true
+    }
+
+    // The length in seconds of animation `name` for a part's model (0 when the model's chain has none).
+    fn length_of { mut sc: Scene, mut w: world::World, part: usize, name: []u8 } -> f32 {
+        let p = part_at{ sc = &sc, i = part }
+        let model = loaded_at{ sc = &sc, i = p.loaded }.model
+        let b = binding_for{ &sc, &w, model, source = p.source, name } ifnull { return 0.0 }
+        return b.animation.length
     }
 
     // ---- the area

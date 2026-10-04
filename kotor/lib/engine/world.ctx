@@ -552,9 +552,22 @@ namespace world {
     }
 
     fn set_animation { o: *mut obj::Object, id: u32, speed: f32 } {
-        if o.animation == id and o.anim_speed == speed { return }
+        if o.animation == id and o.anim_speed == speed and o.anim_cycles == 0.0 { return }
         o.animation = id
         o.anim_speed = speed
+        o.anim_cycles = 0.0
+        o.dirty = o.dirty | obj::DIRTY_ANIMATION
+    }
+
+    // The walk or run cycle for a creature moving at a speed: `cycles` a second is what the ground speed
+    // asks for (speed / the appearance's WALKDIST or RUNDIST, movement::gait_cycles), which the scene
+    // turns into a playback rate by the length of the cycle it plays. 0 when the appearance has no
+    // distance: the cycle plays at rate 1.
+    fn set_gait { o: *mut obj::Object, id: u32, cycles: f32 } {
+        if o.animation == id and o.anim_cycles == cycles { return }
+        o.animation = id
+        o.anim_speed = 1.0
+        o.anim_cycles = cycles
         o.dirty = o.dirty | obj::DIRTY_ANIMATION
     }
 
