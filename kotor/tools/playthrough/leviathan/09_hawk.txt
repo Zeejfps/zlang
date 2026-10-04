@@ -1,0 +1,11 @@
+# Leviathan, part 9: aboard the Ebon Hawk (ebo_m40ad): the talk with the party (ebo_carth: Bastila, Revan, Carth, HK-47, T3-M4), then the flight
+# (stunt_00, the Hawk landing again in ebo_m12aa). From "hawkarr". The first reply of every list. The save "hawkpost" is the Hawk after the Leviathan:
+# Bastila gone, K_KOTOR_MASTER 20, K_CAPTURED_LEV 10, K_STAR_MAP 40.
+5 ui heal
+6 ui replies default 1
+6 gunner
+10 savewhen ebo_m12aa hawkpost
+12000 ui journal list
+12000 ui party
+12000 ui rules
+12000 ui globals K_

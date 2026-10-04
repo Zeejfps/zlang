@@ -1,0 +1,12 @@
+# Leviathan, part 2: Mission in the prison. From the checkpoint "cell" (the cell scene is over, Mission is the player).
+# Mission goes to the detention computer (lev40_detcompdlg) and unlocks the aft cells; k_plev_freeparty switches the player back to the
+# character (SwitchPlayerCharacter -1) and Bastila and Carth talk (lev40_bast400): the plan, who goes where.
+5 ui heal
+6 ui replies ~Unlock_aft_holding_cells default 1
+10 warp brigcomputer
+40 use brigcomputer
+3300 save freed
+3300 ui pos
+3300 ui party
+3300 ui journal list
+3300 ui globals lev

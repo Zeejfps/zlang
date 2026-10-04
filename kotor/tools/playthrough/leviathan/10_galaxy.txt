@@ -1,0 +1,13 @@
+# Leviathan, part 10: the next galaxy map. From "hawkpost" (the Ebon Hawk after the Leviathan, the companions aboard, Bastila gone).
+# The console GalaxyMap opens the map; the planets the four Star Maps found offer (Manaan, the fifth map, is left).
+5 ui heal
+6 ui replies default 1
+10 ui goto GalaxyMap
+1500 use GalaxyMap
+1800 ui ctl LBL_Planet_Manaan
+1800 ui ctl LBL_Planet_Korriban
+1800 ui ctl LBL_Planet_Dantooine
+1800 ui ctl LBL_Planet_UnknownWorld
+1800 ui globals K_
+1800 ui globals star
+1800 ui party

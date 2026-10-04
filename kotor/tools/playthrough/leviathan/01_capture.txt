@@ -1,0 +1,74 @@
+# Leviathan, part 1: the crafted state a Jedi brings from Korriban (the fourth Star Map found), and the galaxy map's flight that
+# the Leviathan catches: stunt_16 (the take-off), the Hawk held in ebo_m40aa, Carth's talk about Saul Karath.
+# Start: kotor.exe --module korr_m33aa (the Ebon Hawk's landing spot at Dreshdae; run.sh does it). The setup lines are those of
+# korriban/01_arrival.txt with the Korriban chain's end (level 14, 104,970 XP, alignment 97, four Star Maps: K_STAR_MAP 40 and
+# K_STAR_MAP_KORRIBAN). The party joins in Korriban: on the Hawk itself the pop-hawk script (k_pebn_pophawk) would take it out again.
+3 ui xp 104970
+4 join p_bastilla 0
+4 join p_carth 2
+4 ui avail 0 1 2 3 4 5 6 7 8
+4 ui jedi 3 14
+4 ui stat str 16
+4 ui stat dex 14
+4 ui stat con 14
+4 ui stat hpmax 160
+4 ui stat hp 160
+4 ui stat persuade 17
+4 ui stat awareness 10
+4 ui stat computer 10
+4 ui giveitem g_w_lghtsbr01 1 equip
+4 ui giveitem g_a_jedirobe01 1 equip
+4 ui giveitem g_i_medeqpmnt01 5
+4 ui giveitem g_i_adrnaline001 3
+4 ui credits 2000
+4 ui gbool DAN_STARMAP_DONE 1
+4 ui gbool K_STAR_MAP_TATOOINE 1
+4 ui gbool K_STAR_MAP_KASHYYYK 1
+4 ui gbool K_STAR_MAP_KORRIBAN 1
+4 ui global K_STAR_MAP 40
+4 ui global K_CAPTURED_LEV 5
+4 ui global K_SWG_BASTILA 99
+4 ui global K_KOTOR_MASTER 20
+4 ui global K_CURRENT_PLANET 30
+4 ui planet 3
+4 ui planet 4
+4 ui planet 5
+4 ui planet 6
+4 ui planet 7
+5 ui stat class 0
+5 ui stat level 7
+5 ui stat class2 3
+5 ui stat level2 7
+5 ui stat hpmax 160
+5 ui stat hp 160
+5 ui replies 1 1 1 1 1 ~Mission_can_do_it ~This_could_work default 1
+6 ui leader bastila
+6 ui jedi 5 14
+6 ui giveitem g_w_lghtsbr01 1 equip
+6 ui giveitem g_a_jedirobe01 1 equip
+6 ui stat hpmax 130
+6 ui stat hp 130
+7 ui leader carth
+7 ui stat class 0
+7 ui stat level 14
+7 ui stat hpmax 160
+7 ui stat hp 160
+8 ui leader pc
+8 ui stat xp 104970
+8 ui stat align 97
+# Aboard: the strip k33_trg_ebonhawk (107,183) takes the party to the Hawk (ebo_m12aa), as the end of the Korriban chain does.
+60 warpxy 107,183 party
+400 ui party
+400 save hawk
+# The galaxy map (the console "galaxymap"): Manaan is picked and "Travel" is pressed; with the fourth Star Map the flight is the capture.
+420 ui goto GalaxyMap
+1700 use GalaxyMap
+3000 ui pos
+3100 ui clickctl LBL_Planet_Manaan
+3200 ui clickctl BTN_ACCEPT
+23300 save cell
+23300 ui heal
+23350 ui journal list
+23350 ui party
+23350 ui rules
+23350 ui globals lev

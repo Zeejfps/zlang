@@ -1,0 +1,14 @@
+# Leviathan, part 4: the command deck (lev_m40ab): from the elevator through the Sith troopers, the Dark Jedi and the assault droid to the bridge door
+# (lev40_bridgedoor), through it to the bridge corridor (lev_m40ad). From the checkpoint "deck". The bot fights in god mode (the party at 1 hit point);
+# the save "bridgearr" waits for the story to be quiet in lev_m40ad (the five Sith Elite Troopers at its door are dead).
+5 ui heal
+6 ui replies default 1
+10 ui bot god on
+10 ui bot unlock on
+10 ui bot route lev40_bridgedoor
+11 ui bot on
+10 savewhen lev_m40ad bridgearr
+9000 ui journal list
+9000 ui party
+9000 ui rules
+9000 ui globals lev

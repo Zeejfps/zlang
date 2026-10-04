@@ -1,0 +1,12 @@
+# Leviathan, part 8: the hangar (lev_m40ac): Canderous's call, the Dark Jedi and troopers (the bot, in god mode), Malak and Bastila
+# (lev40_darthmala2: the Revan revelation; Bastila's stand: stunt_31b, lev40_carth), the hangar door and the Ebon Hawk (lev40_hangardlg),
+# then the Hawk's turret against the fighters (m12ab: the gunner bot) and the arrival in ebo_m40ad. From "hangar".
+# The long talk with Malak takes the first reply of every list (the replies are checked in docs/playthrough-leviathan.md).
+5 ui heal
+6 ui replies default 1
+6 gunner
+10 ui bot god on
+10 ui bot unlock on
+10 ui bot route lev40_malacs lev40_jumpebon
+11 ui bot on
+10 savewhen ebo_m40ad hawkarr soon
