@@ -113,6 +113,10 @@ Open items the leads left, by owner. Remove an item when it lands.
 - Creature stats and party members (`AVAILNPC`) written into saves.
 - The remaining routines (`--report routines`; `docs/design/routines.tsv`).
 
+**Controls** (docs/mechanics/controls.md, open lines): T tooltips-on-hold, X flourish, G stealth key
+(with the items owner's stealth), combat camera framing, the camera clipping through creatures,
+formation/trail following (followers use one follow action to 2 m).
+
 **Screens/HUD** (lib/screens, lib/hud): the original's hexagon item rows; the bench's 3D
 item models; arrow-key planet cycling; the level-up preview without armour and nothing for droids;
 the self action slots' mines slot (needs a trap action) and keys, and the original's rules for what each slot lists (ours, `lib/ingame/selfslots.ctx`).

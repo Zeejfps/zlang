@@ -51,6 +51,7 @@ namespace fight {
         fired: usize,                   // impacts landed
         shots: usize,                   // bolts fired
         cutscene: bool,                 // a designer's round (CutsceneAttack): no OnEndRound, no combat
+        feat: i32,                      // the combat feat of the round's attacks (0 none)
         impacts: [MAX_IMPACTS]Impact,
     }
 
@@ -90,7 +91,7 @@ namespace fight {
     }
 
     fn no_round {} -> Round {
-        return Round{ started = false, timer_ms = 0, length_ms = 0, target = obj::INVALID, anim_row = NO_ROW, anim_ms = 0, count = 0, fired = 0, shots = 0, cutscene = false, impacts = [no_impact{}; MAX_IMPACTS] }
+        return Round{ started = false, timer_ms = 0, length_ms = 0, target = obj::INVALID, anim_row = NO_ROW, anim_ms = 0, count = 0, fired = 0, shots = 0, cutscene = false, feat = 0, impacts = [no_impact{}; MAX_IMPACTS] }
     }
 
     fn new_fighter { heap: *mut heap::Heap } -> !*mut Fighter {
@@ -748,6 +749,7 @@ namespace fight {
         let row = if forced.on { forced.animation } else { attack_row{ &w, s, duel, ranged_beast = ranged and s == 0 } }
         f.round = no_round{}
         f.round.cutscene = forced.on
+        f.round.feat = if feat > 0 { feat } else { 0 }
         if forced.on { f.ready_ms = CUTSCENE_READY_MS }
         f.round.started = true
         f.round.length_ms = ROUND_MS
