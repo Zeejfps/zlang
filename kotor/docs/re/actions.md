@@ -30,13 +30,15 @@ Related pages and the boundary with each:
   actions' timing and the `ActionList` GFF.
 - [gui.md](gui.md): the HUD action-queue icons and the container panel.
 
-**Warning for anyone reading the exports.** Ghidra marks `CSWSCreature::GetUseRange`
-(`0x004ee440`) as a function that does not return. It does return, but every decompiled caller
-(about 20 action handlers: open/close door, lock, unlock, use, dialog, the trap actions, heal,
-attack, move-to-object, the check actions) is cut off right after the call; the rest of those
-functions is not even disassembled by Ghidra. The behaviour below was read from an objdump
-disassembly of the unpacked exe for those parts. The lead should clear the noreturn flag (a
-prototype for `0x004ee440` in names.tsv may do it) and re-export. (high)
+**The exports used to cut these handlers short; they no longer do.** Ghidra had marked
+`CSWSCreature::GetUseRange` (`0x004ee440`) as a function that does not return (and
+`CExoString::~CExoString`, which cut the decompile of over a thousand more functions), so every
+decompiled caller, about 20 action handlers among them (open/close door, lock, unlock, use,
+dialog, the trap actions, heal, attack, move-to-object, the check actions), stopped right after
+the call. The behaviour below was read from an objdump disassembly of the unpacked exe for those
+parts. The exports were rebuilt without the bug on 2026-10-04 ([noreturn-fix.md](noreturn-fix.md));
+the statements marked "damaged" or "lost to the noreturn bug" below can now be checked against the
+full decompile. (high)
 
 ## 1. The queue
 
@@ -1139,8 +1141,8 @@ subskill 0, and `0x00691950` Recover, subskill 101) send input message 0x12 to U
 
 ## 5. Open questions
 
-- The noreturn flag on `0x004ee440` hides the tail of about 20 handlers from the decompiled
-  export; after it is fixed, re-read MOVETOPOINT (step 2–6 above are reconstructed from a damaged
+- The noreturn flag on `0x004ee440` hid the tail of about 20 handlers from the decompiled
+  export; it is fixed now, so re-read MOVETOPOINT (step 2–6 above are reconstructed from a damaged
   decompilation), CHECKMOVETOOBJECT (2), DIALOGOBJECT's second phase, HEAL and the trap handlers.
 - MOVETOPOINT flag bits 1, 3–9 and param 7: what each one changes in the planner ([movement.md](movement.md)).
 - Who first queues ids 2 and 0xa (a scan of every `AddAction`/`AddActionToFront` call site finds

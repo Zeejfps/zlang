@@ -33,7 +33,11 @@ The names database (kotor/docs/re/names.tsv, ours, committed):
 Driving Ghidra (each run pays ~10 s of Ghidra start-up; runs are serialised by a lock):
     rex.py decompile ADDR|NAME...    re-decompile functions after manual changes
     rex.py asm ADDR|NAME...          disassembly listing of functions
-    rex.py export [--tables]         re-export everything (~80 s) or everything but the C (~15 s)
+    rex.py export [--tables] [--out DIR]  re-export everything (~80 s) or all but the C (~15 s)
+    rex.py noreturn [--out FILE]     functions Ghidra marks as not returning, with evidence, and
+                                     how much of .text is code (audit; see docs/re/noreturn-fix.md)
+    rex.py adopt DIR                 install a pipeline rebuilt elsewhere (KOTOR_RE=DIR rex.py setup)
+                                     as the live one; the old export stays as export_prev
     rex.py setup [--force]           from scratch: copy and unpack the exe, import, analyze,
                                      fix up, apply names, export (~7 min)
     rex.py install                   download Ghidra, a JDK and Steamless into kotor/re/tools
@@ -41,6 +45,7 @@ Driving Ghidra (each run pays ~10 s of Ghidra start-up; runs are serialised by a
 
 import argparse
 import bisect
+import contextlib
 import csv
 import glob
 import os
@@ -759,8 +764,9 @@ class Lock:
             pass
 
 
-def run_headless(extra, write=False, log_name='last_run.log'):
-    """Run analyzeHeadless on the project; prints the KOTOR: lines and errors."""
+def run_headless(extra, write=False, log_name='last_run.log', locked=False):
+    """Run analyzeHeadless on the project; prints the KOTOR: lines and errors. `locked`: the
+    caller holds the Lock already."""
     gh = ghidra_home()
     bat = os.path.join(gh, 'support', 'analyzeHeadless.bat' if os.name == 'nt' else 'analyzeHeadless')
     env = dict(os.environ)
@@ -769,7 +775,7 @@ def run_headless(extra, write=False, log_name='last_run.log'):
     cmd = [bat, PROJECT_DIR, PROJECT] + extra
     log = os.path.join(PROJECT_DIR, log_name)
     t0 = time.time()
-    with Lock():
+    with (contextlib.nullcontext() if locked else Lock()):
         p = subprocess.run(cmd, env=env, capture_output=True, text=True, errors='replace')
     out = p.stdout + p.stderr
     with open(log, 'w', encoding='utf-8') as f:
@@ -787,12 +793,12 @@ def run_headless(extra, write=False, log_name='last_run.log'):
     return p.returncode == 0
 
 
-def script_run(args, write=False):
+def script_run(args, write=False, locked=False):
     extra = ['-process', PROGRAM, '-noanalysis', '-scriptPath', SCRIPTS,
              '-postScript', 'KotorRE.java'] + args
     if not write:
         extra.insert(3, '-readOnly')
-    return run_headless(extra, write=write)
+    return run_headless(extra, write=write, locked=locked)
 
 
 def addrs_of(specs):
@@ -830,7 +836,83 @@ def cmd_apply(args):
 
 
 def cmd_export(args):
-    script_run(['export-tables' if args.tables else 'export-all', EXPORT])
+    script_run(['export-tables' if args.tables else 'export-all', args.out or EXPORT])
+
+
+def cmd_noreturn(args):
+    """Audit of "does not return". Ghidra drops the code after a call to a function it believes
+    never returns, so a wrong flag silently truncates every decompiled caller. Worst first:
+    `ret` > 0 means the function has a RET of its own; `code`/`undef` count call sites with code
+    after the call. Also prints how much of .text is neither code, data nor padding."""
+    out = args.out or os.path.join(RE, 'noreturn', 'noreturn.tsv')
+    script_run(['noreturn-report', os.path.dirname(os.path.abspath(out)), out])
+    with open(out, encoding='utf-8', newline='') as f:
+        rows = list(csv.DictReader(f, delimiter='\t', quoting=csv.QUOTE_NONE))
+    rows.sort(key=lambda r: (-(int(r['ret']) > 0), -(int(r['after_code']) + int(r['after_undef'])),
+                             r['addr']))
+    print(f'{"addr":10} {"ret":>3} {"calls":>5} {"code":>4} {"undef":>5} {"end":>4}  name  [ends]')
+    for r in rows:
+        print(f'{r["addr"]:10} {r["ret"]:>3} {r["calls"]:>5} {r["after_code"]:>4} '
+              f'{r["after_undef"]:>5} {r["after_end"]:>4}  {r["name"]}  [{r["ends"]}]')
+    print(f'details: {out}, {out}.sites (call sites with code after them), '
+          f'{out}.overrides (instructions with a flow override)')
+
+
+def cmd_adopt(args):
+    """Install a pipeline built elsewhere (`KOTOR_RE=DIR rex.py setup`) as the live one. The
+    project files and the export are replaced under the Ghidra lock; the old ones stay beside
+    them as *.prev and export_prev (never deleted; a second adopt needs them moved away). New
+    names.tsv rows are applied to the new project and the listings agents had asked for (export/
+    asm) are made again before the export is swapped in, so readers never see a half-written one.
+    The old and new project are different analyses: function boundaries move."""
+    src = os.path.abspath(args.src)
+    if os.path.samefile(src, RE):
+        die('that is the live pipeline')
+    parts = ['swkotor.rep', 'swkotor.gpr', 'names_applied.tsv']
+    for part in parts:
+        if not os.path.exists(os.path.join(src, 'ghidra', part)):
+            die(f'{src}/ghidra/{part} is missing: run `KOTOR_RE={src} rex.py setup` first')
+    if not os.path.exists(os.path.join(src, 'export', 'functions.tsv')):
+        die(f'{src}/export has no functions.tsv')
+    new = os.path.join(RE, 'export_new')
+    prev = os.path.join(RE, 'export_prev')
+    for path in [new, prev] + [os.path.join(PROJECT_DIR, p + '.prev') for p in parts]:
+        if os.path.exists(path):
+            die(f'{path} exists: look at it and move it away first')
+
+    def move(a, b):
+        # Windows refuses while a reader has a file in it open: retry for a while.
+        for i in range(300):
+            try:
+                os.rename(a, b)
+                return
+            except OSError:
+                time.sleep(0.2)
+        die(f'could not rename {a} to {b} (a file in it is open?)')
+
+    with Lock():
+        asm_old = sorted(glob.glob(os.path.join(EXPORT, 'asm', '*.s')))
+        shutil.copytree(os.path.join(src, 'export'), new)
+        for part in parts:
+            live = os.path.join(PROJECT_DIR, part)
+            if os.path.exists(live):
+                move(live, live + '.prev')
+            if os.path.isdir(os.path.join(src, 'ghidra', part)):
+                shutil.copytree(os.path.join(src, 'ghidra', part), live)
+            else:
+                shutil.copy2(os.path.join(src, 'ghidra', part), live)
+        print('applying names.tsv rows that are newer than the new project ...')
+        script_run(['apply-names', new, NAMES, NAMES_STATE], write=True, locked=True)
+        if asm_old:
+            addrs = ['0x' + os.path.basename(p)[:8] for p in asm_old]
+            shutil.rmtree(os.path.join(new, 'asm'), ignore_errors=True)
+            script_run(['asm', new] + addrs, locked=True)
+        if not os.path.exists(os.path.join(new, 'functions.tsv')):
+            die(f'the new export in {new} is incomplete; the live export is untouched')
+        move(EXPORT, prev)
+        move(new, EXPORT)
+    print(f'adopted {src}: {EXPORT} is new, the old export is {prev}, '
+          f'the old project files are *.prev in {PROJECT_DIR}')
 
 
 def download(url, dest):
@@ -949,7 +1031,10 @@ def main():
     add('merge', cmd_merge, A('files', nargs='+'), A('--overwrite', action='store_true'))
     add('decompile', cmd_decompile, A('what', nargs='+'))
     add('asm', cmd_asm, A('what', nargs='+'))
-    add('export', cmd_export, A('--tables', action='store_true'))
+    add('noreturn', cmd_noreturn, A('--out'))
+    add('adopt', cmd_adopt, A('src', help='the other pipeline\'s kotor/re directory'))
+    add('export', cmd_export, A('--tables', action='store_true'),
+        A('--out', help='write the export to this directory instead of kotor/re/export'))
     add('setup', cmd_setup, A('--force', action='store_true'))
     add('install', cmd_install)
     args = p.parse_args()
