@@ -62,9 +62,25 @@ namespace dlgview {
         }
         if ci::eq{ a = cmd, b = "replies" } {
             // `replies 1 2 1`: queues replies, each picked when a list opens (the queue outlives conversations).
+            // `replies clear` drops what is still queued. The picks already used make room, so a long
+            // playthrough is not limited to 32 picks in all.
+            let c = &w.conversation
+            if c.scripted_pos > 0 {
+                let left = c.scripted_count - c.scripted_pos
+                let mut k: usize = 0
+                while k < left {
+                    c.scripted[k] = c.scripted[c.scripted_pos + k]
+                    k = k + 1
+                }
+                c.scripted_count = left
+                c.scripted_pos = 0
+            }
             while true {
                 let word = text::next_word{ &words } ifnull { break }
-                let c = &w.conversation
+                if ci::eq{ a = word, b = "clear" } {
+                    c.scripted_count = 0
+                    continue
+                }
                 if c.scripted_count < 32 {
                     c.scripted[c.scripted_count] = @trunc(u8, text::scan_decimal{ s = word })
                     c.scripted_count = c.scripted_count + 1

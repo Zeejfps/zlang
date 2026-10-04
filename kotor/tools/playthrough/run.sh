@@ -9,6 +9,7 @@
 #   LOAD=SAVE    start from a save, e.g. LOAD=kotor/out/checkpoints/pod (docs/testing.md, "Checkpoints");
 #                SCRIPT is then the resume script kotor/out/checkpoints/pod.txt, or one of your own
 #   SAVES=DIR    the saves directory (default kotor/out/saves); runs in parallel need one each
+#   EXE=PATH     the executable (default kotor/out/kotor.exe)
 export PATH=/g/Dev/msys64/mingw64/bin:$PATH
 name=$1
 script=$2
@@ -23,5 +24,5 @@ if [ "$1" = "--" ]; then shift; fi
 mkdir -p kotor/out/pt
 mode="--headless"
 if [ -n "$FAST" ]; then mode="--no-render --speed ${SPEED:-8}"; fi
-timeout ${TIMEOUT:-240} kotor/out/kotor.exe $mode --frames $frames --input $script $shots --log ${LOG:-scripts} ${LOAD:+--load "$LOAD"} ${SAVES:+--saves "$SAVES"} "$@" > kotor/out/pt/$name.log 2>&1
+timeout ${TIMEOUT:-240} ${EXE:-kotor/out/kotor.exe} $mode --frames $frames --input $script $shots --log ${LOG:-scripts} ${LOAD:+--load "$LOAD"} ${SAVES:+--saves "$SAVES"} "$@" > kotor/out/pt/$name.log 2>&1
 echo "exit $? lines $(wc -l < kotor/out/pt/$name.log)"
