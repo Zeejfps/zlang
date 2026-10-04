@@ -1,0 +1,113 @@
+// GLSL of the atmosphere passes (fx_atmos.ctx, docs/design/enhanced-render.md): height fog and light shafts. Full-screen
+// passes run glsl::POST_VS (one triangle, v_uv 0..1 over the destination). Samplers' units are set after linking.
+//
+// Both passes find the sky the same way: in the scene's second output (the view-space normal, alpha the share of the
+// light that occlusion may darken) a surface the scene's lights do not light, which is the sky dome, the cleared
+// background and what glows by itself, has alpha 0.
+namespace glsl {
+    // Height fog: the opaque surfaces' depth turned back into a world position, the fog along the ray from the eye
+    // to it integrated in closed form, blended into the scene's light as (fog colour, share of fog). The sky gets none.
+    //
+    // The fog's density is d0 * exp(-k h), h the height above the base (clamped at 0). Height is linear along the
+    // ray, so the fog it crosses is d0 * length * mean(exp(-k h)), and that mean is (exp(-k h0) - exp(-k h1)) /
+    // (k (h1 - h0)) between the ends' heights h0 and h1.
+    // u_inv_vp: clip space to world. u_eye: xyz the eye, w the base height. u_fog: x d0, y k, z the most fog there
+    // can be, w the distance past which there is none (the far plane). u_color: the fog's colour.
+    const HEIGHT_FOG_FS: c::String =
+        \\#version 410 core
+        \\uniform sampler2D u_depth;
+        \\uniform sampler2D u_normal;
+        \\uniform mat4 u_inv_vp;
+        \\uniform vec4 u_eye;
+        \\uniform vec4 u_fog;
+        \\uniform vec3 u_color;
+        \\in vec2 v_uv;
+        \\layout(location = 0) out vec4 o_color;
+        \\void main() {
+        \\    float d = texelFetch(u_depth, ivec2(gl_FragCoord.xy), 0).r;
+        \\    if (d >= 1.0 || texelFetch(u_normal, ivec2(gl_FragCoord.xy), 0).a < 0.17) {
+        \\        discard;
+        \\    }
+        \\    vec4 p = u_inv_vp * vec4(v_uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+        \\    vec3 world = p.xyz / p.w;
+        \\    float len = length(world - u_eye.xyz);
+        \\    float h0 = max(u_eye.z - u_eye.w, 0.0);
+        \\    float h1 = max(world.z - u_eye.w, 0.0);
+        \\    float k = u_fog.y;
+        \\    float dh = (h1 - h0) * k;
+        \\    float mean_density = abs(dh) < 0.001 ? exp(-k * 0.5 * (h0 + h1)) : (exp(-k * h0) - exp(-k * h1)) / dh;
+        \\    float f = (1.0 - exp(-u_fog.x * len * mean_density)) * u_fog.z;
+        \\    f *= 1.0 - smoothstep(0.8 * u_fog.w, u_fog.w, len);
+        \\    o_color = vec4(u_color, f);
+        \\}
+        \\
+
+    // Light shafts, first pass at a half or a quarter of the screen's size: for each pixel, march toward the sun's place on the screen
+    // and add up the sky it sees on the way, brightest near the sun, a little less at each step. What stands in
+    // front of the sky leaves its shadow in the sum: the shafts stream from its silhouette. The march starts at a
+    // random fraction of a step (interleaved gradient noise) and has 28 steps.
+    // u_area: the view's rectangle in the full-size target's pixels. u_sun: xy the sun on the view (0..1, y up),
+    // z the strength, w the aspect (width / height). u_params: x the longest march (in view heights), y the decay
+    // per step, z the sun's glow radius (view heights), w how many pixels of the full-size target one of this pass's is.
+    const SHAFT_FS: c::String =
+        \\#version 410 core
+        \\uniform sampler2D u_normal;
+        \\uniform vec4 u_area;
+        \\uniform vec4 u_sun;
+        \\uniform vec4 u_params;
+        \\in vec2 v_uv;
+        \\layout(location = 0) out vec4 o_color;
+        \\const int STEPS = 28;
+        \\float sky_light(vec2 q) {
+        \\    q = clamp(q, vec2(0.0), vec2(1.0));
+        \\    ivec2 ip = ivec2(min(u_area.xy + q * u_area.zw, u_area.xy + u_area.zw - 1.0));
+        \\    float unlit = texelFetch(u_normal, ip, 0).a < 0.17 ? 1.0 : 0.0;
+        \\    float r = length((q - u_sun.xy) * vec2(u_sun.w, 1.0)) / u_params.z;
+        \\    float glow = max(1.0 - r, 0.0);
+        \\    return unlit * glow * glow;
+        \\}
+        \\void main() {
+        \\    vec2 uv = (gl_FragCoord.xy * u_params.w - u_area.xy) / u_area.zw;
+        \\    vec2 to_sun = u_sun.xy - uv;
+        \\    float reach = length(to_sun * vec2(u_sun.w, 1.0));
+        \\    vec2 step_uv = to_sun * (min(reach, u_params.x) / max(reach, 0.0001)) / float(STEPS);
+        \\    float jitter = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+        \\    vec2 q = uv + step_uv * jitter;
+        \\    float light = 0.0;
+        \\    float weight = 1.0;
+        \\    for (int i = 0; i < STEPS; i++) {
+        \\        q += step_uv;
+        \\        light += sky_light(q) * weight;
+        \\        weight *= u_params.y;
+        \\    }
+        \\    o_color = vec4(vec3(pow(light / float(STEPS), 1.35) * u_sun.z), 1.0);
+        \\}
+        \\
+
+    // Light shafts, second pass: the small sum, tinted by the sun's colour, added to the scene's light. A pixel
+    // gets more of it the farther it is (the light it scatters is gathered along the whole ray from the eye): half
+    // at 12 m, nearly all by 60 m; the sky itself gets a quarter, so the sky's colour stays the artists'.
+    // u_params: x the distance the shafts are half there, y the share on the sky. u_proj: the projection's [2][2] and
+    // [3][2]. u_inv_size: 1 / the target's size. u_color: the sun's colour.
+    const SHAFT_ADD_FS: c::String =
+        \\#version 410 core
+        \\uniform sampler2D u_depth;
+        \\uniform sampler2D u_shafts;
+        \\uniform sampler2D u_normal;
+        \\uniform vec4 u_params;
+        \\uniform vec2 u_proj;
+        \\uniform vec2 u_inv_size;
+        \\uniform vec3 u_color;
+        \\in vec2 v_uv;
+        \\layout(location = 0) out vec4 o_color;
+        \\void main() {
+        \\    ivec2 ip = ivec2(gl_FragCoord.xy);
+        \\    float d = texelFetch(u_depth, ip, 0).r;
+        \\    float dist = u_proj.y / (d * 2.0 - 1.0 + u_proj.x);
+        \\    bool sky = d >= 1.0 || texelFetch(u_normal, ip, 0).a < 0.17;
+        \\    float share = sky ? u_params.y : 1.0 - exp(-0.693 * dist / u_params.x);
+        \\    vec3 s = texture(u_shafts, gl_FragCoord.xy * u_inv_size).rgb;
+        \\    o_color = vec4(s * u_color * share, 0.0);
+        \\}
+        \\
+}
