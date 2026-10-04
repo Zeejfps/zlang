@@ -133,29 +133,15 @@ namespace selfslots {
         return false
     }
 
-    // Which self slot lists the item, 0 for none (docs/re/gui.md "Action menus"; the original's test is
-    // 0x00616520, called for each of the party's items and for what is worn on the arms and belt):
-    // 1 for the medical ones (medpacs, recovery kits, droid repair kits: ItemType 45, 47, 26), 2 for
-    // stims (25) and for any item whose ability has `itemtargeting` 1 in spells.2da (disguises, energy
-    // shields, droid devices, plot serums), which are listed only while worn when their type is a droid
-    // utility, droid shield or forearm shield (12, 13, 20). Needs an ability with a use. A grenade is the
-    // target block's, not these.
-    fn slot_of_item { mut w: world::World, id: u32, worn: bool } -> usize {
-        let spell = items::ability_of{ w = &w, id }
-        if spell < 0 { return 0 }
-        let kind = items::base_int{ w = &w, id, column = "itemtype", fallback = 0 }
-        if kind == TYPE_MEDPAC or kind == TYPE_REPAIR_KIT or kind == TYPE_RECOVERY_KIT { return 1 }
-        if kind == TYPE_STIM { return 2 }
-        let targeted = twoda::get_int{ t = w.tables.spells, row = @as(usize, spell), column = "itemtargeting" } ifnull 0
-        if targeted != 1 { return 0 }
-        if (kind == 12 or kind == 13 or kind == 20) and not worn { return 0 }
-        return 2
+    // Which self slot lists the item for the leader, 0 for none: items::self_slot_of (the original's test).
+    fn slot_of_item { mut w: world::World, leader: u32, id: u32, worn: bool } -> usize {
+        return items::self_slot_of{ &w, who = leader, id, worn }
     }
 
     // One item's entry in its list, dimmed with the reason when the leader cannot use it now.
     fn add_item { mut w: world::World, leader: u32, id: u32, worn: bool, mut out: [4]Slot } {
-        let k = slot_of_item{ &w, id, worn }
-        if k == 0 or not items::can_use{ &w, who = leader, id } { return }
+        let k = slot_of_item{ &w, leader, id, worn }
+        if k == 0 { return }
         let kind = items::base_int{ w = &w, id, column = "itemtype", fallback = 0 }
         let alive = not hud::is_down{ w = &w, id = leader }
         let mut reason = R_OK

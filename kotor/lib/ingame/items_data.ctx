@@ -398,6 +398,34 @@ namespace items {
         return false
     }
 
+    // The self slot that lists the item for `who`, 0 when the item is not usable from the inventory or the
+    // HUD (docs/re/gui.md "Action menus"; the original's test is 0x00616520, called with every category by
+    // the inventory's Useable filter and its row click, and per category by the HUD's lists):
+    //   1 medical: ItemType 45 (medpacs), 47 (recovery kits), 26 (droid repair kits) with an ability;
+    //   2 other: stims (25), and any item with an ability whose power has `itemtargeting` 1 in spells.2da
+    //     (disguises, energy shields, droid devices, plot serums), a droid utility, droid shield or
+    //     forearm shield (12, 13, 20) only while worn; grenades and the rest are not usable from here;
+    //   3 mine: ItemType 28 with the Trap property, for a creature with the Demolitions skill.
+    // And CanUseItem passes (limits, proficiency): `can_use`, except that a mine has no ability.
+    fn self_slot_of { mut w: world::World, who: u32, id: u32, worn: bool } -> usize {
+        let kind = base_int{ w = &w, id, column = "itemtype", fallback = 0 }
+        if kind == 28 {
+            let ri = rules_item_of{ w = &w, id } ifnull { return 0 }
+            if not rules::has_property{ item = ri, name = rules::ip::TRAP } { return 0 }
+            let f = hud::ruled_of{ w = &w, id = who } ifnull { return 0 }
+            if not rt_talent::has_skill{ w = &w, f, skill = rules::skill::DEMOLITIONS } { return 0 }
+            return 3
+        }
+        let spell = rt_item::ability_of{ w = &w, id }
+        if spell < 0 or not can_use{ &w, who, id } { return 0 }
+        if kind == 45 or kind == 26 or kind == 47 { return 1 }
+        if kind == 25 { return 2 }
+        let targeted = twoda::get_int{ t = w.tables.spells, row = @as(usize, spell), column = "itemtargeting" } ifnull 0
+        if targeted != 1 { return 0 }
+        if (kind == 12 or kind == 13 or kind == 20) and not worn { return 0 }
+        return 2
+    }
+
     // Whether `who` can use the item now: it has a use and CanUseItem passes (party-items-saves.md
     // 4.3): the alignment, class, race and feat limits, proficiency for an item that fits a slot,
     // and the weapon-size rule. Without rules state only the creature's kind is tested.
