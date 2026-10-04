@@ -161,6 +161,65 @@ namespace doors {
         return actions::Status::done
     }
 
+    // LOCK (actions.md 3.7): params 0 the door or placeable. The mirror of OPENLOCK: walk up, work at
+    // the lock for 1.5 s, then its key (UseKeyOnObject) or a Security check against CloseLockDC locks
+    // it (Locked = 1, LOCKED from the user); a key-only lock without the key fails to lock (feedback
+    // 15). An open door is closed first.
+    fn lock_object { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut actions::Action } -> actions::Status {
+        let target = actions::object_param{ a, i = 0 }
+        let o = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
+        let me = world::object{ w = &w, id } ifnull { return actions::Status::failed }
+        let lock = lock_of{ o } ifnull { return actions::Status::failed }
+        if lock.locked { return actions::Status::done }
+        if approach{ &w, id, target, a } { return actions::Status::done }
+        if obj::door{ o } is some{ value = d } {
+            if d.state != obj::DoorState::closed {
+                set_door_state{ &w, id = target, state = obj::DoorState::closed }
+                events::post{ &w, delay_ms = 0, caller = id, target, payload = events::Payload::script{ e = events::script_event{ kind = events::CLOSE, object = id } } }
+            }
+        }
+        let now = clock::now_ms{ c = w.clock }
+        if a.phase < 2 {
+            a.phase = 2
+            a.started = now
+            let dir = math::vec3::sub{ a = o.position, b = me.position }
+            if dir.x * dir.x + dir.y * dir.y > 0.0001 { world::set_orientation{ o = me, v = math::Vec3{ x = dir.x, y = dir.y, z = 0.0 } } }
+            world::set_animation{ o = me, id = animname::ROW_BASE + (if o.kind == obj::Kind::door { @as(u32, 47) } else { @as(u32, 48) }), speed = 1.0 }
+            return actions::Status::running
+        }
+        if now - a.started < 1500 { return actions::Status::running }
+        world::set_animation{ o = me, id = obj::ANIM_STAND, speed = 1.0 }
+        let mut done = has_key{ &w, who = id, key = lock.key }
+        if not done {
+            if lock.key_required {
+                tell{ &w, who = id, strref = FEEDBACK_NO_KEY }
+                return actions::Status::done
+            }
+            let c = obj::creature{ o = me } ifnull { return actions::Status::failed }
+            let f = c.fighter ifnull { return actions::Status::failed }
+            let check = rules::open_lock_check{ tables = w.rules, c = &f.c, lock_dc = lock.close_dc, spike_bonus = 0, in_combat = c.in_combat, rng = &w.dice }
+            say_roll{ &w, me, target = o, check, in_combat = c.in_combat }
+            done = check.success
+        }
+        if not done { return actions::Status::done }
+        set_locked{ o, locked = true }
+        events::post{ &w, delay_ms = 0, caller = id, target, payload = events::Payload::script{ e = events::script_event{ kind = events::LOCKED, object = id } } }
+        return actions::Status::done
+    }
+
+    // Whether creature `who` (or the party's bag it shares) carries an item tagged `key`.
+    fn has_key { mut w: world::World, who: u32, key: []u8 } -> bool {
+        if key.len == 0 { return false }
+        let me = world::object{ w = &w, id = who } ifnull { return false }
+        let ids = rt_item::inventory_of{ &w, o = me }
+        let mut k: usize = 0
+        while k < ids.len {
+            if world::object{ w = &w, id = ids[k] } is some{ value = it } { if ci::eq{ a = it.tag, b = key } { return true } }
+            k = k + 1
+        }
+        return false
+    }
+
     // ---- locks (actions.md 3.6, 3.7)
 
     // dialog.tlk lines the original shows for the lock actions (feedbacktext messages 13 to 16).
@@ -170,11 +229,15 @@ namespace doors {
     const FEEDBACK_USED_KEY: u32 = 1432     // "You used a key."
 
     // What a door's or placeable's lock holds, for the code that treats the two alike.
-    struct Lock { locked: bool, key_required: bool, key: []u8, dc: i32 }
+    struct Lock { locked: bool, key_required: bool, key: []u8, dc: i32, close_dc: i32, lockable: bool, auto_remove_key: bool }
 
     fn lock_of { o: *obj::Object } -> ?Lock {
-        if o.ext is door{ d } { return Lock{ locked = d.locked, key_required = d.key_required, key = d.key, dc = @as(i32, d.open_dc) } }
-        if o.ext is placeable{ p } { return Lock{ locked = p.locked, key_required = p.key_required, key = p.key, dc = @as(i32, p.open_dc) } }
+        if o.ext is door{ d } {
+            return Lock{ locked = d.locked, key_required = d.key_required, key = d.key, dc = @as(i32, d.open_dc), close_dc = @as(i32, d.close_dc), lockable = d.lockable, auto_remove_key = d.auto_remove_key }
+        }
+        if o.ext is placeable{ p } {
+            return Lock{ locked = p.locked, key_required = p.key_required, key = p.key, dc = @as(i32, p.open_dc), close_dc = @as(i32, p.close_dc), lockable = p.lockable, auto_remove_key = p.auto_remove_key }
+        }
         return null
     }
 
@@ -246,7 +309,7 @@ namespace doors {
 
     // CSWSCreature::UseKeyOnObject (0x004f0b20) for opening: true when the lock is open already, or the
     // creature (or the party's bag it shares) carries an item tagged with the lock's KeyName, in which
-    // case the lock is opened and the creature told it used a key. (AutoRemoveKey is not modelled.)
+    // case the lock is opened and the creature told it used a key; with AutoRemoveKey the key goes.
     fn use_key { mut w: world::World, who: u32, target: u32 } -> bool {
         let o = world::object{ w = &w, id = target } ifnull { return false }
         let lock = lock_of{ o } ifnull { return false }
@@ -261,6 +324,7 @@ namespace doors {
             if it == null or not ci::eq{ a = it.tag, b = lock.key } { continue }
             set_locked{ o, locked = false }
             tell{ &w, who, strref = FEEDBACK_USED_KEY }
+            if lock.auto_remove_key { world::destroy{ &w, id = ids[k - 1] } }
             return true
         }
         return false

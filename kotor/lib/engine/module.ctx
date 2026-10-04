@@ -351,6 +351,16 @@ namespace modload {
         // the party, save::restore_party).
         w.pc = w.player
         party::merge_into_party{ &w, id = w.player }
+        // Items that joined the bag before the player existed (a companion joining on the first
+        // tick) belong to it now.
+        let bag = list::items{ list = w.bag }
+        let mut bi: usize = 0
+        while bi < bag.len {
+            if world::object{ w = &w, id = bag[bi] } is some{ value = bo } {
+                if obj::item{ o = bo } is some{ value = bit } { bit.possessor = w.player }
+            }
+            bi = bi + 1
+        }
         let mo = world::object{ w = &w, id = w.module } ifnull { return }
         let m = obj::module{ o = mo } ifnull { return }
         let mut at = m.entry_position

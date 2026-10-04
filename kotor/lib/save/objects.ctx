@@ -275,6 +275,7 @@ namespace save {
         try put_string{ &b, owner = s, label = "KeyName", v = d.key }
         try put_byte{ &b, owner = s, label = "OpenLockDC", v = @trunc(u8, d.open_dc) }
         try put_byte{ &b, owner = s, label = "CloseLockDC", v = @trunc(u8, d.close_dc) }
+        try put_bool{ &b, owner = s, label = "AutoRemoveKey", v = d.auto_remove_key }
         try put_bool{ &b, owner = s, label = "Static", v = d.static }
         try put_short{ &b, owner = s, label = "HP", v = o.hp_max }
         try put_short{ &b, owner = s, label = "CurrentHP", v = o.hp }
@@ -313,6 +314,7 @@ namespace save {
         try put_string{ &b, owner = s, label = "KeyName", v = p.key }
         try put_byte{ &b, owner = s, label = "OpenLockDC", v = @trunc(u8, p.open_dc) }
         try put_byte{ &b, owner = s, label = "CloseLockDC", v = @trunc(u8, p.close_dc) }
+        try put_bool{ &b, owner = s, label = "AutoRemoveKey", v = p.auto_remove_key }
         try put_short{ &b, owner = s, label = "HP", v = o.hp_max }
         try put_short{ &b, owner = s, label = "CurrentHP", v = o.hp }
         let state: u8 = if p.anim == 10075 { 1 } else if p.anim == 10076 { 2 } else { 0 }
