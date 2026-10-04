@@ -386,6 +386,12 @@ namespace rt_misc {
             }
             _ = rt_item::remove_from_inventory{ &w, o = old, item }
         }
+        // An item in the party's bag leaves it whatever its possessor says (one that came from a
+        // container or a store may still name it): else a GetFirstItemInInventory loop that gives
+        // everything away (k_plev_escsetup) sees the same item for ever.
+        if party::holds{ w = &w, item } {
+            if world::object{ w = &w, id = w.player } is some{ value = po } { _ = rt_item::remove_from_inventory{ &w, o = po, item } }
+        }
         it.equipped_slot = -1
         it.possessor = obj::INVALID
         if rt_item::is_credits{ w = &w, base = it.base } {
