@@ -370,6 +370,13 @@ namespace play {
         }
         _ = @fmt(&w.io, "scene: {} rooms drawn of {}, {} objects drawn, {} visuals; textures {} loaded, {} missing\n",
             sc.drawn_rooms, sc.rooms.len, sc.drawn_objects, sc.visuals.len, sc.materials.loaded, sc.materials.missing)
+        let missing = list::items{ list = sc.materials.missing_names }
+        let mut mi: usize = 0
+        while mi < missing.len {
+            let mut name = missing[mi].name
+            _ = @fmt(&w.io, "texture missing: {} ({})\n", resref::bytes{ r = &name }, missing[mi].use)
+            mi = mi + 1
+        }
         _ = @fmt(&w.io, "sound: {} sounds started\n", amb.started)
         _ = @fmt(&w.io, "vfx: {} effects started, {} wanted while the pool was full\n", vx.started, vx.dropped)
         if timed > 1 {
