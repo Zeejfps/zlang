@@ -71,7 +71,8 @@ namespace equip {
         }
         let io = world::object{ w = &w, id } ifnull { return }
         if obj::item{ o = io } is some{ value = it } { it.equipped_slot = -1 }
-        _ = rt_item::add_to_inventory{ &w, o, item = id }
+        // AddItem merges: a pistol taken off joins the pistols in the bag.
+        _ = rt_item::add_merged{ &w, o, item = id }
     }
 
     // After the rules recomputed: the maximum hit points follow (the deficit stays).

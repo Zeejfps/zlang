@@ -1,0 +1,8 @@
+# The Endar Spire player (checkpoint bunk) uses the Adrenal Stamina stim from the HUD's item slot.
+5 ui fx
+8 ui movectl BTN_ACTION2
+12 ui clickctl BTN_ACTION2
+60 ui fx
+60 ui inv
+400 ui fx
+2500 ui fx

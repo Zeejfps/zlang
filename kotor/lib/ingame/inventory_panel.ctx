@@ -44,6 +44,7 @@ namespace inventory_panel {
         s.box = 0
         gui::set_visible{ &g, panel, tag = "BTN_CHARLEFT", visible = false }
         gui::set_visible{ &g, panel, tag = "BTN_CHARRIGHT", visible = false }
+        gui::set_click_rows{ &g, panel, tag = "LB_ITEMS" }
         items::show_portrait{ &g, &w, &dev, panel, tag = "LBL_PORT", who = s.who }
         try fill_numbers{ &s, &g, &w, panel }
         try fill_filter{ &s, &g, &w, panel }
@@ -61,7 +62,10 @@ namespace inventory_panel {
     fn on_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, ev: gui::Event } -> bool {
         if ev.panel != panel or s.box != 0 { return false }
         if slice::eq_bytes{ a = ev.tag, b = "LB_ITEMS" } {
-            if ev.kind == gui::EventKind::row_selected {
+            // The pointer over a row (or the keys on it) shows its description; a click on it does
+            // what the row does: uses the item or says why not (CSWGuiInventory::OnItemHilighted
+            // and the row's click callback, re/gui.md).
+            if ev.kind == gui::EventKind::row_selected or ev.kind == gui::EventKind::row_hover {
                 let r = pick{ &s, &g, &w, panel, user = ev.user }
                 report{ &w, what = r }
                 return true
@@ -203,8 +207,8 @@ namespace inventory_panel {
 
     // ---- using an item
 
-    // The Use Item button, or a second click on the row (party-items-saves.md and re/gui.md:
-    // the refusals are the original's, in its order).
+    // The Use Item button (the row the pointer last rested on), or a click on a row (party-items-saves.md
+    // and re/gui.md: the refusals are the original's, in its order).
     fn use_picked { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> !bool {
         let id = s.picked
         if id == obj::INVALID or not world::is_valid{ w = &w, id } { return false }

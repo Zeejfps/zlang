@@ -20,6 +20,7 @@ namespace container_panel {
     fn begin { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, placeable: u32 } -> ! {
         if s.open { return }
         s.panel = try gui::open{ &g, fs = &w.fs, &dev, name = "container", mode = gui::Mode::dialog, modal = true }
+        gui::set_click_rows{ &g, panel = s.panel, tag = "LB_ITEMS" }      // a click on an item takes it
         s.placeable = placeable
         s.giving = false
         s.open = true
