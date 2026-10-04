@@ -203,6 +203,18 @@ at the end). Stunt participant names: `PLAYER` = the PC, `OWNER` or empty = the 
 nearest object with that tag (no range limit). (high for the gating, med for the stunt-model
 details)
 
+`CGuiInGame::ApplyStuntModels` (`0x0062c620`, called by `SetDialogScene` `0x0062e020`) does the swap: for each
+`StuntList` participant it takes the client creature and sets the model of its part 0xff (the body; to
+what, the decompile does not show) and the stunt resref as the model of its part 0xfe (the head) (med). Stunt models such as `m02af_c10_char01` are
+full skeletons (`cutscenedummy` > `rootdummy` > ..., `S_Male02` as supermodel) whose `cutNNNw` animations carry
+`cutscenedummy` through the area in area coordinates (the apartment's at about x 92, y 144); their
+`camerahook` is the supermodel's, a child of the model's root, not of `cutscenedummy`. The dialogue camera
+does not touch the creatures' objects, and only `CSWCChaseCamera::Update` calls `ResolveCollision`
+(`0x0063b050`), so the chase camera's obstruction test does not apply to a dialogue shot (`SetShot`'s own
+rays do, 9.2). Where the stunt models are put back, and what `SetShot` takes as a stunt body's eye once the
+scene animation is over, was not traced (ours: the player's talk and listen loops play from the first ordinary
+line on, and a stunt body's eye is its head hook).
+
 ## 3. The loaded dialogue (`LoadDialog` `0x005a2ae0`)
 
 Top-level fields read: `CameraModel` (`+0x50`), `DelayEntry` (kept as the default node delay),

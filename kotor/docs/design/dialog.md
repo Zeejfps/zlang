@@ -135,7 +135,10 @@ only for 6. The **side** of the line the camera keeps to is cached per pair of s
 counting walls in the way of the wide and both shoulder shots (9.3); a shot whose camera is in a wall
 falls back to the plain close-up for the line (9.2). A cutscene's replies picked by the engine don't cut
 away from the running camera animation (*ours*). `apply_camera` then writes eye, direction, **up** and field
-of view into the chase camera (`cam::Camera.up`, new), which resumes when the shot ends; the scene's
+of view into the chase camera (`cam::Camera.up`, new), which resumes when the shot ends. It runs after
+`cam::update`, so the chase camera's four-ray obstruction test (`ResolveCollision`, a `CSWCChaseCamera` method
+that only `CSWCChaseCamera::Update` calls) never moves a dialogue shot, as in the original, whose
+`CSWCDialogCamera` has only `SetShot`'s own ray tests and the close-up fallback; the scene's
 visibility follows the camera's room (`view_room`). *ours*: an eye point is the model's `camerahook`, else
 the head hook's place in its pose plus 0.1 m (the appearance table's `height` gave Trask 1.0 m and the
 player 1.6 m).
@@ -160,10 +163,21 @@ wherever the other left it: the stunt body glided in from the origin (or off scr
 8 frames, and a stale `cutscenedummy` position hung on for the blend after a body animation. So
 `visual::animate_creature` uses no transition when the animation it starts, or the one it replaces, is a `cut`
 one, and a swap or restore of the stunt model resets the part's player (nothing to blend from). The dialogue's
-defaults leave a running scene animation alone as well: the empty reply the engine speaks between two shots
-would play the player's talk loop for a frame (the real creature at its own place, mid-cut), so
-`update_animations` skips the talk and listen loops for a stunt body that runs one, and `set_shot` keeps the
-running camera animation through such a reply unless the reply starts its own. Found with a per-frame log of
+defaults leave a running scene animation alone as well, **inside a cut**: an animated cutscene's line, or a line
+with a camera animation, would play the player's talk loop for a frame (the real creature at its own place,
+mid-cut), so `update_animations` skips the talk and listen loops for a stunt body that runs one there, and
+`set_shot` keeps the running camera animation through such a reply unless the reply starts its own. A line with
+a framed or static shot after the cut is the original's ordinary line, whose speaker and listener loop Talk and
+Listen. The exemption once held for every line, and the wake-up talk in the Taris apartment (`tar02_carth022`:
+two cut entries, then 60 ordinary ones) left the player on its last scene animation for the whole talk, drawn in
+area space: the wide and shoulder shots, built on the player's eye, put the camera hundreds of metres from the
+apartment (a black screen with some far towers in it). The eye of a stunt body is its head hook (+0.1 m),
+which moves with the pose the animation carries through the area; the `camerahook` hangs off the model's root
+and stays at the origin. The original's `ApplyStuntModels` (`0x0062c620`) swaps the participant's model parts
+(body 0xff, head 0xfe) for the stunt model at the scene setup (where it puts them back is not traced, and what
+the original's framed shots take as the eye of a stunt body is open). `--log dialog` has a `dialog camera:` line for every shot (the eye, where it looks, the room
+under it, the two participants' eyes), and `sh kotor/tools/camcheck/run.sh` fails on a black or empty shot
+(testing.md, "Conversation shots"). Found with a per-frame log of
 the object's and the drawn root's place (steps over 0.15 m/frame outside walking), checked on `m01aa_c01`
 (the dream), `cut00_convers` and `tar02_carth022` (the apartment wake-up): no multi-frame glide is left.
 What remains is a script's `AssignCommand(ActionJumpToLocation)` landing one frame after the line that ran it
