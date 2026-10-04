@@ -6,7 +6,7 @@ namespace gui {
     const NO_STRREF: u32 = 4294967295
 
     fn no_img {} -> Img {
-        return Img{ tex = render::Texture{ id = 0 }, w = 0.0, h = 0.0, ok = false }
+        return Img{ tex = render::Texture{ id = 0 }, w = 0.0, h = 0.0, ok = false, additive = false }
     }
 
     fn white_color {} -> render::Color {
@@ -38,7 +38,7 @@ namespace gui {
         let e = material::get{ cache = g.cache, &fs, &dev, rm = g.rm, name }
         let t = e.texture ifnull { return no_img{} }
         let size = gpu::texture_size{ dev, t }
-        return Img{ tex = t, w = @as(f32, size.width), h = @as(f32, size.height), ok = true }
+        return Img{ tex = t, w = @as(f32, size.width), h = @as(f32, size.height), ok = true, additive = e.props.blend == render::Blend::additive }
     }
 
     // The slot of font `name` (a resref from a file), loading it the first time. The engine

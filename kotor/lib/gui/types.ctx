@@ -45,8 +45,11 @@ namespace gui {
     fn clear_bits { f: u32, bits: u32 } -> u32 { return f & (4294967295 ^ bits) }
 
     // A texture and its size in pixels. ok is false for a name the install doesn't have (the
-    // engine draws nothing for those).
-    struct Img { tex: render::Texture, w: f32, h: f32, ok: bool }
+    // engine draws nothing for those). `additive` is what the texture's TXI asks for: the GUI's quad
+    // batch applies the texture's own blend pair (0x0047b000), so a `blending additive` picture
+    // (the HUD's frames and backings, the reticles, 44 in the GUI pack) adds its colour to what is
+    // behind it and its black is clear.
+    struct Img { tex: render::Texture, w: f32, h: f32, ok: bool, additive: bool }
 
     // CSWGuiBorder: corners and edges around the extent, a fill inside.
     struct Border {

@@ -42,8 +42,12 @@ CONTROLTYPEs: label 4, row prototype 5, button 6, check box 7, slider 8, scroll 
 order and hit-tested from the highest down. A list box owns two more controls (its prototype row
 and its scroll bar, flagged internal) and a vector of rows its owner fills.
 
-**Textures and fonts are resolved when a panel opens**: a `gui::Img` is a texture handle and its
-size, so drawing needs no file system and no device. Textures come through the shared
+**Textures and fonts are resolved when a panel opens**: a `gui::Img` is a texture handle, its
+size and whether its TXI says `blending additive` (44 pictures in the GUI pack: the HUD's frames and
+backings, the menu buttons, the reticles), so drawing needs no file system and no device. An additive
+picture is added to what is behind it (`SRC_ALPHA, ONE`, as the original's quad batch does with the
+texture's own blend pair), which is why the party panel, the action slots and the combat bar show the
+world through their black. Textures come through the shared
 `material::Cache` the owner passes to `gui::make`; fonts are `font::load`ed (the `b` variant, or
 `a` with small fonts; `fnt_console` has none).
 
