@@ -1,0 +1,22 @@
+# Tatooine, part 16: into the dragon's lair (checkpoint "dragon", at the camp, the krayt dragon dead): along the dunes' path to the cave mouth (the trigger tat18_kraytcave,
+# tat_test at 320 312 where Calo Nord or Darth Bandon wait) and down to the Star Map at 378 341, the Star Map used (tat17_starmap 90, k_ptat_starcut, the hologram). A save there
+# ("starmap"). K_KALO_BANDON is 10, as the galaxy map script (k_sup_galaxymap) leaves it when the Hawk takes off from Dantooine (part 1 sets it): the trigger at
+# 370 348 (k_trg_calonord2) arms Calo Nord's ambush and makes it 20; 30 would arm Darth Bandon's (it becomes 30 when the Hawk takes off from the next planet).
+#   LOAD=kotor/out/tat_cp/dragon sh kotor/tools/playthrough/tatooine/run.sh cave kotor/tools/playthrough/tatooine/16_cave.txt 3100
+4 ui heal
+4 ui stat hp 127
+5 ui bot god on
+5 ui bot unlock on
+5 ui replies default 1
+5 ui bot route 292,257 314,267 315,280 322,300 339,315 353,325 367,333 372,342 378,344
+6 ui bot on
+1500 ui pos
+1500 ui xp
+1600 use K_TAT_STAR_MAP
+3000 ui journal list
+3000 ui globals CALO
+3000 ui globals BANDON
+3000 ui globals STAR
+3000 ui inv
+3000 ui xp
+3050 save starmap
