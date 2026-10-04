@@ -69,7 +69,7 @@ step 24 4500 sword night "global KOR_SITH_PRESTIGE 5" || exit 1
 step 25 4100 night tomb "dialog end kor39_utharwynn (normal)" || exit 1
 step 26 9600 tomb acid "Special Cold Grenade" || exit 1
 step 27 1200 acid map "global K_STAR_MAP 40" || exit 1
-step 28 8100 map finale "journal: kor35_waysith state 56" || exit 1
+step 28 8200 map finale "journal: kor35_waysith state 56" || exit 1
 step 31 2200 finale hawk "module ebo_m12aa: area m12aa" || exit 1
 step 32 2500 hawk "" "module ebo_m40aa" || exit 1
 echo "the Korriban chain is done"
