@@ -222,7 +222,7 @@ namespace bot {
                 advance{ &b }
                 return
             }
-        } else if dist < (if obj::trigger{ o = t } is some{ value = tr } { 0.6 } else { REACH + 0.25 }) {    // a trigger counts only when stood in, near its middle
+        } else if dist < (if obj::trigger{ o = t } is some{ value = tr } { 0.6 } else { REACH + 0.25 }) and not outside_trigger{ t, me } {    // a trigger counts only when stood in, near its middle
             if talk and not b.talked {
                 b.talked = true
                 let mut a = actions::make{ kind = actions::Kind::dialog_object }
@@ -252,18 +252,20 @@ namespace bot {
         if t.ext is door{ d } { if d.state != obj::DoorState::closed { b.seen_open = true } }
     }
 
+    // Whether the stop is a trigger the leader does not stand in yet (near its middle is not enough in a narrow polygon).
+    fn outside_trigger { t: *obj::Object, me: *obj::Object } -> bool {
+        if obj::trigger{ o = t } is some{ value = tr } {
+            return not movement::inside_polygon{ poly = tr.polygon, x = me.position.x, y = me.position.y }
+        }
+        return false
+    }
+
     // Where to walk for a stop: the object's place, or the middle of a trigger's polygon (a transition trigger is a thin
     // strip some way from its origin, and standing near the origin is not standing in it).
     fn stop_point { w: *world::World, t: *obj::Object, near_z: f32 } -> math::Vec3 {
         if obj::trigger{ o = t } is some{ value = tr } {
             if tr.polygon.len > 0 {
-                let mut sum = math::vec3::zero{}
-                let mut i: usize = 0
-                while i < tr.polygon.len {
-                    sum = math::vec3::add{ a = sum, b = tr.polygon[i] }
-                    i = i + 1
-                }
-                let mid = math::vec3::scale{ v = sum, s = 1.0 / @as(f32, tr.polygon.len) }
+                let mid = polygon_middle{ poly = tr.polygon }
                 // The polygon's heights are not the floor's: the floor under the middle, as the leader would find it.
                 let f = walkmap::floor{ m = &w.walk, x = mid.x, y = mid.y, z = near_z + 2.0 }
                 return math::Vec3{ x = mid.x, y = mid.y, z = if f != null { f.z } else { near_z } }
