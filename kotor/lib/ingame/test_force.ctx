@@ -57,7 +57,7 @@ namespace test_force {
                 rules::caster_level{ tables = w.rules, c = &f.c, spell = 23, override_level = -1, from_class = true },
                 f.c.stats.force_resistance, f.c.stats.speed_factor, f.c.stats.save_base[0], f.c.stats.save_base[1], f.c.stats.save_base[2])
             let o = world::object{ w = &w, id } ifnull { return true }
-            _ = @fmt(&w.io, "  state {} ai_mask {} commandable {} hp {}/{} effects {} anim {}\n", f.c.stats.state, f.c.stats.ai_mask, o.commandable, o.hp, o.hp_max, f.c.nfx, o.animation)
+            _ = @fmt(&w.io, "  state {} ai_mask {} commandable {} hp {}/{} effects {} anim {} gear {}\n", f.c.stats.state, f.c.stats.ai_mask, o.commandable, o.hp, o.hp_max, f.c.nfx, o.animation, rules::equipped_type_mask{ tables = w.rules, c = &f.c })
             return true
         }
         if ci::eq{ a = cmd, b = "play" } {

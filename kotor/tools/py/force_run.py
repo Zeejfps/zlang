@@ -51,7 +51,7 @@ def main():
     ap.add_argument('--keep', action='store_true')
     ap.add_argument('--pre', default='')
     ap.add_argument('--post', default='')
-    ap.add_argument('--hp', type=int, default=500)
+    ap.add_argument('--hp', type=int, default=0)
     ap.add_argument('--speed', type=int, default=8)
     ap.add_argument('--exe', default=os.path.join(KOTOR, 'out', 'kotor_frc.exe'))
     a = ap.parse_args()
@@ -67,8 +67,9 @@ def main():
     at(3, 'ui stat wis %d' % a.wis)
     at(3, 'ui stat cha %d' % a.cha)
     at(4, 'ui jedi %d %d %s' % (a.cls, a.level, 'dark' if a.dark else 'light'))
-    at(4, 'ui stat hpmax %d' % a.hp)
-    at(4, 'ui stat hp %d' % a.hp)
+    if a.hp > 0:
+        at(4, 'ui stat hpmax %d' % a.hp)
+        at(4, 'ui stat hp %d' % a.hp)
     if a.powers != 'keep':
         at(5, 'ui powers %s' % a.powers)
     if a.fp > 0:

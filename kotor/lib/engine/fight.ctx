@@ -969,6 +969,13 @@ namespace fight {
         let f = c.fighter ifnull { return }
         let dt = @as(i32, w.clock.dt * 1000.0)
         if dt <= 0 { return }
+        // The Force pool of a party member refills at 1 % a second out of combat and not at all in
+        // combat (regeneration.2da; rules.md 3.8: CSWSCreature::AIUpdate).
+        if f.loaded and not c.dead and f.c.stats.max_fp > 0 and f.c.fp < f.c.stats.max_fp {
+            f.c.party = party::is_member{ w = &w, id }
+            let gain = rules::regenerate_pools{ tables = w.rules, c = &f.c, dt_ms = dt, in_combat = c.in_combat, alive = o.hp > 0 }
+            if gain > 0 { o.hp = if o.hp + gain > o.hp_max { o.hp_max } else { o.hp + gain } }
+        }
         // The effects' timers (UpdateEffectList): regeneration, poison, expiry.
         if f.c.nfx > 0 and not c.dead {
             sync_flags{ w = &w, o, f }
