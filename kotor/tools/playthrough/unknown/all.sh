@@ -41,14 +41,14 @@ step 6 4500 approach cave "module unk_m41ab: area m41ab" || exit 1
 step 7 2400 cave door "module unk_m42aa: area m42aa" || exit 1
 step 8 12800 door eldertalk "journal: unk_trapped state 15" || exit 1
 step 9 16000 eldertalk onecamp "module unk_m43aa: area m43aa" || exit 1
-step 10 17500 onecamp scout "journal: unk_trapped state 33" || exit 1
+step 10 18500 onecamp scout "journal: unk_trapped state 33" || exit 1
 step 11 12400 scout elders2 "module unk_m41ab: area m41ab" || exit 1
 step 12 17000 elders2 eldersok "journal: unk_trapped state 37" || exit 1
 step 13 9000 eldersok alone1 "module ebo_m41aa: area m12aa" || exit 1
 step 14 3500 alone1 alone2 "module unk_m41aa: area m41aa" || exit 1
 step 15 16000 alone2 temple "dialog end unk41_guide_dlg (normal)" || exit 1
-step 16 6100 temple library "dialog end unk44_lib_dlg (normal)" || exit 1
-step 17 3100 library summit "module unk_m44ac: area m44ac" || exit 1
+step 16 10950 temple library "dialog end unk44_lib_dlg (normal)" || exit 1
+step 17 6100 library summit "module unk_m44ac: area m44ac" || exit 1
 step 18 11050 summit bastdone "journal: unk_trapped state 99" || exit 1
 step 19 3100 bastdone fieldoff "journal: k_starforge state 75" || exit 1
 step 20 2700 fieldoff templeout "module unk_m41ad: area m41ad" || exit 1

@@ -10,17 +10,17 @@
 20 ui faction unk44_shielddrd 2
 20 ui bot route 105.7,40.7 105.8,33.6 116.6,33.6 127.4,33.5 127.6,41.3 142.6,41.4 142.5,54.2 143.0,67.4 142.4,81.5 142.7,99.5 143.3,104.8 127.0,106.2 127.0,111.9 108.0,111.7 108.1,104.3 95.3,104.3 96.2,93.8 90.5,92.3 89.9,85.2 89.8,81.5 89.9,57.9 unk44_basedoor tempdoor switchparty
 21 ui bot on
-4853 ui bot off
-4938 warpxy 71.08,88.14
-5028 warpxy 75.33,88.13
-5128 warpxy 73.18,90.22
-5228 warpxy 75.13,92.15
-5328 warpxy 71.07,92.35
-5428 ui globals UNK_TILES
-5528 ui bot route unk44_massdoor @unk44_rakcomp
-5529 ui bot on
-9528 save library
-10428 ui pos
-10428 ui party
-10428 ui globals punk
-10428 ui journal list
+5103 ui bot off
+5188 warpxy 71.08,88.14
+5278 warpxy 75.33,88.13
+5378 warpxy 73.18,90.22
+5478 warpxy 75.13,92.15
+5578 warpxy 71.07,92.35
+5678 ui globals UNK_TILES
+5778 ui bot route unk44_massdoor @unk44_rakcomp
+5779 ui bot on
+10000 save library
+10800 ui pos
+10800 ui party
+10800 ui globals punk
+10800 ui journal list

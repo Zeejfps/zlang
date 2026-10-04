@@ -7,7 +7,7 @@
 10 ui bot route unk43_redpris
 11 ui bot on
 14200 ui bot off
-15000 use unk43_redpris
-17000 ui journal list
-17000 ui party
-17000 save scout
+16400 use unk43_redpris
+18400 ui journal list
+18400 ui party
+18400 save scout
