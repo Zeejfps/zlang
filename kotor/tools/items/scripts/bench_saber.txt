@@ -1,0 +1,26 @@
+# The upgrade bench for a lightsaber: a slot always opens the list of crystals (None, the crystal it has, the ones the
+# party can give), one click chooses. Two power crystals go in (a crystal in one slot is not offered to the other), the
+# colour crystal becomes red, a power crystal comes out again through None, Assemble. The stock follows: the red crystal
+# is used, the blue one given back, Rubat returned, Damind used; the saber is now the red one.
+#   LOG=actions sh kotor/tools/items/run.sh bench_saber module:ebo_m12aa kotor/tools/items/scripts/bench_saber.txt 500
+4 ui giveitem g_w_lghtsbr01
+4 ui giveitem g_w_sbrcrstl01
+4 ui giveitem g_w_sbrcrstl02
+4 ui giveitem g_w_sbrcrstl16
+4 ui giveitem g_w_sbrcrstl18
+60 ui bench
+90 ui clickctl BTN_LIGHTSABER
+120 ui clickctl LB_ITEMS 0
+150 ui ctl BTN_UPGRADE31
+150 ui ctl BTN_UPGRADE41
+170 ui clickctl BTN_UPGRADE31
+190 ui ctl LB_ITEMS
+200 ui clickctl LB_ITEMS 1
+220 ui clickctl BTN_UPGRADE33
+240 ui clickctl LB_ITEMS 1
+260 ui clickctl BTN_UPGRADE32
+280 ui clickctl LB_ITEMS 2
+300 ui clickctl BTN_UPGRADE31
+320 ui clickctl LB_ITEMS 0
+340 ui clickctl BTN_ASSEMBLE
+360 ui inv

@@ -88,6 +88,10 @@ namespace ups {
             let tag = CAT_TAGS[@as(usize, c - 1)]
             gui::set_enabled{ &g, panel = s.sel, tag, enabled = n > 0 }
             gui::set_text_color{ &g, panel = s.sel, tag, color = if n > 0 { gui::color_menu{} } else { gui::color_disabled{} } }
+            // CSWGuiUpgradeSelect::OnPanelAdded also flips the visible bit of the category's picture
+            // (0x006c4520): a category the party has nothing for shows no picture, so nobody takes it
+            // for a button that does not answer.
+            gui::set_visible{ &g, panel = s.sel, tag = CAT_ICON_LABELS[@as(usize, c - 1)], visible = n > 0 }
             if n > 0 and first < 0 { first = c }
             c = c + 1
         }
@@ -161,22 +165,30 @@ namespace ups {
         s.list = try gui::open{ &g, fs = &w.fs, &dev, name = "upgradeitems", mode = gui::Mode::full_screen, modal = true }
         gui::ensure_backdrop{ &g, fs = &w.fs, &dev, kind = 0 }
         s.mode = MODE_ITEMS
-        try fill_items{ &s, &g, &w, &dev }
+        // The rows are buttons in the original (FillItemList 0x006c5b90 gives each the click handler
+        // OnUpgradeItem and the hilight handler that shows the description): one click takes the item
+        // to the bench, and pointing at a row describes it.
+        gui::set_click_rows{ &g, panel = s.list, tag = "LB_ITEMS" }
+        try fill_items{ &s, &g, &w, &dev, show = obj::INVALID }
     }
 
-    fn fill_items { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+    // The category's items, the one named `show` (when it is listed) selected, else the first
+    // (ReturnItem 0x006c5e90 selects and scrolls to the item that came back from the bench).
+    fn fill_items { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, show: u32 } -> ! {
         let p = s.list
         gui::list_clear{ &g, panel = p, tag = "LB_ITEMS" }
         _ = collect{ &s, w = &w, category = s.category }
         let mut k: usize = 0
+        let mut pick: usize = 0
         while k < s.nlisted {
             let l = s.listed[k]
             _ = try items::add_row{ &g, &w, &dev, panel = p, tag = "LB_ITEMS", id = l.item, equipped = l.owner != obj::INVALID, icon_size = ICON, rows = items::PLAIN }
+            if l.item == show { pick = k }
             k = k + 1
         }
         if s.nlisted > 0 {
-            gui::list_select{ &g, panel = p, tag = "LB_ITEMS", row = 0 }
-            try items::show_description{ &g, &w, panel = p, tag = "LB_DESCRIPTION", id = s.listed[0].item }
+            gui::list_select{ &g, panel = p, tag = "LB_ITEMS", row = @as(i32, pick) }
+            try items::show_description{ &g, &w, panel = p, tag = "LB_DESCRIPTION", id = s.listed[pick].item }
         } else {
             try items::show_description{ &g, &w, panel = p, tag = "LB_DESCRIPTION", id = 0 }
         }
@@ -191,7 +203,7 @@ namespace ups {
             s.mode = MODE_CATEGORIES
             return
         }
-        if ev.kind == gui::EventKind::row_selected {
+        if ev.kind == gui::EventKind::row_selected or ev.kind == gui::EventKind::row_hover {
             try items::show_description{ &g, &w, panel = p, tag = "LB_DESCRIPTION", id = if ev.user > 0 { @as(u32, ev.user) } else { 0 } }
         } else if ev.kind == gui::EventKind::row_activated {
             try pick_row{ &s, &g, &w, &dev, row = ev.row }
@@ -214,20 +226,45 @@ namespace ups {
 
     // ---- taking an item to the bench
 
-    // OnUpgradeItem: a worn item comes off, a stacked one gives one unit, a loose one leaves the
-    // bag; the bench opens on it.
+    // The other hand's weapon of a dual wielder comes off with the item, remembered by what it is (it
+    // may merge into a stack with its twin in the bag).
+    fn take_partner { mut s: State, mut w: world::World, owner: u32, hand: usize } {
+        let other: usize = if hand == obj::SLOT_RIGHT_WEAPON { obj::SLOT_LEFT_WEAPON } else { obj::SLOT_RIGHT_WEAPON }
+        let c = hud::creature_of{ w = &w, id = owner } ifnull { return }
+        let id = c.equipped[other]
+        if id == obj::INVALID { return }
+        let o = world::object{ w = &w, id } ifnull { return }
+        s.partner_template = o.template
+        s.partner_bits = bits_of{ w = &w, item = id }
+        s.partner_slot = other
+        if equip::unequip_item{ &w, id = owner, slot = other } { s.partner = true }
+    }
+
+    // OnUpgradeItem (0x006c2df0): a worn item comes off, a stacked one gives one unit, a loose one
+    // leaves the bag; the bench opens on it. A dual wielder's other weapon comes off with it (the
+    // left hand's first when the right is taken), to go back with it in ReturnItem.
     fn take_item { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, item: u32, owner: u32, slot: i32 } -> ! {
+        s.partner = false
+        let mut unit = obj::INVALID
         if owner != obj::INVALID and slot >= 0 {
-            if not equip::unequip_item{ &w, id = owner, slot = @as(usize, slot) } { return }
+            let hand = @as(usize, slot)
+            let mut template: resref::ResRef
+            if world::object{ w = &w, id = item } is some{ value = io } { template = io.template }
+            let bits = bits_of{ w = &w, item }
+            let two_hands = hand == obj::SLOT_RIGHT_WEAPON or hand == obj::SLOT_LEFT_WEAPON
+            if two_hands and hand == obj::SLOT_RIGHT_WEAPON { take_partner{ &s, &w, owner, hand } }
+            if not equip::unequip_item{ &w, id = owner, slot = hand } { return }
+            if two_hands and hand == obj::SLOT_LEFT_WEAPON { take_partner{ &s, &w, owner, hand } }
+            // Off the hand it went to the bag, where it may have merged into a stack of its twin.
+            unit = if world::is_valid{ w = &w, id = item } { xfer::take_one{ &w, item } } else { bag_unit_like{ &w, template, bits } }
+        } else {
+            unit = xfer::take_one{ &w, item }
         }
-        let unit = xfer::take_one{ &w, item }
         if unit == obj::INVALID { return }
-        if unit == item {
-            let pc = world::object{ w = &w, id = w.player } ifnull { return }
-            _ = rt_item::remove_from_inventory{ &w, o = pc, item }
-            if world::object{ w = &w, id = item } is some{ value = io } {
-                if obj::item{ o = io } is some{ value = it } { it.possessor = obj::INVALID }
-            }
+        let pc = world::object{ w = &w, id = w.player } ifnull { return }
+        _ = rt_item::remove_from_inventory{ &w, o = pc, item = unit }
+        if world::object{ w = &w, id = unit } is some{ value = io } {
+            if obj::item{ o = io } is some{ value = it } { it.possessor = obj::INVALID }
         }
         s.item = unit
         s.original = obj::INVALID
@@ -254,7 +291,17 @@ namespace ups {
         s.bench = try gui::open{ &g, fs = &w.fs, &dev, name = "upgrade", mode = gui::Mode::full_screen, modal = true }
         gui::ensure_backdrop{ &g, fs = &w.fs, &dev, kind = 0 }
         s.mode = MODE_BENCH
+        s.hot_slot = 0
+        // The crystals in the list are buttons too (FUN_006c58c0): one click chooses.
+        gui::set_click_rows{ &g, panel = s.bench, tag = "LB_ITEMS" }
+        // The file gives LB_DESC no prototype row, so its text would have no font: it takes the one
+        // of the lightsaber's description box, which sits at the same place in the file.
+        if gui::find_control{ &g, panel = s.bench, tag = "LB_DESC_LS" } is some{ value = ls } {
+            if gui::find_control{ &g, panel = s.bench, tag = "LB_DESC" } is some{ value = d } { d.proto = ls.proto }
+        }
         try fill_bench{ &s, &g, &w, &dev }
+        // FUN_006c2f80 hilights the first slot on opening, which describes it.
+        gui::set_focus{ &g, panel = s.bench, tag = slot_button{ s = &s, k = 0 } }
     }
 
     const SLOT_LABEL3: [3][]u8 = ["LBL_UPGRADE31", "LBL_UPGRADE32", "LBL_UPGRADE33"]
@@ -262,11 +309,22 @@ namespace ups {
     const SLOT_LABEL4: [4][]u8 = ["LBL_UPGRADE41", "LBL_UPGRADE42", "LBL_UPGRADE43", "LBL_UPGRADE44"]
     const SLOT_BTN4: [4][]u8 = ["BTN_UPGRADE41", "BTN_UPGRADE42", "BTN_UPGRADE43", "BTN_UPGRADE44"]
 
-    // The four-slot row serves the ranged weapons and the lightsaber, the three-slot row the rest.
-    fn four_slots { s: *State } -> bool { return s.category == CAT_RANGED or s.category == CAT_LIGHTSABER }
+    // CSWGuiUpgrade::FUN_006c3aa0 (0x006c3aa0): the lightsaber and the melee weapons use the row of three
+    // slot controls, the ranged weapons and the armour the row of four.
+    fn three_slots { s: *State } -> bool { return s.category == CAT_LIGHTSABER or s.category == CAT_MELEE }
 
-    fn slot_label { s: *State, k: usize } -> []u8 { return if four_slots{ s } { SLOT_LABEL4[k] } else { SLOT_LABEL3[k] } }
-    fn slot_button { s: *State, k: usize } -> []u8 { return if four_slots{ s } { SLOT_BTN4[k] } else { SLOT_BTN3[k] } }
+    // The armour's two slots take the second and third places of the four (g_aUpgradeSlots has an
+    // empty first record for it).
+    fn slot_place { s: *State, k: usize } -> usize { return if s.category == CAT_ARMOUR { k + 1 } else { k } }
+
+    fn slot_label { s: *State, k: usize } -> []u8 { return if three_slots{ s } { SLOT_LABEL3[slot_place{ s, k }] } else { SLOT_LABEL4[slot_place{ s, k }] } }
+    fn slot_button { s: *State, k: usize } -> []u8 { return if three_slots{ s } { SLOT_BTN3[slot_place{ s, k }] } else { SLOT_BTN4[slot_place{ s, k }] } }
+
+    // g_aUpgradeSlots (0x00756fb0) by upgrade type 1 to 9: the slot's name in dialog.tlk and the
+    // picture of the slot while it is empty.
+    const SLOT_NAME_STR: [10]u32 = [0, 32493, 32494, 32495, 32487, 32488, 32489, 32490, 32491, 32492]
+    const SLOT_ICON: [10][]u8 = ["", "i_vcell", "i_durasteel", "i_imp_eng", "i_scope", "i_energy", "i_beam", "i_hair", "i_armorrein", "i_armorrein"]
+    const STR_UPGRADES: u32 = 42026
 
     // The slot a button tag names, -1 for none.
     fn slot_of_tag { s: *State, tag: []u8 } -> i32 {
@@ -328,7 +386,12 @@ namespace ups {
         } else if slot.row != NO_ROW {
             preview = preview_of_row{ &s, &w, row = @as(usize, slot.row) }
         } else if slot.kind == KIND_TYPED and slot.fixed >= 0 {
-            preview = preview_of_row{ &s, &w, row = @as(usize, slot.fixed) }
+            // An empty slot shows its type's own picture, dim when the party has no such upgrade.
+            if slot.type_ >= 1 and slot.type_ <= 9 { generic = SLOT_ICON[@as(usize, slot.type_)] }
+            if generic.len == 0 or not gui::resolve_img{ &g, fs = &w.fs, &dev, name = generic }.ok {
+                generic = ""
+                preview = preview_of_row{ &s, &w, row = @as(usize, slot.fixed) }
+            }
             dim = not upgrade_available{ s = &s, w = &w, row = @as(usize, slot.fixed) }
         } else {
             generic = "i_powerc"
@@ -351,35 +414,77 @@ namespace ups {
         return false
     }
 
-    // The slot's name: the generic name of a lightsaber slot, else its upgrade item's.
-    fn slot_name { mut s: State, mut w: world::World, k: usize } -> []u8 {
-        let slot = s.slots[k]
-        if slot.kind == KIND_COLOUR { return world::string_by_strref{ w = &w, strref = STR_COLOUR_CRYSTAL } }
-        if slot.row == NO_ROW and slot.kind == KIND_POWER { return world::string_by_strref{ w = &w, strref = STR_POWER_CRYSTAL } }
-        let row = if slot.row != NO_ROW { slot.row } else { slot.fixed }
-        if row < 0 { return "" }
-        return items::name_of{ w = &w, id = preview_of_row{ &s, &w, row = @as(usize, row) } }
-    }
-
     fn desc_tag { s: *State } -> []u8 { return if s.lightsaber { "LB_DESC_LS" } else { "LB_DESC" } }
 
-    // The bench's controls for the item, its slots and the description of the item.
+    // The item installed in a slot, for its name (a colour crystal is the saber's colour), or
+    // OBJECT_INVALID when it is empty.
+    fn slot_item { mut s: State, mut w: world::World, k: usize } -> u32 {
+        let slot = s.slots[k]
+        if slot.kind == KIND_COLOUR {
+            let c = if s.colour_new >= 0 { s.colour_new } else { s.colour_now }
+            return if c >= 0 { preview_of_colour{ &s, &w, row = @as(usize, c) } } else { obj::INVALID }
+        }
+        return if slot.row != NO_ROW { preview_of_row{ &s, &w, row = @as(usize, slot.row) } } else { obj::INVALID }
+    }
+
+    // The item's own property lines that an upgrade row switches on (CSWSItem 0x0055f510): what the
+    // slot of that row gives to this item.
+    fn slot_property_text { mut s: State, mut w: world::World, mut b: utf8::Builder(heap::Heap), row: i32 } -> ! {
+        let ri = items::rules_item_of{ w = &w, id = s.item } ifnull { return }
+        let mut k: usize = 0
+        while k < @as(usize, ri.nprops) {
+            let p = ri.props[k]
+            k = k + 1
+            if @as(i32, p.upgrade) != row { continue }
+            let mark = b.bytes.len
+            if mark > 0 { try utf8::push{ &b, s = utf8::String{ bytes = "\n" } } }
+            if not (try items::push_property{ &b, &w, p }) { b.bytes.len = mark }
+        }
+    }
+
+    // OnSlotHilighted (0x006c3c30). A lightsaber slot names what is in it, else the kind of crystal.
+    // The other items name the slot's kind of upgrade, say "Upgrades:", and give the properties that
+    // upgrade adds in the box on the left (the count beside the caption is emptied).
+    fn describe_slot { mut s: State, mut g: gui::Gui, mut w: world::World, k: usize } -> ! {
+        let slot = s.slots[k]
+        let p = s.bench
+        if s.lightsaber {
+            let it = slot_item{ &s, &w, k }
+            let name = if it != obj::INVALID { items::name_of{ w = &w, id = it } } else if slot.kind == KIND_COLOUR { world::string_by_strref{ w = &w, strref = STR_COLOUR_CRYSTAL } } else { world::string_by_strref{ w = &w, strref = STR_POWER_CRYSTAL } }
+            try gui::set_text{ &g, panel = p, tag = "LBL_LSSLOTNAME", text = name }
+            return
+        }
+        let strref: u32 = if slot.type_ >= 1 and slot.type_ <= 9 { SLOT_NAME_STR[@as(usize, slot.type_)] } else { 0 }
+        try gui::set_text{ &g, panel = p, tag = "LBL_SLOTNAME", text = if strref != 0 { world::string_by_strref{ w = &w, strref } } else { "" } }
+        try gui::set_text{ &g, panel = p, tag = "LBL_UPGRADES", text = world::string_by_strref{ w = &w, strref = STR_UPGRADES } }
+        try gui::set_text{ &g, panel = p, tag = "LBL_UPGRADE_COUNT", text = "" }
+        let mut b = items::new_text{ w = &w }
+        defer list::free{ list = &b.bytes }
+        if slot.fixed >= 0 { try slot_property_text{ &s, &w, &b, row = slot.fixed } }
+        try gui::set_text{ &g, panel = p, tag = "LBL_PROPERTY", text = utf8::view{ b }.bytes }
+    }
+
+    // The bench's controls for the item, its slots and the description of the item. In the crystal
+    // list (FUN_006c2f80, selection mode) the picture of the item, the names, Assemble and the
+    // slots give way to the list and the description pane stays.
     fn fill_bench { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
         let p = s.bench
         assign_slots{ &s }
         let ls = s.lightsaber
+        let pick = s.choosing
         let layout_ls: [4][]u8 = ["LB_DESC_LS", "LBL_DESCBG_LS", "3D_MODEL_LS", "LBL_LSSLOTNAME"]
         let layout_other: [7][]u8 = ["LB_DESC", "LBL_DESCBG", "3D_MODEL", "LBL_SLOTNAME", "LBL_UPGRADES", "LBL_UPGRADE_COUNT", "LBL_PROPERTY"]
         let mut i: usize = 0
         while i < 4 {
-            gui::set_visible{ &g, panel = p, tag = layout_ls[i], visible = ls }
+            gui::set_visible{ &g, panel = p, tag = layout_ls[i], visible = ls and (i < 2 or not pick) }
             i = i + 1
         }
         i = 0
         while i < 7 {
-            gui::set_visible{ &g, panel = p, tag = layout_other[i], visible = not ls }
+            gui::set_visible{ &g, panel = p, tag = layout_other[i], visible = not ls and (i < 2 or not pick) }
             i = i + 1
         }
+        gui::set_visible{ &g, panel = p, tag = "BTN_ASSEMBLE", visible = not pick }
         i = 0
         while i < 3 {
             gui::set_visible{ &g, panel = p, tag = SLOT_LABEL3[i], visible = false }
@@ -392,8 +497,8 @@ namespace ups {
             gui::set_visible{ &g, panel = p, tag = SLOT_BTN4[i], visible = false }
             i = i + 1
         }
-        gui::set_visible{ &g, panel = p, tag = "LB_ITEMS", visible = s.choosing }
-        if s.choosing {
+        gui::set_visible{ &g, panel = p, tag = "LB_ITEMS", visible = pick }
+        if pick {
             try fill_choices{ &s, &g, &w, &dev }
             return
         }
@@ -402,60 +507,89 @@ namespace ups {
             show_slot{ &s, &g, &w, &dev, k }
             k = k + 1
         }
-        try gui::set_text{ &g, panel = p, tag = if ls { "LBL_LSSLOTNAME" } else { "LBL_SLOTNAME" }, text = items::name_of{ w = &w, id = s.item } }
-        try chargen::set_number{ &g, panel = p, tag = "LBL_UPGRADE_COUNT", n = installed_count{ s = &s } }
-        let mut b = items::new_text{ w = &w }
-        defer list::free{ list = &b.bytes }
-        try items::describe{ &w, &b, id = s.item }
-        try gui::set_text{ &g, panel = p, tag = "LBL_PROPERTY", text = utf8::view{ b }.bytes }
+        try describe_slot{ &s, &g, &w, k = s.hot_slot }
         try items::show_description{ &g, &w, panel = p, tag = desc_tag{ s = &s }, id = s.item }
     }
 
     // ---- choosing a crystal for a lightsaber slot
 
+    // The choices: -1 is "None" (a power slot only), -2 the crystal the slot has now, else the row
+    // of upgrade.2da (power) or upcrystals.2da (colour) the party can give (OnSlotClicked 0x006c6500).
+    const CHOICE_NONE: i32 = -1
+    const CHOICE_KEEP: i32 = -2
+
+    fn add_choice { mut s: State, c: i32 } {
+        if s.nchoices >= MAX_CHOICES { return }
+        s.choices[s.nchoices] = c
+        s.nchoices = s.nchoices + 1
+    }
+
     fn start_choosing { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, k: usize } -> ! {
         s.choosing_slot = k
         s.nchoices = 0
         if s.slots[k].kind == KIND_COLOUR {
+            let now = if s.colour_new >= 0 { s.colour_new } else { s.colour_now }
+            if now >= 0 { add_choice{ &s, c = CHOICE_KEEP } }
             let mut r: usize = 0
-            while r < COLOURS and s.nchoices < MAX_CHOICES {
-                if @as(i32, r) != (if s.colour_new >= 0 { s.colour_new } else { s.colour_now }) and (crystal_available{ s = &s, w = &w, row = r } or s.col_give[r]) {
-                    s.choices[s.nchoices] = @as(i32, r)
-                    s.nchoices = s.nchoices + 1
-                }
+            while r < COLOURS {
+                if @as(i32, r) != now and (crystal_available{ s = &s, w = &w, row = r } or s.col_give[r]) { add_choice{ &s, c = @as(i32, r) } }
                 r = r + 1
             }
         } else {
+            add_choice{ &s, c = CHOICE_NONE }
+            if s.slots[k].row != NO_ROW { add_choice{ &s, c = CHOICE_KEEP } }
             let mut r: usize = 0
-            while r < ROWS and s.nchoices < MAX_CHOICES {
-                if type_of_row{ s = &s, row = r } == 0 and (s.bits & (@as(u32, 1) << @as(u32, r))) == 0 and upgrade_available{ s = &s, w = &w, row = r } {
-                    s.choices[s.nchoices] = @as(i32, r)
-                    s.nchoices = s.nchoices + 1
-                }
+            while r < ROWS {
+                if type_of_row{ s = &s, row = r } == 0 and (s.bits & (@as(u32, 1) << @as(u32, r))) == 0 and upgrade_available{ s = &s, w = &w, row = r } { add_choice{ &s, c = @as(i32, r) } }
                 r = r + 1
             }
         }
-        if s.nchoices == 0 { return }
         s.choosing = true
         try fill_bench{ &s, &g, &w, &dev }
+    }
+
+    // The item a choice stands for, OBJECT_INVALID for "None".
+    fn choice_item { mut s: State, mut w: world::World, index: usize } -> u32 {
+        let c = s.choices[index]
+        if c == CHOICE_NONE { return obj::INVALID }
+        if c == CHOICE_KEEP { return slot_item{ &s, &w, k = s.choosing_slot } }
+        return if s.slots[s.choosing_slot].kind == KIND_COLOUR { preview_of_colour{ &s, &w, row = @as(usize, c) } } else { preview_of_row{ &s, &w, row = @as(usize, c) } }
     }
 
     fn fill_choices { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
         let p = s.bench
         gui::list_clear{ &g, panel = p, tag = "LB_ITEMS" }
-        let colour = s.slots[s.choosing_slot].kind == KIND_COLOUR
         let mut k: usize = 0
         while k < s.nchoices {
-            let row = @as(usize, s.choices[k])
-            let preview = if colour { preview_of_colour{ &s, &w, row } } else { preview_of_row{ &s, &w, row } }
-            if preview != obj::INVALID {
-                let r = try gui::list_add{ &g, panel = p, tag = "LB_ITEMS", text = items::name_of{ w = &w, id = preview }, user = @as(i64, k) }
-                let img = items::icon_of{ &g, &w, &dev, id = preview }
+            let it = choice_item{ &s, &w, index = k }
+            if it == obj::INVALID {
+                _ = try items::add_none_row{ &g, &w, &dev, panel = p, tag = "LB_ITEMS", icon_size = ICON }
+            } else {
+                let r = try gui::list_add{ &g, panel = p, tag = "LB_ITEMS", text = items::name_of{ w = &w, id = it }, user = @as(i64, k) }
+                let img = items::icon_of{ &g, &w, &dev, id = it }
                 if img.ok { gui::list_set_icon{ &g, panel = p, tag = "LB_ITEMS", row = r, texture = img.tex, w = ICON, h = ICON } }
             }
             k = k + 1
         }
-        if gui::list_count{ &g, panel = p, tag = "LB_ITEMS" } > 0 { gui::list_select{ &g, panel = p, tag = "LB_ITEMS", row = 0 } }
-        gui::set_text{ &g, panel = p, tag = "LBL_PROPERTY", text = "" } iferr {}
+        gui::list_select{ &g, panel = p, tag = "LB_ITEMS", row = 0 }
+        try describe_choice{ &s, &g, &w, index = 0 }
+    }
+
+    // What the pane shows for a crystal pointed at (FUN_006c5370): nothing for "None", else the crystal's
+    // name, and for a power crystal the properties it would add to the saber above it.
+    fn describe_choice { mut s: State, mut g: gui::Gui, mut w: world::World, index: usize } -> ! {
+        if index >= s.nchoices { return }
+        let it = choice_item{ &s, &w, index }
+        let mut b = items::new_text{ w = &w }
+        defer list::free{ list = &b.bytes }
+        if it != obj::INVALID {
+            let row = s.choices[index]
+            if s.slots[s.choosing_slot].kind != KIND_COLOUR and row >= 0 {
+                try slot_property_text{ &s, &w, &b, row }
+                if b.bytes.len > 0 { try utf8::push{ &b, s = utf8::String{ bytes = "\n" } } }
+            }
+            try utf8::push{ &b, s = utf8::String{ bytes = items::name_of{ w = &w, id = it } } }
+        }
+        try gui::set_list_text{ &g, panel = s.bench, tag = desc_tag{ s = &s }, text = utf8::view{ b }.bytes }
     }
 }

@@ -1,0 +1,13 @@
+# The upgrade bench with nothing to upgrade (a party that wears no upgradeable item): every category is dead. The button
+# is disabled and its picture is hidden (the original flips the label's visible bit), a click on it does nothing, and
+# Close leaves.
+#   LOG=actions sh kotor/tools/items/run.sh bench_empty module:ebo_m12aa kotor/tools/items/scripts/bench_empty.txt 200
+60 ui bench
+90 ui ctl BTN_RANGED
+90 ui ctl LBL_RANGED
+90 ui ctl BTN_ARMOR
+90 ui ctl LBL_ARMOR
+110 ui clickctl BTN_RANGED
+130 ui ctl BTN_RANGED
+150 ui clickctl BTN_BACK
+170 ui ctl BTN_RANGED

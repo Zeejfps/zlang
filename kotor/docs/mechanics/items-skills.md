@@ -135,7 +135,37 @@ transitions; doors and using objects do not), the stealth XP pool and routines, 
 client stealth speed (we use the walk rate), the frame-buffer distortion look, the combat log's spot line, rest
 ending stealth (no party rest), the straggler teleport that solo mode turns off.
 
+## 9. The upgrade bench (workbench)
+
+The Ebon Hawk's workbench (`RepairTable1` in `ebo_m12aa`, OnUsed `k_pebo_upgrade`) and every other `ShowUpgradeScreen` call open it: three
+panels, `upgradesel` (the categories), `upgradeitems` (the items of one) and `upgrade` (the slots of one item); code `lib/screens/ups_*.ctx`.
+RE: [gui.md](../re/gui.md) "Upgrade bench"; functions `CSWGuiUpgradeSelect::OnPanelAdded` 0x006c4520, `CSWGuiUpgradeItems::FillItemList`
+0x006c5b90 / `OnUpgradeItem` 0x006c2df0 / `ReturnItem` 0x006c5e90, `CSWGuiUpgrade::OnPanelAdded` 0x006c4d70 / `OnSlotClicked` 0x006c6500 /
+`OnUpgradeChosen` 0x006c5510 / `OnSlotHilighted` 0x006c3c30 / `OnCancel` 0x006c61f0, the slot table `g_aUpgradeSlots` 0x00756fb0.
+Scripts `bench_*.txt` run by `check.sh` (module `ebo_m12aa`, items given with `ui giveitem`, clicks by `ui clickctl`; `ui ctl TAG` also prints
+whether the control is visible and enabled); `LOG=actions` adds a line `upgrade bench: NAME assembled|cancelled, upgrades BITS (were BITS)`.
+
+| Behaviour | Evidence | Status | Test |
+|---|---|---|---|
+| A category is upgradeable by the type of the upgrade slots its items carry (upgrade.2da `upgradetype` of the property tags: 0 lightsaber, 1-3 melee, 4-7 ranged, 8-9 armour); only items whose UTI properties carry an `UpgradeType` are upgradeable at all (a plain Blaster Pistol is not; Carth's, Bendak's, Mission's Vibroblade, Bastila's saber are) | `CSWSItem::GetUpgradeCategory` 0x005541c0 | matches | `bench_*.txt` |
+| A category the party has nothing for has its button **disabled and its picture hidden** (the dimmed label alone left four white tiles that looked like buttons and did not answer a click: the report "I can't click any category" was a party with nothing upgradeable) | `CSWGuiUpgradeSelect::OnPanelAdded` flips the button's text colour and the picture label's visible bit (+0x44 bit 1) | matches (the picture stayed) | `bench_empty.txt` |
+| Items listed: the equipped upgradeable items of the leader, then of every available selectable companion (slots 0 to 17), then the party's bag | `FillItemList`, `AddCreatureItems` | matches | `bench_ranged.txt` |
+| An item row is a button: **one click** takes the item to the bench, pointing at a row describes it; the Upgrade Item button takes the selected row | `FillItemList` gives each row handlers 0 (describe), 0x27 and 0x2d (`OnUpgradeItem`) | matches (a click on an unselected row only selected it) | `bench_ranged.txt` |
+| Taking an item: a worn one comes off, a stack gives one unit, a loose one leaves the bag. **A dual wielder's other-hand weapon comes off too** (the left first when the right is taken) | `OnUpgradeItem` (flags +0xc30, id +0xc34) | matches (the engine slid the left weapon into the right hand and the upgraded one then pushed it into the bag) | `bench_dual.txt` |
+| The lightsaber and the melee items use the three slot controls (`LBL/BTN_UPGRADE31..33`), the ranged items and the armour the four (`41..44`; the armour's two slots are the second and third) | `FUN_006c3aa0`, `FUN_006c2f80`, `CSWGuiUpgrade::OnPanelAdded` | matches (it was lightsaber and ranged on the four, melee and armour on the three, armour on the first two) | `bench_saber.txt`, `bench_armour.txt` |
+| Slots by category: lightsaber power crystal, colour crystal, power crystal; ranged scope, improved energy cell, beam splitter, hair trigger; melee vibration cell, durasteel alloy, energy projector; armour reinforcement, mesh underlay. An empty slot shows its kind's own picture (`i_scope`, `i_energy`, `i_beam`, `i_hair`, `i_vcell`, `i_durasteel`, `i_imp_eng`, `i_armorrein`, `i_powerc`, `i_colorc`), dim while the party has none; a filled slot shows the upgrade's icon | `g_aUpgradeSlots` (type, picture, strref per slot) | matches | `bench_ranged.txt` |
+| On opening the first slot is hilit. Pointing at a slot of a weapon or armour names its kind of upgrade (top left), says "Upgrades:", empties the count box and gives the item properties that upgrade adds in the big box on the left; the item's description is in the right box | `OnSlotHilighted` 0x006c3c30, `FUN_0055f510` | matches (the item name was in the top box, the whole description on the left and the right box was empty: `LB_DESC` has no prototype row in the file, so it shared the lightsaber box's) | `bench_ranged.txt` |
+| A lightsaber slot names what is in it, else "Power Crystal" / "Color Crystal" | `OnSlotHilighted` | matches | `bench_saber.txt` |
+| A slot of a weapon or armour: a filled one gives its upgrade back to the party, an empty one takes the one upgrade item of its kind from the party's stock (nothing when there is none); if the wearer then could not use the item again the box 42489 asks, and Cancel undoes the install | `OnSlotClicked`, callback `FUN_006c6120` | matches | `bench_ranged.txt` (the box: open, no shipped upgrade needs a feat the leader lacks) |
+| **A lightsaber slot always opens the list of crystals**: a power slot lists None, the crystal it has, and every power crystal the party has that is not in the other power slot; the colour slot lists the saber's colour and every other colour crystal the party has. The pictures, the names and Assemble give way to the list (the description box stays); one click chooses, pointing at a row names it (and a power crystal gives the properties it adds). None gives the crystal back | `OnSlotClicked` (lightsaber branch), `OnUpgradeChosen` 0x006c5510, `FUN_006c5370`, `FUN_006c2f80` selection mode | matches (a filled slot gave its crystal back at once, no None, an empty one needed stock) | `bench_saber.txt` |
+| A new colour crystal replaces the saber by the `upcrystals.2da` saber of that colour and kind (short, long, double), keeping its upgrades and its stolen flag; the old colour crystal goes back to the party | `OnUpgradeChosen` | matches (made at Assemble) | `bench_saber.txt` |
+| Assemble keeps the changes, Cancel (and Escape) restores the item and the stock; either puts the item back in its hand if it still may wear it, else in the bag, and returns to the item list with that item selected; a bench opened by a script's item closes the whole screen | `OnAssemble` 0x006c6190, `OnCancel` 0x006c61f0, `ReturnItem` 0x006c5e90 | matches (the first row was selected again) | `bench_saber.txt`, `bench_dual.txt` |
+| Armour comes off and goes back on across the bench; an upgrade's properties apply from the next equip (Armor Reinforcement: defense, Mesh Underlay: resistance and immunity) | `ReturnItem`, the upgrade rule (4.6) | matches | `bench_armour.txt` |
+| The item is shown as a rotating 3D model (`upgitem_light` rig with the item's model, "rotate" at 70 degrees a second; a lightsaber "powered") in `3D_MODEL` (lower right) or `3D_MODEL_LS` (upper left, big) | `FUN_006c3630`, `CSWGuiUpgrade::Render` 0x006c33a0 | open: the area stays empty | |
+
 ## Open items
+
+- The bench's 3D model of the item (above).
 
 - An equip in combat as a combat-round entry; OnEquipItem (no module uses it).
 - Per-minute item uses (one droid shield).

@@ -2017,7 +2017,7 @@ cost × (store +0x244 + store +0x24c) / 100, integer division. +0x248/+0x244 are
 mark-up / mark-down and +0x250/+0x24c the bonus mark-up / mark-down passed to `OpenStore`
 (written by 0x00540300). Rules for stock and infinite items: party-items-saves.md. (high)
 
-#### Upgrade bench: CSWGuiUpgradeSelect, CSWGuiUpgradeItems, CSWGuiUpgrade — skimmed
+#### Upgrade bench: CSWGuiUpgradeSelect, CSWGuiUpgradeItems, CSWGuiUpgrade
 
 Opened by NWScript `ShowUpgradeScreen(oItem)` (routine 354, 0x00543990 →
 `CGuiInGame::ShowUpgradeScreen` 0x0062e760), which creates the category panel and (when an item
@@ -2030,13 +2030,60 @@ is given) goes straight to it. Three panels:
 | 0x006c2b10 | `CSWGuiUpgradeSelect::HandleInputEvent` | | 0x28/0x2e close the bench (`CGuiInGame::CloseUpgradeScreen` 0x0062e870) | high |
 | 0x006c7630 / 0x00757228 | `CSWGuiUpgradeItems` | upgradeitems | `LB_ITEMS` (items of the category, `CSWGuiItemEntry` rows), `LB_DESCRIPTION`, `BTN_UPGRADEITEM`, `BTN_BACK`, `LBL_TITLE` | high |
 | 0x006c2df0 | `CSWGuiUpgradeItems::OnUpgradeItem` | | takes the chosen item: an equipped one is unequipped from its wearer (0x004faa70; for weapons both hands are handled and remembered), a stacked one is split off one unit (0x0055f280), a loose one is removed from the party inventory (0x00555fd0); then opens the upgrade panel with the item (+0x2f54) and kind (+0x2f4c, 1 = lightsaber) | med |
-| 0x006c6b60 / 0x00757298 | `CSWGuiUpgrade` | upgrade | `LB_ITEMS`, `LB_DESC`/`LB_DESC_LS`, `LBL_DESCBG`(`_LS`), `3D_MODEL`(`_LS`), `LBL_SLOTNAME`, `LBL_LSSLOTNAME`, `LBL_UPGRADES`, `LBL_UPGRADE_COUNT`, `LBL_PROPERTY`, `LBL_UPGRADE31..33` + `BTN_UPGRADE31..33` (three slots, other items), `LBL_UPGRADE41..44` + `BTN_UPGRADE41..44` (four slots, lightsabers), `BTN_ASSEMBLE`, `BTN_BACK` | high |
+| 0x006c6b60 / 0x00757298 | `CSWGuiUpgrade` | upgrade | `LB_ITEMS`, `LB_DESC`/`LB_DESC_LS`, `LBL_DESCBG`(`_LS`), `3D_MODEL`(`_LS`), `LBL_SLOTNAME`, `LBL_LSSLOTNAME`, `LBL_UPGRADES`, `LBL_UPGRADE_COUNT`, `LBL_PROPERTY`, `LBL_UPGRADE31..33` + `BTN_UPGRADE31..33` (three slots: lightsaber and melee), `LBL_UPGRADE41..44` + `BTN_UPGRADE41..44` (four slots: ranged, and armour in the second and third), `BTN_ASSEMBLE`, `BTN_BACK` | high |
 | 0x006c6500 | `CSWGuiUpgrade::OnSlotClicked` | | empty slot: list the matching upgrade items found in the party inventory (`upgrade.2da` `UpgradeType`/`Template`, crystals from `upcrystals.2da` `Template`) and enter selection; filled slot: remove the upgrade (clear the item's upgrade bit, item +0x294) and return it to the inventory (0x0055d330). Adding an upgrade that would stop the wearer re-equipping the item asks first (42489) | med |
 | 0x006c6190 | `CSWGuiUpgrade::OnAssemble` | | finishes (0x006c5e90 on the item panel), closes | med |
 | 0x006c6a80 | `CSWGuiUpgrade::HandleInputEvent` | | 0x28/0x2e: leave selection (0x006c4d30) or close and give the item back (0x006c61f0); 0x39/0x3a scroll the description | med |
 
 The upgrade rules (which property each upgrade adds) belong to rules.md /
 party-items-saves.md. (med)
+
+Read again from the decompile (the rebuilt exports): (high unless noted)
+
+- **Categories** (`OnPanelAdded` 0x006c4520). It counts the categories of the PC's and every available selectable NPC's equipped items
+  (`FUN_006c2ab0`) and of the party inventory; for each category (lightsaber 1, ranged 2, melee 3, armour 4, in the order of the buttons
+  and of the picture labels `LBL_LSABER`, `LBL_RANGED`, `LBL_MELEE`, `LBL_ARMOR`) it sets the **picture label's visible bit** (flag +0x44
+  bit 1) to "has items" and the button's text colour to the menu or the disabled colour. With an item given (`ShowUpgradeScreen(item)`)
+  it stores the item and category in the item panel and adds that panel at once. `OnCategory` 0x006c2b60 (0x27, 0x2d; sound 0 for 0x2d)
+  takes the control, or for `BTN_UPGRADEITEMS` the last hilit category button (+0x1154), and opens the items panel when the category has items.
+- **Items panel**. `FillItemList` 0x006c5b90 makes one entry per upgradeable item: the PC's equipped items, those of each available
+  selectable NPC (`AddCreatureItems` 0x006c4960: slot bits 0 to 17), then the inventory's. Each entry is a `CSWGuiItemEntry` (0x3a4 bytes)
+  with handlers 0 (`FUN_006c4880`: the description of the item in the right box), 0x27 and 0x2d (`OnUpgradeItem`): a click on a row
+  takes it. `BTN_UPGRADEITEM` (+0x8a4) acts on the list's selected entry. `OnUpgradeItem` 0x006c2df0: a loose item leaves the inventory
+  (one unit of a stack: `SplitItem`), a worn one is unequipped; for a weapon in the right (0x10) or left (0x20) hand with the other hand
+  filled **both are unequipped** and the other's id and which hand are kept (+0xc30 bit 0 "pair", bit 1 "the item was the left one",
+  +0xc34 the other's id). `ReturnItem` 0x006c5e90 puts the item back with `CanEquipItem`: not allowed any more -> the inventory; a pair:
+  item in the right and the other in the left, or, when the item no longer fits, the other weapon in the right hand; for a left item the
+  right one first. Then, for the list's own opening, the list is filled again when the item's id changed (a new saber), the entry of
+  the item is selected and scrolled to; for a script's item the items panel closes and the screen with it (`CloseUpgradeScreen`).
+- **Bench panel**. `OnPanelAdded` 0x006c4d70 keeps a backup copy of the item (`CopyItem`, used by `OnCancel`) and fills `+0x2fa4[slot]`
+  with the upgrade.2da row of the slot (row whose `UpgradeType` is the slot's type in `g_aUpgradeSlots`) and `+0x2f74[slot]` with a made
+  copy of the upgrade item when the item's Upgrades bit is set. For a lightsaber slot 1 holds the colour crystal made from the
+  `upcrystals.2da` row whose `LongMdlVar`/`ShortMdlVar`/`DoubleMdlVar` (by the base item's ItemType 41/40/39) names the saber's tag; **no row
+  closes the panel**. Slot pictures are the item's icon or the slot's own (`g_aUpgradeSlots[(category-1)*4+slot]`: type, picture, name
+  strref; lightsaber {0, i_powerc, 36977}, {-1, i_colorc, 36978}, {0, i_powerc, 36977}; ranged 4 to 7 {i_scope 32487, i_energy 32488,
+  i_beam 32489, i_hair 32490}; melee 1 to 3 {i_vcell 32493, i_durasteel 32494, i_imp_eng 32495}; armour {none}, {8, i_armorrein 32491},
+  {9, i_armorrein 32492}); an empty non-lightsaber slot whose upgrade the party lacks is drawn at alpha 0.25 (set at opening).
+  `FUN_006c2f80(selecting)` shows/hides controls by their visible bit: normal mode shows the 3D model, the slot name, "Upgrades:", the count,
+  the property box and Assemble for the weapons and armour (the `_LS` ones for a lightsaber), the three-slot controls for lightsaber and melee,
+  the four for ranged (all) and armour (the second and third), and hilights the first slot; selection mode hides all of those and shows
+  `LB_ITEMS` (the description box stays).
+- **Slots**. `OnSlotHilighted` 0x006c3c30: lightsaber: `LBL_LSSLOTNAME` = the slot's item name, else the slot's strref; others:
+  `LBL_SLOTNAME` = the slot's strref, `LBL_UPGRADES` = 42026 "Upgrades:", `LBL_UPGRADE_COUNT` emptied, `LBL_PROPERTY` = the item's own
+  properties tagged with the slot's upgrade row (`FUN_0055f510`). `OnSlotClicked` 0x006c6500: **lightsaber**: the list `LB_ITEMS` with
+  entries made by `FUN_006c58c0(item, row)`: colour slot: the colour crystal it has, then each upcrystals row (other than it) whose crystal
+  the inventory holds; power slot: an entry with no item (shown as None), the crystal it has, then each upgrade.2da row of type 0 whose
+  item the inventory holds and which is in neither power slot. **Other items**: a filled slot clears the item's Upgrades bit and returns the
+  upgrade to the inventory; an empty one takes the inventory's item with the slot's template tag (none: nothing), sets the bit, and when a
+  wearer exists and `CanEquipItem` now fails opens the confirm box 42489 (its callback `FUN_006c6120` takes the item on OK and clears the
+  bit otherwise). `OnUpgradeChosen` 0x006c5510 (a list entry's 0x27/0x2d): colour slot: a new saber is made from the chosen row's
+  template (possessor the player, identified, Upgrades and the stolen flag copied) and replaces the bench item at once; power slot: the
+  old crystal returns to the inventory (its bit cleared), "None" stops there, the chosen entry's crystal is taken (its bit set); the
+  "keep" entry changes nothing. The hover handler `FUN_006c5370` shows the entry's name (for a power crystal after the properties that
+  row adds to the item) in the description box. All inventory moves are ledgered (+0x2f5c taken, +0x2f68 given) so `OnCancel` 0x006c61f0
+  can undo them and restore the backup item. `OnAssemble` 0x006c6190 calls `ReturnItem` and pops the panel.
+- **Render** 0x006c33a0: the item's 3D view (`FUN_006c3630` builds it: the rig `upgitem_light`, camera `camerahook`, the item's model
+  by `GetModelResRef`, "powered" for powered bases, "neutral" for armour) turns by -70 degrees a second.
 
 #### CSWGuiPartySelection (partyselection.gui)
 
@@ -2251,8 +2298,6 @@ addresses)
   the two handlers on `BTN_3DCHAR`; an `asm` look at 0x006b0e40 around the calls would settle it).
 - Map: the map-view object at +0xe38 (world-to-map transform, note picking by click) and the
   Return action 0x00692bc0 were not read.
-- Upgrade bench internals (slot-to-upgrade-type mapping, how `upgrade.2da` rows map to the three
-  or four slots, `BTN_ASSEMBLE` effects) were only skimmed.
 - Store buy/sell confirmation texts and the stock/infinite handling in `DoBuy`/`DoSell`.
 - Journal quest list contents (which JRL fields, how priority and planet sorting are computed).
 
