@@ -3945,6 +3945,8 @@ addr	name	prototype	comment
 0x006fae8c	_ftol		CRT float to integer, truncating (high)
 0x006fb8de	_purecall		CRT: reports R6025 (pure virtual call) and exits; the slot filler of abstract vtables (high)
 0x006fc1f0	_CIpow		CRT pow on the x87 stack (ST1 ^ ST0); also behind the NWScript math routines (med)
+0x006fcbcb	__CxxThrowException@8	__noreturn void __stdcall F(void * pExceptionObject, void * pThrowInfo)	C++ throw: raises the MSVC exception 0xE06D7363 through RaiseException, which does not come back (high)
+0x006fee5f	terminate	__noreturn void __cdecl F(void)	CRT std::terminate: calls the terminate handler, then abort; never returns (high)
 0x0070c170	CExoMoviePlayer::CExoMoviePlayer		owns a 0xa0 CExoMoviePlayerInternal (high)
 0x0070c1e0	CExoMoviePlayer::Skip	void Skip(int bSkipAll, int bForce)	(med)
 0x0070c1f0	CExoMoviePlayer::IsPlaying		(high)

@@ -169,6 +169,20 @@ the object's and the drawn root's place (steps over 0.15 m/frame outside walking
 What remains is a script's `AssignCommand(ActionJumpToLocation)` landing one frame after the line that ran it
 (AssignCommand queues for the next frame), which snaps and is off screen in the checked cutscenes.
 
+### The dead stay down
+
+A creature killed during a conversation (a cut scene's `CutsceneAttack`, a trooper shooting the bith in
+`tar02_preraid`) used to be stood up by it: the view's cast list keeps everyone a line animated, and the next line,
+the end (`finish`) and a hand-over to the next conversation set every cast member back to the stand animation. The
+body rose from the floor and, when the 3 s of the die animation had not run out yet, fell a second time; with the
+timer already spent it stayed upright until it was destroyed. The original asks `CanAnimateParticipant` before
+every one of those changes (docs/re/dialogue.md 8.1), so `fight::can_animate_participant` (not dead, not downed, not
+held in a crowd-control state) now guards `play_animation`, the stand-back loop, `finish` and `hand_over`. Under
+that, `world::set_animation` takes nothing but the dead animations on a dead creature, as the server's
+`SetAnimation` does, so no other path (a script's PlayAnimation, an idle reset) can raise a corpse either. Checked
+with `--screenshot-range` and `cam duel` on the bodies of the Endar Spire's room 3 and room 5 scenes and the Taris raid, and
+kept by `sh kotor/tools/combat/corpses.sh` (testing.md).
+
 ### No picture between two shots
 
 A cut shows the new shot in the frame it happens in and nothing else before it. Four things used to put an
