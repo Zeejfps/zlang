@@ -230,6 +230,9 @@ namespace display {
         d.applied = s
         d.have = true
         measure{ &d, dev, &sdl }
+        // The game draws its own pointer, in every window mode: the OS's is hidden over the window from the start
+        // (the front end, the loading screens, a game) and put away again after a mode change.
+        if not d.hidden { sdl::hide_cursor{ &sdl } }
         return changed
     }
 
@@ -251,11 +254,13 @@ namespace display {
     }
 
     // One line for the log: what the window and the render are now.
-    fn report { d: *Display, mut io: Io } {
+    fn report { d: *Display, mut sdl: sdl::Sdl, mut io: Io } {
         let kind: []u8 = if d.applied.window_mode == 1 { "fullscreen" } else if d.applied.window_mode == 2 { "borderless" } else { "windowed" }
-        _ = @fmt(&io, "display: {} window {}x{}, drawable {}x{}, rendering {}x{}, desktop {}x{}@{}, {} modes, gui scale {}\n", kind,
+        let pointer: []u8 = if sdl::cursor_hidden{ &sdl } { "hidden" } else { "SHOWN" }
+        _ = @fmt(&io, "display: {} window {}x{}, drawable {}x{}, rendering {}x{}, desktop {}x{}@{}, {} modes, gui scale {}, OS pointer {}, shown {}x{} at {},{}\n", kind,
             d.window.width, d.window.height, d.drawable.width, d.drawable.height, d.render.width, d.render.height,
-            d.desktop.width, d.desktop.height, d.desktop.refresh, d.mode_count, d.applied.gui_scale)
+            d.desktop.width, d.desktop.height, d.desktop.refresh, d.mode_count, d.applied.gui_scale, pointer,
+            d.shown.w, d.shown.h, d.shown.x, d.shown.y)
     }
 
     // ---- the mouse
