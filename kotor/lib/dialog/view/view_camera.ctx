@@ -31,7 +31,9 @@ namespace dlgview {
             let part = scene::part_at{ sc, i = vis.first }
             let model = scene::loaded_at{ sc, i = part.loaded }.model
             let mut lift: f32 = 0.0
-            let mut node = mdl::find_node{ model, name = "camerahook" }
+            // A stunt body's `camerahook` hangs off the model's root, not off the `cutscenedummy` that its
+            // animation carries through the area, so it stays at the origin: the head hook moves with the body.
+            let mut node = if vis.stunt { null } else { mdl::find_node{ model, name = "camerahook" } }
             if node == null {
                 node = mdl::find_node{ model, name = mdl_anim::HOOK_HEAD }
                 lift = 0.1
@@ -140,6 +142,7 @@ namespace dlgview {
         v.tar_height = node.tar_height
         v.fov = node.cam_fov
         v.blocked = false
+        v.log_shot = true
         if v.camera_model.loaded and node.camera_anim >= 1000 and node.camera_anim < 1728 and not computer {
             if play_camera_animation{ &v, &w, &sc, number = node.camera_anim } {
                 v.mode = Mode::animated
@@ -189,6 +192,20 @@ namespace dlgview {
         if not have { return }
         v.rig = rig
         v.have_rig = true
+        // Where each shot is put, once per line: the numbers a picture of a black or empty shot is explained by (the
+        // eye and where it looks, the room under it, and the two participants' eyes it was built from).
+        if v.log_shot and w.log.dialog {
+            v.log_shot = false
+            let room = walkmap::room_at{ m = &w.walk, x = rig.eye.x, y = rig.eye.y, z = rig.eye.z }
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog camera: mode {} angle {} static {} blocked {} eye {} {} {} forward {} {} {} fov {} room {}\n", @as(u32, v.mode), v.angle, v.static_id, v.blocked, rig.eye.x, rig.eye.y, rig.eye.z, rig.forward.x, rig.forward.y, rig.forward.z, rig.fov, room)
+            let se = eye_point{ w = &w, sc, id = v.speaker }
+            let le = eye_point{ w = &w, sc, id = v.listener }
+            if se != null and le != null {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "dialog camera: speaker eye {} {} {} listener eye {} {} {}\n", se.x, se.y, se.z, le.x, le.y, le.z)
+            }
+        }
         if not v.overriding {
             v.saved_fov = camera.style.fov
             v.overriding = true
