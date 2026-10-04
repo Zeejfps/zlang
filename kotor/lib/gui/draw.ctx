@@ -323,6 +323,10 @@ namespace gui {
         }
     }
 
+    // The thumb keeps its picture's size along the slider and fills the slider across it, so a
+    // 32 pixel tall thumb on a 24 pixel track is squeezed to 24 (CSWGuiSlider::SetExtent, 0x00418f20:
+    // the thumb's rectangle is the extent's cross size by the picture's length, at
+    // (extent - length) * value / max along the track; DRAWSTYLE 0 stretches the picture to it).
     fn draw_slider_thumb { mut frame: render::Frame, c: *Control, x: i32, y: i32, alpha: f32, clip: render::Rect } {
         if not c.thumb.ok { return }
         let horizontal = c.w >= c.h
@@ -334,11 +338,13 @@ namespace gui {
         if v > mx { v = mx }
         let col = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = alpha }
         if horizontal {
-            let pos = x + (c.w - tw) * v / mx
-            put_image{ &frame, img = c.thumb, x = @as(f32, pos), y = @as(f32, y + (c.h - th) / 2), w = @as(f32, tw), h = @as(f32, th), color = col, angle = 0.0, clip }
+            let len = if tw < c.w { tw } else { c.w }
+            let pos = if tw < c.w { x + (c.w - tw) * v / mx } else { x }
+            put_image{ &frame, img = c.thumb, x = @as(f32, pos), y = @as(f32, y), w = @as(f32, len), h = @as(f32, c.h), color = col, angle = 0.0, clip }
         } else {
-            let pos = y + (c.h - th) * v / mx
-            put_image{ &frame, img = c.thumb, x = @as(f32, x + (c.w - tw) / 2), y = @as(f32, pos), w = @as(f32, tw), h = @as(f32, th), color = col, angle = 0.0, clip }
+            let len = if th < c.h { th } else { c.h }
+            let pos = if th < c.h { y + (c.h - th) * v / mx } else { y }
+            put_image{ &frame, img = c.thumb, x = @as(f32, x), y = @as(f32, pos), w = @as(f32, c.w), h = @as(f32, len), color = col, angle = 0.0, clip }
         }
     }
 
