@@ -67,6 +67,8 @@ namespace outbox {
         //     1 chest, 2 head) to `target`, for `seconds`
         beam{ style: i32, source: u32, target: u32, part: i32, seconds: f32 },
         beam_end{ style: i32, target: u32 },
+        //   saber_leg: a thrown lightsaber (the item `item`) flies from a point to a point in `flight_ms`
+        saber_leg{ item: u32, from: math::Vec3, to: math::Vec3, flight_ms: i32 },
         visual_hold{ effect: i32, target: u32 },
         visual_release{ effect: i32, target: u32 },
         //   effect_model: an effect model by name (a power's cast visual in spells.2da) riding the

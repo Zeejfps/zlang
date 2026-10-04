@@ -641,6 +641,7 @@ namespace rt_fx {
             while leaf < g.len {
                 let item = g.items[@as(usize, leaf)]
                 leaf = leaf + 1
+                if item.kind == rules::fx::LIGHTSABER_THROW and not res.refused { fight::start_saber_throw{ &w, id = target } }
                 if item.kind == rules::fx::BEAM and not res.refused {
                     outbox::post{ out = &w.out, note = outbox::Note::beam{ style = item.ints[0], source = item.objects[0], target, part = item.ints[1], seconds = seconds } }
                 }

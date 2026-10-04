@@ -90,6 +90,7 @@ namespace vfx {
                 start_beam{ &v, style, source, target, part, seconds }
             }
             beam_end{ style, target } => { end_beams{ &v, style, target } }
+            saber_leg{ item, from, to, flight_ms } => { fly_saber{ &v, &sc, &w, &dev, item, from, to, flight = @as(f32, flight_ms) / 1000.0 } }
             visual_hold{ effect, target } => { hold_on{ &v, &sc, &w, &dev, effect, object = target } }
             visual_release{ effect, target } => { release{ &v, effect, object = target } }
             effect_model{ model, object, hook, position, life } => {
@@ -114,6 +115,29 @@ namespace vfx {
         } else {
             _ = spawn_still{ &v, &sc, &w, &dev, model = resref::bytes{ r = &m }, at = position, facing = math::vec3::zero{}, anim = "impact", life } iferr { null }
         }
+    }
+
+    // A thrown lightsaber: the item's own model, blade out, flying from one point to another.
+    fn fly_saber {
+        mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device,
+        item: u32, from: math::Vec3, to: math::Vec3, flight: f32,
+    } {
+        let io = world::object{ w = &w, id = item } ifnull { return }
+        let it = obj::item{ o = io } ifnull { return }
+        let class = twoda::get_string{ t = w.tables.baseitems, row = @as(usize, it.base), column = "itemclass" } ifnull ""
+        if class.len == 0 or class.len > 12 { return }
+        let mut name: [20]u8
+        let mut i: usize = 0
+        while i < class.len {
+            name[i] = class[i]
+            i = i + 1
+        }
+        let n = if it.model_variation == 0 { 1 } else { it.model_variation }
+        name[i] = '_'
+        name[i + 1] = @trunc(u8, '0' + (n / 100) % 10)
+        name[i + 2] = @trunc(u8, '0' + (n / 10) % 10)
+        name[i + 3] = @trunc(u8, '0' + n % 10)
+        _ = spawn_bolt{ &v, &sc, &w, &dev, model = name[..i + 4], from, to, flight, end_effect = 0 } iferr { null }
     }
 
     // Where an object's node is in the world, else `fallback` metres above its feet.

@@ -81,6 +81,7 @@ namespace fight {
         voice_ms: i32,                  // > 0: it has just grunted
         ready_ms: i32,                  // > 0: a cutscene attack was just made, so the weapon stays up
         knock: Knock,
+        saber: SaberThrow,
     }
 
     fn no_impact {} -> Impact {
@@ -96,7 +97,7 @@ namespace fight {
     fn new_fighter { heap: *mut heap::Heap } -> !*mut Fighter {
         let mut c: rules::Creature
         c.loaded_hp = -1
-        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0, voice_ms = 0, ready_ms = 0, knock = no_knock{} }
+        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0, voice_ms = 0, ready_ms = 0, knock = no_knock{}, saber = no_saber{} }
         return try alloc::new(Fighter, heap::Heap){ realloc = heap::alloc, heap, value = f }
     }
 
@@ -995,6 +996,8 @@ namespace fight {
         let f = c.fighter ifnull { return }
         let dt = @as(i32, w.clock.dt * 1000.0)
         if dt <= 0 { return }
+        // A thrown lightsaber is in the air.
+        if f.saber.active and not c.dead { step_saber{ &w, o, f, dt } }
         // The Force pool of a party member refills at 1 % a second out of combat and not at all in
         // combat (regeneration.2da; rules.md 3.8: CSWSCreature::AIUpdate).
         if f.loaded and not c.dead and f.c.stats.max_fp > 0 and f.c.fp < f.c.stats.max_fp {
