@@ -29,7 +29,7 @@ if [ "$first" -le 13 ]; then
   step 2 5750 dock       wann
   step 3 6150 wann       prisoner
   step 4 4400 prisoner   lobby
-  step 5 3650 lobby      droid
+  step 5 14500 lobby     droid
   step 6 17400 droid     trial
   step 7 5700 trial      wann2
   step 8 9900 wann2      suit
