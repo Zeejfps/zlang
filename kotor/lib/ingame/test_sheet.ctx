@@ -67,7 +67,10 @@ namespace test_sheet {
             k = k + 1
         }
         if is_ability { }
-        else if ci::eq{ a = key, b = "xp" } { c.xp = @as(u32, n) }
+        else if ci::eq{ a = key, b = "xp" } {
+            c.xp = @as(u32, n)
+            if c.fighter is some{ value = f } { f.c.xp = n }
+        }
         else if ci::eq{ a = key, b = "align" } { c.good_evil = @as(u32, n) }
         else if ci::eq{ a = key, b = "hp" } { o.hp = n }
         else if ci::eq{ a = key, b = "hpmax" } { o.hp_max = n }
@@ -122,7 +125,8 @@ namespace test_sheet {
             f.c.abil[k] = @as(i32, c.abilities[k])
             k = k + 1
         }
-        f.c.xp = @as(i32, c.xp)
+        // (The experience is the rules creature's own; only `ui stat xp` sets it, above: a load leaves the
+        // object's copy at 0, and copying that back wiped the real number.)
         f.c.good_evil = @as(i32, c.good_evil)
         if classes {
             f.c.classes[0] = rules::ClassSlot{ class = @as(i32, c.classes[0]), level = @as(i32, c.class_levels[0]) }

@@ -173,7 +173,11 @@ namespace ingame {
             let mut i: usize = 0
             while i < ids.len {
                 if world::object{ w = &w, id = ids[i] } is some{ value = m } {
-                    if obj::creature{ o = m } is some{ value = c } { _ = @fmt(&w.io, "xp {} {}: {}\n", ids[i], hud::name_of{ w = &w, id = ids[i] }, c.xp) }
+                    if obj::creature{ o = m } is some{ value = c } {
+                        // The rules creature holds it when there is one (the sheet reads it from there).
+                        let xp = if c.fighter is some{ value = f } { f.c.xp } else { @as(i32, c.xp) }
+                        _ = @fmt(&w.io, "xp {} {}: {}\n", ids[i], hud::name_of{ w = &w, id = ids[i] }, xp)
+                    }
                 }
                 i = i + 1
             }

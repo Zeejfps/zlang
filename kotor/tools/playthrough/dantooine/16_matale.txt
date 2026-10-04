@@ -1,0 +1,15 @@
+# Dantooine, part 16 (the Sandral/Matale side quest, dan_romance): out of the Enclave to the Matale grounds and Ahlan
+# Matale. From the checkpoint "council2" (CKPT=council2: the Council has sent the party back to its ship; dan_romance 10).
+# The doors are the game's; the walks are cut with warps next to the waypoints on the road (part 7).
+3 ui stat hpmax 130
+3 ui stat hp 130
+3 ui bot god on
+5 ui replies default 1
+10 warp dan13_door03
+20 use dan13_door03
+100 warp dan14aa_wp_elise7
+120 ui goto to14bw
+# The Matale grounds (danm14ab): what stands there.
+500 ui pos
+500 ui where ahlan
+500 ui where matale
