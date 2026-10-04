@@ -91,7 +91,10 @@ namespace test_sheet {
         }
         else { return false }
         c.hit_dice = c.class_levels[0] + c.class_levels[1] + c.class_levels[2]
-        sync_rules{ &w, o, c }
+        // Only a class command writes the classes: the rules' creature may have a class the engine's
+        // fields do not (a level gained through AddMultiClass and the Level Up panels).
+        let classes_set = ci::eq{ a = key, b = "class" } or ci::eq{ a = key, b = "level" } or ci::eq{ a = key, b = "class2" } or ci::eq{ a = key, b = "level2" }
+        sync_rules{ &w, o, c, classes = classes_set }
         return true
     }
 
@@ -110,7 +113,7 @@ namespace test_sheet {
 
     // The engine fields this command set writes (abilities, classes, XP, alignment) copied into the
     // rules creature, which then rebuilds its stats.
-    fn sync_rules { mut w: world::World, o: *mut obj::Object, c: *mut obj::Creature } {
+    fn sync_rules { mut w: world::World, o: *mut obj::Object, c: *mut obj::Creature, classes: bool } {
         let f = c.fighter ifnull { return }
         if not f.loaded { return }
         let mut k: usize = 0
@@ -120,9 +123,11 @@ namespace test_sheet {
         }
         f.c.xp = @as(i32, c.xp)
         f.c.good_evil = @as(i32, c.good_evil)
-        f.c.classes[0] = rules::ClassSlot{ class = @as(i32, c.classes[0]), level = @as(i32, c.class_levels[0]) }
-        f.c.classes[1] = rules::ClassSlot{ class = @as(i32, c.classes[1]), level = @as(i32, c.class_levels[1]) }
-        f.c.nclasses = if c.class_levels[1] > 0 { 2 } else { 1 }
+        if classes {
+            f.c.classes[0] = rules::ClassSlot{ class = @as(i32, c.classes[0]), level = @as(i32, c.class_levels[0]) }
+            f.c.classes[1] = rules::ClassSlot{ class = @as(i32, c.classes[1]), level = @as(i32, c.class_levels[1]) }
+            f.c.nclasses = if c.class_levels[1] > 0 { 2 } else { 1 }
+        }
         rules::recompute{ tables = w.rules, c = &f.c }
         f.c.fp = f.c.stats.max_fp
     }

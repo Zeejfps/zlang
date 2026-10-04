@@ -167,6 +167,22 @@ namespace ingame {
             }
             _ = @fmt(&w.io, " numbers: {} {} {} {} {} {} {} {}", o.locals.numbers[0], o.locals.numbers[1], o.locals.numbers[2], o.locals.numbers[3], o.locals.numbers[4], o.locals.numbers[5], o.locals.numbers[6], o.locals.numbers[7])
             _ = @fmt(&w.io, "\n")
+        } else if ci::eq{ a = cmd, b = "fx" } {
+            // Test helper: the effects on the creature with the tag (none given: the leader): kind, duration
+            // type, the seconds it was given, when it expires (day, ms) against now, and who made it.
+            let tag = text::next_word{ &words } ifnull ""
+            let id = if tag.len == 0 { w.pc } else { world::object_by_tag{ w = &w, tag, nth = 0 } }
+            let o = world::object{ w = &w, id } ifnull { return }
+            let c = obj::creature{ o } ifnull { return }
+            let f = c.fighter ifnull { return }
+            let now = fight::time_now{ w = &w }
+            _ = @fmt(&w.io, "fx {} {}: {} effects, now {} {} (clock {} min per hour, rules day {} ms)\n", id, o.tag, f.c.nfx, now.day, now.ms, w.clock.min_per_hour, w.rules.settings.ms_per_day)
+            let mut k: i32 = 0
+            while k < f.c.nfx {
+                let e = &f.c.fx[@as(usize, k)]
+                k = k + 1
+                _ = @fmt(&w.io, "  fx kind {} dur {} {} s expires {} {} creator {} spell {} ints {} {} {}\n", e.kind, e.dur, e.duration, e.expire.day, e.expire.ms, e.creator, e.spell_id, e.ints[0], e.ints[1], e.ints[2])
+            }
         } else if ci::eq{ a = cmd, b = "bot" } {
             bot::run_command{ b = &ui.bot, &w, args = text::rest{ words } }
         } else if ci::eq{ a = cmd, b = "party" } {

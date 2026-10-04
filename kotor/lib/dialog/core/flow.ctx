@@ -63,6 +63,11 @@ namespace dlg {
     // Orders a conversation (ActionStartConversation / the player's click): false if one is
     // already ordered or running.
     fn order { mut w: world::World } -> bool {
+        // A conversation on its last step ends in this frame's pump, and an event its last node
+        // signalled (the Jedi Council's training montage tells Zhar to talk to the player) is
+        // handled before that: the order is taken, queued behind the speaker's ActionWait, and
+        // the action finds the conversation over. The flag stays down for `finish` to clear.
+        if w.conversation.active and w.conversation.ending { return true }
         if w.conversation.pending or w.conversation.active { return false }
         w.conversation.pending = true
         w.conversation.pending_since = now_ms{ w = &w }

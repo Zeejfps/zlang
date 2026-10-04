@@ -1,0 +1,19 @@
+# Dantooine, part 7: out of the Enclave to the courtyard, across the Matale grounds to the grove. From the
+# checkpoint "third" (CKPT=third). The doors and trigger volumes are crossed by the leader as in play; the
+# long walks between them are cut with warps next to the waypoint at the road (the planner stops at the
+# courtyard's low wall: it plans a straight line to the gate below it, see the playthrough notes).
+3 ui stat hpmax 130
+3 ui stat hp 130
+5 ui replies 1 1 1 1 1 1 1 1 1 1 1 1
+10 warp dan13_door03
+20 use dan13_door03
+# The courtyard (danm14aa): to the west gate of the Matale grounds.
+100 warp dan14aa_wp_elise7
+120 ui goto to14bw
+# Matale grounds (danm14ab): the north gate to the grove.
+250 warp FROM14CW
+270 ui goto to14cw
+# The grove (danm14ac): arrival by the west gate. Save here: the walk through the grove is part 8.
+500 ui pos
+500 ui party
+520 save grove

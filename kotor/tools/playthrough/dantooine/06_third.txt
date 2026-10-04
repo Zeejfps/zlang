@@ -1,0 +1,7 @@
+# Dantooine, part 6: Zhar names the third trial (the meditation grove). From the checkpoint "saber" (CKPT=saber).
+# Replies: "I can find crystals on Dantooine?", "I am ready to face the third trial.", "What would you have me
+# do, Master Zhar?", "Do you have no other guidance?"
+5 ui replies 1 1 1 1 1 1 1 1 1 1 1 1
+10 talk dan13_zhar dan13_zhar
+4100 ui journal list
+4100 save third

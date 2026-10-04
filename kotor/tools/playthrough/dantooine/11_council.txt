@@ -1,0 +1,18 @@
+# Dantooine, part 11: back from the trials, the Council speaks (Vandar: Juhani, then the training is complete and
+# the matter of the dream, the ruins and the Star Maps). From the checkpoint "return" (CKPT=return: Zhar's talk is
+# over in the Council chamber, dan_council 20).
+# Replies: only the list at the end of the talk asks: "I will investigate the ruins right away."
+3 ui stat hpmax 130
+3 ui stat hp 130
+5 ui replies 2 default 1
+10 use dan13_vandar
+# Vandar's talk ends at about frame 1750 with dan_ruins 10 and Bastila back in the party.
+# Vandar's talk ends at about frame 1990 and the party screen opens with Bastila forced (and no one else: a script's
+# screen starts from the forced members): Carth, OK, and OK on the confirmation if it asks. Then Ahlan Matale bursts in
+# (dan13_ahlan, the Sandral/Matale quest).
+2200 ui click 597 272
+2210 ui click 640 545
+2230 ui click 638 378
+6000 ui party
+6000 ui journal list
+6010 save ruins1

@@ -1,0 +1,24 @@
+# Dantooine, part 8: through the grove to Juhani. From the checkpoint "grove" (CKPT=grove; the leader stands at
+# the west gate). The test player (god mode: the leader is never below 1 hit point) walks the grove's own
+# stops and fights the kath hounds in sight; the conversations take the first reply.
+3 ui stat hpmax 130
+3 ui stat hp 130
+5 ui replies 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+10 ui bot god on
+10 ui bot route POST_dan14_rickard01 WP_dan_wanderhound1_03 dan14ac_WP_Juhani_03 dan14ac_WP_Juhani_02 dan14ac_WP_Juhani_01 wp_cut01
+10 ui bot on
+# Bolook (the Jedi of the murder case, a side quest) greets the player at the trigger on the road; his long
+# conversation is cut short after the first lines.
+1500 hush
+2500 ui bot status
+3500 ui bot status
+3500 ui pos
+5000 ui bot status
+5000 ui pos
+6500 ui bot status
+6500 ui pos
+# Juhani, wounded (below 50 hit points), drops her guard and asks to talk at about frame 7400 (the cut scene
+# before the duel ends at 6285): the checkpoint is a few seconds before.
+7339 ui locals dan14_juhani
+7340 save fight
+7360 ui bot status

@@ -110,6 +110,10 @@ namespace modload {
         let vo = gff::get_string{ doc = doc.*, s, label = "Mod_VO_ID" }
         if vo != null { m.vo_id = try obj::copy_bytes{ heap = w.heap, s = vo } }
         w.clock.min_per_hour = m.min_per_hour
+        // The rules' effect timers carry into the day at the same length (a module with 0 minutes per
+        // hour runs the day at 5, and Juhani's temporary Flurry penalties, 3 s long, never ended when
+        // the library carried at 2).
+        w.rules.settings.ms_per_day = @as(i32, clock::ms_per_day{ c = w.clock })
         // The calendar: a new game starts it from the first module's IFO; a loaded save from the
         // time it was saved (Mod_PauseDay, Mod_PauseTime); otherwise the running game time goes
         // on through transitions (modules.md, the IFO's bResetTime).

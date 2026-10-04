@@ -1,0 +1,9 @@
+# Dantooine, part 5: Zhar builds the lightsaber with the player (the crystal Dorak gave), and the third trial
+# is named. From the checkpoint "dorak" (CKPT=dorak).
+5 ui replies 1 1 1 1 1 1 1 1 1 1 1 1
+10 talk dan13_zhar dan13_zhar
+# Zhar's talk ends in the Upgrade Bench with the lightsaber and the blue crystal (about frame 470); Assemble.
+620 ui click 524 545
+900 ui inv
+900 ui journal list
+1000 save saber
