@@ -4,7 +4,7 @@
 //
 //   FRAME ui powers all|ROW[,ROW...]|none   the leader knows every Force power (usertype 1) or just these spells.2da rows
 //   FRAME ui fp N                           the leader's Force points (also the maximum when it is lower)
-//   FRAME ui spawn TEMPLATE TAG DIST [DEG]  a creature from the blueprint, tagged TAG, DIST metres from the leader, DEG degrees left of its facing
+//   FRAME ui fspawn TEMPLATE TAG DIST [DEG]  a creature from the blueprint, tagged TAG, DIST metres from the leader, DEG degrees left of its facing
 //   FRAME ui feat ROW[,ROW...]              the leader gains these feats
 namespace test_force {
     fn run { mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device, cmd: []u8, args: []u8 } -> bool {
@@ -22,7 +22,7 @@ namespace test_force {
             f.c.fp = n
             return true
         }
-        if ci::eq{ a = cmd, b = "spawn" } {
+        if ci::eq{ a = cmd, b = "fspawn" } {
             let mut words = text::words{ s = args }
             let template = text::next_word{ &words } ifnull { return true }
             let tag = text::next_word{ &words } ifnull { return true }
@@ -53,7 +53,7 @@ namespace test_force {
             }
             _ = @fmt(&w.io, "rules {}: race {} classes {}/{} {}/{} abil {} {} {} {} {} {} fp {}/{} (temp {}) dc {} caster level {} fr {} ac {} fort {} ref {} will {}\n",
                 id, f.c.race, f.c.classes[0].class, f.c.classes[0].level, f.c.classes[1].class, f.c.classes[1].level,
-                f.c.abil[0], f.c.abil[1], f.c.abil[2], f.c.abil[3], f.c.abil[4], f.c.abil[5],
+                f.c.stats.abil[0], f.c.stats.abil[1], f.c.stats.abil[2], f.c.stats.abil[3], f.c.stats.abil[4], f.c.stats.abil[5],
                 f.c.fp, f.c.stats.max_fp, f.c.temp_fp, rules::force_power_dc{ c = &f.c },
                 rules::caster_level{ tables = w.rules, c = &f.c, spell = 23, override_level = -1, from_class = true },
                 f.c.stats.force_resistance, f.c.stats.speed_factor, f.c.stats.save_base[0], f.c.stats.save_base[1], f.c.stats.save_base[2])
@@ -70,14 +70,14 @@ namespace test_force {
             world::set_animation{ o, id = animname::ROW_BASE + row, speed = 1.0 }
             return true
         }
-        if ci::eq{ a = cmd, b = "clickctl" } {
+        if ci::eq{ a = cmd, b = "fclick" } {
             // A click on the centre of a HUD control by tag (the target block's arrows move with the target,
             // so a script cannot name their pixels): the same mouse events as `ui click X Y`.
             let mut words = text::words{ s = args }
             let tag = text::next_word{ &words } ifnull { return true }
             let p = gui::find_panel{ g = &ui.gui, id = ui.hud.panel } ifnull { return true }
             let c = gui::find_control{ g = &ui.gui, panel = ui.hud.panel, tag } ifnull {
-                _ = @fmt(&w.io, "clickctl: no control {}\n", tag)
+                _ = @fmt(&w.io, "fclick: no control {}\n", tag)
                 return true
             }
             let x = p.sx + c.x + c.w / 2
@@ -85,7 +85,7 @@ namespace test_force {
             ingame::send{ &ui, &w, &dev, ev = sdl::Event::mouse_motion{ x, y, dx = 0, dy = 0, buttons = 0 } }
             ingame::send{ &ui, &w, &dev, ev = sdl::Event::mouse_button{ down = true, button = sdl::BUTTON_LEFT, clicks = 1, x, y } }
             ingame::send{ &ui, &w, &dev, ev = sdl::Event::mouse_button{ down = false, button = sdl::BUTTON_LEFT, clicks = 1, x, y } }
-            _ = @fmt(&w.io, "clickctl: {} at {} {}\n", tag, x, y)
+            _ = @fmt(&w.io, "fclick: {} at {} {}\n", tag, x, y)
             return true
         }
         if ci::eq{ a = cmd, b = "feat" } {

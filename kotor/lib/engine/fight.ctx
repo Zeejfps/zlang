@@ -308,6 +308,13 @@ namespace fight {
             push_creature{ &w, id }
         } else if k == rules::ev::KNOCKDOWN {
             knock_down{ &w, id }
+        } else if k == rules::ev::FEEDBACK and e.a >= 0x1000 and e.a < 0x1006 {
+            // A poison tick's ability drain (poison.2da dam_str..dam_chr, lasting abil_dur seconds):
+            // the rules leave the penalty to the engine, which applies it as a temporary decrease.
+            let mut drain_fx = rules::fx::make_ability_decrease{ ability = e.a - 0x1000, amount = 1 }
+            rules::fx::set_timing{ e = &drain_fx, dur = rules::dur::TEMPORARY, seconds = @as(f32, e.b) }
+            rules::fx::set_creator{ e = &drain_fx, creator = e.who, spell_id = -1 }
+            _ = apply{ &w, target = id, e = drain_fx }
         } else if k == rules::ev::FEEDBACK {
             if w.log.combat {
                 world::prefix{ w = &w }
