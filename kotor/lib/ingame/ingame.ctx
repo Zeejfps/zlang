@@ -678,7 +678,7 @@ namespace ingame {
         if ui.psel_wait and not w.conversation.active and not gui::is_modal_open{ g = &ui.gui } {
             ui.psel_wait = false
             if ui.menu != NO_MENU { close_menu{ &ui, &w } }
-            partysel_panel::open_modal{ s = &ui.menus.partysel, g = &ui.gui, &w, &dev, force1 = ui.psel_force1, force2 = ui.psel_force2, exit_script = ui.psel_exit } iferr err{ error } {
+            partysel_panel::open_modal{ s = &ui.menus.partysel, g = &ui.gui, &w, &dev, force1 = ui.psel_force1, force2 = ui.psel_force2, from_script = true, exit_script = ui.psel_exit } iferr err{ error } {
                 _ = @fmt(&w.io, "kotor: party selection: {}\n", error)
             }
         }

@@ -31,3 +31,4 @@ step 6 4200 saber   third
 step 7 600 third    grove
 step 8 7360 grove   fight
 step 9 4200 fight   redeemed
+step 10 2800 redeemed return
