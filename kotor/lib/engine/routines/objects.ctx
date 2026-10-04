@@ -180,6 +180,12 @@ namespace rt_obj {
         if argc > 3 { _ = try nwarg::float{ &vm, routine = r, argc, i = 3 } }
         let o = world::object{ w = &w, id } ifnull { return }
         if o.kind == obj::Kind::module or o.kind == obj::Kind::area { return }
+        // The party table lets go of a companion's slot at once (ClearNPCObjectId, 0x0052ff20), long before the event
+        // fires: Manaan's airlock leaves the party in the station with DestroyObject, the module's state keeps the
+        // pending event, and the module's load script makes them again with SpawnAvailableNPC, which must not hand
+        // back the doomed object.
+        let slot = party::slot_of{ w = &w, id }
+        if slot >= 0 { w.party.npcs[@as(usize, slot)] = obj::INVALID }
         let ms = if delay > 0.0 { @as(u64, delay * 1000.0) } else { 0 }
         events::post{ &w, delay_ms = ms, caller = nwvm::self_object{ vm }, target = id, payload = events::Payload::destroy }
     }

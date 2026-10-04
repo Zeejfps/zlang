@@ -331,6 +331,15 @@ tracked part is the creature model's `CAMERAHOOK` node if it has one, otherwise 
    and C += up·(0.35 + 0.15)·p/|C − L| (`up` = the target's +z): the camera moves in and rises a
    little. (high)
 
+Notes on this (read from `ResolveCollision` `0x0063b050` and `ClipCameraSegmentToCreatures` `0x004bf650`
+again): the loop in `ResolveCollision` runs once (its counter starts at 1), so the four rays are cast once
+from the camera `ComputeFollowPosition` gave; the hit nearest the ray's end does not matter, the stretch
+left past the hit does, and the camera ends *on* the surface of the worst ray. The creature clip only acts
+when the camera is inside a creature's CAMERASPACE circle (the pre-test) *and* the segment crosses that
+circle twice (the call that finds the crossings returns 2 only then); a segment that ends inside a circle
+has one crossing, so as decompiled the clip never fires (low: a flag test in the compare could hide it).
+The up vector for the lift is the target's orientation applied to +z (the quaternion is stored w first).
+
 There is **no zoom**: the mouse wheel goes to the GUI; the zoom input `0x006401d0` belongs to the
 legacy modes. (med)
 
@@ -712,6 +721,12 @@ Both planners finish the same way (`FinishPathPointRoute` `0x004c17a0` time-slic
    that the straight walk between P + c·(A−P)/|A−P| and P + c·(B−P)/|B−P| is clear, and replace P
    by those two points (`CutCorner` `0x004be3a0`); then try to cut the two new corners once more.
 
+Ours (`paths::route`): A* over the graph in place of the iterative-deepening search, skipping an edge
+that an active placeable's walkmesh stands on (`walkmap::meets_placeable`; the original tests only its
+first and last legs, with the grid planner as the detour, so a placeable created after the PTH was
+authored, such as Calo Nord's landspeeders across the Tatooine camp road, would stop it too), then
+string pulling over the route, each shortcut tested with the walkmesh and every placed mesh.
+
 ### 4.8 Safe positions
 
 - `CSWSArea::IsPositionSafe(pos, info)` (`0x004be5e0`): the point (a ±0.01 m box, z ± 0.1) is on
@@ -960,14 +975,108 @@ of combat mode (`+0x320`) the game also pauses with reason 11 (49118). The latch
 disappears from the list while hostiles are present in combat mode, a 1.5 s timer (`+0x378`) runs
 before a new target is picked automatically. (med)
 
+**What decides who is selectable and visible** (read from `0x004f2c30`, `0x004fc4c0`, `0x00617ad0`,
+`0x00502ac0`; high). `GetNearbySelectableObjects` fills two lists from the x-sorted area list,
+skipping the leader: every selectable object within 30 m, sorted by bearing (degrees from the
+leader's facing, 0 up to 360, ascending), and the **front list**, the objects with a non-negative
+dot product with the facing whose direction from a point **4 m behind** the leader makes an angle
+under 30 degrees with the facing (cos > 0.866), sorted by distance. A creature is selectable when
+it is alive, not dying, and the leader's perception entry for it has its seen bit **or** the
+sight check `0x004f1fd0` says the leader sees it now. The PC's own perception pass (`0x00502ac0`)
+sets seen for everything in its area with no range or line test (the 250 m of ranges row 12 are
+not even looked at); what keeps a PC leader from selecting what is behind a wall is the client's
+visibility ray, `CSWCCreature::GetIsTargetVisible` (`0x00617ad0`): a walkmesh line-of-sight test
+(`CSWSArea::ClearLineOfSight`'s room half) and a scene ray from the leader to the object, the
+object's own model and the leader's left out, that gives up on a **closed door** in the way and
+steps past any other object. Visibility is cached per entry per frame; the pointer's pick
+(`ProcessInput`), `CycleTarget` (invisible entries are dropped) and the auto-target below all use it.
+
+**What the client does every frame** (`UpdateSelectableObjects`, from `MainLoop`; ours:
+`lib/hud/autotarget.ctx`). Read in full, with `GetNearbySelectableObjects` and
+`SelectTarget` (high):
+
+1. *The two lists.* The server leader's `GetNearbySelectableObjects(30, 30)` gives the **all list**
+   (every selectable object within 30 m, 3-D distance, by bearing: the angle of the direction to the object
+   minus the leader's heading, 0 up to 359, counter-clockwise, smallest first) and the **front list** (the
+   members of it whose direction from the leader has a dot product of at least 0 with the leader's facing
+   and whose direction from the point 4 m behind the leader makes an angle under 30 degrees with the
+   facing, cosine above 0.866; sorted by squared distance **from the leader**, nearest first). The facing is
+   the leader's own orientation, never the camera's. The cone is wide near the leader: an object beside him
+   at arm's length is inside it, and at 5 m ahead the cone is 10 m across. The client copies the all list
+   to `+0x2a8`, each entry marked "in the front list" (flag bit 0) and with its visibility not yet known; the
+   visibility is `GetIsTargetVisible` (the ray tests of the section above), asked at most once per entry per
+   frame and only for entries a step looks at.
+2. *The current target* (`+0x2b4`, one value for every way a target gets set: a click, Q / E, a script,
+   the last frame's pick). If it is **in the all list** it is kept as it is: while it is visible the
+   out-of-view timer (`+0x368`) is 0; when it is not, the timer counts real seconds and at 1.0 the target is
+   dropped and picked afresh. Nothing in this function prefers a nearer object over a kept target, and
+   a clicked target is no stickier than an automatic one: the same value, the same rules. The one extra
+   with enemies in combat mode: a target that left the list (it died) is kept for 1.5 s while a hostile
+   creature is still in the list (`+0x378`).
+3. *A hostile coming into sight* overrides the above: in bearing order the first visible hostile creature
+   (or hostile trap, handled apart), when the *sighting latch* (`+0x324`) is clear and nothing is paused or
+   auto-paused, becomes the target and is selected with both flags of `SelectTarget` set (the leader's creature is handed the
+   object, and the chase camera swings toward it even out of combat mode); with the Enemy Sighted option
+   (`0x1000`) and combat mode (`+0x320`) off it asks auto-pause reason 1. The latch is set while any
+   visible hostile is in the list and clears when none has been for 10 s (`+0x394`).
+4. *Picking a new target* (no target, or it left the list or view): out of combat mode, or with no hostile
+   creature in the list, **the first visible entry of the front list**, nearest first. In combat mode with a
+   hostile creature in the list: the first visible *hostile* in the front list; else the first visible
+   hostile in the all list (bearing order); else the nearest entry of the front list that is not hostile
+   (this last one without a visibility test). Nothing found: no target, and the HUD target is cleared.
+   The pick is made by `SelectTarget(object, 1, 0)`: it sets the HUD target (`CGuiInGame::SetHudTarget`),
+   hands the leader's client creature the object with a duration of 10 s (`FUN_006146e0`, a look-at; not
+   traced further) and, only **in combat mode**, swings the chase camera toward it (`TurnTowardObject`
+   `0x00639c30`). A kept target is passed to `SelectTarget` again with both flags 0, so the camera never
+   moves for it.
+
+**The target drop that makes the auto-target follow a walking player** is not in that function but in
+`ProcessInput` (`0x006227e0`, the branch that steps the player control, near its end): each frame, when
+the leader is **not in combat mode**, the HUD target is not none, the auto-pause cool-down (`+0x390`) is
+not running (it is set to 1.0 by `RequestAutoPause`; where it counts down was not found, and ours
+ignores it) and the player control's current speed (`CSWCPlayerControl::GetCurrentSpeed` `0x00679750`, the
+larger of |vx| and |vy| of the keyboard velocity, so the keys and nothing else: a leader walking to a
+clicked door is not "moving" here) is **0.25 m/s or more**, a timer (`+0x36c`) adds the frame's time; at
+**0.5 s** the target (`+0x2b4`) is set to none and the timer to 0; any other frame resets the timer. So
+a player on the move loses his target after half a second of walking, the same frame's
+`UpdateSelectableObjects` finds none, and step 4 picks the nearest visible object in front; this repeats
+every half second. A player who stops keeps what he has (and a click while standing sets a target that
+stays until he walks). In combat mode the drop never runs, so the target stays on the foe until Q / E,
+a click, its death or a second out of view. Without this drop the "keep it while it is in the list"
+rule of step 2 would hold the first object caught for as long as it stays within 30 m and in sight
+(the reported bug: a reticle on a footlocker behind the player while a door right ahead was unmarked).
+
+**What is selectable** (`GetIsSelectableTarget` `0x004f2c30`, by the object-type byte): 5 creature
+(alive, not dying, seen); 7 trigger (traps only, as the table above); 9 placeable: **only its Useable
+flag** (`+0x328`), which the game itself clears when a DieWhenEmpty container has been emptied (`CloseInventory`
+`0x00587560`): HasInventory and Static are not looked at; 10 door: closed and not static. Every other
+object type (items, waypoints, sounds, stores, encounters, areas of effect) answers no, and so do triggers
+that are not traps.
+
+**The reticles** (`CSWGuiMainInterface::UpdateReticles` `0x0068a310`, which ends by calling
+`FUN_006889c0`): there are **two**. The *target's* reticle ("hostilereticle2" / "friendlyreticle2", with
+"hostilearrow" / "friendlyarrow" at the screen edge when the target is off screen, "combatreticle" in
+combat mode) hangs on the HUD target (`+0x64`, set by `SetHudTarget`). The *hover* reticle ("hostilereticle"
+/ "friendlyreticle", the smaller pair, drawn at half strength: the border's alpha is set to 0.5) hangs on
+the object under the pointer (`mainif+0x5cac`, set by `ProcessInput` from the same pick that sets the
+cursor). Both are sized by the leader's distance to the object: 64 px within 5 m, then smaller in a straight
+line to 16 px (creature) or 32 px (other) at 30 m. The hover reticle is hidden while the mouse looks about
+(Lookabout held, xor the Mouse Look option), when the point is within 32 px of the screen's edge, and
+when the pointer is over the target and the target's first action slot is empty. The cursor over a
+selectable object that is not the target is the select cursor; over the target, the default action's.
+
 ### 7.2 Hover picking
 
 `ProcessInput` works out the object under the cursor every frame and calls `SetHoverObject`
 (`0x006222f0`): hover id `client+0x4a4`, hover point `+0x4a8`, and the cursor chosen from the
 hovered object's default action (`GetCursorForAction` `0x0061faa0`, after `BuildDefaultActions`).
-The main interface only shows a hover target that is in front of the camera and within 30 m
-(squared distance ≤ 900) of the leader. How the pick itself is computed (bounding boxes, meshes,
-the selectable list) was not read. (med for the flow, low for the pick)
+The pick walks the same **all list** the auto-target uses (so only what is selectable, within 30 m of
+the leader and visible to him can be hovered), asks each entry's client object for its screen bounds
+(slots `+0x13c`, `+0x144`) and keeps the one nearest the camera that the pointer is over; the pointer
+over a GUI control hovers nothing. The id also goes to the main interface (`+0x5cac`), where it hangs
+the hover reticle (7.1). The squared distance of 900 in the hover code is the reticle's size ramp
+(30 m), not a limit on picking. How the bounds are computed (the model's box or its meshes) was not
+read. (med for the flow, low for the pick)
 
 ### 7.3 Target cycling
 
@@ -987,12 +1096,13 @@ behaviour)
 | Kind | Target | Actions (icon) | Code | Callback |
 |---|---|---|---|---|
 | 0 | none | "no action" (`i_noaction`, strref 32236) | `0x404` | — |
-| 1 | door | open (`i_opendoor`, 365) unless `0x0061f790` or `+0x138` refuses it; bash (`i_attack`, 368) if not plot (`+0x104`) and bashable (`+0x108`) and the area allows combat | `0x3f2` / `0x3f5` | `CSWCDoor::DefaultActionOpen` `0x00683d90` sends (6,3) / `0x00683e90` |
+| 1 | door | open (`i_opendoor`, 365) unless `0x0061f790` (the door's animation is already an open one, 10050 / 10051) or `+0x138` refuses it; then bash (`i_attack`, 368) if not plot (`+0x104`), **locked** (`+0x108`: the same flag gates the Security entry, so it is the Locked field, not a "bashable" one) and the area's RestrictMode (`area+0x2b0`) is 0 | `0x3f2` / `0x3f5` | `CSWCDoor::DefaultActionOpen` `0x00683d90` sends the open message (a locked door is refused by the server: locked feedback, OnFailToOpen; there is no unlock in this list) / `0x00683e90` |
 | 1 / 3 | placeable | use or open (`i_useplace` 366 / `i_openplace` 365) if it has an inventory or is useable; bash (368) if not plot and bashable | `0x3f7` / `0x3f5` | `0x00682660` / `0x006826a0` |
 | 3 | friendly creature | talk (`i_dialog`, 371) | `0x3ea` | `DefaultActionTalk` `0x0060f620`: cancel actions, face, send (6,8) |
 | 2 | mine (any client trigger) | disable (`i_disablemine`, 370) when the mine is hostile, recover (`i_recovermine`, 1531) on any; both need the leader's Demolitions (`0x006477e0`). In the target block (`0x00691f00`) Disable is the left slot, Recover the middle, the right empty; no flag or examine | `0x3f4` / `0x402` | `0x00691900` / `0x00691950` (input message 0x12 to UseSkill, subskill 0 / 101) |
 | 4 | hostile creature (or any creature while the auto-target timer runs) | attack (`i_attack`, 375) unless the area forbids combat (`area+0x2b0`) | `0x3eb` | `0x00616800` |
 
+- **The target block's slots are not this list.** The block asks `FUN_00619c20` for each of its three lists by the target's kind: a door (`FUN_00684410`): slot 0 Bash (`0x3f5`, `i_attack`) under the conditions above, slot 1 Security (`0x3f3`, strref 329, the skills.2da icon; door locked, server `KeyRequired` +0x2d8 clear, leader has skill 6), slot 2 empty; a placeable (`FUN_006837d0`): slot 0 Bash (not plot, area RestrictMode 0, locked `+0x118`), slot 1 Security (useable, locked, leader trained); a hostile creature: feats and Attack, Force powers, grenades; a mine (`FUN_00691f00`); a friendly creature: nothing. Each slot's selected entry is remembered per target kind by the entry's code. Open, Use and Talk are only default actions.
 - **Mouse**: on left button up in the world (not over a GUI, not in mouse look), clicking the
   object that is already the target and was under the cursor at button down runs **entry 0**
   (the default action, GUI sound 6); clicking another object makes it the target

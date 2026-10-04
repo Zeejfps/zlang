@@ -1,10 +1,9 @@
 # Tatooine, part 18: home with the Star Map (checkpoint "calo", at the hunters' camp, Calo Nord's gang dead): the dunes' safe path back to the strip, the Dune Sea
 # and Anchorhead's gate, then the Czerka office: the Chieftain's gaffi stick (his gift for the vaporators) is the bounty (tat17ag_sandbounty 150).
+# Calo Nord's landspeeders (footprints of 3 x 9 m) stand across the camp road: the planner takes the graph edges they do not stand on.
 #   LOAD=kotor/out/tat_cp/calo sh kotor/tools/playthrough/tatooine/run.sh back kotor/tools/playthrough/tatooine/18_back.txt 9100
-# the ambush vehicles (landspeeder footprints, 3 x 9 m each) stand on the road out of the camp and the planner cannot go round them: the party is put past them
 4 ui heal
 4 ui stat hp 127
-5 warpxy 286,253 party
 5 ui bot god on
 5 ui bot unlock on
 5 ui replies 1 1 ~gaffi_sticks ~here_it_is ~That_amount default 1

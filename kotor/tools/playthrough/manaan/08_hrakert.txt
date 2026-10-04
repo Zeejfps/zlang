@@ -5,15 +5,12 @@
 # submersible (man26_sub: "[Use the submersible.]") takes the party to the station, where the Selkath have gone insane and the
 # droids fight them: a mercenary (man28_merc) talks as the party arrives, then the bot (god mode, the leader is never
 # left dead) fights its way along the station's east corridor to the Environmental suit (EnvrSuit, `use`: the suit is an item in the
-# bag, k_pman_suituse), journal man_planet 40. The Insane Selkath's bites cut the maximum hit points (150 to 72) for a while.
-3 ui stat hpmax 150
-3 ui stat hp 150
+# bag, k_pman_suituse), journal man_planet 40. The Insane Selkath's bites cut the maximum hit points (144 to 72) for a while.
+3 ui stat hp 144
 4 ui leader carth
-4 ui stat hpmax 160
-4 ui stat hp 160
+4 ui stat hp 52
 5 ui leader bastila
-5 ui stat hpmax 130
-5 ui stat hp 130
+5 ui stat hp 108
 6 ui leader pc
 8 ui replies ~use_the_submersible default 1
 10 warp man26_wp_repdipt party

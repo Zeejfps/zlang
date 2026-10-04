@@ -9,6 +9,7 @@ namespace cam {
         yaw: f32,               // radians; 0 looks along +y, forward = (-sin yaw, cos yaw)
         rate: f32,              // degrees per second, the rotate keys' integrator
         h: f32,                 // the current horizontal distance to the look-at point
+        hold: f32,              // seconds left in which the camera does not ease back out after a wall or a creature moved it in
         started: bool,
         eye: math::Vec3,
         look: math::Vec3,
@@ -21,6 +22,15 @@ namespace cam {
         turn_rate: f32,         // that swing's easing rate per second, 2.5 to 7.5
     }
 
+    // The time constant of the camera's return to its distance (ours; the original halves the error every frame).
+    const EASE_TIME: f32 = 0.1
+
+    // How long the camera stays where a wall or a creature put it before it eases back out (ours).
+    const HOLD: f32 = 0.4
+
+    // Where collide put the camera, and whether the walls or the creatures (not the easing) decided.
+    struct Placed { eye: math::Vec3, limited: bool }
+
     // Keyboard camera defaults (movement.md 2.3): 200 deg/s, 500 deg/s^2 up, 2000 deg/s^2 down.
     const DPS: f32 = 200.0
     const ACCELERATION: f32 = 500.0
@@ -30,7 +40,7 @@ namespace cam {
         let mut stops = [true; 64]
         stops[30] = false
         return Camera{
-            style = Style{ distance = 6.25, pitch = 80.0, height = 3.5, fov = 55.0 }, yaw = 0.0, rate = 0.0, h = 3.2,
+            style = Style{ distance = 6.25, pitch = 80.0, height = 3.5, fov = 55.0 }, yaw = 0.0, rate = 0.0, h = 3.2, hold = 0.0,
             started = false, freelook = false, fl_pitch = 0.0, turn_to = obj::INVALID, turn_rate = 2.5, eye = math::vec3::zero{}, look = math::vec3::zero{}, dir = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, stops,
         }
     }
@@ -118,11 +128,18 @@ namespace cam {
             if math::abs{ x = c.rate } < 0.01 { c.rate = 0.0 }
         }
         c.yaw = c.yaw + math::radians{ degrees = c.rate * step + mouse_degrees }
-        // The distance error halves every frame (ComputeFollowPosition).
-        c.h = c.style.distance + 0.5 * (c.h - c.style.distance)
+        // The distance error shrinks as time passes (ComputeFollowPosition halves it every frame; ours takes a
+        // time constant of EASE_TIME instead, so the pace does not depend on the frame rate), but not for HOLD
+        // seconds after a wall or a creature moved the camera in: past a railing or a row of pillars the walls
+        // clear and close again every few steps, and a camera that eased out into each gap would flicker.
+        c.hold = math::max{ a = 0.0, b = c.hold - step }
+        let eased = c.style.distance + math::expf{ x = -step / EASE_TIME } * (c.h - c.style.distance)
+        let reach = if c.hold > 0.0 { c.h } else { eased }
         let f = forward{ yaw = c.yaw }
-        let mut eye = math::Vec3{ x = look.x - f.x * c.h, y = look.y - f.y * c.h, z = look.z + c.style.height }
-        eye = collide{ c = &c, w, sc, look, eye }
+        let nominal = math::Vec3{ x = look.x - f.x * c.style.distance, y = look.y - f.y * c.style.distance, z = look.z + c.style.height }
+        let placed = collide{ c = &c, w, sc, target, look, nominal, reach }
+        let eye = placed.eye
+        if placed.limited { c.hold = HOLD }
         c.h = math::sqrtf{ x = (eye.x - look.x) * (eye.x - look.x) + (eye.y - look.y) * (eye.y - look.y) }
         // Look toward the leader, pitched down by 90 - PITCH degrees.
         let dx = look.x - eye.x
@@ -138,16 +155,90 @@ namespace cam {
         c.look = look
     }
 
-    // Pulls the camera in front of walls: a ray from the look-at point to the camera against
-    // every room's walkmesh (ours: the original casts four rays against the rooms' AABB meshes
-    // and the scene objects, movement.md 2.3).
-    fn collide { c: *Camera, w: *world::World, sc: *scene::Scene, look: math::Vec3, eye: math::Vec3 } -> math::Vec3 {
-        let d = math::vec3::sub{ a = eye, b = look }
-        let len = math::vec3::length{ v = d }
-        if len < 0.01 { return eye }
-        let ray = math::ray::make{ origin = look, dir = math::vec3::scale{ v = d, s = 1.0 / len } }
+    // g_fCameraCollisionOffset (0x007a241c): how far the extra rays sit from the line of sight.
+    const CLEARANCE: f32 = 0.35
+    // Ours: the rays end this far beyond the camera, so it stops short of a wall instead of touching it (the
+    // original's camera ends on the surface and the near plane can cut it).
+    const MARGIN: f32 = 0.25
+    // The camera never comes closer to the look-at point than this (ours: the original lets the whole
+    // distance go, which puts the eye inside the head when a wall is right behind the leader).
+    const MIN_DISTANCE: f32 = 0.3
+    // The room the camera wants round it, so the near plane cuts nothing (ours).
+    const ROOM: f32 = 0.15
+
+    // CSWCChaseCamera::ResolveCollision (0x0063b050, movement.md 2.3): four rays from the look-at point L, to
+    // the camera C moved 0.35 m to each side and 0.35 m up and down, go against the rooms and what is drawn.
+    // The camera comes in along the line by the longest stretch a ray has left past its hit and rises by half
+    // of that stretch's share of the distance; the creatures' camera circles keep it out of their bodies.
+    //
+    // Ours differs where the original's camera flickered or touched walls. The rays end MARGIN beyond the
+    // camera, so it stops short of a wall; the pass is repeated (the camera's new place sends its rays to new
+    // hits) until none is left; the rise stops short of a ceiling. The place the camera comes to is worked out
+    // for the camera at its full distance (`nominal`, ahead of ComputeFollowPosition's easing), so it depends
+    // on the walls and not on where the easing had got to: a camera that comes in to a wall stays there,
+    // instead of easing out a step, finding its rays hit again and jumping back. `reach` is the horizontal
+    // distance the easing allows now; the camera is the nearer of that and the place the walls leave, which
+    // makes a wall move it in at once and out smoothly. `limited` says a wall or a creature, not the easing,
+    // decided where it is.
+    fn collide { c: *Camera, w: *world::World, sc: *scene::Scene, target: u32, look: math::Vec3, nominal: math::Vec3, reach: f32 } -> Placed {
+        let d0 = math::vec3::sub{ a = nominal, b = look }
+        let len0 = math::vec3::length{ v = d0 }
+        if len0 < 0.01 { return Placed{ eye = nominal, limited = false } }
+        let dir = math::vec3::scale{ v = d0, s = 1.0 / len0 }
+        let mut moved: f32 = 0.0
+        let mut pass: u32 = 0
+        while pass < 6 {
+            pass = pass + 1
+            let keep = len0 - moved
+            if keep <= MIN_DISTANCE {
+                moved = len0 - MIN_DISTANCE
+                break
+            }
+            let short = overshoot{ c, w, sc, look, eye = math::vec3::add_scaled{ a = look, b = dir, s = keep }, margin = MARGIN }
+            if short < 0.005 { break }
+            moved = moved + short
+        }
+        let mut keep = math::max{ a = len0 - moved, b = MIN_DISTANCE }
+        // The easing: no farther out than `reach` (a horizontal distance) allows along this line.
+        let flat = math::sqrtf{ x = d0.x * d0.x + d0.y * d0.y }
+        let mut limited = keep < len0 - 0.005
+        if flat > 0.01 {
+            let eased = math::max{ a = reach, b = MIN_DISTANCE } * len0 / flat
+            if eased < keep {
+                keep = eased
+                limited = false
+            } else {
+                limited = limited and keep < eased - 0.005
+            }
+        }
+        let mut out = math::vec3::add_scaled{ a = look, b = dir, s = keep }
+        if keep < len0 {
+            // Up by half the share of the line given up, but not into a ceiling.
+            let mut rise = (CLEARANCE + 0.15) * (len0 - keep) / len0
+            let ceiling = nearest_hit{ c, w, sc, origin = out, dir = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, max_t = rise + CLEARANCE }
+            if ceiling != null { rise = math::max{ a = 0.0, b = ceiling - CLEARANCE } }
+            // The lifted place must have room all round as well (a lever's alcove is rock on every side): half the
+            // rise, and half again, until it has, else none.
+            let mut tries: u32 = 0
+            while rise > 0.01 and clearance{ c, w, sc, eye = math::Vec3{ x = out.x, y = out.y, z = out.z + rise }, reach = ROOM } < ROOM - 0.001 {
+                tries = tries + 1
+                rise = if tries < 3 { rise * 0.5 } else { 0.0 }
+            }
+            out.z = out.z + rise
+        }
+        // And out of the creatures' circles, where it ended up.
+        let clear = clip_creatures{ w, target, look, eye = out }
+        if math::vec3::distance{ a = clear, b = out } > 0.0005 { limited = true }
+        return Placed{ eye = clear, limited }
+    }
+
+    // The nearest thing a ray from `origin` meets within max_t: a room's walkmesh (every material but
+    // the trigger's), else what is drawn: the rooms, doors and placeables (walls rise above what the
+    // walkmeshes model). The leader's own model is not among them.
+    fn nearest_hit { c: *Camera, w: *world::World, sc: *scene::Scene, origin: math::Vec3, dir: math::Vec3, max_t: f32 } -> ?f32 {
+        let ray = math::ray::make{ origin, dir }
         let rooms = list::items{ list = w.walk.rooms }
-        let mut best = len
+        let mut best = max_t
         let mut i: usize = 0
         while i < rooms.len {
             let mesh = rooms[i].mesh
@@ -156,12 +247,143 @@ namespace cam {
             let hit = bwm::cast_ray{ w = mesh, ray, max_t = best, stops = c.stops[..] } ifnull { continue }
             if hit.t < best { best = hit.t }
         }
-        // And the drawn rooms: walls rise above what the walkmeshes model.
-        let drawn = scene::ray_hit{ sc, w, origin = look, dir = ray.dir, max_t = best }
+        let drawn = scene::ray_hit{ sc, w, origin, dir, max_t = best }
         if drawn != null and drawn < best { best = drawn }
-        if best >= len { return eye }
-        let pulled = math::max{ a = best - 0.25, b = 0.3 }
-        return math::vec3::add_scaled{ a = look, b = ray.dir, s = pulled }
+        if best >= max_t { return null }
+        return best
+    }
+
+    // ClipCameraSegmentToCreatures (0x004bf650): the camera stays out of the camera circle (appearance.2da
+    // CAMERASPACE, else CREPERSPACE) of the creatures around: one that ends inside a circle is brought back
+    // along the line to the look-at point to where the line enters it. Only creatures within 3 m of the line's
+    // box count, and not those whose personal space holds the look-at point (the leader himself, anyone
+    // standing on him), nor those whose camera circle does (nothing on the line would be outside). The
+    // original's function asks for both crossings of the circle to lie on the line, which a camera inside it
+    // cannot give; the intent, a camera that is never inside a body, is what this does. Repeated until no
+    // creature moves it (at most a few passes).
+    fn clip_creatures { w: *world::World, target: u32, look: math::Vec3, eye: math::Vec3 } -> math::Vec3 {
+        let mut out = eye
+        let lo_x = math::min{ a = look.x, b = eye.x } - 3.0
+        let hi_x = math::max{ a = look.x, b = eye.x } + 3.0
+        let lo_y = math::min{ a = look.y, b = eye.y } - 3.0
+        let hi_y = math::max{ a = look.y, b = eye.y } + 3.0
+        let mut pass: u32 = 0
+        while pass < 6 {
+            pass = pass + 1
+            let mut changed = false
+            let all = list::items{ list = w.objects.all }
+            let mut i: usize = 0
+            while i < all.len {
+                let o = all[i]
+                i = i + 1
+                if o.destroyed or o.id == target or o.kind != obj::Kind::creature or o.area != w.area { continue }
+                if o.position.x < lo_x or o.position.x > hi_x or o.position.y < lo_y or o.position.y > hi_y { continue }
+                let cr = obj::creature{ o } ifnull { continue }
+                let lx = look.x - o.position.x
+                let ly = look.y - o.position.y
+                if lx * lx + ly * ly <= cr.perspace * cr.perspace { continue }
+                // The segment L -> out against the circle around the creature, in the floor plane.
+                let dx = out.x - look.x
+                let dy = out.y - look.y
+                let a = dx * dx + dy * dy
+                if a < 0.000001 { continue }
+                let r = cr.camspace
+                let ex = out.x - o.position.x
+                let ey = out.y - o.position.y
+                if ex * ex + ey * ey >= r * r or lx * lx + ly * ly <= r * r { continue }
+                let b = 2.0 * (lx * dx + ly * dy)
+                let disc = b * b - 4.0 * a * (lx * lx + ly * ly - r * r)
+                if disc <= 0.0 { continue }
+                let t_near = (-b - math::sqrtf{ x = disc }) / (2.0 * a)
+                if t_near < 0.0 or t_near > 1.0 { continue }
+                // Where the line enters the circle, less a millimetre along the line; z follows the line.
+                let dlen = math::sqrtf{ x = a }
+                let back = 0.001 / dlen
+                let t = math::max{ a = t_near - back, b = 0.0 }
+                out = math::Vec3{ x = look.x + dx * t, y = look.y + dy * t, z = look.z + (out.z - look.z) * t - 0.01 }
+                changed = true
+            }
+            if not changed { break }
+        }
+        return out
+    }
+
+    // The longest stretch the four rays have left past what blocks them, for a camera at `eye`: the rays go from
+    // the look-at point to `eye` moved CLEARANCE to each side and up and down, and `margin` further out.
+    fn overshoot { c: *Camera, w: *world::World, sc: *scene::Scene, look: math::Vec3, eye: math::Vec3, margin: f32 } -> f32 {
+        let d = math::vec3::sub{ a = eye, b = look }
+        let len = math::vec3::length{ v = d }
+        if len < 0.0001 { return 0.0 }
+        let beyond = math::vec3::add_scaled{ a = eye, b = d, s = margin / len }
+        let flat = math::sqrtf{ x = d.x * d.x + d.y * d.y }
+        let side = if flat > 0.0001 { math::Vec3{ x = -d.y / flat * CLEARANCE, y = d.x / flat * CLEARANCE, z = 0.0 } } else { math::Vec3{ x = CLEARANCE, y = 0.0, z = 0.0 } }
+        let up = math::Vec3{ x = 0.0, y = 0.0, z = CLEARANCE }
+        let ends = [
+            math::vec3::add{ a = beyond, b = side }, math::vec3::sub{ a = beyond, b = side },
+            math::vec3::add{ a = beyond, b = up }, math::vec3::sub{ a = beyond, b = up },
+        ]
+        let mut p: f32 = 0.0
+        let mut k: usize = 0
+        while k < 4 {
+            let v = math::vec3::sub{ a = ends[k], b = look }
+            k = k + 1
+            let rl = math::vec3::length{ v }
+            if rl < 0.01 { continue }
+            let hit = nearest_hit{ c, w, sc, origin = look, dir = math::vec3::scale{ v, s = 1.0 / rl }, max_t = rl } ifnull { continue }
+            p = math::max{ a = p, b = rl - hit }
+        }
+        return p
+    }
+
+    // How close the nearest surface is to `eye`, looking all round (26 directions, up to `reach`): what the near
+    // plane could cut through.
+    fn clearance { c: *Camera, w: *world::World, sc: *scene::Scene, eye: math::Vec3, reach: f32 } -> f32 {
+        let mut best = reach
+        let mut ix: i32 = -1
+        while ix <= 1 {
+            let mut iy: i32 = -1
+            while iy <= 1 {
+                let mut iz: i32 = -1
+                while iz <= 1 {
+                    if ix != 0 or iy != 0 or iz != 0 {
+                        let v = math::vec3::normalize{ v = math::Vec3{ x = @as(f32, ix), y = @as(f32, iy), z = @as(f32, iz) } }
+                        let hit = nearest_hit{ c, w, sc, origin = eye, dir = v, max_t = best } ifnull { best }
+                        if hit < best { best = hit }
+                    }
+                    iz = iz + 1
+                }
+                iy = iy + 1
+            }
+            ix = ix + 1
+        }
+        return best
+    }
+
+    // Test aid (`FRAME cam probe`): the camera's collision at the leader's place for every 10 degrees of yaw, one line
+    // each and a total: how far the camera comes in, whether any of the four rays still meets a wall from where it ends
+    // up (`left` > 0: the picture can still cut through one) and how close the nearest surface is to the eye (`near`;
+    // under about 0.15 m the near plane can cut it).
+    fn probe { mut c: Camera, mut w: world::World, sc: *scene::Scene, target: u32, look_height: f32 } {
+        let o = world::object{ w = &w, id = target } ifnull { return }
+        let look = math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + look_height }
+        let mut bad: u32 = 0
+        let mut tight: u32 = 0
+        let mut shortest: f32 = 1000.0
+        let mut yaw: u32 = 0
+        while yaw < 360 {
+            let f = forward{ yaw = math::radians{ degrees = @as(f32, yaw) } }
+            let raw = math::Vec3{ x = look.x - f.x * c.style.distance, y = look.y - f.y * c.style.distance, z = look.z + c.style.height }
+            let eye = collide{ c = &c, w = &w, sc, target, look, nominal = raw, reach = c.style.distance }.eye
+            let left = overshoot{ c = &c, w = &w, sc, look, eye, margin = 0.0 }
+            let near = clearance{ c = &c, w = &w, sc, eye, reach = 1.0 }
+            let dist = math::vec3::distance{ a = eye, b = look }
+            if left > 0.02 { bad = bad + 1 }
+            if near < 0.15 { tight = tight + 1 }
+            if dist < shortest { shortest = dist }
+            _ = @fmt(&w.io, "probe yaw {} eye {} {} {} dist {} left {} near {}\n", yaw, eye.x, eye.y, eye.z, dist, left, near)
+            yaw = yaw + 10
+        }
+        _ = @fmt(&w.io, "probe total {} of 36 yaws still cut by a wall, {} with a surface within 0.15 m of the eye, shortest {}\n", bad, tight, shortest)
     }
 
     // The render camera for an aspect ratio.

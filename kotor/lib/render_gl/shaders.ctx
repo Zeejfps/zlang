@@ -228,7 +228,14 @@ namespace glsl {
     ]
 
     // u_image: 0 colour only, 1 a texture, 2 a video frame's Y, U and V planes (BT.601, limited range).
-    const UI_FS: [20]c::String = [
+    //
+    // A quad shows its picture once, so it never samples past the picture's rim: `rim` pins the
+    // coordinate to the centres of the outermost texels, which is what CLAMP_TO_EDGE does, whatever
+    // wrap mode the texture was made with (art is REPEAT unless its TXI says `clamp`). Without it,
+    // a GUI scale that magnifies a border's edge texture (1.5 on an 8-texel strip drawn 9 pixels
+    // thick) lets the linear filter reach across the rim to the texture's opposite side and draws
+    // that side's line inside the border, a seam along the inner edge of every button.
+    const UI_FS: [24]c::String = [
         "#version 410 core\n",
         "uniform sampler2D u_tex;\n",
         "uniform sampler2D u_tex_u;\n",
@@ -237,14 +244,18 @@ namespace glsl {
         "in vec2 v_uv;\n",
         "in vec4 v_color;\n",
         "layout(location = 0) out vec4 o_color;\n",
+        "vec2 rim(sampler2D s) {\n",
+        "    vec2 half_texel = 0.5 / vec2(textureSize(s, 0));\n",
+        "    return clamp(v_uv, half_texel, 1.0 - half_texel);\n",
+        "}\n",
         "void main() {\n",
         "    vec4 c = vec4(1.0);\n",
         "    if (u_image == 1) {\n",
-        "        c = texture(u_tex, v_uv);\n",
+        "        c = texture(u_tex, rim(u_tex));\n",
         "    } else if (u_image == 2) {\n",
-        "        float y = (texture(u_tex, v_uv).r - 16.0 / 255.0) * (255.0 / 219.0);\n",
-        "        float u = (texture(u_tex_u, v_uv).r - 128.0 / 255.0) * (255.0 / 224.0);\n",
-        "        float v = (texture(u_tex_v, v_uv).r - 128.0 / 255.0) * (255.0 / 224.0);\n",
+        "        float y = (texture(u_tex, rim(u_tex)).r - 16.0 / 255.0) * (255.0 / 219.0);\n",
+        "        float u = (texture(u_tex_u, rim(u_tex_u)).r - 128.0 / 255.0) * (255.0 / 224.0);\n",
+        "        float v = (texture(u_tex_v, rim(u_tex_v)).r - 128.0 / 255.0) * (255.0 / 224.0);\n",
         "        c = vec4(y + 1.402 * v, y - 0.344136 * u - 0.714136 * v, y + 1.772 * u, 1.0);\n",
         "    }\n",
         "    o_color = c * v_color;\n",

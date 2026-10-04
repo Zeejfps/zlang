@@ -330,33 +330,32 @@ namespace frontend {
         fe.render_h = @as(i32, render_size.height)
     }
 
+    // The Graphics panel's buttons are 240 pixels wide and the original's own labels leave them 17 to 25 pixels
+    // either side (dialogfont16x16: "Texture Quality" in 200, "Frame Buffer Effects" in 240 leaves 18). Ours keep to
+    // that, in the widest case each can have: 204 pixels of text in 240. "Display Mode: Borderless" was 239.
     fn window_mode_text { mode: i32 } -> []u8 {
-        if mode == 1 { return "Display Mode: Fullscreen" }
-        if mode == 2 { return "Display Mode: Borderless" }
-        return "Display Mode: Windowed"
+        if mode == 1 { return "Display: Fullscreen" }
+        if mode == 2 { return "Display: Borderless" }
+        return "Display: Windowed"
     }
 
-    // "UI Scale: Auto (175%)" or "UI Scale: 200%".
+    // "UI Scale: Auto 175%" or "UI Scale: 200%".
     fn ui_scale_text { fe: *Front, into: []mut u8 } -> []u8 {
         let want = fe.settings.gui_scale
         let shown = if want <= 0.0 { gui::auto_scale{ w = fe.render_w, h = fe.render_h } } else { want }
         let mut n = copy_into{ dst = into, src = "UI Scale: " }
-        if want <= 0.0 { n = n + copy_into{ dst = into[n..], src = "Auto (" } }
+        if want <= 0.0 { n = n + copy_into{ dst = into[n..], src = "Auto " } }
         n = put_int{ into, at = n, n = @as(i32, math::floorf{ x = shown * 100.0 + 0.5 }) }
         n = n + copy_into{ dst = into[n..], src = "%" }
-        if want <= 0.0 { n = n + copy_into{ dst = into[n..], src = ")" } }
         return into[..n]
     }
 
     fn resolution_text { fe: *Front, into: []mut u8 } -> []u8 {
         let s = &fe.settings
-        let mut n = copy_into{ dst = into, src = "Resolution: " }
+        // "Screen: 3840 x 2160" is 200 pixels, "Resolution: 3840 x 2160" 233 and "Resolution: Desktop (3840 x 2160)" 327.
+        let mut n = copy_into{ dst = into, src = "Screen: " }
         if s.window_mode == 2 and s.width >= fe.desktop.width and s.height >= fe.desktop.height {
-            n = n + copy_into{ dst = into[n..], src = "Desktop (" }
-            n = put_int{ into, at = n, n = fe.desktop.width }
-            n = n + copy_into{ dst = into[n..], src = " x " }
-            n = put_int{ into, at = n, n = fe.desktop.height }
-            n = n + copy_into{ dst = into[n..], src = ")" }
+            n = n + copy_into{ dst = into[n..], src = "Desktop" }
             return into[..n]
         }
         n = n + format_mode{ into = into[n..], w = s.width, h = s.height }

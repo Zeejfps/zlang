@@ -27,13 +27,15 @@ namespace play {
         }
         let mut config = render::make_config{ title = "kotor", width = live.width, height = live.height, hidden = opts.headless }
         config.vsync = live.vsync
+        // The game draws its own pointer: Windows' stays hidden from the window's first moment (display::apply keeps it so).
+        if not opts.headless { sdl::hide_cursor{ &sdl } }
         let mut dev = try gpu::open(arena::Arena){ &sdl, realloc = arena::alloc, heap = &device_arena, config }
         defer gpu::close{ &dev, &sdl }
         let mut disp = display::make{ hidden = opts.headless, path = opts.settings }
         let first_change = display::apply{ d = &disp, &dev, &sdl, s = &live }
         disp.live = live
         if (first_change & display::CHANGED_TEXTURES) != 0 { mount_packs{ &w, quality = live.texture_quality } }
-        if not opts.headless { display::report{ d = &disp, io = &w.io } }
+        if not opts.headless { display::report{ d = &disp, &sdl, io = &w.io } }
         let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, heap = &device_arena, cap = render::default_capacity{} }
         // Sound: a device when there is a window; headless, the mixer runs on without one (as the
         // original does with no sound device, audio.md), so sounds still start and end.
@@ -234,7 +236,7 @@ namespace play {
                 disp.live = s
                 options_changed{ &w, &dev, ui, &dview, &disp, ld, changed }
                 reload_scene = reload_scene or (changed & display::CHANGED_TEXTURES) != 0
-                if (changed & display::CHANGED_SIZE) != 0 and not opts.headless { display::report{ d = &disp, io = &w.io } }
+                if (changed & display::CHANGED_SIZE) != 0 and not opts.headless { display::report{ d = &disp, &sdl, io = &w.io } }
             }
             if ingame::take_display_change{ ui } is some{ value = st } {
                 let changed = display::apply{ d = &disp, &dev, &sdl, s = st }
@@ -356,6 +358,7 @@ namespace play {
             // The player doesn't walk while a conversation runs (re/dialogue.md 4.9).
             if w.conversation.active { keys = ctl::no_keys{} }
             ctl::update{ ctl = &control, &w, keys, yaw = camera.yaw, dt = w.clock.dt }
+            ingame::set_move_speed{ ui, speed = math::max{ a = math::abs{ x = control.vx }, b = math::abs{ x = control.vy } } }    // HOOK(ingame)
             world::tick{ &w, &vm, engine }
             fight::trace{ &w }
             // EndGame: after its wait the story is over, and the main menu is next.
@@ -462,10 +465,13 @@ namespace play {
                 if adev == null { speed::mix_seconds{ mixer, silent, rate, seconds = owed.dt } }
             }
             let camera_dt = dt + owed.dt
+            let owed_clock_dt = owed.clock_dt
             owed = speed::Owed{ dt = 0.0, clock_dt = 0.0 }
             // 9-10. Scene and camera (which snaps behind the leader again once it is placed).
             if w.arrival > 0 { camera.started = false }
-            dlgview::pre_sync{ v = &dview, w = &w, sc = &sc, dev = &dev, g = &ui.gui, dt = w.clock.dt }
+            // The dialogue layer's fade, bars and bark clocks take the skipped ticks' time too: a script's fade after a conversation ran 8
+            // times too slowly under --speed 8 (a 2 s fade-in still black 15 s later in the pictures).
+            dlgview::pre_sync{ v = &dview, w = &w, sc = &sc, dev = &dev, g = &ui.gui, dt = w.clock.dt + owed_clock_dt }
             scene::sync{ &sc, &w, &dev, dt = w.clock.dt }
             vfx::update{ v = &vx, &sc, &w, &dev, dt = w.clock.dt }
             dlgview::post_sync{ v = &dview, w = &w, sc = &sc, dt = w.clock.dt }
@@ -497,7 +503,18 @@ namespace play {
             }
             cam::update{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height, turn = if mouse.freelook { 0.0 } else if key_turn != 0.0 { key_turn } else { mouse.edge }, mouse_degrees = cam_yaw, pitch_degrees = mouse.pitch_degrees, dt = camera_dt }
             dlgview::apply_camera{ v = &dview, w = &w, sc = &sc, camera = &camera }
-            if test_camera.len > 0 { place_test_camera{ &w, spec = test_camera, &camera } }
+            if test_camera.len > 0 {
+                if ci::starts_with{ s = test_camera, prefix = "probe" } {
+                    cam::probe{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height }
+                    test_camera = ""
+                } else if ci::starts_with{ s = test_camera, prefix = "trace" } {
+                    // One line a camera update: where the eye is from the look-at point, for finding jitter.
+                    let pc = world::object{ w = &w, id = w.pc }
+                    if pc != null {
+                        _ = @fmt(&w.io, "camtrace {} {} {} {} {} {} {} {}\n", w.clock.frame, pc.position.x, pc.position.y, camera.eye.x - camera.look.x, camera.eye.y - camera.look.y, camera.eye.z - camera.look.z, camera.yaw, camera.h)
+                    }
+                } else { place_test_camera{ &w, spec = test_camera, &camera } }
+            }
             death::place_camera{ d = &wipe, c = &camera, w = &w, sc = &sc, dt = camera_dt }
             // The conversation's focus (game/focus.ctx), eased every tick so pictures taken without rendering see it too.
             let view_focus = focus::update{ f = &fcs, eye = camera.eye, at = dlgview::focus_point{ v = &dview, w = &w, sc = &sc, eye = camera.eye, forward = camera.dir, fov = camera.style.fov }, dt = camera_dt }
@@ -1014,6 +1031,10 @@ namespace play {
             let dx = t.position.x - pc.position.x
             let dy = t.position.y - pc.position.y
             if dx * dx + dy * dy > 0.01 { camera.yaw = math::atan2f{ y = -dx, x = dy } }
+            return
+        } else if ci::eq{ a = kind, b = "yaw" } {
+            // The follow camera at a heading in degrees (0 looks along +y, positive turns left), held.
+            camera.yaw = math::radians{ degrees = text::scan_f32{ s = text::next_word{ &words } ifnull "" } ifnull 0.0 }
             return
         } else if ci::eq{ a = kind, b = "at" } {
             let from = text::next_word{ &words } ifnull { return }

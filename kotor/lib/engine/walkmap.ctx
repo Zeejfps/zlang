@@ -14,7 +14,7 @@ namespace walkmap {
 
     struct Room { name: resref::ResRef, position: math::Vec3, mesh: ?bwm::Walkmesh }
 
-    struct Placed { owner: u32, mesh: bwm::Walkmesh, active: bool }
+    struct Placed { owner: u32, mesh: bwm::Walkmesh, active: bool, door: bool }
 
     // The bounds of a placed walkmesh's vertices: a point or a step far from them cannot meet any of its faces.
     struct Box { lo: math::Vec3, hi: math::Vec3 }
@@ -169,6 +169,85 @@ namespace walkmap {
     // a blocking placed walkmesh.
     fn step_to { m: *Map, from: math::Vec3, to: math::Vec3 } -> ?f32 {
         return walk_segment{ m, from, to, spacing = SAMPLE, bridge = false }
+    }
+
+    // Whether the bounds of any active placeable's walkmesh (not a door's) meet those of the segment from (ax, ay)
+    // to (bx, by): the cheap first question before meets_placeable's.
+    fn placeable_near { m: *Map, ax: f32, ay: f32, bx: f32, by: f32 } -> bool {
+        let placed = list::items{ list = m.placed }
+        let boxes = list::items{ list = m.boxes }
+        let lo_x = math::min{ a = ax, b = bx } - BOX_SLACK
+        let hi_x = math::max{ a = ax, b = bx } + BOX_SLACK
+        let lo_y = math::min{ a = ay, b = by } - BOX_SLACK
+        let hi_y = math::max{ a = ay, b = by } + BOX_SLACK
+        let mut b: usize = 0
+        while b < placed.len {
+            let box = boxes[b]
+            if placed[b].active and not placed[b].door and box.hi.x >= lo_x and box.lo.x <= hi_x and box.hi.y >= lo_y and box.lo.y <= hi_y { return true }
+            b = b + 1
+        }
+        return false
+    }
+
+    // Whether a straight walk from `from` to `to` meets an active placeable's walkmesh (a door's is left out: a
+    // closed door is opened by whoever walks into it, movement.md 4.9, so a route may go through one). The
+    // planner asks it of each edge of the path graph, which was authored without the placeables a script
+    // creates later (Calo Nord's landspeeders on the camp road), and so would run a route into them. The same
+    // blocking test as step_to's, at the same samples, but the floor is looked up only where a sample lies
+    // inside a placeable's bounds, so an edge in the open costs one pass over the placed walkmeshes.
+    fn meets_placeable { m: *Map, from: math::Vec3, to: math::Vec3 } -> bool {
+        let placed = list::items{ list = m.placed }
+        let boxes = list::items{ list = m.boxes }
+        let lo_x = math::min{ a = from.x, b = to.x } - BOX_SLACK
+        let hi_x = math::max{ a = from.x, b = to.x } + BOX_SLACK
+        let lo_y = math::min{ a = from.y, b = to.y } - BOX_SLACK
+        let hi_y = math::max{ a = from.y, b = to.y } + BOX_SLACK
+        let mut near: [48]u32
+        let mut near_count: usize = 0
+        let mut b: usize = 0
+        while b < placed.len {
+            let box = boxes[b]
+            if placed[b].active and not placed[b].door and box.hi.x >= lo_x and box.lo.x <= hi_x and box.hi.y >= lo_y and box.lo.y <= hi_y {
+                // Past 48 near ones the rest are not asked (a crowd of placeables along one edge): the
+                // mover's own steps still stop at them.
+                if near_count < 48 {
+                    near[near_count] = @as(u32, b)
+                    near_count = near_count + 1
+                }
+            }
+            b = b + 1
+        }
+        if near_count == 0 { return false }
+        let dx = to.x - from.x
+        let dy = to.y - from.y
+        let len = math::sqrtf{ x = dx * dx + dy * dy }
+        let n = if len <= SAMPLE { 1 } else { @as(u32, math::ceilf{ x = len / SAMPLE }) }
+        let mut i: u32 = 0
+        while i <= n {
+            let t = @as(f32, i) / @as(f32, n)
+            let x = from.x + dx * t
+            let y = from.y + dy * t
+            let mut inside = false
+            let mut k: usize = 0
+            while k < near_count {
+                let box = boxes[@as(usize, near[k])]
+                if x >= box.lo.x - BOX_SLACK and x <= box.hi.x + BOX_SLACK and y >= box.lo.y - BOX_SLACK and y <= box.hi.y + BOX_SLACK { inside = true }
+                k = k + 1
+            }
+            if inside {
+                // The height the mover would be at: the floor under the sample, else the straight line's.
+                let hint = from.z + (to.z - from.z) * t
+                let found = floor{ m, x, y, z = hint }
+                let z = if found != null { found.z } else { hint }
+                k = 0
+                while k < near_count {
+                    if over_blocking_face{ w = &placed[@as(usize, near[k])].mesh, walkable = m.walkable, x, y, z } { return true }
+                    k = k + 1
+                }
+            }
+            i = i + 1
+        }
+        return false
     }
 
     // A short step across a seam: the walkmeshes of two rooms can leave a gap of a few centimetres

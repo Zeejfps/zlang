@@ -4,8 +4,7 @@
 5 ui replies ~I_am_ready_to_go ~Find_the_Star_Map default 1
 8 ui rules
 10 warp kor35_utharwynn party
-50 ui target kor35_utharwynn
-55 ui key 1
+50 use kor35_utharwynn
 4000 ui pos
 4000 ui party
 4000 ui where

@@ -6,8 +6,7 @@
 # members and begin airlock sequence." takes the player alone to the sea floor in the suit (EffectDisguise, appearance 181). The
 # test player (god mode) follows the waypoints of the survivor's corridor, the survivor's talk (man28_sur2, then the scene where a
 # firaxa takes him), the firaxa along the route to the north door (28bn), which opens at a touch to Kolto Control.
-3 ui stat hpmax 150
-3 ui stat hp 150
+3 ui stat hp 144
 8 ui replies ~begin_airlock_sequence default 1
 10 warp from28bw party
 60 ui pos

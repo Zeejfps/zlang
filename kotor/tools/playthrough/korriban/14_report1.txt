@@ -5,8 +5,7 @@
 8 ui rules
 8 ui globals kor
 10 warp kor35_utharwynn party
-50 ui target kor35_utharwynn
-55 ui key 1
+50 use kor35_utharwynn
 1100 ui rules
 1100 ui globals kor
 1100 ui journal list

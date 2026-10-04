@@ -1,0 +1,21 @@
+# Korriban, part 28 the other way (from the checkpoint "map"): the end of the test with Yuthura's friendship, so that she yields and can be
+# redeemed: "You ask for mercy? You, a Sith?", "I can't talk about that.", "Tell me why you tried to kill me, first.", "[Persuade] Maybe you
+# *should* think about it.", "There's still time to change that." (k39_yth_redeem, journal kor35_waysith 60). The branch needs
+# KOR_YUTHURA2 3 (k_pkor_knyuth02), which her personal talks in the Academy set over several visits (k_pkor_yuth01..05); it is set by hand.
+5 ui global KOR_YUTHURA2 3
+5 ui replies ~I_think_I_understand ~with_Yuthura ~want_any_power ~You_ask_for_mercy ~talk_about_that ~Tell_me_why ~[Persuade]_Maybe ~still_time default 1
+10 warp k39_sabersarc party
+50 hoveron k39_sabersarc
+53 mouse click
+56 mouse click
+400 ui click 640 452
+600 warpxy 121.2,108 party
+750 warpxy 94,108 party
+3900 ui bot god on
+3901 ui bot on
+9000 ui bot off
+9100 ui journal list
+9100 ui rules
+9100 ui party
+9100 ui where kor39_y
+9110 save redeemed

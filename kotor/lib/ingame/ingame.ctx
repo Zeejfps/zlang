@@ -49,7 +49,6 @@ namespace ingame {
         reverse_buttons: bool,              // "Reverse Mouse Buttons": left and right swap
         autopause: bool,                    // the auto-pause triggers run (a person is playing: off in headless runs)
         ap_enemy: bool, ap_mine: bool, ap_party: bool, ap_target: bool, ap_round: bool, ap_action_menu: bool,    // [Autopause Options]
-        enemy_noted: bool,                  // an enemy in sight has been announced; clears when none is in sight
         party_alive: i32,                   // party members on their feet last frame
         ap_cooldown: f32,                   // seconds before "Party Member Down" may pause again
         pause_reason: u32,                  // the banner's text (dialog.tlk) for the next pause
@@ -90,7 +89,7 @@ namespace ingame {
             right_held = false, look_x = 0, look_y = 0, looking = false, freelook = false, turn_to = obj::INVALID, mouse_look = saved.mouse_look, mouse_sens = saved.mouse_sensitivity, reverse_buttons = saved.reverse_buttons,
             autopause = false, ap_enemy = saved.pause_enemy_sighted, ap_mine = saved.pause_mine_sighted, ap_party = saved.pause_party_killed,
             ap_target = saved.pause_triggers, ap_round = saved.pause_end_round, ap_action_menu = saved.pause_action_menu,
-            enemy_noted = false, party_alive = 0, ap_cooldown = 0.0, pause_reason = REASON_PAUSED,
+            party_alive = 0, ap_cooldown = 0.0, pause_reason = REASON_PAUSED,
             psel_wait = false, psel_exit = resref::empty{}, psel_force1 = -1, psel_force2 = -1, psel_paused = false,
             mine_quiet = 1000.0,
         }
@@ -483,6 +482,13 @@ namespace ingame {
         return CameraInput{ yaw_degrees = yaw, pitch_degrees = pitch, edge, looking, freelook = ui.freelook and usable }
     }
 
+    // How fast the keys move the leader after this tick's control step: the larger of the velocity's two
+    // components (CSWCPlayerControl::GetCurrentSpeed 0x00679750). The HUD drops a target a leader on the move
+    // has kept for half a second (hud/autotarget.ctx).
+    fn set_move_speed { mut ui: Ingame, speed: f32 } {
+        ui.hud.move_speed = speed
+    }
+
     // The object Q or E just picked, once: the loop tells the camera to swing round to it.
     fn take_turn_to { mut ui: Ingame } -> u32 {
         let id = ui.turn_to
@@ -558,39 +564,18 @@ namespace ingame {
         if clock_paused_by_player{ w = &w } or w.conversation.active or ui.menu != NO_MENU or ui.hud_hidden { return }
         if w.transition != null or w.arrival > 0 or is_blocked{ &ui } { return }
         ui.pause_reason = reason
+        if w.log.objects {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "auto-pause: {} (target {})\n", reason, w.target)
+        }
         set_player_pause{ &ui, &w, &dev, on = true }
     }
 
-    // Every frame: an enemy coming into sight is the first thing the interface notices itself (the first
-    // of a group; the next announcement waits until none is in sight); then the first request of the frame
-    // from the engine and the HUD (autopause::request: a party member down, a slot's choice stepped, the
-    // end of a round, a new target) is weighed against the options and a person playing.
+    // Every frame: the first request of the frame from the engine and the HUD (autopause::request: an
+    // enemy sighted, a party member down, a slot's choice stepped, the end of a round, a new target) is
+    // weighed against the options and a person playing.
     fn update_autopause { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, dt: f32 } {
         if ui.ap_cooldown > 0.0 { ui.ap_cooldown = ui.ap_cooldown - dt }
-        let lead = party::leader{ w = &w }
-        if ui.autopause and lead != obj::INVALID and not w.conversation.active {
-            let members = party::members{ w = &w }
-            let mut sighted = false
-            let all = list::items{ list = w.objects.all }
-            let mut i: usize = 0
-            while i < all.len and not sighted {
-                let o = all[i]
-                i = i + 1
-                if o.destroyed or o.kind != obj::Kind::creature or o.id == lead or party::is_member{ w = &w, id = o.id } { continue }
-                if not hud::is_selectable{ w = &w, id = o.id } or not hud::is_hostile{ w = &w, id = o.id } { continue }
-                let mut k: usize = 0
-                while k < members.len and not sighted {
-                    if perception::entry_of{ w = &w, viewer = members[k], target = o.id } is some{ value = e } { if e.seen { sighted = true } }
-                    k = k + 1
-                }
-            }
-            if sighted and not ui.enemy_noted {
-                ui.enemy_noted = true
-                if not hud::leader_in_combat{ w = &w } { autopause::request{ &w, reason = autopause::ENEMY_SIGHTED } }
-            } else if not sighted {
-                ui.enemy_noted = false
-            }
-        }
         let asked = autopause::take{ &w }
         if asked == 0 or not ui.autopause { return }
         // The option of each reason ([Autopause Options]); a new target only counts in combat mode
@@ -645,7 +630,13 @@ namespace ingame {
         }
         let aspect = @as(f32, ui.width) / @as(f32, ui.height)
         // A conversation covers the screen with its own panels.
+        ui.hud.looking = ui.looking
         hud::update{ h = &ui.hud, g = &ui.gui, &w, &dev, text = &ui.text, camera, aspect, blocked = is_blocked{ &ui }, dt }
+        // The auto-target's picks that turn the camera (an enemy coming into sight, a pick in combat mode) go the way Q and E do.
+        if ui.hud.swing_to != obj::INVALID {
+            ui.turn_to = ui.hud.swing_to
+            ui.hud.swing_to = obj::INVALID
+        }
         selfslots::update{ s = &ui.selfs, g = &ui.gui, &w, &dev, panel = ui.hud.panel, dt, combat_message = ui.hud.combat and ui.hud.combat_message > 0.0 }
         let events = gui::take_events{ g = &ui.gui }
         let mut i: usize = 0

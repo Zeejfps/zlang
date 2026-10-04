@@ -126,8 +126,8 @@ namespace death {
         let cp = math::cosf{ x = d.pitch }
         let dir = math::Vec3{ x = f.x * cp, y = f.y * cp, z = -math::sinf{ x = d.pitch } }
         let back = math::vec3::add_scaled{ a = look, b = dir, s = -d.distance }
-        // Held off the walls, as the chase camera is (the original casts a ray and stays 0.25 m short of what it hits).
-        let eye = cam::collide{ c = &c, w, sc, look, eye = back }
+        // Held off the walls, as the chase camera is.
+        let eye = cam::collide{ c = &c, w, sc, target = w.pc, look, nominal = back, reach = 1000.0 }.eye
         c.eye = eye
         c.look = look
         c.dir = dir

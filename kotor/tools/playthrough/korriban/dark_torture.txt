@@ -3,8 +3,7 @@
 5 ui replies ~What_are_you_trying_to_do ~How_do_you_drug_him ~You_want_me_to_try_it ~Activate_the_serum ~high_dosage ~high_dosage ~Activate_the_serum ~high_dosage ~high_dosage default 1
 8 ui rules
 10 warp kor35_torturer party
-50 ui target kor35_torturer
-55 ui key 1
+50 use kor35_torturer
 1800 warp kor35_torturecomp party
 1850 use kor35_torturecomp
 8000 ui rules

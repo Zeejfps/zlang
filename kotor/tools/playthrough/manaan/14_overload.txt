@@ -1,0 +1,24 @@
+# Manaan, part 14 (the other ending of the Rift): the two-pod pressure puzzle that overloads the harvester instead of the toxin. From the
+# checkpoint "sci" (CKPT=sci, as part 11). Same airlock and walk to the Kolto Control Panel; there "Access fuel tank pressure control."
+# opens the puzzle of the injector pod (3 million sangen) and the container pod (5): the container must be filled to exactly 4. The
+# moves FILL CONTAINER, TRANSFER container to injector (2 left), DUMP INJECTOR, TRANSFER (injector 2), FILL CONTAINER, TRANSFER (the
+# injector takes 1 more: 4 left) do it; the harvester destroys itself (journal man_planet 65, 1,500 XP, MAN_PLANET_PLOT 3, the movie
+# 26a), the great firaxan is passive ("It allows you to pass", man28_safe) and the walk on to the Star Map (part 12) pays the Star
+# Map. Each console line is read before the next list, so the puzzle takes about 4,000 frames.
+3 ui stat hp 144
+8 ui replies ~begin_airlock_sequence ~access_fuel_tank ~fill_container_pod ~transfer_from_container_to_injector ~dump_injector_pod ~transfer_from_container_to_injector ~fill_container_pod ~transfer_from_container_to_injector default 1
+10 warpxy 217.0,78.0 party
+60 use 28c
+1500 ui bot god on
+1501 ui bot on
+1502 ui bot route man28d_comp
+3800 ui bot off
+3810 use man28d_comp
+8400 ui bot god on
+8401 ui bot on
+8402 ui bot route wp_player_starmap
+10400 ui pos
+10400 ui journal list
+10400 ui xp
+10400 ui inv
+10410 save overload
