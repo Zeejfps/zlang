@@ -849,6 +849,11 @@ The effect-type 0x26 apply handler (registered by `0x004e4a10`). (high unless ma
    If now dead: a door is bashed open (plot set, `0x00589c70`); a placeable gets a death effect,
    or, when it opens rather than dies (`+0x324`), is set plot, plays 10075 and opens after 1 s.
    The attacker's actions are cleared.
+   **Hardness** (UTD / UTP `Hardness`, read by `LoadDoor` `0x0058a1f0` into the door at `+0x2c2` and by `LoadPlaceable` into the placeable at `+0x258`): when
+   nonzero, `FUN_00589d40` / `FUN_00584870` apply a permanent type-2 DAMAGE_RESISTANCE effect after the load, int 0 = `0x3fff` (every damage type), int 1 = the
+   hardness, int 2 (limit) 0. `GetDamageRoll` (6.1 step 10) calls the target's `DoDamageImmunity`, `DoDamageResistance`, `DoDamageReduction` for any target, so a door
+   or placeable takes each weapon hit less its hardness (never below 0). `CurrentHP` is held to `HP` by a template load (`LoadDoor`'s last argument). A Static door is
+   set Plot. (high)
 3. **Creatures**: non-combat damage gets immunity, resistance and reduction here (combat damage
    already had them). Last damager `+0x160` = the creator; mark hostility (`SetLastHostileActor`)
    unless the effect is one of the target's own type-0x23 effects; store the per-type amounts at
