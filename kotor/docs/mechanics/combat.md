@@ -50,7 +50,7 @@ d20, total and the defense it was against. The helpers are in `lib/ingame/test_c
 | 13 | Slot 2: hostile Force powers; slot 3: grenades and other items usable on the target | `0x006191f0`, `0x006198e0` | slot 3 grenades: the items owner (merged); slot 2 Force powers: the Force owner |
 | 14 | In combat a chosen action is added to the queue (at most 4 pending); out of combat it replaces the queue | actions.md 3.13 "Scheduled", `AddAttackActions` | fixed 7713448 (three feat attacks queued in combat, one per round) |
 | 15 | Queue icons: the queued actions' icons (the feat's icon for a feat attack), clear-one drops the last | gui.md "Combat mode" | fixed 7713448 (screenshot: the round and the waiting orders with feat icons) |
-| 16 | The leader keeps attacking its target round after round until it dies | play | matches (ours, end of round) |
+| 16 | At the end of its round the leader attacks its target again while it lives and nothing else waits; when it died, the leader turns on the nearest enemy it sees within its attack range + 2 m (the HUD target follows, waiting attacks turn on it), else stands down | EndCombatRound -> `0x005b6980`, `0x004f2de0`, `0x004ffad0` | fixed c801482 (Upper City, three troopers: killed one, turned on the next and the last) |
 | 17 | Feat attacks: to-hit/damage/self-defense penalties, extra attack, stun on Critical Strike | combat.md 4.5 | matches (log through the target block: Flurry two attacks at -4, the feat's numbers from the rules library, rulescheck) |
 | 18 | Attacking a door or placeable (bash) | combat.md 6.6 | matches (bunk checkpoint, a relocked non-plot door: Bash in the block, defense 0, 8+7+3+3 damage over 4 rounds, the door opens and turns plot, the attacker stops) |
 
@@ -60,7 +60,7 @@ d20, total and the defense it was against. The helpers are in `lib/ingame/test_c
 |---|---|---|---|
 | 19 | OnAttacked runs for every creature hit, the player's too: the leader's `k_hen_attacked01` shouts GEN_I_WAS_ATTACKED and the companions join | `0x004fece0` event 15 runs ScriptAttacked with no player check; k_ai_master 2005 | fixed: the player's OnAttacked runs, and saves keep the listen patterns (Listening, ExpressionList) without which no loaded companion heard the shout; checked at the Vulkar base (Carth and Mission join 3 s after the first shot at the leader). Open (movement): against Kandon, Carth's approach fails to plan a path from (85.4, 54.2) and he never reaches the fight |
 | 20 | OnDamaged runs for everyone but the player character (the main PC, not the leader) | combat.md 6.6 step 5 | fixed |
-| 21 | Creature AI by `k_ai_master` (scripts); party AI styles via SetPartyAIStyle / SetNPCAIStyle | scripts | matches for what the fights showed: targets by GN_DetermineAttackTarget (downed members left out), switches to its melee weapon at close range, a wounded trooper uses a medpac (spell 64) under half health, Vulkar droids fire their carbonite projectors; party members join on the leader's shout. The Scripts button (AI style) panel: a sub-agent |
+| 21 | Creature AI by `k_ai_master` (scripts); party AI styles via SetPartyAIStyle / SetNPCAIStyle | scripts | matches for what the fights showed: targets by GN_DetermineAttackTarget (downed members left out), switches to its melee weapon at close range, a wounded trooper uses a medpac (spell 64) under half health, Vulkar droids fire their carbonite projectors; party members join on the leader's shout. The Scripts button on the character sheet opens the AI style panel (scriptselect.gui: Default attack, Grenadier, Jedi/Droid support from aiscripts.2da) and sets GetNPCAIStyle's value, saved as AIState (merged 3170b91); a grenadier companion throws grenades (row 33) |
 
 ### Death, going down, recovery
 
@@ -91,6 +91,6 @@ d20, total and the defense it was against. The helpers are in `lib/ingame/test_c
 
 | # | Behaviour | Evidence | Status |
 |---|---|---|---|
-| 32 | Energy shields (items used from the self slot) absorb damage until spent or timed out | rules.md | to check |
-| 33 | Grenades thrown at a target or point, area damage, saves | items | to check |
-| 34 | Mines exploding when walked on in combat | items | to check |
+| 32 | Energy shields (items used from the self slot) absorb damage until spent or timed out | rules.md 1.13, `OnApplyForceShield` 0x004df540 | fixed (sub-agent, merged 3f13a64): bands absorb blaster and ion damage until their points run out (20, 7, 3, then the shield breaks and 4 gets through), a missed bolt on a shield is result 10, a new shield replaces the old; open: the shield aura of rows 0-14 is an engine-coded effect lib/vfx does not draw |
+| 33 | Grenades thrown at a target or point, area damage, saves | items | grenades in the block's third slot: the items owner; a fighting order (queues in combat). Thrown by AI: Trask as grenadier throws frag grenades (spell 87) at two troopers on the Endar Spire and the blasts kill both (052d337 made GetFirst/NextObjectInShape walk ascending x, which GN_FindGrenadeTarget depends on) |
+| 34 | Mines exploding when walked on in combat | items | the items/skills owner (traps and mines sub-agent); hooks agreed: MINE_SIGHTED auto-pause, damage as rules effects |
