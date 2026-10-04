@@ -150,7 +150,7 @@ namespace selfslots {
     // One item's entry in its list, dimmed with the reason when the leader cannot use it now.
     fn add_item { mut w: world::World, leader: u32, id: u32, worn: bool, mut out: [4]Slot } {
         let k = slot_of_item{ &w, leader, id, worn }
-        if k == 0 { return }
+        if k == 0 or k == 3 { return }          // the mine slot is fill_mines' (the trap kits)
         let kind = items::base_int{ w = &w, id, column = "itemtype", fallback = 0 }
         let alive = not hud::is_down{ w = &w, id = leader }
         let mut reason = R_OK
