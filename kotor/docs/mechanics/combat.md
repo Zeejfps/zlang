@@ -38,7 +38,7 @@ d20, total and the defense it was against. The helpers are in `lib/ingame/test_c
 | 6 | One round = 3 s; attacks resolved at round start, impacts at the animation's hit times (melee `combatanimations.2da`, ranged `weapondischarge.2da` shots spread over the attacks) | combat.md 3.1-3.4 | matches (log: rounds 91 frames apart) |
 | 7 | Attacks per round: 1 + effect attacks (0..2) + 1 for Flurry/Rapid Shot lines; +1 off-hand with a second weapon or a double weapon | combat.md 3.2 | matches (Carth 2 attacks with two pistols) |
 | 8 | Hit/miss/critical: d20 + modifier vs defense; natural 1 misses, 20 hits; threat range by weapon, confirmation roll; the modifier and defense terms | combat.md 4, 5 | matches (rules library, `rulescheck`) |
-| 9 | Damage dice, STR (melee), Weapon Specialization, crit multiplier, difficulty scaling | combat.md 6 | matches for normal difficulty; open: the difficulty option is not passed to the rules |
+| 9 | Damage dice, STR (melee), Weapon Specialization, crit multiplier, difficulty scaling | combat.md 6 | matches (the difficulty option reaches the rules, row 31) |
 | 10 | Melee against a creature holding a ranged weapon +10; ranged within 5 m +10 | combat.md 4.2 | matches (log totals) |
 
 ### Player's actions and the queue
@@ -85,7 +85,7 @@ d20, total and the defense it was against. The helpers are in `lib/ingame/test_c
 | # | Behaviour | Evidence | Status |
 |---|---|---|---|
 | 30 | Auto-pause: end of round, enemy sighted, mine sighted, party member down, action menu, new target | gameloop.md 6.4 | open: the options are saved but nothing pauses |
-| 31 | Difficulty: easy/normal/difficult change damage (difficultyopt, diffsettings) | combat.md 6.1, 6.7 | open: always normal |
+| 31 | Difficulty: easy/normal/difficult change damage (difficultyopt, diffsettings) | combat.md 6.1, 6.7 | fixed: the Difficulty Level option reaches `rules.settings.difficulty` when the game starts (from the settings file) and every frame once the in-game options panel has been opened, so changing it there takes effect at once. Checked with `--log combat` on the same seeded fight (trooper vs the player): the first hit rolls 7 on normal and takes 7; on difficult it takes 10 (x1.5); on easy the roll is 3 (diffsettings MaxNPCDamagePercent 50: roll minus 50 % of the die maximum) and the player takes 1 (3 x 0.5, truncated), so easy is both scalings in a row, as combat.md 6.1 and 6.7 describe them. Changed in game (options, Gameplay, Difficulty arrow) from normal to easy gives the same 3 and 1. Open (combat.md 12): whether the exe applies both scalings on easy (the server difficulty value for diffsettings is not established). |
 
 ### Items in combat
 

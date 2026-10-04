@@ -762,23 +762,60 @@ The player pause is changed through the client, which applies requests at the en
 ### 6.4 Auto-pause
 
 `[Autopause Options]` in `swkotor.ini` sets bits of the client options word `+0x14` (read by
-`0x0061dbe0`): `End Of Combat Round` 0x800, `Enemy Sighted` 0x1000, `Mine Sighted` 0x2000,
-`Party Killed` 0x4000, `Action Menu` 0x8000, `New Target Selected` 0x10000. Triggers found (med):
+`0x0061dbe0`; the ini keys are `End Of Combat Round` 0x800, `Enemy Sighted` 0x1000, `Mine Sighted`
+0x2000, `Party Killed` 0x4000, `Action Menu` 0x8000, `New Target Selected` 0x10000, which is the
+order of the check boxes of `optautopause`: `CB_ENDROUND`, `CB_ENEMYSIGHTED`, `CB_MINESIGHTED`,
+`CB_PARTYKILLED`, `CB_ACTIONMENU`, `CB_TRIGGERS`; the shipped defaults are 0, 1, 1, 1, 0, 1). Every
+call site tests its own option bit, then calls `RequestAutoPause(1, reason)`. The reason picks the
+banner text (`CGuiInGame::SetPauseState` `0x0062def0` → `CSWGuiPause::SetReason` `0x006c00c0`,
+dialog.tlk): (high)
 
-| Trigger | Where | Reason |
+| Reason | Trigger and its extra conditions | Banner (strref) |
 |---|---|---|
-| a hostile creature becomes visible | `UpdateSelectableObjects` (`0x005fa5a0`), also plays the "enemy sighted" feedback 0x15 | 1 |
-| a mine becomes visible | same function | 0xb |
-| a party member dies while others live | death handling (`0x004e0ac0`), with a 2 s cooldown (`+0x39c`) | 9 |
-| action menu / target selection | HUD handlers `0x006884b0`, `0x00688520`, `0x0068af70`, `0x0068afe0` (option bit 0x8000) | 7 |
-| end of a combat round | `CSWSCombatRound::EndCombatRound` (`0x004d4620`) | not traced |
+| 1 | enemy sighted (below) | 48212 "ENEMY SIGHTED! Press the Pause key (`<Pause>` or Pause) to continue" |
+| 4 | the pause key or the HUD button (not automatic) | 1508 "PAUSED" (also for any unknown reason) |
+| 5 | end of a combat round: `EndCombatRound` (`0x004d4620`) with its script run, for the round of the client party's leader only, the game not paused, option 0x800, and the leader's client creature in combat mode (`+0x440` bit 0) | 42432 "End of Combat Round" |
+| 7 | the arrow buttons of the target block and the self-action block (`0x006884b0`, `0x00688520`, `0x0068af70`, `0x0068afe0`), option 0x8000, no other condition | 42482 "Menu Used" |
+| 8 | the target-cycling keys (events 0xcc / 0xcd in `HandleInputAction` `0x00621210`), only while the client is in combat mode (`+0x320`) and option 0x10000; clicking an object does not ask | 42481 "Target Changed" |
+| 9 | a player-controlled member dies (`OnApplyDeath` `0x004e0ac0`, `+0xa88`) while some party member still has HP of 1 or more, option 0x4000; `RequestAutoPause` itself gives reason 9 a 2 s cooldown (`+0x39c`, on the frame delta) | 42397 "Party Member Down" |
+| 10 | not requested: while auto-paused, picking an action from the target or self block (`0x00689610`, `0x0068ad60`) re-shows the banner with this reason; the game stays paused | 48423 "Action added to queue." |
+| 11 | mine sighted (below) | 49118 "MINE SIGHTED! Press the Pause button to continue" |
 
-`RequestAutoPause(bOn, reason)` (`0x005f3f10`, forwarder `0x005edee0`) pauses only if the game is
-not already paused and no conversation runs, and remembers that the pause is automatic
-(`+0x384` bit 0);
-during the one-second window `+0x38c` after an unpause it defers the request (`+0x390` = 1 s,
-`+0x398` = reason) and client step 27 retries it. Unpausing (the pause key) clears the automatic
-flag. (med)
+Banner layout: for reasons 1 and 11 `LBL_PRESS` ("PRESS THE PAUSE BUTTON TO CONTINUE", 48384) is
+hidden, since the text carries its own instruction; otherwise it hangs below the reason label; the
+reason label is as tall as its wrapped text and the panel as tall as both. `<Pause>` is the key
+bound to the Pause action (keymap.2da has two rows named Pause: the Pause key and Space).
+
+`RequestAutoPause(bOn, reason)` (`0x005f3f10`, forwarder `0x005edee0`), for bOn = 1: nothing if
+the automatic flag (`+0x384` bit 0) is already set, if the server's player pause is on, or if the
+in-game GUI (`+0xb4`) is not in its idle state (a conversation). If the door window `+0x38c` is
+positive, the request is not made: the window is cleared and the reason kept in `+0x398` with a
+1 s countdown `+0x390`; client step 27 counts it down on the frame delta and then calls
+`RequestAutoPause(1, +0x398)` again, but only while the client is not in combat mode (`+0x320`).
+Otherwise the flag is set and a player-pause request is recorded (reason, sound mode 2, input
+blocked), applied at the end of the frame (6.3). The window `+0x38c` is not "after an unpause": its
+only writer sets it to 5 s (and only when no request is waiting) at the end of the player's default
+action on a door (open, unlock, bash: `CSWCDoor` handlers `0x00683dd0`, `0x00683e86`,
+`0x00683ed4`), so a request that comes within 5 s of such an order waits a second. bOn = 0 clears
+the flag and, when the player pause is still on and no request is pending, requests an unpause
+(reason 0); the pause key (`RequestPause(toggle, 4)`, then this when the pause was automatic) and
+the HUD pause button (`0x006885a0`, `0x006c0360`) call it. Loading an area resets the flag,
+`+0x38c`, `+0x390`, `+0x398` (to 0xff = none), the sighting flags and `+0x320` (`0x005f8419`).
+(high)
+
+Sighting: `UpdateSelectableObjects` (`0x005fa5a0`, then `0x005f3ad0`) runs once a client frame
+with the frame delta (0 while paused), when the module state is 0 or 4, no load is in progress and
+no fade is running (`0x0062ded0`). It rebuilds the leader's list of selectable objects within 30 m
+(`GetNearbySelectableObjects`) and, for the hostile ones that are creatures, asks
+`GetIsTargetVisible` (a render ray query from the leader's head to the object, cached per entry
+for the frame). `+0x324` says an enemy was in view lately: it is set on any frame with a visible
+hostile creature (also while paused) and cleared only after 10 s (`+0x394`, frame delta) without
+one. The first visible hostile creature on a frame where `+0x324` is clear, the server not
+player-paused and no request waiting (`+0x398` = 0xff) shows the tutorial pop-up 0x15, and if the
+option is on and the client is not in combat mode (`+0x320`) calls reason 1; it also stores the
+creature as the object to focus (`+0x2b4`). Mines are the same with `+0x328` / `+0x3a0`, for a
+hostile object whose trap trigger flag (`+0x108`) is set, reason 11, option 0x2000. (high for the
+flow, med for the roles of the hostile test (vtable `+0x138`) and the trap flag)
 
 ### 6.5 Time stop
 
