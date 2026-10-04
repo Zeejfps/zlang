@@ -376,10 +376,15 @@ namespace actions {
         let copy = a.*
         a.params = [Param::none; 8]
         add_front{ &w, id, action = copy }
+        // The move and the wait are this action's steps, in its group: GetCurrentAction answers
+        // FOLLOWLEADER all along, as the original's one running action does (k_ai_master stops a
+        // companion that follows when solo mode is on by asking it).
         let mut pause = make{ kind = Kind::wait }
+        pause.group = copy.group
         pause.params[0] = Param::float{ v = 0.25 }
         add_front{ &w, id, action = pause }
         let mut move = make{ kind = Kind::move_to_point }
+        move.group = copy.group
         move.params[0] = Param::vector{ v = t.position }
         move.params[1] = Param::int{ v = 1 }
         move.params[2] = Param::float{ v = dist }
