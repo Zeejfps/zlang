@@ -14,6 +14,7 @@
 #   med1      uppercity  600   a wounded trooper uses its medpac (k_ai_master talents)
 #   bash1     bunk       1000  a locked non-plot door bashed open through the block
 #   gren2     bunk       600   Trask as grenadier (Scripts panel style 4) throws frag grenades
+#   provoke1  uppercity  600   a dark Jedi turned hostile with a buff on itself as its first order attacks once the buff is cast
 export PATH=/g/Dev/msys64/mingw64/bin:$PATH
 cp=$1; name=$2; frames=$3; shift 3
 mkdir -p kotor/out/combat

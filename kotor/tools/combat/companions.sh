@@ -9,6 +9,8 @@
 #   bridge  bunk      Trask against the reinforcements before the bridge, with the player walking on by hand (the bot,
 #                     whose leader kills them in a few rounds, is switched off before them)
 #   carth   uppercity Carth beside the leader, three troopers 4 to 5 m ahead (combat/retarget1.txt)
+#   provoke uppercity not a companion: a creature turned hostile with a buff on itself as its first order must start the fight
+#                     (combat/provoke1.txt; the Star Forge's dark Sith stood still after theirs until attacked)
 #
 # The logs are kotor/out/combat/companions_NAME.log (--log combat; `party` lines name the ids, `attacks` lines are the
 # rounds). docs/testing.md, "Companions in a fight", says why each is there and what to do when one fails.
@@ -62,6 +64,19 @@ rm -rf $out/saves_companions
 $exe --load $ck/uppercity --no-render --speed 8 --saves $out/saves_companions --input $out/companions_upper.txt --frames 900 \
   --log combat > $out/companions_carth.log 2>&1
 check carth Carth 1 900
+
+# A creature a script turns on the party whose first order is a buff on itself (the dark Sith of the Star Forge's Bastila duel,
+# k_psta_sithhosti) must go for its enemy when the buff is cast: it was not in combat yet, so no end of round told the AI.
+rm -rf $out/saves_companions
+$exe --load $ck/uppercity --no-render --speed 8 --saves $out/saves_companions --input kotor/tools/combat/provoke1.txt --frames 600   --log combat > $out/companions_provoke.log 2>&1
+foe=$(grep -a -E '^spawn g_darkjedi04 [0-9]+ ' $out/companions_provoke.log | head -1 | awk '{print $3}')
+n=$(grep -a -E "^\[[0-9]+ [0-9.]+\] $foe attacks [0-9]+:" $out/companions_provoke.log | awk -F'[][ ]+' '$2 >= 200' | wc -l)
+if [ -n "$foe" ] && [ "$n" -ge 1 ]; then
+  echo "ok   provoke: the dark Jedi that cast a buff on itself first went for its enemy ($n attack rounds from frame 200)"
+else
+  echo "FAIL provoke: the dark Jedi stood still after its buff (see $out/companions_provoke.log)"
+  fail=1
+fi
 
 if [ $fail -ne 0 ]; then echo "companions: FAILED"; exit 1; fi
 echo "companions: ok"

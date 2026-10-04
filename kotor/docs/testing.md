@@ -108,7 +108,9 @@ its next order can keep one out. Three checks, from cheapest:
   kept him in the corridor from the day the line of sight stopped letting him "see" the Sith through the walls);
   `bridge` (the same run, the bot off at frame 7,690: Trask must attack the reinforcements before the bridge in 7,600-8,500; the
   bot's leader would kill them in a few rounds on its own); `carth` (from `uppercity`, `retarget1.txt`: three troopers 4 to 5 m
-  ahead, Carth must attack in 900 frames). A FAIL means a companion made no attack where the original's does; read
+  ahead, Carth must attack in 900 frames); `provoke` (from `uppercity`, `provoke1.txt`, not a companion: a dark Jedi turned
+  hostile with a buff on itself as its first order must go for its enemy when the buff is cast, as the Star Forge's dark Sith
+  after `k_psta_sithhosti` must). A FAIL means a companion made no attack where the original's does; read
   `kotor/out/combat/companions_NAME.log` (`--log combat`), then `ui los` / `ui losaudit` below.
 - **`ui los TAG1 TAG2`** prints whether the first object has a clear line to the second (`perception::clear_line`, the line
   perception, the AI's target choice and a ranged attack use), and what stops it: `blocked by room N face F material M at X m` or
