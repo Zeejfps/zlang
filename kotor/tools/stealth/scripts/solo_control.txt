@@ -1,0 +1,3 @@
+30 goto 80,110
+200 ui stealth
+200 ui stealth carth

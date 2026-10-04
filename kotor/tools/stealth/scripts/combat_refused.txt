@@ -1,0 +1,10 @@
+# Stealth refused in combat (start: module:end_m01ab, 310 frames): the leader runs into the Sith without
+# stealth; once in combat G is refused with "You cannot enter stealth mode while in combat." (1452) on
+# the HUD (the picture).
+6 ui stat stealth 10
+6 ui giveitem g_i_belt010 1 equip
+40 hush
+70 ui goto end_sithsol01
+300 ui stealth
+301 ui key g
+303 ui stealth

@@ -1,0 +1,8 @@
+# walk_past.txt without stealth (start: module:end_m01ab, 600 frames): the Sith see the leader and attack.
+6 ui stat stealth 10
+6 ui giveitem g_i_belt010 1 equip
+40 hush
+70 ui goto end_sithsol01
+300 ui stealth
+600 ui stealth
+600 ui pos

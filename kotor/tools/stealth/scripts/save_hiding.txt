@@ -1,0 +1,9 @@
+# A save made while hiding (start: module:end_m01ab, 90 frames); load_hiding.txt loads it
+# (start: save:kotor/out/stealth/saves_save_hiding/000002 - Game1). Expect the leader still hiding, the
+# area's stealth XP pool as it was.
+6 ui stat stealth 10
+6 ui giveitem g_i_belt010 1 equip
+40 hush
+60 ui key g
+70 ui stealth
+80 save hiding
