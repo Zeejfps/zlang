@@ -36,6 +36,15 @@ namespace play {
         let script = try read_script{ &w, path = opts.input }
         let mut next_line: usize = 0
         let mut frame_no: u64 = 0
+        // --load SAVE: the game starts from that save, as the front end's Load Game would.
+        if w.module == obj::INVALID and opts.load.len > 0 {
+            let folder = save::find_save{ &w, game = opts.game, name = opts.load } ifnull {
+                _ = @fmt(&w.io, "kotor: no save {}\n", opts.load)
+                return 1
+            }
+            try save::load_game{ &w, &vm, engine, folder }
+            arena::reset{ heap = w.scratch }
+        }
         // No module named: the front end (movies, main menu) until New Game.
         if w.module == obj::INVALID {
             let chosen = try front_end{ &sdl, &w, &dev, &frame, mixer, adev, scratch = texture_scratch, opts, script, &next_line, &frame_no }

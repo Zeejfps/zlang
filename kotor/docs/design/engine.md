@@ -547,7 +547,7 @@ each frame:
 
 ## Headless and logs
 
-`kotor [--module end_m01aa] [--game DIR] [--headless] [--no-render] [--speed N] [--mute]
+`kotor [--module end_m01aa] [--game DIR] [--headless] [--no-render] [--speed N] [--mute] [--load SAVE]
 [--engine-only] [--frames N] [--dt S] [--input FILE] [--screenshot-at FRAME:PATH]...
 [--log scripts,routines,events,actions,objects] [--report routines] [--seed N] [--size WxH] [--saves DIR]`
 (no `--module`: the front end first):
@@ -565,6 +565,9 @@ each frame:
   differ). A picture taken between catch-ups shows a camera that has stepped N ticks at once.
 - `--mute` (with `--no-render`): the mixer skips the music and the effects. Faster still, but not the same
   log: a voice-over mixed alone ends up to two ticks sooner than one mixed beside another stream.
+- `--load SAVE`: start from a save instead of a module or the front end: a folder name under `--saves`
+  (default `kotor/out/saves`), one of the install's saves, or a path (docs/testing.md, "Checkpoints").
+  Each process keeps its game-in-progress file in its saves directory: parallel runs need one each.
 - `--engine-only`: just lib/engine's world loop (the old `--no-render`): no scene, no conversation view,
   no input script. The fastest way to run scripts; `tools/enginetest` is the same without the presentation.
 - `--input FILE`: one command per line, applied at the start of that frame: `FRAME down KEY` /

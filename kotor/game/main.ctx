@@ -42,7 +42,7 @@ fn run {
     }
     let mut vm = try nwvm::new(heap::Heap){ realloc = heap::alloc, heap = &h, limits = nwvm::LIMITS }
     let engine = routines::call{ w, _ }
-    if opts.module.len > 0 or opts.engine_only {
+    if (opts.module.len > 0 and opts.load.len == 0) or opts.engine_only {
         try modload::enter{ w, name = if opts.module.len > 0 { opts.module } else { "end_m01aa" } }
         arena::reset{ heap = &scratch }
         if opts.run_script.len > 0 { _ = scripts::run{ w, &vm, engine, name = resref::truncate{ name = opts.run_script }, self = w.area } }
