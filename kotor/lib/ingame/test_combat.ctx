@@ -116,6 +116,15 @@ namespace test_combat {
             _ = @fmt(&w.io, "giveto {} {}: item {}\n", tag, name, id)
             return true
         }
+        if ci::eq{ a = cmd, b = "aistyle" } {
+            // Test setup: `ui aistyle TAG N` (0 default, 4 grenadier, 5 Jedi/droid support), as the Scripts panel sets it.
+            let mut words = text::words{ s = args }
+            let tag = text::next_word{ &words } ifnull { return true }
+            let n = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+            let id = world::object_by_tag{ w = &w, tag, nth = 0 }
+            if hud::creature_of{ w = &w, id } is some{ value = c } { c.ai_style = n }
+            return true
+        }
         if ci::eq{ a = cmd, b = "plot" } {
             // Test setup: `ui plot TAG 0|1` sets an object's Plot flag (a bashable door is not plot).
             let mut words = text::words{ s = args }
