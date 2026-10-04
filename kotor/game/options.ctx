@@ -3,7 +3,7 @@
 //   kotor --module end_m01aa [--game DIR] [--headless] [--frames N] [--dt S] [--input FILE]
 //         [--screenshot-at FRAME:PATH]... [--screenshot-range FROM:TO:DIR] [--screenshot-loading DIR] [--log scripts,routines,events,actions,objects]
 //         [--report routines] [--seed N] [--size WxH] [--no-render] [--speed N] [--mute] [--engine-only] [--load SAVE]
-//         [--settings FILE] [--gfx]
+//         [--settings FILE] [--gfx] [--cinema]
 //
 // A window run takes its size, mode and graphics options from the settings file (docs/mechanics/graphics.md); --size
 // overrides the size. A headless run leaves them at the defaults (so logs and pictures repeat) unless --gfx says to
@@ -39,6 +39,7 @@ namespace options {
         settings: []u8,         // the options file (the graphics options, the sound ...): ours, never the install's
         gfx: bool,              // a hidden run takes the graphics options from the settings file too (a picture of an option)
         run_script: []u8,       // a script to run once the module is entered (tests: --run-script k_act_mispaz)
+        cinema: bool,           // a hidden run shows the films and the credits and goes back to the main menu, as a window does (game/cine.ctx)
     }
 
     fn defaults {} -> Options {
@@ -46,7 +47,7 @@ namespace options {
             module = "", game = "F:/Steam/steamapps/common/swkotor", headless = false, no_render = false, engine_only = false, mute = false, speed = 1, load = "",
             frames = 0, dt = 0.0, input = "", shots = [Shot{ frame = 0, path = "" }; 16], shot_count = 0, range_from = 0, range_to = 0, range_dir = "", loading_dir = "",
             log = "", saves = "kotor/out/saves", report = false, seed = 1, width = 1280, height = 720, run_script = "",
-            size_given = false, settings = "kotor/out/kotor-settings.ini", gfx = false,
+            size_given = false, settings = "kotor/out/kotor-settings.ini", gfx = false, cinema = false,
         }
     }
 
@@ -130,6 +131,8 @@ namespace options {
                 o.settings = args[i]
             } else if slice::eq_bytes{ a, b = "--gfx" } {
                 o.gfx = true
+            } else if slice::eq_bytes{ a, b = "--cinema" } {
+                o.cinema = true
             } else {
                 return usage{ &io }
             }
@@ -142,7 +145,7 @@ namespace options {
     }
 
     fn usage { mut io: Io } -> ?Options {
-        io::eprintln{ &io, s = "usage: kotor [--module M] [--game DIR] [--headless] [--no-render] [--speed N] [--mute] [--engine-only] [--load SAVE] [--frames N] [--dt S] [--input FILE] [--screenshot-at FRAME:PATH]... [--screenshot-range FROM:TO:DIR] [--screenshot-loading DIR] [--log LIST] [--report routines] [--seed N] [--size WxH] [--settings FILE] [--gfx] [--run-script NAME]" }
+        io::eprintln{ &io, s = "usage: kotor [--module M] [--game DIR] [--headless] [--no-render] [--speed N] [--mute] [--engine-only] [--load SAVE] [--frames N] [--dt S] [--input FILE] [--screenshot-at FRAME:PATH]... [--screenshot-range FROM:TO:DIR] [--screenshot-loading DIR] [--log LIST] [--report routines] [--seed N] [--size WxH] [--settings FILE] [--gfx] [--run-script NAME] [--cinema]" }
         return null
     }
 }

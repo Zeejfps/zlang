@@ -1,0 +1,15 @@
+# Star Forge, dark side, part 24: down the docking bay with Bastila and Zaalbar: the Jedi's talk at the Hawk (k_sta_jedi001: Bastila's
+# "The Jedi fools will provide a distraction", Zaalbar's rage), the strip k45_init_zaalbar (71,121): k_psta_init_zaal takes Zaalbar out of
+# the party and k_sta_zaalbar has him turn on the Dark Lord ("You tricked me, Revan! ... made me kill Mission!"), the fight. The bot
+# walks the middle of the hall and fights what is hostile; no god mode (Zaalbar must be able to die), the Guardian is strong (hit
+# points 700, Strength 40). From the checkpoint "dbay"; saves "dhall" (the droids dead).
+5 ui stat hpmax 700
+5 ui stat hp 700
+5 ui stat str 40
+5 ui bot party on
+5 ui bot route 69,125 69,100 69,75 69,45
+10 ui bot on
+6200 ui bot off
+6210 ui heal
+6300 save dhall
+6300 ui party

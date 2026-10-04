@@ -1,0 +1,8 @@
+# Star Forge, dark side, part 23: out of the Hawk (the ramp strip ebn12_ebonexit, k_pebn_leavhawk): the party screen, Bastila and
+# Zaalbar (Zaalbar's talk in the docking bay, k_psta_init_zaal, needs him in the party), then the docking bay (sta_m45aa) and its
+# Jedi (k_sta_jedifem) with the Sith ambush. From the checkpoint "dlanded"; saves "dbay".
+10 warpxy 66.5,49.5 party
+60 ui clickctl BTN_NPC8
+80 ui clickctl BTN_DONE
+1000 save dbay
+1000 ui party

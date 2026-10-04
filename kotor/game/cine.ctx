@@ -1,0 +1,533 @@
+// The story's films and credits (docs/playthrough-starforge.md, "Movies, credits and the end of the game").
+//
+// Scripts ask for them through the outbox, and this file shows them between two frames of the game, as the original's client does
+// (it stops the world, plays and goes on):
+//   Note::movie             PlayMovie, and the movies StartNewModule names (sMovie1 .. sMovie6): played in order, each skippable
+//   Note::queue_movie       QueueMovie(name, skippable): kept until
+//   Note::play_movie_queue  PlayMovieQueue(separate): then played; with `separate` a skip ends the movie on screen only,
+//                           else it ends the rest of the queue as well (nwscript.nss)
+//   Note::credits           StartCreditSequence: fnt_credits text from credits.2da scrolled over black with credits.wav, until
+//                           it has gone by or is skipped; IsCreditSequenceInProgress answers false from then on
+//   Note::end_game          EndGame: the game goes to the main menu (after 5 s when the argument is TRUE: the death box's wait)
+//
+// play.ctx owns one `Cinema` and calls, per frame:
+//   cine::take    for each note of the outbox
+//   cine::busy    whether there is something to show now, then cine::show
+//   cine::end_due once the world has run for the EndGame's wait
+// A hidden window (--headless, --no-render) shows nothing unless --cinema asks, so the replays of the story are not held up by the
+// films; their log says what was asked.
+namespace cine {
+    const MAX_ITEMS: usize = 12
+    const NAME_BYTES: usize = 24
+    const GROUPS: usize = 3                 // the mixer groups the films hush: music, voice-over and effects (Movie is theirs)
+
+    struct Item { name: [24]u8, len: usize, skippable: bool, separate: bool }
+
+    struct Cinema {
+        items: [12]Item,
+        count: usize,
+        queue: [12]Item,
+        queued: usize,
+        seen: usize,                        // the outbox's notes taken so far (the outbox is cleared once a frame)
+        credits: bool,                      // StartCreditSequence ran and the credits have not been shown
+        end_game: bool,                     // EndGame ran
+        end_left: f32,                      // seconds of world time before the main menu
+        tables: ?*bink_tables::Tables,
+        tables_failed: bool,
+    }
+
+    enum Ended: u8 { finished, skipped, window_closed, cut }
+
+    fn blank_item {} -> Item { return Item{ name = [0; 24], len = 0, skippable = true, separate = false } }
+
+    fn make {} -> Cinema {
+        return Cinema{
+            items = [blank_item{}; 12], count = 0, queue = [blank_item{}; 12], queued = 0, seen = 0, credits = false, end_game = false, end_left = 0.0,
+            tables = null, tables_failed = false,
+        }
+    }
+
+    fn item_of { name: []u8, skippable: bool, separate: bool } -> Item {
+        let mut it = blank_item{}
+        let n = if name.len > NAME_BYTES { NAME_BYTES } else { name.len }
+        slice::copy(u8){ dst = it.name[..n], src = name[..n] }
+        it.len = n
+        it.skippable = skippable
+        it.separate = separate
+        return it
+    }
+
+    // Notes in, in the order the scripts made them.
+    fn take { mut c: Cinema, note: outbox::Note } {
+        match note {
+            movie{ name } => {
+                let mut r = name
+                if c.count < MAX_ITEMS {
+                    c.items[c.count] = item_of{ name = resref::bytes{ r = &r }, skippable = true, separate = false }
+                    c.count = c.count + 1
+                }
+            }
+            queue_movie{ name, skippable } => {
+                let mut r = name
+                if c.queued < MAX_ITEMS {
+                    c.queue[c.queued] = item_of{ name = resref::bytes{ r = &r }, skippable, separate = false }
+                    c.queued = c.queued + 1
+                }
+            }
+            play_movie_queue{ separate_skips } => {
+                let mut i: usize = 0
+                while i < c.queued and c.count < MAX_ITEMS {
+                    let mut it = c.queue[i]
+                    it.separate = separate_skips
+                    c.items[c.count] = it
+                    c.count = c.count + 1
+                    i = i + 1
+                }
+                c.queued = 0
+            }
+            credits{ transparent } => { c.credits = true }
+            end_game{ show_gui } => {
+                c.end_game = true
+                c.end_left = if show_gui { 5.0 } else { 0.0 }
+            }
+            else => {}
+        }
+    }
+
+    // The notes the outbox holds that have not been taken yet. A module change takes its movies before it loads the module (the
+    // original plays StartNewModule's movies first), the frame's end takes the rest; `seen` keeps either from taking a note twice.
+    fn take_new { mut c: Cinema, notes: []outbox::Note } {
+        if c.seen > notes.len { c.seen = 0 }          // somebody else cleared the outbox (a minigame's frame does)
+        while c.seen < notes.len {
+            take{ &c, note = notes[c.seen] }
+            c.seen = c.seen + 1
+        }
+    }
+
+    // The outbox was cleared.
+    fn forget_notes { mut c: Cinema } { c.seen = 0 }
+
+    fn busy { c: *Cinema } -> bool { return c.count > 0 or c.credits }
+
+    // The input script's words for this file (docs/testing.md, "Adding a scripted command"):
+    //   FRAME movie NAME...   plays the films, as a PlayMovie of each would
+    //   FRAME credits         the credits, as StartCreditSequence
+    fn handle_scripted { mut c: Cinema, word: []u8, rest: []u8 } -> bool {
+        if ci::eq{ a = word, b = "movie" } {
+            let mut words = text::words{ s = rest }
+            while true {
+                let name = text::next_word{ &words } ifnull { break }
+                if c.count < MAX_ITEMS {
+                    c.items[c.count] = item_of{ name, skippable = true, separate = false }
+                    c.count = c.count + 1
+                }
+            }
+        } else if ci::eq{ a = word, b = "credits" } {
+            c.credits = true
+        } else {
+            return false
+        }
+        return true
+    }
+
+    // The wait of an EndGame is over (the world ticks it down): the game goes to the main menu.
+    fn end_due { mut c: Cinema, dt: f32 } -> bool {
+        if not c.end_game { return false }
+        c.end_left = c.end_left - dt
+        return c.end_left <= 0.0
+    }
+
+    fn clear_end { mut c: Cinema } {
+        c.end_game = false
+        c.end_left = 0.0
+    }
+
+    // ---- showing
+
+    // What one pass of a film's or the credits' loop found in the window's events.
+    struct Polled { skip: bool, closed: bool }
+
+    fn poll_events {
+        mut sdl: sdl::Sdl, mut w: world::World, mut dev: gpu::Device, ui: *mut ingame::Ingame, mut disp: display::Display,
+    } -> Polled {
+        let mut out = Polled{ skip = false, closed = false }
+        while true {
+            let polled = sdl::poll{ &sdl } ifnull { break }
+            display::note_event{ d = &disp, ev = polled }
+            if polled is resized {
+                if display::on_resized{ d = &disp, &dev, &sdl } {
+                    ingame::set_gui_scale{ ui, scale = disp.applied.gui_scale }
+                    ingame::relayout{ ui, &w, &dev, width = @as(i32, disp.render.width), height = @as(i32, disp.render.height) }
+                }
+                continue
+            }
+            let e = display::map_event{ d = &disp, ev = polled }
+            if e is quit | close { out.closed = true }
+            // Escape, Enter, Space or a click ends a skippable film (the front end's films end on the same keys).
+            if e is key{ down, keycode } and down and (keycode == sdl::key::ESCAPE or keycode == sdl::key::RETURN or keycode == sdl::key::SPACE) { out.skip = true }
+            if e is mouse_button{ down } and down { out.skip = true }
+        }
+        return out
+    }
+
+    // The scripted keys and clicks of the frames spent here (`FRAME key escape` ends a film as a person's Escape does).
+    fn feed_script { mut sdl: sdl::Sdl, script: []play::Scripted, mut next_line: usize, frame_no: u64, mut inputs: inject::Inputs } {
+        while next_line < script.len and script[next_line].frame <= frame_no {
+            let s = script[next_line]
+            if not inject::handle_scripted{ &sdl, inp = &inputs, word = s.word, rest = s.rest } { break }
+            next_line = next_line + 1
+        }
+    }
+
+    // The sound for one pass: the device is fed, or (no device) the mixer is run on by the step's worth.
+    fn run_sound { mut sdl: sdl::Sdl, mixer: *mut mix::Mixer, adev: ?*mut audio::Device, rate: u32, dt: f32, silent: []mut i16 } {
+        match adev {
+            some{ value } => { audio::update{ &sdl, dev = value, m = mixer } iferr {} }
+            null => {
+                let frames = math::min{ a = @as(f32, rate) * dt, b = 22050.0 }
+                mix::render{ m = mixer, into = silent[..@as(usize, frames) * 2] }
+            }
+        }
+    }
+
+    fn step_of { mut sdl: sdl::Sdl, opts: options::Options, last: u64, freq: u64, now: u64 } -> f32 {
+        if opts.dt > 0.0 { return opts.dt }
+        return math::min{ a = @as(f32, @as(f64, now - last) / @as(f64, freq)), b = 0.25 }
+    }
+
+    // The shots someone asked for by frame number (--screenshot-at) land on the picture of a film or of the credits, too.
+    fn shots { mut w: world::World, mut dev: gpu::Device, opts: options::Options, frame_no: u64 } {
+        let mut s: usize = 0
+        while s < opts.shot_count {
+            if opts.shots[s].frame == frame_no {
+                play::screenshot{ &w, &dev, heap = w.scratch, path = opts.shots[s].path, frame_no } iferr err{ error } {
+                    _ = @fmt(&w.io, "kotor: screenshot failed: {}\n", error)
+                }
+            }
+            s = s + 1
+        }
+    }
+
+    // Plays what is asked for, then the credits. True if the window was closed meanwhile or the run's frames ran out (the game
+    // should end).
+    fn show {
+        mut c: Cinema, mut sdl: sdl::Sdl, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame,
+        ui: *mut ingame::Ingame, mixer: *mut mix::Mixer, adev: ?*mut audio::Device, rate: u32, opts: options::Options,
+        script: []play::Scripted, mut next_line: usize, mut frame_no: u64, mut inputs: inject::Inputs, mut disp: display::Display,
+    } -> !bool {
+        let hidden = opts.headless and not opts.cinema
+        let mut stop = false
+        if hidden {
+            let mut i: usize = 0
+            while i < c.count {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "movie {} (not shown: hidden run)\n", c.items[i].name[..c.items[i].len])
+                i = i + 1
+            }
+            if c.credits {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "credits (not shown: hidden run)\n")
+            }
+            c.count = 0
+            c.credits = false
+            w.credits_running = false
+            return false
+        }
+        let silent = try alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(i16){}, count = 44100 }
+        defer _ = alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = silent, count = 0 }
+        // The world is still: its music, voices and effects are hushed (the original's movie sound mode), not stopped.
+        mix::set_group_paused{ m = mixer, group = mix::Group::music, paused = true }
+        mix::set_group_paused{ m = mixer, group = mix::Group::voice, paused = true }
+        mix::set_group_paused{ m = mixer, group = mix::Group::sfx, paused = true }
+        defer mix::set_group_paused{ m = mixer, group = mix::Group::music, paused = false }
+        defer mix::set_group_paused{ m = mixer, group = mix::Group::voice, paused = false }
+        defer mix::set_group_paused{ m = mixer, group = mix::Group::sfx, paused = false }
+        if c.count > 0 and c.tables == null and not c.tables_failed {
+            let loaded = movie::load_tables(heap::Heap){ fs = &w.fs, realloc = heap::alloc, heap = w.heap, game = opts.game } iferr { null }
+            if loaded != null {
+                c.tables = try alloc::new(bink_tables::Tables, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = loaded }
+            } else {
+                c.tables_failed = true
+            }
+        }
+        let mut i: usize = 0
+        let mut skipping_rest = false
+        while i < c.count and not stop {
+            let item = c.items[i]
+            i = i + 1
+            if skipping_rest {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "movie {} (skipped with the queue)\n", item.name[..item.len])
+                continue
+            }
+            let ended = try play_one{ &c, &sdl, &w, &dev, &frame, ui, mixer, adev, rate, opts, script, &next_line, &frame_no, &inputs, &disp, item, silent }
+            if ended == Ended::window_closed or ended == Ended::cut { stop = true }
+            if ended == Ended::skipped and not item.separate { skipping_rest = true }
+        }
+        c.count = 0
+        if c.credits and not stop {
+            c.credits = false
+            let ended = try play_credits{ &sdl, &w, &dev, &frame, ui, mixer, adev, rate, opts, script, &next_line, &frame_no, &inputs, &disp, silent }
+            if ended == Ended::window_closed or ended == Ended::cut { stop = true }
+        }
+        c.credits = false
+        w.credits_running = false
+        return stop
+    }
+
+    // One film, from its first picture to its last or to a skip.
+    fn play_one {
+        mut c: Cinema, mut sdl: sdl::Sdl, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame,
+        ui: *mut ingame::Ingame, mixer: *mut mix::Mixer, adev: ?*mut audio::Device, rate: u32, opts: options::Options,
+        script: []play::Scripted, mut next_line: usize, mut frame_no: u64, mut inputs: inject::Inputs, mut disp: display::Display,
+        item: Item, silent: []mut i16,
+    } -> !Ended {
+        let name = item.name[..item.len]
+        let tables = c.tables ifnull {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "movie {} (not shown: no Bink tables in binkw32.dll)\n", name)
+            return Ended::finished
+        }
+        let sound: ?*mut mix::Mixer = mixer
+        let mut pl = movie::open(heap::Heap){ fs = &w.fs, &dev, realloc = heap::alloc, heap = w.heap, tables, mixer = sound, game = opts.game, name } iferr err{ error } {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "movie {} (not shown: {})\n", name, error)
+            return Ended::finished
+        }
+        world::prefix{ w = &w }
+        let locked: []u8 = if item.skippable { "" } else { ", not skippable" }
+        _ = @fmt(&w.io, "movie {} start: {}x{}, {} frames, sound {}{}\n", name, pl.movie.header.width, pl.movie.header.height, pl.movie.header.frames,
+            pl.has_audio, locked)
+        let freq = sdl::counter_frequency{ &sdl }
+        let mut last = sdl::counter{ &sdl }
+        let mut ended = Ended::finished
+        while true {
+            frame_no = frame_no + 1
+            if opts.frames > 0 and frame_no > opts.frames {
+                ended = Ended::cut
+                break
+            }
+            feed_script{ &sdl, script, &next_line, frame_no, &inputs }
+            let polled = poll_events{ &sdl, &w, &dev, ui, &disp }
+            if polled.closed {
+                ended = Ended::window_closed
+                break
+            }
+            let now = sdl::counter{ &sdl }
+            let dt = step_of{ &sdl, opts, last, freq, now }
+            last = now
+            run_sound{ &sdl, mixer, adev, rate, dt, silent }
+            let state = movie::update{ fs = &w.fs, &sdl, &dev, p = &pl, output = adev, dt = @as(f64, dt), audio_clock = adev != null }
+            if polled.skip and item.skippable {
+                movie::skip{ p = &pl }
+                ended = Ended::skipped
+                break
+            }
+            if speed::picture_wanted{ opts, frame_no, saving = false } {
+                let size = gpu::screen_size{ dev }
+                render::begin_frame{ &frame, time = 0.0 }
+                movie::draw{ p = &pl, &frame, width = @as(f32, size.width), height = @as(f32, size.height) }
+                gpu::submit{ &dev, frame = &frame } iferr {
+                    ended = Ended::window_closed
+                    break
+                }
+            }
+            shots{ &w, &dev, opts, frame_no }
+            if not opts.headless {
+                gpu::present{ &dev, &sdl }
+                display::rest{ d = &disp, &sdl }
+            }
+            if state == movie::State::finished { break }
+        }
+        world::prefix{ w = &w }
+        let how: []u8 = match ended {
+            finished => { "finished" }
+            skipped => { "skipped" }
+            window_closed => { "window closed" }
+            cut => { "cut by --frames" }
+        }
+        let broken: []u8 = if pl.failed { ", a frame could not be decoded" } else { "" }
+        _ = @fmt(&w.io, "movie {} end: {} after {} s, {} pictures shown, {} dropped{}\n", name, how, @as(f32, pl.time), pl.stats.shown, pl.stats.dropped, broken)
+        movie::close(heap::Heap){ fs = &w.fs, &dev, realloc = heap::alloc, heap = w.heap, p = &pl }
+        return ended
+    }
+
+    // ---- the credits
+
+    const CARDS: usize = 15                 // credits.2da's first rows are title cards (a role and its names); the last is the long list
+    const CARD_SECONDS: f32 = 5.0           // a card stays this long, fading in and out
+    const CARD_FADE: f32 = 0.7
+
+    // The length of a PCM wav (header: channels at 22, rate at 24, bits at 34; the sound after the 44 bytes), 0 if it is not one.
+    fn wav_seconds { bytes: []u8 } -> f32 {
+        if bytes.len < 44 or bytes[0] != 'R' or bytes[8] != 'W' { return 0.0 }
+        let channels = @as(u32, bytes[22]) | (@as(u32, bytes[23]) << 8)
+        let rate = @as(u32, bytes[24]) | (@as(u32, bytes[25]) << 8) | (@as(u32, bytes[26]) << 16) | (@as(u32, bytes[27]) << 24)
+        let bits = @as(u32, bytes[34]) | (@as(u32, bytes[35]) << 8)
+        let per_second = rate * channels * (bits / 8)
+        if per_second == 0 { return 0.0 }
+        return @as(f32, bytes.len - 44) / @as(f32, per_second)
+    }
+
+    // credits.2da's `name` column, the strrefs of the credit blocks in order; how many rows.
+    fn credit_rows { mut w: world::World, into: []mut u32 } -> !usize {
+        let loaded = try res::load{ fs = &w.fs, rm = w.rm.*, name = "credits", kind = restype::Type::twoda, realloc = arena::alloc, heap = w.scratch }
+        let bytes = loaded ifnull { return 0 }
+        let t = try twoda::parse{ data = bytes, realloc = arena::alloc, heap = w.scratch }
+        let rows = twoda::rows{ t }
+        let mut r: usize = 0
+        while r < rows and r < into.len {
+            into[r] = @trunc(u32, twoda::get_int{ t, row = r, column = "name" } ifnull 0)
+            r = r + 1
+        }
+        return r
+    }
+
+    fn count_lines { text: []u8 } -> usize {
+        let mut lines: usize = 1
+        let mut k: usize = 0
+        while k < text.len {
+            if text[k] == '\n' { lines = lines + 1 }
+            k = k + 1
+        }
+        return lines
+    }
+
+    // The lines of `text` (split at newlines) from `top` down, centred, those on the screen only.
+    fn draw_block {
+        mut frame: render::Frame, font: render::Font, text: []u8, top: f32, pitch: f32, scale: f32, alpha: f32, width: f32, height: f32,
+    } {
+        let mut y = top
+        let mut start: usize = 0
+        let mut j: usize = 0
+        while j <= text.len {
+            if j == text.len or text[j] == '\n' {
+                if y > -pitch and y < height and j > start and text[j - 1] != '\r' {
+                    let line = text[start..j]
+                    let across = render::measure_text{ font, text = line, scale }
+                    _ = render::draw_text{ &frame, font, x = (width - across) * 0.5, y, text = line, color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = alpha }, scale, clip = null }
+                }
+                y = y + pitch
+                start = j + 1
+            }
+            j = j + 1
+        }
+    }
+
+    // StartCreditSequence (CSWGuiCredits, credits.gui's LB_CREDITS with fnt_credits, to credits.wav): the title cards of
+    // credits.2da one after the other, then its long list scrolling up the black screen, the whole to the length of the music;
+    // until the list has gone by or a skip.
+    fn play_credits {
+        mut sdl: sdl::Sdl, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame,
+        ui: *mut ingame::Ingame, mixer: *mut mix::Mixer, adev: ?*mut audio::Device, rate: u32, opts: options::Options,
+        script: []play::Scripted, mut next_line: usize, mut frame_no: u64, mut inputs: inject::Inputs, mut disp: display::Display,
+        silent: []mut i16,
+    } -> !Ended {
+        let mut refs: [32]u32 = [0; 32]
+        let n = try credit_rows{ &w, into = refs[..] }
+        let cards = if n < CARDS { n } else { CARDS }
+        // The long list: the rows after the cards, a blank line between them.
+        let mut text = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap }
+        defer list::free{ list = &text }
+        let mut r = cards
+        while r < n {
+            let part = world::string_by_strref{ w = &w, strref = refs[r] }
+            let mut k: usize = 0
+            while k < part.len {
+                if part[k] != '\r' { try list::push{ list = &text, item = part[k] } }
+                k = k + 1
+            }
+            try list::push{ list = &text, item = '\n' }
+            try list::push{ list = &text, item = '\n' }
+            r = r + 1
+        }
+        let body = list::items{ list = text }
+        let slot = gui::font_slot{ g = &ui.gui, fs = &w.fs, &dev, name = "fnt_credits" }
+        let font = gui::font_of{ g = &ui.gui, slot }
+        let lines = count_lines{ text = body }
+        // The music of the credits, once through.
+        let song = res::load{ fs = &w.fs, rm = w.rm.*, name = "credits", kind = restype::Type::wav, realloc = heap::alloc, heap = w.heap } iferr { null }
+        let mut music = mix::Handle{ slot = 0, id = 0 }
+        let mut playing_song = false
+        let mut seconds: f32 = 0.0                   // how long the music lasts: the credits take as long to go by
+        if song != null {
+            let bytes = song
+            seconds = wav_seconds{ bytes }
+            let started = mix::play{ m = mixer, bytes, p = mix::sound_2d{ group = mix::Group::movie, volume = 1.0 } } iferr { null }
+            if started != null {
+                music = started
+                playing_song = true
+            }
+        }
+        let card_total = @as(f32, cards) * CARD_SECONDS
+        let scroll_seconds = if seconds > card_total + 60.0 { seconds - card_total } else { 120.0 }
+        world::prefix{ w = &w }
+        _ = @fmt(&w.io, "credits start: {} cards, a list of {} lines, music {} ({} s), font slot {} ({} px)\n", cards, lines, playing_song, seconds, slot, font.height)
+        let freq = sdl::counter_frequency{ &sdl }
+        let mut last = sdl::counter{ &sdl }
+        let mut ended = Ended::finished
+        let mut offset: f32 = 0.0                    // seconds since the start
+        let mut over = false
+        while not over {
+            frame_no = frame_no + 1
+            if opts.frames > 0 and frame_no > opts.frames {
+                ended = Ended::cut
+                break
+            }
+            feed_script{ &sdl, script, &next_line, frame_no, &inputs }
+            let polled = poll_events{ &sdl, &w, &dev, ui, &disp }
+            if polled.closed {
+                ended = Ended::window_closed
+                break
+            }
+            if polled.skip {
+                ended = Ended::skipped
+                break
+            }
+            let now = sdl::counter{ &sdl }
+            let dt = step_of{ &sdl, opts, last, freq, now }
+            last = now
+            run_sound{ &sdl, mixer, adev, rate, dt, silent }
+            offset = offset + dt
+            let size = gpu::screen_size{ dev }
+            let width = @as(f32, size.width)
+            let height = @as(f32, size.height)
+            let scale = height / 720.0
+            let pitch = font.height * scale * 1.2
+            let into_list = offset - card_total
+            let travel = @as(f32, lines) * pitch + height
+            let top = height - into_list * (travel / scroll_seconds)       // where the list's first line is
+            if into_list >= 0.0 and top + @as(f32, lines) * pitch < 0.0 { over = true }
+            if speed::picture_wanted{ opts, frame_no, saving = false } {
+                render::begin_frame{ &frame, time = 0.0 }
+                render::begin_ui{ &frame, width, height, target = null }
+                // Black behind the text (a frame draws over what the screen has).
+                render::add_quad{ &frame, quad = render::make_quad{ rect = render::Rect{ x = 0.0, y = 0.0, w = width, h = height }, color = render::Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 } } }
+                if into_list < 0.0 {
+                    let card = @as(usize, offset / CARD_SECONDS)
+                    let local = offset - @as(f32, card) * CARD_SECONDS
+                    let alpha = math::min{ a = 1.0, b = math::min{ a = local / CARD_FADE, b = (CARD_SECONDS - local) / CARD_FADE } }
+                    let block = world::string_by_strref{ w = &w, strref = refs[card] }
+                    let tall = @as(f32, count_lines{ text = block }) * pitch * 1.5
+                    draw_block{ &frame, font, text = block, top = (height - tall) * 0.5, pitch = pitch * 1.5, scale, alpha, width, height }
+                } else {
+                    draw_block{ &frame, font, text = body, top, pitch, scale, alpha = 1.0, width, height }
+                }
+                gpu::submit{ &dev, frame = &frame } iferr {
+                    ended = Ended::window_closed
+                    break
+                }
+            }
+            shots{ &w, &dev, opts, frame_no }
+            if not opts.headless {
+                gpu::present{ &dev, &sdl }
+                display::rest{ d = &disp, &sdl }
+            }
+        }
+        if playing_song { mix::stop{ m = mixer, h = music, fade = 0.5 } }
+        world::prefix{ w = &w }
+        let how: []u8 = if ended == Ended::skipped { " (skipped)" } else { "" }
+        _ = @fmt(&w.io, "credits end: after {} s{}\n", offset, how)
+        return ended
+    }
+}

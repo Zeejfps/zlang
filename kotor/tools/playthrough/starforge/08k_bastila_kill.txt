@@ -1,0 +1,16 @@
+# Star Forge, part 8 (the other way): Bastila killed. The same duel; the replies do not redeem her ("You're right. Don't worry, you won't
+# feel a thing." answers her wish to be ended: k_sta_bastexe, the execution cut scene STUNT_50a with movie 50b, and back to level 2
+# with movie 50). Carth then says "It's done. Bastila is dead." in the docking bay. From the checkpoint "freeze"; saves "bastdead".
+5 ui heal
+5 ui bot god on
+10 warpxy -16,-96 party
+60 ui replies ~never_give_up ~as_strong_in_the_light ~Malak_will_never ~dooming_yourself ~Remember_the_Jedi_code ~dark_side_is_not_stronger ~no_need_for_me_to_kill ~reject_the_dark_side ~feel_a_thing default 1
+60 ui goto sta_way_party0
+1600 ui bot on
+11800 savewhen sta_m45ac bastdead
+12400 ui party
+12400 ui pos
+12400 ui globals STA
+12400 ui globals K_PSTA
+12400 ui rules
+12400 ui journal list

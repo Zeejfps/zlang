@@ -1,0 +1,28 @@
+# Star Forge, part 9: level 2's east end. The strip k45_strt_malak (99.4..103.5 x 2.2..7.1) starts Malak's scene (k_sta_darthmalak: he
+# drains his Jedi captives), locks the door to him (k45_door_malak) and starts the six droid generators (k_psta_genstart: droids
+# fight the party in waves). Each generator (k45_plc_assdroid, mk2droid, mk4droid, excharge, prbdroid, wardroid; conversations
+# k_sta_gen_*) is shut down with "Disable generator." (a Computer use with spikes, a setup cheat); the sixth sets STA_GENERATORS 6 and
+# unlocks the door ("The generators must be deactivated before it can be opened again."). From the checkpoint "bastsaved".
+5 ui heal
+5 ui bot god on
+5 ui giveitem g_i_progspike01 120
+10 warpxy 101.5,4.5 party
+5 ui replies ~Surrender_and_the_Jedi ~I_was_saved_from_the_darkness default 1
+3200 ui replies ~Disable_generator ~Disable_generator ~Disable_generator ~Disable_generator ~Disable_generator ~Disable_generator default 1
+3210 warp k45_plc_assdroid party
+3260 use k45_plc_assdroid
+4300 warp k45_plc_mk2droid party
+4350 use k45_plc_mk2droid
+5400 warp k45_plc_mk4droid party
+5450 use k45_plc_mk4droid
+6500 warp k45_plc_excharge party
+6550 use k45_plc_excharge
+7600 warp k45_plc_prbdroid party
+7650 use k45_plc_prbdroid
+8700 warp k45_plc_wardroid party
+8750 use k45_plc_wardroid
+9300 ui bot off
+9310 ui heal
+9400 savewhen sta_m45ac gens
+10000 ui globals STA_GEN
+10000 ui party
