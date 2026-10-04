@@ -1,0 +1,21 @@
+# Korriban, part 7: with the four thugs dead (KOR_THUG_DEATH 4) the murder strip (k33b_trg_initmrd) starts the scene: the Sith who has
+# just got his medallion kills the hopefuls who envy him (kor33b_murderer). From the checkpoint "thugs". The Jedi will not let him kill the
+# woman (k_act_lightsml) and fights him; the medallion (k33_itm_sithmdln) is in his body bag, taken with clicks as in part 6.
+# The murder strip overlaps Lashowe's (k33_las_initconv); (170,195) is inside the first only.
+5 ui replies ~not_going_to_let default 1
+8 ui rules
+10 warpxy 170,195 party
+20 ui bot on
+300 ui pos
+3300 ui bot off
+3300 ui rules
+3300 ui hostiles
+3310 warpxy 167,191 party
+3400 hoveron =Remains
+3403 mouse click
+3406 mouse click
+3800 ui click 640 452
+3900 ui inv
+3900 ui xp
+3900 ui globals kor
+3910 save murder

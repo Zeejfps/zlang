@@ -1,0 +1,18 @@
+# Korriban, part 28: the lightsaber in the sarcophagus beyond the Star Map (k39_sabersarc 135,108: k39_itm_cersaber), taken with clicks, and
+# the walk back: the strip k_kor_utharcut (93,108) brings Uthar and Yuthura (kor39_utharwynn: the end of the test). From the checkpoint "map".
+5 ui replies ~I_think_I_understand ~with_Yuthura ~want_any_power ~Get_out_of_here ~I_am_no_Sith default 1
+10 warp k39_sabersarc party
+50 hoveron k39_sabersarc
+53 mouse click
+56 mouse click
+400 ui click 640 452
+600 warpxy 121.2,108 party
+750 warpxy 94,108 party
+3900 ui bot god on
+3901 ui bot on
+7900 ui bot off
+7950 ui journal list
+7950 ui rules
+7950 ui where kor39_u
+7950 ui where kor39_y
+7960 save finale

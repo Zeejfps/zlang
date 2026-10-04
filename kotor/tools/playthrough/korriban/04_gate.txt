@@ -1,0 +1,18 @@
+# Korriban, part 4: through the gate to the Sith Academy Entrance (korr_m33ab): the guard turns the Jedi away without a medallion
+# (k33_academyguard, which sets KOR33_MEDALLION so the thugs and the murderer appear in Dreshdae), and Mekel, who lets hopefuls
+# die at the door (kor33_mekel). From the checkpoint "shaardan". The gate and the area change are the game's; the 70 m walk is a warp.
+5 ui replies ~What's_this_medallion ~How_do_I_become ~Are_you_Mekel ~do_something_about ~isn't_a_real_test default 1
+8 ui rules
+10 warp kor33a_kor33b party
+30 use kor33a_kor33b
+450 warp k33_academyguard party
+500 ui target k33_academyguard
+505 ui key 1
+1900 ui globals kor
+1910 save guard
+1920 warp kor33_mekel party
+1960 ui target kor33_mekel
+1965 ui key 1
+6000 ui journal list
+6000 ui globals kor
+6000 ui rules

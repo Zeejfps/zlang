@@ -1,0 +1,12 @@
+# Korriban, part 2: the docking bay to the Port Authority (kor33_portauth, the trigger k33_trg_initport): the Czerka official
+# knows the Jedi by the lightsaber and the robe (k_pkor_hassaber, k_pkor_hasrobes), the 25 credit fee, his answers about the
+# colony and the Star Map. From the checkpoint "dock".
+# The walk from the Ebon Hawk (107,188) to the strip (about 20 m) is cut with a warp into the trigger.
+5 ui replies ~how_do_you_know ~haven't_left ~25_credits ~Can_I_ask ~Star_Map ~on_my_way default 1
+8 ui rules
+10 warpxy 123.7,161.8 party
+3500 ui pos
+3500 ui rules
+3500 ui inv
+3500 ui globals kor
+3510 save port

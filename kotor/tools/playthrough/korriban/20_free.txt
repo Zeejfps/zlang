@@ -1,0 +1,11 @@
+# Korriban, part 20: back to Thalia May with the passage clear: "It's clear. You're free to go." (k_pkor_webclear): the renegade students
+# leave the caves for the surface (k34_tha_leave), light side, plot XP, journal kor35_renegadesith 40. From the checkpoint "beast".
+5 ui replies ~It's_clear default 1
+8 ui rules
+10 warp kor34_thaliamay party
+50 ui target kor34_thaliamay
+55 ui key 1
+2500 ui journal list
+2500 ui rules
+2500 ui globals kor
+2510 save freed

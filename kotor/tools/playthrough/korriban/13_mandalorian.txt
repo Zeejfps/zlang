@@ -1,0 +1,14 @@
+# Korriban, part 13: the Mandalorian prisoner (kor35_torturer, kor35_victim, the serum console): the torturer lets the Jedi try to get the
+# location of the weapon cache; the Jedi whispers to the prisoner and persuades him, then puts him into a catatonic state with the
+# console ([Computer Skill]: journal kor35_mandalorian 40, the cache's place told). From the checkpoint "code".
+5 ui replies ~What_are_you_trying_to_do ~How_do_you_drug_him ~You_want_me_to_try_it ~Galactic_Basic ~Tell_me_where ~Whisper ~[Persuade]_Trust ~Activate_the_serum ~Computer_Skill default 1
+8 ui rules
+10 warp kor35_torturer party
+50 ui target kor35_torturer
+55 ui key 1
+1800 warp kor35_torturecomp party
+1850 use kor35_torturecomp
+5200 ui rules
+5200 ui journal list
+5200 ui globals kor
+5210 save mando
