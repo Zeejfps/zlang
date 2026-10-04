@@ -284,9 +284,20 @@ namespace rt_act {
             if not d.locked or d.key_required { return false }
             dc = @as(i32, d.open_dc)
         } else if t.ext is placeable{ p } {
-            if not p.locked or p.key.len > 0 { return false }
+            if not p.locked or p.key_required { return false }
+            dc = @as(i32, p.open_dc)
         } else { return false }
         let check = rules::open_lock_check{ tables = w.rules, c = &f.c, lock_dc = dc, spike_bonus, in_combat = c.in_combat, rng = &w.dice }
+        if w.log.actions {
+            let sk = rules::skill::SECURITY
+            let mode: []u8 = if c.in_combat { "d20" } else { "take-20" }
+            let verdict: []u8 = if check.success { "unlocked" } else { "failed" }
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "security: {} on {} ({}): ranks {} key-ability {} feat {} spike {} + {} {} = {} against DC {}: {}\n", me.tag, t.tag, t.id, f.c.skills[@as(usize, sk)],
+                f.c.stats.abil_mod[@as(usize, w.rules.skills[@as(usize, sk)].key_ability)], rules::skill_feat_bonus{ c = &f.c, skill = sk }, spike_bonus,
+                mode, check.roll, check.total, check.dc, verdict)
+        }
+        doors::say_roll{ &w, me, target = t, check, in_combat = c.in_combat }
         if not check.success { return false }
         if t.ext is door{ d } { d.locked = false } else if t.ext is placeable{ p } { p.locked = false }
         events::post{ &w, delay_ms = 0, caller = who, target, payload = events::Payload::script{ e = events::script_event{ kind = events::UNLOCKED, object = who } } }
