@@ -62,19 +62,18 @@ namespace hud {
         return h.lists[0].count + h.lists[1].count + h.lists[2].count > 0
     }
 
-    // The picture and the tooltip of slot `k` from its list's selected entry. The frame shows whenever any slot
-    // has a choice; the arrows are CSWGuiActionSlot::SetState's: set from "more than one choice" when the list
-    // has any, left as they were when it has none (they start shown, so a blank slot beside a full one has its
-    // arrows, until a slot with a single choice has hidden them).
+    // The picture and the tooltip of slot `k` from its list's selected entry, as CSWGuiActionSlot::SetState
+    // (0x00689280) leaves a slot: the frame shows whenever any slot has a choice, at half strength when this
+    // one has none (a blank frame), and the arrows show only for more than one choice, so never on a blank one.
     fn refresh_slot { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, k: usize } {
         let mut buf: [24]u8
         let l = &h.lists[k]
         let has = l.count > 0
-        if has { h.arrows[k] = l.count > 1 }
         let drawn = has_slots{ &h }
         gui::set_visible{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = k }, visible = drawn }
         gui::set_visible{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "LBL_TARGET", n = k }, visible = drawn }
-        let arrows = drawn and h.arrows[k]
+        let arrows = drawn and l.count > 1
+        gui::set_frame_alpha{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "BTN_TARGET", n = k }, alpha = if has { 1.0 } else { 0.5 } }
         gui::set_visible{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "BTN_TARGETUP", n = k }, visible = arrows }
         gui::set_visible{ &g, panel = h.panel, tag = tag_n{ into = buf[..], prefix = "BTN_TARGETDOWN", n = k }, visible = arrows }
         let tip = world::string_by_strref{ w = &w, strref = SLOT_TIPS[k] }

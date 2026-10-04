@@ -239,11 +239,9 @@ namespace selfslots {
     fn tag_for { into: []mut u8, prefix: []u8, k: usize } -> []u8 { return hud::tag_n{ into, prefix, n = k } }
 
     // Sets slot `k`'s controls from its list as CSWGuiActionSlot::SetState does (0x00689280, called for every
-    // slot every frame by UpdateActionMenus): the frame, the icon and the arrows are on screen from the start
-    // and nothing hides them. A list with choices puts the selected one's picture on the icon (dimmed when it
-    // cannot be used) and shows the arrows when there is more than one; a list with none only blanks the icon
-    // and leaves the arrows as they were, so an empty slot is a blank frame, with its arrows until a slot with a
-    // single choice has hidden them.
+    // slot every frame by UpdateActionMenus): the frame and the icon are never hidden, the arrows show only
+    // for more than one choice, and a slot with none is a blank frame drawn at half strength. A list with
+    // choices puts the selected one's picture on the icon (dimmed when it cannot be used).
     fn show_slot { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, k: usize } {
         let mut buf: [24]u8
         let mut icon_buf: [24]u8
@@ -251,12 +249,13 @@ namespace selfslots {
         let has = sl.count > 0
         gui::set_tooltip{ &g, panel, tag = tag_for{ into = buf[..], prefix = "BTN_ACTION", k }, text = world::string_by_strref{ w = &w, strref = TIPS[k] } } iferr {}
         let lbl = tag_for{ into = icon_buf[..], prefix = "LBL_ACTION", k }
+        gui::set_frame_alpha{ &g, panel, tag = tag_for{ into = buf[..], prefix = "BTN_ACTION", k }, alpha = if has { 1.0 } else { 0.5 } }
+        gui::set_visible{ &g, panel, tag = tag_for{ into = buf[..], prefix = "BTN_ACTIONUP", k }, visible = sl.count > 1 }
+        gui::set_visible{ &g, panel, tag = tag_for{ into = buf[..], prefix = "BTN_ACTIONDOWN", k }, visible = sl.count > 1 }
         if not has {
             gui::clear_picture{ &g, panel, tag = lbl }
             return
         }
-        gui::set_visible{ &g, panel, tag = tag_for{ into = buf[..], prefix = "BTN_ACTIONUP", k }, visible = sl.count > 1 }
-        gui::set_visible{ &g, panel, tag = tag_for{ into = buf[..], prefix = "BTN_ACTIONDOWN", k }, visible = sl.count > 1 }
         let e = sl.entries[index_of{ sl, id = sl.selected }]
         let img = if k == 0 { gui::resolve_img{ &g, fs = &w.fs, &dev, name = e.icon[..e.icon_len] } } else { items::icon_of{ &g, &w, &dev, id = e.id } }
         if img.ok { gui::set_picture{ &g, panel, tag = lbl, texture = img.tex, w = img.w, h = img.h } } else { gui::clear_picture{ &g, panel, tag = lbl } }
