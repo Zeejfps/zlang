@@ -397,7 +397,8 @@ The rates actually used (`GetWalkRate` `0x004f1b20`, `GetRunRate` `0x004f1be0`),
 
 - walk = clamp(`+0xa08`, 0.125, 1.5) · WALKRATE · 1000, and 0 when below 100 (an immobile
   creature never moves); in stealth mode (`+0x9fc` bit 0) the client creature's stealth speed is
-  used instead;
+  used instead (`+0x21c` block `+0x60`; nothing found writes it, so its value is open: we walk at the
+  walk rate);
 - run = clamp(`+0xa08`, 0.125, 1.5) · RUNRATE · 1000, at least 1000.
 
 `+0xa08` is the movement speed multiplier that the speed effects change (rules.md). (high)
@@ -438,8 +439,9 @@ The planned path is walked by one of two functions (high):
 4. **Timeout**: if the move has a deadline (path state `+0x26c`, world time `+0x270/+0x274`) and it
    has passed, the creature **jumps** to the destination, the MOVETOPOINT node is removed, the
    idle animation set; done (Force* moves, see actions.md).
-5. **Speed**: in stealth the walk rate; else the run rate if the action's run flag (`+0xa98`) is
-   set, walk otherwise; the walk (10002) or run (10004) animation is (re)set when the creature has
+5. **Speed**: in stealth the walk rate (entering stealth applies a walk-only LIMIT_MOVEMENT_SPEED
+   effect, +0x8e8 = 1, which clears the run flag when the move starts: `0x004f6d70`); else the run
+   rate if the action's run flag (`+0xa98`) is set, walk otherwise; the walk (10002) or run (10004) animation is (re)set when the creature has
    a client twin (`+0x9f0` bit 1). A party member following the leader overrides it (6.2).
 6. **Speed factor** `f` (`GetSpeedFactor` `0x00512f10`), 3.3. Distance this frame:
    `s = dt_ms · (f + f_prev) · speed_mm/s · 0.5 · 10⁻⁶` m (trapezoidal), `f_prev = f` stored at

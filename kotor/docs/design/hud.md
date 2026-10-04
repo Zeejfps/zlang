@@ -82,7 +82,10 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
   entries make up each list is ours (the original's list builder was not read): see the header of
   the file. Mines are not listed (no trap action in the engine) and the keys (keymap.2da) are not
   bound. `ui useitem RESREF [N]` is the headless test; `scripts/selfslots.txt` the run.
-- **Not built**: the leader-swap animation, effect-count icons, stealth toggle and bark bubbles
+- **Stealth toggle** `TB_STEALTH` (lib/hud/stealth.ctx, lib/ingame/stealth_ui.ctx): shown while the leader
+  can hide, checked while it does; a click or G toggles it, through the solo-mode box when companions are
+  about ([mechanics/stealth.md](../mechanics/stealth.md)).
+- **Not built**: the leader-swap animation, effect-count icons and bark bubbles
   (the dialogue lead's).
 
 ## Menus
@@ -177,7 +180,7 @@ comment so the rules lead's merge finds it.
 ## Open
 
 - Self action slots: the mines slot and the keys; the leader-swap
-  animation, effect-count icons, the stealth toggle, bark bubbles (dialogue lead's).
+  animation, effect-count icons, bark bubbles (dialogue lead's).
 - Item drag-and-drop; variable-height list rows (the journal splits long texts into rows);
   a scrolling description box.
 - The journal in `World`; the party's shared inventory and purse; equip actions in the engine.

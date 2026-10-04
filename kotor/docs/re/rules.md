@@ -768,7 +768,11 @@ dying. So the cap is 20 (or lower if the server cap is lower). (high)
   party **without** the gain message; the killer gets a kill feedback. (high)
 - **Mod_XPScale** is read from and written to the module IFO (+0x1a6, default 10) but nothing else
   reads it. (med)
-- Stealth XP (`AwardStealthXP` etc.) is a script-side system. (low, not read)
+- Stealth XP: a pool per area (ARE `StealthXPEnabled`, `StealthXPMax`, `StealthXPLoss`; the current
+  amount starts at the maximum and is saved in the GIT's AreaProperties) that the engine lowers when
+  someone notices the party (5.3) and `AwardStealthXP` (`0x00508770`) pays to the party with feedback,
+  lighting the status summary's stealth XP icon (kind 3), then empties and switches off. The setters
+  keep the current amount at most the maximum (`0x00506a80`, `0x00506aa0`). (high)
 
 ### 4.3 The level-up record and `LevelUp`
 
@@ -865,9 +869,78 @@ Out-of-combat checks **take 20** (the roll is fixed at 20), in combat (+0x4e0 se
 | Demolitions | DISABLETRAP `0x00519570`, RECOVERTRAP `0x00518c40`, FLAGTRAP `0x0050e400`, EXAMINETRAP `0x0050e900` | Demolitions + (20 or d20) ≥ the trap's `DisarmDC` (min 1); a DC above 35 is impossible; the setter of a trap, or a party member disarming a party trap, succeeds automatically | high |
 | Demolitions | SETTRAP `0x00519e30` | Demolitions (+2 if base ranks > 4) + (20 or d20) ≥ traps.2da `SetDC` (min 1) | high |
 | Awareness | trap detection `DoTrapDetection` `0x004fa390` | every 3 s within 3 m, or every 0.1 s within 20 m in detect mode, each non-friendly armed trap of another faction: Awareness + d10 (d10 + 10 in detect mode) ≥ the trap's `TrapDetectDC`, or the trap is flagged always detected; a party member's success marks the trap for the whole party | med |
-| Stealth vs Awareness | `GetCanSeeStealthed` `0x004fb4b0` | deterministic, no die: observer score = distance/line term − target Stealth − target stealth bonus + observer Awareness (full when searching or standing still, else half) + area modifier + observer bonus − 10 while the observer is in combat ± 5 by both animations + size modifier (−8/−4/+4/+8); seen if ≥ 1 | low (terms med) |
+| Stealth vs Awareness | sight `0x004f1fd0`; hearing `0x004fb4b0` (the one Ghidra names `GetCanSeeStealthed`) | two contests, each side's roll kept for 20 s: 5.3 | high for the terms, med for the wall term |
 | Treat Injury | HEAL action `0x00517a60` | Treat Injury + (20 or d20) for medpac/antidote use; poison or disease on the target are handled first; healing a creature at full HP fails with feedback 0x38 | med |
 | Computer Use, Repair, Persuade | — | used only by dialogue scripts (`GetSkillRank`, 144 shipped scripts) and the computer/repair GUIs; spike consumption is scripted | med |
+
+### 5.3 Stealth and Awareness
+
+How a creature in stealth mode is perceived. The mode itself (entering, leaving, what ends it) is
+[docs/mechanics/stealth.md](../mechanics/stealth.md); this is the arithmetic. The individual
+perception check (`0x00502ac0`, from `UpdatePerception` `0x0051b050`) asks two questions of a
+viewer V about a target T in its area: hearing (`0x004fb4b0`) always, sight (`0x004f1fd0`) only
+when T is within V's sight range with a clear line. Two members of the player's party always see and
+hear each other; no contest. (high)
+
+**The rolls.** Every creature keeps four bytes: two it hides with (`+0x91c` against sight, `+0x91d`
+against hearing) and two it looks and listens with (`+0x91e`, `+0x91f`). The constructor rolls all
+four 1..10. Each time the creature's own perception check runs and 20 s of world time (`+0x37c`)
+have passed since its last roll, it rolls again: the hiding pair 11..20 (d10 + 10) when it is in
+stealth mode itself (left as they were otherwise), the looking pair 1..20 (d20) when it is in detect
+mode or standing idle (animation 10000), else 1..10. Detect mode is switched on for every creature
+by the constructor and by `LoadCreature`, and nothing in the shipped game turns it off, so in
+practice the looking rolls are d20. (high)
+
+**Who hides.** Either contest runs only when T is in stealth mode (`+0x4d1`) and T's Stealth rank
+against V (`GetSkillRank(2, V)`: ranks, item and effect bonuses, DEX, feats) is not 0; otherwise V
+perceives T as usual (within range). So a creature without Stealth ranks cannot hide, and the stealth
+unit's own bonus (item property 36, subtype 2: +2 .. +8) only adds to a creature that has ranks.
+(high)
+
+**Sight** (`0x004f1fd0`), within V's sight range (eye heights + 1 m), with a clear line. A viewer with
+the see-invisible vision bit (`+0x8ec` 4) sees. Else V's score is
+
+- V's Awareness against T (in full: detect mode, or standing idle; half otherwise) + V's look roll
+- − T's Stealth − T's hide-from-sight roll
+- − 5 when V is not one of the player's creatures, T is (the client's objects), and T stands behind V:
+  the direction from V to T against V's facing below −0.707 (more than 135° off)
+- − 10 while V is in combat (`+0x4e0`)
+- − 5 while T stands still, + 5 while V stands still (an animation outside the moving set 10002,
+  10003, 10004, 10078, 10079, 10084..10087, 10093, 10094, 10133: `0x004cae60`)
+- − the whole number of 3 m steps in the distance, only beyond 6 m (d / 3 > 2).
+
+T is seen at 1 or more. When it is, the original sends the player's client a feedback message with
+all the terms (type 0x10, the combat log's spot line). (high; the feedback's text not read)
+
+**Hearing** (`0x004fb4b0`), within V's hearing range (eye heights + 1.5 m); a target flagged at
+`+0x8c8` is never heard. V's score is
+
+- a wall term: the line is cast from V to T and from T to V (`ClearLineOfSight`); with nothing in
+  the way 0; else, in an area whose ARE Flags have bit 1 or 2 (interior, underground), −2 (the
+  propagation test there, `0x006054e0`, is a stub that always passes); outdoors −5 per whole metre
+  between the two hit points (med: the case where both casts hit the same object reads a float the
+  decompiler loses)
+- − T's Stealth − T's hide-from-hearing roll + V's Awareness (full / half as for sight) + the area's
+  `+0x18c` (ModListenCheck; 0 in every shipped ARE) + V's listen roll
+- − 10 while V is in combat, − 5 while T stands still, + 5 while V stands still
+- − the whole number of 3 m steps in the distance (from 0 m)
+- T's size (`+0x4f8`, creaturesize.2da): tiny − 8, small − 4, large + 4, huge + 8.
+
+T is heard at 1 or more. (high)
+
+**Being found does not end stealth.** A viewer that perceives a hiding creature just has it in its
+perception list (and the AI scripts react to the ON_PERCEPTION event); stealth ends when combat
+reaches the hider (`AIUpdate`: entering combat for reason 1), when it attacks, casts or speaks, and
+the other cases of actions.md 1.4. (high)
+
+**Stealth XP.** A viewer that newly sees the player's character or the party leader (a new entry,
+or the seen bit set again) starts a 6000 ms countdown (`+0xaa4`); attacking one of them while the
+countdown runs makes it 0xffffffff (charge at once, `ResolveAttack` `0x005bba80`). Its `AIUpdate`
+runs the countdown only while the area pays stealth XP (`+0x2c0`); when it runs out the area's
+current amount (`+0x2b8`) loses the area's loss (`+0x2bc`, StealthXPLoss), not below 0 and never
+above the maximum (`+0x2b4`, `0x00506aa0`). The viewer is anyone, a party member included: a
+companion's first sight of the leader in a newly entered area costs the loss too. (high for the
+code, med for that consequence, which was not seen in play)
 
 ## 6. Feat and power prerequisites
 
@@ -975,8 +1048,9 @@ All of this was read from the decompiled functions named; it refines 4.4 and 6. 
   (NWN hides them).
 - `SkipOnLoad` and object +0x1ec: the exact reload rule.
 - `ResistForce` return path for immunity (1 or 2) and the second check `0x004ccfc0`.
-- The stealth/awareness formula: which animations count as moving, the distance term, and how
-  often it is evaluated (the caller is in the perception code, [movement.md](movement.md)).
+- Stealth (5.3): what the client's stealth speed (`+0x21c` block `+0x60`) is set from; the
+  hearing contest's wall term when both line casts hit the same object outdoors; the spot feedback
+  message (type 0x10) the player's client formats.
 - Whether the GUI level-up uses classpowergain.2da (we assume so; 6.1). The level-up screens'
   own power and feat counts were not read.
 - Treat Injury's effect on the healed amount (medpac items carry their own heal properties).

@@ -1103,7 +1103,9 @@ counts down the combat message (`+0x7724`, total `+0x7720`; the message alpha is
 half and then falls linearly to 0; at the end the message reverts to strref 48208); sets
 `TB_SOLO` visible when the party has more than one member and checked when solo mode is on
 (party table `server+0x1b770`, `+400`); `TB_STEALTH` visible when the leader can stealth
-(`0x00610ac0`) and checked when stealthed (creature `+0x194` bit 0); `TB_PAUSE` checked when the
+(`0x00610ac0`: the area's player restrict mode `+0x2b0` is 0, the Stealth skill is usable (bought
+ranks), and an item whose base item has ItemType 44, a stealth unit, sits in the belt or the
+creature-hide cell; high) and checked when stealthed (creature `+0x194` bit 0); `TB_PAUSE` checked when the
 game is paused by the player; the menu buttons hidden by "Hide InGame GUI". (high)
 
 `Render` (`0x0068b4a0`) does the real refresh, only while the panel is visible and a party leader
@@ -1236,6 +1238,13 @@ alignment icon) and marks it new; their borders pulse. Called when the status su
   request 6 (`0x005edf40`). The pause logic is in [gameloop.md](gameloop.md). (high for the calls)
 - `TB_SOLO` (`0x00688610`): opens the solo-mode confirmation (below). (high)
 - `TB_STEALTH` (`0x00688640`): when the leader can stealth, toggles stealth (`0x0060f4b0`). (med)
+  The toggle (also key action 264, G, which first asks `0x00610ac0`): with solo mode off and more than
+  one in the client party it shows the solo-mode box for stealth (37890); otherwise it sends the
+  server an input message that runs `SetActivity` mode 1 on the leader (`0x004f2a50`), which leaves
+  stealth if in it, refuses in combat with feedback 0x3c (1452, "You cannot enter stealth mode while
+  in combat."), and otherwise enters it. The box's OK (`0x006c2400`) toggles solo mode
+  (`0x005f2a20`: `SetSoloMode(!solo, 1)`, then the script `k_sup_solo`, which the game does not ship)
+  and, for stealth, sends the same request. (high)
 
 #### CSWGuiTopMenu: the tab bar of the in-game menus (`top`)
 

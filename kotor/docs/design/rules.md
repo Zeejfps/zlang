@@ -302,7 +302,7 @@ checks pass (a few seconds with a warm disk cache).
   fields; the engine writes its own object fields and needs `Creature` serialised next to them
   (classes, history, feats, powers, skills, effects). The fields are all plain values, so a
   writer is straightforward once the save layout is fixed.
-- **Stealth and awareness**, disease ticks, Dispel Magic, Force push/jump/lightsaber-throw
+- Disease ticks, Dispel Magic, Force push/jump/lightsaber-throw
   movement, the impact scripts themselves: the docs mark them low confidence or they belong to
   the engine and the script layer.
 - **Resting and the party rest GUI**: the engine has no such code that we found.
