@@ -1,8 +1,8 @@
 // Keyboard control of the party leader (docs/re/movement.md 1.2-1.4): the forward and strafe
 // axes, turned by the camera's yaw, integrated into a velocity, the leader turning at the
 // camerastyle rates and moving along its facing on the walkmesh with sliding; its new position
-// goes straight into the world object, with the trigger bookkeeping. The default-action key uses
-// the object in front of the leader (door: open, placeable: use, creature: talk).
+// goes straight into the world object, with the trigger bookkeeping. The target actions (R, 1-3) and
+// clicks are the HUD's (lib/hud), not this file's.
 namespace ctl {
     struct Keys {
         forward: bool,
@@ -11,11 +11,12 @@ namespace ctl {
         strafe_right: bool,
         turn_left: bool,            // camera rotate keys
         turn_right: bool,
-        action: bool,               // the default-action key went down this frame
+        walk: bool,                 // the walk modifier (B) is held: half the input, the walk animation
+        action: bool,               // a minigame's fire key went down this frame (Space)
     }
 
     fn no_keys {} -> Keys {
-        return Keys{ forward = false, back = false, strafe_left = false, strafe_right = false, turn_left = false, turn_right = false, action = false }
+        return Keys{ forward = false, back = false, strafe_left = false, strafe_right = false, turn_left = false, turn_right = false, walk = false, action = false }
     }
 
     struct Control {
@@ -62,7 +63,6 @@ namespace ctl {
         let o = world::object{ w = &w, id } ifnull { return }
         let c = obj::creature{ o } ifnull { return }
         if c.dead or dt <= 0.0 { return }
-        if keys.action { default_action{ &w, id } }
         let step = math::min{ a = dt, b = 1.0 }
         // The input vector in the camera's frame (x right, y forward), normalised on diagonals.
         let mut ix: f32 = 0.0
@@ -74,6 +74,11 @@ namespace ctl {
         if ix != 0.0 and iy != 0.0 {
             ix = ix * 0.70710678
             iy = iy * 0.70710678
+        }
+        // The walk modifier (keymap action 265, "Run / Walk") halves the input vector (movement.md 1.2 step 3).
+        if keys.walk {
+            ix = ix * 0.5
+            iy = iy * 0.5
         }
         let has_input = ix != 0.0 or iy != 0.0
         // Input cancels whatever the leader was doing (movement.md 1.4; ours: at once).
@@ -132,7 +137,10 @@ namespace ctl {
             // The creature walks or runs for the AI update that follows (ai::update_creature puts a
             // creature that is not `moving` and has no action back to standing).
             c2.moving = true
-            world::set_animation{ o = o3, id = if v > 2.5 { obj::ANIM_RUN } else { obj::ANIM_WALK }, speed = 1.0 }
+            // Walk below the midpoint of the creature's walk and run rates, run above (ours: the original
+            // blends by speed, movement.md 3.6).
+            let run_from = (c2.walk_rate + c2.run_rate) * 0.5
+            world::set_animation{ o = o3, id = if v >= run_from { obj::ANIM_RUN } else { obj::ANIM_WALK }, speed = 1.0 }
         } else if o2.actions.len == 0 {
             c2.moving = false
             if o2.animation == obj::ANIM_RUN or o2.animation == obj::ANIM_WALK {
@@ -155,57 +163,5 @@ namespace ctl {
         if zx != null and (zy == null or dx >= dy) { return math::Vec3{ x = tx.x, y = tx.y, z = zx } }
         if zy != null { return math::Vec3{ x = ty.x, y = ty.y, z = zy } }
         return null
-    }
-
-    // The default action on the nearest door, useable placeable or creature with a
-    // conversation in front of the leader, within 3 m (movement.md 7.4).
-    fn default_action { mut w: world::World, id: u32 } {
-        let me = world::object{ w = &w, id } ifnull { return }
-        let all = list::items{ list = w.objects.all }
-        let mut best = obj::INVALID
-        let mut best_d: f32 = 3.0
-        let mut best_hostile = false
-        let mut i: usize = 0
-        while i < all.len {
-            let o = all[i]
-            i = i + 1
-            if o.destroyed or o.id == id or o.area != me.area { continue }
-            // A live enemy in front, up to 12 m away, is attacked (ours: the HUD's target).
-            let hostile = match o.ext {
-                creature{ c } => { not c.dead and world::standing{ w = &w, from = me.faction, toward = o.faction } <= 10 }
-                else => { false }
-            }
-            let usable = hostile or match o.ext {
-                door{ d } => { d.state == obj::DoorState::closed and not d.static }
-                placeable{ p } => { p.useable }
-                creature => { not resref::is_empty{ r = o.conversation } }
-                else => { false }
-            }
-            if not usable { continue }
-            let dx = o.position.x - me.position.x
-            let dy = o.position.y - me.position.y
-            let d = math::sqrtf{ x = dx * dx + dy * dy }
-            let limit = if hostile { 12.0 } else { best_d }
-            if (d >= limit and not (hostile and not best_hostile)) or d >= 12.0 or d < 0.001 { continue }
-            if best_hostile and not hostile { continue }
-            if hostile and best_hostile and d >= best_d { continue }
-            if (dx * me.orientation.x + dy * me.orientation.y) / d < 0.3 { continue }
-            best = o.id
-            best_d = d
-            best_hostile = hostile
-        }
-        let target = world::object{ w = &w, id = best } ifnull { return }
-        let kind = if best_hostile { actions::Kind::attack_object } else { match target.kind {
-            door => { actions::Kind::open_door }
-            placeable => { actions::Kind::use_object }
-            else => { actions::Kind::dialog_object }
-        } }
-        let mut a = actions::make{ kind }
-        a.params[0] = actions::Param::object{ id = best }
-        if w.log.actions {
-            world::prefix{ w = &w }
-            _ = @fmt(&w.io, "player default action on {} ({})\n", best, target.tag)
-        }
-        _ = actions::add{ &w, id, action = a, force = false }
     }
 }

@@ -218,6 +218,9 @@ namespace gui {
                 if r != c.hover_row {
                     c.hover_row = r
                     if r >= 0 { play_sound{ &g, n = c.hover_sound } }
+                    if r >= 0 and c.click_rows and c.rows[@as(usize, r)].enabled {
+                        push_event{ &g, kind = EventKind::row_hover, p = hp, ci = g.hover.control, value = r, row = r, user = c.rows[@as(usize, r)].user }
+                    }
                 }
             }
         }
@@ -410,7 +413,9 @@ namespace gui {
             // Releasing on a row that was already selected when pressed activates it (a second
             // click); the first click only selected it.
             let r = row_at{ p, c, lx = x - p.sx, ly = y - p.sy }
-            if r >= 0 and r == c.selected_row and g.press_on_selected and bar_part{ p, c, lx = x - p.sx, ly = y - p.sy } == PART_BODY { activate{ &g, p, ci = cap.control } }
+            // Item rows are buttons in the original: one click does what the row does.
+            let again = g.press_on_selected or c.click_rows
+            if r >= 0 and r == c.selected_row and again and bar_part{ p, c, lx = x - p.sx, ly = y - p.sy } == PART_BODY { activate{ &g, p, ci = cap.control } }
         } else if c.kind != K_SLIDER and c.kind != K_EDIT {
             activate{ &g, p, ci = cap.control }
         } else if c.kind == K_EDIT {

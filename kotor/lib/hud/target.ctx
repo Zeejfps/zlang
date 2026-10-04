@@ -8,18 +8,18 @@ namespace hud {
     const HOSTILE_BELOW: i32 = 11
 
     // What a slot does when pressed.
-    enum Act: u8 { none, open, bash, use_place, open_place, talk, attack, unlock, disarm_mine, recover_mine }
+    enum Act: u8 { none, open, bash, use_place, open_place, talk, attack, unlock, throw, disarm_mine, recover_mine }
 
     // One choice in a slot: its icon (a texture in the GUI pack) and the dialog.tlk string that
-    // names it.
-    struct Entry { act: Act, icon: [16]u8, icon_len: usize, strref: u32 }
+    // names it; an item's (a grenade to throw) is named by the item, which `item` says.
+    struct Entry { act: Act, icon: [24]u8, icon_len: usize, strref: u32, item: u32 }
 
     // A slot's choices, cycled with its arrows.
     struct ActionList { entries: [4]Entry, count: usize, selected: usize }
 
     fn entry { act: Act, icon: []u8, strref: u32 } -> Entry {
-        let mut e = Entry{ act, icon = [0; 16], icon_len = 0, strref }
-        let n = if icon.len > 16 { 16 } else { icon.len }
+        let mut e = Entry{ act, icon = [0; 24], icon_len = 0, strref, item = obj::INVALID }
+        let n = if icon.len > 24 { 24 } else { icon.len }
         slice::copy(u8){ dst = e.icon[..n], src = icon[..n] }
         e.icon_len = n
         return e
@@ -125,22 +125,30 @@ namespace hud {
         return rt_talent::has_skill{ w, f, skill = rules::skill::SECURITY }
     }
 
-    // The pointer's picture for what a click on `id` would do.
+    // The pointer's picture over `id` (SetHoverObject 0x006222f0, movement.md 7.2): over the current target it
+    // is the picture of its default action (GetCursorForAction 0x0061faa0: open door 0x3f2 the door, talk
+    // 0x3ea the talk bubble, use 0x3f7 the hand, attack 0x3eb the kill reticle, bash 0x3f5 the bash);
+    // over any other selectable object the select cursor; over nothing the arrow.
     fn cursor_for { w: *world::World, id: u32 } -> u32 {
+        if id == obj::INVALID { return gui::CURSOR_DEFAULT }
+        if id != w.target { return gui::CURSOR_SELECT }
+        return action_cursor{ w, id }
+    }
+
+    // The picture of what a click on the target `id` would do.
+    fn action_cursor { w: *world::World, id: u32 } -> u32 {
         let l = default_actions{ w, id }
-        if l.count == 0 { return gui::CURSOR_DEFAULT }
-        // A mine shows its action only once it is the target; before, the pointer selects (0x0061faa0).
-        let mine = l.entries[0].act == Act::disarm_mine or l.entries[0].act == Act::recover_mine
-        if mine and id != w.target { return gui::CURSOR_SELECT }
+        if l.count == 0 { return gui::CURSOR_INVALID }
         match l.entries[0].act {
             open => { return gui::CURSOR_DOOR }
             bash => { return gui::CURSOR_BASH }
-            use_place | open_place | unlock => { return gui::CURSOR_USE }
+            use_place | open_place => { return gui::CURSOR_USE }
+            unlock => { return gui::CURSOR_LOCK }
             talk => { return gui::CURSOR_TALK }
-            attack => { return gui::CURSOR_ATTACK }
-            disarm_mine => { return gui::CURSOR_DISMINE }
-            recover_mine => { return gui::CURSOR_RECMINE }
-            else => { return gui::CURSOR_DEFAULT }
+            attack => { return gui::CURSOR_KILL }
+            disarm_mine => { return gui::CURSOR_DISMINE }        // 0x3f4
+            recover_mine => { return gui::CURSOR_RECMINE }       // 0x402
+            else => { return gui::CURSOR_INVALID }
         }
     }
 
@@ -225,12 +233,22 @@ namespace hud {
         }
         let next = if at == n { if forward { 0 } else { n - 1 } } else if forward { (at + 1) % n } else { (at + n - 1) % n }
         w.target = ids[next]
+        autopause::request{ &w, reason = autopause::NEW_TARGET }
     }
 
     // Does `act` on `target` for the leader: queues the matching action in place of whatever it
     // was doing (the player's choice replaces the queue, actions.md).
-    fn run_act { mut w: world::World, act: Act, target: u32 } {
+    fn run_act { mut w: world::World, act: Act, target: u32, item: u32 } {
         let leader = party::leader{ w = &w }
+        if act == Act::throw {
+            // A grenade: its ability cast at the target, in place of what the leader was doing.
+            let spell = rt_item::ability_of{ w = &w, id = item }
+            if spell < 0 { return }
+            actions::clear_for_player{ &w, id = leader }
+            rt_item::signal_activation{ &w, who = leader, item, target }
+            rt_talent::queue_cast{ &w, me = leader, spell, target, location = math::vec3::zero{}, cheat = 0, instant = 0, item }
+            return
+        }
         let kind: actions::Kind = match act {
             open => { actions::Kind::open_door }
             use_place | open_place => { actions::Kind::use_object }
@@ -249,7 +267,13 @@ namespace hud {
         }
         let mut a = actions::make{ kind }
         a.params[0] = actions::Param::object{ id = target }
-        actions::clear_all{ &w, id = leader }
+        if act == Act::talk {
+            // The player's talk order: walk up first (DIALOGOBJECT's approach mode 1, ignore-range 0).
+            a.params[2] = actions::Param::int{ v = 0 }
+            a.params[3] = actions::Param::int{ v = 1 }
+            a.params[4] = actions::Param::int{ v = 0 }
+        }
+        actions::clear_for_player{ &w, id = leader }
         _ = actions::add{ &w, id = leader, action = a, force = false }
     }
 }

@@ -54,6 +54,43 @@ namespace test_items {
             if hud::creature_of{ w = &w, id = leader } is some{ value = c } { c.gold = @trunc(u32, text::scan_decimal{ s = args }) }
         } else if ci::eq{ a = cmd, b = "inv" } {
             dump{ &w, leader }
+        } else if ci::eq{ a = cmd, b = "getglobal" } {
+            // `ui getglobal NAME`: a number global's value.
+            let name = text::first_word{ s = args }
+            _ = @fmt(&w.io, "global {} = {}\n", name, globals::number{ g = &w.globals, name })
+        } else if ci::eq{ a = cmd, b = "faction" } {
+            // `ui faction TAG N`: the creature joins a standard faction (1 hostile, 2 friendly, 5 neutral), so a
+            // test can have a hostile where the story has none.
+            let mut words = text::words{ s = args }
+            let tag = text::next_word{ &words } ifnull { return true }
+            let n = @as(u32, text::scan_decimal{ s = text::next_word{ &words } ifnull "1" })
+            let o = world::object{ w = &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } } ifnull { return true }
+            o.faction = n
+        } else if ci::eq{ a = cmd, b = "log" } {
+            // The HUD's message log, oldest line first (`ui log N`: only the last N).
+            let n = hud::log_count{ log = &ui.log }
+            let want = @as(usize, text::scan_decimal{ s = args })
+            let from = if want > 0 and want < n { n - want } else { 0 }
+            let mut i = from
+            while i < n {
+                _ = @fmt(&w.io, "log: {}\n", hud::log_text{ log = &ui.log, i })
+                i = i + 1
+            }
+        } else if ci::eq{ a = cmd, b = "fx" } {
+            // The effects on the creature with the tag (the leader when none is given): kind, how long it
+            // lasts, the first parameters, whose it is and from which power, and when it ends.
+            let tag = text::first_word{ s = args }
+            let id = if tag.len == 0 { leader } else { world::object_by_tag{ w = &w, tag, nth = 0 } }
+            let o = world::object{ w = &w, id } ifnull { return true }
+            let f = fight::of{ o } ifnull { return true }
+            _ = @fmt(&w.io, "fx {}: {} effects\n", o.tag, f.c.nfx)
+            let now = clock::now_ms{ c = w.clock }
+            let mut k: usize = 0
+            while k < @as(usize, f.c.nfx) {
+                let e = f.c.fx[k]
+                k = k + 1
+                _ = @fmt(&w.io, "  fx kind {} dur {} sub {} seconds {} ints {} {} {} {} creator {} spell {} (now {} ms)\n", e.kind, e.dur, e.sub, e.duration, e.ints[0], e.ints[1], e.ints[2], e.ints[3], e.creator, e.spell_id, now)
+            }
         } else if ci::eq{ a = cmd, b = "movectl" } or ci::eq{ a = cmd, b = "clickctl" } or ci::eq{ a = cmd, b = "ctl" } {
             let mut words = text::words{ s = args }
             let tag = text::next_word{ &words } ifnull { return true }
@@ -111,6 +148,7 @@ namespace test_items {
             _ = @fmt(&w.io, "giveitem {}: nothing made\n", name)
             return
         }
+        xfer::mark_new{ &w, item = id }
         if not equip { return }
         let mask = items::equipable_slots{ w = &w, id }
         let mut index: usize = 0

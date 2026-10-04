@@ -80,24 +80,36 @@ namespace hud {
         }
     }
 
+    // Disengage (BTN_CLEARALL, the F key): the leader leaves combat mode and its actions are cleared. In the
+    // original only while the party is in combat mode (HandleInputAction 240).
+    fn disengage { mut w: world::World } {
+        let leader = party::leader{ w = &w }
+        let c = creature_of{ w = &w, id = leader } ifnull { return }
+        if not c.in_combat { return }
+        actions::clear_all{ &w, id = leader }
+        c.in_combat = false
+    }
+
+    // Clear Combat Action (BTN_CLEARONE, the Y key): the last of the leader's queued actions goes.
+    fn clear_one { mut w: world::World } {
+        let o = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return }
+        if o.actions.len > 1 {
+            let last = o.actions.len - 1
+            actions::free_params{ &w, a = list::items{ list = o.actions }[last] }
+            o.actions.len = last
+        }
+    }
+
     // BTN_CLEARALL (Disengage) leaves combat and clears the leader's actions; BTN_CLEARONE drops
     // the last queued action. True when the event was theirs.
     fn combat_event { mut h: Hud, mut g: gui::Gui, mut w: world::World, ev: gui::Event } -> bool {
         if ev.kind != gui::EventKind::activate { return false }
-        let leader = party::leader{ w = &w }
         if slice::eq_bytes{ a = ev.tag, b = "BTN_CLEARALL" } {
-            actions::clear_all{ &w, id = leader }
-            let c = creature_of{ w = &w, id = leader } ifnull { return true }
-            c.in_combat = false
+            disengage{ &w }
             return true
         }
         if slice::eq_bytes{ a = ev.tag, b = "BTN_CLEARONE" } or slice::eq_bytes{ a = ev.tag, b = "BTN_CLEARONE2" } {
-            let o = world::object{ w = &w, id = leader } ifnull { return true }
-            if o.actions.len > 1 {
-                let last = o.actions.len - 1
-                actions::free_params{ &w, a = list::items{ list = o.actions }[last] }
-                o.actions.len = last
-            }
+            clear_one{ &w }
             return true
         }
         return false

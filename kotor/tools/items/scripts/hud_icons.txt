@@ -1,0 +1,6 @@
+# Taking an item lights the HUD's item-received icon (under the minimap) and logs "Acquired Item: ...".
+20 ui giveitem g_i_medeqpmnt01 1
+24 ui loot footlker
+40 ui clickctl LB_ITEMS 0
+44 ui clickctl BTN_OK
+50 ui log 4

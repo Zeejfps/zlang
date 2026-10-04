@@ -279,6 +279,8 @@ namespace rt_act {
         return unlock_attempt{ &w, who, target, spike_bonus = 0 }
     }
 
+    fn who_is_party { w: *world::World, id: u32 } -> bool { return id == w.pc or id == w.player or party::is_member{ w, id } }
+
     // The same with a security spike's bonus.
     fn unlock_attempt { mut w: world::World, who: u32, target: u32, spike_bonus: i32 } -> bool {
         let t = world::object{ w = &w, id = target } ifnull { return false }
@@ -293,7 +295,28 @@ namespace rt_act {
             if not p.locked or p.key_required { return false }
             dc = @as(i32, p.open_dc)
         } else { return false }
-        let check = rules::open_lock_check{ tables = w.rules, c = &f.c, lock_dc = dc, spike_bonus, in_combat = c.in_combat, rng = &w.dice }
+        let mut check = rules::open_lock_check{ tables = w.rules, c = &f.c, lock_dc = dc, spike_bonus, in_combat = c.in_combat, rng = &w.dice }
+        // A security spike in the party's bag helps when the roll alone falls short: the weakest that
+        // makes it succeed is used up (the original has the player name the spike when queueing OPENLOCK;
+        // which one a player would pick, and when, was not traced, so this is ours).
+        let mut spike_item = obj::INVALID
+        if not check.success and spike_bonus == 0 and who_is_party{ w = &w, id = who } {
+            let mut best: i32 = 1000
+            let ids = list::items{ list = w.bag }
+            let mut k: usize = 0
+            while k < ids.len {
+                let b = rt_item::spike_bonus_of{ w = &w, id = ids[k] }
+                if b > 0 and b < best and check.total + b >= check.dc and world::is_valid{ w = &w, id = ids[k] } {
+                    best = b
+                    spike_item = ids[k]
+                }
+                k = k + 1
+            }
+            if spike_item != obj::INVALID {
+                check = rules::make_check{ total = check.total + best, roll = check.roll, dc = check.dc }
+                rt_item::use_up_one{ &w, item = spike_item }
+            }
+        }
         if w.log.actions {
             let sk = rules::skill::SECURITY
             let mode: []u8 = if c.in_combat { "d20" } else { "take-20" }

@@ -191,7 +191,12 @@ waypoints, sounds, placeables, stores). Creatures join AI level 0, become 1 when
 unless paused, the calendar origin (year, month, day, hour from the IFO), `min_per_hour`
 (`Mod_MinPerHour`, 2 in KOTOR), and `world_ms` = `now_us / 1000`. Event times are absolute world
 milliseconds (*ours*; the original keeps (day, ms) pairs, which saves convert to and from).
-Pause (gameloop.md 6) freezes it: `clock::set_pause{ c = &w.clock, bit, on }` with
+The counter never goes back: a load calls `clock::set_calendar`, which moves the calendar origin so
+the date reads the save's (the original's `SetWorldTime` moves the origin too, gameloop.md 1.6), and
+leaves `now_us` alone, so a stamp taken before the load is never in the future; what the engine keeps
+in calendar time (effect expiry, the saved event queue) is rebased by the new origin. Every elapsed
+time is `clock::elapsed_since{ now, then }`, which is 0 for a `then` in the future instead of an
+unsigned underflow panic. Pause (gameloop.md 6) freezes it: `clock::set_pause{ c = &w.clock, bit, on }` with
 `PAUSE_PLAYER`, `PAUSE_MENU`, `PAUSE_ENGINE`; any bit set stops the clock, but `world::tick` still
 runs, so zero-delay events go through (6.2). The GUI and camera use real time. The delta every system reads
 is `clock.dt` (seconds, 0 while paused), clamped to 0.25 s (*ours*: the original never clamps).

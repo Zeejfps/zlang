@@ -1,0 +1,17 @@
+# Every kind of consumable used once, 80 frames apart (a cast takes 1.5 s and then the next is queued behind it).
+20 ui stat hp 5
+30 ui useitem g_i_medeqpmnt03
+110 ui hp
+120 ui useitem g_i_adrnaline005
+200 ui fx
+210 ui useitem g_i_cmbtshot003
+290 ui fx
+300 ui useitem g_i_medeqpmnt08
+380 ui fx
+390 ui race 5
+391 ui stat hp 5
+400 ui useitem g_i_drdrepeqp001
+480 ui hp
+481 ui stat hp 5
+490 ui useitem g_i_drdrepeqp002
+570 ui hp

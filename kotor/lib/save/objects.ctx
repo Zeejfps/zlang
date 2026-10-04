@@ -160,6 +160,16 @@ namespace save {
         try put_byte{ &b, owner = s, label = "PerceptionRange", v = @trunc(u8, c.perception_range) }
         try put_bool{ &b, owner = s, label = "IsPC", v = c.is_pc }
         try put_bool{ &b, owner = s, label = "CreatnScrptFird", v = c.spawn_fired }
+        // SetListening and the listen patterns (SaveCreature's Listening and ExpressionList).
+        try put_bool{ &b, owner = s, label = "Listening", v = c.listening }
+        let exprs = try gffw::put_list{ &b, owner = s, label = "ExpressionList" }
+        let mut x: usize = 0
+        while x < @as(usize, c.listen_count) and x < 4 {
+            let e = try gffw::add_element{ &b, list = exprs, id = 0 }
+            try put_int{ &b, owner = e, label = "ExpressionId", v = c.listen_number[x] }
+            try put_string{ &b, owner = e, label = "ExpressionString", v = c.listen_text[x][0..@as(usize, c.listen_len[x])] }
+            x = x + 1
+        }
         let mut k: usize = 0
         let mut ruled = false
         if c.fighter is some{ value = f } {

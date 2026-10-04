@@ -1,0 +1,14 @@
+# The HUD's self slots after the original's list rules: stims and a worn energy shield in the second slot,
+# medpacs in the first, grenades in neither.
+4 ui giveitem g_i_frarmbnds01 1 equip
+4 ui giveitem g_i_adrnaline001 3
+4 ui giveitem g_w_fraggren01 4
+4 ui giveitem g_i_medeqpmnt02 2
+4 ui giveitem g_i_drdshld001
+4 ui stat hp 6
+40 ui movectl BTN_ACTION2
+60 ui clickctl BTN_ACTIONDOWN2
+70 ui movectl BTN_ACTION2
+80 ui clickctl BTN_ACTIONDOWN2
+90 ui movectl BTN_ACTION2
+100 ui movectl BTN_ACTION1

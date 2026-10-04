@@ -1,0 +1,20 @@
+# The equipment screen from the keyboard: slots, the candidate list, the preview and the refusals.
+4 ui giveitem g_w_lghtsbr01
+4 ui giveitem g_a_class4001
+4 ui giveitem g_a_class5001
+4 ui giveitem g_w_blstrpstl001
+4 ui giveitem g_i_belt001
+4 ui giveitem g_i_implant101
+4 ui giveitem g_i_mask01
+4 ui giveitem g_i_gauntlet01
+4 ui giveitem g_i_frarmbnds01
+4 ui giveitem g_i_drdshld001
+10 ui key u
+20 ui clickctl BTN_INV_BODY
+30 ui movectl LB_ITEMS 2
+40 ui ctl BTN_EQUIP
+50 ui movectl LB_ITEMS 3
+60 ui clickctl LB_ITEMS 3
+70 ui ctl BTN_EQUIP
+80 ui clickctl BTN_EQUIP
+100 ui inv

@@ -310,6 +310,7 @@ namespace fight {
         o.hp = o.hp - amount
         if o.min_one_hp and o.hp < 1 { o.hp = 1 }
         f.last_damage = amount
+        fight_log::damaged{ &w, target = id, amount, who }
         f.damage_types = [0; 15]
         let mut slot: u32 = 0
         while slot < 15 {
@@ -325,8 +326,9 @@ namespace fight {
             c.last_hostile_actor = who
             enter_combat{ &w, id, other = who }
         }
-        // OnDamaged, unless it is the player's own creature (6.6 step 5).
-        if id != w.pc {
+        // OnDamaged, unless it is the player character (the main one, whoever leads: +0x9d4) or
+        // the hit left it dead or down (6.6 step 5).
+        if id != w.player and o.hp >= 1 {
             events::post{ &w, delay_ms = 0, caller = who, target = id, payload = events::Payload::script{ e = events::script_event{ kind = events::DAMAGED, object = who } } }
         }
         if amount > 0 and o.hp > 0 { bark{ &w, id, first = VOICE_PAIN, count = 2, chance_in = 2, quiet = true } }
@@ -384,6 +386,18 @@ namespace fight {
                 mo.ctx.last_player_died = id
                 events::post{ &w, delay_ms = 0, caller = id, target = w.module, payload = events::Payload::script{ e = events::script_event{ kind = events::DEATH, object = killer } } }
             }
+            // "Party Member Down" auto-pause, while another member is up (8.2).
+            if first_member_up{ w = &w } != obj::INVALID { autopause::request{ &w, reason = autopause::PARTY_MEMBER_DOWN } }
+            // The one the player controls went down: control passes to the next member who is up
+            // (0x005edf80 -> 0x005f7960).
+            if id == party::leader{ w = &w } {
+                let next = first_member_up{ w = &w }
+                if next != obj::INVALID {
+                    party::set_leader{ &w, id = next }
+                    w.pc = next
+                    w.target = obj::INVALID
+                }
+            }
             return
         }
         bc.dead = true
@@ -408,6 +422,7 @@ namespace fight {
         if o.plot or o.hp < 1 or amount <= 0 { return }
         o.hp = o.hp - amount
         o.ctx.last_damager = who
+        fight_log::damaged{ &w, target = id, amount, who }
         if w.log.combat {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "{} ({}) takes {} damage from {}: {}/{}\n", id, o.tag, amount, who, o.hp, o.hp_max)
@@ -479,6 +494,7 @@ namespace fight {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "{} XP for killing {}\n", xp, victim)
         }
+        fight_log::killed{ &w, victim, killer, xp }
     }
 
     // ---- combat state (3.6)
@@ -639,6 +655,9 @@ namespace fight {
             if tf.c.down { return actions::Status::done }
         }
         let f = c.fighter ifnull { return actions::Status::failed }
+        // A party member who is down does nothing (AIActionAttackObject step 2).
+        sync_flags{ w = &w, o, f }
+        if f.c.down { return actions::Status::failed }
         if actions::int_param{ a, i = 3 } != 0 {
             // A cutscene attack (params 3 flag, 4 animation row, 5 result, 6 damage): the round
             // starts at once with the designer's numbers.
@@ -867,18 +886,24 @@ namespace fight {
     fn land { mut w: world::World, id: u32, imp: *Impact } {
         let t = world::object{ w = &w, id = imp.target } ifnull { return }
         if t.kind == obj::Kind::door or t.kind == obj::Kind::placeable {
+            if imp.attack { fight_log::attack{ &w, attacker = id, imp } }
             if imp.attack and imp.hit { damage_object{ &w, id = imp.target, amount = imp.damage.total, who = id } }
             return
         }
         let tc = obj::creature{ o = t } ifnull { return }
         if tc.dead { return }
         if not imp.attack { return }
+        fight_log::attack{ &w, attacker = id, imp }
         if imp.ranged { land_ranged_fx{ &w, id, imp, power = false } } else { land_melee_fx{ &w, id, imp } }
         if imp.result == rules::outcome::CRITICAL { bark{ &w, id, first = VOICE_CRITICAL, count = 1, chance_in = 1, quiet = false } }
         t.ctx.last_attacker = id
         tc.last_hostile_actor = id
         if not imp.cutscene { enter_combat{ &w, id = imp.target, other = id } }
-        if imp.target != w.pc {
+        // OnAttacked for every creature hit that is up, the player's own too (the creature event
+        // handler 0x004fece0, event 15, has no player test): the leader's k_hen_attacked01 shouts
+        // GEN_I_WAS_ATTACKED, which is how the companions join a fight on the leader.
+        let downed = if tc.fighter is some{ value = tf } { tf.c.down } else { false }
+        if not downed {
             events::post{ &w, delay_ms = 0, caller = id, target = imp.target, payload = events::Payload::script{ e = events::script_event{ kind = events::MELEE_ATTACKED, object = id } } }
         }
         // The damage first (rules.md: make_damage_effects, applied before the attack's other effects).
@@ -938,6 +963,7 @@ namespace fight {
             let state: []u8 = if target_alive { "alive" } else { "gone" }
             _ = @fmt(&w.io, "{} ends its round (target {} {})\n", id, target, state)
         }
+        if id == party::leader{ w = &w } { autopause::request{ &w, reason = autopause::END_OF_ROUND } }
         if id == party::leader{ w = &w } and target_alive and o.actions.len == 0 {
             let mut a = actions::make{ kind = actions::Kind::attack_object }
             a.params[0] = actions::Param::object{ id = target }
@@ -970,15 +996,9 @@ namespace fight {
             return
         }
         if c2.dead { return }
-        if f.c.down {
-            // A downed party member gets up when the fight is over (ours: combat.md 12).
-            if not any_hostile_in_combat{ w = &w } {
-                o2.hp = 1
-                f.c.down = false
-                world::set_animation{ o = o2, id = obj::ANIM_STAND, speed = 1.0 }
-            }
-            return
-        }
+        // A downed party member lies still; update_party gets it up when the fight is over.
+        sync_flags{ w = &w, o = o2, f }
+        if f.c.down { return }
         // The round: impacts at their times, the end after 3 s.
         if f.round.started {
             f.round.timer_ms = f.round.timer_ms + dt
@@ -1040,19 +1060,106 @@ namespace fight {
         world::set_animation{ o, id = animname::ROW_BASE + @as(u32, row), speed = 1.0 }
     }
 
-    fn any_hostile_in_combat { w: *world::World } -> bool {
+    // ---- the party's downed members (UpdatePartyDeath 0x004b6da0, once per tick)
+
+    // The clocks of UpdatePartyDeath: the once-a-second scan for hostiles, and how long the party
+    // has had someone down with no hostile creature seeing any member.
+    struct PartyWatch { scan_ms: i32, calm_ms: i32 }
+
+    fn new_party_watch {} -> PartyWatch { return PartyWatch{ scan_ms = 0, calm_ms = 0 } }
+
+    // Whether a party member is down (GetIsDying: in the party, hit points below 1).
+    fn is_down { w: *world::World, id: u32 } -> bool {
+        let o = world::object{ w, id } ifnull { return false }
+        if o.kind != obj::Kind::creature { return false }
+        return o.hp < 1 and party::is_member{ w, id }
+    }
+
+    fn first_member_up { w: *world::World } -> u32 {
+        let members = party::members{ w }
+        let mut k: usize = 0
+        while k < members.len {
+            if not is_down{ w, id = members[k] } { return members[k] }
+            k = k + 1
+        }
+        return obj::INVALID
+    }
+
+    // Whether a living creature outside the party, hostile to the party, sees one of its members
+    // (CSWSCreature::IsPerceivingPartyMember: a seen perception entry of a party member).
+    fn hostile_sees_party { w: *world::World } -> bool {
+        let pc = world::object{ w, id = party::leader{ w } } ifnull { return false }
         let all = list::items{ list = w.objects.all }
-        let pc = world::object{ w, id = w.pc } ifnull { return false }
         let mut i: usize = 0
         while i < all.len {
             let o = all[i]
             i = i + 1
             if o.kind != obj::Kind::creature or o.area != w.area or o.destroyed { continue }
             let c = obj::creature{ o } ifnull { continue }
-            if not c.in_combat or c.dead { continue }
-            if world::standing{ w, from = pc.faction, toward = o.faction } <= 10 { return true }
+            if c.dead or party::is_member{ w, id = o.id } { continue }
+            if world::standing{ w, from = o.faction, toward = pc.faction } >= 11 { continue }
+            let seen = list::items{ list = c.perceived }
+            let mut k: usize = 0
+            while k < seen.len {
+                if seen[k].seen and party::is_member{ w, id = seen[k].id } { return true }
+                k = k + 1
+            }
         }
         return false
+    }
+
+    // While a member is down, once 5 s pass with no hostile creature seeing any member (checked
+    // once a second), every downed member gets up with 1 hit point (a RESURRECTION effect). The
+    // whole party down is the end of the game (play's party_fallen).
+    fn update_party { mut w: world::World } {
+        let dt = @as(i32, w.clock.dt * 1000.0)
+        if dt <= 0 or w.transition != null or w.arrival > 0 { return }
+        let mut ids: [3]u32 = [obj::INVALID; 3]
+        let members = party::members{ w = &w }
+        let n = if members.len < 3 { members.len } else { 3 }
+        let mut k: usize = 0
+        let mut any = false
+        let mut all = n > 0
+        while k < n {
+            ids[k] = members[k]
+            if is_down{ w = &w, id = ids[k] } { any = true } else { all = false }
+            k = k + 1
+        }
+        if all { return }
+        if not any {
+            w.party_watch.calm_ms = 0
+            return
+        }
+        w.party_watch.scan_ms = w.party_watch.scan_ms + dt
+        if w.party_watch.scan_ms > 1000 {
+            w.party_watch.scan_ms = 0
+            if hostile_sees_party{ w = &w } {
+                w.party_watch.calm_ms = 0
+                return
+            }
+        }
+        w.party_watch.calm_ms = w.party_watch.calm_ms + dt
+        if w.party_watch.calm_ms <= 5000 { return }
+        w.party_watch.calm_ms = 0
+        k = 0
+        while k < n {
+            let id = ids[k]
+            k = k + 1
+            if not is_down{ w = &w, id } { continue }
+            let mut e = rules::fx::make_resurrection{}
+            rules::fx::set_creator{ e = &e, creator = id, spell_id = -1 }
+            _ = apply{ &w, target = id, e }
+            if world::object{ w = &w, id } is some{ value = o } {
+                if of{ o } is some{ value = f } {
+                    f.dying_ms = 0
+                    sync_flags{ w = &w, o, f }
+                }
+            }
+            if w.log.combat {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "{} gets up\n", id)
+            }
+        }
     }
 
     // ---- Force powers (actions.md 3.13, rules.md "Force powers")
@@ -1125,9 +1232,10 @@ namespace fight {
                 }
                 if start.interrupted { return actions::Status::failed }
             }
-            // An item's ability spends one of the item's uses as the cast begins.
+            // An item's ability needs the item (it is spent at the impact, below).
             let used = actions::object_param{ a, i = 6 }
-            if used != obj::INVALID { rt_item::spend_use{ &w, item = used, spell } }
+            if used != obj::INVALID and not world::is_valid{ w = &w, id = used } { return actions::Status::failed }
+            a.unclearable = used != obj::INVALID
             let dir = math::vec3::sub{ a = at, b = o.position }
             if dir.x * dir.x + dir.y * dir.y > 0.0001 { world::set_orientation{ o, v = math::Vec3{ x = dir.x, y = dir.y, z = 0.0 } } }
             if obj::creature{ o } is some{ value = c } {
@@ -1142,8 +1250,12 @@ namespace fight {
                 }
                 c.last_force_power = spell
             }
-            let conj = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "conjanim" } ifnull ""
-            play_row{ &w, o, row = cast_row{ name = conj, looping = true } }
+            if used != obj::INVALID {
+                play_item_use{ &w, o, item = used, near = doors::distance_2d{ a = o.position, b = at } < 10.0 }
+            } else {
+                let conj = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "conjanim" } ifnull ""
+                play_row{ &w, o, row = cast_row{ name = conj, looping = true } }
+            }
             spell_visuals{ &w, id, spell, cast = false }
             a.phase = 1
             a.started = now
@@ -1154,21 +1266,29 @@ namespace fight {
         }
         let times = rules::spell_phase_times{ tables = w.rules, spell }
         let instant = actions::int_param{ a, i = 4 } != 0
-        let conj_ms = if instant { 0 } else { @as(u64, @as(u32, if times.conj_ms > 0 { times.conj_ms } else { 0 })) }
-        let cast_ms = if instant { 0 } else { @as(u64, @as(u32, if times.cast_ms > 0 { times.cast_ms } else { 0 })) }
-        let catch_ms = if instant { 0 } else { @as(u64, @as(u32, if times.catch_ms > 0 { times.catch_ms } else { 0 })) }
-        let elapsed = now - a.started
+        // An item's ability has its own timing by kind of item (actions.md 3.13, ITEMCASTSPELL): the
+        // impact lands part way through a 1.5 s action, and the item's use is spent with it.
+        let used_item = actions::object_param{ a, i = 6 }
+        let by_item = used_item != obj::INVALID
+        let item_ms = item_cast_ms{ w = &w, item = used_item, near = doors::distance_2d{ a = o.position, b = at } < 10.0 }
+        let conj_ms = if instant or by_item { 0 } else { @as(u64, @as(u32, if times.conj_ms > 0 { times.conj_ms } else { 0 })) }
+        let cast_ms = if instant { 0 } else if by_item { item_ms.impact } else { @as(u64, @as(u32, if times.cast_ms > 0 { times.cast_ms } else { 0 })) }
+        let catch_ms = if instant { 0 } else if by_item { item_ms.total - item_ms.impact } else { @as(u64, @as(u32, if times.catch_ms > 0 { times.catch_ms } else { 0 })) }
+        let elapsed = clock::elapsed_since{ now, then = a.started }
         if a.phase == 1 {
             if elapsed < conj_ms { return actions::Status::running }
-            let anim = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "castanim" } ifnull ""
-            let back = world::object{ w = &w, id } ifnull { return actions::Status::failed }
-            play_row{ &w, o = back, row = cast_row{ name = anim, looping = false } }
+            if not by_item {
+                let anim = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "castanim" } ifnull ""
+                let back = world::object{ w = &w, id } ifnull { return actions::Status::failed }
+                play_row{ &w, o = back, row = cast_row{ name = anim, looping = false } }
+            }
             spell_visuals{ &w, id, spell, cast = true }
             a.phase = 2
         }
         if a.phase == 2 {
             if elapsed < conj_ms + cast_ms { return actions::Status::running }
             impact{ &w, &vm, engine, id, spell, target, at }
+            if by_item { rt_item::spend_use{ &w, item = used_item, spell } }
             a.phase = 3
         }
         if elapsed < conj_ms + cast_ms + catch_ms { return actions::Status::running }
@@ -1182,6 +1302,30 @@ namespace fight {
             }
         }
         return actions::Status::done
+    }
+
+    struct ItemTimes { impact: u64, total: u64 }
+
+    // When an item's ability lands and when its action ends, by the base item's ItemType (actions.md 3.13,
+    // AIActionItemCastSpell): grenades 700 ms (800 when thrown from 10 m or more) of 1.5 s, droid utility
+    // devices 300 of 1.5 s, forearm shields 600 of 1 s, stims, repair kits and medpacs 750 of 1.5 s, the
+    // squad recovery kit 750 of 1.5 s; the rest land at once.
+    fn item_cast_ms { w: *world::World, item: u32, near: bool } -> ItemTimes {
+        let kind = rt_item::item_type_of{ w, id = item }
+        if kind == 6 { return ItemTimes{ impact = if near { 700 } else { 800 }, total = 1500 } }
+        if kind == 12 { return ItemTimes{ impact = 300, total = 1500 } }
+        if kind == 20 { return ItemTimes{ impact = 600, total = 1000 } }
+        if kind == 25 or kind == 26 or kind == 45 or kind == 47 { return ItemTimes{ impact = 750, total = 1500 } }
+        return ItemTimes{ impact = 1, total = 1500 }
+    }
+
+    // The animation of using an item: the injection for stims, repair kits and medpacs, the throw
+    // for a grenade (the short one from under 10 m), the device's activation for the rest.
+    fn play_item_use { mut w: world::World, o: *mut obj::Object, item: u32, near: bool } {
+        let kind = rt_item::item_type_of{ w = &w, id = item }
+        if kind == 6 { play_row{ &w, o, row = if near { 57 } else { 58 } }; return }
+        if kind == 25 or kind == 26 or kind == 45 { world::set_animation{ o, id = 10070, speed = 1.0 }; return }
+        world::set_animation{ o, id = 10127, speed = 1.0 }
     }
 
     // The impact: the power's script (spells.2da impactscript) as the caster, with the spell

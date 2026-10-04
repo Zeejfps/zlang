@@ -124,6 +124,16 @@ namespace tmpl {
         }
     }
 
+    // Whether a party member's (or the player's) OnSpawn counts as fired. One that does not listen
+    // and whose OnSpawn is the henchman one (k_hen_spawn01: SetIsDestroyable, GN_SetListeningPatterns)
+    // runs it on its first update, as the original does for a creature whose CreatnScrptFird is not
+    // set: a companion made from its blueprint, or one from a save written before listen patterns
+    // were kept, would otherwise never hear the party's GEN_I_WAS_ATTACKED and sit out the fights.
+    fn hench_spawn_fired { o: *obj::Object, c: *obj::Creature } -> bool {
+        if c.listening and c.listen_count > 0 { return true }
+        return not resref::matches{ r = obj::script{ o, slot = obj::Slot::spawn }, name = "k_hen_spawn01" }
+    }
+
     // ---- creatures (UTC; objects.md, "Creature template load")
 
     fn read_creature { mut w: world::World, o: *mut obj::Object, c: *mut obj::Creature, doc: *gff::Doc, s: u32 } -> ! {
@@ -140,6 +150,27 @@ namespace tmpl {
         c.perception_range = @trunc(u32, number{ doc, s, label = "PerceptionRange", default = @as(i64, c.perception_range) })
         c.is_pc = flag{ doc, s, label = "IsPC", default = c.is_pc }
         c.spawn_fired = flag{ doc, s, label = "CreatnScrptFird", default = c.spawn_fired }
+        // A saved creature's SetListening and SetListenPattern list (CSWSCreature::LoadCreature
+        // 0x00500350: Listening, ExpressionList of ExpressionId / ExpressionString): without them
+        // a loaded companion no longer hears GEN_I_WAS_ATTACKED and stands out of every fight.
+        c.listening = flag{ doc, s, label = "Listening", default = c.listening }
+        if gff::get_list{ doc = doc.*, s, label = "ExpressionList" } is some{ value = exprs } {
+            c.listen_count = 0
+            let mut x: usize = 0
+            while x < exprs.len and x < 4 {
+                let text = gff::get_string{ doc = doc.*, s = exprs[x], label = "ExpressionString" } ifnull ""
+                let n = if text.len < 32 { text.len } else { 32 }
+                let mut t: usize = 0
+                while t < n {
+                    c.listen_text[x][t] = text[t]
+                    t = t + 1
+                }
+                c.listen_len[x] = @trunc(u8, n)
+                c.listen_number[x] = @trunc(i32, number{ doc, s = exprs[x], label = "ExpressionId", default = 0 })
+                c.listen_count = c.listen_count + 1
+                x = x + 1
+            }
+        }
         let labels: [6][]u8 = ["Str", "Dex", "Con", "Int", "Wis", "Cha"]
         let mut k: usize = 0
         while k < 6 {

@@ -14,6 +14,7 @@ namespace outbox {
         movie{ name: resref::ResRef },
         bark{ speaker: u32, strref: u32, text: Text, sound: resref::ResRef },
         feedback{ strref: u32, text: Text },
+        hud_notice{ kind: i32 },                    // a HUD notification icon lights for a few seconds (hud::NOTE_*: 1 credits, 7 item received, 8 item lost, ...)
         post_string{ text: Text, x: i32, y: i32, life: f32 },
         no_clicks{ seconds: f32 },
         conversation{ owner: u32, speaker: u32, dialog: resref::ResRef },

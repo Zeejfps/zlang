@@ -1,0 +1,11 @@
+# The equipment screen shows the leader; the portrait button of another member makes him the leader and shows his
+# gear. The bag is shared: a blaster from it goes into his hand.
+4 ui giveitem g_w_blstrpstl001
+10 ui key u
+30 ui clickctl BTN_CHANGE1
+50 ui inv
+60 ui clickctl BTN_INV_WEAP_R
+70 ui ctl LB_ITEMS
+80 ui clickctl LB_ITEMS 2
+100 ui inv
+110 ui party
