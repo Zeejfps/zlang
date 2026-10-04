@@ -454,6 +454,9 @@ namespace rt_item {
         let id = create_item{ &w, template, target, stack }
         // AcquireItem with feedback: the party is told ("Acquired Item: ...", the HUD's icon).
         if id != obj::INVALID {
+            // The module's OnAcquireItem hears it like any other transfer to a creature (AcquireItem 0x005158e0,
+            // party-items-saves.md 5.4): Kashyyyk's journal entry for Bacca's blade is set by that script.
+            rt_misc::announce_move{ &w, item = id, from = obj::INVALID, to = target, old_is_creature = false }
             notices::item_gained{ &w, who = target, item = id }
             if notices::is_party{ w = &w, id = target } { xfer::mark_new{ &w, item = id } }
         } else if stack > 0 and template.len >= 11 and ci::eq{ a = template[..11], b = "g_i_credits" } {
