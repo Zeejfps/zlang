@@ -10,14 +10,11 @@
 # guilty", explain "The Sith lured me inside" / "I was there for diplomatic negotiations": the judges find "not enough
 # evidence" and the Sith Embassy is closed to the city's security (MAN_SITHBASE_SEALED). The first reply of every list instead
 # ("No! I am a Republic citizen!") ends in "You will be executed immediately" and EndGame.
-3 ui stat hpmax 150
-3 ui stat hp 150
+3 ui stat hp 144
 4 ui leader carth
-4 ui stat hpmax 160
-4 ui stat hp 160
+4 ui stat hp 52
 5 ui leader bastila
-5 ui stat hpmax 130
-5 ui stat hp 130
+5 ui stat hp 108
 6 ui leader pc
 8 ui replies ~leave_her_alone ~what?_why? ~arbiter ~i_don't_need_anyone ~how_will_you_get_me_free ~i_was_invited ~i_have_no_prior ~let's_get_the_trial_started ~interrupt ~i_wish_to_dismiss ~i_will_defend_myself ~not_guilty ~the_sith_lured_me_inside ~i_was_there_for_diplomatic default 1
 10 ui bot god on

@@ -1,0 +1,16 @@
+# Manaan, part 12: the Star Map (manm28ad). From the checkpoint "rift" (CKPT=rift: the toxin has been fed into the kolto vents, the
+# great firaxan is dead, MAN_PLANET_PLOT 4). The test player (god mode) walks along the Rift to the pad (`wp_player_starmap`); the
+# trigger `demo_trig_sm` starts the Star Map conversation (man28_starmap, three silent nodes: k_pman_starmap01 pauses it and runs
+# the pad's animation, 02 signals it, 06 gives the item): the hologram dome grows over the pad, journal man26_starmap 40 (end),
+# man_planet 60, k_starforge 40; the item "Star Map: Manaan" (man_starpad) is in the bag, K_STAR_MAP 20, K_STAR_MAP_MANAAN 1.
+3 ui stat hp 144
+8 ui replies default 1
+10 ui bot god on
+11 ui bot on
+12 ui bot route wp_player_starmap
+1000 ui pos
+1000 ui journal list
+1000 ui inv
+1000 ui xp
+1000 ui globals STAR
+1010 save starmap

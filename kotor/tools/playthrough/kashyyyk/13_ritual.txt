@@ -1,8 +1,11 @@
 # Kashyyyk, part 13: the ritual of the Great Beast (kas_m25aa). The viper kinrath (kas25_kinrath, three at 102 96) die to the party
-# (about 1,500 frames); each leaves a body bag holding kas25_kinrathbod, the viper corpse the ritual needs. The bag has no tag to click
+# (about 2,000 frames, the last one has to be dead or it follows the party to the vine and the leader runs off to fight it in the middle
+# of the talk); each leaves a body bag holding kas25_kinrathbod, the viper corpse the ritual needs. The bag has no tag to click
 # on, so the corpse is given by hand (`ui giveitem`). Then the vine (kas25_ritualvine at 188 44): Jolee's talk, the corpse hung
 # on it, and the Great Beast (kas25_wraid, spawned by k_pkas_spwnwraid) comes. From the checkpoint "freyyr" (CKPT=freyyr).
 # Freyyr surrendered in part 12 (SurrenderToEnemies moves him to the Surrender_1 faction): the party must leave him alone.
+# The Beast charges by itself: the talk's last reply (k_pkas_wraidattk) orders its run to kas25_wp_wraid3 and makes it hostile, and
+# the conversation is over in the same call, so FreezeHostiles never clears the order. The party stands at the vine until it comes.
 3 ui stat hpmax 130
 3 ui stat hp 130
 4 ui where kas25_freyyr_01
@@ -10,22 +13,19 @@
 10 ui bot god on
 10 warp kas25_kinrath party
 20 ui bot on
-1600 ui bot off
-1610 ui giveitem kas25_kinrathbod
-1620 ui journal list
-1620 ui inv
-1630 warp kas25_ritualvine party
-1660 use kas25_ritualvine
-# The Great Beast does not charge: FreezeHostiles (every frame of a conversation) clears the run to kas25_wp_wraid3 that k_pkas_wraidattk queued as
-# the talk ends, and the beast stands 29 m from the vine, too far to notice the party (it fights at about 12 m). The party goes up to it.
-3460 warpxy 184.5,64 party
-3460 ui journal list
-3470 ui bot on
-4400 ui hostiles
-5000 ui journal list
-5000 ui hostiles
-5000 ui pos
-7450 ui journal list
-7450 ui inv
-7450 ui xp
-7500 save beast
+2200 ui bot off
+2210 ui giveitem kas25_kinrathbod
+2220 ui hostiles
+2230 warp kas25_ritualvine party
+2260 use kas25_ritualvine
+4100 ui hostiles
+4300 ui hostiles
+4300 ui bot on
+5100 ui hostiles
+5700 ui journal list
+5700 ui hostiles
+5700 ui pos
+8050 ui journal list
+8050 ui inv
+8050 ui xp
+8100 save beast
