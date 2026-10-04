@@ -24,7 +24,7 @@ namespace walkmap {
         placed: list::List(Placed, heap::Heap),
         boxes: list::List(Box, heap::Heap),     // one per placed walkmesh, in the same order
         walkable: []mut bool,               // by surface material: surfacemat.2da Walk
-        sees: []mut bool,                   // by surface material: surfacemat.2da LineOfSight
+        sees: []mut bool,                   // by surface material: surfacemat.2da LineOfSight; true means a face of it blocks sight
         grass: []mut bool,                  // by surface material: surfacemat.2da Grass (grass is drawn on it, lib/scene/grass.ctx)
     }
 
