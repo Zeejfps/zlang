@@ -1,0 +1,124 @@
+// Smoother character silhouettes for the enhanced renderer (docs/design/enhanced-render.md, "Tessellation"): skinned
+// creature draws through PN triangles (GL 4.0 tessellation), cut more finely the nearer they are. The curve of each
+// triangle comes from its corners' smooth normals, the normal every vertex at the same place shares, made here when a
+// skinned mesh is created (MDX duplicates a vertex where UVs or normals split, and PN triangles curved by the split
+// normals would open cracks along those seams).
+namespace gpu {
+    fn make_tess_program { mut dev: Device } -> ! {
+        let vs: [1]c::String = [glsl::TESS_VS]
+        let tcs: [1]c::String = [glsl::TESS_CS]
+        let tes: [1]c::String = [glsl::TESS_ES]
+        let fs: [1]c::String = [glsl::SCENE_FX_FS]
+        let stages: [4]gl::Stage = [
+            gl::Stage{ kind = gl::VERTEX_SHADER, source = vs[..] },
+            gl::Stage{ kind = gl::TESS_CONTROL_SHADER, source = tcs[..] },
+            gl::Stage{ kind = gl::TESS_EVALUATION_SHADER, source = tes[..] },
+            gl::Stage{ kind = gl::FRAGMENT_SHADER, source = fs[..] },
+        ]
+        let p = gl::link_stages{ gl = &dev.gl, stages = stages[..], log = dev.log } iferr err{ error } {
+            let n = match error {
+                gl::compile_failed{ log_len = k } | gl::link_failed{ log_len = k } => { k }
+            }
+            return shader_failed{ log = dev.log[..if n < dev.log.len { n } else { dev.log.len }] }
+        }
+        bind_frame_block{ &dev, program = p }
+        dev.gl.use_program{ program = p }
+        set_unit{ &dev, program = p, name = "u_diffuse", unit = 0 }
+        set_unit{ &dev, program = p, name = "u_lightmap", unit = 1 }
+        set_unit{ &dev, program = p, name = "u_envcube", unit = 2 }
+        set_unit{ &dev, program = p, name = "u_envsphere", unit = 3 }
+        set_unit{ &dev, program = p, name = "u_bump", unit = 4 }
+        set_unit{ &dev, program = p, name = "u_shadow", unit = 5 }
+        set_unit{ &dev, program = p, name = "u_shadow_raw", unit = 6 }
+        dev.gl.use_program{ program = 0 }
+        dev.scene_tess = scene_locations{ &dev, program = p }
+        dev.tess_level = dev.gl.get_uniform_location{ program = p, name = "u_tess" }
+    }
+
+    // Whether a draw goes through the tessellated program: an enhanced view with the option on, a skinned creature
+    // whose mesh has smooth normals, drawn opaque or alpha-tested.
+    fn tess_wanted { dev: Device, draw: render::Draw, mesh: MeshSlot } -> bool {
+        if not dev.in_fx or dev.enhance.tessellation == 0 or dev.scene_tess.id == 0 { return false }
+        if draw.kind != render::DrawKind::creature or draw.bone_count == 0 or mesh.smooth == 0 or mesh.mode != gl::TRIANGLES { return false }
+        let b = draw.material.blend
+        return b == render::Blend::opaque or b == render::Blend::punch or b == render::Blend::alpha_depth
+    }
+
+    // The tessellated program's per-view settings: at most 4 cuts an edge (2 low), flat past 12 m (8 low).
+    fn set_tess_uniforms { mut dev: Device } {
+        if dev.scene_tess.id == 0 { return }
+        let high = dev.enhance.tessellation >= 2
+        use_program{ &dev, program = dev.scene_tess.id }
+        dev.gl.uniform4f{ location = dev.tess_level, v0 = if high { 4.0 } else { 2.0 }, v1 = 2.0, v2 = if high { 12.0 } else { 8.0 }, v3 = 0.0 }
+        dev.gl.patch_parameteri{ pname = gl::PATCH_VERTICES, value = 3 }
+    }
+
+    // ---- smooth normals
+
+    // Every vertex's normal averaged over the vertices at the same place (to the millimetre), into dev.scratch
+    // (3 floats a vertex); false when the mesh lacks positions or normals or is too big.
+    fn smooth_normals { mut dev: Device, desc: render::MeshDesc, vertices: []u8 } -> bool {
+        let l = desc.layout
+        let n = @as(usize, desc.vertex_count)
+        if l.position < 0 or l.normal < 0 or n == 0 or n * 3 > dev.scratch.len or n > dev.sort.len { return false }
+        let mut lo = math::Vec3{ x = 1000000.0, y = 1000000.0, z = 1000000.0 }
+        let mut i: usize = 0
+        while i < n {
+            lo = math::vec3::min{ a = lo, b = vertex_vec3{ bytes = vertices, layout = l, offset = l.position, i } }
+            i = i + 1
+        }
+        i = 0
+        while i < n {
+            let p = vertex_vec3{ bytes = vertices, layout = l, offset = l.position, i }
+            let qx = quantize{ v = p.x - lo.x }
+            let qy = quantize{ v = p.y - lo.y }
+            let qz = quantize{ v = p.z - lo.z }
+            dev.sort[i] = SortItem{ key = (qx << 42) | (qy << 21) | qz, index = @as(u32, i) }
+            i = i + 1
+        }
+        sort_items{ items = dev.sort[..n], tmp = dev.sort_tmp[..n] }
+        let mut start: usize = 0
+        while start < n {
+            let mut end = start + 1
+            while end < n and dev.sort[end].key == dev.sort[start].key { end = end + 1 }
+            let mut sum = math::vec3::zero{}
+            let mut k = start
+            while k < end {
+                sum = math::vec3::add{ a = sum, b = vertex_vec3{ bytes = vertices, layout = l, offset = l.normal, i = @as(usize, dev.sort[k].index) } }
+                k = k + 1
+            }
+            let len = math::vec3::length{ v = sum }
+            k = start
+            while k < end {
+                let vi = @as(usize, dev.sort[k].index)
+                let own = vertex_vec3{ bytes = vertices, layout = l, offset = l.normal, i = vi }
+                // Opposite normals at one place (a two-sided card) average to nothing: each keeps its own.
+                let s = if len > 0.0001 { math::vec3::scale{ v = sum, s = 1.0 / len } } else { own }
+                dev.scratch[vi * 3] = s.x
+                dev.scratch[vi * 3 + 1] = s.y
+                dev.scratch[vi * 3 + 2] = s.z
+                k = k + 1
+            }
+            start = end
+        }
+        return true
+    }
+
+    fn quantize { v: f32 } -> u64 {
+        let q = math::floorf{ x = v * 1000.0 + 0.5 }
+        if q < 0.0 { return 0 }
+        if q > 2097151.0 { return 2097151 }
+        return @as(u64, @as(u32, q))
+    }
+
+    // Three floats of attribute `offset` of vertex i, interleaved or planar as the layout says.
+    fn vertex_vec3 { bytes: []u8, layout: render::VertexLayout, offset: i32, i: usize } -> math::Vec3 {
+        let at = if layout.planar { @as(usize, offset) + i * 12 } else { @as(usize, offset) + i * @as(usize, layout.stride) }
+        if at + 12 > bytes.len { return math::vec3::zero{} }
+        let f = @cast(*f32, &bytes[at])
+        let x = f.*
+        let y = @cast(*f32, &bytes[at + 4]).*
+        let z = @cast(*f32, &bytes[at + 8]).*
+        return math::Vec3{ x, y, z }
+    }
+}

@@ -317,6 +317,13 @@ namespace gpu {
         dev.cur_particle = dev.particle_fx
         let mapped = try render_shadows{ &dev, frame, index }
         set_shadow_uniforms{ &dev, on = mapped }
+        if dev.enhance.tessellation > 0 and dev.scene_tess.id != 0 {
+            // The tessellated program draws creatures with the same shadows (fx_tess.ctx).
+            dev.cur = dev.scene_tess
+            set_shadow_uniforms{ &dev, on = mapped }
+            set_tess_uniforms{ &dev }
+            dev.cur = dev.scene_fx
+        }
         let fbo = if t.samples > 0 { t.ms_fbo } else { t.scene_fbo }
         dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = fbo }
         let mut area = GlRect{ x = 0, y = 0, w = t.width, h = t.height }

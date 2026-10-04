@@ -171,6 +171,27 @@ shadows, 0 pixels differ.
   return at once.
 - **Pictures**: `kotor/out/fx/t/bridge_ssr_cmp.png` (the bridge floor under a console: cube map, then screen space).
 
+### Tessellation (smoother silhouettes)
+
+- **Inputs**: `Enhance.tessellation` (0 off, 1 low, 2 high); `Draw.kind` creature with a bone palette; nothing else:
+  the smooth normals are the backend's own.
+- **What**: skinned creature draws (opaque, alpha-tested, alpha-depth) go through PN triangles (GL 4.0 tessellation
+  control and evaluation stages): the vertex stage skins as before but stays in world space; each patch's cubic control
+  points come from its corners and their *smooth* normals, made at `create_mesh` for every skinned mesh (the normals of
+  all vertices at the same place, to the millimetre, averaged; opposite normals keep their own). MDX splits a vertex
+  wherever its UV or normal changes, and a PN surface curved by split normals opens along those seams; with smooth
+  normals both sides of a seam curve alike. Shading still uses each corner's own normal, tangents and UVs,
+  interpolated, and the same fragment program as everything else. Each edge is cut by its midpoint's distance from the
+  eye (both triangles of an edge agree): up to 4 (2 low) from 2 m, falling to 1, flat and identical to the
+  untessellated mesh, at 12 m (8 low). Shadow casters are not tessellated.
+- **Decision: off by default.** Within a mesh it is crack-free; across separate meshes of one body (KOTOR splits
+  heads, hands and some armour pieces into meshes of their own) each mesh's border curves by its own normals, so a
+  hairline gap can open where two meshes meet, and the rounder silhouettes are a modest gain on characters this
+  low-poly (they also round off a few deliberately hard edges, belts and armour rims). Worth turning on to look at;
+  not clean enough to be the default.
+- **Cost**: within the opaque pass's noise at 1280x720 (+0.01-0.02 ms with two characters near the camera).
+- **Pictures**: `kotor/out/fx/t/tess_cmp.png` (off, high: shoulders and arms), `talk_tess_d.png` (only silhouettes change).
+
 ### Anti-aliasing
 
 - **Inputs**: `Enhance.post_aa` (the Edge AA row: 0 off, 1 FXAA, 2 High), `Enhance.alpha_coverage` (Foliage AA), the
