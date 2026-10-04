@@ -79,6 +79,37 @@ shadows, 0 pixels differ.
   cells, at ~0.1 ms a probe. GPU: one more uniform array per draw.
 - **Pictures**: `kotor/out/fx/t/apt_rl_cmp.png` (the Taris apartment: flat ambient, room light), `grove_rl_cmp.png`.
 
+### Shadows (shadow maps)
+
+- **Inputs**: `Enhance.shadows` (0 the original's planar shadows, 1 shadow maps with 3x3 PCF, 2 soft), the Shadows
+  option (off: none at all); `View.sun` (direction, colour, `strength` = the ARE's ShadowOpacity, `light` = which frame
+  light is the sun); `Light.shadow` (the MDL light's shadow flag); `Draw.casts`, `Draw.kind`.
+- **The sun**: the ARE has no sun direction. The rooms carry the light their lightmaps were baked from: an outdoor
+  area has one shadow-casting light that reaches 100 m or more from far overhead (the grove: 2000 m from 270 m up,
+  Anchorhead, the Shadowlands, the ruins' exterior). `lib/scene/sun.ctx` finds it (not in interior areas, nor
+  underground ones unless natural) and the view's sun travels from it to the camera's subject; dynamic shadows then
+  fall the way the baked ones do. `scene::mark_sun` tells the backend which frame light it is.
+- **Point lights**: the shadow-casting frame lights (not the sun) that light the casters near the camera's subject
+  most (Σ over casters within 12 m of it of (1 − d/r)² × brightness, nearer casters more): 1 low, 3 soft.
+- **Maps**: one depth atlas (2048² low, 4096² soft). Top half: the sun's two orthographic maps (a 48 m low / 64 m
+  soft square around the point 0.5 × reach ahead of the camera, snapped to whole texels against shimmer), one with
+  the moving casters only, one with the rooms too (alpha-tested and alpha-blended-with-depth surfaces cut by their
+  texture's alpha). Bottom half: 6 faces per point light (512² / 256² tiles), moving casters only (a lamp sits in its
+  fixture: rooms would shadow everything), the far plane at 1.6 × the light's radius (the original's shadows were not
+  cut off where the light ends; the last third fades). Casters draw two-sided with slope-scaled depth offset;
+  receivers offset along their normal by 1.5 texels.
+- **Receiving**: rooms (their own shadows are baked) take only the moving casters' maps: the lightmap is darkened by
+  ShadowOpacity × (how much the surface faces the sun, or the point light's falloff) × occlusion, at most 85%; a
+  dim sun's shadows are fainter (× its brightness × 2, at most 1). Creatures and objects take the second sun map
+  (a building or a tree shades them) and the point maps, each on the light it belongs to. Low: 9 bilinear compares.
+  Soft: a 12-tap blocker search, then 16 compares over a penumbra that widens with the caster-to-receiver distance
+  (PCSS; a sun of about a degree, a 0.15 m lamp), rotated per pixel. Where no shadow map is drawn (Planar, or no
+  sun and no shadow-casting light near), the original's planar shadows are drawn instead.
+- **Cost** (RTX 4090, 1280x720 timer marks): the maps 0.2 ms on Tatooine's Anchorhead (sun), 0.19 / 0.33 ms in
+  Taris's Upper City (1 / 3 lights); receiving is part of the opaque pass (+0.02-0.1 ms).
+- **Pictures**: `kotor/out/fx/t/tat_sm_cmp.png` (Anchorhead: planar, low, soft), `up_sm_cmp.png` (Upper City),
+  `bridge_sm_cmp.png` (the Endar Spire bridge: the planar shadows' dark band gone).
+
 ## Settings
 
 The panel is the Advanced Graphics panel's file (`optgraphicsadv.gui`) laid out again: one column of fifteen

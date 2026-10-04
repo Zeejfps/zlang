@@ -450,6 +450,7 @@ namespace scene {
             _ = mdl_render::add_draws_look{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = instance, materials = l.materials, time = sc.time, look = null, cast = null, kind = render::DrawKind::room, ambient = 0 }
             sc.drawn_rooms = sc.drawn_rooms + 1
         }
+        mark_sun{ sc = &sc, &frame, view }
         // Grass stands on the floor of the rooms it is seen in: it comes with them (the eye and the way it looks are the view's).
         let cam = frame.views[view].camera
         let forward = math::Vec3{ x = -cam.view.m[2], y = -cam.view.m[6], z = -cam.view.m[10] }

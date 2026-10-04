@@ -533,6 +533,7 @@ namespace play {
                     try screenshot{ &w, &dev, heap = &scene_arena, path = opts.shots[s].path, frame_no }
                     _ = @fmt(&w.io, "  frame: {} draws, {} shadows, {} lights, {} emitters, {} particles\n", frame.draw_count, frame.shadow_count, frame.light_count, frame.emitter_count, frame.particle_count)
                     fxhud::log{ &w, dev }
+                    if frame.view_count > 0 { scene::log_sun{ sc = &sc, &w, sun = frame.views[0].sun } }
                     if scene::light_of{ sc = &sc, id = w.pc } is some{ value = c } {
                         _ = @fmt(&w.io, "  leader's room light: +x {} {} {} -x {} {} {} +y {} {} {} -y {} {} {} +z {} {} {} -z {} {} {}\n",
                             c.pos_x.x, c.pos_x.y, c.pos_x.z, c.neg_x.x, c.neg_x.y, c.neg_x.z, c.pos_y.x, c.pos_y.y, c.pos_y.z,

@@ -85,6 +85,8 @@ namespace gpu {
         set_unit{ &dev, program = scene, name = "u_envcube", unit = 2 }
         set_unit{ &dev, program = scene, name = "u_envsphere", unit = 3 }
         set_unit{ &dev, program = scene, name = "u_bump", unit = 4 }
+        set_unit{ &dev, program = scene, name = "u_shadow", unit = 5 }
+        set_unit{ &dev, program = scene, name = "u_shadow_raw", unit = 6 }
         dev.gl.use_program{ program = particle }
         set_unit{ &dev, program = particle, name = "u_tex", unit = 0 }
         dev.gl.use_program{ program = down }
@@ -287,6 +289,8 @@ namespace gpu {
         dev.in_fx = true
         dev.cur = dev.scene_fx
         dev.cur_particle = dev.particle_fx
+        let mapped = try render_shadows{ &dev, frame, index }
+        set_shadow_uniforms{ &dev, on = mapped }
         let fbo = if t.samples > 0 { t.ms_fbo } else { t.scene_fbo }
         dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = fbo }
         let mut area = GlRect{ x = 0, y = 0, w = t.width, h = t.height }
@@ -319,8 +323,8 @@ namespace gpu {
         bind_light_target{ &dev }
         dev.gl.viewport{ x = area.x, y = area.y, width = area.w, height = area.h }
         set_outputs{ &dev, n = 1 }
-        // The original's planar shadows until shadow maps take their place.
-        try draw_shadows{ &dev, frame, index }
+        // The original's planar shadows where no shadow map is drawn (Shadows: Planar, or nothing casts near).
+        if not mapped { try draw_shadows{ &dev, frame, index } }
         try draw_transparent{ &dev, frame, index, frustum, eye = v.camera.eye }
         try draw_debug{ &dev, frame, index }
         set_offset{ &dev, on = false }

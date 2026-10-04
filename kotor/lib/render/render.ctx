@@ -375,9 +375,10 @@ namespace render {
         direction: math::Vec3,      // the way its light travels (unit length, pointing down)
         color: math::Vec3,          // its light (the ARE's SunDiffuseColor)
         strength: f32,              // how dark the shadows it casts are, 0..1 (the ARE's ShadowOpacity)
+        light: u32,                 // the frame light that is the sun (its index + 1; 0: none), whose light its shadows take away
     }
 
-    fn no_sun {} -> Sun { return Sun{ on = false, direction = math::Vec3{ x = 0.0, y = 0.0, z = -1.0 }, color = math::vec3::zero{}, strength = 0.0 } }
+    fn no_sun {} -> Sun { return Sun{ on = false, direction = math::Vec3{ x = 0.0, y = 0.0, z = -1.0 }, color = math::vec3::zero{}, strength = 0.0, light = 0 } }
 
     // Depth of field: what is in focus. Things nearer or farther than `range` from `distance` (metres along the
     // view) blur, up to `blur` (0..1 of the effect's largest blur). A cut of the camera changes it at once; the

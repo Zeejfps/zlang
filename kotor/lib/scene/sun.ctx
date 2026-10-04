@@ -12,7 +12,32 @@ namespace scene {
         if sc.sun_state != 1 { return render::no_sun{} }
         let d = math::vec3::sub{ a = at, b = sc.sun_at }
         if math::vec3::length_sq{ v = d } < 1.0 { return render::no_sun{} }
-        return render::Sun{ on = true, direction = math::vec3::normalize{ v = d }, color = sc.sun_color, strength = sc.shadow_opacity }
+        return render::Sun{ on = true, direction = math::vec3::normalize{ v = d }, color = sc.sun_color, strength = sc.shadow_opacity, light = 0 }
+    }
+
+    // One log line, with a screenshot: the area's flags and sun.
+    fn log_sun { sc: *Scene, mut w: world::World, sun: render::Sun } {
+        let mut flags: u32 = 0
+        if world::object{ w = &w, id = w.area } is some{ value = ao } {
+            if obj::area{ o = ao } is some{ value = a } { flags = a.flags }
+        }
+        _ = @fmt(&w.io, "  sun: area flags {}, state {}, on {}, light {}, direction {} {} {}, strength {}\n", flags, sc.sun_state, sun.on, sun.light,
+            sun.direction.x, sun.direction.y, sun.direction.z, sun.strength)
+    }
+
+    // Tells the view which of the frame's lights is the sun (its shadows take that light away), once the rooms'
+    // lights are in the frame.
+    fn mark_sun { sc: *Scene, mut frame: render::Frame, view: u32 } {
+        if sc.sun_state != 1 or not frame.views[view].sun.on { return }
+        let mut k: u32 = 0
+        while k < frame.light_count {
+            let l = frame.lights[k]
+            if l.shadow and math::vec3::distance{ a = l.position, b = sc.sun_at } < 1.0 {
+                frame.views[view].sun.light = k + 1
+                return
+            }
+            k = k + 1
+        }
     }
 
     fn find_sun { mut sc: Scene, w: *world::World } {
@@ -21,7 +46,8 @@ namespace scene {
         let ao = world::object{ w, id = w.area } ifnull { return }
         let a = obj::area{ o = ao } ifnull { return }
         sc.shadow_opacity = @as(f32, a.shadow_opacity) / 255.0
-        if (a.flags & 3) != 0 { return }
+        // Interior areas have none; underground ones only where they are natural (Kashyyyk's Shadowlands, under the trees).
+        if (a.flags & 1) != 0 or ((a.flags & 2) != 0 and (a.flags & 4) == 0) { return }
         let rooms = list::items{ list = sc.rooms }
         let mut best: f32 = 0.0
         let mut i: usize = 0
