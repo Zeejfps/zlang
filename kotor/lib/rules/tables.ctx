@@ -31,9 +31,9 @@ namespace rules {
         iprp_neg5cost, iprp_neg10cost, iprp_damagecost, iprp_immuncost, iprp_damvulcost,
         iprp_soakcost, iprp_resistcost, iprp_srcost, iprp_onhit, iprp_onhitdur, iprp_onhitdc,
         iprp_onhitcost, iprp_monstcost, iprp_immunity, iprp_chargecost, gameeffects, poison,
-        removefxondeath, effecticon, baseitems,
+        removefxondeath, effecticon, baseitems, forceshields, ammunitiontypes,
     }
-    const TAB_COUNT: usize = 33
+    const TAB_COUNT: usize = 35
 
     fn tab_name { t: Tab } -> []u8 {
         let s: []u8 = match t {
@@ -70,6 +70,8 @@ namespace rules {
             removefxondeath => { "removefxondeath" }
             effecticon => { "effecticon" }
             baseitems => { "baseitems" }
+            forceshields => { "forceshields" }
+            ammunitiontypes => { "ammunitiontypes" }
         }
         return s
     }

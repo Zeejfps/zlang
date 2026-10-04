@@ -393,6 +393,52 @@ Global pause (`0x004ae980(2)` on the server) freezes everything. (high)
 - When the player's leader attacks (`AddAttackActions` `0x004fde40`, direct mode): the PC plays a
   battle cry 75 % of the time if not yet in combat, other party members 10 %.
 
+**Battle music** (high for the flow, med for the details). No script plays the battle track of an
+ordinary fight; the creatures' combat code does, through the area's sound object.
+
+- *The area's server-side sound object* is a 0x30-byte object at `CSWSArea+0x208` (constructor
+  `0x005c95a0`, vtable `0x0074c268`). It holds the "battle music is on" flag (`+0x14`) and the
+  battle track last set (`+0x18`). Slot `+0x10`, `MusicBattle(on)` (`0x005c9b90`), and slot `+0x14`,
+  `MusicBattleChange(row)` (`0x005c9c30`), act only when the value differs from the stored one: they
+  send each player in the area a server message, major `0x28` ("Ambient"), minor 4 or 5
+  (`0x0056ae90`, `0x0056aef0`). The script routines MusicBattlePlay, MusicBattleStop and
+  MusicBattleChange (430 to 432, one handler `0x005400c0`) call these two slots, and so does the
+  combat code below.
+- *Turning it on*: `0x004f3580(creature, row)`. It reads `excitedduration.2da` (a 3-row table,
+  `None` 0, `Damage` 10000, `SpellCast` 10000 ms), and if the row's duration is longer than the
+  creature's countdown `+0x384` it stores it there. Then, if the creature has an area with this sound
+  object and finds a hostile creature within 30 m (the nearest-enemy search `0x004f2de0`, over the
+  creature's perception), it calls `MusicBattle(1)`. Callers: `SignalCombatWith` (3.6, above) for
+  every faction-mate it pulls into the fight, with row 1; the creature event handler `0x004fece0` (the
+  attacked creature with row 2, the attacker with row 1); the placeable's and the door's event
+  handlers. So the music starts at the first hostile act (the attack that begins, not the hit that
+  lands), for the whole area, and every later act renews the countdowns of those it concerns and of
+  their faction-mates within range.
+- *Turning it off*: step 6 of `AIUpdate` (`0x004ed110`, gameloop.md 2.3) runs the countdown `+0x384`
+  down by the creature's update step; when it reaches zero it calls `MusicBattle(0)`. The first
+  creature to run out switches the music off for the area (a creature that dies stops counting); the
+  next hostile act switches it on again. So the battle music lasts until 10 s after the last act of
+  whichever creature was stirred up earliest.
+- *The client* (message `0x28`/4 and `/5`: `0x00665510` → `0x006544d0`, `0x00654530`) hands the value
+  to the client area's sound manager (`CSWCArea+0x1dc`, constructor `0x0068df40`, vtable `0x007541c8`),
+  which keeps four ambientmusic.2da entries (resource and the three stingers each: day `+0x2c`,
+  night `+0x4c`, battle `+0x6c`, and two ambient beds) and three streaming sources (`+0xe0` the music,
+  played once; `+0xe4` the ambient bed, looped; `+0x104` the stinger). Its slot `+0x10`
+  (`0x0068e610`): *on*, if the area has a battle track and music is enabled, sets `+0x14`, stops the
+  background track if one plays and starts the battle track (the frame update below does the starting,
+  ten milliseconds later); *off*, if `+0x14` was set, stops the music source, plays a stinger
+  (`0x0068db30`: one of the entry's non-empty `stinger1..3` at random, on the third source at
+  priority 1, once; the files are in `streamsounds/`, e.g. `mus_sbat_townint`), restarts the
+  background music (slot 0, `MusicBackgroundPlay(1)`) and clears `+0x14`. The frame update
+  (`0x0068ef80`): when the music source is idle it waits (the battle track 1000 ms, the background the
+  area's MusicDelay, `+0xcc`, 30000 by default) and starts the same track again. An area whose
+  `MusicBattle` is 0, or whose row has no resource (row 35), plays nothing.
+- *Ours*: `ambience::update_battle` (`lib/scene/ambience.ctx`) reads each creature's combat timer
+  (fight.ctx sets it to 8 s at every hostile act and lets it run down: a timer that did not fall was
+  just renewed), gives that creature and its faction-mates within 30 m a 10 s countdown, and calls
+  the same `battle_music` that MusicBattlePlay/Stop use when a creature with a hostile creature within
+  30 m is renewed and when a countdown runs out; `battle_music(off)` plays the stinger.
+
 ### 3.7 When the target dies mid-round
 
 Already-queued impacts still fire, but `OnApplyDamage` ignores a dead or downed target
@@ -786,7 +832,9 @@ gates a client call when the PC uses a stim (ItemType 25) in `AIActionItemCastSp
      (`0x0062b150`).
 
 What brings a downed party member back up, and the "Your entire party has been killed" end
-(strref 42351), were not found (see Open questions). Party members up and out of combat
+(strref 42351): `UpdatePartyDeath` (gameloop.md 1.3) gets the downed up after 5 s in which no hostile
+creature perceives a party member, and starts the party-wipe sequence when every member is down
+(slow motion, death camera, message box and fade, then the main menu: gameloop.md 6.6). Party members up and out of combat
 regenerate in `AIUpdate` using `regeneration.2da` (InCombat/OutOfCombat × health/Force, per
 second as a percentage of the maximum); the shipped table gives only out-of-combat Force
 regeneration (1 %/s). (high for the regeneration code)

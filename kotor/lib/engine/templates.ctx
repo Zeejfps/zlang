@@ -149,6 +149,8 @@ namespace tmpl {
         c.good_evil = @trunc(u32, number{ doc, s, label = "GoodEvil", default = @as(i64, c.good_evil) })
         c.perception_range = @trunc(u32, number{ doc, s, label = "PerceptionRange", default = @as(i64, c.perception_range) })
         c.is_pc = flag{ doc, s, label = "IsPC", default = c.is_pc }
+        // The Scripts button's AI style (ReadStatsFromGff: INT "AIState" into stats +0x13a, the old value as the default).
+        c.ai_style = @trunc(i32, number{ doc, s, label = "AIState", default = @as(i64, c.ai_style) })
         c.spawn_fired = flag{ doc, s, label = "CreatnScrptFird", default = c.spawn_fired }
         // A saved creature's SetListening and SetListenPattern list (CSWSCreature::LoadCreature
         // 0x00500350: Listening, ExpressionList of ExpressionId / ExpressionString): without them

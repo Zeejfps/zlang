@@ -42,6 +42,15 @@ namespace ai {
         }
         perception::update{ &w, id }
         fight::update{ &w, id }
+        // A party member who is down does nothing until it gets up: OnApplyDeath clears its actions
+        // and the state flags every action needs (combat.md 8.2), so what its heartbeat queues (the
+        // follow order of k_hen_heartbt01) never runs and it stays on the floor.
+        if fight::is_down{ w = &w, id } {
+            if world::object{ w = &w, id } is some{ value = down } { if down.actions.len > 0 { actions::clear_all{ &w, id } } }
+            return
+        }
+        // Getting up off the floor (getupdead) comes before walking off.
+        if fight::getting_up{ w = &w, id } { return }
         wake_follower{ &w, id }
         actions::run{ &w, &vm, engine, id }
         let after = world::object{ w = &w, id } ifnull { return }

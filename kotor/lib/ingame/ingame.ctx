@@ -70,9 +70,10 @@ namespace ingame {
             gui::set_tlk{ &g, table = t }
         }
         try gui::load_defaults{ &g, fs = &w.fs, &dev }
-        // The game options the rules read: Auto Level Up NPCs (the options menu keeps it current).
+        // The game options the rules read: Auto Level Up NPCs and the difficulty (the options menu keeps them current).
         let saved = frontend::load_settings{ fs = &w.fs, heap = w.heap, path = "kotor/out/kotor-settings.ini" }
         w.rules.settings.auto_level = saved.auto_level_up
+        w.rules.settings.difficulty = saved.difficulty
         if mixer != null { gui::set_mixer{ &g, mixer } }
         let h = try hud::open{ &g, &w, &dev }
         let ui = Ingame{
@@ -564,6 +565,7 @@ namespace ingame {
         hud::log_tick{ log = &ui.log, dt }
         if options_panel::settings{ s = &ui.menus.options } is some{ value = st } {
             w.rules.settings.auto_level = st.auto_level_up
+            w.rules.settings.difficulty = st.difficulty
             ui.mouse_look = st.mouse_look
             ui.mouse_sens = st.mouse_sensitivity
             ui.reverse_buttons = st.reverse_buttons
