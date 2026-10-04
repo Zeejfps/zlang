@@ -466,6 +466,18 @@ and apart from the participant check (§5.1) nothing tests distance once it has 
 creature in the area that is not under the player's control and whose reputation toward the PC
 is ≤ 10 (hostile) has its actions cleared and its movement stopped.
 
+It is nothing but that per-frame `ClearAllActions(1)` (plus the client creature's
+`CancelServerActions`): no suspended queue, no flag on the creature, nothing to undo. It runs from
+`UpdateDialog` (4.5), which returns before it unless the owner's `+0x54` names the owner itself,
+so it stops the frame the dialogue is cleared. And a conversation whose last reply leads nowhere
+is cleared in the very call that handled the reply: `HandleDialogReply` (`0x004cb480`) runs
+`HandleReply` (the reply's script among it) and, when that returns 0, `EndConversation` (the
+DLG's end script, then every creature's end-of-dialogue script) and clears the dialogue, all
+before the next frame. So what the last reply's script orders of a hostile (the Great Beast's run
+to `kas25_wp_wraid3` in `k_pkas_wraidattk`, an `AssignCommand` that is delivered on the next
+server update) is never cleared by the freeze; an order given by an *entry* script, or by a
+reply that leads on to another entry, is cleared on the next frame.
+
 **Action queues**: starting a conversation clears the actions of the party leader
 (`ActionStartConversation`) and of both sides (`BeginConversation`); participants found by tag
 are not cleared. NPC scripts in node `Script`s commonly queue actions on participants; those run
