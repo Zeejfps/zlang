@@ -309,7 +309,7 @@ namespace mg_game {
                 let look = gui3d::look_of{ e = emitter, world = node_world }
                 render::add_emitter{ &frame, emitter = render::Emitter{
                     view, texture = em.texture, blend = look.blend, grid_x = emitter.x_grid, grid_y = emitter.y_grid,
-                    facing = look.facing, axis = look.axis, transform = node_world, first = 0, count = 0,
+                    facing = look.facing, axis = look.axis, transform = node_world, first = 0, count = 0, effect = true,
                     fog = true, sort = @as(i32, emitter.render_order),
                 }, particles = em.out[..@as(usize, n)] }
             }

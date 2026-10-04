@@ -342,7 +342,7 @@ fn draw_materials { mut dev: gpu::Device, mut frame: render::Frame, a: Assets, t
     }
     render::add_emitter{ &frame, emitter = render::Emitter{
         view = vi, texture = a.sprites, blend = render::Blend::additive, grid_x = 2, grid_y = 2,
-        facing = render::Facing::camera, axis = up, transform = at{ x = 0.0, y = 5.0, z = 0.0 }, first = 0, count = 0, fog = true, sort = 0,
+        facing = render::Facing::camera, axis = up, transform = at{ x = 0.0, y = 5.0, z = 0.0 }, first = 0, count = 0, effect = true, fog = true, sort = 0,
     }, particles = parts[..] }
     let mut column: [8]render::Particle
     i = 0
@@ -355,7 +355,7 @@ fn draw_materials { mut dev: gpu::Device, mut frame: render::Frame, a: Assets, t
     }
     render::add_emitter{ &frame, emitter = render::Emitter{
         view = vi, texture = a.sprites, blend = render::Blend::additive, grid_x = 2, grid_y = 2,
-        facing = render::Facing::axis, axis = up, transform = at{ x = 6.5, y = 2.0, z = 0.0 }, first = 0, count = 0, fog = true, sort = 0,
+        facing = render::Facing::axis, axis = up, transform = at{ x = 6.5, y = 2.0, z = 0.0 }, first = 0, count = 0, effect = true, fog = true, sort = 0,
     }, particles = column[..] }
 
     // A walkmesh-like patch of debug triangles and its edges, drawn over everything.

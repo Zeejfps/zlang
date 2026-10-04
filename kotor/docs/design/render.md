@@ -248,5 +248,7 @@ the install (11,536 + 5,602, 0 failures) and writes a contact sheet and single t
   particle grid order (cell i counted from v = 0, as TXI flipbooks are), fog for additive
   surfaces (faded to black). RE of the renderer's material setup (re/render-gui.md, part render
   0x00474220 and DrawIndexed variants) would settle them.
-- Not yet: stencil shadow volumes and soft shadows, lightsaber blade geometry (the engine builds
-  it; game side), frame-buffer effects (the original's pbuffer passes), multisampling, gamma.
+- Not yet: stencil shadow volumes, lightsaber blade geometry (the engine builds it; game side), the original's
+  lens flares and film noise. Done since: multisampled screen and target buffers, the brightness curve in `present`,
+  soft shadows by area-light sampling, a view's speed blur, anisotropy and v-sync switched live, window kinds and the
+  screen scaled to the window with its aspect kept ([../mechanics/graphics.md](../mechanics/graphics.md)).

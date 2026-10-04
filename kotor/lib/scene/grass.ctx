@@ -176,7 +176,7 @@ namespace grass {
         if n == 0 { return }
         let em = render::Emitter{
             view, texture = f.texture, blend = render::Blend::punch, grid_x = 2, grid_y = 2, facing = render::Facing::axis,
-            axis = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, transform = math::mat4::identity{}, first = 0, count = 0, fog = true, sort = 0,
+            axis = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, transform = math::mat4::identity{}, first = 0, count = 0, effect = false, fog = true, sort = 0,
         }
         render::add_emitter{ &frame, emitter = em, particles = f.scratch[..n] }
     }

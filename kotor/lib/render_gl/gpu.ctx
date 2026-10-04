@@ -44,6 +44,7 @@ namespace gpu {
     struct ParticleProgram { id: u32, model: i32, emit: i32, axis: i32, mode: i32 }
     struct DebugProgram { id: u32 }
     struct PostProgram { id: u32, exponent: i32 }
+    struct BlurProgram { id: u32, strength: i32 }
 
     // What GL has bound now, so a draw changes only what differs. -1: unknown.
     struct State {
@@ -81,6 +82,9 @@ namespace gpu {
         particle: ParticleProgram,
         debug: DebugProgram,
         post: PostProgram,
+        blur: BlurProgram,
+        fx: gl::Target,             // a copy of the screen for the effects that read it (made when first needed)
+        fx_made: bool,
         frame_ubo: u32,
         white: u32,                 // a 1x1 white 2D texture and a black cube, bound where a material
         black_cube: u32,            //   has no map, so every sampler has something complete
@@ -152,6 +156,7 @@ namespace gpu {
             particle = ParticleProgram{ id = 0, model = -1, emit = -1, axis = -1, mode = -1 },
             debug = DebugProgram{ id = 0 },
             post = PostProgram{ id = 0, exponent = -1 },
+            blur = BlurProgram{ id = 0, strength = -1 }, fx = screen, fx_made = false,
             frame_ubo = 0, white = 0, black_cube = 0, stream = 0, ui_vao = 0, particle_vao = 0, debug_vao = 0,
             scratch = try alloc::resize(f32, S){ realloc, &heap, mem = slice::empty(f32){}, count = STREAM_FLOATS },
             sort = try alloc::resize(SortItem, S){ realloc, &heap, mem = slice::empty(SortItem){}, count = SORT_ITEMS },
@@ -217,6 +222,8 @@ namespace gpu {
         dev.gl.delete_program{ program = dev.particle.id }
         dev.gl.delete_program{ program = dev.debug.id }
         dev.gl.delete_program{ program = dev.post.id }
+        dev.gl.delete_program{ program = dev.blur.id }
+        if dev.fx_made { gl::free_target{ gl = &dev.gl, t = dev.fx } }
         free_ms{ gl = &dev.gl, ms = &dev.screen_ms }
         gl::delete_buffer{ gl = &dev.gl, id = dev.frame_ubo }
         gl::delete_texture{ gl = &dev.gl, id = dev.white }
@@ -249,6 +256,10 @@ namespace gpu {
         if @as(i32, width) == dev.screen.width and @as(i32, height) == dev.screen.height { return }
         gl::free_target{ gl = &dev.gl, t = dev.screen }
         free_ms{ gl = &dev.gl, ms = &dev.screen_ms }
+        if dev.fx_made {
+            gl::free_target{ gl = &dev.gl, t = dev.fx }
+            dev.fx_made = false
+        }
         dev.screen = try gl::make_target{ gl = &dev.gl, width = @as(i32, width), height = @as(i32, height) }
         dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = 0 }
     }
@@ -502,6 +513,7 @@ namespace gpu {
         let debug_fs = glsl::DEBUG_FS
         let post_vs = glsl::POST_VS
         let post_fs = glsl::POST_FS
+        let blur_fs = glsl::BLUR_FS
         let mut n: usize = 0
         let scene = try_link{ gl = &dev.gl, vertex = &scene_vs, fragment = &scene_fs, log = dev.log, log_len = &n }
         if scene == 0 { return shader_failed{ log = dev.log[..n] } }
@@ -513,6 +525,8 @@ namespace gpu {
         if debug == 0 { return shader_failed{ log = dev.log[..n] } }
         let post = try_link{ gl = &dev.gl, vertex = &post_vs, fragment = &post_fs, log = dev.log, log_len = &n }
         if post == 0 { return shader_failed{ log = dev.log[..n] } }
+        let blur = try_link{ gl = &dev.gl, vertex = &post_vs, fragment = &blur_fs, log = dev.log, log_len = &n }
+        if blur == 0 { return shader_failed{ log = dev.log[..n] } }
 
         bind_frame_block{ &dev, program = scene }
         bind_frame_block{ &dev, program = particle }
@@ -531,6 +545,8 @@ namespace gpu {
         set_unit{ &dev, program = particle, name = "u_tex", unit = 0 }
         dev.gl.use_program{ program = post }
         set_unit{ &dev, program = post, name = "u_tex", unit = 0 }
+        dev.gl.use_program{ program = blur }
+        set_unit{ &dev, program = blur, name = "u_tex", unit = 0 }
         dev.gl.use_program{ program = 0 }
 
         dev.scene = ScenePrograms{
@@ -565,6 +581,7 @@ namespace gpu {
         }
         dev.debug = DebugProgram{ id = debug }
         dev.post = PostProgram{ id = post, exponent = dev.gl.get_uniform_location{ program = post, name = "u_exponent" } }
+        dev.blur = BlurProgram{ id = blur, strength = dev.gl.get_uniform_location{ program = blur, name = "u_strength" } }
     }
 
     // gl::link's program, or 0 with the length of the driver's log in `log`. (Its error would be
@@ -1379,6 +1396,39 @@ namespace gpu {
         try draw_debug{ &dev, frame, index }
         set_offset{ &dev, on = false }
         set_stencil{ &dev, on = false }
+        if v.target == null and v.blur > 0.01 and dev.screen_effects { try speed_blur{ &dev, strength = v.blur } }
+    }
+
+    // The Frame Buffer Effects option's speed blur: the screen so far, copied, is drawn back sampled along the line to the
+    // middle of the picture (twelve taps, reaching further toward the edges). `strength` 1 pulls from a whole radius.
+    fn speed_blur { mut dev: Device, strength: f32 } -> ! {
+        let w = dev.screen.width
+        let h = dev.screen.height
+        if not dev.fx_made {
+            dev.fx = try gl::make_target{ gl = &dev.gl, width = w, height = h }
+            dev.fx_made = true
+        }
+        let target = screen_fbo{ &dev }
+        dev.gl.disable{ cap = gl::SCISSOR_TEST }
+        dev.gl.bind_framebuffer{ target = gl::READ_FRAMEBUFFER, framebuffer = target }
+        dev.gl.bind_framebuffer{ target = gl::DRAW_FRAMEBUFFER, framebuffer = dev.fx.framebuffer }
+        dev.gl.blit_framebuffer{ src_x0 = 0, src_y0 = 0, src_x1 = w, src_y1 = h, dst_x0 = 0, dst_y0 = 0, dst_x1 = w, dst_y1 = h, mask = gl::COLOR_BUFFER_BIT, filter = gl::NEAREST }
+        dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = target }
+        dev.gl.viewport{ x = 0, y = 0, width = w, height = h }
+        dev.gl.disable{ cap = gl::BLEND }
+        dev.gl.disable{ cap = gl::DEPTH_TEST }
+        dev.gl.disable{ cap = gl::CULL_FACE }
+        dev.gl.disable{ cap = gl::STENCIL_TEST }
+        dev.gl.depth_mask{ flag = gl::FALSE }
+        dev.gl.use_program{ program = dev.blur.id }
+        dev.gl.uniform1f{ location = dev.blur.strength, v0 = strength * 0.25 }
+        bind_unit{ &dev, unit = 0, target = gl::TEXTURE_2D, name = dev.fx.color }
+        dev.gl.bind_vertex_array{ array = dev.ui_vao }
+        dev.gl.draw_arrays{ mode = gl::TRIANGLES, first = 0, count = 3 }
+        dev.gl.bind_vertex_array{ array = 0 }
+        dev.gl.use_program{ program = 0 }
+        dev.gl.depth_mask{ flag = gl::TRUE }
+        dev.state = unknown_state{}
     }
 
     fn visible { draw: render::Draw, frustum: math::Frustum } -> bool {
@@ -1684,7 +1734,7 @@ namespace gpu {
     }
 
     fn draw_emitter { mut dev: Device, frame: *render::Frame, em: render::Emitter } -> ! {
-        if not dev.particles { return }
+        if not dev.particles and em.effect { return }
         if em.first + em.count > frame.particle_count { return }
         use_program{ &dev, program = dev.particle.id }
         set_blend{ &dev, blend = em.blend }

@@ -34,6 +34,7 @@ namespace display {
         live: frontend::Settings,           // the settings as the script's `gfx` words and the command line left them
         pending: bool,                      // `live` changed: apply it
         minimized: bool,                    // the window is minimised: nothing is drawn, the loop sleeps
+        test_blur: f32,                     // `gfx blur N`: the speed blur held on for a picture of it
     }
 
     fn make { hidden: bool, path: []u8 } -> Display {
@@ -46,7 +47,7 @@ namespace display {
             window = render::Size{ width = 1280, height = 720 }, drawable = render::Size{ width = 1280, height = 720 },
             render = render::Size{ width = 1280, height = 720 },
             shown = render::Rect{ x = 0.0, y = 0.0, w = 1280.0, h = 720.0 },
-            path = [0; 256], path_len = 0, frame_start = 0, live = frontend::default_settings{}, pending = false, minimized = false,
+            path = [0; 256], path_len = 0, frame_start = 0, live = frontend::default_settings{}, pending = false, minimized = false, test_blur = 0.0,
         }
         let n = if path.len < 256 { path.len } else { 256 }
         slice::copy(u8){ dst = d.path[..n], src = path[..n] }
@@ -303,6 +304,10 @@ namespace display {
         else if ci::eq{ a = key, b = "texture" } { s.texture_quality = n }
         else if ci::eq{ a = key, b = "scale" } { s.gui_scale = text::scan_f32{ s = first } ifnull 0.0 }
         else if ci::eq{ a = key, b = "limit" } { s.frame_limit = n }
+        else if ci::eq{ a = key, b = "blur" } {
+            d.test_blur = text::scan_f32{ s = first } ifnull 0.0
+            return true
+        }
         else { return false }
         d.pending = true
         return true

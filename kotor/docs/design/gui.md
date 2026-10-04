@@ -264,18 +264,21 @@ if frontend::take_display_change{ &fe } { apply fe.settings (resolution, full sc
 list's rows) are the engine's menu check box (re/gui.md, "Menu check box"): the loader marks every
 check box of a panel whose name starts with `opt` (`F_MENU_CHECK`) and tints its borders blue and
 yellow; `draw_menu_check` puts the ring in a 25x25 square at the left and the label beside it. Sound sliders apply to the mixer's
-  groups at once; graphics changes set `take_display_change` for the engine to act on. The
-  resolution list is a fixed table of common modes (the platform layer can't list display modes
-  yet). Key mapping is not built (its button is disabled). The `LB_DESC` description pane the
-  original fills on hover is empty: the strings are in the binary's code, not in the data.
+  groups at once; graphics changes set `take_display_change` and game/display.ctx makes the device agree
+  ([../mechanics/graphics.md](../mechanics/graphics.md)). The resolution list is the display's own
+  (`set_display_info`, `build_rows`: SDL's modes, by display mode). The Graphics panel gets two buttons (Display Mode, UI Scale)
+  and the Emitters check box, cloned from its neighbours with `gui::clone_control`. Key mapping is not built (its
+  button is disabled). The `LB_DESC` description pane shows the string after the control's label in dialog.tlk
+  (Shadows 47950, its text 47951), which is where the original keeps them.
 - **The options file** is ours (`kotor-settings.ini`, wherever `config_path` says), never the
   install's `swkotor.ini`. Its sections and keys are swkotor.ini's (`[Graphics Options]` ...), so it
-  reads familiarly; unset keys keep the original's defaults; `GUI Scale` (1 by default, 0 for auto)
-  is ours.
+  reads familiarly (`Brightness`, `Frame Buffer`, `FullScreen`: 0 windowed, 1 full screen, 2 borderless); unset keys keep
+  the original's defaults; `GUI Scale` (0, auto, by default), `Refresh Rate`, `Emitters` and `Frame Limit` are ours.
 
 ## Decisions
 
-- **No scaling by default**: a faithful port first; `scale` is an option, not a rewrite.
+- **Scaling is automatic**: `scale` 0 picks the largest quarter step at which the 800x600 menu fits the window (1 up to
+  1280x720), so a 1080p or 4K window is not a small panel on black; 1 is the original's pixels and is a choice on the Graphics panel.
 - **Poll-style events**, agreed with the engine-core lead, instead of handlers.
 - **Hover is focus** and keyboard navigation uses MOVETO, as in the engine; Escape is a `cancel`
   event for the top panel (a screen closes itself on it), Enter activates the focused control.

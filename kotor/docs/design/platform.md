@@ -71,7 +71,10 @@ load and an indirect call, as C's own loaders do (`gl.clear{ mask }` becomes
   (it would run on SDL's audio thread): the mixer tops the queue up each frame to a target
   latency, say 50-100 ms of frames, measured with `queued_audio`.
 
-Not covered yet: game controllers, cursors, clipboard, display modes, IME composition
+Display modes, window kinds (windowed, full screen, borderless desktop), the display's usable bounds and DPI,
+the DPI-awareness hint and `set_window_kind` are in `sdl.ctx` (docs/mechanics/graphics.md).
+
+Not covered yet: game controllers, cursors, clipboard, IME composition
 (`TEXTEDITING` arrives as `other`), audio device hot-plug.
 
 ### Layouts

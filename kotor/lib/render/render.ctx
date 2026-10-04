@@ -330,12 +330,13 @@ namespace render {
         camera: Camera,
         ambient: math::Vec3,        // light every lit surface gets
         fog: Fog,
+        blur: f32,                  // 0..1: a radial speed blur over the finished picture of a view of the screen (the Frame Buffer Effects option)
     }
 
     fn make_view { camera: Camera } -> View {
         return View{
             target = null, viewport = null, clear_color = Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 }, clear_depth = true,
-            camera, ambient = math::Vec3{ x = 0.3, y = 0.3, z = 0.3 }, fog = no_fog{},
+            camera, ambient = math::Vec3{ x = 0.3, y = 0.3, z = 0.3 }, fog = no_fog{}, blur = 0.0,
         }
     }
 
@@ -393,6 +394,7 @@ namespace render {
         axis: math::Vec3,           // in the emitter's space
         transform: math::Mat4,      // the emitter's space to world
         first: u32, count: u32,
+        effect: bool,               // a visual effect the Emitters option switches off (set false for what is scenery: grass)
         fog: bool,
         sort: i32,
     }

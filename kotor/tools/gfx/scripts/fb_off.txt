@@ -1,0 +1,2 @@
+1 gfx framebuffer 0
+1 gfx blur 1

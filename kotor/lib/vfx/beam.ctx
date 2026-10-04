@@ -162,7 +162,7 @@ namespace vfx {
             if not b.live or b.used == 0 { continue }
             render::add_emitter{ &frame, emitter = render::Emitter{
                 view, texture = v.beam_tex, blend = render::Blend::additive, grid_x = 1, grid_y = 1,
-                facing = render::Facing::velocity, axis = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, transform = math::mat4::identity{}, first = 0, count = 0,
+                facing = render::Facing::velocity, axis = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, transform = math::mat4::identity{}, first = 0, count = 0, effect = true,
                 fog = false, sort = 0,
             }, particles = b.out[..@as(usize, b.used)] }
         }
