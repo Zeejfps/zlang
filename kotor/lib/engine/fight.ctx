@@ -290,6 +290,8 @@ namespace fight {
             end_round{ &w, id, script = false }
         } else if k == rules::ev::COMMANDABLE {
             o.commandable = e.a != 0
+        } else if k == rules::ev::LEAVE_STEALTH {
+            stealth::leave{ &w, id }
         } else if k == rules::ev::VISUAL_ON {
             visual_effect{ &w, effect = e.a, target = id, source = e.who, position = math::vec3::zero{} }
         } else if k == rules::ev::FEEDBACK {
@@ -490,6 +492,9 @@ namespace fight {
             if c.dead { return }
             let was = c.in_combat
             c.in_combat = true
+            // Combat ends stealth: the attacked leave it as their combat begins, attackers as
+            // their attack does (re/combat.md, AIUpdate and AIActionCombat).
+            stealth::leave{ &w, id }
             if c.fighter is some{ value = f } { f.combat_ms = COMBAT_MS }
             if not was { bark{ &w, id, first = VOICE_BATTLE, count = 6, chance_in = 1, quiet = false } }
         }
@@ -722,6 +727,8 @@ namespace fight {
         c.attack_target = target
         c.last_hostile_target = target
         c.last_attack_action = 3
+        stealth::attacked{ &w, attacker = id, target }
+        stealth::leave{ &w, id }
         if not forced.on {
             enter_combat{ &w, id, other = target }
             enter_combat{ &w, id = target, other = id }
@@ -1121,9 +1128,10 @@ namespace fight {
                 }
                 if start.interrupted { return actions::Status::failed }
             }
-            // An item's ability spends one of the item's uses as the cast begins.
+            // An item's ability spends one of the item's uses as the cast begins. A power of the
+            // creature's own ends stealth; an item's does not (ClearActivities 1 against 2).
             let used = actions::object_param{ a, i = 6 }
-            if used != obj::INVALID { rt_item::spend_use{ &w, item = used, spell } }
+            if used != obj::INVALID { rt_item::spend_use{ &w, item = used, spell } } else { stealth::leave{ &w, id } }
             let dir = math::vec3::sub{ a = at, b = o.position }
             if dir.x * dir.x + dir.y * dir.y > 0.0001 { world::set_orientation{ o, v = math::Vec3{ x = dir.x, y = dir.y, z = 0.0 } } }
             if obj::creature{ o } is some{ value = c } {

@@ -62,7 +62,7 @@ namespace rt_crea {
             nwscript::SetListenPattern => { try set_listen_pattern{ &w, &vm, argc } }
             nwscript::SetListening => { try set_listening{ &w, &vm, argc } }
             nwscript::GetNearestCreature => { try get_nearest_creature{ &w, &vm, argc } }
-            nwscript::GetSoloMode => { try nwvm::push_int{ &vm, v = 0 } }
+            nwscript::GetSoloMode => { try nwvm::push_int{ &vm, v = if w.party.solo { 1 } else { 0 } } }
             nwscript::AdjustAlignment => { try adjust_alignment{ &w, &vm, argc } }
             nwscript::SetGoodEvilValue => { try set_good_evil_value{ &w, &vm, argc } }
             nwscript::GiveXPToCreature => { try give_xp_to_creature{ &w, &vm, argc } }

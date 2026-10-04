@@ -160,6 +160,7 @@ namespace save {
         try put_byte{ &b, owner = s, label = "PerceptionRange", v = @trunc(u8, c.perception_range) }
         try put_bool{ &b, owner = s, label = "IsPC", v = c.is_pc }
         try put_bool{ &b, owner = s, label = "CreatnScrptFird", v = c.spawn_fired }
+        try put_bool{ &b, owner = s, label = "StealthMode", v = c.stealth }
         let mut k: usize = 0
         let mut ruled = false
         if c.fighter is some{ value = f } {

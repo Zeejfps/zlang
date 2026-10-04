@@ -6,7 +6,8 @@
 // A creature is seen within its sight range with a clear line between the two at eye height,
 // heard within its hearing range. Ranges: the PC ranges.2da row 12 (PercepRngPlayer); others the
 // UTC's PerceptionRange row, 11 meaning appearance.2da PERCEPTIONDIST (itself a ranges row).
-// Stealth and the rules' checks are HOOK(rules).
+// A creature in stealth mode is seen and heard only when the viewer wins stealth.ctx's contests
+// (party members never hide from each other).
 namespace perception {
     const FULL_PASS_MS: u64 = 4000
     const COMBAT_PASS_MS: u64 = 200
@@ -37,6 +38,7 @@ namespace perception {
         let c = obj::creature{ o } ifnull { return }
         if c.dead { return }
         if c.sight_range <= 0.0 { ranges_of{ &w, c } }
+        stealth::reroll{ &w, id }
         let now = clock::now_ms{ c = w.clock }
         let period = if c.in_combat { COMBAT_PASS_MS } else { FULL_PASS_MS }
         let full = c.last_perception == 0 or now - c.last_perception >= period
@@ -61,8 +63,13 @@ namespace perception {
         let t = world::object{ w = &w, id = target } ifnull { return }
         let tc = obj::creature{ o = t } ifnull { return }
         let d = math::vec3::distance{ a = v.position, b = t.position }
-        let heard = d <= vc.hearing_range and not tc.dead
-        let seen = d <= vc.sight_range and clear_line{ w = &w, a = v.position, b = t.position }
+        let mut heard = d <= vc.hearing_range and not tc.dead
+        let mut seen = d <= vc.sight_range and clear_line{ w = &w, a = v.position, b = t.position }
+        let hidden = tc.stealth and not (party::is_member{ w = &w, id = viewer } and party::is_member{ w = &w, id = target })
+        if hidden {
+            if seen { seen = stealth::spots{ &w, viewer, target } }
+            if heard { heard = stealth::hears{ &w, viewer, target } }
+        }
         let entries = list::items{ list = vc.perceived }
         let mut k: usize = 0
         while k < entries.len and entries[k].id != target { k = k + 1 }
@@ -81,6 +88,12 @@ namespace perception {
             if not seen and not heard { remove_at{ l = &vc.perceived, at = k } }
         } else {
             list::push{ list = &vc.perceived, item = obj::Perceived{ id = target, seen, heard } } iferr {}
+        }
+        if seen and not was_seen { stealth::noticed{ &w, viewer, target } }
+        if hidden and w.log.actions and ((seen and not was_seen) or (heard and not was_heard)) {
+            world::prefix{ w = &w }
+            let how: []u8 = if seen and not was_seen { "sees" } else { "hears" }
+            _ = @fmt(&w.io, "stealth: {} ({}) {} {} ({}) hiding\n", v.tag, viewer, how, t.tag, target)
         }
         let mut e = events::script_event{ kind = events::PERCEPTION, object = target }
         e.ints[0] = change

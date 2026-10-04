@@ -64,6 +64,10 @@ namespace outbox {
         //     node `hook` of `object` for `life` seconds (0: its animation's length), or at
         //     `position` when `object` is OBJECT_INVALID
         effect_model{ model: resref::ResRef, object: u32, hook: resref::ResRef, position: math::Vec3, life: f32 },
+        // Appended by stealth (lib/engine/stealth.ctx). notify: an event of the status summary
+        // (AddStatusSummaryEvent 0x0062eeb0): `which` is its kind, the HUD icon it lights (hud::NOTE_*:
+        // 0 journal, 1 credits, 2 plot XP, 3 stealth XP, ...), `amount` what it was worth.
+        notify{ which: i32, amount: i32 },
     }
 
     // Text copied into the outbox's buffer, valid until the outbox is drained.

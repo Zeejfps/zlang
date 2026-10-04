@@ -312,7 +312,7 @@ namespace rt_act {
 
     // void ActionUseSkill(int nSkill, object oTarget, int nSubSkill = 0, object oItemUsed = OBJECT_INVALID)
     // (actions.md 3.13, UseSkill 0x004fbe40): a skill the creature does not have does nothing. Stealth
-    // toggles stealth mode (kept on the creature; perception does not read it yet), Security opens the
+    // toggles stealth mode (stealth::toggle: no stealth unit needed here), Security opens the
     // target's lock (unlock_with_security). Demolitions (traps: no trap system) and Treat Injury (HEAL:
     // medpacs and poisons are not modelled) are not done; the rest are not usable on a target.
     fn action_use_skill { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
@@ -328,7 +328,7 @@ namespace rt_act {
         let f = c.fighter ifnull { return }
         if not rt_talent::has_skill{ w = &w, f, skill } { return }
         if skill == rules::skill::STEALTH {
-            c.stealth = not c.stealth
+            stealth::toggle{ &w, id = me }
         } else if skill == rules::skill::SECURITY {
             _ = unlock_with_security{ &w, who = me, target }
         } else if w.log.actions {

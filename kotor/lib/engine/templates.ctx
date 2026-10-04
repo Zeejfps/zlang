@@ -140,6 +140,8 @@ namespace tmpl {
         c.perception_range = @trunc(u32, number{ doc, s, label = "PerceptionRange", default = @as(i64, c.perception_range) })
         c.is_pc = flag{ doc, s, label = "IsPC", default = c.is_pc }
         c.spawn_fired = flag{ doc, s, label = "CreatnScrptFird", default = c.spawn_fired }
+        // A saved creature comes back hiding if it was (LoadCreature 0x00500350 sets the mode).
+        c.stealth = flag{ doc, s, label = "StealthMode", default = c.stealth }
         let labels: [6][]u8 = ["Str", "Dex", "Con", "Int", "Wis", "Cha"]
         let mut k: usize = 0
         while k < 6 {

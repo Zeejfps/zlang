@@ -84,7 +84,9 @@ namespace ctl {
         let fy = math::cosf{ x = yaw }
         let ux = fx * iy + fy * ix
         let uy = fy * iy - fx * ix
-        let vmax = c2.run_rate
+        // In stealth (or another walk-only limit) the leader walks (movement.md 1.2, GetMaxSpeed).
+        let walking = stealth::walk_only{ c = c2 }
+        let vmax = if walking { c2.walk_rate } else { c2.run_rate }
         // Turning toward the desired heading, fast when slow (movement.md 1.2 step 5).
         let speed = math::sqrtf{ x = ctl.vx * ctl.vx + ctl.vy * ctl.vy }
         if has_input and speed > 0.1 {
@@ -132,7 +134,7 @@ namespace ctl {
             // The creature walks or runs for the AI update that follows (ai::update_creature puts a
             // creature that is not `moving` and has no action back to standing).
             c2.moving = true
-            world::set_animation{ o = o3, id = if v > 2.5 { obj::ANIM_RUN } else { obj::ANIM_WALK }, speed = 1.0 }
+            world::set_animation{ o = o3, id = if v > 2.5 and not walking { obj::ANIM_RUN } else { obj::ANIM_WALK }, speed = 1.0 }
         } else if o2.actions.len == 0 {
             c2.moving = false
             if o2.animation == obj::ANIM_RUN or o2.animation == obj::ANIM_WALK {
