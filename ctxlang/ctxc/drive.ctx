@@ -104,7 +104,7 @@ namespace drive {
         let runs = join{ &heap, a = build_dir, b = "run" }
         let work = join{ &heap, a = runs, b = tagged{ &heap, name = program, n = mix{ h = FNV_BASIS, bytes = fold{ &heap, s = full, os } } } }
         if not made{ &io, &fs, path = build_dir } or not made{ &io, &fs, path = runs } or not made{ &io, &fs, path = work } { return 1 }
-        let std = std_files{ &io, &fs, &heap, home, os } ifnull { return 1 }
+        let std = std_files{ &io, &fs, &heap, home, os, interp = false } ifnull { return 1 }
         let rt = runtime_hash{ &io, &fs, &heap, home } ifnull { return 1 }
         let cc = compiler{ &fs, &proc, &heap, os }
         let d = Driver{
@@ -183,7 +183,7 @@ namespace drive {
             return 1
         }
         let os = proc::os{ &proc }
-        let std = std_files{ &io, &fs, &heap, home, os } ifnull { return 1 }
+        let std = std_files{ &io, &fs, &heap, home, os, interp = true } ifnull { return 1 }
         let kind = kind_of{ &fs, path }
         if kind == 0 {
             cannot{ &io, path, what = "cannot read" }
@@ -900,13 +900,20 @@ namespace drive {
     }
 
     // std's files, then those of its layer for os (spec §17): std/os/windows, or for Linux and
-    // macOS std/os/posix, which they share, and std/os/linux or std/os/macos.
-    fn std_files { mut io: Io, mut fs: Fs, mut heap: Heap, home: []u8, os: build::Os } -> ?[][]u8 {
+    // macOS std/os/posix, which they share, and std/os/linux or std/os/macos. For the
+    // interpreter, its own layer, std/os/interp, and os's target.ctx.
+    fn std_files { mut io: Io, mut fs: Fs, mut heap: Heap, home: []u8, os: build::Os, interp: bool } -> ?[][]u8 {
         let std_dir = join{ &heap, a = home, b = "std" }
         let layer: []u8 = match os { windows => { "os/windows" } macos => { "os/macos" } linux => { "os/linux" } }
         let top = ctx_files{ &io, &fs, &heap, dir = std_dir } ifnull { return null }
         let mut all = list::new([]u8){ realloc = arena::alloc, &heap }
         add_all{ xs = &all, ys = top }
+        if interp {
+            let own = ctx_files{ &io, &fs, &heap, dir = join{ &heap, a = std_dir, b = "os/interp" } } ifnull { return null }
+            add_all{ xs = &all, ys = own }
+            try! list::push{ list = &all, item = join{ &heap, a = join{ &heap, a = std_dir, b = layer }, b = "target.ctx" } }
+            return list::items{ list = all }
+        }
         if os != build::Os::windows {
             let shared = ctx_files{ &io, &fs, &heap, dir = join{ &heap, a = std_dir, b = "os/posix" } } ifnull { return null }
             add_all{ xs = &all, ys = shared }

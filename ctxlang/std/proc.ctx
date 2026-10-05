@@ -86,6 +86,11 @@ namespace proc {
         return os::env{ &proc, name }
     }
 
+    // This program's environment: its "KEY=VALUE" entries, which live until the program ends.
+    fn environment { mut proc: Proc } -> [][]u8 {
+        return os::environment{ &proc }
+    }
+
     // ---- for the platform's layer (std/os)
 
     // Whether environment entry `entry` ("KEY=VALUE") has the key of one of env's entries, in

@@ -3,8 +3,6 @@
 // functions it names differently.
 
 namespace sys {
-    const OS: build::Os = build::Os::linux
-
     // Where this thread's errno is: a macro in C, over this function.
     #c::symbol{ name = "__errno_location" }
     extern fn errno { mut fs: Fs } -> *mut i32

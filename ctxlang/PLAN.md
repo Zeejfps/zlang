@@ -194,8 +194,6 @@ declares attributes the compiler acts on.
   beside `#convert` and `#write`, among the attributes the compiler declares itself.
 - `main`'s `args` is checked against std's `Args`; it can be checked as `[][]u8`. Only `fn build`
   may take std's `Build`.
-- The interpreter writes standard output out at the end itself, so it knows std's static
-  `io::State::out` and its `io::Out`'s fields (eval.ctx, `flush`).
 
 *Later, for literal conversions* (spec §18; `ctxc/comptime.ctx`):
 - `intlit` (a number literal, as its digits, for a big-integer type) and `arraylit` (an array
@@ -357,9 +355,10 @@ in one step; `fixpoint.py` says when one is out of date.
   own arenas use `reserve`. Untested there, so left for a machine that can run it.
 - 20 corpus programs read temporary files that the test suite deletes once it's done.
   `tools/corpus.py` should copy those files into the case directory.
-- The interpreter is the only second implementation, and it runs only programs that just print:
-  the suite's programs that use files, processes, input, `mem::pages` or a C library are checked
-  by their expected outputs alone.
+- The interpreter is the only second implementation. It runs a program as the C does, from the
+  IR's entry fns, over std's interpreter layer (std/os/interp), but that layer has no standard
+  input, files or processes, and it calls no C library: the suite's programs that use those are
+  checked by their expected outputs alone.
 - `ctxc build`, `ir` and `decls` need std's files listed on the command line; only `run` and
   `exe` find them.
 
@@ -399,7 +398,7 @@ program asks for one (spec §19).
 | `if`/`match` expressions | GNU statement expressions | A branch that leaves uses `return`, `break` or `continue`. |
 | argument order | temporaries | C leaves argument evaluation order unspecified; ctxlang evaluates left to right. |
 | `@panic`, runtime panics | `ctx_panic(line, col, file, msg)`, and `ctx_panic_index` and the rest for the checks | The runtime finds the file and calls the `#panic` fn (`ctx_on_panic`, which C's main gives it), once, with the stack check off; std's writes `file:line:col: panic: msg` and exits with 134. `file` is FNV-1a of the file's name with the top bit set, which the runtime finds in main's file table, so a unit's C doesn't depend on the program's other files. |
-| `fn main`, `#start` | C's `main` calls the start fn with `argc`, `argv` and `ctx_main_value`, a static function value whose code calls `f_main` with `(void *)cap` for each capability | emit_c.ctx, `entry`. Without a start fn, C's main calls `f_main` itself, with no args. |
+| `fn main`, `#start`, `#panic` | IR functions that lowering writes (lower.ctx, `entry_fns`): `<entry>` calls the start fn with its capabilities, the `argc` and `argv` it takes and `<main value>`, a function value that calls main; without a start fn, main itself. `<on panic>` zeroes the stack limit and calls the panic fn. A capability from nothing is IR `capref`, `(void *)cap` in C. | C's `main` only calls `ctx_start` and `<entry>`, and `ctx_on_panic` `<on panic>`, with C's values by name (emit_c.ctx, `entry`); the interpreter calls the same functions (eval.ctx, `main`). |
 | fn | `f_NAME`, after its qualified name | Global across units, `static` in a program of one; a name that isn't an identifier, or a long one, is cut and gets a hash. Types, consts and the rest are numbered within each unit (emit_c.ctx, "Units"). |
 | capability static (`static name: T`) | `s_` and its qualified name, a zeroed C global | emit_c.ctx: `static` in a program of one unit; with several, main's unit defines every one and the others declare those they use `extern`. A use is `(*(&s_NAME))`: IR `(deref (saddr N))`, so it is a place through a pointer, as the checker treats it (`Access::stat`). |
 | stack overflow | check in each function prologue | `CTX_STACK_CHECK_AT(s_rt__Stack__limit)`, without a `#stack_limit` static none: compares the frame address to the `#stack_limit` static, which std's start sets (16 MB below its frame, or `CTX_STACK`) and `ctx_on_panic` sets to 0 before the panic fn runs; 0 checks nothing. Linked with a 256 MB stack on Windows and macOS; on Linux, std raises `RLIMIT_STACK` to 256 MB and runs itself again (std/os/linux). No sibling calls, so every call takes a frame. |
@@ -409,8 +408,9 @@ program asks for one (spec §19).
 - **The suite.** `python -m unittest discover tests` runs every program through the native ctxc
   and cc (`tools/toolchain.py`), and checks its output, exit code, panic or first error.
 - **The interpreter.** `run_sources` also runs each program with `ctxc interp` and requires the
-  same stdout, stderr, exit code and panic; one that calls an extern fn the interpreter doesn't
-  emulate, or recurses too deep, is skipped. `CTX_DIFF=0` turns it off (it adds about a quarter
+  same stdout, stderr, exit code and panic (a trap is 132 for both); one that calls an extern fn
+  the interpreter doesn't emulate, does what std/os/interp can't, or recurses too deep, is
+  skipped. `CTX_DIFF=0` turns it off (it adds about a quarter
   to the suite's time); `tools/interp_diff.py` counts matches and skips by reason.
 - **Errors.** The compile-error tests match on a message fragment, or the message and position
   exactly, so message text is part of the interface. The tests see the first diagnostic; ctxc

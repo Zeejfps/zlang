@@ -1,0 +1,19 @@
+// std: target on Windows. What a program's platform is, whichever layer reaches it (spec §17):
+// the platform's own (std/os/windows), or the interpreter's (std/os/interp), which `ctxc interp`
+// builds with the platform's target.
+
+namespace target {
+    // The operating system the program runs on.
+    const OS: build::Os = build::Os::windows
+
+    // Whether the environment's keys are case-sensitive (proc::overridden): not on Windows.
+    const ENV_CASE: bool = false
+
+    // Whether `path` is absolute: from a drive (`C:`, which a path relative to that drive's
+    // working directory also starts with) or the root of the working directory's drive.
+    fn is_absolute { path: []u8 } -> bool {
+        if path.len == 0 { return false }
+        if path[0] == '/' or path[0] == '\\' { return true }
+        return path.len >= 2 and path[1] == ':'
+    }
+}

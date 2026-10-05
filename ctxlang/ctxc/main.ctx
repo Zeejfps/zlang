@@ -230,7 +230,7 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
     check::program{ &c }
     if mode == Mode::build or mode == Mode::interp or mode == Mode::units {
         if diags.errors == 0 and mode == Mode::interp {
-            return interpret{ &io, &heap, p = lower::program{ &c }, name = out, argv, stack }
+            return interpret{ &io, &proc, &heap, p = lower::program{ &c }, name = out, argv, stack }
         }
         if diags.errors == 0 and mode == Mode::units {
             made = emit::units{ &heap, p = lower::program{ &c }, size }
@@ -278,10 +278,12 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
     return 0
 }
 
-// Runs p's main in the interpreter and writes what it wrote. Returns its exit code: what main
-// returns, or 134 after a panic, as the compiled program's; or 1 if interp can't run it.
-fn interpret { mut io: Io, mut heap: arena::Arena, p: ir::Program, name: []u8, argv: [][]u8, stack: u64 } -> i32 {
+// Runs p in the interpreter, as C's main would run it, in this program's environment, and writes
+// what it wrote. Returns its exit code, as the compiled program's: 132 for a trap, as a shell
+// says for C's (SIGILL); or 1 if interp can't run it.
+fn interpret { mut io: Io, mut proc: Proc, mut heap: arena::Arena, p: ir::Program, name: []u8, argv: [][]u8, stack: u64 } -> i32 {
     let mut m = eval::machine{ heap = &heap, p, name, emulate = true, fuel = eval::FUEL, stack }
+    m.env = proc::environment{ &proc }
     let r = eval::main{ &m, argv }
     let out = list::items{ list = m.out }
     let mut i: usize = 0
@@ -292,6 +294,8 @@ fn interpret { mut io: Io, mut heap: arena::Arena, p: ir::Program, name: []u8, a
     }
     match r {
         ok{ value } => { return eval::exit_code{ value } }
+        exit{ code } => { return code }
+        trap => { return 132 }
         panic{ text } => {
             io::write{ &io, to = io::Stream::err, bytes = text }
             io::eprint{ &io, s = "\n" }

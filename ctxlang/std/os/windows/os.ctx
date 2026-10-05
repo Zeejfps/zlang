@@ -8,11 +8,10 @@ namespace os {
     // through functions.
     capability Proc
 
-    // The operating system this layer is for.
-    const OS: build::Os = build::Os::windows
-
-    // Whether the environment's keys are case-sensitive (proc::overridden): not on Windows.
-    const ENV_CASE: bool = false
+    // The operating system this layer is for, and whether its environment's keys are
+    // case-sensitive (std/os/windows/target.ctx).
+    const OS: build::Os = target::OS
+    const ENV_CASE: bool = target::ENV_CASE
 
     // _write and _read take an unsigned int count and return an int: at most this many a call.
     const CHUNK: usize = 1073741824
@@ -68,6 +67,31 @@ namespace os {
         let m = GetEnvironmentVariableW{ &proc, name = key.ptr, buf = w, size = n }
         if m == 0 or m >= n { return "" }
         return utf8_of{ &proc, s = @slice(w, @as(usize, m)) }
+    }
+
+    // The environment's "KEY=VALUE" entries, as UTF-8, in memory from malloc, for good; none if
+    // Windows won't give them.
+    fn environment { mut proc: Proc } -> [][]u8 {
+        let block = GetEnvironmentStringsW{ &proc } ifnull { return slice::empty([]u8){} }
+        defer _ = FreeEnvironmentStringsW{ &proc, block }
+        let mut n: usize = 0
+        let mut at: usize = 0
+        while block[at] != 0 {
+            at = at + wide_len{ s = block + at } + 1
+            n = n + 1
+        }
+        if n == 0 { return slice::empty([]u8){} }
+        let p = c_malloc{ &proc, size = n * @size_of([]u8) } ifnull { return slice::empty([]u8){} }
+        let items = @slice(@cast(*mut []u8, p), n)
+        at = 0
+        let mut i: usize = 0
+        while i < n {
+            let len = wide_len{ s = block + at }
+            items[i] = utf8_of{ &proc, s = @slice(block + at, len) }
+            at = at + len + 1
+            i = i + 1
+        }
+        return items
     }
 
     // ---- files, for std's fs: a File's id is its HANDLE. Paths aren't empty: fs reports those
@@ -202,12 +226,8 @@ namespace os {
         return @as(usize, m)
     }
 
-    // Whether `path` is absolute: from a drive (`C:`, which a path relative to that drive's
-    // working directory also starts with) or the root of the working directory's drive.
     fn is_absolute { path: []u8 } -> bool {
-        if path.len == 0 { return false }
-        if path[0] == '/' or path[0] == '\\' { return true }
-        return path.len >= 2 and path[1] == ':'
+        return target::is_absolute{ path }
     }
 
     fn dir_open { mut fs: Fs, path: []u8 } -> !Dir {

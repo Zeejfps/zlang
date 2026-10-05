@@ -6977,8 +6977,8 @@ class PlatformLayers(Base):
         # A build checks only its own layer, so each is checked here from any machine, with the
         # C symbols it calls.
         import toolchain
-        # Linux's and macOS's share std/os/posix.
-        self.assertEqual(sorted(os.listdir(os.path.join(ROOT, 'std', 'os'))), sorted(toolchain.PLATFORMS + ('posix',)))
+        # Linux's and macOS's share std/os/posix; the interpreter's is std/os/interp.
+        self.assertEqual(sorted(os.listdir(os.path.join(ROOT, 'std', 'os'))), sorted(toolchain.PLATFORMS + ('posix', 'interp')))
         d, files = toolchain.write_program([("""
 fn main { mut io: Io, mut mem: Mem, mut fs: Fs } -> i32 {
     let mut line: [16]u8
@@ -7000,7 +7000,8 @@ fn main { mut io: Io, mut mem: Mem, mut fs: Fs } -> i32 {
         for platform, symbols in [('linux', posix + ['__errno_location']),
                                   ('macos', posix + ['__error']),
                                   ('windows', ['_write', '_read', 'VirtualAlloc', 'CreateFileW', 'FindFirstFileW',
-                                               'MoveFileExW', 'GetCurrentDirectoryW'])]:
+                                               'MoveFileExW', 'GetCurrentDirectoryW']),
+                                  ('interp', ['ctx_interp_write', 'ctx_interp_pages', 'ctx_interp_unsupported'])]:
             c = os.path.join(d, f'{platform}.c')
             self.assertEqual(toolchain.ctxc_build(toolchain.native_ctxc(), c, list(files), cwd=d, platform=platform), (0, ''))
             with open(c, encoding='utf-8') as f:
@@ -8394,7 +8395,7 @@ CAP_CHAIN = """namespace m {
 
 class Hooks(Base):
     """`#start` and `#panic` (spec §15, Entry point): std's start main and report panics, and a
-    program's own replace them. `ctxc interp` doesn't run a program's own, so it skips these."""
+    program's own replace them. `ctxc interp` runs them as the C does (toolchain.diff)."""
 
     def test_std_start_flushes_and_passes_args(self):
         out = io.StringIO()
@@ -8428,6 +8429,11 @@ fn main { mut io: Io, args: Args } -> i32 {
                           '    io::println_u64{ io = &main, n = 5 }\n    io::flush{ io = &main }\n    return 3\n}\n'
                           'fn main {} {}\n', out=out)
         self.assertEqual((out.getvalue().replace('\r\n', '\n'), code), ('5\n', 3))
+
+    def test_negative_exit_code(self):
+        # Only a trap's code is taken for one when the interpreter's run is compared
+        # (toolchain.diff): -4 is SIGILL's on Linux and macOS, and an exit code on Windows.
+        self.assertEqual(run_source('fn main {} -> i32 { return -4 }\n'), -4 if os.name == 'nt' else 252)
 
     def test_start_without_main(self):
         # The start fn needn't take main, nor anything else.
@@ -8621,31 +8627,36 @@ class CtxcDriver(Base):
         return work
 
     def logging_cc(self, d):
-        """The environment for ctxc to use a C compiler that appends each command line to
-        d/cc.log before running the test's compiler, and a function that returns the lines logged
-        since it last did. The compiler's command is the same for every test, so they share
-        their runtime objects."""
+        """The environment for ctxc to use a C compiler that logs each command line in d/cc.log/
+        before running the test's compiler, and a function that returns the lines logged since it
+        last did, in the order they were. Each run of the compiler writes a file of its own, named
+        after when it started: ctxc runs several at once,
+        and appending to one file from several processes loses lines on Windows. The compiler's
+        command is the same for every test, so they share their runtime objects."""
         import sys
         script, log = os.path.join(ROOT, 'build', 'logging_cc.py'), os.path.join(d, 'cc.log')
         if ' ' in sys.executable + script:
             self.skipTest('CTX_CC is split at spaces')
         with open(script, 'w', encoding='utf-8') as f:
-            f.write(f"""import os, subprocess, sys
+            f.write(f"""import os, subprocess, sys, tempfile, time
 sys.path.insert(0, {os.path.join(ROOT, 'tools')!r})
 from toolchain import compiler
-with open(os.environ['CTX_TEST_CC_LOG'], 'a') as f:
+fd, _ = tempfile.mkstemp(dir=os.environ['CTX_TEST_CC_LOG'], prefix=f'{{time.time_ns():020d}}-', suffix='.txt')
+with os.fdopen(fd, 'w') as f:
     f.write(' '.join(sys.argv[1:]) + '\\n')
 cc, env = compiler()
 sys.exit(subprocess.run(cc + sys.argv[1:], env=env).returncode)
 """)
-        seen = [0]
+        seen = set()
 
         def logged():
-            with open(log, encoding='utf-8') as f:
-                lines = f.read().splitlines()
-            new, seen[0] = lines[seen[0]:], len(lines)
+            new = []
+            for name in sorted(set(os.listdir(log)) - seen):
+                seen.add(name)
+                with open(os.path.join(log, name), encoding='utf-8') as f:
+                    new += f.read().splitlines()
             return new
-        open(log, 'w').close()
+        os.makedirs(log, exist_ok=True)
         return {'CTX_CC': f'{sys.executable} {script}', 'CTX_TEST_CC_LOG': log}, logged
 
     def test_run_a_file_with_arguments(self):
@@ -8991,6 +9002,66 @@ fn main { mut io: Io } {
         self.assertEqual(got, (134, 'before\n', f'{path}:6:28: panic: index 3 out of bounds for length 3\n'))
         self.assertEqual(got, want)
 
+    def test_own_hooks(self):
+        # The interpreter runs a program's own start and panic fns, as C's main and the runtime
+        # do (lower.ctx, entry_fns): here a start without std's binary mode, so that on Windows
+        # "\n" is written as "\r\n", and a panic fn that returns, which traps (132).
+        d = self.project({'hooks.ctx': """
+#start
+fn boot { mut io: Io, argc: i32, main: &fn{ args: Args } -> i32 } -> i32 {
+    io::println_i64{ &io, n = argc }
+    let code = main{ args = slice::empty([]u8){} }
+    io::flush{ &io }
+    return code
+}
+#panic
+fn caught { mut io: Io, msg: []u8, line: u32 } {
+    io::write{ &io, to = io::Stream::out, bytes = msg }
+    io::println_u64{ &io, n = line }
+    io::flush{ &io }
+}
+fn main { mut io: Io } -> i32 {
+    io::println{ &io, s = "main" }
+    let xs = [1, 2]
+    let i: usize = 2
+    return @as(i32, xs[i])
+}
+"""})
+        got, want = self.both(os.path.join(d, 'hooks.ctx'), 'a')
+        self.assertEqual(got[0], 132)
+        self.assertIn('index 2 out of bounds for length 2', got[1])
+        # C's trap: Windows' illegal instruction exception, or SIGILL (toolchain.diff).
+        trap = 132 if want[0] in (3221225501, -4, 132) else want[0]
+        self.assertEqual(got, (trap,) + want[1:])
+
+    def test_exit(self):
+        # os::exit ends the run with its code, a negative one too, after nothing else.
+        d = self.project({'exit.ctx': """
+fn main { mut io: Io, mut proc: Proc } {
+    io::println{ &io, s = "unflushed" }
+    os::exit{ &proc, code = -3 }
+}
+"""})
+        got, want = self.both(os.path.join(d, 'exit.ctx'))
+        self.assertEqual(got[1:], ('', ''))
+        self.assertEqual(got, want)
+
+    def test_environment(self):
+        # The interpreter's program sees the environment `ctxc interp` was given.
+        d = self.project({'env.ctx': """
+fn main { mut io: Io, mut proc: Proc } {
+    io::println{ &io, s = utf8::String{ bytes = proc::env{ &proc, name = "CTX_TEST_ENV" } ifnull { "unset" } } }
+    io::println_bool{ &io, n = proc::environment{ &proc }.len > 0 }
+}
+"""})
+        os.environ['CTX_TEST_ENV'] = 'seen'
+        try:
+            got, want = self.both(os.path.join(d, 'env.ctx'))
+        finally:
+            del os.environ['CTX_TEST_ENV']
+        self.assertEqual(got, (0, 'seen\ntrue\n', ''))
+        self.assertEqual(got, want)
+
     def test_a_directory(self):
         d = self.project({
             'a.ctx': 'fn main { mut io: Io } { io::println_i64{ &io, n = b::n{} } }\n',
@@ -9007,7 +9078,7 @@ fn main { mut io: Io } {
 }
 """})
         self.assertEqual(self.ctxc('interp', os.path.join(d, 'c.ctx')),
-                         (1, 'first\n', "ctxc interp: extern fn abs (C's `abs`) is not supported by interp\n"))
+                         (1, '', "ctxc interp: extern fn abs (C's `abs`) is not supported by interp\n"))
 
     def test_too_deep(self):
         d = self.project({'deep.ctx': """

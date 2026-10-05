@@ -1,0 +1,175 @@
+// std: os in ctxc's interpreter (`ctxc interp`, ctxc/eval.ctx). The platform's layer (spec §17)
+// for a program that runs in the interpreter rather than as C: what io, mem, proc, fs and rt need,
+// over a few externs that only the interpreter provides, `ctx_interp_*`. What it can't do,
+// standard input, files and other programs among it, stops the run as not supported by interp.
+// The platform is the one ctxc runs on: its target.ctx, beside this one in the build.
+//
+// Where it differs from the platform's own layer, beyond what it can't do:
+//   - What fails, fails with the errors of every platform's layer, not only this one's, as a
+//     program for every platform sees them (no_files). The platforms' sets differ, so a match
+//     that lists every error of one platform's without `else` compiles only there, and not here.
+//   - Its argv, for a program's own `#start`, is UTF-8, where Windows' C gives the ANSI code
+//     page's bytes.
+//   - Its environment's keys match as std's proc::overridden does, folding ASCII's case where
+//     the platform's aren't case-sensitive, where Windows folds all of Unicode's.
+//   - Its environment is ctxc's own, CTX_HOME and CTX_STACK among it.
+
+namespace os {
+    // What std's Proc holds here: nothing. The environment is the interpreter's.
+    capability Proc
+
+    // The operating system and its environment's keys, as the platform ctxc runs on has them.
+    const OS: build::Os = target::OS
+    const ENV_CASE: bool = target::ENV_CASE
+
+    // The interpreter's: it keeps what the program writes to standard output (fd 1) and error
+    // (2), in order, for `ctxc interp` to write.
+    #c::symbol{ name = "ctx_interp_write" }
+    extern fn host_write { mut io: Io, fd: i32, bytes: []u8 } -> usize
+
+    // Standard input, output and error in binary mode, as std/os/windows sets them: until then,
+    // on Windows, the interpreter writes "\n" as "\r\n", as C does.
+    #c::symbol{ name = "ctx_interp_binary" }
+    extern fn host_binary { mut io: Io }
+
+    // Zeroed, page-aligned memory of `size` bytes, a multiple of mem::PAGE; null if the
+    // interpreter can't give it.
+    #c::symbol{ name = "ctx_interp_pages" }
+    extern fn host_pages { mut mem: Mem, size: usize } -> ?*mut u8
+
+    // The environment `ctxc interp` was given: its "KEY=VALUE" entries.
+    #c::symbol{ name = "ctx_interp_environment" }
+    extern fn host_environment { mut proc: Proc } -> [][]u8
+
+    // Ends the run with exit code `code`.
+    #c::symbol{ name = "ctx_interp_exit" }
+    extern fn host_exit { mut proc: Proc, code: i32 }
+
+    // Stops the run: the interpreter can't do `what`. It doesn't return.
+    #c::symbol{ name = "ctx_interp_unsupported" }
+    extern fn unsupported { what: []u8 } -> u32
+
+    fn write { mut io: Io, to: io::Stream, bytes: []u8 } -> usize {
+        return host_write{ &io, fd = if to == io::Stream::out { 1 } else { 2 }, bytes }
+    }
+
+    fn read { mut io: Io, into: []mut u8 } -> usize {
+        _ = unsupported{ what = "standard input" }
+        return 0
+    }
+
+    fn pages { mut mem: Mem, size: usize } -> ?*mut u8 {
+        return host_pages{ &mem, size }
+    }
+
+    // The value of environment variable `name`, or null if it isn't set.
+    fn env { mut proc: Proc, name: []u8 } -> ?[]u8 {
+        let entries = host_environment{ &proc }
+        let mut i: usize = 0
+        while i < entries.len {
+            let e = entries[i]
+            if e.len > name.len and e[name.len] == '=' and same_key{ a = e[..name.len], b = name } { return e[name.len + 1..] }
+            i = i + 1
+        }
+        return null
+    }
+
+    fn same_key { a: []u8, b: []u8 } -> bool {
+        if ENV_CASE { return slice::eq_bytes{ a, b } }
+        let mut i: usize = 0
+        while i < a.len {
+            if ascii::to_lower{ c = a[i] } != ascii::to_lower{ c = b[i] } { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    fn environment { mut proc: Proc } -> [][]u8 {
+        return host_environment{ &proc }
+    }
+
+    // ---- files, for std's fs: not supported by interp
+
+    struct Dir { handle: u64 }
+
+    // Stops the run. It fails, as far as the checker can tell, with each error the platforms'
+    // layers fail with, so that a program's handling of them is checked as theirs is.
+    fn no_files(T) {} -> !T {
+        let n = unsupported{ what = "files" }
+        if n == 0 { return fs::not_found }
+        if n == 1 { return fs::permission_denied }
+        if n == 2 { return fs::is_directory }
+        if n == 3 { return fs::exists }
+        if n == 4 { return fs::not_directory }
+        if n == 5 { return fs::bad_file }
+        return fs::other{ code = 0 }
+    }
+
+    fn file_open { mut fs: Fs, path: []u8, mode: fs::Mode } -> !u64 { return try no_files(u64){} }
+    fn file_read { mut fs: Fs, file: u64, into: []mut u8 } -> !usize { return try no_files(usize){} }
+    fn file_write { mut fs: Fs, file: u64, bytes: []u8 } -> !usize { return try no_files(usize){} }
+    fn file_close { mut fs: Fs, file: u64 } -> ! { _ = try no_files(bool){} }
+    fn file_seek { mut fs: Fs, file: u64, offset: u64 } -> ! { _ = try no_files(bool){} }
+    fn file_size { mut fs: Fs, path: []u8 } -> !u64 { return try no_files(u64){} }
+    fn remove { mut fs: Fs, path: []u8 } -> ! { _ = try no_files(bool){} }
+    fn make_dir { mut fs: Fs, path: []u8 } -> ! { _ = try no_files(bool){} }
+    fn rename { mut fs: Fs, from: []u8, to: []u8 } -> ! { _ = try no_files(bool){} }
+    fn working_dir { mut fs: Fs, into: []mut u8 } -> !usize { return try no_files(usize){} }
+    fn dir_open { mut fs: Fs, path: []u8 } -> !Dir { return try no_files(Dir){} }
+    fn dir_next { mut fs: Fs, mut dir: Dir } -> ?[]u8 {
+        _ = unsupported{ what = "files" }
+        return null
+    }
+    fn dir_close { mut fs: Fs, mut dir: Dir } { _ = unsupported{ what = "files" } }
+
+    fn is_absolute { path: []u8 } -> bool {
+        return target::is_absolute{ path }
+    }
+
+    // ---- for std's rt: starting the program, and ending it
+
+    fn exit { mut proc: Proc, code: i32 } {
+        host_exit{ &proc, code }
+    }
+
+    fn start { mut io: Io, mut proc: Proc, argv: *?*u8 } {
+        host_binary{ &io }
+    }
+
+    fn args { mut mem: Mem, argc: i32, argv: *?*u8 } -> [][]u8 {
+        return rt::c_args{ &mem, argc, argv }
+    }
+
+    // ---- memory for arenas (mem::reserve, arena::alloc): pages, usable from the start
+
+    fn reserve { mut mem: Mem, size: usize } -> ?*mut u8 {
+        return host_pages{ &mem, size }
+    }
+
+    fn commit { first: *u8, last: *u8 } -> bool {
+        return true
+    }
+
+    // ---- for std's proc: not supported by interp
+
+    // Stops the run, failing as no_files does with proc's errors.
+    fn no_programs(T) {} -> !T {
+        let n = unsupported{ what = "other programs" }
+        if n == 0 { return proc::not_found }
+        if n == 1 { return proc::permission_denied }
+        return proc::other{ code = 0 }
+    }
+
+    fn spawn { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> !u64 { return try no_programs(u64){} }
+    fn wait { mut proc: Proc, id: u64 } -> !i32 { return try no_programs(i32){} }
+
+    fn processors { mut proc: Proc } -> u32 {
+        _ = unsupported{ what = "the number of processors" }
+        return 1
+    }
+
+    fn exe_path { mut proc: Proc } -> []u8 {
+        _ = unsupported{ what = "the executable's path" }
+        return ""
+    }
+}

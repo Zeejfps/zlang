@@ -87,9 +87,12 @@ class Panic(Exception):
 
 def std_files(platform=HOST):
     """std's files, then its layer's for platform, relative to ROOT, as the names positions in
-    them use."""
+    them use. Platform 'interp' is the interpreter's layer, with this platform's target.ctx, as
+    `ctxc interp` builds a program (ctxc/drive.ctx, std_files)."""
     def ctx(*d):
         return sorted(os.path.relpath(p, ROOT).replace(os.sep, '/') for p in glob.glob(os.path.join(ROOT, *d, '*.ctx')))
+    if platform == 'interp':
+        return ctx('std') + ctx('std', 'os', 'interp') + [f'std/os/{HOST}/target.ctx']
     shared = [] if platform == 'windows' else ctx('std', 'os', 'posix')
     return ctx('std') + shared + ctx('std', 'os', platform)
 
@@ -477,6 +480,10 @@ def diff(sources, r, stdin, args, timeout):
     if want_err.startswith('program: panic: '):
         want_err = stem + want_err[len('program'):]
     code, got_code = (c - (1 << 32) if c >= 1 << 31 else c for c in (r.returncode, i.returncode))
+    # A trap (ctxrt.c, report): Windows' illegal instruction exception, or SIGILL, which
+    # `ctxc interp` reports as a shell does, 132.
+    if code == (-1073741795 if HOST == 'windows' else -4):
+        code = 132
     got = (i.stdout, err, got_code)
     want = (r.stdout, want_err, code)
     if got != want:

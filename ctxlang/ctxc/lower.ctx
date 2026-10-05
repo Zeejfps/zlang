@@ -14,7 +14,7 @@ namespace lower {
     type Id = types::Id
 
     const NONE: u32 = 4294967295
-    const VERSION: u64 = 21
+    const VERSION: u64 = 22
 
     // A function instance: a declaration and its generic arguments. The hidden fn of an @fmt
     // without a sink is an instance too, under the declaration it is in: site is its Site,
@@ -62,9 +62,8 @@ namespace lower {
         let panic = if h == NONE { NONE } else { fn_id{ &l, decl = h, targs = no_ids{} } }
         let v = check::stack_limit{ c }
         let limit = if v is some{ value } { static_of{ &l, v = value } } else { NONE }
-        let mut p = finish{ &l, main, start, panic, stack_limit = limit, adapters = true }
+        let p = finish{ &l, main, start, panic, stack_limit = limit, adapters = true }
         if l.failed { @panic("lower: a const or literal without a value") }
-        p.stdout = std_static{ l, space = "io", cap = "State", name = "out" }
         return p
     }
 
@@ -135,7 +134,7 @@ namespace lower {
             vars = list::items{ list = l.vars },
             statics = list::items{ list = l.statics },
             fns = list::items{ list = l.fns },
-            main, start, panic, entry = ends.entry, on_panic = ends.on_panic, stack_limit, stdout = NONE,
+            main, start, panic, entry = ends.entry, on_panic = ends.on_panic, stack_limit,
         }
     }
 
@@ -2158,20 +2157,6 @@ namespace lower {
         if get{ l, t } is ptr{ elem } { ct = elem }
         let v = check::cap_var{ c = l.c.*, t = ct, name } ifnull { @panic("lower: no such static") }
         return static_of{ &l, v }
-    }
-
-    // The id of std's static `space::cap::name`, if it was met: by its capability's declaration,
-    // which a program's namespace of the same name doesn't have. NONE if it wasn't.
-    fn std_static { l: Lower, space: []u8, cap: []u8, name: []u8 } -> u32 {
-        let d = check::std_decl{ c = l.c.*, space, name = cap }
-        let owners = list::items{ list = l.static_owners }
-        let names = list::items{ list = l.static_names }
-        let mut i: usize = 0
-        while d != NONE and i < owners.len {
-            if owners[i] == d and slice::eq_bytes{ a = names[i], b = name } { return @as(u32, i) }
-            i = i + 1
-        }
-        return NONE
     }
 
     fn static_of { mut l: Lower, v: check::CVar } -> u32 {

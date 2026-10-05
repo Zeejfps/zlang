@@ -46,6 +46,26 @@ namespace rt {
         fail{ msg = m.bytes[..m.len] }
     }
 
+    // The command line's arguments after the program's name, as bytes: views of C's argv, listed
+    // in memory from `mem::pages`. For a layer whose arguments are C's (std/os/posix,
+    // std/os/interp).
+    fn c_args { mut mem: Mem, argc: i32, argv: *?*u8 } -> [][]u8 {
+        if argc <= 1 { return slice::empty([]u8){} }
+        let n = @as(usize, argc) - 1
+        let bytes = mem::pages{ &mem, size = n * @size_of([]u8) } ifnull {
+            rt::fail{ msg = "out of memory" }
+            return slice::empty([]u8){}
+        }
+        let items = slice::cast(u8, []u8){ s = bytes[..n * @size_of([]u8)] }
+        let mut i: usize = 0
+        while i < n {
+            let p = argv[i + 1] ifnull { break }
+            items[i] = c::bytes{ s = c::String{ ptr = p } }
+            i = i + 1
+        }
+        return items[..i]
+    }
+
     // ---- the entry point and panics
 
     // Runs the program: memory for function values' records, the platform's setup (os::start),

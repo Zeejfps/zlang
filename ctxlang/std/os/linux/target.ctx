@@ -1,0 +1,16 @@
+// std: target on Linux. What a program's platform is, whichever layer reaches it (spec §17):
+// the platform's own (std/os/posix), or the interpreter's (std/os/interp), which `ctxc interp`
+// builds with the platform's target.
+
+namespace target {
+    // The operating system the program runs on.
+    const OS: build::Os = build::Os::linux
+
+    // Whether the environment's keys are case-sensitive (proc::overridden).
+    const ENV_CASE: bool = true
+
+    // Whether `path` is absolute: from the root.
+    fn is_absolute { path: []u8 } -> bool {
+        return path.len > 0 and path[0] == '/'
+    }
+}
