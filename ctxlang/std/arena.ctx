@@ -22,21 +22,18 @@ namespace arena {
         let start = heap.used + (align - addr % align) % align
         if start + new > heap.buf.len { return null }
 
-        // Memory from mem::reserve is made usable as it is reached (ctxrt.c, ctx_commit): by the
-        // first allocation, and by one that ends in another MiB than the bytes used before it.
+        // Memory from mem::reserve is made usable as it is reached (os::commit): by the first
+        // allocation, and by one that ends in another MiB than the bytes used before it.
         let end = start + new
         let base = @addr(heap.buf.ptr)
         if heap.used == 0 or (base + end - 1) >> 20 != (base + heap.used - 1) >> 20 {
-            if not commit{ last = &heap.buf[end - 1] } { return null }
+            if not os::commit{ first = &heap.buf[start], last = &heap.buf[end - 1] } { return null }
         }
         let out = heap.buf[start..end]
         heap.used = end
         slice::copy{ dst = out, src = mem }
         return out
     }
-
-    #c::symbol{ name = "ctx_commit" }
-    extern fn commit { last: *u8 } -> bool
 
     // Frees everything allocated so far.
     fn reset { mut heap: Arena } {

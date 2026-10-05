@@ -22,6 +22,10 @@ namespace ir {
         vars:    []Var,         // indexed by C variable id
         fns:     []Func,        // indexed by function id
         main:    u32,
+        // What C's main calls with main's function value, and what the runtime calls for a
+        // panic (§15, Entry point; ctxrt.h): NONE for none.
+        start:   u32,
+        panic:   u32,
     }
 
     // A const of array, struct or union type. Its value is literals only: the checker computed it.

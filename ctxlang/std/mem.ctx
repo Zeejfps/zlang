@@ -37,10 +37,7 @@ namespace mem {
         if size == 0 { return slice::empty(u8){} }
         if size > 18446744073709551615 - (PAGE - 1) { return null }
         let n = (size + PAGE - 1) / PAGE * PAGE
-        let p = reserve_os{ &mem, size = n } ifnull { return null }
+        let p = os::reserve{ &mem, size = n } ifnull { return null }
         return @slice(p, n)
     }
-
-    #c::symbol{ name = "ctx_reserve" }
-    extern fn reserve_os { mut mem: Mem, size: usize } -> ?*mut u8
 }

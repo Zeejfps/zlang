@@ -1,8 +1,12 @@
 // ctxrt: the runtime for C that ctxc emits. Needs GNU C (statement expressions, __typeof__,
 // overflow builtins, empty structs) on a 64-bit little-endian target.
 //
-// Everything that doesn't depend on a program's types lives here: panics, checked arithmetic,
-// conversions, bounds checks, closures and the natives. Messages match ctxi's word for word.
+// It is what the C needs that ctxlang can't say itself: the checks the C calls, panics, the
+// stack check's limit, function values' records, and storage for std's process-wide state.
+// The rest is std's, in ctxlang: starting the program (a `#start` fn, std/rt.ctx), reporting a
+// panic (a `#panic` fn), and the platform's layer (std/os), which the natives of std are over.
+// Of the C library, ctxrt.c uses calloc and free alone. Floats as text and back, which std's
+// ascii declares, are ctxfloat.c's, which a program links only if it uses them (ctxc/drive.ctx).
 
 #ifndef CTXRT_H
 #define CTXRT_H
@@ -15,34 +19,28 @@
 
 _Static_assert(sizeof(void *) == 8, "ctxrt needs 64-bit pointers");
 
-// ---- panics
-
-// Prints "FILE:LINE:COL: panic: MSG" to standard error and exits with 134. `file` is FNV-1a of
-// the file's name with the top bit set, which names it in the program's file table (ctx_init), or
-// an index into that table; an empty name stands for the program's own path.
-_Noreturn void ctx_panic(uint32_t line, uint32_t col, uint32_t file, const char *msg);
-// A panic without a position, such as a native's: "PROGRAM: panic: MSG".
-_Noreturn void ctx_panic_nopos(const char *msg);
-_Noreturn void ctx_panic_fmt(uint32_t line, uint32_t col, uint32_t file, const char *fmt, ...);
-
-// ---- stack
-
-extern char *ctx_stack_limit;
-#define CTX_STACK_CHECK() \
-    do { if ((char *)__builtin_frame_address(0) < ctx_stack_limit) ctx_panic_nopos("stack overflow"); } while (0)
-
-// ---- startup
-
 typedef struct { void *ptr; uint64_t len; } ctx_slice;   // []T
 
-// `program` is the program's path, for panics in files named "": CTX_PROGRAM_NAME, which the
-// generated code's includer can define.
-void ctx_init(const char *const *files, uint32_t nfiles, const char *program, int argc, char **argv);
+// ---- startup
+//
+// C's main, which ctxc writes (emit_c.ctx, `entry`), gives the runtime the program's file table
+// and its `#panic` fn, then calls its `#start` fn.
+
+// A `#panic` fn, as C's main passes it: the message, and the panic's file, line and column,
+// with line 0 for a panic without a position. It shouldn't return.
+typedef void (*ctx_panic_fn)(ctx_slice msg, ctx_slice file, uint32_t line, uint32_t col);
+
+// `files` names the files positions are in (FNV-1a of each, ctx_panic), and `program` the
+// program's path, for panics in files named "" and those without a position: CTX_PROGRAM_NAME,
+// which the generated code's includer can define. Without a panic fn, a panic traps.
+void ctx_start(const char *const *files, uint32_t nfiles, const char *program, ctx_panic_fn on_panic);
 #ifndef CTX_PROGRAM_NAME
 #define CTX_PROGRAM_NAME "program"
 #endif
-ctx_slice ctx_args(void);                  // main's `args`: a [][]u8 of UTF-8 bytes
-int ctx_exit(int32_t code);                // flushes output, closes files; returns code
+
+// Zeroed memory of `size` bytes, the same on every call: std's process-wide state (std/rt.ctx,
+// `State`), whose layout is std's. A size the runtime hasn't room for traps.
+void *ctx_state(uint64_t size);
 
 // The assembler name of C symbol `name`, a string literal, for an extern fn's prototype.
 #define CTX_STR_(x) #x
@@ -51,6 +49,41 @@ int ctx_exit(int32_t code);                // flushes output, closes files; retu
 
 #define CTX_BITCAST(T, x) ({ __typeof__(x) _bc_v = (x); T _bc_r; \
     _Static_assert(sizeof(_bc_r) == sizeof(_bc_v), "bitcast size"); memcpy(&_bc_r, &_bc_v, sizeof _bc_r); _bc_r; })
+
+// ---- panics
+//
+// Each calls the `#panic` fn once, with the stack check off, so that a stack overflow can be
+// reported; a panic while one is reported, or a panic fn that returns, traps. `file` is FNV-1a of
+// the file's name with the top bit set, which names it in the program's file table, or an index
+// into that table; an empty name stands for the program's path.
+
+_Noreturn void ctx_panic(uint32_t line, uint32_t col, uint32_t file, const char *msg);
+// A panic without a position, such as a native's.
+_Noreturn void ctx_panic_nopos(const char *msg);
+// std's rt::fail: a panic without a position, whose message isn't a C string.
+_Noreturn void ctx_panic_msg(ctx_slice msg);
+
+#define CTX_POS uint32_t line, uint32_t col, uint32_t file
+
+// The checks' messages, with their numbers: "index I out of bounds for length N" and the rest.
+_Noreturn void ctx_panic_index(uint64_t i, uint64_t n, CTX_POS);
+_Noreturn void ctx_panic_range(uint64_t lo, uint64_t hi, uint64_t n, CTX_POS);
+_Noreturn void ctx_panic_shift_s(int64_t n, int bits, CTX_POS);
+_Noreturn void ctx_panic_shift_u(uint64_t n, int bits, CTX_POS);
+_Noreturn void ctx_panic_as_s(int64_t v, const char *dst, CTX_POS);
+_Noreturn void ctx_panic_as_u(uint64_t v, const char *dst, CTX_POS);
+// A float that isn't representable, in Python's repr: ctxfloat.c's, which writes floats.
+_Noreturn void ctx_f2i_fail(double v, const char *dst, CTX_POS);
+
+// ---- stack
+
+extern char *ctx_stack_limit;
+#define CTX_STACK_CHECK() \
+    do { if ((char *)__builtin_frame_address(0) < ctx_stack_limit) ctx_panic_nopos("stack overflow"); } while (0)
+
+// Sets the address below which a frame panics with "stack overflow": std's start does, from
+// where its frame is. Before, nothing is checked.
+void ctx_stack_set(uint64_t limit);
 
 // ---- function values
 //
@@ -79,7 +112,6 @@ static inline ctx_fn *ctx_adapt(ctx_fn *inner, void (*code)(void)) {
 
 // ---- integer arithmetic
 
-#define CTX_POS uint32_t line, uint32_t col, uint32_t file
 #define CTX_OVERFLOW() ctx_panic(line, col, file, "integer overflow")
 
 #define CTX_INT_OPS(T, S, MIN, SIGNED)                                                            \
@@ -109,40 +141,41 @@ CTX_INT_OPS(uint64_t, u64, 0, 0)
 
 // A shift count, checked against the width of the value shifted.
 static inline int ctx_shcount_i(int64_t n, int bits, CTX_POS) {
-    if (n < 0 || n >= bits) ctx_panic_fmt(line, col, file, "shift count %lld out of range for a %d-bit integer",
-                                          (long long)n, bits);
+    if (n < 0 || n >= bits) ctx_panic_shift_s(n, bits, line, col, file);
     return (int)n;
 }
 static inline int ctx_shcount_u(uint64_t n, int bits, CTX_POS) {
-    if (n >= (uint64_t)bits) ctx_panic_fmt(line, col, file, "shift count %llu out of range for a %d-bit integer",
-                                           (unsigned long long)n, bits);
+    if (n >= (uint64_t)bits) ctx_panic_shift_u(n, bits, line, col, file);
     return (int)n;
 }
 
 // An array index, checked against the length.
 static inline uint64_t ctx_idx(uint64_t i, uint64_t n, CTX_POS) {
-    if (i >= n) ctx_panic_fmt(line, col, file, "index %llu out of bounds for length %llu",
-                              (unsigned long long)i, (unsigned long long)n);
+    if (i >= n) ctx_panic_index(i, n, line, col, file);
     return i;
 }
 
 // A slice's sub-range lo..hi, or "range LO..HI out of bounds for length N".
 static inline void ctx_range(uint64_t lo, uint64_t hi, uint64_t n, CTX_POS) {
-    if (lo > hi || hi > n) ctx_panic_fmt(line, col, file, "range %llu..%llu out of bounds for length %llu",
-                                         (unsigned long long)lo, (unsigned long long)hi,
-                                         (unsigned long long)n);
+    if (lo > hi || hi > n) ctx_panic_range(lo, hi, n, line, col, file);
 }
 
 // ---- @as
 
 // An integer into [lo, hi], or "@as: V is not representable in DST".
-int64_t ctx_as_s(int64_t v, int64_t lo, int64_t hi, const char *dst, CTX_POS);
-uint64_t ctx_as_u(uint64_t v, uint64_t hi, const char *dst, CTX_POS);
-// A float, truncated toward zero, into [lo, hi]. NaN and infinities panic.
-// Keep the checks visible to the caller's optimizer; only a failed conversion needs the
-// runtime's number formatting and diagnostics.
-_Noreturn void ctx_f2i_fail(double v, const char *dst, CTX_POS);
+static inline int64_t ctx_as_s(int64_t v, int64_t lo, int64_t hi, const char *dst, CTX_POS) {
+    if (v < lo || v > hi) ctx_panic_as_s(v, dst, line, col, file);
+    return v;
+}
 
+static inline uint64_t ctx_as_u(uint64_t v, uint64_t hi, const char *dst, CTX_POS) {
+    if (v > hi) ctx_panic_as_u(v, dst, line, col, file);
+    return v;
+}
+
+// A float, truncated toward zero, into [lo, hi]. NaN and infinities panic. Keep the checks
+// visible to the caller's optimizer; only a failed conversion needs the runtime's number
+// formatting and diagnostics.
 static inline int64_t ctx_f2i_s(double v, int64_t lo, int64_t hi, const char *dst, CTX_POS) {
     // Is trunc(v) at least lo? lo - 1 is exact except for INT64_MIN, with no double between
     // INT64_MIN - 1 and INT64_MIN. The comparisons also reject NaN before the C cast.
@@ -157,35 +190,5 @@ static inline uint64_t ctx_f2i_u(double v, uint64_t hi, const char *dst, CTX_POS
     if (!(v > -1.0 && v < limit)) ctx_f2i_fail(v, dst, line, col, file);
     return (uint64_t)v;
 }
-
-// ---- natives: std's extern fns over the runtime (std/io.ctx, fs.ctx, ascii.ctx, proc.ctx,
-// build.ctx). A capability isn't passed, and a slice is a ctx_slice. std declares them for
-// itself, so these declarations are for the runtime. io and mem reach the OS through std's
-// platform layer (std/os) instead.
-
-void *ctx_io_out(void);                    // io::Out: standard output's buffer, a ctx_slice and its length
-uint8_t *ctx_reserve(uint64_t size);       // mem::reserve: an arena's memory, committed as it's reached
-bool ctx_commit(const uint8_t *last);      // arena::alloc: makes reserved memory usable up to last
-uint64_t ctx_ascii_f64_digits(double n, ctx_slice into);
-uint64_t ctx_ascii_f32_digits(float n, ctx_slice into);
-double ctx_ascii_f64_parse(ctx_slice text);
-float ctx_ascii_f32_parse(ctx_slice text);
-int64_t ctx_proc_run(ctx_slice argv, ctx_slice env, int32_t *code);
-int64_t ctx_proc_spawn(ctx_slice argv, ctx_slice env, uint64_t *id);
-int64_t ctx_proc_wait(uint64_t id, int32_t *code);
-uint32_t ctx_proc_processors(void);
-#ifdef _WIN32
-bool ctx_proc_env(ctx_slice name, ctx_slice *value);
-#endif
-ctx_slice ctx_proc_exe_path(void);
-
-typedef struct { uint32_t id; } ctx_build_exe;            // build::Exe
-ctx_build_exe ctx_build_exe_new(ctx_slice name, ctx_slice root);
-void ctx_build_add_sources(ctx_build_exe exe, ctx_slice dir);
-void ctx_build_optimize(ctx_build_exe exe, uint32_t level);
-void ctx_build_link(ctx_build_exe exe, ctx_slice lib);
-void ctx_build_framework(ctx_build_exe exe, ctx_slice name);
-void ctx_build_lib_path(ctx_build_exe exe, ctx_slice path);
-uint32_t ctx_build_os(void);                              // build::Os: windows 0, macos 1, linux 2
 
 #endif

@@ -22,8 +22,9 @@
 // are relative to the directory build.ctx is in, and may leave it with `..`. A file named
 // build.ctx is never one of an executable's files.
 
-// Permission to describe a build: only a build program's `fn build` receives one.
-capability Build
+// Permission to describe a build: only a build program's `fn build` receives one. It includes
+// the console, where the build's graph goes without CTX_BUILD_OUT.
+capability Build { ..Io }
 
 namespace build {
     // An executable the build describes.
@@ -34,30 +35,142 @@ namespace build {
 
     // An executable `name`, from the .ctx files in directory `root`, but not in its
     // subdirectories. A name is also the name of its files, so it can't hold `/`, `\` or `"`.
-    #c::symbol{ name = "ctx_build_exe_new" }
-    extern fn exe { mut b: Build, name: []u8, root: []u8 } -> Exe
+    fn exe { mut b: Build, name: []u8, root: []u8 } -> Exe {
+        field{ s = name, what = "name" }
+        field{ s = root, what = "root" }
+        // A name names the executable's files, and is the C string its panics print.
+        let mut i: usize = 0
+        while i < name.len {
+            if name[i] == '/' or name[i] == '\\' or name[i] == '"' { rt::fail{ msg = "build: a name cannot hold a slash, a backslash or a double quote" } }
+            i = i + 1
+        }
+        let g = &rt::state{ io = &b }.graph
+        let exe = Exe{ id = g.exes }
+        g.exes = g.exes + 1
+        record{ &b, kind = "exe", exe, a = name, more = root }
+        return exe
+    }
 
     // Adds the .ctx files under directory `dir` to exe: those in it and, at any depth, in its
     // subdirectories. A file that two directories reach is compiled once.
-    #c::symbol{ name = "ctx_build_add_sources" }
-    extern fn add_sources { mut b: Build, exe: Exe, dir: []u8 }
+    fn add_sources { mut b: Build, exe: Exe, dir: []u8 } {
+        check{ &b, exe }
+        field{ s = dir, what = "directory" }
+        record{ &b, kind = "sources", exe, a = dir, more = "" }
+    }
 
     // Compiles exe's C at optimization level `level`, 0 to 3 (`-O0` to `-O3`), instead of 1.
-    #c::symbol{ name = "ctx_build_optimize" }
-    extern fn optimize { mut b: Build, exe: Exe, level: u32 }
+    fn optimize { mut b: Build, exe: Exe, level: u32 } {
+        check{ &b, exe }
+        if level > 3 {
+            let mut m = rt::message{ s = "build: optimization level " }
+            rt::add_u64{ &m, n = level }
+            rt::add{ &m, s = " is not 0, 1, 2 or 3" }
+            rt::fail_with{ m }
+        }
+        let digit: [1]u8 = [@trunc(u8, level) + '0']
+        record{ &b, kind = "optimize", exe, a = digit[..], more = "" }
+    }
 
     // Links exe with library `lib`: `-l lib`.
-    #c::symbol{ name = "ctx_build_link" }
-    extern fn link { mut b: Build, exe: Exe, lib: []u8 }
+    fn link { mut b: Build, exe: Exe, lib: []u8 } {
+        check{ &b, exe }
+        field{ s = lib, what = "library" }
+        record{ &b, kind = "link", exe, a = lib, more = "" }
+    }
 
     // Links exe with a macOS framework: `-framework name`.
-    #c::symbol{ name = "ctx_build_framework" }
-    extern fn framework { mut b: Build, exe: Exe, name: []u8 }
+    fn framework { mut b: Build, exe: Exe, name: []u8 } {
+        check{ &b, exe }
+        field{ s = name, what = "framework" }
+        record{ &b, kind = "framework", exe, a = name, more = "" }
+    }
 
     // Looks for exe's libraries in directory `path` too: `-L path`.
-    #c::symbol{ name = "ctx_build_lib_path" }
-    extern fn lib_path { mut b: Build, exe: Exe, path: []u8 }
+    fn lib_path { mut b: Build, exe: Exe, path: []u8 } {
+        check{ &b, exe }
+        field{ s = path, what = "library path" }
+        record{ &b, kind = "libpath", exe, a = path, more = "" }
+    }
 
-    #c::symbol{ name = "ctx_build_os" }
-    extern fn os { mut b: Build } -> Os
+    fn os { mut b: Build } -> Os {
+        return os::OS
+    }
+
+    // ---- the graph: one record per line, its fields separated by tabs, to the file
+    // CTX_BUILD_OUT names (ctxc/drive.ctx reads it), or to standard output without it:
+    //   exe ID NAME ROOT    sources ID DIR    optimize ID LEVEL
+    //   link ID LIB    framework ID NAME    libpath ID PATH
+
+    // What a build program has described, in std's state (rt::State): how many executables,
+    // and once `opened`, the C library's FILE for CTX_BUILD_OUT, or 0 for standard output.
+    struct Graph { exes: u32, opened: bool, file: u64 }
+
+    // The C library's, to write CTX_BUILD_OUT's file as the program goes. A FILE * is a number
+    // here, as a DIR * is in std/os/posix.
+    extern fn getenv { mut b: Build, name: c::String } -> ?c::String
+    extern fn fopen { mut b: Build, path: c::String, mode: c::String } -> u64
+    extern fn fwrite { mut b: Build, bytes: *u8, size: usize, count: usize, file: u64 } -> usize
+    extern fn fflush { mut b: Build, file: u64 } -> i32
+
+    fn record { mut b: Build, kind: []u8, exe: Exe, a: []u8, more: []u8 } {
+        let g = &rt::state{ io = &b }.graph
+        if not g.opened {
+            g.opened = true
+            let path = getenv{ &b, name = "CTX_BUILD_OUT" }
+            if path is some{ value } and c::len{ s = value } > 0 {
+                g.file = fopen{ &b, path = value, mode = "wb" }
+                if g.file == 0 { rt::fail{ msg = "build: cannot write CTX_BUILD_OUT" } }
+            }
+        }
+        let mut digits: [20]u8
+        write{ &b, g, s = kind }
+        write{ &b, g, s = "\t" }
+        write{ &b, g, s = utf8::fmt_u64{ n = exe.id, into = digits[..] }.bytes }
+        write{ &b, g, s = "\t" }
+        write{ &b, g, s = a }
+        if more.len > 0 {
+            write{ &b, g, s = "\t" }
+            write{ &b, g, s = more }
+        }
+        write{ &b, g, s = "\n" }
+        if g.file != 0 { _ = fflush{ &b, file = g.file } }
+    }
+
+    fn write { mut b: Build, g: *mut Graph, s: []u8 } {
+        if g.file == 0 {
+            io::write{ io = &b, to = io::Stream::out, bytes = s }
+        } else if s.len > 0 {
+            _ = fwrite{ &b, bytes = s.ptr, size = 1, count = s.len, file = g.file }
+        }
+    }
+
+    // Panics unless s can be a record's field: not empty, without a tab, a line break or a zero.
+    fn field { s: []u8, what: []u8 } {
+        if s.len == 0 {
+            let mut m = rt::message{ s = "build: empty " }
+            rt::add{ &m, s = what }
+            rt::fail_with{ m }
+        }
+        let mut i: usize = 0
+        while i < s.len {
+            let c = s[i]
+            if c == '\t' or c == '\n' or c == '\r' or c == 0 {
+                let mut m = rt::message{ s = "build: a " }
+                rt::add{ &m, s = what }
+                rt::add{ &m, s = " cannot hold a tab, a line break or a zero byte" }
+                rt::fail_with{ m }
+            }
+            i = i + 1
+        }
+    }
+
+    // Panics unless exe is one of the build's.
+    fn check { mut b: Build, exe: Exe } {
+        if exe.id >= rt::state{ io = &b }.graph.exes {
+            let mut m = rt::message{ s = "build: no executable " }
+            rt::add_u64{ &m, n = exe.id }
+            rt::fail_with{ m }
+        }
+    }
 }

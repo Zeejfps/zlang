@@ -3,9 +3,16 @@
 // functions it names differently.
 
 namespace sys {
+    const OS: build::Os = build::Os::linux
+
     // Where this thread's errno is: a macro in C, over this function.
     #c::symbol{ name = "__errno_location" }
     extern fn errno { mut fs: Fs } -> *mut i32
+    #c::symbol{ name = "__errno_location" }
+    extern fn proc_errno { mut proc: os::Proc } -> *mut i32
+
+    // sysconf's name for how many processors are online.
+    const SC_NPROCESSORS_ONLN: i32 = 84
 
     // open's flags, besides O_RDONLY (0) and O_WRONLY (1), which every system shares.
     const O_CREAT: i32 = 0x40
@@ -27,5 +34,48 @@ namespace sys {
 
     fn open { mut fs: Fs, path: *u8, flags: i32, mode: u32 } -> i32 {
         return c_open{ &fs, path, flags, mode }
+    }
+
+    extern fn readlink { mut proc: os::Proc, path: c::String, buf: *mut u8, size: usize } -> i64
+
+    // The absolute path of this program's executable, which /proc/self/exe links to; empty if
+    // Linux won't say. In memory from malloc, for good.
+    fn exe_path { mut proc: os::Proc } -> []u8 {
+        let mut buf: [4096]u8
+        let n = readlink{ &proc, path = "/proc/self/exe", buf = buf[..].ptr, size = 4096 }
+        if n <= 0 or n >= 4096 { return "" }
+        let k = @as(usize, n)
+        let p = os::c_malloc{ &proc, size = k } ifnull { return "" }
+        let path = @slice(p, k)
+        slice::copy(u8){ dst = path, src = buf[..k] }
+        return path
+    }
+
+    // getrlimit's and setrlimit's struct rlimit, for RLIMIT_STACK.
+    struct Rlimit { cur: u64, max: u64 }
+
+    extern fn getrlimit { mut proc: os::Proc, resource: i32, mut limit: Rlimit } -> i32
+    extern fn setrlimit { mut proc: os::Proc, resource: i32, mut limit: Rlimit } -> i32
+    extern fn execv { mut proc: os::Proc, path: c::String, argv: *?*u8 } -> i32
+
+    const RLIMIT_STACK: i32 = 3
+    const RLIM_INFINITY: u64 = 18446744073709551615
+    const STACK_RESERVE: u64 = 268435456
+
+    // Linux has no link flag for the main thread's stack: its size is RLIMIT_STACK, usually
+    // 8 MiB, below rt's 16 MiB check, so deep recursion would crash instead of panicking. The
+    // limit is raised to what Windows and macOS executables reserve, 256 MiB, and the program
+    // runs itself again, since the kernel places the stack's neighbours when it starts a
+    // program. Once the limit is high enough, or can't be raised, this does nothing.
+    fn start { mut proc: os::Proc, argv: *?*u8 } {
+        let mut rl = Rlimit{ cur = 0, max = 0 }
+        if getrlimit{ &proc, resource = RLIMIT_STACK, limit = &rl } != 0 { return }
+        if rl.cur == RLIM_INFINITY or rl.cur >= STACK_RESERVE { return }
+        let mut want = STACK_RESERVE
+        if rl.max != RLIM_INFINITY and want > rl.max { want = rl.max }
+        if want <= rl.cur { return }
+        rl.cur = want
+        if setrlimit{ &proc, resource = RLIMIT_STACK, limit = &rl } != 0 { return }
+        _ = execv{ &proc, path = "/proc/self/exe", argv }      // returns only if it failed: carry on
     }
 }

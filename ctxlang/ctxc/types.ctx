@@ -25,6 +25,7 @@ namespace types {
     const FIRST_PRIM: Id = 3             // Prim p has id FIRST_PRIM + p
     const I32: Id = 5
     const U8: Id = 7
+    const U32: Id = 9
     const USIZE: Id = 11
     const BOOL: Id = 14
     const STRLIT: Id = 15

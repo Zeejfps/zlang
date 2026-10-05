@@ -655,7 +655,7 @@ namespace emit {
                 i = i + 1
             }
         }
-        ir_print::text{ o = &all, a = ". Compile with ctxc/rt/ctxrt.c.\n#include \"ctxrt.h\"\n\n" }
+        ir_print::text{ o = &all, a = ". Compile with ctxc/rt/ctxrt.c, and ctxfloat.c if it uses floats as text.\n#include \"ctxrt.h\"\n\n" }
         ir_print::bytes{ o = &all, b = list::items{ list = typed.bytes } }
         ir_print::bytes{ o = &all, b = list::items{ list = proto.bytes } }
         ir_print::char{ o = &all, c = '\n' }
@@ -1236,8 +1236,11 @@ namespace emit {
         put{ &e, a = "\n}\n\n" }
     }
 
-    // The file table, and `int main`, which supplies main's capabilities and args and returns
-    // its exit code.
+    // The file table, and `int main` (spec §15, Entry point). It gives the runtime the file
+    // table and the `#panic` fn (ctx_on_panic), then calls the `#start` fn with C's argc and
+    // argv and main as a function value (ctx_main_value), which supplies main's capabilities and
+    // returns its exit code. Without a start fn, it calls main itself, with no args; without a
+    // panic fn, a panic stops the program at once (ctxrt.c, `report`).
     fn entry { mut e: E } {
         let f = e.p.fns[e.p.main]
         put{ &e, a = "static const char *const ctx_file_table[] = {" }
@@ -1248,23 +1251,88 @@ namespace emit {
             i = i + 1
         }
         put{ &e, a = "\"\" };\n\n" }
-        put{ &e, a = "int main(int argc, char **argv) {\n    static char cap[1];\n    ctx_init(ctx_file_table, " }
+        if e.p.panic != NONE {
+            let h = e.p.fns[e.p.panic]
+            put{ &e, a = "static void ctx_on_panic(ctx_slice msg, ctx_slice file, uint32_t line, uint32_t col) {\n    static char cap[1];\n    " }
+            mark_id{ &e, kind = 'f', id = h.id }
+            ch{ &e, c = '(' }
+            supply{ &e, f = h }
+            put{ &e, a = ");\n}\n\n" }
+        }
+        if e.p.start == NONE {
+            put{ &e, a = "int main(int argc, char **argv) {\n" }
+            begin{ &e }
+            put{ &e, a = "    static char cap[1];\n    " }
+            if is_void{ e, t = f.ret } {
+                call_main{ &e, f, args = "" }
+                put{ &e, a = ";\n    return 0;\n}\n" }
+            } else {
+                put{ &e, a = "return " }
+                call_main{ &e, f, args = "" }
+                put{ &e, a = ";\n}\n" }
+            }
+            return
+        }
+        let s = e.p.fns[e.p.start]
+        let run = param_type_of{ e, f = s, name = "main" }
+        if run != NONE {
+            let func{ params, ret } = ty{ e, id = run } else { @panic("emit: a start fn's main isn't a function") }
+            put{ &e, a = "static " }
+            tn{ &e, t = ret }
+            put{ &e, a = " ctx_main_code(ctx_fn *self, " }
+            code_param{ &e, q = params[0] }
+            put{ &e, a = " args) {\n    static char cap[1];\n    (void)self;\n    " }
+            if is_void{ e, t = f.ret } {
+                call_main{ &e, f, args = "args" }
+                put{ &e, a = ";\n    return 0;\n}\n" }
+            } else {
+                put{ &e, a = "return " }
+                call_main{ &e, f, args = "args" }
+                put{ &e, a = ";\n}\n" }
+            }
+            put{ &e, a = "static ctx_fn ctx_main_value = { (void (*)(void))ctx_main_code };\n\n" }
+        }
+        put{ &e, a = "int main(int argc, char **argv) {\n" }
+        begin{ &e }
+        put{ &e, a = "    static char cap[1];\n    return " }
+        mark_id{ &e, kind = 'f', id = s.id }
+        ch{ &e, c = '(' }
+        supply{ &e, f = s }
+        put{ &e, a = ");\n}\n" }
+    }
+
+    // `ctx_start(...)`: the file table and the panic fn, for the runtime's panics.
+    fn begin { mut e: E } {
+        put{ &e, a = "    ctx_start(ctx_file_table, " }
         num{ &e, n = e.p.files.len }
-        put{ &e, a = ", CTX_PROGRAM_NAME, argc, argv);\n    " }
-        let void_ret = is_void{ e, t = f.ret }
-        if not void_ret { put{ &e, a = "int32_t code = " } }
+        put{ &e, a = ", CTX_PROGRAM_NAME, " }
+        put{ &e, a = if e.p.panic != NONE { "ctx_on_panic" } else { "0" } }
+        put{ &e, a = ");\n" }
+    }
+
+    // `f_main(...)`: main's capabilities, and its args from the C expression `args`, or none
+    // if that is empty.
+    fn call_main { mut e: E, f: ir::Func, args: []u8 } {
         mark_id{ &e, kind = 'f', id = f.id }
         ch{ &e, c = '(' }
-        i = 0
+        let mut i = 0
         while i < f.params.len {
             if i > 0 { put{ &e, a = ", " } }
             let q = f.params[i]
             if q.mutable {
                 put{ &e, a = "(void *)cap" }
             } else if slice::eq_bytes{ a = q.name, b = "args" } {
-                put{ &e, a = "CTX_BITCAST(" }
-                tn{ &e, t = q.ty }
-                put{ &e, a = ", ctx_args())" }
+                if args.len == 0 {
+                    ch{ &e, c = '(' }
+                    tn{ &e, t = q.ty }
+                    put{ &e, a = "){0}" }
+                } else {
+                    put{ &e, a = "CTX_BITCAST(" }
+                    tn{ &e, t = q.ty }
+                    put{ &e, a = ", " }
+                    put{ &e, a = args }
+                    ch{ &e, c = ')' }
+                }
             } else {
                 ch{ &e, c = '(' }
                 tn{ &e, t = q.ty }
@@ -1272,9 +1340,44 @@ namespace emit {
             }
             i = i + 1
         }
-        put{ &e, a = ");\n    return ctx_exit(" }
-        if void_ret { ch{ &e, c = '0' } } else { put{ &e, a = "code" } }
-        put{ &e, a = ");\n}\n" }
+        ch{ &e, c = ')' }
+    }
+
+    // The arguments of a `#start` or `#panic` fn f, which the checker allows (check::hook_field):
+    // its capabilities, and each other field from the C variable of its name, converted to the
+    // field's C type, and `main` as ctx_main_value.
+    fn supply { mut e: E, f: ir::Func } {
+        let mut i = 0
+        while i < f.params.len {
+            if i > 0 { put{ &e, a = ", " } }
+            let q = f.params[i]
+            if q.mutable {
+                put{ &e, a = "(void *)cap" }
+            } else if is_cap{ e, t = q.ty } {
+                ch{ &e, c = '(' }
+                tn{ &e, t = q.ty }
+                put{ &e, a = "){}" }
+            } else if slice::eq_bytes{ a = q.name, b = "main" } {
+                put{ &e, a = "&ctx_main_value" }
+            } else {
+                put{ &e, a = "CTX_BITCAST(" }
+                tn{ &e, t = q.ty }
+                put{ &e, a = ", " }
+                raw{ &e, b = q.name }
+                ch{ &e, c = ')' }
+            }
+            i = i + 1
+        }
+    }
+
+    // The type of f's param `name`, or NONE without one.
+    fn param_type_of { e: E, f: ir::Func, name: []u8 } -> ir::TypeId {
+        let mut i = 0
+        while i < f.params.len {
+            if slice::eq_bytes{ a = f.params[i].name, b = name } { return f.params[i].ty }
+            i = i + 1
+        }
+        return NONE
     }
 
     // ---- statements

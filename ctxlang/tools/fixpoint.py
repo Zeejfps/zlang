@@ -46,7 +46,7 @@ def cc(c, exe):
     start = time.perf_counter()
     comp, env = toolchain.compiler()
     cmd = comp + toolchain.CFLAGS + ['-I', toolchain.RT, '-DCTX_PROGRAM_NAME="ctxc"', c,
-                                     toolchain.runtime_object(comp, env), '-o', exe, '-lm']
+                                     *toolchain.runtime_objects(comp, env, c), '-o', exe, '-lm']
     r = subprocess.run(cmd + toolchain.stack_flags(), capture_output=True, text=True, env=env)
     if r.returncode != 0:
         sys.exit(f'C compiler failed on {c}:\n{r.stderr[:2000]}')

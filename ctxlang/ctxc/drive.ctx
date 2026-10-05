@@ -8,7 +8,7 @@
 // PATH is a .ctx file, or a directory: one program of all its .ctx files, or, if it has a
 // build.ctx, the executables its build program describes (spec §19), of which `run` runs the
 // first and `exe` writes the first to OUT. A build program is compiled and run first, with
-// CTX_BUILD_OUT naming the file for its graph (ctxrt.c, "build").
+// CTX_BUILD_OUT naming the file for its graph (std/build.ctx).
 //
 // ctxc finds std/ and ctxc/rt/ in its home: CTX_HOME if set, else the first directory holding
 // both above its executable, else above the working directory. The C compiler is `cc`, or CTX_CC
@@ -24,7 +24,9 @@
 // named after it and a hash of its absolute path, so ctxcs building different programs at once
 // share no file but the runtime's objects:
 //
-//   ctxrt-HASH.o                 the runtime, compiled once for each runtime, compiler and flags
+//   ctxrt-HASH.o                 the runtime, compiled once for each runtime, compiler and flags,
+//   ctxfloat-HASH.o              and floats as text (ctxc/rt/ctxfloat.c), for the programs
+//                                that use them
 //   PROGRAM-HASH/                a program's
 //       EXE-HASH.c, EXE-HASH.o   a unit's C, to read, and its object, HASH being of its C, the
 //                                runtime's sources, the C compiler and the flags
@@ -212,7 +214,7 @@ namespace drive {
         return @as(usize, n)
     }
 
-    // The stack ctxrt.c lets this program use before it panics: CTX_STACK bytes, at most 200
+    // The stack std's rt lets this program use before it panics: CTX_STACK bytes, at most 200
     // MiB, or 16 MiB.
     fn host_stack { mut proc: Proc } -> u64 {
         let set = proc::env{ &proc, name = "CTX_STACK" } ifnull { return 16777216 }
@@ -476,7 +478,11 @@ namespace drive {
             waited = waited + 1
         }
         if not good { return null }
-        let rt_obj = runtime_object{ &io, &fs, &proc, &heap, d, rt, cflags } ifnull { return null }
+        let rt_obj = runtime_object{ &io, &fs, &proc, &heap, d, rt, cflags, name = "ctxrt" } ifnull { return null }
+        let mut float_obj: []u8 = ""
+        if uses_float{ units } {
+            float_obj = runtime_object{ &io, &fs, &proc, &heap, d, rt, cflags, name = "ctxfloat" } ifnull { return null }
+        }
 
         let mut into = out
         if out.len == 0 {
@@ -500,6 +506,7 @@ namespace drive {
             add_all{ xs = &argv, ys = list::items{ list = objs } }
         }
         try! list::push{ list = &argv, item = rt_obj }
+        if float_obj.len > 0 { try! list::push{ list = &argv, item = float_obj } }
         add_all{ xs = &argv, ys = ldflags }
         let linked = compiled{ &io, &proc, d, argv = list::items{ list = argv } }
         if rsp.len > 0 { _ = fs::remove{ &fs, path = rsp } }
@@ -554,13 +561,34 @@ namespace drive {
         return true
     }
 
-    // The runtime compiled with cflags: HOME/build/run/ctxrt-HASH.o, which every program built
+    // Whether a program's C uses ctxfloat.c, whose functions' names all start with ctx_float_
+    // or ctx_f2i_: std's ascii natives and the float-to-integer @as (ctxrt.h).
+    fn uses_float { units: [][]u8 } -> bool {
+        let mut i: usize = 0
+        while i < units.len {
+            if contains{ s = units[i], part = "ctx_float_" } or contains{ s = units[i], part = "ctx_f2i_" } { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    fn contains { s: []u8, part: []u8 } -> bool {
+        if part.len == 0 { return true }
+        let mut i: usize = 0
+        while i + part.len <= s.len {
+            if s[i] == part[0] and slice::eq_bytes{ a = s[i..i + part.len], b = part } { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // Runtime file NAME.c compiled with cflags: HOME/build/run/NAME-HASH.o, which every program built
     // with the same runtime, compiler and flags shares. Null after saying why there is none.
-    fn runtime_object { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, d: Driver, rt: []u8, cflags: [][]u8 } -> ?[]u8 {
+    fn runtime_object { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, d: Driver, rt: []u8, cflags: [][]u8, name: []u8 } -> ?[]u8 {
         let mut h = mix_u64{ h = FNV_BASIS, n = d.rt }
         h = mix_all{ h, xs = d.cc }
         h = mix_all{ h, xs = cflags }
-        let base = join{ &heap, a = d.runs, b = "ctxrt" }
+        let base = join{ &heap, a = d.runs, b = name }
         let obj = cat{ &heap, a = cat{ &heap, a = base, b = "-" }, b = cat{ &heap, a = hex{ &heap, n = h }, b = ".o" } }
         if kind_of{ &fs, path = obj } == 1 { return obj }
         let tmp = claim{ &io, &fs, &heap, base, ext = ".o" } ifnull { return null }
@@ -570,7 +598,7 @@ namespace drive {
         try! list::push{ list = &argv, item = "-I" }
         try! list::push{ list = &argv, item = rt }
         try! list::push{ list = &argv, item = "-c" }
-        try! list::push{ list = &argv, item = join{ &heap, a = rt, b = "ctxrt.c" } }
+        try! list::push{ list = &argv, item = join{ &heap, a = rt, b = cat{ &heap, a = name, b = ".c" } } }
         try! list::push{ list = &argv, item = "-o" }
         try! list::push{ list = &argv, item = tmp }
         if not compiled{ &io, &proc, d, argv = list::items{ list = argv } } {
@@ -594,7 +622,7 @@ namespace drive {
     }
 
     // What links an executable, after its objects: its build program's flags, the math library,
-    // and the main thread's stack, which ctxrt.c checks against 16 MiB (or CTX_STACK) and on
+    // and the main thread's stack, which std's rt checks against 16 MiB (or CTX_STACK) and on
     // Linux raises itself.
     fn link_flags { mut heap: Heap, os: build::Os, flags: [][]u8 } -> [][]u8 {
         let mut xs = list::new([]u8){ realloc = arena::alloc, &heap }
@@ -703,7 +731,7 @@ namespace drive {
     // A hash of the runtime's sources, which every executable is compiled with.
     fn runtime_hash { mut io: Io, mut fs: Fs, mut heap: Heap, home: []u8 } -> ?u64 {
         let mut h = FNV_BASIS
-        let names: [2][]u8 = ["ctxc/rt/ctxrt.c", "ctxc/rt/ctxrt.h"]
+        let names: [3][]u8 = ["ctxc/rt/ctxrt.c", "ctxc/rt/ctxrt.h", "ctxc/rt/ctxfloat.c"]
         let mut i: usize = 0
         while i < names.len {
             let p = join{ &heap, a = home, b = names[i] }

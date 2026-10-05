@@ -49,7 +49,7 @@ BOOT = os.path.join(ROOT, 'bootstrap', f'ctxc.{HOST}.c')
 CACHE = os.path.join(ROOT, 'build', 'cbackend')
 PROGS = os.path.join(ROOT, 'build', 'progs')
 NATIVE = os.path.join(ROOT, 'build', 'ctxc')
-STACK = 256 << 20         # reserved; ctxrt.c checks against CTX_STACK, at most 200 MiB
+STACK = 256 << 20         # reserved; std's rt checks against CTX_STACK, at most 200 MiB
 CTXC_STACK = str(200 << 20)
 # No sibling calls: clang makes them at -O1, and a call must take a frame for unbounded
 # recursion to overflow the stack rather than loop forever. No strict aliasing: @cast reads memory
@@ -195,9 +195,9 @@ def link(tmp_c, c, exe, name, flags=(), cflags=CFLAGS):
     to c. The runtime is compiled with CFLAGS."""
     tmp_exe = exe + f'.{os.getpid()}.tmp'
     cc, env = compiler()
-    rt_obj = runtime_object(cc, env)
+    rt_objs = runtime_objects(cc, env, tmp_c)
     name_def = '-DCTX_PROGRAM_NAME="' + name.replace('\\', '\\\\').replace('"', '\\"') + '"'
-    cmd = cc + list(cflags) + ['-I', RT, name_def, tmp_c, rt_obj, '-o', tmp_exe, *flags, '-lm']
+    cmd = cc + list(cflags) + ['-I', RT, name_def, tmp_c, *rt_objs, '-o', tmp_exe, *flags, '-lm']
     cmd += stack_flags()
     r = subprocess.run(cmd, capture_output=True, text=True, env=env)
     replace(tmp_c, c)
@@ -206,15 +206,32 @@ def link(tmp_c, c, exe, name, flags=(), cflags=CFLAGS):
     replace(tmp_exe, exe)
 
 
-def runtime_object(cc, env):
-    obj = os.path.join(CACHE, 'ctxrt-' + runtime_hash()[:16] + '.o')
+def runtime_objects(cc, env, c=None):
+    """The runtime's objects to link the C at path c with: ctxrt.c's, and ctxfloat.c's if the C
+    uses it, as ctxc's driver links them (ctxc/drive.ctx, uses_float); both without c."""
+    names = ['ctxrt']
+    if c is None or uses_float(c):
+        names.append('ctxfloat')
+    return [runtime_object(cc, env, name) for name in names]
+
+
+def uses_float(c):
+    """Whether the C at path c calls ctxfloat.c, whose functions' names start with ctx_float_ or
+    ctx_f2i_."""
+    with open(c, 'rb') as f:
+        text = f.read()
+    return b'ctx_float_' in text or b'ctx_f2i_' in text
+
+
+def runtime_object(cc, env, name='ctxrt'):
+    obj = os.path.join(CACHE, f'{name}-' + runtime_hash()[:16] + '.o')
     if not os.path.exists(obj):
         os.makedirs(CACHE, exist_ok=True)
         tmp = obj + f'.{os.getpid()}.tmp'
-        r = subprocess.run(cc + CFLAGS + ['-c', os.path.join(RT, 'ctxrt.c'), '-o', tmp],
+        r = subprocess.run(cc + CFLAGS + ['-c', os.path.join(RT, name + '.c'), '-o', tmp],
                            capture_output=True, text=True, env=env)
         if r.returncode != 0:
-            raise RuntimeError(f'C compiler failed on ctxrt.c:\n{r.stderr}')
+            raise RuntimeError(f'C compiler failed on {name}.c:\n{r.stderr}')
         replace(tmp, obj)
     return obj
 

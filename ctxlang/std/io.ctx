@@ -16,12 +16,15 @@ capability Io
 namespace io {
     enum Stream: u32 { out, err }
 
-    // Standard output's buffer, the runtime's (ctxrt.c), since a panic and the program's end
-    // flush it too: the bytes in buf[..len] are waiting to be written.
+    // Standard output's buffer, in std's state for the whole program (rt::State), since a panic
+    // and the program's end flush it too: the bytes in buf[..len] are waiting to be written.
     struct Out { buf: []mut u8, len: usize }
 
-    #c::symbol{ name = "ctx_io_out" }
-    extern fn out_buffer { mut io: Io } -> *mut Out
+    fn out_buffer { mut io: Io } -> *mut Out {
+        let s = rt::state{ &io }
+        if s.out.buf.len == 0 { s.out.buf = s.out_bytes[..] }
+        return &s.out
+    }
 
     // Writes bytes to standard output or standard error. Standard output is buffered, and written
     // out before anything goes to standard error or is read from standard input.

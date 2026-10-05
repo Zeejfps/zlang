@@ -12,7 +12,8 @@
 //   ctxc interp PATH [-- ARGS...]               checks the program at PATH as `run` does, and
 //                                               runs its main in the interpreter (eval.ctx)
 //   ctxc build OUT.c STD... -- FILE...          checks the program of FILE..., with std's files
-//                                               STD..., and writes it as C, for ctxc/rt/ctxrt.c;
+//                                               STD..., and writes it as C, for ctxc/rt/ctxrt.c
+//                                               (and ctxfloat.c);
 //                                               or prints its errors and exits with 1
 //   ctxc ir STD... -- FILE...                   checks the program and prints its IR, or its
 //                                               diagnostics if it has errors (lower.ctx)

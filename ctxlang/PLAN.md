@@ -44,28 +44,29 @@ mislead.
 
 The goal is real programs over C libraries: OpenGL or Vulkan rendering, windowing, audio.
 
-1. **proc over the layers.** `ctx_proc_run`, `ctx_proc_exe_path` and Windows' `ctx_proc_env`
-   move into ctxlang. The runtime then keeps only what has to be C: startup, panics, the stack
-   check, and small helpers. Float formatting and parsing (shortest round-trip text) may stay in
-   C.
-   - `proc.ctx`, shared: argv and env checks, whether an entry overrides an inherited one
-     (case-insensitive on Windows), and the status-to-error mapping.
-   - posix (`std/os/posix`): argv and env as `?c::String` arrays, `posix_spawnp` (which returns
-     the error number itself), `waitpid` retried on EINTR, and the exit status decoded with bit
-     operations, since `WIFEXITED` and the rest are macros; the encoding is the same on Linux
-     and macOS. The environment to merge comes from `os::Proc`'s `environ`. The executable's
-     path differs, so it goes in `sys`: `readlink("/proc/self/exe")` on Linux,
-     `_NSGetExecutablePath` and `realpath` on macOS.
-   - windows: `quote_arg` in ctxlang, UTF-8 to UTF-16 and back, the `GetEnvironmentStringsW`
-     block walked with pointer arithmetic, `CreateProcessW` with `STARTUPINFOW` and
-     `PROCESS_INFORMATION` as ctxlang structs, `_wgetenv`, `GetModuleFileNameW`. This also
-     tests Windows' code paths in the driver.
-   - The C code uses `malloc` and flushes stdout before the child starts. In ctxlang both show
-     in the signatures: `run`, `env` and `exe_path` take an allocator, as `fs::list` does, and
-     `run` takes `Io` for the flush. *To settle.*
-2. **`const OS` in each layer**, so that `proc::os` and `build::os` stop calling `ctx_build_os`.
-3. **`#c::export{ name }`**, for a public symbol, over the callback thunk.
-4. **Loading a library at run time**, where the capability means "it loaded".
+1. **`#c::export{ name }`**, for a public symbol, over the callback thunk.
+2. **Loading a library at run time**, where the capability means "it loaded".
+3. **Floats as text in ctxlang.** `ctxc/rt/ctxfloat.c` is the last of std's natives in C:
+   shortest round-trip printing over `snprintf`, as Python's `repr`, and parsing over `strtod`,
+   which a program links only if its C uses them (drive.ctx, `uses_float`). A printer with
+   exact big-integer digits (Steele and White's, or Ryu's tables) and a correctly rounding
+   parser would make std need no C of its own. The failed float-to-integer `@as` writes its
+   value as text too, so its message would come from std as well, through the panic fn.
+
+*Done: the runtime's natives in ctxlang.* The runtime (ctxc/rt/ctxrt.c) keeps only what
+ctxlang can't say: the checks' panics, which write their messages without the C library, the
+stack check's limit, function values' records (calloc and free, its only C library calls), and
+zeroed storage for std's state (`ctx_state`). Starting the program is std's `#start` fn
+(std/rt.ctx): the platform's setup (binary mode on Windows, the stack's re-exec on Linux),
+`args`, `CTX_STACK`, and standard output written out at the end; reporting a panic is its
+`#panic` fn. A program may replace either (spec §15). proc, the build graph, `mem::reserve`
+and the arena's commit are ctxlang over the layers, each with `const OS`. `Proc` and `Build`
+include `Io`: `run` writes standard output out before a child starts, and a build's graph goes
+to standard output without `CTX_BUILD_OUT`. The layers take temporary memory for proc from
+malloc, as the C did, rather than from an allocator in `run`'s signature. On Windows,
+`reserve` keeps no table of regions: `commit` asks VirtualQuery whether the memory is
+committed yet, so any number of arenas may reserve, and an arena over other memory costs one
+query a MiB.
 
 *Done: several C files, compiled at once* (emit_c.ctx's "Units", drive.ctx). A big program's C is
 units of about 256 KiB, grouped by the files that declare their functions, compiled as many at a
@@ -99,7 +100,9 @@ another.
 - A build program naming a layer of its own for a platform std doesn't know
   (`build::platform{ &b, exe, dir }`), so that a port supplies `namespace os` without editing std.
 - A target with no layer at all, where everything that takes no capability still works
-  (freestanding). It also needs the runtime's startup and panics replaced.
+  (freestanding). A program supplies its own `#start` and `#panic` fns (spec §15); what's left
+  is std compiling without a layer, the C library's calloc and free behind function values'
+  records, and memcpy, memset and fmod, which C compilers call themselves.
 - Threads. A `#c::callback` must be called on the thread that called into C, since the stack
   limit and the runtime's stdout buffer are global; threads would need a `_Thread_local` limit
   and an entry thunk.
@@ -188,7 +191,8 @@ declares attributes the compiler acts on.
   beside `#convert` and `#write`, among the attributes the compiler declares itself.
 - `main`'s `args` is checked against std's `Args`; it can be checked as `[][]u8`. Only `fn build`
   may take std's `Build`.
-- The runtime fills `io`'s `Out`, a struct whose layout std defines (`ctxrt.c`, `out_buffer`).
+- The interpreter emulates the runtime's `ctx_state` and writes standard output out at the end
+  itself, so it knows that std's `rt::State` starts with `io`'s `Out` (eval.ctx, `flush`).
 
 *Later, for literal conversions* (spec §18; `ctxc/comptime.ctx`):
 - `intlit` (a number literal, as its digits, for a big-integer type) and `arraylit` (an array
@@ -304,7 +308,7 @@ and fuzzing (`#fuzz` over a `[]u8` input), both built in as Go has them.
 ## Working on ctxc
 
 ```
-cc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -Ictxc/rt bootstrap/ctxc.linux.c ctxc/rt/ctxrt.c -lm -o ctxc
+cc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -Ictxc/rt bootstrap/ctxc.linux.c ctxc/rt/ctxrt.c ctxc/rt/ctxfloat.c -lm -o ctxc
 ./ctxc run examples/wordcount.ctx -- spec.md             # a file
 ./ctxc run examples/json -- examples/json/sample.json    # a directory
 ./ctxc run examples/glfw                                 # a directory with a build program
@@ -346,7 +350,7 @@ in one step; `fixpoint.py` says when one is out of date.
   against 100 ms for the check alone. It hasn't been profiled.
 - The C backend prints no `in fn` stack trace with a panic (see Open decisions).
 - On Linux and macOS, `mem::pages` clears its memory with memset (std/os/posix), touching every
-  page up front; calloc, as `mem::reserve` uses (ctxrt.c), would leave that to the OS. ctxc's
+  page up front; calloc, as `mem::reserve` uses (std/os/posix), would leave that to the OS. ctxc's
   own arenas use `reserve`. Untested there, so left for a machine that can run it.
 - 20 corpus programs read temporary files that the test suite deletes once it's done.
   `tools/corpus.py` should copy those files into the case directory.
@@ -391,9 +395,10 @@ program asks for one (spec §19).
 | const of array, struct or union type | `static const qvN = VALUE;` | The checker folds the value to literals; `[x; N]` is a GNU range designator. A scalar const is its value at each use. Const array slices borrow this static storage read-only, without copying; each C unit may have its own copy. |
 | `if`/`match` expressions | GNU statement expressions | A branch that leaves uses `return`, `break` or `continue`. |
 | argument order | temporaries | C leaves argument evaluation order unspecified; ctxlang evaluates left to right. |
-| `@panic`, runtime panics | `ctx_panic(line, col, file, msg)` | `file:line:col: panic: msg`, exit code 134. `file` is FNV-1a of the file's name with the top bit set, which the runtime finds in main's file table, so a unit's C doesn't depend on the program's other files. |
+| `@panic`, runtime panics | `ctx_panic(line, col, file, msg)`, and `ctx_panic_index` and the rest for the checks | The runtime finds the file and calls the `#panic` fn (`ctx_on_panic`, which C's main gives it), once, with the stack check off; std's writes `file:line:col: panic: msg` and exits with 134. `file` is FNV-1a of the file's name with the top bit set, which the runtime finds in main's file table, so a unit's C doesn't depend on the program's other files. |
+| `fn main`, `#start` | C's `main` calls the start fn with `argc`, `argv` and `ctx_main_value`, a static function value whose code calls `f_main` with `(void *)cap` for each capability | emit_c.ctx, `entry`. Without a start fn, C's main calls `f_main` itself, with no args. |
 | fn | `f_NAME`, after its qualified name | Global across units, `static` in a program of one; a name that isn't an identifier, or a long one, is cut and gets a hash. Types, consts and the rest are numbered within each unit (emit_c.ctx, "Units"). |
-| stack overflow | check in each function prologue | Compares the frame address to a limit set at startup (16 MB, or `CTX_STACK`). Linked with a 256 MB stack on Windows and macOS; on Linux, raises `RLIMIT_STACK` to 256 MB and runs itself again. No sibling calls, so every call takes a frame. |
+| stack overflow | check in each function prologue | Compares the frame address to a limit std's start sets (`ctx_stack_set`: 16 MB below its frame, or `CTX_STACK`); 0 checks nothing. Linked with a 256 MB stack on Windows and macOS; on Linux, std raises `RLIMIT_STACK` to 256 MB and runs itself again (std/os/linux). No sibling calls, so every call takes a frame. |
 
 ## Testing
 

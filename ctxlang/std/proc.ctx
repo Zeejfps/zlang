@@ -16,38 +16,32 @@
 // for one.
 
 // Permission to start programs and to read this program's environment. It includes what its
-// platform's layer needs for that, os::Proc (std/os), such as C's environ.
-capability Proc { ..os::Proc }
+// platform's layer needs for that, os::Proc (std/os), such as C's environ, and the console,
+// which the programs it starts share: `run` writes standard output's buffer out first.
+capability Proc { ..os::Proc, ..Io }
 
 namespace proc {
     error not_found             // no such program, on PATH or at the path given
     error permission_denied
     error other{ code: i64 }    // the OS's error number
 
-    // ---- the runtime's (ctxrt.c)
-
-    #c::symbol{ name = "ctx_proc_run" }
-    extern fn sys_run { mut proc: Proc, argv: [][]u8, env: [][]u8, mut code: i32 } -> i64
-
-    #c::symbol{ name = "ctx_proc_spawn" }
-    extern fn sys_spawn { mut proc: Proc, argv: [][]u8, env: [][]u8, mut id: u64 } -> i64
-
-    #c::symbol{ name = "ctx_proc_wait" }
-    extern fn sys_wait { mut proc: Proc, id: u64, mut code: i32 } -> i64
-
     // How many processors this program may run on: at least 1.
-    #c::symbol{ name = "ctx_proc_processors" }
-    extern fn processors { mut proc: Proc } -> u32
+    fn processors { mut proc: Proc } -> u32 {
+        return os::processors{ &proc }
+    }
 
-    // The absolute path of this program's executable; empty if the OS won't say.
-    #c::symbol{ name = "ctx_proc_exe_path" }
-    extern fn exe_path { mut proc: Proc } -> []u8
+    // The absolute path of this program's executable; empty if the OS won't say. It lives until
+    // the program ends.
+    fn exe_path { mut proc: Proc } -> []u8 {
+        let s = rt::state{ io = &proc }
+        if s.exe_path.len == 0 { s.exe_path = os::exe_path{ &proc } }
+        return s.exe_path
+    }
 
     // The operating system this program runs on.
-    #c::symbol{ name = "ctx_build_os" }
-    extern fn os { mut proc: Proc } -> build::Os
-
-    // ----
+    fn os { mut proc: Proc } -> build::Os {
+        return os::OS
+    }
 
     // Runs program argv[0] with the arguments argv[1..] and waits for it to end. argv[0] is
     // looked for on PATH unless it holds a path separator. The program gets this one's
@@ -55,10 +49,8 @@ namespace proc {
     // shares its standard input, output and error. Returns the program's exit code; one that a
     // signal N killed has 128 + N, as a shell says.
     fn run { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> !i32 {
-        let mut code: i32 = 0
-        let r = sys_run{ &proc, argv, env, code = &code }
-        if r < 0 { return failed{ code = r } }
-        return code
+        let child = try spawn{ &proc, argv, env }
+        return try wait{ &proc, child }
     }
 
     // A program that `spawn` started, to `wait` for once: its process handle on Windows, its
@@ -68,18 +60,20 @@ namespace proc {
     // Starts a program as `run` does, without waiting for it: several may run at once. Every
     // child must be waited for, once.
     fn spawn { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> !Child {
-        let mut id: u64 = 0
-        let r = sys_spawn{ &proc, argv, env, id = &id }
-        if r < 0 { return failed{ code = r } }
-        return Child{ id }
+        if argv.len == 0 { rt::fail{ msg = "proc: run needs a program to run" } }
+        let mut i: usize = 0
+        while i < env.len {
+            let e = env[i]
+            if e.len == 0 or e[0] == '=' or key_len{ entry = e } == e.len { rt::fail{ msg = "proc: an environment entry is KEY=VALUE" } }
+            i = i + 1
+        }
+        io::flush{ io = &proc }
+        return Child{ id = try os::spawn{ &proc, argv, env } }
     }
 
     // Waits for a child to end, and returns its exit code as `run` does.
     fn wait { mut proc: Proc, child: Child } -> !i32 {
-        let mut code: i32 = 0
-        let r = sys_wait{ &proc, id = child.id, code = &code }
-        if r < 0 { return failed{ code = r } }
-        return code
+        return try os::wait{ &proc, id = child.id }
     }
 
     // The value of environment variable `name`, or null if it isn't set. It lives until the
@@ -88,10 +82,36 @@ namespace proc {
         return os::env{ &proc, name }
     }
 
-    // The error for the runtime's negative status, as fs::failed reads it.
-    fn failed(T) { code: i64 } -> !T {
-        if code == -1 { return not_found }
-        if code == -2 { return permission_denied }
-        return other{ code = -1000 - code }
+    // ---- for the platform's layer (std/os)
+
+    // Whether environment entry `entry` ("KEY=VALUE") has the key of one of env's entries, in
+    // the case the platform's keys are in (os::ENV_CASE): an entry of env replaces it.
+    fn overridden { entry: []u8, env: [][]u8 } -> bool {
+        let key = key_len{ entry }
+        let mut i: usize = 0
+        while i < env.len {
+            let e = env[i]
+            if e.len > key and e[key] == '=' and same_key{ a = e[..key], b = entry[..key] } { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // Where entry's key ends: at its first '=' but one at the start, as Windows' "=C:=C:\..."
+    // entries have; entry.len without one.
+    fn key_len { entry: []u8 } -> usize {
+        let mut i: usize = if entry.len > 0 and entry[0] == '=' { 1 } else { 0 }
+        while i < entry.len and entry[i] != '=' { i = i + 1 }
+        return i
+    }
+
+    fn same_key { a: []u8, b: []u8 } -> bool {
+        if os::ENV_CASE { return slice::eq_bytes{ a, b } }
+        let mut i: usize = 0
+        while i < a.len {
+            if ascii::to_lower{ c = a[i] } != ascii::to_lower{ c = b[i] } { return false }
+            i = i + 1
+        }
+        return true
     }
 }

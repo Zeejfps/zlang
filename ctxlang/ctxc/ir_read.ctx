@@ -54,6 +54,8 @@ namespace ir_read {
         let mut vars = list::new(ir::Var){ realloc = arena::alloc, heap = r.heap }
         let mut fns = list::new(ir::Func){ realloc = arena::alloc, heap = r.heap }
         let mut main = 0
+        let mut start = lower::NONE
+        let mut panic = lower::NONE
         while true {
             expect{ &r, c = '(' }
             if r.failed { break }
@@ -76,6 +78,10 @@ namespace ir_read {
                 try list::push{ list = &fns, item = try function{ &r } }
             } else if spells{ s = tag, lit = "extern" } {
                 try list::push{ list = &fns, item = try extern_fn{ &r } }
+            } else if spells{ s = tag, lit = "start" } {
+                start = id32{ &r }
+            } else if spells{ s = tag, lit = "panic" } {
+                panic = id32{ &r }
             } else if spells{ s = tag, lit = "main" } {
                 main = id32{ &r }
                 expect{ &r, c = ')' }
@@ -89,7 +95,7 @@ namespace ir_read {
         if r.pos < r.text.len { fail{ &r, problem = Problem::trailing_text } }
         return ir::Program{
             version, files, types = list::items{ list = types }, consts = list::items{ list = consts },
-            vars = list::items{ list = vars }, fns = list::items{ list = fns }, main,
+            vars = list::items{ list = vars }, fns = list::items{ list = fns }, main, start, panic,
         }
     }
 

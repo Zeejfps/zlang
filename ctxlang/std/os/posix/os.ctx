@@ -1,7 +1,8 @@
-// std: os on Linux and macOS. The platform's layer (spec §17): what io, mem, proc and fs need
-// from the operating system, over the C library and its environ. Every layer declares the same
-// functions; std/os/windows is Windows', and a build compiles one. What differs between Linux
-// and macOS is in namespace sys, std/os/linux or std/os/macos, which a build compiles beside it.
+// std: os on Linux and macOS. The platform's layer (spec §17): what io, mem, proc, fs and rt
+// need from the operating system, over the C library and its environ. Every layer declares the
+// same functions; std/os/windows is Windows', and a build compiles one. What differs between
+// Linux and macOS is in namespace sys, std/os/linux or std/os/macos, which a build compiles
+// beside it.
 
 namespace os {
     // What std's Proc holds on this platform: C's `char **environ`, the "KEY=VALUE" strings of
@@ -9,6 +10,12 @@ namespace os {
     capability Proc {
         extern environ: ?*?c::String,
     }
+
+    // The operating system this layer is for.
+    const OS: build::Os = sys::OS
+
+    // Whether the environment's keys are case-sensitive (proc::overridden).
+    const ENV_CASE: bool = true
 
     #c::symbol{ name = "write" }
     extern fn c_write { mut io: Io, fd: i32, buf: *u8, count: usize } -> i64
@@ -193,6 +200,168 @@ namespace os {
 
     fn dir_close { mut fs: Fs, mut dir: Dir } {
         _ = closedir{ &fs, dir = dir.handle }
+    }
+
+    // ---- for std's rt: starting the program, and ending it
+
+    #c::symbol{ name = "exit" }
+    extern fn c_exit { mut proc: Proc, code: i32 }
+
+    // Ends the program with exit code `code`, as C's exit does.
+    fn exit { mut proc: Proc, code: i32 } {
+        c_exit{ &proc, code }
+    }
+
+    // What the platform needs before main runs (sys::start).
+    fn start { mut io: Io, mut proc: Proc, argv: *?*u8 } {
+        sys::start{ &proc, argv }
+    }
+
+    // The command line's arguments after the program's name, as bytes: views of C's argv, in
+    // memory from `pages`.
+    fn args { mut mem: Mem, argc: i32, argv: *?*u8 } -> [][]u8 {
+        if argc <= 1 { return slice::empty([]u8){} }
+        let n = @as(usize, argc) - 1
+        let bytes = mem::pages{ &mem, size = n * @size_of([]u8) } ifnull {
+            rt::fail{ msg = "out of memory" }
+            return slice::empty([]u8){}
+        }
+        let items = slice::cast(u8, []u8){ s = bytes[..n * @size_of([]u8)] }
+        let mut i: usize = 0
+        while i < n {
+            let p = argv[i + 1] ifnull { break }
+            items[i] = c::bytes{ s = c::String{ ptr = p } }
+            i = i + 1
+        }
+        return items[..i]
+    }
+
+    // ---- memory for arenas (mem::reserve, arena::alloc)
+
+    #c::symbol{ name = "calloc" }
+    extern fn c_calloc { mut mem: Mem, count: usize, size: usize } -> ?*mut u8
+
+    // `size` bytes, a multiple of mem::PAGE, for an arena: zeroed and page-aligned. calloc gives
+    // zeroed memory that the OS supplies on first use: it takes a big block from mmap without
+    // clearing it. Null if there isn't enough memory.
+    fn reserve { mut mem: Mem, size: usize } -> ?*mut u8 {
+        if size > 18446744073709551615 - mem::PAGE { return null }
+        let p = c_calloc{ &mem, count = 1, size = size + mem::PAGE } ifnull { return null }
+        return p + (mem::PAGE - @addr(p) % mem::PAGE) % mem::PAGE
+    }
+
+    // Makes an arena's memory from first to last usable, which memory from `reserve` is here
+    // from the start.
+    fn commit { first: *u8, last: *u8 } -> bool {
+        return true
+    }
+
+    // ---- for std's proc: programs, started with posix_spawnp and waited for with waitpid. A
+    // child's id is its process id.
+
+    extern fn posix_spawnp { mut proc: Proc, mut pid: i32, file: *u8, actions: ?*u8, attrs: ?*u8, argv: *?*u8, envp: *?*u8 } -> i32
+    extern fn waitpid { mut proc: Proc, pid: i32, mut status: i32, options: i32 } -> i32
+    extern fn sysconf { mut proc: Proc, name: i32 } -> i64
+    #c::symbol{ name = "malloc" }
+    extern fn c_malloc { mut proc: Proc, size: usize } -> ?*mut u8
+    #c::symbol{ name = "free" }
+    extern fn c_free { mut proc: Proc, p: *mut u8 }
+
+    // Starts argv[0] with this program's environment, less the entries env replaces, and env's
+    // own. argv and env aren't empty and are checked (proc::spawn). Its arrays of C strings are
+    // in one block from malloc, while posix_spawnp copies them.
+    fn spawn { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> !u64 {
+        let inherited = proc.environ
+        let mut n: usize = 0
+        if inherited != null {
+            while inherited[n] != null { n = n + 1 }
+        }
+        let words = argv.len + 1 + n + env.len + 1
+        let mut size = words * 8
+        let mut i: usize = 0
+        while i < argv.len { size = size + argv[i].len + 1; i = i + 1 }
+        i = 0
+        while i < env.len { size = size + env[i].len + 1; i = i + 1 }
+        let block = c_malloc{ &proc, size } ifnull {
+            rt::fail{ msg = "out of memory" }
+            return proc::other{ code = 12 }
+        }
+        defer c_free{ &proc, p = block }
+        let ptrs = @slice(@cast(*mut ?*u8, block), words)
+        let mut text = block + words * 8
+        i = 0
+        while i < argv.len {
+            ptrs[i] = text
+            text = c_copy{ into = text, bytes = argv[i] }
+            i = i + 1
+        }
+        ptrs[argv.len] = null
+        let envp = argv.len + 1
+        let mut k = envp
+        i = 0
+        while inherited != null and i < n {
+            let entry = inherited[i] ifnull { break }
+            if not proc::overridden{ entry = c::bytes{ s = entry }, env } {
+                ptrs[k] = entry.ptr
+                k = k + 1
+            }
+            i = i + 1
+        }
+        i = 0
+        while i < env.len {
+            ptrs[k] = text
+            text = c_copy{ into = text, bytes = env[i] }
+            k = k + 1
+            i = i + 1
+        }
+        ptrs[k] = null
+        let file = ptrs[0] ifnull { return proc::not_found }
+        let mut pid: i32 = 0
+        let r = posix_spawnp{ &proc, pid = &pid, file, actions = null, attrs = null, argv = ptrs.ptr, envp = ptrs.ptr + envp }
+        if r != 0 { return proc_failed{ code = r } }
+        return @as(u64, pid)
+    }
+
+    // bytes and a zero at into; returns where they end.
+    fn c_copy { into: *mut u8, bytes: []u8 } -> *mut u8 {
+        let mut i: usize = 0
+        while i < bytes.len {
+            into[i] = bytes[i]
+            i = i + 1
+        }
+        into[bytes.len] = 0
+        return into + (bytes.len + 1)
+    }
+
+    // Waits for child `id` to end: its exit code, or 128 + N if signal N killed it. waitpid's
+    // status is decoded as WIFEXITED and the rest are, the same on Linux and macOS.
+    fn wait { mut proc: Proc, id: u64 } -> !i32 {
+        let mut status: i32 = 0
+        while waitpid{ &proc, pid = @as(i32, id), status = &status, options = 0 } < 0 {
+            let e = sys::proc_errno{ &proc }.*
+            if e != 4 { return proc_failed{ code = e } }              // EINTR: wait again
+        }
+        let signal = status & 127
+        if signal == 0 { return (status >> 8) & 255 }
+        if signal != 127 { return 128 + signal }
+        return 255
+    }
+
+    // How many processors this program may run on: at least 1.
+    fn processors { mut proc: Proc } -> u32 {
+        let n = sysconf{ &proc, name = sys::SC_NPROCESSORS_ONLN }
+        return if n > 0 and n < 4294967296 { @as(u32, n) } else { 1 }
+    }
+
+    fn exe_path { mut proc: Proc } -> []u8 {
+        return sys::exe_path{ &proc }
+    }
+
+    // The error for errno `code` from starting or waiting for a program.
+    fn proc_failed(T) { code: i32 } -> !T {
+        if code == 2 { return proc::not_found }                         // ENOENT
+        if code == 1 or code == 13 { return proc::permission_denied }   // EPERM, EACCES
+        return proc::other{ code = @as(i64, code) }
     }
 
     // `path` with a zero after it, as C takes it, in buf; null if it doesn't fit.

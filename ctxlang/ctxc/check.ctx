@@ -85,8 +85,8 @@ namespace check {
     }
 
     // The attributes the compiler declares, in the universe: `#convert` (§18, Literal
-    // conversions) and `#write` (§13, Formatting).
-    enum Attribute: u8 { convert, write }
+    // conversions), `#write` (§13, Formatting), and `#start` and `#panic` (§15, Entry point).
+    enum Attribute: u8 { convert, write, start, panic }
 
     struct Space {
         name:   []u8,
@@ -145,6 +145,10 @@ namespace check {
         main:      u32,                          // NONE unless `main` is valid
         converts:  list::List(u32, Heap),        // the fns with a valid `#convert`, in order
         writers:   list::List(u32, Heap),        // the fns with a valid `#write`, in order
+        // The fns with a valid `#start` or `#panic` (§15): std's and the program's, each NONE
+        // without one. The program's replaces std's (start_fn, panic_fn).
+        starts:    [2]u32,
+        panics:    [2]u32,
         cstr_decl: u32,                          // c::String, for its C layout, or NONE
         calling:   u64,                          // the callee being checked, whose field may be a capability's
         // The body being checked: a const's initializer or a function's body.
@@ -346,6 +350,8 @@ namespace check {
             layouts = map::new(Id, Layout){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             busy = map::new(Id, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             main = NONE,
+            starts = [NONE, NONE],
+            panics = [NONE, NONE],
             converts = ids{ &heap },
             writers = ids{ &heap },
             cstr_decl = NONE,
@@ -420,6 +426,8 @@ namespace check {
         put_name{ &c, ns = UNIVERSE, values = false, name = "strlit", e = Entry::strlit }
         put_name{ &c, ns = UNIVERSE, values = false, name = "convert", e = Entry::attr{ a = Attribute::convert } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "write", e = Entry::attr{ a = Attribute::write } }
+        put_name{ &c, ns = UNIVERSE, values = false, name = "start", e = Entry::attr{ a = Attribute::start } }
+        put_name{ &c, ns = UNIVERSE, values = false, name = "panic", e = Entry::attr{ a = Attribute::panic } }
         return c
     }
 
@@ -1314,6 +1322,8 @@ namespace check {
             let x = decls[i]
             let mut seen_convert = false
             let mut seen_write = false
+            let mut seen_start = false
+            let mut seen_panic = false
             let mut k: usize = 0
             while k < x.attrs.len {
                 let a = x.attrs[k]
@@ -1329,6 +1339,14 @@ namespace check {
                             write_attr{ &c, x, file, a, seen = seen_write }
                             seen_write = true
                         }
+                        start => {
+                            hook_attr{ &c, x, file, a, which, seen = seen_start }
+                            seen_start = true
+                        }
+                        panic => {
+                            hook_attr{ &c, x, file, a, which, seen = seen_panic }
+                            seen_panic = true
+                        }
                     }
                 }
                 k = k + 1
@@ -1343,7 +1361,7 @@ namespace check {
 
     // A compiler attribute's name, for messages.
     fn attr_name { a: Attribute } -> []u8 {
-        return match a { convert => { "convert" } write => { "write" } }
+        return match a { convert => { "convert" } write => { "write" } start => { "start" } panic => { "panic" } }
     }
 
     // The attribute the compiler declares that a names, if it is one: `#convert` or `#write`
@@ -1408,6 +1426,118 @@ namespace check {
             return
         }
         push{ xs = &c.converts, n = d }
+    }
+
+    // `#start` or `#panic` on x (§15, Entry point): a fn with a body and no generic
+    // parameters. The runtime calls it, and supplies its context: capabilities without fields,
+    // as `main`'s, and the fields hook_field names. A start fn returns the exit code, and a
+    // panic fn nothing. std declares one of each, and the program's replaces std's (start_fn).
+    fn hook_attr { mut c: Checker, x: syntax::Decl, file: u32, a: syntax::Attr, which: Attribute, seen: bool } {
+        let name = attr_name{ a = which }
+        let func{ tparams, params, ret, external } = x.k else {
+            errorf{ &c, at = a.span, msg = @fmt("`{}` applies only to a fn", str{ s = name }) }
+            return
+        }
+        if external {
+            errorf{ &c, at = a.span, msg = @fmt("`{}` applies only to a fn with a body, not an extern fn", str{ s = name }) }
+            return
+        }
+        if seen {
+            errorf{ &c, at = a.span, msg = @fmt("duplicate `{}` attribute", str{ s = name }) }
+            return
+        }
+        if tparams.len > 0 {
+            errorf{ &c, at = a.span, msg = @fmt("a `{}` fn can't be generic", str{ s = name }) }
+            return
+        }
+        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        let fd = get_decl{ c, d }
+        let bad = c.diags.errors
+        let r = types::prune{ s = c.ty, t = fd.ret }
+        let ret_at = if ret == null { x.span } else { ret.span }
+        if which == Attribute::start and r != types::I32 and r != types::ERROR {
+            error{ &c, at = ret_at, msg = "a `start` fn returns the exit code, an i32" }
+        }
+        if which == Attribute::panic and r != types::VOID and r != types::ERROR {
+            error{ &c, at = ret_at, msg = "a `panic` fn returns nothing" }
+        }
+        let mut i: usize = 0
+        while i < fd.fields.len {
+            let f = fd.fields[i]
+            let t = types::prune{ s = c.ty, t = f.ty }
+            let at = if i < params.len { params[i].span } else { x.span }
+            if t == types::ERROR {
+                i = i + 1
+                continue
+            }
+            if types::get{ s = c.ty, id = t } is cap{ decl } {
+                if decl == std_decl_top{ c, name = "Build" } {
+                    errorf{ &c, at, msg = @fmt("a `{}` fn cannot take a Build: only a build program's `fn build` receives one", str{ s = name }) }
+                } else if loaded_cap{ c, t } {
+                    errorf{ &c, at, msg = @fmt("a `{}` fn cannot take `{}`: a capability with fields comes from a function of its namespace, not the runtime", str{ s = name }, tstr{ c, t }) }
+                }
+            } else if f.mutable or not hook_field{ c, which, name = f.name, t } {
+                if which == Attribute::start {
+                    errorf{ &c, at, msg = @fmt("a `start` fn's context is capabilities, `argc: i32`, `argv: *?*u8` and `main: &fn{{ args: Args }} -> i32`, not `{}: {}`", str{ s = f.name }, tstr{ c, t }) }
+                } else {
+                    errorf{ &c, at, msg = @fmt("a `panic` fn's context is capabilities, `msg: []u8`, `file: []u8`, `line: u32` and `col: u32`, not `{}: {}`", str{ s = f.name }, tstr{ c, t }) }
+                }
+            }
+            i = i + 1
+        }
+        if c.diags.errors != bad { return }
+        let own: usize = if @as(usize, file) < c.std_files { 0 } else { 1 }
+        let had = if which == Attribute::start { c.starts[own] } else { c.panics[own] }
+        if had != NONE {
+            let whose: []u8 = if own == 0 { "std's" } else { "the program's" }
+            errorf{ &c, at = a.span, msg = @fmt("a second `{}` fn: `{}` is {} already", str{ s = name }, str{ s = get_decl{ c, d = had }.name.text }, str{ s = whose }) }
+            return
+        }
+        if which == Attribute::start { c.starts[own] = d } else { c.panics[own] = d }
+    }
+
+    // Whether a read-only field `name: t` is one the runtime gives a `#start` or `#panic` fn.
+    // A start fn may take `argc` and `argv`, C's, and `main`, which calls the program's entry
+    // point with its capabilities and `args`. A panic fn may take the message, the file, line
+    // and column of the panic, which are 0 for a panic without a position.
+    fn hook_field { c: Checker, which: Attribute, name: []u8, t: Id } -> bool {
+        if which == Attribute::start {
+            if slice::eq_bytes{ a = name, b = "argc" } { return t == types::I32 }
+            if slice::eq_bytes{ a = name, b = "argv" } {
+                let ptr{ elem = p, mutable = pm } = types::get{ s = c.ty, id = t } else { return false }
+                let opt{ elem = q } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = p } } else { return false }
+                let ptr{ elem = b, mutable = qm } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = q } } else { return false }
+                return not pm and not qm and types::prune{ s = c.ty, t = b } == types::U8
+            }
+            if slice::eq_bytes{ a = name, b = "main" } {
+                let func{ fields, ret, external } = types::get{ s = c.ty, id = t } else { return false }
+                if external or fields.len != 1 or types::prune{ s = c.ty, t = ret } != types::I32 { return false }
+                let arg = fields[0]
+                if arg.mutable or not slice::eq_bytes{ a = arg.name, b = "args" } { return false }
+                let slice{ elem, mutable } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = arg.ty } } else { return false }
+                return not mutable and is_bytes{ c, t = elem }
+            }
+            return false
+        }
+        if slice::eq_bytes{ a = name, b = "msg" } or slice::eq_bytes{ a = name, b = "file" } { return is_bytes{ c, t } }
+        if slice::eq_bytes{ a = name, b = "line" } or slice::eq_bytes{ a = name, b = "col" } { return t == types::U32 }
+        return false
+    }
+
+    // Whether t is `[]u8`.
+    fn is_bytes { c: Checker, t: Id } -> bool {
+        let slice{ elem, mutable } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } else { return false }
+        return not mutable and types::prune{ s = c.ty, t = elem } == types::U8
+    }
+
+    // The fn the runtime calls for `#start` or `#panic`: the program's, or std's if it has
+    // none; NONE for neither.
+    fn start_fn { c: Checker } -> u32 {
+        return if c.starts[1] != NONE { c.starts[1] } else { c.starts[0] }
+    }
+
+    fn panic_fn { c: Checker } -> u32 {
+        return if c.panics[1] != NONE { c.panics[1] } else { c.panics[0] }
     }
 
     // The type conversion f gives a literal: its result's T, or VOID if it has none.

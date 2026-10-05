@@ -1,16 +1,18 @@
-// std: os on Windows. The platform's layer (spec §17): what io, mem, proc and fs need from the
-// operating system, over the C runtime's _write and _read, the kernel's own functions, and the
-// runtime's ctx_proc_env. Every layer declares the same functions; std/os/posix is Linux's and
-// macOS's, and a build compiles one.
+// std: os on Windows. The platform's layer (spec §17): what io, mem, proc, fs and rt need from
+// the operating system, over the C runtime's _write, _read and exit, and the kernel's own
+// functions. Every layer declares the same functions; std/os/posix is Linux's and macOS's, and a
+// build compiles one.
 
 namespace os {
     // What std's Proc holds on this platform: nothing, since Windows reaches the environment
     // through functions.
     capability Proc
 
-    // The runtime's (ctxrt.c), which converts from UTF-16.
-    #c::symbol{ name = "ctx_proc_env" }
-    extern fn sys_env { mut proc: Proc, name: []u8, mut value: []u8 } -> bool
+    // The operating system this layer is for.
+    const OS: build::Os = build::Os::windows
+
+    // Whether the environment's keys are case-sensitive (proc::overridden): not on Windows.
+    const ENV_CASE: bool = false
 
     // _write and _read take an unsigned int count and return an int: at most this many a call.
     const CHUNK: usize = 1073741824
@@ -50,11 +52,22 @@ namespace os {
     }
 
     // The value of environment variable `name`, or null if it isn't set. It lives until the
-    // program ends.
+    // program ends, in memory from malloc.
     fn env { mut proc: Proc, name: []u8 } -> ?[]u8 {
-        let mut value: []u8 = slice::empty(u8){}
-        if not sys_env{ &proc, name, value = &value } { return null }
-        return value
+        if name.len == 0 or name.len > 2147483646 { return null }
+        let keys = c_malloc{ &proc, size = (name.len + 1) * 2 } ifnull { return null }
+        defer c_free{ &proc, p = keys }
+        let key = @slice(@cast(*mut u16, keys), name.len + 1)
+        let k = utf16_of{ s = name, into = key[..name.len] } ifnull { return null }
+        key[k] = 0
+        let n = GetEnvironmentVariableW{ &proc, name = key.ptr, buf = null, size = 0 }
+        if n == 0 { return null }
+        let wide = c_malloc{ &proc, size = @as(usize, n) * 2 } ifnull { return null }
+        defer c_free{ &proc, p = wide }
+        let w = @cast(*mut u16, wide)
+        let m = GetEnvironmentVariableW{ &proc, name = key.ptr, buf = w, size = n }
+        if m == 0 or m >= n { return "" }
+        return utf8_of{ &proc, s = @slice(w, @as(usize, m)) }
     }
 
     // ---- files, for std's fs: a File's id is its HANDLE. Paths aren't empty: fs reports those
@@ -230,6 +243,360 @@ namespace os {
 
     fn dir_close { mut fs: Fs, mut dir: Dir } {
         _ = FindClose{ &fs, find = dir.find }
+    }
+
+    // ---- for std's rt: starting the program, and ending it
+
+    #c::symbol{ name = "exit" }
+    extern fn c_exit { mut proc: Proc, code: i32 }
+
+    // Ends the program with exit code `code`, as C's exit does.
+    fn exit { mut proc: Proc, code: i32 } {
+        c_exit{ &proc, code }
+    }
+
+    #c::symbol{ name = "_setmode" }
+    extern fn set_mode { mut io: Io, fd: i32, mode: i32 } -> i32
+
+    const O_BINARY: i32 = 32768
+
+    // What the platform needs before main runs: standard input, output and error in binary
+    // mode, so that "\n" stays one byte.
+    fn start { mut io: Io, mut proc: Proc, argv: *?*u8 } {
+        _ = set_mode{ &io, fd = 0, mode = O_BINARY }
+        _ = set_mode{ &io, fd = 1, mode = O_BINARY }
+        _ = set_mode{ &io, fd = 2, mode = O_BINARY }
+    }
+
+    extern fn GetCommandLineW { mut mem: Mem } -> *u16
+    extern fn CommandLineToArgvW { mut mem: Mem, line: *u16, mut count: i32 } -> ?*?*u16
+    extern fn LocalFree { mut mem: Mem, p: *?*u16 } -> u64
+
+    // The command line's arguments after the program's name, as UTF-8: Windows' own, as
+    // CommandLineToArgvW splits them, rather than C's argv, which are in the ANSI code page. In
+    // memory from `pages`.
+    fn args { mut mem: Mem, argc: i32, argv: *?*u8 } -> [][]u8 {
+        let mut count: i32 = 0
+        let wide = CommandLineToArgvW{ &mem, line = GetCommandLineW{ &mem }, count = &count } ifnull { return slice::empty([]u8){} }
+        defer _ = LocalFree{ &mem, p = wide }
+        if count <= 1 { return slice::empty([]u8){} }
+        let n = @as(usize, count) - 1
+        let head = n * @size_of([]u8)
+        let mut size = head
+        let mut i: usize = 0
+        while i < n {
+            let w = wide[i + 1] ifnull { return slice::empty([]u8){} }
+            size = size + @as(usize, narrow{ text = w, n = -1, out = null, cap = 0, fallback = null, used = null })
+            i = i + 1
+        }
+        let bytes = mem::pages{ &mem, size } ifnull {
+            rt::fail{ msg = "out of memory" }
+            return slice::empty([]u8){}
+        }
+        let items = slice::cast(u8, []u8){ s = bytes[..head] }
+        let mut at = head
+        i = 0
+        while i < n {
+            let w = wide[i + 1] ifnull { break }
+            let k = narrow{ text = w, n = -1, out = bytes[at..].ptr, cap = @as(i32, size - at), fallback = null, used = null }
+            if k <= 0 { break }
+            items[i] = bytes[at..at + @as(usize, k) - 1]          // less the zero
+            at = at + @as(usize, k)
+            i = i + 1
+        }
+        return items[..i]
+    }
+
+    // ---- memory for arenas (mem::reserve, arena::alloc): reserved, and committed as an arena
+    // reaches it, so that a generous size costs address space rather than memory.
+
+    const PAGE_NOACCESS: u32 = 0x01
+
+    // `size` bytes, a multiple of mem::PAGE, reserved for an arena. Null if there isn't enough
+    // address space.
+    fn reserve { mut mem: Mem, size: usize } -> ?*mut u8 {
+        return VirtualAlloc{ &mem, address = null, size, kind = MEM_RESERVE, protect = PAGE_NOACCESS }
+    }
+
+    // MEMORY_BASIC_INFORMATION.
+    struct MemInfo { base: usize, allocation_base: usize, allocation_protect: u32, partition: u32, size: usize, state: u32, protect: u32, kind: u32, pad: u32 }
+
+    // What `commit` asks of the kernel. Committing memory `reserve` made makes usable what
+    // was usable to begin with, so these take no capability, and an arena over any memory
+    // needs none.
+    #c::symbol{ name = "VirtualQuery" }
+    extern fn query { address: *u8, mut info: MemInfo, size: usize } -> usize
+    #c::symbol{ name = "VirtualAlloc" }
+    extern fn commit_pages { address: *u8, size: usize, kind: u32, protect: u32 } -> ?*mut u8
+
+    // Makes an arena's memory from first to last usable: commits each run of reserved pages
+    // from first's page on, the last of them to the end of the MiB that holds last, or to the end
+    // of what `reserve` made, if that is sooner. Pages that are committed already, as memory
+    // `reserve` didn't make always is, need nothing. VirtualQuery describes the run of pages
+    // alike from an address on, so this asks once a run.
+    fn commit { first: *u8, last: *u8 } -> bool {
+        let mut info = MemInfo{ base = 0, allocation_base = 0, allocation_protect = 0, partition = 0, size = 0, state = 0, protect = 0, kind = 0, pad = 0 }
+        let start = @addr(first)
+        let mib = (@addr(last) | 1048575) + 1
+        let mut at = start
+        while at <= @addr(last) {
+            let p = first + (at - start)
+            if query{ address = p, info = &info, size = @size_of(MemInfo) } == 0 { return false }
+            let end = info.base + info.size
+            if end <= at { return false }
+            if info.state == MEM_RESERVE {
+                let to = if mib < end { mib } else { end }
+                if commit_pages{ address = p, size = to - at, kind = MEM_COMMIT, protect = PAGE_READWRITE } == null { return false }
+            } else if info.state != MEM_COMMIT {
+                return false
+            }
+            at = end
+        }
+        return true
+    }
+
+    // ---- for std's proc: programs, started with CreateProcessW. A child's id is its process
+    // handle.
+
+    extern fn CreateProcessW { mut proc: Proc, app: ?*u16, line: *mut u16, process: ?*u8, thread: ?*u8, inherit: i32, flags: u32, env: ?*u16, dir: ?*u16, mut startup: StartupInfo, mut info: ProcessInfo } -> i32
+    extern fn GetEnvironmentStringsW { mut proc: Proc } -> ?*u16
+    extern fn FreeEnvironmentStringsW { mut proc: Proc, block: *u16 } -> i32
+    extern fn GetEnvironmentVariableW { mut proc: Proc, name: *u16, buf: ?*mut u16, size: u32 } -> u32
+    extern fn WaitForSingleObject { mut proc: Proc, handle: u64, ms: u32 } -> u32
+    extern fn GetExitCodeProcess { mut proc: Proc, handle: u64, mut code: u32 } -> i32
+    extern fn GetActiveProcessorCount { mut proc: Proc, group: u16 } -> u32
+    extern fn GetModuleFileNameW { mut proc: Proc, module: u64, buf: *mut u16, size: u32 } -> u32
+    #c::symbol{ name = "CloseHandle" }
+    extern fn close_handle { mut proc: Proc, handle: u64 } -> i32
+    #c::symbol{ name = "GetLastError" }
+    extern fn last_error { mut proc: Proc } -> u32
+    #c::symbol{ name = "malloc" }
+    extern fn c_malloc { mut proc: Proc, size: usize } -> ?*mut u8
+    #c::symbol{ name = "free" }
+    extern fn c_free { mut proc: Proc, p: *mut u8 }
+
+    // UTF-8 and UTF-16, which convert pure functions.
+    #c::symbol{ name = "MultiByteToWideChar" }
+    extern fn widen { page: u32, flags: u32, text: *u8, n: i32, out: ?*mut u16, cap: i32 } -> i32
+    #c::symbol{ name = "WideCharToMultiByte" }
+    extern fn narrow_utf16 { page: u32, flags: u32, text: *u16, n: i32, out: ?*mut u8, cap: i32, fallback: ?*u8, used: ?*mut i32 } -> i32
+
+    fn narrow { text: *u16, n: i32, out: ?*mut u8, cap: i32, fallback: ?*u8, used: ?*mut i32 } -> i32 {
+        return narrow_utf16{ page = UTF8, flags = 0, text, n, out, cap, fallback, used }
+    }
+
+    // STARTUPINFOW, zero but its size, and PROCESS_INFORMATION.
+    struct StartupInfo { size: u32, pad: u32, rest: [12]u64 }
+    struct ProcessInfo { process: u64, thread: u64, pid: u32, tid: u32 }
+
+    const CREATE_UNICODE_ENVIRONMENT: u32 = 0x400
+    const INFINITE: u32 = 4294967295
+    const WAIT_FAILED: u32 = 4294967295
+    const ALL_PROCESSOR_GROUPS: u16 = 0xffff
+
+    // Starts argv[0] with this program's environment, less the entries env replaces, and env's
+    // own. argv and env aren't empty and are checked (proc::spawn).
+    fn spawn { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> !u64 {
+        // The command line, as CommandLineToArgvW reads it back: each argument takes at most
+        // twice its bytes and three more, a space and quotes.
+        let mut cap: usize = 1
+        let mut i: usize = 0
+        while i < argv.len { cap = cap + 2 * argv[i].len + 3; i = i + 1 }
+        let line = c_malloc{ &proc, size = cap } ifnull { return out_of_memory(u64){} }
+        defer c_free{ &proc, p = line }
+        let text = @slice(line, cap)
+        let mut n: usize = 0
+        i = 0
+        while i < argv.len {
+            n = quote_arg{ line = text, n, arg = argv[i] }
+            i = i + 1
+        }
+        let wline = c_malloc{ &proc, size = (n + 1) * 2 } ifnull { return out_of_memory(u64){} }
+        defer c_free{ &proc, p = wline }
+        let wide = @slice(@cast(*mut u16, wline), n + 1)
+        let k = if n == 0 { 0 } else { widen{ page = UTF8, flags = 0, text = line, n = @as(i32, n), out = wide.ptr, cap = @as(i32, n) } }
+        wide[@as(usize, k)] = 0
+
+        // The environment block: "KEY=VALUE" entries, each ending in a zero, then a zero.
+        let inherited = GetEnvironmentStringsW{ &proc } ifnull { return proc::other{ code = @as(i64, last_error{ &proc }) } }
+        defer _ = FreeEnvironmentStringsW{ &proc, block = inherited }
+        let mut units: usize = 1
+        let mut at: usize = 0
+        while inherited[at] != 0 {
+            let len = wide_len{ s = inherited + at }
+            units = units + len + 1
+            at = at + len + 1
+        }
+        i = 0
+        while i < env.len { units = units + env[i].len + 1; i = i + 1 }
+        let bytes = c_malloc{ &proc, size = units * 2 } ifnull { return out_of_memory(u64){} }
+        defer c_free{ &proc, p = bytes }
+        let block = @slice(@cast(*mut u16, bytes), units)
+        let mut used: usize = 0
+        at = 0
+        while inherited[at] != 0 {
+            let len = wide_len{ s = inherited + at }
+            if not replaced{ &proc, entry = @slice(inherited + at, len), env } {
+                let mut j: usize = 0
+                while j <= len {
+                    block[used + j] = inherited[at + j]
+                    j = j + 1
+                }
+                used = used + len + 1
+            }
+            at = at + len + 1
+        }
+        i = 0
+        while i < env.len {
+            let e = env[i]
+            let w = widen{ page = UTF8, flags = 0, text = e.ptr, n = @as(i32, e.len), out = block[used..].ptr, cap = @as(i32, units - used) }
+            used = used + @as(usize, w)
+            block[used] = 0
+            used = used + 1
+            i = i + 1
+        }
+        block[used] = 0
+
+        let mut startup = StartupInfo{ size = 104, pad = 0, rest = [0; 12] }
+        let mut info = ProcessInfo{ process = 0, thread = 0, pid = 0, tid = 0 }
+        let ok = CreateProcessW{ &proc, app = null, line = wide.ptr, process = null, thread = null, inherit = 1, flags = CREATE_UNICODE_ENVIRONMENT, env = block.ptr, dir = null, startup = &startup, info = &info }
+        if ok == 0 {
+            let e = last_error{ &proc }
+            if e == 2 or e == 3 { return proc::not_found }              // file, path not found
+            if e == 5 { return proc::permission_denied }                // access denied
+            return proc::other{ code = @as(i64, e) }
+        }
+        _ = close_handle{ &proc, handle = info.thread }
+        return info.process
+    }
+
+    fn out_of_memory(T) {} -> !T {
+        rt::fail{ msg = "out of memory" }
+        return proc::other{ code = 8 }                                  // ERROR_NOT_ENOUGH_MEMORY
+    }
+
+    // How many u16s s has before its zero.
+    fn wide_len { s: *u16 } -> usize {
+        let mut n: usize = 0
+        while s[n] != 0 { n = n + 1 }
+        return n
+    }
+
+    // Whether env replaces inherited entry `entry` ("KEY=VALUE"): its key, as UTF-8, is the key
+    // of one of env's entries (proc::overridden).
+    fn replaced { mut proc: Proc, entry: []u16, env: [][]u8 } -> bool {
+        let mut n: usize = if entry.len > 0 and entry[0] == 61 { 1 } else { 0 }        // '='
+        while n < entry.len and entry[n] != 61 { n = n + 1 }
+        if n == 0 { return false }
+        let k = narrow{ text = entry.ptr, n = @as(i32, n), out = null, cap = 0, fallback = null, used = null }
+        if k <= 0 { return false }
+        let bytes = c_malloc{ &proc, size = @as(usize, k) } ifnull { return false }
+        defer c_free{ &proc, p = bytes }
+        _ = narrow{ text = entry.ptr, n = @as(i32, n), out = bytes, cap = k, fallback = null, used = null }
+        return proc::overridden{ entry = @slice(bytes, @as(usize, k)), env }
+    }
+
+    // Appends arg to the command line at line[..n], as CommandLineToArgvW reads it back: quoted
+    // if it is empty or holds a space, a tab, a line break, a vertical tab or a quote, with the
+    // backslashes before a quote, or before the closing quote, doubled. Returns the new length.
+    fn quote_arg { line: []mut u8, n: usize, arg: []u8 } -> usize {
+        let mut o = n
+        if o > 0 {
+            line[o] = ' '
+            o = o + 1
+        }
+        let mut plain = arg.len > 0
+        let mut i: usize = 0
+        while i < arg.len {
+            let c = arg[i]
+            if c == ' ' or c == '\t' or c == '"' or c == '\n' or c == 11 { plain = false }
+            i = i + 1
+        }
+        if plain {
+            slice::copy(u8){ dst = line[o..o + arg.len], src = arg }
+            return o + arg.len
+        }
+        line[o] = '"'
+        o = o + 1
+        let mut slashes: usize = 0
+        i = 0
+        while i < arg.len {
+            let c = arg[i]
+            if c == '\\' {
+                slashes = slashes + 1
+            } else {
+                let times = if c == '"' { slashes * 2 + 1 } else { slashes }
+                o = backslashes{ line, n = o, times }
+                slashes = 0
+                line[o] = c
+                o = o + 1
+            }
+            i = i + 1
+        }
+        o = backslashes{ line, n = o, times = slashes * 2 }
+        line[o] = '"'
+        return o + 1
+    }
+
+    fn backslashes { line: []mut u8, n: usize, times: usize } -> usize {
+        let mut k: usize = 0
+        while k < times {
+            line[n + k] = '\\'
+            k = k + 1
+        }
+        return n + times
+    }
+
+    // Waits for child `id` to end, and closes its handle: its exit code.
+    fn wait { mut proc: Proc, id: u64 } -> !i32 {
+        if WaitForSingleObject{ &proc, handle = id, ms = INFINITE } == WAIT_FAILED { return proc::other{ code = @as(i64, last_error{ &proc }) } }
+        let mut code: u32 = 0
+        _ = GetExitCodeProcess{ &proc, handle = id, code = &code }
+        _ = close_handle{ &proc, handle = id }
+        return @trunc(i32, code)
+    }
+
+    // How many processors this program may run on: at least 1.
+    fn processors { mut proc: Proc } -> u32 {
+        let n = GetActiveProcessorCount{ &proc, group = ALL_PROCESSOR_GROUPS }
+        return if n > 0 { n } else { 1 }
+    }
+
+    // The absolute path of this program's executable, with `/` for `\`; empty if Windows won't
+    // say. In memory from malloc, for good.
+    fn exe_path { mut proc: Proc } -> []u8 {
+        let wide = c_malloc{ &proc, size = 65536 } ifnull { return "" }
+        defer c_free{ &proc, p = wide }
+        let w = @cast(*mut u16, wide)
+        let n = GetModuleFileNameW{ &proc, module = 0, buf = w, size = 32768 }
+        if n == 0 or n >= 32768 { return "" }
+        let path = utf8_of{ &proc, s = @slice(w, @as(usize, n)) }
+        let mut i: usize = 0
+        while i < path.len {
+            if path[i] == '\\' { path[i] = '/' }
+            i = i + 1
+        }
+        return path
+    }
+
+    // s as UTF-8, in memory from malloc: empty if it can't be converted.
+    fn utf8_of { mut proc: Proc, s: []u16 } -> []mut u8 {
+        if s.len == 0 { return slice::empty(u8){} }
+        let n = narrow{ text = s.ptr, n = @as(i32, s.len), out = null, cap = 0, fallback = null, used = null }
+        if n <= 0 { return slice::empty(u8){} }
+        let p = c_malloc{ &proc, size = @as(usize, n) } ifnull { return slice::empty(u8){} }
+        let out = @slice(p, @as(usize, n))
+        _ = narrow{ text = s.ptr, n = @as(i32, s.len), out = p, cap = n, fallback = null, used = null }
+        return out
+    }
+
+    // s as UTF-16 in `into`: how many u16s; null if it doesn't fit or isn't UTF-8.
+    fn utf16_of { s: []u8, into: []mut u16 } -> ?usize {
+        if s.len == 0 { return 0 }
+        if s.len > into.len { return null }
+        let n = widen{ page = UTF8, flags = 0, text = s.ptr, n = @as(i32, s.len), out = into.ptr, cap = @as(i32, into.len) }
+        if n <= 0 { return null }
+        return @as(usize, n)
     }
 
     // `path` as UTF-16 with a zero after it, in buf; null if it doesn't fit.

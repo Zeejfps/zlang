@@ -6920,6 +6920,24 @@ fn main { mut mem: Mem } { }
     return 0""")
         self.assertEqual((out, code), ('0\n19\n', 0))
 
+    def test_reserve_committed_out_of_order(self):
+        # An arena over the upper half of a reservation commits pages there first; one over all
+        # of it then allocates across both halves, and must find the lower half's pages
+        # uncommitted though its last byte's are (on Windows, std/os/windows `commit`).
+        out, code = self.run_mem("""
+    let some{ value = buf } = mem::reserve{ &mem, size = 4194304 } else { return 1 }
+    let mut high = arena::new{ buf = buf[2097152..] }
+    let some{ value = a } = arena::alloc{ heap = &high, mem = slice::empty(u8){}, new = 16, align = 8 } else { return 2 }
+    a[0] = 1
+    let mut all = arena::new{ buf }
+    let some{ value = b } = arena::alloc{ heap = &all, mem = slice::empty(u8){}, new = 2097169, align = 8 } else { return 3 }
+    b[0] = 5
+    b[1048576] = 6
+    b[b.len - 1] = 7
+    io::println_u64{ &io, n = b[0] + b[1048576] + b[b.len - 1] }
+    return 0""")
+        self.assertEqual((out, code), ('18\n', 0))
+
     def test_arena_in_a_const(self):
         # arena::alloc's call into the runtime runs while compiling too.
         self.assertOutput("""
@@ -7034,7 +7052,7 @@ fn main {} -> i32 {
     return h{ a = 1, b = 2 }
 }
 """)
-        self.assertRegex(text, r'\(let 0 \(fnconv \d+ \(fnref \d+ 1\)\)\)')
+        self.assertRegex(text, r'\(let 0 \(fnconv \d+ \(fnref \d+ \d+\)\)\)')
         self.assertIn('(dcall ', text)
 
     def test_generic_instances(self):
@@ -8087,6 +8105,7 @@ fn main { mut io: Io, mut o: getopt::Opts, mut mine: Mine, mut l: m::L } -> i32 
     def test_c_variable_ir(self):
         # A variable is an item, declared once however many capabilities read it, and a read is
         # its value.
+        import re
         from toolchain import ir_sources
         text = ir_sources([("""
 namespace g {
@@ -8096,9 +8115,10 @@ namespace g {
 }
 fn main { mut o: g::O } -> i32 { return g::a{ &o } + g::b{ p = &o } }
 """, None)])
+        # std's start reads environ on Linux and macOS, a variable of its own.
         self.assertRegex(text, r'\(var 0 "optind" "optind" \d+\)')
-        self.assertNotIn('(var 1', text)
-        self.assertEqual(text.count('(cvar '), 2)
+        self.assertEqual(text.count('(var '), 1 + text.count('(var 1 "environ" "environ"'))
+        self.assertEqual(len(re.findall(r'\(cvar \d+ 0\)', text)), 2)
         text = ir_sources([('capability O {\n    #c::symbol{ name = "opterr" }\n    extern reports: i32\n}\nfn main { mut o: O } -> i32 { return o.reports }', None)])
         self.assertRegex(text, r'\(var 0 "reports" "opterr" \d+\)')
 
@@ -8168,6 +8188,83 @@ CAP_CHAIN = """namespace m {
     fn load_c { mut l: L } -> C { return C{ int, ..load_b{ &l } } }
 }
 """
+
+
+class Hooks(Base):
+    """`#start` and `#panic` (spec §15, Entry point): std's start main and report panics, and a
+    program's own replace them. `ctxc interp` doesn't run a program's own, so it skips these."""
+
+    def test_std_start_flushes_and_passes_args(self):
+        out = io.StringIO()
+        code = run_source('fn main { mut io: Io, args: Args } -> i32 {\n'
+                          '    io::print{ &io, s = utf8::of{ chars = args[1] } }\n'
+                          '    return @as(i32, args.len)\n}\n', out=out, args=['a', 'b c'])
+        self.assertEqual((out.getvalue(), code), ('b c', 2))
+
+    def test_own_start(self):
+        out = io.StringIO()
+        code = run_source("""
+#start
+fn boot { mut io: Io, main: &fn{ args: Args } -> i32 } -> i32 {
+    io::println{ &io, s = "boot" }
+    let code = main{ args = slice::empty([]u8){} }
+    io::flush{ &io }
+    return code + 1
+}
+fn main { mut io: Io, args: Args } -> i32 {
+    io::println_u64{ &io, n = args.len }
+    return 41
+}
+""", out=out, args=['x'])
+        # Without std's start nothing sets standard output's binary mode on Windows.
+        self.assertEqual((out.getvalue().replace('\r\n', '\n'), code), ('boot\n0\n', 42))
+
+    def test_start_without_main(self):
+        # The start fn needn't take main, nor anything else.
+        self.assertEqual(run_source('#start\nfn boot {} -> i32 { return 7 }\nfn main {} {}\n'), 7)
+
+    def test_own_panic(self):
+        # A panic fn that returns stops the program at once (ctxrt.c, `report`), without std's
+        # report and its exit code 134.
+        out = io.StringIO()
+        code = run_source("""
+#panic
+fn caught { mut io: Io, msg: []u8, line: u32 } {
+    io::print{ &io, s = "caught: " }
+    io::write{ &io, to = io::Stream::out, bytes = msg }
+    io::print{ &io, s = " at " }
+    io::println_u64{ &io, n = line }
+    io::flush{ &io }
+}
+fn main { mut io: Io } {
+    let xs = [1, 2]
+    let i: usize = 2
+    io::println_i64{ &io, n = xs[i] }
+}
+""", out=out)
+        self.assertEqual(out.getvalue(), 'caught: index 2 out of bounds for length 2 at 13\n')
+        self.assertNotIn(code, (0, 134))
+
+    def test_errors(self):
+        self.assertCompileError('#start\nfn boot {} -> u8 { return 0 }\nfn main {} {}',
+                                'a `start` fn returns the exit code, an i32')
+        self.assertCompileError('#start\nfn boot { n: i64 } -> i32 { return 0 }\nfn main {} {}',
+                                "a `start` fn's context is capabilities, `argc: i32`, `argv: *?*u8` and "
+                                "`main: &fn{ args: Args } -> i32`, not `n: i64`")
+        self.assertCompileError('#start\nfn boot { mut argc: i32 } -> i32 { return 0 }\nfn main {} {}',
+                                "a `start` fn's context is capabilities")
+        self.assertCompileError('#panic\nfn halt { msg: []u8 } -> i32 { return 0 }\nfn main {} {}',
+                                'a `panic` fn returns nothing')
+        self.assertCompileError('#panic\nfn halt { line: u64 } {}\nfn main {} {}',
+                                "a `panic` fn's context is capabilities, `msg: []u8`, `file: []u8`, "
+                                "`line: u32` and `col: u32`, not `line: u64`")
+        self.assertCompileError('#panic\nfn halt { mut b: Build } {}\nfn main {} {}',
+                                "a `panic` fn cannot take a Build: only a build program's `fn build` receives one")
+        self.assertCompileError('#panic\nfn a {} {}\n#panic\nfn b {} {}\nfn main {} {}',
+                                "a second `panic` fn: `a` is the program's already")
+        self.assertCompileError('#start\nfn boot(T) {} -> i32 { return 0 }\nfn main {} {}',
+                                "a `start` fn can't be generic")
+        self.assertCompileError('#panic\nstruct S {}\nfn main {} {}', '`panic` applies only to a fn')
 
 
 PROC_MAIN = """
@@ -8649,7 +8746,7 @@ fn main { mut io: Io, args: Args } -> i32 {
         self.assertEqual(got, want)
 
     def test_panic(self):
-        # Standard output's buffer is written before the panic, as ctxrt.c does.
+        # Standard output's buffer is written before the panic, as std's rt::report does.
         d = self.project({'boom.ctx': """
 fn main { mut io: Io } {
     io::println{ &io, s = "before" }

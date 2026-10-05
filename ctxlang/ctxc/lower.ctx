@@ -14,7 +14,7 @@ namespace lower {
     type Id = types::Id
 
     const NONE: u32 = 4294967295
-    const VERSION: u64 = 17
+    const VERSION: u64 = 18
 
     // A function instance: a declaration and its generic arguments. The hidden fn of an @fmt
     // without a sink is an instance too, under the declaration it is in: site is its Site,
@@ -53,7 +53,11 @@ namespace lower {
     fn program { mut c: check::Checker } -> ir::Program {
         let mut l = lowering{ &c }
         let main = fn_id{ &l, decl = c.main, targs = no_ids{} }
-        let p = finish{ &l, main }
+        let s = check::start_fn{ c }
+        let start = if s == NONE { NONE } else { fn_id{ &l, decl = s, targs = no_ids{} } }
+        let h = check::panic_fn{ c }
+        let panic = if h == NONE { NONE } else { fn_id{ &l, decl = h, targs = no_ids{} } }
+        let p = finish{ &l, main, start, panic }
         if l.failed { @panic("lower: a const or literal without a value") }
         return p
     }
@@ -66,7 +70,7 @@ namespace lower {
     fn alone { mut c: check::Checker, d: u32 } -> ?ir::Program {
         let mut l = lowering{ &c }
         let main = fn_id{ &l, decl = d, targs = no_ids{} }
-        let p = finish{ &l, main }
+        let p = finish{ &l, main, start = NONE, panic = NONE }
         if l.failed { return null }
         return p
     }
@@ -93,7 +97,7 @@ namespace lower {
     }
 
     // Lowers the queued instances, and those they reach, into a program.
-    fn finish { mut l: Lower, main: u32 } -> ir::Program {
+    fn finish { mut l: Lower, main: u32, start: u32, panic: u32 } -> ir::Program {
         let mut i: usize = 0
         while i < l.queue.len {
             let inst = list::items{ list = l.queue }[i]
@@ -119,7 +123,7 @@ namespace lower {
             consts = list::items{ list = l.consts },
             vars = list::items{ list = l.vars },
             fns = list::items{ list = l.fns },
-            main,
+            main, start, panic,
         }
     }
 

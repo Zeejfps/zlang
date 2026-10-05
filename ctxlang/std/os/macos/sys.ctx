@@ -3,9 +3,16 @@
 // functions it names differently.
 
 namespace sys {
+    const OS: build::Os = build::Os::macos
+
     // Where this thread's errno is: a macro in C, over this function.
     #c::symbol{ name = "__error" }
     extern fn errno { mut fs: Fs } -> *mut i32
+    #c::symbol{ name = "__error" }
+    extern fn proc_errno { mut proc: os::Proc } -> *mut i32
+
+    // sysconf's name for how many processors are online.
+    const SC_NPROCESSORS_ONLN: i32 = 58
 
     // open's flags, besides O_RDONLY (0) and O_WRONLY (1), which every system shares.
     const O_CREAT: i32 = 0x200
@@ -32,4 +39,22 @@ namespace sys {
     fn open { mut fs: Fs, path: *u8, flags: i32, mode: u32 } -> i32 {
         return c_open{ &fs, path, flags, mode, r3 = 0, r4 = 0, r5 = 0, r6 = 0, r7 = 0, stacked = mode }
     }
+
+    #c::symbol{ name = "_NSGetExecutablePath" }
+    extern fn executable_path { mut proc: os::Proc, buf: *mut u8, mut size: u32 } -> i32
+    extern fn realpath { mut proc: os::Proc, path: *u8, resolved: ?*mut u8 } -> ?*u8
+
+    // The absolute path of this program's executable, without links; empty if macOS won't say.
+    // In memory from malloc (realpath's), for good.
+    fn exe_path { mut proc: os::Proc } -> []u8 {
+        let buf = os::c_malloc{ &proc, size = 4096 } ifnull { return "" }
+        defer os::c_free{ &proc, p = buf }
+        let mut size: u32 = 4096
+        if executable_path{ &proc, buf, size = &size } != 0 { return "" }
+        let real = realpath{ &proc, path = buf, resolved = null } ifnull { return "" }
+        return c::bytes{ s = c::String{ ptr = real } }
+    }
+
+    // Nothing: the executable reserves its stack (ctxc/drive.ctx, link_flags).
+    fn start { mut proc: os::Proc, argv: *?*u8 } {}
 }

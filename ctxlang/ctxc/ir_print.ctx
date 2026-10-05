@@ -65,6 +65,16 @@ namespace ir_print {
             function{ &o, f = p.fns[i] }
             i = i + 1
         }
+        if p.start != lower::NONE {
+            text{ &o, a = "(start " }
+            num{ &o, n = p.start }
+            text{ &o, a = ")\n" }
+        }
+        if p.panic != lower::NONE {
+            text{ &o, a = "(panic " }
+            num{ &o, n = p.panic }
+            text{ &o, a = ")\n" }
+        }
         text{ &o, a = "(main " }
         num{ &o, n = p.main }
         text{ &o, a = ")\n" }

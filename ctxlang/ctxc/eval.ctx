@@ -32,9 +32,10 @@
 //
 // Nothing here needs a capability: what the program writes is kept in order (m.out, m.chunks)
 // for the caller to write. With `emulate`, the externs that writing to standard output and error
-// reaches run here: ctx_io_out (ctxrt.c's stdout buffer), `write` (Windows: `_write`) to fds 1 and
-// 2, and std's float text natives, which are ctxc's own. Any other extern fn, and any C variable,
-// stops the program.
+// reaches run here: ctx_state (ctxrt.c's storage for std's state, which holds the stdout buffer),
+// `write` (Windows: `_write`) to fds 1 and 2, and std's float text natives, which are ctxc's own.
+// Without it too, std's panics without a position (ctx_panic_msg) and Windows' arena commit
+// (VirtualQuery) run here. Any other extern fn, and any C variable, stops the program.
 
 namespace eval {
     type Heap = arena::Arena
@@ -44,7 +45,7 @@ namespace eval {
     const MASK: u64 = 1099511627775             // 2^40 - 1: an address's offset
     const CODE: u32 = 1
     const STACK: u32 = 2
-    const STACK_SIZE: u64 = 16777216            // 16 MiB, ctxrt.c's stack check
+    const STACK_SIZE: u64 = 16777216            // 16 MiB, std's rt's stack check
     const CHUNK: u64 = 1048576                  // a static or heap region, at least
     const FUEL: u64 = 1000000000                // the steps `ctxc interp` allows: under a minute
     const MAX_DEPTH: u32 = 100000               // nested calls
@@ -121,7 +122,7 @@ namespace eval {
         statics:  u32,                          // the region static data is going into
         chunk:    u32,                          // the region the heap is going into
         cap:      Addr,                         // what a `mut` capability points to: emit_c's cap[1]
-        stdout:   Addr,                         // ctx_io_out's buffer, once asked for
+        stdout:   Addr,                         // ctx_state's memory, once asked for: std's rt::State, whose first field is io's Out
         out:      list::List(u8, Heap),
         chunks:   list::List(Chunk, Heap),
         literals: list::List(Literal, Heap),
@@ -174,9 +175,16 @@ namespace eval {
 
     // ---- running
 
-    // main, with the capabilities and args the C entry point (emit_c's `entry`) gives it, and
-    // standard output's buffer flushed after, as ctx_exit and a panic flush it.
+    // main, with the capabilities and args std's start (std/rt.ctx) gives it, and standard
+    // output's buffer flushed after, as std's start and panic fn flush it. The start fn itself
+    // doesn't run: it reaches the OS.
     fn main { mut m: M, argv: [][]u8 } -> Outcome {
+        // A program's own `#start` or `#panic` fn (spec §15) would run where std's don't.
+        if not std_hook{ m, f = m.p.start, name = "rt::start" } or not std_hook{ m, f = m.p.panic, name = "rt::report" } {
+            fail{ &m, msg = "a program's own #start or #panic fn is not supported by interp" }
+            m.why = Why::external{ name = "#start" }
+            return m.stop
+        }
         let ok{ value = args } = main_args{ &m, argv } else { return m.stop }
         let r = run{ &m, callee = m.p.main, args }
         match flush{ &m } {
@@ -184,6 +192,11 @@ namespace eval {
             else => { return m.stop }
         }
         return r
+    }
+
+    // Whether hook f is std's fn `name`, or there is none.
+    fn std_hook { m: M, f: u32, name: []u8 } -> bool {
+        return f == lower::NONE or slice::eq_bytes{ a = m.p.fns[f].name, b = name }
     }
 
     fn main_args { mut m: M, argv: [][]u8 } -> ![][]u8 {
@@ -197,7 +210,7 @@ namespace eval {
                 let c = try cap{ &m }
                 put_bits{ b = b[..8], v = c }
             } else if slice::eq_bytes{ a = q.name, b = "args" } {
-                // ctx_args: a [][]u8 on the heap, an empty arg's pointer null
+                // os::args: a [][]u8 on the heap, an empty arg's pointer null
                 let mut items: Addr = 0
                 if argv.len > 0 { items = try heap_bytes{ &m, n = 16 * @as(u64, argv.len) } }
                 let mut k: usize = 0
@@ -1332,22 +1345,31 @@ namespace eval {
 
     fn external { mut m: M, f: ir::Func, base: usize, res: Addr } -> ! {
         let s = f.symbol
-        if slice::eq_bytes{ a = s, b = "ctx_commit" } {
-            // arena::alloc's: making reserved memory usable, which this memory always is. So a
-            // const or a literal conversion may allocate from an arena.
-            try store{ &m, a = res, n = 1, v = 1 }
+        if slice::eq_bytes{ a = s, b = "VirtualQuery" } {
+            // arena::alloc's on Windows (std/os/windows, `commit`): whether reserved memory is
+            // usable yet, which this memory always is (MEMORY_BASIC_INFORMATION's State is
+            // MEM_COMMIT). So a const or a literal conversion may allocate from an arena.
+            // A run of committed pages from the address's page to past any arena's end.
+            let address = try arg_bits{ &m, f, base, name = "address" }
+            let info = try arg_bits{ &m, f, base, name = "info" }
+            try store{ &m, a = info, n = 8, v = address / 4096 * 4096 }
+            try store{ &m, a = info + 24, n = 8, v = 1099511627776 }
+            try store{ &m, a = info + 32, n = 4, v = 4096 }
+            try store{ &m, a = res, n = 8, v = 48 }
             return
         }
+        if slice::eq_bytes{ a = s, b = "ctx_panic_msg" } {
+            // std's rt::fail: a panic without a position.
+            let msg = try arg_at{ &m, f, base, name = "msg" }
+            let ptr = try load{ &m, a = msg, n = 8 }
+            let len = try load{ &m, a = msg + 8, n = 8 }
+            panic_nopos{ &m, msg = try at{ &m, a = ptr, n = len } }
+            return halt
+        }
         if m.emulate {
-            if slice::eq_bytes{ a = s, b = "ctx_io_out" } {
-                // ctxrt.c's { ctx_slice buf; uint64_t len; } over a 64 KiB buffer
-                if m.stdout == 0 {
-                    let buf = try heap_bytes{ &m, n = 65536 }
-                    let o = try heap_bytes{ &m, n = 24 }
-                    try store{ &m, a = o, n = 8, v = buf }
-                    try store{ &m, a = o + 8, n = 8, v = 65536 }
-                    m.stdout = o
-                }
+            if slice::eq_bytes{ a = s, b = "ctx_state" } {
+                // ctxrt.c's zeroed memory for std's process-wide state, the same on every call
+                if m.stdout == 0 { m.stdout = try heap_bytes{ &m, n = try arg_bits{ &m, f, base, name = "size" } } }
                 try store{ &m, a = res, n = 8, v = m.stdout }
                 return
             }
@@ -1363,8 +1385,8 @@ namespace eval {
                     return
                 }
             }
-            let f64_text = slice::eq_bytes{ a = s, b = "ctx_ascii_f64_digits" }
-            if f64_text or slice::eq_bytes{ a = s, b = "ctx_ascii_f32_digits" } {
+            let f64_text = slice::eq_bytes{ a = s, b = "ctx_float_f64_digits" }
+            if f64_text or slice::eq_bytes{ a = s, b = "ctx_float_f32_digits" } {
                 let n = try arg_bits{ &m, f, base, name = "n" }
                 let into = try arg_at{ &m, f, base, name = "into" }
                 let mut buf: [64]u8
@@ -1381,8 +1403,8 @@ namespace eval {
                 try store{ &m, a = res, n = 8, v = @as(u64, k) }
                 return
             }
-            let f64_parse = slice::eq_bytes{ a = s, b = "ctx_ascii_f64_parse" }
-            if f64_parse or slice::eq_bytes{ a = s, b = "ctx_ascii_f32_parse" } {
+            let f64_parse = slice::eq_bytes{ a = s, b = "ctx_float_f64_parse" }
+            if f64_parse or slice::eq_bytes{ a = s, b = "ctx_float_f32_parse" } {
                 let text = try arg_at{ &m, f, base, name = "text" }
                 let ptr = try load{ &m, a = text, n = 8 }
                 let len = try load{ &m, a = text + 8, n = 8 }
@@ -1420,11 +1442,13 @@ namespace eval {
         return try get{ &m, a, t = f.params[k].ty }
     }
 
-    // Standard output's buffer, written out, as ctxrt.c's flush_out does.
+    // Standard output's buffer, written out, as std's io::flush does: io's Out, a slice of
+    // the buffer and the length of what waits in it, at the start of std's rt::State.
     fn flush { mut m: M } -> ! {
         if m.stdout == 0 { return }
         let ptr = try load{ &m, a = m.stdout, n = 8 }
         let len = try load{ &m, a = m.stdout + 16, n = 8 }
+        if len == 0 { return }
         let bytes = try at{ &m, a = ptr, n = len }
         try emit{ &m, to = io::Stream::out, bytes }
         try store{ &m, a = m.stdout + 16, n = 8, v = 0 }

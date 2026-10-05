@@ -1,0 +1,111 @@
+// std: rt. What starts a program and reports its panics (spec §15, Entry point), over the
+// platform's layer, and std's state for the whole program. The runtime (ctxc/rt/ctxrt.c) keeps
+// only what ctxlang can't: C's main calls `start`, and each panic calls `report`.
+//
+// A program replaces either with a fn of its own that has the attribute, as one for a target
+// without an OS might:
+//
+//   #panic
+//   fn halt { msg: []u8 } { while true {} }
+
+namespace rt {
+    // std's state for the whole program, in memory the runtime keeps (ctx_state): standard
+    // output's buffer (io), what a build program has described (build), and the executable's
+    // path, once asked for (proc::exe_path).
+    struct State { out: io::Out, out_bytes: [65536]u8, graph: build::Graph, exe_path: []u8 }
+
+    #c::symbol{ name = "ctx_state" }
+    extern fn state_of { mut io: Io, size: usize } -> *mut State
+
+    // The state, the same on every call.
+    fn state { mut io: Io } -> *mut State {
+        return state_of{ &io, size = @size_of(State) }
+    }
+
+    // Panics with a message that needn't be a literal, as `@panic` does, but without a
+    // position: for std's checks of what a caller passed.
+    #c::symbol{ name = "ctx_panic_msg" }
+    extern fn fail { msg: []u8 }
+
+    // A panic message of pieces, for `fail`: what doesn't fit is cut.
+    struct Message { bytes: [256]u8, len: usize }
+
+    fn message { s: []u8 } -> Message {
+        let mut m = Message{ bytes = [0; 256], len = 0 }
+        add{ &m, s }
+        return m
+    }
+
+    fn add { mut m: Message, s: []u8 } {
+        let n = if s.len > m.bytes.len - m.len { m.bytes.len - m.len } else { s.len }
+        slice::copy(u8){ dst = m.bytes[m.len..m.len + n], src = s[..n] }
+        m.len = m.len + n
+    }
+
+    fn add_u64 { mut m: Message, n: u64 } {
+        let mut buf: [20]u8
+        add{ &m, s = utf8::fmt_u64{ n, into = buf[..] }.bytes }
+    }
+
+    fn fail_with { m: Message } {
+        fail{ msg = m.bytes[..m.len] }
+    }
+
+    // ---- the entry point and panics
+
+    // Runs the program: the platform's setup (os::start), the stack check's limit, main with
+    // the command line's arguments, and standard output written out. Returns main's exit code.
+    #start
+    fn start { mut io: Io, mut mem: Mem, mut proc: Proc, argc: i32, argv: *?*u8, main: &fn{ args: Args } -> i32 } -> i32 {
+        os::start{ &io, &proc, argv }
+        let here: u8 = 0
+        let at = @addr(&here)
+        let size = stack_size{ &proc }
+        stack_set{ &proc, limit = if at > size { at - size } else { 0 } }
+        let code = main{ args = os::args{ &mem, argc, argv } }
+        io::flush{ &io }
+        return code
+    }
+
+    // Where a frame panics with "stack overflow" (ctxrt.h, CTX_STACK_CHECK).
+    #c::symbol{ name = "ctx_stack_set" }
+    extern fn stack_set { mut proc: Proc, limit: usize }
+
+    // The stack the check lets a program use: CTX_STACK bytes, at most 200 MiB, or 16 MiB. The
+    // executable reserves more (ctxc/drive.ctx, link_flags), so a frame that crosses the limit
+    // still has room to reach the check, and `report` to say so.
+    fn stack_size { mut proc: Proc } -> usize {
+        let set = os::env{ &proc, name = "CTX_STACK" } ifnull { return 16777216 }
+        let n = utf8::parse_u64{ s = utf8::String{ bytes = set } } ifnull { return 16777216 }
+        if n == 0 { return 16777216 }
+        return if n > 209715200 { 209715200 } else { @as(usize, n) }
+    }
+
+    // Reports a panic on standard error, after what standard output holds, and ends the program
+    // with exit code 134: "FILE:LINE:COL: panic: MSG", or "PROGRAM: panic: MSG" for a panic
+    // without a position (line 0).
+    #panic
+    fn report { mut io: Io, mut proc: Proc, msg: []u8, file: []u8, line: u32, col: u32 } {
+        let mut buf: [4096]u8
+        let mut n = put{ into = buf[..buf.len - 1], n = 0, s = file }
+        if line > 0 {
+            let mut digits: [20]u8
+            n = put{ into = buf[..buf.len - 1], n, s = ":" }
+            n = put{ into = buf[..buf.len - 1], n, s = utf8::fmt_u64{ n = line, into = digits[..] }.bytes }
+            n = put{ into = buf[..buf.len - 1], n, s = ":" }
+            n = put{ into = buf[..buf.len - 1], n, s = utf8::fmt_u64{ n = col, into = digits[..] }.bytes }
+        }
+        n = put{ into = buf[..buf.len - 1], n, s = ": panic: " }
+        n = put{ into = buf[..buf.len - 1], n, s = msg }
+        buf[n] = '\n'
+        io::write{ &io, to = io::Stream::err, bytes = buf[..n + 1] }
+        os::exit{ &proc, code = 134 }
+    }
+
+    // s after into[..n], or as much of it as fits. Returns the new length.
+    fn put { into: []mut u8, n: usize, s: []u8 } -> usize {
+        let k = if s.len > into.len - n { into.len - n } else { s.len }
+        slice::copy(u8){ dst = into[n..n + k], src = s[..k] }
+        return n + k
+    }
+}
