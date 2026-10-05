@@ -5,9 +5,6 @@
 // The platform is the one ctxc runs on: its target.ctx, beside this one in the build.
 //
 // Where it differs from the platform's own layer, beyond what it can't do:
-//   - What fails, fails with the errors of every platform's layer, not only this one's, as a
-//     program for every platform sees them (no_files). The platforms' sets differ, so a match
-//     that lists every error of one platform's without `else` compiles only there, and not here.
 //   - Its argv, for a program's own `#start`, is UTF-8, where Windows' C gives the ANSI code
 //     page's bytes.
 //   - Its environment's keys match as std's proc::overridden does, folding ASCII's case where
@@ -92,30 +89,24 @@ namespace os {
 
     struct Dir { handle: u64 }
 
-    // Stops the run. It fails, as far as the checker can tell, with each error the platforms'
-    // layers fail with, so that a program's handling of them is checked as theirs is.
-    fn no_files(T) {} -> !T {
-        let n = unsupported{ what = "files" }
-        if n == 0 { return fs::not_found }
-        if n == 1 { return fs::permission_denied }
-        if n == 2 { return fs::is_directory }
-        if n == 3 { return fs::exists }
-        if n == 4 { return fs::not_directory }
-        if n == 5 { return fs::bad_file }
+    // Stops the run. Its callers declare the errors every layer may fail with (fs::Error), so
+    // that a program is checked as the platform's layer would check it.
+    fn no_files(T) {} -> fs::Error!T {
+        _ = unsupported{ what = "files" }
         return fs::other{ code = 0 }
     }
 
-    fn file_open { mut fs: Fs, path: []u8, mode: fs::Mode } -> !u64 { return try no_files(u64){} }
-    fn file_read { mut fs: Fs, file: u64, into: []mut u8 } -> !usize { return try no_files(usize){} }
-    fn file_write { mut fs: Fs, file: u64, bytes: []u8 } -> !usize { return try no_files(usize){} }
-    fn file_close { mut fs: Fs, file: u64 } -> ! { _ = try no_files(bool){} }
-    fn file_seek { mut fs: Fs, file: u64, offset: u64 } -> ! { _ = try no_files(bool){} }
-    fn file_size { mut fs: Fs, path: []u8 } -> !u64 { return try no_files(u64){} }
-    fn remove { mut fs: Fs, path: []u8 } -> ! { _ = try no_files(bool){} }
-    fn make_dir { mut fs: Fs, path: []u8 } -> ! { _ = try no_files(bool){} }
-    fn rename { mut fs: Fs, from: []u8, to: []u8 } -> ! { _ = try no_files(bool){} }
-    fn working_dir { mut fs: Fs, into: []mut u8 } -> !usize { return try no_files(usize){} }
-    fn dir_open { mut fs: Fs, path: []u8 } -> !Dir { return try no_files(Dir){} }
+    fn file_open { mut fs: Fs, path: []u8, mode: fs::Mode } -> fs::Error!u64 { return try no_files(u64){} }
+    fn file_read { mut fs: Fs, file: u64, into: []mut u8 } -> fs::Error!usize { return try no_files(usize){} }
+    fn file_write { mut fs: Fs, file: u64, bytes: []u8 } -> fs::Error!usize { return try no_files(usize){} }
+    fn file_close { mut fs: Fs, file: u64 } -> fs::Error! { _ = try no_files(bool){} }
+    fn file_seek { mut fs: Fs, file: u64, offset: u64 } -> fs::Error! { _ = try no_files(bool){} }
+    fn file_size { mut fs: Fs, path: []u8 } -> fs::Error!u64 { return try no_files(u64){} }
+    fn remove { mut fs: Fs, path: []u8 } -> fs::Error! { _ = try no_files(bool){} }
+    fn make_dir { mut fs: Fs, path: []u8 } -> fs::Error! { _ = try no_files(bool){} }
+    fn rename { mut fs: Fs, from: []u8, to: []u8 } -> fs::Error! { _ = try no_files(bool){} }
+    fn working_dir { mut fs: Fs, into: []mut u8 } -> fs::Error!usize { return try no_files(usize){} }
+    fn dir_open { mut fs: Fs, path: []u8 } -> fs::Error!Dir { return try no_files(Dir){} }
     fn dir_next { mut fs: Fs, mut dir: Dir } -> ?[]u8 {
         _ = unsupported{ what = "files" }
         return null
@@ -152,16 +143,14 @@ namespace os {
 
     // ---- for std's proc: not supported by interp
 
-    // Stops the run, failing as no_files does with proc's errors.
-    fn no_programs(T) {} -> !T {
-        let n = unsupported{ what = "other programs" }
-        if n == 0 { return proc::not_found }
-        if n == 1 { return proc::permission_denied }
+    // Stops the run, as no_files does, for proc's errors.
+    fn no_programs(T) {} -> proc::Error!T {
+        _ = unsupported{ what = "other programs" }
         return proc::other{ code = 0 }
     }
 
-    fn spawn { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> !u64 { return try no_programs(u64){} }
-    fn wait { mut proc: Proc, id: u64 } -> !i32 { return try no_programs(i32){} }
+    fn spawn { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> proc::Error!u64 { return try no_programs(u64){} }
+    fn wait { mut proc: Proc, id: u64 } -> proc::Error!i32 { return try no_programs(i32){} }
 
     fn processors { mut proc: Proc } -> u32 {
         _ = unsupported{ what = "the number of processors" }

@@ -416,8 +416,9 @@ namespace tree {
                 line{ &d, at, s = "topt" }
                 sub_type{ &d, t = elem.* }
             }
-            fail{ elem } => {
+            fail{ elem, set } => {
                 line{ &d, at, s = "tfail" }
+                if set != null { sub_type{ &d, t = set.* } }
                 if elem != null { sub_type{ &d, t = elem.* } }
             }
             slice{ mutable, elem } => {

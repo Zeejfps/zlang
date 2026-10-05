@@ -141,7 +141,7 @@ namespace os {
     // hasn't been returned yet, and its name as UTF-8.
     struct Dir { find: u64, data: FindData, fresh: bool, name: [1040]u8 }
 
-    fn file_open { mut fs: Fs, path: []u8, mode: fs::Mode } -> !u64 {
+    fn file_open { mut fs: Fs, path: []u8, mode: fs::Mode } -> fs::Error!u64 {
         let mut buf: [32768]u16
         let p = wide_path{ &fs, path, buf = buf[..] } ifnull { return too_long{} }
         if is_dir{ &fs, path = p } { return fs::is_directory }
@@ -153,7 +153,7 @@ namespace os {
     }
 
     // Reads at most into.len bytes, which aren't none. Returns how many; 0 at the end.
-    fn file_read { mut fs: Fs, file: u64, into: []mut u8 } -> !usize {
+    fn file_read { mut fs: Fs, file: u64, into: []mut u8 } -> fs::Error!usize {
         let n = if into.len > CHUNK { CHUNK } else { into.len }
         let mut done: u32 = 0
         if ReadFile{ &fs, file, buf = into.ptr, count = @as(u32, n), done = &done, overlapped = null } == 0 {
@@ -163,7 +163,7 @@ namespace os {
     }
 
     // Writes some of `bytes`, which aren't none. Returns how many.
-    fn file_write { mut fs: Fs, file: u64, bytes: []u8 } -> !usize {
+    fn file_write { mut fs: Fs, file: u64, bytes: []u8 } -> fs::Error!usize {
         let n = if bytes.len > CHUNK { CHUNK } else { bytes.len }
         let mut done: u32 = 0
         if WriteFile{ &fs, file, buf = bytes.ptr, count = @as(u32, n), done = &done, overlapped = null } == 0 {
@@ -172,19 +172,19 @@ namespace os {
         return @as(usize, done)
     }
 
-    fn file_close { mut fs: Fs, file: u64 } -> ! {
+    fn file_close { mut fs: Fs, file: u64 } -> fs::Error! {
         if CloseHandle{ &fs, handle = file } == 0 { return failed{ code = GetLastError{ &fs } } }
     }
 
     // Moves the position to `offset` from the start (FILE_BEGIN).
-    fn file_seek { mut fs: Fs, file: u64, offset: u64 } -> ! {
+    fn file_seek { mut fs: Fs, file: u64, offset: u64 } -> fs::Error! {
         if offset > 9223372036854775807 { return failed{ code = 131 } }      // ERROR_NEGATIVE_SEEK
         if SetFilePointerEx{ &fs, file, distance = @as(i64, offset), moved_to = null, method = 0 } == 0 {
             return failed{ code = GetLastError{ &fs } }
         }
     }
 
-    fn file_size { mut fs: Fs, path: []u8 } -> !u64 {
+    fn file_size { mut fs: Fs, path: []u8 } -> fs::Error!u64 {
         let mut buf: [32768]u16
         let p = wide_path{ &fs, path, buf = buf[..] } ifnull { return too_long{} }
         let mut data: FileData
@@ -193,20 +193,20 @@ namespace os {
         return (@as(u64, data.size_high) << 32) | @as(u64, data.size_low)
     }
 
-    fn remove { mut fs: Fs, path: []u8 } -> ! {
+    fn remove { mut fs: Fs, path: []u8 } -> fs::Error! {
         let mut buf: [32768]u16
         let p = wide_path{ &fs, path, buf = buf[..] } ifnull { return too_long{} }
         if is_dir{ &fs, path = p } { return fs::is_directory }
         if DeleteFileW{ &fs, name = p } == 0 { return failed{ code = GetLastError{ &fs } } }
     }
 
-    fn make_dir { mut fs: Fs, path: []u8 } -> ! {
+    fn make_dir { mut fs: Fs, path: []u8 } -> fs::Error! {
         let mut buf: [32768]u16
         let p = wide_path{ &fs, path, buf = buf[..] } ifnull { return too_long{} }
         if CreateDirectoryW{ &fs, name = p, security = null } == 0 { return failed{ code = GetLastError{ &fs } } }
     }
 
-    fn rename { mut fs: Fs, from: []u8, to: []u8 } -> ! {
+    fn rename { mut fs: Fs, from: []u8, to: []u8 } -> fs::Error! {
         let mut a: [32768]u16
         let mut b: [32768]u16
         let p = wide_path{ &fs, path = from, buf = a[..] } ifnull { return too_long{} }
@@ -215,7 +215,7 @@ namespace os {
     }
 
     // The working directory's path, as UTF-8, into `into`. Returns its length.
-    fn working_dir { mut fs: Fs, into: []mut u8 } -> !usize {
+    fn working_dir { mut fs: Fs, into: []mut u8 } -> fs::Error!usize {
         let mut buf: [32768]u16
         let n = GetCurrentDirectoryW{ &fs, size = @as(u32, buf.len), buf = buf[..].ptr }
         if n == 0 { return failed{ code = GetLastError{ &fs } } }
@@ -230,7 +230,7 @@ namespace os {
         return target::is_absolute{ path }
     }
 
-    fn dir_open { mut fs: Fs, path: []u8 } -> !Dir {
+    fn dir_open { mut fs: Fs, path: []u8 } -> fs::Error!Dir {
         let mut buf: [32768]u16
         let p = wide_path{ &fs, path, buf = buf[..buf.len - 2] } ifnull { return too_long{} }
         let mut n: usize = 0
@@ -416,7 +416,7 @@ namespace os {
 
     // Starts argv[0] with this program's environment, less the entries env replaces, and env's
     // own. argv and env aren't empty and are checked (proc::spawn).
-    fn spawn { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> !u64 {
+    fn spawn { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> proc::Error!u64 {
         // The command line, as CommandLineToArgvW reads it back: each argument takes at most
         // twice its bytes and three more, a space and quotes.
         let mut cap: usize = 1
@@ -568,7 +568,7 @@ namespace os {
     }
 
     // Waits for child `id` to end, and closes its handle: its exit code.
-    fn wait { mut proc: Proc, id: u64 } -> !i32 {
+    fn wait { mut proc: Proc, id: u64 } -> proc::Error!i32 {
         if WaitForSingleObject{ &proc, handle = id, ms = INFINITE } == WAIT_FAILED { return proc::other{ code = @as(i64, last_error{ &proc }) } }
         let mut code: u32 = 0
         _ = GetExitCodeProcess{ &proc, handle = id, code = &code }

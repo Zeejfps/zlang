@@ -5809,6 +5809,234 @@ fn main { mut io: Io } {
 }
 """, 'ok 42\nerr parse::empty\nerr parse::bad_digit{ at = 1 }\nerr parse::too_big\n')
 
+    DECLARED = """
+namespace p {
+    error empty
+    error bad{ at: usize }
+    error huge
+
+    type ParseError = error(empty, bad)
+    type Error = error(ParseError, huge)
+
+    fn digit { s: []u8 } -> ParseError!u64 {
+        if s.len == 0 { return empty }
+        if s[0] < '0' or s[0] > '9' { return bad{ at = 0 } }
+        return @as(u64, s[0] - '0')
+    }
+
+    fn inferred { s: []u8 } -> !u64 {
+        return try digit{ s }
+    }
+
+    fn bounded { s: []u8 } -> Error!u64 {
+        let d = try digit{ s }
+        let e = try inferred{ s }
+        return d + e
+    }
+
+    fn checked { s: []u8 } -> error(huge, bad, empty)! {
+        _ = try bounded{ s }
+    }
+}
+"""
+
+    def test_declared_set(self):
+        # `E!T` declares the errors a function may fail with (spec §8, Errors, rule 14): its
+        # callers see that set, whatever its body returns, and match against it. `huge` is
+        # never returned, but bounded's callers must allow it.
+        self.assertOutput(self.DECLARED + """
+fn main { mut io: Io } {
+    match p::digit{ s = "7" } {
+        ok{ value } => { io::println_u64{ &io, n = value } }
+        p::empty => { io::println{ &io, s = "empty" } }
+        p::bad{ at } => { io::println_u64{ &io, n = at } }
+    }
+    match p::bounded{ s = "x" } {
+        ok{ value } => { io::println_u64{ &io, n = value } }
+        p::bad{ at } => { io::println{ &io, s = "bad" } }
+        p::empty | p::huge => { io::println{ &io, s = "other" } }
+    }
+    let e: p::Error!u64 = p::digit{ s = "" }
+    io::println_bool{ &io, n = match e { ok => { false } err{ error } => { true } } }
+    p::checked{ s = "" } iferr err{ error } { io::println{ &io, s = "failed" } }
+    show_set{ &io, r = p::bounded{ s = "" } }
+}
+
+fn show_set { mut io: Io, r: p::Error!u64 } {
+    match r {
+        ok => {}
+        err{ error } => { _ = @fmt(&io, "{}\\n", error) }
+    }
+}
+""", '7\nbad\ntrue\nfailed\np::empty\n')
+
+    def test_declared_set_errors(self):
+        head = 'error a\nerror b\nerror c\n'
+        for src, msg in [
+            # a body returns only the set's errors, directly, by `try`, or from a call
+            ('fn f {} -> error(a)!u64 { return b }\nfn main {} { _ = f{} }',
+             "`b` can't join error(a): a declared set holds only its own errors"),
+            ('fn g {} -> !u64 { return c }\nfn f {} -> error(a, b)!u64 { return try g{} }\nfn main {} { _ = f{} }',
+             "the errors of `g` include `c`, which isn't one of error(a, b): a declared set holds only its own errors"),
+            ('fn f {} -> error(a, b)!u64 { return a }\nfn k {} -> error(a)! { _ = try f{} }\nfn main {} { _ = k{} }',
+             '`try` passes up error(a, b), not all of which are in error(a): a declared set holds only its own errors'),
+            # callers match against the declared set
+            ('fn f {} -> error(a, b)!u64 { return a }\nfn main {} { match f{} { ok => {} a => {} } }',
+             "match isn't exhaustive: missing b"),
+            ('fn f {} -> error(a, b)!u64 { return a }\nfn main {} { match f{} { ok => {} a => {} b => {} c => {} } }',
+             "error `c` can't happen here: this fails only with a, b"),
+            # a set is errors and sets
+            ('fn f {} -> error(a, u64)!u64 { return a }\nfn main {} {}',
+             "u64 is not an error set: a set is `error(...)`, an alias of one, or one error"),
+            ('fn f {} -> u64!u64 { return 1 }\nfn main {} {}',
+             "u64 is not an error set: a set is `error(...)`, an alias of one, or one error"),
+            ('fn f {} -> error(error)!u64 { return a }\nfn main {} {}',
+             '`error` is every error already: a set lists errors and sets'),
+            # not yet in a function type
+            ('fn f { g: fn{} -> error(a)!u64 } {}\nfn main {} {}',
+             "a function type's `!T` fails with any error: its set can't be written"),
+        ]:
+            self.assertCompileError(head + src, msg)
+
+    def test_declared_set_joins(self):
+        # A declared writer's errors join an @fmt's; branches of declared and inferred sets join
+        # the widest; a declared function is a value, and generic, with its payloads renumbered.
+        self.assertOutput("""
+error a
+error b
+error c{ n: u64 }
+struct P { n: u32 }
+#write
+fn write_p { mut io: Io, p: P } -> error(a)! {
+    if p.n == 0 { return a }
+    io::print_u64{ &io, n = @as(u64, p.n) }
+}
+fn f { mut io: Io, n: u32 } -> error(a, b)! {
+    try @fmt(&io, "{}\\n", P{ n })
+}
+fn da {} -> error(a)!u64 { return a }
+fn ib {} -> !u64 { return b }
+fn dab {} -> error(a, b)!u64 { return 7 }
+fn pick { n: u32 } -> error(a, b)!u64 {
+    let r = match n { 0 => { da{} } 1 => { ib{} } else => { dab{} } }
+    return r
+}
+fn twice(T) { x: T, fail: bool } -> error(b, c)!T {
+    if fail { return c{ n = 9 } }
+    return x
+}
+fn call { g: fn{} -> !u64 } -> !u64 { return try g{} }
+fn cv {} -> error(b, c)!u64 { return c{ n = 5 } }
+fn main { mut io: Io } {
+    f{ &io, n = 4 } iferr err{ error } { io::println{ &io, s = "failed" } }
+    match f{ &io, n = 0 } {
+        ok => {}
+        a => { io::println{ &io, s = "a" } }
+        b => { io::println{ &io, s = "b" } }
+    }
+    io::println_u64{ &io, n = pick{ n = 2 } iferr 0 }
+    match pick{ n = 1 } { ok => {} a => {} b => { io::println{ &io, s = "b" } } }
+    match twice(u8){ x = 3, fail = true } { ok => {} b => {} c{ n } => { io::println_u64{ &io, n } } }
+    match call{ g = cv } { ok => {} err{ error } => { _ = @fmt(&io, "{}\\n", error) } }
+}
+""", '4\na\n7\nb\n9\nc{ n = 5 }\n')
+
+    def test_declared_writers(self):
+        # A declared writer's errors reach an @fmt also when it writes an error's payload, and
+        # one declaring `error!` makes the @fmt's set any error.
+        self.assertOutput("""
+error a
+struct P { n: u32 }
+error holds{ p: P }
+#write
+fn write_p { mut io: Io, p: P } -> error(a)! {
+    if p.n == 0 { return a }
+    io::print_u64{ &io, n = @as(u64, p.n) }
+}
+struct Q { n: u32 }
+#write
+fn write_q { mut io: Io, q: Q } -> error! {
+    if q.n == 0 { return a }
+    io::print_u64{ &io, n = @as(u64, q.n) }
+}
+fn show { mut io: Io, e: error(holds) } -> !u64 {
+    try @fmt(&io, "{}\\n", e)
+    return 1
+}
+fn main { mut io: Io } {
+    match show{ &io, e = holds{ p = P{ n = 0 } } } { ok => {} a => { io::println{ &io, s = "a" } } }
+    match @fmt(&io, "{}\\n", Q{ n = 0 }) { ok => {} else => { io::println{ &io, s = "any" } } }
+}
+""", 'holds{ p = a\nany\n')
+
+    def test_declared_set_names(self):
+        # A type of a set's name comes before an error of the same name (§10).
+        self.assertOutput("""
+error E
+error b
+type E = error(b)
+fn f {} -> E!u64 { return b }
+fn main { mut io: Io } { match f{} { ok => {} b => { io::println{ &io, s = "b" } } } }
+""", 'b\n')
+        # A name that is an attribute, or a namespace, is an error's in a set.
+        self.assertOutput("""
+error write
+error c
+fn f {} -> write!u64 { return write }
+fn g {} -> error(c)! { return c }
+fn main { mut io: Io } {
+    match f{} { ok => {} write => { io::println{ &io, s = "write" } } }
+    match g{} { ok => {} c => { io::println{ &io, s = "c" } } }
+}
+""", 'write\nc\n')
+
+    def test_declared_set_more_errors(self):
+        head = 'error a\nerror b\n'
+        for src, msg in [
+            # a const's initializer joins a declared set as a body does
+            ('fn g {} -> !u64 { return b }\nconst N: u64 = g{} iferr err{ error } {\n    let e: error(a) = error\n    0\n}\nfn main {} { _ = N }',
+             "the errors of `g` include `b`, which isn't one of error(a): a declared set holds only its own errors"),
+            # an alias can't declare a function type's set
+            ('type R = error(a)!u64\ntype F = fn{} -> R\nfn main {} {}',
+             "a function type's `!T` fails with any error: its set can't be written"),
+            # a mismatched value is said to be one, not its set
+            ('fn g {} -> error(a)!u8 { return 1 }\nfn f {} -> error(a)!u64 { return g{} }\nfn main {} { _ = f{} }',
+             'expected error(a)!u64, got error(a)!u8'),
+            # a declared local holds only its errors too
+            ('fn g {} -> !u64 { return b }\nfn main {} { let r: error(a)!u64 = g{}\n    _ = r }',
+             "the errors of `g` include `b`, which isn't one of error(a): a declared set holds only its own errors"),
+            ('fn main {} { let e: error(a) = b\n    _ = e }',
+             "`b` can't join error(a): a declared set holds only its own errors"),
+            # assigned, as when declared
+            ('fn g {} -> !u64 { return b }\nfn main {} {\n    let mut r: error(a)!u64 = 1\n    r = g{}\n    _ = r\n}',
+             "the errors of `g` include `b`, which isn't one of error(a): a declared set holds only its own errors"),
+            ('fn main {} {\n    let mut e: error(a) = a\n    e = b\n    _ = e\n}',
+             "`b` can't join error(a): a declared set holds only its own errors"),
+            # a result isn't an error, whatever their sets
+            ('fn g {} -> error(a)!u64 { return 1 }\nfn main {} { let e: error(a) = g{}\n    _ = e }',
+             'expected error(a), got error(a)!u64'),
+            ('fn g {} -> error(a)!u64 { return 1 }\nfn main {} { let r: error(a)!u64 = g\n    _ = r }',
+             'expected error(a)!u64, got fn{} -> error(a)!u64'),
+        ]:
+            self.assertCompileError(head + src, msg)
+
+    def test_one_error_and_any_as_a_set(self):
+        # One error is a set of its own, and `error!T` fails with any error, as `!T` written
+        # outside a function's result does.
+        self.assertOutput("""
+error a
+error b
+fn one {} -> a!u64 { return a }
+fn any { n: u64 } -> error!u64 {
+    if n == 0 { return a }
+    return b
+}
+fn main { mut io: Io } {
+    match one{} { ok => {} a => { io::println{ &io, s = "a" } } }
+    match any{ n = 1 } { ok => {} a => {} else => { io::println{ &io, s = "b" } } }
+}
+""", 'a\nb\n')
+
     def test_try_passes_the_error_up(self):
         self.assertOutput(self.PARSE + """
 fn sum { a: []u8, b: []u8 } -> !u64 {
@@ -7008,6 +7236,30 @@ fn main { mut io: Io, mut mem: Mem, mut fs: Fs } -> i32 {
                 text = f.read()
             for s in symbols:
                 self.assertIn(f'CTX_SYMBOL("{s}")', text, platform)
+
+    def test_same_errors_everywhere(self):
+        # Every layer declares the same sets (fs::Error, proc::Error; spec §8, Errors, rule 14),
+        # so a match that lists every error a platform function may fail with checks the same on
+        # every platform and in the interpreter.
+        import toolchain
+        d, files = toolchain.write_program([("""
+fn main { mut io: Io, mut fs: Fs, mut proc: Proc } -> i32 {
+    match fs::open{ &fs, path = "x", mode = fs::Mode::read } {
+        ok => { return 0 }
+        fs::not_found | fs::permission_denied | fs::is_directory | fs::exists => { return 1 }
+        fs::not_directory | fs::bad_file => { return 2 }
+        fs::other{ code } => { return 3 }
+    }
+    match proc::wait{ &proc, child = proc::Child{ id = 0 } } {
+        ok => { return 0 }
+        proc::not_found | proc::permission_denied => { return 1 }
+        proc::other => { return 2 }
+    }
+}
+""", 'main.ctx')])
+        for platform in toolchain.PLATFORMS + ('interp',):
+            c = os.path.join(d, f'{platform}.c')
+            self.assertEqual(toolchain.ctxc_build(toolchain.native_ctxc(), c, list(files), cwd=d, platform=platform), (0, ''), platform)
 
     def test_output_order(self):
         # Standard output is written out before standard error, and a panic writes out what is

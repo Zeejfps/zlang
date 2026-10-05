@@ -353,7 +353,10 @@ namespace recover {
             path{ segs } => { seg_list{ &c, segs, lo = a, hi = b } }
             ptr{ elem } => { type_expr{ &c, t = elem.*, lo = a, hi = b } }
             opt{ elem } => { type_expr{ &c, t = elem.*, lo = a, hi = b } }
-            fail{ elem } => { if elem != null { type_expr{ &c, t = elem.*, lo = a, hi = b } } }
+            fail{ elem, set } => {
+                if set != null { type_expr{ &c, t = set.*, lo = a, hi = b } }
+                if elem != null { type_expr{ &c, t = elem.*, lo = a, hi = b } }
+            }
             slice{ elem } => { type_expr{ &c, t = elem.*, lo = a, hi = b } }
             array{ n, elem } => {
                 expr{ &c, e = n.*, lo = a, hi = b }

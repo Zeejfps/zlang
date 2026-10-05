@@ -109,7 +109,7 @@ namespace os {
     // A directory being read, for fs::list: the C library's DIR.
     struct Dir { handle: u64 }
 
-    fn file_open { mut fs: Fs, path: []u8, mode: fs::Mode } -> !u64 {
+    fn file_open { mut fs: Fs, path: []u8, mode: fs::Mode } -> fs::Error!u64 {
         let mut buf: [4096]u8
         let p = c_path{ path, buf = buf[..] } ifnull { return failed{ code = sys::ENAMETOOLONG } }
         if is_dir{ &fs, path = p } { return fs::is_directory }
@@ -125,7 +125,7 @@ namespace os {
     }
 
     // Reads at most into.len bytes, which aren't none. Returns how many; 0 at the end.
-    fn file_read { mut fs: Fs, file: u64, into: []mut u8 } -> !usize {
+    fn file_read { mut fs: Fs, file: u64, into: []mut u8 } -> fs::Error!usize {
         let fd = descriptor{ file } ifnull { return fs::bad_file }
         let n = fd_read{ &fs, fd, buf = into.ptr, count = into.len }
         if n < 0 { return failed{ code = sys::errno{ &fs }.* } }
@@ -133,27 +133,27 @@ namespace os {
     }
 
     // Writes some of `bytes`, which aren't none. Returns how many.
-    fn file_write { mut fs: Fs, file: u64, bytes: []u8 } -> !usize {
+    fn file_write { mut fs: Fs, file: u64, bytes: []u8 } -> fs::Error!usize {
         let fd = descriptor{ file } ifnull { return fs::bad_file }
         let n = fd_write{ &fs, fd, buf = bytes.ptr, count = bytes.len }
         if n < 0 { return failed{ code = sys::errno{ &fs }.* } }
         return @as(usize, n)
     }
 
-    fn file_close { mut fs: Fs, file: u64 } -> ! {
+    fn file_close { mut fs: Fs, file: u64 } -> fs::Error! {
         let fd = descriptor{ file } ifnull { return fs::bad_file }
         if fd_close{ &fs, fd } < 0 { return failed{ code = sys::errno{ &fs }.* } }
     }
 
     // Moves the position to `offset` from the start (SEEK_SET).
-    fn file_seek { mut fs: Fs, file: u64, offset: u64 } -> ! {
+    fn file_seek { mut fs: Fs, file: u64, offset: u64 } -> fs::Error! {
         let fd = descriptor{ file } ifnull { return fs::bad_file }
         if offset > 9223372036854775807 { return failed{ code = 22 } }       // EINVAL
         if lseek{ &fs, fd, offset = @as(i64, offset), whence = SEEK_SET } < 0 { return failed{ code = sys::errno{ &fs }.* } }
     }
 
     // The size of the file at `path`: where its end is, which needs no layout of struct stat.
-    fn file_size { mut fs: Fs, path: []u8 } -> !u64 {
+    fn file_size { mut fs: Fs, path: []u8 } -> fs::Error!u64 {
         let mut buf: [4096]u8
         let p = c_path{ path, buf = buf[..] } ifnull { return failed{ code = sys::ENAMETOOLONG } }
         if is_dir{ &fs, path = p } { return fs::is_directory }
@@ -166,20 +166,20 @@ namespace os {
         return @as(u64, end)
     }
 
-    fn remove { mut fs: Fs, path: []u8 } -> ! {
+    fn remove { mut fs: Fs, path: []u8 } -> fs::Error! {
         let mut buf: [4096]u8
         let p = c_path{ path, buf = buf[..] } ifnull { return failed{ code = sys::ENAMETOOLONG } }
         if is_dir{ &fs, path = p } { return fs::is_directory }
         if unlink{ &fs, path = p } < 0 { return failed{ code = sys::errno{ &fs }.* } }
     }
 
-    fn make_dir { mut fs: Fs, path: []u8 } -> ! {
+    fn make_dir { mut fs: Fs, path: []u8 } -> fs::Error! {
         let mut buf: [4096]u8
         let p = c_path{ path, buf = buf[..] } ifnull { return failed{ code = sys::ENAMETOOLONG } }
         if mkdir{ &fs, path = p, mode = 511 } < 0 { return failed{ code = sys::errno{ &fs }.* } }     // 0777, less the umask
     }
 
-    fn rename { mut fs: Fs, from: []u8, to: []u8 } -> ! {
+    fn rename { mut fs: Fs, from: []u8, to: []u8 } -> fs::Error! {
         let mut a: [4096]u8
         let mut b: [4096]u8
         let p = c_path{ path = from, buf = a[..] } ifnull { return failed{ code = sys::ENAMETOOLONG } }
@@ -188,7 +188,7 @@ namespace os {
     }
 
     // The working directory's path into `into`. Returns its length.
-    fn working_dir { mut fs: Fs, into: []mut u8 } -> !usize {
+    fn working_dir { mut fs: Fs, into: []mut u8 } -> fs::Error!usize {
         if getcwd{ &fs, buf = into.ptr, size = into.len } == null { return failed{ code = sys::errno{ &fs }.* } }
         let mut n: usize = 0
         while n < into.len and into[n] != 0 { n = n + 1 }
@@ -199,7 +199,7 @@ namespace os {
         return target::is_absolute{ path }
     }
 
-    fn dir_open { mut fs: Fs, path: []u8 } -> !Dir {
+    fn dir_open { mut fs: Fs, path: []u8 } -> fs::Error!Dir {
         let mut buf: [4096]u8
         let p = c_path{ path, buf = buf[..] } ifnull { return failed{ code = sys::ENAMETOOLONG } }
         let d = opendir{ &fs, path = p }
@@ -272,7 +272,7 @@ namespace os {
     // Starts argv[0] with this program's environment, less the entries env replaces, and env's
     // own. argv and env aren't empty and are checked (proc::spawn). Its arrays of C strings are
     // in one block from malloc, while posix_spawnp copies them.
-    fn spawn { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> !u64 {
+    fn spawn { mut proc: Proc, argv: [][]u8, env: [][]u8 } -> proc::Error!u64 {
         let inherited = proc.environ
         let mut n: usize = 0
         if inherited != null {
@@ -337,7 +337,7 @@ namespace os {
 
     // Waits for child `id` to end: its exit code, or 128 + N if signal N killed it. waitpid's
     // status is decoded as WIFEXITED and the rest are, the same on Linux and macOS.
-    fn wait { mut proc: Proc, id: u64 } -> !i32 {
+    fn wait { mut proc: Proc, id: u64 } -> proc::Error!i32 {
         let mut status: i32 = 0
         while waitpid{ &proc, pid = @as(i32, id), status = &status, options = 0 } < 0 {
             let e = sys::proc_errno{ &proc }.*

@@ -366,7 +366,7 @@ namespace parser {
             skip{ &p }
             let mut elem: ?*syntax::TypeExpr = null
             if starts_type{ p } and not nl{ p } { elem = box{ &p, value = type_expr{ &p } } }
-            t = syntax::TypeKind::fail{ elem }
+            t = syntax::TypeKind::fail{ elem, set = null }
         } else if k == tok::Kind::lbracket {
             skip{ &p }
             if accept{ &p, k = tok::Kind::rbracket } {
@@ -390,6 +390,15 @@ namespace parser {
             try! list::push{ list = &segs, item = type_seg{ &p } }
             while accept{ &p, k = tok::Kind::colons } { try! list::push{ list = &segs, item = type_seg{ &p } } }
             t = syntax::TypeKind::path{ segs = list::items{ list = segs } }
+            // `E!T`, or `E!` alone where no type follows on its line: a result whose errors are
+            // set E's.
+            if next_is{ p, k = tok::Kind::bang } and not nl{ p } {
+                let set = box{ &p, value = syntax::TypeExpr{ id, span = span_from{ p, start }, k = t } }
+                skip{ &p }
+                let mut elem: ?*syntax::TypeExpr = null
+                if starts_type{ p } and not nl{ p } { elem = box{ &p, value = type_expr{ &p } } }
+                return syntax::TypeExpr{ id = new_id{ &p }, span = span_from{ p, start }, k = syntax::TypeKind::fail{ elem, set } }
+            }
         } else if k == tok::Kind::error {
             skip{ &p }
         } else {

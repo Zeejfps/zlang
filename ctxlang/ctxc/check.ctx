@@ -227,6 +227,10 @@ namespace check {
         flows:     map::Map(u32, Flow, Heap),         // by function
         sets:      map::Map(u32, []u32, Heap),        // by function, once inferred
         pending:   list::List(Pending, Heap),         // matches on errors, finished once they are
+        // Inferred sets that flow into a declared one (§8, Errors, rule 14), checked once they
+        // are inferred (check_declared); conv_at is where the conversion being checked is.
+        declared:  list::List(Declared, Heap),
+        conv_at:   source::Span,
         pat_errs:  map::Map(u64, u32, Heap),          // the error a pattern names, by its name's key
         borrow_ready: bool,
         borrows: map::Map(u32, Borrow, Heap),
@@ -242,6 +246,10 @@ namespace check {
     // What flows into a function's error set: the errors it returns (atoms), the functions whose
     // errors it passes up (subs), and whether any error at all may (from a function type).
     struct Flow { atoms: []u32, subs: []u32, any: bool }
+
+    // Function owner's inferred set, which must be in set into, a declared one (an eset): where
+    // its errors join it.
+    struct Declared { owner: u32, into: Id, at: source::Span }
 
     // A match on errors, whose arms are checked against the set once it is inferred: the errors
     // it lists, where, and the arm that takes the rest (`else` or `err`), if any.
@@ -411,6 +419,8 @@ namespace check {
             faults = ids{ &heap },
             fn_decl = NONE,
             flows = map::new(u32, Flow){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            declared = list::new(Declared){ realloc = arena::alloc, &heap },
+            conv_at = source::Span{ file = 0, start = 0, end = 0 },
             sets = map::new(u32, []u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             pending = list::new(Pending){ realloc = arena::alloc, &heap },
             pat_errs = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
@@ -462,6 +472,7 @@ namespace check {
         each{ &c, xs = c.fns, what = Phase::bodies }
         infer_sets{ &c }
         finish_matches{ &c }
+        check_declared{ &c }
         finish_escapes{ &c }
         evaluate{ &c }
         check_main{ &c }
@@ -1989,7 +2000,16 @@ namespace check {
             func{ bound, params, ret, external } => {
                 let fields = context{ &c, params, sc }
                 let mut r = types::VOID
-                if ret != null { r = ret_type{ &c, te = ret.*, sc, owner = NONE } }
+                if ret != null {
+                    r = ret_type{ &c, te = ret.*, sc, owner = NONE }
+                    // An alias can't declare a set where `E!T` can't (§8, Errors, rule 14).
+                    if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = r } } is res{ ok, errs } {
+                        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = errs } } is eset {
+                            error{ &c, at = ret.span, msg = "a function type's `!T` fails with any error: its set can't be written" }
+                            r = types::res{ s = &c.ty, ok, errs = types::errs{ s = &c.ty, owner = NONE, one = NONE } }
+                        }
+                    }
+                }
                 if bound and not allow_bound {
                     error{ &c, at = te.span, msg = "`&fn` can only be the type of a local or a read-only context field" }
                     return types::ERROR
@@ -2001,10 +2021,15 @@ namespace check {
                 return types::func{ s = &c.ty, fields, ret = r, bound, external }
             }
             // `!T` anywhere but a function's own result, where there is no body to infer a set
-            // from, fails with any error.
-            fail{ elem } => {
+            // from, fails with any error; `E!T`, with set E's.
+            fail{ elem, set } => {
+                let mut errs = types::errs{ s = &c.ty, owner = NONE, one = NONE }
+                if set != null {
+                    let d = declared_set{ &c, te = set.*, sc }
+                    if d != types::ERROR { errs = d }
+                }
                 let ok = if elem == null { types::VOID } else { rtype{ &c, te = elem.*, sc, allow_bound = false } }
-                return types::res{ s = &c.ty, ok, errs = types::errs{ s = &c.ty, owner = NONE, one = NONE } }
+                return types::res{ s = &c.ty, ok, errs }
             }
         }
     }
@@ -2012,11 +2037,111 @@ namespace check {
     // A function's result type. `!T` there fails with the errors owner's body can produce, or
     // with any error in a function type (owner NONE), which has no body to infer them from.
     fn ret_type { mut c: Checker, te: syntax::TypeExpr, sc: Scope, owner: u32 } -> Id {
-        let fail{ elem } = te.k else { return rtype{ &c, te, sc, allow_bound = false } }
+        let fail{ elem, set } = te.k else { return rtype{ &c, te, sc, allow_bound = false } }
         let ok = if elem == null { types::VOID } else { rtype{ &c, te = elem.*, sc, allow_bound = false } }
-        let t = types::res{ s = &c.ty, ok, errs = types::errs{ s = &c.ty, owner, one = NONE } }
+        let mut errs = types::errs{ s = &c.ty, owner, one = NONE }
+        if set != null {
+            // A declared set (§8, Errors, rule 14): not yet in a function type, whose result
+            // fails with any error.
+            errs = declared_set{ &c, te = set.*, sc }
+            if errs == types::ERROR { errs = types::errs{ s = &c.ty, owner, one = NONE } }
+            if owner == NONE {
+                error{ &c, at = set.span, msg = "a function type's `!T` fails with any error: its set can't be written" }
+                errs = types::errs{ s = &c.ty, owner, one = NONE }
+            }
+        }
+        let t = types::res{ s = &c.ty, ok, errs }
         try! map::put{ m = &c.type_of, key = key{ file = te.span.file, id = te.id }, value = t }
         return t
+    }
+
+    // Set E of `E!T` (§8, Errors, rule 14): a declared set, `error(...)` or an alias of one, or
+    // one error alone, as an eset; `error` itself is any error.
+    fn declared_set { mut c: Checker, te: syntax::TypeExpr, sc: Scope } -> Id {
+        if te.k is path{ segs } and segs.len > 0 and segs[segs.len - 1].targs == null and not names_type{ c, segs, sc } {
+            let one = error_named{ &c, segs, sc }
+            if one != NONE { return types::eset{ s = &c.ty, errs = one_id{ c, n = one } } }
+        }
+        let t = rtype{ &c, te, sc, allow_bound = false }
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
+            eset => { return t }
+            errs{ owner, one } => {
+                if one != NONE { return types::eset{ s = &c.ty, errs = one_id{ c, n = one } } }
+                if owner == NONE { return t }
+            }
+            else => {}
+        }
+        if t != types::ERROR { errorf{ &c, at = te.span, msg = @fmt("{} is not an error set: a set is `error(...)`, an alias of one, or one error", tstr{ c, t }) } }
+        return types::ERROR
+    }
+
+    // Whether a path names a type, which a type's path means before an error of the same name
+    // (§10); a namespace of the name doesn't hide one.
+    fn names_type { c: Checker, segs: []syntax::Seg, sc: Scope } -> bool {
+        if segs.len == 1 {
+            let mut k: usize = 0
+            while k < sc.names.len {
+                if slice::eq_bytes{ a = sc.names[k].text, b = segs[0].name.text } { return true }
+                k = k + 1
+            }
+        }
+        let mut e = lookup_path{ c, ns = sc.ns, name = segs[0].name.text } ifnull { return false }
+        let mut i: usize = 1
+        while i < segs.len {
+            let space{ ns } = e else { return false }
+            e = map::get{ m = get_space{ c, ns }.paths, key = segs[i].name.text } ifnull { return false }
+            i = i + 1
+        }
+        return not (e is space | attr)
+    }
+
+    // The error a path names, `name` or `a::b::name`, or NONE if it names none (without saying so).
+    fn error_named { mut c: Checker, segs: []syntax::Seg, sc: Scope } -> u32 {
+        let last = segs[segs.len - 1]
+        let mut found: ?Entry = null
+        if segs.len == 1 {
+            found = lookup_value{ c, ns = sc.ns, name = last.name.text }
+        } else {
+            let mut e = lookup_path{ c, ns = sc.ns, name = segs[0].name.text } ifnull { return NONE }
+            let mut i: usize = 1
+            while i < segs.len {
+                let space{ ns } = e else { return NONE }
+                if i + 1 == segs.len {
+                    found = map::get{ m = get_space{ c, ns }.values, key = last.name.text }
+                } else {
+                    e = map::get{ m = get_space{ c, ns }.paths, key = segs[i].name.text } ifnull { return NONE }
+                }
+                i = i + 1
+            }
+        }
+        let f = found
+        if f is decl{ i } and get_decl{ c, d = i }.kind == Kind::fault {
+            refer{ &c, n = last.name, e = f }
+            return i
+        }
+        return NONE
+    }
+
+    // `error(A, B, ...)`: the set of errors A, B, ..., each an error or a set whose errors it
+    // takes (§8, Errors, rule 14).
+    fn error_set { mut c: Checker, targs: []syntax::TypeExpr, sc: Scope } -> Id {
+        let mut errs: []u32 = no_vars{}
+        let mut bad = false
+        let mut k: usize = 0
+        while k < targs.len {
+            let t = declared_set{ &c, te = targs[k], sc }
+            if types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is eset{ errs = more } {
+                errs = set_union{ c, a = errs, b = more }
+            } else if t == types::ERROR {
+                bad = true
+            } else {
+                error{ &c, at = targs[k].span, msg = "`error` is every error already: a set lists errors and sets" }
+                bad = true
+            }
+            k = k + 1
+        }
+        if bad { return types::ERROR }
+        return types::eset{ s = &c.ty, errs = sorted_ids{ c, xs = errs } }
     }
 
     fn path_type { mut c: Checker, segs: []syntax::Seg, sc: Scope, allow_bound: bool } -> Id {
@@ -2068,6 +2193,7 @@ namespace check {
         }
         let last = segs[segs.len - 1]
         let targs = last.targs
+        if e is anyerr and targs != null { return error_set{ &c, targs, sc } }
         let mut args: ?[]Id = null
         if targs != null {
             let mut xs = list::new(Id){ realloc = arena::alloc, heap = c.heap }
@@ -2459,16 +2585,17 @@ namespace check {
                 return @fmt(&b, "error of `{}`", str{ s = get_decl{ c, d = owner }.qual })
             }
             eset{ errs } => {
-                try utf8::push{ &b, s = "error{" }
+                try utf8::push{ &b, s = "error(" }
                 let mut i: usize = 0
                 while i < errs.len {
                     if i > 0 { try utf8::push{ &b, s = ", " } }
                     try utf8::push{ &b, s = str{ s = get_decl{ c, d = errs[i] }.qual } }
                     i = i + 1
                 }
-                return utf8::push{ &b, s = "}" }
+                return utf8::push{ &b, s = ")" }
             }
             res{ ok, errs } => {
+                if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = errs } } is eset { try write_type{ c, t = errs, &b } }
                 try utf8::push{ &b, s = "!" }
                 if ok != types::VOID { try write_type{ c, t = ok, &b } }
             }
@@ -4018,8 +4145,11 @@ namespace check {
         return target
     }
 
-    // Whether every branch with a value converts to t, trying them in order.
+    // Whether every branch with a value converts to t, trying them in order. It only tries:
+    // what would join a declared set joins it when the branches convert (coerce_node).
     fn all_convert { mut c: Checker, bs: []mut Branch, t: Id } -> bool {
+        let tried = c.declared.len
+        defer c.declared.len = tried
         let mut i: usize = 0
         while i < bs.len {
             if bs[i].t != types::NO_TYPE and coerce{ &c, a = bs[i].t, e = t } is fail { return false }
@@ -6420,12 +6550,31 @@ namespace check {
         let x = types::prune{ s = c.ty, t = from }
         let y = types::prune{ s = c.ty, t = into }
         if x == y { return true }
+        // A declared set holds only its own errors: now, if what joins it is known, or once a
+        // function's set is inferred (check_declared).
+        if types::get{ s = c.ty, id = y } is eset{ errs = holds } {
+            match types::get{ s = c.ty, id = x } {
+                eset{ errs } => { return within{ xs = errs, ys = holds } }
+                errs{ owner, one } => {
+                    if one != NONE { return has_id{ xs = holds, n = one } }
+                    if owner == NONE { return false }
+                    try! list::push{ list = &c.declared, item = Declared{ owner, into = y, at = c.conv_at } }
+                    return true
+                }
+                else => { return false }
+            }
+        }
         let errs{ owner = io, one = ie } = types::get{ s = c.ty, id = y } else { return false }
         if io == NONE and ie == NONE { return true }
         if io == NONE or io != c.fn_decl { return false }
-        let errs{ owner = fo, one = fe } = types::get{ s = c.ty, id = x } else { return false }
         let f = map::get{ m = c.flows, key = io } ifnull { Flow{ atoms = no_vars{}, subs = no_vars{}, any = false } }
         let mut g = f
+        if types::get{ s = c.ty, id = x } is eset{ errs } {
+            g.atoms = set_union{ c, a = f.atoms, b = errs }
+            try! map::put{ m = &c.flows, key = io, value = g }
+            return true
+        }
+        let errs{ owner = fo, one = fe } = types::get{ s = c.ty, id = x } else { return false }
         if fe != NONE {
             g.atoms = set_add{ c, xs = f.atoms, n = fe }
         } else if fo == NONE {
@@ -6437,12 +6586,59 @@ namespace check {
         return true
     }
 
+    // Whether every id of xs is one of ys.
+    fn within { xs: []u32, ys: []u32 } -> bool {
+        let mut i: usize = 0
+        while i < xs.len {
+            if not has_id{ xs = ys, n = xs[i] } { return false }
+            i = i + 1
+        }
+        return true
+    }
+
+    // The inferred sets that joined a declared one: each must be in it (§8, Errors, rule 14).
+    // Bodies are checked twice, so each is reported once, where it first joined.
+    fn check_declared { mut c: Checker } {
+        let ds = list::items{ list = c.declared }
+        let mut i: usize = 0
+        while i < ds.len {
+            let d = ds[i]
+            let mut seen = false
+            let mut j: usize = 0
+            while j < i and not seen {
+                seen = ds[j].owner == d.owner and ds[j].into == d.into and ds[j].at.file == d.at.file and ds[j].at.start == d.at.start
+                j = j + 1
+            }
+            if seen {
+                i = i + 1
+                continue
+            }
+            let holds = set_of{ c, t = d.into }
+            let theirs = map::get{ m = c.sets, key = d.owner } ifnull { no_vars{} }
+            let mut k: usize = 0
+            while k < theirs.len {
+                if not has_id{ xs = holds, n = theirs[k] } {
+                    let mut b = message{ c }
+                    try! set_text{ c, t = types::errs{ s = &c.ty, owner = d.owner, one = NONE }, &b }
+                    try! @fmt(&b, " include `{}`, which isn't one of ", str{ s = get_decl{ c, d = theirs[k] }.qual })
+                    try! write_type{ c, t = d.into, &b }
+                    try! utf8::push{ &b, s = ": a declared set holds only its own errors" }
+                    error{ &c, at = d.at, msg = utf8::view{ b } }
+                    break
+                }
+                k = k + 1
+            }
+            i = i + 1
+        }
+    }
+
     // How a value of type a converts to t, after reporting at pos that it doesn't.
     fn convert { mut c: Checker, a: Id, t: Id, pos: source::Span } -> Coercion {
         if a == types::VOID {
             error{ &c, at = pos, msg = "expression has no value" }
             return Coercion::fail
         }
+        c.conv_at = pos
         let how = coerce{ &c, a, e = t }
         if how is fail {
             let mut b = message{ c }
@@ -6486,7 +6682,7 @@ namespace check {
                         if not types::unify{ s = &c.ty, a = t, b = u } { return Coercion::fail }
                         return if flows{ &c, from, into } { Coercion::same } else { Coercion::fail }
                     }
-                    errs => { return if flows{ &c, from = x, into } { Coercion::same } else { Coercion::fail } }
+                    errs | eset => { return if flows{ &c, from = x, into } { Coercion::same } else { Coercion::fail } }
                     var{ n } => {
                         if types::var_of{ s = c.ty, n }.kind == types::VarKind::any {
                             return if types::unify{ s = &c.ty, a = x, b = y } { Coercion::same } else { Coercion::fail }
@@ -6497,8 +6693,8 @@ namespace check {
                 if types::prune{ s = c.ty, t = u } == types::VOID { return Coercion::fail }
                 return coerce{ &c, a = x, e = u }
             }
-            errs => {
-                if types::get{ s = c.ty, id = x } is errs { return if flows{ &c, from = x, into = y } { Coercion::same } else { Coercion::fail } }
+            errs | eset => {
+                if types::get{ s = c.ty, id = x } is errs | eset { return if flows{ &c, from = x, into = y } { Coercion::same } else { Coercion::fail } }
             }
             else => {}
         }
@@ -6622,6 +6818,24 @@ namespace check {
         // every set, so a mismatch there is something else.
         let xr = result_of{ c, t = x }
         let yr = result_of{ c, t = y }
+        // An error a declared set doesn't hold.
+        let mut into = yr
+        if types::get{ s = c.ty, id = yr } is res{ errs } { into = types::prune{ s = c.ty, t = errs } }
+        let mut from = xr
+        if types::get{ s = c.ty, id = xr } is res{ errs } { from = types::prune{ s = c.ty, t = errs } }
+        // An error into a result, or two results of one T: a result into an error is the
+        // mismatch, whatever their sets.
+        let mut oks = not (types::get{ s = c.ty, id = xr } is res and not (types::get{ s = c.ty, id = yr } is res))
+            and (types::get{ s = c.ty, id = x } is func) == (types::get{ s = c.ty, id = y } is func)
+        if types::get{ s = c.ty, id = xr } is res{ ok = xo } {
+            if types::get{ s = c.ty, id = yr } is res{ ok = yo } { oks = oks and types::prune{ s = c.ty, t = xo } == types::prune{ s = c.ty, t = yo } }
+        }
+        if oks and types::get{ s = c.ty, id = into } is eset and types::get{ s = c.ty, id = from } is errs | eset {
+            try set_text{ c, t = from, &b }
+            try utf8::push{ &b, s = " can't join " }
+            try write_type{ c, t = into, &b }
+            return utf8::push{ &b, s = ": a declared set holds only its own errors" }
+        }
         if types::get{ s = c.ty, id = xr } is res{ ok = xo, errs = xe } {
             if types::get{ s = c.ty, id = yr } is res{ ok = yo, errs = ye } {
                 if types::prune{ s = c.ty, t = xo } == types::prune{ s = c.ty, t = yo } and xe != ye and not any_error{ c, t = ye } {
@@ -6775,7 +6989,16 @@ namespace check {
                 escape_error{ &c, t = errs, at = expr_at{ e }, msg = utf8::view{ b } }
             }
         }
-        _ = flows{ &c, from = errs, into = own }
+        c.conv_at = expr_at{ e }
+        if not flows{ &c, from = errs, into = own } {
+            let mut b = message{ c }
+            try! utf8::push{ &b, s = "`try` passes up " }
+            try! set_text{ c, t = errs, &b }
+            try! utf8::push{ &b, s = ", not all of which are in " }
+            try! write_type{ c, t = own, &b }
+            try! utf8::push{ &b, s = ": a declared set holds only its own errors" }
+            error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
+        }
         return ok
     }
 
@@ -8463,9 +8686,22 @@ namespace check {
         return found.one
     }
 
-    // What a writer adds to an @fmt's set: its own, unless it returns nothing.
+    // What a writer adds to an @fmt's set: its own, unless it returns nothing; a declared one's
+    // errors (§8, Errors, rule 14), which no inferred set holds.
     fn add_writer_set { c: Checker, mut flow: Flow, d: u32 } {
-        if types::prune{ s = c.ty, t = get_decl{ c, d }.ret } != types::VOID { flow.subs = set_add{ c, xs = flow.subs, n = d } }
+        let r = types::prune{ s = c.ty, t = get_decl{ c, d }.ret }
+        if r == types::VOID { return }
+        if types::get{ s = c.ty, id = r } is res{ errs } {
+            if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = errs } } is eset{ errs = own } {
+                flow.atoms = set_union{ c, a = flow.atoms, b = own }
+                return
+            }
+            if any_error{ c, t = errs } {
+                flow.any = true
+                return
+            }
+        }
+        flow.subs = set_add{ c, xs = flow.subs, n = d }
     }
 
     // The text of an error type owned by a site: its position, "`@fmt` at 3:9".
@@ -8907,8 +9143,19 @@ namespace check {
             while i < fs.len {
                 let d = fs[i]
                 let f = map::get{ m = c.flows, key = d }
+                // What error_holes found since the sets were seeded: a writer's declared
+                // errors, or any error.
+                if f != null and f.any and not map::has{ m = any, key = d } {
+                    put_bool{ m = &any, k = d }
+                    changed = true
+                }
                 if f != null and not map::has{ m = any, key = d } {
                     let mut cur = map::get{ m = c.sets, key = d } ifnull { no_vars{} }
+                    let grown = set_union{ c, a = cur, b = f.atoms }
+                    if grown.len != cur.len {
+                        cur = grown
+                        changed = true
+                    }
                     let mut k: usize = 0
                     while k < f.subs.len {
                         let sub = f.subs[k]
