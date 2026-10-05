@@ -27,6 +27,11 @@ namespace ir {
         // panic (§15, Entry point; ctxrt.h): NONE for none.
         start:   u32,
         panic:   u32,
+        // What runs the program (lower.ctx, entry_fns): C's main calls entry, with argc and
+        // argv if it takes them, and the runtime calls on_panic, with the panic's message and
+        // position; NONE for none.
+        entry:    u32,
+        on_panic: u32,
         // The static every function's frame is checked against (§15, rule 13): NONE for none.
         stack_limit: u32,
         // std's standard output buffer, `io::State`'s static `out`, if the program uses it: the
@@ -165,6 +170,7 @@ namespace ir {
         constref{ id: u32 },                                    // the value of a Const
         cvar{ id: u32 },                                        // the value of a Var
         saddr{ id: u32 },                                       // the address of a Static, a pointer
+        capref,                                                 // a capability from nothing: what a `mut` one points to
         deref{ ptr: *Expr, pos: Pos },
         field{ base: *Expr, index: u32 },
         index{ base: *Expr, i: *Expr, pos: Pos },

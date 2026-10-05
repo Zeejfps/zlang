@@ -8421,6 +8421,14 @@ fn main { mut io: Io, args: Args } -> i32 {
         # Without std's start nothing sets standard output's binary mode on Windows.
         self.assertEqual((out.getvalue().replace('\r\n', '\n'), code), ('boot\n0\n', 42))
 
+    def test_capability_named_main(self):
+        # A capability may be any of a start fn's fields, `main` among them.
+        out = io.StringIO()
+        code = run_source('#start\nfn boot { mut main: Io, other: Io } -> i32 {\n'
+                          '    io::println_u64{ io = &main, n = 5 }\n    io::flush{ io = &main }\n    return 3\n}\n'
+                          'fn main {} {}\n', out=out)
+        self.assertEqual((out.getvalue().replace('\r\n', '\n'), code), ('5\n', 3))
+
     def test_start_without_main(self):
         # The start fn needn't take main, nor anything else.
         self.assertEqual(run_source('#start\nfn boot {} -> i32 { return 7 }\nfn main {} {}\n'), 7)

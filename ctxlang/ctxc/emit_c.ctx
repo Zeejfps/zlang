@@ -1263,8 +1263,9 @@ namespace emit {
             ch{ &e, c = ';' }
             i = i + 1
         }
-        // The stack check, against the `#stack_limit` static (spec §15, rule 13), if there is one.
-        if e.p.stack_limit != NONE {
+        // The stack check, against the `#stack_limit` static (spec §15, rule 13), if there is one;
+        // not in on_panic, which turns it off to report an overflow.
+        if e.p.stack_limit != NONE and f.id != e.p.on_panic {
             nl{ &e }
             put{ &e, a = "CTX_STACK_CHECK_AT(" }
             mark_id{ &e, kind = 'd', id = e.p.stack_limit }
@@ -1313,13 +1314,12 @@ namespace emit {
         put{ &e, a = "\n}\n\n" }
     }
 
-    // The file table, and `int main` (spec §15, Entry point). It gives the runtime the file
-    // table and the `#panic` fn (ctx_on_panic), then calls the `#start` fn with C's argc and
-    // argv and main as a function value (ctx_main_value), which supplies main's capabilities and
-    // returns its exit code. Without a start fn, it calls main itself, with no args; without a
-    // panic fn, a panic stops the program at once (ctxrt.c, `report`).
+    // The file table, and `int main` (spec §15, Entry point): it gives the runtime the file
+    // table and ctx_on_panic, then returns the IR's entry fn's result, with C's argc and argv if
+    // it takes them. ctx_on_panic passes a panic to the IR's on_panic fn; without one, a panic
+    // stops the program at once (ctxrt.c, `report`). What they run is the IR's (lower.ctx,
+    // entry_fns): this is only C's way of calling them.
     fn entry { mut e: E } {
-        let f = e.p.fns[e.p.main]
         put{ &e, a = "static const char *const ctx_file_table[] = {" }
         let mut i = 0
         while i < e.p.files.len {
@@ -1328,138 +1328,39 @@ namespace emit {
             i = i + 1
         }
         put{ &e, a = "\"\" };\n\n" }
-        if e.p.panic != NONE {
-            let h = e.p.fns[e.p.panic]
-            put{ &e, a = "static void ctx_on_panic(ctx_slice msg, ctx_slice file, uint32_t line, uint32_t col) {\n    static char cap[1];\n    " }
-            if e.p.stack_limit != NONE {
-                // The stack check is off while the panic fn runs, so it can report an overflow.
-                mark_id{ &e, kind = 'd', id = e.p.stack_limit }
-                put{ &e, a = " = 0;\n    " }
-            }
+        if e.p.on_panic != NONE {
+            let h = e.p.fns[e.p.on_panic]
+            put{ &e, a = "static void ctx_on_panic(ctx_slice msg, ctx_slice file, uint32_t line, uint32_t col) {\n    " }
             mark_id{ &e, kind = 'f', id = h.id }
             ch{ &e, c = '(' }
-            supply{ &e, f = h }
+            c_names{ &e, f = h }
             put{ &e, a = ");\n}\n\n" }
         }
-        if e.p.start == NONE {
-            put{ &e, a = "int main(int argc, char **argv) {\n" }
-            begin{ &e }
-            put{ &e, a = "    static char cap[1];\n    " }
-            if is_void{ e, t = f.ret } {
-                call_main{ &e, f, args = "" }
-                put{ &e, a = ";\n    return 0;\n}\n" }
-            } else {
-                put{ &e, a = "return " }
-                call_main{ &e, f, args = "" }
-                put{ &e, a = ";\n}\n" }
-            }
-            return
-        }
-        let s = e.p.fns[e.p.start]
-        let run = param_type_of{ e, f = s, name = "main" }
-        if run != NONE {
-            let func{ params, ret } = ty{ e, id = run } else { @panic("emit: a start fn's main isn't a function") }
-            put{ &e, a = "static " }
-            tn{ &e, t = ret }
-            put{ &e, a = " ctx_main_code(ctx_fn *self, " }
-            code_param{ &e, q = params[0] }
-            put{ &e, a = " args) {\n    static char cap[1];\n    (void)self;\n    " }
-            if is_void{ e, t = f.ret } {
-                call_main{ &e, f, args = "args" }
-                put{ &e, a = ";\n    return 0;\n}\n" }
-            } else {
-                put{ &e, a = "return " }
-                call_main{ &e, f, args = "args" }
-                put{ &e, a = ";\n}\n" }
-            }
-            put{ &e, a = "static ctx_fn ctx_main_value = { (void (*)(void))ctx_main_code };\n\n" }
-        }
-        put{ &e, a = "int main(int argc, char **argv) {\n" }
-        begin{ &e }
-        put{ &e, a = "    static char cap[1];\n    return " }
-        mark_id{ &e, kind = 'f', id = s.id }
+        put{ &e, a = "int main(int argc, char **argv) {\n    ctx_start(ctx_file_table, " }
+        num{ &e, n = e.p.files.len }
+        put{ &e, a = ", CTX_PROGRAM_NAME, " }
+        put{ &e, a = if e.p.on_panic != NONE { "ctx_on_panic" } else { "0" } }
+        put{ &e, a = ");\n    return " }
+        let f = e.p.fns[e.p.entry]
+        mark_id{ &e, kind = 'f', id = f.id }
         ch{ &e, c = '(' }
-        supply{ &e, f = s }
+        c_names{ &e, f }
         put{ &e, a = ");\n}\n" }
     }
 
-    // `ctx_start(...)`: the file table and the panic fn, for the runtime's panics.
-    fn begin { mut e: E } {
-        put{ &e, a = "    ctx_start(ctx_file_table, " }
-        num{ &e, n = e.p.files.len }
-        put{ &e, a = ", CTX_PROGRAM_NAME, " }
-        put{ &e, a = if e.p.panic != NONE { "ctx_on_panic" } else { "0" } }
-        put{ &e, a = ");\n" }
-    }
-
-    // `f_main(...)`: main's capabilities, and its args from the C expression `args`, or none
-    // if that is empty.
-    fn call_main { mut e: E, f: ir::Func, args: []u8 } {
-        mark_id{ &e, kind = 'f', id = f.id }
-        ch{ &e, c = '(' }
+    // f's args from the C variables of their names, converted to the fields' C types.
+    fn c_names { mut e: E, f: ir::Func } {
         let mut i = 0
         while i < f.params.len {
             if i > 0 { put{ &e, a = ", " } }
             let q = f.params[i]
-            if q.mutable {
-                put{ &e, a = "(void *)cap" }
-            } else if slice::eq_bytes{ a = q.name, b = "args" } {
-                if args.len == 0 {
-                    ch{ &e, c = '(' }
-                    tn{ &e, t = q.ty }
-                    put{ &e, a = "){0}" }
-                } else {
-                    put{ &e, a = "CTX_BITCAST(" }
-                    tn{ &e, t = q.ty }
-                    put{ &e, a = ", " }
-                    put{ &e, a = args }
-                    ch{ &e, c = ')' }
-                }
-            } else {
-                ch{ &e, c = '(' }
-                tn{ &e, t = q.ty }
-                put{ &e, a = "){}" }
-            }
+            put{ &e, a = "CTX_BITCAST(" }
+            tn{ &e, t = q.ty }
+            put{ &e, a = ", " }
+            raw{ &e, b = q.name }
+            ch{ &e, c = ')' }
             i = i + 1
         }
-        ch{ &e, c = ')' }
-    }
-
-    // The arguments of a `#start` or `#panic` fn f, which the checker allows (check::hook_field):
-    // its capabilities, and each other field from the C variable of its name, converted to the
-    // field's C type, and `main` as ctx_main_value.
-    fn supply { mut e: E, f: ir::Func } {
-        let mut i = 0
-        while i < f.params.len {
-            if i > 0 { put{ &e, a = ", " } }
-            let q = f.params[i]
-            if q.mutable {
-                put{ &e, a = "(void *)cap" }
-            } else if is_cap{ e, t = q.ty } {
-                ch{ &e, c = '(' }
-                tn{ &e, t = q.ty }
-                put{ &e, a = "){}" }
-            } else if slice::eq_bytes{ a = q.name, b = "main" } {
-                put{ &e, a = "&ctx_main_value" }
-            } else {
-                put{ &e, a = "CTX_BITCAST(" }
-                tn{ &e, t = q.ty }
-                put{ &e, a = ", " }
-                raw{ &e, b = q.name }
-                ch{ &e, c = ')' }
-            }
-            i = i + 1
-        }
-    }
-
-    // The type of f's param `name`, or NONE without one.
-    fn param_type_of { e: E, f: ir::Func, name: []u8 } -> ir::TypeId {
-        let mut i = 0
-        while i < f.params.len {
-            if slice::eq_bytes{ a = f.params[i].name, b = name } { return f.params[i].ty }
-            i = i + 1
-        }
-        return NONE
     }
 
     // ---- statements
@@ -1979,6 +1880,7 @@ namespace emit {
                 mark_id{ &e, kind = 'd', id }
                 ch{ &e, c = ')' }
             }
+            capref => { put{ &e, a = "({ static char cap[1]; (void *)cap; })" } }
             deref{ ptr } => {
                 put{ &e, a = "(*" }
                 expr{ &e, x = ptr.* }
@@ -2936,7 +2838,7 @@ namespace emit {
     // x, which a call takes if `taken`.
     fn c_expr { mut e: E, x: ir::Expr, taken: bool } {
         match x.k {
-            int | float | boolean | str | sbytes | cstr | nil | constref | cvar | saddr | fnref => {}
+            int | float | boolean | str | sbytes | cstr | nil | constref | cvar | saddr | capref | fnref => {}
             local{ slot } => { if not taken { loose{ &e, slot } } }
             deref{ ptr = a } | field{ base = a } | payload{ base = a } | addr{ place = a } | neg{ e = a }
             | lnot{ e = a } | isnull{ e = a } | notnull{ e = a } | widen{ e = a } | some{ e = a }
@@ -3528,7 +3430,7 @@ namespace emit {
             other => {}
         }
         return match x.k {
-            int | float | boolean | str | sbytes | cstr | nil | fnref | cvar | saddr => { false }
+            int | float | boolean | str | sbytes | cstr | nil | fnref | cvar | saddr | capref => { false }
             some{ e = a } | widen{ e = a } | cast{ e = a } | seq{ then = a } | ptradd{ p = a } => {
                 reaches{ e, x = a.*, slot }
             }
@@ -3602,7 +3504,7 @@ namespace emit {
     // May evaluating x write memory: does it call a function, or run statements?
     fn writes { e: E, x: ir::Expr } -> bool {
         return match x.k {
-            int | float | boolean | str | sbytes | cstr | nil | local | constref | cvar | saddr | fnref => { false }
+            int | float | boolean | str | sbytes | cstr | nil | local | constref | cvar | saddr | capref | fnref => { false }
             deref{ ptr = a } | field{ base = a } | payload{ base = a } | addr{ place = a }
             | lnot{ e = a } | isnull{ e = a } | notnull{ e = a } | widen{ e = a } | some{ e = a }
             | cast{ e = a } | ptraddr{ e = a } | trunc{ e = a } | fnconv{ e = a } | repeat{ elem = a }
@@ -3753,7 +3655,7 @@ namespace emit {
     // The same value whenever it is computed, whatever else runs.
     fn constant { x: ir::Expr } -> bool {
         return match x.k {
-            int | float | boolean | str | sbytes | cstr | nil | fnref | saddr => { true }
+            int | float | boolean | str | sbytes | cstr | nil | fnref | saddr | capref => { true }
             addr{ place } => { fixed_place{ x = place.* } }
             else    => { false }
         }

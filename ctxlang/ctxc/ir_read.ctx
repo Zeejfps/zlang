@@ -58,6 +58,8 @@ namespace ir_read {
         let mut start = lower::NONE
         let mut panic = lower::NONE
         let mut stack_limit = lower::NONE
+        let mut entry = lower::NONE
+        let mut on_panic = lower::NONE
         let mut stdout = lower::NONE
         while true {
             expect{ &r, c = '(' }
@@ -89,6 +91,10 @@ namespace ir_read {
                 start = id32{ &r }
             } else if spells{ s = tag, lit = "panic" } {
                 panic = id32{ &r }
+            } else if spells{ s = tag, lit = "entry" } {
+                entry = id32{ &r }
+            } else if spells{ s = tag, lit = "on_panic" } {
+                on_panic = id32{ &r }
             } else if spells{ s = tag, lit = "stack_limit" } {
                 stack_limit = id32{ &r }
             } else if spells{ s = tag, lit = "stdout" } {
@@ -107,7 +113,7 @@ namespace ir_read {
         return ir::Program{
             version, files, types = list::items{ list = types }, consts = list::items{ list = consts },
             vars = list::items{ list = vars }, statics = list::items{ list = statics }, fns = list::items{ list = fns },
-            main, start, panic, stack_limit, stdout,
+            main, start, panic, entry, on_panic, stack_limit, stdout,
         }
     }
 
@@ -430,6 +436,8 @@ namespace ir_read {
             k = ir::ExprKind::cvar{ id = id32{ &r } }
         } else if spells{ s = tag, lit = "saddr" } {
             k = ir::ExprKind::saddr{ id = id32{ &r } }
+        } else if spells{ s = tag, lit = "capref" } {
+            k = ir::ExprKind::capref
         } else if spells{ s = tag, lit = "call" } {
             let callee = id32{ &r }
             k = ir::ExprKind::call{ callee, args = try args{ &r } }

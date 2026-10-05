@@ -14,7 +14,7 @@ namespace lower {
     type Id = types::Id
 
     const NONE: u32 = 4294967295
-    const VERSION: u64 = 20
+    const VERSION: u64 = 21
 
     // A function instance: a declaration and its generic arguments. The hidden fn of an @fmt
     // without a sink is an instance too, under the declaration it is in: site is its Site,
@@ -62,7 +62,7 @@ namespace lower {
         let panic = if h == NONE { NONE } else { fn_id{ &l, decl = h, targs = no_ids{} } }
         let v = check::stack_limit{ c }
         let limit = if v is some{ value } { static_of{ &l, v = value } } else { NONE }
-        let mut p = finish{ &l, main, start, panic, stack_limit = limit }
+        let mut p = finish{ &l, main, start, panic, stack_limit = limit, adapters = true }
         if l.failed { @panic("lower: a const or literal without a value") }
         p.stdout = std_static{ l, space = "io", cap = "State", name = "out" }
         return p
@@ -76,7 +76,7 @@ namespace lower {
     fn alone { mut c: check::Checker, d: u32 } -> ?ir::Program {
         let mut l = lowering{ &c }
         let main = fn_id{ &l, decl = d, targs = no_ids{} }
-        let p = finish{ &l, main, start = NONE, panic = NONE, stack_limit = NONE }
+        let p = finish{ &l, main, start = NONE, panic = NONE, stack_limit = NONE, adapters = false }
         if l.failed { return null }
         return p
     }
@@ -105,8 +105,9 @@ namespace lower {
         }
     }
 
-    // Lowers the queued instances, and those they reach, into a program.
-    fn finish { mut l: Lower, main: u32, start: u32, panic: u32, stack_limit: u32 } -> ir::Program {
+    // Lowers the queued instances, and those they reach, into a program, with the functions that
+    // run it (adapters: entry_fns) for a program, but not for a const's.
+    fn finish { mut l: Lower, main: u32, start: u32, panic: u32, stack_limit: u32, adapters: bool } -> ir::Program {
         let mut i: usize = 0
         while i < l.queue.len {
             let inst = list::items{ list = l.queue }[i]
@@ -125,6 +126,7 @@ namespace lower {
             try! list::push{ list = &l.fns, item = f }
             i = i + 1
         }
+        let ends = if adapters { entry_fns{ &l, main, start, panic, limit = stack_limit } } else { Entry{ entry = NONE, on_panic = NONE } }
         return ir::Program{
             version = VERSION,
             files = list::items{ list = l.files },
@@ -133,8 +135,177 @@ namespace lower {
             vars = list::items{ list = l.vars },
             statics = list::items{ list = l.statics },
             fns = list::items{ list = l.fns },
-            main, start, panic, stack_limit, stdout = NONE,
+            main, start, panic, entry = ends.entry, on_panic = ends.on_panic, stack_limit, stdout = NONE,
         }
+    }
+
+    // ---- the entry point (spec §15, Entry point)
+    //
+    // What C's main and the runtime call, as functions of the IR, so that each backend runs a
+    // program the same way and only passes them what the platform gives:
+    //   entry      { argc?, argv? } -> i32: the `#start` fn with its capabilities, the fields
+    //              of C's it takes and `main` as a function value; without one, main itself
+    //              with no args, whose exit code is 0 if it returns nothing.
+    //   main value { args } -> i32: main with its capabilities, for the start fn's `main`.
+    //   on panic   { msg?, file?, line?, col? }: turns the stack check off, so that a stack
+    //              overflow can be reported, and calls the `#panic` fn.
+    // A capability comes from nothing (capref), as the runtime supplies main's.
+
+    struct Entry { entry: u32, on_panic: u32 }
+
+    // A field the caller supplies to a call that supply_call writes, by name.
+    struct Given { name: []u8, value: ir::Expr }
+
+    // A function being written: its locals and statements.
+    struct Adapter { locals: list::List(ir::Local, Heap), stmts: list::List(ir::Stmt, Heap) }
+
+    fn entry_fns { mut l: Lower, main: u32, start: u32, panic: u32, limit: u32 } -> Entry {
+        let m = list::items{ list = l.fns }[main]
+        let i32t = tid{ &l, t = types::I32 }
+        let mut out = Entry{ entry = NONE, on_panic = NONE }
+
+        // main as a function value, for the start fn's `main`
+        let mut value: ?ir::Expr = null
+        if start != NONE {
+            let s = list::items{ list = l.fns }[start]
+            let k = param_at{ ps = s.params, name = "main" }
+            if k != NONE and not cap_type{ l, t = s.params[k].ty } {
+                let ft = s.params[k].ty
+                let func{ params } = list::items{ list = l.types }[ft] else { @panic("lower: a start fn's main isn't a function") }
+                let mut a = adapter{ l }
+                let mut given = list::new(Given){ realloc = arena::alloc, heap = l.heap }
+                let mut i: usize = 0
+                while i < params.len {
+                    try! list::push{ list = &a.locals, item = ir::Local{ name = params[i].name, ty = params[i].ty } }
+                    try! list::push{ list = &given, item = Given{ name = params[i].name, value = mk{ ty = params[i].ty, k = ir::ExprKind::local{ slot = @as(u32, i) } } } }
+                    i = i + 1
+                }
+                returns_code{ &l, &a, call = supply_call{ &l, &a, f = m, given = list::items{ list = given } }, i32t }
+                let id = add_adapter{ &l, a, name = "<main value>", params, ret = i32t, near = m }
+                value = mk{ ty = ft, k = ir::ExprKind::fnref{ callee = id } }
+            }
+        }
+
+        // entry
+        let mut a = adapter{ l }
+        let mut params = list::new(ir::Param){ realloc = arena::alloc, heap = l.heap }
+        let mut given = list::new(Given){ realloc = arena::alloc, heap = l.heap }
+        if start != NONE {
+            let s = list::items{ list = l.fns }[start]
+            let mut i: usize = 0
+            while i < s.params.len {
+                let q = s.params[i]
+                if slice::eq_bytes{ a = q.name, b = "main" } and not cap_type{ l, t = q.ty } {
+                    if value is some{ value = v } { try! list::push{ list = &given, item = Given{ name = q.name, value = v } } }
+                } else if not cap_type{ l, t = q.ty } {
+                    let slot = @as(u32, a.locals.len)
+                    try! list::push{ list = &params, item = q }
+                    try! list::push{ list = &a.locals, item = ir::Local{ name = q.name, ty = q.ty } }
+                    try! list::push{ list = &given, item = Given{ name = q.name, value = mk{ ty = q.ty, k = ir::ExprKind::local{ slot } } } }
+                }
+                i = i + 1
+            }
+            let call = supply_call{ &l, &a, f = s, given = list::items{ list = given } }
+            try! list::push{ list = &a.stmts, item = ir::Stmt::ret{ value = call } }
+        } else {
+            returns_code{ &l, &a, call = supply_call{ &l, &a, f = m, given = list::items{ list = given } }, i32t }
+        }
+        out.entry = add_adapter{ &l, a, name = "<entry>", params = list::items{ list = params }, ret = i32t, near = m }
+
+        // on panic
+        if panic != NONE {
+            let h = list::items{ list = l.fns }[panic]
+            let mut b = adapter{ l }
+            let mut ps = list::new(ir::Param){ realloc = arena::alloc, heap = l.heap }
+            let mut gs = list::new(Given){ realloc = arena::alloc, heap = l.heap }
+            let mut i: usize = 0
+            while i < h.params.len {
+                let q = h.params[i]
+                if not cap_type{ l, t = q.ty } {
+                    let slot = @as(u32, b.locals.len)
+                    try! list::push{ list = &ps, item = q }
+                    try! list::push{ list = &b.locals, item = ir::Local{ name = q.name, ty = q.ty } }
+                    try! list::push{ list = &gs, item = Given{ name = q.name, value = mk{ ty = q.ty, k = ir::ExprKind::local{ slot } } } }
+                }
+                i = i + 1
+            }
+            if limit != NONE {
+                let st = list::items{ list = l.statics }[limit].ty
+                let pt = tid{ &l, t = types::ptr{ s = &l.c.ty, elem = types::USIZE, mutable = true } }
+                let at = mk{ ty = pt, k = ir::ExprKind::saddr{ id = limit } }
+                let place = mk{ ty = st, k = ir::ExprKind::deref{ ptr = box{ l, e = at }, pos = ir::Pos{ line = 0, col = 0, file = 0 } } }
+                try! list::push{ list = &b.stmts, item = ir::Stmt::assign{ place, value = mk{ ty = st, k = ir::ExprKind::int{ negative = false, value = 0 } } } }
+            }
+            let call = supply_call{ &l, a = &b, f = h, given = list::items{ list = gs } }
+            try! list::push{ list = &b.stmts, item = ir::Stmt::eval{ e = call } }
+            out.on_panic = add_adapter{ &l, a = b, name = "<on panic>", params = list::items{ list = ps }, ret = h.ret, near = h }
+        }
+        return out
+    }
+
+    fn adapter { l: Lower } -> Adapter {
+        return Adapter{ locals = list::new(ir::Local){ realloc = arena::alloc, heap = l.heap }, stmts = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap } }
+    }
+
+    // A call of f: each capability from nothing, a read-only one zeroed in a local, and the
+    // other fields from given, by name, or zeroed in a local without one.
+    fn supply_call { mut l: Lower, mut a: Adapter, f: ir::Func, given: []Given } -> ir::Expr {
+        let mut args = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+        let mut i: usize = 0
+        while i < f.params.len {
+            let q = f.params[i]
+            let mut v: ?ir::Expr = null
+            if q.mutable and cap_type{ l, t = q.ty } {
+                v = mk{ ty = f.locals[i].ty, k = ir::ExprKind::capref }
+            } else if not cap_type{ l, t = q.ty } {
+                let mut k: usize = 0
+                while k < given.len {
+                    if slice::eq_bytes{ a = given[k].name, b = q.name } { v = given[k].value }
+                    k = k + 1
+                }
+            }
+            let value = v ifnull {
+                let slot = @as(u32, a.locals.len)
+                try! list::push{ list = &a.locals, item = ir::Local{ name = q.name, ty = q.ty } }
+                try! list::push{ list = &a.stmts, item = ir::Stmt::zero{ slot } }
+                mk{ ty = q.ty, k = ir::ExprKind::local{ slot } }
+            }
+            add_arg{ xs = &args, a = ir::Arg{ index = @as(u32, i), value } }
+            i = i + 1
+        }
+        return mk{ ty = f.ret, k = ir::ExprKind::call{ callee = f.id, args = list::items{ list = args } } }
+    }
+
+    // `return call`, or `call; return 0` if it gives nothing: an exit code.
+    fn returns_code { mut l: Lower, mut a: Adapter, call: ir::Expr, i32t: u32 } {
+        if list::items{ list = l.types }[call.ty] is void {
+            try! list::push{ list = &a.stmts, item = ir::Stmt::eval{ e = call } }
+            try! list::push{ list = &a.stmts, item = ir::Stmt::ret{ value = mk{ ty = i32t, k = ir::ExprKind::int{ negative = false, value = 0 } } } }
+            return
+        }
+        try! list::push{ list = &a.stmts, item = ir::Stmt::ret{ value = call } }
+    }
+
+    fn add_adapter { mut l: Lower, a: Adapter, name: []u8, params: []ir::Param, ret: u32, near: ir::Func } -> u32 {
+        let id = @as(u32, l.fns.len)
+        try! list::push{ list = &l.fns, item = ir::Func{
+            id, name, symbol = "", params, ret, locals = list::items{ list = a.locals },
+            body = ir::Block{ stmts = list::items{ list = a.stmts }, result = null }, unit = near.unit, at = near.at,
+        } }
+        return id
+    }
+
+    fn cap_type { l: Lower, t: u32 } -> bool {
+        return list::items{ list = l.types }[t] is cap
+    }
+
+    fn param_at { ps: []ir::Param, name: []u8 } -> u32 {
+        let mut i: usize = 0
+        while i < ps.len {
+            if slice::eq_bytes{ a = ps[i].name, b = name } { return @as(u32, i) }
+            i = i + 1
+        }
+        return NONE
     }
 
     fn no_ids {} -> []Id {

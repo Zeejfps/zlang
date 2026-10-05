@@ -697,6 +697,12 @@ namespace eval {
                 try store{ &m, a, n = 8, v = s }
                 return a
             }
+            capref => {
+                let c = try cap{ &m }
+                let a = try temp{ &m, t = x.ty }
+                try store{ &m, a, n = 8, v = c }
+                return a
+            }
             ssub{ base, lo, hi, pos } => { return try ssub{ &m, t = x.ty, base = base.*, lo = lo.*, hi, pos } }
             addr{ place = q } => {
                 let mut a: Addr = 0
@@ -829,6 +835,7 @@ namespace eval {
                 return try get{ &m, a, t = x.ty }
             }
             saddr{ id } => { return try static_at{ &m, id } }
+            capref => { return try cap{ &m } }
             neg{ e, pos } => {
                 let v = try scalar{ &m, x = e.* }
                 return try negate{ &m, p = prim{ ts = m.types, t = x.ty }, v, pos }

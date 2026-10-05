@@ -86,6 +86,16 @@ namespace ir_print {
             num{ &o, n = p.panic }
             text{ &o, a = ")\n" }
         }
+        if p.entry != lower::NONE {
+            text{ &o, a = "(entry " }
+            num{ &o, n = p.entry }
+            text{ &o, a = ")\n" }
+        }
+        if p.on_panic != lower::NONE {
+            text{ &o, a = "(on_panic " }
+            num{ &o, n = p.on_panic }
+            text{ &o, a = ")\n" }
+        }
         if p.stack_limit != lower::NONE {
             text{ &o, a = "(stack_limit " }
             num{ &o, n = p.stack_limit }
@@ -515,6 +525,7 @@ namespace ir_print {
             constref{ id }            => { head{ &o, e, a = "constref" }; spaced{ &o, n = id } }
             cvar{ id }                => { head{ &o, e, a = "cvar" }; spaced{ &o, n = id } }
             saddr{ id }               => { head{ &o, e, a = "saddr" }; spaced{ &o, n = id } }
+            capref                    => { head{ &o, e, a = "capref" } }
             deref{ ptr, pos }         => { head{ &o, e, a = "deref" }; sub{ &o, e = ptr, depth }; position{ &o, p = pos } }
             field{ base, index }      => { head{ &o, e, a = "field" }; sub{ &o, e = base, depth }; spaced{ &o, n = index } }
             index{ base, i, pos }     => { head{ &o, e, a = "index" }; sub{ &o, e = base, depth }; sub{ &o, e = i, depth }; position{ &o, p = pos } }
