@@ -5372,7 +5372,15 @@ namespace check {
                     out.err = out.ok
                 }
             }
-            field{ base } | deref{ base } => { out = borrow_project{ c, value = borrow_expr{ &c, &b, e = base.* } } }
+            field{ base } | deref{ base } => {
+                // A static's value is no capability's: its base only has effects. Nothing it
+                // holds points to a frame (the escape check keeps those out).
+                if access_of{ c, e } is stat {
+                    _ = borrow_expr{ &c, &b, e = base.* }
+                } else {
+                    out = borrow_project{ c, value = borrow_expr{ &c, &b, e = base.* } }
+                }
+            }
             index{ base, i } => {
                 out = borrow_project{ c, value = borrow_expr{ &c, &b, e = base.* } }
                 _ = borrow_expr{ &c, &b, e = i.* }

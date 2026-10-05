@@ -29,6 +29,9 @@ namespace ir {
         panic:   u32,
         // The static every function's frame is checked against (§15, rule 13): NONE for none.
         stack_limit: u32,
+        // std's standard output buffer, `io::State`'s static `out`, if the program uses it: the
+        // interpreter writes it out when main ends (eval.ctx, flush). NONE for none.
+        stdout: u32,
     }
 
     // A const of array, struct or union type. Its value is literals only: the checker computed it.

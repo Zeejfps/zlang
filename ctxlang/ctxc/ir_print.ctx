@@ -91,6 +91,11 @@ namespace ir_print {
             num{ &o, n = p.stack_limit }
             text{ &o, a = ")\n" }
         }
+        if p.stdout != lower::NONE {
+            text{ &o, a = "(stdout " }
+            num{ &o, n = p.stdout }
+            text{ &o, a = ")\n" }
+        }
         text{ &o, a = "(main " }
         num{ &o, n = p.main }
         text{ &o, a = ")\n" }

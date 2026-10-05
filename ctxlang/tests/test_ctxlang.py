@@ -8224,6 +8224,39 @@ fn main { mut io: Io, mut all: All, mut c: counter::Count } -> i32 {
 }
 """, "1\n2\n4\n12\n101\n13\ntrue\ncounter0\n")
 
+    def test_static_read_is_no_capabilitys(self):
+        # A static's value doesn't come from the capability it is read through, so reading it
+        # through a pointer to a local capability returns nothing of that local.
+        self.assertOutput("""
+namespace g {
+    capability C { static s: []u8 }
+    fn set { mut c: C } { c.s = "hi" }
+    fn get { p: *C } -> []u8 { return p.s }
+    fn via { c: C } -> []u8 {
+        let local = c
+        return get{ p = &local }
+    }
+}
+fn main { mut io: Io, mut c: g::C } {
+    g::set{ &c }
+    io::print{ &io, s = utf8::String{ bytes = g::via{ c } } }
+}
+""", "hi")
+
+    def test_static_named_as_std_s(self):
+        # A program's `io::State::out` is its own, not std's standard output buffer, which the
+        # interpreter writes out when main ends.
+        self.assertOutput("""
+namespace io {
+    capability State { static out: i32 }
+    fn set { mut s: State } -> i32 {
+        s.out = s.out + 1
+        return s.out
+    }
+}
+fn main { mut s: io::State } -> i32 { return io::set{ &s } - 1 }
+""", "")
+
     def test_static_is_a_name_elsewhere(self):
         # `static` is a keyword only before a name in a capability's braces.
         self.assertOutput("""

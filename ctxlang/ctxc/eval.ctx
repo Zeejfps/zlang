@@ -35,8 +35,8 @@
 // Nothing here needs a capability: what the program writes is kept in order (m.out, m.chunks)
 // for the caller to write. With `emulate`, the externs that writing to standard output and error
 // reaches run here: `write` (Windows: `_write`) to fds 1 and 2, and std's float text natives,
-// which are ctxc's own. Standard output's buffer is std's static `io::State::out`, which main's
-// end writes out (flush).
+// which are ctxc's own. Standard output's buffer is std's static `io::State::out` (Program's
+// stdout), which main's end writes out (flush).
 // Without it too, std's panics without a position (ctx_panic_msg) and Windows' arena commit
 // (VirtualQuery) run here. Any other extern fn, and any C variable, stops the program.
 
@@ -1458,9 +1458,8 @@ namespace eval {
     // Standard output's buffer, written out, as std's io::flush does: std's static
     // `io::State::out`, an io::Out, whose bytes[..len] wait to be written.
     fn flush { mut m: M } -> ! {
-        let mut i: usize = 0
-        while i < m.p.statics.len and not slice::eq_bytes{ a = m.p.statics[i].name, b = "io::State::out" } { i = i + 1 }
-        if i == m.p.statics.len or i >= m.cells.len or list::items{ list = m.cells }[i] == 0 { return }
+        let i = @as(usize, m.p.stdout)
+        if m.p.stdout == lower::NONE or i >= m.cells.len or list::items{ list = m.cells }[i] == 0 { return }
         let out = list::items{ list = m.cells }[i]
         let t = m.p.statics[i].ty
         let len_at = out + member_offset{ m, t, name = "len" }
