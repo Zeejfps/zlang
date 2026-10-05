@@ -283,6 +283,7 @@ match pair{ a, b } {
 2. `( )` after a name or `::` path, on the same line, is generic application: `list::new(i32)` and `list::new (i32)` mean the same. Everywhere else, `( )` groups an expression. This is unambiguous because calls use `{ }` and nothing else can follow a name with `(`. Builtins are the exception (§13).
 3. At a call, struct literal or union construction, explicit arguments bind parameters left to right. The remaining parameters are inferred from the supplied fields or the expected type. A parameter that can't be inferred is an error.
 4. In a literal, a generic struct or union may be named without arguments (`Slice{ ... }`), and then every parameter is inferred.
+5. A function's parameter may be an **error set** instead, `E: error`: its argument is a set (§8, Errors), given (`retry(u64, net::Error)`) or inferred, as from a function value's `E!T` result. `E!T` in its signature then fails with the argument's errors, so a function that forwards a callback's `!T` gives its callers the callback's own set: `fn retry(T, E: error) { f: &fn{} -> E!T, times: u32 } -> E!T`. Its body may pass E's errors up only into E, or into any error; a set it infers itself, which serves every instance, then may be any error. E holds no error of its own, and a match on one needs `else` or `err`, as on an open set (§8, Errors, rule 15).
 
 ## 10. Namespaces
 

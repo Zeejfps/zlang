@@ -35,7 +35,8 @@ namespace syntax {
     union DeclKind {
         error,
         // An extern fn has no tparams and an empty body, where its declaration ends.
-        func{ name: Name, tparams: []Name, params: []Param, ret: ?TypeExpr, body: Block, external: bool },
+        // tsets: which of tparams are error sets, `E: error` (§9).
+        func{ name: Name, tparams: []Name, tsets: []bool, params: []Param, ret: ?TypeExpr, body: Block, external: bool },
         record{ name: Name, tparams: []Name, fields: []Field, untagged: bool },   // struct; extern union if untagged
         sum{ name: Name, tparams: []Name, variants: []Variant },         // union
         enumeration{ name: Name, base: TypeExpr, variants: []EnumVariant },

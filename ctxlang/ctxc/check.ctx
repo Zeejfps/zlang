@@ -57,6 +57,7 @@ namespace check {
         qual:     []u8,                 // the name with its namespaces, as messages show it
         syn:      syntax::Decl,
         tparams:  []syntax::Name,
+        tsets:    []bool,               // which of a function's tparams are error sets, `E: error` (§9)
         fields:   []types::Field,
         variants: []Variant,
         ret:      Id,
@@ -332,7 +333,7 @@ namespace check {
     union Value { none, expr{ e: syntax::Expr }, nested{ s: syntax::Stmt } }
 
     // A generic argument left to inference, and how to describe it if inference fails.
-    struct GVar { v: Id, param: []u8, owner: []u8, at: source::Span }
+    struct GVar { v: Id, param: []u8, owner: []u8, at: source::Span, set: bool }
 
     // An implicit conversion, spelled out in ctxi's tree as a Coerce (to ?T) or ToSlice node. A
     // `null` takes its optional type, and widening is left for the IR. An array sliced with
@@ -552,8 +553,9 @@ namespace check {
             let x = decls[i]
             match x.k {
                 error => {}
-                func{ name, tparams, external } => {
+                func{ name, tparams, tsets, external } => {
                     let d = declare{ &c, kind = if external { Kind::external } else { Kind::func }, x, file, name, tparams, ns }
+                    list::at{ list = c.decls, i = d }.tsets = tsets
                     add_name{ &c, ns, values = true, name, e = Entry::decl{ i = d }, at = x.span }
                     if external {
                         list::at{ list = c.decls, i = d }.symbol = name.text
@@ -624,7 +626,7 @@ namespace check {
     fn declare { mut c: Checker, kind: Kind, x: syntax::Decl, file: u32, name: syntax::Name, tparams: []syntax::Name, ns: u32 } -> u32 {
         let d = @as(u32, c.decls.len)
         let item = Decl{
-            kind, name, ns, qual = qualify{ c, ns, name = name.text }, syn = x, tparams,
+            kind, name, ns, qual = qualify{ c, ns, name = name.text }, syn = x, tparams, tsets = slice::empty(bool){},
             fields = slice::empty(types::Field){}, variants = slice::empty(Variant){},
             ret = types::VOID, ty = types::ERROR, values = slice::empty(i64){}, symbol = "",
             callback = false, includes = slice::empty(u32){}, vars = slice::empty(CVar){},
@@ -2054,6 +2056,7 @@ namespace check {
         let t = rtype{ &c, te, sc, allow_bound = false }
         match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
             eset => { return t }
+            param{ decl, index } => { if set_param{ c, d = decl, index = @as(usize, index) } { return t } }
             errs{ owner, one } => {
                 if one != NONE { return types::eset{ s = &c.ty, errs = one_id{ c, n = one }, open = false } }
                 if owner == NONE { return t }
@@ -2260,7 +2263,7 @@ namespace check {
                 }
                 while all.len < n {
                     let v = types::fresh{ s = &c.ty, kind = types::VarKind::any }
-                    generic_var{ &c, v, param = x.tparams[all.len], owner = x.name, at }
+                    generic_var{ &c, v, param = x.tparams[all.len], owner = x.name, at, set = set_param{ c, d = i, index = all.len } }
                     push{ xs = &all, n = v }
                 }
                 let xs: []Id = list::items{ list = all }
@@ -2588,7 +2591,7 @@ namespace check {
                 return utf8::push{ &b, s = ")" }
             }
             res{ ok, errs } => {
-                if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = errs } } is eset { try write_type{ c, t = errs, &b } }
+                if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = errs } } is eset | param { try write_type{ c, t = errs, &b } }
                 try utf8::push{ &b, s = "!" }
                 if ok != types::VOID { try write_type{ c, t = ok, &b } }
             }
@@ -2734,6 +2737,8 @@ namespace check {
             let g = gs[i]
             if types::has_vars{ s = c.ty, t = g.v } {
                 errorf{ &c, at = g.at, msg = @fmt("cannot infer type parameter `{}` of `{}`", str{ s = g.param }, str{ s = g.owner }) }
+            } else if g.set and not is_set_type{ c, t = g.v } {
+                kind_error{ &c, param = g.param, owner = g.owner, t = g.v, at = g.at }
             }
             if types::has_bound_fn{ s = c.ty, t = g.v } {
                 errorf{ &c, at = g.at, msg = @fmt("type parameter `{}` of `{}` cannot be a `&fn` type", str{ s = g.param }, str{ s = g.owner }) }
@@ -2779,8 +2784,29 @@ namespace check {
     }
 
     // A generic argument to infer by the end of the body.
-    fn generic_var { mut c: Checker, v: Id, param: syntax::Name, owner: syntax::Name, at: source::Span } {
-        try! list::push{ list = &c.gvars, item = GVar{ v, param = param.text, owner = owner.text, at } }
+    fn generic_var { mut c: Checker, v: Id, param: syntax::Name, owner: syntax::Name, at: source::Span, set: bool } {
+        try! list::push{ list = &c.gvars, item = GVar{ v, param = param.text, owner = owner.text, at, set } }
+    }
+
+    // Whether generic parameter index of decl d is an error set, `E: error` (§9).
+    fn set_param { c: Checker, d: u32, index: usize } -> bool {
+        let ts = get_decl{ c, d }.tsets
+        return index < ts.len and ts[index]
+    }
+
+    // Whether t is an error set: a set, an error alone, any error, or a generic parameter that
+    // is one.
+    fn is_set_type { c: Checker, t: Id } -> bool {
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
+            error | errs | eset => { return true }
+            param{ decl, index } => { return set_param{ c, d = decl, index = @as(usize, index) } }
+            else => { return false }
+        }
+    }
+
+    // A generic argument of the wrong kind: an error set's must be a set (§9).
+    fn kind_error { mut c: Checker, param: []u8, owner: []u8, t: Id, at: source::Span } {
+        errorf{ &c, at, msg = @fmt("type parameter `{}` of `{}` is an error set, `{}: error`, not {}", str{ s = param }, str{ s = owner }, str{ s = param }, tstr{ c, t }) }
     }
 
     // §14: whether folding can compute a const's initializer: literals, other consts, enum
@@ -6563,6 +6589,13 @@ namespace check {
         if io == NONE or io != c.fn_decl { return false }
         let f = map::get{ m = c.flows, key = io } ifnull { Flow{ atoms = no_vars{}, subs = no_vars{}, any = false, open = false } }
         let mut g = f
+        // A generic set, `E: error` (§9): one inferred set serves every instance, so it takes
+        // any error.
+        if types::get{ s = c.ty, id = x } is param {
+            g.any = true
+            try! map::put{ m = &c.flows, key = io, value = g }
+            return true
+        }
         if types::get{ s = c.ty, id = x } is eset{ errs, open } {
             g.atoms = set_union{ c, a = f.atoms, b = errs }
             g.open = g.open or open
@@ -6586,6 +6619,7 @@ namespace check {
     fn open_set { c: Checker, t: Id } -> bool {
         match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
             eset{ open } => { return open }
+            param => { return true }           // a generic set, which may be any
             // Any error, `error` or a function type's `!T`, is open: it may be one declared later.
             errs{ owner, one } => { return one == NONE and (owner == NONE or map::has{ m = c.open_sets, key = owner }) }
             else => { return false }
@@ -6696,9 +6730,16 @@ namespace check {
                 match types::get{ s = c.ty, id = x } {
                     res{ ok = t, errs = from } => {
                         if not types::unify{ s = &c.ty, a = t, b = u } { return Coercion::fail }
+                        // A generic set not yet inferred (§9) is the one expected.
+                        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = from } } is var{ n } and types::var_of{ s = c.ty, n }.kind == types::VarKind::any {
+                            return if types::unify{ s = &c.ty, a = from, b = into } { Coercion::same } else { Coercion::fail }
+                        }
                         return if flows{ &c, from, into } { Coercion::same } else { Coercion::fail }
                     }
-                    errs | eset => { return if flows{ &c, from = x, into } { Coercion::same } else { Coercion::fail } }
+                    errs | eset | param => {
+                        // An error, or a generic set's: a plain T param is a value, below.
+                        if is_errs{ c, t = x } { return if flows{ &c, from = x, into } { Coercion::same } else { Coercion::fail } }
+                    }
                     var{ n } => {
                         if types::var_of{ s = c.ty, n }.kind == types::VarKind::any {
                             return if types::unify{ s = &c.ty, a = x, b = y } { Coercion::same } else { Coercion::fail }
@@ -6709,8 +6750,8 @@ namespace check {
                 if types::prune{ s = c.ty, t = u } == types::VOID { return Coercion::fail }
                 return coerce{ &c, a = x, e = u }
             }
-            errs | eset => {
-                if types::get{ s = c.ty, id = x } is errs | eset { return if flows{ &c, from = x, into = y } { Coercion::same } else { Coercion::fail } }
+            errs | eset | param => {
+                if is_errs{ c, t = y } and is_errs{ c, t = x } { return if flows{ &c, from = x, into = y } { Coercion::same } else { Coercion::fail } }
             }
             else => {}
         }
@@ -6856,6 +6897,13 @@ namespace check {
         oks = oks and unbound
         if types::get{ s = c.ty, id = xr } is res{ ok = xo } {
             if types::get{ s = c.ty, id = yr } is res{ ok = yo } { oks = oks and types::prune{ s = c.ty, t = xo } == types::prune{ s = c.ty, t = yo } }
+        }
+        // An error a generic set doesn't hold: it holds only its argument's.
+        if oks and types::get{ s = c.ty, id = into } is param and types::get{ s = c.ty, id = from } is errs | eset {
+            try set_text{ c, t = from, &b }
+            try utf8::push{ &b, s = " can't join " }
+            try write_type{ c, t = into, &b }
+            return utf8::push{ &b, s = ": a generic set holds only the errors of its argument" }
         }
         if oks and types::get{ s = c.ty, id = into } is eset and types::get{ s = c.ty, id = from } is errs | eset {
             try set_text{ c, t = from, &b }
@@ -7427,13 +7475,16 @@ namespace check {
                     }
                     let mut k: usize = 0
                     while k < explicit.len {
+                        if set_param{ c, d = i, index = k } and not is_set_type{ c, t = explicit[k] } {
+                            kind_error{ &c, param = x.tparams[k].text, owner = x.name.text, t = explicit[k], at = seg.name.span }
+                        }
                         push{ xs = &all, n = explicit[k] }
                         k = k + 1
                     }
                 }
                 while all.len < x.tparams.len {
                     let v = types::fresh{ s = &c.ty, kind = types::VarKind::any }
-                    generic_var{ &c, v, param = x.tparams[all.len], owner = x.name, at = seg.name.span }
+                    generic_var{ &c, v, param = x.tparams[all.len], owner = x.name, at = seg.name.span, set = set_param{ c, d = i, index = all.len } }
                     push{ xs = &all, n = v }
                 }
                 return PathRef::func{ decl = i, targs = list::items{ list = all } }
@@ -8956,7 +9007,11 @@ namespace check {
     }
 
     fn is_errs { c: Checker, t: Id } -> bool {
-        return types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is errs | eset
+        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
+            errs | eset => { return true }
+            param{ decl, index } => { return set_param{ c, d = decl, index = @as(usize, index) } }
+            else => { return false }
+        }
     }
 
     // Whether t is a bare `!`: a function returning it returns no value, or fails.
@@ -9289,6 +9344,8 @@ namespace check {
     // The errors an error of type t may be while the sets are inferred: as set_of, with a
     // function or @fmt in `any` failing with every error.
     fn current_set { c: Checker, t: Id, any: map::Map(u32, bool, Heap) } -> []u32 {
+        // A generic set (§9) is known only in each instance: every error, as any error is.
+        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is param { return list::items{ list = c.faults } }
         if types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is errs{ owner, one } and one == NONE and owner != NONE and map::has{ m = any, key = owner } {
             return list::items{ list = c.faults }
         }
@@ -9326,7 +9383,10 @@ namespace check {
                 if not has_id{ xs = set, n = p.listed[j] } {
                     let mut b = message{ c }
                     try! @fmt(&b, "error `{}` can't happen here: ", str{ s = get_decl{ c, d = p.listed[j] }.qual })
-                    if set.len == 0 {
+                    if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = p.errs } } is param {
+                        try! write_type{ c, t = p.errs, &b }
+                        try! utf8::push{ &b, s = " is a generic set, whose errors are its argument's" }
+                    } else if set.len == 0 {
                         try! utf8::push{ &b, s = "this can't fail" }
                     } else {
                         try! utf8::push{ &b, s = "this fails only with " }

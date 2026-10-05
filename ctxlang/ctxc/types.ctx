@@ -200,7 +200,8 @@ namespace types {
                 }
                 return func{ &s, fields = list::items{ list = fs }, ret = subst{ &s, t = ret, decl, args }, bound, external }
             }
-            res{ ok, errs } => { return res{ &s, ok = subst{ &s, t = ok, decl, args }, errs } }
+            // A set may be a generic parameter (`E: error`, §9): an instance's is its argument.
+            res{ ok, errs } => { return res{ &s, ok = subst{ &s, t = ok, decl, args }, errs = subst{ &s, t = errs, decl, args } } }
             else => { return t }
         }
     }
@@ -394,7 +395,7 @@ namespace types {
                 }
                 return func{ &s, fields = list::items{ list = fs }, ret = zonk{ &s, t = ret }, bound, external }
             }
-            res{ ok, errs } => { return res{ &s, ok = zonk{ &s, t = ok }, errs } }
+            res{ ok, errs } => { return res{ &s, ok = zonk{ &s, t = ok }, errs = zonk{ &s, t = errs } } }
             else => { return x }
         }
     }
@@ -423,7 +424,7 @@ namespace types {
             array{ elem } => { return occurs{ s, n, t = elem } }
             record{ args } => { return any_occurs{ s, n, ts = args } }
             sum{ args } => { return any_occurs{ s, n, ts = args } }
-            res{ ok } => { return occurs{ s, n, t = ok } }
+            res{ ok, errs } => { return occurs{ s, n, t = ok } or occurs{ s, n, t = errs } }
             func{ fields, ret } => {
                 if occurs{ s, n, t = ret } { return true }
                 let mut i: usize = 0
@@ -489,7 +490,7 @@ namespace types {
             sum{ decl, args } => { return tb is sum{ decl = d, args = xs } and decl == d and unify_all{ &s, a = args, b = xs } }
             // Two results are the same type only with the same errors: an error set flows into
             // another only where the checker allows it (check::coerce).
-            res{ ok, errs } => { return tb is res{ ok = o, errs = e } and errs == e and unify{ &s, a = ok, b = o } }
+            res{ ok, errs } => { return tb is res{ ok = o, errs = e } and (errs == e or unify{ &s, a = errs, b = e }) and unify{ &s, a = ok, b = o } }
             func{ fields, ret, bound, external } => {
                 if not (tb is func{ fields = fs, ret = r, bound = bd, external = ex }) or bound != bd or external != ex or fields.len != fs.len { return false }
                 let mut i: usize = 0
@@ -529,7 +530,7 @@ namespace types {
             array{ n, elem } => { return tb is array{ n = k, elem = e } and n == k and instance{ s, p = elem, t = e, decl, args } }
             record{ decl = r, args = ps } => { return tb is record{ decl = d, args = ts } and r == d and instances{ s, ps, ts, decl, args } }
             sum{ decl = r, args = ps } => { return tb is sum{ decl = d, args = ts } and r == d and instances{ s, ps, ts, decl, args } }
-            res{ ok, errs } => { return tb is res{ ok = o, errs = e } and errs == e and instance{ s, p = ok, t = o, decl, args } }
+            res{ ok, errs } => { return tb is res{ ok = o, errs = e } and (errs == e or instance{ s, p = errs, t = e, decl, args }) and instance{ s, p = ok, t = o, decl, args } }
             func{ fields, ret, bound, external } => {
                 if not (tb is func{ fields = fs, ret = r, bound = bd, external = ex }) or bound != bd or external != ex or fields.len != fs.len { return false }
                 let mut i: usize = 0
@@ -556,7 +557,7 @@ namespace types {
             array{ elem } => { return mentions{ s, t = elem, decl, index } }
             record{ args } => { return any_mentions{ s, ts = args, decl, index } }
             sum{ args } => { return any_mentions{ s, ts = args, decl, index } }
-            res{ ok } => { return mentions{ s, t = ok, decl, index } }
+            res{ ok, errs } => { return mentions{ s, t = ok, decl, index } or mentions{ s, t = errs, decl, index } }
             func{ fields, ret } => {
                 let mut i: usize = 0
                 while i < fields.len {
@@ -658,7 +659,7 @@ namespace types {
             array{ elem } => { return has_vars{ s, t = elem } }
             record{ args } => { return any_vars{ s, ts = args } }
             sum{ args } => { return any_vars{ s, ts = args } }
-            res{ ok } => { return has_vars{ s, t = ok } }
+            res{ ok, errs } => { return has_vars{ s, t = ok } or has_vars{ s, t = errs } }
             func{ fields, ret } => {
                 if has_vars{ s, t = ret } { return true }
                 let mut i: usize = 0

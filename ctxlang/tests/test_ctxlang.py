@@ -6193,6 +6193,224 @@ fn main { mut io: Io } {
         ]:
             self.assertCompileError(src, msg)
 
+    def test_generic_set(self):
+        # `E: error` is a generic parameter that is an error set (spec §9): a function forwards
+        # its callback's own set, which its callers match without `else`, inferred or given.
+        self.assertOutput("""
+error busy
+error gone{ id: u64 }
+error broke
+
+namespace net {
+    type Error = error(busy, gone)
+    fn load { n: u64 } -> Error!u64 {
+        if n == 0 { return busy }
+        if n == 1 { return gone{ id = 9 } }
+        return n * 10
+    }
+}
+
+// Forwards the callback's own set: callers see net::Error, not any error.
+fn retry(T, E: error) { f: &fn{} -> E!T, times: u32 } -> E!T {
+    let mut i: u32 = 1
+    while i < times {
+        match f{} {
+            ok{ value } => { return value }
+            err => {}
+        }
+        i = i + 1
+    }
+    return f{}
+}
+
+// An inferred caller of a set-generic one.
+fn twice { n: u64 } -> !u64 {
+    let v = try retry{ f = net::load{ n, _ }, times = 2 }
+    return v + 1
+}
+
+fn main { mut io: Io } {
+    match retry{ f = net::load{ n = 0, _ }, times = 3 } {
+        ok{ value } => { io::println_u64{ &io, n = value } }
+        busy => { io::println{ &io, s = "busy" } }
+        gone{ id } => { io::println_u64{ &io, n = id } }
+    }
+    match retry(u64, net::Error){ f = net::load{ n = 1, _ }, times = 1 } {
+        ok => {}
+        busy => {}
+        gone{ id } => { io::println_u64{ &io, n = id } }
+    }
+    match twice{ n = 4 } {
+        ok{ value } => { io::println_u64{ &io, n = value } }
+        busy | gone => {}
+    }
+}
+""", 'busy\n9\n41\n')
+
+    def test_generic_set_forwarding(self):
+        # A generic calling a generic, inferred and given, recursion, an inferred caller, and an
+        # instance widening into any error or a larger declared set, each renumbered.
+        self.assertOutput(r"""
+error a
+error b{ n: u64 }
+error c{ x: u32, y: u32 }
+fn da {} -> error(a)!u64 { return a }
+fn db {} -> error(b)!u64 { return b{ n = 7 } }
+fn dc {} -> !u64 { return c{ x = 1, y = 2 } }
+fn dmix { k: u64 } -> !u64 {
+    if k == 0 { return b{ n = 5 } }
+    if k == 1 { return c{ x = 3, y = 4 } }
+    return k
+}
+fn retry(T, E: error) { f: &fn{} -> E!T, times: u32 } -> E!T {
+    let mut i: u32 = 1
+    while i < times {
+        match f{} { ok{ value } => { return value } err => {} }
+        i = i + 1
+    }
+    return f{}
+}
+fn fwd(E: error) { f: &fn{} -> E!u64 } -> E!u64 { return retry{ f, times = 2 } }
+fn fwd2(E: error) { f: &fn{} -> E!u64 } -> E!u64 { let v = try retry(u64, E){ f, times = 2 }
+    return v + 1 }
+fn rec(E: error) { f: &fn{} -> E!u64, n: u32 } -> E!u64 {
+    if n == 0 { return f{} }
+    return rec{ f, n = n - 1 }
+}
+fn inf(E: error) { f: &fn{} -> E!u64 } -> !u64 { return try fwd{ f } }
+fn up(E: error) { f: &fn{} -> E!u64 } -> error!u64 { return try f{} }
+fn wide(E: error) { f: &fn{} -> E!u64 } -> u64 {
+    let g: &fn{} -> !u64 = f
+    return g{} iferr 99
+}
+fn main { mut io: Io } {
+    match fwd{ f = db } { ok => {} b{ n } => { _ = @fmt(&io, "1 {}\n", n) } }
+    match fwd{ f = da } { ok => {} a => { _ = @fmt(&io, "2 a\n") } }
+    match fwd2{ f = dmix{ k = 1, _ } } { ok => {} b{ n } => { _ = @fmt(&io, "3b {}\n", n) } c{ x, y } => { _ = @fmt(&io, "3c {} {}\n", x, y) } }
+    match fwd2{ f = dmix{ k = 0, _ } } { ok => {} b{ n } => { _ = @fmt(&io, "4b {}\n", n) } c{ x, y } => { _ = @fmt(&io, "4c {} {}\n", x, y) } }
+    match rec{ f = dc, n = 3 } { ok => {} err{ error } => { _ = @fmt(&io, "5 {}\n", error) } }
+    match inf{ f = db } { ok => {} err{ error } => { _ = @fmt(&io, "6 {}\n", error) } }
+    match inf{ f = dmix{ k = 1, _ } } { ok => {} err{ error } => { _ = @fmt(&io, "7 {}\n", error) } }
+    match up{ f = db } { ok => {} err{ error } => { _ = @fmt(&io, "8 {}\n", error) } }
+    _ = @fmt(&io, "9 {}\n", wide{ f = da })
+    match retry(u64, error){ f = db, times = 1 } { ok => {} err{ error } => { _ = @fmt(&io, "10 {}\n", error) } }
+    match retry(u64, error(a, b)){ f = db, times = 1 } { ok => {} a => {} b{ n } => { _ = @fmt(&io, "11 {}\n", n) } }
+}
+""", '1 7\n2 a\n3c 3 4\n4b 5\n5 c{ x = 1, y = 2 }\n6 b{ n = 7 }\n7 c{ x = 3, y = 4 }\n8 b{ n = 7 }\n9 99\n10 b{ n = 7 }\n11 7\n')
+
+    def test_generic_set_error_passed_up(self):
+        # An error of a generic set, bound by a match, goes back up into E.
+        self.assertOutput(r"""
+error a
+error b{ n: u64 }
+fn da {} -> error(a)!u64 { return a }
+fn db {} -> error(b)!u64 { return b{ n = 7 } }
+// catch E's error and pass it up into E
+fn pass(E: error) { f: &fn{} -> E!u64 } -> E!u64 {
+    match f{} {
+        ok{ value } => { return value }
+        err{ error } => { return error }
+    }
+}
+fn main { mut io: Io } {
+    match pass{ f = db } {
+        ok => {}
+        b{ n } => { io::println_u64{ &io, n } }
+    }
+}
+""", '7\n')
+
+    def test_generic_set_error_into_any(self):
+        # An error of a generic set goes up into any error.
+        self.assertOutput(r"""
+error a
+error b{ n: u64 }
+fn db {} -> error(b)!u64 { return b{ n = 7 } }
+// widen E's error into any error, by value
+fn up(E: error) { f: &fn{} -> E!u64 } -> error!u64 {
+    match f{} {
+        ok{ value } => { return value }
+        err{ error } => { return error }
+    }
+}
+fn main { mut io: Io } {
+    match up{ f = db } {
+        ok => {}
+        b{ n } => { io::println_u64{ &io, n } }
+        else => { io::println{ &io, s = "other" } }
+    }
+}
+""", '7\n')
+
+    def test_generic_set_error_matched(self):
+        # A match on an error of a generic set has `else`.
+        self.assertOutput(r"""
+error a
+error b{ n: u64 }
+fn db {} -> error(b)!u64 { return b{ n = 7 } }
+fn show(E: error) { mut io: Io, f: &fn{} -> E!u64 } {
+    match f{} {
+        ok => {}
+        err{ error } => {
+            match error {
+                else => { io::println{ &io, s = "an error" } }
+            }
+        }
+    }
+}
+fn main { mut io: Io } { show{ &io, f = db } }
+""", 'an error\n')
+
+    def test_generic_set_error_written(self):
+        # An error of a generic set is written as any error is: by its own writer, per instance.
+        self.assertOutput(r"""
+error a
+error b{ n: u64 }
+fn db {} -> error(b)!u64 { return b{ n = 7 } }
+fn show(E: error) { mut io: Io, f: &fn{} -> E!u64 } {
+    match f{} { ok => {} err{ error } => { _ = @fmt(&io, "{}\n", error) } }
+}
+fn main { mut io: Io } { show{ &io, f = db } }
+""", 'b{ n = 7 }\n')
+
+    def test_generic_set_from_expected(self):
+        # A generic set is inferred from the result expected, as a type is (spec §9, rule 3).
+        self.assertOutput(r"""
+error a
+fn mk(E: error) { n: u64 } -> E!u64 { return n }
+fn mkt(T) { n: u64 } -> ?T { return null }
+fn g {} -> error(a)!u64 { return mk{ n = 3 } }
+fn main { mut io: Io } {
+    let x: error(a)!u64 = mk{ n = 1 }
+    let y: ?u32 = mkt{ n = 1 }
+    _ = @fmt(&io, "{}\n", x iferr 0)
+    _ = @fmt(&io, "{}\n", g{} iferr 0)
+}
+""", '1\n3\n')
+
+    def test_generic_set_errors(self):
+        head = ('error a\nerror b\nfn da {} -> error(a)!u64 { return a }\n'
+                'fn fwd(E: error) { f: &fn{} -> E!u64 } -> E!u64 { return try f{} }\n')
+        for src, msg in [
+            # E holds only its argument's errors
+            ('fn add(E: error) { f: &fn{} -> E!u64 } -> E!u64 { return b }\nfn main {} {}',
+             "`b` can't join E: a generic set holds only the errors of its argument"),
+            ('fn c(E: error) { f: &fn{} -> E!u64 } -> error(a)!u64 { return try f{} }\nfn main {} {}',
+             "`try` passes up E, an open set, which closed error(a) can't hold: it may gain errors"),
+            # a match on E needs `else`, and lists no error of its own
+            ('fn m(E: error) { f: &fn{} -> E!u64 } { match f{} { ok => {} else => {} } }\n'
+             'fn n(E: error) { f: &fn{} -> E!u64 } { match f{} { ok => {} a => {} else => {} } }\nfn main {} {}',
+             "error `a` can't happen here: E is a generic set, whose errors are its argument's"),
+            # an inferred set that E joins may be any error
+            ('fn inf(E: error) { f: &fn{} -> E!u64 } -> !u64 { return try f{} }\nfn main {} { match inf{ f = da } { ok => {} a => {} } }',
+             "a match on an open error set needs `else` or `err`: error of `inf` may gain errors"),
+            # kinds
+            ('fn main {} { _ = fwd(u64){ f = da } }', "type parameter `E` of `fwd` is an error set, `E: error`, not u64"),
+            ('fn k(T) { x: T } -> T!u64 { return 1 }\nfn main {} {}', "T is not an error set: a set is `error(...)`, an alias of one, or one error"),
+            ('fn bad(E: errorx) {} {}\nfn main {} {}', "a generic parameter's kind is `error`, an error set: `E: error`"),
+        ]:
+            self.assertCompileError(head + src, msg)
+
     def test_any_error_is_open(self):
         # Any error, here a function type's `!T`, is open: a match on it needs `else`, which is
         # never unreachable, however many errors it lists.

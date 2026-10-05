@@ -81,13 +81,13 @@ namespace parser {
         } else if k == tok::Kind::kw_fn {
             skip{ &p }
             let name = ident{ &p }
-            let tparams = tparams{ &p }
+            let tps = fn_tparams{ &p }
             if body_as_context{ p } {
                 failf{ &p, msg = @fmt("a function's context comes before its body: write `fn {} {{}} {{ ... }}`", utf8::String{ bytes = name.text }) }
             }
             let params = ctx_fields{ &p }
             let ret: ?syntax::TypeExpr = if accept{ &p, k = tok::Kind::arrow } { type_expr{ &p } } else { null }
-            d = syntax::DeclKind::func{ name, tparams, params, ret, body = block{ &p }, external = false }
+            d = syntax::DeclKind::func{ name, tparams = tps.names, tsets = tps.sets, params, ret, body = block{ &p }, external = false }
         } else if k == tok::Kind::kw_extern and kind{ p, ahead = 1 } == tok::Kind::kw_union {
             skip{ &p }
             skip{ &p }
@@ -104,7 +104,7 @@ namespace parser {
             if next_is{ p, k = tok::Kind::lbrace } and not nl{ p } { fail{ &p, msg = "an extern fn has no body: C provides it" } }
             let at = prev_end{ p }
             let body = syntax::Block{ id = new_id{ &p }, span = source::Span{ file = p.file, start = at, end = at }, stmts = slice::empty(syntax::Stmt){} }
-            d = syntax::DeclKind::func{ name, tparams = slice::empty(syntax::Name){}, params, ret, body, external = true }
+            d = syntax::DeclKind::func{ name, tparams = slice::empty(syntax::Name){}, tsets = slice::empty(bool){}, params, ret, body, external = true }
         } else if k == tok::Kind::kw_struct {
             skip{ &p }
             let name = ident{ &p }
@@ -253,6 +253,32 @@ namespace parser {
             expect{ &p, k = tok::Kind::rparen }
         }
         return list::items{ list = xs }
+    }
+
+    struct TParams { names: []syntax::Name, sets: []bool }
+
+    // A function's `(T, E: error, ...)`: its generic parameters, and which are error sets (§9).
+    fn fn_tparams { mut p: Parser } -> TParams {
+        let mut xs = list::new(syntax::Name){ realloc = arena::alloc, heap = p.heap }
+        let mut sets = list::new(bool){ realloc = arena::alloc, heap = p.heap }
+        if accept{ &p, k = tok::Kind::lparen } {
+            while true {
+                try! list::push{ list = &xs, item = ident{ &p } }
+                let mut set = false
+                if accept{ &p, k = tok::Kind::colon } {
+                    let kind = ident{ &p }
+                    if slice::eq_bytes{ a = kind.text, b = "error" } {
+                        set = true
+                    } else if kind.text.len > 0 {
+                        fail{ &p, msg = "a generic parameter's kind is `error`, an error set: `E: error`" }
+                    }
+                }
+                try! list::push{ list = &sets, item = set }
+                if not accept{ &p, k = tok::Kind::comma } { break }
+            }
+            expect{ &p, k = tok::Kind::rparen }
+        }
+        return TParams{ names = list::items{ list = xs }, sets = list::items{ list = sets } }
     }
 
     // `{ mut name: T, ... }`, the context of a function or function type.
