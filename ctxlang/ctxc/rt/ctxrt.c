@@ -1,10 +1,8 @@
-// ctxrt: see ctxrt.h. Of the C library it uses calloc and free alone, for function values'
-// records: panics write their messages themselves and leave reporting them to the program's
-// `#panic` fn, and starting the program is its `#start` fn's (std/rt.ctx).
+// ctxrt: see ctxrt.h. It calls no C library function: panics write their messages themselves
+// and leave reporting them to the program's `#panic` fn, starting the program is its `#start`
+// fn's, and function values' records take pages from a fn that std's start gives (std/rt.ctx).
 
 #include "ctxrt.h"
-
-#include <stdlib.h>
 
 static const char *program_name = "program";
 static const char *const *ctx_files;
@@ -169,46 +167,95 @@ _Noreturn void ctx_panic_as_u(uint64_t v, const char *dst, CTX_POS) {
     ctx_panic(line, col, file, m.text);
 }
 
-// ---- escaping callable records: permanent bump allocation
+// ---- function values' records
+//
+// Memory comes from the pages fn std's start gives (ctx_pages_set), and before it from the
+// image: zeroed, so it costs nothing until it is touched.
 
-void *ctx_alloc(size_t n) {
-    static char *chunk;
-    static size_t left;
-    n = (n + 15) & ~(size_t)15;
-    if (n > left) {
-        size_t size = n > (1 << 20) ? n : (1 << 20);
-        chunk = calloc(1, size);
-        if (!chunk) ctx_panic_nopos("out of memory");
-        left = size;
+static ctx_pages_fn pages_fn;
+static int growing;
+
+void ctx_pages_set(ctx_pages_fn pages) {
+    pages_fn = pages;
+}
+
+// n bytes of pages, n a multiple of PAGE, or a panic.
+#define PAGE ((uint64_t)4096)
+#define PAGES(n) (((n) + PAGE - 1) / PAGE * PAGE)
+
+static char *pages(uint64_t n) {
+    if (growing) __builtin_trap();          // the pages fn made a record that needed more
+    char *p = NULL;
+    if (pages_fn) {
+        growing = 1;
+        p = pages_fn(n);
+        growing = 0;
     }
-    void *p = chunk;
-    chunk += n;
-    left -= n;
+    if (!p) {
+        pages_fn = NULL;
+        ctx_panic_nopos("out of memory for function values");
+    }
     return p;
 }
 
-// Borrowed records live until their creating invocation exits, including nested calls.
-// A long-running invocation retains every record until exit, rather than reusing a site.
-struct ctx_bind_node {
-    struct ctx_bind_node *next;
-    max_align_t alignment;
-    unsigned char data[];
-};
+// Borrowed records: a stack of segments. A function that may make one saves the top on entry
+// and restores it on return (CTX_RECORDS), so a record lives until its invocation returns, and
+// the next call reuses its memory. A segment never moves or goes back to the system.
 
-void *ctx_borrow_alloc(ctx_bind_scope *scope, size_t n) {
-    ctx_bind_node *node = calloc(1, sizeof *node + n);
-    if (!node) ctx_panic_nopos("out of memory");
-    node->next = scope->head;
-    scope->head = node;
-    return node->data;
+static _Alignas(16) char first_space[1 << 16];
+static ctx_rec_seg first_seg = { NULL, first_space, first_space + sizeof first_space };
+ctx_rec_mark ctx_recs = { &first_seg, first_space, first_space + sizeof first_space };
+
+#define SEGMENT ((uint64_t)1 << 18)
+
+void *ctx_rec_more(uint64_t n) {
+    ctx_rec_seg *s = ctx_recs.seg->next;
+    while (s && (uint64_t)(s->end - s->data) < n) s = s->next;
+    if (!s) {
+        uint64_t size = n + 32 > SEGMENT ? PAGES(n + 32) : SEGMENT;
+        char *p = pages(size);
+        s = (ctx_rec_seg *)p;
+        s->data = p + 32;
+        s->end = p + size;
+        s->next = ctx_recs.seg->next;
+        ctx_recs.seg->next = s;
+    }
+    ctx_recs.seg = s;
+    ctx_recs.top = s->data + n;
+    ctx_recs.end = s->end;
+    return s->data;
 }
 
-void ctx_bind_release(ctx_bind_scope *scope) {
-    ctx_bind_node *node = scope->head;
-    while (node) {
-        ctx_bind_node *next = node->next;
-        free(node);
-        node = next;
+// Permanent records: bump allocation, never freed.
+void *ctx_alloc(size_t n) {
+    static _Alignas(16) char space[1 << 14];
+    static char *at = space, *end = space + sizeof space;
+    n = (n + 15) & ~(size_t)15;
+    if ((size_t)(end - at) < n) {
+        uint64_t size = n > (1 << 16) ? PAGES(n) : (1 << 16);
+        at = pages(size);
+        end = at + size;
     }
-    scope->head = NULL;
+    void *p = at;
+    at += n;
+    return p;
+}
+
+// Adapters of `fn` values, one for each inner value and code. Such a value is a named
+// function's static record or another of these, so there are finitely many.
+typedef struct ctx_canon { struct ctx_canon *next; ctx_adapter a; } ctx_canon;
+
+ctx_fn *ctx_adapt(ctx_fn *inner, void (*code)(void)) {
+    static ctx_canon *table[256];
+    uintptr_t h = (uintptr_t)inner * 31 + (uintptr_t)code;
+    h ^= h >> 17;
+    ctx_canon **b = &table[(h ^ (h >> 8)) & 255];
+    for (ctx_canon *c = *b; c; c = c->next)
+        if (c->a.inner == inner && c->a.base.code == code) return &c->a.base;
+    ctx_canon *c = ctx_alloc(sizeof *c);
+    c->a.base.code = code;
+    c->a.inner = inner;
+    c->next = *b;
+    *b = c;
+    return &c->a.base;
 }

@@ -6264,7 +6264,17 @@ namespace check {
     fn expr { mut c: Checker, e: syntax::Expr, exp: Id } -> Id {
         let t = expr_kind{ &c, e, exp }
         set_type{ &c, e, t }
+        holds_bound{ &c, e, t }
         return t
+    }
+
+    // A value whose type holds a `&fn` but isn't one (`&f`, `[f]`, `?&fn` from a branch's
+    // `null`) is an error, as the written type is (§6, rule 1): a bound function lives only in a
+    // local or a read-only context field, which is what lets a bind's record be reused.
+    fn holds_bound { mut c: Checker, e: syntax::Expr, t: Id } {
+        if not types::has_bound_fn{ s = c.ty, t } { return }
+        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is func { return }
+        error{ &c, at = expr_at{ e }, msg = "`&fn` can only be the type of a local or a read-only context field" }
     }
 
     // Checks that e has a type that converts to t.

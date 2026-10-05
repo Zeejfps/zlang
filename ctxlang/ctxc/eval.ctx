@@ -17,14 +17,16 @@
 //        temporaries above them. A statement's temporaries are freed when it ends, except those
 //        whose address is taken (C's compound literals), which live until their block ends.
 //   3... static data (literals' bytes, with C's NUL after them, and consts), read-only, and the
-//        heap (ctx_alloc's records, the stdout buffer, main's args), in chunks that never move.
+//        heap (records, the stdout buffer, main's args), in chunks that never move.
 // An address is a u64, region << 40 | offset: @addr and casts between pointers round-trip, 0 is
 // null, and since a region starts at a multiple of 2^40, an address's alignment is its offset's.
 //
 // Function values are emit_c's: a pointer to a record whose first 8 bytes are its code. A named
 // function's record is static (gN); a bind allocates one with its captured args (bK), a bind of
 // a function value one with the inner value too, and a conversion to a type with more fields an
-// adapter (ctx_adapt). A C function pointer is its code alone.
+// adapter (ctx_adapt). A C function pointer is its code alone. Unlike the C (emit_c.ctx,
+// Records), every bind and adapter gets a fresh record that is never freed, so the tests check
+// the C's reuse of records against it.
 //
 // Control: evaluation fails with `halt` when the program stops (m.stop says why), and with
 // `leave` when a break, continue or return leaves blocks (m.flow says where to). Each block it
@@ -1226,7 +1228,7 @@ namespace eval {
         return g
     }
 
-    // A bind's record, from ctx_alloc: its code, the inner function value if start is 16, then
+    // A bind's record, on the heap: its code, the inner function value if start is 16, then
     // the captured args, evaluated in order. Returns a temporary holding its address.
     fn record_of { mut m: M, t: ir::TypeId, c: Addr, inner: Addr, start: u64, args: []ir::Arg } -> !Addr {
         let base = m.argv.len
@@ -2012,7 +2014,7 @@ namespace eval {
         return b
     }
 
-    // n zeroed bytes from ctx_alloc: 16-byte aligned, never freed.
+    // n zeroed bytes on the heap: 16-byte aligned, never freed.
     fn heap_bytes { mut m: M, n: u64 } -> !Addr {
         let mut a = bump{ &m, region = m.chunk, n, align = 16 }
         if a == null {

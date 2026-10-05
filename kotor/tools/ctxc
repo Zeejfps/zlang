@@ -14,11 +14,11 @@ CTX="$ROOT/ctxlang"
 export PATH="/g/Dev/msys64/mingw64/bin:$PATH"
 export CTX_HOME="$CTX"
 EXE="$CTX/build/ctxc-boot.exe"
-if [ ! -f "$EXE" ] || [ "$CTX/bootstrap/ctxc.windows.c" -nt "$EXE" ] || [ "$CTX/ctxc/rt/ctxrt.c" -nt "$EXE" ] || [ "$CTX/ctxc/rt/ctxrt.h" -nt "$EXE" ]; then
+if [ ! -f "$EXE" ] || [ "$CTX/bootstrap/ctxc.windows.c" -nt "$EXE" ] || [ "$CTX/ctxc/rt/ctxrt.c" -nt "$EXE" ] || [ "$CTX/ctxc/rt/ctxrt.h" -nt "$EXE" ] || [ "$CTX/ctxc/rt/ctxfloat.c" -nt "$EXE" ]; then
   mkdir -p "$CTX/build"
   echo "kotor/tools/ctxc: building ctxc from bootstrap/ctxc.windows.c ..." >&2
   gcc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -fno-strict-aliasing -I"$CTX/ctxc/rt" \
-    "$CTX/bootstrap/ctxc.windows.c" "$CTX/ctxc/rt/ctxrt.c" -lm -Wl,--stack,268435456 -o "$EXE.$$.tmp"
+    "$CTX/bootstrap/ctxc.windows.c" "$CTX/ctxc/rt/ctxrt.c" "$CTX/ctxc/rt/ctxfloat.c" -lm -Wl,--stack,268435456 -o "$EXE.$$.tmp"
   mv -f "$EXE.$$.tmp" "$EXE"
 fi
 exec "$EXE" "$@"

@@ -818,6 +818,20 @@ class Declarations(Base):
         ]:
             self.assertDeclError(src + '\nfn main {} {}', msg, line, col)
 
+    def test_bound_fn_values_stay_in_locals(self):
+        # A value whose inferred type holds a `&fn` is an error, as the written type is.
+        msg = '`&fn` can only be the type of a local or a read-only context field'
+        read = 'fn read { n: i32 } -> i32 { return n }\nfn f {} {\n    let g = read{ n = 1, _ }\n'
+        for body, col in [
+            ('    let p = &g', 13),
+            ('    let a = [g, g]', 13),
+            ('    let a = [g; 2]', 13),
+            ('    let a = [[g]]', 14),
+            ('    let o = if true { g } else { null }', 13),
+            ('    let mut a = [g]\n    a[0] = read{ n = 2, _ }', 17),
+        ]:
+            self.assertDeclError(read + body + '\n}\nfn main {} {}', msg, 4, col)
+
     def test_types(self):
         for src, msg, line, col in [
             ('struct S { a: [0 - 1]u8 }', 'array length must not be negative', 1, 15),

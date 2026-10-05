@@ -5,7 +5,7 @@
 // stack check's limit, function values' records, and storage for std's process-wide state.
 // The rest is std's, in ctxlang: starting the program (a `#start` fn, std/rt.ctx), reporting a
 // panic (a `#panic` fn), and the platform's layer (std/os), which the natives of std are over.
-// Of the C library, ctxrt.c uses calloc and free alone. Floats as text and back, which std's
+// ctxrt.c calls no C library function. Floats as text and back, which std's
 // ascii declares, are ctxfloat.c's, which a program links only if it uses them (ctxc/drive.ctx).
 
 #ifndef CTXRT_H
@@ -89,26 +89,42 @@ void ctx_stack_set(uint64_t limit);
 //
 // Every function value, bound or not, points to a record whose first member is its code. The
 // code takes the record, then the function type's fields in name order (`mut` ones as void*).
+// A named function's record is static. A bind's record is in its function's frame when no
+// earlier record of the same bind can still be called when it runs again (ctxc/emit_c.ctx,
+// Records); otherwise it is borrowed from a stack that the function restores on return.
 
 typedef struct ctx_fn { void (*code)(void); } ctx_fn;
 typedef struct { ctx_fn base; ctx_fn *inner; } ctx_adapter;
 
-void *ctx_alloc(size_t n);                 // zeroed permanent storage for escaping records/adapters
-// Each invocation owns its borrowed records. Separate allocations preserve loop snapshots;
-// cleanup runs on every C return, after the emitter has evaluated returns and run defers.
-typedef struct ctx_bind_node ctx_bind_node;
-typedef struct { ctx_bind_node *head; } ctx_bind_scope;
-void *ctx_borrow_alloc(ctx_bind_scope *scope, size_t n);
-void ctx_bind_release(ctx_bind_scope *scope);
-static inline void ctx_bind_cleanup(ctx_bind_scope *scope) {
-    if (scope->head) ctx_bind_release(scope);
+// Where the runtime takes memory for records from once its own is used up (64 KiB for
+// borrowed records, 16 KiB for permanent ones): pages of at least `size` bytes that last until
+// the program ends, or null; `size` is a multiple of 4096. std's start sets it (std/rt.ctx).
+// It may make no record: one that needs more pages traps. Without it, a record past the
+// runtime's own panics.
+typedef void *(*ctx_pages_fn)(uint64_t size);
+void ctx_pages_set(ctx_pages_fn pages);
+
+// Borrowed records: `CTX_RECORDS;` at the top of a function that may make one, which
+// restores the stack's top when the function returns, after its defers.
+typedef struct ctx_rec_seg { struct ctx_rec_seg *next; char *data; char *end; } ctx_rec_seg;
+typedef struct { ctx_rec_seg *seg; char *top; char *end; } ctx_rec_mark;
+extern ctx_rec_mark ctx_recs;
+void *ctx_rec_more(uint64_t n);
+static inline void ctx_rec_release(ctx_rec_mark *m) { ctx_recs = *m; }
+#define CTX_RECORDS ctx_rec_mark _ctx_records __attribute__((cleanup(ctx_rec_release))) = ctx_recs
+
+// n bytes, not zeroed, until the function's CTX_RECORDS restores the top.
+static inline void *ctx_rec_alloc(uint64_t n) {
+    n = (n + 15) & ~(uint64_t)15;
+    char *p = ctx_recs.top;
+    if ((uint64_t)(ctx_recs.end - p) < n) return ctx_rec_more(n);
+    ctx_recs.top = p + n;
+    return p;
 }
-static inline ctx_fn *ctx_adapt(ctx_fn *inner, void (*code)(void)) {
-    ctx_adapter *a = ctx_alloc(sizeof *a);
-    a->base.code = code;
-    a->inner = inner;
-    return &a->base;
-}
+
+void *ctx_alloc(size_t n);                 // permanent storage, not zeroed
+// The adapter of `fn` value `inner` with `code`: the same record for the same pair.
+ctx_fn *ctx_adapt(ctx_fn *inner, void (*code)(void));
 
 // ---- integer arithmetic
 

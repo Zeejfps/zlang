@@ -27,9 +27,8 @@ interpreter ctxc replaced, is at `8436f4d`.
    shorthand for `let some{ value = p } = e else { ... }`.
 2. **Errors' remaining gap:** matching through a pointer to a `!T`.
 
-*Later, for `@fmt`* (spec §13): a borrowed writer's capture record is reclaimed when its
-creating invocation exits. Any separate function adapter still uses permanent `ctx_alloc`
-storage (Open decisions). An error hole is the only piece the compiler writes
+*Later, for `@fmt`* (spec §13): a writer passed to a call has its record in the frame, and
+one held otherwise is reclaimed when its creating invocation returns (Representation, `&fn`). An error hole is the only piece the compiler writes
 itself; a field with no writer is `_`, and std's padded writers keep their `push_` names.
 
 *Later, if wanted:* if patterns nest (a payload's fields, literal values), `_` comes in as a
@@ -55,7 +54,8 @@ The goal is real programs over C libraries: OpenGL or Vulkan rendering, windowin
 
 *Done: the runtime's natives in ctxlang.* The runtime (ctxc/rt/ctxrt.c) keeps only what
 ctxlang can't say: the checks' panics, which write their messages without the C library, the
-stack check's limit, function values' records (calloc and free, its only C library calls), and
+stack check's limit, function values' records (over pages from a fn std's start gives,
+`ctx_pages_set`, so it calls no C library function), and
 zeroed storage for std's state (`ctx_state`). Starting the program is std's `#start` fn
 (std/rt.ctx): the platform's setup (binary mode on Windows, the stack's re-exec on Linux),
 `args`, `CTX_STACK`, and standard output written out at the end; reporting a panic is its
@@ -101,8 +101,9 @@ another.
   (`build::platform{ &b, exe, dir }`), so that a port supplies `namespace os` without editing std.
 - A target with no layer at all, where everything that takes no capability still works
   (freestanding). A program supplies its own `#start` and `#panic` fns (spec §15); what's left
-  is std compiling without a layer, the C library's calloc and free behind function values'
-  records, and memcpy, memset and fmod, which C compilers call themselves.
+  is std compiling without a layer, a pages fn for function values' records past the runtime's
+  first 64 KiB (std/rt.ctx, `record_pages`), and memcpy, memset and fmod, which C compilers call
+  themselves.
 - Threads. A `#c::callback` must be called on the thread that called into C, since the stack
   limit and the runtime's stdout buffer are global; threads would need a `_Thread_local` limit
   and an entry thunk.
@@ -390,7 +391,7 @@ program asks for one (spec §19).
 | `a[i]` on arrays | index with a bounds check | Panics, as the spec requires. |
 | `fn{C} -> R` | pointer to a record whose first member is the code | Called with the record and the fields in name order. Conversion to a type with more fields wraps the value in an adapter. Conversion to one whose `!T` may fail with any error (spec §5) is a widening thunk that lowering writes as a function (lower.ctx, `widen_fn`): a named function's is its static record, a bind's binds the thunk instead, and any other value is held by a bind of a thunk calling it. |
 | read-only param of a struct, union or array over 32 bytes | `T *`, used as `(*lN)` | Spec §14.6: the caller passes its place, or a copy where another argument or the callee could change it (emit_c.ctx, `pass`). Not to extern fns. A 300 KB struct passed 20,000 times: 0.89 s to 0.06 s; `ctxc build` of ctxc, 451 ms to 317 ms. |
-| `&fn{C} -> R` | a distinct `ctx_borrow_alloc` record per execution | Reclaimed at invocation exit after defers, including early `try` returns. |
+| `&fn{C} -> R` | a record in a frame slot, or borrowed from the runtime's record stack | emit_c.ctx, Records. A slot when no earlier record of the bind can still be called when it runs again: no loop around it, or it is only passed to a call or called, or only held by a confined local (one `let`, only called or passed). Otherwise `ctx_rec_alloc`, released when the function returns (`CTX_RECORDS`, after defers, including early `try` returns). An adapter of a `&fn` goes where a bind's record would; one of a `fn` is static for a named function and otherwise one per pair (`ctx_adapt`), as are widening thunks of `fn` values. A bind of nothing has a static record. A loop of 20M binds passed to a call: 1.5 GB and 2.0 s before, 6 MB and 0.19 s after. |
 | `defer` | copied to each exit | Innermost first. `return e` evaluates `e` into a temporary first. |
 | const of array, struct or union type | `static const qvN = VALUE;` | The checker folds the value to literals; `[x; N]` is a GNU range designator. A scalar const is its value at each use. Const array slices borrow this static storage read-only, without copying; each C unit may have its own copy. |
 | `if`/`match` expressions | GNU statement expressions | A branch that leaves uses `return`, `break` or `continue`. |
@@ -432,15 +433,12 @@ program asks for one (spec §19).
 
 - **Panic stack traces.** Printing the function frames with each panic needs a shadow stack in C,
   which costs time on every call. *Recommendation:* a debug flag, off by default. **Deferred.**
-- **Borrowed bind storage.** Each executed borrowed bind uses a separate invocation-owned
-  allocation. GNU C cleanup releases that invocation's list after defers on every return,
-  including early `try` returns. Separate records preserve simultaneous loop snapshots and
-  nested/reentrant callbacks. A long-running or never-returning invocation still retains every
-  record it creates until exit. Last-use reclamation and frame slots are deferred.
-  - Adapters (`ctx_adapt`) and binds whose IR type is escaping `fn` still use permanent
-    `ctx_alloc` storage. No borrowed-to-`fn` promotion is added. A widening bind with `&fn`
-    type is reclaimed with the other borrowed records.
-  - The interpreter keeps its existing representation.
+- **Bind storage.** *Done* (Representation, `&fn`): frame slots where an earlier record can't
+  still be called, a stack of records released on return otherwise, and static or one-per-pair
+  records for `fn` values. What's left: a record that a loop's outer local holds (`prev = cur;
+  cur = f{ x = i, _ }`, or a chain of binds) still keeps its memory until the function returns.
+  Last-use reclamation would need liveness across loop iterations. The interpreter keeps its own
+  representation, a fresh record for each bind, so the tests compare the C against it.
 - **Direct borrowing summaries.** A checked-AST pass infers whole-parameter success/error
   origins plus pointer-store effects, then bodies are checked again for escapes. Recursion and
   indirect calls are conservative; effects carry stored types through generic substitution so

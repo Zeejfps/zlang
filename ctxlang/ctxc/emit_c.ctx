@@ -54,6 +54,8 @@ namespace emit {
     type Out = ir_print::Out
 
     const NONE: u32 = 4294967295
+    // A frame slot that holds an adapter rather than a bind's record (E.slots).
+    const SLOT_ADAPTER: u32 = 2147483648
 
     // A read-only struct, union or array param over this many bytes is passed by reference
     // (spec §14.6): a pointer to the caller's place, or to a copy (`pass`).
@@ -90,6 +92,11 @@ namespace emit {
         f:        ir::Func,                         // the function being emitted
         temp:     u32,                              // the next _tK
         sites:    u32,                              // the next bind record
+        loops:    u32,                              // the loops around what is being written
+        given:    Given,                            // what takes the value being written (Records)
+        stacked:  bool,                             // the function borrows records (CTX_RECORDS)
+        slots:    list::List(u32, ir::Heap),        // its records in its frame, by site: SLOT_ADAPTER for an adapter's
+        confined: list::List(u8, ir::Heap),         // by local: UNSEEN, CONFINED or LOOSE (confine)
         depth:    u32,                              // indentation
         scopes:   list::List(Scope, ir::Heap),
         static_init: bool,                          // writing a const's static initializer
@@ -184,7 +191,10 @@ namespace emit {
             o = ir_print::out{ heap, types = p.types },
             aux = ir_print::out{ heap, types = p.types },
             f = p.fns[p.main],
-            temp = 0, sites = 0, depth = 0,
+            temp = 0, sites = 0, loops = 0, given = Given::other, stacked = false,
+            slots = list::new(u32){ realloc = arena::alloc, heap },
+            confined = list::new(u8){ realloc = arena::alloc, heap },
+            depth = 0,
             scopes = list::new(Scope){ realloc = arena::alloc, heap },
             static_init = false, split = false, direct = false, assembling = false,
             names = list::new([]u8){ realloc = arena::alloc, heap },
@@ -1214,18 +1224,39 @@ namespace emit {
         }
         nl{ &e }
         put{ &e, a = "CTX_STACK_CHECK();" }
-        // Emit once into a buffer to see whether this body creates records, including
-        // records in defer copies. Functions without binds need no cleanup attribute.
+        // The body goes into a buffer first: its records' slots, and whether it borrows any,
+        // go before it.
+        confine{ &e, f }
+        e.loops = 0
+        e.given = Given::other
+        e.stacked = false
+        list::clear{ list = &e.slots }
         let head = e.o
-        let sites = e.sites
         e.o = ir_print::out{ heap = e.heap, types = e.p.types }
         nl{ &e }
         block{ &e, b = f.body }
         let body = list::items{ list = e.o.bytes }
         e.o = head
-        if e.sites != sites {
+        let slots = list::items{ list = e.slots }
+        i = 0
+        while i < slots.len {
             nl{ &e }
-            put{ &e, a = "ctx_bind_scope _ctx_binds __attribute__((cleanup(ctx_bind_cleanup))) = {0};" }
+            let adapter = slots[i] >= SLOT_ADAPTER
+            let k = if adapter { slots[i] - SLOT_ADAPTER } else { slots[i] }
+            if adapter {
+                put{ &e, a = "ctx_adapter" }
+            } else {
+                put{ &e, a = "struct " }
+                mark_id{ &e, kind = 'b', id = k }
+            }
+            put{ &e, a = " _r" }
+            num{ &e, n = k }
+            ch{ &e, c = ';' }
+            i = i + 1
+        }
+        if e.stacked {
+            nl{ &e }
+            put{ &e, a = "CTX_RECORDS;" }
         }
         raw{ &e, b = body }
         if not is_void{ e, t = f.ret } {
@@ -1494,6 +1525,7 @@ namespace emit {
             define{ slot, init } => {
                 target{ &e, slot }
                 put{ &e, a = " = " }
+                if list::items{ list = e.confined }[slot] == CONFINED { e.given = Given::local }
                 expr{ &e, x = init }
                 ch{ &e, c = ';' }
             }
@@ -1549,11 +1581,13 @@ namespace emit {
                     put{ &e, a = ": " }
                 }
                 put{ &e, a = "while (" }
+                e.loops = e.loops + 1
                 expr{ &e, x = c }
                 put{ &e, a = ") " }
                 push_scope{ &e, s = Scope::loop{ label } }
                 block{ &e, b = body }
                 _ = list::pop{ list = &e.scopes }
+                e.loops = e.loops - 1
                 if label != null {
                     put{ &e, a = " _brk" }
                     num{ &e, n = label }
@@ -1831,6 +1865,8 @@ namespace emit {
 
     fn expr { mut e: E, x: ir::Expr } {
         use{ &e, t = x.ty }
+        let given = e.given
+        e.given = Given::other
         match x.k {
             int{ negative, value } => { int_lit{ &e, t = x.ty, n = ir::Int{ negative, value } } }
             float{ value } => {
@@ -2017,11 +2053,11 @@ namespace emit {
                     put{ &e, a = " })" }
                 }
             }
-            fnconv{ e = a } => { fnconv{ &e, to = x.ty, a = a.* } }
+            fnconv{ e = a } => { fnconv{ &e, to = x.ty, a = a.*, given } }
             call{ callee, args } => { call{ &e, callee, args } }
             dcall{ callee, args } => { dcall{ &e, callee = callee.*, args } }
-            bind{ callee, args } => { bind{ &e, t = x.ty, callee, args } }
-            dbind{ callee, args } => { dbind{ &e, t = x.ty, callee = callee.*, args } }
+            bind{ callee, args } => { bind{ &e, t = x.ty, callee, args, given } }
+            dbind{ callee, args } => { dbind{ &e, t = x.ty, callee = callee.*, args, given } }
             fnref{ callee } => {
                 if is_cfn{ e, t = x.ty } {
                     if e.p.fns[callee].symbol.len > 0 {
@@ -2557,7 +2593,11 @@ namespace emit {
                 if a.index == j {
                     let k = @as(u32, i)
                     match pass{ e, args, i, c } {
-                        value => { operand{ &e, x = a.value, tt, i = k } }
+                        value => {
+                            e.given = Given::call
+                            operand{ &e, x = a.value, tt, i = k }
+                            e.given = Given::other
+                        }
                         place => {
                             if tt.on { tmp{ &e, k = tt.base + k } } else { address{ &e, x = a.value } }
                         }
@@ -2585,6 +2625,7 @@ namespace emit {
         put{ &e, a = "({ ctx_fn *" }
         tmp{ &e, k = kf }
         put{ &e, a = " = " }
+        e.given = Given::call
         expr{ &e, x = callee }
         put{ &e, a = "; " }
         let tt = temps_call{ &e, args, c }
@@ -2601,9 +2642,9 @@ namespace emit {
         put{ &e, a = "; })" }
     }
 
-    // A bound function: a record holding the code and the given args, allocated each time. The
-    // record's type and code go before the function (aux).
-    fn bind { mut e: E, t: ir::TypeId, callee: u32, args: []ir::Arg } {
+    // A bound function: a record holding the code and the given args (Records). The record's
+    // type and code go before the function (aux).
+    fn bind { mut e: E, t: ir::TypeId, callee: u32, args: []ir::Arg, given: Given } {
         let f = e.p.fns[callee]
         let k = e.sites
         e.sites = e.sites + 1
@@ -2618,11 +2659,11 @@ namespace emit {
         forward{ &e, target = f.params, ext = f.symbol.len > 0, args, given = params }
         put{ &e, a = ");\n}\n\n" }
         to_aux{ &e }
-        new_record{ &e, k, inner = null, args, borrowed = func_bound{ e, t } }
+        new_record{ &e, k, inner = null, args, t, given }
     }
 
     // A bound function value: like bind, calling the callee value through its code.
-    fn dbind { mut e: E, t: ir::TypeId, callee: ir::Expr, args: []ir::Arg } {
+    fn dbind { mut e: E, t: ir::TypeId, callee: ir::Expr, args: []ir::Arg, given: Given } {
         let func{ params = target } = ty{ e, id = callee.ty } else { @panic("emit: bind of a non-function") }
         let k = e.sites
         e.sites = e.sites + 1
@@ -2639,7 +2680,7 @@ namespace emit {
         forward{ &e, target, ext = false, args, given = params }
         put{ &e, a = ");\n}\n\n" }
         to_aux{ &e }
-        new_record{ &e, k, inner = callee, args, borrowed = func_bound{ e, t } }
+        new_record{ &e, k, inner = callee, args, t, given }
     }
 
     //   struct bK *s = (struct bK *)self;
@@ -2671,29 +2712,296 @@ namespace emit {
         to_aux{ &e }
     }
 
-    // Allocates record bK and fills it, in IR order: callee, then args. Borrowed records
-    // belong to this invocation; escaping fn records retain permanent storage.
     fn func_bound { e: E, t: ir::TypeId } -> bool {
         return ty{ e, id = t } is func{ bound } and bound
     }
 
-    fn new_record { mut e: E, k: u32, inner: ?ir::Expr, args: []ir::Arg, borrowed: bool } {
+    // ---- Records
+    //
+    // Where a function value's record goes (ctxrt.h, function values):
+    //   - a `fn` value's is a named function's static record, or an adapter or widening thunk of
+    //     another `fn` value, which the runtime keeps one of for each pair (ctx_adapt): there are
+    //     finitely many;
+    //   - a bind that captures nothing has a static record;
+    //   - a `&fn` value's is a slot in the frame when no earlier record of the same site can be
+    //     called once the site runs again: the site runs at most once per invocation (no loop
+    //     is around it), or what it makes is only called or passed to a call (Given::call: a
+    //     callee can't keep a `&fn`, §6), or only held by a local that nothing else is ever put
+    //     in and that is only called or passed to calls (Given::local, confine), which the
+    //     next run of the site gives the new record;
+    //   - otherwise it is borrowed from the runtime's stack, until the function returns.
+    // A slot's record is built in a temporary and copied in once the args are evaluated, so the
+    // args may still call the slot's old record.
+
+    // What takes the value being written: a call, as an argument or the function called; a
+    // confined local's `let` (Records); anything else.
+    union Given { call, local, other }
+
+    union Store { canon, fixed, slot, stack }
+
+    fn store { mut e: E, t: ir::TypeId, given: Given, empty: bool } -> Store {
+        if not func_bound{ e, t } { return Store::canon }
+        if empty { return Store::fixed }
+        if e.loops == 0 or not (given is other) { return Store::slot }
+        e.stacked = true
+        return Store::stack
+    }
+
+    // What a record's own callee and args are given: a slot's that a call takes can be slots too.
+    fn inner_given { s: Store, given: Given } -> Given {
+        if s is slot and given is call { return Given::call }
+        return Given::other
+    }
+
+    // A local's state in confine: no `let` seen yet, one `let` and only taken by calls so far
+    // (CONFINED), or anything else.
+    const UNSEEN: u8 = 0
+    const CONFINED: u8 = 1
+    const LOOSE: u8 = 2
+
+    // Which of f's `&fn` locals are confined: given a value by one `let` alone, never assigned,
+    // and only called or passed to calls (Records).
+    fn confine { mut e: E, f: ir::Func } {
+        list::clear{ list = &e.confined }
+        let mut i: usize = 0
+        while i < f.locals.len {
+            let mine = i >= f.params.len and func_bound{ e, t = f.locals[i].ty }
+            try! list::push{ list = &e.confined, item = if mine { UNSEEN } else { LOOSE } }
+            i = i + 1
+        }
+        c_block{ &e, b = f.body }
+        i = 0
+        while i < f.locals.len {
+            if list::items{ list = e.confined }[i] == UNSEEN { list::items{ list = e.confined }[i] = LOOSE }
+            i = i + 1
+        }
+    }
+
+    fn loose { mut e: E, slot: u32 } {
+        list::items{ list = e.confined }[slot] = LOOSE
+    }
+
+    fn c_block { mut e: E, b: ir::Block } {
+        let mut i = 0
+        while i < b.stmts.len {
+            c_stmt{ &e, s = b.stmts[i] }
+            i = i + 1
+        }
+        if b.result != null { c_expr{ &e, x = b.result.*, taken = false } }
+    }
+
+    fn c_binds { mut e: E, binds: []ir::Bind } {
+        let mut i = 0
+        while i < binds.len {
+            loose{ &e, slot = binds[i].slot }
+            i = i + 1
+        }
+    }
+
+    fn c_arms { mut e: E, arms: []ir::Arm } {
+        let mut i = 0
+        while i < arms.len {
+            let mut j = 0
+            while j < arms[i].pats.len {
+                c_binds{ &e, binds = arms[i].pats[j].binds }
+                j = j + 1
+            }
+            c_block{ &e, b = arms[i].body }
+            i = i + 1
+        }
+    }
+
+    fn c_cases { mut e: E, cases: []ir::Case } {
+        let mut i = 0
+        while i < cases.len {
+            c_block{ &e, b = cases[i].body }
+            i = i + 1
+        }
+    }
+
+    fn c_stmt { mut e: E, s: ir::Stmt } {
+        match s {
+            define{ slot, init } => {
+                c_expr{ &e, x = init, taken = false }
+                let st = list::items{ list = e.confined }[slot]
+                list::items{ list = e.confined }[slot] = if st == UNSEEN { CONFINED } else { LOOSE }
+            }
+            zero{ slot } => { loose{ &e, slot } }
+            assign{ place, value } => {
+                if place.k is local{ slot } { loose{ &e, slot } } else { c_expr{ &e, x = place, taken = false } }
+                c_expr{ &e, x = value, taken = false }
+            }
+            eval{ e = x } => { c_expr{ &e, x, taken = false } }
+            cond{ c, then, els } => {
+                c_expr{ &e, x = c, taken = false }
+                c_block{ &e, b = then }
+                match els {
+                    some{ value } => { c_block{ &e, b = value } }
+                    null => {}
+                }
+            }
+            loop{ c, body } => {
+                c_expr{ &e, x = c, taken = false }
+                c_block{ &e, b = body }
+            }
+            brk | cont | panic => {}
+            ret{ value } => {
+                match value {
+                    some{ value = v } => { c_expr{ &e, x = v, taken = false } }
+                    null => {}
+                }
+            }
+            deferred{ body } => { c_block{ &e, b = body } }
+            choose{ scrut, arms } => {
+                c_expr{ &e, x = scrut, taken = false }
+                c_arms{ &e, arms }
+            }
+            switch{ scrut, cases } => {
+                c_expr{ &e, x = scrut, taken = false }
+                c_cases{ &e, cases }
+            }
+            let_else{ init, binds, els_binds, els } => {
+                c_expr{ &e, x = init, taken = false }
+                c_binds{ &e, binds }
+                c_binds{ &e, binds = els_binds }
+                c_block{ &e, b = els }
+            }
+        }
+    }
+
+    fn c_args { mut e: E, args: []ir::Arg, taken: bool } {
+        let mut i = 0
+        while i < args.len {
+            c_expr{ &e, x = args[i].value, taken }
+            i = i + 1
+        }
+    }
+
+    // x, which a call takes if `taken`.
+    fn c_expr { mut e: E, x: ir::Expr, taken: bool } {
+        match x.k {
+            int | float | boolean | str | sbytes | cstr | nil | constref | cvar | fnref => {}
+            local{ slot } => { if not taken { loose{ &e, slot } } }
+            deref{ ptr = a } | field{ base = a } | payload{ base = a } | addr{ place = a } | neg{ e = a }
+            | lnot{ e = a } | isnull{ e = a } | notnull{ e = a } | widen{ e = a } | some{ e = a }
+            | fnconv{ e = a } | repeat{ elem = a } | convert{ e = a } | trunc{ e = a } | cast{ e = a }
+            | ptraddr{ e = a } => {
+                c_expr{ &e, x = a.*, taken = false }
+            }
+            index{ base, i } | sindex{ base, i } => {
+                c_expr{ &e, x = base.*, taken = false }
+                c_expr{ &e, x = i.*, taken = false }
+            }
+            ssub{ base, lo, hi } => {
+                c_expr{ &e, x = base.*, taken = false }
+                c_expr{ &e, x = lo.*, taken = false }
+                if hi != null { c_expr{ &e, x = hi.*, taken = false } }
+            }
+            seq{ first, then } => {
+                c_expr{ &e, x = first.*, taken = false }
+                c_expr{ &e, x = then.*, taken = false }
+            }
+            with{ slot, init, body } => {
+                loose{ &e, slot }
+                c_expr{ &e, x = init.*, taken = false }
+                c_expr{ &e, x = body.*, taken = false }
+            }
+            land{ a, b } | lor{ a, b } | arith{ a, b } | bits{ a, b } | shift{ a, b } | cmp{ a, b }
+            | wrap{ a, b } => {
+                c_expr{ &e, x = a.*, taken = false }
+                c_expr{ &e, x = b.*, taken = false }
+            }
+            ptradd{ p, n } => {
+                c_expr{ &e, x = p.*, taken = false }
+                c_expr{ &e, x = n.*, taken = false }
+            }
+            call{ args } => { c_args{ &e, args, taken = true } }
+            dcall{ callee, args } => {
+                c_expr{ &e, x = callee.*, taken = true }
+                c_args{ &e, args, taken = true }
+            }
+            bind{ args } => { c_args{ &e, args, taken = false } }
+            dbind{ callee, args } => {
+                c_expr{ &e, x = callee.*, taken = false }
+                c_args{ &e, args, taken = false }
+            }
+            record{ items } | variant{ items } => { c_args{ &e, args = items, taken = false } }
+            array{ elems } => {
+                let mut i = 0
+                while i < elems.len {
+                    c_expr{ &e, x = elems[i], taken = false }
+                    i = i + 1
+                }
+            }
+            ifx{ c, then, els } => {
+                c_expr{ &e, x = c.*, taken = false }
+                c_block{ &e, b = then }
+                c_block{ &e, b = els }
+            }
+            matchx{ scrut, arms } => {
+                c_expr{ &e, x = scrut.*, taken = false }
+                c_arms{ &e, arms }
+            }
+            switchx{ scrut, cases } => {
+                c_expr{ &e, x = scrut.*, taken = false }
+                c_cases{ &e, cases }
+            }
+        }
+    }
+
+    // Record bK, filled in IR order: callee, then args.
+    fn new_record { mut e: E, k: u32, inner: ?ir::Expr, args: []ir::Arg, t: ir::TypeId, given: Given } {
+        let s = store{ &e, t, given, empty = args.len == 0 and inner == null }
+        match s {
+            canon => {
+                // A widening thunk of a `fn` value (lower.ctx, widen_fn): an adapter's layout.
+                if inner != null or args.len != 1 or not (ty{ e, id = args[0].value.ty } is func) {
+                    @panic("emit: a `fn` record that isn't a widening thunk")
+                }
+                put{ &e, a = "ctx_adapt(" }
+                expr{ &e, x = args[0].value }
+                put{ &e, a = ", (void (*)(void))" }
+                mark_id{ &e, kind = 'b', id = k }
+                put{ &e, a = "_code)" }
+                return
+            }
+            fixed => {
+                put{ &e, a = "({ static struct " }
+                mark_id{ &e, kind = 'b', id = k }
+                put{ &e, a = " _r = { { (void (*)(void))" }
+                mark_id{ &e, kind = 'b', id = k }
+                put{ &e, a = "_code } }; (ctx_fn *)&_r; })" }
+                return
+            }
+            else => {}
+        }
         let kr = fresh{ &e }
+        let to: []u8 = if s is slot { "." } else { "->" }
         put{ &e, a = "({ struct " }
         mark_id{ &e, kind = 'b', id = k }
-        put{ &e, a = " *" }
+        if s is slot {
+            ch{ &e, c = ' ' }
+            tmp{ &e, k = kr }
+            put{ &e, a = "; " }
+        } else {
+            put{ &e, a = " *" }
+            tmp{ &e, k = kr }
+            put{ &e, a = " = ctx_rec_alloc(sizeof(struct " }
+            mark_id{ &e, kind = 'b', id = k }
+            put{ &e, a = ")); " }
+        }
         tmp{ &e, k = kr }
-        put{ &e, a = if borrowed { " = ctx_borrow_alloc(&_ctx_binds, sizeof(struct " } else { " = ctx_alloc(sizeof(struct " } }
-        mark_id{ &e, kind = 'b', id = k }
-        put{ &e, a = ")); " }
-        tmp{ &e, k = kr }
-        put{ &e, a = "->base.code = (void (*)(void))" }
+        put{ &e, a = to }
+        put{ &e, a = "base.code = (void (*)(void))" }
         mark_id{ &e, kind = 'b', id = k }
         put{ &e, a = "_code; " }
+        let g = inner_given{ s, given }
         match inner {
             some{ value } => {
                 tmp{ &e, k = kr }
-                put{ &e, a = "->inner = " }
+                put{ &e, a = to }
+                put{ &e, a = "inner = " }
+                e.given = g
                 expr{ &e, x = value }
                 put{ &e, a = "; " }
             }
@@ -2703,15 +3011,27 @@ namespace emit {
         while i < args.len {
             let a = args[i]
             tmp{ &e, k = kr }
-            put{ &e, a = "->c" }
+            put{ &e, a = to }
+            ch{ &e, c = 'c' }
             num{ &e, n = a.index }
             put{ &e, a = " = " }
+            e.given = g
             expr{ &e, x = a.value }
             put{ &e, a = "; " }
             i = i + 1
         }
-        put{ &e, a = "(ctx_fn *)" }
-        tmp{ &e, k = kr }
+        if s is slot {
+            try! list::push{ list = &e.slots, item = k }
+            put{ &e, a = "_r" }
+            num{ &e, n = k }
+            put{ &e, a = " = " }
+            tmp{ &e, k = kr }
+            put{ &e, a = "; (ctx_fn *)&_r" }
+            num{ &e, n = k }
+        } else {
+            put{ &e, a = "(ctx_fn *)" }
+            tmp{ &e, k = kr }
+        }
         put{ &e, a = "; })" }
     }
 
@@ -2886,11 +3206,13 @@ namespace emit {
     }
 
     // A function value of type `from` as type `to`. The same fields need nothing; more fields
-    // need an adapter that drops them (adapter_def).
-    fn fnconv { mut e: E, to: ir::TypeId, a: ir::Expr } {
+    // need an adapter that drops them (adapter_def), whose record goes where a bind's would
+    // (Records).
+    fn fnconv { mut e: E, to: ir::TypeId, a: ir::Expr, given: Given } {
         let func{ params = src } = ty{ e, id = a.ty } else { @panic("emit: fnconv of a non-function") }
         let func{ params = dst } = ty{ e, id = to } else { @panic("emit: fnconv to a non-function") }
         if same_params{ a = src, b = dst } {
+            e.given = given
             expr{ &e, x = a }
             return
         }
@@ -2901,11 +3223,57 @@ namespace emit {
             k = k + 1
         }
         if k == e.adapters.len { try! list::push{ list = &e.adapters, item = Pair{ from = a.ty, to } } }
-        put{ &e, a = "ctx_adapt(" }
+        let s = store{ &e, t = to, given, empty = false }
+        if s is canon {
+            if a.k is fnref {
+                put{ &e, a = "({ static ctx_adapter _r = { { (void (*)(void))" }
+                mark_id{ &e, kind = 'a', id = @as(u32, k) }
+                put{ &e, a = "_code }, " }
+                expr{ &e, x = a }
+                put{ &e, a = " }; &_r.base; })" }
+                return
+            }
+            put{ &e, a = "ctx_adapt(" }
+            expr{ &e, x = a }
+            put{ &e, a = ", (void (*)(void))" }
+            mark_id{ &e, kind = 'a', id = @as(u32, k) }
+            put{ &e, a = "_code)" }
+            return
+        }
+        let kr = fresh{ &e }
+        put{ &e, a = "({ ctx_adapter " }
+        if s is slot {
+            tmp{ &e, k = kr }
+            put{ &e, a = " = { { (void (*)(void))" }
+            mark_id{ &e, kind = 'a', id = @as(u32, k) }
+            put{ &e, a = "_code }, " }
+            e.given = inner_given{ s, given }
+            expr{ &e, x = a }
+            let site = e.sites
+            e.sites = e.sites + 1
+            try! list::push{ list = &e.slots, item = site + SLOT_ADAPTER }
+            put{ &e, a = " }; _r" }
+            num{ &e, n = site }
+            put{ &e, a = " = " }
+            tmp{ &e, k = kr }
+            put{ &e, a = "; &_r" }
+            num{ &e, n = site }
+            put{ &e, a = ".base; })" }
+            return
+        }
+        ch{ &e, c = '*' }
+        tmp{ &e, k = kr }
+        put{ &e, a = " = ctx_rec_alloc(sizeof(ctx_adapter)); " }
+        tmp{ &e, k = kr }
+        put{ &e, a = "->base.code = (void (*)(void))" }
+        mark_id{ &e, kind = 'a', id = @as(u32, k) }
+        put{ &e, a = "_code; " }
+        tmp{ &e, k = kr }
+        put{ &e, a = "->inner = " }
         expr{ &e, x = a }
-        put{ &e, a = ", (void (*)(void))" }
-        mark_id{ &e, kind = 'a', id = k }
-        put{ &e, a = "_code)" }
+        put{ &e, a = "; &" }
+        tmp{ &e, k = kr }
+        put{ &e, a = "->base; })" }
     }
 
     //   static R aN_code(ctx_fn *self, P a0, ...) { ctx_fn *in = ...; return ((cT)in->code)(in, ...); }
@@ -3260,6 +3628,7 @@ namespace emit {
                 ch{ &e, c = ' ' }
                 tmp{ &e, k = base + @as(u32, i) }
                 put{ &e, a = " = " }
+                e.given = Given::call
                 expr{ &e, x }
             }
             put{ &e, a = "; " }
