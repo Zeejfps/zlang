@@ -82,7 +82,8 @@ namespace syntax {
     }
 
     // One step of a path: `name` or `name(T, ...)`. `name()` has empty targs, not null ones.
-    struct Seg { name: Name, targs: ?[]TypeExpr }
+    // rest: `..` after the type arguments, which only `error(...)` takes (an open set, §8, Errors).
+    struct Seg { name: Name, targs: ?[]TypeExpr, rest: bool }
 
     // ---- statements
 

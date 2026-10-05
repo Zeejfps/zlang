@@ -31,8 +31,9 @@ namespace proc {
     error other{ code: i64 }    // the OS's error number
 
     // What the platform's layer (std/os) may fail with, on every platform, starting or waiting
-    // for a program: spawn and wait declare this set (spec §8, Errors, rule 14).
-    type Error = error(not_found, permission_denied, other)
+    // for a program: spawn and wait declare this set (spec §8, Errors, rule 14). It is open, as
+    // fs::Error is.
+    type Error = error(not_found, permission_denied, other, ..)
 
     // How many processors this program may run on: at least 1.
     fn processors { mut proc: Proc } -> u32 {

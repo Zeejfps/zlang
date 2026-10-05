@@ -6020,6 +6020,93 @@ fn main { mut io: Io } {
         ]:
             self.assertCompileError(head + src, msg)
 
+    def test_open_set(self):
+        # `error(a, b, ..)` is open (spec §8, Errors, rule 15): it may gain errors, so a match on
+        # it, or on a set it joined, needs `else` or `err` even when it lists every one.
+        self.assertOutput("""
+namespace store {
+    error missing
+    error locked
+    type Error = error(missing, locked, ..)
+    fn get { n: u32 } -> Error!u32 {
+        if n == 0 { return missing }
+        if n == 1 { return locked }
+        return n
+    }
+    fn twice { n: u32 } -> !u32 { return try get{ n } * 2 }
+    fn wider { n: u32 } -> error(Error, missing)!u32 { return try twice{ n } }
+}
+fn main { mut io: Io } {
+    match store::get{ n = 0 } {
+        ok{ value } => { io::println_u64{ &io, n = value } }
+        store::missing => { io::println{ &io, s = "missing" } }
+        store::locked => { io::println{ &io, s = "locked" } }
+        else => { io::println{ &io, s = "other" } }
+    }
+    match store::twice{ n = 1 } {
+        ok{ value } => {}
+        store::locked => { io::println{ &io, s = "locked" } }
+        err{ error } => {}
+    }
+    io::println_u64{ &io, n = store::wider{ n = 4 } iferr 0 }
+}
+""", 'missing\nlocked\n8\n')
+
+    def test_open_set_errors(self):
+        head = 'error a\nerror b\ntype O = error(a, b, ..)\nfn f {} -> O!u64 { return a }\n'
+        for src, msg in [
+            ('fn main {} { match f{} { ok => {} a => {} b => {} } }',
+             'a match on an open error set needs `else` or `err`: error(a, b, ..) may gain errors'),
+            ('fn g {} -> !u64 { return try f{} }\nfn main {} { match g{} { ok => {} a => {} b => {} } }',
+             'a match on an open error set needs `else` or `err`: error of `g` may gain errors'),
+            ('fn g {} -> error(a, b)!u64 { return try f{} }\nfn main {} { _ = g{} }',
+             "`try` passes up error(a, b, ..), an open set, which closed error(a, b) can't hold: it may gain errors"),
+            ('fn h {} -> !u64 { return try f{} }\nfn g {} -> error(a, b)!u64 { return try h{} }\nfn main {} { _ = g{} }',
+             "the errors of `h` are an open set, which closed error(a, b) can't hold: it may gain errors"),
+            ('fn main {} { let r: error(a, b)!u64 = f{}\n    _ = r }',
+             "error(a, b, ..) can't join error(a, b): it is open, and may gain errors a closed set doesn't hold"),
+            ('type W = error(O, b)\nfn g {} -> W!u64 { return try f{} }\nfn main {} { match g{} { ok => {} a => {} b => {} } }',
+             'a match on an open error set needs `else` or `err`: error(a, b, ..) may gain errors'),
+            ('type X = u64(..)\nfn main {} {}', '`..` follows only the errors of a set, `error(a, b, ..)`'),
+        ]:
+            self.assertCompileError(head + src, msg)
+
+    def test_any_error_is_open(self):
+        # Any error, here a function type's `!T`, is open: a match on it needs `else`, which is
+        # never unreachable, however many errors it lists.
+        head = 'error a\nerror b\nfn f {} -> error(a, b)!u64 { return a }\n'
+        self.assertCompileError(head + 'fn main {} {\n    let v: fn{} -> !u64 = f\n    match v{} { ok => {} a => {} b => {} }\n}',
+                                'a match on an open error set needs `else` or `err`: error may gain errors')
+        self.assertOutput(head + 'fn main { mut io: Io } {\n    let v: fn{} -> !u64 = f\n'
+                          '    match v{} { ok => {} a => { io::println{ &io, s = "a" } } b => {} else => {} }\n}', 'a\n')
+
+    def test_open_set_spreads(self):
+        # An open set's openness reaches every inferred set its errors reach, however they get
+        # there: a chain of `try`, recursion, an error rebound and returned, a function value (any
+        # error, which is open too), and a writer that declares one.
+        head = 'error a\nerror b\ntype O = error(a, b, ..)\nfn f {} -> O!u64 { return a }\n'
+        need = 'a match on an open error set needs `else` or `err`: error of `{}` may gain errors'
+        for src, fn in [
+            ('fn g {} -> !u64 { return try f{} }\nfn h {} -> !u64 { return try g{} }', 'h'),
+            ('fn h { n: u64 } -> !u64 {\n    if n == 0 { return try f{} }\n    return try h{ n = n - 1 }\n}', 'h'),
+            ('fn h {} -> !u64 {\n    let v = f{} iferr err{ error } { return error }\n    return v\n}', 'h'),
+            ('fn h {} -> !u64 {\n    let ok{ value } = f{} else err{ error } { return error }\n    return value\n}', 'h'),
+            ('fn h {} -> !u64 {\n    match f{} {\n        ok{ value } => { return value }\n        err{ error } => { return error }\n    }\n}', 'h'),
+            ('fn h {} -> !u64 {\n    let v: fn{} -> !u64 = f\n    return try v{}\n}', 'h'),
+            ('struct P { n: u32 }\n#write\nfn write_p { mut io: Io, p: P } -> error(a, ..)! { return a }\n'
+             'fn h { mut io: Io } -> !u64 {\n    try @fmt(&io, "{}", P{ n = 1 })\n    return 1\n}', 'h'),
+            # an error's payload writer, found once the sets are seeded, adds only openness
+            ('struct P { n: u32 }\nerror holds{ p: P }\n#write\nfn write_p { mut io: Io, p: P } -> error(a, ..)! { return a }\n'
+             'fn h { mut io: Io } -> !u64 {\n    if false { return a }\n    if false { return b }\n'
+             '    try @fmt(&io, "{}", holds{ p = P{ n = 1 } })\n    return 1\n}', 'h'),
+        ]:
+            call = 'h{ &io }' if 'mut io' in src else ('h{ n = 1 }' if 'n: u64' in src else 'h{}')
+            arms = 'a => {}' if '#write' in src else 'a => {} b => {}'
+            if 'holds' in src:
+                arms = 'a => {} b => {}'
+            self.assertCompileError(head + src + f'\nfn main {{ mut io: Io }} {{ match {call} {{ ok => {{}} {arms} }} }}',
+                                    need.format(fn))
+
     def test_one_error_and_any_as_a_set(self):
         # One error is a set of its own, and `error!T` fails with any error, as `!T` written
         # outside a function's result does.
@@ -6363,7 +6450,7 @@ fn main { mut io: Io } {
              'fn f {} -> !u64 {\n    let buf: [4]u8 = [1; 4]\n    let h: fn{ s: []u8 } -> !u64 = g\n    return try h{ s = buf[..] }\n}\nfn main {} {}',
              '`try` would return an error that may hold the address of local `buf`', (9, 12)),
             ('fn main {} -> i32 {\n    let f: fn{ s: []u8 } -> !u64 = number\n    match f{ s = "" } { ok => { return 0 } parse::empty => { return 1 } parse::bad_digit => { return 2 } parse::too_big => { return 3 } }\n}',
-             "match isn't exhaustive: missing ", (3, 5)),
+             "a match on an open error set needs `else` or `err`: error may gain errors", (3, 5)),
             ('fn f {} -> !i32 { return parse::bad_digit }\nfn main {} {}',
              'error `parse::bad_digit` has a payload; construct it with `parse::bad_digit{ ... }`', (1, 26)),
             ('fn f {} -> !i32 { return parse::empty{} }\nfn main {} {}',
@@ -7240,7 +7327,7 @@ fn main { mut io: Io, mut mem: Mem, mut fs: Fs } -> i32 {
     def test_same_errors_everywhere(self):
         # Every layer declares the same sets (fs::Error, proc::Error; spec §8, Errors, rule 14),
         # so a match that lists every error a platform function may fail with checks the same on
-        # every platform and in the interpreter.
+        # every platform and in the interpreter. The sets are open (rule 15): it needs `else`.
         import toolchain
         d, files = toolchain.write_program([("""
 fn main { mut io: Io, mut fs: Fs, mut proc: Proc } -> i32 {
@@ -7249,11 +7336,13 @@ fn main { mut io: Io, mut fs: Fs, mut proc: Proc } -> i32 {
         fs::not_found | fs::permission_denied | fs::is_directory | fs::exists => { return 1 }
         fs::not_directory | fs::bad_file => { return 2 }
         fs::other{ code } => { return 3 }
+        else => { return 4 }
     }
     match proc::wait{ &proc, child = proc::Child{ id = 0 } } {
         ok => { return 0 }
         proc::not_found | proc::permission_denied => { return 1 }
         proc::other => { return 2 }
+        else => { return 3 }
     }
 }
 """, 'main.ctx')])

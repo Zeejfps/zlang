@@ -58,7 +58,8 @@ namespace types {
         errs{ owner: u32, one: u32 },
         // An error of a known set: the declarations of its errors, in declaration order. What an
         // errs becomes once the sets are inferred.
-        eset{ errs: []u32 },
+        // open: `error(..., ..)`, a set that may gain errors (§8, Errors, rule 15).
+        eset{ errs: []u32, open: bool },
         // `!T`: a T, or an error of type errs (an errs). ok is VOID for a bare `!`.
         res{ ok: Id, errs: Id },
         // A string literal's type (§11): its bytes, `.bytes`, with the hidden zero after them.
@@ -157,8 +158,8 @@ namespace types {
         return intern{ &s, t = Type::errs{ owner, one } }
     }
 
-    fn eset { mut s: Store, errs: []u32 } -> Id {
-        return intern{ &s, t = Type::eset{ errs = copy(u32){ s, xs = errs } } }
+    fn eset { mut s: Store, errs: []u32, open: bool } -> Id {
+        return intern{ &s, t = Type::eset{ errs = copy(u32){ s, xs = errs }, open } }
     }
 
     fn res { mut s: Store, ok: Id, errs: Id } -> Id {
@@ -279,7 +280,7 @@ namespace types {
             param{ decl, index } => { return mix{ h = mix{ h = 14, n = decl }, n = index } }
             var{ n } => { return mix{ h = 15, n } }
             errs{ owner, one } => { return mix{ h = mix{ h = 16, n = owner }, n = one } }
-            eset{ errs } => { return mix_ids{ h = 17, ids = errs } }
+            eset{ errs, open } => { return mix{ h = mix_ids{ h = 17, ids = errs }, n = flag{ b = open } } }
             res{ ok, errs } => { return mix{ h = mix{ h = 18, n = ok }, n = errs } }
             strlit => { return 19 }
         }
@@ -331,7 +332,7 @@ namespace types {
             param{ decl, index } => { return b is param{ decl = d, index = k } and decl == d and index == k }
             var{ n } => { return b is var{ n = k } and n == k }
             errs{ owner, one } => { return b is errs{ owner = o, one = e } and owner == o and one == e }
-            eset{ errs } => { return b is eset{ errs = xs } and same_ids{ a = errs, b = xs } }
+            eset{ errs, open } => { return b is eset{ errs = xs, open = o } and same_ids{ a = errs, b = xs } and open == o }
             res{ ok, errs } => { return b is res{ ok = o, errs = e } and ok == o and errs == e }
             strlit => { return b is strlit }
         }

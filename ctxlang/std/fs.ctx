@@ -30,7 +30,8 @@ namespace fs {
 
     // What the platform's layer (std/os) may fail with, on every platform: each of its file
     // functions declares this set (spec §8, Errors, rule 14), whichever of it the OS can give.
-    type Error = error(not_found, permission_denied, is_directory, exists, not_directory, bad_file, other)
+    // It is open (rule 15): an OS can fail in new ways, so a match on it has an `else`.
+    type Error = error(not_found, permission_denied, is_directory, exists, not_directory, bad_file, other, ..)
 
     union Mode {
         read,       // an existing file

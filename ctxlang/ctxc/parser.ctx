@@ -418,8 +418,21 @@ namespace parser {
 
     fn type_seg { mut p: Parser } -> syntax::Seg {
         let name = ident{ &p }
-        let targs: ?[]syntax::TypeExpr = if next_is{ p, k = tok::Kind::lparen } and not nl{ p } { type_list{ &p } } else { null }
-        return syntax::Seg{ name, targs }
+        if not (next_is{ p, k = tok::Kind::lparen } and not nl{ p }) { return syntax::Seg{ name, targs = null, rest = false } }
+        // `(T, ...)`, and `..` last for an open error set, `error(a, b, ..)`.
+        let mut xs = list::new(syntax::TypeExpr){ realloc = arena::alloc, heap = p.heap }
+        let mut rest = false
+        expect{ &p, k = tok::Kind::lparen }
+        while more{ p, close = tok::Kind::rparen } {
+            if accept{ &p, k = tok::Kind::dots } {
+                rest = true
+                break
+            }
+            try! list::push{ list = &xs, item = type_expr{ &p } }
+            if not accept{ &p, k = tok::Kind::comma } { break }
+        }
+        expect{ &p, k = tok::Kind::rparen }
+        return syntax::Seg{ name, targs = list::items{ list = xs }, rest }
     }
 
     // `(T, ...)`
@@ -676,10 +689,10 @@ namespace parser {
         let mut segs = list::new(syntax::Seg){ realloc = arena::alloc, heap = p.heap }
         let mut i: usize = 0
         while i < quals.len {
-            try! list::push{ list = &segs, item = syntax::Seg{ name = quals[i], targs = null } }
+            try! list::push{ list = &segs, item = syntax::Seg{ name = quals[i], targs = null, rest = false } }
             i = i + 1
         }
-        try! list::push{ list = &segs, item = syntax::Seg{ name, targs = null } }
+        try! list::push{ list = &segs, item = syntax::Seg{ name, targs = null, rest = false } }
         let k = syntax::ExprKind::path{ segs = list::items{ list = segs } }
         return syntax::Expr{ id = new_id{ &p }, span = span_from{ p, start }, at = start_of{ p, start }, k }
     }
@@ -1106,7 +1119,7 @@ namespace parser {
         }
         while true {
             if accept{ &p, k = tok::Kind::colons } {
-                try! list::push{ list = &xs, item = syntax::Seg{ name = ident{ &p }, targs = null } }
+                try! list::push{ list = &xs, item = syntax::Seg{ name = ident{ &p }, targs = null, rest = false } }
             } else if next_is{ p, k = tok::Kind::lparen } and not nl{ p } and xs.items[xs.len - 1].targs == null {
                 let targs = type_list{ &p }
                 xs.items[xs.len - 1].targs = targs
@@ -1179,7 +1192,7 @@ namespace parser {
     // A path of one name, where the name is.
     fn name_path { mut p: Parser, name: syntax::Name } -> syntax::Expr {
         let mut segs = list::new(syntax::Seg){ realloc = arena::alloc, heap = p.heap }
-        try! list::push{ list = &segs, item = syntax::Seg{ name, targs = null } }
+        try! list::push{ list = &segs, item = syntax::Seg{ name, targs = null, rest = false } }
         let k = syntax::ExprKind::path{ segs = list::items{ list = segs } }
         return syntax::Expr{ id = new_id{ &p }, span = name.span, at = name.span.start, k }
     }
