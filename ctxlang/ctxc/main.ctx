@@ -9,8 +9,10 @@
 //                                               directory, maybe with a build.ctx) with the C
 //                                               compiler and runs it (drive.ctx)
 //   ctxc exe PATH -o OUT                        builds it into the executable OUT
-//   ctxc interp PATH [-- ARGS...]               checks the program at PATH as `run` does, and
-//                                               runs its main in the interpreter (eval.ctx)
+//   ctxc interp [--env N=V | --env N]... PATH [-- ARGS...]
+//                                               checks the program at PATH as `run` does, and
+//                                               runs it in the interpreter (eval.ctx), in ctxc's
+//                                               environment with N set to V, or N removed
 //   ctxc build OUT.c STD... -- FILE...          checks the program of FILE..., with std's files
 //                                               STD..., and writes it as C, for ctxc/rt/ctxrt.c
 //                                               (and ctxfloat.c);
@@ -183,7 +185,7 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
     }
     let out: []u8 = if mode == Mode::build { args[1] } else { "" }
     let mut units: [][]u8 = slice::empty([]u8){}
-    return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = split - first, mode, out, argv = slice::empty([]u8){}, stack = 0, size = 0, made = &units }
+    return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = split - first, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, made = &units }
 }
 
 // Checks the program of `paths`, std's files first, and acts on it as `mode` says: for build,
@@ -192,7 +194,7 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
 // program named `out`, letting its calls take `stack` bytes of ctxc's stack. A const computed by
 // running code (comptime.ctx) may take half of ctxc's stack, and CTX_CONST_FUEL steps if that is
 // set.
-fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8, std_files: usize, mode: Mode, out: []u8, argv: [][]u8, stack: u64, size: usize, mut made: [][]u8 } -> i32 {
+fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8, std_files: usize, mode: Mode, out: []u8, argv: [][]u8, env: [][]u8, stack: u64, size: usize, mut made: [][]u8 } -> i32 {
     let mut total: u64 = 0
     let mut i: usize = 0
     while i < paths.len {
@@ -230,7 +232,7 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
     check::program{ &c }
     if mode == Mode::build or mode == Mode::interp or mode == Mode::units {
         if diags.errors == 0 and mode == Mode::interp {
-            return interpret{ &io, &proc, &heap, p = lower::program{ &c }, name = out, argv, stack }
+            return interpret{ &io, &heap, p = lower::program{ &c }, name = out, argv, env, stack }
         }
         if diags.errors == 0 and mode == Mode::units {
             made = emit::units{ &heap, p = lower::program{ &c }, size }
@@ -278,12 +280,12 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
     return 0
 }
 
-// Runs p in the interpreter, as C's main would run it, in this program's environment, and writes
-// what it wrote. Returns its exit code, as the compiled program's: 132 for a trap, as a shell
-// says for C's (SIGILL); or 1 if interp can't run it.
-fn interpret { mut io: Io, mut proc: Proc, mut heap: arena::Arena, p: ir::Program, name: []u8, argv: [][]u8, stack: u64 } -> i32 {
+// Runs p in the interpreter, as C's main would run it, in environment env ("KEY=VALUE"), and
+// writes what it wrote. Returns its exit code, as the compiled program's: 132 for a trap, as a
+// shell says for C's (SIGILL); or 1 if interp can't run it.
+fn interpret { mut io: Io, mut heap: arena::Arena, p: ir::Program, name: []u8, argv: [][]u8, env: [][]u8, stack: u64 } -> i32 {
     let mut m = eval::machine{ heap = &heap, p, name, emulate = true, fuel = eval::FUEL, stack }
-    m.env = proc::environment{ &proc }
+    m.env = env
     let r = eval::main{ &m, argv }
     let out = list::items{ list = m.out }
     let mut i: usize = 0

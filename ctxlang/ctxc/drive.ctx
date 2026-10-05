@@ -164,15 +164,21 @@ namespace drive {
         return started{ &io, r = proc::run{ &proc, argv = list::items{ list = argv }, env = slice::empty([]u8){} }, what = first }
     }
 
-    // `ctxc interp PATH [-- ARGS...]`: finds std and PATH's files as `run` does, then checks and
-    // lowers the program and runs its main in the interpreter instead of the C compiler. A
-    // directory with a build program is an error: interp doesn't run one.
+    // `ctxc interp [--env NAME=VALUE | --env NAME]... PATH [-- ARGS...]`: finds std and PATH's
+    // files as `run` does, then checks and lowers the program and runs it in the interpreter
+    // instead of the C compiler. Its environment is ctxc's, but for each --env, which sets NAME
+    // or, without a value, removes it: ctxc's own CTX_STACK and CTX_HOME needn't be the
+    // program's. A directory with a build program is an error: interp doesn't run one.
     fn interp { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> i32 {
-        if not (args.len == 2 or (args.len >= 3 and slice::eq_bytes{ a = args[2], b = "--" })) {
-            io::eprintln{ &io, s = "usage: ctxc interp PATH [-- ARGS...]" }
+        let mut at: usize = 1
+        while at + 1 < args.len and slice::eq_bytes{ a = args[at], b = "--env" } { at = at + 2 }
+        let edits = args[1..at]
+        let shape = args.len == at + 1 or (args.len >= at + 2 and slice::eq_bytes{ a = args[at + 1], b = "--" })
+        if not shape or slice::eq_bytes{ a = args[at], b = "--env" } {
+            io::eprintln{ &io, s = "usage: ctxc interp [--env NAME=VALUE | --env NAME]... PATH [-- ARGS...]" }
             return 2
         }
-        let path = trim_slash{ path = args[1] }
+        let path = trim_slash{ path = args[at] }
         let pages = mem::reserve{ &mem, size = 16777216 } ifnull {
             io::eprintln{ &io, s = "out of memory" }
             return 1
@@ -200,10 +206,29 @@ namespace drive {
         let mut paths = list::new([]u8){ realloc = arena::alloc, &heap }
         add_all{ xs = &paths, ys = std }
         add_all{ xs = &paths, ys = files }
-        let argv = if args.len >= 3 { args[3..] } else { args[2..] }
+        let argv = if args.len >= at + 2 { args[at + 2..] } else { args[at + 1..] }
         let stack = host_stack{ &proc } / 4 * 3
         let mut units: [][]u8 = slice::empty([]u8){}
-        return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = std.len, mode = Mode::interp, out = stem{ path = base{ path } }, argv, stack, size = 0, made = &units }
+        // The program's environment: ctxc's, with the edits.
+        let mut env = list::new([]u8){ realloc = arena::alloc, &heap }
+        add_all{ xs = &env, ys = proc::environment{ &proc } }
+        let mut k: usize = 1
+        while k < edits.len {
+            let e = edits[k]
+            let mut n: usize = 0
+            while n < e.len and e[n] != '=' { n = n + 1 }
+            let mut kept = list::new([]u8){ realloc = arena::alloc, &heap }
+            let xs = list::items{ list = env }
+            let mut j: usize = 0
+            while j < xs.len {
+                if not proc::overridden{ entry = xs[j], env = one{ &heap, s = cat{ &heap, a = e[..n], b = "=" } } } { try! list::push{ list = &kept, item = xs[j] } }
+                j = j + 1
+            }
+            if n < e.len { try! list::push{ list = &kept, item = e } }
+            env = kept
+            k = k + 2
+        }
+        return analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = std.len, mode = Mode::interp, out = stem{ path = base{ path } }, argv, env = list::items{ list = env }, stack, size = 0, made = &units }
     }
 
     // About how many bytes of C a unit has: CTX_UNIT_SIZE, or UNIT_SIZE.
@@ -390,7 +415,7 @@ namespace drive {
         add_all{ xs = &paths, ys = d.std }
         add_all{ xs = &paths, ys = files }
         let mut units: [][]u8 = slice::empty([]u8){}
-        let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = d.std.len, mode = Mode::units, out = "", argv = slice::empty([]u8){}, stack = 0, size = d.unit, made = &units }
+        let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = d.std.len, mode = Mode::units, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = d.unit, made = &units }
         if code != 0 { return null }
 
         // A unit's HASH is of its C, the runtime, the compiler, the flags and the program's name;

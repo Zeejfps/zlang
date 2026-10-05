@@ -9,7 +9,8 @@
 //     page's bytes.
 //   - Its environment's keys match as std's proc::overridden does, folding ASCII's case where
 //     the platform's aren't case-sensitive, where Windows folds all of Unicode's.
-//   - Its environment is ctxc's own, CTX_HOME and CTX_STACK among it.
+//   - Its environment is ctxc's, but for what `ctxc interp --env` sets or removes, as the
+//     comparison with the compiled run does for CTX_STACK and CTX_HOME (tools/toolchain.py).
 
 namespace os {
     // What std's Proc holds here: nothing. The environment is the interpreter's.

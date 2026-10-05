@@ -9715,6 +9715,33 @@ fn main { mut io: Io } -> i32 {
         trap = 132 if want[0] in (3221225501, -4, 132) else want[0]
         self.assertEqual(got, (trap,) + want[1:])
 
+    def test_environment_edits(self):
+        # `--env NAME=VALUE` sets the program's NAME, and `--env NAME` removes it, whatever
+        # ctxc's own: CTX_STACK, here, is both ctxc's stack and the program's to read.
+        d = self.project({'env.ctx': """
+fn main { mut io: Io, mut proc: Proc } {
+    io::println{ &io, s = utf8::String{ bytes = proc::env{ &proc, name = "CTX_STACK" } ifnull { "unset" } } }
+    io::println{ &io, s = utf8::String{ bytes = proc::env{ &proc, name = "CTX_TEST_ENV" } ifnull { "unset" } } }
+}
+"""})
+        os.environ['CTX_TEST_ENV'] = 'ctxc'
+        try:
+            got = self.ctxc('interp', '--env', 'CTX_STACK=12345', '--env', 'CTX_TEST_ENV', os.path.join(d, 'env.ctx'))
+        finally:
+            del os.environ['CTX_TEST_ENV']
+        self.assertEqual(got, (0, '12345\nunset\n', ''))
+        self.assertEqual(self.ctxc('interp', '--env')[0], 2)
+
+    def test_same_environment_as_compiled(self):
+        # The comparison gives the interpreted program the compiled run's CTX_STACK and
+        # CTX_HOME, not ctxc's own (toolchain.diff).
+        self.assertOutput("""
+fn main { mut io: Io, mut proc: Proc } {
+    io::println{ &io, s = utf8::String{ bytes = proc::env{ &proc, name = "CTX_STACK" } ifnull { "unset" } } }
+    io::println_bool{ &io, n = proc::env{ &proc, name = "CTX_HOME" } == null }
+}
+""", f'{16 << 20}\n{"true" if "CTX_HOME" not in os.environ else "false"}\n')
+
     def test_exit(self):
         # os::exit ends the run with its code, a negative one too, after nothing else.
         d = self.project({'exit.ctx': """

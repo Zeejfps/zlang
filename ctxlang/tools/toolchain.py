@@ -364,7 +364,7 @@ def run_sources(sources, out=None, err=None, inp=None, stack_size=16 << 20, args
                        timeout=timeout)
     stdin = read_input(inp)
     r = execute(exe, stdin, stack_size, args, timeout)
-    diff(sources, r, stdin, args, timeout)
+    diff(sources, r, stdin, args, timeout, program_env(stack_size))
     return report(r, out, err, 'program', given)
 
 
@@ -384,8 +384,13 @@ def read_input(inp):
     return data.encode() if isinstance(data, str) else data
 
 
+def program_env(stack_size=None, env=None):
+    """The environment a compiled program runs in (execute)."""
+    return dict(os.environ, CTX_STACK=str(stack_size or (16 << 20)), **(env or {}))
+
+
 def execute(exe, stdin, stack_size=None, args=(), timeout=None, env=None, cwd=None):
-    full = dict(os.environ, CTX_STACK=str(stack_size or (16 << 20)), **(env or {}))
+    full = program_env(stack_size, env)
     return subprocess.run([exe, *args], input=stdin, capture_output=True, env=full, timeout=timeout, cwd=cwd)
 
 
@@ -448,9 +453,10 @@ def read_program(path):
 INTERP_ERROR = 'ctxc interp: '
 
 
-def diff(sources, r, stdin, args, timeout):
+def diff(sources, r, stdin, args, timeout, guest):
     """Runs the program of sources, already written by build_sources, with `ctxc interp`, and
-    compares it with r, the compiled program's run: raises DiffMismatch if they differ."""
+    compares it with r, the compiled program's run, which had environment guest: raises
+    DiffMismatch if they differ."""
     d, files = write_program(sources)
     names = list(files)
     if len(names) == 1:
@@ -464,8 +470,12 @@ def diff(sources, r, stdin, args, timeout):
         path = top
     home = os.path.relpath(ROOT, d).replace(os.sep, '/')
     env = dict(os.environ, CTX_HOME=home, CTX_STACK=CTXC_STACK)
+    # ctxc's own CTX_HOME and CTX_STACK aren't the program's: it gets the compiled run's.
+    edits = []
+    for k in ('CTX_HOME', 'CTX_STACK'):
+        edits += ['--env', f'{k}={guest[k]}' if k in guest else k]
     try:
-        i = subprocess.run([native_ctxc(), 'interp', path, '--', *args], input=stdin, capture_output=True,
+        i = subprocess.run([native_ctxc(), 'interp', *edits, path, '--', *args], input=stdin, capture_output=True,
                            env=env, cwd=d, timeout=timeout or 600)
     except subprocess.TimeoutExpired:
         return log('skip', 'timeout')
