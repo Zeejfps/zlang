@@ -2003,16 +2003,7 @@ namespace check {
             func{ bound, params, ret, external } => {
                 let fields = context{ &c, params, sc }
                 let mut r = types::VOID
-                if ret != null {
-                    r = ret_type{ &c, te = ret.*, sc, owner = NONE }
-                    // An alias can't declare a set where `E!T` can't (§8, Errors, rule 14).
-                    if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = r } } is res{ ok, errs } {
-                        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = errs } } is eset {
-                            error{ &c, at = ret.span, msg = "a function type's `!T` fails with any error: its set can't be written" }
-                            r = types::res{ s = &c.ty, ok, errs = types::errs{ s = &c.ty, owner = NONE, one = NONE } }
-                        }
-                    }
-                }
+                if ret != null { r = ret_type{ &c, te = ret.*, sc, owner = NONE } }
                 if bound and not allow_bound {
                     error{ &c, at = te.span, msg = "`&fn` can only be the type of a local or a read-only context field" }
                     return types::ERROR
@@ -2044,14 +2035,9 @@ namespace check {
         let ok = if elem == null { types::VOID } else { rtype{ &c, te = elem.*, sc, allow_bound = false } }
         let mut errs = types::errs{ s = &c.ty, owner, one = NONE }
         if set != null {
-            // A declared set (§8, Errors, rule 14): not yet in a function type, whose result
-            // fails with any error.
+            // A declared set (§8, Errors, rule 14), a function's or a function type's.
             errs = declared_set{ &c, te = set.*, sc }
             if errs == types::ERROR { errs = types::errs{ s = &c.ty, owner, one = NONE } }
-            if owner == NONE {
-                error{ &c, at = set.span, msg = "a function type's `!T` fails with any error: its set can't be written" }
-                errs = types::errs{ s = &c.ty, owner, one = NONE }
-            }
         }
         let t = types::res{ s = &c.ty, ok, errs }
         try! map::put{ m = &c.type_of, key = key{ file = te.span.file, id = te.id }, value = t }
@@ -6798,14 +6784,19 @@ namespace check {
     }
 
     // §5: whether a function's result `from` becomes `into` by a thunk that widens its error: a
-    // `!T` that fails with a set (a function's, inferred) as a `!T` of the same T that may fail
-    // with any error, a function type's. Lowering writes the thunk (lower::widen_fn), once the
-    // sets are inferred; until then any set will do, since any error takes them all.
+    // A function's `!T` as a function type's `!T` of the same T that fails with a larger set:
+    // any error, or a declared set (§8, Errors, rule 14) that holds the function's errors, which
+    // for an inferred set is checked once it is (flows, check_declared). Lowering writes the
+    // thunk that renumbers its error (lower::widen_fn).
     fn widens_result { mut c: Checker, from: Id, into: Id } -> bool {
         let res{ ok = a, errs = fe } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = from } } else { return false }
         let res{ ok = b, errs = te } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = into } } else { return false }
-        if not any_error{ c, t = te } or any_error{ c, t = fe } { return false }
-        return types::unify{ s = &c.ty, a, b }
+        if any_error{ c, t = te } {
+            if any_error{ c, t = fe } { return false }
+            return types::unify{ s = &c.ty, a, b }
+        }
+        if not (types::get{ s = c.ty, id = types::prune{ s = c.ty, t = te } } is eset) { return false }
+        return types::unify{ s = &c.ty, a, b } and flows{ &c, from = fe, into = te }
     }
 
     // Whether errs type t may be any error: `error`, or a function type's `!T`.
@@ -6848,6 +6839,11 @@ namespace check {
         // every set, so a mismatch there is something else.
         let xr = result_of{ c, t = x }
         let yr = result_of{ c, t = y }
+        // A bound function where a `fn` is wanted is the mismatch, whatever its set.
+        let mut unbound = true
+        if types::get{ s = c.ty, id = x } is func{ bound = xb } {
+            if types::get{ s = c.ty, id = y } is func{ bound = yb } { unbound = not (xb and not yb) }
+        }
         // An error a declared set doesn't hold.
         let mut into = yr
         if types::get{ s = c.ty, id = yr } is res{ errs } { into = types::prune{ s = c.ty, t = errs } }
@@ -6857,6 +6853,7 @@ namespace check {
         // mismatch, whatever their sets.
         let mut oks = not (types::get{ s = c.ty, id = xr } is res and not (types::get{ s = c.ty, id = yr } is res))
             and (types::get{ s = c.ty, id = x } is func) == (types::get{ s = c.ty, id = y } is func)
+        oks = oks and unbound
         if types::get{ s = c.ty, id = xr } is res{ ok = xo } {
             if types::get{ s = c.ty, id = yr } is res{ ok = yo } { oks = oks and types::prune{ s = c.ty, t = xo } == types::prune{ s = c.ty, t = yo } }
         }
@@ -6871,7 +6868,7 @@ namespace check {
         }
         if types::get{ s = c.ty, id = xr } is res{ ok = xo, errs = xe } {
             if types::get{ s = c.ty, id = yr } is res{ ok = yo, errs = ye } {
-                if types::prune{ s = c.ty, t = xo } == types::prune{ s = c.ty, t = yo } and xe != ye and not any_error{ c, t = ye } {
+                if types::prune{ s = c.ty, t = xo } == types::prune{ s = c.ty, t = yo } and xe != ye and not any_error{ c, t = ye } and unbound {
                     try @fmt(&b, "expected ")
                     try write_type{ c, t = y, &b }
                     try @fmt(&b, " failing with ")
@@ -8418,6 +8415,13 @@ namespace check {
         }
         try! list::push{ list = &c.sites, item = st }
         try! map::put{ m = &c.site_of, key = expr_key{ e }, value = si }
+        // A writer of a type that declares its set: the site's errors must be in it, as a
+        // function's that converts to the type (§8, Errors, rule 14).
+        if value and types::get{ s = c.ty, id = types::prune{ s = c.ty, t = result_of{ c, t = ty } } } is res{ errs } {
+            if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = errs } } is eset {
+                try! list::push{ list = &c.declared, item = Declared{ owner = SITE + si, into = types::prune{ s = c.ty, t = errs }, at = expr_at{ e } } }
+            }
+        }
         try! list::push{ list = &c.fmts, item = e }
         if value { try! map::put{ m = &c.holds, key = expr_key{ e }, value = held } }
         return ty
@@ -8876,7 +8880,17 @@ namespace check {
                 ps[i].writer = text
             } else if types::get{ s = c.ty, id = t } is func{ fields, ret, external } and not external and fields.len == 1 and fields[0].mutable and void_result{ c, t = ret } {
                 ps[i].push = "call"
-                flow.any = true
+                // A function value's errors: its type's declared set (§8, Errors, rule 14), or any.
+                let rs = types::prune{ s = c.ty, t = ret }
+                let mut declared = false
+                if types::get{ s = c.ty, id = rs } is res{ errs } {
+                    if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = errs } } is eset{ errs = own, open } {
+                        flow.atoms = set_union{ c, a = flow.atoms, b = own }
+                        flow.open = flow.open or open
+                        declared = true
+                    }
+                }
+                if not declared { flow.any = true }
                 call_hole{ &c, x = args[h - 1], site }
             } else {
                 let w = writer_of{ &c, b = sink, t, ns = site.ns, at, why } ifnull { return false }

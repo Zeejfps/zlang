@@ -5892,9 +5892,16 @@ fn show_set { mut io: Io, r: p::Error!u64 } {
              "u64 is not an error set: a set is `error(...)`, an alias of one, or one error"),
             ('fn f {} -> error(error)!u64 { return a }\nfn main {} {}',
              '`error` is every error already: a set lists errors and sets'),
-            # not yet in a function type
-            ('fn f { g: fn{} -> error(a)!u64 } {}\nfn main {} {}',
-             "a function type's `!T` fails with any error: its set can't be written"),
+            # a function value's errors join its type's declared set
+            ('fn g {} -> !u64 { return b }\nfn run { f: fn{} -> error(a)!u64 } -> error(a)!u64 { return try f{} }\nfn main {} { _ = run{ f = g } }',
+             "the errors of `g` include `b`, which isn't one of error(a): a declared set holds only its own errors"),
+            ('fn da {} -> error(a)!u64 { return a }\nfn run { f: fn{} -> error(a)!u64 } -> error(a)!u64 { return try f{} }\n'
+             'fn main {} {\n    let v: fn{} -> !u64 = da\n    _ = run{ f = v }\n}',
+             "any error can't join error(a): a declared set holds only its own errors"),
+            ('type O = error(a, ..)\nfn o {} -> O!u64 { return a }\nfn run { f: fn{} -> error(a)!u64 } -> error(a)!u64 { return try f{} }\nfn main {} { _ = run{ f = o } }',
+             "error(a, ..) can't join error(a): it is open, and may gain errors a closed set doesn't hold"),
+            ('type R = error(a)!u64\ntype F = fn{} -> R\nfn da {} -> error(a)!u64 { return a }\nfn main {} {\n    let f: F = da\n    match f{} { ok => {} a => {} b => {} }\n}',
+             "error `b` can't happen here: this fails only with a"),
         ]:
             self.assertCompileError(head + src, msg)
 
@@ -5996,9 +6003,6 @@ fn main { mut io: Io } {
             # a const's initializer joins a declared set as a body does
             ('fn g {} -> !u64 { return b }\nconst N: u64 = g{} iferr err{ error } {\n    let e: error(a) = error\n    0\n}\nfn main {} { _ = N }',
              "the errors of `g` include `b`, which isn't one of error(a): a declared set holds only its own errors"),
-            # an alias can't declare a function type's set
-            ('type R = error(a)!u64\ntype F = fn{} -> R\nfn main {} {}',
-             "a function type's `!T` fails with any error: its set can't be written"),
             # a mismatched value is said to be one, not its set
             ('fn g {} -> error(a)!u8 { return 1 }\nfn f {} -> error(a)!u64 { return g{} }\nfn main {} { _ = f{} }',
              'expected error(a)!u64, got error(a)!u8'),
@@ -6070,6 +6074,124 @@ fn main { mut io: Io } {
             ('type X = u64(..)\nfn main {} {}', '`..` follows only the errors of a set, `error(a, b, ..)`'),
         ]:
             self.assertCompileError(head + src, msg)
+
+    def test_function_type_set(self):
+        # A function type may declare its set (spec §8, Errors, rule 14): a value converts to it
+        # if its errors are in it, renumbered by a thunk, and a call through it fails with that
+        # set, which a match lists without `else`.
+        self.assertOutput("""
+error a
+error b
+error c{ n: u64 }
+type Small = error(a)
+type Wide = error(a, b, c)
+fn da {} -> Small!u64 { return a }
+fn inf { n: u64 } -> !u64 {
+    if n == 0 { return b }
+    if n == 1 { return c{ n = 7 } }
+    return n
+}
+fn run { f: fn{} -> Wide!u64 } -> Wide!u64 { return try f{} }
+fn each { f: fn{ n: u64 } -> Wide!u64, n: u64 } -> Wide!u64 { return try f{ n } }
+struct Handler { on: fn{ n: u64 } -> Wide!u64 }
+fn main { mut io: Io } {
+    match run{ f = da } {
+        ok => {}
+        a => { io::println{ &io, s = "a" } }
+        b | c => {}
+    }
+    match each{ f = inf, n = 1 } {
+        ok => {}
+        a | b => {}
+        c{ n } => { io::println_u64{ &io, n } }
+    }
+    let h = Handler{ on = inf }
+    match h.on{ n = 0 } {
+        ok => {}
+        b => { io::println{ &io, s = "b" } }
+        a | c => {}
+    }
+    let g: fn{} -> !u64 = da
+    match g{} { ok => {} a => { io::println{ &io, s = "any a" } } else => {} }
+}
+""", 'a\n7\nb\nany a\n')
+
+    def test_function_type_set_conversions(self):
+        # A bind of a declared function, a generic instance's bind, an array and an optional of
+        # function values convert to a function type's declared set, each renumbered.
+        self.assertOutput("""
+error a
+error b
+error c{ n: u64 }
+type Wide = error(a, b, c)
+
+fn da {} -> error(a)!u64 { return a }
+fn inf { n: u64 } -> !u64 {
+    if n == 0 { return b }
+    if n == 1 { return c{ n = 7 } }
+    return n
+}
+fn add { k: u64, n: u64 } -> error(c)!u64 {
+    if n == 3 { return c{ n = k } }
+    return k + n
+}
+fn gen(T) { x: T, n: u64 } -> error(b)!u64 {
+    if n == 0 { return b }
+    return n
+}
+
+fn each { f: fn{ n: u64 } -> Wide!u64, n: u64 } -> Wide!u64 { return try f{ n } }
+fn each_bound { f: &fn{ n: u64 } -> Wide!u64, n: u64 } -> Wide!u64 { return try f{ n } }
+
+fn show { mut io: Io, r: Wide!u64 } {
+    match r {
+        ok{ value } => { io::println_u64{ &io, n = value } }
+        a => { io::println{ &io, s = "a" } }
+        b => { io::println{ &io, s = "b" } }
+        c{ n } => { io::println_u64{ &io, n = 1000 + n } }
+    }
+}
+
+fn main { mut io: Io } {
+    // a bind of a declared function
+    show{ &io, r = each_bound{ f = add{ k = 5, _ }, n = 3 } }
+    show{ &io, r = each_bound{ f = add{ k = 5, _ }, n = 4 } }
+    // a generic instance
+    show{ &io, r = each_bound{ f = gen(u8){ x = 1, _ }, n = 0 } }
+    // an array of function values of the declared type
+    let fs: [2]fn{ n: u64 } -> Wide!u64 = [inf, inf]
+    show{ &io, r = fs[1]{ n = 1 } }
+    // a struct field and an optional
+    let maybe: ?fn{ n: u64 } -> Wide!u64 = inf
+    if maybe is some{ value } { show{ &io, r = value{ n = 0 } } }
+}
+""", '1005\n9\nb\n1007\nb\n')
+
+    def test_function_type_set_writers(self):
+        # A writer of a type that declares a set holds only its errors, and a function value
+        # written by an @fmt adds its type's declared set, not any error.
+        head = ('error a\nerror b\nstruct Q { n: u32 }\n#write\nfn write_q { mut io: Io, q: Q } -> error(b)! {\n'
+                '    if q.n == 0 { return b }\n    io::print_u64{ &io, n = @as(u64, q.n) }\n}\n')
+        self.assertOutput(head + 'fn main { mut io: Io } {\n    let w: &fn{ mut io: Io } -> error(a, b)! = @fmt("{}", Q{ n = 0 })\n'
+                          '    match w{ &io } { ok => {} a => {} b => { io::println{ &io, s = "b" } } }\n}\n', 'b\n')
+        self.assertCompileError(head + 'fn main { mut io: Io } {\n    let w: &fn{ mut io: Io } -> error(a)! = @fmt("{}", Q{ n = 0 })\n'
+                                '    match w{ &io } { ok => {} a => {} }\n}\n',
+                                "include `b`, which isn't one of error(a): a declared set holds only its own errors")
+        self.assertOutput('error a\nfn show { mut io: Io, w: &fn{ mut io: Io } -> error(a)! } -> error(a)! { try @fmt(&io, "x{}", w) }\n'
+                          'fn main { mut io: Io } {\n    let w: &fn{ mut io: Io } -> error(a)! = @fmt("y")\n    show{ &io, w } iferr {}\n'
+                          '    io::println{ &io, s = "" }\n}\n', 'xy\n')
+
+    def test_function_type_set_narrowing(self):
+        for src, msg in [
+            # a function value's set doesn't narrow
+            ('error a\nerror b\nfn d {} -> error(a, b)!u64 { return a }\nfn main {} {\n    let f: fn{} -> error(a, b)!u64 = d\n'
+             '    let g: fn{} -> error(a)!u64 = f\n    _ = g\n}\n',
+             "error(a, b) can't join error(a): a declared set holds only its own errors"),
+            # a bind is no `fn`, whatever its set
+            ('error a\nfn ia { k: u64, n: u64 } -> !u64 { return a }\nfn main {} {\n    let m: fn{ n: u64 } -> error(a)!u64 = ia{ k = 1, _ }\n    _ = m\n}\n',
+             'expected fn{ n: u64 } -> error(a)!u64, got &fn{ n: u64 } -> !u64'),
+        ]:
+            self.assertCompileError(src, msg)
 
     def test_any_error_is_open(self):
         # Any error, here a function type's `!T`, is open: a match on it needs `else`, which is
