@@ -23,6 +23,9 @@
 //                params that calls f_NAME, supplying the capabilities C doesn't pass.
 //   consts       static const qN, initialized with the literals of its value.
 //   C variables  vN, declared with the C symbol as its assembler name, as an extern fn is.
+//   statics      s_ and the static's qualified name (`prepare`), zeroed: `static` in a program of
+//                one unit; with several, main's unit defines every one and the others declare
+//                the ones they use `extern`. A use is `(*(&s_NAME))`, a deref of its address.
 //   fn values    ctx_fn*: a record whose first member is the code, called with the record and
 //                the function type's fields in name order (code type cN). A function's value
 //                is a static record gN, code hN; a bind allocates one (struct bN); a conversion
@@ -109,6 +112,7 @@ namespace emit {
         adapters: list::List(Pair, ir::Heap),
         callbacks: list::List(Callback, ir::Heap),
         knames:   list::List([]u8, ir::Heap),       // by callback: its C name
+        snames:   list::List([]u8, ir::Heap),       // by static: its C name
         uses:     list::List(u32, ir::Heap),        // the types of the function being emitted
         used:     list::List(u32, ir::Heap),        // by type id: 1 + the last function using it
         bodies:   list::List(Body, ir::Heap),       // by function id
@@ -117,8 +121,9 @@ namespace emit {
         unit:     u32,                              // the unit being written
         marks:    list::List(u8, ir::Heap),         // by type id, in the unit: 1 typedef'd, 2 defined
         lt: Locals, lc: Locals, lq: Locals, lv: Locals, lf: Locals,     // types, code types,
-        lg: Locals, la: Locals, lk: Locals, lb: Locals,                 // consts, C variables,
-                                                    // functions, thunks, adapters, callbacks, records
+        lg: Locals, la: Locals, lk: Locals, lb: Locals, ld: Locals,     // consts, C variables,
+                                                    // functions, thunks, adapters, callbacks, records,
+                                                    // statics
     }
 
     // The whole program as one C file.
@@ -203,6 +208,7 @@ namespace emit {
             adapters = list::new(Pair){ realloc = arena::alloc, heap },
             callbacks = list::new(Callback){ realloc = arena::alloc, heap },
             knames = list::new([]u8){ realloc = arena::alloc, heap },
+            snames = list::new([]u8){ realloc = arena::alloc, heap },
             uses = list::new(u32){ realloc = arena::alloc, heap },
             used = zeros{ heap, n = p.types.len, value = 0 },
             bodies = list::new(Body){ realloc = arena::alloc, heap },
@@ -213,6 +219,7 @@ namespace emit {
             lt = locals{ heap, n = 0 }, lc = locals{ heap, n = 0 }, lq = locals{ heap, n = 0 },
             lv = locals{ heap, n = 0 }, lf = locals{ heap, n = 0 }, lg = locals{ heap, n = 0 },
             la = locals{ heap, n = 0 }, lk = locals{ heap, n = 0 }, lb = locals{ heap, n = 0 },
+            ld = locals{ heap, n = 0 },
         }
         let mut i: usize = 0
         while i < p.files.len {
@@ -279,7 +286,8 @@ namespace emit {
     // Names what other units see: a function with a body is f_ and its name, where a name of
     // letters, digits, `_` and `::` (as `__`) is kept as it is, and any other, or a long one, is
     // cut and followed by a hash of the whole; a second function of the same name gets _1, and
-    // so on. A callback is k_ and its function's name. Sizes the units' tables.
+    // so on. A callback is k_ and its function's name, and a static s_ and its qualified name.
+    // Sizes the units' tables.
     fn prepare { mut e: E } {
         let heap = e.heap
         let mut taken = map::new([]u8, u32){ realloc = arena::alloc, heap, hash = map::hash_bytes, eq = slice::eq_bytes }
@@ -299,6 +307,12 @@ namespace emit {
             try! list::push{ list = &e.knames, item = unique{ heap, &taken, base } }
             i = i + 1
         }
+        i = 0
+        while i < e.p.statics.len {
+            let base = mangle{ heap, prefix = "s_", name = e.p.statics[i].name }
+            try! list::push{ list = &e.snames, item = unique{ heap, &taken, base } }
+            i = i + 1
+        }
         e.lt = locals{ heap, n = e.p.types.len }
         e.lc = locals{ heap, n = e.p.types.len }
         e.lq = locals{ heap, n = e.p.consts.len }
@@ -308,6 +322,7 @@ namespace emit {
         e.la = locals{ heap, n = e.adapters.len }
         e.lk = locals{ heap, n = e.callbacks.len }
         e.lb = locals{ heap, n = @as(usize, e.sites) }
+        e.ld = locals{ heap, n = e.p.statics.len }
     }
 
     // base, or base_N for the first N from 1 that no other name has taken.
@@ -545,6 +560,13 @@ namespace emit {
             i = i + 1
         }
 
+        // main's unit defines every static, which the others declare.
+        i = 0
+        while e.split and entry and i < e.p.statics.len {
+            _ = number{ l = &e.ld, id = @as(u32, i) }
+            i = i + 1
+        }
+
         // What the text uses, declared or defined, until that uses nothing new.
         let mut proto = ir_print::out{ heap, types }
         let mut defs = ir_print::out{ heap, types }
@@ -554,6 +576,7 @@ namespace emit {
         let mut ng: usize = 0
         let mut na: usize = 0
         let mut nk: usize = 0
+        let mut nd: usize = 0
         while true {
             list::clear{ list = &e.o.bytes }
             if nf < e.lf.order.len {
@@ -575,6 +598,10 @@ namespace emit {
             } else if nv < e.lv.order.len {
                 c_variable{ &e, id = list::items{ list = e.lv.order }[nv] }
                 nv = nv + 1
+                rewrite{ &e, src = list::items{ list = e.o.bytes }, into = &proto }
+            } else if nd < e.ld.order.len {
+                static_def{ &e, id = list::items{ list = e.ld.order }[nd], entry }
+                nd = nd + 1
                 rewrite{ &e, src = list::items{ list = e.o.bytes }, into = &proto }
             } else if nq < e.lq.order.len {
                 const_def{ &e, id = list::items{ list = e.lq.order }[nq] }
@@ -691,6 +718,7 @@ namespace emit {
         clear_locals{ l = &e.la }
         clear_locals{ l = &e.lk }
         clear_locals{ l = &e.lb }
+        clear_locals{ l = &e.ld }
     }
 
     // src, with each marker replaced by its name in the unit, onto `into`.
@@ -747,6 +775,9 @@ namespace emit {
             ir_print::bytes{ o = &into, b = list::items{ list = e.knames }[id] }
         } else if kind == 'b' {
             local_name{ &into, c = 'b', n = number{ l = &e.lb, id } }
+        } else if kind == 'd' {
+            _ = number{ l = &e.ld, id }
+            ir_print::bytes{ o = &into, b = list::items{ list = e.snames }[id] }
         } else if kind == 's' {
             if not e.split { ir_print::text{ o = &into, a = "static " } }
         } else {
@@ -1082,6 +1113,16 @@ namespace emit {
         put{ &e, a = "));\n" }
     }
 
+    // A static, zeroed: `static T s_NAME;` in a program of one unit, `T s_NAME;` in main's unit
+    // of several, and `extern T s_NAME;` in the others.
+    fn static_def { mut e: E, id: u32, entry: bool } {
+        if not e.split { put{ &e, a = "static " } } else if not entry { put{ &e, a = "extern " } }
+        tn{ &e, t = e.p.statics[id].ty }
+        ch{ &e, c = ' ' }
+        mark_id{ &e, kind = 'd', id }
+        put{ &e, a = ";\n" }
+    }
+
     // A C function's parameter types: no capabilities, a `mut` one as a pointer.
     fn c_params { mut e: E, params: []ir::Param } {
         let mut first = true
@@ -1222,8 +1263,13 @@ namespace emit {
             ch{ &e, c = ';' }
             i = i + 1
         }
-        nl{ &e }
-        put{ &e, a = "CTX_STACK_CHECK();" }
+        // The stack check, against the `#stack_limit` static (spec §15, rule 13), if there is one.
+        if e.p.stack_limit != NONE {
+            nl{ &e }
+            put{ &e, a = "CTX_STACK_CHECK_AT(" }
+            mark_id{ &e, kind = 'd', id = e.p.stack_limit }
+            put{ &e, a = ");" }
+        }
         // The body goes into a buffer first: its records' slots, and whether it borrows any,
         // go before it.
         confine{ &e, f }
@@ -1285,6 +1331,11 @@ namespace emit {
         if e.p.panic != NONE {
             let h = e.p.fns[e.p.panic]
             put{ &e, a = "static void ctx_on_panic(ctx_slice msg, ctx_slice file, uint32_t line, uint32_t col) {\n    static char cap[1];\n    " }
+            if e.p.stack_limit != NONE {
+                // The stack check is off while the panic fn runs, so it can report an overflow.
+                mark_id{ &e, kind = 'd', id = e.p.stack_limit }
+                put{ &e, a = " = 0;\n    " }
+            }
             mark_id{ &e, kind = 'f', id = h.id }
             ch{ &e, c = '(' }
             supply{ &e, f = h }
@@ -1923,6 +1974,11 @@ namespace emit {
             local{ slot } => { local{ &e, slot } }
             constref{ id } => { mark_id{ &e, kind = 'q', id } }
             cvar{ id } => { mark_id{ &e, kind = 'v', id } }
+            saddr{ id } => {
+                put{ &e, a = "(&" }
+                mark_id{ &e, kind = 'd', id }
+                ch{ &e, c = ')' }
+            }
             deref{ ptr } => {
                 put{ &e, a = "(*" }
                 expr{ &e, x = ptr.* }
@@ -2880,7 +2936,7 @@ namespace emit {
     // x, which a call takes if `taken`.
     fn c_expr { mut e: E, x: ir::Expr, taken: bool } {
         match x.k {
-            int | float | boolean | str | sbytes | cstr | nil | constref | cvar | fnref => {}
+            int | float | boolean | str | sbytes | cstr | nil | constref | cvar | saddr | fnref => {}
             local{ slot } => { if not taken { loose{ &e, slot } } }
             deref{ ptr = a } | field{ base = a } | payload{ base = a } | addr{ place = a } | neg{ e = a }
             | lnot{ e = a } | isnull{ e = a } | notnull{ e = a } | widen{ e = a } | some{ e = a }
@@ -3472,7 +3528,7 @@ namespace emit {
             other => {}
         }
         return match x.k {
-            int | float | boolean | str | sbytes | cstr | nil | fnref | cvar => { false }
+            int | float | boolean | str | sbytes | cstr | nil | fnref | cvar | saddr => { false }
             some{ e = a } | widen{ e = a } | cast{ e = a } | seq{ then = a } | ptradd{ p = a } => {
                 reaches{ e, x = a.*, slot }
             }
@@ -3546,7 +3602,7 @@ namespace emit {
     // May evaluating x write memory: does it call a function, or run statements?
     fn writes { e: E, x: ir::Expr } -> bool {
         return match x.k {
-            int | float | boolean | str | sbytes | cstr | nil | local | constref | cvar | fnref => { false }
+            int | float | boolean | str | sbytes | cstr | nil | local | constref | cvar | saddr | fnref => { false }
             deref{ ptr = a } | field{ base = a } | payload{ base = a } | addr{ place = a }
             | lnot{ e = a } | isnull{ e = a } | notnull{ e = a } | widen{ e = a } | some{ e = a }
             | cast{ e = a } | ptraddr{ e = a } | trunc{ e = a } | fnconv{ e = a } | repeat{ elem = a }
@@ -3697,7 +3753,7 @@ namespace emit {
     // The same value whenever it is computed, whatever else runs.
     fn constant { x: ir::Expr } -> bool {
         return match x.k {
-            int | float | boolean | str | sbytes | cstr | nil | fnref => { true }
+            int | float | boolean | str | sbytes | cstr | nil | fnref | saddr => { true }
             addr{ place } => { fixed_place{ x = place.* } }
             else    => { false }
         }

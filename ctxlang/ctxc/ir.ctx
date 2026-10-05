@@ -20,12 +20,15 @@ namespace ir {
         types:   []Type,        // indexed by TypeId
         consts:  []Const,       // indexed by const id
         vars:    []Var,         // indexed by C variable id
+        statics: []Static,      // indexed by static id
         fns:     []Func,        // indexed by function id
         main:    u32,
         // What C's main calls with main's function value, and what the runtime calls for a
         // panic (§15, Entry point; ctxrt.h): NONE for none.
         start:   u32,
         panic:   u32,
+        // The static every function's frame is checked against (§15, rule 13): NONE for none.
+        stack_limit: u32,
     }
 
     // A const of array, struct or union type. Its value is literals only: the checker computed it.
@@ -33,6 +36,10 @@ namespace ir {
 
     // A C variable that a capability names (§15): the C symbol, of type ty.
     struct Var { name: Bytes, symbol: Bytes, ty: TypeId }
+
+    // A capability's static (§15): zeroed storage of type ty for the whole program. name is the
+    // capability's qualified name and the static's, `ns::Cap::name`, which names it in C too.
+    struct Static { name: Bytes, ty: TypeId }
 
     // A source position: 1-based line and column, and an index into Program.files.
     struct Pos { line: u32, col: u32, file: u32 }
@@ -154,6 +161,7 @@ namespace ir {
         local{ slot: u32 },
         constref{ id: u32 },                                    // the value of a Const
         cvar{ id: u32 },                                        // the value of a Var
+        saddr{ id: u32 },                                       // the address of a Static, a pointer
         deref{ ptr: *Expr, pos: Pos },
         field{ base: *Expr, index: u32 },
         index{ base: *Expr, i: *Expr, pos: Pos },

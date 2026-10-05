@@ -8172,6 +8172,161 @@ fn main { mut o: g::O } -> i32 { return g::a{ &o } + g::b{ p = &o } }
         ]:
             self.assertCapError(src, msg, line, col)
 
+    def test_statics(self):
+        # `static name: T` in a capability is storage for the whole program (spec §15, rule
+        # 13): zeroed, one however many capabilities include it, and taking no space in them. A
+        # function of the declaring namespace uses it as a place, through the capability, one
+        # that includes it, or a pointer to either; mutable when the capability is. Its address
+        # outlives any local holding the capability.
+        self.assertOutput("""
+namespace counter {
+    struct Totals { n: i64, seen: [4]u8, last: ?u32, name: []u8 }
+    capability Count { static totals: Totals, static hits: u64 }
+
+    fn bump { mut c: Count } -> i64 {
+        c.totals.n = c.totals.n + 1
+        c.hits = c.hits + 2
+        c.totals.seen[1] = 7
+        return c.totals.n
+    }
+    fn hits { c: Count } -> u64 { return c.hits }
+    fn through { p: *mut Count } -> i64 {
+        p.totals.n = p.totals.n + 10
+        return p.totals.n
+    }
+    fn place { mut c: Count } -> *mut Totals { return &c.totals }
+    fn kept { c: Count } -> *u64 {
+        let local = c
+        let p = &local
+        return &p.hits
+    }
+    fn named { mut c: Count } -> []u8 {
+        if c.totals.name.len == 0 { c.totals.name = "counter" }
+        return c.totals.name
+    }
+}
+
+capability All { ..counter::Count }
+
+fn main { mut io: Io, mut all: All, mut c: counter::Count } -> i32 {
+    io::println_i64{ &io, n = counter::bump{ &c } }
+    io::println_i64{ &io, n = counter::bump{ c = &all } }
+    io::println_u64{ &io, n = counter::hits{ c } }
+    io::println_i64{ &io, n = counter::through{ p = &c } }
+    let t = counter::place{ &c }
+    t.n = 100
+    io::println_i64{ &io, n = counter::bump{ &c } }
+    io::println_u64{ &io, n = @as(u64, t.seen[1]) + counter::kept{ c }.* }
+    io::println_bool{ &io, n = t.last == null }
+    io::print{ &io, s = utf8::String{ bytes = counter::named{ &c } } }
+    io::println_u64{ &io, n = @size_of(counter::Count) + @size_of(All) }
+    return 0
+}
+""", "1\n2\n4\n12\n101\n13\ntrue\ncounter0\n")
+
+    def test_static_is_a_name_elsewhere(self):
+        # `static` is a keyword only before a name in a capability's braces.
+        self.assertOutput("""
+struct S { static: i32 }
+capability C { static static: i32 }
+fn get { mut c: C } -> i32 {
+    c.static = c.static + 5
+    return c.static
+}
+fn main { mut io: Io, mut c: C } {
+    let static = S{ static = 4 }
+    io::println_i64{ &io, n = static.static + get{ &c } }
+}
+""", "9\n")
+
+    def test_static_ir(self):
+        # A static is an item, declared once however many capabilities reach it, and a use is a
+        # deref of its address.
+        from toolchain import ir_sources
+        text = ir_sources([("""
+namespace g {
+    capability O { static n: i32 }
+    fn a { mut o: O } -> i32 { o.n = o.n + 1; return o.n }
+    fn b { p: *O } -> i32 { return p.n }
+}
+capability X { ..g::O }
+fn main { mut o: g::O, mut x: X } -> i32 { return g::a{ &o } + g::b{ p = &o } + g::a{ o = &x } }
+""", None)])
+        import re
+        self.assertEqual(len(re.findall(r'\(static \d+ "g::O::n" \d+\)', text)), 1, text)
+        self.assertIn('(saddr ', text)
+        # std's stack limit, which every function's frame is checked against.
+        self.assertRegex(text, r'\(static \d+ "rt::Stack::limit" \d+\)')
+        self.assertRegex(text, r'\(stack_limit \d+\)')
+
+    def test_static_errors(self):
+        for src, msg, line, col in [
+            # used only by a function of the namespace that declares the capability
+            ('namespace g { capability O { static n: i32 } }\nfn main { mut o: g::O } -> i32 { return o.n }',
+             '`n` is a static of capability `O`: only a function of namespace `g`, which declares it, can use it', 2, 42),
+            ('namespace g { capability O { static n: i32 } }\ncapability X { ..g::O }\nfn main { mut x: X } { x.n = 1 }',
+             '`n` is a static of capability `O`: only a function of namespace `g`, which declares it, can use it', 3, 25),
+            # mutable only through a mutable capability
+            ('namespace g { capability O { static n: i32 }\nfn f { o: O } { o.n = 1 } }\nfn main {} {}', '`o` is not a mutable place', 2, 17),
+            ('namespace g { capability O { static n: i32 }\nfn f { o: O } -> *mut i32 { return &o.n } }\nfn main {} {}', 'expected *mut i32, got *i32', 2, 36),
+            ('namespace g { capability O { static n: i32 }\nfn f { p: *O } { p.n = 1 } }\nfn main {} {}', 'cannot write through *O; it needs to be a `*mut`', 2, 19),
+            # it holds no address of a local
+            ('namespace g { capability O { static p: ?*i32 }\nfn f { mut o: O } { let x: i32 = 3; o.p = &x } }\nfn main {} {}',
+             'cannot store the address of local `x` through a pointer', 2, 37),
+            # of a type with a zero value
+            ('capability O { static n: *u8 }\nfn main {} {}', "capability `O`'s static `n` can't have type *u8: it has no zero value to start as", 1, 16),
+            ('capability O { static n: Io }\nfn main {} {}', "capability `O`'s static `n` can't have type Io: it has no zero value to start as", 1, 16),
+            # one name, once
+            ('capability O { static x: i32, extern x: i32 }\nfn main {} {}', 'duplicate field `x`', 1, 31),
+            ('capability V { static x: i32 }\ncapability O { ..V, static x: i32 }\nfn main {} {}', 'capability `O` declares `x`, which it includes from `V`', 2, 21),
+            ('capability V { static x: i32 }\ncapability X { f: extern fn{}, ..V }\nfn main {} {}', "capability `X` can't include `V`: it has only statics", 2, 32),
+            # no symbol of C's
+            ('capability O {\n    #c::symbol{ name = "x" }\n    static n: i32\n}\nfn main {} {}',
+             "`c::symbol` on a capability's field applies only to a C variable, `extern name: T`", 2, 5),
+            # `#stack_limit`: a usize static, the program's only with its own start
+            ('capability O {\n    #stack_limit\n    static n: i32\n}\nfn main {} {}', 'a `stack_limit` static is a usize, an address, not i32', 3, 5),
+            ('capability O {\n    #stack_limit\n    extern n: usize\n}\nfn main {} {}', "`stack_limit` applies only to a capability's static, `static name: usize`", 2, 5),
+            ('#stack_limit\nfn main {} {}', "`stack_limit` applies only to a capability's static, `static name: usize`", 1, 1),
+            ('capability O {\n    #stack_limit\n    static n: usize\n}\nfn main {} {}',
+             "a program's `stack_limit` static needs the program's own `start` fn, which sets it: std's sets std's", 2, 5),
+            ('capability O {\n    #stack_limit\n    #stack_limit\n    static n: usize\n}\n#start\nfn go {} -> i32 { return 0 }\nfn main {} {}',
+             'duplicate `stack_limit` attribute', 3, 5),
+            ('capability O {\n    #stack_limit\n    static n: usize,\n    #stack_limit\n    static m: usize\n}\n#start\nfn go {} -> i32 { return 0 }\nfn main {} {}',
+             "a second `stack_limit` static: `n` is the program's already", 4, 5),
+        ]:
+            self.assertCapError(src, msg, line, col)
+
+    def test_program_stack_limit(self):
+        # A program's own start sets its own limit, which every frame is checked against.
+        self.assertPanic("""
+namespace g {
+    capability O {
+        #stack_limit
+        static n: usize
+    }
+
+    #start
+    fn go { mut o: O, mut io: Io, main: &fn{ args: Args } -> i32 } -> i32 {
+        let here: u8 = 0
+        o.n = @addr(&here) - 65536
+        let code = main{ args = slice::empty([]u8){} }
+        io::flush{ &io }
+        return code
+    }
+
+    fn deep { n: u64 } -> u64 {
+        if n == 0 { return 0 }
+        let pad: [64]u8 = [0; 64]
+        return @as(u64, pad[0]) + 1 + deep{ n = n - 1 }
+    }
+}
+
+fn main { mut io: Io } {
+    io::println_u64{ &io, n = g::deep{ n = 10 } }
+    io::println_u64{ &io, n = g::deep{ n = 100000 } }
+}
+""", 'stack overflow')
+
 
 # A capability with fields, M, and the function of its namespace that makes one.
 CAP_FIELDS = """namespace m {
@@ -8703,6 +8858,27 @@ fn main { mut io: Io } {
         })
         code, out, err = self.ctxc('run', d, env={'CTX_UNIT_SIZE': '1'})
         self.assertEqual((code, out), (0, '50\n'), err)
+
+    def test_statics_across_units(self):
+        # Main's unit defines every static, and the others declare those they use.
+        d = self.project({
+            'count.ctx': """
+namespace count {
+    capability C { static n: u64, static xs: [3]u64 }
+    fn add { mut c: C, k: u64 } { c.n = c.n + k; c.xs[@as(usize, k % 3)] = c.n }
+    fn total { c: C } -> u64 { return c.n + c.xs[1] }
+}
+""",
+            'main.ctx': """
+fn main { mut io: Io, mut c: count::C } {
+    count::add{ &c, k = 1 }
+    count::add{ &c, k = 3 }
+    io::println_u64{ &io, n = count::total{ c } }
+}
+""",
+        })
+        code, out, err = self.ctxc('run', d, env={'CTX_UNIT_SIZE': '1'})
+        self.assertEqual((code, out), (0, '5\n'), err)
 
     def test_optimization_level(self):
         d = self.project({'build.ctx': 'fn build { mut b: Build } { build::optimize{ &b, exe = build::exe{ &b, name = "t", root = "src" }, level = 2 } }\n',

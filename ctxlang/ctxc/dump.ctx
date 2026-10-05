@@ -386,7 +386,7 @@ namespace tree {
                 k = k + 1
             }
             start{ &d, at = f.span.start }
-            put{ &d, s = if f.external { "extern field " } else { "field " } }
+            put{ &d, s = if f.external { "extern field " } else if f.stat { "static field " } else { "field " } }
             name{ &d, n = f.name }
             end{ &d }
             sub_type{ &d, t = f.ty }
@@ -1024,7 +1024,8 @@ namespace decls {
                 j = 0
                 while j < d.vars.len {
                     let v = d.vars[j]
-                    try! @fmt(&out, "  extern {}: {}\n", check::str{ s = v.name }, check::tstr{ c, t = v.ty })
+                    let kw: []u8 = if v.stat { "static" } else { "extern" }
+                    try! @fmt(&out, "  {} {}: {}\n", check::str{ s = kw }, check::str{ s = v.name }, check::tstr{ c, t = v.ty })
                     j = j + 1
                 }
             }

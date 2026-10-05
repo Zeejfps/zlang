@@ -10,21 +10,18 @@
 //
 // print* functions write their value only. println* functions add a newline.
 
-// Permission to use the console.
-capability Io
+// Permission to use the console. It includes io's state, which only io reaches.
+capability Io { ..io::State }
 
 namespace io {
     enum Stream: u32 { out, err }
 
-    // Standard output's buffer, in std's state for the whole program (rt::State), since a panic
-    // and the program's end flush it too: the bytes in buf[..len] are waiting to be written.
-    struct Out { buf: []mut u8, len: usize }
+    // io's state for the whole program (spec §15, rule 13): standard output's buffer, which a
+    // panic and the program's end flush too.
+    capability State { static out: Out }
 
-    fn out_buffer { mut io: Io } -> *mut Out {
-        let s = rt::state{ &io }
-        if s.out.buf.len == 0 { s.out.buf = s.out_bytes[..] }
-        return &s.out
-    }
+    // The bytes in bytes[..len] are waiting to be written.
+    struct Out { len: usize, bytes: [65536]u8 }
 
     // Writes bytes to standard output or standard error. Standard output is buffered, and written
     // out before anything goes to standard error or is read from standard input.
@@ -35,13 +32,13 @@ namespace io {
             put{ &io, to, bytes }
             return
         }
-        let b = out_buffer{ &io }
-        if b.len + bytes.len > b.buf.len { flush{ &io } }
-        if bytes.len > b.buf.len {
+        let b = &io.out
+        if b.len + bytes.len > b.bytes.len { flush{ &io } }
+        if bytes.len > b.bytes.len {
             put{ &io, to, bytes }
             return
         }
-        slice::copy(u8){ dst = b.buf[b.len..b.len + bytes.len], src = bytes }
+        slice::copy(u8){ dst = b.bytes[b.len..b.len + bytes.len], src = bytes }
         b.len = b.len + bytes.len
     }
 
@@ -54,10 +51,10 @@ namespace io {
 
     // Writes standard output's buffer out.
     fn flush { mut io: Io } {
-        let b = out_buffer{ &io }
+        let b = &io.out
         let n = b.len
         b.len = 0
-        put{ &io, to = Stream::out, bytes = b.buf[..n] }
+        put{ &io, to = Stream::out, bytes = b.bytes[..n] }
     }
 
     // Writes all of `bytes` through the platform's layer (std/os), or as much as it takes before

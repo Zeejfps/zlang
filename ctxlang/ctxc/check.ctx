@@ -71,8 +71,9 @@ namespace check {
     // A capability's C variable (§15): `extern name: T` reads the C symbol `name`, or the one
     // `#c::symbol` gives. owner is the capability that declares it: only a function of owner's
     // namespace may read it, and owner's own entry has the symbol, once attributes are checked
-    // (var_symbol).
-    struct CVar { name: []u8, ty: Id, owner: u32, symbol: []u8 }
+    // (var_symbol). A static (`static name: T`, stat) is ctxlang's storage instead, zeroed, with
+    // no symbol of C's: a place, through the capability (§15, rule 13).
+    struct CVar { name: []u8, ty: Id, owner: u32, symbol: []u8, stat: bool }
 
     // What a name in a path refers to.
     union Entry {
@@ -86,7 +87,7 @@ namespace check {
 
     // The attributes the compiler declares, in the universe: `#convert` (§18, Literal
     // conversions), `#write` (§13, Formatting), and `#start` and `#panic` (§15, Entry point).
-    enum Attribute: u8 { convert, write, start, panic }
+    enum Attribute: u8 { convert, write, start, panic, stack_limit }
 
     struct Space {
         name:   []u8,
@@ -149,6 +150,11 @@ namespace check {
         // without one. The program's replaces std's (start_fn, panic_fn).
         starts:    [2]u32,
         panics:    [2]u32,
+        // The statics with a valid `#stack_limit` (§15, rule 13): std's and the program's, each
+        // a capability's decl and the static's name, NONE without one. The program's replaces
+        // std's (stack_limit).
+        limit_caps:  [2]u32,
+        limit_names: [2][]u8,
         cstr_decl: u32,                          // c::String, for its C layout, or NONE
         calling:   u64,                          // the callee being checked, whose field may be a capability's
         // The body being checked: a const's initializer or a function's body.
@@ -287,8 +293,9 @@ namespace check {
 
     // How a field, index or `.len` expression reaches its value (ctxi's Field.kind and
     // Index.kind): through a pointer (p), in an array or slice (s). cvar is a capability's C
-    // variable (§15), read through the capability or a pointer to it, and lit a strlit's bytes.
-    enum Access: u8 { field, pfield, plen, len, slen, sptr, arr, slice, parr, ptr, cvar, lit }
+    // variable (§15), read through the capability or a pointer to it, stat a capability's static,
+    // a place through it as through a pointer, and lit a strlit's bytes.
+    enum Access: u8 { field, pfield, plen, len, slen, sptr, arr, slice, parr, ptr, cvar, stat, lit }
 
     // A field that `..` supplies: the local of the same name, as `&name` for a `mut` field. ty is
     // the local's type, arg the argument's.
@@ -352,6 +359,8 @@ namespace check {
             main = NONE,
             starts = [NONE, NONE],
             panics = [NONE, NONE],
+            limit_caps = [NONE, NONE],
+            limit_names = ["", ""],
             converts = ids{ &heap },
             writers = ids{ &heap },
             cstr_decl = NONE,
@@ -428,6 +437,7 @@ namespace check {
         put_name{ &c, ns = UNIVERSE, values = false, name = "write", e = Entry::attr{ a = Attribute::write } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "start", e = Entry::attr{ a = Attribute::start } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "panic", e = Entry::attr{ a = Attribute::panic } }
+        put_name{ &c, ns = UNIVERSE, values = false, name = "stack_limit", e = Entry::attr{ a = Attribute::stack_limit } }
         return c
     }
 
@@ -795,7 +805,7 @@ namespace check {
                 }
                 if i == fields.len { break }
                 let f = fields[i]
-                if f.external {
+                if f.external or f.stat {
                     add_cvar{ &c, d, f, sc, out = list::items{ list = out }, from = list::items{ list = from }, vars = &vars, vfrom = &vfrom }
                     i = i + 1
                     continue
@@ -815,7 +825,13 @@ namespace check {
         }
         if out.len > 0 and bare != NONE {
             let y = get_decl{ c, d = bare }
-            let why: utf8::String = if y.vars.len > 0 { "it has only C variables" } else { "it has no fields" }
+            let mut externs: usize = 0
+            let mut k: usize = 0
+            while k < y.vars.len {
+                if not y.vars[k].stat { externs = externs + 1 }
+                k = k + 1
+            }
+            let why: utf8::String = if y.vars.len == 0 { "it has no fields" } else if externs == y.vars.len { "it has only C variables" } else if externs == 0 { "it has only statics" } else { "it has only C variables and statics" }
             errorf{ &c, at = bare_at, msg = @fmt("capability `{}` can't include `{}`: {}", str{ s = x.name.text }, str{ s = y.name.text }, why) }
         }
         _ = list::pop{ list = &c.cap_stack }
@@ -825,16 +841,21 @@ namespace check {
         list::at{ list = c.decls, i = d }.includes = list::items{ list = incl }
     }
 
-    // `extern name: T` in capability d's braces (§15): the C variable `name`, of a type C has.
+    // `extern name: T` in capability d's braces (§15): the C variable `name`, of a type C has;
+    // or `static name: T`, a static, of a type with a zero value, which it starts as.
     fn add_cvar { mut c: Checker, d: u32, f: syntax::Field, sc: Scope, out: []types::Field, from: []u32, mut vars: list::List(CVar, Heap), mut vfrom: list::List(u32, Heap) } {
         let x = get_decl{ c, d }
         let t = rtype{ &c, te = f.ty, sc, allow_bound = false }
-        if not c_variable{ c, t } {
+        if f.stat {
+            if t != types::ERROR and not has_zero{ &c, t, depth = 0 } {
+                errorf{ &c, at = f.span, msg = @fmt("capability `{}`'s static `{}` can't have type {}: it has no zero value to start as", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t }) }
+            }
+        } else if not c_variable{ c, t } {
             errorf{ &c, at = f.span, msg = @fmt("capability `{}`'s C variable `{}` can't have type {}: C has no equivalent of it", str{ s = x.name.text }, str{ s = f.name.text }, tstr{ c, t }) }
         }
         let came = cap_member{ out, from, vars = list::items{ list = vars }, vfrom = list::items{ list = vfrom }, name = f.name.text }
         if came != null and f.name.text.len > 0 { cap_clash{ &c, x, name = f.name, at = f.span, came } }
-        try! list::push{ list = &vars, item = CVar{ name = f.name.text, ty = t, owner = d, symbol = f.name.text } }
+        try! list::push{ list = &vars, item = CVar{ name = f.name.text, ty = t, owner = d, symbol = f.name.text, stat = f.stat } }
         push{ xs = &vfrom, n = NONE }
     }
 
@@ -1347,6 +1368,9 @@ namespace check {
                             hook_attr{ &c, x, file, a, which, seen = seen_panic }
                             seen_panic = true
                         }
+                        stack_limit => {
+                            error{ &c, at = a.span, msg = "`stack_limit` applies only to a capability's static, `static name: usize`" }
+                        }
                     }
                 }
                 k = k + 1
@@ -1361,7 +1385,7 @@ namespace check {
 
     // A compiler attribute's name, for messages.
     fn attr_name { a: Attribute } -> []u8 {
-        return match a { convert => { "convert" } write => { "write" } start => { "start" } panic => { "panic" } }
+        return match a { convert => { "convert" } write => { "write" } start => { "start" } panic => { "panic" } stack_limit => { "stack_limit" } }
     }
 
     // The attribute the compiler declares that a names, if it is one: `#convert` or `#write`
@@ -1692,13 +1716,19 @@ namespace check {
         while i < fields.len {
             let f = fields[i]
             let mut seen = false
+            let mut seen_limit = false
             let mut k: usize = 0
             while k < f.attrs.len {
                 let a = f.attrs[k]
                 let which = compiler_attr{ c, a, ns }
                 if which != null {
                     use_attr{ &c, a, which }
-                    errorf{ &c, at = a.span, msg = @fmt("`{}` applies only to a fn", str{ s = attr_name{ a = which } }) }
+                    if which == Attribute::stack_limit {
+                        limit_attr{ &c, d, f, file, a, seen = seen_limit }
+                        seen_limit = true
+                    } else {
+                        errorf{ &c, at = a.span, msg = @fmt("`{}` applies only to a fn", str{ s = attr_name{ a = which } }) }
+                    }
                 } else if attribute{ &c, a, ns } is record{ ty, fields = vals } {
                     let rd = record_decl{ c, t = ty }
                     if rd == NONE {
@@ -1713,6 +1743,48 @@ namespace check {
             }
             i = i + 1
         }
+    }
+
+    // `#stack_limit` on capability d's field f (§15, rule 13): a `usize` static, below which a
+    // frame's address panics. std declares one, and the program's replaces std's.
+    fn limit_attr { mut c: Checker, d: u32, f: syntax::Field, file: u32, a: syntax::Attr, seen: bool } {
+        if not f.stat {
+            error{ &c, at = a.span, msg = "`stack_limit` applies only to a capability's static, `static name: usize`" }
+            return
+        }
+        if seen {
+            error{ &c, at = a.span, msg = "duplicate `stack_limit` attribute" }
+            return
+        }
+        let v = decl_var{ c, d, name = f.name.text } ifnull { return }
+        let t = types::prune{ s = c.ty, t = v.ty }
+        if t == types::ERROR { return }
+        if t != types::USIZE {
+            errorf{ &c, at = f.span, msg = @fmt("a `stack_limit` static is a usize, an address, not {}", tstr{ c, t }) }
+            return
+        }
+        let own: usize = if @as(usize, file) < c.std_files { 0 } else { 1 }
+        // std's start sets std's limit, so a program's needs a start of its own to set it.
+        if own == 1 and c.starts[1] == NONE {
+            error{ &c, at = a.span, msg = "a program's `stack_limit` static needs the program's own `start` fn, which sets it: std's sets std's" }
+            return
+        }
+        if c.limit_caps[own] != NONE {
+            let whose: []u8 = if own == 0 { "std's" } else { "the program's" }
+            errorf{ &c, at = a.span, msg = @fmt("a second `stack_limit` static: `{}` is {} already", str{ s = c.limit_names[own] }, str{ s = whose }) }
+            return
+        }
+        c.limit_caps[own] = d
+        c.limit_names[own] = f.name.text
+    }
+
+    // The static that `#stack_limit` makes the stack limit, as its capability's decl and name:
+    // the program's, or std's if it has none; null for neither.
+    fn stack_limit { c: Checker } -> ?CVar {
+        let own: usize = if c.limit_caps[1] != NONE { 1 } else { 0 }
+        let d = c.limit_caps[own]
+        if d == NONE { return null }
+        return decl_var{ c, d, name = c.limit_names[own] }
     }
 
     // `#c::symbol{ name }` on capability d's field f: the symbol of the C variable it is.
@@ -4863,7 +4935,7 @@ namespace check {
             field{ base, name } => {
                 let a = access_of{ c, e }
                 if a is field { return check_place{ &c, e = base.* } }
-                if a is null | pfield { return true }
+                if a is null | pfield | stat { return true }
                 let mut b = message{ c }
                 try! @fmt(&b, "`.{}` is not a place", str{ s = name.text })
                 msg = utf8::view{ b }
@@ -4895,7 +4967,10 @@ namespace check {
                 return
             }
             field{ base } => {
-                if access_of{ c, e } is field {
+                let a = access_of{ c, e }
+                // A static is mutable through a mutable capability, or a `*mut` to one.
+                let through = a is stat and not (types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = base.* } } } is ptr)
+                if a is field or through {
                     check_mutable{ &c, e = base.* }
                     return
                 }
@@ -4923,7 +4998,11 @@ namespace check {
                 if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } { return get_var{ c, v = var }.mutable }
                 return true
             }
-            field{ base } => { if access_of{ c, e } is field { return place_mutable{ c, e = base.* } } }
+            field{ base } => {
+                let a = access_of{ c, e }
+                if a is field { return place_mutable{ c, e = base.* } }
+                if a is stat and not (types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = base.* } } } is ptr) { return place_mutable{ c, e = base.* } }
+            }
             index{ base } => { if access_of{ c, e } is arr { return place_mutable{ c, e = base.* } } }
             deref => {}
             else => { return true }
@@ -5267,7 +5346,14 @@ namespace check {
                     return map::get{ m = b.env, key = root_var{ c, v = var } } ifnull { no_vars{} }
                 }
             }
-            field{ base } | deref{ base } => { return borrow_address{ &c, &b, e = base.* } }
+            field{ base } | deref{ base } => {
+                // A capability's static outlives every caller: its base only has effects.
+                if access_of{ c, e } is stat {
+                    _ = borrow_expr{ &c, &b, e = base.* }
+                    return no_vars{}
+                }
+                return borrow_address{ &c, &b, e = base.* }
+            }
             index{ base, i } => {
                 _ = borrow_expr{ &c, &b, e = i.* }
                 return borrow_address{ &c, &b, e = base.* }
@@ -5699,6 +5785,8 @@ namespace check {
                 else => { return no_vars{} }
             }
         }
+        // A capability's static lives as long as the program, whatever holds the capability.
+        if access_of{ c, e = b } is stat { return no_vars{} }
         match b.k {
             field{ base } => { return derives_raw{ &c, e = base.* } }
             index{ base } => { return derives_raw{ &c, e = base.* } }
@@ -7650,7 +7738,7 @@ namespace check {
                     }
                     cap => {
                         let v = cap_var{ c, t = inner, name = name.text }
-                        if v != null { return read_cvar{ &c, e, v } }
+                        if v != null { return use_cvar{ &c, e, v } }
                         if loaded_cap{ c, t = inner } {
                             put_access{ &c, e, a = Access::pfield }
                             return cap_field{ &c, st = inner, e, name }
@@ -7667,7 +7755,7 @@ namespace check {
             }
             cap => {
                 let v = cap_var{ c, t = bt, name = name.text }
-                if v != null { return read_cvar{ &c, e, v } }
+                if v != null { return use_cvar{ &c, e, v } }
                 if loaded_cap{ c, t = bt } {
                     put_access{ &c, e, a = Access::field }
                     return cap_field{ &c, st = bt, e, name }
@@ -7733,33 +7821,40 @@ namespace check {
         return ft
     }
 
-    // Capability t's C variable `name` (§15), its own or one it includes, or null.
+    // Capability t's C variable or static `name` (§15), its own or one it includes, or null.
     fn cap_var { c: Checker, t: Id, name: []u8 } -> ?CVar {
-        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is cap{ decl } {
-            let vs = get_decl{ c, d = decl }.vars
-            let mut i: usize = 0
-            while i < vs.len {
-                if slice::eq_bytes{ a = vs[i].name, b = name } { return vs[i] }
-                i = i + 1
-            }
+        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is cap{ decl } { return decl_var{ c, d = decl, name } }
+        return null
+    }
+
+    // Capability d's C variable or static `name`, or null.
+    fn decl_var { c: Checker, d: u32, name: []u8 } -> ?CVar {
+        let vs = get_decl{ c, d }.vars
+        let mut i: usize = 0
+        while i < vs.len {
+            if slice::eq_bytes{ a = vs[i].name, b = name } { return vs[i] }
+            i = i + 1
         }
         return null
     }
 
-    // A read of a capability's C variable v (§15). Only a function of the namespace that
-    // declares v's capability may read it, so that namespace wraps it for everyone else. It is
-    // the variable's value, not a place: neither assigned nor addressed.
-    fn read_cvar { mut c: Checker, e: syntax::Expr, v: CVar } -> Id {
-        put_access{ &c, e, a = Access::cvar }
+    // A use of a capability's C variable or static v (§15). Only a function of the namespace
+    // that declares v's capability may use it, so that namespace wraps it for everyone else. A
+    // C variable's is its value, not a place: neither assigned nor addressed. A static's is a
+    // place, as through a pointer: mutable if the capability is (place_mutable).
+    fn use_cvar { mut c: Checker, e: syntax::Expr, v: CVar } -> Id {
+        put_access{ &c, e, a = if v.stat { Access::stat } else { Access::cvar } }
         let x = get_decl{ c, d = v.owner }
         let f = c.fn_decl
         if f == NONE or get_decl{ c, d = f }.kind != Kind::func or get_decl{ c, d = f }.ns != x.ns {
             let qual = get_space{ c, ns = x.ns }.qual
+            let what: utf8::String = if v.stat { "a static" } else { "a C variable" }
+            let verb: utf8::String = if v.stat { "use" } else { "read" }
             let mut b = message{ c }
             if qual.len == 0 {
-                try! @fmt(&b, "`{}` is a C variable of capability `{}`: only a function at the top level, which declares it, can read it", str{ s = v.name }, str{ s = x.name.text })
+                try! @fmt(&b, "`{}` is {} of capability `{}`: only a function at the top level, which declares it, can {} it", str{ s = v.name }, what, str{ s = x.name.text }, verb)
             } else {
-                try! @fmt(&b, "`{}` is a C variable of capability `{}`: only a function of namespace `{}`, which declares it, can read it", str{ s = v.name }, str{ s = x.name.text }, str{ s = qual })
+                try! @fmt(&b, "`{}` is {} of capability `{}`: only a function of namespace `{}`, which declares it, can {} it", str{ s = v.name }, what, str{ s = x.name.text }, str{ s = qual }, verb)
             }
             error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
         }

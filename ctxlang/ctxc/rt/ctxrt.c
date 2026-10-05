@@ -8,27 +8,12 @@ static const char *program_name = "program";
 static const char *const *ctx_files;
 static uint32_t ctx_nfiles;
 static ctx_panic_fn panic_fn;
-char *ctx_stack_limit;
 
 void ctx_start(const char *const *files, uint32_t nfiles, const char *program, ctx_panic_fn on_panic) {
     ctx_files = files;
     ctx_nfiles = nfiles;
     program_name = program;
     panic_fn = on_panic;
-}
-
-void ctx_stack_set(uint64_t limit) {
-    ctx_stack_limit = (char *)(uintptr_t)limit;
-}
-
-// ---- std's state: zeroed, in the program's image, so it costs nothing until it is touched
-
-#define CTX_STATE_SIZE (1u << 17)
-static _Alignas(64) unsigned char state[CTX_STATE_SIZE];
-
-void *ctx_state(uint64_t size) {
-    if (size > sizeof state) __builtin_trap();
-    return state;
 }
 
 // ---- panics
@@ -60,13 +45,13 @@ static const char *file_name(uint32_t file) {
     return program_name;
 }
 
-// Calls the panic fn once. The stack check is off while it runs: a stack overflow has used the
-// stack up to the limit, and the executable reserves more than that beyond it.
+// Calls the panic fn once. C's main's ctx_on_panic turns the stack check off before it runs: a
+// stack overflow has used the stack up to the limit, and the executable reserves more than that
+// beyond it.
 _Noreturn static void report(const char *where, uint32_t line, uint32_t col, const char *msg, uint64_t len) {
     static int panicking;
     if (!panicking && panic_fn) {
         panicking = 1;
-        ctx_stack_limit = NULL;
         panic_fn((ctx_slice){ (void *)msg, len }, (ctx_slice){ (void *)where, c_len(where) }, line, col);
     }
     __builtin_trap();

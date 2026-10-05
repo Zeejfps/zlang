@@ -53,10 +53,12 @@ The goal is real programs over C libraries: OpenGL or Vulkan rendering, windowin
    value as text too, so its message would come from std as well, through the panic fn.
 
 *Done: the runtime's natives in ctxlang.* The runtime (ctxc/rt/ctxrt.c) keeps only what
-ctxlang can't say: the checks' panics, which write their messages without the C library, the
-stack check's limit, function values' records (over pages from a fn std's start gives,
-`ctx_pages_set`, so it calls no C library function), and
-zeroed storage for std's state (`ctx_state`). Starting the program is std's `#start` fn
+ctxlang can't say: the checks' panics, which write their messages without the C library, and
+function values' records (over pages from a fn std's start gives, `ctx_pages_set`, so it calls
+no C library function). std's state for the whole program is capabilities' statics (spec §15,
+rule 13): standard output's buffer (`io::State`), a build's graph (`build::State`), the
+executable's path (`proc::State`), and the stack check's limit (`rt::Stack`, `#stack_limit`).
+Starting the program is std's `#start` fn
 (std/rt.ctx): the platform's setup (binary mode on Windows, the stack's re-exec on Linux),
 `args`, `CTX_STACK`, and standard output written out at the end; reporting a panic is its
 `#panic` fn. A program may replace either (spec §15). proc, the build graph, `mem::reserve`
@@ -104,9 +106,9 @@ another.
   is std compiling without a layer, a pages fn for function values' records past the runtime's
   first 64 KiB (std/rt.ctx, `record_pages`), and memcpy, memset and fmod, which C compilers call
   themselves.
-- Threads. A `#c::callback` must be called on the thread that called into C, since the stack
-  limit and the runtime's stdout buffer are global; threads would need a `_Thread_local` limit
-  and an entry thunk.
+- Threads. A `#c::callback` must be called on the thread that called into C, since std's
+  statics (the stack limit, standard output's buffer) are one for the program; threads would
+  need thread-local statics, at least for the limit, and an entry thunk.
 
 *Done when:* a program opens a window and draws with OpenGL through a binding written in
 ctxlang.
@@ -192,8 +194,8 @@ declares attributes the compiler acts on.
   beside `#convert` and `#write`, among the attributes the compiler declares itself.
 - `main`'s `args` is checked against std's `Args`; it can be checked as `[][]u8`. Only `fn build`
   may take std's `Build`.
-- The interpreter emulates the runtime's `ctx_state` and writes standard output out at the end
-  itself, so it knows that std's `rt::State` starts with `io`'s `Out` (eval.ctx, `flush`).
+- The interpreter writes standard output out at the end itself, so it knows std's static
+  `io::State::out` and its `io::Out`'s fields (eval.ctx, `flush`).
 
 *Later, for literal conversions* (spec §18; `ctxc/comptime.ctx`):
 - `intlit` (a number literal, as its digits, for a big-integer type) and `arraylit` (an array
@@ -399,7 +401,8 @@ program asks for one (spec §19).
 | `@panic`, runtime panics | `ctx_panic(line, col, file, msg)`, and `ctx_panic_index` and the rest for the checks | The runtime finds the file and calls the `#panic` fn (`ctx_on_panic`, which C's main gives it), once, with the stack check off; std's writes `file:line:col: panic: msg` and exits with 134. `file` is FNV-1a of the file's name with the top bit set, which the runtime finds in main's file table, so a unit's C doesn't depend on the program's other files. |
 | `fn main`, `#start` | C's `main` calls the start fn with `argc`, `argv` and `ctx_main_value`, a static function value whose code calls `f_main` with `(void *)cap` for each capability | emit_c.ctx, `entry`. Without a start fn, C's main calls `f_main` itself, with no args. |
 | fn | `f_NAME`, after its qualified name | Global across units, `static` in a program of one; a name that isn't an identifier, or a long one, is cut and gets a hash. Types, consts and the rest are numbered within each unit (emit_c.ctx, "Units"). |
-| stack overflow | check in each function prologue | Compares the frame address to a limit std's start sets (`ctx_stack_set`: 16 MB below its frame, or `CTX_STACK`); 0 checks nothing. Linked with a 256 MB stack on Windows and macOS; on Linux, std raises `RLIMIT_STACK` to 256 MB and runs itself again (std/os/linux). No sibling calls, so every call takes a frame. |
+| capability static (`static name: T`) | `s_` and its qualified name, a zeroed C global | emit_c.ctx: `static` in a program of one unit; with several, main's unit defines every one and the others declare those they use `extern`. A use is `(*(&s_NAME))`: IR `(deref (saddr N))`, so it is a place through a pointer, as the checker treats it (`Access::stat`). |
+| stack overflow | check in each function prologue | `CTX_STACK_CHECK_AT(s_rt__Stack__limit)`, without a `#stack_limit` static none: compares the frame address to the `#stack_limit` static, which std's start sets (16 MB below its frame, or `CTX_STACK`) and `ctx_on_panic` sets to 0 before the panic fn runs; 0 checks nothing. Linked with a 256 MB stack on Windows and macOS; on Linux, std raises `RLIMIT_STACK` to 256 MB and runs itself again (std/os/linux). No sibling calls, so every call takes a frame. |
 
 ## Testing
 

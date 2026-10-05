@@ -14,7 +14,7 @@ namespace lower {
     type Id = types::Id
 
     const NONE: u32 = 4294967295
-    const VERSION: u64 = 18
+    const VERSION: u64 = 19
 
     // A function instance: a declaration and its generic arguments. The hidden fn of an @fmt
     // without a sink is an instance too, under the declaration it is in: site is its Site,
@@ -39,6 +39,9 @@ namespace lower {
         const_ids: map::Map(u32, u32, Heap),       // by the const's Decl
         vars:      list::List(ir::Var, Heap),
         var_owners: list::List(u32, Heap),         // each var's capability Decl, which with its name finds it
+        statics:   list::List(ir::Static, Heap),
+        static_owners: list::List(u32, Heap),      // each static's capability Decl, as var_owners
+        static_names: list::List([]u8, Heap),      // and its own name
         files:     list::List([]u8, Heap),
         file_ids:  map::Map(u32, u32, Heap),       // by the checker's file index
         // The function being lowered: its instance, and its locals' slots.
@@ -57,7 +60,9 @@ namespace lower {
         let start = if s == NONE { NONE } else { fn_id{ &l, decl = s, targs = no_ids{} } }
         let h = check::panic_fn{ c }
         let panic = if h == NONE { NONE } else { fn_id{ &l, decl = h, targs = no_ids{} } }
-        let p = finish{ &l, main, start, panic }
+        let v = check::stack_limit{ c }
+        let limit = if v is some{ value } { static_of{ &l, v = value } } else { NONE }
+        let p = finish{ &l, main, start, panic, stack_limit = limit }
         if l.failed { @panic("lower: a const or literal without a value") }
         return p
     }
@@ -70,7 +75,7 @@ namespace lower {
     fn alone { mut c: check::Checker, d: u32 } -> ?ir::Program {
         let mut l = lowering{ &c }
         let main = fn_id{ &l, decl = d, targs = no_ids{} }
-        let p = finish{ &l, main, start = NONE, panic = NONE }
+        let p = finish{ &l, main, start = NONE, panic = NONE, stack_limit = NONE }
         if l.failed { return null }
         return p
     }
@@ -87,6 +92,9 @@ namespace lower {
             const_ids = map::new(u32, u32){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 },
             vars = list::new(ir::Var){ realloc = arena::alloc, heap = c.heap },
             var_owners = list::new(u32){ realloc = arena::alloc, heap = c.heap },
+            statics = list::new(ir::Static){ realloc = arena::alloc, heap = c.heap },
+            static_owners = list::new(u32){ realloc = arena::alloc, heap = c.heap },
+            static_names = list::new([]u8){ realloc = arena::alloc, heap = c.heap },
             files = list::new([]u8){ realloc = arena::alloc, heap = c.heap },
             file_ids = map::new(u32, u32){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 },
             decl = NONE, targs = no_ids{}, ret = types::VOID,
@@ -97,7 +105,7 @@ namespace lower {
     }
 
     // Lowers the queued instances, and those they reach, into a program.
-    fn finish { mut l: Lower, main: u32, start: u32, panic: u32 } -> ir::Program {
+    fn finish { mut l: Lower, main: u32, start: u32, panic: u32, stack_limit: u32 } -> ir::Program {
         let mut i: usize = 0
         while i < l.queue.len {
             let inst = list::items{ list = l.queue }[i]
@@ -122,8 +130,9 @@ namespace lower {
             types = list::items{ list = l.types },
             consts = list::items{ list = l.consts },
             vars = list::items{ list = l.vars },
+            statics = list::items{ list = l.statics },
             fns = list::items{ list = l.fns },
-            main, start, panic,
+            main, start, panic, stack_limit,
         }
     }
 
@@ -1970,6 +1979,32 @@ namespace lower {
         return @as(u32, vs.len)
     }
 
+    // The id of a capability's static (§15, rule 13) of capability t, or of the one t points to,
+    // given the first time it is met.
+    fn static_id { mut l: Lower, t: Id, name: []u8 } -> u32 {
+        let mut ct = t
+        if get{ l, t } is ptr{ elem } { ct = elem }
+        let v = check::cap_var{ c = l.c.*, t = ct, name } ifnull { @panic("lower: no such static") }
+        return static_of{ &l, v }
+    }
+
+    fn static_of { mut l: Lower, v: check::CVar } -> u32 {
+        let owners = list::items{ list = l.static_owners }
+        let names = list::items{ list = l.static_names }
+        let mut i: usize = 0
+        while i < owners.len {
+            if owners[i] == v.owner and slice::eq_bytes{ a = names[i], b = v.name } { return @as(u32, i) }
+            i = i + 1
+        }
+        let ty = tid{ &l, t = T{ &l, t = v.ty } }
+        let mut b = utf8::builder{ realloc = arena::alloc, heap = l.heap }
+        try! @fmt(&b, "{}::{}", utf8::String{ bytes = check::get_decl{ c = l.c.*, d = v.owner }.qual }, utf8::String{ bytes = v.name })
+        try! list::push{ list = &l.statics, item = ir::Static{ name = utf8::view{ b }.bytes, ty } }
+        try! list::push{ list = &l.static_owners, item = v.owner }
+        try! list::push{ list = &l.static_names, item = v.name }
+        return @as(u32, owners.len)
+    }
+
     // Const d's value, used at `at`. An evaluated const's is computed here the first time
     // (check's const_value), while another const's initializer is lowered; if it has none, the
     // lowering has failed, and the value is a stand-in.
@@ -2059,6 +2094,18 @@ namespace lower {
             if base.k is path { return v }
             let b = ex{ &l, e = base }
             return mk{ ty, k = ir::ExprKind::seq{ first = box{ l, e = b }, then = box{ l, e = v } } }
+        }
+        // A capability's static: the place its address points to, after evaluating the base
+        // unless it is a name.
+        if a is stat {
+            let ty = tid{ &l, t }
+            let pt = tid{ &l, t = types::ptr{ s = &l.c.ty, elem = t, mutable = true } }
+            let p = mk{ ty = pt, k = ir::ExprKind::saddr{ id = static_id{ &l, t = bt, name = name.text } } }
+            let place = mk{ ty, k = ir::ExprKind::deref{ ptr = box{ l, e = p }, pos = epos{ &l, e } } }
+            if base.k is path { return place }
+            let b = ex{ &l, e = base }
+            let first = mk{ ty = pt, k = ir::ExprKind::seq{ first = box{ l, e = b }, then = box{ l, e = p } } }
+            return mk{ ty, k = ir::ExprKind::deref{ ptr = box{ l, e = first }, pos = epos{ &l, e } } }
         }
         // A strlit's bytes: the strlit itself, which is a []u8 in the IR.
         if a is lit { return ex{ &l, e = base } }

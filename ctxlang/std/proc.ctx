@@ -16,11 +16,16 @@
 // for one.
 
 // Permission to start programs and to read this program's environment. It includes what its
-// platform's layer needs for that, os::Proc (std/os), such as C's environ, and the console,
-// which the programs it starts share: `run` writes standard output's buffer out first.
-capability Proc { ..os::Proc, ..Io }
+// platform's layer needs for that, os::Proc (std/os), such as C's environ, the console, which
+// the programs it starts share (`run` writes standard output's buffer out first), and proc's
+// state.
+capability Proc { ..os::Proc, ..Io, ..proc::State }
 
 namespace proc {
+    // proc's state for the whole program (spec §15, rule 13): the executable's path, once
+    // asked for.
+    capability State { static exe_path: []u8 }
+
     error not_found             // no such program, on PATH or at the path given
     error permission_denied
     error other{ code: i64 }    // the OS's error number
@@ -33,9 +38,8 @@ namespace proc {
     // The absolute path of this program's executable; empty if the OS won't say. It lives until
     // the program ends.
     fn exe_path { mut proc: Proc } -> []u8 {
-        let s = rt::state{ io = &proc }
-        if s.exe_path.len == 0 { s.exe_path = os::exe_path{ &proc } }
-        return s.exe_path
+        if proc.exe_path.len == 0 { proc.exe_path = os::exe_path{ &proc } }
+        return proc.exe_path
     }
 
     // The operating system this program runs on.

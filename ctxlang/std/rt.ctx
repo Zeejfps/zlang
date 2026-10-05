@@ -1,6 +1,6 @@
 // std: rt. What starts a program and reports its panics (spec §15, Entry point), over the
-// platform's layer, and std's state for the whole program. The runtime (ctxc/rt/ctxrt.c) keeps
-// only what ctxlang can't: C's main calls `start`, and each panic calls `report`.
+// platform's layer, and the stack check's limit. The runtime (ctxc/rt/ctxrt.c) keeps only what
+// ctxlang can't: C's main calls `start`, and each panic calls `report`.
 //
 // A program replaces either with a fn of its own that has the attribute, as one for a target
 // without an OS might:
@@ -9,17 +9,12 @@
 //   fn halt { msg: []u8 } { while true {} }
 
 namespace rt {
-    // std's state for the whole program, in memory the runtime keeps (ctx_state): standard
-    // output's buffer (io), what a build program has described (build), and the executable's
-    // path, once asked for (proc::exe_path).
-    struct State { out: io::Out, out_bytes: [65536]u8, graph: build::Graph, exe_path: []u8 }
-
-    #c::symbol{ name = "ctx_state" }
-    extern fn state_of { mut io: Io, size: usize } -> *mut State
-
-    // The state, the same on every call.
-    fn state { mut io: Io } -> *mut State {
-        return state_of{ &io, size = @size_of(State) }
+    // The stack check's limit (spec §15, rule 13): every function's frame below it panics with
+    // "stack overflow". `start` sets it; until then, and while a panic is reported, it is 0,
+    // which checks nothing.
+    capability Stack {
+        #stack_limit
+        static limit: usize
     }
 
     // Panics with a message that needn't be a literal, as `@panic` does, but without a
@@ -57,21 +52,17 @@ namespace rt {
     // the stack check's limit, main with the command line's arguments, and standard output
     // written out. Returns main's exit code.
     #start
-    fn start { mut io: Io, mut mem: Mem, mut proc: Proc, argc: i32, argv: *?*u8, main: &fn{ args: Args } -> i32 } -> i32 {
+    fn start { mut io: Io, mut mem: Mem, mut proc: Proc, mut stack: Stack, argc: i32, argv: *?*u8, main: &fn{ args: Args } -> i32 } -> i32 {
         pages_set{ &mem, pages = record_pages }
         os::start{ &io, &proc, argv }
         let here: u8 = 0
         let at = @addr(&here)
         let size = stack_size{ &proc }
-        stack_set{ &proc, limit = if at > size { at - size } else { 0 } }
+        stack.limit = if at > size { at - size } else { 0 }
         let code = main{ args = os::args{ &mem, argc, argv } }
         io::flush{ &io }
         return code
     }
-
-    // Where a frame panics with "stack overflow" (ctxrt.h, CTX_STACK_CHECK).
-    #c::symbol{ name = "ctx_stack_set" }
-    extern fn stack_set { mut proc: Proc, limit: usize }
 
     // Memory for function values' records (ctxrt.h), once the runtime's own is used up. The
     // runtime calls it only within `start`, which holds the `Mem`. It may make no record.

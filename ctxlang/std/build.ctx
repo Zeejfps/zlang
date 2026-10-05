@@ -24,7 +24,7 @@
 
 // Permission to describe a build: only a build program's `fn build` receives one. It includes
 // the console, where the build's graph goes without CTX_BUILD_OUT.
-capability Build { ..Io }
+capability Build { ..Io, ..build::State }
 
 namespace build {
     // An executable the build describes.
@@ -44,7 +44,7 @@ namespace build {
             if name[i] == '/' or name[i] == '\\' or name[i] == '"' { rt::fail{ msg = "build: a name cannot hold a slash, a backslash or a double quote" } }
             i = i + 1
         }
-        let g = &rt::state{ io = &b }.graph
+        let g = &b.graph
         let exe = Exe{ id = g.exes }
         g.exes = g.exes + 1
         record{ &b, kind = "exe", exe, a = name, more = root }
@@ -102,8 +102,12 @@ namespace build {
     //   exe ID NAME ROOT    sources ID DIR    optimize ID LEVEL
     //   link ID LIB    framework ID NAME    libpath ID PATH
 
-    // What a build program has described, in std's state (rt::State): how many executables,
-    // and once `opened`, the C library's FILE for CTX_BUILD_OUT, or 0 for standard output.
+    // build's state for the whole program (spec §15, rule 13): what the build program has
+    // described.
+    capability State { static graph: Graph }
+
+    // How many executables, and once `opened`, the C library's FILE for CTX_BUILD_OUT, or 0 for
+    // standard output.
     struct Graph { exes: u32, opened: bool, file: u64 }
 
     // The C library's, to write CTX_BUILD_OUT's file as the program goes. A FILE * is a number
@@ -114,7 +118,7 @@ namespace build {
     extern fn fflush { mut b: Build, file: u64 } -> i32
 
     fn record { mut b: Build, kind: []u8, exe: Exe, a: []u8, more: []u8 } {
-        let g = &rt::state{ io = &b }.graph
+        let g = &b.graph
         if not g.opened {
             g.opened = true
             let path = getenv{ &b, name = "CTX_BUILD_OUT" }
@@ -167,7 +171,7 @@ namespace build {
 
     // Panics unless exe is one of the build's.
     fn check { mut b: Build, exe: Exe } {
-        if exe.id >= rt::state{ io = &b }.graph.exes {
+        if exe.id >= b.graph.exes {
             let mut m = rt::message{ s = "build: no executable " }
             rt::add_u64{ &m, n = exe.id }
             rt::fail_with{ m }

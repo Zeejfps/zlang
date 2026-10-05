@@ -281,15 +281,15 @@ namespace parser {
             let name = ident{ &p }
             expect{ &p, k = tok::Kind::colon }
             let ty = type_expr{ &p }
-            try! list::push{ list = &xs, item = syntax::Field{ span = span_from{ p, start }, attrs = slice::empty(syntax::Attr){}, name, ty, external = false } }
+            try! list::push{ list = &xs, item = syntax::Field{ span = span_from{ p, start }, attrs = slice::empty(syntax::Attr){}, name, ty, external = false, stat = false } }
             if not accept{ &p, k = tok::Kind::comma } { break }
         }
         expect{ &p, k = tok::Kind::rbrace }
         return list::items{ list = xs }
     }
 
-    // A capability's `{ name: T, extern name: T, ..Name, ... }`: its fields, C variables among
-    // them, and in includes each `..Name`.
+    // A capability's `{ name: T, extern name: T, static name: T, ..Name, ... }`: its fields, C
+    // variables and statics among them, and in includes each `..Name`.
     fn cap_fields { mut p: Parser, mut includes: list::List(syntax::Include, arena::Arena) } -> []syntax::Field {
         let mut xs = list::new(syntax::Field){ realloc = arena::alloc, heap = p.heap }
         expect{ &p, k = tok::Kind::lbrace }
@@ -301,10 +301,14 @@ namespace parser {
                 try! list::push{ list = &includes, item = syntax::Include{ span = span_from{ p, start }, ty, at = xs.len } }
             } else {
                 let external = accept{ &p, k = tok::Kind::kw_extern }
+                // `static` is a keyword only here, before a name: elsewhere it is a name.
+                let stat = not external and next_is{ p, k = tok::Kind::ident } and kind{ p, ahead = 1 } == tok::Kind::ident
+                           and slice::eq_bytes{ a = text_of{ p, t = p.toks[p.i] }, b = "static" }
+                if stat { skip{ &p } }
                 let name = ident{ &p }
                 expect{ &p, k = tok::Kind::colon }
                 let ty = type_expr{ &p }
-                try! list::push{ list = &xs, item = syntax::Field{ span = span_from{ p, start }, attrs, name, ty, external } }
+                try! list::push{ list = &xs, item = syntax::Field{ span = span_from{ p, start }, attrs, name, ty, external, stat } }
             }
             if not accept{ &p, k = tok::Kind::comma } { break }
         }

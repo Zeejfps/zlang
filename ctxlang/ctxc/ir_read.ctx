@@ -52,10 +52,12 @@ namespace ir_read {
         let mut types = list::new(ir::Type){ realloc = arena::alloc, heap = r.heap }
         let mut consts = list::new(ir::Const){ realloc = arena::alloc, heap = r.heap }
         let mut vars = list::new(ir::Var){ realloc = arena::alloc, heap = r.heap }
+        let mut statics = list::new(ir::Static){ realloc = arena::alloc, heap = r.heap }
         let mut fns = list::new(ir::Func){ realloc = arena::alloc, heap = r.heap }
         let mut main = 0
         let mut start = lower::NONE
         let mut panic = lower::NONE
+        let mut stack_limit = lower::NONE
         while true {
             expect{ &r, c = '(' }
             if r.failed { break }
@@ -74,6 +76,10 @@ namespace ir_read {
                 let name = try string{ &r }
                 let symbol = try string{ &r }
                 try list::push{ list = &vars, item = ir::Var{ name, symbol, ty = id32{ &r } } }
+            } else if spells{ s = tag, lit = "static" } {
+                if id32{ &r } != statics.len { fail{ &r, problem = Problem::bad_id } }
+                let name = try string{ &r }
+                try list::push{ list = &statics, item = ir::Static{ name, ty = id32{ &r } } }
             } else if spells{ s = tag, lit = "fn" } {
                 try list::push{ list = &fns, item = try function{ &r } }
             } else if spells{ s = tag, lit = "extern" } {
@@ -82,6 +88,8 @@ namespace ir_read {
                 start = id32{ &r }
             } else if spells{ s = tag, lit = "panic" } {
                 panic = id32{ &r }
+            } else if spells{ s = tag, lit = "stack_limit" } {
+                stack_limit = id32{ &r }
             } else if spells{ s = tag, lit = "main" } {
                 main = id32{ &r }
                 expect{ &r, c = ')' }
@@ -95,7 +103,8 @@ namespace ir_read {
         if r.pos < r.text.len { fail{ &r, problem = Problem::trailing_text } }
         return ir::Program{
             version, files, types = list::items{ list = types }, consts = list::items{ list = consts },
-            vars = list::items{ list = vars }, fns = list::items{ list = fns }, main, start, panic,
+            vars = list::items{ list = vars }, statics = list::items{ list = statics }, fns = list::items{ list = fns },
+            main, start, panic, stack_limit,
         }
     }
 
@@ -416,6 +425,8 @@ namespace ir_read {
             k = ir::ExprKind::constref{ id = id32{ &r } }
         } else if spells{ s = tag, lit = "cvar" } {
             k = ir::ExprKind::cvar{ id = id32{ &r } }
+        } else if spells{ s = tag, lit = "saddr" } {
+            k = ir::ExprKind::saddr{ id = id32{ &r } }
         } else if spells{ s = tag, lit = "call" } {
             let callee = id32{ &r }
             k = ir::ExprKind::call{ callee, args = try args{ &r } }

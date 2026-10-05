@@ -1,10 +1,11 @@
 // ctxrt: the runtime for C that ctxc emits. Needs GNU C (statement expressions, __typeof__,
 // overflow builtins, empty structs) on a 64-bit little-endian target.
 //
-// It is what the C needs that ctxlang can't say itself: the checks the C calls, panics, the
-// stack check's limit, function values' records, and storage for std's process-wide state.
-// The rest is std's, in ctxlang: starting the program (a `#start` fn, std/rt.ctx), reporting a
-// panic (a `#panic` fn), and the platform's layer (std/os), which the natives of std are over.
+// It is what the C needs that ctxlang can't say itself: the checks the C calls, panics, and
+// function values' records. It keeps no state of std's: that is std's statics (spec §15, rule
+// 13), the stack check's limit among them. The rest is std's, in ctxlang: starting the program
+// (a `#start` fn, std/rt.ctx), reporting a panic (a `#panic` fn), and the platform's layer
+// (std/os), which the natives of std are over.
 // ctxrt.c calls no C library function. Floats as text and back, which std's
 // ascii declares, are ctxfloat.c's, which a program links only if it uses them (ctxc/drive.ctx).
 
@@ -38,10 +39,6 @@ void ctx_start(const char *const *files, uint32_t nfiles, const char *program, c
 #define CTX_PROGRAM_NAME "program"
 #endif
 
-// Zeroed memory of `size` bytes, the same on every call: std's process-wide state (std/rt.ctx,
-// `State`), whose layout is std's. A size the runtime hasn't room for traps.
-void *ctx_state(uint64_t size);
-
 // The assembler name of C symbol `name`, a string literal, for an extern fn's prototype.
 #define CTX_STR_(x) #x
 #define CTX_STR(x) CTX_STR_(x)
@@ -52,8 +49,8 @@ void *ctx_state(uint64_t size);
 
 // ---- panics
 //
-// Each calls the `#panic` fn once, with the stack check off, so that a stack overflow can be
-// reported; a panic while one is reported, or a panic fn that returns, traps. `file` is FNV-1a of
+// Each calls the `#panic` fn once, which C's main gives (ctx_on_panic: it turns the stack check
+// off first, so that a stack overflow can be reported); a panic while one is reported, or a panic fn that returns, traps. `file` is FNV-1a of
 // the file's name with the top bit set, which names it in the program's file table, or an index
 // into that table; an empty name stands for the program's path.
 
@@ -77,13 +74,10 @@ _Noreturn void ctx_f2i_fail(double v, const char *dst, CTX_POS);
 
 // ---- stack
 
-extern char *ctx_stack_limit;
-#define CTX_STACK_CHECK() \
-    do { if ((char *)__builtin_frame_address(0) < ctx_stack_limit) ctx_panic_nopos("stack overflow"); } while (0)
-
-// Sets the address below which a frame panics with "stack overflow": std's start does, from
-// where its frame is. Before, nothing is checked.
-void ctx_stack_set(uint64_t limit);
+// A frame below `limit`, the program's `#stack_limit` static (spec §15, rule 13), panics with
+// "stack overflow". std's start sets it; 0 checks nothing.
+#define CTX_STACK_CHECK_AT(limit) \
+    do { if ((uint64_t)(uintptr_t)__builtin_frame_address(0) < (limit)) ctx_panic_nopos("stack overflow"); } while (0)
 
 // ---- function values
 //

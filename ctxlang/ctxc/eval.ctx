@@ -34,8 +34,9 @@
 //
 // Nothing here needs a capability: what the program writes is kept in order (m.out, m.chunks)
 // for the caller to write. With `emulate`, the externs that writing to standard output and error
-// reaches run here: ctx_state (ctxrt.c's storage for std's state, which holds the stdout buffer),
-// `write` (Windows: `_write`) to fds 1 and 2, and std's float text natives, which are ctxc's own.
+// reaches run here: `write` (Windows: `_write`) to fds 1 and 2, and std's float text natives,
+// which are ctxc's own. Standard output's buffer is std's static `io::State::out`, which main's
+// end writes out (flush).
 // Without it too, std's panics without a position (ctx_panic_msg) and Windows' arena commit
 // (VirtualQuery) run here. Any other extern fn, and any C variable, stops the program.
 
@@ -124,7 +125,7 @@ namespace eval {
         statics:  u32,                          // the region static data is going into
         chunk:    u32,                          // the region the heap is going into
         cap:      Addr,                         // what a `mut` capability points to: emit_c's cap[1]
-        stdout:   Addr,                         // ctx_state's memory, once asked for: std's rt::State, whose first field is io's Out
+        cells:    list::List(Addr, Heap),       // by static: its zeroed memory once used, or 0
         out:      list::List(u8, Heap),
         chunks:   list::List(Chunk, Heap),
         literals: list::List(Literal, Heap),
@@ -146,7 +147,8 @@ namespace eval {
             frames = list::new(Frame){ realloc = arena::alloc, heap },
             codes = list::new(Code){ realloc = arena::alloc, heap },
             known = map::new(Key, Addr){ realloc = arena::alloc, heap, hash = hash_key, eq = eq_key },
-            statics = 0, chunk = 0, cap = 0, stdout = 0,
+            statics = 0, chunk = 0, cap = 0,
+            cells = list::new(Addr){ realloc = arena::alloc, heap },
             out = list::new(u8){ realloc = arena::alloc, heap },
             chunks = list::new(Chunk){ realloc = arena::alloc, heap },
             literals = list::new(Literal){ realloc = arena::alloc, heap },
@@ -689,6 +691,12 @@ namespace eval {
                 fail{ &m, msg = utf8::view{ b }.bytes }
                 return halt
             }
+            saddr{ id } => {
+                let s = try static_at{ &m, id }
+                let a = try temp{ &m, t = x.ty }
+                try store{ &m, a, n = 8, v = s }
+                return a
+            }
             ssub{ base, lo, hi, pos } => { return try ssub{ &m, t = x.ty, base = base.*, lo = lo.*, hi, pos } }
             addr{ place = q } => {
                 let mut a: Addr = 0
@@ -820,6 +828,7 @@ namespace eval {
                 let a = try place{ &m, x }
                 return try get{ &m, a, t = x.ty }
             }
+            saddr{ id } => { return try static_at{ &m, id } }
             neg{ e, pos } => {
                 let v = try scalar{ &m, x = e.* }
                 return try negate{ &m, p = prim{ ts = m.types, t = x.ty }, v, pos }
@@ -953,6 +962,14 @@ namespace eval {
             }
             else => { return try value{ &m, x } }
         }
+    }
+
+    // Static id's memory, zeroed, the same on every use: emit_c's s_NAME.
+    fn static_at { mut m: M, id: u32 } -> !Addr {
+        while m.cells.len < m.p.statics.len { try! list::push{ list = &m.cells, item = 0 } }
+        let cells = list::items{ list = m.cells }
+        if cells[id] == 0 { cells[id] = try heap_bytes{ &m, n = size{ ts = m.types, t = m.p.statics[id].ty } } }
+        return cells[id]
     }
 
     fn base_of { mut m: M, x: ir::Expr } -> !Addr {
@@ -1369,12 +1386,6 @@ namespace eval {
             return halt
         }
         if m.emulate {
-            if slice::eq_bytes{ a = s, b = "ctx_state" } {
-                // ctxrt.c's zeroed memory for std's process-wide state, the same on every call
-                if m.stdout == 0 { m.stdout = try heap_bytes{ &m, n = try arg_bits{ &m, f, base, name = "size" } } }
-                try store{ &m, a = res, n = 8, v = m.stdout }
-                return
-            }
             if slice::eq_bytes{ a = s, b = "write" } or slice::eq_bytes{ a = s, b = "_write" } {
                 // C's write, or the Windows CRT's _write, to standard output or error
                 let fd = try arg_bits{ &m, f, base, name = "fd" }
@@ -1444,16 +1455,32 @@ namespace eval {
         return try get{ &m, a, t = f.params[k].ty }
     }
 
-    // Standard output's buffer, written out, as std's io::flush does: io's Out, a slice of
-    // the buffer and the length of what waits in it, at the start of std's rt::State.
+    // Standard output's buffer, written out, as std's io::flush does: std's static
+    // `io::State::out`, an io::Out, whose bytes[..len] wait to be written.
     fn flush { mut m: M } -> ! {
-        if m.stdout == 0 { return }
-        let ptr = try load{ &m, a = m.stdout, n = 8 }
-        let len = try load{ &m, a = m.stdout + 16, n = 8 }
+        let mut i: usize = 0
+        while i < m.p.statics.len and not slice::eq_bytes{ a = m.p.statics[i].name, b = "io::State::out" } { i = i + 1 }
+        if i == m.p.statics.len or i >= m.cells.len or list::items{ list = m.cells }[i] == 0 { return }
+        let out = list::items{ list = m.cells }[i]
+        let t = m.p.statics[i].ty
+        let len_at = out + member_offset{ m, t, name = "len" }
+        let bytes_at = out + member_offset{ m, t, name = "bytes" }
+        let len = try load{ &m, a = len_at, n = 8 }
         if len == 0 { return }
-        let bytes = try at{ &m, a = ptr, n = len }
+        let bytes = try at{ &m, a = bytes_at, n = len }
         try emit{ &m, to = io::Stream::out, bytes }
-        try store{ &m, a = m.stdout + 16, n = 8, v = 0 }
+        try store{ &m, a = len_at, n = 8, v = 0 }
+    }
+
+    // The offset of struct t's field `name`.
+    fn member_offset { m: M, t: ir::TypeId, name: []u8 } -> u64 {
+        let ms = members{ ts = m.types, t }
+        let mut i: usize = 0
+        while i < ms.len {
+            if slice::eq_bytes{ a = ms[i].name, b = name } { return ms[i].offset }
+            i = i + 1
+        }
+        @panic("eval: io::Out has no such field")
     }
 
     // Keeps bytes the program wrote to `to`.
