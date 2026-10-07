@@ -6,6 +6,9 @@ sneak attacks, critical hits, death and party members going down, what the engin
 versus what the AI scripts do, and the combat-log messages. Addresses are for the Steam
 `swkotor.exe` after SteamStub removal (see [README.md](README.md)); every claim ends with a
 confidence (high = read in the code, med = role clear and detail inferred, low = plausible).
+The whole page was rechecked claim by claim against the exports rebuilt after the noreturn fix
+([noreturn-fix.md](noreturn-fix.md)) on 2026-10-07; a med claim that says "needs a runtime check"
+rests on static reading alone and is surprising enough to test before relying on it.
 Names are ours, in the engine family's style. Proposed names for every address here are in
 `kotor/re/proposals/combat.tsv` (git-ignored scratch, merged into [names.tsv](names.tsv) by the
 lead).
@@ -31,39 +34,39 @@ unless a table says otherwise. Creature offsets below `+0x228` are `CSWSObject` 
 
 | Step | Where | What |
 |---|---|---|
-| 1 | `CSWSCreature::AIActionAttackObject` `0x005bbbf0` | the ATTACKOBJECT action, once in range: decide whether the two creatures are *engaged* (paired) and who is *master*, `StartCombatRound` on both, pause the round for the attack animation, then `ResolveAttack` |
+| 1 | `CSWSCreature::AIActionAttackObject` `0x005bbbf0` | the ATTACKOBJECT action, once in range and while its round is not paused: decide whether the two creatures are *engaged* (paired) and who is *master*. Not engaged: `StartCombatRound` on itself; engaged master: on itself and on the target (as slave); engaged slave: none, it waits until its master has started both rounds. Then pause its own round for the attack animation (and the partner's too when the attack uses a combat feat), pick up a pending `NewAttackTarget`, then `ResolveAttack` |
 | 2 | `CSWSCombatRound::StartCombatRound` `0x004d5f70` | 3000 ms round, number of on-hand and off-hand attacks |
 | 3 | `CSWSCreature::ResolveAttack` `0x005bba80` | melee or ranged by the right-hand weapon's `RangedWeapon` |
-| 4 | `ResolveMeleeAttack` `0x005bb890` / `ResolveRangedAttack` `0x005bb590` | for each attack of the round: attack roll, special-attack effects, damage roll, impact time |
+| 4 | `ResolveMeleeAttack` `0x005bb890` / `ResolveRangedAttack` `0x005bb590` | melee: for each attack of the round, all into the one current attack record: attack roll, special-attack effects, damage roll on a hit, one impact record with its time. Ranged: for each shot the weapon fires, a random pick decides whether the shot carries one of the round's attacks (rolled the same way) or is a plain miss, which may still be deflected |
 | 5 | `ResolveAttackRoll` `0x005baca0` | d20 + attack modifier vs. defense, threat and confirmation, deflection |
 | 6 | `ResolveDamage` `0x005bb440` → `CSWSCreatureStats::GetDamageRoll` `0x005a9050` | dice, bonuses, critical multiplication, target immunity → resistance → reduction |
 | 7 | `CSWSCreature::UpdateCombat` `0x004faf20` (every frame) | runs the round timer and the attack-animation pause; when an impact's time comes, `ApplyAttackImpact` `0x005b8050` |
-| 8 | `ApplyAttackImpact` → `SignalMeleeDamage` `0x005b75d0` / `SignalRangedDamage` `0x005b6f30` | queues ON_MELEE_ATTACKED (event 15), a damage effect (event 5, effect type 0x26), on-hit effects, combat-log messages |
+| 8 | `ApplyAttackImpact` → `SignalMeleeDamage` `0x005b75d0` / `SignalRangedDamage` `0x005b6f30` | `ApplyAttackImpact` sends the combat-log rolls (summary, attack roll, threat, defense, damage, special attack, deflection; for melee always, for ranged only when record `+0x04` is set, whose writer was not found) and queues event 0x1b to the player creature when it takes a critical hit; then `Signal*` queues ON_MELEE_ATTACKED (event 15) and, for hits only, the damage effect (event 5, effect type 0x26), the record's feedback messages (event 22), its on-impact effects and item on-hit spells (event 19) |
 | 9 | `CSWSEffectListHandler::OnApplyDamage` `0x004dfa40` → `CSWSCreature::TakeDamage` `0x004f3830` → `CSWSObject::DoDamage` `0x004ccf80` | hit points go down; OnDamaged script; death effect if the target died |
 | 10 | `CSWSEffectListHandler::OnApplyDeath` `0x004e0ac0` | OnDeath script, death animation, XP, destroy / body bag |
-| 11 | `CSWSCombatRound::EndCombatRound` `0x004d4620` | when the round's time is used up: OnEndRound script, which (in the shipped AI) issues the next attack |
+| 11 | `CSWSCombatRound::EndCombatRound` `0x004d4620` | when the round's time is used up: OnEndRound script, which (in the shipped AI) issues the next attack; the client party's leader runs none and gets the engine's own continuation `0x005b6980` instead (3.5, 9) |
 
 ## 2. Data structures
 
 ### CSWSCombatRound (0x9d8 bytes at creature `+0x9c8`, ctor `0x004d5cb0`)
 
-Labels are the GFF field names `SaveCombatRound` (`0x004d3ec0`) writes into `CombatRoundData`; the
+The creature constructor allocates the round on the heap and keeps the pointer at `+0x9c8`. Labels are the GFF field names `SaveCombatRound` (`0x004d3ec0`) writes into `CombatRoundData`; the
 loader is `0x004d5120`. (high unless marked)
 
 | Offset | GFF label | Meaning |
 |---|---|---|
-| `+0x004` | AttackList | attack records, 0x14c bytes each; the constructor builds 7, but every reset, save and load touches only the first 5 (med) |
+| `+0x004` | AttackList | attack records, 0x14c bytes each; the constructor builds 7, but every reset, save and load touches only the first 5 |
 | `+0x918/+0x91c` | SpecAttackList | ushort array of queued special attacks (pointer, count) |
 | `+0x924/+0x928` | SpecAttackIdList | ushort array |
 | `+0x930` | AttackID | ushort |
 | `+0x934` | RoundStarted | |
 | `+0x938` | SpellCastRound | the round is a Force power / item cast, not attacks |
-| `+0x93c` | — | set with SpellCastRound (`0x004d28b0`) (med) |
+| `+0x93c` | — | second argument of `SetSpellCastRound` (`0x004d28b0`; the cast action passes bit 31 of its param 9); when set, `EndCombatRound` does not run OnEndRound (med) |
 | `+0x940` | — | "cutscene attack" flag (StartCombatRound's 5th argument, the ATTACKOBJECT node's first parameter); suppresses OnEndRound (med) |
 | `+0x944` | Timer | ms elapsed in the round |
-| `+0x948` | — | the current target is debilitated (set when animations are resolved) |
+| `+0x948` | — | the current target is debilitated (`+0x8ed` ≠ 0) or dying (set by `ResolveMeleeAnimations` `0x005b7470`) |
 | `+0x94c` | RoundLength | 3000 at start, shortened by attack animations (section 3.4) |
-| `+0x950` | OverlapAmount | how far a round may be stretched to fit an animation (≤ 1000 ms) |
+| `+0x950` | OverlapAmount | meant to track how far the round has been stretched to fit animations, but it stays 0 (the update in `0x004d3440` writes back the same value), so each animation may stretch the round by up to 1000 ms |
 | `+0x954` | BleedTimer | |
 | `+0x958` | RoundPaused | the round's timer is frozen while an attack animation plays |
 | `+0x95c` | RoundPausedBy | object id |
@@ -89,7 +92,7 @@ loader is `0x004d5120`. (high unless marked)
 | `+0x9b8` | Engaged | the round is paired with another creature's |
 | `+0x9bc` | Master | this creature drives the pair |
 | `+0x9c0` | MasterID | id of the pair's master |
-| `+0x9c4` | — | id of the pair's slave (master side) |
+| `+0x9c4` | — | id of the pair's slave; the master copies `+0x9c0/+0x9c4` into the slave's round, so both rounds hold the pair |
 | `+0x9c8` | — | the scheduled action being executed |
 | `+0x9cc` | — | the round's target (INVALID when attacking oneself) |
 | `+0x9d0` | — | type byte of the scheduled action being executed |
@@ -109,7 +112,7 @@ filled as the roll is made. (high unless marked)
 | `+0x12` | ReaxnAnimation (the target's reaction: 10014 hit, 10011 miss, 10012 deflected, 10001 none) |
 | `+0x14` | ReaxnAnimLength |
 | `+0x18` | MissedBy |
-| `+0x1c` | DamageList: 15 shorts, one per damage-type bit 0..14 (−1 = none) |
+| `+0x1c` | DamageList: 15 shorts indexed by log2 of the damage-type flag (−1 = none); the game's types use slots 0..12 (Blaster = 4096), and slot 14 is the total below. All 15 are copied into the 0x26 damage effect's integers 0..14 |
 | `+0x38` | total damage (short) |
 | `+0x3a` | WeaponAttackType (section 4.1) |
 | `+0x3b` | AttackMode |
@@ -140,18 +143,18 @@ filled as the roll is made. (high unless marked)
 | `+0xd8` / `+0xdc` | natural 20 / natural 1 (dwords) |
 | `+0xe0..+0xf1` | threat range, is-threat, confirmation d20, confirmed, critical multiplier |
 | `+0xf4..+0xfc` | defense: total, armour, DEX part, DEX modifier, class bonus, natural, dodge + effects, Dueling, debilitated penalty |
-| `+0xfe..+0x109` | damage: base dice, special-attack bonus, —, sneak, STR, Weapon Specialization, …, effect bonus |
-| `+0x12c..+0x13c` | stun-from-special-attack report (`+0x12d` = 4, `+0x13c` = 1) (med) |
+| `+0xfe..+0x109` | damage: `+0xfe` base dice, `+0xff` combat-mode bonus + special-attack damage bonus (Massive Critical dice added on a critical hit), `+0x100` always 0, `+0x101` sneak dice, `+0x102` STR (melee only), `+0x103` Weapon Specialization, `+0x104..+0x108` sent in the damage log but no writer found, `+0x109` effect bonus |
+| `+0x12c..+0x13c` | saving-throw report that `SavingThrowRoll` (`0x005b92b0`) writes into the attacker's current record: save `+0x12c`, save type `+0x12e`, base `+0x130`, bonus `+0x131`, total `+0x132`, DC `+0x133`, result `+0x134` (0xff none, 1 saved). A melee or ranged special attack sets `+0x12d` = 4 (the stun state) when the save fails and `+0x13c` = 1 (send the report) whenever it rolled a save (med) |
 | `+0x140..+0x148` | deflection: d20, attack total, Jedi Defense feat and bonus, effect bonus, result, BAB, stat bonus, total |
 
 ### Scheduled combat actions (0x88 bytes, list at round `+0x9b0`)
 
 Written by `0x004d1dd0` as `SchedActionList` entries: ActionTimer `+0x00`, Animation `+0x04`,
 AnimationTime `+0x08`, NumAttacks `+0x0c`, ActionType `+0x10` (1 attack, 0xb attack with a combat
-feat whose id is at `+0x5c`, 6/7 item use, 9 cast, 10 item cast, 0xc move…), Target `+0x14`,
+feat whose id is at `+0x5c`, 3 pause only, 6 equip (slot `+0x1c`), 7 unequip (repository `+0x20`), 9 cast, 10 item cast, 0xc move), Target `+0x14`,
 Retargettable `+0x18`, InventorySlot `+0x1c`, TargetRepository `+0x20`; `+0x74` marks a cutscene
-attack. `CSWSCombatRound::AddAttackAction` (`0x004d38b0`) creates attack entries (NumAttacks 1) with
-animation 10009 and AnimationTime `(g_nCombatActionTime + 3000) / 2` (global `0x008327dc`). They are consumed by action 0x3f
+attack. `CSWSCombatRound::AddAttackAction` (`0x004d38b0`) creates attack entries (every caller passes NumAttacks 1) with
+animation 10009 and AnimationTime `(g_nCombatActionTimeBias + 3000) / 2` (global `0x008327dc`; no writer found, so 1500 ms, med). They are consumed by action 0x3f
 (`0x005b6210`, see [actions.md](actions.md)), which turns each due entry into a real action
 (`AddAttackActions` with the direct flag, `AddCastSpellActions`, item use…). (high for the
 fields, med for the action types)
@@ -165,8 +168,8 @@ fields, med for the action types)
 | `+0x15c` | last attacker (GetLastAttacker), set by event 15 | high |
 | `+0x160` | last damager (GetLastDamager) | high |
 | `+0x168` | pointer to 15 ints: damage of the last hit by type (GetDamageDealtByType) | med |
-| `+0x16c` / `+0x16e` / `+0x170` | last attack type (combat feat), last attack mode, last weapon used | high |
-| `+0x4d2` | combat-mode byte: 2 → +5 damage, 3 → +10 damage (no writer found) | low |
+| `+0x16c` / `+0x16e` / `+0x170` | last attack type (combat feat) and attack mode of the attack this creature last *received*, and the weapon this creature last *attacked with*; all set by event 15 | high |
+| `+0x4d2` | combat mode, set by `CSWSCreature::SetCombatMode` `0x0050ee80`; `SetActivityMode` `0x004f2a50` maps activity modes 2..7 to combat modes 1..6, from the player's input message `0x005254c0`, UseSkill and UnequipItem; a change asked for during a round waits in `+0x4d3`. `GetDamageBonus` gives mode 2 +5 and mode 3 +10 damage (whether the GUI ever selects them needs a runtime check) | med |
 | `+0x4dc` | set when a non-player-controlled creature is attacked or attacks | med |
 | `+0x4e0` | in combat (GetIsInCombat) | high |
 | `+0x4e4` | combat timeout, 8000 ms (section 3.6) | high |
@@ -208,48 +211,63 @@ WeaponWield, `+0x09` WeaponType, `+0x0c` DamageFlags, `+0x18` ModelType, `+0x1a`
 
 ### 3.1 Starting a round
 
-`AIActionAttackObject` (`0x005bbbf0`), once the target is in range and in line (the approach is in
-[actions.md](actions.md)), does in order (high unless marked):
+`AIActionAttackObject` (`0x005bbbf0`) does in order (high unless marked):
 
-1. If the game is paused, or the round is paused for an attack animation already in progress,
-   return "still running".
-2. Bail out ("failed", stand to idle animation 10000, clear the round's queued attacks) if the
-   attacker is dead or a downed party member, lacks state bits 0x80/0x04 at `+0x9f0`, or targets
-   itself; return "done" if the target is dead, a downed party member, or not a valid attack
-   target (`0x005b48f0`: doors and placeables always are; a non-player-controlled attacker must
-   perceive a creature target).
+1. Bail out ("failed": clear the interact target, stand to idle animation 10000, leave combat
+   mode with `SetCombatMode(0, 1)`, and drop the round's queued special attacks and the
+   AttackType of the remaining attack records, `0x004d4f60`) if the attacker is dead or a downed
+   party member, lacks state bits 0x80/0x04 at `+0x9f0`, or targets itself; return "done" if the
+   target is dead, a downed party member, or not a valid attack target (`GetCanAttack`
+   `0x005b48f0`: doors and placeables always are; for any other target a non-player-controlled
+   attacker needs a perception entry that sees it (bit 0x01), without bit 0x10, and not of kind
+   4 in bits 0x0c). These checks come before the approach.
+2. Approach the target until it is in range and in line (see [actions.md](actions.md)). Then, if
+   the game is paused, or the round is paused (`+0x958`) for an attack animation already in
+   progress, return "still running".
 3. **Engagement.** `GetCanEngage(target)` (`0x004d2c30`) is true when the target is a creature and
    - its round has not started and it has no attempted attack target (`+0x50c`: it is idle), or
    - it is attacking this creature (its `+0x50c`, or its attempted spell target `+0x524`, is this
      creature), or
    - its round runs without a target (a cast);
 
-   and never when the target is helpless (`GetIsHelpless` `0x005b4880`: debilitated `+0x8ed`, or
-   dying). When the target is the creature the player leads (the client party's first member) it
-   is true only while that creature is attacking (or casting at) this one and its queued click
-   target (`+0x510`, which the player's attack command sets while the creature is busy with
-   something else) is empty or this one: an idle leader is never engaged, so enemies attack it
-   with solo rounds and it does not react. `GetShouldBeMaster(target, canEngage)` (`0x004d2d60`)
-   is false when it cannot engage; otherwise true when the target has no attempted attack target,
-   or has this creature for it and its own Master flag (`+0x9bc`) is 0; and true whenever the
-   attacker is player-controlled (`+0xa88`: the player character and every party member). The
-   Master flag is **not** cleared when a round ends, only by the creature's next
-   `StartCombatRound` (a solo round writes 0), so two creatures that keep fighting each other keep
-   the same master. Two creatures that both carry a stale flag cannot start a pair: each waits
-   for the other (no timeout was found). (high)
-4. **Animation request.** Before the engagement test the action sets 10109 when
-   `GetBothWieldMelee` (`0x004d2b70`) holds: both sides have a right-hand weapon that is not a
-   ranged weapon and whose WeaponWield is not 1 or 8. A creature that cannot engage is reset to
-   10009 (the plain attack). An engaged one keeps 10109 when `GetBothWieldMelee` held or either
-   creature's appearance `MODELTYPE` starts with S or L (`0x005b47c0`), else the action's own
-   animation (10009). The client maps the request to a row of `animations.2da` from the
-   attacker's stance digit (FUN_005f32e0 / FUN_00613da0): 10009 gives the general attacks `g<d>a1/2`
-   (rows 122/123 one-handed, 163/164 two-handed or double, 204/205 two weapons, 87/88 stun baton,
-   247/248 bare hands); 10109 against a creature with a weapon gives the duel attacks `c<d>a1..5`
-   (94-98, 135-139, 176-180), the variant drawn at random, never the one the creature drew last
-   (FUN_0060d0e0, a field of the client creature); 10109 against a simple model gives the
-   monster-fighting `m<d>a1/2` (125/126, 166/167, 207/208). (high for the table, med for which
-   side the client takes `<d>` from)
+   (the first and last cases together amount to "its `+0x50c` is empty, whatever its round
+   state") and never when the target is helpless (`GetIsHelpless` `0x005b4880`: debilitated
+   `+0x8ed`, or dying). When the target is the creature the player leads (the client party's
+   first member) it is true only while that creature either attacks this one (`+0x50c`) with an
+   attempted spell target `+0x524` that is empty or this one, or has no attack target and casts
+   at this one; in both cases its queued click target (`+0x510`, which the player's attack
+   command sets while the creature is busy with something else) must be empty or this one: an
+   idle leader is never engaged, so enemies attack it with solo rounds and it does not react.
+   `GetShouldBeMaster(target, canEngage)` (`0x004d2d60`) is false when it cannot engage;
+   otherwise true when the target has no attempted attack target, or has this creature for it
+   and its own Master flag (`+0x9bc`) is 0; and true whenever the attacker is player-controlled
+   (`+0xa88`: the player character and every party member). The Master flag is **not** cleared
+   when a round ends, only by the creature's next `StartCombatRound` (a solo round writes 0), so
+   two creatures that keep fighting each other keep the same master. (high) Two creatures that
+   both carry a stale flag and target each other cannot start a pair: each waits for the other,
+   and no timeout was found in the action (med: inferred from the code path, needs a runtime
+   check).
+4. **Animation request.** Before the engagement test (and before the approach) the action sets
+   10109 when `GetBothWieldMelee` (`0x004d2b70`) holds: both sides have a right-hand weapon that
+   is not a ranged weapon and whose WeaponWield is not 1 or 8. A creature that cannot engage is
+   reset to 10009 (the plain attack). An engaged one keeps 10109 when `GetBothWieldMelee` held or
+   either creature's appearance `MODELTYPE` starts with S or L (`0x005b47c0`), else the action's
+   own animation (node parameter 3, 10009 for every scheduled attack). The client maps the
+   request to a row of `animations.2da` from the attacker's stance digit `<d>` (a byte at `+0xc5`
+   of the attacker's client data; FUN_005f32e0 / FUN_00613da0): 10009 gives the general attacks
+   `g<d>a1/2` (rows 122/123 one-handed, 163/164 two-handed or double, 204/205 two weapons, 87/88
+   stun baton, 247/248 bare hands); 10109 when neither side is a simple model gives the duel
+   attacks `c<d>a1..5` (94-98, 135-139, 176-180), the variant drawn at random, never the one the
+   attacker drew last (FUN_0060d0e0, a field of the attacker's client creature); 10109 when
+   either side is a simple model (FUN_0060d3e0) gives the monster-fighting `m<d>a1/2` (125/126,
+   166/167, 207/208). With 10109 the stun-baton and bare-hand digits (1, 8) keep their general
+   rows `g1a1/2` / `g8a1/2`. A simple-model attacker always uses `g0a1/2` (276/277), or `m0a1`
+   (282) for 10109 when its model has that animation. A combat feat (the record's AttackType)
+   replaces all of this for a non-simple attacker, by stance digit 1/2/3/4: Critical Strike
+   family (8, 19, 81) rows 87/113/154/195; Flurry family (11, 53, 91) 88/114/155/196; Power
+   Attack family (28, 17, 83) 87/115/156/197; Force Jump (101-103) 386/387/388 (`f<d>a4`, none
+   for digit 1). A cutscene attack plays the forced animation it carries (node parameter 7).
+   (high for the table; the meaning of each stance digit is not traced to its writer)
 5. **Start.** Not engageable: `StartCombatRound(target, bEngaged = 0, bMaster = 0)` on the attacker
    alone (every run of the action restarts the round; the dispatcher 0x3f keeps a second attack
    from being started in the same round). Engageable and master: `StartCombatRound(target, 1, 1)`
@@ -257,17 +275,19 @@ WeaponWield, `+0x09` WeaponType, `+0x0c` DamageFlags, `+0x18` ModelType, `+0x1a`
    (its `+0x4dc` = 1). **Engageable but not master: no round is started; the action returns "still
    running" for as long as the attacker's own round has not been started, so the slave waits for
    its master to start it.** (high)
-6. If the round started: store the combat feat in the current attack record (`AttackType`) when
-   the attacker holds a right-hand weapon, `+0x8e0` is 0 and the action's parameters ask for it;
-   play the requested animation; set the attempted attack target (`+0x50c`); pause the round, paused
-   by the attacker (`SetRoundPaused` `0x004d28f0`), for the action's duration
+6. If the round started: store the combat feat (node parameter 6) in the current attack record
+   (`AttackType`) when the node's action type (parameter 2) is 0xb or a Force jump
+   (`0x005b7b30`) started on this run, `+0x8e0` is 0 and the attacker holds a right-hand weapon;
+   play the requested animation; set the attempted attack target (`+0x50c`); pause the round,
+   paused by the attacker (`SetRoundPaused` `0x004d28f0`), for the action's duration
    (`SetPauseTimer` `0x004d2920`; parameter 4 of the node, **1500 ms** for every attack: the
    scheduled entry's AnimationTime is (g_nCombatActionTimeBias 0 + 3000) / 2); count the action
    (`+0x968`). **When the pair is engaged** (the `GetCanEngage` result, whatever the feat) the
    partner's round is paused too, before the attack is resolved: a master holds its slave with an
    infinite pause (paused by the master, `SetPauseTimer(duration, bInfinite = 1)`), a slave holds
-   its master for the same duration with an ordinary pause (paused by the slave). (high; this
-   corrects an earlier reading in which only a combat feat did this)
+   its master with an ordinary pause (paused by the slave). An ordinary `SetPauseTimer` adds the
+   duration to a pause that is still running, so the slave extends whatever is left of the
+   master's own animation pause. (high)
 7. A pending `NewAttackTarget` replaces the target; then `ResolveAttack` (`0x005bba80`); return
    "done". The attack action lasts one round; the next round's attack comes from outside
    (section 9).
@@ -275,13 +295,15 @@ WeaponWield, `+0x09` WeaponType, `+0x0c` DamageFlags, `+0x18` ModelType, `+0x1a`
 `StartCombatRound(target, bEngaged, bMaster, nCombatFeat, bCutscene)` (`0x004d5f70`): Engaged and
 Master are written first; a slave then ends its current round (`EndCombatRound` with bRunScript =
 RoundStarted: its OnEndRound runs if it had one, and the attack records are cleared, so a blow it
-had in flight is lost). MasterID is the master's id (the attacker's own on the master side, the
-partner's on the slave side); the master also writes MasterID and its slave's id into the slave's
-round and zeroes the slave's timer. Then RoundStarted = 1, Timer = 0, unpaused, PausedBy =
-INVALID, SpellCastRound = 0, RoundLength = **3000 ms**, the five attack records are reset, the
-attack counts are computed (3.2), OffHandTaken = ExtraTaken = 0, the round target and DodgeTarget =
-the target, DeflectArrow = 1, WeaponSucks = 0, the creature's look-at target is set (`0x004f34a0`)
-and its `+0x540` = 3. (high)
+had in flight is lost). On a master call MasterID is the creature's own id, and when engaged the
+master also stores the slave's id in its own `+0x9c4`, copies MasterID and that slave id into
+the slave's round and zeroes the slave's timer; on any other call (a slave, or a solo round) MasterID is the target.
+Then RoundStarted = 1, Timer = 0, Paused = 0, PauseTimer = 0, PausedBy = INVALID,
+SpellCastRound = 0, `+0x93c` = 0, `+0x940` = bCutscene, RoundLength = **3000 ms**, the five attack
+records are reset, the attack counts are computed (3.2), OffHandTaken = ExtraTaken = 0, the round
+target (INVALID if the target is the creature itself) and DodgeTarget = the target,
+DeflectArrow = 1, WeaponSucks = 0, the creature's look-at target is set (`0x004f34a0`) and its
+`+0x540` = 3. InfinitePause (`+0x964`) is not cleared. (high)
 
 Spell rounds start the same way from the cast actions (`AIActionCastSpell` `0x00514af0`,
 `AIActionItemCastSpell` `0x0050f170`) with `SetSpellCastRound` (`0x004d28b0`). (high)
@@ -305,11 +327,21 @@ KOTOR does not use iterative attacks from the base attack bonus. (high)
 
 **Weapon attack type** of the current attack (`GetWeaponAttackType` `0x004d3da0`, stored in the
 record's `+0x3a`): if the creature has no hand weapons but has a creature weapon
-(`HasCreatureWeapons` `0x004d2e20`) → 3 when the 0x4000 slot is filled, else 0; off-hand → 2; an
-extra attack (AdditAttacks or EffectAttacks non-zero and the index past OnHand) → 6 with a right
-weapon, 8 without; otherwise 1 with a right weapon, 7 without. `GetCurrentAttackWeapon`
-(`0x004d4ff0`) maps 1/6 → right weapon, 2 → right weapon if it is a double weapon (WeaponWield 3)
-else left, 3/4/5 → creature weapon slots, 7/8 → gloves. (high)
+(`HasCreatureWeapons` `0x004d2e20`) → 3 when the 0x4000 slot is filled, else 0; off-hand (the
+round's flag `+0x970`) → 2; an extra attack (AdditAttacks or EffectAttacks non-zero and
+CurrentAttack `+0x96c` ≥ OnHand) → 6 with a right weapon, 8 without; otherwise 1 with a right
+weapon, 7 without. `GetCurrentAttackWeapon` (`0x004d4ff0`; type 0 means "compute it now") maps
+1/6 → right weapon, 2 → right weapon if it is a double weapon (WeaponWield 3) else left, 3/4/5 →
+creature weapon slots, 7/8 → gloves. (high)
+
+Nothing advances CurrentAttack (only the constructor and the loader write it), so every attack of
+a round uses record 0 and the 6/8 branch never fires. The melee loop computes the type before it
+sets the attack's off-hand flag, and the flag is not reset at round start, so the `+0x3a` stored
+for an attack carries the previous attack's off-hand state (attack 0 inherits the last attack of
+the previous round). `GetDamageRoll` is unaffected (it calls `GetCurrentAttackWeapon(0)` after
+the flag is set); `+0x3a` is read by `GetCurrentWeaponDamageFlags`, `GetTotalEffectBonus` and the
+impact records. The ranged loop sets the flag first and writes 1 or 2 directly. (high for the
+code; med for the effect in play, needs a runtime check with two weapons)
 
 ### 3.3 Resolving the round's attacks
 
@@ -317,15 +349,20 @@ else left, 3/4/5 → creature weapon slots, 7/8 → gloves. (high)
 the round and stand ready (10001). Otherwise remember the target in `+0x504`, then melee or ranged
 by the right weapon's RangedWeapon. (high)
 
-**Melee** (`ResolveMeleeAttack` `0x005bb890`), for each attack *i* of the round:
+**Melee** (`ResolveMeleeAttack` `0x005bb890`), for each attack *i* of the round (all in the one
+record at CurrentAttack):
 
-1. Record the target and weapon attack type; set the off-hand flag (*i* ≥ OnHand).
-2. **Coup de grace**: if the target creature is debilitated, its total level is below 5 and it is
-   not player-controlled, the record's CoupDeGrace = 1. (high)
+1. Record the target and weapon attack type (computed before the next step, see 3.2); set the
+   off-hand flag (*i* ≥ OnHand).
+2. **Coup de grace**: if the target creature is debilitated or dying, its total level is below 5
+   and it is not player-controlled, the record's CoupDeGrace = 1. (high)
 3. `ResolveAttackRoll` (section 4).
-4. Ask the client for the attack animation and look up the hit time of attack *i*:
-   `combatanimations.2da`, row labelled with the animation number, column *i* + 1 (`hit1`, `hit2`,
-   `hit3`; `GetCombatAnimationHitTime` `0x005b4f30`). (med for the client half)
+4. Ask the client for the attack animation (3.1 step 4; the forced one for a cutscene attack) and
+   look up the hit time of attack *i*: `combatanimations.2da`, row labelled with the animation
+   number, column index *i* + 1 (`hit1`, `hit2`, `hit3`; `GetCombatAnimationHitTime`
+   `0x005b4f30`). Every shipped melee row fills only `hit1`, so a second and third attack get
+   0 ms (their impact is at once), and a fourth or fifth would read `parry0` / `dodge0` (an
+   animation row number) as milliseconds. (high for the lookup, med for the client half)
 5. With a combat feat, `ResolveMeleeSpecialAttack` (`0x005ba8e0`, section 4.5).
 6. On a hit (results 1–3): `ResolveDamage` (section 6) then `ResolvePostMeleeDamage`
    (`0x005b8b00`): KillingBlow = 1 when the record's total damage ≥ the target's current HP; a
@@ -338,12 +375,15 @@ stores the length in the attack record and takes it out of the attacker's round
 (`DecrementRoundLength`, 3.4). It then chooses the target's reaction from the result in the
 current attack record, which holds the **last** attack of the round (the loop overwrites one
 record): 10014 on a hit, 10012 after a deflection, 10011 after a miss, else 10001. When the
-target is not debilitated or dying, **the attacker's round is engaged** and the target's round has
-room for the animation (`CheckActionLength` `0x004d2970`, 3.4), the target's animation is set to
-the reaction **at once**, when the attack begins and not at the hit time, and its round is
-shortened by the same length. Otherwise the reaction is 10001 (none). The client turns 10014 /
-10011 into the row that `combatanimations.2da` pairs with the attacker's row (`damage<d>` /
-`parry<d>`, d = the defender's weapon class): the reaction animations `c2d1..5` / `c2p1..5` are
+target is not debilitated or dying, **the attacker's round is engaged** and either the target's
+round has room for the animation (`CheckActionLength` `0x004d2970`, 3.4) or the attack is a
+cutscene attack, the target's animation is set to the reaction **at once** (ReaxnDelay 0), when
+the attack begins and not at the hit time, and its round is shortened by the same length.
+Otherwise the reaction is 10001 (none). The client (`0x0060d140`) turns 10014 / 10011 / 10012
+into the row that `combatanimations.2da` gives in the attacker's row under `damage<d>` /
+`dodge<d>` / `parry<d>` (which creature supplies this `<d>` is not traced). In the duel rows
+`dodge<d>` and `parry<d>` name the same `c<d>p` animation; in the general rows they differ
+(row 87: `parry2` 134, `dodge2` 131). The reaction animations `c2d1..5` / `c2p1..5` are
 1.47 s long like the duel attacks `c2a1..5`, and carry the same swing times (their swings play
 the `Swingshort` / `Swinglong` sounds, then `Contact` and `HitParry`), so the pair is a
 choreographed exchange. A target busy with its own attack animation (paused by itself) fails
@@ -355,18 +395,22 @@ master holds it while its own attack waits. (high)
 (OnHand + OffHand) are spread at random over the visual shots: for each shot *u*, with *S* shots
 and *A* attacks still to place, the shot carries an attack when `rand() % S < A`. A carrying shot
 gets the off-hand flag as in melee, a full `ResolveAttackRoll`, and the special-attack step
-(`ResolveRangedSpecialAttack` `0x005ba540`); a shot that missed (4–6) may still be deflected or hit
-an energy shield (results 8/10, section 4.6). Hits run `ResolveDamage` and
-`ResolvePostRangedDamage` (`0x005b8c20`). Each shot is queued as an impact at its `shotN` time,
-fired from the hand given by the `switchmask` digit (`AddRangedImpact` `0x004d5b60`); the bolt's
-travel time (≈ distance × 23.8 ms per metre, constant `0x0074b2ec`) becomes ReaxnDelay. The
-`hits` column is read but not used. `ResolveRangedAnimations` (`0x005b6c40`) shortens the
-attacker's round and the (engaged, not helpless, roomy) target's by the action's 1500 ms as in
-melee, but the only reaction it asks for is a dodge (10011) when the attack missed, the attacker is
-engaged and the target holds no lightsaber and is not in one of a few reaction states
-(`0x005b55a0`); a hit asks for none. The flinch of a ranged (or any) hit comes from
-`OnApplyDamage`: an unpaused target whose animation is 10000 / 10001 pauses its round for the
-damage animation and plays 10023. (high for the selection rule, med for travel time)
+(`ResolveRangedSpecialAttack` `0x005ba540`). Every shot starts as a miss (result 4), so any shot
+that missed (4–6), including one that carried no attack, may still be deflected or hit an
+energy shield (`GetCanDeflectProjectile`, results 8/10, section 4.6). Hits run `ResolveDamage`
+and `ResolvePostRangedDamage` (`0x005b8c20`). Each shot is queued as an impact at its `shotN`
+time, fired from the hand given by the `switchmask` digit (`AddRangedImpact` `0x004d5b60`); the
+bolt's travel time (≈ distance × 23.8 ms per metre, constant `0x0074b2ec`, set by
+`0x005b6db0` / `0x005b6e90`) becomes ReaxnDelay. The `hits` column is read but not used.
+`ResolveRangedAnimations` (`0x005b6c40`) takes the action's 1500 ms out of the attacker's round.
+It asks for a dodge (10011) only when no shot of the round hit (result 1–3 or 8–10), the
+*target's* round is engaged, and the target holds no lightsaber in either hand and is not in one
+of a few reaction animations (`0x005b55a0`: 10015-10020, 10061, 10070/10071, 10401, 11000);
+otherwise for none (10001). The dodge is played at once, and the target's round shortened by the
+same length, only when the target is not helpless, `CheckActionLength` passes and the attacker's
+round is engaged (no cutscene exception here). A ranged combat hit gets no flinch from
+`OnApplyDamage`: its 10023 branch is for non-combat damage only (section 6.6). (high for the
+selection rule, med for travel time)
 
 ### 3.4 Timing inside the 3 seconds
 
@@ -374,28 +418,37 @@ A round has a timer, a length and a pause, and the three are what make a pair ta
 unless marked)
 
 - **Round timer.** `IncrementTimer` (`0x004d4c10`) adds the frame time (creature `+0xcc`, ms) to
-  Timer, and runs only while the round is not paused. When Timer ≥ RoundLength the round ends
-  (`EndCombatRound(1)`; a slave's the same, the code only logs whether its master is still found),
-  except that a spell round ends only once the head of the action queue is no longer a cast
-  (action 0xf). A negative timer ends it too (log strings at `0x00746418..0x007464e0`).
-- **Pause.** `UpdateCombat` (`0x004faf20`), every frame, by the round's state: not paused,
-  `IncrementTimer`; paused with `InfinitePause`, only `DecrementPauseTimer` (`0x004d4e80`: the
-  pause stays, and the round ends only if the master has left the world); paused otherwise,
+  Timer; `UpdateCombat` calls it only while the round is not paused (`FinishAttackPause` calls it
+  right after unpausing). In a started round, when Timer ≥ RoundLength the round ends
+  (`EndCombatRound(1)`; for a slave, engaged and not master, MasterID is first set to INVALID and
+  the code logs whether the master was still found), except that a spell round ends only once the
+  head of the action queue is no longer a cast (action 0xf). A negative timer ends it too (log
+  strings at `0x00746418..0x007464e0`). Last, an engaged non-master whose MasterID is its own id
+  has its Engaged flag and MasterID cleared.
+- **Pause.** `UpdateCombat` (`0x004faf20`), every frame while the creature has a round and the
+  server is not globally paused, by the round's state: not paused, `IncrementTimer`; paused with
+  `InfinitePause`, only `DecrementPauseTimer` (`0x004d4e80`: PauseTimer runs down, even below 0,
+  but the pause stays, and the round ends only if the master has left the world); paused otherwise,
   PauseTimer − dt; while it stays ≥ 1 the next impact of the current record is applied when its
-  time has come (impact time < AnimationLength − PauseTimer, `0x004d45e0`, via `ApplyAttackImpact`
-  `0x005b8050`); when it falls below 1 every impact left is applied and `FinishAttackPause`
-  (`0x004f1250`) runs with the overshoot: unpause (which also ends an infinite pause), PauseTimer =
-  0, `IncrementTimer(overshoot)`, `+0x4dc` = 0, and the idle animation (combat ready) if the
-  current one is a combat animation and the creature is not helpless. A **master** then does the
-  same `FinishAttackPause` for its slave, which is how the slave is let go; and the round ends
-  if its target is now dead or down.
-- **Shortening.** `DecrementRoundLength(len, bForce)` (`0x004d3440`), exactly: if RoundLength − len
-  < 0 and len − RoundLength ≤ 1000 − OverlapAmount (always 1000: the arithmetic leaves it
-  unchanged), RoundLength = len + 1; every scheduled action's timer and the Timer become
-  trunc(timer × (RoundLength − len) / RoundLength), and with RoundLength 0 the Timer becomes
-  −len (the round then ends at its next tick); if RoundLength − len < 0 RoundLength is set to len;
-  last, RoundLength −= len. So an attack of 1500 ms takes RoundLength from 3000 to 1500, and a
-  second 1500 ms to 0.
+  time has come (one per frame; impact time < AnimationLength − PauseTimer, `0x004d45e0`, via
+  `ApplyAttackImpact` `0x005b8050`); when it falls below 1 every impact left is applied and
+  `FinishAttackPause` (`0x004f1250`) runs with the overshoot: unpause (which also ends an infinite
+  pause), PauseTimer = 0, `IncrementTimer(overshoot)`, current action type 0, `+0x4dc` = 0, and
+  then, if the creature is not dead, dying or helpless, the round is not a cutscene round, and its
+  current animation is not one of the movement animations (`0x004cae60`: 10002..10004, 10078,
+  10079, 10084..10087, 10093, 10094, 10133), its idle animation (`0x004f0f90`: 10001 in combat,
+  otherwise 10000). A **master** then does the same `FinishAttackPause` for its slave (`+0x9c4`;
+  nothing checks that the slave is still paired with it), which is how the slave is let go; and
+  the round ends if its target is now dead or down.
+- **Shortening.** `DecrementRoundLength(len, bForce)` (`0x004d3440`), exactly, and only in a
+  started round: if RoundLength − len < 0 and len − RoundLength ≤ 1000 − OverlapAmount
+  (OverlapAmount is 0 from the constructor and only a saved game sets it, so the bound is 1000),
+  RoundLength = len + 1; else if RoundLength − len < 0 and bForce (only equip and unequip, 1500 ms),
+  RoundLength = len. Then every scheduled action's timer becomes
+  trunc(timer / RoundLength × (RoundLength − len)) (0 when RoundLength ≤ 0), and so does the Timer,
+  which with RoundLength 0 becomes −len (the round then ends at its next tick); if RoundLength −
+  len < 0 RoundLength is set to len; last, RoundLength −= len. So an attack of 1500 ms takes
+  RoundLength from 3000 to 1500, and a second 1500 ms to 0.
 - **`CheckActionLength(by, len, 0)`** (`0x004d2970`): false when the round is paused by someone
   other than `by` and its PauseTimer is above 0; otherwise, for a started round, whether
   `len` ≤ RoundLength − OverlapAmount − Timer + 1000.
@@ -412,44 +465,64 @@ read from the code above, the frame by frame order of two creatures' updates lef
    paused) now runs: B is engaged and not master, so it starts nothing; it plays its own attack,
    pauses itself for 1500 and **pauses A for 1500**; A reacts with the animation paired with B's
    attack and its RoundLength becomes 0 (B's, shortened once, too).
-4. t ≈ 3000: both pauses are over (A's `FinishAttackPause` makes its timer reach its length, so
-   `EndCombatRound` runs for A, which lets B go and runs A's OnEndRound; B's ends the same way).
-5. Each OnEndRound makes its creature attack again. A drives again: B's Master flag is 0, so
+4. t ≈ 3000: both pauses are over. A's `FinishAttackPause` makes its timer reach its length, so
+   `EndCombatRound` runs for A, which lets B go and runs A's OnEndRound (not when A is the party
+   leader, 3.5). A keeps its Master flag, so the same `UpdateCombat` then runs `FinishAttackPause`
+   on B: when A updates first, B's round, now unpaired and at its length, ends there; otherwise
+   B's own pause end ends it.
+5. Each OnEndRound (for the party leader, the engine's continuation `0x005b6980`, 3.5) makes its
+   creature attack again. A drives again: B's Master flag is 0, so
    `GetShouldBeMaster` favours A, whereas B (A's flag is still up) can only wait.
 
 So each fighter attacks once per 3 s round, as when each had its own round, but the master first
 and the slave 1.5 s later, and each swing is answered by the other's paired parry or damage
 animation. A slave without an attack waiting (a victim that does nothing) only reacts, then runs
 its shortened round out. A solo round (ranged attackers, doors, an idle party leader, a helpless
-target) is 1500 ms of paused attack and 1500 ms of timer. The player's creatures are always the
-master when the target can engage; when an NPC has begun a pair with the leader, the leader's own
-attack takes the master's place and restarts the NPC's round as the slave. (high for the
-mechanism, med for the order of the events within one frame)
+target) is 1500 ms of paused attack and 1500 ms of timer. The player's creatures (`+0xa88`) are
+always the master when the target can engage; when an NPC has begun a pair with the leader, the
+leader's own attack takes the master's place and restarts the NPC's round as the slave. That
+restart (`StartCombatRound` on a slave) first ends the NPC's running round with
+`EndCombatRound(RoundStarted)`, so the NPC's OnEndRound fires. (high for the mechanism, med for the
+order of the events within one frame)
 
-Global pause (`0x004ae980(2)` on the server) freezes everything. (high)
+Global pause (`0x004ae980(2)` on the server) freezes the combat clocks: `UpdateCombat` does nothing
+while it is on. (high)
 
 ### 3.5 Ending a round, OnEndRound and continuing
 
 `EndCombatRound(bRunScript)` (`0x004d4620`), in order (high):
 
-1. Clear RoundStarted, Timer, RoundLength, pause state, DodgeTarget, AdditAttacks and `+0x968`.
-2. If creature `+0xa9c` is set, refill current Force points to the maximum (med: which state sets
-   it is unknown).
+1. Clear RoundStarted, Timer, RoundLength, the paused flag, paused-by and PauseTimer (not the
+   round's own InfinitePause), DodgeTarget, AdditAttacks and `+0x968`.
+2. If creature `+0xa9c` is set, refill current Force points to the maximum. EffectBodyFuel (effect
+   0x62) sets it on apply (`0x004de5b0`) and clears it on removal (`0x004de5d0`).
 3. A master releases its slave (when its Master flag is up, whether or not it is still in a pair):
    the slave's pause (paused flag, paused-by, PauseTimer, InfinitePause) is cleared, and so are its
    Engaged flag and MasterID. The master's own Engaged and Master flags and its slave's id stay.
-4. If the round's target is dead or down (doors: open; placeables: destroyed) clear it, and pick the
-   creature's current attack (or spell) target as the "next" target.
-5. Animation 10001 (combat ready); reset the five attack records; clear the creature's attack,
-   spell and hostile-target fields that point at dead objects.
-6. Unless the creature is the one the player controls, stop its combat stepping (`0x0050ee80`).
+4. Clear the round's target if it is gone, a creature that is dead or down, a door whose OpenState
+   `+0x2cc` is set, or a placeable whose Open flag `+0x338` is set. When a creature target died,
+   note that and take the attempted attack target `+0x50c` (attempted spell target `+0x524` in a
+   spell round) as the "next" target; step 8 uses both.
+5. Animation 10001 (combat ready); reset the five attack records; set to INVALID each of `+0x504`,
+   `+0x50c`, `+0x520`, `+0x524` and `+0x528` whose object is gone or dead (GetDead, not merely
+   dying); free the buffer at `+0xa80` (`0x005b8010`).
+6. Unless the creature is the client party's leader, reset its combat mode: `SetCombatMode(0, 1)`
+   (`0x0050ee80`) sets `+0x4d2` to 0 and clears that mode's activity bit.
 7. **OnEndRound** (`ScriptEndRound`, creature `+0x260`) runs when bRunScript is set, the head of
-   the action queue is not a move-to-point, the round was not a spell round or a cutscene attack,
-   and the creature is neither dead nor down.
-8. Copy current → last fields (`+0x504→+0x53c`, `+0x540→+0x544`, `+0x550→+0x554`, spell
-   fields); NumAOOs = NumCleaves = 1.
+   the action queue is not a MOVETOPOINT (type 1), `+0x93c` (set with SpellCastRound by
+   `0x004d28b0`) and the cutscene flag `+0x940` are clear, the creature is **not the client party's
+   leader**, and it is neither dead nor down. The leader never runs its OnEndRound here.
+8. For the leader only (asm `0x004d4af9..0x004d4b6e`): when bRunScript is set and the client is
+   not paused, with option bit 0x800 ("End Of Combat Round") and the leader's client creature
+   `+0x440` bit 0 set, `RequestAutoPause(1, 5)`; then, unless the round is a cutscene round,
+   `0x005b6980(targetDied, SpellCastRound, nextTarget)`, which schedules the leader's next attack
+   (section 9).
+9. Copy current → last fields: `+0x504→+0x53c` (INVALID after a kill, step 5), `+0x540→+0x544`,
+   and `+0x550→+0x554` when `+0x550` is not 0; in a spell round also `+0x548→+0x54c`, creature
+   `+0x960` = 0 and SpellCastRound cleared. NumAOOs = NumCleaves = 1.
 
-`IncrementTimer` and `UpdateCombat` call it with bRunScript = 1. Because ATTACKOBJECT returns
+`IncrementTimer`, `UpdateCombat` and `DecrementPauseTimer` call it with bRunScript = 1,
+`SetCombatState` (leaving combat) with 0, and `StartCombatRound` (a slave's restart) with RoundStarted. Because ATTACKOBJECT returns
 "done" after resolving one round, the next round depends on who re-issues an attack (section 9).
 Resetting the attack records (step 5) also empties their impact lists: a blow not yet applied when
 a round is ended, or restarted by a master, is lost. (high)
@@ -472,25 +545,38 @@ played at the impact. Looked at with `--log combat` (`A (tag) engages B (tag) as
 
 `CSWSCreature::SetCombatState(bInCombat, nReason)` (`0x004f2610`) (high):
 
-- Entering combat sets `+0x4e0` and the **8000 ms** timeout `+0x4e4`; `+0xac0` keeps the reason
-  (1 = this creature is being attacked, 2 = it is attacking or reacting). A non-player creature
-  entering combat for reason 1 plays a battle cry 30 % of the time (`0x004ec8e0`). A creature of
-  faction 5 (`STANDARD_FACTION_NEUTRAL`; `GetFaction` `0x00513fc0`, faction `+0xc`) never enters
-  combat. (med for the faction-id reading)
+- Entering combat sets `+0x4e0` and the **8000 ms** timeout `+0x4e4`; `+0xac0` takes the reason
+  (1 = this creature is being attacked, 2 = it is attacking or reacting), and a 1 stays until
+  combat is left. A creature that is neither a party member (`+0xa88`) nor the PC (`+0x9d4`),
+  going into combat for reason 1, plays a battle cry 30 % of the time (`0x004ec8e0`). For a
+  creature of faction 5 (`STANDARD_FACTION_NEUTRAL`; `GetFaction` `0x00513fc0`, faction `+0xc`)
+  bInCombat is forced to 0, so the call runs the leave-combat branch below. (med for the
+  faction-id reading)
 - `CSWSCreature::AIUpdate` (`0x004fe210`) counts the timeout down by the frame time and leaves
-  combat when it runs out; stealth is dropped on entering combat for reason 1. Every hostile act
-  resets it: `SignalCombatWith` (`0x004fbbe0`) is called by attacks, by ON_MELEE_ATTACKED on both
-  sides and by damage. It puts the creature in combat when the other party is hostile (reputation
-  < 11) and pulls in every faction-mate within range that is also hostile to it (30 m for
-  player-controlled creatures, otherwise the member's perception range or `ranges.2da` row 11
-  PrimaryRange). (med for the range choice)
-- Leaving combat clears the attack/spell targets, the round's queued attacks and specials,
-  `+0x540..+0x554`, the hostile actor, and ends a running round.
+  combat when it runs out; every update while in combat for reason 1 also drops stealth (unless
+  `+0xa00` bit 0 is set). Every hostile act resets the timeout: `SignalCombatWith` (`0x004fbbe0`) is
+  called by attacks (`AddAttackActions` signals the attacker with itself), by ON_MELEE_ATTACKED on
+  both sides, by damage, by counter-spells and by the placeable and door event handlers. It puts
+  the creature in combat when the other party is hostile (reputation < 11) or is itself. If the
+  creature's plot flag (`+0xf8`) is clear, it also pulls in every faction-mate within range that
+  is hostile to the other party (30 m when the signalling creature is player-controlled, `+0xa88`;
+  otherwise the member's sight range, or `ranges.2da` row 11 PrimaryRange for a non-creature), and
+  gives each the battle-music countdown `0x004f3580(row 1)`. (med for the range choice)
+- Leaving combat zeroes the timeout and `+0xac0`, sets `+0x4dc` = 1, clears `+0x53c..+0x554`, the
+  last hostile actor, the attack and spell targets (`+0x504`, `+0x50c`, `+0x524`, `+0x528`) and the
+  round's target, frees the round's scheduled actions and resets its attack records (the
+  special-attack list is kept), and ends a running round with `EndCombatRound(0)`, so no
+  OnEndRound.
 - `CancelCombat` (routine 54 → `0x004fdaa0`): clear actions, leave combat, end the round.
-  `ClearAttackersInArea` (`0x004fd960`) and `0x004fda20` make everyone targeting a creature leave
-  combat (used when it dies, surrenders or becomes unseen).
-- When the player's leader attacks (`AddAttackActions` `0x004fde40`, direct mode): the PC plays a
-  battle cry 75 % of the time if not yet in combat, other party members 10 %.
+  `ClearAttackersInArea` (`0x004fd960`, called by SurrenderByFaction and by the apply handler of
+  effect 0x4f `0x004dd140`, which makes the creature disappear) and `0x004fda20` (called by
+  OnApplySanctuary and GetIsHiddenFrom) make each creature whose attack, spell or last-hostile-actor
+  field names this creature leave combat. No death path calls them.
+- `AddAttackActions` (`0x004fde40`, direct mode) first calls `SignalCombatWith(self, self)`, which
+  puts the creature in combat, and only then tests "the PC, not yet in combat: battle cry 75 %".
+  That branch therefore never runs in practice, and what does run is the other one: a party member
+  (`+0xa88` = 1) plays a battle cry 10 % of the time on each direct attack order. (med: static
+  reading only, needs a runtime check)
 
 **Battle music** (high for the flow, med for the details). No script plays the battle track of an
 ordinary fight; the creatures' combat code does, through the area's sound object.
@@ -504,17 +590,20 @@ ordinary fight; the creatures' combat code does, through the area's sound object
   MusicBattleChange (430 to 432, one handler `0x005400c0`) call these two slots, and so does the
   combat code below.
 - *Turning it on*: `0x004f3580(creature, row)`. It reads `excitedduration.2da` (a 3-row table,
-  `None` 0, `Damage` 10000, `SpellCast` 10000 ms), and if the row's duration is longer than the
-  creature's countdown `+0x384` it stores it there. Then, if the creature has an area with this sound
-  object and finds a hostile creature within 30 m (the nearest-enemy search `0x004f2de0`, over the
-  creature's perception), it calls `MusicBattle(1)`. Callers: `SignalCombatWith` (3.6, above) for
-  every faction-mate it pulls into the fight, with row 1; the creature event handler `0x004fece0` (the
-  attacked creature with row 2, the attacker with row 1); the placeable's and the door's event
-  handlers. So the music starts at the first hostile act (the attack that begins, not the hit that
-  lands), for the whole area, and every later act renews the countdowns of those it concerns and of
-  their faction-mates within range.
-- *Turning it off*: step 6 of `AIUpdate` (`0x004ed110`, gameloop.md 2.3) runs the countdown `+0x384`
-  down by the creature's update step; when it reaches zero it calls `MusicBattle(0)`. The first
+  `None` 0, `Damage` 10000, `SpellCast` 10000 ms). Only if the row's duration is longer than the
+  creature's countdown `+0x384` does it store it there and then, if the creature has a client object
+  and an area with this sound object and finds a hostile creature within 30 m (the nearest-enemy
+  search `0x004f2de0`, over the creature's perception), call `MusicBattle(1)`. Callers:
+  `SignalCombatWith` (3.6, above) for every faction-mate it pulls into the fight, with row 1; the
+  creature event handler `0x004fece0` for SPELL_CAST_AT (event 2) with a harmful spell (the caster
+  with row 2, the target with row 1); the placeable's and the door's event handlers. Starting an
+  attack signals only the attacker with itself and pulls in no one, so in a melee fight the music
+  starts at the first impact (ON_MELEE_ATTACKED, queued by `SignalMeleeDamage` at the impact, hit or
+  miss), or earlier at damage or a harmful spell. It plays for the whole area, and every later act
+  renews the countdowns of those it concerns and of their faction-mates within range.
+- *Turning it off*: `0x004ed110`, which `AIUpdate` calls right after `UpdateCombat` (step 6,
+  gameloop.md 2.3), runs the countdown `+0x384` down by the creature's update step; when it reaches
+  zero it calls `MusicBattle(0)` if the creature has a client object. The first
   creature to run out switches the music off for the area (a creature that dies stops counting); the
   next hostile act switches it on again. So the battle music lasts until 10 s after the last act of
   whichever creature was stirred up earliest.
@@ -523,20 +612,25 @@ ordinary fight; the creatures' combat code does, through the area's sound object
   which keeps four ambientmusic.2da entries (resource and the three stingers each: day `+0x2c`,
   night `+0x4c`, battle `+0x6c`, and two ambient beds) and three streaming sources (`+0xe0` the music,
   played once; `+0xe4` the ambient bed, looped; `+0x104` the stinger). Its slot `+0x10`
-  (`0x0068e610`): *on*, if the area has a battle track and music is enabled, sets `+0x14`, stops the
-  background track if one plays and starts the battle track (the frame update below does the starting,
-  ten milliseconds later); *off*, if `+0x14` was set, stops the music source, plays a stinger
-  (`0x0068db30`: one of the entry's non-empty `stinger1..3` at random, on the third source at
-  priority 1, once; the files are in `streamsounds/`, e.g. `mus_sbat_townint`), restarts the
-  background music (slot 0, `MusicBackgroundPlay(1)`) and clears `+0x14`. The frame update
+  (`0x0068e610`), in the usual mode (`+0xfc` clear): *on*, if the area has a battle track and music
+  is enabled, sets `+0x14` and starts the battle track at once when the music source is idle; when
+  another track plays it stops it and the frame update below starts the battle track ten
+  milliseconds later; *off*, if `+0x14` was set, stops the music source and, when music is enabled
+  (`+0xec`), plays a stinger (`0x0068db30`: one of the entry's non-empty `stinger1..3` at random, on
+  the third source at priority 1, once; the files are in `streamsounds/`, e.g. `mus_sbat_townint`)
+  and restarts the background music (slot 0, `MusicBackgroundPlay(1)`); then it clears `+0x14`.
+  With `+0xfc` set the slot takes another path: it records the state in `+0x14`, sets a 10 ms delay
+  and plays the day, night or battle track by its sequence state `+0x100` (med: what sets `+0xfc`
+  was not traced). The frame update
   (`0x0068ef80`): when the music source is idle it waits (the battle track 1000 ms, the background the
   area's MusicDelay, `+0xcc`, 30000 by default) and starts the same track again. An area whose
   `MusicBattle` is 0, or whose row has no resource (row 35), plays nothing.
 - *Ours*: `ambience::update_battle` (`lib/scene/ambience.ctx`) reads each creature's combat timer
   (fight.ctx sets it to 8 s at every hostile act and lets it run down: a timer that did not fall was
-  just renewed), gives that creature and its faction-mates within 30 m a 10 s countdown, and calls
-  the same `battle_music` that MusicBattlePlay/Stop use when a creature with a hostile creature within
-  30 m is renewed and when a countdown runs out; `battle_music(off)` plays the stinger.
+  just renewed), gives that creature a 10 s countdown and, when a hostile creature is within 30 m of
+  it, its faction-mates within 30 m too, and calls the same `battle_music` that MusicBattlePlay/Stop
+  use when such a renewed creature has a hostile creature within 30 m and when a countdown runs out;
+  `battle_music(off)` plays the stinger.
 
 ### 3.7 When the target dies mid-round
 
@@ -558,8 +652,9 @@ target dead and returns "done". (high)
 5. A forced result (cutscene attack) is stored and the roll ends.
 6. CoupDeGrace → result 3 (automatic hit), d20 shown as 20.
 7. Assured hit (`+0x8d4`) → result 1.
-8. **Deflection check** `ResolveProjectileDeflection` (`0x005b8e50`, 4.6) with "would hit"
-   = (defense ≤ d20 + modifier); if it deflects, the roll ends with result 8 or 9.
+8. **Deflection check** `ResolveProjectileDeflection` (`0x005b8e50`, 4.6), tried for every ranged
+   attack, including ones that would miss: the "would hit" flag (defense ≤ d20 + modifier) is
+   passed along but nothing on this path reads it. If it deflects, the roll ends with result 8 or 9.
 9. **Natural 1** → miss (result 4), flagged.
 10. If d20 + modifier < defense → miss unless the d20 is 20 (natural 20 always hits).
 11. **Threat**: threat = `GetCriticalHitRoll(offhand)` (4.3); if d20 < threat → hit (1).
@@ -577,14 +672,14 @@ Summed in this order (each term is also written to the record for the log) (high
 | # | Term | Rule |
 |---|---|---|
 | 1 | Base attack bonus | `GetBaseAttackBonus` `0x005a60d0`: Σ over class slots of `cls_atk_*` `BAB` at row (class level − 1) (`CSWClass::GetAttackBonus` `0x005bccb0`, levels 1–60, table loaded by `LoadAttackBonusTable` `0x005bcda0` from `classes.attackbonustable`). Multiclass simply adds. A stats override at `+0x102` would replace it but is never set. |
-| 2 | Dual-wield penalty | Only when wielding an off-hand weapon (left slot, or a double weapon in the right) with WeaponType ≠ 0. On-hand attack: −6, or −4 if the off-hand weapon is "light" (WeaponSize − creature size = −1, `GetRelativeWeaponSize` `0x004ed190`) or a double weapon; then +4 with Two-Weapon Mastery (85) or else +2 with Two-Weapon Advanced (9). Off-hand attack: −10, then +8 Mastery, else +6 Advanced, else +4 Two-Weapon Fighting (3). (OffHandTaken is counted here.) |
+| 2 | Dual-wield penalty | Only for weapon attack type 1 (on-hand) or 2 (off-hand) while wielding an off-hand weapon (left slot, or a double weapon in the right). Extra attacks (types 6/8: Flurry, Rapid Shot, effect attacks), creature-weapon (3) and unarmed (7) attacks take no penalty. On-hand attack, if the off-hand weapon's WeaponType ≠ 0: −6, or −4 if it is "light" (WeaponSize − creature size = −1, `GetRelativeWeaponSize` `0x004ed190`) or a double weapon; then +4 with Two-Weapon Mastery (85) or else +2 with Two-Weapon Advanced (9). Off-hand attack: −10, then +8 Mastery, else +6 Advanced, else +4 Two-Weapon Fighting (3). Each off-hand evaluation also increments OffHandTaken (`+0x998`). |
 | 3 | Special-attack to-hit | `GetSpecialAttackModifier` `0x005a4ec0` by the record's combat feat: Flurry 11 / Rapid Shot 30: −4; Improved 91 / 92: −2; Master 53 / Multi Shot 26: −1; Power Attack 28, Improved 17, Master 83 and Power Blast 29, 18, 82: −3; Force Jump 101/102/103: 0/+2/+4; Critical Strike and Sniper Shot lines: 0. |
 | 4 | Dueling | Right weapon only (no left item) with WeaponWield 2 (one-handed melee) or 4 (pistol): +3 Master Dueling (115), +2 Advanced (114), +1 Dueling (113). |
 | 5 | Close-range ranged | Ranged attack and target within 5 m (distance² ≤ 25): **+10** ("Close Proximity Ranged Bonus", strref 42330). |
 | 6 | Melee vs. ranged | Melee attack against a target whose right weapon is ranged: **+10** ("melee on ranged", strref 42317). |
-| 7 | Ability modifier | Melee: STR modifier, or the DEX modifier when the weapon is a lightsaber (baseitems 8, 9, 10; `GetIsLightsaber` `0x00555690`) and DEX mod > STR mod (`GetUseDexterityForAttack` `0x005a54f0`). Ranged: DEX modifier. A debilitated attacker's DEX modifier is capped at 0. |
+| 7 | Ability modifier | Melee: STR modifier, or the DEX modifier when the weapon is a lightsaber (baseitems 8, 9, 10; `GetIsLightsaber` `0x00555690`) and DEX mod > STR mod (`GetUseDexterityForAttack` `0x005a54f0`). Ranged: DEX modifier. A helpless attacker (debilitated, or a party member at ≤ 0 HP: `GetIsHelpless` `0x005b4880`) has its DEX modifier capped at 0, also where it is compared with STR; STR is never capped. |
 | 8 | Weapon Focus | +1 if the creature has the weapon's `FocFeat`. |
-| 9 | Effects | `GetTotalEffectBonus(1, target)` (`0x004f3fe0`, rules.md): Σ attack-increase effects (type 0x0a) − Σ attack-decrease (0x0b), filtered by weapon attack type (0 = any; types 6 and 8 also match 1/3 and 7), the target's race and alignment group; effects created by the same item do not stack (only the largest counts). |
+| 9 | Effects | `GetTotalEffectBonus(1, target)` (`0x004f3fe0`, rules.md): attack-increase (type 0x0a) and attack-decrease (0x0b) effects matching the weapon attack type (int1; 0 = any; current types 6 and 8 also match 1/3 and 7), the target's race (int2) and alignment group (int4). Effects with int1 = 0 that carry a spell id are grouped by spell id and only the largest of each group counts; typed effects and effects without a spell id always add. Bonuses and penalties are each capped at 20: min(Σ bonus, 20) − min(Σ penalty, 20). |
 
 There is no size modifier and no range penalty. Weapon enhancement and attack-bonus item
 properties reach the roll only as effects the item applies when equipped (rules.md). (high for the
@@ -595,7 +690,8 @@ absence in this function)
 `GetCriticalHitRoll(bOffHand)` (`0x005a5130`), returns the lowest d20 that threatens (high):
 
 1. Weapon = right weapon; for an off-hand attack the left weapon unless the right is a double
-   weapon; if none, the gloves; if still none the threat width is 1.
+   weapon (with an empty right hand the left slot is not looked at); if none, the gloves; if still
+   none the threat width is 1 (the feat multiples below still apply).
 2. *t* = baseitem `CritThreat`; Keen (item property 28) adds *t* again.
 3. Combat feat: Critical Strike (8) or Sniper Shot (31) add *t*; Improved (19, 20) add 2*t*; Master
    (81, 77) add 3*t*.
@@ -619,8 +715,10 @@ difficulty. (high: no reader of that row)
 | 9 | (DEFLECTED) | bolt sent back at the shooter ("Returned!", 42421) |
 | 10 | — | a missed bolt absorbed by an energy shield (visual only) |
 
-`+0x558` keeps the class of the last result: 1–3 hit, 4–6 miss, 8–10 deflected (`0x005b7400`;
-`0xff` = keep). The target's reaction animation follows it. (high)
+`+0x558` on the attacker keeps the class of its last **melee** result: 0 hit (1–3), 1 miss (4–6),
+2 deflected (8–10). Its only writer, `UpdateLastAttackOutcome` (`0x005b7400`), is called only from
+`ResolveMeleeAttack`, so ranged attacks leave it unchanged; its "keep" input (−1) never occurs.
+The target's reaction animation is chosen from the record's result with the same grouping. (high)
 
 ### 4.5 Combat feats ("special attacks")
 
@@ -629,15 +727,15 @@ the record's AttackType. The melee/ranged special-attack step runs only for the 
 the round and first checks the creature still has the feat (`CSWSCreatureStats::HasFeat`
 `0x005a6680`, which returns remaining uses); otherwise AttackType is cleared. (high)
 
-| Feats | Attack | Damage | Defense effect on self | On hit |
+| Feats | Attack | Damage | Defense effect on self | Other |
 |---|---|---|---|---|
 | Power Attack 28 / Power Blast 29 | −3 | +5 | — | — |
 | Improved 17 / 18 | −3 | +8 | — | — |
 | Master 83 / 82 | −3 | +10 | — | — |
-| Flurry 11 / Rapid Shot 30 | −4 | — | dodge AC −4 for 3 s | +1 attack |
-| Improved Flurry 91 / Improved Rapid Shot 92 | −2 | — | −2 for 3 s | +1 attack |
-| Master Flurry 53 / Multi Shot 26 | −1 | — | −1 for 3 s | +1 attack |
-| Critical Strike 8, 19, 81 (melee) | 0 | — | −5 for 3 s | threat ×2/×3/×4 width; stun 6 s unless Fortitude vs. level + STR mod |
+| Flurry 11 / Rapid Shot 30 | −4 | — | dodge AC −4 for 3 s | +1 attack in the round (section 3) |
+| Improved Flurry 91 / Improved Rapid Shot 92 | −2 | — | −2 for 3 s | +1 attack in the round |
+| Master Flurry 53 / Multi Shot 26 | −1 | — | −1 for 3 s | +1 attack in the round |
+| Critical Strike 8, 19, 81 (melee) | 0 | — | −5 for 3 s | threat ×2/×3/×4 width; on any hit, stun 6 s unless Fortitude vs. level + STR mod |
 | Sniper Shot 31, 20, 77 (ranged) | 0 | — | −5 for 3 s | as above with INT mod |
 | Force Jump 101 / 102 / 103 | 0 / +2 / +4 | 0 / +2 / +4 | — | — |
 
@@ -645,8 +743,8 @@ The self-penalty is an AC-decrease effect (type 0x31, dodge, versus everything) 
 is effect type 8 (int 0 = 4) of 6.0 s, added to the record's on-impact list only if the target is
 not immune (`0x005a6a90`) and fails the save (`SavingThrowRoll` `0x005b92b0`, type 1). Flurry and
 Rapid Shot effects come from `0x005ba8e0` (melee) and `0x005ba540` (ranged); damage bonuses from
-`GetSpecialAttackDamageBonus` `0x005a4fb0`. The feat descriptions (strrefs 1133–1155, 1144)
-describe the same numbers. (high)
+`GetSpecialAttackDamageBonus` `0x005a4fb0`. The feat descriptions (feat.2da DESCRIPTION: strrefs
+1133–1155, 1177, 1189, 1251–1253, 1261–1262) describe the same numbers. (high)
 
 ### 4.6 Deflecting blaster bolts
 
@@ -654,14 +752,21 @@ Only ranged attacks can be deflected. (high)
 
 - **Who can** (`GetCanDeflectProjectile` `0x005b78e0`): a target with Jedi Defense (55), Advanced
   (1) or Master (24), not debilitated or down, holding a lightsaber, not busy (`+0xa04`), and
-  facing the shooter (the dot product of its facing and the shooter's facing ≤ 0). Without the
-  feats, a shot that missed can still hit an energy shield (the ammunition type's `ShieldHit` in
-  `ammunitiontypes.2da`), giving result 10.
+  facing the shooter (the dot product of its facing and the shooter's facing ≤ 0).
+- **Misses** (`ResolveRangedAttack` `0x005bb590`): after a ranged miss (result 4–6) the same test
+  runs again. A target that could deflect turns the miss into result 8 ("Deflected!"). Otherwise,
+  if the target lacks the feats or is debilitated/down, the miss becomes result 10 when the target
+  has a Force Shield effect (type 0x6b) and the shooter's weapon in the firing hand uses an
+  ammunition type whose `ShieldHit` (`ammunitiontypes.2da`) is non-zero.
 - **Roll** (`ResolveProjectileDeflection` `0x005b8e50`), made before the attack is resolved:
   deflect = d20 + 6 (Master Jedi Defense) or + 3 (Advanced) + the defender's base attack bonus
-  + two stat bytes `+0x16c/+0x16d` + Σ blaster-deflection effects (types 0x5c/0x5d, int 1). If
-  deflect < d20 + attack modifier → not deflected. If deflect ≥ attack + 6 → result 9 (returned),
-  else 8. Assured deflection (`+0x8dc`) skips the roll: 9 when `+0x8d8`, else 8.
+  + two stat bytes `+0x16c/+0x16d` (only ever zeroed) + Σ int1 of every blaster-deflection effect,
+  types 0x5c **and** 0x5d both added. Only the item-property versions (`0x004e7ce0`/`0x004e7db0`)
+  set int1, so a "decrease" property raises deflection; the script `EffectBlasterDeflection*`
+  (`0x00534cd0`/`0x00534db0`) keep their amount in int0 and add nothing (med: static reading
+  only, needs a runtime check). If deflect < d20 + attack modifier → not deflected. If deflect ≥
+  attack + 6 → result 9 (returned), else 8. Assured deflection (`+0x8dc`) skips the roll: 9 when
+  `+0x8d8`, else 8.
 - **Effect** (`SignalRangedDamage`): 8 and 10 fly off to a deflection point (no damage). 9 applies
   the damage to the shooter (its own damage resistance then immunity are applied) at twice the
   travel time.
@@ -694,7 +799,10 @@ Summed in this order (high unless marked):
 2. Unless bTouch: **natural** (`+0xf5` base + `+0xfe` − `+0xff`), **armour** (`+0xf6` + `+0xf8` −
    `+0xf9`), **shield** (`+0xf7` + `+0xfc` − `+0xfd`). The base values come from equipped items,
    the ±pairs from AC effects without a "versus" condition, both kept up to date by the effect and
-   equipment code (rules.md, party-items-saves.md). (med for who writes them)
+   equipment code (rules.md, party-items-saves.md). (med for who writes them) The apply handler
+   (`OnApplyACIncrease` `0x004d8d80`) treats an effect as unconditioned when its race and alignment
+   fields are empty and ignores the damage-type filter (int 5), so an effect with only a damage-type
+   filter lands here as well and can be counted again in step 4. (high)
 3. **DEX and dodge**: if the attacker is not hidden from the defender (`GetIsHiddenFrom`
    `0x00501950`, below) and the defender perceives it (seen bit): dodge = min(`+0x100` − `+0x101`,
    10) and DEX = `GetDexModifierForDefense(1)` (`0x005a5330`): the DEX modifier, capped by the
@@ -705,24 +813,39 @@ Summed in this order (high unless marked):
 4. **Versus effects**: the defender's AC-increase/decrease effects (types 0x30/0x31) that carry a
    condition (a racial type, an alignment group, or a damage-type filter other than 0x4007): dodge
    type summed (decreases subtract); deflection type: the best of the stats deflection value
-   (`+0xfa`) and matching increases. Natural, armour and shield "versus" effects are gathered but
-   only added when bTouch is set, and the deflection-decrease branch adds instead of subtracting
-   (both look like slips in the original). The damage-type filter compares 1/2/4 against the
-   attacker's weapon flags 0/1/2 (another mismatch), and the script constant
-   `AC_VS_DAMAGE_TYPE_ALL` is 8199 = 0x2007 while the exe tests 0x4007. (med for the reading of
-   these quirks)
-5. **Dueling**: `GetDuelingDefenseBonus` (`0x005a9f50`): +3/+2/+1 for Master/Advanced/Dueling with
-   a single one-handed melee weapon or pistol.
+   (`+0xfa`) and matching increases (touch or not). Matching uses the racial type (int 2) against
+   the attacker's, the alignment group (int 4) against the attacker's GoodEvil (≤ 40 dark side 3,
+   ≥ 60 light side 2, else neutral 1) and the damage-type filter (int 5). The other types are
+   broken (asm `0x005ad8ff`–`0x005ada31`, sum at `0x005add2e`): natural "versus" effects are summed
+   but never added; armour and shield "versus" effects are only gathered when bTouch is 0 but only
+   added when bTouch is 1, so they never count; what a touch attack does add is the untouched
+   starting values, the stats armour and shield effect bonuses `+0xf8` and `+0xfc`, so touch AC is
+   10 + class + DEX/dodge + deflection + those two effect bonuses + dueling − debilitated. The
+   decrease branch meant for deflection tests the shield type (3): the largest matching
+   shield-type AC *decrease* is **added** to AC on every non-touch attack, and deflection
+   decreases are ignored. The damage-type filter compares 1/2/4 against the attacker's weapon flags
+   0/1/2 (another mismatch), and the script constant `AC_VS_DAMAGE_TYPE_ALL` is 8199 = 0x2007 while
+   the exe tests 0x4007, so a script-made AC effect never matches here and counts only through
+   step 2. (high for the code; all look like slips in the original)
+5. **Dueling**: `GetDuelingDefenseBonus` (`0x005a9f50`): +3/+2/+1 for Master/Advanced/Dueling
+   (feats 115/114/113) with a weapon in the right hand, nothing in the left, and baseitems
+   `WeaponWield` 2 (one-handed blades and sabers) or 4 (pistols); the stun baton (WeaponWield 1)
+   does not qualify.
 6. **Debilitated**: −4 (and DEX capped at 0 above).
 
-`GetIsHiddenFrom(defender)` (`0x00501950`) walks the attacker's invisibility effects (type 0x2f):
-the attacker is hidden unless the defender's `+0x8ec` bits see through that kind (1 and 4 by bits
-0x5, 2 by bits 0x6). A SANCTUARY effect (0x3f, not stealth) on the attacker, against a hostile
-defender that has no perception entry of it, makes the defender roll a Will save against the
-effect's DC (int 4); failing it, the defender lets go of the attacker and the attacker counts as
-hidden. Stealth mode plays no part here: a hiding attacker is simply not perceived (perception's
-own contests, [rules.md](rules.md) 5.2), which already denies the defender its dodge. (high for
-the save, corrected from "a stealth-type effect ... Awareness check")
+`GetIsHiddenFrom(defender)` (`0x00501950`, creature defenders only) walks the attacker's effects
+below type 0x40. An invisibility effect (0x2f) whose racial filter (int 1) matches the defender or
+is empty, and whose int 3 is 0 or equals the defender's raw GoodEvil value (likely a slip for the
+alignment group), decides at the first match: kinds 1 and 4 are seen through when the defender has
+`+0x8ec` bits 0x5, kind 2 with bits 0x6, any other kind always hides. A SANCTUARY effect (0x3f, not
+stealth) with the same filters, against a hostile defender (reputation < 11): if the defender has
+no perception entry of the attacker it rolls a Will save against the effect's DC (int 4); failing,
+it drops the attacker as a target, gets a perception entry marked "failed" and the attacker counts
+as hidden; passing, the entry is marked "saved". An existing entry decides by its mark: failed →
+hidden unless the defender has `+0x8ec` bit 0x4; saved → not hidden; unmarked → the save is rolled
+again (no mark is stored). Stealth mode plays no part here: a hiding attacker is simply not
+perceived (perception's own contests, [rules.md](rules.md) 5.2), which already denies the defender
+its dodge. (high)
 
 Touch attacks (script `TouchAttackMelee/Ranged`, `0x00548ca0`) call this with bTouch = 1 and use
 the display bonuses `GetMeleeAttackBonus` (`0x005a7770`) / `GetRangedAttackBonus` (`0x005a7b60`).
@@ -739,13 +862,18 @@ player-controlled, the damage is 0 (or the forced amount). A forced amount (cuts
 used as is with the weapon's damage type. Otherwise (high):
 
 1. `GetDamageRoll(target, bOffHand, bCritical = (result 2), bSneak, bMaximize = 0, bRecord = 1)`.
-2. Add it to the record's total (`+0x38`).
-3. `ResolveOnHitEffect` (`0x005bafa0`): item property 32 (OnHit) on the weapon (subtypes 0–10 from
-   `iprp_onhit.2da`, chance and duration from `iprp_onhitdur.2da`, save DC from cost table 25
-   `Value`, default 20); the effect goes on the record's impact list if the chance roll passes and
-   the target fails the save.
-4. `ResolveDamageVisualEffects` (`0x005b9040`): per damaged type, `damagehitvisual.2da`
-   `VisualEffect` (melee) or `RangedEffect`; a deflection adds visual 4023.
+2. Add it to the record's total (`+0x38`; a total ≤ 0 is replaced rather than added to).
+3. `ResolveOnHitEffect` (`0x005bafa0`), creature targets only: each item property 32 (OnHit) on the
+   weapon that is active in its slot. Subtypes 0–5 (Sleep, Stun, Paralyze, Confusion, Fear, Slow)
+   take chance and duration rounds from `iprp_onhitdur.2da` (row = the property's param value; read
+   only because `iprp_onhit.2da` `Param1ResRef` is 1 for them) and fire only when both are > 0.
+   Ability drain (6), item poison (7) and instant death (10) use 100 %; Slay (8, 9) starts at 0 %
+   and so practically never fires. Saves: Will for 0, 1, 3, 4, 5; Fortitude for 2, 8, 9; Reflex
+   for 6; none for 7 and 10. The DC is `iprp_onhitdc` (cost table 25) `Value` at the property's cost
+   value, default 20. A firing effect goes on the record's impact list.
+4. `ResolveDamageVisualEffects` (`0x005b9040`): for each damaged slot 3–13 (the physical types get
+   none), `damagehitvisual.2da` `VisualEffect` (melee) or `RangedEffect`; a deflection (result
+   8–10) adds visual 4023.
 5. On a critical hit, sound-set entry 0x11 (`0x004f2520`).
 
 `GetDamageRoll` (high):
@@ -755,33 +883,46 @@ used as is with the weapon's damage type. Otherwise (high):
 2. **Difficulty scaling setup**: PC attacker (stats `IsPC`) against a non-PC → percentage =
    `diffsettings.2da` row 3 `MinPCDamagePercent`; NPC against the PC → row 4
    `MaxNPCDamagePercent`; columns by the server's difficulty value (`CSWRules::GetDifficultySetting`
-   `0x00550c30`, table loaded by `0x00550c50`; `****` reads as 0).
+   `0x00550c30`, table loaded by `0x00550c50`; `****` reads as 0). Only against a creature target
+   (attacker stats `+0x6c` against the target's `+0x9d4`).
 3. **Dice**:
    - no weapon, or ItemType 19 (gauntlets) / 20 (forearm bands): unarmed, 1d2 for tiny/small
      creatures, 1d1 for medium and larger (`GetUnarmedDamageRoll` `0x005a4d90`; a folded constant
      selects the 1d4/1d6 monk-style branch never taken);
    - creature weapons (attack types 3–5): item property 51 (Monster damage) → `iprp_monstcost.2da`
-     `NumDice` d `Die`;
+     `NumDice` d `Die`; without that property no dice are rolled (step 9 then gives 1);
    - otherwise baseitems `NumDice` d `DieToRoll`.
-   Each roll goes through `ApplyDifficultyToDamageRoll` (`0x00550d10`, below). On a critical the
-   dice are rolled *multiplier* times and added. With bMaximize the dice give their maximum.
-4. Item property 31 (DamageNone) → 0.
+   Each roll goes through `ApplyDifficultyToDamageRoll` (`0x00550d10`, below), unarmed ones inside
+   `GetUnarmedDamageRoll`. On a critical the dice are rolled *multiplier* times and added. With
+   bMaximize (not used by combat) a weapon gives NumDice × Die once, with no critical multiplier and
+   no difficulty scaling.
+4. Item property 31 (DamageNone) → 0 (weapons only).
 5. With bRecord and damage > 0: store as the base damage in the record's type slot.
 6. **Sneak attack** (bSneak): highest feat 60–69 → 1d6 … 10d6, added once (never multiplied).
 7. **Bonuses** (`GetDamageBonus` `0x005a8be0`): STR modifier for melee attacks only (full
    modifier, also off-hand and two-handed; ranged 0); Weapon Specialization +2 (`SpecFeat`);
-   special-attack bonus (4.5) plus the `+0x4d2` combat-mode bonus. Not critical: added once.
-   Critical: each of the three is added *multiplier* times, then item property 49 (Massive
-   Criticals) adds `iprp_damagecost.2da` `NumDice` d `Die` once.
-8. **Effect damage bonus** `GetTotalEffectBonus(2, target)`: damage-increase/decrease effects
-   (0x0d/0x0e); amounts 1–5 are flat, 6+ index `iprp_damagecost.2da` dice, rolled *multiplier*
-   times on a critical; each is pushed through the target's immunity and resistance and recorded
-   in its own damage-type slot; increases and decreases are each capped at 36. (med: rules.md owns
-   the effect details)
+   special-attack bonus (4.5) plus the `+0x4d2` combat-mode bonus (mode 2: +5, mode 3: +10). Not
+   critical: added once. Critical: each of the three is added *multiplier* times, then item
+   property 49 (Massive Criticals, weapon only) adds `iprp_damagecost.2da` `NumDice` d `Die` once;
+   rows without dice (1–5) add the row number (1–5) as a flat amount.
+8. **Effect damage** `GetTotalEffectBonus(2, target)` (`0x004f3fe0`): damage-increase/decrease
+   effects (0x0d/0x0e) whose race/alignment filters match. Only effects that name an attack type
+   (int 5 ≠ 0, as the item-property handlers set) reach the damage: amounts 1–5 are flat (added
+   once, even on a critical), 6+ index `iprp_damagecost.2da` dice rolled *multiplier* times on a
+   critical; each increase is pushed through the target's immunity and resistance and added to its
+   own damage-type slot and to the record's total; such decreases are subtracted from their slot
+   and the total (as the raw int 0; med). Effects without an attack type (int 5 = 0, which covers
+   every script `EffectDamageIncrease/Decrease`) are grouped by source and only counted in the
+   function's return value, which `GetDamageRoll` stores in record `+0x109` for the debug log and
+   never adds to the damage, so by static reading they deal nothing; the ±36 caps apply only to
+   that return value. (med: surprising, needs a runtime check; rules.md owns the other effect
+   details)
 9. **Minimum 1**: if the weapon damage is < 1 it becomes 1.
 10. **Target mitigation** on the weapon damage, in this order: `DoDamageImmunity` (virtual slot 43,
     `0x004cf160`), `DoDamageResistance` (slot 42, `0x004d0e40`), `DoDamageReduction` (slot 41,
-    `0x004d09e0`); never below 0.
+    `0x004d09e0`), the last with power = the low byte of the attacker's attack effect bonus against
+    the target (`GetTotalEffectBonus(1)` via `0x004fd6f0`); never below 0. Called for any target
+    object.
 
 `ApplyDifficultyToDamageRoll(roll, max, bPCAttacker, bNPCvsPC, pct)` (`0x00550d10`) (high):
 
@@ -796,30 +937,41 @@ With the shipped table: easy raises the PC's rolls by 50–99 % of the maximum a
 
 ### 6.2 What a critical multiplies
 
-Weapon dice, STR, Weapon Specialization, the special-attack bonus and effect damage bonuses are
-multiplied (re-rolled or re-added *multiplier* times). Sneak attack dice and Massive Criticals are
-not. The multiplier is `CritHitMult`, 2 for every shipped weapon. (high)
+Weapon dice, STR, Weapon Specialization, the special-attack bonus and the combat-mode bonus are
+multiplied (re-rolled or re-added *multiplier* times), as are the dice of effect damage bonuses.
+Flat effect damage bonuses (1–5), sneak attack dice and Massive Criticals are not. The multiplier
+is `CritHitMult` (`GetCriticalHitMultiplier` `0x005a52b0`; 2 with no weapon), 2 for every shipped
+weapon. (high)
 
 ### 6.3 Damage types and the damage list
 
-The record keeps 15 damage values indexed by bit: 1 bludgeoning, 2 piercing, 4 slashing,
-8 universal, 16 acid, 32 cold, 64 light side, 128 electrical, 256 fire, 512 dark side, 1024 sonic,
-2048 ion, 4096 blaster; bits 13–14 unused. A weapon's `DamageFlags` picks its slot as the nearest
+The record keeps 14 damage values at `+0x1c` indexed by bit: 1 bludgeoning, 2 piercing,
+4 slashing, 8 universal, 16 acid, 32 cold, 64 light side, 128 electrical, 256 fire, 512 dark side,
+1024 sonic, 2048 ion, 4096 blaster; bit 13 unused. The 15th short (`+0x38`) is the record's total,
+and the damage effect's int 14 is copied from it (6.5). A weapon's `DamageFlags` picks its slot as the nearest
 integer to log₂(flags) (`AddDamage` `0x004d20d0`, `SetDamage` `0x004d2070`): 7 (disruptors: B|P|S)
 lands in slot 3 (universal), 4096 in slot 12. An item without flags counts as 8; an unarmed
-attack as 1. The record's total (`+0x38`) is what the summary log shows; `GetTotalDamageFromList`
-(`0x004d2180`) sums slots 0–13 only (slot 14 is skipped). (high)
+attack as 1. The record's total (`+0x38`) is what the summary log shows and what `OnApplyDamage`
+applies (6.6); the per-type values only drive feedback, hit visuals and the target's `+0x168`.
+`GetTotalDamageFromList` (`0x004d2180`) sums slots 0–13. (high)
 
 ### 6.4 Immunity, resistance, reduction
 
 - **Immunity** (slot 43): percentage = virtual slot 45 (`GetDamageImmunityByFlags`, the 15-byte
   table at `+0x1ac`); absorbed = damage × pct / 100 truncated, at least 1 when pct > 0; negative
-  percentages (vulnerability) increase the damage. Feedback 0x3e (strref 1453). (high)
-- **Resistance** (slot 42): the strongest damage-resistance effect (type 2) whose type mask matches
-  is subtracted; limited resistances lose what they absorb and are removed when used up (feedback
-  0x3f, strrefs 1454/1456). (med)
-- **Reduction** (slot 41): damage reduction against the attack's "power" (strrefs 1455/1457).
-  (med; rules.md)
+  percentages (vulnerability) increase the damage. Several type bits take the lowest percentage,
+  clamped to ±100. Feedback 0x3e (strref 1453, med: the client formatter's 0x3e case was not seen
+  using it). (high)
+- **Resistance** (slot 42): the strongest damage-resistance effect (type 2) whose type mask (int 0)
+  matches is subtracted (int 1). A limited one (int 2 ≠ 0) has its limit cut by the whole incoming
+  damage (twice that when any resistance effect's int 3 mask matches); when the limit would drop
+  below 1 it absorbs only what was left and is removed. Then a creature with IMPROVED_TOUGHNESS
+  (feat 123) takes 2 less and with WOOKIE_ENDURANCE (feat 95) another 2 less, on every call and for
+  any damage type, with or without a resistance effect. Never below 0. Feedback 0x3f/0x42 (strrefs
+  1454/1456). (high for the code)
+- **Reduction** (slot 41): the strongest damage-reduction effect (type 0xc; int 0 amount, int 1
+  power) absorbs when the attack's power is below the effect's; its limit (int 2) counts down by
+  the incoming damage. Feedback 0x40/0x43 (strrefs 1455/1457). (med; rules.md)
 
 ### 6.5 Delivery
 
@@ -829,23 +981,30 @@ At impact time (section 3.4) `ApplyAttackImpact` (`0x005b8050`) (high):
 - for melee attacks and for ranged shots that carried an attack: send the combat-log messages
   (section 10);
 - melee: `SignalMeleeDamage(target, 1)` (`0x005b75d0`): queue ON_MELEE_ATTACKED (event 15, the
-  attack record as data); on a hit, create a damage effect (type 0x26, creator = attacker, subtype
-  0x16, ints 0–14 = the damage list, 15 = 1, 16 = AnimationLength / 2, 19 = 1 "combat damage",
-  21 = 1 "no feedback") and queue it as APPLY_EFFECT (event 5); queue the record's feedback
-  messages (event 22), apply its on-impact effects to the target, queue item on-hit spells (event
+  attack record as data); on a hit (result 1–3), create a damage effect (type 0x26, instant,
+  creator = attacker, 22 ints: 0–13 = the damage list, 14 = the record total, 15 = 1,
+  16 = AnimationLength / 2, 19 = 1 "combat damage", 21 = 1 "no feedback") and queue it as
+  APPLY_EFFECT (event 5); queue the record's feedback messages (event 22), apply its on-impact
+  effects to the target (queued as event 5 for a non-creature), queue item on-hit spells (event
   19) on the attacker. A miss by the controlled character updates the client's target display.
-- ranged: `SignalRangedDamage` (`0x005b6f30`): the same, with the effect delayed by the travel
-  time, int 20 = 1, deflections as in 4.6, and a stun effect on impact reported by `0x005b60f0`.
+- ranged: `SignalRangedDamage` (`0x005b6f30`): event 15 only on the record's first impact;
+  feedback delayed by the travel time; a damage effect like the melee one (int 16 = travel ms,
+  int 20 = 1, delayed by the travel time) for every result except a deflection (8, 10), misses
+  included (harmless: their total is 0); result 9 sends the record total back at the shooter
+  through the shooter's own resistance and then immunity, with twice the delay (4.6); stun effects
+  on impact are reported by `0x005b60f0`.
 
 ### 6.6 Applying the damage (`CSWSEffectListHandler::OnApplyDamage` `0x004dfa40`)
 
 The effect-type 0x26 apply handler (registered by `0x004e4a10`). (high unless marked)
 
-1. Ignore a dead or downed target. Plot targets (and the debug no-damage flag) zero every
-   non-negative type. Read the effect's ints.
-2. **Doors and placeables**: for non-combat damage apply immunity, resistance and (for
-   non-physical types) reduction to the total, and an object in its 10022 or 10076 animation
-   replays it (event 9) and shows 10014; `DoDamage`; queue ON_DAMAGED (script event 4) with the amount; feedback.
+1. Ignore a dead or downed target. Read ints 0–14; plot targets (and the debug no-damage flag)
+   zero every non-negative one. The amount is int 14 (the record total, 6.3); when it is 0 and the
+   target is not plot, stop here. Also read 16 (pause ms), 17 (damage flags of non-combat damage),
+   19 (combat damage), 20 (ranged), 21 (no feedback).
+2. **Doors and placeables**: for non-combat damage apply immunity and resistance to the total, and
+   reduction (power 0) when the flags include a physical type (`& 0x4007`); an object then in its
+   10022 or 10076 animation replays it (event 9) and shows 10014. Then `DoDamage`; queue ON_DAMAGED (script event 4) with the amount; feedback.
    If now dead: a door is bashed open (plot set, `0x00589c70`); a placeable gets a death effect,
    or, when it opens rather than dies (`+0x324`), is set plot, plays 10075 and opens after 1 s.
    The attacker's actions are cleared.
@@ -854,17 +1013,23 @@ The effect-type 0x26 apply handler (registered by `0x004e4a10`). (high unless ma
    hardness, int 2 (limit) 0. `GetDamageRoll` (6.1 step 10) calls the target's `DoDamageImmunity`, `DoDamageResistance`, `DoDamageReduction` for any target, so a door
    or placeable takes each weapon hit less its hardness (never below 0). `CurrentHP` is held to `HP` by a template load (`LoadDoor`'s last argument). A Static door is
    set Plot. (high)
-3. **Creatures**: non-combat damage gets immunity, resistance and reduction here (combat damage
-   already had them). Last damager `+0x160` = the creator; mark hostility (`SetLastHostileActor`)
-   unless the effect is one of the target's own type-0x23 effects; store the per-type amounts at
-   `+0x168`; for melee combat damage run `0x005b7d10` (damage shields, rules.md) (med).
-4. If the total > 0: `TakeDamage` (6.7); a creature casting a concentration-breakable power
+3. **Creatures**: non-combat damage gets immunity, resistance and (physical types only, power 0)
+   reduction here (combat damage already had them), and every non-negative per-type entry is then
+   replaced by the mitigated total. Last damager `+0x160` = the creator; mark hostility
+   (`SetLastHostileActor`) unless the creature's `+0x9e0` is set and this effect is one of its own
+   type-0x23 effects; store the 15 ints at `+0x168`; for melee combat damage run `0x005b7d10`
+   (damage shields, type 0x3d, rules.md) (med).
+4. If the total > 0: `TakeDamage` (6.7). A creature casting a concentration-breakable power
    (spells.2da flag `+0x134` of the current spell; casting animations 10015/10016/11000) rolls d20
-   against 10 + spell level + damage and is interrupted (animation 10014, feedback, effect type
-   0x1e) when it rolls lower; for non-combat damage the target plays 10302 or, for electrical or
-   dark-side damage while idle, 10023 with its round paused.
+   against 10 + spell level (innate level, or the casting class's level) + damage; when it rolls
+   lower it loses the action (animation 10014, a type-0x1e effect) but still pays the power's
+   Force cost. Only for non-combat damage (int 19 = 0, so never for weapon hits, which set it to 1)
+   and a creature that is not debilitated: with no electrical (slot 7) or dark-side (slot 9) damage
+   it plays 10302; with either, and only while idle (animation 10000/10001), its round is paused
+   for int 16 ms (unless already paused) and it plays 10023; otherwise no reaction animation.
 5. **OnDamaged** (`ScriptDamaged` `+0x250`) runs immediately unless the creature is the PC
-   (`+0x9d4`), dead, down, or the party is in a state `0x00563a00` reports. (med for the last)
+   (`+0x9d4`), dead, down, or the current party leader (`CSWPartyTable::IsCreatureLeader`
+   `0x00563a00`).
 6. Feedback (unless int 21): the damage message to the target, and to the attacker when their
    factions differ.
 7. A dead target, or a party member that is now down, gets a **death effect** (type 0x13, creator
@@ -890,8 +1055,9 @@ The effect-type 0x26 apply handler (registered by `0x004e4a10`). (high unless ma
 
 KOTOR has none. The event BROADCAST_AOO (20) exists in the event table, but nothing queues it and
 the creature event handler ignores it; the round's NumAOOs/NumCleaves are only reset and saved;
-`diffsettings.2da` rows 1 (`NoAoOWithRanged`) is never read and row 2 (`NoAoOWithPotion`) only
-gates a client call when the PC uses a stim (ItemType 25) in `AIActionItemCastSpell`. (high)
+`diffsettings.2da` row 1 (`NoAoOWithRanged`) is never read and row 2 (`NoAoOWithPotion`) only
+decides, when the PC uses a stim (base item type 25) in `AIActionItemCastSpell`, whether an empty
+function (`0x0060e760`) is called, so it has no effect either. (high)
 
 ## 8. Death and going down
 
@@ -912,53 +1078,75 @@ gates a client call when the PC uses a stim (ItemType 25) in `AIActionItemCastSp
 2. Notify its client object (`0x00610950`, med), clear its look-at target (`0x004f34a0`),
    `ClearAllActions(1)`.
 3. **Placeable**: `0x00587770`, animation 10072. **Door**: destroyed state, and its linked door
-   gets a death effect too. Both then signal OnDeath (script event 10) and are destroyed after
-   2000 ms (event 11).
+   gets a death effect too (unless that door already plays animation 10072, which stops the pair
+   from killing each other again). Both then signal OnDeath (script event 10, queued with no delay)
+   and are destroyed after 2000 ms (event 11). Any other kind of object: nothing.
 4. **Creature** (skipped when `+0x9f0` is already 0):
-   - a "magical" death (effect subtype bits 8) against a creature immune to death (immunity 32)
-     with a spell id only gives feedback 0x7f;
-   - killer `+0x154` = the creator; `AwardKillXP` (`0x004fb1e0`, 8.3); unless player-controlled,
-     leave the party/faction structures (`0x005bfa70`);
+   - the client notes the dead creature's id (client `+0x2d4`, via `0x005edc70` → `0x005f2fe0`)
+     when it is player-controlled (med);
+   - a "magical" death (effect subtype bits 8) caused by a spell (spell id `+0x1c` set) against a
+     creature immune to death (immunity 32, checked against the killer) sends feedback 0x7f to the
+     victim and to the killer, and the creature lives;
+   - killer `+0x154` = the creator; `AwardKillXP` (`0x004fb1e0`, 8.3); unless player-controlled
+     (`+0xa88`), the corpse moves into the Neutral standard faction (`0x005bfa70` with the faction
+     manager's field 0, see 8.5), so it no longer counts as an enemy;
    - `EndCombatRound`, clear the round target; run **OnDeath** (`ScriptDeath` `+0x280`)
      immediately;
    - death animation: unless the animation state `+0x4c4` is 3, 4 or 14, pick state 3 or 4 at
      random and play 10000 (`0x004efef0`);
    - `+0x19c` = 0, state flags `+0x9f0` = 0, HP = −11 (if higher), `0x004eded0`, `0x004f6f30`;
      remove every effect except those with duration type 3 or 4 and those `0x004df420` keeps
-     (`removefxondeath.2da`, rules.md) (med);
+     (their script type is listed in `removefxondeath.2da` `EffectType`; a visual effect also
+     stays when the listed type is 0x15 and `0x004ca960` accepts its id; rules.md); HP = −11
+     again (if higher);
    - if the creature is **not** a downed party member: with int 0 = 0 (or the creature not
      destroyable) queue DESTROY_OBJECT after `appearance.2da` `DestroyObjectDelay` seconds
-     (default 3); with int 0 = 1 also apply visual effect 6003 first. Encounter bookkeeping
-     (`+0xa24`, `0x00594310`, `+0xa28`);
+     (default 3). With int 0 = 1, apply visual effect 6003, queue the same destroy, and do the
+     encounter bookkeeping now (`+0xa24`, `0x00594310`, `+0xa28` = 1). Otherwise the
+     DESTROY_OBJECT handler does it (8.4), so a creature that is never destroyed never reports to
+     its encounter;
    - if it **is** a downed party member: send script event 10 to the module, which runs
      `Mod_OnPlrDeath` (module `+0xf8`; GetLastPlayerDied = `+0x16c`). The shipped modules name
      `nw_o0_death`, which does not exist, except `k_pkor_pcdeath` and `k_dan_death`;
-   - sound-set entry 0x10; if client option bit 0x4000 ("Party Member Down" auto-pause) is set and
-     another party member is up, pause (reason 9); if it is the player's creature, switch control
-     to the next party member who is up (`0x005edf80` → `0x005f7960`) and close panels
-     (`0x0062b150`).
+   - sound-set entry 0x10; if the dead creature is player-controlled, client option bit 0x4000
+     ("Party Member Down" auto-pause) is set and another party member is up, pause (reason 9);
+     if it is the player's creature, switch control to the next party member who is up
+     (`0x005edf80` → `0x005f7960`) and close panels (`0x0062b150`).
 
 What brings a downed party member back up, and the "Your entire party has been killed" end
 (strref 42351): `UpdatePartyDeath` (`0x004b6da0`, gameloop.md 1.3) gets the downed up after 5 s in which no hostile
 creature perceives a party member (real time; while anyone is down a 1 s scan of the area's
 creatures looks for one that is not player-controlled, has reputation < 11 toward a member and a
 seen perception entry of a party member, `IsPerceivingPartyMember` `0x004f7650`; finding one resets
-the 5 s), then moves each downed member to a free spot within 5 m, applies a RESURRECTION effect
-(type 4: HP 1) and sets `+0xf0`; unless solo mode, members more than 40 m from the first are moved
-back to their formation places (high). It starts the party-wipe sequence when every member is down
-(slow motion, death camera, message box and fade, then the main menu: gameloop.md 6.6). Party members up and out of combat
-regenerate in `AIUpdate` using `regeneration.2da` (InCombat/OutOfCombat × health/Force, per
-second as a percentage of the maximum); the shipped table gives only out-of-combat Force
-regeneration (1 %/s). (high for the regeneration code)
+the 5 s; the reputation is taken toward the last member of the client party list), then moves each
+downed member to a free spot within 5 m, applies a RESURRECTION effect (type 4) and sets `+0xf0`
+(`IsRaiseable`); unless solo mode, members more than 40 m from the first are moved back to their
+formation places. Nothing of this runs during slow motion or a load. (high) The resurrection
+handler (`0x004e13c0`) acts only when `IsRaiseable` is already set: it raises HP to 1 if below 1,
+clears actions, sets `+0x9f0` = 0xffff and commandable, and drops temporary effects of type 0x39;
+setting `+0xf0` after applying the effect only matters for a later resurrection (high). It starts
+the party-wipe sequence when every member is down
+(slow motion, death camera, message box and fade, then the main menu: gameloop.md 6.6).
+Player-controlled creatures that are neither dead nor down regenerate in `AIUpdate`
+(`0x004fe210`) using `regeneration.2da` (health/Force, per second as a percentage of the maximum).
+The OutOfCombat row applies out of combat and also in combat that the creature entered by
+attacking (`+0xac0` = 2); the InCombat row applies only when it was put into combat by being
+attacked (`+0xac0` = 1). The shipped table gives only OutOfCombat Force regeneration (1 %/s), so a
+party member that started the fight keeps regaining Force. (high for the regeneration code)
 
 ### 8.3 XP for a kill (`CSWSCreature::AwardKillXP` `0x004fb1e0`)
 
-Only when the dead creature is not the PC, not a party member, and its faction's standing towards
-the player's is ≤ 10 (hostile). XP = `GetKillXPValue` (`0x004f19e0`, formula in rules.md) ×
-(1 + `npc.2da` row 10 `PercentXP` / 100 × party count), rounded, given to the party
-(`0x005653a0`). Feedback "<killer> killed <victim>: N XP" (strref 1407) goes to the killer (an
-area of effect's creator stands in for it) or to the player creature. (high for the gate, med for
-the party-count term)
+Only when the dead creature is not the PC, not a party member, and the Player row of the live
+reputation table at its faction's column (`0x0052b420`) is ≤ 10 (hostile). XP =
+`GetKillXPValue` (`0x004f19e0`, formula in rules.md), times (1 + `npc.2da` row 10 `PercentXP` /
+100 × the party table's NPC count) only when that cell is above 0 (shipped: 0, so no bonus),
+**rounded up** (`ceil` `0x006fc880`), given to the party (`CSWPartyTable::AddExperience(xp, 0)`
+`0x005653a0`). Feedback "<killer> killed <victim>: N XP" (message 4, strref 1407, `0x004ec500`)
+goes to the killer, or to the creature that laid it when the killer is a trigger (a mine: trigger
+`CreatorId` `+0x2e4`), else to the player creature. It reaches every client-controlled member of
+that creature's faction in the same area within 30 m. Then, when client option bit 0x10 is on, "XP"
+(strref 38551) floats over the corpse (`0x005edea0` → `0x006027c0`, type 3). (high for the gate
+and formula, med for the feedback recipients)
 
 ### 8.4 Destruction and the body bag
 
@@ -967,28 +1155,39 @@ the PC, is destroyable (`+0xec`, GFF `IsDestroyable`; also `IsRaiseable` `+0xf0`
 `+0xf4`) and not player-controlled (high):
 
 1. If dead: `SpawnBodyBag` (`0x004ce220`) and tell the client which bag belongs to the corpse.
-2. Fade out after `appearance.2da` `FadeDelayOnDeath` (`0x004ce8a0`, `0x004ce9a0`).
-3. Leave every trigger, door and placeable occupant list in the area; encounter bookkeeping; delete
-   the object.
+2. If the event carries no data: fade out after `appearance.2da` `FadeDelayOnDeath` (`0x004ce8a0`
+   stores the delay, `0x004ce9a0` records that the table had none; both on the player's client
+   object entry for this creature, else on the server object).
+3. Remove it from the area and tell every creature that perceived it that it vanished
+   (`0x004f0fd0`); leave every trigger, door and placeable occupant list in the area; encounter
+   bookkeeping unless done at death (`+0xa28`); delete the object.
 
 `SpawnBodyBag` (high): body-bag row = stats `BodyBag` (`+0x9da`) or else `appearance.2da`
 `BODY_BAG`; if `bodybag.2da` `Corpse` is 0 and the creature has nothing to drop (`0x004f3770`,
-`0x004edd60`), no bag. Otherwise build a placeable (appearance from `bodybag.2da` `Appearance`, name
-from `Name`, IsBodyBag = 1, owner = the creature; a corpse row makes it non-plot and usable), place
-it at the creature's position and facing, and queue SPAWN_BODY_BAG (event 17) to the area after
-500 ms. `SetIsDestroyable` (routine 323) queues a destroy after 3000 ms when a dead creature
-becomes destroyable.
+`0x004edd60`), no bag. Otherwise build a placeable (appearance from `bodybag.2da` `Appearance`,
+falling back to the `appearance.2da` `Body_Bag` row's when that cell is empty; name from `Name`),
+**move the creature's items into it** (`TakeItemsFromObject`), and set IsBodyBag = 1 (`+0x440`) and
+owner = the creature (`+0x448`). A normal bag is plot and DieWhenEmpty (`+0x334`). A corpse row
+gives IsCorpse = 1 (`+0x44c`), not plot, not DieWhenEmpty, and no inventory (`+0x324`) if it got
+no items. Place it at the creature's position and facing, and queue SPAWN_BODY_BAG (event 17) to
+the area after 500 ms. A placeable that dies drops a bag only if it holds items (its own `BodyBag`
+row, `+0x394`). `SetIsDestroyable` (routine 323) queues a destroy after 3000 ms whenever it is set
+TRUE on a dead creature that is neither the PC nor player-controlled (it also clears the creature's
+interact target).
 
 ### 8.5 Surrender (`CSWSCreature::SurrenderToEnemies` `0x00518990`)
 
 Routines 476 `SurrenderToEnemies`, 762 `SurrenderRetainBuffs` and the action `0x41` (`ActionSurrenderToEnemies`, 379) end in
-this function (`bRetainBuffs` is 0 for 476 and 379):
+this function (`bRetainBuffs` is 0 for 476 and 379). All three do nothing for a caller whose stats `+0x6c` is set (the
+PC flag, med), and the action fails for the PC (`+0x9d4`).
 
-1. `CancelCombat` and `CSWSObject::RemoveAllEffects(bRetainBuffs)` (`0x004d0940`: every effect but the equipped, innate and
-   SETSTATE_INTERNAL ones, and with the flag those the object made itself; it also sets the object commandable again) on the caller.
+1. `CancelCombat` and `CSWSObject::RemoveAllEffects(bRetainBuffs)` (`0x004d0940`: every effect but those of duration type 3
+   or 4 (equipped, innate) and type 9 SETSTATE_INTERNAL, and with the flag those the object made itself; if the object had
+   any effects it is also made commandable again) on the caller.
 2. The same on every creature of the caller's area within 250 m (a squared distance of 62,500) for which
    `GetReputation(caller, other) < 11`, i.e. everyone the caller counts an enemy: the player and the party, for Freyyr. A knocked
-   down player is on his feet and commandable, so the `ActionStartConversation(PC)` that follows is not dropped.
+   down player is back on their feet and commandable, so the `ActionStartConversation(PC)` that follows is not dropped (med:
+   static reading, needs a runtime check).
 3. The caller is put into a faction through `FUN_005bfa70(faction, id, 0)`, the routine `ChangeToStandardFaction` and `AddToParty`
    use; `OnApplyDeath` does the same for a dead non-player creature. The faction is `*factionManager`, the first field of
    the manager at `CServerExoAppInternal+0x10054`. The manager keeps seven named pointers (fields 0 to 6) that
@@ -998,8 +1197,9 @@ this function (`bRetainBuffs` is 0 for 476 and 379):
    `"player"` (6). So the surrendering creature (and a creature that dies) moves into **Neutral, row 5**, not into
    Surrender_1 (row 9, which nothing in the binary names): its row is 50 toward every standard faction but
    Endar_Spire's (0), and theirs toward it is 50, so nobody takes the fight up again. (When repute.2da cannot be read
-   the fallback `0x0052bce0` makes the same seven factions with ids 0 to 6 in the order player, hostile_1, friendly_1,
-   hostile_2, friendly_2, neutral, insane, which agrees.) A script that wants the fight back sets a standard
+   the fallback `0x0052bce0` makes the same seven factions with ids 0 to 6 in the order player, hostile_1, hostile_2,
+   friendly_1, friendly_2, neutral, insane: neutral is 5 there too, but hostile_2 and friendly_1 are swapped relative to
+   repute.2da.) A script that wants the fight back sets a standard
    faction itself (`k_pkas_freyyrfin`, the "Now die!" branch of Freyyr's talk). Ours: the dead keep their faction.
 
 Ours: `fight::surrender` (lib/engine/fight_state.ctx).
@@ -1015,40 +1215,67 @@ The engine (high):
 - fires, in this order for one hit: **OnAttacked** when ON_MELEE_ATTACKED (event 15) is handled
   (immediately at impact; it records last attacker, attack type/mode and weapon, hostility, and
   runs `ScriptAttacked` `+0x248` unless dead or down), then **OnDamaged** when the damage effect is
-  applied (6.6), then **OnDeath** (8.2); **OnEndRound** at the end of every round (3.5);
+  applied (6.6), then **OnDeath** (8.2); **OnEndRound** at the end of a round, for every creature
+  but the client party's leader, when the round ran scripts and was neither a spell round
+  (round `+0x93c`) nor a cutscene attack (`+0x940`), the head of its action queue is not a
+  move-to-point, and it is neither dead nor down (3.5);
 - for the player: `ActionAttack` (routine 37) queues a scheduled attack for one round plus the
   combat-step action (see actions.md); the player's own clicks go through `AddAttackActions` too.
-- for the client party's leader, at the end of each round after OnEndRound (unless a cutscene
-  round; `EndCombatRound` calls `0x005b6980(targetDied, spellRound, nextTarget)`): while the round's
-  target lives, is hostile (reputation < 11) and nothing else is scheduled, it schedules another
-  plain attack on it (`AddAttackAction`, 1500 ms) — this is what keeps the player's character
-  fighting; when the target died (or nothing valid is left), it looks for the nearest enemy
-  (`0x004f2de0`: a creature hostile to it, alive, not dying, seen, with a clear line of sight from
-  1.5 m up, nearest by distance between their edges) within `GetMaxAttackRange` + 2 m
-  (`0x004ffad0`), makes it the attempted attack target and the client's selected target
-  (`0x005edd70`), turns the retargettable scheduled attacks on it
-  (`UpdateAttackTargetForAllActions` `0x004d3e50`) and schedules an attack; with none it stands
-  (animation 10000) and leaves combat mode. The same tail asks for the "End Of Combat Round"
-  auto-pause (reason 5, option bit 0x800) when the leader is in combat mode. (high for the flow,
-  med for the arguments' meaning)
+- at the end of each round (`EndCombatRound` `0x004d4620`, 3.5 steps 7-9), a
+  creature that is not the client party's leader leaves combat mode (`0x0050ee80`) and may run
+  OnEndRound (above). The leader runs **no** OnEndRound. When the round ran scripts, the game is
+  not already paused, client option bit 0x800 ("End Of Combat Round" auto-pause) is on and the
+  leader is in combat mode (`+0x440` bit 0), the leader asks for auto-pause reason 5. Then, unless
+  a cutscene round, it alone gets `0x005b6980(targetDied, spellRound, nextTarget)`. nextTarget is
+  its attempted attack target `+0x50c` (spell target `+0x524` in a spell round) taken when the
+  round's target died, else none.
+  - The target is the round's target (the spell target `+0x524` in a spell round). While that
+    target is alive and up, the leader too, it is hostile (reputation < 11) and nothing else is
+    scheduled, the leader gets another plain attack on it (`AddAttackAction`, 1500 ms; in a spell
+    round only within `GetMaxAttackRange` + 2 m). This is what keeps the player's character
+    fighting.
+  - If the target is still there but no longer attackable and did not die, nothing happens.
+  - When the target died, or there is no target and nothing is scheduled, it looks for the
+    nearest enemy within `GetMaxAttackRange` + 2 m (`0x004ffad0`) with `0x004f2de0`. That
+    function takes a creature that is hostile to the leader, alive, not dying, seen, with a clear
+    line of sight from 1.5 m up, nearest by distance between their edges. The search uses
+    nextTarget's seen list when nextTarget is a creature, else the leader's, measuring from the
+    leader either way (med).
+  - With an enemy found: make it the interact target, the attempted attack target (`+0x50c`,
+    also `+0x84`) and the client's selected target (`0x005edd70`), set `+0x4e8`, turn the
+    retargettable scheduled attacks on it (`UpdateAttackTargetForAllActions` `0x004d3e50`) and
+    schedule an attack. A non-creature result stops the attack.
+  - With no enemy: clear the interact target, stand (animation 10000), leave combat mode and
+    clear the special attacks.
+
+  (high for the flow, med for the arguments' meaning)
 
 The shipped AI (`k_ai_master` with event numbers 1003/1005/1006/1007 from the default
 `k_def_*` scripts) decides what happens next: on end of round and when attacked it calls
-`GN_DetermineCombatRound`, which issues the next attack, talent or move; on damage it may retarget
-or approach an unseen damager; on death it shouts to allies. So "keep attacking until the target
-dies" is the AI's job, round by round. (high for the script names, med for the summary)
+`GN_DetermineCombatRound`, which issues the next attack, talent or move (when attacked, only if it
+has no attack or spell target or its action queue is empty); on damage it may retarget or approach
+an unseen damager; on death it shouts to allies ("GEN_I_AM_DEAD", "GEN_ATTACK_MY_TARGET"). So
+"keep attacking until the target dies" is the AI's job, round by round, for every creature but the
+party leader, whose OnEndRound never runs and whose continuation is the engine's `0x005b6980`
+above. (high for the script names, med for the summary)
 
 Script getters and where they read: GetLastAttacker `+0x15c`, GetLastDamager `+0x160`,
 GetLastKiller `+0x154`, GetLastHostileActor `+0x158`, GetAttackTarget `+0x504`,
 GetAttemptedAttackTarget `+0x50c`, GetLastAttackType `+0x16c`, GetLastAttackMode `+0x16e`,
 GetLastWeaponUsed `+0x170`, GetLastCombatFeatUsed `+0x554`, GetLastHostileTarget `+0x53c`,
-GetLastAttackAction `+0x544`, GetLastAttackResult `+0x55c`, GetIsInCombat `+0x4e0`. (high)
+GetLastAttackAction `+0x544`, GetLastAttackResult `+0x55c`, GetIsInCombat `+0x4e0`.
+GetLastAttackType and GetLastAttackMode return 0 unless the creature is in combat (`+0x4e0`), and
+translate the stored value (type 0xb → 9, 0x1e → 10, else 0; mode 1-3 as is, 5 → 4, 6 → 5,
+else 0). GetLastHostileActor returns OBJECT_INVALID for a plot object and for an actor that is not
+a living, up creature (clearing `+0x158`), and gives an area of effect's creator (`+0x248`) for an
+area of effect. GetLastWeaponUsed reads the attacker's own `+0x170`, which the attacked creature's
+ON_MELEE_ATTACKED handler fills. (high)
 
 ## 10. Combat-log messages and floating numbers
 
 What a fight tells the player: lines in Messages > Feedback and numbers floating over the
-creatures. Read case by case from the client formatter (jump table and case bodies disassembled;
-the decompiler gives up after the first string destructor), checked against the senders. Our build:
+creatures. Read case by case from the client formatter (decompiled whole, with the integer arguments
+of its string calls taken from the disassembly), checked against the senders. Our build:
 `lib/engine/fight_log.ctx`, `lib/hud/floating.ctx`.
 
 ### 10.1 From the server to the list
@@ -1059,18 +1286,19 @@ then object ids) as the client-side-message major `0x12` (`CSWCMessage::HandleSe
 `CClientExoApp::FormatCombatFeedback` `0x00656d20` (misnamed: its `this` is the message), a switch on
 the type through the jump table at `0x00662f34` (entry = type - 1; type 3 `0x0065799d`, 4
 `0x0065ac7e`, 0x12 `0x0065f56c`, 0x14 `0x006603d9`, 0x15 `0x00661134`, 0x16 `0x00661379`, 0x17
-`0x006619e1`, 0x1a `0x00662a10`). Ghidra ends the function after 118 bytes; the cases are
-separate fragments. Each case:
+`0x006619e1`, 0x19 `0x00662767`, 0x1a `0x00662a10`; 0x18 has no case). Each case:
 
 1. reads its fields from the message: object ids (`0x00692630`), ints in the bit width the sender
-   wrote (`0x004d6780` 32 bits, `0x004d6750` 16, `0x004d66f0` 8), and gives up if a read ran out
-   (`0x004d6230`);
-2. names objects (`0x005ed350` → `0x005f6640`: a creature's first and last name, a placeable's or
-   door's name) and fills `<CUSTOMn>` with `CTlkTable::SetCustomToken(n, text)` (`0x0041db50`);
+   wrote (`0x004d6780` 32 bits, `0x004d6750` 16, `0x004d66f0` 8, which still takes a 4-byte slot),
+   and gives up if a read ran out (`0x004d6230`);
+2. names objects (`0x005ed350` → `0x005f6640`: a creature's first and last name; a placeable's name,
+   else its placeables.2da strref; a door's or item's name; a mine's name, else 1421 "Mine"; an id
+   the client no longer has is looked up in a list of remembered names; nothing found gives strref 0,
+   "Bad StrRef") and fills `<CUSTOMn>` with `CTlkTable::SetCustomToken(n, text)` (`0x0041db50`);
 3. takes the template with the tokens expanded (`FUN_005ee390`, dialog.tlk by strref) and joins the
    pieces with `CExoString::operator+` (`0x005e5d10`);
 4. adds the line to the in-game GUI's feedback list with `0x0062b5c0` (`AddFeedbackMessage(text,
-   0x80, kind)`, `this` = `CClientExoApp::GetInGameGui` `0x005ed690`).
+   0x80, kind)`, `this` = `CClientExoApp::GetInGameGui` `0x005ed690`; an empty text is dropped).
 
 The list is the in-game GUI's array at `+0xf8` (16-byte entries: the text, a dword that is always
 `0x80`, a kind byte), count at `+0x100`, at most 64: the 65th line pushes the oldest out. The
@@ -1078,12 +1306,16 @@ dialogue history is a second array at `+0xfc` (count `+0x104`). **Only the Messa
 them**: `CSWGuiMessages::OnPanelAdded` `0x00626d90` → `0x0062ad60` → `0x00626920` fills
 `LB_MESSAGES` (one row per line, the newest selected). `0x00626920` colours a row red
 `(0.74, 0.11, 0.0)` (globals `0x007a23d8..e0`) when its kind byte is 1, else the menu blue
-`(0, 0.66, 0.98)` (`g_vGuiMenuTextColor`). Nothing else touches the arrays (no other reference to
-`+0xf8`/`+0x100`), so **the original HUD has no short-lived feedback lines**, and the Feedback
+`(0, 0.66, 0.98)` (`g_vGuiMenuTextColor`). Besides that screen only the save code touches the
+arrays: `CSWPartyTable::SavePartyTable` `0x005648c0` writes both (`PT_FB_MSG_LIST` with
+`PT_FB_MSG_COLOR` for the kind, `PT_DLG_MSG_LIST`) and `LoadPartyTable` `0x00565d20` adds them back
+through `0x0062b5c0`, so the log survives a save. Nothing draws them on the HUD, so **the original
+HUD has no short-lived feedback lines**, and the Feedback
 options (`optfeedback`: Floating Numbers, Tutorial Popups, Status Summary, Subtitles, Mini Map,
-Tooltips) do not filter combat lines. Kind 1 (red) is the attack summary (0x12), the "<CUSTOM0>
-uses <CUSTOM1>." line (type 8, strref 32292, with "Force Points spent:" 42006), type 0x10 and the
-awareness detections (type 0x13); every other line is kind 0. (high)
+Tooltips) do not filter combat lines (the formatter reads no option). Kind 1 (red) is the attack
+summary (0x12), the "<CUSTOM0> uses <CUSTOM1>." line (type 8, strref 32292, with "Force Points
+spent:" 42006), the first line of type 0x10 and the first line of type 0x13 (awareness); every other
+line is kind 0. (high)
 
 ### 10.2 Who receives a message
 
@@ -1092,12 +1324,15 @@ awareness detections (type 0x13); every other line is kind 0. (high)
 member list of the sending creature's **faction** (`GetFaction` `0x00513fc0`; `+0` array, `+4`
 count), take the members that are clients' creatures (`GetClientObjectByObjectId`), and send to a
 client when its creature is in the same area (`+0x8c`) and the squared distance to the sending
-creature is below 900 (30 m). In a one-player game that is: the player's creature belongs to the
-faction of the creature the message is about, and is within 30 m of it. An attack sends the summary
-for the attacker's faction and again for the target's, so a fight between a hostile and a party
-member reaches the player once (the hostile's faction has no client) and two party members fighting
-each other twice. Damage (type 3) goes to the damaged creature's faction, and also to the damager's
-when the two factions differ. The kill line goes to the killer's faction. (high)
+creature is at most 900 (30 m, the bound included). In a one-player game that is: the player's
+creature belongs to the faction of the creature the message is about, and is within 30 m of it. An
+attack sends the summary and each breakdown for the attacker's faction and again for the target's,
+so a fight between a hostile and a party member reaches the player once (the hostile's faction has
+no client) and two party members fighting each other twice. Damage to a creature (type 3) goes to
+the damaged creature's faction, and also to the damager's when the two factions (`+0xa74` → `+0x78`)
+differ; damage to a door or placeable goes only to the damager's faction, and only when the damager
+is a creature; type 2 goes to the damaged creature's faction; a damage effect whose int 0x15 is set
+sends neither. The kill line goes to the killer's faction. (high)
 
 ### 10.3 The lines
 
@@ -1108,7 +1343,8 @@ All ids are dialog.tlk strrefs; "tok n" is the `<CUSTOMn>` hole. Common words: 4
 `0x005b5ea0`, once per attack that carries a roll; red). Fields, in the order the client reads: the
 attacker, the target, the result (`ATTACK_RESULT_*`, 32 bits), the combat feat (16), the attack
 total (d20 + modifier), the defense, the damage (the attack's total, times the `MULTIPLIER` of
-`difficultyopt.2da` for the client's difficulty when the target is a party member), confirmed
+`difficultyopt.2da` for the client's difficulty when the target is a party member or has `+0x9d4`
+set, the same test as `TakeDamage`), confirmed
 critical, sneak attack, coup de grace, a stun state (1..10), a flag that the stun was resisted
 (byte), natural 20 (byte), natural 1 (byte). The line, built in this order:
 
@@ -1121,12 +1357,15 @@ critical, sneak attack, coup de grace, a stun state (1..10), a flag that the stu
    `1459` Sneak Attack!, `42303` Death Blow! (coup de grace), `42390` Automatic Hit! (natural 20)
    or else `42391` Automatic Miss! (natural 1), `42411` Deflected! (result 8), `42421` Returned!
    (result 9);
-5. when the stun state is set: `42030` with the target's name and a state word (`42031..42040`: is
-   confused, stunned, choked, Force Pushed, frightened, droid stunned, held, sleeping, caught in a
-   whirlwind, horrified; with the resisted flag the "is not ..." versions, 41 strrefs higher).
+5. when the stun state is set: `42030` tok0 the target's name, tok1 a state word, appended with no
+   separator. State → word: 1 is confused (42031), 2 is frightened (42035), 3 is droid stunned
+   (42036), 4 is stunned (42032), 5 is held (42037), 6 is sleeping (42038), 7 is choked (42033),
+   8 is horrified (42040), 9 is Force Pushed (42034), 10 is caught in a whirlwind (42039), any other
+   value strref 0; with the resisted flag the "is not ..." version, 41 strrefs higher.
 
-Sent when the attack is not ranged or the shot carries the attack (`attack+0x40 == 0 || attack+4
-!= 0`). (high)
+The summary and the breakdowns 0x14..0x17 are all sent when the attack is not ranged or the shot
+carries the attack (`attack+0x40 == 0 || attack+4 != 0`); 0x19 and 0x1a are sent inside the same
+test, each under its own condition. (high)
 
 **Type 0x14, attack breakdown** (always sent with the summary). Fields (21 ints): total, d20,
 modifier (unused by the client), STR part, DEX part, combat feat, the feat's to-hit, off-hand
@@ -1135,8 +1374,9 @@ id, close-range bonus, melee-vs-ranged bonus, Weapon Focus bonus, effect bonus, 
 dual-wield penalty, natural 20, natural 1. Line: `42146` tok0 Mainhand/Offhand, tok1 the total,
 then `42316` " roll <d20>", then on a natural 20 or 1 only " Automatic Hit!" / " Automatic
 Miss!", otherwise (every part is a template starting with " + ", printed when its value is not 0
-except the base): `42392` " + base <bab>" (always), `42333` Dual Wield Penalty (penalty plus feat
-bonus), `42334` Small Offhand Bonus, `42318` " + <feat name> <value>" for the combat feat's to-hit
+except the base): `42392` " + base <bab>" (always), `42333` Dual Wield Penalty (when the penalty is
+not 0; the value is the penalty plus the feat bonus), `42334` Small Offhand Bonus, `42318` " +
+<feat name> <value>" for the combat feat's to-hit (feat and to-hit both set)
 and again for Dueling (name of its feat id), `42330` Close Proximity Ranged Bonus, `42317` melee
 on ranged, `42375` dexterity mod or else `42154` strength mod, `42331` Weapon Focus Bonus,
 `42332` Effect Bonus. "Attack Breakdown: Mainhand 21 = roll 8 + base 1 + melee on ranged 10 +
@@ -1149,29 +1389,50 @@ confirmation), tok3 the confirmation d20 + modifier, tok4 the defense. (high)
 **Type 0x16, defense breakdown** (always sent; printed when the total is not 0): `42149` tok0 total
 ("= base 10") then, for each non-zero: `42338` armor, `42339` dex mod, `42340` class, `42341`
 natural, `42342` feats and effects mod (dodge, conditional dodge and deflection), `42343` " + feat
-<n>" (Dueling), `42427` debilitated penalty. (high)
+<n>" (Dueling), `42427` debilitated penalty. The fourth int (`+0xf7`) is sent but not printed. (high)
 
-**Type 0x17, damage breakdown** (sent when the hit has damage): the 15 damage slots (the three
-physical ones are added into one), dice, STR part, feat, special bonus, sneak, Weapon
-Specialization, critical multiplier, toughness terms. `42150` tok0 the total, tok1 the parts:
-`42386` "Critical x<n> for " first when the multiplier is above 1; then each non-zero slot by its
-word ("physical <n>" 1423, universal 1422, acid 1440, cold 1441, light side 1442, electrical 1443,
-fire 1444, dark side 1445, sonic 1446, ion 1447, energy 1448, poison 41902) joined with " + ";
-then `42154` strength mod, `42363` weapon specialization, " + " `42155` bonus damage, " + " `42156`
-sneak attack damage, and the Toughness terms (`42433`, `42434`). The joining of the tail was not
-followed to the last branch. (med)
+**Type 0x17, damage breakdown** (always sent with the summary; the client prints it only when the
+total is above 0). Ints: the 15 damage slots (slot 14 is the total), then `+0xfe`, `+0x102`
+(strength), the feat, `+0xff` (bonus damage), `+0x100`, `+0x101` (sneak attack), `+0x103` (weapon
+specialization), `+0xf1` (critical multiplier, 0 unless the critical was confirmed), `+0x104`
+(Toughness), `+0x105` (Wookiee Toughness), `+0x106..+0x108`; `+0xfe`, the feat, `+0x100` and the
+last three are not printed. Line: `42150` tok0 is `42386` "Critical x<n> for " when the multiplier
+is above 0, followed by the total ("Damage Breakdown: Critical x2 for 14 = ..."); tok1 is the
+parts: slots 0..2 summed (positive values only) as "physical <n>" 1423, then each other slot above
+0 by its word (universal 1422, acid 1440, cold 1441, light side 1442, electrical 1443, fire 1444,
+dark side 1445, sonic 1446, ion 1447, energy 1448, poison 41902), joined with " + " (none before
+the first; energy is put in front of what is already there rather than after it); then " " +
+`42154` " + strength mod <n>" when not 0 (two spaces in the result), " " + `42363` " + weapon
+specialization <n>" when not 0, " + " + `42155` "bonus damage <n>" when above 0, " + " + `42156`
+"sneak attack damage <n>" when above 0, " - " + `42433` "Toughness <n>" when not 0, " - " +
+`42434` "WookieeToughness <n>" when not 0. (high)
 
-**Types 0x19 (stun report of a special attack) and 0x1a (`42417` deflection breakdown)**: sent by
-`ApplyAttackImpact` after the damage breakdown (0x19 when a special attack stuns, 0x1a for results
-8..10); their formatting was not read. (open)
+**Type 0x19, effect application** (`ApplyAttackImpact` after the damage breakdown, when
+`attack+0x13c` is set; ints from `+0x12c..+0x134`): the client uses the stun state (int 1) and the
+outcome (int 8, signed). No line when the outcome is -1 or 1; otherwise `42157` "Effect
+Application Breakdown:" followed with no space by `42160` "<CUSTOM0> resisted <CUSTOM1>" (outcome
+2) or `42158` "<CUSTOM0> <CUSTOM1>" (any other), tok0 the object's name, tok1 the state word with
+the summary's mapping (left unset when the state is 0). Kind 0. (high)
+
+**Type 0x1a, deflection breakdown** (`ApplyAttackImpact`, results 8..10; ints from
+`+0x140..+0x148`): printed when int 2 (`+0x148`, the deflection total) is not 0: `42417`
+"Deflection Breakdown: <name> deflects projectile with <int 2> = <parts> vs. attack <int 1>" (int 1
+is `+0x141`); the parts, each only when not 0: `42316` " roll <int 3>", `42318` " + <feat name of
+int 5> <int 4>", `42419` " + base attack bonus <int 6>", `42420` " + armor check penalty <int 7>",
+`42620` " + item bonus <int 8>". Kind 0. (high)
 
 **Type 3, damage** (`OnApplyDamage` `0x004dfa40` through `0x004ec400`, for every damage effect
 applied to a creature, door or placeable, not only weapon hits): `1403` tok0 the damager's name,
-tok1 the damaged one's, tok2 the damage (the 15th slot of the message, which holds the total after
-mitigation). **Type 2**, the same without a known damager: `1402` tok0 the damaged, tok2 the
-damage. **Type 4, experience** (`AwardKillXP` `0x004fb1e0`, after `AddExperience`): `1407` tok0 the
-killer's name (the player's creature when the killer is not a creature), tok1 the victim's, tok2
-the XP. (high)
+tok1 the damaged one's ("" when it has none), tok2 the damage (the 15th slot of the message, which
+holds the total after mitigation), then " (" + the parts + ")": the physical slots 0..2 summed as
+"physical <n>" 1423 when any is present, then each present slot 3..13 with the 0x17 words, joined
+with " " ("Carth damages Kath Hound for 7 damage (physical 5 fire 2)"). With `g_bCombatDebugText`
+set the message also carries a string, added as a second line. **Type 2**, no known damager: `1402`
+"<CUSTOM0> damaged: <CUSTOM2>" with tok0 the damaged and the same " (...)" parts, but the client
+puts the damage in tok1, so the number printed is whatever tok2 last held: a bug in the original
+(static reading only, needs a runtime check; med). **Type 4, experience** (`AwardKillXP`
+`0x004fb1e0`, after `AddExperience`): `1407` tok0 the killer's name (the player's creature when the
+killer is not a creature), tok1 the victim's, tok2 the XP. (high)
 
 **Type 0xb, numbered feedback** (`CSWSCreature::SendFeedbackMessage` `0x004ede10`, `feedbacktext.2da`
 rows; the 62 callers are immunity, resistance, trap, lock and inventory messages) has its own inner
@@ -1189,10 +1450,10 @@ main interface (`CSWGuiMainInterface` `0x0068b7c0`).
 | Kind | Text | Colour (globals) | Lifetime | Who calls it (all seven call sites of `0x005edea0`) |
 |---|---|---|---|---|
 | 0 | the damage as a number | red `(0.74, 0.11, 0)` | 1.5 s | `OnApplyDamage` (twice: creatures with damage above 0, and doors and placeables) when the damager is the client's player creature, over the damaged object; `TakeDamage` `0x004f3830` when the damaged creature is the player's creature and the damager is not, over it, with the damage after the difficulty multiplier, temporary hit points and Min1HP |
-| 1 | the healing as a number | green `(0.28, 0.92, 0.11)` | 1.5 s | `OnApplyHeal` `0x004e0750` when the healed creature is the client's player creature or any party member |
+| 1 | the healing as a number | green `(0.28, 0.92, 0.11)` | 1.5 s | `OnApplyHeal` `0x004e0750`, with the hit points actually gained, when the healed creature is the client's player (`CClientExoApp` internal `+0x2b4`, `FUN_005edd80`) or in the client's party |
 | 2 | "miss" (1373) | white | 1.5 s | `SignalMeleeDamage` `0x005b75d0`, per melee attack of the player creature whose result is not 1..3 (a parry included); **ranged attacks never show it** |
 | 3 | "XP <n>" (38551, `%s %d`) | magenta `(0.95, 0, 0.85)` | 3 s | `AwardKillXP`, over the victim, for everyone |
-| 4 | "Level <n>" (32154) | orange `(0.98, 0.45, 0)` | 3 s | `CSWSCreatureStats::AutoLevelUp` `0x005b27e0`, over the creature that levelled |
+| 4 | "Level <n>" (32154) | orange `(0.98, 0.45, 0)` | 3 s | `CSWSCreatureStats::AutoLevelUp` `0x005b27e0` when its feedback argument is set, over the creature that levelled |
 | 5, 6 | "Sneak Attack" (1391), "Spotted" (42403) | white | 1.5 s | nobody in this executable |
 
 "The client's player creature" is `CClientExoApp +0x20` (`FUN_005ed550`): the creature the player
@@ -1213,18 +1474,33 @@ count byte at `+0x14c`). The list is `CSWGuiMainInterface +0x5cb4` (count `+0x5c
 
 ### 10.5 What our build does
 
-`fight_log::attack` (called by `fight::land` for every impact that carries a roll), `damaged`
-(`take_damage`, `damage_object`) and `killed` (`award_xp`) build the lines above from the rules
-library's own numbers (`fight::Impact.roll` and `.damage`) and post them as outbox `feedback` notes
-whose strref names the template; `ingame::take` files them: the summary red, the rest in Messages
-only (`fight_log::LOG_COMBAT`: the HUD's young-feedback lines, which the original does not have,
-stay for other feedback). Recipients follow 10.2 with the party and the player's faction as "the
-client's faction" and the leader as "the client's creature". `fight_log::floating` posts the
-`floating_text` note for kinds 0 (damage dealt or taken by the leader), 2 (the leader's melee
-misses) and 3 (kills), and `hud/floating.ctx` draws it. Differences: the label sits at 0.9 of the
-box height (the HUD has no head node), the 0x17 tail and the 0x19/0x1a lines are approximate or
-missing, and kinds 1 and 4 are drawn when posted (`fight_log::healed`, `leveled`) but nothing
-posts them yet (the heal and level-up code is outside `fight_log`'s reach).
+`fight_log::attack` (called by `fight::land` for every impact that carries a roll, doors and
+placeables included), `damaged` (`take_damage`, `damage_object`) and `killed` (`award_kill_xp`)
+build the lines above from the rules library's own numbers (`fight::Impact.roll` and `.damage`) and
+post them as outbox `feedback` notes whose strref names the template; `ingame::take` files them: the
+summary red, the rest in Messages only (`fight_log::LOG_COMBAT`: the HUD's young-feedback lines,
+which the original does not have, stay for other feedback). Recipients follow 10.2 with the party
+and the player's faction as "the client's faction" and the leader as "the client's creature"; an
+attack's lines go out once per side that reaches the player, a damage line at most once.
+`fight_log::floating` posts the `floating_text` note for kinds 0 (damage dealt or taken by the
+leader), 1 (`healed`, from `fight.ctx`'s heal event, for a creature on the player's side), 2 (the
+leader's melee misses), 3 (kills) and 4 (`leveled`, from `levelup.ctx`), and `hud/floating.ctx`
+draws it.
+
+Differences from the original:
+
+- the label sits at 0.9 of the creature's box height (the HUD has no head node);
+- the distance test is `< 900` (the original includes 900);
+- the summary has no stun clause (step 5);
+- the damage breakdown puts "Critical x<n> for " at the head of the parts instead of before the
+  total, shows a single "physical" (or other) dice term instead of every slot, and joins the
+  strength and weapon-specialization terms with " + " instead of " " (no double space) and has no
+  Toughness terms;
+- types 0x19 and 0x1a are not produced;
+- the damage lines (types 2 and 3) have no " (physical 5 fire 2)" suffix, and type 2 prints the
+  damage where the original prints a stale `<CUSTOM2>`;
+- the save writes `PT_FB_MSG_LIST` and `PT_DLG_MSG_LIST` empty (`save/partytable.ctx`), so the log
+  does not survive a save.
 
 ## 11. Names
 
@@ -1255,9 +1531,10 @@ The proposals file lists every address of this page; the main ones:
 | `0x00550b60` | `CSWRules::RollDice` | high |
 | `0x004d09e0` / `0x004d0e40` / `0x004cf160` | `CSWSObject::DoDamageReduction` / `DoDamageResistance` / `DoDamageImmunity` (virtual slots 41–43; objects.md guessed saving throws) | high |
 
-`0x005a6680` already carries `CSWSCreatureStats::HasFeat` but returns the remaining uses (100 =
-unlimited) after checking `0x005a6630`, which is the plain "has this feat" test; the proposals
-suggest `GetFeatRemainingUses` and `HasFeatInLists`, for the lead to decide.
+`0x005a6680` still carries `CSWSCreatureStats::HasFeat` but returns the remaining uses (100 =
+unlimited or not tracked, 0 = used up) after checking `0x005a6630` (`HasFeatInLists`, already in
+names.tsv), the plain "has this feat" test; the proposals suggest `GetFeatRemainingUses` for it, for
+the lead to decide.
 
 ## 12. Open questions
 
@@ -1265,15 +1542,17 @@ suggest `GetFeatRemainingUses` and `HasFeatInLists`, for the lead to decide.
   client option used for `difficultyopt.2da`: which column each KOTOR setting selects.
 - The exact pause time set by ATTACKOBJECT (a local the decompiler confused) and the client half of
   animation selection (`0x005f32e0`) that returns the `combatanimations.2da` row.
-- `+0x4d2` combat mode (+5/+10 damage): no writer found. `+0x55c` (GetLastAttackResult): no writer
-  found, so the routine may always return 0.
-- What `+0xa9c` is (Force points refilled at round end) and `+0x8e0` (blocks storing the feat).
+- `+0x55c` (GetLastAttackResult): no writer anywhere in the decompile, so the routine may always
+  return 0 (needs a runtime check).
+- What reads `+0x8e0` (`UseFeat` `0x004ecee0` toggles it between 0 and the feat id for feats 2, 0x19
+  and 0x36).
+- Whether a script's EffectDamageIncrease reaches the damage at all: static reading says no; needs a
+  runtime check.
 - The AC "versus" quirks of section 5.4 and the 0x2007 vs 0x4007 "all damage types" sentinel:
   confirm against how the effect constructors store the value (rules.md).
 - Stats bytes `+0x16c/+0x16d` in the deflection roll; the energy-shield path (result 10) and its
   client function `0x00616890`.
 - Damage reduction details (slot 41) and resistance bookkeeping (slot 42) are only skimmed.
-- The client formatter `0x00656d20` is read for the attack summary, the breakdowns 0x14..0x16, the
-  damage, damage-without-damager and kill lines (section 10); still to read: types 0x17's tail, 0x19,
-  0x1a, 0xb and the other types (1, 5..7, 9..0x11, 0x13, 0x1b).
+- The client formatter `0x00656d20` is described for types 2, 3, 4, 0x12, 0x14..0x17, 0x19 and 0x1a
+  (section 10); still to describe: 0xb and the other types (1, 5..10, 0xc..0x11, 0x13, 0x1b).
 - Seven attack records are constructed but only five are used.
