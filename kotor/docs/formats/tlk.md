@@ -140,7 +140,10 @@ version is `V3.0`, 36-byte entries (no SoundLength) otherwise. Decision: our rea
 only and reports anything else as an error; no such file exists for KOTOR.
 
 Robustness: the engine bounds-checks StrRef and the start of the text (a text starting past the end
-of the file comes back as the StrRef's decimal number) but not its end. Our reader checks both and
+of the file comes back as the StrRef's decimal number, and the fetch counts as **failed**, with no
+retry in the next slot or with the masculine table) but not its end. When a slot's feminine file
+opens but fails the `TLK ` check, both of the slot's files are closed and the slot fails
+([re/resources.md](../re/resources.md) 5). Our reader checks both and
 treats a bad entry as an error value.
 
 ## Engine notes

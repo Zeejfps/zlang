@@ -225,7 +225,11 @@ substring (41 of them in the save). TotalSize always matches the substrings.
 BioWare's documented lookup, which a reader should follow: prefer the embedded substring for the
 user's language and the wanted gender; otherwise fetch the StrRef from the talk table; otherwise
 optionally fall back to embedded strings in other languages (English, French, German, Italian,
-Spanish). Whether KOTOR's engine does exactly this is not yet confirmed from the executable.
+Spanish). KOTOR's engine (`CExoLocString::GetString`, [re/resources.md](../re/resources.md) 5)
+uses the embedded substring for the wanted language id if there is one, else the StrRef's TLK
+text, with **no** fallback to other languages; for English the gender is forced to masculine.
+The engine also caches non-empty TLK text it fetched as an embedded substring, and its GFF writer
+saves cached entries, which is why save files hold LocStrings with both a StrRef and a substring.
 
 ### VOID
 
@@ -345,8 +349,14 @@ So a file is determined by (a) the **creation order** of structs and fields, (b)
 - **second** (in place): a struct gets its block when it receives its **second** field, at the end
   of the array as it is then; later fields are inserted into the block in place, shifting the
   blocks after it. Result: blocks ordered by the field-array index of each struct's second field,
-  each block holding all the struct's fields, packed, no dead bytes. This is the engine's save
-  behaviour. In most files it gives the same bytes as `struct`; the save's `repute.fac` tells them
+  each block holding all the struct's fields, packed, no dead bytes. This reproduces the engine's
+  saves, but it is not literally what the engine does: the engine's writer never shifts blocks; it
+  grows a block in place only when it is the last one, else copies it to the end (as **move**
+  below), and before writing, `Pack` rebuilds the field-indices block in struct-array order (and
+  the list-indices block in List-field order) only when the wasted bytes are at least 1 % of the
+  file ([re/resources.md](../re/resources.md) 3). When no block ever had to move, the result is
+  this layout; a save whose writing moved blocks would come out in struct order (waste ≥ 1 %) or
+  with dead bytes (waste < 1 %) (med: not yet seen in a save). In most files it gives the same bytes as `struct`; the save's `repute.fac` tells them
   apart: its top struct's first field is `FactionList`, so the top struct gets its block only at
   `RepList`, after the faction structs got theirs.
 - **struct**: blocks in struct-array order, packed (82 DLG and 2 GUI need this).

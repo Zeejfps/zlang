@@ -172,8 +172,11 @@ what the engine actually does:
 1. Line 1 is `2DA V2.0` (only the first 8 bytes are checked); skip it and any following blank
    lines (runs of CR, LF, space, TAB).
 2. If the first token of the next line, upper-cased, is `DEFAULT:`, the next token is the
-   table's default value; `DEFAULT` followed by `:value` or by a separate `:` and a value also
-   works. Skip that line and blank lines.
+   table's default value; skip that line and blank lines. `DEFAULT` followed by `:value` or by a
+   separate `:` and a value also sets the default, but the engine then does not move past that
+   line, so it reads the column names from the `DEFAULT` line itself (a parser slip,
+   [re/resources.md](../re/resources.md) 4; med, needs a runtime check). Without a `DEFAULT` token
+   the line is the column-name line.
 3. The next line holds the column names: whitespace-separated tokens (space or TAB), **lowered**
    to lower case.
 4. Every following non-blank line is a row. Its first token is the row label (lowered to lower

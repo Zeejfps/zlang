@@ -103,7 +103,7 @@ exist as plain files outside any container. Content: **GFF** = BioWare Generic F
 | 3006 | txb | (Xbox texture, unused) | 0 | |
 | 3007 | tpc | texture (no magic; 128-byte header, TXI appended) | 11,536 | the four texture packs, `patch.erf` |
 | 3008 | mdx | model vertex data, no magic | 3,085 | beside every MDL |
-| 3009 | rsv | (unused) | 0 | |
+| 3009 | rsv | module state kept by the loader (`<module>.rsv` is looked for before `.sav` and copied from GAMEINPROGRESS: to CURRENTGAME:; `SaveModuleIFO` deletes a stale one) | 0 | none in the install |
 | 3010 | sig | (unused) | 0 | |
 | 3011 | xbx | (Xbox, unused) | 0 | |
 | 9997 | erf | ERF archive ([erf.md](erf.md)) | — | the `.erf` files themselves |
