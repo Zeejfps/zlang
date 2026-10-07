@@ -211,8 +211,9 @@ its param 9 is set; ITEMCASTSPELL of a spell whose `spells.2da` HostileSetting i
 round's next scheduled action (AIActionCombat, below: any entry but type 0xa, and a cast of a
 hostile spell), and by the party-wide `SetPartyStealthMode` (`0x00563c60`: conversations,
 transitions, solo mode off; it passes `bOn = 0` to `SetActivity` whatever its own argument).
-`Rest` (`0x004fd1e0`) does not touch bit 1 itself: it turns off activity bits 8..0x80 and sets
-bit 8 (med: static reading, needs a runtime check). USEOBJECT and DIALOGOBJECT call `SetActivity(4, FALSE)`, which leaves a conversation, not
+`Rest` (`0x004fd1e0`) drops it too: it calls `0x004eb1b0(0xf)` (asm `0x004fd2ba`), which ends
+activities 1 (stealth), 4 and 8 when they are set and not locked in `+0xa00`, then turns off
+activity bits 8..0x80 and sets bit 8. (high) USEOBJECT and DIALOGOBJECT call `SetActivity(4, FALSE)`, which leaves a conversation, not
 stealth. (high; corrected from an earlier "talking, opening, using all break stealth",
 docs/mechanics/stealth.md)
 
@@ -1284,13 +1285,13 @@ when none). Per frame:
     freed unsent (med: the list's reader was not traced). With a round already running, not
     paused and nothing started in it (`+0x968` = 0), the cast takes it over the same way (spell
     round, pause, shortening, and the engaged partner's), without that call.
-  - t < conj ⇒ conjure animation by the ConjAnim code (3 → 11000, 2 → 10016, 7 → 10162, else
+  - t < conj ⇒ conjure animation by the CastAnim code (`spells.2da` ConjAnim is never read, [rules.md](rules.md) 3.1; 3 → 11000, 2 → 10016, 7 → 10162, else
     10015), 1.
 - From the first frame with t ≥ conj: while node `+0x70` is 1 it is set to the round's Engaged
   flag (`+0x9b8`), so **a solo cast cannot be cleared from here on** (an engaged one stays
   clearable and repeats this step each frame); a real cast fails (3) without an area, pays the
   Force points (`0x004eddd0`, failure ⇒ 3) unless the slot is 0xff (cheat), param 4 is set, or
-  they are already paid (`+0x960`), and a silence-type effect (true type 0x12) interrupts it with
+  they are already paid (`+0x960`), and an entangle effect (true type 0x12, from `EffectEntangle`, routine 130) interrupts it with
   animation 10001 and feedback 0x41 ⇒ 3; the projectile delay is computed. Then, while t < conj +
   cast or the spell has not fired, the cast animation by CastAnim code (2 → 10018, 1 → 10017,
   3 → 10019, 4 → 10020, 7 → 10061, 8/9 none, else 10061) and, once: a fake cast only sends the
@@ -1341,7 +1342,7 @@ out healer ⇒ 3; target not a creature or item gone ⇒ 3. Out of use range wit
 [move, check 0x11, face, copy with param 3 = 0] ⇒ 2 (the copy no longer checks range). First pass
 (creature `+0x978` = 0): queue PLAYANIMATION 10017 for 2 s and a copy behind it ⇒ 2. Second pass:
 roll d20 in combat, 20 out of combat, + Treat Injury rank against the target; of the target's
-poison (0x23) and disease (5) effects only the last in its list is tried, against poison.2da
+poison (0x23) and disease (5) effects only the first in its list (sorted by type; asm `0x00517e10`–`0x00517eb9`) is tried, against poison.2da
 Save_DC or disease.2da Subs_Save (at least 1), and removed when roll + rank ≥ DC; nothing to cure
 ⇒ feedback 0x37, and with full HP also 0x38 ⇒ 3; otherwise the roll is reported (message 0x14a with roll, rank, DC, take-20 flag and outcome),
 one item of the stack is consumed (the last one destroyed), the target is healed roll + rank

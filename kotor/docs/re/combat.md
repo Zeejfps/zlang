@@ -144,7 +144,7 @@ filled as the roll is made. (high unless marked)
 | `+0xe0..+0xf1` | threat range, is-threat, confirmation d20, confirmed, critical multiplier |
 | `+0xf4..+0xfc` | defense: total, armour, DEX part, DEX modifier, class bonus, natural, dodge + effects, Dueling, debilitated penalty |
 | `+0xfe..+0x109` | damage: `+0xfe` base dice, `+0xff` combat-mode bonus + special-attack damage bonus (Massive Critical dice added on a critical hit), `+0x100` always 0, `+0x101` sneak dice, `+0x102` STR (melee only), `+0x103` Weapon Specialization, `+0x104..+0x108` sent in the damage log but no writer found, `+0x109` effect bonus |
-| `+0x12c..+0x13c` | saving-throw report that `SavingThrowRoll` (`0x005b92b0`) writes into the attacker's current record: save `+0x12c`, save type `+0x12e`, base `+0x130`, bonus `+0x131`, total `+0x132`, DC `+0x133`, result `+0x134` (0xff none, 1 saved). A melee or ranged special attack sets `+0x12d` = 4 (the stun state) when the save fails and `+0x13c` = 1 (send the report) whenever it rolled a save (med) |
+| `+0x12c..+0x13c` | saving-throw report that `SavingThrowRoll` (`0x005b92b0`) writes into the attacker's current record: save `+0x12c`, save type `+0x12e`, base `+0x130`, bonus `+0x131`, total `+0x132`, DC `+0x133`, result `+0x134` (0 failed, 1 saved, 2 immune after a failed roll; 0xff none). A melee or ranged special attack sets `+0x12d` = 4 (the stun state) when the save fails and `+0x13c` = 1 (send the report) whenever it rolled a save (med) |
 | `+0x140..+0x148` | deflection: d20, attack total, Jedi Defense feat and bonus, effect bonus, result, BAB, stat bonus, total |
 
 ### Scheduled combat actions (0x88 bytes, list at round `+0x9b0`)
