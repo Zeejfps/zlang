@@ -797,8 +797,9 @@ Summed in this order (high unless marked):
    `LoadArmorClassTable` `0x005bde80`, rows 0–20). Soldier and Scout get 0; Scoundrel and the three
    Jedi 2/4/6 at levels 1–5/6–11/12+; both droid classes use the Scoundrel column.
 2. Unless bTouch: **natural** (`+0xf5` base + `+0xfe` − `+0xff`), **armour** (`+0xf6` + `+0xf8` −
-   `+0xf9`), **shield** (`+0xf7` + `+0xfc` − `+0xfd`). The base values come from equipped items,
-   the ±pairs from AC effects without a "versus" condition, both kept up to date by the effect and
+   `+0xf9`), **shield** (`+0xf7` + `+0xfc` − `+0xfd`). `+0xf6` comes from the equipped body armour, `+0xf5` is the
+   GFF's NaturalAC, and `+0xf7` is never written after construction (always 0,
+   [party-items-saves.md](party-items-saves.md) 4.7); the ±pairs from AC effects without a "versus" condition, both kept up to date by the effect and
    equipment code (rules.md, party-items-saves.md). (med for who writes them) The apply handler
    (`OnApplyACIncrease` `0x004d8d80`) treats an effect as unconditioned when its race and alignment
    fields are empty and ignores the damage-type filter (int 5), so an effect with only a damage-type
@@ -1056,7 +1057,7 @@ The effect-type 0x26 apply handler (registered by `0x004e4a10`). (high unless ma
 KOTOR has none. The event BROADCAST_AOO (20) exists in the event table, but nothing queues it and
 the creature event handler ignores it; the round's NumAOOs/NumCleaves are only reset and saved;
 `diffsettings.2da` row 1 (`NoAoOWithRanged`) is never read and row 2 (`NoAoOWithPotion`) only
-decides, when the PC uses a stim (base item type 25) in `AIActionItemCastSpell`, whether an empty
+decides, when the PC uses a stim (`baseitems.2da` ItemType 25) in `AIActionItemCastSpell`, whether an empty
 function (`0x0060e760`) is called, so it has no effect either. (high)
 
 ## 8. Death and going down

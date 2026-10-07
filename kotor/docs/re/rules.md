@@ -487,7 +487,7 @@ them. (high)
   calls `RemoveEffectsByDurationType` (`0x004d0870`) for temporary, then permanent effects; each
   call removes at most 21 effect ids, so the list shrinks over several updates. (high)
 - **Item effects** (duration type 3, creator = item): unequipping runs `RemoveItemProperties`
-  (`0x00553c30`: each active property's remove handler, then `RemoveEffectsByCreator(item)`
+  (`0x00553c30`: the remove handler of each property in the item's passive-property list (`+0x24c`/`+0x254`), then `RemoveEffectsByCreator(item)`
   `0x004d0820`). That loop advances its index even after a removal, so an effect of the same item
   directly behind a removed one is skipped. (high for the code; med for the consequence, needs a
   runtime check)
@@ -634,7 +634,8 @@ types are in itempropdef.2da; the per-property handlers (`0x004e5490`…`0x004ea
 read one by one. (high for the mechanism)
 
 Example, `ApplyEnhancementBonus` (`0x004e5490`, properties 5–7: enhancement, versus alignment
-group, versus race), nothing when the `Value` of the property's cost-table row is 0: one
+group, versus race), nothing when the `Value` of `iprp_meleecost.2da` at the property's cost value is 0 (the handler reads that table whatever the property's CostTable byte says;
+[party-items-saves.md](party-items-saves.md) 4.6): one
 ATTACK_INCREASE with int0 = that value and int1 = the attack type of the equipment slot (right
 hand 1, left hand 2, the three creature-weapon slots 3–5, the hands slot 7), and one
 DAMAGE_INCREASE with the same int0 (an iprp_damagecost row, so values 1–5 are flat), int1 = the

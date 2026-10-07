@@ -950,8 +950,8 @@ both the holder and the actor have `+0xa88` set, party members); the player's "p
 the container" order (input 0x24) uses it too. The handler has no dead/knocked-out test. Fewer than
 2 params, no recipient or no item ⇒ fail. A creature out of use range of the recipient pushes a
 fresh GIVEITEM, FACEPOINT (use point), CHECKINRANGEOFOBJECT (0x11) and a move to the use point
-(target = recipient, run when the use point is farther than 5 m), done. Otherwise: credits (base
-item 23) are first taken from the actor's gold (`RemoveGold` `0x004f3ed0`) and a pazaak card (42)
+(target = recipient, run when the use point is farther than 5 m), done. Otherwise: credits (`baseitems.2da`
+ItemType 23, record `+0xac`) are first taken from the actor's gold (`RemoveGold` `0x004f3ed0`) and a pazaak card (ItemType 42)
 from its pazaak deck (`RemovePazaakCard` `0x004efc30`); the stack is split when the count is not
 -1 (`SplitItem` `0x0055f280`); then it goes to a creature (`AcquireItem` `0x005158e0`, feedback
 except for credits; HUD notice 7 when the notify flag is set and the recipient has `+0xa88`), a

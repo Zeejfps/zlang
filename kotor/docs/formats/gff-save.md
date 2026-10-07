@@ -97,7 +97,7 @@ NPC slots are the rows of `npc.2da` (0 Bastila, 1 Canderous, 2 Carth, 3 HK-47, 4
 | `PT_GOLD` | DWORD | all | 63 | Party credits. |
 | `PT_XP_POOL` | INT | all | 450 | Shared party XP. |
 | `PT_PLAYEDSECONDS` | DWORD | all | 883 | Seconds played. |
-| `PT_CONTROLLED_NP` | INT | all | -1 | NPC slot the player is controlling; -1 = the PC *(inferred)*. |
+| `PT_CONTROLLED_NP` | INT | all | -1 | NPC slot that `SwitchPlayerCharacter` made the player character; -1 normally. Not the Tab-selected leader (that is `PT_IS_LEADER`). Written as `PT_CONTROLLED_NPC`, truncated to 16 characters by the GFF writer ([re/party-items-saves.md](../re/party-items-saves.md) 1.9). |
 | `PT_SOLOMODE` | BYTE | all | 0 | 1 in solo mode. |
 | `PT_CHEAT_USED` | BYTE | all | 0 | 1 if cheats were used. |
 | `PT_NUM_MEMBERS` | BYTE | all | 1 | Members in the active party besides the PC *(inferred; 1 = Trask here)*. |
@@ -105,20 +105,20 @@ NPC slots are the rows of `npc.2da` (0 Bastila, 1 Canderous, 2 Carth, 3 HK-47, 4
 | `PT_MEMBERS/PT_MEMBER_ID` | INT | all | 0 | NPC slot (row of `npc.2da`). |
 | `PT_MEMBERS/PT_IS_LEADER` | BYTE | all | 0 | 1 if the party leader. |
 | `PT_AVAIL_NPCS` | List | all | 9 entries; struct id 0 | One struct per NPC slot (9). |
-| `PT_AVAIL_NPCS/PT_NPC_AVAIL` | BYTE | all | 0, 1 | 1 if the NPC has joined (has an `availnpcN.utc`). |
+| `PT_AVAIL_NPCS/PT_NPC_AVAIL` | BYTE | all | 0, 1 | The slot's "available" flag. `RemoveAvailableNPC` clears it but leaves `AVAILNPCn.utc` on disk, so a 0 can sit next to an existing file. |
 | `PT_AVAIL_NPCS/PT_NPC_SELECT` | BYTE | all | 1 | 1 if selectable in the party screen. |
 | `PT_AISTATE` | INT | all | 0 | Party AI setting *(inferred)*. |
 | `PT_FOLLOWSTATE` | INT | all | 0 | Party follow setting *(inferred)*. |
 | `GlxyMap` | Struct | all | struct id 0 | Galaxy map state. |
 | `GlxyMap.GlxyMapNumPnts` | DWORD | all | 16 | Number of planets on the map (16). |
-| `GlxyMap.GlxyMapPlntMsk` | DWORD | all | 0 | Bit mask of planets available *(inferred)*. |
+| `GlxyMap.GlxyMapPlntMsk` | DWORD | all | 0 | Bits 0–15: planet *n* available; bits 16–31: planet *n* selectable. Ignored on load unless `GlxyMapNumPnts` is 16; loading only sets flags, a clear bit leaves the flag as it was. |
 | `GlxyMap.GlxyMapSelPnt` | INT | all | -1 | Selected planet; -1 none. |
-| `PT_PAZAAKCARDS` | List | all | 19 entries; struct id 0 | Pazaak side cards owned: count per card type (19 entries; the last is stored as BYTE, the others as INT, so a reader must accept both). |
+| `PT_PAZAAKCARDS` | List | all | 19 entries; struct id 0 | Pazaak side cards owned: 18 INT counts, one per card type, then a stray 19th BYTE that repeats `PT_CHEAT_USED` (a writer slip; the engine reads only 18). Write the same to match. |
 | `PT_PAZAAKCARDS/PT_PAZAAKCOUNT` | BYTE/INT | all | 0, 2 | Number owned. |
 | `PT_PAZSIDELIST` | List | all | 10 entries; struct id 0 | The 10 slots of the chosen side deck. |
 | `PT_PAZSIDELIST/PT_PAZSIDECARD` | INT | all | -1 | Card type in the slot; -1 empty. |
-| `PT_TUT_WND_SHOWN` | VOID | all | sizes 6 | Bit set of tutorial pop-ups already shown (6 bytes) *(inferred)*. |
-| `PT_LAST_GUI_PNL` | INT | all | 7 | Last in-game menu panel opened *(inferred)*. |
+| `PT_TUT_WND_SHOWN` | VOID | all | sizes 6 | Bit set of tutorial pop-ups already shown (6 bytes): the in-game GUI's tutorial-shown flags. |
+| `PT_LAST_GUI_PNL` | INT | all | 7 | Last in-game menu panel opened (the in-game GUI's last panel). |
 | `PT_FB_MSG_LIST` | List | all | 64 entries; struct id 0 | Feedback (combat) message log. |
 | `PT_FB_MSG_LIST/PT_FB_MSG_MSG` | CExoString | all | e.g. `Defense Breakdown…`, `Defense Breakdown…`, `Damage Breakdown:…` | Message text. |
 | `PT_FB_MSG_LIST/PT_FB_MSG_TYPE` | DWORD | all | 128 | Message category. |
@@ -126,7 +126,7 @@ NPC slots are the rows of `npc.2da` (0 Bastila, 1 Canderous, 2 Carth, 3 HK-47, 4
 | `PT_DLG_MSG_LIST` | List | all | 35 entries; struct id 0 | Dialogue log. |
 | `PT_DLG_MSG_LIST/PT_DLG_MSG_SPKR` | CExoString | all | 2 empty; e.g. `Trask`, `Dunta Mothma`, `Carth` | Speaker name. |
 | `PT_DLG_MSG_LIST/PT_DLG_MSG_MSG` | CExoString | all | e.g. `  `, `Okay.`, `Combat is real ti…` | Line text. |
-| `PT_COST_MULT_LIS` | List | all | 92 entries; struct id 0 | Store price multipliers, one per `baseitems.2da` row (92) *(inferred from the count)*. |
+| `PT_COST_MULT_LIS` | List | all | 92 entries; struct id 0 | Per-base-item price multipliers, one float per `baseitems.2da` row, set by `ChangeItemCost` (routine 747); 1.0 when absent. Written as `PT_COST_MULT_LIST`, truncated to 16 characters. |
 | `PT_COST_MULT_LIS/PT_COST_MULT_VAL` | FLOAT | all | 1 | Multiplier. |
 | `JNL_SortOrder` | INT | all | 0 | Journal sort setting. |
 | `JNL_Entries` | List | all | 1 entries; struct id 0 | Current state of every started quest. |
@@ -141,11 +141,12 @@ NPC slots are the rows of `npc.2da` (0 Bastila, 1 Canderous, 2 Carth, 3 HK-47, 4
 Global variables are the rows of `globalcat.2da` (809 booleans, 369 numbers, 5 locations,
 2 strings). The save stores its own name lists (`Cat*`) and packed values (`Val*`), indexed by
 position in its own list: the save's boolean names are the same set as `globalcat.2da`'s but in a
-different order, so map by name, never by 2DA row. Numbers are one byte each (globals are
-0..255 in KOTOR). Locations are 6 floats (position x, y, z, orientation x, y, z) each, in a block
-sized for 100 *(inferred: 2400 bytes for 5 names)*. Booleans are packed 8 per byte (809 bits in
-102 bytes); the bit order is not settled by this save, whose booleans are all false
-*(unverified; check against a later save or the executable)*.
+different order, so map by name, never by 2DA row. Numbers are one byte each, signed
+(−128..127: written as the low byte of the script value, read back sign-extended). Locations are 6 floats (position x, y, z, orientation x, y, z) each, in a block
+always 2400 bytes (100 slots; those after the last location are zero). Booleans are packed 8 per byte, most significant bit
+first: boolean *k* of `CatBoolean` is bit `0x80 >> (k & 7)` of byte `k >> 3` of `ValBoolean`, which
+is `count/8 + 1` bytes (809 bits in 102 bytes). The name order is the engine's hash-table order
+([re/party-items-saves.md](../re/party-items-saves.md) 2).
 
 <!-- gff-table save:GVT -->
 | Field | Type | Files | Values | Meaning |
