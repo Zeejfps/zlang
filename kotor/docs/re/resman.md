@@ -42,7 +42,7 @@ The global resource manager object is `DAT_007a39e8`.
 
 | Address | What |
 |---|---|
-| 0x005f8550 | start-up (reads `swkotor.ini`): directories `TEMPCLIENT:`, `OVERRIDE:`, `ERRORTEX:`; Xbox `HD0:DATAXBOX\*` paths; `HD0:CHITIN` (KEY); directories `RIMS:`, `SERVERVAULT:`, `PORTRAITS:`; ERFs `OVERRIDE:textures` and `HD0:patch` in group 1; directories `HD0:MOVIES`, `HD0:STREAMWAVES`, `HD0:STREAMMUSIC`; RIM `RIMS:GLOBAL` if `GLOBAL.rim` exists; later `Texture Quality` to 0x005f14a0 |
+| 0x005f8550 | start-up (reads `swkotor.ini`): directories `TEMPCLIENT:`, `OVERRIDE:`, `ERRORTEX:`; (the Xbox `HD0:DATAXBOX\*` path strings are only copied, nothing is registered); `HD0:CHITIN` (KEY); directories `RIMS:`, `SERVERVAULT:`, `PORTRAITS:`; ERFs `OVERRIDE:textures` and `HD0:patch` in group 1; directories `HD0:MOVIES`, `HD0:STREAMWAVES`, `HD0:STREAMMUSIC`; RIM `RIMS:GLOBAL` if `GLOBAL.rim` exists; later `Texture Quality` to 0x005f14a0 |
 | 0x005f14a0 | texture packs: row `Texture Quality` (0 if missing or > 3) of `texpacks.2da`; columns `Texture`, `Gui`, `DynMemRatio`, `Mem`; mounts `TEXTUREPACKS:<Texture>` in slot 1 and `TEXTUREPACKS:<Gui>` in slot 2 |
 | 0x0070d800, 0x0070cf80, 0x0070cf30 | pack slots 0..3 (names kept at 0x00834098): unmount the slot's old ERF, mount the new one as ERF group 2 |
 | 0x0067c4c0, 0x006dc3c0 | main menu and character generation: `RIMS:MAINMENU` / `RIMS:CHARGEN` as RIMs if present; 0x0040c8e0 and 0x004165e0 remove them (flags in resman+0x34) |
