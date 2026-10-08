@@ -3,10 +3,12 @@
 How the engine loads and runs compiled NWScript (`.ncs`, resource type 2010). Addresses are for
 the Steam `swkotor.exe` after SteamStub removal. Names are ours, in the Aurora/NWN vocabulary
 (`CVirtualMachine`, `CVirtualMachineStack`, `CVirtualMachineScript`,
-`CVirtualMachineCmdImplementer`); Ghidra still shows most of them as `FUN_...` until the
-proposals in `kotor/re/proposals/vm.tsv` are merged. Confidence: **high** = read in the code and
-consistent everywhere it is used; **med** = behaviour clear, name or a detail inferred; **low** =
-a guess.
+`CVirtualMachineCmdImplementer`); they are merged into [names.tsv](names.tsv), so the exports
+and `rex.py` show them. Confidence: **high** = read in the code and consistent everywhere it is
+used; **med** = behaviour clear, name or a detail inferred; **low** = a guess. The whole page was
+rechecked claim by claim on 2026-10-07 against the exports rebuilt after the noreturn fix
+([noreturn-fix.md](noreturn-fix.md)); a med claim that says "needs a runtime check" rests on
+static reading alone and is surprising enough to test before relying on it.
 
 The short version for an implementer: KOTOR's VM is the NWN 1.x VM almost unchanged. The opcode
 set and encodings are the ones documented for NWN/KOTOR NCS; the differences that matter are
@@ -16,7 +18,7 @@ listed under [Quirks](#quirks-a-compatible-vm-must-reproduce).
 
 | Object | Size | Where | What |
 |---|---|---|---|
-| `CVirtualMachine` | 4 | `g_pVirtualMachine` 0x007a3a00 | a facade: its only field is a pointer to the internal object. Every public method is a 7-byte thunk that loads that pointer and jumps to the internal method (high) |
+| `CVirtualMachine` | 4 | `g_pVirtualMachine` 0x007a3a00 | a facade: its only field is a pointer to the internal object. Apart from the constructor, the destructor and `StackPushVector` (0x005d1050, which repacks its three floats before calling 0x005d18b0), every public method is a 7-byte thunk that loads that pointer and jumps to the internal method (high) |
 | `CVirtualMachineInternal` | 0x3d8 | created by 0x005d0f40 | the real VM: return value, counters, 8 script slots, per-level OBJECT_SELF, the runtime stack, the return-address stack, the saved-state registers, the command implementer. Derives from `CResHelper<CResNCS,2010>` at offset 0, which is how it loads NCS files (high) |
 | `CVirtualMachineStack` | 0x18 | embedded at VM+0x1ac; also heap copies inside saved situations | the value stack: parallel arrays of type bytes and 32-bit values (high) |
 | `CVirtualMachineScript` | 0x28 | 8 slots at VM+0x2c; also heap objects = "script situations" | one loaded script (code, name) or one saved continuation (code or name, IP, stack copy) (high) |
@@ -28,8 +30,9 @@ CVirtualMachine` (0x005d0f40, which allocates the 0x3d8-byte internal object and
 constructor 0x005d4900), then `new CSWVirtualMachineCommands` (vtable only), then
 `SetCommandImplementer` (0x005d0ff0 → 0x005d1a40), which stores the pointer at VM+0x3d4 and calls
 the implementer's virtual `InitializeCommands` (slot 1, 0x0054c960) to fill the 772-entry routine
-table. Shutdown (0x004b7c60) deletes the VM through 0x005d0fb0 (virtual destructor of the internal
-object, 0x005d4c10 → 0x005d49b0).
+table. The implementer pointer is also kept at +0x1000c of the server app. Shutdown (0x004b7c60)
+deletes the VM through 0x005d0fb0 (virtual destructor of the internal object, 0x005d4c10 →
+0x005d49b0), then the implementer through its virtual deleting destructor (slot 0).
 
 ## Loading an NCS file
 
@@ -55,7 +58,7 @@ Consequences:
 | Address | Name | What it does | Conf. |
 |---|---|---|---|
 | 0x005d0fc0 → 0x005d45d0 | `RunScript(CExoString* name, OBJECT_ID oid, BOOL bOidValid)` | see below; returns 1 on success, 0 on any failure | high |
-| 0x005d4270 | `CVirtualMachineInternal::RunScriptFile(int ip)` | runs the code of the current level from `ip`: clears the return value (+0x1c, +0x20), pushes −1 on the return-address stack, calls `ExecuteCode`. If the result is negative or the return-address stack did not come back to its entry depth, it calls the implementer's `ReportError(name, −result)` (slot 4) and cuts the value stack back to its entry SP and the return stack to its entry depth. Returns the `ExecuteCode` result (0 = ok) | high |
+| 0x005d4270 | `CVirtualMachineInternal::RunScriptFile(int ip)` | runs the code of the current level from `ip`: clears the return value (+0x1c, +0x20), pushes −1 on the return-address stack, calls `ExecuteCode`. If the result is negative or the return-address stack did not come back to its entry depth, it calls the implementer's `ReportError(name, −result)` (slot 4; the implementer pointer is not checked here) and puts SP back to its entry value (cells above it are destroyed; if SP had dropped below it, the SP field is simply set back up, the cells in between are not re-created) and the return stack to its entry depth. Returns the `ExecuteCode` result (0 = ok) | high |
 | 0x005d2bd0 | `CVirtualMachineInternal::ExecuteCode(int* pIP, char* code, int size)` | the interpreter loop, [below](#the-interpreter-loop) | high |
 | 0x005d0fe0 → 0x005d1820 | `GetRunScriptReturnValue(int* type, int* value)` | succeeds only if the last run left an int: type 3 and the value | high |
 
@@ -79,7 +82,8 @@ Consequences:
    scripts report, e.g. the dialog condition check 0x0059ec90: empty script name = true, else
    `RunScript` and `GetRunScriptReturnValue` != 0). Leftover cells are popped. If the stack
    did not come back to the remembered SP or SP + 1, `RunScript` returns 0. When the outermost
-   script ends, the stack is cleared.
+   script ends without an error, the stack is cleared (after an error `RunScriptFile` has already
+   cut it back; the next outermost run clears it in step 2).
 
 OBJECT_SELF: the `CONST object` instruction with value 0 pushes the current level's `oid` if its
 `bOidValid` is exactly 1, otherwise OBJECT_INVALID (0x7f000000); any other constant value
@@ -110,7 +114,7 @@ script with that code.
 | −96 | bad NCS header (magic, version, `'B'`) | high |
 | −97 | invalid type qualifier for the opcode | high |
 | −99 | push failed (engine-structure push without implementer) or JSR depth exhausted | high |
-| −100 | stack underflow / wrong type on a pop / copy offset below 0 / RETN with no return address | high |
+| −100 | stack underflow / wrong type on a pop / copy or INC/DEC index below 0 / RETN with no return address | high |
 | −101 | unknown opcode (0x00, 0x2D NOP, ≥ 0x2E) | high |
 | −105 | division or modulo by zero (int, float, vector / float) | high |
 | −107 | instruction pointer past the end of the code | high |
@@ -137,28 +141,28 @@ right operand is on top; "a op b" below means a = lower cell, b = top cell.
 | Op | Mnemonic | Operands after opcode+type | Behaviour in KOTOR | Conf. |
 |---|---|---|---|---|
 | 0x01 | CPDOWNSP | int32 offset, int16 size | copies the top size/4 cells to SP + offset/4 (cell by cell, deep copies, see `AssignLocationToLocation`); −100 if the destination index < 0. 8 bytes | high |
-| 0x02 | RSADD | — | pushes a default cell: int 0, float 0.0, string "", object OBJECT_INVALID, engine structure = `CopyGameDefinedStructure(n, NULL)` (a default-constructed one). Other types −97 | high |
-| 0x03 | CPTOPSP | int32 offset, int16 size | pushes copies of size/4 cells starting at SP + offset/4. 8 bytes | high |
-| 0x04 | CONST | int: int32; float: 32-bit IEEE; string: int16 length + bytes; object: int32 | int/float/object 6 bytes, string 4 + length bytes. The string length is read as a **signed** 16-bit value and the text goes through a `"%s"` format, so it stops at an embedded NUL. Object: 0 = OBJECT_SELF (see above), anything else OBJECT_INVALID. Other types −97 | high |
-| 0x05 | ACTION | uint16 routine, uint8 argc | calls the implementer's `RunCommand(routine, argc)` (vtable slot 2, 0x0052c0d0); a negative result aborts the script with that code; −108 without implementer. 5 bytes. The VM does not check how many cells the handler consumed | high |
+| 0x02 | RSADD | — | pushes a default cell: int 0, float 0.0, string "", object OBJECT_INVALID, engine structure = `CopyGameDefinedStructure(n, NULL)` (a default-constructed one; for n 4..9 the hook returns a null value) through 0x005d19c0, −99 without an implementer. Other types −97 | high |
+| 0x03 | CPTOPSP | int32 offset, int16 size | pushes copies of size/4 cells starting at SP + offset/4; −100 if the source index < 0. 8 bytes | high |
+| 0x04 | CONST | int: int32; float: 32-bit IEEE; string: int16 length + bytes; object: int32 | int/float/object 6 bytes, string 4 + length bytes. The string length is read as a **signed** 16-bit value and the text goes through a `"%s"` format, so it stops at an embedded NUL (a negative length copies nothing and advances IP by 4). Object: 0 = OBJECT_SELF (see above), anything else OBJECT_INVALID. Other types −97 | high |
+| 0x05 | ACTION | int16 routine, uint8 argc | calls the implementer's `RunCommand(routine, argc)` (vtable slot 2, 0x0052c0d0); a negative result aborts the script with that code; −108 without implementer. 5 bytes. The VM does not check how many cells the handler consumed. The routine number is sign-extended and `RunCommand` only checks it is < 772 (signed) and has a handler (else −2002), so a value ≥ 0x8000 would index before the table (no script has one) | high |
 | 0x06 | LOGAND | 0x20 only | pops b, a; pushes (a && b) | high |
 | 0x07 | LOGOR | 0x20 | pushes (a \|\| b) | high |
 | 0x08 | INCOR | 0x20 | bitwise or | high |
 | 0x09 | EXCOR | 0x20 | bitwise xor | high |
 | 0x0A | BOOLAND | 0x20 | bitwise and | high |
-| 0x0B / 0x0C | EQUAL / NEQUAL | 0x20..0x23, 0x30..0x39; 0x24 adds int16 size (bytes) | compares n cells pairwise (n = 1, or size/4 for 0x24; cell k of the top block with cell k of the block below), pops 2n cells, pushes 1/0. Per cell, by the cell's type: int, float and object compare the raw 32 bits (so float 0.0 ≠ −0.0); strings compare **ASCII case-insensitively** (0x005e6450; a null string equals only a null string); engine structures through `GetEqualGameDefinedStructure`; anything else −109. −100 if fewer than 2n cells. 2 bytes, 4 with 0x24 | high |
+| 0x0B / 0x0C | EQUAL / NEQUAL | 0x20..0x23, 0x30..0x39; 0x24 adds int16 size (bytes) | compares n cells pairwise (n = 1, or size/4 for 0x24; cell k of the top block with cell k of the block below), pops 2n cells, pushes 1/0. Per cell, by the type byte of the top block's cell (the lower cell's type is not checked): int, float and object compare the raw 32 bits (so float 0.0 ≠ −0.0); strings compare **ASCII case-insensitively** (0x005e6450; a null string equals only a null string); engine structures through `GetEqualGameDefinedStructure`; anything else −109. −100 if fewer than 2n cells. 2 bytes, 4 with 0x24 | high |
 | 0x0D | GEQ | 0x20, 0x21 | a >= b | high |
 | 0x0E | GT | 0x20, 0x21 | a > b | high |
 | 0x0F | LT | 0x20, 0x21 | a < b | high |
 | 0x10 | LEQ | 0x20, 0x21 | a <= b | high |
 | 0x11 | SHLEFT | 0x20 | a << (b & 31) | high |
-| 0x12 | SHRIGHT | 0x20 | a >= 0: a >> b; a < 0: −((−a) >> b) (rounds toward zero) | high |
-| 0x13 | USHRIGHT | 0x20 | **arithmetic** (sign-extending) shift, not logical — same as NWN | high |
-| 0x14..0x17 | ADD, SUB, MUL, DIV | 0x20, 0x21, 0x25, 0x26 (result float when either side is float); 0x23 ADD only (concatenation a + b); 0x3a ADD/SUB only; 0x3b vector*/÷float; 0x3c float*vector | int DIV uses x86 `idiv` (division by 0 → −105; INT_MIN / −1 would fault). Float and vector/float DIV by 0.0 → −105. With a qualifier that is accepted but meaningless for the opcode (e.g. SUB 0x23, MUL 0x3a, ADD 0x3b) the operands are popped and nothing is pushed | high |
-| 0x18 | MOD | 0x20 | a % b (C remainder); b = 0 → −105 | high |
+| 0x12 | SHRIGHT | 0x20 | a >= 0: a >> (b & 31); a < 0: −((−a) >> (b & 31)) (rounds toward zero) | high |
+| 0x13 | USHRIGHT | 0x20 | a >> (b & 31) as an **arithmetic** (sign-extending, `sar`) shift, not logical — same as NWN | high |
+| 0x14..0x17 | ADD, SUB, MUL, DIV | 0x20, 0x21, 0x25, 0x26 (result float when either side is float); 0x23 ADD only (concatenation a + b); 0x3a ADD/SUB only; 0x3b and 0x3c MUL/DIV only (both compute vector × float or vector ÷ float, whichever side the vector is on) | int DIV uses x86 `idiv` (division by 0 → −105; INT_MIN / −1 would fault). Float and vector/float DIV by 0.0 → −105; vector ÷ float is computed as each component × (1/f). With a qualifier that is accepted but meaningless for the opcode (e.g. SUB 0x23, MUL 0x3a, ADD 0x3b) the operands are popped and nothing is pushed | high |
+| 0x18 | MOD | 0x20 | a % b (C remainder, `idiv`, so INT_MIN % −1 would fault); b = 0 → −105 | high |
 | 0x19 | NEG | 3, 4 | −a | high |
 | 0x1A | COMP | 3 | ~a | high |
-| 0x1B | MOVSP | int32 offset | SP += offset/4 (only shrinks; freed cells are destroyed). 6 bytes | high |
+| 0x1B | MOVSP | int32 offset | SP += offset/4 (only shrinks; freed cells are destroyed; a target below 0 is not rejected). 6 bytes | high |
 | 0x1C | STORE_STATEALL | type byte = resume offset | saved IP = IP + type byte, both saved sizes 0 (= "whole stack"). 2 bytes | high |
 | 0x1D | JMP | int32 offset | IP += offset | high |
 | 0x1E | JSR | int32 offset | pushes IP + 6 on the return-address stack (−99 if it is full), IP += offset | high |
@@ -166,7 +170,7 @@ right operand is on top; "a op b" below means a = lower cell, b = top cell.
 | 0x20 | RETN | — | pops a return address into IP (−100 if none); −1 ends `ExecuteCode` with 0 | high |
 | 0x21 | DESTRUCT | int16 size, int16 keep-offset, int16 keep-size | removes size/4 cells from the top but keeps the keep-size/4 cells that start keep-offset/4 cells into that block (they slide down). 8 bytes | high |
 | 0x22 | NOT | 3 | !a | high |
-| 0x23 / 0x24 | DECISP / INCISP | type 3, int32 offset | ±1 on the int cell at SP + offset/4 (only if that cell is an int; any other type byte in the instruction is silently skipped). 6 bytes | high |
+| 0x23 / 0x24 | DECISP / INCISP | type 3, int32 offset | ±1 on the int cell at SP + offset/4: −100 if that index < 0; nothing happens if the cell is not an int (the index is not checked against SP); any other type byte in the instruction is silently skipped. 6 bytes | high |
 | 0x25 | JNZ | int32 offset | pops an int; jumps if non-zero | high |
 | 0x26 | CPDOWNBP | as 0x01, relative to BP | | high |
 | 0x27 | CPTOPBP | as 0x03, relative to BP | | high |
@@ -182,8 +186,8 @@ Helpers called by the loop:
 |---|---|---|---|
 | 0x005d17f0 | `PushInstructionPtr(int)` | stores at +0x1c8[depth], depth + 1; false once depth reaches 128 | high |
 | 0x005d17b0 | `PopInstructionPtr(int*)` | depth − 1; false (depth back to 0) if it went negative | high |
-| 0x005d16c0 | `CVirtualMachineStack::ModifyIntegerAtLocation(idx, delta)` | INC/DEC on an int cell | high |
-| 0x005d1c40 | `CVirtualMachineStack::AssignLocationToLocation(src, dst)` | copies one cell: grows the stack first if dst == SP; strings are duplicated (the old dst string is freed); engine structures: destroy old dst (slot 6), `CopyGameDefinedStructure` (slot 8); other types copy the 32 bits; dst type = src type | high |
+| 0x005d16c0 | `CVirtualMachineStack::ModifyIntegerAtLocation(idx, delta)` | INC/DEC on an int cell; ignores idx < 0 and non-int cells | high |
+| 0x005d1c40 | `CVirtualMachineStack::AssignLocationToLocation(src, dst)` | copies one cell: grows the stack first if dst == SP; the old dst value is released according to the **source** cell's type: a string src frees the old dst pointer as a string and stores a duplicate; an engine-structure src destroys the old dst (slot 6, if non-null) and stores `CopyGameDefinedStructure` (slot 8); other types just copy the 32 bits (an old dst string or structure is not released); dst type = src type | high |
 
 ## The value stack
 
@@ -200,16 +204,17 @@ Helpers called by the loop:
 
 | Address | Name | What | Conf. |
 |---|---|---|---|
-| 0x005d15a0 | `AddToTopOfStack(int type)` | grows by 256 cells when full (reallocates both arrays), writes the type and a default value (0; object 0x7f000000; an engine-structure cell is only added if `m_pVMachine` is set) | high |
+| 0x005d15a0 | `AddToTopOfStack(int type)` | grows by 256 cells when full (reallocates both arrays), writes the type and a default value (0; object 0x7f000000; an engine-structure cell holds a null pointer and is only added if `m_pVMachine` is set; any other type adds nothing) | high |
 | 0x005d21f0 | `SetStackPointer(int sp)` | lowers SP to `sp`, destroying freed cells from the top down: strings deleted, engine structures via `DestroyGameDefinedStructure` (slot 6). Never raises SP | high |
 | 0x005d2140 | `ClearStack()` | destroys every cell, frees both arrays, zeroes SP/BP/size | high |
-| 0x005d28f0 | `CopyFromStack(src, stackBytes, baseBytes)` | rebuilds this stack from part of `src`: `baseBytes/4` cells taken from just below `src.BP` become cells 0.. (new BP = that count), then `stackBytes/4` cells taken from just below `src.SP` follow; both clamped to 0..65536 cells and the base part to at most `src.BP`. Both 0 = whole stack (base = src.BP cells, rest = SP − BP). Deep copies strings and engine structures. Capacity = cells + 16 | high |
+| 0x005d28f0 | `CopyFromStack(src, stackBytes, baseBytes)` | rebuilds this stack from part of `src`: `baseBytes/4` cells taken from just below `src.BP` become cells 0.. (new BP = that count), then `stackBytes/4` cells taken from just below `src.SP` follow; both clamped to 0..65536 cells and the base part to at most `src.BP`. Both 0 = whole stack (base = src.BP cells, rest = SP − BP). Deep copies strings and engine structures (slot 8, through this stack's own `m_pVMachine`, which must already be set). Capacity = cells + 16 | high |
 | 0x005d1d80 | `SaveStack(CResGFF*, CResStruct*)` | GFF, see [Saved situations](#save-games) | high |
 | 0x005d1ef0 | `LoadStack(CResGFF*, CResStruct*)` | GFF reader | high |
 
 Push and pop (facade thunk → internal implementation; every pop fails, returning 0 and leaving
-the stack alone, if the stack is empty or the top cell has the wrong type; pushes return 1, except
-an engine-structure push without a command implementer, which returns 0):
+the stack alone, if the stack is empty or the top cell has the wrong type, except the vector pop
+noted below; pushes return 1, except an engine-structure push without a command implementer,
+which returns 0):
 
 | Facade | Internal | Name | Notes | Conf. |
 |---|---|---|---|---|
@@ -217,15 +222,15 @@ an engine-structure push without a command implementer, which returns 0):
 | 0x005d1010 | 0x005d1850 | `StackPushInteger(int)` | | high |
 | 0x005d1020 | 0x005d2510 | `StackPopFloat(float*)` | | high |
 | 0x005d1030 | 0x005d1880 | `StackPushFloat(float)` | | high |
-| 0x005d1040 | 0x005d2560 | `StackPopVector(Vector*)` | pops z, y, x (three float cells; z is on top) | high |
+| 0x005d1040 | 0x005d2560 | `StackPopVector(Vector*)` | pops z, y, x (three float cells; z is on top) one at a time: if y or x is not a float it fails with the cells above already consumed | high |
 | 0x005d1050 | 0x005d18b0 | `StackPushVector(Vector)` | pushes x, y, z | high |
 | 0x005d1080 | 0x005d25e0 | `StackPopString(CExoString*)` | assigns into the caller's string, then frees the cell | high |
 | 0x005d1090 | 0x005d1930 | `StackPushString(CExoString const&)` | pushes a new heap copy | high |
-| 0x005d10a0 | 0x005d2630 | `StackPopEngineStructure(int n, void** out)` | top must be type 0x10+n; returns a **copy** (slot 8) and destroys the stack's own object | high |
+| 0x005d10a0 | 0x005d2630 | `StackPopEngineStructure(int n, void** out)` | top must be type 0x10+n; returns a **copy** (slot 8) and destroys the stack's own object; fails without a command implementer | high |
 | 0x005d10b0 | 0x005d19c0 | `StackPushEngineStructure(int n, void* p)` | pushes a **copy** (slot 8); the caller keeps and must free `p` | high |
 | 0x005d10c0 | 0x005d26a0 | `StackPopObject(OBJECT_ID*)` | | high |
 | 0x005d10d0 | 0x005d1a10 | `StackPushObject(OBJECT_ID)` | | high |
-| 0x005d10e0 | 0x005d4380 | `StackPopCommand(CVirtualMachineScript**)` | captures the last STORE_STATE as a script situation, [below](#script-situations-action-arguments) | high (name med) |
+| 0x005d10e0 | 0x005d4380 | `StackPopCommand(CVirtualMachineScript**)` | captures the last STORE_STATE as a script situation, [below](#script-situations-action-arguments); pops nothing and always returns 1 | high (name med) |
 
 ## Engine structures and the command implementer
 
@@ -236,8 +241,8 @@ and ten `_purecall` slots). `CSWVirtualMachineCommands` (vtable 0x007450e4) fill
 |---|---|---|---|---|
 | 0 | 0x004b16e0 | deleting destructor | destructor 0x0052c070 frees the routine table | high |
 | 1 | 0x0054c960 | `InitializeCommands()` | allocates and fills the 772-entry table at +0xc | high |
-| 2 | 0x0052c0d0 | `RunCommand(routine, argc)` | | high |
-| 3 | 0x0052c100 | `RunScriptCallback(CExoString* name)` | called by `RunScript` for every script; for a non-empty name, appends `name` + `","` to a `CExoString` at +0x60 of the object returned by 0x004aed80 (server getter, the same object `AddEventDeltaTime` is called on). Purpose unknown (a debug trace?) | med |
+| 2 | 0x0052c0d0 | `RunCommand(routine, argc)` | calls table entry `routine` with (routine, argc); −2002 if routine ≥ 772 or the entry is empty | high |
+| 3 | 0x0052c100 | `RunScriptCallback(CExoString* name)` | called by `RunScript` for every script (not by `RunScriptSituation`); for a non-empty name, appends `name` + `","` (0x0052bfc0) to a `CExoString` at +0x60 of the AI master (0x004aed80, the object `AddEventDeltaTime` is called on). A profiling trace: `UpdateState` (0x004b0b70) empties the string and its counters (+0x68..+0x7c) before each `AIUpdate`, and an `AIUpdate` of 75,000 µs or more sends debug feedback 0xa3 (0x004ce6e0) carrying the list, only while the server flag +0x1006c is set ([gameloop.md](gameloop.md) 2.2). No gameplay effect | high |
 | 4 | 0x005b5e90 | `ReportError(CExoString* name, int err)` | folded empty stub: errors are dropped | high |
 | 5 | 0x0052c580 | `CreateGameDefinedStructure(n)` | `new` of the type's class; not called by the VM itself | high |
 | 6 | 0x00548360 | `DestroyGameDefinedStructure(n, p)` | | high |
@@ -253,9 +258,9 @@ The four engine structures (n is `ENGINE_STRUCTURE_n` in nwscript.nss):
 
 | n | Script type | Class (size) | Constructor / copy / equality / save / load | Equality means | Conf. |
 |---|---|---|---|---|---|
-| 0 | effect | `CGameEffect` (0x8c) | 0x00503e40 (arg: create a new 64-bit id from the counter at 0x007a1b40) / 0x00504090 / inline / 0x00503790 / 0x005043a0; destructor 0x00503590 | same 64-bit effect id | high (class name med) |
-| 1 | event | `CScriptEvent` (0x34) | 0x004d7540 / 0x004d77f0 / 0x004d7270 / 0x004d73a0 / 0x004d79b0; destructor 0x004d7590 | same event type and equal int, float, string and object lists | high (name med) |
-| 2 | location | `CScriptLocation` (0x18) | 0x004ca7a0 / 0x004ca7c0 / 0x0052bf80 / 0x004ca8e0 / 0x004ca800 | same position and orientation vectors (0x004aa980) | high |
+| 0 | effect | `CGameEffect` (0x8c) | 0x00503e40 (arg 1: take a new 64-bit id from the counter at 0x007a1b40; the VM's create and copy pass 0, so a copy keeps its source's id; the load passes 1, then reads the saved `Id`) / 0x00504090 / inline / 0x00503790 / 0x005043a0; destructor 0x00503590 | same 64-bit effect id (a copy equals its original) | high (class name med) |
+| 1 | event | `CScriptEvent` (0x34) | 0x004d7540 / 0x004d77f0 / 0x004d7270 / 0x004d73a0 / 0x004d79b0; destructor 0x004d7590 | equal int, float (float `==`), object and string lists (strings case-sensitive, 0x005e5310). The event type is **not** compared | high (name med) |
+| 2 | location | `CScriptLocation` (0x18) | 0x004ca7a0 / 0x004ca7c0 / 0x0052bf80 / 0x004ca8e0 / 0x004ca800 | same position and orientation vectors, exact float `==` per component (0x004aa980) | high |
 | 3 | talent | `CScriptTalent` (0x18) | 0x004ca9e0 / 0x004caa10 / 0x004cabb0 / 0x004caa50 / 0x004caaf0 | all fields equal | high |
 
 A KOTOR location is position (+0, three floats) and orientation (+0xc, three floats; GFF
@@ -286,11 +291,17 @@ Running one: `RunScriptSituation(situation, oid, bOidValid)` (0x005d0fd0 → 0x0
 **wipes the runtime stack** and replaces it with a copy of the situation's stack, frees the
 situation's stack, zeroes the return-stack depth and the instruction counter, then
 `SetUpScriptSituation` (0x005d23e0) opens a new level: if the situation has no code it calls
-`ReadScriptFile(name)` (code from the resource, flag 0), otherwise it adopts the situation's code
-and flag; it copies name, IP, CRC. If the slot's CRC is non-zero the code is not run. Otherwise it
-sets the level's OBJECT_SELF, `RunScriptFile(InstructionPtr)`, frees the slot, level − 1, deletes
-the situation and returns true on success. It assumes no other script is running (it does not
-preserve the stack); the engine only calls it from event and action processing.
+`ReadScriptFile(name)` (code from the resource, flag 0), otherwise it raises the level itself
+(−94 past 8 levels) and adopts the situation's code and flag; it copies name, IP, secondary IP,
+stack size and CRC. If opening the level fails (missing or bad script, too many levels), the
+situation is deleted and the result is false. If the slot's CRC is non-zero the code is not run
+(slot freed, level − 1, situation deleted, false). Otherwise it sets the level's OBJECT_SELF (also
+in the implementer), `RunScriptFile(InstructionPtr)`, frees the slot, level − 1, deletes the
+situation and returns true when `RunScriptFile` returned 0. Unlike `RunScript` it neither restores
+the implementer's OBJECT_SELF afterwards nor clears the stack (leftovers stay until the next
+outermost `RunScript`), and it reads no return value. It assumes no other script is running (it
+does not preserve the stack); the engine only calls it from event delivery (the object, area and
+module event handlers) and the DOCOMMAND action (0x0057b530).
 
 `DeleteScriptSituation` (0x005d1110 → 0x005d48e0) frees a situation that will not run.
 
@@ -298,15 +309,21 @@ preserve the stack); the engine only calls it from event and action processing.
 
 | Routine | Handler | Behaviour | Conf. |
 |---|---|---|---|
-| 6 `AssignCommand(object, action)` | 0x0052e720 | pops the object, then the situation. If the object exists (object array 0x004aed70, lookup 0x004d8230), queues an AI event: delay 0 days 0 ms, caller = OBJECT_SELF (or OBJECT_INVALID if not valid), target = the object, event id 1, data = the situation (0x004b08d0). Otherwise frees the situation. Returns 0 either way | high |
-| 7 `DelayCommand(float, action)` | 0x0052fe30 | pops the float, then the situation. Only if OBJECT_SELF is valid and exists: queues event id 1 with delay `(int)(seconds * 1000.0)` ms (constant at 0x0073d6fc), caller = target = OBJECT_SELF. Otherwise the situation is freed | high |
-| 294 `ActionDoCommand(action)` | 0x0052c740 | pops the situation; if OBJECT_SELF exists, 0x0057cb10 adds action 0x25 (37, the do-command action; med) with one parameter of type 5 (situation) to its queue, or deletes the situation if the object is not commandable (+0xe8 == 0). If OBJECT_SELF does not exist the situation is leaked, not freed. When the action executes (0x0057b530, called from 0x0057f4a0, the action dispatcher; med) it runs `RunScriptSituation(situation, self, TRUE)` | high |
+| 6 `AssignCommand(object, action)` | 0x0052e720 | pops the object, then the situation. If the object exists (object array 0x004aed70, lookup 0x004d8230), queues an AI event: delay 0 days 0 ms, caller = OBJECT_SELF (or OBJECT_INVALID if not valid), target = the object, event id 1, data = the situation (0x004b08d0). Otherwise frees the situation (a bare `free` of the 0x28-byte object: its stack copy and name leak). Returns 0 either way; −2001 if a pop fails | high |
+| 7 `DelayCommand(float, action)` | 0x0052fe30 | pops the float, then the situation. Only if OBJECT_SELF is valid and exists: queues event id 1 with delay `(int)(seconds * 1000.0)` ms (float constant at 0x0073d6fc, truncated by `_ftol`), caller = target = OBJECT_SELF. Otherwise the situation is freed (bare `free`, as above). A delay that is negative or reaches one game day is rejected by `AddWorldTimes` (0x004adf50) and the situation is freed the same way ([gameloop.md](gameloop.md) 4.3) | high |
+| 294 `ActionDoCommand(action)` | 0x0052c740 | pops the situation; if OBJECT_SELF (the implementer's id, whatever its validity flag) exists, 0x0057cb10 adds action 0x25 (DOCOMMAND, [actions.md](actions.md) 1.9) with one parameter of type 5 (situation) to its queue, or deletes the situation if the object is not commandable (+0xe8 == 0). If OBJECT_SELF does not exist the situation is leaked, not freed. When the action comes up in `RunActions` (0x0057f4a0), 0x0057b530 fails it (3; the node destructor deletes the situation) if the object is dead (virtual `GetDead`) or a dying creature (0x004ef890), the common preconditions of [actions.md](actions.md) 1.4; otherwise it runs `RunScriptSituation(situation, self, TRUE)` and the action is done (2) | high |
 | 8 `ExecuteScript(string, object, int = −1)` | 0x00535b70 | pops the name, the target and (when argc > 2) `nScriptVar` into the global 0x00832828 (read by `GetRunScriptVar`, never reset). Runs `RunScript(name, target, bValid)` **immediately and nested** (one recursion level deeper), where bValid is the caller's OBJECT_SELF validity and the target becomes OBJECT_INVALID if the caller's OBJECT_SELF is not valid. The result is ignored | high |
 
-Event id 1 is delivered by the AI master's update (0x004b0b70) to the target object's
-`EventHandler`, which calls `RunScriptSituation(situation, its own id, TRUE)` (for example
-0x004c5120 for one object type). So OBJECT_SELF inside a delayed or assigned action is the event's
-target.
+Event id 1 is delivered by the AI master's update (0x004b0b70) by the target's object type:
+type ≥ 5 through virtual slot 30 (+0x78) `EventHandler` (creature 0x004fece0, item 0x0055ee10,
+placeable 0x00587ba0, door 0x0058b850, trigger 0x0058f140, area-of-effect 0x005964e0, store
+0x005c6ee0), type 4 to the area's handler 0x0050d6c0, type 3 to the module's 0x004c5120. Each
+calls `RunScriptSituation(situation, its own id, TRUE)`. So OBJECT_SELF inside a delayed or
+assigned action is the event's target. The encounter, waypoint and sound-object handlers
+(0x00594220, 0x005c7f10, 0x005c8650, slot 30 of their vtables) ignore event 1: an action assigned
+to (or delayed on) one of those objects never runs, and its situation is leaked. If the target no
+longer exists at delivery, `ClearEventData` (0x004b0ab0) deletes the situation unrun
+([gameloop.md](gameloop.md) 4.4).
 
 ### Save games
 
@@ -315,15 +332,17 @@ Situations are saved in two places: the AI event queue (0x004afea0 / 0x004b0290;
 (0x004cc7e0 / 0x004cecb0; a `Paramaters` element of `Type` 5 has a `Value` struct, id 2).
 
 `SaveScriptSituation` (0x005d10f0 → 0x005d47a0) always embeds code: if the situation has none it
-loads the script by name just to copy its code. `LoadScriptSituation` (0x005d1100 → 0x005d26f0)
-sets the loaded-from-save flag, so a reloaded situation (and any situation captured from it later)
-runs the saved code, not the current resource.
+loads the script by name (`ReadScriptFile`, a temporary level) just to copy its code; it also
+zeroes the situation's CRC. `LoadScriptSituation` (0x005d1100 → 0x005d26f0) sets the
+loaded-from-save flag, so a reloaded situation (and any situation captured from it later) runs the
+saved code, not the current resource. A situation saved with `CodeSize` 0 is flagged too but has
+no code, so it re-reads the script by name when it runs (flag back to 0).
 
 | Field | GFF type | Meaning | Conf. |
 |---|---|---|---|
 | `CodeSize` | INT | code length (0 if the script could not be loaded) | high |
 | `Code` | VOID | code bytes (file offset 13 onward) | high |
-| `CRC` | DWORD | written as 0; on load, a non-zero value prevents the situation from running | high |
+| `CRC` | DWORD | written as 0; on load (0 if absent), a non-zero value prevents the situation from running | high |
 | `InstructionPtr` | INT | resume address (code offset) | high |
 | `SecondaryPtr` | INT | 0 in practice | high |
 | `Name` | CExoString | script resref | high |
@@ -361,7 +380,7 @@ runs the saved code, not the current resource.
 |---|---|---|
 | +0x00 | `CVirtualMachineStack*` (saved stack; null in a running slot) | high |
 | +0x04 | stack size (SP at capture) | high |
-| +0x08 | instruction pointer (resume address; initialised to 13 but unused for fresh scripts, which start at 0) | high |
+| +0x08 | instruction pointer (resume address; 0 from the constructor, 13 after `InitializeScript` or the reset, but unused for fresh scripts, which start at 0) | high |
 | +0x0c | secondary instruction pointer | high |
 | +0x10 | code buffer | high |
 | +0x14 | code size | high |
@@ -371,30 +390,42 @@ runs the saved code, not the current resource.
 
 ## Quirks a compatible VM must reproduce
 
-- String `==` / `!=` are ASCII case-insensitive.
-- Float `==` compares bit patterns.
-- `USHRIGHT` sign-extends; `SHRIGHT` of a negative number rounds toward zero.
+- String `==` / `!=` are ASCII case-insensitive (only A–Z fold; 0x005e6450).
+- Float `==` compares bit patterns (so 0.0 ≠ −0.0 on the stack; engine structures compare their
+  floats with float `==`).
+- `USHRIGHT` sign-extends; `SHRIGHT` of a negative number rounds toward zero (computed as
+  −((−a) >> b), so `SHRIGHT` of INT_MIN by n ≥ 1 gives +2^(31−n)). All three shifts use only the
+  low 5 bits of the count.
 - `NOP` (0x2D) is an invalid opcode.
 - The NCS size field is ignored; code offsets exclude the 13-byte header.
 - Errors are silent; a script that fails keeps the effects it already had.
 - Nested `ExecuteScript` runs share the instruction budget (131,071 per outermost run) and the
   128-entry return stack; at most 8 levels.
 - `ExecuteScript` runs synchronously; `AssignCommand` always goes through the event queue (it runs
-  on the next AI update, never inline); `DelayCommand` and `AssignCommand` drop the action if
-  their object is gone.
+  at the AI master's next event delivery point, normally later in the same frame,
+  [gameloop.md](gameloop.md) 4.2; never inline); `DelayCommand` and `AssignCommand` drop the
+  action if their object is gone, both when queuing and at delivery. `DelayCommand` also drops it
+  when the delay is negative or at least one game day. An action assigned to or delayed on an
+  encounter, waypoint or sound object never runs (their event handlers ignore event 1).
+- `ActionDoCommand` on a non-commandable object discards the action; a queued DOCOMMAND fails
+  without running when its object is dead or a dying party member.
+- Engine-structure `==`: effects by id (a copy equals its original), events by their parameter
+  lists only (the event type is ignored; strings case-sensitive), locations by position and
+  orientation only, talents by every field.
 - `RunScriptFile` clears the return value at every run, including nested ones, and `RunScript`
   only overwrites it when its own script leaves an int; a void script that ran a nested
-  int-returning script therefore still reports the nested value (med).
-- After an error in a nested script, SP is restored but BP is not (med: no code restores it).
+  int-returning script therefore still reports the nested value (high: 0x005d4270, 0x005d45d0).
+- After an error in a nested script, SP is restored but BP is not: neither `RunScriptFile` nor
+  `RunScript` touches BP, and `ExecuteScript` ignores the result, so the caller resumes with the
+  BP the failed script left (high). SP is cut back to its entry value, or, if the failed script
+  had popped below it, simply set back to it without restoring the popped cells.
 
 ## Unresolved
 
-- Purpose of the comma-separated script-name list written by `RunScriptCallback` (+0x60 of the
-  object from 0x004aed80).
 - The global 0x007a3a04 is deleted at shutdown (0x004b7c60 → 0x005d1120 → 0x005d14d0) but never
-  created; its destructor (16 include-stack entries of 0x34 bytes holding a `CResHelper`, arrays
+  created (nothing else references it); like `CVirtualMachine` it is a pointer to an internal
+  object, whose destructor (16 include-stack entries of 0x34 bytes holding a `CResHelper`, arrays
   of 0x7c-byte records, 32 strings at +0x8a8) looks like NWN's script compiler. Probably a
   compiled-out compiler (low).
-- The other `CResHelper` vtable at 0x0074c480 (destructor 0x005d11e0) is used by that object only.
-- Names of the object classes whose `EventHandler` receives event id 1 (0x004c5120 and the vtable
-  slot +0x78 of game objects) belong in [objects.md](objects.md).
+- The other `CResHelper` vtable at 0x0074c480 (deleting destructor 0x005d1240, destructor
+  0x005d11e0) is used by that object only.

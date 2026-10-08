@@ -101,8 +101,8 @@ float on top). Sizes are in bytes; "n" in a stack effect is a byte count.
 | 0x01 | CPDOWNSP | 01 | offset:i32, size:u16 | 8 | copy the top `size` bytes to SP+offset (overwrite, no pop): assignment to a local |
 | 0x02 | RSADD | 03 04 05 06 10 11 12 13 | | 2 | push one default value of the type (a local or a return slot) |
 | 0x03 | CPTOPSP | 01 | offset:i32, size:u16 | 8 | push a copy of `size` bytes from SP+offset: reading a local or argument |
-| 0x04 | CONST | 03 04 05 06 | int: i32; float: f32; string: len:u16 + bytes (no terminator); object: i32 | 6, 6, 4+len, 6 | push the constant |
-| 0x05 | ACTION | 00 | routine:u16, argc:u8 | 5 | call engine routine `routine`; see [ACTION](#action) |
+| 0x04 | CONST | 03 04 05 06 | int: i32; float: f32; string: len:u16 + bytes (no terminator; the game reads the length signed, and a negative one just advances 4 bytes); object: i32 | 6, 6, 4+len, 6 | push the constant |
+| 0x05 | ACTION | 00 | routine:u16 (the game reads it signed, and compares it signed with 772), argc:u8 | 5 | call engine routine `routine`; see [ACTION](#action) |
 | 0x06 | LOGAND | 20 | | 2 | pop b, a; push `a && b` (0/1) |
 | 0x07 | LOGOR | 20 | | 2 | pop b, a; push `a \|\| b` |
 | 0x08 | INCOR | 20 | | 2 | pop b, a; push `a \| b` (bitwise) |
@@ -114,18 +114,18 @@ float on top). Sizes are in bytes; "n" in a stack effect is a byte count.
 | 0x0E | GT | 20 21 | | 2 | `a > b` |
 | 0x0F | LT | 20 21 | | 2 | `a < b` |
 | 0x10 | LEQ | 20 21 | | 2 | `a <= b` |
-| 0x11 | SHLEFT | 20 | | 2 | `a << b` |
-| 0x12 | SHRIGHT | 20 | | 2 | `a >> b` (signed; unused, so negative operands are unverified) |
-| 0x13 | USHRIGHT | 20 | | 2 | `a >> b` (unsigned; unused) |
+| 0x11 | SHLEFT | 20 | | 2 | `a << (b & 31)` |
+| 0x12 | SHRIGHT | 20 | | 2 | `a >> (b & 31)` for a ≥ 0; for a negative a the game computes −((−a) >> b), which rounds toward zero (unused; [../re/vm.md](../re/vm.md)) |
+| 0x13 | USHRIGHT | 20 | | 2 | despite the name, an arithmetic (sign-extending) `a >> (b & 31)` in the game (unused; [../re/vm.md](../re/vm.md)) |
 | 0x14 | ADD | 20 21 25 26 23 3A | | 2 | pop b, a; push `a + b`; SS concatenates strings; VV adds vectors (pops 6 cells, pushes 3) |
 | 0x15 | SUB | 20 21 25 26 3A | | 2 | `a - b` |
 | 0x16 | MUL | 20 21 25 26 3B 3C | | 2 | `a * b`; VF/FV scale a vector (pop 4 cells, push 3) |
-| 0x17 | DIV | 20 21 25 26 3B | | 2 | `a / b`; VF divides a vector by a float |
+| 0x17 | DIV | 20 21 25 26 3B 3C | | 2 | `a / b`; VF and FV both divide the vector by the float (each component × 1/f) |
 | 0x18 | MOD | 20 | | 2 | `a % b` |
 | 0x19 | NEG | 03 04 | | 2 | negate the top cell in place |
 | 0x1A | COMP | 03 | | 2 | bitwise complement of the top cell |
 | 0x1B | MOVSP | 00 | offset:i32 | 6 | SP += offset (always ≤ 0: pops `-offset` bytes, releasing what they held) |
-| 0x1C | STORE_STATEALL | | | | obsolete; not emitted, not in the corpus |
+| 0x1C | STORE_STATEALL | | | 2 | obsolete; not emitted, not in the corpus |
 | 0x1D | JMP | 00 | offset:i32 | 6 | jump to this instruction + offset |
 | 0x1E | JSR | 00 | offset:i32 | 6 | push the return address (return stack) and jump |
 | 0x1F | JZ | 00 | offset:i32 | 6 | pop an int; jump if it is 0 |
@@ -142,7 +142,7 @@ float on top). Sizes are in bytes; "n" in a stack effect is a byte count.
 | 0x2A | SAVEBP | 00 | | 2 | BP := SP, then push the old BP (one cell) |
 | 0x2B | RESTOREBP | 00 | | 2 | pop the saved cell back into BP |
 | 0x2C | STORE_STATE | 10 | bp_bytes:i32, sp_bytes:i32 | 10 | save a resumable state; see [Actions](#action-arguments-store_state) |
-| 0x2D | NOP | 00 | | 2 | nothing |
+| 0x2D | NOP | 00 | | 2 | not implemented in the game: it stops the script with error −101 like an unknown opcode (unused; [../re/vm.md](../re/vm.md)) |
 
 Notes:
 
@@ -289,7 +289,8 @@ Inside functions:
   is never taken, and its target is one cell short; a static checker must prune it (ours does)
   and a VM simply never takes it. `b` is always evaluated, side effects included.
 - Recursion exists (918 recursive subroutines across the unique scripts, mostly in the AI
-  include `k_inc_generic`), so the return stack must grow as needed.
+  include `k_inc_generic`); the game's return stack is a fixed 128-entry array (127 usable), and a
+  JSR beyond it fails the script with −99.
 - Functions from `#include`d libraries are compiled into each script that calls them; uncalled
   ones are left out (a 851-byte condition that includes `k_inc_utility` contains only the one
   helper it calls). Their global variables, though, are all there, used or not, as the include
@@ -307,7 +308,8 @@ the answers ([../design/script.md](../design/script.md)):
 - A routine handler pops typed values; a wrong type or an empty stack fails the handler, and the
   VM stops the script (silently, in the game). Extra arguments stay on the stack. Omitted
   trailing ones take the prototype's defaults (`lib/script/nwarg.ctx`).
-- Int arithmetic wraps; division and modulo by zero (int, float, vector) stop the script.
+- Int arithmetic wraps, except that INT_MIN / −1 and INT_MIN % −1 crash the game (an `idiv`
+  fault); division and modulo by zero (int, float, vector) stop the script.
 - An outermost run (with the scripts it runs through ExecuteScript) stops at its 131,072nd
   instruction; at most 8 scripts nest, and the return-address stack holds 128 entries.
 

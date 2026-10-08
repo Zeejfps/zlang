@@ -632,7 +632,9 @@ The target id decides (high, `0x004b0b70`):
   (`+0x120`), and 0x24 DESTROYPLAYERCREATURE (deletes the caller if it is a creature). The 15 module script names
   are stored in this order from `+0xb0`, 8 bytes apart;
 - an id that no longer exists (or names a type below 3): the payload is freed (`ClearEventData`
-  `0x004b0ab0`).
+  `0x004b0ab0`). The encounter, waypoint and sound-object handlers (`0x00594220`, `0x005c7f10`,
+  `0x005c8650`) ignore event 1, so a command assigned to or delayed on one of those objects never
+  runs ([vm.md](vm.md), script situations).
 
 ### 4.5 Pause, transitions and saves
 
@@ -772,7 +774,7 @@ While busy, the server frame does one step per frame (high):
 
 | Tick | Condition | Work |
 |---|---|---|
-| 1 | count = 0 | `CopyModuleFile`, `new CSWSModule`, `LoadModuleStart` (IFO, time, factions; sets count = 1) |
+| 1 | count = 0 | `CopyModuleFile`, `new CSWSModule`, `LoadModuleStart` (IFO, time, factions; sets the count to the length of `Mod_Area_list`, 1 in every shipped module) |
 | 2 | loaded ≠ count | `ClearNPCObjectIds` (`0x005639c0`), then `LoadModuleInProgress(loaded)`: the area (ARE, LYT, GIT objects, PTH); loaded = 1; progress message to the client |
 | 3 | loaded = count | `LoadModuleFinish`: queue **SIGNAL_EVENT MODULE_LOAD (script event 17) to the module**; done = 1; server state = 1 ("module loaded"); `+0x100b4` = 0; tell the client (load result, "ModuleLoaded" status) |
 
@@ -803,7 +805,7 @@ of the round trips is med:
 | 6 | client | 3/0xc → `0x00652860` | replies Login 2/0xf (`0x00678030`) |
 | 7 | server | Login 0xf → `PlayerLoginToModule` (`0x004b7470`) | after a transition: the PC is re-created from `TEMP:pifo` (`LoadCharacter(-1, …)` `0x00561e30`) and the party restored (`RestoreParty` `0x00565760`), which re-spawns the members straight into the area (`AddToArea(…, fromSave = 1)`, so **no area OnEnter for them**); `SignalPlayerEnterModule` queues **OnClientEnter** (script event 0xe; also OnPlayerDeath, script event 10, when the PC is dead or down at 0 HP or less, `GetIsDying`) and, the first time the player enters the module (flag `+0x24`), sends the module info (3/1). The PC is not in the area yet. |
 | 8 | client | 3/1 | builds the client module and camera (`0x0063f660`), replies 3/2 |
-| 9 | server | Module 3/2 → `PrepareAreaForPlayer` (`0x004b3a90`) | gives a new player the IFO's `Mod_Entry_*` start, keeps a known player's stored position; sends the area (10/2, 10/1) |
+| 9 | server | Module 3/2 → `PrepareAreaForPlayer` (`0x004b3a90`) | gives a new player the IFO's `Mod_Entry_*` start, keeps a known player's stored position; sends the area (major 4 / minor 1, which the client routes to `HandleServerToPlayerAreaLoad`, through `0x0056cd20`; then 0x32/2 through `0x0056d2d0`) |
 | 10 | client | area message (`HandleServerToPlayerAreaLoad` `0x0064bab0`, `0x0064dcf0`) | loads the client area synchronously, drawing loading frames; replies Area 4/3 (`0x006778f0`) |
 | 11 | server | Area 4/3 (`0x00524b80`) → `PlacePlayerInModule` (`0x004b3d10`) | if a waypoint tag is pending, the start position and facing become the waypoint's (tag lookup `0x004c6e00`) and the tag is cleared; snap to a free walkmesh spot within 20 m (`0x004be860`); `AddToArea(…, fromSave = 0)` (`0x004fa100`) → `AddObjectToArea` (`0x0050dfd0`), which **queues the area's OnEnter (script event 0xc) for the PC** (caller = the PC, int 0 = `GetLoadFromSaveGame`) and, as the first creature with a client twin, raises the area's objects to AI level 1 (`IncrementPlayersInArea` `0x00508c20`); a perception pass; the party is placed (`PlacePartyAroundLeader` `0x00565b00`, positions only); only while the server is in state 2. The handler then re-sends each pause type that is on |
 | 12 | client | step 1 of its frame | while the loading flag (client `+0x288`) is set and the PC's client creature exists: a pending leader switch (client `+0x338`, `0x005fb6e0`) is handled first and ends the step for that frame; otherwise input class and HUD are restored, and then, only while the application is active (`0x007a3a38`, app.md; else the step repeats next frame): **the load screen (client `+0x278`) goes away** (`0x005f6e20`, which also clears an input-block bit so that input returns 0.5 s later through the `+0x3dc` delay, autosave or not), all clocks unpause (world time resumes from the stored snapshot, 7.2), and unless an autosave is pending the fade-in starts: a 1 s fade-in after 0.5 s, or, while a conversation is pending (in-game GUI `+0xb4`) or `+0xb98` is set, only `+0xb98` = 1 (the conversation's end fades in, `SetDialogPending(0)`); `+0x288` is then cleared |
