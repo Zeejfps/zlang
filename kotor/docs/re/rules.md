@@ -1272,7 +1272,8 @@ included: a companion's first sight of the leader in a newly entered area costs 
 feat.2da is loaded into 0x48-byte `CSWFeat` rows (`g_pRules`+0x90, count +0xa4, `GetFeat`
 `0x00550c00`, valid only when flag 0x10 at +0x28 is set). `MeetsFeatRequirements(feat, pending)`
 (`0x005afb00`) is called only by `CanSelectFeat` (`0x005b2530`), whose only caller is
-`AutoLevelUp` (the GUI's feat screens were not traced to it): (high)
+`AutoLevelUp`; the GUI's feat screens use their own client-side copies of the same checks
+(`0x0064a4c0` / `0x0064a2e0`, [chargen.md](chargen.md) H), which also test `mincharlevel`: (high)
 
 1. The last class's feat table may name a level for the feat (`0x005be220`); total level must reach
    it.
@@ -1289,7 +1290,7 @@ slot is left: the class feat table says whether the feat is a general choice, a 
 choice or both (`GetFeatSelectableAs` `0x005a6fe0`), and the pending choices are matched to slots
 greedily (6.1). (high)
 
-Class tables: `CSWClass::LoadFeatTable` (`0x005bd0f0`, cls_feat_*: granted level and selectability
+Class tables: `CSWClass::LoadFeatTable` (`0x005bd0f0`, from `feat.2da`'s `<class code>_List` / `_Granted` / `_Recom` columns: granted level and selectability
 per feat), `LoadFeatGain` (`0x005bcf70`, featgain.2da `_REG`/`_BON` for levels 1–20 into class
 +0x150/+0x13c), `LoadSkillsTable` (`0x005bd6c0`, class skills), `LoadSpellGainTable`
 (`0x005bd900`: cls_spgn_jedi `NumSpellLevels` per level into class +0x114, classpowergain.2da's

@@ -435,7 +435,8 @@ getters. (high unless marked)
 | `+0x60` / `+0x64` | Age (int) / Gender (byte, clamped to 4) |
 | `+0x68` | Experience (GetXP); set through `SetExperience` `0x005af480`, which refuses a value below the current one |
 | `+0x6c` | IsPC (constructor default 1, kept when the GFF has no `IsPC` field) |
-| `+0x78` | FactionID (default −1) |
+| `+0x78` | FactionID as read (default −1); `PostProcess` moves a non-PC's value to `+0x7c` and sets this to −1 ([chargen-creature.md](chargen-creature.md)) |
+| `+0x7c` | current faction id |
 | `+0x84` | ChallengeRating (float) |
 | `+0x88` | StartingPackage |
 | `+0x89` | number of classes (at most 2, the two slots that exist; the constructor starts with one: class 0, level 1) |
