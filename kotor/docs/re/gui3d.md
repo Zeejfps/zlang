@@ -6,6 +6,9 @@ does for the main menu (found by reading `CSWGuiMainMenu::CSWGuiMainMenu` and th
 and what `kotor/lib/frontend/gui3d` does about it. Addresses are for the Steam `swkotor.exe`
 after SteamStub removal (README.md); each claim has a confidence (high = read in the code, med =
 role clear and detail inferred, low = plausible). Names are ours.
+The whole page was rechecked claim by claim on 2026-10-08 against the exports rebuilt after the
+noreturn fix ([noreturn-fix.md](noreturn-fix.md)); a med claim that says "needs a runtime check"
+rests on static reading alone and is surprising enough to test before relying on it.
 
 ## Main menu 3D scene
 
@@ -14,8 +17,10 @@ role clear and detail inferred, low = plausible). Names are ours.
 `CSWGuiMainMenu` (ctor `0x0067c4c0`) holds the control `LBL_3DVIEW` at `+0x360`, a custom control
 whose vtable is `0x00752e30` and whose member at control `+0x5c` (panel `+0x3bc`) is a
 `CSWGui3DScene` (class vtable `0x0073e3f0`, ctor `0x004174b0`). The panel's own code only does
-this, after the button handlers, and only `if (DAT_0078d1e4 != 0)` (a global that is 1 at start-up
-and shared by every GUI 3D user; probably an options or hardware switch) (high):
+this, after the button handlers, and only `if (DAT_0078d1e4 != 0)` (a global that is 1 in the
+image and that no function in the decompile writes, so always on in this build (med: a store
+through a computed address would not show); every GUI 3D panel tests it, the cursor model's
+scene, `CSWGuiManager::CreateCursorModel` `0x0040b060`, does not) (high):
 
 1. `scene->vtable[+0x70]("gui3D_room", pos (0,0,0), orientation (0,0,0,1))` = `FUN_00456f30`
    (`CAurScene` slot 28): puts the **room** model `gui3D_room` into the scene at the origin
@@ -27,10 +32,10 @@ and shared by every GUI 3D user; probably an options or hardware switch) (high):
    Flags 0 means loop: the object update (`CAurObject::Update` `0x00486670`) takes an animation
    without flag bit 0 back by its length when it passes the end, and one with the bit as done.
    (high)
-4. object slot `+0x14` with 1.0 = `CAurObject::Update(1.0)`: the model is advanced by one second
-   straight away (animation time starts at 1 s, the mist emitters have run for a second). (med: the
-   slot is named by the existing names.tsv with low confidence, and what the update does to
-   emitters was not read.)
+4. object slot `+0x14` with 1.0 = `CAurObject::Update` (`0x00486670`, slot 5 of `0x00741268`; the
+   same slot the scene's per-frame update calls with dt, below): the model is advanced by one second
+   straight away, so the animation starts at 1 s. (high) The emitters are not stepped here: they
+   run in the scene's render (below), which pre-runs them 10 s on its first frame.
 5. camera slot `+0x74` (`FUN_0045c200` → `FUN_00443820`) with the object and `"camerahook"`:
    attaches the camera to that node of the model; the camera's world position and orientation
    are the node's, every frame. (high)
@@ -48,8 +53,8 @@ is read from `0x0078d3d8` = (-1,-1,-1), which means "do not fill". (high)
 `CSWGuiPanel::Render` (`0x0040b760`) calls each visible control's Render slot (`+0x38`); the 3D
 control's (`0x0067acb0`) jumps to the scene object's slot 3 = `FUN_00414fb0(dt)`:
 
-1. scene slot `+0x1c` (`dt`): updates the scene's objects (animations, particles) by the frame's
-   own delta time. (med)
+1. scene slot `+0x1c` (`dt`, `0x00451c80`): calls every object's `+0x14` update
+   (`CAurObject::Update`) with the frame's own delta time: animations. (high)
 2. `Render_PushViewport(x, y, w, h, colour (-1,-1,-1), clear = 1, alpha 1.0)`
    (`0x004592f0`): the control's rectangle in screen pixels, offset
    by the panel's place. No colour fill, because the colour is -1; clear = 1 clears **depth and
@@ -59,7 +64,15 @@ control's (`0x0067acb0`) jumps to the scene object's slot 3 = `FUN_00414fb0(dt)`
    with `w / h` of the **current GL viewport**, i.e. of that rectangle (the camera has an override
    rectangle at `+0x1e4..0x1f0`, zero here), then the view matrix from the camera object's world
    position and quaternion (`LoadViewMatrix` `0x00425ca0`: rotate by the inverse, translate by the
-   negated position, no extra axis swap), then the scene (`CAurScene::Render`). (high)
+   negated position, no extra axis swap), then the scene (`CAurScene::Render` `0x004512d0`). (high)
+
+The particles are stepped inside `CAurScene::Render`, not by the object update. Its emitter pass
+(`0x004509b0`, scene slot `+0x110`) steps each emitter that is drawn (`0x00494da0`) with
+min(frame delta, 0.1 s) and then draws it. And on the scene's **first** render (the frame counter
+at scene `+0x50`, zeroed by `CAurScene::CAurScene`, still 0) `0x004511f0` runs every emitter of
+the scene's objects and of the scene itself through `0x00494da0` **100 times with dt 0.1 s**:
+10 s of simulation, so the mist (life 10 s) is at its steady state in the first picture. (med:
+static reading, needs a runtime check)
 
 **Field of view: vertical, in degrees, 22.70; the aspect is the viewport's.** It is the argument
 `fovy` of `gluPerspective`. The model confirms it: `Plane01` (the backdrop, texture `loadscreen3`)
@@ -82,7 +95,9 @@ world +Z, so the camera looks along +Y with Z up, toward Malak (at y = 0.85) and
 normals pointing inward, texture `Black`, extents x +-530, y +-530, z 0..150 in the mesh's space,
 the mesh node at (0.02, 9.23, -40.36) so the box spans z -40..110: a black room around the camera
 and the model. The engine needs a room in a scene for anything to be visible; here it also gives
-a black background. All the GUI 3D users use the same room. The library does not load it: it
+a black background. Every GUI 3D panel scene uses the same room (main menu, class selection,
+character generation, portrait, level-up, character sheet, galaxy map, upgrade: the callers of
+the `gui3D_room` string); the cursor's scene loads only `gui_mouse`. The library does not load it: it
 clears the viewport to black, which is the same picture. (high for the contents, med for the
 role)
 
@@ -96,7 +111,10 @@ differently shaped expression)
 
 `mainmenu.mdl` (387,699 bytes) and `.mdx` (264,688) are in `models.bif`; `rims/mainmenu.rim` and
 `mainmenudx.rim` carry the same files (same sizes), which the constructor mounts as `RIMS:MAINMENU`
-when `MAINMENU` is not already a resource (it removes it again when the menu goes). `lib/res`
+when a resource `MAINMENU` of type 0xbba (3002, the RIM) exists (`CExoResMan::Exists`). The
+menu's destructor (`0x0067b500`) flags it for removal (resman `+0x34` bit 1) under the same test,
+and the GUI manager's input pass (`0x0040c8e0`) or a `CSWGui3DScene` destructor (`0x004165e0`)
+then removes it. `lib/res`
 finds the BIF copy; no special case. Another model, `mainmenu_model`, is in the BIF and unused.
 
 - Classification 4, bounding box +-5 x +-5 x -1..10, radius 40, no supermodel, one animation
@@ -121,27 +139,31 @@ finds the BIF copy; no special case. Another model, `mainmenu_model`, is in the 
 | `Fx_PuffySand02` | `Normal` | 5 | 25 (+5) | 6 | 0.5 / 1.5 / 1.5 | 0 / 0.6 / 0 at 0, 0.08, 1 | 0 / 0 / 0.18 | 149, 170 | +0.3 | 0x22 |
 | `Fx_PuffySand03` | `Normal` | 0 | 22 (+8) | 4 | 1 / 2 / 2 | 0 / 0.3 / 0 at 0, 0.3, 1 | 0 / 0.27 / 0.80 | 180, 170 | -0.2 | 0x22 |
 
-  (Velocity 0 everywhere, `randvel` 0.1 to 0.2, `spread` 0 or 2 pi, no gravity or drag. Flags:
-  0x2 `p2p_sel`, 0x20 `random`, 0x100 `inherit_local`.)
+  (Velocity 0 everywhere, `randvel` 0 for the two `Mist` emitters and 0.1 to 0.2 for the sand
+  puffs, `spread` 0 or 2 pi, `mass` (the gravity, particles.md), `grav` and `drag` 0; the puffs
+  have `bounce_co` 0.3 but no `bounce` flag. Flags: 0x2 `p2p_sel`, 0x20 `random`, 0x100
+  `inherit_local`.)
 
 ### Emitter behaviour read from the code
 
-`FUN_00496e40` (the emitter's per-frame update, 2019 bytes) and the particle initialiser
-`FUN_004921d0` (vtable `0x007432d8` slot 2) give (high unless stated):
+`FUN_00496e40` (the Fountain emitter's per-frame update, 2019 bytes) and the particle initialiser
+`FUN_004921d0` (vtable `0x007432d8` slot 2) give (high unless stated; the full rules are in
+[particles.md](particles.md)):
 
 - each particle's rotation adds `dt x particleRot` (radians per second), wrapped at +-2 pi;
-- births: time is accumulated and whole particles are born when it passes the interval; the
-  random birth rate is added; when the `random` flag (0x20) is set the cell number is a random
-  one of `frameEnd - frameStart + 1`;
-- start position: `x`, `y` offsets = `(rand x rand) mod N` with N = scale x size x 100, either
-  sign, times 0.0001, along the emitter's own axes: **an offset of up to size / 100 metres each
-  way** (a 400 area is +-4 m), along two of the emitter's own axes;
+- births: a timer accumulates dt; once it reaches 1 / birthrate, the rate b = birthrate plus or
+  minus `rand % round(m_fRandomBirthRate)` (random sign) gives `int(b x timer) mod (int(b) + 1)`
+  particles at once and the timer restarts at 0; when the `random` flag (0x20) is set the cell
+  number is frameStart + a random one of `frameEnd - frameStart + 1`;
+- start position (`0x0048d870`): `x`, `y` offsets = `(rand x rand) mod N` with N =
+  int(int(size x scale x 100) x 0.5), either sign, times 0.0001, along the emitter's own X and Y
+  axes: **an offset of up to size / 200 metres each way** (a 400 area is +-2 m);
 - start velocity: speed = `velocity` + (rand mod (randvel x 100)) x 0.01 with a random sign when
   `randvel` > 0.01, along +Z turned by the `spread` cone;
-- not read: the exact curves (we use linear start / mid / end at the percent keys), blending of
-  `Normal` (we use alpha), the quad's scale (we take `size` as the full width in metres; **low**:
-  half of it would thin the mist), what `p2p`, `inherit*`, bounce and `Single`/`Explosion`/`Lightning`
-  updates do.
+- drawing (particles.md): colour, alpha and size are linear start / mid / end at the percent
+  keys; `Normal` blending is src alpha, 1 - src alpha; the quad's half-size is size x 0.5, so
+  `size` is the full width in metres; `p2p`, `inherit*`, bounce and the `Single` / `Explosion` /
+  `Lightning` updates are described there.
 
 ### What lib/frontend/gui3d does
 
@@ -161,13 +183,21 @@ finds the BIF copy; no special case. Another model, `mainmenu_model`, is in the 
   colour **before** the texture multiplies it (GL emission), so a fully emissive surface shows its
   texture as it is. Other values still go through the seam's rule. Worth a fix in the seam's
   shader (`rgb = base.rgb * (light + selfillum)`) for the render lead;
-- emitters are simulated per the notes above on the CPU, in the emitter node's space, drawn one
-  batch per emitter in the facing of their render mode (`Billboard_to_World_Z` lies flat on the ground, which
-  is what the original does: re/particles.md), sorted by `render_order`;
-- not done: the room model, fog, the shadow of `AuroraLight01`, `p2p` / `inherit` flags,
-  non-fountain emitters, bounce.
+- emitters are simulated on the CPU, in the emitter node's space (the original keeps particles in
+  world space; the same for an emitter that does not move), drawn one batch per emitter in the
+  facing of their render mode (`Billboard_to_World_Z` lies flat on the ground, which is what the
+  original does: re/particles.md), sorted by `render_order`, at the full `size` as the original
+  draws it. Where ours differs from the notes above (`particles.ctx`): births are a continuous
+  accumulation of `rate x dt` with the random part uniform in +-m_fRandomBirthRate, not the
+  original's clumps; the start offset reaches xsize / 100 and ysize / 100 metres each way, twice
+  the original's size / 200 (worth a fix); the scene is warmed up 1 s, while the original's first
+  render runs the emitters 10 s (above);
+- not done: the room model, fog, the shadow of `AuroraLight01`, `p2p` / `inherit` flags, bounce;
+  of the other update types `Single` keeps its one particle, `Lightning` stays quiet and
+  `Explosion` emits like a Fountain.
 
 Checked by running `kotor/tools/ctxc run kotor/tools/gui3dview` (pictures in `kotor/out/gui/`):
 Malak in a dark red robe and dark cape with a pale mask, arms crossed, on the left; the dark
 bulkhead of `loadscreen3` behind him; haze rising from the floor from about 3 s on and thickening
-to a steady state at about 10 s (life); a 4:3 slice of picture with black beside it at 16:9.
+to a steady state at about 10 s (life); a 4:3 slice of picture with black beside it at 16:9. (The
+original should show that steady state from its first frame, by the 10 s pre-run above.)
