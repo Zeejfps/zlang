@@ -38,37 +38,39 @@ powers (the HUD lists rebuild every 0.2 s of presented time, and `--speed 8` pre
 
 | # | Behaviour (original) | Evidence | Status |
 |---|---|---|---|
-| 1 | The target block of a hostile creature has three slots; the middle one lists the leader's hostile Force powers: one entry per `ForceHostile` line (0 stun/stasis, 1 droid, 2 choke/wound/kill, 3 affliction/plague/slow, 4 fear/horror/insanity, 5 shock/lightning/storm, 6 push/whirlwind/wave, 7 drain/death field, 8 breach/suppress, 9 saber throw), the known power of the line with the highest `ForcePriority`, lines in order | gui.md "Action menus"; `0x006191f0` → `0x0064af10` → `0x0064a870` (category 1 = hostile; entry value = category x 1000 + line x 10 + priority) | fixed (the slot was empty: no hostile power could be cast) |
-| 2 | A power whose `Exclusion` bit matches the target's race is left out: bit 2 (organic powers) for a droid (racialtypes 5), bit 1 (droid powers) for a human (6), both shown for other races | `0x006191f0` | fixed |
-| 3 | An entry that cannot be used is dimmed (alpha 0.25); pressing it shows the reason in the message bar for 5 s with the refusal sound: "Force Depleted" (38613), "Restricted by Armor" (38614), "Missing Item" (38615) | gui.md; `UseAction 0x00689610` | fixed (checked: armour, depleted) |
-| 4 | The arrows cycle the slot with wrap-around; the chosen power stays chosen from target to target | gui.md; `Refresh 0x00689410` keeps the selected id per kind of target | fixed |
+| 1 | The target block of a hostile creature has three slots; the middle one lists the leader's hostile Force powers: one entry per `ForceHostile` line (0 stun/stasis, 1 droid, 2 choke/wound/kill, 3 affliction/plague/slow, 4 fear/horror/insanity, 5 shock/lightning/storm, 6 push/whirlwind/wave, 7 drain/death field, 8 breach/suppress, 9 saber throw), the known power of the line with the highest `ForcePriority` (the first one found on a tie), lines in order; nothing is listed while the area's RestrictMode is set | gui.md "Action menus"; `0x006191f0` → `0x0064af10` (once per class slot) → `0x0064a870` (category 1 = hostile; entry value = category x 1000 + line x 10 + priority; both test RestrictMode, area `+0x2b0`) | fixed (the slot was empty: no hostile power could be cast); open: ours lists them in an area with RestrictMode set too |
+| 2 | A power whose `Exclusion` value matches the target's race is left out: 0x02 (the organic-only powers) against a droid (racialtypes 5), 0x01 (the droid powers) against a human (6), both shown for other races | `0x006191f0` builds the mask (2 droid, 1 human, 0 other creature, 4 not a creature); `0x0064a870` tests it against spells.2da Exclusion (+0x188) | fixed |
+| 3 | An entry that cannot be used is dimmed (alpha 0.25); pressing it shows the reason for 5 s in the target block's name label (`LBL_NAME`, in place of the target's name) with the refusal sound (GUI sound 2): "Force Depleted" (38613: the cost is above current + temporary points), "Restricted by Armor" (38614: `ForbidItemMask`), "Missing Item" (38615: `RequireItemMask` not met), "Target too Close" (42422: the target is within the Range letter's SecondaryRange, which only `W` has, 5 m) | gui.md; `0x0064a870` sets the reason codes 1 to 4 (forbidden equipment wins over too close, too close over depleted; missing item only when nothing else stops it); `UseAction 0x00689610` stores the message, `0x00685cb0` shows it | fixed (checked: armour, depleted); open: ours shows it in the combat message bar, says "Restricted by Armor" for a missing saber and has no "Target too Close" |
+| 4 | The arrows cycle the slot with wrap-around; the chosen power stays chosen from target to target | gui.md; `UseAction 0x00689610` and `Refresh 0x00689410` keep the selected id per kind of target and slot; Shift with a slot key steps to the next entry (`0x006865b0`) | fixed |
 | 5 | Keys `1` `2` `3` press the target slots, Shift with them cycles; keys `4` `5` `6` `7` press the self slots (friendly power, medical item, other item, mine) | keymap.2da | fixed (`4`..`7` were not bound; Shift is the controls owner's) |
-| 6 | The self slot of friendly powers lists one power per `ForceFriendly` line (0 cure/heal, 1 aura/shield/armor, 2 speeds, 3 valors, 4 resist force/immunity, 5 energy resistances), the highest priority first | `0x00616230` (category 3); the items per the items owner's rules | fixed (it listed every friendly row) |
-| 7 | Using a power puts a hostile target in combat and replaces what the leader was doing (queues behind it in combat mode unless Shift) | UseAction; controls owner's queue rule | matches |
-| 8 | Out of range the leader runs toward the target until it is within the range, then casts | actions.md 3.13: range = `ranges.2da` PrimaryRange of the Range letter (P and T 2.25, S 10, M 15, L 28, W) + both creatures' personal space less 0.1 | matches (checked from 19 m; the range of `W` is 10, the RE page says 15: unread) |
+| 6 | The self slot of friendly powers lists one power per `ForceFriendly` line (0 cure/heal, 1 aura/shield/armor, 2 speeds, 3 valors, 4 resist force/immunity, 5 energy resistances), the known power of the line with the highest priority, lines in order | `0x00616230` → `0x0064af10` (category 3, no exclusion mask); the items per the items owner's rules | fixed (it listed every friendly row) |
+| 7 | Using a target slot out of combat mode turns the leader's combat mode on and replaces what the leader was doing; in combat mode the order queues behind the others, and Shift clears the queued combat actions first | `UseAction 0x00689610` (SetCombatMode, then ClearAllActions on the server creature), `0x0068ad20` (Shift: ClearAllCombatActions); controls owner's queue rule | matches for the replace and queue rule; open: the press itself does not turn combat on here (ours enters combat, both sides, when the cast begins after the approach) |
+| 8 | Out of range the leader runs toward the target until it is within the range, then casts | actions.md 3.13: range = `ranges.2da` PrimaryRange of the Range letter (P and T 2.25, S 10, M 15, L 28, W 15 from row 19 SpellRngThrow) + each creature's radius less 0.1; `GetSpellRange 0x004eb3a0`, the ranges loaded by `CSWRules 0x00552c50` (rows 0..4 and 19) | matches for P to L (checked from 19 m); open: ours takes `W` from row 5 (10 m) instead of row 19 (15 m) |
 | 9 | The block's lists only exist while the target is on the screen | ours (the HUD builds the block over the visible target) | open (the original builds the lists from the selection; keys on an off-screen target do nothing here) |
-| 10 | Hovering a target slot names its selected entry above the self slots (`LBL_ACTIONDESC`); the tooltips are "Activate Left/Middle/Right Action" (48303/48307/48311) | gui.md | fixed (the tooltip was the entry's name and nothing showed in the label) |
+| 10 | Hovering a target slot puts its selected entry's name in the target block's name label (`LBL_NAME`, in place of the target's name; `LBL_ACTIONDESC` belongs to the self slots); the tooltips are "Activate Left/Middle/Right Action" (48303/48307/48311) | gui.md; `0x00685cb0` | fixed (the tooltip was the entry's name and nothing showed in the label) |
 | 11 | A droid leader's middle slot lists the droid utilities of its equipment (`FUN_00618c20`) | gui.md | open (T3-M4 and HK-47 are not Force users; their device lists are the items owner's) |
 
 ## The cast
 
 The original (`AIActionCastSpell 0x00514af0`, actions.md 3.13) per power: the action faces the target and starts
 a combat round of conjuration + cast + catch time (170 + 1330 + 0 ms; the saber throws 560 + 1940 + 500);
-during the conjuration the conjure animation plays; **at its end** (170 ms) the Force points are paid, the cast
-animation starts, the cast visuals and sound play and the impact script runs at once: no Force power has a
-projectile (spells.2da `Proj` is 0; only the grenades fly), so the effect lands then, and the cast animation plays
-on until the end of the round. A silence (entangle) effect breaks the cast after the payment.
+during the conjuration the conjure animation plays (picked by `CastAnim`; `ConjAnim` is never read); **at its
+end** (170 ms) the Force points are paid, the cast animation starts, the cast visuals and sound play and the
+impact script runs at once: no Force power has a projectile (spells.2da `Proj` is 0; only the grenades fly), so
+the effect lands then, and the cast animation plays on to the end of the cast time; the saber throws then play
+the catch for 500 ms and the action ends. An entangle effect (true type 0x12, `EffectEntangle`; not silence)
+breaks the cast after the payment, so the points are lost.
 
 | # | Behaviour | Evidence | Status |
 |---|---|---|---|
-| 12 | Payment at the end of the conjuration, not at the click; refused when the Force points are short, the armour forbids the power (`ForbidItemMask`) or the saber is missing (`RequireItemMask`) | actions.md 3.13 | fixed (paid at the click and the effect landed 1.5 s late) |
-| 13 | The impact script runs at the end of the conjuration (170 ms) | `SpellCastAndImpact 0x004cdf50`, delay `ComputeSpellImpactDelay 0x004cb9e0` = 0 without a projectile | fixed |
+| 12 | Payment at the end of the conjuration, not at the click; the Force points are checked when the cast is ordered, and the payment itself cannot fail (points lost in between floor the pool at 0); the cast fails on any frame where the armour forbids the power (`ForbidItemMask`) or the saber is missing (`RequireItemMask`) | actions.md 3.13, rules.md 3.2, 3.3; `PayForcePowerCost 0x004eddd0` | fixed (paid at the click and the effect landed 1.5 s late); open: ours checks the points again after the approach and at the payment and refuses where the original pays down to 0 |
+| 13 | The impact script runs at the end of the conjuration (170 ms) | `SpellCastAndImpact 0x004cdf50` posts AI event 8 (SPELL_IMPACT) to the caster after the delay of `ComputeSpellImpactDelay 0x004cb9e0`, 0 without a projectile | fixed |
 | 14 | Cost = base x `forceadjust.2da` (row = alignment / 10; `goodcost` for light powers, `evilcost` for dark, 1.0 for universal) for the player's party; others pay the base | rules.md 3.2 | matches (L10 light 85: Stun 20 -> 16, Choke 15 -> 22, Push 10) |
 | 15 | Casting never changes alignment | rules.md 3.9 | matches |
 | 16 | Save DC = 5 + level + WIS + CHA + Force Focus (+1/+2/+4) | rules.md 3.5 | matches (DC 24 at consular level 10, WIS 20, CHA 14) |
-| 17 | The caster plays the conjure then the cast animation (`hand`/`self` castout1, `dark` castout2, `up` castout3, `throw` throwsab), the power's `cast*visual` models and the cast sound `v_useforce` | spells.2da columns; the animation names are ours (the client's table is unread) | matches (sound and models added); the light cast model `v_con_light` does not exist in the install, so a light power shows no hand glow, as the data say |
+| 17 | The caster plays the conjure then the cast animation, both picked by the `CastAnim` code (`ConjAnim` is never read; ours names them `self` castout1, `dark` castout2, `up` castout3, `throw` throwsab), the power's `cast*visual` models and the cast sound `v_useforce` | spells.2da columns; `AIActionCastSpell 0x00514af0` (conjure 10015/10016/11000/10162, cast 10017/10018/10019/10061 by code), rules.md 3.1; the animation names are ours (the client's table is unread) | matches (sound and models added); open: ours picks the conjure animation from `ConjAnim`, so the eight powers that conjure `hand` but cast `dark` or `up` (Affliction, Drain Life, Fear, Horror, Insanity, Plague, Force Storm, Force Wave) conjure with the wrong set; the light cast model `v_con_light` does not exist in the install, so a light power shows no hand glow, as the data say |
 | 18 | After the cast the player's creature goes on attacking its target | ours (the original's client-side auto-attack was not read) | matches (the attack is queued when the cast ends) |
-| 19 | Force points come back at 1 % of the pool a second out of combat and not in combat; no hit-point regeneration | `regeneration.2da`, rules.md 3.8 | fixed (nothing ever called `regenerate_pools`: the pool only fell); checked 170 -> 190 in 10 s |
+| 19 | Force points come back for a party member at 1 % of the pool (maximum + temporary) a second out of combat and also in a fight it started by attacking; nothing once it was attacked, until that combat ends; no hit-point regeneration | `regeneration.2da`, rules.md 3.8; `AIUpdate 0x004fe210` takes the OutOfCombat row unless in combat for reason 1 (+0xac0) | fixed (nothing ever called `regenerate_pools`: the pool only fell); checked 170 -> 190 in 10 s; open: ours stops it in every fight, also one the party started |
 | 20 | The Force bar of the HUD and the character sheet follow the pool | gui.md | matches |
 
 ## Crowd control, push, speed, visuals (what the world does with the rules' events)
@@ -78,16 +80,16 @@ engine does with them.
 
 | # | Behaviour | Evidence | Status |
 |---|---|---|---|
-| 21 | A state (stun 4, paralysis 5, sleep 6, choke 7, horror 8, whirlwind 10, droid stun 3) clears the creature's actions, aborts its round, makes it uncommandable, masks its AI (no move, no attack) for the duration and runs OnEndCombatRound when it ends | rules.md 1.10 | matches (rules) and fixed (the engine now does the AI pickup) |
-| 22 | The state's looping animation: choke, horror, whirlwind, sleep, paralyzed (the creature set for beasts); a stunned creature stays in its stance | `UpdateStateAnimation 0x004f28d0` (stun = `pausedrnk`, which most models lack) | fixed (the animation names are the animations.2da rows that carry the state's name) |
+| 21 | A state (stun 4, paralysis 5, sleep 6, choke 7, horror 8, whirlwind 10, droid stun 3) clears the creature's actions and its round's scheduled actions, makes it uncommandable, masks its AI for the duration (movement only for stun, droid stun, choke, horror and whirlwind; movement and attack for paralysis, 0xfff1; sleep 0xfea1) and runs OnEndCombatRound when it ends | rules.md 1.10; `0x004da330` | matches (rules) and fixed (the engine now does the AI pickup) |
+| 22 | The state's looping animation: choke, horror, whirlwind, sleep, paralyzed (the creature set for beasts); a stunned creature stays in its stance | `UpdateStateAnimation 0x004f28d0` sets a state code (sleep 11, stun 2, choke 5, whirlwind 6, horror 7, droid stun 8, paralysis 12) and plays animation 10000; the code's animation is the client's (unread), so stun as `pausedrnk`, which most models lack, is unchecked | fixed (the animation names are the animations.2da rows that carry the state's name) |
 | 23 | A stun keeps VFX_DUR_STUN (`v_stun_imp`) on the creature until it ends, a droid stun sparks (1007) | rules.md 1.10 | fixed |
-| 24 | Force push: thrown 5 m away from the pusher (or from the centre of EffectForcePushTargeted) up to the end of the walkmesh, facing the pusher; it falls, lies and gets up over 2.55 s (the original leaves it unable to act that long); the script then stuns 2 s unless saved | `OnApplyForcePush 0x004e3800`, `OnRemoveForcePush 0x004de400` (AI state 0xfea1 for 2.55 s) | fixed (the target stood still); animations `die1`/`dead1`/`getupdead1` are ours |
+| 24 | Force push: thrown 5 m away from the pusher (or from the centre of EffectForcePushTargeted) up to the end of the walkmesh, facing the pusher; it falls, lies and gets up over 2.55 s (the original leaves it unable to act that long); the script then stuns 2 s unless saved | `OnApplyForcePush 0x004e3800` (distance float 3, 5 m when 0; walk-line test unless int 1 is set), `OnRemoveForcePush 0x004de400` (AI state 0xfea1 for 2.55 s once the 0.1 s push effect ends) | fixed (the target stood still); animations `die1`/`dead1`/`getupdead1` are ours |
 | 25 | Knockdown: uncommandable for the duration + 1.5 s with the fall animation | rules.md 1.10 | fixed (same machinery) |
-| 26 | Movement speed effects (Burst of Speed and the speeds: x1.5 after the rules' clamp; Slow, Plague, Affliction, Stasis-slow: below 1) change the creature's walk and run and their animation rate | rules.md 1.3 (HASTE_INTERNAL 150 %, SLOW_INTERNAL 50 %, clamp 0.125 .. 1.5) | fixed (the speed factor was never read) |
+| 26 | Movement speed effects (Burst of Speed and the speeds: x1.5 after the rules' clamp; Slow, Plague, Affliction, Stasis-slow: below 1) change the creature's walk and run and their animation rate | rules.md 1.3 (HASTE_INTERNAL 150 %, SLOW_INTERNAL 50 %), 1.7 (`GetMovementRateFactor 0x004ec370`, clamp 0.125 .. 1.5) | fixed (the speed factor was never read) |
 | 27 | Duration visuals (Type_FD D) stay until their effect leaves; the others play once | rules.md 1.11 | fixed for those with a model; the programmed ones (aura/shield rings, hold cage, speed streaks, `progfx` 1401-1424, 1601) have none in the install and are not drawn: open |
 | 28 | Beams (EffectBeam: lightning, shock, drain life, death field, storm arcs, the droid powers) are programmed effects | rules.md 1.3 (BEAM), visualeffects `progfx_duration` 608..621 | fixed (ours: a jagged chain of `fx_lightning` streaks hand to chest, tinted per beam; the original's look was not read) |
-| 29 | Spell shapes of `GetFirstObjectInShape`: the spell cylinder is a line from the caster through the target, `size` long and 1.5 m either side; the spell cone 30 degrees and `size`; the sphere around the point | `0x0054a260` | fixed (the cylinder was a capsule of radius `size`: lightning hit everything around) |
-| 30 | Throw Lightsaber and its advanced form: the saber flies to up to three targets and back, always hitting for 1d6 per two levels each | `OnApplyLightsaberThrow 0x004de600` | fixed (it did nothing); the flight takes 75 ms a metre (ours), the flying saber shows its hilt without a blade: open |
+| 29 | Spell shapes of `GetFirstObjectInShape`: the spell cylinder is a line from the caster through the target, `size` long and 1.5 m either side; the spell cone within 30 degrees of the line (cosine 0.866) and `size`; the sphere around the point | `0x0054a260` (shapes 0, 3, 4) | fixed (the cylinder was a capsule of radius `size`: lightning hit everything around) |
+| 30 | Throw Lightsaber and its advanced form: the saber flies to up to three targets and back with no attack roll, each hit for d6 x (level / 2) through the target's resistances; the legs share the power's cast time (1940 ms) in proportion to their length, whatever the distance (static reading, needs a runtime check) | `OnApplyLightsaberThrow 0x004de600` (dice = level x 0.5, `0x0073e9ac`; leg time = leg length x CastTime / path length) | fixed (it did nothing); open: the flight takes 75 ms a metre here, and the flying saber shows its hilt without a blade |
 
 ## Per power (K1 has 44 Force powers, usertype 1)
 
@@ -96,49 +98,49 @@ Learn levels are `spells.2da` guardian/consular/sentinel; "Jedi" means the first
 
 | Row | Power | Side | FP | Learned at (G/C/S) | Range | Reaches | Save | What it does (script, observed) | Status |
 |---|---|---|---|---|---|---|---|---|---|
-| 4 | Adv Throw Lightsaber | universal | 20 | 9/9/9 | W | hostile, up to 3 in a chain (W) | none (always hits) | saber flies to each in turn and back; 1d6 per 2 levels each; cast animation `throw` | matches; the flying saber has no blade |
-| 6 | Affect Mind | universal | 0 | Jedi | **** | passive | none | no action: dialogue lines test GetHasSpell(6) (k_con_fperslow) | matches (script-driven) |
-| 7 | Affliction | dark | 15 | 6/6/6 | M | hostile single (M) | Fort DC 20 (poison.2da row 1) | poison, a tick every 6 s for 36 s: -1 to each ability for 60 s per tick (the data drain all six abilities; the description says the physical ones and 7 points over 21 s), slowed | fixed (the ticks drained nothing); matches poison.2da |
-| 8 | Burst of Speed | universal | 20 | Jedi | P | self | - | +50% movement (rules clamp 1.5), +2 AC for 36 s | matches (movement, animation rate follow it) |
-| 9 | Choke | dark | 15 | 9/9/9 | M | hostile single (M) | Fort negates part | choke state 6 s (choke animation, held), 2/3 level damage every 2 s, -4 STR/DEX/CON 24 s | matches |
+| 4 | Adv Throw Lightsaber | universal | 20 | 9/9/9 | W | hostile target (W) and up to two creatures friendly to it within 5 m of it; the menu refuses a target within 5 m | none (no attack roll) | saber flies to each in turn and back; d6 per 2 levels each (the engine's roll); cast animation `throw` | matches; open: the range is 10 m here (15 m), there is no 5 m minimum, the flying saber has no blade |
+| 6 | Affect Mind | universal | 0 | Jedi | **** | passive | none | no action: dialogue lines test GetHasSpell(6) or GetHasSpell(14) (k_con_fperslow) | matches (script-driven) |
+| 7 | Affliction | dark | 15 | 6/6/6 | M | hostile single (M) | Fort DC 20 (poison.2da row 1; the script itself rolls none) | poison, a tick every 6 s for 36 s: -1 to each ability for 60 s per tick (the data drain all six abilities; the description says the physical ones and 7 points over 21 s), slowed 50 %; nothing when the target is already poisoned | fixed (the ticks drained nothing); matches poison.2da |
+| 8 | Burst of Speed | universal | 20 | Jedi | P | self | - | +99 % movement (x1.5 after the rules' clamp), +2 AC for 36 s | matches (movement, animation rate follow it) |
+| 9 | Choke | dark | 15 | 9/9/9 | M | hostile single (M) | Fort negates | choke state 6 s (choke animation, held), 2/3 level damage at 1, 3 and 5 s, -4 STR/DEX/CON 24 s | matches |
 | 10 | Cure | light | 25 | 6/6/6 | T | party within 15 m (cast on self) | - | heals 5 + CHA + WIS + level (22 at L10), no droids | matches |
-| 11 | Death Field | dark | 20 | 18/18/18 | S | hostile within 10 m of caster | Fort half | 1-4 per level (max 10) damage, heals the caster by the sum; death-field beam | matches (beam tinted red) |
-| 12 | Disable Droid | light | 10 | 6/6/6 | M | droids within 5 m of the target droid | Fort | droid stun 12 s + level damage; disable beam | matches (droid stun state and spark) |
-| 13 | Destroy Droid | light | 10 | 12/12/12 | M | droids within 6 m of the target droid | Fort half | 1-6 per level damage, disabled 12 s; destroy beam | matches |
+| 11 | Death Field | dark | 20 | 18/18/18 | S | hostile humans (and placeables) within 12 m of the caster | Fort half | d4 per level (max 10 dice) damage, heals a hurt caster by the sum; death-field beam | matches (beam tinted red) |
+| 12 | Disable Droid | light | 10 | 6/6/6 | M | the target droid and hostile droids within 5 m of it | Reflex half (no stun) | droid stun 12 s + level damage; disable beam | matches (droid stun state and spark) |
+| 13 | Destroy Droid | light | 10 | 12/12/12 | M | the target droid and hostile droids within 6 m of it | Reflex half (no stun) | d6 per level damage (no cap), droid stun 12 s; destroy beam | matches |
 | 14 | Dominate Mind | universal | 0 | 6/6/6 | **** | passive | none | dialogue lines test GetHasSpell(14) (k_con_fpershigh) | matches (script-driven) |
 | 15 | Drain Life | dark | 20 | 9/9/9 | M | hostile single (M) | Fort half | 1-4 per level (max 10) damage, heals the caster; drain beam | matches (beam tinted red) |
 | 16 | Fear | dark | 10 | Jedi | M | hostile single (M) | Will negates | horrified (cowering) 6 s | matches (horror animation) |
 | 17 | Force Armor | light | 15 | 12/12/12 | P | self | - | +6 AC and saves 20 s | matches |
 | 18 | Force Aura | light | 15 | Jedi | P | self | - | +2 AC and saves 20 s | matches |
-| 19 | Force Breach | universal | 25 | 15/15/15 | M | hostile single (M) | none | strips Force Aura/Shield/Armor, valors, speeds, resistances | matches (script; RemoveEffect checked with the valors) |
-| 20 | Force Immunity | universal | 20 | 15/15/15 | P | self | - | Force immunity 60 s (opposed roll DC 15 + level) | matches (effect applied; the roll belongs to the attacker) |
-| 22 | Force Valor | light | 20 | Jedi | P | party in 15 m | - | +2 STR/DEX/CON and saves 20 s | matches (stack replaced by Knight/Master Valor) |
-| 23 | Force Push | universal | 10 | Jedi | M | hostile single (M) | Reflex | thrown 5 m away, lies 2.55 s then stunned 2 s unless saved; level damage after 0.4 s | matches (throw, fall, lie, rise) |
+| 19 | Force Breach | universal | 25 | 15/15/15 | M | hostile single (M) | none (no resistance check) | strips Force Aura/Shield/Armor, the three valors, the three speeds, both energy resistances, Resist Force and Force Immunity | matches (script; RemoveEffect checked with the valors) |
+| 20 | Force Immunity | universal | 20 | 15/15/15 | P | self | - | Force resistance 15 + level for 60 s (an attacker's power is resisted when d20 + its level falls short); replaces Resist Force | matches (effect applied; the roll belongs to the attacker) |
+| 22 | Force Valor | light | 20 | Jedi | P | friends within 30 m | - | +2 Fort/Reflex/Will and +2 to all six abilities 20 s; first removes every valor (and Battle Meditation) from the caster's faction within 30 m | matches (stack replaced by Knight/Master Valor) |
+| 23 | Force Push | universal | 10 | Jedi | M | hostile single (M); not large, huge, turret or immobile creatures | Reflex (still pushed) | failed: thrown 5 m away, level damage after 0.4 s, lies 2.55 s then stunned 2 s; saved: thrown, half the level damage at once, no stun | matches (throw, fall, lie, rise) |
 | 24 | Force Shield | light | 15 | 6/6/6 | P | self | - | +4 AC and saves 20 s | matches |
-| 25 | Force Storm | dark | 20 | 18/18/18 | S | hostile within 10 m of the target (S) | Will half | 1-6 per level damage to HP and Force points; storm arcs | matches (arc beam tinted purple) |
-| 26 | Force Wave | universal | 10 | 15/15/15 | S | hostile within 15 m of the caster | Reflex | thrown 5 m, 1.5 x level damage, down 6 s | matches |
-| 27 | Force Whirlwind | universal | 10 | 9/9/9 | M | hostile single (M) | Reflex | whirlwind state 9 s (lifted, spinning), level/3 damage every 2 s | matches (whirlwind animation); the script says 9 s, the description 12 s |
+| 25 | Force Storm | dark | 20 | 18/18/18 | S | hostile within 12 m of the target (S) | Will half | d6 per level (max 10 dice, one roll for all) damage to HP and Force points; storm arcs | matches (arc beam tinted purple) |
+| 26 | Force Wave | universal | 10 | 15/15/15 | S | hostile within 15 m of the caster | Reflex (still pushed) | failed: 1.5 x level damage after 0.4 s, thrown 5 m, stunned 6 s from 2.55 s; saved: thrown, half damage, no stun | matches |
+| 27 | Force Whirlwind | universal | 10 | 9/9/9 | M | hostile single (M); hostile creatures within 5 m of it are pushed away unless they save | Reflex negates | whirlwind state 9 s (lifted, spinning), level/3 damage at once and every 2 s up to 11 s; shielded geo droids are not lifted | matches (whirlwind animation); the state lasts 9 s, the damage about 12 s, as the description says |
 | 28 | Heal | light | 25 | 12/12/12 | T | party within 15 m (self cast) | - | heals 10 + CHA + WIS + level (27 at L10), cures poison | matches |
 | 29 | Stasis | light | 20 | 9/9/9 | M | hostile single (M) | Fort slows instead | paralysed 12 s (paralyzed animation) | matches |
-| 30 | Horror | dark | 10 | 6/6/6 | M | hostile within 5 m of the target | Will negates | horrified 12 s | matches |
-| 31 | Insanity | dark | 10 | 12/12/12 | M | hostile within 10 m of the target | Will negates | horrified 12 s | matches |
-| 32 | Kill | dark | 15 | 12/12/12 | M | hostile single (M) | Fort | choke 6 s, damage half the target's maximum over the choke | matches |
-| 33 | Knight Valor | light | 20 | 9/9/9 | P | party in 15 m | - | +3 STR/DEX/CON and saves, poison immunity, 20 s; replaces Force Valor | matches |
+| 30 | Horror | dark | 10 | 6/6/6 | M | hostile humans within 5 m of the target | Will negates | horrified 12 s | matches |
+| 31 | Insanity | dark | 10 | 12/12/12 | M | hostile humans within 10 m of the target | Will negates | horrified 12 s | matches |
+| 32 | Kill | dark | 15 | 12/12/12 | M | hostile single (M) | Fort (level damage instead) | failed: choke 6 s and three ticks of a third of half the target's maximum HP at 1, 3 and 5 s | matches |
+| 33 | Knight Valor | light | 20 | 9/9/9 | P | friends within 30 m | - | +3 Fort/Reflex/Will and +3 to all six abilities, poison immunity, 20 s; replaces the other valors | matches |
 | 34 | Knight Speed | universal | 20 | 9/9/9 | P | self | - | speed x1.5 (clamp), +4 AC, +1 attack per round, 36 s | matches (extra attacks are the combat owner's) |
-| 35 | Force Lightning | dark | 20 | 9/9/9 | M | hostile on a line 16 m ahead, 1.5 m either side | Will half | 1-6 per level (max 10) damage; lightning beam to each | matches (shape fixed; beam drawn) |
-| 36 | Master Valor | light | 20 | 15/15/15 | P | party in 15 m | - | +5 STR/DEX/CON and saves, poison immunity, 20 s; replaces the lesser valors | matches |
+| 35 | Force Lightning | dark | 20 | 9/9/9 | M | hostile on a line 17 m from the caster through the target, 1.5 m either side | Will half | d6 per level (max 10 dice, one roll) damage, each save halving the shared amount for the rest of the line (script); lightning beam to each | matches (shape fixed; beam drawn) |
+| 36 | Master Valor | light | 20 | 15/15/15 | P | friends within 30 m | - | +5 Fort/Reflex/Will and +5 to all six abilities, poison immunity, 20 s; replaces the lesser valors | matches |
 | 37 | Master Speed | universal | 20 | 15/15/15 | P | self | - | speed x1.5 (clamp), +4 AC, +2 attacks, 36 s | matches (extra attacks are the combat owner's) |
 | 38 | Plague | dark | 15 | 12/12/12 | M | hostile single (M) | none (poison.2da row 2, DC 100) | poison, a tick every 6 s for 72 s: -1 to each ability for 100 s per tick (description: 12 points over 12 s), slowed | fixed (the ticks drained nothing); matches poison.2da |
-| 40 | Improved Energy Resistance | universal | 10 | 9/9/9 | P | party | - | absorbs 15 of sonic/fire/cold/electrical, poison and disease immunity, 120 s | matches (effect applied) |
-| 41 | Force Resistance | universal | 20 | 9/9/9 | P | self | - | Force resistance (opposed roll vs the attacker) | matches (effect applied; ResistForce is the rules lead's) |
+| 40 | Improved Energy Resistance | universal | 10 | 9/9/9 | P | the party, at any distance (not those with an energy resistance) | - | absorbs 15 of cold/fire/sonic/blaster/electrical, poison immunity, 120 s | matches (effect applied) |
+| 41 | Force Resistance | universal | 20 | 9/9/9 | P | self | - | Force resistance 10 + level for 60 s (opposed roll vs the attacker; not while Force Immunity is on) | matches (effect applied; ResistForce is the rules lead's) |
 | 42 | Energy Resistance | universal | 10 | Jedi | P | self | - | absorbs 15 of sonic/fire/cold/electrical, 120 s | matches (effect applied) |
 | 43 | Shock | dark | 20 | Jedi | M | hostile single (M) | Will half | 1-6 per level (max 10) damage; shock beam | matches |
-| 44 | Stasis Field | light | 20 | 15/15/15 | M | hostile within 10 m of the target | Fort slows instead | paralysed 12 s | matches |
+| 44 | Stasis Field | light | 20 | 15/15/15 | M | hostile within 10 m of the target, not droids | Fort slows instead | paralysed 12 s | matches |
 | 45 | Slow | dark | 15 | Jedi | M | hostile single (M) | Will negates | -2 AC, Reflex and attack, slowed 30 s | matches |
 | 46 | Stun | light | 20 | Jedi | M | hostile single (M) | Fort slows instead | stunned 9 s (the stun's stars held on it) | matches |
-| 47 | Stun Droid | light | 10 | Jedi | M | droid single (M) | Fort negates | droid stun 12 s + level damage; stun beam | matches |
-| 48 | Force Suppression | universal | 25 | 9/9/9 | M | hostile single (M) | none | strips first and second tier buffs | matches (script) |
-| 49 | Throw Lightsaber | universal | 20 | Jedi | W | hostile single (W), at least 5 m | none (always hits) | saber flies out and back; 1d6 per 2 levels | matches; the flying saber has no blade |
+| 47 | Stun Droid | light | 10 | Jedi | M | droid single (M) | Fort (half damage, no stun) | droid stun 12 s + level damage; stun beam | matches |
+| 48 | Force Suppression | universal | 25 | 9/9/9 | M | hostile single (M) | none | strips Force Aura, Force Shield, Force Valor, Knight Valor, Burst of Speed, Knight Speed, Resist Force and Energy Resistance | matches (script) |
+| 49 | Throw Lightsaber | universal | 20 | Jedi | W | hostile single (W); the menu refuses a target within 5 m | none (no attack roll) | saber flies out and back; d6 per 2 levels (the engine's roll) | matches; open: the range is 10 m here (15 m), there is no 5 m minimum, the flying saber has no blade |
 | 50 | Wound | dark | 15 | Jedi | M | hostile single (M) | Fort negates | choke-like state 6 s, 2/3 level damage every 2 s | matches |
 
 ## Level-up, abilities, feats
@@ -148,7 +150,7 @@ Learn levels are `spells.2da` guardian/consular/sentinel; "Jedi" means the first
 | 31 | The level-up panel's Powers step lists the powers the class's level column reaches that the Jedi lacks, dimmed while a prerequisite is missing, with as many picks as classpowergain.2da gives; Recommended fills the auto-level order; Affect Mind and Dominate Mind are for the player character only | gui.md (`pwrlvlup`); rules.md 6 | matches (the screens lead's panel; checked with `tools/ingame/scripts/levelup_jedi.txt`: the Powers step, Recommended, OK) |
 | 32 | The Abilities panel's Powers tab shows each known power with base cost, the light/dark modifier and the cost per use for the leader's alignment | gui.md | matches |
 | 33 | Passive feats: Force Focus (+1/+2/+4 to the DC), Force Immunity: Stun/Paralysis/Fear (refuse the state), Jedi Defense, Conditioning and the implants show in the sheet and the rules | rules.md 3.5, 1.10 | matches (rulescheck; the combat feats are combat.md's) |
-| 34 | Affect Mind and Dominate Mind add dialogue options for a Jedi who knows them: the DLG lines test `GetHasSpell(6)` / `GetHasSpell(14)` (k_con_fperslow, k_con_fpershigh) | scripts | matches (script-driven; `GetHasSpell` reads the known powers) |
+| 34 | Affect Mind and Dominate Mind add dialogue options for a Jedi who knows them: the DLG lines' k_con_fperslow passes with either power (`GetHasSpell(6)` or `GetHasSpell(14)`), k_con_fpershigh only with Dominate Mind (`GetHasSpell(14)`) | scripts | matches (script-driven; `GetHasSpell` reads the known powers) |
 
 ## Open
 
@@ -158,5 +160,13 @@ Learn levels are `spells.2da` guardian/consular/sentinel; "Jedi" means the first
 - Companions in the party did not fight or cast in the test arenas (their OnPerception ran but they never
   attacked the hostile troopers); that is the party AI, not the powers. Bastila/Jolee casting through
   `k_ai_master` is therefore unchecked.
-- `W` range (saber throws): 10 m (ranges.2da row 5) against the RE page's 15 m.
+- `W` range (saber throws): ours takes ranges.2da row 5 (10 m); the original takes row 19 (15 m) and the target
+  block refuses a target within its SecondaryRange (5 m, "Target too Close") (rows 3, 8, 4, 49).
+- The target block's refusals: shown in the block's name label in the original, in the message bar here; a
+  missing saber says "Missing Item" there (row 3).
+- Combat mode at the press of a target slot, and the RestrictMode gate on the power list (rows 1, 7).
+- The Force points: checked again at the payment here (row 12); regeneration in a fight the party started
+  (row 19).
+- The conjure animation comes from `CastAnim`, not `ConjAnim` (row 17).
+- The saber's flight time: the original spreads the cast time over the legs (row 30).
 - The animation names of the cast and state animations are ours (the client's table, `0x0069f650`, is unread).
