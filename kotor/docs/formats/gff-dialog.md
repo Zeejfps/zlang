@@ -49,9 +49,11 @@ an entry with empty text is a silent pass-through used to run scripts or branch)
   animation `CUT<N+1:03>W` on the participant's model, and small values (35, 40, 41, 44, 70) are
   NWN-style animation constants that equal `dialoganimations.2da` rows directly *(inferred)*.
 - **Fades.** `FadeType` 3 fade in, 4 fade out (with `FadeLength`, `FadeDelay`, `FadeColor`
-  present exactly when the type is 3 or 4); 1 occurs 17 times without parameters *(unknown)*.
+  present exactly when the type is 3 or 4); 1 occurs 17 times without parameters: the engine fades out for types 1 and 4 and in for any other
+  non-zero type, so 1 is a fade out with no length, i.e. instant ([re/dialogue.md](../re/dialogue.md) 9.6).
 - **Waiting.** `WaitFlags` bit 0 occurs only with `CameraAngle` 4: hold the node until the camera
-  animation ends; 9 = bits 0 and 3 *(inferred: also wait for the participants' animations)*.
+  animation ends; bit 3 (8) waits for the dialogue fade, so 9 = wait for the camera animation and the fade
+  ([re/dialogue.md](../re/dialogue.md) 6).
 - **Delay** is seconds before the node advances; 0xFFFFFFFF (23 010 of 24 234 entries) = default
   (until the VO or a text-length timer ends) *(inferred)*.
 
@@ -71,7 +73,7 @@ an entry with empty text is a silent pass-through used to run scripts or branch)
 | `VO_ID` | CExoString | 1144 | 254 empty; e.g. `c01001`, `c03001`, `c02001` | Voice-over session id from BioWare's pipeline *(inferred; not needed to find files)*. |
 | `ConversationType` | INT | 983 | 0, 1, 2 | 0 normal cinematic, 1 computer terminal; 2 occurs in party-member and some plot DLGs *(meaning unknown)*. |
 | `ComputerType` | BYTE | 794 | 0, 1 | For computer conversations: 0 modern, 1 ancient (Rakatan) skin *(inferred; 1 only on Dantooine ruins and Star Forge terminals)*. |
-| `OldHitCheck` | BYTE | 770 | 0, 1 | *(Unknown; presumably an older line-of-sight check for starting the conversation.)* |
+| `OldHitCheck` | BYTE | 770 | 0, 1 | Selects the older dialogue-camera framing: a blocked shot keeps its angle's formula and is pulled in front of the hit ([re/dialogue.md](../re/dialogue.md) 9.2). Nothing to do with starting the conversation. |
 | `AmbientTrack` | ResRef | 959 | 942 empty; e.g. `03a`, `06`, `07` | Music played during the conversation: a file in `streammusic/` (all 17 exist). |
 | `UnequipItems` | BYTE | 959 | 0, 1 | 1 to hide participants' equipped items during the conversation *(inferred)*. |
 | `AnimatedCut` | BYTE | 849 | 0, 1 | 1 if the conversation is an animated cutscene *(inferred)*. |
@@ -150,8 +152,9 @@ an entry with empty text is a silent pass-through used to run scripts or branch)
 
 The cross-check found condition and action scripts present as NCS for all but 38 of ~19 000
 references (dead names such as `k_pdan_taree01`, and a few links whose `Active` is the string
-`0`): a missing script must count as "no script" (a missing condition as TRUE is the safe
-reading, but this is unverified against the engine).
+`0`): a missing action script does nothing, and a missing **condition** script counts as FALSE
+(`CheckCondition` `0x0059ec90` returns the script's result, and `RunScript` returns 0 for a
+missing script; [re/dialogue.md](../re/dialogue.md) 4.2), so such a link is never taken.
 
 ## JRL: journal
 

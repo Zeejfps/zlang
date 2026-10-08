@@ -1067,7 +1067,7 @@ function (`0x0060e760`) is called, so it has no effect either. (high)
 - `CSWSObject::GetDead` (slot 37, `0x004cb810`): HP < 1; for the PC (`+0x9d4`) HP < −9.
 - `CSWSCreature::GetDead` (`0x004ef820`): a member of the client's party list is **never** dead.
 - `GetIsIncapacitatedPartyMember` (`0x004ef890`): a member of the client's party list with HP < 1.
-- `GetIsDebilitated` (`0x005b4880`, script GetIsDebilitated): state `+0x8ed` set, or down.
+- `GetIsHelpless` (`0x005b4880`, behind the script routine GetIsDebilitated): state `+0x8ed` set, or down.
 
 (high)
 

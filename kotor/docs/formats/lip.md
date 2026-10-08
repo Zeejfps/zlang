@@ -138,12 +138,11 @@ A LIP has the same resref as the VO it animates.
 
 ## Playback (best known)
 
-What the shipped data and the `talk` animations support; how swkotor.exe blends is not yet
-confirmed by reverse engineering:
+How to play it (step 2 follows swkotor.exe, see the engine notes below):
 
 1. Start the LIP when the VO starts. At time *t*, find the last key *k* with `time_k <= t`.
-2. The pose for shape *s* is the head's `talk` animation sampled at *s*/30 s, clamped to the
-   animation's length.
+2. The pose for shape *s* is the head's `talk` animation sampled at `(s + 1) / 16` of the
+   animation's length (the engine's rule, below; *s*/30 s is close but not what it does).
 3. Between key *k* and key *k+1*, blend the two poses by `(t - time_k) / (time_k+1 - time_k)`. The
    first and last keys are shape 0, so lines start and end at rest.
 4. After the last key, hold shape 0 until the audio ends.
