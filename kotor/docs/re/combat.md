@@ -436,8 +436,9 @@ unless marked)
   pause), PauseTimer = 0, `IncrementTimer(overshoot)`, current action type 0, `+0x4dc` = 0, and
   then, if the creature is not dead, dying or helpless, the round is not a cutscene round, and its
   current animation is not one of the movement animations (`0x004cae60`: 10002..10004, 10078,
-  10079, 10084..10087, 10093, 10094, 10133), its idle animation (`0x004f0f90`: 10001 in combat,
-  otherwise 10000). A **master** then does the same `FinishAttackPause` for its slave (`+0x9c4`;
+  10079, 10084..10087, 10093, 10094, 10133), its idle animation (`0x004f0f90`: from the client twin
+  when there is one, 10001 or the injured 10092; without one, 10001 in combat, otherwise 10000;
+  [movement.md](movement.md) 3.6). A **master** then does the same `FinishAttackPause` for its slave (`+0x9c4`;
   nothing checks that the slave is still paired with it), which is how the slave is let go; and
   the round ends if its target is now dead or down.
 - **Shortening.** `DecrementRoundLength(len, bForce)` (`0x004d3440`), exactly, and only in a
@@ -1451,7 +1452,7 @@ main interface (`CSWGuiMainInterface` `0x0068b7c0`).
 | Kind | Text | Colour (globals) | Lifetime | Who calls it (all seven call sites of `0x005edea0`) |
 |---|---|---|---|---|
 | 0 | the damage as a number | red `(0.74, 0.11, 0)` | 1.5 s | `OnApplyDamage` (twice: creatures with damage above 0, and doors and placeables) when the damager is the client's player creature, over the damaged object; `TakeDamage` `0x004f3830` when the damaged creature is the player's creature and the damager is not, over it, with the damage after the difficulty multiplier, temporary hit points and Min1HP |
-| 1 | the healing as a number | green `(0.28, 0.92, 0.11)` | 1.5 s | `OnApplyHeal` `0x004e0750`, with the hit points actually gained, when the healed creature is the client's player (`CClientExoApp` internal `+0x2b4`, `FUN_005edd80`) or in the client's party |
+| 1 | the healing as a number | green `(0.28, 0.92, 0.11)` | 1.5 s | `OnApplyHeal` `0x004e0750`, with the hit points actually gained, when the healed creature is the client's selected target (`CClientExoApp` internal `+0x2b4`, written by `SetTarget` / `CycleTarget`, read by `FUN_005edd80`) or in the client's party |
 | 2 | "miss" (1373) | white | 1.5 s | `SignalMeleeDamage` `0x005b75d0`, per melee attack of the player creature whose result is not 1..3 (a parry included); **ranged attacks never show it** |
 | 3 | "XP <n>" (38551, `%s %d`) | magenta `(0.95, 0, 0.85)` | 3 s | `AwardKillXP`, over the victim, for everyone |
 | 4 | "Level <n>" (32154) | orange `(0.98, 0.45, 0)` | 3 s | `CSWSCreatureStats::AutoLevelUp` `0x005b27e0` when its feedback argument is set, over the creature that levelled |

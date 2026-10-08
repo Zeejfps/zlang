@@ -414,7 +414,7 @@ Constructor `0x004f7a10`.
 | `+0xa50..+0xa73` | visible-appearance record, the third argument of the stats loader: item ids in equipment slots 0x20, 0x10, 0x2, 0x1 (left weapon, right weapon, body armour, head) at `+0xa50..+0xa5c` (`OBJECT_INVALID` initially, refreshed by `0x004ed620`), then copies of Appearance_Type `+0xa60`, Phenotype `+0xa62`, Gender `+0xa63`, the four colours `+0xa64..+0xa67`, Appearance_Head `+0xa68`, Tail `+0xa69`, Wings `+0xa6a`, UseBackupHead `+0xa6c`, DuplicatingHead `+0xa70` | high |
 | `+0xa74` | `CSWSCreatureStats*` | high |
 | `+0xa88` | player-controlled flag (party member under the player; written only by `SetPlayerControlled` `0x004fdb20`) | med |
-| `+0xa8c` | forced/ordered movement kind: −1 none, 1 stopped, 2 move-to-point queued, 3 follow leader, 4 Force Push, 5/6 Force Jump | med |
+| `+0xa8c` | movement state: −1 none, 0 walking, 1 stopped, 2 move-to-point queued, 3 follow leader, 4 Force Push, 5/6 Force Jump | med |
 
 ### CSWSCreatureStats (0x1b8 bytes, ctor `0x005aca80`)
 
