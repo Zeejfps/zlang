@@ -871,8 +871,9 @@ Dead, knocked out, an invalid target or one that is not an object ⇒ timer hidd
    *int*, when `0x004eada0` accepts it. Success: Locked = 0; a door is opened by the user; a
    placeable gets USEOBJECT pushed only when the actor's stats `+0x6c` is set (likely the PC
    flag) or the actor is the party leader; then event 12 UNLOCK_OBJECT to the target and sound-set entry 0x19 (0x18 on failure).
-   A combat log entry (id 0x149, dialog.tlk 1405 "<CUSTOM0> attempts <CUSTOM1> on <CUSTOM2> :
-   *<CUSTOM3>* : (<CUSTOM4> <CUSTOM5> <CUSTOM6> = <CUSTOM7><CUSTOM8>)") shows the roll, with result
+   A combat log entry (id 0x149, formatted by the client's skill-roll case `0x0065b4a0` with dialog.tlk
+   1408 "<CUSTOM0> <CUSTOM1> <CUSTOM2>: <CUSTOM3> (roll <CUSTOM4> <CUSTOM5> <CUSTOM6> <CUSTOM7>) vs. DC
+   <CUSTOM8>"; 1405 is the attack-roll line) shows the roll, with result
    code 1 success, 0 failure in combat, 3 failure taking 20 below DC 60, 5 taking 20 at DC 60 or
    more ("success not possible", 1397). Then, on success **and** failure, when the item is in the
    creature's inventory its stack size (`+0x28c`) drops by one; at the last one it is removed
