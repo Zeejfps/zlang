@@ -56,7 +56,7 @@ namespace fight {
         let c = obj::creature{ o } ifnull { return }
         let ammo = ammo_of{ w = &w, item = hand_item{ c, hand = imp.hand } }
         if ammo <= 0 { return }
-        let result = if imp.attack { imp.result } else { rules::outcome::MISS }
+        let result = if imp.attack or imp.result != 0 { imp.result } else { rules::outcome::MISS }
         outbox::post{ out = &w.out, note = outbox::Note::shot{
             attacker = id, target = imp.target, ammo, power, hand = imp.hand, flight_ms = imp.at_ms - imp.fire_ms, result,
         } }
@@ -139,7 +139,6 @@ namespace fight {
     // that was knocked away. (A miss flew on; lib/vfx ends it where it hits.)
     fn land_ranged_fx { mut w: world::World, id: u32, imp: *Impact, power: bool } {
         let t = world::object{ w = &w, id = imp.target } ifnull { return }
-        if not imp.attack { return }
         if imp.hit {
             let mut effect = ranged_hit_effect{ w = &w, damage = &imp.damage }
             if effect == 0 and imp.damage.total > 0 { effect = VFX_BLASTER_IMPACT }

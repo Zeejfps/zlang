@@ -21,7 +21,7 @@ namespace ambience {
     struct Excited {
         id: u32,
         ms: i32,                        // left of excitedduration.2da's 10 s since its last hostile act
-        combat_ms: i32,                 // its fight state's combat timer when last looked at: a refresh shows as no decay
+        stirs: u32,                     // its fight state's count of hostile acts that stirred it, when last looked at
     }
 
     struct Ambience {
@@ -273,18 +273,20 @@ namespace ambience {
     //
     // Nothing in the scripts plays the battle track of an ordinary fight: the engine does. Every hostile
     // act stirs the creatures it concerns up for excitedduration.2da's 10 s (CSWSCreature 0x004f3580,
-    // from SignalCombatWith and the attack events), and a creature that has a hostile creature within
-    // 30 m then turns the area's battle music on. When one such creature's 10 s run out, the battle music
-    // goes off (0x004ed110, from the creature's update), and with it a stinger; the next hostile act
-    // turns it on again. The fight state's combat timer (8 s, fight.ctx) is set by every hostile act and
-    // otherwise runs down, so a creature whose timer did not run down was just stirred up.
+    // from SignalCombatWith's pull-in: fight::pull_in counts each one's stirs, the creature and its
+    // faction-mates within 30 m for the party or their sight range for others), and a creature so
+    // stirred that perceives a hostile creature within 30 m turns the area's battle music on. An attack
+    // stirs no one as it starts (the attacker signals only itself), so the music starts at its first
+    // impact, or at damage. When one such creature's 10 s run out, the battle music goes off
+    // (0x004ed110, from the creature's update), and with it a stinger; the next hostile act turns it on
+    // again.
 
     const EXCITED_MS: i32 = 10000
     const HOSTILE_RANGE: f32 = 30.0
     const BATTLE_REPLAY_S: f32 = 1.0    // the battle track starts over a second after it ends
 
-    // Whether a living creature hostile to `o` stands within 30 m of it (the original asks the
-    // creature's perception: GetNearestEnemy 0x004f2de0).
+    // Whether `o` perceives a living creature hostile to it within 30 m (GetNearestEnemy 0x004f2de0: its
+    // perception list's seen entries).
     fn hostile_near { w: *world::World, o: *obj::Object } -> bool {
         let all = list::items{ list = w.objects.all }
         let mut i: usize = 0
@@ -294,40 +296,12 @@ namespace ambience {
             if h.id == o.id or h.kind != obj::Kind::creature or h.area != w.area or h.destroyed { continue }
             let hc = obj::creature{ o = h } ifnull { continue }
             if hc.dead or h.hp < 1 { continue }
-            if world::standing{ w, from = o.faction, toward = h.faction } >= 11 and world::standing{ w, from = h.faction, toward = o.faction } >= 11 { continue }
-            if math::vec3::distance{ a = o.position, b = h.position } <= HOSTILE_RANGE { return true }
+            if world::standing{ w, from = o.faction, toward = h.faction } >= 11 { continue }
+            if math::vec3::distance{ a = o.position, b = h.position } > HOSTILE_RANGE { continue }
+            let seen = perception::entry_of{ w, viewer = o.id, target = h.id } ifnull { continue }
+            if seen.seen { return true }
         }
         return false
-    }
-
-    // Stirs creature `id` up for the full 10 s (a record for it if it has none).
-    fn excite { mut a: Ambience, id: u32, combat_ms: i32 } {
-        let recs = list::items{ list = a.excited }
-        let mut k: usize = 0
-        while k < recs.len {
-            if recs[k].id == id {
-                if recs[k].ms < EXCITED_MS { recs[k].ms = EXCITED_MS }
-                return
-            }
-            k = k + 1
-        }
-        list::push{ list = &a.excited, item = Excited{ id, ms = EXCITED_MS, combat_ms } } iferr {}
-    }
-
-    // SignalCombatWith (0x004fbbe0) pulls in every member of the creature's faction within 30 m (more for
-    // the player's party): they are stirred up too, whether or not the blow was theirs, so a fight
-    // that goes on keeps all of its side's countdowns from running out.
-    fn excite_faction { mut a: Ambience, w: *world::World, o: *obj::Object } {
-        let all = list::items{ list = w.objects.all }
-        let mut i: usize = 0
-        while i < all.len {
-            let h = all[i]
-            i = i + 1
-            if h.id == o.id or h.kind != obj::Kind::creature or h.area != w.area or h.destroyed or h.faction != o.faction { continue }
-            let hc = obj::creature{ o = h } ifnull { continue }
-            if hc.dead or math::vec3::distance{ a = o.position, b = h.position } > HOSTILE_RANGE { continue }
-            excite{ &a, id = h.id, combat_ms = if hc.fighter is some{ value = hf } { hf.combat_ms } else { 0 } }
-        }
     }
 
     // Drops a record (the last takes its place).
@@ -364,20 +338,18 @@ namespace ambience {
                 if recs[k].id == o.id { at = k }
                 k = k + 1
             }
-            if f.combat_ms <= 0 and at == recs.len { continue }
-            // The timer fell by the elapsed time if nothing refreshed it (a margin for the tick's rounding).
-            let fresh = f.combat_ms > 0 and (at == recs.len or f.combat_ms > recs[at].combat_ms - elapsed + 50)
+            if f.stirs == 0 and at == recs.len { continue }
+            // Stirred since the last look (a creature seen for the first time counts while it is in
+            // combat: its record went with an earlier visit to another area).
+            let fresh = if at == recs.len { f.combat_ms > 0 } else { f.stirs != recs[at].stirs }
             if at == recs.len {
-                list::push{ list = &a.excited, item = Excited{ id = o.id, ms = 0, combat_ms = f.combat_ms } } iferr { continue }
+                list::push{ list = &a.excited, item = Excited{ id = o.id, ms = 0, stirs = f.stirs } } iferr { continue }
             }
             let now_recs = list::items{ list = a.excited }
-            now_recs[at].combat_ms = f.combat_ms
+            now_recs[at].stirs = f.stirs
             if not fresh { continue }
             if now_recs[at].ms < EXCITED_MS { now_recs[at].ms = EXCITED_MS }
-            if hostile_near{ w = &w, o } {
-                battle_music{ &a, &w, play = true }
-                excite_faction{ &a, w = &w, o }
-            }
+            if hostile_near{ w = &w, o } { battle_music{ &a, &w, play = true } }
         }
         // The countdowns: a creature that is gone or dead no longer counts down (its update stops).
         let mut r: usize = 0
@@ -398,10 +370,6 @@ namespace ambience {
                     recs[r].ms = 0
                     battle_music{ &a, &w, play = false }
                 }
-            }
-            if recs[r].ms <= 0 and recs[r].combat_ms <= 0 {
-                forget_excited{ &a, index = r }
-                continue
             }
             r = r + 1
         }

@@ -1132,7 +1132,7 @@ Ours (`game/death.ctx`, called from `play::run`): the same sequence. The world k
 runs the sequence slowed where the game does not; the HUD goes away, the box opens (`msgbox::show_strref`), the fade
 is the dialogue layer's (an `outbox` fade note: wait 12, length 1, black), the camera is the orbit
 above, placed after the chase camera's update. The box's OK (or Escape) and the end of the fade end the
-loop, as the options menu's Exit Game does (a return to the front end is built for neither).
+loop and return to the main menu (`game/play.ctx`, `death::is_over`), as the options menu's Exit Game does.
 
 ### 6.7 Solo mode
 

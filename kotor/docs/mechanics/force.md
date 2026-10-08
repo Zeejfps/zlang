@@ -45,7 +45,7 @@ powers (the HUD lists rebuild every 0.2 s of presented time, and `--speed 8` pre
 | 5 | Keys `1` `2` `3` press the target slots, Shift with them cycles; keys `4` `5` `6` `7` press the self slots (friendly power, medical item, other item, mine) | keymap.2da | fixed (`4`..`7` were not bound; Shift is the controls owner's) |
 | 6 | The self slot of friendly powers lists one power per `ForceFriendly` line (0 cure/heal, 1 aura/shield/armor, 2 speeds, 3 valors, 4 resist force/immunity, 5 energy resistances), the known power of the line with the highest priority, lines in order | `0x00616230` → `0x0064af10` (category 3, no exclusion mask); the items per the items owner's rules | fixed (it listed every friendly row) |
 | 7 | Using a target slot out of combat mode turns the leader's combat mode on and replaces what the leader was doing; in combat mode the order queues behind the others, and Shift clears the queued combat actions first | `UseAction 0x00689610` (SetCombatMode, then ClearAllActions on the server creature), `0x0068ad20` (Shift: ClearAllCombatActions); controls owner's queue rule | matches for the replace and queue rule; open: the press itself does not turn combat on here (ours enters combat, both sides, when the cast begins after the approach) |
-| 8 | Out of range the leader runs toward the target until it is within the range, then casts | actions.md 3.13: range = `ranges.2da` PrimaryRange of the Range letter (P and T 2.25, S 10, M 15, L 28, W 15 from row 19 SpellRngThrow) + each creature's radius less 0.1; `GetSpellRange 0x004eb3a0`, the ranges loaded by `CSWRules 0x00552c50` (rows 0..4 and 19) | matches for P to L (checked from 19 m); open: ours takes `W` from row 5 (10 m) instead of row 19 (15 m) |
+| 8 | Out of range the leader runs toward the target until it is within the range, then casts | actions.md 3.13: range = `ranges.2da` PrimaryRange of the Range letter (P and T 2.25, S 10, M 15, L 28, W 15 from row 19 SpellRngThrow) + each creature's radius less 0.1; `GetSpellRange 0x004eb3a0`, the ranges loaded by `CSWRules 0x00552c50` (rows 0..4 and 19) | matches for P to L (checked from 19 m); fixed for `W`, now row 19 (15 m) rather than row 5 (10 m): `force_run.py --powers 49 --dist 13` with a lightsaber, the leader casts Throw Lightsaber at once where the HEAD build walked in first |
 | 9 | The block's lists only exist while the target is on the screen | ours (the HUD builds the block over the visible target) | open (the original builds the lists from the selection; keys on an off-screen target do nothing here) |
 | 10 | Hovering a target slot puts its selected entry's name in the target block's name label (`LBL_NAME`, in place of the target's name; `LBL_ACTIONDESC` belongs to the self slots); the tooltips are "Activate Left/Middle/Right Action" (48303/48307/48311) | gui.md; `0x00685cb0` | fixed (the tooltip was the entry's name and nothing showed in the label) |
 | 11 | A droid leader's middle slot lists the droid utilities of its equipment (`FUN_00618c20`) | gui.md | open (T3-M4 and HK-47 are not Force users; their device lists are the items owner's) |
@@ -98,7 +98,7 @@ Learn levels are `spells.2da` guardian/consular/sentinel; "Jedi" means the first
 
 | Row | Power | Side | FP | Learned at (G/C/S) | Range | Reaches | Save | What it does (script, observed) | Status |
 |---|---|---|---|---|---|---|---|---|---|
-| 4 | Adv Throw Lightsaber | universal | 20 | 9/9/9 | W | hostile target (W) and up to two creatures friendly to it within 5 m of it; the menu refuses a target within 5 m | none (no attack roll) | saber flies to each in turn and back; d6 per 2 levels each (the engine's roll); cast animation `throw` | matches; open: the range is 10 m here (15 m), there is no 5 m minimum, the flying saber has no blade |
+| 4 | Adv Throw Lightsaber | universal | 20 | 9/9/9 | W | hostile target (W) and up to two creatures friendly to it within 5 m of it; the menu refuses a target within 5 m | none (no attack roll) | saber flies to each in turn and back; d6 per 2 levels each (the engine's roll); cast animation `throw` | matches (the range 15 m, row 8); open: there is no 5 m minimum, the flying saber has no blade |
 | 6 | Affect Mind | universal | 0 | Jedi | **** | passive | none | no action: dialogue lines test GetHasSpell(6) or GetHasSpell(14) (k_con_fperslow) | matches (script-driven) |
 | 7 | Affliction | dark | 15 | 6/6/6 | M | hostile single (M) | Fort DC 20 (poison.2da row 1; the script itself rolls none) | poison, a tick every 6 s for 36 s: -1 to each ability for 60 s per tick (the data drain all six abilities; the description says the physical ones and 7 points over 21 s), slowed 50 %; nothing when the target is already poisoned | fixed (the ticks drained nothing); matches poison.2da |
 | 8 | Burst of Speed | universal | 20 | Jedi | P | self | - | +99 % movement (x1.5 after the rules' clamp), +2 AC for 36 s | matches (movement, animation rate follow it) |
@@ -140,7 +140,7 @@ Learn levels are `spells.2da` guardian/consular/sentinel; "Jedi" means the first
 | 46 | Stun | light | 20 | Jedi | M | hostile single (M) | Fort slows instead | stunned 9 s (the stun's stars held on it) | matches |
 | 47 | Stun Droid | light | 10 | Jedi | M | droid single (M) | Fort (half damage, no stun) | droid stun 12 s + level damage; stun beam | matches |
 | 48 | Force Suppression | universal | 25 | 9/9/9 | M | hostile single (M) | none | strips Force Aura, Force Shield, Force Valor, Knight Valor, Burst of Speed, Knight Speed, Resist Force and Energy Resistance | matches (script) |
-| 49 | Throw Lightsaber | universal | 20 | Jedi | W | hostile single (W); the menu refuses a target within 5 m | none (no attack roll) | saber flies out and back; d6 per 2 levels (the engine's roll) | matches; open: the range is 10 m here (15 m), there is no 5 m minimum, the flying saber has no blade |
+| 49 | Throw Lightsaber | universal | 20 | Jedi | W | hostile single (W); the menu refuses a target within 5 m | none (no attack roll) | saber flies out and back; d6 per 2 levels (the engine's roll) | matches (the range 15 m, row 8); open: there is no 5 m minimum, the flying saber has no blade |
 | 50 | Wound | dark | 15 | Jedi | M | hostile single (M) | Fort negates | choke-like state 6 s, 2/3 level damage every 2 s | matches |
 
 ## Level-up, abilities, feats
@@ -160,7 +160,7 @@ Learn levels are `spells.2da` guardian/consular/sentinel; "Jedi" means the first
 - Companions in the party did not fight or cast in the test arenas (their OnPerception ran but they never
   attacked the hostile troopers); that is the party AI, not the powers. Bastila/Jolee casting through
   `k_ai_master` is therefore unchecked.
-- `W` range (saber throws): ours takes ranges.2da row 5 (10 m); the original takes row 19 (15 m) and the target
+- `W` range (saber throws): row 19, 15 m, as the original; the original's target
   block refuses a target within its SecondaryRange (5 m, "Target too Close") (rows 3, 8, 4, 49).
 - The target block's refusals: shown in the block's name label in the original, in the message bar here; a
   missing saber says "Missing Item" there (row 3).

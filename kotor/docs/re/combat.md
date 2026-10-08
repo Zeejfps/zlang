@@ -538,8 +538,7 @@ pause); a round ended with `script` true applies its impacts still in flight fir
 dropping them; a master lets go of a slave only while the slave still has it as master, and a
 slave held by a master that is gone is let go; a creature that has waited two rounds for a master
 becomes one (two stale Master flags would otherwise wait for ever); cutscene attacks are always
-solo; spell rounds (Force powers) do not use rounds; a ranged attack's dodge reaction is still
-played at the impact. Looked at with `--log combat` (`A (tag) engages B (tag) as master`,
+solo; spell rounds (Force powers) do not use rounds. Looked at with `--log combat` (`A (tag) engages B (tag) as master`,
 `B answers with animation ROW`) and `--log trace` (animation names every 6 frames).
 
 ### 3.6 Combat state
@@ -626,12 +625,11 @@ ordinary fight; the creatures' combat code does, through the area's sound object
   (`0x0068ef80`): when the music source is idle it waits (the battle track 1000 ms, the background the
   area's MusicDelay, `+0xcc`, 30000 by default) and starts the same track again. An area whose
   `MusicBattle` is 0, or whose row has no resource (row 35), plays nothing.
-- *Ours*: `ambience::update_battle` (`lib/scene/ambience.ctx`) reads each creature's combat timer
-  (fight.ctx sets it to 8 s at every hostile act and lets it run down: a timer that did not fall was
-  just renewed), gives that creature a 10 s countdown and, when a hostile creature is within 30 m of
-  it, its faction-mates within 30 m too, and calls the same `battle_music` that MusicBattlePlay/Stop
-  use when such a renewed creature has a hostile creature within 30 m and when a countdown runs out;
-  `battle_music(off)` plays the stinger.
+- *Ours*: `fight::pull_in` (SignalCombatWith's pull-in) counts, in each creature it brings in (the
+  signalling one among them), a `stirs` number; `ambience::update_battle` (`lib/scene/ambience.ctx`)
+  gives every creature whose count went up a 10 s countdown and calls the same `battle_music` that
+  MusicBattlePlay/Stop use when such a creature perceives a hostile creature within 30 m (a seen
+  perception entry) and when a countdown runs out; `battle_music(off)` plays the stinger.
 
 ### 3.7 When the target dies mid-round
 
@@ -1202,7 +1200,7 @@ PC flag, med), and the action fails for the PC (`+0x9d4`).
    the fallback `0x0052bce0` makes the same seven factions with ids 0 to 6 in the order player, hostile_1, hostile_2,
    friendly_1, friendly_2, neutral, insane: neutral is 5 there too, but hostile_2 and friendly_1 are swapped relative to
    repute.2da.) A script that wants the fight back sets a standard
-   faction itself (`k_pkas_freyyrfin`, the "Now die!" branch of Freyyr's talk). Ours: the dead keep their faction.
+   faction itself (`k_pkas_freyyrfin`, the "Now die!" branch of Freyyr's talk). Ours: `fight::died` moves the dead there too.
 
 Ours: `fight::surrender` (lib/engine/fight_state.ctx).
 
