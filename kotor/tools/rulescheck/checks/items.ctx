@@ -87,7 +87,7 @@ namespace check {
     }
 
     fn items_env { tables: *rules::Tables } -> rules::Env {
-        return rules::Env{ tables, now = rules::Time{ day = 0, ms = 0 }, hp = 100 }
+        return rules::Env{ tables, now = rules::Time{ day = 0, ms = 0 }, hp = 100, self_id = rules::OBJECT_INVALID }
     }
 
     fn items_mix { d: i64, v: i64 } -> i64 { return @wrap_add(@wrap_mul(d, 31), v) }

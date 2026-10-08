@@ -60,7 +60,7 @@ namespace check {
         let items = gff::get_list{ doc = doc.*, s, label = "Equip_ItemList" } ifnull slice::empty(u32){}
         let mut ev: rules::Events
         let mut rng = rules::seed_rng{ seed = 1 }
-        let env = rules::Env{ tables, now = rules::Time{ day = 0, ms = 0 }, hp = 10 }
+        let env = rules::Env{ tables, now = rules::Time{ day = 0, ms = 0 }, hp = 10, self_id = rules::OBJECT_INVALID }
         let mut i: usize = 0
         while i < items.len {
             let mut it: rules::Item

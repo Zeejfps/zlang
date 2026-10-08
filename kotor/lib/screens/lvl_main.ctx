@@ -34,7 +34,7 @@ namespace lvl {
         s.step_kind = NO_STEP
         s.rec = rules::LevelRecord{
             class, hp = s.opts.hp, fp = s.opts.fp, ability = -1, skill_left = s.opts.skill_points,
-            skills = [0; 8], nfeats = 0, feats = [0; 8], npowers = 0, powers = [0; 8],
+            skills = [0; 8], nfeats = 0, feats = [0; rules::MAX_LEVEL_FEATS], npowers = 0, powers = [0; rules::MAX_LEVEL_POWERS],
         }
         s.needed = [
             s.opts.ability_point, s.opts.skill_points > 0, s.opts.general_feats + s.opts.bonus_feats > 0,

@@ -9,6 +9,7 @@ namespace rules {
         tables: *Tables,
         now: Time,
         hp: i32,                // the creature's current hit points (dead and dying checks, regeneration)
+        self_id: u32,           // the creature's object id (the creator of what it makes itself), OBJECT_INVALID if none
     }
 
     struct ApplyResult {
@@ -79,27 +80,52 @@ namespace rules {
         return hi
     }
 
-    // The damage immunity (percent, negative for vulnerability) of a creature against one damage
-    // slot: increases add, decreases subtract (the engine's per-type table, rules.md 1.3), 100 at most.
-    fn immunity_percent { c: *Creature, slot: usize } -> i32 {
+    // GetDamageImmunityByFlags (0x004caf70) over the per-type table: the lowest percentage of the
+    // set bits, except that a running 0 gives way to any later value (the exe tests "nothing yet"
+    // by 0, so 0 then 50 reads 50; a quirk kept), clamped to -100..100.
+    fn immunity_by_flags { table: *[15]i32, flags: i32 } -> i32 {
         let mut pct = 0
+        let mut b: usize = 0
+        while b < 15 {
+            if ((flags >> @as(u32, b)) & 1) != 0 and (pct == 0 or table[b] < pct) { pct = table[b] }
+            b = b + 1
+        }
+        return if pct > 100 { 100 } else if pct < -100 { -100 } else { pct }
+    }
+
+    // The creature's per-type immunity table (rules.md 1.3), as the apply handlers build it in list
+    // order: each effect reads the table by its own flags, adds (a decrease subtracts) its amount,
+    // clamps to -100..100 and stores the result in the entry of its lowest damage-type bit only.
+    fn immunity_table { c: *Creature } -> [15]i32 {
+        let mut table = [0; 15]
         let mut i: usize = 0
         while i < @as(usize, c.nfx) {
             let e = &c.fx[i]
             i = i + 1
             let up = e.kind == fx::DAMAGE_IMMUNITY_INCREASE
             if not up and e.kind != fx::DAMAGE_IMMUNITY_DECREASE { continue }
-            if ((e.ints[0] >> @as(u32, slot)) & 1) == 0 { continue }
-            pct = if up { pct + e.ints[1] } else { pct - e.ints[1] }
+            if e.ints[1] < 0 { continue }
+            let mut low: usize = 0
+            while low < 15 and ((e.ints[0] >> @as(u32, low)) & 1) == 0 { low = low + 1 }
+            if low == 15 { continue }
+            let cur = immunity_by_flags{ table = &table, flags = e.ints[0] }
+            let v = if up { cur + e.ints[1] } else { cur - e.ints[1] }
+            table[low] = if v > 100 { 100 } else if v < -100 { -100 } else { v }
         }
-        if pct > 100 { pct = 100 }
-        return pct
+        return table
+    }
+
+    // The damage immunity (percent, negative for vulnerability) of a creature against damage of
+    // the types in `flags` (combat.md 6.4).
+    fn immunity_percent { c: *Creature, flags: i32 } -> i32 {
+        let table = immunity_table{ c }
+        return immunity_by_flags{ table = &table, flags }
     }
 
     // DoDamageImmunity: the share of the damage an immunity absorbs, at least 1 when there is any
     // immunity (truncated towards zero); a vulnerability adds damage.
     fn apply_damage_immunity { c: *Creature, amount: i32, flags: i32 } -> i32 {
-        let pct = immunity_percent{ c, slot = damage_slot{ flags } }
+        let pct = immunity_percent{ c, flags }
         if pct == 0 { return amount }
         let mut absorbed = amount * pct / 100
         if pct > 0 and absorbed < 1 { absorbed = 1 }
@@ -109,8 +135,20 @@ namespace rules {
     // DoDamageResistance: the largest matching DAMAGE_RESISTANCE absorbs up to its amount; a
     // limited one (int2 > 0) loses what it absorbed and is removed when it is spent. `simulate`
     // leaves the effect alone. A damage type in the int3 mask of any resistance (an energy
-    // shield's VulnerFlags: ion) drains the limit twice as fast.
+    // shield's VulnerFlags: ion) drains the limit twice as fast. Then Improved Toughness and
+    // Wookiee Endurance each take 2 more off, whatever the damage type and with or without a
+    // resistance effect, on every call; never below 0 (0x004d0e40).
     fn apply_damage_resistance { mut c: Creature, amount: i32, flags: i32, simulate: bool, mut ev: Events } -> i32 {
+        let resisted = apply_resistance_effect{ c = &c, amount, flags, simulate, ev = &ev }
+        let mut feats = 0
+        if has_feat{ c = &c, feat = feat::IMPROVED_TOUGHNESS } { feats = feats + 2 }
+        if has_feat{ c = &c, feat = feat::WOOKIEE_ENDURANCE } { feats = feats + 2 }
+        let d = resisted - feats
+        return if d < 0 { 0 } else { d }
+    }
+
+    // The resistance effect's share of DoDamageResistance.
+    fn apply_resistance_effect { mut c: Creature, amount: i32, flags: i32, simulate: bool, mut ev: Events } -> i32 {
         let mut best = -1
         let mut best_amount = 0
         let mut vulnerable = false

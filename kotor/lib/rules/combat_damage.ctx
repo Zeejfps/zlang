@@ -76,10 +76,11 @@ namespace rules {
         return cell_int{ t, row = @as(usize, row), col = "rank", dflt = 0 }
     }
 
-    // The amount of an iprp_damagecost row: rows 1..5 are that flat amount, higher rows roll
-    // NumDice d Die, `times` times (a critical hit re-rolls them once per multiplier step).
+    // The amount of an iprp_damagecost row: rows 1..5 are that flat amount, added once even on a
+    // critical hit; higher rows roll NumDice d Die, `times` times (a critical hit re-rolls them once
+    // per multiplier step, re/combat.md 6.2).
     fn combat_roll_row_amount { tables: *Tables, mut rng: Rng, row: i32, times: i32 } -> i32 {
-        if row < 6 { return if row > 0 { row * times } else { 0 } }
+        if row < 6 { return if row > 0 { row } else { 0 } }
         let d = damage_row_dice{ tables, row }
         let mut sum = 0
         let mut k = 0
@@ -257,8 +258,10 @@ namespace rules {
     // followed by its difficulty draw), the sneak dice, Massive Criticals, the effect dice. The
     // defender's mitigation is immunity, resistance, reduction on the weapon's damage; with
     // `simulate` no limited resistance or reduction is spent (a preview).
-    // Decisions: the power against DAMAGE_REDUCTION is the weapon's enhancement bonus 0..5, 0
-    // unarmed; the effect damage bonus is added to the total (the exe keeps it apart in the
+    // The power against DAMAGE_REDUCTION is the low byte of the attacker's attack effect bonus
+    // against the defender (0x004fd6f0), not the weapon's enhancement: a net attack penalty wraps
+    // to 236..255 and so beats every reduction (an engine quirk, kept).
+    // Decisions: the effect damage bonus is added to the total (the exe keeps it apart in the
     // record, which makes no sense for what the player sees); a Massive Criticals row below 6
     // adds that flat amount (the exe rolls nothing there and adds a leftover register).
     fn roll_damage { tables: *Tables, mut rng: Rng, atk: *Creature, mut def: Creature, mut ev: Events, sit: *AttackSituation, attack_index: i32, combat_feat: i32, critical: bool, sneak: bool, simulate: bool } -> DamageRoll {
@@ -392,7 +395,7 @@ namespace rules {
         // 9, 10: at least 1, then the defender's immunity, resistance and reduction
         if weapon_dmg < 1 { weapon_dmg = 1 }
         r.weapon_raw = weapon_dmg
-        r.power = if weapon != null and armed { weapon_enhancement{ tables, item = weapon } } else { 0 }
+        r.power = combat_get_attack_effects{ atk, def = &def, sit, wtype = v.wtype } & 0xff
         // (A door's or placeable's stand-in defender carries only its Hardness, as a damage resistance.)
         r.absorbed_immunity = weapon_dmg - apply_damage_immunity{ c = &def, amount = weapon_dmg, flags = r.weapon_flags }
         let after = mitigate_damage{ c = &def, amount = weapon_dmg, flags = r.weapon_flags, power = r.power, simulate, ev = &ev }

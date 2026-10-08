@@ -48,7 +48,7 @@ namespace check {
     fn run_examples { mut io: Io, mut r: Report, tables: *rules::Tables } {
         let mut rng = rules::seed_rng{ seed = 1 }
         let mut ev: rules::Events
-        let env = rules::Env{ tables, now = zero_time{}, hp = 30 }
+        let env = rules::Env{ tables, now = zero_time{}, hp = 30, self_id = rules::OBJECT_INVALID }
 
         // ---- ability modifiers: (score - 10) / 2 rounded down
         expect_eq{ &io, &r, name = "modifier of 7", got = @as(i64, rules::ability_modifier{ score = 7 }), want = -2 }
@@ -184,7 +184,7 @@ namespace check {
         expect_eq{ &io, &r, name = "CON +4 raises max HP by 4 x 2", got = @as(i64, hp.stats.max_hp), want = 52 }
         expect_eq{ &io, &r, name = "the max HP change is reported (new value)", got = event_value{ ev, kind = rules::ev::MAX_HP_CHANGED }, want = 44 }
         // expiry: 60 s later the effect is gone
-        let later = rules::Env{ tables, now = rules::time_add_seconds{ t = zero_time{}, seconds = 61.0, ms_per_day = 2880000 }, hp = 30 }
+        let later = rules::Env{ tables, now = rules::time_add_seconds{ t = zero_time{}, seconds = 61.0, ms_per_day = 2880000 }, hp = 30, self_id = rules::OBJECT_INVALID }
         rules::clear_events{ &ev }
         rules::update_effects{ env = later, c = &hp, rng = &rng, ev = &ev }
         expect_eq{ &io, &r, name = "the temporary CON bonus has expired", got = @as(i64, hp.stats.max_hp), want = 44 }
@@ -286,11 +286,11 @@ namespace check {
         let mut rg = build_creature{ tables, class = rules::cls::SOLDIER, level = 1, str = 10, dex = 10, con = 10, wis = 10, cha = 10 }
         _ = apply_timed{ env, c = &rg, e = rules::fx::make_regenerate{ amount = 2, seconds = 6.0 }, dur = rules::dur::PERMANENT, seconds = 0.0, spell = -1, id = 70, rng = &rng, ev = &ev }
         let hurt = 5
-        let at5 = rules::Env{ tables, now = rules::time_add_seconds{ t = zero_time{}, seconds = 5.0, ms_per_day = 2880000 }, hp = hurt }
+        let at5 = rules::Env{ tables, now = rules::time_add_seconds{ t = zero_time{}, seconds = 5.0, ms_per_day = 2880000 }, hp = hurt, self_id = rules::OBJECT_INVALID }
         rules::clear_events{ &ev }
         rules::update_effects{ env = at5, c = &rg, rng = &rng, ev = &ev }
         expect_eq{ &io, &r, name = "regeneration: nothing before the interval", got = count_events{ ev, kind = rules::ev::HEAL_HP }, want = 0 }
-        let at7 = rules::Env{ tables, now = rules::time_add_seconds{ t = zero_time{}, seconds = 7.0, ms_per_day = 2880000 }, hp = hurt }
+        let at7 = rules::Env{ tables, now = rules::time_add_seconds{ t = zero_time{}, seconds = 7.0, ms_per_day = 2880000 }, hp = hurt, self_id = rules::OBJECT_INVALID }
         rules::update_effects{ env = at7, c = &rg, rng = &rng, ev = &ev }
         expect_eq{ &io, &r, name = "regeneration: heals 2 after the interval", got = event_value{ ev, kind = rules::ev::HEAL_HP }, want = 2 }
         rules::clear_events{ &ev }
@@ -330,11 +330,11 @@ namespace check {
         let pres = rules::apply_effect{ env, c = &ps, e = rules::fx::make_poison{ poison_row = 3 }, rng = &prng, ev = &ev }
         expect_true{ &io, &r, name = "poison takes hold after a failed save", cond = pres.kept }
         expect_eq{ &io, &r, name = "poison: the first tick damages 3", got = event_value{ ev, kind = rules::ev::DAMAGE_HP }, want = 3 }
-        let at4 = rules::Env{ tables, now = rules::time_add_seconds{ t = zero_time{}, seconds = 4.0, ms_per_day = 2880000 }, hp = 20 }
+        let at4 = rules::Env{ tables, now = rules::time_add_seconds{ t = zero_time{}, seconds = 4.0, ms_per_day = 2880000 }, hp = 20, self_id = rules::OBJECT_INVALID }
         rules::clear_events{ &ev }
         rules::update_effects{ env = at4, c = &ps, rng = &prng, ev = &ev }
         expect_eq{ &io, &r, name = "poison: the next tick after the period", got = count_events{ ev, kind = rules::ev::DAMAGE_HP }, want = 1 }
-        let at40 = rules::Env{ tables, now = rules::time_add_seconds{ t = zero_time{}, seconds = 40.0, ms_per_day = 2880000 }, hp = 20 }
+        let at40 = rules::Env{ tables, now = rules::time_add_seconds{ t = zero_time{}, seconds = 40.0, ms_per_day = 2880000 }, hp = 20, self_id = rules::OBJECT_INVALID }
         rules::update_effects{ env = at40, c = &ps, rng = &prng, ev = &ev }
         expect_eq{ &io, &r, name = "poison runs out", got = @as(i64, ps.nfx), want = 0 }
         let mut ps2 = build_creature{ tables, class = rules::cls::SOLDIER, level = 1, str = 10, dex = 10, con = 10, wis = 10, cha = 10 }
@@ -413,7 +413,7 @@ namespace check {
     fn run_shield_examples { mut io: Io, mut r: Report, tables: *rules::Tables } {
         let mut rng = rules::seed_rng{ seed = 5 }
         let mut ev: rules::Events
-        let env = rules::Env{ tables, now = zero_time{}, hp = 30 }
+        let env = rules::Env{ tables, now = zero_time{}, hp = 30, self_id = rules::OBJECT_INVALID }
         let mpd = 2880000
         let temp = rules::dur::TEMPORARY
 
@@ -502,10 +502,10 @@ namespace check {
         // Time runs out: the whole shield goes at the next update.
         let mut tm = plain_soldier{ tables }
         _ = apply_timed{ env, c = &tm, e = rules::fx::make_force_shield{ shield = 6 }, dur = temp, seconds = 200.0, spell = 99, id = 93, rng = &rng, ev = &ev }
-        let early = rules::Env{ tables, now = rules::time_add_seconds{ t = zero_time{}, seconds = 199.0, ms_per_day = mpd }, hp = 30 }
+        let early = rules::Env{ tables, now = rules::time_add_seconds{ t = zero_time{}, seconds = 199.0, ms_per_day = mpd }, hp = 30, self_id = rules::OBJECT_INVALID }
         rules::update_effects{ env = early, c = &tm, rng = &rng, ev = &ev }
         expect_eq{ &io, &r, name = "shield: still there at 199 s", got = @as(i64, tm.nfx), want = 3 }
-        let late = rules::Env{ tables, now = rules::time_add_seconds{ t = zero_time{}, seconds = 201.0, ms_per_day = mpd }, hp = 30 }
+        let late = rules::Env{ tables, now = rules::time_add_seconds{ t = zero_time{}, seconds = 201.0, ms_per_day = mpd }, hp = 30, self_id = rules::OBJECT_INVALID }
         rules::clear_events{ &ev }
         rules::update_effects{ env = late, c = &tm, rng = &rng, ev = &ev }
         expect_eq{ &io, &r, name = "shield: gone at 201 s", got = @as(i64, tm.nfx), want = 0 }

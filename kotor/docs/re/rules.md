@@ -733,9 +733,9 @@ never played: the code looks up `SoundCessation`, but the column is spelled `sou
 the 2DA's column match is exact apart from case ([render-gui.md](render-gui.md), engine-coded
 effects; med: static reading, needs a runtime check). (high for the structure, low for what the engine-coded effects draw)
 
-Our library (`lib/rules/shield.ctx`, `effects.ctx`): the same two children, one id (the creator
-of the children stays the caster: the library does not know its creature's object id), removal
-of the spent resistance by id, the miss branch in `combat_finish_miss`.
+Our library (`lib/rules/shield.ctx`, `effects.ctx`): the same two children, one id, the creature
+itself as their creator (`Env.self_id`), removal of the spent resistance by id, the miss branch
+in `ranged_miss_result`.
 
 ## 2. Saving throws
 

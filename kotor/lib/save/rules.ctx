@@ -98,7 +98,7 @@ namespace save {
                 }
                 let hf = try gffw::put_list{ &b, owner = e, label = "FeatList" }
                 j = 0
-                while j < @as(usize, r.nfeats) and j < 8 {
+                while j < @as(usize, r.nfeats) and j < rules::MAX_LEVEL_FEATS {
                     let fe = try gffw::add_element{ &b, list = hf, id = 0 }
                     try put_word{ &b, owner = fe, label = "Feat", v = bits{ v = r.feats[j] } }
                     j = j + 1

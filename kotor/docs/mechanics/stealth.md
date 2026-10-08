@@ -87,7 +87,7 @@ in every shipped area), no facing term, no 6 m grace and the hider's size. Each 
 | The two contests, their terms, the 20 s rolls | `0x004f1fd0`, `0x004fb4b0`, `0x00502ac0` | matches; ours: the rolls come from a hash of the creature and the time, not the world's dice, so hiding changes no other roll of the game (the original uses rand()) | `walk_past` |
 | A creature without Stealth ranks, or not in stealth mode, is perceived as usual | both contests | matches | `walk_control` |
 | Party members always perceive each other | `0x00502ac0` | partly: in stealth they do; their ranges and line still apply otherwise (unchanged from before) | by reading |
-| True seeing (vision bit 4, set by TRUE_SEEING) sees a hider; see invisible (bit 1) does not | `0x004f1fd0`, `0x004e35b0`, `0x004dcd00` | open: ours tests bit 4, which our effects set for see invisible (true seeing sets 2), so in ours see invisible sees a hider and true seeing does not | by reading |
+| True seeing (vision bit 4, set by TRUE_SEEING) sees a hider; see invisible (bit 1) does not | `0x004f1fd0`, `0x004e35b0`, `0x004dcd00` | fixed: our effects now set the engine's bits (see invisible 1, ultravision 2, true seeing 4) and `stealth::spots` tests bit 4, so true seeing sees a hider and see invisible does not; checked by `rulescheck` ("vision:" cases) and `stealth/check.sh` (unchanged results), no run with a true-seeing viewer | by reading |
 | A hidden attacker's first swing finds the defender flat-footed (no dodge) | the defender has no perception of it (combat.md 5) | matches | `attack_out` |
 | The spot line in the combat log (feedback type 0x10 with the terms) | `0x004ec7a0` | open: the client's text for it was not read | |
 
@@ -134,7 +134,6 @@ keep the stealth XP pool. Matches (`save_hiding` / `load_hiding`).
 ## Open items
 
 - The stealth pace (appearance DriveAnimWalk, not the walk rate) and the stealth walk animation (10133).
-- True seeing, not see invisible, sees a hider (our vision bits differ from the original's).
 - Laying a mine ends stealth in ours; it does not in the original.
 - A hostile item ability used at a point ends stealth in the original, not in ours.
 - Entering stealth during a conversation (activity 4 or 8) is refused in the original.

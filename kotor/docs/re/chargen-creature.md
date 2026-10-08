@@ -307,7 +307,7 @@ name scripts hp hp_max plot min_one_hp faction conversation`; the UTC reader is
 | `IsPC` (absent in the BIC) | `is_pc` default 0 | `is_pc` default false | **must be forced to true** (and `pc_rules`); exe default is 1 |
 | `Min1HP`, `Plot` | `min1hp`, `plot` | `Object.min_one_hp`, `plot` | none; the module script sets it |
 | scores, classes, skills, feats | yes | placeholders `abilities classes class_levels` | to be replaced by the `rules::Creature` hook |
-| `LvlStatList[0]` | `history[0]` | — | `LevelRecord.feats` is `[8]i32` and the reader stops at 8, but the first record of a Soldier has 10 feats (7 class grants + 3 chosen): two are dropped from the history (the top-level `FeatList` is complete) |
+| `LvlStatList[0]` | `history[0]` | — | none: `LevelRecord.feats` holds `MAX_LEVEL_FEATS` (16), so the first record of a Soldier keeps its 10 feats (7 class grants + 3 chosen) through the reader and the save writer |
 | `HitPoints` | `hp_base` (default 1 if absent) | `hp_max` | For a player the base is irrelevant; use `stats.max_hp` from the history |
 | `CurrentHitPoints` | `loaded_hp` | `templates.ctx` takes it as **absolute** HP | wrong for players and saves: it is relative (4.3). For a new player set `hp = hp_max`; for a saved one use `PregameCurrent` (absolute) or add `max − HitPoints` |
 | `MaxHitPoints` | — (recomputed) | `templates.ctx` reads it as `hp_max` | for a chargen file it is the wrong figure (4.3); recompute |

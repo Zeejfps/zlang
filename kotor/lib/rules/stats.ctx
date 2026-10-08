@@ -321,7 +321,7 @@ namespace rules {
         let mut s = Stats{
             level = 0, size = 3, abil = [10; 6], abil_mod = [0; 6], bab = 0, save_base = [0; 3], save_effect = [0; 3],
             max_hp = 0, max_fp = 0, skill = [0; NUM_SKILLS], ac_natural = 0, ac_armour = 0, ac_shield = 0,
-            ac_deflection = 0, ac_dodge = 0, ac_class = 0, force_resistance = 0, speed_factor = 1.0, state = 0,
+            ac_deflection = 0, ac_dodge = 0, ac_armour_bonus = 0, ac_shield_bonus = 0, ac_deflection_bonus = 0, ac_class = 0, force_resistance = 0, speed_factor = 1.0, state = 0,
             ai_mask = 0xffff, vision = 0, assured_hit = false, assured_deflection = false,
             deflection_returns = false, walk_only = false, extra_attacks = 0, temp_hp_pool = c.temp_hp,
             poisoned = false, attack_misc = 0, entangled = false, dirty = false,
@@ -366,8 +366,10 @@ namespace rules {
                 c.stats.assured_deflection = true
                 if e.ints[0] != 0 { c.stats.deflection_returns = true }
             }
-            if e.kind == fx::TRUE_SEEING { c.stats.vision = c.stats.vision | 2 }
-            if e.kind == fx::SEE_INVISIBLE { c.stats.vision = c.stats.vision | 1 | 4 }
+            // the engine's bits (rules.md 1.3): see invisible 1, ultravision 2, true seeing 4
+            if e.kind == fx::SEE_INVISIBLE { c.stats.vision = c.stats.vision | 1 }
+            if e.kind == fx::ULTRAVISION { c.stats.vision = c.stats.vision | 2 }
+            if e.kind == fx::TRUE_SEEING { c.stats.vision = c.stats.vision | 4 }
             if e.kind == fx::BLINDNESS { c.stats.vision = c.stats.vision | 8 }
             if e.kind == fx::DARKNESS { c.stats.vision = c.stats.vision | 0x10 }
             if e.kind == fx::LIMIT_MOVEMENT_SPEED { c.stats.walk_only = true }
@@ -448,6 +450,9 @@ namespace rules {
         if haste < 0 { c.stats.ac_dodge = c.stats.ac_dodge - 2 }
         c.stats.ac_deflection = pieces.deflection
         c.stats.ac_shield = pieces.shield
+        c.stats.ac_armour_bonus = pieces.armour_up
+        c.stats.ac_shield_bonus = pieces.shield_up
+        c.stats.ac_deflection_bonus = pieces.deflection_up
         let mut armour_base = 0
         let body = equipped_item{ c = &c, mask = slot::BODY }
         if body != null {

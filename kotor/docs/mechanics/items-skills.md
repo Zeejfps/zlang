@@ -108,7 +108,7 @@ frames, so setup and click are spaced out.
 | Treat Injury | the medpac script adds the rank; the HEAL action (0x38, 0x00517a60: walk up, a 2 s animation, Treat Injury + 20 or d20 against the target's first poison or disease, heal by the total, one medical item spent) is queued by UseSkill (0x004fbe40) with the item it is given: only scripts pass one (the player's own skill request carries no item, and no button sends it) | script for medpacs; the HEAL action is open (nothing in the player's UI calls it) |
 | Persuade, Awareness (outside traps) | dialogue scripts roll GetSkillRank + d20 or fixed; Awareness is also the stealth contests' skill (section 8) | script |
 | Awareness / Demolitions on mines | detection and the four trap actions, [traps.md](traps.md) | matches for detection, Disable and Recover (section 8); open: where the worker stops, the combat log's wording, flag and examine details |
-| Stealth | the toggle, the contests, [stealth.md](stealth.md) | matches for the toggle, the contests and most of what ends it; open: the stealth pace, true seeing, laying a mine, a hostile item used at a point (section 8) |
+| Stealth | the toggle, the contests, [stealth.md](stealth.md) | matches for the toggle, the contests and most of what ends it; open: the stealth pace, laying a mine, a hostile item used at a point (section 8) |
 | Skill rank = ranks + effects + key ability (- 4 for a Strength or Dexterity skill while blind) + best feat tier, 0 when untrained and not usable untrained; Computer Use also adds a bonus kept on the placeable in use (+0x43c; nothing that sets it was found); the armour term of Demolitions and Stealth is always 0 | rules.md 5.1, GetSkillRank 0x005aa570 | matches (lib/rules; no placeable bonus) |
 
 ## 8. Mines and stealth
@@ -139,8 +139,7 @@ the shimmer, detection by the original's sight and hearing contests (Awareness a
 against Stealth and a d10 + 10 hide roll, each rolled again every 20 s; ours draws the rolls from a hash), what
 ends it (attack, combat, one's own powers, taking off the belt, conversations and transitions; doors and using
 objects do not), the stealth XP pool and routines, save and load. Open: the stealth pace and walk animation (we
-use the walk rate and the ordinary walk), true seeing and see invisible are swapped in ours (in the original true
-seeing spots a hider), laying a mine ends ours, a hostile item ability ends ours only through the combat it starts with a creature (one
+use the walk rate and the ordinary walk), laying a mine ends ours, a hostile item ability ends ours only through the combat it starts with a creature (one
 used at a point keeps it), entering
 stealth during a conversation is not refused, a stealth XP countdown kept while the area's pool is off, a save's
 RestrictMode, the frame-buffer distortion look, the combat log's spot line, rest ending stealth (no party rest),

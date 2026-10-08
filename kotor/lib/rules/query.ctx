@@ -189,13 +189,17 @@ namespace rules {
         armour: i32,
         shield: i32,
         deflection: i32,
+        armour_up: i32,             // the best armour, shield and deflection bonuses alone: the
+        shield_up: i32,             // starting values of GetArmorClassVersus
+        deflection_up: i32,
     }
 
-    // Whether an AC effect carries no condition (any race, no alignment group, all damage types).
+    // Whether the AC apply handler (OnApplyACIncrease 0x004d8d80) writes the effect into the stats:
+    // any race and ints 3 and 4 empty. It ignores the damage-type filter (int 5), so an effect
+    // limited only by damage type counts here for every attacker and again in the attack's versus
+    // pass when the attacker's weapon matches (re/combat.md 5.2, an engine quirk kept on purpose).
     fn ac_unconditional { e: *Effect } -> bool {
-        if e.ints[2] != race::ANY or e.ints[4] != 0 { return false }
-        let f = e.ints[5]
-        return f == 0 or f == fx::AC_ALL_A or f == fx::AC_ALL_B
+        return e.ints[2] == race::ANY and e.ints[3] == 0 and e.ints[4] == 0
     }
 
     // Dodge adds up; natural, armour, shield and deflection keep only the highest bonus and the
@@ -228,6 +232,9 @@ namespace rules {
             armour = best_up[2] - best_down[2],
             shield = best_up[3] - best_down[3],
             deflection = best_up[4] - best_down[4],
+            armour_up = best_up[2],
+            shield_up = best_up[3],
+            deflection_up = best_up[4],
         }
     }
 

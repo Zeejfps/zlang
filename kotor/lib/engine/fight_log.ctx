@@ -262,7 +262,7 @@ namespace fight_log {
         if d.dex != 0 { put_part{ w, &b, strref = 42339, v = d.dex } }
         if d.class_bonus != 0 { put_part{ w, &b, strref = 42340, v = d.class_bonus } }
         if d.natural != 0 { put_part{ w, &b, strref = 42341, v = d.natural } }
-        let effects = d.dodge + d.versus_dodge + d.deflection
+        let effects = d.dodge + d.versus_dodge + d.deflection + d.versus_shield
         if effects != 0 { put_part{ w, &b, strref = 42342, v = effects } }
         if d.dueling != 0 { put_part{ w, &b, strref = 42343, v = d.dueling } }
         if d.debilitated != 0 { put_part{ w, &b, strref = 42427, v = d.debilitated } }

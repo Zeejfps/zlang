@@ -178,7 +178,7 @@ namespace rules {
             }
             let hf = gff::get_list{ doc = doc.*, s = levels[i], label = "FeatList" } ifnull slice::empty(u32){}
             k = 0
-            while k < hf.len and k < 8 {
+            while k < hf.len and k < MAX_LEVEL_FEATS {
                 r.feats[k] = read_number{ doc, s = hf[k], label = "Feat", dflt = -1 }
                 k = k + 1
             }

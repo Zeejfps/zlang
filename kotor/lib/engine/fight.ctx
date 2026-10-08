@@ -146,7 +146,7 @@ namespace fight {
     }
 
     fn env_of { w: *world::World, o: *obj::Object } -> rules::Env {
-        return rules::Env{ tables = w.rules, now = time_now{ w }, hp = o.hp }
+        return rules::Env{ tables = w.rules, now = time_now{ w }, hp = o.hp, self_id = o.id }
     }
 
     // The engine's facts the rules read from the creature (rules.md, "Data the library owns").
@@ -1204,11 +1204,7 @@ namespace fight {
                 // still deflect (8) or an energy shield stop (10): it flies off, harmless (4.6).
                 imp.result = rules::outcome::MISS
                 if not is_object and not forced.on {
-                    if rules::combat_can_deflect{ atk = &f.c, def, sit = &sit } {
-                        imp.result = rules::outcome::DEFLECTED
-                    } else if rules::shield_absorbs_miss{ tables = w.rules, atk = &f.c, def, off_hand = hands[k] == 1, defender_hp = t.hp } {
-                        imp.result = rules::outcome::SHIELD
-                    }
+                    imp.result = rules::ranged_miss_result{ tables = w.rules, atk = &f.c, def, sit = &sit, off_hand = hands[k] == 1 }
                 }
             }
             if carries[k] {

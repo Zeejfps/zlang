@@ -185,20 +185,26 @@ namespace rules {
             }
         }
 
-        // 9: the effects. The state penalties (entangled, slowed) are attack-decrease effects in the
-        // engine and share its caps.
+        // 9: the effects
+        m.effects = combat_get_attack_effects{ atk, def, sit, wtype = v.wtype }
+
+        m.total = m.bab + m.dual_base + m.dual_light + m.dual_feat + m.special + m.dueling + m.close_range +
+            m.melee_vs_ranged + m.str_mod + m.dex_mod + m.focus + m.effects
+        return m
+    }
+
+    // The attacker's attack effects against the defender (GetTotalEffectBonus category 1), capped
+    // at +20 and -20 apart. The state penalties (entangled, slowed) are attack-decrease effects in
+    // the engine and share the cap.
+    fn combat_get_attack_effects { atk: *Creature, def: *Creature, sit: *AttackSituation, wtype: i32 } -> i32 {
         let vs = if sit.target_object { no_versus{} } else { versus_creature{ c = def } }
-        let b = effect_bonus{ c = atk, q = BonusQuery{ category = cat::ATTACK, a = 0, b = 0, hand = v.wtype, vs } }
+        let b = effect_bonus{ c = atk, q = BonusQuery{ category = cat::ATTACK, a = 0, b = 0, hand = wtype, vs } }
         let mut plus = b.plus
         let mut minus = b.minus
         if atk.stats.attack_misc < 0 { minus = minus - atk.stats.attack_misc } else { plus = plus + atk.stats.attack_misc }
         if plus > 20 { plus = 20 }
         if minus > 20 { minus = 20 }
-        m.effects = plus - minus
-
-        m.total = m.bab + m.dual_base + m.dual_light + m.dual_feat + m.special + m.dueling + m.close_range +
-            m.melee_vs_ranged + m.str_mod + m.dex_mod + m.focus + m.effects
-        return m
+        return plus - minus
     }
 
     // ---- defense (5)
@@ -213,6 +219,7 @@ namespace rules {
         dodge: i32,                 // the dodge bonus counted (at most 10), 0 when the attacker is hidden or unseen
         dex: i32,                   // the DEX modifier counted (armour cap, debilitated cap, hidden rule)
         versus_dodge: i32,          // conditional dodge effects (versus a race, alignment or damage type)
+        versus_shield: i32,         // the largest matching shield-type AC decrease, added (an exe quirk)
         deflection: i32,
         dueling: i32,
         debilitated: i32,           // -4 for a debilitated defender
@@ -238,8 +245,10 @@ namespace rules {
 
     // GetIsHiddenFrom (0x00501950): the first invisibility effect (0x2f) of the attacker that
     // admits the defender hides it unless the defender's vision bits see through its kind: type 1
-    // and 4 by bits 0x5 (see invisible), type 2 (darkness) by bits 0x6. The stealth branch of the
-    // exe (an Awareness save) is not modelled.
+    // and 4 by bits 0x5 (see invisible or true seeing), type 2 (darkness) by bits 0x6 (ultravision
+    // or true seeing). The SANCTUARY branch of the exe (a Will save, remembered in the defender's
+    // perception entry) is not modelled: no script routine or item property of the game makes a
+    // SANCTUARY effect.
     fn combat_is_hidden_from { atk: *Creature, def: *Creature } -> bool {
         let mut i: usize = 0
         while i < @as(usize, atk.nfx) {
@@ -260,12 +269,14 @@ namespace rules {
         return false
     }
 
-    // Does an AC effect's damage-type filter admit the attacker's weapon? Decision: 0x4007 (the
-    // exe's sentinel) and 0x2007 (the script constant) both mean every type. The exe compares the
-    // filter values 1, 2, 4 with the weapon's DamageFlags as 0, 1, 2 (an index mismatch that
-    // makes them match the wrong weapons); that is reproduced, because it is what the game does.
+    // Does an AC effect's damage-type filter admit the attacker's weapon? Only 0x4007, the exe's
+    // own sentinel, means every type here. The script constant AC_VS_DAMAGE_TYPE_ALL is 0x2007, so a
+    // script-made AC effect never matches in the versus pass: with a race or an alignment group it
+    // never counts at all (engine quirk, re/combat.md 5.4). The filter values 1, 2, 4 are compared
+    // with the weapon's DamageFlags as 0, 1, 2 (another slip of the exe, kept because the game
+    // does it).
     fn combat_ac_filter_admits { filter: i32, weapon_flags: i32 } -> bool {
-        if filter == fx::AC_ALL_A or filter == fx::AC_ALL_B { return true }
+        if filter == fx::AC_ALL_A { return true }
         return (filter == 1 and weapon_flags == 0) or (filter == 2 and weapon_flags == 1) or
             (filter == 4 and weapon_flags == 2)
     }
@@ -276,12 +287,22 @@ namespace rules {
         return damage_flags_of{ tables, item = w }
     }
 
-    // GetArmorClassVersus (0x005ad0e0). `touch` skips natural, armour and shield (touch attacks).
-    // 10 + class bonus + natural + armour + shield, then DEX and dodge (the DEX modifier and a
-    // dodge up to 10 when the defender perceives an attacker that is not hidden; a hidden
-    // attacker gets no dodge and only a negative DEX; an unperceived one neither), then the
-    // conditional AC effects (dodge type summed, deflection the best of the plain value and the
-    // matching bonuses), the Dueling bonus and -4 when debilitated.
+    // GetArmorClassVersus (0x005ad0e0). 10 + class bonus + natural + armour + shield (not for a
+    // touch attack), then DEX and dodge (the DEX modifier and a dodge up to 10 when the defender
+    // perceives an attacker that is not hidden; a hidden attacker gets no dodge and only a negative
+    // DEX; an unperceived one neither), then the versus pass over the AC effects, the Dueling bonus
+    // and -4 when debilitated.
+    //
+    // The versus pass skips only effects with any race, no alignment group and the filter 0x4007;
+    // every other AC effect whose race, alignment group and damage-type filter match the attacker
+    // counts by its type (engine quirks of re/combat.md 5.4, kept on purpose):
+    //  - dodge: summed, decreases subtract;
+    //  - deflection: the best of the stats' deflection bonus and the matching increases;
+    //  - shield: the largest matching *decrease* is added to AC on a non-touch attack (the branch
+    //    meant for deflection decreases tests the shield type), and deflection decreases count not;
+    //  - natural, armour, shield increases: never counted. A touch attack instead adds the stats'
+    //    armour and shield bonuses (the pass's untouched starting values), though it skips the
+    //    natural, armour and shield pieces above.
     fn defense_versus { tables: *Tables, def: *Creature, atk: *Creature, sit: *AttackSituation, attack_index: i32, combat_feat: i32, touch: bool } -> DefenseBreakdown {
         let v = combat_look_up_attack{ tables, atk, attack_index, combat_feat }
         let mut d: DefenseBreakdown
@@ -304,32 +325,40 @@ namespace rules {
             d.dex = dex
         }
 
-        // conditional AC effects: a race, an alignment group or a damage-type filter
         let wflags = combat_get_weapon_flags{ tables, c = atk, wtype = v.wtype }
         let agroup = alignment_group{ good_evil = atk.good_evil }
-        let mut deflect = if def.stats.ac_deflection > 0 { def.stats.ac_deflection } else { 0 }
+        let mut deflect = def.stats.ac_deflection_bonus
+        let mut shield_down = 0
         let mut i: usize = 0
         while i < @as(usize, def.nfx) {
             let e = &def.fx[i]
             i = i + 1
             let up = e.kind == fx::AC_INCREASE
             if not up and e.kind != fx::AC_DECREASE { continue }
-            if ac_unconditional{ e } { continue }
+            if e.ints[2] == race::ANY and e.ints[4] == 0 and e.ints[5] == fx::AC_ALL_A { continue }
             let race_ok = e.ints[2] == race::ANY or e.ints[2] == atk.race
             let align_ok = e.ints[4] == 0 or e.ints[4] == agroup
             if not (race_ok and align_ok and combat_ac_filter_admits{ filter = e.ints[5], weapon_flags = wflags }) { continue }
+            let t = e.ints[0]
             let amount = e.ints[1]
-            if e.ints[0] == 0 {
+            if t == 0 {
                 d.versus_dodge = if up { d.versus_dodge + amount } else { d.versus_dodge - amount }
-            } else if e.ints[0] == 4 and up and amount > deflect {
+            } else if t == 4 and up and amount > deflect {
                 deflect = amount
+            } else if t == 3 and not up and not touch and amount > shield_down {
+                shield_down = amount
             }
         }
         d.deflection = deflect
+        d.versus_shield = shield_down
+        if touch {
+            d.armour = def.stats.ac_armour_bonus
+            d.shield = def.stats.ac_shield_bonus
+        }
         d.dueling = combat_get_dueling_bonus{ feat = combat_find_dueling_feat{ tables, c = def } }
         if is_debilitated{ c = def } { d.debilitated = -4 }
         d.total = d.base + d.class_bonus + d.natural + d.armour + d.shield + d.dodge + d.dex + d.versus_dodge +
-            d.deflection + d.dueling + d.debilitated
+            d.versus_shield + d.deflection + d.dueling + d.debilitated
         return d
     }
 
@@ -532,17 +561,26 @@ namespace rules {
         return r
     }
 
-    // A miss: how far off, and an energy shield may still absorb a missed bolt (result 10): the
-    // defender's FORCE_SHIELD effect and the shooter's ammunition decide (shield_absorbs_miss), or
-    // the engine says so in the situation.
+    // A miss: how far off, and what becomes of a missed bolt (ranged_miss_result).
     fn combat_finish_miss { tables: *Tables, atk: *Creature, def: *Creature, r: AttackRoll, v: AttackView, sit: *AttackSituation } -> AttackRoll {
         let mut out = r
         out.result = outcome::MISS
         out.missed_by = if out.defense.total > out.attack_total { out.defense.total - out.attack_total } else { 0 }
-        if v.ranged and not sit.target_object and (sit.shield_absorbs or
-            shield_absorbs_miss{ tables, atk, def, off_hand = v.off_hand, defender_hp = sit.defender_hp }) {
-            out.result = outcome::SHIELD
+        if v.ranged and not sit.target_object {
+            out.result = ranged_miss_result{ tables, atk, def, sit, off_hand = v.off_hand }
         }
         return out
+    }
+
+    // ResolveRangedAttack (0x005bb590) asks GetCanDeflectProjectile again after a ranged miss: a
+    // defender who could deflect the bolt turns the miss into "Deflected!" (8), whatever the
+    // deflection roll said; else an energy shield may stop it (10: the defender's FORCE_SHIELD and
+    // the shooter's ammunition decide, shield_absorbs_miss, or the engine says so in the
+    // situation); else it stays a miss (4). Used for every missed bolt, whether or not the shot
+    // carried an attack roll.
+    fn ranged_miss_result { tables: *Tables, atk: *Creature, def: *Creature, sit: *AttackSituation, off_hand: bool } -> i32 {
+        if combat_can_deflect{ atk, def, sit } { return outcome::DEFLECTED }
+        if sit.shield_absorbs or shield_absorbs_miss{ tables, atk, def, off_hand, defender_hp = sit.defender_hp } { return outcome::SHIELD }
+        return outcome::MISS
     }
 }

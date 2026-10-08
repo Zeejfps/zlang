@@ -13,7 +13,8 @@
 // Removing it needs no handler of its own (rules.md 1.3).
 namespace rules {
     // One row of forceshields.2da, with the aura already chosen for the creature's appearance.
-    // DefaultRadius, Radius_0N and Permanent are never read by the engine.
+    // DefaultRadius and Permanent are dead columns; Radius_0N is read only by the client's bolt
+    // drawing (0x006501b0, how far short of the target a stopped bolt ends), not by the rules.
     struct ShieldRow {
         valid: bool,
         visual: i32,            // visualeffects.2da label of the aura
@@ -87,17 +88,16 @@ namespace rules {
     }
 
     // A child of the shield as CGameEffectFromParent makes it: the parent's id, duration kind and
-    // length, subtype, creator and spell, not exposed to scripts. (The original also makes the
-    // creature the creator; the library does not know its creature's object id, so the child keeps
-    // the caster as creator.)
-    fn make_shield_child { parent: *Effect, kind: i32 } -> Effect {
+    // length, subtype and spell, not exposed to scripts; its creator is the creature wearing the
+    // shield (`owner`), not the caster (0x004df540).
+    fn make_shield_child { parent: *Effect, kind: i32, owner: u32 } -> Effect {
         let mut e = fx::make_effect{ kind }
         e.id = parent.id
         e.dur = parent.dur
         e.sub = parent.sub
         e.duration = parent.duration
         e.expire = parent.expire
-        e.creator = parent.creator
+        e.creator = owner
         e.spell_id = parent.spell_id
         e.exposed = false
         return e
@@ -119,10 +119,10 @@ namespace rules {
             }
         }
         let row = read_shield_row{ tables = env.tables, row = e.ints[0], appearance = c.appearance }
-        let mut aura = make_shield_child{ parent = e, kind = fx::VISUALEFFECT }
+        let mut aura = make_shield_child{ parent = e, kind = fx::VISUALEFFECT, owner = env.self_id }
         aura.ints[0] = row.visual
         _ = apply_leaf{ env, c = &c, e0 = aura, rng = &rng, ev = &ev }
-        let mut guard = make_shield_child{ parent = e, kind = fx::DAMAGE_RESISTANCE }
+        let mut guard = make_shield_child{ parent = e, kind = fx::DAMAGE_RESISTANCE, owner = env.self_id }
         guard.sub = sub::MAGICAL
         guard.ints[0] = row.damage_flags
         guard.ints[1] = row.resistance

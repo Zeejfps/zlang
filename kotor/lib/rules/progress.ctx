@@ -345,7 +345,7 @@ namespace rules {
     fn knows_or_picks_feat { c: *Creature, pending: *LevelRecord, feat: i32 } -> bool {
         if has_feat{ c, feat } { return true }
         let mut i: usize = 0
-        while i < @as(usize, pending.nfeats) and i < 8 {
+        while i < @as(usize, pending.nfeats) and i < MAX_LEVEL_FEATS {
             if pending.feats[i] == feat { return true }
             i = i + 1
         }
@@ -416,8 +416,8 @@ namespace rules {
         if not sel.general and not sel.bonus { return false }
         let mut g = general
         let mut b = bonus
-        let mut used = [false; 8]
-        let n = if pending.nfeats > 8 { 8 } else { @as(usize, pending.nfeats) }
+        let mut used = [false; MAX_LEVEL_FEATS]
+        let n = if pending.nfeats > @as(i32, MAX_LEVEL_FEATS) { MAX_LEVEL_FEATS } else { @as(usize, pending.nfeats) }
         let mut i: usize = 0
         while i < n {
             let s = feat_selectable_as{ tables, class, feat = pending.feats[i] }
@@ -634,7 +634,7 @@ namespace rules {
         }
         c.skill_points = rec.skill_left
         // 6 feats and powers (a player character learns powers only in a Force class)
-        let nf = if rec.nfeats > 8 { 8 } else { @as(usize, rec.nfeats) }
+        let nf = if rec.nfeats > @as(i32, MAX_LEVEL_FEATS) { MAX_LEVEL_FEATS } else { @as(usize, rec.nfeats) }
         let mut f: usize = 0
         while f < nf {
             grant_feat{ c = &c, feat = rec.feats[f] }
@@ -642,7 +642,7 @@ namespace rules {
         }
         _ = grant_class_feats{ tables, c = &c, class = rec.class, class_level = new_level }
         if not c.is_pc or is_force_class{ tables, class = rec.class } {
-            let np = if rec.npowers > 8 { 8 } else { @as(usize, rec.npowers) }
+            let np = if rec.npowers > @as(i32, MAX_LEVEL_POWERS) { MAX_LEVEL_POWERS } else { @as(usize, rec.npowers) }
             let mut p: usize = 0
             while p < np {
                 if get_spell{ tables, row = rec.powers[p] } != null { learn_power{ c = &c, spell = rec.powers[p] } }
@@ -707,7 +707,7 @@ namespace rules {
         let fc = feat_counts_for_level{ tables, class, class_level = n }
         let mut to_pick = fc.general + fc.bonus
         pos = 1
-        while to_pick > 0 and pos <= @as(i32, tables.feats.len) and r.nfeats < 8 {
+        while to_pick > 0 and pos <= @as(i32, tables.feats.len) and r.nfeats < @as(i32, MAX_LEVEL_FEATS) {
             let ft = feat_at_priority{ tables, class, position = pos }
             pos = pos + 1
             if ft < 0 { continue }
@@ -723,7 +723,7 @@ namespace rules {
             let want = powers_to_gain{ tables, class, class_level = n }
             let light = c.good_evil > 40
             pos = 1
-            while r.npowers < want and r.npowers < 8 and pos <= @as(i32, tables.spells.len) {
+            while r.npowers < want and r.npowers < @as(i32, MAX_LEVEL_POWERS) and pos <= @as(i32, tables.spells.len) {
                 let sp = power_at_priority{ tables, light, position = pos }
                 pos = pos + 1
                 if sp < 0 { continue }

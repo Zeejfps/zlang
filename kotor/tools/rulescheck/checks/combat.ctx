@@ -18,6 +18,7 @@
 // A clean run prints a few summary lines and nothing per success.
 namespace check {
     const CB_ATTACKER: u32 = 0x7f000a01
+    const CB_WEARER: u32 = 0x7f000a02          // the creature a test shield is applied to
 
     // ---- fixtures
 
@@ -395,6 +396,14 @@ namespace check {
         dg.stats.vision = 1 | 4
         cb_eq{ &io, &r, name = "defense: see-invisible defender", got = cb_defense{ tables, d = &dg, a = &hid, &sit }.total, want = 14 }
         dg.stats.vision = 0
+        // the effects set the engine's bits: see invisible 1, ultravision 2, true seeing 4 (the bit
+        // that spots a hider, stealth.md)
+        let mut vz: rules::Creature
+        cb_fighter{ tables, c = &vz, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_effect{ tables, c = &vz, e = rules::fx::make_effect{ kind = rules::fx::SEE_INVISIBLE } }
+        cb_eq{ &io, &r, name = "vision: see invisible is bit 1", got = vz.stats.vision, want = 1 }
+        cb_effect{ tables, c = &vz, e = rules::fx::make_effect{ kind = rules::fx::TRUE_SEEING } }
+        cb_eq{ &io, &r, name = "vision: true seeing adds bit 4", got = vz.stats.vision, want = 5 }
         sit.defender_sees = false
         cb_eq{ &io, &r, name = "defense: unaware defender", got = cb_defense{ tables, d = &dg, a = &a, &sit }.total, want = 10 }
         sit.defender_sees = true
@@ -424,12 +433,25 @@ namespace check {
         a.race = rules::race::DROID
         cb_eq{ &io, &r, name = "defense: bonus versus droids, droid attacker", got = cb_defense{ tables, d = &vs, a = &a, &sit }.total, want = 13 }
         a.race = rules::race::HUMAN
-        // the same bonus made with the script's sentinel 0x2007 counts too
+        // quirk (5.4): the same bonus made by a script carries 0x2007, which the versus pass never
+        // admits, and its race keeps it out of the stats: it never counts
         let mut e2 = rules::fx::make_ac{ kind = rules::fx::AC_INCREASE, amount = 2, mod_type = 4, types = rules::fx::AC_ALL_B }
         e2.ints[2] = rules::race::DROID
         cb_effect{ tables, c = &vs, e = e2 }
         a.race = rules::race::DROID
-        cb_eq{ &io, &r, name = "defense: conditional deflection with either sentinel", got = cb_defense{ tables, d = &vs, a = &a, &sit }.total, want = 15 }
+        cb_eq{ &io, &r, name = "defense: a script AC effect versus a race never counts", got = cb_defense{ tables, d = &vs, a = &a, &sit }.total, want = 13 }
+        // quirk (5.4): a matching shield-type AC decrease is added, on non-touch attacks only
+        let mut sd: rules::Creature
+        cb_fighter{ tables, c = &sd, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        let mut es = rules::fx::make_ac{ kind = rules::fx::AC_DECREASE, amount = 3, mod_type = 3, types = rules::fx::AC_ALL_A }
+        es.ints[2] = rules::race::DROID
+        cb_effect{ tables, c = &sd, e = es }
+        let sd1 = cb_defense{ tables, d = &sd, a = &a, &sit }
+        cb_eq{ &io, &r, name = "defense: a shield-type AC decrease versus droids adds", got = sd1.total, want = 13 }
+        cb_eq{ &io, &r, name = "defense: ... as the versus shield piece", got = sd1.versus_shield, want = 3 }
+        cb_eq{ &io, &r, name = "defense: ... but not on a touch attack", got = rules::defense_versus{ tables, def = &sd, atk = &a, sit = &sit, attack_index = 0, combat_feat = 0, touch = true }.total, want = 10 }
+        a.race = rules::race::HUMAN
+        cb_eq{ &io, &r, name = "defense: ... nor against a human", got = cb_defense{ tables, d = &sd, a = &a, &sit }.total, want = 10 }
 
         // an alignment group: the attacker's good-evil axis 80 is light (2), 20 is dark (3)
         let mut al: rules::Creature
@@ -452,8 +474,21 @@ namespace check {
         let mut sab: rules::Creature
         cb_fighter{ tables, c = &sab, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
         cb_wield{ tables, c = &sab, mask = rules::slot::RIGHT, base_item = 8 }
-        cb_eq{ &io, &r, name = "defense: damage-type filter, unarmed attacker", got = cb_defense{ tables, d = &df, a = &a, &sit }.total, want = 13 }
-        cb_eq{ &io, &r, name = "defense: damage-type filter, lightsaber attacker", got = cb_defense{ tables, d = &df, a = &sab, &sit }.total, want = 10 }
+        // quirk (5.2/5.4): the apply handler ignores the filter, so the bonus is in the stats for
+        // every attacker and counts a second time in the versus pass when the weapon matches
+        cb_eq{ &io, &r, name = "defense: damage-type filter, unarmed attacker counts twice", got = cb_defense{ tables, d = &df, a = &a, &sit }.total, want = 16 }
+        cb_eq{ &io, &r, name = "defense: damage-type filter, lightsaber attacker counts once", got = cb_defense{ tables, d = &df, a = &sab, &sit }.total, want = 13 }
+
+        // quirk (5.4): a touch attack skips the armour, but keeps the armour and shield effect
+        // bonuses (not their penalties)
+        let mut tch: rules::Creature
+        cb_fighter{ tables, c = &tch, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_wield{ tables, c = &tch, mask = rules::slot::BODY, base_item = 38 }
+        cb_effect{ tables, c = &tch, e = rules::fx::make_ac{ kind = rules::fx::AC_INCREASE, amount = 2, mod_type = 2, types = rules::fx::AC_ALL_A } }
+        cb_effect{ tables, c = &tch, e = rules::fx::make_ac{ kind = rules::fx::AC_INCREASE, amount = 1, mod_type = 3, types = rules::fx::AC_ALL_A } }
+        cb_effect{ tables, c = &tch, e = rules::fx::make_ac{ kind = rules::fx::AC_DECREASE, amount = 1, mod_type = 2, types = rules::fx::AC_ALL_A } }
+        cb_eq{ &io, &r, name = "defense: armour 4 + armour effects 2 - 1 + shield 1", got = cb_defense{ tables, d = &tch, a = &a, &sit }.total, want = 16 }
+        cb_eq{ &io, &r, name = "defense: touch keeps the armour and shield bonuses", got = rules::defense_versus{ tables, def = &tch, atk = &a, sit = &sit, attack_index = 0, combat_feat = 0, touch = true }.total, want = 13 }
     }
 
     // ---- critical hits (4.3), sneak attacks (4.7)
@@ -669,6 +704,12 @@ namespace check {
         let f = cb_attack{ tables, atk = &b, def = &g, sit = &sit, seed = s_fail, idx = 0, feat = 0 }
         cb_eq{ &io, &r, name = "deflect: not deflected is an ordinary hit", got = f.result, want = rules::outcome::HIT }
         expect_true{ &io, &r, name = "deflect: not deflected but able", cond = f.deflection.can and f.deflection.result == 0 }
+        // a bolt that fails the deflection roll and then misses is still "Deflected!" (8) for a
+        // defender who could deflect (ResolveRangedAttack asks again after a miss)
+        let s_miss = cb_find_seed{ d1 = 1, lo2 = 1, hi2 = 6 }             // natural 1; deflect 1..6 + 7 against 14
+        let ms = cb_attack{ tables, atk = &b, def = &g, sit = &sit, seed = s_miss, idx = 0, feat = 0 }
+        expect_true{ &io, &r, name = "deflect: the roll failed", cond = ms.deflection.can and ms.deflection.result == 0 and ms.natural_1 }
+        cb_eq{ &io, &r, name = "deflect: a missed bolt at a deflector is deflected", got = ms.result, want = rules::outcome::DEFLECTED }
         // Advanced adds 3, plain Jedi Defense nothing
         let mut adv: rules::Creature
         cb_fighter{ tables, c = &adv, class = rules::cls::JEDI_GUARDIAN, level = 1, strength = 10, dexterity = 10 }
@@ -940,19 +981,54 @@ namespace check {
         cb_effect{ tables, c = &sm, e = rules::fx::make_damage_resistance{ types = rules::dmg::BLASTER, amount = 30, limit = 4 } }
         cb_eq{ &io, &r, name = "resistance: a spent one absorbs its limit", got = cb_dmg{ tables, atk = &a, def = &sm, sit = &sit, seed = 777, idx = 0, feat = 0, critical = false, sneak = false, simulate = false }.weapon_damage, want = raw - 4 }
         cb_eq{ &io, &r, name = "resistance: ... and goes", got = sm.nfx, want = 0 }
-        // reduction: absorbs what its power exceeds; the weapon's enhancement is the power
+        // reduction: absorbs what its power exceeds; the power is the low byte of the attacker's
+        // attack effect bonus against the defender (0x004fd6f0), not the weapon's enhancement
         let mut red: rules::Creature
         cb_fighter{ tables, c = &red, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
         cb_effect{ tables, c = &red, e = rules::fx::make_damage_reduction{ amount = 5, power = 2, limit = 0 } }
         let rd = cb_hit{ tables, atk = &a, def = &red, seed = 777, critical = false }
         cb_eq{ &io, &r, name = "reduction: power 0 against 2", got = rd.weapon_damage, want = if raw - 5 < 0 { 0 } else { raw - 5 } }
-        cb_eq{ &io, &r, name = "reduction: unarmoured power", got = rd.power, want = 0 }
-        cb_prop{ tables, c = &a, mask = rules::slot::RIGHT, name = 5, subtype = 0, cost = 1, param1_value = 0 }
-        cb_eq{ &io, &r, name = "reduction: power 1 against 2", got = cb_hit{ tables, atk = &a, def = &red, seed = 777, critical = false }.weapon_damage, want = if raw - 5 < 0 { 0 } else { raw - 5 } }
-        cb_prop{ tables, c = &a, mask = rules::slot::RIGHT, name = 5, subtype = 0, cost = 3, param1_value = 0 }
-        let rp = cb_hit{ tables, atk = &a, def = &red, seed = 777, critical = false }
-        cb_eq{ &io, &r, name = "reduction: the best enhancement is the power", got = rp.power, want = 3 }
+        cb_eq{ &io, &r, name = "reduction: no attack effects, power 0", got = rd.power, want = 0 }
+        let mut ab = a
+        cb_effect{ tables, c = &ab, e = rules::fx::make_attack_increase{ amount = 1, hand = 0 } }
+        cb_eq{ &io, &r, name = "reduction: power 1 against 2", got = cb_hit{ tables, atk = &ab, def = &red, seed = 777, critical = false }.weapon_damage, want = if raw - 5 < 0 { 0 } else { raw - 5 } }
+        cb_effect{ tables, c = &ab, e = rules::fx::make_attack_increase{ amount = 2, hand = 0 } }
+        let rp = cb_hit{ tables, atk = &ab, def = &red, seed = 777, critical = false }
+        cb_eq{ &io, &r, name = "reduction: attack effects +3 are the power", got = rp.power, want = 3 }
         cb_eq{ &io, &r, name = "reduction: power 3 passes a +2 reduction", got = rp.weapon_damage, want = raw }
+        // quirk: a net attack penalty's low byte is 254 for -2, which passes every reduction
+        let mut pen = a
+        cb_effect{ tables, c = &pen, e = rules::fx::make_attack_decrease{ amount = 2, hand = 0 } }
+        let rn = cb_hit{ tables, atk = &pen, def = &red, seed = 777, critical = false }
+        cb_eq{ &io, &r, name = "reduction: an attack penalty of 2 is power 254", got = rn.power, want = 254 }
+        cb_eq{ &io, &r, name = "reduction: ... and passes the reduction", got = rn.weapon_damage, want = raw }
+        // Improved Toughness and Wookiee Endurance take 2 each off any damage, resistance or not
+        let mut ev: rules::Events
+        let mut tg: rules::Creature
+        cb_fighter{ tables, c = &tg, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_feat{ c = &tg, feat = rules::feat::IMPROVED_TOUGHNESS }
+        cb_eq{ &io, &r, name = "toughness: Improved Toughness takes 2", got = rules::mitigate_damage{ c = &tg, amount = 10, flags = rules::dmg::SLASHING, power = 0, simulate = true, ev = &ev }, want = 8 }
+        cb_feat{ c = &tg, feat = rules::feat::WOOKIEE_ENDURANCE }
+        cb_eq{ &io, &r, name = "toughness: and Wookiee Endurance 2 more", got = rules::mitigate_damage{ c = &tg, amount = 10, flags = rules::dmg::FIRE, power = 0, simulate = true, ev = &ev }, want = 6 }
+        cb_eq{ &io, &r, name = "toughness: never below 0", got = rules::mitigate_damage{ c = &tg, amount = 3, flags = rules::dmg::SLASHING, power = 0, simulate = true, ev = &ev }, want = 0 }
+        // immunity over several damage types: the lowest entry, except a running 0 gives way to the
+        // next bit (quirk of 0x004caf70); entries clamp to -100..100
+        let mut im3: rules::Creature
+        cb_fighter{ tables, c = &im3, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_effect{ tables, c = &im3, e = rules::fx::make_damage_immunity_increase{ types = rules::dmg::BLUDGEONING, percent = 25 } }
+        cb_effect{ tables, c = &im3, e = rules::fx::make_damage_immunity_increase{ types = rules::dmg::PIERCING, percent = 10 } }
+        cb_effect{ tables, c = &im3, e = rules::fx::make_damage_immunity_increase{ types = rules::dmg::SLASHING, percent = 50 } }
+        let bps = rules::dmg::BLUDGEONING | rules::dmg::PIERCING | rules::dmg::SLASHING
+        cb_eq{ &io, &r, name = "immunity: the lowest of three types", got = rules::immunity_percent{ c = &im3, flags = bps }, want = 10 }
+        let mut im2: rules::Creature
+        cb_fighter{ tables, c = &im2, class = rules::cls::SOLDIER, level = 1, strength = 10, dexterity = 10 }
+        cb_effect{ tables, c = &im2, e = rules::fx::make_damage_immunity_increase{ types = rules::dmg::SLASHING, percent = 50 } }
+        cb_eq{ &io, &r, name = "immunity: a 0 entry gives way to the next type", got = rules::immunity_percent{ c = &im2, flags = bps }, want = 50 }
+        cb_effect{ tables, c = &im2, e = rules::fx::make_damage_immunity_increase{ types = rules::dmg::SLASHING, percent = 80 } }
+        cb_eq{ &io, &r, name = "immunity: clamped at 100", got = rules::immunity_percent{ c = &im2, flags = rules::dmg::SLASHING }, want = 100 }
+        cb_effect{ tables, c = &im2, e = rules::fx::make_damage_immunity_decrease{ types = rules::dmg::FIRE, percent = 150 } }
+        cb_eq{ &io, &r, name = "immunity: clamped at -100", got = rules::immunity_percent{ c = &im2, flags = rules::dmg::FIRE }, want = -100 }
+
         // doors and placeables: the object's Hardness is a resistance against every type, nothing else mitigates
         cb_check_door{ &io, &r, tables, a = &a }
     }
@@ -984,7 +1060,7 @@ namespace check {
         e.dur = rules::dur::TEMPORARY
         e.duration = 200.0
         e.id = id
-        let env = rules::Env{ tables, now = rules::Time{ day = 0, ms = 0 }, hp = 30 }
+        let env = rules::Env{ tables, now = rules::Time{ day = 0, ms = 0 }, hp = 30, self_id = CB_WEARER }
         _ = rules::apply_effect{ env, c = &c, e, rng = &rng, ev = &ev }
     }
 
@@ -1009,6 +1085,14 @@ namespace check {
         // a worn shield absorbs it: result 10, no damage
         let mut s = d
         cb_shield{ tables, c = &s, row = 6, id = 101 }
+        // the aura and resistance children are the wearer's own (OnApplyForceShield)
+        let mut kids = 0
+        let mut q: usize = 0
+        while q < @as(usize, s.nfx) {
+            if s.fx[q].id == 101 and s.fx[q].kind != rules::fx::FORCE_SHIELD and s.fx[q].creator == CB_WEARER { kids = kids + 1 }
+            q = q + 1
+        }
+        cb_eq{ &io, &r, name = "shield: both children are made by the wearer", got = kids, want = 2 }
         let ab = cb_attack{ tables, atk = &b, def = &s, sit = &sit, seed = miss, idx = 0, feat = 0 }
         cb_eq{ &io, &r, name = "shield: a missed bolt is absorbed", got = ab.result, want = rules::outcome::SHIELD }
         cb_eq{ &io, &r, name = "shield: a melee swing is just a miss", got = cb_attack{ tables, atk = &m, def = &s, sit = &sit, seed = miss, idx = 0, feat = 0 }.result, want = rules::outcome::MISS }
@@ -1064,7 +1148,8 @@ namespace check {
         cb_eq{ &io, &r, name = "effect damage: flat", got = x.effect_plus, want = 3 }
         cb_eq{ &io, &r, name = "effect damage: total", got = x.total, want = w + 3 }
         cb_eq{ &io, &r, name = "effect damage: in the blaster slot", got = x.slots[12], want = w + 3 }
-        cb_eq{ &io, &r, name = "effect damage: doubled on a critical", got = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = true }.effect_plus, want = 6 }
+        // a flat row (1-5) is added once on a critical; only dice rows are rolled per multiplier (6.2)
+        cb_eq{ &io, &r, name = "effect damage: flat, once on a critical", got = cb_hit{ tables, atk = &a, def = &d, seed = 777, critical = true }.effect_plus, want = 3 }
         // made for the off-hand it does not apply to an on-hand attack
         cb_clear_effects{ tables, c = &a }
         cb_effect{ tables, c = &a, e = cb_damage_effect{ amount = 3, types = rules::dmg::BLASTER, hand = 2, spell = -1, decrease = false } }

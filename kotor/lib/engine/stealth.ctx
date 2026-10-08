@@ -218,7 +218,7 @@ namespace stealth {
         let t = world::object{ w = &w, id = target } ifnull { return true }
         let tc = obj::creature{ o = t } ifnull { return true }
         let tf = tc.fighter ifnull { return true }
-        // See-invisible sees through it.
+        // True seeing (vision bit 4) sees through it; see invisible does not (0x004f1fd0).
         if (vf.c.stats.vision & 4) != 0 { return true }
         let rank = hiding_rank{ w = &w, vf, tc }
         if rank == 0 { return true }
