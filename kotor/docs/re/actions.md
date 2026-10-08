@@ -1380,7 +1380,8 @@ a plain attack (type 1) and the dispatcher, which takes the feat from `+0x5c`, a
 (med: static reading, needs a runtime check); guard stances (2, 25, 54) toggle `+0x8e0`.
 `ActionUseSkill` (288 → `UseSkill` `0x004fbe40`): the skill must be usable (feedback 0 otherwise),
 hostile skills on friends give feedback 0xbb; Demolitions: subskill 100 FLAGTRAP, 101 RECOVERTRAP,
-102 EXAMINETRAP, else DISABLETRAP on a detected trap; Stealth toggles stealth; Security queues
+102 EXAMINETRAP, else DISABLETRAP (nothing checks that the trap was found; a trapped target that
+is not disarmable is refused, below); Stealth toggles stealth; Security queues
 OPENLOCK; Treat Injury queues HEAL. `ActionUseTalent*` (309/310 → `0x00500ca0` / `0x004fd070`)
 dispatch to the item, cast, feat-attack (`AddAttackActions` with the feat, so type 0xb) or skill
 paths. `CutsceneAttack` (503) and `CutsceneMove` (507) schedule entries (cutscene attack, type 0xc

@@ -1738,8 +1738,11 @@ horizontally by the 640x480 centring offset only). `SetTransitionObject(id, posi
 name (object types 10 and 7) and keeps only what follows the first "-" and the character after it,
 e.g. "Taris - Upper City" → "Upper City". Render (`0x006c8050`) puts its top at the bottom edge of
 the bark bubble while one is shown (`0x0062ebe0`), else at its design y, and colours the frames and
-text by whether every party member is within 30 m of the leader (`0x00635350`). Shown while the
-cursor is over a transition; the hover logic is in [movement.md](movement.md). (high)
+text by whether every party member is within 30 m of the leader (`0x00635350`). Which door or
+transition trigger it names is decided every frame by the objects themselves (door `0x00684660`,
+trigger `0x006920b0`): one ahead of the player creature (along its facing, or the camera's heading
+while in-game GUI `+0xc1c` is set) and within 8 m, the nearer one winning; the mouse pointer plays no
+part (med: static reading, needs a runtime check). (high for the rest)
 
 #### CSWGuiToolTip (`tooltipWxH`)
 
@@ -2498,7 +2501,8 @@ In detail (high unless noted):
   and armour (the second and third), and hilights the first slot; selection mode hides all of those and shows `LB_ITEMS` (the description
   box stays).
 - **Slots**. `OnSlotHilighted` 0x006c3c30: lightsaber: `LBL_LSSLOTNAME` = the slot's item name, else the slot's strref; others:
-  `LBL_SLOTNAME` = the slot's strref, `LBL_UPGRADES` = 42026 "Upgrades:", `LBL_UPGRADE_COUNT` emptied, `LBL_PROPERTY` = the item's own
+  `LBL_SLOTNAME` = the slot's strref, `LBL_UPGRADES` = 42026 "Upgrades:", `LBL_UPGRADE_COUNT` = the stack size of the party
+inventory's item with the slot's template tag (0 when there is none; `0x006c3d43`..`0x006c3d88`), `LBL_PROPERTY` = the item's own
   properties tagged with the slot's upgrade row (`FUN_0055f510`). `OnSlotClicked` 0x006c6500: **lightsaber**: the list `LB_ITEMS` with
   entries made by `FUN_006c58c0(item, row)`: colour slot: the colour crystal it has, then each upcrystals row (other than it) whose
   crystal the inventory holds; power slot: an entry with no item (shown as None), the crystal it has, then each upgrade.2da row of type 0

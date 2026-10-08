@@ -1827,7 +1827,9 @@ strref}, indexed `(category − 1) × 4 + slot`; high):
    creature's equipment, re-check `CanEquipItem` (`0x0051aa60`) on the upgraded item: failure shows
    message 42489 ("Adding this upgrade will prevent the character who was previously using this
    item from reequipping it because they do not have the appropriate feat.") as a yes/no box
-   (`0x006c6120`: yes installs, no clears the bit again); else the upgrade item is moved out of the
+   (`0x006c6120`: yes installs; no clears the bit on the *upgrade* item, the callback's argument,
+   not on the bench item, so the bench item keeps the bit without the upgrade being taken: med,
+   needs a runtime check; see [gui.md](gui.md) "Slots"); else the upgrade item is moved out of the
    party inventory (one unit, `TakeUpgradeItem` `0x006c59a0`). Lightsaber slots open a list
    instead: power crystals from the party inventory other than those in either power slot; colour
    crystals in the party inventory other than the current one.
