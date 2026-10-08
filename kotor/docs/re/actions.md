@@ -84,8 +84,8 @@ group even though the handlers later expand it into move + face + wait + open no
 groups (high):
 
 - `GetCurrentAction` (section 1.9) reports the head group, not the head node.
-- the HUD action queue (`CSWSCreature::UpdateActionQueueDisplay` `0x004f6f30`): for party members
-  shown on the HUD (`+0x9d4 == 1`), every 300 ms (`AIUpdate`; also on death) the first 10 groups
+- the HUD action queue (`CSWSCreature::UpdateActionQueueDisplay` `0x004f6f30`): for the player
+  character (`+0x9d4 == 1`, the PC flag, [combat.md](combat.md) 2), every 300 ms (`AIUpdate`; also on death) the first 10 groups
   that have a script-visible node are summarised (groups without one are skipped, not shown) into
   10 entries of 0x1c bytes at creature `+0x3a8`: group id, the group's `ACTION_*` id, a spell id
   (casts; for item casts the item property's spell), a point and a target, taken from the group's
@@ -687,7 +687,7 @@ for a door, a point on its approach side (`0x00589240`) moved by twice the path 
 for a waypoint, its position (and facing); otherwise the object's position; a creature outside any
 area is aimed at through its stored area and position (`+0x310`/`+0x314`), fail if none. (med)
 
-**WAITFORAREA (0x3c, `0x00511080`)**: fails for creatures not on the HUD (`+0x9d4`), runs (1) until
+**WAITFORAREA (0x3c, `0x00511080`)**: fails for any creature but the player character (`+0x9d4`, the PC flag), runs (1) until
 the creature is in an area, then done. (high)
 
 ### 3.3 Following (0x37, 0x3a, 0x3d, 0x40)
@@ -820,7 +820,7 @@ The door's side (`CSWSDoor::EventHandler` `0x0058b850`, high):
   with a `LoadScreenID`, shows that load screen. A transition door runs no script: with a
   non-empty destination module (`+0x390`), no conversation running and the clicker the player's
   creature or the party leader, a first click checks that the party is near the leader (else
-  `k_trg_transfail` runs on the clicker), fades out 0.5 s, pauses, marks the area's transition
+  `k_trg_transfail` runs on the clicker), fades out 0.5 s, forces the player pause off (`SetPauseState(2, 0)`), marks the area's transition
   pending and re-sends event 30 to itself 500 ms later with a token; that second event (matching
   token, clicker alive) sets the module transition (module `+0x390`, waypoint `+0x388`)
   ([movement.md](movement.md) / [gameloop.md](gameloop.md)).
@@ -849,7 +849,7 @@ Dead, knocked out, an invalid target or one that is not an object ⇒ timer hidd
 2. First pass with `+0x980` = 0 (creature): `+0x980 = 1`; push a fresh OPENLOCK and, before it,
    PLAYANIMATION (10128 `0x2790` for a door, 10131 `0x2793` otherwise, speed 1.0, 1.5 s); show a
    1500 ms action timer (`StartActionProgress` `0x004ef480`, type 7, sent only for the
-   player-controlled creature, `+0x9d4` = 1); done. For the player the animation action plays
+   player character, `+0x9d4` = 1); done. For the player the animation action plays
    `gui_lockpick` 250 ms in (3.9).
 3. Second pass, creature: trap check as for doors (door `+0x2e8` / `+0x2b8`, placeable `+0x278` /
    `+0x23c`; reputation < 90 and a different faction ⇒ event 26, flags cleared, fail).
@@ -1200,10 +1200,10 @@ damage. `AddAttackActions` (15 args): target, feat, p3, bPassive, bClearFirst, b
 type, animation, duration, p11, bCutscene, cutscene animation/result/damage. Direct path refuses
 non-commandable attackers (`+0xe8`), targets whose perception entry is of kind 4 (bits 0x0c), and
 friendly creatures (the target's reputation of the attacker ≥ 90, feedback 0xbb); marks
-"going to be attacked by" (`+0x520`) on a target that is a HUD creature or the party leader;
+"going to be attacked by" (`+0x520`) on a target that is the player character (`+0x9d4`) or the party leader;
 calls `SignalCombatWith(self, self)`; sets `+0x4dc` (= not party-controlled) when the target is a
 creature, `+0x50c` (attempted attack target) when unset and `+0x4e8` = bPassive; may bark a battle
-cry (1 in 10 for a party member, `+0xa88`; the 3-in-4 branch for an out-of-combat HUD creature
+cry (1 in 10 for a party member, `+0xa88`; the 3-in-4 branch for the player character out of combat
 never runs because `SignalCombatWith` has just put it in combat, [combat.md](combat.md) 3.6, med);
 and attacking a plot door sends it FAIL_TO_OPEN. Per frame (the order of
 [combat.md](combat.md) 3.1):
@@ -1222,7 +1222,7 @@ and attacking a plot door sends it FAIL_TO_OPEN. Per frame (the order of
    then their use point); other objects 1.5. Maximum range (`0x004fb0f0`): melee reach + 0.5;
    ranged weapon its base item's `maxattackrange` (30.0 when 0).
 5. Line of sight from 1.5 m above each foot (`0x0050c330`). Blocked twice from the same spot
-   (`+0x514`) by a HUD creature ⇒ feedback 0xda, clear `+0x504`, look for another enemy within
+   (`+0x514`) by the player character (`+0x9d4`) ⇒ feedback 0xda, clear `+0x504`, look for another enemy within
    `GetMaxAttackRange(self, targeting)` (20 m with a ranged weapon; `0x004f2de0`) and switch to it
    when it is a creature (`RetargetAttack`, 1), or stop (2).
 6. Must move when in another area, farther than the maximum range, without sight, or (NPCs only)
@@ -1366,7 +1366,7 @@ and remove effects for itself and every creature within 250 m it counts an enemy
 then move itself to the Neutral faction) ⇒ 2; routine 379 queues it, 476/762 act at once, all three
 only for a caller whose stats `+0x6c` is clear. REST (0x2a) returns 2 at once; resting itself
 (`0x004fd1e0`: refused in an area that forbids it, feedback 0x36, with an enemy within 30 m, 0xba,
-or while the HUD creature's battle-music countdown runs, 0x11) happens when it is queued, and
+or while the player character's battle-music countdown runs, 0x11) happens when it is queued, and
 clearing it cancels the rest (module event PLAYER_REST with 3). The stubs 0x29, 0x2b, 0x36 fail.
 0x10 (`0x00513f60`, "wait while the round is active") and 0x24 (`0x00510c20`, encounter despawn:
 tell the encounter, destroy self after 5000 ms, commandable off) have handlers but no queuer.
