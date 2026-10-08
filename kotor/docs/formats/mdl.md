@@ -486,9 +486,12 @@ light dynamic objects (creatures, placeables), choosing by priority.
 Flags (RE: the ASCII parser's setters at `0x0048d790`..`0x0048d850`): 0x1 `p2p`, 0x2 `p2p_sel`,
 0x4 `affectedByWind`, 0x8 `m_isTinted`, 0x10 `bounce`, 0x20 `random` (bit 0), 0x40 `inherit`,
 0x80 `inheritvel`, 0x100 `inherit_local`, 0x200 `splat`, 0x400 `inherit_part`, 0x800
-`depth_texture`, 0x1000 `random` (bit 1). The particle simulation that uses these is not
-specified here (inferred from names: birthrate particles/s, lifeExp seconds, velocity ± randvel
-along the node's +Z within `spread` radians, colours/alphas/sizes interpolated start→mid→end at
+`depth_texture`, 0x1000 `random` (bit 1). The particle simulation that uses these is in
+[re/particles.md](../re/particles.md); in short: birthrate is not simply particles per second (a
+Fountain emits in bursts once 1/birthrate s have passed, so the real rate depends on frame time;
+spawn type 1 emits per metre moved, and nothing is emitted while birthrate < 1), lifeExp is
+seconds, velocity ± randvel along the node's +Z tilted by up to spread/2 (`spread` is the full cone
+angle), colours/alphas/sizes interpolated start→mid→end at
 percentStart/Mid/End of life, xgrid × ygrid flipbook from frameStart to frameEnd at fps; `Lighten`
 = additive).
 

@@ -11,7 +11,9 @@ read from the data and marked *(inferred)* where it is interpretation rather tha
 - **Design resolution.** Coordinates are pixels in the GUI's design size: the root `EXTENT`
   is 640x480 for 49 files; a few screens exist per resolution (`mainmenu8x6`, `mainmenu16x12`,
   `mipc28x6`, `tooltip16x12`, ...: the suffix is the resolution in hundreds, 8x6 = 800x600), and
-  smaller roots are dialog boxes centred on screen *(inferred)*.
+  smaller roots are dialog boxes. Centring is not decided by the file: the code centres a panel
+  through its panel flags (full-screen panels, and bits 0x20/0x40 against 640x480) and
+  `CenterOnScreen` ([re/render-gui.md](../re/render-gui.md), GUI).
 - **Control types** (`CONTROLTYPE`), with the sub-structs each carries in the data:
 
   | Type | Control | Sub-structs |
@@ -48,8 +50,8 @@ read from the data and marked *(inferred)* where it is interpretation rather tha
 | `CONTROLS` | List | all | 0..120 entries; struct id 0 | The panel's controls, in draw order *(inferred)*; struct id 0. |
 | `CONTROLS/CONTROLTYPE` | INT | 90 | 4..11 (7 values) | Control type (table above). |
 | `CONTROLS/ID` | INT | 90 | 0..139 | Control id, unique in the file (referenced by `MOVETO` and `Obj_ParentID`). |
-| `CONTROLS/Obj_Locked` | BYTE | 90 | 0, 1 | Editor lock flag; no effect in game *(inferred)*. |
-| `CONTROLS/Obj_Parent` | CExoString | 90 | e.g. `TGuiPanel`, `MAIN_PANEL`, `MAIN_PNL` | Tag of the parent (the panel's tag or a control's). |
+| `CONTROLS/Obj_Locked` | BYTE | 90 | 0, 1 | Editor lock flag; never read by the game (the string is not in the executable, [re/render-gui.md](../re/render-gui.md)). |
+| `CONTROLS/Obj_Parent` | CExoString | 90 | e.g. `TGuiPanel`, `MAIN_PANEL`, `MAIN_PNL` | Tag of the parent (the panel's tag or a control's). Never read by the game: parents come from `Obj_ParentID` ([re/render-gui.md](../re/render-gui.md)). |
 | `CONTROLS/TAG` | CExoString | 90 | e.g. `LB_DESC`, `MAIN_TITLE_LBL`, `SUB_TITLE_LBL` | Control tag; the game code finds controls by tag. |
 | `CONTROLS/Obj_ParentID` | INT | 83 | -1..116 | Id of the parent control; -1 = the panel. |
 | `CONTROLS/EXTENT` | Struct | 90 | struct id 0, 14 | Position and size. |
@@ -163,14 +165,14 @@ read from the data and marked *(inferred)* where it is interpretation rather tha
 | `CONTROLS/SCROLLBAR.BORDER.INNEROFFSET` | INT | 47 | 0 | Inset of the fill from the extent. |
 | `CONTROLS/SCROLLBAR.BORDER.COLOR` | Vector | 47 | varies | Tint, RGB 0..1; (-1,-1,-1) = none. |
 | `CONTROLS/SCROLLBAR.BORDER.PULSING` | BYTE | 47 | 0 | 1 or 2 if the element pulses *(inferred)*. |
-| `CONTROLS/SCROLLBAR.DIR` | Struct | 49 | struct id 0, 14 | Arrow image struct. |
+| `CONTROLS/SCROLLBAR.DIR` | Struct | 49 | struct id 0, 14 | Arrow image struct. Never read by the game (no loader reads `DIR`; [re/render-gui.md](../re/render-gui.md)). |
 | `CONTROLS/SCROLLBAR.DIR.IMAGE` | ResRef | 49 | 2 empty; e.g. `uparrow` | Image texture. |
 | `CONTROLS/SCROLLBAR.DIR.DRAWSTYLE` | INT | 49 | 0 | Always 0. |
 | `CONTROLS/SCROLLBAR.DIR.FLIPSTYLE` | INT | 49 | 0 | Always 0. |
 | `CONTROLS/SCROLLBAR.DIR.ROTATE` | FLOAT | 48 | 0 | Rotation; always 0. |
 | `CONTROLS/SCROLLBAR.DIR.ALIGNMENT` | INT | 49 | 18 | Always 18 (centred). |
 | `CONTROLS/SCROLLBAR.DIR.ROTATESTYLE` | INT | 1 | 0 | Always 0. |
-| `CONTROLS/SCROLLBAR.DRAWMODE` | BYTE | 48 | 0, 1 | 0 or 1 *(unknown)*. |
+| `CONTROLS/SCROLLBAR.DRAWMODE` | BYTE | 48 | 0, 1 | 0 or 1; read by the scroll-bar loader (`0x0041bcd0`, [re/render-gui.md](../re/render-gui.md)). |
 | `CONTROLS/SCROLLBAR.MAXVALUE` | INT | 49 | 1, 5, 10, 99 | Scroll range. |
 | `CONTROLS/SCROLLBAR.VISIBLEVALUE` | INT | 49 | 1, 4, 5, 50, 99 | Rows visible at once *(inferred)*. |
 | `CONTROLS/SCROLLBAR.THUMB` | Struct | 49 | struct id 0, 14 | Thumb image struct. |
@@ -220,10 +222,10 @@ read from the data and marked *(inferred)* where it is interpretation rather tha
 | `CONTROLS/HILIGHTSELECTED.COLOR` | Vector | 16 | varies | Tint, RGB 0..1; (-1,-1,-1) = none. |
 | `CONTROLS/HILIGHTSELECTED.PULSING` | BYTE | 16 | 0 | 1 or 2 if the element pulses *(inferred)*. |
 | `CONTROLS/ISSELECTED` | BYTE | 16 | 0 | Check box: initial state; 0. |
-| `CONTROLS/PARENTID` | INT | 1 | -1..7 (9 values) | Same role as `Obj_ParentID` in one file. |
-| `CONTROLTYPE` | INT | all | 2 | Root panel: always 2. |
+| `CONTROLS/PARENTID` | INT | 1 | -1..7 (9 values) | Same role as `Obj_ParentID` in one file, but never read by the game ([re/render-gui.md](../re/render-gui.md)). |
+| `CONTROLTYPE` | INT | all | 2 | Root panel: always 2. The root's value is not read ([re/render-gui.md](../re/render-gui.md)). |
 | `Obj_Locked` | BYTE | all | 0, 1 | Editor lock flag. |
-| `TAG` | CExoString | all | e.g. `TGuiPanel`, `MAIN_PNL`, `CUST_PNL` | Panel tag. |
+| `TAG` | CExoString | all | e.g. `TGuiPanel`, `MAIN_PNL`, `CUST_PNL` | Panel tag. The root's `TAG` is not read ([re/render-gui.md](../re/render-gui.md)). |
 | `Obj_ParentID` | INT | 83 | -1 | Always -1. |
 | `EXTENT` | Struct | all | struct id 0, 14 | Panel rectangle: its size is the design resolution or dialog size. |
 | `EXTENT.LEFT` | INT | all | 0..322 (13 values) | Left edge, design pixels (relative to the panel origin). |

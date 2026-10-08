@@ -728,8 +728,10 @@ the branch and the columns read, med for how the radius and the sound show on sc
 row but 15 is an engine-coded effect (`progfx_duration` 1413-1421, no model in the 2DA); row 15 and
 the four droid appearances (59, 60, 61 and 65, for rows 0-5 and 15-18) get a model on the root node
 (`v_fieldmrk*_dur`, `v_fieldmk*b_dur`, `v_fieldsp*_dur`). The 2DA's `soundimpact` /
-`soundduration` / `soundcessastion` give the sounds of putting it on, keeping it and taking it
-off. (high for the structure, low for what the engine-coded effects draw)
+`soundduration` give the sounds of putting it on and keeping it. The sound of taking it off is
+never played: the code looks up `SoundCessation`, but the column is spelled `soundcessastion`, and
+the 2DA's column match is exact apart from case ([render-gui.md](render-gui.md), engine-coded
+effects; med: static reading, needs a runtime check). (high for the structure, low for what the engine-coded effects draw)
 
 Our library (`lib/rules/shield.ctx`, `effects.ctx`): the same two children, one id (the creator
 of the children stays the caster: the library does not know its creature's object id), removal
