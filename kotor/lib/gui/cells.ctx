@@ -1,0 +1,231 @@
+// Lists of cell rows: the feats panel's and the Force powers panel's LB_FEATS / LB_POWERS (docs/re/gui.md,
+// "Chain rows"). The original fills those list boxes with rows of its own (0x006cccc0) in place of
+// the file's prototype: three square cells, each a feat or power icon on a backing in a frame, with
+// an arrow before the second and third. One cell, not one row, has the focus; its frame pulses.
+namespace gui {
+    const CELLS_PER_ROW: usize = 3
+    const CELL_ROW_H: i32 = 40          // the row control's own height (242x40); the list stretches it like any row
+    const CELL_ARROW: i32 = 32
+
+    // The cell styles (0x006ccfd0). Every style starts with the icon, the backing, the frame and the
+    // arrow into the cell opaque, and the frame pulses while the cell has the focus.
+    const CELL_OPEN: u8 = 0             // may be picked: icon at a quarter; frame only when focused, in the hilight colour
+    const CELL_KNOWN: u8 = 1            // the creature has it: green frame at half alpha, full when focused
+    const CELL_GRANTED: u8 = 2          // granted at this level: as CELL_KNOWN
+    const CELL_LOCKED: u8 = 3           // prerequisites missing: icon and backing at a quarter, no arrow into it, red-orange frame only when focused
+    const CELL_CHOSEN: u8 = 4           // picked in this panel: green frame
+    const CELL_DIM_ARROW: u8 = 5        // frame only when focused, in the hilight colour; the arrow into it at a quarter
+    const CELL_PLAIN: u8 = 6            // frame only when focused, in the hilight colour
+
+    fn cell_green {} -> render::Color { return render::Color{ r = 0.28, g = 0.92, b = 0.11, a = 1.0 } }
+    fn cell_red {} -> render::Color { return render::Color{ r = 0.74, g = 0.11, b = 0.0, a = 1.0 } }
+
+    // Makes list `tag` a list of cell rows, with the row control's art: frame corners `border2d`,
+    // edges `border1d` (no DIMENSION, so the textures' sizes), backing `lbl_indent`, arrow `lbl_skarr`.
+    fn list_use_cells { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, panel: u32, tag: []u8 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        let mut b: Border
+        b.present = true
+        b.corner = resolve_img{ &g, &fs, &dev, name = "border2d" }
+        b.edge = resolve_img{ &g, &fs, &dev, name = "border1d" }
+        b.fill = no_img{}
+        b.color = white_color{}
+        c.cell_art = CellArt{
+            on = true, frame = b,
+            backing = resolve_img{ &g, &fs, &dev, name = "lbl_indent" },
+            arrow = resolve_img{ &g, &fs, &dev, name = "lbl_skarr" },
+        }
+        c.cell_focus = 0
+    }
+
+    // Appends a row of three cells (`users` -1 for an empty cell, which ends the row's chain).
+    // Every cell starts as CELL_LOCKED, as the original's panels restyle all before marking the rest.
+    fn list_add_cells { mut g: Gui, panel: u32, tag: []u8, users: [3]i64, icons: [3]Img } -> !i32 {
+        let r = try list_add{ &g, panel, tag, text = "", user = users[0] }
+        if r < 0 { return r }
+        let c = find_control{ &g, panel, tag } ifnull { return -1 }
+        let need = (@as(usize, r) + 1) * CELLS_PER_ROW
+        if c.cells.len < need {
+            let n = if c.cells.len == 0 { 16 * CELLS_PER_ROW } else { c.cells.len * 2 }
+            c.cells = try alloc::resize(Cell, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = c.cells, count = if n < need { need } else { n } }
+        }
+        let mut k: usize = 0
+        while k < CELLS_PER_ROW {
+            c.cells[@as(usize, r) * CELLS_PER_ROW + k] = Cell{ user = users[k], icon = if users[k] >= 0 { icons[k] } else { no_img{} }, style = CELL_LOCKED }
+            k = k + 1
+        }
+        return r
+    }
+
+    // Gives the cell holding `user` style `style` (0x006cd280).
+    fn list_set_cell_style { mut g: Gui, panel: u32, tag: []u8, user: i64, style: u8 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        let i = find_cell{ c, user }
+        if i >= 0 { c.cells[@as(usize, i)].style = style }
+    }
+
+    // Moves the focus to the cell holding `user`, selecting its row (0x006cdc00); false when no
+    // cell holds it.
+    fn list_focus_cell { mut g: Gui, panel: u32, tag: []u8, user: i64 } -> bool {
+        let p = find_panel{ &g, id = panel } ifnull { return false }
+        let ci = find_by_tag{ p, tag }
+        if ci < 0 { return false }
+        let c = list::at{ list = p.controls, i = @as(usize, ci) }
+        let i = find_cell{ c, user }
+        if i < 0 { return false }
+        c.selected_row = i / @as(i32, CELLS_PER_ROW)
+        c.cell_focus = i - c.selected_row * @as(i32, CELLS_PER_ROW)
+        ensure_row_visible{ p, c }
+        return true
+    }
+
+    // The value of the focused cell, -1 when there is none.
+    fn list_focused_cell { mut g: Gui, panel: u32, tag: []u8 } -> i64 {
+        let c = find_control{ &g, panel, tag } ifnull { return -1 }
+        return focused_user{ c, row = c.selected_row }
+    }
+
+    fn find_cell { c: *Control, user: i64 } -> i32 {
+        let n = @as(usize, c.row_count) * CELLS_PER_ROW
+        let mut i: usize = 0
+        while i < n and i < c.cells.len {
+            if c.cells[i].user == user and user >= 0 { return @as(i32, i) }
+            i = i + 1
+        }
+        return -1
+    }
+
+    fn cell_user { c: *Control, row: i32, k: i32 } -> i64 {
+        if row < 0 or row >= @as(i32, c.row_count) or k < 0 or k >= @as(i32, CELLS_PER_ROW) { return -1 }
+        let i = @as(usize, row) * CELLS_PER_ROW + @as(usize, k)
+        if i >= c.cells.len { return -1 }
+        return c.cells[i].user
+    }
+
+    // What an event about row `row` carries: the focused cell's value in a cell list, else the row's.
+    fn focused_user { c: *Control, row: i32 } -> i64 {
+        if row < 0 or row >= @as(i32, c.row_count) { return -1 }
+        if c.cell_art.on { return cell_user{ c, row, k = c.cell_focus } }
+        return c.rows[@as(usize, row)].user
+    }
+
+    // Cell `k` of a row at (x, y, w, h) (the row's SetExtent, 0x006cce30): an h-by-h square at the
+    // left, in the middle ((w - h) / 2 in) and at the right.
+    fn cell_box { x: i32, y: i32, w: i32, h: i32, k: i32 } -> Area {
+        let dx = if k == 0 { 0 } else if k == 1 { (w - h) / 2 } else { w - h }
+        return Area{ x = x + dx, y, w = h, h }
+    }
+
+    // The arrow before cell `k` (1 or 2): 32 square, centred in the gap between the two cells.
+    fn arrow_box { x: i32, y: i32, w: i32, h: i32, k: i32 } -> Area {
+        let mid = if k == 1 { (w + h) / 4 } else { (3 * w - h) / 4 }
+        return Area{ x = x + mid - CELL_ARROW / 2, y = y + (h - CELL_ARROW) / 2, w = CELL_ARROW, h = CELL_ARROW }
+    }
+
+    // The cell a point in the row hits (0x006cd1c0): the first cell up to the first empty one whose
+    // square holds it, edges included; cell 0 when none does.
+    fn cell_at { c: *Control, row: i32, x: i32, y: i32, w: i32, h: i32, px: i32, py: i32 } -> i32 {
+        let mut k: i32 = 0
+        while k < @as(i32, CELLS_PER_ROW) {
+            if cell_user{ c, row, k } < 0 { return 0 }
+            let b = cell_box{ x, y, w, h, k }
+            if px >= b.x and px <= b.x + b.w and py >= b.y and py <= b.y + b.h { return k }
+            k = k + 1
+        }
+        return 0
+    }
+
+    // The cell of visible row `row` under the panel point (lx, ly), placed as draw_list places rows.
+    fn cell_in_row { p: *Panel, c: *Control, row: i32, lx: i32, ly: i32 } -> i32 {
+        let l = list_layout{ p, c }
+        let s = row_slot{ l, padding = c.padding, k = row - c.first_row }
+        return cell_at{ c, row, x = l.ax + c.padding, y = l.ay + s.y, w = l.aw - 2 * c.padding, h = s.h, px = lx, py = ly }
+    }
+
+    // How a cell draws in its style (0x006ccfd0): alphas of the icon, the backing, the frame and the
+    // arrow into it, and the frame's colour.
+    struct CellLook { icon: f32, backing: f32, frame: f32, arrow: f32, color: render::Color }
+
+    fn cell_look { style: u8, focused: bool } -> CellLook {
+        let mut l = CellLook{ icon = 1.0, backing = 1.0, frame = 1.0, arrow = 1.0, color = color_hilight{} }
+        if style == CELL_OPEN or style == CELL_PLAIN or style == CELL_DIM_ARROW {
+            if style == CELL_OPEN { l.icon = 0.25 }
+            if style == CELL_DIM_ARROW { l.arrow = 0.25 }
+            if not focused { l.frame = 0.0 }
+        } else if style == CELL_KNOWN or style == CELL_GRANTED {
+            l.color = cell_green{}
+            if not focused { l.frame = 0.5 }
+        } else if style == CELL_LOCKED {
+            l.icon = 0.25
+            l.backing = 0.25
+            l.arrow = 0.0
+            l.color = cell_red{}
+            if not focused { l.frame = 0.0 }
+        } else if style == CELL_CHOSEN {
+            l.color = cell_green{}
+        }
+        return l
+    }
+
+    // A row of cells (the row control's draw, 0x006ccc40): each filled cell's backing, icon and
+    // frame, then the arrows into the second and third cells when they are filled.
+    fn draw_cell_row {
+        mut g: Gui, mut frame: render::Frame, c: *Control, idx: i32, x: i32, y: i32, w: i32, h: i32,
+        alpha: f32, clip: render::Rect,
+    } {
+        let art = c.cell_art
+        let mut k: i32 = 0
+        while k < @as(i32, CELLS_PER_ROW) {
+            let i = @as(usize, idx) * CELLS_PER_ROW + @as(usize, k)
+            if i < c.cells.len and c.cells[i].user >= 0 {
+                let cell = c.cells[i]
+                let focused = c.selected_row == idx and c.cell_focus == k
+                let look = cell_look{ style = cell.style, focused }
+                let b = cell_box{ x, y, w, h, k }
+                put_image{ &frame, img = art.backing, x = @as(f32, b.x), y = @as(f32, b.y), w = @as(f32, b.w), h = @as(f32, b.h), color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = alpha * look.backing }, angle = 0.0, clip }
+                // The icon fills the frame's inside (its text rectangle).
+                let a = text_area{ b = art.frame, x = b.x, y = b.y, w = b.w, h = b.h }
+                put_image{ &frame, img = cell.icon, x = @as(f32, a.x), y = @as(f32, a.y), w = @as(f32, a.w), h = @as(f32, a.h), color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = alpha * look.icon }, angle = 0.0, clip }
+                let mut fb = art.frame
+                fb.tinted = true
+                fb.color = look.color
+                fb.pulsing = if focused { 1 } else { 0 }
+                draw_border{ &g, &frame, b = fb, x = b.x, y = b.y, w = b.w, h = b.h, alpha = alpha * look.frame, clip, override = no_img{} }
+            }
+            k = k + 1
+        }
+        k = 1
+        while k < @as(i32, CELLS_PER_ROW) {
+            let i = @as(usize, idx) * CELLS_PER_ROW + @as(usize, k)
+            if i < c.cells.len and c.cells[i].user >= 0 {
+                let look = cell_look{ style = c.cells[i].style, focused = false }
+                let b = arrow_box{ x, y, w, h, k }
+                put_image{ &frame, img = art.arrow, x = @as(f32, b.x), y = @as(f32, b.y), w = @as(f32, b.w), h = @as(f32, b.h), color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = alpha * look.arrow }, angle = 0.0, clip }
+            }
+            k = k + 1
+        }
+    }
+
+    // The arrow keys in a cell list (0x006cdd80): left and right move along the row as far as its
+    // last filled cell, with GUI sound 1; up and down move a row, wrapping at the ends, and keep the
+    // column unless that cell is empty, when the focus steps left to a filled one.
+    fn move_cell_focus { mut g: Gui, p: *mut Panel, ci: i32, dir: usize } {
+        let c = list::at{ list = p.controls, i = @as(usize, ci) }
+        let n = @as(i32, c.row_count)
+        if n == 0 { return }
+        let mut row = if c.selected_row < 0 { 0 } else { c.selected_row }
+        let mut k = c.cell_focus
+        if dir == DIR_LEFT {
+            if k > 0 { k = k - 1 }
+        } else if dir == DIR_RIGHT {
+            if k < @as(i32, CELLS_PER_ROW) - 1 and cell_user{ c, row, k = k + 1 } >= 0 { k = k + 1 }
+        } else {
+            if dir == DIR_UP { row = if row == 0 { n - 1 } else { row - 1 } } else { row = if row >= n - 1 { 0 } else { row + 1 } }
+            while k > 0 and cell_user{ c, row, k } < 0 { k = k - 1 }
+        }
+        if row == c.selected_row and k == c.cell_focus { return }
+        play_sound{ &g, n = if dir == DIR_LEFT or dir == DIR_RIGHT { 1 } else { c.hover_sound } }
+        c.cell_focus = k
+        set_selected_row{ &g, p, ci, row }
+    }
+}

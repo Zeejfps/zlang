@@ -419,6 +419,7 @@ namespace gui {
     }
 
     fn proto_height { p: *Panel, c: *Control } -> i32 {
+        if c.cell_art.on { return CELL_ROW_H }
         if c.proto < 0 { return 16 }
         let pc = list::at{ list = p.controls, i = @as(usize, c.proto) }
         return if pc.h > 0 { pc.h } else { 16 }
@@ -519,6 +520,10 @@ namespace gui {
         mut g: Gui, mut frame: render::Frame, p: *Panel, c: *Control, idx: i32, x: i32, y: i32, w: i32, h: i32,
         alpha: f32, clip: render::Rect,
     } {
+        if c.cell_art.on {
+            draw_cell_row{ &g, &frame, c, idx, x, y, w, h, alpha, clip }
+            return
+        }
         if c.proto < 0 { return }
         let pc = list::at{ list = p.controls, i = @as(usize, c.proto) }
         let row = c.rows[@as(usize, idx)]

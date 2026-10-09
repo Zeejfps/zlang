@@ -48,7 +48,7 @@ namespace chargen {
         fpicks: i32,                        // regular feats still to choose
         fchosen: [8]i32,
         fnchosen: usize,
-        fsel: i32,                          // the row the feats list has selected
+        fsel: i32,                          // the focused cell's feat, an index into frows
         views: Views,
     }
 

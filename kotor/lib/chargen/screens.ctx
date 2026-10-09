@@ -77,7 +77,7 @@ namespace chargen {
         } else if screen == SCR_SKILLS {
             try open_skills{ st, &g, p }
         } else if screen == SCR_FEATS {
-            try open_feats{ st, &g, p }
+            try open_feats{ st, &g, &fs, &dev, p }
         }
         refresh_views{ st, &g, &fs, &dev }
     }

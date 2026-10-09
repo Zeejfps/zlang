@@ -144,7 +144,19 @@ namespace gui {
         max_chars: i32,
         // a texture given by code that replaces the border's fill (portraits, screenshots)
         override_fill: Img,
+        // a list of cell rows (cells.ctx): CELLS_PER_ROW cells per row, the focused one in the selected row
+        cells: []mut Cell,
+        cell_focus: i32,
+        cell_art: CellArt,
     }
+
+    // One cell of a cell row (the feats and Force powers panels' chain rows, cells.ctx): the owner's
+    // value for it (a feat or spell id; -1 an empty cell), its icon and its CELL_* style.
+    struct Cell { user: i64, icon: Img, style: u8 }
+
+    // What every cell row draws besides the icons: the cell frame, the backing behind an icon and
+    // the arrow between two cells. `on` makes the list a list of cell rows.
+    struct CellArt { on: bool, frame: Border, backing: Img, arrow: Img }
 
     enum Mode: u8 {
         full_screen,                    // centred on the screen over the resolution's backdrop; hides panels below it

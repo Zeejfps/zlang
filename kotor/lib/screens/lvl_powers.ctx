@@ -14,6 +14,12 @@ namespace lvl {
         return rec
     }
 
+    fn row_color { state: u8 } -> render::Color {
+        if state == FS_CHOSEN { return gui::color_hilight{} }
+        if state == FS_SELECTABLE { return gui::color_menu{} }
+        return gui::color_disabled{}
+    }
+
     fn power_is_chosen { s: *State, spell: i32 } -> bool {
         let mut i: usize = 0
         while i < s.pnchosen {

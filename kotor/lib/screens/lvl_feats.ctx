@@ -1,6 +1,9 @@
-// The feats step of a level-up (ftchrgen, docs/re/chargen.md H): the feats the class grants this
-// level (dim), the ones the creature has (dim), and those it may pick, in chains by successor; as
-// many picks as featgain.2da gives (regular and bonus).
+// The feats step of a level-up (ftchrgen, docs/re/chargen.md H): the original's rows of icon
+// cells, one row per prereqfeat chain the class lists or the creature knows (chargen
+// feat_cells.ctx). Known and granted feats are framed green at half strength, picks framed green,
+// the rest faint until picked; the focused cell names and describes its feat. As many picks as
+// featgain.2da gives (regular and bonus together, where the original asks for bonus feats in a
+// second pass).
 namespace lvl {
     // The record of the picks so far, for the rules' prerequisite checks.
     fn pending_feats { s: *State } -> rules::LevelRecord {
@@ -24,65 +27,30 @@ namespace lvl {
         return false
     }
 
-    // Whether the list shows the feat: the class lists it (regular, bonus or granted at this
-    // level) or the creature has it.
-    fn feat_shown { s: *State, w: *world::World, f: *fight::Fighter, feat: i32 } -> bool {
-        let row = rules::get_feat{ tables = w.rules, row = feat } ifnull { return false }
-        if not row.valid { return false }
-        if rules::has_feat{ c = &f.c, feat } { return true }
-        let cx = @as(usize, s.class)
-        let l = row.list[cx]
-        if l == 3 { return row.granted[cx] == s.opts.class_level }
-        return l == 0 or l == 1 or l == 2
+    // The panel's feats in list order, each cell of each row.
+    fn rows_from_chains { mut s: State, chains: []chargen::FeatChain } {
+        s.fcount = 0
+        let mut i: usize = 0
+        while i < chains.len {
+            let mut k: usize = 0
+            while k < 3 {
+                if chains[i].cell[k] >= 0 and s.fcount < MAX_FEAT_ROWS {
+                    s.frows[s.fcount] = Row{ id = chains[i].cell[k], state = FS_SELECTABLE }
+                    s.fcount = s.fcount + 1
+                }
+                k = k + 1
+            }
+            i = i + 1
+        }
     }
 
-    fn feat_listed { s: *State, feat: i32 } -> bool {
+    fn feat_index { s: *State, feat: i64 } -> i32 {
         let mut i: usize = 0
         while i < s.fcount {
-            if s.frows[i].id == feat { return true }
+            if @as(i64, s.frows[i].id) == feat { return @as(i32, i) }
             i = i + 1
         }
-        return false
-    }
-
-    fn add_feat_row { mut s: State, feat: i32 } {
-        if s.fcount >= MAX_FEAT_ROWS or feat_listed{ s = &s, feat } { return }
-        s.frows[s.fcount] = Row{ id = feat, state = FS_SELECTABLE }
-        s.fcount = s.fcount + 1
-    }
-
-    // Root feats of a chain first with the successors after them, then whatever is left.
-    fn build_feat_rows { mut s: State, w: *world::World, f: *fight::Fighter } {
-        s.fcount = 0
-        let total = w.rules.feats.len
-        let mut i: usize = 0
-        while i < total {
-            let id = @as(i32, i)
-            i = i + 1
-            if not feat_shown{ s = &s, w, f, feat = id } or is_successor{ s = &s, w, f, feat = id } { continue }
-            let mut at = id
-            let mut guard: usize = 0
-            while at >= 0 and guard < 16 and feat_shown{ s = &s, w, f, feat = at } and not feat_listed{ s = &s, feat = at } {
-                add_feat_row{ &s, feat = at }
-                at = (rules::get_feat{ tables = w.rules, row = at } ifnull { return }).successor
-                guard = guard + 1
-            }
-        }
-        i = 0
-        while i < total {
-            if feat_shown{ s = &s, w, f, feat = @as(i32, i) } { add_feat_row{ &s, feat = @as(i32, i) } }
-            i = i + 1
-        }
-    }
-
-    fn is_successor { s: *State, w: *world::World, f: *fight::Fighter, feat: i32 } -> bool {
-        let mut i: usize = 0
-        while i < w.rules.feats.len {
-            let row = &w.rules.feats[i]
-            if row.valid and row.successor == feat and feat_shown{ s, w, f, feat = @as(i32, i) } { return true }
-            i = i + 1
-        }
-        return false
+        return -1
     }
 
     // Each row's state: known, granted this level, picked, open to pick, or out of reach.
@@ -107,44 +75,29 @@ namespace lvl {
         }
     }
 
-    fn row_color { state: u8 } -> render::Color {
-        if state == FS_CHOSEN { return gui::color_hilight{} }
-        if state == FS_SELECTABLE { return gui::color_menu{} }
-        return gui::color_disabled{}
-    }
-
     fn open_feats { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
         let f = creature_of{ w = &w, id = s.who } ifnull { return }
         s.fnchosen = 0
-        s.fsel = 0
         s.fpicks = s.opts.general_feats + s.opts.bonus_feats
-        build_feat_rows{ &s, w = &w, f }
+        let mut chains: [chargen::MAX_FEAT_CHAINS]chargen::FeatChain
+        let n = chargen::build_feat_chains{ tables = w.rules, class = s.class, c = &f.c, regular = s.opts.general_feats > 0 or s.opts.bonus_feats == 0, bonus = s.opts.bonus_feats > 0, out = &chains }
+        rows_from_chains{ &s, chains = chains[..n] }
         refresh_feat_states{ &s, w = &w, f }
-        try fill_feat_list{ &s, &g, &w }
+        try chargen::fill_feat_cells{ &g, fs = &w.fs, &dev, panel = s.step, tag = "LB_FEATS", t = s.feat_table, chains = chains[..n] }
+        // The focus starts on the first row's first cell.
+        s.fsel = if s.fcount > 0 { 0 } else { -1 }
+        if s.fsel >= 0 { _ = gui::list_focus_cell{ &g, panel = s.step, tag = "LB_FEATS", user = @as(i64, s.frows[0].id) } }
+        restyle_feat_cells{ &s, &g }
         try refresh_feat_counts{ &s, &g }
         try show_feat{ &s, &g, &w }
         gui::set_focus{ &g, panel = s.step, tag = "LB_FEATS" }
     }
 
-    fn fill_feat_list { mut s: State, mut g: gui::Gui, mut w: world::World } -> ! {
-        let p = s.step
-        gui::list_clear{ &g, panel = p, tag = "LB_FEATS" }
+    // Each cell's look from its feat's state.
+    fn restyle_feat_cells { mut s: State, mut g: gui::Gui } {
         let mut i: usize = 0
         while i < s.fcount {
-            let row = rules::get_feat{ tables = w.rules, row = s.frows[i].id } ifnull { return }
-            let name = try gui::tlk_text{ &g, strref = @as(u32, row.name) }
-            defer gui::free_string{ &g, s = name }
-            let r = try gui::list_add{ &g, panel = p, tag = "LB_FEATS", text = name, user = @as(i64, s.frows[i].id) }
-            gui::list_set_color{ &g, panel = p, tag = "LB_FEATS", row = r, color = row_color{ state = s.frows[i].state } }
-            i = i + 1
-        }
-        if s.fsel >= 0 and @as(usize, s.fsel) < s.fcount { gui::list_select{ &g, panel = p, tag = "LB_FEATS", row = s.fsel } }
-    }
-
-    fn recolor_feat_list { mut s: State, mut g: gui::Gui } {
-        let mut i: usize = 0
-        while i < s.fcount {
-            gui::list_set_color{ &g, panel = s.step, tag = "LB_FEATS", row = @as(i32, i), color = row_color{ state = s.frows[i].state } }
+            gui::list_set_cell_style{ &g, panel = s.step, tag = "LB_FEATS", user = @as(i64, s.frows[i].id), style = chargen::feat_cell_style{ state = s.frows[i].state } }
             i = i + 1
         }
     }
@@ -213,7 +166,7 @@ namespace lvl {
             drop_feat{ &s, w = &w, f, feat = fr.id }
         }
         refresh_feat_states{ &s, w = &w, f }
-        recolor_feat_list{ &s, &g }
+        restyle_feat_cells{ &s, &g }
         try refresh_feat_counts{ &s, &g }
         try show_feat{ &s, &g, &w }
     }
@@ -271,7 +224,7 @@ namespace lvl {
             i = i + 1
         }
         refresh_feat_states{ &s, w = &w, f }
-        recolor_feat_list{ &s, &g }
+        restyle_feat_cells{ &s, &g }
         try refresh_feat_counts{ &s, &g }
         try show_feat{ &s, &g, &w }
     }
@@ -282,10 +235,10 @@ namespace lvl {
             return
         }
         if ev.kind == gui::EventKind::row_selected {
-            s.fsel = ev.row
+            s.fsel = feat_index{ s = &s, feat = ev.user }
             try show_feat{ &s, &g, &w }
         } else if ev.kind == gui::EventKind::row_activated {
-            s.fsel = ev.row
+            s.fsel = feat_index{ s = &s, feat = ev.user }
             try toggle_feat{ &s, &g, &w, &dev }
         } else if ev.kind == gui::EventKind::activate {
             if slice::eq_bytes{ a = ev.tag, b = "BTN_SELECT" } {

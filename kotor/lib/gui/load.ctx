@@ -202,6 +202,7 @@ namespace gui {
             c.list_tinted = lc.r >= 0.0
         }
         c.rows = slice::empty(Row){}
+        c.cells = slice::empty(Cell){}
         c.selected_row = -1
         c.hover_row = -1
         c.text_mode = false
@@ -422,6 +423,9 @@ namespace gui {
             }
             if cs[i].rows.len > 0 {
                 _ = alloc::resize(Row, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = cs[i].rows, count = 0 }
+            }
+            if cs[i].cells.len > 0 {
+                _ = alloc::resize(Cell, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = cs[i].cells, count = 0 }
             }
             i = i + 1
         }

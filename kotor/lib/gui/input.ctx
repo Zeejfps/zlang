@@ -233,7 +233,7 @@ namespace gui {
         if row < 0 or row >= @as(i32, c.row_count) { return }
         c.selected_row = row
         ensure_row_visible{ p, c }
-        push_event{ &g, kind = EventKind::row_selected, p, ci, value = row, row, user = c.rows[@as(usize, row)].user }
+        push_event{ &g, kind = EventKind::row_selected, p, ci, value = row, row, user = focused_user{ c, row } }
     }
 
     fn visible_rows { p: *mut Panel, c: *Control } -> i32 {
@@ -333,6 +333,13 @@ namespace gui {
                 } else if part == PART_BODY {
                     let r = row_at{ p, c, lx, ly }
                     g.press_on_selected = r >= 0 and r == c.selected_row
+                    if r >= 0 and c.cell_art.on {
+                        // A cell list focuses the cell under the pointer; only a press on the cell
+                        // that already had the focus goes on to activate it (0x006f3cf0).
+                        let k = cell_in_row{ p, c, row = r, lx, ly }
+                        g.press_on_selected = g.press_on_selected and k == c.cell_focus
+                        c.cell_focus = k
+                    }
                     if r >= 0 and c.rows[@as(usize, r)].enabled { set_selected_row{ &g, p, ci = h.control, row = r } }
                 }
             }
@@ -381,7 +388,7 @@ namespace gui {
         if c.kind == K_LIST {
             if c.selected_row >= 0 and c.selected_row < @as(i32, c.row_count) {
                 play_sound{ &g, n = c.click_sound }
-                push_event{ &g, kind = EventKind::row_activated, p, ci, value = c.selected_row, row = c.selected_row, user = c.rows[@as(usize, c.selected_row)].user }
+                push_event{ &g, kind = EventKind::row_activated, p, ci, value = c.selected_row, row = c.selected_row, user = focused_user{ c, row = c.selected_row } }
             }
             return
         }
@@ -500,6 +507,10 @@ namespace gui {
     // Up and down on a focused list box move its selection; left and right on a slider move it.
     fn key_in_control { mut g: Gui, p: *mut Panel, ci: i32, dir: usize } -> bool {
         let c = list::at{ list = p.controls, i = @as(usize, ci) }
+        if c.kind == K_LIST and c.cell_art.on {
+            move_cell_focus{ &g, p, ci, dir }
+            return true
+        }
         if c.kind == K_LIST and (dir == DIR_UP or dir == DIR_DOWN) and c.row_count > 0 {
             let n = @as(i32, c.row_count)
             let mut r = c.selected_row

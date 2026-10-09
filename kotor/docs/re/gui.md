@@ -1100,8 +1100,9 @@ The flow (high for the wiring; the screen-by-screen detail is [chargen.md](charg
      `HandleInputEvent` 0x006f6a10. Behaviour in chargen.md G. (high)
    - **Feats** (0x006f3d60, vtable 0x007598b0, `ftchrgen`): `LB_FEATS` (row clicked 0x1f8 →
      0x006f3420, double-click 0x1f9 → 0x006f3cf0), `BTN_SELECT` (accept thunk), `BTN_ACCEPT`
-     (`OnButtonX`), `BTN_RECOMMENDED`, `LBL_NAME`; `HandleInputEvent` 0x006f4680. Behaviour in
-     chargen.md H. (high)
+     (`OnButtonX`), `BTN_RECOMMENDED`, `LBL_NAME`; `HandleInputEvent` 0x006f4680. `LB_FEATS` holds
+     chain rows of icon cells ("Chain rows" under the in-game panels), not the file's prototype.
+     Behaviour in chargen.md H. (high)
    - **Force powers** (0x006f2180, vtable 0x00759780, `pwrlvlup`): `LB_POWERS`, `LBL_POWER`,
      `SELECT_BTN` (`OnButtonX`), `ACCEPT_BTN` (accept), `RECOMMENDED_BTN` (`OnButtonY`),
      `BACK_BTN`; `HandleInputEvent` 0x006f28c0. Used by level-up only: its one caller is
@@ -1765,11 +1766,53 @@ party buttons (`0x00686750`). (high)
 
 0x24e8 bytes, ctor `0x006ce7c0`, vtable `0x00757940`, owner `CGuiInGame+0x9c`, centred 333x231:
 `LBL_MESSAGE`, `LB_SKILLS` (ten preallocated rows), `BTN_OK`. Accept/cancel keys play GUI sound 0
-and mark it for removal (`0x006cd3c0`). Filled by the abilities panel (`SetCreature` `0x006adb00`
-→ `0x006ce370`, and through `0x006abce0` → `0x006ce0f0`), the Force-power selection panel
-(`CSWGuiCharGenPowers` ctor `0x006f2180` → `0x006ce0f0`) and the feat selection panel
-(`CSWGuiCharGenFeats` ctor `0x006f3d60` → `0x006f3460` → `0x006ce570`); contents not traced.
-(med)
+and mark it for removal (`0x006cd3c0`). What it lists was not traced. (`0x006ce370`, `0x006ce0f0` and `0x006ce570`, once noted here as
+its fillers, build the chain rows below, not this panel.) (med)
+
+#### Chain rows (feats and Force powers lists)
+
+The feat and Force power lists show progression chains as rows of icons. Each row is a control of
+its own (0x47c bytes, ctor `0x006cccc0`, vtable `0x007578a8`) handed to the list box with
+`CSWGuiListBox::SetItems`, which replaces the file's `PROTOITEM` (ftchrgen's 245x56 border2/border1
+row is never drawn). A row set (a growable array of row pointers plus the focused cell `+0xc` and
+row `+0xd`) is built by:
+
+- `0x006ce570` (feats panel, `0x006cda80` per row): chains by `prereqfeat1`/`prereqfeat2`
+  (chargen.md H);
+- `0x006ce370` (the in-game abilities screen, `CSWGuiAbilities::SetCreature`): the same chains from
+  the creature's known feats only, all cells style 6;
+- `0x006ce0f0` (Force powers panel and the abilities screen's powers, `0x006cd7e0` per row, icon
+  `spells.2da` `iconresref`): chains by the spell's first force-AI code (`+0x12c`, built by
+  `CSWSpellArray::Load` from `FORCEHOSTILE`/`FORCEFRIENDLY`/`FORCEPASSIVE` and `FORCEPRIORITY`):
+  code mod 10 is the tier (0 starts a row, 1 the second cell, 2 the third), code / 1000 and
+  (code mod 1000) / 10 must match the root's; sorted by `0x006cd590`. (med: the sort and the
+  per-power availability test `0x005a6e70` not traced.)
+
+The row's makers set three cells (feat or spell id, -1 empty; icon resref, empty for an empty cell)
+and the extent (0, 0, 242, 40); the list box then lays it out like any row, padding in from the left
+and its own width less twice the padding, the height stretched like a prototype row.
+
+Each cell (0x128 bytes at `+0x5c`) is a border (`+0`, corners `border2d`, edges `border1d`, no
+DIMENSION, so the textures' sizes), the icon image (`+0x74`, DRAWSTYLE 1, centred), a backing image
+(`+0xc8`, `lbl_indent`), the id (`+0x11c`), the style (`+0x120`) and a hilight bit (`+0x124` bit 0).
+Two arrow images (`lbl_skarr`) follow at `+0x3d4`.
+
+- **Layout** (SetExtent `0x006cce30`, row extent x, y, w, h): cells are h by h at x, x + (w - h) / 2
+  and x + w - h; the icon fills the border's text rectangle; the arrows are 32x32, vertically
+  centred, at x + (w + h) / 4 - 16 and x + (3w - h) / 4 - 16 (centred in each gap).
+- **Draw** (`0x006ccc40`): for each filled cell the backing, the icon, the frame; then each arrow
+  whose following cell is filled. Hilight and hit test are the base control's, so a row shows no
+  hover; the list's selection shows only through the focused cell.
+- **Styles** (`0x006ccfd0`; all four alphas start at 1 and the frame pulses, `SetPulsing(1,1)`,
+  while the cell has the focus): 0 icon 0.25, frame hidden unless focused, then in the menu hilight
+  text colour; 1 and 2 green (0.28, 0.92, 0.11) frame at 0.5 (1 when focused); 3 icon and backing
+  0.25, arrow into the cell 0, frame hidden unless focused, then red-orange (0.74, 0.11, 0);
+  4 green frame; 5 as 0 but icon 1 and the arrow into it 0.25; 6 as 0 but icon 1.
+- **Focus** (`0x006cdc00` by id, `0x006cdd10` first cell, `0x006cdd80` arrows, `0x006cd1c0` hit
+  test): chargen.md H. (high)
+
+Ours: `lib/gui/cells.ctx` (a list box with `cell_art.on`; `chargen/feat_cells.ctx` builds the
+feat rows for both feats steps).
 
 #### CSWGuiPause (`pause`)
 
