@@ -179,7 +179,11 @@ namespace test_screens {
             let p = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "-1" })
             outbox::post{ out = &w.out, note = outbox::Note::galaxy_map{ planet = p } }
         } else if ci::eq{ a = cmd, b = "autoopt" } {
-            w.rules.settings.auto_level = text::scan_decimal{ s = args } != 0
+            // As the options screen's Auto Level Up NPCs box: its settings, which every frame passes
+            // on to the rules (ingame::update), else the next frame undoes the change.
+            let on = text::scan_decimal{ s = args } != 0
+            if ui.menus.options.fe is some{ value = fe } { fe.settings.auto_level_up = on }
+            w.rules.settings.auto_level = on
         } else if ci::eq{ a = cmd, b = "levels" } {
             // Every party member's level and XP.
             let members = party::members{ w = &w }
