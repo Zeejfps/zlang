@@ -20,9 +20,20 @@ namespace gui3d {
         ctrl: [MAX_CTRL]math::Vec3, tang: [MAX_CTRL]math::Vec3, ctrl_count: u32, line: math::Vec3, square: math::Vec3,
     }
 
+    // What a branch's Lightning emitter keeps between branchings (0x00491a50 reuses the same child emitters,
+    // the first rand % (branch_count + 1) of them, each with its own arrays): its base curve, laid again only
+    // when its control-point count changes (0x00497c60; a child's arrays start at 2, 0x0049ce30), else
+    // kept where it was, only its ends moved to the new start and end. `base` is relative to the start,
+    // made against `base_line`; `start` and `span` are where the branch last stood (its base rode with them).
+    struct Kid {
+        base: [MAX_CTRL]math::Vec3, base_tang: [MAX_CTRL]math::Vec3, base_count: u32, base_line: math::Vec3,
+        start: math::Vec3, span: math::Vec3,
+    }
+
     struct Bolt {
         chains: [MAX_CHAINS]Chain,
         chain_count: u32,
+        kids: [MAX_CHAINS - 1]Kid,      // the branches' emitters, chains[1 ..] the ones running
         ctrl: [MAX_CTRL]math::Vec3,     // the control points (0x00497c60's new curve), in the emitter's space, made against `line`
         tang: [MAX_CTRL]math::Vec3,     // and their tangents
         old_ctrl: [MAX_CTRL]math::Vec3, // the curve before them, which a smoothing emitter leaves over controlptdelay
@@ -48,10 +59,15 @@ namespace gui3d {
         }
     }
 
+    fn no_kid {} -> Kid {
+        let zero = math::vec3::zero{}
+        return Kid{ base = [zero; MAX_CTRL], base_tang = [zero; MAX_CTRL], base_count = 2, base_line = zero, start = zero, span = zero }
+    }
+
     fn no_bolt { node_turn: math::Quat } -> Bolt {
         let zero = math::vec3::zero{}
         return Bolt{
-            chains = [no_chain{}; MAX_CHAINS], chain_count = 0, ctrl = [zero; MAX_CTRL], tang = [zero; MAX_CTRL],
+            chains = [no_chain{}; MAX_CHAINS], chain_count = 0, kids = [no_kid{}; MAX_CHAINS - 1], ctrl = [zero; MAX_CTRL], tang = [zero; MAX_CTRL],
             old_ctrl = [zero; MAX_CTRL], old_tang = [zero; MAX_CTRL], ctrl_count = 2, old_count = 0,
             base = [zero; MAX_CTRL], base_tang = [zero; MAX_CTRL], base_count = 0, square = zero, line = zero, node_turn, jag_age = 0.0, shape_age = 0.0, shaped = false,
         }
@@ -204,11 +220,15 @@ namespace gui3d {
         let mut c: u32 = 1
         while c < b.chain_count {
             let ch = &b.chains[c]
+            let kid = &b.kids[c - 1]
             c = c + 1
             let from_index = least{ a = ch.from, b = main - 1 }
             let start = math::vec3::add{ a = em.puffs[from_index].pos, b = em.puffs[from_index].jag }
             let end = if ch.forks { math::vec3::add{ a = start, b = ch.reach } } else { goal }
             let span = math::vec3::sub{ a = end, b = start }
+            // The branch's base rides with it (0x00498b80 turns and moves it with the start-to-end line).
+            kid.start = start
+            kid.span = span
             let span_len = math::vec3::length{ v = span }
             let room = @as(u32, em.puffs.len) - used
             let count = least{ a = points_for{ props, length = span_len }, b = room }
@@ -329,7 +349,9 @@ namespace gui3d {
     // kept for a smoothing emitter. And the branches (0x00491a50): rand % (branch_count + 1) of them, each from
     // a point a tenth to nine tenths along the chain, as thick as that fraction of the chain; one from the
     // first half forks off to a point of its own, a later one runs to the target too. A branch's control
-    // points are made the same way on a base laid from its start to its end (ours lays it at each branching).
+    // points are made the same way on its own base (Kid), laid from its start to its end only when its count
+    // changes. Its end is a target object of its own (0x0049ce30), only ever moved, never turned, so every
+    // branch's base arrives along world +Z.
     fn shape_bolt {
         mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, goal: math::Vec3, goal_up: math::Vec3, length: f32, main: u32,
         world: math::Mat4, inv: math::Mat4,
@@ -400,14 +422,36 @@ namespace gui3d {
             let span = math::vec3::sub{ a = end, b = start }
             let span_len = math::vec3::length{ v = span }
             if span_len > 0.01 {
-                // A branch is a Lightning emitter of the same node, so its curve also leaves along the node's +Z;
-                // one that runs to the target arrives along the target's +Z, one that forks along world up
-                // (its end is a point of its own, whose turn was not traced).
+                // A branch is a Lightning emitter of the same node, so a new base leaves along the node's +Z; it
+                // arrives along world +Z, its target object's (never turned).
+                let kid = &b.kids[f]
                 let bn = control_points_for{ props, length = span_len }
-                let up = if ch.forks { math::mat4::transform_dir{ m = inv, v = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } } } else { goal_up }
                 let mut base: [MAX_CTRL]math::Vec3
                 let mut base_tang: [MAX_CTRL]math::Vec3
-                lay_base{ pts = &base, tang = &base_tang, n = bn, a = start, b = end, ha = first, hb = math::vec3::scale{ v = up, s = len }, len }
+                if bn != kid.base_count {
+                    let up = math::mat4::transform_dir{ m = inv, v = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } }
+                    lay_base{ pts = &base, tang = &base_tang, n = bn, a = start, b = end, ha = first, hb = math::vec3::scale{ v = up, s = len }, len }
+                    kid.base_count = bn
+                } else {
+                    // The kept base where the branch left it; its ends on the new start and end.
+                    k = 0
+                    while k < bn {
+                        base[k] = math::vec3::add{ a = kid.start, b = turn_between{ v = kid.base[k], from = kid.base_line, to = kid.span } }
+                        base_tang[k] = turn_between{ v = kid.base_tang[k], from = kid.base_line, to = kid.span }
+                        k = k + 1
+                    }
+                    base[0] = start
+                    base[bn - 1] = end
+                }
+                k = 0
+                while k < bn {
+                    kid.base[k] = math::vec3::sub{ a = base[k], b = start }
+                    kid.base_tang[k] = base_tang[k]
+                    k = k + 1
+                }
+                kid.base_line = span
+                kid.start = start
+                kid.span = span
                 ch.square = square_of{ u = math::vec3::normalize{ v = math::mat4::transform_dir{ m = world, v = span } } }
                 throw_curve{ rng = &em.rng, props, base = &base, base_tang = &base_tang, n = bn, square = ch.square, lead, world, inv, ctrl = &ch.ctrl, tang = &ch.tang }
                 k = 0

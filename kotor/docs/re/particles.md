@@ -326,8 +326,19 @@ A Lightning emitter births nothing: its particles are the points of a chain from
   children run (each a Lightning emitter of its own, so its control points are made by the same `0x00497c60` on
   its next step, its clock having been set to controlptdelay; its base's start tangent is the parent's square
   times tangentlength turned by (-(rand % 45)) degrees about Z and rand % 360 about the third axis, its end
-  tangent that one again for a fork or the parent's last base tangent otherwise; read 2026-10-09, med: the
-  child's own base count and target node, which decide whether those are used, were not followed). Each gets s = 0.1 + (rand % 80) / 100, its sizes (start, mid, end and the y ones) s times
+  tangent that one again for a fork or the parent's last base tangent otherwise). The children are the same
+  emitters every time, the first rand % (branch_count + 1) of them in order: each was made at setup
+  (`0x0049d1d0` with the parent's node, then `0x0049ce30`: its six curve arrays sized 2, the branch flag
+  `+0x28c` set, and a target object of its own, a fresh `CAurObject` at `+0x1e4` that the branching only
+  moves, slot `+0x5c`, and nothing ever turns, so its slot `+0x68` orientation is the identity and a new
+  base arrives along world +Z, a fork's and a branch to the parent's target alike). The branching writes
+  the child's base start and start tangent and its second point and tangent (its end while the count is
+  2), and sets the old line `+0x1f8` and start `+0x204` to the new ones; the child's own `0x00497c60` on its
+  next step lays the base again only when int(numcontrolpts * its length + 0.5) + 2 differs from the size
+  of its base array (`+0x214`), which then overwrites the start tangent with the node's own +Z and the end
+  tangent with the line; otherwise the inner base points stay where the child last carried them and only
+  the ends move, and the tangents the branching wrote are not used (the new curve's end tangents are
+  recomputed and its inner ones come from the inner base tangents). (high, read 2026-10-09) Each gets s = 0.1 + (rand % 80) / 100, its sizes (start, mid, end and the y ones) s times
   the parent's, and a start point on the parent's chain. With s <= 0.5 it forks to a point of its own:
   from its start, (rand % 75 / 100 + 0.25) * L / 2 along the parent's square turned about world X by rand % 360
   degrees plus
