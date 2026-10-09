@@ -267,7 +267,7 @@ namespace traps {
         if exploded and sound.len > 0 {
             outbox::post{ out = &w.out, note = outbox::Note::play_sound{ name = resref::truncate{ name = sound }, object = obj::INVALID, position, positional = true, group = outbox::GROUP_SINGLE_SHOT } }
         }
-        events::post{ &w, delay_ms = 0, caller = id, target = id, payload = events::Payload::destroy }
+        events::post{ &w, delay_ms = 0, caller = id, target = id, payload = events::Payload::destroy{ death = false } }
     }
 
     // ---- what the party can do to a trap (actions.md 3.14)

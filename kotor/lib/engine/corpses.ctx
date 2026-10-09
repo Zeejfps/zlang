@@ -1,0 +1,155 @@
+// The bodies of the dead (docs/re/actions.md 3.15, combat.md 8.4). The original's server deletes a
+// dead creature when its destroy event comes (DestroyObjectDelay after the death), but its client
+// keeps the body: a creature whose appearance.2da FadeDelayOnDeath is blank (all but three rows)
+// stays lying in its death pose, one of a ring of the area's latest corpses (0x006056b0, from the
+// client's handling of the deletion 0x0064cc90). The ring has four slots and the insert that fills
+// it pushes the oldest out at once, so three stay: the evicted body fades out (0x0063ce60: a 1 s
+// wait, then alpha down 0.0005 a ms, 2 s) and its body bag, hidden behind it till then
+// (0x0064d500), shows. A bag whose corpse lies there sounds as placeableobjsnds.2da row 53
+// (objsound.ctx). A FadeDelayOnDeath of its own (the spider droids, the terentatek) fades the body
+// after that many ms instead; a bodybag.2da Corpse row (the rancor, the krayt dragon) leaves the
+// corpse placeable alone in its place, and so does DestroyObject.
+//
+// Ours: the kept creature leaves the world (no script, search or click finds it) and its object
+// moves here, where the scene still draws it; the body bag stays clickable while hidden.
+//
+//   corpses::keep{ &w, id, bag, death }    the destroy event: keep the body? (true: kept)
+//   corpses::update{ &w }                  each server frame: fades end, bodies go
+//   corpses::object_of{ w, id }            a kept body's object, for the scene
+//   corpses::alpha{ w, id }                how much of it shows (1 whole, 0 gone)
+//   corpses::hides_bag{ w, bag }           whether a bag is hidden behind its corpse
+//   corpses::clear{ &w }                   the area goes: so do its bodies
+namespace corpses {
+    const NEVER: u64 = 0xFFFFFFFFFFFFFFFF
+    const RING: usize = 4
+    const EVICT_WAIT_MS: u64 = 1000         // 0x006056b0's 0x0063ce60 call: hide after 1000 ms ...
+    const FADE_MS: u64 = 2000               // ... at 0.0005 alpha a ms (0x0063df60)
+
+    // Whether the destroy event of creature `id` keeps its body (the object stays here, out of the
+    // world, until it fades): only a death's own destroy (not DestroyObject's), of a creature whose
+    // appearance has no FadeDelayOnDeath (it goes into the ring) or one (it fades after it), and not
+    // when its bag is itself the corpse. `bag` is the body bag SpawnBodyBag just left, if any.
+    fn keep { mut w: world::World, id: u32, bag: u32, death: bool } -> bool {
+        if not death { return false }
+        let o = world::object{ w = &w, id } ifnull { return false }
+        let c = obj::creature{ o } ifnull { return false }
+        if not c.dead or party::is_member{ w = &w, id } { return false }
+        let now = clock::now_ms{ c = w.clock }
+        let delay = twoda::get_int{ t = w.tables.appearance, row = @as(usize, c.appearance), column = "fadedelayondeath" }
+        if delay is some{ value = ms } {
+            let from = now + @as(u64, @as(u32, if ms > 0 { ms } else { 0 }))
+            list::push{ list = &w.corpses, item = world::Corpse{ o, bag, fade_from = from, gone_at = from + FADE_MS } } iferr { return false }
+            return true
+        }
+        let look = twoda::get_int{ t = w.tables.appearance, row = @as(usize, c.appearance), column = "body_bag" } ifnull -1
+        if look >= 0 {
+            if (twoda::get_int{ t = w.tables.bodybag, row = @as(usize, look), column = "corpse" } ifnull 0) != 0 { return false }
+        }
+        list::push{ list = &w.corpses, item = world::Corpse{ o, bag, fade_from = NEVER, gone_at = NEVER } } iferr { return false }
+        // 0x006056b0: write at the write index; when it meets the read index the oldest goes.
+        w.corpse_ring[@as(usize, w.ring_write)] = id
+        w.ring_write = @trunc(u8, (@as(usize, w.ring_write) + 1) % RING)
+        if w.ring_read == w.ring_write {
+            let old = w.corpse_ring[@as(usize, w.ring_read)]
+            if find{ w = &w, id = old } is some{ value = k } {
+                let all = list::items{ list = w.corpses }
+                all[k].fade_from = now + EVICT_WAIT_MS
+                all[k].gone_at = now + EVICT_WAIT_MS + FADE_MS
+                if w.log.objects {
+                    world::prefix{ w = &w }
+                    _ = @fmt(&w.io, "corpse {} fades, bag {} shows\n", old, all[k].bag)
+                }
+            }
+            w.corpse_ring[@as(usize, w.ring_read)] = obj::INVALID
+            w.ring_read = @trunc(u8, (@as(usize, w.ring_read) + 1) % RING)
+        }
+        if w.log.objects {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "corpse {} {} kept, bag {}\n", id, o.tag, bag)
+        }
+        return true
+    }
+
+    // The index of creature `id`'s kept body in w.corpses.
+    fn find { w: *world::World, id: u32 } -> ?usize {
+        let all = list::items{ list = w.corpses }
+        let mut k: usize = 0
+        while k < all.len {
+            if all[k].o.id == id { return k }
+            k = k + 1
+        }
+        return null
+    }
+
+    fn object_of { w: *world::World, id: u32 } -> ?*mut obj::Object {
+        let k = find{ w, id } ifnull { return null }
+        return list::items{ list = w.corpses }[k].o
+    }
+
+    // Whether the object is a body kept here (world::sweep leaves its memory alone).
+    fn holds { w: *world::World, o: *obj::Object } -> bool {
+        let all = list::items{ list = w.corpses }
+        let mut k: usize = 0
+        while k < all.len {
+            if all[k].o == o { return true }
+            k = k + 1
+        }
+        return false
+    }
+
+    fn alpha { w: *world::World, id: u32 } -> f32 {
+        let k = find{ w, id } ifnull { return 1.0 }
+        let c = list::items{ list = w.corpses }[k]
+        let now = clock::now_ms{ c = w.clock }
+        if c.fade_from == NEVER or now <= c.fade_from { return 1.0 }
+        let gone = @as(f32, now - c.fade_from) / @as(f32, FADE_MS)
+        return if gone >= 1.0 { 0.0 } else { 1.0 - gone }
+    }
+
+    // Whether `bag` belongs to a corpse in the ring: hidden, and sounding as the corpse.
+    fn hides_bag { w: *world::World, bag: u32 } -> bool {
+        if bag == obj::INVALID { return false }
+        let mut r: usize = 0
+        while r < RING {
+            let id = w.corpse_ring[r]
+            r = r + 1
+            if id == obj::INVALID { continue }
+            let k = find{ w, id } ifnull { continue }
+            if list::items{ list = w.corpses }[k].bag == bag { return true }
+        }
+        return false
+    }
+
+    // The bag of the newest corpse in the ring (a test's `bag`), INVALID for none.
+    fn newest_bag { w: *world::World } -> u32 {
+        let r = (@as(usize, w.ring_write) + RING - 1) % RING
+        let id = w.corpse_ring[r]
+        if id == obj::INVALID { return obj::INVALID }
+        let k = find{ w, id } ifnull { return obj::INVALID }
+        return list::items{ list = w.corpses }[k].bag
+    }
+
+    // Bodies whose fade is over go, their memory with them.
+    fn update { mut w: world::World } {
+        let now = clock::now_ms{ c = w.clock }
+        let mut k: usize = 0
+        while k < w.corpses.len {
+            let all = list::items{ list = w.corpses }
+            let c = all[k]
+            if c.gone_at == NEVER or now < c.gone_at {
+                k = k + 1
+                continue
+            }
+            all[k] = all[all.len - 1]
+            w.corpses.len = w.corpses.len - 1
+            world::free_object{ &w, o = c.o }
+        }
+    }
+
+    fn clear { mut w: world::World } {
+        while list::pop{ list = &w.corpses } is some{ value = c } { world::free_object{ &w, o = c.o } }
+        w.corpse_ring = [obj::INVALID; 4]
+        w.ring_read = 0
+        w.ring_write = 0
+    }
+}

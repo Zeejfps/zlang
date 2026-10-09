@@ -753,6 +753,6 @@ namespace rt_fx {
         }
         events::post{ &w, delay_ms = 0, caller = killer, target = id, payload = events::Payload::script{
             e = events::script_event{ kind = events::DEATH, object = killer } } }
-        events::post{ &w, delay_ms = 2000, caller = id, target = id, payload = events::Payload::destroy }
+        events::post{ &w, delay_ms = 2000, caller = id, target = id, payload = events::Payload::destroy{ death = false } }
     }
 }

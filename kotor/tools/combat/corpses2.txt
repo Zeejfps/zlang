@@ -1,0 +1,13 @@
+30 ui bot off
+31 ui heal
+31 ui sethp pc 900
+35 ui foe g_sithtroop01 5 -4
+35 ui foe g_sithtroop01 5 -2
+35 ui foe g_sithtroop01 5 0
+35 ui foe g_sithtroop01 5 2
+35 ui foe g_sithtroop01 5 4
+40 ui damage g_sithtroop01 300
+240 ui damage g_sithtroop01 300
+440 ui damage g_sithtroop01 300
+640 ui damage g_sithtroop01 300
+840 ui damage g_sithtroop01 300

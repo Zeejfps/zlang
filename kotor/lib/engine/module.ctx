@@ -707,6 +707,7 @@ namespace modload {
             list::push{ list = &w.doomed, item = o.id } iferr {}
         }
         events::clear{ &w }
+        corpses::clear{ &w }
         world::sweep{ &w }
         scripts::clear_cache{ &w }
         walkmap::clear{ m = &w.walk }

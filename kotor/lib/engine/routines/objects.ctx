@@ -187,7 +187,7 @@ namespace rt_obj {
         let slot = party::slot_of{ w = &w, id }
         if slot >= 0 { w.party.npcs[@as(usize, slot)] = obj::INVALID }
         let ms = if delay > 0.0 { @as(u64, delay * 1000.0) } else { 0 }
-        events::post{ &w, delay_ms = ms, caller = nwvm::self_object{ vm }, target = id, payload = events::Payload::destroy }
+        events::post{ &w, delay_ms = ms, caller = nwvm::self_object{ vm }, target = id, payload = events::Payload::destroy{ death = false } }
     }
 
     // object CreateObject(int nObjectType, string sTemplate, location lLocation, int bUseAppearAnimation = FALSE)

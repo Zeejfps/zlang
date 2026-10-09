@@ -50,7 +50,7 @@ namespace events {
     union Payload {
         situation{ s: *mut nwvm::Situation },     // 1 TIMED_EVENT: run it as the target
         script{ e: values::ScriptEvent },           // 10 SIGNAL_EVENT: run the matching slot
-        destroy,                                    // 11 DESTROY_OBJECT
+        destroy{ death: bool },                     // 11 DESTROY_OBJECT; death: a dead creature's own (no event data), whose body stays
         transition{ token: u8 },                    // 26 AREA_TRANSITION, phase 2 (gameloop.md 5.2)
         run_script{ name: resref::ResRef },         // a screen's script (the galaxy map's Travel), run as the target; not saved
         // 8 SPELL_IMPACT: a thrown grenade lands (the projectile's flight after the throw), its impact script run
@@ -173,7 +173,7 @@ namespace events {
                 if e.kind == DEATH and o.kind == obj::Kind::placeable { objsound::play{ &w, id = o.id, column = objsound::DESTROYED } }
                 run_script_event{ &w, &vm, engine, o, e, caller = ev.caller }
             }
-            destroy => {
+            destroy{ death } => {
                 // Only DestroyObject queues this for an item (a used-up one goes at once): one a party creature
                 // holds is an item lost to the status summary (the item's EventHandler 0x0055ee10, event data 1).
                 if obj::item{ o } is some{ value = it } {
@@ -181,10 +181,11 @@ namespace events {
                         notices::summary{ &w, kind = notices::SUMMARY_ITEM_LOST, value = 0 }
                     }
                 }
-                // A bag the corpse leaves is the newest object (ids count up): its sounds follow the corpse's.
+                // A bag the corpse leaves is the newest object (ids count up); the body may stay (corpses.ctx).
                 let before = w.objects.next_low
                 fight::spawn_body_bag{ &w, id = ev.target }
-                if w.objects.next_low != before { objsound::note_body_bag{ &w, bag = w.objects.next_low - 1, owner = ev.target } }
+                let bag = if w.objects.next_low != before { w.objects.next_low - 1 } else { obj::INVALID }
+                _ = corpses::keep{ &w, id = ev.target, bag, death }
                 world::destroy{ &w, id = ev.target }
             }
             transition{ token } => { modload::transition_arrived{ &w, id = ev.target, token } }

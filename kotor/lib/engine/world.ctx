@@ -71,6 +71,10 @@ namespace world {
         member_joined_own: [13]u32, // its member_rounds then
     }
 
+    // A dead creature's body kept after its object left the world (corpses.ctx): it shows until
+    // fade_from, fades to gone_at (w.clock ms; corpses::NEVER while it lies in the ring).
+    struct Corpse { o: *mut obj::Object, bag: u32, fade_from: u64, gone_at: u64 }
+
     struct World {
         fs: Fs,
         io: Io,
@@ -155,7 +159,10 @@ namespace world {
         messages: msglog::Log,              // Messages > Feedback and Dialog (msglog.ctx): the save keeps it with the party table
         log_tokens: fight_log::Tokens,      // the combat log's <CUSTOM2> as the client last had it (fight_log.ctx)
         heads: [8]HeadPoint,                // where the floating labels hang: the scene finds these objects' head_g nodes
-        recent_bags: [3]u32,                // the latest body bags whose corpse still shows, newest first (objsound.ctx)
+        corpses: list::List(Corpse, heap::Heap),   // bodies the world let go of that still show (corpses.ctx)
+        corpse_ring: [4]u32,                // the area's latest corpses (0x006056b0's ring), INVALID for an empty slot
+        ring_read: u8,
+        ring_write: u8,
         object_text: ObjectText,            // a line the target block shows in place of an object's name ("Locked")
         // HOOK(party): the party table
     }
@@ -211,7 +218,8 @@ namespace world {
             credits_running = false, button_mash = false, subscreen = 0, party_watch = fight::new_party_watch{},
             messages = msglog::new{}, log_tokens = fight_log::no_tokens{},
             heads = [HeadPoint{ id = obj::INVALID, at = math::vec3::zero{}, found = false }; 8],
-            recent_bags = [obj::INVALID; 3], object_text = ObjectText{ id = obj::INVALID, strref = 0, until_ms = 0 },
+            corpses = list::new(Corpse, heap::Heap){ realloc = heap::alloc, heap }, corpse_ring = [obj::INVALID; 4], ring_read = 0, ring_write = 0,
+            object_text = ObjectText{ id = obj::INVALID, strref = 0, until_ms = 0 },
         }
         let p = try alloc::new(World, heap::Heap){ realloc = heap::alloc, heap, value = w }
         try rules::load_tables{ fs = &f, rm = rm.*, heap = heap, out = p.rules }
@@ -472,7 +480,7 @@ namespace world {
             i = i + 1
             let o = map::remove{ m = &w.objects.by_id, key = id } ifnull { continue }
             remove_from_all{ &w, o }
-            free_object{ &w, o }
+            if not corpses::holds{ w = &w, o } { free_object{ &w, o } }
         }
         list::clear{ list = &w.doomed }
     }
@@ -638,6 +646,7 @@ namespace world {
             if w.arrival == 0 { modload::place_player{ &w } }
         }
         sweep{ &w }
+        corpses::update{ &w }
     }
 
     // The log line prefix: `[frame seconds] `.

@@ -417,6 +417,21 @@ namespace scene {
             visual::update{ &sc, &w, v, o, dt }
             o.dirty = 0
         }
+        // The bodies the world let go of still lie there (corpses.ctx): the visual made while the
+        // creature lived, never remade (its gear went into the bag), fading out at the end.
+        let kept = list::items{ list = w.corpses }
+        i = 0
+        while i < kept.len {
+            let o = kept[i].o
+            i = i + 1
+            let index = map::get{ m = sc.by_id, key = o.id } ifnull { continue }
+            if index == NO_VISUAL { continue }
+            let v = list::at{ list = sc.visuals, i = index }
+            v.alive = true
+            visual::update{ &sc, &w, v, o, dt }
+            let a = corpses::alpha{ w = &w, id = o.id }
+            if a < 1.0 { fade{ &sc, v, alpha = a } }
+        }
         // Rooms animate too.
         let rooms = list::items{ list = sc.rooms }
         i = 0
@@ -426,6 +441,20 @@ namespace scene {
         }
         find_aim{ &sc, &w }
         find_heads{ &sc, &w }
+    }
+
+    // Scales every node's alpha of a visual's evaluated poses (a body fading out).
+    fn fade { mut sc: Scene, v: *Visual, alpha: f32 } {
+        let mut i: usize = 0
+        while i < v.count {
+            let p = part_at{ sc = &sc, i = v.first + i }
+            i = i + 1
+            let mut k: usize = 0
+            while k < p.pose.alpha.len {
+                p.pose.alpha[k] = p.pose.alpha[k] * alpha
+                k = k + 1
+            }
+        }
     }
 
     // Where the target's reticle hangs (UpdateReticles 0x0068a310 asks the client object for its screen
@@ -527,7 +556,11 @@ namespace scene {
             i = i + 1
             if not v.alive { continue }
             if v.room >= 0 and @as(usize, v.room) < rooms.len and not rooms[@as(usize, v.room)].visible { continue }
-            let o = world::object{ w, id = v.id } ifnull { continue }
+            let mut found = world::object{ w, id = v.id }
+            if found == null { found = corpses::object_of{ w, id = v.id } }
+            let o = found ifnull { continue }
+            // A body bag lies hidden behind its corpse (0x0064d500); it can still be clicked.
+            if o.kind == obj::Kind::placeable and corpses::hides_bag{ w, bag = o.id } { continue }
             visual::draw{ sc = &sc, w, v = &v, o, &frame, view, sight }
             sc.drawn_objects = sc.drawn_objects + 1
         }

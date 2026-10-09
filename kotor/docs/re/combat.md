@@ -1220,7 +1220,8 @@ the PC, is destroyable (`+0xec`, GFF `IsDestroyable`; also `IsRaiseable` `+0xf0`
 1. If dead: `SpawnBodyBag` (`0x004ce220`) and tell the client which bag belongs to the corpse.
 2. If the event carries no data: fade out after `appearance.2da` `FadeDelayOnDeath` (`0x004ce8a0`
    stores the delay, `0x004ce9a0` records that the table had none; both on the player's client
-   object entry for this creature, else on the server object).
+   object entry for this creature, else on the server object). With none (nearly every row) the
+   client keeps the body lying there, one of the area's latest three (actions.md 3.15).
 3. Remove it from the area and tell every creature that perceived it that it vanished
    (`0x004f0fd0`); leave every trigger, door and placeable occupant list in the area; encounter
    bookkeeping unless done at death (`+0xa28`); delete the object.

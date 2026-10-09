@@ -52,9 +52,9 @@ namespace test_screens {
             // `#N` names the container by its object id (`ui containers`): a body bag has no tag.
             if tag[0] == '#' { id = @as(u32, text::scan_decimal{ s = tag[1..] }) }
             // `bag`: the newest body bag whose corpse still lies there (objsound.ctx).
-            if ci::eq{ a = tag, b = "bag" } { id = w.recent_bags[0] }
+            if ci::eq{ a = tag, b = "bag" } { id = corpses::newest_bag{ w = &w } }
             let mut nth: i32 = 0
-            while nth < 8 and tag[0] != '#' and id != w.recent_bags[0] {
+            while nth < 8 and tag[0] != '#' and not ci::eq{ a = tag, b = "bag" } {
                 let found = world::object_by_tag{ w = &w, tag, nth }
                 nth = nth + 1
                 if found == obj::INVALID { break }

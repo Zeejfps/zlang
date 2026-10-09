@@ -11,6 +11,9 @@
 #                      die animation's 3 s timer the dead animation made them fall a second time)
 #   taris   apartment  tar02_preraid: the trooper kills the bith in the middle of the conversation (the corpse stood
 #                      upright for the rest of the visit)
+#   ring    uppercity  corpses2.txt: five Sith troopers killed one by one; their bodies stay after their objects go,
+#                      the latest three of them (--log objects: five "corpse ... kept",, the first two "corpse ... fades"
+#                      when the fourth and fifth come; docs/re/actions.md 3.15)
 #
 # The logs are kotor/out/combat/corpses_NAME.log. docs/re/dialogue.md 8.1 says what the original does.
 export PATH=/g/Dev/msys64/mingw64/bin:$PATH
@@ -20,7 +23,7 @@ ck=kotor/out/checkpoints
 mkdir -p $out
 fail=0
 
-for need in bunk apartment; do
+for need in bunk apartment uppercity; do
   if [ ! -d $ck/$need ]; then echo "no checkpoint $ck/$need: run sh kotor/tools/checkpoints/make.sh first"; exit 2; fi
 done
 
@@ -47,4 +50,14 @@ $exe --load $ck/bunk --no-render --speed 8 --saves $out/saves_corpses --input $c
 check endar
 $exe --load $ck/apartment --no-render --speed 8 --saves $out/saves_corpses --input $ck/apartment.txt --frames 1700 --log trace > $out/corpses_taris.log 2>&1
 check taris
+$exe --load $ck/uppercity --no-render --speed 8 --saves $out/saves_corpses --input kotor/tools/combat/corpses2.txt --frames 900 --log objects,combat > $out/corpses_ring.log 2>&1
+kept=$(grep -a -c -E '^\[[0-9]+ [0-9.]+\] corpse [0-9]+ g_sithtroop01 kept' $out/corpses_ring.log)
+faded=$(grep -a -E '^\[[0-9]+ [0-9.]+\] corpse [0-9]+ fades' $out/corpses_ring.log | awk '{ print $4 }' | xargs)
+first=$(grep -a -E '^\[[0-9]+ [0-9.]+\] corpse [0-9]+ g_sithtroop01 kept' $out/corpses_ring.log | head -2 | awk '{ print $4 }' | xargs)
+if [ "$kept" -ne 5 ] || [ "$faded" != "$first" ]; then
+  echo "FAIL ring: $kept bodies kept (want 5), faded [$faded] (want the first two kept, [$first]; see $out/corpses_ring.log)"
+  fail=1
+else
+  echo "ok   ring: 5 bodies kept, the first two ($first) faded when the fourth and fifth came"
+fi
 exit $fail

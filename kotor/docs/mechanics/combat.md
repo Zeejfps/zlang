@@ -112,6 +112,7 @@ Differences between ours and the corrected re/combat.md (2026-10-07) that no row
 | 41 | Non-combat damage: a concentration check (d20 vs 10 + spell level + damage) interrupts a power being cast, which is still paid for; the 10302 / 10023 reactions | combat.md 6.6 step 4 | open: not built |
 | 42 | A party member that entered combat by attacking keeps the OutOfCombat regeneration row (1 %/s Force) | combat.md 8.2 | open: ours stops all regeneration in combat |
 | 43 | Damage immunity over several type bits takes the lowest percentage, clamped to ±100 | combat.md 6.4 | fixed: `immunity_table` builds the per-type table as the apply handlers do (each effect into the entry of its lowest bit, clamped to ±100) and `immunity_by_flags` reads it as `0x004caf70` does (the lowest, a running 0 giving way to the next bit); checked by `rulescheck` (the immunity cases), not in a game run |
+| 45 | A dead creature's body stays where it fell after its object is destroyed: the area keeps the latest three (a ring of four whose filling insert fades the oldest out over 2 s after 1 s and shows its body bag, hidden till then); a FadeDelayOnDeath appearance fades instead, DestroyObject leaves none | actions.md 3.15, combat.md 8.4 | fixed: `corpses.ctx` keeps the object out of the world for the scene; checked with a five-kill scene in Upper City (screenshots) and `corpses.sh` |
 
 ## QA reports
 

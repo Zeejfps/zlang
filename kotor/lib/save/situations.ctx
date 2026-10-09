@@ -279,7 +279,9 @@ namespace save {
                 let sit = read_situation{ &w, doc, s = data } ifnull { continue }
                 events::post{ &w, delay_ms = due, caller, target, payload = events::Payload::situation{ s = sit } }
             } else if id == 11 {
-                events::post{ &w, delay_ms = due, caller, target, payload = events::Payload::destroy }
+                // The original saves no event data for it, so a death's destroy and DestroyObject's
+                // come back alike: as a death's, which keeps the body only of a dead creature.
+                events::post{ &w, delay_ms = due, caller, target, payload = events::Payload::destroy{ death = true } }
             } else if id == 8 {
                 // The impact runs the spell's impact script as spells.2da names it now (ours keeps no copy of
                 // Script); a spell row out of the table drops the event.

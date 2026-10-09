@@ -28,17 +28,11 @@ namespace objsound {
 
     // The object's placeableobjsnds.2da row: genericdoors.2da's SoundAppType for a door, placeables.2da's
     // for a placeable; null for anything else or a blank cell. (A door with a doortypes.2da Appearance
-    // would read doortypes.2da instead; no UTD has one.) A body bag among the latest three whose
-    // creature's corpse still lies there sounds as the corpse, row 53 (the client placeable update
-    // 0x006832a0; note_body_bag).
+    // would read doortypes.2da instead; no UTD has one.) A body bag whose creature's corpse still
+    // lies there (in the area's ring, corpses.ctx) sounds as the corpse, row 53 (the client
+    // placeable update 0x006832a0).
     fn row_of { w: *world::World, o: *obj::Object } -> ?usize {
-        if o.kind == obj::Kind::placeable {
-            let mut k: usize = 0
-            while k < 3 {
-                if w.recent_bags[k] == o.id { return ROW_CORPSE }
-                k = k + 1
-            }
-        }
+        if o.kind == obj::Kind::placeable and corpses::hides_bag{ w, bag = o.id } { return ROW_CORPSE }
         return own_row_of{ w, o }
     }
 
@@ -61,25 +55,6 @@ namespace objsound {
     fn armor_type { w: *world::World, o: *obj::Object } -> []u8 {
         let row = own_row_of{ w, o } ifnull { return "" }
         return twoda::get_string{ t = w.tables.placeableobjsnds, row, column = "armortype" } ifnull ""
-    }
-
-    // A dead creature left body bag `bag`. The client keeps the corpses of the latest few: each new one
-    // goes into a ring of four creature ids in the area (0x006056b0, from 0x0064cc90, unless the
-    // creature's appearance.2da Body_Bag row of bodybag.2da is itself a Corpse), and the insert that
-    // fills it fades the oldest corpse out, shows its bag and marks it (+0x444), so three stay. While
-    // its corpse lies there the bag sounds as one (row_of).
-    fn note_body_bag { mut w: world::World, bag: u32, owner: u32 } {
-        let b = world::object{ w = &w, id = bag } ifnull { return }
-        if b.kind != obj::Kind::placeable { return }
-        let o = world::object{ w = &w, id = owner } ifnull { return }
-        let c = obj::creature{ o } ifnull { return }
-        let look = twoda::get_int{ t = w.tables.appearance, row = @as(usize, c.appearance), column = "body_bag" } ifnull -1
-        if look >= 0 {
-            if (twoda::get_int{ t = w.tables.bodybag, row = @as(usize, look), column = "corpse" } ifnull 0) != 0 { return }
-        }
-        w.recent_bags[2] = w.recent_bags[1]
-        w.recent_bags[1] = w.recent_bags[0]
-        w.recent_bags[0] = bag
     }
 
     // Plays one column of the door's or placeable's row at it; nothing when the cell is blank.

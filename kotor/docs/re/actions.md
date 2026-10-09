@@ -1576,9 +1576,32 @@ The insert that fills the ring evicts the oldest at once, so three corpses stay:
 creature fades out (`0x0063ce60` with 45000 and 1000, taken to be ms; med), its bag (client creature `+0x3dc`, set when `SpawnBodyBag`
 ran, combat.md 8.4) is shown and marked `+0x444`, and sounds as its own appearance from then on;
 a bag still in the ring is hidden behind its corpse (`0x0064d500`). The test reads the client
-creature's `+0x3dc` for each id in the ring. (high; the flag 0x0064cc90 tests before pushing, med:
-taken to be "leaves a body bag". Ours, objsound.ctx, keeps the latest three such bags for the sound
-only: our corpse goes with the creature and its bag shows at once.) A bashed door is opened (`CSWSDoor::Open`, combat.md
+creature's `+0x3dc` for each id in the ring. (high)
+
+What lies there is the client creature itself, in the pose its death animation left: the server
+deletes its creature at DESTROY_OBJECT (combat.md 8.4) and sends the client the deletion
+(`0x0056df60` writes it, `0x0064cc90` reads it): for a creature a 1, the entry's `+0x148`, the
+fade delay `+0x150` and the keep flag `+0x14c`. The death's destroy (no event data) sets `+0x150` to
+`appearance.2da` `FadeDelayOnDeath` when the cell has a value (`0x004ce8a0`) and `+0x14c` when it is
+blank (`0x004ce9a0`); `DestroyObject` (`0x0052ff20`) instead posts its destroy with data 1 and sets
+`+0x148` and `+0x150` from its own arguments, leaving `+0x14c` clear. On the client a set keep flag
+(only 506 of 509 appearance rows have a blank cell; the spider droids and the terentatek have 0)
+leaves the creature drawn, detaches it from its server object (`+0xe4`), and pushes it into the
+ring unless its bag row is a `Corpse`; a clear one hides it through `0x0063ce60` (visible 0, fade
+on, wait `+0x150` ms; immediately when `+0x148` is set). `0x0063ce60(object, visible, fade,
+linger, wait)` sets the target visibility `+0x91`, fade `+0x94`, `+0x88` linger and `+0x8c` wait
+ms from now (world time); the client object's update `0x0063df60` waits `+0x8c`, then moves the
+alpha `+0x98` by 0.0005 a ms of frame time (2 s from whole to gone), and once there reports the
+object done `+0x88` ms after the wait. The ring's eviction calls it with wait 1000 and linger
+45000: the oldest body waits 1 s, fades over 2 s and is deleted 46 s after the eviction. The
+evicted corpse's bag gets visible 1 without a fade. (high for the fields and calls, med for the
+reading of `+0x88` as how long the faded object lingers) Ours (corpses.ctx) keeps the dead
+creature's object out of the world in `w.corpses` (ring and fades as above, the body freed when its
+fade ends), the scene draws it with the visual made while it lived, and a bag in the ring is not
+drawn (it stays clickable: the original's hidden bag is still an object the cursor finds; med) and
+sounds as row 53. A `Corpse` bag row (the rancor, the krayt) and `DestroyObject` leave nothing of
+the creature, as before (the original keeps a `Corpse` creature's client body too, under the
+corpse placeable; ours draws the placeable alone). A bashed door is opened (`CSWSDoor::Open`, combat.md
 6.6), so it sounds `Opened`; a bashed container opens rather than dies (no sound but the hits'). No
 other caller reads these columns (no unlock or trap sound comes from this table; the unlock's
 sounds are the user's sound set, 3.7).
