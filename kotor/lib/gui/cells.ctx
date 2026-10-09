@@ -1,7 +1,8 @@
-// Lists of cell rows: the feats panel's and the Force powers panel's LB_FEATS / LB_POWERS (docs/re/gui.md,
-// "Chain rows"). The original fills those list boxes with rows of its own (0x006cccc0) in place of
-// the file's prototype: three square cells, each a feat or power icon on a backing in a frame, with
-// an arrow before the second and third. One cell, not one row, has the focus; its frame pulses.
+// Lists of cell rows: the feats and Force powers panels' LB_FEATS / LB_POWERS and the abilities
+// screen's LB_ABILITY on its Powers and Feats tabs (docs/re/gui.md, "Chain rows"). The original fills
+// those list boxes with rows of its own (0x006cccc0) in place of the file's prototype: three square
+// cells, each a feat or power icon on a backing in a frame, with an arrow before the second and
+// third. One cell, not one row, has the focus; its frame pulses.
 namespace gui {
     const CELLS_PER_ROW: usize = 3
     const CELL_ROW_H: i32 = 40          // the row control's own height (242x40); the list stretches it like any row
@@ -38,6 +39,13 @@ namespace gui {
         c.cell_focus = 0
     }
 
+    // Makes list `tag` an ordinary list again (the abilities screen's Skills tab after Powers or Feats).
+    fn list_use_rows { mut g: Gui, panel: u32, tag: []u8 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.cell_art.on = false
+        c.cell_focus = 0
+    }
+
     // Appends a row of three cells (`users` -1 for an empty cell, which ends the row's chain).
     // Every cell starts as CELL_LOCKED, as the original's panels restyle all before marking the rest.
     fn list_add_cells { mut g: Gui, panel: u32, tag: []u8, users: [3]i64, icons: [3]Img } -> !i32 {
@@ -62,6 +70,17 @@ namespace gui {
         let c = find_control{ &g, panel, tag } ifnull { return }
         let i = find_cell{ c, user }
         if i >= 0 { c.cells[@as(usize, i)].style = style }
+    }
+
+    // Gives every cell style `style` (0x006cd2e0), as the panels do before styling the cells they know.
+    fn list_set_cell_styles { mut g: Gui, panel: u32, tag: []u8, style: u8 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        let n = @as(usize, c.row_count) * CELLS_PER_ROW
+        let mut i: usize = 0
+        while i < n and i < c.cells.len {
+            c.cells[i].style = style
+            i = i + 1
+        }
     }
 
     // Moves the focus to the cell holding `user`, selecting its row (0x006cdc00); false when no
@@ -204,6 +223,17 @@ namespace gui {
             }
             k = k + 1
         }
+    }
+
+    // The panel's shown list of cell rows, -1 for none.
+    fn cell_list_of { p: *Panel } -> i32 {
+        let cs = list::items{ list = p.controls }
+        let mut i: usize = 0
+        while i < cs.len {
+            if cs[i].kind == K_LIST and cs[i].cell_art.on and (cs[i].flags & F_VISIBLE) != 0 { return @as(i32, i) }
+            i = i + 1
+        }
+        return -1
     }
 
     // The arrow keys in a cell list (0x006cdd80): left and right move along the row as far as its

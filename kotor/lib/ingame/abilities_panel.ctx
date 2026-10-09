@@ -3,8 +3,11 @@
 // comes from `sheet::known_of` and its numbers from `sheet::read` (sheet_data.ctx); the names,
 // icons and descriptions are skills.2da, spells.2da and feat.2da rows through dialog.tlk.
 //
-// A list row's `user` value is the 2DA row of its entry. The Powers tab is hidden for a character
-// with no Force class, and the tab shown is kept between openings (as the original keeps it).
+// A list row's `user` value is the 2DA row of its entry. The Powers and Feats tabs show the original's
+// rows of icon cells, one chain of known powers or feats per row (gui cells.ctx, chargen
+// power_cells.ctx and feat_cells.ctx), every cell plain until it has the focus; the focused cell is
+// the entry described. The Powers tab is hidden for a character with no Force class, and the tab
+// shown is kept between openings (as the original keeps it).
 namespace abilities_panel {
     const TAB_SKILLS: i32 = 0
     const TAB_POWERS: i32 = 1
@@ -29,12 +32,20 @@ namespace abilities_panel {
         tab: i32,                       // TAB_*
         who: u32,                       // the creature shown
         portrait: [4]i32,               // LBL_PORTRAIT as the file has it: x, y, w, h
+        focus: [3]i64,                  // per tab, the entry that had the focus (-1 the first), kept across tab changes
     }
 
-    fn new {} -> State { return State{ opened = false, tab = TAB_SKILLS, who = obj::INVALID, portrait = [0; 4] } }
+    fn new {} -> State { return State{ opened = false, tab = TAB_SKILLS, who = obj::INVALID, portrait = [0; 4], focus = [-1; 3] } }
 
-    // The panel was just added, the leader changed or a tab was chosen: fill it again.
+    // The panel was just added or the leader changed: the rows are built afresh with the focus on
+    // the first cell (SetCreature 0x006adb00).
     fn open { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> ! {
+        s.focus = [-1; 3]
+        try rebuild{ &s, &g, &w, &dev, panel }
+    }
+
+    // Fills the panel for the tab shown (RebuildList 0x006ad560), the tab's focus restored.
+    fn rebuild { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> ! {
         if not s.opened { s.portrait = sheet::home_of{ &g, panel, tag = "LBL_PORTRAIT" } }
         s.opened = true
         s.who = party::leader{ w = &w }
@@ -68,14 +79,57 @@ namespace abilities_panel {
             try gui::set_strref{ &g, panel, tag = "LBL_TOTAL", strref = STR_COST_PER_USE }
         }
 
-        gui::list_clear{ &g, panel, tag = "LB_ABILITY" }
-        let first = try fill_rows{ &g, &w, &dev, panel, tab = s.tab, known }
+        let mut first: i64 = -1
+        if s.tab == TAB_SKILLS {
+            gui::list_use_rows{ &g, panel, tag = "LB_ABILITY" }
+            gui::list_clear{ &g, panel, tag = "LB_ABILITY" }
+            first = try fill_rows{ &g, &w, &dev, panel, tab = s.tab, known }
+            if first >= 0 { gui::list_select{ &g, panel, tag = "LB_ABILITY", row = 0 } }
+        } else {
+            first = try fill_cells{ &s, &g, &w, &dev, panel, known }
+        }
         if first >= 0 {
-            gui::list_select{ &g, panel, tag = "LB_ABILITY", row = 0 }
             try show_detail{ &g, &w, panel, tab = s.tab, row = @as(usize, first), known, v }
         } else {
             try clear_detail{ &g, &w, panel }
         }
+    }
+
+    // The Powers or Feats tab's rows (0x006ce0f0 without its every-power flag, 0x006ce370), all
+    // cells style 6 (0x006abce0), the focus on the tab's remembered entry or the first cell.
+    // Returns the focused entry, -1 for an empty list.
+    fn fill_cells { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, known: sheet::Known } -> !i64 {
+        let feats = s.tab == TAB_FEATS
+        let t = sheet::table_of{ &w, name = if feats { "feat" } else { "spells" } } ifnull { return -1 }
+        let mut chains: [chargen::MAX_FEAT_CHAINS]chargen::FeatChain
+        let mut n: usize = 0
+        if feats {
+            n = chargen::build_known_feat_chains{ tables = w.rules, known = known.feats[..known.nfeats], out = &chains }
+        } else {
+            // A power past a row's first cell shows only while the Force points cover its cost.
+            let mut usable: [96]u16
+            let mut nu: usize = 0
+            let f = hud::ruled_of{ w = &w, id = s.who }
+            let mut i: usize = 0
+            while i < known.npowers {
+                let spell = @as(i32, known.powers[i])
+                let ok = if f is some{ value = fr } { rules::has_enough_force_points{ tables = w.rules, c = &fr.c, spell } } else { true }
+                if ok {
+                    usable[nu] = known.powers[i]
+                    nu = nu + 1
+                }
+                i = i + 1
+            }
+            n = chargen::build_power_chains{ tables = w.rules, all = false, known = known.powers[..known.npowers], usable = usable[..nu], out = &chains }
+        }
+        try chargen::fill_chain_cells{ &g, fs = &w.fs, &dev, panel, tag = "LB_ABILITY", t, column = if feats { "icon" } else { "iconresref" }, chains = chains[..n] }
+        gui::list_set_cell_styles{ &g, panel, tag = "LB_ABILITY", style = gui::CELL_PLAIN }
+        if n == 0 { return -1 }
+        let want = s.focus[@as(usize, s.tab)]
+        if want < 0 or not gui::list_focus_cell{ &g, panel, tag = "LB_ABILITY", user = want } {
+            _ = gui::list_focus_cell{ &g, panel, tag = "LB_ABILITY", user = @as(i64, chains[0].cell[0]) }
+        }
+        return gui::list_focused_cell{ &g, panel, tag = "LB_ABILITY" }
     }
 
     // One list row: the entry's name and icon; `user` is its 2DA row.
@@ -185,7 +239,7 @@ namespace abilities_panel {
             while k < 3 {
                 if slice::eq_bytes{ a = ev.tag, b = TAB_TAGS[k] } {
                     s.tab = @as(i32, k)
-                    open{ &s, &g, &w, &dev, panel } iferr err{ error } { _ = @fmt(&w.io, "kotor: abilities: {}\n", error) }
+                    rebuild{ &s, &g, &w, &dev, panel } iferr err{ error } { _ = @fmt(&w.io, "kotor: abilities: {}\n", error) }
                     return true
                 }
                 k = k + 1
@@ -202,6 +256,8 @@ namespace abilities_panel {
             return false
         }
         if ev.kind == gui::EventKind::row_selected and slice::eq_bytes{ a = ev.tag, b = "LB_ABILITY" } {
+            if ev.user < 0 { return true }
+            if s.tab != TAB_SKILLS { s.focus[@as(usize, s.tab)] = ev.user }
             let known = sheet::known_of{ &w, id = s.who }
             let v = sheet::read{ &w, id = s.who, known }
             show_detail{ &g, &w, panel, tab = s.tab, row = @as(usize, ev.user), known, v } iferr err{ error } {

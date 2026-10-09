@@ -1,11 +1,12 @@
 // The feats list as the original draws it (ftchrgen's LB_FEATS, docs/re/chargen.md H): one row per
 // progression chain, each a row of up to three icon cells (gui cells.ctx). Shared by character
-// generation's feats step and level-up's.
+// generation's feats step, level-up's and the in-game abilities screen's Feats tab.
 namespace chargen {
     const MAX_FEAT_CHAINS: usize = 96
+    const MAX_SORTED: usize = 512
 
-    // One row: the root feat, the next one (prereqfeat1 the root, no prereqfeat2) and the last
-    // (prereqfeat1 the root and a prereqfeat2); -1 for an empty cell.
+    // One row: the root, the next one and the last (for feats: prereqfeat1 the root, without and
+    // with a prereqfeat2; for powers power_cells.ctx); -1 for an empty cell.
     struct FeatChain { cell: [3]i32 }
 
     // Where a feat sorts (0x006cd960): 0 no prereqfeat1, 1 prereqfeat1 only, 2 both.
@@ -21,6 +22,37 @@ namespace chargen {
         return l >= 0 and l <= 3
     }
 
+    // The feats in the order the lists take them (0x006cd960): tier by tier, by id within a tier, so
+    // a tier-0 prefix holds the roots.
+    fn sort_feats { tables: *rules::Tables, out: *mut [MAX_SORTED]i32 } -> usize {
+        let total = tables.feats.len
+        let mut n: usize = 0
+        let mut tier: i32 = 0
+        while tier < 3 {
+            let mut f: usize = 0
+            while f < total and n < MAX_SORTED {
+                let row = &tables.feats[f]
+                if row.valid and feat_tier{ row } == tier {
+                    out[n] = @as(i32, f)
+                    n = n + 1
+                }
+                f = f + 1
+            }
+            tier = tier + 1
+        }
+        return n
+    }
+
+    // Whether the ascending list holds `id`.
+    fn holds { list: []u16, id: i32 } -> bool {
+        let mut i: usize = 0
+        while i < list.len {
+            if @as(i32, list[i]) == id { return true }
+            i = i + 1
+        }
+        return false
+    }
+
     // The rows (0x006ce570). Each root (tier 0) the creature knows or the class lists starts a row
     // when it fits an open pool (regular: _list 0 or 1; bonus: 1 or 2); a feat the class grants and
     // the creature knows needs no pool. Its other cells are known or class-listed feats whose
@@ -31,23 +63,8 @@ namespace chargen {
         out: *mut [MAX_FEAT_CHAINS]FeatChain,
     } -> usize {
         if class < 0 or class >= @as(i32, rules::NUM_CLASS_ROWS) { return 0 }
-        let total = tables.feats.len
-        // The sorted order, tier by tier, by id within a tier; a tier-0 prefix holds the roots.
-        let mut order: [512]i32
-        let mut n: usize = 0
-        let mut tier: i32 = 0
-        while tier < 3 {
-            let mut f: usize = 0
-            while f < total and n < 512 {
-                let row = &tables.feats[f]
-                if row.valid and feat_tier{ row } == tier {
-                    order[n] = @as(i32, f)
-                    n = n + 1
-                }
-                f = f + 1
-            }
-            tier = tier + 1
-        }
+        let mut order: [MAX_SORTED]i32
+        let n = sort_feats{ tables, out = &order }
         let mut count: usize = 0
         let mut i: usize = 0
         while i < n and count < MAX_FEAT_CHAINS {
@@ -78,10 +95,41 @@ namespace chargen {
         return count
     }
 
-    // Fills list `tag` with one cell row per chain, each cell showing its feat's feat.2da `icon`.
-    fn fill_feat_cells {
+    // The abilities screen's rows (0x006ce370): every known root starts one, with the known feats
+    // whose prereqfeat1 it is in its other cells (without prereqfeat2 in the second, with it in
+    // the third); no pool or class test.
+    fn build_known_feat_chains { tables: *rules::Tables, known: []u16, out: *mut [MAX_FEAT_CHAINS]FeatChain } -> usize {
+        let mut order: [MAX_SORTED]i32
+        let n = sort_feats{ tables, out = &order }
+        let mut count: usize = 0
+        let mut i: usize = 0
+        while i < n and count < MAX_FEAT_CHAINS {
+            let root = order[i]
+            if feat_tier{ row = &tables.feats[@as(usize, root)] } != 0 { break }
+            i = i + 1
+            if not holds{ list = known, id = root } { continue }
+            let mut next: i32 = -1
+            let mut last: i32 = -1
+            let mut j = i
+            while j < n and (next < 0 or last < 0) {
+                let id = order[j]
+                let fr = &tables.feats[@as(usize, id)]
+                if fr.prereq[0] == root and holds{ list = known, id } {
+                    if fr.prereq[1] < 0 { next = id } else { last = id }
+                }
+                j = j + 1
+            }
+            out[count] = FeatChain{ cell = [root, next, last] }
+            count = count + 1
+        }
+        return count
+    }
+
+    // Fills list `tag` with one cell row per chain, each cell showing the icon its row of `t` names
+    // in `column` (feat.2da `icon`, spells.2da `iconresref`).
+    fn fill_chain_cells {
         mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, panel: u32, tag: []u8, t: twoda::Table,
-        chains: []FeatChain,
+        column: []u8, chains: []FeatChain,
     } -> ! {
         gui::list_use_cells{ &g, &fs, &dev, panel, tag }
         gui::list_clear{ &g, panel, tag }
@@ -95,7 +143,7 @@ namespace chargen {
                 users[k] = @as(i64, feat)
                 icons[k] = gui::no_img{}
                 if feat >= 0 {
-                    let name = twoda::get_string{ t, row = @as(usize, feat), column = "icon" } ifnull ""
+                    let name = twoda::get_string{ t, row = @as(usize, feat), column } ifnull ""
                     icons[k] = gui::resolve_img{ &g, &fs, &dev, name }
                 }
                 k = k + 1

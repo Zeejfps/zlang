@@ -129,11 +129,19 @@ chargen's pure helpers (`set_number`, `ability_tag`, the tag tables) are shared.
   `skill_max_rank`; a skill the creature may not use is greyed; the messages 42178 / 42179 (with
   `<CUSTOM0>`) and 42464; Recommended is the auto-leveller's spend (`prepare_auto_level` on a copy);
   Accept with points left asks 41815.
-- Feats: the feats the class grants this level and those the creature has (dim), and the class's regular
-  and bonus feats in chains by `successor`; selectable if the prerequisites hold (`meets_feat_requirements`
-  with the picks as pending) and a pool is free (`can_select_feat`); 42182, 42183, 42184, 42530, 48215.
-- Powers: every Force power the class's level column reaches that the creature lacks, dim while a
-  prerequisite is neither known nor picked; icons from `spells.2da`; `classpowergain.2da` says how many.
+- Feats: chargen's rows of icon cells (`chargen::build_feat_chains`, `fill_chain_cells`): the chains by
+  `prereqfeat1`/`prereqfeat2` the class lists or the creature knows; selectable if the pass's pool takes
+  the feat and the prerequisites hold (`meets_feat_requirements` with the pass's picks as pending), picked
+  through `can_select_feat` with that pool only; 42182, 42183, 42184, 42530, 48215. A level with bonus
+  feats opens a second ftchrgen after Accept, the bonus pass (sub title 1316), on a copy of the creature
+  that has the regular picks; the record takes both passes' picks. Back in the bonus pass drops both.
+  (The game's `featgain.2da` gives no bonus feats, so this only runs with modded data.)
+- Powers: rows of icon cells (`chargen::build_power_chains`, every Force power, rows by force-AI kind and
+  line, cells by priority); known green at half, picks green, the selectable set (CanLearnForcePower with
+  the count + 1) faint, the rest faint on a faint backing; Affect Mind and Dominate Mind locked for
+  anyone but the PC (42470); 42185, 42186, 42529, 48210; "Add Power" / "Remove Power";
+  `classpowergain.2da` says how many.
+- The cell lists take the arrow keys whichever control has the focus, as the original's panels do.
 - Accept: `levelup::apply` (the rules' record, maxima follow, full heal, OnPlayerLevelUp posted to the
   module for the player). The character sheet's Level Up posts the `level_up` note; Auto calls
   `levelup::auto_level`. The option "Auto Level Up NPCs" (`rules::Settings.auto_level`, read from the

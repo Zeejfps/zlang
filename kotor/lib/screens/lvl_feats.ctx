@@ -1,11 +1,13 @@
 // The feats step of a level-up (ftchrgen, docs/re/chargen.md H): the original's rows of icon
 // cells, one row per prereqfeat chain the class lists or the creature knows (chargen
 // feat_cells.ctx). Known and granted feats are framed green at half strength, picks framed green,
-// the rest faint until picked; the focused cell names and describes its feat. As many picks as
-// featgain.2da gives (regular and bonus together, where the original asks for bonus feats in a
-// second pass).
+// the rest faint until picked; the focused cell names and describes its feat. A level with bonus
+// feats asks for them in a second panel after the regular picks are accepted (the bonus pass,
+// sub title 1316 "Bonus Feats"; 0x006f44c0), as featgain.2da gives each.
 namespace lvl {
-    // The record of the picks so far, for the rules' prerequisite checks.
+    const STR_BONUS_FEATS: u32 = 1316
+
+    // The record of this pass's picks, for the rules' prerequisite and pool checks.
     fn pending_feats { s: *State } -> rules::LevelRecord {
         let mut rec: rules::LevelRecord
         rec.class = s.class
@@ -17,6 +19,23 @@ namespace lvl {
         }
         return rec
     }
+
+    // The creature as this pass sees it: in the bonus pass the regular picks are its own, as the
+    // original adds them to the creature before it opens that pass.
+    fn feat_base { s: *State, f: *fight::Fighter } -> rules::Creature {
+        let mut c = f.c
+        let mut i: usize = 0
+        while i < s.fnprior {
+            rules::grant_feat{ &c, feat = s.fprior[i] }
+            i = i + 1
+        }
+        return c
+    }
+
+    // The pools this pass may fill: the regular pass counts only the regular picks, the bonus
+    // pass only the bonus ones.
+    fn pass_general { s: *State } -> i32 { return if s.fbonus { 0 } else { s.opts.general_feats } }
+    fn pass_bonus { s: *State } -> i32 { return if s.fbonus { s.opts.bonus_feats } else { 0 } }
 
     fn feat_is_chosen { s: *State, feat: i32 } -> bool {
         let mut i: usize = 0
@@ -53,20 +72,23 @@ namespace lvl {
         return -1
     }
 
-    // Each row's state: known, granted this level, picked, open to pick, or out of reach.
+    // Each row's state: known, granted this level (the regular pass only), picked, open to pick
+    // in this pass's pool, or out of reach.
     fn refresh_feat_states { mut s: State, w: *world::World, f: *fight::Fighter } {
         let rec = pending_feats{ s = &s }
+        let base = feat_base{ s = &s, f }
         let cx = @as(usize, s.class)
         let mut i: usize = 0
         while i < s.fcount {
             let feat = s.frows[i].id
             let row = rules::get_feat{ tables = w.rules, row = feat } ifnull { return }
             let sel = rules::feat_selectable_as{ tables = w.rules, class = s.class, feat }
-            if rules::has_feat{ c = &f.c, feat } {
-                s.frows[i].state = if row.list[cx] == 3 and row.granted[cx] == s.opts.class_level { FS_GRANTED } else { FS_KNOWN }
+            let fits = if s.fbonus { sel.bonus } else { sel.general }
+            if rules::has_feat{ c = &base, feat } {
+                s.frows[i].state = if not s.fbonus and row.list[cx] == 3 and row.granted[cx] == s.opts.class_level { FS_GRANTED } else { FS_KNOWN }
             } else if feat_is_chosen{ s = &s, feat } {
                 s.frows[i].state = FS_CHOSEN
-            } else if (sel.general or sel.bonus) and rules::meets_feat_requirements{ tables = w.rules, c = &f.c, feat, class = s.class, class_level = s.opts.class_level, pending = &rec } {
+            } else if fits and rules::meets_feat_requirements{ tables = w.rules, c = &base, feat, class = s.class, class_level = s.opts.class_level, pending = &rec } {
                 s.frows[i].state = FS_SELECTABLE
             } else {
                 s.frows[i].state = FS_UNAVAILABLE
@@ -75,15 +97,21 @@ namespace lvl {
         }
     }
 
-    fn open_feats { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+    // Opens the regular pass, or the bonus pass with `bonus`. A level without regular picks goes
+    // straight to the bonus pass, as the original's regular panel accepts itself at once.
+    fn open_feats { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, bonus: bool } -> ! {
         let f = creature_of{ w = &w, id = s.who } ifnull { return }
+        s.fbonus = bonus or s.opts.general_feats == 0
+        if not s.fbonus { s.fnprior = 0 }
+        if s.fbonus { try gui::set_strref{ &g, panel = s.step, tag = "SUB_TITLE_LBL", strref = STR_BONUS_FEATS } }
         s.fnchosen = 0
-        s.fpicks = s.opts.general_feats + s.opts.bonus_feats
+        s.fpicks = pass_general{ s = &s } + pass_bonus{ s = &s }
+        let base = feat_base{ s = &s, f }
         let mut chains: [chargen::MAX_FEAT_CHAINS]chargen::FeatChain
-        let n = chargen::build_feat_chains{ tables = w.rules, class = s.class, c = &f.c, regular = s.opts.general_feats > 0 or s.opts.bonus_feats == 0, bonus = s.opts.bonus_feats > 0, out = &chains }
+        let n = chargen::build_feat_chains{ tables = w.rules, class = s.class, c = &base, regular = not s.fbonus, bonus = s.fbonus, out = &chains }
         rows_from_chains{ &s, chains = chains[..n] }
         refresh_feat_states{ &s, w = &w, f }
-        try chargen::fill_feat_cells{ &g, fs = &w.fs, &dev, panel = s.step, tag = "LB_FEATS", t = s.feat_table, chains = chains[..n] }
+        try chargen::fill_chain_cells{ &g, fs = &w.fs, &dev, panel = s.step, tag = "LB_FEATS", t = s.feat_table, column = "icon", chains = chains[..n] }
         // The focus starts on the first row's first cell.
         s.fsel = if s.fcount > 0 { 0 } else { -1 }
         if s.fsel >= 0 { _ = gui::list_focus_cell{ &g, panel = s.step, tag = "LB_FEATS", user = @as(i64, s.frows[0].id) } }
@@ -146,14 +174,15 @@ namespace lvl {
             try say{ &s, &g, &w, &dev, strref = 42184, ask = ASK_INFO }
             return
         }
+        let base = feat_base{ s = &s, f }
         if fr.state == FS_SELECTABLE {
             let rec = pending_feats{ s = &s }
             if s.fpicks <= 0 {
                 try say{ &s, &g, &w, &dev, strref = 42530, ask = ASK_INFO }
                 return
             }
-            // The pools may be full for this kind of feat even with picks left.
-            if not rules::can_select_feat{ tables = w.rules, c = &f.c, feat = fr.id, class = s.class, class_level = s.opts.class_level, general = s.opts.general_feats, bonus = s.opts.bonus_feats, pending = &rec } {
+            // The pool may be full for this kind of feat even with picks left.
+            if not rules::can_select_feat{ tables = w.rules, c = &base, feat = fr.id, class = s.class, class_level = s.opts.class_level, general = pass_general{ s = &s }, bonus = pass_bonus{ s = &s }, pending = &rec } {
                 try say{ &s, &g, &w, &dev, strref = 42530, ask = ASK_INFO }
                 return
             }
@@ -163,7 +192,7 @@ namespace lvl {
                 s.fpicks = s.fpicks - 1
             }
         } else {
-            drop_feat{ &s, w = &w, f, feat = fr.id }
+            drop_feat{ &s, w = &w, c = &base, feat = fr.id }
         }
         refresh_feat_states{ &s, w = &w, f }
         restyle_feat_cells{ &s, &g }
@@ -172,7 +201,7 @@ namespace lvl {
     }
 
     // Removes a pick and every pick that needed it.
-    fn drop_feat { mut s: State, w: *world::World, f: *fight::Fighter, feat: i32 } {
+    fn drop_feat { mut s: State, w: *world::World, c: *rules::Creature, feat: i32 } {
         let mut i: usize = 0
         while i < s.fnchosen {
             if s.fchosen[i] == feat {
@@ -200,33 +229,79 @@ namespace lvl {
                 }
                 m = m + 1
             }
-            if not rules::meets_feat_requirements{ tables = w.rules, c = &f.c, feat = ft, class = s.class, class_level = s.opts.class_level, pending = &without } {
-                drop_feat{ &s, w, f, feat = ft }
+            if not rules::meets_feat_requirements{ tables = w.rules, c, feat = ft, class = s.class, class_level = s.opts.class_level, pending = &without } {
+                drop_feat{ &s, w, c, feat = ft }
                 return
             }
             j = j + 1
         }
     }
 
-    // The picks the auto-leveller would make.
+    // The picks the auto-leveller would make that fit this pass's pool.
     fn recommend_feats { mut s: State, mut g: gui::Gui, mut w: world::World } -> ! {
         let f = creature_of{ w = &w, id = s.who } ifnull { return }
         let mut trial = f.c
         let mut rec: rules::LevelRecord
         if not rules::prepare_auto_level{ tables = w.rules, c = &trial, class = s.class, rec = &rec } { return }
+        let base = feat_base{ s = &s, f }
         s.fnchosen = 0
-        s.fpicks = s.opts.general_feats + s.opts.bonus_feats
+        s.fpicks = pass_general{ s = &s } + pass_bonus{ s = &s }
         let mut i: usize = 0
         while i < @as(usize, rec.nfeats) and s.fnchosen < 8 and s.fpicks > 0 {
-            s.fchosen[s.fnchosen] = rec.feats[i]
-            s.fnchosen = s.fnchosen + 1
-            s.fpicks = s.fpicks - 1
+            let pending = pending_feats{ s = &s }
+            if rules::can_select_feat{ tables = w.rules, c = &base, feat = rec.feats[i], class = s.class, class_level = s.opts.class_level, general = pass_general{ s = &s }, bonus = pass_bonus{ s = &s }, pending = &pending } {
+                s.fchosen[s.fnchosen] = rec.feats[i]
+                s.fnchosen = s.fnchosen + 1
+                s.fpicks = s.fpicks - 1
+            }
             i = i + 1
         }
         refresh_feat_states{ &s, w = &w, f }
         restyle_feat_cells{ &s, &g }
         try refresh_feat_counts{ &s, &g }
         try show_feat{ &s, &g, &w }
+    }
+
+    // Accept: refused while picks remain and something could still be picked; after the regular
+    // pass of a level with bonus feats, the bonus pass opens in a new panel; else the step is done
+    // with both passes' picks.
+    fn accept_feats { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+        if s.fpicks > 0 {
+            let mut any = false
+            let mut i: usize = 0
+            while i < s.fcount {
+                if s.frows[i].state == FS_SELECTABLE { any = true }
+                i = i + 1
+            }
+            if any {
+                try say{ &s, &g, &w, &dev, strref = 48215, ask = ASK_INFO }
+                return
+            }
+        }
+        if not s.fbonus and s.opts.bonus_feats > 0 {
+            s.fnprior = 0
+            while s.fnprior < s.fnchosen {
+                s.fprior[s.fnprior] = s.fchosen[s.fnprior]
+                s.fnprior = s.fnprior + 1
+            }
+            close_step{ &s, &g }
+            try open_step{ &s, &g, &w, &dev, k = STEP_FEATS, bonus = true }
+            return
+        }
+        let mut n: usize = 0
+        while n < s.fnprior {
+            s.rec.feats[n] = s.fprior[n]
+            n = n + 1
+        }
+        let mut i: usize = 0
+        while i < s.fnchosen and n < rules::MAX_LEVEL_FEATS {
+            s.rec.feats[n] = s.fchosen[i]
+            n = n + 1
+            i = i + 1
+        }
+        s.rec.nfeats = @as(i32, n)
+        close_step{ &s, &g }
+        step_taken{ &s, &g, &w, step = STEP_FEATS }
     }
 
     fn feats_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> ! {
@@ -246,27 +321,7 @@ namespace lvl {
             } else if slice::eq_bytes{ a = ev.tag, b = "BTN_RECOMMENDED" } {
                 try recommend_feats{ &s, &g, &w }
             } else if slice::eq_bytes{ a = ev.tag, b = "BTN_ACCEPT" } {
-                // Refused while picks remain and something could still be picked.
-                if s.fpicks > 0 {
-                    let mut any = false
-                    let mut i: usize = 0
-                    while i < s.fcount {
-                        if s.frows[i].state == FS_SELECTABLE { any = true }
-                        i = i + 1
-                    }
-                    if any {
-                        try say{ &s, &g, &w, &dev, strref = 48215, ask = ASK_INFO }
-                        return
-                    }
-                }
-                s.rec.nfeats = @as(i32, s.fnchosen)
-                let mut i: usize = 0
-                while i < s.fnchosen {
-                    s.rec.feats[i] = s.fchosen[i]
-                    i = i + 1
-                }
-                close_step{ &s, &g }
-                step_taken{ &s, &g, &w, step = STEP_FEATS }
+                try accept_feats{ &s, &g, &w, &dev }
             } else if slice::eq_bytes{ a = ev.tag, b = "BTN_BACK" } {
                 close_step{ &s, &g }
             }

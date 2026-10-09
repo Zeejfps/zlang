@@ -87,7 +87,7 @@ namespace chargen {
         let n = build_feat_chains{ tables = st.tables, class = st.ch.class, c = st.scratch, regular = counts.general > 0 or counts.bonus == 0, bonus = counts.bonus > 0, out = &chains }
         rows_from_chains{ st, chains = chains[..n] }
         refresh_feat_states{ st }
-        try fill_feat_cells{ &g, &fs, &dev, panel = p, tag = "LB_FEATS", t = st.data.feat.t, chains = chains[..n] }
+        try fill_chain_cells{ &g, &fs, &dev, panel = p, tag = "LB_FEATS", t = st.data.feat.t, column = "icon", chains = chains[..n] }
         // The focus starts on the first row's first cell.
         st.fsel = if st.fcount > 0 { 0 } else { -1 }
         if st.fsel >= 0 { _ = gui::list_focus_cell{ &g, panel = p, tag = "LB_FEATS", user = @as(i64, st.frows[0].feat) } }

@@ -1,0 +1,93 @@
+// The Force powers lists as the original draws them (pwrlvlup's LB_POWERS and the abilities screen's
+// Powers tab; docs/re/gui.md "Chain rows"): one row per chain of powers in up to three icon cells
+// (gui cells.ctx), the chains read from spells.2da's force-AI columns, not its prerequisites.
+namespace chargen {
+    // A power's first force-AI code (CSWSpellArray::Load 0x0059ba20): the first of forcefriendly,
+    // forcehostile and forcepassive with a value v gives (5v + 1500, 500 or 1000) * 2 plus
+    // forcepriority, so the thousands are the kind (3 friendly, 1 hostile, 2 passive), the tens the
+    // line and the units the priority, which is the cell. -1 for none.
+    fn power_code { row: *rules::SpellRow } -> i32 {
+        if row.line_friendly >= 0 { return (row.line_friendly * 5 + 1500) * 2 + row.priority }
+        if row.line_hostile >= 0 { return (row.line_hostile * 5 + 500) * 2 + row.priority }
+        if row.line_passive >= 0 { return (row.line_passive * 5 + 1000) * 2 + row.priority }
+        return -1
+    }
+
+    // The cell a code puts its power in: 0 starts a row. The engine takes it unsigned, so a power
+    // with no code gets 5: it sorts last and starts nothing.
+    fn power_tier { code: i32 } -> i32 { return if code < 0 { 5 } else { code % 10 } }
+    fn power_kind { code: i32 } -> i32 { return if code < 0 { 0 } else { code / 1000 } }
+    fn power_line { code: i32 } -> i32 { return if code < 0 { 0 } else { (code % 1000) / 10 } }
+
+    // The Force powers (UserType 1 with a name) in list order (0x006cd590, an insertion sort over
+    // the spell ids): by tier, then kind from high to low (friendly, passive, hostile), then line;
+    // by id where all three match.
+    fn sort_powers { tables: *rules::Tables, out: *mut [MAX_SORTED]i32 } -> usize {
+        let mut n: usize = 0
+        let mut s: usize = 0
+        while s < tables.spells.len and n < MAX_SORTED {
+            let row = &tables.spells[s]
+            if row.valid and row.user_type == 1 and row.name > 0 {
+                let c = power_code{ row }
+                let mut at = n
+                let mut k: usize = 0
+                while k < n {
+                    let e = power_code{ row = &tables.spells[@as(usize, out[k])] }
+                    let before = power_tier{ code = c } < power_tier{ code = e } or
+                        (power_tier{ code = c } == power_tier{ code = e } and
+                            (power_kind{ code = e } < power_kind{ code = c } or
+                                (power_kind{ code = e } == power_kind{ code = c } and power_line{ code = c } < power_line{ code = e })))
+                    if before {
+                        at = k
+                        break
+                    }
+                    k = k + 1
+                }
+                let mut m = n
+                while m > at {
+                    out[m] = out[m - 1]
+                    m = m - 1
+                }
+                out[at] = @as(i32, s)
+                n = n + 1
+            }
+            s = s + 1
+        }
+        return n
+    }
+
+    // The rows (0x006ce0f0). Each tier-0 power starts one, with the tier-1 power of the same kind
+    // and line in its second cell and the tier-2 one in its third. With `all` (the level-up panel)
+    // every power counts; otherwise (the abilities screen) a root must be in `known` and the other
+    // cells in `usable`, the known powers whose cost the current Force points cover: the engine
+    // asks its has-spell test (0x005a6e70) for the Force points there.
+    fn build_power_chains {
+        tables: *rules::Tables, all: bool, known: []u16, usable: []u16, out: *mut [MAX_FEAT_CHAINS]FeatChain,
+    } -> usize {
+        let mut order: [MAX_SORTED]i32
+        let n = sort_powers{ tables, out = &order }
+        let mut count: usize = 0
+        let mut i: usize = 0
+        while i < n and count < MAX_FEAT_CHAINS {
+            let root = order[i]
+            let rc = power_code{ row = &tables.spells[@as(usize, root)] }
+            if power_tier{ code = rc } != 0 { break }
+            i = i + 1
+            if not all and not holds{ list = known, id = root } { continue }
+            let mut next: i32 = -1
+            let mut last: i32 = -1
+            let mut j = i
+            while j < n and (next < 0 or last < 0) {
+                let id = order[j]
+                let c = power_code{ row = &tables.spells[@as(usize, id)] }
+                if (all or holds{ list = usable, id }) and power_kind{ code = c } == power_kind{ code = rc } and power_line{ code = c } == power_line{ code = rc } {
+                    if power_tier{ code = c } == 1 { next = id } else if power_tier{ code = c } == 2 { last = id }
+                }
+                j = j + 1
+            }
+            out[count] = FeatChain{ cell = [root, next, last] }
+            count = count + 1
+        }
+        return count
+    }
+}

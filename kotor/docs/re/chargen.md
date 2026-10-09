@@ -454,6 +454,7 @@ the level-up flag sets `MAIN_TITLE_LBL` to 1071 "Level Up", the bonus flag `SUB_
 | Focus and description | one cell has the focus, not a row (`+0x1a14` cell, `+0x1a15` row of the row set at `+0x1a08`). On open the first row's first cell (`0x006cdd10`), after a pick the same feat (`0x006cdc00`). A row click (0x1f8, `0x006f3420`) focuses the cell under the pointer (`0x006cd1c0`: the first filled cell whose square holds it, else cell 0); a press (0x1f9, `0x006f3cf0`) selects or unselects only when it lands on the cell that already has the focus. Arrows (`0x006cdd80`): left/right move along the row (no wrap, not past the last filled cell, GUI sound 1); up/down move a row and wrap at both ends, then step left until the cell is filled. The focused cell gives `LBL_NAME` = feat `name` strref, `LB_DESC` = `description` strref (`0x006f2fb0`); Enter/A act on it (`0x006aba50` returns its feat) | high |
 | Accept (event 0x29, X; `0x006f44c0`) | if picks remain **and** the selectable set is not empty: message 48215 "You have gained new feats. You must use "Add Feat" to select your new feats before continuing." and stay; otherwise add the chosen feats to the creature, pop; if this is not the bonus pass and the level has a bonus count, open a second feats panel in bonus mode; else level-up returns to its panel, chargen sets custom counter 4 (`0x006ef530`). So accept requires all picks used unless nothing is selectable | high |
 | Back (0x28/0x2e; `0x006f2c70`) | pops without adding; the creature keeps the granted feats | high |
+| The bonus pass | a second `ftchrgen` panel (`CSWGuiCharGenFeats` ctor with the bonus flag, added with flags 3 over the level-up list), opened by Accept of the regular pass after its picks were added to the creature (`0x005a7670`); sub title 1316 "Bonus Feats"; no feats granted and no granted popup; its rows, selectable set and pick count are the bonus pool's (`_List` 1 or 2, `featgain` `_BON`), and the regular picks show as known. Its Accept returns to level-up (`0x006ee5d0`), its Back leaves the regular picks on the creature without finishing the step. In the game's data every `featgain.2da` `*_bon` cell is 0, so the pass never opens unless a mod sets one | high |
 
 For the three starting classes the granted level-1 feats (data, `_List` 3 and `_Granted` 1): Soldier
 armour proficiency light/medium/heavy, Power Attack, Power Blast, blaster/blaster rifle/heavy/melee
@@ -469,6 +470,24 @@ are chosen later in the story and entered through level-up. The custom step list
 Attributes, Skills, Feats, Name, Play, and `CSWGuiCharGenPowers` (`0x006f2180`) has exactly one
 caller, `CSWGuiLevelUpPanel::OnPowers` (`0x006ee350`); it loads `pwrlvlup.gui` for a creature given
 by id, not a chargen creature.
+
+The level-up Powers panel (`pwrlvlup`, `CSWGuiCharGenPowers`; all high, read from the decompile):
+
+| Item | Value |
+|---|---|
+| Controls | `LB_POWERS` (0x1f8 row clicked → `0x006f1940`, 0x1f9 pressed → `0x006f2110`), `LBL_POWER` (name), `LB_DESC`, `SELECT_BTN` (X, 0x29), `RECOMMENDED_BTN` (Y, 0x2a), `ACCEPT_BTN` (0x27), `BACK_BTN` (0x28), `REMAINING_SELECTIONS_LBL` |
+| Lists (ctor, `0x006f1990`) | known: every power in every class slot's known list (`0x006487d0` / `0x006495a0`), kept sorted by name; picks left `+0x19bc` = the level's count (`0x00649070`), and `+0x19bd` = count + 1; the selectable set (`0x006f1730`): every spell neither known, picked nor already in it that passes `0x00649b50` (CanLearnForcePower, rules.md, with count + 1 and the picks as pending), whose `+0x174` is not -2 and that has a name; sorted by name. With count + 1 the set does not empty as picks are made |
+| List | chain rows from every Force power (`0x006ce0f0` with "every power"; gui.md "Chain rows"): rows by kind and line, friendly first, cells by `FORCEPRIORITY` |
+| States (`0x006f1280`) | 2 known, 1 picked, 0 in the selectable set, else 3 |
+| Styles (`0x006f15a0`) | every cell 3 (icon and backing faint, no arrow into it), the known 1 (green frame at half), the picks 4 (green frame), the selectable set 0 (faint icon); but Affect Mind (6) and Dominate Mind (14) get 3 when the panel's creature is not the PC (stats `+0x6c` bit 0, kept at `+0x19c0`). Then the focus: the first cell on opening (`0x006cdd10`), else the power shown last |
+| Shown (`0x006f1460`) | `LBL_POWER` the spell's name, `LB_DESC` its `spelldesc`; `SELECT_BTN` 38455 or 38456 + " " + 42488 ("Add Power" for states 0 and 3, "Remove Power" for 1 and 2), in the menu text colour for 0 and 1 and the dim colour for 2 and 3 |
+| Select (X, press on the focused cell; `0x006f2030`) | 0: 42470 "Only the main character can select this feat." for spells 6 and 14 on a non-PC, 42529 "You have selected all your available powers for this level." with no picks left, else pick it (`0x006f1c90`); 1: unpick (`0x006f1e40`); 2: 42185 "You cannot deselect a power you already have."; 3: 42186 "You do not yet have the necessary prerequisites to select this power, ..." |
+| Recommended (`0x006f1f30`) | drops the picks, picks the auto-level list (`0x00649c30`), shows the list popup with caption 42257 "The following power(s) have been recommended." |
+| Accept (`0x006f1130`) | with picks left and a non-empty selectable set: 48210 "You have gained new powers. You must use "Add Power" ..."; else each pick is added to the last class slot (`0x00649f90`), the panel pops and level-up marks the step (`0x006ee5d0`) |
+| Arrows | to the row set whichever control has the focus (`0x006cdd80`), then the power is shown |
+
+Ours: `lib/screens/lvl_powers.ctx` with `chargen/power_cells.ctx`. Not done: the Recommended
+popup, and the known list's name order (only the selectable test uses the lists).
 
 ## J. Strrefs set for titles, subtitles and messages
 

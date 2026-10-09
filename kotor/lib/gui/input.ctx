@@ -580,6 +580,13 @@ namespace gui {
         else if keycode == sdl::key::LEFT { dir = DIR_LEFT } else if keycode == sdl::key::RIGHT { dir = DIR_RIGHT }
         if dir == 9 { return false }
         if p.key_events { push_event{ &g, kind = EventKind::arrow, p, ci = p.focus, value = @as(i32, dir), row = -1, user = 0 } }
+        // A panel with a list of cell rows gives it the arrows whichever control has the focus, as
+        // the feats, powers and abilities panels do (0x006f4680, 0x006f28c0, 0x006ae5f0).
+        let cl = cell_list_of{ p }
+        if cl >= 0 {
+            move_cell_focus{ &g, p, ci = cl, dir }
+            return true
+        }
         if p.focus >= 0 and key_in_control{ &g, p, ci = p.focus, dir } { return true }
         move_focus{ &g, p, dir }
         return true

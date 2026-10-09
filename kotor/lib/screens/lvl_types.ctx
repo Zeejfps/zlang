@@ -71,6 +71,9 @@ namespace lvl {
         fchosen: [8]i32,
         fnchosen: usize,
         fpicks: i32,
+        fbonus: bool,               // the bonus pass (a second ftchrgen after the regular picks)
+        fprior: [8]i32,             // the regular pass's picks, the creature's own in the bonus pass
+        fnprior: usize,
         // powers
         prows: [64]Row,
         pcount: usize,

@@ -1145,7 +1145,8 @@ The flow (high for the wiring; the screen-by-screen detail is [chargen.md](charg
    - **Force powers** (0x006f2180, vtable 0x00759780, `pwrlvlup`): `LB_POWERS`, `LBL_POWER`,
      `SELECT_BTN` (`OnButtonX`), `ACCEPT_BTN` (accept), `RECOMMENDED_BTN` (`OnButtonY`),
      `BACK_BTN`; `HandleInputEvent` 0x006f28c0. Used by level-up only: its one caller is
-     `CSWGuiLevelUpPanel::OnPowers` 0x006ee350 (chargen.md I). (high)
+     `CSWGuiLevelUpPanel::OnPowers` 0x006ee350. `LB_POWERS` holds chain rows of icon cells, like
+     `LB_FEATS`. Behaviour in chargen.md I. (high)
 8. **Play** (`Finish` 0x006eb320 → `CSWGuiCharGenMain::Close` 0x006ea830, then
    `CSWGuiClassSelection::StartGame` 0x006dbdf0): `Close` pops the modal, marks each step panel
    that is in the manager for deletion (deleting the others at once) and marks itself;
@@ -1914,14 +1915,31 @@ row `+0xd`) is built by:
 
 - `0x006ce570` (feats panel, `0x006cda80` per row): chains by `prereqfeat1`/`prereqfeat2`
   (chargen.md H);
-- `0x006ce370` (the in-game abilities screen, `CSWGuiAbilities::SetCreature`): the same chains from
-  the creature's known feats only, all cells style 6;
+- `0x006ce370` (the in-game abilities screen, `CSWGuiAbilities::SetCreature`): the same sorted
+  feats; every root the creature has (`HasFeatInLists`) starts a row, and its other cells are feats
+  the creature has whose `prereqfeat1` is the root (without `prereqfeat2` in the second, with it in
+  the third; the class-table test beside it is moot, as the feat must be known anyway); no pool
+  test; then all cells style 6 (`0x006abce0`). (high)
 - `0x006ce0f0` (Force powers panel and the abilities screen's powers, `0x006cd7e0` per row, icon
-  `spells.2da` `iconresref`): chains by the spell's first force-AI code (`+0x12c`, built by
-  `CSWSpellArray::Load` from `FORCEHOSTILE`/`FORCEFRIENDLY`/`FORCEPASSIVE` and `FORCEPRIORITY`):
-  code mod 10 is the tier (0 starts a row, 1 the second cell, 2 the third), code / 1000 and
-  (code mod 1000) / 10 must match the root's; sorted by `0x006cd590`. (med: the sort and the
-  per-power availability test `0x005a6e70` not traced.)
+  `spells.2da` `iconresref`; second argument "every power"): chains by the spell's first force-AI
+  code (`+0x12c`, count `+0x130`, getter `0x0059b6a0`). `CSWSpellArray::Load` (`0x0059ba20`)
+  makes one code per filled column, in this order: `FORCEFRIENDLY` v gives (5v + 1500) * 2,
+  `FORCEHOSTILE` (5v + 500) * 2, `FORCEPASSIVE` (5v + 1000) * 2, each plus `FORCEPRIORITY`. So
+  code / 1000 is the kind (3 friendly, 1 hostile, 2 passive), (code mod 1000) / 10 the line
+  (`0x00647510`) and code mod 10 the priority (`0x006474d0`), which is the cell: 0 starts a row,
+  1 is the second cell, 2 the third (the last match wins until both are found). A spell with no
+  code reads as -1, unsigned: tier 5. The sort (`0x006cd590`) is an insertion over the spell ids
+  of those with `UserType` (`+0x140`) 1 and a name (`+8`): a spell goes before the first one
+  already placed with a higher tier, or the same tier and a **lower** kind, or the same tier and
+  kind and a higher line; so tier, then friendly, passive, hostile, then line, then id. The roots
+  are the tier-0 prefix; the scan stops at the first spell that is not. With "every power" set
+  (the level-up panel, from its ctor `0x006f2180`) every root and cell counts; without it (the
+  abilities screen, `0x006abce0`) a root needs `0x005a6e70`(stats, 0, spell, 0) and a second or
+  third cell `0x005a6e70`(stats, 0, spell, 1). `0x005a6e70` looks for the spell in every class
+  slot's known-power list; with its last argument set it also wants the Force point cost
+  (`CSWSpell::GetForcePointCost`) not above the current Force points (stats `+0x124` + `+0x126`).
+  So the abilities screen leaves a known upgrade out of its root's row while the character cannot
+  pay for it (the push of 1 is in the code, `0x006ce21f`). (high)
 
 The row's makers set three cells (feat or spell id, -1 empty; icon resref, empty for an empty cell)
 and the extent (0, 0, 242, 40); the list box then lays it out like any row, padding in from the left
@@ -1944,10 +1962,14 @@ Two arrow images (`lbl_skarr`) follow at `+0x3d4`.
   0.25, arrow into the cell 0, frame hidden unless focused, then red-orange (0.74, 0.11, 0);
   4 green frame; 5 as 0 but icon 1 and the arrow into it 0.25; 6 as 0 but icon 1.
 - **Focus** (`0x006cdc00` by id, `0x006cdd10` first cell, `0x006cdd80` arrows, `0x006cd1c0` hit
-  test): chargen.md H. (high)
+  test): chargen.md H. The three panels that hold row sets (feats `0x006f4680`, powers `0x006f28c0`,
+  abilities `0x006ae5f0` on its Powers and Feats tabs) send the arrows (0x2f-0x32, 0x3d-0x40) to the
+  row set whichever control has the focus, then on to the base handler. (high)
 
-Ours: `lib/gui/cells.ctx` (a list box with `cell_art.on`; `chargen/feat_cells.ctx` builds the
-feat rows for both feats steps).
+Ours: `lib/gui/cells.ctx` (a list box with `cell_art.on`; a panel's shown cell list takes the
+arrows, but the base handling after it is not repeated); `chargen/feat_cells.ctx` builds the feat
+rows for both feats steps and the abilities screen, `chargen/power_cells.ctx` the power rows for
+the level-up powers step and the abilities screen.
 
 #### CSWGuiPause (`pause`)
 
@@ -2548,8 +2570,12 @@ the `patch.erf` copy). The tab is kept
 in `CGuiInGame` +0xbc0 between openings; Powers is hidden and the tab reset to Skills when the
 character's newest class is not a Force user (0x005be4a0), and shown when it is one and the power
 list is not empty (an empty list leaves the button as it was). Feats and powers are read through a tree
-helper shared with the level-up screens (objects at +0x3f78/+0x3f88, functions 0x006cd1c0,
-0x006cdc00, 0x006ce370), described with the level-up panels. Skimmed. (med)
+helper shared with the level-up screens (row sets at +0x3f78 powers / +0x3f88 feats, built by
+`SetCreature` through `0x006abce0` / `0x006ce370` with the focus on the first cell; "Chain rows"
+above). `RebuildList` hands the tab's row set to `LB_ABILITY` and restores its focused row and cell,
+so each tab keeps its focus across tab changes until the creature changes; a click (0x1f8,
+`OnSelectionChanged`) focuses the cell under the pointer and shows it, the arrows move it. The
+Skills tab shows the ten prebuilt rows. (high for the row sets, med for the rest)
 
 #### CSWGuiJournal (journal.gui)
 

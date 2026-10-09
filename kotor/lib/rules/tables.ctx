@@ -157,6 +157,7 @@ namespace rules {
         // none, and its priority within the line (the highest known one is shown).
         line_hostile: i32,
         line_friendly: i32,
+        line_passive: i32,              // forcepassive: only the GUI's power chains read it (chargen power_cells.ctx)
         priority: i32,
         exclusion: i32,                 // bit 0: not on a human, bit 1: not on a droid (the target's race)
         range: u8,                      // spells.2da Range letter: P, T, S, M, L, W; 0 none
@@ -468,6 +469,7 @@ namespace rules {
             s.dark_recom = cell_int{ t = sp.t, row = i, col = "dark_recom", dflt = 0 }
             s.line_hostile = cell_int{ t = sp.t, row = i, col = "forcehostile", dflt = -1 }
             s.line_friendly = cell_int{ t = sp.t, row = i, col = "forcefriendly", dflt = -1 }
+            s.line_passive = cell_int{ t = sp.t, row = i, col = "forcepassive", dflt = -1 }
             s.priority = cell_int{ t = sp.t, row = i, col = "forcepriority", dflt = 0 }
             s.exclusion = cell_int{ t = sp.t, row = i, col = "exclusion", dflt = 0 }
             let range = cell_text{ t = sp.t, row = i, col = "range" }
