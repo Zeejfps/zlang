@@ -192,7 +192,7 @@ finds the BIF copy; no special case. Another model, `mainmenu_model`, is in the 
   original's clumps; the start offset reaches xsize / 100 and ysize / 100 metres each way, twice
   the original's size / 200 (worth a fix); the scene is warmed up 1 s, while the original's first
   render runs the emitters 10 s (above);
-- not done: the room model, fog, the shadow of `AuroraLight01`, `p2p` / `inherit` flags, bounce;
+- not done: the room model, fog, the shadow of `AuroraLight01`, the `p2p` flag, bounce;
   of the other update types `Single` keeps its one particle, `Lightning` stays quiet and
   `Explosion` emits like a Fountain.
 

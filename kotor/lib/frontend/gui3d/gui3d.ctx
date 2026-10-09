@@ -128,7 +128,7 @@ namespace gui3d {
         let mut i: usize = 0
         while i < scene.emitting.len {
             let world = math::mat4::mul{ a = scene.instance, b = scene.pose.world[scene.model.emitters[i].node] }
-            step_emitting{ em = &scene.emitting[i], e = &scene.model.emitters[i], props = scene.pose.emitters[i], dt, world, ground = no_contact }
+            step_emitting{ em = &scene.emitting[i], e = &scene.model.emitters[i], props = scene.pose.emitters[i], dt, world, owner = math::mat4::get_translation{ m = scene.instance }, ground = no_contact }
             i = i + 1
         }
         scene.time = scene.time + dt

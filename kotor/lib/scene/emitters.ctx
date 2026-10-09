@@ -65,8 +65,9 @@ namespace scene {
                     }
                 }
                 let ground = touch{ sc, w, _ }
-                if em.seen == 0 and warm { warm_up{ em, e = ex, props, world, ground } }
-                step_one{ em, e = ex, props, dt, world, ground }
+                let owner = math::mat4::get_translation{ m = instance }
+                if em.seen == 0 and warm { warm_up{ em, e = ex, props, world, owner, ground } }
+                step_one{ em, e = ex, props, dt, world, owner, ground }
                 em.seen = sc.fx_frame
             }
             let n = gui3d::fill_particles{ em, e = ex, props }
@@ -82,24 +83,24 @@ namespace scene {
 
     // 100 steps of 0.1 s, as the original runs every room emitter at the scene's first render, so
     // smoke and mist are at their steady state when first seen.
-    fn warm_up { mut em: gui3d::Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, world: math::Mat4, ground: &fn{ from: math::Vec3, to: math::Vec3 } -> ?gui3d::Contact } {
+    fn warm_up { mut em: gui3d::Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, world: math::Mat4, owner: math::Vec3, ground: &fn{ from: math::Vec3, to: math::Vec3 } -> ?gui3d::Contact } {
         let mut i: u32 = 0
         while i < 100 {
-            step_one{ &em, e, props, dt = gui3d::MAX_STEP, world, ground }
+            step_one{ &em, e, props, dt = gui3d::MAX_STEP, world, owner, ground }
             i = i + 1
         }
     }
 
     // One step: an Explosion emitter gives birth only in a burst, when its owner's animation said
     // `detonate` since its last step (the original's latch, set by 0x0048d770).
-    fn step_one { mut em: gui3d::Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, dt: f32, world: math::Mat4, ground: &fn{ from: math::Vec3, to: math::Vec3 } -> ?gui3d::Contact } {
+    fn step_one { mut em: gui3d::Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, dt: f32, world: math::Mat4, owner: math::Vec3, ground: &fn{ from: math::Vec3, to: math::Vec3 } -> ?gui3d::Contact } {
         let explodes = e.update == mdl::EmitterUpdate::explosion
         let mut fed = props
         if explodes {
             fed.birthrate = 0.0
             fed.random_birthrate = 0.0
         }
-        gui3d::step_emitting{ &em, e, props = fed, dt, world, ground }
+        gui3d::step_emitting{ &em, e, props = fed, dt, world, owner, ground }
         if explodes and em.latch { gui3d::burst{ &em, e, props } }
         em.latch = false
     }

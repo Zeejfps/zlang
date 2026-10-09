@@ -3,10 +3,12 @@
 // alpha curves; docs/re/gui3d.md says what is inferred): the original's code is read only as far
 // as the main menu needs.
 //
-// Particles live in their emitter's space, so a moving emitter carries them (the original's live in
-// the world and only `inherit` ones follow the emitter: docs/design/vfx.md, "Decisions"); what the
-// world does to them, gravity and the surfaces they bounce off, is the world's, brought into that
-// space each step. One Emitting is one emitter node of one model; the Scene owns them.
+// Particles are kept in their emitter's space (that is what the seam draws), but they behave as the
+// original's, which live in the world (docs/re/particles.md, "A particle"): each step `carry` brings them
+// through the emitter's move so that they stay where they were in the world, unless the emitter's flags
+// say otherwise (`inherit` keeps them rigid with it, `inherit_local` adds its owner's move, `inherit_part`
+// its own). What the world does to them, gravity and the surfaces they bounce off, is the world's too.
+// One Emitting is one emitter node of one model; the Scene owns them.
 namespace gui3d {
     // One live particle. `aim` is the unit direction it was sent in (the +Z of the particle's own
     // orientation in the original), which does not follow its velocity; `tail` is where a
@@ -37,6 +39,9 @@ namespace gui3d {
         latch: bool,                        // an Explosion emitter: its owner's animation said `detonate`, not burst yet
         aim: ?math::Vec3,                   // a Lightning emitter: where its bolt ends, in the world, set by the owner each step
         bolt: Bolt,                         // a Lightning emitter's chains (lightning.ctx)
+        last: math::Mat4,                   // the emitter node's matrix to world space at its last step (when `placed`)
+        owner_at: math::Vec3,               // and its owner's (the model's) world position then
+        placed: bool,                       // stepped at least once since it was made or reset
     }
 
     // An emitter's state over the arrays given: nothing alive.
@@ -44,6 +49,7 @@ namespace gui3d {
         return Emitting{
             emitter = index, texture, puffs, live = 0, owed = 0.0, rng = 0x2545F491 + 7919 * (index + 1), out, seen = 0,
             latch = false, aim = null, bolt = no_bolt{ node_turn },
+            last = math::mat4::identity{}, owner_at = math::vec3::zero{}, placed = false,
         }
     }
 
@@ -94,10 +100,11 @@ namespace gui3d {
     // One step of `dt` seconds: the old die, the rest move, new ones are born. A Single emitter keeps
     // one particle while its birth rate is at least 1 (whole particles: the original truncates),
     // which ages to the end of its curves and stays there; the others give birth `birthrate` times a
-    // second. `world` is the emitter node's matrix to world space, where gravity pulls down (world -Z)
-    // and `ground` says where a bouncing particle meets something.
+    // second. `world` is the emitter node's matrix to world space, where gravity pulls down (world -Z),
+    // `owner` its model's position in the world, and `ground` says where a bouncing particle meets
+    // something.
     fn step_emitting {
-        mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, dt: f32, world: math::Mat4,
+        mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, dt: f32, world: math::Mat4, owner: math::Vec3,
         ground: &fn{ from: math::Vec3, to: math::Vec3 } -> ?Contact,
     } {
         if e.update == mdl::EmitterUpdate::lightning {
@@ -105,6 +112,7 @@ namespace gui3d {
             return
         }
         if dt <= 0.0 { return }
+        let moved = carry_of{ &em, flags = e.flags, world, owner }
         let single = e.update == mdl::EmitterUpdate::single
         let blur = e.render == mdl::EmitterRender::motion_blur
         let linked = e.render == mdl::EmitterRender::linked
@@ -141,6 +149,7 @@ namespace gui3d {
                 p.tail = math::vec3::lerp{ a = p.tail, b = p.pos, t }
             }
             p.angle = p.angle + props.particle_rot * dt
+            if moved.on { carry{ &p, c = moved } }
             if p.still {
                 em.puffs[i] = p
                 i = i + 1
@@ -173,6 +182,68 @@ namespace gui3d {
             em.owed = em.owed - 1.0
             if @as(usize, em.live) < em.puffs.len { spawn{ &em, e, props } }
         }
+    }
+
+    // MDL emitter flags that carry particles with their emitter (0x00492450).
+    const EMIT_INHERIT: u32 = 0x40
+    const EMIT_INHERIT_LOCAL: u32 = 0x100
+    const EMIT_INHERIT_PART: u32 = 0x400
+
+    // How the particles go through the emitter's move since its last step (from `em.last` to `world`), as
+    // the original's step carries them before it moves them (0x00492450): a particle stays where it was in
+    // the world, its velocity and the direction it was sent in unturned, except that
+    //   - with `inherit` (0x40) its position and velocity are rigid with the emitter (its move and turn);
+    //   - with `inherit_local` (0x100, not with `inherit`) its position and its streak's tail move by its
+    //     owner's (the model's) move;
+    //   - with `inherit_part` (0x400) they move by the emitter's own move (its origin's, not its turn).
+    // A Motion_Blur particle's tail is never turned with the emitter, so a carried streak trails. A particle
+    // that bounced to rest is not carried at all. Nothing moves on an emitter's first step, nor while it and
+    // its owner stand still (a room's): `on` is false then.
+    struct Carry { on: bool, rigid: bool, move: math::Mat4, by: math::Vec3 }
+
+    fn carry_of { mut em: Emitting, flags: u32, world: math::Mat4, owner: math::Vec3 } -> Carry {
+        let was = em.last
+        let owner_was = em.owner_at
+        let placed = em.placed
+        em.last = world
+        em.owner_at = owner
+        em.placed = true
+        let rigid = (flags & EMIT_INHERIT) != 0
+        let mut c = Carry{ on = false, rigid, move = math::mat4::identity{}, by = math::vec3::zero{} }
+        if not placed or em.live == 0 { return c }
+        let mut shift = math::vec3::zero{}
+        if (flags & EMIT_INHERIT_LOCAL) != 0 and not rigid { shift = math::vec3::sub{ a = owner, b = owner_was } }
+        if (flags & EMIT_INHERIT_PART) != 0 {
+            shift = math::vec3::add{ a = shift, b = math::vec3::sub{ a = math::mat4::get_translation{ m = world }, b = math::mat4::get_translation{ m = was } } }
+        }
+        let mut same = shift.x == 0.0 and shift.y == 0.0 and shift.z == 0.0
+        let mut k: usize = 0
+        while k < 16 and same {
+            if was.m[k] != world.m[k] { same = false }
+            k = k + 1
+        }
+        if same { return c }
+        // Old emitter space to the new one for a point that stays put in the world, and the shift there.
+        let to_local = math::mat4::inverse_affine{ m = world }
+        c.on = true
+        c.move = math::mat4::mul{ a = to_local, b = was }
+        c.by = math::mat4::transform_dir{ m = to_local, v = shift }
+        return c
+    }
+
+    fn carry { mut p: Puff, c: Carry } {
+        p.aim = math::vec3::normalize{ v = math::mat4::transform_dir{ m = c.move, v = p.aim } }
+        p.tail = math::mat4::transform_point{ m = c.move, p = p.tail }
+        if p.still {
+            p.pos = math::mat4::transform_point{ m = c.move, p = p.pos }
+            return
+        }
+        if not c.rigid {
+            p.pos = math::mat4::transform_point{ m = c.move, p = p.pos }
+            p.vel = math::mat4::transform_dir{ m = c.move, v = p.vel }
+        }
+        p.pos = math::vec3::add{ a = p.pos, b = c.by }
+        p.tail = math::vec3::add{ a = p.tail, b = c.by }
     }
 
     // Births `birthrate` particles (at least one) at once from an Explosion emitter: its burst on the

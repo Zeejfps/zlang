@@ -197,6 +197,7 @@ namespace vfx {
         while e < f.emitting.len {
             f.emitting[e].live = 0
             f.emitting[e].owed = 0.0
+            f.emitting[e].placed = false
             e = e + 1
         }
         // The pose at time zero, so the first frame already shows the animation's start.
@@ -398,7 +399,7 @@ namespace vfx {
             }
             let world = math::mat4::mul{ a = f.matrix, b = p.pose.world[ex.node] }
             if ex.update == mdl::EmitterUpdate::lightning { em.aim = bolt_aim{ sc = &sc, w = &w, f, model, pose_world = p.pose.world, e = ex } }
-            gui3d::step_emitting{ em, e = ex, props, dt = dt_eff, world, ground = scene::touch{ sc = &sc, w = &w, _ } }
+            gui3d::step_emitting{ em, e = ex, props, dt = dt_eff, world, owner = math::mat4::get_translation{ m = f.matrix }, ground = scene::touch{ sc = &sc, w = &w, _ } }
             // A burst after the step, so its particles are seen at least once even when they
             // live less than a frame (a muzzle flash lives 0.02 s).
             if explodes and f.detonate { gui3d::burst{ em, e = ex, props = p.pose.emitters[e - 1] } }

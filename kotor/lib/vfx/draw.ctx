@@ -38,12 +38,14 @@ namespace vfx {
             let look = gui3d::look_of{ e = ex, world = node_world }
             if f.kind == Kind::bolt and ex.render == mdl::EmitterRender::motion_blur {
                 // A bolt streaks along its flight: the particle's long axis is the way it flies (in the
-                // emitter's space), its length the distance covered in `blurlength`.
+                // emitter's space), its length the distance covered in `blurlength`, centred on the head (the
+                // particle's own tail stays in the world, a frame's flight behind).
                 let local = math::vec3::normalize{ v = math::mat4::transform_dir{ m = math::mat4::inverse_affine{ m = node_world }, v = f.dir } }
                 let length = math::max{ a = f.speed * props.blur_length * STREAK_LENGTH, b = MIN_STREAK }
                 let mut k: u32 = 0
                 while k < n {
                     em.out[k].dir = local
+                    em.out[k].position = em.puffs[k].pos
                     em.out[k].angle = 0.0
                     em.out[k].size.y = em.out[k].size.x + length
                     k = k + 1

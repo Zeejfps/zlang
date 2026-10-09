@@ -48,13 +48,14 @@ joint's corners shared by the quads either side, as `0x00495b20` builds it),
 sheets), `Billboard_to_World_Z` lies flat on the ground, `Aligned_to_World_Z` stands upright, `Aligned_to_Particle_Dir`
 lies in the plane of the direction it was sent in, and `Motion_Blur` is a streak from the particle's tail (which
 eases to its head over `blurlength` seconds) to its head, 2 x `sizeStart` wide. A bolt's emitter is turned to the
-direction of flight and its quad made `speed * blurlength * 2.4` long (ours: its tail would not trail in the emitter's
-own space; the factor makes a bolt read at fight distances). The simulation is the original's where it was read:
+direction of flight and its quad made `speed * blurlength * 2.4` long (ours: drawn so, centred on the head, rather
+than to its tail, which trails a frame's flight behind as the original's does; the factor makes a bolt read at fight
+distances). The simulation is the original's where it was read:
 gravity is the controller `mass` (smoke and flames have a negative one and rise), a particle starts turned to 0
 and spins by `particleRot`, a `Single` emitter keeps exactly one particle while `birthrate` is at least 1, and a
-sprite sheet steps through its cells at `fps`. Not done: chunk models (debris), `bounce`, wind, particles that stay in
-the world when their emitter moves (ours move with it, as `inherit` does), point-to-point emitters other than
-Lightning.
+sprite sheet steps through its cells at `fps`. A particle stays where it is in the world when its emitter moves,
+unless the emitter's flags carry it (below, "Particles in the world"). Not done: chunk models (debris), `bounce`,
+wind, point-to-point emitters other than Lightning.
 
 A `Lightning` emitter (gui3d `lightning.ctx`) is a chain of points from the emitter to its target (`Emitting.aim`, in
 the world, set by the owner each step: a beam's target's `impact` node, else the `fx_ref` reference node under the
@@ -256,9 +257,23 @@ mostly one-particle `Single` sprites) for about 0.2 to 0.3 ms a frame more in a 
 
 ## Particles in the world (lib/frontend/gui3d/particles.ctx)
 
-A particle lives in its emitter's space (below), but what the world does to it is the world's, as in the
-original ([../re/particles.md](../re/particles.md), "A particle"): `gui3d::step_emitting` is given the emitter
-node's matrix to world space and
+A particle is kept in its emitter's space (that is what the seam's `render::Emitter` draws with the node's
+matrix), but it behaves as the original's, which live in the world ([../re/particles.md](../re/particles.md), "A
+particle"): `gui3d::step_emitting` is given the emitter node's matrix to world space and its owner's (the model's)
+position, and
+
+- each step first brings the particles through the emitter's move since its last step (`gui3d::carry_of`, `carry`):
+  a particle stays where it was in the world, its velocity unturned, unless the emitter has `inherit` (0x40: rigid
+  with it, 1,853 emitters, mostly the bolts', Kashyyyk's birds and the other rooms' moving sprites),
+  `inherit_local` (0x100: plus its owner's move, the creature, placeable or effect the model is; for a room
+  nothing) or `inherit_part` (0x400: plus the emitter's own move, not its turn). A streak's tail is never turned
+  with the emitter, so a carried streak trails (a bolt's is drawn its own way, `vfx::draw_one`), and a particle
+  that bounced to rest is not carried. Nothing is done while the emitter and its owner stand still, which is every
+  room's emitter but those on animated nodes, so rooms' smoke, mist and crowds are as before. What it changes:
+  particles left behind by an emitter that moves without a carrying flag, a Force power's impact sparkles on a
+  walking character (`v_cure_imp`, `v_faura_imp`: their emitters circle on dummies their `impact` animation turns),
+  smoke from a moving droid or placeable. Pictures: `kotor/tools/py/force_run.py --powers 10 --dist 12 --cast-at 500
+  --post '64 mouse click 1113 688;72 down w;111 up w' --shots 86,102` (Cure from the self slot, then a run);
 
 - gravity (`mass` g) pulls along world -Z, brought into the emitter's space each step. It used to pull along
   the emitter's own -Z, which for an emitter turned on its side is sideways: the lightsaber clash sparks
@@ -302,13 +317,9 @@ last clash, which proved nothing.
   only row 1003, both 1401). The engine-coded codes other than 1401-1426 (beams 608-621, the fizzle
   and resist models 1201/1202, the medal and Revan masks 1700-1702, the player's camera and
   full-screen effects, the vision modes) are not drawn.
-- World emitters: particles live in their emitter's space, as the effects' do (the original keeps them in world
-  space and carries them with the emitter only with `inherit`, 0x40, which 1,853 emitters have, mostly the bolts';
-  the same for an emitter that does not move, which is nearly every room's and every still effect's; gravity and
-  bounces are the world's, above). Left so because the rules that move world-space particles are not all known:
-  `inherit_local` (0x100, the owner object's move) without `inherit` is on about 6,000 emitter nodes, 4,926 of them the rooms' `Single` sprites
-  (crowds, birds), and a `Single` sprite on a keyed node would stay where it was born unless something carries it,
-  which was not traced; doing it needs those worked out and a look at Kashyyyk's birds and Taris' crowds. A room's
+- World emitters: particles behave as the original's world-space ones ("Particles in the world"). Not done: the
+  original takes the emitter's previous position, for the per-metre spawn type and `inheritvel`, less its owner's
+  move under `inherit_local` (neither is done here). A room's
   or placeable's Lightning emitter (`plc_endcorps`, `m45ac_bmap`) aims at its reference child; the menus' and
   minigames' scenes give theirs no target, so they stay quiet. A model's particles draw with depth writes off,
   punch-through ones too, as the original's (grass, ours alone as an emitter, keeps them);

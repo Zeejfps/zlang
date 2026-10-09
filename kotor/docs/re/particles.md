@@ -75,11 +75,41 @@ reuses from its free list.
 
 Each frame (`0x00492450`, through `0x00494d40` for emitters without `p2p`; p2p emitters use
 `0x00492ea0`/`0x00493ae0` instead, and only while they have a target), for each particle not frozen:
-position += velocity * dt + the inherited speed `+0x18` * its direction * dt, then
-velocity.z -= dt * mass * 9.81, and the inherited speed is multiplied by (1 - dt). `inherit`
-(flag 0x40) keeps the particles rigid with the emitter (each frame they are carried by its move and
-turn, velocity included); `inherit_local` (0x100, only without `inherit`) adds the owner object's
-move each frame, `inherit_part` (0x400) the emitter's move (both also move the streak tail);
+first the carrying flags (header +300; read 2026-10-09, high), then position += velocity * dt + the
+inherited speed `+0x18` * its direction * dt, then velocity.z -= dt * mass * 9.81, and the inherited
+speed is multiplied by (1 - dt). Without a carrying flag a particle stays where it is in the world
+whatever its emitter does. The flags:
+
+- `inherit` (0x40): position = R(now) * R(before)^-1 * (position - the emitter's previous world
+  position `+0x170`) + its world position now `+0x164` (R the world orientations `+0x1a4` and the
+  previous `+0x1b4`), and the velocity turned the same way: rigid with the emitter's move and turn. The
+  streak tail `+0x60` and the particle's own orientation are not carried, so a carried Motion_Blur
+  particle's tail lags a frame's move behind it.
+- `inherit_local` (0x100, only without `inherit`, and only with an owner, emitter `+0x40`, the model's
+  object): position and tail += the owner's world position `+0x78` minus the copy kept at emitter
+  `+0x158`. The copy (and the owner's orientation, `+0x194`) is taken on the emitter's first step and
+  again after every step.
+- `inherit_part` (0x400, checked apart from the others): position and tail += the emitter's world
+  position now minus `+0x158`, which for this flag is the emitter's own position, taken on its first
+  step and after every step: its move without its turn. (No emitter in the data has it with `inherit`
+  or `inherit_local`.)
+- `inheritvel` (0x80) is not a carry: it is the birth's inherited speed (above).
+
+`0x00494da0` also uses `inherit_local` before the update: the emitter's previous position `+0x170` is then
+its last position plus the owner's move, so the owner's move does not count as the emitter's own (for
+the per-metre spawn type 1 and `inheritvel`). Nothing else carries a particle: drawing (`0x0049b680`,
+`0x0048f040`) takes the stored world positions as they are, and a `Single` emitter's update
+(`0x004979c0`) never puts its one particle back on the emitter, so a `Single` sprite born on a moving
+node stays where it was born unless a flag carries it. In the data (every model's emitter nodes, `kmdl`
+census, 2026-10-09) the room `Single` sprites on nodes that some animation moves all have `inherit`
+(Kashyyyk's 445 birds in `m22aa`, `m13aa_01f`'s 36, `m14`, `m23`, `m25`, `m26`, `m41`, `m44`: 1,460
+nodes), and every one with `inherit_local` (4,926: the duelling ring's crowd in `m02ae_07a`, 172, and
+4,754 in `m31aa/ab/ad_00a`, rooms no module's LYT names) is on a node no animation moves, in a room,
+whose owner never moves: they stand still in either reading. The exceptions are `m45ac_bmap`'s 35 capital
+ships, `Single` sprites without a flag under a `RotDummy` keyed in the room's `default` animation, which
+would stand where they were born if that animation ran.
+
+Then, for every particle not frozen, carried or not:
 `affectedByWind` (0x4) adds an offset from the scene's wind query (scene slot `+0xd0`, given the
 particle's position and dt), asked for every particle while the emitter has fewer than 50 and for
 every sixth otherwise (the others reuse the last answer); `bounce` (0x10) ray-casts the step against
