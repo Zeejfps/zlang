@@ -435,6 +435,12 @@ namespace chargen {
         } else if ev.kind == gui::EventKind::row_activated {
             st.fsel = feat_index{ st, feat = ev.user }
             toggle_feat{ st, &g, &fs, &dev, p } iferr {}
+        } else if ev.kind == gui::EventKind::cell_enter {
+            // Enter picks or drops the focused cell's feat, whichever control has the focus (0x006f4680:
+            // GUI sound 0, then 0x006f3c20 as a press on the cell); the focused control has it next.
+            gui::play_sound{ &g, n = 0 }
+            st.fsel = feat_index{ st, feat = ev.user }
+            toggle_feat{ st, &g, &fs, &dev, p } iferr {}
         } else if ev.kind == gui::EventKind::activate {
             if tag_is{ ev, tag = "BTN_SELECT" } {
                 toggle_feat{ st, &g, &fs, &dev, p } iferr {}

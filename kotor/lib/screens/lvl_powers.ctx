@@ -241,37 +241,46 @@ namespace lvl {
         } else if ev.kind == gui::EventKind::row_activated {
             s.psel = power_index{ s = &s, spell = ev.user }
             try toggle_power{ &s, &g, &w, &dev }
+        } else if ev.kind == gui::EventKind::cell_enter {
+            // Enter accepts, whichever cell has the focus (0x006f28c0: GUI sound 0, then 0x006f1130).
+            gui::play_sound{ &g, n = 0 }
+            try accept_powers{ &s, &g, &w, &dev }
         } else if ev.kind == gui::EventKind::activate {
             if slice::eq_bytes{ a = ev.tag, b = "SELECT_BTN" } {
                 try toggle_power{ &s, &g, &w, &dev }
             } else if slice::eq_bytes{ a = ev.tag, b = "RECOMMENDED_BTN" } {
                 try recommend_powers{ &s, &g, &w, &dev }
             } else if slice::eq_bytes{ a = ev.tag, b = "ACCEPT_BTN" } {
-                // Refused while picks remain and the selectable set is not empty (0x006f1130).
-                if s.ppicks > 0 {
-                    let mut any = false
-                    let mut i: usize = 0
-                    while i < s.pcount {
-                        if s.prows[i].state == FS_SELECTABLE { any = true }
-                        i = i + 1
-                    }
-                    if any {
-                        // "You have gained new powers. You must use "Add Power" to select your new powers before continuing."
-                        try say{ &s, &g, &w, &dev, strref = 48210, ask = ASK_INFO }
-                        return
-                    }
-                }
-                s.rec.npowers = @as(i32, s.pnchosen)
-                let mut i: usize = 0
-                while i < s.pnchosen {
-                    s.rec.powers[i] = s.pchosen[i]
-                    i = i + 1
-                }
-                close_step{ &s, &g }
-                step_taken{ &s, &g, &w, step = STEP_POWERS }
+                try accept_powers{ &s, &g, &w, &dev }
             } else if slice::eq_bytes{ a = ev.tag, b = "BACK_BTN" } {
                 close_step{ &s, &g }
             }
         }
+    }
+
+    // Accept (0x006f1130): refused while picks remain and the selectable set is not empty; else the
+    // picks are the level's powers and the step is done.
+    fn accept_powers { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
+        if s.ppicks > 0 {
+            let mut any = false
+            let mut i: usize = 0
+            while i < s.pcount {
+                if s.prows[i].state == FS_SELECTABLE { any = true }
+                i = i + 1
+            }
+            if any {
+                // "You have gained new powers. You must use "Add Power" to select your new powers before continuing."
+                try say{ &s, &g, &w, &dev, strref = 48210, ask = ASK_INFO }
+                return
+            }
+        }
+        s.rec.npowers = @as(i32, s.pnchosen)
+        let mut i: usize = 0
+        while i < s.pnchosen {
+            s.rec.powers[i] = s.pchosen[i]
+            i = i + 1
+        }
+        close_step{ &s, &g }
+        step_taken{ &s, &g, &w, step = STEP_POWERS }
     }
 }

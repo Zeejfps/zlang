@@ -151,7 +151,10 @@ chargen's pure helpers (`set_number`, `ability_tag`, the tag tables) are shared.
   `classpowergain.2da` says how many.
 - The cell lists take the arrow keys whichever control has the focus, as the original's panels do, and
   then pass them on to the focused control once the new cell is shown: with the pointer over the
-  description it scrolls the new text a line (`levelup_desc.txt`), a focused button follows its MOVETO.
+  description it scrolls the new text a line in the same frame (`levelup_desc.txt`), a focused button
+  follows its MOVETO. Enter picks or drops the focused cell's feat in the feats steps and accepts the
+  powers step, whichever control has the focus, then reaches the focused control (`gui::EventKind::
+  cell_enter`; `levelup_enter.txt`).
 - Accept: `levelup::apply` (the rules' record, maxima follow, full heal, OnPlayerLevelUp posted to the
   module for the player). The character sheet's Level Up posts the `level_up` note; Auto calls
   `levelup::auto_level`. The option "Auto Level Up NPCs" (`rules::Settings.auto_level`, read from the

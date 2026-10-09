@@ -42,6 +42,13 @@ namespace gui {
     // an arrow a cell list took to the panel's focused control (on_key).
     fn clear_events { mut g: Gui } {
         list::clear{ list = &g.events }
+        pass_keys{ &g }
+    }
+
+    // Gives an arrow a cell list took to the panel's focused control now, once the owner has shown the
+    // new cell (its events seen): the description scrolls in the same frame, as the original's does.
+    // clear_events does it otherwise.
+    fn pass_keys { mut g: Gui } {
         if g.pass_panel == 0 { return }
         let id = g.pass_panel
         g.pass_panel = 0
@@ -577,6 +584,20 @@ namespace gui {
             return true
         }
         if keycode == sdl::key::RETURN or keycode == KEY_KP_ENTER {
+            // A panel with a list of cell rows acts on Enter itself first (the feats panel 0x006f4680
+            // picks or drops the focused cell's feat, the powers panel 0x006f28c0 accepts: cell_enter),
+            // then passes it on to the focused control (0x00409e60). The cell list's own Enter goes
+            // to its focused row, whose click needs the pointer on the focused cell (0x006f3cf0), so
+            // it does nothing more here.
+            let cl = cell_list_of{ p }
+            if cl >= 0 {
+                let c = list::at{ list = p.controls, i = @as(usize, cl) }
+                if c.selected_row >= 0 and c.selected_row < @as(i32, c.row_count) {
+                    push_event{ &g, kind = EventKind::cell_enter, p, ci = cl, value = 0, row = c.selected_row, user = focused_user{ c, row = c.selected_row } }
+                }
+                if p.focus >= 0 and p.focus != cl { activate{ &g, p, ci = p.focus } }
+                return true
+            }
             if p.focus >= 0 { activate{ &g, p, ci = p.focus } }
             return true
         }

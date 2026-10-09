@@ -346,6 +346,12 @@ namespace lvl {
         } else if ev.kind == gui::EventKind::row_activated {
             s.fsel = feat_index{ s = &s, feat = ev.user }
             try toggle_feat{ &s, &g, &w, &dev }
+        } else if ev.kind == gui::EventKind::cell_enter {
+            // Enter picks or drops the focused cell's feat, whichever control has the focus (0x006f4680:
+            // GUI sound 0, then 0x006f3c20 as a press on the cell); the focused control has it next.
+            gui::play_sound{ &g, n = 0 }
+            s.fsel = feat_index{ s = &s, feat = ev.user }
+            try toggle_feat{ &s, &g, &w, &dev }
         } else if ev.kind == gui::EventKind::activate {
             if slice::eq_bytes{ a = ev.tag, b = "BTN_SELECT" } {
                 try toggle_feat{ &s, &g, &w, &dev }

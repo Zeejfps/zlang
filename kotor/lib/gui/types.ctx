@@ -217,6 +217,7 @@ namespace gui {
         right_click,                    // 0x44
         scrolled,                       // a list scrolled (wheel, scroll bar)
         arrow,                          // an arrow key, to a panel that asked (set_key_events); `value` 0 up, 1 down, 2 left, 3 right
+        cell_enter,                     // Enter on a panel with a shown list of cell rows, before the focused control has it; `row`, `user` the focused cell
     }
 
     struct Event {

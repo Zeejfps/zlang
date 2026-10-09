@@ -1974,13 +1974,23 @@ Two arrow images (`lbl_skarr`) follow at `+0x3d4`.
   (hover is focus) scrolls the new text a line, a button follows its MOVETO, and `LB_FEATS` itself,
   when it has the focus, steps its own selected index (`0x0041ce20`: the first press selects row 0,
   then one row, wrapping only with flag 0x40), apart from the row set's focused row. Enter (0x27) and
-  Back (0x28) are passed on after the panel's own handling too. (high)
+  Back (0x28) are passed on after the panel's own handling too. Enter's own handling (and the
+  pad's 0x2d) differs by panel: the feats panel plays GUI sound 0 and runs `0x006f3c20` on the
+  focused cell's feat (what `OnFeatPressed` 0x006f3cf0 runs for a press on the focused cell: pick
+  it, drop it, or the refusal box 42530/42183/42182/42184), the powers panel plays sound 0 and runs
+  its Accept (`0x006f1130`: the 48210 box while picks remain, else the picks are applied and the
+  panel closes), and the abilities panel has none (Enter only reaches the focused control). A list
+  box hands Enter to its selected row's control (`0x0041ce20`'s default), whose press needs the
+  pointer on the focused cell. (high)
 
 Ours: `lib/gui/cells.ctx` (a list box with `cell_art.on`; a panel's shown cell list takes the
-arrows, and `clear_events` passes them on to the focused control once the owner has shown the new
-cell, a frame later than the original; the cell list's own selection is its focused row, so the
-list box's separate selection step is not repeated; Enter still goes only to the focused control, not
-to the focused cell as well); `chargen/feat_cells.ctx` builds the feat
+arrows, and `pass_keys` passes them on to the focused control once the owner has shown the new
+cell, in the same frame (the in-game interface calls it after every panel has had its events;
+`clear_events` otherwise); the cell list's own selection is its focused row, so the
+list box's separate selection step is not repeated; Enter on such a panel is first a `cell_enter`
+event with the focused cell, which the feats steps take as a press on it and the powers step as
+Accept, then goes to the focused control unless that is the cell list itself:
+`tools/ingame/scripts/levelup_enter.txt`); `chargen/feat_cells.ctx` builds the feat
 rows for both feats steps and the abilities screen, `chargen/power_cells.ctx` the power rows for
 the level-up powers step and the abilities screen.
 

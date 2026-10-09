@@ -767,6 +767,9 @@ namespace ingame {
         // by a script closes the menu first.
         if screens::is_waiting{ s = &ui.screens } and ui.menu != NO_MENU { close_menu{ &ui, &w } }
         screens::update{ s = &ui.screens, g = &ui.gui, &w, &dev, events, dt }
+        // Every panel has seen its events: an arrow a cell list took goes on to the focused control now,
+        // so the description scrolls in the frame the new cell shows.
+        gui::pass_keys{ g = &ui.gui }
         // The sheet's 3D character goes with the sheet (closing a menu has no device to give it back with).
         if ui.menu != MENU_CHARACTER { character_panel::drop_view{ s = &ui.menus.character, &dev } }
         // The party selection screen (a script's ShowPartySelectionGUI), once the conversation that asked is over.
