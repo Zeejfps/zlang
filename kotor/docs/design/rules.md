@@ -293,7 +293,7 @@ memory addresses.
   (Guardian: 120 HP, 110 FP, BAB 10, saves 9/9/7), all nine classes to level 20; the 1959
   templates swept for Force points, power prerequisites and feat requirements.
 
-`kotor/tools/ctxc exe kotor/tools/rulescheck -o kotor/out/rulescheck.exe` and run it: 1046
+`kotor/tools/ctxc exe kotor/tools/rulescheck -o kotor/out/rulescheck.exe` and run it: 1143
 checks pass (a few seconds with a warm disk cache).
 
 ## Not done
