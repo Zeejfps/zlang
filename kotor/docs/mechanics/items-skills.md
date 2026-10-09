@@ -80,6 +80,7 @@ frames, so setup and click are spaced out.
 | Behaviour | Evidence | Status | Test |
 |---|---|---|---|
 | Using a container opens the loot panel listing its items, which cannot be clicked (no row handler, the list not selectable); Get Items takes all, last to first, Cancel takes nothing; OnInvDisturbed per item | 5.7, CSWGuiContainer.ShowContainerItems 0x006b8130 | open: ours takes an item on one click (the original has no taking of a single item) | `loot_click.txt` |
+| The party's use of a closed container sounds `Opened` and lifts the lid (animation 10075: the client plays `close2open`, then loops `open`); the panel comes up when the longer of the two is over (0.5 s with no client). One already open (`Open`) does nothing. Closing the panel plays 10076 (`open2close`, then `close`) with the `Closed` sound, whether or not it was emptied; a clear of the use before the panel closes the lid again. `Open` is saved apart from `AnimationState` | actions.md 3.5 and 3.15 (0x0057e8c0, client transitions 0x0063e930), 5.7 (CloseInventory 0x00587560, LoadPlaceable 0x00585670) | matches, except **ours on purpose: an emptied container stays open** (the user asked for it): the panel's close leaves the lid up and silent (a body bag that dies when empty still goes); the lid shows open after a load (`AnimationState` 1), and using it again shows the panel at once with no sound (the original would play `Opened` again for a lid it shows open). Putting something in and closing closes it | `sh kotor/tools/containers/locker.sh` |
 | Switch To lists the party's non-plot items; one click puts one in the container (a chosen count while the alternate-action key is held) | CSWGuiContainer.ShowGiveItems 0x006b8410, input 0x24 → GIVEITEM (0x22) | matches for the click; open: ours also lists plot items and has no count | `container_give.txt` |
 | PICKUPITEM walks to 1.1 m, crouches 1.5 s, acquires on the second pass | actions.md 3.8 | matches (earlier lead's action, now with the feedback) | |
 | There is no drop command in the original's inventory | gui.md ("No drag and drop") | matches | |
@@ -195,6 +196,8 @@ whether the control is visible and enabled); `LOG=actions` adds a line `upgrade 
 - Using an item from the inventory is instant in the original (0x004efe30: the power is cast and the use spent at the
   click, no action or animation, the queue untouched); ours queues a 1.5 s action.
 - A container's rows cannot be clicked in the original (0x006b8130: take all only); ours takes one item per click.
+- An emptied container closes its lid in the original (CloseInventory always plays 10076); ours leaves it open, silent,
+  across saves (section 4).
 - A charged item that reaches 0 charges is destroyed in the original; ours keeps it.
 - Skill rolls in the combat log: ours words them with 1405, the original formats its combat message 9 with 1408
   (the trap actions, [traps.md](traps.md) 4; the Security roll goes through the same message, `AIActionOpenLock`

@@ -248,7 +248,7 @@ namespace visual {
                 if v.count > 1 and v.saber != 3 { animate_sabers{ &sc, &w, v, o, c } }
             }
             door{ d } => { animate_door{ &sc, &w, v, state = @as(u32, d.state) } }
-            placeable{ p } => { animate_placeable{ &sc, &w, v, anim = p.anim } }
+            placeable{ p } => { animate_placeable{ &sc, &w, v, o, anim = p.anim } }
             trigger{ t } => { animate_mine{ &sc, &w, v, shown = traps::is_known{ w = &w, o } } }
             else => {}
         }
@@ -443,17 +443,48 @@ namespace visual {
     }
 
     // A placeable plays `default` (or nothing), or the animation its state names (on, off, open,
-    // close, animloopN).
-    fn animate_placeable { mut sc: scene::Scene, mut w: world::World, v: *mut scene::Visual, anim: u32 } {
+    // close, animloopN). A change between states plays the client's transition first (0x0063e930:
+    // to open close2open, from open open2close, to off or from on on2off, to on or from off off2on,
+    // the later rule winning) and then loops the new state; a placeable first seen in a state shows it
+    // at once. An opening container's panel waits for its close2open (container::hold_opening).
+    fn animate_placeable { mut sc: scene::Scene, mut w: world::World, v: *mut scene::Visual, o: *obj::Object, anim: u32 } {
         if v.state == anim { return }
+        let first = v.state == 0xFFFFFFFF
+        let from = v.state
         v.state = anim
         let name = animname::name_of{ id = anim }
         if anim == obj::ANIM_STAND or name.len == 0 {
             _ = scene::play{ &sc, &w, part = v.first, name = "default", looping = true, speed = 1.0, transition = 0.0 }
             return
         }
-        _ = scene::play{ &sc, &w, part = v.first, name, looping = animname::loops{ id = anim }, speed = 1.0, transition = 0.0 }
+        let mut via: []u8 = ""
+        if not first {
+            if anim == container::ANIM_OPEN { via = "close2open" }
+            if from == container::ANIM_OPEN { via = "open2close" }
+            if anim == ANIM_OFF { via = "on2off" }
+            if from == ANIM_OFF { via = "off2on" }
+            if anim == ANIM_ON { via = "off2on" }
+            if from == ANIM_ON { via = "on2off" }
+        }
+        if w.log.objects {
+            let sep: []u8 = if via.len > 0 { " then " } else { "" }
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "placeable {} {} plays {}{}{}\n", o.id, o.tag, via, sep, name)
+        }
+        let looping = animname::loops{ id = anim } or anim == container::ANIM_OPEN or anim == container::ANIM_CLOSE or anim == ANIM_ON or anim == ANIM_OFF
+        if via.len > 0 and scene::play{ &sc, &w, part = v.first, name = via, looping = false, speed = 1.0, transition = 0.0 } {
+            set_next{ sc = &sc, part = v.first, name }
+            if anim == container::ANIM_OPEN {
+                let seconds = scene::length_of{ &sc, &w, part = v.first, name = via }
+                container::hold_opening{ &w, placeable = o.id, ms = @as(u64, seconds * 1000.0 + 0.5) }
+            }
+            return
+        }
+        _ = scene::play{ &sc, &w, part = v.first, name, looping, speed = 1.0, transition = 0.0 }
     }
+
+    const ANIM_ON: u32 = 10073
+    const ANIM_OFF: u32 = 10074
 
     // The visual's draws: each part under its parent's hook.
     // The world transform of each of a visual's parts (the root's at the object, an attachment's

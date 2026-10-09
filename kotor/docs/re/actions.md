@@ -750,9 +750,12 @@ Param 0 = the object. In order (high unless marked):
      client twin (the player): placeable already open (`+0x338` set) ⇒ done, no OnUsed; first pass
      ⇒ push a fresh USEOBJECT and, in front of it, a WAIT of max(the placeable's animation 312
      length, sound length) — 0.5 s when the placeable has no client twin —, the placeable plays
-     10075 (med: which object plays 10075 needs a runtime check), mark `+0x450` = opening, done;
-     second pass (`+0x450` set) ⇒ open the container panel (`CSWSPlaceable::OpenInventory`
-     `0x00587420`), clear `+0x450`, speed 1.0, then step 5.
+     10075 (its own `SetAnimation`, vtable `+0x7c`; the NPC path above calls it on the actor), mark the
+     placeable's `+0x450` = opening, done; second pass (`+0x450` set) ⇒ open the container panel
+     (`CSWSPlaceable::OpenInventory` `0x00587420`, bAnimate 0: the lid is already up), clear `+0x450`, the
+     placeable's speed `+0xd8` = 1.0, then step 5. The 312 is `animations.2da` row 312 `close2open` on the
+     placeable's model (the footlocker's 0.67 s against its `pl_footlkr_open` 0.99 s: a 1 s wait; a body bag's
+     model has none, so it waits for its sound).
 4. In range, item target: when the base item's flag at row `+0x70` is set and the actor has a
    client twin, opens that item's container (`0x005561a0`), or closes it
    (`CSWSItem::CloseInventory` `0x0055d800`) when it is the one the client has open; done. Any
@@ -1565,6 +1568,13 @@ gives 313, a new 10074 314, ..., a new 10075 312, then a new 10072 306 for a pla
 329 for a door (type 10) last), so a dead placeable sounds `Destroyed` whatever it was doing. 312,
 the opening itself, plays nothing in `0x006832a0`: the open sound is USEOBJECT's. A placeable
 opened another way (PlayAnimation open) is silent. (high)
+
+The transitions are `animations.2da` rows, played once on the object's model before the new state's own animation
+loops (10075 row 310 `open`, 10076 311 `close`, 10073 308 `on`, 10074 309 `off`): 312 `close2open`, 313
+`open2close`, 314 `on2off`, 315 `off2on`. For a placeable the tests run new 10075 → 312, old 10075 → 313, new 10074
+→ 314, old 10074 → 315, new 10073 → 315, old 10073 → 314, the later winning. The container models have all four
+open/close names (`plc_footlker`: `close2open` and `open2close` 0.67 s, `open` and `close` one-frame poses);
+corpses and bags have none. (high)
 
 A body bag left by a creature uses row 53 `Corpse` for the client's sounds instead of its
 appearance's while the creature's corpse still lies there (`0x006832a0`): server `IsBodyBag` `+0x440`

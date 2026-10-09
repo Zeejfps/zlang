@@ -337,6 +337,8 @@ namespace obj {
         anim: u32,                          // the placeable's own animation state (10073..)
         die_when_empty: bool,               // DieWhenEmpty: a body bag vanishes once it is emptied
         user: u32,                          // who has the container open (OBJECT_INVALID: nobody)
+        opening: bool,                      // the party's USEOBJECT is waiting for the lid (+0x450, actions.md 3.5)
+        opening_until: u64,                 // world ms when that wait ends (the presentation lengthens it)
     }
 
     struct Trigger {

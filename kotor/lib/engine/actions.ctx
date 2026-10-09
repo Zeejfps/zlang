@@ -178,6 +178,7 @@ namespace actions {
     fn clear_queue { mut w: world::World, o: *mut obj::Object } {
         while true {
             let a = take_head{ o } ifnull { return }
+            if a.kind == Kind::use_object { doors::use_cleared{ &w, a = &a } }
             free_params{ &w, a }
         }
     }

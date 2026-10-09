@@ -418,7 +418,9 @@ namespace tmpl {
         read_object_hp{ o, doc, s }
         let state = number{ doc, s, label = "AnimationState", default = 0 }
         p.anim = if state == 1 { 10075 } else if state == 2 { 10076 } else { obj::ANIM_STAND }
-        p.open = state == 1
+        // `Open` (+0x338, LoadPlaceable 0x00585670) is the container's panel state, apart from the
+        // animation: a lid shown open is still closed to USEOBJECT's "already open" test.
+        p.open = flag{ doc, s, label = "Open", default = false }
         script{ doc, s, o, label = "OnClosed", slot = obj::Slot::closed }
         script{ doc, s, o, label = "OnDamaged", slot = obj::Slot::damaged }
         script{ doc, s, o, label = "OnDeath", slot = obj::Slot::death }

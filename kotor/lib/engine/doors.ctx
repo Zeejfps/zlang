@@ -96,6 +96,16 @@ namespace doors {
         return true
     }
 
+    // USEOBJECT's phase while the party waits for a container's lid (the approach uses 1).
+    const OPENING: u32 = 2
+
+    // A USEOBJECT leaves the queue unfinished (ClearAllActions, a new order): a container still
+    // opening for it closes its lid again (actions.md 1.5, 0x28).
+    fn use_cleared { mut w: world::World, a: *actions::Action } {
+        if a.phase != OPENING { return }
+        container::abort_opening{ &w, placeable = actions::object_param{ a, i = 0 } }
+    }
+
     // OPENDOOR (actions.md 3.6): param 0 the door.
     fn open_door { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut actions::Action } -> actions::Status {
         let target = actions::object_param{ a, i = 0 }
@@ -149,13 +159,24 @@ namespace doors {
         if p.has_inventory and p.locked and not use_key{ &w, who = id, target } {
             say_locked{ &w, who = id, target }
         }
-        // Opening it sounds placeableobjsnds' Opened, whoever opens it (0x0057e8c0).
-        if p.has_inventory and not p.locked and not p.open { objsound::play{ &w, id = target, column = objsound::OPENED } }
-        // A container the party opens shows its contents (actions.md 3.5): OnOpen, not OnUsed.
+        // A container the party opens shows its contents (actions.md 3.5): OnOpen, not OnUsed. One
+        // already open does nothing. The first pass sounds Opened and lifts the lid, and the panel waits
+        // for both (phase OPENING); one we left open when emptied (container::stays_open) shows its
+        // panel at once, without the sound.
         if p.has_inventory and not p.locked and (id == w.pc or id == w.player or party::is_member{ w = &w, id }) {
+            if p.open { return actions::Status::done }
+            if a.phase != OPENING and p.anim != container::ANIM_OPEN {
+                objsound::play{ &w, id = target, column = objsound::OPENED }
+                container::begin_opening{ &w, placeable = target }
+                a.phase = OPENING
+                return actions::Status::running
+            }
+            if a.phase == OPENING and not container::is_opened{ w = &w, p } { return actions::Status::running }
             _ = container::open{ &w, placeable = target, user = id }
             return actions::Status::done
         }
+        // Anyone else opening it sounds placeableobjsnds' Opened (0x0057e8c0).
+        if p.has_inventory and not p.locked and not p.open { objsound::play{ &w, id = target, column = objsound::OPENED } }
         events::post{ &w, delay_ms = 0, caller = id, target, payload = events::Payload::script{ e = events::script_event{ kind = events::USED, object = id } } }
         return actions::Status::done
     }

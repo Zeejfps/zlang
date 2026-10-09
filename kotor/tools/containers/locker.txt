@@ -1,0 +1,15 @@
+# The Endar Spire's footlocker opened, closed, opened, emptied, saved and loaded (kotor/tools/containers/locker.sh).
+# The start is 10_endar_spire.txt's; the clicks are the loot panel's Close (640 501) and Get Items (640 451).
+3 newgame
+4 ui replies 1 1 1 2 1 1 1 1 1 1 1 1 1 1 1 1 3 1 1 1 1 1 1 1 1 3 4 1 default 9
+2900 use end_locker01
+3010 ui click 640 501
+3020 ui click 640 501
+3070 use end_locker01
+3140 ui click 640 451
+3180 use end_locker01
+3220 ui click 640 501
+3240 save LOCKER
+3260 load kotor/out/containers/saves/000002 - Game1
+3330 use end_locker01
+3380 ui click 640 501

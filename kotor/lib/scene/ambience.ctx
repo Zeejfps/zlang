@@ -613,10 +613,17 @@ namespace ambience {
         }
     }
 
+    // A wave's length in ms as its header says (0 for an MP3, whose header doesn't).
+    fn length_ms { bytes: []u8 } -> u64 {
+        let info = wav::probe{ bytes } iferr { return 0 }
+        if info.rate == 0 { return 0 }
+        return info.frames * 1000 / @as(u64, info.rate)
+    }
+
     // One outbox note, if it is a sound.
     fn take { mut a: Ambience, mut w: world::World, note: outbox::Note } {
         match note {
-            play_sound{ name, position, positional, group } => {
+            play_sound{ name, object, position, positional, group } => {
                 let bytes = wave{ &a, &w, name }
                 if w.log.sound {
                     world::prefix{ w = &w }
@@ -634,6 +641,9 @@ namespace ambience {
                 p.squared = positional
                 _ = mix::play{ m = a.m, bytes, p } iferr { mix::Handle{ slot = 0, id = 0 } }
                 a.started = a.started + 1
+                // An opening container's panel waits for its Opened sound too (the length
+                // PlayVoiceStream returns to USEOBJECT, 0x0057e8c0).
+                if object != obj::INVALID { container::hold_opening{ &w, placeable = object, ms = length_ms{ bytes } } }
             }
             sound_object{ id, play, volume } => {
                 if volume >= 0 {

@@ -2,6 +2,7 @@
 // party-items-saves.md 5.7). The panel (lib/screens) shows what `open` posts and ends with
 // `close`; the item moves in between are `rt_misc::move_item`'s.
 //
+//   container::begin_opening{ &w, placeable }       USEOBJECT's first pass: the lid lifts, the panel waits
 //   container::open{ &w, placeable, user }            USEOBJECT's last step
 //   container::take{ &w, placeable, item }           one item to the party
 //   container::close{ &w, placeable, take_all }      the panel's Close or Get Items
@@ -21,10 +22,56 @@ namespace container {
         if not p.has_inventory or p.user != obj::INVALID { return false }
         p.open = true
         p.user = user
+        p.opening = false
         play{ &w, o, p, anim = ANIM_OPEN }
         events::post{ &w, delay_ms = 0, caller = user, target = placeable, payload = events::Payload::script{ e = events::script_event{ kind = events::OPEN, object = user } } }
         outbox::post{ out = &w.out, note = outbox::Note::open_container{ placeable, user } }
         return true
+    }
+
+    // The original's wait for the lid when no client tells it how long (0x0057e8c0 with no client twin).
+    const OPENING_MS: u64 = 500
+
+    // USEOBJECT's first pass for the party (actions.md 3.5): the lid opens (10075) and the action
+    // waits for max(close2open, the Opened sound) before the panel comes up. The presentation, which
+    // knows both lengths, lengthens the wait (`hold_opening`); without one it is 0.5 s.
+    fn begin_opening { mut w: world::World, placeable: u32 } {
+        let o = world::object{ w = &w, id = placeable } ifnull { return }
+        let p = obj::placeable{ o } ifnull { return }
+        play{ &w, o, p, anim = ANIM_OPEN }
+        p.opening = true
+        p.opening_until = clock::now_ms{ c = w.clock } + OPENING_MS
+    }
+
+    // The presentation started something `ms` long for an opening container (its close2open, its
+    // Opened sound): the panel waits for it.
+    fn hold_opening { mut w: world::World, placeable: u32, ms: u64 } {
+        let o = world::object{ w = &w, id = placeable } ifnull { return }
+        let p = obj::placeable{ o } ifnull { return }
+        if not p.opening { return }
+        let until = clock::now_ms{ c = w.clock } + ms
+        if until > p.opening_until { p.opening_until = until }
+    }
+
+    // Whether the wait for the lid is over (USEOBJECT's second pass then opens the panel).
+    fn is_opened { w: *world::World, p: *obj::Placeable } -> bool {
+        return not p.opening or clock::now_ms{ c = w.clock } >= p.opening_until
+    }
+
+    // The opening USEOBJECT was cleared before the panel came up (ClearAllActions, a new order): the
+    // lid closes again (actions.md 1.5's table, 0x28).
+    fn abort_opening { mut w: world::World, placeable: u32 } {
+        let o = world::object{ w = &w, id = placeable } ifnull { return }
+        let p = obj::placeable{ o } ifnull { return }
+        if not p.opening { return }
+        p.opening = false
+        if p.anim == ANIM_OPEN { play{ &w, o, p, anim = ANIM_CLOSE } }
+    }
+
+    // Ours (docs/mechanics/items-skills.md): an emptied container stays open, its lid up and silent,
+    // instead of closing as CloseInventory does; a body bag that dies when empty still goes.
+    fn stays_open { p: *obj::Placeable } -> bool {
+        return p.has_inventory and p.inventory.len == 0 and not p.die_when_empty
     }
 
     fn play { mut w: world::World, o: *mut obj::Object, p: *mut obj::Placeable, anim: u32 } {
@@ -65,8 +112,8 @@ namespace container {
     }
 
     // CSWSPlaceable::CloseInventory: with `take_all` everything goes to the party, last item
-    // first; then OnClose, the close animation, and a bag that is empty and dies when empty goes
-    // away. Does nothing when it is not open.
+    // first; then OnClose, the close animation (not for an emptied container: `stays_open`), and a
+    // bag that is empty and dies when empty goes away. Does nothing when it is not open.
     fn close { mut w: world::World, placeable: u32, take_all: bool } {
         let o = world::object{ w = &w, id = placeable } ifnull { return }
         let p = obj::placeable{ o } ifnull { return }
@@ -86,7 +133,7 @@ namespace container {
         }
         p.open = false
         p.user = obj::INVALID
-        play{ &w, o, p, anim = ANIM_CLOSE }
+        if not stays_open{ p } { play{ &w, o, p, anim = ANIM_CLOSE } }
         events::post{ &w, delay_ms = 0, caller = user, target = placeable, payload = events::Payload::script{ e = events::script_event{ kind = events::CLOSE, object = user } } }
         if p.has_inventory and p.die_when_empty and p.inventory.len == 0 {
             p.useable = false

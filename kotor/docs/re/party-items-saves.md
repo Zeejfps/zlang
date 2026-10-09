@@ -1550,7 +1550,9 @@ Placeable fields (`CSWSPlaceable::LoadPlaceable` `0x00585670`, high): `+0x324` `
 `ItemList`), `+0x2bc` `OnInvDisturbed`, `+0x394` `BodyBag` (row of `bodybag.2da`), `+0x440`
 `IsBodyBag`, `+0x44c` `IsCorpse`, `+0x448` the body's former owner id (set only by
 `SpawnBodyBag`), `+0xf8` plot (`Invulnerable`, else `Plot`; forced 1 by `Static`), `+0x218`
-`PartyInteract`. `GroundPile` is read but the field `+0x254` is always forced to 1.
+`PartyInteract`. `GroundPile` is read but the field `+0x254` is always forced to 1. `Open` and
+`AnimationState` are separate fields: `+0x338` is read from `Open`, the animation from `AnimationState` (1 →
+10075, 2 → 10076, ...), so a lid shown open is not open to USEOBJECT's already-open test.
 
 Opening is the USEOBJECT action's ([actions.md](actions.md) 3.5), which ends in
 **`CSWSPlaceable::OpenInventory(user, bAnimate)`** (`0x00587420`, high): only when closed and

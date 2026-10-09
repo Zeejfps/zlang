@@ -393,7 +393,7 @@ namespace world {
                     appearance = 0, open = false, on = false, useable = false, has_inventory = false, party_interact = false,
                     static = false, locked = false, lockable = false, key_required = false, key = slice::empty(u8){}, open_dc = 0, close_dc = 0, auto_remove_key = false,
                     inventory = list::new(u32, heap::Heap){ realloc = heap::alloc, heap = h }, walk = -1,
-                    model = resref::empty{}, anim = obj::ANIM_STAND, die_when_empty = false, user = obj::INVALID,
+                    model = resref::empty{}, anim = obj::ANIM_STAND, die_when_empty = false, user = obj::INVALID, opening = false, opening_until = 0,
                 } } }
             }
             trigger => {
