@@ -8,8 +8,8 @@ as inventory definitions. A module's GIT only names a template, so the template'
 every container placed from it holds; each item's StackSize is its count.
 
 Items are matched to the framework's seeded items (apps/kotor/src/items.ts, upgrades.ts) by name,
-with OVERRIDES settling names several items share. Items with no match (story items, datapads,
-Pazaak cards) are left out and listed. A template id is its resref, prefixed with the module when
+with OVERRIDES settling names several items share. Items with no match (Pazaak cards, which go to
+the side deck rather than the inventory) are left out and listed. A template id is its resref, prefixed with the module when
 copies in different modules hold different items.
 
 Placed containers and their loot rolls aren't written yet: they come with the framework's world
@@ -47,7 +47,8 @@ TRES = {
     'k_plc_tressndppl': 'sand_people',
 }
 
-# Templates whose name matches several framework items, settled by price or properties. Robes,
+# Templates whose name matches several framework items, settled by price, properties or content,
+# keyed by resref or, where a resref is a different item in each module, by module/resref. Robes,
 # which differ only in texture, are numbered in resref order (robe_overrides).
 OVERRIDES = {
     'g_w_vbroswrd01': 'vibrosword',
@@ -55,10 +56,28 @@ OVERRIDES = {
     'g_w_hldoblstr03': 'sith_assassin_pistol',
     'g_i_drdutldev007': 'advanced_flame_thrower',
     'g_i_belt010': 'stealth_field_generator',
+    # Story datapads, all named "Datapad"
+    'tar_m08aa/g_i_datapad002': 'calo_nord_datapad',
+    'kor37_datapad01': 'veren_gal_datapad',
+    'kor37_datapad02': 'sith_student_datapad',
+    'kor39_itm_datapd': 'sith_test_datapad',
+    'unk44_data': 'sequencer_datapad',
+    'manm27aa/w_sdatapad': 'dark_jedi_master_datapad',
+    # Rakghoul serum: the plot copy, and the two Zelka sells at different prices
+    'ptar_rakghoulser': 'rakghoul_serum',
+    'ptar_rakghoul001': 'rakghoul_serum_2',
+    'ptar_rakghoul002': 'rakghoul_serum_3',
 }
 
-ITEM_ROW = re.compile(r'\{ id: "([a-z0-9_]+)", name: ("(?:[^"\\]|\\.)*"), description: '
-                      r'"(?:[^"\\]|\\.)*", basePrice: (\d+)')
+ITEM_ROW = re.compile(r'\{ id: "([a-z0-9_]+)",(?: itemTypeId: "[a-z0-9_]+",)? '
+                      r'name: ("(?:[^"\\]|\\.)*"), description: "(?:[^"\\]|\\.)*", basePrice: (\d+)')
+
+
+def item_value(u):
+    """An item template's value, as the game computes it (`CSWSItem::GetCost`): 0 for a plot item,
+    else its AddCost, at least 1. The template's Cost is a stale editor value the game never reads
+    (party-items-saves.md 5.1)."""
+    return 0 if u.get('Plot') else max(1, u.get('AddCost') or 0)
 
 
 def txt(v):
@@ -151,8 +170,9 @@ def placed_templates(install):
                 for it in s.get('ItemList') or []:
                     iref = txt(it.get('InventoryRes'))
                     u = gff.read(kres.read_entry(find(iref, 'uti'))).root
+                    value = item_value(u)
                     items.append((iref, install.name(u, 'LocalizedName'), u.get('StackSize') or 1,
-                                  u.get('Cost')))
+                                  value))
                 templates[(mod, ref)] = {'loot': loot[0] if loot else None, 'items': items}
     return templates, placed
 
@@ -170,15 +190,16 @@ def main(argv):
     unseeded, price_mismatches, resolved = Counter(), set(), {}
     for key, t in templates.items():
         stacks = Counter()
-        for iref, name, count, cost in t['items']:
-            ids = [overrides[iref]] if iref in overrides else by_name.get(name.lower(), [])
+        for iref, name, count, value in t['items']:
+            override = overrides.get(f'{key[0]}/{iref}') or overrides.get(iref)
+            ids = [override] if override else by_name.get(name.lower(), [])
             if len(ids) > 1:
                 raise SystemExit(f'{iref} ({name}) matches {ids}: add it to OVERRIDES')
             if not ids:
                 unseeded[(iref, name)] += placed[key]
                 continue
-            if ids[0] != 'credits' and prices[ids[0]] != cost:
-                price_mismatches.add((iref, name, cost, ids[0], prices[ids[0]]))
+            if ids[0] != 'credits' and prices[ids[0]] != value:
+                price_mismatches.add((iref, name, value, ids[0], prices[ids[0]]))
             stacks[ids[0]] += count
         resolved[key] = stacks
 
