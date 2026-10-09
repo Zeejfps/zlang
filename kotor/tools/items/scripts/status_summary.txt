@@ -13,4 +13,4 @@
 88 ui replies 2 3 default 1
 90 use end_comp02
 700 ui xp
-980 ui clickctl BTN_OK
+800 ui clickctl BTN_OK

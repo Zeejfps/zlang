@@ -100,7 +100,7 @@ namespace ingame {
     // Once a frame, after the HUD: the icons' and the portraits' sound events, then the client's delay
     // (MainLoop step 22): while there is news and the game has the player's attention, 0.25 s (counted only on
     // frames shorter than that) and then the flush; anything in the way starts the wait again.
-    fn update_summary { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, fade_busy: bool, dt: f32 } {
+    fn update_summary { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, fade_busy: bool, frame_dt: f32, dt: f32 } {
         if not ui.hud_hidden {
             if ui.summary.icon_news {
                 ui.summary.icon_news = false
@@ -123,7 +123,9 @@ namespace ingame {
             ui.summary.delay = SUMMARY_DELAY
             return
         }
-        if dt < SUMMARY_DELAY { ui.summary.delay = ui.summary.delay - dt }
+        // A hitch (a frame of a quarter second or more) does not count. Under --speed N the GUI's step carries the
+        // ticks it skipped, so it is the frame's own delta that is weighed.
+        if frame_dt < SUMMARY_DELAY { ui.summary.delay = ui.summary.delay - dt }
         if ui.summary.delay > 0.0 { return }
         ui.summary.delay = 0.0
         flush_summary{ &ui, &w, &dev }

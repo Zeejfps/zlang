@@ -57,6 +57,7 @@ namespace ingame {
         notice_box: msgbox::Box,            // a box with only OK (42628, the leader is down), up until answered
         summary: Summary,                   // the status summary's events and its panel (summary_ui.ctx)
         fade_busy: bool,                    // a screen fade runs (the loop says so each frame): the status summary waits
+        frame_dt: f32,                      // the frame's own delta, without the ticks a --speed run skipped (the loop sets it)
     }
 
     // What the camera takes from the mouse each frame (CameraInputMouseYaw, movement.md 2.3).
@@ -98,7 +99,7 @@ namespace ingame {
             party_alive = 0, ap_cooldown = 0.0, pause_reason = REASON_PAUSED,
             psel_wait = false, psel_exit = resref::empty{}, psel_force1 = -1, psel_force2 = -1, psel_paused = false,
             mine_quiet = 1000.0, combat_movement = saved.combat_movement, wiping = false, notice_box = msgbox::blank{},
-            summary = new_summary{ on = saved.status_summary }, fade_busy = false,
+            summary = new_summary{ on = saved.status_summary }, fade_busy = false, frame_dt = 0.0,
         }
         let mut p = try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
         options_panel::set_config{ s = &p.menus.options, path = settings }
@@ -713,7 +714,7 @@ namespace ingame {
         }
         if not ui.hud_hidden { watch_mines{ &ui, &w, dt } }
         check_solo_box{ &ui, &w, &dev }
-        update_summary{ &ui, &w, &dev, fade_busy = ui.fade_busy, dt }
+        update_summary{ &ui, &w, &dev, fade_busy = ui.fade_busy, frame_dt = ui.frame_dt, dt }
         // The pause banner follows the clock (a script or the toggle can change it).
         if ui.pause_panel != 0 and not clock_paused_by_player{ w = &w } {
             gui::close{ g = &ui.gui, id = ui.pause_panel }
