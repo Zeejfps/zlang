@@ -51,6 +51,7 @@ namespace ingame {
         party_alive: i32,                   // party members on their feet last frame
         ap_cooldown: f32,                   // seconds before "Party Member Down" may pause again
         pause_reason: u32,                  // the banner's text (dialog.tlk) for the next pause
+        auto_paused: bool,                  // the pause is an auto-pause (client +0x384 bit 0): cleared with the pause
         mine_quiet: f32,                    // seconds no hostile mine has been in sight (mine_watch.ctx)
         combat_movement: bool,              // the "Combat Movement" option (lib/scene/control.ctx reads it)
         wiping: bool,                       // the party-wipe sequence runs (game/death.ctx): menu keys fade out
@@ -96,7 +97,7 @@ namespace ingame {
             right_held = false, look_x = 0, look_y = 0, looking = false, freelook = false, turn_to = obj::INVALID, mouse_look = saved.mouse_look, mouse_sens = saved.mouse_sensitivity, reverse_buttons = saved.reverse_buttons,
             autopause = false, ap_enemy = saved.pause_enemy_sighted, ap_mine = saved.pause_mine_sighted, ap_party = saved.pause_party_killed,
             ap_target = saved.pause_triggers, ap_round = saved.pause_end_round, ap_action_menu = saved.pause_action_menu,
-            party_alive = 0, ap_cooldown = 0.0, pause_reason = REASON_PAUSED,
+            party_alive = 0, ap_cooldown = 0.0, pause_reason = REASON_PAUSED, auto_paused = false,
             psel_wait = false, psel_exit = resref::empty{}, psel_force1 = -1, psel_force2 = -1, psel_paused = false,
             mine_quiet = 1000.0, combat_movement = saved.combat_movement, wiping = false, notice_box = msgbox::blank{},
             summary = new_summary{ on = saved.status_summary }, fade_busy = false, frame_dt = 0.0,
@@ -553,37 +554,44 @@ namespace ingame {
             pp.x = (ui.gui.ui_w - pp.w) / 2
             pp.y = ui.gui.ui_h / 6
             gui::place{ g = &ui.gui, p = pp }
-            if ui.pause_reason == REASON_PAUSED {
-                gui::set_strref{ g = &ui.gui, panel = p, tag = "LBL_PAUSEREASON", strref = ui.pause_reason } iferr {}
-            } else {
-                // An automatic pause says why, and its text carries the instruction itself, so the panel's own
-                // "press the pause button" line goes and the box grows to hold the text (CSWGuiPause::SetReason);
-                // "<Pause>" is the key's name.
-                let raw = world::string_by_strref{ w = &w, strref = ui.pause_reason }
-                ui.text.bytes.len = 0
-                let token: []u8 = "<Pause>"
-                let mut at: usize = 0
-                while at < raw.len {
-                    if at + token.len <= raw.len and slice::eq_bytes{ a = raw[at..at + token.len], b = token } {
-                        _ = @fmt(&ui.text, "Space")
-                        at = at + token.len
-                    } else {
-                        list::push{ list = &ui.text.bytes, item = raw[at] } iferr {}
-                        at = at + 1
-                    }
-                }
-                gui::set_text{ g = &ui.gui, panel = p, tag = "LBL_PAUSEREASON", text = utf8::view{ b = ui.text }.bytes } iferr {}
-                gui::set_visible{ g = &ui.gui, panel = p, tag = "LBL_PRESS", visible = false }
-                let reason_label = gui::find_control{ g = &ui.gui, panel = p, tag = "LBL_PAUSEREASON" }
-                if reason_label != null { reason_label.h = 80 }
-                let button = gui::find_control{ g = &ui.gui, panel = p, tag = "BTN_UNPAUSE" }
-                if button != null { button.h = 86 }
-                pp.h = 90
-            }
+            set_banner_reason{ &ui, &w, p, reason = ui.pause_reason }
             ui.pause_reason = REASON_PAUSED
         } else if not on and ui.pause_panel != 0 {
             gui::close{ g = &ui.gui, id = ui.pause_panel }
             ui.pause_panel = 0
+        }
+        if not on { ui.auto_paused = false }
+    }
+
+    // The banner's text (CSWGuiPause::SetReason 0x006c00c0).
+    fn set_banner_reason { mut ui: Ingame, mut w: world::World, p: u32, reason: u32 } {
+        let pp = gui::find_panel{ g = &ui.gui, id = p } ifnull { return }
+        if reason == REASON_PAUSED {
+            gui::set_strref{ g = &ui.gui, panel = p, tag = "LBL_PAUSEREASON", strref = reason } iferr {}
+        } else {
+            // An automatic pause says why, and its text carries the instruction itself, so the panel's own
+            // "press the pause button" line goes and the box grows to hold the text (CSWGuiPause::SetReason);
+            // "<Pause>" is the key's name.
+            let raw = world::string_by_strref{ w = &w, strref = reason }
+            ui.text.bytes.len = 0
+            let token: []u8 = "<Pause>"
+            let mut at: usize = 0
+            while at < raw.len {
+                if at + token.len <= raw.len and slice::eq_bytes{ a = raw[at..at + token.len], b = token } {
+                    _ = @fmt(&ui.text, "Space")
+                    at = at + token.len
+                } else {
+                    list::push{ list = &ui.text.bytes, item = raw[at] } iferr {}
+                    at = at + 1
+                }
+            }
+            gui::set_text{ g = &ui.gui, panel = p, tag = "LBL_PAUSEREASON", text = utf8::view{ b = ui.text }.bytes } iferr {}
+            gui::set_visible{ g = &ui.gui, panel = p, tag = "LBL_PRESS", visible = false }
+            let reason_label = gui::find_control{ g = &ui.gui, panel = p, tag = "LBL_PAUSEREASON" }
+            if reason_label != null { reason_label.h = 80 }
+            let button = gui::find_control{ g = &ui.gui, panel = p, tag = "BTN_UNPAUSE" }
+            if button != null { button.h = 86 }
+            pp.h = 90
         }
     }
 
@@ -597,6 +605,7 @@ namespace ingame {
     const REASON_MENU: u32 = 42482           // "Menu Used"
     const REASON_ROUND: u32 = 42432          // "End of Combat Round"
     const REASON_MINE: u32 = 49118           // "MINE SIGHTED! Press the Pause button to continue"
+    const REASON_QUEUED: u32 = 48423         // "Action added to queue." (reason 10: a choice queued during an auto-pause)
 
     // Pauses for `reason` unless the game is already paused, a conversation or a menu has the screen, or
     // a module change is coming (RequestAutoPause 0x005f3f10).
@@ -604,6 +613,7 @@ namespace ingame {
         if clock_paused_by_player{ w = &w } or w.conversation.active or ui.menu != NO_MENU or ui.hud_hidden { return }
         if w.transition != null or w.arrival > 0 or is_blocked{ &ui } { return }
         ui.pause_reason = reason
+        ui.auto_paused = true
         if w.log.objects {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "auto-pause: {} (target {})\n", reason, w.target)
@@ -691,13 +701,29 @@ namespace ingame {
         let aspect = @as(f32, ui.width) / @as(f32, ui.height)
         // A conversation covers the screen with its own panels.
         ui.hud.looking = ui.looking
+        // A choice from the target block or the self slots in combat mode during an auto-pause: the banner says
+        // "Action added to queue." and the game stays paused (SetPauseState(1, 10) from 0x00689610 / 0x0068ad60).
+        if ui.hud.queued_banner or ui.selfs.queued {
+            if ui.auto_paused and ui.pause_panel != 0 {
+                set_banner_reason{ &ui, &w, p = ui.pause_panel, reason = REASON_QUEUED }
+                if w.log.objects {
+                    world::prefix{ w = &w }
+                    _ = @fmt(&w.io, "pause banner: {}\n", REASON_QUEUED)
+                }
+            }
+            ui.hud.queued_banner = false
+            ui.selfs.queued = false
+        }
+        ui.hud.auto_paused = ui.auto_paused
+        // The self slots' refusal borrows the combat message bar's label.
+        ui.hud.label_lent = ui.selfs.message > 0.0
         hud::update{ h = &ui.hud, g = &ui.gui, &w, &dev, text = &ui.text, camera, aspect, blocked = is_blocked{ &ui }, dt }
         // The auto-target's picks that turn the camera (an enemy coming into sight, a pick in combat mode) go the way Q and E do.
         if ui.hud.swing_to != obj::INVALID {
             ui.turn_to = ui.hud.swing_to
             ui.hud.swing_to = obj::INVALID
         }
-        selfslots::update{ s = &ui.selfs, g = &ui.gui, &w, &dev, panel = ui.hud.panel, dt, combat_message = ui.hud.combat and ui.hud.combat_message > 0.0 }
+        selfslots::update{ s = &ui.selfs, g = &ui.gui, &w, &dev, panel = ui.hud.panel, dt, combat_message = ui.hud.combat }
         let events = gui::take_events{ g = &ui.gui }
         let mut i: usize = 0
         while i < events.len {

@@ -371,7 +371,22 @@ object, `+0x30` only for a creature, slot `+0x94` is `GetDead`, the client creat
 3. Afterwards, for the controlled creature in combat mode, the party entry's combat message
    (`party+0xa8` for its slot, set by `0x006345e0` from the attack, cast and item-cast actions and
    the HUD's `Update`) is shown again with `ShowCombatMessage` through `0x0062b110` unless it is
-   48208 (`0xbc50`, "COMBAT MODE engaged"). (med: what the messages are)
+   48208 (`0xbc50`, "COMBAT MODE engaged"). (high) The messages (all through `0x006345e0`, which stores the
+   strref in the member's record and shows it at once when the member is the controlled creature): 48208 at
+   every run of `AIActionAttackObject` (`0x005bbd06`) and of the cast actions (`AIActionCastSpell` `0x00514b82`,
+   `AIActionItemCastSpell` `0x0050f292`), for a party member (`+0xa88`); 42477 "Closing to attack range." when
+   the attack pushes its approach and the target is more than 0.5 m away in the plane (`0x005bca13`, squared
+   distance above 0.25) and when `AddCastSpellActions` / `AddItemCastSpellActions` push the walk into range
+   (`0x004f9d50`, `0x004f93fe`); from `ProcessInput` (asm `0x00623c2c`..`0x00623c8e`) for the controlled
+   creature in combat mode, 42476 "Player moving. Cancelling combat actions." while the player control's speed
+   (slot `+0x1c`) is 0.25 or more, else, when its message is 42476, 48208; and 48208 from the HUD's `Update`
+   when a timed message runs out. `ShowCombatMessage` (`0x00687700`) does nothing while a timed message runs
+   (`+0x7724` not -1); 42476, 42477 and 47859 are refused while auto-paused; every message but 48208 and 47915
+   gets a 2.5 s timer (`+0x7720`, `+0x7724`; alpha 1 for the first half, then falling to 0); the colour is by
+   strref (48208 (0.74, 0.11, 0), 42476 and 42478 (0.28, 0.92, 0.11), 47859 (0.95, 0, 0.85), 47915 (0.98, 0.45,
+   0), others the menu text colour (0, 0.66, 0.98)). The HUD's `SetCombatMode` shows the bar (`LBL_CMBTMSGBG`,
+   `LBL_CMBTMODEMSG`) for the whole of combat mode and ends a timed message when it ends. Ours:
+   `hud::show_combat_message`, `fight::say_combat_message`. (high)
 
 `+0x50c` is set by `AddAttackActions` (`0x004fde40`, when unset), by `AIActionAttackObject` and by
 the end-of-round continuation; `+0x524` by the cast actions when unset; `RunActions` clears both

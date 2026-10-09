@@ -40,7 +40,13 @@ namespace hud {
         minimap: MiniMap,
         font: i32,                          // the feedback lines' font slot, -1 none
         combat: bool,                       // the combat controls are up
-        combat_message: f32,                // seconds left of the combat-mode message
+        cmsg: u32,                          // the combat message bar's text (dialog.tlk; main interface +0x7728)
+        cmsg_left: f32,                     // seconds left of a timed message (+0x7724); below 0 none runs, and a new message may come up
+        cmsg_total: f32,                    // its whole time (+0x7720)
+        cmsg_label: u32,                    // the strref LBL_CMBTMODEMSG shows now, 0 when it must be written again
+        label_lent: bool,                   // the self slots' refusal has the bar's label this frame (ingame)
+        auto_paused: bool,                  // the game is paused by an auto-pause (client +0x384 bit 0; ingame)
+        queued_banner: bool,                // a choice was queued while auto-paused: the banner says so (pause reason 10; taken by ingame)
         notify: [9]f32,                     // seconds left of each notification icon
         notify_shown: [9]bool,
         level_news: bool,                   // a member can newly level up: the status summary's gui_level is due (taken by ingame)
@@ -108,7 +114,7 @@ namespace hud {
             widgets = [Widget{ id = obj::INVALID, portrait = 0, hp = -1, hp_max = -1, fp = -1, fp_max = -1, level = -1, xp = 0, down = false }; 3],
             block = [BlockPart{ index = -1, x = 0, y = 0 }; 16],
             minimap = open_minimap{ &g, &w, &dev, panel },
-            font = gui::font_slot{ &g, fs = &w.fs, &dev, name = "dialogfont10x10" }, combat = false, combat_message = 0.0, notify = [0.0; 9], notify_shown = [false; 9], level_news = false, told = [Told{ id = obj::INVALID, level = -1 }; 12],
+            font = gui::font_slot{ &g, fs = &w.fs, &dev, name = "dialogfont10x10" }, combat = false, cmsg = COMBAT_ENGAGED, cmsg_left = -1.0, cmsg_total = 2.5, cmsg_label = 0, label_lent = false, auto_paused = false, queued_banner = false, notify = [0.0; 9], notify_shown = [false; 9], level_news = false, told = [Told{ id = obj::INVALID, level = -1 }; 12],
             shown_target = obj::INVALID, lists = [empty_list{}; 3], power_pick = -1, refusal = 0.0, refusal_reason = 0, hover_slot = -1, look = -1, pressed = obj::INVALID,
             pressing = false, reticle = Reticle{ shown = false, x = 0.0, y = 0.0, side = 0.0, mark = 0, turns = 0 }, reticle_for = obj::INVALID, zoom = -1.0, sight_latch = false, sight_quiet = 0.0, target_lost = 0.0, move_speed = 0.0, moving_for = 0.0, looking = false, swing_to = obj::INVALID, door_window = 0.0, deferred = 0.0, deferred_text = 0, alternate = false, trans_panel = 0, trans_object = obj::INVALID,
             projector = Projector{ vp = math::mat4::identity{}, eye = math::vec3::zero{}, w = 1.0, h = 1.0 },

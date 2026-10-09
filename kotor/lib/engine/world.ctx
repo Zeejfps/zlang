@@ -86,6 +86,7 @@ namespace world {
         party: party::Party,
         target: u32,                        // the selected object (HUD picking), obj::INVALID none
         hover: u32,                         // the object under the cursor
+        target_keep: f32,                   // the client's 1.5 s keep of a target that died (+0x378, hud::pick_target); while it runs every creature is a foe to the HUD (hud::is_foe)
         aim_id: u32,                        // the object `aim` belongs to: the target, once the scene has found where its reticle hangs
         aim: math::Vec3,                    // that point in the world (the model's head_g / lookathook node), for the HUD's reticle
         repute: [32][32]u8,                 // repute.2da standings, faction by faction (0..100)
@@ -175,7 +176,7 @@ namespace world {
             clock = clock::new{},
             objects = obj::new_table{ heap },
             module = obj::INVALID, area = obj::INVALID, pc = obj::INVALID, arrival = 0,
-            party = party::new{}, target = obj::INVALID, hover = obj::INVALID, aim_id = obj::INVALID, aim = math::vec3::zero{},
+            party = party::new{}, target = obj::INVALID, hover = obj::INVALID, target_keep = 0.0, aim_id = obj::INVALID, aim = math::vec3::zero{},
             repute = [[50; 32]; 32], repute_rows = 0,
             queue = events::new_queue{ heap },
             scripts = scripts::new_cache{ heap },

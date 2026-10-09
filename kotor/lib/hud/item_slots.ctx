@@ -39,7 +39,7 @@ namespace hud {
     fn grenade_actions { w: *world::World, target: u32 } -> ActionList {
         let mut l = empty_list{}
         if not allows_combat{ w } { return l }
-        if not is_hostile{ w, id = target } { return l }
+        if not is_foe{ w, id = target } { return l }
         let ids = list::items{ list = w.bag }
         let mut k: usize = 0
         while k < ids.len {

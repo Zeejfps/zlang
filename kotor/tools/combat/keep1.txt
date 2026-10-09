@@ -1,0 +1,9 @@
+20 ui heal
+21 ui sethp pc 300
+30 ui foe g_sithtroop01 3 0
+31 ui foe g_sithtroop02 9 4
+32 ui damage g_sithtroop01 24
+35 cam toward g_sithtroop01
+40 ui clickon g_sithtroop01
+42 ui clickon g_sithtroop01
+44 ui fight

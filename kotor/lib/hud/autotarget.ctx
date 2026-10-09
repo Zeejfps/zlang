@@ -24,6 +24,8 @@ namespace hud {
     const MOVING_MIN: f32 = 0.25
     const MOVING_DROP_S: f32 = 0.5
     const NEAR_MAX: usize = 128
+    // How long a target that died is kept in combat mode (client +0x378).
+    const KEEP_DEAD_S: f32 = 1.5
     const TWO_PI: f32 = 6.2831855
 
     // The counter-clockwise angle from the leader's facing to the direction of `p`, in [0, 2 pi): the
@@ -151,10 +153,33 @@ namespace hud {
             n = n + 1
         }
 
+        // A target that died (0x005fa7aa..0x005fa8c6): in combat mode, with a hostile creature still in the list, a
+        // current target that left the list because it is dead or dying stays the target for 1.5 s (+0x378,
+        // counted on the world's frame time); anything else stops the keep.
+        let combat = leader_in_combat_mode{ w = &w }
+        let mut in_list = false
+        let mut k: usize = 0
+        while k < n {
+            if ids[k] == w.target { in_list = true }
+            k = k + 1
+        }
+        let mut kept = false
+        if not hostile_near or not combat or in_list {
+            w.target_keep = 0.0
+        } else if w.target_keep > 0.0 {
+            w.target_keep = w.target_keep - dt
+            if w.target_keep > 0.0 {
+                if is_dead_or_dying{ w = &w, id = w.target } { kept = true } else { w.target_keep = 0.0 }
+            }
+        } else if is_dead_or_dying{ w = &w, id = w.target } {
+            w.target_keep = KEEP_DEAD_S
+            kept = true
+        }
+
         // The current target: kept while it is on the list and in view, dropped a second after it leaves view.
-        let mut have = false
-        if w.target != obj::INVALID {
-            let mut k: usize = 0
+        let mut have = kept
+        if w.target != obj::INVALID and not kept {
+            k = 0
             while k < n {
                 if ids[k] == w.target {
                     have = true
@@ -171,14 +196,13 @@ namespace hud {
                 k = k + 1
             }
             if not have { w.target = obj::INVALID }
-        } else {
+        } else if not kept {
             h.target_lost = 0.0
         }
 
         // An enemy coming into sight: the first of the visible hostile creatures round the leader by bearing.
-        let combat = leader_in_combat_mode{ w = &w }
         let mut first_hostile: usize = n
-        let mut k: usize = 0
+        k = 0
         while k < n {
             if hostile[k] and (first_hostile == n or bearing[k] < bearing[first_hostile]) and is_entry_seen{ w = &w, ids, &seen, k } { first_hostile = k }
             k = k + 1
@@ -245,5 +269,15 @@ namespace hud {
             // SelectTarget swings the camera toward a pick only in combat mode.
             if combat { h.swing_to = w.target }
         }
+    }
+
+    // Whether `id` is a creature that is dead or dying (the keep's test: GetDead slot 0x94, GetIsDying).
+    fn is_dead_or_dying { w: *world::World, id: u32 } -> bool {
+        let o = world::object{ w, id } ifnull { return false }
+        let c = obj::creature{ o } ifnull { return false }
+        if party::is_member{ w, id } { return false }
+        if c.dead { return true }
+        if fight::of{ o } is some{ value = f } { return f.dying_ms > 0 }
+        return false
     }
 }

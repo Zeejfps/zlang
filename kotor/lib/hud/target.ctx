@@ -59,6 +59,16 @@ namespace hud {
         return world::standing{ w, from = o.faction, toward = lo.faction } < HOSTILE_BELOW
     }
 
+    // Whether the HUD treats `id` as a foe: the target kind 4 of GetTargetKind (0x0060fcc0; the target block's
+    // lists, the default actions), FUN_0060fc00's kind 3 (UseAction's switch into combat mode) and the target
+    // marker's hostile look (UpdateReticles 0x0068a310). A hostile creature, or any creature at all while the
+    // leader's 1.5 s keep of a target that died runs (FUN_005ee0f0 reads client +0x378; autotarget.ctx).
+    fn is_foe { w: *world::World, id: u32 } -> bool {
+        let o = world::object{ w, id } ifnull { return false }
+        if o.kind != obj::Kind::creature { return false }
+        return w.target_keep > 0.0 or is_hostile{ w, id }
+    }
+
     // Whether `id` is a placeable without an inventory that is hostile to the leader: the target block treats
     // it as a foe and lists the hostile Force powers in its middle slot (GetTargetKind 0x0060fcc0 gives it kind 3,
     // FUN_00619c20 then asks the client hostile flag and the standing, below 11).
@@ -136,7 +146,7 @@ namespace hud {
                 if p.locked and not o.plot and allows_combat{ w } { push_entry{ &l, e = entry{ act = Act::bash, icon = "i_attack", strref = 368 } } }
             }
             creature{ c } => {
-                if is_hostile{ w, id } {
+                if is_foe{ w, id } {
                     if allows_combat{ w } { push_entry{ &l, e = entry{ act = Act::attack, icon = "i_attack", strref = 375 } } }
                 } else { push_entry{ &l, e = entry{ act = Act::talk, icon = "i_dialog", strref = 371 } } }
             }
@@ -660,7 +670,7 @@ namespace hud {
     // actions' first, plain Attack: BuildDefaultActions, movement.md 7.4.)
     fn attack_slot { w: *world::World, id: u32 } -> ActionList {
         let plain = default_actions{ w, id }
-        if not is_hostile{ w, id } {
+        if not is_foe{ w, id } {
             // A mine's Disable and Recover; a locked door's or placeable's Bash; nothing on a friendly creature.
             if world::object{ w, id } is some{ value = o } { if o.kind == obj::Kind::trigger { return plain } }
             return build_slot_actions{ w, id, k = 0 }

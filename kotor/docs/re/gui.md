@@ -1506,7 +1506,8 @@ has an entry), and the keys 1-3 (which run the selected entry of these lists) do
 other ways to act on a friend give no hostile choice either: a click or R runs the default list
 (Talk on a kind-3 creature, 7.4), and the self slots hold friendly powers, medical and other items
 used on the leader, and mines. Ours (`hud::attack_slot`, `middle_actions`, `grenade_actions`) follows
-the table; the keep timer is not modelled, so in ours a creature is hostile only by its reputation.
+the table; the keep timer is `w.target_keep` (hud::pick_target), and `hud::is_foe` makes every creature kind 4
+while it runs.
 
 ##### The target block's drawing
 

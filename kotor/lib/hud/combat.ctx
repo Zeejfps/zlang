@@ -2,9 +2,6 @@
 // combat the bar at the bottom centre shows the queue of its attack actions and the Disengage
 // button, and the message bar at the top announces combat mode for a few seconds.
 namespace hud {
-    // How long the "combat mode" message stays up.
-    const COMBAT_MESSAGE_SECONDS: f32 = 6.0
-
     const COMBAT_TAGS: [8][]u8 = [
         "LBL_COMBATBG1", "LBL_COMBATBG2", "LBL_COMBATBG3", "BTN_CLEARALL", "BTN_CLEARONE", "BTN_CLEARONE2",
         "LBL_QUEUE0", "LBL_QUEUE1",
@@ -75,6 +72,15 @@ namespace hud {
     // foe "going to attack it" (+0x520: a live hostile creature, or any live object that is not a creature);
     // the enemy-sighted latch then lets go as soon as no enemy is in sight (+0x394 = -1).
     fn update_combat_modes { mut h: Hud, mut w: world::World } {
+        // ProcessInput first (asm 0x00623c2c..0x00623c8e): the leader in combat mode, moved by the keys at 0.25 m/s
+        // or more, says "Player moving. Cancelling combat actions."; once slower, that message turns back into
+        // "combat mode engaged".
+        if creature_of{ w = &w, id = party::leader{ w = &w } } is some{ value = lc } {
+            if lc.combat_mode {
+                if h.move_speed >= MOVING_MIN { lc.combat_message = PLAYER_MOVING }
+                else if lc.combat_message == PLAYER_MOVING { lc.combat_message = COMBAT_ENGAGED }
+            }
+        }
         let ids = party_ids{ w = &w }
         let mut m: usize = 0
         while m < ids.len {
@@ -93,6 +99,7 @@ namespace hud {
                 }
                 continue
             }
+            if id == party::leader{ w = &w } and w.target_keep > 0.0 { continue }
             if is_hostile{ w = &w, id } { continue }
             if fight_target_of{ w = &w, o, self_ok = true } != obj::INVALID { continue }
             let by = c.attacked_by
@@ -107,6 +114,48 @@ namespace hud {
                 _ = @fmt(&w.io, "combat mode off: {}\n", id)
             }
         }
+        // Last, the leader's own message is put up again every frame while it is in combat mode, unless it is
+        // "combat mode engaged" (0x0062b110 at the end of 0x005f3ad0); the bar takes it only when no timed message runs.
+        if creature_of{ w = &w, id = party::leader{ w = &w } } is some{ value = lc } {
+            if lc.combat_mode and lc.combat_message != COMBAT_ENGAGED { show_combat_message{ &h, &w, strref = lc.combat_message } }
+        }
+    }
+
+    // The combat message bar's texts (dialog.tlk).
+    const COMBAT_ENGAGED: u32 = 48208       // "COMBAT MODE engaged. Press the Disengage button to cancel."
+    const PLAYER_MOVING: u32 = 42476        // "Player moving. Cancelling combat actions."
+    const CLOSING_IN: u32 = 42477           // "Closing to attack range."
+    const ALREADY_ENGAGED: u32 = 42478      // "COMBAT MODE already engaged."
+    const PATH_BLOCKED: u32 = 47859         // "The path to your target is blocked."
+    const DEBILITATED: u32 = 47915          // "Player debilitated. Cancelling combat actions."
+    const TIMED_MESSAGE_S: f32 = 2.5
+
+    // CSWGuiMainInterface::ShowCombatMessage (0x00687700): puts `strref` in the bar, unless a timed message is
+    // still up. "Combat mode engaged" and "Player debilitated" stand until replaced; any other message stays
+    // 2.5 s, opaque for the first half and then fading, and "Player moving", "Closing to attack range" and "The
+    // path is blocked" are not shown at all during an auto-pause.
+    fn show_combat_message { mut h: Hud, mut w: world::World, strref: u32 } {
+        if h.cmsg_left >= 0.0 { return }
+        if (strref == PLAYER_MOVING or strref == CLOSING_IN or strref == PATH_BLOCKED) and h.auto_paused { return }
+        if strref != COMBAT_ENGAGED and strref != DEBILITATED {
+            h.cmsg_left = TIMED_MESSAGE_S
+            h.cmsg_total = TIMED_MESSAGE_S
+        }
+        if strref != h.cmsg { h.cmsg_label = 0 }
+        h.cmsg = strref
+        if w.log.combat {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "combat message: {}\n", strref)
+        }
+    }
+
+    // The bar's text colour for a message (ShowCombatMessage's table).
+    fn combat_message_color { strref: u32 } -> render::Color {
+        if strref == COMBAT_ENGAGED { return render::Color{ r = 0.74, g = 0.11, b = 0.0, a = 1.0 } }
+        if strref == PLAYER_MOVING or strref == ALREADY_ENGAGED { return render::Color{ r = 0.28, g = 0.92, b = 0.11, a = 1.0 } }
+        if strref == PATH_BLOCKED { return render::Color{ r = 0.95, g = 0.0, b = 0.85, a = 1.0 } }
+        if strref == DEBILITATED { return render::Color{ r = 0.98, g = 0.45, b = 0.0, a = 1.0 } }
+        return render::Color{ r = 0.0, g = 0.66, b = 0.98, a = 1.0 }
     }
 
     // The picture a fighting order shows in the queue: an attack's combat feat (feat.2da ICON) or
@@ -148,24 +197,44 @@ namespace hud {
             h.refusal = h.refusal - dt
             if h.refusal <= 0.0 { show_slot_description{ &h, &g, &w } }
         }
+        // A timed message runs out (Update 0x00686ba0): the leader's message becomes "combat mode engaged" again
+        // and the bar shows it (0x006345e0).
+        let mut alpha: f32 = 1.0
+        if h.cmsg_left >= 0.0 {
+            h.cmsg_left = h.cmsg_left - dt
+            if h.cmsg_left > 0.0 {
+                let f = h.cmsg_left / h.cmsg_total
+                if f < 0.5 { alpha = f + f }
+            } else {
+                h.cmsg_left = -1.0
+                if creature_of{ w = &w, id = party::leader{ w = &w } } is some{ value = lc } { lc.combat_message = COMBAT_ENGAGED }
+                show_combat_message{ &h, &w, strref = COMBAT_ENGAGED }
+            }
+        }
         let on = leader_in_combat_mode{ w = &w }
         if on != h.combat {
             h.combat = on
+            // The bar is up for as long as combat mode is (the HUD's SetCombatMode 0x006874c0, which also ends a
+            // timed message when combat mode ends).
             show_combat_controls{ &h, &g, on }
             if on {
-                h.combat_message = COMBAT_MESSAGE_SECONDS
-                gui::set_strref{ &g, panel = h.panel, tag = "LBL_CMBTMODEMSG", strref = 48208 } iferr {}
                 gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMSGBG", visible = true }
                 gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMODEMSG", visible = true }
+            } else {
+                h.cmsg_left = -1.0
             }
         }
         if not on { return }
-        if h.combat_message > 0.0 {
-            h.combat_message = h.combat_message - dt
-            if h.combat_message <= 0.0 {
-                gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMSGBG", visible = false }
-                gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMODEMSG", visible = false }
+        if h.label_lent {
+            h.cmsg_label = 0
+        } else {
+            if h.cmsg_label != h.cmsg {
+                h.cmsg_label = h.cmsg
+                gui::set_strref{ &g, panel = h.panel, tag = "LBL_CMBTMODEMSG", strref = h.cmsg } iferr {}
             }
+            let mut color = combat_message_color{ strref = h.cmsg }
+            color.a = alpha
+            gui::set_text_color{ &g, panel = h.panel, tag = "LBL_CMBTMODEMSG", color }
         }
         // The queue (UpdateCombatQueue 0x0068a010): the round the leader is fighting, then its
         // waiting fighting orders, each with its feat's, item's or power's picture.

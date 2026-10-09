@@ -65,6 +65,7 @@ namespace selfslots {
         hover: i32,                 // the slot under the pointer, -1 none
         shown_leader: u32,
         labelled: bool,             // the description label shows one of these slots' entries
+        queued: bool,               // a choice was used in combat mode: an auto-pause banner says "Action added to queue." (ingame)
     }
 
     fn empty_entry {} -> Entry {
@@ -76,7 +77,7 @@ namespace selfslots {
     }
 
     fn new {} -> State {
-        return State{ slots = [empty_slot{}; 4], wait = 0.0, message = 0.0, blink = [0.0; 4], hover = -1, shown_leader = obj::INVALID, labelled = false }
+        return State{ slots = [empty_slot{}; 4], wait = 0.0, message = 0.0, blink = [0.0; 4], hover = -1, shown_leader = obj::INVALID, labelled = false, queued = false }
     }
 
     // ---- the lists
@@ -388,6 +389,8 @@ namespace selfslots {
             return
         }
         let leader = party::leader{ w = &w }
+        // In combat mode during an auto-pause the banner turns to reason 10 (UseSelfAction 0x0068ad60).
+        if hud::leader_in_combat_mode{ w = &w } { s.queued = true }
         if k == 0 {
             actions::clear_for_player{ &w, id = leader }
             rt_talent::queue_cast{ &w, me = leader, spell = @as(i32, e.id), target = leader, location = math::vec3::zero{}, cheat = 0, instant = 0, item = obj::INVALID }

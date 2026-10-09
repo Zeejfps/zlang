@@ -1008,6 +1008,8 @@ namespace fight {
         let o = world::object{ w = &w, id } ifnull { return actions::Status::failed }
         let c = obj::creature{ o } ifnull { return actions::Status::failed }
         let target = actions::object_param{ a, i = 0 }
+        // A party member's message is "combat mode engaged" again whenever its attack runs (0x005bbd06).
+        say_combat_message{ &w, id, strref = MSG_ENGAGED }
         if target == id or c.dead { return actions::Status::failed }
         let t = world::object{ w = &w, id = target } ifnull { return actions::Status::done }
         if t.area != o.area { return actions::Status::done }
@@ -1042,6 +1044,10 @@ namespace fight {
             // attacker with itself before it walks up: in combat from now on, so the player's further
             // clicks queue behind it rather than clear it.
             if a.phase == 0 { enter_combat{ &w, id, other = id } }
+            // A party member that has more than half a metre to go says "Closing to attack range." (0x005bca13).
+            let gx = t.position.x - o.position.x
+            let gy = t.position.y - o.position.y
+            if gx * gx + gy * gy > 0.25 { say_combat_message{ &w, id, strref = MSG_CLOSING } }
             // Approach: a move in front of a copy of this action (actions.md 3.13).
             let mut copy = a.*
             copy.phase = a.phase + 1
@@ -2043,6 +2049,8 @@ namespace fight {
                 let range = spell_range{ w = &w, spell, caster = o, target }
                 if doors::distance_2d{ a = o.position, b = at } > range + 0.5 {
                     if a.serial > 0 and a.started + 20000 < now { return actions::Status::failed }
+                    // AddCastSpellActions' walk into range: "Closing to attack range." for a party member (0x004f9d50).
+                    say_combat_message{ &w, id, strref = MSG_CLOSING }
                     let mut copy = a.*
                     copy.has_started = true
                     actions::add_front{ &w, id, action = copy }
@@ -2057,6 +2065,8 @@ namespace fight {
                     return actions::Status::done
                 }
             }
+            // In range: the cast runs (AIActionCastSpell, AIActionItemCastSpell: "combat mode engaged" again).
+            say_combat_message{ &w, id, strref = MSG_ENGAGED }
             // The action fails at once when the caster is dead or its equipment forbids the power
             // (the Force points are paid later, at the end of the conjuration).
             if of{ o } is some{ value = f } {
@@ -2464,15 +2474,31 @@ namespace fight {
         if others { clear_attackers{ &w, id } }
     }
 
+    // The combat messages a party member's actions give it (client party record +0x84, 0x006345e0): "COMBAT MODE
+    // engaged. Press the Disengage button to cancel.", "Closing to attack range."; the HUD's bar shows the leader's.
+    const MSG_ENGAGED: u32 = 48208
+    const MSG_CLOSING: u32 = 42477
+
+    fn say_combat_message { mut w: world::World, id: u32, strref: u32 } {
+        if not party::is_member{ w = &w, id } { return }
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        c.combat_message = strref
+    }
+
     // The player's orders to the leader are called off (CancelServerActions 0x0063d470 ->
-    // CServerExoApp::CancelCreatureActions 0x004aef40: ClearAllActions(TRUE) and the attack, attempted-attack,
-    // spell and attempted-spell targets cleared; movement.md 1.4): Disengage, F, and keys that break the orders.
-    // Ours clears the attempted target only (the round in progress keeps its own target), which is what the
-    // leader's combat mode is read from (hud::update_combat_modes).
+    // CServerExoApp::CancelCreatureActions 0x004aef40; movement.md 1.4): Disengage, F, and keys that break the
+    // orders. ClearAllActions(TRUE) and ClearScheduledActions (ours: the queue, which holds the waiting orders
+    // too), then the running round's target (+0x9cc) and the attack, attempted-attack, spell and attempted-spell
+    // targets (+0x504, +0x50c, +0x528, +0x524; ours keeps no spell targets) go. The round itself runs on to its
+    // end; with no target and nothing waiting, its end-of-round continuation then looks for the nearest enemy in
+    // reach (0x005b6980, continue_fight), as the original's does. The clicked target (+0x510) stays.
     fn cancel_actions { mut w: world::World, id: u32 } {
         actions::clear_all{ &w, id }
         let o = world::object{ w = &w, id } ifnull { return }
         let c = obj::creature{ o } ifnull { return }
+        c.attack_target = obj::INVALID
         c.attempted_target = obj::INVALID
+        if c.fighter is some{ value = f } { f.round.target = obj::INVALID }
     }
 }
