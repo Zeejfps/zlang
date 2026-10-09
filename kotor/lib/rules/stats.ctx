@@ -305,14 +305,17 @@ namespace rules {
         return m
     }
 
-    // The armour class the character sheet shows (GetArmorClass with nobody attacking): 10, the
-    // class bonus, natural, armour, shield and deflection, dodge (at most 10) and the capped DEX
-    // modifier. Attack-time defense, with the attacker's visibility and conditional effects, is
-    // rules::defense_versus in combat.
+    // The armour class the character sheet shows (GetArmorClass with nobody attacking, 0x004ed1d0,
+    // which GetAC and the saved ArmorClass use too): 10, the class bonus, natural, armour, shield
+    // and deflection, dodge (at most 10), the capped DEX modifier, the Dueling bonus
+    // (GetDuelingDefenseBonus 0x005a9f50) and -4 when helpless. Attack-time defense, with the
+    // attacker's visibility and conditional effects, is rules::defense_versus in combat.
     fn armor_class_sheet { tables: *Tables, c: *Creature } -> i32 {
         let s = &c.stats
         let dodge = if s.ac_dodge > 10 { 10 } else { s.ac_dodge }
-        return 10 + s.ac_class + s.ac_natural + s.ac_armour + s.ac_shield + s.ac_deflection + dodge + dex_modifier_for_defense{ tables, c }
+        let dueling = combat_get_dueling_bonus{ feat = combat_find_dueling_feat{ tables, c } }
+        let helpless: i32 = if is_debilitated{ c } { -4 } else { 0 }
+        return 10 + s.ac_class + s.ac_natural + s.ac_armour + s.ac_shield + s.ac_deflection + dodge + dex_modifier_for_defense{ tables, c } + dueling + helpless
     }
 
     // Rebuilds Creature.stats. The order follows the engine: abilities first (everything else

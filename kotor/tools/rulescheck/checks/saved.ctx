@@ -106,10 +106,11 @@ namespace check {
         let width = 21 - rules::critical_threat_roll{ tables, c = &c, off_hand = false, combat_feat = 0 }
         let mult = rules::critical_multiplier{ tables, c = &c, off_hand = false }
         if counts.on_hand != saved_attacks { st.attacks_wrong = st.attacks_wrong + 1; mismatch{ &io, &st, copy, tag, field = "attacks per round", got = counts.on_hand, want = saved_attacks } }
-        // The sheet number is GetMeleeAttackBonus(0, no base, ...): ability, Weapon Focus and the dual-wield terms, without BAB or effects.
+        // The sheet number is GetMeleeAttackBonus / GetRangedAttackBonus (0x005a7770 / 0x005a7b60) with no base: ability, Weapon Focus,
+        // the dual-wield terms and, at their ends, the Dueling bonus (feats 113..115), without BAB or effects.
         // (the dual-wield terms only when the left slot holds something: a double weapon alone has none on the sheet)
         let left_held = rules::equipped_item{ c = &c, mask = rules::slot::LEFT } != null
-        let sheet_mod = am.str_mod + am.dex_mod + am.focus + (if left_held { am.dual_base + am.dual_light + am.dual_feat } else { 0 })
+        let sheet_mod = am.str_mod + am.dex_mod + am.focus + am.dueling + (if left_held { am.dual_base + am.dual_light + am.dual_feat } else { 0 })
         if sheet_mod != saved_atk_mod { st.attack_mod_wrong = st.attack_mod_wrong + 1; mismatch{ &io, &st, copy, tag, field = "on-hand attack modifier (no BAB)", got = sheet_mod, want = saved_atk_mod } }
         if width != saved_crit { st.crit_wrong = st.crit_wrong + 1; mismatch{ &io, &st, copy, tag, field = "critical threat width", got = width, want = saved_crit } }
         if mult != saved_mult { st.mult_wrong = st.mult_wrong + 1; mismatch{ &io, &st, copy, tag, field = "critical multiplier", got = mult, want = saved_mult } }
