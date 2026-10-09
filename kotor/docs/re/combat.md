@@ -34,7 +34,7 @@ unless a table says otherwise. Creature offsets below `+0x228` are `CSWSObject` 
 
 | Step | Where | What |
 |---|---|---|
-| 1 | `CSWSCreature::AIActionAttackObject` `0x005bbbf0` | the ATTACKOBJECT action, once in range and while its round is not paused: decide whether the two creatures are *engaged* (paired) and who is *master*. Not engaged: `StartCombatRound` on itself; engaged master: on itself and on the target (as slave); engaged slave: none, it waits until its master has started both rounds. Then pause its own round for the attack animation (and the partner's too when the attack uses a combat feat), pick up a pending `NewAttackTarget`, then `ResolveAttack` |
+| 1 | `CSWSCreature::AIActionAttackObject` `0x005bbbf0` | the ATTACKOBJECT action, once in range and while its round is not paused: decide whether the two creatures are *engaged* (paired) and who is *master*. Not engaged: `StartCombatRound` on itself; engaged master: on itself and on the target (as slave); engaged slave: none, it waits until its master has started both rounds. Then pause its own round for the attack animation (and the partner's too when the two are engaged, whatever the feat and whether melee or ranged), pick up a pending `NewAttackTarget`, then `ResolveAttack` |
 | 2 | `CSWSCombatRound::StartCombatRound` `0x004d5f70` | 3000 ms round, number of on-hand and off-hand attacks |
 | 3 | `CSWSCreature::ResolveAttack` `0x005bba80` | melee or ranged by the right-hand weapon's `RangedWeapon` |
 | 4 | `ResolveMeleeAttack` `0x005bb890` / `ResolveRangedAttack` `0x005bb590` | melee: for each attack of the round, all into the one current attack record: attack roll, special-attack effects, damage roll on a hit, one impact record with its time. Ranged: for each shot the weapon fires, a random pick decides whether the shot carries one of the round's attacks (rolled the same way) or is a plain miss, which may still be deflected |
@@ -287,7 +287,12 @@ WeaponWield, `+0x09` WeaponType, `+0x0c` DamageFlags, `+0x18` ModelType, `+0x1a`
    infinite pause (paused by the master, `SetPauseTimer(duration, bInfinite = 1)`), a slave holds
    its master with an ordinary pause (paused by the slave). An ordinary `SetPauseTimer` adds the
    duration to a pause that is still running, so the slave extends whatever is left of the
-   master's own animation pause. (high)
+   master's own animation pause. (high) The decompile reads as if the feat decided this: Ghidra
+   merges two neighbouring stack slots, the combat feat at `[ESP+0x50]` (StartCombatRound's 4th
+   argument, the attack record's AttackType) and the `GetCanEngage` result at `[ESP+0x54]`, into one
+   variable. The asm tests the second: `0x005bc641` loads `[ESP+0x54]` (stored at `0x005bc4c7`
+   straight after `GetCanEngage`) and skips the partner's pause when it is 0, then picks the
+   infinite or the ordinary pause by the master flag (EBP, `GetShouldBeMaster`'s result). (high)
 7. A pending `NewAttackTarget` replaces the target; then `ResolveAttack` (`0x005bba80`); return
    "done". The attack action lasts one round; the next round's attack comes from outside
    (section 9).
@@ -478,8 +483,22 @@ read from the code above, the frame by frame order of two creatures' updates lef
 So each fighter attacks once per 3 s round, as when each had its own round, but the master first
 and the slave 1.5 s later, and each swing is answered by the other's paired parry or damage
 animation. A slave without an attack waiting (a victim that does nothing) only reacts, then runs
-its shortened round out. A solo round (ranged attackers, doors, an idle party leader, a helpless
-target) is 1500 ms of paused attack and 1500 ms of timer. The player's creatures (`+0xa88`) are
+its shortened round out. A solo round (doors and placeables, a target attacking someone else, an
+idle party leader, a helpless target) is 1500 ms of paused attack and 1500 ms of timer.
+
+**Ranged attackers pair too.** Nothing between the range check and `StartCombatRound` looks at
+the weapon (`0x005bc4b3..0x005bc5a3`: `GetCanEngage` and `GetShouldBeMaster` test only the target's
+attempted targets, its round, its Master flag, the party leader and helplessness;
+`GetHasRangedWeapon` is read only earlier, for the range and the approach), and the partner's pause
+is gated on engagement alone (3.1 step 6). So a blaster fight between two creatures that target
+each other takes turns the same way, master first and slave 1.5 s later. What differs is what the
+pair looks like: the duel and monster animations (10109) need `GetBothWieldMelee` or a simple
+model, so blaster users play their general attacks; and the target's reaction to a ranged round is
+at most a dodge, only when no shot hit and the target holds no lightsaber
+(`ResolveRangedAnimations`, which itself tests the target's and the attacker's Engaged flags, 3.3).
+A melee pair answers every swing with a paired parry or damage animation, which is the
+sword-fight look. `lib/engine/fight.ctx`'s `can_engage` already engages ranged attackers.
+(high) The player's creatures (`+0xa88`) are
 always the master when the target can engage; when an NPC has begun a pair with the leader, the
 leader's own attack takes the master's place and restarts the NPC's round as the slave. That
 restart (`StartCombatRound` on a slave) first ends the NPC's running round with
