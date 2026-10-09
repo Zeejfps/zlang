@@ -1,0 +1,11 @@
+# Free look's video effect (StartFreeLook 0x006413c0, appearance.2da FreeLookEffect): T3-M4 leads and looks
+# about with Caps Lock (videoeffects.2da row 1), then leaves it; then HK-47 (row 2).
+#   EXE=... LOG=dialog sh kotor/tools/items/run.sh freelook uppercity kotor/tools/ingame/scripts/freelook_effect.txt 140 40:t3 60:t3off 110:hk 130:hkoff
+5 ui fspawn p_t3m4 fl_t3 3 0
+6 ui fspawn p_hk47 fl_hk 3 40
+10 ui leader fl_t3
+20 key caps
+50 key caps
+70 ui leader fl_hk
+80 key caps
+120 key caps

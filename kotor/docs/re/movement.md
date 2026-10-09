@@ -601,7 +601,11 @@ chase camera starts at the combat camera's pose. (high)
   `StartFreeLook` (`0x006413c0`) saves the chase state and turns the creature (client side) to
   face away from the camera (both only when the mode was 3), installs the controller (which also
   starts the appearance's `FreeLookEffect` screen effect) and sets mode 5 (option and `+0xc`).
-  (high)
+  (high) The effect: `CSWCCreature::GetFreeLookEffect` (`0x00610490`) reads appearance.2da
+  `FreeLookEffect` for the appearance record's row (+0x18), -1 when the cell is blank (only rows 2,
+  T3-M4, = 1 and 3, HK-47, = 2 have one); the controller's constructor (`0x0063a5d0`) keeps it at
+  +0x78 and calls `EnableVideoEffect` with it, which with -1 only switches an earlier effect off; its
+  destructor (`0x0063a6c0`) switches the effect off (`0x005edf20`). (high)
 - **Leave** (`RestoreDefaultCamera`, input class 0, HUD shown): the Freelook key again, a GUI key
   (209–216) or Pause (241), or the leader getting a queued action. (med)
 - **Update** (`0x00639d00`): hides the cursor every frame; the eye is the model node

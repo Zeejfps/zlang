@@ -116,6 +116,7 @@ namespace play {
         let mut control = ctl::new{}
         let mut was_freelook = false            // last frame's free look and conversation: RestoreDefaultCamera's moments
         let mut was_talking = false
+        let mut freelook_effect: i32 = -2       // the videoeffects.2da row free look switched on (-2: none)
         let ao = world::object{ w = &w, id = w.area }
         if ao != null {
             if obj::area{ o = ao } is some{ value = a } {
@@ -546,6 +547,17 @@ namespace play {
             let talking = w.conversation.active
             if combat_mode and w.target != obj::INVALID and ((was_freelook and not mouse.freelook) or (was_talking and not talking)) {
                 cam::face_toward{ c = &camera, w = &w, leader = w.pc, target = w.target }
+            }
+            // StartFreeLook (0x006413c0) gives the free-look camera the leader's appearance.2da FreeLookEffect,
+            // which its constructor switches on (T3-M4's row 1, HK-47's row 2; -1 for the rest only switches an
+            // earlier effect off), and its destructor switches the effect off (0x0063a6c0). The way out leaves an
+            // effect a conversation has put on since alone.
+            if mouse.freelook and not was_freelook {
+                freelook_effect = free_look_effect{ w = &w }
+                dlg::enable_video_effect{ &w, row = freelook_effect }
+            } else if was_freelook and not mouse.freelook {
+                if freelook_effect >= 0 and w.conversation.video_effect == freelook_effect { dlg::disable_video_effect{ &w } }
+                freelook_effect = -2
             }
             was_freelook = mouse.freelook
             was_talking = talking
@@ -1015,6 +1027,16 @@ namespace play {
     // A and D turn); ours swaps them, as the install's swkotor.ini puts strafe on A and D. In a minigame A
     // and D steer, with the arrows. The arrows, R and Space are a minigame's (ICMiniGame) and nothing in the
     // world's: there R runs the target's default action and Space pauses (lib/ingame).
+    // The leader's free-look video effect (CSWCCreature::GetFreeLookEffect 0x00610490): appearance.2da
+    // `FreeLookEffect` of the appearance the model shows, -1 when blank or with no leader.
+    fn free_look_effect { w: *world::World } -> i32 {
+        let o = world::object{ w, id = w.pc } ifnull { return -1 }
+        let c = obj::creature{ o } ifnull { return -1 }
+        let row = @as(usize, visual::shown_appearance{ c })
+        if row >= twoda::rows{ t = w.tables.appearance } { return -1 }
+        return twoda::get_int{ t = w.tables.appearance, row, column = "FreeLookEffect" } ifnull -1
+    }
+
     // Turns the leader on the spot by `degrees` (positive to the left), for free look.
     fn turn_leader { mut w: world::World, degrees: f32 } {
         let o = world::object{ w = &w, id = w.pc } ifnull { return }

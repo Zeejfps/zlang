@@ -1028,7 +1028,11 @@ camera with that id is used (high):
 - position = `Position` + (0, 0, `Height`);
 - orientation: take yaw, pitch and roll out of `Orientation`, add `Pitch` (degrees) to the pitch
   (the X rotation; 0 = looking straight down, 90 = level), rebuild as Rz·Rx·Ry;
-- FOV = `FieldOfView`; `MicRange` is kept for the sound listener (`+0xf4`, med);
+- FOV = `FieldOfView`; `MicRange` is kept for the sound listener (`+0xf4`, med). The FOV is set
+  once, when the shot is placed (`CSWCDialogCamera::SetStaticShot` `0x006bb590` calls the camera's
+  set-FOV slot `+0x44`); `CSWCDialogCamera::Update` (`0x006bcf50`) leaves a mode-6 camera alone, so
+  **nothing changes the field of view while a static view (in a conversation or a computer's camera
+  view) is up**; the next framed shot puts 55 back (`SetShot` `0x006bd260`). (high)
 - unknown id: the origin, identity rotation, FOV 55;
 - then `CamVidEffect` (unless −1/−2) enables that `videoeffects.2da` row (§9.6); with −1/−2 an
   effect switched on earlier stays on (med).
@@ -1078,8 +1082,12 @@ is applied (the handler passes −1). In the computer panel it goes through
     each entry clamped to 1 (the code tests the blue row's first entry where it means its last;
     no shipped row reaches 1 there). Row 0 (s 0.15, m 1/1.4/2) gives a blue-grey picture: the
     security camera and the comlink calls (`end_carth001`'s static-camera lines, CamVidEffect
-    0). Rows 1 and 2 are T3-M4's and HK-47's free-look views. (high for the matrix, med for the
+    0). Rows 1 and 2 are T3-M4's and HK-47's free-look views (movement.md 2.5: the leader's
+    appearance.2da `FreeLookEffect` is switched on while free look lasts): T3-M4's has row 0's
+    numbers, HK-47's (s 0.2, m 2.4/0.4/0.4) a red picture. (high for the matrix, med for the
     clamp being a register limit)
+  None of the three rows, nor `EnableVideoEffect`, touches the field of view: videoeffects.2da
+  has no FOV column (K2's has).
   Ours: `render::VideoEffect` on the view (`dlgview::video_effect_of` builds the rows), drawn by
   `gpu::video_effect` after the speed blur in both renderers, under the GUI.
 - **Letterbox**: the cinematic panel is `dialog.gui` (`CSWGuiDialogLetterbox` `0x006a8b40`,
