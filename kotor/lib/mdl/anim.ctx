@@ -356,6 +356,20 @@ namespace mdl_anim {
         player.current = t
     }
 
+    // Moves what is playing now to `time` seconds in, taken back by the animation's length as
+    // PlayAnimation does with its start (0x00485bd0), firing no events on the way.
+    fn seek { mut player: Player, time: f32 } {
+        let mut t = player.current ifnull { return }
+        let length = t.binding.animation.length
+        let mut at = math::max{ a = time, b = 0.0 }
+        if length > 0.0 {
+            while at > length { at = at - length }
+        }
+        t.time = at
+        t.started = true
+        player.current = t
+    }
+
     fn new_player {} -> Player {
         return Player{ current = null, previous = null, held = null, layers = [null; LAYERS], elapsed = 0.0, transition = 0.0 }
     }

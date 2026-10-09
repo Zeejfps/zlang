@@ -217,7 +217,26 @@ follows from applying an animation's own node tree). In the data 45 models have 
 `animloop3`, nearly all rooms (the Endar Spire bridge's planet turns in `m01aa_07b` animloop2,
 Sith fighters fly in its animloop3; the Taris swoop garage `m10ac_35a` moves its overhead arms in
 animloop2; Dantooine's and Kashyyyk's rooms fly birds and bugs and drift mist); 6 of them key one
-node in two loops.
+node in two loops. No room model is played `default` (only the stunt rooms `stuntroom12aa2/3` have
+one); the `default` animations that move room scenery belong to the models of reference nodes,
+below.
+
+Reference nodes (high): the model object's constructor (`FUN_00449cc0`, used for every model the
+client makes: rooms, creatures, placeables, GUI models) ends by walking the model's node tree
+(`FUN_004448c0`, unrolled several levels deep); for each node whose slot `+0x38` answers (a reference
+node, type flags 0x11) it makes a model object of the node's model name (node data `+0x50`) with the
+same constructor, so the reference model's own references get theirs too, stores it at the node
+(`+0x4c`), attaches it to the parent object at that node (object slot `+0x50`), and plays
+`default` on it (slot `+0x18`) at speed `1 + (rand() % 100 - 50) * 0.001` (0.95 to 1.049), flags 0
+(loop), from `(rand() % 100) * 0.01` s in (PlayAnimation takes a start in seconds, wrapped by the
+animation's length). In the data the rooms' references are Kashyyyk's vines (`m24_vine1`, 511), shrubs
+and palms (`or_*shrub*`, `or_smallpalm*`), Tatooine's lamps (`or_lamp01`), banthas, Sith flags,
+the stunt rooms' crowds, and Manaan's docking bay freighters: `m26ad_03b`'s `OmenRef01/02` hang
+`m26ad_sp3` / `m26ad_sp2`, whose 106.7 s `default` lands the ship, keeps it on the pad with its
+`gearsteam` emitters venting and flies it off again, each with an `m26ad_hd` reference of its own.
+Outside rooms the references are `fx_ref` (under Lightning emitters, the beam's end; see
+particles.md), `fx_stunref`, `fx_carbref` and `dor_ukn02`. Ours (lib/scene `add_references`) hangs
+them on rooms only: an object model's are the beam end points the effects code already handles.
 
 The renderer also has its own LYT reader (`CAurScene::LoadLayout`, slot 27, `0x0044f8d0`:
 `roomcount` / `trackcount` sections only, rooms added through slot 28, then `LoadVisibility`) and a

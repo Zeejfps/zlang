@@ -447,7 +447,9 @@ and it can be rebuilt from the world at any time):
 
 - **Rooms**: the LYT's room models, each with its pose (animloop1..3 when the model has them, all
   three at once: animloop1 is the player's current animation and animloop2 / animloop3 its two
-  layers, `mdl_anim::play_layer`, each moving the nodes it keys, re/modules.md) and lights; the VIS table. Each frame the camera's room is the room whose walkmesh is under the
+  layers, `mdl_anim::play_layer`, each moving the nodes it keys, re/modules.md) and lights, and the
+  models of their reference nodes (`scene.room_refs`: shrubs, vines, lamps, Manaan's freighters), each a part
+  looping its `default` at its parent's node and drawn with its room; the VIS table. Each frame the camera's room is the room whose walkmesh is under the
   leader (else the camera); rooms not visible from it per VIS are skipped (a room without a VIS
   entry sees everything, vis.md). Room lights go into the frame for dynamic objects.
 - **Visuals**, one per object that has a model, keyed by object id (`scene.visuals`): created when

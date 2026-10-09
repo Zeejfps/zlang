@@ -39,6 +39,17 @@ namespace scene {
         trees: i32,                     // the first of its meshes' ray trees in Scene.ray_trees, -1 until built
     }
 
+    // A model hung at a reference node of a room's model, or of another such model (shrubs,
+    // lamps, Kashyyyk's vines, Manaan's freighters, the stunt rooms' crowds): 0x004448c0.
+    struct RoomRef {
+        part: usize,                    // its part (Scene.parts)
+        parent: usize,                  // the part whose node it hangs at
+        node: u32,                      // that node, in the parent's model
+        room: usize,                    // the room it belongs to (drawn with it)
+        parent_ref: i32,                // the parent's index in Scene.room_refs, -1 the room itself
+        transform: math::Mat4,          // where the last draw put it
+    }
+
     struct Visual {
         id: u32,
         first: usize,                   // its parts: Scene.parts[first .. first + count], the root first
@@ -68,6 +79,8 @@ namespace scene {
         missing_anims: map::Map([]u8, u32, arena::Arena),
         parts: list::List(Part, arena::Arena),
         rooms: list::List(Room, arena::Arena),
+        room_refs: list::List(RoomRef, arena::Arena),  // parents before their children
+        seed: u32,                      // the reference models' coin (ours: an LCG for the original's rand)
         ray_trees: list::List(RayTree, arena::Arena),   // per room mesh, for the camera's rays (raytree.ctx)
         ray_trees_built: bool,
         visuals: list::List(Visual, arena::Arena),
@@ -109,6 +122,7 @@ namespace scene {
             missing_anims = map::new([]u8, u32, arena::Arena){ realloc = arena::alloc, heap = arena, hash = map::hash_bytes, eq = slice::eq_bytes },
             parts = list::new(Part, arena::Arena){ realloc = arena::alloc, heap = arena },
             rooms = list::new(Room, arena::Arena){ realloc = arena::alloc, heap = arena },
+            room_refs = list::new(RoomRef, arena::Arena){ realloc = arena::alloc, heap = arena }, seed = 0x2545F491,
             ray_trees = list::new(RayTree, arena::Arena){ realloc = arena::alloc, heap = arena }, ray_trees_built = false,
             visuals = list::new(Visual, arena::Arena){ realloc = arena::alloc, heap = arena },
             by_id = map::new(u32, usize, arena::Arena){ realloc = arena::alloc, heap = arena, hash = map::hash_u32, eq = map::eq_u32 },
@@ -314,6 +328,7 @@ namespace scene {
                 _ = play{ &sc, &w, part = p, name = "animloop1", looping = true, speed = 1.0, transition = 0.0 }
                 _ = play_layer{ &sc, &w, part = p, slot = 0, name = "animloop2" }
                 _ = play_layer{ &sc, &w, part = p, slot = 1, name = "animloop3" }
+                try add_references{ &sc, &w, &dev, room = sc.rooms.len, parent = p, parent_ref = -1, depth = 0 }
             }
             try list::push{ list = &sc.rooms, item = Room{ name = r.model, position = math::Vec3{ x = r.x, y = r.y, z = r.z }, part, visible = true, trees = -1 } }
         }
@@ -328,6 +343,39 @@ namespace scene {
                 sc.grass = try grass::plant{ arena = sc.arena, walk = &w.walk, grass = a.grass, cache = &sc.materials, fs = &w.fs, &dev, rm = w.rm.* }
             }
         }
+    }
+
+    // The models of a part's reference nodes, each a part of its own hung at its node
+    // (0x004448c0, which the model object's constructor 0x00449cc0 runs on every model it makes,
+    // so a reference model's own references get theirs): each loops its `default` animation at
+    // 0.95 to 1.049 times its speed, from 0 to 0.99 s in, so that a row of shrubs doesn't sway as
+    // one. Their emitters run (a freighter's steam).
+    fn add_references { mut sc: Scene, mut w: world::World, mut dev: gpu::Device, room: usize, parent: usize, parent_ref: i32, depth: u32 } -> ! {
+        if depth >= 4 { return }
+        let model = loaded_at{ sc = &sc, i = part_at{ sc = &sc, i = parent }.loaded }.model
+        let mut k: usize = 0
+        while k < model.references.len {
+            let r = model.references[k]
+            k = k + 1
+            let loaded = try load_model{ &sc, &w, &dev, name = r.model, body_texture = "", envmap = "", hide_null = false }
+            if loaded != null {
+                let p = try add_part{ &sc, loaded, parent = -1, hook = "" }
+                try give_emitters{ &sc, &w, &dev, part = p }
+                let speed = 1.0 + (@as(f32, next_random{ &sc } % 100) - 50.0) * 0.001
+                let start = @as(f32, next_random{ &sc } % 100) * 0.01
+                if play{ &sc, &w, part = p, name = "default", looping = true, speed, transition = 0.0 } {
+                    mdl_anim::seek{ player = &part_at{ sc = &sc, i = p }.player, time = start }
+                }
+                try list::push{ list = &sc.room_refs, item = RoomRef{ part = p, parent, node = r.node, room, parent_ref, transform = math::mat4::identity{} } }
+                try add_references{ &sc, &w, &dev, room, parent = p, parent_ref = @as(i32, sc.room_refs.len - 1), depth = depth + 1 }
+            }
+        }
+    }
+
+    // 0..32767, as the C library's rand.
+    fn next_random { mut sc: Scene } -> u32 {
+        sc.seed = @wrap_add(@wrap_mul(sc.seed, 1103515245), 12345)
+        return (sc.seed >> 16) & 0x7FFF
     }
 
     // An ARE colour (0x00BBGGRR) as RGB in 0..1.
@@ -439,6 +487,12 @@ namespace scene {
             if rooms[i].part >= 0 { advance_part{ &sc, &w, part = @as(usize, rooms[i].part), dt } }
             i = i + 1
         }
+        let refs = list::items{ list = sc.room_refs }
+        i = 0
+        while i < refs.len {
+            advance_part{ &sc, &w, part = refs[i].part, dt }
+            i = i + 1
+        }
         find_aim{ &sc, &w }
         find_heads{ &sc, &w }
     }
@@ -540,6 +594,7 @@ namespace scene {
             draw_emitters{ sc = &sc, w, &frame, view, part = @as(usize, r.part), instance, sight, warm = true }
             sc.drawn_rooms = sc.drawn_rooms + 1
         }
+        draw_references{ &sc, w, &frame, view, sight }
         mark_sun{ sc = &sc, &frame, view }
         // Grass stands on the floor of the rooms it is seen in: it comes with them (the eye and the way it looks are the view's).
         let cam = frame.views[view].camera
@@ -567,6 +622,27 @@ namespace scene {
         // The world's emitters, grass apart (the screenshot log's count).
         sc.drawn_emitters = (e1 - e0) + (frame.emitter_count - e2)
         sc.drawn_particles = (p1 - p0) + (frame.particle_count - p2)
+    }
+
+    // The reference models of the visible rooms, each at its parent's node.
+    fn draw_references { mut sc: Scene, w: *world::World, mut frame: render::Frame, view: u32, sight: Sight } {
+        let rooms = list::items{ list = sc.rooms }
+        let refs = list::items{ list = sc.room_refs }
+        let mut i: usize = 0
+        while i < refs.len {
+            let r = &refs[i]
+            i = i + 1
+            let room = rooms[r.room]
+            let base = if r.parent_ref >= 0 { refs[@as(usize, r.parent_ref)].transform } else { math::mat4::translation{ t = room.position } }
+            let parent = part_at{ sc = &sc, i = r.parent }
+            r.transform = math::mat4::mul{ a = base, b = parent.pose.world[r.node] }
+            if not room.visible { continue }
+            let p = part_at{ sc = &sc, i = r.part }
+            let l = loaded_at{ sc = &sc, i = p.loaded }
+            add_lights{ &frame, model = l.model, pose = p.pose, instance = r.transform }
+            _ = mdl_render::add_draws_look{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = r.transform, materials = l.materials, time = sc.time, look = null, cast = null, kind = render::DrawKind::room, ambient = 0 }
+            draw_emitters{ sc = &sc, w, &frame, view, part = r.part, instance = r.transform, sight, warm = true }
+        }
     }
 
     // SetLightsaberPowered: `forced` fixes the blade lit or dark whatever the creature is doing,
