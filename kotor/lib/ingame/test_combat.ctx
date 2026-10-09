@@ -8,6 +8,7 @@
 //                                   (BTN_TARGET0, BTN_TARGETDOWN0, BTN_CLEARALL, BTN_CLEARONE ...)
 //   FRAME ui fight                  prints the leader's combat state, its queue and the target block
 //   FRAME ui foe TEMPLATE [DIST [SIDE]]    a creature (UTC) DIST m ahead of the leader, SIDE m to its right
+//   FRAME ui shield TAG ROW        an energy shield (forceshields.2da ROW) on a creature (TAG pc: the player)
 //   FRAME ui heal                 the party at full health, Min1HP off (test setup after the bot's god mode)
 //   FRAME ui grantfeat ID          gives the leader a feat (test setup: Power Attack 28, Flurry 11 ...)
 namespace test_combat {
@@ -154,6 +155,15 @@ namespace test_combat {
             let n = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "1" })
             let id = if ci::eq{ a = tag, b = "pc" } { w.player } else { world::object_by_tag{ w = &w, tag, nth = 0 } }
             _ = fight::apply{ &w, target = id, e = rules::fx::make_damage{ amount = n, types = 1, power = 0 } }
+            return true
+        }
+        if ci::eq{ a = cmd, b = "shield" } {
+            // Test setup: `ui shield TAG ROW`, an energy shield (EffectForceShield, forceshields.2da ROW) on a creature.
+            let mut words = text::words{ s = args }
+            let tag = text::next_word{ &words } ifnull { return true }
+            let row = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "1" })
+            let id = if ci::eq{ a = tag, b = "pc" } { w.player } else { world::object_by_tag{ w = &w, tag, nth = 0 } }
+            _ = fight::apply{ &w, target = id, e = rules::fx::make_force_shield{ shield = row } }
             return true
         }
         if ci::eq{ a = cmd, b = "giveto" } {

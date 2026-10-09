@@ -161,14 +161,19 @@ namespace fight {
     }
 
     // weaponsounds.2da's column for the material a hit lands on, then 0 or 1 at random (rand() % 2),
-    // as the hit sound 0x00617470 picks it (docs/re/actions.md 3.15): a creature's own sound set's
-    // ArmorType (appearancesndset.2da: droids "armor", beasts "leather"), else its worn armour's, else
-    // leather; a door's or placeable's placeableobjsnds.2da ArmorType (metal, wood, stone...). Empty
-    // for any other object or a blank cell: no sound.
+    // as the hit sound 0x00617470 picks it (docs/re/actions.md 3.15): "forcefield" for a creature
+    // behind an energy shield (a FORCE_SHIELD effect with a nonzero forceshields.2da row, 0x00616890),
+    // else its own sound set's ArmorType (appearancesndset.2da: droids "armor", beasts "leather"),
+    // else its worn armour's, else leather; a door's or placeable's placeableobjsnds.2da ArmorType
+    // (metal, wood, stone...). Empty for any other object or a blank cell: no sound. The original's
+    // "stone" and "wood" come from three client creature flags nothing in the game sets (3.15).
     fn hit_column { mut w: world::World, t: *obj::Object, into: []mut u8 } -> []u8 {
         let mut kind: []u8 = ""
         if obj::creature{ o = t } is some{ value = tc } {
-            let st = sound_type_of{ w = &w, c = tc }
+            if tc.fighter is some{ value = tf } {
+                if rules::has_force_shield{ c = &tf.c } { kind = "forcefield" }
+            }
+            let st = if kind.len == 0 { sound_type_of{ w = &w, c = tc } } else { -1 }
             if st >= 0 {
                 let own = twoda::get_string{ t = w.tables.appearancesndset, row = @as(usize, st), column = "armortype" } ifnull ""
                 if own.len < 12 { kind = own }
@@ -187,8 +192,13 @@ namespace fight {
             if s.len < 12 { kind = s }
         }
         if kind.len == 0 { return "" }
+        return suffixed{ &w, base = kind, into }
+    }
+
+    // base followed by 0 or 1 at random (rand() % 2 in the original), written into `into`.
+    fn suffixed { mut w: world::World, base: []u8, into: []mut u8 } -> []u8 {
         let mut n: usize = 0
-        while n < kind.len { into[n] = kind[n]; n = n + 1 }
+        while n < base.len { into[n] = base[n]; n = n + 1 }
         into[n] = if world::random_noise{ &w } % 2 == 0 { '0' } else { '1' }
         return into[..n + 1]
     }
@@ -224,7 +234,9 @@ namespace fight {
             parried = holds_weapon{ w = &w, c = tc } and holds_weapon{ w = &w, c }
             clash = parried and row == 1 and weapon_sound_row{ w = &w, c = tc } == 1
         }
-        let column: []u8 = if imp.hit { hit_column{ &w, t, into = col[..] } } else if clash { "clash0" } else { "parry0" }
+        // The parry and clash columns take the same random 0 / 1 suffix as the hits' (0x00617470,
+        // 0x00610e10), from the noise generator so the world's dice stay as they were.
+        let column: []u8 = if imp.hit { hit_column{ &w, t, into = col[..] } } else { suffixed{ &w, base = if clash { "clash" } else { "parry" }, into = col[..] } }
         let sound = twoda::get_string{ t = w.tables.weaponsounds, row, column } ifnull ""
         say{ &w, name = sound, at = chest_of{ o = t }, source = imp.target }
         if parried {

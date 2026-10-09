@@ -154,8 +154,9 @@ Blaster rifles shoot red bolts, ion weapons blue, disruptors white (ammunitionty
   the appearancesndset `fall*` sound for the surface under the body. Footsteps (`snd_footstep`) are
   not played yet.
 - **Hits** at the combatanimations hit time play the weapon's hit sound for the target's material
-  (worn armour's `armortype`, else the creature's, else leather). A blow that was turned plays
-  `parry0`, two lightsabers `clash0`, and throws sparks where the blades meet:
+  (`forcefield` behind an energy shield, else the creature's sound set's `armortype`, else its worn
+  armour's, else leather), the column's `0` or `1` at random. A blow that was turned plays
+  `parry0`/`1`, two lightsabers `clash0`/`1`, and throws sparks where the blades meet:
   `VFX_COM_SPARKS_LIGHTSABER` (4004) when a lightsaber is in it, else
   `VFX_COM_SPARKS_PARRY_METAL` (4011). There is no visual for a melee hit (damagehitvisual.2da has
   none), as in the original.

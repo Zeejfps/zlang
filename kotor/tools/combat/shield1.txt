@@ -1,0 +1,7 @@
+30 ui bot off
+31 ui heal
+31 ui sethp pc 300
+35 ui foe g_sithtroop01 2 0
+36 ui sethp g_sithtroop01 400
+36 ui shield g_sithtroop01 1
+45 ui clicktag BTN_TARGET0

@@ -1546,9 +1546,14 @@ object the text 1439 "Locked" for 5000 ms (`0x0063d2d0`: the string at `+0xe8`, 
 over the refusal message and the hovered slot's name. (high)
 
 The hit sound (`0x00617470`) builds the column name from a material and `rand() % 2` (`"0"` or
-`"1"`; also for the `Parry` columns). For a creature (type 5) the material is `forcefield` when
-`0x00616890` says so, `stone` when its client object's `+0xc` or `+0x14` is set, `wood` for `+0x10`
-(those three not read further), else its `appearancesndset.2da` `ArmorType` (by `appearance.2da`
+`"1"`; also for the `Parry` columns, and the `Clash` animation event's sound `0x0060dc50` adds the
+same suffix to `Clash`). For a creature (type 5) the material is `forcefield` when `0x00616890`
+says so (the first effect of type 0x6b FORCE_SHIELD in the server creature's sorted effect list
+`+0x124`/`+0x128` has a nonzero integer 0, its forceshields.2da row; rules.md), `stone` when its
+client object's `+0xc` or `+0x14` is set, `wood` for `+0x10`. Those three flags look like NWN's
+stoneskin, petrify and barkskin: the client object constructor (`0x0063e530`) clears them and no
+other write to them was found (med: searched the decompile, not every instruction), so in KOTOR they stay
+clear and the material comes from the shield or else `appearancesndset.2da` `ArmorType` (by `appearance.2da`
 `SoundAppType`), else the worn body armour's base item ArmorType (`+0xbc`), else `leather`: the
 sound set wins over the armour. For a door (type 10) the row is `doortypes.2da`'s or
 `genericdoors.2da`'s SoundAppType as above, for a placeable (9) `placeables.2da`'s, and the material
