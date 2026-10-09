@@ -474,6 +474,34 @@ namespace gui {
         return id
     }
 
+    // A message box's icon (CSWGuiMessageBox::SetIcon 0x00627160 and FitToText 0x006253a0): a 32x32
+    // picture centred above the text, which moves down 32 pixels with the buttons, the box growing as
+    // much. The tutorial pop-ups' icons (tutorial.2da Icon).
+    fn add_message_icon { mut g: Gui, panel: u32, img: Img } -> ! {
+        if not img.ok { return }
+        let p = find_panel{ &g, id = panel } ifnull { return }
+        let cs = list::items{ list = p.controls }
+        let mut i: usize = 0
+        while i < cs.len {
+            if (cs[i].flags & F_INTERNAL) == 0 and cs[i].parent < 0 { cs[i].y = cs[i].y + ICON_SIDE }
+            i = i + 1
+        }
+        p.h = p.h + ICON_SIDE
+        if not try clone_control{ &g, panel, from = "BTN_OK", tag = "LBL_ICON", x = (p.w - ICON_SIDE) / 2, y = 10 } { return }
+        let c = find_control{ &g, panel, tag = "LBL_ICON" } ifnull { return }
+        c.kind = K_LABEL
+        c.flags = F_VISIBLE | F_NO_HIT
+        c.w = ICON_SIDE
+        c.h = ICON_SIDE
+        c.border = no_border{}
+        c.border.present = true
+        c.hilight = no_border{}
+        c.override_fill = img
+        place{ &g, p }
+    }
+
+    const ICON_SIDE: i32 = 32
+
     fn list_clear { mut g: Gui, panel: u32, tag: []u8 } {
         let c = find_control{ &g, panel, tag } ifnull { return }
         let mut r: usize = 0

@@ -443,9 +443,24 @@ namespace hud {
             h.queued_banner = true
         }
         note_door_action{ &h, w = &w, act = e.act, target = w.target }
-        run_act{ &w, act = e.act, target = w.target, item = e.item, spell = e.id, queue = queues_orders{ h = &h, w = &w } }
+        // A combat feat's and a grenade's callbacks (0x00617dd0, 0x00617e40) offer their tutorials first; the
+        // box's close gives the order then.
+        let leader = party::leader{ w = &w }
+        let taught = if e.act == Act::feat_attack { offer_tutorial{ &h, w = &w, id = TUT_COMBAT_FEAT, who = w.target, target = obj::INVALID, n = e.id } }
+            else if e.act == Act::throw { offer_tutorial{ &h, w = &w, id = TUT_GRENADE, who = w.target, target = leader, n = @as(i32, e.item) } }
+            else { false }
+        if not taught { run_act{ &w, act = e.act, target = w.target, item = e.item, spell = e.id, queue = queues_orders{ h = &h, w = &w } } }
         if to_combat { enter_combat_mode{ &w } }
         return true
+    }
+
+    // A default action (a second click on the target, R): the attack on a foe (DefaultActionAttack 0x00616800)
+    // and the bash (DefaultActionBash 0x00683e90 / 0x006826a0) offer their tutorials first.
+    fn run_default_act { mut h: Hud, mut w: world::World, act: Act, target: u32, item: u32, spell: i32 } {
+        let leader = party::leader{ w = &w }
+        if act == Act::attack and not attack_order_goes{ &h, w = &w, attacker = leader, target } { return }
+        if act == Act::bash and offer_tutorial{ &h, w = &w, id = TUT_BASH, who = leader, target, n = if target_is_door{ w = &w, id = target } { 1 } else { 0 } } { return }
+        run_act{ &w, act, target, item, spell, queue = adds_to_queue{ act } }
     }
 
     // The R key (DefaultAction, movement.md 7.4): the first of the target's default actions (plain Attack on a
@@ -456,7 +471,7 @@ namespace hud {
         let l = default_actions{ w = &w, id = w.target }
         if l.count == 0 { return false }
         note_door_action{ &h, w = &w, act = l.entries[0].act, target = w.target }
-        run_act{ &w, act = l.entries[0].act, target = w.target, item = l.entries[0].item, spell = l.entries[0].id, queue = adds_to_queue{ act = l.entries[0].act } }
+        run_default_act{ &h, &w, act = l.entries[0].act, target = w.target, item = l.entries[0].item, spell = l.entries[0].id }
         return true
     }
 
@@ -552,7 +567,7 @@ namespace hud {
             if l.count > 0 {
                 gui::play_sound{ &g, n = 6 }
                 note_door_action{ &h, w = &w, act = l.entries[0].act, target = id }
-                run_act{ &w, act = l.entries[0].act, target = id, item = l.entries[0].item, spell = l.entries[0].id, queue = adds_to_queue{ act = l.entries[0].act } }
+                run_default_act{ &h, &w, act = l.entries[0].act, target = id, item = l.entries[0].item, spell = l.entries[0].id }
             }
         } else {
             w.target = id

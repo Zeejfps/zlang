@@ -57,6 +57,7 @@ namespace ingame {
         wiping: bool,                       // the party-wipe sequence runs (game/death.ctx): menu keys fade out
         notice_box: msgbox::Box,            // a box with only OK (42628, the leader is down), up until answered
         summary: Summary,                   // the status summary's events and its panel (summary_ui.ctx)
+        tbox: TutorialBox,                  // the tutorial pop-up while it is up (tutorial_ui.ctx)
         fade_busy: bool,                    // a screen fade runs (the loop says so each frame): the status summary waits
         frame_dt: f32,                      // the frame's own delta, without the ticks a --speed run skipped (the loop sets it)
     }
@@ -88,6 +89,7 @@ namespace ingame {
         if mixer != null { gui::set_mixer{ &g, mixer } }
         let mut h = try hud::open{ &g, &w, &dev }
         h.floating.enabled = saved.floating_numbers
+        h.tut.on = saved.tutorial_popups
         let ui = Ingame{
             heap = w.heap, cache, gui = g, hud = h, selfs = selfslots::new{},
             text = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } },
@@ -100,7 +102,7 @@ namespace ingame {
             party_alive = 0, ap_cooldown = 0.0, pause_reason = REASON_PAUSED, auto_paused = false,
             psel_wait = false, psel_exit = resref::empty{}, psel_force1 = -1, psel_force2 = -1, psel_paused = false,
             mine_quiet = 1000.0, combat_movement = saved.combat_movement, wiping = false, notice_box = msgbox::blank{},
-            summary = new_summary{ on = saved.status_summary }, fade_busy = false, frame_dt = 0.0,
+            summary = new_summary{ on = saved.status_summary }, fade_busy = false, frame_dt = 0.0, tbox = no_tutorial_box{},
         }
         let mut p = try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
         options_panel::set_config{ s = &p.menus.options, path = settings }
@@ -377,8 +379,10 @@ namespace ingame {
             return true
         }
         if keycode == sdl::key::SPACE or keycode == sdl::key::PAUSE {
-            set_player_pause{ &ui, &w, &dev, on = not clock_paused_by_player{ w = &w } }
-            gui::play_sound{ g = &ui.gui, n = 6 }
+            // Pausing offers the pause's tutorial, which takes the place of GUI sound 6 (HandleInputAction 0xe0).
+            let pausing = not clock_paused_by_player{ w = &w }
+            set_player_pause{ &ui, &w, &dev, on = pausing }
+            if not pausing or not hud::offer_tutorial{ h = &ui.hud, w = &w, id = hud::TUT_PAUSE, who = obj::INVALID, target = obj::INVALID, n = 0 } { gui::play_sound{ g = &ui.gui, n = 6 } }
             return true
         }
         if keycode == 'v' {
@@ -390,7 +394,8 @@ namespace ingame {
             return true
         }
         if keycode == 'y' {
-            hud::clear_one{ &w }
+            // Its tutorial first (0x00688790), whose close does the clear.
+            if not hud::offer_tutorial{ h = &ui.hud, w = &w, id = hud::TUT_CLEAR_ONE, who = obj::INVALID, target = obj::INVALID, n = 0 } { hud::clear_one{ &w } }
             return true
         }
         // keymap.2da: G stealth (action 264).
@@ -460,6 +465,8 @@ namespace ingame {
             }
             summary{ kind, value } => { add_summary{ s = &ui.summary, kind, value } }
             summary_suppress{ count } => { ui.summary.suppress = count }
+            // ShowTutorialWindow (ExecuteCommandShowTutorialWindow 0x00547340): the offer, with no action behind it.
+            tutorial{ window } => { _ = hud::offer_tutorial{ h = &ui.hud, w = &w, id = window, who = obj::INVALID, target = obj::INVALID, n = 0 } }
             feedback{ strref, text } => {
                 let sent = outbox::text_of{ out = &w.out, t = text }
                 let said = if sent.len > 0 { sent } else { world::string_by_strref{ w = &w, strref } }
@@ -693,7 +700,9 @@ namespace ingame {
             ui.ap_round = st.pause_end_round
             ui.ap_action_menu = st.pause_action_menu
             ui.summary.on = st.status_summary
+            ui.hud.tut.on = st.tutorial_popups
         }
+        hud::tick_tutorial{ h = &ui.hud, real_dt = ui.frame_dt }
         update_autopause{ &ui, &w, &dev, dt }
         // A conversation or cutscene takes the screen: the HUD and any menu go away for it
         // (re/gui.md, "SetHudMode"), and the world is not picked.
@@ -739,6 +748,7 @@ namespace ingame {
         while i < events.len {
             let ev = events[i]
             i = i + 1
+            if tutorial_event{ &ui, &w, &dev, ev } { continue }
             answer_solo{ &ui, &w, &dev, ev }
             summary_event{ &ui, &w, ev }
             if msgbox::answer{ b = ui.notice_box, ev } != msgbox::Answer::none {
@@ -767,6 +777,8 @@ namespace ingame {
         // by a script closes the menu first.
         if screens::is_waiting{ s = &ui.screens } and ui.menu != NO_MENU { close_menu{ &ui, &w } }
         screens::update{ s = &ui.screens, g = &ui.gui, &w, &dev, events, dt }
+        // A tutorial offered this frame opens its box (MainLoop, after the input).
+        update_tutorial{ &ui, &w, &dev }
         // Every panel has seen its events: an arrow a cell list took goes on to the focused control now,
         // so the description scrolls in the frame the new cell shows.
         gui::pass_keys{ g = &ui.gui }
@@ -839,6 +851,7 @@ namespace ingame {
             }
         } else if ev.kind == gui::EventKind::value_changed and slice::eq_bytes{ a = ev.tag, b = "TB_PAUSE" } {
             set_player_pause{ &ui, &w, &dev, on = ev.value != 0 }
+            _ = hud::offer_tutorial{ h = &ui.hud, w = &w, id = hud::TUT_PAUSE, who = obj::INVALID, target = obj::INVALID, n = 0 }    // OnPauseToggle 0x00688590
         } else if ev.kind == gui::EventKind::value_changed and slice::eq_bytes{ a = ev.tag, b = "TB_SOLO" } {
             // The toggle only asks (the box decides); the HUD sets the check mark from the party table.
             ask_solo{ &ui, &w, &dev, for_stealth = false }

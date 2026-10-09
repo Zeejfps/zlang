@@ -100,7 +100,7 @@ namespace save {
             k = k + 1
         }
 
-        let tutorial: [6]u8 = [0; 6]
+        let tutorial: [6]u8 = w.party.tutorial_shown
         try put_gff_value{ &b, owner = root, label = "PT_TUT_WND_SHOWN", value = gff::Value::void{ v = tutorial[..] } }
         try put_gff_value{ &b, owner = root, label = "PT_LAST_GUI_PNL", value = gff::Value::int{ v = PT_LAST_PANEL } }
         // The Messages logs (SavePartyTable 0x005648c0): the feedback lines, oldest first, with the
@@ -223,6 +223,15 @@ namespace save {
         while pc < PT_PAZAAK_CARDS {
             w.party.pazaak_cards[pc] = if pc < cards.len { @trunc(i32, gff::get_number{ doc = doc.*, s = cards[pc], label = "PT_PAZAAKCOUNT" } ifnull 0) } else { 0 }
             pc = pc + 1
+        }
+        // The tutorial pop-ups shown (LoadPartyTable reads the six bytes back; a save without them shows none).
+        w.party.tutorial_shown = [0; 6]
+        if gff::get_void{ doc = doc.*, s = gff::ROOT, label = "PT_TUT_WND_SHOWN" } is some{ value = bits } {
+            let mut ti: usize = 0
+            while ti < 6 and ti < bits.len {
+                w.party.tutorial_shown[ti] = bits[ti]
+                ti = ti + 1
+            }
         }
         let side = gff::get_list{ doc = doc.*, s = gff::ROOT, label = "PT_PAZSIDELIST" } ifnull none
         pc = 0

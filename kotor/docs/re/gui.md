@@ -1754,6 +1754,64 @@ Variants (all `confirm.gui`):
 | `CGuiInGame+0x8c` | `0x006c2270` / `0x00756f28` | **solo-mode box** (0xfc8 bytes): `SetMode(bForStealth)` (`0x006c24a0`) picks 37889 "turn Solo Mode on?", 37890 (stealth needs solo), 37891 "turn Solo Mode off?", 37892 (off also ends stealth); OK and the accept keys (`0x1f6`, `0x27`, `0x2d`) toggle solo mode (`0x005ede60`) and, for the stealth case, request stealth (`0x0060ee00`); those and Cancel / the cancel keys (`0x1f7`, `0x28`, `0x2e`) all call `CloseSoloModeConfirm` instead of the base close path; its Render (`0x006c2310`) marks it for removal by itself while a conversation is pending (`CGuiInGame+0xb4`), during a load, when the server area's `+0x2c4` is set (not identified), or when the player creature is dead (vtable `+0x94`) or dying | high |
 | `CGuiInGame+0x50` | `0x006ce9c0` / `0x007579c8` | info box (0x988 bytes; `ShowInfoBox(strref)` `0x0062d3e0`, used by the store's buy, keeps the strref at `+0x984`): OK caption 1582 "Close", OK only; the accept and cancel keys play GUI sound 0 and call `CloseInfoBox` (`0x0062d440`: pop, remove, input class 2 if `+0x984` is 1, else 0); a click on `BTN_OK` (`0x1f6`) takes the base close path instead, whose `OnClose` sets the caption back to 1580 "OK" for later uses (med, needs a runtime check) | high |
 
+#### Tutorial pop-ups (CSWGuiTutorialBox)
+
+Read for the tutorial pop-ups of 2026-10 (ours: `lib/hud/tutorial.ctx` the offers,
+`lib/ingame/tutorial_ui.ctx` the box; `tools/ingame/tutorials.sh`). (high unless marked)
+
+- **The offer** (`CClientExoApp::ShowTutorialPopup(id, a, b, c)` 0x005edf40 →
+  `CClientExoAppInternal::ShowTutorialPopup` 0x005f4120): `CGuiInGame::CanShowTutorial`
+  (0x0062f420) wants the "Tutorial Popups" option (client options `+0x14` bit 1, swkotor.ini `[Game
+  Options] Tutorial Popups`), an id below 43 (0x2b) whose bit in the shown set (`CGuiInGame+0xba8`, 6
+  bytes) is clear, no conversation starting (`+0xb4`), and a `Message0` in `tutorial.2da` for the row
+  (0x006aa1a0). Then 0x006aa900 readies the box (`+0x994` id, `+0x995` page 0, the first page,
+  the close callback by id) and the id and arguments are kept (`client+0x3b8`, `+0x3ac..+0x3b4`); it
+  returns 1, and every caller then leaves the action it was about to do. The next `MainLoop` pass
+  (0x0062f4a0) sets the id's shown bit, hands the arguments to the box (`+0x984`, `+0x988`, `+0x98c`)
+  and adds it as a modal panel.
+- **The box**: a `CSWGuiMessageBox` (0x998 bytes, ctor 0x006aa100, at `CGuiInGame+0xa0`; text font
+  `fnt_d16x16`) in OK-only mode. `NextPage` (0x006aa670) shows `MessageN` of the row for page N
+  (`+0x995`), the OK button captioned 38623 "Continue" while `MessageN+1` exists and 1580 "OK" on
+  the last, and the row's `Icon` (`SetIcon`, 32x32 above the text). `HandleInputEvent` (0x006aa8a0):
+  OK (0x1f6), Enter and the cancel keys (0x27-0x28, 0x2d-0x2e) turn the page, and close the box
+  only after the last. `OnPanelAdded` (0x006aa860) pauses (`RequestPause(1, reason 2)`) unless the
+  player has paused; every close callback first lifts that pause.
+- **The close callbacks** (0x006aa900 by id) redo what offered them: 0 the combat feat's attack
+  (0x00616900 with the feat `+0x98c` on the target `+0x984`), 1 the grenade throw (0x006167d0: item
+  `+0x98c`, target `+0x984`, user `+0x988`), 2 a mine (0x0060ee60), 3 and 4 a Force power
+  (0x0060ef10), 0x1d/0x1e nothing more, 0x1f 0x005ede90, 0x20 Clear Combat Action (0x006880c0),
+  0x21 the bash again (`DefaultActionBash` of the door, `+0x98c` 1, or the placeable), 0x22 the
+  attack again (`DefaultActionAttack`), 0x27 the map's Return to Base; any other id only lifts the
+  pause (so 0x23's order is dropped).
+- **Shown set**: saved in the party table as `PT_TUT_WND_SHOWN` (6 bytes, `SavePartyTable`
+  0x005648c0 / `LoadPartyTable` 0x00565d20), cleared by a new `CGuiInGame`.
+- **Who offers what** (`tutorial.2da` rows; arguments a, b, c):
+
+| Id | Row | Offered by |
+|---|---|---|
+| 0 | Use_Combat_Feat | a combat feat from the target block (0x00617dd0: target, -, feat) |
+| 1 | Use_Grenade | a grenade from the target block (0x00617e40, base item `+0xac` 6: target, user, item) |
+| 5 | Use_Vertical_Menu | the target and self blocks' up/down arrows |
+| 6 | Pause_Game | pausing with Space/Pause (`HandleInputAction` 0xe0, 0xf1: in place of GUI sound 6) and the pause button (`OnPauseToggle` 0x00688590, either way) |
+| 7 | Press_Start | `HandleInputAction` 0xdf (the in-game menu key; med) |
+| 10, 11, 12, 13, 20, 41 | screens | `OnPanelAdded` of the script select, equip (a slot click), messages, map, inventory and party selection panels |
+| 14 | Receive_Journal_Entry | `CSWGuiStatusSummary::OnPanelAdded` (on a flag of its last category: med) |
+| 15 | Party_Member_Dies | 0x006655e0 / 0x00666667 |
+| 16-19 | character generation screens | their panels' openers (0x006f10c0, 0x006f2f30, 0x006f49a0, 0x006f6db0) |
+| (variable) | Enter_*_Screen | `CSWGuiAbilities::RebuildList` with an id it computes (36-38 by their labels; not read: med) |
+| 21 | Hostile_Creature_Encountered | `UpdateSelectableObjects` at an enemy sighting, before the enemy-sighted auto-pause |
+| 32 | In_Combat_Y_Button | Clear Combat Action (`OnClearOneAction` 0x0068b050, the Y key 0x00688790): the clear waits for the box |
+| 33 | Bash | `DefaultActionBash` of a door (0x00683e90) or placeable (0x006826a0) |
+| 34 | Attack | `DefaultActionAttack` (0x00616800): a second click on a foe, R |
+| 35 | Attack_Button_Mash | the same within 3 s of the last attack order: `0x005edf90(3000)` sets `client+0x3e0` when an order goes, `MainLoop` counts it down by the frame's time |
+| 39 | Return_To_Base | the map's Return to Base (`CSWGuiMap::HandleInputEvent`) |
+| any | ShowTutorialWindow | the script routine (0x00547340), arguments invalid |
+
+Ours offers 0, 1, 6, 12, 13, 14, 20, 21, 32, 33, 34, 35 and `ShowTutorialWindow`; a headless run
+offers none unless its script says `ui tutorial allow` (as the status summary's panel). Our box is
+`gui::message_box` with `gui::add_message_icon`, the default font, and grows only in height (the
+original's `FitToText` also widens a tall box up to 440).
+
 #### CSWGuiStatusSummary (`statussummary`)
 
 0x1b44 bytes, ctor `0x006272a0`, vtable `0x0074ff68`, owner `CGuiInGame+0xa8`, 322x332 centred.

@@ -1,0 +1,30 @@
+# Tutorial pop-ups (docs/re/gui.md "Tutorial pop-ups"; lib/ingame/tutorial_ui.ctx), from the uppercity
+# checkpoint with the option on and the pop-ups allowed in a headless run: Space pauses and offers
+# Pause_Game (6) in place of the pause sound; its box closes with Enter. A Sith trooper comes into sight
+# (Hostile_Creature_Encountered, 21, at the sighting); R on it offers
+# Attack (34), two pages ("Continue", then "OK"), and the box's close gives the attack order (the leader's
+# queue shows it). A second R within 3 s offers Attack_Button_Mash (35, two pages), whose close drops the
+# order. Each shows once in the game (PT_TUT_WND_SHOWN): the pause after a save and its load shows none.
+#   EXE=... sh kotor/tools/ingame/tutorials.sh
+3 ui bot off
+3 ui tutorial on
+3 ui tutorial allow
+3 ui tutorial reset
+10 key space
+20 key return
+24 key space
+30 ui foe g_sithtroop01 8 0
+32 ui target g_sithtroop01
+36 key return
+40 key r
+46 key return
+50 key return
+52 ui fight
+54 key r
+58 key return
+62 key return
+64 ui fight
+72 save tutsave
+80 load tutsave
+100 ui tutorial allow
+104 key space

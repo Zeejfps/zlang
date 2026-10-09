@@ -216,6 +216,8 @@ namespace hud {
                 world::prefix{ w = &w }
                 _ = @fmt(&w.io, "enemy sighted: {}, combat mode {}\n", ids[first_hostile], combat)
             }
+            // UpdateSelectableObjects offers Hostile_Creature_Encountered at the sighting (0x005fa5a0).
+            _ = offer_tutorial{ &h, w = &w, id = TUT_HOSTILE, who = obj::INVALID, target = obj::INVALID, n = 0 }
             if not combat { autopause::request{ &w, reason = autopause::ENEMY_SIGHTED } }
         }
         // The announcement latches until no enemy has been in sight for ten seconds.
