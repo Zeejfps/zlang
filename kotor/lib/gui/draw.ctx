@@ -432,7 +432,7 @@ namespace gui {
         }
         if c.scrollbar >= 0 {
             let sb = list::at{ list = p.controls, i = @as(usize, c.scrollbar) }
-            l.has_bar = sb.w > 0
+            l.has_bar = sb.w > 0 and not c.bar_off
             l.sx = sb.x
             l.sy = sb.y
             l.sw = sb.w
@@ -481,12 +481,21 @@ namespace gui {
         let rc = intersect{ a = area_clip, b = clip }
         let count = @as(i32, c.row_count)
         if c.text_mode {
-            // One wrapped text in the prototype's font, colour and alignment.
+            // One wrapped text in the prototype's font, colour and alignment. A text taller than
+            // the box is one tall row moved up by whole lines (text_scroll).
             if count > 0 and c.proto >= 0 {
                 let pc = list::at{ list = p.controls, i = @as(usize, c.proto) }
                 let col = mul_alpha{ c = pc.text.color, a = alpha }
-                draw_text_in{ &g, &frame, t = pc.text, text = c.rows[0].text, color = col, x = ox + l.ax + c.padding, y = oy + l.ay + c.padding, w = l.aw - 2 * c.padding, h = l.ah - 2 * c.padding, clip = rc }
+                let ts = text_scroll{ &g, p, c, l }
+                let tx = ox + l.ax + c.padding
+                let tw = l.aw - 2 * c.padding
+                if ts.on {
+                    draw_text_in{ &g, &frame, t = pc.text, text = c.rows[0].text, color = col, x = tx, y = oy + l.ay + ts.top, w = tw, h = ts.text_h, clip = rc }
+                } else {
+                    draw_text_in{ &g, &frame, t = pc.text, text = c.rows[0].text, color = col, x = tx, y = oy + l.ay + c.padding, w = tw, h = l.ah - 2 * c.padding, clip = rc }
+                }
             }
+            if bar_shown{ c, l, count } { draw_scrollbar{ &g, &frame, p, c, l, alpha, clip } }
             return
         }
         let mut k: i32 = 0
@@ -497,7 +506,96 @@ namespace gui {
             draw_row{ &g, &frame, p, c, idx, x = ox + l.ax + c.padding, y = oy + l.ay + s.y, w = l.aw - 2 * c.padding, h = s.h, alpha, clip = rc }
             k = k + 1
         }
-        if l.has_bar and count > l.visible { draw_scrollbar{ &g, &frame, p, c, l, alpha, clip } }
+        if bar_shown{ c, l, count } { draw_scrollbar{ &g, &frame, p, c, l, alpha, clip } }
+    }
+
+    // Whether the list draws its scroll bar. The original shows it whenever the list has one
+    // (list flag 0x20, set by the constructor 0x0041be40), whether or not there is anything to
+    // scroll; the conversation's replies show it only while they overflow (0x006a86a0), and a
+    // message box whose text fits gives it no width (bar_off, CSWGuiMessageBox::FitToText).
+    fn bar_shown { c: *Control, l: ListLayout, count: i32 } -> bool {
+        if not l.has_bar { return false }
+        if c.bar_when_needed { return count > l.visible }
+        return true
+    }
+
+    // ---- one tall text (descriptions, message boxes)
+
+    // A text-mode list whose text is taller than its box scrolls like the original's list with one
+    // row taller than the row area (IsPixelScrolling 0x0041a290, LayoutPixelScroll 0x0041a2d0):
+    // the row is the whole wrapped text, and the scroll position counts lines. At step 0 the text
+    // starts `padding` below the top; each step moves it up one line of the font; the last step
+    // puts its end `padding` above the bottom. There are `lines - page + 1` steps, where `page` is
+    // the whole lines the box holds.
+    struct TextScroll {
+        on: bool,                   // the text is taller than the box
+        line_h: i32,
+        text_h: i32,                // the whole wrapped text
+        steps: i32,                 // scroll positions, at least 1
+        page: i32,                  // whole lines in the box: a press on the track moves this many
+        step: i32,                  // the position, clamped to 0..steps-1
+        top: i32,                   // where the text's top is, relative to the row area
+    }
+
+    fn text_scroll { mut g: Gui, p: *Panel, c: *Control, l: ListLayout } -> TextScroll {
+        let mut r = TextScroll{ on = false, line_h = 0, text_h = 0, steps = 1, page = 1, step = 0, top = c.padding }
+        if not c.text_mode or c.row_count == 0 or c.proto < 0 { return r }
+        let pc = list::at{ list = p.controls, i = @as(usize, c.proto) }
+        if pc.text.font < 0 or @as(usize, pc.text.font) >= g.fonts.len { return r }
+        let font = list::items{ list = g.fonts }[@as(usize, pc.text.font)].font
+        let n = layout{ font, text = c.rows[0].text, width = l.aw - 2 * c.padding, lines = g.lines }
+        r.line_h = lines_height{ font, count = 1 }
+        if r.line_h <= 0 { return r }
+        r.text_h = lines_height{ font, count = n }
+        if l.ah >= r.text_h + c.padding { return r }
+        r.on = true
+        r.page = l.ah / r.line_h
+        r.steps = @as(i32, n) - r.page + 1
+        if r.steps < 1 { r.steps = 1 }
+        r.step = c.text_step
+        if r.step > r.steps - 1 { r.step = r.steps - 1 }
+        if r.step < 0 { r.step = 0 }
+        r.top = if r.step == r.steps - 1 { l.ah - r.text_h - c.padding } else { c.padding - r.step * r.line_h }
+        return r
+    }
+
+    // ---- the scroll bar's values and thumb
+
+    // The scroll bar's maximum, current and visible values as the list sets them (UpdateLayout
+    // 0x0041b140, LayoutPixelScroll): rows give max = count - visible + 1 (at least 1), visible =
+    // the rows shown, current = the top row; a tall text gives max = text height - box height + 1,
+    // visible = the box height and current = the pixels scrolled, spread evenly over the steps
+    // (the last step sets the text height, which the bar clamps to max).
+    struct BarValues { max: i32, cur: i32, visible: i32 }
+
+    fn bar_values { mut g: Gui, p: *Panel, c: *Control, l: ListLayout } -> BarValues {
+        if c.text_mode {
+            let ts = text_scroll{ &g, p, c, l }
+            if not ts.on { return BarValues{ max = 1, cur = 0, visible = 1 } }
+            let mx = ts.text_h - l.ah + 1
+            let mut cur: i32 = 0
+            if ts.step == ts.steps - 1 { cur = mx }
+            else if ts.step > 0 { cur = @as(i32, @as(f32, ts.step) / @as(f32, ts.steps - 1) * @as(f32, ts.text_h - l.ah)) }
+            return BarValues{ max = mx, cur, visible = l.ah }
+        }
+        let count = @as(i32, c.row_count)
+        let mut mx = count - l.visible + 1
+        if mx < 1 { mx = 1 }
+        let mut vis = if l.visible < count { l.visible } else { count }
+        if vis < 1 { vis = 1 }
+        return BarValues{ max = mx, cur = c.first_row, visible = vis }
+    }
+
+    // The thumb's y (relative to the panel) and length (0x004193f0): the track lies between the
+    // arrows; the thumb is visible / (visible + max) of it, at least 4 pixels, placed by current /
+    // (max - 1); with max 1 or less it fills the track.
+    fn thumb_of { l: ListLayout, b: BarValues } -> Slot {
+        let track_y = l.sy + l.sw
+        let track_h = l.sh - 2 * l.sw
+        if b.max <= 1 { return Slot{ y = track_y, h = track_h } }
+        let mut len = track_h * b.visible / (b.visible + b.max)
+        if len < 4 { len = 4 }
+        return Slot{ y = track_y + (track_h - len) * b.cur / (b.max - 1), h = len }
     }
 
     fn intersect { a: render::Rect, b: render::Rect } -> render::Rect {
@@ -588,17 +686,18 @@ namespace gui {
         let y = p.sy + l.sy
         let w = l.sw
         let h = l.sh
-        let count = @as(i32, c.row_count)
         let col = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = alpha }
-        let can_up = c.first_row > 0
-        let can_down = c.first_row + l.visible < count
+        let bv = bar_values{ &g, p, c, l }
+        // DRAWMODE 1's arrows (0x00418010 / 0x00418030), from the bar's values as they are; the
+        // down test lets a one-row window go one further.
+        let can_up = bv.visible < bv.max and bv.cur >= 1
+        let end = if bv.visible < 2 and bv.cur != bv.max { bv.max + 1 } else { bv.max }
+        let can_down = bv.visible < bv.max and bv.cur + bv.visible < end
         if sb.draw_mode == 0 {
             draw_border{ &g, &frame, b = sb.border, x, y, w, h, alpha, clip, override = no_img{} }
-            // The thumb rides the track between the arrows.
-            let track_y = y + w
-            let track_h = h - 2 * w
-            if track_h > 4 and sb.thumb.ok {
-                var_thumb{ &frame, sb, x, track_y, w, track_h, first = c.first_row, visible = l.visible, count, col, clip }
+            let t = thumb_of{ l, b = bv }
+            if t.h > 0 and sb.thumb.ok {
+                put_image{ &frame, img = sb.thumb, x = @as(f32, x), y = @as(f32, p.sy + t.y), w = @as(f32, w), h = @as(f32, t.h), color = col, angle = 0.0, clip }
             }
         }
         if sb.arrow.ok {
@@ -610,18 +709,5 @@ namespace gui {
                 put_image{ &frame, img = sb.arrow, x = @as(f32, x), y = @as(f32, y + h - w), w = aw, h = aw, color = col, angle = PI, clip }
             }
         }
-    }
-
-    fn var_thumb {
-        mut frame: render::Frame, sb: *Control, x: i32, track_y: i32, w: i32, track_h: i32, first: i32, visible: i32, count: i32,
-        col: render::Color, clip: render::Rect,
-    } {
-        if count <= visible { return }
-        let mut len = track_h * visible / count
-        if len < 12 { len = 12 }
-        if len > track_h { len = track_h }
-        let range = count - visible
-        let pos = (track_h - len) * first / range
-        put_image{ &frame, img = sb.thumb, x = @as(f32, x), y = @as(f32, track_y + pos), w = @as(f32, w), h = @as(f32, len), color = col, angle = 0.0, clip }
     }
 }

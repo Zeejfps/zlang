@@ -2,22 +2,20 @@
 // quest text or one log line is one tall row that the scroll bar and the up and down keys scroll.
 // The GUI's rows all have the height the file gives its prototype (two lines of the font in the
 // journal's and the message log's lists), so:
-//  - `show_text`: a text that fits the box is shown as the list's one wrapped text (`set_list_text`);
-//    a longer one goes into rows, so that the list scrolls;
+//  - `show_text`: one text is the list's one wrapped text (`set_list_text`), which scrolls by lines
+//    when it is taller than the box, as the original's tall row does;
 //  - `add_wrapped`: a log line goes into as many rows as it needs, each holding the lines that fit,
 //    broken where the row would break them.
 namespace journal {
     // How a list box wraps: the font its rows use and the widths and heights of its text.
     struct Wrap {
         font: i32,              // index into the Gui's fonts, -1 when the list has no usable prototype
-        text_w: i32,            // the width and height of the one wrapped text (`set_list_text`)
-        text_h: i32,
         row_w: i32,             // the width of the text of a row
         per_row: usize,         // the lines a row holds
     }
 
     fn wrap_of { mut g: gui::Gui, panel: u32, tag: []u8 } -> Wrap {
-        let mut r = Wrap{ font = -1, text_w = 0, text_h = 0, row_w = 0, per_row = 1 }
+        let mut r = Wrap{ font = -1, row_w = 0, per_row = 1 }
         let p = gui::find_panel{ &g, id = panel } ifnull { return r }
         let ci = gui::find_by_tag{ p, tag }
         if ci < 0 { return r }
@@ -30,29 +28,18 @@ namespace journal {
         let area = gui::text_area{ b = pc.border, x = 0, y = 0, w = l.aw - 2 * c.padding, h = l.row_h }
         let line_h = gui::lines_height{ font, count = 1 }
         r.font = pc.text.font
-        r.text_w = l.aw - 2 * c.padding
-        r.text_h = l.ah - 2 * c.padding
         r.row_w = area.w
         if line_h > 0 and area.h / line_h > 1 { r.per_row = @as(usize, area.h / line_h) }
         return r
     }
 
-    // Replaces the list's contents with `text`: one wrapped text when it fits the box, else rows.
+    // Replaces the list's contents with `text`, one wrapped text.
     fn show_text { mut g: gui::Gui, panel: u32, tag: []u8, text: []u8 } -> ! {
-        gui::list_clear{ &g, panel, tag }
-        let c = gui::find_control{ &g, panel, tag } ifnull { return }
-        c.text_mode = false
-        if text.len == 0 { return }
-        let r = wrap_of{ &g, panel, tag }
-        if r.font >= 0 {
-            let font = list::items{ list = g.fonts }[@as(usize, r.font)].font
-            let n = gui::layout{ font, text, width = r.text_w, lines = g.lines }
-            if gui::lines_height{ font, count = n } <= r.text_h {
-                try gui::set_list_text{ &g, panel, tag, text }
-                return
-            }
+        if text.len == 0 {
+            gui::list_clear{ &g, panel, tag }
+            return
         }
-        try add_wrapped{ &g, panel, tag, text, colored = false, color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = 1.0 } }
+        try gui::set_list_text{ &g, panel, tag, text }
     }
 
     // Appends `text` to list box `tag` as rows; with `colored` they are drawn in `color`.

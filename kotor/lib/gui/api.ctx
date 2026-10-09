@@ -330,9 +330,13 @@ namespace gui {
         c.click_rows = true
     }
 
-    // Makes the list box show one wrapped text instead of rows (message boxes, descriptions).
+    // Makes the list box show one wrapped text instead of rows (message boxes, descriptions). A
+    // text taller than the box scrolls by lines (the wheel, the scroll bar, up and down); a new
+    // text starts at the top, as the original's ClearItems (0x00419a90) puts it back there.
     fn set_list_text { mut g: Gui, panel: u32, tag: []u8, text: []u8 } -> ! {
         let c = find_control{ &g, panel, tag } ifnull { return }
+        // The same text again (a panel refreshing) keeps where it was scrolled to.
+        if c.text_mode and c.row_count == 1 and slice::eq_bytes{ a = c.rows[0].text, b = text } { return }
         list_clear{ &g, panel, tag }
         c.text_mode = true
         _ = try list_add{ &g, panel, tag, text, user = 0 }
@@ -397,6 +401,9 @@ namespace gui {
         if li < 0 { return }
         let c = list::at{ list = p.controls, i = @as(usize, li) }
         if c.proto < 0 or c.row_count == 0 { return }
+        // The box is fitted with no scroll bar (FitToText 0x006253a0 gives it width 0) and grows
+        // until the text fits, so the bar never comes back.
+        c.bar_off = true
         let pc = list::at{ list = p.controls, i = @as(usize, c.proto) }
         if pc.text.font < 0 or @as(usize, pc.text.font) >= g.fonts.len { return }
         let font = list::items{ list = g.fonts }[@as(usize, pc.text.font)].font
@@ -439,8 +446,16 @@ namespace gui {
         }
         c.row_count = 0
         c.first_row = 0
+        c.text_step = 0
         c.selected_row = -1
         c.hover_row = -1
+    }
+
+    // Has the list box draw its scroll bar only while its rows overflow, as the conversation's
+    // replies do (0x006a86a0); other lists show theirs always.
+    fn set_bar_when_needed { mut g: Gui, panel: u32, tag: []u8 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.bar_when_needed = true
     }
 
     // Appends a row showing `text`; `user` is the owner's value for it. Returns its index.

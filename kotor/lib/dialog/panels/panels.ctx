@@ -224,18 +224,22 @@ namespace dlgpanel {
         if computer {
             let id = try gui::open{ &g, &fs, &dev, name = "computer", mode = gui::Mode::full_screen, modal = false }
             p.main = id
+            // The replies show their scroll bar only while they overflow (0x006a86a0).
+            gui::set_bar_when_needed{ &g, panel = id, tag = "LB_REPLIES" }
             gui::set_backdrop{ &g, &fs, &dev, panel = id, kind = 4 }
             load_computer_backdrop{ &p, &g, &fs, &dev }
             return
         }
         let id = try gui::open{ &g, &fs, &dev, name = "dialog", mode = gui::Mode::placed, modal = false }
         p.main = id
+        gui::set_bar_when_needed{ &g, panel = id, tag = "LB_REPLIES" }
         gui::set_text_color{ &g, panel = id, tag = "LBL_MESSAGE", color = gui::color_menu{} }
         gui::set_visible{ &g, panel = id, tag = "LBL_MESSAGE", visible = false }
         gui::set_visible{ &g, panel = id, tag = "LB_REPLIES", visible = false }
         // The second dialog.gui, for the last line in the top bar; it has nothing to show until replies do.
         let lid = try gui::open{ &g, &fs, &dev, name = "dialog", mode = gui::Mode::placed, modal = false }
         p.last = lid
+        gui::set_bar_when_needed{ &g, panel = lid, tag = "LB_REPLIES" }
         gui::set_visible{ &g, panel = lid, tag = "LBL_MESSAGE", visible = false }
         gui::set_visible{ &g, panel = lid, tag = "LB_REPLIES", visible = false }
         p.bars_on = true

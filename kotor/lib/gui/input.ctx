@@ -255,30 +255,53 @@ namespace gui {
         clamp_first{ p, c }
     }
 
-    fn scroll_list { mut g: Gui, p: *mut Panel, ci: i32, delta: i32 } {
+    // Scrolls list `ci` by `delta` rows, or a tall text by `delta` lines. True when it moved.
+    fn scroll_list { mut g: Gui, p: *mut Panel, ci: i32, delta: i32 } -> bool {
         let c = list::at{ list = p.controls, i = @as(usize, ci) }
+        if c.text_mode {
+            let ts = text_scroll{ &g, p, c, l = list_layout{ p, c } }
+            let mut s = ts.step + delta
+            if s > ts.steps - 1 { s = ts.steps - 1 }
+            if s < 0 { s = 0 }
+            c.text_step = s
+            if s == ts.step { return false }
+            push_event{ &g, kind = EventKind::scrolled, p, ci, value = s, row = -1, user = 0 }
+            return true
+        }
         let before = c.first_row
         c.first_row = c.first_row + delta
         clamp_first{ p, c }
-        if c.first_row != before { push_event{ &g, kind = EventKind::scrolled, p, ci, value = c.first_row, row = -1, user = 0 } }
+        if c.first_row == before { return false }
+        push_event{ &g, kind = EventKind::scrolled, p, ci, value = c.first_row, row = -1, user = 0 }
+        return true
+    }
+
+    // The list's scroll position: its top row, or how many lines its tall text is scrolled.
+    fn scroll_pos { mut g: Gui, p: *mut Panel, c: *Control } -> i32 {
+        if c.text_mode { return text_scroll{ &g, p, c, l = list_layout{ p, c } }.step }
+        return c.first_row
     }
 
     // Which part of a list's scroll bar the panel-relative point is on.
-    fn bar_part { p: *mut Panel, c: *Control, lx: i32, ly: i32 } -> i32 {
+    fn bar_part { mut g: Gui, p: *mut Panel, c: *Control, lx: i32, ly: i32 } -> i32 {
         let l = list_layout{ p, c }
-        if not l.has_bar or @as(i32, c.row_count) <= l.visible { return PART_BODY }
+        if not bar_shown{ c, l, count = @as(i32, c.row_count) } { return PART_BODY }
         if lx < l.sx or lx > l.sx + l.sw or ly < l.sy or ly > l.sy + l.sh { return PART_BODY }
         if ly < l.sy + l.sw { return PART_UP }
         if ly > l.sy + l.sh - l.sw { return PART_DOWN }
-        let track_h = l.sh - 2 * l.sw
-        let count = @as(i32, c.row_count)
-        let mut len = track_h * l.visible / count
-        if len < 12 { len = 12 }
-        if len > track_h { len = track_h }
-        let pos = (track_h - len) * c.first_row / (count - l.visible)
-        let ty = l.sy + l.sw + pos
-        if ly >= ty and ly <= ty + len { return PART_THUMB }
+        let t = thumb_of{ l, b = bar_values{ &g, p, c, l } }
+        if ly >= t.y and ly <= t.y + t.h { return PART_THUMB }
         return PART_TRACK
+    }
+
+    // A press on the track pages: a tall text by the whole lines its box holds, rows by the rows
+    // shown (0x1fd / 0x1fe), up when the press is above the thumb.
+    fn page_list { mut g: Gui, p: *mut Panel, ci: i32, ly: i32 } {
+        let c = list::at{ list = p.controls, i = @as(usize, ci) }
+        let l = list_layout{ p, c }
+        let t = thumb_of{ l, b = bar_values{ &g, p, c, l } }
+        let page = if c.text_mode { text_scroll{ &g, p, c, l }.page } else { bar_values{ &g, p, c, l }.visible }
+        _ = scroll_list{ &g, p, ci, delta = if ly < t.y { -page } else { page } }
     }
 
     fn set_slider { mut g: Gui, p: *mut Panel, ci: i32, v: i32 } {
@@ -322,15 +345,14 @@ namespace gui {
             if c.kind == K_SLIDER {
                 set_slider{ &g, p, ci = h.control, v = slider_from_point{ c, lx, ly } }
             } else if c.kind == K_LIST {
-                let part = bar_part{ p, c, lx, ly }
+                let part = bar_part{ &g, p, c, lx, ly }
                 g.capture_part = part
-                if part == PART_UP { scroll_list{ &g, p, ci = h.control, delta = -1 } }
-                else if part == PART_DOWN { scroll_list{ &g, p, ci = h.control, delta = 1 } }
-                else if part == PART_TRACK {
-                    let l = list_layout{ p, c }
-                    let mid = l.sy + l.sw + (l.sh - 2 * l.sw) * c.first_row / (if @as(i32, c.row_count) > 0 { @as(i32, c.row_count) } else { 1 })
-                    scroll_list{ &g, p, ci = h.control, delta = if ly < mid { -l.visible } else { l.visible } }
-                } else if part == PART_BODY {
+                g.capture_y = ly
+                g.capture_value = scroll_pos{ &g, p, c }
+                if part == PART_UP { _ = scroll_list{ &g, p, ci = h.control, delta = -1 } }
+                else if part == PART_DOWN { _ = scroll_list{ &g, p, ci = h.control, delta = 1 } }
+                else if part == PART_TRACK { page_list{ &g, p, ci = h.control, ly } }
+                else if part == PART_BODY and not c.text_mode {
                     let r = row_at{ p, c, lx, ly }
                     g.press_on_selected = r >= 0 and r == c.selected_row
                     if r >= 0 and c.cell_art.on {
@@ -356,16 +378,16 @@ namespace gui {
         if c.kind == K_SLIDER {
             set_slider{ &g, p, ci = g.capture.control, v = slider_from_point{ c, lx, ly } }
         } else if c.kind == K_LIST and g.capture_part == PART_THUMB {
+            // The thumb follows the pointer from where it was pressed (0x0041b670): the positions
+            // past the first spread over the track the thumb does not cover, rounded.
             let l = list_layout{ p, c }
-            let count = @as(i32, c.row_count)
-            let track_h = l.sh - 2 * l.sw
-            let mut len = track_h * l.visible / (if count > 0 { count } else { 1 })
-            if len < 12 { len = 12 }
-            let room = track_h - len
-            if room > 0 and count > l.visible {
-                let rel = ly - (l.sy + l.sw) - len / 2
-                let want = (count - l.visible) * rel / room
-                scroll_list{ &g, p, ci = g.capture.control, delta = want - c.first_row }
+            let t = thumb_of{ l, b = bar_values{ &g, p, c, l } }
+            let room = l.sh - 2 * l.sw - t.h
+            let last = if c.text_mode { text_scroll{ &g, p, c, l }.steps - 1 } else { bar_values{ &g, p, c, l }.max - 1 }
+            if room > 0 and last > 0 {
+                // Counted from 1 as the original's position is, so its +0.5 rounds the same way.
+                let want = @as(i32, @as(f32, g.capture_value + 1) + @as(f32, (ly - g.capture_y) * last) / @as(f32, room) + 0.5) - 1
+                _ = scroll_list{ &g, p, ci = g.capture.control, delta = want - scroll_pos{ &g, p, c } }
             }
         }
     }
@@ -422,7 +444,7 @@ namespace gui {
             let r = row_at{ p, c, lx = x - p.sx, ly = y - p.sy }
             // Item rows are buttons in the original: one click does what the row does.
             let again = g.press_on_selected or c.click_rows
-            if r >= 0 and r == c.selected_row and again and bar_part{ p, c, lx = x - p.sx, ly = y - p.sy } == PART_BODY { activate{ &g, p, ci = cap.control } }
+            if r >= 0 and r == c.selected_row and again and not c.text_mode and bar_part{ &g, p, c, lx = x - p.sx, ly = y - p.sy } == PART_BODY { activate{ &g, p, ci = cap.control } }
         } else if c.kind != K_SLIDER and c.kind != K_EDIT {
             activate{ &g, p, ci = cap.control }
         } else if c.kind == K_EDIT {
@@ -437,7 +459,7 @@ namespace gui {
         if h.control < 0 { return top_modal{ &g } != null }
         let c = list::at{ list = p.controls, i = @as(usize, h.control) }
         let step: i32 = if dy > 0.0 { -1 } else { 1 }
-        if c.kind == K_LIST { scroll_list{ &g, p, ci = h.control, delta = step } }
+        if c.kind == K_LIST { _ = scroll_list{ &g, p, ci = h.control, delta = step } }
         else if c.kind == K_SLIDER { set_slider{ &g, p, ci = h.control, v = c.value - step } }
         return true
     }
@@ -509,6 +531,11 @@ namespace gui {
         let c = list::at{ list = p.controls, i = @as(usize, ci) }
         if c.kind == K_LIST and c.cell_art.on {
             move_cell_focus{ &g, p, ci, dir }
+            return true
+        }
+        if c.kind == K_LIST and c.text_mode and (dir == DIR_UP or dir == DIR_DOWN) {
+            // Up and down scroll a tall text a line, with the list's move sound (0x0041ce20).
+            if scroll_list{ &g, p, ci, delta = if dir == DIR_UP { -1 } else { 1 } } { play_sound{ &g, n = c.hover_sound } }
             return true
         }
         if c.kind == K_LIST and (dir == DIR_UP or dir == DIR_DOWN) and c.row_count > 0 {

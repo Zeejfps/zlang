@@ -1,11 +1,13 @@
-# A quest whose text is longer than the box: it scrolls (the scroll bar, the wheel and the keys of the list).
-# sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/journal_long.txt 20 6:j_long 12:j_long_scrolled
+# A quest whose text is longer than the box: it scrolls by lines (the scroll bar's arrow, the wheel).
+# sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/journal_long.txt 32 18:j_long 24:j_long_scrolled 31:j_long_wheel
 2 ui journal add k_pazaak 1
 2 ui journal add tat18ac_dragonhunt 10
 3 ui menu journal
-4 ui click 515 306
-8 ui click 897 488
-9 ui click 897 488
-9 ui click 897 488
-10 ui click 897 488
-11 ui click 897 488
+16 ui click 515 302
+20 ui click 897 488
+21 ui click 897 488
+22 ui click 897 488
+23 ui click 897 488
+26 mouse move 760 400
+27 mouse wheel 1
+28 mouse wheel 1

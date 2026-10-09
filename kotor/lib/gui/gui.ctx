@@ -23,7 +23,7 @@ namespace gui {
             next_panel = 1,
             win_w = width, win_h = height, scale = 1.0, ui_w = width, ui_h = height, small_fonts = false,
             mouse_x = width / 2, mouse_y = height / 2, buttons = 0,
-            hover = Ref{ panel = 0, control = -1 }, capture = Ref{ panel = 0, control = -1 }, capture_button = 0, capture_part = 0, press_on_selected = false,
+            hover = Ref{ panel = 0, control = -1 }, capture = Ref{ panel = 0, control = -1 }, capture_button = 0, capture_part = 0, press_on_selected = false, capture_y = 0, capture_value = 0,
             cursor = 0, cursor_visible = true, hidden = false, cursors,
             time = 0.0, pulse_border = 1.0, pulse_list = 1.0, hover_time = -1.0, tooltip_delay = 1.0, tooltips = true, tooltip_key = false,
             tooltip_ref = Ref{ panel = 0, control = -1 }, key_repeat = 0.0,

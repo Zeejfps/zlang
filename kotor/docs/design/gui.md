@@ -147,7 +147,8 @@ What owners set (all by tag; unknown tags are ignored):
 | `set_value`, `set_max`, `value_of`, `set_checked`, `is_checked` | sliders, progress bars, check boxes |
 | `set_picture`, `clear_picture` | a texture in place of the control's fill (portraits, save screenshots, item icons) |
 | `list_clear`, `list_add`, `list_set_color`, `list_set_icon`, `list_set_checked`, `list_select`, `list_selected`, `list_count`, `row_rect` | list box rows (`user` is the owner's value, returned in events) |
-| `set_list_text` | a list box that shows one wrapped text (descriptions, messages) |
+| `set_list_text` | a list box that shows one wrapped text (descriptions, messages); a text taller than the box scrolls by lines (wheel, scroll bar, up/down while hovered) and a new text starts at the top |
+| `set_bar_when_needed` | the list draws its scroll bar only while its rows overflow (the conversation's replies); other lists always draw theirs, as the original does |
 | `make_edit`, `set_max_chars` | a label that takes typed text (the caret is an `_`) |
 | `set_background`, `set_panel_picture`, `set_backdrop` | the panel's own fill, a picture in it, its backdrop |
 | `control_rect` | a control's rectangle on the screen (3D views are drawn into one) |

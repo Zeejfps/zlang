@@ -1,0 +1,27 @@
+# The level-up feats panel's description box scrolls by lines: the wheel, the down key, a press on
+# the scroll bar's track and down arrow, a drag of the thumb; a short description shows a full thumb.
+#   MODULE=danm13 sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/levelup_desc.txt 44 19:lu_desc0 24:lu_desc_wheel 27:lu_desc_key 30:lu_desc_track 33:lu_desc_arrow 38:lu_desc_drag 43:lu_desc_feat2
+3 ui xp 1000
+3 ui sheet
+4 ui levelup
+10 ui key return
+12 ui click 625 375
+14 ui click 640 544
+18 ui key return
+20 mouse move 770 400
+21 mouse wheel -1
+22 mouse wheel -1
+23 mouse wheel -1
+25 key down
+26 key down
+28 mouse click 900 330
+31 mouse click 900 489
+32 mouse click 900 489
+34 mouse down left 900 400
+35 mouse move 900 380
+36 mouse move 900 340
+37 mouse up left
+38 mouse move 770 400
+39 mouse wheel -1
+40 mouse wheel -1
+41 mouse click 406 370

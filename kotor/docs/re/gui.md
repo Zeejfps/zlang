@@ -497,9 +497,11 @@ Fields (high): +0x28c..+0x298 the row area (inside the border, beside the scroll
 rows (count +0x2a0), +0x2b4 row height, +0x2c0 `PADDING` (byte), +0x2c1 move sound (0xff =
 none), +0x2c2 pixel-scroll position, +0x2c4 visible rows, +0x2c6 selected index (-1 = none),
 +0x2c8 first visible row, +0x2cc the prototype row control, +0x2d0 `COLOR`, +0x2bc flags (0x08
-needs layout, 0x10 scroll bar on the left, 0x20 scroll bar shown, 0x40 `LOOPING`, 0x100 "one
-text" mode, 0x200 "scroll only, no selection", 0x400 draw only fully visible rows, 0x800 pulse
-the scroll bar, 0x1000 keep the selection in view, bits 13–16 the prototype's CONTROLTYPE).
+needs layout, 0x10 scroll bar on the left, 0x20 scroll bar shown, 0x40 `LOOPING`, 0x80 the window
+is anchored at its first row (variable rows, below), 0x100 rows of different heights, 0x200
+"scroll only, no selection", 0x400 draw only fully visible rows, 0x800 pulse the scroll bar,
+0x1000 keep the selection in view, bits 13–16 the prototype's CONTROLTYPE). +0x2b8 is a float, the
+box height over one line of the row's font (1.0 until set), +0x2ca the last visible row. (high)
 
 - **Prototype.** `PROTOITEM` is read once into a template control of type 4–8 (0x0041d3e0);
   panels fill the list by creating row controls (usually copies of the template made by the
@@ -513,12 +515,49 @@ the scroll bar, 0x1000 keep the selection in view, bits 13–16 the prototype's 
   rows above and below the window are placed outside the area and not drawn. The scroll bar gets
   `max = count - visible + 1` (at least 1), `visible = min(visible, count)` (1 in "scroll only"
   mode), `current = first visible row`. (high)
-- **Tall content.** When the tallest row plus the padding is taller than the area (descriptions;
-  `IsPixelScrolling` 0x0041a290), the list scrolls by pixels instead (+0x2c2, 0x0041a2d0) and
-  only the first row is placed and drawn. (med)
+- **Rows of different heights** (flag 0x100, the last argument of `SetItems`/`SetItemsArray`; the
+  conversation's replies use it, 0x006a86a0): `LayoutText` (0x00419ee0) stacks the rows by their own
+  heights from the first visible row down (flag 0x80) or from the last visible row up, works out
+  the other end, and gives the bar max = count - shown + 1, visible = shown, current = first row.
+  Such a list never scrolls by pixels. (Earlier notes called this "one text" mode; it is not.) (high)
+- **Tall content** (`IsPixelScrolling` 0x0041a290): a list of fixed-height rows (no 0x100) with
+  at least one row, whose tallest row plus the padding is taller than the row area. Descriptions
+  are such lists: `CSWGuiStore::SetDescription` (0x006c0690) and its kind clear the list, size one
+  label to the whole wrapped text (height = text height, or one line when empty), hand it over as
+  the only row and select it (no sound). Then (high):
+  - Layout: +0x2b8 = area height / line height of the row's font; the scroll position +0x2c2 runs
+    from 1 to `steps = ceil(rowH / lineH) - floor(areaH / lineH) + 1` (0x004182b0; the ceiling is a
+    +0.99998 before truncating), i.e. lines - whole lines in the box + 1. Only the first row is
+    placed and drawn (0x0041a2d0): at position `n` its top is `padding - (n-1) * lineH` (computed
+    as `(n-1) * areaH / ratio`, truncated); at the last position it is `areaH - rowH - padding`, so
+    the text's end sits `padding` above the bottom; its width is the area's minus twice the padding.
+  - Scroll bar values: max = rowH - areaH + 1, visible = areaH (UpdateLayout's branch for zero whole
+    rows), current = 0 at the first position, rowH (clamped to max) at the last, else
+    `(n-1)/(steps-1) * (rowH - areaH)` truncated.
+  - One step is one line: wheel 500/501 and the arrow presses 0x1fb/0x1fc move the position by 1;
+    the up/down keys (0x3d/0x31, 0x3e/0x32) too, but only while the list has a selection (they do,
+    see above), and a move plays the list's move sound; a press on the track (0x1fd/0x1fe) moves
+    `floor(ratio)` steps (the whole lines the box holds). All clamp to 1..steps.
+  - Dragging the thumb (`OnMouseDrag` 0x0041b670): position = the position at the press + `dY *
+    (steps - 1) / (track height - thumb height)` + 0.5, truncated and clamped; rows lists do the same
+    with the first row and max - 1.
+  - `ClearItems` (0x00419a90) puts the position back to 1, so a new description starts at the top.
 - **Keeping the selection in view**: after `SetSelectedIndex` (0x0041c040) the first visible row
   moves just enough to show the selection; scrolling with the wheel or the scroll bar turns
   this off until the next selection. (high)
+- **When the scroll bar shows.** The constructor sets flag 0x20 and no list code clears it, so a
+  list draws its bar whenever it has one, scrollable or not (`DRAWMODE` 0: border, a thumb that fills
+  the track, both arrows). Two exceptions: the conversation's replies set 0x20 only while the last
+  visible row is not the last row (0x006a86a0), and the message box's `FitToText` gives the bar
+  width 0 (`PlaceScrollBar` 0x004181f0) while it fits the text, and its width back only if the text
+  still overflows. (high)
+- **Thumb** (the bar's `SetExtent` 0x004193f0, run by every value setter): the track is the inner
+  rectangle of the bar's border between the two arrow squares; with max > 1 the thumb is
+  `track * visible / (visible + max)` long (at least 4) at `(track - length) * current / (max - 1)`;
+  with max ≤ 1 it fills the track. `DRAWMODE` 1 draws the up arrow when `visible < max` and current
+  ≥ 1 (0x00418010), the down arrow when `visible < max` and `current + visible < max` (max + 1 for a
+  one-row window not in "scroll only" mode and not at max; 0x00418030). So with rows lists the down
+  arrow goes before the end, and a tall text less than twice its box shows no arrows. (high)
 - **Drawing** (0x0041a3e0): the scroll bar (if shown), the list `BORDER`, then a viewport over
   the row area filled with `COLOR` unless it is (-1,-1,-1) — a list whose file says (0,0,0) gets
   a black background — and the rows that intersect it. (high)
@@ -1881,9 +1920,12 @@ for the keys)
 `CSWGuiPanel::MarkForRemoval` (0x00624a00), which sets panel flag 0x200 (or keeps 0x400) so the
 manager removes it after drawing, flag bit 8 from the argument. (high)
 
-**Scrolling the description box.** Events 0x39/0x3a (up/down navigation) are turned into 0x31/0x32
-and sent to the panel's description list box, so the up/down keys scroll the item or quest text
-while the item list keeps keyboard focus. (high)
+**Scrolling the description box.** Events 0x39/0x3a are turned into 0x31/0x32 and sent to the
+panel's description list box (inventory, equipment, abilities, store, upgrade, quest items, the
+message box), so the description scrolls while the item list keeps the focus. 0x39/0x3a come only
+from a gamepad's second stick (analog axes 0x37/0x38, §7); the PC key map never makes them, so on
+PC the arrow keys move the focused list, and the description scrolls with the wheel, its scroll bar,
+or the arrow keys while the pointer is over it (hover is focus). (high)
 
 **Message boxes.** Refusals ("you cannot ...") all use the shared message box at `CGuiInGame`
 +0x98: `CSWGuiMessageBox::SetConfirmMode(0)` (0x00627130, sets +0x64 bit1 and the open sound +0x60

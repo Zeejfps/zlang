@@ -129,7 +129,10 @@ namespace gui {
         row_count: u32,
         first_row: i32,                 // the top visible row
         selected_row: i32,              // -1 none
-        text_mode: bool,                // a list box showing one wrapped text (message boxes) instead of rows
+        text_mode: bool,                // a list box showing one wrapped text (message boxes, descriptions) instead of rows
+        text_step: i32,                 // text mode: how many lines a text taller than the box is scrolled (the original's pixel scroll, 0-based)
+        bar_off: bool,                  // the scroll bar is given no width: the rows take the whole box (a message box whose text fits)
+        bar_when_needed: bool,          // the scroll bar is drawn only while the rows overflow (the conversation's replies)
         picture_alpha: f32,             // the alpha of a picture put on the control with set_picture (the equipment screen draws the left hand's ghost of a two-handed weapon at 0.25)
         row_frame_alpha: f32,           // item rows: the alpha of a row's normal frame (the equipment screen's slot view draws none)
         click_rows: bool,               // item lists: a click on a row activates it (the rows are buttons in the original) and hovering one says so (row_hover)
@@ -262,6 +265,8 @@ namespace gui {
         capture_button: i32,
         capture_part: i32,
         press_on_selected: bool,        // the press that began this capture landed on the already selected row
+        capture_y: i32,                 // a scroll thumb drag: the pointer's y at the press
+        capture_value: i32,             // ... and the list's scroll position then
         cursor: u32,
         cursor_visible: bool,
         hidden: bool,                   // draws and takes nothing (a movie plays over everything)
