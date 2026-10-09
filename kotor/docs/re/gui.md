@@ -1772,8 +1772,45 @@ text. Every shown row also flashes the matching HUD icon (`FlashHudIcon`), the d
 rows only when their side is the larger shift, the net-shift row never. It then clears the data,
 centres the panel on the screen, asks for tutorial popup 14 and moves the cursor onto `BTN_OK`.
 Accept/cancel keys (`0x00625ac0`) remove it, return to the game input class and unpause unless the
-game was paused before (`+0x7c` bit 0, set by `FlushStatusSummary`). Skimmed: the exact row
-spacing. (high / med)
+game was paused before (`+0x7c` bit 0, set by `FlushStatusSummary`); `BTN_OK` takes the same path
+(`OnButtonAccept`, event 0x27). (high / med)
+
+Layout (from the disassembly, high): a shown row's icon keeps its file x, width and height at the
+running y (starting at 10); its description goes to the file x, y − 1, the running description width
+(starting at 150) and the file height; while the description's text is not empty, needs more than one
+line (text info slot +8 against `0x00414ee0`, the font's line height) and the width is below 440, the
+width grows by 20 (so at most 450) and the extent is set again. The width carries on to the rows below.
+y then grows by 37. At the end the panel is `LBL_JOURNAL_DESC.x + width + 10` wide and `y + 25` high,
+centred on the screen, and `BTN_OK` is centred across it at y − 7. Hidden rows lose their visible bit.
+The net-shift row's controls are not in `statussummary.gui` (`InitControl` 0x0040b930 adds a control to
+the panel only when the file has its tag), so that row is an empty 37-pixel gap (med). The rows without
+a number keep the file's strrefs: 42436 journal, 42440 dark side, 42441 light side, 42442 "Item(s)
+Received", 42443 "Item(s) Lost". The last row's flash flag is always set when the walk ends, so tutorial
+pop-up 14 is always offered. The pointer is moved onto `BTN_OK`'s centre (`SaveMousePosition` first).
+
+When it shows (high): the client main loop (gameloop.md 1.2 step 22) waits while the data has bit 0 or 1
+set, the input class is the game's (`+0x9c` 0), nothing loads (`+0x288`), no conversation is pending or
+up (GUI `+0xb4`, `+0xb98`) and no fade runs (`GetIsFadePanelBusy`, `0x0062ded0`); any of those resets the
+timer `+0x370`. The first good frame sets it to 0.25 s, later ones subtract frames shorter than 0.25 s,
+and at zero `FlushStatusSummary` runs. So the panel comes up a quarter second after a conversation that
+gave something ends, and events from scripts outside conversations show the same way.
+
+Who adds events (callers of `AddStatusSummaryEvent`, high): GiveGoldToCreature (+n, n > 0, party creature
+`+0xa88`), TakeGoldFromCreature (−n for the party creature taken from; the caller's gain is not told),
+GiveXPToCreature (n > 0, party), CreateItemOnObject (7 when a party creature acquired it, credits
+included), SetItemStackSize (7 when the stack grew, 8 when it shrank, whoever holds the item), the item's
+DESTROY_OBJECT with event data 1 (only `DestroyObject` 0x0052ff20 sends 1; a used-up stack sends 0) for
+an item a party creature holds (8), AIActionGiveItem (7 to a party recipient), AIActionTakeItem (8 from a
+party holder), AdjustAlignment (the asked shift, before the 0..100 clamp, for a party creature),
+GivePlotXP / GivePlotXPByRow and a DLG's journal XP (2), AwardStealthXP (3), pazaak's settlement
+(`0x005f3950`: the gold change, 1), the client's journal notice (`0x00676c20`, on the message the
+journal's state setter `0x005c5a40` sends unless loading: 0, then 10, or 11 when the entry has `End`),
+the portraits (`0x00687860`: 9 when a member can level up and its client creature's `+0x440` bit 1 is
+set, which its constructor and a finished level-up set) and `CSWGuiNotifyLabel::Update` (`0x00686a20`:
+10 on the first update after any icon but the journal's (index `+0x148` non-zero) was flashed). So
+loot, purchases, pick-ups and used-up items light no icon, and every icon but the journal's is followed
+by gui_quest a quarter second later. `SuppressStatusSummaryEntry` (`0x00547e50` → `0x0062f0c0`) sets the
+drop count (a negative count is ignored); a dropped event decrements it, the icon sound events included.
 
 #### CSWGuiFade (`fade`)
 

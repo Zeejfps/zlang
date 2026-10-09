@@ -696,6 +696,9 @@ namespace rt_crea {
             else if now < 50 { v = if now + shift > 50 { 50 } else { now + shift } }
         }
         set_alignment{ &w, id, to = v }
+        // A party member's shift goes to the status summary as asked for, before the 0..100 clamp (0x0052dfe0).
+        let asked = v - now
+        if asked != 0 and notices::is_party{ w = &w, id } { notices::summary{ &w, kind = notices::SUMMARY_ALIGNMENT, value = asked } }
     }
 
     // void SetGoodEvilValue(object oCreature, int nAlignment)

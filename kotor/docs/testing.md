@@ -193,6 +193,14 @@ lacks `dialog video effect 0` for the Carth call and the three camera nodes, or 
 "Experience Points (XP) Received: 100" (docs/re/dialogue.md 9.6, 9.7, 4.8). Run it after changing the computer panel,
 the video effects or the XP feedback.
 
+`sh kotor/tools/camcheck/summary.sh` (`EXE=PATH`; about 20 s) plays the same terminal twice
+(`kotor/tools/items/scripts/status_summary.txt`) and fails when, with the option on, the status summary panel does
+not come up after the conversation with the 120 XP and the used-up spikes (`status summary: flags 9 credits 0 xp 120`
+in the `scripts` log) or its OK cannot be clicked, or when, with `ui summary off`, anything but the HUD's icons comes
+of it (docs/re/gui.md "CSWGuiStatusSummary"). Headless runs never stop for the panel unless a script says
+`ui summary panel`. Pictures: `kotor/out/items/sum_panel.png`, `sum_after.png`, `sumoff_icons.png`. Run it after
+changing the status summary, the routines that give or take items, credits, XP or alignment, or the HUD's icons.
+
 ## Adding a check
 
 A new subsystem gets a corpus tool that runs it over every resource of its type (AGENTS.md rule 6). A new input-script

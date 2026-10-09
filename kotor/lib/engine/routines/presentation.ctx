@@ -42,6 +42,7 @@ namespace rt_pres {
             nwscript::PlayRoomAnimation => { try play_room_animation{ &w, &vm, argc } }
             nwscript::SetLightsaberPowered => { try set_lightsaber_powered{ &w, &vm, argc } }
             nwscript::ShowTutorialWindow => { try show_tutorial_window{ &w, &vm, argc } }
+            nwscript::SuppressStatusSummaryEntry => { try suppress_status_summary_entry{ &w, &vm, argc } }
             nwscript::PauseGame => { try pause_game{ &w, &vm, argc } }
             nwscript::EndGame => { try end_game{ &w, &vm, argc } }
             // ---- screens that are not built yet: a note for the presentation, state for the getters
@@ -263,6 +264,13 @@ namespace rt_pres {
         let transition = try nwarg::int{ &vm, routine = r, argc, i = 3 }
         if not world::is_valid{ w = &w, id } { return }
         outbox::post{ out = &w.out, note = outbox::Note::lightsaber{ id, forced = forced != 0, powered = powered != 0, transition = transition != 0 } }
+    }
+
+    // void SuppressStatusSummaryEntry(int nNumEntries = 1): the next that many status-summary events are dropped
+    // (0x00547e50: the count is set, not added to; a negative one is ignored).
+    fn suppress_status_summary_entry { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
+        let count = try nwarg::int{ &vm, routine = nwscript::SuppressStatusSummaryEntry, argc, i = 0 }
+        if count >= 0 { outbox::post{ out = &w.out, note = outbox::Note::summary_suppress{ count } } }
     }
 
     // void ShowTutorialWindow(int nWindow): the HUD shows the tutorial window (once; it keeps

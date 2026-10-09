@@ -1,16 +1,30 @@
-// What the party is told when it gains or loses an item or credits (party-items-saves.md 5.6: the
-// feedback numbers 50 and 51 and the HUD notices 7 and 8; dialog.tlk 1449 "Acquired Item:
-// <CUSTOM0>", 1450 "Lost Item: <CUSTOM0>", 1493 "Acquired <CUSTOM0> Credits", 1494 "Lost <CUSTOM0>
-// Credits"): a line on the HUD's feedback log and the matching notification icon for a few
-// seconds. Only the player's party is told. The callers are the moves that carry feedback in the
-// original (AcquireItem with bFeedback: loot, pick-ups, purchases, CreateItemOnObject), not
-// GiveItem.
+// What the party is told when it gains or loses an item, credits or experience (party-items-saves.md 5.6: the
+// feedback numbers 50 and 51; dialog.tlk 1449 "Acquired Item: <CUSTOM0>", 1450 "Lost Item: <CUSTOM0>", 1493
+// "Acquired <CUSTOM0> Credits", 1494 "Lost <CUSTOM0> Credits"): a line on the feedback log. Only the player's
+// party is told. The callers are the moves that carry feedback in the original (AcquireItem with bFeedback:
+// loot, pick-ups, purchases, CreateItemOnObject), not GiveItem.
+//
+// The status summary (docs/re/gui.md, "CSWGuiStatusSummary") is told separately, by `summary`, and only where
+// the original adds an event (AddStatusSummaryEvent 0x0062eeb0): the script routines that give or take items,
+// credits, experience and alignment, plot XP, journal updates, stealth XP and pazaak. Loot, purchases and used-up
+// items have the feedback line but no event, so they light no HUD icon.
 namespace notices {
-    // The HUD's notification icons (hud::NOTE_*, gui.md "Notification icons").
-    const CREDITS: i32 = 1
-    const PLOT_XP: i32 = 2
-    const ITEM_RECEIVED: i32 = 7
-    const ITEM_LOST: i32 = 8
+    // The status summary's event kinds (AddStatusSummaryEvent's nKind; the HUD's icons share 0..8).
+    const SUMMARY_JOURNAL: i32 = 0
+    const SUMMARY_CREDITS: i32 = 1          // value: credits, signed
+    const SUMMARY_XP: i32 = 2               // value: experience
+    const SUMMARY_STEALTH_XP: i32 = 3
+    const SUMMARY_ALIGNMENT: i32 = 4        // value: the shift, positive towards the light side (5 means the same)
+    const SUMMARY_ITEM_RECEIVED: i32 = 7
+    const SUMMARY_ITEM_LOST: i32 = 8
+    const SUMMARY_LEVEL_UP_SOUND: i32 = 9   // 9..11 only queue a sound: gui_level, gui_quest, gui_complete
+    const SUMMARY_QUEST_SOUND: i32 = 10
+    const SUMMARY_QUEST_DONE_SOUND: i32 = 11
+
+    // A status-summary event for the in-game GUI.
+    fn summary { mut w: world::World, kind: i32, value: i32 } {
+        outbox::post{ out = &w.out, note = outbox::Note::summary{ kind, value } }
+    }
 
     // Whether `id` is on the player's side.
     fn is_party { w: *world::World, id: u32 } -> bool {
@@ -47,37 +61,35 @@ namespace notices {
     fn item_gained { mut w: world::World, who: u32, item: u32 } {
         if not is_party{ w = &w, id = who } { return }
         say_with{ &w, strref = 1449, value = name_of{ w = &w, item } }
-        outbox::post{ out = &w.out, note = outbox::Note::hud_notice{ kind = ITEM_RECEIVED } }
     }
 
     // The party lost the item.
     fn item_lost { mut w: world::World, who: u32, item: u32 } {
         if not is_party{ w = &w, id = who } { return }
         say_with{ &w, strref = 1450, value = name_of{ w = &w, item } }
-        outbox::post{ out = &w.out, note = outbox::Note::hud_notice{ kind = ITEM_LOST } }
     }
 
     // The party was given `amount` experience with feedback (CSWPartyTable::AddExperience 0x005653a0 with bFeedback:
     // feedback 0x8f, dialog.tlk 42438 "Experience Points (XP) Received: <CUSTOM0>", the whole amount before each
-    // member's share). `icon`: the status summary's experience event as well (AddStatusSummaryEvent kind 2, the
-    // HUD's LBL_PLOTXP), as plot XP (GivePlotXPByRow 0x005666e0, GivePlotXP 0x00566600) and GiveXPToCreature
-    // on the player's side post it. Kill XP has neither.
+    // member's share). `icon`: the status summary's experience event as well (kind 2: the panel's XP row, the
+    // HUD's LBL_PLOTXP), as plot XP (GivePlotXPByRow 0x005666e0, GivePlotXP 0x00566600), a DLG's journal update and
+    // GiveXPToCreature on the player's side post it. Kill XP has neither.
     fn xp_gained { mut w: world::World, amount: i32, icon: bool } {
         if amount <= 0 { return }
         let mut b = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } }
         defer list::free{ list = &b.bytes }
         _ = @fmt(&b, "{}", amount)
         say_with{ &w, strref = 42438, value = utf8::view{ b }.bytes }
-        if icon { outbox::post{ out = &w.out, note = outbox::Note::hud_notice{ kind = PLOT_XP } } }
+        if icon { summary{ &w, kind = SUMMARY_XP, value = amount } }
     }
 
-    // The party's purse changed by `n` credits.
+    // The party's purse changed by `n` credits: the feedback line (the callers add the summary's event where the
+    // original does).
     fn credits_changed { mut w: world::World, who: u32, n: i64 } {
         if n == 0 or not is_party{ w = &w, id = who } { return }
         let mut b = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } }
         defer list::free{ list = &b.bytes }
         _ = @fmt(&b, "{}", if n < 0 { -n } else { n })
         say_with{ &w, strref = if n > 0 { 1493 } else { 1494 }, value = utf8::view{ b }.bytes }
-        outbox::post{ out = &w.out, note = outbox::Note::hud_notice{ kind = CREDITS } }
     }
 }

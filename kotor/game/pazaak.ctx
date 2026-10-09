@@ -60,6 +60,8 @@ namespace pz_game {
         if result.wager > 0 {
             let before = w.party.gold
             w.party.gold = if result.won { before + result.wager } else if before > result.wager { before - result.wager } else { 0 }
+            // The change goes to the status summary's credits row (0x005f3950).
+            if w.party.gold != before { notices::summary{ &w, kind = notices::SUMMARY_CREDITS, value = w.party.gold - before } }
         }
         let verb: []u8 = if result.won { "won" } else { "lost" }
         world::prefix{ w = &w }

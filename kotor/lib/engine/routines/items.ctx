@@ -400,7 +400,12 @@ namespace rt_item {
         let o = world::object{ w = &w, id } ifnull { return }
         let it = obj::item{ o } ifnull { return }
         let most = max_stack{ w = &w, base = it.base }
+        let before = it.stack
         it.stack = if n < 1 { 1 } else if @as(u32, n) > most { most } else { @as(u32, n) }
+        // A changed stack is an item received or lost to the status summary, whoever holds it (0x00546630: feedback
+        // 50 or 51 to the holding creature, the event with no party test).
+        if it.stack == before { return }
+        notices::summary{ &w, kind = if it.stack > before { notices::SUMMARY_ITEM_RECEIVED } else { notices::SUMMARY_ITEM_LOST }, value = 0 }
     }
 
     // ---- creating items
@@ -466,7 +471,12 @@ namespace rt_item {
         let target = try nwarg::object{ &vm, routine = r, argc, i = 1 }
         let stack = try nwarg::int{ &vm, routine = r, argc, i = 2 }
         let id = create_item{ &w, template, target, stack }
-        // AcquireItem with feedback: the party is told ("Acquired Item: ...", the HUD's icon).
+        // AcquireItem with feedback: the party is told ("Acquired Item: ..."), and the status summary hears of an
+        // item received when a party creature got it, credits too (0x0052f570).
+        let made = id != obj::INVALID or (stack > 0 and template.len >= 11 and ci::eq{ a = template[..11], b = "g_i_credits" })
+        if made and notices::is_party{ w = &w, id = target } and rt_crea::creature_of{ w = &w, id = target } != null {
+            notices::summary{ &w, kind = notices::SUMMARY_ITEM_RECEIVED, value = 0 }
+        }
         if id != obj::INVALID {
             // The module's OnAcquireItem hears it like any other transfer to a creature (AcquireItem 0x005158e0,
             // party-items-saves.md 5.4): Kashyyyk's journal entry for Bacca's blade is set by that script.
@@ -497,7 +507,8 @@ namespace rt_item {
         // The party has one purse (party-items-saves.md, 3.6); anyone else keeps their own.
         if party::is_member{ w = &w, id } {
             party::add_gold{ &w, n = @as(i64, n) }
-            notices::credits_changed{ &w, who = id, n = @as(i64, n) }       // feedback and the HUD's credits icon
+            notices::credits_changed{ &w, who = id, n = @as(i64, n) }       // the feedback line
+            if n > 0 { notices::summary{ &w, kind = notices::SUMMARY_CREDITS, value = n } }     // 0x0053e690
             return
         }
         c.gold = add_gold{ have = c.gold, n = @as(i64, n) }
@@ -520,6 +531,8 @@ namespace rt_item {
         if shared {
             party::add_gold{ &w, n = 0 - @as(i64, amount) }
             notices::credits_changed{ &w, who = id, n = 0 - @as(i64, amount) }
+            // The summary hears of the loss only, not of the caller's gain (0x00544970).
+            notices::summary{ &w, kind = notices::SUMMARY_CREDITS, value = 0 - @as(i32, amount) }
         } else { c.gold = c.gold - amount }
         if destroy != 0 { return }
         let me = nwvm::self_object{ vm }

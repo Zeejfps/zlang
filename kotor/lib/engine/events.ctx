@@ -174,6 +174,13 @@ namespace events {
                 run_script_event{ &w, &vm, engine, o, e, caller = ev.caller }
             }
             destroy => {
+                // Only DestroyObject queues this for an item (a used-up one goes at once): one a party creature
+                // holds is an item lost to the status summary (the item's EventHandler 0x0055ee10, event data 1).
+                if obj::item{ o } is some{ value = it } {
+                    if notices::is_party{ w = &w, id = it.possessor } {
+                        notices::summary{ &w, kind = notices::SUMMARY_ITEM_LOST, value = 0 }
+                    }
+                }
                 fight::spawn_body_bag{ &w, id = ev.target }
                 world::destroy{ &w, id = ev.target }
             }

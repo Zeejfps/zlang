@@ -1,0 +1,16 @@
+# The status summary after a conversation (kotor/tools/camcheck/summary.sh): the Endar Spire's security terminal
+# (as computer_camera.txt) overloads the power conduit, which pays 120 XP and uses up spikes. Once the conversation
+# is over the panel shows "Experience Points (XP) Received: 120" and "Item(s) Lost" (headless runs only light the
+# HUD's icons unless `ui summary panel`); OK closes it and the icons stay lit. With `ui summary off` (the summary.sh
+# second run) there is no panel, only the icons.
+60 hush
+61 ui summary panel
+62 ui stat computer 4
+64 ui xp
+80 warpxy 82.4,66.6
+82 ui giveitem g_i_progspike01 10
+84 ui inv
+88 ui replies 2 3 default 1
+90 use end_comp02
+700 ui xp
+980 ui clickctl BTN_OK

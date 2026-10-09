@@ -55,6 +55,8 @@ namespace ingame {
         combat_movement: bool,              // the "Combat Movement" option (lib/scene/control.ctx reads it)
         wiping: bool,                       // the party-wipe sequence runs (game/death.ctx): menu keys fade out
         notice_box: msgbox::Box,            // a box with only OK (42628, the leader is down), up until answered
+        summary: Summary,                   // the status summary's events and its panel (summary_ui.ctx)
+        fade_busy: bool,                    // a screen fade runs (the loop says so each frame): the status summary waits
     }
 
     // What the camera takes from the mouse each frame (CameraInputMouseYaw, movement.md 2.3).
@@ -96,6 +98,7 @@ namespace ingame {
             party_alive = 0, ap_cooldown = 0.0, pause_reason = REASON_PAUSED,
             psel_wait = false, psel_exit = resref::empty{}, psel_force1 = -1, psel_force2 = -1, psel_paused = false,
             mine_quiet = 1000.0, combat_movement = saved.combat_movement, wiping = false, notice_box = msgbox::blank{},
+            summary = new_summary{ on = saved.status_summary }, fade_busy = false,
         }
         let mut p = try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
         options_panel::set_config{ s = &p.menus.options, path = settings }
@@ -453,9 +456,8 @@ namespace ingame {
                 ui.psel_force1 = force1
                 ui.psel_force2 = force2
             }
-            hud_notice{ kind } => {
-                if kind >= 0 { notify{ &ui, which = @as(usize, kind) } }
-            }
+            summary{ kind, value } => { add_summary{ s = &ui.summary, kind, value } }
+            summary_suppress{ count } => { ui.summary.suppress = count }
             feedback{ strref, text } => {
                 let sent = outbox::text_of{ out = &w.out, t = text }
                 let said = if sent.len > 0 { sent } else { world::string_by_strref{ w = &w, strref } }
@@ -470,10 +472,9 @@ namespace ingame {
         }
     }
 
-    // An event the player should notice: turns on one of the HUD's notification icons for four
-    // seconds (hud::NOTE_*: journal updated, credits, experience, alignment shift, item received
-    // or lost). The engine's routines that cause them call this through the outbox once it carries
-    // them; until then `ui flash N` shows each.
+    // Turns on one of the HUD's notification icons for four seconds (hud::NOTE_*: journal updated, credits,
+    // experience, alignment shift, item received or lost): `ui flash N`. The game lights them through the
+    // status summary (summary_ui.ctx).
     fn notify { mut ui: Ingame, which: usize } {
         hud::flash_icon{ h = &ui.hud, which }
     }
@@ -670,6 +671,7 @@ namespace ingame {
             ui.ap_target = st.pause_triggers
             ui.ap_round = st.pause_end_round
             ui.ap_action_menu = st.pause_action_menu
+            ui.summary.on = st.status_summary
         }
         update_autopause{ &ui, &w, &dev, dt }
         // A conversation or cutscene takes the screen: the HUD and any menu go away for it
@@ -701,6 +703,7 @@ namespace ingame {
             let ev = events[i]
             i = i + 1
             answer_solo{ &ui, &w, &dev, ev }
+            summary_event{ &ui, &w, ev }
             if msgbox::answer{ b = ui.notice_box, ev } != msgbox::Answer::none {
                 msgbox::close{ g = &ui.gui, b = &ui.notice_box }
                 ui.notice_box = msgbox::blank{}
@@ -710,6 +713,7 @@ namespace ingame {
         }
         if not ui.hud_hidden { watch_mines{ &ui, &w, dt } }
         check_solo_box{ &ui, &w, &dev }
+        update_summary{ &ui, &w, &dev, fade_busy = ui.fade_busy, dt }
         // The pause banner follows the clock (a script or the toggle can change it).
         if ui.pause_panel != 0 and not clock_paused_by_player{ w = &w } {
             gui::close{ g = &ui.gui, id = ui.pause_panel }

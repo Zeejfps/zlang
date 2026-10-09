@@ -266,8 +266,8 @@ namespace rt_misc {
         let a = current_area{ w = &w } ifnull { return }
         if not a.stealth_xp_enabled or a.stealth_xp_current == 0 { return }
         award_party_xp{ &w, amount = a.stealth_xp_current }
-        // The status summary's stealth XP event: the HUD's LBL_STEALTHXP icon.
-        outbox::post{ out = &w.out, note = outbox::Note::hud_notice{ kind = 3 } }
+        // The status summary's stealth XP event: its "Stealth XP Received" row, the HUD's LBL_STEALTHXP icon.
+        notices::summary{ &w, kind = notices::SUMMARY_STEALTH_XP, value = a.stealth_xp_current }
         a.stealth_xp_current = 0
         a.stealth_xp_enabled = false
     }
@@ -383,6 +383,29 @@ namespace rt_misc {
         return 0
     }
 
+    // Whether global.jrl marks the quest's entry `state` as its last (EntryList/End).
+    fn journal_entry_ends { mut w: world::World, tag: []u8, state: i32 } -> !bool {
+        let doc = try world::read_gff{ &w, name = "global", kind = restype::Type::jrl } ifnull { return false }
+        let cats = gff::get_list{ doc, s = gff::ROOT, label = "Categories" } ifnull { return false }
+        let mut i: usize = 0
+        while i < cats.len {
+            let c = cats[i]
+            i = i + 1
+            if not ci::eq{ a = gff::get_string{ doc, s = c, label = "Tag" } ifnull "", b = tag } { continue }
+            let es = gff::get_list{ doc, s = c, label = "EntryList" } ifnull { return false }
+            let mut k: usize = 0
+            while k < es.len {
+                let e = es[k]
+                k = k + 1
+                if @trunc(i32, gff::get_number{ doc, s = e, label = "ID" } ifnull -1) == state {
+                    return (gff::get_number{ doc, s = e, label = "End" } ifnull 0) != 0
+                }
+            }
+            return false
+        }
+        return false
+    }
+
     // Moves a quest on and pays for the step (the routine and the conversations' journal updates).
     // `xp_icon`: a DLG's journal update (CSWSDialog::UpdateJournal 0x0059ef00) also posts the status summary's XP
     // event; AddJournalQuestEntry (0x005483f0) gives only the feedback line.
@@ -390,6 +413,11 @@ namespace rt_misc {
         let now = fight::time_now{ w = &w }
         let changed = journal::set_state{ j = &w.journal, tag, state, allow_lower, day = now.day, time = now.ms }
         if changed {
+            // The client's journal notice (0x00676c20, from the state's message 0x005c5a40): the summary's journal
+            // row, then gui_complete for a state that ends the quest (global.jrl's End), gui_quest for any other.
+            notices::summary{ &w, kind = notices::SUMMARY_JOURNAL, value = 0 }
+            let ends = journal_entry_ends{ &w, tag, state } iferr { false }
+            notices::summary{ &w, kind = if ends { notices::SUMMARY_QUEST_DONE_SOUND } else { notices::SUMMARY_QUEST_SOUND }, value = 0 }
             let amount = journal_entry_xp{ &w, tag, state } iferr { 0 }
             if amount > 0 {
                 if w.log.scripts {
@@ -531,7 +559,11 @@ namespace rt_misc {
     fn give_item { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16 } -> ! {
         let item = try nwarg::object{ &vm, routine, argc, i = 0 }
         let to = try nwarg::object{ &vm, routine, argc, i = 1 }
-        _ = move_item{ &w, item, to }
+        let moved = move_item{ &w, item, to }
+        // The action tells the status summary of an item a party creature received (AIActionGiveItem 0x0057b6a0).
+        if moved and routine == nwscript::ActionGiveItem and notices::is_party{ w = &w, id = to } and rt_crea::creature_of{ w = &w, id = to } != null {
+            notices::summary{ &w, kind = notices::SUMMARY_ITEM_RECEIVED, value = 0 }
+        }
     }
 
     // void ActionTakeItem(object oItem, object oTakeFrom): the caller takes the item from the
@@ -544,7 +576,10 @@ namespace rt_misc {
         let holder = it.possessor
         let same = holder == from or (party::is_member{ w = &w, id = holder } and party::is_member{ w = &w, id = from })
         if not same or not world::is_valid{ w = &w, id = from } { return }
-        _ = move_item{ &w, item, to = nwvm::self_object{ vm } }
+        // Taken from a party creature, it is an item lost to the status summary (AIActionTakeItem 0x0057bae0).
+        if move_item{ &w, item, to = nwvm::self_object{ vm } } and notices::is_party{ w = &w, id = from } and rt_crea::creature_of{ w = &w, id = from } != null {
+            notices::summary{ &w, kind = notices::SUMMARY_ITEM_LOST, value = 0 }
+        }
     }
 
     // int GetNumStackedItems(object oItem): the stack size, -1 for anything but an item.

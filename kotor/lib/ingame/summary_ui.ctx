@@ -1,0 +1,274 @@
+// The status summary (statussummary.gui, CSWGuiStatusSummary; docs/re/gui.md "CSWGuiStatusSummary" and
+// "Notification icons"): what scripts gave or took since it was last shown (journal updates, credits,
+// experience, stealth experience, alignment shifts, items received or lost) adds up here
+// (AddStatusSummaryEvent 0x0062eeb0). A quarter second after the game is back in the player's hands (no
+// conversation, menu, screen, fade or load), FlushStatusSummary (0x0062ef90) shows it as a pausing panel when
+// the "Status Summary" feedback option is on, or else only lights the HUD's notification icons.
+namespace ingame {
+    // The data's flags (the panel's +0x64).
+    const SUM_PANEL: u32 = 0x1              // something for the panel
+    const SUM_NEWS: u32 = 0x2               // only sounds to play
+    const SUM_RECEIVED: u32 = 0x4
+    const SUM_LOST: u32 = 0x8
+    const SUM_JOURNAL: u32 = 0x10
+    const SUM_SOUND_LEVEL: u32 = 0x20       // gui sound 12 gui_level
+    const SUM_SOUND_QUEST: u32 = 0x40       // 13 gui_quest
+    const SUM_SOUND_DONE: u32 = 0x80        // 14 gui_complete
+    const SUM_NET_CREDITS: u32 = 0x100      // the credits changed sign: "Net Change: "
+    const SUM_DATA: u32 = 0x1ff
+
+    const SUMMARY_DELAY: f32 = 0.25
+
+    // The rows, top to bottom (icon label, description label); 6 is the net shift, whose controls the file
+    // lacks.
+    const SUM_ROWS: [9][]u8 = ["LBL_JOURNAL", "LBL_CREDITS", "LBL_XP", "LBL_STEALTH", "LBL_DARKSIDE", "LBL_LIGHTSIDE", "LBL_NETSHIFT", "LBL_RECEIVED", "LBL_LOST"]
+    const SUM_DESCS: [9][]u8 = ["LBL_JOURNAL_DESC", "LBL_CREDITS_DESC", "LBL_XP_DESC", "LBL_STEALTH_DESC", "LBL_DARKSIDE_DESC", "LBL_LIGHTSIDE_DESC", "LBL_NETSHIFT_DESC", "LBL_RECEIVED_DESC", "LBL_LOST_DESC"]
+
+    struct Summary {
+        flags: u32,
+        light: u8, dark: u8,                // the shifts, each wrapping as the original's bytes do
+        credits: i32, xp: i32, stealth_xp: i32,
+        suppress: i32,                      // events still to drop (SuppressStatusSummaryEntry)
+        delay: f32,                         // the client's +0x370: 0 idle, else seconds to the flush
+        panel: u32,                         // the panel while it is up, 0 else
+        was_paused: bool,                   // the game was paused when it opened: closing leaves it so
+        on: bool,                           // the "Status Summary" option
+        panel_allowed: bool,                // someone is playing (headless runs flash the icons unless a script says)
+        icon_news: bool,                    // a notification icon other than the journal's lit: its sound is due
+    }
+
+    fn new_summary { on: bool } -> Summary {
+        return Summary{ flags = 0, light = 0, dark = 0, credits = 0, xp = 0, stealth_xp = 0, suppress = 0, delay = 0.0, panel = 0, was_paused = false, on, panel_allowed = false, icon_news = false }
+    }
+
+    // One event (AddStatusSummaryEvent): while a suppress count is left, the event is dropped instead.
+    fn add_summary { mut s: Summary, kind: i32, value: i32 } {
+        if s.suppress > 0 {
+            s.suppress = s.suppress - 1
+            return
+        }
+        if kind == notices::SUMMARY_JOURNAL { s.flags = s.flags | SUM_JOURNAL | SUM_PANEL }
+        else if kind == notices::SUMMARY_CREDITS {
+            if value == 0 { return }
+            if (s.credits > 0 and value < 0) or (s.credits < 0 and value > 0) { s.flags = s.flags | SUM_NET_CREDITS }
+            s.credits = s.credits + value
+            s.flags = s.flags | SUM_PANEL
+        } else if kind == notices::SUMMARY_XP {
+            if value == 0 { return }
+            s.xp = s.xp + value
+            s.flags = s.flags | SUM_PANEL
+        } else if kind == notices::SUMMARY_STEALTH_XP {
+            if value == 0 { return }
+            s.stealth_xp = s.stealth_xp + value
+            s.flags = s.flags | SUM_PANEL
+        } else if kind == 4 or kind == 5 {
+            // AddAlignmentShift takes the shift as a signed byte.
+            let shift = @as(i32, @trunc(i8, value))
+            if shift == 0 { return }
+            if shift > 0 { s.light = @trunc(u8, (@as(i32, s.light) + shift) & 0xff) } else { s.dark = @trunc(u8, (@as(i32, s.dark) - shift) & 0xff) }
+            s.flags = s.flags | SUM_PANEL
+        } else if kind == notices::SUMMARY_ITEM_RECEIVED { s.flags = s.flags | SUM_RECEIVED | SUM_PANEL }
+        else if kind == notices::SUMMARY_ITEM_LOST { s.flags = s.flags | SUM_LOST | SUM_PANEL }
+        else if kind == notices::SUMMARY_LEVEL_UP_SOUND { s.flags = s.flags | SUM_SOUND_LEVEL | SUM_NEWS }
+        else if kind == notices::SUMMARY_QUEST_SOUND { s.flags = s.flags | SUM_SOUND_QUEST | SUM_NEWS }
+        else if kind == notices::SUMMARY_QUEST_DONE_SOUND { s.flags = s.flags | SUM_SOUND_DONE | SUM_NEWS }
+    }
+
+    fn clear_summary { mut s: Summary } {
+        s.flags = s.flags & (0xffffffff ^ SUM_DATA)
+        s.light = 0
+        s.dark = 0
+        s.credits = 0
+        s.xp = 0
+        s.stealth_xp = 0
+    }
+
+    // Lights HUD icon `which` the way FlashHudIcon does; every icon but the journal's then asks for gui_quest
+    // (CSWGuiNotifyLabel::Update 0x00686a20 raises event 10 on its next update).
+    fn flash_summary_icon { mut ui: Ingame, which: usize } {
+        hud::flash_icon{ h = &ui.hud, which }
+        if which != hud::NOTE_JOURNAL { ui.summary.icon_news = true }
+    }
+
+    fn play_summary_sounds { mut ui: Ingame } {
+        let f = ui.summary.flags
+        if (f & SUM_SOUND_LEVEL) != 0 { gui::play_sound{ g = &ui.gui, n = 12 } }
+        if (f & SUM_SOUND_QUEST) != 0 { gui::play_sound{ g = &ui.gui, n = 13 } }
+        if (f & SUM_SOUND_DONE) != 0 { gui::play_sound{ g = &ui.gui, n = 14 } }
+    }
+
+    // Once a frame, after the HUD: the icons' and the portraits' sound events, then the client's delay
+    // (MainLoop step 22): while there is news and the game has the player's attention, 0.25 s (counted only on
+    // frames shorter than that) and then the flush; anything in the way starts the wait again.
+    fn update_summary { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, fade_busy: bool, dt: f32 } {
+        if not ui.hud_hidden {
+            if ui.summary.icon_news {
+                ui.summary.icon_news = false
+                add_summary{ s = &ui.summary, kind = notices::SUMMARY_QUEST_SOUND, value = 0 }
+            }
+            if ui.hud.level_news {
+                ui.hud.level_news = false
+                add_summary{ s = &ui.summary, kind = notices::SUMMARY_LEVEL_UP_SOUND, value = 0 }
+            }
+        }
+        let news = (ui.summary.flags & (SUM_PANEL | SUM_NEWS)) != 0
+        let free = not w.conversation.active and not w.conversation.hold and ui.menu == NO_MENU and not ui.hud_hidden
+            and not gui::is_modal_open{ g = &ui.gui } and not screens::is_open{ s = &ui.screens } and not partysel_panel::is_open{ s = &ui.menus.partysel }
+            and w.transition == null and w.arrival == 0 and not fade_busy and not ui.wiping
+        if not news or not free {
+            ui.summary.delay = 0.0
+            return
+        }
+        if ui.summary.delay == 0.0 {
+            ui.summary.delay = SUMMARY_DELAY
+            return
+        }
+        if dt < SUMMARY_DELAY { ui.summary.delay = ui.summary.delay - dt }
+        if ui.summary.delay > 0.0 { return }
+        ui.summary.delay = 0.0
+        flush_summary{ &ui, &w, &dev }
+    }
+
+    // FlushStatusSummary (0x0062ef90): with something for the panel and the option on, the game pauses under it;
+    // otherwise its sounds play and the icons of what happened light.
+    fn flush_summary { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device } {
+        let s = &ui.summary
+        if (s.flags & SUM_PANEL) != 0 and s.on and s.panel_allowed {
+            open_summary{ &ui, &w, &dev }
+            return
+        }
+        if w.log.scripts and (s.flags & SUM_PANEL) != 0 {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "status summary icons: flags {} credits {} xp {} stealth {} light {} dark {}\n", s.flags, s.credits, s.xp, s.stealth_xp, s.light, s.dark)
+        }
+        play_summary_sounds{ &ui }
+        if (s.flags & SUM_JOURNAL) != 0 { flash_summary_icon{ &ui, which = 0 } }
+        if s.credits != 0 { flash_summary_icon{ &ui, which = 1 } }
+        if s.xp != 0 { flash_summary_icon{ &ui, which = 2 } }
+        if s.stealth_xp != 0 { flash_summary_icon{ &ui, which = 3 } }
+        if s.light < s.dark { flash_summary_icon{ &ui, which = 4 } }
+        if s.dark < s.light { flash_summary_icon{ &ui, which = 5 } }
+        if (s.flags & SUM_RECEIVED) != 0 { flash_summary_icon{ &ui, which = 7 } }
+        if (s.flags & SUM_LOST) != 0 { flash_summary_icon{ &ui, which = 8 } }
+        clear_summary{ s }
+    }
+
+    // The panel (OnPanelAdded 0x00625c60): the rows with something to say, from y 10 down 37 pixels apart; the
+    // descriptions start 150 wide and every row's widens by 20 (to 450 at most) until its text fits one line,
+    // the width carrying on to the rows below. The panel fits around them and OK sits under the last.
+    fn open_summary { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device } {
+        let g = &ui.gui
+        let id = gui::open{ g, fs = &w.fs, &dev, name = "statussummary", mode = gui::Mode::dialog, modal = true } iferr err{ error } {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "kotor: status summary: {}\n", error)
+            clear_summary{ s = &ui.summary }
+            return
+        }
+        let s = &ui.summary
+        ui.summary.was_paused = clock_paused_by_player{ w = &w } or (w.clock.pause_bits & clock::PAUSE_MENU) != 0
+        clock::set_pause{ c = &w.clock, bit = clock::PAUSE_PLAYER, on = true }
+        ui.summary.panel = id
+        play_summary_sounds{ &ui }
+        let mut y: i32 = 10
+        let mut width: i32 = 150
+        let mut row: usize = 0
+        while row < 9 {
+            let r = row
+            row = row + 1
+            let mut shown = false
+            let mut flash = true
+            let mut text_strref: u32 = 0
+            let mut prefix: u32 = 0
+            let mut number: i32 = 0
+            if r == 0 { shown = (s.flags & SUM_JOURNAL) != 0 }
+            else if r == 1 {
+                shown = s.credits != 0 or (s.flags & SUM_NET_CREDITS) != 0
+                text_strref = if s.credits < 0 { 42627 } else { 42437 }
+                number = if s.credits < 0 { -s.credits } else { s.credits }
+                if (s.flags & SUM_NET_CREDITS) != 0 { prefix = 47933 }
+            } else if r == 2 {
+                shown = s.xp != 0
+                text_strref = 42438
+                number = s.xp
+            } else if r == 3 {
+                shown = s.stealth_xp != 0
+                text_strref = 42439
+                number = s.stealth_xp
+            } else if r == 4 {
+                shown = s.dark != 0
+                flash = s.light < s.dark
+            } else if r == 5 {
+                shown = s.light != 0
+                flash = s.dark < s.light
+            } else if r == 6 {
+                // Both sides moved by different amounts: a row for the net shift, but statussummary.gui has no
+                // LBL_NETSHIFT, so it is an empty gap (InitControl added nothing to draw).
+                shown = s.light != 0 and s.dark != 0 and s.light != s.dark
+                flash = false
+            } else if r == 7 { shown = (s.flags & SUM_RECEIVED) != 0 }
+            else { shown = (s.flags & SUM_LOST) != 0 }
+            gui::set_visible{ g, panel = id, tag = SUM_ROWS[r], visible = shown }
+            gui::set_visible{ g, panel = id, tag = SUM_DESCS[r], visible = shown }
+            if not shown { continue }
+            if text_strref != 0 { set_summary_text{ &ui, &w, panel = id, tag = SUM_DESCS[r], prefix, strref = text_strref, n = number } }
+            if gui::control_extent{ g, panel = id, tag = SUM_ROWS[r] } is some{ value = e } {
+                gui::set_extent{ g, panel = id, tag = SUM_ROWS[r], x = @as(i32, e.x), y, w = @as(i32, e.w), h = @as(i32, e.h) }
+            }
+            if gui::control_extent{ g, panel = id, tag = SUM_DESCS[r] } is some{ value = e } {
+                gui::set_extent{ g, panel = id, tag = SUM_DESCS[r], x = @as(i32, e.x), y = y - 1, w = width, h = @as(i32, e.h) }
+                while width < 440 and gui::count_lines{ g, panel = id, tag = SUM_DESCS[r], width } > 1 {
+                    width = width + 20
+                    gui::set_extent{ g, panel = id, tag = SUM_DESCS[r], x = @as(i32, e.x), y = y - 1, w = width, h = @as(i32, e.h) }
+                }
+            }
+            if flash { flash_summary_icon{ &ui, which = r } }
+            y = y + 37
+        }
+        let mut desc_x: i32 = 52
+        if gui::control_extent{ g, panel = id, tag = SUM_DESCS[0] } is some{ value = e } { desc_x = @as(i32, e.x) }
+        let pw = desc_x + width + 10
+        let ph = y + 25
+        gui::set_panel_size{ g, panel = id, w = pw, h = ph }
+        if gui::control_extent{ g, panel = id, tag = "BTN_OK" } is some{ value = e } {
+            gui::set_extent{ g, panel = id, tag = "BTN_OK", x = (pw - @as(i32, e.w)) / 2, y = y - 7, w = @as(i32, e.w), h = @as(i32, e.h) }
+        }
+        gui::set_focus{ g, panel = id, tag = "BTN_OK" }
+        if w.log.scripts {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "status summary: flags {} credits {} xp {} stealth {} light {} dark {}\n", s.flags, s.credits, s.xp, s.stealth_xp, s.light, s.dark)
+        }
+        // Tutorial pop-up 14 is offered here too; tutorial pop-ups are not built yet.
+        clear_summary{ s }
+    }
+
+    // A description with dialog.tlk's `strref` (and `prefix` before it, 0 none), its <CUSTOM0> the number.
+    fn set_summary_text { mut ui: Ingame, mut w: world::World, panel: u32, tag: []u8, prefix: u32, strref: u32, n: i32 } {
+        ui.text.bytes.len = 0
+        if prefix != 0 { _ = @fmt(&ui.text, "{}", world::string_by_strref{ w = &w, strref = prefix }) }
+        let src = world::string_by_strref{ w = &w, strref }
+        let token: []u8 = "<CUSTOM0>"
+        let mut at: usize = 0
+        while at < src.len {
+            if at + token.len <= src.len and slice::eq_bytes{ a = src[at..at + token.len], b = token } {
+                _ = @fmt(&ui.text, "{}", n)
+                at = at + token.len
+            } else {
+                list::push{ list = &ui.text.bytes, item = src[at] } iferr {}
+                at = at + 1
+            }
+        }
+        gui::set_text{ g = &ui.gui, panel, tag, text = utf8::view{ b = ui.text }.bytes } iferr {}
+    }
+
+    // OK, Enter or Escape (HandleInputEvent 0x00625ac0, BTN_OK's OnButtonAccept): the click sound, the panel
+    // goes and the game runs on unless it was paused before.
+    fn summary_event { mut ui: Ingame, mut w: world::World, ev: gui::Event } {
+        if ui.summary.panel == 0 or ev.panel != ui.summary.panel { return }
+        let done = ev.kind == gui::EventKind::cancel or (ev.kind == gui::EventKind::activate and slice::eq_bytes{ a = ev.tag, b = "BTN_OK" })
+        if not done { return }
+        gui::close{ g = &ui.gui, id = ui.summary.panel }
+        ui.summary.panel = 0
+        gui::play_sound{ g = &ui.gui, n = 0 }
+        if not ui.summary.was_paused { clock::set_pause{ c = &w.clock, bit = clock::PAUSE_PLAYER, on = false } }
+    }
+}

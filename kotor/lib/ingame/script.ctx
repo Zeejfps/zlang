@@ -155,6 +155,14 @@ namespace ingame {
             // `ui autopause on|off`: the auto-pause triggers (enemy sighted, party member down, new target in
             // combat), off in headless runs until a test asks.
             ui.autopause = ci::eq{ a = text::next_word{ &words } ifnull "on", b = "on" }
+        } else if ci::eq{ a = cmd, b = "summary" } {
+            // `ui summary on|off|panel`: the "Status Summary" option; `panel` lets a headless run show the panel
+            // (it only lights the HUD's icons there otherwise, as nobody would press OK).
+            let word = text::next_word{ &words } ifnull "on"
+            if ci::eq{ a = word, b = "panel" } { ui.summary.panel_allowed = true } else {
+                ui.summary.on = ci::eq{ a = word, b = "on" }
+                if options_front{ &ui } is some{ value = fe } { fe.settings.status_summary = ui.summary.on }
+            }
         } else if ci::eq{ a = cmd, b = "close" } {
             close_menu{ &ui, &w }
         } else if ci::eq{ a = cmd, b = "target" } {

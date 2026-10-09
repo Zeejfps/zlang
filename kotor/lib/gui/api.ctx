@@ -452,6 +452,14 @@ namespace gui {
         place{ &g, p }
     }
 
+    // How many lines the control's text takes at `width` pixels (0 for no text or font).
+    fn count_lines { mut g: Gui, panel: u32, tag: []u8, width: i32 } -> usize {
+        let c = find_control{ &g, panel, tag } ifnull { return 0 }
+        if c.text.text.len == 0 or c.text.font < 0 or @as(usize, c.text.font) >= g.fonts.len { return 0 }
+        let font = list::items{ list = g.fonts }[@as(usize, c.text.font)].font
+        return layout{ font, text = c.text.text, width, lines = g.lines }
+    }
+
     // A confirmation or notice (confirm.gui): `text` over OK and, if `cancel`, Cancel. Modal,
     // centred. The owner takes the activate events of BTN_OK / BTN_CANCEL and closes the panel.
     fn message_box { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, text: []u8, cancel: bool } -> !u32 {

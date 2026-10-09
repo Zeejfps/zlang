@@ -143,6 +143,7 @@ namespace play {
         }
         if not opts.headless { _ = sdl::SDL_ShowCursor{ &sdl, toggle = 0 } }    // HOOK(ingame): the GUI draws the pointer
         ui.autopause = not opts.headless    // HOOK(ingame): a person is playing: the auto-pause options apply
+        ui.summary.panel_allowed = not opts.headless    // and the status summary may stop the game for its panel
         loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 90 }
         let silent = try alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(i16){}, count = 44100 }
         let mut keys = ctl::no_keys{}
@@ -564,6 +565,7 @@ namespace play {
             let player_room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
             let room = dlgview::view_room{ v = &dview, w = &w, player_room }
             scene::update_visibility{ &sc, w = &w, room }
+            ui.fade_busy = dlgpanel::fade_running{ p = dview.panels }    // the status summary waits for a fade
             ingame::update{ ui, &w, &dev, sc, camera, dt = camera_dt }    // HOOK(ingame): under --speed the GUI's clocks (feedback fade, tooltips) get the ticks it skipped
             if ingame::wants_quit{ ui } {    // HOOK(ingame)
                 quit = true

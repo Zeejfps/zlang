@@ -20,6 +20,10 @@ namespace hud {
         down: bool,
     }
 
+    // A creature whose level-up the portraits announced, and at which level (the client creature's +0x440 bit 1:
+    // set when it is made and after each level-up, cleared by the announcement; re/gui.md "State").
+    struct Told { id: u32, level: i32 }
+
     // A control of the floating target block with its place in the file; the block moves as a
     // whole over the selected object.
     struct BlockPart { index: i32, x: i32, y: i32 }
@@ -39,6 +43,8 @@ namespace hud {
         combat_message: f32,                // seconds left of the combat-mode message
         notify: [9]f32,                     // seconds left of each notification icon
         notify_shown: [9]bool,
+        level_news: bool,                   // a member can newly level up: the status summary's gui_level is due (taken by ingame)
+        told: [12]Told,                     // whose level-up was announced, at which level
         shown_target: u32,                  // the target the block was built for
         lists: [3]ActionList,               // the block's slots
         power_pick: i32,                    // the Force power chosen in the middle slot (a spells.2da row), kept from target to target
@@ -102,7 +108,7 @@ namespace hud {
             widgets = [Widget{ id = obj::INVALID, portrait = 0, hp = -1, hp_max = -1, fp = -1, fp_max = -1, level = -1, xp = 0, down = false }; 3],
             block = [BlockPart{ index = -1, x = 0, y = 0 }; 16],
             minimap = open_minimap{ &g, &w, &dev, panel },
-            font = gui::font_slot{ &g, fs = &w.fs, &dev, name = "dialogfont10x10" }, combat = false, combat_message = 0.0, notify = [0.0; 9], notify_shown = [false; 9],
+            font = gui::font_slot{ &g, fs = &w.fs, &dev, name = "dialogfont10x10" }, combat = false, combat_message = 0.0, notify = [0.0; 9], notify_shown = [false; 9], level_news = false, told = [Told{ id = obj::INVALID, level = -1 }; 12],
             shown_target = obj::INVALID, lists = [empty_list{}; 3], power_pick = -1, refusal = 0.0, refusal_reason = 0, hover_slot = -1, look = -1, pressed = obj::INVALID,
             pressing = false, reticle = Reticle{ shown = false, x = 0.0, y = 0.0, side = 0.0, mark = 0, turns = 0 }, reticle_for = obj::INVALID, zoom = -1.0, sight_latch = false, sight_quiet = 0.0, target_lost = 0.0, move_speed = 0.0, moving_for = 0.0, looking = false, swing_to = obj::INVALID, door_window = 0.0, deferred = 0.0, deferred_text = 0, alternate = false, trans_panel = 0, trans_object = obj::INVALID,
             projector = Projector{ vp = math::mat4::identity{}, eye = math::vec3::zero{}, w = 1.0, h = 1.0 },
@@ -284,6 +290,25 @@ namespace hud {
         tick_floats{ &h, dt }
     }
 
+    // A member showing the level-up badge raises the status summary's level-up sound once per level
+    // (UpdatePartyPortraits 0x00687860, event 9).
+    fn tell_level_up { mut h: Hud, id: u32, level: i32 } {
+        let mut free: usize = 12
+        let mut i: usize = 0
+        while i < 12 {
+            if h.told[i].id == id {
+                if h.told[i].level == level { return }
+                free = i
+                break
+            }
+            if h.told[i].id == obj::INVALID and free == 12 { free = i }
+            i = i + 1
+        }
+        if free == 12 { free = 0 }
+        h.told[free] = Told{ id, level }
+        h.level_news = true
+    }
+
     // Portraits, vitality and Force bars, level-up and down marks of the party members.
     fn update_party { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, mut text: utf8::Builder(heap::Heap) } {
         let ids = party_ids{ w = &w }
@@ -357,6 +382,7 @@ namespace hud {
             // A mark over the portrait when the member is down, and the level-up badge when the
             // experience allows another level.
             let up = can_level_up{ w = &w, id }
+            if up { tell_level_up{ &h, id, level } }
             gui::set_visible{ &g, panel, tag = tag_n{ into = buf[..], prefix = "LBL_DEBILATATED", n = n + 1 }, visible = down }
             gui::set_visible{ &g, panel, tag = tag_n{ into = buf[..], prefix = "LBL_LEVELUP", n = n + 1 }, visible = up }
             gui::set_visible{ &g, panel, tag = tag_n{ into = buf[..], prefix = "LBL_LVLUPBG", n = n + 1 }, visible = up }
