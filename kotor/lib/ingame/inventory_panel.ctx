@@ -6,7 +6,6 @@
 // PLACEHOLDER: the list is the player character's own bag (items::carried); the original shows
 // the party's one inventory.
 namespace inventory_panel {
-    const ICON: f32 = 36.0
     const FILTERS: usize = 6
     // The filters' names: all, new, quest, equippable, utility, useable items.
     const FILTER_NAMES: [6]u32 = [41822, 42165, 41818, 41821, 41819, 41820]
@@ -183,7 +182,7 @@ namespace inventory_panel {
             let id = c.equipped[slot]
             slot = slot + 1
             if id == obj::INVALID or not world::is_valid{ w = &w, id } or not passes{ &s, &w, id } { continue }
-            let row = try items::add_row{ &g, &w, &dev, panel, tag = "LB_ITEMS", id, equipped = true, icon_size = ICON, rows = items::ENTRY_NEW }
+            let row = try items::add_row{ &g, &w, &dev, panel, tag = "LB_ITEMS", id, equipped = true, rows = items::ENTRY_NEW }
             if id == s.picked { select = row }
         }
         let mut order: [512]u32
@@ -193,7 +192,7 @@ namespace inventory_panel {
             let id = carried[k]
             k = k + 1
             if not world::is_valid{ w = &w, id } or not passes{ &s, &w, id } { continue }
-            let row = try items::add_row{ &g, &w, &dev, panel, tag = "LB_ITEMS", id, equipped = false, icon_size = ICON, rows = items::ENTRY_NEW }
+            let row = try items::add_row{ &g, &w, &dev, panel, tag = "LB_ITEMS", id, equipped = false, rows = items::ENTRY_NEW }
             if id == s.picked { select = row }
         }
         if gui::list_count{ &g, panel, tag = "LB_ITEMS" } == 0 {

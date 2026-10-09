@@ -14,8 +14,8 @@ namespace journal_panel {
         collect_items{ &s, &w }
         let mut i: usize = 0
         while i < s.item_count {
-            let name = hud::name_of{ w = &w, id = s.items[i] }
-            _ = try gui::list_add{ &g, panel = id, tag = "LB_ITEMS", text = name, user = @as(i64, s.items[i]) }
+            // CSWGuiItemEntry rows, never marked equipped or new (0x006d29f0).
+            _ = try items::add_row{ &g, &w, &dev, panel = id, tag = "LB_ITEMS", id = s.items[i], equipped = false, rows = items::ENTRY }
             i = i + 1
         }
         if s.item_count > 0 { gui::list_select{ &g, panel = id, tag = "LB_ITEMS", row = 0 } }
@@ -43,8 +43,7 @@ namespace journal_panel {
 
     // The description of the item on row `row`. PLACEHOLDER: the engine's Item keeps no description,
     // so it is read from the blueprint (UTI DescIdentified, falling back to Description); when the
-    // engine reads it into the object, take it from there. The item's icon (the original puts it
-    // beside the name) waits for the same data.
+    // engine reads it into the object, take it from there.
     fn show_item { mut s: State, mut g: gui::Gui, mut w: world::World, row: i32 } -> ! {
         if s.items_panel == 0 { return }
         if row < 0 or @as(usize, row) >= s.item_count {

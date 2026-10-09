@@ -2,7 +2,6 @@
 // a body holds. A row takes that item; Get Items takes everything and closes; Switch To lists the
 // party's items to put in; Close leaves the rest. The moves are lib/engine/container.ctx's.
 namespace container_panel {
-    const ICON: f32 = 36.0
     const STR_PLACE_ITEMS: u32 = 392         // the file's own title: items available to place in the container
 
     struct State {
@@ -92,7 +91,7 @@ namespace container_panel {
             let id = source[k]
             k = k + 1
             if not world::is_valid{ w = &w, id } { continue }
-            _ = try items::add_row{ &g, &w, &dev, panel = p, tag = "LB_ITEMS", id, equipped = false, icon_size = ICON, rows = items::ENTRY }
+            _ = try items::add_row{ &g, &w, &dev, panel = p, tag = "LB_ITEMS", id, equipped = false, rows = items::ENTRY }
         }
         if gui::list_count{ &g, panel = p, tag = "LB_ITEMS" } > 0 { gui::list_select{ &g, panel = p, tag = "LB_ITEMS", row = 0 } }
     }

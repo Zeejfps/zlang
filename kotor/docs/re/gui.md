@@ -2014,6 +2014,53 @@ bEquipped, bNew)` (0x006b6710) fills it (high):
 - an empty row (id `OBJECT_INVALID`, or an id that no longer resolves to an item) reads "None"
   (strref 363) with icon `inone`.
 
+Layout and drawing (high). The entry is a button with three extra borders and a text: +0x1c8 the
+hexagon frame, +0x23c the hilighted hexagon frame, +0x2b0 the icon, +0x324 the stack count. Each
+"frame" is a border with no corner or edge texture, only a fill, so it fills the border's whole
+extent:
+
+- Vtable slot 40 (0x006b4db0, `Init(protoText, protoBorder, protoHilight, width, pulse)`, called by
+  every maker right after the ctor) copies the prototype's text and its `BORDER` / `HILIGHT`
+  frames, recolours them (above), makes the two hexagon borders (fill `lbl_hex_3`, fill style 0,
+  menu blue and yellow, the hilighted one with a pulsing fill), and sets the extent to
+  (0, 0, `width`, **56**). Callers pass the list box's width less twice its padding. The
+  prototype's own height (50 in `inventory.gui`) is never used.
+- Slot 1 `SetExtent` (0x006b5270) does nothing unless the width is over 56. It keeps the given
+  rectangle as the control's (the list box's layout and hit test use it), then places the parts
+  using a fixed height of 56, whatever height it was given:
+  - the hexagon, hilighted hexagon and icon borders: (x, y, 56, 56), the square at the left;
+  - the stack count text: (x + 56 − w, y + 37, w, 19), with w = 21 when the count string has at
+    most two characters and 42 otherwise. That puts it in the square's bottom right corner;
+  - the button's `BORDER` and `HILIGHT`: (x + 56, y, width − 56, 56), the rest of the row;
+  - the name text: the frames' inner text rectangle (their `GetTextRect`, combined by 0x0040a4a0),
+    so the name sits right of the square.
+- Slot 14 `Render` (0x006b4d40): when the entry is hilighted (+0x44 bit 0), the `HILIGHT` frame and
+  the hilighted hexagon; otherwise the `BORDER` frame and the normal hexagon. Then the icon, the
+  name and the count.
+- `SetItem` puts the icon resref in the icon border's fill and sets that fill's style to 2,
+  **stretched** (+0x2e0 = (… & ~1) | 2). The icon therefore always covers the 56x56 square,
+  whatever its own size. Item icons (`iw*`, `ia*`, `ii*`) are 64x64, as are `inone` and every
+  `lbl_hex*`. The hexagon keeps fill style 0 (tiled), but a 64-pixel texture on a 56-pixel area
+  is one stretched tile, so it covers the square too.
+- The count text is font `fnt_d16x16` in menu blue (`g_vGuiMenuTextColor`), alignment 0x22 (bottom
+  centre), scale 1. Its string is the stack size when that is 2 or more, else empty.
+- The list box's row height is its tallest row's (`UpdateLayout`), so item lists step by 56 plus
+  padding. The list's leftover height is spread over the slots as for any list. The entry still
+  draws everything 56 high, at the top of its slot.
+
+Two copies of the entry share `SetExtent` and `Render` and paint alike (menu blue and yellow
+frames, the `lbl_hex_3/6/7` hexagon, the stretched icon, the `fnt_d16x16` count): the store's row
+(0x394 bytes, ctor 0x006b71e0, vtable 0x00756850, `Init` 0x006b53f0, `SetItem` 0x006b7270), and the
+upgrade bench's (ctor 0x006c3e00, vtable 0x00757108, `SetExtent` 0x006c2650, `Init` 0x006c2830,
+`SetItem` 0x006c3ea0). The bench's own `SetExtent` gives the count text the whole square's height
+(y, 56) instead of (y + 37, 19), which looks the same with bottom alignment. The feat and power
+chain rows (0x006cccc0) and the abilities screen's skill rows are other controls (see "Chain
+rows").
+
+The GUI is never scaled (§2). The entry's 56-pixel square and its icon are the same size in
+screen pixels at every resolution. A reimplementation that scales the whole GUI must scale these
+rows along with everything else.
+
 #### CSWGuiInventory (inventory.gui)
 
 | Address | Name | What | Conf. |

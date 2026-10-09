@@ -20,8 +20,6 @@
 // BTN_BACK is this file's exit button but the framework only knows BTN_EXIT, so the control is
 // renamed: BTN_EXIT ("Close") in the slot view, BTN_BACK ("Cancel") in selection mode.
 namespace equip_panel {
-    // The size item pictures get in the list rows.
-    const ICON: f32 = 36.0
     const NO_PICK: i64 = -1
 
     struct State {
@@ -321,12 +319,12 @@ namespace equip_panel {
         try gui::set_strref{ &g, panel, tag = "LBL_SLOTNAME", strref = name }
         let c = hud::creature_of{ w = &w, id = s.who } ifnull { return false }
         s.states = [items::FITS; MAX_ROWS]
-        _ = try items::add_none_row{ &g, &w, &dev, panel, tag = "LB_ITEMS", icon_size = ICON }
+        _ = try items::add_none_row{ &g, &w, &dev, panel, tag = "LB_ITEMS" }
         let worn = c.equipped[index]
         // Selection mode starts on the worn item's row; with nothing worn nothing is selected.
         let mut select: i32 = -1
         if worn != obj::INVALID and world::is_valid{ w = &w, id = worn } {
-            select = try items::add_row{ &g, &w, &dev, panel, tag = "LB_ITEMS", id = worn, equipped = true, icon_size = ICON, rows = items::ENTRY }
+            select = try items::add_row{ &g, &w, &dev, panel, tag = "LB_ITEMS", id = worn, equipped = true, rows = items::ENTRY }
         }
         let mut order: [512]u32
         let carried = items::carried{ w = &w, who = s.who, into = order[..] }
@@ -335,7 +333,7 @@ namespace equip_panel {
             let id = carried[k]
             k = k + 1
             if (items::equipable_slots{ w = &w, id } & items::mask_of{ index }) == 0 or not items::race_ok{ w = &w, who = s.who, item = id } { continue }
-            let row = try items::add_row{ &g, &w, &dev, panel, tag = "LB_ITEMS", id, equipped = false, icon_size = ICON, rows = items::ENTRY }
+            let row = try items::add_row{ &g, &w, &dev, panel, tag = "LB_ITEMS", id, equipped = false, rows = items::ENTRY }
             // The state is fixed when the list is built (OnSlotHilighted), not when a row is pointed at.
             let state = items::row_state{ w = &w, who = s.who, item = id, index }
             if row >= 0 and @as(usize, row) < MAX_ROWS { s.states[@as(usize, row)] = state }

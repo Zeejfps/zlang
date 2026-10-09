@@ -3,7 +3,6 @@
 // arithmetic and the moving are lib/engine/store.ctx's; this is the lists, the confirmations the
 // original asks and the sounds.
 namespace store_panel {
-    const ICON: f32 = 36.0
 
     // What a confirmation box is for.
     const ASK_BUY: i32 = 1
@@ -149,7 +148,7 @@ namespace store_panel {
         let mut select: i32 = 0
         let mut k: usize = 0
         while k < n {
-            let row = try items::add_row{ &g, &w, &dev, panel = p, tag, id = order[k], equipped = false, icon_size = ICON, rows = items::PLAIN }
+            let row = try items::add_row{ &g, &w, &dev, panel = p, tag, id = order[k], equipped = false, rows = items::ENTRY }
             if order[k] == s.picked { select = row }
             k = k + 1
         }

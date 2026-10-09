@@ -466,7 +466,7 @@ namespace gui {
             c.rows = try alloc::resize(Row, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = c.rows, count = n }
         }
         let copy = try copy_string{ &g, s = text }
-        c.rows[@as(usize, c.row_count)] = Row{ text = copy, user, color = white_color{}, has_color = false, icon = no_img{}, enabled = true, checked = false, frame = 0 }
+        c.rows[@as(usize, c.row_count)] = Row{ text = copy, user, color = white_color{}, has_color = false, icon = no_img{}, enabled = true, checked = false, frame = 0, hex = no_img{}, count = 0 }
         c.row_count = c.row_count + 1
         return @as(i32, c.row_count) - 1
     }
@@ -490,6 +490,18 @@ namespace gui {
     fn list_set_frame_alpha { mut g: Gui, panel: u32, tag: []u8, alpha: f32 } {
         let c = find_control{ &g, panel, tag } ifnull { return }
         c.row_frame_alpha = alpha
+    }
+
+    // Makes the list's rows item entries and gives row `row` its hexagon frame by the stack size
+    // `count`, printed in the icon box's corner when 2 or more (CSWGuiItemEntry::SetItem 0x006b6710).
+    fn list_set_entry { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, panel: u32, tag: []u8, row: i32, count: i32 } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        if row < 0 or row >= @as(i32, c.row_count) { return }
+        c.entry_rows = true
+        if c.entry_font < 0 { c.entry_font = font_slot{ &g, &fs, &dev, name = "fnt_d16x16" } }
+        let name: []u8 = if count < 2 { "lbl_hex_3" } else if count < 100 { "lbl_hex_6" } else { "lbl_hex_7" }
+        c.rows[@as(usize, row)].hex = resolve_img{ &g, &fs, &dev, name }
+        c.rows[@as(usize, row)].count = count
     }
 
     fn list_set_icon { mut g: Gui, panel: u32, tag: []u8, row: i32, texture: render::Texture, w: f32, h: f32 } {

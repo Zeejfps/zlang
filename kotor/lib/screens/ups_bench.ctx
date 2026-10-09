@@ -2,7 +2,6 @@
 namespace ups {
     const CAT_TAGS: [4][]u8 = ["BTN_LIGHTSABER", "BTN_RANGED", "BTN_MELEE", "BTN_ARMOR"]
     const CAT_ICON_LABELS: [4][]u8 = ["LBL_LSABER", "LBL_RANGED", "LBL_MELEE", "LBL_ARMOR"]
-    const ICON: f32 = 36.0
 
     fn report { mut w: world::World, text: []u8 } {
         _ = @fmt(&w.io, "kotor: upgrade bench: {}\n", text)
@@ -182,7 +181,7 @@ namespace ups {
         let mut pick: usize = 0
         while k < s.nlisted {
             let l = s.listed[k]
-            _ = try items::add_row{ &g, &w, &dev, panel = p, tag = "LB_ITEMS", id = l.item, equipped = l.owner != obj::INVALID, icon_size = ICON, rows = items::PLAIN }
+            _ = try items::add_row{ &g, &w, &dev, panel = p, tag = "LB_ITEMS", id = l.item, equipped = l.owner != obj::INVALID, rows = items::ENTRY }
             if l.item == show { pick = k }
             k = k + 1
         }
@@ -563,11 +562,11 @@ namespace ups {
         while k < s.nchoices {
             let it = choice_item{ &s, &w, index = k }
             if it == obj::INVALID {
-                _ = try items::add_none_row{ &g, &w, &dev, panel = p, tag = "LB_ITEMS", icon_size = ICON }
+                _ = try items::add_none_row{ &g, &w, &dev, panel = p, tag = "LB_ITEMS" }
             } else {
                 let r = try gui::list_add{ &g, panel = p, tag = "LB_ITEMS", text = items::name_of{ w = &w, id = it }, user = @as(i64, k) }
-                let img = items::icon_of{ &g, &w, &dev, id = it }
-                if img.ok { gui::list_set_icon{ &g, panel = p, tag = "LB_ITEMS", row = r, texture = img.tex, w = ICON, h = ICON } }
+                gui::list_set_frame{ &g, panel = p, tag = "LB_ITEMS", row = r, frame = gui::FRAME_ITEM }
+                items::dress_row{ &g, &w, &dev, panel = p, tag = "LB_ITEMS", row = r, id = it }
             }
             k = k + 1
         }

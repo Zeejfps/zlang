@@ -420,6 +420,8 @@ namespace gui {
 
     fn proto_height { p: *Panel, c: *Control } -> i32 {
         if c.cell_art.on { return CELL_ROW_H }
+        // The list's row height is its tallest row's (UpdateLayout 0x0041b140), and an item entry is always ENTRY_BOX tall.
+        if c.entry_rows { return ENTRY_BOX }
         if c.proto < 0 { return 16 }
         let pc = list::at{ list = p.controls, i = @as(usize, c.proto) }
         return if pc.h > 0 { pc.h } else { 16 }
@@ -658,6 +660,10 @@ namespace gui {
             b.color = item_frame_color{ frame = row.frame, hot = lit }
             if not lit { row_alpha = alpha * c.row_frame_alpha * (if row.frame == FRAME_NEW { 0.5 } else { 1.0 }) }
         }
+        if c.entry_rows {
+            draw_entry_row{ &g, &frame, c, pc, row, b, lit, x, y, w, alpha, row_alpha, clip }
+            return
+        }
         draw_border{ &g, &frame, b, x, y, w, h, alpha = row_alpha, clip, override = no_img{} }
         let a = text_area{ b = pc.border, x, y, w, h }
         let mut ax = a.x
@@ -676,6 +682,61 @@ namespace gui {
         if lit and pc.kind == K_BUTTON { col = mul_alpha{ c = col, a = g.pulse_border } }
         col = mul_alpha{ c = col, a = alpha }
         draw_text_in{ &g, &frame, t = pc.text, text = row.text, color = col, x = ax, y = a.y, w = aw, h = a.h, clip }
+    }
+
+    // An item entry (CSWGuiItemEntry: SetExtent 0x006b5270, Render 0x006b4d40), whatever the slot's
+    // height: the button frames `b` over (x + ENTRY_BOX, y, w - ENTRY_BOX, ENTRY_BOX), the hexagon
+    // frame and then the icon each stretched over the ENTRY_BOX square at the left, the name in the
+    // frames' text area, and a stack's size in the square's bottom right corner.
+    fn draw_entry_row {
+        mut g: Gui, mut frame: render::Frame, c: *Control, pc: *Control, row: Row, b: Border, lit: bool,
+        x: i32, y: i32, w: i32, alpha: f32, row_alpha: f32, clip: render::Rect,
+    } {
+        let box = ENTRY_BOX
+        draw_border{ &g, &frame, b, x = x + box, y, w = w - box, h = box, alpha = row_alpha, clip, override = no_img{} }
+        // The hexagon is a fill: the hilighted one pulses, a new item's normal one is half transparent;
+        // the slot view's frame alpha (row_frame_alpha) leaves it alone.
+        let ha = if lit { alpha * g.pulse_border } else if row.frame == FRAME_NEW { alpha * 0.5 } else { alpha }
+        let hc = item_frame_color{ frame = row.frame, hot = lit }
+        let bf = @as(f32, box)
+        put_image{ &frame, img = row.hex, x = @as(f32, x), y = @as(f32, y), w = bf, h = bf, color = mul_alpha{ c = hc, a = ha }, angle = 0.0, clip }
+        put_image{ &frame, img = row.icon, x = @as(f32, x), y = @as(f32, y), w = bf, h = bf, color = render::Color{ r = 1.0, g = 1.0, b = 1.0, a = alpha }, angle = 0.0, clip }
+        let a = text_area{ b = pc.border, x = x + box, y, w = w - box, h = box }
+        let mut col = pc.text.color
+        if row.has_color { col = row.color }
+        if lit and pc.kind == K_BUTTON and not row.has_color { col = color_hilight{} }
+        if not row.enabled { col = color_disabled{} }
+        if lit and pc.kind == K_BUTTON { col = mul_alpha{ c = col, a = g.pulse_border } }
+        draw_text_in{ &g, &frame, t = pc.text, text = row.text, color = mul_alpha{ c = col, a = alpha }, x = a.x, y = a.y, w = a.w, h = a.h, clip }
+        if row.count < 2 { return }
+        // The count: fnt_d16x16 in menu blue, bottom centred in a 19 pixel high box against the
+        // square's right edge, 21 pixels wide for one or two digits and 42 for more.
+        let mut digits: [12]u8
+        let n = put_digits{ into = digits[..], n = row.count }
+        let tw = if n <= 2 { 21 } else { 42 }
+        let mut t = pc.text
+        t.font = c.entry_font
+        t.align = A_CENTRE | A_BOTTOM
+        draw_text_in{ &g, &frame, t, text = digits[..n], color = mul_alpha{ c = color_menu{}, a = alpha }, x = x + box - tw, y = y + 37, w = tw, h = 19, clip }
+    }
+
+    // Writes `n` (not negative) in decimal at the start of `into`; returns how many bytes.
+    fn put_digits { into: []mut u8, n: i32 } -> usize {
+        let mut tmp: [12]u8
+        let mut k: usize = 0
+        let mut v = if n < 0 { 0 } else { n }
+        while true {
+            tmp[k] = @as(u8, 48 + v % 10)
+            k = k + 1
+            v = v / 10
+            if v == 0 or k >= tmp.len { break }
+        }
+        let mut i: usize = 0
+        while i < k and i < into.len {
+            into[i] = tmp[k - 1 - i]
+            i = i + 1
+        }
+        return i
     }
 
     // The scroll bar of a list box (0x00419660): border, thumb and arrows; with DRAWMODE 1 only

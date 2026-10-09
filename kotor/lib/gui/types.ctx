@@ -40,6 +40,11 @@ namespace gui {
     const FRAME_NEW: u8 = 2             // magenta, the normal frame half transparent
     const FRAME_REFUSED: u8 = 3         // the creature cannot wear it: red-orange, hilighted or not
 
+    // An item entry (CSWGuiItemEntry 0x006b5270 and the store's and upgrade bench's copies of it) is
+    // always this tall, whatever the prototype says: a square box this wide at the left holds the
+    // hexagon frame and the icon, both stretched to it, and the button frames take the rest.
+    const ENTRY_BOX: i32 = 56
+
     // ---- text alignment bits
     const A_LEFT: u32 = 1
     const A_CENTRE: u32 = 2
@@ -94,6 +99,8 @@ namespace gui {
         enabled: bool,
         checked: bool,                  // rows of check-box prototypes
         frame: u8,                      // item rows (CSWGuiItemEntry): FRAME_*, how the row's frames are tinted; 0 keeps the file's colours
+        hex: Img,                       // item entries: the hexagon frame behind the icon (lbl_hex_3, _6 or _7 by the stack)
+        count: i32,                     // item entries: the stack size, printed in the box's corner when 2 or more
     }
 
     struct Control {
@@ -135,6 +142,8 @@ namespace gui {
         bar_when_needed: bool,          // the scroll bar is drawn only while the rows overflow (the conversation's replies)
         picture_alpha: f32,             // the alpha of a picture put on the control with set_picture (the equipment screen draws the left hand's ghost of a two-handed weapon at 0.25)
         row_frame_alpha: f32,           // item rows: the alpha of a row's normal frame (the equipment screen's slot view draws none)
+        entry_rows: bool,               // the rows are item entries (ENTRY_BOX): an icon box at the left, the frames beside it
+        entry_font: i32,                // item entries: fnt_d16x16's slot for the stack count, -1 none
         click_rows: bool,               // item lists: a click on a row activates it (the rows are buttons in the original) and hovering one says so (row_hover)
         hover_row: i32,                 // -1 none
         // sounds (indices into guisounds.2da)
