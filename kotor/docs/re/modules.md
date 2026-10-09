@@ -186,7 +186,7 @@ When the message's "has minigame" byte is set it creates the minigame object (0x
 1. creates the scene `mainscene` (`CAurScene::Create` `0x00458e70`, area+0x184);
 2. loads `<area>.lyt` with a `CLayout` and creates one 0x48-byte room object per LYT room (array at
    area+0x260, count +0x25c): the room model (named after the room) placed at the LYT position,
-   looping `animloop1`..`animloop3` started on it, and per-room sound emitters (`MGB_null` /
+   looping `animloop1`..`animloop3` started on it (below), and per-room sound emitters (`MGB_null` /
    `sounddummy` helper models) for the ARE's `Rooms` sound entries whose `ModelPart` node exists
    in the room model; the load-screen bar advances every fifth room and at the last;
 3. only when the area has a minigame: hands the LYT tracks (swoop-race track pieces) and obstacles
@@ -200,6 +200,24 @@ When the message's "has minigame" byte is set it creates the minigame object (0x
    applies sun or moon lighting by `IsNight` (`ApplySunLighting` `0x006058c0` /
    `ApplyMoonLighting` `0x006059c0`) and sets the module's day phase (`CSWCModule::SetDayPhase`);
    returns 1, or 0 when the message runs short (med for this step's details).
+
+The room animations (high unless marked): scene slot 28 (`FUN_00456f30`) makes the room's model
+object (`FUN_00449cc0`, vtable `0x00741268`), and `CSWCArea::LoadArea` calls its slot `+0x18`,
+`PlayAnimation(name, speed, flags, start)` (`FUN_00485bd0`), three times: `animloop1`, `animloop2`,
+`animloop3`, each at speed 1.0 with flags 8 and start 0. A model object keeps a list of playing
+animations (+0xb0, count +0xb4). A play without flag 8 goes in at the first entry that is not
+layered and drops every entry after it (the usual "replace what plays"); with flag 8 the new entry
+goes in at the front (before entries flagged 0x200) and nothing is dropped, so the three loops play
+at once. Flags 8 has no bit 0, so each loops by its own length (gui3d.md). `CAurObject::Update`
+(`0x00486670`) advances every entry and applies them from the back of the list to the front
+(`FUN_00483d80` with the animation's node tree, a weight that reaches 1 at once with no transition),
+so each animation sets only the nodes it has keys for and, where two key the same node, the later
+one played wins: animloop3 over animloop2 over animloop1 (med for "only its keyed nodes", which
+follows from applying an animation's own node tree). In the data 45 models have `animloop2` or
+`animloop3`, nearly all rooms (the Endar Spire bridge's planet turns in `m01aa_07b` animloop2,
+Sith fighters fly in its animloop3; the Taris swoop garage `m10ac_35a` moves its overhead arms in
+animloop2; Dantooine's and Kashyyyk's rooms fly birds and bugs and drift mist); 6 of them key one
+node in two loops.
 
 The renderer also has its own LYT reader (`CAurScene::LoadLayout`, slot 27, `0x0044f8d0`:
 `roomcount` / `trackcount` sections only, rooms added through slot 28, then `LoadVisibility`) and a

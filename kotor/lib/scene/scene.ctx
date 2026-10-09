@@ -274,6 +274,16 @@ namespace scene {
         return true
     }
 
+    // Starts looping animation `name` on layer `slot` of a part, over what it plays
+    // (mdl_anim::play_layer); false if the model has no such animation.
+    fn play_layer { mut sc: Scene, mut w: world::World, part: usize, slot: usize, name: []u8 } -> bool {
+        let p = part_at{ sc = &sc, i = part }
+        let model = loaded_at{ sc = &sc, i = p.loaded }.model
+        let b = binding_for{ &sc, &w, model, source = p.source, name } ifnull { return false }
+        mdl_anim::play_layer{ player = &p.player, slot, binding = b, looping = true, speed = 1.0 }
+        return true
+    }
+
     // The length in seconds of animation `name` for a part's model (0 when the model's chain has none).
     fn length_of { mut sc: Scene, mut w: world::World, part: usize, name: []u8 } -> f32 {
         let p = part_at{ sc = &sc, i = part }
@@ -299,7 +309,11 @@ namespace scene {
                 let p = try add_part{ &sc, loaded, parent = -1, hook = "" }
                 try give_emitters{ &sc, &w, &dev, part = p }
                 part = @as(i32, p)
+                // CSWCArea::LoadArea starts all three, layered: each moves its own nodes (fans,
+                // lights, Taris' birds), animloop3 over animloop2 over animloop1 where they share one.
                 _ = play{ &sc, &w, part = p, name = "animloop1", looping = true, speed = 1.0, transition = 0.0 }
+                _ = play_layer{ &sc, &w, part = p, slot = 0, name = "animloop2" }
+                _ = play_layer{ &sc, &w, part = p, slot = 1, name = "animloop3" }
             }
             try list::push{ list = &sc.rooms, item = Room{ name = r.model, position = math::Vec3{ x = r.x, y = r.y, z = r.z }, part, visible = true, trees = -1 } }
         }

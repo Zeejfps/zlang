@@ -336,14 +336,18 @@ namespace mdl_anim {
     }
 
     // Plays one animation at a time, blending each new one in from the one before over its
-    // transition time.
+    // transition time, and up to LAYERS more over it at once (`play_layer`).
     struct Player {
         current: ?Track,
         previous: ?Track,                      // the animation blending out
         held: ?Track,                          // an animation held at its last frame under the rest (play_after)
+        layers: [LAYERS]?Track,                // played over the rest, in order (a room's animloop2 and animloop3)
         elapsed: f32,                          // time since the current one started
         transition: f32,                       // how long the blend takes
     }
+
+    // How many animations a player runs over its current one.
+    const LAYERS: usize = 2
 
     // Changes the pace of what is playing now, from where it is (a walker speeding up).
     fn set_speed { mut player: Player, speed: f32 } {
@@ -353,7 +357,17 @@ namespace mdl_anim {
     }
 
     fn new_player {} -> Player {
-        return Player{ current = null, previous = null, held = null, elapsed = 0.0, transition = 0.0 }
+        return Player{ current = null, previous = null, held = null, layers = [null; LAYERS], elapsed = 0.0, transition = 0.0 }
+    }
+
+    // Starts `binding`'s animation from its beginning on layer `slot` (below LAYERS), over the
+    // current animation and the layers before it, without blending: the original's layered play
+    // (flag 8 of CAurObject's PlayAnimation, docs/re/modules.md), which keeps the animations already
+    // playing and adds this one. Each moves only the nodes it keys; where two key the same node,
+    // the later layer wins.
+    fn play_layer { mut player: Player, slot: usize, binding: Binding, looping: bool, speed: f32 } {
+        if slot >= LAYERS { return }
+        player.layers[slot] = Track{ binding, time = 0.0, speed, looping, started = false }
     }
 
     // Starts `binding`'s animation from its beginning. `transition` is the blend-in time in
@@ -394,6 +408,14 @@ namespace mdl_anim {
         match &player.current {
             some{ &value } => { step{ track = &value, dt, on_event } }
             null => {}
+        }
+        let mut k: usize = 0
+        while k < LAYERS {
+            match &player.layers[k] {
+                some{ &value } => { step{ track = &value, dt, on_event } }
+                null => {}
+            }
+            k = k + 1
         }
     }
 
@@ -448,6 +470,12 @@ namespace mdl_anim {
         if cur != null {
             let w = if prev != null and player.transition > 0.0 { math::clamp{ x = player.elapsed / player.transition, lo = 0.0, hi = 1.0 } } else { 1.0 }
             apply{ model, binding = cur.binding, time = cur.time, weight = w, pose }
+        }
+        let mut k: usize = 0
+        while k < LAYERS {
+            let layer = player.layers[k]
+            if layer != null { apply{ model, binding = layer.binding, time = layer.time, weight = 1.0, pose } }
+            k = k + 1
         }
         finish{ model, pose }
     }
