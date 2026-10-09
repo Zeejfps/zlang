@@ -103,6 +103,7 @@ namespace ingame {
         gui::set_backdrop{ g = &ui.gui, fs = &w.fs, &dev, panel, kind = if n == MENU_MAP { 3 } else { 0 } }
         let bar = gui::open{ g = &ui.gui, fs = &w.fs, &dev, name = "top", mode = gui::Mode::placed, modal = false } iferr { 0 }
         ui.menu = n
+        w.last_menu = n
         ui.menu_panel = panel
         ui.top_panel = bar
         place_bar{ &ui, panel = bar }

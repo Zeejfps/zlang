@@ -118,7 +118,7 @@ NPC slots are the rows of `npc.2da` (0 Bastila, 1 Canderous, 2 Carth, 3 HK-47, 4
 | `PT_PAZSIDELIST` | List | all | 10 entries; struct id 0 | The 10 slots of the chosen side deck. |
 | `PT_PAZSIDELIST/PT_PAZSIDECARD` | INT | all | -1 | Card type in the slot; -1 empty. |
 | `PT_TUT_WND_SHOWN` | VOID | all | sizes 6 | Bit set of tutorial pop-ups already shown (6 bytes): the in-game GUI's tutorial-shown flags. |
-| `PT_LAST_GUI_PNL` | INT | all | 7 | Last in-game menu panel opened (the in-game GUI's last panel). |
+| `PT_LAST_GUI_PNL` | INT | all | 7 | The in-game GUI's current menu number (`CGuiInGame` `+0x2c`, 0 equipment .. 7 options; it stays when the menu closes, 0 before any opens): 7 for a save from the options menu, the last menu seen for a quick save (6 in one of the install's). |
 | `PT_FB_MSG_LIST` | List | all | 64 entries; struct id 0 | Feedback (combat) message log. |
 | `PT_FB_MSG_LIST/PT_FB_MSG_MSG` | CExoString | all | e.g. `Defense Breakdown…`, `Defense Breakdown…`, `Damage Breakdown:…` | Message text. |
 | `PT_FB_MSG_LIST/PT_FB_MSG_TYPE` | DWORD | all | 128 | Message category. |

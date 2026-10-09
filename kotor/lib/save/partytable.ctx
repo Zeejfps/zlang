@@ -14,8 +14,6 @@ namespace save {
     const PT_SLOTS: usize = 9
     const PT_PAZAAK_CARDS: usize = 18
     const PT_SIDE_CARDS: usize = 10
-    // The in-game menu panel a fresh install's save shows as last opened.
-    const PT_LAST_PANEL: i32 = 7
 
     fn write_party_table(S) { realloc: alloc::Fn(S), mut heap: S, w: *world::World, played_seconds: u32 } -> !alloc::Bytes {
         let mut b = try gffw::new{ realloc, heap = &heap, tag = "PT  " }
@@ -102,7 +100,7 @@ namespace save {
 
         let tutorial: [6]u8 = w.party.tutorial_shown
         try put_gff_value{ &b, owner = root, label = "PT_TUT_WND_SHOWN", value = gff::Value::void{ v = tutorial[..] } }
-        try put_gff_value{ &b, owner = root, label = "PT_LAST_GUI_PNL", value = gff::Value::int{ v = PT_LAST_PANEL } }
+        try put_gff_value{ &b, owner = root, label = "PT_LAST_GUI_PNL", value = gff::Value::int{ v = w.last_menu } }
         // The Messages logs (SavePartyTable 0x005648c0): the feedback lines, oldest first, with the
         // type the GUI keeps (0x80) and the colour byte (1 red: the attack summary), then the dialogue
         // lines (we keep no speaker apart from the text).
@@ -233,6 +231,8 @@ namespace save {
                 ti = ti + 1
             }
         }
+        // The in-game GUI's menu number (LoadPartyTable 0x00565d20 keeps the current one when the field is missing).
+        w.last_menu = @trunc(i32, gff::get_number{ doc = doc.*, s = gff::ROOT, label = "PT_LAST_GUI_PNL" } ifnull @as(i64, w.last_menu))
         let side = gff::get_list{ doc = doc.*, s = gff::ROOT, label = "PT_PAZSIDELIST" } ifnull none
         pc = 0
         while pc < PT_SIDE_CARDS {
