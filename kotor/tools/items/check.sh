@@ -27,8 +27,8 @@ expect equip_prev   bunk equip_preview.txt    160 "worn 1: 202 Clothing" "worn 1
 expect grenade      uppercity grenade.txt     300 "hp -11" "Frag Grenade x3"
 expect security     bunk security2.txt        260 "\*success\* : (Take 20 + 5 = 25 vs. DC 12)"
 expect security_sp  bunk security_spike.txt   260 "\*success\* : (Take 20 + 12 = 32 vs. DC 28)" "Security Spike Tunneler x1"
-expect consumables  bunk consumables2.txt     620 "fx : 7 effects" "leader hp 22 of 22"
-expect props        bunk props_effects.txt     60 "fx : 3 effects" "fx : 0 effects"
+expect consumables  bunk consumables2.txt     620 "^fx [0-9]* : 7 effects" "leader hp 22 of 22"
+expect props        bunk props_effects.txt     60 "^fx [0-9]* : 3 effects" "^fx [0-9]* : 0 effects"
 expect medpac_tut   bunk medpac_tutorial.txt  220 "leader hp 18 of 22"
 expect container    bunk container_give.txt   120 "Medpac x2"
 expect slots        bunk slots_lists.txt      110
