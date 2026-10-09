@@ -153,7 +153,7 @@ namespace vfx {
         let puffs = try alloc::resize(gui3d::Puff, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(gui3d::Puff){}, count = PUFFS }
         let out = try alloc::resize(render::Particle, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(render::Particle){}, count = PUFFS }
         let t = material::get{ cache = &sc.materials, fs = &w.fs, &dev, rm = w.rm.*, name = e.texture }
-        return gui3d::Emitting{ emitter = index, texture = t.texture, puffs, live = 0, owed = 0.0, rng = 0x2545F491 + 7919 * (index + 1), out }
+        return gui3d::Emitting{ emitter = index, texture = t.texture, puffs, live = 0, owed = 0.0, rng = 0x2545F491 + 7919 * (index + 1), out, seen = 0, latch = false }
     }
 
     // Starts the slot's animation (`anim`, else `impact`, else `default`) and fixes how long it
@@ -322,16 +322,6 @@ namespace vfx {
         if ci::eq{ a = event.name, b = "detonate" } { f.detonate = true }
     }
 
-    // Births `birthrate` particles (at least one) at once from an Explosion emitter.
-    fn burst { mut em: gui3d::Emitting, e: *mdl::Emitter, props: mdl::EmitterProps } {
-        let want = math::max{ a = props.birthrate, b = 1.0 }
-        let mut n: usize = 0
-        while @as(f32, n) < want and em.live < em.puffs.len {
-            gui3d::spawn{ &em, e, props }
-            n = n + 1
-        }
-    }
-
     // Moves every live effect on by `dt` seconds: its place, its animation, its particles.
     fn update { mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, dt: f32 } {
         v.time = v.time + dt
@@ -385,7 +375,7 @@ namespace vfx {
             gui3d::step_emitting{ em, e = ex, props, dt = dt_eff }
             // A burst after the step, so its particles are seen at least once even when they
             // live less than a frame (a muzzle flash lives 0.02 s).
-            if explodes and f.detonate { burst{ em, e = ex, props = p.pose.emitters[e - 1] } }
+            if explodes and f.detonate { gui3d::burst{ em, e = ex, props = p.pose.emitters[e - 1] } }
             if em.live > 0 { all_quiet = false }
         }
         f.detonate = false

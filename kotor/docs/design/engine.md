@@ -466,7 +466,9 @@ and it can be rebuilt from the world at any time):
   The head part plays its own (`pause1` while the body idles, `talk` while talking).
 - Each frame `scene::sync{ &scene, w, dt }` updates visuals (transform from position and facing,
   animation changes, advance players by `clock.dt`), and `scene::draw{ &scene, &frame, view }`
-  adds rooms, objects (`mdl_render::add_draws`), lights and the leader's planar shadow.
+  adds rooms, objects (`mdl_render::add_draws`), lights and the leader's planar shadow, and steps and
+  draws the particle emitters of the rooms and objects it draws (`lib/scene/emitters.ctx`; vfx.md,
+  "World emitters").
 - **Camera** (`cam`, movement.md 2.3): the chase camera from camerastyle.2da's row for the area's
   CameraStyle (DEFAULT: distance 3.2, pitch 83, height 0.45, FOV 55), the look-at point the
   leader's position + head height + CameraHeightOffset, yaw from Z/C (the rate integrator) and

@@ -23,6 +23,8 @@ namespace gui3d {
         owed: f32,                          // births carried to the next step (a fraction of one)
         rng: u32,
         out: []mut render::Particle,        // the live ones as the seam takes them
+        seen: u32,                          // a world emitter: the scene frame it was last stepped in, 0 never (lib/scene/emitters.ctx)
+        latch: bool,                        // an Explosion emitter: its owner's animation said `detonate`, not burst yet
     }
 
     // ---- random numbers (xorshift32: the stream matters only for variety)
@@ -67,7 +69,7 @@ namespace gui3d {
         let t = material::get{ cache = &mats, &fs, &dev, rm, name = e.texture }
         return Emitting{
             emitter = index, texture = t.texture, puffs, live = 0, owed = 0.0,
-            rng = 0x2545F491 + 7919 * (index + 1), out,
+            rng = 0x2545F491 + 7919 * (index + 1), out, seen = 0, latch = false,
         }
     }
 
@@ -121,6 +123,17 @@ namespace gui3d {
         while em.owed >= 1.0 {
             em.owed = em.owed - 1.0
             if @as(usize, em.live) < em.puffs.len { spawn{ &em, e, props } }
+        }
+    }
+
+    // Births `birthrate` particles (at least one) at once from an Explosion emitter: its burst on the
+    // animation's `detonate`.
+    fn burst { mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps } {
+        let want = math::max{ a = props.birthrate, b = 1.0 }
+        let mut n: usize = 0
+        while @as(f32, n) < want and em.live < em.puffs.len {
+            spawn{ &em, e, props }
+            n = n + 1
         }
     }
 

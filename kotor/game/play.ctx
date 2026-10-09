@@ -251,6 +251,7 @@ namespace play {
             }
             sc.grass.on = disp.applied.grass     // the Grass option, every frame (a new area's scene starts with it on)
             sc.room_light = not disp.applied.fx_original and disp.applied.fx_room_light > 0     // the Room Light option, likewise
+            sc.emitters_on = disp.applied.emitters      // the Emitters option: the world's emitters too (lib/scene/emitters.ctx)
             // Another texture pack: the area's textures are loaded again from it, as a load does (the world stays).
             if reload_scene and w.transition == null {
                 dlgview::leave{ v = &dview, w = &w, sc = &sc, g = &ui.gui }
@@ -620,6 +621,7 @@ namespace play {
                 if opts.shots[s].frame == frame_no {
                     try screenshot{ &w, &dev, heap = &scene_arena, path = opts.shots[s].path, frame_no }
                     _ = @fmt(&w.io, "  frame: {} draws, {} shadows, {} lights, {} emitters, {} particles\n", frame.draw_count, frame.shadow_count, frame.light_count, frame.emitter_count, frame.particle_count)
+                    _ = @fmt(&w.io, "  world emitters: {} drawn, {} particles\n", sc.drawn_emitters, sc.drawn_particles)
                     fxhud::log{ &w, dev }
                     if frame.view_count > 0 { scene::log_sun{ sc = &sc, &w, sun = frame.views[0].sun } }
                     if scene::light_of{ sc = &sc, id = w.pc } is some{ value = c } {

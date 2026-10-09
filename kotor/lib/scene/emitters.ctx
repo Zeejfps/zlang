@@ -1,0 +1,109 @@
+// The particle emitters of the world's models (docs/design/vfx.md, "World emitters"): the rooms'
+// smoke, steam, sparks, flares, ripples, birds and crowds, and the objects' (a placeable's smoke, a
+// droid's sparks, a door's flares). The particles are gui3d::Emitting's, one per emitter node of a
+// part, kept in the part.
+//
+// The original runs them inside its scene render (docs/re/particles.md, "Which emitters run"): only
+// an emitter that is drawn is stepped, once a frame by the frame's time (at most 0.1 s), so one out
+// of sight stands still until it is seen again; what is drawn is the rooms visible from the current
+// room (VIS) and, in them, every emitter whose origin lies inside the view (0x0046a730); the rooms'
+// emitters run 10 s ahead before the area's first picture (0x004511f0). Ours does the same in
+// scene::draw: a room's emitters on the room's first sight, an object's when its visual is drawn.
+namespace scene {
+    // What a draw's emitters are seen by: the view's volume, and the Emitters option.
+    struct Sight { frustum: math::Frustum, on: bool }
+
+    // Gives part `part` its model's emitters (nothing when it has none): their particle arrays in the
+    // scene arena, their textures through the material cache.
+    fn give_emitters { mut sc: Scene, mut w: world::World, mut dev: gpu::Device, part: usize } -> ! {
+        let model = loaded_at{ sc = &sc, i = part_at{ sc = &sc, i = part }.loaded }.model
+        if model.emitters.len == 0 { return }
+        let ems = try alloc::resize(gui3d::Emitting, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(gui3d::Emitting){}, count = model.emitters.len }
+        let mut e: usize = 0
+        while e < ems.len {
+            ems[e] = try gui3d::make_emitting{ fs = &w.fs, dev = &dev, heap = sc.arena, mats = &sc.materials, rm = w.rm.*, model, index = @as(u32, e) }
+            e = e + 1
+        }
+        part_at{ sc = &sc, i = part }.emitting = ems
+    }
+
+    // The start of a view's draw: a new scene time is a new frame, whose emitters step by the time
+    // since the last frame drawn.
+    fn begin_emitters { mut sc: Scene, frame: *render::Frame, view: u32 } -> Sight {
+        if sc.time != sc.fx_time {
+            sc.fx_dt = if sc.fx_time < 0.0 { 0.0 } else { sc.time - sc.fx_time }
+            sc.fx_time = sc.time
+            sc.fx_frame = sc.fx_frame + 1
+        }
+        let cam = frame.views[view].camera
+        return Sight{ frustum = math::frustum::from_matrix{ m = math::mat4::mul{ a = cam.proj, b = cam.view } }, on = sc.emitters_on }
+    }
+
+    // Steps (the first time this frame) and draws the emitters of part `part`, placed by `instance`,
+    // that the view sees. `warm`: a room's, which run 10 s before they are first shown.
+    fn draw_emitters { sc: *Scene, mut frame: render::Frame, view: u32, part: usize, instance: math::Mat4, sight: Sight, warm: bool } {
+        let p = part_at{ sc, i = part }
+        if p.emitting.len == 0 or not sight.on { return }
+        let model = loaded_at{ sc, i = p.loaded }.model
+        // The original steps by the frame's time, at most 0.1 s (0x004509b0).
+        let dt = math::min{ a = sc.fx_dt, b = gui3d::MAX_STEP }
+        let mut e: usize = 0
+        while e < p.emitting.len {
+            let ex = &model.emitters[e]
+            let em = &p.emitting[e]
+            let props = p.pose.emitters[e]
+            e = e + 1
+            let world = math::mat4::mul{ a = instance, b = p.pose.world[ex.node] }
+            // Its origin, a point, must be inside the view (0x0046a730 tests a sphere whose radius is 0
+            // but for a point-to-point emitter's).
+            if not math::frustum::intersects_sphere{ f = sight.frustum, center = math::mat4::get_translation{ m = world }, radius = 0.0 } { continue }
+            if em.seen != sc.fx_frame {
+                if em.seen == 0 and warm { warm_up{ em, e = ex, props } }
+                step_one{ em, e = ex, props, dt }
+                em.seen = sc.fx_frame
+            }
+            let n = gui3d::fill_particles{ em, e = ex, props }
+            if n == 0 { continue }
+            let look = gui3d::look_of{ e = ex, world }
+            render::add_emitter{ &frame, emitter = render::Emitter{
+                view, texture = em.texture, blend = look.blend, grid_x = ex.x_grid, grid_y = ex.y_grid,
+                facing = look.facing, axis = look.axis, transform = world, first = 0, count = 0, effect = true,
+                fog = true, sort = @as(i32, ex.render_order),
+            }, particles = em.out[..@as(usize, n)] }
+        }
+    }
+
+    // 100 steps of 0.1 s, as the original runs every room emitter at the scene's first render, so
+    // smoke and mist are at their steady state when first seen.
+    fn warm_up { mut em: gui3d::Emitting, e: *mdl::Emitter, props: mdl::EmitterProps } {
+        let mut i: u32 = 0
+        while i < 100 {
+            step_one{ &em, e, props, dt = gui3d::MAX_STEP }
+            i = i + 1
+        }
+    }
+
+    // One step: an Explosion emitter gives birth only in a burst, when its owner's animation said
+    // `detonate` since its last step (the original's latch, set by 0x0048d770).
+    fn step_one { mut em: gui3d::Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, dt: f32 } {
+        let explodes = e.update == mdl::EmitterUpdate::explosion
+        let mut fed = props
+        if explodes {
+            fed.birthrate = 0.0
+            fed.random_birthrate = 0.0
+        }
+        gui3d::step_emitting{ &em, e, props = fed, dt }
+        if explodes and em.latch { gui3d::burst{ &em, e, props } }
+        em.latch = false
+    }
+
+    // An animation event of a part with emitters: `detonate` latches its Explosion emitters.
+    fn latch_on_detonate { p: *mut Part, event: mdl::Event } {
+        if not ci::eq{ a = event.name, b = "detonate" } { return }
+        let mut e: usize = 0
+        while e < p.emitting.len {
+            p.emitting[e].latch = true
+            e = e + 1
+        }
+    }
+}

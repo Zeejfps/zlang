@@ -90,6 +90,56 @@ freezes (`+0x6c`): it stops being stepped, its quaternion is turned to lie along
 (kept at `+0x48`), and it sits 2 cm off the surface (plus sizeStart for a chunk model). (The
 global `0x00798ba0` that selects this rule is 1; its mode 2 is unused.)
 
+## Which emitters run, and when
+
+Read on 2026-10-09 from the decompile (confidence high unless marked). The original has no update pass
+for emitters: they are stepped while the scene is drawn, and only those that are drawn.
+
+- **Collection.** `CAurScene::Render` (`0x004512d0`) calls `0x0046e5c0`, which gathers the frame's
+  meshes and emitters. With rooms (scene `+0xc8` array, count `+0xcc`), `0x0046d070` lists the rooms
+  to look at: the current room (scene `+0xd4`) and the rooms its VIS entry names (room `+0x5c`, count
+  `+0x60`), or every room when there is no current room. Each listed room's node tree is walked
+  against the camera's frustum (`0x004ad7e0`, planes at camera `+0x1f8`), calling `0x0046d3b0` on
+  each node. That callback tests the node's meshes (`+0xc`/`+0x10`, `0x0046a8c0`) and its emitters
+  (`+0x24`/`+0x28`) and appends each emitter that passes to a global list (`0x007fbf78`, count
+  `0x007fbf7c`); a second emitter list of the node (`+0x8c`, copied by `0x0046d250`) is appended
+  without duplicates. Our reading is that the second list holds the emitters of the models placed in
+  the node besides the room's own, the placeables', doors' and creatures' (med: the code that fills
+  it was not traced).
+- **The cull is a point.** `0x0046a730` asks the emitter for its world position (vtable `+0xc`) and
+  drops it when the distance outside any frustum plane exceeds emitter `+0xd0`. `+0xd0` is written
+  only for point-to-point emitters (the distance to the target, `0x00494da0` and `0x0049b240`), so
+  for every other emitter it is 0: an emitter whose origin is off screen is neither stepped nor
+  drawn, even when its particles would be in view. (high for the code; med for the frustum's planes
+  being the camera's own, unclipped)
+- **The pass.** The scene's emitter pass (`0x004509b0`, vtable slot `+0x110`) runs when the globals
+  `0x0078e3d8` and `0x0078e614` are set (both 1 in the image; nothing found that clears the first).
+  It sorts the list (`0x0044f5a0`: two emitters of the same model by a short at node `+0x108`;
+  otherwise Lighten emitters, blend code 2 at `+0x4c`, after the rest; otherwise far to near by the
+  distance from the camera to the owning model's position `+0x78`, or the emitter's own `+0x8`
+  without an owner), then for each one: steps it (`0x00494da0` with min(frame delta, 0.1 s), see
+  [gui3d.md](gui3d.md)) when the scene's byte `+0xda` is set or the owning model's byte `+0x10` is
+  (vtable `+0x170`, `0x0043e850`; set by slot `+0xdc`, `0x0043e830`), and draws it (`0x0049b680`).
+  `CAurScene::CAurScene` sets `+0xda` to 1 and no direct caller of the clearing slot 25 (`0x0044f3b0`)
+  was found, so in practice every emitter that is drawn is stepped (med). An emitter out of sight
+  keeps its particles where they were until it is seen again, then goes on by one frame's time.
+- **Warm-up.** On the scene's first render (frame counter scene `+0x50` still 0) `0x004511f0` steps
+  every emitter of every room (room `+0x58`, emitters `+0x24`/`+0x28`) and of the scene's own list
+  (`+0x94`/`+0x98`) 100 times by 0.1 s: the rooms' smoke and mist are 10 s along in the first picture.
+  The objects' emitters are not in those lists and start empty.
+- **Detonate.** An Explosion emitter registers `Detonate` on its owning model (above); the handler
+  (`0x0048d770`) sets the latch `+0x1f6`, which the Explosion update consumes, so a latch set while the
+  emitter is not drawn waits for its next step.
+- **No option.** Nothing reads an `Emitters` key or switches the pass off from the options
+  ([../mechanics/graphics.md](../mechanics/graphics.md)): every emitter of a visible room runs.
+
+What the area data holds (counted over every LYT's rooms): at most 200 emitters an area (`m25ab`;
+`m22aa` 186, `m02ae` 172), mostly `Single` sprites (Kashyyyk's birds, 342 in `m22aa`'s rooms, a
+crowd of sprites in `m02ae_07a`, waves) and `Fountain` smoke, steam, fire, sparks, ripples, sand
+and bubbles; Explosion 34 and Lightning 3 in rooms. Placeables (539 emitters, e.g. `plc_starmap`'s 68
+`Single` sprites, `plc_smk01` smoke), doors (`dor_lsi06`'s 20 flares, `dor_lta02` smoke) and a few
+creatures (`c_drdastro`, `c_drdwar`, `c_turret01`) have them too.
+
 ## The three update types
 
 Fountain and Explosion first age their particles (`0x00494b30`): a particle whose age has reached

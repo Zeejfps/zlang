@@ -205,6 +205,33 @@ EXE=kotor/out/kotor_combat.exe FAST=1 SPEED=1 LOG=combat,trace LOAD=kotor/out/ch
 (`SPEED=1` so each screenshot is of its own tick; up to 16 screenshots per run, and none after
 `--frames`.)
 
+## World emitters (lib/scene/emitters.ctx)
+
+The emitters that are part of the world's models, not effects: a room's smoke, steam, fire, sparks, ripples, sand,
+birds and crowds, and those of the objects' models (the star map's sprites, a door's flares, a droid's sparks). They
+use the same `gui3d::Emitting` simulation and `render::Emitter` drawing as the effects, kept in the scene part that
+shows the model (`Part.emitting`, made by `scene::give_emitters` when a room is loaded or a visual is made; a model
+without emitters costs nothing). What runs follows the original ([../re/particles.md](../re/particles.md), "Which
+emitters run"):
+
+- they are stepped inside `scene::draw`, not by `sync`: an emitter is stepped the first time it is drawn in a frame,
+  by the time since the frame before (at most 0.1 s), and one that is not drawn stands still until it is seen again;
+- what is drawn: the emitters of the rooms visible from the leader's room (VIS) and of the visuals drawn in them,
+  each only while its origin lies inside the view (the original's point cull: smoke whose source is just off screen
+  goes with it);
+- a room's emitters run 10 s ahead (100 steps of 0.1 s) the first time they are drawn, as the original does for
+  every room at the area's first picture; an object's start empty;
+- an `Explosion` emitter bursts when its part's animation says `detonate` (rooms and objects alike; the latch waits
+  for the emitter's next step), and gives no other birth;
+- they are `effect` emitters, so the Emitters option drops them, and with the option off they are not stepped either
+  (`sc.emitters_on`, set by `game/play.ctx` each frame). The original has no such switch.
+
+Cost: one draw a visible emitter. The heaviest areas draw 40 to 80 at once (Manaan's Ahto West, Kashyyyk's landing:
+mostly one-particle `Single` sprites) for about 0.2 to 0.3 ms a frame more in a headless run that draws every frame
+(3,000 frames: `manm26aa` 6.0 to 6.4 s before, 6.8 to 7.1 s after; `kas_m22aa` 3.9 s, 4.4 to 4.7 s). A fast replay
+(`--no-render`) draws, and so steps, only the frames it pictures. The screenshot log has a line
+`world emitters: N drawn, M particles` (grass apart), which `kotor/tools/gfx/world_emitters.sh` checks.
+
 ## Decisions (ours) and open items
 
 - Bolt speed is the engine's 23.8 ms/m (42 m/s); the streak's length factor is ours.
@@ -225,6 +252,9 @@ EXE=kotor/out/kotor_combat.exe FAST=1 SPEED=1 LOG=combat,trace LOAD=kotor/out/ch
   only row 1003, both 1401). The engine-coded codes other than 1401-1426 (beams 608-621, the fizzle
   and resist models 1201/1202, the medal and Revan masks 1700-1702, the player's camera and
   full-screen effects, the vision modes) are not drawn.
+- World emitters: particles live in their emitter's space, as the effects' do (the original keeps them in world
+  space; the same for an emitter that does not move, which is nearly every room's); Lightning emitters stay quiet;
+  only `animloop1` plays on a room, so emitters keyed in `animloop2`/`animloop3` are not animated.
 - Not done: footsteps, melee blood (the game has none), beams, thrown grenades and Force
   projectiles in flight (above), the Jedi's blade colours by crystal (blades show the model's
   own).

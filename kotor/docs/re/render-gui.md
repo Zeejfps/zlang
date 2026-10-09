@@ -374,6 +374,10 @@ first cutscene) are that data, not a renderer fault; drawing lightmap only (diff
 off) shows the same black areas. No other mesh of that lightmap uses its v 0.88..1 band, which
 confirms our V orientation for TGA lightmaps. Our enhanced renderer's Lifted lightmaps (ours, the default) lift
 such texels to a dark floor ([../design/enhanced-render.md](../design/enhanced-render.md), "Lifted lightmaps").
+The room's own emitters stand in front of those ends: `smoke044` (child of `Object107`, 40 particles a second for
+6 s) fills the south dead end and `smoke011`/`smoke022` (children of `Box108`) the side passage, which then read as
+grey haze rather than black; `DamageSpark77`/`DamageSpark12` spit small sparks from the walls. Ours ran no room
+emitter before 2026-10-09 ([particles.md](particles.md), "Which emitters run").
 
 When the lightmap texture fails to load, `0x00470d30` clears the mesh's lightmapped flag (mesh
 +0x184; the material's lightmap at +4 is checked by `0x00420bf0`) and the mesh takes the

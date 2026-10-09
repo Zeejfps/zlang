@@ -28,6 +28,7 @@ namespace scene {
         parent: i32,                    // the part it hangs from (index in Scene.parts), -1 none
         hook: []u8,                     // the parent's node it hangs at
         source: ?*mdl::Model,           // a stunt model whose animations this part plays besides its own (lib/dialog)
+        emitting: []mut gui3d::Emitting,    // its model's emitters' particles (emitters.ctx), empty until given
     }
 
     struct Room {
@@ -89,6 +90,12 @@ namespace scene {
         grade_state: u8,                // 0 not made yet, 1 made, 2 none
         hfog: render::HeightFog,        // the area's height fog (atmosphere.ctx)
         hfog_state: u8,                 // 0 not looked for yet, 1 found, 2 none
+        emitters_on: bool,              // the Emitters option (set by the owner): the world's emitters run and draw (emitters.ctx)
+        fx_frame: u32,                  // frames drawn so far (a new scene time), for stepping each emitter once a frame
+        fx_time: f32,                   // the scene time of the last of them
+        fx_dt: f32,                     // and how long before it the one before was drawn
+        drawn_emitters: u32,            // the world emitters the last draw showed, and their particles (the screenshot log)
+        drawn_particles: u32,
     }
 
     fn make { arena: *mut arena::Arena, heap: *mut heap::Heap, scratch: alloc::Bytes, rm: res::Manager } -> Scene {
@@ -110,6 +117,7 @@ namespace scene {
             room_light = false, field = no_field{ arena },
             sun_state = 0, sun_at = math::vec3::zero{}, sun_color = math::vec3::zero{}, shadow_opacity = 0.5,
             grade = null, grade_state = 0, hfog = render::no_height_fog{}, hfog_state = 0,
+            emitters_on = true, fx_frame = 0, fx_time = -1.0, fx_dt = 0.0, drawn_emitters = 0, drawn_particles = 0,
         }
     }
 
@@ -206,6 +214,7 @@ namespace scene {
         }
         try list::push{ list = &sc.parts, item = Part{
             loaded, pose, player = mdl_anim::new_player{}, anim = [0; 32], anim_len = 0, next = [0; 32], next_len = 0, parent, hook, source = null,
+            emitting = slice::empty(gui3d::Emitting){},
         } }
         return sc.parts.len - 1
     }
@@ -288,6 +297,7 @@ namespace scene {
             let loaded = try load_model{ &sc, &w, &dev, name, body_texture = "", envmap = "", hide_null = false }
             if loaded != null {
                 let p = try add_part{ &sc, loaded, parent = -1, hook = "" }
+                try give_emitters{ &sc, &w, &dev, part = p }
                 part = @as(i32, p)
                 _ = play{ &sc, &w, part = p, name = "animloop1", looping = true, speed = 1.0, transition = 0.0 }
             }
@@ -440,14 +450,17 @@ namespace scene {
 
     // The animation's events of a creature's body (a swing, a body hitting the ground) are the
     // creature's: fight::animation_event makes their sounds.
-    fn animation_event { mut w: world::World, owner: u32, event: mdl::Event } {
+    fn animation_event { mut w: world::World, owner: u32, p: *mut Part, event: mdl::Event } {
         fight::animation_event{ &w, id = owner, name = event.name }
+        latch_on_detonate{ p, event }
     }
 
     fn advance_owned { mut sc: Scene, mut w: world::World, part: usize, dt: f32, owner: u32 } {
         let p = part_at{ sc = &sc, i = part }
         if owner != obj::INVALID {
-            mdl_anim::advance{ player = &p.player, dt, on_event = animation_event{ &w, owner, _ } }
+            mdl_anim::advance{ player = &p.player, dt, on_event = animation_event{ &w, owner, p, _ } }
+        } else if p.emitting.len > 0 {
+            mdl_anim::advance{ player = &p.player, dt, on_event = latch_on_detonate{ p, _ } }
         } else {
             mdl_anim::advance{ player = &p.player, dt, on_event = mdl_anim::ignore_event }
         }
@@ -467,6 +480,9 @@ namespace scene {
     fn draw { mut sc: Scene, w: *world::World, mut frame: render::Frame, view: u32 } {
         sc.drawn_rooms = 0
         sc.drawn_objects = 0
+        let sight = begin_emitters{ &sc, frame = &frame, view }
+        let e0 = frame.emitter_count
+        let p0 = frame.particle_count
         let rooms = list::items{ list = sc.rooms }
         let mut i: usize = 0
         while i < rooms.len {
@@ -478,13 +494,18 @@ namespace scene {
             let instance = math::mat4::translation{ t = r.position }
             add_lights{ &frame, model = l.model, pose = p.pose, instance }
             _ = mdl_render::add_draws_look{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = instance, materials = l.materials, time = sc.time, look = null, cast = null, kind = render::DrawKind::room, ambient = 0 }
+            draw_emitters{ sc = &sc, &frame, view, part = @as(usize, r.part), instance, sight, warm = true }
             sc.drawn_rooms = sc.drawn_rooms + 1
         }
         mark_sun{ sc = &sc, &frame, view }
         // Grass stands on the floor of the rooms it is seen in: it comes with them (the eye and the way it looks are the view's).
         let cam = frame.views[view].camera
         let forward = math::Vec3{ x = -cam.view.m[2], y = -cam.view.m[6], z = -cam.view.m[10] }
+        let e1 = frame.emitter_count
+        let p1 = frame.particle_count
         grass::draw{ f = &sc.grass, &frame, view, eye = cam.eye, forward, ambient = sc.ambient, time = sc.time }
+        let e2 = frame.emitter_count
+        let p2 = frame.particle_count
         let visuals = list::items{ list = sc.visuals }
         i = 0
         while i < visuals.len {
@@ -493,9 +514,12 @@ namespace scene {
             if not v.alive { continue }
             if v.room >= 0 and @as(usize, v.room) < rooms.len and not rooms[@as(usize, v.room)].visible { continue }
             let o = world::object{ w, id = v.id } ifnull { continue }
-            visual::draw{ sc = &sc, w, v = &v, o, &frame, view }
+            visual::draw{ sc = &sc, w, v = &v, o, &frame, view, sight }
             sc.drawn_objects = sc.drawn_objects + 1
         }
+        // The world's emitters, grass apart (the screenshot log's count).
+        sc.drawn_emitters = (e1 - e0) + (frame.emitter_count - e2)
+        sc.drawn_particles = (p1 - p0) + (frame.particle_count - p2)
     }
 
     // SetLightsaberPowered: `forced` fixes the blade lit or dark whatever the creature is doing,
