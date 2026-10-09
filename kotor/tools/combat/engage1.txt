@@ -1,0 +1,29 @@
+30 ui bot off
+31 ui heal
+31 ui sethp pc 300
+32 ui autopause on
+35 ui foe g_sithtroop01 12 0
+45 ui fight
+46 ui clicktag BTN_TARGET0
+60 ui fight
+60 ui ctl BTN_CLEARALL
+60 ui ctl BTN_CLEARONE
+60 ui ctl LBL_QUEUE0
+60 ui ctl LBL_QUEUE1
+62 key 1
+75 ui fight
+75 ui ctl LBL_QUEUE1
+77 key f
+90 ui fight
+90 ui ctl BTN_CLEARALL
+90 ui ctl LBL_QUEUE0
+92 key r
+105 ui fight
+105 ui ctl BTN_CLEARALL
+105 ui ctl LBL_QUEUE0
+107 key space
+130 ui fight
+160 ui fight
+200 ui fight
+300 ui fight
+600 ui fight

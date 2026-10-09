@@ -88,7 +88,13 @@ namespace rt_combat {
         let mut a = actions::make{ kind = actions::Kind::attack_object }
         a.params[0] = actions::Param::object{ id = target }
         a.params[1] = actions::Param::int{ v = passive }
-        _ = actions::add{ &w, id = nwvm::self_object{ vm }, action = a, force = false }
+        let me = nwvm::self_object{ vm }
+        _ = actions::add{ &w, id = me, action = a, force = false }
+        // AddAttackActions 0x004fde40 marks the player's character or the party's leader as "going to be attacked
+        // by" the attacker (+0x520), which keeps the leader in combat mode while that foe lives (hud::update_combat_modes).
+        if target == w.pc or target == party::leader{ w = &w } {
+            if creature_of{ w = &w, id = target } is some{ value = tc } { tc.attacked_by = me }
+        }
     }
 
     // GetAttackTarget(object oCreature = OBJECT_SELF), GetAttemptedAttackTarget() (no argument:

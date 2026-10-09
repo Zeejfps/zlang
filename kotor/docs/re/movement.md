@@ -309,10 +309,78 @@ camera is not torn down by it. (high)
 
 **Combat mode.** `CSWCCreature::SetCombatMode(b)` (`0x00610a10`) sets the client creature's
 `+0x440` bit 0; for the controlled creature it calls `CClientExoAppInternal::SetCombatMode`
-(`0x005f3a80`), which, when the value changes, stores `client+0x320` and calls `StartCombatCamera`
-(on) or `RestoreDefaultCamera` (off). The CancelCombat key (240) turns it off for the leader and
-cancels the leader's server actions. While it is on, target cycling only offers hostiles (7.3).
-(high)
+(`0x005f3a80`), which clears `client+0x3e0` when turning off and, when the value changes, stores
+`client+0x320` and calls `StartCombatCamera` (on) or `RestoreDefaultCamera` (off). The CancelCombat
+key (240) turns it off for the leader and cancels the leader's server actions. While it is on,
+target cycling only offers hostiles (7.3). `CSWCParty::SetLeader` (`0x00635480`) hands the client
+the new leader's own bit. (high)
+
+Combat mode is **not** the server's combat state (`SetCombatState` `0x004f2610`, creature `+0x4e0`,
+8 s after the last hostile act, [combat.md](combat.md)), nor the server's attack mode `+0x4d2` that
+the move command turns off (`SetCombatMode(0, 1)` `0x0050ee80`, [actions.md](actions.md)). Everything
+the player sees of "combat" follows the client bit: the HUD's combat bar and queue
+([gui.md](gui.md) "Combat mode, queue, clear buttons"), Disengage and F, the combat camera, the
+combat reticle, hostile-only Q / E, the end-of-round, new-target and enemy-sighted auto-pause
+conditions, the dropped movement keys (1.4). (high)
+
+*Turned on* (all high):
+- by the target block (`CSWGuiTargetInfo::UseAction` `0x00689610`): when the leader is out of
+  combat mode (`+0x440` and `client+0x320` both clear) and the block's target kind
+  (`FUN_0060fc00`, stored at `+0x1aea`: 3 a creature whose client hostile slot `+0x138` answers or
+  while the 1.5 s keep timer `client+0x378` runs, 2 another creature, 0 a door or a placeable with
+  an inventory, 2 one without, 1 a trigger) is 3, then after the entry's callback, if the leader is
+  still out of combat mode, `SetCombatMode(1)`. (The decompile loses this flag: asm
+  `0x006896f4`–`0x00689710` and `0x006897c3`.) Security on a door, a mine's Disable or Recover do
+  not turn it on;
+- by the hostile-target callbacks themselves, before or after the order goes to the server: attack
+  (`0x00616900`), feat attack (`0x00617dd0`, after its tutorial pop-up), Force power (`0x00616200`),
+  grenade / item (`0x006167d0`, `0x00617e40`), and `DefaultActionAttack` (`0x00616800`: the R key or
+  a second click on a hostile, after tutorials 0x23 and 0x22; it also arms a 3000 ms window
+  `client+0x3e0` in which another default attack offers tutorial 0x23). None of them waits for the
+  game to run: paused, the combat bar is up at once;
+- every client frame by `0x005f3ad0` (below), from the server's targets.
+
+*Turned off*: by Disengage (`ClearAllCombatActions` `0x006887d0`) and F (`HandleInputAction` 240,
+only while `client+0x320`), both with `CancelServerActions` (1.4); by `CSWSCreature::CancelCombat`
+(`0x004fdaa0`, the CancelCombat routine and `SurrenderToEnemies`); and by `0x005f3ad0`. (high)
+
+**`0x005f3ad0`**, called by `MainLoop` right after `UpdateSelectableObjects` (7.1, so also while
+paused), walks the client party (`client+0x270`), every member, not only the leader (high for the
+flow; the vtable slots read from the vtables: object `+0x10` returns the object for every server
+object, `+0x30` only for a creature, slot `+0x94` is `GetDead`, the client creature's `+0x138` is
+`+0x2dc == 2`, its client hostile flag):
+
+1. *Out of combat mode*: on when its server creature's attempted attack target (`+0x50c`) is a live
+   object, or its attempted spell target (`+0x524`) is one that is neither itself nor `+0x50c`.
+   "Live" is `GetDead` false: a creature with HP 1 or more (-9 or more for the player's character; a party member never counts as dead:
+   `CSWSCreature::GetDead` `0x004ef820`), a door or placeable with HP 1 or more (or its `+0xf8`
+   set, `0x00588ab0`). So bashing a door turns it on too, a frame after the order, since
+   `AddAttackActions` sets `+0x50c` as the order is queued. (high)
+2. *In combat mode*: off when all of these hold (high):
+   - the member is not slot 0, or the leader's dead-target keep timer (`client+0x378`, 1.5 s, 7.1)
+     has run out;
+   - the member's client creature is not hostile (`+0x138`);
+   - (a test of the door / placeable callbacks `FUN_00683ee0` `+0x2c4`, `FUN_00682e00` `+0x260`
+     that only runs for a member whose client object is not a creature: dead code in practice);
+   - `+0x50c` is not a live object, `+0x524` (when it differs from `+0x50c`) is not a live object
+     (itself included), and the "going to be attacked by" `+0x520` (when it differs from both) is
+     gone, dead, or a live creature whose client hostile flag is clear. A live attacker that is not
+     a creature, or a live hostile one, keeps combat mode on.
+   It then sets `client+0x394` = -1, so the enemy-sighted latch (7.1 step 3) lets go on the first
+   frame without a hostile in view instead of after 10 s, and calls `SetCombatMode(0)`.
+3. Afterwards, for the controlled creature in combat mode, the party entry's combat message
+   (`party+0xa8` for its slot, set by `0x006345e0` from the attack, cast and item-cast actions and
+   the HUD's `Update`) is shown again with `ShowCombatMessage` through `0x0062b110` unless it is
+   48208 (`0xbc50`, "COMBAT MODE engaged"). (med: what the messages are)
+
+`+0x50c` is set by `AddAttackActions` (`0x004fde40`, when unset), by `AIActionAttackObject` and by
+the end-of-round continuation; `+0x524` by the cast actions when unset; `RunActions` clears both
+when the queue runs dry (actions.md 1.3), `CancelCreatureActions` clears them (1.4), and the end of
+a round clears any whose object is dead. `+0x520` is set by `AddAttackActions` on its target when
+that is the player's character (`+0x9d4`) or the party leader, and is cleared only by the target's
+`EndCombatRound` when the attacker is gone or dead. So once a foe has been ordered to attack the
+leader, the leader stays in combat mode until that foe dies or stops being hostile, or the player
+presses F, however far he walks. (high for the code, med for the consequence)
 
 ### 2.2 camerastyle.2da and the ARE's CameraStyle
 

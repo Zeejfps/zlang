@@ -620,7 +620,7 @@ namespace ingame {
             ui.hud.deferred = ui.hud.deferred - dt
             if ui.hud.deferred <= 0.0 {
                 ui.hud.deferred = 0.0
-                if not hud::leader_in_combat{ w = &w } { auto_pause{ &ui, &w, &dev, reason = ui.hud.deferred_text } }
+                if not hud::leader_in_combat_mode{ w = &w } { auto_pause{ &ui, &w, &dev, reason = ui.hud.deferred_text } }
             }
         } else if ui.hud.door_window > 0.0 {
             ui.hud.door_window = ui.hud.door_window - dt
@@ -635,7 +635,7 @@ namespace ingame {
         else if asked == autopause::PARTY_MEMBER_DOWN { if ui.ap_party and ui.ap_cooldown <= 0.0 { text = REASON_PARTY_DOWN } }
         else if asked == autopause::MINE_SIGHTED { if ui.ap_mine { text = REASON_MINE } }
         else if asked == autopause::END_OF_ROUND { if ui.ap_round { text = REASON_ROUND } }
-        else if asked == autopause::NEW_TARGET { if ui.ap_target and hud::leader_in_combat{ w = &w } { text = REASON_TARGET } }
+        else if asked == autopause::NEW_TARGET { if ui.ap_target and hud::leader_in_combat_mode{ w = &w } { text = REASON_TARGET } }
         if text == 0 { return }
         if asked == autopause::PARTY_MEMBER_DOWN { ui.ap_cooldown = 2.0 }
         // Within 5 s of the player's action on a door the request waits a second (RequestAutoPause 0x005f3f10).

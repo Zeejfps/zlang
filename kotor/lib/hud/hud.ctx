@@ -268,6 +268,8 @@ namespace hud {
         // The target follows the player when the world is on show (UpdateSelectableObjects waits for no modal panel).
         if not blocked and not w.conversation.active and not w.conversation.hold and w.transition == null and w.arrival == 0 {
             update_target{ &h, &w, dt }
+            // Then the party's combat mode (0x005f3ad0 follows UpdateSelectableObjects in MainLoop).
+            update_combat_modes{ &h, &w }
         }
         update_hover{ &h, &g, &w, blocked }
         update_transition{ &h, &g, &w, &dev, id = w.hover }

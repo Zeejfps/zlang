@@ -1447,9 +1447,9 @@ namespace fight {
             _ = @fmt(&w.io, "{} ends its round (target {} {})\n", id, target, state)
         }
         // The leader runs no OnEndRound (3.5 step 7): it asks for the end-of-round auto-pause while
-        // in combat mode (step 8) and the engine continues its fight (0x005b6980).
+        // in combat mode (step 8: its client creature's +0x440 bit 0) and the engine continues its fight (0x005b6980).
         if id == party::leader{ w = &w } {
-            if c.in_combat { autopause::request{ &w, reason = autopause::END_OF_ROUND } }
+            if c.combat_mode { autopause::request{ &w, reason = autopause::END_OF_ROUND } }
             continue_fight{ &w, id, target, target_alive }
             return
         }
@@ -2301,16 +2301,30 @@ namespace fight {
     }
 
     // A creature stops fighting (surrender, CancelCombat): its round ends without OnEndRound, its
-    // actions and targets are cleared, it leaves combat; with `others` everyone attacking it stops.
+    // actions and targets are cleared, it leaves combat and its client creature combat mode
+    // (CancelCombat 0x004fdaa0 ends with CSWCCreature::SetCombatMode(0)); with `others` everyone attacking it stops.
     fn stop_fighting { mut w: world::World, id: u32, others: bool } {
         end_round{ &w, id, script = false }
         actions::clear_all{ &w, id }
         let o = world::object{ w = &w, id } ifnull { return }
         let c = obj::creature{ o } ifnull { return }
         c.in_combat = false
+        c.combat_mode = false
         c.attack_target = obj::INVALID
         c.attempted_target = obj::INVALID
         if c.fighter is some{ value = f } { f.combat_ms = 0 }
         if others { clear_attackers{ &w, id } }
+    }
+
+    // The player's orders to the leader are called off (CancelServerActions 0x0063d470 ->
+    // CServerExoApp::CancelCreatureActions 0x004aef40: ClearAllActions(TRUE) and the attack, attempted-attack,
+    // spell and attempted-spell targets cleared; movement.md 1.4): Disengage, F, and keys that break the orders.
+    // Ours clears the attempted target only (the round in progress keeps its own target), which is what the
+    // leader's combat mode is read from (hud::update_combat_modes).
+    fn cancel_actions { mut w: world::World, id: u32 } {
+        actions::clear_all{ &w, id }
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        c.attempted_target = obj::INVALID
     }
 }

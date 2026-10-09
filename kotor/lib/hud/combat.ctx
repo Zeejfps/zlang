@@ -10,9 +10,103 @@ namespace hud {
         "LBL_QUEUE0", "LBL_QUEUE1",
     ]
 
-    fn leader_in_combat { w: *world::World } -> bool {
+    // Whether the leader is in combat mode: its client creature's flag (CSWCCreature +0x440 bit 0, which for the
+    // controlled creature is also the client's +0x320), not the server's combat state (`in_combat`, +0x4e0). The
+    // combat bar, Disengage and F, the combat camera and reticle, hostile-only Q / E and the auto-target's and
+    // auto-pause's combat rules all read this one.
+    fn leader_in_combat_mode { w: *world::World } -> bool {
         let c = creature_of{ w, id = party::leader{ w } } ifnull { return false }
-        return c.in_combat
+        return c.combat_mode
+    }
+
+    // CSWCCreature::SetCombatMode (0x00610a10) for the leader: the target block's and the default action's
+    // fighting orders (CSWGuiTargetInfo::UseAction 0x00689610 and the callbacks 0x00616900, 0x00617dd0,
+    // 0x00616200, 0x006167d0, 0x00617e40, DefaultActionAttack 0x00616800) turn it on at once, paused or not.
+    fn enter_combat_mode { mut w: world::World } {
+        let c = creature_of{ w = &w, id = party::leader{ w = &w } } ifnull { return }
+        if not c.combat_mode and w.log.combat {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "combat mode on: {} (order)\n", party::leader{ w = &w })
+        }
+        c.combat_mode = true
+    }
+
+    // Whether `id` is alive as the original's GetDead (slot 37) sees it: a creature that is not dead (a party
+    // member never is: CSWSCreature::GetDead 0x004ef820), a door or placeable with a hit point left
+    // (CSWSObject::GetDead 0x004cb810); gone is not alive.
+    fn is_live { w: *world::World, id: u32 } -> bool {
+        if id == obj::INVALID { return false }
+        let o = world::object{ w, id } ifnull { return false }
+        if o.destroyed { return false }
+        if obj::creature{ o } is some{ value = c } { return party::is_member{ w, id } or not c.dead }
+        return o.hp >= 1
+    }
+
+    // The live object party member `o` means to fight, the original's attempted attack target (server +0x50c)
+    // or attempted spell target (+0x524), INVALID for none; `self_ok` lets its own id count (the switch-off
+    // test does, the switch-on test does not). The original sets them as an order is queued (AddAttackActions
+    // 0x004fde40, the cast's 0x004d39b0, when unset) and clears them when the queue runs dry (RunActions
+    // 0x0057f4a0) or the orders are cancelled (CancelCreatureActions 0x004aef40). Ours keeps the attempted
+    // target from the attack until its target dies (fight.ctx), so here it counts while an order waits or a
+    // round runs, and a waiting attack or cast counts by its own target.
+    fn fight_target_of { w: *world::World, o: *obj::Object, self_ok: bool } -> u32 {
+        let c = obj::creature{ o } ifnull { return obj::INVALID }
+        let mut running = o.actions.len > 0
+        if fight::of{ o } is some{ value = f } { if f.round.started { running = true } }
+        if running and is_live{ w, id = c.attempted_target } and (self_ok or c.attempted_target != o.id) { return c.attempted_target }
+        let queue = list::items{ list = o.actions }
+        let mut i: usize = 0
+        while i < queue.len {
+            let a = queue[i]
+            i = i + 1
+            let mut t = obj::INVALID
+            if a.kind == actions::Kind::attack_object { t = actions::object_param{ a = &a, i = 0 } }
+            else if a.kind == actions::Kind::cast_spell { t = actions::object_param{ a = &a, i = 1 } }
+            if is_live{ w, id = t } and (self_ok or t != o.id) { return t }
+        }
+        return obj::INVALID
+    }
+
+    // The client's per-frame combat mode of the party members (0x005f3ad0, called by MainLoop after
+    // UpdateSelectableObjects; docs/re/gameloop.md 6.4, movement.md 2.1). A member out of combat mode enters
+    // it when it has a live attempted attack or spell target (not itself). A member in combat mode leaves it
+    // when (it is not the leader, or the client's 1.5 s dead-target keep timer +0x378 has run out: ours has no
+    // such timer), it is not hostile itself, and it has no live attempted attack or spell target and no live
+    // foe "going to attack it" (+0x520: a live hostile creature, or any live object that is not a creature);
+    // the enemy-sighted latch then lets go as soon as no enemy is in sight (+0x394 = -1).
+    fn update_combat_modes { mut h: Hud, mut w: world::World } {
+        let ids = party_ids{ w = &w }
+        let mut m: usize = 0
+        while m < ids.len {
+            let id = ids[m]
+            m = m + 1
+            let o = world::object{ w = &w, id } ifnull { continue }
+            let c = obj::creature{ o } ifnull { continue }
+            if not c.combat_mode {
+                let t = fight_target_of{ w = &w, o, self_ok = false }
+                if t != obj::INVALID {
+                    c.combat_mode = true
+                    if w.log.combat {
+                        world::prefix{ w = &w }
+                        _ = @fmt(&w.io, "combat mode on: {} (target {})\n", id, t)
+                    }
+                }
+                continue
+            }
+            if is_hostile{ w = &w, id } { continue }
+            if fight_target_of{ w = &w, o, self_ok = true } != obj::INVALID { continue }
+            let by = c.attacked_by
+            if is_live{ w = &w, id = by } {
+                let bo = world::object{ w = &w, id = by } ifnull { continue }
+                if bo.kind != obj::Kind::creature or is_hostile{ w = &w, id = by } { continue }
+            }
+            c.combat_mode = false
+            h.sight_quiet = -1.0
+            if w.log.combat {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "combat mode off: {}\n", id)
+            }
+        }
     }
 
     // The picture a fighting order shows in the queue: an attack's combat feat (feat.2da ICON) or
@@ -54,7 +148,7 @@ namespace hud {
             h.refusal = h.refusal - dt
             if h.refusal <= 0.0 { show_slot_description{ &h, &g, &w } }
         }
-        let on = leader_in_combat{ w = &w }
+        let on = leader_in_combat_mode{ w = &w }
         if on != h.combat {
             h.combat = on
             show_combat_controls{ &h, &g, on }
@@ -118,16 +212,21 @@ namespace hud {
         }
     }
 
-    // Disengage (BTN_CLEARALL, the F key): the leader leaves combat mode and its actions are cleared. In the
-    // original only while the party is in combat mode (HandleInputAction 240); it also arms the combat
-    // reticle's zoom-in again (ClearAllCombatActions 0x006887d0).
+    // Disengage (BTN_CLEARALL, the F key): the leader leaves combat mode and its orders are cancelled with
+    // their targets (ClearAllCombatActions 0x006887d0: SetCombatMode(0), CancelServerActions). The server's combat
+    // state is left to run out. The F key works only in combat mode (HandleInputAction 240) and the button shows
+    // only then; it also arms the combat reticle's zoom-in again.
     fn disengage { mut h: Hud, mut w: world::World } {
         let leader = party::leader{ w = &w }
         let c = creature_of{ w = &w, id = leader } ifnull { return }
-        if not c.in_combat { return }
-        actions::clear_all{ &w, id = leader }
-        c.in_combat = false
+        if not c.combat_mode { return }
+        c.combat_mode = false
+        fight::cancel_actions{ &w, id = leader }
         h.zoom = -1.0
+        if w.log.combat {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "combat mode off: {} (disengage)\n", leader)
+        }
     }
 
     // Clear Combat Action (BTN_CLEARONE, the Y key): the last of the leader's queued actions goes.

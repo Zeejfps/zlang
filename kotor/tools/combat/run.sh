@@ -15,6 +15,8 @@
 #   bash1     bunk       1000  a locked non-plot door bashed open through the block
 #   gren2     bunk       600   Trask as grenadier (Scripts panel style 4) throws frag grenades
 #   provoke1  uppercity  600   a dark Jedi turned hostile with a buff on itself as its first order attacks once the buff is cast
+#   engage1   uppercity  620   paused after an enemy is sighted, the block's attack puts the leader in combat mode at once
+#                              (checked by engage.sh)
 export PATH=/g/Dev/msys64/mingw64/bin:$PATH
 cp=$1; name=$2; frames=$3; shift 3
 mkdir -p kotor/out/combat

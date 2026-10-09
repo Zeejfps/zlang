@@ -66,7 +66,7 @@ namespace hud {
     // Standing still, or any slower frame, starts the half second again; so does a frame in which an
     // auto-pause request is waiting its second (client+0x390, ingame's update_autopause).
     fn drop_while_moving { mut h: Hud, mut w: world::World, dt: f32 } {
-        if w.target == obj::INVALID or h.move_speed < MOVING_MIN or leader_in_combat{ w = &w } or h.deferred > 0.0 {
+        if w.target == obj::INVALID or h.move_speed < MOVING_MIN or leader_in_combat_mode{ w = &w } or h.deferred > 0.0 {
             h.moving_for = 0.0
             return
         }
@@ -171,7 +171,7 @@ namespace hud {
         }
 
         // An enemy coming into sight: the first of the visible hostile creatures round the leader by bearing.
-        let combat = leader_in_combat{ w = &w }
+        let combat = leader_in_combat_mode{ w = &w }
         let mut first_hostile: usize = n
         let mut k: usize = 0
         while k < n {

@@ -317,7 +317,7 @@ namespace hud {
         let mut side = reticle_side{ distance = math::sqrtf{ x = dx * dx + dy * dy + dz * dz }, creature = o.kind == obj::Kind::creature }
         let hostile = is_hostile{ w = &w, id = w.target }
         let mut mark = if hostile { MARK_HOSTILE } else { MARK_FRIENDLY }
-        if hostile and leader_in_combat{ w = &w } {
+        if hostile and leader_in_combat_mode{ w = &w } {
             mark = MARK_COMBAT
             if h.zoom < -0.5 {
                 side = side + 64.0
@@ -419,8 +419,12 @@ namespace hud {
             gui::play_sound{ &g, n = 2 }
             return true
         }
+        // Out of combat mode a choice on a hostile creature (the block's kind 3, FUN_0060fc00) puts the leader in
+        // it after the order is given (UseAction, asm 0x006896e9..0x006897cf).
+        let to_combat = not leader_in_combat_mode{ w = &w } and is_hostile{ w = &w, id = w.target }
         note_door_action{ &h, w = &w, act = e.act, target = w.target }
         run_act{ &w, act = e.act, target = w.target, item = e.item, spell = e.id, queue = queues_orders{ h = &h, w = &w } }
+        if to_combat { enter_combat_mode{ &w } }
         return true
     }
 

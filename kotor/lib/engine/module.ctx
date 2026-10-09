@@ -77,6 +77,9 @@ namespace modload {
         while i < all.len {
             let o = all[i]
             i = i + 1
+            // The client's creatures are made afresh for a module, out of combat mode (unloading the client's module,
+            // 0x005f8290, also clears client+0x320).
+            if obj::creature{ o } is some{ value = c } { c.combat_mode = false }
             if o.kind != obj::Kind::creature or o.id == w.pc { continue }
             // A loaded save's creatures stand inside their triggers already (no OnEnter for them).
             if w.restoring { movement::settle_volumes{ &w, id = o.id } }

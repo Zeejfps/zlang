@@ -193,7 +193,14 @@ namespace test_combat {
         let leader = party::leader{ w = &w }
         let o = world::object{ w = &w, id = leader } ifnull { return }
         let c = obj::creature{ o } ifnull { return }
-        _ = @fmt(&w.io, "fight leader {} hp {}/{} in_combat {} target {} attack_target {} queue", leader, o.hp, o.hp_max, c.in_combat, w.target, c.attack_target)
+        // The target's distance, and the combat mode beside the server's combat state: the HUD's combat bar follows the mode.
+        let mut dist: f32 = -1.0
+        if world::object{ w = &w, id = w.target } is some{ value = t } {
+            let dx = t.position.x - o.position.x
+            let dy = t.position.y - o.position.y
+            dist = math::sqrtf{ x = dx * dx + dy * dy }
+        }
+        _ = @fmt(&w.io, "fight leader {} hp {}/{} in_combat {} combat_mode {} bar {} target {} dist {} attack_target {} queue", leader, o.hp, o.hp_max, c.in_combat, c.combat_mode, ui.hud.combat, w.target, dist, c.attack_target)
         let q = list::items{ list = o.actions }
         let mut i: usize = 0
         while i < q.len {

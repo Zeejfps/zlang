@@ -1271,12 +1271,13 @@ namespace play {
         _ = rt_party::bring_member{ &w, n = slot }
     }
 
-    // Combat mode: the leader fights (the client's combat flag follows the server's combat state).
+    // Combat mode: the leader's client creature's (+0x440 bit 0, CSWCCreature::SetCombatMode 0x00610a10, which
+    // for the controlled creature starts the combat camera or restores the default one, 0x005f3a80).
     fn leader_in_combat_mode { w: *world::World } -> bool {
         let lead = party::leader{ w }
         let id = if lead == obj::INVALID { w.pc } else { lead }
         if world::object{ w, id } is some{ value = o } {
-            if obj::creature{ o } is some{ value = c } { return c.in_combat and not c.dead }
+            if obj::creature{ o } is some{ value = c } { return c.combat_mode and not c.dead }
         }
         return false
     }

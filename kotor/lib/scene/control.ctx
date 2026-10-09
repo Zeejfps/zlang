@@ -87,14 +87,14 @@ namespace ctl {
         }
         // A leader with orders in combat mode does not hear the keys unless the Combat Movement option is on
         // (ProcessInput 0x006227e0, movement.md 1.4).
-        if o.actions.len > 0 and c.in_combat and not ctl.combat_movement {
+        if o.actions.len > 0 and c.combat_mode and not ctl.combat_movement {
             ix = 0.0
             iy = 0.0
         }
         let has_input = ix != 0.0 or iy != 0.0
-        // Otherwise input cancels whatever the leader was doing (movement.md 1.4; ours: at once, where the original
-        // waits 0.3 s first).
-        if has_input and o.actions.len > 0 { actions::clear_all{ &w, id } }
+        // Otherwise input cancels whatever the leader was doing (movement.md 1.4, CancelServerActions; ours: at once,
+        // where the original waits 0.3 s first).
+        if has_input and o.actions.len > 0 { fight::cancel_actions{ &w, id } }
         let o2 = world::object{ w = &w, id } ifnull { return }
         let c2 = obj::creature{ o = o2 } ifnull { return }
         let fx = -math::sinf{ x = yaw }

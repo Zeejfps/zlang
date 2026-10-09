@@ -1542,12 +1542,21 @@ shown for 5 s in `LBL_ACTIONDESC` (strref `+0x70`, timer `+0x6c`, fading over th
 (38615), 4 "Target too Close" (42422), 5 "Full Health" (42498), 6 "PC Dead" (47936); GUI sound 2.
 If usable: when the leader's client creature is not in combat mode (`+0x440` bit 0, as in
 [gameloop.md](gameloop.md) and [combat.md](combat.md)), `0x0063d490` clears the scheduled actions
-of the leader's server combat round (`ClearScheduledActions`) and GUI sound 6 plays; in combat mode
-while auto-paused (client `+0x384` bit 0, `IsAutoPaused`), the pause banner switches to reason 10
-("Action added to queue."); then the entry's callback runs with its id and the leader (it posts the
+of the leader's server combat round (`ClearScheduledActions`), and for a door's Bash (block kind 0,
+entry `0x3f5`) or a hostile creature (kind 3) the combat message 48208 "COMBAT MODE engaged" is put
+up at once (`+0x7724` reset, `ShowCombatMessage(0xbc50)`); in combat mode while auto-paused (client
+`+0x384` bit 0, `IsAutoPaused`), the pause banner switches to reason 10 ("Action added to queue.").
+Either way GUI sound 6 plays; then the entry's callback runs with its id and the leader (it posts the
 request to the server side), the icon blinks once (fade out and back in, two 0.1 s phases,
-`0x006858e0`), and out of combat mode the leader's server actions are cleared at once
-(`ClearAllActions`), so the new request replaces them instead of queueing behind them. (high)
+`0x006858e0`), and if the leader is still out of combat mode: when the target is a hostile
+creature (kind 3) and the client was out of combat mode too (`+0x320`), `SetCombatMode(1)` (the
+decompile drops this flag; asm `0x006896f4`–`0x00689710`, `0x006897c3`), and the leader's server
+actions are cleared at once (`ClearAllActions(0)`), so the new request replaces them instead of
+queueing behind them. A callback that turned combat mode on itself (attack, feat, power, grenade)
+skips that clear. The block's kind is `FUN_0060fc00`'s (stored at `+0x1aea`): 3 a creature whose
+client hostile slot `+0x138` answers or while the 1.5 s keep timer `client+0x378` runs, 2 any other
+creature, 0 a door or a placeable with an inventory, 2 one without, 1 a trigger. Who else turns
+combat mode on and off: [movement.md](movement.md) 2.1. (high)
 Up/down (`0x0068af70`/`0x0068afe0`) select the previous/next entry with wrap-around (GUI sound 7,
 only with more than one entry), pausing with reason 7 when the "Action Menu" auto-pause option
 (client options bit 15) is on, and offer tutorial popup 5. Hovering a slot records it as the current
@@ -1571,6 +1580,11 @@ remove the last scheduled action of the leader's combat round (`0x006880c0`:
 `RemoveLastScheduledAction`, or `ClearAllActions(1)` on the server creature when there was none);
 `BTN_CLEARALL` (48518 "Disengage", `0xf0`) ends combat mode for the leader and cancels its server
 actions, GUI sound 0 (`0x006887d0`). (high for the wiring, med for the queue filter)
+
+The bar follows the client's combat mode (`client+0x320`, the leader's client creature `+0x440`
+bit 0), not the server's combat state (`+0x4e0`): it comes up the moment a fighting order is given
+from the target block or as a default action, paused or not, and goes when `0x005f3ad0` finds the
+leader with no live target and no live foe on its way ([movement.md](movement.md) 2.1). (high)
 
 ##### Minimap
 

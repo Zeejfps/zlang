@@ -1015,7 +1015,10 @@ hostile creature (also while paused) and cleared only after 10 s (`+0x394`, fram
 one. The first visible hostile creature on a frame where `+0x324` is clear, the server not
 player-paused and no request waiting (`+0x398` = 0xff) shows the tutorial pop-up 0x15, and if the
 option is on and the client is not in combat mode (`+0x320`) calls reason 1; it also stores the
-creature as the object to focus (`+0x2b4`). Mines are the same with `+0x328` / `+0x3a0`, for a
+creature as the object to focus (`+0x2b4`). Right after it, `0x005f3ad0` turns each party member's
+client combat mode on or off from its server targets and sets `+0x394` to -1 when it turns one off,
+so the latch then clears on the first frame with no hostile in view ([movement.md](movement.md) 2.1,
+high). Mines are the same with `+0x328` / `+0x3a0`, for a
 hostile object whose trap trigger flag (`+0x108`) is set, reason 11, option 0x2000, but with no
 tutorial pop-up. (high for the
 flow, med for the roles of the hostile test (vtable `+0x138`) and the trap flag)
