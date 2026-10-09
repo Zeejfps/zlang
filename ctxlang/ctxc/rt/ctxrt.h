@@ -3,11 +3,17 @@
 //
 // It is what the C needs that ctxlang can't say itself: the checks the C calls, panics, and
 // function values' records. It keeps no state of std's: that is std's statics (spec §15, rule
-// 13), the stack check's limit among them. The rest is std's, in ctxlang: starting the program
-// (a `#start` fn, std/rt.ctx), reporting a panic (a `#panic` fn), and the platform's layer
-// (std/os), which the natives of std are over.
+// 13), but for the stack check's limit, whose storage is a thread's (below). The rest is std's,
+// in ctxlang: starting the program (a `#start` fn, std/rt.ctx), reporting a panic (a `#panic`
+// fn), and the platform's layer (std/os), which the natives of std are over.
 // ctxrt.c calls no C library function. Floats as text and back, which std's
-// ascii declares, are ctxfloat.c's, which a program links only if it uses them (ctxc/drive.ctx).
+// ascii declares, are ctxfloat.c's, which a program links only if it uses them (ctxc/drive.ctx),
+// and the state of each thread of a threaded program is ctxthread.c's, which it links only then.
+//
+// A program that may run on several threads (spec §15, Entry point, rule 8) is compiled with
+// CTX_THREADS, which ctxc defines at the top of its C: then the runtime's state is per thread,
+// found through a thread-local pointer. Any other has one thread, whose state is a plain global,
+// so it pays nothing for threads.
 
 #ifndef CTXRT_H
 #define CTXRT_H
@@ -72,12 +78,82 @@ _Noreturn void ctx_panic_as_u(uint64_t v, const char *dst, CTX_POS);
 // A float that isn't representable, in Python's repr: ctxfloat.c's, which writes floats.
 _Noreturn void ctx_f2i_fail(double v, const char *dst, CTX_POS);
 
+// ---- threads
+//
+// The runtime's state for a thread: its stack limit, the storage of the program's `#stack_limit`
+// static (spec §15, rule 13); its borrowed records (function values, below); and what a panic on
+// it needs. ctx_main_thread is the main thread's. In a threaded program CTX_HERE finds the
+// calling thread's through a thread-local pointer, which ctxthread.c keeps: on Windows x64 a
+// slot of the thread's TEB, read with one instruction, since MinGW's _Thread_local is a call;
+// elsewhere a _Thread_local. A callback that C calls on a thread without one gives it one on its
+// frame until it returns (ctx_thread_enter), with the stack check off: such a thread's stack is
+// unknown.
+
+typedef struct ctx_rec_seg { struct ctx_rec_seg *next; char *data; char *end; struct ctx_rec_seg *pool; } ctx_rec_seg;
+typedef struct { ctx_rec_seg *seg; char *top; char *end; } ctx_rec_mark;
+
+typedef struct ctx_thread {
+    uint64_t stack_limit;                  // 0 checks nothing
+    ctx_rec_mark recs;                     // the top of its borrowed records
+    ctx_rec_seg *head;                     // its first segment of them
+    uint32_t growing;                      // taking pages for records
+    uint32_t reporting;                    // reporting a panic
+    uint64_t name_len;
+    char name[64];                         // for a panic's report; empty for the main thread
+} ctx_thread;
+
+extern ctx_thread ctx_main_thread;
+
+#ifdef CTX_THREADS
+#if defined(_WIN64) && defined(__x86_64__)
+extern uint32_t ctx_thread_slot;            // a TLS slot below 64, whose TEB entry is at gs:0x1480
+static inline ctx_thread *ctx_thread_here(void) {
+    ctx_thread *t;
+    __asm__("movq %%gs:0x1480(,%1,8), %0" : "=r"(t) : "r"((uint64_t)ctx_thread_slot));
+    return t;
+}
+#define CTX_HERE (ctx_thread_here())
+#else
+extern _Thread_local ctx_thread *ctx_thread_current;
+#define CTX_HERE ctx_thread_current
+#endif
+// C's main calls it first: the main thread's state, and locks in the runtime.
+void ctx_thread_setup(void);
+// A callback's: gives the calling thread t if it has no state, and returns whether it did; then
+// ctx_thread_leave(t) takes it back, after the fn std's start gave for a thread's end.
+int ctx_thread_enter(ctx_thread *t);
+void ctx_thread_leave(ctx_thread *t);
+// std's thread::begin, on a new thread: its stack limit, `usable` bytes below the caller's
+// frame, and its name, cut to 63 bytes.
+void ctx_thread_begin(uint64_t usable, ctx_slice name);
+#else
+#define CTX_HERE (&ctx_main_thread)
+#endif
+
+// The calling thread's name, for a panic's report: empty for the main thread (std's rt).
+ctx_slice ctx_here_name(void);
+// The fn the runtime calls when a thread it gave state to ends, std's start's (std/rt.ctx): it
+// writes out the thread's standard output.
+typedef void (*ctx_end_fn)(void);
+void ctx_ends_set(ctx_end_fn ends);
+
+// ctxrt.c's, for ctxthread.c: the calling thread's state, which its setup makes CTX_HERE's;
+// whether the program is threaded, which turns ctxrt.c's lock on; the fn std's start gave for
+// a thread's end; and where an ending thread's records go.
+extern ctx_thread *(*ctx_current)(void);
+extern int ctx_threaded;
+extern ctx_end_fn ctx_thread_ends;
+void ctx_rec_give(ctx_thread *t);
+
 // ---- stack
 
 // A frame below `limit`, the program's `#stack_limit` static (spec §15, rule 13), panics with
 // "stack overflow". std's start sets it; 0 checks nothing.
 #define CTX_STACK_CHECK_AT(limit) \
     do { if ((uint64_t)(uintptr_t)__builtin_frame_address(0) < (limit)) ctx_panic_nopos("stack overflow"); } while (0)
+// The `#stack_limit` static: the calling thread's, and the check against it.
+#define CTX_STACK_LIMIT (CTX_HERE->stack_limit)
+#define CTX_STACK_CHECK() CTX_STACK_CHECK_AT(CTX_STACK_LIMIT)
 
 // ---- function values
 //
@@ -99,20 +175,20 @@ typedef void *(*ctx_pages_fn)(uint64_t size);
 void ctx_pages_set(ctx_pages_fn pages);
 
 // Borrowed records: `CTX_RECORDS;` at the top of a function that may make one, which
-// restores the stack's top when the function returns, after its defers.
-typedef struct ctx_rec_seg { struct ctx_rec_seg *next; char *data; char *end; } ctx_rec_seg;
-typedef struct { ctx_rec_seg *seg; char *top; char *end; } ctx_rec_mark;
-extern ctx_rec_mark ctx_recs;
-void *ctx_rec_more(uint64_t n);
+// restores the stack's top when the function returns, after its defers. Each thread has its
+// own stack of them (ctx_thread).
+#define ctx_recs (CTX_HERE->recs)
+void *ctx_rec_more(ctx_thread *t, uint64_t n);
 static inline void ctx_rec_release(ctx_rec_mark *m) { ctx_recs = *m; }
 #define CTX_RECORDS ctx_rec_mark _ctx_records __attribute__((cleanup(ctx_rec_release))) = ctx_recs
 
 // n bytes, not zeroed, until the function's CTX_RECORDS restores the top.
 static inline void *ctx_rec_alloc(uint64_t n) {
+    ctx_thread *t = CTX_HERE;
     n = (n + 15) & ~(uint64_t)15;
-    char *p = ctx_recs.top;
-    if ((uint64_t)(ctx_recs.end - p) < n) return ctx_rec_more(n);
-    ctx_recs.top = p + n;
+    char *p = t->recs.top;
+    if ((uint64_t)(t->recs.end - p) < n) return ctx_rec_more(t, n);
+    t->recs.top = p + n;
     return p;
 }
 

@@ -201,6 +201,8 @@ def link(tmp_c, c, exe, name, flags=(), cflags=CFLAGS):
     rt_objs = runtime_objects(cc, env, tmp_c)
     name_def = '-DCTX_PROGRAM_NAME="' + name.replace('\\', '\\\\').replace('"', '\\"') + '"'
     cmd = cc + list(cflags) + ['-I', RT, name_def, tmp_c, *rt_objs, '-o', tmp_exe, *flags, '-lm']
+    if sys.platform.startswith('linux') and uses_threads(tmp_c):
+        cmd.append('-lpthread')     # glibc before 2.34 keeps threads in a library of their own
     cmd += stack_flags()
     r = subprocess.run(cmd, capture_output=True, text=True, env=env)
     replace(tmp_c, c)
@@ -215,7 +217,16 @@ def runtime_objects(cc, env, c=None):
     names = ['ctxrt']
     if c is None or uses_float(c):
         names.append('ctxfloat')
+    if c is None or uses_threads(c):
+        names.append('ctxthread')
     return [runtime_object(cc, env, name) for name in names]
+
+
+def uses_threads(c):
+    """Whether the C at path c is a threaded program's, which calls ctxthread.c, whose functions'
+    names start with ctx_thread_ (ctxc/drive.ctx, uses_threads)."""
+    with open(c, 'rb') as f:
+        return b'ctx_thread_' in f.read()
 
 
 def uses_float(c):

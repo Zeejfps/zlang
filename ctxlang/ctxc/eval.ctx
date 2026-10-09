@@ -131,6 +131,15 @@ namespace eval {
         chunk:    u32,                          // the region the heap is going into
         cap:      Addr,                         // what a `mut` capability points to: emit_c's cap[1]
         cells:    list::List(Addr, Heap),       // by static: its zeroed memory once used, or 0
+        // Threads, which std/os/interp runs one at a time, each to its end when it starts: the
+        // `#thread_local` statics' cells of the threads it interrupted (thread_enter), the
+        // running threads' names and ids, innermost last, the next id, and the fn std's start
+        // gives for a thread's end (ctx_ends_set), a C function's address, or 0.
+        saved:    list::List(Addr, Heap),
+        names:    list::List([]u8, Heap),
+        ids:      list::List(u64, Heap),
+        next_id:  u64,
+        ends:     Addr,
         // The platform, as std/os/interp reaches it: the environment's "KEY=VALUE" entries,
         // and as the program sees them once asked for (0 before); and whether standard output
         // and error are in binary mode, not translating "\n" on Windows.
@@ -160,6 +169,10 @@ namespace eval {
             known = map::new(Key, Addr){ realloc = arena::alloc, heap, hash = hash_key, eq = eq_key },
             statics = 0, chunk = 0, cap = 0,
             cells = list::new(Addr){ realloc = arena::alloc, heap },
+            saved = list::new(Addr){ realloc = arena::alloc, heap },
+            names = list::new([]u8){ realloc = arena::alloc, heap },
+            ids = list::new(u64){ realloc = arena::alloc, heap },
+            next_id = 2, ends = 0,
             env = slice::empty([]u8){}, environ = 0, binary = false,
             out = list::new(u8){ realloc = arena::alloc, heap },
             chunks = list::new(Chunk){ realloc = arena::alloc, heap },
@@ -717,6 +730,12 @@ namespace eval {
                 return a
             }
             nil => { return try temp{ &m, t = x.ty } }
+            atomic{ op, args } => {
+                let v = try atomic{ &m, op, args }
+                let a = try temp{ &m, t = x.ty }
+                try store{ &m, a, n = size{ ts = m.types, t = x.ty }, v }
+                return a
+            }
             local | constref | deref | field | index | sindex | payload => {
                 let src = try place{ &m, x }
                 return try copied{ &m, src, t = x.ty }
@@ -951,6 +970,38 @@ namespace eval {
                 return try get{ &m, a, t = x.ty }
             }
         }
+    }
+
+    // An atomic (§13): one thread runs at a time here, so it is the plain load or store.
+    // compare_exchange gives the value it found; store and fence give 0.
+    fn atomic { mut m: M, op: ir::AtomicOp, args: []ir::Expr } -> !u64 {
+        if op is fence { return 0 }
+        let p = try scalar{ &m, x = args[0] }
+        let ptr{ elem } = m.types[args[0].ty] else {
+            fail{ &m, msg = "eval: an atomic without a pointer" }
+            return halt
+        }
+        let n = size{ ts = m.types, t = elem }
+        if op is load { return try get{ &m, a = p, t = elem } }
+        let v = try scalar{ &m, x = args[1] }
+        if op is store {
+            try store{ &m, a = p, n, v }
+            return 0
+        }
+        if op is compare_exchange {
+            let d = try scalar{ &m, x = args[2] }
+            let old = try get{ &m, a = p, t = elem }
+            if old == v { try store{ &m, a = p, n, v = d } }
+            return old
+        }
+        let old = try get{ &m, a = p, t = elem }
+        let r = match op {
+            add => { @wrap_add(old, v) }
+            subtract => { @wrap_sub(old, v) }
+            else => { v }
+        }
+        try store{ &m, a = p, n, v = r }
+        return old
     }
 
     fn truth { mut m: M, x: ir::Expr } -> !bool {
@@ -1397,6 +1448,32 @@ namespace eval {
         return r
     }
 
+    // Calls the fn std's start gave for a thread's end (ctx_ends_set): a callback whose context
+    // is capabilities, as c_call supplies them.
+    fn ends { mut m: M } -> ! {
+        let c = try code_at{ &m, a = m.ends }
+        let cfn{ callee = id } = c else {
+            fail{ &m, msg = "eval: a thread's end fn that isn't a C function" }
+            return halt
+        }
+        let f = m.p.fns[id]
+        let nb = m.argv.len
+        let mut j: usize = 0
+        while j < f.params.len {
+            let q = f.params[j]
+            let v = try temp{ &m, t = f.locals[j].ty }
+            if q.mutable {
+                let c_at = try cap{ &m }
+                try store{ &m, a = v, n = 8, v = c_at }
+            }
+            try! list::push{ list = &m.argv, item = v }
+            j = j + 1
+        }
+        let r = try temp{ &m, t = f.ret }
+        try invoke{ &m, callee = id, base = nb, res = r }
+        m.argv.len = nb
+    }
+
     // What a `mut` capability param points to: emit_c's `static char cap[1]`, zeroed.
     fn cap { mut m: M } -> !Addr {
         if m.cap == 0 { m.cap = try heap_bytes{ &m, n = 8 } }
@@ -1477,6 +1554,8 @@ namespace eval {
     fn is_host { s: []u8 } -> bool {
         let p: []u8 = "ctx_interp_"
         return (s.len > p.len and slice::eq_bytes{ a = s[..p.len], b = p }) or slice::eq_bytes{ a = s, b = "ctx_pages_set" }
+            or slice::eq_bytes{ a = s, b = "ctx_ends_set" } or slice::eq_bytes{ a = s, b = "ctx_here_name" }
+            or slice::eq_bytes{ a = s, b = "ctx_thread_begin" }
     }
 
     // Runs one of the externs is_host names; halt if it stopped the run (exit, unsupported).
@@ -1548,6 +1627,66 @@ namespace eval {
         if slice::eq_bytes{ a = s, b = "ctx_pages_set" } {
             // std's start gives the runtime a pages fn for records, which the interpreter
             // allocates itself.
+            return
+        }
+        if slice::eq_bytes{ a = s, b = "ctx_ends_set" } {
+            m.ends = try arg_bits{ &m, f, base, name = "ends" }
+            return
+        }
+        if slice::eq_bytes{ a = s, b = "ctx_thread_begin" } {
+            // the stack limit is the interpreter's; the name, for a panic's report
+            let name = try arg_bytes{ &m, f, base, name = "name" }
+            if m.names.len > 0 {
+                let mut b = builder{ heap = m.heap }
+                try! @fmt(&b, "{}", name[..if name.len > 63 { 63 } else { name.len }])
+                list::items{ list = m.names }[m.names.len - 1] = utf8::view{ b }.bytes
+            }
+            return
+        }
+        if slice::eq_bytes{ a = s, b = "ctx_here_name" } {
+            let name: []u8 = if m.names.len > 0 { list::items{ list = m.names }[m.names.len - 1] } else { "" }
+            let at_n = try heap_bytes{ &m, n = @as(u64, name.len) + 1 }
+            slice::copy(u8){ dst = try at_w{ &m, a = at_n, n = @as(u64, name.len) }, src = name }
+            try store{ &m, a = res, n = 8, v = at_n }
+            try store{ &m, a = res + 8, n = 8, v = @as(u64, name.len) }
+            return
+        }
+        if slice::eq_bytes{ a = s, b = "ctx_interp_thread_enter" } {
+            // A thread starts, and runs to its end before its creator goes on: its own
+            // `#thread_local` statics, zeroed, and an id.
+            let mut i: usize = 0
+            while i < m.p.statics.len {
+                if m.p.statics[i].local {
+                    _ = try static_at{ &m, id = @as(u32, i) }
+                    try! list::push{ list = &m.saved, item = list::items{ list = m.cells }[i] }
+                    list::items{ list = m.cells }[i] = 0
+                }
+                i = i + 1
+            }
+            try! list::push{ list = &m.names, item = "" }
+            try! list::push{ list = &m.ids, item = m.next_id }
+            m.next_id = m.next_id + 1
+            return
+        }
+        if slice::eq_bytes{ a = s, b = "ctx_interp_thread_leave" } {
+            // The thread's end: std's fn for it (its standard output written out), then its
+            // creator's statics back.
+            if m.ends != 0 { try ends{ &m } }
+            let mut i = m.p.statics.len
+            while i > 0 {
+                i = i - 1
+                if m.p.statics[i].local {
+                    list::items{ list = m.cells }[i] = list::items{ list = m.saved }[m.saved.len - 1]
+                    m.saved.len = m.saved.len - 1
+                }
+            }
+            if m.names.len > 0 { m.names.len = m.names.len - 1 }
+            if m.ids.len > 0 { m.ids.len = m.ids.len - 1 }
+            return
+        }
+        if slice::eq_bytes{ a = s, b = "ctx_interp_thread_id" } {
+            let id: u64 = if m.ids.len > 0 { list::items{ list = m.ids }[m.ids.len - 1] } else { 1 }
+            try store{ &m, a = res, n = 8, v = id }
             return
         }
         unsupported{ &m, what = s }

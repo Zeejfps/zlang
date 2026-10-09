@@ -508,6 +508,10 @@ namespace drive {
         if uses_float{ units } {
             float_obj = runtime_object{ &io, &fs, &proc, &heap, d, rt, cflags, name = "ctxfloat" } ifnull { return null }
         }
+        let mut thread_obj: []u8 = ""
+        if uses_threads{ units } {
+            thread_obj = runtime_object{ &io, &fs, &proc, &heap, d, rt, cflags, name = "ctxthread" } ifnull { return null }
+        }
 
         let mut into = out
         if out.len == 0 {
@@ -532,7 +536,10 @@ namespace drive {
         }
         try! list::push{ list = &argv, item = rt_obj }
         if float_obj.len > 0 { try! list::push{ list = &argv, item = float_obj } }
+        if thread_obj.len > 0 { try! list::push{ list = &argv, item = thread_obj } }
         add_all{ xs = &argv, ys = ldflags }
+        // glibc before 2.34 keeps threads in a library of their own
+        if thread_obj.len > 0 and d.os == build::Os::linux { try! list::push{ list = &argv, item = "-lpthread" } }
         let linked = compiled{ &io, &proc, d, argv = list::items{ list = argv } }
         if rsp.len > 0 { _ = fs::remove{ &fs, path = rsp } }
         if not linked {
@@ -592,6 +599,17 @@ namespace drive {
         let mut i: usize = 0
         while i < units.len {
             if contains{ s = units[i], part = "ctx_float_" } or contains{ s = units[i], part = "ctx_f2i_" } { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // Whether a program's C is threaded (spec §15, Entry point, rule 8) and needs ctxthread.c:
+    // its functions' names start with ctx_thread_, and a threaded program's main calls one.
+    fn uses_threads { units: [][]u8 } -> bool {
+        let mut i: usize = 0
+        while i < units.len {
+            if contains{ s = units[i], part = "ctx_thread_" } { return true }
             i = i + 1
         }
         return false
@@ -756,7 +774,7 @@ namespace drive {
     // A hash of the runtime's sources, which every executable is compiled with.
     fn runtime_hash { mut io: Io, mut fs: Fs, mut heap: Heap, home: []u8 } -> ?u64 {
         let mut h = FNV_BASIS
-        let names: [3][]u8 = ["ctxc/rt/ctxrt.c", "ctxc/rt/ctxrt.h", "ctxc/rt/ctxfloat.c"]
+        let names: [4][]u8 = ["ctxc/rt/ctxrt.c", "ctxc/rt/ctxrt.h", "ctxc/rt/ctxfloat.c", "ctxc/rt/ctxthread.c"]
         let mut i: usize = 0
         while i < names.len {
             let p = join{ &heap, a = home, b = names[i] }

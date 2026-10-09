@@ -68,6 +68,8 @@ namespace ir_print {
             char{ &o, c = ' ' }
             quote{ &o, b = v.name }
             spaced{ &o, n = v.ty }
+            char{ &o, c = ' ' }
+            flag{ &o, b = v.local }
             text{ &o, a = ")\n" }
             i = i + 1
         }
@@ -96,6 +98,7 @@ namespace ir_print {
             num{ &o, n = p.on_panic }
             text{ &o, a = ")\n" }
         }
+        if p.threaded { text{ &o, a = "(threaded)\n" } }
         if p.stack_limit != lower::NONE {
             text{ &o, a = "(stack_limit " }
             num{ &o, n = p.stack_limit }
@@ -643,6 +646,20 @@ namespace ir_print {
             }
             cast{ e = x }             => { unary{ &o, a = "cast", ty = e.ty, e = x, depth } }
             ptraddr{ e = x }          => { unary{ &o, a = "ptraddr", ty = e.ty, e = x, depth } }
+            atomic{ op, order, args } => {
+                head{ &o, e, a = "atomic" }
+                char{ &o, c = ' ' }
+                atomic_op{ &o, op }
+                spaced{ &o, n = @as(u32, order) }
+                text{ &o, a = " [" }
+                let mut i = 0
+                while i < args.len {
+                    if i > 0 { char{ &o, c = ' ' } }
+                    expr{ &o, e = args[i], depth }
+                    i = i + 1
+                }
+                char{ &o, c = ']' }
+            }
         }
         char{ &o, c = ')' }
     }
@@ -696,6 +713,18 @@ namespace ir_print {
             mul => { text{ &o, a = "mul" } }
             div => { text{ &o, a = "div" } }
             rem => { text{ &o, a = "rem" } }
+        }
+    }
+
+    fn atomic_op { mut o: Out, op: ir::AtomicOp } {
+        match op {
+            load => { text{ &o, a = "load" } }
+            store => { text{ &o, a = "store" } }
+            exchange => { text{ &o, a = "exchange" } }
+            compare_exchange => { text{ &o, a = "compare_exchange" } }
+            add => { text{ &o, a = "add" } }
+            subtract => { text{ &o, a = "subtract" } }
+            fence => { text{ &o, a = "fence" } }
         }
     }
 

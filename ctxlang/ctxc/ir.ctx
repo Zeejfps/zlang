@@ -34,6 +34,10 @@ namespace ir {
         on_panic: u32,
         // The static every function's frame is checked against (§15, rule 13): NONE for none.
         stack_limit: u32,
+        // Whether the program may run on several threads (§15, Entry point, rule 8): `main` or
+        // the start fn takes `Threads`, or C may call a callback from any thread. Only then are
+        // `#thread_local` statics and the stack limit per thread.
+        threaded: bool,
     }
 
     // A const of array, struct or union type. Its value is literals only: the checker computed it.
@@ -42,9 +46,10 @@ namespace ir {
     // A C variable that a capability names (§15): the C symbol, of type ty.
     struct Var { name: Bytes, symbol: Bytes, ty: TypeId }
 
-    // A capability's static (§15): zeroed storage of type ty for the whole program. name is the
-    // capability's qualified name and the static's, `ns::Cap::name`, which names it in C too.
-    struct Static { name: Bytes, ty: TypeId }
+    // A capability's static (§15): zeroed storage of type ty for the whole program, or for each
+    // thread if local (`#thread_local`). name is the capability's qualified name and the
+    // static's, `ns::Cap::name`, which names it in C too.
+    struct Static { name: Bytes, ty: TypeId, local: bool }
 
     // A source position: 1-based line and column, and an index into Program.files.
     struct Pos { line: u32, col: u32, file: u32 }
@@ -149,6 +154,9 @@ namespace ir {
     union BitOp { bit_and, bit_or, bit_xor }                    // (bits T and|or|xor E E)
     union ShiftOp { shl, shr }
     union CmpOp { eq, ne, lt, le, gt, ge }
+    // An atomic operation (§13), whose args are the pointer and the values, in the builtin's
+    // order. compare_exchange gives the value it found, which is the expected one if it stored.
+    union AtomicOp { load, store, exchange, compare_exchange, add, subtract, fence }
 
     // A call's argument, a literal's field: `index` is the param, field or struct field.
     struct Arg { index: u32, value: Expr }
@@ -208,6 +216,9 @@ namespace ir {
         wrap{ op: ArithOp, a: *Expr, b: *Expr },
         cast{ e: *Expr },
         ptraddr{ e: *Expr },
+        // (atomic T OP ORDER [ARG...]): order is atomic::Order's value, 0 relaxed to 4
+        // sequentially consistent.
+        atomic{ op: AtomicOp, order: u8, args: []Expr },
     }
 
     fn type_of { p: Program, id: TypeId } -> Type {

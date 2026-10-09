@@ -65,6 +65,8 @@ namespace check {
         values:   []i64,                // an enum's, one per variant
         symbol:   []u8,                 // an extern fn's C symbol
         callback: bool,                 // a fn with `#c::callback`: C may call it (§18)
+        any_thread: bool,               // and `any_thread = true`: from any thread, holding no capability
+        spawn:    bool,                 // a fn with a valid `#spawn` (§15, rule 14)
         includes: []u32,                // what a capability includes, directly or not (§15)
         vars:     []mut CVar,           // a capability's C variables, its own and included ones
     }
@@ -87,8 +89,9 @@ namespace check {
     }
 
     // The attributes the compiler declares, in the universe: `#convert` (§18, Literal
-    // conversions), `#write` (§13, Formatting), and `#start` and `#panic` (§15, Entry point).
-    enum Attribute: u8 { convert, write, start, panic, stack_limit }
+    // conversions), `#write` (§13, Formatting), `#start` and `#panic` (§15, Entry point),
+    // `#stack_limit` and `#thread_local` on a static (§15, rule 13), and `#spawn` (§15, rule 14).
+    enum Attribute: u8 { convert, write, start, panic, stack_limit, thread_local, spawn }
 
     struct Space {
         name:   []u8,
@@ -243,6 +246,12 @@ namespace check {
         sites:     list::List(Site, Heap),            // every @fmt, whose set is owned by SITE + its index
         fault_writers: map::Map(u64, []Writer, Heap), // an error hole's field writers, by fault_key
         ptr_faults: bool,                             // whether some error's payload holds a pointer
+        thread_locals: list::List(CVar, Heap),        // the `#thread_local` statics, by owner and name
+        // Threads (§15, rule 14): whether the call being checked is to a `#spawn` fn, and what
+        // a run function passed to one takes beyond its field's type, by the argument's key.
+        spawning:  bool,
+        carries:   map::Map(u64, []Forward, Heap),
+        in_attr:   bool,                              // checking an attribute's literal (§18, Attributes)
     }
 
     // What flows into a function's error set: the errors it returns (atoms), the functions whose
@@ -435,6 +444,9 @@ namespace check {
             sites = list::new(Site){ realloc = arena::alloc, &heap },
             fault_writers = map::new(u64, []Writer){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             ptr_faults = false,
+            thread_locals = list::new(CVar){ realloc = arena::alloc, &heap },
+            spawning = false, in_attr = false,
+            carries = map::new(u64, []Forward){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
         }
         _ = space{ &c, name = "", parent = NONE }
         _ = space{ &c, name = "", parent = UNIVERSE }
@@ -452,6 +464,8 @@ namespace check {
         put_name{ &c, ns = UNIVERSE, values = false, name = "start", e = Entry::attr{ a = Attribute::start } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "panic", e = Entry::attr{ a = Attribute::panic } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "stack_limit", e = Entry::attr{ a = Attribute::stack_limit } }
+        put_name{ &c, ns = UNIVERSE, values = false, name = "thread_local", e = Entry::attr{ a = Attribute::thread_local } }
+        put_name{ &c, ns = UNIVERSE, values = false, name = "spawn", e = Entry::attr{ a = Attribute::spawn } }
         return c
     }
 
@@ -629,7 +643,7 @@ namespace check {
             kind, name, ns, qual = qualify{ c, ns, name = name.text }, syn = x, tparams, tsets = slice::empty(bool){},
             fields = slice::empty(types::Field){}, variants = slice::empty(Variant){},
             ret = types::VOID, ty = types::ERROR, values = slice::empty(i64){}, symbol = "",
-            callback = false, includes = slice::empty(u32){}, vars = slice::empty(CVar){},
+            callback = false, any_thread = false, spawn = false, includes = slice::empty(u32){}, vars = slice::empty(CVar){},
         }
         try! list::push{ list = &c.decls, item }
         try! map::put{ m = &c.decl_of, key = key{ file, id = x.id }, value = d }
@@ -1361,6 +1375,7 @@ namespace check {
             let mut seen_write = false
             let mut seen_start = false
             let mut seen_panic = false
+            let mut seen_spawn = false
             let mut k: usize = 0
             while k < x.attrs.len {
                 let a = x.attrs[k]
@@ -1387,6 +1402,13 @@ namespace check {
                         stack_limit => {
                             error{ &c, at = a.span, msg = "`stack_limit` applies only to a capability's static, `static name: usize`" }
                         }
+                        thread_local => {
+                            error{ &c, at = a.span, msg = "`thread_local` applies only to a capability's static, `static name: T`" }
+                        }
+                        spawn => {
+                            spawn_attr{ &c, x, file, a, seen = seen_spawn }
+                            seen_spawn = true
+                        }
                     }
                 }
                 k = k + 1
@@ -1401,7 +1423,7 @@ namespace check {
 
     // A compiler attribute's name, for messages.
     fn attr_name { a: Attribute } -> []u8 {
-        return match a { convert => { "convert" } write => { "write" } start => { "start" } panic => { "panic" } stack_limit => { "stack_limit" } }
+        return match a { convert => { "convert" } write => { "write" } start => { "start" } panic => { "panic" } stack_limit => { "stack_limit" } thread_local => { "thread_local" } spawn => { "spawn" } }
     }
 
     // The attribute the compiler declares that a names, if it is one: `#convert` or `#write`
@@ -1534,6 +1556,97 @@ namespace check {
             return
         }
         if which == Attribute::start { c.starts[own] = d } else { c.panics[own] = d }
+    }
+
+    // `#spawn` on x (§15, rule 14): a fn with a body whose context has a read-only field `run`
+    // of a `fn` type, which it runs on a thread of its own. A call to it may pass `run` a
+    // function that also takes capabilities the caller holds (carry).
+    fn spawn_attr { mut c: Checker, x: syntax::Decl, file: u32, a: syntax::Attr, seen: bool } {
+        let func{ external } = x.k else {
+            error{ &c, at = a.span, msg = "`spawn` applies only to a fn" }
+            return
+        }
+        if external {
+            error{ &c, at = a.span, msg = "`spawn` applies only to a fn with a body, not an extern fn" }
+            return
+        }
+        if seen {
+            error{ &c, at = a.span, msg = "duplicate `spawn` attribute" }
+            return
+        }
+        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        let at = list::at{ list = c.decls, i = d }
+        let f = types::find_field{ fields = at.fields, name = "run" }
+        let mut ok = false
+        if f != null and not f.mutable {
+            let t = types::prune{ s = c.ty, t = f.ty }
+            if t == types::ERROR { return }
+            ok = types::get{ s = c.ty, id = t } is func{ bound, external = fx } and not bound and not fx
+        }
+        if not ok {
+            error{ &c, at = a.span, msg = "a `spawn` fn takes a read-only field `run` of a `fn` type: the function it runs" }
+            return
+        }
+        at.spawn = true
+    }
+
+    // The argument of a `#spawn` fn's `run` (§15, rule 14), where type t is expected: a value
+    // of t, or a `fn` whose context also has capabilities, which the caller must hold as `..`
+    // would supply them to a direct call (§3, rule 7): a local or context field of the same
+    // name, mutable for a `mut` one. The value carries copies of them (carries), and a thread
+    // that runs it receives them.
+    fn carry { mut c: Checker, e: syntax::Expr, t: Id } {
+        let at = expr{ &c, e, exp = t }
+        let g = types::prune{ s = c.ty, t = at }
+        let s = types::prune{ s = c.ty, t }
+        let func{ fields = gf, ret = gr, bound, external } = types::get{ s = c.ty, id = g } else {
+            coerce_node{ &c, e, at, t }
+            return
+        }
+        let func{ fields = sf, ret = sr } = types::get{ s = c.ty, id = s } else {
+            coerce_node{ &c, e, at, t }
+            return
+        }
+        if bound or external {
+            coerce_node{ &c, e, at, t }
+            return
+        }
+        let mut extra = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+        let mut rest = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < gf.len {
+            let f = gf[i]
+            if types::find_field{ fields = sf, name = f.name } == null and types::get{ s = c.ty, id = types::prune{ s = c.ty, t = f.ty } } is cap {
+                add_field{ xs = &extra, f }
+            } else {
+                add_field{ xs = &rest, f }
+            }
+            i = i + 1
+        }
+        if extra.len == 0 {
+            coerce_node{ &c, e, at, t }
+            return
+        }
+        let mine = types::func{ s = &c.ty, fields = list::items{ list = rest }, ret = gr, bound = false, external = false }
+        if not fn_accepts{ &c, g = mine, s } or not types::unify{ s = &c.ty, a = gr, b = sr } {
+            coerce_node{ &c, e, at, t }
+            return
+        }
+        let name = source_text{ c, span = e.span }
+        let mut fwd = list::new(Forward){ realloc = arena::alloc, heap = c.heap }
+        let xs = list::items{ list = extra }
+        i = 0
+        while i < xs.len {
+            let f = xs[i]
+            let v = lookup_local{ c, name = f.name, callable = false }
+            if v == NONE {
+                errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` takes capability `{}`, which a thread receives from its creator: no local or context field named `{}` holds one here", str{ s = name }, str{ s = f.name }, str{ s = f.name }) }
+            } else {
+                try! list::push{ list = &fwd, item = forwarded{ &c, f, v, at = expr_at{ e } } }
+            }
+            i = i + 1
+        }
+        try! map::put{ m = &c.carries, key = expr_key{ e }, value = list::items{ list = fwd } }
     }
 
     // Whether a read-only field `name: t` is one the runtime gives a `#start` or `#panic` fn.
@@ -1704,7 +1817,7 @@ namespace check {
                         symbol_attr{ &c, x, file, a, fields, seen }
                         seen = true
                     } else if rd == callback_decl {
-                        callback_attr{ &c, x, file, a, seen = seen_callback }
+                        callback_attr{ &c, x, file, a, fields, seen = seen_callback }
                         seen_callback = true
                     }
                 }
@@ -1733,6 +1846,7 @@ namespace check {
             let f = fields[i]
             let mut seen = false
             let mut seen_limit = false
+            let mut seen_local = false
             let mut k: usize = 0
             while k < f.attrs.len {
                 let a = f.attrs[k]
@@ -1742,6 +1856,9 @@ namespace check {
                     if which == Attribute::stack_limit {
                         limit_attr{ &c, d, f, file, a, seen = seen_limit }
                         seen_limit = true
+                    } else if which == Attribute::thread_local {
+                        local_attr{ &c, d, f, a, seen = seen_local }
+                        seen_local = true
                     } else {
                         errorf{ &c, at = a.span, msg = @fmt("`{}` applies only to a fn", str{ s = attr_name{ a = which } }) }
                     }
@@ -1794,6 +1911,31 @@ namespace check {
         c.limit_names[own] = f.name.text
     }
 
+    // `#thread_local` on capability d's field f (§15, rule 13): a static of which each thread
+    // has its own.
+    fn local_attr { mut c: Checker, d: u32, f: syntax::Field, a: syntax::Attr, seen: bool } {
+        if not f.stat {
+            error{ &c, at = a.span, msg = "`thread_local` applies only to a capability's static, `static name: T`" }
+            return
+        }
+        if seen {
+            error{ &c, at = a.span, msg = "duplicate `thread_local` attribute" }
+            return
+        }
+        try! list::push{ list = &c.thread_locals, item = CVar{ name = f.name.text, ty = types::ERROR, owner = d, symbol = "", stat = true } }
+    }
+
+    // Whether static v is `#thread_local`: each thread has its own.
+    fn thread_local { c: Checker, v: CVar } -> bool {
+        let xs = list::items{ list = c.thread_locals }
+        let mut i: usize = 0
+        while i < xs.len {
+            if xs[i].owner == v.owner and slice::eq_bytes{ a = xs[i].name, b = v.name } { return true }
+            i = i + 1
+        }
+        return false
+    }
+
     // The static that `#stack_limit` makes the stack limit, as its capability's decl and name:
     // the program's, or std's if it has none; null for neither.
     fn stack_limit { c: Checker } -> ?CVar {
@@ -1838,7 +1980,9 @@ namespace check {
     fn attribute { mut c: Checker, a: syntax::Attr, ns: u32 } -> ?Val {
         begin_body{ &c, sc = Scope{ ns, owner = NONE, names = no_names{}, args = slice::empty(Id){} }, ret = types::VOID }
         let before = c.diags.errors
+        c.in_attr = true
         let t = expr{ &c, e = a.value, exp = types::NO_TYPE }
+        c.in_attr = false
         finish{ &c }
         if c.diags.errors != before { return null }
         let lit = map::get{ m = c.literal, key = expr_key{ e = a.value } }
@@ -1888,7 +2032,7 @@ namespace check {
     // `#c::callback` on a fn: C may call it through a pointer, so it converts to an extern fn
     // type (§12, C function pointers) whose fields include its own. Its fields and result must
     // have C equivalents, and it can't be generic: C's pointer is to one function.
-    fn callback_attr { mut c: Checker, x: syntax::Decl, file: u32, a: syntax::Attr, seen: bool } {
+    fn callback_attr { mut c: Checker, x: syntax::Decl, file: u32, a: syntax::Attr, fields: []Val, seen: bool } {
         let func{ tparams, params, ret, external } = x.k else {
             error{ &c, at = a.span, msg = "`c::callback` applies only to a fn" }
             return
@@ -1916,6 +2060,20 @@ namespace check {
         let lf = loaded_field{ c, fields = at.fields }
         if lf != null {
             errorf{ &c, at = x.span, msg = @fmt("callback `{}` can't take `{}`: capability {} {}", str{ s = at.name.text }, str{ s = lf.name }, tstr{ c, t = lf.ty }, str{ s = NO_THUNK }) }
+        }
+        // `any_thread = true` (§18, Callbacks, rule 6): C may call it from any thread, which holds
+        // no capability.
+        if fields.len == 1 and fields[0] is boolean{ value } and value {
+            at.any_thread = true
+            let mut i: usize = 0
+            while i < at.fields.len {
+                let f = at.fields[i]
+                if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = f.ty } } is cap {
+                    errorf{ &c, at = x.span, msg = @fmt("callback `{}` can't take `{}`: C may call it from any thread, and a thread the program didn't start holds no capability", str{ s = at.name.text }, str{ s = f.name }) }
+                    return
+                }
+                i = i + 1
+            }
         }
     }
 
@@ -3113,7 +3271,19 @@ namespace check {
                     break
                 }
             }
-            if found == NONE { return null }
+            if found == NONE {
+                // An attribute's field left out (zero_field): false or 0.
+                let ft = types::prune{ s = c.ty, t = fields[i].ty }
+                if ft == types::BOOL {
+                    add_val{ xs = &out, v = Val::boolean{ ty = ft, value = false } }
+                } else if types::is_int{ s = c.ty, t = ft } {
+                    add_val{ xs = &out, v = Val::int{ ty = ft, negative = false, magnitude = 0 } }
+                } else {
+                    return null
+                }
+                i = i + 1
+                continue
+            }
             let v = fold_to{ &c, e = items[found].value, t = fields[i].ty }
             if v == null { return null }
             add_val{ xs = &out, v }
@@ -7507,6 +7677,7 @@ namespace check {
     fn braced_as { mut c: Checker, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, forward: bool, bind: bool, exp: Id } -> Id {
         let mut ct = types::ERROR
         let mut name = str{ s = "function" }
+        let mut spawn = false
         match callee.k {
             path{ segs } => {
                 let r = resolve_path{ &c, e = callee, segs, call = true }
@@ -7519,7 +7690,10 @@ namespace check {
                         errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` is an enum value; write it without braces", name) }
                         return types::ERROR
                     }
-                    func{ decl, targs } => { ct = fn_type{ &c, d = decl, targs } }
+                    func{ decl, targs } => {
+                        ct = fn_type{ &c, d = decl, targs }
+                        spawn = get_decl{ c, d = decl }.spawn
+                    }
                     fault{ decl } => { return fault_lit{ &c, e, decl, items, forward, bind } }
                     constant{ decl } => { ct = get_decl{ c, d = decl }.ty }
                     local{ var } => {
@@ -7545,6 +7719,7 @@ namespace check {
             errorf{ &c, at = expr_at{ e = callee }, msg = @fmt("`{}` has type {} and cannot be called", name, tstr{ c, t = ct }) }
             return types::ERROR
         }
+        c.spawning = spawn
         return call_args{ &c, e, ft, name, items, forward, bind }
     }
 
@@ -7604,6 +7779,8 @@ namespace check {
 
     // A call or a bind of function type ft (ctxi's call_args).
     fn call_args { mut c: Checker, e: syntax::Expr, ft: Id, name: utf8::String, items: []syntax::Item, forward: bool, bind: bool } -> Id {
+        let spawn = c.spawning
+        c.spawning = false
         set_literal{ &c, e, literal = false }
         no_spread{ &c, e, items }
         let mut fields: []types::Field = slice::empty(types::Field){}
@@ -7635,6 +7812,8 @@ namespace check {
                         }
                         else => { mut_arg{ &c, e = it.value, at = expr{ &c, e = it.value, exp = want }, t = want } }
                     }
+                } else if spawn and slice::eq_bytes{ a = f.name, b = "run" } {
+                    carry{ &c, e = it.value, t = f.ty }
                 } else {
                     expect{ &c, e = it.value, t = f.ty }
                 }
@@ -7872,7 +8051,7 @@ namespace check {
         let mut missing = list::new(types::Field){ realloc = arena::alloc, heap = c.heap }
         let mut i: usize = 0
         while i < fields.len {
-            if not given{ items, name = fields[i].name } and types::find_field{ fields = spread, name = fields[i].name } == null {
+            if not given{ items, name = fields[i].name } and types::find_field{ fields = spread, name = fields[i].name } == null and not (c.in_attr and zero_field{ c, t = fields[i].ty }) {
                 add_field{ xs = &missing, f = fields[i] }
             }
             i = i + 1
@@ -7891,6 +8070,13 @@ namespace check {
             i = i + 1
         }
         return t
+    }
+
+    // Whether an attribute may leave out a field of type t, which is then false or 0 (§18,
+    // Attributes, rule 2).
+    fn zero_field { c: Checker, t: Id } -> bool {
+        let x = types::prune{ s = c.ty, t }
+        return types::is_int{ s = c.ty, t = x } or x == types::BOOL
     }
 
     // ---- operators
@@ -8259,6 +8445,7 @@ namespace check {
             }
         }
         if slice::eq_bytes{ a = n, b = "size_of" } or slice::eq_bytes{ a = n, b = "align_of" } { return types::USIZE }
+        if atomic_name{ n } { return atomic_builtin{ &c, e, n, args } }
         if slice::eq_bytes{ a = n, b = "offset_of" } {
             if tt != types::ERROR and tt != types::NO_TYPE and args.len == 1 { _ = offset_of{ &c, t = tt, arg = args[0], report = true } }
             return types::USIZE
@@ -8369,6 +8556,123 @@ namespace check {
 
     fn is_enum { c: Checker, t: Id } -> bool {
         return types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is enumeration
+    }
+
+    // ---- atomics (§13): @atomic_load and the rest, and @fence
+
+    fn atomic_name { n: []u8 } -> bool {
+        let p: []u8 = "atomic_"
+        return (n.len > p.len and slice::eq_bytes{ a = n[..p.len], b = p }) or slice::eq_bytes{ a = n, b = "fence" }
+    }
+
+    // The arguments an atomic takes before its order: the pointer and the values.
+    fn atomic_arity { n: []u8 } -> usize {
+        if slice::eq_bytes{ a = n, b = "fence" } { return 0 }
+        if slice::eq_bytes{ a = n, b = "atomic_load" } { return 1 }
+        if slice::eq_bytes{ a = n, b = "atomic_compare_exchange" } { return 3 }
+        return 2
+    }
+
+    // `@atomic_OP(p, values..., order)` on the T that p, a `*T` for a load and a `*mut T`
+    // otherwise, points to: an integer, a `bool`, an enum or a pointer, an integer for add and
+    // subtract. `@fence(order)` takes the order alone.
+    fn atomic_builtin { mut c: Checker, e: syntax::Expr, n: []u8, args: []syntax::Expr } -> Id {
+        let k = atomic_arity{ n }
+        if args.len < k + 1 { return types::ERROR }         // the parser has reported it
+        let load = slice::eq_bytes{ a = n, b = "atomic_load" }
+        let arith = slice::eq_bytes{ a = n, b = "atomic_add" } or slice::eq_bytes{ a = n, b = "atomic_subtract" }
+        let mut t = types::ERROR
+        if k > 0 {
+            let pt = typed{ &c, e = args[0] }
+            match types::get{ s = c.ty, id = pt } {
+                ptr{ elem, mutable } => {
+                    t = types::prune{ s = c.ty, t = elem }
+                    if not load and not mutable {
+                        errorf{ &c, at = expr_at{ e = args[0] }, msg = @fmt("@{} writes through its pointer, which must be a *mut T, not {}", str{ s = n }, tstr{ c, t = pt }) }
+                    }
+                }
+                error => {}
+                else => { errorf{ &c, at = expr_at{ e = args[0] }, msg = @fmt("@{} needs a pointer, got {}", str{ s = n }, tstr{ c, t = pt }) } }
+            }
+            if t != types::ERROR {
+                if arith and not is_int{ c, t } {
+                    errorf{ &c, at = expr_at{ e = args[0] }, msg = @fmt("@{} needs a pointer to an integer, not to {}", str{ s = n }, tstr{ c, t }) }
+                    t = types::ERROR
+                } else if not atomic_type{ c, t } {
+                    errorf{ &c, at = expr_at{ e = args[0] }, msg = @fmt("@{} works on an integer, a bool, an enum or a pointer, not {}", str{ s = n }, tstr{ c, t }) }
+                    t = types::ERROR
+                }
+            }
+            let mut i: usize = 1
+            while i < k {
+                if t == types::ERROR { _ = expr{ &c, e = args[i], exp = types::NO_TYPE } } else { expect{ &c, e = args[i], t } }
+                i = i + 1
+            }
+            // What is stored through p can't hold a local's address (§14, Escape check).
+            if k > 1 and not arith and t != types::ERROR { check_store{ &c, root = NONE, through = true, rhs = args[k - 1], at = expr_at{ e = args[k - 1] } } }
+        }
+        atomic_order{ &c, n, e = args[k], load, store = slice::eq_bytes{ a = n, b = "atomic_store" } }
+        if k == 0 or slice::eq_bytes{ a = n, b = "atomic_store" } { return types::VOID }
+        if t == types::ERROR { return types::ERROR }
+        if slice::eq_bytes{ a = n, b = "atomic_compare_exchange" } { return types::opt{ s = &c.ty, elem = t } }
+        return t
+    }
+
+    // Whether atomics work on a T: one machine word or less that C's atomics take.
+    fn atomic_type { c: Checker, t: Id } -> bool {
+        let x = types::prune{ s = c.ty, t }
+        match types::get{ s = c.ty, id = x } {
+            ptr | enumeration => { return true }
+            prim{ p } => { return types::is_int{ s = c.ty, t = x } or p == types::Prim::bool }
+            opt{ elem } => { return types::get{ s = c.ty, id = types::prune{ s = c.ty, t = elem } } is ptr }
+            var{ n } => { return types::var_of{ s = c.ty, n }.kind == types::VarKind::int }
+            else => { return false }
+        }
+    }
+
+    // An atomic's order: std's `atomic::Order`, a constant. A load can't release, and a store
+    // can't acquire.
+    fn atomic_order { mut c: Checker, n: []u8, e: syntax::Expr, load: bool, store: bool } {
+        let ot = std_type_in{ &c, space = "atomic", name = "Order" }
+        if ot == types::ERROR {
+            let had = c.diags.errors
+            _ = expr{ &c, e, exp = types::NO_TYPE }
+            if c.diags.errors == had {
+                errorf{ &c, at = expr_at{ e }, msg = @fmt("@{} takes std's atomic::Order, which isn't declared", str{ s = n }) }
+            }
+            return
+        }
+        let before = c.diags.errors
+        expect{ &c, e, t = ot }
+        if c.diags.errors != before { return }
+        let v = atomic_order_value{ &c, e }
+        if v == null {
+            errorf{ &c, at = expr_at{ e }, msg = @fmt("the order of @{} must be a constant: an atomic::Order value, or a const of one", str{ s = n }) }
+            return
+        }
+        if load and (v == 2 or v == 3) {
+            error{ &c, at = expr_at{ e }, msg = "@atomic_load can't be `release` or `acquire_release`: a load only acquires" }
+        }
+        if store and (v == 1 or v == 3) {
+            error{ &c, at = expr_at{ e }, msg = "@atomic_store can't be `acquire` or `acquire_release`: a store only releases" }
+        }
+    }
+
+    // The value of an atomic's order, once checked: 0 relaxed, 1 acquire, 2 release, 3
+    // acquire_release, 4 sequentially_consistent; null if it isn't a constant.
+    fn atomic_order_value { mut c: Checker, e: syntax::Expr } -> ?u64 {
+        let v = fold{ &c, e } ifnull { return null }
+        let int{ magnitude } = v else { return null }
+        if magnitude > 4 { return null }
+        return magnitude
+    }
+
+    // A type std declares in its namespace `space`, such as `atomic::Order`; ERROR without one.
+    fn std_type_in { mut c: Checker, space: []u8, name: []u8 } -> Id {
+        let d = std_decl{ c, space, name }
+        if d == NONE { return types::ERROR }
+        let n = syntax::Name{ id = NONE, span = nowhere{}, text = name }
+        return decl_type{ &c, e = Entry::decl{ i = d }, name = n, args = null, at = nowhere{}, partial = false, allow_bound = false }
     }
 
     // ---- @fmt(b, "format", args...) (§13, Formatting): writes into a sink

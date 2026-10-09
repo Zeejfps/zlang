@@ -60,6 +60,7 @@ namespace ir_read {
         let mut stack_limit = lower::NONE
         let mut entry = lower::NONE
         let mut on_panic = lower::NONE
+        let mut threaded = false
         while true {
             expect{ &r, c = '(' }
             if r.failed { break }
@@ -81,7 +82,8 @@ namespace ir_read {
             } else if spells{ s = tag, lit = "static" } {
                 if id32{ &r } != statics.len { fail{ &r, problem = Problem::bad_id } }
                 let name = try string{ &r }
-                try list::push{ list = &statics, item = ir::Static{ name, ty = id32{ &r } } }
+                let ty = id32{ &r }
+                try list::push{ list = &statics, item = ir::Static{ name, ty, local = flag{ &r } } }
             } else if spells{ s = tag, lit = "fn" } {
                 try list::push{ list = &fns, item = try function{ &r } }
             } else if spells{ s = tag, lit = "extern" } {
@@ -94,6 +96,8 @@ namespace ir_read {
                 entry = id32{ &r }
             } else if spells{ s = tag, lit = "on_panic" } {
                 on_panic = id32{ &r }
+            } else if spells{ s = tag, lit = "threaded" } {
+                threaded = true
             } else if spells{ s = tag, lit = "stack_limit" } {
                 stack_limit = id32{ &r }
             } else if spells{ s = tag, lit = "main" } {
@@ -110,7 +114,7 @@ namespace ir_read {
         return ir::Program{
             version, files, types = list::items{ list = types }, consts = list::items{ list = consts },
             vars = list::items{ list = vars }, statics = list::items{ list = statics }, fns = list::items{ list = fns },
-            main, start, panic, entry, on_panic, stack_limit,
+            main, start, panic, entry, on_panic, stack_limit, threaded,
         }
     }
 
@@ -571,6 +575,11 @@ namespace ir_read {
         } else if spells{ s = tag, lit = "dbind" } {
             let callee = try sub{ &r }
             k = ir::ExprKind::dbind{ callee, args = try args{ &r } }
+        } else if spells{ s = tag, lit = "atomic" } {
+            let op = atomic_op{ &r }
+            let order = id32{ &r }
+            if order > 4 { fail{ &r, problem = Problem::expected_int } }
+            k = ir::ExprKind::atomic{ op, order = @trunc(u8, order), args = try exprs{ &r } }
         } else {
             fail{ &r, problem = Problem::unknown_tag }
         }
@@ -622,6 +631,18 @@ namespace ir_read {
         if spells{ s, lit = "div" } { return ir::ArithOp::div }
         if not spells{ s, lit = "rem" } { fail{ &r, problem = Problem::unknown_tag } }
         return ir::ArithOp::rem
+    }
+
+    fn atomic_op { mut r: Reader } -> ir::AtomicOp {
+        let s = sym{ &r }
+        if spells{ s, lit = "load" } { return ir::AtomicOp::load }
+        if spells{ s, lit = "store" } { return ir::AtomicOp::store }
+        if spells{ s, lit = "exchange" } { return ir::AtomicOp::exchange }
+        if spells{ s, lit = "compare_exchange" } { return ir::AtomicOp::compare_exchange }
+        if spells{ s, lit = "add" } { return ir::AtomicOp::add }
+        if spells{ s, lit = "subtract" } { return ir::AtomicOp::subtract }
+        if not spells{ s, lit = "fence" } { fail{ &r, problem = Problem::unknown_tag } }
+        return ir::AtomicOp::fence
     }
 
     fn bit_op { mut r: Reader } -> ir::BitOp {

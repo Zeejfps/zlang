@@ -8968,10 +8968,10 @@ capability X { ..g::O }
 fn main { mut o: g::O, mut x: X } -> i32 { return g::a{ &o } + g::b{ p = &o } + g::a{ o = &x } }
 """, None)])
         import re
-        self.assertEqual(len(re.findall(r'\(static \d+ "g::O::n" \d+\)', text)), 1, text)
+        self.assertEqual(len(re.findall(r'\(static \d+ "g::O::n" \d+ 0\)', text)), 1, text)
         self.assertIn('(saddr ', text)
         # std's stack limit, which every function's frame is checked against.
-        self.assertRegex(text, r'\(static \d+ "rt::Stack::limit" \d+\)')
+        self.assertRegex(text, r'\(static \d+ "rt::Stack::limit" \d+ 0\)')
         self.assertRegex(text, r'\(stack_limit \d+\)')
 
     def test_static_errors(self):

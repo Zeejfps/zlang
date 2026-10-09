@@ -309,8 +309,13 @@ namespace emit {
         }
         i = 0
         while i < e.p.statics.len {
-            let base = mangle{ heap, prefix = "s_", name = e.p.statics[i].name }
-            try! list::push{ list = &e.snames, item = unique{ heap, &taken, base } }
+            // The stack limit is the runtime's: a thread's own in a threaded program (ctxrt.h).
+            if @as(u32, i) == e.p.stack_limit {
+                try! list::push{ list = &e.snames, item = "CTX_STACK_LIMIT" }
+            } else {
+                let base = mangle{ heap, prefix = "s_", name = e.p.statics[i].name }
+                try! list::push{ list = &e.snames, item = unique{ heap, &taken, base } }
+            }
             i = i + 1
         }
         e.lt = locals{ heap, n = e.p.types.len }
@@ -692,7 +697,11 @@ namespace emit {
                 i = i + 1
             }
         }
-        ir_print::text{ o = &all, a = ". Compile with ctxc/rt/ctxrt.c, and ctxfloat.c if it uses floats as text.\n#include \"ctxrt.h\"\n\n" }
+        ir_print::text{ o = &all, a = ". Compile with ctxc/rt/ctxrt.c, ctxthread.c if it is threaded, and ctxfloat.c if it uses floats as text.\n" }
+        // A program that may run on several threads (ir::Program.threaded) keeps the runtime's
+        // state per thread (ctxrt.h, CTX_THREADS).
+        if e.p.threaded { ir_print::text{ o = &all, a = "#define CTX_THREADS 1\n" } }
+        ir_print::text{ o = &all, a = "#include \"ctxrt.h\"\n\n" }
         ir_print::bytes{ o = &all, b = list::items{ list = typed.bytes } }
         ir_print::bytes{ o = &all, b = list::items{ list = proto.bytes } }
         ir_print::char{ o = &all, c = '\n' }
@@ -1114,9 +1123,12 @@ namespace emit {
     }
 
     // A static, zeroed: `static T s_NAME;` in a program of one unit, `T s_NAME;` in main's unit
-    // of several, and `extern T s_NAME;` in the others.
+    // of several, and `extern T s_NAME;` in the others; `_Thread_local` too for a
+    // `#thread_local` one in a threaded program. The stack limit is the runtime's.
     fn static_def { mut e: E, id: u32, entry: bool } {
+        if id == e.p.stack_limit { return }
         if not e.split { put{ &e, a = "static " } } else if not entry { put{ &e, a = "extern " } }
+        if e.p.threaded and e.p.statics[id].local { put{ &e, a = "_Thread_local " } }
         tn{ &e, t = e.p.statics[id].ty }
         ch{ &e, c = ' ' }
         mark_id{ &e, kind = 'd', id }
@@ -1267,9 +1279,7 @@ namespace emit {
         // not in on_panic, which turns it off to report an overflow.
         if e.p.stack_limit != NONE and f.id != e.p.on_panic {
             nl{ &e }
-            put{ &e, a = "CTX_STACK_CHECK_AT(" }
-            mark_id{ &e, kind = 'd', id = e.p.stack_limit }
-            put{ &e, a = ");" }
+            put{ &e, a = "CTX_STACK_CHECK();" }
         }
         // The body goes into a buffer first: its records' slots, and whether it borrows any,
         // go before it.
@@ -1336,7 +1346,9 @@ namespace emit {
             c_names{ &e, f = h }
             put{ &e, a = ");\n}\n\n" }
         }
-        put{ &e, a = "int main(int argc, char **argv) {\n    ctx_start(ctx_file_table, " }
+        put{ &e, a = "int main(int argc, char **argv) {\n    " }
+        if e.p.threaded { put{ &e, a = "ctx_thread_setup();\n    " } }
+        put{ &e, a = "ctx_start(ctx_file_table, " }
         num{ &e, n = e.p.files.len }
         put{ &e, a = ", CTX_PROGRAM_NAME, " }
         put{ &e, a = if e.p.on_panic != NONE { "ctx_on_panic" } else { "0" } }
@@ -1999,6 +2011,7 @@ namespace emit {
                 expr{ &e, x = a.* }
                 put{ &e, a = "))" }
             }
+            atomic{ op, order, args } => { atomic{ &e, op, order, args } }
             some{ e = a } => {
                 if nptr_record{ e, t = x.ty } {
                     expr{ &e, x = a.* }                     // the same struct, under a typedef
@@ -2891,6 +2904,13 @@ namespace emit {
                     i = i + 1
                 }
             }
+            atomic{ args = elems } => {
+                let mut i = 0
+                while i < elems.len {
+                    c_expr{ &e, x = elems[i], taken = false }
+                    i = i + 1
+                }
+            }
             ifx{ c, then, els } => {
                 c_expr{ &e, x = c.*, taken = false }
                 c_block{ &e, b = then }
@@ -2912,16 +2932,19 @@ namespace emit {
         let s = store{ &e, t, given, empty = args.len == 0 and inner == null }
         match s {
             canon => {
-                // A widening thunk of a `fn` value (lower.ctx, widen_fn): an adapter's layout.
-                if inner != null or args.len != 1 or not (ty{ e, id = args[0].value.ty } is func) {
-                    @panic("emit: a `fn` record that isn't a widening thunk")
+                // A thunk of a `fn` value alone (lower.ctx, widen_fn and carried): an adapter's
+                // layout, one for each value.
+                if inner == null and args.len == 1 and ty{ e, id = args[0].value.ty } is func {
+                    put{ &e, a = "ctx_adapt(" }
+                    expr{ &e, x = args[0].value }
+                    put{ &e, a = ", (void (*)(void))" }
+                    mark_id{ &e, kind = 'b', id = k }
+                    put{ &e, a = "_code)" }
+                    return
                 }
-                put{ &e, a = "ctx_adapt(" }
-                expr{ &e, x = args[0].value }
-                put{ &e, a = ", (void (*)(void))" }
-                mark_id{ &e, kind = 'b', id = k }
-                put{ &e, a = "_code)" }
-                return
+                // A thunk that carries capabilities to a thread (lower.ctx, carried): a record
+                // that lives as long as the program, as the thread may.
+                if inner != null { @panic("emit: a `fn` record of a function value's bind") }
             }
             fixed => {
                 put{ &e, a = "({ static struct " }
@@ -2944,7 +2967,7 @@ namespace emit {
         } else {
             put{ &e, a = " *" }
             tmp{ &e, k = kr }
-            put{ &e, a = " = ctx_rec_alloc(sizeof(struct " }
+            put{ &e, a = if s is canon { " = ctx_alloc(sizeof(struct " } else { " = ctx_rec_alloc(sizeof(struct " } }
             mark_id{ &e, kind = 'b', id = k }
             put{ &e, a = ")); " }
         }
@@ -3140,7 +3163,14 @@ namespace emit {
             }
             i = i + 1
         }
-        if not is_void{ e, t = ret } { put{ &e, a = "return " } }
+        // In a threaded program, C may call it on a thread the runtime has no state for (one
+        // the program didn't start), which it gets until the callback returns (ctxrt.h).
+        let entered = e.p.threaded
+        if entered { put{ &e, a = "ctx_thread _thread; int _entered = ctx_thread_enter(&_thread);\n    " } }
+        if entered and not is_void{ e, t = ret } {
+            tn{ &e, t = ret }
+            put{ &e, a = " _result = " }
+        } else if not entered and not is_void{ e, t = ret } { put{ &e, a = "return " } }
         mark_id{ &e, kind = 'f', id = c.callee }
         ch{ &e, c = '(' }
         let mut j = 0
@@ -3159,6 +3189,12 @@ namespace emit {
                 by_name{ &e, name = q.name, params, c = true, to_ref = by_ref{ e, q } }
             }
             j = j + 1
+        }
+        if entered {
+            put{ &e, a = ");\n    if (_entered) ctx_thread_leave(&_thread);\n" }
+            if not is_void{ e, t = ret } { put{ &e, a = "    return _result;\n" } }
+            put{ &e, a = "}\n\n" }
+            return
         }
         put{ &e, a = ");\n}\n\n" }
     }
@@ -3260,6 +3296,71 @@ namespace emit {
             i = i + 1
         }
         return true
+    }
+
+    // An atomic (spec §13) as GCC's __atomic builtins, which gcc and clang both have: the
+    // pointer and the values in temporaries, in order. compare_exchange gives the value it found,
+    // which is the expected one if it stored.
+    fn atomic { mut e: E, op: ir::AtomicOp, order: u8, args: []ir::Expr } {
+        if op is fence {
+            put{ &e, a = "__atomic_thread_fence(" }
+            memory_order{ &e, order }
+            ch{ &e, c = ')' }
+            return
+        }
+        let base = e.temp
+        e.temp = e.temp + @as(u32, args.len)
+        put{ &e, a = "({ " }
+        let mut i = 0
+        while i < args.len {
+            declare{ &e, t = args[i].ty, k = base + @as(u32, i) }
+            expr{ &e, x = args[i] }
+            put{ &e, a = "; " }
+            i = i + 1
+        }
+        put{ &e, a = match op {
+            load => { "__atomic_load_n(" }
+            store => { "__atomic_store_n(" }
+            exchange => { "__atomic_exchange_n(" }
+            compare_exchange => { "__atomic_compare_exchange_n(" }
+            add => { "__atomic_fetch_add(" }
+            subtract => { "__atomic_fetch_sub(" }
+            fence => { "" }
+        } }
+        tmp{ &e, k = base }
+        if op is compare_exchange {
+            put{ &e, a = ", &" }
+            tmp{ &e, k = base + 1 }
+            put{ &e, a = ", " }
+            tmp{ &e, k = base + 2 }
+            put{ &e, a = ", 0, " }
+            memory_order{ &e, order }
+            put{ &e, a = ", " }
+            // on failure: no release, which only a store does
+            memory_order{ &e, order = if order == 2 { 0 } else if order == 3 { 1 } else { order } }
+            put{ &e, a = "); " }
+            tmp{ &e, k = base + 1 }
+            put{ &e, a = "; })" }
+            return
+        }
+        if args.len > 1 {
+            put{ &e, a = ", " }
+            tmp{ &e, k = base + 1 }
+        }
+        put{ &e, a = ", " }
+        memory_order{ &e, order }
+        put{ &e, a = "); })" }
+    }
+
+    // atomic::Order's value as C's memory order.
+    fn memory_order { mut e: E, order: u8 } {
+        put{ &e, a = match order {
+            0 => { "__ATOMIC_RELAXED" }
+            1 => { "__ATOMIC_ACQUIRE" }
+            2 => { "__ATOMIC_RELEASE" }
+            3 => { "__ATOMIC_ACQ_REL" }
+            else => { "__ATOMIC_SEQ_CST" }
+        } }
     }
 
     // Swaps the output with the aux buffer.
