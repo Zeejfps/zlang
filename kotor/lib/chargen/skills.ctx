@@ -65,6 +65,12 @@ namespace chargen {
         let mut r: usize = 0
         while r < SKILLS {
             try set_number{ &g, panel = p, tag = SK_POINTS_TAG[r], n = st.sk[r] }
+            // Plus hides at the cap, minus at the rank the panel opened with (0); running out of
+            // points leaves them showing (the original's visible bit).
+            let mut b1: [24]u8
+            gui::set_visible{ &g, panel = p, tag = skill_tag{ into = b1[..], row = r, suffix = "_PLUS_BTN" }, visible = st.sk[r] < skill_cap_of{ st, row = r } }
+            let mut b2: [24]u8
+            gui::set_visible{ &g, panel = p, tag = skill_tag{ into = b2[..], row = r, suffix = "_MINUS_BTN" }, visible = st.sk[r] > 0 }
             r = r + 1
         }
         try set_number{ &g, panel = p, tag = "REMAINING_SELECTIONS_LBL", n = st.sk_points }
@@ -90,16 +96,17 @@ namespace chargen {
         st.sk_focus = row
         let cost = skill_cost_of{ st, row }
         let cap = skill_cap_of{ st, row }
+        if cost > st.sk_points {
+            // Checked before the cap, as the original does.
+            try show_message{ st, &g, &fs, &dev, strref = 42464, ask = Ask::info }
+            return
+        }
         if st.sk[row] >= cap {
             // "Class skills can have a maximum skill rank of <CUSTOM0> (current level + 3)."
             let mut buf: [16]u8
             let len = frontend::put_int{ into = buf[..], at = 0, n = cap }
             try gui::set_token{ &g, name = "CUSTOM0", value = buf[..len] }
             try show_message{ st, &g, &fs, &dev, strref = if cost == 1 { 42178 } else { 42179 }, ask = Ask::info }
-            return
-        }
-        if cost > st.sk_points {
-            try show_message{ st, &g, &fs, &dev, strref = 42464, ask = Ask::info }
             return
         }
         st.sk[row] = st.sk[row] + 1

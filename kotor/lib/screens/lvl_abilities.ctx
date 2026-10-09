@@ -23,9 +23,11 @@ namespace lvl {
             let mut b1: [24]u8
             try chargen::set_number{ &g, panel = p, tag = chargen::ability_tag{ into = b1[..], row = r, suffix = "_POINTS_BTN" }, n = s.ab[r] }
             let mut b2: [24]u8
-            gui::set_enabled{ &g, panel = p, tag = chargen::ability_tag{ into = b2[..], row = r, suffix = "_PLUS_BTN" }, enabled = s.ab_points > 0 }
+            // Level-up has no cap of 18, so the original never hides plus here; minus hides at the
+            // score the panel opened with.
+            gui::set_visible{ &g, panel = p, tag = chargen::ability_tag{ into = b2[..], row = r, suffix = "_PLUS_BTN" }, visible = true }
             let mut b3: [24]u8
-            gui::set_enabled{ &g, panel = p, tag = chargen::ability_tag{ into = b3[..], row = r, suffix = "_MINUS_BTN" }, enabled = s.ab[r] > s.ab_start[r] }
+            gui::set_visible{ &g, panel = p, tag = chargen::ability_tag{ into = b3[..], row = r, suffix = "_MINUS_BTN" }, visible = s.ab[r] > s.ab_start[r] }
             r = r + 1
         }
         try chargen::set_number{ &g, panel = p, tag = "REMAINING_SELECTIONS_LBL", n = s.ab_points }

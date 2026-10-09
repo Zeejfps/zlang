@@ -22,9 +22,11 @@ namespace lvl {
             try chargen::set_number{ &g, panel = p, tag = chargen::SK_POINTS_TAG[r], n = skill_total{ s = &s, w = &w, row = r } }
             let usable = s.opts.skills[r].usable
             let mut b1: [24]u8
-            gui::set_enabled{ &g, panel = p, tag = chargen::skill_tag{ into = b1[..], row = r, suffix = "_PLUS_BTN" }, enabled = usable }
+            // The original hides plus at the cap and on a row the creature may not use, and minus
+            // at the rank the panel opened with; running out of points leaves them showing.
+            gui::set_visible{ &g, panel = p, tag = chargen::skill_tag{ into = b1[..], row = r, suffix = "_PLUS_BTN" }, visible = usable and skill_total{ s = &s, w = &w, row = r } < s.opts.skills[r].max_rank }
             let mut b2: [24]u8
-            gui::set_enabled{ &g, panel = p, tag = chargen::skill_tag{ into = b2[..], row = r, suffix = "_MINUS_BTN" }, enabled = usable and s.sk[r] > 0 }
+            gui::set_visible{ &g, panel = p, tag = chargen::skill_tag{ into = b2[..], row = r, suffix = "_MINUS_BTN" }, visible = s.sk[r] > 0 }
             r = r + 1
         }
         try chargen::set_number{ &g, panel = p, tag = "REMAINING_SELECTIONS_LBL", n = s.sk_points }
@@ -81,16 +83,17 @@ namespace lvl {
         s.sk_focus = row
         let o = s.opts.skills[row]
         if not o.usable { return }
+        if o.cost > s.sk_points {
+            // Checked before the cap, as the original does.
+            try say{ &s, &g, &w, &dev, strref = 42464, ask = ASK_INFO }
+            return
+        }
         if skill_total{ s = &s, w = &w, row } >= o.max_rank {
             // "Class skills can have a maximum skill rank of <CUSTOM0> (current level + 3)."
             let mut buf: [16]u8
             let len = frontend::put_int{ into = buf[..], at = 0, n = o.max_rank }
             try gui::set_token{ &g, name = "CUSTOM0", value = buf[..len] }
             try say{ &s, &g, &w, &dev, strref = if o.cost == 1 { 42178 } else { 42179 }, ask = ASK_INFO }
-            return
-        }
-        if o.cost > s.sk_points {
-            try say{ &s, &g, &w, &dev, strref = 42464, ask = ASK_INFO }
             return
         }
         s.sk[row] = s.sk[row] + 1

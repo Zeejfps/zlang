@@ -59,9 +59,11 @@ namespace chargen {
             let mut buf: [24]u8
             try set_number{ &g, panel = p, tag = ability_tag{ into = buf[..], row = r, suffix = "_POINTS_BTN" }, n = st.ab[r] }
             let mut b2: [24]u8
-            gui::set_enabled{ &g, panel = p, tag = ability_tag{ into = b2[..], row = r, suffix = "_PLUS_BTN" }, enabled = st.ab[r] < ABILITY_MAX }
+            // The original hides the arrows at the limits (the visible bit, not "disabled"); running
+            // out of points leaves them showing.
+            gui::set_visible{ &g, panel = p, tag = ability_tag{ into = b2[..], row = r, suffix = "_PLUS_BTN" }, visible = st.ab[r] < ABILITY_MAX }
             let mut b3: [24]u8
-            gui::set_enabled{ &g, panel = p, tag = ability_tag{ into = b3[..], row = r, suffix = "_MINUS_BTN" }, enabled = st.ab[r] > ABILITY_MIN }
+            gui::set_visible{ &g, panel = p, tag = ability_tag{ into = b3[..], row = r, suffix = "_MINUS_BTN" }, visible = st.ab[r] > ABILITY_MIN }
             r = r + 1
         }
         try set_number{ &g, panel = p, tag = "REMAINING_SELECTIONS_LBL", n = st.ab_points }
@@ -91,6 +93,7 @@ namespace chargen {
     fn raise_ability { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, p: u32, row: usize } -> ! {
         st.ab_focus = row
         let score = st.ab[row]
+        if st.ab_points <= 0 { return }     // checked first: at 18 with no points left it is silent too
         if score >= ABILITY_MAX {
             try show_message{ st, &g, &fs, &dev, strref = 42181, ask = Ask::info }
             return
