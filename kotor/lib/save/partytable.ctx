@@ -103,7 +103,7 @@ namespace save {
         try put_gff_value{ &b, owner = root, label = "PT_LAST_GUI_PNL", value = gff::Value::int{ v = w.last_menu } }
         // The Messages logs (SavePartyTable 0x005648c0): the feedback lines, oldest first, with the
         // type the GUI keeps (0x80) and the colour byte (1 red: the attack summary), then the dialogue
-        // lines (we keep no speaker apart from the text).
+        // lines with their speakers.
         let fb = try gffw::put_list{ &b, owner = root, label = "PT_FB_MSG_LIST" }
         let n_lines = msglog::count{ log = &w.messages }
         k = 0
@@ -122,7 +122,7 @@ namespace save {
         while k < n_lines {
             if msglog::kind{ log = &w.messages, i = k } == msglog::DIALOG {
                 let e = try gffw::add_element{ &b, list = dl, id = 0 }
-                try put_gff_value{ &b, owner = e, label = "PT_DLG_MSG_SPKR", value = gff::Value::exostring{ v = "" } }
+                try put_gff_value{ &b, owner = e, label = "PT_DLG_MSG_SPKR", value = gff::Value::exostring{ v = msglog::speaker{ log = &w.messages, i = k } } }
                 try put_gff_value{ &b, owner = e, label = "PT_DLG_MSG_MSG", value = gff::Value::exostring{ v = msglog::text{ log = &w.messages, i = k } } }
             }
             k = k + 1
@@ -255,7 +255,8 @@ namespace save {
         li = 0
         while li < dl.len {
             let text = gff::get_string{ doc = doc.*, s = dl[li], label = "PT_DLG_MSG_MSG" } ifnull ""
-            if text.len > 0 { msglog::add{ log = &w.messages, text, kind = msglog::DIALOG } }
+            let speaker = gff::get_string{ doc = doc.*, s = dl[li], label = "PT_DLG_MSG_SPKR" } ifnull ""
+            if text.len > 0 { msglog::add_spoken{ log = &w.messages, speaker, text, kind = msglog::DIALOG } }
             li = li + 1
         }
         // The journal.

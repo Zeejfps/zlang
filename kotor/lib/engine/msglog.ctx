@@ -5,7 +5,8 @@
 // reaches it; hud/log.ctx is the HUD's view of it.
 namespace msglog {
     const LINES: usize = 64
-    const LEN: usize = 192
+    const LEN: usize = 1024             // a conversation line can run past 192 bytes (saves hold 197)
+    const SPEAKER_LEN: usize = 64
 
     // What a line is: feedback (also drawn as the HUD's young lines), something said in a
     // conversation, a red feedback line (the original's colour byte 1: the attack summary), or
@@ -16,8 +17,10 @@ namespace msglog {
     const QUIET: u8 = 3
 
     struct Line {
-        text: [192]u8,
+        text: [1024]u8,
         len: usize,
+        speaker: [64]u8,        // a dialogue line's speaker (PT_DLG_MSG_SPKR), empty for feedback
+        speaker_len: usize,
         kind: u8,
         age: f32,               // seconds since it was added; the HUD fades recent feedback
     }
@@ -39,7 +42,7 @@ namespace msglog {
     }
 
     fn new_ring {} -> Ring {
-        return Ring{ lines = [Line{ text = [0; 192], len = 0, kind = 0, age = 0.0 }; 64], added = 0, kept = 0 }
+        return Ring{ lines = [Line{ text = [0; 1024], len = 0, speaker = [0; 64], speaker_len = 0, kind = 0, age = 0.0 }; 64], added = 0, kept = 0 }
     }
 
     fn new {} -> Log {
@@ -63,6 +66,12 @@ namespace msglog {
         return l.text[..l.len]
     }
 
+    // Line `i`'s speaker: who said a dialogue line; empty for feedback.
+    fn speaker { log: *Log, i: usize } -> []u8 {
+        let l = line_at{ log, i } ifnull { return "" }
+        return l.speaker[..l.speaker_len]
+    }
+
     fn kind { log: *Log, i: usize } -> u8 {
         let l = line_at{ log, i } ifnull { return 0 }
         return l.kind
@@ -75,11 +84,19 @@ namespace msglog {
 
     // Adds a line (cut to LEN bytes) to its list; the 65th pushes the oldest out.
     fn add { mut log: Log, text: []u8, kind: u8 } {
+        add_spoken{ &log, speaker = "", text, kind }
+    }
+
+    // Adds a line with its speaker (cut to SPEAKER_LEN bytes).
+    fn add_spoken { mut log: Log, speaker: []u8, text: []u8, kind: u8 } {
         let r = if kind == DIALOG { &log.dialog } else { &log.feedback }
         let at = r.added % LINES
         let n = if text.len > LEN { LEN } else { text.len }
         slice::copy(u8){ dst = r.lines[at].text[..n], src = text[..n] }
         r.lines[at].len = n
+        let ns = if speaker.len > SPEAKER_LEN { SPEAKER_LEN } else { speaker.len }
+        slice::copy(u8){ dst = r.lines[at].speaker[..ns], src = speaker[..ns] }
+        r.lines[at].speaker_len = ns
         r.lines[at].kind = kind
         r.lines[at].age = 0.0
         r.added = r.added + 1
