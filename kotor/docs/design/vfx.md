@@ -233,6 +233,31 @@ mostly one-particle `Single` sprites) for about 0.2 to 0.3 ms a frame more in a 
 (`--no-render`) draws, and so steps, only the frames it pictures. The screenshot log has a line
 `world emitters: N drawn, M particles` (grass apart), which `kotor/tools/gfx/world_emitters.sh` checks.
 
+## Particles in the world (lib/frontend/gui3d/particles.ctx)
+
+A particle lives in its emitter's space (below), but what the world does to it is the world's, as in the
+original ([../re/particles.md](../re/particles.md), "A particle"): `gui3d::step_emitting` is given the emitter
+node's matrix to world space and
+
+- gravity (`mass` g) pulls along world -Z, brought into the emitter's space each step. It used to pull along
+  the emitter's own -Z, which for an emitter turned on its side is sideways: the lightsaber clash sparks
+  (`v_spkb_imp`, `VFX_COM_SPARKS_LIGHTSABER`: Explosion, Motion_Blur, 60 sparks at 3 +- 2 m/s, mass 1.5,
+  life 2 s, the node turned so its +Z is the effect's facing) fell 30 m down the corridor at 15 m/s/s,
+  streaking a metre long, and flew through the closed door of the Endar Spire's Jedi duel before it opened;
+- an emitter with the `bounce` flag (0x10; 453 emitters: sparks, droids', doors' `DamageSpark`, dust) has
+  each particle's step ray-cast against the world (`scene::touch`: the visible rooms' drawn meshes, the doors
+  and placeables, `scene::ray_contact`, the camera's test with the face's normal). At a contact it is
+  reflected (times 0.75, its upward part also times `bounce_co`) or, slower than sqrt(0.5) m/s, comes to rest
+  2 cm off the surface and is not moved again. The menus and the minigames have nothing to bounce off
+  (`gui3d::no_contact`). A resting particle keeps its render mode's facing (the original lays it along the
+  surface normal: not done);
+- a birth's offset is within xsize/200 and ysize/200 m either way and its tilt off +Z up to `spread`/2 (both
+  were twice the original's).
+
+`sh kotor/tools/gfx/duel_sparks.sh EXE` checks the duel: four shots from in front of the closed door during
+the clashes (from the `bunk` checkpoint), each with at most 40 spark-yellow pixels
+(`kotor/tools/py/spark_pixels.py`); the build with the sideways gravity had 130 and 766.
+
 ## Decisions (ours) and open items
 
 - Bolt speed is the engine's 23.8 ms/m (42 m/s); the streak's length factor is ours.
@@ -254,7 +279,10 @@ mostly one-particle `Single` sprites) for about 0.2 to 0.3 ms a frame more in a 
   and resist models 1201/1202, the medal and Revan masks 1700-1702, the player's camera and
   full-screen effects, the vision modes) are not drawn.
 - World emitters: particles live in their emitter's space, as the effects' do (the original keeps them in world
-  space; the same for an emitter that does not move, which is nearly every room's); Lightning emitters stay quiet;
+  space and carries them with the emitter only with `inherit`, 0x40, which 1,853 emitters have, mostly the bolts';
+  the same for an emitter that does not move, which is nearly every room's and every still effect's; gravity and
+  bounces are the world's, above); Lightning emitters stay quiet; Linked emitters draw billboards, not the
+  original's ribbon; particles draw with depth writes off except punch-through ones (the original: off for all);
   only `animloop1` plays on a room, so emitters keyed in `animloop2`/`animloop3` are not animated.
 - Not done: footsteps, melee blood (the game has none), beams, thrown grenades and Force
   projectiles in flight (above), the Jedi's blade colours by crystal (blades show the model's

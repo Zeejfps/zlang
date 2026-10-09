@@ -417,7 +417,8 @@ namespace mg_game {
                 pose_anim{ a = &stage.anims[i], model, pose = p.pose, dt }
                 let mut e: usize = 0
                 while e < it.emitting.len {
-                    gui3d::step_emitting{ em = &it.emitting[e], e = &model.emitters[e], props = p.pose.emitters[e], dt = math::min{ a = dt, b = gui3d::MAX_STEP } }
+                    let world = math::mat4::mul{ a = it.instance, b = p.pose.world[model.emitters[e].node] }
+                    gui3d::step_emitting{ em = &it.emitting[e], e = &model.emitters[e], props = p.pose.emitters[e], dt = math::min{ a = dt, b = gui3d::MAX_STEP }, world, ground = gui3d::no_contact }
                     e = e + 1
                 }
             }

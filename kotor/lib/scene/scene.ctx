@@ -494,7 +494,7 @@ namespace scene {
             let instance = math::mat4::translation{ t = r.position }
             add_lights{ &frame, model = l.model, pose = p.pose, instance }
             _ = mdl_render::add_draws_look{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = instance, materials = l.materials, time = sc.time, look = null, cast = null, kind = render::DrawKind::room, ambient = 0 }
-            draw_emitters{ sc = &sc, &frame, view, part = @as(usize, r.part), instance, sight, warm = true }
+            draw_emitters{ sc = &sc, w, &frame, view, part = @as(usize, r.part), instance, sight, warm = true }
             sc.drawn_rooms = sc.drawn_rooms + 1
         }
         mark_sun{ sc = &sc, &frame, view }
@@ -545,15 +545,24 @@ namespace scene {
     // original's ray test, movement.md 2.3, meets geometry the walkmeshes lack, such as building
     // fronts above the floor). Meshes are culled by their bounding spheres first.
     fn ray_hit { sc: *Scene, w: *world::World, origin: math::Vec3, dir: math::Vec3, max_t: f32 } -> ?f32 {
+        let c = ray_contact{ sc, w, origin, dir, max_t } ifnull { return null }
+        return c.t
+    }
+
+    // A ray's first contact: how far along `dir`, and the face's unit normal there (facing the ray).
+    struct RayContact { t: f32, normal: math::Vec3 }
+
+    // ray_hit with the face it met: what a bouncing particle reflects off (lib/scene/emitters.ctx).
+    fn ray_contact { sc: *Scene, w: *world::World, origin: math::Vec3, dir: math::Vec3, max_t: f32 } -> ?RayContact {
         let rooms = list::items{ list = sc.rooms }
-        let mut best = max_t
+        let mut best = RayContact{ t = max_t, normal = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } }
         let mut found = false
         let mut i: usize = 0
         while i < rooms.len {
             let r = rooms[i]
             i = i + 1
             if not r.visible or r.part < 0 { continue }
-            let t = part_hit{ sc, part = @as(usize, r.part), instance = math::mat4::translation{ t = r.position }, trees = r.trees, origin, dir, max_t = best }
+            let t = part_hit{ sc, part = @as(usize, r.part), instance = math::mat4::translation{ t = r.position }, trees = r.trees, origin, dir, max_t = best.t }
             if t != null {
                 best = t
                 found = true
@@ -568,11 +577,11 @@ namespace scene {
             if not v.alive or v.count == 0 { continue }
             let o = world::object{ w, id = v.id } ifnull { continue }
             if o.kind != obj::Kind::door and o.kind != obj::Kind::placeable { continue }
-            if math::vec3::distance{ a = o.position, b = origin } > best + 10.0 { continue }
+            if math::vec3::distance{ a = o.position, b = origin } > best.t + 10.0 { continue }
             let instance = math::mat4::from_rotation_translation{
                 r = math::quat::from_axis_angle{ axis = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, angle = obj::model_yaw{ orientation = o.orientation } }, t = o.position,
             }
-            let t = part_hit{ sc, part = v.first, instance, trees = -1, origin, dir, max_t = best }
+            let t = part_hit{ sc, part = v.first, instance, trees = -1, origin, dir, max_t = best.t }
             if t != null {
                 best = t
                 found = true
@@ -583,11 +592,11 @@ namespace scene {
     }
 
     // The nearest hit of a ray on one part's drawn, rigid meshes, within max_t.
-    fn part_hit { sc: *Scene, part: usize, instance: math::Mat4, trees: i32, origin: math::Vec3, dir: math::Vec3, max_t: f32 } -> ?f32 {
+    fn part_hit { sc: *Scene, part: usize, instance: math::Mat4, trees: i32, origin: math::Vec3, dir: math::Vec3, max_t: f32 } -> ?RayContact {
         let p = part_at{ sc, i = part }
         let model = loaded_at{ sc, i = p.loaded }.model
         let tlist = list::items{ list = sc.ray_trees }
-        let mut best = max_t
+        let mut best = RayContact{ t = max_t, normal = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } }
         let mut found = false
         let mut m: usize = 0
         while m < model.meshes.len {
@@ -599,7 +608,7 @@ namespace scene {
                 if trees >= 0 {
                     let tree = &tlist[@as(usize, trees) + m - 1]
                     if tree.nodes.len > 0 and same_matrix{ a = tree.world, b = math::mat4::mul{ a = instance, b = p.pose.world[mesh.node] } } {
-                        let t = cast_ray_tree{ tree, mesh, ray = math::Ray{ origin, dir }, max_t = best }
+                        let t = cast_ray_tree{ tree, mesh, ray = math::Ray{ origin, dir }, max_t = best.t }
                         if t != null {
                             best = t
                             found = true
@@ -611,7 +620,7 @@ namespace scene {
                 // per mesh would cost more than the rays do).
                 let center = math::mat4::transform_point{ m = instance, p = math::mat4::transform_point{ m = p.pose.world[mesh.node], p = mesh.average } }
                 let oc = math::vec3::sub{ a = center, b = origin }
-                let along = math::clamp{ x = math::vec3::dot{ a = oc, b = dir }, lo = 0.0, hi = best }
+                let along = math::clamp{ x = math::vec3::dot{ a = oc, b = dir }, lo = 0.0, hi = best.t }
                 let closest = math::vec3::add_scaled{ a = origin, b = dir, s = along }
                 let off = math::vec3::sub{ a = closest, b = center }
                 let reach = mesh.radius + 0.01
@@ -623,15 +632,22 @@ namespace scene {
                     let b = corner{ mesh, m = world_m, i = mesh.indices[k + 1] }
                     let c = corner{ mesh, m = world_m, i = mesh.indices[k + 2] }
                     k = k + 3
-                    let hit = math::ray::intersect_triangle{ ray = math::Ray{ origin, dir }, a, b, c, max_t = best }
-                    if hit != null and hit.t < best {
-                        best = hit.t
+                    let hit = math::ray::intersect_triangle{ ray = math::Ray{ origin, dir }, a, b, c, max_t = best.t }
+                    if hit != null and hit.t < best.t {
+                        best = RayContact{ t = hit.t, normal = facing_normal{ a, b, c, dir } }
                         found = true
                     }
                 }
             }
         if not found { return null }
         return best
+    }
+
+    // A triangle's unit normal, turned to face against `dir` (the ray that met it).
+    fn facing_normal { a: math::Vec3, b: math::Vec3, c: math::Vec3, dir: math::Vec3 } -> math::Vec3 {
+        let n = math::vec3::normalize{ v = math::vec3::cross{ a = math::vec3::sub{ a = b, b = a }, b = math::vec3::sub{ a = c, b = a } } }
+        if math::vec3::dot{ a = n, b = dir } > 0.0 { return math::vec3::scale{ v = n, s = -1.0 } }
+        return n
     }
 
     fn corner { mesh: *mdl::Mesh, m: math::Mat4, i: u16 } -> math::Vec3 {

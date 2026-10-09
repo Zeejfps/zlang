@@ -3,13 +3,23 @@
 // alpha curves; docs/re/gui3d.md says what is inferred): the original's code is read only as far
 // as the main menu needs.
 //
-// Particles live in their emitter's space, so a moving emitter carries them. One Emitting is one
-// emitter node of one model; the Scene owns them.
+// Particles live in their emitter's space, so a moving emitter carries them (the original's live in
+// the world and only `inherit` ones follow the emitter: docs/design/vfx.md, "Decisions"); what the
+// world does to them, gravity and the surfaces they bounce off, is the world's, brought into that
+// space each step. One Emitting is one emitter node of one model; the Scene owns them.
 namespace gui3d {
     // One live particle. `aim` is the unit direction it was sent in (the +Z of the particle's own
     // orientation in the original), which does not follow its velocity; `tail` is where a
-    // Motion_Blur particle's streak ends, trailing behind `pos`.
-    struct Puff { pos: math::Vec3, vel: math::Vec3, age: f32, life: f32, angle: f32, frame: f32, aim: math::Vec3, tail: math::Vec3 }
+    // Motion_Blur particle's streak ends, trailing behind `pos`. `still`: it bounced to a stop on a
+    // surface and is no longer moved.
+    struct Puff { pos: math::Vec3, vel: math::Vec3, age: f32, life: f32, angle: f32, frame: f32, aim: math::Vec3, tail: math::Vec3, still: bool }
+
+    // Where a bouncing particle's step (from, to: world space) first meets the world: the point and
+    // the face's unit normal there, null for none.
+    struct Contact { at: math::Vec3, normal: math::Vec3 }
+
+    // Nothing to bounce off: a menu's or a minigame's scene.
+    fn no_contact { from: math::Vec3, to: math::Vec3 } -> ?Contact { return null }
 
     // The most particles one emitter keeps alive, whatever its birth rate and life say.
     const MAX_PUFFS: usize = 4096
@@ -76,11 +86,23 @@ namespace gui3d {
     // One step of `dt` seconds: the old die, the rest move, new ones are born. A Single emitter keeps
     // one particle while its birth rate is at least 1 (whole particles: the original truncates),
     // which ages to the end of its curves and stays there; the others give birth `birthrate` times a
-    // second.
-    fn step_emitting { mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, dt: f32 } {
+    // second. `world` is the emitter node's matrix to world space, where gravity pulls down (world -Z)
+    // and `ground` says where a bouncing particle meets something.
+    fn step_emitting {
+        mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, dt: f32, world: math::Mat4,
+        ground: &fn{ from: math::Vec3, to: math::Vec3 } -> ?Contact,
+    } {
         if dt <= 0.0 { return }
         let single = e.update == mdl::EmitterUpdate::single
         let blur = e.render == mdl::EmitterRender::motion_blur
+        let bounces = (e.flags & EMIT_BOUNCE) != 0
+        // World down in the emitter's space (its length is a world metre's there): the original's
+        // particles are in the world and fall along world -Z whichever way the emitter points
+        // (0x00492450); a sideways spark emitter (the clash sparks v_spkb_imp emit along their
+        // effect's facing) must not fall sideways.
+        let to_local = math::mat4::inverse_affine{ m = world }
+        let down = math::mat4::transform_dir{ m = to_local, v = math::Vec3{ x = 0.0, y = 0.0, z = -1.0 } }
+        let pull = props.mass * GRAVITY * dt
         let mut i: u32 = 0
         while i < em.live {
             let mut p = em.puffs[i]
@@ -96,11 +118,18 @@ namespace gui3d {
                 let t = if props.blur_length > 0.000001 { math::min{ a = dt, b = props.blur_length } / props.blur_length } else { 1.0 }
                 p.tail = math::vec3::lerp{ a = p.tail, b = p.pos, t }
             }
+            p.angle = p.angle + props.particle_rot * dt
+            if p.still {
+                em.puffs[i] = p
+                i = i + 1
+                continue
+            }
             // The original moves a particle and then lets gravity (the controller `mass`, in g) pull
             // its velocity down: a negative mass rises (smoke, flames).
+            let from = p.pos
             p.pos = math::vec3::add_scaled{ a = p.pos, b = p.vel, s = dt }
-            p.vel.z = p.vel.z - props.mass * GRAVITY * dt
-            p.angle = p.angle + props.particle_rot * dt
+            if bounces { bounce{ &p, from, world, to_local, bounce_co = props.bounce_co, dt, ground } }
+            if not p.still { p.vel = math::vec3::add_scaled{ a = p.vel, b = down, s = pull } }
             em.puffs[i] = p
             i = i + 1
         }
@@ -140,14 +169,45 @@ namespace gui3d {
     // Metres per second squared that a `mass` of 1 pulls with.
     const GRAVITY: f32 = 9.81
 
-    // One new particle: somewhere within xsize/100 metres of the emitter along its X axis and
-    // ysize/100 along Y (the original draws an offset of up to that, either way), moving along
-    // +Z within `spread` radians at velocity plus or minus up to randvel. It starts turned to 0
-    // and spins by `particleRot` a second.
+    // MDL emitter flag: particles bounce off the world.
+    const EMIT_BOUNCE: u32 = 0x10
+
+    // A bouncing particle's step from `from` to p.pos (the emitter's space) against the world, as the
+    // original's (docs/re/particles.md, "A particle"): at a contact it is put there and, with bounce_co
+    // 0, stops; otherwise its velocity is reflected about the surface, scaled by 0.75, and its upward
+    // part further by bounce_co (more for a long frame). Slower than sqrt(0.5) m/s it comes to rest
+    // 2 cm off the surface.
+    fn bounce {
+        mut p: Puff, from: math::Vec3, world: math::Mat4, to_local: math::Mat4, bounce_co: f32, dt: f32,
+        ground: &fn{ from: math::Vec3, to: math::Vec3 } -> ?Contact,
+    } {
+        let a = math::mat4::transform_point{ m = world, p = from }
+        let b = math::mat4::transform_point{ m = world, p = p.pos }
+        let c = ground{ from = a, to = b } ifnull { return }
+        let mut v = math::vec3::zero{}
+        if bounce_co != 0.0 {
+            let vw = math::mat4::transform_dir{ m = world, v = p.vel }
+            v = math::vec3::scale{ v = math::vec3::sub{ a = vw, b = math::vec3::scale{ v = c.normal, s = 2.0 * math::vec3::dot{ a = vw, b = c.normal } } }, s = 0.75 }
+            v.z = v.z * bounce_co * math::clamp{ x = 0.033 / dt, lo = 0.5, hi = 1.0 }
+        }
+        let mut at = c.at
+        if math::vec3::length_sq{ v } < 0.5 {
+            p.still = true
+            v = math::vec3::zero{}
+            at = math::vec3::add_scaled{ a = c.at, b = c.normal, s = 0.02 }
+        }
+        p.pos = math::mat4::transform_point{ m = to_local, p = at }
+        p.vel = math::mat4::transform_dir{ m = to_local, v }
+    }
+
+    // One new particle: in an xsize/100 by ysize/100 metre rectangle centred on the emitter, in its
+    // X/Y plane (0x0048d870: up to xsize/200 either way), moving along +Z tilted by up to half of
+    // `spread` (the full cone's angle, 0x0048de60) at velocity plus or minus up to randvel. It starts
+    // turned to 0 and spins by `particleRot` a second.
     fn spawn { mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps } {
-        let x = (2.0 * rng_unit{ s = &em.rng } - 1.0) * props.x_size * 0.01
-        let y = (2.0 * rng_unit{ s = &em.rng } - 1.0) * props.y_size * 0.01
-        let theta = rng_unit{ s = &em.rng } * props.spread
+        let x = (2.0 * rng_unit{ s = &em.rng } - 1.0) * props.x_size * 0.005
+        let y = (2.0 * rng_unit{ s = &em.rng } - 1.0) * props.y_size * 0.005
+        let theta = rng_unit{ s = &em.rng } * props.spread * 0.5
         let phi = rng_unit{ s = &em.rng } * math::TAU
         let dir = math::Vec3{
             x = math::sinf{ x = theta } * math::cosf{ x = phi },
@@ -167,7 +227,7 @@ namespace gui3d {
         let life = if props.life_exp < 0.0 { 1.0e9 } else { math::max{ a = props.life_exp, b = 0.01 } }
         em.puffs[em.live] = Puff{
             pos = at, vel = math::vec3::scale{ v = dir, s = speed },
-            age = 0.0, life, angle = 0.0, frame, aim = dir, tail = at,
+            age = 0.0, life, angle = 0.0, frame, aim = dir, tail = at, still = false,
         }
         em.live = em.live + 1
     }

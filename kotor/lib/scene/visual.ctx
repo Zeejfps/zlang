@@ -432,7 +432,7 @@ namespace visual {
             let p = scene::part_at{ sc, i = v.first + i }
             let l = scene::loaded_at{ sc, i = p.loaded }
             _ = mdl_render::add_draws_look{ &frame, view, model = l.model, pose = p.pose, g = l.gpu, transform = transforms[i], materials = l.materials, time = sc.time, look, cast, kind, ambient }
-            scene::draw_emitters{ sc, &frame, view, part = v.first + i, instance = transforms[i], sight, warm = false }
+            scene::draw_emitters{ sc, w, &frame, view, part = v.first + i, instance = transforms[i], sight, warm = false }
             i = i + 1
         }
     }

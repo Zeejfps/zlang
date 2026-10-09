@@ -41,7 +41,7 @@ namespace scene {
 
     // Steps (the first time this frame) and draws the emitters of part `part`, placed by `instance`,
     // that the view sees. `warm`: a room's, which run 10 s before they are first shown.
-    fn draw_emitters { sc: *Scene, mut frame: render::Frame, view: u32, part: usize, instance: math::Mat4, sight: Sight, warm: bool } {
+    fn draw_emitters { sc: *Scene, w: *world::World, mut frame: render::Frame, view: u32, part: usize, instance: math::Mat4, sight: Sight, warm: bool } {
         let p = part_at{ sc, i = part }
         if p.emitting.len == 0 or not sight.on { return }
         let model = loaded_at{ sc, i = p.loaded }.model
@@ -58,8 +58,9 @@ namespace scene {
             // but for a point-to-point emitter's).
             if not math::frustum::intersects_sphere{ f = sight.frustum, center = math::mat4::get_translation{ m = world }, radius = 0.0 } { continue }
             if em.seen != sc.fx_frame {
-                if em.seen == 0 and warm { warm_up{ em, e = ex, props } }
-                step_one{ em, e = ex, props, dt }
+                let ground = touch{ sc, w, _ }
+                if em.seen == 0 and warm { warm_up{ em, e = ex, props, world, ground } }
+                step_one{ em, e = ex, props, dt, world, ground }
                 em.seen = sc.fx_frame
             }
             let n = gui3d::fill_particles{ em, e = ex, props }
@@ -75,26 +76,37 @@ namespace scene {
 
     // 100 steps of 0.1 s, as the original runs every room emitter at the scene's first render, so
     // smoke and mist are at their steady state when first seen.
-    fn warm_up { mut em: gui3d::Emitting, e: *mdl::Emitter, props: mdl::EmitterProps } {
+    fn warm_up { mut em: gui3d::Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, world: math::Mat4, ground: &fn{ from: math::Vec3, to: math::Vec3 } -> ?gui3d::Contact } {
         let mut i: u32 = 0
         while i < 100 {
-            step_one{ &em, e, props, dt = gui3d::MAX_STEP }
+            step_one{ &em, e, props, dt = gui3d::MAX_STEP, world, ground }
             i = i + 1
         }
     }
 
     // One step: an Explosion emitter gives birth only in a burst, when its owner's animation said
     // `detonate` since its last step (the original's latch, set by 0x0048d770).
-    fn step_one { mut em: gui3d::Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, dt: f32 } {
+    fn step_one { mut em: gui3d::Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, dt: f32, world: math::Mat4, ground: &fn{ from: math::Vec3, to: math::Vec3 } -> ?gui3d::Contact } {
         let explodes = e.update == mdl::EmitterUpdate::explosion
         let mut fed = props
         if explodes {
             fed.birthrate = 0.0
             fed.random_birthrate = 0.0
         }
-        gui3d::step_emitting{ &em, e, props = fed, dt }
+        gui3d::step_emitting{ &em, e, props = fed, dt, world, ground }
         if explodes and em.latch { gui3d::burst{ &em, e, props } }
         em.latch = false
+    }
+
+    // Where a bouncing particle's step from `from` to `to` meets the visible rooms, the doors or the
+    // placeables (the camera's ray test, ray_contact).
+    fn touch { sc: *Scene, w: *world::World, from: math::Vec3, to: math::Vec3 } -> ?gui3d::Contact {
+        let d = math::vec3::sub{ a = to, b = from }
+        let len = math::vec3::length{ v = d }
+        if len < 0.000001 { return null }
+        let dir = math::vec3::scale{ v = d, s = 1.0 / len }
+        let c = ray_contact{ sc, w, origin = from, dir, max_t = len } ifnull { return null }
+        return gui3d::Contact{ at = math::vec3::add_scaled{ a = from, b = dir, s = c.t }, normal = c.normal }
     }
 
     // An animation event of a part with emitters: `detonate` latches its Explosion emitters.

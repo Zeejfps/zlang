@@ -173,7 +173,9 @@ and the particles are stepped, before any births of the frame.
 `0x00490700` when the chunk name is set, `0x00495b20` for Linked, `0x00490820` for Motion_Blur and
 `0x0048f040` for the other modes. Each first runs the flipbook (below).
 
-State: depth writes off, depth test on, lighting off, alpha test off, the blend of the table above;
+State: depth writes off, depth test on, lighting off, alpha test off, the blend of the table above (so a
+particle is hidden by any opaque surface in front of it, a closed door included: sparks seen through a door
+are on the near side of it);
 `0x0048f040` also turns face culling off when the header's two-sided field (+176) is set, and
 `0x00490820` always. Per particle the colour and alpha, and the half-sizes (size * 0.5) are the
 start / mid / end values at the particle's age / lifeExp between percentStart / Mid / End (a percentStart
