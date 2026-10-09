@@ -13,7 +13,7 @@
 #   down1     uppercity  400   Carth down (die1, dead1), the foe killed, Carth up 5 s later (getupdead1)
 #   med1      uppercity  600   a wounded trooper uses its medpac (k_ai_master talents)
 #   bash1     bunk       1000  a locked non-plot door bashed open through the block
-#   gren2     bunk       600   Trask as grenadier (Scripts panel style 4) throws frag grenades
+#   gren2     uppercity  300   Carth as grenadier (Scripts panel style 4) throws a frag grenade at two troopers (checked by grenade.sh)
 #   gren1     uppercity  130   Carth targeted (empty block), then a frag grenade thrown at a hostile trooper (checked by grenade.sh)
 #   provoke1  uppercity  600   a dark Jedi turned hostile with a buff on itself as its first order attacks once the buff is cast
 #   engage1   uppercity  620   paused after an enemy is sighted, the block's attack puts the leader in combat mode at once

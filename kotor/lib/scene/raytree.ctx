@@ -134,7 +134,7 @@ namespace scene {
 
     // The nearest hit of a ray on a mesh through its tree, within max_t.
     fn cast_ray_tree { tree: *RayTree, mesh: *mdl::Mesh, ray: math::Ray, max_t: f32 } -> ?RayContact {
-        let mut best = RayContact{ t = max_t, normal = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } }
+        let mut best = RayContact{ t = max_t, normal = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, back = false }
         let mut found = false
         let mut stack: [RAY_STACK]u32
         let mut sp: usize = 1
@@ -154,7 +154,7 @@ namespace scene {
                     let c = corner{ mesh, m = tree.world, i = mesh.indices[t + 2] }
                     let hit = math::ray::intersect_triangle{ ray, a, b, c, max_t = best.t }
                     if hit != null and hit.t < best.t {
-                        best = RayContact{ t = hit.t, normal = facing_normal{ a, b, c, dir = ray.dir } }
+                        best = RayContact{ t = hit.t, normal = facing_normal{ a, b, c, dir = ray.dir }, back = is_back_face{ a, b, c, dir = ray.dir } }
                         found = true
                     }
                 }

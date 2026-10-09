@@ -563,13 +563,15 @@ namespace scene {
         return c.t
     }
 
-    // A ray's first contact: how far along `dir`, and the face's unit normal there (facing the ray).
-    struct RayContact { t: f32, normal: math::Vec3 }
+    // A ray's first contact: how far along `dir`, the face's unit normal there (facing the ray), and whether the
+    // ray met the face from behind (its winding's normal points along the ray: the inside of a sky dome seen
+    // from above, say).
+    struct RayContact { t: f32, normal: math::Vec3, back: bool }
 
     // ray_hit with the face it met: what a bouncing particle reflects off (lib/scene/emitters.ctx).
     fn ray_contact { sc: *Scene, w: *world::World, origin: math::Vec3, dir: math::Vec3, max_t: f32 } -> ?RayContact {
         let rooms = list::items{ list = sc.rooms }
-        let mut best = RayContact{ t = max_t, normal = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } }
+        let mut best = RayContact{ t = max_t, normal = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, back = false }
         let mut found = false
         let mut i: usize = 0
         while i < rooms.len {
@@ -610,7 +612,7 @@ namespace scene {
         let p = part_at{ sc, i = part }
         let model = loaded_at{ sc, i = p.loaded }.model
         let tlist = list::items{ list = sc.ray_trees }
-        let mut best = RayContact{ t = max_t, normal = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } }
+        let mut best = RayContact{ t = max_t, normal = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, back = false }
         let mut found = false
         let mut m: usize = 0
         while m < model.meshes.len {
@@ -648,13 +650,19 @@ namespace scene {
                     k = k + 3
                     let hit = math::ray::intersect_triangle{ ray = math::Ray{ origin, dir }, a, b, c, max_t = best.t }
                     if hit != null and hit.t < best.t {
-                        best = RayContact{ t = hit.t, normal = facing_normal{ a, b, c, dir } }
+                        best = RayContact{ t = hit.t, normal = facing_normal{ a, b, c, dir }, back = is_back_face{ a, b, c, dir } }
                         found = true
                     }
                 }
             }
         if not found { return null }
         return best
+    }
+
+    // Whether a ray along `dir` meets the triangle from behind.
+    fn is_back_face { a: math::Vec3, b: math::Vec3, c: math::Vec3, dir: math::Vec3 } -> bool {
+        let n = math::vec3::cross{ a = math::vec3::sub{ a = b, b = a }, b = math::vec3::sub{ a = c, b = a } }
+        return math::vec3::dot{ a = n, b = dir } > 0.0
     }
 
     // A triangle's unit normal, turned to face against `dir` (the ray that met it).

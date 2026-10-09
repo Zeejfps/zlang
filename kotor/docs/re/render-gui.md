@@ -621,7 +621,11 @@ where the target stood. (high)
 
 Ours: `fight::fire` (`lib/engine/fight.ctx`) reckons the flight, posts the impact as an event
 (`events::Payload::spell_impact`, not saved) and the `projectile` outbox note; `lib/vfx/projectile.ctx`
-flies the model on the grenade path (the ground under each point from our walkmesh, not a scene ray).
+flies the model on the grenade path; the ground under each point is a ray straight down from +1000 through the
+scene (`scene::ray_contact`: the visible rooms' drawn geometry, doors and placeables), passing through faces it meets
+from behind, since a sky dome over the area (Taris' upper city has one about 437 m up, its faces looking inward)
+would otherwise be the ground (that the original's query, mask `0xbfffffff`, does not meet it is inferred: med);
+when a ray meets nothing the path is one leg. `--log combat` prints `grenade path: N legs, ground ...`.
 
 ### Console overlay
 

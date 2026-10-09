@@ -17,8 +17,33 @@ namespace vfx {
     // Throws `model` from `source`'s node to `to` in `flight` seconds. A grenade (path 11, and 12, which the
     // original builds alike: 0x006d5b10) bounces: it falls to the ground under the point 80% of the way
     // there in 60% of the time, then hops to the ground under 90% (20% of the time), 95% (10%) and comes to
-    // rest on the point (10%), each leg an arc under gravity. Off the walkmesh it makes one arc to the point.
+    // rest on the point (10%), each leg an arc under gravity. The ground under a point is where a vertical ray
+    // from 1000 m up to 1000 m down first meets the scene (the original's scene ray query; ours: the visible
+    // rooms' drawn geometry, doors and placeables, scene::ray_hit); when a ray meets nothing the grenade makes
+    // one arc to the point.
     // Any other path flies straight (no shipped spell has one).
+    // Where the grenade path's rays down start (and, below 0, end): +1000 to -1000 (0x006d5b10).
+    const GROUND_RAY_TOP: f32 = 1000.0
+
+    // The height of the first surface a ray straight down from GROUND_RAY_TOP meets at (x, y), seen from above:
+    // faces met from behind are passed through (ours: a sky dome over the area, whose faces look inward, would
+    // otherwise be the ground 400 m up; the original's ray query does not meet it, med). Null when it meets
+    // nothing.
+    fn ground_below { sc: *scene::Scene, w: *world::World, x: f32, y: f32 } -> ?f32 {
+        let down = math::Vec3{ x = 0.0, y = 0.0, z = -1.0 }
+        let mut z = GROUND_RAY_TOP
+        let mut tries = 0
+        while tries < 16 {
+            tries = tries + 1
+            let left = z + GROUND_RAY_TOP
+            if left <= 0.0 { return null }
+            let hit = scene::ray_contact{ sc, w, origin = math::Vec3{ x, y, z }, dir = down, max_t = left } ifnull { return null }
+            if not hit.back { return z - hit.t }
+            z = z - hit.t - 0.01
+        }
+        return null
+    }
+
     fn throw_projectile {
         mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device,
         model: resref::ResRef, source: u32, spawn: i32, to: math::Vec3, path: i32, flight: f32,
@@ -45,7 +70,7 @@ namespace vfx {
         let mut grounded = true
         while k < 3 {
             let p = math::vec3::add{ a = from, b = math::vec3::scale{ v = span, s = shares[k] } }
-            let z = walkmap::height{ m = &w.walk, x = p.x, y = p.y, z = p.z } ifnull { grounded = false; break }
+            let z = ground_below{ sc = &sc, w = &w, x = p.x, y = p.y } ifnull { grounded = false; break }
             f.legs[k] = math::Vec3{ x = p.x, y = p.y, z }
             f.leg_time[k] = flight * times[k]
             k = k + 1
@@ -58,6 +83,10 @@ namespace vfx {
             f.legs[0] = to
             f.leg_time[0] = flight
             f.leg_count = 1
+        }
+        if w.log.combat {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "grenade path: {} legs, ground {} {} {}, target z {}\n", f.leg_count, f.legs[0].z, f.legs[1].z, f.legs[2].z, to.z)
         }
         let flat = math::Vec3{ x = span.x, y = span.y, z = 0.0 }
         if math::vec3::length_sq{ v = flat } > 0.0001 { f.dir = math::vec3::normalize{ v = flat } }

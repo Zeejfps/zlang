@@ -7,7 +7,7 @@
 #
 #   sh kotor/tools/combat/grenade.sh            (EXE=kotor/out/kotor.exe; run from the repository root; about 5 seconds)
 #
-# The log is kotor/out/combat/gren1.log. docs/re/gui.md "What the target block offers", docs/re/render-gui.md
+# The logs are kotor/out/combat/gren1.log, grens.log and gren2.log. docs/re/gui.md "What the target block offers", docs/re/render-gui.md
 # "Spell projectiles", docs/mechanics/combat.md rows 31-32.
 export PATH=/g/Dev/msys64/mingw64/bin:$PATH
 exe=${EXE:-kotor/out/kotor.exe}
@@ -68,5 +68,37 @@ elif [ "$shit" -le "$loaded" ]; then
   echo "FAIL the grenade saved in flight hit at tick $shit, before the load at $loaded"; fail=1
 else
   echo "ok   grenade saved in flight: loaded at tick $loaded, landed at $shit"
+fi
+
+# An AI throw (gren2.txt): Carth as a grenadier (NPC_AISTYLE 4, k_ai_master's talents) with frag grenades in the bag,
+# two troopers 9-10 m off engaging the party. He must throw one on his own, it must fly the grenade path (four legs:
+# the scene rays found the ground under the three bounce points) and land after its flight, hurting the troopers.
+rm -rf $out/saves_gren2
+$exe --load $ck/uppercity --no-render --speed 8 --saves $out/saves_gren2 --input kotor/tools/combat/gren2.txt --frames 300 --log combat > $out/gren2.log 2>&1
+alog=$out/gren2.log
+# The thrower is the party member who is not the player's creature (2147483647).
+athrow=$(grep -a -E '^\[[0-9]+ [0-9.]+\] [0-9]+ throws 87 at .*lands in [0-9]+ ms' $alog | grep -a -v '\] 2147483647 throws' | head -1)
+carth=$(echo "$athrow" | awk '{print $3}')
+apath=$(grep -a -E '^\[[0-9]+ [0-9.]+\] grenade path: ' $alog | head -1 | sed -E 's/.*grenade path: ([0-9]+) legs.*/\1/')
+if [ -z "$carth" ] || [ -z "$athrow" ]; then
+  echo "FAIL Carth threw no grenade on his own (see $alog)"; fail=1
+else
+  aat=$(echo "$athrow" | sed -E 's/^\[([0-9]+) .*/\1/')
+  ams=$(echo "$athrow" | sed -E 's/.*lands in ([0-9]+) ms.*/\1/')
+  ahit=$(grep -a -E "^\[[0-9]+ [0-9.]+\] [0-9]+ takes [0-9]+ damage from $carth:" $alog | head -1 | sed -E 's/^\[([0-9]+) .*/\1/')
+  awant=$((aat + ams * 30 / 1000))
+  # The bounce points lie on the floor the troopers stand on, not on something overhead (a sky dome seen from above).
+  agap=$(grep -a -E '^\[[0-9]+ [0-9.]+\] grenade path: ' $alog | head -1 | sed -E 's/.*ground ([^ ]+) ([^ ]+) ([^,]+), target z (.*)$/\1 \2 \3 \4/' | awk '{m = 0; for (i = 1; i <= 3; i++) { d = $i - $4; if (d < 0) d = -d; if (d > m) m = d } print (m < 2.0) ? "ok" : m}')
+  if [ "$apath" != 4 ]; then
+    echo "FAIL Carth's grenade flew '$apath' legs (want 4: the ground under the bounce points)"; fail=1
+  elif [ "$agap" != ok ]; then
+    echo "FAIL a bounce point of Carth's grenade is $agap m off the target's floor"; fail=1
+  elif [ -z "$ahit" ]; then
+    echo "FAIL Carth's grenade hurt nobody (see $alog)"; fail=1
+  elif [ $((ahit - awant)) -lt -1 ] || [ $((ahit - awant)) -gt 2 ]; then
+    echo "FAIL Carth's grenade hit at tick $ahit, want about $awant (thrown at $aat, $ams ms of flight)"; fail=1
+  else
+    echo "ok   AI grenade: Carth threw at tick $aat, $apath legs, landed at $ahit"
+  fi
 fi
 exit $fail

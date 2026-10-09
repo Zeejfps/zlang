@@ -1,9 +1,13 @@
+19 ui autopause off
 20 ui heal
 21 ui sethp pc 300
+21 ui sethp carth 300
 22 ui giveitem g_w_fraggren01 5
-23 ui aistyle end_trask 4
-30 ui foe g_sithtroop01 12 -1
-31 ui foe g_sithtroop02 12 1
+23 ui aistyle carth 4
+30 ui foe g_sithtroop01 9 -1
+31 ui foe g_sithtroop02 10 1
+32 ui sethp g_sithtroop01 200
+33 ui sethp g_sithtroop02 200
 35 cam toward g_sithtroop01
 40 ui clickon g_sithtroop01
 42 ui clickon g_sithtroop01
