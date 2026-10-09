@@ -208,11 +208,11 @@ namespace lvl {
     }
 
     // The picks the auto-leveller would make.
-    fn recommend_powers { mut s: State, mut g: gui::Gui, mut w: world::World } -> ! {
+    fn recommend_powers { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
         let f = creature_of{ w = &w, id = s.who } ifnull { return }
         let mut trial = f.c
         let mut rec: rules::LevelRecord
-        if not rules::prepare_auto_level{ tables = w.rules, c = &trial, class = s.class, rec = &rec } { return }
+        if not rules::prepare_auto_level{ tables = w.rules, c = &trial, class = s.class, rec = &rec } { rec.npowers = 0 }
         s.pnchosen = 0
         s.ppicks = s.opts.powers
         let mut i: usize = 0
@@ -226,6 +226,8 @@ namespace lvl {
         restyle_power_cells{ &s, &g, f }
         try refresh_power_counts{ &s, &g }
         try show_power{ &s, &g, &w }
+        // "The following power(s) have been recommended."
+        try show_list_popup{ &s, &g, &w, &dev, caption = 42257, t = w.tables.spells, icon_column = "iconresref", ids = s.pchosen[..s.pnchosen] }
     }
 
     fn powers_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> ! {
@@ -243,7 +245,7 @@ namespace lvl {
             if slice::eq_bytes{ a = ev.tag, b = "SELECT_BTN" } {
                 try toggle_power{ &s, &g, &w, &dev }
             } else if slice::eq_bytes{ a = ev.tag, b = "RECOMMENDED_BTN" } {
-                try recommend_powers{ &s, &g, &w }
+                try recommend_powers{ &s, &g, &w, &dev }
             } else if slice::eq_bytes{ a = ev.tag, b = "ACCEPT_BTN" } {
                 // Refused while picks remain and the selectable set is not empty (0x006f1130).
                 if s.ppicks > 0 {

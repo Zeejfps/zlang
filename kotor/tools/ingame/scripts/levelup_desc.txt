@@ -1,6 +1,10 @@
-# The level-up feats panel's description box scrolls by lines: the wheel, the down key, a press on
-# the scroll bar's track and down arrow, a drag of the thumb; a short description shows a full thumb.
-#   MODULE=danm13 sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/levelup_desc.txt 44 19:lu_desc0 24:lu_desc_wheel 27:lu_desc_key 30:lu_desc_track 33:lu_desc_arrow 38:lu_desc_drag 43:lu_desc_feat2
+# The level-up feats panel's description box scrolls by lines: the wheel; the arrow keys move the feat
+# focus and, with the pointer over the description (hover is focus), are passed on to it after the new
+# feat's text is in (0x006f4680 sends them to the row set, shows the cell, then calls the base handler):
+# up wraps to Dueling (short, nothing to scroll), down back to Two-Weapon Fighting, shown from its second
+# line; then a press on the scroll bar's track below the thumb (a page down), two on its up arrow,
+# a drag of the thumb; a short description shows a full thumb.
+#   MODULE=danm13 sh kotor/tools/ingame/go.sh kotor/tools/ingame/scripts/levelup_desc.txt 44 19:lu_desc0 24:lu_desc_wheel 26:lu_desc_keyup 28:lu_desc_key 30:lu_desc_track 33:lu_desc_arrow 38:lu_desc_drag 43:lu_desc_feat2
 3 ui xp 1000
 3 ui sheet
 4 ui levelup
@@ -12,11 +16,11 @@
 21 mouse wheel -1
 22 mouse wheel -1
 23 mouse wheel -1
-25 key down
-26 key down
-28 mouse click 900 330
-31 mouse click 900 489
-32 mouse click 900 489
+25 key up
+27 key down
+29 mouse click 900 470
+31 mouse click 900 293
+32 mouse click 900 293
 34 mouse down left 900 400
 35 mouse move 900 380
 36 mouse move 900 340

@@ -1903,7 +1903,9 @@ party buttons (`0x00686750`). (high)
 
 0x24e8 bytes, ctor `0x006ce7c0`, vtable `0x00757940`, owner `CGuiInGame+0x9c`, centred 333x231:
 `LBL_MESSAGE`, `LB_SKILLS` (ten preallocated rows), `BTN_OK`. Accept/cancel keys play GUI sound 0
-and mark it for removal (`0x006cd3c0`). What it lists was not traced. (`0x006ce370`, `0x006ce0f0` and `0x006ce570`, once noted here as
+and mark it for removal (`0x006cd3c0`). It lists skills, feats or Force powers by id, an icon and a
+name per row (`0x006cdfc0`, `0x006acb40`; chargen.md I): the feats and powers panels' Recommended
+open it. (`0x006ce370`, `0x006ce0f0` and `0x006ce570`, once noted here as
 its fillers, build the chain rows below, not this panel.) (med)
 
 #### Chain rows (feats and Force powers lists)
@@ -1940,7 +1942,8 @@ row `+0xd`) is built by:
   slot's known-power list; with its last argument set it also wants the Force point cost
   (`CSWSpell::GetForcePointCost`) not above the current Force points (stats `+0x124` + `+0x126`).
   So the abilities screen leaves a known upgrade out of its root's row while the character cannot
-  pay for it (the push of 1 is in the code, `0x006ce21f`). (high)
+  pay for it (the push of 1 is in the code, `0x006ce21f`). (high) Ours tests a character the rules do
+  not run (known only from its blueprint) against the sheet's Force points and cost per use.
 
 The row's makers set three cells (feat or spell id, -1 empty; icon resref, empty for an empty cell)
 and the extent (0, 0, 242, 40); the list box then lays it out like any row, padding in from the left
@@ -1965,10 +1968,19 @@ Two arrow images (`lbl_skarr`) follow at `+0x3d4`.
 - **Focus** (`0x006cdc00` by id, `0x006cdd10` first cell, `0x006cdd80` arrows, `0x006cd1c0` hit
   test): chargen.md H. The three panels that hold row sets (feats `0x006f4680`, powers `0x006f28c0`,
   abilities `0x006ae5f0` on its Powers and Feats tabs) send the arrows (0x2f-0x32, 0x3d-0x40) to the
-  row set whichever control has the focus, then on to the base handler. (high)
+  row set whichever control has the focus, show the new cell (the feats panel `0x006f2fb0`, which
+  puts its description in `LB_DESC`), then on to the base handler `CSWGuiPanel::HandleInputEvent`
+  (`0x00409e60`), which gives the event to the panel's active control: the description list box
+  (hover is focus) scrolls the new text a line, a button follows its MOVETO, and `LB_FEATS` itself,
+  when it has the focus, steps its own selected index (`0x0041ce20`: the first press selects row 0,
+  then one row, wrapping only with flag 0x40), apart from the row set's focused row. Enter (0x27) and
+  Back (0x28) are passed on after the panel's own handling too. (high)
 
 Ours: `lib/gui/cells.ctx` (a list box with `cell_art.on`; a panel's shown cell list takes the
-arrows, but the base handling after it is not repeated); `chargen/feat_cells.ctx` builds the feat
+arrows, and `clear_events` passes them on to the focused control once the owner has shown the new
+cell, a frame later than the original; the cell list's own selection is its focused row, so the
+list box's separate selection step is not repeated; Enter still goes only to the focused control, not
+to the focused cell as well); `chargen/feat_cells.ctx` builds the feat
 rows for both feats steps and the abilities screen, `chargen/power_cells.ctx` the power rows for
 the level-up powers step and the abilities screen.
 

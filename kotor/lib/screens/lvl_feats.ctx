@@ -6,6 +6,7 @@
 // sub title 1316 "Bonus Feats"; 0x006f44c0), as featgain.2da gives each.
 namespace lvl {
     const STR_BONUS_FEATS: u32 = 1316
+    const STR_FEATS_RECOMMENDED: u32 = 42256      // "The following feat(s) have been recommended."
 
     // The record of this pass's picks, for the rules' prerequisite and pool checks.
     fn pending_feats { s: *State } -> rules::LevelRecord {
@@ -21,15 +22,38 @@ namespace lvl {
     }
 
     // The creature as this pass sees it: in the bonus pass the regular picks are its own, as the
-    // original adds them to the creature before it opens that pass.
+    // original adds them to the creature before it opens that pass; so are the regular picks a
+    // bonus pass's Back left on it.
     fn feat_base { s: *State, f: *fight::Fighter } -> rules::Creature {
         let mut c = f.c
         let mut i: usize = 0
+        while i < s.fnkept {
+            rules::grant_feat{ &c, feat = s.fkept[i] }
+            i = i + 1
+        }
+        i = 0
         while i < s.fnprior {
             rules::grant_feat{ &c, feat = s.fprior[i] }
             i = i + 1
         }
         return c
+    }
+
+    // Back (0x006f2c70) pops the panel without taking anything back from the creature: in the bonus
+    // pass the regular picks, which the regular Accept added to it, stay. The step is not taken, so
+    // the regular pass opens again, with those feats known and the level's picks to make anew, as
+    // the original's does; ours applies them with the rest of the level.
+    fn leave_feats { mut s: State, mut g: gui::Gui } {
+        if s.fbonus {
+            let mut i: usize = 0
+            while i < s.fnprior and s.fnkept < 8 {
+                s.fkept[s.fnkept] = s.fprior[i]
+                s.fnkept = s.fnkept + 1
+                i = i + 1
+            }
+            s.fnprior = 0
+        }
+        close_step{ &s, &g }
     }
 
     // The pools this pass may fill: the regular pass counts only the regular picks, the bonus
@@ -238,11 +262,11 @@ namespace lvl {
     }
 
     // The picks the auto-leveller would make that fit this pass's pool.
-    fn recommend_feats { mut s: State, mut g: gui::Gui, mut w: world::World } -> ! {
+    fn recommend_feats { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
         let f = creature_of{ w = &w, id = s.who } ifnull { return }
         let mut trial = f.c
         let mut rec: rules::LevelRecord
-        if not rules::prepare_auto_level{ tables = w.rules, c = &trial, class = s.class, rec = &rec } { return }
+        if not rules::prepare_auto_level{ tables = w.rules, c = &trial, class = s.class, rec = &rec } { rec.nfeats = 0 }
         let base = feat_base{ s = &s, f }
         s.fnchosen = 0
         s.fpicks = pass_general{ s = &s } + pass_bonus{ s = &s }
@@ -260,6 +284,7 @@ namespace lvl {
         restyle_feat_cells{ &s, &g }
         try refresh_feat_counts{ &s, &g }
         try show_feat{ &s, &g, &w }
+        try show_list_popup{ &s, &g, &w, &dev, caption = STR_FEATS_RECOMMENDED, t = s.feat_table, icon_column = "icon", ids = s.fchosen[..s.fnchosen] }
     }
 
     // Accept: refused while picks remain and something could still be picked; after the regular
@@ -289,9 +314,15 @@ namespace lvl {
             return
         }
         let mut n: usize = 0
-        while n < s.fnprior {
-            s.rec.feats[n] = s.fprior[n]
+        while n < s.fnkept {
+            s.rec.feats[n] = s.fkept[n]
             n = n + 1
+        }
+        let mut k: usize = 0
+        while k < s.fnprior and n < rules::MAX_LEVEL_FEATS {
+            s.rec.feats[n] = s.fprior[k]
+            n = n + 1
+            k = k + 1
         }
         let mut i: usize = 0
         while i < s.fnchosen and n < rules::MAX_LEVEL_FEATS {
@@ -306,7 +337,7 @@ namespace lvl {
 
     fn feats_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> ! {
         if ev.kind == gui::EventKind::cancel {
-            close_step{ &s, &g }
+            leave_feats{ &s, &g }
             return
         }
         if ev.kind == gui::EventKind::row_selected {
@@ -319,11 +350,11 @@ namespace lvl {
             if slice::eq_bytes{ a = ev.tag, b = "BTN_SELECT" } {
                 try toggle_feat{ &s, &g, &w, &dev }
             } else if slice::eq_bytes{ a = ev.tag, b = "BTN_RECOMMENDED" } {
-                try recommend_feats{ &s, &g, &w }
+                try recommend_feats{ &s, &g, &w, &dev }
             } else if slice::eq_bytes{ a = ev.tag, b = "BTN_ACCEPT" } {
                 try accept_feats{ &s, &g, &w, &dev }
             } else if slice::eq_bytes{ a = ev.tag, b = "BTN_BACK" } {
-                close_step{ &s, &g }
+                leave_feats{ &s, &g }
             }
         }
     }

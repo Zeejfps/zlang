@@ -30,7 +30,7 @@ namespace gui {
             backdrops, backdrop_for = [-1, -1, -1, -1, -1, -1],
             sounds, sound_volume = 1.0,
             events = list::new(Event, heap::Heap){ realloc = heap::alloc, heap },
-            dropped_events = 0, lines, quads_drawn = 0,
+            dropped_events = 0, pass_panel = 0, pass_dir = 0, lines, quads_drawn = 0,
         }
         return g
     }

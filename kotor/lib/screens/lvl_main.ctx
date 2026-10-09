@@ -43,6 +43,8 @@ namespace lvl {
         s.done = [not s.needed[0], not s.needed[1], not s.needed[2], not s.needed[3], false]
         s.fnchosen = 0
         s.fnprior = 0
+        s.fnkept = 0
+        s.popup = 0
         s.fbonus = false
         s.pnchosen = 0
         if not s.has_feat_table {
@@ -64,6 +66,7 @@ namespace lvl {
     fn close_panels { mut s: State, mut g: gui::Gui, mut dev: gpu::Device } {
         if not s.open { return }
         msgbox::close{ &g, b = &s.box }
+        close_list_popup{ &s, &g }
         if s.step != 0 { gui::close{ &g, id = s.step } }
         gui::close{ &g, id = s.list }
         gui::close{ &g, id = s.main }
@@ -161,6 +164,35 @@ namespace lvl {
         s.ask = ask
     }
 
+    // The list popup (skillinfo, CSWGuiSkillInfo 0x006ce7c0) over the step: `caption` in LBL_MESSAGE and
+    // one LB_SKILLS row per id with its icon and name from `t` (0x006cdfc0, each row by 0x006acb40: feat.2da
+    // `icon` and `name`, spells.2da `iconresref` and `name`, "inone" without an icon). The Recommended
+    // buttons open it (0x006f3a80, 0x006f1f30), even with nothing in it.
+    fn show_list_popup { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, caption: u32, t: twoda::Table, icon_column: []u8, ids: []i32 } -> ! {
+        close_list_popup{ &s, &g }
+        s.popup = try gui::open{ &g, fs = &w.fs, &dev, name = "skillinfo", mode = gui::Mode::dialog, modal = true }
+        try gui::set_strref{ &g, panel = s.popup, tag = "LBL_MESSAGE", strref = caption }
+        gui::list_clear{ &g, panel = s.popup, tag = "LB_SKILLS" }
+        let mut i: usize = 0
+        while i < ids.len {
+            let id = @as(usize, ids[i])
+            let name_ref = twoda::get_int{ t, row = id, column = "name" } ifnull -1
+            let name = if name_ref >= 0 { world::string_by_strref{ w = &w, strref = @as(u32, name_ref) } } else { "" }
+            let row = try gui::list_add{ &g, panel = s.popup, tag = "LB_SKILLS", text = name, user = @as(i64, id) }
+            let mut icon = twoda::get_string{ t, row = id, column = icon_column } ifnull ""
+            if icon.len == 0 { icon = "inone" }
+            let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name = icon }
+            if img.ok { gui::list_set_icon{ &g, panel = s.popup, tag = "LB_SKILLS", row, texture = img.tex, w = img.w, h = img.h } }
+            i = i + 1
+        }
+        gui::set_focus{ &g, panel = s.popup, tag = "BTN_OK" }
+    }
+
+    fn close_list_popup { mut s: State, mut g: gui::Gui } {
+        if s.popup != 0 { gui::close{ &g, id = s.popup } }
+        s.popup = 0
+    }
+
     // ---- events
 
     // One GUI event of this frame; true when it belonged to the level-up panels.
@@ -174,6 +206,14 @@ namespace lvl {
             answered{ &s, &g, &w, &dev, ask, ok = a == msgbox::Answer::ok } iferr err{ error } { _ = @fmt(&w.io, "kotor: level up: {}\n", error) }
             return true
         }
+        if s.popup != 0 and (ev.panel == s.popup or ev.panel == s.step) {
+            // OK, Enter or Escape close it with GUI sound 0 (0x006cd3c0).
+            if ev.panel == s.popup and (ev.kind == gui::EventKind::cancel or (ev.kind == gui::EventKind::activate and slice::eq_bytes{ a = ev.tag, b = "BTN_OK" })) {
+                gui::play_sound{ &g, n = 0 }
+                close_list_popup{ &s, &g }
+            }
+            return true
+        }
         if ev.panel == s.step and s.step != 0 {
             if msgbox::is_open{ b = s.box } { return true }
             step_event{ &s, &g, &w, &dev, ev } iferr err{ error } { _ = @fmt(&w.io, "kotor: level up: {}\n", error) }
@@ -184,7 +224,7 @@ namespace lvl {
             list_event{ &s, &g, &w, &dev, ev } iferr err{ error } { _ = @fmt(&w.io, "kotor: level up: {}\n", error) }
             return true
         }
-        return ev.panel == s.main or ev.panel == s.list or ev.panel == s.step
+        return ev.panel == s.main or ev.panel == s.list or ev.panel == s.step or (s.popup != 0 and ev.panel == s.popup)
     }
 
     fn step_number { tag: []u8 } -> i32 {

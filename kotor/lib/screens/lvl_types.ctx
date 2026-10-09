@@ -51,6 +51,7 @@ namespace lvl {
         step_kind: i32,
         box: msgbox::Box,
         ask: i32,
+        popup: u32,                 // the skillinfo list popup over the step (Recommended's), 0 none
         opts: rules::LevelUpOptions,
         rec: rules::LevelRecord,    // what has been chosen so far
         done: [5]bool,              // steps taken (or not needed)
@@ -74,6 +75,8 @@ namespace lvl {
         fbonus: bool,               // the bonus pass (a second ftchrgen after the regular picks)
         fprior: [8]i32,             // the regular pass's picks, the creature's own in the bonus pass
         fnprior: usize,
+        fkept: [8]i32,              // regular picks a bonus pass's Back left on the creature (0x006f2c70)
+        fnkept: usize,
         // powers
         prows: [64]Row,
         pcount: usize,
@@ -93,6 +96,7 @@ namespace lvl {
         s.who = obj::INVALID
         s.view = null
         s.box = msgbox::blank{}
+        s.popup = 0
         s.step_kind = NO_STEP
         return s
     }

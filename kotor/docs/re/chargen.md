@@ -486,8 +486,20 @@ The level-up Powers panel (`pwrlvlup`, `CSWGuiCharGenPowers`; all high, read fro
 | Accept (`0x006f1130`) | with picks left and a non-empty selectable set: 48210 "You have gained new powers. You must use "Add Power" ..."; else each pick is added to the last class slot (`0x00649f90`), the panel pops and level-up marks the step (`0x006ee5d0`) |
 | Arrows | to the row set whichever control has the focus (`0x006cdd80`), then the power is shown |
 
-Ours: `lib/screens/lvl_powers.ctx` with `chargen/power_cells.ctx`. Not done: the Recommended
-popup, and the known list's name order (only the selectable test uses the lists).
+Ours: `lib/screens/lvl_powers.ctx` with `chargen/power_cells.ctx`; the Recommended popup is
+`lvl::show_list_popup` (`skillinfo`). Not done: the known list's name order (only the selectable
+test uses the lists).
+
+The list popup (`skillinfo`, `CSWGuiSkillInfo`) that both Recommended buttons open: the feats
+panel's handler (`0x006f3a80`) drops every pick (`0x006f3990` on each), takes the recommended list
+(`0x0064a770`), chooses each (`0x006f37e0`) and copies its ids, then fills the popup with them
+(`0x006cdfc0`(popup, ids, 1)), sets its `LBL_MESSAGE` (+0x42c) to 42256 and adds it (`AddPanel(1, 1)`)
+whether or not the list is empty. `0x006cdfc0` gives each id one of the popup's prebuilt rows (+0x648,
+stride 0x310) through `0x006acb40`(row, id, kind): kind 0 a skill (the rules' skill table: icon and
+name), 1 a feat (`CSWFeat` +0x18 icon, +8 name), 2 a Force power (`CSWSpell` +0x10 icon, +8 name),
+"inone" when none; the row's icon becomes the fill of its border (+0x2b0) and the name its text
+(+0xe8); then `SetItems` on `LB_SKILLS`. The powers panel's Recommended (`0x006f1f30`) does the same
+with kind 2 and 42257. (high)
 
 ## J. Strrefs set for titles, subtitles and messages
 

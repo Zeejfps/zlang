@@ -38,9 +38,16 @@ namespace gui {
         return list::items{ list = g.events }
     }
 
-    // Forgets the events (call after dispatching them, before the next handle_event).
+    // Forgets the events (call after dispatching them, before the next handle_event), then gives
+    // an arrow a cell list took to the panel's focused control (on_key).
     fn clear_events { mut g: Gui } {
         list::clear{ list = &g.events }
+        if g.pass_panel == 0 { return }
+        let id = g.pass_panel
+        g.pass_panel = 0
+        let p = find_panel{ &g, id } ifnull { return }
+        let cl = cell_list_of{ p }
+        if p.focus >= 0 and p.focus != cl and not key_in_control{ &g, p, ci = p.focus, dir = g.pass_dir } { move_focus{ &g, p, dir = g.pass_dir } }
     }
 
     // ---- sounds (guisounds.2da row indices)
@@ -581,10 +588,17 @@ namespace gui {
         if dir == 9 { return false }
         if p.key_events { push_event{ &g, kind = EventKind::arrow, p, ci = p.focus, value = @as(i32, dir), row = -1, user = 0 } }
         // A panel with a list of cell rows gives it the arrows whichever control has the focus, as
-        // the feats, powers and abilities panels do (0x006f4680, 0x006f28c0, 0x006ae5f0).
+        // the feats, powers and abilities panels do (0x006f4680, 0x006f28c0, 0x006ae5f0), shows the
+        // new cell, and then passes them on to the focused control as their base handler does
+        // (0x00409e60): over the description (hover is focus) the new cell's text scrolls a line, a
+        // focused button follows its MOVETO. The pass waits for clear_events, after the owner has
+        // put the new cell's text in. The cell list's own selection is the focused row here, so it
+        // does not take them a second time.
         let cl = cell_list_of{ p }
         if cl >= 0 {
             move_cell_focus{ &g, p, ci = cl, dir }
+            g.pass_panel = p.id
+            g.pass_dir = dir
             return true
         }
         if p.focus >= 0 and key_in_control{ &g, p, ci = p.focus, dir } { return true }

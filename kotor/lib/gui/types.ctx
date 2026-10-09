@@ -300,6 +300,10 @@ namespace gui {
         // events for the owner
         events: list::List(Event, heap::Heap),
         dropped_events: u32,
+        // an arrow a cell list took, for the focused control once the owner has seen the list's
+        // events (clear_events): the original's panels pass it on after showing the new cell
+        pass_panel: u32,                // 0 none
+        pass_dir: usize,
         // scratch for text layout
         lines: []mut Line,
         // numbers for the tools

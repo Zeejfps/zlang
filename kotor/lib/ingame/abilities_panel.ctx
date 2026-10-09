@@ -86,7 +86,7 @@ namespace abilities_panel {
             first = try fill_rows{ &g, &w, &dev, panel, tab = s.tab, known }
             if first >= 0 { gui::list_select{ &g, panel, tag = "LB_ABILITY", row = 0 } }
         } else {
-            first = try fill_cells{ &s, &g, &w, &dev, panel, known }
+            first = try fill_cells{ &s, &g, &w, &dev, panel, known, v }
         }
         if first >= 0 {
             try show_detail{ &g, &w, panel, tab = s.tab, row = @as(usize, first), known, v }
@@ -98,7 +98,7 @@ namespace abilities_panel {
     // The Powers or Feats tab's rows (0x006ce0f0 without its every-power flag, 0x006ce370), all
     // cells style 6 (0x006abce0), the focus on the tab's remembered entry or the first cell.
     // Returns the focused entry, -1 for an empty list.
-    fn fill_cells { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, known: sheet::Known } -> !i64 {
+    fn fill_cells { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, known: sheet::Known, v: sheet::Sheet } -> !i64 {
         let feats = s.tab == TAB_FEATS
         let t = sheet::table_of{ &w, name = if feats { "feat" } else { "spells" } } ifnull { return -1 }
         let mut chains: [chargen::MAX_FEAT_CHAINS]chargen::FeatChain
@@ -106,14 +106,16 @@ namespace abilities_panel {
         if feats {
             n = chargen::build_known_feat_chains{ tables = w.rules, known = known.feats[..known.nfeats], out = &chains }
         } else {
-            // A power past a row's first cell shows only while the Force points cover its cost.
+            // A power past a row's first cell shows only while the Force points cover its cost
+            // (0x005a6e70: HasEnoughForcePoints). A character the rules do not run (one known only
+            // from its blueprint) has the pool and the cost per use the sheet shows.
             let mut usable: [96]u16
             let mut nu: usize = 0
             let f = hud::ruled_of{ w = &w, id = s.who }
             let mut i: usize = 0
             while i < known.npowers {
                 let spell = @as(i32, known.powers[i])
-                let ok = if f is some{ value = fr } { rules::has_enough_force_points{ tables = w.rules, c = &fr.c, spell } } else { true }
+                let ok = if f is some{ value = fr } { rules::has_enough_force_points{ tables = w.rules, c = &fr.c, spell } } else { blueprint_can_afford{ &w, t, spell, v } }
                 if ok {
                     usable[nu] = known.powers[i]
                     nu = nu + 1
@@ -214,6 +216,15 @@ namespace abilities_panel {
 
     fn strref_of { t: twoda::Table, row: usize, column: []u8 } -> u32 {
         return @as(u32, twoda::get_int{ t, row, column } ifnull 0)
+    }
+
+    // Whether the sheet's Force points cover a use of `spell` (spells.2da `forcepoints` with the
+    // alignment's forceadjust multiplier), for a character with no rules state.
+    fn blueprint_can_afford { mut w: world::World, t: twoda::Table, spell: i32, v: sheet::Sheet } -> bool {
+        let row = @as(usize, spell)
+        let base = twoda::get_int{ t, row, column = "forcepoints" } ifnull 0
+        let kind = twoda::get_string{ t, row, column = "goodevil" } ifnull "-"
+        return v.fp >= power_cost{ &w, base, kind, light = v.light }
     }
 
     // What a use of the power costs the player (rules.md 3.2): the base cost times forceadjust.2da's

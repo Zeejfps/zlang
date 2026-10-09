@@ -136,14 +136,22 @@ chargen's pure helpers (`set_number`, `ability_tag`, the tag tables) are shared.
   the feat and the prerequisites hold (`meets_feat_requirements` with the pass's picks as pending), picked
   through `can_select_feat` with that pool only; 42182, 42183, 42184, 42530, 48215. A level with bonus
   feats opens a second ftchrgen after Accept, the bonus pass (sub title 1316), on a copy of the creature
-  that has the regular picks; the record takes both passes' picks. Back in the bonus pass drops both.
-  (The game's `featgain.2da` gives no bonus feats, so this only runs with modded data.)
+  that has the regular picks; the record takes both passes' picks. Back in the bonus pass leaves the
+  regular picks on the character, as the original's (they were added at the regular Accept): the step is
+  not taken, the regular pass opens again with them known and a fresh count, and the level applies them
+  with the rest (ours applies nothing before the level is accepted). (The game's `featgain.2da` gives no
+  bonus feats, so this only runs with modded data; checked with `bonus_feats` forced to 1.)
+- Recommended in the feats and powers steps also opens the original's list popup (`skillinfo`: caption
+  42256 or 42257, a row per pick with its icon and name, OK / Enter / Escape close it with GUI sound 0),
+  even when it lists nothing (`kotor/tools/ingame/scripts/levelup_jedi.txt`).
 - Powers: rows of icon cells (`chargen::build_power_chains`, every Force power, rows by force-AI kind and
   line, cells by priority); known green at half, picks green, the selectable set (CanLearnForcePower with
   the count + 1) faint, the rest faint on a faint backing; Affect Mind and Dominate Mind locked for
   anyone but the PC (42470); 42185, 42186, 42529, 48210; "Add Power" / "Remove Power";
   `classpowergain.2da` says how many.
-- The cell lists take the arrow keys whichever control has the focus, as the original's panels do.
+- The cell lists take the arrow keys whichever control has the focus, as the original's panels do, and
+  then pass them on to the focused control once the new cell is shown: with the pointer over the
+  description it scrolls the new text a line (`levelup_desc.txt`), a focused button follows its MOVETO.
 - Accept: `levelup::apply` (the rules' record, maxima follow, full heal, OnPlayerLevelUp posted to the
   module for the player). The character sheet's Level Up posts the `level_up` note; Auto calls
   `levelup::auto_level`. The option "Auto Level Up NPCs" (`rules::Settings.auto_level`, read from the

@@ -11,9 +11,11 @@
 14 ui click 640 544
 18 ui key return
 20 ui click 500 545
+21 ui key return
 22 ui click 640 544
 26 ui key return
 30 ui click 500 545
+32 ui key return
 34 ui key right
 35 ui key down
 36 ui key down
