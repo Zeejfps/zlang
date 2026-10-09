@@ -146,7 +146,10 @@ different order, so map by name, never by 2DA row. Numbers are one byte each, si
 always 2400 bytes (100 slots; those after the last location are zero). Booleans are packed 8 per byte, most significant bit
 first: boolean *k* of `CatBoolean` is bit `0x80 >> (k & 7)` of byte `k >> 3` of `ValBoolean`, which
 is `count/8 + 1` bytes (809 bits in 102 bytes). The name order is the engine's hash-table order
-([re/party-items-saves.md](../re/party-items-saves.md) 2).
+([re/party-items-saves.md](../re/party-items-saves.md) 2), which our writer reproduces. A location's
+orientation is stored as given: one set with facing 0 saves as (1, 0, 0) (the install's
+`K_LAST_LOCATION` at the origin), one never set as zeros, so a reader has to keep the difference to
+write the file back as it was.
 
 <!-- gff-table save:GVT -->
 | Field | Type | Files | Values | Meaning |

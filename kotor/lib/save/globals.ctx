@@ -8,23 +8,26 @@
 //   ValLocation  always 100 slots of 6 floats: position x, y, z, orientation x, y, z
 //   ValString    a list, one struct with `String` per name
 //
-// The engine writes the names in the order of its hash table; we write them in globalcat.2da's
-// order, which the reader doesn't care about because it maps by name.
+// The names go in the order of the engine's hash table (party-items-saves.md 2.1, 2.3), as the
+// engine writes them; the reader maps by name, so any order loads.
 //
 //   let bytes = try save::write_globals{ realloc = heap::alloc, &h, g = &w.globals }
 //   try save::read_globals{ g = &w.globals, doc = &doc }
 namespace save {
     const LOCATION_SLOTS: usize = 100
     const LOCATION_BYTES: usize = 2400
+    const HASH_SLOTS: usize = 1775
 
     fn write_globals(S) { realloc: alloc::Fn(S), mut heap: S, g: *globals::Globals } -> !alloc::Bytes {
         let mut b = try gffw::new{ realloc, heap = &heap, tag = "GVT " }
         defer gffw::free{ &b }
         let all = list::items{ list = g.all }
-        try put_global_names{ &b, all, kind = globals::Type::boolean, label = "CatBoolean" }
-        try put_global_names{ &b, all, kind = globals::Type::number, label = "CatNumber" }
-        try put_global_names{ &b, all, kind = globals::Type::location, label = "CatLocation" }
-        try put_global_names{ &b, all, kind = globals::Type::string, label = "CatString" }
+        let mut slots: [1775]u32
+        let order = hash_order{ all, slots = slots[..] }
+        try put_global_names{ &b, all, order, kind = globals::Type::boolean, label = "CatBoolean" }
+        try put_global_names{ &b, all, order, kind = globals::Type::number, label = "CatNumber" }
+        try put_global_names{ &b, all, order, kind = globals::Type::location, label = "CatLocation" }
+        try put_global_names{ &b, all, order, kind = globals::Type::string, label = "CatString" }
 
         let mut vals = list::new(u8, S){ realloc, heap = &heap }
         defer list::free{ list = &vals }
@@ -35,48 +38,52 @@ namespace save {
         let bits = list::items{ list = vals }
         let top: u8 = 0x80
         let mut k: usize = 0
-        let mut i: usize = 0
-        while i < all.len {
+        let mut j: usize = 0
+        while j < order.len {
+            let i = @as(usize, order[j])
+            j = j + 1
             if all[i].kind == globals::Type::boolean {
                 if all[i].number != 0 { bits[k >> 3] = bits[k >> 3] | (top >> (k & 7)) }
                 k = k + 1
             }
-            i = i + 1
         }
         _ = try gffw::add_value{ &b, owner = gffw::ROOT, label = "ValBoolean", value = gff::Value::void{ v = bits } }
 
         // Numbers: the low byte of the value, read back signed.
         list::clear{ list = &vals }
-        i = 0
-        while i < all.len {
+        j = 0
+        while j < order.len {
+            let i = @as(usize, order[j])
+            j = j + 1
             if all[i].kind == globals::Type::number { try le::put_u8{ out = &vals, v = @trunc(u8, all[i].number) } }
-            i = i + 1
         }
         _ = try gffw::add_value{ &b, owner = gffw::ROOT, label = "ValNumber", value = gff::Value::void{ v = list::items{ list = vals } } }
 
         // Locations: 6 floats a slot, zero-filled to the 100 slots the engine always writes.
         list::clear{ list = &vals }
         k = 0
-        i = 0
-        while i < all.len {
+        j = 0
+        while j < order.len {
+            let i = @as(usize, order[j])
+            j = j + 1
             if all[i].kind == globals::Type::location and k < LOCATION_SLOTS {
-                try put_location_slot{ out = &vals, l = all[i].location }
+                try put_location_slot{ out = &vals, l = all[i].location, stored = all[i].stored }
                 k = k + 1
             }
-            i = i + 1
         }
         try le::put_zeros{ out = &vals, n = LOCATION_BYTES - vals.len }
         _ = try gffw::add_value{ &b, owner = gffw::ROOT, label = "ValLocation", value = gff::Value::void{ v = list::items{ list = vals } } }
 
         // Strings: one struct each.
         let strings = try gffw::put_list{ &b, owner = gffw::ROOT, label = "ValString" }
-        i = 0
-        while i < all.len {
+        j = 0
+        while j < order.len {
+            let i = @as(usize, order[j])
+            j = j + 1
             if all[i].kind == globals::Type::string {
                 let e = try gffw::add_element{ &b, list = strings, id = 0 }
                 _ = try gffw::add_value{ &b, owner = e, label = "String", value = gff::Value::exostring{ v = all[i].text } }
             }
-            i = i + 1
         }
         return try gffw::finish{ &b, layout = gffw::ENGINE }
     }
@@ -91,23 +98,70 @@ namespace save {
         return n
     }
 
-    // A List field with one `Name` struct for each global of `kind`.
-    fn put_global_names(S) { mut b: gffw::Builder(S), all: []globals::Global, kind: globals::Type, label: []u8 } -> ! {
+    // A List field with one `Name` struct for each global of `kind`, in `order`.
+    fn put_global_names(S) { mut b: gffw::Builder(S), all: []globals::Global, order: []u32, kind: globals::Type, label: []u8 } -> ! {
         let l = try gffw::put_list{ &b, owner = gffw::ROOT, label }
-        let mut i: usize = 0
-        while i < all.len {
+        let mut j: usize = 0
+        while j < order.len {
+            let i = @as(usize, order[j])
+            j = j + 1
             if all[i].kind == kind {
                 let e = try gffw::add_element{ &b, list = l, id = 0 }
                 _ = try gffw::add_value{ &b, owner = e, label = "Name", value = gff::Value::exostring{ v = all[i].name } }
             }
-            i = i + 1
         }
     }
 
+    // The catalogue's indices in the engine's table order (CSWGlobalVariableTable, docs/re/
+    // party-items-saves.md 2.1): each name, in catalogue order, goes to slot CRC-32 of its upper-cased
+    // bytes (reflected polynomial 0xEDB88320, starting at 0, no final inversion) modulo 1775, or the
+    // next free slot after it; WriteTable walks the slots from 0. `slots` holds HASH_SLOTS entries;
+    // the result is the leading part of it.
+    fn hash_order { all: []globals::Global, slots: []mut u32 } -> []u32 {
+        let empty: u32 = 0xFFFFFFFF
+        let mut k: usize = 0
+        while k < HASH_SLOTS {
+            slots[k] = empty
+            k = k + 1
+        }
+        let mut i: usize = 0
+        while i < all.len and i < HASH_SLOTS {
+            let mut at = @as(usize, name_crc{ name = all[i].name } % @as(u32, HASH_SLOTS))
+            while slots[at] != empty { at = (at + 1) % HASH_SLOTS }
+            slots[at] = @trunc(u32, i)
+            i = i + 1
+        }
+        let mut n: usize = 0
+        k = 0
+        while k < HASH_SLOTS {
+            if slots[k] != empty {
+                slots[n] = slots[k]
+                n = n + 1
+            }
+            k = k + 1
+        }
+        return slots[..n]
+    }
+
+    fn name_crc { name: []u8 } -> u32 {
+        let mut c: u32 = 0
+        let mut i: usize = 0
+        while i < name.len {
+            c = c ^ @as(u32, ascii::to_upper{ c = name[i] })
+            let mut bit = 0
+            while bit < 8 {
+                c = if (c & 1) != 0 { 0xEDB88320 ^ (c >> 1) } else { c >> 1 }
+                bit = bit + 1
+            }
+            i = i + 1
+        }
+        return c
+    }
+
     // One location slot: position, then the facing as a unit vector (AngleToVector's, degrees from
-    // +X). A location nobody set, which the install's save shows as all zeros, stays all zeros.
-    fn put_location_slot(S) { mut out: list::List(u8, S), l: values::Location } -> ! {
-        let unset = l.area == obj::INVALID and l.facing == 0.0
+    // +X). A location nobody set, which the install's saves show as all zeros, stays all zeros.
+    fn put_location_slot(S) { mut out: list::List(u8, S), l: values::Location, stored: bool } -> ! {
+        let unset = not stored
         try le::put_f32{ &out, v = l.position.x }
         try le::put_f32{ &out, v = l.position.y }
         try le::put_f32{ &out, v = l.position.z }
@@ -151,8 +205,12 @@ namespace save {
         k = 0
         while k < location_names.len and k < LOCATION_SLOTS and 24 * (k + 1) <= locations.len {
             let name = gff::get_string{ doc = doc.*, s = location_names[k], label = "Name" } ifnull ""
+            // An all-zero orientation is a location never set (set_location marks it stored).
+            let ox = try le::get_f32{ data = locations, at = 24 * k + 12 }
+            let oy = try le::get_f32{ data = locations, at = 24 * k + 16 }
             let value = try read_location_slot{ data = locations, at = 24 * k }
-            globals::set_location{ g, name, value }
+            if ox != 0.0 or oy != 0.0 { globals::set_location{ g, name, value } }
+            else if globals::find{ g, name, kind = globals::Type::location } is some{ value = v } { v.location = value }
             k = k + 1
         }
 
@@ -177,7 +235,10 @@ namespace save {
                     obj::free_bytes{ heap = g.heap, s = p.text }
                     p.text = slice::empty(u8){}
                 }
-                location => { p.location = values::no_location{} }
+                location => {
+                    p.location = values::no_location{}
+                    p.stored = false
+                }
                 else => { p.number = 0 }
             }
             i = i + 1

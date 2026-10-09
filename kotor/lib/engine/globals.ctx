@@ -5,7 +5,9 @@
 namespace globals {
     enum Type: u8 { boolean, number, string, location }
 
-    struct Global { name: []u8, kind: Type, number: i32, text: []mut u8, location: values::Location }
+    // `stored`: a location global was given a value. The engine keeps a location's orientation as a
+    // vector, so a stored facing of 0 saves as (1, 0, 0) while an untouched one saves as zeros.
+    struct Global { name: []u8, kind: Type, number: i32, text: []mut u8, location: values::Location, stored: bool }
 
     struct Globals {
         heap: *mut heap::Heap,
@@ -30,7 +32,7 @@ namespace globals {
                 else if ci::eq{ a = type_name, b = "string" } { Type::string }
                 else if ci::eq{ a = type_name, b = "location" } { Type::location }
                 else { Type::boolean }
-            try list::push{ list = &g.all, item = Global{ name, kind, number = 0, text = slice::empty(u8){}, location = values::no_location{} } }
+            try list::push{ list = &g.all, item = Global{ name, kind, number = 0, text = slice::empty(u8){}, location = values::no_location{}, stored = false } }
             try map::put{ m = &g.by_name, key = name, value = g.all.len - 1 }
         }
         return g
@@ -78,5 +80,6 @@ namespace globals {
     fn set_location { g: *Globals, name: []u8, value: values::Location } {
         let v = find{ g, name, kind = Type::location } ifnull { return }
         v.location = value
+        v.stored = true
     }
 }
