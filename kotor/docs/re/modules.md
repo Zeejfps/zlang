@@ -208,7 +208,8 @@ and the console; the game's area loading goes through `CLayout` (med).
 
 The VIS format as read by `0x004568d0` (high): first every room's visibility is cleared; then each
 line `<room> <n>` (read with `%s%d`, indentation ignored) is followed by `n` lines naming the rooms
-visible from it, linked with `0x00454940`. Rooms are looked up by name through scene slot 29; when
+visible from it, linked with `0x00454940` (mode 1: each room is added to the other's list unless
+already there, so links go both ways; mode 0 removes a pair from both lists). Rooms are looked up by name through scene slot 29; when
 the parent room is unknown or `n` is 0, its child lines are not consumed and get read as headers.
 The function returns 0 only when the file does not exist.
 

@@ -49,8 +49,12 @@ count  = 1*digit ;                                      (decimal, number of line
 
 ## Meaning
 
-- **Directed, not symmetric.** 666 of the 8,894 "A lists B" pairs have no "B lists A". Use only the
-  current room's own entry.
+- **The file is directed, the links are not.** 666 of the 8,894 "A lists B" pairs have no "B lists
+  A" (`m01aa.vis`: `M01aa_10` lists `M01aa_04a`, whose entry does not list it back). The loader
+  (`CAurScene::LoadVisibility` `0x004568d0`) links each name with the link routine `0x00454940` in
+  its adding mode, which puts each room in the other's list (high). So the rooms seen from R are
+  R's own entry plus every room whose entry names R. Reading only R's entry hides the room behind
+  such a door until the player walks in (`end_m01aa`, the door into the jump-cutscene room).
 - **A room does not list itself** (1,245 of 1,250 entries; 5 do). The current room is always drawn.
 - **Entries may be empty**: 65 entries have no names (count 0, or once no count); draw just the
   room.
@@ -73,8 +77,10 @@ count  = 1*digit ;                                      (decimal, number of line
   `m23aa` (`_11a`), `m28ad` (`_04a`), `m34aa` (`_09`), `stunt_ebodant` (`stuntroom12aa3`),
   `stunt_unkramp` (`stuntroom41ad`), and the unused `m41az` (six rooms). Several of these rooms
   have walkmesh faces (`m17af_00a`'s WOK has 1,147, `m17ac_00b`'s 171), so the player can be in
-  them. What swkotor.exe does then is not known yet. Decision: **when the current room has no
-  entry, draw every room** of the area. Drawing too much only costs time; drawing too little makes
+  them. In swkotor.exe such a room sees the rooms whose entries name it (the links go both ways,
+  above) and, when none does, only itself: the loader clears every room's list first. Decision
+  (ours): **when the current room has no entry and no entry names it, draw every room** of the
+  area. Drawing too much only costs time; drawing too little makes
   the world vanish. When the current room is unknown (camera outside every room), do the same.
 - **No VIS for an area** does not happen in the shipped data; treat it as "everything visible".
 

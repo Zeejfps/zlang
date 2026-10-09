@@ -1,5 +1,6 @@
 // VIS room visibility (docs/formats/vis.md): for each room of an area, the rooms that can be
-// seen from it. While the camera is in room R the engine draws R and the rooms R's entry lists.
+// seen from it. While the camera is in room R the engine draws R, the rooms R's entry lists and
+// the rooms whose entries list R.
 //
 //   let v = try vis::parse{ data, realloc, &heap }
 //   defer vis::free{ v, realloc, &heap }
@@ -102,18 +103,41 @@ namespace vis {
         return v.names[@as(usize, e.first)..@as(usize, e.first) + @as(usize, e.count)]
     }
 
-    // Whether room `to` is drawn while the camera is in room `from`. A room always sees itself,
-    // and a room with no entry sees everything (vis.md's decision: drawing too much only costs
-    // time, drawing too little makes the world vanish).
-    fn sees { v: Vis, from: []u8, to: []u8 } -> bool {
-        if ci::eq{ a = from, b = to } { return true }
-        let e = find{ v, name = from } ifnull { return true }
+    // Whether entry `e` names room `name`.
+    fn lists { v: Vis, e: Entry, name: []u8 } -> bool {
         let ns = get_names{ v, e }
         let mut i: usize = 0
         while i < ns.len {
-            if resref::matches{ r = ns[i], name = to } { return true }
+            if resref::matches{ r = ns[i], name } { return true }
             i = i + 1
         }
         return false
+    }
+
+    // Whether some entry names room `name`.
+    fn is_listed { v: Vis, name: []u8 } -> bool {
+        let mut i: usize = 0
+        while i < v.entries.len {
+            if lists{ v, e = v.entries[i], name } { return true }
+            i = i + 1
+        }
+        return false
+    }
+
+    // Whether room `to` is drawn while the camera is in room `from`. A room always sees itself.
+    // A line links both rooms: the loader (CAurScene::LoadVisibility 0x004568d0, link 0x00454940)
+    // adds each to the other's list, so `from` also sees every room whose entry names it. A room
+    // with no entry that no entry names sees everything (vis.md's decision: drawing too much only
+    // costs time, drawing too little makes the world vanish).
+    fn sees { v: Vis, from: []u8, to: []u8 } -> bool {
+        if ci::eq{ a = from, b = to } { return true }
+        let own = find{ v, name = from }
+        if own is some{ value = e } {
+            if lists{ v, e, name = to } { return true }
+        }
+        if find{ v, name = to } is some{ value = back } {
+            if lists{ v, e = back, name = from } { return true }
+        }
+        return own == null and not is_listed{ v, name = from }
     }
 }

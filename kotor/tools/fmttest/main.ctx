@@ -21,6 +21,8 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     arena::reset{ heap = &scratch }
     check_malformed{ &io, &t, &scratch }
     arena::reset{ heap = &scratch }
+    check_vis{ &io, &t, &scratch }
+    arena::reset{ heap = &scratch }
     check_real_tables{ &io, &fs, &t, &h, &scratch, game }
     _ = @fmt(&io, "fmttest: {} checks, {} failed; heap {} bytes live\n", t.run, t.failed, h.live)
     io::flush{ &io }
@@ -72,6 +74,21 @@ fn check_text_2da { mut io: Io, mut t: Tally, mut scratch: arena::Arena } {
     expect{ &io, &t, ok = (twoda::get_int{ t = tb2, row = 1, column = "a" } ifnull 9) == 0, what = "binary 2da non-number is 0, found" }
     expect{ &io, &t, ok = (twoda::get_int{ t = tb2, row = 1, column = "b" } ifnull 0) == 31, what = "binary 2da %i hex" }
     expect{ &io, &t, ok = twoda::get_string{ t = tb2, row = 0, column = "a" } == null, what = "binary 2da empty cell is blank" }
+}
+
+fn check_vis { mut io: Io, mut t: Tally, mut scratch: arena::Arena } {
+    // As in end_m01aa: room 10 lists 04a, 04a does not list 10; room 09 has no entry, room 11 is nowhere.
+    let src: []u8 = "m01aa_04a 1\r\n  m01aa_05a\r\nM01aa_10 2\r\n  M01aa_04a\r\n  m01aa_09\r\n"
+    let v = vis::parse{ data = src, realloc = arena::alloc, heap = &scratch } iferr err{ error } {
+        _ = @fmt(&io, "FAIL: vis parse: {}\n", error)
+        t.failed = t.failed + 1
+        return
+    }
+    expect{ &io, &t, ok = vis::sees{ v, from = "m01aa_04a", to = "m01aa_05a" }, what = "vis room sees what its entry lists" }
+    expect{ &io, &t, ok = vis::sees{ v, from = "m01aa_04a", to = "m01aa_10" }, what = "vis room sees a room whose entry lists it" }
+    expect{ &io, &t, ok = not vis::sees{ v, from = "m01aa_05a", to = "m01aa_10" }, what = "vis unlinked rooms do not see each other" }
+    expect{ &io, &t, ok = vis::sees{ v, from = "m01aa_09", to = "m01aa_10" } and not vis::sees{ v, from = "m01aa_09", to = "m01aa_04a" }, what = "vis room without an entry sees the rooms that list it" }
+    expect{ &io, &t, ok = vis::sees{ v, from = "m01aa_11", to = "m01aa_04a" }, what = "vis room nothing names sees everything" }
 }
 
 fn check_gff_builder { mut io: Io, mut t: Tally, mut scratch: arena::Arena } {
