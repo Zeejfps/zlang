@@ -8,6 +8,7 @@
 namespace notices {
     // The HUD's notification icons (hud::NOTE_*, gui.md "Notification icons").
     const CREDITS: i32 = 1
+    const PLOT_XP: i32 = 2
     const ITEM_RECEIVED: i32 = 7
     const ITEM_LOST: i32 = 8
 
@@ -54,6 +55,20 @@ namespace notices {
         if not is_party{ w = &w, id = who } { return }
         say_with{ &w, strref = 1450, value = name_of{ w = &w, item } }
         outbox::post{ out = &w.out, note = outbox::Note::hud_notice{ kind = ITEM_LOST } }
+    }
+
+    // The party was given `amount` experience with feedback (CSWPartyTable::AddExperience 0x005653a0 with bFeedback:
+    // feedback 0x8f, dialog.tlk 42438 "Experience Points (XP) Received: <CUSTOM0>", the whole amount before each
+    // member's share). `icon`: the status summary's experience event as well (AddStatusSummaryEvent kind 2, the
+    // HUD's LBL_PLOTXP), as plot XP (GivePlotXPByRow 0x005666e0, GivePlotXP 0x00566600) and GiveXPToCreature
+    // on the player's side post it. Kill XP has neither.
+    fn xp_gained { mut w: world::World, amount: i32, icon: bool } {
+        if amount <= 0 { return }
+        let mut b = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } }
+        defer list::free{ list = &b.bytes }
+        _ = @fmt(&b, "{}", amount)
+        say_with{ &w, strref = 42438, value = utf8::view{ b }.bytes }
+        if icon { outbox::post{ out = &w.out, note = outbox::Note::hud_notice{ kind = PLOT_XP } } }
     }
 
     // The party's purse changed by `n` credits.

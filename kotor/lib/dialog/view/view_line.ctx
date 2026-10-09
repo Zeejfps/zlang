@@ -157,7 +157,7 @@ namespace dlgview {
                 i = i + 1
             }
         }
-        set_shot{ &v, &w, &sc, node, speaker = line.speaker, listener = line.listener, angle = line.angle, spoken_reply = line.reply }
+        set_shot{ &v, &w, &sc, &g, node, speaker = line.speaker, listener = line.listener, angle = line.angle, spoken_reply = line.reply }
         start_node_fade{ &v, node }
         w.conversation.fade_busy = node.wait_flags & dlg::WAIT_FADE != 0 and dlgpanel::fade_running{ p = v.panels }
         let text = dlg::text_of{ w = &w, n = node, gender = w.conversation.gender }
@@ -193,7 +193,7 @@ namespace dlgview {
         let first = dlg::choice_node{ s = &w.conversation, i = 0 } ifnull { return }
         update_animations{ &v, &w, &sc, node = first, speaker = ch.speaker, listener = ch.listener }
         v.pull_back = 0.0
-        set_shot{ &v, &w, &sc, node = first, speaker = ch.speaker, listener = ch.listener, angle = ch.angle, spoken_reply = false }
+        set_shot{ &v, &w, &sc, &g, node = first, speaker = ch.speaker, listener = ch.listener, angle = ch.angle, spoken_reply = false }
         let mut texts: [32][]u8
         let mut enabled: [32]bool
         let mut i: usize = 0

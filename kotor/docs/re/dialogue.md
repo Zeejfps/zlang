@@ -579,6 +579,13 @@ replaces the message, and:
   the percentage > 0, call `CSWPartyTable::GivePlotXPByRow` (`0x005666e0`) with the plot index
   and percent = ceil(`PlotXPPercentage` × 100): XP = ceil(plot.2da `XP` of that row × percent ×
   0.01f), and when > 0 `AddExperience(xp, 1)` plus the XP event (kind 2) (rules.md 4.2).
+  `AddExperience`'s 1 is bFeedback: the player creature gets feedback 0x8f
+  (`FormatFeedbackMessage` `0x005fcd10` → dialog.tlk 42438 "Experience Points (XP) Received:
+  <CUSTOM0>", the whole amount) in the message log. GivePlotXP (`0x00566600`) and
+  GiveXPToCreature (`0x0053e750`, the kind-2 event only for a player-controlled target) do the
+  same; kill XP (`AwardKillXP` `0x004fb1e0`) passes 0 and has its own "killed" line. (high)
+  Ours: `notices::xp_gained` (the feedback line and the HUD's `LBL_PLOTXP` icon for the kind-2
+  event; the status-summary panel itself is not made).
 
 Both happen when the node is shown (entries: the journal for each player after the entry is
 sent, the plot XP once) or chosen (replies: both inside the per-player loop), before the node's
@@ -1048,7 +1055,33 @@ is applied (the handler passes −1). In the computer panel it goes through
   `videoeffects.2da` row n: scan noise when `EnableScanNoise`, and when `EnableSaturation` the
   `Saturation` and `ModulationRed/Green/Blue` values; the client keeps the active row at
   `+0x3a8` (−2 = none). `DisableVideoEffect` (510) sets −2 and switches both off. Framed shots
-  turn the effect off (`0x005edf20`). (high)
+  turn the effect off (`0x005edf20`). (high) In `SetDialogCamera` (`0x006306e0`): angle 5 changes
+  nothing, angle 6 enables the node's effect unless it is −1/−2, every other angle frames a shot
+  and calls `0x005edf20`; animated-camera nodes do not call it, so an effect stays on through
+  them. The dialogue panel's close (`0x006332b0`, from `ClearDialog`, the module transition and
+  `SpeakDialogReply`) switches it off too, so a conversation's effect ends with it. (high)
+
+  **What it draws.** `EnableVideoEffect` only sets render globals (`0x0044f0c0`..`0x0044f100`:
+  saturation on `0x007a6881`, scan noise on `0x007a6882`, modulation r/g/b `0x0078db24..2c`,
+  saturation `0x007a6884`). `CAurScene::RenderPasses` (`0x004514f0`) runs the frame-buffer
+  passes after the scene and before the GUI, only with the **Frame Buffer Effects** option
+  (`0x0078d98c`, mechanics/graphics.md) and a GPU path that has them:
+  - scan noise (`Render_ApplyScreenEffects` `0x00437520` bit 4; ATI path `0x00432780`, NV path
+    `0x00432ad0`): the screen copy plus the scene's `filmnoisetex` (`CAurScene` +0xe4, requested
+    in `CAurScene::CAurScene` `0x00458790`; a TXI-only procedural texture: `proceduretype
+    random`, 32×32, channel scale 0.02, so a grain of 0..0.02) tiled 7.5 times across the
+    screen, **added** (ATI fragment shader `0x007a6920` built in `0x00427490`: `ADD` of the two
+    samples); (high for the add and the tiling, med for how often the grain changes)
+  - saturation (`Render_ApplyScreenEffectsLate` `0x004361f0` → `0x00434890`, NV register
+    combiners, stage 0x16 of `GL_SetupScreenEffectStage` `0x004299c0`: three dot products): a
+    colour matrix whose row for channel c is m_c · (s·e_c + (1−s)·(0.3086, 0.6094, 0.082)),
+    each entry clamped to 1 (the code tests the blue row's first entry where it means its last;
+    no shipped row reaches 1 there). Row 0 (s 0.15, m 1/1.4/2) gives a blue-grey picture: the
+    security camera and the comlink calls (`end_carth001`'s static-camera lines, CamVidEffect
+    0). Rows 1 and 2 are T3-M4's and HK-47's free-look views. (high for the matrix, med for the
+    clamp being a register limit)
+  Ours: `render::VideoEffect` on the view (`dlgview::video_effect_of` builds the rows), drawn by
+  `gpu::video_effect` after the speed blur in both renderers, under the GUI.
 - **Letterbox**: the cinematic panel is `dialog.gui` (`CSWGuiDialogLetterbox` `0x006a8b40`,
   0x1e00 bytes): `LBL_MESSAGE` for the line and `LB_REPLIES` for the replies (20 rows with hover
   colours), laid out across the screen width. It also builds a small text panel (`+0x1dfc`)
@@ -1068,6 +1101,24 @@ area has no static cameras). Here `CamVidEffect` −1 applies `videoeffects.2da`
 (`VIDEO_EFFECT_SECURITY_CAMERA`), only −2 means none. Every following line and reply first puts
 the computer panel back and turns the video effect off (`0x0062d990`, `0x0062d8c0`), so the
 next node without angle 6 shows the computer panel. (high)
+
+- `SetComputerStaticCamera(id, effect)`: returns at once when the area's camera count
+  (`CGuiInGame+0x1b0`) is 0; else removes the current panel (`+0x3c`), adds the camera panel
+  (`+0x48`) and gives it the speaker (slot 30), places the static shot, then effect −1 → 0, −2 →
+  none, else that row. `SetDialogPlaceableCamera` (461) in a computer conversation calls it with
+  effect −1, so a script's camera gets the security camera's look as well. (high)
+- `computercamera.gui` (`CSWGuiDialogComputerCamera` `0x006a95f0`) is sized to the screen and has
+  one label, `LBL_RETURN` (strref 48226 "Press 'Enter' to Cancel Live Feed and Return to
+  Interface."), moved to x = (screen width − its width) / 2, y = screen height − 75. Its input is
+  the shared `CSWGuiDialog::HandleInputEvent` (`0x006a7230`): Enter or a click while the line is
+  up skips it. The camera nodes in the data have empty text, a `Delay` (the Endar Spire's: 5 s, 2
+  s, 5 s) and one empty reply, so the view stays up for the delay and the next entry brings the
+  panel back. (high)
+- Ours until 2026-10: the computer panel stayed up over the static camera and nothing read the
+  video effect, so "view camera" showed the panel with an empty line for the delay
+  (`end_securitycomp`, `tar08_aacompdlg`, `tar09_*`, `man27_comp*`, `dan16_comp*`,
+  `lev40_*compdlg`, `unk_comp*`, `sta45_turretcomp`: 45 of the 102 computer DLGs have angle-6 nodes).
+  `kotor/tools/camcheck/computer.sh` checks the Endar Spire's.
 
 ## 10. Barks, speech, one-liners, cutscenes, movies
 

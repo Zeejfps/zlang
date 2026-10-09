@@ -31,7 +31,7 @@ namespace rt_dlg {
         else if routine == nwscript::HoldWorldFadeInForDialog { w.conversation.hold_fade_in = true }
         else if routine == nwscript::CancelPostDialogCharacterSwitch { }
         else if routine == nwscript::EnableVideoEffect { try enable_video_effect{ &w, &vm, argc } }
-        else if routine == nwscript::DisableVideoEffect { w.conversation.video_effect = -2 }
+        else if routine == nwscript::DisableVideoEffect { dlg::disable_video_effect{ &w } }
         else { return false }
         return true
     }
@@ -203,6 +203,7 @@ namespace rt_dlg {
 
     // void EnableVideoEffect(int nEffectType): a videoeffects.2da row for the 3D view (9.6).
     fn enable_video_effect { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {
-        w.conversation.video_effect = try nwarg::int{ &vm, routine = nwscript::EnableVideoEffect, argc, i = 0 }
+        let row = try nwarg::int{ &vm, routine = nwscript::EnableVideoEffect, argc, i = 0 }
+        dlg::enable_video_effect{ &w, row }
     }
 }

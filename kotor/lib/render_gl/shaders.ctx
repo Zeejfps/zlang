@@ -438,6 +438,29 @@ namespace glsl {
         "}\n",
     ]
 
+    // A video effect (render::VideoEffect, videoeffects.2da): a grain of u_noise at most, in cells of u_cells across the
+    // picture that change with u_seed, added to the picture (the original adds its 32x32 `filmnoisetex`, of 0..0.02,
+    // tiled 7.5 times over the screen), then each channel the dot product of its row with the colour.
+    const VIDEO_FS: [17]c::String = [
+        "#version 410 core\n",
+        "uniform sampler2D u_tex;\n",
+        "uniform vec3 u_red;\n",
+        "uniform vec3 u_green;\n",
+        "uniform vec3 u_blue;\n",
+        "uniform float u_noise;\n",
+        "uniform float u_seed;\n",
+        "uniform vec2 u_cells;\n",
+        "in vec2 v_uv;\n",
+        "layout(location = 0) out vec4 o_color;\n",
+        "void main() {\n",
+        "    vec2 cell = floor(v_uv * u_cells);\n",
+        "    float grain = fract(sin(dot(cell, vec2(12.9898, 78.233)) + u_seed) * 43758.5453);\n",
+        "    vec3 c = texture(u_tex, v_uv).rgb + vec3(grain * u_noise);\n",
+        "    o_color = vec4(clamp(vec3(dot(u_red, c), dot(u_green, c), dot(u_blue, c)), 0.0, 1.0), 1.0);\n",
+        "}\n",
+        "\n",
+    ]
+
     const POST_FS: [10]c::String = [
         "#version 410 core\n",
         "uniform sampler2D u_tex;\n",

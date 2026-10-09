@@ -1,0 +1,22 @@
+# The Endar Spire's security terminal (end_comp02 in end_m01ab, end_securitycomp.dlg), from `--module end_m01ab`:
+# view the starboard transport module (entry 2: CameraAngle 6, camera 1), then overload the power conduit
+# (k_con_com32 wants 5 - Computer Use / 4 spikes, so 10 are given): the camera shows the conduit (entry 6, camera 3)
+# and the Sith room (entry 7, camera 1), k_pend_comp09 blows the conduit, and entry 7's PlotIndex 47 x 0.1 gives
+# 100 XP with the feedback line and the HUD's experience icon. The camera views show computercamera.gui's
+# LBL_RETURN over the 3D view with the security camera's video effect (videoeffects.2da row 0).
+#   EXE=... LOG=dialog sh kotor/tools/items/run.sh cc module:end_m01ab kotor/tools/items/scripts/computer_camera.txt 820 \
+#       150:view 300:panel 490:conduit 720:after 800:messages
+# The log has `dialog video effect 0` at frames 92, 455 and 517, `dialog plot xp 47 x 0.1: 100`, and the `xp`
+# lines 0 before and 100 plus the kills' XP after. kotor/tools/camcheck/computer.sh checks it.
+60 hush
+62 ui stat computer 4
+64 ui xp
+80 warpxy 82.4,66.6
+82 ui giveitem g_i_progspike01 10
+84 ui inv
+88 ui replies 2 3 default 1
+90 use end_comp02
+700 ui xp
+700 ui log
+760 ui menu messages
+770 ui clickctl BTN_SHOW

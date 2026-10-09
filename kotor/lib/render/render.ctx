@@ -394,6 +394,19 @@ namespace render {
 
     fn no_height_fog {} -> HeightFog { return HeightFog{ on = false, color = math::vec3::zero{}, base = 0.0, density = 0.0, falloff = 1.0 } }
 
+    // A video effect over the finished 3D picture of a view of the screen (videoeffects.2da: the security camera's
+    // and the droids' views). `noise` (0..1) adds a fine grain that changes every frame; then each output channel is
+    // the dot product of its row with the colour, clamped to 0..1. Drawn only with the Frame Buffer Effects option, as
+    // the original does.
+    struct VideoEffect { on: bool, red: math::Vec3, green: math::Vec3, blue: math::Vec3, noise: f32 }
+
+    fn no_video_effect {} -> VideoEffect {
+        return VideoEffect{
+            on = false, red = math::Vec3{ x = 1.0, y = 0.0, z = 0.0 }, green = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 },
+            blue = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, noise = 0.0,
+        }
+    }
+
     // What a draw is, for the effects that treat surfaces differently. `room`: static, its light baked in a
     // lightmap; it receives shadows and occlusion and is what light probes are made from. `creature`: a
     // character (skinned or not), lit by the light around it, casting shadows; tessellated. `object`: a
@@ -423,6 +436,7 @@ namespace render {
         ambient: math::Vec3,        // light every lit surface gets
         fog: Fog,
         blur: f32,                  // 0..1: a radial speed blur over the finished picture of a view of the screen (the Frame Buffer Effects option)
+        video: VideoEffect,         // a video effect after the blur (the same option)
         // What the enhanced renderer knows of the scene (Enhance): ignored by the original look.
         sun: Sun,
         focus: Focus,
@@ -434,7 +448,7 @@ namespace render {
     fn make_view { camera: Camera } -> View {
         return View{
             target = null, viewport = null, clear_color = Color{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 }, clear_depth = true,
-            camera, ambient = math::Vec3{ x = 0.3, y = 0.3, z = 0.3 }, fog = no_fog{}, blur = 0.0,
+            camera, ambient = math::Vec3{ x = 0.3, y = 0.3, z = 0.3 }, fog = no_fog{}, blur = 0.0, video = no_video_effect{},
             sun = no_sun{}, focus = no_focus{}, grade = null, height_fog = no_height_fog{}, exposure = 1.0,
         }
     }

@@ -342,6 +342,13 @@ namespace rt_misc {
         rt_crea::give_party_xp{ &w, amount }
     }
 
+    // The same, told to the player: the feedback line, and with `icon` the HUD's experience icon (notices::xp_gained).
+    fn award_party_xp_told { mut w: world::World, amount: i32, icon: bool } {
+        if amount <= 0 { return }
+        rt_crea::give_party_xp{ &w, amount }
+        notices::xp_gained{ &w, amount, icon }
+    }
+
     // What a journal entry is worth, given to the party when a quest moves on to it (AddJournalQuestEntry,
     // 0x005483f0 reads it back from the journal after setting the state and calls CSWPartyTable::AddExperience;
     // CSWVirtualMachineCommands::ExecuteCommandGetJournalQuestExperience asks the same thing): global.jrl's category
@@ -377,7 +384,9 @@ namespace rt_misc {
     }
 
     // Moves a quest on and pays for the step (the routine and the conversations' journal updates).
-    fn set_quest_state { mut w: world::World, tag: []u8, state: i32, allow_lower: bool } -> bool {
+    // `xp_icon`: a DLG's journal update (CSWSDialog::UpdateJournal 0x0059ef00) also posts the status summary's XP
+    // event; AddJournalQuestEntry (0x005483f0) gives only the feedback line.
+    fn set_quest_state { mut w: world::World, tag: []u8, state: i32, allow_lower: bool, xp_icon: bool } -> bool {
         let now = fight::time_now{ w = &w }
         let changed = journal::set_state{ j = &w.journal, tag, state, allow_lower, day = now.day, time = now.ms }
         if changed {
@@ -387,7 +396,7 @@ namespace rt_misc {
                     world::prefix{ w = &w }
                     _ = @fmt(&w.io, "journal xp: {} {} -> {}\n", tag, state, amount)
                 }
-                award_party_xp{ &w, amount }
+                award_party_xp_told{ &w, amount, icon = xp_icon }
             }
         }
         return changed
@@ -403,7 +412,7 @@ namespace rt_misc {
         let xp = twoda::get_int{ t = table, row, column = "xp" } ifnull { return }
         let total = @as(i64, xp) * @as(i64, percent)
         if total <= 0 { return }
-        award_party_xp{ &w, amount = @trunc(i32, (total + 99) / 100) }
+        award_party_xp_told{ &w, amount = @trunc(i32, (total + 99) / 100), icon = true }
     }
 
     // location GetGlobalLocation(string sIdentifier) / void SetGlobalLocation(string sIdentifier, location lValue)

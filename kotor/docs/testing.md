@@ -181,6 +181,14 @@ this build: when a conversation's timing moves they shift, and a frame that fall
 moving. Run it after changing the dialogue view (`lib/dialog/view`), the camera (`lib/scene/camera.ctx`), the scene's
 visibility or the animation of a cutscene's actors.
 
+`sh kotor/tools/camcheck/computer.sh` (`EXE=PATH`; about 10 s) plays the Endar Spire's security terminal from
+`--module end_m01ab` (`kotor/tools/items/scripts/computer_camera.txt`: view the starboard transport module, then
+overload the power conduit) and fails when the camera view does not show the 3D picture blue-grey under the security
+camera's video effect (the left eighth of `kotor/out/items/cc_view.png`, black beside the computer panel), when the log
+lacks `dialog video effect 0` for the Carth call and the three camera nodes, or when the message log lacks the plot XP's
+"Experience Points (XP) Received: 100" (docs/re/dialogue.md 9.6, 9.7, 4.8). Run it after changing the computer panel,
+the video effects or the XP feedback.
+
 ## Adding a check
 
 A new subsystem gets a corpus tool that runs it over every resource of its type (AGENTS.md rule 6). A new input-script

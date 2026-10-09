@@ -611,6 +611,7 @@ namespace play {
                 let mut view = render::make_view{ camera = cam::render_camera{ c = &camera, aspect = @as(f32, size.width) / @as(f32, size.height) } }
                 speed_blur = speed_blur + (math::max{ a = leader_haste{ w = &w }, b = disp.test_blur } - speed_blur) * math::min{ a = 1.0, b = dt * 4.0 }
                 view.blur = speed_blur
+                view.video = dlgview::video_effect_of{ w = &w }
                 view.ambient = sc.ambient
                 view.fog = sc.fog
                 view.sun = scene::sun_of{ &sc, w = &w, at = camera.look }

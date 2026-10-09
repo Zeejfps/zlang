@@ -382,11 +382,53 @@ namespace dlg {
         }
     }
 
+    // EnableVideoEffect (CClientExoAppInternal::EnableVideoEffect 0x005f7710, 9.6): the effect on, row `row` of
+    // videoeffects.2da, after switching off the one before. A row that turns on neither its scan noise nor its
+    // saturation leaves none (-2), as does a negative row.
+    fn enable_video_effect { mut w: world::World, row: i32 } {
+        disable_video_effect{ &w }
+        if row < 0 { return }
+        let t = rt_misc::scratch_table{ &w, name = "videoeffects" } ifnull { return }
+        let r = @as(usize, row)
+        if r >= t.labels.len { return }
+        let c = &w.conversation
+        if (twoda::get_int{ t, row = r, column = "EnableScanNoise" } ifnull 0) != 0 {
+            c.video_effect = row
+            c.video_noise = true
+        }
+        if (twoda::get_int{ t, row = r, column = "EnableSaturation" } ifnull 0) != 0 {
+            c.video_effect = row
+            c.video_saturate = true
+            c.video_modulation = math::Vec3{
+                x = twoda::get_float{ t, row = r, column = "ModulationRed" } ifnull 0.0,
+                y = twoda::get_float{ t, row = r, column = "ModulationGreen" } ifnull 0.0,
+                z = twoda::get_float{ t, row = r, column = "ModulationBlue" } ifnull 0.0,
+            }
+            c.video_saturation = twoda::get_float{ t, row = r, column = "Saturation" } ifnull 0.0
+        }
+        if w.log.dialog {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog video effect {} (noise {}, saturation {})\n", c.video_effect, c.video_noise, c.video_saturate)
+        }
+    }
+
+    // DisableVideoEffect (0x005edf20): none.
+    fn disable_video_effect { mut w: world::World } {
+        let c = &w.conversation
+        if c.video_effect != -2 and w.log.dialog {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "dialog video effect off\n")
+        }
+        c.video_effect = -2
+        c.video_noise = false
+        c.video_saturate = false
+    }
+
     // The journal and plot XP a node carries (4.8): the quest moves up to QuestEntry (never back
     // down), and a plot index with a percentage gives the party that part of plot.2da's XP.
     fn apply_quest { mut w: world::World, n: *Node } {
         if n.quest.len > 0 {
-            let changed = rt_misc::set_quest_state{ &w, tag = n.quest, state = @as(i32, n.quest_entry), allow_lower = false }
+            let changed = rt_misc::set_quest_state{ &w, tag = n.quest, state = @as(i32, n.quest_entry), allow_lower = false, xp_icon = true }
             let how: []u8 = if changed { "changed" } else { "kept" }
             if w.log.dialog {
                 world::prefix{ w = &w }
@@ -402,7 +444,7 @@ namespace dlg {
                 world::prefix{ w = &w }
                 _ = @fmt(&w.io, "dialog plot xp {} x {}: {}\n", n.plot_index, n.plot_xp, amount)
             }
-            if amount > 0 { rt_misc::award_party_xp{ &w, amount = @trunc(i32, amount) } }
+            if amount > 0 { rt_misc::award_party_xp_told{ &w, amount = @trunc(i32, amount), icon = true } }
         }
     }
 
@@ -826,6 +868,8 @@ namespace dlg {
         w.conversation.locked_orientation_count = 0
         w.conversation.locked_head_count = 0
         w.conversation.static_camera = -1
+        // The dialogue panel closing switches the video effect off (0x006332b0 from CSWSDialog::ClearDialog).
+        disable_video_effect{ &w }
         w.conversation.hold_fade_in = false
         w.conversation.ignore_count = 0
         w.conversation.use_leader = false

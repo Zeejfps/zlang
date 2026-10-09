@@ -125,8 +125,9 @@ namespace dlgview {
     // What the line asks the camera for (9.1): the cutscene's camera model first, whatever the
     // angle; else the framed shot, the GIT's camera, or the shot kept. A computer terminal only
     // moves the camera for angle 6.
-    fn set_shot { mut v: View, mut w: world::World, mut sc: scene::Scene, node: *dlg::Node, speaker: u32, listener: u32, angle: u32, spoken_reply: bool } {
+    fn set_shot { mut v: View, mut w: world::World, mut sc: scene::Scene, mut g: gui::Gui, node: *dlg::Node, speaker: u32, listener: u32, angle: u32, spoken_reply: bool } {
         let computer = w.conversation.d.conversation_type == dlg::TYPE_COMPUTER
+        if computer { set_computer_view{ &v, &w, &g, node, angle } }
         // Cutscene replies picked by the engine don't cut away from the camera that is running, unless the
         // reply brings a camera animation of its own: an empty reply between two shots otherwise shows a
         // computed shot of the speakers for a frame, from wherever the stunt bodies stand.
@@ -150,6 +151,16 @@ namespace dlgview {
                 return
             }
         }
+        // SetDialogCamera (0x006306e0): a static camera switches on the node's video effect unless it is -1 or -2
+        // (an earlier one then stays on); angle 5 keeps everything; every other angle frames a shot and switches
+        // the effect off. A cutscene's camera animation does not call it, so the effect stays.
+        if not computer {
+            if angle == dlg::ANGLE_STATIC {
+                if node.cam_vid_effect != -1 and node.cam_vid_effect != -2 { dlg::enable_video_effect{ &w, row = node.cam_vid_effect } }
+            } else if angle != dlg::ANGLE_KEEP {
+                dlg::disable_video_effect{ &w }
+            }
+        }
         if angle == dlg::ANGLE_STATIC {
             v.static_id = node.camera_id
             v.mode = Mode::fixed
@@ -159,6 +170,49 @@ namespace dlgview {
         } else {
             v.mode = Mode::framed
         }
+    }
+
+    // A computer conversation's line (9.7): every line and reply first puts the computer panel back and switches the
+    // video effect off (0x0062d990, 0x0062d8c0); one with CameraAngle 6 then shows the camera view
+    // (SetComputerStaticCamera 0x0062c030: nothing when the area has no static cameras) with its CamVidEffect, -1
+    // meaning row 0 (VIDEO_EFFECT_SECURITY_CAMERA) here and only -2 none.
+    fn set_computer_view { mut v: View, mut w: world::World, mut g: gui::Gui, node: *dlg::Node, angle: u32 } {
+        dlgpanel::hide_computer_camera{ p = &v.panels, g = &g }
+        dlg::disable_video_effect{ &w }
+        if angle == dlg::ANGLE_STATIC and w.conversation.camera_count > 0 { show_computer_camera{ &v, &w, &g, effect = node.cam_vid_effect } }
+    }
+
+    fn show_computer_camera { mut v: View, mut w: world::World, mut g: gui::Gui, effect: i32 } {
+        dlgpanel::show_computer_camera{ p = &v.panels, g = &g }
+        if effect != -2 { dlg::enable_video_effect{ &w, row = if effect == -1 { 0 } else { effect } } }
+    }
+
+    // The video effect on now (9.6), as the renderer takes it: the original's colour matrix
+    // (Render_ApplyScreenEffectsLate 0x004361f0 → 0x00434890): with saturation s and modulation m, the
+    // channel c row is m_c · (s·e_c + (1-s)·(0.3086, 0.6094, 0.082)), each entry at most 1 (its register
+    // combiners hold no more; the original misses the clamp of the blue row's last entry, which no row
+    // reaches). The scan noise adds `filmnoisetex` (procedural random, channel scale 0.02).
+    fn video_effect_of { w: *world::World } -> render::VideoEffect {
+        let c = &w.conversation
+        let mut e = render::no_video_effect{}
+        if not c.video_noise and not c.video_saturate { return e }
+        e.on = true
+        if c.video_noise { e.noise = 0.02 }
+        if c.video_saturate {
+            let s = c.video_saturation
+            let m = c.video_modulation
+            let lr = (1.0 - s) * 0.3086
+            let lg = (1.0 - s) * 0.6094
+            let lb = (1.0 - s) * 0.082
+            e.red = clamp_row{ v = math::Vec3{ x = m.x * (lr + s), y = m.x * lg, z = m.x * lb } }
+            e.green = clamp_row{ v = math::Vec3{ x = m.y * lr, y = m.y * (lg + s), z = m.y * lb } }
+            e.blue = clamp_row{ v = math::Vec3{ x = m.z * lr, y = m.z * lg, z = m.z * (lb + s) } }
+        }
+        return e
+    }
+
+    fn clamp_row { v: math::Vec3 } -> math::Vec3 {
+        return math::Vec3{ x = math::min{ a = v.x, b = 1.0 }, y = math::min{ a = v.y, b = 1.0 }, z = math::min{ a = v.z, b = 1.0 } }
     }
 
     // Puts the camera over the chase camera while a shot is up. The listener follows it too.

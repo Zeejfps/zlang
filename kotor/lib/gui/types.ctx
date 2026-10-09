@@ -196,6 +196,7 @@ namespace gui {
         // where the panel is on the screen (recomputed by place)
         sx: i32, sy: i32,
         shown: bool,                    // not hidden by a full-screen panel above it
+        hidden: bool,                   // taken off the screen by its owner (still open, keeps its state)
         background: bool,               // draw the panel's own COLOR and BORDER (a 3D view behind needs it off)
         backdrop: u32,                  // 0 back, 1 store, 2 pazaak, 3 map, 4 comp
         key_events: bool,               // arrow keys also go to the owner as `arrow` events, before they move the focus

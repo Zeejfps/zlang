@@ -302,6 +302,22 @@ namespace gui {
 
     // Whether the panel draws its own colour and border fill (off lets a 3D view drawn under the
     // GUI show through).
+    // Takes an open panel off the screen, or puts it back, as the original's RemovePanel / AddPanel of a panel it
+    // keeps: a hidden panel is not drawn, takes no input and hides nothing below it, and keeps its controls' state.
+    fn set_panel_hidden { mut g: Gui, panel: u32, hidden: bool } {
+        let p = find_panel{ &g, id = panel } ifnull { return }
+        p.hidden = hidden
+        update_visibility{ &g }
+    }
+
+    // Gives a panel a new size (CSWGuiPanel::SetExtent): its controls are drawn only inside it.
+    fn set_panel_size { mut g: Gui, panel: u32, w: i32, h: i32 } {
+        let p = find_panel{ &g, id = panel } ifnull { return }
+        p.w = w
+        p.h = h
+        place{ &g, p }
+    }
+
     fn set_background { mut g: Gui, panel: u32, on: bool } {
         let p = find_panel{ &g, id = panel } ifnull { return }
         p.background = on

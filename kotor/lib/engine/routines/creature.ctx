@@ -740,6 +740,7 @@ namespace rt_crea {
         let amount = try nwarg::int{ &vm, routine = nwscript::GiveXPToCreature, argc, i = 1 }
         if creature_of{ w = &w, id } == null { return }
         give_party_xp{ &w, amount }
+        notices::xp_gained{ &w, amount, icon = notices::is_party{ w = &w, id } }
     }
 
     // void SetXP(object oCreature, int nXpAmount): XP never goes down ("Cannot reduce XP",

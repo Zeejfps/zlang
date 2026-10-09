@@ -404,7 +404,7 @@ namespace gpu {
         dev.cur = dev.scene
         dev.cur_particle = dev.particle
         dev.state = unknown_state{}
-        if v.blur > 0.01 and dev.screen_effects { try speed_blur{ &dev, strength = v.blur } }
+        try screen_passes{ &dev, v, time = frame.time }
     }
 
     // With multisampling, the opaque surfaces' depth and normals copied to the textures passes read (a blit takes one

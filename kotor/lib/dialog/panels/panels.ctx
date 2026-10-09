@@ -69,6 +69,8 @@ namespace dlgpanel {
 
     struct Panels {
         main: u32,                      // dialog.gui or computer.gui, 0 when none is open
+        camera: u32,                    // computer: computercamera.gui, hidden except while a camera view is up (main hidden then)
+        camera_up: bool,
         last: u32,                      // the second dialog.gui showing the last NPC line in the top bar
         bark: u32,                      // barkbubble.gui
         computer: bool,
@@ -228,6 +230,13 @@ namespace dlgpanel {
             gui::set_bar_when_needed{ &g, panel = id, tag = "LB_REPLIES" }
             gui::set_backdrop{ &g, &fs, &dev, panel = id, kind = 4 }
             load_computer_backdrop{ &p, &g, &fs, &dev }
+            // The camera view's panel, opened now and hidden until a node asks for it.
+            let cid = try gui::open{ &g, &fs, &dev, name = "computercamera", mode = gui::Mode::placed, modal = false }
+            p.camera = cid
+            p.camera_up = false
+            gui::set_background{ &g, panel = cid, on = false }
+            gui::set_panel_hidden{ &g, panel = cid, hidden = true }
+            place_computer_camera{ &p, &g }
             return
         }
         let id = try gui::open{ &g, &fs, &dev, name = "dialog", mode = gui::Mode::placed, modal = false }
@@ -283,8 +292,42 @@ namespace dlgpanel {
         }
     }
 
+    // ---- the computer's camera view
+
+    // A computer conversation's static camera (CGuiInGame::SetComputerStaticCamera 0x0062c030): the computer panel
+    // makes way for `computercamera.gui`, the size of the screen with nothing but LBL_RETURN centred 75 pixels above
+    // the bottom (CSWGuiDialogComputerCamera 0x006a95f0), so the 3D view shows. A click or Enter skips the line as
+    // on the computer panel (they share CSWGuiDialog::HandleInputEvent 0x006a7230).
+    // Both panels open with the conversation; this swaps which one shows.
+    fn show_computer_camera { mut p: Panels, mut g: gui::Gui } {
+        if p.main == 0 or p.camera == 0 or p.camera_up { return }
+        p.camera_up = true
+        gui::set_panel_hidden{ &g, panel = p.camera, hidden = false }
+        gui::set_panel_hidden{ &g, panel = p.main, hidden = true }
+    }
+
+    // The next line or reply puts the computer panel back (0x0062d990, 0x0062d8c0).
+    fn hide_computer_camera { mut p: Panels, mut g: gui::Gui } {
+        if p.camera == 0 or not p.camera_up { return }
+        p.camera_up = false
+        gui::set_panel_hidden{ &g, panel = p.camera, hidden = true }
+        if p.main != 0 { gui::set_panel_hidden{ &g, panel = p.main, hidden = false } }
+    }
+
+    fn place_computer_camera { mut p: Panels, mut g: gui::Gui } {
+        if p.camera == 0 { return }
+        gui::set_panel_size{ &g, panel = p.camera, w = g.ui_w, h = g.ui_h }
+        let r = gui::control_extent{ &g, panel = p.camera, tag = "LBL_RETURN" } ifnull { return }
+        let w = @as(i32, r.w)
+        let h = @as(i32, r.h)
+        gui::set_extent{ &g, panel = p.camera, tag = "LBL_RETURN", x = (g.ui_w - w) / 2, y = g.ui_h - 75, w, h }
+    }
+
     // Removes the conversation panels (and the bars). The fade layer and the bark bubble stay.
     fn close { mut p: Panels, mut g: gui::Gui } {
+        if p.camera != 0 { gui::close{ &g, id = p.camera } }
+        p.camera = 0
+        p.camera_up = false
         if p.main != 0 { gui::close{ &g, id = p.main } }
         if p.last != 0 { gui::close{ &g, id = p.last } }
         p.main = 0
@@ -299,6 +342,7 @@ namespace dlgpanel {
             p.ui_w = g.ui_w
             p.ui_h = g.ui_h
             load_computer_backdrop{ &p, &g, &fs, &dev }
+            place_computer_camera{ &p, &g }
             return
         }
         let was = p.bars_instant

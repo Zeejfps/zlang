@@ -168,6 +168,9 @@ namespace dlgview {
         if w.conversation.static_camera != v.seen_static {
             v.seen_static = w.conversation.static_camera
             if v.seen_static >= 0 {
+                // A computer's goes through SetComputerStaticCamera (0x0062e900 → 0x0062c030) with effect -1: the
+                // camera view and the security camera's effect.
+                if w.conversation.d.conversation_type == dlg::TYPE_COMPUTER and w.conversation.camera_count > 0 { show_computer_camera{ &v, &w, &g, effect = -1 } }
                 v.static_id = v.seen_static
                 v.mode = Mode::fixed
             }
