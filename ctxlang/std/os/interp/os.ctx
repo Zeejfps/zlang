@@ -162,4 +162,66 @@ namespace os {
         _ = unsupported{ what = "the executable's path" }
         return ""
     }
+
+    // ---- threads (std/thread.ctx): one at a time
+    //
+    // A thread runs to its end inside thread::create, before its creator goes on, with its own
+    // `#thread_local` statics (ctx_interp_thread_enter and _leave): one schedule a program's
+    // threads may have, and the same each run. What would wait for another thread instead (a
+    // mutex another holds, a condition) stops the run, as not supported by interp.
+
+    #c::symbol{ name = "ctx_interp_thread_enter" }
+    extern fn host_thread_enter { mut threads: Threads }
+    #c::symbol{ name = "ctx_interp_thread_leave" }
+    extern fn host_thread_leave { mut threads: Threads }
+    #c::symbol{ name = "ctx_interp_thread_id" }
+    extern fn host_thread_id {} -> u64
+
+    fn thread_create { mut threads: Threads, start: *mut u8, stack_size: usize } -> ?u64 {
+        host_thread_enter{ &threads }
+        thread::begin{ start }
+        host_thread_leave{ &threads }
+        return 1
+    }
+
+    fn thread_join { mut threads: Threads, handle: u64 } {}
+    fn thread_detach { mut threads: Threads, handle: u64 } {}
+    fn thread_sleep { mut threads: Threads, nanoseconds: u64 } {}
+    fn thread_yield { mut threads: Threads } {}
+    fn thread_id {} -> u64 { return host_thread_id{} }
+    fn thread_name { name: []u8 } {}
+
+    struct Mutex { locked: u32 }
+    struct Condition { signals: u32 }
+
+    fn mutex_make {} -> Mutex { return Mutex{ locked = 0 } }
+
+    fn mutex_lock { mut mutex: Mutex } {
+        if mutex.locked != 0 { _ = unsupported{ what = "waiting for a mutex that another thread holds" } }
+        mutex.locked = 1
+    }
+
+    fn mutex_try_lock { mut mutex: Mutex } -> bool {
+        if mutex.locked != 0 { return false }
+        mutex.locked = 1
+        return true
+    }
+
+    fn mutex_unlock { mut mutex: Mutex } { mutex.locked = 0 }
+    fn mutex_free { mut mutex: Mutex } {}
+
+    fn condition_make {} -> Condition { return Condition{ signals = 0 } }
+
+    fn condition_wait { mut condition: Condition, mut mutex: Mutex } {
+        _ = unsupported{ what = "waiting on a condition" }
+    }
+
+    // No other thread can signal it meanwhile: it gives up at once.
+    fn condition_wait_for { mut condition: Condition, mut mutex: Mutex, nanoseconds: u64 } -> bool {
+        return false
+    }
+
+    fn condition_signal { mut condition: Condition } {}
+    fn condition_broadcast { mut condition: Condition } {}
+    fn condition_free { mut condition: Condition } {}
 }

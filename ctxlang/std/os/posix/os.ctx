@@ -398,4 +398,118 @@ namespace os {
         if code == 9 { return fs::bad_file }                        // EBADF
         return fs::other{ code = @as(i64, code) }
     }
+
+    // ---- threads (std/thread.ctx): pthreads
+
+    // A pthread_attr_t: 56 bytes on Linux, 64 on macOS.
+    struct Attr { bytes: [8]u64 }
+    struct Timespec { sec: i64, nsec: i64 }
+
+    extern fn pthread_attr_init { mut threads: Threads, mut attr: Attr } -> i32
+    extern fn pthread_attr_setstacksize { mut threads: Threads, mut attr: Attr, size: usize } -> i32
+    extern fn pthread_attr_destroy { mut threads: Threads, mut attr: Attr } -> i32
+    extern fn pthread_create { mut threads: Threads, mut thread: u64, attr: *Attr, entry: extern fn{ start: *mut u8 } -> ?*mut u8, start: *mut u8 } -> i32
+    extern fn pthread_join { mut threads: Threads, thread: u64, result: ?*mut ?*mut u8 } -> i32
+    extern fn pthread_detach { mut threads: Threads, thread: u64 } -> i32
+    extern fn pthread_self {} -> u64
+    extern fn nanosleep { mut threads: Threads, request: *Timespec, remaining: ?*mut Timespec } -> i32
+    extern fn sched_yield { mut threads: Threads } -> i32
+    extern fn clock_gettime { clock: i32, mut now: Timespec } -> i32
+
+    const CLOCK_REALTIME: i32 = 0
+
+    // Where a new thread starts: a C function that pthreads call on it, which holds no
+    // capability.
+    #c::callback{ any_thread = true }
+    fn thread_entry { start: *mut u8 } -> ?*mut u8 {
+        thread::begin{ start }
+        return null
+    }
+
+    // Starts a thread that runs thread::begin{ start }, with a stack of stack_size bytes, rounded
+    // up to 64 KiB as macOS wants a multiple of its pages: its pthread_t, or null.
+    fn thread_create { mut threads: Threads, start: *mut u8, stack_size: usize } -> ?u64 {
+        let mut attr = Attr{ bytes = [0; 8] }
+        if pthread_attr_init{ &threads, &attr } != 0 { return null }
+        defer _ = pthread_attr_destroy{ &threads, &attr }
+        let size = (stack_size + 65535) / 65536 * 65536
+        if pthread_attr_setstacksize{ &threads, &attr, size } != 0 { return null }
+        let mut t: u64 = 0
+        if pthread_create{ &threads, thread = &t, attr = &attr, entry = thread_entry, start } != 0 { return null }
+        return t
+    }
+
+    fn thread_join { mut threads: Threads, handle: u64 } {
+        _ = pthread_join{ &threads, thread = handle, result = null }
+    }
+
+    fn thread_detach { mut threads: Threads, handle: u64 } {
+        _ = pthread_detach{ &threads, thread = handle }
+    }
+
+    fn thread_sleep { mut threads: Threads, nanoseconds: u64 } {
+        let t = Timespec{ sec = @as(i64, nanoseconds / 1000000000), nsec = @as(i64, nanoseconds % 1000000000) }
+        _ = nanosleep{ &threads, request = &t, remaining = null }
+    }
+
+    fn thread_yield { mut threads: Threads } {
+        _ = sched_yield{ &threads }
+    }
+
+    fn thread_id {} -> u64 {
+        return pthread_self{}
+    }
+
+    // The calling thread's name for debuggers, cut to what the system takes.
+    fn thread_name { name: []u8 } {
+        if name.len == 0 { return }
+        let mut buf: [64]u8 = [0; 64]
+        let n = if name.len > sys::THREAD_NAME_MAX { sys::THREAD_NAME_MAX } else { name.len }
+        slice::copy(u8){ dst = buf[..n], src = name[..n] }
+        sys::set_thread_name{ name = &buf[0] }
+    }
+
+    // ---- mutexes and conditions (std/thread.ctx): a pthread_mutex_t, 40 or 48 bytes on Linux
+    // and 64 on macOS, and a pthread_cond_t, 48, as their static initializers make them.
+
+    struct Mutex { sig: i64, rest: [7]u64 }
+    struct Condition { sig: i64, rest: [7]u64 }
+
+    extern fn pthread_mutex_lock { mutex: *mut Mutex } -> i32
+    extern fn pthread_mutex_trylock { mutex: *mut Mutex } -> i32
+    extern fn pthread_mutex_unlock { mutex: *mut Mutex } -> i32
+    extern fn pthread_mutex_destroy { mutex: *mut Mutex } -> i32
+    extern fn pthread_cond_wait { cond: *mut Condition, mutex: *mut Mutex } -> i32
+    extern fn pthread_cond_timedwait { cond: *mut Condition, mutex: *mut Mutex, until: *Timespec } -> i32
+    extern fn pthread_cond_signal { cond: *mut Condition } -> i32
+    extern fn pthread_cond_broadcast { cond: *mut Condition } -> i32
+    extern fn pthread_cond_destroy { cond: *mut Condition } -> i32
+
+    fn mutex_make {} -> Mutex { return Mutex{ sig = sys::MUTEX_SIG, rest = [0; 7] } }
+    fn mutex_lock { mut mutex: Mutex } { _ = pthread_mutex_lock{ mutex = &mutex } }
+    fn mutex_try_lock { mut mutex: Mutex } -> bool { return pthread_mutex_trylock{ mutex = &mutex } == 0 }
+    fn mutex_unlock { mut mutex: Mutex } { _ = pthread_mutex_unlock{ mutex = &mutex } }
+    fn mutex_free { mut mutex: Mutex } { _ = pthread_mutex_destroy{ mutex = &mutex } }
+
+    fn condition_make {} -> Condition { return Condition{ sig = sys::COND_SIG, rest = [0; 7] } }
+
+    fn condition_wait { mut condition: Condition, mut mutex: Mutex } {
+        _ = pthread_cond_wait{ cond = &condition, mutex = &mutex }
+    }
+
+    // pthread_cond_timedwait waits until a time of the realtime clock.
+    fn condition_wait_for { mut condition: Condition, mut mutex: Mutex, nanoseconds: u64 } -> bool {
+        let mut now = Timespec{ sec = 0, nsec = 0 }
+        _ = clock_gettime{ clock = CLOCK_REALTIME, &now }
+        let ns = @as(u64, now.nsec) + nanoseconds % 1000000000
+        let secs = nanoseconds / 1000000000 + ns / 1000000000
+        let max: u64 = 9223372036854775807
+        let sec = if secs > max - @as(u64, now.sec) { max } else { @as(u64, now.sec) + secs }
+        let until = Timespec{ sec = @as(i64, sec), nsec = @as(i64, ns % 1000000000) }
+        return pthread_cond_timedwait{ cond = &condition, mutex = &mutex, until = &until } == 0
+    }
+
+    fn condition_signal { mut condition: Condition } { _ = pthread_cond_signal{ cond = &condition } }
+    fn condition_broadcast { mut condition: Condition } { _ = pthread_cond_broadcast{ cond = &condition } }
+    fn condition_free { mut condition: Condition } { _ = pthread_cond_destroy{ cond = &condition } }
 }

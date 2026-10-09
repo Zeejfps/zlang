@@ -637,6 +637,119 @@ namespace os {
         return fs::other{ code = 206 }                              // ERROR_FILENAME_EXCED_RANGE
     }
 
+    // ---- threads (std/thread.ctx): kernel32's
+
+    #c::symbol{ name = "CreateThread" }
+    extern fn create_thread { mut threads: Threads, security: ?*u8, stack: usize, entry: extern fn{ start: *mut u8 } -> u32, start: *mut u8, flags: u32, id: ?*mut u32 } -> u64
+    #c::symbol{ name = "WaitForSingleObject" }
+    extern fn wait_thread { mut threads: Threads, handle: u64, ms: u32 } -> u32
+    #c::symbol{ name = "CloseHandle" }
+    extern fn close_thread { mut threads: Threads, handle: u64 } -> i32
+    #c::symbol{ name = "Sleep" }
+    extern fn c_sleep { mut threads: Threads, ms: u32 }
+    #c::symbol{ name = "SwitchToThread" }
+    extern fn switch_thread { mut threads: Threads } -> i32
+    #c::symbol{ name = "GetCurrentThreadId" }
+    extern fn current_thread_id {} -> u32
+    #c::symbol{ name = "GetCurrentThread" }
+    extern fn current_thread {} -> u64
+    #c::symbol{ name = "SetThreadDescription" }
+    extern fn set_thread_description { thread: u64, name: *u16 } -> i32
+
+    // CreateThread's flag: its stack size is what to reserve, not what to commit.
+    const STACK_SIZE_PARAM_IS_A_RESERVATION: u32 = 65536
+
+    // Where a new thread starts: a C function that Windows calls on it, which holds no
+    // capability.
+    #c::callback{ any_thread = true }
+    fn thread_entry { start: *mut u8 } -> u32 {
+        thread::begin{ start }
+        return 0
+    }
+
+    // Starts a thread that runs thread::begin{ start }, with a stack of stack_size bytes: its
+    // handle, or null if Windows won't.
+    fn thread_create { mut threads: Threads, start: *mut u8, stack_size: usize } -> ?u64 {
+        let h = create_thread{ &threads, security = null, stack = stack_size, entry = thread_entry, start, flags = STACK_SIZE_PARAM_IS_A_RESERVATION, id = null }
+        if h == 0 { return null }
+        return h
+    }
+
+    fn thread_join { mut threads: Threads, handle: u64 } {
+        _ = wait_thread{ &threads, handle, ms = INFINITE }
+        _ = close_thread{ &threads, handle }
+    }
+
+    fn thread_detach { mut threads: Threads, handle: u64 } {
+        _ = close_thread{ &threads, handle }
+    }
+
+    fn thread_sleep { mut threads: Threads, nanoseconds: u64 } {
+        let mut ms = millis{ nanoseconds }
+        while ms > 0 {
+            let now: u32 = if ms >= @as(u64, INFINITE) { INFINITE - 1 } else { @as(u32, ms) }
+            c_sleep{ &threads, ms = now }
+            ms = ms - @as(u64, now)
+        }
+    }
+
+    // nanoseconds in milliseconds, rounded up.
+    fn millis { nanoseconds: u64 } -> u64 {
+        return nanoseconds / 1000000 + (if nanoseconds % 1000000 > 0 { 1 } else { 0 })
+    }
+
+    fn thread_yield { mut threads: Threads } {
+        _ = switch_thread{ &threads }
+    }
+
+    fn thread_id {} -> u64 {
+        return @as(u64, current_thread_id{})
+    }
+
+    // The calling thread's name for debuggers, as UTF-16; nothing for an empty one.
+    fn thread_name { name: []u8 } {
+        if name.len == 0 { return }
+        let mut wide: [64]u16
+        let n = utf16_of{ s = name[..if name.len > 63 { 63 } else { name.len }], into = wide[..63] } ifnull { return }
+        wide[n] = 0
+        _ = set_thread_description{ thread = current_thread{}, name = &wide[0] }
+    }
+
+    // ---- mutexes and conditions (std/thread.ctx): slim reader/writer locks, zero when free,
+    // and condition variables, zero too.
+
+    struct Mutex { lock: usize }
+    struct Condition { cv: usize }
+
+    extern fn AcquireSRWLockExclusive { lock: *mut Mutex }
+    extern fn TryAcquireSRWLockExclusive { lock: *mut Mutex } -> u8
+    extern fn ReleaseSRWLockExclusive { lock: *mut Mutex }
+    extern fn SleepConditionVariableSRW { cv: *mut Condition, lock: *mut Mutex, ms: u32, flags: u32 } -> i32
+    extern fn WakeConditionVariable { cv: *mut Condition }
+    extern fn WakeAllConditionVariable { cv: *mut Condition }
+
+    fn mutex_make {} -> Mutex { return Mutex{ lock = 0 } }
+    fn mutex_lock { mut mutex: Mutex } { AcquireSRWLockExclusive{ lock = &mutex } }
+    fn mutex_try_lock { mut mutex: Mutex } -> bool { return TryAcquireSRWLockExclusive{ lock = &mutex } != 0 }
+    fn mutex_unlock { mut mutex: Mutex } { ReleaseSRWLockExclusive{ lock = &mutex } }
+    fn mutex_free { mut mutex: Mutex } {}
+
+    fn condition_make {} -> Condition { return Condition{ cv = 0 } }
+
+    fn condition_wait { mut condition: Condition, mut mutex: Mutex } {
+        _ = SleepConditionVariableSRW{ cv = &condition, lock = &mutex, ms = INFINITE, flags = 0 }
+    }
+
+    fn condition_wait_for { mut condition: Condition, mut mutex: Mutex, nanoseconds: u64 } -> bool {
+        let ms = millis{ nanoseconds }
+        let wait: u32 = if ms >= @as(u64, INFINITE) { INFINITE - 1 } else { @as(u32, ms) }
+        return SleepConditionVariableSRW{ cv = &condition, lock = &mutex, ms = wait, flags = 0 } != 0
+    }
+
+    fn condition_signal { mut condition: Condition } { WakeConditionVariable{ cv = &condition } }
+    fn condition_broadcast { mut condition: Condition } { WakeAllConditionVariable{ cv = &condition } }
+    fn condition_free { mut condition: Condition } {}
+
     // The error for GetLastError's `code`.
     fn failed(T) { code: u32 } -> !T {
         if code == 2 or code == 3 { return fs::not_found }          // file, path not found

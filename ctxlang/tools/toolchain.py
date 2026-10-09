@@ -78,9 +78,9 @@ class DiffMismatch(AssertionError):
 class Panic(Exception):
     """A panic in a program, at (line, column, file), or at no position."""
 
-    def __init__(self, msg, pos=None):
+    def __init__(self, msg, pos=None, thread=None):
         super().__init__(msg)
-        self.msg, self.pos = msg, pos
+        self.msg, self.pos, self.thread = msg, pos, thread
 
 
 # ---- ctxc itself
@@ -359,7 +359,8 @@ STD_FILE = re.compile(r'(?:\.\./)*(std/(?:os/[^/]+/)?[^/]+\.ctx)')
 
 # ---- running programs
 
-PANIC = re.compile(r'^(.*?)(?::(\d+):(\d+))?: panic: (.*)$')
+# std's report (std/rt.ctx) says "panic in thread NAME:" on a thread but the main one.
+PANIC = re.compile(r'^(.*?)(?::(\d+):(\d+))?: panic(?: in thread ([^:]*))?: (.*)$')
 
 
 def run_source(src, file=None, **kw):
@@ -423,9 +424,9 @@ def report(r, out, err, name, given):
     write(out if out is not None else sys.stdout, r.stdout)
     write(err if err is not None else sys.stderr, stderr)
     if panic is not None:
-        file, line, col, msg = panic.groups()
+        file, line, col, thread, msg = panic.groups()
         pos = (int(line), int(col), None if file == name else rename(file, given)) if line else None
-        raise Panic(msg, pos)
+        raise Panic(msg, pos, thread)
     return code
 
 

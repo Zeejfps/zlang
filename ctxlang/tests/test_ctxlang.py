@@ -10562,3 +10562,434 @@ class JsonExample(Base):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class Threads(Base):
+    """Threads (spec §15, rule 14; §13, Atomics; §17, thread, mutex, condition; threads.md). The
+    interpreter runs each thread to its end inside thread::create, so what it can run it runs
+    the same each time, and the compiled program must print the same."""
+
+    def run_native(self, src):
+        """Runs src compiled, without the interpreter: for what it can't run, or too slowly."""
+        old = os.environ.get('CTX_DIFF')
+        os.environ['CTX_DIFF'] = '0'
+        try:
+            return run(src)
+        finally:
+            if old is None:
+                del os.environ['CTX_DIFF']
+            else:
+                os.environ['CTX_DIFF'] = old
+
+    def test_create_join_and_data(self):
+        self.assertOutput('''
+struct Job { input: u64, output: u64 }
+
+fn square { data: *mut Job } {
+    data.output = data.input * data.input
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut a = Job{ input = 7, output = 0 }
+    let mut b = Job{ input = 12, output = 0 }
+    let ta = thread::create{ &threads, run = square, data = &a, options = thread::default_options{} } iferr { return 1 }
+    let tb = thread::create{ &threads, run = square, data = &b, options = thread::Options{ stack_size = 65536, name = "b" } } iferr { return 1 }
+    thread::join{ &threads, thread = ta }
+    thread::join{ &threads, thread = tb }
+    io::println_u64{ &io, n = a.output + b.output }
+    return 0
+}
+''', '193\n')
+
+    def test_capabilities_on_a_thread(self):
+        """The run function takes Io, which main holds: the thread receives it, and its standard
+        output is written out when it ends."""
+        self.assertOutput('''
+fn hello { mut io: Io, data: *mut u32 } {
+    io::println_u64{ &io, n = @as(u64, data.*) }
+}
+
+fn start { mut io: Io, mut threads: Threads, n: *mut u32 } -> !thread::Thread {
+    return thread::create{ &threads, run = hello, data = n, options = thread::default_options{} }
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut n: u32 = 42
+    let t = start{ &io, &threads, n = &n } iferr { return 1 }
+    thread::join{ &threads, thread = t }
+    io::println{ &io, s = "joined" }
+    return 0
+}
+''', '42\njoined\n')
+
+    def test_a_thread_without_the_callers_capability(self):
+        self.assertCompileError('''
+fn hello { mut io: Io, data: *mut u32 } {
+    io::println_u64{ &io, n = @as(u64, data.*) }
+}
+
+fn start { mut threads: Threads, n: *mut u32 } -> !thread::Thread {
+    return thread::create{ &threads, run = hello, data = n, options = thread::default_options{} }
+}
+
+fn main { mut io: Io, mut threads: Threads } {
+    let mut n: u32 = 1
+    _ = start{ &threads, n = &n }
+}
+''', "`hello` takes capability `io`, which a thread receives from its creator: no local or context field named `io` holds one here")
+
+    def test_a_thread_needs_a_mutable_capability(self):
+        self.assertCompileError('''
+fn hello { mut io: Io, data: *mut u32 } {}
+
+fn start { io: Io, mut threads: Threads, n: *mut u32 } -> !thread::Thread {
+    return thread::create{ &threads, run = hello, data = n, options = thread::default_options{} }
+}
+
+fn main { mut io: Io, mut threads: Threads } {
+    let mut n: u32 = 1
+    _ = start{ io, &threads, n = &n }
+}
+''', '`io` is not a mutable place')
+
+    def test_a_bound_function_cant_run_on_a_thread(self):
+        self.assertCompileError('''
+fn add { a: u32, data: *mut u32 } { data.* = data.* + a }
+
+fn main { mut threads: Threads } {
+    let mut n: u32 = 1
+    let f = add{ a = 2, _ }
+    _ = thread::create{ &threads, run = f, data = &n, options = thread::default_options{} }
+}
+''', 'got &fn{ data: *mut u32 }')
+
+    def test_capability_with_fields_on_a_thread(self):
+        """A capability with fields goes to the thread as a copy, which outlives its creator."""
+        self.assertOutput('''
+namespace lib {
+    capability Lib { abs: extern fn{ n: i64 } -> i64 }
+
+    #c::symbol{ name = "llabs" }
+    extern fn c_llabs { n: i64 } -> i64
+
+    fn load { mut io: Io } -> Lib { return Lib{ abs = c_llabs } }
+}
+
+fn work { mut lib: lib::Lib, data: *mut i64 } {
+    data.* = lib.abs{ n = data.* }
+}
+
+fn start { mut threads: Threads, mut io: Io, n: *mut i64 } -> !thread::Thread {
+    let mut lib = lib::load{ &io }
+    return thread::create{ &threads, run = work, data = n, options = thread::default_options{} }
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut n: i64 = -5
+    let t = start{ &threads, &io, n = &n } iferr { return 1 }
+    thread::join{ &threads, thread = t }
+    io::println_i64{ &io, n }
+    return 0
+}
+''', '5\n')
+
+    def test_a_fn_value_runs_on_a_thread(self):
+        self.assertOutput('''
+fn twice { data: *mut u32 } { data.* = data.* * 2 }
+fn thrice { mut io: Io, data: *mut u32 } { data.* = data.* * 3 }
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut n: u32 = 1
+    let fs: [2]fn{ data: *mut u32 } = [twice, twice]
+    let t = thread::create{ &threads, run = fs[1], data = &n, options = thread::default_options{} } iferr { return 1 }
+    thread::join{ &threads, thread = t }
+    let g = thrice
+    let u = thread::create{ &threads, run = g, data = &n, options = thread::default_options{} } iferr { return 1 }
+    thread::join{ &threads, thread = u }
+    io::println_u64{ &io, n = @as(u64, n) }
+    return 0
+}
+''', '6\n')
+
+    def test_atomics(self):
+        self.assertOutput('''
+enum State: u8 { idle, busy, done }
+
+fn main { mut io: Io, mut mem: Mem } {
+    let mut n: u32 = 5
+    _ = @atomic_add(&n, 3, atomic::Order::relaxed)
+    let before = @atomic_subtract(&n, 1, atomic::Order::acquire_release)
+    io::println_u64{ &io, n = @as(u64, before) }
+    @atomic_store(&n, 40, atomic::Order::release)
+    io::println_u64{ &io, n = @as(u64, @atomic_load(&n, atomic::Order::acquire)) }
+    let old = @atomic_exchange(&n, 41, atomic::Order::sequentially_consistent)
+    io::println_u64{ &io, n = @as(u64, old) }
+    match @atomic_compare_exchange(&n, 41, 42, atomic::Order::acquire_release) {
+        null => { io::println{ &io, s = "stored" } }
+        some{ value } => { io::println_u64{ &io, n = @as(u64, value) } }
+    }
+    match @atomic_compare_exchange(&n, 41, 43, atomic::Order::relaxed) {
+        null => { io::println{ &io, s = "stored" } }
+        some{ value } => { io::println_u64{ &io, n = @as(u64, value) } }
+    }
+    let mut i: i8 = -100
+    _ = @atomic_subtract(&i, 100, atomic::Order::relaxed)
+    io::println_i64{ &io, n = @as(i64, i) }
+    let mut flag = false
+    io::println_bool{ &io, n = @atomic_exchange(&flag, true, atomic::Order::sequentially_consistent) }
+    io::println_bool{ &io, n = @atomic_load(&flag, atomic::Order::relaxed) }
+    let mut s = State::idle
+    _ = @atomic_compare_exchange(&s, State::idle, State::done, atomic::Order::sequentially_consistent)
+    io::println_u64{ &io, n = @as(u64, @as(u8, s)) }
+    // pointers to memory that isn't a local's, which an atomic may store (§14, Escape check)
+    let words = mem::pages{ &mem, size = 16 } ifnull { return }
+    let x = @cast(*mut u64, words.ptr)
+    let y = x + 1
+    x.* = 1
+    y.* = 2
+    let mut p: *mut u64 = x
+    let q: *mut u64 = @atomic_exchange(&p, y, atomic::Order::acquire_release)
+    io::println_u64{ &io, n = q.* + @atomic_load(&p, atomic::Order::acquire).* }
+    let mut np: ?*mut u64 = null
+    io::println_bool{ &io, n = @atomic_compare_exchange(&np, null, x, atomic::Order::sequentially_consistent) == null }
+    @fence(atomic::Order::sequentially_consistent)
+}
+''', '8\n40\n40\nstored\n42\n56\nfalse\ntrue\n2\n3\ntrue\n')
+
+    def test_atomic_errors(self):
+        cases = [
+            ('let mut n: u32 = 0\n    let o = atomic::Order::relaxed\n    _ = @atomic_load(&n, o)',
+             'the order of @atomic_load must be a constant'),
+            ('let mut n: u32 = 0\n    _ = @atomic_load(&n, atomic::Order::release)',
+             "@atomic_load can't be `release` or `acquire_release`"),
+            ('let mut n: u32 = 0\n    @atomic_store(&n, 1, atomic::Order::acquire)',
+             "@atomic_store can't be `acquire` or `acquire_release`"),
+            ('let mut b = false\n    _ = @atomic_add(&b, true, atomic::Order::relaxed)',
+             '@atomic_add needs a pointer to an integer'),
+            ('let n: u32 = 0\n    @atomic_store(&n, 1, atomic::Order::relaxed)',
+             '@atomic_store writes through its pointer, which must be a *mut T'),
+            ('let mut f: f64 = 0.0\n    _ = @atomic_load(&f, atomic::Order::relaxed)',
+             '@atomic_load works on an integer, a bool, an enum or a pointer, not f64'),
+            ('let mut n: u32 = 0\n    @atomic_add(&n, 1, atomic::Order::relaxed)',
+             'is unused'),
+        ]
+        for body, fragment in cases:
+            with self.subTest(fragment=fragment):
+                self.assertCompileError('fn main {} {\n    %s\n}\n' % body, fragment)
+
+    def test_atomic_store_cant_keep_a_locals_address(self):
+        self.assertCompileError('''
+fn keep { mut p: *mut u64 } {
+    let mut x: u64 = 1
+    @atomic_store(&p, &x, atomic::Order::release)
+}
+fn main {} {}
+''', 'cannot store the address of local `x` through a pointer')
+
+    def test_mutex(self):
+        self.assertOutput('''
+fn main { mut io: Io } {
+    let mut m = mutex::make{}
+    mutex::lock{ mutex = &m }
+    io::println_bool{ &io, n = mutex::try_lock{ mutex = &m } }
+    mutex::unlock{ mutex = &m }
+    io::println_bool{ &io, n = mutex::try_lock{ mutex = &m } }
+    mutex::unlock{ mutex = &m }
+    mutex::free{ mutex = &m }
+}
+''', 'false\ntrue\n')
+
+    def test_condition(self):
+        """A consumer waits on a condition for what a producer adds. The interpreter can't run a
+        thread that waits for another."""
+        out = self.run_native('''
+struct Queue { lock: mutex::Mutex, ready: condition::Condition, items: [16]u32, count: u32, done: bool }
+
+fn produce { mut threads: Threads, data: *mut Queue } {
+    let mut i: u32 = 1
+    while i <= 10 {
+        mutex::lock{ mutex = &data.lock }
+        data.items[@as(usize, data.count)] = i
+        data.count = data.count + 1
+        condition::signal{ condition = &data.ready }
+        mutex::unlock{ mutex = &data.lock }
+        thread::yield_now{ &threads }
+        i = i + 1
+    }
+    mutex::lock{ mutex = &data.lock }
+    data.done = true
+    condition::broadcast{ condition = &data.ready }
+    mutex::unlock{ mutex = &data.lock }
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut q = Queue{ lock = mutex::make{}, ready = condition::make{}, items = [0; 16], count = 0, done = false }
+    let t = thread::create{ &threads, run = produce, data = &q, options = thread::default_options{} } iferr { return 1 }
+    let mut total: u32 = 0
+    mutex::lock{ mutex = &q.lock }
+    while true {
+        while q.count > 0 {
+            q.count = q.count - 1
+            total = total + q.items[@as(usize, q.count)]
+        }
+        if q.done { break }
+        condition::wait{ condition = &q.ready, mutex = &q.lock }
+    }
+    mutex::unlock{ mutex = &q.lock }
+    thread::join{ &threads, thread = t }
+    // nothing signals it now: it gives up
+    mutex::lock{ mutex = &q.lock }
+    let woke = condition::wait_for{ condition = &q.ready, mutex = &q.lock, nanoseconds = 1000000 }
+    mutex::unlock{ mutex = &q.lock }
+    condition::free{ condition = &q.ready }
+    mutex::free{ mutex = &q.lock }
+    io::println_u64{ &io, n = @as(u64, total) }
+    io::println_bool{ &io, n = woke }
+    return 0
+}
+''')
+        self.assertEqual(out, '55\nfalse\n')
+
+    def test_thread_local_statics(self):
+        """Each thread counts in its own static; a program that isn't threaded has one."""
+        src = '''
+namespace counts {
+    capability Counts {
+        #thread_local
+        static n: u64
+    }
+
+    fn bump { mut c: Counts } -> u64 {
+        c.n = c.n + 1
+        return c.n
+    }
+}
+
+struct Seen { n: u64 }
+
+fn worker { mut counts: counts::Counts, data: *mut Seen } {
+    _ = counts::bump{ c = &counts }
+    data.n = counts::bump{ c = &counts }
+}
+
+fn main { mut io: Io, mut counts: counts::Counts, mut threads: Threads } -> i32 {
+    _ = counts::bump{ c = &counts }
+    _ = counts::bump{ c = &counts }
+    _ = counts::bump{ c = &counts }
+    let mut s = Seen{ n = 0 }
+    let t = thread::create{ &threads, run = worker, data = &s, options = thread::default_options{} } iferr { return 1 }
+    thread::join{ &threads, thread = t }
+    io::println_u64{ &io, n = s.n }
+    io::println_u64{ &io, n = counts::bump{ c = &counts } }
+    return 0
+}
+'''
+        self.assertOutput(src, '2\n4\n')
+        single = src.replace('mut threads: Threads', 'mut threads: Io').replace(
+            '''    let t = thread::create{ &threads, run = worker, data = &s, options = thread::default_options{} } iferr { return 1 }
+    thread::join{ &threads, thread = t }
+''', '    worker{ &counts, data = &s }\n')
+        self.assertOutput(single, '5\n6\n')
+
+    def test_threaded_only_where_the_source_says(self):
+        """A program is threaded if main takes Threads (spec §15, Entry point, rule 8): only then
+        is its C, and the stack limit and `#thread_local` statics in it, per thread."""
+        import tempfile
+        import toolchain
+        plain = 'fn main { mut io: Io } { io::println{ &io, s = "hi" } }\n'
+        threaded = 'fn main { mut io: Io, mut threads: Threads } { io::println{ &io, s = "hi" } }\n'
+        texts = []
+        for src in (plain, threaded):
+            with tempfile.TemporaryDirectory(dir=toolchain.CACHE) as d:
+                with open(os.path.join(d, 'main.ctx'), 'w') as f:
+                    f.write(src)
+                out = os.path.join(d, 'main.c')
+                code, err = toolchain.ctxc_build(toolchain.native_ctxc(), out, ['main.ctx'], cwd=d)
+                self.assertEqual(code, 0, err)
+                with open(out) as f:
+                    texts.append(f.read())
+        self.assertNotIn('CTX_THREADS', texts[0])
+        self.assertNotIn('_Thread_local', texts[0])
+        self.assertIn('#define CTX_THREADS 1', texts[1])
+        self.assertIn('_Thread_local', texts[1])
+        self.assertIn('ctx_thread_setup();', texts[1])
+
+    def test_panic_on_a_thread(self):
+        with self.assertRaises(Panic) as cm:
+            run('''
+fn fail { data: *mut u32 } {
+    let xs: [2]u32 = [1, 2]
+    data.* = xs[@as(usize, data.*)]
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut n: u32 = 5
+    let t = thread::create{ &threads, run = fail, data = &n, options = thread::Options{ stack_size = 0, name = "worker" } } iferr { return 1 }
+    thread::join{ &threads, thread = t }
+    io::println{ &io, s = "not reached" }
+    return 0
+}
+''')
+        self.assertEqual(cm.exception.msg, 'index 5 out of bounds for length 2')
+        self.assertEqual(cm.exception.thread, 'worker')
+
+    def test_stack_overflow_on_a_thread(self):
+        """A thread's stack limit is its own: a recursion on a thread with a small stack panics
+        there, as the main thread's would."""
+        with self.assertRaises(Panic) as cm:
+            self.run_native('''
+fn down { n: u64 } -> u64 {
+    let pad: [64]u64 = [n; 64]
+    return down{ n = n + 1 } + pad[3]
+}
+
+fn deep { data: *mut u64 } {
+    data.* = down{ n = 0 }
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut n: u64 = 0
+    let t = thread::create{ &threads, run = deep, data = &n, options = thread::Options{ stack_size = 262144, name = "deep" } } iferr { return 1 }
+    thread::join{ &threads, thread = t }
+    return 0
+}
+''')
+        self.assertEqual(cm.exception.msg, 'stack overflow')
+        self.assertEqual(cm.exception.thread, 'deep')
+
+    def test_stress(self):
+        """8 threads each add 1,000,000 times to one atomic counter and to one counter under a
+        mutex: both totals are exact."""
+        out = self.run_native('''
+struct Shared { atomic: u64, lock: mutex::Mutex, locked: u64 }
+
+fn add { data: *mut Shared } {
+    let mut i: u32 = 0
+    while i < 1000000 {
+        _ = @atomic_add(&data.atomic, 1, atomic::Order::relaxed)
+        mutex::lock{ mutex = &data.lock }
+        data.locked = data.locked + 1
+        mutex::unlock{ mutex = &data.lock }
+        i = i + 1
+    }
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut s = Shared{ atomic = 0, lock = mutex::make{}, locked = 0 }
+    let mut ts: [8]thread::Thread
+    let mut i: usize = 0
+    while i < 8 {
+        ts[i] = thread::create{ &threads, run = add, data = &s, options = thread::default_options{} } iferr { return 1 }
+        i = i + 1
+    }
+    i = 0
+    while i < 8 {
+        thread::join{ &threads, thread = ts[i] }
+        i = i + 1
+    }
+    io::println_u64{ &io, n = @atomic_load(&s.atomic, atomic::Order::acquire) }
+    io::println_u64{ &io, n = s.locked }
+    return 0
+}
+''')
+        self.assertEqual(out, '8000000\n8000000\n')

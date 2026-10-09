@@ -93,7 +93,7 @@ typedef struct ctx_rec_seg { struct ctx_rec_seg *next; char *data; char *end; st
 typedef struct { ctx_rec_seg *seg; char *top; char *end; } ctx_rec_mark;
 
 typedef struct ctx_thread {
-    uint64_t stack_limit;                  // 0 checks nothing
+    uint64_t stack_limit;                  // 0 checks nothing; a threaded program's is CTX_STACK_LIMIT
     ctx_rec_mark recs;                     // the top of its borrowed records
     ctx_rec_seg *head;                     // its first segment of them
     uint32_t growing;                      // taking pages for records
@@ -113,9 +113,28 @@ static inline ctx_thread *ctx_thread_here(void) {
     return t;
 }
 #define CTX_HERE (ctx_thread_here())
+// The stack limit has a slot of its own, which the check reads with one instruction.
+extern uint32_t ctx_thread_limit_slot;
+static inline uint64_t *ctx_thread_limit_at(void) {
+    char *teb;
+    __asm__("movq %%gs:0x30, %0" : "=r"(teb));
+    return (uint64_t *)(teb + 0x1480) + ctx_thread_limit_slot;
+}
+// The slot's number is read straight from its symbol, which the program links in: GCC would read
+// a .refptr first, as for any extern variable on Windows.
+static inline uint64_t ctx_thread_limit_now(void) {
+    uint64_t v;
+    __asm__("movl ctx_thread_limit_slot(%%rip), %k0; movq %%gs:0x1480(,%0,8), %0" : "=r"(v));
+    return v;
+}
+#define CTX_STACK_LIMIT (*ctx_thread_limit_at())
+#define CTX_STACK_LIMIT_NOW() ctx_thread_limit_now()
 #else
 extern _Thread_local ctx_thread *ctx_thread_current;
+extern _Thread_local uint64_t ctx_thread_limit;
 #define CTX_HERE ctx_thread_current
+#define CTX_STACK_LIMIT ctx_thread_limit
+#define CTX_STACK_LIMIT_NOW() ctx_thread_limit
 #endif
 // C's main calls it first: the main thread's state, and locks in the runtime.
 void ctx_thread_setup(void);
@@ -128,6 +147,8 @@ void ctx_thread_leave(ctx_thread *t);
 void ctx_thread_begin(uint64_t usable, ctx_slice name);
 #else
 #define CTX_HERE (&ctx_main_thread)
+#define CTX_STACK_LIMIT (ctx_main_thread.stack_limit)
+#define CTX_STACK_LIMIT_NOW() (ctx_main_thread.stack_limit)
 #endif
 
 // The calling thread's name, for a panic's report: empty for the main thread (std's rt).
@@ -151,9 +172,8 @@ void ctx_rec_give(ctx_thread *t);
 // "stack overflow". std's start sets it; 0 checks nothing.
 #define CTX_STACK_CHECK_AT(limit) \
     do { if ((uint64_t)(uintptr_t)__builtin_frame_address(0) < (limit)) ctx_panic_nopos("stack overflow"); } while (0)
-// The `#stack_limit` static: the calling thread's, and the check against it.
-#define CTX_STACK_LIMIT (CTX_HERE->stack_limit)
-#define CTX_STACK_CHECK() CTX_STACK_CHECK_AT(CTX_STACK_LIMIT)
+// The check against the `#stack_limit` static, CTX_STACK_LIMIT: the calling thread's (above).
+#define CTX_STACK_CHECK() CTX_STACK_CHECK_AT(CTX_STACK_LIMIT_NOW())
 
 // ---- function values
 //

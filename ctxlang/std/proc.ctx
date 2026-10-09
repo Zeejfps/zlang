@@ -22,9 +22,12 @@
 capability Proc { ..os::Proc, ..Io, ..proc::State }
 
 namespace proc {
-    // proc's state for the whole program (spec §15, rule 13): the executable's path, once
-    // asked for.
-    capability State { static exe_path: []u8 }
+    // proc's state (spec §15, rule 13): the executable's path, once asked for; each thread asks
+    // once, rather than two writing one slice.
+    capability State {
+        #thread_local
+        static exe_path: []u8
+    }
 
     error not_found             // no such program, on PATH or at the path given
     error permission_denied

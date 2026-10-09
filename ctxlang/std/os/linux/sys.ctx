@@ -9,6 +9,20 @@ namespace sys {
     #c::symbol{ name = "__errno_location" }
     extern fn proc_errno { mut proc: os::Proc } -> *mut i32
 
+    // pthread_mutex_t's and pthread_cond_t's static initializers' first word: all zeros.
+    const MUTEX_SIG: i64 = 0
+    const COND_SIG: i64 = 0
+
+    // The bytes of a thread's name pthread_setname_np takes, before its NUL.
+    const THREAD_NAME_MAX: usize = 15
+
+    extern fn pthread_setname_np { thread: u64, name: *u8 } -> i32
+
+    // The calling thread's name, NUL-terminated.
+    fn set_thread_name { name: *u8 } {
+        _ = pthread_setname_np{ thread = os::pthread_self{}, name }
+    }
+
     // sysconf's name for how many processors are online.
     const SC_NPROCESSORS_ONLN: i32 = 84
 

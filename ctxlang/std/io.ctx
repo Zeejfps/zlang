@@ -16,9 +16,13 @@ capability Io { ..io::State }
 namespace io {
     enum Stream: u32 { out, err }
 
-    // io's state for the whole program (spec §15, rule 13): standard output's buffer, which a
-    // panic and the program's end flush too.
-    capability State { static out: Out }
+    // io's state (spec §15, rule 13): standard output's buffer, which a panic and the program's
+    // end flush too. Each thread has its own (`#thread_local`), which is written out when the
+    // thread ends (rt::thread_ends): what threads write may interleave by line, not by byte.
+    capability State {
+        #thread_local
+        static out: Out
+    }
 
     // The bytes in bytes[..len] are waiting to be written.
     struct Out { len: usize, bytes: [65536]u8 }
