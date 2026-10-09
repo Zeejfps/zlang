@@ -2397,6 +2397,55 @@ the top; the 3D model (scene object at +0x59e4) is rebuilt only when the viewed 
 alignment changes (compared with the server stats' GoodEvil +0x17e), because the dark-side look
 depends on it; the slider is updated only then too. (med)
 
+**The 3D character** (rechecked 2026-10-09 against the rebuilt exports). The constructor builds
+the scene into the custom 3D control at +0x577c (vtable 0x00752e30, the chargen previews' kind;
+scene +0x57d8, camera +0x57f0) on `LBL_3DCHAR`'s place: room `gui3D_room` at the origin, light model
+`charrec_light` (`FUN_00417620(scene, name, -1)`), the camera on its `camerahook` in mode 1, field of
+view 22.70 degrees (0x41b5ced9), all only when the GUI-3D switch `DAT_0078d1e4` is set; then a
+blank `CSWCCreature` (0x44c bytes, ctor 0x00616a20) at +0x59e4, remembered creature +0x59e8 = 0 and
+alignment +0x59ec = -1, so the first `UpdateStats` builds it. There is **no background of its own**:
+what changes with alignment is the light model's animation (`evil`, `align1`..`align19`, `good`:
+its emitters make the red clouds and sparks of the dark side, the blue clouds and light streams of
+the light side, plain mist between, and it recolours `AuroraLight01`), the creature's pose and the
+dark-side textures, all below. The room is the black box every GUI scene has (gui3d.md). (high)
+
+When the creature or alignment changed, `UpdateStats` (tail of 0x006afda0): copies the first 15
+dwords of the viewed creature's appearance record (creature +0x21c: body variation, texture
+variation, armoured flag +0x14, appearance row +0x18, head ...; chargen-3d.md) into a local, sets
+its dword +0x10 to 0x7f000000 (meaning not traced), copies something from the viewed creature
+(its vtable slot +0x148, into the model's slot +0xec; not traced, perhaps the name), applies the
+record with `FUN_006134c0(model, record, 3, 1)`: mask 3 = body and head only, so **the creature is
+shown as dressed (its armour's body and texture) but without weapons** (bits 4 and 8 would build
+the hand items through `FUN_00697b00` / `FUN_00697bc0`); then `FUN_00698150(model appearance,
+viewed creature's good/evil)` (the dark-side textures, next paragraph), attaches the model to the
+scene (+0x94), puts it at the origin (+0x8c) facing (1, 0, 0) (+0x88), and calls
+`FUN_006100f0(model, 3D control, viewed creature, 0, 1)`: the light model's animation, the pose
+played on body and head, and the camera hook by the creature's name (chargen-3d.md, "The main
+panel and alignment": `t3m4` and `hk47` pause instead of posing and take `camerahookt` /
+`camerahookh`, `zaalbar` `camerahookz`; the name is a string at +0x18 of the object
+`FUN_0063d4b0` + slot +0x30 returns for the creature, by all appearances its tag). (high for the
+calls and the mask, med for the name being the tag)
+
+`FUN_00698150(appearance, alignment)` (also run by `FUN_006134c0` with the model's own stats and by
+`FUN_0060f780` for creatures in the world) does nothing when the alignment is the one it last used
+(+0x2c) and nothing is pending (+0x50). Otherwise the head's texture: heads.2da row (the record's
+head byte +0x34, or when 0xff the appearance's `normalhead` or `backuphead` column by +0x30), column
+`headtexvvve` below 11, `headtexvve` below 21, `headtexve` below 31, `headtexe` below 41; the cell's
+texture (TPC or TGA) replaces the head's, and with no cell (41 and up) the head's own texture comes
+back. The body: when the record is not armoured (+0x14 = 0) and the alignment is below 31,
+appearance.2da `texaevil` + `01` replaces the body's texture if it exists; otherwise the body's own
+(`FUN_00697610`) comes back. So a dark Jedi's face and underwear darken by stages; an armoured body
+keeps its armour's texture. (high)
+
+Turning: `BTN_3DCHAR` (+0x580c) is a repeat button (vtable 0x007533c8, see the open questions at the
+end): a left press sends 0x16256 (`RotateModelLeft`, -10 degrees) and a right press 0x16257
+(`RotateModelRight`, +10 degrees) at once, then again every +0x59d0 = 0.1 s while the button keeps the
+mouse (the constructor sets +0x59d0 / +0x59d4 to 0.2 / 0.5 and then both to 0.1). The turn is the
+model's own orientation, so it lasts until the model is rebuilt. Events 0x3b / 0x3c (the gamepad's
+right stick) turn it too. `OnPanelAdded` (0x006b2220) resets the viewed index (+0x59f0 = -1) and two
+other fields, not +0x59e8, so reopening the sheet keeps the old model, turn and outfit unless the
+creature or the alignment changed. (high)
+
 #### CSWGuiAbilities (abilities.gui)
 
 | Address | Name | What | Conf. |

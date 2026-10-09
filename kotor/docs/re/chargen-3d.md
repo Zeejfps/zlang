@@ -37,7 +37,9 @@ plays the light model's animation, attaches the camera (mode 1), sets the field 
 camera offset; the constructor then attaches the creature, puts it at the origin and sets the
 offset again. The character sheet (`CSWGuiCharacter`, from `UpdateStats`) and the level-up panel
 (`CSWGuiLevelUpMain`) call `FUN_006100f0` too, with the same light model `charrec_light` and the
-last argument 1. `cgmain_light` is in the install but no string of that name is in the
+last argument 1; the sheet's creature is the viewed one's appearance record applied body and head
+only, so dressed but unarmed, with the dark side's head and body textures (re/gui.md,
+"CSWGuiCharacter", "The 3D character"). `cgmain_light` is in the install but no string of that name is in the
 executable: unused (med).
 
 ### Where the camera is
@@ -219,12 +221,18 @@ The head is drawn at the body's `headhook` transform and its copies of the hook'
 (`mdl_anim::hold_shared`, models.md, Attachments): without that the head's own idle moves them again and it
 floats off the neck by the body's root offset, worst on the female bodies.
 
+`preview3d::make` builds chargen's creature from an appearance row; `make_with` takes a `Look` (body
+and head models, texture replacements, pose) and a camera node, which is how the in-game character
+sheet and the level-up panel (lib/screens/lvl_view.ctx) show a creature as dressed, with the dark
+side's textures (re/gui.md, "CSWGuiCharacter", `FUN_00698150`) and the T3-M4 / HK-47 / Zaalbar hooks
+and droid `pause1`. A pose the model lacks loops `pause1` (ours: what the original's creature does
+then is not traced). Alignments 95 to 99 play `good` on the light model, as the original's fallback
+does.
+
 Not done: the idle's random start and fidgets (we loop `pause1`, the main panel's `evil` /
 `neutral` / `good`; the game plays no pose on the creature in character generation, see "The main
-panel and alignment", and plays `good` on the light model for alignments 95 to 99 where we play
-`align19`), the portrait step's `pause2` / `listen` every 1 to 4 s, the dark side's head textures (heads.2da `headtexe` and friends, which depend
-on alignment), the lights' shadow flag, the room model, T3-M4 / HK-47 / Zaalbar special hooks (a
-generic creature can pass a model with a `camerahookX` node; the preview uses `camerahook`).
+panel and alignment"), the portrait step's `pause2` / `listen` every 1 to 4 s, the lights' shadow
+flag, the room model.
 
 Checked with `kotor/tools/ctxc run kotor/tools/chargenview` (pictures in `kotor/out/chargen/`):
 class selection shows a lit full-length figure, centred, head and shoes inside the frame; the main

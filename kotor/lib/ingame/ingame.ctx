@@ -726,6 +726,8 @@ namespace ingame {
         // by a script closes the menu first.
         if screens::is_waiting{ s = &ui.screens } and ui.menu != NO_MENU { close_menu{ &ui, &w } }
         screens::update{ s = &ui.screens, g = &ui.gui, &w, &dev, events, dt }
+        // The sheet's 3D character goes with the sheet (closing a menu has no device to give it back with).
+        if ui.menu != MENU_CHARACTER { character_panel::drop_view{ s = &ui.menus.character, &dev } }
         // The party selection screen (a script's ShowPartySelectionGUI), once the conversation that asked is over.
         if ui.psel_wait and not w.conversation.active and not gui::is_modal_open{ g = &ui.gui } {
             ui.psel_wait = false
@@ -809,6 +811,20 @@ namespace ingame {
         if ui.menu == MENU_MAP { map_panel::draw{ s = &ui.menus.map, g = &ui.gui, &w, &dev, &frame, panel = ui.menu_panel } }
         gui::draw_backdrop_pass{ g = &ui.gui, &frame }
         screens::draw_views{ s = &ui.screens, g = &ui.gui, &frame, target = gpu::screen_size{ dev } }
+        // The sheet's 3D character stands where LBL_3DCHAR is in the file: the controls after it
+        // (the alignment bar, the level-up buttons) go over it. Not under a modal panel (the AI
+        // style panel), which would come before the held-back controls.
+        if ui.menu == MENU_CHARACTER {
+            let shown = not gui::is_modal_open{ g = &ui.gui } and character_panel::has_view{ s = &ui.menus.character }
+            gui::set_overlay_after{ g = &ui.gui, panel = ui.menu_panel, tag = if shown { "LBL_3DCHAR" } else { "" } }
+            if shown {
+                gui::draw_panels_under_views{ g = &ui.gui, &frame }
+                character_panel::draw_view{ s = &ui.menus.character, g = &ui.gui, &frame, target = gpu::screen_size{ dev }, panel = ui.menu_panel }
+                gui::draw_overlay{ g = &ui.gui, &frame }
+                screens::draw_over{ s = &ui.screens, g = &ui.gui, &frame, target = gpu::screen_size{ dev } }
+                return
+            }
+        }
         gui::draw_panels{ g = &ui.gui, &frame }
         screens::draw_over{ s = &ui.screens, g = &ui.gui, &frame, target = gpu::screen_size{ dev } }
     }

@@ -3,10 +3,17 @@
 // buttons (docs/re/gui.md, "CSWGuiCharacter"). The numbers come from `sheet::read`
 // (sheet_data.ctx), the one place that works them out.
 //
-// What the original has that this does not yet (each marked PLACEHOLDER below): the 3D model in the
-// middle (the portrait stands in). The effect icons next to the alignment bar are the creature's ICON
-// effects. The Scripts button opens the AI style panel (scriptselect_panel.ctx) for the character shown.
+// In the middle stands the character in 3D (lvl_view.ctx, the level-up panel's view): dressed as
+// equipped, posed and lit by alignment (charrec_light's red clouds on the dark side, blue on the
+// light), turned 10 degrees per 0.1 s while BTN_3DCHAR holds the left (one way) or right (the
+// other) mouse button, as the original's repeat button does. The effect icons next to the
+// alignment bar are the creature's ICON effects. The Scripts button opens the AI style panel
+// (scriptselect_panel.ctx) for the character shown.
 namespace character_panel {
+    // BTN_3DCHAR repeats every 0.1 s, the first time 0.1 s after the press, and each step turns
+    // the model 10 degrees (CSWGuiCharacter ctor 0x006b0e40, RotateModelLeft / Right).
+    const TURN_REPEAT: f32 = 0.1
+    const TURN_STEP: f32 = 0.17453293
     // The label tags of the six attributes and their modifiers, in STR DEX CON INT WIS CHA order.
     const ABIL_TAGS: [6][]u8 = ["LBL_STR", "LBL_DEX", "LBL_CON", "LBL_INT", "LBL_WIS", "LBL_CHA"]
     const MOD_TAGS: [6][]u8 = ["LBL_STR_MOD", "LBL_DEX_MOD", "LBL_CON_MOD", "LBL_INT_MOD", "LBL_WIS_MOD", "LBL_CHA_MOD"]
@@ -17,9 +24,13 @@ namespace character_panel {
         who: u32,                       // the creature shown
         script: scriptselect_panel::State,  // the AI style panel (BTN_SCRIPTS), modal over the sheet
         area: [4]i32,                   // LBL_3DCHAR as the file has it: x, y, w, h
+        view: ?*mut lvl::View,          // the 3D character; null when its appearance makes none
+        turn_wait: f32,                 // time to BTN_3DCHAR's next repeat while it is held
     }
 
-    fn new {} -> State { return State{ opened = false, who = obj::INVALID, script = scriptselect_panel::new{}, area = [0; 4] } }
+    fn new {} -> State {
+        return State{ opened = false, who = obj::INVALID, script = scriptselect_panel::new{}, area = [0; 4], view = null, turn_wait = 0.0 }
+    }
 
     // The panel was just added, or the leader changed and it must be filled again.
     fn open { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32 } -> ! {
@@ -28,10 +39,27 @@ namespace character_panel {
         s.who = party::leader{ w = &w }
         let known = sheet::known_of{ &w, id = s.who }
         let v = sheet::read{ &w, id = s.who, known }
-        try fill{ &g, &w, &dev, panel, id = s.who, v, area = s.area }
+        // The original rebuilds its model only when the creature or its alignment changed and so
+        // keeps an outfit changed since; ours is made each time, from what the creature wears now.
+        drop_view{ &s, &dev }
+        s.view = lvl::make_view{ &w, &g, &dev, who = s.who }
+        try fill{ &g, &w, &dev, panel, id = s.who, v, area = s.area, has_view = s.view != null }
     }
 
-    fn fill { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, id: u32, v: sheet::Sheet, area: [4]i32 } -> ! {
+    fn drop_view { mut s: State, mut dev: gpu::Device } {
+        if s.view is some{ value = v } { lvl::free_view{ v, &dev } }
+        s.view = null
+    }
+
+    fn has_view { s: *State } -> bool { return s.view != null }
+
+    // Over LBL_3DCHAR, before the controls that follow it in the file (ingame::draw).
+    fn draw_view { mut s: State, mut g: gui::Gui, mut frame: render::Frame, target: render::Size, panel: u32 } {
+        let v = s.view ifnull { return }
+        lvl::add_view{ v, &g, &frame, target, panel, tag = "LBL_3DCHAR" }
+    }
+
+    fn fill { mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, id: u32, v: sheet::Sheet, area: [4]i32, has_view: bool } -> ! {
         let mut b = sheet::new_text{ w = &w }
         defer utf8::free{ &b }
 
@@ -101,10 +129,13 @@ namespace character_panel {
 
         try show_effects{ &g, &w, &dev, panel, id }
 
-        // PLACEHOLDER: the original shows a rotating 3D model of the character here (a gui3d scene
-        // drawn into the control's rectangle by the session); until that is wired the portrait
-        // takes its place, in proportion and centred in the model's area.
-        try sheet::show_picture{ &g, &w, &dev, panel, tag = "LBL_3DCHAR", name = sheet::portrait_of{ w = &w, id }, home = area }
+        // The 3D character shows through the empty label; a creature whose appearance makes no
+        // view (ours: the original shows nothing) gets its portrait there instead.
+        if has_view {
+            gui::clear_picture{ &g, panel, tag = "LBL_3DCHAR" }
+        } else {
+            try sheet::show_picture{ &g, &w, &dev, panel, tag = "LBL_3DCHAR", name = sheet::portrait_of{ w = &w, id }, home = area }
+        }
     }
 
     // The icons beside the alignment bar: the creature's ICON effects (rules effect kind 0x43;
@@ -156,6 +187,31 @@ namespace character_panel {
     // Every frame while the panel is shown: the AI style panel over it, when open, takes its events.
     fn update { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, dt: f32 } {
         scriptselect_panel::update{ s = &s.script, g = &g, w = &w, dev = &dev }
+        let v = s.view ifnull { return }
+        preview3d::update{ preview = v.preview, dt }
+        // BTN_3DCHAR held: the left button turns one way, the right the other, a step at the press
+        // and one each repeat after (the original's repeat button: events 0x16256 / 0x16257).
+        let held = held_button{ &g, panel, tag = "BTN_3DCHAR" }
+        if held == 0 {
+            s.turn_wait = -1.0
+            return
+        }
+        if s.turn_wait < 0.0 {
+            s.turn_wait = 0.0
+        }
+        s.turn_wait = s.turn_wait - dt
+        while s.turn_wait <= 0.0 {
+            preview3d::turn{ preview = v.preview, radians = if held == 1 { 0.0 - TURN_STEP } else { TURN_STEP } }
+            s.turn_wait = s.turn_wait + TURN_REPEAT
+        }
+    }
+
+    // The mouse button (1 left, 3 right) holding control `tag` of `panel`, 0 for none.
+    fn held_button { mut g: gui::Gui, panel: u32, tag: []u8 } -> i32 {
+        if g.capture.panel != panel or g.capture.control < 0 { return 0 }
+        let p = gui::find_panel{ &g, id = panel } ifnull { return 0 }
+        if gui::find_by_tag{ p, tag } != g.capture.control { return 0 }
+        return g.capture_button
     }
 
     // One of the panel's GUI events (BTN_EXIT, Escape and the BTN_CHANGE buttons are the

@@ -16,6 +16,9 @@
 //                try preview3d::set_appearance{ preview = &p, &fs, &dev, rm, &models, &mats, appearance, head }
 //   when the screen goes:       preview3d::free{ preview = &p, &dev }
 //
+// A caller that knows the creature's models itself (the in-game sheet and level-up panel, a
+// creature as dressed: lib/screens/lvl_view.ctx) passes a `Look` to `make_with` instead.
+//
 // `appearance` is an appearance.2da row, `head` a heads.2da row (-1: the appearance's own
 // `normalhead`), `female` picks the portrait camera's hook, `alignment` (0..100) the main panel's
 // pose and light. A player's creature is a B-type body in the clothes the original puts on every
@@ -66,11 +69,53 @@ namespace preview3d {
         yaw: f32,                               // what turn added
     }
 
+    // What the creature is made of, by name: what `make_with` takes from a caller that works the
+    // models out itself (the in-game sheet, from the creature's armour and alignment). The names
+    // need only live through the call; the preview keeps copies.
+    struct Look {
+        body: []u8,                             // the body model
+        body_texture: []u8,                     // replaces the body's diffuse textures that share its first four letters ("": none)
+        head: []u8,                             // the head model, on the body's headhook ("": none)
+        head_texture: []u8,                     // the same for the head (the dark side's heads.2da headtex*)
+        pose: []u8,                             // the loop to play ("": the kind's own, see pose_of)
+    }
+
     fn make {
         mut fs: Fs, mut dev: gpu::Device, buf: alloc::Bytes, rm: res::Manager,
         mut models: mdl_cache::Cache, mut mats: material::Cache,
         appearance_2da: twoda::Table, heads_2da: twoda::Table,
         appearance: i32, head: i32, female: bool, kind: Kind, alignment: i32,
+    } -> !Preview {
+        let mut p = try make_scene{ &fs, &dev, buf, rm, &models, &mats, appearance_2da, heads_2da, female, kind, alignment, camera_node = "" }
+        build_creature{ preview = &p, &fs, &dev, rm, &models, &mats, appearance, head } iferr err{ error } {
+            free{ preview = &p, &dev }
+            return error
+        }
+        return p
+    }
+
+    // A preview of a creature given by `look`. `camera_node` names the light model's camera node
+    // ("" for the kind's own); it must be a constant, because gui3d::load's errors carry it.
+    fn make_with {
+        mut fs: Fs, mut dev: gpu::Device, buf: alloc::Bytes, rm: res::Manager,
+        mut models: mdl_cache::Cache, mut mats: material::Cache,
+        appearance_2da: twoda::Table, heads_2da: twoda::Table,
+        kind: Kind, alignment: i32, camera_node: []u8, look: Look,
+    } -> !Preview {
+        let mut p = try make_scene{ &fs, &dev, buf, rm, &models, &mats, appearance_2da, heads_2da, female = false, kind, alignment, camera_node }
+        build_look{ preview = &p, &fs, &dev, rm, &models, &mats, look } iferr err{ error } {
+            free{ preview = &p, &dev }
+            return error
+        }
+        return p
+    }
+
+    // The light scene of `kind`, without a creature.
+    fn make_scene {
+        mut fs: Fs, mut dev: gpu::Device, buf: alloc::Bytes, rm: res::Manager,
+        mut models: mdl_cache::Cache, mut mats: material::Cache,
+        appearance_2da: twoda::Table, heads_2da: twoda::Table,
+        female: bool, kind: Kind, alignment: i32, camera_node: []u8,
     } -> !Preview {
         let half = buf.len / 2
         let mut fixed = arena::new{ buf = buf[..half] }
@@ -89,6 +134,7 @@ namespace preview3d {
                 animation = light_animation{ alignment }
             }
         }
+        if camera_node.len > 0 { node = camera_node }
         // The original updates the new scene by one second at once: the mist is already drifting.
         let light = try gui3d::load{
             &fs, &dev, heap = &fixed, rm, &models, &mats, model, camera_node = node,
@@ -100,16 +146,13 @@ namespace preview3d {
         }
         // The original's 3D controls fill no colour (docs/re/gui3d.md): the panel shows around the scene.
         p.light.clear = null
-        build_creature{ preview = &p, &fs, &dev, rm, &models, &mats, appearance, head } iferr err{ error } {
-            free{ preview = &p, &dev }
-            return error
-        }
         return p
     }
 
     // charrec_light's animations by alignment: `evil` and `good` at the ends, between them
-    // `alignN` with N = alignment / 5 + 1 (the model has align1 to align19, so alignments 95 to
-    // 99 take 19). Constants: gui3d::load's errors carry names, which may not point into a local.
+    // `alignN` with N = alignment / 5 + 1. The model has align1 to align19: for 95 to 99 the
+    // original finds no align20 and plays the creature's pose name instead, `good`.
+    // Constants: gui3d::load's errors carry names, which may not point into a local.
     const LIGHT_ALIGN: [19][]u8 = [
         "align1", "align2", "align3", "align4", "align5", "align6", "align7", "align8", "align9", "align10",
         "align11", "align12", "align13", "align14", "align15", "align16", "align17", "align18", "align19",
@@ -119,7 +162,8 @@ namespace preview3d {
         if alignment <= 0 { return "evil" }
         if alignment >= 100 { return "good" }
         let n = @as(usize, alignment / 5)
-        return LIGHT_ALIGN[if n > 18 { 18 } else { n }]
+        if n > 18 { return "good" }
+        return LIGHT_ALIGN[n]
     }
 
     fn put_bytes { into: []mut u8, mut at: usize, s: []u8 } {
@@ -173,32 +217,21 @@ namespace preview3d {
         let row = @as(usize, appearance)
         let is_b = ci::eq{ a = cell{ t, row, column = "modeltype" }, b = "b" }
         let mut body_name: []u8 = ""
-        // The body's texture name lives in the creature's arena, like everything the parts keep.
-        let texture = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &preview.creature, mem = slice::empty(u8){}, count = 24 }
+        let mut texture: [24]u8
         let mut texture_len: usize = 0
         if is_b {
             body_name = cell{ t, row, column = "modelb" }
             let base = cell{ t, row, column = "texb" }
             if base.len > 0 and base.len < 20 {
-                put_bytes{ into = texture, at = &texture_len, s = base }
-                put_bytes{ into = texture, at = &texture_len, s = "01" }
+                put_bytes{ into = texture[..], at = &texture_len, s = base }
+                put_bytes{ into = texture[..], at = &texture_len, s = "01" }
             }
         } else {
             body_name = cell{ t, row, column = "race" }
             let racetex = cell{ t, row, column = "racetex" }
-            if racetex.len > 0 and racetex.len < 24 { put_bytes{ into = texture, at = &texture_len, s = racetex } }
+            if racetex.len > 0 and racetex.len < 24 { put_bytes{ into = texture[..], at = &texture_len, s = racetex } }
         }
-        if body_name.len == 0 { return no_body }
-        // The idle: pause1 in the selection and portrait screens; the main panel's alignment pose.
-        let idle: []u8 = match preview.kind {
-            main => { if preview.alignment < 40 { "evil" } else if preview.alignment < 60 { "neutral" } else { "good" } }
-            else => { "pause1" }
-        }
-        preview.body = try load_part{
-            &fs, &dev, heap = &preview.creature, rm, &models, &mats, name = body_name,
-            body_texture = texture[..texture_len], animation = idle, parent = null,
-        }
-        let body = preview.body ifnull { return no_body }
+        let mut head_name: []u8 = ""
         if is_b {
             let mut head_row = head
             if head_row < 0 {
@@ -206,13 +239,54 @@ namespace preview3d {
                 if normal != null { head_row = normal }
             }
             if head_row >= 0 and @as(usize, head_row) < twoda::rows{ t = preview.heads_2da } {
-                let head_name = cell{ t = preview.heads_2da, row = @as(usize, head_row), column = "head" }
-                if head_name.len > 0 {
-                    preview.head = try load_part{
-                        &fs, &dev, heap = &preview.creature, rm, &models, &mats, name = head_name,
-                        body_texture = "", animation = idle, parent = body.model,
-                    }
-                }
+                head_name = cell{ t = preview.heads_2da, row = @as(usize, head_row), column = "head" }
+            }
+        }
+        try build_look{ &preview, &fs, &dev, rm, &models, &mats, look = Look{
+            body = body_name, body_texture = texture[..texture_len], head = head_name, head_texture = "", pose = "",
+        } }
+    }
+
+    // The kind's own loop: pause1 in the selection and portrait screens, the main panel's pose by
+    // alignment (FUN_006100f0: evil below 40, neutral below 60, else good).
+    fn pose_of { preview: *Preview } -> []u8 {
+        return match preview.kind {
+            main => { if preview.alignment < 40 { "evil" } else if preview.alignment < 60 { "neutral" } else { "good" } }
+            else => { "pause1" }
+        }
+    }
+
+    // A copy of `s` in the creature's arena (the texture names: the materials keep them).
+    fn keep_name { mut preview: Preview, s: []u8 } -> ![]u8 {
+        if s.len == 0 { return s }
+        let copy = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &preview.creature, mem = slice::empty(u8){}, count = s.len }
+        let mut i: usize = 0
+        while i < s.len {
+            copy[i] = s[i]
+            i = i + 1
+        }
+        return copy
+    }
+
+    // The creature of `look`: its body, the head on the body's headhook, their loop, and the
+    // camera height that goes with them.
+    fn build_look {
+        mut preview: Preview, mut fs: Fs, mut dev: gpu::Device, rm: res::Manager,
+        mut models: mdl_cache::Cache, mut mats: material::Cache, look: Look,
+    } -> ! {
+        if look.body.len == 0 { return no_body }
+        let idle = if look.pose.len > 0 { look.pose } else { pose_of{ preview = &preview } }
+        let body_texture = try keep_name{ &preview, s = look.body_texture }
+        let head_texture = try keep_name{ &preview, s = look.head_texture }
+        preview.body = try load_part{
+            &fs, &dev, heap = &preview.creature, rm, &models, &mats, name = look.body,
+            body_texture, animation = idle, parent = null,
+        }
+        let body = preview.body ifnull { return no_body }
+        if look.head.len > 0 {
+            preview.head = try load_part{
+                &fs, &dev, heap = &preview.creature, rm, &models, &mats, name = look.head,
+                body_texture = head_texture, animation = idle, parent = body.model,
             }
         }
         preview.camera_height = camera_height_of{ preview = &preview }
@@ -237,6 +311,17 @@ namespace preview3d {
     // animation it lacks leaves the bind pose. A head passes its `parent` body: the head's copies
     // of the body's top nodes stay at their bind state (mdl_anim::hold_shared), because the
     // headhook's transform already carries what the body's idle does to them.
+    // Animation `name` of `m` or its supermodels; S and L models name theirs with a `c` in front.
+    fn find_loop { mut fs: Fs, mut models: mdl_cache::Cache, m: *mdl::Model, name: []u8 } -> ?mdl_anim::Found {
+        let plain = mdl_anim::find{ model = m, name, lookup = mdl_cache::get{ &fs, cache = &models, _ } }
+        if plain != null { return plain }
+        let mut with_c: [34]u8
+        let mut c_len: usize = 1
+        with_c[0] = 'c'
+        put_bytes{ into = with_c[..], at = &c_len, s = name }
+        return mdl_anim::find{ model = m, name = with_c[..c_len], lookup = mdl_cache::get{ &fs, cache = &models, _ } }
+    }
+
     fn load_part {
         mut fs: Fs, mut dev: gpu::Device, mut heap: arena::Arena, rm: res::Manager,
         mut models: mdl_cache::Cache, mut mats: material::Cache,
@@ -246,15 +331,10 @@ namespace preview3d {
         let pose = try mdl_anim::make_pose{ realloc = arena::alloc, heap = &heap, model = m }
         if parent != null { mdl_anim::hold_shared{ model = m, pose, parent, hook = mdl_anim::HOOK_HEAD } }
         let mut player = mdl_anim::new_player{}
-        // S and L models name their animations with a `c` in front.
-        let mut with_c: [34]u8
-        let mut c_len: usize = 1
-        with_c[0] = 'c'
-        put_bytes{ into = with_c[..], at = &c_len, s = animation }
-        let plain = mdl_anim::find{ model = m, name = animation, lookup = mdl_cache::get{ &fs, cache = &models, _ } }
-        let found = if plain != null { plain } else {
-            mdl_anim::find{ model = m, name = with_c[..c_len], lookup = mdl_cache::get{ &fs, cache = &models, _ } }
-        }
+        // A model without the pose (a party member's own skeleton may lack evil / neutral /
+        // good) loops pause1 rather than standing in its bind pose.
+        let first = find_loop{ &fs, &models, m, name = animation }
+        let found = if first != null { first } else { find_loop{ &fs, &models, m, name = "pause1" } }
         if found != null {
             let b = try mdl_anim::bind{ realloc = arena::alloc, heap = &heap, model = m, animation = found.animation }
             mdl_anim::play{ &player, binding = b, looping = true, speed = 1.0, transition = 0.0 }

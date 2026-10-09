@@ -107,7 +107,19 @@ chargen's pure helpers (`set_number`, `ability_tag`, the tag tables) are shared.
 - `maincg` full screen with `leveluppnl` framed over it; the title is "Level Up" (1071); name, class,
   portrait, new level, the six scores, and the old and new vitality, defense and saves (`OLD_*`/`NEW_*`
   with their arrows) from a trial application of the record on a copy of the rules creature, refreshed
-  after every step. The creature stands on `MODEL_LBL` (chargen's `preview3d` main preview).
+  after every step. The creature stands on `MODEL_LBL` (chargen's `preview3d` main preview), made by
+  `lvl_view` as the character sheet makes it (below).
+- `lvl_view` (`lvl::make_view`, `add_view`) is also the in-game character sheet's 3D character
+  (`character_panel`, over `LBL_3DCHAR`): the creature as dressed, the way lib/scene/visual.ctx picks
+  the body (the armour's body letter and texture variation, `a` without armour; F and S/L types their
+  single model), its head, no weapons; below alignment 31 an unarmoured body wears `texaevil` + `01`, and
+  below 41 the head the dark side's `headtex*e` of its stage (re/gui.md, "CSWGuiCharacter"); the light
+  model plays the alignment's animation and the creature its pose; tags `t3m4` / `hk47` / `zaalbar` take
+  `camerahookt` / `h` / `z`, the two droids loop `pause1`. A pose the model lacks loops `pause1`. The sheet
+  draws the view with `gui::set_overlay_after` so the controls after `LBL_3DCHAR` in the file (alignment
+  bar, level-up buttons) cover it, as the original's do, and turns it 10 degrees per 0.1 s while
+  `BTN_3DCHAR` holds the left or right mouse button. Not under a modal panel (the AI style panel): the
+  model is hidden while one is up.
 - The steps list: Attributes (only on a level whose class level is a multiple of 4), Skills, Feats (when
   featgain gives any), Powers (Force classes), Accept. A step opens when it is needed, not done, and every
   needed step before it is done; Accept applies when all are. Back asks 48541 once something was chosen.
@@ -191,7 +203,10 @@ sword, and the galaxy map's Travel runs the script with the right planet.
 - The bench is a ledger so that Cancel is exact; the original moves items as it goes and undoes them.
 - An upgrade slot's empty icon is its item's own picture (dimmed), which is what the original's code does
   with the party's stock; the original dims by alpha 0.25 on the control, here the control's border tint.
-- The chargen panels' 3D model on the level-up main panel is the unarmoured body of the appearance.
+- The sheet's 3D character is made each time the sheet opens or shows another character, from what it
+  wears then; the original rebuilds its model only when the creature or its alignment changed, so an
+  outfit changed since the last look keeps the old one. A creature whose appearance makes no view gets
+  its portrait on `LBL_3DCHAR` (the original shows nothing).
 
 ## Not done
 
