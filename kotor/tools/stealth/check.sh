@@ -28,7 +28,7 @@ expect() {
 
 expect walk_past module:end_m01ab walk_past.txt 600 "enters stealth mode" "on true toggle true solo false party 1 combat false xp 300/300 enabled true at 76" "!attacks 2147483647"
 expect walk_control module:end_m01ab walk_control.txt 600 "combat true xp 0/300" "!enters stealth mode"
-expect attack_out module:end_m01ab attack_out.txt 700 "leaves stealth mode" "noticed the party: stealth XP 300 -> 0"
+expect attack_out module:end_m01ab attack_out.txt 900 "leaves stealth mode" "noticed the party: stealth XP 300 -> 0"
 expect key_unequip module:end_m01ab key_unequip.txt 200 "^pos 55\.8" "leaves stealth mode" "on false toggle false solo false party 1"
 expect combat_refused module:end_m01ab combat_refused.txt 310 "log: You cannot enter stealth mode while in combat." "!enters stealth mode"
 expect solo_box uppercity solo_box.txt 245 "on true toggle true solo true party 2" "^stealth: [0-9]* on false toggle false solo true party 2 combat false xp 0/0 enabled false at 9" "on false toggle true solo false party 2"

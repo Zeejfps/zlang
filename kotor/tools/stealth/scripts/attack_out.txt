@@ -1,13 +1,17 @@
-# An attack out of stealth (start: module:end_m01ab, 700 frames): the leader walks up hidden, then the
-# target block's first action on end_sithsol01 (the click a player makes, then key 1). Expect: stealth
-# ends as the attack starts, the soldier does not perceive the attacker for that first swing (no dodge:
-# flat-footed), the area's stealth XP drops at once (it was attacked by someone it had not seen; the
-# soldier then sees the leader), the fight goes on.
+# An attack out of stealth (start: module:end_m01ab, 900 frames): the leader walks up hidden to end_door01
+# and opens it (R on the door: a closed door stops the walk, and an attack's approach gives up after 6 s
+# rather than jump through it, movement.ctx), then the target block's first action on end_sithsol01 (the
+# click a player makes, then key 1). Expect: the leader stays hidden while it walks up (its signal to itself
+# is combat reason 2, which keeps stealth), stealth ends as the swing starts, the soldier does not perceive
+# the attacker for that first swing (no dodge: flat-footed), the area's stealth XP drops at once (a soldier
+# attacks someone it had not seen before), the fight goes on.
 6 ui stat stealth 10
 6 ui giveitem g_i_belt010 1 equip
 40 hush
 60 ui clickctl TB_STEALTH
-70 ui goto end_sithsol01
-400 ui target end_sithsol01
-402 ui key 1
-600 ui stealth
+70 ui goto end_door01
+520 ui target end_door01
+522 ui key r
+690 ui target end_sithsol01
+692 ui key 1
+880 ui stealth
