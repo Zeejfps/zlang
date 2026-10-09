@@ -1,0 +1,110 @@
+// The message log: the feedback lines the game has shown ("Item received", the combat log ...) and
+// the dialogue lines it has spoken, for the Messages menu. The original keeps them in the in-game
+// GUI (+0xf8 and +0xfc, 64 lines each) and saves them with the party table (PT_FB_MSG_LIST,
+// PT_DLG_MSG_LIST: save/partytable.ctx), so the world holds ours (`w.messages`) where the save
+// reaches it; hud/log.ctx is the HUD's view of it.
+namespace msglog {
+    const LINES: usize = 64
+    const LEN: usize = 192
+
+    // What a line is: feedback (also drawn as the HUD's young lines), something said in a
+    // conversation, a red feedback line (the original's colour byte 1: the attack summary), or
+    // feedback for Messages only (the rest of the combat log, and every line a save brought back).
+    const FEEDBACK: u8 = 0
+    const DIALOG: u8 = 1
+    const RED: u8 = 2
+    const QUIET: u8 = 3
+
+    struct Line {
+        text: [192]u8,
+        len: usize,
+        kind: u8,
+        age: f32,               // seconds since it was added; the HUD fades recent feedback
+    }
+
+    // The last LINES lines of one list: `added` counts every line ever added, line i (0 oldest kept)
+    // is at (added - kept + i) % LINES.
+    struct Ring {
+        lines: [64]Line,
+        added: usize,
+        kept: usize,
+    }
+
+    // The feedback list and the dialogue list, 64 lines each like the original's; `total` counts
+    // every change (a line added, a load starting over), for whoever shows them.
+    struct Log {
+        feedback: Ring,
+        dialog: Ring,
+        total: usize,
+    }
+
+    fn new_ring {} -> Ring {
+        return Ring{ lines = [Line{ text = [0; 192], len = 0, kind = 0, age = 0.0 }; 64], added = 0, kept = 0 }
+    }
+
+    fn new {} -> Log {
+        return Log{ feedback = new_ring{}, dialog = new_ring{}, total = 0 }
+    }
+
+    // Lines kept: the feedback lines (oldest first), then the dialogue lines.
+    fn count { log: *Log } -> usize { return log.feedback.kept + log.dialog.kept }
+
+    fn line_at { log: *Log, i: usize } -> ?*Line {
+        let fb = log.feedback.kept
+        if i < fb { return &log.feedback.lines[(log.feedback.added - fb + i) % LINES] }
+        let j = i - fb
+        if j < log.dialog.kept { return &log.dialog.lines[(log.dialog.added - log.dialog.kept + j) % LINES] }
+        return null
+    }
+
+    // Line `i`.
+    fn text { log: *Log, i: usize } -> []u8 {
+        let l = line_at{ log, i } ifnull { return "" }
+        return l.text[..l.len]
+    }
+
+    fn kind { log: *Log, i: usize } -> u8 {
+        let l = line_at{ log, i } ifnull { return 0 }
+        return l.kind
+    }
+
+    fn age { log: *Log, i: usize } -> f32 {
+        let l = line_at{ log, i } ifnull { return 0.0 }
+        return l.age
+    }
+
+    // Adds a line (cut to LEN bytes) to its list; the 65th pushes the oldest out.
+    fn add { mut log: Log, text: []u8, kind: u8 } {
+        let r = if kind == DIALOG { &log.dialog } else { &log.feedback }
+        let at = r.added % LINES
+        let n = if text.len > LEN { LEN } else { text.len }
+        slice::copy(u8){ dst = r.lines[at].text[..n], src = text[..n] }
+        r.lines[at].len = n
+        r.lines[at].kind = kind
+        r.lines[at].age = 0.0
+        r.added = r.added + 1
+        if r.kept < LINES { r.kept = r.kept + 1 }
+        log.total = log.total + 1
+    }
+
+    // Forgets every line.
+    fn clear { mut log: Log } {
+        log.feedback.kept = 0
+        log.dialog.kept = 0
+        log.total = log.total + 1
+    }
+
+    fn tick { mut log: Log, dt: f32 } {
+        age_ring{ r = &log.feedback, dt }
+        age_ring{ r = &log.dialog, dt }
+    }
+
+    fn age_ring { mut r: Ring, dt: f32 } {
+        let mut i: usize = 0
+        while i < r.kept {
+            let at = (r.added - r.kept + i) % LINES
+            r.lines[at].age = r.lines[at].age + dt
+            i = i + 1
+        }
+    }
+}

@@ -1,7 +1,7 @@
 // PARTYTABLE.res: the party table of a save (docs/formats/gff-save.md, "PARTYTABLE.res";
 // docs/re/party-items-saves.md 1.9, 3.1, 3.2 and 3.9). What we keep of it is the purse, solo mode,
-// which of the nine NPC slots are available and selectable, and who is in the active party; the
-// rest (XP pool, galaxy map, pazaak, logs, journal) is written at the defaults a fresh game has,
+// which of the nine NPC slots are available and selectable, and who is in the active party, the Messages logs; the
+// rest (XP pool, galaxy map, pazaak, journal) is written at the defaults a fresh game has,
 // in the engine's field order, so the file has the shape the original's loader expects.
 //
 // Reading does not spawn anyone: membership is data (`w.party.saved_*`) until the loader
@@ -103,8 +103,32 @@ namespace save {
         let tutorial: [6]u8 = [0; 6]
         try put_gff_value{ &b, owner = root, label = "PT_TUT_WND_SHOWN", value = gff::Value::void{ v = tutorial[..] } }
         try put_gff_value{ &b, owner = root, label = "PT_LAST_GUI_PNL", value = gff::Value::int{ v = PT_LAST_PANEL } }
-        _ = try gffw::put_list{ &b, owner = root, label = "PT_FB_MSG_LIST" }
-        _ = try gffw::put_list{ &b, owner = root, label = "PT_DLG_MSG_LIST" }
+        // The Messages logs (SavePartyTable 0x005648c0): the feedback lines, oldest first, with the
+        // type the GUI keeps (0x80) and the colour byte (1 red: the attack summary), then the dialogue
+        // lines (we keep no speaker apart from the text).
+        let fb = try gffw::put_list{ &b, owner = root, label = "PT_FB_MSG_LIST" }
+        let n_lines = msglog::count{ log = &w.messages }
+        k = 0
+        while k < n_lines {
+            let kind = msglog::kind{ log = &w.messages, i = k }
+            if kind != msglog::DIALOG {
+                let e = try gffw::add_element{ &b, list = fb, id = 0 }
+                try put_gff_value{ &b, owner = e, label = "PT_FB_MSG_MSG", value = gff::Value::exostring{ v = msglog::text{ log = &w.messages, i = k } } }
+                try put_gff_value{ &b, owner = e, label = "PT_FB_MSG_TYPE", value = gff::Value::dword{ v = 0x80 } }
+                try put_gff_value{ &b, owner = e, label = "PT_FB_MSG_COLOR", value = gff::Value::byte{ v = if kind == msglog::RED { 1 } else { 0 } } }
+            }
+            k = k + 1
+        }
+        let dl = try gffw::put_list{ &b, owner = root, label = "PT_DLG_MSG_LIST" }
+        k = 0
+        while k < n_lines {
+            if msglog::kind{ log = &w.messages, i = k } == msglog::DIALOG {
+                let e = try gffw::add_element{ &b, list = dl, id = 0 }
+                try put_gff_value{ &b, owner = e, label = "PT_DLG_MSG_SPKR", value = gff::Value::exostring{ v = "" } }
+                try put_gff_value{ &b, owner = e, label = "PT_DLG_MSG_MSG", value = gff::Value::exostring{ v = msglog::text{ log = &w.messages, i = k } } }
+            }
+            k = k + 1
+        }
 
         // One price multiplier per baseitems.2da row, all 1.0 (ChangeItemCost isn't implemented).
         // The engine writes PT_COST_MULT_LIST and PT_COST_MULT_VALUE, cut to 16 characters.
@@ -205,6 +229,25 @@ namespace save {
         while pc < PT_SIDE_CARDS {
             w.party.pazaak_deck[pc] = if pc < side.len { @trunc(i32, gff::get_number{ doc = doc.*, s = side[pc], label = "PT_PAZSIDECARD" } ifnull -1) } else { -1 }
             pc = pc + 1
+        }
+        // The Messages logs (LoadPartyTable 0x00565d20 adds them back): colour byte 1 is the red
+        // summary; the other feedback lines go to Messages only, not to the HUD's young lines. A
+        // save without the lists (ours before they were written) leaves the log empty.
+        msglog::clear{ log = &w.messages }
+        let fb = gff::get_list{ doc = doc.*, s = gff::ROOT, label = "PT_FB_MSG_LIST" } ifnull none
+        let mut li: usize = 0
+        while li < fb.len {
+            let text = gff::get_string{ doc = doc.*, s = fb[li], label = "PT_FB_MSG_MSG" } ifnull ""
+            let red = (gff::get_number{ doc = doc.*, s = fb[li], label = "PT_FB_MSG_COLOR" } ifnull 0) == 1
+            if text.len > 0 { msglog::add{ log = &w.messages, text, kind = if red { msglog::RED } else { msglog::QUIET } } }
+            li = li + 1
+        }
+        let dl = gff::get_list{ doc = doc.*, s = gff::ROOT, label = "PT_DLG_MSG_LIST" } ifnull none
+        li = 0
+        while li < dl.len {
+            let text = gff::get_string{ doc = doc.*, s = dl[li], label = "PT_DLG_MSG_MSG" } ifnull ""
+            if text.len > 0 { msglog::add{ log = &w.messages, text, kind = msglog::DIALOG } }
+            li = li + 1
         }
         // The journal.
         w.journal = journal::new_journal{}

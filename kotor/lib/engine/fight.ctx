@@ -43,6 +43,8 @@ namespace fight {
         cutscene: bool,
         first: bool,                    // the round's first impact: a ranged round's OnAttacked comes with it alone (6.5)
         damage: rules::DamageRoll,      // a hit's damage (the DAMAGE effects are made at impact)
+        stun_tried: bool,               // Critical Strike or Sniper Shot rolled its stun save (attack +0x13c)
+        stun_save: rules::SaveResult,   // that save: a failure stuns (the summary's stun clause, fight_log)
         nfx: i32,
         fx: [rules::MAX_COMBAT_FX]rules::CombatEffect,
     }
@@ -91,6 +93,7 @@ namespace fight {
         killer: u32,                    // GetLastKiller
         last_damage: i32,               // GetTotalDamageDealt
         damage_types: [15]i32,          // GetDamageDealtByType: the last hit's damage by type slot
+        quiet_damage: bool,             // a weapon hit's damage is being applied: its effects say "no feedback" (int 0x15)
         file_hp: i32,                   // the GFF's CurrentHitPoints, adopted by equip_loaded
         has_file_hp: bool,
         dying_ms: i32,                  // > 0: the die animation plays, then dead
@@ -113,7 +116,8 @@ namespace fight {
         let mut fx: [rules::MAX_COMBAT_FX]rules::CombatEffect
         let mut damage: rules::DamageRoll
         let mut roll: rules::AttackRoll
-        return Impact{ at_ms = 0, fire_ms = 0, hand = 0, target = obj::INVALID, attack = false, hit = false, result = 0, roll, killing = false, ranged = false, reaction = NO_ROW, cutscene = false, first = false, damage, nfx = 0, fx }
+        let stun_save = rules::SaveResult{ result = 1, roll = 0, bonus = 0, base = 0, dc = 0 }
+        return Impact{ at_ms = 0, fire_ms = 0, hand = 0, target = obj::INVALID, attack = false, hit = false, result = 0, roll, killing = false, ranged = false, reaction = NO_ROW, cutscene = false, first = false, damage, stun_tried = false, stun_save, nfx = 0, fx }
     }
 
     fn no_round {} -> Round {
@@ -123,7 +127,7 @@ namespace fight {
     fn new_fighter { heap: *mut heap::Heap } -> !*mut Fighter {
         let mut c: rules::Creature
         c.loaded_hp = -1
-        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, stirs = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], file_hp = 0, has_file_hp = false, dying_ms = 0, voice_ms = 0, ready_ms = 0, engaged = false, master = false, master_id = obj::INVALID, slave_id = obj::INVALID, wait_ms = 0, duel_last = -1, knock = no_knock{}, saber = no_saber{}, item_ms = 0 }
+        let f = Fighter{ c, round = no_round{}, loaded = false, combat_ms = 0, stirs = 0, react_ms = 0, variant = 0, killer = obj::INVALID, last_damage = 0, damage_types = [0; 15], quiet_damage = false, file_hp = 0, has_file_hp = false, dying_ms = 0, voice_ms = 0, ready_ms = 0, engaged = false, master = false, master_id = obj::INVALID, slave_id = obj::INVALID, wait_ms = 0, duel_last = -1, knock = no_knock{}, saber = no_saber{}, item_ms = 0 }
         return try alloc::new(Fighter, heap::Heap){ realloc = heap::alloc, heap, value = f }
     }
 
@@ -376,13 +380,23 @@ namespace fight {
         o.hp = o.hp - amount
         if o.min_one_hp and o.hp < 1 { o.hp = 1 }
         f.last_damage = amount
-        fight_log::damaged{ &w, target = id, amount, who }
         f.damage_types = [0; 15]
         let mut slot: u32 = 0
         while slot < 15 {
             if (types >> slot) & 1 != 0 { f.damage_types[@as(usize, slot)] = amount }
             slot = slot + 1
         }
+        // A weapon hit's damage effects carry "no feedback" (int 0x15): the attack's summary and
+        // breakdowns report it, so OnApplyDamage sends no damage line, only the floating number.
+        let mut slots: [15]i32 = [0; 15]
+        let first = if (types & rules::dmg::PHYSICAL) != 0 { types & -types } else { 0 }
+        slot = 0
+        while slot < 15 {
+            let bit = @as(i32, 1) << slot
+            if (types & bit) != 0 and (bit & rules::dmg::PHYSICAL == 0 or bit == first) { slots[@as(usize, slot)] = amount }
+            slot = slot + 1
+        }
+        fight_log::damaged{ &w, target = id, amount, slots, who, line = not f.quiet_damage }
         if w.log.combat {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "{} takes {} damage from {}: {}/{}\n", id, amount, who, o.hp, o.hp_max)
@@ -491,12 +505,12 @@ namespace fight {
     // Damage to a door or placeable (combat.md 6.6 step 2, 8.2): hit points down unless plot,
     // OnDamaged; at 0 a door is bashed open (and plot from then on), a placeable dies (OnDeath,
     // destroyed 2 s later). The attacker stops.
-    fn damage_object { mut w: world::World, id: u32, amount: i32, who: u32 } {
+    fn damage_object { mut w: world::World, id: u32, amount: i32, slots: [15]i32, who: u32 } {
         let o = world::object{ w = &w, id } ifnull { return }
         if o.plot or o.hp < 1 or amount <= 0 { return }
         o.hp = o.hp - amount
         o.ctx.last_damager = who
-        fight_log::damaged{ &w, target = id, amount, who }
+        fight_log::damaged{ &w, target = id, amount, slots, who, line = true }
         if w.log.combat {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "{} ({}) takes {} damage from {}: {}/{}\n", id, o.tag, amount, who, o.hp, o.hp_max)
@@ -1216,6 +1230,8 @@ namespace fight {
                 imp.roll = res.roll
                 imp.killing = res.killing_blow
                 imp.damage = res.damage
+                imp.stun_tried = res.stun_tried
+                imp.stun_save = res.stun_save
                 imp.nfx = res.effects.len
                 imp.fx = res.effects.items
                 // The target's reaction (3.3): damage on a hit, else a parry (melee) or a dodge. It
@@ -1332,7 +1348,7 @@ namespace fight {
         let t = world::object{ w = &w, id = imp.target } ifnull { return }
         if t.kind == obj::Kind::door or t.kind == obj::Kind::placeable {
             if imp.attack { fight_log::attack{ &w, attacker = id, imp } }
-            if imp.attack and imp.hit { damage_object{ &w, id = imp.target, amount = imp.damage.total, who = id } }
+            if imp.attack and imp.hit { damage_object{ &w, id = imp.target, amount = imp.damage.total, slots = imp.damage.slots, who = id } }
             return
         }
         let tc = obj::creature{ o = t } ifnull { return }
@@ -1361,10 +1377,14 @@ namespace fight {
         // The damage first (rules.md: make_damage_effects, applied before the attack's other effects).
         if imp.hit {
             let dmg = rules::make_damage_effects{ roll = &imp.damage, creator = id }
+            if of{ o = t } is some{ value = tf } { tf.quiet_damage = true }
             let mut d: i32 = 0
             while d < dmg.len {
                 _ = apply{ &w, target = imp.target, e = dmg.items[@as(usize, d)] }
                 d = d + 1
+            }
+            if world::object{ w = &w, id = imp.target } is some{ value = back } {
+                if of{ o = back } is some{ value = tf } { tf.quiet_damage = false }
             }
         }
         let mut k: i32 = 0

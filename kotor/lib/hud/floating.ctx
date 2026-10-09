@@ -100,6 +100,31 @@ namespace hud {
         if f.count == FLOAT_MAX { remove_float{ f, at = 0 } }
         f.items[f.count] = item
         f.count = f.count + 1
+        want_head{ f, &w, object }
+    }
+
+    // Asks the scene for the object's head (w.heads): a free entry, or one whose object no longer has
+    // a label.
+    fn want_head { f: *Floating, mut w: world::World, object: u32 } {
+        let mut free: usize = w.heads.len
+        let mut i: usize = 0
+        while i < w.heads.len {
+            let id = w.heads[i].id
+            if id == object { return }
+            if free == w.heads.len and (id == obj::INVALID or not has_label{ f, object = id }) { free = i }
+            i = i + 1
+        }
+        if free == w.heads.len { free = 0 }
+        w.heads[free] = world::HeadPoint{ id = object, at = math::vec3::zero{}, found = false }
+    }
+
+    fn has_label { f: *Floating, object: u32 } -> bool {
+        let mut i: usize = 0
+        while i < f.count {
+            if f.items[i].object == object { return true }
+            i = i + 1
+        }
+        return false
     }
 
     fn remove_float { mut f: Floating, at: usize } {
@@ -122,10 +147,16 @@ namespace hud {
         }
     }
 
-    // Where a label hangs: the screen point at a creature's head (the original projects the model's
-    // head_g node, else the root; ours is 0.9 of the box the target block uses, 1.6 m for a person)
-    // or the top of a door's or placeable's box. Null when it is behind the eye.
-    fn float_anchor { p: Projector, o: *obj::Object } -> ?math::Vec2 {
+    // Where a label hangs: the screen point of the object's head_g node, else its rootdummy, as the
+    // scene found them (w.heads); until it has (the label's first frame) or when the model has
+    // neither, 0.9 of the box the target block uses for a creature (1.6 m for a person) and the top of
+    // a door's or placeable's box. Null when it is behind the eye.
+    fn float_anchor { p: Projector, w: *world::World, o: *obj::Object } -> ?math::Vec2 {
+        let mut i: usize = 0
+        while i < w.heads.len {
+            if w.heads[i].id == o.id and w.heads[i].found { return project{ p, at = w.heads[i].at } }
+            i = i + 1
+        }
         let s = shape_of{ o }
         let up = if obj::creature{ o } is some{ value = c } { s.height * 0.9 } else { s.height }
         return project{ p, at = math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + up } }
@@ -142,7 +173,7 @@ namespace hud {
             let it = &f.items[i]
             i = i + 1
             let o = world::object{ w = &w, id = it.object } ifnull { continue }
-            let at = float_anchor{ p = h.projector, o } ifnull { continue }
+            let at = float_anchor{ p = h.projector, w = &w, o } ifnull { continue }
             let text = it.text[..it.len]
             let x = at.x - render::measure_text{ font, text, scale = 1.0 } / 2.0
             let y = at.y - FLOAT_ABOVE - font.height - it.lift

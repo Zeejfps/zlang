@@ -1476,31 +1476,29 @@ count byte at `+0x14c`). The list is `CSWGuiMainInterface +0x5cb4` (count `+0x5c
 
 `fight_log::attack` (called by `fight::land` for every impact that carries a roll, doors and
 placeables included), `damaged` (`take_damage`, `damage_object`) and `killed` (`award_kill_xp`)
-build the lines above from the rules library's own numbers (`fight::Impact.roll` and `.damage`) and
-post them as outbox `feedback` notes whose strref names the template; `ingame::take` files them: the
-summary red, the rest in Messages only (`fight_log::LOG_COMBAT`: the HUD's young-feedback lines,
-which the original does not have, stay for other feedback). Recipients follow 10.2 with the party
-and the player's faction as "the client's faction" and the leader as "the client's creature"; an
-attack's lines go out once per side that reaches the player, a damage line at most once.
-`fight_log::floating` posts the `floating_text` note for kinds 0 (damage dealt or taken by the
-leader), 1 (`healed`, from `fight.ctx`'s heal event, for a creature on the player's side), 2 (the
-leader's melee misses), 3 (kills) and 4 (`leveled`, from `levelup.ctx`), and `hud/floating.ctx`
-draws it.
+build the lines above from the rules library's own numbers (`fight::Impact.roll`, `.damage` and the
+special attack's stun save) and post them as outbox `feedback` notes whose strref names the
+template; `ingame::take` files them in the world's message log (`w.messages`, `engine/msglog.ctx`):
+the summary red, the rest in Messages only (`msglog::QUIET`: the HUD's young-feedback lines, which
+the original does not have, stay for other feedback). Recipients follow 10.2 with the party and the
+player's faction as "the client's faction" and the leader as "the client's creature"; an attack's
+lines go out once per side that reaches the player, a damage line at most once. A weapon hit's
+damage posts no damage line (its effects carry "no feedback", int 0x15), only the floating number;
+the stale `<CUSTOM2>` of type 2 is the last one our combat lines filled (`fight_log::Tokens`), not
+the client's whole token table. `fight_log::floating` posts the `floating_text` note for kinds 0
+(damage dealt or taken by the leader), 1 (`healed`, from `fight.ctx`'s heal event, for a creature
+on the player's side), 2 (the leader's melee misses), 3 (kills) and 4 (`leveled`, from
+`levelup.ctx`), and `hud/floating.ctx` draws it at the object's `head_g` (else `rootdummy`) node,
+which the scene finds for the objects the labels name (`w.heads`). The party table saves both logs
+(`save/partytable.ctx`) and a load puts them back.
 
 Differences from the original:
 
-- the label sits at 0.9 of the creature's box height (the HUD has no head node);
-- the distance test is `< 900` (the original includes 900);
-- the summary has no stun clause (step 5);
-- the damage breakdown puts "Critical x<n> for " at the head of the parts instead of before the
-  total, shows a single "physical" (or other) dice term instead of every slot, and joins the
-  strength and weapon-specialization terms with " + " instead of " " (no double space) and has no
-  Toughness terms;
-- types 0x19 and 0x1a are not produced;
-- the damage lines (types 2 and 3) have no " (physical 5 fire 2)" suffix, and type 2 prints the
-  damage where the original prints a stale `<CUSTOM2>`;
-- the save writes `PT_FB_MSG_LIST` and `PT_DLG_MSG_LIST` empty (`save/partytable.ctx`), so the log
-  does not survive a save.
+- the stun clause and the effect-application line know only Critical Strike's and Sniper Shot's
+  stun (state 4); the "resisted" flag (`+0x138`, set when the stun meets an immunity at apply time)
+  is never set, because our attack rolls the save only for a target that is not immune;
+- the deflection line's armor check penalty is always 0 (the two stat bytes are not read, 4.6);
+- the log holds a line's first 192 bytes, and a saved dialogue line has no speaker of its own.
 
 ## 11. Names
 

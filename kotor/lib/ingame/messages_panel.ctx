@@ -7,7 +7,7 @@
 namespace messages_panel {
     // A feedback line the original draws in the combat colour (its saved message colour byte is 1):
     // the log's kind is LOG_FEEDBACK (0) or LOG_DIALOG (1); this is a feedback line with the red.
-    const KIND_FEEDBACK_RED: u8 = 2
+    const KIND_FEEDBACK_RED: u8 = msglog::RED
 
     const TITLE_STRREF: u32 = 1563              // "Messages"
     const DIALOG_STRREF: u32 = 371              // "Dialog"

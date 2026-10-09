@@ -401,6 +401,7 @@ namespace scene {
             i = i + 1
         }
         find_aim{ &sc, &w }
+        find_heads{ &sc, &w }
     }
 
     // Where the target's reticle hangs (UpdateReticles 0x0068a310 asks the client object for its screen
@@ -414,6 +415,23 @@ namespace scene {
         let found = m ifnull { return }
         w.aim = math::mat4::get_translation{ m = found }
         w.aim_id = o.id
+    }
+
+    // The heads the floating labels hang from (the label's 0x0060fd80: the head_g node, else
+    // rootdummy), for the objects the HUD listed in w.heads.
+    fn find_heads { sc: *Scene, mut w: world::World } {
+        let mut i: usize = 0
+        while i < w.heads.len {
+            let id = w.heads[i].id
+            w.heads[i].found = false
+            i = i + 1
+            if id == obj::INVALID { continue }
+            let mut m = hook_of{ sc, w = &w, id, hook = "head_g", which = 0 }
+            if m == null { m = hook_of{ sc, w = &w, id, hook = "rootdummy", which = 0 } }
+            let found = m ifnull { continue }
+            w.heads[i - 1].at = math::mat4::get_translation{ m = found }
+            w.heads[i - 1].found = true
+        }
     }
 
     fn advance_part { mut sc: Scene, mut w: world::World, part: usize, dt: f32 } {

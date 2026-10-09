@@ -23,7 +23,6 @@ namespace ingame {
         menu_panel: u32,                    // its panel and the tab bar's, 0 when none
         top_panel: u32,
         menus: Menus,
-        log: hud::MessageLog,
         pause_panel: u32,                   // the "PAUSED" banner, 0 when not shown
         screens: screens::State,            // the store, loot, level-up, workbench and galaxy map panels (lib/screens)
         hud_hidden: bool,
@@ -83,7 +82,7 @@ namespace ingame {
         let ui = Ingame{
             heap = w.heap, cache, gui = g, hud = h, selfs = selfslots::new{},
             text = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } },
-            width, height, gui_scale, menu = NO_MENU, menu_panel = 0, top_panel = 0, menus = new_menus{}, log = hud::new_log{},
+            width, height, gui_scale, menu = NO_MENU, menu_panel = 0, top_panel = 0, menus = new_menus{},
             pause_panel = 0, hud_hidden = false, screens = screens::new{}, bot = bot::new{},
             shift_held = false, ctrl_held = false, solo_box = msgbox::blank{}, solo_pause = false, focus_paused = false, run_script = resref::empty{},
             right_held = false, look_x = 0, look_y = 0, looking = false, freelook = false, turn_to = obj::INVALID, mouse_look = saved.mouse_look, mouse_sens = saved.mouse_sensitivity, reverse_buttons = saved.reverse_buttons,
@@ -431,7 +430,7 @@ namespace ingame {
                 let said = if sent.len > 0 { sent } else { world::string_by_strref{ w = &w, strref } }
                 // The combat log's lines go to Messages only; the attack summary is red there.
                 let kind = if fight_log::is_summary{ strref } { messages_panel::KIND_FEEDBACK_RED } else if fight_log::is_combat_line{ strref } { fight_log::LOG_COMBAT } else { hud::LOG_FEEDBACK }
-                if said.len > 0 { hud::log_add{ log = &ui.log, text = said, kind } }
+                if said.len > 0 { hud::log_add{ log = &w.messages, text = said, kind } }
             }
             floating_text{ object, kind, amount } => {
                 hud::add_float{ h = &ui.hud, g = &ui.gui, &w, object, kind, amount }
@@ -599,7 +598,7 @@ namespace ingame {
     fn update { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, sc: scene::Scene, camera: cam::Camera, dt: f32 } {
         gui::update{ g = &ui.gui, dt }
         bot::step{ b = &ui.bot, &w }
-        hud::log_tick{ log = &ui.log, dt }
+        hud::log_tick{ log = &w.messages, dt }
         if options_panel::settings{ s = &ui.menus.options } is some{ value = st } {
             w.rules.settings.auto_level = st.auto_level_up
             w.rules.settings.difficulty = st.difficulty
@@ -743,7 +742,7 @@ namespace ingame {
 
     // Adds the interface to the frame: the HUD's own render targets, then the panels.
     fn draw { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame } {
-        if ui.menu == NO_MENU and not ui.hud_hidden { hud::draw{ h = &ui.hud, g = &ui.gui, &w, &dev, &frame, log = &ui.log } }
+        if ui.menu == NO_MENU and not ui.hud_hidden { hud::draw{ h = &ui.hud, g = &ui.gui, &w, &dev, &frame, log = &w.messages } }
         // A menu that draws into a render target before the panels (the map's picture with its arrows).
         if ui.menu == MENU_MAP { map_panel::draw{ s = &ui.menus.map, g = &ui.gui, &w, &dev, &frame, panel = ui.menu_panel } }
         gui::draw_backdrop_pass{ g = &ui.gui, &frame }

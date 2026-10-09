@@ -8,10 +8,10 @@
 // whose creature is in the faction of the creature the message is about, in its area, within 30 m
 // of it; here: that creature is on the player's side and the leader is near it.
 namespace fight_log {
-    // The Messages log's kind for combat lines that are not the red summary (hud::LOG_FEEDBACK 0 and
-    // LOG_DIALOG 1 are taken, messages_panel::KIND_FEEDBACK_RED is 2). The HUD's young-feedback lines
-    // draw kind 0 only, and the original shows no such lines, so combat stays out of them.
-    const LOG_COMBAT: u8 = 3
+    // The Messages log's kind for combat lines that are not the red summary (msglog.ctx). The HUD's
+    // young-feedback lines draw msglog::FEEDBACK only, and the original shows no such lines, so
+    // combat stays out of them.
+    const LOG_COMBAT: u8 = msglog::QUIET
 
     // The templates the lines are built from; a note carries its line's, so the owner of the log can
     // tell a combat line (and the red summary) from other feedback.
@@ -20,6 +20,8 @@ namespace fight_log {
     const T_THREAT: u32 = 42148
     const T_DEFENSE: u32 = 42149
     const T_DAMAGE: u32 = 42150
+    const T_EFFECT: u32 = 42157             // "Effect Application Breakdown:"
+    const T_DEFLECT: u32 = 42417            // "Deflection Breakdown: ..."
     const T_DAMAGES: u32 = 1403             // "<CUSTOM0> damages <CUSTOM1> for <CUSTOM2> damage"
     const T_DAMAGED: u32 = 1402             // "<CUSTOM0> damaged: <CUSTOM2>" (no attacker known)
     const T_KILLED: u32 = 1407              // "<CUSTOM0> killed <CUSTOM1>: <CUSTOM2> XP"
@@ -34,10 +36,29 @@ namespace fight_log {
     // Whether a feedback note's strref marks a combat line, and the red summary among them.
     fn is_combat_line { strref: u32 } -> bool {
         return strref == T_SUMMARY or strref == T_ATTACK or strref == T_THREAT or strref == T_DEFENSE or strref == T_DAMAGE or
-            strref == T_DAMAGES or strref == T_DAMAGED or strref == T_KILLED
+            strref == T_EFFECT or strref == T_DEFLECT or strref == T_DAMAGES or strref == T_DAMAGED or strref == T_KILLED
     }
 
     fn is_summary { strref: u32 } -> bool { return strref == T_SUMMARY }
+
+    // The client's <CUSTOM2> as the last combat line left it: "<target> damaged: <CUSTOM2>" (1402)
+    // fills only <CUSTOM0> and <CUSTOM1>, so the original prints whatever an earlier line put there.
+    struct Tokens { custom2: [96]u8, len: usize }
+
+    fn no_tokens {} -> Tokens { return Tokens{ custom2 = [0; 96], len = 0 } }
+
+    fn remember_custom2 { mut w: world::World, s: []u8 } {
+        let n = if s.len > 96 { 96 } else { s.len }
+        slice::copy(u8){ dst = w.log_tokens.custom2[..n], src = s[..n] }
+        w.log_tokens.len = n
+    }
+
+    fn remember_custom2_number { mut w: world::World, v: i32 } {
+        let mut b = new_line{ w = &w }
+        defer list::free{ list = &b.bytes }
+        _ = @fmt(&b, "{}", v)
+        remember_custom2{ &w, s = utf8::view{ b }.bytes }
+    }
 
     // ---- templates
 
@@ -95,7 +116,7 @@ namespace fight_log {
     }
 
     // The server's rule for who is sent a combat message about `id` (SendCombatMessageToNearbyPlayers
-    // 0x004ecae0): a player in the creature's faction, in its area, less than 30 m away.
+    // 0x004ecae0): a player in the creature's faction, in its area, 30 m away at most.
     fn reaches_player { w: *world::World, id: u32 } -> bool {
         if not on_players_side{ w, id } { return false }
         let me = world::object{ w, id = w.pc } ifnull { return false }
@@ -104,7 +125,7 @@ namespace fight_log {
         let dx = me.position.x - o.position.x
         let dy = me.position.y - o.position.y
         let dz = me.position.z - o.position.z
-        return dx * dx + dy * dy + dz * dz < 900.0
+        return dx * dx + dy * dy + dz * dz <= 900.0
     }
 
     fn copies_for { w: *world::World, id: u32 } -> i32 {
@@ -145,7 +166,8 @@ namespace fight_log {
     // ---- an attack
 
     // An attack landed or missed (ApplyAttackImpact 0x005b8050: the summary, then the attack, threat,
-    // defense and damage breakdowns, each to the attacker's and the target's neighbourhood).
+    // defense and damage breakdowns, the effect-application and deflection breakdowns, each to the
+    // attacker's and the target's neighbourhood).
     fn attack { mut w: world::World, attacker: u32, imp: *fight::Impact } {
         let a = world::object{ w = &w, id = attacker } ifnull { return }
         let t = world::object{ w = &w, id = imp.target } ifnull { return }
@@ -160,6 +182,7 @@ namespace fight_log {
         let r = &imp.roll
         summary_line{ w = &w, &b, a, t, imp }
         post_line{ &w, strref = T_SUMMARY, line = utf8::view{ b }.bytes, copies }
+        remember_custom2_number{ &w, v = r.defense.total }
         list::clear{ list = &b.bytes }
         attack_breakdown{ w = &w, &b, imp }
         post_line{ &w, strref = T_ATTACK, line = utf8::view{ b }.bytes, copies }
@@ -167,15 +190,86 @@ namespace fight_log {
             list::clear{ list = &b.bytes }
             threat_breakdown{ w = &w, &b, imp }
             post_line{ &w, strref = T_THREAT, line = utf8::view{ b }.bytes, copies }
+            remember_custom2{ &w, s = world::string_by_strref{ w = &w, strref = if r.confirmed { 1392 } else { 1393 } } }
         }
         list::clear{ list = &b.bytes }
         defense_breakdown{ w = &w, &b, imp }
         post_line{ &w, strref = T_DEFENSE, line = utf8::view{ b }.bytes, copies }
         if imp.damage.total > 0 {
             list::clear{ list = &b.bytes }
-            damage_breakdown{ w = &w, &b, imp }
+            damage_breakdown{ w = &w, &b, imp, target = t }
             post_line{ &w, strref = T_DAMAGE, line = utf8::view{ b }.bytes, copies }
         }
+        // Case 0x19: the stun save of Critical Strike or Sniper Shot, unless it was passed.
+        if imp.stun_tried and imp.stun_save.result != 1 {
+            list::clear{ list = &b.bytes }
+            effect_breakdown{ w = &w, &b, t, imp }
+            post_line{ &w, strref = T_EFFECT, line = utf8::view{ b }.bytes, copies }
+        }
+        // Case 0x1a: a bolt deflected (or stopped) after a deflection roll.
+        if imp.result >= rules::outcome::DEFLECTED and imp.result <= rules::outcome::SHIELD and r.deflection.total != 0 {
+            let mut parts = new_line{ w = &w }
+            defer list::free{ list = &parts.bytes }
+            deflection_parts{ w = &w, b = &parts, d = &r.deflection }
+            list::clear{ list = &b.bytes }
+            expand_template{ w = &w, &b, strref = T_DEFLECT, holes = [
+                Hole::text{ s = doors::name_text{ w = &w, o = t } }, Hole::num{ v = r.deflection.total },
+                Hole::text{ s = utf8::view{ b = parts }.bytes }, Hole::num{ v = r.deflection.attack_total }, Hole::none,
+            ] }
+            post_line{ &w, strref = T_DEFLECT, line = utf8::view{ b }.bytes, copies }
+            remember_custom2{ &w, s = utf8::view{ b = parts }.bytes }
+        }
+    }
+
+    // The stun a summary or an effect line reports: 4 (stunned) when the stun save failed (the
+    // special attack's +0x12d), else none.
+    fn stun_state { imp: *fight::Impact } -> i32 {
+        return if imp.stun_tried and imp.stun_save.result == 0 { 4 } else { 0 }
+    }
+
+    // A state's word (FormatCombatFeedback's mapping): confused, frightened, droid stunned, stunned,
+    // held, sleeping, choked, horrified, Force Pushed, caught in a whirlwind; "is not ..." 41 higher.
+    fn state_word { state: i32, resisted: bool } -> u32 {
+        let base: u32 = if state == 1 { 42031 } else if state == 2 { 42035 } else if state == 3 { 42036 } else if state == 4 { 42032 }
+            else if state == 5 { 42037 } else if state == 6 { 42038 } else if state == 7 { 42033 } else if state == 8 { 42040 }
+            else if state == 9 { 42034 } else if state == 10 { 42039 } else { 0 }
+        return if base != 0 and resisted { base + 41 } else { base }
+    }
+
+    // Case 0x19: "Effect Application Breakdown:<target> stunned" (42157 then 42158), or "...<target>
+    // resisted ..." (42160) when the save said immune. With no state the word is left out (the
+    // original leaves the client's <CUSTOM1> as an earlier line set it).
+    fn effect_breakdown { w: *world::World, mut b: utf8::Builder(heap::Heap), t: *obj::Object, imp: *fight::Impact } {
+        expand_template{ w, &b, strref = T_EFFECT, holes = no_holes{} }
+        let state = stun_state{ imp }
+        let word = if state != 0 { Hole::text{ s = world::string_by_strref{ w, strref = state_word{ state, resisted = false } } } } else { Hole::none }
+        expand_template{ w, &b, strref = if imp.stun_save.result == 2 { 42160 } else { 42158 }, holes = [
+            Hole::text{ s = doors::name_text{ w, o = t } }, word, Hole::none, Hole::none, Hole::none,
+        ] }
+    }
+
+    // Case 0x1a's parts, each when not 0: " roll <d20>", the Jedi Defense feat's " + <name> <bonus>",
+    // " + base attack bonus <n>", " + armor check penalty <n>" (none of ours), " + item bonus <n>".
+    fn deflection_parts { w: *world::World, mut b: utf8::Builder(heap::Heap), d: *rules::Deflection } {
+        if d.d20 != 0 { put_part{ w, &b, strref = 42316, v = d.d20 } }
+        if d.jedi_bonus != 0 {
+            expand_template{ w, &b, strref = 42318, holes = [Hole::text{ s = feat_name{ w, feat = d.jedi_feat } }, Hole::num{ v = d.jedi_bonus }, Hole::none, Hole::none, Hole::none] }
+        }
+        if d.bab != 0 { put_part{ w, &b, strref = 42419, v = d.bab } }
+        if d.effects != 0 { put_part{ w, &b, strref = 42620, v = d.effects } }
+    }
+
+    // The summary's damage (SendAttackSummary 0x005b5ea0): the attack's total, times difficultyopt.2da's
+    // MULTIPLIER when the target is in the party or is the player character (TakeDamage's test).
+    fn summary_damage { w: *world::World, t: *obj::Object, total: i32 } -> i32 {
+        let mut d = total
+        if party::is_member{ w, id = t.id } or t.id == w.player {
+            let table = rules::raw_table{ tables = w.rules, which = rules::Tab::difficultyopt }
+            if twoda::get_float{ t = table, row = @as(usize, w.rules.settings.difficulty), column = "multiplier" } is some{ value = m } {
+                d = @as(i32, @as(f32, total) * m)
+            }
+        }
+        return if d < 0 { 0 } else { d }
     }
 
     // Case 0x12 of FormatCombatFeedback: "<A> succeeds with attack on <T>. [<feat> used. ]Hit with
@@ -194,7 +288,7 @@ namespace fight_log {
             expand_template{ w, &b, strref = 42046, holes = [Hole::text{ s = name }, Hole::none, Hole::none, Hole::none, Hole::none] }
             put_text{ &b, s = ". " }
         }
-        let damage = if imp.damage.total < 0 { 0 } else { imp.damage.total }
+        let damage = summary_damage{ w, t, total = imp.damage.total }
         expand_template{ w, &b, strref = 42119, holes = [
             Hole::text{ s = world::string_by_strref{ w, strref = if hit { 42133 } else { 42134 } } },
             Hole::num{ v = r.attack_total }, Hole::num{ v = r.defense.total }, Hole::num{ v = damage }, Hole::none,
@@ -205,6 +299,14 @@ namespace fight_log {
         if r.natural_20 { put_flag{ w, &b, strref = 42390 } } else if r.natural_1 { put_flag{ w, &b, strref = 42391 } }
         if imp.result == rules::outcome::DEFLECTED { put_flag{ w, &b, strref = 42411 } }
         if imp.result == rules::outcome::RETURNED { put_flag{ w, &b, strref = 42421 } }
+        // "<T> is stunned" with no separator before it (Critical Strike or Sniper Shot stunned the target).
+        let state = stun_state{ imp }
+        if state != 0 {
+            expand_template{ w, &b, strref = 42030, holes = [
+                Hole::text{ s = doors::name_text{ w, o = t } }, Hole::text{ s = world::string_by_strref{ w, strref = state_word{ state, resisted = false } } },
+                Hole::none, Hole::none, Hole::none,
+            ] }
+        }
     }
 
     // The name of a feat (feat.2da NAME) or nothing.
@@ -276,34 +378,83 @@ namespace fight_log {
         return 41902
     }
 
-    // Case 0x17: "Damage Breakdown: <total> = [Critical x<n> for ]physical <dice> + strength mod <n> ...".
-    fn damage_breakdown { w: *world::World, mut b: utf8::Builder(heap::Heap), imp: *fight::Impact } {
+    // Case 0x17: "Damage Breakdown: [Critical x<n> for ]<total> = physical <n> + fire <n>  + strength
+    // mod <n> ...". The parts are the damage slots (physical is slots 0..2 summed), joined with " + "
+    // where physical and energy go in front of what is already there; then the terms the record keeps
+    // apart: strength and weapon specialization after a single space (their templates start with
+    // " + "), bonus damage and sneak attack after " + ", Toughness and Wookiee Toughness after " - ".
+    fn damage_breakdown { w: *world::World, mut b: utf8::Builder(heap::Heap), imp: *fight::Impact, target: *obj::Object } {
         let d = &imp.damage
         let mut parts = new_line{ w }
         defer list::free{ list = &parts.bytes }
-        if d.critical and d.multiplier > 1 { put_part{ w, b = &parts, strref = 42386, v = d.multiplier } }
-        let dice = if d.dice > 0 { d.dice } else { d.weapon_damage }
-        if dice > 0 {
-            put_part{ w, b = &parts, strref = slot_word{ slot = d.weapon_slot }, v = dice }
+        let mut word = new_line{ w }
+        defer list::free{ list = &word.bytes }
+        let mut physical = 0
+        let mut s: usize = 0
+        while s < 3 {
+            if d.slots[s] > 0 { physical = physical + d.slots[s] }
+            s = s + 1
         }
-        if d.str_bonus != 0 { put_part{ w, b = &parts, strref = 42154, v = d.str_bonus } }
-        if d.spec_bonus != 0 { put_part{ w, b = &parts, strref = 42363, v = d.spec_bonus } }
-        let bonus = d.special_bonus + d.effect_plus - d.effect_minus + d.massive
-        if bonus != 0 { put_text{ b = &parts, s = " + " }; put_part{ w, b = &parts, strref = 42155, v = bonus } }
-        if d.sneak != 0 { put_text{ b = &parts, s = " + " }; put_part{ w, b = &parts, strref = 42156, v = d.sneak } }
-        expand_template{ w, &b, strref = T_DAMAGE, holes = [Hole::num{ v = d.total }, Hole::text{ s = utf8::view{ b = parts }.bytes }, Hole::none, Hole::none, Hole::none] }
+        let mut first = true
+        s = 2
+        while s < 14 {
+            let v = if s == 2 { physical } else { d.slots[s] }
+            if v > 0 {
+                list::clear{ list = &word.bytes }
+                put_part{ w, b = &word, strref = slot_word{ slot = @as(i32, s) }, v }
+                let text = utf8::view{ b = word }.bytes
+                if first {
+                    put_text{ b = &parts, s = text }
+                } else if s == 2 or s == 12 {
+                    let mut ahead = new_line{ w }
+                    defer list::free{ list = &ahead.bytes }
+                    put_text{ b = &ahead, s = text }
+                    put_text{ b = &ahead, s = " + " }
+                    put_text{ b = &ahead, s = utf8::view{ b = parts }.bytes }
+                    list::clear{ list = &parts.bytes }
+                    put_text{ b = &parts, s = utf8::view{ b = ahead }.bytes }
+                } else {
+                    put_text{ b = &parts, s = " + " }
+                    put_text{ b = &parts, s = text }
+                }
+                first = false
+            }
+            s = s + 1
+        }
+        let mult = if d.critical and d.multiplier > 1 { d.multiplier } else { 1 }
+        if d.str_bonus != 0 { put_text{ b = &parts, s = " " }; put_part{ w, b = &parts, strref = 42154, v = d.str_bonus * mult } }
+        if d.spec_bonus != 0 { put_text{ b = &parts, s = " " }; put_part{ w, b = &parts, strref = 42363, v = d.spec_bonus * mult } }
+        let bonus = d.special_bonus * mult + d.massive
+        if bonus > 0 { put_text{ b = &parts, s = " + " }; put_part{ w, b = &parts, strref = 42155, v = bonus } }
+        if d.sneak > 0 { put_text{ b = &parts, s = " + " }; put_part{ w, b = &parts, strref = 42156, v = d.sneak } }
+        // DoDamageResistance notes 2 for Improved Toughness and Wookiee Endurance whenever a creature
+        // with the feat mitigates an attack's damage.
+        if not d.forced {
+            if fight::of{ o = target } is some{ value = tf } {
+                if rules::has_feat{ c = &tf.c, feat = rules::feat::IMPROVED_TOUGHNESS } { put_text{ b = &parts, s = " - " }; put_part{ w, b = &parts, strref = 42433, v = 2 } }
+                if rules::has_feat{ c = &tf.c, feat = rules::feat::WOOKIEE_ENDURANCE } { put_text{ b = &parts, s = " - " }; put_part{ w, b = &parts, strref = 42434, v = 2 } }
+            }
+        }
+        let mut head = new_line{ w }
+        defer list::free{ list = &head.bytes }
+        if d.critical and d.multiplier > 0 { put_part{ w, b = &head, strref = 42386, v = d.multiplier } }
+        _ = @fmt(&head, "{}", d.total)
+        expand_template{ w, &b, strref = T_DAMAGE, holes = [Hole::text{ s = utf8::view{ b = head }.bytes }, Hole::text{ s = utf8::view{ b = parts }.bytes }, Hole::none, Hole::none, Hole::none] }
     }
 
     // ---- damage and kills
 
     // A creature or object took damage (OnApplyDamage 0x004dfa40: "<who> damages <target> for <n>
-    // damage", or "<target> damaged: <n>" when no attacker is known; the numbers float over the
-    // target when the player dealt the damage, and over the player when someone else did).
-    fn damaged { mut w: world::World, target: u32, amount: i32, who: u32 } {
+    // damage (physical 5 fire 2)", or "<target> damaged: <CUSTOM2>" when no attacker is known; the
+    // numbers float over the target when the player dealt the damage, and over the player when someone
+    // else did). `slots` is the damage by type slot, 0 where none; `line` is false for a weapon hit's
+    // damage, whose effects say "no feedback" (the attack's own lines report it).
+    fn damaged { mut w: world::World, target: u32, amount: i32, slots: [15]i32, who: u32, line: bool } {
         if amount <= 0 { return }
         if who == w.pc or target == w.pc {
             floating{ &w, object = target, kind = FLOAT_DAMAGE, amount }
         }
+        if not line { return }
         let t = world::object{ w = &w, id = target } ifnull { return }
         let known = world::object{ w = &w, id = who }
         let copies = if copies_for{ w = &w, id = target } > 0 { 1 } else if known != null { copies_for{ w = &w, id = who } } else { 0 }
@@ -315,13 +466,40 @@ namespace fight_log {
                 Hole::text{ s = doors::name_text{ w = &w, o = a } }, Hole::text{ s = doors::name_text{ w = &w, o = t } },
                 Hole::num{ v = amount }, Hole::none, Hole::none,
             ] }
+            damage_tail{ w = &w, &b, slots = &slots }
             post_line{ &w, strref = T_DAMAGES, line = utf8::view{ b }.bytes, copies }
+            remember_custom2_number{ &w, v = amount }
         } else {
+            // The original fills <CUSTOM0> and <CUSTOM1> (the amount) but prints <CUSTOM2>: the
+            // number an earlier line left there.
             expand_template{ w = &w, &b, strref = T_DAMAGED, holes = [
-                Hole::text{ s = doors::name_text{ w = &w, o = t } }, Hole::none, Hole::num{ v = amount }, Hole::none, Hole::none,
+                Hole::text{ s = doors::name_text{ w = &w, o = t } }, Hole::num{ v = amount },
+                Hole::text{ s = w.log_tokens.custom2[..w.log_tokens.len] }, Hole::none, Hole::none,
             ] }
+            damage_tail{ w = &w, &b, slots = &slots }
             post_line{ &w, strref = T_DAMAGED, line = utf8::view{ b }.bytes, copies }
         }
+    }
+
+    // " (physical 5 fire 2)": the physical slots summed, then each other slot with damage, by its word.
+    fn damage_tail { w: *world::World, mut b: utf8::Builder(heap::Heap), slots: *[15]i32 } {
+        put_text{ &b, s = " (" }
+        let mut first = true
+        let physical = slots[0] + slots[1] + slots[2]
+        if slots[0] > 0 or slots[1] > 0 or slots[2] > 0 {
+            put_part{ w, &b, strref = 1423, v = physical }
+            first = false
+        }
+        let mut s: usize = 3
+        while s < 14 {
+            if slots[s] > 0 {
+                if not first { put_text{ &b, s = " " } }
+                put_part{ w, &b, strref = slot_word{ slot = @as(i32, s) }, v = slots[s] }
+                first = false
+            }
+            s = s + 1
+        }
+        put_text{ &b, s = ")" }
     }
 
     // A creature was healed (OnApplyHeal 0x004e0750): a green number over it when it is the player's.
@@ -336,22 +514,35 @@ namespace fight_log {
         floating{ &w, object = who, kind = FLOAT_LEVEL, amount = level }
     }
 
+    fn creature_object { w: *world::World, id: u32 } -> ?*mut obj::Object {
+        let o = world::object{ w, id } ifnull { return null }
+        if obj::creature{ o } == null { return null }
+        return o
+    }
+
     // A kill's experience (AwardKillXP 0x004fb1e0: "<killer> killed <victim>: N XP" to the killer's
-    // neighbours; "XP N" floats over the victim for everyone).
+    // neighbours; "XP N" floats over the victim for everyone). A mine's kill is its layer's (the
+    // trigger's CreatorId); a killer that is no creature we know gives the line to the player's creature.
     fn killed { mut w: world::World, victim: u32, killer: u32, xp: i32 } {
         floating{ &w, object = victim, kind = FLOAT_XP, amount = xp }
         let v = world::object{ w = &w, id = victim } ifnull { return }
-        // A killer that is not a creature we know is replaced by the player's creature.
-        let known = world::object{ w = &w, id = killer }
-        let k = if known != null { known } else { world::object{ w = &w, id = w.pc } ifnull { return } }
-        let copies = copies_for{ w = &w, id = k.id }
+        let mut by = killer
+        if world::object{ w = &w, id = killer } is some{ value = ko } {
+            if obj::trigger{ o = ko } is some{ value = tr } {
+                if tr.trap.creator != obj::INVALID { by = tr.trap.creator }
+            }
+        }
+        let pc = world::object{ w = &w, id = w.pc }
+        let kc = creature_object{ w = &w, id = by } ifnull pc ifnull { return }
+        let copies = copies_for{ w = &w, id = kc.id }
         if copies == 0 { return }
         let mut b = new_line{ w = &w }
         defer list::free{ list = &b.bytes }
         expand_template{ w = &w, &b, strref = T_KILLED, holes = [
-            Hole::text{ s = doors::name_text{ w = &w, o = k } }, Hole::text{ s = doors::name_text{ w = &w, o = v } },
+            Hole::text{ s = doors::name_text{ w = &w, o = kc } }, Hole::text{ s = doors::name_text{ w = &w, o = v } },
             Hole::num{ v = xp }, Hole::none, Hole::none,
         ] }
         post_line{ &w, strref = T_KILLED, line = utf8::view{ b }.bytes, copies }
+        remember_custom2_number{ &w, v = xp }
     }
 }

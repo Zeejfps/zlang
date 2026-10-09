@@ -149,8 +149,15 @@ namespace world {
         button_mash: bool,                  // SetButtonMashCheck / GetButtonMashCheck (the combat tutorial)
         subscreen: i32,                     // GetSubScreenID: SUBSCREEN_ID_* of the in-game screen showing (0: none)
         party_watch: fight::PartyWatch,     // UpdatePartyDeath's clocks: downed members get up after the fight (fight.ctx)
+        messages: msglog::Log,              // Messages > Feedback and Dialog (msglog.ctx): the save keeps it with the party table
+        log_tokens: fight_log::Tokens,      // the combat log's <CUSTOM2> as the client last had it (fight_log.ctx)
+        heads: [8]HeadPoint,                // where the floating labels hang: the scene finds these objects' head_g nodes
         // HOOK(party): the party table
     }
+
+    // An object the HUD wants the head of (a floating label's anchor, hud/floating.ctx) and where the
+    // scene found it: its model's head_g node, else rootdummy (0x0060fd80); `found` false when neither.
+    struct HeadPoint { id: u32, at: math::Vec3, found: bool }
 
     // A world with the session's tables loaded and no module yet.
     fn make {
@@ -193,6 +200,8 @@ namespace world {
             rules = try alloc::new(rules::Tables, heap::Heap){ realloc = heap::alloc, heap, value = blank_rules },
             dice = rules::seed_rng{ seed }, fx_ids = rules::EffectIds{ next = 1 }, rev = blank_events,
             credits_running = false, button_mash = false, subscreen = 0, party_watch = fight::new_party_watch{},
+            messages = msglog::new{}, log_tokens = fight_log::no_tokens{},
+            heads = [HeadPoint{ id = obj::INVALID, at = math::vec3::zero{}, found = false }; 8],
         }
         let p = try alloc::new(World, heap::Heap){ realloc = heap::alloc, heap, value = w }
         try rules::load_tables{ fs = &f, rm = rm.*, heap = heap, out = p.rules }

@@ -1,74 +1,27 @@
-// The message log: the lines the game shows as feedback ("Item received", combat results ...) and
-// the dialogue lines it has spoken, kept for the Messages menu and the lines on the HUD.
+// The message log as the HUD and the menus see it: the world keeps it (`w.messages`, lib/engine/
+// msglog.ctx) so a save can carry it, as the original's party table does.
 namespace hud {
-    const LOG_LINES: usize = 64
-    const LOG_LEN: usize = 192
+    type MessageLog = msglog::Log
+
+    const LOG_LINES: usize = msglog::LINES
+    const LOG_LEN: usize = msglog::LEN
 
     // What a line is: feedback from the game, or something said in a conversation.
-    const LOG_FEEDBACK: u8 = 0
-    const LOG_DIALOG: u8 = 1
-
-    struct LogLine {
-        text: [192]u8,
-        len: usize,
-        kind: u8,
-        age: f32,               // seconds since it was added; the HUD fades recent feedback
-    }
-
-    // A ring of the last LOG_LINES lines: `total` counts every line ever added, line i (0 oldest
-    // kept) is at (first + i) % LOG_LINES.
-    struct MessageLog {
-        lines: [64]LogLine,
-        total: usize,
-    }
-
-    fn new_log {} -> MessageLog {
-        return MessageLog{ lines = [LogLine{ text = [0; 192], len = 0, kind = 0, age = 0.0 }; 64], total = 0 }
-    }
+    const LOG_FEEDBACK: u8 = msglog::FEEDBACK
+    const LOG_DIALOG: u8 = msglog::DIALOG
 
     // Lines kept.
-    fn log_count { log: *MessageLog } -> usize {
-        return if log.total < LOG_LINES { log.total } else { LOG_LINES }
-    }
+    fn log_count { log: *MessageLog } -> usize { return msglog::count{ log } }
 
     // Line `i`, oldest first.
-    fn log_text { log: *MessageLog, i: usize } -> []u8 {
-        let n = log_count{ log }
-        if i >= n { return "" }
-        let at = (log.total - n + i) % LOG_LINES
-        return log.lines[at].text[..log.lines[at].len]
-    }
+    fn log_text { log: *MessageLog, i: usize } -> []u8 { return msglog::text{ log, i } }
 
-    fn log_kind { log: *MessageLog, i: usize } -> u8 {
-        let n = log_count{ log }
-        if i >= n { return 0 }
-        return log.lines[(log.total - n + i) % LOG_LINES].kind
-    }
+    fn log_kind { log: *MessageLog, i: usize } -> u8 { return msglog::kind{ log, i } }
 
-    fn log_age { log: *MessageLog, i: usize } -> f32 {
-        let n = log_count{ log }
-        if i >= n { return 0.0 }
-        return log.lines[(log.total - n + i) % LOG_LINES].age
-    }
+    fn log_age { log: *MessageLog, i: usize } -> f32 { return msglog::age{ log, i } }
 
     // Adds a line (cut to LOG_LEN bytes).
-    fn log_add { mut log: MessageLog, text: []u8, kind: u8 } {
-        let at = log.total % LOG_LINES
-        let n = if text.len > LOG_LEN { LOG_LEN } else { text.len }
-        slice::copy(u8){ dst = log.lines[at].text[..n], src = text[..n] }
-        log.lines[at].len = n
-        log.lines[at].kind = kind
-        log.lines[at].age = 0.0
-        log.total = log.total + 1
-    }
+    fn log_add { mut log: MessageLog, text: []u8, kind: u8 } { msglog::add{ log = &log, text, kind } }
 
-    fn log_tick { mut log: MessageLog, dt: f32 } {
-        let n = log_count{ log = &log }
-        let mut i: usize = 0
-        while i < n {
-            let at = (log.total - n + i) % LOG_LINES
-            log.lines[at].age = log.lines[at].age + dt
-            i = i + 1
-        }
-    }
+    fn log_tick { mut log: MessageLog, dt: f32 } { msglog::tick{ log = &log, dt } }
 }

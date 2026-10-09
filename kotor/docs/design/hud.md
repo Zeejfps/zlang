@@ -77,8 +77,9 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
   icon; Disengage, clear-one) and for six seconds the combat-mode message show. Fighting orders
   given in combat queue behind the round (at most four), Shift makes them replace
   (docs/mechanics/combat.md).
-- **Feedback** (`feedback.ctx`, `log.ctx`): outbox `feedback` notes go to a 64-line ring
-  (`hud::MessageLog`, also read by the Messages menu); the young ones draw as blue lines under the
+- **Feedback** (`feedback.ctx`, `log.ctx`): outbox `feedback` notes go to the world's message log
+  (`w.messages`, `engine/msglog.ctx`: 64 feedback and 64 dialogue lines, saved with the party table;
+  `hud::MessageLog` names it here, and the Messages menu reads it); the young ones draw as blue lines under the
   minimap's notification icons and fade after six seconds.
 - **Notification icons** (`notify.ctx`): `ingame::notify{ ui, hud::NOTE_* }` lights the journal,
   credits, experience, alignment and item icons for four seconds. No engine routine calls it yet

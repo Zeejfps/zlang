@@ -151,7 +151,7 @@ namespace ingame {
         else if n == MENU_INVENTORY { try inventory_panel::open{ s = &ui.menus.inventory, g = &ui.gui, &w, &dev, panel } }
         else if n == MENU_CHARACTER { try character_panel::open{ s = &ui.menus.character, g = &ui.gui, &w, &dev, panel } }
         else if n == MENU_ABILITIES { try abilities_panel::open{ s = &ui.menus.abilities, g = &ui.gui, &w, &dev, panel } }
-        else if n == MENU_MESSAGES { try messages_panel::open{ s = &ui.menus.messages, g = &ui.gui, &w, &dev, panel, log = &ui.log } }
+        else if n == MENU_MESSAGES { try messages_panel::open{ s = &ui.menus.messages, g = &ui.gui, &w, &dev, panel, log = &w.messages } }
         else if n == MENU_JOURNAL { try journal_panel::open{ s = &ui.menus.journal, g = &ui.gui, &w, &dev, panel } }
         else if n == MENU_MAP { try map_panel::open{ s = &ui.menus.map, g = &ui.gui, &w, &dev, panel } }
         else { try options_panel::open{ s = &ui.menus.options, g = &ui.gui, &w, &dev, panel } }
@@ -162,7 +162,7 @@ namespace ingame {
         else if n == MENU_INVENTORY { inventory_panel::update{ s = &ui.menus.inventory, g = &ui.gui, &w, &dev, panel, dt } }
         else if n == MENU_CHARACTER { character_panel::update{ s = &ui.menus.character, g = &ui.gui, &w, &dev, panel, dt } }
         else if n == MENU_ABILITIES { abilities_panel::update{ s = &ui.menus.abilities, g = &ui.gui, &w, &dev, panel, dt } }
-        else if n == MENU_MESSAGES { messages_panel::update{ s = &ui.menus.messages, g = &ui.gui, &w, &dev, panel, dt, log = &ui.log } }
+        else if n == MENU_MESSAGES { messages_panel::update{ s = &ui.menus.messages, g = &ui.gui, &w, &dev, panel, dt, log = &w.messages } }
         else if n == MENU_JOURNAL { journal_panel::update{ s = &ui.menus.journal, g = &ui.gui, &w, &dev, panel, dt } }
         else if n == MENU_MAP { map_panel::update{ s = &ui.menus.map, g = &ui.gui, &w, &dev, panel, dt } }
         else { options_panel::update{ s = &ui.menus.options, g = &ui.gui, &w, &dev, panel, dt } }
@@ -173,7 +173,7 @@ namespace ingame {
         if n == MENU_INVENTORY { return inventory_panel::on_event{ s = &ui.menus.inventory, g = &ui.gui, &w, &dev, panel, ev } }
         if n == MENU_CHARACTER { return character_panel::on_event{ s = &ui.menus.character, g = &ui.gui, &w, &dev, panel, ev } }
         if n == MENU_ABILITIES { return abilities_panel::on_event{ s = &ui.menus.abilities, g = &ui.gui, &w, &dev, panel, ev } }
-        if n == MENU_MESSAGES { return messages_panel::on_event{ s = &ui.menus.messages, g = &ui.gui, &w, &dev, panel, ev, log = &ui.log } }
+        if n == MENU_MESSAGES { return messages_panel::on_event{ s = &ui.menus.messages, g = &ui.gui, &w, &dev, panel, ev, log = &w.messages } }
         if n == MENU_JOURNAL { return journal_panel::on_event{ s = &ui.menus.journal, g = &ui.gui, &w, &dev, panel, ev } }
         if n == MENU_MAP { return map_panel::on_event{ s = &ui.menus.map, g = &ui.gui, &w, &dev, panel, ev } }
         return options_panel::on_event{ s = &ui.menus.options, g = &ui.gui, &w, &dev, panel, ev }

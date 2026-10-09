@@ -177,7 +177,7 @@ namespace ingame {
             let n = text::next_word{ &words } ifnull { return }
             notify{ &ui, which = @as(usize, text::scan_decimal{ s = n }) }
         } else if ci::eq{ a = cmd, b = "say" } {
-            hud::log_add{ log = &ui.log, text = text::rest{ words }, kind = hud::LOG_FEEDBACK }
+            hud::log_add{ log = &w.messages, text = text::rest{ words }, kind = hud::LOG_FEEDBACK }
         } else if ci::eq{ a = cmd, b = "join" } {
             // The object joins the party (play will have the party lead's routines for this).
             let tag = text::next_word{ &words } ifnull { return }

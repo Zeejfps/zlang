@@ -352,6 +352,21 @@ fn test_party { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, w: *mu
     check{ &io, &r, ok = same_shape{ a = &doc, b = &doc2 }, what = "party: same fields as the install's, in order" }
     let items = twoda::rows{ t = w.tables.baseitems }
     check{ &io, &r, ok = list_len{ doc = &doc2, s = gff::ROOT, label = "PT_COST_MULT_LIS" } == items and items == list_len{ doc = &doc, s = gff::ROOT, label = "PT_COST_MULT_LIS" }, what = "party: one cost multiplier per baseitems row, as the install's" }
+    // The Messages logs come back as they were read (combat.md 10.1): both lists, in order, colours kept.
+    let fb_a = gff::get_list{ doc = doc, s = gff::ROOT, label = "PT_FB_MSG_LIST" } ifnull slice::empty(u32){}
+    let fb_b = gff::get_list{ doc = doc2, s = gff::ROOT, label = "PT_FB_MSG_LIST" } ifnull slice::empty(u32){}
+    let mut same_fb = fb_a.len == fb_b.len and fb_a.len > 0
+    let mut fi: usize = 0
+    while same_fb and fi < fb_a.len {
+        let ta = gff::get_string{ doc = doc, s = fb_a[fi], label = "PT_FB_MSG_MSG" } ifnull ""
+        let tb = gff::get_string{ doc = doc2, s = fb_b[fi], label = "PT_FB_MSG_MSG" } ifnull ""
+        let ca = gff::get_number{ doc = doc, s = fb_a[fi], label = "PT_FB_MSG_COLOR" } ifnull 9
+        let cb = gff::get_number{ doc = doc2, s = fb_b[fi], label = "PT_FB_MSG_COLOR" } ifnull 9
+        if ta.len > 0 { same_fb = slice::eq_bytes{ a = ta, b = tb } and ca == cb }
+        fi = fi + 1
+    }
+    _ = @fmt(&io, "party: {} feedback and {} dialogue lines kept\n", fb_b.len, list_len{ doc = &doc2, s = gff::ROOT, label = "PT_DLG_MSG_LIST" })
+    check{ &io, &r, ok = same_fb and list_len{ doc = &doc2, s = gff::ROOT, label = "PT_DLG_MSG_LIST" } == list_len{ doc = &doc, s = gff::ROOT, label = "PT_DLG_MSG_LIST" }, what = "party: the message logs round-trip" }
     check{ &io, &r, ok = list_len{ doc = &doc2, s = gff::ROOT, label = "PT_AVAIL_NPCS" } == 9 and list_len{ doc = &doc2, s = gff::ROOT, label = "PT_PAZSIDELIST" } == 10 and list_len{ doc = &doc2, s = gff::ROOT, label = "PT_MEMBERS" } == 1, what = "party: list sizes" }
     let cards = gff::get_list{ doc = doc2, s = gff::ROOT, label = "PT_PAZAAKCARDS" } ifnull slice::empty(u32){}
     check{ &io, &r, ok = cards.len == 19 and (gff::get_int{ doc = doc2, s = cards[0], label = "PT_PAZAAKCOUNT" } ifnull 99999) == 2 and (gff::get_byte{ doc = doc2, s = cards[18], label = "PT_PAZAAKCOUNT" } ifnull 255) == 0, what = "party: pazaak is 18 INTs and a BYTE" }

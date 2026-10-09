@@ -16,15 +16,15 @@
 namespace test_journal {
     fn run { mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device, cmd: []u8, args: []u8 } -> bool {
         if ci::eq{ a = cmd, b = "log" } {
-            hud::log_add{ log = &ui.log, text = args, kind = hud::LOG_FEEDBACK }
+            hud::log_add{ log = &w.messages, text = args, kind = hud::LOG_FEEDBACK }
             return true
         }
         if ci::eq{ a = cmd, b = "logred" } {
-            hud::log_add{ log = &ui.log, text = args, kind = messages_panel::KIND_FEEDBACK_RED }
+            hud::log_add{ log = &w.messages, text = args, kind = messages_panel::KIND_FEEDBACK_RED }
             return true
         }
         if ci::eq{ a = cmd, b = "dialog" } {
-            hud::log_add{ log = &ui.log, text = args, kind = hud::LOG_DIALOG }
+            hud::log_add{ log = &w.messages, text = args, kind = hud::LOG_DIALOG }
             return true
         }
         if not ci::eq{ a = cmd, b = "journal" } { return false }
