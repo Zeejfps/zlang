@@ -587,7 +587,11 @@ solo; spell rounds (Force powers) do not use rounds. Looked at with `--log comba
   `+0xa00` bit 0 is set). Every hostile act resets the timeout: `SignalCombatWith` (`0x004fbbe0`) is
   called by attacks (`AddAttackActions` signals the attacker with itself), by ON_MELEE_ATTACKED on
   both sides, by damage, by counter-spells and by the placeable and door event handlers. It puts
-  the creature in combat when the other party is hostile (reputation < 11) or is itself. If the
+  the creature in combat when the other party is hostile (reputation < 11) or is itself, with
+  reason 1 when the other creature's attempted attack target (`+0x50c`) or attempted spell target
+  (`+0x524`) is this creature and 2 otherwise, so an attacker's signal to itself is reason 2 and
+  keeps it hidden until its swing; each pulled-in mate gets its reason by the same test. Ours:
+  `fight::is_targeted_by` (no spell target is kept: a cast in the other's queue on it counts). If the
   creature's plot flag (`+0xf8`) is clear, it also pulls in every faction-mate within range that
   is hostile to the other party (30 m when the signalling creature is player-controlled, `+0xa88`;
   otherwise the member's sight range, or `ranges.2da` row 11 PrimaryRange for a non-creature), and

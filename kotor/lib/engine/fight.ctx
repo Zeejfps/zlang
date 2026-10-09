@@ -596,9 +596,26 @@ namespace fight {
         let o = world::object{ w = &w, id } ifnull { return }
         if obj::creature{ o } is some{ value = c } {
             if c.dead { return }
-            if other == id or is_hostile_to{ w = &w, o, other } { set_combat{ &w, id, bark = true } }
+            if other == id or is_hostile_to{ w = &w, o, other } { set_combat{ &w, id, bark = true, attacked = is_targeted_by{ w = &w, id, who = other } } }
         }
         pull_in{ &w, id, other }
+    }
+
+    // SignalCombatWith's reason (0x004fbbe0): 1, being attacked, when `who`'s attempted attack target
+    // (+0x50c) or attempted spell target (+0x524) is `id`, else 2 (attacking or reacting; an attacker's
+    // signal to itself). Ours keeps no spell target: a cast in `who`'s queue on `id` counts.
+    fn is_targeted_by { w: *world::World, id: u32, who: u32 } -> bool {
+        let o = world::object{ w, id = who } ifnull { return false }
+        let c = obj::creature{ o } ifnull { return false }
+        if c.attempted_target == id { return true }
+        let queue = list::items{ list = o.actions }
+        let mut i: usize = 0
+        while i < queue.len {
+            let a = queue[i]
+            i = i + 1
+            if a.kind == actions::Kind::cast_spell and actions::object_param{ a = &a, i = 1 } == id { return true }
+        }
+        return false
     }
 
     // Whether `o`'s standing toward the object `other` is hostile (below 11).
@@ -609,7 +626,7 @@ namespace fight {
 
     // SetCombatState(1) (0x004f2610): in combat for 8 s. A creature of the Neutral standard faction
     // never is: the call leaves combat instead (ours: a round it is running goes on).
-    fn set_combat { mut w: world::World, id: u32, bark: bool } {
+    fn set_combat { mut w: world::World, id: u32, bark: bool, attacked: bool } {
         let o = world::object{ w = &w, id } ifnull { return }
         let c = obj::creature{ o } ifnull { return }
         if o.faction == NEUTRAL_FACTION {
@@ -620,9 +637,10 @@ namespace fight {
         }
         let was = c.in_combat
         c.in_combat = true
-        // Combat ends stealth: the attacked leave it as their combat begins, attackers as
-        // their attack does (re/combat.md, AIUpdate and AIActionCombat).
-        stealth::leave{ &w, id }
+        // Combat ends stealth: the attacked (reason 1) leave it as their combat begins (AIUpdate
+        // 0x004fe210 drops it every update while +0xac0 is 1), attackers as their attack does
+        // (AIActionCombat): an attacker that signals itself as it walks up stays hidden until its swing.
+        if attacked { stealth::leave{ &w, id } }
         if c.fighter is some{ value = f } { f.combat_ms = COMBAT_MS }
         if bark and not was { bark{ &w, id, first = VOICE_BATTLE, count = 6, chance_in = 1, quiet = false } }
     }
@@ -653,7 +671,7 @@ namespace fight {
             if world::standing{ w = &w, from = m.faction, toward = foe.faction } >= 11 { continue }
             let range = if party { 30.0 } else { mc.sight_range }
             if doors::distance_2d{ a = m.position, b = o.position } > range { continue }
-            set_combat{ &w, id = m.id, bark = false }
+            set_combat{ &w, id = m.id, bark = false, attacked = is_targeted_by{ w = &w, id = m.id, who = other } }
             if mc.fighter is some{ value = mf } { mf.stirs = mf.stirs + 1 }
         }
     }
