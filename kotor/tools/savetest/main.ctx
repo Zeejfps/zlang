@@ -272,6 +272,7 @@ fn test_info { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, save_di
     let mut shown: u32 = 0
     let differing = count_differences{ &io, a = &doc, sa = root, b = &doc2, sb = root, parent = "savenfo", skip = slice::empty([]u8){}, &shown }
     check{ &io, &r, ok = differing == 0, what = "info: the install's file written back, every field as it was" }
+    check{ &io, &r, ok = slice::eq_bytes{ a = bytes, b = data }, what = "info: the install's file written back byte for byte" }
 
     // A transition autosave: PCAUTOSAVE, no SAVEGAMENAME.
     let mut auto = info
@@ -388,27 +389,6 @@ fn locations_and_strings_differing { g: *globals::Globals, doc: *gff::Doc } -> u
     return bad
 }
 
-// Location slots (24 bytes: position, orientation x, y, z) whose floats differ by 0.001 or more.
-fn location_slots_differing { a: []u8, b: []u8 } -> usize {
-    if a.len != b.len { return a.len / 24 + 1 }
-    let mut bad: usize = 0
-    let mut slot: usize = 0
-    while 24 * (slot + 1) <= a.len {
-        let mut same = true
-        let mut k: usize = 0
-        while k < 6 {
-            let at = 24 * slot + 4 * k
-            let x = le::get_f32{ data = a, at } iferr 0.0
-            let y = le::get_f32{ data = b, at } iferr 0.0
-            if math::abs{ x = x - y } >= 0.001 { same = false }
-            k = k + 1
-        }
-        if not same { bad = bad + 1 }
-        slot = slot + 1
-    }
-    return bad
-}
-
 fn test_globals { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, w: *mut world::World, save_dir: []u8, out_dir: []u8 } -> ! {
     let data = try read_file{ &fs, &h, dir = save_dir, name = "GLOBALVARS.res" }
     let doc = try gff::parse{ data, realloc = heap::alloc, heap = &h }
@@ -448,16 +428,14 @@ fn test_globals { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, w: *
     check{ &io, &r, ok = locations_and_strings_differing{ g, doc = &doc } == 0, what = "globals: the install's locations and strings load as stored" }
 
     // Written straight back, the file is the install's: the same names in the same order, the
-    // same packed bytes, the same location slots (to float rounding; the facing goes through
-    // degrees and back).
+    // same packed bytes and location floats, and the same GFF layout.
     let back = try save::write_globals{ realloc = heap::alloc, heap = &h, g }
     let back_doc = try gff::parse{ data = back, realloc = heap::alloc, heap = &h }
     let mut shown: u32 = 0
-    let skip: [1][]u8 = ["ValLocation"]
-    let differing = count_differences{ &io, a = &doc, sa = gff::ROOT, b = &back_doc, sb = gff::ROOT, parent = "globals", skip = skip[..], &shown }
-    let slots_differing = location_slots_differing{ a = gff::get_void{ doc, s = gff::ROOT, label = "ValLocation" } ifnull "", b = gff::get_void{ doc = back_doc, s = gff::ROOT, label = "ValLocation" } ifnull "" }
-    _ = @fmt(&io, "globals: written back, {} fields and {} location slots differ from the install's\n", differing, slots_differing)
-    check{ &io, &r, ok = differing == 0 and slots_differing == 0, what = "globals: the install's file written back, every value as it was" }
+    let differing = count_differences{ &io, a = &doc, sa = gff::ROOT, b = &back_doc, sb = gff::ROOT, parent = "globals", skip = slice::empty([]u8){}, &shown }
+    _ = @fmt(&io, "globals: written back, {} fields differ from the install's\n", differing)
+    check{ &io, &r, ok = differing == 0, what = "globals: the install's file written back, every value as it was" }
+    check{ &io, &r, ok = slice::eq_bytes{ a = back, b = data }, what = "globals: the install's file written back byte for byte" }
 
     // Give the round trip something to carry: a boolean in the first byte, one in the second, the
     // last one, signed numbers, a string, locations.
@@ -623,6 +601,7 @@ fn test_party { mut io: Io, mut fs: Fs, mut h: heap::Heap, mut r: Report, w: *mu
     let differing = count_differences{ &io, a = &doc, sa = gff::ROOT, b = &doc2, sb = gff::ROOT, parent = "party", skip = slice::empty([]u8){}, &shown }
     _ = @fmt(&io, "party: written back, {} fields differ from the install's\n", differing)
     check{ &io, &r, ok = differing == 0, what = "party: the install's table written back, every field as it was" }
+    check{ &io, &r, ok = slice::eq_bytes{ a = bytes, b = data }, what = "party: the install's table written back byte for byte" }
 
     w.party = party::new{}
     try save::read_party_table{ w, doc = &doc2 }

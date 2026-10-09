@@ -5,9 +5,10 @@
 namespace globals {
     enum Type: u8 { boolean, number, string, location }
 
-    // `stored`: a location global was given a value. The engine keeps a location's orientation as a
-    // vector, so a stored facing of 0 saves as (1, 0, 0) while an untouched one saves as zeros.
-    struct Global { name: []u8, kind: Type, number: i32, text: []mut u8, location: values::Location, stored: bool }
+    // `orientation`: a location global's direction as the engine keeps and saves it, a vector: the
+    // facing's (cos, sin, 0) when a script stores it, a save's own floats when loaded, zero for one
+    // never set (so a stored facing of 0 saves as (1, 0, 0) and an untouched one as zeros).
+    struct Global { name: []u8, kind: Type, number: i32, text: []mut u8, location: values::Location, orientation: math::Vec3 }
 
     struct Globals {
         heap: *mut heap::Heap,
@@ -32,7 +33,7 @@ namespace globals {
                 else if ci::eq{ a = type_name, b = "string" } { Type::string }
                 else if ci::eq{ a = type_name, b = "location" } { Type::location }
                 else { Type::boolean }
-            try list::push{ list = &g.all, item = Global{ name, kind, number = 0, text = slice::empty(u8){}, location = values::no_location{}, stored = false } }
+            try list::push{ list = &g.all, item = Global{ name, kind, number = 0, text = slice::empty(u8){}, location = values::no_location{}, orientation = math::vec3::zero{} } }
             try map::put{ m = &g.by_name, key = name, value = g.all.len - 1 }
         }
         return g
@@ -80,6 +81,7 @@ namespace globals {
     fn set_location { g: *Globals, name: []u8, value: values::Location } {
         let v = find{ g, name, kind = Type::location } ifnull { return }
         v.location = value
-        v.stored = true
+        let rad = math::radians{ degrees = value.facing }
+        v.orientation = math::Vec3{ x = math::cosf{ x = rad }, y = math::sinf{ x = rad }, z = 0.0 }
     }
 }

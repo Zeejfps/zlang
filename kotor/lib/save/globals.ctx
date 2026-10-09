@@ -24,10 +24,7 @@ namespace save {
         let all = list::items{ list = g.all }
         let mut slots: [1775]u32
         let order = hash_order{ all, slots = slots[..] }
-        try put_global_names{ &b, all, order, kind = globals::Type::boolean, label = "CatBoolean" }
-        try put_global_names{ &b, all, order, kind = globals::Type::number, label = "CatNumber" }
-        try put_global_names{ &b, all, order, kind = globals::Type::location, label = "CatLocation" }
-        try put_global_names{ &b, all, order, kind = globals::Type::string, label = "CatString" }
+        try put_global_names{ &b, all, order }
 
         let mut vals = list::new(u8, S){ realloc, heap = &heap }
         defer list::free{ list = &vals }
@@ -67,7 +64,7 @@ namespace save {
             let i = @as(usize, order[j])
             j = j + 1
             if all[i].kind == globals::Type::location and k < LOCATION_SLOTS {
-                try put_location_slot{ out = &vals, l = all[i].location, stored = all[i].stored }
+                try put_location_slot{ out = &vals, l = all[i].location, orientation = all[i].orientation }
                 k = k + 1
             }
         }
@@ -98,17 +95,26 @@ namespace save {
         return n
     }
 
-    // A List field with one `Name` struct for each global of `kind`, in `order`.
-    fn put_global_names(S) { mut b: gffw::Builder(S), all: []globals::Global, order: []u32, kind: globals::Type, label: []u8 } -> ! {
-        let l = try gffw::put_list{ &b, owner = gffw::ROOT, label }
+    // The four name lists, as WriteTable (0x005299b0) builds them: the List fields first, then one
+    // walk of the table in `order` that appends each name (a struct with `Name`) to its kind's
+    // list, so the file's structs and fields come in the original's order too.
+    fn put_global_names(S) { mut b: gffw::Builder(S), all: []globals::Global, order: []u32 } -> ! {
+        let bools = try gffw::put_list{ &b, owner = gffw::ROOT, label = "CatBoolean" }
+        let numbers = try gffw::put_list{ &b, owner = gffw::ROOT, label = "CatNumber" }
+        let locations = try gffw::put_list{ &b, owner = gffw::ROOT, label = "CatLocation" }
+        let strings = try gffw::put_list{ &b, owner = gffw::ROOT, label = "CatString" }
         let mut j: usize = 0
         while j < order.len {
             let i = @as(usize, order[j])
             j = j + 1
-            if all[i].kind == kind {
-                let e = try gffw::add_element{ &b, list = l, id = 0 }
-                _ = try gffw::add_value{ &b, owner = e, label = "Name", value = gff::Value::exostring{ v = all[i].name } }
+            let l = match all[i].kind {
+                boolean => { bools }
+                number => { numbers }
+                location => { locations }
+                string => { strings }
             }
+            let e = try gffw::add_element{ &b, list = l, id = 0 }
+            _ = try gffw::add_value{ &b, owner = e, label = "Name", value = gff::Value::exostring{ v = all[i].name } }
         }
     }
 
@@ -158,17 +164,16 @@ namespace save {
         return c
     }
 
-    // One location slot: position, then the facing as a unit vector (AngleToVector's, degrees from
-    // +X). A location nobody set, which the install's saves show as all zeros, stays all zeros.
-    fn put_location_slot(S) { mut out: list::List(u8, S), l: values::Location, stored: bool } -> ! {
-        let unset = not stored
+    // One location slot: position, then the orientation vector the global keeps (the facing's unit
+    // vector, degrees from +X, or a loaded save's own floats). A location nobody set, which the
+    // install's saves show as all zeros, stays all zeros.
+    fn put_location_slot(S) { mut out: list::List(u8, S), l: values::Location, orientation: math::Vec3 } -> ! {
         try le::put_f32{ &out, v = l.position.x }
         try le::put_f32{ &out, v = l.position.y }
         try le::put_f32{ &out, v = l.position.z }
-        let rad = math::radians{ degrees = l.facing }
-        try le::put_f32{ &out, v = if unset { 0.0 } else { math::cosf{ x = rad } } }
-        try le::put_f32{ &out, v = if unset { 0.0 } else { math::sinf{ x = rad } } }
-        try le::put_f32{ &out, v = 0.0 }
+        try le::put_f32{ &out, v = orientation.x }
+        try le::put_f32{ &out, v = orientation.y }
+        try le::put_f32{ &out, v = orientation.z }
     }
 
     // Loads a GLOBALVARS.res into the catalogue the game has. As the engine does, everything is
@@ -205,12 +210,17 @@ namespace save {
         k = 0
         while k < location_names.len and k < LOCATION_SLOTS and 24 * (k + 1) <= locations.len {
             let name = gff::get_string{ doc = doc.*, s = location_names[k], label = "Name" } ifnull ""
-            // An all-zero orientation is a location never set (set_location marks it stored).
-            let ox = try le::get_f32{ data = locations, at = 24 * k + 12 }
-            let oy = try le::get_f32{ data = locations, at = 24 * k + 16 }
+            // The orientation is kept as saved, so the slot writes back bit for bit (all zeros:
+            // never set).
             let value = try read_location_slot{ data = locations, at = 24 * k }
-            if ox != 0.0 or oy != 0.0 { globals::set_location{ g, name, value } }
-            else if globals::find{ g, name, kind = globals::Type::location } is some{ value = v } { v.location = value }
+            if globals::find{ g, name, kind = globals::Type::location } is some{ value = v } {
+                v.location = value
+                v.orientation = math::Vec3{
+                    x = try le::get_f32{ data = locations, at = 24 * k + 12 },
+                    y = try le::get_f32{ data = locations, at = 24 * k + 16 },
+                    z = try le::get_f32{ data = locations, at = 24 * k + 20 },
+                }
+            }
             k = k + 1
         }
 
@@ -237,7 +247,7 @@ namespace save {
                 }
                 location => {
                     p.location = values::no_location{}
-                    p.stored = false
+                    p.orientation = math::vec3::zero{}
                 }
                 else => { p.number = 0 }
             }
