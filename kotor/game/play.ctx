@@ -583,8 +583,12 @@ namespace play {
             // The conversation's focus (game/focus.ctx), eased every tick so pictures taken without rendering see it too.
             let view_focus = focus::update{ f = &fcs, eye = camera.eye, at = dlgview::focus_point{ v = &dview, w = &w, sc = &sc, eye = camera.eye, forward = camera.dir, fov = camera.style.fov }, dt = camera_dt }
             let pc = world::object{ w = &w, id = w.pc }
-            let player_room = if pc != null { walkmap::room_at{ m = &w.walk, x = pc.position.x, y = pc.position.y, z = pc.position.z + 0.5 } } else { -1 }
-            let room = dlgview::view_room{ v = &dview, w = &w, player_room }
+            let player_room = if pc != null { walkmap::room_under{ m = &w.walk, x = pc.position.x, y = pc.position.y } } else { -1 }
+            // A point outside every walkmesh leaves the room as it was (UpdateAreaSoundEnvironment
+            // 0x005ee860 sets the scene's room only when it finds one): a conversation's static
+            // camera hung outside the walkmeshes shows what the last room saw, not every room.
+            let found = dlgview::view_room{ v = &dview, w = &w, player_room }
+            let room = if found >= 0 { found } else { sc.current_room }
             scene::update_visibility{ &sc, w = &w, room }
             ui.fade_busy = dlgpanel::fade_running{ p = dview.panels }    // the status summary waits for a fade
             ui.frame_dt = dt

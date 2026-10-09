@@ -250,6 +250,23 @@ already there, so links go both ways; mode 0 removes a pair from both lists). Ro
 the parent room is unknown or `n` is 0, its child lines are not consumed and get read as headers.
 The function returns 0 only when the file does not exist.
 
+Which rooms are drawn (high): `0x0046d070`, from the scene's render (`0x0046e5c0`), lists the
+current room (scene `+0xd4`) and the rooms its VIS list names, or every room when there is no
+current room, when the scene has no VIS (scene `+0xd8` set by slot 35; slot 34 clears it) or when the
+global `0x0078e5c8` (1 in the image) is 0. The current room is drawn whatever its VIS entry says, so
+`m02ae_07a`, the Upper City cantina's duelling ring, whose entry lists no room, still shows its
+crowd (172 sprite emitters) whenever the view is in it. The current room is set through scene slot 31
+(`0x00452c90`, by index; slot 32 `0x0044f8c0` takes the room itself): `CSWCArea::LoadArea` sets room 0,
+and every frame after `UpdateObjectsAndRender` the main loop (`0x00602eb0`) calls
+`CClientExoAppInternal::UpdateAreaSoundEnvironment` (`0x005ee860`) with a point: party member 0's
+position, or while the in-game GUI's conversation flag (`+0xb4`) is up `0x0062ed30`'s point, the
+player creature's position unless a conversation camera is active (`+0xb20` / `+0xb24`), then the
+camera's (camera slot `+0x20`). It finds the room under the point (`CSWSArea::GetRoomIndexAtPoint`
+`0x004bb730` through `0x004aeaf0`, with its flag 0: the first room in LYT order whose walkmesh has
+any face, walkable or not, under (x, y) at any height, `CSWWalkMesh::FindFaceUnderPoint`) and, only when there is one, makes it the scene's current room and applies the
+room's environment audio; a point over no room changes nothing, so the last room stays. (A client
+option byte `+0x6d` of 7 uses the camera's position instead; not traced.)
+
 ## Saves and the CURRENTGAME / GAMEINPROGRESS folders
 
 - `GAMEINPROGRESS:` holds the state of every module visited in the current game (`<m>.sav` ERFs,

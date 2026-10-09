@@ -123,6 +123,21 @@ namespace walkmap {
         return f.room
     }
 
+    // The room a point is in, for drawing (LYT order, -1 for none): the first room whose walkmesh
+    // has any face over (x, y), whatever its height or surface (CSWSArea::GetRoomIndexAtPoint
+    // 0x004bb730 as UpdateAreaSoundEnvironment asks it, docs/re/modules.md).
+    fn room_under { m: *Map, x: f32, y: f32 } -> i32 {
+        let rooms = list::items{ list = m.rooms }
+        let mut i: usize = 0
+        while i < rooms.len {
+            let mesh = rooms[i].mesh
+            i = i + 1
+            if mesh == null { continue }
+            if bwm::has_face_over{ w = mesh, x, y } { return @as(i32, i - 1) }
+        }
+        return -1
+    }
+
     // Whether an active placed walkmesh (a closed door, a placeable) has a face that doesn't let
     // anyone walk over (x, y) at about height z.
     fn blocked { m: *Map, x: f32, y: f32, z: f32 } -> bool {

@@ -450,7 +450,8 @@ and it can be rebuilt from the world at any time):
   layers, `mdl_anim::play_layer`, each moving the nodes it keys, re/modules.md) and lights, and the
   models of their reference nodes (`scene.room_refs`: shrubs, vines, lamps, Manaan's freighters), each a part
   looping its `default` at its parent's node and drawn with its room; the VIS table. Each frame the camera's room is the room whose walkmesh is under the
-  leader (else the camera); rooms not visible from it per VIS are skipped (a room without a VIS
+  leader (under the camera while a conversation's shot is up; a point over no walkmesh keeps the room
+  it had, as UpdateAreaSoundEnvironment 0x005ee860 does); the current room is always drawn, and rooms not visible from it per VIS are skipped (a room without a VIS
   entry sees everything, vis.md). Room lights go into the frame for dynamic objects.
 - **Visuals**, one per object that has a model, keyed by object id (`scene.visuals`): created when
   a new id appears in `w.objects.all`, dropped when it's gone. A visual is a set of parts, each a

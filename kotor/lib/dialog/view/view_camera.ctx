@@ -250,7 +250,7 @@ namespace dlgview {
         // eye and where it looks, the room under it, and the two participants' eyes it was built from).
         if v.log_shot and w.log.dialog {
             v.log_shot = false
-            let room = walkmap::room_at{ m = &w.walk, x = rig.eye.x, y = rig.eye.y, z = rig.eye.z }
+            let room = walkmap::room_under{ m = &w.walk, x = rig.eye.x, y = rig.eye.y }
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "dialog camera: mode {} angle {} static {} blocked {} eye {} {} {} forward {} {} {} fov {} room {}\n", @as(u32, v.mode), v.angle, v.static_id, v.blocked, rig.eye.x, rig.eye.y, rig.eye.z, rig.forward.x, rig.forward.y, rig.forward.z, rig.fov, room)
             let se = eye_point{ w = &w, sc, id = v.speaker }
@@ -292,9 +292,9 @@ namespace dlgview {
     }
 
     // The room the picture is seen from: the player's, unless a shot is up, then the room under
-    // the camera (none, which shows every room, when it hangs outside the walkmeshes).
+    // the camera (-1 when it hangs outside the walkmeshes: the caller keeps the room it had).
     fn view_room { v: *View, w: *world::World, player_room: i32 } -> i32 {
         if not v.overriding { return player_room }
-        return walkmap::room_at{ m = &w.walk, x = v.rig.eye.x, y = v.rig.eye.y, z = v.rig.eye.z }
+        return walkmap::room_under{ m = &w.walk, x = v.rig.eye.x, y = v.rig.eye.y }
     }
 }

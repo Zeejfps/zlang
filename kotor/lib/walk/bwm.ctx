@@ -496,6 +496,36 @@ namespace bwm {
         return best
     }
 
+    // Whether any face, walkable or not and at any height, lies over (x, y): the vertical query
+    // of CSWWalkMesh::FindFaceUnderPoint (0x00581530) that picks the room a point is in.
+    fn has_face_over { w: Walkmesh, x: f32, y: f32 } -> bool {
+        if w.nodes.len == 0 {
+            let mut f: usize = 0
+            while f < w.faces.len {
+                if is_over_triangle{ c = face_corners{ w, face = f }, x, y } { return true }
+                f = f + 1
+            }
+            return false
+        }
+        let mut stack: [STACK]u32
+        let mut sp: usize = 1
+        while sp > 0 {
+            sp = sp - 1
+            let node = w.nodes[stack[sp]]
+            let b = node.box
+            if x < b.min.x - EDGE_SLACK or x > b.max.x + EDGE_SLACK or y < b.min.y - EDGE_SLACK or y > b.max.y + EDGE_SLACK { continue }
+            if node.face >= 0 {
+                if is_over_triangle{ c = face_corners{ w, face = @as(usize, node.face) }, x, y } { return true }
+                continue
+            }
+            if sp + 2 > STACK { continue }
+            stack[sp] = @as(u32, node.right)
+            stack[sp + 1] = @as(u32, node.left)
+            sp = sp + 2
+        }
+        return false
+    }
+
     // Ties go to the lower face, so the tree and a search of every face agree exactly.
     fn beats_floor { found: bool, best: Floor, face: u32, z: f32 } -> bool {
         return not found or z > best.z or (z == best.z and face < best.face)
