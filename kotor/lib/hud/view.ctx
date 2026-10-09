@@ -56,7 +56,17 @@ namespace hud {
     struct OnScreen { x0: f32, y0: f32, x1: f32, y1: f32, top: math::Vec2 }
 
     fn box_on_screen { p: Projector, o: *obj::Object } -> ?OnScreen {
+        return box_of_shape{ p, o, s = shape_of{ o } }
+    }
+
+    // A dead creature lying where it fell: as long as it stood tall, every way round (which way it
+    // fell is the death animation's), and knee high.
+    fn lying_shape { o: *obj::Object } -> Shape {
         let s = shape_of{ o }
+        return Shape{ half_x = s.height * 0.5, half_y = s.height * 0.5, height = 0.5 }
+    }
+
+    fn box_of_shape { p: Projector, o: *obj::Object, s: Shape } -> ?OnScreen {
         // Models face +Y; the object's facing vector turns them about Z by atan2(y, x) - pi/2.
         let yaw = math::atan2f{ y = o.orientation.y, x = o.orientation.x } - 1.5707964
         let cs = math::cosf{ x = yaw }

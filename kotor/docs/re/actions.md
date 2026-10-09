@@ -1598,8 +1598,14 @@ evicted corpse's bag gets visible 1 without a fade. (high for the fields and cal
 reading of `+0x88` as how long the faded object lingers) Ours (corpses.ctx) keeps the dead
 creature's object out of the world in `w.corpses` (ring and fades as above, the body freed when its
 fade ends), the scene draws it with the visual made while it lived, and a bag in the ring is not
-drawn (it stays clickable: the original's hidden bag is still an object the cursor finds; med) and
-sounds as row 53. A `Corpse` bag row (the rancor, the krayt) and `DestroyObject` leave nothing of
+drawn and sounds as row 53. It stays clickable, and the body is how: the pointer's scene ray
+(`ProcessInput` 0x006227e0, movement.md 7.2) that hits a client creature whose `+0x3dc` names a bag
+hovers the bag instead, hidden or not, without the selectable list's visibility test; a body with no
+bag is refused while it is in the ring (`0x00604bc0`). The hidden bag itself (`0x0064d500`: visible
+0 at once, `0x0063e220(0)`) keeps its place in the selectable list (a useable placeable), so Q/E and
+the list pick find it too. Ours: `hud::pick_at` gives the bag for a point on its body (a lying box
+as long as the creature stood tall, every way round: ours) and the bag's own box. (high; checked by
+`tools/combat/corpses.sh`, `ui bodypick`) A `Corpse` bag row (the rancor, the krayt) and `DestroyObject` leave nothing of
 the creature, as before (the original keeps a `Corpse` creature's client body too, under the
 corpse placeable; ours draws the placeable alone). A bashed door is opened (`CSWSDoor::Open`, combat.md
 6.6), so it sounds `Opened`; a bashed container opens rather than dies (no sound but the hits'). No

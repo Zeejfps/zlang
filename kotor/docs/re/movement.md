@@ -1609,8 +1609,9 @@ gives the select cursor 0x2d; anything else the default cursor. The pick has two
 flow, med for the per-type rules):
 
 1. *A scene ray under the pointer* (a `CAurRayQuery` cast by the camera) takes the model it hits by
-   type: a creature (a dead or dying one is refused when it is in a four-entry id list checked by
-   `0x00604bc0`; low); an item; a trigger, a mine only while it plays 10144
+   type: a creature (one whose client `+0x3dc` names a body bag hovers that bag instead, hidden
+   behind the body or not; one with none, dead or dying, is refused while it is in the area's
+   corpse ring, which `0x00604bc0` searches: actions.md 3.15; high); an item; a trigger, a mine only while it plays 10144
    (7.1); a placeable only when useable (client `+0x128`) and not static (server `+0x398`), and one that
    is not is left out and the ray cast again when its placeables.2da row has a non-zero value in a
    column not identified (`DAT_007a225c`; low); a door only when not open (10050 / 10051) and its

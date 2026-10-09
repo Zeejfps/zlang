@@ -425,6 +425,26 @@ namespace hud {
                 best = o.id
             }
         }
+        // A body that left a bag: the pointer on the body is on its bag (ProcessInput 0x006227e0: a creature
+        // the ray hits whose client +0x3dc names a bag hovers the bag), hidden behind the body or not.
+        let bodies = list::items{ list = w.corpses }
+        i = 0
+        while i < bodies.len {
+            let k = bodies[i]
+            i = i + 1
+            // The ray's pick does not consult the selectable list, so not the bag's own line of sight either.
+            if k.bag == obj::INVALID or not is_selectable_kind{ w, id = k.bag } { continue }
+            let b = box_of_shape{ p, o = k.o, s = lying_shape{ o = k.o } } ifnull { continue }
+            if fx < b.x0 or fx > b.x1 or fy < b.y0 or fy > b.y1 { continue }
+            let dx = k.o.position.x - p.eye.x
+            let dy = k.o.position.y - p.eye.y
+            let dz = k.o.position.z - p.eye.z
+            let d = dx * dx + dy * dy + dz * dz
+            if d < best_d {
+                best_d = d
+                best = k.bag
+            }
+        }
         return best
     }
 
