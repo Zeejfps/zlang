@@ -349,6 +349,18 @@ namespace gui {
     // then also draws the tooltip and the pointer.
     fn draw_panels { mut g: Gui, mut frame: render::Frame } {
         if g.hidden { return }
+        draw_panels_under_views{ &g, &frame }
+        if has_overlay{ &g } { return }
+        let screen = rect_of{ x = 0, y = 0, w = g.ui_w, h = g.ui_h }
+        draw_tooltip{ &g, &frame, screen }
+        draw_cursor{ &g, &frame, screen }
+    }
+
+    // draw_panels without the tooltip and the pointer, for a caller that draws 3D views over the
+    // panels (character generation's models) and then calls draw_overlay, which ends with them:
+    // the pointer must stay over the views, as the original's is.
+    fn draw_panels_under_views { mut g: Gui, mut frame: render::Frame } {
+        if g.hidden { return }
         update_visibility{ &g }
         render::begin_ui{ &frame, width = @as(f32, g.ui_w), height = @as(f32, g.ui_h), target = null }
         let screen = rect_of{ x = 0, y = 0, w = g.ui_w, h = g.ui_h }
@@ -363,9 +375,6 @@ namespace gui {
             }
             pass = pass + 1
         }
-        if has_overlay{ &g } { return }
-        draw_tooltip{ &g, &frame, screen }
-        draw_cursor{ &g, &frame, screen }
     }
 
     fn has_overlay { mut g: Gui } -> bool {
@@ -378,10 +387,10 @@ namespace gui {
         return false
     }
 
-    // The controls draw_panels held back, in a UI pass of their own over what the caller drew since,
-    // then the tooltip and the pointer. Nothing happens when no panel holds any back.
+    // The controls draw_panels held back, if any, in a UI pass of their own over what the caller
+    // drew since, then the tooltip and the pointer. Goes with draw_panels_under_views.
     fn draw_overlay { mut g: Gui, mut frame: render::Frame } {
-        if g.hidden or not has_overlay{ &g } { return }
+        if g.hidden { return }
         render::begin_ui{ &frame, width = @as(f32, g.ui_w), height = @as(f32, g.ui_h), target = null }
         let screen = rect_of{ x = 0, y = 0, w = g.ui_w, h = g.ui_h }
         let ps = list::items{ list = g.panels }

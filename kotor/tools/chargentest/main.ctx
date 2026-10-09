@@ -11,22 +11,25 @@
 //   slide:TAG:V   press at fraction V (0..100) along a slider
 //   size:WxH      the window size (before the first command)
 //
-// Options: --movies (play the start-up movies; otherwise skipped), --game DIR, --out DIR.
+// Options: --movies (play the start-up movies; otherwise skipped), --cursor (draw the pointer), --game
+// DIR, --out DIR.
 // After each command that makes the front end say something other than "running", the outcome
 // is printed (new game, load game, quit).
 
 const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
 
-struct Options { game: []u8, out: []u8, movies: bool, audio: bool, first: usize }
+struct Options { game: []u8, out: []u8, movies: bool, audio: bool, cursor: bool, first: usize }
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } -> i32 {
-    let mut o = Options{ game = DEFAULT_GAME, out = "kotor/out/gui", movies = false, audio = false, first = args.len }
+    let mut o = Options{ game = DEFAULT_GAME, out = "kotor/out/gui", movies = false, audio = false, cursor = false, first = args.len }
     let mut i: usize = 0
     while i < args.len {
         if slice::eq_bytes{ a = args[i], b = "--movies" } {
             o.movies = true
         } else if slice::eq_bytes{ a = args[i], b = "--audio" } {
             o.audio = true
+        } else if slice::eq_bytes{ a = args[i], b = "--cursor" } {
+            o.cursor = true                 // draw the pointer in the pictures
         } else if slice::eq_bytes{ a = args[i], b = "--game" } and i + 1 < args.len {
             i = i + 1
             o.game = args[i]
@@ -82,7 +85,7 @@ fn run {
     defer gui::free{ &g }
     gui::set_tlk{ &g, table = &table }
     try gui::load_defaults{ &g, &fs, &dev }
-    gui::set_cursor_visible{ &g, visible = false }
+    gui::set_cursor_visible{ &g, visible = o.cursor }
     make_dir{ &fs, path = o.out }
 
     let mut fe = frontend::make{ &fs, heap = &h, game = o.game, config_path = "kotor/out/menutest-settings.ini" }

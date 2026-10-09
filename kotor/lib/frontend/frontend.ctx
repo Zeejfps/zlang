@@ -189,11 +189,14 @@ namespace frontend {
         }
         gui::draw_backdrop_pass{ &g, &frame }
         draw_scene{ &fe, &g, &frame, target }
-        gui::draw_panels{ &g, &frame }
         let cg_active = fe.cg
         if cg_active != null {
+            // The models go over the panels and the pointer over the models.
+            gui::draw_panels_under_views{ &g, &frame }
             chargen::draw_views{ st = cg_active, &g, &frame, target }
             gui::draw_overlay{ &g, &frame }
+        } else {
+            gui::draw_panels{ &g, &frame }
         }
     }
 
