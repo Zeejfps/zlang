@@ -356,6 +356,31 @@ the sum. The part's opacity (part `+0x84`, the alpha controller; it is multiplie
 +0xd8 when the part has an owner at +0x40) goes to the texture shader's constant colour alpha
 (through `0x007a6820`), not into the blend.
 
+### Lightmaps: black texels, missing lightmaps
+
+A lightmapped mesh is drawn as diffuse times lightmap and nothing else: the plain paths
+`0x0046fa40` (case 0xc of the switch in `0x00477830`, texture shader 0x1a, diffuse x lightmap) and
+`0x0046fb10` (case 0xe, fixed function: lighting off, the lightmap pass `DST_COLOR, ZERO`) add
+nothing after the lightmap's multiply. So a texel the level designers baked black draws black in
+the original, whatever lights are near. (high, from the code and the data)
+
+The Endar Spire has such places: in `m01aa_03a` the blocked-off corridor ends are closed by
+`Plane01` (two quads, `LHR_wall07` with `M01aa_03a_lm0`, self-illumination 0), whose lightmap
+charts (u 0..0.25, v 0.88..1) are the black block of `m01aa_03a_lm0` (texels 1/255), and the parts
+of the room's big meshes inside those dead ends (`Object2723`, `Object96`, `Object75`, `Object26`,
+`Object2715`: lightmaps `lm0`/`lm3`) sample black texels too. The pitch-black side passage with
+smoke and the black far end seen from room `M01aa_03a` (leader near x 45, y 17..33, after the
+first cutscene) are that data, not a renderer fault; drawing lightmap only (diffuse off, lighting
+off) shows the same black areas. No other mesh of that lightmap uses its v 0.88..1 band, which
+confirms our V orientation for TGA lightmaps.
+
+When the lightmap texture fails to load, `0x00470d30` clears the mesh's lightmapped flag (mesh
++0x184; the material's lightmap at +4 is checked by `0x00420bf0`) and the mesh takes the
+unlightmapped, lit path. Two such references exist on the Endar Spire and resolve to nothing in
+the install: `m01aa_04a_a0002t` (`m01aa_04a`'s `Object5044`) and `DOR_LHR02_a00004` (the door
+`dor_lhr02`'s `Object02`). Ours does the same: with no lightmap a lit mesh takes ambient plus the
+frame's lights (`lib/render_gl/shaders.ctx`, `fx_shaders.ctx`).
+
 ### Shadows, grass, frame-buffer effects, options
 
 The client options loader (0x0061dbe0, which reads `[Graphics Options]`) calls small setters:
