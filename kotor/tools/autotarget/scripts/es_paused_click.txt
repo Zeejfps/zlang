@@ -1,0 +1,22 @@
+# From `bunk` with the bot (checkpoint bunk.txt's set-up lines) and the auto-pause on: the bot plays to the
+# door of the Republic soldiers' fight (end_door10_cut2); just before it the player takes over and holds W, so
+# the leader is walking by the keys when end_cut2_sith1 is sighted and the game auto-pauses (48212). While
+# paused: select Trask, then click the Sith (its screen box from `ui info`). The clicked Sith must stay the
+# target for the rest of the pause: the original's walking drop and out-of-view timer run on the world's
+# frame time, 0 while paused (movement.md 7.1). Checked by kotor/tools/autotarget/paused_click.sh.
+1 ui replies 1 1 1 1 1 1 1 1 1 1 3 1 1 1 1 1 1 1 1 3 4 1 default 9
+1 ui bot party on
+10 ui bot god on
+10 ui bot unlock on
+10 ui bot route end_door01 end_door02 end_door05 end_door10_cut2 end_jump_pc end_grenade end_door16 wp_end_room5_1 wp_end_room7_1 end_door08 wp_end_bridgesith1 carth end_door15 end_door19 wp_player01 end_door10 end_trig10 end_door06 end_door01 end_door05 end_door04 end_wp_carth01
+11 ui bot on
+12 ui autopause on
+1440 key space
+3590 ui bot off
+3592 keydown w
+3640 keyup w
+3681 ui target end_trask
+3700 mouse move 467 305
+3702 mouse click left 467 305
+3704 ui info
+3790 ui info

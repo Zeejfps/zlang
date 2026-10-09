@@ -1487,7 +1487,7 @@ dropped) and the auto-target below all use it.
    frame and only for entries a step looks at.
 2. *The current target* (`+0x2b4`, one value for every way a target gets set: a click, Q / E, a script,
    the last frame's pick). If it is **in the all list** it is kept as it is: while it is visible the
-   out-of-view timer (`+0x368`) is 0; when it is not, the timer counts real seconds and at 1.0 the target is
+   out-of-view timer (`+0x368`) is 0; when it is not, the timer counts the world's frame time (0 while paused, below) and at 1.0 the target is
    dropped and picked afresh. Nothing in this function prefers a nearer object over a kept target, and
    a clicked target is no stickier than an automatic one: the same value, the same rules. The one extra
    with enemies in combat mode: a target that left the list (it died) is kept for 1.5 s while a hostile
@@ -1517,6 +1517,29 @@ dropped) and the auto-target below all use it.
    `(1, 0)` on the next pass. The server sets it that way when a combat round moves the attack to a new
    enemy (`0x005b6980`), so the camera turns to the new foe in combat mode; a click sets it without the
    bit.
+
+**While the game is paused** (any pause bit, the player's or an auto-pause; high, read from the asm).
+`UpdateSelectableObjects(float fDelta)` and `ProcessInput(float)` are both handed `g_fFrameDelta`
+(`0x0078e574`: the client world timer's `GetFrameDelta` (`+0x24`) times 1e-6, which is 0 while that timer is
+paused, [gameloop.md](gameloop.md) step 4), by `MainLoop` at `0x00603b61` and at `0x00603323` / `0x006033ac`.
+Every timer of the auto-target adds or subtracts that argument (`[ESP+0x68]` in `0x005fa5a0`, `[ESP+0x134]`
+in `0x006227e0`): the out-of-view second (`+0x368`, `0x005fac66`), the 1.5 s keep of a dead target (`+0x378`,
+`0x005fa862`), the sighting latch (`+0x394`, `0x005fab12`), the mine latch (`+0x3a0`, `0x005fab5d`) and the
+walking drop (`+0x36c`, `0x00623cd9`). So a pause freezes them all: the walking drop cannot fire while paused,
+whatever the keys did when the pause came, and a target out of view is not given up. The rest of the pass
+still runs every paused frame (input class 0, no fade): a target that leaves the list is replaced at once,
+and an empty target is picked by the step 4 rules; the sighting (step 3) waits for the unpause. Hence a
+target the player clicks while paused (`OnWorldClick` is not refused by a pause) stays until he unpauses.
+
+**What the auto-target may choose, and clicks** (high, from the functions above). Dead or dying creatures are
+never in the list (`GetIsSelectableTarget`), so a corpse is never a candidate. What a dead creature leaves
+is another matter: when it is destroyed, `SpawnBodyBag` (combat.md 8.4) puts down a placeable holding its
+drops, useable, so it is selectable like any useable placeable and the auto-target may pick it. There is no
+hostile-first priority out of combat mode: step 4 takes the nearest visible object in the front cone, a
+body bag or a footlocker as readily as a Sith; only the sighting (step 3, which also asks the auto-pause)
+and combat mode's picks prefer hostiles. A click holds no better than a pick (step 2): no timer and no flag
+lock it; it is let go when it leaves the list (death, 30 m, not selectable), after a second out of view, or
+by the walking drop below, all three on the world's clock.
 
 **The target drop that makes the auto-target follow a walking player** is not in that function but in
 `ProcessInput` (`0x006227e0`, the branch that steps the player control, near its end): each frame, when

@@ -38,10 +38,15 @@ namespace hud {
 
     // One frame of the auto-target, with a line in the objects log whenever the target changes: what it
     // was, what it is, how far away, and the angle from the leader's facing it lies at.
+    // Its clocks are the world's (both functions are handed g_fFrameDelta, 0 while anything pauses the game,
+    // movement.md 7.1): a pause freezes the walking drop, the out-of-view second and the sighting latch, so a
+    // target the player clicks while paused stays. The real frame time would let the keys' velocity of the
+    // frame the pause began (the control does not step while paused) drop a clicked enemy every half second.
     fn update_target { mut h: Hud, mut w: world::World, dt: f32 } {
         let before = w.target
-        drop_while_moving{ &h, &w, dt }
-        pick_target{ &h, &w, dt }
+        let world_dt = if w.clock.paused { 0.0 } else { dt }
+        drop_while_moving{ &h, &w, dt = world_dt }
+        pick_target{ &h, &w, dt = world_dt }
         if w.target != before and w.log.objects {
             let lo = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return }
             let mut bt: []u8 = "none"
