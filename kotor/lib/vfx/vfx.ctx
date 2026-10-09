@@ -57,6 +57,9 @@ namespace vfx {
         matrix: math::Mat4,
         dir: math::Vec3,                // a bolt's direction of flight
         speed: f32,                     // a bolt's metres per second
+        // a beam (beam.ctx): its Lightning emitters end at this object's `impact` node; obj::INVALID none
+        aim_object: u32,
+        beam: i32,                      // the beam's visualeffects.2da id, 0 none
     }
 
     fn no_fx {} -> Fx {
@@ -65,7 +68,7 @@ namespace vfx {
             stopped = false, detonate = false, at = math::vec3::zero{}, facing = math::vec3::zero{}, object = obj::INVALID, hook = [0; 24], hook_len = 0,
             which = 0, from = math::vec3::zero{}, to = math::vec3::zero{}, flight = 0.0, end_effect = 0,
             legs = [math::vec3::zero{}; 4], leg_time = [0.0; 4], leg_count = 0, leg = 0, leg_age = 0.0, matrix = math::mat4::identity{},
-            dir = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, speed = 0.0,
+            dir = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, speed = 0.0, aim_object = obj::INVALID, beam = 0,
         }
     }
 
@@ -75,20 +78,16 @@ namespace vfx {
         aura_count: u32,                // auras begun, which also orders them
         time: f32,
         rng: u32,
-        beams: [12]Beam,                // lightning and the other beams (beam.ctx)
-        beam_tex: ?render::Texture,     // their streak texture, loaded with the first beam
         started: u32,                   // effects begun, for the report
         dropped: u32,                   // wanted while the pool was full
     }
 
     fn make {} -> Vfx {
-        return Vfx{ fx = [no_fx{}; MAX_FX], auras = [no_aura{}; MAX_AURAS], aura_count = 0, time = 0.0, rng = 0x2F6E2B1, beams = [no_beam{}; 12], beam_tex = null, started = 0, dropped = 0 }
+        return Vfx{ fx = [no_fx{}; MAX_FX], auras = [no_aura{}; MAX_AURAS], aura_count = 0, time = 0.0, rng = 0x2F6E2B1, started = 0, dropped = 0 }
     }
 
     // The scene was released: its parts and arrays are gone with the area's arena.
     fn reset { mut v: Vfx } {
-        v.beams = [no_beam{}; 12]
-        v.beam_tex = null
         let mut i: usize = 0
         while i < MAX_FX {
             v.fx[i] = no_fx{}
@@ -158,15 +157,16 @@ namespace vfx {
     // The particle arrays of emitter `index`, with room for a burst.
     fn make_emitting { mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, model: *mdl::Model, index: u32 } -> !gui3d::Emitting {
         let e = &model.emitters[index]
-        let puffs = try alloc::resize(gui3d::Puff, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(gui3d::Puff){}, count = PUFFS }
-        let out = try alloc::resize(render::Particle, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(render::Particle){}, count = PUFFS }
+        let room = if e.update == mdl::EmitterUpdate::lightning { gui3d::LIGHTNING_POINTS } else { PUFFS }
+        let puffs = try alloc::resize(gui3d::Puff, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(gui3d::Puff){}, count = room }
+        let out = try alloc::resize(render::Particle, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(render::Particle){}, count = room }
         let t = material::get{ cache = &sc.materials, fs = &w.fs, &dev, rm = w.rm.*, name = e.texture }
-        return gui3d::Emitting{ emitter = index, texture = t.texture, puffs, live = 0, owed = 0.0, rng = 0x2545F491 + 7919 * (index + 1), out, seen = 0, latch = false }
+        return gui3d::emitting_over{ index, texture = t.texture, puffs, out }
     }
 
-    // Starts the slot's animation (`anim`, else `impact`, else `default`) and fixes how long it
-    // lives: `life` seconds, or the animation's length (at least a moment) when `life` is 0.
-    fn begin { mut v: Vfx, mut sc: scene::Scene, mut w: world::World, slot: usize, anim: []u8, life: f32, kind: Kind, looping: bool } {
+    // Starts the slot's animation (`anim`, else `impact`, else `default`; `strict`: `anim` or none) and
+    // fixes how long it lives: `life` seconds, or the animation's length (at least a moment) when `life` is 0.
+    fn begin { mut v: Vfx, mut sc: scene::Scene, mut w: world::World, slot: usize, anim: []u8, life: f32, kind: Kind, looping: bool, strict: bool } {
         let f = &v.fx[slot]
         let model = scene::loaded_at{ sc = &sc, i = f.loaded }.model
         f.kind = kind
@@ -176,13 +176,16 @@ namespace vfx {
         f.stopped = false
         f.detonate = false
         f.hold = 0
+        f.aim_object = obj::INVALID
+        f.beam = 0
         let p = scene::part_at{ sc = &sc, i = f.part }
         p.anim_len = 0
         let mut length: f32 = 0.0
         let mut played = false
         let names: [3][]u8 = [anim, "impact", "default"]
         let mut n: usize = 0
-        while n < 3 and not played {
+        let tries: usize = if strict { 1 } else { 3 }
+        while n < tries and not played {
             if names[n].len > 0 and mdl::find_animation{ model, name = names[n] } is some{ value = ai } {
                 length = model.animations[ai].length
                 played = scene::play{ &sc, &w, part = f.part, name = names[n], looping, speed = 1.0, transition = 0.0 }
@@ -215,7 +218,7 @@ namespace vfx {
         f.at = at
         f.facing = facing
         f.matrix = placed{ at, facing }
-        begin{ &v, &sc, &w, slot, anim, life, kind = Kind::still, looping = false }
+        begin{ &v, &sc, &w, slot, anim, life, kind = Kind::still, looping = false, strict = false }
         return slot
     }
 
@@ -235,7 +238,7 @@ namespace vfx {
             i = i + 1
         }
         f.hook_len = n
-        begin{ &v, &sc, &w, slot, anim, life, kind = Kind::follow, looping = false }
+        begin{ &v, &sc, &w, slot, anim, life, kind = Kind::follow, looping = false, strict = false }
         f.matrix = follow_matrix{ sc = &sc, w = &w, f }
         return slot
     }
@@ -257,7 +260,7 @@ namespace vfx {
             i = i + 1
         }
         f.hook_len = n
-        begin{ &v, &sc, &w, slot, anim = "impact", life = 1.0e9, kind = Kind::follow, looping = true }
+        begin{ &v, &sc, &w, slot, anim = "impact", life = 1.0e9, kind = Kind::follow, looping = true, strict = false }
         f.hold = effect
         f.matrix = follow_matrix{ sc = &sc, w = &w, f }
         return slot
@@ -293,7 +296,7 @@ namespace vfx {
         f.dir = if length > 0.001 { math::vec3::scale{ v = span, s = 1.0 / length } } else { math::Vec3{ x = 0.0, y = 1.0, z = 0.0 } }
         f.speed = length / f.flight
         f.matrix = placed{ at = from, facing = f.dir }
-        begin{ &v, &sc, &w, slot, anim = "travel01", life = f.flight, kind = Kind::bolt, looping = false }
+        begin{ &v, &sc, &w, slot, anim = "travel01", life = f.flight, kind = Kind::bolt, looping = false, strict = false }
         return slot
     }
 
@@ -333,7 +336,6 @@ namespace vfx {
     // Moves every live effect on by `dt` seconds: its place, its animation, its particles.
     fn update { mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, dt: f32 } {
         v.time = v.time + dt
-        update_beams{ &v, sc, w, dt }
         step_auras{ &v, &sc, &w, dt }
         let mut i: usize = 0
         while i < MAX_FX {
@@ -342,6 +344,15 @@ namespace vfx {
             if not v.fx[slot].live { continue }
             step{ &v, &sc, &w, &dev, slot, dt }
         }
+    }
+
+    // Where a Lightning emitter of the effect ends: a beam's target's `impact` node, else the reference node
+    // under the emitter; none once the effect is past its life (the original removes the beam's model).
+    fn bolt_aim { sc: *scene::Scene, w: *world::World, f: *Fx, model: *mdl::Model, pose_world: []math::Mat4, e: *mdl::Emitter } -> ?math::Vec3 {
+        if f.stopped { return null }
+        if f.aim_object != obj::INVALID { return hook_point{ sc, w, id = f.aim_object, hook = "impact", which = 0, fallback = 1.2 } }
+        let node = gui3d::bolt_end_node{ model, e } ifnull { return null }
+        return math::mat4::get_translation{ m = math::mat4::mul{ a = f.matrix, b = pose_world[node] } }
     }
 
     fn step { mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, slot: usize, dt: f32 } {
@@ -386,6 +397,7 @@ namespace vfx {
                 props.random_birthrate = 0.0
             }
             let world = math::mat4::mul{ a = f.matrix, b = p.pose.world[ex.node] }
+            if ex.update == mdl::EmitterUpdate::lightning { em.aim = bolt_aim{ sc = &sc, w = &w, f, model, pose_world = p.pose.world, e = ex } }
             gui3d::step_emitting{ em, e = ex, props, dt = dt_eff, world, ground = scene::touch{ sc = &sc, w = &w, _ } }
             // A burst after the step, so its particles are seen at least once even when they
             // live less than a frame (a muzzle flash lives 0.02 s).

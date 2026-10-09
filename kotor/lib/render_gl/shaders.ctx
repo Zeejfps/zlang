@@ -264,8 +264,9 @@ namespace glsl {
 
     // Particles, one instance each: position, size, angle, colour, frame, direction.
     // u_emit: facing (0 camera, 1 axis, 2 plane, 3 velocity, 4 emitter plane, 5 world plane, 6 upright,
-    // 7 tangent), grid x, grid y.
-    const PARTICLE_VS: [69]c::String = [
+    // 7 tangent, 8 ribbon), grid x, grid y. A ribbon's instance is the quad from its row to the next, whose
+    // position, size and direction come in as a_next_* (the same rows one further on).
+    const PARTICLE_VS: [85]c::String = [
         "#version 410 core\n",
         "layout(std140) uniform Frame {\n",
         "    mat4 u_view_proj;\n",
@@ -284,6 +285,9 @@ namespace glsl {
         "layout(location = 3) in vec4 a_color;\n",
         "layout(location = 4) in float a_frame;\n",
         "layout(location = 5) in vec3 a_dir;\n",
+        "layout(location = 6) in vec3 a_next_position;\n",
+        "layout(location = 7) in vec2 a_next_size;\n",
+        "layout(location = 10) in vec3 a_next_dir;\n",
         "out vec2 v_uv;\n",
         "out vec4 v_color;\n",
         "out vec3 v_world;\n",
@@ -326,6 +330,20 @@ namespace glsl {
         "        up = normalize(mat3(u_model) * a_dir);\n",
         "    }\n",
         "    vec3 world = center + right * local.x + up * local.y;\n",
+        // A ribbon's joint: its corners across the on-screen way into it, in the camera's plane (0x00495b20).
+        "    if (u_emit.x == 8) {\n",
+        "        bool far = corner.y < 0.5;\n",
+        "        vec3 jp = (u_model * vec4(far ? a_next_position : a_position, 1.0)).xyz;\n",
+        "        vec2 js = far ? a_next_size : a_size;\n",
+        "        vec3 jd = mat3(u_model) * (far ? a_next_dir : a_dir);\n",
+        "        float dx = dot(jd, right);\n",
+        "        float dy = dot(jd, up);\n",
+        "        float dl = sqrt(dx * dx + dy * dy);\n",
+        "        vec3 e1 = right;\n",
+        "        vec3 e2 = up;\n",
+        "        if (dl > 1e-5) { e2 = (right * dx + up * dy) / dl; e1 = (right * dy - up * dx) / dl; }\n",
+        "        world = jp + e1 * (js.x * (corner.x * 2.0 - 1.0)) + e2 * js.y;\n",
+        "    }\n",
         "    gl_Position = u_view_proj * vec4(world, 1.0);\n",
         "    int gx = max(u_emit.y, 1);\n",
         "    int gy = max(u_emit.z, 1);\n",

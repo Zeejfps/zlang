@@ -41,7 +41,9 @@ An effect lives for `life` seconds (its animation's length unless told) and then
 die out; a bolt ends on arrival and may play a `visualeffects.2da` row where it ends.
 
 Particles are drawn as the seam's `render::Emitter`s, one facing per MDL render mode (gui3d `look_of`; what
-each does in the original is in [../re/particles.md](../re/particles.md)): `Normal` and `Linked` face the camera,
+each does in the original is in [../re/particles.md](../re/particles.md)): `Normal` faces the camera, `Linked` is a
+ribbon through the particles in birth order (`Facing::ribbon`: a row a joint, a quad from each to the next, the
+joint's corners shared by the quads either side, as `0x00495b20` builds it),
 `Billboard_to_Local_Z` lies in the emitter's own X/Y plane (the scorch mark on the floor, a muzzle flash's crossed
 sheets), `Billboard_to_World_Z` lies flat on the ground, `Aligned_to_World_Z` stands upright, `Aligned_to_Particle_Dir`
 lies in the plane of the direction it was sent in, and `Motion_Blur` is a streak from the particle's tail (which
@@ -51,7 +53,19 @@ own space; the factor makes a bolt read at fight distances). The simulation is t
 gravity is the controller `mass` (smoke and flames have a negative one and rise), a particle starts turned to 0
 and spins by `particleRot`, a `Single` emitter keeps exactly one particle while `birthrate` is at least 1, and a
 sprite sheet steps through its cells at `fps`. Not done: chunk models (debris), `bounce`, wind, particles that stay in
-the world when their emitter moves (ours move with it, as `inherit` does), point-to-point emitters.
+the world when their emitter moves (ours move with it, as `inherit` does), point-to-point emitters other than
+Lightning.
+
+A `Lightning` emitter (gui3d `lightning.ctx`) is a chain of points from the emitter to its target (`Emitting.aim`, in
+the world, set by the owner each step: a beam's target's `impact` node, else the `fx_ref` reference node under the
+emitter), lightningSubDiv points a metre, on a curve through int(numcontrolpts) + 2 control points renewed every
+controlptdelay seconds; every lightningDelay seconds the inner points are thrown off it by up to lightningRadius
+(most in the middle), twisted by lightningZigzag; up to branch_count branches fork off it, thinner. It draws as a
+Linked ribbon, one strip a chain (`gui3d::add_rows`). Ours, where it is not the original's: the points are
+recomputed from the curve every step rather than carried rigidly between renewals (the same while the ends do not
+move), control-point smoothing is not done (the curve jumps at each renewal), the tangent at the emitter is its +Z
+tilted by up to tangentspread degrees (the original's perturbation was not worked through), and the direction the
+flicker throws points in starts from any square to the chain.
 Model lights (a bolt's red one, radius 2.5) are added as frame lights, so a bolt lights the
 creatures it passes.
 
@@ -161,9 +175,11 @@ Blaster rifles shoot red bolts, ion weapons blue, disruptors white (ammunitionty
   kept until its effect leaves (`vfx::spawn_hold`, `vfx::release`); those without a model (programmed effects:
   shields, auras, the hold cage, speed streaks) show nothing.
 - **Beams** (`lib/vfx/beam.ctx`, note `beam{ style, source, target, part, seconds }`, posted when an `EffectBeam` leaf
-  is applied): a jagged chain of `fx_lightning` streaks from the effector's hand (`handconjure`) to the target's
-  `impact_bolt`, reshaped every 45 ms, a wide dim glow under a narrow bright core, tinted by the beam's id
-  (lightning and shock blue-white, drain life and the death field red, the droid powers cyan, the storm purple).
+  is applied): as the original (render-gui.md, codes 600-699), the model of the row's `progfx_duration` code
+  (608 `v_lightns_dur` .. 621 `v_fshock_dur`) rides the effector's node (`handconjure`, `impact` or `headconjure`
+  by the body part) playing only `cast01`, which the models lack, so their geometry's sizes hold (their `impact`
+  animation would shrink the bolt away in 0.07 s); its Lightning emitters end at the target's `impact` node
+  (`Fx.aim_object`). The effect ends with the beam's time or its `beam_end`.
 - **Thrown saber** (`saber_leg{ item, from, to, flight_ms }`): the saber item's model flies each leg as a bolt
   (without its blade).
 
@@ -178,8 +194,6 @@ Blaster rifles shoot red bolts, ion weapons blue, disruptors white (ammunitionty
   post a note when the cast animation starts, let `vfx::spawn_bolt` fly the `projmodel` from the
   `projspwnpoint` hook (add an `arc` height to `Fx` for a grenade: `z += arc * 4 t (1 - t)`),
   and run the impact script when it arrives.
-- A beam (`EffectBeam`, lightning): `vfx` has no beam kind; `Lightning` emitters are skipped by
-  `gui3d::step_emitting`.
 - A duration effect (`type_fd` D): a model of the row is one `follow` effect kept until the
   effect leaves the creature (`visual_hold` / `visual_release`); a row with only a code is an
   aura (above). `visual_on` plays every other row once.
@@ -281,9 +295,10 @@ the clashes (from the `bunk` checkpoint), each with at most 40 spark-yellow pixe
 - World emitters: particles live in their emitter's space, as the effects' do (the original keeps them in world
   space and carries them with the emitter only with `inherit`, 0x40, which 1,853 emitters have, mostly the bolts';
   the same for an emitter that does not move, which is nearly every room's and every still effect's; gravity and
-  bounces are the world's, above); Lightning emitters stay quiet; Linked emitters draw billboards, not the
-  original's ribbon; particles draw with depth writes off except punch-through ones (the original: off for all);
+  bounces are the world's, above); a room's or placeable's Lightning emitter (`plc_endcorps`, `m45ac_bmap`) aims at its
+  reference child; the menus' and minigames' scenes give theirs no target, so they stay quiet; particles draw
+  with depth writes off except punch-through ones (the original: off for all);
   only `animloop1` plays on a room, so emitters keyed in `animloop2`/`animloop3` are not animated.
-- Not done: footsteps, melee blood (the game has none), beams, thrown grenades and Force
+- Not done: footsteps, melee blood (the game has none), thrown grenades and Force
   projectiles in flight (above), the Jedi's blade colours by crystal (blades show the model's
   own).

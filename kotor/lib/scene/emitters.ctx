@@ -58,6 +58,12 @@ namespace scene {
             // but for a point-to-point emitter's).
             if not math::frustum::intersects_sphere{ f = sight.frustum, center = math::mat4::get_translation{ m = world }, radius = 0.0 } { continue }
             if em.seen != sc.fx_frame {
+                if ex.update == mdl::EmitterUpdate::lightning {
+                    em.aim = null
+                    if gui3d::bolt_end_node{ model, e = ex } is some{ value = node } {
+                        em.aim = math::mat4::get_translation{ m = math::mat4::mul{ a = instance, b = p.pose.world[node] } }
+                    }
+                }
                 let ground = touch{ sc, w, _ }
                 if em.seen == 0 and warm { warm_up{ em, e = ex, props, world, ground } }
                 step_one{ em, e = ex, props, dt, world, ground }
@@ -66,11 +72,11 @@ namespace scene {
             let n = gui3d::fill_particles{ em, e = ex, props }
             if n == 0 { continue }
             let look = gui3d::look_of{ e = ex, world }
-            render::add_emitter{ &frame, emitter = render::Emitter{
+            gui3d::add_rows{ &frame, emitter = render::Emitter{
                 view, texture = em.texture, blend = look.blend, grid_x = ex.x_grid, grid_y = ex.y_grid,
                 facing = look.facing, axis = look.axis, transform = world, first = 0, count = 0, effect = true,
                 fog = true, sort = @as(i32, ex.render_order),
-            }, particles = em.out[..@as(usize, n)] }
+            }, em, e = ex, n }
         }
     }
 

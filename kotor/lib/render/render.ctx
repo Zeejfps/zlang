@@ -500,6 +500,9 @@ namespace render {
         world_plane,                // lie flat in the world's X/Y plane (`Billboard_to_World_Z`)
         upright,                    // vertical along `axis` (up, in the emitter's space), its side square to the view (`Aligned_to_World_Z`)
         tangent,                    // lie in the plane of each particle's `dir` and the circle's tangent about `axis` (`Aligned_to_Particle_Dir`)
+        ribbon,                     // the rows are the joints of one strip (`Linked`): a quad joins each row to the next, coloured
+                                    // and textured by the first; a joint's two corners are its `position` +- `size.x` across the
+                                    // on-screen way of `dir`, moved `size.y` along it, the same for the quads either side
     }
 
     // One particle: a quad of `size` at `position` (in the emitter's space), turned by `angle`,

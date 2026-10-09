@@ -11,8 +11,8 @@ namespace gui3d {
     // One live particle. `aim` is the unit direction it was sent in (the +Z of the particle's own
     // orientation in the original), which does not follow its velocity; `tail` is where a
     // Motion_Blur particle's streak ends, trailing behind `pos`. `still`: it bounced to a stop on a
-    // surface and is no longer moved.
-    struct Puff { pos: math::Vec3, vel: math::Vec3, age: f32, life: f32, angle: f32, frame: f32, aim: math::Vec3, tail: math::Vec3, still: bool }
+    // surface and is no longer moved. `jag`: a Lightning point's throw off its curve (lightning.ctx).
+    struct Puff { pos: math::Vec3, vel: math::Vec3, age: f32, life: f32, angle: f32, frame: f32, aim: math::Vec3, tail: math::Vec3, still: bool, jag: math::Vec3 }
 
     // Where a bouncing particle's step (from, to: world space) first meets the world: the point and
     // the face's unit normal there, null for none.
@@ -35,6 +35,16 @@ namespace gui3d {
         out: []mut render::Particle,        // the live ones as the seam takes them
         seen: u32,                          // a world emitter: the scene frame it was last stepped in, 0 never (lib/scene/emitters.ctx)
         latch: bool,                        // an Explosion emitter: its owner's animation said `detonate`, not burst yet
+        aim: ?math::Vec3,                   // a Lightning emitter: where its bolt ends, in the world, set by the owner each step
+        bolt: Bolt,                         // a Lightning emitter's chains (lightning.ctx)
+    }
+
+    // An emitter's state over the arrays given: nothing alive.
+    fn emitting_over { index: u32, texture: ?render::Texture, puffs: []mut Puff, out: []mut render::Particle } -> Emitting {
+        return Emitting{
+            emitter = index, texture, puffs, live = 0, owed = 0.0, rng = 0x2545F491 + 7919 * (index + 1), out, seen = 0,
+            latch = false, aim = null, bolt = no_bolt{},
+        }
     }
 
     // ---- random numbers (xorshift32: the stream matters only for variety)
@@ -59,7 +69,8 @@ namespace gui3d {
 
     // Room for the particles an emitter can have alive at once: births per second times life,
     // with some slack for the random part of the rate.
-    fn capacity_for { props: mdl::EmitterProps } -> usize {
+    fn capacity_for { e: *mdl::Emitter, props: mdl::EmitterProps } -> usize {
+        if e.update == mdl::EmitterUpdate::lightning { return LIGHTNING_POINTS }
         let rate = math::max{ a = props.birthrate, b = 0.0 } + math::max{ a = props.random_birthrate, b = 0.0 }
         let need = rate * math::max{ a = props.life_exp, b = 0.0 } * 1.25 + 8.0
         let n = math::clamp{ x = need, lo = 8.0, hi = @as(f32, MAX_PUFFS) }
@@ -73,14 +84,11 @@ namespace gui3d {
         model: *mdl::Model, index: u32,
     } -> !Emitting {
         let e = &model.emitters[index]
-        let cap = capacity_for{ props = e.props }
+        let cap = capacity_for{ e, props = e.props }
         let puffs = try alloc::resize(Puff, arena::Arena){ realloc = arena::alloc, heap = &heap, mem = slice::empty(Puff){}, count = cap }
         let out = try alloc::resize(render::Particle, arena::Arena){ realloc = arena::alloc, heap = &heap, mem = slice::empty(render::Particle){}, count = cap }
         let t = material::get{ cache = &mats, &fs, &dev, rm, name = e.texture }
-        return Emitting{
-            emitter = index, texture = t.texture, puffs, live = 0, owed = 0.0,
-            rng = 0x2545F491 + 7919 * (index + 1), out, seen = 0, latch = false,
-        }
+        return emitting_over{ index, texture = t.texture, puffs, out }
     }
 
     // One step of `dt` seconds: the old die, the rest move, new ones are born. A Single emitter keeps
@@ -92,9 +100,14 @@ namespace gui3d {
         mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, dt: f32, world: math::Mat4,
         ground: &fn{ from: math::Vec3, to: math::Vec3 } -> ?Contact,
     } {
+        if e.update == mdl::EmitterUpdate::lightning {
+            step_lightning{ &em, e, props, dt, world }
+            return
+        }
         if dt <= 0.0 { return }
         let single = e.update == mdl::EmitterUpdate::single
         let blur = e.render == mdl::EmitterRender::motion_blur
+        let linked = e.render == mdl::EmitterRender::linked
         let bounces = (e.flags & EMIT_BOUNCE) != 0
         // World down in the emitter's space (its length is a world metre's there): the original's
         // particles are in the world and fall along world -Z whichever way the emitter points
@@ -108,7 +121,16 @@ namespace gui3d {
             let mut p = em.puffs[i]
             p.age = p.age + dt
             if p.age >= p.life and not single {
-                em.puffs[i] = em.puffs[em.live - 1]
+                // A Linked emitter's ribbon runs through its particles in the order they were born.
+                if linked {
+                    let mut k = i
+                    while k + 1 < em.live {
+                        em.puffs[k] = em.puffs[k + 1]
+                        k = k + 1
+                    }
+                } else {
+                    em.puffs[i] = em.puffs[em.live - 1]
+                }
                 em.live = em.live - 1
                 continue
             }
@@ -133,8 +155,6 @@ namespace gui3d {
             em.puffs[i] = p
             i = i + 1
         }
-        // Lightning is drawn as a strip of its own, which is not done: such an emitter stays quiet.
-        if e.update == mdl::EmitterUpdate::lightning { return }
         if single {
             if props.birthrate < 1.0 {
                 em.live = 0
@@ -227,7 +247,7 @@ namespace gui3d {
         let life = if props.life_exp < 0.0 { 1.0e9 } else { math::max{ a = props.life_exp, b = 0.01 } }
         em.puffs[em.live] = Puff{
             pos = at, vel = math::vec3::scale{ v = dir, s = speed },
-            age = 0.0, life, angle = 0.0, frame, aim = dir, tail = at, still = false,
+            age = 0.0, life, angle = 0.0, frame, aim = dir, tail = at, still = false, jag = math::vec3::zero{},
         }
         em.live = em.live + 1
     }
@@ -269,6 +289,7 @@ namespace gui3d {
     //   Aligned_to_Particle_Dir: `dir` is the direction it was sent in, kept as it flies;
     //   the others: `dir` is the way it moves now.
     fn fill_particles { mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps } -> u32 {
+        if e.render == mdl::EmitterRender::linked { return fill_ribbons{ &em, e, props } }
         let blur = e.render == mdl::EmitterRender::motion_blur
         let aimed = e.render == mdl::EmitterRender::aligned_to_particle_dir
         // The height is the width unless some key of it is set (a key left at 0 then means 0).
@@ -306,11 +327,82 @@ namespace gui3d {
         return em.live
     }
 
+    // A run of rows that is one ribbon: out[first .. first + count].
+    struct Strip { first: u32, count: u32 }
+
+    // How many ribbons a Linked emitter draws: a Lightning emitter one a chain, the others one through all
+    // their particles.
+    fn strip_count { em: *Emitting, e: *mdl::Emitter } -> u32 {
+        if e.update == mdl::EmitterUpdate::lightning { return em.bolt.chain_count }
+        return 1
+    }
+
+    fn strip_at { em: *Emitting, e: *mdl::Emitter, k: u32 } -> Strip {
+        if e.update == mdl::EmitterUpdate::lightning {
+            let c = em.bolt.chains[k]
+            return Strip{ first = c.first, count = c.count }
+        }
+        return Strip{ first = 0, count = em.live }
+    }
+
+    // A Linked emitter's particles as the joints of its ribbons (render::Facing::ribbon), the original's
+    // 0x00495b20: a quad joins each particle to the next, coloured and sized by the first of the two, its
+    // end corners the next quad's start corners. A joint's row carries its point, the way into it (the
+    // first joint: the way out) and the size of the quad that ends there: `size.x` across (sizeX either
+    // side) and `size.y` the cap past the point along the way (a quarter of sizeY, or of sizeX without one;
+    // backwards at the first joint). Along a Lightning chain the curves run by the point's place in the
+    // chain, not its age, and a branch's sizes are its share of the chain's.
+    fn fill_ribbons { mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps } -> u32 {
+        let tall = props.size_start_y != 0.0 or props.size_mid_y != 0.0 or props.size_end_y != 0.0
+        let bolt = e.update == mdl::EmitterUpdate::lightning
+        let strips = strip_count{ em = &em, e }
+        let mut k: u32 = 0
+        while k < strips {
+            let st = strip_at{ em = &em, e, k }
+            let scale = if bolt { em.bolt.chains[k].scale } else { 1.0 }
+            k = k + 1
+            let mut prev_at = math::vec3::zero{}
+            let mut prev_size = math::Vec2{ x = 0.0, y = 0.0 }
+            let mut j: u32 = 0
+            while j < st.count {
+                let p = em.puffs[st.first + j]
+                let t = if bolt { @as(f32, j) / @as(f32, st.count) } else { math::clamp{ x = p.age / p.life, lo = 0.0, hi = 1.0 } }
+                let r = curve{ t, ps = props.percent_start, pm = props.percent_mid, pe = props.percent_end, a = props.color_start.x, b = props.color_mid.x, c = props.color_end.x }
+                let g = curve{ t, ps = props.percent_start, pm = props.percent_mid, pe = props.percent_end, a = props.color_start.y, b = props.color_mid.y, c = props.color_end.y }
+                let b = curve{ t, ps = props.percent_start, pm = props.percent_mid, pe = props.percent_end, a = props.color_start.z, b = props.color_mid.z, c = props.color_end.z }
+                let a = curve{ t, ps = props.percent_start, pm = props.percent_mid, pe = props.percent_end, a = props.alpha_start, b = props.alpha_mid, c = props.alpha_end }
+                let sx = curve{ t, ps = props.percent_start, pm = props.percent_mid, pe = props.percent_end, a = props.size_start, b = props.size_mid, c = props.size_end } * scale
+                let sy = curve{ t, ps = props.percent_start, pm = props.percent_mid, pe = props.percent_end, a = props.size_start_y, b = props.size_mid_y, c = props.size_end_y } * scale
+                let high = if tall { sy } else { sx }
+                let size = math::Vec2{ x = sx, y = high * 0.25 }
+                let at = math::vec3::add{ a = p.pos, b = p.jag }
+                let mut dir = math::vec3::sub{ a = at, b = prev_at }
+                let mut joint = prev_size
+                if j == 0 {
+                    joint = math::Vec2{ x = size.x, y = -size.y }
+                    dir = math::vec3::zero{}
+                    if st.count > 1 {
+                        let q = em.puffs[st.first + 1]
+                        dir = math::vec3::sub{ a = math::vec3::add{ a = q.pos, b = q.jag }, b = at }
+                    }
+                }
+                em.out[st.first + j] = render::Particle{
+                    position = at, size = joint, angle = 0.0,
+                    color = render::Color{ r = r, g = g, b = b, a = a }, frame = @as(u32, cell_of{ e, props, p }), dir,
+                }
+                prev_at = at
+                prev_size = size
+                j = j + 1
+            }
+        }
+        return em.live
+    }
+
     // How the emitter's particles face and which axis that turns about, in the emitter's space
     // (`world`: its node's matrix to world, to bring Z up into it). The original's seven render
     // modes (a particle's quad is spanned by two axes):
-    //   Normal, Linked   the view's right and up: a square-on billboard (a Linked emitter's particles
-    //                    are drawn so too; its chain of beams is the vfx beams');
+    //   Normal           the view's right and up: a square-on billboard;
+    //   Linked           a ribbon through the particles (fill_ribbons);
     //   Billboard_to_Local_Z  the emitter's own X and Y: it lies in the emitter's plane, so a scorch
     //                    on the floor lies on the floor, a muzzle flash is crossed sheets;
     //   Billboard_to_World_Z  the world's X and Y: flat on the ground whatever the emitter's turn;
@@ -335,6 +427,8 @@ namespace gui3d {
             l.facing = render::Facing::tangent
         } else if r == mdl::EmitterRender::motion_blur {
             l.facing = render::Facing::velocity
+        } else if r == mdl::EmitterRender::linked {
+            l.facing = render::Facing::ribbon
         }
         if e.blend == mdl::EmitterBlend::lighten {
             l.blend = render::Blend::additive

@@ -726,6 +726,10 @@ namespace gpu {
         instance_attrib{ &dev, index = 3, size = 4, stride = 56, offset = 24 }
         instance_attrib{ &dev, index = 4, size = 1, stride = 56, offset = 40 }
         instance_attrib{ &dev, index = 5, size = 3, stride = 56, offset = 44 }
+        // A ribbon's next row (render::Facing::ribbon); other draws point these at their own rows.
+        instance_attrib{ &dev, index = 6, size = 3, stride = 56, offset = 56 }
+        instance_attrib{ &dev, index = 7, size = 2, stride = 56, offset = 68 }
+        instance_attrib{ &dev, index = 10, size = 3, stride = 56, offset = 100 }
 
         // Debug vertices: position 3, colour 4 = 7 floats.
         dev.debug_vao = gl::gen_vertex_array{ gl = &dev.gl }
@@ -1917,6 +1921,10 @@ namespace gpu {
         set_offset{ &dev, on = false }
         set_stencil{ &dev, on = false }
         bind_vao{ &dev, vao = dev.particle_vao }
+        // A ribbon's quads join neighbouring rows: count rows make count - 1 quads, and a batch that does not
+        // end the ribbon hands its last row on to the next as its first.
+        let ribbon = em.facing == render::Facing::ribbon
+        if ribbon and em.count < 2 { return }
         let textured = material_map{ &dev, t = em.texture, unit = 0, cube = false }
         dev.gl.uniform_matrix4fv{ location = dev.cur_particle.model, count = 1, transpose = gl::FALSE, value = &em.transform.m[0] }
         let facing: i32 = match em.facing {
@@ -1928,6 +1936,7 @@ namespace gpu {
             world_plane => { 5 }
             upright => { 6 }
             tangent => { 7 }
+            ribbon => { 8 }
         }
         dev.gl.uniform4i{ location = dev.cur_particle.emit, v0 = facing, v1 = @as(i32, em.grid_x), v2 = @as(i32, em.grid_y), v3 = 0 }
         dev.gl.uniform4f{ location = dev.cur_particle.axis, v0 = em.axis.x, v1 = em.axis.y, v2 = em.axis.z, v3 = 0.0 }
@@ -1964,11 +1973,13 @@ namespace gpu {
                 i = i + 1
             }
             let at = stream{ &dev, floats = n * per }
-            aim_particles{ &dev, at }
-            dev.gl.draw_arrays_instanced{ mode = gl::TRIANGLE_STRIP, first = 0, count = 4, instance_count = @as(i32, n) }
+            aim_particles{ &dev, at, next = ribbon }
+            let quads = if ribbon { n - 1 } else { n }
+            dev.gl.draw_arrays_instanced{ mode = gl::TRIANGLE_STRIP, first = 0, count = 4, instance_count = @as(i32, quads) }
             dev.stats.draws = dev.stats.draws + 1
             dev.stats.particles = dev.stats.particles + @as(u32, n)
-            done = done + @as(u32, n)
+            done = done + @as(u32, quads)
+            if ribbon and done + 1 >= em.count { break }
         }
     }
 
@@ -2007,7 +2018,11 @@ namespace gpu {
         dev.gl.vertex_attrib_pointer{ index = 3, size = 1, kind = gl::FLOAT, normalized = gl::FALSE, stride = 52, offset = at + 48 }
     }
 
-    fn aim_particles { mut dev: Device, at: usize } {
+    fn aim_particles { mut dev: Device, at: usize, next: bool } {
+        let ahead: usize = if next { 56 } else { 0 }
+        dev.gl.vertex_attrib_pointer{ index = 6, size = 3, kind = gl::FLOAT, normalized = gl::FALSE, stride = 56, offset = at + ahead }
+        dev.gl.vertex_attrib_pointer{ index = 7, size = 2, kind = gl::FLOAT, normalized = gl::FALSE, stride = 56, offset = at + ahead + 12 }
+        dev.gl.vertex_attrib_pointer{ index = 10, size = 3, kind = gl::FLOAT, normalized = gl::FALSE, stride = 56, offset = at + ahead + 44 }
         dev.gl.vertex_attrib_pointer{ index = 0, size = 3, kind = gl::FLOAT, normalized = gl::FALSE, stride = 56, offset = at }
         dev.gl.vertex_attrib_pointer{ index = 1, size = 2, kind = gl::FLOAT, normalized = gl::FALSE, stride = 56, offset = at + 12 }
         dev.gl.vertex_attrib_pointer{ index = 2, size = 1, kind = gl::FLOAT, normalized = gl::FALSE, stride = 56, offset = at + 20 }

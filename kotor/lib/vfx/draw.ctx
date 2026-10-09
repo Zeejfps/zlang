@@ -9,7 +9,6 @@ namespace vfx {
     const STREAK_LENGTH: f32 = 2.4
 
     fn draw { v: *Vfx, sc: *scene::Scene, mut frame: render::Frame, view: u32 } {
-        draw_beams{ v, &frame, view }
         let mut i: usize = 0
         while i < MAX_FX {
             let slot = i
@@ -50,11 +49,11 @@ namespace vfx {
                     k = k + 1
                 }
             }
-            render::add_emitter{ &frame, emitter = render::Emitter{
+            gui3d::add_rows{ &frame, emitter = render::Emitter{
                 view, texture = em.texture, blend = look.blend, grid_x = ex.x_grid, grid_y = ex.y_grid,
                 facing = look.facing, axis = look.axis, transform = node_world, first = 0, count = 0, effect = true,
                 fog = true, sort = @as(i32, ex.render_order),
-            }, particles = em.out[..@as(usize, n)] }
+            }, em, e = ex, n }
         }
     }
 }

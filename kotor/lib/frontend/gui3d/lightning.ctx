@@ -1,0 +1,299 @@
+// A `Lightning` emitter (docs/re/particles.md, "Lightning"): no births, but a chain of points from the
+// emitter to its target, drawn as a Linked ribbon. The chain follows a curve through a few control points,
+// renewed every `controlptdelay` seconds; every `lightningDelay` seconds each point is thrown off the curve
+// anew, most in the middle and not at all at the ends, which is the flicker; and a few branches fork off
+// the chain, each a chain of its own, thinner. Everything is in the emitter's space, like the other
+// emitters' particles; the target, in the world, is the owner's to say (Emitting.aim).
+namespace gui3d {
+    // The most points one Lightning emitter keeps, its branches' included.
+    const LIGHTNING_POINTS: usize = 384
+    const MAX_CHAINS: usize = 6         // the chain and up to five branches (branch_count is at most 5 in the data)
+    const MAX_CTRL: usize = 8
+
+    // One chain of a bolt: its points are puffs[first .. first + count]. A branch starts at point `from`
+    // of the main chain and ends at the main chain's target or, when it `forks`, at `reach` from its start;
+    // its sizes are `scale` of the emitter's.
+    struct Chain { first: u32, count: u32, from: u32, forks: bool, reach: math::Vec3, lead: math::Vec3, scale: f32 }
+
+    struct Bolt {
+        chains: [MAX_CHAINS]Chain,
+        chain_count: u32,
+        bends: [MAX_CTRL]math::Vec3,    // the control points' offsets from the straight line, the ends' zero
+        ctrl_count: u32,
+        lead: math::Vec3,               // the main chain's tangent at the emitter
+        jag_age: f32,                   // seconds since the points were last thrown off the curve
+        shape_age: f32,                 // seconds since the control points were last drawn
+        shaped: bool,
+    }
+
+    fn no_chain {} -> Chain {
+        let zero = math::vec3::zero{}
+        return Chain{ first = 0, count = 0, from = 0, forks = false, reach = zero, lead = zero, scale = 1.0 }
+    }
+
+    fn no_bolt {} -> Bolt {
+        let zero = math::vec3::zero{}
+        return Bolt{ chains = [no_chain{}; MAX_CHAINS], chain_count = 0, bends = [zero; MAX_CTRL], ctrl_count = 2, lead = zero, jag_age = 0.0, shape_age = 0.0, shaped = false }
+    }
+
+    fn least { a: u32, b: u32 } -> u32 { return if a < b { a } else { b } }
+
+    // A whole number below `n` (0 for n 0), as the original's rand() % n.
+    fn rng_below { mut s: u32, n: u32 } -> u32 {
+        if n == 0 { return 0 }
+        return rng_next{ &s } % n
+    }
+
+    // `v` turned by `degrees` about the unit axis `k`.
+    fn turn_about { v: math::Vec3, k: math::Vec3, degrees: f32 } -> math::Vec3 {
+        let a = degrees * (math::TAU / 360.0)
+        let c = math::cosf{ x = a }
+        let s = math::sinf{ x = a }
+        let kv = math::vec3::cross{ a = k, b = v }
+        let along = math::vec3::scale{ v = k, s = math::vec3::dot{ a = k, b = v } * (1.0 - c) }
+        return math::vec3::add{ a = math::vec3::add{ a = math::vec3::scale{ v, s = c }, b = math::vec3::scale{ v = kv, s } }, b = along }
+    }
+
+    // A unit vector square to the unit vector `u`.
+    fn square_to { u: math::Vec3 } -> math::Vec3 {
+        let r = if math::abs{ x = u.x } < 0.9 { math::Vec3{ x = 1.0, y = 0.0, z = 0.0 } } else { math::Vec3{ x = 0.0, y = 1.0, z = 0.0 } }
+        return math::vec3::normalize{ v = math::vec3::cross{ a = u, b = r } }
+    }
+
+    // The point at `f` (0 to 1) of a curve through `ctrl` (count n): between neighbouring control points a
+    // cubic leaving the first along its tangent and arriving at the next along that one's.
+    fn curve_point { ctrl: *[MAX_CTRL]math::Vec3, tang: *[MAX_CTRL]math::Vec3, n: u32, f: f32 } -> math::Vec3 {
+        let spans = @as(f32, n - 1)
+        let mut k = @as(u32, math::clamp{ x = math::floorf{ x = f * spans }, lo = 0.0, hi = spans - 1.0 })
+        let t = math::clamp{ x = f * spans - @as(f32, k), lo = 0.0, hi = 1.0 }
+        let a = ctrl[k]
+        let b = ctrl[k + 1]
+        let ha = math::vec3::add{ a, b = tang[k] }
+        let hb = math::vec3::sub{ a = b, b = tang[k + 1] }
+        let s = 1.0 - t
+        let mut p = math::vec3::scale{ v = a, s = s * s * s }
+        p = math::vec3::add_scaled{ a = p, b = ha, s = 3.0 * s * s * t }
+        p = math::vec3::add_scaled{ a = p, b = hb, s = 3.0 * s * t * t }
+        return math::vec3::add_scaled{ a = p, b, s = t * t * t }
+    }
+
+    // How many points a chain `length` metres long has: lightningSubDiv a metre and the two ends
+    // (0x00494da0 sets the birthrate, which is the point count, so).
+    fn points_for { props: mdl::EmitterProps, length: f32 } -> u32 {
+        let n = math::max{ a = props.lightning_sub_div * length + 2.0, b = 2.0 }
+        return @as(u32, math::min{ a = n, b = @as(f32, LIGHTNING_POINTS) })
+    }
+
+    // One step of a Lightning emitter whose node is at `world`. Without a target (em.aim null) it has no
+    // points, as the original drops every particle when it has none.
+    fn step_lightning { mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, dt: f32, world: math::Mat4 } {
+        let b = &em.bolt
+        let aim = em.aim ifnull {
+            em.live = 0
+            b.chain_count = 0
+            b.shaped = false
+            return
+        }
+        let goal = math::mat4::transform_point{ m = math::mat4::inverse_affine{ m = world }, p = aim }
+        let length = math::vec3::length{ v = goal }
+        if length < 0.01 or em.puffs.len < 4 {
+            em.live = 0
+            b.chain_count = 0
+            return
+        }
+        let step = math::max{ a = dt, b = 0.0 }
+        b.jag_age = b.jag_age + step
+        b.shape_age = b.shape_age + step
+        let main = least{ a = points_for{ props, length }, b = @as(u32, em.puffs.len / 2) }
+        if not b.shaped or b.shape_age > props.control_pt_delay {
+            shape_bolt{ &em, e, props, goal, length, main }
+            b.shape_age = 0.0
+        }
+        let jag = not b.shaped or b.jag_age > props.lightning_delay
+        b.shaped = true
+        if jag { b.jag_age = 0.0 }
+        let old_live = em.live
+        // The main chain along its curve.
+        let unit = math::vec3::scale{ v = goal, s = 1.0 / length }
+        let mut ctrl: [MAX_CTRL]math::Vec3
+        let mut tang: [MAX_CTRL]math::Vec3
+        let n = b.ctrl_count
+        let mut k: u32 = 0
+        while k < n {
+            ctrl[k] = math::vec3::add{ a = math::vec3::scale{ v = goal, s = @as(f32, k) / @as(f32, n - 1) }, b = b.bends[k] }
+            tang[k] = math::vec3::scale{ v = unit, s = props.tangent_length }
+            k = k + 1
+        }
+        tang[0] = b.lead
+        b.chains[0].first = 0
+        b.chains[0].count = main
+        b.chains[0].scale = 1.0
+        let mut i: u32 = 0
+        while i < main {
+            let at = curve_point{ ctrl = &ctrl, tang = &tang, n, f = @as(f32, i) / @as(f32, main - 1) }
+            set_point{ &em, i, at, dt = step, fresh = i >= old_live }
+            i = i + 1
+        }
+        if jag { jag_chain{ &em, props, first = 0, count = main } }
+        // The branches, each from a point of the main chain as it now stands.
+        let mut used = main
+        let mut c: u32 = 1
+        while c < b.chain_count {
+            let ch = &b.chains[c]
+            c = c + 1
+            let from_index = least{ a = ch.from, b = main - 1 }
+            let start = math::vec3::add{ a = em.puffs[from_index].pos, b = em.puffs[from_index].jag }
+            let end = if ch.forks { math::vec3::add{ a = start, b = ch.reach } } else { goal }
+            let span = math::vec3::sub{ a = end, b = start }
+            let span_len = math::vec3::length{ v = span }
+            let room = @as(u32, em.puffs.len) - used
+            let count = least{ a = points_for{ props, length = span_len }, b = room }
+            ch.first = used
+            ch.count = if count >= 2 and span_len > 0.01 { count } else { 0 }
+            if ch.count == 0 { continue }
+            let mut bc: [MAX_CTRL]math::Vec3
+            let mut bt: [MAX_CTRL]math::Vec3
+            bc[0] = start
+            bc[1] = end
+            bt[0] = ch.lead
+            bt[1] = math::vec3::scale{ v = span, s = props.tangent_length / span_len }
+            let mut j: u32 = 0
+            while j < ch.count {
+                let at = curve_point{ ctrl = &bc, tang = &bt, n = 2, f = @as(f32, j) / @as(f32, ch.count - 1) }
+                set_point{ &em, i = used + j, at, dt = step, fresh = used + j >= old_live }
+                j = j + 1
+            }
+            if jag { jag_chain{ &em, props, first = used, count = ch.count } }
+            used = used + ch.count
+        }
+        em.live = used
+    }
+
+    // Point i of a chain at `at`; a point new this step starts unthrown and young (its age only runs the
+    // flipbook).
+    fn set_point { mut em: Emitting, i: u32, at: math::Vec3, dt: f32, fresh: bool } {
+        let p = &em.puffs[i]
+        if fresh {
+            p.* = Puff{ pos = at, vel = math::vec3::zero{}, age = 0.0, life = 1.0, angle = 0.0, frame = 0.0, aim = math::vec3::zero{}, tail = at, still = false, jag = math::vec3::zero{} }
+        } else {
+            p.pos = at
+            p.age = p.age + dt
+        }
+    }
+
+    // New control points (0x00497c60): the line from the emitter to the target with int(numcontrolpts) more
+    // points between, each up to controlptradius off the line; the curve leaves the emitter along its +Z
+    // turned up to tangentspread degrees, every control point's tangent tangentlength long. And the
+    // branches (0x00491a50): rand % (branch_count + 1) of them, each from a point a tenth to nine tenths
+    // along the chain, as thick as that fraction of the chain; one from the first half forks off to a
+    // point of its own, a later one runs to the target too.
+    fn shape_bolt { mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, goal: math::Vec3, length: f32, main: u32 } {
+        let b = &em.bolt
+        let unit = math::vec3::scale{ v = goal, s = 1.0 / length }
+        let side = square_to{ u = unit }
+        let n = @as(u32, math::clamp{ x = props.num_control_pts + 2.0, lo = 2.0, hi = @as(f32, MAX_CTRL) })
+        b.ctrl_count = n
+        let mut k: u32 = 0
+        while k < n {
+            b.bends[k] = math::vec3::zero{}
+            if k > 0 and k + 1 < n and props.control_pt_radius > 0.0 {
+                let dir = turn_about{ v = side, k = unit, degrees = @as(f32, rng_below{ s = &em.rng, n = 360 }) }
+                b.bends[k] = math::vec3::scale{ v = dir, s = (2.0 * rng_unit{ s = &em.rng } - 1.0) * props.control_pt_radius }
+            }
+            k = k + 1
+        }
+        let z = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }
+        let tilt = rng_unit{ s = &em.rng } * math::max{ a = props.tangent_spread, b = 0.0 }
+        let lean = turn_about{ v = z, k = turn_about{ v = math::Vec3{ x = 1.0, y = 0.0, z = 0.0 }, k = z, degrees = @as(f32, rng_below{ s = &em.rng, n = 360 }) }, degrees = tilt }
+        b.lead = math::vec3::scale{ v = lean, s = props.tangent_length }
+        b.chains[0] = no_chain{}
+        b.chain_count = 1
+        let forks = rng_below{ s = &em.rng, n = e.branch_count + 1 }
+        let mut f: u32 = 0
+        while f < forks and b.chain_count < MAX_CHAINS {
+            let s = @as(f32, rng_below{ s = &em.rng, n = 80 }) * 0.01 + 0.1
+            let mut ch = no_chain{}
+            ch.scale = s
+            ch.from = @as(u32, s * @as(f32, main - 1))
+            ch.forks = s <= 0.5
+            let out = turn_about{ v = side, k = unit, degrees = @as(f32, rng_below{ s = &em.rng, n = 360 }) }
+            if ch.forks {
+                let wide = (@as(f32, rng_below{ s = &em.rng, n = 75 }) * 0.01 + 0.25) * length * 0.5
+                let ahead = @as(f32, rng_below{ s = &em.rng, n = 25 }) * 0.01 + 0.25
+                ch.reach = math::vec3::add{ a = math::vec3::scale{ v = out, s = wide }, b = math::vec3::scale{ v = goal, s = ahead } }
+            }
+            ch.lead = math::vec3::scale{ v = out, s = props.tangent_length }
+            b.chains[b.chain_count] = ch
+            b.chain_count = b.chain_count + 1
+            f = f + 1
+        }
+    }
+
+    // Throws a chain's inner points off its curve (0x00498b80, every lightningDelay seconds): each by up to
+    // lightningRadius times twice its distance from the nearer end in chain fractions (nothing at the ends,
+    // the radius in the middle), along a direction square to the chain that turns about it by a random step
+    // of up to lightningZigzag degrees a point, plus up to half a point's spacing times lightningScale along
+    // the chain either way.
+    fn jag_chain { mut em: Emitting, props: mdl::EmitterProps, first: u32, count: u32 } {
+        if count < 2 { return }
+        let a = em.puffs[first].pos
+        let z = em.puffs[first + count - 1].pos
+        em.puffs[first].jag = math::vec3::zero{}
+        em.puffs[first + count - 1].jag = math::vec3::zero{}
+        let span = math::vec3::sub{ a = z, b = a }
+        let len = math::vec3::length{ v = span }
+        if len < 0.0001 { return }
+        let unit = math::vec3::scale{ v = span, s = 1.0 / len }
+        let along = math::vec3::scale{ v = unit, s = len / @as(f32, count) * 0.5 * props.lightning_scale }
+        let mut out = square_to{ u = unit }
+        let zig = @as(u32, math::max{ a = props.lightning_zigzag, b = 0.0 })
+        let mut turned: f32 = 0.0
+        let mut i: u32 = 1
+        while i + 1 < count {
+            if zig != 0 {
+                let mut d = @as(f32, rng_below{ s = &em.rng, n = zig })
+                if (rng_next{ s = &em.rng } & 1) != 0 { d = 360.0 - d }
+                turned = turned + d
+                out = turn_about{ v = out, k = unit, degrees = turned }
+            }
+            let mut f = @as(f32, i) / @as(f32, count)
+            if f > 0.5 { f = 1.0 - f }
+            let reach = 2.0 * f * props.lightning_radius * @as(f32, rng_below{ s = &em.rng, n = 100 }) * 0.01
+            let mut slide = @as(f32, rng_below{ s = &em.rng, n = 100 }) * 0.01
+            if (rng_next{ s = &em.rng } & 1) != 0 { slide = -slide }
+            em.puffs[first + i].jag = math::vec3::add{ a = math::vec3::scale{ v = out, s = reach }, b = math::vec3::scale{ v = along, s = slide } }
+            i = i + 1
+        }
+    }
+
+    // The node a Lightning emitter's bolt runs to unless its owner says otherwise: its first child that is a
+    // reference node (an `fx_ref` dummy where the bolt ends; a beam hangs it on its target instead, and the
+    // original's `_EmitterTarget` event, 0x0049b240, takes the emitter's target from such a child).
+    fn bolt_end_node { model: *mdl::Model, e: *mdl::Emitter } -> ?u32 {
+        let node = &model.nodes[e.node]
+        let mut i: usize = 0
+        while i < node.children.len {
+            let c = node.children[i]
+            i = i + 1
+            if model.nodes[c].reference != null { return c }
+        }
+        return null
+    }
+
+    // Adds an emitter's `n` rows (fill_particles) to the frame as `emitter` says: a Linked emitter's as one
+    // ribbon a strip, the others as one batch.
+    fn add_rows { mut frame: render::Frame, emitter: render::Emitter, em: *Emitting, e: *mdl::Emitter, n: u32 } {
+        if emitter.facing != render::Facing::ribbon {
+            render::add_emitter{ &frame, emitter, particles = em.out[..@as(usize, n)] }
+            return
+        }
+        let strips = strip_count{ em, e }
+        let mut k: u32 = 0
+        while k < strips {
+            let st = strip_at{ em, e, k }
+            k = k + 1
+            if st.count < 2 or st.first + st.count > n { continue }
+            render::add_emitter{ &frame, emitter, particles = em.out[@as(usize, st.first)..@as(usize, st.first + st.count)] }
+        }
+    }
+}

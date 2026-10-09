@@ -1,170 +1,73 @@
 // Beams (EffectBeam, visualeffects.2da rows with Type_FD D whose duration effect is an engine-programmed
-// beam, progfx 608..621): Force lightning, drain life, the droid powers, the Force storm's arcs. The
-// original draws them from code; ours is a jagged chain of camera-facing streaks of fx_lightning from
-// the effector's hand to the target's chest, jittered anew every few hundredths of a second, a wide
-// dim glow under a narrow bright core (ours: the programmed effects were not read).
+// beam, progfx 608..621): Force lightning, drain life, the droid powers, the Force storm's arcs, the rays.
+// The original (docs/re/render-gui.md, the 600s) loads the code's model, hangs it on the source's node and
+// its far end, the `fx_ref` reference nodes under its Lightning emitters, on the target's `impact` node, and
+// plays `cast01`; the Lightning emitters draw the bolt from one to the other (gui3d lightning.ctx). Ours: a
+// `follow` effect on the source whose Lightning emitters aim at the target (Fx.aim_object).
 namespace vfx {
-    const MAX_BEAMS: usize = 12
-    const BEAM_SEGMENTS: usize = 10
-    // How often the bolt's shape changes (seconds).
-    const BEAM_FLICKER: f32 = 0.045
-
-    struct Beam {
-        live: bool,
-        style: i32,                     // the visualeffects.2da id
-        source: u32,
-        target: u32,
-        part: i32,                      // the effector's body node: 0 hand, 1 chest, 2 head
-        age: f32,
-        life: f32,
-        shape_age: f32,                 // seconds since the jitter was drawn
-        from: math::Vec3,
-        to: math::Vec3,
-        points: [11]math::Vec3,
-        out: [24]render::Particle,      // the glow's and the core's streaks, kept until the frame is drawn
-        used: u32,
+    // The model of a beam code (0x006a0680).
+    fn beam_model { code: i32 } -> []u8 {
+        if code == 608 { return "v_lightns_dur" }
+        if code == 609 { return "v_lightnx_dur" }
+        if code == 610 { return "v_drddisab_dur" }
+        if code == 611 { return "v_drdkill_dur" }
+        if code == 612 { return "v_deathfld_dur" }
+        if code == 613 { return "v_drain_dur" }
+        if code == 614 { return "v_flame_dur" }
+        if code == 615 { return "v_stunray_dur" }
+        if code == 616 { return "v_coldray_dur" }
+        if code == 617 { return "v_ionray01_dur" }
+        if code == 618 { return "v_ionray02_dur" }
+        if code == 619 { return "v_fstorm_dur" }
+        if code == 620 { return "v_drdstun_dur" }
+        if code == 621 { return "v_fshock_dur" }
+        return ""
     }
 
-    fn no_beam {} -> Beam {
-        let zero = math::vec3::zero{}
-        let blank = render::Particle{ position = zero, size = math::Vec2{ x = 0.0, y = 0.0 }, angle = 0.0, color = render::white{}, frame = 0, dir = zero }
-        return Beam{
-            live = false, style = 0, source = obj::INVALID, target = obj::INVALID, part = 0, age = 0.0, life = 0.0, shape_age = 1.0,
-            from = zero, to = zero, points = [zero; 11], out = [blank; 24], used = 0,
-        }
-    }
-
-    // The beam's colour (glow, core) by its visualeffects.2da id: lightning and shock blue-white, drain life
-    // and the death field's tentacles red, the droid powers electric blue-green, the storm purple.
-    struct Tint { glow: render::Color, core: render::Color, width: f32 }
-
-    fn tint_of { style: i32 } -> Tint {
-        if style == 2029 or style == 2026 { return Tint{ glow = render::rgba{ r = 0.9, g = 0.15, b = 0.2, a = 0.55 }, core = render::rgba{ r = 1.0, g = 0.7, b = 0.7, a = 1.0 }, width = 0.22 } }
-        if style == 2027 or style == 2028 or style == 2065 { return Tint{ glow = render::rgba{ r = 0.2, g = 0.9, b = 0.9, a = 0.55 }, core = render::rgba{ r = 0.8, g = 1.0, b = 1.0, a = 1.0 }, width = 0.14 } }
-        if style == 2061 { return Tint{ glow = render::rgba{ r = 0.65, g = 0.3, b = 1.0, a = 0.55 }, core = render::rgba{ r = 0.9, g = 0.8, b = 1.0, a = 1.0 }, width = 0.2 } }
-        if style == 2053 { return Tint{ glow = render::rgba{ r = 1.0, g = 0.5, b = 0.1, a = 0.55 }, core = render::rgba{ r = 1.0, g = 0.9, b = 0.5, a = 1.0 }, width = 0.3 } }
-        return Tint{ glow = render::rgba{ r = 0.35, g = 0.55, b = 1.0, a = 0.55 }, core = render::rgba{ r = 0.9, g = 0.95, b = 1.0, a = 1.0 }, width = 0.16 }
-    }
-
-    // The node of the effector the beam leaves from (BODY_NODE_HAND 0, CHEST 1, HEAD 2).
+    // The node of the effector the beam leaves from (BODY_NODE_HAND 0, CHEST 1, HEAD 2; the original's
+    // selector: 0 handconjure, 1 impact, 2 headconjure).
     fn beam_hook { part: i32 } -> []u8 {
-        if part == 1 { return "impact_bolt" }
+        if part == 1 { return "impact" }
         if part == 2 { return "headconjure" }
         return "handconjure"
     }
 
-    fn start_beam { mut v: Vfx, style: i32, source: u32, target: u32, part: i32, seconds: f32 } {
+    fn start_beam {
+        mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device,
+        style: i32, source: u32, target: u32, part: i32, seconds: f32,
+    } {
+        let t = w.tables.visualeffects
+        let row = effect_row{ t, effect = style } ifnull { return }
+        let model = beam_model{ code = progfx_code{ t, row, column = "progfx_duration" } }
+        if model.len == 0 { return }
+        let life = if seconds > 0.05 { seconds } else { 1.0 }
+        let got = acquire{ &v, &sc, &w, &dev, name = model } iferr { null }
+        let slot = got ifnull { return }
+        let f = &v.fx[slot]
+        f.object = source
+        f.which = 0
+        let hook = beam_hook{ part }
         let mut i: usize = 0
-        while i < MAX_BEAMS {
-            if not v.beams[i].live {
-                let b = &v.beams[i]
-                b.live = true
-                b.style = style
-                b.source = source
-                b.target = target
-                b.part = part
-                b.age = 0.0
-                b.life = if seconds > 0.05 { seconds } else { 1.0 }
-                b.shape_age = 1.0
-                return
-            }
+        while i < hook.len {
+            f.hook[i] = hook[i]
             i = i + 1
         }
-        v.dropped = v.dropped + 1
+        f.hook_len = hook.len
+        // Only `cast01`, which the beam models lack: their `impact` would shrink the bolt to nothing in a
+        // tenth of a second.
+        begin{ &v, &sc, &w, slot, anim = "cast01", life, kind = Kind::follow, looping = false, strict = true }
+        f.matrix = follow_matrix{ sc = &sc, w = &w, f }
+        f.aim_object = target
+        f.beam = style
     }
 
     // Ends the beams `style` at `target` (the effect was removed before its time).
     fn end_beams { mut v: Vfx, style: i32, target: u32 } {
         let mut i: usize = 0
-        while i < MAX_BEAMS {
-            let b = &v.beams[i]
+        while i < MAX_FX {
+            let f = &v.fx[i]
             i = i + 1
-            if b.live and b.style == style and b.target == target { b.live = false }
-        }
-    }
-
-    fn update_beams { mut v: Vfx, sc: scene::Scene, w: world::World, dt: f32 } {
-        let mut i: usize = 0
-        while i < MAX_BEAMS {
-            let b = &v.beams[i]
-            i = i + 1
-            if not b.live { continue }
-            b.age = b.age + dt
-            if b.age >= b.life {
-                b.live = false
-                continue
-            }
-            b.from = hook_point{ sc = &sc, w = &w, id = b.source, hook = beam_hook{ part = b.part }, which = 0, fallback = 1.2 }
-            b.to = hook_point{ sc = &sc, w = &w, id = b.target, hook = "impact_bolt", which = 0, fallback = 1.2 }
-            b.shape_age = b.shape_age + dt
-            if b.shape_age >= BEAM_FLICKER {
-                b.shape_age = 0.0
-                shape_beam{ &v, b }
-            }
-        }
-    }
-
-    // A fresh jagged line from `from` to `to`: the points sway sideways and up by an amount that is
-    // nothing at the ends and largest in the middle.
-    fn shape_beam { mut v: Vfx, b: *mut Beam } {
-        let span = math::vec3::sub{ a = b.to, b = b.from }
-        let length = math::vec3::length{ v = span }
-        if length < 0.05 {
-            b.used = 0
-            return
-        }
-        let ahead = math::vec3::scale{ v = span, s = 1.0 / length }
-        let side = math::vec3::normalize{ v = math::vec3::cross{ a = ahead, b = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } } }
-        let up = math::vec3::cross{ a = side, b = ahead }
-        let sway = math::min{ a = 0.35, b = 0.05 + length * 0.05 }
-        let mut k: usize = 0
-        while k <= BEAM_SEGMENTS {
-            let t = @as(f32, k) / @as(f32, BEAM_SEGMENTS)
-            let on_line = math::vec3::lerp{ a = b.from, b = b.to, t }
-            let bulge = 4.0 * t * (1.0 - t)
-            let dx = (random{ &v } - 0.5) * 2.0 * sway * bulge
-            let dy = (random{ &v } - 0.5) * 2.0 * sway * bulge
-            b.points[k] = math::vec3::add{ a = on_line, b = math::vec3::add{ a = math::vec3::scale{ v = side, s = dx }, b = math::vec3::scale{ v = up, s = dy } } }
-            k = k + 1
-        }
-        // The streaks: for every segment the glow, then the core.
-        let tint = tint_of{ style = b.style }
-        let fade = math::clamp{ x = (b.life - b.age) / 0.2, lo = 0.0, hi = 1.0 }
-        let mut n: u32 = 0
-        k = 0
-        while k < BEAM_SEGMENTS {
-            let p0 = b.points[k]
-            let p1 = b.points[k + 1]
-            let seg = math::vec3::sub{ a = p1, b = p0 }
-            let seg_len = math::vec3::length{ v = seg }
-            if seg_len > 0.001 {
-                let dir = math::vec3::scale{ v = seg, s = 1.0 / seg_len }
-                let mid = math::vec3::lerp{ a = p0, b = p1, t = 0.5 }
-                let mut glow = tint.glow
-                glow.a = glow.a * fade
-                let mut core = tint.core
-                core.a = core.a * fade
-                b.out[n] = render::Particle{ position = mid, size = math::Vec2{ x = tint.width * 3.0, y = seg_len + tint.width * 2.0 }, angle = 0.0, color = glow, frame = 0, dir }
-                b.out[n + 1] = render::Particle{ position = mid, size = math::Vec2{ x = tint.width, y = seg_len + tint.width }, angle = 0.0, color = core, frame = 0, dir }
-                n = n + 2
-            }
-            k = k + 1
-        }
-        b.used = n
-    }
-
-    fn draw_beams { v: *Vfx, mut frame: render::Frame, view: u32 } {
-        if v.beam_tex == null { return }
-        let mut i: usize = 0
-        while i < MAX_BEAMS {
-            let b = &v.beams[i]
-            i = i + 1
-            if not b.live or b.used == 0 { continue }
-            render::add_emitter{ &frame, emitter = render::Emitter{
-                view, texture = v.beam_tex, blend = render::Blend::additive, grid_x = 1, grid_y = 1,
-                facing = render::Facing::velocity, axis = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, transform = math::mat4::identity{}, first = 0, count = 0, effect = true,
-                fog = false, sort = 0,
-            }, particles = b.out[..@as(usize, b.used)] }
+            if f.live and f.beam == style and f.aim_object == target { f.life = f.age }
         }
     }
 }

@@ -202,10 +202,19 @@ while flying and sizeEnd (sizeEnd_y) once frozen, with no curve and no halving (
 frame-blending field (header +186) draws the emitter in 5 passes: the current cell at half alpha,
 then neighbouring cells additively with alpha fading by the time into the cell (med).
 
-Linked (med): one ribbon through the particles in list (birth) order, a quad per pair of neighbours
-sharing its end corners with the next one, built like the Motion_Blur quad below (width across the
-on-screen direction to the next particle, W = sizeX, A = sizeY / 4), each quad coloured and sized by
-the first particle of the pair.
+Linked (`0x00495b20`, read 2026-10-09): one ribbon through the particles in list (birth) order, n - 1
+quads for n particles. For the pair (i, i + 1) the segment's direction is projected onto the camera's X and
+Y axes (columns 0 and 1 of the camera quaternion, camera `+0x88`): e2 is that on-screen direction, unit, and
+e1 the perpendicular in the camera's plane (both the camera's axes when the projection is under 1e-5). The
+quad's end corners are p(i+1) +- e1 * W + e2 * A, with W = particle i's sizeX (twice the half-size) and A a
+quarter of its sizeY (of sizeX without one); its start corners are the previous quad's end corners (the
+first quad's: p0 +- e1 * W - e2 * A). Each quad is coloured by particle i (one packed colour for its four
+corners); u runs across the ribbon (the +e1 corners take the cell's right edge), v along it, each quad
+showing the whole cell of particle i's flipbook frame. Positions are the particles' plus, when the emitter
+answers vtable `+0x84` (only the Lightning class does, returning itself), its per-point offsets at `+0x270`.
+For a Lightning emitter (the short at `+0x1f4` is 6) the curves run by the point's index over the count,
+not by age over lifeExp. Depth writes off, depth test on, the blend of the table above; the owner's scale
+multiplies the sizes.
 
 Motion_Blur: a quad from the particle's tail `+0x60` to its head. Each frame, before the move, the tail
 eases to the head: tail = (1 - t) tail + t head, t = min(dt, blurlength) / blurlength, so the streak
@@ -221,3 +230,46 @@ above frameEnd it stays on frameStart, med); with `random` bit 0 (flag 0x20) it 
 `random` bit 1 (flag 0x1000) each step jumps to a random cell rand % (|frameEnd - frameStart| + 1)
 (not offset by frameStart). Cell c is the texture's tile c % xgrid across, c / xgrid down (header
 +20, +24). After a step a particle with negative lifeExp has its age reset to 0.
+
+## Lightning (`0x0049d1d0`, vtable `0x00743610`; read 2026-10-09)
+
+A Lightning emitter births nothing: its particles are the points of a chain from the emitter to a target
+(`+0x1e4`, a node), drawn as the Linked ribbon above. Every one of the 44 Lightning emitters in the data
+(beam models `v_*_dur`, `plc_endcorps`, `m45ac_bmap`) is Linked, Lighten and point-to-point (flag 0x2).
+
+- **Setup** (`0x0049d480`, slot `+0x7c`): the usual setup, then lifeExp (`+0x78`) = 1, the animation
+  event `_EmitterTarget` registered on the owner (handler `0x0049b240`), the marker short `+0x1f4` = 6, and
+  `branch_count` (header +12) child Lightning emitters of the same node made (arrays `+0x258`, their
+  start points `+0x264`).
+- **Target.** `0x0049b240` takes the target from the emitter's children: the first whose vtable `+0x38`
+  answers, i.e. a reference node. Every Lightning node in the data has an `fx_ref` reference child a few
+  metres along its +Z; the beam models' are `reattachable`, and a beam (render-gui.md, codes 600-699) hangs
+  them on the target's node, so the bolt ends there. Without a target nothing is stepped or drawn (the
+  update drops every particle, `0x0049b680` returns).
+- **Point count** (`0x00494da0`, when slot `+0x84` answers): `+0xd0` = the distance to the target and
+  birthrate (`+0x58`) = lightningSubDiv * distance + 2. The update (`0x00498b80`, slot `+0x80`) keeps
+  exactly int(birthrate) particles (reusing a free list), so lightningSubDiv is points a metre.
+- **The curve** (`0x00497c60`, slot `+0x88`, every controlptdelay seconds, `+0xf8` the clock;
+  `+0x210`.. arrays of 0x0c-byte points): int(numcontrolpts) + 2 control points from the emitter to the
+  target, the inner ones moved off the straight line by up to controlptradius in a random direction about
+  it; tangents (`+0x234`) tangentlength long, the emitter's along its +Z (perturbed by random angles,
+  degrees) and the target's toward it. Each chain point i lies at i / (n - 1) of a cubic through neighbouring
+  control points and their tangents. With the node's control-point smoothing (header +16) set, the points
+  move from the old curve (`+0x21c`) to the new one (`+0x228`) over controlptdelay; without, they jump.
+  Between renewals the points, control points and tangents are turned and moved rigidly with the line from
+  the emitter to its target (`0x004ab630`, rotation from the old line `+0x1f8` to the new).
+- **The flicker** (every lightningDelay seconds, `+0xf4`): for each inner point i of n, an offset
+  (`+0x270`, added only when drawing) = a direction square to the chain times 2 * min(i/n, 1 - i/n) *
+  lightningRadius * (rand % 100) / 100, plus the chain's unit direction times (L / n) * 0.5 *
+  lightningScale * (rand % 100) / 100 with a random sign. The square direction (`+0x27c`, set from the
+  chain's direction) is turned about the chain before each point by an angle that grows by rand %
+  int(lightningZigzag) degrees (or 360 minus that) a point, so a non-zero zigzag twists the bolt; the
+  end points are not moved. (A second rule behind the global `0x0083049c`, an offset along a fixed
+  perpendicular of up to rand % int(...) hundredths times lightningScale, is not used: the global is 0, med.)
+- **Branches** (`0x00491a50`, slot `+0x8c`, with each new curve): rand % (branch_count + 1) of the
+  children run. Each gets s = 0.1 + (rand % 80) / 100, its sizes (start, mid, end and the y ones) s times
+  the parent's, and a start point on the parent's chain. With s <= 0.5 it forks to a point of its own:
+  from its start, (rand % 75 / 100 + 0.25) * L / 2 along a random direction square to the chain plus
+  (rand % 25 / 100 + 0.25) of the chain's line; with s > 0.5 it runs to the parent's target. Its point
+  count is lightningSubDiv * its length + 2, its start follows the parent's offset point each frame, and
+  it is stepped and flickers as a chain of its own (the children are drawn as emitters of their own).
