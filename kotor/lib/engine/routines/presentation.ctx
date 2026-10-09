@@ -90,7 +90,7 @@ namespace rt_pres {
         let me = nwvm::self_object{ vm }
         let o = world::object{ w = &w, id = me }
         let at = if o != null { o.position } else { math::vec3::zero{} }
-        outbox::post{ out = &w.out, note = outbox::Note::play_sound{ name = resref::truncate{ name }, object = me, position = at, positional = o != null } }
+        outbox::post{ out = &w.out, note = outbox::Note::play_sound{ name = resref::truncate{ name }, object = me, position = at, positional = o != null, group = outbox::GROUP_SCRIPTED } }
     }
 
     fn no_clicks_for { mut w: world::World, mut vm: nwvm::Vm, argc: u8 } -> ! {

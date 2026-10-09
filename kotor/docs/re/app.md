@@ -379,6 +379,45 @@ the two environment-effects keys are not written back.
 The listener follows the camera/player each frame (`UpdateSoundListener` 0x005f5370), and the
 area's EAX room follows the listener (0x005ee860).
 
+### Voices: how many, who gets one, how loud
+
+Read for the sound fixes of 2026-10 (docs/design/audio.md, "Voices and loudness"); confidence
+high where a decompile says it plainly, medium where it rests on a field's use.
+
+- **Handles.** `Initialize` (0x005da8a0) allocates the 3D sample handles (`Number 3D Voices`,
+  clamped to 16..64; count at internal+0x29, an array of 16-byte entries at +0x30: owning source,
+  Miles handle, a busy flag, one more word) and the 2D ones (`Number 2D Voices`, clamped to
+  24..64; count +0x28, array +0x2c). Sound sources (`CExoSoundSource`, effects) only ever take the
+  first half of the 2D handles (0x005d8ff0 scans `count >> 1`: 12 by default); 0x005d8470 counts
+  against the other half (the streams', med). Miles mixes on its own service thread, so a long
+  game frame never starves the output; the game only calls `AIL_set_preference(1, 64)` once in the
+  constructor (0x005d86e0; which preference index 1 is wasn't checked).
+- **PriorityGroups.2da** is read by 0x005d7bd0 into a table at internal+0x4c (row count +0x2a), one
+  0x18-byte row per group: +0 `Interrupt` (int), +4 `MaxPlaying`, +5 how many play now, +6
+  `Priority`, +7 `Volume` (bytes), +8 `MinVolumeDist`, +0xc `MaxVolumeDist` (floats, only when
+  both are present), +0x14 `FadeTime` (u16), then `PlaybackVariance`. A source's group is its
+  byte +0x35.
+- **Starting a source** (`CExoSoundSourceInternal::Play` 0x005db4d0): a 3D source at or past its
+  max distance from the listener (0x005db050) is not started; a looping one waits on a list
+  (0x005d7b80) until it comes in range. When its group already plays `MaxPlaying` sources, it
+  stops one of them if `Interrupt` is set (0x005d7fe0: the first of the group on the playing list
+  at +0x40, where 0x005d7b40 adds at the head, so the most recently started, med) and otherwise
+  isn't started. Then it needs a handle (0x005d8ff0 2D, 0x005d8eb0 3D): a free one, or else the
+  one whose owner's group `Priority` is the largest number (the least important) **and strictly
+  larger than the new sound's**; that owner is stopped (0x005db210) and, if looping, parked on
+  the waiting list (+0x38) to start again later. With no such handle the new sound is simply not
+  played: a sound never cuts off one of its own priority.
+- **Out of range later**: `Update` (0x005d9590) stops a playing source that has moved out of range
+  (0x005db050) and parks it on the waiting list if it loops.
+- **Loudness** (`CExoSoundSourceInternal::SetVolume` 0x005db800): byte +0x84 is the group's
+  `Volume` (set by 0x005dbb20), byte +0x85 the source's own (0..127). The level is
+  `groupVolume * volume / 127` (an integer 0..127). A 2D source gets `level / 127 * user` where
+  `user` is the Sound Effects volume (0x005d6b10), times `2 - bias` when `2D3D Bias` (+0x60) is
+  over 1, as `AIL_set_sample_volume_levels`. A 3D source gets `(level / 127 * user * b)` squared
+  (`_CIpow` with 2.0), `b` being the bias when it is under 1, as `AIL_set_3D_sample_volume`. The
+  installed swkotor.ini has `2D3D Bias=1.50` (the hardware rows of `SoundProvider.2da` say 1.5,
+  Miles Fast 2D 1.0), so 2D effects play at half their level.
+
 ## Movies (Bink)
 
 | Address | Our name | What it does | Conf. |

@@ -39,6 +39,7 @@ namespace frontend {
         // [Sound Options]
         music: i32, voice: i32, effects: i32, movie: i32,       // 0..100
         eax: bool, force_software: bool,
+        bias_2d3d: f32,             // "2D3D Bias", 0.1..1.9: over 1 quietens the 2D sound effects by 2 - bias (docs/re/app.md, "Voices"); not on the panel
         // [Game Options]
         difficulty: i32,            // 0 easy, 1 normal, 2 hard
         mouse_sensitivity: i32,     // 0..100
@@ -63,7 +64,7 @@ namespace frontend {
             fx_original = false, fx_bloom = 2, fx_room_light = 1, fx_shadows = 2, fx_ao = 2, fx_lightmaps = 2, fx_dof = 2,
             fx_reflections = 2, fx_shafts = true, fx_fog = true, fx_grade = true, fx_edges = 1, fx_foliage = true,
             fx_tessellation = 0, fx_timing = false, fx_exposure = 1.0,
-            music = 85, voice = 85, effects = 85, movie = 100, eax = false, force_software = false,
+            music = 85, voice = 85, effects = 85, movie = 100, eax = false, force_software = false, bias_2d3d = 1.5,
             difficulty = 1, mouse_sensitivity = 33, reverse_buttons = false,
             mouse_look = false, auto_level_up = false, autosave = true, reverse_minigame_y = false, combat_movement = true,
             tooltips = true, tutorial_popups = true, subtitles = true, minimap = true, floating_numbers = true,
@@ -145,6 +146,7 @@ namespace frontend {
             movie = clamp_i{ v = get_int{ data, section = s, key = "Movie Volume", fallback = d.movie }, lo = 0, hi = 100 },
             eax = get_bool{ data, section = s, key = "EAX", fallback = d.eax },
             force_software = get_bool{ data, section = s, key = "Force Software", fallback = d.force_software },
+            bias_2d3d = math::clamp{ x = get_float{ data, section = s, key = "2D3D Bias", fallback = d.bias_2d3d }, lo = 0.1, hi = 1.9 },
             difficulty = clamp_i{ v = get_int{ data, section = o, key = "Difficulty Level", fallback = d.difficulty }, lo = 0, hi = 2 },
             mouse_sensitivity = clamp_i{ v = get_int{ data, section = o, key = "Mouse Sensitivity", fallback = d.mouse_sensitivity }, lo = 0, hi = 100 },
             reverse_buttons = get_bool{ data, section = o, key = "Reverse Mouse Buttons", fallback = d.reverse_buttons },
@@ -268,6 +270,7 @@ namespace frontend {
         try put_i{ &b, key = "Movie Volume", v = s.movie }
         try put_b{ &b, key = "EAX", v = s.eax }
         try put_b{ &b, key = "Force Software", v = s.force_software }
+        try @fmt(&b, "2D3D Bias={}\n", s.bias_2d3d)
         try @fmt(&b, "\n[Game Options]\n")
         try put_i{ &b, key = "Difficulty Level", v = s.difficulty }
         try put_i{ &b, key = "Mouse Sensitivity", v = s.mouse_sensitivity }

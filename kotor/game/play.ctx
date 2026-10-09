@@ -40,7 +40,7 @@ namespace play {
         // Sound: a device when there is a window; headless, the mixer runs on without one (as the
         // original does with no sound device, audio.md), so sounds still start and end.
         let mut adev: ?*mut audio::Device = null
-        if not opts.headless {
+        if not opts.headless or opts.sound_device {
             let opened = audio::open{ &sdl, rate = 44100, latency_ms = 60 } iferr err{ error } {
                 _ = @fmt(&w.io, "kotor: no sound: {}\n", error)
                 null
@@ -117,9 +117,11 @@ namespace play {
             }
         }
         let mut amb = ambience::make{ heap = w.heap, m = mixer }
+        amb.bias = disp.live.bias_2d3d
         let mut dview = dlgview::make{ heap = w.heap, m = mixer }
         dlgview::attach{ v = &dview, w = &w }
         ambience::start_area{ a = &amb, &w }
+        brace_sound{ &sdl, adev, mixer }
         // HOOK(minigames): a minigame area has a run, its own stage and its own frames (game/minigame*.ctx).
         let mut mg_models = mdl_cache::new{ rm = w.rm.*, keep = w.mod_arena }
         _ = try mg_game::enter{ &w, models = &mg_models }
@@ -262,8 +264,10 @@ namespace play {
                 sc = scene::make{ arena = &scene_arena, heap = w.heap, scratch = texture_scratch, rm = w.rm.* }
                 try scene::load_area{ &sc, &w, &dev }
                 ambience::start_area{ a = &amb, &w }
+                brace_sound{ &sdl, adev, mixer }
             }
             // The step: fixed when headless, measured otherwise.
+            speed::pace{ &sdl, opts, last, freq }
             let now = sdl::counter{ &sdl }
             let real = @as(f32, @as(f64, now - last) / @as(f64, freq))
             last = now
@@ -314,6 +318,7 @@ namespace play {
                         }
                     }
                     ambience::start_area{ a = &amb, &w }
+                    brace_sound{ &sdl, adev, mixer }
                     // The new area fades in after 0.5 s over 1 s, unless its OnEnter script fades itself (gameloop.md 5.5 step 1).
                     outbox::post{ out = &w.out, note = outbox::Note::fade{ out = false, wait = 0.5, length = 1.0, color = math::vec3::zero{} } }
                 }
@@ -422,6 +427,7 @@ namespace play {
                         }
                     }
                     ambience::start_area{ a = &amb, &w }
+                    brace_sound{ &sdl, adev, mixer }
                     // The new area fades in after 0.5 s over 1 s, unless its OnEnter script fades itself (gameloop.md 5.5 step 1).
                     outbox::post{ out = &w.out, note = outbox::Note::fade{ out = false, wait = 0.5, length = 1.0, color = math::vec3::zero{} } }
                     mg_stage = mg_game::make_stage{}
@@ -569,7 +575,14 @@ namespace play {
             // 11. Sound at the camera.
             ambience::update{ a = &amb, &w, eye = camera.eye, forward = camera.dir, dt }
             match adev {
-                some{ value } => { audio::update{ &sdl, dev = value, m = mixer } iferr {} }
+                some{ value } => {
+                    let before = value.underruns
+                    audio::update{ &sdl, dev = value, m = mixer } iferr {}
+                    if w.log.sound and value.underruns != before {
+                        world::prefix{ w = &w }
+                        _ = @fmt(&w.io, "sound underrun: the queue ran dry after a {} ms frame (now keeping {} ms queued)\n", real * 1000.0, value.want * 1000 / value.rate)
+                    }
+                }
                 null => {
                     let frames = math::min{ a = @as(f32, rate) * dt, b = 22050.0 }
                     mix::render{ m = mixer, into = silent[..@as(usize, frames) * 2] }
@@ -668,6 +681,12 @@ namespace play {
             mi = mi + 1
         }
         _ = @fmt(&w.io, "sound: {} sounds started\n", amb.started)
+        if w.log.sound {
+            let st = mixer.stats
+            let underruns: u32 = match adev { some{ value } => { value.underruns } null => { 0 } }
+            _ = @fmt(&w.io, "sound mixer: {} steals, {} refused, {} cut without a fade, {} samples clipped, peak {}, {} blocks limited, at most {} 2D and {} 3D voices busy; {} underruns\n",
+                st.steals, st.refused, st.cuts, st.clipped, st.peak, st.limited, st.busy_2d, st.busy_3d, underruns)
+        }
         _ = @fmt(&w.io, "vfx: {} effects started, {} wanted while the pool was full\n", vx.started, vx.dropped)
         if timed > 1 {
             _ = @fmt(&w.io, "frames: {}, {} ms each on average, {} ms the slowest\n", timed, @as(f32, real_total * 1000.0 / @as(f64, timed - 1)), real_worst * 1000.0)
@@ -705,6 +724,15 @@ namespace play {
 
     // A new world for the next session (the main menu after a story that ended): the tables and the session's capabilities are
     // made again, the saves and the log options are kept, and the old world's memory is left to the arenas.
+    // A new area's sound starts while its first frames are still slow (the first sight of its models, textures and
+    // emitters): the device queues the most it would for a slow frame, so its music doesn't stutter in.
+    fn brace_sound { mut sdl: sdl::Sdl, adev: ?*mut audio::Device, mixer: *mut mix::Mixer } {
+        match adev {
+            some{ value } => { audio::brace{ &sdl, dev = value, m = mixer } iferr {} }
+            null => {}
+        }
+    }
+
     fn restart_world { mut w: world::World, opts: options::Options } -> ! {
         arena::reset{ heap = w.mod_arena }
         let fresh = try world::make{ fs = w.fs, io = w.io, heap = w.heap, rm = w.rm, module_arena = w.mod_arena, scratch = w.scratch, seed = opts.seed, saves = opts.saves }
@@ -775,6 +803,7 @@ namespace play {
                 let ev = display::map_event{ d = &disp, ev = polled }
                 _ = frontend::handle_event{ &fe, &g, ev, scale_x = 1.0, scale_y = 1.0 }
             }
+            speed::pace{ &sdl, opts, last, freq }
             let now = sdl::counter{ &sdl }
             let real = @as(f32, @as(f64, now - last) / @as(f64, freq))
             last = now

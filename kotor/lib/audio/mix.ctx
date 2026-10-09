@@ -16,10 +16,13 @@
 // change smoothly across each render, so volume changes and moving sounds don't click.
 //
 // Voices are limited as swkotor.ini's "Number 2D Voices" (24) and "Number 3D Voices" (16) limit
-// them: when a kind runs out, a new sound takes the voice of the lowest-priority one playing,
-// if that priority isn't higher than its own.
+// them: when a kind runs out, a new sound takes the voice of the lowest-priority one playing if
+// that priority is lower than its own, and otherwise isn't played: as the original's
+// (docs/re/app.md, "Voices"), a sound never cuts off one as important as itself. A 3D sound out
+// of its max_distance from the listener isn't played at all (no voice for what can't be heard).
 namespace mix {
-    error no_voice              // every voice of the kind is busy with a higher priority
+    error no_voice              // every voice of the kind is busy with a priority as high or higher
+    error out_of_range          // a 3D sound beyond its max_distance: nothing to hear
     error bad_feed              // feed rate or channels out of range
 
     // swkotor.ini's volume groups: [Sound Options] Music, Voiceover, Sound Effects, Movie Volume.
@@ -37,13 +40,14 @@ namespace mix {
         position: math::Vec3,
         min_distance: f32,      // 3D: full volume up to this distance
         max_distance: f32,      // 3D: silent from this distance
+        tag: u32,               // the caller's name for the sound, reported back in Event (0: none)
     }
 
     // A sound heard the same wherever the listener is: music, voice-over, the GUI.
     fn sound_2d { group: Group, volume: f32 } -> Params {
         return Params{
             group, volume, pan = 0.0, pitch = 1.0, looping = false, priority = 128, positional = false,
-            position = math::vec3::zero{}, min_distance = 1.0, max_distance = 100.0,
+            position = math::vec3::zero{}, min_distance = 1.0, max_distance = 100.0, tag = 0,
         }
     }
 
@@ -51,7 +55,7 @@ namespace mix {
     fn sound_3d { group: Group, volume: f32, position: math::Vec3, min_distance: f32, max_distance: f32 } -> Params {
         return Params{
             group, volume, pan = 0.0, pitch = 1.0, looping = false, priority = 128, positional = true,
-            position, min_distance, max_distance,
+            position, min_distance, max_distance, tag = 0,
         }
     }
 
@@ -60,6 +64,23 @@ namespace mix {
     struct Handle { slot: u32, id: u32 }
 
     struct Listener { position: math::Vec3, forward: math::Vec3, up: math::Vec3 }
+
+    // What the mixer did that is worth knowing when the sound misbehaves (`--log sound`): counts
+    // since `make`, read and reset by whoever reports them.
+    struct Stats {
+        steals: u32,            // voices taken from a playing sound for a new one
+        refused: u32,           // sounds not played: every voice of their kind busy with a higher priority
+        cuts: u32,              // audible voices ended without a fade (a click): steals and stop{ fade = 0 }
+        clipped: u32,           // output samples past full scale (clamped), after the limiter
+        peak: f32,              // the largest sum of the voices, 1.0 full scale (before the limiter)
+        limited: u32,           // blocks the limiter turned down
+        busy_2d: u32,           // the most 2D / 3D voices busy at once
+        busy_3d: u32,
+    }
+
+    // A steal or a refusal, for the caller to name the sounds involved (Params.tag).
+    struct Event { stolen: bool, tag: u32, priority: u8, old_tag: u32, old_priority: u8, old_looping: bool, old_played: f32 }
+    const EVENTS: usize = 16
 
     const BLOCK: usize = 1024           // output frames mixed at a time
     const WINDOW: usize = 1024          // source frames a voice keeps for interpolation
@@ -109,6 +130,10 @@ namespace mix {
         acc: [2048]f32,         // BLOCK stereo frames being mixed
         scratch: [4096]i16,     // samples read from a stream
         feeds: [2]Feed,
+        stats: Stats,
+        limit_gain: f32,        // the limiter's gain at the end of the last block
+        events: [16]Event,      // the latest steals and refusals, oldest first
+        event_count: usize,     // events since the caller last took them (more than EVENTS: the oldest are lost)
     }
 
     // A mixer for output at `rate` Hz, in memory from `realloc` (it is about 3 MB with its
@@ -131,6 +156,9 @@ namespace mix {
         m.listener = Listener{ position = math::vec3::zero{}, forward = math::vec3::make{ x = 0.0, y = 1.0, z = 0.0 }, up = math::vec3::make{ x = 0.0, y = 0.0, z = 1.0 } }
         m.next_id = 1
         m.errors = 0
+        m.stats = Stats{ steals = 0, refused = 0, cuts = 0, clipped = 0, peak = 0.0, limited = 0, busy_2d = 0, busy_3d = 0 }
+        m.limit_gain = 1.0
+        m.event_count = 0
         let mut i: usize = 0
         while i < n {
             m.voices[i].active = false
@@ -156,6 +184,7 @@ namespace mix {
     // Plays the sound file `bytes` (any kind wav::probe knows), which must stay in memory until
     // the voice is done. Fails with the file's error if it isn't a sound, or no_voice.
     fn play { mut m: Mixer, bytes: []u8, p: Params } -> !Handle {
+        if p.positional and p.max_distance > 0.0 and math::vec3::distance{ a = p.position, b = m.listener.position } >= p.max_distance { return out_of_range }
         let slot = try take_voice{ &m, p }
         let v = &m.voices[slot]
         snd::open{ s = &v.stream, bytes } iferr err{ error } {
@@ -243,9 +272,21 @@ namespace mix {
         let free_now = free_slot
         if busy < limit and free_now != null {
             slot = free_now
+            if p.positional { if busy + 1 > m.stats.busy_3d { m.stats.busy_3d = busy + 1 } } else if busy + 1 > m.stats.busy_2d { m.stats.busy_2d = busy + 1 }
         } else {
-            let lowest = victim ifnull { return no_voice }
-            if m.voices[lowest].p.priority > p.priority { return no_voice }
+            let lowest = victim ifnull {
+                m.stats.refused = m.stats.refused + 1
+                note_event{ &m, stolen = false, p, old = null }
+                return no_voice
+            }
+            if m.voices[lowest].p.priority >= p.priority {
+                m.stats.refused = m.stats.refused + 1
+                note_event{ &m, stolen = false, p, old = lowest }
+                return no_voice
+            }
+            m.stats.steals = m.stats.steals + 1
+            if audible{ v = &m.voices[lowest] } { m.stats.cuts = m.stats.cuts + 1 }
+            note_event{ &m, stolen = true, p, old = lowest }
             end_voice{ &m, slot = lowest }
             slot = lowest
         }
@@ -254,6 +295,41 @@ namespace mix {
         v.id = m.next_id
         m.next_id = if m.next_id == 0xFFFFFFFF { 1 } else { m.next_id + 1 }
         return slot
+    }
+
+    fn note_event { mut m: Mixer, stolen: bool, p: Params, old: ?usize } {
+        let mut e = Event{ stolen, tag = p.tag, priority = p.priority, old_tag = 0, old_priority = 0, old_looping = false, old_played = 0.0 }
+        if old is some{ value = k } {
+            let v = &m.voices[k]
+            e.old_tag = v.p.tag
+            e.old_priority = v.p.priority
+            e.old_looping = v.p.looping
+            e.old_played = @as(f32, v.played / @as(f64, v.rate))
+        }
+        if m.event_count < EVENTS {
+            m.events[m.event_count] = e
+        } else {
+            let mut i: usize = 1
+            while i < EVENTS {
+                m.events[i - 1] = m.events[i]
+                i = i + 1
+            }
+            m.events[EVENTS - 1] = e
+        }
+        m.event_count = m.event_count + 1
+    }
+
+    // The events since the last call, oldest first (at most EVENTS of them), and how many were lost.
+    fn take_events { mut m: Mixer } -> []Event {
+        let n = if m.event_count < EVENTS { m.event_count } else { EVENTS }
+        m.event_count = 0
+        return m.events[..n]
+    }
+
+    // Whether ending a voice now would be heard as a click: it is sounding, not fading out, and loud enough.
+    fn audible { v: *Voice } -> bool {
+        if v.paused or v.fresh or v.fading { return false }
+        return v.gain_l + v.gain_r > 0.01
     }
 
     fn start { mut m: Mixer, slot: usize, p: Params, rate: u32, channels: u32, feed: ?usize } {
@@ -303,6 +379,7 @@ namespace mix {
         let v = voice_of{ m = &m, h } ifnull { return }
         // A paused voice renders nothing, so it would never finish a fade.
         if fade <= 0.0 or v.paused or m.group_paused[@as(usize, v.p.group)] {
+            if fade <= 0.0 and not m.group_paused[@as(usize, v.p.group)] and audible{ v } { m.stats.cuts = m.stats.cuts + 1 }
             end_voice{ &m, slot = h.slot }
             return
         }
@@ -406,14 +483,49 @@ namespace mix {
                 }
                 k = k + 1
             }
-            i = 0
-            while i < 2 * n {
-                let x = m.acc[i] * 32768.0
-                into[2 * done + i] = mp3::round_to_i16{ x }
-                i = i + 1
-            }
+            limit{ &m, frames = n, into = into[2 * done..2 * (done + n)] }
             done = done + n
         }
+    }
+
+    // The limiter: when the voices sum past full scale, the whole mix is turned down for a while
+    // instead of clipped (a hard clip of a loud fight crackles). It looks at the block it is about
+    // to hand over: a block that would pass LIMIT_CEILING lowers the gain to fit within
+    // LIMIT_ATTACK frames (a short ramp, no step), and the gain comes back by LIMIT_RELEASE a
+    // block (about half a second from half to full). Ours: Miles' own output stage wasn't read.
+    const LIMIT_CEILING: f32 = 0.97
+    const LIMIT_ATTACK: usize = 64
+    const LIMIT_RELEASE: f32 = 0.025
+
+    fn limit { mut m: Mixer, frames: usize, into: []mut i16 } {
+        let mut peak: f32 = 0.0
+        let mut i: usize = 0
+        while i < 2 * frames {
+            let a = m.acc[i]
+            let mag = if a < 0.0 { -a } else { a }
+            if mag > peak { peak = mag }
+            i = i + 1
+        }
+        if peak > m.stats.peak { m.stats.peak = peak }
+        let fits = if peak > LIMIT_CEILING { LIMIT_CEILING / peak } else { 1.0 }
+        let back = if m.limit_gain + LIMIT_RELEASE < 1.0 { m.limit_gain + LIMIT_RELEASE } else { 1.0 }
+        let target = if fits < back { fits } else { back }
+        let ramp = if target < m.limit_gain { if LIMIT_ATTACK < frames { LIMIT_ATTACK } else { frames } } else { frames }
+        let from = m.limit_gain
+        let step = (target - from) / @as(f32, ramp)
+        i = 0
+        while i < frames {
+            let g = if i < ramp { from + step * @as(f32, i + 1) } else { target }
+            let l = m.acc[2 * i] * g
+            let r = m.acc[2 * i + 1] * g
+            if l > 1.0 or l < -1.0 { m.stats.clipped = m.stats.clipped + 1 }
+            if r > 1.0 or r < -1.0 { m.stats.clipped = m.stats.clipped + 1 }
+            into[2 * i] = mp3::round_to_i16{ x = l * 32768.0 }
+            into[2 * i + 1] = mp3::round_to_i16{ x = r * 32768.0 }
+            i = i + 1
+        }
+        if target < 1.0 { m.stats.limited = m.stats.limited + 1 }
+        m.limit_gain = target
     }
 
     struct Gains { l: f32, r: f32, mono: bool }

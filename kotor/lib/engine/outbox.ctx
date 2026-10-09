@@ -4,8 +4,16 @@
 namespace outbox {
     enum Music: u8 { day, night, battle }
 
+    // prioritygroups.2da rows a played sound belongs to (docs/re/app.md, "Audio"): its priority
+    // decides which sound keeps a voice when they run out. Which row each kind of sound takes is
+    // ours, by the rows' names.
+    const GROUP_SCRIPTED: u8 = 10           // Scripted_PlaySound
+    const GROUP_GUI: u8 = 11                // GUI
+    const GROUP_COMBAT: u8 = 15             // Combat: weapons, impacts, the creatures' grunts and cries
+    const GROUP_SINGLE_SHOT: u8 = 22        // Single_Shot_Positional
+
     union Note {
-        play_sound{ name: resref::ResRef, object: u32, position: math::Vec3, positional: bool },
+        play_sound{ name: resref::ResRef, object: u32, position: math::Vec3, positional: bool, group: u8 },     // group: its prioritygroups.2da row
         sound_object{ id: u32, play: bool, volume: i32 },
         music{ kind: Music, play: bool },
         music_row{ kind: Music, row: i32 },

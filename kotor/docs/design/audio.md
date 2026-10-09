@@ -35,14 +35,26 @@ while running {
 }
 ```
 
-`audio::update` measures what is still queued and renders just enough to have `latency_ms` of
-sound queued again (in blocks of up to 1,024 frames). A frame that takes longer than the latency
-empties the queue and the sound stutters (`dev.underruns` counts it). 60 ms covers a 30 fps frame
-with a margin. Before work known to stall the loop for longer, such as loading a module, call
-`audio::fill{ &sdl, &dev, m, frames = rate / 2 }` to queue half a second, and call
-`audio::update` between loading steps as the original's `RenderLoadingFrame` updates its sound
-(docs/re/app.md). Changes made to the mixer are heard after the queued latency, which is why it
-should stay small.
+`audio::update` measures what is still queued and renders just enough to cover the next frame
+(in blocks of up to 1,024 frames). A frame that takes longer than what is queued empties the
+queue and the sound stutters (`dev.underruns` counts it, `--log sound` names the frame time).
+This is the cost of having no threads: Miles mixed on a thread of its own, so the original's
+output never depended on the game's frame time. What we keep queued adapts: at least
+`latency_ms` (60), else the longest gap between updates lately (falling by 5 % of each frame's
+time, a stall counted as at most 250 ms) plus 50 ms, at most 250 ms. Quick frames keep the
+latency low (sounds are heard 60-90 ms after they start); a run of slow ones (a heavy scene, a
+busy machine) raises it after the first stutter instead of stuttering every frame. Changes made
+to the mixer are heard after the queued latency, which is why it falls back when frames are
+quick. `audio::brace` queues the most at once and holds it for a few seconds; the game calls it
+when an area's sound starts, since that area's first frames (models, textures, emitters seen for
+the first time) are slow. `audio::fill{ &sdl, &dev, m, frames }` queues a given amount before
+other known stalls.
+
+Measured at real pace (`--sound-device`, SDL's disk driver; "Checked"): on the escape pod and the
+Taris arrival with the machine busy (frames of 60-100 ms), a fixed 60 ms ran dry 144 times in
+90 s (2.7 s of silence in 150 dropouts); adapting, 3 times (one 140 ms dropout where the new
+area's music started over its first frames, which `brace` now covers). On a quiet machine
+(frames of 33-64 ms) the same scene went from 3 underruns and 4 dropouts to none.
 
 The original opens Miles at 44.1 kHz, 16-bit stereo ([re/app.md](../re/app.md)); so do we by
 default.
@@ -101,8 +113,29 @@ while it is paused, music plays on).
 
 **Voices.** `make` takes how many 2D and 3D voices there are, as swkotor.ini's `Number 2D
 Voices=24` and `Number 3D Voices=16` say for Miles. When a kind runs out, `play` takes the voice
-of the lowest-priority sound of that kind if its priority is no higher than the new one's, and
-fails with `no_voice` otherwise.
+of the lowest-priority sound of that kind if its priority is *lower* than the new one's, and
+fails with `no_voice` otherwise: as in the original ([re/app.md](../re/app.md), "Voices"), a sound
+never cuts off one as important as itself. A 3D sound at or past its `max_distance` from the
+listener fails with `out_of_range` and takes no voice. `m.stats` counts steals, refusals, cuts
+(audible voices ended without a fade), clipped output samples, the peak and the most voices busy;
+`take_events` hands over the latest steals and refusals with the sounds' `tag`s, for
+`--log sound`.
+
+**Voices and loudness: what the engine layer does** (lib/scene/ambience.ctx). Every sound effect
+carries its `prioritygroups.2da` row: a sound object its UTS `Priority`, a `play_sound` note a
+row chosen by kind (`outbox::GROUP_*`: combat 15, scripted `PlaySound` 10, GUI 11, traps 22), the
+music 2, stingers 1, the ambient bed 4. Its mixer priority is `255 - Priority`, so ambients (4, 5)
+keep their voices over combat (15) and footsteps (19, 20). Its volume is the original's: its own
+times the row's `Volume` (both /127), squared for a 3D sound, and for a 2D one times `2 - 2D3D
+Bias` (the settings' `2D3D Bias`, 1.5 as installed: half). A continuous positional sound object
+gives its voice back 6 m past its max distance and starts again within 2 m of it.
+
+Measured on the first 9,000 frames of the Endar Spire replay at real pace (below, "Checked"),
+before these rules: 936 voices stolen in 5 minutes (353 of them looping ambients, which then
+restarted and stole another; every sound had priority 128 and the first busy slot was taken, so
+one slot was often stolen several times in a frame), 295 audible cuts, 1.4 % of output samples
+clipped (peak 2.5 times full scale, from the bunk room's 2D loops at their full level on); after:
+none stolen or refused, 12 cuts, 118 samples clipped (the limiter, below, turns the rest down).
 
 **Resampling.** Each voice is resampled from its file's rate (11,025, 22,050, 32,000 or 44,100 Hz
 in KOTOR) times its pitch to the output rate by cubic (Catmull-Rom) interpolation, from 32.32
@@ -124,6 +157,13 @@ is no Doppler, HRTF, occlusion or reverb (the original's EAX rooms are not repro
 **Smoothness.** Gains move linearly from where they were to the new target across each block of
 up to 1,024 frames (23 ms), so volume, pan and position changes and moving sounds don't click.
 A new voice starts at its target gain; `stop` fades over the time given.
+
+**Limiter** (ours: Miles' output stage wasn't read). When the voices sum past full scale, the
+block about to be handed over turns the whole mix down to 0.97 of full scale within 64 frames (a
+ramp, not a step), and the gain comes back by 0.025 a block (about half a second from half to
+full) once the sum fits. Hard clipping a loud fight made it crackle: the Upper City fight against
+six troopers clipped 1.6 % of its samples (peak 2.8 times full scale) before; with the original's
+volumes (below) and the limiter, 20 samples in a minute.
 
 **Feeds** play samples the caller makes as it goes, such as a Bink movie's sound:
 
@@ -256,12 +296,39 @@ kotor/tools/ctxc run kotor/tools/sndplay -- FILE       # play one (or --wav / --
   1,000x real time, music MP3 (44.1 kHz stereo) about 340x, IMA ADPCM stereo about 700x, PCM
   thousands. Mixing 40 PCM voices with resampling, 3D and ramps runs about 90x real time; 40 voices
   each decoding its own stereo MP3 about 5x.
-- **mixtest**: 27 checks of exact sample values (gains, pans, groups, ends, loops, fades,
-  stealing, stale handles, 3D, feeds) pass.
+- **mixtest**: 32 checks of exact sample values (gains, pans, groups, ends, loops, fades,
+  stealing and its equal-priority rule, the stats, out-of-range 3D, the limiter, stale handles,
+  3D, feeds) pass.
+- **At real pace** (`sh kotor/tools/sndrun/run.sh`, testing.md): the game runs headless with
+  `--sound-device` on SDL's `disk` driver, which takes the samples at the speakers' pace and
+  writes them to a file, and `kotor/tools/py/sndscan.py` reads that file for dropouts (digital
+  silence between sounds), clicks (a step far larger than the signal's motion around it; real
+  sounds' sharp attacks count too, so it is a relative measure) and clipping; `--log sound`
+  gives the mixer's side. Before and after the fixes of 2026-10 (steals, the original's volumes,
+  out-of-range voices, the limiter, the adaptive latency):
+
+  | Scenario | Steals | Clipped samples | Underruns (dropouts, silence) | Clicks |
+  |---|---|---|---|---|
+  | Endar Spire, 9,000 frames (5 min) | 936 → 0 | 390,786 (1.4 %) → 118 | 3 (2, 43 ms) → 21 on a busy machine, all after frames of 61-708 ms | 417 → 363 |
+  | Upper City, six troopers (1 min) | 2 → 0 | 83,911 (1.6 %) → 20 | 1 → 1 (the first frames) | 5 → 8 |
+  | Escape pod to Taris, busy machine (90 s) | 0 | 52,900 → 18 | 144 (150, 2.7 s) → 3 (1, 140 ms) | 218 → 52 |
+  | the same, quiet machine, run in turn | 0 | 47,584 → 0 | 3 (4, 62 ms) → 0 | 56 → 51 |
+
+  So of what was heard as cut-offs and weirdness, the voice stealing and the clipping were the
+  mixer's own bugs on any machine; the underruns (no threads) only bite when frames run past the
+  latency, which a busy machine or a heavy scene makes common and the adaptive latency now
+  absorbs up to 250 ms frames.
 
 ## Open questions
 
 - Whether Miles trimmed the MP3s' encoder delay (LIP timing would say, by 18 ms).
-- The original's 3D rolloff and pan law (Miles with a 3D provider, or EAX), and how `2D3D Bias`
-  and `Environment Effects Level` apply; ours are chosen, not measured.
+- The original's 3D rolloff and pan law (Miles with a 3D provider, or EAX), and how
+  `Environment Effects Level` applies; ours are chosen, not measured. (`2D3D Bias` is read:
+  re/app.md, "Voices".)
+- `MaxPlaying` and `Interrupt` of `prioritygroups.2da` (re/app.md, "Voices") aren't enforced yet,
+  nor `FadeTime`; the player's Sound Effects volume, which the original squares for 3D sounds,
+  stays linear here.
+- Whether Miles clipped or scaled a mix past full scale (ours limits it).
+- The streams' loudness (music, the ambient bed, voice-over): whether `prioritygroups.2da`'s
+  volume applies to them as to sound effects (0x005dc930 wasn't read that far).
 - Which volume `prioritygroups.2da`'s distances override (they differ from the UTS's own).

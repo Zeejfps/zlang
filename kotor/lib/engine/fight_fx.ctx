@@ -42,7 +42,7 @@ namespace fight {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "sound {} for {}\n", name, source)
         }
-        outbox::post{ out = &w.out, note = outbox::Note::play_sound{ name = resref::truncate{ name }, object = source, position = at, positional = true } }
+        outbox::post{ out = &w.out, note = outbox::Note::play_sound{ name = resref::truncate{ name }, object = source, position = at, positional = true, group = outbox::GROUP_COMBAT } }
     }
 
     fn chest_of { o: *obj::Object } -> math::Vec3 {

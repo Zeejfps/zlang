@@ -265,7 +265,7 @@ namespace traps {
         outbox::post{ out = &w.out, note = outbox::Note::mine_gone{ model = resref::truncate{ name = if model.len == 0 { "v_mnfrag" } else { model } }, position, exploded } }
         let sound = cell{ w = &w, row = base, column = "explosionsound" }
         if exploded and sound.len > 0 {
-            outbox::post{ out = &w.out, note = outbox::Note::play_sound{ name = resref::truncate{ name = sound }, object = obj::INVALID, position, positional = true } }
+            outbox::post{ out = &w.out, note = outbox::Note::play_sound{ name = resref::truncate{ name = sound }, object = obj::INVALID, position, positional = true, group = outbox::GROUP_SINGLE_SHOT } }
         }
         events::post{ &w, delay_ms = 0, caller = id, target = id, payload = events::Payload::destroy }
     }
@@ -354,7 +354,7 @@ namespace traps {
         if a.phase == 2 and now - a.started >= SOUND_MS {
             a.phase = 3
             if kneels and is_party{ w = &w, id } {
-                outbox::post{ out = &w.out, note = outbox::Note::play_sound{ name = resref::truncate{ name = "gui_minedisarm" }, object = id, position = me.position, positional = false } }
+                outbox::post{ out = &w.out, note = outbox::Note::play_sound{ name = resref::truncate{ name = "gui_minedisarm" }, object = id, position = me.position, positional = false, group = outbox::GROUP_GUI } }
             }
         }
         if now - a.started < WORK_MS { return actions::Status::running }
@@ -502,7 +502,7 @@ namespace traps {
         if a.phase == 2 and now - a.started >= SOUND_MS {
             a.phase = 3
             if is_party{ w = &w, id } {
-                outbox::post{ out = &w.out, note = outbox::Note::play_sound{ name = resref::truncate{ name = "gui_minearm" }, object = id, position = me.position, positional = false } }
+                outbox::post{ out = &w.out, note = outbox::Note::play_sound{ name = resref::truncate{ name = "gui_minearm" }, object = id, position = me.position, positional = false, group = outbox::GROUP_GUI } }
             }
         }
         if now - a.started < SET_MS { return actions::Status::running }

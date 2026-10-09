@@ -64,4 +64,15 @@ namespace speed {
         owed.dt = owed.dt + dt
         owed.clock_dt = owed.clock_dt + clock_dt
     }
+
+    // --headless --sound-device: a pass takes at least the fixed step of wall time, so the world's
+    // clock keeps the sound device's pace as a window's would (a quicker pass would start sounds
+    // faster than they play). A slower pass is left slow: that is what the measurement is for.
+    fn pace { mut sdl: sdl::Sdl, opts: options::Options, last: u64, freq: u64 } {
+        if not opts.headless or not opts.sound_device or opts.dt <= 0.0 { return }
+        let spent = @as(f64, sdl::counter{ &sdl } - last) / @as(f64, freq)
+        let left = @as(f64, opts.dt) - spent
+        if left > 0.001 { sdl::delay{ &sdl, ms = @as(u32, left * 1000.0) } }
+        while @as(f64, sdl::counter{ &sdl } - last) / @as(f64, freq) < @as(f64, opts.dt) {}
+    }
 }

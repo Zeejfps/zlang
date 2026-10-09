@@ -36,6 +36,7 @@ namespace ambience {
         placed: list::List(Placed, heap::Heap),
         sounds: map::Map(resref::ResRef, usize, heap::Heap),      // wave index by name
         waves: list::List([]mut u8, heap::Heap),                  // their bytes (empty: none)
+        names: list::List(resref::ResRef, heap::Heap),            // their names, for the sound log (a voice's tag is its index + 1)
         rng: u32,
         started: u32,                   // sounds started, for the report
         listener: math::Vec3,
@@ -46,6 +47,7 @@ namespace ambience {
         excited: list::List(Excited, heap::Heap),
         battle_clock: u64,              // the world clock (ms) when the creatures were last looked at
         ambient_off: bool,              // a script stopped the ambient bed (AmbientSoundStop)
+        bias: f32,                      // the settings' 2D3D Bias (loudness)
     }
 
     fn make { heap: *mut heap::Heap, m: *mut mix::Mixer } -> Ambience {
@@ -55,10 +57,11 @@ namespace ambience {
             placed = list::new(Placed, heap::Heap){ realloc = heap::alloc, heap },
             sounds = map::new(resref::ResRef, usize, heap::Heap){ realloc = heap::alloc, heap, hash = resref::hash, eq = resref::eq },
             waves = list::new([]mut u8, heap::Heap){ realloc = heap::alloc, heap },
+            names = list::new(resref::ResRef, heap::Heap){ realloc = heap::alloc, heap },
             rng = 12345, started = 0, listener = math::vec3::zero{},
             bg_off = false, battle = false, ambient_off = false,
             stinger = mix::Handle{ slot = 0, id = 0 }, stinger_bytes = slice::empty(u8){},
-            excited = list::new(Excited, heap::Heap){ realloc = heap::alloc, heap }, battle_clock = 0,
+            excited = list::new(Excited, heap::Heap){ realloc = heap::alloc, heap }, battle_clock = 0, bias = 1.5,
         }
     }
 
@@ -85,8 +88,77 @@ namespace ambience {
         let found = res::load{ fs = &w.fs, rm = w.rm.*, name = resref::bytes{ r = &key }, kind = restype::Type::wav, realloc = heap::alloc, heap = a.heap } iferr { null }
         let bytes: []mut u8 = found ifnull { slice::empty(u8){} }
         list::push{ list = &a.waves, item = bytes } iferr { return slice::empty(u8){} }
+        list::push{ list = &a.names, item = name } iferr {}
         map::put{ m = &a.sounds, key = name, value = a.waves.len - 1 } iferr {}
         return list::items{ list = a.waves }[a.waves.len - 1]
+    }
+
+    // The mixer priority of a prioritygroups.2da row: the table's 0 is the most important, the
+    // mixer's 255. A row the table lacks is its Default (255, the least important).
+    fn priority_of { w: *world::World, row: u32 } -> u8 {
+        let p = twoda::get_int{ t = w.tables.prioritygroups, row = @as(usize, row), column = "priority" } ifnull 255
+        if p < 0 or p > 255 { return 0 }
+        return @trunc(u8, 255 - p)
+    }
+
+    // A sound effect's amplitude as the original sets it (CExoSoundSourceInternal::SetVolume,
+    // docs/re/app.md "Voices"): its own volume times its prioritygroups.2da row's (both out of
+    // 127), and for a 3D sound that squared (Miles' 3D volume). Ours: the player's Sound Effects
+    // volume, which the original squares with it, stays linear (the mixer's group volume).
+    // swkotor.ini's "2D3D Bias" (1.5 as installed) tilts the balance: over 1 a 2D sound is
+    // scaled by 2 - bias (half, as installed), under 1 a 3D sound by the bias before squaring.
+    fn loudness { a: *Ambience, w: *world::World, volume: f32, row: u32, positional: bool } -> f32 {
+        let g = twoda::get_int{ t = w.tables.prioritygroups, row = @as(usize, row), column = "volume" } ifnull 127
+        let v = volume * @as(f32, if g < 0 { 0 } else { g }) / 127.0
+        if positional {
+            let b = if a.bias < 1.0 { v * a.bias } else { v }
+            return b * b
+        }
+        return if a.bias > 1.0 { v * (2.0 - a.bias) } else { v }
+    }
+
+    // The streams' rows (the original plays them on stream voices of their own that no sound
+    // effect can take; ours share the 2D voices, so they get their rows' high priorities).
+    const ROW_STINGERS: u32 = 1
+    const ROW_MUSIC: u32 = 2
+    const ROW_AREA_AMBIENT: u32 = 4
+
+    // A music track or stinger: half volume (prioritygroups.2da's 64 of 127), its row's priority.
+    fn stream_params { w: *world::World, row: u32 } -> mix::Params {
+        let mut p = mix::sound_2d{ group = mix::Group::music, volume = 0.5 }
+        p.priority = priority_of{ w, row }
+        return p
+    }
+
+    // The mixer tag of a wave `wave` has loaded: its index + 1.
+    fn tag_of { a: *Ambience, name: resref::ResRef } -> u32 {
+        let have = map::get{ m = a.sounds, key = name } ifnull { return 0 }
+        return @trunc(u32, have + 1)
+    }
+
+    // `--log sound`: the mixer's steals and refusals since the last frame, by name.
+    fn report_events { mut a: Ambience, mut w: world::World } {
+        let events = mix::take_events{ m = a.m }
+        let mut i: usize = 0
+        while i < events.len {
+            let e = events[i]
+            i = i + 1
+            world::prefix{ w = &w }
+            let mut new_name = name_of{ a = &a, tag = e.tag }
+            if e.stolen {
+                let mut old_name = name_of{ a = &a, tag = e.old_tag }
+                _ = @fmt(&w.io, "sound steal: {} (priority {}) took the voice of {} (priority {}, looping {}, {} s in)\n", resref::bytes{ r = &new_name }, e.priority,
+                    resref::bytes{ r = &old_name }, e.old_priority, e.old_looping, e.old_played)
+            } else {
+                _ = @fmt(&w.io, "sound refused: {} (priority {}): no voice\n", resref::bytes{ r = &new_name }, e.priority)
+            }
+        }
+    }
+
+    fn name_of { a: *Ambience, tag: u32 } -> resref::ResRef {
+        let names = list::items{ list = a.names }
+        if tag == 0 or @as(usize, tag) > names.len { return resref::truncate{ name = "(stream)" } }
+        return names[tag - 1]
     }
 
     fn stop_bytes { mut a: Ambience, bytes: []mut u8 } {
@@ -141,7 +213,7 @@ namespace ambience {
         a.music_bytes = read_stream{ &a, &w, name }
         if a.music_bytes.len == 0 { return }
         // prioritygroups.2da's Streams_Music volume, 64 of 127 (audio.md).
-        a.music = mix::play{ m = a.m, bytes = a.music_bytes, p = mix::sound_2d{ group = mix::Group::music, volume = 0.5 } } iferr { mix::Handle{ slot = 0, id = 0 } }
+        a.music = mix::play{ m = a.m, bytes = a.music_bytes, p = stream_params{ w = &w, row = ROW_MUSIC } } iferr { mix::Handle{ slot = 0, id = 0 } }
         a.started = a.started + 1
         if w.log.module {
             world::prefix{ w = &w }
@@ -187,6 +259,7 @@ namespace ambience {
         if a.ambient_bytes.len == 0 { return }
         let mut p = mix::sound_2d{ group = mix::Group::sfx, volume = @as(f32, volume) / 127.0 }
         p.looping = true
+        p.priority = priority_of{ w = &w, row = ROW_AREA_AMBIENT }
         a.ambient = mix::play{ m = a.m, bytes = a.ambient_bytes, p } iferr { mix::Handle{ slot = 0, id = 0 } }
         a.started = a.started + 1
     }
@@ -254,7 +327,7 @@ namespace ambience {
         stop_bytes{ &a, bytes = a.stinger_bytes }
         a.stinger_bytes = read_stinger{ &a, &w, name }
         if a.stinger_bytes.len == 0 { return }
-        a.stinger = mix::play{ m = a.m, bytes = a.stinger_bytes, p = mix::sound_2d{ group = mix::Group::music, volume = 0.5 } } iferr { mix::Handle{ slot = 0, id = 0 } }
+        a.stinger = mix::play{ m = a.m, bytes = a.stinger_bytes, p = stream_params{ w = &w, row = ROW_STINGERS } } iferr { mix::Handle{ slot = 0, id = 0 } }
         a.started = a.started + 1
         if w.log.module {
             world::prefix{ w = &w }
@@ -430,10 +503,13 @@ namespace ambience {
     // One outbox note, if it is a sound.
     fn take { mut a: Ambience, mut w: world::World, note: outbox::Note } {
         match note {
-            play_sound{ name, position, positional } => {
+            play_sound{ name, position, positional, group } => {
                 let bytes = wave{ &a, &w, name }
                 if bytes.len == 0 { return }
-                let p = if positional { mix::sound_3d{ group = mix::Group::sfx, volume = 1.0, position, min_distance = 3.0, max_distance = 30.0 } } else { mix::sound_2d{ group = mix::Group::sfx, volume = 1.0 } }
+                let mut p = if positional { mix::sound_3d{ group = mix::Group::sfx, volume = 1.0, position, min_distance = 3.0, max_distance = 30.0 } } else { mix::sound_2d{ group = mix::Group::sfx, volume = 1.0 } }
+                p.tag = tag_of{ a = &a, name }
+                p.priority = priority_of{ w = &w, row = @as(u32, group) }
+                p.volume = loudness{ a = &a, w = &w, volume = 1.0, row = @as(u32, group), positional }
                 _ = mix::play{ m = a.m, bytes, p } iferr { mix::Handle{ slot = 0, id = 0 } }
                 a.started = a.started + 1
             }
@@ -464,12 +540,13 @@ namespace ambience {
             if a.music_wait < 0.0 { a.music_wait = if a.battle { BATTLE_REPLAY_S } else { a.music_delay } } else {
                 a.music_wait = a.music_wait - dt
                 if a.music_wait <= 0.0 {
-                    a.music = mix::play{ m = a.m, bytes = a.music_bytes, p = mix::sound_2d{ group = mix::Group::music, volume = 0.5 } } iferr { mix::Handle{ slot = 0, id = 0 } }
+                    a.music = mix::play{ m = a.m, bytes = a.music_bytes, p = stream_params{ w = &w, row = ROW_MUSIC } } iferr { mix::Handle{ slot = 0, id = 0 } }
                     a.music_wait = -1.0
                 }
             }
         }
         update_battle{ &a, &w }
+        if w.log.sound { report_events{ &a, &w } }
         if a.stinger_bytes.len > 0 and not mix::is_playing{ m = a.m, h = a.stinger } {
             stop_bytes{ &a, bytes = a.stinger_bytes }
             a.stinger_bytes = slice::empty(u8){}
@@ -488,6 +565,13 @@ namespace ambience {
         if not s.active or s.sounds.len == 0 { return }
         if s.continuous {
             if p.playing and mix::is_playing{ m = a.m, h = p.handle } {
+                // Out of earshot, a loop gives its voice back and starts again on the way back in (as the original's
+                // CExoSoundInternal::Update, docs/re/app.md "Voices"; the 4 m between the two is ours, against flapping).
+                if s.positional and math::vec3::distance{ a = o.position, b = a.listener } > s.max_distance + 6.0 {
+                    mix::stop{ m = a.m, h = p.handle, fade = 0.1 }
+                    p.playing = false
+                    return
+                }
                 // A script changing the pitch of a running loop (the swoop engine sounds follow the gears).
                 if s.fixed_variance > 0.0 { mix::set_pitch{ m = a.m, h = p.handle, pitch = s.fixed_variance } }
                 return
@@ -517,15 +601,22 @@ namespace ambience {
         let bytes = wave{ &a, &w, name = s.sounds[index] }
         let none = mix::Handle{ slot = 0, id = 0 }
         if bytes.len == 0 { return none }
-        let volume = @as(f32, s.volume) / 127.0
+        let volume = loudness{ a = &a, w = &w, volume = @as(f32, s.volume) / 127.0, row = s.priority, positional = s.positional }
         let mut p = if s.positional {
             let mut at = o.position
             at.z = at.z + s.elevation
             mix::sound_3d{ group = mix::Group::sfx, volume, position = at, min_distance = s.min_distance, max_distance = s.max_distance }
         } else { mix::sound_2d{ group = mix::Group::sfx, volume } }
         p.looping = looping
+        p.tag = tag_of{ a = &a, name = s.sounds[index] }
+        p.priority = priority_of{ w = &w, row = s.priority }
         // SoundObjectSetFixedVariance: a constant multiplier on the sound's pitch.
         if s.fixed_variance > 0.0 { p.pitch = s.fixed_variance }
+        if w.log.sound {
+            world::prefix{ w = &w }
+            let mut name = s.sounds[index]
+            _ = @fmt(&w.io, "sound object {}: {} row {} volume {} positional {} looping {}\n", o.id, resref::bytes{ r = &name }, s.priority, p.volume, s.positional, looping)
+        }
         let h = mix::play{ m = a.m, bytes, p } iferr { return none }
         a.started = a.started + 1
         return h

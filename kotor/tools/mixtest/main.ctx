@@ -92,6 +92,16 @@ fn run { mut io: Io, mut heap: arena::Arena, mut t: Tally } -> ! {
     mix::set_group_volume{ m, group = mix::Group::sfx, volume = 1.0 }
     mix::set_master{ m, volume = 1.0 }
 
+    // ---- the limiter: a sum past full scale is turned down to 0.97 of it, not clipped, and comes back
+    let loud = try mix::play{ m, bytes = dc, p = mix::sound_2d{ group = mix::Group::sfx, volume = 5.0 } }
+    _ = render{ m, out, frames = 1024 }
+    let lim = render{ m, out, frames = 100 }
+    expect{ &io, &t, ok = lim[0] > 31700 and lim[0] < 31800 and lim[1] == lim[0] and lim[198] == lim[0], what = "the limiter holds a loud sum under full scale" }
+    mix::stop{ m, h = loud, fade = 0.0 }
+    _ = render{ m, out, frames = 20 * 1024 }
+    let back = render{ m, out, frames = 100 }
+    expect{ &io, &t, ok = back[0] == 5000, what = "the limiter lets go once the sum fits again" }
+
     // ---- length: 22,050 frames at 22,050 Hz end after 44,100 output frames
     mix::stop{ m, h, fade = 0.0 }
     expect{ &io, &t, ok = not mix::is_playing{ m, h }, what = "stop with no fade ends at once" }
@@ -133,7 +143,15 @@ fn run { mut io: Io, mut heap: arena::Arena, mut t: Tally } -> ! {
     p.priority = 5
     let refused = match mix::play{ m, bytes = dc, p } { ok => { false } err => { true } }
     expect{ &io, &t, ok = refused, what = "a lower priority than every voice gets none" }
+    p.priority = 15
+    let tie = match mix::play{ m, bytes = dc, p } { ok => { false } err => { true } }
+    expect{ &io, &t, ok = tie and mix::is_playing{ m, h = d }, what = "an equal priority doesn't cut a playing sound off (the original's rule)" }
+    let st = m.stats
+    expect{ &io, &t, ok = st.steals == 1 and st.refused == 2 and st.busy_2d == 3, what = "the stats count the steal and the refusals" }
     mix::stop_all{ m, group = null, fade = 0.0 }
+    let far = mix::sound_3d{ group = mix::Group::sfx, volume = 1.0, position = math::vec3::make{ x = 50.0, y = 0.0, z = 0.0 }, min_distance = 1.0, max_distance = 30.0 }
+    let unheard = match mix::play{ m, bytes = dc, p = far } { ok => { false } err => { true } }
+    expect{ &io, &t, ok = unheard, what = "a 3D sound beyond its max distance takes no voice" }
     expect{ &io, &t, ok = not mix::is_playing{ m, h = b } and not mix::is_playing{ m, h = d }, what = "stop_all ends them" }
     // A handle stays dead when its slot is reused.
     let e = try mix::play{ m, bytes = dc, p }
