@@ -1,0 +1,12 @@
+3 ui giveitem g_i_medeqpmnt01 2
+30 ui bot off
+31 ui heal
+31 ui sethp pc 10
+32 ui autopause on
+35 ui foe g_sithtroop01 12 0
+45 ui fight
+46 ui clicktag BTN_TARGET0
+55 ui fight
+60 ui clicktag BTN_ACTION1
+62 ui fight
+90 ui fight

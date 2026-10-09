@@ -226,7 +226,7 @@ namespace test_combat {
             let dy = t.position.y - o.position.y
             dist = math::sqrtf{ x = dx * dx + dy * dy }
         }
-        _ = @fmt(&w.io, "fight leader {} hp {}/{} in_combat {} combat_mode {} bar {} target {} dist {} attack_target {} queue", leader, o.hp, o.hp_max, c.in_combat, c.combat_mode, ui.hud.combat, w.target, dist, c.attack_target)
+        _ = @fmt(&w.io, "fight leader {} hp {}/{} in_combat {} combat_mode {} bar {} target {} dist {} attack_target {} attempted {} clicked {} queue", leader, o.hp, o.hp_max, c.in_combat, c.combat_mode, ui.hud.combat, w.target, dist, c.attack_target, c.attempted_target, c.clicked_target)
         let q = list::items{ list = o.actions }
         let mut i: usize = 0
         while i < q.len {

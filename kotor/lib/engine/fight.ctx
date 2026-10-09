@@ -1065,7 +1065,10 @@ namespace fight {
         if not rules::can_attack{ c = &f.c } { return actions::Status::failed }
         // No fight starts while an ordinary conversation is on: its hostiles are frozen (frozen_hostile).
         if frozen_hostile{ w = &w, o } { return actions::Status::failed }
-        c.attempted_target = target
+        // The attempted attack target (+0x50c) is this one from the attack on (below); before it, only
+        // when there is none (AddAttackActions), so a creature walking up to a new target still
+        // counts as fighting the old one (GetCanEngage, the clicked target +0x510).
+        if c.attempted_target == obj::INVALID { c.attempted_target = target }
         let s = stance{ w = &w, c }
         let ranged = is_ranged_stance{ s } or (s == 0 and is_ranged_item{ w = &w, item = c.equipped[obj::SLOT_RIGHT_WEAPON] })
         if not in_reach{ w = &w, o, t, ranged } {
@@ -1100,6 +1103,7 @@ namespace fight {
         if f.round.paused { return actions::Status::running }
         if f.round.started and f.round.attacks > 0 { return actions::Status::running }
         let can = can_engage{ w = &w, id, target }
+        if w.log.combat and not can { log_clicked_refusal{ &w, id, target } }
         let mut master = should_be_master{ w = &w, id, target, can }
         // Ours: two creatures that both wait for the other to start the pair (each one's master
         // flag from an earlier pair is still up) would wait for ever; after two rounds one drives.
@@ -1118,6 +1122,7 @@ namespace fight {
             return actions::Status::running
         }
         f.wait_ms = 0
+        c.attempted_target = target
         start_round{ &w, id, target, s, ranged_in = ranged, feat, forced = not_forced{}, engaged = can }
         return actions::Status::done
     }
@@ -1629,6 +1634,17 @@ namespace fight {
         let mut a = actions::make{ kind = actions::Kind::attack_object }
         a.params[0] = actions::Param::object{ id = next }
         _ = actions::add{ &w, id, action = a, force = false }
+    }
+
+    // `--log combat`: the leader fights this attacker back but was ordered onto another foe (+0x510),
+    // so the attacker's round runs unpaired (can_engage).
+    fn log_clicked_refusal { mut w: world::World, id: u32, target: u32 } {
+        if target != party::leader{ w = &w } { return }
+        let t = world::object{ w = &w, id = target } ifnull { return }
+        let tc = obj::creature{ o = t } ifnull { return }
+        if tc.attempted_target != id or tc.clicked_target == obj::INVALID or tc.clicked_target == id { return }
+        world::prefix{ w = &w }
+        _ = @fmt(&w.io, "{} not paired with {}: its clicked target is {}\n", id, target, tc.clicked_target)
     }
 
     // The continuation schedules an attack on `target`: the player's clicked target (+0x510) is done with when it

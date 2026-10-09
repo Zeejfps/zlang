@@ -1,0 +1,13 @@
+30 ui bot off
+31 ui heal
+31 ui sethp pc 900
+35 ui foe g_sithtroop01 6 -3
+35 ui foe g_sithtroop01 6 3
+36 ui sethp g_sithtroop01 400
+45 ui clickon g_sithtroop01 0
+47 ui clickon g_sithtroop01 0
+196 key e
+197 ui fight
+198 key r
+200 ui fight
+400 ui fight
