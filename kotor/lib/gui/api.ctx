@@ -423,33 +423,68 @@ namespace gui {
         p.border.fill_style = FILL_STRETCHED
     }
 
-    // Makes room for the message's lines: the list box, the panel and the buttons below grow.
+    // Makes room for the message's lines as FitToText (0x006253a0) does: while the list cannot show
+    // every line, a box taller than 160 and narrower than 440 widens by 40 (its list with it, the rest
+    // staying centred), and a box lower than 280 grows by one text line (the list with it, the buttons
+    // moving down); it stops when the text fits or both limits are reached, and a list that still
+    // overflows gets its scroll bar.
     fn grow_message_box { mut g: Gui, panel: u32 } {
         let p = find_panel{ &g, id = panel } ifnull { return }
         let li = find_by_tag{ p, tag = "LB_MESSAGE" }
         if li < 0 { return }
         let c = list::at{ list = p.controls, i = @as(usize, li) }
         if c.proto < 0 or c.row_count == 0 { return }
-        // The box is fitted with no scroll bar (FitToText 0x006253a0 gives it width 0) and grows
-        // until the text fits, so the bar never comes back.
+        // The box is fitted with no scroll bar (FitToText gives it width 0); the bar comes back only
+        // when the text still does not fit.
         c.bar_off = true
         let pc = list::at{ list = p.controls, i = @as(usize, c.proto) }
         if pc.text.font < 0 or @as(usize, pc.text.font) >= g.fonts.len { return }
         let font = list::items{ list = g.fonts }[@as(usize, pc.text.font)].font
+        let line = lines_height{ font, count = 1 }
+        let mut fits = message_fits{ &g, p, c, font }
+        while not fits and line > 0 and (p.w < 440 or p.h < 280) {
+            if p.h > 160 and p.w < 440 {
+                widen_message_box{ p, li = @as(usize, li), by = 40 }
+                fits = message_fits{ &g, p, c, font }
+                if fits { break }
+            }
+            if p.h < 280 {
+                c.h = c.h + line
+                p.h = p.h + line
+                let cs = list::items{ list = p.controls }
+                let mut i: usize = 0
+                while i < cs.len {
+                    if cs[i].kind == K_BUTTON and (cs[i].flags & F_INTERNAL) == 0 { cs[i].y = cs[i].y + line }
+                    else if @as(i32, i) == c.scrollbar { cs[i].h = cs[i].h + line }
+                    i = i + 1
+                }
+                fits = message_fits{ &g, p, c, font }
+            }
+        }
+        if not fits { c.bar_off = false }
+        place{ &g, p }
+    }
+
+    // Whether the message list shows all its text's lines.
+    fn message_fits { mut g: Gui, p: *Panel, c: *Control, font: render::Font } -> bool {
         let l = list_layout{ p, c }
         let n = layout{ font, text = c.rows[0].text, width = l.aw - 2 * c.padding, lines = g.lines }
-        let need = lines_height{ font, count = n } + 2 * c.padding
-        if need <= c.h { return }
-        let extra = need - c.h
-        c.h = c.h + extra
-        p.h = p.h + extra
+        return lines_height{ font, count = n } + 2 * c.padding <= c.h
+    }
+
+    // The box and its list `by` wider (a scroll bar at the list's right end moving with it); the other
+    // controls move half as far, staying centred.
+    fn widen_message_box { mut p: Panel, li: usize, by: i32 } {
+        p.w = p.w + by
         let cs = list::items{ list = p.controls }
+        let bar = if cs[li].scroll_left { -1 } else { cs[li].scrollbar }
         let mut i: usize = 0
         while i < cs.len {
-            if cs[i].kind == K_BUTTON and (cs[i].flags & F_INTERNAL) == 0 { cs[i].y = cs[i].y + extra }
+            if i == li { cs[i].w = cs[i].w + by }
+            else if @as(i32, i) == bar { cs[i].x = cs[i].x + by }
+            else if (cs[i].flags & F_INTERNAL) == 0 and cs[i].parent < 0 and cs[i].kind != K_PROTO { cs[i].x = cs[i].x + by / 2 }
             i = i + 1
         }
-        place{ &g, p }
     }
 
     // How many lines the control's text takes at `width` pixels (0 for no text or font).
@@ -463,12 +498,32 @@ namespace gui {
     // A confirmation or notice (confirm.gui): `text` over OK and, if `cancel`, Cancel. Modal,
     // centred. The owner takes the activate events of BTN_OK / BTN_CANCEL and closes the panel.
     fn message_box { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, text: []u8, cancel: bool } -> !u32 {
+        return message_box_in{ &g, &fs, &dev, text, cancel, font = "", icon = no_img{} }
+    }
+
+    // The same with the message in font `font` ("" the file's: the tutorial box sets fnt_d16x16) and
+    // `icon` above it (if ok). Fitted as FitToText (0x006253a0) does: the icon first, an OK-only box
+    // losing the Cancel button's height + 2 (BTN_CANCEL sits under BTN_OK), then the text's room.
+    fn message_box_in { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, text: []u8, cancel: bool, font: []u8, icon: Img } -> !u32 {
         let id = try open{ &g, &fs, &dev, name = "confirm", mode = Mode::dialog, modal = true }
+        if font.len > 0 {
+            let slot = font_slot{ &g, &fs, &dev, name = font }
+            if slot >= 0 and find_control{ &g, panel = id, tag = "LB_MESSAGE" } is some{ value = c } {
+                if c.proto >= 0 {
+                    let p = find_panel{ &g, id } ifnull { return id }
+                    list::at{ list = p.controls, i = @as(usize, c.proto) }.text.font = slot
+                }
+            }
+        }
         try set_list_text{ &g, panel = id, tag = "LB_MESSAGE", text }
-        grow_message_box{ &g, panel = id }
+        if icon.ok { try add_message_icon{ &g, panel = id, img = icon } }
         if not cancel {
             set_visible{ &g, panel = id, tag = "BTN_CANCEL", visible = false }
+            let p = find_panel{ &g, id } ifnull { return id }
+            if find_control{ &g, panel = id, tag = "BTN_CANCEL" } is some{ value = b } { p.h = p.h - b.h - 2 }
+            place{ &g, p }
         }
+        grow_message_box{ &g, panel = id }
         set_focus{ &g, panel = id, tag = "BTN_OK" }
         play_sound{ &g, n = 4 }
         return id

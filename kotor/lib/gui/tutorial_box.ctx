@@ -1,0 +1,60 @@
+// The tutorial pop-up's box (CSWGuiTutorialBox, docs/re/gui.md "Tutorial pop-ups"): a message box
+// (confirm.gui, OK only) whose text is in fnt_d16x16 (the constructor 0x006aa100 sets it), showing
+// tutorial.2da's pages Message0..2 under the row's Icon. OK, Enter or Escape turn the page, the OK
+// button saying "Continue" while another follows (NextPage 0x006aa670); after the last the owner
+// closes it. Whoever offers tutorials (the game, character generation) owns the offers, the pause and
+// what the close does.
+//
+//   let b = try gui::open_tutorial_box{ &g, &fs, &dev, t = table, id }       // b.panel 0: the row has no page
+//   on the box's activate or cancel event: if not gui::turn_tutorial_page{ &g, &b, t = table } { close it }
+namespace gui {
+    const TUT_CONTINUE: u32 = 38623         // the OK button while another page follows (0x96df)
+    const TUT_OK: u32 = 1580                // and on the last (0x62c)
+    const TUT_PAGES: i32 = 3
+    const TUT_FONT: []u8 = "fnt_d16x16"
+
+    struct TutorialBox { panel: u32, id: i32, page: i32 }
+
+    fn no_tutorial_box {} -> TutorialBox { return TutorialBox{ panel = 0, id = -1, page = 0 } }
+
+    // Row `id`'s page `page` (tutorial.2da MessageN), null past the last.
+    fn tutorial_page { t: twoda::Table, id: i32, page: i32 } -> ?u32 {
+        if id < 0 or page < 0 or page >= TUT_PAGES { return null }
+        let names: [3][]u8 = ["message0", "message1", "message2"]
+        let v = twoda::get_int{ t, row = @as(usize, id), column = names[@as(usize, page)] } ifnull { return null }
+        return @as(u32, v)
+    }
+
+    // The box with row `id`'s first page and icon, modal over everything.
+    fn open_tutorial_box { mut g: Gui, mut fs: Fs, mut dev: gpu::Device, t: twoda::Table, id: i32 } -> !TutorialBox {
+        let first = tutorial_page{ t, id, page = 0 } ifnull { return no_tutorial_box{} }
+        let text = try tlk_text{ &g, strref = first }
+        defer free_string{ &g, s = text }
+        let icon = twoda::get_string{ t, row = @as(usize, id), column = "icon" } ifnull ""
+        let img = if icon.len > 0 { resolve_img{ &g, &fs, &dev, name = icon } } else { no_img{} }
+        let panel = try message_box_in{ &g, &fs, &dev, text, cancel = false, font = TUT_FONT, icon = img }
+        let b = TutorialBox{ panel, id, page = 0 }
+        try caption_tutorial_box{ &g, b = &b, t }
+        return b
+    }
+
+    // OK says Continue while a next page follows.
+    fn caption_tutorial_box { mut g: Gui, b: *TutorialBox, t: twoda::Table } -> ! {
+        let more = tutorial_page{ t, id = b.id, page = b.page + 1 } != null
+        let caption = try tlk_text{ &g, strref = if more { TUT_CONTINUE } else { TUT_OK } }
+        defer free_string{ &g, s = caption }
+        try set_text{ &g, panel = b.panel, tag = "BTN_OK", text = caption }
+    }
+
+    // The next page, refitted; false when the last page was showing (the box is to close).
+    fn turn_tutorial_page { mut g: Gui, mut b: TutorialBox, t: twoda::Table } -> bool {
+        let next = tutorial_page{ t, id = b.id, page = b.page + 1 } ifnull { return false }
+        b.page = b.page + 1
+        let text = tlk_text{ &g, strref = next } iferr { return true }
+        defer free_string{ &g, s = text }
+        set_list_text{ &g, panel = b.panel, tag = "LB_MESSAGE", text } iferr {}
+        grow_message_box{ &g, panel = b.panel }
+        caption_tutorial_box{ &g, b = &b, t } iferr {}
+        return true
+    }
+}
