@@ -1,5 +1,5 @@
 # Security re-verified through the mouse in the Endar Spire (checkpoint bunk): end_door01 at DC 12 and a
-# 4-rank player (take 20 out of combat): the target block's Security slot is clicked, the leader walks up,
+# 4-rank player (take 20 out of combat): the target block's Security slot (the middle one, FUN_00684410) is clicked, the leader walks up,
 # kneels, the door opens; then end_door02 at DC 30 (no 4-rank player can beat it) fails with the roll as the message.
 20 ui stat security 4
 20 ui relock end_door01 12
@@ -9,7 +9,7 @@
 70 ui info
 72 ui ctl BTN_TARGET0
 72 ui ctl BTN_TARGET1
-74 ui clickctl BTN_TARGET0
+74 ui clickctl BTN_TARGET1
 200 ui locks end_door01
 200 ui pos
 201 ui log 3

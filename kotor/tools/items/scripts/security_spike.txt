@@ -1,11 +1,11 @@
-# A security spike adds its bonus to the Security roll and is used up: DC 28 against 1 rank (take 20 + 1 + the
+# Security is the target block's middle slot (BTN_TARGET1, FUN_00684410). A security spike adds its bonus to the Security roll and is used up: DC 28 against 1 rank (take 20 + 1 + the
 # key ability modifier falls short), with a Security Spike Tunneler in the bag it opens.
 20 ui stat security 1
 20 ui relock end_door01 28
 20 ui giveitem g_i_secspike02 2
 24 cam at 12.5,21.3,1.6 21.1,20.7,1.0
 60 ui target end_door01
-74 ui clickctl BTN_TARGET0
+74 ui clickctl BTN_TARGET1
 200 ui locks end_door01
 200 ui bag
 201 ui log 3
