@@ -14,7 +14,7 @@ Mines and traps are [traps.md](traps.md), stealth [stealth.md](stealth.md); thei
 
 `sh kotor/tools/items/run.sh NAME START SCRIPT FRAMES [FRAME:SHOT]...` runs an input script from a checkpoint
 (`docs/testing.md`) with `--no-render --speed 8` and keeps the log and the pictures under `kotor/out/items/`.
-The scripts are in `kotor/tools/items/scripts/`; `sh kotor/tools/items/check.sh` runs the ones with a checkable log line (18 scenarios; 6 of their patterns are stale, see "Known failing checks"). They click controls by tag with `ui clickctl TAG [ROW]` and
+The scripts are in `kotor/tools/items/scripts/`; `sh kotor/tools/items/check.sh` runs the ones with a checkable log line (18 scenarios, all passing). They click controls by tag with `ui clickctl TAG [ROW]` and
 `ui movectl`, which find the control (or the list row) in the topmost shown panel and send the platform's own
 pointer events to its centre, so the panels' hit test decides what happens, as for a player. Test-only commands
 are used only for setup (`ui giveitem`, `ui stat KEY N`, `ui relock`, `ui faction`, `ui hp`); reading helpers:
@@ -96,7 +96,7 @@ frames, so setup and click are spaced out.
 
 | Behaviour | Evidence | Status | Test |
 |---|---|---|---|
-| A locked door or container offers Security in the target block's middle slot when the leader can use the skill and the lock wants no key (a door's left slot has Bash when it is not plot and combat is allowed); a click walks up, kneels 1.5 s, rolls Security + spike bonus + (20 out of combat, d20 in combat) against OpenLockDC, the roll goes to the combat log worded with dialog.tlk 1408 ("<name> <success or failure> Security: ... (roll ...) vs. DC <DC>"), the door opens | actions.md 3.7, rules.md 5.2, 0x00684410 (doors), client skill-roll case 0x0065b4a0 | matches for the middle slot, the walk, the roll and the opening; open: our line uses the attack-roll wording 1405 (`Player attempts Security on Door : *success* : (Take 20 + 5 = 25 vs. DC 12)`); `security2.txt` still clicks `BTN_TARGET0` (see "Known failing checks") | `security2.txt` |
+| A locked door or container offers Security in the target block's middle slot when the leader can use the skill and the lock wants no key (a door's left slot has Bash when it is not plot and combat is allowed); a click walks up, kneels 1.5 s, rolls Security + spike bonus + (20 out of combat, d20 in combat) against OpenLockDC, the roll goes to the combat log worded with dialog.tlk 1408 ("<name> <success or failure> Security: ... (roll ...) vs. DC <DC>"), the door opens | actions.md 3.7, rules.md 5.2, 0x00684410 (doors), client skill-roll case 0x0065b4a0 | matches for the middle slot, the walk, the roll and the opening; open: our line uses the attack-roll wording 1405 (`Player attempts Security on Door : *success* : (Take 20 + 5 = 25 vs. DC 12)`) | `security2.txt` |
 | Failure: the roll is the only message; key-only locks say so; keys open; AutoRemoveKey | playthrough.md "Lock picking" | matches (earlier lead; the Endar Spire replay runs the bridge door) | replay |
 
 ## 7. Skills in play
@@ -202,17 +202,12 @@ whether the control is visible and enabled); `LOG=actions` adds a line `upgrade 
 - Mines, stealth: see their docs.
 - The equipment list leaves out unwearable rows only when the "Hide Unequippable" option is on; ours reads the option but does not use it. The hexagonal frames (`lbl_hex_3/6/7`) around the rows' pictures are not drawn.
 
-## Known failing checks (`check.sh`, left as they are)
+## Checks that once failed (`check.sh`)
 
-`sh kotor/tools/items/check.sh` reports **6 failures** in 4 scenarios, the same with the executable from before the
-equipment-screen work and with fresh checkpoints, so they are not regressions of the screens. All 6 are checks that
-went stale; the behaviour they test was seen working by hand.
-
-| Scenario | Failed patterns | Why |
-|---|---|---|
-| `security` | `*success* : (Take 20 + 5 = 25 vs. DC 12)` | The script clicks `BTN_TARGET0`, but a locked door's target block now has the Security lock in the second slot (`BTN_TARGET1`) and the first holds only Bash, which a plot door such as `end_door01` does not offer, so the click does nothing and the leader never walks up. Clicking `BTN_TARGET1` logs "Player attempts Security on Door : *success* : (Take 20 + 5 = 25 vs. DC 12)" (our 1405 wording; the original words the roll with 1408). |
-| `security_sp` | `*success* : (Take 20 + 12 = 32 vs. DC 28)`, `Security Spike Tunneler x1` | The same click on `BTN_TARGET0`: no roll, so no spike is used up. The spike pattern checks our choice: the original's Security click uses no spike. |
-| `consumables` | `fx : 7 effects` | `ui fx` prints the creature's id now (`fx 2147483647 : 7 effects`), so the pattern without it matches nothing. The effects are there. |
-| `props` | `fx : 3 effects`, `fx : 0 effects` | The same id in the `ui fx` line. |
-
-Fixing them is changing `BTN_TARGET0` to `BTN_TARGET1` in `security2.txt` and `security_spike.txt` and the patterns to `fx [0-9]* : N effects`.
+Until 2026-10-09 `check.sh` reported 6 failures in 4 scenarios, all stale checks: `security2.txt` and
+`security_spike.txt` clicked `BTN_TARGET0`, but a locked door's Security is the target block's middle slot
+(`FUN_00684410`: Bash on the left only for a locked, non-plot door), so on the plot door `end_door01` the click did
+nothing; they now click `BTN_TARGET1`. `consumables` and `props` looked for `fx : N effects`, but `ui fx` prints the
+creature's id too (`fx 2147483647 : 7 effects`); the patterns are `^fx [0-9]* : N effects` now. `security_sp`'s
+spike patterns still check our choice (the weakest spike that makes the roll is used up), not the original's, whose
+Security click sends no spike (above; a runtime check is wanted before changing it).

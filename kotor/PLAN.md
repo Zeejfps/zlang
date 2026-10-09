@@ -107,13 +107,6 @@ committed kotor), the Endar Spire replay (`FAST=1`, 0 faults to tar_m02af),
 `kotor/tools/combat/companions.sh`, `kotor/tools/combat/corpses.sh` and `kotor/tools/camcheck/run.sh`
 (the last needs a Python with numpy first on PATH).
 
-**First, a likely regression:** `sh kotor/tools/stealth/check.sh` fails `attack_out` since 948e3bb
-(the star door fix: only scripted force moves jump). In end_m01ab the leader's attack approach to
-end_sithsol01 is blocked at (76.3, 81.7) on its way to (76.3, 77.6) and ends at its 6 s timeout
-without a swing; before, the timeout teleported the attacker, which hid the blockage. Find what blocks
-it (a door an attack approach doesn't open, a creature, a placeable) and what the original's approach
-does there; a player attacking past that point would stand short of the target.
-
 **Story QA** (docs/playthrough-*.md; each planet's log says where it stopped and how to resume):
 - One continuous playthrough from New Game to an ending, with real input and no crafted states.
 - Side quests on every planet: Taris (the Sith uniform route, side quests), Dantooine (the
@@ -144,8 +137,6 @@ scaling were never tested on real hardware.
 the equip list ignores "Hide Unequippable" and lacks the hexagonal icon frames; followers' feet may
 slide about 20% while catching up (the speed cap in UpdateFollowLeader is an assumption); T tooltips on
 hold, X flourish, the bench's 3D item models, arrow-key planet cycling.
-- `kotor/tools/items/check.sh` has 6 stale patterns (items-skills.md, "Known failing checks"): the
-  security scripts click BTN_TARGET0 where Security is now BTN_TARGET1, and two expect the old `ui fx` line.
 
 **Force** (docs/mechanics/force.md): the look of programmed effects (the hold cage), the thrown
 saber's missing blade, the saber throw range (10 m vs RE's 15 m), companions' power choices beyond one
