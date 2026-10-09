@@ -1,6 +1,6 @@
 # From `uppercity`: the combat camera (movement.md 2.4). A Sith trooper 8 m ahead and 3 m to the right puts the
 # leader into combat mode; the camera then sits 3.6 m straight behind the leader along its own yaw (camtrace's
-# eye - look is -3.6 x (-sin yaw, cos yaw) and the height row 8's), E cycles the target without turning it, D
+# eye - look is -3.6 x (-sin yaw, cos yaw) and the height row 8's), E cycles the target without turning it, C
 # turns it, and leaving free look turns it once toward the target.
 #   $EXE --load kotor/out/checkpoints/uppercity --no-render --frames 260 --input THIS --log objects,combat
 # then the `camtrace` lines (frame, leader x y, eye - look x y z, yaw, horizontal distance) and the `target:` lines.
@@ -10,8 +10,8 @@
 20 ui foe g_sithtroop01 8 3
 120 ui pos
 125 key e
-170 keydown d
-185 keyup d
+170 keydown c
+185 keyup c
 230 key caps
 240 key caps
 241 ui pos

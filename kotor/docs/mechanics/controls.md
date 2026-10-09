@@ -26,16 +26,17 @@ rows `Action280A/B`..`Action286A/B` pair two keys into one axis event (`SetupKey
 reads `[Keymapping]` first and writes the 2DA's default only for a missing entry). The install's
 `swkotor.ini` has the 2DA's codes for every row except two: `Action281A/B` = 51 / 54 (strafe on A / D) and
 `Action284A/B` = 0 / 0 (camera rotation unbound), a remap; the table gives the defaults. Ours: the keys are
-fixed at these defaults (`lib/ingame/ingame.ctx` `handle_key`, `game/play.ctx` `apply_key`); `[Keymapping]` is
-not read and the options' keymap button is disabled.
+fixed (`lib/ingame/ingame.ctx` `handle_key`, `game/play.ctx` `apply_key`) at these defaults except that strafe
+and camera rotation swap (strafe on A / D as the install's ini has it, rotation on Z / C; the user's choice);
+`[Keymapping]` is not read and the options' keymap button is disabled.
 World is the row's ICPC flag, Menus its ICPCGUI flag; the free-look (ICFreelook) and minigame flags are named
 where they matter.
 
 | Key | Action (id) | World | Menus | Ours |
 |---|---|---|---|---|
 | W / S | forward / back (280) | yes | | matches |
-| Z / C | strafe left / right (281) | yes | | matches |
-| A / D | rotate camera left / right (284) | yes | | matches |
+| A / D | strafe left / right (281; default Z / C) | yes | | ours: swapped with rotation (A / D steer in minigames) |
+| Z / C | rotate camera left / right (284; default A / D) | yes | | ours: swapped with strafe |
 | Arrows | minigames only (285, 286); MoveForward.. (200-203) are disabled | no | | matches (arrows do nothing in the world) |
 | B (held) | walk modifier "Run / Walk" (265) | yes | | matches |
 | Q / E | previous / next target (204, 205); in menus previous / next menu (243, 244) | yes | yes | matches (in free look they only end it: `tools/camcheck/scripts/freelook.txt`, the target stays); in combat mode with no hostile in view they cycle every entry (see Mouse) |
@@ -87,12 +88,12 @@ Reverse Mouse Buttons (options) swaps left and right: matches.
 | Rotate keys: rate integrator 200 deg/s, 500 up, 2000 down | `CRateIntegrator` | matches |
 | Camera never swings behind a moving player by itself | 2.3 | matches |
 | Mouse look while Lookabout (Ctrl or right button) is held, XOR the Mouse Look option; cursor hidden; yaw = clamp(counts/100) x (10 + 0.45 x sensitivity), the mouse moving right turns the view right | `CameraInputMouseYaw`, `UpdateCameraInput` 0x005f5e10 | matches (relative mouse mode in a window; the 0.1 s coast after release: `tools/camcheck/scripts/mouse_coast.txt`) |
-| A cursor within max(2, width/1000) px of the left or right edge rotates like A / D, when no key is down, the mouse is not looking and free look is off | `UpdateCameraInput` 0x005f5e10 | matches |
+| A cursor within max(2, width/1000) px of the left or right edge rotates like the rotation keys (ours Z / C), when no key is down, the mouse is not looking and free look is off | `UpdateCameraInput` 0x005f5e10 | matches |
 | Q / E swing the chase camera round to the new target (15 deg to the side it is on, eased); the combat camera has no swing | `TurnTowardObject` 0x00639c30 (from `SelectTarget` 0x005f9c60, chase camera only) | matches (rate 2.5 to 7.5 as read; the stop test is ours; in combat mode nothing swings: `tools/camcheck/scripts/combat_cam.txt`, E leaves the yaw) |
 | Leader change keeps the yaw and retargets | `SetPartyLeader` 0x005f6b60, `SetCameraTarget` 0x0063f9d0 | matches |
 | Collision: four rays (L to C +- 0.35 sideways and up), creatures' CAMERASPACE circles clip it | 2.3 "Collision" | matches, and goes further: the four rays against the walkmeshes, the drawn rooms (through a bounding tree per room mesh: `lib/scene/raytree.ctx`), doors and placeables, ending 0.25 m beyond the camera and repeated until clear; the rise stops short of a ceiling; a camera that ends inside a creature's circle comes out along the line; a wall or creature holds the camera in for 0.4 s before it eases out (no flicker past railings), eased over a 0.1 s time constant. `cam probe` and `cam trace` check it |
 | Combat camera: row 8 at 3.6 m straight behind the leader along the player-turned yaw (no target framing; only the mouse and the rotate keys turn it; it turns toward the target once, when installed by `RestoreDefaultCamera` in combat mode with a target), no easing, the chase camera's wall pull-in, no creature clip | 2.4 | matches (`tools/camcheck/scripts/combat_cam.txt`: 3.6 m behind along the yaw from the first combat frame, 0.55 up, E does not turn it, D does, leaving free look turns it to the target; the creature clip is skipped, by reading) |
-| Free look (Caps Lock, only with the leader's queue empty and the game not paused): eye at the head (`FreeLookHook`, else `CameraHook`), the mouse turns the leader (yaw) and pitches the view within -FL_LOOKDOWN and +FL_LOOKUP of the area's camerastyle row (-20 / +15 in DEFAULT, -30 / +30 in most others), A / D turn him at 200 deg/s, W / S tilt the view and nothing moves him (Z / C do nothing), the HUD is hidden; the same key, a menu key, Escape, Pause/Break, Q, E, Tab or V (these four only end it), or an order given to the leader ends it | 2.5, `HandleInputAction` 0xcc-0xd8, 0xdf, 0xe0, `ProcessInput` 0x006227e0 (`CameraInputMove` 0x0063fdb0) | matches (`tools/camcheck/scripts/freelook.txt`: W and S tilt to +15 / -20 in Taris and +-30 on the Ebon Hawk, nothing moves the leader, Tab V Q E only end it; the tilt keys' integrator is 200 deg/s and 500 deg/s^2, a mouse move resets it); open: the screen effect of the appearance's FreeLookEffect is not drawn |
+| Free look (Caps Lock, only with the leader's queue empty and the game not paused): eye at the head (`FreeLookHook`, else `CameraHook`), the mouse turns the leader (yaw) and pitches the view within -FL_LOOKDOWN and +FL_LOOKUP of the area's camerastyle row (-20 / +15 in DEFAULT, -30 / +30 in most others), the rotation keys (ours Z / C) turn him at 200 deg/s, W / S tilt the view and nothing moves him (the strafe keys, ours A / D, do nothing), the HUD is hidden; the same key, a menu key, Escape, Pause/Break, Q, E, Tab or V (these four only end it), or an order given to the leader ends it | 2.5, `HandleInputAction` 0xcc-0xd8, 0xdf, 0xe0, `ProcessInput` 0x006227e0 (`CameraInputMove` 0x0063fdb0) | matches (`tools/camcheck/scripts/freelook.txt`: W and S tilt to +15 / -20 in Taris and +-30 on the Ebon Hawk, nothing moves the leader, Tab V Q E only end it; the tilt keys' integrator is 200 deg/s and 500 deg/s^2, a mouse move resets it); open: the screen effect of the appearance's FreeLookEffect is not drawn |
 | No zoom; the wheel goes to the GUI | 2.3 | matches |
 | Dialogue camera, death camera, shake | 2.1, 2.6 | dialogue: the dialogue lead's; death camera: built (`game/death.ctx`); shake: matches (`tools/camcheck/scripts/shake.txt`: VFX_IMP_SCREEN_SHAKE shakes the view for 1 s by under a degree; ours adds it to whatever camera draws, the death camera too) |
 

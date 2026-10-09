@@ -952,9 +952,11 @@ namespace play {
         }
     }
 
-    // The held keys the world reads each frame (keymap.2da's ICPC rows): W and S forward and back, Z and C
-    // strafe, A and D turn the camera, B walks. The arrows, R and Space are a minigame's (ICMiniGame) and
-    // nothing in the world's: there R runs the target's default action and Space pauses (lib/ingame).
+    // The held keys the world reads each frame (keymap.2da's ICPC rows): W and S forward and back, A and D
+    // strafe, Z and C turn the camera, B walks. The 2DA's defaults are the other way round (Z and C strafe,
+    // A and D turn); ours swaps them, as the install's swkotor.ini puts strafe on A and D. In a minigame A
+    // and D steer, with the arrows. The arrows, R and Space are a minigame's (ICMiniGame) and nothing in the
+    // world's: there R runs the target's default action and Space pauses (lib/ingame).
     // Turns the leader on the spot by `degrees` (positive to the left), for free look.
     fn turn_leader { mut w: world::World, degrees: f32 } {
         let o = world::object{ w = &w, id = w.pc } ifnull { return }
@@ -967,10 +969,10 @@ namespace play {
     fn apply_key { mut keys: ctl::Keys, keycode: i32, down: bool, minigame: bool } {
         if keycode == 'w' or (minigame and keycode == sdl::key::UP) { keys.forward = down }
         else if keycode == 's' or (minigame and keycode == sdl::key::DOWN) { keys.back = down }
-        else if keycode == 'z' { keys.strafe_left = down }
-        else if keycode == 'c' { keys.strafe_right = down }
-        else if keycode == 'a' or (minigame and keycode == sdl::key::LEFT) { keys.turn_left = down }
-        else if keycode == 'd' or (minigame and keycode == sdl::key::RIGHT) { keys.turn_right = down }
+        else if (minigame and keycode == 'a') or keycode == 'z' or (minigame and keycode == sdl::key::LEFT) { keys.turn_left = down }
+        else if (minigame and keycode == 'd') or keycode == 'c' or (minigame and keycode == sdl::key::RIGHT) { keys.turn_right = down }
+        else if keycode == 'a' { keys.strafe_left = down }
+        else if keycode == 'd' { keys.strafe_right = down }
         else if keycode == 'b' { keys.walk = down }
         else if minigame and (keycode == 'r' or keycode == sdl::key::SPACE) { if down { keys.action = true } }
     }

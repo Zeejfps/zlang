@@ -408,7 +408,7 @@ radius } -> LineResult` (blocked by a non-walkable face, the edge of the walkmes
 door's or a placeable's walkmesh; the edge it hit, for sliding). Creature-against-creature tests
 use the creatures' PERSPACE circles.
 
-**Player control** (`ctl`, movement.md 1.2): the forward and strafe axes (W/S, Z/C, and arrows
+**Player control** (`ctl`, movement.md 1.2): the forward and strafe axes (W/S, A/D (the 2DA's default is Z/C; ours swaps strafe and rotation), and arrows
 *ours*), rotated by the camera's yaw, integrated with the original's velocity law, the leader
 turning at the camerastyle rates, moved by `ctl::move_leader` with up to six slide attempts; the
 leader's new position goes straight into the world object (as the original writes the server
@@ -416,7 +416,7 @@ creature) with the trigger bookkeeping (`movement::cross_volumes`). The leader's
 from its speed (10000 stand, 10002 walk, 10004 run) and it is `moving` while under way, which the AI
 update needs to leave the animation alone (`ai::update_creature` stands a creature that is neither moving
 nor busy). Strafing and backing are the same walk or run: the creature turns to the input and moves
-along its facing (movement.md 1.2), and the camera keys (A/D) turn only the camera. **NPC movement** is server side: MOVETOPOINT
+along its facing (movement.md 1.2), and the camera keys (Z/C, the default A/D) turn only the camera. **NPC movement** is server side: MOVETOPOINT
 and its relatives in `movement`, with the acceleration and braking of movement.md 3.3, along a
 path from `paths::plan` (the straight walk if clear, else A* over the area's PTH points, string
 pulled, else the farthest clear point; movement.md 4). FOLLOW, FOLLOWLEADER and RANDOMWALK push a
@@ -469,7 +469,7 @@ and it can be rebuilt from the world at any time):
   adds rooms, objects (`mdl_render::add_draws`), lights and the leader's planar shadow.
 - **Camera** (`cam`, movement.md 2.3): the chase camera from camerastyle.2da's row for the area's
   CameraStyle (DEFAULT: distance 3.2, pitch 83, height 0.45, FOV 55), the look-at point the
-  leader's position + head height + CameraHeightOffset, yaw from A/D (the rate integrator) and
+  leader's position + head height + CameraHeightOffset, yaw from Z/C (the rate integrator) and
   mouse look, collision against the walkmesh by four rays. Dialogue and combat cameras are their
   leads' (HOOK(dialog), HOOK(rules)).
 - **Sound** (`ambience`): area music (`ambientmusic.2da` from the area's MusicDay, repeated after
@@ -616,7 +616,7 @@ each frame:
   `FRAME load FOLDER`, `FRAME hush` (ends the running conversation), `FRAME newgame` (the front
   end's New Game), and in a minigame `FRAME gunner` (a bot aims and fires the turret), `FRAME mouse DX DY`
   (the mouse moves by those counts) and `FRAME pause` (Escape). Keys: W/S or arrows forward and back,
-  Z/C strafe, A/D or arrows turn the camera, R or Space the default action (the nearest door,
+  A/D strafe, Z/C or arrows turn the camera, R or Space the default action (the nearest door,
   useable placeable or creature with a conversation in front, within 3 m).
 - `--screenshot-at F:PATH` (repeatable) reads the screen after frame F's render and writes a PNG.
 - Logs go to stdout, one line each, prefixed with the frame and world time: `[12 0.400] script

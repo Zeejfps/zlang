@@ -67,7 +67,7 @@ namespace ctl {
         if c.dead or dt <= 0.0 { return }
         let step = math::min{ a = dt, b = 1.0 }
         // The input vector in the camera's frame (x right, y forward), normalised on diagonals.
-        // In free look the inputs are 0 (movement.md 1.2 step 2): W and S tilt the view, Z and C do nothing.
+        // In free look the inputs are 0 (movement.md 1.2 step 2): W and S tilt the view, A and D (strafe) do nothing.
         let mut ix: f32 = 0.0
         let mut iy: f32 = 0.0
         if not keys.freelook {
