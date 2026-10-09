@@ -171,8 +171,9 @@ namespace ingame {
         clock::set_pause{ c = &w.clock, bit = clock::PAUSE_PLAYER, on = true }
         ui.summary.panel = id
         play_summary_sounds{ &ui }
-        // OnPanelAdded offers Receive_Journal_Entry (0x00625c60; the condition it tests was not read: med).
-        _ = world::offer_plain_tutorial{ &w, id = world::TUT_JOURNAL }
+        // OnPanelAdded offers Receive_Journal_Entry when the journal row shows (0x00625c60: flags bit 4, kept
+        // from the loop's first row in [ESP+0x3c] and tested after CSWGuiPanel::OnPanelAdded).
+        if (ui.summary.flags & SUM_JOURNAL) != 0 { _ = world::offer_plain_tutorial{ &w, id = world::TUT_JOURNAL } }
         let mut y: i32 = 10
         let mut width: i32 = 150
         let mut row: usize = 0

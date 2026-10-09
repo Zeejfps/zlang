@@ -1800,7 +1800,7 @@ what a close does again; `tools/ingame/tutorials.sh`, `tools/chargentest/selftes
 | 7 | Press_Start | `HandleInputAction` 0xdf (the in-game menu key, Escape) after `ShowInGameMenu(7)` (the options menu) opened, with no conversation and a leader |
 | 10, 12, 13, 20, 41 | screens | `OnPanelAdded` of the script select (0x006e9b90), messages, map, inventory and party selection (0x006beeb0, last) panels |
 | 11 | Press_A_On_Equip_Screen | `CSWGuiEquip::OnSlotClicked` (0x006b8eb0) as selection mode begins (after the title 38154 is set) |
-| 14 | Receive_Journal_Entry | `CSWGuiStatusSummary::OnPanelAdded` (on a flag of its last category: med) |
+| 14 | Receive_Journal_Entry | `CSWGuiStatusSummary::OnPanelAdded` (0x00625c60) when the journal row shows (flags bit 4): the walk's first case keeps that bit in `[ESP+0x3c]`, tested after `CSWGuiPanel::OnPanelAdded` (the decompile shows another local) |
 | 15 | Party_Member_Dies | the client's creature update (0x00666667, in 0x006655e0's message parsing): when its value at `+0x2d0` (a short: hit points, med) is 0, the creature is in the client party (0x00634620) and the party has more than one member |
 | 16, 17, 19 | Enter_Attribute_Screen, Enter_Skill_Screen_Char_Gen, Enter_Force_Power_Screen_Char_Gen | `OnPanelAdded` of `CSWGuiCharGenAbilities` (0x006f6db0), `CSWGuiCharGenSkills` (0x006f49a0) and `CSWGuiCharGenPowers` (0x006f10c0): New Game's character generation and level-up alike (the box exists from start-up) |
 | 18 | Enter_Feat_Screen_Char_Gen | `CSWGuiCharGenFeats` `OnPanelAdded` (0x006f2f30), only while its "granted" popup is queued (+0x19f4 bit 2: the level granted feats not known before); the box's callback (0x006f2c40) then adds that popup (the `skillinfo` panel), else it is added at once |
@@ -1853,8 +1853,8 @@ centred on the screen, and `BTN_OK` is centred across it at y − 7. Hidden rows
 The net-shift row's controls are not in `statussummary.gui` (`InitControl` 0x0040b930 adds a control to
 the panel only when the file has its tag), so that row is an empty 37-pixel gap (med). The rows without
 a number keep the file's strrefs: 42436 journal, 42440 dark side, 42441 light side, 42442 "Item(s)
-Received", 42443 "Item(s) Lost". The last row's flash flag is always set when the walk ends, so tutorial
-pop-up 14 is always offered. The pointer is moved onto `BTN_OK`'s centre (`SaveMousePosition` first).
+Received", 42443 "Item(s) Lost". Tutorial pop-up 14 is offered only when the journal row shows (the flag
+the walk's first case kept; Tutorial pop-ups, above). The pointer is moved onto `BTN_OK`'s centre (`SaveMousePosition` first).
 
 When it shows (high): the client main loop (gameloop.md 1.2 step 22) waits while the data has bit 0 or 1
 set, the input class is the game's (`+0x9c` 0), nothing loads (`+0x288`), no conversation is pending or
