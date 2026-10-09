@@ -6,7 +6,8 @@
 // What the RE settles: the slot controls, the cycling, the dimmed icon of an entry that cannot be
 // used now (alpha 0.25), the refusal messages with their reason codes (shown for 5 seconds in the
 // combat message bar), the description of the hovered slot's entry in LBL_ACTIONDESC, the
-// request being the leader's own and replacing its queued actions, and the blink. What it does not
+// request being the leader's own, replacing its queued actions out of combat mode and going behind
+// them in it (use_slot), and the blink. What it does not
 // (UpdateActionMenus, 0x00689d80, is read for its frame only): which powers and items make up
 // each list. The rules here are ours, from the data:
 //   - powers: the leader's known Force powers (spells.2da usertype 1) that are not hostile
@@ -379,7 +380,11 @@ namespace selfslots {
     }
 
     // A slot's button: does its selected entry on the leader (UseSelfAction, 0x0068ad60).
-    fn use_slot { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32, k: usize } {
+    // In combat mode the use goes behind the leader's waiting orders, as the target block's (UseSelfAction
+    // 0x0068ad60 clears the round's scheduled actions only out of combat mode, and the server's
+    // AddItemCastSpellActions 0x004f8c70 / AddCastSpellActions put the use on the scheduled list);
+    // out of combat mode, or with Shift held (`alternate`: ClearAllCombatActions first), it replaces them.
+    fn use_slot { mut s: State, mut g: gui::Gui, mut w: world::World, panel: u32, k: usize, alternate: bool } {
         let sl = &s.slots[k]
         if sl.count == 0 { return }
         let e = sl.entries[index_of{ sl, id = sl.selected }]
@@ -390,15 +395,17 @@ namespace selfslots {
         }
         let leader = party::leader{ w = &w }
         // In combat mode during an auto-pause the banner turns to reason 10 (UseSelfAction 0x0068ad60).
-        if hud::leader_in_combat_mode{ w = &w } { s.queued = true }
+        let queue = hud::leader_in_combat_mode{ w = &w } and not alternate
+        if queue { s.queued = true }
         if k == 0 {
-            actions::clear_for_player{ &w, id = leader }
+            if not hud::make_room_to_fight{ &w, leader, queue } { return }
             rt_talent::queue_cast{ &w, me = leader, spell = @as(i32, e.id), target = leader, location = math::vec3::zero{}, cheat = 0, instant = 0, item = obj::INVALID }
         } else if k == 3 {
             // A mine is laid at the leader's feet (UseItem's trap branch, SETTRAP).
             _ = traps::lay_mine{ &w, who = leader, item = e.id }
         } else {
-            items::use_item{ &w, who = leader, item = e.id }
+            if not hud::make_room_to_fight{ &w, leader, queue } { return }
+            items::use_item_queued{ &w, who = leader, item = e.id }
         }
         gui::play_sound{ &g, n = 6 }
         s.blink[k] = BLINK_SECONDS
@@ -407,7 +414,7 @@ namespace selfslots {
 
     // The HUD's events for the slots: the button, the arrows (with wrap-around), the pointer over a
     // slot. True when it was theirs.
-    fn event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, ev: gui::Event } -> bool {
+    fn event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, panel: u32, ev: gui::Event, alternate: bool } -> bool {
         // The icon label lies over the button and takes the pointer, so either one is the slot's.
         let over_button = slot_of{ tag = ev.tag, prefix = "BTN_ACTION" }
         let over = if over_button >= 0 { over_button } else { slot_of{ tag = ev.tag, prefix = "LBL_ACTION" } }
@@ -423,7 +430,7 @@ namespace selfslots {
                 return true
             }
             if ev.kind == gui::EventKind::activate {
-                use_slot{ &s, &g, &w, panel, k = @as(usize, over) }
+                use_slot{ &s, &g, &w, panel, k = @as(usize, over), alternate }
                 return true
             }
             return false

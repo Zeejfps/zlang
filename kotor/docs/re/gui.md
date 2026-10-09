@@ -3108,7 +3108,14 @@ are in [pazaak.md](pazaak.md). (high for the tags, addresses and the handlers na
 - The action-list builder `0x00619db0` (what goes into categories 0..5) and the target list
   builder `0x00689410` were not read; they decide what the action slots offer.
 - `UseSelfAction` clears the leader's actions after queuing outside combat; the order relative to
-  the callback looks odd and should be checked in the disassembly.
+  the callback looks odd and should be checked in the disassembly. Settled for combat mode
+  (2026-10): nothing is cleared on the client, and the item's request reaches
+  `CSWSCreature::UseItem` (0x004fc210) → `AddItemCastSpellActions` (0x004f8c70), which appends an
+  item-cast entry (type 0xa, `AddItemCastSpellAction` 0x004d3a90) to the combat round's scheduled
+  list and adds a COMBAT action when there is none; it clears the creature's actions
+  (`ClearAllActions(1)`) only when the creature is out of the combat state (`+0x4e0` 0) and an
+  entry is due. So a medpac used in combat mode waits behind the queued attacks (ours: the self
+  slots go through `hud::make_room_to_fight` as the target block's orders, `clicked.sh` selfq).
 - `CGuiInGame+0xb4` (blocks menus). Solved: it is the conversation-pending flag, set when a
   conversation is requested and read by `GetIsConversationActive` ([dialogue.md](dialogue.md) 2.2
   and the routine table).

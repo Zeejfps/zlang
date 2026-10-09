@@ -372,7 +372,7 @@ namespace ingame {
             if ui.shift_held {
                 selfslots::cycle{ s = &ui.selfs, g = &ui.gui, &w, &dev, panel = ui.hud.panel, k, forward = true }
             } else {
-                selfslots::use_slot{ s = &ui.selfs, g = &ui.gui, &w, panel = ui.hud.panel, k }
+                selfslots::use_slot{ s = &ui.selfs, g = &ui.gui, &w, panel = ui.hud.panel, k, alternate = false }
             }
             return true
         }
@@ -816,7 +816,7 @@ namespace ingame {
     // What the HUD's own controls ask for: a menu, the pause toggle, a party portrait, the target
     // block's slots.
     fn hud_event { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } {
-        if selfslots::event{ s = &ui.selfs, g = &ui.gui, &w, &dev, panel = ui.hud.panel, ev } { return }
+        if selfslots::event{ s = &ui.selfs, g = &ui.gui, &w, &dev, panel = ui.hud.panel, ev, alternate = ui.hud.alternate } { return }
         if hud::block_event{ h = &ui.hud, g = &ui.gui, &w, &dev, ev } { return }
         if hud::combat_event{ h = &ui.hud, g = &ui.gui, &w, ev } { return }
         if ev.kind == gui::EventKind::activate {

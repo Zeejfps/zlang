@@ -10,7 +10,8 @@
 #   selfq    selfq1.txt: with the auto-pause on, a trooper appears (the game pauses), the target block's attack puts the
 #            leader in combat mode, and a self slot (BTN_ACTION1, a medpac) is used: in combat mode during an
 #            auto-pause the banner turns to "Action added to queue." (48423; UseSelfAction 0x0068ad60, reason 10).
-#            FAIL unless the banner line follows the slot's click and the use is in the leader's queue (action 15).
+#            FAIL unless the banner line follows the slot's click and the use (action 15) waits in the leader's queue
+#            behind the attack (12): in combat mode a self slot queues (UseSelfAction, AddItemCastSpellActions 0x004f8c70).
 #
 #   sh kotor/tools/combat/clicked.sh            (EXE=kotor/out/kotor.exe; run from the repository root; about 10 seconds)
 #
@@ -40,11 +41,11 @@ $exe --load $ck/uppercity --no-render --speed 8 --saves $out/saves_selfq1 --inpu
 log=$out/selfq1.log
 banner=$(grep -a -E '^\[[0-9]+ [0-9.]+\] pause banner: 48423' $log | head -1 | sed -E 's/^\[([0-9]+) .*/\1/')
 queue=$(grep -a '^fight leader' $log | sed -n 4p | sed -E 's/.* queue (.*) waiting .*/\1/')
-case "$queue" in *15:*) used=1 ;; *) used=0 ;; esac
+case "$queue" in *12:*15:*) used=1 ;; *) used=0 ;; esac
 if [ -z "$banner" ] || [ "$banner" -lt 60 ] || [ $used = 0 ]; then
-  echo "FAIL selfq: banner 48423 at tick '$banner' (want after the slot's click at 60), leader's queue '$queue' (want the use, 15; see $log)"
+  echo "FAIL selfq: banner 48423 at tick '$banner' (want after the slot's click at 60), leader's queue '$queue' (want the attack, 12, then the use, 15; see $log)"
   fail=1
 else
-  echo "ok   selfq: the self slot in combat mode during the auto-pause turned the banner to 48423 (tick $banner)"
+  echo "ok   selfq: the self slot in combat mode during the auto-pause turned the banner to 48423 (tick $banner), the use queued behind the attack"
 fi
 exit $fail

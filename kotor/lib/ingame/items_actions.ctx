@@ -129,10 +129,19 @@ namespace items {
     // place of whatever the user was doing (as the HUD's self slots and the inventory's Use Item
     // do); the cast action spends the item's use when it begins (rt_item::spend_use).
     fn use_item { mut w: world::World, who: u32, item: u32 } {
+        use_item_how{ &w, who, item, replace = true }
+    }
+
+    // The same behind what the user was doing (the self slots in combat mode); the caller made room.
+    fn use_item_queued { mut w: world::World, who: u32, item: u32 } {
+        use_item_how{ &w, who, item, replace = false }
+    }
+
+    fn use_item_how { mut w: world::World, who: u32, item: u32, replace: bool } {
         rt_item::signal_activation{ &w, who, item, target = obj::INVALID }
         let spell = ability_of{ w = &w, id = item }
         if not is_self_ability{ w = &w, spell } { return }
-        actions::clear_for_player{ &w, id = who }
+        if replace { actions::clear_for_player{ &w, id = who } }
         rt_talent::queue_cast{ &w, me = who, spell, target = who, location = math::vec3::zero{}, cheat = 0, instant = 0, item }
     }
 }
