@@ -4,7 +4,9 @@
 //   FRAME ui gold N                  the party's credits
 //   FRAME ui store RESREF [UP DOWN]  a merchant made from a UTM blueprint and opened (OpenStore's
 //                                    bonuses UP and DOWN, percent)
-//   FRAME ui loot TAG|#ID            the container with that tag (or object id, from `ui containers`) opened as if the leader used it
+//   FRAME ui loot TAG|#ID|bag        the container with that tag (or object id, from `ui containers`; `bag` the newest
+//                                    body bag) opened as if the leader used it
+//   FRAME ui carry TAG RESREF        an item from the blueprint given to the tagged creature, to drop when it dies
 //   FRAME ui bag                     prints the party's inventory and credits
 //   FRAME ui xp N                    gives the party N experience points
 //   FRAME ui describe RESREF...      prints the description of each item blueprint, property lines included
@@ -35,14 +37,24 @@ namespace test_screens {
                     k = k + 1
                 }
             }
+        } else if ci::eq{ a = cmd, b = "carry" } {
+            // `ui carry TAG RESREF`: an item from the blueprint in the creature's inventory, dropped when it dies.
+            let tag = text::next_word{ &words } ifnull { return true }
+            let template = text::next_word{ &words } ifnull { return true }
+            let item = rt_item::create_item{ &w, template, target = world::object_by_tag{ w = &w, tag, nth = 0 }, stack = 1 }
+            if world::object{ w = &w, id = item } is some{ value = io } {
+                if obj::item{ o = io } is some{ value = it } { it.droppable = true }
+            }
         } else if ci::eq{ a = cmd, b = "loot" } {
             let tag = text::next_word{ &words } ifnull { return true }
             // The first object with the tag that holds items (a tag can be shared with a waypoint).
             let mut id = world::object_by_tag{ w = &w, tag, nth = 0 }
             // `#N` names the container by its object id (`ui containers`): a body bag has no tag.
             if tag[0] == '#' { id = @as(u32, text::scan_decimal{ s = tag[1..] }) }
+            // `bag`: the newest body bag whose corpse still lies there (objsound.ctx).
+            if ci::eq{ a = tag, b = "bag" } { id = w.recent_bags[0] }
             let mut nth: i32 = 0
-            while nth < 8 and tag[0] != '#' {
+            while nth < 8 and tag[0] != '#' and id != w.recent_bags[0] {
                 let found = world::object_by_tag{ w = &w, tag, nth }
                 nth = nth + 1
                 if found == obj::INVALID { break }

@@ -1,6 +1,18 @@
 # Door sounds (kotor/tools/sndrun/doors.sh): from the uppercity checkpoint the leader, put in front of a
-# locked apartment door, tries it (placeableobjsnds Locked), then bashes it open (Opened).
+# locked apartment door, tries it (placeableobjsnds Locked, "This object is locked.", "Locked" over the
+# door), then bashes it open (the hits sound metal, then Opened).
 1 ui bot god on
 5 warpxy 90.75,94
 10 use ptar_lockde
 100 attack ptar_lockde
+# Another of the apartment doors dies of EffectDeath: destroyed (silent), and gone 2 s later.
+400 fx death ptar_lockde 1
+# A Sith trooper killed where it stands: its body bag, opened and closed, sounds as the corpse (row 53).
+420 ui foe g_sithtroop01 3 0
+421 ui carry g_sithtroop01 g_i_progspike01
+425 ui fight
+600 ui fight
+800 ui fight
+1000 ui fight
+1500 ui loot bag
+1510 ui clicktag BTN_CANCEL

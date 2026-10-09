@@ -400,11 +400,13 @@ namespace visual {
     }
 
     // closed -> opening1 then opened1 (and back with closing1 then closed); a door first seen
-    // open shows opened1 at once.
+    // open shows opened1 at once. A destroyed door (3, the death effect) keeps its pose until it is
+    // removed two seconds later.
     fn animate_door { mut sc: scene::Scene, mut w: world::World, v: *mut scene::Visual, state: u32 } {
         if v.state == state { return }
         let first = v.state == 0xFFFFFFFF
         v.state = state
+        if state == 3 and not first { return }
         let part = v.first
         if state == 0 {
             if first or not scene::play{ &sc, &w, part, name = "closing1", looping = false, speed = 1.0, transition = 0.0 } {

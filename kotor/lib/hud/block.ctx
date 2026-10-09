@@ -11,8 +11,11 @@ namespace hud {
 
     // The block's name bar: the target's name, or the selected entry's name while the pointer is on one of the
     // slots (FUN_00685cb0 0x00685cb0; the self slots' description label is the other slots' own). A refused
-    // choice's reason takes its place for five seconds (UseAction 0x00689610 stores it), over either.
+    // choice's reason takes its place for five seconds (UseAction 0x00689610 stores it), over either; the
+    // object's own text ("Locked", world::set_object_text) over all three.
     fn block_name { mut h: Hud, mut w: world::World, id: u32 } -> []u8 {
+        let text = world::object_text_of{ w = &w, id }
+        if text != 0 { return world::string_by_strref{ w = &w, strref = text } }
         if h.refusal > 0.0 and h.refusal_reason > 0 and h.refusal_reason < 7 {
             return world::string_by_strref{ w = &w, strref = REASON_TEXT[@as(usize, h.refusal_reason)] }
         }

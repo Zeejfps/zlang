@@ -181,7 +181,10 @@ namespace events {
                         notices::summary{ &w, kind = notices::SUMMARY_ITEM_LOST, value = 0 }
                     }
                 }
+                // A bag the corpse leaves is the newest object (ids count up): its sounds follow the corpse's.
+                let before = w.objects.next_low
                 fight::spawn_body_bag{ &w, id = ev.target }
+                if w.objects.next_low != before { objsound::note_body_bag{ &w, bag = w.objects.next_low - 1, owner = ev.target } }
                 world::destroy{ &w, id = ev.target }
             }
             transition{ token } => { modload::transition_arrived{ &w, id = ev.target, token } }

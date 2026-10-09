@@ -1136,10 +1136,14 @@ function (`0x0060e760`) is called, so it has no effect either. (high)
 1. Plot → nothing. Min1HP → HP = 1, nothing else.
 2. Notify its client object (`0x00610950`, med), clear its look-at target (`0x004f34a0`),
    `ClearAllActions(1)`.
-3. **Placeable**: `0x00587770`, animation 10072. **Door**: destroyed state, and its linked door
-   gets a death effect too (unless that door already plays animation 10072, which stops the pair
-   from killing each other again). Both then signal OnDeath (script event 10, queued with no delay)
-   and are destroyed after 2000 ms (event 11). Any other kind of object: nothing.
+3. **Placeable**: `0x00587770`, animation 10072. **Door**: destroyed state
+   (`SetOpenState(3, 1)`, animation 10072, whose sound is the blank `Destroyed`: actions.md 3.15; it
+   is not opened), and its linked door (`CSWSDoor::GetLinkedDoor` `0x00589580`: with
+   `LinkedToFlags` 1 or 2, the module's object tagged `LinkedTo`, cached at `+0x398`) gets a death
+   effect too (made from this one, not spectacular, with feedback), unless that door already plays
+   animation 10072, which stops the pair from killing each other again. Both then signal OnDeath
+   (script event 10, queued with no delay) and are destroyed after 2000 ms (event 11). Any other kind
+   of object: nothing. (A door bashed open by weapons is another path, 6.6.)
 4. **Creature** (skipped when `+0x9f0` is already 0):
    - the client notes the dead creature's id (client `+0x2d4`, via `0x005edc70` → `0x005f2fe0`)
      when it is player-controlled (med);

@@ -269,7 +269,8 @@ namespace doors {
     // ---- locks (actions.md 3.6, 3.7)
 
     // dialog.tlk lines the original shows for the lock actions (feedbacktext messages 13 to 16).
-    const FEEDBACK_LOCKED: u32 = 1439       // "Locked"
+    const FEEDBACK_LOCKED: u32 = 1437       // "This object is locked."
+    const TEXT_LOCKED: u32 = 1439           // "Locked", over the object
     const FEEDBACK_NOT_LOCKED: u32 = 1430   // "That object is not locked."
     const FEEDBACK_NO_KEY: u32 = 1431       // "This object cannot be opened through conventional means."
     const FEEDBACK_USED_KEY: u32 = 1432     // "You used a key."
@@ -302,12 +303,19 @@ namespace doors {
         outbox::post{ out = &w.out, note = outbox::Note::feedback{ strref, text = outbox::keep_text{ out = &w.out, s = "" } } }
     }
 
-    // Feedback message 13 for a locked door or placeable: the client that shows it also plays the
-    // target's placeableobjsnds Locked sound (FormatFeedbackMessage 0x005fcd10), so only the player's.
+    // Feedback message 13 for a locked door or placeable (FormatFeedbackMessage 0x005fcd10): the line
+    // "This object is locked.", and the client that shows it also plays the target's placeableobjsnds
+    // Locked sound and gives the target the text "Locked" for five seconds, which the target block
+    // shows in place of its name (0x0063d2d0). So only the player's.
     fn say_locked { mut w: world::World, who: u32, target: u32 } {
         if not is_player_side{ w = &w, id = who } { return }
         tell{ &w, who, strref = FEEDBACK_LOCKED }
         objsound::play{ &w, id = target, column = objsound::LOCKED }
+        world::set_object_text{ &w, id = target, strref = TEXT_LOCKED }
+        if w.log.objects {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "locked {}: feedback {}, text {}\n", target, FEEDBACK_LOCKED, TEXT_LOCKED)
+        }
     }
 
     // The roll of a Security check as the original's combat log words it (dialog.tlk 1405, "<CUSTOM0>

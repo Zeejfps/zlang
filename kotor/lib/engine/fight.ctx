@@ -1466,6 +1466,8 @@ namespace fight {
         let t = world::object{ w = &w, id = imp.target } ifnull { return }
         if t.kind == obj::Kind::door or t.kind == obj::Kind::placeable {
             if imp.attack { fight_log::attack{ &w, attacker = id, imp } }
+            // A blow that lands sounds as the door's or placeable's material (fight_fx.ctx hit_column).
+            if imp.attack and imp.hit and not imp.ranged { land_melee_fx{ &w, id, imp } }
             if imp.attack and imp.hit { damage_object{ &w, id = imp.target, amount = imp.damage.total, slots = imp.damage.slots, who = id } }
             return
         }

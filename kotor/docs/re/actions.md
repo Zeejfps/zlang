@@ -1536,7 +1536,24 @@ columns `ArmorType`, `Locked`, `Opened`, `Closed`, `Destroyed`; `Used` is read b
 | A placeable's animation turns to dead 10072 (transition 306; the death effect) | `Destroyed` | same |
 | A placeable's animation turns to or from on 10073 / off 10074 (transitions 314 / 315) | `Used` | same |
 | Feedback message 13 "This object is locked." (the actor's client only, so the player's): the door's (1.5 m up) or placeable's | `Locked` | `FormatFeedbackMessage` `0x005fcd10` |
-| A hit on a door or placeable: `ArmorType` picks weaponsounds.2da's `<armortype>0`/`1` column (random), as a worn armour's type does for a creature | `ArmorType` | hit sound `0x00617470` |
+| A hit on a door or placeable: `ArmorType` picks weaponsounds.2da's `<armortype>0`/`1` column (random), as a creature's material does | `ArmorType` | hit sound `0x00617470` |
+
+Feedback message 13 (`FormatFeedbackMessage` case 0xd) shows dialog.tlk 1437 "This object is
+locked." in the feedback log, and besides the `Locked` sound gives the door's or placeable's client
+object the text 1439 "Locked" for 5000 ms (`0x0063d2d0`: the string at `+0xe8`, the time at `+0xf0`;
+`DisplayFeedBackText` and a client message call it too). The target block (`CSWGuiTargetInfo`,
+`0x00685cb0` from `Refresh` `0x00689410`) shows that text in its name label while the time lasts,
+over the refusal message and the hovered slot's name. (high)
+
+The hit sound (`0x00617470`) builds the column name from a material and `rand() % 2` (`"0"` or
+`"1"`; also for the `Parry` columns). For a creature (type 5) the material is `forcefield` when
+`0x00616890` says so, `stone` when its client object's `+0xc` or `+0x14` is set, `wood` for `+0x10`
+(those three not read further), else its `appearancesndset.2da` `ArmorType` (by `appearance.2da`
+`SoundAppType`), else the worn body armour's base item ArmorType (`+0xbc`), else `leather`: the
+sound set wins over the armour. For a door (type 10) the row is `doortypes.2da`'s or
+`genericdoors.2da`'s SoundAppType as above, for a placeable (9) `placeables.2da`'s, and the material
+is that `placeableobjsnds.2da` row's `ArmorType` (blank: no sound). Any other type has no material.
+(high)
 
 The client picks those transitions in `0x0063e930` from the old and new animation (an old 10075
 gives 313, a new 10074 314, ..., a new 10075 312, then a new 10072 306 for a placeable (type 9) or
@@ -1544,9 +1561,19 @@ gives 313, a new 10074 314, ..., a new 10075 312, then a new 10072 306 for a pla
 the opening itself, plays nothing in `0x006832a0`: the open sound is USEOBJECT's. A placeable
 opened another way (PlayAnimation open) is silent. (high)
 
-A body bag left by a creature (server `IsBodyBag` `+0x440` set, `+0x444` clear, and a test of the
-client object `0x006057b0` not read) uses row 53 `Corpse` for the client's sounds instead of its
-appearance's (`0x006832a0`; low: the test). A bashed door is opened (`CSWSDoor::Open`, combat.md
+A body bag left by a creature uses row 53 `Corpse` for the client's sounds instead of its
+appearance's while the creature's corpse still lies there (`0x006832a0`): server `IsBodyBag` `+0x440`
+set, `+0x444` clear, and `0x006057b0` finds the bag among the client area's recent corpses. That is a
+ring of four creature ids at area `+0x268` (read `+0x278`, write `+0x279`) that `0x006056b0` fills
+from `0x0064cc90`, the client's handling of a creature that leaves a corpse, unless the creature's
+`appearance.2da` `Body_Bag` row of `bodybag.2da` is itself a `Corpse` (the Rancor's, the Krayt's).
+The insert that fills the ring evicts the oldest at once, so three corpses stay: the evicted
+creature fades out (`0x0063ce60` with 45000 and 1000, taken to be ms; med), its bag (client creature `+0x3dc`, set when `SpawnBodyBag`
+ran, combat.md 8.4) is shown and marked `+0x444`, and sounds as its own appearance from then on;
+a bag still in the ring is hidden behind its corpse (`0x0064d500`). The test reads the client
+creature's `+0x3dc` for each id in the ring. (high; the flag 0x0064cc90 tests before pushing, med:
+taken to be "leaves a body bag". Ours, objsound.ctx, keeps the latest three such bags for the sound
+only: our corpse goes with the creature and its bag shows at once.) A bashed door is opened (`CSWSDoor::Open`, combat.md
 6.6), so it sounds `Opened`; a bashed container opens rather than dies (no sound but the hits'). No
 other caller reads these columns (no unlock or trap sound comes from this table; the unlock's
 sounds are the user's sound set, 3.7).

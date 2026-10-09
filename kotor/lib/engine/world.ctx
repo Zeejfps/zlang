@@ -118,6 +118,7 @@ namespace world {
         arrival_waypoint: [64]u8,           // where the PC arrives in the module being entered
         arrival_waypoint_len: usize,
         rng: Rng,
+        noise: Rng,                         // presentation picks (which of two hit sounds) kept off `rng`, so they never shift the game's sequence
         stats: Stats,
         routes: [772]?routines::Category,   // each routine's category file, found by its first call (routines::categories)
         log: elog::Log,
@@ -154,8 +155,14 @@ namespace world {
         messages: msglog::Log,              // Messages > Feedback and Dialog (msglog.ctx): the save keeps it with the party table
         log_tokens: fight_log::Tokens,      // the combat log's <CUSTOM2> as the client last had it (fight_log.ctx)
         heads: [8]HeadPoint,                // where the floating labels hang: the scene finds these objects' head_g nodes
+        recent_bags: [3]u32,                // the latest body bags whose corpse still shows, newest first (objsound.ctx)
+        object_text: ObjectText,            // a line the target block shows in place of an object's name ("Locked")
         // HOOK(party): the party table
     }
+
+    // A client object's text (0x0063d2d0: its +0xe8 string for 5000 ms), which the target block shows
+    // over the object's name while it lasts (CSWGuiTargetInfo, 0x00685cb0). Ours keeps one at a time.
+    struct ObjectText { id: u32, strref: u32, until_ms: u64 }
 
     // An object the HUD wants the head of (a floating label's anchor, hud/floating.ctx) and where the
     // scene found it: its model's head_g node, else rootdummy (0x0060fd80); `found` false when neither.
@@ -187,7 +194,7 @@ namespace world {
             out = outbox::new{ heap },
             transition = null,
             arrival_waypoint = [0; 64], arrival_waypoint_len = 0,
-            rng = Rng{ state = seed },
+            rng = Rng{ state = seed }, noise = Rng{ state = seed },
             stats = Stats{ calls = [0; 772], missing = [0; 772], unbalanced = [false; 772], script_runs = 0, faults = 0, events = 0, objects_made = 0, party_rounds = 0, member_rounds = [0; 13], member_joined = [0; 13], member_joined_own = [0; 13] },
             routes = [null; 772],
             log = elog::quiet{},
@@ -204,6 +211,7 @@ namespace world {
             credits_running = false, button_mash = false, subscreen = 0, party_watch = fight::new_party_watch{},
             messages = msglog::new{}, log_tokens = fight_log::no_tokens{},
             heads = [HeadPoint{ id = obj::INVALID, at = math::vec3::zero{}, found = false }; 8],
+            recent_bags = [obj::INVALID; 3], object_text = ObjectText{ id = obj::INVALID, strref = 0, until_ms = 0 },
         }
         let p = try alloc::new(World, heap::Heap){ realloc = heap::alloc, heap, value = w }
         try rules::load_tables{ fs = &f, rm = rm.*, heap = heap, out = p.rules }
@@ -656,4 +664,22 @@ namespace world {
 
     // MSVC rand() on the world's generator.
     fn random { mut w: World } -> u32 { return rand{ r = &w.rng } }
+
+    // The same for presentation only (the original's rand() is one sequence; ours keeps sounds off the game's).
+    fn random_noise { mut w: World } -> u32 { return rand{ r = &w.noise } }
+
+    // How long an object's text lasts (0x0063d2d0 sets 5000 ms).
+    const OBJECT_TEXT_MS: u64 = 5000
+
+    // Shows dialog.tlk `strref` in the target block over object `id` for five seconds.
+    fn set_object_text { mut w: World, id: u32, strref: u32 } {
+        w.object_text = ObjectText{ id, strref, until_ms = clock::now_ms{ c = w.clock } + OBJECT_TEXT_MS }
+    }
+
+    // The text object `id` shows now instead of its name: its dialog.tlk strref, 0 for none.
+    fn object_text_of { w: *World, id: u32 } -> u32 {
+        if id == obj::INVALID or w.object_text.id != id { return 0 }
+        if clock::now_ms{ c = w.clock } >= w.object_text.until_ms { return 0 }
+        return w.object_text.strref
+    }
 }

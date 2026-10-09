@@ -1134,7 +1134,7 @@ namespace play {
     // `FRAME fx visual ROW TAG` plays visualeffects.2da effect ROW on the tagged object (`pc` for the
     // player's character); `fx at ROW X,Y,Z` at a point; `fx model MODEL TAG [HOOK]` an effect model
     // on an object's node; `fx mine MODEL X,Y,Z` a mine's blast; `fx cast SPELL TAG` a Force power's conjure and cast visuals. For looking
-    // at effects (lib/vfx, docs/design/vfx.md).
+    // at effects (lib/vfx, docs/design/vfx.md); `fx death TAG [N]` kills a door or placeable as EffectDeath does.
     fn test_effect { mut w: world::World, text: []u8 } {
         let mut words = text::words{ s = text }
         let kind = text::next_word{ &words } ifnull { return }
@@ -1159,6 +1159,10 @@ namespace play {
             let id = tagged{ w = &w, word = second }
             fight::spell_visuals{ &w, id, spell, cast = false }
             fight::spell_visuals{ &w, id, spell, cast = true }
+        } else if ci::eq{ a = kind, b = "death" } {
+            // `fx death TAG [N]`: EffectDeath on the Nth door or placeable with the tag (kotor/tools/sndrun/doors.sh).
+            let nth = @as(i32, text::scan_decimal{ s = second })
+            if world::object{ w = &w, id = world::object_by_tag{ w = &w, tag = first, nth } } is some{ value = o } { rt_fx::kill{ &w, o, killer = w.pc } }
         }
     }
 

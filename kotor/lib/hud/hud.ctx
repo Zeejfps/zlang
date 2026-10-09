@@ -56,6 +56,7 @@ namespace hud {
         power_pick: i32,                    // the Force power chosen in the middle slot (a spells.2da row), kept from target to target
         refusal: f32,                       // seconds left of a refusal message in the target block's name label
         refusal_reason: i32,                // its reason code (REASON_TEXT)
+        object_text: u32,                   // the target's own text the name label shows (world::object_text_of), 0 none
         hover_slot: i32,                    // the target slot under the pointer, -1 none
         look: i32,                          // the block's frames and health bar as set: 1 hostile, 2 poisoned, -1 not yet
         pressed: u32,                       // the target when the button went down in the world
@@ -115,7 +116,7 @@ namespace hud {
             block = [BlockPart{ index = -1, x = 0, y = 0 }; 16],
             minimap = open_minimap{ &g, &w, &dev, panel },
             font = gui::font_slot{ &g, fs = &w.fs, &dev, name = "dialogfont10x10" }, combat = false, cmsg = COMBAT_ENGAGED, cmsg_left = -1.0, cmsg_total = 2.5, cmsg_label = 0, label_lent = false, auto_paused = false, queued_banner = false, notify = [0.0; 9], notify_shown = [false; 9], level_news = false, told = [Told{ id = obj::INVALID, level = -1 }; 12],
-            shown_target = obj::INVALID, lists = [empty_list{}; 3], power_pick = -1, refusal = 0.0, refusal_reason = 0, hover_slot = -1, look = -1, pressed = obj::INVALID,
+            shown_target = obj::INVALID, lists = [empty_list{}; 3], power_pick = -1, refusal = 0.0, refusal_reason = 0, object_text = 0, hover_slot = -1, look = -1, pressed = obj::INVALID,
             pressing = false, reticle = Reticle{ shown = false, x = 0.0, y = 0.0, side = 0.0, mark = 0, turns = 0 }, reticle_for = obj::INVALID, zoom = -1.0, sight_latch = false, sight_quiet = 0.0, target_lost = 0.0, move_speed = 0.0, moving_for = 0.0, looking = false, swing_to = obj::INVALID, door_window = 0.0, deferred = 0.0, deferred_text = 0, alternate = false, trans_panel = 0, trans_object = obj::INVALID,
             projector = Projector{ vp = math::mat4::identity{}, eye = math::vec3::zero{}, w = 1.0, h = 1.0 },
             floating = new_floating{ &g, &w, &dev },

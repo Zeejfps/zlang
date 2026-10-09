@@ -211,6 +211,12 @@ namespace hud {
                 show_combat_message{ &h, &w, strref = COMBAT_ENGAGED }
             }
         }
+        // The target's own text ("Locked") comes and goes on the world's clock.
+        let text = world::object_text_of{ w = &w, id = h.shown_target }
+        if text != h.object_text {
+            h.object_text = text
+            show_slot_description{ &h, &g, &w }
+        }
         let on = leader_in_combat_mode{ w = &w }
         if on != h.combat {
             h.combat = on

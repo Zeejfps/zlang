@@ -722,9 +722,12 @@ namespace rt_fx {
         }
     }
 
-    // Death of a door or a placeable: nothing for a plot object, one point for Min1HP. A door
-    // is broken open, a placeable is destroyed a moment after its OnDeath is posted. Its hit
-    // points go to -1 to say so (a dead one dies once; damage stops at 0).
+    // Death of a door or a placeable (OnApplyDeath 0x004e0ac0, combat.md 8.2): nothing for a plot
+    // object, one point for Min1HP. A door turns destroyed (its Destroyed sound, blank for every door)
+    // and the door it links to (LinkedToFlags 1 or 2, by tag) dies with it unless already dead; a
+    // placeable plays its death. Both post OnDeath at once and are destroyed 2 s later. The hit points
+    // go to -1 to say so (a dead one dies once; damage stops at 0). (A door bashed by weapons is
+    // opened instead: fight.ctx.)
     fn kill { mut w: world::World, o: *mut obj::Object, killer: u32 } {
         if o.plot { return }
         if o.min_one_hp {
@@ -733,12 +736,23 @@ namespace rt_fx {
         }
         if o.hp < 0 { return }
         o.hp = -1
-        if o.kind == obj::Kind::door {
-            doors::set_door_state{ &w, id = o.id, state = obj::DoorState::open1 }
-        } else if o.kind == obj::Kind::placeable {
-            events::post{ &w, delay_ms = 0, caller = killer, target = o.id, payload = events::Payload::script{
-                e = events::script_event{ kind = events::DEATH, object = killer } } }
-            events::post{ &w, delay_ms = 500, caller = o.id, target = o.id, payload = events::Payload::destroy }
+        let id = o.id
+        if o.kind != obj::Kind::door and o.kind != obj::Kind::placeable { return }
+        if obj::door{ o } is some{ value = d } {
+            doors::set_door_state{ &w, id, state = obj::DoorState::destroyed }
+            if d.linked_flags == 1 or d.linked_flags == 2 {
+                let other = world::object_by_tag{ w = &w, tag = d.linked_to, nth = 0 }
+                if other != id {
+                    if world::object{ w = &w, id = other } is some{ value = lo } {
+                        if obj::door{ o = lo } is some{ value = ld } {
+                            if ld.state != obj::DoorState::destroyed { kill{ &w, o = lo, killer } }
+                        }
+                    }
+                }
+            }
         }
+        events::post{ &w, delay_ms = 0, caller = killer, target = id, payload = events::Payload::script{
+            e = events::script_event{ kind = events::DEATH, object = killer } } }
+        events::post{ &w, delay_ms = 2000, caller = id, target = id, payload = events::Payload::destroy }
     }
 }

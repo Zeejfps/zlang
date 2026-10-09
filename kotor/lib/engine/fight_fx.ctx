@@ -160,27 +160,36 @@ namespace fight {
         return twoda::get_int{ t = w.tables.appearance, row = @as(usize, c.appearance), column = "soundapptype" } ifnull -1
     }
 
-    // weaponsounds.2da's column for the material a hit lands on: the worn armour's type, else the
-    // creature's own (appearancesndset.2da: droids "armor", beasts "leather"), else leather (cloth
-    // and leather share their sounds).
-    fn hit_column { w: *world::World, t: *obj::Object, into: []mut u8 } -> []u8 {
-        let mut kind: []u8 = "leather"
+    // weaponsounds.2da's column for the material a hit lands on, then 0 or 1 at random (rand() % 2),
+    // as the hit sound 0x00617470 picks it (docs/re/actions.md 3.15): a creature's own sound set's
+    // ArmorType (appearancesndset.2da: droids "armor", beasts "leather"), else its worn armour's, else
+    // leather; a door's or placeable's placeableobjsnds.2da ArmorType (metal, wood, stone...). Empty
+    // for any other object or a blank cell: no sound.
+    fn hit_column { mut w: world::World, t: *obj::Object, into: []mut u8 } -> []u8 {
+        let mut kind: []u8 = ""
         if obj::creature{ o = t } is some{ value = tc } {
-            let st = sound_type_of{ w, c = tc }
+            let st = sound_type_of{ w = &w, c = tc }
             if st >= 0 {
                 let own = twoda::get_string{ t = w.tables.appearancesndset, row = @as(usize, st), column = "armortype" } ifnull ""
-                if own.len > 0 and own.len < 12 { kind = own }
+                if own.len < 12 { kind = own }
             }
-            if world::object{ w, id = tc.equipped[obj::SLOT_BODY] } is some{ value = armor } {
-                if obj::item{ o = armor } is some{ value = it } {
-                    let s = twoda::get_string{ t = w.tables.baseitems, row = @as(usize, it.base), column = "armortype" } ifnull ""
-                    if s.len > 0 and s.len < 12 { kind = s }
+            if kind.len == 0 {
+                if world::object{ w = &w, id = tc.equipped[obj::SLOT_BODY] } is some{ value = armor } {
+                    if obj::item{ o = armor } is some{ value = it } {
+                        let s = twoda::get_string{ t = w.tables.baseitems, row = @as(usize, it.base), column = "armortype" } ifnull ""
+                        if s.len < 12 { kind = s }
+                    }
                 }
             }
+            if kind.len == 0 { kind = "leather" }
+        } else {
+            let s = objsound::armor_type{ w = &w, o = t }
+            if s.len < 12 { kind = s }
         }
+        if kind.len == 0 { return "" }
         let mut n: usize = 0
         while n < kind.len { into[n] = kind[n]; n = n + 1 }
-        into[n] = '0'
+        into[n] = if world::random_noise{ &w } % 2 == 0 { '0' } else { '1' }
         return into[..n + 1]
     }
 
@@ -215,7 +224,7 @@ namespace fight {
             parried = holds_weapon{ w = &w, c = tc } and holds_weapon{ w = &w, c }
             clash = parried and row == 1 and weapon_sound_row{ w = &w, c = tc } == 1
         }
-        let column: []u8 = if imp.hit { hit_column{ w = &w, t, into = col[..] } } else if clash { "clash0" } else { "parry0" }
+        let column: []u8 = if imp.hit { hit_column{ &w, t, into = col[..] } } else if clash { "clash0" } else { "parry0" }
         let sound = twoda::get_string{ t = w.tables.weaponsounds, row, column } ifnull ""
         say{ &w, name = sound, at = chest_of{ o = t }, source = imp.target }
         if parried {
