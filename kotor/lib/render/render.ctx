@@ -340,6 +340,7 @@ namespace render {
         shadows: u8,                // 0 the original's planar creature shadows (the Shadows option); 1 shadow maps, 2 with soft penumbras
         ao: u8,                     // ambient occlusion on the ambient and lightmap light
         smooth_lightmaps: bool,     // lightmaps sampled bicubically, not bilinearly
+        lift_lightmaps: bool,       // the lightmaps' near-black texels lifted to a dark floor (ours: their baked-black dead ends)
         dof: u8,                    // depth of field, for views with a focus (conversations)
         reflections: u8,            // screen-space reflections on environment-mapped surfaces
         shafts: bool,               // light shafts toward the view's sun
@@ -354,7 +355,7 @@ namespace render {
     // Everything off: the original renderer.
     fn original_look {} -> Enhance {
         return Enhance{
-            on = false, bloom = 0, exposure = 1.0, room_light = 0, shadows = 0, ao = 0, smooth_lightmaps = false, dof = 0,
+            on = false, bloom = 0, exposure = 1.0, room_light = 0, shadows = 0, ao = 0, smooth_lightmaps = false, lift_lightmaps = false, dof = 0,
             reflections = 0, shafts = false, height_fog = false, grade = false, post_aa = 0, alpha_coverage = false,
             tessellation = 0, timing = false,
         }
@@ -363,7 +364,7 @@ namespace render {
     // Every effect on at its high level: what a new settings file starts with.
     fn full_enhance {} -> Enhance {
         return Enhance{
-            on = true, bloom = 2, exposure = 1.0, room_light = 2, shadows = 2, ao = 2, smooth_lightmaps = true, dof = 2,
+            on = true, bloom = 2, exposure = 1.0, room_light = 2, shadows = 2, ao = 2, smooth_lightmaps = true, lift_lightmaps = true, dof = 2,
             reflections = 2, shafts = true, height_fog = true, grade = true, post_aa = 1, alpha_coverage = true,
             tessellation = 0, timing = false,
         }

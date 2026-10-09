@@ -34,6 +34,11 @@ bloom, room light on characters, shadow maps, occlusion, smooth lightmaps, depth
 shafts, height fog, colour grades, edge smoothing, foliage anti-aliasing, tessellation, and an Original Look that
 turns them all off. See [../design/enhanced-render.md](../design/enhanced-render.md).
 
+Its **Lightmaps** row (key `Lightmaps`, `gfx lightmaps 0|1|2`) is Original, Smooth or Lifted (the default). Lifted
+(ours) is Smooth plus a soft floor under the rooms' baked light: a texel baked black draws at 0.12 instead of 0,
+fading out by 0.25, so a dead end the original leaves pitch black (the Endar Spire's corridor ends) shows its walls,
+dark, while ordinary shadows stay as they are. Original and Smooth, and Original Look, keep the original's black.
+
 ## The panels, option by option
 
 | Option (panel) | Original | Ours | State |

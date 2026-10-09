@@ -334,7 +334,7 @@ namespace display {
         else if ci::eq{ a = key, b = "roomlight" } { s.fx_room_light = n }
         else if ci::eq{ a = key, b = "shadowmaps" } { s.fx_shadows = n }
         else if ci::eq{ a = key, b = "ao" } { s.fx_ao = n }
-        else if ci::eq{ a = key, b = "lightmaps" } { s.fx_lightmaps = on }
+        else if ci::eq{ a = key, b = "lightmaps" } { s.fx_lightmaps = n }
         else if ci::eq{ a = key, b = "dof" } { s.fx_dof = n }
         else if ci::eq{ a = key, b = "reflections" } { s.fx_reflections = n }
         else if ci::eq{ a = key, b = "shafts" } { s.fx_shafts = on }

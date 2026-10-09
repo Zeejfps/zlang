@@ -281,14 +281,19 @@ namespace gpu {
 
     // ---- per draw
 
-    // The enhanced program's uniforms of a draw: its kind, the smooth-lightmap switch, the light around it, and
+    // What a lightmap texel of black becomes with Enhance.lift_lightmaps (lift_dark in fx_shaders.ctx): enough
+    // light that a wall baked black (the Endar Spire's dead ends) shows its panels, dark; from 0.25 up nothing changes.
+    // At most 0.125, or the curve would dip before it rises.
+    const LIGHTMAP_FLOOR: f32 = 0.12
+
+    // The enhanced program's uniforms of a draw: its kind, the lightmap switches, the light around it, and
     // how much brighter than white emissive and additive light goes (only with bloom, which shows it).
     fn set_fx_draw { mut dev: Device, frame: *render::Frame, draw: render::Draw } {
         let e = dev.enhance
         let cube = e.room_light > 0 and draw.ambient > 0 and draw.ambient <= frame.ambient_count
         dev.gl.uniform4i{ location = dev.cur.fx, v0 = @as(i32, draw.kind), v1 = if e.smooth_lightmaps { 1 } else { 0 }, v2 = if cube { 1 } else { 0 }, v3 = if coverage_wanted{ samples = dev.samples, e, blend = draw.material.blend } { 1 } else { 0 } }
         let glow = emissive_gain{ e }
-        dev.gl.uniform4f{ location = dev.cur.fx2, v0 = glow, v1 = glow * 1.5, v2 = 0.0, v3 = 0.0 }
+        dev.gl.uniform4f{ location = dev.cur.fx2, v0 = glow, v1 = glow * 1.5, v2 = if e.lift_lightmaps { LIGHTMAP_FLOOR } else { 0.0 }, v3 = 0.0 }
         if cube {
             let c = frame.ambients[draw.ambient - 1]
             let v: [18]f32 = [

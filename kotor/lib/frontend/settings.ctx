@@ -25,7 +25,7 @@ namespace frontend {
         fx_room_light: i32,         // 0 or 1
         fx_shadows: i32,            // 0 the original's planar shadows, 1 shadow maps, 2 soft shadow maps
         fx_ao: i32,
-        fx_lightmaps: bool,         // smooth (bicubic) lightmaps
+        fx_lightmaps: i32,          // 0 the original's, 1 smooth (bicubic), 2 smooth with near-black lifted (ours)
         fx_dof: i32,
         fx_reflections: i32,
         fx_shafts: bool,
@@ -60,7 +60,7 @@ namespace frontend {
             width = 1280, height = 720, window_mode = 0, refresh = 0, vsync = true, gamma = 57,
             shadows = true, soft_shadows = false, grass = true, frame_buffer = true, emitters = true,
             anisotropy = 3, antialias = 0, texture_quality = 2, gui_scale = 0.0, frame_limit = 0,
-            fx_original = false, fx_bloom = 2, fx_room_light = 1, fx_shadows = 2, fx_ao = 2, fx_lightmaps = true, fx_dof = 2,
+            fx_original = false, fx_bloom = 2, fx_room_light = 1, fx_shadows = 2, fx_ao = 2, fx_lightmaps = 2, fx_dof = 2,
             fx_reflections = 2, fx_shafts = true, fx_fog = true, fx_grade = true, fx_edges = 1, fx_foliage = true,
             fx_tessellation = 0, fx_timing = false, fx_exposure = 1.0,
             music = 85, voice = 85, effects = 85, movie = 100, eax = false, force_software = false,
@@ -127,7 +127,8 @@ namespace frontend {
             fx_room_light = clamp_i{ v = get_int{ data, section = x, key = "Room Light", fallback = d.fx_room_light }, lo = 0, hi = 1 },
             fx_shadows = clamp_i{ v = get_int{ data, section = x, key = "Shadow Maps", fallback = d.fx_shadows }, lo = 0, hi = 2 },
             fx_ao = clamp_i{ v = get_int{ data, section = x, key = "Ambient Occlusion", fallback = d.fx_ao }, lo = 0, hi = 2 },
-            fx_lightmaps = get_bool{ data, section = x, key = "Smooth Lightmaps", fallback = d.fx_lightmaps },
+            // A file from before the lift has Smooth Lightmaps, which every new file wrote on: on is today's default.
+            fx_lightmaps = clamp_i{ v = get_int{ data, section = x, key = "Lightmaps", fallback = if get_bool{ data, section = x, key = "Smooth Lightmaps", fallback = true } { d.fx_lightmaps } else { 0 } }, lo = 0, hi = 2 },
             fx_dof = clamp_i{ v = get_int{ data, section = x, key = "Depth Of Field", fallback = d.fx_dof }, lo = 0, hi = 2 },
             fx_reflections = clamp_i{ v = get_int{ data, section = x, key = "Reflections", fallback = d.fx_reflections }, lo = 0, hi = 2 },
             fx_shafts = get_bool{ data, section = x, key = "Light Shafts", fallback = d.fx_shafts },
@@ -202,7 +203,7 @@ namespace frontend {
         }
         return render::Enhance{
             on = true, bloom = @trunc(u8, s.fx_bloom), exposure = s.fx_exposure, room_light = @trunc(u8, s.fx_room_light),
-            shadows = @trunc(u8, s.fx_shadows), ao = @trunc(u8, s.fx_ao), smooth_lightmaps = s.fx_lightmaps, dof = @trunc(u8, s.fx_dof),
+            shadows = @trunc(u8, s.fx_shadows), ao = @trunc(u8, s.fx_ao), smooth_lightmaps = s.fx_lightmaps > 0, lift_lightmaps = s.fx_lightmaps > 1, dof = @trunc(u8, s.fx_dof),
             reflections = @trunc(u8, s.fx_reflections), shafts = s.fx_shafts, height_fog = s.fx_fog, grade = s.fx_grade,
             post_aa = @trunc(u8, s.fx_edges), alpha_coverage = s.fx_foliage, tessellation = @trunc(u8, s.fx_tessellation),
             timing = s.fx_timing,
@@ -249,7 +250,7 @@ namespace frontend {
         try put_i{ &b, key = "Room Light", v = s.fx_room_light }
         try put_i{ &b, key = "Shadow Maps", v = s.fx_shadows }
         try put_i{ &b, key = "Ambient Occlusion", v = s.fx_ao }
-        try put_b{ &b, key = "Smooth Lightmaps", v = s.fx_lightmaps }
+        try put_i{ &b, key = "Lightmaps", v = s.fx_lightmaps }
         try put_i{ &b, key = "Depth Of Field", v = s.fx_dof }
         try put_i{ &b, key = "Reflections", v = s.fx_reflections }
         try put_b{ &b, key = "Light Shafts", v = s.fx_shafts }

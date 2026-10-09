@@ -184,6 +184,32 @@ Endar Spire's screens and lamps instead.
 - **Cost**: four fetches instead of one per lightmapped pixel; not measurable in the opaque pass.
 - **Pictures**: `kotor/out/fx/t/bridge_lm_cmp.png` (bilinear, smooth; 3x).
 
+### Lifted lightmaps (near-black texels)
+
+- **Inputs**: `Enhance.lift_lightmaps` (the Lightmaps row's Lifted, the default; it implies Smooth); lightmapped
+  materials; `LIGHTMAP_FLOOR` (fx.ctx, 0.12) in `u_fx2.z`.
+- **What**: `lift_dark` (fx_shaders.ctx) right after the lightmap read (smooth or bilinear), before anything else
+  touches that light. On the texel's brightest channel `m`, below 0.25, it adds `floor * (1 - m/0.25)²`: black
+  becomes 0.12, 0.05 becomes 0.127, 0.1 becomes 0.143, 0.2 becomes 0.205, and from 0.25 up nothing changes. The
+  curve meets the identity with the same slope at 0.25 (no knee) and rises everywhere (its slope at black is
+  1 − 2·floor/0.25 = 0.04, so the floor must stay at most 0.125). The amount goes to all three channels alike at
+  black and in the texel's own proportions as `m` nears 0.25, so dark coloured light keeps its hue and the 1/255
+  noise of a black chart is not blown up into colour. Everything after works on the lifted light as on any other:
+  received shadow-map shadows multiply it (a shadow still darkens a lifted wall), ambient occlusion multiplies the
+  result, self-illumination adds to it, and the lift stays far below bloom's threshold (1.1).
+- **Not in room light**: the probes (`lib/scene/probes.ctx`) read the raw lightmap texels. A creature standing in a
+  black corner already keeps half the area's ambient (`keep_tint`), so it is never lost against the lifted wall;
+  lifting the probes' texels too would make their cached cubes depend on a display option (rebuilt on every
+  toggle) for a few percent of bounce light from walls that are dark either way.
+- **Why ours**: the original multiplies by the lightmap and adds nothing (render-gui.md, "Lightmaps: black texels,
+  missing lightmaps"), so the Endar Spire's corridor dead ends draw pitch black there too; with the room around
+  them well lit, only thin lit edges float in a black void and read as a hole in the model. Lifted, their panels
+  show, dark. Original and Smooth keep the original's black.
+- **Cost**: a few ALU per lightmapped pixel; not measurable.
+- **Pictures**: `kotor/out/fx/t/es_lift_end_cmp.png`, `es_lift_side_cmp.png` (the Endar Spire's far end and side
+  passage, Smooth then Lifted; the dead end's mean goes from 16 to 26 of 255), `sithbase_lift_cmp.png` (a dark
+  area, the most changed: mean 14.5 to 17.7 of 255, its shadows still deep), `cantina_lift_cmp.png` (no visible change).
+
 ### Depth of field (conversations)
 
 - **Inputs**: `Enhance.dof`; `View.focus` (`distance` along the view, `range` kept sharp, `blur` 0..1); the view's
@@ -417,7 +443,7 @@ settings file starts with every enhancement on (tessellation off); offscreen run
 | Room Light | `Room Light` | Off, On | `roomlight` |
 | Shadows | `Shadow Maps` | Planar, Low, Soft | `shadowmaps` |
 | Occlusion | `Ambient Occlusion` | Off, Low, High | `ao` |
-| Lightmaps | `Smooth Lightmaps` | Original, Smooth | `lightmaps` |
+| Lightmaps | `Lightmaps` (0, 1, 2; a file with only the old `Smooth Lightmaps` reads 1 as Lifted, 0 as Original) | Original, Smooth, Lifted | `lightmaps` |
 | Focus Blur | `Depth Of Field` | Off, Low, High | `dof` |
 | Reflections | `Reflections` | Off, Low, High | `reflections` |
 | Light Shafts | `Light Shafts` | Off, On | `shafts` |

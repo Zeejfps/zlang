@@ -372,7 +372,8 @@ of the room's big meshes inside those dead ends (`Object2723`, `Object96`, `Obje
 smoke and the black far end seen from room `M01aa_03a` (leader near x 45, y 17..33, after the
 first cutscene) are that data, not a renderer fault; drawing lightmap only (diffuse off, lighting
 off) shows the same black areas. No other mesh of that lightmap uses its v 0.88..1 band, which
-confirms our V orientation for TGA lightmaps.
+confirms our V orientation for TGA lightmaps. Our enhanced renderer's Lifted lightmaps (ours, the default) lift
+such texels to a dark floor ([../design/enhanced-render.md](../design/enhanced-render.md), "Lifted lightmaps").
 
 When the lightmap texture fails to load, `0x00470d30` clears the mesh's lightmapped flag (mesh
 +0x184; the material's lightmap at +4 is checked by `0x00420bf0`) and the mesh takes the

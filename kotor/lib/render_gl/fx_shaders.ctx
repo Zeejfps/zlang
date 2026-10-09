@@ -5,13 +5,14 @@
 // fragment programs here. Samplers' units are set after linking (GLSL 410 has no layout(binding)).
 namespace glsl {
     // The scene's meshes, enhanced: the original's lighting and blending, plus the light around a dynamic
-    // draw (an ambient cube), smooth lightmaps, light brighter than white from emissive and additive
+    // draw (an ambient cube), smooth and lifted lightmaps, light brighter than white from emissive and additive
     // surfaces (HDR), and a second output for the passes that follow: the view-space normal and the share
     // of the light that ambient occlusion may darken (alpha). Runs with glsl::SCENE_VS.
     //
     // u_fx: x the draw's kind (render::DrawKind), y smooth lightmaps, z the ambient cube is set, w 1 for a punch-through
     // draw through alpha-to-coverage (the cut becomes a coverage alpha a pixel wide: fx_aa.ctx).
-    // u_fx2: x the extra light of self-illumination, y the extra light of additive surfaces.
+    // u_fx2: x the extra light of self-illumination, y the extra light of additive surfaces, z the floor that
+    // lift_dark raises the lightmaps' near-black texels to (0 off; fx.ctx's LIGHTMAP_FLOOR).
     const SCENE_FX_FS: c::String =
         \\#version 410 core
         \\layout(std140) uniform Frame {
@@ -79,6 +80,15 @@ namespace glsl {
         \\    vec3 c01 = texelFetch(t, ivec2(b0.x, b1.y), 0).rgb;
         \\    vec3 c11 = texelFetch(t, b1, 0).rgb;
         \\    return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+        \\}
+        \\vec3 lift_dark(vec3 l) {
+        \\    float m = max(max(l.r, l.g), l.b);
+        \\    if (u_fx2.z <= 0.0 || m >= 0.25) {
+        \\        return l;
+        \\    }
+        \\    float t = 1.0 - m * 4.0;
+        \\    vec3 hue = m > 0.0001 ? l / m : vec3(1.0);
+        \\    return l + u_fx2.z * t * t * mix(vec3(1.0), hue, m * 4.0);
         \\}
         \\vec3 cube_light(vec3 n) {
         \\    vec3 n2 = n * n;
@@ -203,7 +213,7 @@ namespace glsl {
         \\    bool shadows = u_shadow_on.x + u_shadow_on.y > 0;
         \\    vec3 light = vec3(1.0);
         \\    if (u_maps.y == 1) {
-        \\        light = u_fx.y == 1 ? bicubic(u_lightmap, v_uv1) : texture(u_lightmap, v_uv1).rgb;
+        \\        light = lift_dark(u_fx.y == 1 ? bicubic(u_lightmap, v_uv1) : texture(u_lightmap, v_uv1).rgb);
         \\        if (shadows && u_fx.x == 1) {
         \\            float dark = 0.0;
         \\            if (u_shadow_on.x == 1) {
