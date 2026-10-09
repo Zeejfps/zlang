@@ -38,14 +38,14 @@ namespace corpses {
         let delay = twoda::get_int{ t = w.tables.appearance, row = @as(usize, c.appearance), column = "fadedelayondeath" }
         if delay is some{ value = ms } {
             let from = now + @as(u64, @as(u32, if ms > 0 { ms } else { 0 }))
-            list::push{ list = &w.corpses, item = world::Corpse{ o, bag, fade_from = from, gone_at = from + FADE_MS } } iferr { return false }
+            list::push{ list = &w.corpses, item = world::Corpse{ o, bag, fade_from = from, gone_at = from + FADE_MS, shape = slice::empty(math::Vec3){}, shape_count = 0 } } iferr { return false }
             return true
         }
         let look = twoda::get_int{ t = w.tables.appearance, row = @as(usize, c.appearance), column = "body_bag" } ifnull -1
         if look >= 0 {
             if (twoda::get_int{ t = w.tables.bodybag, row = @as(usize, look), column = "corpse" } ifnull 0) != 0 { return false }
         }
-        list::push{ list = &w.corpses, item = world::Corpse{ o, bag, fade_from = NEVER, gone_at = NEVER } } iferr { return false }
+        list::push{ list = &w.corpses, item = world::Corpse{ o, bag, fade_from = NEVER, gone_at = NEVER, shape = slice::empty(math::Vec3){}, shape_count = 0 } } iferr { return false }
         // 0x006056b0: write at the write index; when it meets the read index the oldest goes.
         w.corpse_ring[@as(usize, w.ring_write)] = id
         w.ring_write = @trunc(u8, (@as(usize, w.ring_write) + 1) % RING)
@@ -142,12 +142,21 @@ namespace corpses {
             }
             all[k] = all[all.len - 1]
             w.corpses.len = w.corpses.len - 1
+            free_shape{ &w, c }
             world::free_object{ &w, o = c.o }
         }
     }
 
+    fn free_shape { mut w: world::World, c: world::Corpse } {
+        if c.shape.len == 0 { return }
+        _ = alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = c.shape, count = 0 }
+    }
+
     fn clear { mut w: world::World } {
-        while list::pop{ list = &w.corpses } is some{ value = c } { world::free_object{ &w, o = c.o } }
+        while list::pop{ list = &w.corpses } is some{ value = c } {
+            free_shape{ &w, c }
+            world::free_object{ &w, o = c.o }
+        }
         w.corpse_ring = [obj::INVALID; 4]
         w.ring_read = 0
         w.ring_write = 0

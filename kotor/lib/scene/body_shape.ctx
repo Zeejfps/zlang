@@ -1,0 +1,86 @@
+// The posed triangles of the kept bodies that left a bag (world::Corpse.shape), for the pointer:
+// the original's pointer ray (ProcessInput 0x006227e0) hits a body's meshes and hands it to its bag
+// (docs/re/actions.md 3.15), so hud::pick_at casts its ray at the same triangles as the scene draws.
+namespace scene {
+    // Fills corpse `k`'s shape from its visual `v` as it is posed now: every drawn mesh of every
+    // part (body, head, weapons) that shows, skinned ones through their bones.
+    fn shape_body { sc: *Scene, mut w: world::World, k: usize, v: *Visual, o: *obj::Object } {
+        let mut transforms: [8]math::Mat4
+        let n = visual::part_transforms{ sc, v, o, out = transforms[..] }
+        let mut need: usize = 0
+        let mut i: usize = 0
+        while i < n {
+            let p = part_at{ sc, i = v.first + i }
+            let model = loaded_at{ sc, i = p.loaded }.model
+            let mut m: usize = 0
+            while m < model.meshes.len {
+                let mesh = &model.meshes[m]
+                m = m + 1
+                if picks{ mesh, pose = p.pose } { need = need + (mesh.indices.len / 3) * 3 }
+            }
+            i = i + 1
+        }
+        let c = list::at{ list = w.corpses, i = k }
+        if c.shape.len < need {
+            let grown = alloc::resize(math::Vec3, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = c.shape, count = need } iferr {
+                c.shape_count = 0
+                return
+            }
+            c.shape = grown
+        }
+        let mut palette: [32]math::Mat4
+        let mut out: usize = 0
+        i = 0
+        while i < n {
+            let p = part_at{ sc, i = v.first + i }
+            let model = loaded_at{ sc, i = p.loaded }.model
+            let mut m: usize = 0
+            while m < model.meshes.len {
+                let mesh = &model.meshes[m]
+                m = m + 1
+                if not picks{ mesh, pose = p.pose } { continue }
+                let world_m = math::mat4::mul{ a = transforms[i], b = p.pose.world[mesh.node] }
+                let bones = mdl_anim::skin_palette{ model, mesh, pose = p.pose, out = palette[..] }
+                let mut f: usize = 0
+                while f + 2 < mesh.indices.len {
+                    let mut j: usize = 0
+                    while j < 3 {
+                        let at = posed{ mesh, i = @as(usize, mesh.indices[f + j]), palette = palette[..bones] }
+                        c.shape[out] = math::mat4::transform_point{ m = world_m, p = at }
+                        out = out + 1
+                        j = j + 1
+                    }
+                    f = f + 3
+                }
+            }
+            i = i + 1
+        }
+        c.shape_count = out
+    }
+
+    // Whether a mesh is part of the body the pointer can hit: drawn and not hidden.
+    fn picks { mesh: *mdl::Mesh, pose: mdl_anim::Pose } -> bool {
+        if not mdl_render::draws{ mesh = mesh.* } or mesh.saber != null { return false }
+        return pose.alpha[mesh.node] >= 0.5
+    }
+
+    // Vertex `i` of a mesh in its node's space as posed: its bones' blend for a skinned mesh.
+    fn posed { mesh: *mdl::Mesh, i: usize, palette: []math::Mat4 } -> math::Vec3 {
+        let p = math::Vec3{ x = mesh.positions[i * 3], y = mesh.positions[i * 3 + 1], z = mesh.positions[i * 3 + 2] }
+        let skin = mesh.skin ifnull { return p }
+        if palette.len == 0 { return p }
+        let mut sum = math::vec3::zero{}
+        let mut total: f32 = 0.0
+        let mut b: usize = 0
+        while b < 4 {
+            let weight = skin.weights[i * 4 + b]
+            let slot = @as(usize, skin.bones[i * 4 + b])
+            b = b + 1
+            if weight <= 0.0 or slot >= palette.len { continue }
+            sum = math::vec3::add_scaled{ a = sum, b = math::mat4::transform_point{ m = palette[slot], p }, s = weight }
+            total = total + weight
+        }
+        if total <= 0.0 { return p }
+        return math::vec3::scale{ v = sum, s = 1.0 / total }
+    }
+}

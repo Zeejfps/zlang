@@ -426,16 +426,17 @@ namespace hud {
             }
         }
         // A body that left a bag: the pointer on the body is on its bag (ProcessInput 0x006227e0: a creature
-        // the ray hits whose client +0x3dc names a bag hovers the bag), hidden behind the body or not.
+        // the ray hits whose client +0x3dc names a bag hovers the bag), hidden behind the body or not. The ray
+        // meets the body's own triangles as the scene posed them (scene::shape_body).
         let bodies = list::items{ list = w.corpses }
+        let ray = pointer_ray{ p, x = fx, y = fy } ifnull { return best }
         i = 0
         while i < bodies.len {
             let k = bodies[i]
             i = i + 1
             // The ray's pick does not consult the selectable list, so not the bag's own line of sight either.
             if k.bag == obj::INVALID or not is_selectable_kind{ w, id = k.bag } { continue }
-            let b = box_of_shape{ p, o = k.o, s = lying_shape{ o = k.o } } ifnull { continue }
-            if fx < b.x0 or fx > b.x1 or fy < b.y0 or fy > b.y1 { continue }
+            if not hits_shape{ ray, corners = k.shape[..k.shape_count] } { continue }
             let dx = k.o.position.x - p.eye.x
             let dy = k.o.position.y - p.eye.y
             let dz = k.o.position.z - p.eye.z
@@ -446,6 +447,16 @@ namespace hud {
             }
         }
         return best
+    }
+
+    // Whether a ray meets any of the triangles (three corners each).
+    fn hits_shape { ray: math::Ray, corners: []math::Vec3 } -> bool {
+        let mut t: usize = 0
+        while t + 2 < corners.len {
+            if math::ray::intersect_triangle{ ray, a = corners[t], b = corners[t + 1], c = corners[t + 2], max_t = 1000.0 } != null { return true }
+            t = t + 3
+        }
+        return false
     }
 
     // Q and E: the next (or previous) selectable object around the leader by bearing from its

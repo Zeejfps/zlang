@@ -14,7 +14,8 @@
 #   ring    uppercity  corpses2.txt: five Sith troopers killed one by one; their bodies stay after their objects go,
 #                      the latest three of them (--log objects: five "corpse ... kept",, the first two "corpse ... fades"
 #                      when the fourth and fifth come; docs/re/actions.md 3.15); the first leaves a bag, hidden behind
-#                      its body, which the pointer on the body picks (`ui bodypick`)
+#                      its body, which the pointer on the body's own triangles picks and the pointer over
+#                      it does not (`bodyhit`)
 #
 # The logs are kotor/out/combat/corpses_NAME.log. docs/re/dialogue.md 8.1 says what the original does.
 export PATH=/g/Dev/msys64/mingw64/bin:$PATH
@@ -63,7 +64,10 @@ else
 fi
 # The first trooper carries a spike, so its body leaves a bag, hidden behind the body: the pointer on the body is
 # on the bag (ProcessInput's ray hands a hit body to its bag, client +0x3dc).
-picked=$(grep -a '^bodypick bag' $out/corpses_ring.log | head -1)
-case "$picked" in *"hidden true: 4 of 4"*) echo "ok   bag: the hidden bag picked through its body ($picked)" ;;
+picked=$(grep -a '^bodyhit bag' $out/corpses_ring.log | head -1)
+bag=$(echo "$picked" | awk '{ print $3 }')
+case "$picked" in
+  *"hidden true: "*" 4 of 4 points on the body pick it, the point over it picks $bag") echo "FAIL bag: the point over the body picks the bag too ('$picked')"; fail=1 ;;
+  *"hidden true: "*" 4 of 4 points on the body pick it"*) echo "ok   bag: the hidden bag picked through its body's triangles ($picked)" ;;
   *) echo "FAIL bag: the pointer on the body does not pick its hidden bag ('$picked'; see $out/corpses_ring.log)"; fail=1 ;; esac
 exit $fail

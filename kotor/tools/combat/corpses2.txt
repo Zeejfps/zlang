@@ -8,7 +8,7 @@
 35 ui foe g_sithtroop01 5 4
 36 ui carry g_sithtroop01 g_i_progspike01
 40 ui damage g_sithtroop01 300
-230 ui bodypick
+230 bodyhit
 240 ui damage g_sithtroop01 300
 440 ui damage g_sithtroop01 300
 640 ui damage g_sithtroop01 300

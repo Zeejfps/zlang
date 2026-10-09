@@ -59,11 +59,17 @@ namespace hud {
         return box_of_shape{ p, o, s = shape_of{ o } }
     }
 
-    // A dead creature lying where it fell: as long as it stood tall, every way round (which way it
-    // fell is the death animation's), and knee high.
-    fn lying_shape { o: *obj::Object } -> Shape {
-        let s = shape_of{ o }
-        return Shape{ half_x = s.height * 0.5, half_y = s.height * 0.5, height = 0.5 }
+    // The ray from the eye through GUI pixel (x, y) (project's inverse); null if the view has none.
+    fn pointer_ray { p: Projector, x: f32, y: f32 } -> ?math::Ray {
+        let inv = math::mat4::inverse{ m = p.vp } ifnull { return null }
+        let nx = x / p.w * 2.0 - 1.0
+        let ny = 1.0 - y / p.h * 2.0
+        let deep = math::mat4::transform{ m = inv, v = math::Vec4{ x = nx, y = ny, z = 1.0, w = 1.0 } }
+        if deep.w == 0.0 { return null }
+        let at = math::Vec3{ x = deep.x / deep.w, y = deep.y / deep.w, z = deep.z / deep.w }
+        let d = math::vec3::sub{ a = at, b = p.eye }
+        if math::vec3::length{ v = d } < 0.0001 { return null }
+        return math::Ray{ origin = p.eye, dir = math::vec3::normalize{ v = d } }
     }
 
     fn box_of_shape { p: Projector, o: *obj::Object, s: Shape } -> ?OnScreen {

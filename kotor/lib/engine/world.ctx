@@ -73,8 +73,10 @@ namespace world {
     }
 
     // A dead creature's body kept after its object left the world (corpses.ctx): it shows until
-    // fade_from, fades to gone_at (w.clock ms; corpses::NEVER while it lies in the ring).
-    struct Corpse { o: *mut obj::Object, bag: u32, fade_from: u64, gone_at: u64 }
+    // fade_from, fades to gone_at (w.clock ms; corpses::NEVER while it lies in the ring). `shape`
+    // holds `shape_count` corners, three a triangle, of the body as the scene last posed it, in
+    // world space (w.heap; scene::sync fills it for a body with a bag, which the pointer picks by it).
+    struct Corpse { o: *mut obj::Object, bag: u32, fade_from: u64, gone_at: u64, shape: []mut math::Vec3, shape_count: usize }
 
     struct World {
         fs: Fs,

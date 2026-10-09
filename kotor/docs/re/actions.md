@@ -1603,9 +1603,10 @@ drawn and sounds as row 53. It stays clickable, and the body is how: the pointer
 hovers the bag instead, hidden or not, without the selectable list's visibility test; a body with no
 bag is refused while it is in the ring (`0x00604bc0`). The hidden bag itself (`0x0064d500`: visible
 0 at once, `0x0063e220(0)`) keeps its place in the selectable list (a useable placeable), so Q/E and
-the list pick find it too. Ours: `hud::pick_at` gives the bag for a point on its body (a lying box
-as long as the creature stood tall, every way round: ours) and the bag's own box. (high; checked by
-`tools/combat/corpses.sh`, `ui bodypick`) A `Corpse` bag row (the rancor, the krayt) and `DestroyObject` leave nothing of
+the list pick find it too. Ours: `hud::pick_at` gives the bag when the pointer's ray meets
+the body's triangles as the scene posed them for the frame (`scene::shape_body`: every drawn mesh of
+its parts, skinned ones through their bones, kept in the corpse record) and for the bag's own box.
+(high; checked by `tools/combat/corpses.sh`, `bodyhit`) A `Corpse` bag row (the rancor, the krayt) and `DestroyObject` leave nothing of
 the creature, as before (the original keeps a `Corpse` creature's client body too, under the
 corpse placeable; ours draws the placeable alone). A bashed door is opened (`CSWSDoor::Open`, combat.md
 6.6), so it sounds `Opened`; a bashed container opens rather than dies (no sound but the hits'). No

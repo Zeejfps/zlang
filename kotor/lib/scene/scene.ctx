@@ -479,6 +479,7 @@ namespace scene {
             visual::update{ &sc, &w, v, o, dt }
             let a = corpses::alpha{ w = &w, id = o.id }
             if a < 1.0 { fade{ &sc, v, alpha = a } }
+            if kept[i - 1].bag != obj::INVALID { shape_body{ sc = &sc, &w, k = i - 1, v, o } }
         }
         // Rooms animate too.
         let rooms = list::items{ list = sc.rooms }
