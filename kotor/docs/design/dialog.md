@@ -151,7 +151,10 @@ world matrix is the camera (it looks down -Z with +Y up, like a GUI 3D camera), 
 (`camera_busy`). A **stunt model** (`m01aa_c01_char01`) has **no meshes of its own** (`render` false on
 every mesh): it is the skeleton that carries the scene's `cutNNNw` animations. So the participant keeps
 its body and head and plays the stunt model's animation (`Part.source`: `scene::binding_for` looks there
-first and binds to the body's nodes by name). The animations are authored in **area space**, so the
+first and binds to the body's nodes by name). The head part gets the same `source`: the stunt model has the
+face's nodes too (`eyeLlid`, `eyeRlid`, `f_jaw_g`, the brows), and its `cutNNNw` close the eyelids of the
+sleeping player in `m01aa_c01`; without it the head found no `cutNNNw` in its own chain and idled on
+`pause1`, eyes open and blinking. The animations are authored in **area space**, so the
 visual draws at the origin (`Visual.stunt`) and `cutscenedummy`'s position keys are **not scaled by the
 body's `anim_scale`** (that put the sleeping player a metre off his bed). All of this was found on
 `m01aa_c01` (the Endar Spire's opening: four camera animations over the sleeping player) and checked

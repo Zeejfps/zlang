@@ -74,6 +74,14 @@ namespace dlgview {
         part.anim_len = 0
         // A new model: nothing of the body's pose to blend away from (it is not in area space).
         part.player = mdl_anim::new_player{}
+        // The stunt model has the face's nodes too (eyelids, jaw, brows): its scene animations move the
+        // head as well, so the head plays them from it (the player sleeps with closed eyes in the opening).
+        if head_part{ sc = &sc, vis } is some{ value = h } {
+            let hp = scene::part_at{ sc = &sc, i = h }
+            hp.source = part.source
+            hp.anim_len = 0
+            hp.player = mdl_anim::new_player{}
+        }
         vis.stunt = true
         vis.animation = 0xFFFFFFFF
         v.swaps[v.swap_count] = Swap{ id, visual = vi, original = 0, active = true }
@@ -96,6 +104,14 @@ namespace dlgview {
         return false
     }
 
+    // The part of visual `vis` that is its head (a B body's second part, hung at the headhook), if any.
+    fn head_part { sc: *scene::Scene, vis: *scene::Visual } -> ?usize {
+        if vis.count < 2 { return null }
+        let h = scene::part_at{ sc, i = vis.first + 1 }
+        if not slice::eq_bytes{ a = h.hook, b = mdl_anim::HOOK_HEAD } { return null }
+        return vis.first + 1
+    }
+
     // The participants back as they were.
     fn restore_stunts { mut v: View, mut w: world::World, mut sc: scene::Scene } {
         let mut i: usize = 0
@@ -108,6 +124,12 @@ namespace dlgview {
             part.source = null
             part.anim_len = 0
             part.player = mdl_anim::new_player{}
+            if head_part{ sc = &sc, vis } is some{ value = h } {
+                let hp = scene::part_at{ sc = &sc, i = h }
+                hp.source = null
+                hp.anim_len = 0
+                hp.player = mdl_anim::new_player{}
+            }
             vis.stunt = false
             vis.animation = 0xFFFFFFFF
         }
