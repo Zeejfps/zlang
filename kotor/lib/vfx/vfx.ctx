@@ -161,7 +161,7 @@ namespace vfx {
         let puffs = try alloc::resize(gui3d::Puff, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(gui3d::Puff){}, count = room }
         let out = try alloc::resize(render::Particle, arena::Arena){ realloc = arena::alloc, heap = sc.arena, mem = slice::empty(render::Particle){}, count = room }
         let t = material::get{ cache = &sc.materials, fs = &w.fs, &dev, rm = w.rm.*, name = e.texture }
-        return gui3d::emitting_over{ index, texture = t.texture, puffs, out }
+        return gui3d::emitting_over{ index, texture = t.texture, puffs, out, node_turn = model.nodes[e.node].orientation }
     }
 
     // Starts the slot's animation (`anim`, else `impact`, else `default`; `strict`: `anim` or none) and

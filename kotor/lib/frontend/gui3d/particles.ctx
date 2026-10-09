@@ -40,10 +40,10 @@ namespace gui3d {
     }
 
     // An emitter's state over the arrays given: nothing alive.
-    fn emitting_over { index: u32, texture: ?render::Texture, puffs: []mut Puff, out: []mut render::Particle } -> Emitting {
+    fn emitting_over { index: u32, texture: ?render::Texture, puffs: []mut Puff, out: []mut render::Particle, node_turn: math::Quat } -> Emitting {
         return Emitting{
             emitter = index, texture, puffs, live = 0, owed = 0.0, rng = 0x2545F491 + 7919 * (index + 1), out, seen = 0,
-            latch = false, aim = null, bolt = no_bolt{},
+            latch = false, aim = null, bolt = no_bolt{ node_turn },
         }
     }
 
@@ -88,7 +88,7 @@ namespace gui3d {
         let puffs = try alloc::resize(Puff, arena::Arena){ realloc = arena::alloc, heap = &heap, mem = slice::empty(Puff){}, count = cap }
         let out = try alloc::resize(render::Particle, arena::Arena){ realloc = arena::alloc, heap = &heap, mem = slice::empty(render::Particle){}, count = cap }
         let t = material::get{ cache = &mats, &fs, &dev, rm, name = e.texture }
-        return emitting_over{ index, texture = t.texture, puffs, out }
+        return emitting_over{ index, texture = t.texture, puffs, out, node_turn = model.nodes[e.node].orientation }
     }
 
     // One step of `dt` seconds: the old die, the rest move, new ones are born. A Single emitter keeps

@@ -249,15 +249,37 @@ A Lightning emitter births nothing: its particles are the points of a chain from
 - **Point count** (`0x00494da0`, when slot `+0x84` answers): `+0xd0` = the distance to the target and
   birthrate (`+0x58`) = lightningSubDiv * distance + 2. The update (`0x00498b80`, slot `+0x80`) keeps
   exactly int(birthrate) particles (reusing a free list), so lightningSubDiv is points a metre.
-- **The curve** (`0x00497c60`, slot `+0x88`, every controlptdelay seconds, `+0xf8` the clock;
-  `+0x210`.. arrays of 0x0c-byte points): int(numcontrolpts) + 2 control points from the emitter to the
-  target, the inner ones moved off the straight line by up to controlptradius in a random direction about
-  it; tangents (`+0x234`) tangentlength long, the emitter's along its +Z (perturbed by random angles,
-  degrees) and the target's toward it. Each chain point i lies at i / (n - 1) of a cubic through neighbouring
-  control points and their tangents. With the node's control-point smoothing (header +16) set, the points
-  move from the old curve (`+0x21c`) to the new one (`+0x228`) over controlptdelay; without, they jump.
-  Between renewals the points, control points and tangents are turned and moved rigidly with the line from
-  the emitter to its target (`0x004ab630`, rotation from the old line `+0x1f8` to the new).
+- **The curve** (`0x00497c60`, slot `+0x88`, every controlptdelay seconds, `+0xf8` the clock; arrays of
+  0x0c-byte points). The count is int(numcontrolpts (`+0x100`) * distance + 0.5) + 2 (`0x0073e9ac` is 0.5),
+  so numcontrolpts is control points a metre (0.1 to 0.3 in the beams: one or two inner points on a 6 m
+  bolt). A base curve (`+0x210` points, `+0x234` tangents) is a cubic from the emitter's world position
+  (`+0x164`) to the target's (slot `+0x64`) with handles start + R(q) * (0, 0, tangentlength), where q is
+  the quaternion (w, x, y, z) at `+0x14`, the emitter part's **own** orientation (CAurPart's local
+  transform, `0x004457a0`: position `+0x8`, orientation `+0x14`, scale `+0x24`; for an emitter part, its
+  node's orientation in the model), used as a world direction without its parents' turns; and target +
+  R(target's slot `+0x68` quaternion) * (0, 0, tangentlength). Its inner points are the cubic at k / (n -
+  1), its inner tangents the cubic's derivative there scaled to tangentlength (`0x004ab130` normalises).
+  The new curve (`+0x228` points, `+0x24c` tangents) then: the ends are the base ends, the start tangent
+  R(`+0x1a4`, the emitter's world orientation) * (0, 0, tangentlength) and the end tangent the unit line
+  to the target times tangentlength, neither perturbed; each inner point is the base point plus (rand %
+  int(controlptradius * 100)) / 100 with a random sign times the square direction `+0x27c`, that offset
+  turned about **world X** by rand % 360 degrees (`Quaternion_FromEulerDegrees(0, rand % 360, 0)`); each
+  inner tangent is the base tangent turned by `Quaternion_FromEulerDegrees(a, b, 0)` (Z then X, degrees),
+  a and b each (rand % int(tangentspread * 100)) / 100 with a random sign (`0x00741838` is 100). Before
+  that, the previous new curve is copied into the old (`+0x21c`, `+0x240`); a branch (`+0x28c` set) copies
+  the new points into the old at once. Each chain point i lies at i / (n - 1) of the old curve's cubics
+  (points and tangents of neighbouring control points: s^3 A + 3 s^2 t (A + TA) + 3 s t^2 (B - TB) + t^3 B).
+  (high for the formulas; med for slot `+0x68` being the target's world orientation)
+- **Smoothing and carrying** (`0x00498b80`): while the control clock is within controlptdelay, a main
+  chain (`+0x28c` clear) whose node has control-point smoothing (header +16, a dword flag, 1 where set:
+  `v_drain_dur`, `v_deathfld_dur`, `v_fshock_dur`, `plc_endcorps`, `m45ac_bmap` ...) evaluates its points
+  on the blend of the old and new control points and tangents by clock / controlptdelay, so the bolt moves
+  from one curve to the next; without it, or for a branch, the points stay. At the renewal the clock
+  resets, the base ends are set to the emitter's and the target's positions, the curve is made (slot
+  `+0x88`) and, for a main chain with branches, the branches (slot `+0x8c`) with their clocks set to
+  controlptdelay. Between flickers (the flicker clock within lightningDelay) the points, control points
+  and tangents are turned and moved rigidly with the line from the emitter to its target (`0x004ab630`,
+  the rotation from the old line `+0x1f8` to the new).
 - **The flicker** (every lightningDelay seconds, `+0xf4`): for each inner point i of n, an offset
   (`+0x270`, added only when drawing) = a direction square to the chain times 2 * min(i/n, 1 - i/n) *
   lightningRadius * (rand % 100) / 100, plus the chain's unit direction times (L / n) * 0.5 *

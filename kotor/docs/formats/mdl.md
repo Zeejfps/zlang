@@ -466,7 +466,7 @@ light dynamic objects (creatures, placeables), choosing by priority.
 | 4 | f32 | blast radius | |
 | 8 | f32 | blast length | |
 | 12 | u32 | branch count (lightning) | 0..5 |
-| 16 | f32 | control point smoothing | 0 |
+| 16 | u32 | control point smoothing: a flag, 0 or 1 in the data (the original tests the dword, `0x00498b80`; read as a float it is a denormal) | 0 |
 | 20 | u32 | x grid (texture frames across) | 0, 1, 2, 4, 5, 8, 16 |
 | 24 | u32 | y grid (frames down) | |
 | 28 | u32 | spawn type | 0, 1 |

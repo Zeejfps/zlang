@@ -58,14 +58,20 @@ Lightning.
 
 A `Lightning` emitter (gui3d `lightning.ctx`) is a chain of points from the emitter to its target (`Emitting.aim`, in
 the world, set by the owner each step: a beam's target's `impact` node, else the `fx_ref` reference node under the
-emitter), lightningSubDiv points a metre, on a curve through int(numcontrolpts) + 2 control points renewed every
-controlptdelay seconds; every lightningDelay seconds the inner points are thrown off it by up to lightningRadius
-(most in the middle), twisted by lightningZigzag; up to branch_count branches fork off it, thinner. It draws as a
-Linked ribbon, one strip a chain (`gui3d::add_rows`). Ours, where it is not the original's: the points are
-recomputed from the curve every step rather than carried rigidly between renewals (the same while the ends do not
-move), control-point smoothing is not done (the curve jumps at each renewal), the tangent at the emitter is its +Z
-tilted by up to tangentspread degrees (the original's perturbation was not worked through), and the direction the
-flicker throws points in starts from any square to the chain.
+emitter), lightningSubDiv points a metre, on a curve through int(numcontrolpts * length + 0.5) + 2 control points
+renewed every controlptdelay seconds (re/particles.md, "Lightning": the inner ones on a cubic that leaves along the
+node's own orientation taken as a world direction, moved up to controlptradius off it, their tangents turned by up
+to tangentspread degrees; the ends' tangents unturned, the emitter's along its +Z); between renewals the control
+points ride with the emitter-to-target line, and a smoothing emitter (header +16) moves from the old curve to the new
+over controlptdelay; every lightningDelay seconds the inner points are thrown off it by up to lightningRadius (most
+in the middle), twisted by lightningZigzag; up to branch_count branches fork off it, thinner, each leaving along the
+node's +Z too. It draws as a Linked ribbon, one strip a chain (`gui3d::add_rows`). Ours, where it is not the
+original's: the points are evaluated from the carried control points every step (the original carries the points
+themselves between flickers), the base cubic's second handle is world up where the original takes the target's +Z,
+the tangents are turned about world Z and X but the control points' offsets about the line (the original turns the
+offset's direction about world X), a branch's curve has only its two ends, and the direction the flicker throws
+points in starts from any square to the chain. `python kotor/tools/py/force_run.py --powers 35 ...` (Force
+lightning) and `--powers 15` (drain life, with smoothing) show them.
 Model lights (a bolt's red one, radius 2.5) are added as frame lights, so a bolt lights the
 creatures it passes.
 

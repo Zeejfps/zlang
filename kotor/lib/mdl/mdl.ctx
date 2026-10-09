@@ -301,7 +301,7 @@ namespace mdl {
         blast_radius: f32,
         blast_length: f32,
         branch_count: u32,
-        control_point_smoothing: f32,
+        control_point_smoothing: u32,  // a flag (0 or 1 in the data; the original tests the dword, 0x00498b80)
         x_grid: u32,                   // texture frames across and down
         y_grid: u32,
         spawn_type: u32,
@@ -982,7 +982,7 @@ namespace mdl {
             blast_radius = f32_at{ d, at = at + 4 },
             blast_length = f32_at{ d, at = at + 8 },
             branch_count = u32_at{ d, at = at + 12 },
-            control_point_smoothing = f32_at{ d, at = at + 16 },
+            control_point_smoothing = u32_at{ d, at = at + 16 },
             x_grid = u32_at{ d, at = at + 20 },
             y_grid = u32_at{ d, at = at + 24 },
             spawn_type = u32_at{ d, at = at + 28 },

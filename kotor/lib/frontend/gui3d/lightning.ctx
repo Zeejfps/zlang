@@ -18,9 +18,14 @@ namespace gui3d {
     struct Bolt {
         chains: [MAX_CHAINS]Chain,
         chain_count: u32,
-        bends: [MAX_CTRL]math::Vec3,    // the control points' offsets from the straight line, the ends' zero
+        ctrl: [MAX_CTRL]math::Vec3,     // the control points (0x00497c60's new curve), in the emitter's space, made against `line`
+        tang: [MAX_CTRL]math::Vec3,     // and their tangents
+        old_ctrl: [MAX_CTRL]math::Vec3, // the curve before them, which a smoothing emitter leaves over controlptdelay
+        old_tang: [MAX_CTRL]math::Vec3,
         ctrl_count: u32,
-        lead: math::Vec3,               // the main chain's tangent at the emitter
+        old_count: u32,
+        line: math::Vec3,               // the emitter-to-target line the control points were made against
+        node_turn: math::Quat,          // the emitter node's own orientation (CAurPart +0x14), the base curve's start
         jag_age: f32,                   // seconds since the points were last thrown off the curve
         shape_age: f32,                 // seconds since the control points were last drawn
         shaped: bool,
@@ -31,9 +36,35 @@ namespace gui3d {
         return Chain{ first = 0, count = 0, from = 0, forks = false, reach = zero, lead = zero, scale = 1.0 }
     }
 
-    fn no_bolt {} -> Bolt {
+    fn no_bolt { node_turn: math::Quat } -> Bolt {
         let zero = math::vec3::zero{}
-        return Bolt{ chains = [no_chain{}; MAX_CHAINS], chain_count = 0, bends = [zero; MAX_CTRL], ctrl_count = 2, lead = zero, jag_age = 0.0, shape_age = 0.0, shaped = false }
+        return Bolt{
+            chains = [no_chain{}; MAX_CHAINS], chain_count = 0, ctrl = [zero; MAX_CTRL], tang = [zero; MAX_CTRL],
+            old_ctrl = [zero; MAX_CTRL], old_tang = [zero; MAX_CTRL], ctrl_count = 2, old_count = 0, line = zero,
+            node_turn, jag_age = 0.0, shape_age = 0.0, shaped = false,
+        }
+    }
+
+    // `v` turned as the direction `from` turns into `to` (the rotation between two lines, 0x004ab630).
+    fn turn_between { v: math::Vec3, from: math::Vec3, to: math::Vec3 } -> math::Vec3 {
+        let lf = math::vec3::length{ v = from }
+        let lt = math::vec3::length{ v = to }
+        if lf < 0.0001 or lt < 0.0001 { return v }
+        let a = math::vec3::scale{ v = from, s = 1.0 / lf }
+        let b = math::vec3::scale{ v = to, s = 1.0 / lt }
+        let axis = math::vec3::cross{ a, b }
+        let s = math::vec3::length{ v = axis }
+        if s < 0.000001 { return v }
+        let c = math::vec3::dot{ a, b }
+        return turn_about{ v, k = math::vec3::scale{ v = axis, s = 1.0 / s }, degrees = math::atan2f{ y = s, x = c } * (360.0 / math::TAU) }
+    }
+
+    // A whole number of hundredths below `x` hundredths, either sign: the original's
+    // (rand() % int(x * 100)) * 0.01 with a random sign (0 when x is under a hundredth).
+    fn rng_hundredths { mut s: u32, x: f32 } -> f32 {
+        let n = @as(u32, math::max{ a = x * 100.0, b = 0.0 })
+        let v = @as(f32, rng_below{ s = &s, n }) * 0.01
+        return if (rng_next{ s = &s } & 1) != 0 { 0.0 - v } else { v }
     }
 
     fn least { a: u32, b: u32 } -> u32 { return if a < b { a } else { b } }
@@ -87,6 +118,10 @@ namespace gui3d {
     // One step of a Lightning emitter whose node is at `world`. Without a target (em.aim null) it has no
     // points, as the original drops every particle when it has none.
     fn step_lightning { mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, dt: f32, world: math::Mat4 } {
+        // (A smoothing emitter's main chain moves from the old curve to the new over controlptdelay, its
+        // control points and tangents blended by the time since the renewal (0x00498b80, header +16 set);
+        // a branch, or an emitter without it, jumps. Between renewals the control points ride with the
+        // line from the emitter to its target, turned as it turns, the ends on the emitter and the target.)
         let b = &em.bolt
         let aim = em.aim ifnull {
             em.live = 0
@@ -106,7 +141,7 @@ namespace gui3d {
         b.shape_age = b.shape_age + step
         let main = least{ a = points_for{ props, length }, b = @as(u32, em.puffs.len / 2) }
         if not b.shaped or b.shape_age > props.control_pt_delay {
-            shape_bolt{ &em, e, props, goal, length, main }
+            shape_bolt{ &em, e, props, goal, length, main, world }
             b.shape_age = 0.0
         }
         let jag = not b.shaped or b.jag_age > props.lightning_delay
@@ -114,17 +149,24 @@ namespace gui3d {
         if jag { b.jag_age = 0.0 }
         let old_live = em.live
         // The main chain along its curve.
-        let unit = math::vec3::scale{ v = goal, s = 1.0 / length }
         let mut ctrl: [MAX_CTRL]math::Vec3
         let mut tang: [MAX_CTRL]math::Vec3
         let n = b.ctrl_count
+        let blend = if e.control_point_smoothing != 0 and b.old_count == n and props.control_pt_delay > 0.0 {
+            math::clamp{ x = b.shape_age / props.control_pt_delay, lo = 0.0, hi = 1.0 }
+        } else { 1.0 }
         let mut k: u32 = 0
         while k < n {
-            ctrl[k] = math::vec3::add{ a = math::vec3::scale{ v = goal, s = @as(f32, k) / @as(f32, n - 1) }, b = b.bends[k] }
-            tang[k] = math::vec3::scale{ v = unit, s = props.tangent_length }
+            ctrl[k] = turn_between{ v = b.ctrl[k], from = b.line, to = goal }
+            tang[k] = turn_between{ v = b.tang[k], from = b.line, to = goal }
+            if blend < 1.0 {
+                ctrl[k] = math::vec3::lerp{ a = turn_between{ v = b.old_ctrl[k], from = b.line, to = goal }, b = ctrl[k], t = blend }
+                tang[k] = math::vec3::lerp{ a = turn_between{ v = b.old_tang[k], from = b.line, to = goal }, b = tang[k], t = blend }
+            }
             k = k + 1
         }
-        tang[0] = b.lead
+        ctrl[0] = math::vec3::zero{}
+        ctrl[n - 1] = goal
         b.chains[0].first = 0
         b.chains[0].count = main
         b.chains[0].scale = 1.0
@@ -181,31 +223,77 @@ namespace gui3d {
         }
     }
 
-    // New control points (0x00497c60): the line from the emitter to the target with int(numcontrolpts) more
-    // points between, each up to controlptradius off the line; the curve leaves the emitter along its +Z
-    // turned up to tangentspread degrees, every control point's tangent tangentlength long. And the
-    // branches (0x00491a50): rand % (branch_count + 1) of them, each from a point a tenth to nine tenths
-    // along the chain, as thick as that fraction of the chain; one from the first half forks off to a
-    // point of its own, a later one runs to the target too.
-    fn shape_bolt { mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, goal: math::Vec3, length: f32, main: u32 } {
+    // New control points (0x00497c60), in the emitter's space. int(numcontrolpts * length + 0.5) + 2 of them
+    // (numcontrolpts is a count a metre). They start on a cubic from the emitter to the target whose first
+    // handle is tangentlength along the node's own orientation's +Z taken as a world direction (CAurPart
+    // +0x14, not turned by its parents) and whose second is tangentlength above the target (the original
+    // takes the target's +Z; ours keeps no orientation for the target, so world up); each inner one is then
+    // moved up to controlptradius off it, square to the line, and its tangent, the cubic's direction there
+    // tangentlength long, is turned by up to tangentspread degrees about world Z and X. The ends' tangents
+    // are not turned: the emitter's along its +Z (its world orientation, +0x1a4), the target's along the
+    // line. The old curve is kept for a smoothing emitter. And the branches (0x00491a50): rand %
+    // (branch_count + 1) of them, each from a point a tenth to nine tenths along the chain, as thick as
+    // that fraction of the chain; one from the first half forks off to a point of its own, a later one runs
+    // to the target too.
+    fn shape_bolt { mut em: Emitting, e: *mdl::Emitter, props: mdl::EmitterProps, goal: math::Vec3, length: f32, main: u32, world: math::Mat4 } {
         let b = &em.bolt
         let unit = math::vec3::scale{ v = goal, s = 1.0 / length }
         let side = square_to{ u = unit }
-        let n = @as(u32, math::clamp{ x = props.num_control_pts + 2.0, lo = 2.0, hi = @as(f32, MAX_CTRL) })
-        b.ctrl_count = n
         let mut k: u32 = 0
-        while k < n {
-            b.bends[k] = math::vec3::zero{}
-            if k > 0 and k + 1 < n and props.control_pt_radius > 0.0 {
-                let dir = turn_about{ v = side, k = unit, degrees = @as(f32, rng_below{ s = &em.rng, n = 360 }) }
-                b.bends[k] = math::vec3::scale{ v = dir, s = (2.0 * rng_unit{ s = &em.rng } - 1.0) * props.control_pt_radius }
+        if b.shaped {
+            while k < b.ctrl_count {
+                b.old_ctrl[k] = turn_between{ v = b.ctrl[k], from = b.line, to = goal }
+                b.old_tang[k] = turn_between{ v = b.tang[k], from = b.line, to = goal }
+                k = k + 1
             }
+            b.old_count = b.ctrl_count
+        }
+        let n = @as(u32, math::clamp{ x = math::floorf{ x = props.num_control_pts * length + 0.5 } + 2.0, lo = 2.0, hi = @as(f32, MAX_CTRL) })
+        b.ctrl_count = n
+        b.line = goal
+        let len = props.tangent_length
+        let inv = math::mat4::inverse_affine{ m = world }
+        let first = math::mat4::transform_dir{ m = inv, v = math::quat::rotate{ q = b.node_turn, v = math::Vec3{ x = 0.0, y = 0.0, z = len } } }
+        let last = math::vec3::add{ a = goal, b = math::mat4::transform_dir{ m = inv, v = math::Vec3{ x = 0.0, y = 0.0, z = len } } }
+        let spread = math::max{ a = props.tangent_spread, b = 0.0 }
+        k = 1
+        while k + 1 < n {
+            let t = @as(f32, k) / @as(f32, n - 1)
+            let s = 1.0 - t
+            let mut at = math::vec3::scale{ v = first, s = 3.0 * s * s * t }
+            at = math::vec3::add_scaled{ a = at, b = last, s = 3.0 * s * t * t }
+            at = math::vec3::add_scaled{ a = at, b = goal, s = t * t * t }
+            let mut dir = math::vec3::scale{ v = first, s = 3.0 * s * s - 6.0 * s * t }
+            dir = math::vec3::add_scaled{ a = dir, b = last, s = 6.0 * s * t - 3.0 * t * t }
+            dir = math::vec3::add_scaled{ a = dir, b = goal, s = 3.0 * t * t }
+            let off = rng_hundredths{ s = &em.rng, x = props.control_pt_radius }
+            let out = turn_about{ v = side, k = unit, degrees = @as(f32, rng_below{ s = &em.rng, n = 360 }) }
+            b.ctrl[k] = math::vec3::add_scaled{ a = at, b = out, s = off }
+            let dl = math::vec3::length{ v = dir }
+            let mut tg = if dl > 0.0001 { math::vec3::scale{ v = dir, s = len / dl } } else { math::vec3::scale{ v = unit, s = len } }
+            if spread > 0.0 {
+                let az = rng_hundredths{ s = &em.rng, x = spread }
+                let ax = rng_hundredths{ s = &em.rng, x = spread }
+                let tw = math::mat4::transform_dir{ m = world, v = tg }
+                let turned = turn_about{ v = turn_about{ v = tw, k = math::Vec3{ x = 1.0, y = 0.0, z = 0.0 }, degrees = ax }, k = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, degrees = az }
+                tg = math::mat4::transform_dir{ m = inv, v = turned }
+            }
+            b.tang[k] = tg
             k = k + 1
         }
-        let z = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }
-        let tilt = rng_unit{ s = &em.rng } * math::max{ a = props.tangent_spread, b = 0.0 }
-        let lean = turn_about{ v = z, k = turn_about{ v = math::Vec3{ x = 1.0, y = 0.0, z = 0.0 }, k = z, degrees = @as(f32, rng_below{ s = &em.rng, n = 360 }) }, degrees = tilt }
-        b.lead = math::vec3::scale{ v = lean, s = props.tangent_length }
+        b.ctrl[0] = math::vec3::zero{}
+        b.ctrl[n - 1] = goal
+        b.tang[0] = math::Vec3{ x = 0.0, y = 0.0, z = len }
+        b.tang[n - 1] = math::vec3::scale{ v = unit, s = len }
+        if not b.shaped {
+            k = 0
+            while k < n {
+                b.old_ctrl[k] = b.ctrl[k]
+                b.old_tang[k] = b.tang[k]
+                k = k + 1
+            }
+            b.old_count = n
+        }
         b.chains[0] = no_chain{}
         b.chain_count = 1
         let forks = rng_below{ s = &em.rng, n = e.branch_count + 1 }
@@ -222,7 +310,8 @@ namespace gui3d {
                 let ahead = @as(f32, rng_below{ s = &em.rng, n = 25 }) * 0.01 + 0.25
                 ch.reach = math::vec3::add{ a = math::vec3::scale{ v = out, s = wide }, b = math::vec3::scale{ v = goal, s = ahead } }
             }
-            ch.lead = math::vec3::scale{ v = out, s = props.tangent_length }
+            // A branch is a Lightning emitter of the same node, so its curve also leaves along the node's +Z.
+            ch.lead = math::Vec3{ x = 0.0, y = 0.0, z = props.tangent_length }
             b.chains[b.chain_count] = ch
             b.chain_count = b.chain_count + 1
             f = f + 1
