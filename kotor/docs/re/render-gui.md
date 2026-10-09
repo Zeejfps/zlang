@@ -605,6 +605,13 @@ hand, lands short of the target at 60% of the time and skips on in three small h
 find no ground the path is one leg straight to the point over the whole time. (high for the numbers,
 med for the ray's fallback)
 
+**In a save** (high): the pending SPELL_IMPACT is an ordinary entry of the module's `EventQueue`
+(`CServerAIMaster::SaveEvent` `0x004afea0`, event 8 or 0x13 with EventData struct 0x6666 written by
+`0x004ee230`: `SpellId`, `CasterId`, `TargetId`, `AreaId`, `ItemId`, `Script`, `TargetPosX/Y/Z`;
+`LoadEvent` `0x004b0290` makes the 0x2c-byte record back). So a game saved while a grenade flies
+explodes after the load when the rest of its flight is up. The projectile object is the client's and
+nothing saves it: after the load nothing is seen flying.
+
 **The throw itself** (actions.md ITEMCASTSPELL): the thrower plays 10130 from under 10 m, 10129
 from farther, which the client's animation table (`0x0069f650`) turns into animations.2da row 58
 `throwgren1` and row 57 `throwgren`; the grenade leaves the hand at the impact time of the item

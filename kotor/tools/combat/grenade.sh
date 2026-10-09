@@ -49,4 +49,24 @@ else
   fi
 fi
 if [ $fail = 0 ]; then echo "ok   grenade: nothing offered on Carth; the throw left at tick $at and landed $ms ms later (hit at $hit)"; fi
+
+# Saved in flight (gren_save.txt: the same throw, `save` 10 ticks after the release, `load` at once): the impact is
+# in the save's event queue (SPELL_IMPACT, EventData 0x6666, as the original's SaveEvent 0x004afea0), so the trooper
+# still takes the grenade, the flight time left after the load.
+rm -rf $out/saves_grens
+$exe --load $ck/uppercity --no-render --speed 8 --saves $out/saves_grens --input kotor/tools/combat/gren_save.txt --frames 200 --log combat,module > $out/grens.log 2>&1
+slog=$out/grens.log
+saved=$(grep -a -E '^\[[0-9]+ [0-9.]+\] saved ' $slog | head -1 | sed -E 's/^\[[0-9]+ ([0-9.]+)\].*/\1/')
+loaded=$(grep -a -E '^\[[0-9]+ [0-9.]+\] loaded .*saves_grens' $slog | head -1 | sed -E 's/^\[([0-9]+) .*/\1/')
+sthrow=$(grep -a -E '^\[[0-9]+ [0-9.]+\] [0-9]+ throws 87 at .*lands in [0-9]+ ms' $slog | head -1)
+shit=$(grep -a -E '^\[[0-9]+ [0-9.]+\] [0-9]+ takes [0-9]+ damage from 2147483647' $slog | head -1 | sed -E 's/^\[([0-9]+) .*/\1/')
+if [ -z "$saved" ] || [ -z "$loaded" ] || [ -z "$sthrow" ]; then
+  echo "FAIL the in-flight save run did not throw, save and load (see $slog)"; fail=1
+elif [ -z "$shit" ]; then
+  echo "FAIL a grenade saved in flight never landed after the load (see $slog)"; fail=1
+elif [ "$shit" -le "$loaded" ]; then
+  echo "FAIL the grenade saved in flight hit at tick $shit, before the load at $loaded"; fail=1
+else
+  echo "ok   grenade saved in flight: loaded at tick $loaded, landed at $shit"
+fi
 exit $fail

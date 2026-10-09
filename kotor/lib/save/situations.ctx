@@ -211,9 +211,12 @@ namespace save {
     // ---- the event queue (module IFO)
 
     // Pending events as EventQueue entries (struct id 0xABCD): due (Day, Time) of the game
-    // calendar, target, caller, event id; situations as EventData 0x7777. Other kinds are
-    // delivered within the frame they are posted, so a save between frames has few (ours: only
-    // situations and destroys are kept).
+    // calendar, target, caller, event id; situations as EventData 0x7777, a projectile's impact (SPELL_IMPACT,
+    // 8) as 0x6666 (CServerAIMaster::SaveEvent 0x004afea0 with 0x004ee230: SpellId, CasterId, TargetId, AreaId,
+    // ItemId, Script, TargetPosX/Y/Z). Other kinds are delivered within the frame they are posted, so a save
+    // between frames has few (ours: only situations, impacts and destroys are kept). A grenade saved in flight
+    // so explodes on time after the load, as the original's does; the projectile's picture is the client's
+    // and is not saved, so nothing is seen flying.
     fn write_event_queue { mut b: Builder, mut w: world::World, owner: u32 } -> ! {
         let list = try gffw::put_list{ &b, owner, label = "EventQueue" }
         let all = list::items{ list = w.queue.events }
@@ -223,7 +226,7 @@ namespace save {
         while i < all.len {
             let ev = all[i]
             i = i + 1
-            let id: u32 = match ev.payload { situation => { 1 } destroy => { 11 } else => { 0 } }
+            let id: u32 = match ev.payload { situation => { 1 } spell_impact => { 8 } destroy => { 11 } else => { 0 } }
             if id == 0 { continue }
             let at = origin + ev.due
             let e = try gffw::add_element{ &b, list, id = 0xABCD }
@@ -235,6 +238,19 @@ namespace save {
             if ev.payload is situation{ s } {
                 let data = try gffw::put_struct{ &b, owner = e, label = "EventData", id = 0x7777 }
                 try write_situation{ &b, &w, owner = data, s }
+            }
+            if ev.payload is spell_impact{ spell, object, at } {
+                let data = try gffw::put_struct{ &b, owner = e, label = "EventData", id = 0x6666 }
+                try put_int{ &b, owner = data, label = "SpellId", v = spell }
+                try put_dword{ &b, owner = data, label = "CasterId", v = ev.target }
+                try put_dword{ &b, owner = data, label = "TargetId", v = object }
+                try put_dword{ &b, owner = data, label = "AreaId", v = w.area }
+                try put_dword{ &b, owner = data, label = "ItemId", v = obj::INVALID }
+                let script = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "impactscript" } ifnull ""
+                try put_string{ &b, owner = data, label = "Script", v = script }
+                try put_float{ &b, owner = data, label = "TargetPosX", v = at.x }
+                try put_float{ &b, owner = data, label = "TargetPosY", v = at.y }
+                try put_float{ &b, owner = data, label = "TargetPosZ", v = at.z }
             }
         }
     }
@@ -264,6 +280,15 @@ namespace save {
                 events::post{ &w, delay_ms = due, caller, target, payload = events::Payload::situation{ s = sit } }
             } else if id == 11 {
                 events::post{ &w, delay_ms = due, caller, target, payload = events::Payload::destroy }
+            } else if id == 8 {
+                // The impact runs the spell's impact script as spells.2da names it now (ours keeps no copy of
+                // Script); a spell row out of the table drops the event.
+                let data = gff::get_struct{ doc = doc.*, s = e, label = "EventData" } ifnull { continue }
+                let spell = @trunc(i32, number_at{ doc, s = data, label = "SpellId", default = -1 })
+                if spell < 0 or @as(usize, spell) >= twoda::rows{ t = w.tables.spells } { continue }
+                let object = @trunc(u32, number_at{ doc, s = data, label = "TargetId", default = 0x7F000000 })
+                let at = math::Vec3{ x = float_at{ doc, s = data, label = "TargetPosX" }, y = float_at{ doc, s = data, label = "TargetPosY" }, z = float_at{ doc, s = data, label = "TargetPosZ" } }
+                events::post{ &w, delay_ms = due, caller, target, payload = events::Payload::spell_impact{ spell, object, at } }
             }
         }
     }

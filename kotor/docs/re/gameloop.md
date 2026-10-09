@@ -651,7 +651,8 @@ The target id decides (high, `0x004b0b70`):
   queue, unless `modulesave.2da` `IncludeInSave` excludes it (`SaveModuleIFOStart` `0x004c7050` →
   `SaveEventQueue` `0x004b0970`, GFF list `EventQueue` of 0xABCD structs, fields `Day`, `Time`,
   `ObjectId`, `CallerId`, `EventId`, `EventData` with a payload struct per type: 0x7777 script
-  situation, 0x4444 script event, 0x1111 effect, …). When that module is entered again from its
+  situation, 0x4444 script event, 0x1111 effect, 0x6666 a spell's impact (SPELL_IMPACT, so a grenade in flight
+  lands after a load; render-gui.md "Spell projectiles"), …). When that module is entered again from its
   saved state (`Mod_IsSaveGame`, which `SaveModuleIFO` sets), `LoadModuleStart` (`0x004c9050`)
   restores the queue in saved order (`LoadEventQueue` `0x004b0a00`, appended as read). The world
   time is not taken from that module's IFO on a transition: `LoadModuleStart` continues from the
