@@ -297,6 +297,8 @@ namespace gui {
         // sounds
         sounds: [SOUNDS]Sound,
         sound_volume: f32,
+        sound_priority: u8,     // the mixer's priority and play group of the clicks (set_sound_class)
+        sound_group: u8,
         // events for the owner
         events: list::List(Event, heap::Heap),
         dropped_events: u32,

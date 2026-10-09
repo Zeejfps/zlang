@@ -143,6 +143,7 @@ namespace play {
         // HOOK(ingame): the HUD and the in-game menus (docs/design/hud.md).
         let screen_now = gpu::screen_size{ dev }
         let ui = try ingame::make{ &w, &dev, mixer, scratch = texture_scratch, width = @as(i32, screen_now.width), height = @as(i32, screen_now.height), settings = opts.settings, gui_scale = disp.live.gui_scale }
+        ambience::tune_gui{ g = &ui.gui, m = mixer, w = &w, bias = amb.bias }
         if ingame::options_front{ ui } is some{ value = fe } {
             fe.settings = disp.live
             display::tell{ d = &disp, fe }
@@ -799,6 +800,7 @@ namespace play {
         try gui::load_defaults{ &g, fs = &w.fs, &dev }
         gui::set_cursor_visible{ &g, visible = not opts.headless }
         gui::set_mixer{ &g, mixer }
+        ambience::tune_gui{ g = &g, m = mixer, w = &w, bias = frontend::install_bias{ fs = &w.fs, heap = w.heap, game = opts.game, fallback = disp.live.bias_2d3d } }
         let mut fe = frontend::make{ fs = &w.fs, heap = w.heap, game = opts.game, config_path = opts.settings }
         frontend::set_own_saves{ &fe, dir = opts.saves }
         fe.settings = disp.live

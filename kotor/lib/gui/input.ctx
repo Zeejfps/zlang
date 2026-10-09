@@ -57,7 +57,10 @@ namespace gui {
         let s = g.sounds[@as(usize, n)]
         if not s.ok { return }
         let m = g.mixer ifnull { return }
-        _ = mix::play{ m, bytes = s.bytes, p = mix::sound_2d{ group = mix::Group::sfx, volume = g.sound_volume } } iferr { mix::Handle{ slot = 0, id = 0 } }
+        let mut p = mix::sound_2d{ group = mix::Group::sfx, volume = g.sound_volume }
+        p.priority = g.sound_priority
+        p.play_group = g.sound_group
+        _ = mix::play{ m, bytes = s.bytes, p } iferr { mix::Handle{ slot = 0, id = 0 } }
     }
 
     // ---- hit testing

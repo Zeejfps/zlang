@@ -437,6 +437,22 @@ high where a decompile says it plainly, medium where it rests on a field's use.
   rows: music 2 (64: half), stingers 1 (64), `CGuiInGame::PlayDialogVoice` 9 (90),
   `PlayDialogAmbientTrack` 4 (95, so Sound Effects), `CSWGuiBarkBubble::ShowBark` 26 (127, volume
   127); a new stream's row is 2 (its constructor 0x005dbbe0).
+- **GUI sounds** (`CSWGuiManager::LoadGuiSounds` 0x00409f00): one `CExoSoundSource` per
+  `guisounds.2da` row, put in row 11 `GUI` (0x005d5900 with 0xb), 2D; `PlayGuiSound` (0x0040a140)
+  plays that source. So a click is priority 11, Volume 127, at most two at once (MaxPlaying 2,
+  Interrupt 1), with the 2D sources' Sound Effects volume and 2D3D Bias scale. (high)
+- **Sound modes** (`CExoSoundInternal::SetSoundMode` 0x005d8560): a stack of ten modes at +0x118
+  (top index +0x140); 0 pops, any other pushes (unless it is already on top). Entering 2, 3 or 4
+  stops (pauses, 0x005d82c0) every stream and source except, in mode 2 (a pause request),
+  rows 1, 2, 4 and 11 and, in mode 4 (stores, the galaxy map, a load), rows 1, 2 and 11;
+  mode 3 (movies, saving) stops all; leaving them resumes everything (0x005d83f0). Mode 1 starts a
+  500 ms fade (0x005d6a10: +0xc set, +0x54 500, start time +0x50; leaving it, 0x005d6a50 fades
+  back over +0x5c 500) whose factor only rows 4 and 21 take (0x005dc930); its only user is
+  0x005f4ae0, from `CGuiInGame::QuickLoad` and `CSWGuiSaveLoad::LoadSelectedGame`, which pushes
+  mode 1 and spins `CExoSound::Update` for 500 ms before the load: the area's ambient bed fades
+  out as a saved game loads. 5 and 6 are the window losing and regaining activation (all paused,
+  then resumed and the stack popped back to the mode below). (high for the stack and the rows,
+  med for the fade's shape)
 
 ## Movies (Bink)
 

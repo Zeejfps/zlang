@@ -134,15 +134,25 @@ namespace ambience {
 
     // Hands the mixer each prioritygroups.2da row's MaxPlaying and Interrupt (0x005d7bd0; a blank
     // MaxPlaying is 255, no limit, and a blank Interrupt is 1). FadeTime is loaded there but nothing reads it.
-    fn apply_limits { a: *Ambience, w: *world::World } {
+    fn apply_limits { m: *mut mix::Mixer, w: *world::World } {
         let n = twoda::rows{ t = w.tables.prioritygroups }
         let mut row: usize = 0
         while row < n and row < mix::LIMITS {
             let most = twoda::get_int{ t = w.tables.prioritygroups, row, column = "maxplaying" } ifnull 255
             let interrupt = (twoda::get_int{ t = w.tables.prioritygroups, row, column = "interrupt" } ifnull 1) != 0
-            mix::set_group_limit{ m = a.m, group = @trunc(u8, row), max_playing = if most < 0 or most > 255 { 255 } else { @trunc(u8, most) }, interrupt }
+            mix::set_group_limit{ m, group = @trunc(u8, row), max_playing = if most < 0 or most > 255 { 255 } else { @trunc(u8, most) }, interrupt }
             row = row + 1
         }
+    }
+
+    // The GUI's sounds (guisounds.2da) play as prioritygroups.2da row 11 `GUI` (CSWGuiManager::
+    // LoadGuiSounds 0x00409f00): 2D sources at the row's priority and Volume with the 2D3D Bias's
+    // scale (loudness), at most two at once, a new click stopping the latest (MaxPlaying 2, Interrupt 1).
+    const ROW_GUI: u32 = 11
+    fn tune_gui { mut g: gui::Gui, m: *mut mix::Mixer, w: *world::World, bias: f32 } {
+        apply_limits{ m, w }
+        let v = group_volume{ w, row = ROW_GUI }
+        gui::set_sound_class{ &g, group = @trunc(u8, ROW_GUI), priority = priority_of{ w, row = ROW_GUI }, volume = if bias > 1.0 { v * (2.0 - bias) } else { v } }
     }
 
     // The streams' rows (the original plays them on stream voices of their own that no sound
@@ -221,7 +231,7 @@ namespace ambience {
 
     // The area's music and ambient bed, and a player for each sound object.
     fn start_area { mut a: Ambience, mut w: world::World } {
-        apply_limits{ a = &a, w = &w }
+        apply_limits{ m = a.m, w = &w }
         let ao = world::object{ w = &w, id = w.area } ifnull { return }
         let area = obj::area{ o = ao } ifnull { return }
         a.music_delay = @as(f32, area.music_delay) / 1000.0

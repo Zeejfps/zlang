@@ -422,9 +422,11 @@ kotor/tools/ctxc run kotor/tools/sndplay -- FILE       # play one (or --wav / --
   re/app.md, "Voices".)
 - Whether Miles clipped or scaled a mix past full scale (ours limits it).
 - Which volume `prioritygroups.2da`'s distances override (they differ from the UTS's own).
-- The sound-mode fade (0x005dc930's third argument, which only rows 4 and 21 take): ours doesn't
-  fade the ambient bed with the screen's fades.
+- The sound modes (re/app.md "Voices"): ours neither pauses the world's sounds in a store, the
+  galaxy map or a pause (modes 2 and 4), nor fades the ambient bed over the 500 ms
+  before a saved game loads (mode 1, rows 4 and 21).
 
-Settled (2026-10): `MaxPlaying` and `Interrupt` are enforced (play groups); `FadeTime` is loaded but
+Settled (2026-10): GUI clicks play in row 11 `GUI` (priority, Volume, two at once, the 2D3D
+Bias's scale: `ambience::tune_gui`). `MaxPlaying` and `Interrupt` are enforced (play groups); `FadeTime` is loaded but
 nothing reads it; the Sound Effects volume is squared for 3D sound effects; the streams' loudness is
 their row's `Volume` times the player's volume for the row (above, and re/app.md "Voices").
