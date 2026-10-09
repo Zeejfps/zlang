@@ -31,14 +31,15 @@ namespace hud {
         return into[..n + 3]
     }
 
-    // The grenades the leader can throw at the creature `target` (a friend too: the builder does not
-    // ask): one choice for each item of the party's inventory that is a grenade and has an ability,
-    // in the inventory's order (the stack is one choice). None where the area's RestrictMode is set (0x006198e0).
+    // The grenades the leader can throw at the creature `target`: one choice for each item of the party's
+    // inventory that is a grenade and has an ability, in the inventory's order (the stack is one choice).
+    // None where the area's RestrictMode is set (0x006198e0). The builder itself does not ask who the target
+    // is, but the block calls it only for a hostile creature (FUN_00619c20 by GetTargetKind: kind 4), so a
+    // party member, a friend or a neutral gets none.
     fn grenade_actions { w: *world::World, target: u32 } -> ActionList {
         let mut l = empty_list{}
         if not allows_combat{ w } { return l }
-        let to = world::object{ w, id = target } ifnull { return l }
-        if to.kind != obj::Kind::creature { return l }
+        if not is_hostile{ w, id = target } { return l }
         let ids = list::items{ list = w.bag }
         let mut k: usize = 0
         while k < ids.len {

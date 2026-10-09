@@ -1325,7 +1325,7 @@ other items decide as for attacks but start no round for the target. Timing by t
 
 | itemtype | Items | Animation (humanoid / other) | Impact at | Total |
 |---|---|---|---|---|
-| 6 | grenades | 10130 under 10 m, else 10129 / 10001 | 700 (near) or 800 ms | 1500 ms |
+| 6 | grenades | 10130 under 10 m, else 10129 (animations.2da rows 58 `throwgren1` and 57 `throwgren`) / 10001 | 700 (near) or 800 ms: the grenade leaves the hand; the impact script runs when it lands, after the projectile's flight ([render-gui.md](render-gui.md) "Spell projectiles") | 1500 ms |
 | 12 | droid utility | 11001, then 11002 | client animation length − 50 ms, or 300 | 1500 ms |
 | 20 | forearm shields | 10136 / 10001 | 600 ms | 1000 ms |
 | 25, 45 | stims, medpacs | 10070 / 10001, played by the target creature when there is one | 750 ms | 1500 ms |

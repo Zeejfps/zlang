@@ -34,7 +34,8 @@ loads the model once; slots are reused for the same model), one `gui3d::Emitting
 |---|---|---|
 | `still` | at a point, optionally turned so its +Y points along `facing` | an impact on the wall, a blast at a location |
 | `follow` | riding a node of an object's visual (`scene::hook_of`), every frame | a muzzle flash on the weapon, an impact on a creature, a power's glow on a hand |
-| `bolt` | flying from a point to a point over a time (`flight`), +Y along the way | a blaster bolt; later a grenade (add an arc) or a Force lightning bolt |
+| `bolt` | flying from a point to a point over a time (`flight`), +Y along the way | a blaster bolt, a thrown lightsaber |
+| `arc` | legs of a fall under gravity, each from where the last ended to its end in its time (`projectile.ctx`) | a thrown grenade: up out of the hand, down short of the point, three hops on (re/render-gui.md "Spell projectiles") |
 
 An effect lives for `life` seconds (its animation's length unless told) and then the particles
 die out; a bolt ends on arrival and may play a `visualeffects.2da` row where it ends.

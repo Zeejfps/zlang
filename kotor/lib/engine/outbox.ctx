@@ -69,6 +69,10 @@ namespace outbox {
         beam_end{ style: i32, target: u32 },
         //   saber_leg: a thrown lightsaber (the item `item`) flies from a point to a point in `flight_ms`
         saber_leg{ item: u32, from: math::Vec3, to: math::Vec3, flight_ms: i32 },
+        //   projectile: a spell's projectile (spells.2da ProjModel: a thrown grenade) leaves `source`'s body node
+        //     `spawn` (ProjSpwnPoint: 1 hand, 2 head, 3 throw, the right hand; 0 the root) for the point `to`, on the
+        //     path `path` (ProjType's number: 11 grenade), landing `flight_ms` later
+        projectile{ model: resref::ResRef, source: u32, spawn: i32, to: math::Vec3, path: i32, flight_ms: i32 },
         visual_hold{ effect: i32, target: u32 },
         visual_release{ effect: i32, target: u32 },
         //   effect_model: an effect model by name (a power's cast visual in spells.2da) riding the

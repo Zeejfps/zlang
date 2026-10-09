@@ -1480,6 +1480,33 @@ above 1), and its usable flag is never cleared for a repository item. Its callba
 sends input 9 (`0x00677bd0`, message 6/9): the item, the leader as the target and a zero point,
 which UseItem turns into SETTRAP ([actions.md](actions.md) 3.14). (high)
 
+##### What the target block offers, by target
+
+`CSWGuiTargetInfo::Refresh` (`0x00689410`) fills the three lists through `FUN_00619c20`, once per slot
+(0 left, 1 middle, 2 right), which switches on `GetTargetKind` (`0x0060fcc0`; movement.md 7.4). The
+builders behind it never ask who the target is: the switch alone keeps the hostile actions off
+friends. A creature is kind 4 when its client hostile slot (vtable `+0x138`, the server's
+friend-or-enemy answer: reputation below 11) is set **or while the leader's 1.5 s dead-target keep
+timer (`client+0x378`, `FUN_005ee0f0`) runs**, otherwise kind 3, whatever else it is. (high, static
+reading of the switch and the builders)
+
+| Target | Kind | Left (0) | Middle (1) | Right (2) |
+|---|---|---|---|---|
+| hostile creature | 4 | the leader's best rank of the three combat feats for its right-hand weapon, then Attack (`0x00619950`, `0x00619b10`) | the hostile Force powers (`0x006191f0`; a droid leader its equipment's abilities) | the party's grenades (`0x006198e0`: items with baseitems ItemType 6 and a cast-spell property; none under RestrictMode) |
+| party member, friendly or neutral creature | 3 | nothing | nothing | nothing |
+| dead or dying creature | — | not selectable (`GetIsSelectableTarget`, movement.md 7.1), so no block, except the one just killed while the keep timer runs, which is then kind 4 like every creature | | |
+| door | 1 | Bash (`FUN_00684410`: locked, not plot, RestrictMode 0) | Security (locked, no key required, the leader has the skill) | nothing |
+| placeable with an inventory | 1 | Bash (`FUN_006837d0`, same tests) | Security (locked, the leader has the skill) | nothing |
+| placeable without one | 3 | Bash (`FUN_006837d0`) | the hostile Force powers when its client hostile flag is set and its reputation toward the leader is below 11, else as for a placeable with an inventory (no Security without an inventory) | nothing |
+| mine (known trap trigger) | 2 | Disable (`FUN_00691f00`: hostile mine, Demolitions) | Recover (Demolitions) | nothing |
+
+So a party member's block shows its name and health bar only (the block shrinks to them when no list
+has an entry), and the keys 1-3 (which run the selected entry of these lists) do nothing on it. The
+other ways to act on a friend give no hostile choice either: a click or R runs the default list
+(Talk on a kind-3 creature, 7.4), and the self slots hold friendly powers, medical and other items
+used on the leader, and mines. Ours (`hud::attack_slot`, `middle_actions`, `grenade_actions`) follows
+the table; the keep timer is not modelled, so in ours a creature is hostile only by its reputation.
+
 ##### The target block's drawing
 
 `CSWGuiTargetInfo::Render` (`0x00685ed0`, only while the block's flag `+0x1aec` bit 0 is set) pushes a

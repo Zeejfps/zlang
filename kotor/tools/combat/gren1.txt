@@ -1,0 +1,11 @@
+20 ui heal
+21 ui giveitem g_w_fraggren01 3
+22 ui foe g_sithtroop02 11 0
+24 cam toward g_sithtroop02
+26 ui target Carth
+30 ui fight
+40 ui target g_sithtroop02
+44 ui fight
+50 ui clicktag BTN_TARGET2
+52 ui fight
+120 ui fight

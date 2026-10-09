@@ -562,6 +562,60 @@ lasts; the off sound in the misspelled `soundcessastion` column is not played (a
 
 Our version: `lib/vfx/aura.ctx` and docs/design/vfx.md, "Texture auras".
 
+### Spell projectiles (the thrown grenade)
+
+Only spells.2da rows with `Proj` 1 throw something: the twelve grenade abilities (87-98), each with
+`ProjModel` the grenade's own model (`w_FragGren_001`, `w_ThermDet_001`...), `ProjType` `grenade`,
+`ProjSpwnPoint` `throw`. Every Force power has `Proj` 0. (high, from the data)
+
+**Loading** (`CSWSpellArray::Load` `0x0059ba20`): `Proj` at spell `+0xf4`; with 0, the row gets the
+model `sp_sumfire`, path 1 and the sound `amb_e14` (never used: nothing flies). Otherwise `ProjModel`
+`+0xf8`, `ProjType` lower-cased to a number at `+0x108`: homing 1, ballistic 2, highballistic 3,
+accelerating 5, spiral 6, linked 7, bounce 8, burst 9, **grenade 11**, test 50, anything else 0;
+`ProjSpwnPoint` at `+0x10c`: hand 1, head 2, **throw 3**, else 0. (high)
+
+**The flight time** is the server's (`CSWSObject::ComputeSpellImpactDelay` `0x004cb9e0`, actions.md
+CASTSPELL): over the distance d from the caster to the point (or the target object), v = 3 ln d + 2
+m/s, scaled by the path (homing x2, accelerating x1.5, bounce x0.4, linked v = d/2, highballistic a
+fixed 2000 ms; grenade unscaled), d / v seconds (1 ms when v ≤ 0), plus 2500 ms for a spiral. A
+grenade thrown 5 m flies 0.98 s, 10 m 1.12 s, 20 m 1.24 s. `SpellCastAndImpact` (`0x004cdf50`) sends
+it with the visual and posts SPELL_IMPACT (AI event 8) to the caster that many ms later: the impact
+script, the damage and the script's explosion visual come when the projectile lands. (high)
+
+**The visual** (`BroadcastSpellVisual` `0x004cdd30` → message `FUN_0056e6e0`, to every player within
+250 m of either end; client `FUN_00650b90`): caster id, target id, the caster's position, the end
+point, the flight time, a kind (6 for a spell, 7 with the param 8 flag), the spell. For kind 6 the
+client takes the spell's path number, finds the caster's node for `ProjSpwnPoint` (1 `handconjure`,
+2 `headconjure`, **3 `rhand`**, else `root`), plays the spell's sound at `+0xdc` once when it names
+one (likely `ProjSound`, which every grenade row leaves empty; med), and makes a projectile
+object (`FUN_006d57b0`, 0x1c8 bytes, vtable `0x00757cc8`) with `ProjModel`, placed at the node, its
+time (`+0x120`, `+0x190`) the flight time, its end point (`+0x114`), then builds its path by type
+(`FUN_006d6ee0`: a switch to one builder per path). A path is a list of legs (0x34 bytes: end point,
+target object or none, time in ms `+0x20`, leg kind `+0x2d`); the projectile flies leg after leg
+(`FUN_006d7590` each frame) and is removed when its time is up. (high for the structure)
+
+**The grenade path** (11 and 12 alike, `FUN_006d5b10`): four legs of kind 2, a fall under gravity
+(`FUN_006d33c0` gives kind 2 an acceleration of (0, 0, -9.81); `FUN_006d2e00` re-aims each frame with
+v0 = (2·Δ - T²·a) / 2T, Δ the way to the leg's end and T the time left, so the leg is the one parabola
+that leaves where the grenade is and reaches the end on time). The ends: the points 80%, 90% and 95%
+of the way from the hand to the target point, each dropped onto the ground beneath it by a vertical
+ray (from +1000 to -1000), and then the target point; the times 0.6, 0.2, 0.1 and 0.1 of the flight
+(constants `0x0075147c` 0.6, `0x0073e46c` 0.2, `0x0073e798` 0.1). So the grenade arcs up out of the
+hand, lands short of the target at 60% of the time and skips on in three small hops. When the rays
+find no ground the path is one leg straight to the point over the whole time. (high for the numbers,
+med for the ray's fallback)
+
+**The throw itself** (actions.md ITEMCASTSPELL): the thrower plays 10130 from under 10 m, 10129
+from farther, which the client's animation table (`0x0069f650`) turns into animations.2da row 58
+`throwgren1` and row 57 `throwgren`; the grenade leaves the hand at the impact time of the item
+table (700 ms near, 800 ms far), when the server fires the spell and spends the use, and the action
+lasts 1500 ms whatever the flight. The item use clears the target: the grenade goes to the point
+where the target stood. (high)
+
+Ours: `fight::fire` (`lib/engine/fight.ctx`) reckons the flight, posts the impact as an event
+(`events::Payload::spell_impact`, not saved) and the `projectile` outbox note; `lib/vfx/projectile.ctx`
+flies the model on the grenade path (the ground under each point from our walkmesh, not a scene ray).
+
 ### Console overlay
 
 A Quake-style console is built into the renderer library. `Console_ExecFile` 0x0044c980 runs

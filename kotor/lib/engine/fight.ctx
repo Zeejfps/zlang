@@ -1948,17 +1948,20 @@ namespace fight {
     // 5 feat talent, 6 item. Walks into the power's range, faces the target and conjures (phase 1,
     // `conj` ms). At the end of the conjuration the Force points are paid (item and feat talents pay
     // nothing; an entangled caster loses them and the cast breaks), the cast animation starts and
-    // the impact script runs at once: nothing of the Force powers flies (spells.2da Proj is 0 for
-    // them; only grenades have a flight), so the effect lands at that moment and the cast animation
-    // plays out after it (phase 2, `cast` ms), then the catch time (phase 3).
+    // the power fires (`fire`): nothing of the Force powers flies (spells.2da Proj is 0 for them), so
+    // their effect lands at that moment and the cast animation plays out after it (phase 2, `cast` ms),
+    // then the catch time (phase 3). Only the grenades fly: thrown at the point where the target stood
+    // as the throw began (ITEMCASTSPELL clears the target of an item without FORCEHOSTILE), they land
+    // after the projectile's flight.
     fn cast_spell { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, a: *mut actions::Action } -> actions::Status {
         let o = world::object{ w = &w, id } ifnull { return actions::Status::failed }
         let spell = actions::int_param{ a, i = 0 }
         let target = actions::object_param{ a, i = 1 }
         let mut at = actions::vector_param{ a, i = 2 }
+        let flies = has_projectile{ w = &w, spell }
         if target != obj::INVALID {
             let t = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
-            at = t.position
+            if not flies or a.phase == 0 { at = t.position }
         }
         let now = clock::now_ms{ c = w.clock }
         let free = actions::int_param{ a, i = 3 } != 0 or actions::int_param{ a, i = 5 } != 0 or actions::object_param{ a, i = 6 } != obj::INVALID
@@ -2024,6 +2027,7 @@ namespace fight {
                 play_row{ &w, o, row = cast_row{ name = conj, looping = true } }
             }
             spell_visuals{ &w, id, spell, cast = false }
+            if flies { a.params[2] = actions::Param::vector{ v = at } }
             a.phase = 1
             a.started = now
             if w.log.combat {
@@ -2073,13 +2077,14 @@ namespace fight {
                 _ = @fmt(&w.io, "{} casts {} at {}\n", id, spell, target)
             }
             // A Force power lands as the cast animation starts (an item's ability a moment later, below).
-            if not by_item { impact{ &w, &vm, engine, id, spell, target, at } }
+            if not by_item { fire{ &w, &vm, engine, id, spell, target, at } }
             a.phase = 2
         }
         if a.phase == 2 {
             if elapsed < conj_ms + cast_ms { return actions::Status::running }
             if by_item {
-                impact{ &w, &vm, engine, id, spell, target, at }
+                // A thrown grenade goes to the point, not the creature (the original clears the target).
+                fire{ &w, &vm, engine, id, spell, target = if flies { obj::INVALID } else { target }, at }
                 rt_item::spend_use{ &w, item = used_item, spell }
             }
             a.phase = 3
@@ -2142,12 +2147,83 @@ namespace fight {
     }
 
     // The animation of using an item: the injection for stims, repair kits and medpacs, the throw
-    // for a grenade (the short one from under 10 m), the device's activation for the rest.
+    // for a grenade, the device's activation for the rest. AIActionItemCastSpell throws with 10130 from
+    // under 10 m and 10129 from farther, which the client plays as animations.2da rows 58 (throwgren1)
+    // and 57 (throwgren) (its animation table 0x0069f650).
     fn play_item_use { mut w: world::World, o: *mut obj::Object, item: u32, near: bool } {
         let kind = rt_item::item_type_of{ w = &w, id = item }
-        if kind == 6 { play_row{ &w, o, row = if near { 57 } else { 58 } }; return }
+        if kind == 6 { play_row{ &w, o, row = if near { 58 } else { 57 } }; return }
         if kind == 25 or kind == 26 or kind == 45 { world::set_animation{ o, id = 10070, speed = 1.0 }; return }
         world::set_animation{ o, id = 10127, speed = 1.0 }
+    }
+
+    // Whether the spell throws a projectile (spells.2da Proj: only the grenades).
+    fn has_projectile { w: *world::World, spell: i32 } -> bool {
+        if spell < 0 { return false }
+        return (twoda::get_int{ t = w.tables.spells, row = @as(usize, spell), column = "proj" } ifnull 0) != 0
+    }
+
+    // spells.2da ProjType as CSWSpellArray::Load (0x0059ba20) numbers it: homing 1, ballistic 2,
+    // highballistic 3, accelerating 5, spiral 6, linked 7, bounce 8, burst 9, grenade 11, test 50, else 0.
+    fn projectile_path { w: *world::World, spell: i32 } -> i32 {
+        let name = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "projtype" } ifnull ""
+        let names: [10][]u8 = ["homing", "ballistic", "highballistic", "accelerating", "spiral", "linked", "bounce", "burst", "grenade", "test"]
+        let codes: [10]i32 = [1, 2, 3, 5, 6, 7, 8, 9, 11, 50]
+        let mut i: usize = 0
+        while i < 10 {
+            if ci::eq{ a = name, b = names[i] } { return codes[i] }
+            i = i + 1
+        }
+        return 0
+    }
+
+    // ProjSpwnPoint: hand 1, head 2, throw 3, else 0 (the model's root).
+    fn projectile_spawn { w: *world::World, spell: i32 } -> i32 {
+        let name = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "projspwnpoint" } ifnull ""
+        if ci::eq{ a = name, b = "hand" } { return 1 }
+        if ci::eq{ a = name, b = "head" } { return 2 }
+        if ci::eq{ a = name, b = "throw" } { return 3 }
+        return 0
+    }
+
+    // How long the projectile flies (CSWSObject::ComputeSpellImpactDelay 0x004cb9e0), in ms: none without
+    // one; else over the distance d from the caster to the point, at v = 3 ln d + 2 metres a second
+    // (doubled for homing, x1.5 accelerating, x0.4 bounce, d/2 linked; highballistic a fixed 2 s), 1 ms
+    // when v is not above 0, and 2.5 s more for a spiral. A grenade at 10 m flies 1.12 s, at 5 m 0.98 s.
+    fn flight_ms { w: *world::World, spell: i32, from: math::Vec3, to: math::Vec3 } -> u64 {
+        if not has_projectile{ w, spell } { return 0 }
+        let path = projectile_path{ w, spell }
+        if path == 3 { return 2000 }
+        let d = math::vec3::distance{ a = from, b = to }
+        let mut v = 3.0 * math::logf{ x = d } + 2.0
+        if path == 1 { v = v * 2.0 } else if path == 5 { v = v * 1.5 } else if path == 7 { v = d * 0.5 } else if path == 8 { v = v * 0.4 }
+        if not (v > 0.0) { return 1 }
+        let ms = @as(u64, @as(u32, d / v * 1000.0))
+        return if path == 6 { ms + 2500 } else { ms }
+    }
+
+    // The power fires (SpellCastAndImpact 0x004cdf50): the impact at once, or, for a spell that throws a
+    // projectile, the projectile shown leaving the caster's hand for the point and the impact (AI event 8,
+    // SPELL_IMPACT, to the caster) when it lands.
+    fn fire { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, spell: i32, target: u32, at: math::Vec3 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let ms = flight_ms{ w = &w, spell, from = o.position, to = at }
+        if ms == 0 {
+            impact{ &w, &vm, engine, id, spell, target, at }
+            return
+        }
+        let model = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "projmodel" } ifnull ""
+        if model.len > 0 and model.len <= 16 and not ci::eq{ a = model, b = "****" } {
+            outbox::post{ out = &w.out, note = outbox::Note::projectile{
+                model = resref::truncate{ name = model }, source = id, spawn = projectile_spawn{ w = &w, spell },
+                to = at, path = projectile_path{ w = &w, spell }, flight_ms = @as(i32, @as(u32, ms)),
+            } }
+        }
+        if w.log.combat {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "{} throws {} at {} {} {}: lands in {} ms\n", id, spell, at.x, at.y, at.z, ms)
+        }
+        events::post{ &w, delay_ms = ms, caller = id, target = id, payload = events::Payload::spell_impact{ spell, object = target, at } }
     }
 
     // The impact: the power's script (spells.2da impactscript) as the caster, with the spell

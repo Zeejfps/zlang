@@ -9,16 +9,17 @@
 //   each frame, after scene::draw:     vfx::draw{ &vx, &sc, &frame, view }
 //   leaving an area (scene released):  vfx::reset{ &vx }
 //
-// Three ways to place an effect: still (at a point), follow (riding a node of an object's visual,
-// such as a weapon's muzzlehook or a creature's impact_bolt) and bolt (a projectile flying from
-// one point to another over a time, which a miss lets fly on past its target).
+// Four ways to place an effect: still (at a point), follow (riding a node of an object's visual,
+// such as a weapon's muzzlehook or a creature's impact_bolt), bolt (a projectile flying from
+// one point to another over a time, which a miss lets fly on past its target) and arc (a thrown
+// grenade: legs of a fall under gravity, projectile.ctx).
 namespace vfx {
     const MAX_FX: usize = 128
 
     // Room for particles per emitter: an Explosion bursts `birthrate` of them at once.
     const PUFFS: usize = 96
 
-    enum Kind: u8 { still, follow, bolt }
+    enum Kind: u8 { still, follow, bolt, arc }
 
     struct Fx {
         live: bool,
@@ -46,6 +47,12 @@ namespace vfx {
         to: math::Vec3,
         flight: f32,
         end_effect: i32,                // a visualeffects.2da row played where the bolt ends, 0 none
+        // arc: each leg falls from where the last one ended (`from` for the first) to its end in its time
+        legs: [4]math::Vec3,
+        leg_time: [4]f32,
+        leg_count: usize,
+        leg: usize,
+        leg_age: f32,
         // where it stands this frame
         matrix: math::Mat4,
         dir: math::Vec3,                // a bolt's direction of flight
@@ -56,7 +63,8 @@ namespace vfx {
         return Fx{
             live = false, used = false, loaded = 0, part = 0, emitting = slice::empty(gui3d::Emitting){}, kind = Kind::still, age = 0.0, fresh = false, life = 0.0, hold = 0,
             stopped = false, detonate = false, at = math::vec3::zero{}, facing = math::vec3::zero{}, object = obj::INVALID, hook = [0; 24], hook_len = 0,
-            which = 0, from = math::vec3::zero{}, to = math::vec3::zero{}, flight = 0.0, end_effect = 0, matrix = math::mat4::identity{},
+            which = 0, from = math::vec3::zero{}, to = math::vec3::zero{}, flight = 0.0, end_effect = 0,
+            legs = [math::vec3::zero{}; 4], leg_time = [0.0; 4], leg_count = 0, leg = 0, leg_age = 0.0, matrix = math::mat4::identity{},
             dir = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, speed = 0.0,
         }
     }
@@ -352,6 +360,11 @@ namespace vfx {
                 return
             }
             f.matrix = placed{ at = math::vec3::lerp{ a = f.from, b = f.to, t = age / f.flight }, facing = f.dir }
+        } else if f.kind == Kind::arc {
+            if not step_arc{ f, dt = dt_eff } {
+                f.live = false
+                return
+            }
         } else if f.kind == Kind::follow {
             f.matrix = follow_matrix{ sc = &sc, w = &w, f }
         }
@@ -359,7 +372,7 @@ namespace vfx {
         let model = scene::loaded_at{ sc = &sc, i = f.loaded }.model
         mdl_anim::advance{ player = &p.player, dt = dt_eff, on_event = on_event{ f, _ } }
         mdl_anim::evaluate{ model, player = p.player, pose = p.pose }
-        if age >= f.life and f.kind != Kind::bolt { f.stopped = true }
+        if age >= f.life and f.kind != Kind::bolt and f.kind != Kind::arc { f.stopped = true }
         let mut all_quiet = true
         let mut e: usize = 0
         while e < model.emitters.len {

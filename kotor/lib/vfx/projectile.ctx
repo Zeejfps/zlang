@@ -1,0 +1,85 @@
+// A spell's projectile: the grenade a creature throws (docs/re/render-gui.md, "Spell projectiles"). The
+// client (0x00650b90) puts spells.2da's ProjModel at the thrower's node for ProjSpwnPoint and sends it to
+// the point on the path ProjType names, over the flight time the server reckoned; it is gone when the time
+// is up, and the impact script's own visual (the explosion) comes then.
+namespace vfx {
+    // Gravity on a falling leg (m/s^2, 0x006d33c0's -9.81 for a leg of kind 2).
+    const GRAVITY: f32 = 9.81
+
+    // The node a projectile leaves from: ProjSpwnPoint 1 hand, 2 head, 3 throw (the right hand).
+    fn spawn_node { spawn: i32 } -> []u8 {
+        if spawn == 1 { return "handconjure" }
+        if spawn == 2 { return "headconjure" }
+        if spawn == 3 { return "rhand" }
+        return ""
+    }
+
+    // Throws `model` from `source`'s node to `to` in `flight` seconds. A grenade (path 11, and 12, which the
+    // original builds alike: 0x006d5b10) bounces: it falls to the ground under the point 80% of the way
+    // there in 60% of the time, then hops to the ground under 90% (20% of the time), 95% (10%) and comes to
+    // rest on the point (10%), each leg an arc under gravity. Off the walkmesh it makes one arc to the point.
+    // Any other path flies straight (no shipped spell has one).
+    fn throw_projectile {
+        mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device,
+        model: resref::ResRef, source: u32, spawn: i32, to: math::Vec3, path: i32, flight: f32,
+    } {
+        let mut m = model
+        let name = resref::bytes{ r = &m }
+        let node = spawn_node{ spawn }
+        let o = world::object{ w = &w, id = source } ifnull { return }
+        let from = if node.len > 0 { hook_point{ sc = &sc, w = &w, id = source, hook = node, which = 0, fallback = 1.2 } } else { o.position }
+        if path != 11 and path != 12 {
+            _ = spawn_bolt{ &v, &sc, &w, &dev, model = name, from, to, flight, end_effect = 0 } iferr { null }
+            return
+        }
+        let made = spawn_bolt{ &v, &sc, &w, &dev, model = name, from, to, flight, end_effect = 0 } iferr { null }
+        let slot = made ifnull { return }
+        let f = &v.fx[slot]
+        f.kind = Kind::arc
+        f.leg = 0
+        f.leg_age = 0.0
+        let span = math::vec3::sub{ a = to, b = from }
+        let shares: [3]f32 = [0.8, 0.9, 0.95]
+        let times: [4]f32 = [0.6, 0.2, 0.1, 0.1]
+        let mut k: usize = 0
+        let mut grounded = true
+        while k < 3 {
+            let p = math::vec3::add{ a = from, b = math::vec3::scale{ v = span, s = shares[k] } }
+            let z = walkmap::height{ m = &w.walk, x = p.x, y = p.y, z = p.z } ifnull { grounded = false; break }
+            f.legs[k] = math::Vec3{ x = p.x, y = p.y, z }
+            f.leg_time[k] = flight * times[k]
+            k = k + 1
+        }
+        if grounded {
+            f.legs[3] = to
+            f.leg_time[3] = flight * times[3]
+            f.leg_count = 4
+        } else {
+            f.legs[0] = to
+            f.leg_time[0] = flight
+            f.leg_count = 1
+        }
+        let flat = math::Vec3{ x = span.x, y = span.y, z = 0.0 }
+        if math::vec3::length_sq{ v = flat } > 0.0001 { f.dir = math::vec3::normalize{ v = flat } }
+        f.matrix = placed{ at = from, facing = f.dir }
+    }
+
+    // Moves an arc on by `dt`; false once its last leg has landed. A leg of time T from A to B is at
+    // A + (B - A) t / T + g t (T - t) / 2 up after t seconds: the one fall under gravity that starts at A
+    // and is at B when the time is up.
+    fn step_arc { mut f: Fx, dt: f32 } -> bool {
+        f.leg_age = f.leg_age + dt
+        while f.leg < f.leg_count and f.leg_age >= f.leg_time[f.leg] {
+            f.leg_age = f.leg_age - f.leg_time[f.leg]
+            f.from = f.legs[f.leg]
+            f.leg = f.leg + 1
+        }
+        if f.leg >= f.leg_count { return false }
+        let time = f.leg_time[f.leg]
+        let t = f.leg_age
+        let mut at = math::vec3::lerp{ a = f.from, b = f.legs[f.leg], t = if time > 0.0 { t / time } else { 1.0 } }
+        at.z = at.z + 0.5 * GRAVITY * t * (time - t)
+        f.matrix = placed{ at, facing = f.dir }
+        return true
+    }
+}

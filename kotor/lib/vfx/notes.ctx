@@ -113,6 +113,9 @@ namespace vfx {
             }
             beam_end{ style, target } => { end_beams{ &v, style, target } }
             saber_leg{ item, from, to, flight_ms } => { fly_saber{ &v, &sc, &w, &dev, item, from, to, flight = @as(f32, flight_ms) / 1000.0 } }
+            projectile{ model, source, spawn, to, path, flight_ms } => {
+                throw_projectile{ &v, &sc, &w, &dev, model, source, spawn, to, path, flight = @as(f32, flight_ms) / 1000.0 }
+            }
             visual_hold{ effect, target } => { hold_on{ &v, &sc, &w, &dev, effect, object = target } }
             visual_release{ effect, target } => {
                 release{ &v, effect, object = target }
