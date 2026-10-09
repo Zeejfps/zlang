@@ -459,7 +459,8 @@ and it can be rebuilt from the world at any time):
     itemclass + `_` + model variation) at `rhand`, the left at `lhand`; `envmap` from appearance;
     the dark side's textures by good/evil for any creature, as the original's FUN_00698150 does
     (re/gui.md, "Dark-side looks in the world": below 41 the head's `headtex*e`, below 31 an
-    unarmoured B body's `texaevil` + `01`); the visual's signature holds the alignment's stage, so
+    unarmoured B body's `texaevil` + `01`, unarmoured meaning nothing in the body slot, as the original's
+    creature update sets its flag for any body-slot item, droid plating and disguise included); the visual's signature holds the alignment's stage, so
     crossing 11, 21, 31 or 41 rebuilds it;
   - placeable: `placeables.2da` modelname; door: `genericdoors.2da` modelname, animated
     `opening1`/`opened1`/`closing1`/`closed` from the door's open state;

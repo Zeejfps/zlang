@@ -2514,13 +2514,26 @@ panel and alignment": `t3m4` and `hk47` pause instead of posing and take `camera
 `FUN_0063d4b0` + slot +0x30 returns for the creature, by all appearances its tag). (high for the
 calls and the mask, med for the name being the tag)
 
-The record's dword +0x10 is an object id (0x7f000000 is the client's invalid object id, the value
-`CancelCreatureActions` and others reset ids to). Its only reader found is `FUN_006978a0`, which
-`FUN_006134c0` runs on the appearance: when the appearance's flag +0x68 is set it puts the opacity
-of the body's and head's models (creature slot +0x98, parts 0xff and 0xfe), of the object with that
-id and of the items in inventory slots 0x10 and 0x20 (the hands) back to 1.0 (`FUN_0043e150(model,
-1.0)`). Clearing it keeps the sheet's copy from reaching an object of the viewed creature's in the
-world. Nothing on screen depends on it. (high for the reader, med for "only")
+The record's dword +0x10 is the object id of the item in the head slot (the creature update sets
+it, below; 0x7f000000 is the client's invalid object id, what an unequip writes). Its only reader
+found is `FUN_006978a0`, which `FUN_006134c0` runs on the appearance: when the appearance's flag
++0x68 is set it puts the opacity of the body's and head's models (creature slot +0x98, parts 0xff
+and 0xfe), of that head item's model and of the items in inventory slots 0x10 and 0x20 (the hands)
+back to 1.0 (`FUN_0043e150(model, 1.0)`). Clearing it keeps the sheet's copy from reaching the
+viewed creature's own mask in the world; the sheet's model wears no head item (mask 3 builds none).
+Nothing on screen depends on it. (high for the reader, med for "only")
+
+Who fills the appearance record (`FUN_00655e40`, the client creature update, its `0x200` block:
+one entry per equipped or removed item, a slot bit, the item's object id, 'A' added or 'D' removed):
+the record is the stack copy at `-0x6c` that `FUN_006134c0` then applies with the parts that
+changed. For an 'A' in the **body slot (2)** it sets the armoured dword +0x14 to 1 and copies the
+item's body and texture variation (from the item's own appearance block, `FUN_0064e730`) into bytes
++0 and +1 only when the base item's `ModelType` (CSWBaseItem +0x18) is 1; a 'D' there sets +0x14,
++0 and the three dwords +2..+0xd to 0. For the head slot (1) an 'A' writes the item's id to +0x10 and
+a 'D' 0x7f000000. So **the armoured flag means "something is in the body slot"**, whatever its base
+item: robes and armour (ModelType 1), but also the droid platings (rows 66 to 68) and the disguise
+item (row 90), ModelType 0, which leave the variation bytes as they were. Any of them keeps
+`texaevil` off. (high for the slot-2 writes, med for the server sending every body item)
 
 `FUN_00698150(appearance, alignment)` (also run by `FUN_006134c0` with the model's own stats and by
 `FUN_0060f780` for creatures in the world, see "Dark-side looks in the world" below) does nothing when the alignment is the one it last used

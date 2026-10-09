@@ -169,6 +169,8 @@ namespace visual {
                 texture[i + 1] = @trunc(u8, '0' + v % 10)
                 texture_len = i + 2
             }
+            // The original's armoured flag is set by any item in the body slot, whatever its base
+            // item (FUN_00655e40, re/gui.md "Who fills the appearance record").
             if not armoured {
                 let evil = dark_body_texture{ w = &w, row, alignment = @as(i32, c.good_evil), into = texture[..] }
                 if evil > 0 { texture_len = evil }
