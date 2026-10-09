@@ -134,11 +134,13 @@ namespace tmpl {
         }
     }
 
-    // Whether a party member's (or the player's) OnSpawn counts as fired. One that does not listen
-    // and whose OnSpawn is the henchman one (k_hen_spawn01: SetIsDestroyable, GN_SetListeningPatterns)
-    // runs it on its first update, as the original does for a creature whose CreatnScrptFird is not
-    // set: a companion made from its blueprint, or one from a save written before listen patterns
-    // were kept, would otherwise never hear the party's GEN_I_WAS_ATTACKED and sit out the fights.
+    // Whether the player's OnSpawn (or that of a party member already in the world) counts as fired.
+    // One that does not listen and whose OnSpawn is the henchman one (k_hen_spawn01:
+    // SetIsDestroyable, GN_SetListeningPatterns) runs it on its first update, as the original does
+    // for a creature whose CreatnScrptFird is not set: one from a save written before listen
+    // patterns were kept would otherwise never hear the party's GEN_I_WAS_ATTACKED and sit out the
+    // fights. A companion the party table makes anew always runs its OnSpawn (save::npc_from_store,
+    // rt_party::spawn_available).
     fn hench_spawn_fired { o: *obj::Object, c: *obj::Creature } -> bool {
         if c.listening and c.listen_count > 0 { return true }
         return not resref::matches{ r = obj::script{ o, slot = obj::Slot::spawn }, name = "k_hen_spawn01" }

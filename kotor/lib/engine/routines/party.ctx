@@ -330,7 +330,8 @@ namespace rt_party {
         if not w.party.available[s] { return obj::INVALID }
         let facing = obj::direction_of{ degrees = l.facing }
         let mut id = w.party.npcs[s]
-        if not world::is_valid{ w = &w, id } {
+        let made = not world::is_valid{ w = &w, id }
+        if made {
             // The companion as it was last kept (AVAILNPC<n>), else its blueprint.
             let kept = save::npc_from_store{ &w, slot = s } iferr { null }
             if kept is some{ value = k } { id = k }
@@ -347,8 +348,13 @@ namespace rt_party {
         }
         let o = world::object{ w = &w, id } ifnull { return obj::INVALID }
         let c = obj::creature{ o } ifnull { return obj::INVALID }
-        // A companion comes back as it left: its OnSpawn does not run again.
-        c.spawn_fired = true
+        // A companion made here runs its OnSpawn on its first update, as the original's does:
+        // GetNPCObject (0x00564700) builds a new creature (spawn flag +0x34c clear) and reads
+        // AVAILNPC<n> with LoadFromTemplate, which leaves CreatnScrptFird unread. That OnSpawn
+        // (k_hen_spawn01, Trask's k_pdan_trask_9) sets the listen patterns; without it a member
+        // brought by the party selection never heard the leader's GEN_I_WAS_ATTACKED and sat
+        // out every fight it was not ordered into. One already in the world keeps its flag.
+        if made { c.spawn_fired = false }
         o.area = w.area
         o.commandable = true
         actions::clear_all{ &w, id }

@@ -17,7 +17,7 @@ exe=${EXE:-kotor/out/kotor.exe}
 out=kotor/out/checkpoints
 
 # name:frame. Each frame is between two of the replay's steps, with no menu open and no conversation up.
-points="bunk:3940 bridge:13950 pod:31900 apartment:39450 uppercity:40450 cantina:56800 lowercity:65000 undercity:70400 mission:74000 gate:77300 sithbase:79900"
+points="bunk:3940 bridge:11800 pod:31900 apartment:39450 uppercity:40450 cantina:56800 lowercity:65000 undercity:70400 mission:74000 gate:77300 sithbase:79900"
 
 rm -rf $out/work
 mkdir -p $out/work/saves

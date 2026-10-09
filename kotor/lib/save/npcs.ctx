@@ -74,7 +74,10 @@ namespace save {
         o.position = math::Vec3{ x = tmpl::real{ doc = &doc, s = gff::ROOT, label = "XPosition", default = 0.0 }, y = tmpl::real{ doc = &doc, s = gff::ROOT, label = "YPosition", default = 0.0 }, z = tmpl::real{ doc = &doc, s = gff::ROOT, label = "ZPosition", default = 0.0 } }
         world::set_orientation{ o, v = math::Vec3{ x = tmpl::real{ doc = &doc, s = gff::ROOT, label = "XOrientation", default = 0.0 }, y = tmpl::real{ doc = &doc, s = gff::ROOT, label = "YOrientation", default = 1.0 }, z = 0.0 } }
         try tmpl::read{ &w, o, doc = &doc, s = gff::ROOT }
-        if obj::creature{ o } is some{ value = c } { c.spawn_fired = tmpl::hench_spawn_fired{ o, c } }
+        // Its OnSpawn runs again on its first update: the original makes it with GetNPCObject
+        // (0x00564700), a new creature (spawn flag +0x34c clear) read by LoadFromTemplate, which
+        // leaves CreatnScrptFird unread (only LoadCreature reads it).
+        if obj::creature{ o } is some{ value = c } { c.spawn_fired = false }
         return o.id
     }
 
@@ -133,7 +136,8 @@ namespace save {
             if slot < 0 or slot >= @as(i32, party::SLOTS) { continue }
             let s = @as(usize, slot)
             let mut id = obj::INVALID
-            if not world::is_valid{ w = &w, id = w.party.npcs[s] } {
+            let fresh = not world::is_valid{ w = &w, id = w.party.npcs[s] }
+            if fresh {
                 let made = try npc_from_store{ &w, slot = s }
                 if made is some{ value = m } { id = m }
                 if id == obj::INVALID and not resref::is_empty{ r = w.party.templates[s] } {
@@ -149,7 +153,11 @@ namespace save {
             o.area = w.area
             o.faction = pc.faction
             o.ai_level = 4
-            if obj::creature{ o } is some{ value = c } { c.spawn_fired = tmpl::hench_spawn_fired{ o, c } }
+            // RestoreParty makes each member with SpawnAvailableNPC, so a member made here runs its
+            // OnSpawn (npc_from_store); one already in the world keeps its flag.
+            if not fresh {
+                if obj::creature{ o } is some{ value = c } { c.spawn_fired = tmpl::hench_spawn_fired{ o, c } }
+            }
             actions::clear_all{ &w, id }
             // Behind the player, one to each side (ours: the original fades them in where the
             // file says and lets them catch up).

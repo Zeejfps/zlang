@@ -551,6 +551,16 @@ unmount, revive it if `bRevive` and its current HP < 1 (sets `IsRaiseable` `+0xf
 a resurrection effect, type 4; 1.8), link it and return its id; else `OBJECT_INVALID` (a failed
 load deletes the creature but leaves the mount count raised). (high)
 
+Such a creature has **not fired its OnSpawn**: the constructor (`0x004f7a10`) clears the spawn flag
+`+0x34c`, and `LoadFromTemplate` (`0x005026d0`) reads neither `CreatnScrptFird` nor the listen
+patterns (`Listening`, `ExpressionList`), which only `LoadCreature` (`0x00500350`, a GIT creature
+of a save) reads. So the member's OnSpawn runs on its first `AIUpdate` (gameloop.md 2.4) every time
+the party table makes it: after the selection screen, `SpawnAvailableNPC`, and each `RestoreParty`
+(module entry, save load). That OnSpawn (`k_hen_spawn01`, Trask's `k_pdan_trask_9`,
+`k_hen_candspwn`) is what sets the listen patterns, without which the member hears no
+`GEN_I_WAS_ATTACKED` and joins no fight it is not ordered into. A member already linked to a creature
+in the world is not made again and keeps its flag. (high)
+
 `SpawnAvailableNPC(n, bUseLocation, position, orientation, bRevive)` (`0x00565130`; routine 698
 passes bUseLocation = 1 and bRevive = 1, `RestoreParty` bUseLocation = 0): (high)
 

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Do the companions fight? Three fights from checkpoints (kotor/tools/checkpoints/make.sh), each checked for the
+# Do the companions fight? Fights from checkpoints (kotor/tools/checkpoints/make.sh), each checked for the
 # attack rounds a party member made in it, FAIL and exit status 1 when it made none:
 #
 #   sh kotor/tools/combat/companions.sh            (EXE=kotor/out/kotor.exe; run from the repository root; about a minute)
@@ -8,6 +8,11 @@
 #                     attack two frames later; a FOLLOWLEADER queued in between kept him in the corridor)
 #   bridge  bunk      Trask against the reinforcements before the bridge, with the player walking on by hand (the bot,
 #                     whose leader kills them in a few rounds, is switched off before them)
+#   shout   bunk      Trask in the bot's fights between room 3 and the bridge, where nothing orders him and the Sith shoot
+#                     at the leader: he joins on the leader's GEN_I_WAS_ATTACKED. He came by the party selection screen
+#                     (k_pend_traskdl29) and is restored from the save, so his OnSpawn (k_pdan_trask_9, the listen
+#                     patterns) must run when the party table makes him; it did not, and he heard no shout
+#   joined  New Game  the same fights in a run from New Game (frames 6,000-8,400), where the party selection makes Trask
 #   carth   uppercity Carth beside the leader, three troopers 4 to 5 m ahead (combat/retarget1.txt)
 #   provoke uppercity not a companion: a creature turned hostile with a buff on itself as its first order must start the fight
 #                     (combat/provoke1.txt; the Star Forge's dark Sith stood still after theirs until attacked)
@@ -41,21 +46,36 @@ check() {
 }
 
 # The Endar Spire from the bunk: the replay's own resume lines up to the bot's start (they hold the reply queue, the
-# bot's cheats and its route), then probes; the bot is switched off at 6900 for the bridge fight (before the
+# bot's cheats and its route), then probes; the bot is switched off at 4500 for the bridge fight (before the
 # reinforcements come: how long the first of them lives depends on the run's dice, so a window after the bot's last kill
-# can have nothing left for Trask to fight).
+# can have nothing left for Trask to fight). It was 6900 while Trask sat out the fights in between: with him fighting
+# the bot's last kill before the bridge came at frame 4136 instead of 6079 and the reinforcements at 5111 instead of 7131.
 {
   grep -v '^#' $ck/bunk.txt | grep -v '^[[:space:]]*$' | awk '$1 <= 11'
   echo "50 ui party"
-  echo "6900 ui bot off"
-  echo "6910 use end_door08"
+  echo "4500 ui bot off"
+  echo "4510 use end_door08"
 } | sort -s -n -k1,1 > $out/companions_endar.txt
 rm -rf $out/saves_companions
-$exe --load $ck/bunk --no-render --speed 8 --saves $out/saves_companions --input $out/companions_endar.txt --frames 8500 \
+$exe --load $ck/bunk --no-render --speed 8 --saves $out/saves_companions --input $out/companions_endar.txt --frames 6500 \
   --log combat > $out/companions_room3.log 2>&1
 cp $out/companions_room3.log $out/companions_bridge.log
+cp $out/companions_room3.log $out/companions_shout.log
 check room3 Trask 1 3000
-check bridge Trask 6900 8500
+check bridge Trask 4500 6500
+check shout Trask 2000 4500
+
+# The same fights from New Game, so the Trask the party selection makes in this very run is the one checked (a checkpoint
+# carries the Trask of the build that made it, listen patterns and all): the replay's lines up to the bot's start, the
+# room 3 fight at about 5,500, then the bot's fights that only the leader's shout brings him into.
+{
+  grep -v '^#' kotor/tools/playthrough/10_endar_spire.txt | grep -v '^[[:space:]]*$' | awk '$1 <= 3951'
+  echo "4000 ui party"
+} | sort -s -n -k1,1 > $out/companions_new.txt
+rm -rf $out/saves_companions
+$exe --no-render --speed 8 --saves $out/saves_companions --input $out/companions_new.txt --frames 8400 \
+  --log combat > $out/companions_joined.log 2>&1
+check joined Trask 6000 8400
 
 # Carth in the Upper City.
 {

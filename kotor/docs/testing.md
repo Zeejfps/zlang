@@ -111,14 +111,20 @@ its next order can keep one out. Three checks, from cheapest:
   none while the rest made 10 or more since it joined, `companion idle: carth made no attack round while the rest of the party
   made 128 since it joined`. The replays, the smoke test and any `--log`-less run print it; grep for `companion idle`. A leader
   that fights alone in a log that has that line is the case to look at.
-- **`sh kotor/tools/combat/companions.sh`** (checkpoints made by `kotor/tools/checkpoints/make.sh`; about a minute) plays three
-  fights and prints `ok` or `FAIL` for each:
+- **`sh kotor/tools/combat/companions.sh`** (checkpoints made by `kotor/tools/checkpoints/make.sh`; about a minute) plays
+  these fights and prints `ok` or `FAIL` for each:
   `room3` (from `bunk`, the bot leads: Trask must make an attack round before frame 3,000: the cut scene's `k_pend_cut1_end`
   clears his queue, orders him about 2 frames later and to attack 3 s on; a FOLLOWLEADER queued in between, which never ends,
   kept him in the corridor from the day the line of sight stopped letting him "see" the Sith through the walls);
-  `bridge` (the same run, the bot off at frame 6,900, before the reinforcements: Trask must attack them in 6,900-8,500; the
+  `bridge` (the same run, the bot off at frame 4,500, before the reinforcements: Trask must attack them in 4,500-6,500; the
   bot's leader would kill them in a few rounds on its own, and how soon depends on the run's dice: with the bot off at 7,690 the
-  reinforcements were already dead in the run after the followers' gait change); `carth` (from `uppercity`, `retarget1.txt`: three troopers 4 to 5 m
+  reinforcements were already dead in the run after the followers' gait change, and once Trask fought the fights in between
+  they came at 5,111 instead of 7,131, so the bot-off frame moved from 6,900); `shout` (the same run: Trask must attack in
+  2,000-4,500, the bot's fights between room 3 and the bridge, where nothing orders him and the Sith shoot at the leader, so
+  only the leader's `GEN_I_WAS_ATTACKED` brings him in; he made none there while he heard no shout, because the party table
+  made him without running his OnSpawn, which sets the listen patterns: mechanics/combat.md, QA reports); `joined` (the same
+  fights from New Game, frames 6,000-8,400: a checkpoint carries the Trask of the build that made it, listen patterns and
+  all, so only a run from New Game checks the Trask that the selection screen makes); `carth` (from `uppercity`, `retarget1.txt`: three troopers 4 to 5 m
   ahead, Carth must attack in 900 frames); `provoke` (from `uppercity`, `provoke1.txt`, not a companion: a dark Jedi turned
   hostile with a buff on itself as its first order must go for its enemy when the buff is cast, as the Star Forge's dark Sith
   after `k_psta_sithhosti` must). A FAIL means a companion made no attack where the original's does; read
@@ -129,6 +135,10 @@ its next order can keep one out. Three checks, from cheapest:
   within METRES (12): distance, clear, perceived, and the blocker. A companion 5 m from an enemy with a clear line that has not
   perceived it is a lag of the perception pass; one with a blocker that is not a wall or a closed door is a line of sight that
   stops too much.
+- **A companion who hears nothing**: with `--log events,scripts`, each `script k_hen_attacked01 self=LEADER` (the leader shot
+  at) should be followed by `event 7 to ID` and `script k_hen_dialogue01 self=ID` for every member that listens. None at all
+  for a member means no listen patterns: its OnSpawn (`script k_hen_spawn01 self=ID`, or its own spawn script) never ran
+  after the party table made it.
 
 When the engine's timing changes (the checkpoints are rebuilt, the frames shift) the windows of `companions.sh` may need to move:
 the replay is `kotor/tools/playthrough/10_endar_spire.txt`, whose reply queue (`4 ui replies ...`) assumes the conversations that
