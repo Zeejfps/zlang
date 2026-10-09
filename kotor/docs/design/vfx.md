@@ -268,9 +268,12 @@ node's matrix to world space and
 - a birth's offset is within xsize/200 and ysize/200 m either way and its tilt off +Z up to `spread`/2 (both
   were twice the original's).
 
-`sh kotor/tools/gfx/duel_sparks.sh EXE` checks the duel: four shots from in front of the closed door during
-the clashes (from the `bunk` checkpoint), each with at most 40 spark-yellow pixels
-(`kotor/tools/py/spark_pixels.py`); the build with the sideways gravity had 130 and 766.
+`sh kotor/tools/gfx/duel_sparks.sh EXE` checks the duel (from the `bunk` checkpoint) twice: a camera in the
+duel's room takes three shots at clashes, each with at least 100 of the sparks' bright cores (190 to 490: the
+sparks still draw), and a camera in front of the closed door five shots during the clashes and after the last
+(near frame 4227), each with at most 40 spark-yellow pixels (`kotor/tools/py/spark_pixels.py`); the build with
+the sideways gravity had 130 and 766. The door shots alone once passed with 0 pixels while being taken after the
+last clash, which proved nothing.
 
 ## Decisions (ours) and open items
 
