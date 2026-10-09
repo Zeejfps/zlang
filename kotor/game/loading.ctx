@@ -63,10 +63,15 @@ namespace loading {
         // The window may have changed size or the GUI scale since the last time.
         let size = gpu::screen_size{ dev }
         gui::set_screen{ g = &l.g, fs = &w.fs, &dev, width = @as(i32, size.width), height = @as(i32, size.height), scale = l.scale }
+        // The hint counters are the game's (a save carries them), not this GUI's.
+        l.fe.hint_game = @as(u32, w.load_hints[0])
+        l.fe.hint_story = @as(u32, w.load_hints[1])
         l.panel = frontend::show_loading{ fe = &l.fe, g = &l.g, fs = &w.fs, dev = &dev, name, story, saving = false } iferr err{ error } {
             _ = @fmt(&w.io, "kotor: loading screen: {}\n", error)
             0
         }
+        w.load_hints[0] = @trunc(u8, l.fe.hint_game)
+        w.load_hints[1] = @trunc(u8, l.fe.hint_story)
         if w.log.module {
             world::prefix{ w = &w }
             _ = @fmt(&w.io, "loading screen up for {}\n", name)

@@ -113,6 +113,7 @@ namespace world {
         calendar_set: bool,                 // the clock's calendar came from a new game or a save
         restoring: bool,                    // the module being entered comes from a loaded save
         played_seconds: f64,                // time played (real time in game; PT_PLAYEDSECONDS)
+        load_hints: [2]u8,                  // the loading screen's next gameplay and story hint rows (savenfo GAMEPLAYHINT, STORYHINT)
         player_blueprint: []mut u8,         // character creation's player (UTC GFF bytes, heap); empty: the default
         autosave_due: bool,                 // an AUTOSAVE is wanted (a transition or DoSinglePlayerAutoSave)
         journal: journal::Journal,          // the player's quests (AddJournalQuestEntry; JNL_Entries)
@@ -201,7 +202,7 @@ namespace world {
             values = values::new{ heap },
             walk = walkmap::empty{ heap },
             layout = null, paths = null, vis = null,
-            tables, tlk = null, globals, gip = try save::new_store{ heap, root = saves }, calendar_set = false, restoring = false, played_seconds = 0.0, player_blueprint = slice::empty(u8){}, autosave_due = false, journal = journal::new_journal{}, journal_sort = 0, player = obj::INVALID, bag = list::new(u32, heap::Heap){ realloc = heap::alloc, heap }, autosave_ms = 0.0,
+            tables, tlk = null, globals, gip = try save::new_store{ heap, root = saves }, calendar_set = false, restoring = false, played_seconds = 0.0, load_hints = [0; 2], player_blueprint = slice::empty(u8){}, autosave_due = false, journal = journal::new_journal{}, journal_sort = 0, player = obj::INVALID, bag = list::new(u32, heap::Heap){ realloc = heap::alloc, heap }, autosave_ms = 0.0,
             out = outbox::new{ heap },
             transition = null,
             arrival_waypoint = [0; 64], arrival_waypoint_len = 0,

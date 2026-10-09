@@ -57,12 +57,21 @@ namespace frontend {
         defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = fe.heap, mem = bytes, count = 0 }
         let t = try twoda::parse{ data = bytes, realloc = heap::alloc, heap = fe.heap }
         defer twoda::free{ t, realloc = heap::alloc, heap = fe.heap }
-        let rows = twoda::rows{ t }
-        if rows == 0 { return }
-        let counter = if story { fe.hint_story } else { fe.hint_game }
-        let row = @as(usize, counter) % rows
-        if story { fe.hint_story = counter + 1 } else { fe.hint_game = counter + 1 }
-        let strref = @as(u32, twoda::get_int{ t, row, column = if story { "storyhint" } else { "gameplayhint" } } ifnull 0)
-        try gui::set_strref{ &g, panel, tag = "LBL_HINT", strref }
+        // PickLoadScreenHint (0x005f4760): the counter is the next row to show (a save keeps it); a
+        // row that doesn't read (past the end, or an empty cell: the story column stops at row 36)
+        // starts the column over at row 0.
+        let column: []u8 = if story { "storyhint" } else { "gameplayhint" }
+        let mut row = @as(usize, if story { fe.hint_story } else { fe.hint_game })
+        let mut strref = twoda::get_int{ t, row, column }
+        if strref == null {
+            row = 0
+            strref = twoda::get_int{ t, row, column }
+        }
+        let found = strref ifnull {
+            if story { fe.hint_story = 0 } else { fe.hint_game = 0 }
+            return
+        }
+        if story { fe.hint_story = @as(u32, row) + 1 } else { fe.hint_game = @as(u32, row) + 1 }
+        try gui::set_strref{ &g, panel, tag = "LBL_HINT", strref = @as(u32, found) }
     }
 }

@@ -73,8 +73,8 @@ the module and the area); they are described once, in the `availnpc0.utc` table 
 | `TIMEPLAYED` | DWORD | all | 883 | Seconds played. |
 | `CHEATUSED` | BYTE | all | 0 | 1 if cheats were used. |
 | `SAVEGAMENAME` | CExoString | all | e.g. `wadsd` | Name the player typed. |
-| `GAMEPLAYHINT` | BYTE | all | 2 | Index of the gameplay hint shown on loading *(inferred)*. |
-| `STORYHINT` | BYTE | all | 2 | Index of the story hint shown on loading *(inferred)*. |
+| `GAMEPLAYHINT` | BYTE | all | 2 | The loading screen's next `loadscreenhints.2da` gameplay row: the client's round-robin counter (`PickLoadScreenHint` `0x005f4760`, client `+0x490`), written by `DoSaveGame` and put back by `LoadSelectedGame` (`0x006cb0e0`) and `QuickLoad`. |
+| `STORYHINT` | BYTE | all | 2 | The same for the story column (client `+0x491`). |
 | `LIVE1` | CExoString | all | always empty | Xbox Live content slot; empty on PC. |
 | `LIVE2` | CExoString | all | always empty | Xbox Live content slot. |
 | `LIVE3` | CExoString | all | always empty | Xbox Live content slot. |

@@ -148,6 +148,7 @@ namespace save {
         let mut info = Info{
             area_name = "", last_module = "", time_played = played, save_name, portraits = [resref::empty{}; 3],
             portrait_count = 0, cheat_used = false, autosave = false,
+            gameplay_hint = w.load_hints[0], story_hint = w.load_hints[1],
         }
         let ao = world::object{ w = &w, id = w.area }
         if ao != null {
@@ -278,6 +279,8 @@ namespace save {
             try read_party_table{ &w, doc = &doc }
         }
         w.played_seconds = @as(f64, info.time_played)
+        // LoadSelectedGame (0x006cb0e0) puts the client's hint counters back from savenfo.
+        w.load_hints = [info.gameplay_hint, info.story_hint]
         w.restoring = true
         try modload::enter{ &w, name = module }
         world::prefix{ w = &w }

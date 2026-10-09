@@ -15,6 +15,8 @@ namespace save {
         portrait_count: usize,
         cheat_used: bool,
         autosave: bool,
+        gameplay_hint: u8,          // the loading screen's next gameplay hint row (the client's counter)
+        story_hint: u8,             // and its next story hint row
     }
 
     const INFO_PORTRAITS: usize = 3
@@ -33,8 +35,8 @@ namespace save {
         } else {
             try put_gff_value{ &b, owner = root, label = "SAVEGAMENAME", value = gff::Value::exostring{ v = info.save_name } }
         }
-        try put_gff_value{ &b, owner = root, label = "GAMEPLAYHINT", value = gff::Value::byte{ v = 0 } }
-        try put_gff_value{ &b, owner = root, label = "STORYHINT", value = gff::Value::byte{ v = 0 } }
+        try put_gff_value{ &b, owner = root, label = "GAMEPLAYHINT", value = gff::Value::byte{ v = info.gameplay_hint } }
+        try put_gff_value{ &b, owner = root, label = "STORYHINT", value = gff::Value::byte{ v = info.story_hint } }
         if not info.autosave {
             let mut k: usize = 0
             while k < INFO_LIVE_SLOTS {
@@ -80,6 +82,8 @@ namespace save {
             portraits = [resref::empty{}; 3], portrait_count = 0,
             cheat_used = (gff::get_number{ doc = doc.*, s = gff::ROOT, label = "CHEATUSED" } ifnull 0) != 0,
             autosave = (gff::get_number{ doc = doc.*, s = gff::ROOT, label = "PCAUTOSAVE" } ifnull 0) != 0,
+            gameplay_hint = gff::get_byte{ doc = doc.*, s = gff::ROOT, label = "GAMEPLAYHINT" } ifnull 0,
+            story_hint = gff::get_byte{ doc = doc.*, s = gff::ROOT, label = "STORYHINT" } ifnull 0,
         }
         let seconds = gff::get_number{ doc = doc.*, s = gff::ROOT, label = "TIMEPLAYED" } ifnull 0
         info.time_played = if seconds < 0 { 0 } else if seconds > 4294967295 { 4294967295 } else { @as(u32, seconds) }
