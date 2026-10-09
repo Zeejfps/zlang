@@ -165,14 +165,33 @@ listener fails with `out_of_range` and takes no voice. `m.stats` counts steals, 
 `--log sound`, which also names every one-shot the presentation starts (`sound play NAME row
 GROUP`, `(missing)` when the wave isn't found).
 
+**Play groups.** `Params.play_group` names a `prioritygroups.2da` row, and `set_group_limit` gives
+a row its `MaxPlaying` and `Interrupt`. Before it looks for a voice, `play` counts the group's
+sounds playing (not those fading out): when there are `MaxPlaying` of them, an `Interrupt` group
+stops the one started last and the new sound starts, any other group refuses it with
+`group_full`. A sound with `may_interrupt` false (a looping sound object coming back after it lost
+its voice or went out of earshot) never interrupts: it waits until the group has room, as the
+original's parked loops do. `stats` counts these apart from steals (`interrupted`, `held`), and
+`take_events` reports them with `group` set (`sound group:` lines). `Params.squared` squares the
+volume group's volume in the voice's gain: the original's 3D sound effects square the player's
+volume with their level.
+
 **Voices and loudness: what the engine layer does** (lib/scene/ambience.ctx). Every sound effect
 carries its `prioritygroups.2da` row: a sound object its UTS `Priority`, a `play_sound` note a
 row chosen by kind (`outbox::GROUP_*`: combat 15, scripted `PlaySound` 10, GUI 11, traps 22), the
 music 2, stingers 1, the ambient bed 4. Its mixer priority is `255 - Priority`, so ambients (4, 5)
 keep their voices over combat (15) and footsteps (19, 20). Its volume is the original's: its own
-times the row's `Volume` (both /127), squared for a 3D sound, and for a 2D one times `2 - 2D3D
-Bias` (the settings' `2D3D Bias`, 1.5 as installed: half). A continuous positional sound object
-gives its voice back 6 m past its max distance and starts again within 2 m of it.
+times the row's `Volume` (both /127), squared for a 3D sound together with the player's volume
+(`squared`), and for a 2D one times `2 - 2D3D Bias` (1.5 as installed: half), the bias read from
+the install's `swkotor.ini` when it has one (read only; our options file's otherwise). The row
+also says which of the player's volumes applies (0x005d6ad0): Voiceover for the chat rows 8 and 9,
+the creature vocalizations 16 and 17 and the bark bubbles 26, Music for 1 and 2, Sound Effects for
+the rest; and its `MaxPlaying` and `Interrupt` limit it (play groups, above; `apply_limits` at each
+area's start). The streams (0x005dc930) are not squared and know no bias: the music at 64/127 of
+Music, the area's ambient bed at its ARE volume times 95/127 (row 4) of Sound Effects, a
+conversation's voice-over at 90/127 (row 9) of Voiceover and its AmbientTrack at 95/127 (row 4) of
+Sound Effects. A continuous positional sound object gives its voice back 6 m past its max distance
+and starts again within 2 m of it.
 
 Measured on the first 9,000 frames of the Endar Spire replay at real pace (below, "Checked"),
 before these rules: 936 voices stolen in 5 minutes (353 of them looping ambients, which then
@@ -401,10 +420,11 @@ kotor/tools/ctxc run kotor/tools/sndplay -- FILE       # play one (or --wav / --
 - The original's 3D rolloff and pan law (Miles with a 3D provider, or EAX), and how
   `Environment Effects Level` applies; ours are chosen, not measured. (`2D3D Bias` is read:
   re/app.md, "Voices".)
-- `MaxPlaying` and `Interrupt` of `prioritygroups.2da` (re/app.md, "Voices") aren't enforced yet,
-  nor `FadeTime`; the player's Sound Effects volume, which the original squares for 3D sounds,
-  stays linear here.
 - Whether Miles clipped or scaled a mix past full scale (ours limits it).
-- The streams' loudness (music, the ambient bed, voice-over): whether `prioritygroups.2da`'s
-  volume applies to them as to sound effects (0x005dc930 wasn't read that far).
 - Which volume `prioritygroups.2da`'s distances override (they differ from the UTS's own).
+- The sound-mode fade (0x005dc930's third argument, which only rows 4 and 21 take): ours doesn't
+  fade the ambient bed with the screen's fades.
+
+Settled (2026-10): `MaxPlaying` and `Interrupt` are enforced (play groups); `FadeTime` is loaded but
+nothing reads it; the Sound Effects volume is squared for 3D sound effects; the streams' loudness is
+their row's `Volume` times the player's volume for the row (above, and re/app.md "Voices").

@@ -208,6 +208,53 @@ fn run { mut io: Io, mut heap: arena::Arena, mut t: Tally, mut threads: Threads 
     let bad = match mix::play_feed{ m, rate = 22050, channels = 3, p = mix::sound_2d{ group = mix::Group::movie, volume = 1.0 } } { ok => { false } err => { true } }
     expect{ &io, &t, ok = bad, what = "a feed of 3 channels is refused" }
 
+    // ---- squared: a 3D sound effect's player volume counts twice (the original squares it with the level)
+    mix::stop_all{ m, group = null, fade = 0.0 }
+    mix::set_listener{ m, position = math::vec3::zero{}, forward = math::vec3::make{ x = 0.0, y = 1.0, z = 0.0 }, up = math::vec3::make{ x = 0.0, y = 0.0, z = 1.0 } }
+    mix::set_group_volume{ m, group = mix::Group::sfx, volume = 0.5 }
+    let mut sq = mix::sound_3d{ group = mix::Group::sfx, volume = 1.0, position = math::vec3::make{ x = 0.0, y = 1.0, z = 0.0 }, min_distance = 2.0, max_distance = 20.0 }
+    sq.squared = true
+    let hs = try mix::play{ m, bytes = dc, p = sq }
+    let os = render{ m, out, frames = 100 }
+    expect{ &io, &t, ok = os[0] == 2500 and os[1] == 2500, what = "a squared sound plays at the group volume squared (0.5 -> 0.25)" }
+    mix::stop{ m, h = hs, fade = 0.0 }
+    let mut lin = sq
+    lin.squared = false
+    let hl = try mix::play{ m, bytes = dc, p = lin }
+    let ol = render{ m, out, frames = 100 }
+    expect{ &io, &t, ok = ol[0] == 5000, what = "an unsquared one at the group volume" }
+    mix::stop{ m, h = hl, fade = 0.0 }
+    mix::set_group_volume{ m, group = mix::Group::sfx, volume = 1.0 }
+
+    // ---- play groups (prioritygroups.2da MaxPlaying, Interrupt): two at most; an interrupting group
+    // stops its latest sound for a new one, the other refuses the new one, and a loop coming back never interrupts
+    let before = mix::stats{ m }
+    mix::set_group_limit{ m, group = 4, max_playing = 2, interrupt = true }
+    mix::set_group_limit{ m, group = 9, max_playing = 2, interrupt = false }
+    let mut g4 = mix::sound_2d{ group = mix::Group::sfx, volume = 0.1 }
+    g4.play_group = 4
+    let a1 = try mix::play{ m, bytes = dc, p = g4 }
+    let a2 = try mix::play{ m, bytes = dc, p = g4 }
+    let a3 = try mix::play{ m, bytes = dc, p = g4 }
+    expect{ &io, &t, ok = mix::is_playing{ m, h = a1 } and not mix::is_playing{ m, h = a2 } and mix::is_playing{ m, h = a3 }, what = "a full Interrupt group stops its latest sound for the new one" }
+    let mut back4 = g4
+    back4.may_interrupt = false
+    let back_ok = match mix::play{ m, bytes = dc, p = back4 } { ok => { true } err => { false } }
+    expect{ &io, &t, ok = not back_ok and mix::is_playing{ m, h = a1 } and mix::is_playing{ m, h = a3 }, what = "a loop coming back to a full group waits instead" }
+    mix::stop_all{ m, group = null, fade = 0.0 }
+    let mut g9 = g4
+    g9.play_group = 9
+    let b1 = try mix::play{ m, bytes = dc, p = g9 }
+    let b2 = try mix::play{ m, bytes = dc, p = g9 }
+    let third = match mix::play{ m, bytes = dc, p = g9 } { ok => { true } err => { false } }
+    expect{ &io, &t, ok = not third and mix::is_playing{ m, h = b1 } and mix::is_playing{ m, h = b2 }, what = "a full group without Interrupt refuses the new sound" }
+    mix::stop{ m, h = b1, fade = 0.5 }
+    let b3_ok = match mix::play{ m, bytes = dc, p = g9 } { ok => { true } err => { false } }
+    expect{ &io, &t, ok = b3_ok, what = "a sound fading out no longer counts against its group" }
+    let gst = mix::stats{ m }
+    expect{ &io, &t, ok = gst.interrupted - before.interrupted == 1 and gst.held - before.held == 2 and gst.steals == before.steals, what = "interrupts and holds are counted apart from steals" }
+    mix::stop_all{ m, group = null, fade = 0.0 }
+
     // ---- release: every voice reading the bytes ends at once, handle kept or not; others play on
     let r1 = try mix::play{ m, bytes = dc, p = mix::sound_2d{ group = mix::Group::sfx, volume = 0.5 } }
     let r2 = try mix::play{ m, bytes = dc2, p = mix::sound_2d{ group = mix::Group::sfx, volume = 0.5 } }

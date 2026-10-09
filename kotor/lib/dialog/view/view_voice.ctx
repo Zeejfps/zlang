@@ -1,6 +1,17 @@
 // A line's voice-over (docs/re/dialogue.md 7): one stream in the voice group, replaced only when
 // the next voiced line starts, so it plays on over the reply list and over unvoiced lines.
 namespace dlgview {
+    // prioritygroups.2da rows of a conversation's streams (Non_Player_Chat, Looping_AreaWide_Ambients).
+    const ROW_DIALOG_VOICE: u32 = 9
+    const ROW_DIALOG_AMBIENT: u32 = 4
+
+    // A stream's level before the player's volume (0x005dc930): its row's Volume out of 127 (its own
+    // volume is the default 127).
+    fn row_volume { w: *world::World, row: u32 } -> f32 {
+        let g = twoda::get_int{ t = w.tables.prioritygroups, row = @as(usize, row), column = "volume" } ifnull 127
+        return @as(f32, if g < 0 { 0 } else { g }) / 127.0
+    }
+
     fn stop_voice { mut v: View, mut w: world::World, fade: f32 } {
         mix::stop{ m = v.m, h = v.voice, fade }
         if v.voice_bytes.len > 0 and fade <= 0.0 {
@@ -23,7 +34,11 @@ namespace dlgview {
         let loaded = dlg::load_sound{ &w, name } iferr { return false }
         let bytes = loaded ifnull { return false }
         v.voice_bytes = bytes
-        v.voice = mix::play{ m = v.m, bytes, p = mix::sound_2d{ group = mix::Group::voice, volume = 1.0 } } iferr {
+        // CGuiInGame::PlayDialogVoice streams it in prioritygroups.2da row 9 (Non_Player_Chat): its Volume,
+        // 90 of 127, times the Voiceover volume (0x005dc930).
+        let mut p = mix::sound_2d{ group = mix::Group::voice, volume = row_volume{ w = &w, row = ROW_DIALOG_VOICE } }
+        p.play_group = @trunc(u8, ROW_DIALOG_VOICE)
+        v.voice = mix::play{ m = v.m, bytes, p } iferr {
             _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = v.voice_bytes, count = 0 }
             v.voice_bytes = slice::empty(u8){}
             return false
@@ -53,8 +68,8 @@ namespace dlgview {
         }
     }
 
-    // The dialogue's AmbientTrack (2.7): a file of streammusic/, played in the music group for as
-    // long as the conversation lasts. The area's own music keeps playing under it (ours: the
+    // The dialogue's AmbientTrack (2.7): a file of streammusic/, played (row 4, the Sound Effects
+    // volume, not Music) for as long as the conversation lasts. The area's own music keeps playing under it (ours: the
     // original's handling of it was not traced).
     fn start_ambient_track { mut v: View, mut w: world::World, name: resref::ResRef } {
         if resref::is_empty{ r = name } { return }
@@ -72,7 +87,10 @@ namespace dlgview {
         let path = res::music_path(heap::Heap){ rm = w.rm.*, name = kept, realloc = heap::alloc, heap = w.heap } iferr { return }
         defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = path, count = 0 }
         let bytes = fs::read_all(heap::Heap){ fs = &w.fs, heap = v.heap, realloc = heap::alloc, path } iferr { return }
-        let mut p = mix::sound_2d{ group = mix::Group::music, volume = 0.5 }
+        // CGuiInGame::PlayDialogAmbientTrack streams it in row 4 (Looping_AreaWide_Ambients): 95 of 127 of
+        // the Sound Effects volume.
+        let mut p = mix::sound_2d{ group = mix::Group::sfx, volume = row_volume{ w = &w, row = ROW_DIALOG_AMBIENT } }
+        p.play_group = @trunc(u8, ROW_DIALOG_AMBIENT)
         p.looping = true
         v.ambient = mix::play{ m = v.m, bytes, p } iferr {
             _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = bytes, count = 0 }

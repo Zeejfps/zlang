@@ -396,13 +396,24 @@ high where a decompile says it plainly, medium where it rests on a field's use.
   0x18-byte row per group: +0 `Interrupt` (int), +4 `MaxPlaying`, +5 how many play now, +6
   `Priority`, +7 `Volume` (bytes), +8 `MinVolumeDist`, +0xc `MaxVolumeDist` (floats, only when
   both are present), +0x14 `FadeTime` (u16), then `PlaybackVariance`. A source's group is its
-  byte +0x35.
+  byte +0x35, a stream's its byte +8. A blank cell keeps the row's default (0x005d6c10):
+  `Interrupt` 1, `MaxPlaying` 255, `Priority` 0, `Volume` 127, `FadeTime` 0. Nothing reads
+  `FadeTime` (the row getter 0x005d6080 serves only `Update`, which reads +4/+5; no other user of the
+  table touches +0x14).
+- **Which player volume** (0x005d6a90 for a source, 0x005d6ad0 for a stream, then 0x005d6b10):
+  rows 8, 9, 16, 17 and 26 (the chat rows, creature vocalizations, bark bubbles) follow the
+  Voiceover volume, rows 1 and 2 (stingers, music) the Music volume, every other row Sound
+  Effects. Each has a current and a target value (+0x64/+0x74 voice, +0x7c/+0x70 effects,
+  +0x78/+0x6c music), for the sound-mode fades.
 - **Starting a source** (`CExoSoundSourceInternal::Play` 0x005db4d0): a 3D source at or past its
   max distance from the listener (0x005db050) is not started; a looping one waits on a list
   (0x005d7b80) until it comes in range. When its group already plays `MaxPlaying` sources, it
   stops one of them if `Interrupt` is set (0x005d7fe0: the first of the group on the playing list
-  at +0x40, where 0x005d7b40 adds at the head, so the most recently started, med) and otherwise
-  isn't started. Then it needs a handle (0x005d8ff0 2D, 0x005d8eb0 3D): a free one, or else the
+  at +0x40, where 0x005d7b40 adds at the head, so the most recently started; a looping one is
+  parked on the waiting list +0x38) and otherwise isn't started (a looping one waits). A stream
+  checks the same counts (`CExoStreamingSoundSourceInternal::Play` 0x005dca30, interrupting through
+  0x005d80a0). A parked loop is started again by `Update` only when its group has room (it never
+  interrupts). Then it needs a handle (0x005d8ff0 2D, 0x005d8eb0 3D): a free one, or else the
   one whose owner's group `Priority` is the largest number (the least important) **and strictly
   larger than the new sound's**; that owner is stopped (0x005db210) and, if looping, parked on
   the waiting list (+0x38) to start again later. With no such handle the new sound is simply not
@@ -416,7 +427,16 @@ high where a decompile says it plainly, medium where it rests on a field's use.
   over 1, as `AIL_set_sample_volume_levels`. A 3D source gets `(level / 127 * user * b)` squared
   (`_CIpow` with 2.0), `b` being the bias when it is under 1, as `AIL_set_3D_sample_volume`. The
   installed swkotor.ini has `2D3D Bias=1.50` (the hardware rows of `SoundProvider.2da` say 1.5,
-  Miles Fast 2D 1.0), so 2D effects play at half their level.
+  Miles Fast 2D 1.0), so 2D effects play at half their level. `user` is inside the square, so the
+  player's volume is squared too.
+- **Streams** (music, the ambient bed, voice-over; 0x005dc930): `AIL_set_stream_volume_levels`
+  gets `groupVolume / 127 * user * round(volume * f) / 127`, with `groupVolume` the stream's row's
+  `Volume` (byte +0x50, set with the row by 0x005dcd50), `volume` its own (+0x46, 127 unless
+  `CExoStreamingSoundSource::SetVolume` 0x005d5b50 sets it), and `f` 1.0 except for rows 4 and 21,
+  which take a fade factor from the caller (the sound-mode fades). No 2D3D bias, no squaring. The
+  rows: music 2 (64: half), stingers 1 (64), `CGuiInGame::PlayDialogVoice` 9 (90),
+  `PlayDialogAmbientTrack` 4 (95, so Sound Effects), `CSWGuiBarkBubble::ShowBark` 26 (127, volume
+  127); a new stream's row is 2 (its constructor 0x005dbbe0).
 
 ## Movies (Bink)
 

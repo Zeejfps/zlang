@@ -14,6 +14,7 @@ namespace ambience {
         wait: f32,                      // seconds until its next sound
         next: usize,                    // its next sound in order (not Random)
         playing: bool,                  // a continuous loop is on
+        started: bool,                  // a continuous loop has played: starting it again is a return
     }
 
     // A creature stirred up by a hostile act (docs/re/combat.md 3.6, "Battle music"): the battle track plays
@@ -103,18 +104,45 @@ namespace ambience {
 
     // A sound effect's amplitude as the original sets it (CExoSoundSourceInternal::SetVolume,
     // docs/re/app.md "Voices"): its own volume times its prioritygroups.2da row's (both out of
-    // 127), and for a 3D sound that squared (Miles' 3D volume). Ours: the player's Sound Effects
-    // volume, which the original squares with it, stays linear (the mixer's group volume).
-    // swkotor.ini's "2D3D Bias" (1.5 as installed) tilts the balance: over 1 a 2D sound is
-    // scaled by 2 - bias (half, as installed), under 1 a 3D sound by the bias before squaring.
+    // 127), and for a 3D sound that squared (Miles' 3D volume) with the player's volume in it,
+    // which the mixer squares too (Params.squared). swkotor.ini's "2D3D Bias" (1.5 as installed)
+    // tilts the balance: over 1 a 2D sound is scaled by 2 - bias (half, as installed), under 1 a 3D
+    // sound by the bias before squaring.
     fn loudness { a: *Ambience, w: *world::World, volume: f32, row: u32, positional: bool } -> f32 {
-        let g = twoda::get_int{ t = w.tables.prioritygroups, row = @as(usize, row), column = "volume" } ifnull 127
-        let v = volume * @as(f32, if g < 0 { 0 } else { g }) / 127.0
+        let v = volume * group_volume{ w, row }
         if positional {
             let b = if a.bias < 1.0 { v * a.bias } else { v }
             return b * b
         }
         return if a.bias > 1.0 { v * (2.0 - a.bias) } else { v }
+    }
+
+    // A prioritygroups.2da row's Volume, out of 127 (blank: 127).
+    fn group_volume { w: *world::World, row: u32 } -> f32 {
+        let g = twoda::get_int{ t = w.tables.prioritygroups, row = @as(usize, row), column = "volume" } ifnull 127
+        return @as(f32, if g < 0 { 0 } else { g }) / 127.0
+    }
+
+    // Which of the player's volumes a row's sounds follow (0x005d6a90 / 0x005d6ad0): the chat rows
+    // (8, 9), the creature vocalizations (16, 17) and the bark bubbles (26) Voiceover, the music rows
+    // (1, 2) Music, every other Sound Effects.
+    fn volume_group { row: u32 } -> mix::Group {
+        if row == 8 or row == 9 or row == 16 or row == 17 or row == 26 { return mix::Group::voice }
+        if row == 1 or row == 2 { return mix::Group::music }
+        return mix::Group::sfx
+    }
+
+    // Hands the mixer each prioritygroups.2da row's MaxPlaying and Interrupt (0x005d7bd0; a blank
+    // MaxPlaying is 255, no limit, and a blank Interrupt is 1). FadeTime is loaded there but nothing reads it.
+    fn apply_limits { a: *Ambience, w: *world::World } {
+        let n = twoda::rows{ t = w.tables.prioritygroups }
+        let mut row: usize = 0
+        while row < n and row < mix::LIMITS {
+            let most = twoda::get_int{ t = w.tables.prioritygroups, row, column = "maxplaying" } ifnull 255
+            let interrupt = (twoda::get_int{ t = w.tables.prioritygroups, row, column = "interrupt" } ifnull 1) != 0
+            mix::set_group_limit{ m = a.m, group = @trunc(u8, row), max_playing = if most < 0 or most > 255 { 255 } else { @trunc(u8, most) }, interrupt }
+            row = row + 1
+        }
     }
 
     // The streams' rows (the original plays them on stream voices of their own that no sound
@@ -123,10 +151,13 @@ namespace ambience {
     const ROW_MUSIC: u32 = 2
     const ROW_AREA_AMBIENT: u32 = 4
 
-    // A music track or stinger: half volume (prioritygroups.2da's 64 of 127), its row's priority.
+    // A stream's level (0x005dc930): its own volume (127 unless set) times its row's Volume, out of
+    // 127 each, times the player's volume for the row (linear, and no 2D3D Bias for a stream).
+    // Music plays at 64 of 127, the area's ambient bed at 95, a conversation's voice at 90.
     fn stream_params { w: *world::World, row: u32 } -> mix::Params {
-        let mut p = mix::sound_2d{ group = mix::Group::music, volume = 0.5 }
+        let mut p = mix::sound_2d{ group = volume_group{ row }, volume = group_volume{ w, row } }
         p.priority = priority_of{ w, row }
+        p.play_group = @trunc(u8, row)
         return p
     }
 
@@ -136,7 +167,8 @@ namespace ambience {
         return @trunc(u32, have + 1)
     }
 
-    // `--log sound`: the mixer's steals and refusals since the last frame, by name.
+    // `--log sound`: the mixer's steals and refusals since the last frame, by name, and what the play
+    // groups' limits did.
     fn report_events { mut a: Ambience, mut w: world::World } {
         let events = mix::take_events{ m = a.m }
         let mut i: usize = 0
@@ -145,7 +177,11 @@ namespace ambience {
             i = i + 1
             world::prefix{ w = &w }
             let mut new_name = name_of{ a = &a, tag = e.tag }
-            if e.stolen {
+            if e.group {
+                let mut old_name = name_of{ a = &a, tag = e.old_tag }
+                let what: []u8 = if e.stolen { "interrupted" } else { "held back by" }
+                _ = @fmt(&w.io, "sound group: {} {} {} (its play group full)\n", resref::bytes{ r = &new_name }, what, resref::bytes{ r = &old_name })
+            } else if e.stolen {
                 let mut old_name = name_of{ a = &a, tag = e.old_tag }
                 _ = @fmt(&w.io, "sound steal: {} (priority {}) took the voice of {} (priority {}, looping {}, {} s in)\n", resref::bytes{ r = &new_name }, e.priority,
                     resref::bytes{ r = &old_name }, e.old_priority, e.old_looping, e.old_played)
@@ -185,6 +221,7 @@ namespace ambience {
 
     // The area's music and ambient bed, and a player for each sound object.
     fn start_area { mut a: Ambience, mut w: world::World } {
+        apply_limits{ a = &a, w = &w }
         let ao = world::object{ w = &w, id = w.area } ifnull { return }
         let area = obj::area{ o = ao } ifnull { return }
         a.music_delay = @as(f32, area.music_delay) / 1000.0
@@ -201,7 +238,7 @@ namespace ambience {
             let o = all[i]
             i = i + 1
             if o.kind != obj::Kind::sound or o.destroyed { continue }
-            list::push{ list = &a.placed, item = Placed{ id = o.id, handle = mix::Handle{ slot = 0, id = 0 }, wait = random{ &a } * 2.0, next = 0, playing = false } } iferr {}
+            list::push{ list = &a.placed, item = Placed{ id = o.id, handle = mix::Handle{ slot = 0, id = 0 }, wait = random{ &a } * 2.0, next = 0, playing = false, started = false } } iferr {}
         }
     }
 
@@ -259,9 +296,10 @@ namespace ambience {
         let bed = twoda::get_string{ t = w.tables.ambientsound, row = @as(usize, if row < 0 { 0 } else { row }), column = "resource" } ifnull ""
         a.ambient_bytes = read_stream{ &a, &w, name = bed }
         if a.ambient_bytes.len == 0 { return }
-        let mut p = mix::sound_2d{ group = mix::Group::sfx, volume = @as(f32, volume) / 127.0 }
+        // The area's AmbientSndDayVol / NightVol as the stream's own volume, times row 4's 95 (stream_params).
+        let mut p = stream_params{ w = &w, row = ROW_AREA_AMBIENT }
+        p.volume = p.volume * @as(f32, volume) / 127.0
         p.looping = true
-        p.priority = priority_of{ w = &w, row = ROW_AREA_AMBIENT }
         a.ambient = mix::play{ m = a.m, bytes = a.ambient_bytes, p } iferr { mix::Handle{ slot = 0, id = 0 } }
         a.started = a.started + 1
     }
@@ -514,10 +552,13 @@ namespace ambience {
                     _ = @fmt(&w.io, "sound play {} row {}{}\n", resref::bytes{ r = &shown }, group, missing)
                 }
                 if bytes.len == 0 { return }
-                let mut p = if positional { mix::sound_3d{ group = mix::Group::sfx, volume = 1.0, position, min_distance = 3.0, max_distance = 30.0 } } else { mix::sound_2d{ group = mix::Group::sfx, volume = 1.0 } }
+                let kind = volume_group{ row = @as(u32, group) }
+                let mut p = if positional { mix::sound_3d{ group = kind, volume = 1.0, position, min_distance = 3.0, max_distance = 30.0 } } else { mix::sound_2d{ group = kind, volume = 1.0 } }
                 p.tag = tag_of{ a = &a, name }
                 p.priority = priority_of{ w = &w, row = @as(u32, group) }
                 p.volume = loudness{ a = &a, w = &w, volume = 1.0, row = @as(u32, group), positional }
+                p.play_group = group
+                p.squared = positional
                 _ = mix::play{ m = a.m, bytes, p } iferr { mix::Handle{ slot = 0, id = 0 } }
                 a.started = a.started + 1
             }
@@ -585,8 +626,9 @@ namespace ambience {
                 return
             }
             if s.positional and math::vec3::distance{ a = o.position, b = a.listener } > s.max_distance + 2.0 { return }
-            p.handle = start_one{ &a, &w, s, o, index = 0, looping = true }
+            p.handle = start_one{ &a, &w, s, o, index = 0, looping = true, first = not p.started }
             p.playing = mix::is_playing{ m = a.m, h = p.handle }
+            if p.playing { p.started = true }
             return
         }
         if mix::is_playing{ m = a.m, h = p.handle } { return }
@@ -599,23 +641,29 @@ namespace ambience {
         }
         let index = if s.random { @as(usize, random{ &a } * @as(f32, s.sounds.len)) % s.sounds.len } else { p.next % s.sounds.len }
         p.next = index + 1
-        p.handle = start_one{ &a, &w, s, o, index, looping = false }
+        p.handle = start_one{ &a, &w, s, o, index, looping = false, first = true }
         let variation = @as(f32, s.interval_variation) * (random{ &a } * 2.0 - 1.0)
         p.wait = math::max{ a = (@as(f32, s.interval) + variation) / 1000.0, b = 1.0 }
         if not s.looping and not s.continuous and index + 1 >= s.sounds.len and not s.random { s.active = false }
     }
 
-    fn start_one { mut a: Ambience, mut w: world::World, s: *obj::Sound, o: *obj::Object, index: usize, looping: bool } -> mix::Handle {
+    // `first`: not a loop coming back after it lost its voice or went out of earshot (the original parks
+    // those and starts them again only when their group has room, never interrupting).
+    fn start_one { mut a: Ambience, mut w: world::World, s: *obj::Sound, o: *obj::Object, index: usize, looping: bool, first: bool } -> mix::Handle {
         let bytes = wave{ &a, &w, name = s.sounds[index] }
         let none = mix::Handle{ slot = 0, id = 0 }
         if bytes.len == 0 { return none }
         let volume = loudness{ a = &a, w = &w, volume = @as(f32, s.volume) / 127.0, row = s.priority, positional = s.positional }
+        let kind = volume_group{ row = s.priority }
         let mut p = if s.positional {
             let mut at = o.position
             at.z = at.z + s.elevation
-            mix::sound_3d{ group = mix::Group::sfx, volume, position = at, min_distance = s.min_distance, max_distance = s.max_distance }
-        } else { mix::sound_2d{ group = mix::Group::sfx, volume } }
+            mix::sound_3d{ group = kind, volume, position = at, min_distance = s.min_distance, max_distance = s.max_distance }
+        } else { mix::sound_2d{ group = kind, volume } }
         p.looping = looping
+        p.squared = s.positional
+        if s.priority < 255 { p.play_group = @trunc(u8, s.priority) }
+        p.may_interrupt = first
         p.tag = tag_of{ a = &a, name = s.sounds[index] }
         p.priority = priority_of{ w = &w, row = s.priority }
         // SoundObjectSetFixedVariance: a constant multiplier on the sound's pitch.

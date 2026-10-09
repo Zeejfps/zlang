@@ -20,6 +20,8 @@
 // that priority is lower than its own, and otherwise isn't played: as the original's
 // (docs/re/app.md, "Voices"), a sound never cuts off one as important as itself. A 3D sound out
 // of its max_distance from the listener isn't played at all (no voice for what can't be heard).
+// Before that, a sound's play group (a prioritygroups.2da row: set_group_limit) may be full: then
+// it stops the group's latest sound to start (Interrupt) or isn't played (group_full).
 //
 // The mixer may render on a thread of its own (audio::start) while the game plays and stops
 // sounds: every fn here that takes a Mixer locks `m.lock` for its work, and `render` holds it
@@ -31,6 +33,13 @@ namespace mix {
     error no_voice              // every voice of the kind is busy with a priority as high or higher
     error out_of_range          // a 3D sound beyond its max_distance: nothing to hear
     error bad_feed              // feed rate or channels out of range
+    error group_full            // its play group already plays its most and may not interrupt one
+
+    // Play groups (prioritygroups.2da rows, which the caller numbers): how many of a group's sounds
+    // may play at once and whether a new one stops one of them to start (set_group_limit).
+    const NO_GROUP: u8 = 255
+    const LIMITS: usize = 32
+    struct Limit { max_playing: u8, interrupt: bool }
 
     // swkotor.ini's volume groups: [Sound Options] Music, Voiceover, Sound Effects, Movie Volume.
     enum Group: u8 { music, voice, sfx, movie }
@@ -48,6 +57,9 @@ namespace mix {
         min_distance: f32,      // 3D: full volume up to this distance
         max_distance: f32,      // 3D: silent from this distance
         tag: u32,               // the caller's name for the sound, reported back in Event (0: none)
+        play_group: u8,         // its play group (set_group_limit), NO_GROUP: none
+        may_interrupt: bool,    // when its play group is full, it may stop one of the group's to start (a loop coming back may not)
+        squared: bool,          // its volume group's volume squared, as a 3D sound effect's is in the original
     }
 
     // A sound heard the same wherever the listener is: music, voice-over, the GUI.
@@ -55,6 +67,7 @@ namespace mix {
         return Params{
             group, volume, pan = 0.0, pitch = 1.0, looping = false, priority = 128, positional = false,
             position = math::vec3::zero{}, min_distance = 1.0, max_distance = 100.0, tag = 0,
+            play_group = NO_GROUP, may_interrupt = true, squared = false,
         }
     }
 
@@ -63,6 +76,7 @@ namespace mix {
         return Params{
             group, volume, pan = 0.0, pitch = 1.0, looping = false, priority = 128, positional = true,
             position, min_distance, max_distance, tag = 0,
+            play_group = NO_GROUP, may_interrupt = true, squared = false,
         }
     }
 
@@ -83,10 +97,13 @@ namespace mix {
         limited: u32,           // blocks the limiter turned down
         busy_2d: u32,           // the most 2D / 3D voices busy at once
         busy_3d: u32,
+        interrupted: u32,       // sounds stopped for a newer one of their full play group
+        held: u32,              // sounds not played: their play group full, and not allowed to interrupt
     }
 
-    // A steal or a refusal, for the caller to name the sounds involved (Params.tag).
-    struct Event { stolen: bool, tag: u32, priority: u8, old_tag: u32, old_priority: u8, old_looping: bool, old_played: f32 }
+    // A steal or a refusal, for the caller to name the sounds involved (Params.tag); `group`: done by the
+    // play group's limit (an interrupt when `stolen`, else held back), not for want of a voice.
+    struct Event { stolen: bool, group: bool, tag: u32, priority: u8, old_tag: u32, old_priority: u8, old_looping: bool, old_played: f32 }
     const EVENTS: usize = 16
 
     const BLOCK: usize = 1024           // output frames mixed at a time
@@ -141,6 +158,7 @@ namespace mix {
         limit_gain: f32,        // the limiter's gain at the end of the last block
         events: [16]Event,      // the latest steals and refusals, oldest first
         event_count: usize,     // events since the caller last took them (more than EVENTS: the oldest are lost)
+        limits: [32]Limit,      // by play group (Params.play_group)
         lock: mutex::Mutex,     // held by every fn below for its work, so the mixer may render on another thread
     }
 
@@ -164,9 +182,10 @@ namespace mix {
         m.listener = Listener{ position = math::vec3::zero{}, forward = math::vec3::make{ x = 0.0, y = 1.0, z = 0.0 }, up = math::vec3::make{ x = 0.0, y = 0.0, z = 1.0 } }
         m.next_id = 1
         m.errors = 0
-        m.stats = Stats{ steals = 0, refused = 0, cuts = 0, clipped = 0, peak = 0.0, limited = 0, busy_2d = 0, busy_3d = 0 }
+        m.stats = Stats{ steals = 0, refused = 0, cuts = 0, clipped = 0, peak = 0.0, limited = 0, busy_2d = 0, busy_3d = 0, interrupted = 0, held = 0 }
         m.limit_gain = 1.0
         m.event_count = 0
+        m.limits = [Limit{ max_playing = 255, interrupt = false }; 32]
         m.lock = mutex::make{}
         let mut i: usize = 0
         while i < n {
@@ -197,6 +216,7 @@ namespace mix {
         mutex::lock{ mutex = &m.lock }
         defer mutex::unlock{ mutex = &m.lock }
         if p.positional and p.max_distance > 0.0 and math::vec3::distance{ a = p.position, b = m.listener.position } >= p.max_distance { return out_of_range }
+        try admit{ &m, p }
         let slot = try take_voice{ &m, p }
         let v = &m.voices[slot]
         snd::open{ s = &v.stream, bytes } iferr err{ error } {
@@ -216,6 +236,7 @@ namespace mix {
         let mut k: usize = 0
         while k < FEEDS and m.feeds[k].used { k = k + 1 }
         if k == FEEDS { return no_voice }
+        try admit{ &m, p }
         let slot = try take_voice{ &m, p }
         let f = &m.feeds[k]
         f.used = true
@@ -269,6 +290,53 @@ namespace mix {
     }
 
     // A free voice of p's kind, or the one to take over; marks it active.
+    // Whether a sound of play group p.play_group may start (CExoSoundSourceInternal::Play, docs/re/app.md
+    // "Voices"): when the group already plays its MaxPlaying sounds, an Interrupt group stops the one
+    // of them started last, and otherwise the new sound isn't played. A fading voice no longer counts.
+    fn admit { mut m: Mixer, p: Params } -> ! {
+        if @as(usize, p.play_group) >= LIMITS { return }
+        let lim = m.limits[@as(usize, p.play_group)]
+        if lim.max_playing == 255 { return }
+        let mut count: u32 = 0
+        let mut newest: ?usize = null
+        let mut i: usize = 0
+        while i < m.voices.len {
+            let v = &m.voices[i]
+            if v.active and not v.fading and v.p.play_group == p.play_group {
+                count = count + 1
+                let have = newest
+                if have == null or voice_age{ m = &m, slot = i } < voice_age{ m = &m, slot = have } { newest = i }
+            }
+            i = i + 1
+        }
+        if count < @as(u32, lim.max_playing) { return }
+        let last = newest ifnull { return }
+        if not lim.interrupt or not p.may_interrupt {
+            m.stats.held = m.stats.held + 1
+            note_any{ &m, stolen = false, group = true, p, old = last }
+            return group_full
+        }
+        m.stats.interrupted = m.stats.interrupted + 1
+        if audible{ v = &m.voices[last] } { m.stats.cuts = m.stats.cuts + 1 }
+        note_any{ &m, stolen = true, group = true, p, old = last }
+        end_voice{ &m, slot = last }
+    }
+
+    // How many voices were started after the one in `slot` (ids count up, wrapping past 0xFFFFFFFF to 1).
+    fn voice_age { m: *Mixer, slot: usize } -> u32 {
+        let id = m.voices[slot].id
+        return if m.next_id >= id { m.next_id - id } else { m.next_id + (0xFFFFFFFF - id) }
+    }
+
+    // Play group `group` (a prioritygroups.2da row) plays at most `max_playing` sounds at once (255:
+    // no limit); with `interrupt` a new one stops the latest of them to start, else it isn't played.
+    fn set_group_limit { mut m: Mixer, group: u8, max_playing: u8, interrupt: bool } {
+        mutex::lock{ mutex = &m.lock }
+        defer mutex::unlock{ mutex = &m.lock }
+        if @as(usize, group) >= LIMITS { return }
+        m.limits[@as(usize, group)] = Limit{ max_playing, interrupt }
+    }
+
     fn take_voice { mut m: Mixer, p: Params } -> !usize {
         let mut busy: u32 = 0
         let mut free_slot: ?usize = null
@@ -318,7 +386,11 @@ namespace mix {
     }
 
     fn note_event { mut m: Mixer, stolen: bool, p: Params, old: ?usize } {
-        let mut e = Event{ stolen, tag = p.tag, priority = p.priority, old_tag = 0, old_priority = 0, old_looping = false, old_played = 0.0 }
+        note_any{ &m, stolen, group = false, p, old }
+    }
+
+    fn note_any { mut m: Mixer, stolen: bool, group: bool, p: Params, old: ?usize } {
+        let mut e = Event{ stolen, group, tag = p.tag, priority = p.priority, old_tag = 0, old_priority = 0, old_looping = false, old_played = 0.0 }
         if old is some{ value = k } {
             let v = &m.voices[k]
             e.old_tag = v.p.tag
@@ -618,7 +690,9 @@ namespace mix {
 
     // The left and right gains a voice should have now.
     fn target_gains { m: *Mixer, v: *Voice } -> Gains {
-        let g = v.p.volume * m.group_volume[@as(usize, v.p.group)] * m.master
+        // A 3D sound effect's level is squared with the player's volume in it (`squared`, docs/re/app.md "Voices").
+        let gv = m.group_volume[@as(usize, v.p.group)]
+        let g = v.p.volume * (if v.p.squared { gv * gv } else { gv }) * m.master
         let mut pan = v.p.pan
         let mut gain = g
         let mut mono = false

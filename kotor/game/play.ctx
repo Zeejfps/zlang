@@ -124,7 +124,12 @@ namespace play {
             }
         }
         let mut amb = ambience::make{ heap = w.heap, m = mixer }
-        amb.bias = disp.live.bias_2d3d
+        // The install's swkotor.ini says the 2D3D Bias, as for the original; our options file's when it doesn't.
+        amb.bias = frontend::install_bias{ fs = &w.fs, heap = w.heap, game = opts.game, fallback = disp.live.bias_2d3d }
+        if w.log.sound {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "sound: 2D3D Bias {}\n", amb.bias)
+        }
         let mut dview = dlgview::make{ heap = w.heap, m = mixer }
         dlgview::attach{ v = &dview, w = &w }
         ambience::start_area{ a = &amb, &w }
@@ -699,8 +704,8 @@ namespace play {
         if w.log.sound {
             let st = mix::stats{ m = mixer }
             let underruns: u32 = match adev { some{ value } => { audio::underruns{ dev = value } } null => { 0 } }
-            _ = @fmt(&w.io, "sound mixer: {} steals, {} refused, {} cut without a fade, {} samples clipped, peak {}, {} blocks limited, at most {} 2D and {} 3D voices busy; {} underruns\n",
-                st.steals, st.refused, st.cuts, st.clipped, st.peak, st.limited, st.busy_2d, st.busy_3d, underruns)
+            _ = @fmt(&w.io, "sound mixer: {} steals, {} refused, {} cut without a fade, {} samples clipped, peak {}, {} blocks limited, at most {} 2D and {} 3D voices busy; {} underruns; play groups: {} interrupted, {} held back\n",
+                st.steals, st.refused, st.cuts, st.clipped, st.peak, st.limited, st.busy_2d, st.busy_3d, underruns, st.interrupted, st.held)
         }
         _ = @fmt(&w.io, "vfx: {} effects started, {} wanted while the pool was full\n", vx.started, vx.dropped)
         if timed > 1 {

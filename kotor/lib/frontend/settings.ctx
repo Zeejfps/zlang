@@ -39,7 +39,7 @@ namespace frontend {
         // [Sound Options]
         music: i32, voice: i32, effects: i32, movie: i32,       // 0..100
         eax: bool, force_software: bool,
-        bias_2d3d: f32,             // "2D3D Bias", 0.1..1.9: over 1 quietens the 2D sound effects by 2 - bias (docs/re/app.md, "Voices"); not on the panel
+        bias_2d3d: f32,             // "2D3D Bias", 0.1..1.9: over 1 quietens the 2D sound effects by 2 - bias (docs/re/app.md, "Voices"); not on the panel; the install's swkotor.ini wins (install_bias)
         // [Game Options]
         difficulty: i32,            // 0 easy, 1 normal, 2 hard
         mouse_sensitivity: i32,     // 0..100
@@ -210,6 +210,18 @@ namespace frontend {
             post_aa = @trunc(u8, s.fx_edges), alpha_coverage = s.fx_foliage, tessellation = @trunc(u8, s.fx_tessellation),
             timing = s.fx_timing,
         }
+    }
+
+    // The install's own "2D3D Bias" (GAME/swkotor.ini, [Sound Options]; 1.50 as installed), which the
+    // original reads at start (CClientExoAppInternal::InitializeSound 0x005f1f70, clamped 0.1..1.9): the
+    // file is only read, never written (the original writes the value back; we don't touch the
+    // install). `fallback`, our options file's, when there is no such file or key.
+    fn install_bias { mut fs: Fs, heap: *mut heap::Heap, game: []u8, fallback: f32 } -> f32 {
+        let mut buf: [1024]u8
+        let file = path::join_into{ dir = game, name = "swkotor.ini", into = buf[..] } ifnull { return fallback }
+        let bytes = fs::read_all(heap::Heap){ &fs, heap, realloc = heap::alloc, path = file } iferr { return fallback }
+        defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = bytes, count = 0 }
+        return math::clamp{ x = get_float{ data = bytes, section = "Sound Options", key = "2D3D Bias", fallback }, lo = 0.1, hi = 1.9 }
     }
 
     // Reads the options file at `path`; the defaults when there is none or it can't be read.
