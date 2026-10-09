@@ -87,7 +87,7 @@ frames, so setup and click are spaced out.
 
 | Behaviour | Evidence | Status | Test |
 |---|---|---|---|
-| The target block's right slot lists the party's grenades (base items of ItemType 6) for a creature target, only where the area's RestrictMode is 0; a click throws one (the leader approaches to the power's range, throws, the blast runs k_sup_grenade: damage in a radius with a Reflex save for half, the visual and sound) | list builder 0x006198e0 / 0x006196a0; AIActionItemCastSpell | matches (the slot was an empty placeholder); open: ours offers grenades where RestrictMode is set too | `grenade.txt` (hp 15 to -11, Frag Grenade x4 to x3) |
+| The target block's right slot lists the party's grenades (base items of ItemType 6) for a creature target, only where the area's RestrictMode is 0; a click throws one (the leader approaches to the power's range, throws, the blast runs k_sup_grenade: damage in a radius with a Reflex save for half, the visual and sound) | list builder 0x006198e0 / 0x006196a0; AIActionItemCastSpell | matches (the slot was an empty placeholder; `grenade.txt` passes in `tools/items/check.sh`); the RestrictMode gate fixed (by reading the code; no run) | `grenade.txt` (hp 15 to -11, Frag Grenade x4 to x3) |
 | The middle slot lists the leader's hostile Force powers (a droid leader's own list), only where RestrictMode is 0; the combat feats are in the left slot with Attack | 0x006191f0 (0x0064af10, droids 0x00618c20); left slot 0x00619950 / 0x00619b10 | not mine (the Force owner) | |
 | Throwing an item whose power is hostile (spells.2da HostileSetting) puts the thrower in combat and ends its stealth; the target hears a harmful OnSpellCastAt from k_sup_grenade. Nothing found turns a creature that is not an enemy hostile (needs a runtime check) | AIActionItemCastSpell 0x0050f170 (`ClearActivities(1)`, `SetCombatState(1, 1)`), actions.md 3.13 | open: ours enters combat only against an enemy, and an item's power ends stealth only through the combat it starts, so one used at a point keeps it (`fight.ctx` cast_spell, `enter_combat`) | |
 
@@ -130,7 +130,7 @@ SIGHTED auto-pause (ours also wants the mine's box on the screen), where the wor
 + 1.25 m of the mine's centre), flag and examine (ours skips their roll on any party mine; what the client shows
 for Examine), the combat log's wording of the rolls (ours 1405, the original 1408), laying a mine ends our stealth
 (the original keeps it), the mine slot is never dimmed and ignores RestrictMode, a step across a trap's outline
-does not set it off here, no action-timer bar (the HUD has none; lock picking lacks it too), trap script routines
+does not set it off here, trap script routines
 nothing calls, the mine slot label wraps.
 
 **Stealth ([stealth.md](stealth.md); `sh kotor/tools/stealth/check.sh`).** Matches: TB_STEALTH and G (only with
@@ -184,7 +184,8 @@ whether the control is visible and enabled); `LOG=actions` adds a line `upgrade 
 - Per-minute item uses (one droid shield).
 - The HEAL action (Treat Injury as an action): only scripts can queue it and none of the shipped ones was found
   to; medpacs add the rank through their own script.
-- The new flag is not saved. The action timer over the portrait (lock picking and the trap actions) is not drawn.
+- The new flag is not saved. No action timer is drawn for lock picking and the trap actions, as in the original:
+  the server sends `StartActionProgress`, but the client's handler (`0x00654a30`) reads the message and drops it.
 - Security spikes: the player's Security click in the original sends no spike (both unlock senders pass no item and
   no list offers one; needs a runtime check), so a player's roll gets no spike bonus; ours uses up the weakest spike
   that makes the roll succeed.

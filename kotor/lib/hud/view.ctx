@@ -21,6 +21,17 @@ namespace hud {
         return math::Vec2{ x = (c.x / c.w * 0.5 + 0.5) * p.w, y = (0.5 - c.y / c.w * 0.5) * p.h }
     }
 
+    // A world point's perspective division in GUI pixels, behind the eye too (then the point comes out
+    // mirrored through the middle of the screen): what the target marker's edge arrows are placed from.
+    struct RawPoint { x: f32, y: f32, front: bool }
+
+    fn project_raw { p: Projector, at: math::Vec3 } -> RawPoint {
+        let c = math::mat4::transform{ m = p.vp, v = math::Vec4{ x = at.x, y = at.y, z = at.z, w = 1.0 } }
+        let front = c.w >= 0.05
+        let cw = if c.w >= 0.0 and c.w < 0.0001 { 0.0001 } else if c.w < 0.0 and c.w > -0.0001 { -0.0001 } else { c.w }
+        return RawPoint{ x = (c.x / cw * 0.5 + 0.5) * p.w, y = (0.5 - c.y / cw * 0.5) * p.h, front }
+    }
+
     // The box a selectable object fills, in its own space (feet at the origin, facing +Y). The
     // models' own bounds are the compiler's default box, so the shapes are ours: a creature is as
     // tall as a person scaled by its personal space (appearance.2da PERSPACE, 0.35 for a human),

@@ -1509,6 +1509,24 @@ field of the .gui changes it) never shows: the first `Refresh` hides them. (high
 `friend_bar` blue, `poison_bar` green. The combat reticle swap is the reticle's only combat change; nothing tints the slots
 for combat mode. The hilight border stays `lbl_miscroll_hi` (yellow). (high)
 
+**The target marker** (`UpdateReticles` `0x0068a310`) is one control (`mainif+0x5a2c`, fill `+0x5a9c`, fill
+rotation `+0x5aa4` in degrees), shown while the HUD target projects at all (the object's slot `+0x13c` answers 0
+none, 1 in front of the eye, 2 behind it, with the point divided through either way). Its side is 64 px within
+5 m of the leader, shrinking to 16 (creature) or 32 (other) at 30 m. A hostile creature in client combat mode
+(`+0x320`, `0x005ede70`) gets `combatreticle`: the timer `+0x5cb0` is set to -1 by `SetTargetObject`
+`0x006855f0` on a new target and by `ClearAllCombatActions` `0x006887d0`; at -1 the side gets 64 more and the
+timer 0.5 s, then while it runs the side gets `timer x 128` more (truncated). Placement, with the screen
+rectangle `+0xbf70`: in front, a point within 32 px of the left or right edge gives a 32 px arrow
+(`hostilearrow` / `friendlyarrow`) at that edge (rotation 0 on the left, 180 on the right) at the point's
+height less 16, clamped to the top or bottom 32 px; otherwise a point within 32 px of the top or bottom gives
+the arrow there at the point's x less 16 (rotation 270 at the top, 90 at the bottom); otherwise the reticle
+centred on the point. Behind the eye always the arrow: on the right edge (180) when the divided point is left of
+the middle, else the left (0); its y the bottom 32 px for a point within 32 px of the top, the top for one near
+the bottom, otherwise the point's y mirrored (`h - (y + 16)`) when it is in the upper half, `y - 16` in the
+lower. So the arrow picture points left and the rotation turns it counter-clockwise on the screen. The target
+block (`FUN_00686090`) follows the same cases: it stays shown while there is a target, centred over the point
+in front, clamped to the screen, and for a target behind the eye moved to the edge on its side. (high)
+
 `CSWGuiActionSlot::Init` (`0x0068b9d0`, self and target slots) writes 180.0 into the fill rotation (border `+0x1c`) of the
 down button's BORDER and HILIGHT, so a down arrow is `lbl_miarr_1` / `_2` drawn half a turn round; for a target slot
 (`bTarget`) it also makes the frame the parent of the other three (`AddChild`), so the frame lights when the pointer is on

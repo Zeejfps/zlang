@@ -59,7 +59,7 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
   creature's `head_g`, the `lookathook` of a door or placeable; the middle of the box when there is none): the
   block 32 pixels above it, the reticle centred on it, 64 pixels square within 5 m of the leader and shrinking
   to 16 (creature) or 32 (door, placeable, mine) at 30 m, whatever the object's size (UpdateReticles
-  `0x0068a310`; not modelled: the combat reticle's zoom-in and the edge arrows of an off-screen target).
+  `0x0068a310`; near an edge or behind the eye an arrow at the edge, and in combat mode the combat reticle, `update_reticle`).
   Models carry no usable bounds (the compiler's default box), so the pick boxes are ours: creature height
   scaled by `PERSPACE`, typical door and placeable sizes. Slot 1 holds, on a foe, the leader's best Critical
   Strike / Flurry / Power Attack (or Power Blast / Rapid Shot / Sniper Shot with a ranged weapon) and Attack
@@ -103,10 +103,12 @@ centred. Controls the game decides to show (combat bar, notifications, action sl
   [mechanics/force.md](../mechanics/force.md)); the item lists are the original's (docs/mechanics/items-skills.md); the mine slot lists trap kits and lays one
   (lib/engine/traps.ctx, docs/mechanics/traps.md). The keys (keymap.2da) are not bound. `ui useitem RESREF [N]` is the headless test; `scripts/selfslots.txt` the run.
 - **The target block's Force powers** (`hud::power_actions` in `target.ctx`, used by `block.ctx`): against a hostile
-  creature the middle slot lists the leader's hostile powers, one per `ForceHostile` line (spells.2da), the
-  known power of the line with the highest priority, those that bar the target's race (`Exclusion`) left out. An
-  entry the leader cannot pay for or wear dims and, pressed, says why in the message bar for five seconds
-  (`hud::use_slot`, `say_reason`); the choice stays chosen from target to target (`power_pick`); hovering a slot
+  creature (or an inventory-less placeable hostile to the leader) the middle slot lists the leader's hostile
+  powers, one per `ForceHostile` line (spells.2da), the known power of the line with the highest priority, those
+  that bar the target's race (`Exclusion`) left out, none where the area's RestrictMode is set; a droid leader
+  lists its equipment's abilities instead (`droid_actions`). An entry that cannot be used dims and, pressed, says
+  why in the block's name label for five seconds (`hud::use_slot`, `refusal`; armour, too close, Force, missing
+  item, in that order); the choice stays chosen from target to target (`power_pick`); hovering a slot
   names its entry in the block's name bar (the self slots' hover uses the label above them). The cast is `rt_talent::queue_cast`, so the
   key `2`, a click and the arrows are tested like any other input (`ui fclick`, `ui key 2`).
 - **Stealth toggle** `TB_STEALTH` (lib/hud/stealth.ctx, lib/ingame/stealth_ui.ctx): shown while the leader

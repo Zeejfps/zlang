@@ -126,7 +126,7 @@ namespace selfslots {
             if spell < 0 { continue }
             let row = rules::get_spell{ tables = w.rules, row = spell } ifnull { continue }
             let icon = twoda::get_string{ t, row = @as(usize, spell), column = "iconresref" } ifnull { continue }
-            let reason = hud::power_reason{ w, f, spell, alive }
+            let reason = hud::power_reason{ w, f, spell, alive, dist2 = 1000000.0 }
             push{ sl = &out[0], id = @as(u32, spell), icon, strref = @as(u32, row.name), usable = reason == R_OK, reason }
         }
     }

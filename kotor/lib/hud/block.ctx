@@ -10,13 +10,18 @@ namespace hud {
     const SLOT_TIPS: [3]u32 = [48303, 48307, 48311]
 
     // The block's name bar: the target's name, or the selected entry's name while the pointer is on one of the
-    // slots (FUN_00685cb0 0x00685cb0; the self slots' description label is the other slots' own).
+    // slots (FUN_00685cb0 0x00685cb0; the self slots' description label is the other slots' own). A refused
+    // choice's reason takes its place for five seconds (UseAction 0x00689610 stores it), over either.
     fn block_name { mut h: Hud, mut w: world::World, id: u32 } -> []u8 {
+        if h.refusal > 0.0 and h.refusal_reason > 0 and h.refusal_reason < 7 {
+            return world::string_by_strref{ w = &w, strref = REASON_TEXT[@as(usize, h.refusal_reason)] }
+        }
         let k = h.hover_slot
         if k >= 0 and k < 3 and h.lists[@as(usize, k)].count > 0 {
             let l = &h.lists[@as(usize, k)]
             let e = l.entries[l.selected]
-            if e.item != obj::INVALID { return name_of{ w = &w, id = e.item } }
+            // A grenade is named by its item; a droid's utility by its ability.
+            if e.item != obj::INVALID and e.strref == 0 { return name_of{ w = &w, id = e.item } }
             return world::string_by_strref{ w = &w, strref = e.strref }
         }
         return name_of{ w = &w, id }
@@ -136,11 +141,11 @@ namespace hud {
         return middle
     }
 
-    // The middle slot: the leader's Force powers against a hostile creature, with the choice made
-    // on the last hostile target still chosen when it is in this list (the original keeps the
-    // selected entry's id per kind of target).
+    // The middle slot: the leader's Force powers against a hostile creature or an inventory-less placeable
+    // hostile to the leader, with the choice made on the last hostile target still chosen when it is in this
+    // list (the original keeps the selected entry's id per kind of target).
     fn middle_actions { h: *Hud, w: *world::World, id: u32 } -> ActionList {
-        if not is_hostile{ w, id } { return build_slot_actions{ w, id, k = 1 } }
+        if not is_hostile{ w, id } and not is_hostile_placeable{ w, id } { return build_slot_actions{ w, id, k = 1 } }
         let mut l = power_actions{ w, target = id }
         let mut i: usize = 0
         while i < l.count {
@@ -162,28 +167,24 @@ namespace hud {
         return true
     }
 
-    // Keeps the block over the target: builds it for a new target, hides it when there is none or
-    // it is off screen, otherwise moves it above the head and updates the health bar.
+    // Keeps the block over the target: builds it for a new target, hides it when there is none, otherwise
+    // moves it above the head (or to the screen's edge on the target's side when the target is off screen:
+    // the block and its lists follow the selection, so the keys 1 to 3 work on a target out of sight,
+    // FUN_00686090) and updates the health bar.
     fn update_block { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } {
         let t = w.target
         if t != obj::INVALID and not is_selectable_kind{ w = &w, id = t } {
             w.target = obj::INVALID
         }
-        let o = world::object{ w = &w, id = w.target }
-        let seen = if o == null { false } else { box_on_screen{ p = h.projector, o = o } != null }
-        if not seen {
+        let target_object = world::object{ w = &w, id = w.target } ifnull {
             if h.shown_target != obj::INVALID {
                 hide_block{ &h, &g }
                 h.shown_target = obj::INVALID
-                if h.hover_slot >= 0 {
-                    h.hover_slot = -1
-                    show_slot_description{ &h, &g, &w }
-                }
+                h.lists = [empty_list{}; 3]
+                h.hover_slot = -1
             }
             return
         }
-        let target_object = world::object{ w = &w, id = w.target } ifnull { return }
-        let on = box_on_screen{ p = h.projector, o = target_object } ifnull { return }
         if h.shown_target != w.target {
             build_block{ &h, &g, &w, &dev, id = w.target }
             h.shown_target = w.target
@@ -208,13 +209,17 @@ namespace hud {
             set_look{ &h, &g, &w, &dev, id = w.target }
         }
         let p = gui::find_panel{ &g, id = h.panel } ifnull { return }
-        // The block hangs 32 pixels over the point the reticle is centred on (CSWGuiTargetInfo 0x00686090).
-        let at = aim_point{ h = &h, w = &w, o = target_object, b = on }
+        // The block hangs 32 pixels over the point the reticle is centred on (CSWGuiTargetInfo 0x00686090); for a
+        // target behind the eye, over the edge point its arrow takes.
+        let a = anchor_of{ h = &h, w = &w, o = target_object }
+        let at = if a.front { math::Vec2{ x = a.x, y = a.y } } else { behind_point{ p = h.projector, x = a.x, y = a.y } }
+        let height = if has_slots{ &h } { BLOCK_H } else { BAR_H }
         let mut x0 = @as(i32, at.x) - BLOCK_W / 2
         // The viewport reaches down to the slots' bottom edge when a slot has a choice, else to the health bar's.
-        let mut y0 = @as(i32, at.y) - 32 - (if has_slots{ &h } { BLOCK_H } else { BAR_H })
+        let mut y0 = @as(i32, at.y) - 32 - height
         if x0 > g.ui_w - BLOCK_W { x0 = g.ui_w - BLOCK_W }
         if x0 < 0 { x0 = 0 }
+        if y0 > g.ui_h - height { y0 = g.ui_h - height }
         if y0 < 4 { y0 = 4 }
         let mut i: usize = 0
         while i < BLOCK_TAGS.len {
@@ -259,29 +264,112 @@ namespace hud {
         render::add_quad{ &frame, quad = q }
     }
 
-    // The reticle around the target: blue for the friendly, red for the hostile, drawn under the panels,
-    // centred on the aim point.
-    fn draw_reticle { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame } {
-        if h.shown_target == obj::INVALID { return }
-        let o = world::object{ w = &w, id = h.shown_target } ifnull { return }
-        let b = box_on_screen{ p = h.projector, o } ifnull { return }
-        let name: []u8 = if is_hostile{ w = &w, id = h.shown_target } { "hostilereticle2" } else { "friendlyreticle2" }
-        let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name }
-        if not img.ok { return }
-        let at = aim_point{ h = &h, w = &w, o, b }
-        let cx = at.x
-        let cy = at.y
+    // Where the target is on the screen: the aim point when its box is in front of the eye, else the
+    // perspective division of its middle as it falls (behind the eye it comes out mirrored, which the edge
+    // rules below undo).
+    struct Anchor { x: f32, y: f32, front: bool }
+
+    fn anchor_of { h: *Hud, w: *world::World, o: *obj::Object } -> Anchor {
+        if box_on_screen{ p = h.projector, o } is some{ value = b } {
+            let at = aim_point{ h, w, o, b }
+            return Anchor{ x = at.x, y = at.y, front = true }
+        }
+        let s = shape_of{ o }
+        let mid = if w.aim_id == o.id { w.aim } else { math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + s.height / 2.0 } }
+        let r = project_raw{ p = h.projector, at = mid }
+        return Anchor{ x = r.x, y = r.y, front = r.front }
+    }
+
+    // The middle of the edge arrow of a target behind the eye (UpdateReticles 0x0068a310): on the side the
+    // target is (the division mirrored it, so a point left of the middle means the right edge), and at its
+    // height mirrored back into the lower half, the top and bottom 32 pixels swapped.
+    fn behind_point { p: Projector, x: f32, y: f32 } -> math::Vec2 {
+        let ex = if x < p.w / 2.0 { p.w - 16.0 } else { 16.0 }
+        let ey = if y < 32.0 { p.h - 16.0 } else if y > p.h - 32.0 { 16.0 } else if y < p.h / 2.0 { p.h - y } else { y }
+        return math::Vec2{ x = ex, y = ey }
+    }
+
+    // The target marker's pictures (UpdateReticles 0x0068a310).
+    const MARKS: [5][]u8 = ["friendlyreticle2", "hostilereticle2", "combatreticle", "friendlyarrow", "hostilearrow"]
+    const MARK_FRIENDLY: u8 = 0
+    const MARK_HOSTILE: u8 = 1
+    const MARK_COMBAT: u8 = 2
+    const MARK_FRIENDLY_ARROW: u8 = 3
+    const MARK_HOSTILE_ARROW: u8 = 4
+
+    // The target marker this frame (UpdateReticles 0x0068a310). It follows the HUD target wherever it is. On
+    // the screen it is the reticle centred on the aim point, sized by the leader's distance; a hostile
+    // creature in combat mode gets the combat reticle, which starts 64 pixels larger and shrinks to its size
+    // in half a second each time the target changes or the player disengages. Within 32 pixels of an edge,
+    // or behind the eye, it is a 32-pixel arrow at that edge pointing out toward the target (the picture
+    // points left: turned half round on the right edge, a quarter on the bottom and three on the top).
+    fn update_reticle { mut h: Hud, mut w: world::World, dt: f32 } {
+        h.reticle.shown = false
+        if w.target != h.reticle_for {
+            h.reticle_for = w.target
+            h.zoom = -1.0
+        }
+        let o = world::object{ w = &w, id = w.target } ifnull { return }
         let leader = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return }
         let dx = leader.position.x - o.position.x
         let dy = leader.position.y - o.position.y
         let dz = leader.position.z - o.position.z
-        let side = reticle_side{ distance = math::sqrtf{ x = dx * dx + dy * dy + dz * dz }, creature = o.kind == obj::Kind::creature }
+        let mut side = reticle_side{ distance = math::sqrtf{ x = dx * dx + dy * dy + dz * dz }, creature = o.kind == obj::Kind::creature }
+        let hostile = is_hostile{ w = &w, id = w.target }
+        let mut mark = if hostile { MARK_HOSTILE } else { MARK_FRIENDLY }
+        if hostile and leader_in_combat{ w = &w } {
+            mark = MARK_COMBAT
+            if h.zoom < -0.5 {
+                side = side + 64.0
+                h.zoom = 0.5
+            } else if h.zoom > 0.0 {
+                h.zoom = h.zoom - dt
+                if h.zoom > 0.0 { side = side + @as(f32, @as(i32, h.zoom * 128.0)) } else { h.zoom = 0.0 }
+            }
+        }
+        let arrow = if hostile { MARK_HOSTILE_ARROW } else { MARK_FRIENDLY_ARROW }
+        let a = anchor_of{ h = &h, w = &w, o }
+        let sw = h.projector.w
+        let sh = h.projector.h
+        let mut r = Reticle{ shown = true, x = 0.0, y = 0.0, side = 32.0, mark = arrow, turns = 0 }
+        if not a.front {
+            let e = behind_point{ p = h.projector, x = a.x, y = a.y }
+            r.x = e.x - 16.0
+            r.y = @as(f32, @as(i32, e.y - 16.0))
+            if a.x < sw / 2.0 { r.turns = 2 }
+        } else if a.x < 32.0 or a.x > sw - 32.0 {
+            r.x = if a.x < 32.0 { 0.0 } else { sw - 32.0 }
+            if a.x >= 32.0 { r.turns = 2 }
+            r.y = if a.y < 32.0 { 0.0 } else if a.y > sh - 32.0 { sh - 32.0 } else { @as(f32, @as(i32, a.y - 16.0)) }
+        } else if a.y < 32.0 or a.y > sh - 32.0 {
+            r.x = @as(f32, @as(i32, a.x - 16.0))
+            r.y = if a.y < 32.0 { 0.0 } else { sh - 32.0 }
+            r.turns = if a.y < 32.0 { 3 } else { 1 }
+        } else {
+            r.mark = mark
+            r.side = side
+            r.x = @as(f32, @as(i32, a.x - side / 2.0))
+            r.y = @as(f32, @as(i32, a.y - side / 2.0))
+        }
+        h.reticle = r
         if w.log.trace and w.clock.frame % 4 == 0 {
             world::prefix{ w = &w }
-            _ = @fmt(&w.io, "reticle {} {} m side {} px at {} {} of {} {}\n", o.tag, math::sqrtf{ x = dx * dx + dy * dy + dz * dz }, side, cx, cy, h.projector.w, h.projector.h)
+            _ = @fmt(&w.io, "reticle {} {} side {} at {} {} turns {} (point {} {} front {})\n", o.tag, MARKS[@as(usize, r.mark)], r.side, r.x, r.y, r.turns, a.x, a.y, a.front)
         }
+    }
+
+    // The target marker, drawn under the panels.
+    fn draw_reticle { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame } {
+        let r = h.reticle
+        if not r.shown or w.target == obj::INVALID { return }
+        let img = gui::resolve_img{ &g, fs = &w.fs, &dev, name = MARKS[@as(usize, r.mark)] }
+        if not img.ok { return }
         render::begin_ui{ &frame, width = h.projector.w, height = h.projector.h, target = null }
-        draw_picture{ &frame, rect = render::Rect{ x = cx - side / 2.0, y = cy - side / 2.0, w = side, h = side }, img, color = render::white{} }
+        let mut q = render::make_quad{ rect = render::Rect{ x = r.x, y = r.y, w = r.side, h = r.side }, color = render::white{} }
+        q.image = render::Image::texture{ t = img.tex }
+        q.blend = gui::quad_blend{ img }
+        q.angle = @as(f32, r.turns) * 1.5707964
+        render::add_quad{ &frame, quad = q }
     }
 
     // The highlight on the object under the pointer (FUN_006889c0 0x006889c0, called at the end of UpdateReticles):
@@ -318,10 +406,20 @@ namespace hud {
         if l.count == 0 { return false }
         let e = l.entries[l.selected]
         if not e.usable {
-            say_reason{ &h, &g, reason = e.reason }
+            // The reason shows in the block's name label for five seconds.
+            if e.reason > 0 {
+                h.refusal = 5.0
+                h.refusal_reason = e.reason
+                show_slot_description{ &h, &g, &w }
+            }
+            if w.log.combat {
+                world::prefix{ w = &w }
+                _ = @fmt(&w.io, "refused: {} slot {} spell {} reason {} \"{}\"\n", party::leader{ w = &w }, k, e.id, e.reason, block_name{ &h, &w, id = w.target })
+            }
             gui::play_sound{ &g, n = 2 }
             return true
         }
+        note_door_action{ &h, w = &w, act = e.act, target = w.target }
         run_act{ &w, act = e.act, target = w.target, item = e.item, spell = e.id, queue = queues_orders{ h = &h, w = &w } }
         return true
     }
@@ -333,8 +431,20 @@ namespace hud {
         if w.target == obj::INVALID { return false }
         let l = default_actions{ w = &w, id = w.target }
         if l.count == 0 { return false }
+        note_door_action{ &h, w = &w, act = l.entries[0].act, target = w.target }
         run_act{ &w, act = l.entries[0].act, target = w.target, item = l.entries[0].item, spell = l.entries[0].id, queue = false }
         return true
+    }
+
+    // The player's open (of a closed door), unlock or bash of a door opens a 5 s window in which an
+    // auto-pause request waits a second before it is made (0x005f4100, from CSWCDoor's DefaultActionOpen,
+    // the unlock and DefaultActionBash; not while a request already waits; gameloop.md 6.4).
+    fn note_door_action { mut h: Hud, w: *world::World, act: Act, target: u32 } {
+        if act != Act::open and act != Act::unlock and act != Act::bash { return }
+        let o = world::object{ w, id = target } ifnull { return }
+        let d = obj::door{ o } ifnull { return }
+        if act == Act::open and d.state != obj::DoorState::closed { return }
+        if h.deferred <= 0.0 { h.door_window = 5.0 }
     }
 
     // Target slot `k`'s next (or previous) choice, wrapping: its arrows, and Shift with the slot's key.
@@ -388,23 +498,29 @@ namespace hud {
         return false
     }
 
-    // A left click in the world, past the GUI (movement.md 7.4): the first click on an object
-    // targets it, a second on the target does its default action. Returns true when it hit an
-    // object (the game does not also move there).
+    // A left click in the world, past the GUI (movement.md 7.4, OnLeftMouseUp 0x00620530): the release
+    // selects whatever is under the pointer then; a release on the object that was already the target when
+    // the button went down does its default action. Returns true when it hit an object (the game does not
+    // also move there).
     fn world_click { mut h: Hud, mut g: gui::Gui, mut w: world::World, x: i32, y: i32, down: bool } -> bool {
         let id = pick_at{ p = h.projector, w = &w, x, y }
         if down {
-            h.pressed = id
+            h.pressing = true
+            h.pressed = w.target
             return id != obj::INVALID
         }
-        let began = h.pressed
+        // A press the GUI took is not a world click.
+        if not h.pressing { return false }
+        h.pressing = false
+        let target_at_press = h.pressed
         h.pressed = obj::INVALID
-        if id == obj::INVALID or id != began { return false }
-        if id == w.target {
+        if id == obj::INVALID { return false }
+        if id == w.target and id == target_at_press {
             // The default action: entry 0 of BuildDefaultActions (a mine's Recover is in the middle slot).
             let l = default_actions{ w = &w, id }
             if l.count > 0 {
                 gui::play_sound{ &g, n = 6 }
+                note_door_action{ &h, w = &w, act = l.entries[0].act, target = id }
                 run_act{ &w, act = l.entries[0].act, target = id, item = l.entries[0].item, spell = l.entries[0].id, queue = false }
             }
         } else {

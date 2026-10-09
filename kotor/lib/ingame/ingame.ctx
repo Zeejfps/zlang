@@ -381,7 +381,7 @@ namespace ingame {
             return true
         }
         if keycode == 'f' {
-            hud::disengage{ &w }
+            hud::disengage{ h = &ui.hud, &w }
             return true
         }
         if keycode == 'y' {
@@ -614,6 +614,17 @@ namespace ingame {
     // weighed against the options and a person playing.
     fn update_autopause { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, dt: f32 } {
         if ui.ap_cooldown > 0.0 { ui.ap_cooldown = ui.ap_cooldown - dt }
+        // A request that came in the door window waits its second (client step 27, gameloop.md 6.4): then it
+        // is made, unless combat mode is on by then (it is dropped). While none waits the window closes.
+        if ui.hud.deferred > 0.0 {
+            ui.hud.deferred = ui.hud.deferred - dt
+            if ui.hud.deferred <= 0.0 {
+                ui.hud.deferred = 0.0
+                if not hud::leader_in_combat{ w = &w } { auto_pause{ &ui, &w, &dev, reason = ui.hud.deferred_text } }
+            }
+        } else if ui.hud.door_window > 0.0 {
+            ui.hud.door_window = ui.hud.door_window - dt
+        }
         let asked = autopause::take{ &w }
         if asked == 0 or not ui.autopause { return }
         // The option of each reason ([Autopause Options]); a new target only counts in combat mode
@@ -627,6 +638,13 @@ namespace ingame {
         else if asked == autopause::NEW_TARGET { if ui.ap_target and hud::leader_in_combat{ w = &w } { text = REASON_TARGET } }
         if text == 0 { return }
         if asked == autopause::PARTY_MEMBER_DOWN { ui.ap_cooldown = 2.0 }
+        // Within 5 s of the player's action on a door the request waits a second (RequestAutoPause 0x005f3f10).
+        if ui.hud.door_window > 0.0 and not clock_paused_by_player{ w = &w } {
+            ui.hud.door_window = 0.0
+            ui.hud.deferred = 1.0
+            ui.hud.deferred_text = text
+            return
+        }
         auto_pause{ &ui, &w, &dev, reason = text }
     }
 

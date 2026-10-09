@@ -63,9 +63,10 @@ namespace hud {
 
     // ProcessInput's timer (client+0x36c): outside combat mode, a target and a leader moving by the keys
     // for half a second on end, and the target is gone (the pick below then finds the nearest in front).
-    // Standing still, or any slower frame, starts the half second again.
+    // Standing still, or any slower frame, starts the half second again; so does a frame in which an
+    // auto-pause request is waiting its second (client+0x390, ingame's update_autopause).
     fn drop_while_moving { mut h: Hud, mut w: world::World, dt: f32 } {
-        if w.target == obj::INVALID or h.move_speed < MOVING_MIN or leader_in_combat{ w = &w } {
+        if w.target == obj::INVALID or h.move_speed < MOVING_MIN or leader_in_combat{ w = &w } or h.deferred > 0.0 {
             h.moving_for = 0.0
             return
         }

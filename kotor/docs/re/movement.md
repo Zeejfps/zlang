@@ -1452,9 +1452,9 @@ dropped) and the auto-target below all use it.
 
 **The target drop that makes the auto-target follow a walking player** is not in that function but in
 `ProcessInput` (`0x006227e0`, the branch that steps the player control, near its end): each frame, when
-the leader is **not in combat mode**, the HUD target is not none, the auto-pause cool-down (`+0x390`) is
-not running (it is set to 1.0 by `RequestAutoPause`; where it counts down was not found, and ours
-ignores it) and the player control's current speed (`CSWCPlayerControl::GetCurrentSpeed` `0x00679750`, the
+the leader is **not in combat mode**, the HUD target is not none, the deferred auto-pause (`+0x390`) is
+not running (`RequestAutoPause` sets it to 1 s for a request made in the 5 s door window, and client step 27
+counts it down, [gameloop.md](gameloop.md) 6.4) and the player control's current speed (`CSWCPlayerControl::GetCurrentSpeed` `0x00679750`, the
 larger of |vx| and |vy| of the keyboard velocity, so the keys and nothing else: a leader walking to a
 clicked door is not "moving" here) is **0.25 m/s or more**, a timer (`+0x36c`) adds the frame's time; at
 **0.5 s** the target (`+0x2b4`) is set to none and the timer to 0; any other frame resets the timer. So

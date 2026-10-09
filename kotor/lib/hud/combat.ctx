@@ -32,16 +32,6 @@ namespace hud {
         return ""
     }
 
-    // A refusal in the message bar (UseAction's reason codes): "Force Depleted", "Restricted by Armor"...,
-    // for five seconds.
-    fn say_reason { mut h: Hud, mut g: gui::Gui, reason: i32 } {
-        if reason <= 0 or reason >= 7 { return }
-        gui::set_strref{ &g, panel = h.panel, tag = "LBL_CMBTMODEMSG", strref = REASON_TEXT[@as(usize, reason)] } iferr {}
-        gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMSGBG", visible = true }
-        gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMODEMSG", visible = true }
-        h.refusal = 5.0
-    }
-
     fn show_combat_controls { mut h: Hud, mut g: gui::Gui, on: bool } {
         let mut i: usize = 0
         while i < COMBAT_TAGS.len {
@@ -58,16 +48,11 @@ namespace hud {
 
     // Shows the controls when combat starts, hides them when it ends, and fills the queue icons.
     fn update_combat { mut h: Hud, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, dt: f32 } {
+        // A refusal's five seconds in the target block's name label (the block's timers, 0x00684e70): then
+        // the name, or the hovered slot's choice, comes back.
         if h.refusal > 0.0 {
             h.refusal = h.refusal - dt
-            if h.refusal <= 0.0 {
-                if h.combat_message > 0.0 {
-                    gui::set_strref{ &g, panel = h.panel, tag = "LBL_CMBTMODEMSG", strref = 48208 } iferr {}
-                } else {
-                    gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMSGBG", visible = false }
-                    gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMODEMSG", visible = false }
-                }
-            }
+            if h.refusal <= 0.0 { show_slot_description{ &h, &g, &w } }
         }
         let on = leader_in_combat{ w = &w }
         if on != h.combat {
@@ -83,7 +68,7 @@ namespace hud {
         if not on { return }
         if h.combat_message > 0.0 {
             h.combat_message = h.combat_message - dt
-            if h.combat_message <= 0.0 and h.refusal <= 0.0 {
+            if h.combat_message <= 0.0 {
                 gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMSGBG", visible = false }
                 gui::set_visible{ &g, panel = h.panel, tag = "LBL_CMBTMODEMSG", visible = false }
             }
@@ -134,13 +119,15 @@ namespace hud {
     }
 
     // Disengage (BTN_CLEARALL, the F key): the leader leaves combat mode and its actions are cleared. In the
-    // original only while the party is in combat mode (HandleInputAction 240).
-    fn disengage { mut w: world::World } {
+    // original only while the party is in combat mode (HandleInputAction 240); it also arms the combat
+    // reticle's zoom-in again (ClearAllCombatActions 0x006887d0).
+    fn disengage { mut h: Hud, mut w: world::World } {
         let leader = party::leader{ w = &w }
         let c = creature_of{ w = &w, id = leader } ifnull { return }
         if not c.in_combat { return }
         actions::clear_all{ &w, id = leader }
         c.in_combat = false
+        h.zoom = -1.0
     }
 
     // Clear Combat Action (BTN_CLEARONE, the Y key): the last of the leader's queued actions goes.
@@ -158,7 +145,7 @@ namespace hud {
     fn combat_event { mut h: Hud, mut g: gui::Gui, mut w: world::World, ev: gui::Event } -> bool {
         if ev.kind != gui::EventKind::activate { return false }
         if slice::eq_bytes{ a = ev.tag, b = "BTN_CLEARALL" } {
-            disengage{ &w }
+            disengage{ &h, &w }
             return true
         }
         if slice::eq_bytes{ a = ev.tag, b = "BTN_CLEARONE" } or slice::eq_bytes{ a = ev.tag, b = "BTN_CLEARONE2" } {

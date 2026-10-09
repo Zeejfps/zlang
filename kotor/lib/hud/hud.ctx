@@ -24,6 +24,10 @@ namespace hud {
     // whole over the selected object.
     struct BlockPart { index: i32, x: i32, y: i32 }
 
+    // The target marker as this frame placed it (block.ctx, update_reticle): one of MARKS, its top left
+    // corner and side in GUI pixels, and the quarter turns of the picture (the edge arrows).
+    struct Reticle { shown: bool, x: f32, y: f32, side: f32, mark: u8, turns: i32 }
+
     struct Hud {
         panel: u32,
         file_w: i32, file_h: i32,           // the HUD file's design size
@@ -38,10 +42,15 @@ namespace hud {
         shown_target: u32,                  // the target the block was built for
         lists: [3]ActionList,               // the block's slots
         power_pick: i32,                    // the Force power chosen in the middle slot (a spells.2da row), kept from target to target
-        refusal: f32,                       // seconds left of a refusal message in the message bar
+        refusal: f32,                       // seconds left of a refusal message in the target block's name label
+        refusal_reason: i32,                // its reason code (REASON_TEXT)
         hover_slot: i32,                    // the target slot under the pointer, -1 none
         look: i32,                          // the block's frames and health bar as set: 1 hostile, 2 poisoned, -1 not yet
-        pressed: u32,                       // the object under the pointer when the button went down
+        pressed: u32,                       // the target when the button went down in the world
+        pressing: bool,                     // the button went down in the world (not on the GUI)
+        reticle: Reticle,                   // the target marker to draw
+        reticle_for: u32,                   // the target the marker was last placed for
+        zoom: f32,                          // seconds left of the combat reticle's zoom-in; -1 armed for the next combat frame
         sight_latch: bool,                  // an enemy in sight has been announced (autotarget.ctx)
         sight_quiet: f32,                   // seconds left before the latch lets go once none is in sight
         target_lost: f32,                   // seconds the target has been out of sight
@@ -49,6 +58,9 @@ namespace hud {
         moving_for: f32,                    // seconds the leader has been moving by the keys, out of combat mode (autotarget.ctx)
         looking: bool,                      // the mouse turns the camera: the pointer is hidden and nothing is hovered
         swing_to: u32,                      // an object the auto-target wants the camera to swing round to (taken by the loop), obj::INVALID none
+        door_window: f32,                   // seconds left in which an auto-pause request waits (client +0x38c, after the player's action on a door)
+        deferred: f32,                      // seconds left before a waiting auto-pause request is made (+0x390); the auto-target's drop waits too
+        deferred_text: u32,                 // that request's reason text
         alternate: bool,                    // Shift is held (AlternateActions): slot orders replace the queue in combat
         trans_panel: u32,                   // the area transition label's panel while the pointer is on a transition, else 0
         trans_object: u32,                  // the transition it names
@@ -91,7 +103,8 @@ namespace hud {
             block = [BlockPart{ index = -1, x = 0, y = 0 }; 16],
             minimap = open_minimap{ &g, &w, &dev, panel },
             font = gui::font_slot{ &g, fs = &w.fs, &dev, name = "dialogfont10x10" }, combat = false, combat_message = 0.0, notify = [0.0; 9], notify_shown = [false; 9],
-            shown_target = obj::INVALID, lists = [empty_list{}; 3], power_pick = -1, refusal = 0.0, hover_slot = -1, look = -1, pressed = obj::INVALID, sight_latch = false, sight_quiet = 0.0, target_lost = 0.0, move_speed = 0.0, moving_for = 0.0, looking = false, swing_to = obj::INVALID, alternate = false, trans_panel = 0, trans_object = obj::INVALID,
+            shown_target = obj::INVALID, lists = [empty_list{}; 3], power_pick = -1, refusal = 0.0, refusal_reason = 0, hover_slot = -1, look = -1, pressed = obj::INVALID,
+            pressing = false, reticle = Reticle{ shown = false, x = 0.0, y = 0.0, side = 0.0, mark = 0, turns = 0 }, reticle_for = obj::INVALID, zoom = -1.0, sight_latch = false, sight_quiet = 0.0, target_lost = 0.0, move_speed = 0.0, moving_for = 0.0, looking = false, swing_to = obj::INVALID, door_window = 0.0, deferred = 0.0, deferred_text = 0, alternate = false, trans_panel = 0, trans_object = obj::INVALID,
             projector = Projector{ vp = math::mat4::identity{}, eye = math::vec3::zero{}, w = 1.0, h = 1.0 },
             floating = new_floating{ &g, &w, &dev },
         }
@@ -259,6 +272,7 @@ namespace hud {
         update_hover{ &h, &g, &w, blocked }
         update_transition{ &h, &g, &w, &dev, id = w.hover }
         update_block{ &h, &g, &w, &dev }
+        update_reticle{ &h, &w, dt }
         update_combat{ &h, &g, &w, &dev, dt }
         // Solo mode: its toggle shows once there is someone to leave behind.
         gui::set_visible{ &g, panel = h.panel, tag = "TB_SOLO", visible = w.party.count > 1 }

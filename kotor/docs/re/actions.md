@@ -849,7 +849,9 @@ Dead, knocked out, an invalid target or one that is not an object ⇒ timer hidd
 2. First pass with `+0x980` = 0 (creature): `+0x980 = 1`; push a fresh OPENLOCK and, before it,
    PLAYANIMATION (10128 `0x2790` for a door, 10131 `0x2793` otherwise, speed 1.0, 1.5 s); show a
    1500 ms action timer (`StartActionProgress` `0x004ef480`, type 7, sent only for the
-   player character, `+0x9d4` = 1); done. For the player the animation action plays
+   player character, `+0x9d4` = 1; message 0x30/1, whose client handler `0x00654a30`, reached from
+   `HandleServerToPlayerMessage` `0x0066a640` through `0x00665590`, reads the flag, the type and the
+   milliseconds and does nothing with them, so no timer is ever shown, for any type); done. For the player the animation action plays
    `gui_lockpick` 250 ms in (3.9).
 3. Second pass, creature: trap check as for doors (door `+0x2e8` / `+0x2b8`, placeable `+0x278` /
    `+0x23c`; reputation < 90 and a different faction ⇒ event 26, flags cleared, fail).

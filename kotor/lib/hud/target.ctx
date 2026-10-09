@@ -15,10 +15,11 @@ namespace hud {
     const R_FORCE: i32 = 1
     const R_ARMOR: i32 = 2
     const R_ITEM: i32 = 3
+    const R_CLOSE: i32 = 4
     const R_FULL: i32 = 5
     const R_DEAD: i32 = 6
 
-    // dialog.tlk: the refusal messages by reason code (shown for 5 seconds in the message bar).
+    // dialog.tlk: the refusal messages by reason code (shown for 5 seconds in the block's name label).
     const REASON_TEXT: [7]u32 = [0, 38613, 38614, 38615, 42422, 42498, 47936]
 
     // One choice in a slot: its icon (a texture in the GUI pack) and the dialog.tlk string that
@@ -55,6 +56,17 @@ namespace hud {
         let o = world::object{ w, id } ifnull { return false }
         let lo = world::object{ w, id = party::leader{ w } } ifnull { return false }
         if o.kind != obj::Kind::creature { return false }
+        return world::standing{ w, from = o.faction, toward = lo.faction } < HOSTILE_BELOW
+    }
+
+    // Whether `id` is a placeable without an inventory that is hostile to the leader: the target block treats
+    // it as a foe and lists the hostile Force powers in its middle slot (GetTargetKind 0x0060fcc0 gives it kind 3,
+    // FUN_00619c20 then asks the client hostile flag and the standing, below 11).
+    fn is_hostile_placeable { w: *world::World, id: u32 } -> bool {
+        let o = world::object{ w, id } ifnull { return false }
+        let lo = world::object{ w, id = party::leader{ w } } ifnull { return false }
+        let p = obj::placeable{ o } ifnull { return false }
+        if p.has_inventory { return false }
         return world::standing{ w, from = o.faction, toward = lo.faction } < HOSTILE_BELOW
     }
 
@@ -98,8 +110,8 @@ namespace hud {
         if dx * dx + dy * dy + dz * dz > RANGE2 { return false }
         match o.ext {
             creature{ c } => { return not c.dead and o.hp > 0 }
-            // An area transition stays clickable once someone has opened it (the click walks the leader through).
-            door{ d } => { return (d.state == obj::DoorState::closed or modload::link_of{ o } != null) and not d.static }
+            // An open door is never pickable, an area transition's neither: the leader walks through it.
+            door{ d } => { return d.state == obj::DoorState::closed and not d.static }
             placeable{ p } => { return p.useable }
             trigger{ t } => { return traps::is_known{ w, o } }
             else => { return false }
@@ -142,26 +154,30 @@ namespace hud {
 
     // What the target block's slot `k` holds for a door or placeable (FUN_00684410 and FUN_006837d0): the left
     // one Bash when it is locked, not plot and the area allows combat; the middle one Security (the unlock)
-    // when it is locked and the leader has the skill, a door also only when it wants no key. Open, Use and
-    // Talk are in no slot: they are what a click does.
+    // when it is locked and the leader has the skill, a door only when it wants no key, a placeable only when
+    // it has an inventory. Open, Use and Talk are in no slot: they are what a click does.
     fn build_slot_actions { w: *world::World, id: u32, k: usize } -> ActionList {
         let mut l = empty_list{}
         let o = world::object{ w, id } ifnull { return l }
         let mut locked = false
         let mut wants_key = false
+        let mut pickable = true
         match o.ext {
             door{ d } => {
                 locked = d.locked
                 wants_key = d.key_required
             }
-            placeable{ p } => { locked = p.locked and (p.useable or p.has_inventory) }
+            placeable{ p } => {
+                locked = p.locked and (p.useable or p.has_inventory)
+                pickable = p.has_inventory
+            }
             else => { return l }
         }
         if not locked { return l }
         if k == 0 and not o.plot and allows_combat{ w } {
             push_entry{ &l, e = entry{ act = Act::bash, icon = "i_attack", strref = 368 } }
         }
-        if k == 1 and not wants_key and can_pick_locks{ w } {
+        if k == 1 and pickable and not wants_key and can_pick_locks{ w } {
             push_entry{ &l, e = entry{ act = Act::unlock, icon = "isk_security", strref = 329 } }
         }
         return l
@@ -181,20 +197,37 @@ namespace hud {
         left = kept
     }
 
-    // The reason a known power cannot be cast now (R_OK when it can): the rules' answer as the
-    // action menus' reason codes (re/gui.md "Action menus").
-    fn power_reason { w: *world::World, f: *fight::Fighter, spell: i32, alive: bool } -> i32 {
-        let r = rules::can_cast_spell{ tables = w.rules, c = &f.c, spell, alive, from_item = false }
-        if r == rules::cast::DEAD { return R_DEAD }
-        if r == rules::cast::NOT_ENOUGH_FP { return R_FORCE }
-        if r == rules::cast::FORBIDDEN_EQUIPMENT or r == rules::cast::MISSING_EQUIPMENT { return R_ARMOR }
+    // The reason a known power cannot be cast now at a target `dist2` squared metres away (R_OK when it can),
+    // as the action menus' reason codes (re/gui.md "Action menus", 0x0064a870): a forbidden item (armour)
+    // first, then a target too close, then too few Force points; a missing item (a saber for the throws)
+    // only when nothing else stops it.
+    fn power_reason { w: *world::World, f: *fight::Fighter, spell: i32, alive: bool, dist2: f32 } -> i32 {
+        if not alive { return R_DEAD }
+        let row = rules::get_spell{ tables = w.rules, row = spell } ifnull { return R_OK }
+        let mask = rules::equipped_type_mask{ tables = w.rules, c = &f.c }
+        if (mask & @trunc(u32, row.forbid_items)) != 0 { return R_ARMOR }
+        let near = secondary_range{ w, letter = row.range }
+        if near > 0.0 and dist2 <= near * near { return R_CLOSE }
+        if not rules::has_enough_force_points{ tables = w.rules, c = &f.c, spell } { return R_FORCE }
+        let require = @trunc(u32, row.require_items)
+        if (mask & require) != require { return R_ITEM }
         return R_OK
+    }
+
+    // ranges.2da's SecondaryRange for a spells.2da Range letter (rows as GetSpellRange takes them: P and T 1,
+    // S 2, M 3, L 4, W 19). Only W's (SpellRngThrow, 5 m) is above zero: a target that close is refused.
+    fn secondary_range { w: *world::World, letter: u8 } -> f32 {
+        let row: usize = if letter == 'P' or letter == 'T' { 1 } else if letter == 'S' { 2 } else if letter == 'M' { 3 } else if letter == 'L' { 4 } else if letter == 'W' { 19 } else { 2 }
+        return twoda::get_float{ t = w.tables.ranges, row, column = "secondaryrange" } ifnull 0.0
     }
 
     // The spells.2da Exclusion bits that apply to a target (UpdateActionMenus' 0x006191f0): a
     // droid (racialtypes row 5) excludes the powers that bar droids (bit 1), a human (row 6) those
-    // that bar humans (bit 0, the droid-only powers); any other race leaves both kinds.
+    // that bar humans (bit 0, the droid-only powers); any other race leaves both kinds, and a target
+    // that is not a creature (a hostile placeable) excludes the powers that need one (bit 2).
     fn target_exclusion { w: *world::World, target: u32 } -> i32 {
+        let o = world::object{ w, id = target } ifnull { return 0 }
+        if o.kind != obj::Kind::creature { return 4 }
         let t = ruled_of{ w, id = target } ifnull { return 0 }
         if t.c.race == 5 { return 2 }
         if t.c.race == 6 { return 1 }
@@ -205,13 +238,22 @@ namespace hud {
     // block lists them: one entry per hostile line (spells.2da ForceHostile: stun, choke, push...),
     // the known power of that line with the highest ForcePriority (Stasis Field over Stasis; a line
     // never lists its lower rungs), the lines in order. The powers that do not suit the target's
-    // race are left out.
+    // race are left out. Nothing while the area's RestrictMode is set; a droid leader lists the utilities
+    // of its equipment instead (droid_actions).
     fn power_actions { w: *world::World, target: u32 } -> ActionList {
         let mut l = empty_list{}
+        if not allows_combat{ w } { return l }
         let leader = party::leader{ w }
         let f = ruled_of{ w, id = leader } ifnull { return l }
         let alive = not is_down{ w, id = leader }
         let exclude = target_exclusion{ w, target }
+        if f.c.race == 5 { return droid_actions{ w, f, leader, exclude } }
+        let lo = world::object{ w, id = leader } ifnull { return l }
+        let to = world::object{ w, id = target } ifnull { return l }
+        let dx = to.position.x - lo.position.x
+        let dy = to.position.y - lo.position.y
+        let dz = to.position.z - lo.position.z
+        let dist2 = dx * dx + dy * dy + dz * dz
         let mut best_row: [10]i32 = [-1; 10]
         let mut best_pri: [10]i32 = [-1; 10]
         let mut spell: usize = 0
@@ -238,11 +280,77 @@ namespace hud {
             let icon = twoda::get_string{ t = w.tables.spells, row = @as(usize, s), column = "iconresref" } ifnull ""
             let mut e = entry{ act = Act::power, icon, strref = @as(u32, row.name) }
             e.id = s
-            e.reason = power_reason{ w, f, spell = s, alive }
+            e.reason = power_reason{ w, f, spell = s, alive, dist2 }
             e.usable = e.reason == R_OK
             push_entry{ &l, e }
         }
         return l
+    }
+
+    // A droid leader's middle slot (FUN_00618c20): the hostile abilities of the items in its first fifteen
+    // equipment slots (a flame thrower, a stun ray...), one per spells.2da ForceHostile line (10 to 19 for
+    // these), the first item found keeping a line unless a later one has a higher ForcePriority, lines in
+    // order. Each is cast with its item, as a grenade is thrown. Named by the ability, pictured by its icon or
+    // else the item's; it is dimmed when the item has no use left ("Force Depleted"), when the ability forbids
+    // an item the droid wears ("Restricted by Armor") or needs one it lacks ("Missing Item"), the last that
+    // applies winning.
+    fn droid_actions { w: *world::World, f: *fight::Fighter, leader: u32, exclude: i32 } -> ActionList {
+        let mut l = empty_list{}
+        let lc = creature_of{ w, id = leader } ifnull { return l }
+        let mut best_item: [20]u32 = [obj::INVALID; 20]
+        let mut best_pri: [20]i32 = [-1; 20]
+        let mut slot: usize = 0
+        while slot < 15 {
+            let item = lc.equipped[slot]
+            slot = slot + 1
+            if item == obj::INVALID { continue }
+            let spell = rt_item::ability_of{ w, id = item }
+            if spell < 0 { continue }
+            let row = rules::get_spell{ tables = w.rules, row = spell } ifnull { continue }
+            if not row.valid or row.line_hostile < 0 or row.line_hostile >= 20 { continue }
+            if (row.exclusion & exclude) != 0 { continue }
+            let line = @as(usize, row.line_hostile)
+            if best_item[line] == obj::INVALID or row.priority > best_pri[line] {
+                best_item[line] = item
+                best_pri[line] = row.priority
+            }
+        }
+        let mask = rules::equipped_type_mask{ tables = w.rules, c = &f.c }
+        let mut line: usize = 0
+        while line < 20 {
+            let item = best_item[line]
+            line = line + 1
+            if item == obj::INVALID { continue }
+            let spell = rt_item::ability_of{ w, id = item }
+            let row = rules::get_spell{ tables = w.rules, row = spell } ifnull { continue }
+            let mut buf: [40]u8
+            let own = twoda::get_string{ t = w.tables.spells, row = @as(usize, spell), column = "iconresref" } ifnull ""
+            let icon = if own.len > 0 { own } else { item_icon_name{ w, id = item, into = buf[..] } }
+            let mut e = entry{ act = Act::throw, icon, strref = @as(u32, row.name) }
+            e.item = item
+            e.id = spell
+            if not has_use_left{ w, item } { e.reason = R_FORCE }
+            if (mask & @trunc(u32, row.forbid_items)) != 0 { e.reason = R_ARMOR }
+            let require = @trunc(u32, row.require_items)
+            if (mask & require) != require { e.reason = R_ITEM }
+            e.usable = e.reason == R_OK
+            push_entry{ &l, e }
+        }
+        return l
+    }
+
+    // Whether the item's ability (its first active CastSpell property) has a use left.
+    fn has_use_left { w: *world::World, item: u32 } -> bool {
+        let io = world::object{ w, id = item } ifnull { return false }
+        let it = obj::item{ o = io } ifnull { return false }
+        let ri = it.rules ifnull { return false }
+        let mut k: usize = 0
+        while k < @as(usize, ri.nprops) {
+            let p = ri.props[k]
+            k = k + 1
+            if @as(i32, p.name) == rules::ip::CAST_SPELL and rules::prop_active{ item = ri, p = &p } { return rt_talent::uses_left{ it, pr = &p } }
+        }
+        return false
     }
 
     // Whether the party leader has the Security skill trained.
@@ -266,7 +374,8 @@ namespace hud {
     // The picture of what a click on the target `id` would do.
     fn action_cursor { w: *world::World, id: u32 } -> u32 {
         let l = default_actions{ w, id }
-        if l.count == 0 { return gui::CURSOR_INVALID }
+        // Nothing to do to it: SetHoverObject leaves the arrow.
+        if l.count == 0 { return gui::CURSOR_DEFAULT }
         match l.entries[0].act {
             open => { return gui::CURSOR_DOOR }
             bash => { return gui::CURSOR_BASH }
@@ -310,26 +419,42 @@ namespace hud {
     }
 
     // Q and E: the next (or previous) selectable object around the leader by bearing from its
-    // facing, wrapping; hostile ones only in combat (movement.md 7.3).
+    // facing, wrapping; in combat mode hostile creatures only, or every one when no hostile creature
+    // is in view (CycleTarget 0x005fb050, movement.md 7.3).
     fn cycle_target { mut w: world::World, forward: bool } {
         let leader = party::leader{ w = &w }
         let lo = world::object{ w = &w, id = leader } ifnull { return }
         let all = list::items{ list = w.objects.all }
         let mut ids: [32]u32
         let mut bearing: [32]f32
+        let mut hostile: [32]bool
         let mut n: usize = 0
+        let mut foes: usize = 0
         let mut i: usize = 0
         while i < all.len and n < 32 {
             let o = all[i]
             i = i + 1
             if o.destroyed or not is_selectable{ w = &w, id = o.id } { continue }
-            let mut in_combat = false
-            if lo.ext is creature{ c = lc } { in_combat = lc.in_combat }
-            if in_combat and not is_hostile{ w = &w, id = o.id } { continue }
-            let a = measure_bearing{ lo, p = o.position }
             ids[n] = o.id
-            bearing[n] = a
+            bearing[n] = measure_bearing{ lo, p = o.position }
+            hostile[n] = is_hostile{ w = &w, id = o.id }
+            if hostile[n] { foes = foes + 1 }
             n = n + 1
+        }
+        let mut in_combat = false
+        if lo.ext is creature{ c = lc } { in_combat = lc.in_combat }
+        if in_combat and foes > 0 {
+            let mut kept: usize = 0
+            let mut j: usize = 0
+            while j < n {
+                if hostile[j] {
+                    ids[kept] = ids[j]
+                    bearing[kept] = bearing[j]
+                    kept = kept + 1
+                }
+                j = j + 1
+            }
+            n = kept
         }
         if n == 0 {
             w.target = obj::INVALID
