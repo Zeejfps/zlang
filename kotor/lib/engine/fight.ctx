@@ -680,20 +680,52 @@ namespace fight {
     // The creature's combat stance, the digit of the animation names (the client's 0x00613710, from
     // the hands' baseitems WeaponWield): 0 a creature model, 1 stun baton, 2 one melee weapon, 3
     // two-handed or double, 4 two melee weapons, 5 pistol, 6 two pistols, 7 rifle, 9 repeating
-    // blaster (WeaponWield 6), 8 bare hands. Ours: a left-hand item with an empty right hand, or a
-    // left hand other than a one-handed weapon or a pistol, keeps the right hand's digit (the client
-    // gives 0).
+    // blaster (WeaponWield 6), 8 bare hands. With both hands full the left item alone decides: a
+    // one-handed weapon 4, a pistol 6, anything else (a stun baton) 0; a left-hand item with the right
+    // hand empty (which the equip rules do not allow) is 0 too. A creature that is not a simple model
+    // with digit 0 attacks with animations.2da row 0 (the client's 0x00613da0 has no case for it).
     fn stance { w: *world::World, c: *obj::Creature } -> i32 {
         if is_beast{ w, c } { return 0 }
+        let has_right = c.equipped[obj::SLOT_RIGHT_WEAPON] != obj::INVALID
+        let has_left = c.equipped[obj::SLOT_LEFT_WEAPON] != obj::INVALID
+        if not has_right { return if has_left { 0 } else { 8 } }
+        if has_left {
+            let left = wield_of{ w, item = c.equipped[obj::SLOT_LEFT_WEAPON] }
+            return if left == 2 { 4 } else if left == 4 { 6 } else { 0 }
+        }
         let right = wield_of{ w, item = c.equipped[obj::SLOT_RIGHT_WEAPON] }
-        let left = wield_of{ w, item = c.equipped[obj::SLOT_LEFT_WEAPON] }
+        if right == 1 { return 1 }
+        if right == 2 { return 2 }
+        if right == 3 { return 3 }
+        if right == 4 { return 5 }
+        if right == 5 { return 7 }
+        if right == 6 { return 9 }
+        return 0
+    }
+
+    // The digit the ready pose is drawn from. Ours: where the client's digit is 0 for a creature that
+    // is not a simple model (a stun baton in the left hand, a left hand alone), which ready row the
+    // client then plays was not traced; it stands as with the right hand's own weapon (or bare hands).
+    fn pose_stance { w: *world::World, c: *obj::Creature } -> i32 {
+        let s = stance{ w, c }
+        if s != 0 or is_beast{ w, c } { return s }
+        let right = wield_of{ w, item = c.equipped[obj::SLOT_RIGHT_WEAPON] }
         if right == 0 { return 8 }
         if right == 1 { return 1 }
-        if right == 2 { return if left == 2 or left == 1 { 4 } else { 2 } }
+        if right == 2 { return 2 }
         if right == 3 { return 3 }
-        if right == 4 { return if left == 4 { 6 } else { 5 } }
+        if right == 4 { return 5 }
         if right == 6 { return 9 }
         return 7
+    }
+
+    // GetBothWieldMelee (0x004d2b70), one side: a right-hand weapon that is not ranged and whose WeaponWield
+    // is not 1 (the stun baton) or 8.
+    fn wields_melee { w: *world::World, c: *obj::Creature } -> bool {
+        let item = c.equipped[obj::SLOT_RIGHT_WEAPON]
+        if item == obj::INVALID or is_ranged_item{ w, item } { return false }
+        let wield = wield_of{ w, item }
+        return wield != 1 and wield != 8
     }
 
     fn is_ranged_stance { s: i32 } -> bool { return (s >= 5 and s <= 7) or s == 9 }
@@ -708,10 +740,11 @@ namespace fight {
 
     // An attack animation row: melee duels (c sets, `variant` 0..4) when the two are engaged and both
     // fight in melee, the general attacks (g sets) otherwise; ranged b sets.
-    fn attack_row { mut w: world::World, s: i32, duel: bool, monster: bool, ranged_beast: bool, variant: i32 } -> i32 {
+    fn attack_row { mut w: world::World, s: i32, beast: bool, duel: bool, monster: bool, ranged_beast: bool, variant: i32 } -> i32 {
         let pick = world::random{ &w }
         if s == 0 {
             if ranged_beast { return ranged_row{ s, feat = 0 } }
+            if not beast { return 0 }
             return if pick % 2 == 0 { 276 } else { 277 }
         }
         if s == 1 { return if pick % 2 == 0 { 87 } else { 88 } }
@@ -873,7 +906,8 @@ namespace fight {
     // GetCanEngage 0x004d2c30: whether the target's round can be paired with this attack. It can
     // when the target is idle (no round, no attempted target), already fights this creature, or
     // runs a round without a target; never when it is helpless. The creature the player leads is
-    // paired only while it fights this one back (its spell targets are not kept here).
+    // paired only while it fights this one back and the player has not ordered an attack on another
+    // (its clicked target +0x510 is empty or this one); its spell targets are not kept here.
     fn can_engage { w: *world::World, id: u32, target: u32 } -> bool {
         let t = world::object{ w, id = target } ifnull { return false }
         let tc = obj::creature{ o = t } ifnull { return false }
@@ -883,7 +917,9 @@ namespace fight {
         if not tf.round.started and idle { can = true }
         if tc.attempted_target == id { can = true }
         if tf.round.started and idle { can = true }
-        if target == party::leader{ w } and tc.attempted_target != id { can = false }
+        if target == party::leader{ w } {
+            if tc.attempted_target != id or (tc.clicked_target != obj::INVALID and tc.clicked_target != id) { can = false }
+        }
         if tc.dead or tf.dying_ms > 0 or rules::is_debilitated{ c = &tf.c } { can = false }
         return can
     }
@@ -1107,11 +1143,15 @@ namespace fight {
         stand_in.abil = [10; 6]
         let mut def: *mut rules::Creature = &stand_in
         let mut ts: i32 = 8
+        let mut target_beast = false
+        let mut target_melee = false
         let mut is_object = false
         if obj::creature{ o = t } is some{ value = tc } {
             let tf = tc.fighter ifnull { return }
             sync_flags{ w = &w, o = t, f = tf }
             ts = stance{ w = &w, c = tc }
+            target_beast = is_beast{ w = &w, c = tc }
+            target_melee = wields_melee{ w = &w, c = tc }
             def = &tf.c
         } else {
             if t.kind != obj::Kind::door and t.kind != obj::Kind::placeable { return }
@@ -1136,15 +1176,15 @@ namespace fight {
         // The animation (AIActionAttackObject, FUN_00613da0): the duel attacks (10109) when the two
         // are engaged and both wield melee weapons, the monster-fighting ones against a creature's
         // model, the general ones (10009) when the target is not engaged.
-        let both_melee = s >= 2 and s <= 4 and ts >= 2 and ts <= 4
+        let both_melee = wields_melee{ w = &w, c } and target_melee
         let duel = engaged and not ranged and both_melee
-        let monster = engaged and not ranged and ts == 0 and s >= 2 and s <= 4
+        let monster = engaged and not ranged and target_beast and s >= 2 and s <= 4
         let variant = if duel and not forced.on { duel_variant{ &w, last = f.duel_last } } else { 0 }
         // A combat feat sets the attack record's AttackType only for an attacker with a weapon in its
         // right hand (AIActionAttackObject, 3.1 step 6), and the client then plays the feat's own
         // animation in place of the general, duel or monster one.
         let attack_type = if feat > 0 and c.equipped[obj::SLOT_RIGHT_WEAPON] != obj::INVALID and rules::has_feat{ c = &f.c, feat } { feat } else { 0 }
-        let mut row = if forced.on { forced.animation } else { attack_row{ &w, s, duel, monster, ranged_beast = ranged and s == 0, variant } }
+        let mut row = if forced.on { forced.animation } else { attack_row{ &w, s, beast = is_beast{ w = &w, c }, duel, monster, ranged_beast = ranged and s == 0, variant } }
         if not forced.on and attack_type > 0 {
             if ranged { row = ranged_row{ s, feat = attack_type } } else if s != 0 {
                 let fr = melee_feat_row{ s, feat = attack_type }
@@ -1550,6 +1590,7 @@ namespace fight {
             let mut a = actions::make{ kind = actions::Kind::attack_object }
             a.params[0] = actions::Param::object{ id = target }
             _ = actions::add{ &w, id, action = a, force = false }
+            drop_clicked{ &w, id, target }
             return
         }
         let next = nearest_enemy{ w = &w, o, range = retarget_range{ w = &w, o } }
@@ -1580,6 +1621,7 @@ namespace fight {
         if world::object{ w = &w, id } is some{ value = back } {
             if obj::creature{ o = back } is some{ value = c } { c.attempted_target = next }
         }
+        drop_clicked{ &w, id, target = next }
         if w.target == target or w.target == obj::INVALID { w.target = next }
         if w.log.combat {
             world::prefix{ w = &w }
@@ -1589,6 +1631,14 @@ namespace fight {
         let mut a = actions::make{ kind = actions::Kind::attack_object }
         a.params[0] = actions::Param::object{ id = next }
         _ = actions::add{ &w, id, action = a, force = false }
+    }
+
+    // The continuation schedules an attack on `target`: the player's clicked target (+0x510) is done with when it
+    // is that one (0x005b6980, LAB_005b6c0b).
+    fn drop_clicked { mut w: world::World, id: u32, target: u32 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let c = obj::creature{ o } ifnull { return }
+        if c.clicked_target == target { c.clicked_target = obj::INVALID }
     }
 
     // GetMaxAttackRange + 2 m (0x004ffad0): a ranged weapon's maxattackrange (30 when 0), else the
@@ -1800,7 +1850,7 @@ namespace fight {
     }
 
     fn play_ready { mut w: world::World, o: *mut obj::Object, c: *obj::Creature } {
-        let row = ready_row{ s = stance{ w = &w, c } }
+        let row = ready_row{ s = pose_stance{ w = &w, c } }
         if row_of_animation{ id = o.animation } == row { return }
         world::set_animation{ o, id = animname::ROW_BASE + @as(u32, row), speed = 1.0 }
     }

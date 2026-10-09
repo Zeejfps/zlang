@@ -535,6 +535,7 @@ namespace hud {
             a.params[0] = actions::Param::object{ id = target }
             a.params[2] = actions::Param::int{ v = spell }
             _ = actions::add{ &w, id = leader, action = a, force = false }
+            note_clicked{ &w, leader, target }
             return
         }
         let kind: actions::Kind = match act {
@@ -567,6 +568,16 @@ namespace hud {
             actions::clear_for_player{ &w, id = leader }
         }
         _ = actions::add{ &w, id = leader, action = a, force = false }
+        if kind == actions::Kind::attack_object { note_clicked{ &w, leader, target } }
+    }
+
+    // The attack input (0x005254c0 case 2, the attack and feat-attack orders): after AddAttackActions, which sets
+    // the attempted attack target (+0x50c) when there is none, a target other than it is kept as the player's
+    // clicked target (+0x510). Until the end-of-round continuation schedules that target (fight::drop_clicked) the
+    // leader pairs with no other foe (fight::can_engage), so the foes it is not after attack it with solo rounds.
+    fn note_clicked { mut w: world::World, leader: u32, target: u32 } {
+        let c = creature_of{ w = &w, id = leader } ifnull { return }
+        if c.attempted_target != obj::INVALID and c.attempted_target != target { c.clicked_target = target }
     }
 
     // Whether a slot order goes behind the leader's queue: in combat mode, unless Shift is held.

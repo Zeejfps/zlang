@@ -25,12 +25,17 @@ namespace rules {
     fn combat_look_up_attack { tables: *Tables, atk: *Creature, attack_index: i32, combat_feat: i32 } -> AttackView {
         let feat = combat_pick_feat{ c = atk, combat_feat }
         let counts = attack_counts{ tables, c = atk, combat_feat = feat }
+        // The feat counts its extra attack whatever the hands hold (StartCombatRound), but the attack record's
+        // AttackType, which everything else reads, is written only with an item in the right hand
+        // (AIActionAttackObject, asm 0x005bc4b3 on: GetItemInSlot(0x10)). Bare hands, or a left-hand item alone,
+        // make plain attacks: an unarmed Flurry is two plain attacks, an unarmed Power Attack or Critical Strike one.
+        let typed = if equipped_item{ c = atk, mask = slot::RIGHT } != null { feat } else { 0 }
         let mut idx = attack_index
         if idx >= counts.total { idx = counts.total - 1 }
         if idx < 0 { idx = 0 }
         let u = @as(usize, idx)
         return AttackView{
-            feat, index = idx, off_hand = counts.is_off_hand[u], wtype = counts.weapon_type[u],
+            feat = typed, index = idx, off_hand = counts.is_off_hand[u], wtype = counts.weapon_type[u],
             ranged = combat_is_ranged{ tables, c = atk }, counts,
         }
     }
