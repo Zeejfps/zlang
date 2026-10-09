@@ -229,6 +229,8 @@ namespace pazaak {
         let mut k: usize = 0
         while k < 8 {
             if s.sounds[k].len > 0 {
+                // A click may still be playing it, on the mixer's thread: it ends first (mix.ctx, the memory rule).
+                if s.mixer is some{ value = m } { mix::release{ m, bytes = s.sounds[k] } }
                 _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = g.heap, mem = s.sounds[k], count = 0 }
                 s.sounds[k] = slice::empty(u8){}
             }

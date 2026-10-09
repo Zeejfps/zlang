@@ -1,7 +1,7 @@
 #!/bin/sh
 # The game's sound at real pace, measured without speakers (docs/testing.md; docs/design/audio.md, "Checked").
 #
-#   EXE=kotor/out/kotor.exe [CK=kotor/out/checkpoints] sh kotor/tools/sndrun/run.sh [ES_FRAMES]
+#   EXE=kotor/out/kotor.exe [CK=kotor/out/checkpoints] [OUT=kotor/out/sndrun] [STALL=MS] sh kotor/tools/sndrun/run.sh [ES_FRAMES]
 #
 # Two runs, headless with the sound device open on SDL's disk driver (which takes the samples at the
 # speakers' pace and writes them to a file) and every pass held to the 1/30 s step (--sound-device):
@@ -11,12 +11,15 @@
 # Each run's `--log sound` summary and its recording (kotor/tools/py/sndscan.py) are checked; FAIL (exit 1) when
 # a voice was stolen from a sound as important as the new one, the device ran dry after a frame under 60 ms (past the
 # first second), or more than 1,000 samples were clipped. Underruns after slower frames and the recording's dropouts
-# and clicks are printed: they depend on how busy the machine is. Logs and recordings in kotor/out/sndrun/.
+# and clicks are printed: they depend on how busy the machine is. Logs and recordings in kotor/out/sndrun/ (OUT).
+# STALL=MS passes --stall MS: every 15th pass sleeps MS ms more, slow frames the mixer's thread must play through
+# (FAIL then on any underrun past the first second, whatever the frame took).
 py=$(command -v python)                         # Windows' Python (numpy), found before MSYS2's comes first on PATH
 export PATH=/g/Dev/msys64/mingw64/bin:$PATH     # SDL2.dll
 exe=${EXE:-kotor/out/kotor.exe}
 ck=${CK:-kotor/out/checkpoints}
-out=kotor/out/sndrun
+out=${OUT:-kotor/out/sndrun}
+stall=${STALL:+--stall $STALL}
 mkdir -p $out
 fail=0
 
@@ -29,11 +32,13 @@ check() {
   steals=$(echo "$summary" | awk '{ print $3 }')
   clipped=$(echo "$summary" | awk -F', ' '{ for (i = 1; i <= NF; i++) if ($i ~ /samples clipped/) { split($i, w, " "); print w[1] } }')
   # The device running dry after a frame quicker than 60 ms (past the first second) is the queue's fault, not the frame's.
-  quick=$(grep -a 'sound underrun' $log | awk '{ f = substr($1, 2) + 0; split($0, p, "after a "); if (f > 30 && p[2] + 0 < 60) n++ } END { print n + 0 }')
+  # With STALL every frame counts: the slow ones are made on purpose, and the mixer's thread doesn't wait for frames.
+  limit=60; [ -n "$stall" ] && limit=100000
+  quick=$(grep -a 'sound underrun' $log | awk -v limit=$limit '{ f = substr($1, 2) + 0; split($0, p, "after a "); if (f > 30 && p[2] + 0 < limit) n++ } END { print n + 0 }')
   echo "     $name: $summary"
   echo "     $name: $(grep -a '^dropouts:' $out/$name.scan.txt); $(grep -a '^clicks:' $out/$name.scan.txt)"
   if [ "$steals" -gt 0 ] || [ "$quick" -gt 0 ] || [ "$clipped" -gt 1000 ]; then
-    echo "FAIL $name: $steals steals, $quick underruns after a frame under 60 ms, $clipped samples clipped"
+    echo "FAIL $name: $steals steals, $quick underruns past the first second (frames under $limit ms), $clipped samples clipped"
     fail=1
   else
     echo "ok   $name"
@@ -43,13 +48,13 @@ check() {
 if [ -d $ck/uppercity ]; then
   rm -rf $out/saves
   SDL_AUDIODRIVER=disk SDL_DISKAUDIOFILE=$out/fight.raw timeout 600 $exe --headless --sound-device --load $ck/uppercity \
-    --saves $out/saves --input kotor/tools/sndrun/fight6.txt --frames 1800 --log sound > $out/fight.log 2>&1
+    --saves $out/saves --input kotor/tools/sndrun/fight6.txt --frames 1800 --log sound $stall > $out/fight.log 2>&1
   check fight
 else
   echo "skip fight: no checkpoint $ck/uppercity (sh kotor/tools/checkpoints/make.sh)"
 fi
 rm -rf $out/saves
 SDL_AUDIODRIVER=disk SDL_DISKAUDIOFILE=$out/es.raw timeout 900 $exe --headless --sound-device \
-  --saves $out/saves --input kotor/tools/playthrough/10_endar_spire.txt --frames ${1:-6000} --log sound > $out/es.log 2>&1
+  --saves $out/saves --input kotor/tools/playthrough/10_endar_spire.txt --frames ${1:-6000} --log sound $stall > $out/es.log 2>&1
 check es
 exit $fail

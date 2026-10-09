@@ -161,7 +161,10 @@ namespace ambience {
         return names[tag - 1]
     }
 
+    // Frees a stream's bytes. The mixer (on its own thread) may be reading them: any voice that
+    // still does ends first (mix.ctx, the memory rule).
     fn stop_bytes { mut a: Ambience, bytes: []mut u8 } {
+        mix::release{ m = a.m, bytes }
         if bytes.len > 0 { _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = a.heap, mem = bytes, count = 0 } }
     }
 
@@ -204,7 +207,7 @@ namespace ambience {
 
     // Starts ambientmusic.2da row `row` (stopping what plays); row 0 or a blank resource: silence.
     fn play_music { mut a: Ambience, mut w: world::World, row: i32 } {
-        mix::stop{ m = a.m, h = a.music, fade = 1.0 }
+        mix::stop{ m = a.m, h = a.music, fade = 0.0 }      // its bytes go next: a fade would read them freed
         stop_bytes{ &a, bytes = a.music_bytes }
         a.music_bytes = slice::empty(u8){}
         a.music_wait = -1.0
@@ -238,10 +241,9 @@ namespace ambience {
         return obj::area{ o = ao }
     }
 
-    // Switches the music to ambientmusic.2da row `row`. play_music fades the old track out but
-    // gives its bytes back at once, and the mixer needs them until the voice is done: stop it first.
+    // Switches the music to ambientmusic.2da row `row` (play_music stops the old track at once:
+    // it gives its bytes back).
     fn change_music { mut a: Ambience, mut w: world::World, row: i32 } {
-        mix::stop{ m = a.m, h = a.music, fade = 0.0 }
         play_music{ &a, &w, row }
     }
 

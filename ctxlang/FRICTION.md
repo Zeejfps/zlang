@@ -100,3 +100,16 @@ errors and capability-variable work (`e19f1fe`).
   `mutex::lock{ mutex = &shared.lock }`. Every call on a lock or a condition inside a struct pays
   the field's name.
 
+- **20. Locking a structure needs `mut`** (from the game's mixer thread, kotor/lib/audio/mix.ctx).
+  A query that only reads a shared structure (`mix::is_playing{ m: *Mixer, h }`, `played`,
+  `feed_room`) must still lock the structure's mutex, which takes `mut mutex: Mutex`, so the fn
+  became `mut m: Mixer`: its signature no longer says it changes nothing. Four fns there. A
+  read-only `*T` that may still lock its mutex field (a lock as interior mutability) would say it.
+- **21. No scoped lock** (same place). Every public fn of the mixer starts with
+  `mutex::lock{ mutex = &m.lock }` and `defer mutex::unlock{ mutex = &m.lock }`: 21 pairs, each
+  naming the lock twice. A `mutex::hold` that unlocks at the scope's end needs something like a
+  destructor; a block form (`with`-like) would do.
+- **22. The mutex isn't fair, and std doesn't say so** (same place). Windows' slim locks let a
+  thread that unlocks and locks again at once keep the lock: mixtest's stress check, a thread
+  rendering block after block, let the other thread in 97 times in 3,000 blocks, and about 1,000
+  times once it yielded between blocks. Worth a line in std's `mutex` comment.

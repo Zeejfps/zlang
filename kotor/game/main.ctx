@@ -2,7 +2,9 @@
 //
 //   kotor/tools/ctxc run kotor -- --module end_m01aa
 //   kotor/tools/ctxc run kotor -- --module end_m01aa --headless --frames 90 --screenshot-at 60:kotor/out/game/m1.png
-fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } -> i32 {
+// Taking Threads makes the game a threaded program (spec §15, Entry point): the sound is mixed on a
+// thread of its own (lib/audio/audio.ctx), so a slow frame doesn't empty the device's queue.
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, mut threads: Threads, args: Args } -> i32 {
     let opts = options::parse{ &io, args } ifnull { return 2 }
     let mut h = heap::new{ &mem }
     let module_pages = mem::pages{ &mem, size = 268435456 } ifnull { return oom{ &io } }
@@ -14,7 +16,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } 
         io::flush{ &io }
         return 1
     }
-    let code = run{ &io, &fs, &mem, &sdl, &h, &rm, &module_arena, &scratch, opts } iferr err{ error } {
+    let code = run{ &io, &fs, &mem, &sdl, &threads, &h, &rm, &module_arena, &scratch, opts } iferr err{ error } {
         _ = @fmt(&io, "kotor: failed: {}\n", error)
         io::flush{ &io }
         1
@@ -29,7 +31,7 @@ fn oom { mut io: Io } -> i32 {
 }
 
 fn run {
-    mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, mut h: heap::Heap, mut rm: res::Manager,
+    mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, mut threads: Threads, mut h: heap::Heap, mut rm: res::Manager,
     mut module_arena: arena::Arena, mut scratch: arena::Arena, opts: options::Options,
 } -> !i32 {
     let w = try world::make{ fs, io, heap = &h, rm = &rm, module_arena = &module_arena, scratch = &scratch, seed = opts.seed, saves = opts.saves }
@@ -77,7 +79,7 @@ fn run {
         report::summary{ w, routines = opts.report }
         return 0
     }
-    return try play::run{ &sdl, w, &vm, engine, &mem, opts }
+    return try play::run{ &sdl, &threads, w, &vm, engine, &mem, opts }
 }
 
 // @fmt of C strings (SDL's error text) to standard output; tools/common has the rest.

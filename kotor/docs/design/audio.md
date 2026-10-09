@@ -2,8 +2,8 @@
 
 `kotor/lib/audio` plays every sound the game has: it decodes KOTOR's `.wav` files (PCM, IMA ADPCM
 and MP3 behind two KOTOR-specific wrappers, [formats/audio.md](../formats/audio.md)), mixes the
-sounds playing at once into 16-bit stereo, and keeps SDL's audio queue topped up. Everything is
-ctxlang; SDL only takes the finished samples.
+sounds playing at once into 16-bit stereo, and keeps SDL's audio queue topped up from a thread of
+its own. Everything is ctxlang; SDL only takes the finished samples.
 
 | File | Namespace | What |
 |---|---|---|
@@ -13,48 +13,87 @@ ctxlang; SDL only takes the finished samples.
 | `mp3_tab.ctx` | `mp3_tab` | generated (`tools/py/mp3tab.py`): the Huffman lookup tables and the synthesis window |
 | `snd.ctx` | `snd` | `Stream`: any sound file, decoded a block or frame at a time |
 | `mix.ctx` | `mix` | the mixer: voices, resampling, volumes and groups, 2D pan, 3D sound, feeds |
-| `audio.ctx` | `audio` | the device: SDL's queue, filled once a frame; `heard` for lip sync |
+| `audio.ctx` | `audio` | the device: SDL's queue, kept full by the mixer's thread (or once a frame); `heard` for lip sync |
 
 Only `audio.ctx` names SDL; the rest is platform-neutral. Programs that use `lib/audio` add
 `lib/base` (for `math::Vec3`) and `lib/platform`, and link SDL2.
 
-## The per-frame model
+## The mixer's thread
 
-ctxlang has no threads, so nothing pulls samples from us the way an audio callback would. SDL's
-queued audio (`SDL_QueueAudio`) plays what it is given; the game gives it more once a frame:
+SDL's queued audio (`SDL_QueueAudio`) plays what it is given; something has to give it more before
+it runs dry. In the game that is a thread of its own (`audio::start`), as Miles mixed on its own
+thread in the original, so the sound no longer depends on how long a frame takes:
 
 ```
 let mut dev = try audio::open{ &sdl, rate = 44100, latency_ms = 60 }      // the device may pick another rate
 let m = try mix::make{ realloc = heap::alloc, heap = &h, rate = dev.rate, voices_2d = 24, voices_3d = 16 }
+try audio::start{ &sdl, &threads, &dev, m }    // the mixer's thread: needs Threads, so main takes it
+defer audio::close{ &sdl, &dev }
+defer audio::stop{ &threads, &dev }            // runs first: the thread is joined before the device closes
 
 while running {
-    // ... the game's update: start and stop sounds, move them ...
-    mix::set_listener{ m, position = camera.position, forward = camera.forward, up = camera.up }
-    try audio::update{ &sdl, &dev, m }           // mixes what the queue lacks, queues it
+    // ... the game's update: start and stop sounds, move them, set the listener ...
     // ... render ...
 }
 ```
 
-`audio::update` measures what is still queued and renders just enough to cover the next frame
-(in blocks of up to 1,024 frames). A frame that takes longer than what is queued empties the
-queue and the sound stutters (`dev.underruns` counts it, `--log sound` names the frame time).
-This is the cost of having no threads: Miles mixed on a thread of its own, so the original's
-output never depended on the game's frame time. What we keep queued adapts: at least
-`latency_ms` (60), else the longest gap between updates lately (falling by 5 % of each frame's
-time, a stall counted as at most 250 ms) plus 50 ms, at most 250 ms. Quick frames keep the
-latency low (sounds are heard 60-90 ms after they start); a run of slow ones (a heavy scene, a
-busy machine) raises it after the first stutter instead of stuttering every frame. Changes made
-to the mixer are heard after the queued latency, which is why it falls back when frames are
-quick. `audio::brace` queues the most at once and holds it for a few seconds; the game calls it
-when an area's sound starts, since that area's first frames (models, textures, emitters seen for
-the first time) are slow. `audio::fill{ &sdl, &dev, m, frames }` queues a given amount before
-other known stalls.
+**The thread** (`audio::pump`) looks at the queue every 4 ms and mixes what it lacks to stay
+`latency_ms` (60 ms) ahead of the speakers, a `mix::BLOCK` (1,024 frames, 23 ms) at a time, then
+sleeps. The device takes its buffer 1,024 frames at a time, so the queue swings between about
+37 and 60 ms; a frame of any length leaves it there. Changes to the mixer are heard 40-80 ms
+later.
 
-Measured at real pace (`--sound-device`, SDL's disk driver; "Checked"): on the escape pod and the
-Taris arrival with the machine busy (frames of 60-100 ms), a fixed 60 ms ran dry 144 times in
-90 s (2.7 s of silence in 150 dropouts); adapting, 3 times (one 140 ms dropout where the new
-area's music started over its first frames, which `brace` now covers). On a quiet machine
-(frames of 33-64 ms) the same scene went from 3 underruns and 4 dropouts to none.
+**The lock.** The Mixer is one structure both threads use, guarded by a mutex in it (`m.lock`).
+Every public `mix::` fn takes the lock for its own work (so the game's calls change nothing), and
+`mix::render` holds it for one block's mixing at a time, never across SDL's calls or a sleep. A
+game call waits at most for the block being mixed (well under a millisecond for 40 voices). The
+lock isn't recursive: inside mix.ctx only the public fns lock, and what they call (`stop_voice`,
+`take_voice`, `voice_of`) doesn't. Windows' slim lock isn't fair: a thread that unlocks and locks
+again at once can keep it, so the pump sleeps between top-ups (mixtest's stress check yields
+between blocks for the same reason). A command queue (ctxlang/threads.md, "Examples") would avoid
+the waiting altogether; it isn't needed while a block is this quick.
+
+**Memory.** The voices read their sounds' bytes, which belong to the game (the ambience's
+streams, the dialogue's voice-over, the GUI's and pazaak's clicks, cached effect waves). The rule:
+bytes may be freed only once no voice reads them, which is when `mix::stop{ fade = 0 }` or
+`mix::release{ m, bytes }` has returned, or `is_playing` said false. A stopped voice that is
+fading out still reads its bytes until the fade ends. Since every one of these takes the lock,
+once it returns no block being mixed can still be reading them. `release` ends every voice
+reading a buffer whether or not its handle was kept: the ambience's `stop_bytes` and pazaak's
+`end_session` call it before they free. Area changes run `ambience::stop_area` (every voice
+stopped at once) before the scene and module memory go. Sounds that are never freed (the GUI's,
+the front end's theme, the cached effect waves, the credits song) need nothing. A feed's samples
+(movies) are copied into the mixer's own ring, so a movie's memory isn't the mixer's concern.
+
+**Output and counters.** The thread prints nothing (standard output is per thread in a threaded
+program). It counts underruns (the queue found empty) in `dev.underruns` with atomics;
+`audio::underruns` reads them, and with `--log sound` the game reports each new one at the frame
+it sees it, and the total at the end.
+
+**Shutdown.** `audio::stop` clears an atomic `running` flag and joins the thread; the game's play
+loop does it, and closes the device, as it returns (`play::close_sound`, deferred right after the
+mixer starts, so it runs before anything set up earlier is undone).
+
+**Without the thread.** A program that doesn't take `Threads` (the tools: sndplay, menurun,
+movietest, pazaakplay), or a game whose thread failed to start, calls `audio::update` once a frame
+instead, which mixes what the queue lacks to cover the next frame (`update`, `brace` and `fill` do
+nothing while the thread runs). A frame that takes longer than what is queued then empties the
+queue and the sound stutters. What it keeps queued adapts: at least `latency_ms`, else the longest
+gap between updates lately (falling by 5 % of each frame's time, a stall counted as at most
+250 ms) plus 50 ms, at most 250 ms. `audio::brace` queues the most at once before a known stall
+(a new area's first frames), and `audio::fill{ &sdl, &dev, m, frames }` a given amount. Measured
+before the thread at real pace: on the escape pod and the Taris arrival with the machine busy
+(frames of 60-100 ms), a fixed 60 ms ran dry 144 times in 90 s; adapting, 3 times.
+
+**Headless runs** without `--sound-device` open no device and start no thread: the game renders
+into a scratch buffer for each tick's time (as before), so replays and tests stay deterministic.
+
+**What a threaded program costs.** `main` taking `Threads` makes the whole game a threaded program
+(spec §15, Entry point, rule 8): the stack check reads its limit from a thread-local slot, about a
+fifth more time on a program that does nothing but call. On the game it is about 2-3 %: the Upper
+City fight (`--headless --load uppercity`, fight6.txt, 1,800 frames, no sound device, three runs
+each, the mixer's lock included) took 3.05 ms a frame drawn before and 3.11 after, and 1.17 ms
+with `--no-render` before and 1.21 after.
 
 The original opens Miles at 44.1 kHz, 16-bit stereo ([re/app.md](../re/app.md)); so do we by
 default.
@@ -93,8 +132,12 @@ mix::set_group_volume{ m, group, volume }     // swkotor.ini's 0..100 / 100
 mix::set_group_paused{ m, group, paused }
 mix::set_master{ m, volume }
 mix::set_listener{ m, position, forward, up }
-mix::render{ m, into }                        // what audio::update calls
+mix::render{ m, into }                        // what the mixer's thread (or audio::update) calls
+mix::release{ m, bytes }                      // ends at once every voice reading `bytes`, before they are freed
+mix::stats{ m }                               // the counts (Stats), read under the lock
 ```
+
+Each of these takes the mixer's lock for its work (above, "The mixer's thread").
 
 `Params` say how a sound plays: `group`, `volume` (linear, 0..1), `pan` (2D, -1..1), `pitch`
 (rate multiplier), `looping`, `priority` (0..255, higher keeps its voice), `positional`,
@@ -182,14 +225,18 @@ fade = 0.0 }` drops what is left when the movie is skipped.
 
 **Memory.** `mix::make` allocates the mixer and its voices (about 3 MB for 40 voices: each holds
 its own stream and decoder) from the allocator it is given; `mix::free` gives it back. A voice
-doesn't own its file's bytes: the caller keeps them until `is_playing` is false. Streams and
+doesn't own its file's bytes: the caller keeps them until `is_playing` is false (or until `stop`
+with no fade or `release` returns: "The mixer's thread", Memory). Streams and
 the mixer are big, so they are only ever passed by pointer.
 
 ### The device (`audio`)
 
 ```
 audio::open{ &sdl, rate, latency_ms } -> !Device     // initialises SDL's audio subsystem
-audio::update{ &sdl, &dev, m }                       // once a frame
+audio::start{ &sdl, &threads, &dev, m }              // the mixer's thread keeps the queue latency_ms ahead
+audio::stop{ &threads, &dev }                        // ends and joins it (before close)
+audio::underruns{ &dev } -> u32                      // times the queue ran dry, from any thread
+audio::update{ &sdl, &dev, m }                       // once a frame, without the thread (nothing with it)
 audio::fill{ &sdl, &dev, m, frames }                 // queue more before a stall
 audio::set_latency{ &dev, latency_ms }
 audio::heard{ &sdl, dev, m, h } -> ?f64              // seconds into voice h as heard now
@@ -296,9 +343,11 @@ kotor/tools/ctxc run kotor/tools/sndplay -- FILE       # play one (or --wav / --
   1,000x real time, music MP3 (44.1 kHz stereo) about 340x, IMA ADPCM stereo about 700x, PCM
   thousands. Mixing 40 PCM voices with resampling, 3D and ramps runs about 90x real time; 40 voices
   each decoding its own stereo MP3 about 5x.
-- **mixtest**: 32 checks of exact sample values (gains, pans, groups, ends, loops, fades,
-  stealing and its equal-priority rule, the stats, out-of-range 3D, the limiter, stale handles,
-  3D, feeds) pass.
+- **mixtest**: 34 checks pass: 33 of exact sample values (gains, pans, groups, ends, loops,
+  fades, stealing and its equal-priority rule, the stats, out-of-range 3D, the limiter, stale
+  handles, 3D, feeds, `release`), and the lock: a thread renders 3,000 blocks while the test plays,
+  stops, fades and releases sounds, and a sound stopped at once or released is never seen playing
+  after the call.
 - **At real pace** (`sh kotor/tools/sndrun/run.sh`, testing.md): the game runs headless with
   `--sound-device` on SDL's `disk` driver, which takes the samples at the speakers' pace and
   writes them to a file, and `kotor/tools/py/sndscan.py` reads that file for dropouts (digital
@@ -318,6 +367,21 @@ kotor/tools/ctxc run kotor/tools/sndplay -- FILE       # play one (or --wav / --
   mixer's own bugs on any machine; the underruns (no threads) only bite when frames run past the
   latency, which a busy machine or a heavy scene makes common and the adaptive latency now
   absorbs up to 250 ms frames.
+
+  The mixer's thread (2026-10), against the frame-driven queue with its adaptive latency, the same
+  runs (`sndrun`; `STALL=250` sleeps 250 ms more every 15th frame, as a heavy scene or a busy
+  machine would):
+
+  | Scenario | Frame-driven: underruns (silence) | Thread: underruns |
+  |---|---|---|
+  | Upper City, six troopers (1 min) | 0 | 0 |
+  | Endar Spire, 6,000 frames (4 min) | 1 (9 ms) | 0 |
+  | the fight, `STALL=250` | 34 (193 ms) | 0 |
+  | the Endar Spire, `STALL=250` | 134 (852 ms) | 0 |
+
+  The adaptive latency can't help a stall that comes now and then: it falls back between them, and
+  each stall runs the queue dry again. The thread plays through them at its steady 60 ms. A third
+  pass with `STALL=300` gave 0 underruns and 0 dropouts in both runs too.
 
 ## Open questions
 

@@ -1,6 +1,7 @@
 // mixtest: checks lib/audio's mixer on sounds made here, with known answers: gains, pans and
 // group volumes, 3D attenuation and panning, resampled lengths, ends, loops, fades, voice
-// stealing by priority, stale handles, feeds, and played-time. No device: it renders offline.
+// stealing by priority, stale handles, feeds, played-time, `release`, and the lock: a thread
+// renders while this one plays and stops sounds, as the game's mixer thread does. No device.
 //
 //   kotor/tools/ctxc run kotor/tools/mixtest
 //
@@ -11,11 +12,11 @@ struct Tally { passed: u32, failed: u32 }
 
 const RATE: u32 = 44100
 
-fn main { mut io: Io, mut mem: Mem } -> i32 {
+fn main { mut io: Io, mut mem: Mem, mut threads: Threads } -> i32 {
     let pages = mem::pages{ &mem, size = 67108864 } ifnull { return 1 }
     let mut heap = arena::new{ buf = pages }
     let mut t = Tally{ passed = 0, failed = 0 }
-    run{ &io, &heap, &t } iferr err{ error } {
+    run{ &io, &heap, &t, &threads } iferr err{ error } {
         _ = @fmt(&io, "mixtest: {}\n", error)
         t.failed = t.failed + 1
     }
@@ -60,7 +61,7 @@ fn render { m: *mut mix::Mixer, out: []mut i16, frames: usize } -> []mut i16 {
     return out[..2 * frames]
 }
 
-fn run { mut io: Io, mut heap: arena::Arena, mut t: Tally } -> ! {
+fn run { mut io: Io, mut heap: arena::Arena, mut t: Tally, mut threads: Threads } -> ! {
     let out = try alloc::resize(i16, arena::Arena){ realloc = arena::alloc, &heap, mem = slice::empty(i16){}, count = 2 * 200000 }
     let dc = make_wav{ &heap, rate = 22050, channels = 1, frames = 22050, value = 10000 }
     let dc2 = make_wav{ &heap, rate = 44100, channels = 2, frames = 4410, value = 8000 }
@@ -206,6 +207,64 @@ fn run { mut io: Io, mut heap: arena::Arena, mut t: Tally } -> ! {
     expect{ &io, &t, ok = rendered >= 1900 and rendered <= 2200, what = "an ended feed plays out what it has, then ends" }
     let bad = match mix::play_feed{ m, rate = 22050, channels = 3, p = mix::sound_2d{ group = mix::Group::movie, volume = 1.0 } } { ok => { false } err => { true } }
     expect{ &io, &t, ok = bad, what = "a feed of 3 channels is refused" }
+
+    // ---- release: every voice reading the bytes ends at once, handle kept or not; others play on
+    let r1 = try mix::play{ m, bytes = dc, p = mix::sound_2d{ group = mix::Group::sfx, volume = 0.5 } }
+    let r2 = try mix::play{ m, bytes = dc2, p = mix::sound_2d{ group = mix::Group::sfx, volume = 0.5 } }
+    _ = render{ m, out, frames = 100 }
+    mix::release{ m, bytes = dc[100..200] }
+    expect{ &io, &t, ok = not mix::is_playing{ m, h = r1 } and mix::is_playing{ m, h = r2 }, what = "release ends the voices reading those bytes, and only those" }
+    mix::stop_all{ m, group = null, fade = 0.0 }
+    mix::free{ realloc = arena::alloc, &heap, m }
+
+    try lock_stress{ &io, &t, &heap, &threads, dc, short }
+}
+
+// What the rendering thread shares with the test.
+struct Spin { m: *mut mix::Mixer, blocks: u32, done: u32 }
+
+// It yields between blocks, as the game's pump sleeps between top-ups: a lock that isn't fair would
+// otherwise go back to it every time.
+fn spin_render { mut threads: Threads, data: *mut Spin } {
+    let mut buf: [2048]i16 = [0; 2048]
+    let mut i: u32 = 0
+    while i < data.blocks {
+        mix::render{ m = data.m, into = buf[..] }
+        thread::yield_now{ &threads }
+        i = i + 1
+    }
+    @atomic_store(&data.done, 1, atomic::Order::release)
+}
+
+// A thread renders block after block while this one plays, stops, fades and releases sounds: no
+// deadlock, and a voice stopped at once or released is never seen playing after the call returns.
+fn lock_stress { mut io: Io, mut t: Tally, mut heap: arena::Arena, mut threads: Threads, dc: []u8, short: []u8 } -> ! {
+    let m = try mix::make{ realloc = arena::alloc, &heap, rate = RATE, voices_2d = 8, voices_3d = 4 }
+    let mut spin = Spin{ m, blocks = 3000, done = 0 }
+    let th = try thread::create{ &threads, run = spin_render, data = &spin, options = thread::default_options{} }
+    let mut calls: u32 = 0
+    let mut wrong: u32 = 0
+    while @atomic_load(&spin.done, atomic::Order::acquire) == 0 {
+        let bytes = if calls % 2 == 0 { dc } else { short }
+        let h = mix::play{ m, bytes, p = mix::sound_2d{ group = mix::Group::sfx, volume = 0.3 } } iferr { mix::Handle{ slot = 0, id = 0 } }
+        mix::set_volume{ m, h, volume = 0.2 }
+        mix::set_listener{ m, position = math::vec3::zero{}, forward = math::vec3::make{ x = 0.0, y = 1.0, z = 0.0 }, up = math::vec3::make{ x = 0.0, y = 0.0, z = 1.0 } }
+        if calls % 3 == 0 {
+            mix::stop{ m, h, fade = 0.0 }
+            if mix::is_playing{ m, h } { wrong = wrong + 1 }
+        } else if calls % 3 == 1 {
+            mix::stop{ m, h, fade = 0.01 }
+        } else if calls % 7 == 2 {
+            mix::release{ m, bytes }
+            if mix::is_playing{ m, h } { wrong = wrong + 1 }
+        }
+        _ = mix::played{ m, h }
+        calls = calls + 1
+    }
+    thread::join{ &threads, thread = th }
+    mix::stop_all{ m, group = null, fade = 0.0 }
+    let st = mix::stats{ m }
+    expect{ &io, &t, ok = wrong == 0 and calls > 10 and st.busy_2d > 0, what = "a thread renders while this one plays and stops sounds" }
     mix::free{ realloc = arena::alloc, &heap, m }
 }
 
