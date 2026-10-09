@@ -1,0 +1,6 @@
+# Door sounds (kotor/tools/sndrun/doors.sh): from the uppercity checkpoint the leader, put in front of a
+# locked apartment door, tries it (placeableobjsnds Locked), then bashes it open (Opened).
+1 ui bot god on
+5 warpxy 90.75,94
+10 use ptar_lockde
+100 attack ptar_lockde

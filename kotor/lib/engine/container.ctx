@@ -21,13 +21,14 @@ namespace container {
         if not p.has_inventory or p.user != obj::INVALID { return false }
         p.open = true
         p.user = user
-        play{ o, p, anim = ANIM_OPEN }
+        play{ &w, o, p, anim = ANIM_OPEN }
         events::post{ &w, delay_ms = 0, caller = user, target = placeable, payload = events::Payload::script{ e = events::script_event{ kind = events::OPEN, object = user } } }
         outbox::post{ out = &w.out, note = outbox::Note::open_container{ placeable, user } }
         return true
     }
 
-    fn play { o: *mut obj::Object, p: *mut obj::Placeable, anim: u32 } {
+    fn play { mut w: world::World, o: *mut obj::Object, p: *mut obj::Placeable, anim: u32 } {
+        objsound::placeable_animated{ &w, id = o.id, from = p.anim, to = anim }
         p.anim = anim
         o.animation = anim
         o.dirty = o.dirty | obj::DIRTY_ANIMATION
@@ -85,7 +86,7 @@ namespace container {
         }
         p.open = false
         p.user = obj::INVALID
-        play{ o, p, anim = ANIM_CLOSE }
+        play{ &w, o, p, anim = ANIM_CLOSE }
         events::post{ &w, delay_ms = 0, caller = user, target = placeable, payload = events::Payload::script{ e = events::script_event{ kind = events::CLOSE, object = user } } }
         if p.has_inventory and p.die_when_empty and p.inventory.len == 0 {
             p.useable = false

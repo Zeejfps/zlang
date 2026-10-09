@@ -116,7 +116,7 @@ namespace doors {
         // field of Kolto Control does once its scientist is persuaded) sends OPEN_OBJECT with no lock test, 0x0057d490.
         let by_creature = if world::object{ w = &w, id } is some{ value = actor } { actor.kind == obj::Kind::creature } else { false }
         if by_creature and d.locked and not use_key{ &w, who = id, target } {
-            tell{ &w, who = id, strref = FEEDBACK_LOCKED }
+            say_locked{ &w, who = id, target }
             events::post{ &w, delay_ms = 0, caller = id, target, payload = events::Payload::script{ e = events::script_event{ kind = events::FAIL_TO_OPEN, object = id } } }
             return actions::Status::failed
         }
@@ -147,8 +147,10 @@ namespace doors {
         if approach{ &w, id, target, a } { return actions::Status::done }
         // A locked container opens to its key; else the actor is told it is locked and OnUsed still runs (3.5).
         if p.has_inventory and p.locked and not use_key{ &w, who = id, target } {
-            tell{ &w, who = id, strref = FEEDBACK_LOCKED }
+            say_locked{ &w, who = id, target }
         }
+        // Opening it sounds placeableobjsnds' Opened, whoever opens it (0x0057e8c0).
+        if p.has_inventory and not p.locked and not p.open { objsound::play{ &w, id = target, column = objsound::OPENED } }
         // A container the party opens shows its contents (actions.md 3.5): OnOpen, not OnUsed.
         if p.has_inventory and not p.locked and (id == w.pc or id == w.player or party::is_member{ w = &w, id }) {
             _ = container::open{ &w, placeable = target, user = id }
@@ -300,6 +302,14 @@ namespace doors {
         outbox::post{ out = &w.out, note = outbox::Note::feedback{ strref, text = outbox::keep_text{ out = &w.out, s = "" } } }
     }
 
+    // Feedback message 13 for a locked door or placeable: the client that shows it also plays the
+    // target's placeableobjsnds Locked sound (FormatFeedbackMessage 0x005fcd10), so only the player's.
+    fn say_locked { mut w: world::World, who: u32, target: u32 } {
+        if not is_player_side{ w = &w, id = who } { return }
+        tell{ &w, who, strref = FEEDBACK_LOCKED }
+        objsound::play{ &w, id = target, column = objsound::LOCKED }
+    }
+
     // The roll of a Security check as the original's combat log words it (dialog.tlk 1405, "<CUSTOM0>
     // attempts <CUSTOM1> on <CUSTOM2> : *<CUSTOM3>* : (<CUSTOM4> <CUSTOM5> <CUSTOM6> = <CUSTOM7><CUSTOM8>)"):
     // "Leia Tana attempts Security on Door : *success* : (Take 20 + 5 = 25 vs. DC 1)". Said to the player
@@ -384,7 +394,9 @@ namespace doors {
     fn set_door_state { mut w: world::World, id: u32, state: obj::DoorState } {
         let o = world::object{ w = &w, id } ifnull { return }
         let d = obj::door{ o } ifnull { return }
+        let from = d.state
         d.state = state
+        objsound::door_changed{ &w, id, from, to = state }
         walkmap::set_active{ m = &w.walk, index = d.walk, active = state == obj::DoorState::closed }
         o.dirty = o.dirty | obj::DIRTY_ANIMATION
         if w.log.objects {

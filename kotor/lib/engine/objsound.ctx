@@ -1,0 +1,80 @@
+// The sounds of doors and placeables (placeableobjsnds.2da; docs/re/actions.md, "Door and placeable
+// sounds"): a door opening, closing or destroyed, a container opened or closed, a placeable switched
+// on or off or destroyed, the rattle of a locked one. Each plays once, 3D at the object (a door's
+// 1.5 m up), in prioritygroups.2da row 22 (Single_Shot_Positional), as the original does.
+//
+//   objsound::play{ &w, id, column }                       one column of the object's row
+//   objsound::door_changed{ &w, id, from, to }             a door's open state changed
+//   objsound::placeable_animated{ &w, id, from, to }       a placeable's state animation changed
+namespace objsound {
+    // placeableobjsnds.2da's columns (the original reads them by these names).
+    const OPENED: []u8 = "opened"
+    const CLOSED: []u8 = "closed"
+    const DESTROYED: []u8 = "destroyed"
+    const USED: []u8 = "used"
+    const LOCKED: []u8 = "locked"
+
+    // A placeable's state animations (animname.ctx).
+    const ANIM_DESTROYED: u32 = 10072
+    const ANIM_ON: u32 = 10073
+    const ANIM_OFF: u32 = 10074
+    const ANIM_OPEN: u32 = 10075
+
+    // Where a door's sound plays above its position (the 1.5 the client adds; a placeable's is 0).
+    const DOOR_HEIGHT: f32 = 1.5
+
+    // The object's placeableobjsnds.2da row: genericdoors.2da's SoundAppType for a door, placeables.2da's
+    // for a placeable; null for anything else or a blank cell. (A door with a doortypes.2da Appearance
+    // would read doortypes.2da instead; no UTD has one.)
+    fn row_of { w: *world::World, o: *obj::Object } -> ?usize {
+        let mut row: ?i32 = null
+        if obj::door{ o } is some{ value = d } {
+            row = twoda::get_int{ t = w.tables.genericdoors, row = @as(usize, d.appearance), column = "soundapptype" }
+        } else if obj::placeable{ o } is some{ value = p } {
+            row = twoda::get_int{ t = w.tables.placeables, row = @as(usize, p.appearance), column = "soundapptype" }
+        }
+        let r = row ifnull { return null }
+        if r < 0 { return null }
+        return @as(usize, r)
+    }
+
+    // Plays one column of the door's or placeable's row at it; nothing when the cell is blank.
+    fn play { mut w: world::World, id: u32, column: []u8 } {
+        let o = world::object{ w = &w, id } ifnull { return }
+        let row = row_of{ w = &w, o } ifnull { return }
+        let name = twoda::get_string{ t = w.tables.placeableobjsnds, row, column } ifnull { return }
+        if name.len > 16 { return }
+        let mut at = o.position
+        if o.kind == obj::Kind::door { at.z = at.z + DOOR_HEIGHT }
+        outbox::post{ out = &w.out, note = outbox::Note::play_sound{ name = resref::truncate{ name }, object = id, position = at, positional = true, group = outbox::GROUP_SINGLE_SHOT } }
+    }
+
+    // The client plays a door's transition animation when its state changes and sounds it: opening
+    // (either way) Opened, closing Closed, destroyed Destroyed (blank for every door row).
+    fn door_changed { mut w: world::World, id: u32, from: obj::DoorState, to: obj::DoorState } {
+        if from == to { return }
+        if to == obj::DoorState::destroyed {
+            play{ &w, id, column = DESTROYED }
+        } else if to == obj::DoorState::closed {
+            play{ &w, id, column = CLOSED }
+        } else if from == obj::DoorState::closed {
+            play{ &w, id, column = OPENED }
+        }
+    }
+
+    // The same for a placeable's state animation: destroyed Destroyed, a switch on or off (to or
+    // from either) Used, leaving the open state Closed. Opening is silent here: USEOBJECT plays
+    // Opened itself.
+    fn placeable_animated { mut w: world::World, id: u32, from: u32, to: u32 } {
+        if from == to { return }
+        if to == ANIM_DESTROYED {
+            play{ &w, id, column = DESTROYED }
+        } else if to == ANIM_OPEN {
+            return
+        } else if to == ANIM_ON or to == ANIM_OFF or from == ANIM_ON or from == ANIM_OFF {
+            play{ &w, id, column = USED }
+        } else if from == ANIM_OPEN {
+            play{ &w, id, column = CLOSED }
+        }
+    }
+}

@@ -80,7 +80,10 @@ namespace rt_act {
         let id = animname::from_script{ constant, kind = o.kind }
         if seconds < 0.0 or o.kind != obj::Kind::creature {
             world::set_animation{ o, id, speed }
-            if obj::placeable{ o } is some{ value = p } { p.anim = id }
+            if obj::placeable{ o } is some{ value = p } {
+                objsound::placeable_animated{ &w, id = me, from = p.anim, to = id }
+                p.anim = id
+            }
             return
         }
         let mut a = actions::make{ kind = actions::Kind::play_animation }

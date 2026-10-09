@@ -2898,7 +2898,7 @@ addr	name	prototype	comment
 0x005d5dd0	CExoSound::Update		(high)
 0x005d5de0	CExoSound::SetListenerOrientation	void SetListenerOrientation(float * pFront, float * pUp)	(high)
 0x005d5df0	CExoSound::SetListenerPosition	void SetListenerPosition(float * pPosition)	(high)
-0x005d5e10	CExoSound::PlayVoiceStream	int PlayVoiceStream(void * sResRef)	streams a C_/P_/N_ prefixed voice resource through a private streaming source; name descriptive (low)
+0x005d5e10	CExoSound::PlayVoiceStream	int PlayVoiceStream(void * sResRef)	plays a wave once at a point: args resref, position (x, y, z), height added to z, prioritygroups.2da row, delay ms, volume, min and max distance (0 = defaults); a C_/P_/N_ prefixed resref streams through a private streaming source instead (actions.md 3.15); name misleading (high for the args)
 0x005d5e80	CExoSound::SetSoundMode	void SetSoundMode(int nMode)	game/paused/movie/dialog modes; 5 pushes and 6 pops a pause state (med)
 0x005d5e90	CResHelperWAV::SetResRef	void SetResRef(void * pResRef, int bDemand)	wav (4) (med)
 0x005d60e0	CExoSoundSource::CExoSoundSource	CExoSoundSource * CExoSoundSource(void * sResRef)	vtable 0x0074c608, owns a 0xa0 internal source (high)

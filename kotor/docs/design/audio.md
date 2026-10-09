@@ -162,7 +162,8 @@ never cuts off one as important as itself. A 3D sound at or past its `max_distan
 listener fails with `out_of_range` and takes no voice. `m.stats` counts steals, refusals, cuts
 (audible voices ended without a fade), clipped output samples, the peak and the most voices busy;
 `take_events` hands over the latest steals and refusals with the sounds' `tag`s, for
-`--log sound`.
+`--log sound`, which also names every one-shot the presentation starts (`sound play NAME row
+GROUP`, `(missing)` when the wave isn't found).
 
 **Voices and loudness: what the engine layer does** (lib/scene/ambience.ctx). Every sound effect
 carries its `prioritygroups.2da` row: a sound object its UTS `Priority`, a `play_sound` note a
@@ -305,6 +306,17 @@ delay (18 ms at 32 kHz, in the LAME tag) that we play as Miles probably did, wit
 anything in the world, 2D for the GUI, with the class's priority. Moving sources (a creature's
 looping sound) get `set_position` each frame. The listener is the camera
 (`UpdateSoundListener` in the original follows the camera/player each frame).
+
+**Doors and placeables** (lib/engine/objsound.ctx; [re/actions.md](../re/actions.md) 3.15): their
+`placeableobjsnds.2da` row (genericdoors/placeables `SoundAppType`) names the waves. A door's open
+state changing plays `Opened` (from closed), `Closed` (to closed) or `Destroyed`
+(`doors::set_door_state`, so a bashed door, which opens, sounds `Opened`); USEOBJECT opening a
+container plays `Opened`; a placeable's state animation plays `Closed` (leaving open), `Used` (to
+or from on/off) or `Destroyed` (its DEATH event); "This object is locked." to the player plays
+`Locked`. All as `play_sound` notes, 3D at the object (a door's 1.5 m up), group 22
+(`Single_Shot_Positional`). Not done yet: a hit on a door or placeable should take its row's
+`ArmorType` as the weaponsounds.2da column (lib/engine/fight_fx.ctx `hit_column` still uses
+`leather`), and a creature's body bag uses row 53 `Corpse` for its close sound.
 
 **Movies.** The Bink decoder (lib/video) decodes a movie's audio and pushes it into a feed
 (`play_feed` in the `movie` group, `feed` as frames decode, `end_feed` at the end); the picture

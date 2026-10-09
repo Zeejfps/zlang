@@ -42,6 +42,7 @@ namespace world {
         appearancesndset: twoda::Table,
         soundset: twoda::Table,
         traps: twoda::Table,
+        placeableobjsnds: twoda::Table,     // doors' and placeables' sounds (objsound.ctx)
     }
 
     // A pending module change (gameloop.md 5.1).
@@ -271,6 +272,7 @@ namespace world {
             appearancesndset = try load_table{ &fs, heap, rm, name = "appearancesndset" },
             soundset = try load_table{ &fs, heap, rm, name = "soundset" },
             traps = try load_table{ &fs, heap, rm, name = "traps" },
+            placeableobjsnds = try load_table{ &fs, heap, rm, name = "placeableobjsnds" },
         }
     }
 

@@ -507,6 +507,12 @@ namespace ambience {
         match note {
             play_sound{ name, position, positional, group } => {
                 let bytes = wave{ &a, &w, name }
+                if w.log.sound {
+                    world::prefix{ w = &w }
+                    let mut shown = name
+                    let missing: []u8 = if bytes.len == 0 { " (missing)" } else { "" }
+                    _ = @fmt(&w.io, "sound play {} row {}{}\n", resref::bytes{ r = &shown }, group, missing)
+                }
                 if bytes.len == 0 { return }
                 let mut p = if positional { mix::sound_3d{ group = mix::Group::sfx, volume = 1.0, position, min_distance = 3.0, max_distance = 30.0 } } else { mix::sound_2d{ group = mix::Group::sfx, volume = 1.0 } }
                 p.tag = tag_of{ a = &a, name }

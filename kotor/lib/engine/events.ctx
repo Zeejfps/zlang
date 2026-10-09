@@ -167,7 +167,12 @@ namespace events {
                 scripts::resume{ &w, &vm, engine, situation = s, self = ev.target }
                 scripts::free_situation{ &w, s }
             }
-            script{ e } => { run_script_event{ &w, &vm, engine, o, e, caller = ev.caller } }
+            script{ e } => {
+                // A placeable's death plays its destroyed animation, which sounds placeableobjsnds'
+                // Destroyed (objsound.ctx); every way it dies posts this event at once.
+                if e.kind == DEATH and o.kind == obj::Kind::placeable { objsound::play{ &w, id = o.id, column = objsound::DESTROYED } }
+                run_script_event{ &w, &vm, engine, o, e, caller = ev.caller }
+            }
             destroy => {
                 fight::spawn_body_bag{ &w, id = ev.target }
                 world::destroy{ &w, id = ev.target }

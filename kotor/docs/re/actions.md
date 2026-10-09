@@ -745,7 +745,7 @@ Param 0 = the object. In order (high unless marked):
    - locked (`+0x260`), actor a creature and `UseKeyOnObject(placeable, 0)` fails ⇒ feedback
      message 13 ("locked") to the actor, go to step 5 (OnUsed still fires);
    - otherwise open it. The sound is `placeableobjsnds.2da` column `Opened` of the row given by
-     `placeables.2da` `SoundAppType` for the appearance (`+0x230`). Actor without a client twin
+     `placeables.2da` `SoundAppType` for the appearance (`+0x230`), 3D at the placeable (3.15). Actor without a client twin
      (NPC): the actor plays animation 10075 and the sound plays, no GUI, then step 5. Actor with a
      client twin (the player): placeable already open (`+0x338` set) ⇒ done, no OnUsed; first pass
      ⇒ push a fresh USEOBJECT and, in front of it, a WAIT of max(the placeable's animation 312
@@ -1513,6 +1513,43 @@ mine slot (`0x0060f590`) sends the user itself as the target and a zero point, s
 the user's feet. The target block's mine actions (callbacks `0x00691900` Disable, subskill 0, and
 `0x00691950` Recover, subskill 101) send player input message 7 (`0x00677b10`, major 6; skill 1, the
 subskill, the target, a zero point), which the server hands to UseSkill (`0x005254c0`).
+
+### 3.15 Door and placeable sounds (`placeableobjsnds.2da`)
+
+The object's row of `placeableobjsnds.2da` is its `SoundAppType`: for a door, `genericdoors.2da`'s
+for its GenericType (client door `+0x125`), or `doortypes.2da`'s when its `Appearance` (`+0x124`) is
+non-zero (no UTD has one); for a placeable, `placeables.2da`'s for its appearance. Every play below
+goes through `0x005d5e10` (misnamed `CExoSound::PlayVoiceStream`: it is the one-shot "play this
+wave at a point" call; args resref, position, height added to z, prioritygroups.2da row, delay,
+volume, min and max distance, the last four 0 here, so the row's defaults). All are 3D at the
+object, in row 22 `Single_Shot_Positional`; a door's 1.5 m above its position, a placeable's at it.
+A blank cell plays nothing. The loader `C2DAs::LoadPlaceableobjsnds` (`0x005c1980`) resolves the
+columns `ArmorType`, `Locked`, `Opened`, `Closed`, `Destroyed`; `Used` is read by name. (high)
+
+| When | Column | Where |
+|---|---|---|
+| A door's animation turns from closed (10022) to open 10050 / 10051: the client plays the transition 334 / 335 | `Opened` | client door update `0x00684030` |
+| A door's animation turns to closed 10022 from 10050 / 10051 (transition 336 / 337), whoever closed it, `YavinHackCloseDoor` too | `Closed` | same |
+| A door turns to destroyed 10072 (transition 329; the death effect, 8.2 of combat.md). Blank for every door row | `Destroyed` | same |
+| USEOBJECT opens an unlocked container (3.5 step 3), the NPC path and the player's first pass alike; at the placeable, height 0 | `Opened` | `0x0057e8c0`, three calls |
+| A placeable's animation leaves open 10075 (transition 313, closing) | `Closed` | client placeable update `0x006832a0` |
+| A placeable's animation turns to dead 10072 (transition 306; the death effect) | `Destroyed` | same |
+| A placeable's animation turns to or from on 10073 / off 10074 (transitions 314 / 315) | `Used` | same |
+| Feedback message 13 "This object is locked." (the actor's client only, so the player's): the door's (1.5 m up) or placeable's | `Locked` | `FormatFeedbackMessage` `0x005fcd10` |
+| A hit on a door or placeable: `ArmorType` picks weaponsounds.2da's `<armortype>0`/`1` column (random), as a worn armour's type does for a creature | `ArmorType` | hit sound `0x00617470` |
+
+The client picks those transitions in `0x0063e930` from the old and new animation (an old 10075
+gives 313, a new 10074 314, ..., a new 10075 312, then a new 10072 306 for a placeable (type 9) or
+329 for a door (type 10) last), so a dead placeable sounds `Destroyed` whatever it was doing. 312,
+the opening itself, plays nothing in `0x006832a0`: the open sound is USEOBJECT's. A placeable
+opened another way (PlayAnimation open) is silent. (high)
+
+A body bag left by a creature (server `IsBodyBag` `+0x440` set, `+0x444` clear, and a test of the
+client object `0x006057b0` not read) uses row 53 `Corpse` for the client's sounds instead of its
+appearance's (`0x006832a0`; low: the test). A bashed door is opened (`CSWSDoor::Open`, combat.md
+6.6), so it sounds `Opened`; a bashed container opens rather than dies (no sound but the hits'). No
+other caller reads these columns (no unlock or trap sound comes from this table; the unlock's
+sounds are the user's sound set, 3.7).
 
 ## 4. Ranges and other constants
 

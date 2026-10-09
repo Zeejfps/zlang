@@ -14,6 +14,7 @@
 # and clicks are printed: they depend on how busy the machine is. Logs and recordings in kotor/out/sndrun/ (OUT).
 # STALL=MS passes --stall MS: every 15th pass sleeps MS ms more, slow frames the mixer's thread must play through
 # (FAIL then on any underrun past the first second, whatever the frame took).
+# Also FAIL when the es run plays no footlocker or door open sound, or doors.sh (a locked door tried, then bashed) fails.
 py=$(command -v python)                         # Windows' Python (numpy), found before MSYS2's comes first on PATH
 export PATH=/g/Dev/msys64/mingw64/bin:$PATH     # SDL2.dll
 exe=${EXE:-kotor/out/kotor.exe}
@@ -57,4 +58,11 @@ rm -rf $out/saves
 SDL_AUDIODRIVER=disk SDL_DISKAUDIOFILE=$out/es.raw timeout 900 $exe --headless --sound-device \
   --saves $out/saves --input kotor/tools/playthrough/10_endar_spire.txt --frames ${1:-6000} --log sound $stall > $out/es.log 2>&1
 check es
+# The footlocker and the doors on the route sound placeableobjsnds.2da (docs/re/actions.md 3.15).
+if grep -a -q 'sound play pl_footlkr_open row 22$' $out/es.log && grep -a -q 'sound play dr_.*_open row 22$' $out/es.log; then
+  echo "ok   es: footlocker and door sounds"
+else
+  echo "FAIL es: no footlocker or door open sound (sound play pl_footlkr_open / dr_*_open)"; fail=1
+fi
+EXE=$exe CK=$ck OUT=$out sh kotor/tools/sndrun/doors.sh || fail=1
 exit $fail
