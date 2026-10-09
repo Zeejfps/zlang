@@ -164,6 +164,7 @@ namespace mix {
         fade_level: f32,        // their gain now, 0..1
         fade_target: f32,
         fade_rate: f32,         // how far fade_level moves a frame
+        suspended: bool,        // sound mode 5 (the window inactive): a sound started meanwhile is held at once
         lock: mutex::Mutex,     // held by every fn below for its work, so the mixer may render on another thread
     }
 
@@ -195,6 +196,7 @@ namespace mix {
         m.fade_level = 1.0
         m.fade_target = 1.0
         m.fade_rate = 0.0
+        m.suspended = false
         m.lock = mutex::make{}
         let mut i: usize = 0
         while i < n {
@@ -458,7 +460,7 @@ namespace mix {
         v.fade = 1.0
         v.fade_step = 0.0
         v.paused = false
-        v.held = false
+        v.held = m.suspended and feed == null
         v.failed = false
     }
 
@@ -634,6 +636,25 @@ namespace mix {
             m.voices[i].held = false
             i = i + 1
         }
+    }
+
+    // Sound mode 5 and 6 (SetSoundMode 0x005d8560 with 0x005d82c0(1) / 0x005d83f0): the window lost
+    // activation, so every sound playing stops (hold_world with nothing kept) and one started meanwhile
+    // is held at once (CExoSoundSourceInternal::Play stops it while +0x144 is set); its return lets them
+    // all go on (the owner then applies its sound mode again). Returns how many it stopped.
+    fn suspend_world { mut m: Mixer, on: bool } -> u32 {
+        if on {
+            let held = hold_world{ &m, keep = 0 }
+            mutex::lock{ mutex = &m.lock }
+            m.suspended = true
+            mutex::unlock{ mutex = &m.lock }
+            return held
+        }
+        mutex::lock{ mutex = &m.lock }
+        m.suspended = false
+        mutex::unlock{ mutex = &m.lock }
+        release_world{ &m }
+        return 0
     }
 
     // Turns the sounds of the play groups in `rows` (bits; the ones playing and any started later)

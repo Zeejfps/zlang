@@ -451,8 +451,16 @@ high where a decompile says it plainly, medium where it rests on a field's use.
   0x005f4ae0, from `CGuiInGame::QuickLoad` and `CSWGuiSaveLoad::LoadSelectedGame`, which pushes
   mode 1 and spins `CExoSound::Update` for 500 ms before the load: the area's ambient bed fades
   out as a saved game loads. 5 and 6 are the window losing and regaining activation (all paused,
-  then resumed and the stack popped back to the mode below). (high for the stack and the rows,
-  med for the fade's shape)
+  then resumed and the stack popped back to the mode below). Who pushes 3: `RequestSaveGame`
+  (0x004b58a0; `DoSaveGame` 0x004b3110 pops it), `PlayMovie` (0x00540ed0, around the film),
+  `PlayQueuedMovies` (0x00602650), the movie mode (0x00602af0), `ShowLoadScreen` for a save, and
+  `PostInitialize` when a film already plays. 5 (`OnAppDeactivate`) runs 0x005d82c0(1), which stops every
+  stream; its source loop ignores the argument and spares the exempt rows of a mode 2 or 4 on top; 6
+  clears +0x144, resumes all (0x005d83f0), then pops the top and pushes it again. The fade
+  (`Update` 0x005d9590, while +0x54 / +0x5c is set): t = (now in ms - +0x50) / 500 clamped to 0..1, the
+  three current volume levels set to setting x (1 - t) going down and setting x t coming back, then
+  re-applied to the streams (0x005d8110; only rows 4 and 21 take them, above); at t = 1 the down fade also stops and frees some streams. Linear
+  in time. (high)
 
 ## Movies (Bink)
 

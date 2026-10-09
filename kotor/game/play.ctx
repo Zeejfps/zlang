@@ -414,7 +414,7 @@ namespace play {
                 // The movies StartNewModule named play first, before the module is loaded (gameloop.md 5.3: StartModuleTransition plays the queued movies).
                 cine::take_new{ c = &cinema, notes = outbox::notes{ out = &w.out } }
                 if cine::busy{ c = &cinema } {
-                    if try cine::show{ c = &cinema, &sdl, &w, &dev, &frame, ui, mixer, adev, rate, opts, script, &next_line, &frame_no, &inputs, &disp } { quit = true }
+                    if try cine::show{ c = &cinema, &sdl, &w, &dev, &frame, ui, mixer, amb = &amb, adev, rate, opts, script, &next_line, &frame_no, &inputs, &disp } { quit = true }
                     last = sdl::counter{ &sdl }
                 }
                 // The loading screen goes up over the change (gameloop.md 5.3: the client picks it, closes its panels and stops its sounds first).
@@ -473,7 +473,7 @@ namespace play {
             cine::forget_notes{ c = &cinema }
             // The films and the credits the scripts asked for are shown now, between two frames of the game.
             if cine::busy{ c = &cinema } {
-                if try cine::show{ c = &cinema, &sdl, &w, &dev, &frame, ui, mixer, adev, rate, opts, script, &next_line, &frame_no, &inputs, &disp } { quit = true }
+                if try cine::show{ c = &cinema, &sdl, &w, &dev, &frame, ui, mixer, amb = &amb, adev, rate, opts, script, &next_line, &frame_no, &inputs, &disp } { quit = true }
                 last = sdl::counter{ &sdl }
             }
             // HOOK(minigames): a script asked for a game of pazaak; the visit takes over the frame (game/pazaak.ctx).
@@ -611,14 +611,16 @@ namespace play {
             if ingame::take_save_request{ ui } is some{ value = n } { want_save = n }    // HOOK(ingame)
             if ingame::take_load_request{ ui } is some{ value = n } { want_load = n }    // HOOK(ingame)
             // 11. Sound at the camera, in the mode the screen calls for.
-            let sound_mode = ingame::sound_mode{ ui, w = &w }    // HOOK(ingame)
-            if sound_mode != amb.mode {
-                let held = ambience::set_mode{ a = &amb, mode = sound_mode }
+            // The window losing activation suspends every sound (modes 5 and 6) whatever the mode.
+            if disp.inactive != amb.suspended {
+                let held = ambience::suspend{ a = &amb, on = disp.inactive }
                 if w.log.sound {
                     world::prefix{ w = &w }
-                    _ = @fmt(&w.io, "sound mode {}: {} sounds held\n", sound_mode, held)
+                    _ = @fmt(&w.io, "sound mode {}: {} sounds held\n", if disp.inactive { 5 } else { 6 }, held)
                 }
             }
+            let sound_mode = ingame::sound_mode{ ui, w = &w }    // HOOK(ingame)
+            if sound_mode != amb.mode { _ = enter_sound_mode{ &w, a = &amb, mode = sound_mode } }
             ambience::update{ a = &amb, &w, eye = camera.eye, forward = camera.dir, dt }
             match adev {
                 some{ value } => {
@@ -707,9 +709,12 @@ namespace play {
                 let size = gpu::screen_size{ dev }
                 let pixels = try alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &scene_arena, mem = slice::empty(u8){}, count = @as(usize, size.width) * @as(usize, size.height) * 4 }
                 _ = gpu::read_screen{ &dev, into = pixels } iferr { size }
+                // RequestSaveGame (0x004b58a0) pushes sound mode 3 and DoSaveGame (0x004b3110) pops it: nothing plays while the save is written.
+                let mode_before = enter_sound_mode{ &w, a = &amb, mode = ambience::MODE_MOVIE }
                 save::save_named{ &w, name = want_save, screen = pixels, width = size.width, height = size.height } iferr err{ error } {
                     _ = @fmt(&w.io, "kotor: save failed: {}\n", error)
                 }
+                _ = enter_sound_mode{ &w, a = &amb, mode = mode_before }
                 _ = alloc::resize(u8, arena::Arena){ realloc = arena::alloc, heap = &scene_arena, mem = pixels, count = 0 }
                 want_save = ""
             }
@@ -1467,6 +1472,18 @@ namespace play {
         let mut a = actions::make{ kind = actions::Kind::attack_object }
         a.params[0] = actions::Param::object{ id = best }
         _ = actions::add{ &w, id = me.id, action = a, force = false }
+    }
+
+    // Sound mode `mode` (ambience::set_mode), logged with --log sound. Returns the mode before, to go back to.
+    fn enter_sound_mode { mut w: world::World, mut a: ambience::Ambience, mode: u8 } -> u8 {
+        let before = a.mode
+        if mode == before { return before }
+        let held = ambience::set_mode{ &a, mode }
+        if w.log.sound {
+            world::prefix{ w = &w }
+            _ = @fmt(&w.io, "sound mode {}: {} sounds held\n", mode, held)
+        }
+        return before
     }
 
     // The loading screen for loading a save: its module's picture, chosen before the load reads the save.

@@ -19,7 +19,6 @@
 namespace cine {
     const MAX_ITEMS: usize = 12
     const NAME_BYTES: usize = 24
-    const GROUPS: usize = 3                 // the mixer groups the films hush: music, voice-over and effects (Movie is theirs)
 
     struct Item { name: [24]u8, len: usize, skippable: bool, separate: bool }
 
@@ -212,7 +211,7 @@ namespace cine {
     // should end).
     fn show {
         mut c: Cinema, mut sdl: sdl::Sdl, mut w: world::World, mut dev: gpu::Device, mut frame: render::Frame,
-        ui: *mut ingame::Ingame, mixer: *mut mix::Mixer, adev: ?*mut audio::Device, rate: u32, opts: options::Options,
+        ui: *mut ingame::Ingame, mixer: *mut mix::Mixer, mut amb: ambience::Ambience, adev: ?*mut audio::Device, rate: u32, opts: options::Options,
         script: []play::Scripted, mut next_line: usize, mut frame_no: u64, mut inputs: inject::Inputs, mut disp: display::Display,
     } -> !bool {
         let hidden = opts.headless and not opts.cinema
@@ -235,13 +234,10 @@ namespace cine {
         }
         let silent = try alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(i16){}, count = 44100 }
         defer _ = alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = silent, count = 0 }
-        // The world is still: its music, voices and effects are hushed (the original's movie sound mode), not stopped.
-        mix::set_group_paused{ m = mixer, group = mix::Group::music, paused = true }
-        mix::set_group_paused{ m = mixer, group = mix::Group::voice, paused = true }
-        mix::set_group_paused{ m = mixer, group = mix::Group::sfx, paused = true }
-        defer mix::set_group_paused{ m = mixer, group = mix::Group::music, paused = false }
-        defer mix::set_group_paused{ m = mixer, group = mix::Group::voice, paused = false }
-        defer mix::set_group_paused{ m = mixer, group = mix::Group::sfx, paused = false }
+        // The world is still: every sound playing stops until the films are over (sound mode 3, pushed around
+        // PlayMovie 0x00540ed0 and by the movie mode 0x00602af0), the films' own and the credits' started after.
+        let mode_before = play::enter_sound_mode{ &w, a = &amb, mode = ambience::MODE_MOVIE }
+        defer _ = play::enter_sound_mode{ &w, a = &amb, mode = mode_before }
         if c.count > 0 and c.tables == null and not c.tables_failed {
             let loaded = movie::load_tables(heap::Heap){ fs = &w.fs, realloc = heap::alloc, heap = w.heap, game = opts.game } iferr { null }
             if loaded != null {

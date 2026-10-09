@@ -34,6 +34,7 @@ namespace display {
         live: frontend::Settings,           // the settings as the script's `gfx` words and the command line left them
         pending: bool,                      // `live` changed: apply it
         minimized: bool,                    // the window is minimised: nothing is drawn, the loop sleeps
+        inactive: bool,                     // the window lost the focus (the original's WM_ACTIVATEAPP): sound modes 5 / 6
         test_blur: f32,                     // `gfx blur N`: the speed blur held on for a picture of it
     }
 
@@ -47,7 +48,7 @@ namespace display {
             window = render::Size{ width = 1280, height = 720 }, drawable = render::Size{ width = 1280, height = 720 },
             render = render::Size{ width = 1280, height = 720 },
             shown = render::Rect{ x = 0.0, y = 0.0, w = 1280.0, h = 720.0 },
-            path = [0; 256], path_len = 0, frame_start = 0, live = frontend::default_settings{}, pending = false, minimized = false, test_blur = 0.0,
+            path = [0; 256], path_len = 0, frame_start = 0, live = frontend::default_settings{}, pending = false, minimized = false, inactive = false, test_blur = 0.0,
         }
         let n = if path.len < 256 { path.len } else { 256 }
         slice::copy(u8){ dst = d.path[..n], src = path[..n] }
@@ -246,6 +247,7 @@ namespace display {
     fn note_event { mut d: Display, ev: sdl::Event } {
         if ev is minimized { d.minimized = true }
         if ev is restored { d.minimized = false }
+        if ev is focus{ gained } { d.inactive = not gained }
     }
 
     // A frame of rest while the window is minimised.
@@ -302,6 +304,12 @@ namespace display {
     // roomlight, shadowmaps, ao, lightmaps, dof, reflections, shafts, hfog, grade, edges, foliage, tess,
     // timing (levels 0..2 or switches) and exposure (a factor).
     fn handle_scripted { mut d: Display, word: []u8, rest: []u8 } -> bool {
+        // `FRAME focus lost|gained`: the window's activation as the sound sees it (modes 5 and 6; the game's own pause on a
+        // lost focus is the event's, not this word's).
+        if ci::eq{ a = word, b = "focus" } {
+            d.inactive = ci::eq{ a = rest, b = "lost" }
+            return true
+        }
         if not ci::eq{ a = word, b = "gfx" } { return false }
         let mut ws = text::words{ s = rest }
         let key = text::next_word{ words = &ws } ifnull ""

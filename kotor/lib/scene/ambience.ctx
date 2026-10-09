@@ -50,6 +50,7 @@ namespace ambience {
         ambient_off: bool,              // a script stopped the ambient bed (AmbientSoundStop)
         bias: f32,                      // the settings' 2D3D Bias (loudness)
         mode: u8,                       // the sound mode applied (set_mode)
+        suspended: bool,                // modes 5 / 6: the window is inactive (suspend)
     }
 
     fn make { heap: *mut heap::Heap, m: *mut mix::Mixer } -> Ambience {
@@ -63,7 +64,7 @@ namespace ambience {
             rng = 12345, started = 0, listener = math::vec3::zero{},
             bg_off = false, battle = false, ambient_off = false,
             stinger = mix::Handle{ slot = 0, id = 0 }, stinger_bytes = slice::empty(u8){},
-            excited = list::new(Excited, heap::Heap){ realloc = heap::alloc, heap }, battle_clock = 0, bias = 1.5, mode = MODE_PLAY,
+            excited = list::new(Excited, heap::Heap){ realloc = heap::alloc, heap }, battle_clock = 0, bias = 1.5, mode = MODE_PLAY, suspended = false,
         }
     }
 
@@ -236,10 +237,14 @@ namespace ambience {
     // 4, 11); behind a menu screen (mode 4: the in-game menu, a store, the galaxy map, the party
     // selection, the upgrade bench) the ambient bed stops too. Leaving the mode lets them go on.
     // Mode 1 (fade_before_load) turns the ambient bed and the global one-shots (rows 4 and 21)
-    // down over 500 ms before a saved game loads in the game.
+    // down over 500 ms before a saved game loads in the game, linearly in time, and leaving it turns
+    // them up again from silence over 500 ms (0x005d6a10 / 0x005d6a50, CExoSoundInternal::Update).
+    // Mode 3 (a film, a save being written, a loading screen without load music) stops every sound.
+    // Modes 5 and 6 are not a screen's: the window losing and regaining activation (suspend).
     const MODE_PLAY: u8 = 0
     const MODE_FADE: u8 = 1
     const MODE_PAUSE: u8 = 2
+    const MODE_MOVIE: u8 = 3
     const MODE_MENU: u8 = 4
     const KEEP_PAUSE: u32 = (1 << ROW_STINGERS) | (1 << ROW_MUSIC) | (1 << ROW_AREA_AMBIENT) | (1 << ROW_GUI)
     const KEEP_MENU: u32 = (1 << ROW_STINGERS) | (1 << ROW_MUSIC) | (1 << ROW_GUI)
@@ -250,13 +255,41 @@ namespace ambience {
     // Returns how many sounds it stopped.
     fn set_mode { mut a: Ambience, mode: u8 } -> u32 {
         if mode == a.mode { return 0 }
-        if a.mode == MODE_FADE { mix::fade_rows{ m = a.m, rows = FADE_ROWS, level = 1.0, seconds = 0.0 } }
-        if a.mode == MODE_PAUSE or a.mode == MODE_MENU { mix::release_world{ m = a.m } }
+        if a.mode == MODE_FADE {
+            mix::fade_rows{ m = a.m, rows = FADE_ROWS, level = 0.0, seconds = 0.0 }
+            mix::fade_rows{ m = a.m, rows = FADE_ROWS, level = 1.0, seconds = FADE_SECONDS }
+        }
+        // While the window is inactive everything stays stopped: the new mode is applied when it comes back.
+        if a.suspended {
+            a.mode = mode
+            if mode == MODE_FADE { mix::fade_rows{ m = a.m, rows = FADE_ROWS, level = 0.0, seconds = FADE_SECONDS } }
+            return 0
+        }
+        if a.mode == MODE_PAUSE or a.mode == MODE_MOVIE or a.mode == MODE_MENU { mix::release_world{ m = a.m } }
         a.mode = mode
-        if mode == MODE_FADE { mix::fade_rows{ m = a.m, rows = FADE_ROWS, level = 0.0, seconds = FADE_SECONDS } }
-        if mode == MODE_PAUSE { return mix::hold_world{ m = a.m, keep = KEEP_PAUSE } }
-        if mode == MODE_MENU { return mix::hold_world{ m = a.m, keep = KEEP_MENU } }
+        return apply_mode{ &a }
+    }
+
+    // What entering the mode does (SetSoundMode's tail: 0x005d6a10 for 1, 0x005d82c0(0) for 2, 3 and 4).
+    fn apply_mode { mut a: Ambience } -> u32 {
+        if a.mode == MODE_FADE { mix::fade_rows{ m = a.m, rows = FADE_ROWS, level = 0.0, seconds = FADE_SECONDS } }
+        if a.mode == MODE_PAUSE { return mix::hold_world{ m = a.m, keep = KEEP_PAUSE } }
+        if a.mode == MODE_MOVIE { return mix::hold_world{ m = a.m, keep = 0 } }
+        if a.mode == MODE_MENU { return mix::hold_world{ m = a.m, keep = KEEP_MENU } }
         return 0
+    }
+
+    // Modes 5 and 6 (OnAppDeactivate 0x00401d90, OnAppActivate 0x00401e00): the window lost activation,
+    // every sound stops and any started meanwhile is stopped at once (0x005d82c0(1), +0x144); it came back,
+    // everything goes on and the mode on top is applied again (its stack popped and pushed back). (The
+    // original's 5 spares a pause's or a menu's exempt sources, not its streams; ours stops all.) Returns
+    // how many sounds it stopped.
+    fn suspend { mut a: Ambience, on: bool } -> u32 {
+        if on == a.suspended { return 0 }
+        a.suspended = on
+        if on { return mix::suspend_world{ m = a.m, on = true } }
+        _ = mix::suspend_world{ m = a.m, on = false }
+        return apply_mode{ &a }
     }
 
     // The area's music and ambient bed, and a player for each sound object.

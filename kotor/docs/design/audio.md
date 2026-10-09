@@ -364,12 +364,17 @@ says what the world's sounds do; ours derives the top from the screen each frame
 | 0 | playing | everything plays |
 | 2 | the player's pause | `mix::hold_world` stops every sound playing but rows 1, 2, 4 and 11 (stingers, music, the ambient bed, the GUI) |
 | 4 | the in-game menu, a store, the galaxy map, the party selection, the upgrade bench (over a pause too) | the same but row 4: the ambient bed stops as well |
-| 1 | a saved game loading in the game (quick load, the Load Game screen) | `mix::fade_rows` turns rows 4 and 21 to 0 over 500 ms while the screen stands still (`fade_before_load`; only with a device), then the area stops and the level is 1 again |
+| 1 | a saved game loading in the game (quick load, the Load Game screen) | `mix::fade_rows` turns rows 4 and 21 to 0 over 500 ms while the screen stands still (`fade_before_load`; only with a device), then the area stops; leaving the mode turns them up from 0 over 500 ms |
+| 3 | a film or the credits (`cine::show`), a save being written (`RequestSaveGame` 0x004b58a0 pushes it, `DoSaveGame` 0x004b3110 pops it) | `mix::hold_world` with nothing kept: every sound playing stops; the films' and the credits' own sounds start after |
+| 5 / 6 | the window losing / regaining activation (`OnAppDeactivate` 0x00401d90 / `OnAppActivate` 0x00401e00, ours `display.inactive` from SDL's focus events) | `mix::suspend_world`: every sound stops and one started meanwhile is held at once (the original stops it while its +0x144 flag is set); on return all go on and the mode on top is applied again; a mode change meanwhile waits for the return |
 
 A held voice keeps its place and goes on when the mode ends (`mix::release_world`); a sound started
-during a mode plays, as the original's (its pause only stops what plays at the change). Modes 3
-(movies, saving: ours pauses the volume groups instead, `cine.ctx`) and 5/6 (the window losing focus)
-are not modelled.
+during modes 2-4 plays, as the original's (its pause only stops what plays at the change). Mode 1's
+shape (`CExoSoundInternal::Update` 0x005d9590): the levels are the settings times 1 - t going down and t
+coming back, t = the whole milliseconds since the change / 500, clamped to 1: linear in time, and the
+Miles stream volume they feed is a linear factor (0x005dc930). Not modelled: mode 5 sparing a pause's
+or a menu's exempt sources (it stops every stream but only the sources the mode on top would), and the
+load screen's mode (4 when a load music is set, client +0x304; the case without one was not traced).
 
 ## Checked
 
@@ -393,7 +398,7 @@ kotor/tools/ctxc run kotor/tools/sndplay -- FILE       # play one (or --wav / --
   1,000x real time, music MP3 (44.1 kHz stereo) about 340x, IMA ADPCM stereo about 700x, PCM
   thousands. Mixing 40 PCM voices with resampling, 3D and ramps runs about 90x real time; 40 voices
   each decoding its own stereo MP3 about 5x.
-- **mixtest**: 34 checks pass: 33 of exact sample values (gains, pans, groups, ends, loops,
+- **mixtest**: 49 checks pass (among them the sound modes' hold, fade and suspend): 33 of exact sample values (gains, pans, groups, ends, loops,
   fades, stealing and its equal-priority rule, the stats, out-of-range 3D, the limiter, stale
   handles, 3D, feeds, `release`), and the lock: a thread renders 3,000 blocks while the test plays,
   stops, fades and releases sounds, and a sound stopped at once or released is never seen playing

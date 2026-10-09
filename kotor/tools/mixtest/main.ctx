@@ -351,6 +351,15 @@ fn sound_modes { mut io: Io, mut t: Tally, m: *mut mix::Mixer, out: []mut i16, d
     _ = render{ m, out, frames = 1100 }
     let o6 = render{ m, out, frames = 100 }
     expect{ &io, &t, ok = o6[100] == 7500, what = "fade_rows at once back to full" }
+    // Sound modes 5 / 6: everything stops, and a sound started meanwhile is held until the window comes back.
+    let stopped = mix::suspend_world{ m, on = true }
+    let d = try mix::play{ m, bytes = dc, p = pc }
+    let o7 = render{ m, out, frames = 1100 }
+    expect{ &io, &t, ok = stopped == 2 and o7[2000] == 0, what = "suspend_world stops every sound and holds one started meanwhile" }
+    _ = mix::suspend_world{ m, on = false }
+    let o8 = render{ m, out, frames = 1100 }
+    expect{ &io, &t, ok = o8[2000] == 10000, what = "suspend_world's end lets them all go on" }
+    mix::stop{ m, h = d, fade = 0.0 }
     mix::stop{ m, h = a, fade = 0.0 }
     mix::stop{ m, h = b, fade = 0.0 }
 }

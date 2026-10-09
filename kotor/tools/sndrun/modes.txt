@@ -1,0 +1,12 @@
+# The sound modes (docs/design/audio.md "Sound modes"), from the uppercity checkpoint: the window loses and
+# regains activation (5, 6), the inventory menu (4) with the window lost while it is open and back after it
+# closed (the menu's mode is not applied while inactive; 6 then applies 0), and a save (3 while it is written).
+#   EXE=... sh kotor/tools/sndrun/modes.sh
+3 ui bot off
+20 focus lost
+40 focus gained
+50 ui menu inventory
+60 focus lost
+70 ui close
+75 focus gained
+90 save sndmode
