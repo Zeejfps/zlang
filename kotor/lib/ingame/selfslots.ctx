@@ -440,6 +440,10 @@ namespace selfslots {
         let down = slot_of{ tag = ev.tag, prefix = "BTN_ACTIONDOWN" }
         let k = if up >= 0 { up } else { down }
         if k < 0 { return false }
+        // OnSelfActionUp / Down (0x0068af70, 0x0068afe0): the action menu's auto-pause, Use_Vertical_Menu offered,
+        // and the slot cycles anyway.
+        autopause::request{ &w, reason = autopause::ACTION_MENU }
+        _ = world::offer_plain_tutorial{ &w, id = world::TUT_VERTICAL_MENU }
         cycle{ &s, &g, &w, &dev, panel, k = @as(usize, k), forward = down >= 0 }
         return true
     }

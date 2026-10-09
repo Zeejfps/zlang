@@ -45,6 +45,7 @@ namespace chargen {
         st.stack[st.depth] = Entry{ screen, panel = id }
         st.depth = st.depth + 1
         try bind_screen{ st, &g, &fs, &dev, screen, p = id }
+        offer_screen_tutorial{ st, &g, &fs, &dev, screen }
     }
 
     fn close_top { st: *mut State, mut g: gui::Gui } {

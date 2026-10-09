@@ -1,52 +1,32 @@
-// The tutorial pop-up box (CSWGuiTutorialBox, docs/re/gui.md "Tutorial pop-ups"): a message box
-// (confirm.gui, OK only) with tutorial.2da's pages Message0..2 and its Icon. The HUD takes the offers
-// (lib/hud/tutorial.ctx); the frame after one is taken the tutorial is marked shown in the game
-// (PT_TUT_WND_SHOWN) and the box opens over everything, pausing the game unless the player has.
-// OK (or Enter, or Escape) turns to the next page, "Continue" while there is one; after the last it
-// closes, the pause it made ends, and the action that offered it is done (hud::redo_tutorial).
+// The game's tutorial pop-up box (docs/re/gui.md "Tutorial pop-ups"; the box itself is
+// gui::TutorialBox, lib/gui/tutorial_box.ctx). Anything may take an offer (world::offer_tutorial); the
+// frame after one is taken the tutorial is marked shown in the game (PT_TUT_WND_SHOWN) and the box
+// opens over everything, pausing the game unless the player has. After its last page it closes, the
+// pause it made ends, and the action that offered it is done (hud::redo_tutorial).
 namespace ingame {
-    const TUT_CONTINUE: u32 = 38623         // the OK button while another page follows (0x96df)
-    const TUT_OK: u32 = 1580                // and on the last (0x62c)
-    const TUT_PAGES: i32 = 3
-
-    struct TutorialBox { panel: u32, id: i32, page: i32, paused_it: bool, who: u32, target: u32, n: i32 }
+    struct TutorialBox { b: gui::TutorialBox, paused_it: bool, who: u32, target: u32, n: i32 }
 
     fn no_tutorial_box {} -> TutorialBox {
-        return TutorialBox{ panel = 0, id = -1, page = 0, paused_it = false, who = obj::INVALID, target = obj::INVALID, n = 0 }
-    }
-
-    // The page's strref (tutorial.2da MessageN), null past the last.
-    fn tutorial_page { w: *world::World, id: i32, page: i32 } -> ?u32 {
-        if page < 0 or page >= TUT_PAGES { return null }
-        let names: [3][]u8 = ["message0", "message1", "message2"]
-        let v = twoda::get_int{ t = w.tables.tutorial, row = @as(usize, id), column = names[@as(usize, page)] } ifnull { return null }
-        return @as(u32, v)
+        return TutorialBox{ b = gui::no_tutorial_box{}, paused_it = false, who = obj::INVALID, target = obj::INVALID, n = 0 }
     }
 
     // MainLoop's step for the offer taken last (0x0062f4a0): marked shown, the box with its first page.
     fn update_tutorial { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device } {
         // A box something else took down (a conversation's interface, a module change) is over, and its pause.
-        if ui.tbox.panel != 0 and gui::find_panel{ g = &ui.gui, id = ui.tbox.panel } == null {
+        if ui.tbox.b.panel != 0 and gui::find_panel{ g = &ui.gui, id = ui.tbox.b.panel } == null {
             if ui.tbox.paused_it { clock::set_pause{ c = &w.clock, bit = clock::PAUSE_PLAYER, on = false } }
             ui.tbox = no_tutorial_box{}
-            ui.hud.tut.open = false
+            w.tut.open = false
         }
-        let id = ui.hud.tut.pending
+        let id = w.tut.pending
         if id < 0 { return }
-        ui.hud.tut.pending = -1
-        if ui.tbox.panel != 0 { return }
-        let first = tutorial_page{ w = &w, id, page = 0 } ifnull { return }
-        hud::mark_tutorial_shown{ &w, id }
-        let text = world::string_by_strref{ w = &w, strref = first }
-        let panel = gui::message_box{ g = &ui.gui, fs = &w.fs, &dev, text, cancel = false } iferr { return }
-        ui.tbox = TutorialBox{ panel, id, page = 0, paused_it = false, who = ui.hud.tut.who, target = ui.hud.tut.target, n = ui.hud.tut.n }
-        ui.hud.tut.open = true
-        let icon = twoda::get_string{ t = w.tables.tutorial, row = @as(usize, id), column = "icon" } ifnull ""
-        if icon.len > 0 {
-            let img = gui::resolve_img{ g = &ui.gui, fs = &w.fs, &dev, name = icon }
-            gui::add_message_icon{ g = &ui.gui, panel, img } iferr {}
-        }
-        caption_tutorial{ &ui, &w }
+        w.tut.pending = -1
+        if ui.tbox.b.panel != 0 { return }
+        let b = gui::open_tutorial_box{ g = &ui.gui, fs = &w.fs, &dev, t = w.tables.tutorial, id } iferr { return }
+        if b.panel == 0 { return }
+        world::mark_tutorial_shown{ &w, id }
+        ui.tbox = TutorialBox{ b, paused_it = false, who = w.tut.who, target = w.tut.target, n = w.tut.n }
+        w.tut.open = true
         // OnPanelAdded (0x006aa860): the game pauses unless the player has paused it already.
         if not clock_paused_by_player{ w = &w } {
             clock::set_pause{ c = &w.clock, bit = clock::PAUSE_PLAYER, on = true }
@@ -54,28 +34,16 @@ namespace ingame {
         }
         if w.log.objects {
             world::prefix{ w = &w }
-            _ = @fmt(&w.io, "tutorial shown: {} page 0 strref {}\n", id, first)
+            _ = @fmt(&w.io, "tutorial shown: {} page 0 strref {}\n", id, gui::tutorial_page{ t = w.tables.tutorial, id, page = 0 } ifnull 0)
         }
-    }
-
-    // The OK button says Continue while a next page follows (NextPage 0x006aa670).
-    fn caption_tutorial { mut ui: Ingame, w: *world::World } {
-        let more = tutorial_page{ w, id = ui.tbox.id, page = ui.tbox.page + 1 } != null
-        gui::set_text{ g = &ui.gui, panel = ui.tbox.panel, tag = "BTN_OK", text = world::string_by_strref{ w, strref = if more { TUT_CONTINUE } else { TUT_OK } } } iferr {}
     }
 
     // The box's events: OK, Enter or Escape turn the page (HandleInputEvent 0x006aa8a0), or close the box
     // after the last. True when the event was the box's.
     fn tutorial_event { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } -> bool {
-        if ui.tbox.panel == 0 or ev.panel != ui.tbox.panel { return false }
+        if ui.tbox.b.panel == 0 or ev.panel != ui.tbox.b.panel { return false }
         if ev.kind != gui::EventKind::activate and ev.kind != gui::EventKind::cancel { return true }
-        if tutorial_page{ w = &w, id = ui.tbox.id, page = ui.tbox.page + 1 } is some{ value = next } {
-            ui.tbox.page = ui.tbox.page + 1
-            gui::set_list_text{ g = &ui.gui, panel = ui.tbox.panel, tag = "LB_MESSAGE", text = world::string_by_strref{ w = &w, strref = next } } iferr {}
-            gui::grow_message_box{ g = &ui.gui, panel = ui.tbox.panel }
-            caption_tutorial{ &ui, &w }
-            return true
-        }
+        if gui::turn_tutorial_page{ g = &ui.gui, b = &ui.tbox.b, t = w.tables.tutorial } { return true }
         close_tutorial{ &ui, &w, &dev }
         return true
     }
@@ -83,16 +51,18 @@ namespace ingame {
     // The close (CSWGuiMessageBox's, GUI sound 0, then the id's callback): the pause it made ends, and the
     // action that offered it is done.
     fn close_tutorial { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device } {
-        let b = ui.tbox
-        gui::close{ g = &ui.gui, id = b.panel }
+        let t = ui.tbox
+        gui::close{ g = &ui.gui, id = t.b.panel }
         gui::play_sound{ g = &ui.gui, n = 0 }
         ui.tbox = no_tutorial_box{}
-        ui.hud.tut.open = false
-        if b.paused_it { clock::set_pause{ c = &w.clock, bit = clock::PAUSE_PLAYER, on = false } }
+        w.tut.open = false
+        if t.paused_it { clock::set_pause{ c = &w.clock, bit = clock::PAUSE_PLAYER, on = false } }
         if w.log.objects {
             world::prefix{ w = &w }
-            _ = @fmt(&w.io, "tutorial closed: {}\n", b.id)
+            _ = @fmt(&w.io, "tutorial closed: {}\n", t.b.id)
         }
-        hud::redo_tutorial{ h = &ui.hud, g = &ui.gui, &w, id = b.id, who = b.who, target = b.target, n = b.n }
+        hud::redo_tutorial{ h = &ui.hud, g = &ui.gui, &w, id = t.b.id, who = t.who, target = t.target, n = t.n }
+        // 0x27's close (0x006aa620): the map's Return to Base again.
+        if t.b.id == world::TUT_RETURN and ui.menu == MENU_MAP { map_panel::ask_return{ s = &ui.menus.map, g = &ui.gui, &w, &dev } }
     }
 }

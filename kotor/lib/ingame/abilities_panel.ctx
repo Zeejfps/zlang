@@ -93,6 +93,8 @@ namespace abilities_panel {
         } else {
             try clear_detail{ &g, &w, panel }
         }
+        // RebuildList ends with the tab's tutorial: Enter_Skill_Screen, Enter_Force_Power_Screen or Enter_Feat_Screen.
+        _ = world::offer_plain_tutorial{ &w, id = if s.tab == TAB_SKILLS { world::TUT_SKILL_SCREEN } else if s.tab == TAB_POWERS { world::TUT_POWER_SCREEN } else { world::TUT_FEAT_SCREEN } }
     }
 
     // The Powers or Feats tab's rows (0x006ce0f0 without its every-power flag, 0x006ce370), all

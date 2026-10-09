@@ -235,6 +235,8 @@ namespace partysel_panel {
         }
         fill{ &s, &g, &w, &dev }
         gui::set_focus{ &g, panel = id, tag = "BTN_DONE" }
+        // OnPanelAdded (0x006beeb0) ends with Party_Selection's offer.
+        _ = world::offer_plain_tutorial{ &w, id = world::TUT_PARTY_SELECTION }
     }
 
     // Closes the panel; `finished` says so to whoever opened it.

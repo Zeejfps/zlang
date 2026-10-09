@@ -111,8 +111,8 @@ namespace ingame {
         // Menus pause the game (gameloop.md 6): the clock stops, the world still ticks.
         clock::set_pause{ c = &w.clock, bit = clock::PAUSE_MENU, on = true }
         // The inventory's, the map's and the messages' OnPanelAdded offer their screens' tutorials.
-        let taught = if n == MENU_INVENTORY { hud::TUT_INVENTORY } else if n == MENU_MAP { hud::TUT_MAP } else if n == MENU_MESSAGES { hud::TUT_MESSAGES } else { -1 }
-        if taught >= 0 { _ = hud::offer_tutorial{ h = &ui.hud, w = &w, id = taught, who = obj::INVALID, target = obj::INVALID, n = 0 } }
+        let taught = if n == MENU_INVENTORY { world::TUT_INVENTORY } else if n == MENU_MAP { world::TUT_MAP } else if n == MENU_MESSAGES { world::TUT_MESSAGES } else { -1 }
+        if taught >= 0 { _ = world::offer_plain_tutorial{ &w, id = taught } }
     }
 
     // Centres the tab bar at the top of the screen.

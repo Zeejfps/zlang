@@ -151,7 +151,7 @@ namespace play {
         if not opts.headless { _ = sdl::SDL_ShowCursor{ &sdl, toggle = 0 } }    // HOOK(ingame): the GUI draws the pointer
         ui.autopause = not opts.headless    // HOOK(ingame): a person is playing: the auto-pause options apply
         ui.summary.panel_allowed = not opts.headless    // and the status summary may stop the game for its panel
-        ui.hud.tut.allowed = not opts.headless    // and so may a tutorial pop-up (a script's `ui tutorial allow` lets a test see them)
+        w.tut.allowed = not opts.headless    // and so may a tutorial pop-up (a script's `ui tutorial allow` lets a test see them)
         loading::step{ l = ld, &w, &dev, &sdl, &frame, opts, percent = 90 }
         let silent = try alloc::resize(i16, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(i16){}, count = 44100 }
         let mut keys = ctl::no_keys{}
@@ -795,6 +795,8 @@ namespace play {
         try walkmap::load_materials{ m = &fresh.walk, heap = w.heap, table = fresh.tables.surfacemat }
         fresh.log = w.log
         fresh.tlk = w.tlk
+        fresh.tut.on = w.tut.on            // the option and whether someone plays carry on to the next session
+        fresh.tut.allowed = w.tut.allowed
         w = fresh.*
     }
 
@@ -818,6 +820,7 @@ namespace play {
         gui::set_mixer{ &g, mixer }
         ambience::tune_gui{ g = &g, m = mixer, w = &w, bias = frontend::install_bias{ fs = &w.fs, heap = w.heap, game = opts.game, fallback = disp.live.bias_2d3d } }
         let mut fe = frontend::make{ fs = &w.fs, heap = w.heap, game = opts.game, config_path = opts.settings }
+        fe.tutorials_allowed = not opts.headless    // character generation's tutorial pop-ups, as the game's (w.tut.allowed)
         frontend::set_own_saves{ &fe, dir = opts.saves }
         fe.settings = disp.live
         fe.settings.disable_movies = fe.settings.disable_movies or opts.headless
@@ -892,6 +895,8 @@ namespace play {
                 new_game{ module, player } => {
                     // The character the player made (empty: the engine's default soldier).
                     try modload::set_player_blueprint{ &w, bytes = player }
+                    // The tutorials character generation showed stay shown (the original's set lives in CGuiInGame).
+                    w.party.tutorial_shown = fe.tutorial_shown
                     let mut m = module
                     let name = resref::bytes{ r = &m }
                     let kept = try alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap, mem = slice::empty(u8){}, count = name.len }

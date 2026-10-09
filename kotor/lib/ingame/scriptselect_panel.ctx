@@ -62,6 +62,8 @@ namespace scriptselect_panel {
         try fill{ &s, &g, &w }
         gui::set_focus{ &g, panel = id, tag = LIST }
         try select_current{ &s, &g, &w }
+        // OnPanelAdded (0x006e9b90) offers Enter_Party_Script_Screen.
+        _ = world::offer_plain_tutorial{ &w, id = world::TUT_SCRIPTS }
     }
 
     // One row per line of aiscripts.2da (a table with more than MAX_ROWS lines is cut).

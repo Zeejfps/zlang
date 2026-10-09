@@ -1,0 +1,80 @@
+// Character generation's tutorial pop-ups (docs/re/gui.md "Tutorial pop-ups"). The in-game GUI and its
+// tutorial box exist from start-up (CGuiInGame::CreateEarlyPanels), so the abilities, skills and feats
+// panels offer theirs in New Game's character generation too (OnPanelAdded 0x006f6db0, 0x006f49a0,
+// 0x006f2f30; the feats' only when the "granted" popup is queued). There is no world yet: the offers,
+// the shown set and the box are kept here, and the shown set goes on to the new game (frontend
+// Front.tutorial_shown). The original opens the box on the next MainLoop pass; ours at the offer.
+namespace chargen {
+    const TUT_ABILITIES: i32 = 16           // Enter_Attribute_Screen
+    const TUT_SKILLS: i32 = 17              // Enter_Skill_Screen_Char_Gen
+    const TUT_FEATS: i32 = 18               // Enter_Feat_Screen_Char_Gen
+
+    struct Tutor {
+        on: bool,                   // the "Tutorial Popups" option
+        allowed: bool,              // someone is playing (the front end says)
+        shown: [6]u8,               // PT_TUT_WND_SHOWN's bits for the ones shown here
+        table: ?twoda::Table,       // tutorial.2da, loaded at the first offer
+        bytes: alloc::Bytes,
+        box: gui::TutorialBox,
+    }
+
+    fn no_tutor {} -> Tutor {
+        return Tutor{ on = false, allowed = false, shown = [0; 6], table = null, bytes = slice::empty(u8){}, box = gui::no_tutorial_box{} }
+    }
+
+    // CanShowTutorial and the box at once: the option, not yet shown, no box up, and a first page.
+    fn offer_tutorial { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, id: i32 } {
+        let t = &st.tut
+        if not t.on or not t.allowed or t.box.panel != 0 or id < 0 or id >= 43 { return }
+        let bit = @trunc(u8, 1 << @as(u32, id % 8))
+        if (t.shown[@as(usize, id / 8)] & bit) != 0 { return }
+        if t.table == null {
+            let bytes = res::load{ &fs, rm = g.rm, name = "tutorial", kind = restype::Type::twoda, realloc = heap::alloc, heap = st.heap } iferr { null }
+            let b = bytes ifnull { return }
+            t.bytes = b
+            t.table = twoda::parse{ data = b, realloc = heap::alloc, heap = st.heap } iferr { null }
+        }
+        let table = t.table ifnull { return }
+        let b = gui::open_tutorial_box{ &g, &fs, &dev, t = table, id } iferr { return }
+        if b.panel == 0 { return }
+        t.box = b
+        t.shown[@as(usize, id / 8)] = t.shown[@as(usize, id / 8)] | bit
+    }
+
+    // The box's events: OK, Enter or Escape turn the page, or close it after the last (no action follows
+    // in ours: the feats' "granted" popup is not made). True when the event was the box's.
+    fn tutorial_event { st: *mut State, mut g: gui::Gui, ev: gui::Event } -> bool {
+        let t = &st.tut
+        if t.box.panel == 0 or ev.panel != t.box.panel { return false }
+        if ev.kind != gui::EventKind::activate and ev.kind != gui::EventKind::cancel { return true }
+        let table = t.table ifnull { return true }
+        if gui::turn_tutorial_page{ &g, b = &t.box, t = table } { return true }
+        gui::close{ &g, id = t.box.panel }
+        gui::play_sound{ &g, n = 0 }
+        t.box = gui::no_tutorial_box{}
+        return true
+    }
+
+    // The panel just opened offers its tutorial.
+    fn offer_screen_tutorial { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, screen: u32 } {
+        if screen == SCR_ABILITIES { offer_tutorial{ st, &g, &fs, &dev, id = TUT_ABILITIES } }
+        else if screen == SCR_SKILLS { offer_tutorial{ st, &g, &fs, &dev, id = TUT_SKILLS } }
+        else if screen == SCR_FEATS and grants_new_feats{ st } { offer_tutorial{ st, &g, &fs, &dev, id = TUT_FEATS } }
+    }
+
+    // The feats panel's "granted" popup is queued when the class grants feats at level 1 (the creature's
+    // feat lists are cleared first in character generation, so every one is new).
+    fn grants_new_feats { st: *mut State } -> bool {
+        return st.fgranted > 0
+    }
+
+    fn free_tutor { st: *mut State, mut g: gui::Gui } {
+        let t = &st.tut
+        if t.box.panel != 0 { gui::close{ &g, id = t.box.panel } }
+        t.box = gui::no_tutorial_box{}
+        if t.table is some{ value } { twoda::free(heap::Heap){ t = value, realloc = heap::alloc, heap = st.heap } }
+        t.table = null
+        free_bytes{ b = t.bytes, heap = st.heap }
+        t.bytes = slice::empty(u8){}
+    }
+}

@@ -384,6 +384,8 @@ namespace equip_panel {
         show_mode{ &g, panel, selecting = true }
         try set_back_role{ &g, panel, cancel = true }
         try gui::set_strref{ &g, panel, tag = "LBL_SELECTTITLE", strref = 38154 }
+        // OnSlotClicked (0x006b8eb0) offers Press_A_On_Equip_Screen as selection mode begins.
+        _ = world::offer_plain_tutorial{ &w, id = world::TUT_EQUIP }
         _ = try fill_slot_list{ &s, &g, &w, &dev, panel }
         gui::set_focus{ &g, panel, tag = "LB_ITEMS" }
         let chosen = gui::list_selected{ &g, panel, tag = "LB_ITEMS" }

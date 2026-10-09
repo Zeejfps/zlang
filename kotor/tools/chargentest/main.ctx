@@ -11,23 +11,25 @@
 //   slide:TAG:V   press at fraction V (0..100) along a slider
 //   size:WxH      the window size (before the first command)
 //
-// Options: --movies (play the start-up movies; otherwise skipped), --cursor (draw the pointer), --game
-// DIR, --out DIR.
+// Options: --movies (play the start-up movies; otherwise skipped), --cursor (draw the pointer), --tutorials
+// (character generation's tutorial pop-ups show, as for a player), --game DIR, --out DIR.
 // After each command that makes the front end say something other than "running", the outcome
 // is printed (new game, load game, quit).
 
 const DEFAULT_GAME: []u8 = "F:/Steam/steamapps/common/swkotor"
 
-struct Options { game: []u8, out: []u8, movies: bool, audio: bool, cursor: bool, first: usize }
+struct Options { game: []u8, out: []u8, movies: bool, audio: bool, cursor: bool, tutorials: bool, first: usize }
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, args: Args } -> i32 {
-    let mut o = Options{ game = DEFAULT_GAME, out = "kotor/out/gui", movies = false, audio = false, cursor = false, first = args.len }
+    let mut o = Options{ game = DEFAULT_GAME, out = "kotor/out/gui", movies = false, audio = false, cursor = false, tutorials = false, first = args.len }
     let mut i: usize = 0
     while i < args.len {
         if slice::eq_bytes{ a = args[i], b = "--movies" } {
             o.movies = true
         } else if slice::eq_bytes{ a = args[i], b = "--audio" } {
             o.audio = true
+        } else if slice::eq_bytes{ a = args[i], b = "--tutorials" } {
+            o.tutorials = true
         } else if slice::eq_bytes{ a = args[i], b = "--cursor" } {
             o.cursor = true                 // draw the pointer in the pictures
         } else if slice::eq_bytes{ a = args[i], b = "--game" } and i + 1 < args.len {
@@ -89,6 +91,8 @@ fn run {
     make_dir{ &fs, path = o.out }
 
     let mut fe = frontend::make{ &fs, heap = &h, game = o.game, config_path = "kotor/out/menutest-settings.ini" }
+    fe.tutorials_allowed = o.tutorials
+    if o.tutorials { fe.settings.tutorial_popups = true }
     fe.settings.disable_movies = not o.movies
     // With --audio there is a mixer (no device): the GUI's sounds and the menu's music play into
     // it and it is rendered each frame, so a failing sound shows in its error count.
@@ -305,6 +309,7 @@ fn make_dir { mut fs: Fs, path: []u8 } {
 fn current_panel { fe: *frontend::Front } -> u32 {
     let cg = fe.cg
     if cg != null {
+        if cg.tut.box.panel != 0 { return cg.tut.box.panel }
         if cg.msg_panel != 0 { return cg.msg_panel }
         return chargen::top_panel{ st = cg }
     }

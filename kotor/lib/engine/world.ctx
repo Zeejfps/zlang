@@ -157,6 +157,7 @@ namespace world {
         // routines answer from until it takes over (it writes `subscreen` and clears `credits_running`).
         credits_running: bool,              // StartCreditSequence ran and the credits are not over (IsCreditSequenceInProgress)
         button_mash: bool,                  // SetButtonMashCheck / GetButtonMashCheck (the combat tutorial)
+        tut: Tutorials,                     // the tutorial pop-ups' offers (tutorial.ctx)
         subscreen: i32,                     // GetSubScreenID: SUBSCREEN_ID_* of the in-game screen showing (0: none)
         party_watch: fight::PartyWatch,     // UpdatePartyDeath's clocks: downed members get up after the fight (fight.ctx)
         messages: msglog::Log,              // Messages > Feedback and Dialog (msglog.ctx): the save keeps it with the party table
@@ -218,7 +219,7 @@ namespace world {
             last_activated = obj::INVALID, last_activator = obj::INVALID, last_activated_target = obj::INVALID,
             rules = try alloc::new(rules::Tables, heap::Heap){ realloc = heap::alloc, heap, value = blank_rules },
             dice = rules::seed_rng{ seed }, fx_ids = rules::EffectIds{ next = 1 }, rev = blank_events,
-            credits_running = false, button_mash = false, subscreen = 0, party_watch = fight::new_party_watch{},
+            credits_running = false, button_mash = false, tut = no_tutorials{}, subscreen = 0, party_watch = fight::new_party_watch{},
             messages = msglog::new{}, log_tokens = fight_log::no_tokens{},
             heads = [HeadPoint{ id = obj::INVALID, at = math::vec3::zero{}, found = false }; 8],
             corpses = list::new(Corpse, heap::Heap){ realloc = heap::alloc, heap }, corpse_ring = [obj::INVALID; 4], ring_read = 0, ring_write = 0,

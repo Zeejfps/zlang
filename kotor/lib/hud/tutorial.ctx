@@ -1,85 +1,14 @@
-// The tutorial pop-ups' offers (docs/re/gui.md, "Tutorial pop-ups"). A player's action that has a
-// tutorial (the pause, an attack, a combat feat, a grenade, a bash, Clear Combat Action, a menu screen
-// or a script's ShowTutorialWindow) first offers it (ShowTutorialPopup 0x005edf40): when the
-// "Tutorial Popups" option is on, the tutorial has not been shown in this game, no conversation is
-// starting and tutorial.2da has a Message0 for it, the offer is taken and the action is left; the
-// box (lib/ingame/tutorial_ui.ctx) opens the next frame and its close does the action again
-// (redo_tutorial). Taken or not, the caller learns which.
-//
-//   if hud::offer_tutorial{ &h, &w, id = hud::TUT_ATTACK, who, target, n = 0 } { return }
+// The HUD's part of the tutorial pop-ups (docs/re/gui.md, "Tutorial pop-ups"; the offers themselves are
+// world::offer_tutorial, lib/engine/tutorial.ctx): the attack's 3 s window, a party member's fall, and
+// what each box's close does again (redo_tutorial).
 namespace hud {
-    // tutorial.2da rows the HUD offers.
-    const TUT_COMBAT_FEAT: i32 = 0          // Use_Combat_Feat (0x00617dd0)
-    const TUT_GRENADE: i32 = 1              // Use_Grenade (0x00617e40)
-    const TUT_PAUSE: i32 = 6                // Pause_Game (OnPauseToggle 0x00688590, the pause keys)
-    const TUT_MESSAGES: i32 = 12            // Enter_Messages_Screen (CSWGuiMessages::OnPanelAdded)
-    const TUT_MAP: i32 = 13                 // Enter_Map_Screen (CSWGuiMap::OnPanelAdded)
-    const TUT_JOURNAL: i32 = 14             // Receive_Journal_Entry (CSWGuiStatusSummary::OnPanelAdded)
-    const TUT_INVENTORY: i32 = 20           // Enter_Inventory_Screen (CSWGuiInventory::OnPanelAdded)
-    const TUT_HOSTILE: i32 = 21             // Hostile_Creature_Encountered (UpdateSelectableObjects)
-    const TUT_CLEAR_ONE: i32 = 32           // In_Combat_Y_Button (OnClearOneAction 0x0068b050, the Y key)
-    const TUT_BASH: i32 = 33                // Bash (DefaultActionBash 0x00683e90 / 0x006826a0)
-    const TUT_ATTACK: i32 = 34              // Attack (DefaultActionAttack 0x00616800)
-    const TUT_ATTACK_AGAIN: i32 = 35        // Attack_Button_Mash: an attack ordered within 3 s of the last
-    const TUT_ROWS: i32 = 43                // CanShowTutorial takes ids below 0x2b
-
     // The 3 s after an attack order in which another one offers TUT_ATTACK_AGAIN (client +0x3e0, set by
     // 0x005edf90(3000) and counted down by the frame's time in MainLoop).
     const ATTACK_WINDOW: f32 = 3.0
 
-    struct Tutorial {
-        on: bool,           // the "Tutorial Popups" option (client options +0x14 bit 1)
-        allowed: bool,      // someone is playing: a headless run shows none unless its script says (`ui tutorial`)
-        pending: i32,       // the offer taken this frame, for the box to open (client +0x3b8, 0xff none); -1 none
-        who: u32,           // its arguments (+0x3ac, +0x3b0, +0x3b4): the action's object, its target, a number
-        target: u32,
-        n: i32,
-        open: bool,         // a box is up (the owner's): no other offer is taken meanwhile
-        attack_window: f32, // seconds left of ATTACK_WINDOW
-    }
-
-    fn new_tutorial {} -> Tutorial {
-        return Tutorial{ on = true, allowed = false, pending = -1, who = obj::INVALID, target = obj::INVALID, n = 0, open = false, attack_window = 0.0 }
-    }
-
-    // Whether tutorial `id` has been shown in this game.
-    fn tutorial_shown { w: *world::World, id: i32 } -> bool {
-        if id < 0 or id >= TUT_ROWS { return true }
-        return (w.party.tutorial_shown[@as(usize, id / 8)] & @trunc(u8, 1 << @as(u32, id % 8))) != 0
-    }
-
-    fn mark_tutorial_shown { mut w: world::World, id: i32 } {
-        if id < 0 or id >= TUT_ROWS { return }
-        let k = @as(usize, id / 8)
-        w.party.tutorial_shown[k] = w.party.tutorial_shown[k] | @trunc(u8, 1 << @as(u32, id % 8))
-    }
-
-    // CGuiInGame::CanShowTutorial (0x0062f420): the option, not yet shown, no conversation starting
-    // (+0xb4), and a first page in tutorial.2da (0x006aa1a0).
-    fn can_show_tutorial { h: *Hud, w: *world::World, id: i32 } -> bool {
-        if not h.tut.on or not h.tut.allowed or h.tut.open or h.tut.pending >= 0 { return false }
-        if tutorial_shown{ w, id } { return false }
-        if w.conversation.active or w.conversation.hold { return false }
-        return twoda::get_int{ t = w.tables.tutorial, row = @as(usize, id), column = "message0" } != null
-    }
-
-    // ShowTutorialPopup: true when the tutorial will show, and the caller leaves its action to the box.
-    fn offer_tutorial { mut h: Hud, mut w: world::World, id: i32, who: u32, target: u32, n: i32 } -> bool {
-        if not can_show_tutorial{ h = &h, w = &w, id } { return false }
-        h.tut.pending = id
-        h.tut.who = who
-        h.tut.target = target
-        h.tut.n = n
-        if w.log.objects {
-            world::prefix{ w = &w }
-            _ = @fmt(&w.io, "tutorial offered: {} ({} {} {})\n", id, who, target, n)
-        }
-        return true
-    }
-
     // The frame's time off the attack window.
     fn tick_tutorial { mut h: Hud, real_dt: f32 } {
-        if h.tut.attack_window > 0.0 { h.tut.attack_window = if real_dt >= h.tut.attack_window { 0.0 } else { h.tut.attack_window - real_dt } }
+        if h.attack_window > 0.0 { h.attack_window = if real_dt >= h.attack_window { 0.0 } else { h.attack_window - real_dt } }
     }
 
     // The attack order of a click on a foe or R (DefaultActionAttack 0x00616800): within 3 s of the last
@@ -87,9 +16,9 @@ namespace hud {
     // offers Attack, whose close gives the order again; else the order goes and the 3 s start. True when
     // the order may go now.
     fn attack_order_goes { mut h: Hud, mut w: world::World, attacker: u32, target: u32 } -> bool {
-        if h.tut.attack_window > 0.0 and offer_tutorial{ &h, w = &w, id = TUT_ATTACK_AGAIN, who = attacker, target, n = 0 } { return false }
-        if offer_tutorial{ &h, w = &w, id = TUT_ATTACK, who = attacker, target, n = 0 } { return false }
-        h.tut.attack_window = ATTACK_WINDOW
+        if h.attack_window > 0.0 and world::offer_tutorial{ &w, id = world::TUT_ATTACK_AGAIN, who = attacker, target, n = 0 } { return false }
+        if world::offer_tutorial{ &w, id = world::TUT_ATTACK, who = attacker, target, n = 0 } { return false }
+        h.attack_window = ATTACK_WINDOW
         return true
     }
 
@@ -97,25 +26,44 @@ namespace hud {
     // 0x006aa620 set by 0x006aa900 per id). The others only end the box.
     fn redo_tutorial { mut h: Hud, mut g: gui::Gui, mut w: world::World, id: i32, who: u32, target: u32, n: i32 } {
         let leader = party::leader{ w = &w }
-        if id == TUT_ATTACK {
+        if id == world::TUT_ATTACK {
             // 0x006aa520: DefaultActionAttack again, which may offer the next tutorial or give the order.
             if world::object{ w = &w, id = target } == null { return }
             if attack_order_goes{ &h, w = &w, attacker = leader, target } { run_act{ &w, act = Act::attack, target, item = obj::INVALID, spell = -1, queue = true } }
-        } else if id == TUT_COMBAT_FEAT {
+        } else if id == world::TUT_COMBAT_FEAT {
             // 0x006aa260: the feat attack on the target (+0x984) with the feat (+0x98c).
             if world::object{ w = &w, id = who } == null { return }
             run_act{ &w, act = Act::feat_attack, target = who, item = obj::INVALID, spell = n, queue = queues_orders{ h = &h, w = &w } }
-        } else if id == TUT_GRENADE {
+        } else if id == world::TUT_GRENADE {
             // 0x006aa350: the throw of item n (+0x98c) at the target (+0x984).
             if world::object{ w = &w, id = who } == null { return }
             run_act{ &w, act = Act::throw, target = who, item = @as(u32, n), spell = -1, queue = queues_orders{ h = &h, w = &w } }
-        } else if id == TUT_BASH {
+        } else if id == world::TUT_BASH {
             // 0x006aa480: DefaultActionBash on the door (n 1) or placeable (n 0) again.
             if world::object{ w = &w, id = target } == null { return }
             run_act{ &w, act = Act::bash, target, item = obj::INVALID, spell = -1, queue = false }
-        } else if id == TUT_CLEAR_ONE {
+        } else if id == world::TUT_CLEAR_ONE {
             // 0x006aa5d0: the clear itself (0x006880c0).
             clear_one{ &w }
+        }
+    }
+
+    // A party member falls: the client's creature update (0x00666667) offers Party_Member_Dies when the
+    // creature is in the client party, the party has more than one member and the update's hit points are
+    // 0 (med: the field read as hit points). Ours looks each frame while someone is down, until shown.
+    fn watch_member_falls { mut w: world::World } {
+        if not world::can_show_tutorial{ w = &w, id = world::TUT_MEMBER_DIES } { return }
+        let ms = party::members{ w = &w }
+        if ms.len < 2 { return }
+        let mut i: usize = 0
+        while i < ms.len {
+            let o = world::object{ w = &w, id = ms[i] }
+            i = i + 1
+            let m = o ifnull { continue }
+            if m.hp < 1 and not m.min_one_hp {
+                _ = world::offer_plain_tutorial{ &w, id = world::TUT_MEMBER_DIES }
+                return
+            }
         }
     }
 }

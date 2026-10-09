@@ -1756,8 +1756,9 @@ Variants (all `confirm.gui`):
 
 #### Tutorial pop-ups (CSWGuiTutorialBox)
 
-Read for the tutorial pop-ups of 2026-10 (ours: `lib/hud/tutorial.ctx` the offers,
-`lib/ingame/tutorial_ui.ctx` the box; `tools/ingame/tutorials.sh`). (high unless marked)
+Read for the tutorial pop-ups of 2026-10 (ours: `lib/engine/tutorial.ctx` the offers, `lib/gui/tutorial_box.ctx`
+the box, `lib/ingame/tutorial_ui.ctx` and `lib/chargen/tutorial.ctx` its two owners, `lib/hud/tutorial.ctx`
+what a close does again; `tools/ingame/tutorials.sh`, `tools/chargentest/selftest.sh`). (high unless marked)
 
 - **The offer** (`CClientExoApp::ShowTutorialPopup(id, a, b, c)` 0x005edf40 →
   `CClientExoAppInternal::ShowTutorialPopup` 0x005f4120): `CGuiInGame::CanShowTutorial`
@@ -1769,8 +1770,11 @@ Read for the tutorial pop-ups of 2026-10 (ours: `lib/hud/tutorial.ctx` the offer
   returns 1, and every caller then leaves the action it was about to do. The next `MainLoop` pass
   (0x0062f4a0) sets the id's shown bit, hands the arguments to the box (`+0x984`, `+0x988`, `+0x98c`)
   and adds it as a modal panel.
-- **The box**: a `CSWGuiMessageBox` (0x998 bytes, ctor 0x006aa100, at `CGuiInGame+0xa0`; text font
-  `fnt_d16x16`) in OK-only mode. `NextPage` (0x006aa670) shows `MessageN` of the row for page N
+- **The box**: a `CSWGuiMessageBox` (0x998 bytes, ctor 0x006aa100, at `CGuiInGame+0xa0`; the ctor sets
+  the message's text info (+0x15c, the one `FitToText` measures lines with) to `fnt_d16x16`, where
+  `confirm.gui` has `dialogfont16x16`) in OK-only mode, fitted by `FitToText` (CSWGuiMessageBox, above):
+  the icon's 32 pixels first, the Cancel button's height + 2 off, then a box over 160 high widens by 40
+  up to 440 and one under 280 grows a line at a time. `NextPage` (0x006aa670) shows `MessageN` of the row for page N
   (`+0x995`), the OK button captioned 38623 "Continue" while `MessageN+1` exists and 1580 "OK" on
   the last, and the row's `Icon` (`SetIcon`, 32x32 above the text). `HandleInputEvent` (0x006aa8a0):
   OK (0x1f6), Enter and the cancel keys (0x27-0x28, 0x2d-0x2e) turn the page, and close the box
@@ -1791,26 +1795,30 @@ Read for the tutorial pop-ups of 2026-10 (ours: `lib/hud/tutorial.ctx` the offer
 |---|---|---|
 | 0 | Use_Combat_Feat | a combat feat from the target block (0x00617dd0: target, -, feat) |
 | 1 | Use_Grenade | a grenade from the target block (0x00617e40, base item `+0xac` 6: target, user, item) |
-| 5 | Use_Vertical_Menu | the target and self blocks' up/down arrows |
+| 5 | Use_Vertical_Menu | the target and self blocks' up/down arrows (`OnTargetActionUp/Down` 0x006884b0 / 0x00688520, `OnSelfActionUp/Down` 0x0068af70 / 0x0068afe0): when the arrow is enabled, the action-menu auto-pause (reason 7, if its option is on), the offer, and the slot cycles whatever the offer did |
 | 6 | Pause_Game | pausing with Space/Pause (`HandleInputAction` 0xe0, 0xf1: in place of GUI sound 6) and the pause button (`OnPauseToggle` 0x00688590, either way) |
-| 7 | Press_Start | `HandleInputAction` 0xdf (the in-game menu key; med) |
-| 10, 11, 12, 13, 20, 41 | screens | `OnPanelAdded` of the script select, equip (a slot click), messages, map, inventory and party selection panels |
+| 7 | Press_Start | `HandleInputAction` 0xdf (the in-game menu key, Escape) after `ShowInGameMenu(7)` (the options menu) opened, with no conversation and a leader |
+| 10, 12, 13, 20, 41 | screens | `OnPanelAdded` of the script select (0x006e9b90), messages, map, inventory and party selection (0x006beeb0, last) panels |
+| 11 | Press_A_On_Equip_Screen | `CSWGuiEquip::OnSlotClicked` (0x006b8eb0) as selection mode begins (after the title 38154 is set) |
 | 14 | Receive_Journal_Entry | `CSWGuiStatusSummary::OnPanelAdded` (on a flag of its last category: med) |
-| 15 | Party_Member_Dies | 0x006655e0 / 0x00666667 |
-| 16-19 | character generation screens | their panels' openers (0x006f10c0, 0x006f2f30, 0x006f49a0, 0x006f6db0) |
-| (variable) | Enter_*_Screen | `CSWGuiAbilities::RebuildList` with an id it computes (36-38 by their labels; not read: med) |
+| 15 | Party_Member_Dies | the client's creature update (0x00666667, in 0x006655e0's message parsing): when its value at `+0x2d0` (a short: hit points, med) is 0, the creature is in the client party (0x00634620) and the party has more than one member |
+| 16, 17, 19 | Enter_Attribute_Screen, Enter_Skill_Screen_Char_Gen, Enter_Force_Power_Screen_Char_Gen | `OnPanelAdded` of `CSWGuiCharGenAbilities` (0x006f6db0), `CSWGuiCharGenSkills` (0x006f49a0) and `CSWGuiCharGenPowers` (0x006f10c0): New Game's character generation and level-up alike (the box exists from start-up) |
+| 18 | Enter_Feat_Screen_Char_Gen | `CSWGuiCharGenFeats` `OnPanelAdded` (0x006f2f30), only while its "granted" popup is queued (+0x19f4 bit 2: the level granted feats not known before); the box's callback (0x006f2c40) then adds that popup (the `skillinfo` panel), else it is added at once |
+| 36, 37, 38 | Enter_Skill_Screen, Enter_Feat_Screen, Enter_Force_Power_Screen | `CSWGuiAbilities::RebuildList` (0x006ad560) by the tab it builds: skills 0x24, powers 0x26, feats 0x25 |
 | 21 | Hostile_Creature_Encountered | `UpdateSelectableObjects` at an enemy sighting, before the enemy-sighted auto-pause |
 | 32 | In_Combat_Y_Button | Clear Combat Action (`OnClearOneAction` 0x0068b050, the Y key 0x00688790): the clear waits for the box |
 | 33 | Bash | `DefaultActionBash` of a door (0x00683e90) or placeable (0x006826a0) |
 | 34 | Attack | `DefaultActionAttack` (0x00616800): a second click on a foe, R |
 | 35 | Attack_Button_Mash | the same within 3 s of the last attack order: `0x005edf90(3000)` sets `client+0x3e0` when an order goes, `MainLoop` counts it down by the frame's time |
-| 39 | Return_To_Base | the map's Return to Base (`CSWGuiMap::HandleInputEvent`) |
+| 39 | Return_To_Base_Button | the map's Return to Base (`CSWGuiMap::HandleInputEvent` 0x29, BTN_RETURN): GUI sound 0, the offer, and `OnReturnToBase` (0x00692bc0) only if it was not taken; the close (0x006aa620) calls `OnReturnToBase` |
 | any | ShowTutorialWindow | the script routine (0x00547340), arguments invalid |
 
-Ours offers 0, 1, 6, 12, 13, 14, 20, 21, 32, 33, 34, 35 and `ShowTutorialWindow`; a headless run
-offers none unless its script says `ui tutorial allow` (as the status summary's panel). Our box is
-`gui::message_box` with `gui::add_message_icon`, the default font, and grows only in height (the
-original's `FitToText` also widens a tall box up to 440).
+Ours offers every row above (39 is wired, but our map never shows BTN_RETURN) and `ShowTutorialWindow`;
+a headless run offers none unless its script says `ui tutorial allow` (as the status summary's panel), and
+character generation's only with `chargentest --tutorials`. In New Game's character generation there is no
+world yet: `lib/chargen/tutorial.ctx` keeps its own offers and shown set and opens the box at the offer, and
+the set goes on to the new game. Not done: the feats panel's "granted" popup (18's callback), so 18's box
+closes on nothing; Party_Member_Dies is looked for each frame while a member is at 0 hit points.
 
 #### CSWGuiStatusSummary (`statussummary`)
 
@@ -2137,8 +2145,7 @@ Popups" option (client options +0x14 bit1) is on, the id's bit in the shown-set 
 +0xba8 is clear (only ids below 0x2b are looked up there), `CGuiInGame` +0xb4 is 0 and
 `tutorial.2da` has a `Message0` entry for the id (0x006aa1a0); then the id goes to the tutorial
 panel (`CGuiInGame` +0xa0, 0x006aa900) and, if that accepts it, the arguments are stored (client
-internal +0x3ac..+0x3b8) and it returns 1. Ids seen here: 0x14 inventory opened, 0x0b equipment
-slot opened, 0x0d map opened, 0x27 return-to-base pressed. (high)
+internal +0x3ac..+0x3b8) and it returns 1. Every caller: "Tutorial pop-ups" in section 10. (high)
 
 **Switching character (BTN_CHANGE1, BTN_CHANGE2, key event 0xce).** Inventory, equipment,
 character sheet and abilities share one scheme:

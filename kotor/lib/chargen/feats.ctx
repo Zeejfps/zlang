@@ -79,7 +79,7 @@ namespace chargen {
 
     fn open_feats { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, p: u32 } -> ! {
         reset_scratch{ st }
-        _ = rules::grant_class_feats{ tables = st.tables, c = st.scratch, class = st.ch.class, class_level = 1 }
+        st.fgranted = rules::grant_class_feats{ tables = st.tables, c = st.scratch, class = st.ch.class, class_level = 1 }
         st.fnchosen = 0
         let counts = rules::feat_counts_for_level{ tables = st.tables, class = st.ch.class, class_level = 1 }
         st.fpicks = counts.general + counts.bonus

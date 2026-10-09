@@ -1,0 +1,48 @@
+# More tutorial pop-ups (docs/re/gui.md "Tutorial pop-ups"), from the uppercity checkpoint with the option
+# on and the pop-ups allowed: Escape opens the options menu and offers Press_Start (7); the Abilities menu
+# Enter_Skill_Screen (36, its skills tab); a click on the equipment's body slot Press_A_On_Equip_Screen (11)
+# as its selection begins; the character sheet's Scripts button Enter_Party_Script_Screen (10); the map's
+# Party Selection Party_Selection (41; the map's own Enter_Map_Screen, 13, comes first); with a Sith trooper
+# in sight (Hostile_Creature_Encountered, 21) the target block's down arrow Use_Vertical_Menu (5, the slot
+# cycling anyway); Carth falling Party_Member_Dies (15); the level-up's skills panel
+# Enter_Skill_Screen_Char_Gen (17). Each box is closed with Enter.
+#   EXE=... sh kotor/tools/ingame/tutorials.sh
+3 ui bot off
+3 ui tutorial on
+3 ui tutorial allow
+3 ui tutorial reset
+3 ui stock
+8 key escape
+12 key return
+14 key escape
+18 ui menu abilities
+22 key return
+24 ui menu equip
+26 ui clickctl BTN_INV_BODY
+30 key return
+32 key escape
+34 key escape
+38 ui menu character
+40 ui clickctl BTN_SCRIPTS
+44 key return
+46 key escape
+48 key escape
+52 ui menu map
+54 key return
+56 ui clickctl BTN_PRTYSLCT
+60 key return
+62 key escape
+64 ui close
+66 ui foe g_sithtroop01 8 0
+68 ui target g_sithtroop01
+72 key return
+74 ui clickctl BTN_TARGETDOWN0
+78 key return
+82 ui damage Carth 400
+86 key return
+90 ui sethp Carth 50
+92 ui xp 40000
+94 ui levelup
+100 ui key return
+104 key return
+108 ui key escape

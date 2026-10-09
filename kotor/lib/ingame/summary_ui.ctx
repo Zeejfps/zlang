@@ -172,7 +172,7 @@ namespace ingame {
         ui.summary.panel = id
         play_summary_sounds{ &ui }
         // OnPanelAdded offers Receive_Journal_Entry (0x00625c60; the condition it tests was not read: med).
-        _ = hud::offer_tutorial{ h = &ui.hud, w = &w, id = hud::TUT_JOURNAL, who = obj::INVALID, target = obj::INVALID, n = 0 }
+        _ = world::offer_plain_tutorial{ &w, id = world::TUT_JOURNAL }
         let mut y: i32 = 10
         let mut width: i32 = 150
         let mut row: usize = 0

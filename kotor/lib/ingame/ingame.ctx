@@ -89,7 +89,7 @@ namespace ingame {
         if mixer != null { gui::set_mixer{ &g, mixer } }
         let mut h = try hud::open{ &g, &w, &dev }
         h.floating.enabled = saved.floating_numbers
-        h.tut.on = saved.tutorial_popups
+        w.tut.on = saved.tutorial_popups
         let ui = Ingame{
             heap = w.heap, cache, gui = g, hud = h, selfs = selfslots::new{},
             text = utf8::Builder(heap::Heap){ bytes = list::new(u8, heap::Heap){ realloc = heap::alloc, heap = w.heap } },
@@ -326,7 +326,13 @@ namespace ingame {
         if keycode == sdl::key::ESCAPE {
             // A panel in a sub-mode (the equipment's slot selection) takes Escape as its Cancel.
             if ui.menu != NO_MENU and panel_escape{ &ui, &w, &dev } { return true }
-            if ui.menu != NO_MENU { close_menu{ &ui, &w } } else { open_menu{ &ui, &w, &dev, n = MENU_OPTIONS } }
+            if ui.menu != NO_MENU {
+                close_menu{ &ui, &w }
+            } else {
+                open_menu{ &ui, &w, &dev, n = MENU_OPTIONS }
+                // HandleInputAction 0xdf offers Press_Start once ShowInGameMenu(7) has opened the menu.
+                if ui.menu == MENU_OPTIONS { _ = world::offer_plain_tutorial{ &w, id = world::TUT_MENU_KEY } }
+            }
             return true
         }
         let n = menu_of_key{ keycode }
@@ -382,7 +388,7 @@ namespace ingame {
             // Pausing offers the pause's tutorial, which takes the place of GUI sound 6 (HandleInputAction 0xe0).
             let pausing = not clock_paused_by_player{ w = &w }
             set_player_pause{ &ui, &w, &dev, on = pausing }
-            if not pausing or not hud::offer_tutorial{ h = &ui.hud, w = &w, id = hud::TUT_PAUSE, who = obj::INVALID, target = obj::INVALID, n = 0 } { gui::play_sound{ g = &ui.gui, n = 6 } }
+            if not pausing or not world::offer_plain_tutorial{ &w, id = world::TUT_PAUSE } { gui::play_sound{ g = &ui.gui, n = 6 } }
             return true
         }
         if keycode == 'v' {
@@ -395,7 +401,7 @@ namespace ingame {
         }
         if keycode == 'y' {
             // Its tutorial first (0x00688790), whose close does the clear.
-            if not hud::offer_tutorial{ h = &ui.hud, w = &w, id = hud::TUT_CLEAR_ONE, who = obj::INVALID, target = obj::INVALID, n = 0 } { hud::clear_one{ &w } }
+            if not world::offer_plain_tutorial{ &w, id = world::TUT_CLEAR_ONE } { hud::clear_one{ &w } }
             return true
         }
         // keymap.2da: G stealth (action 264).
@@ -466,7 +472,7 @@ namespace ingame {
             summary{ kind, value } => { add_summary{ s = &ui.summary, kind, value } }
             summary_suppress{ count } => { ui.summary.suppress = count }
             // ShowTutorialWindow (ExecuteCommandShowTutorialWindow 0x00547340): the offer, with no action behind it.
-            tutorial{ window } => { _ = hud::offer_tutorial{ h = &ui.hud, w = &w, id = window, who = obj::INVALID, target = obj::INVALID, n = 0 } }
+            tutorial{ window } => { _ = world::offer_plain_tutorial{ &w, id = window } }
             feedback{ strref, text } => {
                 let sent = outbox::text_of{ out = &w.out, t = text }
                 let said = if sent.len > 0 { sent } else { world::string_by_strref{ w = &w, strref } }
@@ -700,9 +706,10 @@ namespace ingame {
             ui.ap_round = st.pause_end_round
             ui.ap_action_menu = st.pause_action_menu
             ui.summary.on = st.status_summary
-            ui.hud.tut.on = st.tutorial_popups
+            w.tut.on = st.tutorial_popups
         }
         hud::tick_tutorial{ h = &ui.hud, real_dt = ui.frame_dt }
+        hud::watch_member_falls{ &w }
         update_autopause{ &ui, &w, &dev, dt }
         // A conversation or cutscene takes the screen: the HUD and any menu go away for it
         // (re/gui.md, "SetHudMode"), and the world is not picked.
@@ -851,7 +858,7 @@ namespace ingame {
             }
         } else if ev.kind == gui::EventKind::value_changed and slice::eq_bytes{ a = ev.tag, b = "TB_PAUSE" } {
             set_player_pause{ &ui, &w, &dev, on = ev.value != 0 }
-            _ = hud::offer_tutorial{ h = &ui.hud, w = &w, id = hud::TUT_PAUSE, who = obj::INVALID, target = obj::INVALID, n = 0 }    // OnPauseToggle 0x00688590
+            _ = world::offer_plain_tutorial{ &w, id = world::TUT_PAUSE }    // OnPauseToggle 0x00688590
         } else if ev.kind == gui::EventKind::value_changed and slice::eq_bytes{ a = ev.tag, b = "TB_SOLO" } {
             // The toggle only asks (the box decides); the HUD sets the check mark from the party table.
             ask_solo{ &ui, &w, &dev, for_stealth = false }

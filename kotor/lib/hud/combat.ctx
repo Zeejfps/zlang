@@ -324,7 +324,7 @@ namespace hud {
         }
         if slice::eq_bytes{ a = ev.tag, b = "BTN_CLEARONE" } or slice::eq_bytes{ a = ev.tag, b = "BTN_CLEARONE2" } {
             // OnClearOneAction (0x0068b050): its tutorial first, whose close does the clear.
-            if not offer_tutorial{ &h, w = &w, id = TUT_CLEAR_ONE, who = obj::INVALID, target = obj::INVALID, n = 0 } { clear_one{ &w } }
+            if not world::offer_tutorial{ &w, id = world::TUT_CLEAR_ONE, who = obj::INVALID, target = obj::INVALID, n = 0 } { clear_one{ &w } }
             return true
         }
         return false

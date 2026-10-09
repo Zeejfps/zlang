@@ -454,11 +454,11 @@ namespace ingame {
             // `ui tutorial on|off|allow|reset`: the "Tutorial Popups" option; `allow` lets a headless run show the
             // pop-ups (as `ui summary panel`); `reset` forgets which were shown.
             let word = text::next_word{ &words } ifnull ""
-            if ci::eq{ a = word, b = "allow" } { ui.hud.tut.allowed = true }
+            if ci::eq{ a = word, b = "allow" } { w.tut.allowed = true }
             else if ci::eq{ a = word, b = "reset" } { w.party.tutorial_shown = [0; 6] }
             else {
-                ui.hud.tut.on = ci::eq{ a = word, b = "on" }
-                if options_front{ &ui } is some{ value = fe } { fe.settings.tutorial_popups = ui.hud.tut.on }
+                w.tut.on = ci::eq{ a = word, b = "on" }
+                if options_front{ &ui } is some{ value = fe } { fe.settings.tutorial_popups = w.tut.on }
             }
         } else if ci::eq{ a = cmd, b = "bodypick" } {
             // Test helper: the picks at four points 0.8 m from the newest kept body (around it, a little above

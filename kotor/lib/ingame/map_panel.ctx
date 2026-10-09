@@ -244,6 +244,12 @@ namespace map_panel {
         }
     }
 
+    // OnReturnToBase: the question is the party table's second strref (42120 by default).
+    fn ask_return { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } {
+        say{ &s, &g, &w, &dev, strref = 42120, ask = true }
+        s.pending = 1
+    }
+
     // A message of the game's in a box: a refusal or the Return question.
     fn say { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, strref: u32, ask: bool } {
         if s.box != 0 { return }
@@ -267,9 +273,10 @@ namespace map_panel {
                 partysel_panel::open_modal{ s = &s.sel, g = &g, w = &w, dev = &dev, force1 = -1, force2 = -1, from_script = false, exit_script = resref::empty{} } iferr {}
             }
         } else if slice::eq_bytes{ a = ev.tag, b = "BTN_RETURN" } {
-            // The question is the party table's second strref (42120 by default).
-            say{ &s, &g, &w, &dev, strref = 42120, ask = true }
-            s.pending = 1
+            // HandleInputEvent 0x29: GUI sound 0, then Return_To_Base_Button's offer; the box's close asks
+            // the question instead (0x006aa620 calls OnReturnToBase).
+            gui::play_sound{ &g, n = 0 }
+            if not world::offer_plain_tutorial{ &w, id = world::TUT_RETURN } { ask_return{ &s, &g, &w, &dev } }
         } else {
             return false
         }

@@ -52,5 +52,13 @@ run "back out" click:BTN_NEWGAME wait:20 click:BTN_SEL2 click:BTN_BACK wait:5 sh
     click:BTN_STEPNAME1 click:BTN_ACCEPT click:BTN_CANCEL shot:b_confirm key:e click:BTN_SEL5 click:QUICK_CHAR_BTN \
     click:BTN_STEPNAME1 click:BTN_ACCEPT click:BTN_STEPNAME2 click:END_BTN click:BTN_STEPNAME3 verifyquick:$PLAYER
 
+# The tutorial pop-ups (as for a player, --tutorials): the attributes', skills' and feats' boxes (16, 17, 18, a
+# soldier being granted feats at level 1) come up over their panels, each OK closes one, and the creation goes on.
+run "tutorials" --tutorials click:BTN_NEWGAME wait:20 click:BTN_SEL3 click:CUST_CHAR_BTN click:BTN_STEPNAME1 click:BTN_ACCEPT \
+    click:BTN_STEPNAME2 shot:t_attributes click:BTN_OK click:BTN_RECOMMENDED click:BTN_ACCEPT click:BTN_STEPNAME3 shot:t_skills click:BTN_OK \
+    click:BTN_RECOMMENDED click:BTN_ACCEPT click:BTN_STEPNAME4 shot:t_feats click:BTN_OK click:BTN_RECOMMENDED click:BTN_ACCEPT \
+    click:BTN_STEPNAME5 click:END_BTN click:BTN_STEPNAME6 verify:$PLAYER
+if grep -q "no control" $OUT/last.log; then bad=$((bad + 1)); echo "   a tutorial box was missing: $(grep -m1 'no control' $OUT/last.log)"; fi
+
 if [ $bad -ne 0 ]; then echo "selftest: $bad problems"; exit 1; fi
 echo "selftest: all creations made and checked"

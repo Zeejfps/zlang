@@ -78,6 +78,8 @@ namespace frontend {
         hint_game: u32, hint_story: u32,    // the loading screen's round-robin hint counters
         cg_wait: bool,                      // New Game was picked: character generation starts after the next frame, behind its loading screen
         load_panel: u32,                    // that loading screen (0 when none)
+        tutorials_allowed: bool,            // someone is playing: character generation's tutorial pop-ups may show
+        tutorial_shown: [6]u8,              // the ones character generation showed, for the new game's shown set
     }
 
     // A front end with the options from `config_path` (the defaults if there is no such file).
@@ -100,7 +102,7 @@ namespace frontend {
             player = null, tables = null, audio_clock = true, from_menu = false,
             scene = null, scene_failed = false, cg = null,
             music = mix::Handle{ slot = 0, id = 0 }, music_bytes = slice::empty(u8){}, music_started = false,
-            hint_game = 0, hint_story = 0, cg_wait = false, load_panel = 0,
+            hint_game = 0, hint_story = 0, cg_wait = false, load_panel = 0, tutorials_allowed = false, tutorial_shown = [0; 6],
         }
         fe.config_len = copy_into{ dst = fe.config_path[..], src = config_path }
         fe.start_len = copy_into{ dst = fe.start_module[..], src = "end_m01aa" }

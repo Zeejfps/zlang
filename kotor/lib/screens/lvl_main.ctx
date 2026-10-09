@@ -288,6 +288,19 @@ namespace lvl {
         else if k == STEP_SKILLS { try open_skills{ &s, &g, &w } }
         else if k == STEP_FEATS { try open_feats{ &s, &g, &w, &dev, bonus } }
         else { try open_powers{ &s, &g, &w, &dev } }
+        // The panels' OnPanelAdded offer their tutorials (0x006f6db0, 0x006f49a0, 0x006f10c0); the feats'
+        // (0x006f2f30) only when the "granted" popup is queued: feats this level grants that were not known.
+        let taught = if k == STEP_ATTRIBUTES { world::TUT_ABILITIES } else if k == STEP_SKILLS { world::TUT_SKILLS }
+            else if k == STEP_POWERS { world::TUT_POWERS } else if not s.fbonus and grants_new_feats{ s = &s, w = &w } { world::TUT_FEATS } else { -1 }
+        if taught >= 0 { _ = world::offer_plain_tutorial{ &w, id = taught } }
+    }
+
+    // Whether this level's class grants feats the creature does not know (0x00649950's list, which
+    // queues the feats panel's "granted" popup).
+    fn grants_new_feats { s: *State, w: *world::World } -> bool {
+        let f = creature_of{ w, id = s.who } ifnull { return false }
+        let mut c = f.c
+        return rules::grant_class_feats{ tables = w.rules, c = &c, class = s.class, class_level = s.opts.class_level } > 0
     }
 
     fn close_step { mut s: State, mut g: gui::Gui } {

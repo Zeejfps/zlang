@@ -1,0 +1,98 @@
+// The tutorial pop-ups' offers (docs/re/gui.md, "Tutorial pop-ups"). A player's action that has a
+// tutorial (the pause, an attack, a menu screen, a level-up step, a script's ShowTutorialWindow, ...)
+// first offers it (ShowTutorialPopup 0x005edf40): when the "Tutorial Popups" option is on, the tutorial
+// has not been shown in this game, no conversation is starting and tutorial.2da has a Message0 for it,
+// the offer is taken and the caller leaves its action; the box (lib/ingame/tutorial_ui.ctx) opens the
+// next frame and its close does the action again (hud::redo_tutorial). Taken or not, the caller learns
+// which. The offers live in the world so that every panel can make one.
+//
+//   if world::offer_tutorial{ &w, id = world::TUT_ATTACK, who, target, n = 0 } { return }
+namespace world {
+    // tutorial.2da rows and who offers them.
+    const TUT_COMBAT_FEAT: i32 = 0          // Use_Combat_Feat (0x00617dd0)
+    const TUT_GRENADE: i32 = 1              // Use_Grenade (0x00617e40)
+    const TUT_VERTICAL_MENU: i32 = 5        // Use_Vertical_Menu (OnTarget/SelfActionUp/Down 0x006884b0 ..)
+    const TUT_PAUSE: i32 = 6                // Pause_Game (OnPauseToggle 0x00688590, the pause keys)
+    const TUT_MENU_KEY: i32 = 7             // Press_Start (HandleInputAction 0xdf: the options menu opened)
+    const TUT_SCRIPTS: i32 = 10             // Enter_Party_Script_Screen (CSWGuiScriptSelect::OnPanelAdded)
+    const TUT_EQUIP: i32 = 11               // Press_A_On_Equip_Screen (CSWGuiEquip::OnSlotClicked)
+    const TUT_MESSAGES: i32 = 12            // Enter_Messages_Screen (CSWGuiMessages::OnPanelAdded)
+    const TUT_MAP: i32 = 13                 // Enter_Map_Screen (CSWGuiMap::OnPanelAdded)
+    const TUT_JOURNAL: i32 = 14             // Receive_Journal_Entry (CSWGuiStatusSummary::OnPanelAdded)
+    const TUT_MEMBER_DIES: i32 = 15         // Party_Member_Dies (the client's creature update, 0x00666667)
+    const TUT_ABILITIES: i32 = 16           // Enter_Attribute_Screen (CSWGuiCharGenAbilities 0x006f6db0)
+    const TUT_SKILLS: i32 = 17              // Enter_Skill_Screen_Char_Gen (CSWGuiCharGenSkills 0x006f49a0)
+    const TUT_FEATS: i32 = 18               // Enter_Feat_Screen_Char_Gen (CSWGuiCharGenFeats 0x006f2f30)
+    const TUT_POWERS: i32 = 19              // Enter_Force_Power_Screen_Char_Gen (CSWGuiCharGenPowers 0x006f10c0)
+    const TUT_INVENTORY: i32 = 20           // Enter_Inventory_Screen (CSWGuiInventory::OnPanelAdded)
+    const TUT_HOSTILE: i32 = 21             // Hostile_Creature_Encountered (UpdateSelectableObjects)
+    const TUT_CLEAR_ONE: i32 = 32           // In_Combat_Y_Button (OnClearOneAction 0x0068b050, the Y key)
+    const TUT_BASH: i32 = 33                // Bash (DefaultActionBash 0x00683e90 / 0x006826a0)
+    const TUT_ATTACK: i32 = 34              // Attack (DefaultActionAttack 0x00616800)
+    const TUT_ATTACK_AGAIN: i32 = 35        // Attack_Button_Mash: an attack ordered within 3 s of the last
+    const TUT_SKILL_SCREEN: i32 = 36        // Enter_Skill_Screen (CSWGuiAbilities::RebuildList 0x006ad560, by tab)
+    const TUT_FEAT_SCREEN: i32 = 37         // Enter_Feat_Screen
+    const TUT_POWER_SCREEN: i32 = 38        // Enter_Force_Power_Screen
+    const TUT_RETURN: i32 = 39             // Return_To_Base_Button (CSWGuiMap::HandleInputEvent 0x29)
+    const TUT_PARTY_SELECTION: i32 = 41     // Party_Selection (CSWGuiPartySelection::OnPanelAdded)
+    const TUT_ROWS: i32 = 43                // CanShowTutorial takes ids below 0x2b
+
+    struct Tutorials {
+        on: bool,           // the "Tutorial Popups" option (client options +0x14 bit 1)
+        allowed: bool,      // someone is playing: a headless run shows none unless its script says (`ui tutorial`)
+        pending: i32,       // the offer taken this frame, for the box to open (client +0x3b8, 0xff none); -1 none
+        who: u32,           // its arguments (+0x3ac, +0x3b0, +0x3b4): the action's object, its target, a number
+        target: u32,
+        n: i32,
+        open: bool,         // a box is up (the owner's): no other offer is taken meanwhile
+    }
+
+    fn no_tutorials {} -> Tutorials {
+        return Tutorials{ on = true, allowed = false, pending = -1, who = obj::INVALID, target = obj::INVALID, n = 0, open = false }
+    }
+
+    // Whether tutorial `id` is set in a shown set (PT_TUT_WND_SHOWN, CGuiInGame +0xba8): bit n of byte n / 8.
+    fn is_tutorial_in { shown: [6]u8, id: i32 } -> bool {
+        if id < 0 or id >= TUT_ROWS { return true }
+        return (shown[@as(usize, id / 8)] & @trunc(u8, 1 << @as(u32, id % 8))) != 0
+    }
+
+    fn add_tutorial_to { mut shown: [6]u8, id: i32 } {
+        if id < 0 or id >= TUT_ROWS { return }
+        let k = @as(usize, id / 8)
+        shown[k] = shown[k] | @trunc(u8, 1 << @as(u32, id % 8))
+    }
+
+    // Whether tutorial `id` has been shown in this game.
+    fn tutorial_shown { w: *World, id: i32 } -> bool { return is_tutorial_in{ shown = w.party.tutorial_shown, id } }
+
+    fn mark_tutorial_shown { mut w: World, id: i32 } { add_tutorial_to{ shown = &w.party.tutorial_shown, id } }
+
+    // CGuiInGame::CanShowTutorial (0x0062f420): the option, not yet shown, no conversation starting
+    // (+0xb4), and a first page in tutorial.2da (0x006aa1a0).
+    fn can_show_tutorial { w: *World, id: i32 } -> bool {
+        if not w.tut.on or not w.tut.allowed or w.tut.open or w.tut.pending >= 0 { return false }
+        if tutorial_shown{ w, id } { return false }
+        if w.conversation.active or w.conversation.hold { return false }
+        return twoda::get_int{ t = w.tables.tutorial, row = @as(usize, id), column = "message0" } != null
+    }
+
+    // ShowTutorialPopup: true when the tutorial will show, and the caller leaves its action to the box.
+    fn offer_tutorial { mut w: World, id: i32, who: u32, target: u32, n: i32 } -> bool {
+        if not can_show_tutorial{ w = &w, id } { return false }
+        w.tut.pending = id
+        w.tut.who = who
+        w.tut.target = target
+        w.tut.n = n
+        if w.log.objects {
+            prefix{ w = &w }
+            _ = @fmt(&w.io, "tutorial offered: {} ({} {} {})\n", id, who, target, n)
+        }
+        return true
+    }
+
+    // An offer with no arguments (the panels' OnPanelAdded ones).
+    fn offer_plain_tutorial { mut w: World, id: i32 } -> bool {
+        return offer_tutorial{ &w, id, who = obj::INVALID, target = obj::INVALID, n = 0 }
+    }
+}

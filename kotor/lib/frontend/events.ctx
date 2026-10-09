@@ -464,6 +464,9 @@ namespace frontend {
             return new_game_outcome{ &fe, player = slice::empty(u8){} }
         }
         fe.cg = st
+        st.tut.on = fe.settings.tutorial_popups
+        st.tut.allowed = fe.tutorials_allowed
+        fe.tutorial_shown = [0; 6]
         close_loading{ &fe, &g }
         return Outcome::running
     }
@@ -484,7 +487,10 @@ namespace frontend {
     fn chargen_event { mut fe: Front, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> Outcome {
         let st = fe.cg ifnull { return Outcome::running }
         let o = chargen::on_event{ st, &g, &fs, &dev, ev }
-        if o is finished { return new_game_outcome{ &fe, player = st.player } }
+        if o is finished {
+            fe.tutorial_shown = st.tut.shown
+            return new_game_outcome{ &fe, player = st.player }
+        }
         if o is cancelled { end_chargen{ &fe, &g, &dev } }
         return Outcome::running
     }

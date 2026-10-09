@@ -78,7 +78,7 @@ namespace hud {
         trans_panel: u32,                   // the area transition label's panel while the pointer is on a transition, else 0
         trans_object: u32,                  // the transition it names
         projector: Projector,               // this frame's, for picking and the reticle
-        tut: Tutorial,                      // the tutorial pop-ups' offers (tutorial.ctx)
+        attack_window: f32,                 // seconds left of the 3 s after an attack order (tutorial.ctx)
         floating: Floating,                 // the damage, miss and XP labels over creatures (floating.ctx)
     }
 
@@ -120,7 +120,7 @@ namespace hud {
             shown_target = obj::INVALID, lists = [empty_list{}; 3], power_pick = -1, refusal = 0.0, refusal_reason = 0, object_text = 0, hover_slot = -1, look = -1, pressed = obj::INVALID,
             pressing = false, reticle = Reticle{ shown = false, x = 0.0, y = 0.0, side = 0.0, mark = 0, turns = 0 }, reticle_for = obj::INVALID, zoom = -1.0, sight_latch = false, sight_quiet = 0.0, target_lost = 0.0, move_speed = 0.0, moving_for = 0.0, looking = false, swing_to = obj::INVALID, door_window = 0.0, deferred = 0.0, deferred_text = 0, alternate = false, trans_panel = 0, trans_object = obj::INVALID,
             projector = Projector{ vp = math::mat4::identity{}, eye = math::vec3::zero{}, w = 1.0, h = 1.0 },
-            floating = new_floating{ &g, &w, &dev }, tut = new_tutorial{},
+            floating = new_floating{ &g, &w, &dev }, attack_window = 0.0,
         }
         let mut i: usize = 0
         while i < STARTS_HIDDEN.len {

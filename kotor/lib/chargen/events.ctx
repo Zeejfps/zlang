@@ -33,6 +33,7 @@ namespace chargen {
 
     // One event from the GUI.
     fn on_event { st: *mut State, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> Outcome {
+        if tutorial_event{ st, &g, ev } { return Outcome::running }
         if st.msg_panel != 0 and ev.panel == st.msg_panel { return message_event{ st, &g, &fs, &dev, ev } }
         let screen = screen_of{ st, panel = ev.panel }
         if screen == SCR_CLASS { return class_event{ st, &g, &fs, &dev, ev } }

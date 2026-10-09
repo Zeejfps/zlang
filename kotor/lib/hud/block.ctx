@@ -446,8 +446,8 @@ namespace hud {
         // A combat feat's and a grenade's callbacks (0x00617dd0, 0x00617e40) offer their tutorials first; the
         // box's close gives the order then.
         let leader = party::leader{ w = &w }
-        let taught = if e.act == Act::feat_attack { offer_tutorial{ &h, w = &w, id = TUT_COMBAT_FEAT, who = w.target, target = obj::INVALID, n = e.id } }
-            else if e.act == Act::throw { offer_tutorial{ &h, w = &w, id = TUT_GRENADE, who = w.target, target = leader, n = @as(i32, e.item) } }
+        let taught = if e.act == Act::feat_attack { world::offer_tutorial{ &w, id = world::TUT_COMBAT_FEAT, who = w.target, target = obj::INVALID, n = e.id } }
+            else if e.act == Act::throw { world::offer_tutorial{ &w, id = world::TUT_GRENADE, who = w.target, target = leader, n = @as(i32, e.item) } }
             else { false }
         if not taught { run_act{ &w, act = e.act, target = w.target, item = e.item, spell = e.id, queue = queues_orders{ h = &h, w = &w } } }
         if to_combat { enter_combat_mode{ &w } }
@@ -459,7 +459,7 @@ namespace hud {
     fn run_default_act { mut h: Hud, mut w: world::World, act: Act, target: u32, item: u32, spell: i32 } {
         let leader = party::leader{ w = &w }
         if act == Act::attack and not attack_order_goes{ &h, w = &w, attacker = leader, target } { return }
-        if act == Act::bash and offer_tutorial{ &h, w = &w, id = TUT_BASH, who = leader, target, n = if target_is_door{ w = &w, id = target } { 1 } else { 0 } } { return }
+        if act == Act::bash and world::offer_tutorial{ &w, id = world::TUT_BASH, who = leader, target, n = if target_is_door{ w = &w, id = target } { 1 } else { 0 } } { return }
         run_act{ &w, act, target, item, spell, queue = adds_to_queue{ act } }
     }
 
@@ -536,6 +536,8 @@ namespace hud {
             let up = slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "BTN_TARGETUP", n = k } }
             let down = slice::eq_bytes{ a = ev.tag, b = tag_n{ into = buf[..], prefix = "BTN_TARGETDOWN", n = k } }
             if up or down {
+                // OnTargetActionUp / Down (0x006884b0, 0x00688520): Use_Vertical_Menu is offered and the slot cycles anyway.
+                _ = world::offer_plain_tutorial{ &w, id = world::TUT_VERTICAL_MENU }
                 cycle_slot{ &h, &g, &w, &dev, k, forward = down }
                 return true
             }
