@@ -26,7 +26,7 @@ namespace lvl {
         return twoda::get_string{ t, row, column } ifnull ""
     }
 
-    // `base` + two digits of `v` into `into` (tex<L>NN, texaevil's 01); the length, 0 if it does not fit.
+    // `base` + two digits of `v` into `into` (tex<L>NN); the length, 0 if it does not fit.
     fn put_numbered { into: []mut u8, base: []u8, v: u32 } -> usize {
         if base.len == 0 or base.len + 2 > into.len { return 0 }
         let mut n: usize = 0
@@ -36,15 +36,6 @@ namespace lvl {
         return n + 2
     }
 
-    // The heads.2da column of the dark side's head texture at `alignment` (FUN_00698150: below 11,
-    // 21, 31, 41), "" for none.
-    fn dark_head_column { alignment: i32 } -> []u8 {
-        if alignment < 11 { return "headtexvvve" }
-        if alignment < 21 { return "headtexvve" }
-        if alignment < 31 { return "headtexve" }
-        if alignment < 41 { return "headtexe" }
-        return ""
-    }
 
     // What creature `c` looks like on the sheet. A B body takes the letter and texture variation
     // of its armour (a and the creature's own variation without one); an unarmoured body below
@@ -77,28 +68,18 @@ namespace lvl {
             let li = if letter >= 'a' and letter <= 'j' { @as(usize, letter - 'a') } else { 0 }
             look.body = cell{ t, row, column = visual::MODEL_COLUMNS[li] }
             names.body_len = put_numbered{ into = names.body[..], base = cell{ t, row, column = visual::TEX_COLUMNS[li] }, v = if texvar == 0 { 1 } else { texvar } }
-            if not armoured and alignment < 31 {
-                let evil = put_numbered{ into = names.head[..], base = cell{ t, row, column = "texaevil" }, v = 1 }
-                if evil > 0 and res::find_texture{ rm = w.rm.*, name = names.head[..evil] } != null {
-                    let mut i: usize = 0
-                    while i < evil {
-                        names.body[i] = names.head[i]
-                        i = i + 1
-                    }
-                    names.body_len = evil
-                }
+            if not armoured {
+                let evil = visual::dark_body_texture{ w = &w, row, alignment, into = names.body[..] }
+                if evil > 0 { names.body_len = evil }
             }
             let head_row = if c.head >= 0 { c.head } else { twoda::get_int{ t, row, column = "normalhead" } ifnull -1 }
             if head_row >= 0 and @as(usize, head_row) < twoda::rows{ t = w.tables.heads } {
                 let hr = @as(usize, head_row)
                 look.head = cell{ t = w.tables.heads, row = hr, column = "head" }
-                let column = dark_head_column{ alignment }
-                if column.len > 0 {
-                    let dark = cell{ t = w.tables.heads, row = hr, column }
-                    if dark.len > 0 and dark.len <= names.head.len {
-                        names.head_len = 0
-                        preview3d::put_bytes{ into = names.head[..], at = &names.head_len, s = dark }
-                    }
+                let dark = visual::dark_head_texture{ w = &w, head_row = hr, alignment }
+                if dark.len > 0 and dark.len <= names.head.len {
+                    names.head_len = 0
+                    preview3d::put_bytes{ into = names.head[..], at = &names.head_len, s = dark }
                 }
             }
         } else if ci::eq{ a = kind, b = "f" } {

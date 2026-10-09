@@ -56,10 +56,12 @@ namespace visual {
         return index
     }
 
-    // What a visual's models depend on: a creature's appearance and its armour and weapons.
+    // What a visual's models depend on: a creature's appearance, its armour and weapons, and its
+    // alignment's dark-side stage (the original re-textures whenever good/evil changes).
     fn signature_of { o: *obj::Object } -> u64 {
         let c = obj::creature{ o } ifnull { return 0 }
         let mut h: u64 = @as(u64, shown_appearance{ c }) + @as(u64, c.head + 1) * 4096
+        h = @wrap_add(@wrap_mul(h, 1000003), @as(u64, dark_stage{ alignment = @as(i32, c.good_evil) }))
         h = @wrap_add(@wrap_mul(h, 1000003), @as(u64, c.equipped[obj::SLOT_BODY]))
         h = @wrap_add(@wrap_mul(h, 1000003), @as(u64, c.equipped[obj::SLOT_RIGHT_WEAPON]))
         h = @wrap_add(@wrap_mul(h, 1000003), @as(u64, c.equipped[obj::SLOT_LEFT_WEAPON]))
@@ -68,6 +70,58 @@ namespace visual {
 
     // The appearance.2da row the creature is drawn with: its disguise's while it has one.
     fn shown_appearance { c: *obj::Creature } -> u32 { return if c.disguise > 0 { c.disguise } else { c.appearance } }
+
+    // Which of FUN_00698150's dark-side looks good/evil `alignment` gets: 0 below 11 (headtexvvve),
+    // 1 below 21, 2 below 31 (also the unarmoured body's texaevil), 3 below 41 (headtexe), 4 none.
+    fn dark_stage { alignment: i32 } -> u32 {
+        if alignment < 11 { return 0 }
+        if alignment < 21 { return 1 }
+        if alignment < 31 { return 2 }
+        if alignment < 41 { return 3 }
+        return 4
+    }
+
+    // The heads.2da column of the dark side's head texture at `alignment`, "" for none.
+    fn dark_head_column { alignment: i32 } -> []u8 {
+        let stage = dark_stage{ alignment }
+        if stage == 0 { return "headtexvvve" }
+        if stage == 1 { return "headtexvve" }
+        if stage == 2 { return "headtexve" }
+        if stage == 3 { return "headtexe" }
+        return ""
+    }
+
+    // The texture heads.2da row `head_row` wears at `alignment` in place of its own, "" for its own.
+    // Only the player heads (rows 26 on) have these cells, so only creatures with one darken.
+    fn dark_head_texture { w: *world::World, head_row: usize, alignment: i32 } -> []u8 {
+        let column = dark_head_column{ alignment }
+        if column.len == 0 or head_row >= twoda::rows{ t = w.tables.heads } { return "" }
+        return cell{ t = w.tables.heads, row = head_row, column }
+    }
+
+    // An unarmoured B body's dark-side texture below alignment 31, appearance.2da `texaevil` + `01`
+    // when it exists, written into `into`; its length, or 0 for the body's own texture.
+    fn dark_body_texture { w: *world::World, row: usize, alignment: i32, into: []mut u8 } -> usize {
+        if alignment >= 31 { return 0 }
+        let base = cell{ t = w.tables.appearance, row, column = "texaevil" }
+        if base.len == 0 or base.len + 2 > 24 or base.len + 2 > into.len { return 0 }
+        let mut name: [24]u8
+        let mut i: usize = 0
+        while i < base.len {
+            name[i] = base[i]
+            i = i + 1
+        }
+        name[i] = '0'
+        name[i + 1] = '1'
+        let n = i + 2
+        if res::find_texture{ rm = w.rm.*, name = name[..n] } == null { return 0 }
+        i = 0
+        while i < n {
+            into[i] = name[i]
+            i = i + 1
+        }
+        return n
+    }
 
     // A cell of appearance.2da ("" for a blank or "****").
     fn cell { t: twoda::Table, row: usize, column: []u8 } -> []u8 {
@@ -90,9 +144,11 @@ namespace visual {
             // The armour's body letter (models-usage.md, B-type bodies): a without armour.
             let mut letter: u8 = 'a'
             let mut texvar = @as(u32, c.texture_variation)
+            let mut armoured = false
             let armor = world::object{ w = &w, id = c.equipped[obj::SLOT_BODY] }
             if armor != null {
                 if obj::item{ o = armor } is some{ value = it } {
+                    armoured = true
                     let bodyvar = cell{ t = w.tables.baseitems, row = @as(usize, it.base), column = "bodyvar" }
                     if bodyvar.len == 1 { letter = ascii::to_lower{ c = bodyvar[0] } }
                     else if it.body_variation >= 1 and it.body_variation <= 10 { letter = @trunc(u8, 'a' + it.body_variation - 1) }
@@ -112,6 +168,10 @@ namespace visual {
                 texture[i] = @trunc(u8, '0' + (v / 10) % 10)
                 texture[i + 1] = @trunc(u8, '0' + v % 10)
                 texture_len = i + 2
+            }
+            if not armoured {
+                let evil = dark_body_texture{ w = &w, row, alignment = @as(i32, c.good_evil), into = texture[..] }
+                if evil > 0 { texture_len = evil }
             }
         } else if ci::eq{ a = kind, b = "f" } {
             body_name = cell{ t, row, column = "modela" }
@@ -141,7 +201,8 @@ namespace visual {
             if head_row >= 0 {
                 let head = cell{ t = w.tables.heads, row = @as(usize, head_row), column = "head" }
                 if head.len > 0 {
-                    let hl = try scene::load_model{ &sc, &w, &dev, name = head, body_texture = "", envmap, hide_null = false }
+                    let dark = dark_head_texture{ w = &w, head_row = @as(usize, head_row), alignment = @as(i32, c.good_evil) }
+                    let hl = try scene::load_model{ &sc, &w, &dev, name = head, body_texture = dark, envmap, hide_null = false }
                     if hl != null { _ = try scene::add_part{ &sc, loaded = hl, parent = @as(i32, body), hook = mdl_anim::HOOK_HEAD } }
                 }
             }

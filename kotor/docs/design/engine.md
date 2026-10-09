@@ -445,8 +445,9 @@ original's two contests (lib/engine/stealth.ctx, [mechanics/stealth.md](../mecha
 `scene::Scene` mirrors the world into draws; nothing in it is game state (a save never needs it,
 and it can be rebuilt from the world at any time):
 
-- **Rooms**: the LYT's room models, each with its pose (animloop1..3 when the model has them) and
-  lights; the VIS table. Each frame the camera's room is the room whose walkmesh is under the
+- **Rooms**: the LYT's room models, each with its pose (animloop1..3 when the model has them, all
+  three at once: animloop1 is the player's current animation and animloop2 / animloop3 its two
+  layers, `mdl_anim::play_layer`, each moving the nodes it keys, re/modules.md) and lights; the VIS table. Each frame the camera's room is the room whose walkmesh is under the
   leader (else the camera); rooms not visible from it per VIS are skipped (a room without a VIS
   entry sees everything, vis.md). Room lights go into the frame for dynamic objects.
 - **Visuals**, one per object that has a model, keyed by object id (`scene.visuals`): created when
@@ -456,6 +457,10 @@ and it can be rebuilt from the world at any time):
     texture `tex<L>NN` + head (`heads.2da` row from NORMALHEAD) at `headhook`; F → `modela` or
     `race`; S/L → `race` (retextured with `racetex`); the right-hand weapon (`baseitems.2da`
     itemclass + `_` + model variation) at `rhand`, the left at `lhand`; `envmap` from appearance;
+    the dark side's textures by good/evil for any creature, as the original's FUN_00698150 does
+    (re/gui.md, "Dark-side looks in the world": below 41 the head's `headtex*e`, below 31 an
+    unarmoured B body's `texaevil` + `01`); the visual's signature holds the alignment's stage, so
+    crossing 11, 21, 31 or 41 rebuilds it;
   - placeable: `placeables.2da` modelname; door: `genericdoors.2da` modelname, animated
     `opening1`/`opened1`/`closing1`/`closed` from the door's open state;
   - waypoints, triggers and sounds have none.

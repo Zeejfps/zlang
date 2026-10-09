@@ -2454,7 +2454,7 @@ panel and alignment": `t3m4` and `hk47` pause instead of posing and take `camera
 calls and the mask, med for the name being the tag)
 
 `FUN_00698150(appearance, alignment)` (also run by `FUN_006134c0` with the model's own stats and by
-`FUN_0060f780` for creatures in the world) does nothing when the alignment is the one it last used
+`FUN_0060f780` for creatures in the world, see "Dark-side looks in the world" below) does nothing when the alignment is the one it last used
 (+0x2c) and nothing is pending (+0x50). Otherwise the head's texture: heads.2da row (the record's
 head byte +0x34, or when 0xff the appearance's `normalhead` or `backuphead` column by +0x30), column
 `headtexvvve` below 11, `headtexvve` below 21, `headtexve` below 31, `headtexe` below 41; the cell's
@@ -2463,6 +2463,20 @@ back. The body: when the record is not armoured (+0x14 = 0) and the alignment is
 appearance.2da `texaevil` + `01` replaces the body's texture if it exists; otherwise the body's own
 (`FUN_00697610`) comes back. So a dark Jedi's face and underwear darken by stages; an armoured body
 keeps its armour's texture. (high)
+
+Dark-side looks in the world: the same function runs for every client creature, at two places.
+`FUN_006134c0` (apply an appearance record to a `CSWCCreature`: the body and head models, the hand
+items) ends with `FUN_00698150(creature +0x21c, client stats (+0x2f8) +0x80)`, so every build of a
+creature's model takes its good/evil. `FUN_0060f780(creature, good/evil)` stores the value (clamped
+0..100) in the client stats +0x80 and calls `FUN_00698150` again; the creature update handler
+`FUN_00667265` (via the table at `0x0074dd88`) calls it for the update's `0x1000` block (portrait
+id, name, two bytes, good/evil). The server writes that block in `FUN_00574a10` (stats +0x17e, the
+value GetGoodEvilValue returns) whenever `FUN_0056b950` finds the creature's portrait, name, class
+levels, good/evil or another of a few fields changed since the last update; nothing there limits it
+to the player or the party. So any creature re-textures when its alignment changes, and the rule
+needs no check of who it is because only the player heads (heads.2da rows 26 on) have `headtex*`
+cells and only player bodies have `texaevil`. (high for the calls, med for "every creature": the
+update path for non-party creatures was not followed to the end)
 
 Turning: `BTN_3DCHAR` (+0x580c) is a repeat button (vtable 0x007533c8, see the open questions at the
 end): a left press sends 0x16256 (`RotateModelLeft`, -10 degrees) and a right press 0x16257
