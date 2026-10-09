@@ -167,6 +167,19 @@ namespace gui {
         }
     }
 
+    // CSWGuiControl::SetHilighted (vtable slot 16): the control draws its HILIGHT border, whatever the
+    // pointer does; its text is left alone.
+    fn set_hilighted { mut g: Gui, panel: u32, tag: []u8, on: bool } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.flags = if on { c.flags | F_HILIGHT } else { clear_bits{ f = c.flags, bits = F_HILIGHT } }
+    }
+
+    // Whether the pointer passes through the control: no hover, no click, no keyboard focus.
+    fn set_click_through { mut g: Gui, panel: u32, tag: []u8, through: bool } {
+        let c = find_control{ &g, panel, tag } ifnull { return }
+        c.flags = if through { c.flags | F_NO_HIT } else { clear_bits{ f = c.flags, bits = F_NO_HIT } }
+    }
+
     fn set_value { mut g: Gui, panel: u32, tag: []u8, value: i32 } {
         let c = find_control{ &g, panel, tag } ifnull { return }
         c.value = value

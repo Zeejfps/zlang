@@ -239,7 +239,12 @@ which returns to class selection. (high)
 Both step panels hold a step counter (quick `+0x135c`, custom `+0x2184`), set by a "SetStep"
 function (quick `0x006efc10`, custom `0x006eefd0`). **Only the button of the current step is
 enabled and highlighted; every other one, earlier or later, is disabled**, so the order is forced
-and a finished step can only be revisited with Back. Each handler also checks the counter (table).
+and a finished step can only be revisited with Back. Each step is three controls: the circle `LBL_k`
+(type 5, `lbl_cg_circ1`, hilight fill `lbl_cg_circ2`), the number `LBL_NUMk` and the name
+`BTN_STEPNAMEk`. SetStep hilights the current step's circle (vtable slot 16, SetHilighted) and makes
+its number and name selectable (slot 34) in `g_vGuiMenuHilightTextColor` (0x007a23c0: 0.98, 1, 0);
+the others' circles lose the hilight and their numbers and names are made unselectable, which dims
+their text. The circles are never made selectable: the pointer doesn't hover or click them. Each handler also checks the counter (table).
 `BTN_BACK` is disabled (dim colour) at step 0.
 
 | Panel | Step | Button | strref | Opens | Needs counter | Finishing sets counter to |

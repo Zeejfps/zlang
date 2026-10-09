@@ -189,18 +189,45 @@ namespace chargen {
 
     // ---- the step lists
 
-    // The panel `screen` ("quick" or "custom") with only the current step enabled.
+    // The panel `screen` ("quick" or "custom") with only the current step enabled (the panels'
+    // SetStep, custom 0x006eefd0, quick 0x006efc10). Each step is a circle (`LBL_k`, a type-5 control
+    // the pointer never touches), its number (`LBL_NUMk`) and its name (`BTN_STEPNAMEk`): the current
+    // step's circle is hilighted and its number and name are selectable in the hilight colour; every
+    // other step's are neither, their text dim.
     fn bind_steps { st: *mut State, mut g: gui::Gui, p: u32, screen: u32 } {
         let count: i32 = if screen == SCR_QUICK { 3 } else { 6 }
         let mut k: i32 = 0
         while k < count {
-            let mut tag: [16]u8
-            let n = frontend::copy_into{ dst = tag[..], src = "BTN_STEPNAME" }
-            tag[n] = '1' + @trunc(u8, k)
-            gui::set_enabled{ &g, panel = p, tag = tag[..n + 1], enabled = k == st.step }
+            let digit = '1' + @trunc(u8, k)
+            let current = k == st.step
+            let mut circle: [8]u8
+            let nc = frontend::copy_into{ dst = circle[..], src = "LBL_" }
+            circle[nc] = digit
+            gui::set_click_through{ &g, panel = p, tag = circle[..nc + 1], through = true }
+            gui::set_hilighted{ &g, panel = p, tag = circle[..nc + 1], on = current }
+            let mut number: [12]u8
+            let nn = frontend::copy_into{ dst = number[..], src = "LBL_NUM" }
+            number[nn] = digit
+            show_step_text{ &g, p, tag = number[..nn + 1], current }
+            let mut name: [16]u8
+            let n = frontend::copy_into{ dst = name[..], src = "BTN_STEPNAME" }
+            name[n] = digit
+            show_step_text{ &g, p, tag = name[..n + 1], current }
             k = k + 1
         }
         gui::set_enabled{ &g, panel = p, tag = "BTN_BACK", enabled = st.step > 0 }
+    }
+
+    // A step's number or name: selectable in the hilight colour when it is the current step, else
+    // not selectable, which dims its text (SetSelectable, vtable slot 34).
+    fn show_step_text { mut g: gui::Gui, p: u32, tag: []u8, current: bool } {
+        if current {
+            gui::set_enabled{ &g, panel = p, tag, enabled = true }
+            gui::set_text_color{ &g, panel = p, tag, color = gui::color_hilight{} }
+        } else {
+            gui::set_text_color{ &g, panel = p, tag, color = gui::color_menu{} }
+            gui::set_enabled{ &g, panel = p, tag, enabled = false }
+        }
     }
 
     // After a step: the counter moves on and the list below shows the next step.
