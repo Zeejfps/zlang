@@ -347,13 +347,17 @@ namespace vfx {
         }
     }
 
-    // Where a Lightning emitter of the effect ends: a beam's target's `impact` node, else the reference node
-    // under the emitter; none once the effect is past its life (the original removes the beam's model).
-    fn bolt_aim { sc: *scene::Scene, w: *world::World, f: *Fx, model: *mdl::Model, pose_world: []math::Mat4, e: *mdl::Emitter } -> ?math::Vec3 {
+    // Where a Lightning emitter of the effect ends, as the node's matrix to world space (the curve arrives along
+    // its +Z): a beam's target's `impact` node, else the reference node under the emitter; none once the effect
+    // is past its life (the original removes the beam's model).
+    fn bolt_aim { sc: *scene::Scene, w: *world::World, f: *Fx, model: *mdl::Model, pose_world: []math::Mat4, e: *mdl::Emitter } -> ?math::Mat4 {
         if f.stopped { return null }
-        if f.aim_object != obj::INVALID { return hook_point{ sc, w, id = f.aim_object, hook = "impact", which = 0, fallback = 1.2 } }
+        if f.aim_object != obj::INVALID {
+            if scene::hook_of{ sc, w, id = f.aim_object, hook = "impact", which = 0 } is some{ value = m } { return m }
+            return math::mat4::translation{ t = hook_point{ sc, w, id = f.aim_object, hook = "impact", which = 0, fallback = 1.2 } }
+        }
         let node = gui3d::bolt_end_node{ model, e } ifnull { return null }
-        return math::mat4::get_translation{ m = math::mat4::mul{ a = f.matrix, b = pose_world[node] } }
+        return math::mat4::mul{ a = f.matrix, b = pose_world[node] }
     }
 
     fn step { mut v: Vfx, mut sc: scene::Scene, mut w: world::World, mut dev: gpu::Device, slot: usize, dt: f32 } {

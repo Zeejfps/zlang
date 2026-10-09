@@ -61,7 +61,7 @@ namespace scene {
                 if ex.update == mdl::EmitterUpdate::lightning {
                     em.aim = null
                     if gui3d::bolt_end_node{ model, e = ex } is some{ value = node } {
-                        em.aim = math::mat4::get_translation{ m = math::mat4::mul{ a = instance, b = p.pose.world[node] } }
+                        em.aim = math::mat4::mul{ a = instance, b = p.pose.world[node] }
                     }
                 }
                 let ground = touch{ sc, w, _ }

@@ -37,7 +37,7 @@ namespace gui3d {
         out: []mut render::Particle,        // the live ones as the seam takes them
         seen: u32,                          // a world emitter: the scene frame it was last stepped in, 0 never (lib/scene/emitters.ctx)
         latch: bool,                        // an Explosion emitter: its owner's animation said `detonate`, not burst yet
-        aim: ?math::Vec3,                   // a Lightning emitter: where its bolt ends, in the world, set by the owner each step
+        aim: ?math::Mat4,                   // a Lightning emitter: the node its bolt ends at (its matrix to world space), set by the owner each step
         bolt: Bolt,                         // a Lightning emitter's chains (lightning.ctx)
         last: math::Mat4,                   // the emitter node's matrix to world space at its last step (when `placed`)
         owner_at: math::Vec3,               // and its owner's (the model's) world position then

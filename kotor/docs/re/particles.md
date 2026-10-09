@@ -282,7 +282,9 @@ A Lightning emitter births nothing: its particles are the points of a chain from
 - **The curve** (`0x00497c60`, slot `+0x88`, every controlptdelay seconds, `+0xf8` the clock; arrays of
   0x0c-byte points). The count is int(numcontrolpts (`+0x100`) * distance + 0.5) + 2 (`0x0073e9ac` is 0.5),
   so numcontrolpts is control points a metre (0.1 to 0.3 in the beams: one or two inner points on a 6 m
-  bolt). A base curve (`+0x210` points, `+0x234` tangents) is a cubic from the emitter's world position
+  bolt). The base curve is laid only when that count differs from the base's (and once by `0x00494da0` on the
+  emitter's first step with a target, guarded by the byte `+0x1f7`); otherwise the base kept from before is
+  used, as carried with the line (below) and with its ends set at the renewal. A base curve (`+0x210` points, `+0x234` tangents) is a cubic from the emitter's world position
   (`+0x164`) to the target's (slot `+0x64`) with handles start + R(q) * (0, 0, tangentlength), where q is
   the quaternion (w, x, y, z) at `+0x14`, the emitter part's **own** orientation (CAurPart's local
   transform, `0x004457a0`: position `+0x8`, orientation `+0x14`, scale `+0x24`; for an emitter part, its
@@ -292,7 +294,9 @@ A Lightning emitter births nothing: its particles are the points of a chain from
   The new curve (`+0x228` points, `+0x24c` tangents) then: the ends are the base ends, the start tangent
   R(`+0x1a4`, the emitter's world orientation) * (0, 0, tangentlength) and the end tangent the unit line
   to the target times tangentlength, neither perturbed; each inner point is the base point plus (rand %
-  int(controlptradius * 100)) / 100 with a random sign times the square direction `+0x27c`, that offset
+  int(controlptradius * 100)) / 100 with a random sign times the square direction `+0x27c` (set once, on the
+  first step, from the unit line u to the target as (-u.y, u.z, -u.x), `0x00494da0`: square to u only for some
+  directions, and fixed in the world afterwards; a branch's from its own line at each branching), that offset
   turned about **world X** by rand % 360 degrees (`Quaternion_FromEulerDegrees(0, rand % 360, 0)`); each
   inner tangent is the base tangent turned by `Quaternion_FromEulerDegrees(a, b, 0)` (Z then X, degrees),
   a and b each (rand % int(tangentspread * 100)) / 100 with a random sign (`0x00741838` is 100). Before
@@ -319,9 +323,14 @@ A Lightning emitter births nothing: its particles are the points of a chain from
   end points are not moved. (A second rule behind the global `0x0083049c`, an offset along a fixed
   perpendicular of up to rand % int(...) hundredths times lightningScale, is not used: the global is 0, med.)
 - **Branches** (`0x00491a50`, slot `+0x8c`, with each new curve): rand % (branch_count + 1) of the
-  children run. Each gets s = 0.1 + (rand % 80) / 100, its sizes (start, mid, end and the y ones) s times
+  children run (each a Lightning emitter of its own, so its control points are made by the same `0x00497c60` on
+  its next step, its clock having been set to controlptdelay; its base's start tangent is the parent's square
+  times tangentlength turned by (-(rand % 45)) degrees about Z and rand % 360 about the third axis, its end
+  tangent that one again for a fork or the parent's last base tangent otherwise; read 2026-10-09, med: the
+  child's own base count and target node, which decide whether those are used, were not followed). Each gets s = 0.1 + (rand % 80) / 100, its sizes (start, mid, end and the y ones) s times
   the parent's, and a start point on the parent's chain. With s <= 0.5 it forks to a point of its own:
-  from its start, (rand % 75 / 100 + 0.25) * L / 2 along a random direction square to the chain plus
+  from its start, (rand % 75 / 100 + 0.25) * L / 2 along the parent's square turned about world X by rand % 360
+  degrees plus
   (rand % 25 / 100 + 0.25) of the chain's line; with s > 0.5 it runs to the parent's target. Its point
   count is lightningSubDiv * its length + 2, its start follows the parent's offset point each frame, and
   it is stepped and flickers as a chain of its own (the children are drawn as emitters of their own).
