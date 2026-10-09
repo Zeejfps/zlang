@@ -89,4 +89,14 @@ errors and capability-variable work (`e19f1fe`).
   unlikely to show in a profile; the front end's time hasn't been profiled (PLAN.md, Known gaps).
   The lexer now indexes tables of kinds that consts compute while compiling (`tok::KEYWORD_KINDS`,
   `OP_KINDS`); other `@as` to an enum still lower to the chain.
+- **18. A typed function value can't be cast** (from writing threads, std/thread.ctx). A thread's
+  start record holds its run function, of type `fn{ data: *mut T }` for any `T`, and a non-generic
+  callback reads it: the value goes through a pointer cast,
+  `@cast(*fn{ data: *mut u8 }, &run).*`, since `@cast` takes pointers and C function pointers
+  only. It works because every `fn` value is one pointer whatever its fields' types, which a cast
+  of `fn` values whose fields differ only in pointer types could say outright. One place.
+- **19. `&p` punning takes a name only** (from writing threads). threads.md's draft wrote
+  `mutex::lock{ &shared.lock }`, which reads well and doesn't parse as a field: it is
+  `mutex::lock{ mutex = &shared.lock }`. Every call on a lock or a condition inside a struct pays
+  the field's name.
 
