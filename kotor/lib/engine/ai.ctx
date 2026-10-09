@@ -98,7 +98,7 @@ namespace ai {
     }
 
     fn is_movement_animation { id: u32 } -> bool {
-        return id == obj::ANIM_WALK or id == obj::ANIM_RUN or id == obj::ANIM_WALK_BACK
+        return id == obj::ANIM_WALK or id == obj::ANIM_RUN or id == obj::ANIM_WALK_BACK or id == obj::ANIM_STEALTH_WALK
     }
 
     fn heartbeat { mut w: world::World, mut vm: nwvm::Vm, engine: nwvm::Engine, id: u32, now: u64 } {

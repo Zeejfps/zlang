@@ -1,6 +1,8 @@
 // The chase camera (docs/re/movement.md 2.2, 2.3): behind and above the leader at the area's
 // camerastyle.2da row, turned by the rotate keys through the original's rate integrator, its
 // distance easing back to the style's after collisions, looking at the leader with a fixed pitch.
+// In combat mode the same struct is the combat camera (2.4): row 8, rigid, looking along its yaw.
+// Free look (2.5) and the shake (2.6) are here too.
 namespace cam {
     struct Style { distance: f32, pitch: f32, height: f32, fov: f32 }
 
@@ -20,6 +22,17 @@ namespace cam {
         fl_pitch: f32,          // free look's pitch in degrees, up positive
         turn_to: u32,           // an object the camera is swinging round to show (target cycling), obj::INVALID when none
         turn_rate: f32,         // that swing's easing rate per second, 2.5 to 7.5
+        combat: bool,           // the combat camera (combat mode): rigid at row 8's distance, no swing, no creature clip
+        fl_rate: f32,           // free look's tilt integrator (W / S), degrees per second
+        fl_up: f32,             // the area's FL_LOOKUP and FL_LOOKDOWN, degrees
+        fl_down: f32,
+        fl_row: u32,            // the camerastyle row they came from
+        shake_left: f32,        // the shake (StartCameraShake): milliseconds of it left, 0 when none
+        shake_total: f32,       // its whole length, milliseconds
+        shake_delay: f32,       // milliseconds before it starts
+        shake_yaw: f32,         // this frame's offsets, degrees (render_camera adds them)
+        shake_pitch: f32,
+        seed: u32,              // the shake's coin (ours: an LCG for the original's rand)
     }
 
     // The time constant of the camera's return to its distance (ours; the original halves the error every frame).
@@ -41,7 +54,9 @@ namespace cam {
         stops[30] = false
         return Camera{
             style = Style{ distance = 6.25, pitch = 80.0, height = 3.5, fov = 55.0 }, yaw = 0.0, rate = 0.0, h = 3.2, hold = 0.0,
-            started = false, freelook = false, fl_pitch = 0.0, turn_to = obj::INVALID, turn_rate = 2.5, eye = math::vec3::zero{}, look = math::vec3::zero{}, dir = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, stops,
+            started = false, freelook = false, fl_pitch = 0.0, turn_to = obj::INVALID, turn_rate = 2.5,
+            combat = false, fl_rate = 0.0, fl_up = 15.0, fl_down = 20.0, fl_row = 0xFFFFFFFF,
+            shake_left = 0.0, shake_total = 0.0, shake_delay = 0.0, shake_yaw = 0.0, shake_pitch = 0.0, seed = 0x2545F491, eye = math::vec3::zero{}, look = math::vec3::zero{}, dir = math::Vec3{ x = 0.0, y = 1.0, z = 0.0 }, up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, stops,
         }
     }
 
@@ -55,20 +70,119 @@ namespace cam {
         c.style.fov = if fov <= 0.0 { 55.0 } else { fov }
     }
 
+    // Free look's pitch limits come from the area's row even in combat mode (CSWCFreeLookCamera::LoadCameraStyle
+    // 0x006383c0): -20 / +15 in DEFAULT, -30 / +30 in most others. Read again only when the row changes.
+    fn set_freelook_style { mut c: Camera, t: twoda::Table, row: u32 } {
+        if c.fl_row == row { return }
+        c.fl_row = row
+        let r = @as(usize, row)
+        c.fl_up = twoda::get_float{ t, row = r, column = "fl_lookup" } ifnull 15.0
+        c.fl_down = twoda::get_float{ t, row = r, column = "fl_lookdown" } ifnull 20.0
+    }
+
     // Target cycling (Q, E) asks the camera to bring the new target into view (TurnTowardObject 0x00639c30);
-    // any turn by hand cancels it.
+    // any turn by hand cancels it. Only the chase camera swings: SelectTarget finds no chase camera while the
+    // combat camera is installed, so in combat mode nothing turns.
     fn turn_toward { mut c: Camera, id: u32 } {
+        if c.combat { return }
         c.turn_to = id
         c.turn_rate = 2.5
+    }
+
+    // RestoreDefaultCamera in combat mode with a target (the end of a conversation, leaving free look): the
+    // combat camera is put once behind the leader looking toward the target, at once (0x006d22c0, movement.md
+    // 2.4). The player turns it from there.
+    fn face_toward { mut c: Camera, w: *world::World, leader: u32, target: u32 } {
+        let o = world::object{ w, id = leader } ifnull { return }
+        let goal = world::object{ w, id = target } ifnull { return }
+        let dx = goal.position.x - o.position.x
+        let dy = goal.position.y - o.position.y
+        if dx * dx + dy * dy < 0.000001 { return }
+        c.yaw = math::atan2f{ y = -dx, x = dy }
+        c.rate = 0.0
+        c.turn_to = obj::INVALID
+    }
+
+    // StartCameraShake (0x006416f0): after `delay` ms the camera shakes for `duration` ms. A shorter shake does
+    // not replace a longer one still running.
+    fn start_shake { mut c: Camera, delay: f32, duration: f32 } {
+        if duration <= 0.0 or duration < c.shake_left { return }
+        c.shake_left = duration
+        c.shake_total = duration
+        c.shake_delay = math::max{ a = delay, b = 0.0 }
+    }
+
+    // A visual effect's note: visualeffects.2da ShakeType 2 shakes the camera for ShakeDuration seconds after
+    // ShakeDelay seconds (0x00690010, 0x006a5fc0: both times 1000 into StartCameraShake's milliseconds); only
+    // VFX_IMP_SCREEN_SHAKE (6002, one second) has it. Type 1 asks the pad's rumble instead, which a PC never has.
+    fn take_note { mut c: Camera, w: *world::World, note: outbox::Note } {
+        let id = effect_of{ note }
+        if id < 0 { return }
+        let row = row_of_effect{ t = w.tables.visualeffects, effect = id } ifnull { return }
+        let kind = twoda::get_int{ t = w.tables.visualeffects, row, column = "shaketype" } ifnull 0
+        if kind != 2 { return }
+        let delay = twoda::get_float{ t = w.tables.visualeffects, row, column = "shakedelay" } ifnull 0.0
+        let length = twoda::get_float{ t = w.tables.visualeffects, row, column = "shakeduration" } ifnull 0.0
+        start_shake{ &c, delay = delay * 1000.0, duration = length * 1000.0 }
+    }
+
+    // UpdateCameraShake (0x00641760): while r ms of a shake of D ms are left the yaw and the pitch each get
+    // -a or nothing (a coin per axis per frame), a = sin(2 pi r / 30) (1 + cos(2 pi r / D)) 20 pi / 180, added
+    // to angles in degrees, so the shake is under a degree.
+    fn advance_shake { mut c: Camera, dt: f32 } {
+        c.shake_yaw = 0.0
+        c.shake_pitch = 0.0
+        if c.shake_left <= 0.0 { return }
+        let mut ms = dt * 1000.0
+        if c.shake_delay > 0.0 {
+            if ms < c.shake_delay {
+                c.shake_delay = c.shake_delay - ms
+                return
+            }
+            ms = ms - c.shake_delay
+            c.shake_delay = 0.0
+        }
+        if ms >= c.shake_left {
+            c.shake_left = 0.0
+            return
+        }
+        let r = c.shake_left
+        let a = math::sinf{ x = 2.0 * math::PI * r / 30.0 } * (1.0 + math::cosf{ x = 2.0 * math::PI * r / c.shake_total }) * 20.0 * math::PI / 180.0
+        c.seed = @wrap_add(@wrap_mul(c.seed, 1664525), 1013904223)
+        if (c.seed >> 16) & 1 != 0 { c.shake_yaw = -a }
+        c.seed = @wrap_add(@wrap_mul(c.seed, 1664525), 1013904223)
+        if (c.seed >> 16) & 1 != 0 { c.shake_pitch = -a }
+        c.shake_left = r - ms
     }
 
     fn forward { yaw: f32 } -> math::Vec3 {
         return math::Vec3{ x = -math::sinf{ x = yaw }, y = math::cosf{ x = yaw }, z = 0.0 }
     }
 
-    // One update: `turn` is the rotate keys' input (-1..1, positive turns left), `target` the
-    // leader, `look_height` its head height above its feet.
-    fn update { mut c: Camera, w: *world::World, sc: *scene::Scene, target: u32, look_height: f32, turn: f32, mouse_degrees: f32, pitch_degrees: f32, dt: f32 } {
+    // One step of the rotate keys' rate integrator (CRateIntegratorDecel): with input the rate moves toward
+    // DPS x u, without it falls at the deceleration (time constants 0.4 s and 0.1 s).
+    fn integrate_turn { rate: f32, u: f32, step: f32 } -> f32 {
+        if u != 0.0 { return rate + (ACCELERATION * u - (ACCELERATION / DPS) * rate) * step }
+        let r = rate - (DECELERATION / DPS) * rate * step
+        return if math::abs{ x = r } < 0.01 { 0.0 } else { r }
+    }
+
+    // What the player's hands give the camera this frame.
+    struct Input {
+        turn: f32,              // the rotate keys or the screen edge (-1..1, positive turns left)
+        mouse_degrees: f32,     // the mouse's yaw step while it looks about (positive turns left)
+        pitch_degrees: f32,     // free look: the mouse's pitch step (up positive)
+        looking: bool,          // the mouse looks about (Lookabout held XOR the Mouse Look option)
+        look_input: f32,        // its counts / 100, clamped to one, with the yaw's sign: the integrator's input
+        tilt: f32,              // free look: W (+1) and S (-1) tilt the view
+    }
+
+    fn no_input {} -> Input {
+        return Input{ turn = 0.0, mouse_degrees = 0.0, pitch_degrees = 0.0, looking = false, look_input = 0.0, tilt = 0.0 }
+    }
+
+    // One update: `target` is the leader, `look_height` its head height above its feet.
+    fn update { mut c: Camera, w: *world::World, sc: *scene::Scene, target: u32, look_height: f32, input: Input, dt: f32 } {
         let o = world::object{ w, id = target } ifnull { return }
         let look = math::Vec3{ x = o.position.x, y = o.position.y, z = o.position.z + look_height }
         if not c.started {
@@ -77,12 +191,23 @@ namespace cam {
             c.h = c.style.distance
             c.started = true
         }
+        advance_shake{ &c, dt }
+        // The rate integrators' dt is clamped to 0.2 s.
+        let step = math::min{ a = dt, b = 0.2 }
         // Free look (movement.md 2.5): the eye at the head looking along the leader's facing, pitched by the
-        // mouse within the style's FL_LOOKDOWN and FL_LOOKUP (20 and 15 degrees by default). The chase camera
-        // starts again from close in and swings out.
+        // mouse, or by W and S through a rate integrator (200 deg/s, 500 deg/s^2, no extra braking; a mouse
+        // move resets it), within the area's FL_LOOKDOWN and FL_LOOKUP. The chase camera starts again from
+        // close in and swings out.
         if c.freelook {
             c.yaw = math::atan2f{ y = -o.orientation.x, x = o.orientation.y }
-            c.fl_pitch = math::clamp{ x = c.fl_pitch + pitch_degrees, lo = -20.0, hi = 15.0 }
+            if input.pitch_degrees != 0.0 {
+                c.fl_pitch = c.fl_pitch + input.pitch_degrees
+                c.fl_rate = 0.0
+            } else {
+                c.fl_rate = c.fl_rate + (500.0 * input.tilt - (500.0 / 200.0) * c.fl_rate) * step
+                c.fl_pitch = c.fl_pitch + c.fl_rate * step
+            }
+            c.fl_pitch = math::clamp{ x = c.fl_pitch, lo = -c.fl_down, hi = c.fl_up }
             let f = forward{ yaw = c.yaw }
             let up = math::radians{ degrees = c.fl_pitch }
             let cp = math::cosf{ x = up }
@@ -96,13 +221,16 @@ namespace cam {
             return
         }
         c.fl_pitch = 0.0
-        // The rate integrator (CRateIntegrator), dt clamped to 0.2 s.
-        let step = math::min{ a = dt, b = 0.2 }
+        c.fl_rate = 0.0
+        if c.combat {
+            update_combat{ &c, w, sc, target, look, input, step }
+            return
+        }
         // Swinging round to a cycled target: with no turn by hand, the yaw eases toward the heading from the
         // leader to the object, 15 degrees to the side it is already on, at a rate that grows while the
         // camera is more than a metre from where it should be and falls back near it (movement.md 2.3).
         if c.turn_to != obj::INVALID {
-            if turn != 0.0 or mouse_degrees != 0.0 {
+            if input.turn != 0.0 or input.mouse_degrees != 0.0 {
                 c.turn_to = obj::INVALID
             } else if world::object{ w, id = c.turn_to } is some{ value = goal } {
                 let heading = math::atan2f{ y = -(goal.position.x - o.position.x), x = goal.position.y - o.position.y }
@@ -121,13 +249,16 @@ namespace cam {
                 c.turn_to = obj::INVALID
             }
         }
-        if turn != 0.0 {
-            c.rate = c.rate + (ACCELERATION * turn - (ACCELERATION / DPS) * c.rate) * step
+        // While the mouse looks about it turns the camera itself, and the integrator is fed the mouse's input
+        // without turning anything; once it stops looking, the rate built up coasts out over about 0.1 s
+        // (UpdateYaw 0x006391a0). The keys count only when the mouse is not looking.
+        if input.looking {
+            c.rate = integrate_turn{ rate = c.rate, u = input.look_input, step }
+            c.yaw = c.yaw + math::radians{ degrees = input.mouse_degrees }
         } else {
-            c.rate = c.rate - (DECELERATION / DPS) * c.rate * step
-            if math::abs{ x = c.rate } < 0.01 { c.rate = 0.0 }
+            c.rate = integrate_turn{ rate = c.rate, u = input.turn, step }
+            c.yaw = c.yaw + math::radians{ degrees = c.rate * step }
         }
-        c.yaw = c.yaw + math::radians{ degrees = c.rate * step + mouse_degrees }
         // The distance error shrinks as time passes (ComputeFollowPosition halves it every frame; ours takes a
         // time constant of EASE_TIME instead, so the pace does not depend on the frame rate), but not for HOLD
         // seconds after a wall or a creature moved the camera in: past a railing or a row of pillars the walls
@@ -137,7 +268,7 @@ namespace cam {
         let reach = if c.hold > 0.0 { c.h } else { eased }
         let f = forward{ yaw = c.yaw }
         let nominal = math::Vec3{ x = look.x - f.x * c.style.distance, y = look.y - f.y * c.style.distance, z = look.z + c.style.height }
-        let placed = collide{ c = &c, w, sc, target, look, nominal, reach }
+        let placed = collide{ c = &c, w, sc, target, look, nominal, reach, creatures = true }
         let eye = placed.eye
         if placed.limited { c.hold = HOLD }
         c.h = math::sqrtf{ x = (eye.x - look.x) * (eye.x - look.x) + (eye.y - look.y) * (eye.y - look.y) }
@@ -153,6 +284,55 @@ namespace cam {
         c.up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }
         c.eye = eye
         c.look = look
+    }
+
+    // The combat camera (CSWCCombatCamera, update 0x006d1fc0, movement.md 2.4): straight behind the leader at row
+    // 8's distance along its own yaw, at the leader's camera height plus HEIGHT, with no easing; only the mouse
+    // and the rotate keys turn it (a mouse step also becomes the keys' integrator rate, so it coasts after). The
+    // chase camera's wall pull-in applies, the creatures' circles do not, and it looks along its yaw at the
+    // fixed pitch instead of at the leader. Leaving combat mode, the chase camera eases out from where it was.
+    fn update_combat { mut c: Camera, w: *world::World, sc: *scene::Scene, target: u32, look: math::Vec3, input: Input, step: f32 } {
+        c.turn_to = obj::INVALID
+        c.hold = 0.0
+        if input.mouse_degrees != 0.0 {
+            c.rate = input.mouse_degrees
+            c.yaw = c.yaw + math::radians{ degrees = input.mouse_degrees }
+        } else {
+            c.rate = integrate_turn{ rate = c.rate, u = if input.looking { 0.0 } else { input.turn }, step }
+            c.yaw = c.yaw + math::radians{ degrees = c.rate * step }
+        }
+        let f = forward{ yaw = c.yaw }
+        let nominal = math::Vec3{ x = look.x - f.x * c.style.distance, y = look.y - f.y * c.style.distance, z = look.z + c.style.height }
+        let eye = collide{ c = &c, w, sc, target, look, nominal, reach = c.style.distance, creatures = false }.eye
+        c.h = math::sqrtf{ x = (eye.x - look.x) * (eye.x - look.x) + (eye.y - look.y) * (eye.y - look.y) }
+        let down = math::radians{ degrees = 90.0 - c.style.pitch }
+        let cd = math::cosf{ x = down }
+        c.dir = math::Vec3{ x = f.x * cd, y = f.y * cd, z = -math::sinf{ x = down } }
+        c.up = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }
+        c.eye = eye
+        c.look = look
+    }
+
+    // The visualeffects.2da id a note starts, -1 for any other note.
+    fn effect_of { note: outbox::Note } -> i32 {
+        match note {
+            visual{ effect, target, source, position } => { return effect }
+            visual_hold{ effect, target } => { return effect }
+            else => { return -1 }
+        }
+    }
+
+    // visualeffects.2da's row for an effect id: the row labelled with the id.
+    fn row_of_effect { t: twoda::Table, effect: i32 } -> ?usize {
+        let mut digits: [12]u8
+        let mut d: usize = 0
+        let mut x = effect
+        if x == 0 { digits[0] = '0'; d = 1 }
+        while x > 0 and d < 12 { digits[d] = @trunc(u8, '0' + @as(u32, x % 10)); x = x / 10; d = d + 1 }
+        let mut label: [12]u8
+        let mut n: usize = 0
+        while d > 0 { d = d - 1; label[n] = digits[d]; n = n + 1 }
+        return twoda::find_row{ t, label = label[..n] }
     }
 
     // g_fCameraCollisionOffset (0x007a241c): how far the extra rays sit from the line of sight.
@@ -180,7 +360,7 @@ namespace cam {
     // distance the easing allows now; the camera is the nearer of that and the place the walls leave, which
     // makes a wall move it in at once and out smoothly. `limited` says a wall or a creature, not the easing,
     // decided where it is.
-    fn collide { c: *Camera, w: *world::World, sc: *scene::Scene, target: u32, look: math::Vec3, nominal: math::Vec3, reach: f32 } -> Placed {
+    fn collide { c: *Camera, w: *world::World, sc: *scene::Scene, target: u32, look: math::Vec3, nominal: math::Vec3, reach: f32, creatures: bool } -> Placed {
         let d0 = math::vec3::sub{ a = nominal, b = look }
         let len0 = math::vec3::length{ v = d0 }
         if len0 < 0.01 { return Placed{ eye = nominal, limited = false } }
@@ -226,7 +406,9 @@ namespace cam {
             }
             out.z = out.z + rise
         }
-        // And out of the creatures' circles, where it ended up.
+        // And out of the creatures' circles, where it ended up (the chase camera's only: the combat camera has no
+        // creature clip).
+        if not creatures { return Placed{ eye = out, limited } }
         let clear = clip_creatures{ w, target, look, eye = out }
         if math::vec3::distance{ a = clear, b = out } > 0.0005 { limited = true }
         return Placed{ eye = clear, limited }
@@ -373,7 +555,7 @@ namespace cam {
         while yaw < 360 {
             let f = forward{ yaw = math::radians{ degrees = @as(f32, yaw) } }
             let raw = math::Vec3{ x = look.x - f.x * c.style.distance, y = look.y - f.y * c.style.distance, z = look.z + c.style.height }
-            let eye = collide{ c = &c, w = &w, sc, target, look, nominal = raw, reach = c.style.distance }.eye
+            let eye = collide{ c = &c, w = &w, sc, target, look, nominal = raw, reach = c.style.distance, creatures = not c.combat }.eye
             let left = overshoot{ c = &c, w = &w, sc, look, eye, margin = 0.0 }
             let near = clearance{ c = &c, w = &w, sc, eye, reach = 1.0 }
             let dist = math::vec3::distance{ a = eye, b = look }
@@ -386,9 +568,17 @@ namespace cam {
         _ = @fmt(&w.io, "probe total {} of 36 yaws still cut by a wall, {} with a surface within 0.15 m of the eye, shortest {}\n", bad, tight, shortest)
     }
 
-    // The render camera for an aspect ratio.
+    // The render camera for an aspect ratio, with the shake's offsets added to the view's yaw and pitch.
     fn render_camera { c: *Camera, aspect: f32 } -> render::Camera {
-        let at = math::vec3::add{ a = c.eye, b = c.dir }
+        let mut dir = c.dir
+        if c.shake_yaw != 0.0 or c.shake_pitch != 0.0 {
+            let flat = math::sqrtf{ x = dir.x * dir.x + dir.y * dir.y }
+            let heading = math::atan2f{ y = dir.y, x = dir.x } + math::radians{ degrees = c.shake_yaw }
+            let rise = math::atan2f{ y = dir.z, x = flat } + math::radians{ degrees = c.shake_pitch }
+            let cr = math::cosf{ x = rise }
+            dir = math::Vec3{ x = math::cosf{ x = heading } * cr, y = math::sinf{ x = heading } * cr, z = math::sinf{ x = rise } }
+        }
+        let at = math::vec3::add{ a = c.eye, b = dir }
         return render::Camera{
             view = math::mat4::look_at{ eye = c.eye, at, up = c.up },
             proj = math::mat4::perspective{ fovy = math::radians{ degrees = c.style.fov }, aspect, near = 0.1, far = 1000.0 },

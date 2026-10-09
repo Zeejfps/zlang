@@ -11,7 +11,7 @@ namespace ctl {
         strafe_right: bool,
         turn_left: bool,            // camera rotate keys
         turn_right: bool,
-        freelook: bool,             // free look: the leader keeps its facing (the mouse turns it) and moves along the keys
+        freelook: bool,             // free look: the keys do not move the leader (W and S tilt the view, cam::Input)
         walk: bool,                 // the walk modifier (B) is held: half the input, the walk animation
         action: bool,               // a minigame's fire key went down this frame (Space)
     }
@@ -26,9 +26,10 @@ namespace ctl {
         min_turn: f32,              // degrees per second (camerastyle MinTurnRate, MaxTurnRate)
         max_turn: f32,
         last: u32,                  // the creature moved last frame: when the leader changes, the old one stops
+        combat_movement: bool,      // the "Combat Movement" option: in combat mode the keys may break the leader's orders
     }
 
-    fn new {} -> Control { return Control{ vx = 0.0, vy = 0.0, min_turn = 150.0, max_turn = 1500.0, last = obj::INVALID } }
+    fn new {} -> Control { return Control{ vx = 0.0, vy = 0.0, min_turn = 150.0, max_turn = 1500.0, last = obj::INVALID, combat_movement = true } }
 
     fn set_style { mut ctl: Control, t: twoda::Table, row: u32 } {
         ctl.min_turn = twoda::get_float{ t, row = @as(usize, row), column = "minturnrate" } ifnull 150.0
@@ -66,12 +67,15 @@ namespace ctl {
         if c.dead or dt <= 0.0 { return }
         let step = math::min{ a = dt, b = 1.0 }
         // The input vector in the camera's frame (x right, y forward), normalised on diagonals.
+        // In free look the inputs are 0 (movement.md 1.2 step 2): W and S tilt the view, Z and C do nothing.
         let mut ix: f32 = 0.0
         let mut iy: f32 = 0.0
-        if keys.forward { iy = iy + 1.0 }
-        if keys.back { iy = iy - 1.0 }
-        if keys.strafe_right { ix = ix + 1.0 }
-        if keys.strafe_left { ix = ix - 1.0 }
+        if not keys.freelook {
+            if keys.forward { iy = iy + 1.0 }
+            if keys.back { iy = iy - 1.0 }
+            if keys.strafe_right { ix = ix + 1.0 }
+            if keys.strafe_left { ix = ix - 1.0 }
+        }
         if ix != 0.0 and iy != 0.0 {
             ix = ix * 0.70710678
             iy = iy * 0.70710678
@@ -81,8 +85,15 @@ namespace ctl {
             ix = ix * 0.5
             iy = iy * 0.5
         }
+        // A leader with orders in combat mode does not hear the keys unless the Combat Movement option is on
+        // (ProcessInput 0x006227e0, movement.md 1.4).
+        if o.actions.len > 0 and c.in_combat and not ctl.combat_movement {
+            ix = 0.0
+            iy = 0.0
+        }
         let has_input = ix != 0.0 or iy != 0.0
-        // Input cancels whatever the leader was doing (movement.md 1.4; ours: at once).
+        // Otherwise input cancels whatever the leader was doing (movement.md 1.4; ours: at once, where the original
+        // waits 0.3 s first).
         if has_input and o.actions.len > 0 { actions::clear_all{ &w, id } }
         let o2 = world::object{ w = &w, id } ifnull { return }
         let c2 = obj::creature{ o = o2 } ifnull { return }
@@ -104,9 +115,7 @@ namespace ctl {
         let vmax = if drive > 0.0 and drive * scale < rated { drive * scale } else { rated }
         // Turning toward the desired heading, fast when slow (movement.md 1.2 step 5).
         let speed = math::sqrtf{ x = ctl.vx * ctl.vx + ctl.vy * ctl.vy }
-        if keys.freelook {
-            // Free look: the mouse turns the leader, the keys only move him.
-        } else if has_input and speed > 0.1 {
+        if has_input and speed > 0.1 {
             let want = math::atan2f{ y = uy, x = ux }
             let have = math::atan2f{ y = o2.orientation.y, x = o2.orientation.x }
             let mut delta = want - have
@@ -122,15 +131,14 @@ namespace ctl {
             // the first step goes where the keys say (ours).
             world::set_orientation{ o = o2, v = math::Vec3{ x = ux, y = uy, z = 0.0 } }
         }
-        // Velocity: v approaches u * vmax (movement.md 1.2 step 6; K = 15, ours).
+        // Velocity: v approaches u * vmax with the time constant vmax / K (movement.md 1.2 step 6).
         if not has_input and math::abs{ x = ctl.vx } < 0.25 and math::abs{ x = ctl.vy } < 0.25 {
             ctl.vx = 0.0
             ctl.vy = 0.0
         } else {
-            // K = 15 is ours for DriveAccl 50 (the humanoids'); a smaller DriveAccl pushes less, and below 1.8 m/s
-            // the original scales K by vmax / 1.8 (movement.md 1.2).
-            let mut k: f32 = 15.0
-            if accl > 0.0 and accl < 50.0 { k = k * accl / 50.0 }
+            // K is the appearance's DriveAccl (50 for the humanoids: full speed in about 0.3 s), 15 in stealth, and
+            // below 1.8 m/s scaled by vmax / 1.8 (CSWCCreature::GetAcceleration 0x00610590, movement.md 1.2).
+            let mut k: f32 = if c2.stealth { 15.0 } else if accl > 0.0 { accl } else { 50.0 }
             if vmax < 1.8 { k = k * vmax / 1.8 }
             let decay = math::expf{ x = -step * k / vmax }
             ctl.vx = ux * vmax + (ctl.vx - ux * vmax) * decay
@@ -142,12 +150,8 @@ namespace ctl {
             // Move along the facing by |v| dt (movement.md 1.2 step 7), sliding along what blocks.
             let d = v * step
             let from = o2.position
-            let mut dx = o2.orientation.x
-            let mut dy = o2.orientation.y
-            if keys.freelook {
-                dx = ctl.vx / v
-                dy = ctl.vy / v
-            }
+            let dx = o2.orientation.x
+            let dy = o2.orientation.y
             let to = math::Vec3{ x = from.x + dx * d, y = from.y + dy * d, z = from.z }
             let moved = slide{ &w, from, to }
             if moved != null {
@@ -162,13 +166,13 @@ namespace ctl {
             // creature that is not `moving` and has no action back to standing).
             c2.moving = true
             // Run above 0.6 of the run rate, walk at or below it (the client's drive animation, movement.md 3.6);
-            // in stealth always walk. The cycle plays at the velocity over the distance one cycle covers.
+            // in stealth always walk, with the stealth walk. The cycle plays at the velocity over the distance one cycle covers.
             let run_from = c2.run_rate * 0.6 * scale
             let run = v > run_from and not walking
-            world::set_gait{ o = o3, id = if run { obj::ANIM_RUN } else { obj::ANIM_WALK }, cycles = movement::gait_cycles{ w = &w, c = c2, run, speed = v, drive = true } }
+            world::set_gait{ o = o3, id = movement::gait_of{ c = c2, run }, cycles = movement::gait_cycles{ w = &w, c = c2, run, speed = v, drive = true } }
         } else if o2.actions.len == 0 {
             c2.moving = false
-            if o2.animation == obj::ANIM_RUN or o2.animation == obj::ANIM_WALK {
+            if o2.animation == obj::ANIM_RUN or o2.animation == obj::ANIM_WALK or o2.animation == obj::ANIM_STEALTH_WALK {
                 world::set_animation{ o = o2, id = obj::ANIM_STAND, speed = 1.0 }
             }
         }

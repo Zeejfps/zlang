@@ -1,0 +1,19 @@
+# From `uppercity`: mouse look (the right button held) turns the camera by the mouse; after the button is let go
+# the turn coasts out over about 0.1 s (the key integrator fed during the look, UpdateYaw 0x006391a0). camtrace's
+# yaw keeps changing for a few frames after frame 41.
+#   $EXE --load kotor/out/checkpoints/uppercity --no-render --frames 60 --input THIS
+1 ui bot off
+5 cam trace
+20 mouse move 640 360
+30 mouse down right
+31 mouse move 660 360
+32 mouse move 680 360
+33 mouse move 700 360
+34 mouse move 720 360
+35 mouse move 740 360
+36 mouse move 760 360
+37 mouse move 780 360
+38 mouse move 800 360
+39 mouse move 820 360
+40 mouse move 840 360
+41 mouse up right

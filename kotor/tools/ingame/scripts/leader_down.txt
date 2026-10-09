@@ -1,0 +1,15 @@
+# From `lowercity` (Carth in the party): the leader at 0 hit points (down), so the menu keys do nothing and
+# Escape shows 42628 "You can't access the Start Menu while controlling an unconscious character." instead of the
+# options (HandleInputAction 0xd1-0xd8, 0xdf; docs/mechanics/controls.md). Tab then gives the lead to Carth (GUI
+# sound 6), and I opens the inventory again.
+#   $EXE --load kotor/out/checkpoints/lowercity --headless --frames 420 --input THIS --log combat
+#     --screenshot-at 310:down_i.png --screenshot-at 330:down_esc.png --screenshot-at 400:up_i.png
+1 ui bot off
+5 ui sethp pc 0
+290 ui pos
+300 key i
+320 key escape
+340 key enter
+360 key tab
+370 ui pos
+390 key i

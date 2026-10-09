@@ -525,8 +525,10 @@ chase camera starts at the combat camera's pose. (high)
   `FreeLookHook`, else `CameraHook`, else `root` + 2 m. Yaw is the creature's own facing: mouse x
   turns the creature (client and server, `CameraInputMouseYaw` mode 5: the value halved and
   clamped to ±30, times FL_RotateSpeed), the A/D keys feed the control's turn integrator
-  (200 °/s, 500 °/s²). Pitch: mouse y adds dt·FL_TiltSpeed·v, keys go through a rate integrator
-  (`+0x7c`); wrapped to ±180 and clamped to [−FL_LOOKDOWN, FL_LOOKUP]; the orientation uses
+  (200 °/s, 500 °/s²). Pitch: mouse y adds dt·FL_TiltSpeed·v (and resets the key integrator), keys go
+  through a rate integrator (`+0x7c`, the plain `CRateIntegrator`: 200 °/s and 500 °/s² set by the
+  constructor, no separate braking; its input is minus the forward input, so W tilts up and S down,
+  `CameraInputMove` `0x0063fdb0`); wrapped to ±180 and clamped to [−FL_LOOKDOWN, FL_LOOKUP]; the orientation uses
   pitch + 90 plus the shake offsets `+0x70`/`+0x74`. (high for the pitch, med for the yaw
   formula)
 
@@ -540,7 +542,8 @@ chase camera starts at the combat camera's pose. (high)
   geometry. (med)
 - **Shake**: `StartCameraShake` (`0x006416f0`, delay and duration in ms; a shorter shake does not
   replace a longer one) is started by visualeffects.2da `ShakeType` 2 with `ShakeDelay` and
-  `ShakeDuration` (`0x00690010`, `0x006a5fc0`; type 1 goes to `0x00641730` instead).
+  `ShakeDuration`, seconds times 1000 (`0x00690010`, `0x006a5fc0`; type 1 goes to `0x00641730` instead, a
+  rumble request). Only row 6002, VFX_IMP_SCREEN_SHAKE, has type 2 (1 s, no delay).
   `UpdateCameraShake` (`0x00641760`, every frame from `UpdateCameraInput`) acts only when a chase,
   dialogue, free-look or combat controller is installed, and cancels any shake unless the options
   bit `CClientOptions+0` & 4 is set. After the delay, while r ms of the duration D remain:

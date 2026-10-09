@@ -1,0 +1,7 @@
+# From `uppercity`: VFX_IMP_SCREEN_SHAKE (6002, visualeffects.2da ShakeType 2, ShakeDuration 1 s) on the leader
+# shakes the camera for a second (movement.md 2.6): camtrace's `shake YAW PITCH` columns (degrees, under one) are
+# -a or 0 each frame from frame 20 to about frame 50, then 0.
+#   $EXE --load kotor/out/checkpoints/uppercity --no-render --frames 60 --input THIS
+1 ui bot off
+5 cam trace
+20 fx visual 6002 pc

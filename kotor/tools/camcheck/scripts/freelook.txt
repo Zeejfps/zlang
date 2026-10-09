@@ -1,0 +1,27 @@
+# From `uppercity` (camerastyle row 0, DEFAULT: FL_LOOKUP 15, FL_LOOKDOWN 20) or `--module ebo_m12aa` (row 1,
+# EbonHawk: 30 and 30): free look (movement.md 2.5). In free look W and S tilt the view up and down to the area's
+# limits and the leader stays put, Z and C do nothing; Tab, V, Q and E only end it (Tab with GUI sound 6, Q and E
+# keep the target). camtrace's eye - look is minus the view direction in free look, so its z is -sin(pitch); `ui pos`
+# shows the leader has not moved.
+#   $EXE --load kotor/out/checkpoints/uppercity --no-render --frames 320 --input THIS --log objects
+# uppercity: z -0.259 after W (+15), 0.342 after S (-20); ebo_m12aa: -0.5 and 0.5.
+1 ui bot off
+5 cam trace
+20 ui pos
+30 key caps
+40 keydown w
+100 keyup w
+101 ui pos
+110 keydown s
+200 keyup s
+210 keydown z
+230 keyup z
+231 ui pos
+240 key tab
+250 key caps
+260 key q
+270 key caps
+280 key v
+290 key caps
+300 key e
+310 ui pos

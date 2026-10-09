@@ -57,6 +57,7 @@ namespace obj {
     const ANIM_WALK_BACK: u32 = 10003
     const ANIM_RUN: u32 = 10004
     const ANIM_DEAD: u32 = 10006
+    const ANIM_STEALTH_WALK: u32 = 10133   // walk and run in stealth mode
 
     // A display name: a dialog.tlk strref (0xFFFFFFFF none) or text of its own (heap).
     struct Name { strref: u32, text: []mut u8 }

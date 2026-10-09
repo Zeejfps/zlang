@@ -107,6 +107,8 @@ namespace play {
         let mut test_camera: []u8 = ""       // `FRAME cam ...`: a camera for pictures (see place_test_camera)
         let mut camera_row: u32 = 0xFFFFFFFF    // the camerastyle.2da row the camera uses
         let mut control = ctl::new{}
+        let mut was_freelook = false            // last frame's free look and conversation: RestoreDefaultCamera's moments
+        let mut was_talking = false
         let ao = world::object{ w = &w, id = w.area }
         if ao != null {
             if obj::area{ o = ao } is some{ value = a } {
@@ -361,6 +363,7 @@ namespace play {
             clock::advance{ c = &w.clock, seconds = dt }
             // The player doesn't walk while a conversation runs (re/dialogue.md 4.9).
             if w.conversation.active { keys = ctl::no_keys{} }
+            control.combat_movement = ingame::combat_movement{ ui }    // HOOK(ingame)
             ctl::update{ ctl = &control, &w, keys, yaw = camera.yaw, dt = w.clock.dt }
             ingame::set_move_speed{ ui, speed = math::max{ a = math::abs{ x = control.vx }, b = math::abs{ x = control.vy } } }    // HOOK(ingame)
             world::tick{ &w, &vm, engine }
@@ -434,6 +437,7 @@ namespace play {
                 ingame::take{ ui, &w, note = notes[n] }    // HOOK(ingame)
                 dlgview::take_note{ v = &dview, w = &w, g = &ui.gui, dev = &dev, note = notes[n] }
                 vfx::take{ v = &vx, &sc, &w, &dev, note = notes[n] }
+                cam::take_note{ c = &camera, w = &w, note = notes[n] }
                 if pz_game::request_of{ note = notes[n] } is some{ value = asked } { pazaak_asked = asked }
                 n = n + 1
             }
@@ -480,9 +484,13 @@ namespace play {
             vfx::update{ v = &vx, &sc, &w, &dev, dt = w.clock.dt }
             dlgview::post_sync{ v = &dview, w = &w, sc = &sc, dt = w.clock.dt }
             let look_height = leader_height{ w = &w }
-            // Combat mode: the combat camera's style (camerastyle.2da row 8) while the leader
-            // fights, the area's otherwise (movement.md 2.1, 2.2).
-            let wanted_row = camera_row_now{ w = &w }
+            // Combat mode: the combat camera (camerastyle.2da row 8) while the leader fights, the area's
+            // chase camera otherwise (movement.md 2.1, 2.2, 2.4). Free look keeps the area's row.
+            let combat_mode = leader_in_combat_mode{ w = &w }
+            let area_row = area_camera_row{ w = &w }
+            let wanted_row = if combat_mode { 8 } else { area_row }
+            camera.combat = combat_mode
+            cam::set_freelook_style{ c = &camera, t = w.tables.camerastyle, row = area_row }
             if wanted_row != camera_row {
                 camera_row = wanted_row
                 cam::set_style{ c = &camera, t = w.tables.camerastyle, row = wanted_row }
@@ -497,15 +505,29 @@ namespace play {
             let swing_to = ingame::take_turn_to{ ui }    // HOOK(ingame)
             if swing_to != obj::INVALID { cam::turn_toward{ c = &camera, id = swing_to } }
             let key_turn = ctl::turn_input{ keys }
-            // Free look: the mouse and the rotate keys turn the leader himself, the camera is his eyes.
+            // Free look: the mouse and the rotate keys turn the leader himself, the camera is his eyes; W and S
+            // tilt the view.
             camera.freelook = mouse.freelook
             keys.freelook = mouse.freelook
-            let mut cam_yaw = mouse.yaw_degrees
+            let mut input = cam::Input{
+                turn = if key_turn != 0.0 { key_turn } else { mouse.edge }, mouse_degrees = mouse.yaw_degrees, pitch_degrees = mouse.pitch_degrees,
+                looking = mouse.looking, look_input = mouse.look_input, tilt = 0.0,
+            }
             if mouse.freelook {
                 turn_leader{ &w, degrees = mouse.yaw_degrees + key_turn * cam::DPS * camera_dt }
-                cam_yaw = 0.0
+                input = cam::no_input{}
+                input.pitch_degrees = mouse.pitch_degrees
+                input.tilt = (if keys.forward { 1.0 } else { 0.0 }) - (if keys.back { 1.0 } else { 0.0 })
             }
-            cam::update{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height, turn = if mouse.freelook { 0.0 } else if key_turn != 0.0 { key_turn } else { mouse.edge }, mouse_degrees = cam_yaw, pitch_degrees = mouse.pitch_degrees, dt = camera_dt }
+            // RestoreDefaultCamera in combat mode with a target (leaving free look, the end of a conversation) turns
+            // the combat camera toward the target once.
+            let talking = w.conversation.active
+            if combat_mode and w.target != obj::INVALID and ((was_freelook and not mouse.freelook) or (was_talking and not talking)) {
+                cam::face_toward{ c = &camera, w = &w, leader = w.pc, target = w.target }
+            }
+            was_freelook = mouse.freelook
+            was_talking = talking
+            cam::update{ c = &camera, w = &w, sc = &sc, target = w.pc, look_height, input, dt = camera_dt }
             dlgview::apply_camera{ v = &dview, w = &w, sc = &sc, camera = &camera }
             if test_camera.len > 0 {
                 if ci::starts_with{ s = test_camera, prefix = "probe" } {
@@ -515,7 +537,7 @@ namespace play {
                     // One line a camera update: where the eye is from the look-at point, for finding jitter.
                     let pc = world::object{ w = &w, id = w.pc }
                     if pc != null {
-                        _ = @fmt(&w.io, "camtrace {} {} {} {} {} {} {} {}\n", w.clock.frame, pc.position.x, pc.position.y, camera.eye.x - camera.look.x, camera.eye.y - camera.look.y, camera.eye.z - camera.look.z, camera.yaw, camera.h)
+                        _ = @fmt(&w.io, "camtrace {} {} {} {} {} {} {} {} shake {} {}\n", w.clock.frame, pc.position.x, pc.position.y, camera.eye.x - camera.look.x, camera.eye.y - camera.look.y, camera.eye.z - camera.look.z, camera.yaw, camera.h, camera.shake_yaw, camera.shake_pitch)
                     }
                 } else { place_test_camera{ &w, spec = test_camera, &camera } }
             }
@@ -1247,12 +1269,18 @@ namespace play {
         _ = rt_party::bring_member{ &w, n = slot }
     }
 
-    fn camera_row_now { w: *world::World } -> u32 {
+    // Combat mode: the leader fights (the client's combat flag follows the server's combat state).
+    fn leader_in_combat_mode { w: *world::World } -> bool {
         let lead = party::leader{ w }
         let id = if lead == obj::INVALID { w.pc } else { lead }
         if world::object{ w, id } is some{ value = o } {
-            if obj::creature{ o } is some{ value = c } { if c.in_combat and not c.dead { return 8 } }
+            if obj::creature{ o } is some{ value = c } { return c.in_combat and not c.dead }
         }
+        return false
+    }
+
+    // The area's camerastyle.2da row (the ARE's CameraStyle).
+    fn area_camera_row { w: *world::World } -> u32 {
         let ao = world::object{ w, id = w.area } ifnull { return 0 }
         let a = obj::area{ o = ao } ifnull { return 0 }
         return a.camera_style

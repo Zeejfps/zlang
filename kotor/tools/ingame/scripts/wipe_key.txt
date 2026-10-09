@@ -1,0 +1,8 @@
+# From `lowercity` (Carth in the party): the whole party at 0 hit points starts the party wipe (game/death.ctx);
+# a menu key then starts a 0.5 s fade to black (0x005f2f20) and its end leaves for the main menu, long before the
+# wipe's own 12 s fade. The combat log's "party wipe over after N s" line says when.
+#   $EXE --load kotor/out/checkpoints/lowercity --no-render --frames 200 --input THIS --log combat
+1 ui bot off
+5 ui sethp pc 0
+5 ui sethp carth 0
+60 key i

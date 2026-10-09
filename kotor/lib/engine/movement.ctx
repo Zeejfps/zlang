@@ -122,7 +122,7 @@ namespace movement {
             s = dt_ms * (f + c.speed_factor) * rate * 0.5 / 1000.0
             c.speed_factor = f
             c.speed = s / (dt_ms / 1000.0)
-            world::set_gait{ o, id = if run { obj::ANIM_RUN } else { obj::ANIM_WALK }, cycles = gait_cycles{ w = &w, c, run, speed = c.speed, drive = false } }
+            world::set_gait{ o, id = gait_of{ c, run }, cycles = gait_cycles{ w = &w, c, run, speed = c.speed, drive = false } }
         }
         // Along the path's points (StepAlongPath, movement.md 3.4).
         let from = o.position
@@ -243,7 +243,7 @@ namespace movement {
         // the line, would otherwise change cycles every other frame.
         let line = c.run_rate * scale * 0.6 * (if o.animation == obj::ANIM_RUN { 0.95 } else { 1.05 })
         let run = smooth >= line and not stealth::walk_only{ c }
-        world::set_gait{ o, id = if run { obj::ANIM_RUN } else { obj::ANIM_WALK }, cycles = gait_cycles{ w = &w, c, run, speed = smooth, drive = true } }
+        world::set_gait{ o, id = gait_of{ c, run }, cycles = gait_cycles{ w = &w, c, run, speed = smooth, drive = true } }
     }
 
     // A step that a closed door's walkmesh stopped: the nearest closed door within reach of the
@@ -288,6 +288,12 @@ namespace movement {
     // the cycle over the appearance's DriveAnimWalk or DriveAnimRun, which are 2 and 4 when the row has
     // none; one that walks a planned path (MOVETOPOINT), over WALKDIST or RUNDIST. The rows say the same
     // for the humanoids; they differ for the Envirosuit (0.75 and 1.25 against 1.2 and 2.3).
+    // The walk or run cycle's id: in stealth both become the stealth walk (SetAnimation 0x004f0d70, movement.md 3.6).
+    fn gait_of { c: *obj::Creature, run: bool } -> u32 {
+        if c.stealth { return obj::ANIM_STEALTH_WALK }
+        return if run { obj::ANIM_RUN } else { obj::ANIM_WALK }
+    }
+
     fn gait_cycles { w: *world::World, c: *obj::Creature, run: bool, speed: f32, drive: bool } -> f32 {
         let row = @as(usize, if c.disguise != 0 { c.disguise } else { c.appearance })
         let mut dist = twoda::get_float{ t = w.tables.appearance, row, column = if drive { if run { "driveanimrun" } else { "driveanimwalk" } } else { if run { "rundist" } else { "walkdist" } } } ifnull 0.0

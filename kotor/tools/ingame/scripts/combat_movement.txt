@@ -1,0 +1,13 @@
+# From `uppercity`: the "Combat Movement" option (movement.md 1.4). The leader is put into combat mode with an
+# attack queued on a Sith trooper 6 m ahead, then W is held. With the option on (the default) the keys cancel the
+# attack and he walks off; with it off (`Combat Movement=0` under [Game Options] in the --settings file, as the
+# install's swkotor.ini has it) the keys are dropped while he has orders and the attack goes on.
+#   $EXE --load kotor/out/checkpoints/uppercity --no-render --frames 150 --input THIS --log combat [--settings FILE]
+1 ui bot off
+2 ui sethp pc 300
+5 ui foe g_sithtroop01 6 0
+8 ui combat g_sithtroop01
+30 ui pos
+40 keydown w
+100 keyup w
+101 ui pos

@@ -52,10 +52,15 @@ namespace ingame {
         ap_cooldown: f32,                   // seconds before "Party Member Down" may pause again
         pause_reason: u32,                  // the banner's text (dialog.tlk) for the next pause
         mine_quiet: f32,                    // seconds no hostile mine has been in sight (mine_watch.ctx)
+        combat_movement: bool,              // the "Combat Movement" option (lib/scene/control.ctx reads it)
+        wiping: bool,                       // the party-wipe sequence runs (game/death.ctx): menu keys fade out
+        notice_box: msgbox::Box,            // a box with only OK (42628, the leader is down), up until answered
     }
 
     // What the camera takes from the mouse each frame (CameraInputMouseYaw, movement.md 2.3).
-    struct CameraInput { yaw_degrees: f32, pitch_degrees: f32, edge: f32, looking: bool, freelook: bool }
+    // `look_input` is the mouse's counts / 100 clamped to one with the yaw's sign: what the camera's rate integrator
+    // is fed while the mouse looks, so the turn coasts out after it stops.
+    struct CameraInput { yaw_degrees: f32, pitch_degrees: f32, edge: f32, looking: bool, freelook: bool, look_input: f32 }
 
     // Opens the interface for a window of `width` x `height`. `scratch` is the texture decoder's
     // working memory (the scene's may be shared: loads never overlap).
@@ -90,7 +95,7 @@ namespace ingame {
             ap_target = saved.pause_triggers, ap_round = saved.pause_end_round, ap_action_menu = saved.pause_action_menu,
             party_alive = 0, ap_cooldown = 0.0, pause_reason = REASON_PAUSED,
             psel_wait = false, psel_exit = resref::empty{}, psel_force1 = -1, psel_force2 = -1, psel_paused = false,
-            mine_quiet = 1000.0,
+            mine_quiet = 1000.0, combat_movement = saved.combat_movement, wiping = false, notice_box = msgbox::blank{},
         }
         let mut p = try alloc::new(Ingame, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = ui }
         options_panel::set_config{ s = &p.menus.options, path = settings }
@@ -243,6 +248,8 @@ namespace ingame {
                 ui.hud.alternate = down
             }
             if keycode == sdl::key::LCTRL or keycode == sdl::key::RCTRL { ui.ctrl_held = down }
+            // ToolTips (T, action 225): while it is held the tooltip delay is 0 (SetTooltipKeyHeld 0x005f4be0).
+            if keycode == 't' { gui::set_tooltip_key{ g = &ui.gui, held = down } }
             if down and not repeat {
                 if handle_key{ &ui, &w, &dev, keycode } { return true }
             }
@@ -281,9 +288,32 @@ namespace ingame {
             }
             return true
         }
-        if ui.freelook and (menu_of_key{ keycode } >= 0 or keycode == sdl::key::ESCAPE or keycode == sdl::key::PAUSE or keycode == 'q' or keycode == 'e') {
-            ui.freelook = false
-            set_hud_hidden{ &ui, hidden = w.conversation.active }
+        if ui.freelook {
+            // Q, E, Tab and V only end free look (Tab with its sound); a menu key, Escape and Pause end it and go
+            // on to do their own work.
+            let only_ends = keycode == 'q' or keycode == 'e' or keycode == sdl::key::TAB or keycode == 'v'
+            if only_ends or menu_of_key{ keycode } >= 0 or keycode == sdl::key::ESCAPE or keycode == sdl::key::PAUSE {
+                ui.freelook = false
+                set_hud_hidden{ &ui, hidden = w.conversation.active }
+                if keycode == sdl::key::TAB { gui::play_sound{ g = &ui.gui, n = 6 } }
+                if only_ends { return true }
+            }
+        }
+        // The menu keys and Escape while the leader is down (client party member 0 dying, 0x005f2ed0): during the
+        // party wipe they start a 0.5 s fade to black (0x005f2f20); otherwise the menu keys do nothing and Escape
+        // says "You can't access the Start Menu while controlling an unconscious character." (42628).
+        if menu_of_key{ keycode } >= 0 or keycode == sdl::key::ESCAPE {
+            if ui.wiping {
+                outbox::post{ out = &w.out, note = outbox::Note::fade{ out = true, wait = 0.0, length = 0.5, color = math::vec3::zero{} } }
+                return true
+            }
+            let lead = party::leader{ w = &w }
+            if lead != obj::INVALID and hud::is_down{ w = &w, id = lead } and not ui.hud_hidden and not gui::is_modal_open{ g = &ui.gui } {
+                if keycode == sdl::key::ESCAPE and not msgbox::is_open{ b = ui.notice_box } {
+                    ui.notice_box = msgbox::show_strref{ g = &ui.gui, &w, &dev, strref = 42628, cancel = false, what = 0, item = 0 }
+                }
+                return true
+            }
         }
         if ui.hud_hidden or gui::is_modal_open{ g = &ui.gui } { return false }
         if keycode == sdl::key::ESCAPE {
@@ -298,11 +328,12 @@ namespace ingame {
             return true
         }
         // ChangeChar works in the world and in the menus (ICPC and ICPCGUI); a menu shows the new leader.
+        // GUI sound 6 whether or not anyone took the lead (HandleInputAction 0xce).
         if keycode == sdl::key::TAB {
             if cycle_leader{ &w } {
-                gui::play_sound{ g = &ui.gui, n = 6 }
                 if ui.menu != NO_MENU { fill_panel{ &ui, &w, &dev, n = ui.menu, panel = ui.menu_panel } }
             }
+            gui::play_sound{ g = &ui.gui, n = 6 }
             return true
         }
         if ui.menu != NO_MENU {
@@ -467,9 +498,11 @@ namespace ingame {
         ui.look_y = 0
         let mut yaw: f32 = 0.0
         let mut pitch: f32 = 0.0
+        let mut input: f32 = 0.0
         if looking {
             let scale = 10.0 + 0.45 * @as(f32, ui.mouse_sens)
-            yaw = -math::clamp{ x = @as(f32, counts) / 100.0, lo = -1.0, hi = 1.0 } * scale
+            input = -math::clamp{ x = @as(f32, counts) / 100.0, lo = -1.0, hi = 1.0 }
+            yaw = input * scale
             pitch = -math::clamp{ x = @as(f32, counts_y) / 100.0, lo = -1.0, hi = 1.0 } * scale
         }
         let mut edge: f32 = 0.0
@@ -478,7 +511,7 @@ namespace ingame {
             if ui.gui.mouse_x <= margin { edge = 1.0 }
             else if ui.gui.mouse_x >= ui.width - margin { edge = -1.0 }
         }
-        return CameraInput{ yaw_degrees = yaw, pitch_degrees = pitch, edge, looking, freelook = ui.freelook and usable }
+        return CameraInput{ yaw_degrees = yaw, pitch_degrees = pitch, edge, looking, freelook = ui.freelook and usable, look_input = input }
     }
 
     // How fast the keys move the leader after this tick's control step: the larger of the velocity's two
@@ -487,6 +520,12 @@ namespace ingame {
     fn set_move_speed { mut ui: Ingame, speed: f32 } {
         ui.hud.move_speed = speed
     }
+
+    // The "Combat Movement" option: whether the keys may break the leader's orders in combat mode.
+    fn combat_movement { ui: *Ingame } -> bool { return ui.combat_movement }
+
+    // The party wipe began or ended (game/death.ctx): while it runs the menu keys and Escape fade out.
+    fn set_wiping { mut ui: Ingame, on: bool } { ui.wiping = on }
 
     // The object Q or E just picked, once: the loop tells the camera to swing round to it.
     fn take_turn_to { mut ui: Ingame } -> u32 {
@@ -606,6 +645,7 @@ namespace ingame {
             ui.mouse_look = st.mouse_look
             ui.mouse_sens = st.mouse_sensitivity
             ui.reverse_buttons = st.reverse_buttons
+            ui.combat_movement = st.combat_movement
             ui.ap_enemy = st.pause_enemy_sighted
             ui.ap_mine = st.pause_mine_sighted
             ui.ap_party = st.pause_party_killed
@@ -643,6 +683,10 @@ namespace ingame {
             let ev = events[i]
             i = i + 1
             answer_solo{ &ui, &w, &dev, ev }
+            if msgbox::answer{ b = ui.notice_box, ev } != msgbox::Answer::none {
+                msgbox::close{ g = &ui.gui, b = &ui.notice_box }
+                ui.notice_box = msgbox::blank{}
+            }
             if ev.panel == ui.hud.panel { hud_event{ &ui, &w, &dev, ev } }
             else if ev.panel == ui.pause_panel and ev.kind == gui::EventKind::activate { set_player_pause{ &ui, &w, &dev, on = false } }
         }
@@ -726,7 +770,7 @@ namespace ingame {
                 // companion's makes it the leader.
                 let ids = party::members{ w = &w }
                 let member = hud::member_of_widget{ count = ids.len, widget = @as(usize, who) }
-                if member == 0 { open_menu{ &ui, &w, &dev, n = MENU_EQUIP } }
+                if member == 0 { open_menu{ &ui, &w, &dev, n = if hud::can_level_up{ w = &w, id = party::leader{ w = &w } } { MENU_CHARACTER } else { MENU_EQUIP } } }
                 else if member > 0 { change_leader{ &w, step = @as(usize, member) } }
             }
         } else if ev.kind == gui::EventKind::value_changed and slice::eq_bytes{ a = ev.tag, b = "TB_PAUSE" } {

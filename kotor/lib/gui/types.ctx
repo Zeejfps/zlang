@@ -273,6 +273,7 @@ namespace gui {
         hover_time: f32,                // how long the pointer has rested on the hovered control, -1 stopped
         tooltip_delay: f32,
         tooltips: bool,
+        tooltip_key: bool,              // the ToolTips key (T) is held: no delay
         tooltip_ref: Ref,
         key_repeat: f32,
         // backdrop textures by resolution tag and kind, loaded when first needed

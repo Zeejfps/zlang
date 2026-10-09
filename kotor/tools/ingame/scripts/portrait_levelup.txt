@@ -1,0 +1,9 @@
+# From `uppercity`: the leader's portrait opens the character sheet when the leader can level up, else the
+# equipment (OnPartyMemberButton 0x00688690, docs/mechanics/controls.md "Party").
+#   $EXE --load kotor/out/checkpoints/uppercity --headless --frames 60 --input THIS
+#     --screenshot-at 15:portrait_equip.png --screenshot-at 45:portrait_sheet.png
+1 ui bot off
+10 ui clickctl BTN_CHAR1
+20 ui key escape
+30 ui xp 1000
+40 ui clickctl BTN_CHAR1

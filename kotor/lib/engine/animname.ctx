@@ -13,7 +13,7 @@ namespace animname {
     fn is_row { id: u32 } -> bool { return id >= ROW_BASE }
     fn row_of { id: u32 } -> usize { return @as(usize, (id - ROW_BASE) & 0xFFFF) }
 
-    const TABLE: [54]Entry = [
+    const TABLE: [55]Entry = [
         Entry{ id = 10000, name = "pause1", looping = true },
         Entry{ id = 10001, name = "pause1", looping = true },
         Entry{ id = 10002, name = "walk", looping = true },
@@ -68,6 +68,7 @@ namespace animname {
         Entry{ id = 10124, name = "horror", looping = true },
         Entry{ id = 10125, name = "usecomplp", looping = true },
         Entry{ id = 10127, name = "activate", looping = false },
+        Entry{ id = 10133, name = "stealth", looping = true },
         Entry{ id = 10137, name = "sleep", looping = true },
         Entry{ id = 10151, name = "pause3", looping = true },
     ]

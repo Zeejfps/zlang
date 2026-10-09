@@ -1,0 +1,10 @@
+# From `uppercity`: holding T (ToolTips, action 225) shows the hovered control's tooltip at once instead of after
+# the 1 s delay (SetTooltipKeyHeld 0x005f4be0). The pointer rests on a menu button for 4 frames without T (no
+# tooltip at frame 24), then on the next button with T held (its tooltip at frame 44).
+#   $EXE --load kotor/out/checkpoints/uppercity --headless --frames 50 --input THIS
+#     --screenshot-at 24:tip_none.png --screenshot-at 44:tip_held.png
+1 ui bot off
+20 mouse move 1043 20
+39 keydown t
+40 mouse move 1075 20
+46 keyup t

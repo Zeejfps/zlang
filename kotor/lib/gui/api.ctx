@@ -523,13 +523,20 @@ namespace gui {
 
     // ---- tooltips
 
-    // After the pointer rests on a control with tooltip text for the delay, the tooltip shows.
+    // After the pointer rests on a control with tooltip text for the delay, the tooltip shows; at once while the
+    // ToolTips key (T) is held.
     fn update_tooltip { mut g: Gui } {
-        if not g.tooltips or g.hover_time < g.tooltip_delay or g.tooltip_ref.panel != 0 { return }
+        let delay = if g.tooltip_key { 0.0 } else { g.tooltip_delay }
+        if not g.tooltips or g.hover_time < delay or g.tooltip_ref.panel != 0 { return }
         if g.hover.panel == 0 or g.hover.control < 0 { return }
         let p = panel_of{ &g, r = g.hover } ifnull { return }
         let c = list::at{ list = p.controls, i = @as(usize, g.hover.control) }
         if c.tooltip.len > 0 { g.tooltip_ref = g.hover }
+    }
+
+    // The ToolTips key went down or up.
+    fn set_tooltip_key { mut g: Gui, held: bool } {
+        g.tooltip_key = held
     }
 
     fn set_tooltip_delay { mut g: Gui, seconds: f32, enabled: bool } {

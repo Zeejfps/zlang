@@ -61,6 +61,7 @@ namespace death {
         if not d.active { return }
         msgbox::close{ g = &ui.gui, b = &d.box }
         ingame::set_hud_hidden{ &ui, hidden = false }
+        ingame::set_wiping{ &ui, on = false }
         w.clock.speed = 1.0
         d = make{}
     }
@@ -70,6 +71,7 @@ namespace death {
     fn start { mut d: Death, mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device } {
         d = make{}
         d.active = true
+        ingame::set_wiping{ &ui, on = true }
         if ui.menu != ingame::NO_MENU { ingame::close_menu{ &ui, &w } }
         ingame::set_hud_hidden{ &ui, hidden = true }
         d.box = msgbox::show_strref{ g = &ui.gui, &w, &dev, strref = STRREF, cancel = false, what = 0, item = 0 }
@@ -127,7 +129,7 @@ namespace death {
         let dir = math::Vec3{ x = f.x * cp, y = f.y * cp, z = -math::sinf{ x = d.pitch } }
         let back = math::vec3::add_scaled{ a = look, b = dir, s = -d.distance }
         // Held off the walls, as the chase camera is.
-        let eye = cam::collide{ c = &c, w, sc, target = w.pc, look, nominal = back, reach = 1000.0 }.eye
+        let eye = cam::collide{ c = &c, w, sc, target = w.pc, look, nominal = back, reach = 1000.0, creatures = true }.eye
         c.eye = eye
         c.look = look
         c.dir = dir
