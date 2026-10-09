@@ -307,11 +307,13 @@ namespace play {
                 if folder == null {
                     _ = @fmt(&w.io, "kotor: no such save\n")
                 } else {
+                    fade_before_load{ &sdl, a = &amb, adev, mixer }
                     show_for_save{ ld, &w, &dev, &sdl, &frame, opts, folder }
                     // As a transition: no conversation survives the world it ran in.
                     dlg::abort{ &w, &vm, engine }
                     dlgview::leave{ v = &dview, w = &w, sc = &sc, g = &ui.gui }
                     ambience::stop_area{ a = &amb }
+                    _ = ambience::set_mode{ a = &amb, mode = ambience::MODE_PLAY }
                     scene::release{ &sc, &dev }
                     arena::reset{ heap = &scene_arena }
                     vfx::reset{ v = &vx }
@@ -602,7 +604,15 @@ namespace play {
             // The options menu's Save Game and Load Game (the menus have closed themselves).
             if ingame::take_save_request{ ui } is some{ value = n } { want_save = n }    // HOOK(ingame)
             if ingame::take_load_request{ ui } is some{ value = n } { want_load = n }    // HOOK(ingame)
-            // 11. Sound at the camera.
+            // 11. Sound at the camera, in the mode the screen calls for.
+            let sound_mode = ingame::sound_mode{ ui, w = &w }    // HOOK(ingame)
+            if sound_mode != amb.mode {
+                let held = ambience::set_mode{ a = &amb, mode = sound_mode }
+                if w.log.sound {
+                    world::prefix{ w = &w }
+                    _ = @fmt(&w.io, "sound mode {}: {} sounds held\n", sound_mode, held)
+                }
+            }
             ambience::update{ a = &amb, &w, eye = camera.eye, forward = camera.dir, dt }
             match adev {
                 some{ value } => {
@@ -1400,6 +1410,19 @@ namespace play {
     }
 
     // The loading screen for loading a save: its module's picture, chosen before the load reads the save.
+    // Before a saved game loads in the game (CGuiInGame::QuickLoad, CSWGuiSaveLoad::LoadSelectedGame):
+    // sound mode 1 for 500 ms, the screen standing still, while the ambient bed fades out (0x005f4ae0).
+    // Nothing to wait for with no device to hear it.
+    fn fade_before_load { mut sdl: sdl::Sdl, mut a: ambience::Ambience, adev: ?*mut audio::Device, mixer: *mut mix::Mixer } {
+        let dev = adev ifnull { return }
+        _ = ambience::set_mode{ &a, mode = ambience::MODE_FADE }
+        let start = sdl::ticks{ &sdl }
+        while sdl::ticks{ &sdl } - start < 500 {
+            audio::update{ &sdl, dev, m = mixer } iferr {}
+            sdl::delay{ &sdl, ms = 10 }
+        }
+    }
+
     fn show_for_save {
         mut ld: loading::Loading, mut w: world::World, mut dev: gpu::Device, mut sdl: sdl::Sdl, mut frame: render::Frame,
         opts: options::Options, folder: []u8,

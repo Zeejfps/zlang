@@ -262,6 +262,7 @@ fn run { mut io: Io, mut heap: arena::Arena, mut t: Tally, mut threads: Threads 
     mix::release{ m, bytes = dc[100..200] }
     expect{ &io, &t, ok = not mix::is_playing{ m, h = r1 } and mix::is_playing{ m, h = r2 }, what = "release ends the voices reading those bytes, and only those" }
     mix::stop_all{ m, group = null, fade = 0.0 }
+    try sound_modes{ &io, &t, m, out, dc }
     mix::free{ realloc = arena::alloc, &heap, m }
 
     try lock_stress{ &io, &t, &heap, &threads, dc, short }
@@ -313,6 +314,45 @@ fn lock_stress { mut io: Io, mut t: Tally, mut heap: arena::Arena, mut threads: 
     let st = mix::stats{ m }
     expect{ &io, &t, ok = wrong == 0 and calls > 10 and st.busy_2d > 0, what = "a thread renders while this one plays and stops sounds" }
     mix::free{ realloc = arena::alloc, &heap, m }
+}
+
+// The sound modes: hold_world stops all but the kept play groups until release_world; fade_rows
+// turns some play groups down over time and back.
+fn sound_modes { mut io: Io, mut t: Tally, m: *mut mix::Mixer, out: []mut i16, dc: []u8 } -> ! {
+    let mut pa = mix::sound_2d{ group = mix::Group::sfx, volume = 0.5 }
+    pa.play_group = 4
+    pa.looping = true
+    let mut pb = mix::sound_2d{ group = mix::Group::sfx, volume = 0.25 }
+    pb.play_group = 15
+    pb.looping = true
+    let a = try mix::play{ m, bytes = dc, p = pa }
+    let b = try mix::play{ m, bytes = dc, p = pb }
+    _ = render{ m, out, frames = 1000 }
+    let held = mix::hold_world{ m, keep = 1 << 4 }
+    let o = render{ m, out, frames = 1100 }
+    expect{ &io, &t, ok = held == 1 and o[2000] == 5000 and mix::is_playing{ m, h = b }, what = "hold_world stops all but the kept play groups, and keeps them" }
+    let mut pc = pb
+    pc.looping = false
+    let c = try mix::play{ m, bytes = dc, p = pc }
+    let o2 = render{ m, out, frames = 1100 }
+    expect{ &io, &t, ok = o2[2000] == 7500, what = "a sound started during a hold plays" }
+    mix::stop{ m, h = c, fade = 0.0 }
+    mix::release_world{ m }
+    let o3 = render{ m, out, frames = 1100 }
+    expect{ &io, &t, ok = o3[2000] == 7500, what = "release_world lets the held sounds go on" }
+    mix::fade_rows{ m, rows = 1 << 4, level = 0.0, seconds = 0.5 }
+    let o4 = render{ m, out, frames = 11025 }
+    let mid = o4[2 * 11000]
+    expect{ &io, &t, ok = mid > 4000 and mid < 6000, what = "fade_rows turns its rows down over its time" }
+    _ = render{ m, out, frames = 13000 }
+    let o5 = render{ m, out, frames = 100 }
+    expect{ &io, &t, ok = o5[100] == 2500, what = "fade_rows ends at its level, other rows untouched" }
+    mix::fade_rows{ m, rows = 1 << 4, level = 1.0, seconds = 0.0 }
+    _ = render{ m, out, frames = 1100 }
+    let o6 = render{ m, out, frames = 100 }
+    expect{ &io, &t, ok = o6[100] == 7500, what = "fade_rows at once back to full" }
+    mix::stop{ m, h = a, fade = 0.0 }
+    mix::stop{ m, h = b, fade = 0.0 }
 }
 
 fn var_loop { mut io: Io, mut t: Tally, m: *mut mix::Mixer, out: []mut i16, short: []u8 } -> ! {

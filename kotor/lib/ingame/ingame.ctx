@@ -539,6 +539,16 @@ namespace ingame {
 
     // ---- pause
 
+    // The sound mode the screen calls for (ambience::set_mode): 4 behind the menu, a store, the galaxy
+    // map, the party selection or the upgrade bench (CGuiInGame's Show/Open calls push it), else 2
+    // in the player's pause (CClientExoAppInternal::RequestPause), else 0.
+    fn sound_mode { ui: *Ingame, w: *world::World } -> u8 {
+        let sc = &ui.screens
+        if ui.menu != NO_MENU or sc.store.open or sc.galaxy.open or sc.bench.open or partysel_panel::is_open{ s = &ui.menus.partysel } { return 4 }
+        if clock_paused_by_player{ w } { return 2 }
+        return 0
+    }
+
     fn clock_paused_by_player { w: *world::World } -> bool {
         return (w.clock.pause_bits & clock::PAUSE_PLAYER) != 0
     }

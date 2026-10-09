@@ -137,6 +137,7 @@ namespace mix {
         fade: f32,
         fade_step: f32,
         paused: bool,
+        held: bool,             // stopped by a sound mode (hold_world) until release_world
         failed: bool,           // the stream failed mid-way (counted in Mixer.errors)
     }
 
@@ -159,6 +160,10 @@ namespace mix {
         events: [16]Event,      // the latest steals and refusals, oldest first
         event_count: usize,     // events since the caller last took them (more than EVENTS: the oldest are lost)
         limits: [32]Limit,      // by play group (Params.play_group)
+        fade_rows: u32,         // the play groups (bits) the row fade turns down (fade_rows)
+        fade_level: f32,        // their gain now, 0..1
+        fade_target: f32,
+        fade_rate: f32,         // how far fade_level moves a frame
         lock: mutex::Mutex,     // held by every fn below for its work, so the mixer may render on another thread
     }
 
@@ -186,6 +191,10 @@ namespace mix {
         m.limit_gain = 1.0
         m.event_count = 0
         m.limits = [Limit{ max_playing = 255, interrupt = false }; 32]
+        m.fade_rows = 0
+        m.fade_level = 1.0
+        m.fade_target = 1.0
+        m.fade_rate = 0.0
         m.lock = mutex::make{}
         let mut i: usize = 0
         while i < n {
@@ -422,7 +431,7 @@ namespace mix {
 
     // Whether ending a voice now would be heard as a click: it is sounding, not fading out, and loud enough.
     fn audible { v: *Voice } -> bool {
-        if v.paused or v.fresh or v.fading { return false }
+        if v.paused or v.held or v.fresh or v.fading { return false }
         return v.gain_l + v.gain_r > 0.01
     }
 
@@ -449,6 +458,7 @@ namespace mix {
         v.fade = 1.0
         v.fade_step = 0.0
         v.paused = false
+        v.held = false
         v.failed = false
     }
 
@@ -479,7 +489,7 @@ namespace mix {
     fn stop_voice { mut m: Mixer, h: Handle, fade: f32 } {
         let v = voice_of{ m = &m, h } ifnull { return }
         // A paused voice renders nothing, so it would never finish a fade.
-        if fade <= 0.0 or v.paused or m.group_paused[@as(usize, v.p.group)] {
+        if fade <= 0.0 or v.paused or v.held or m.group_paused[@as(usize, v.p.group)] {
             if fade <= 0.0 and not m.group_paused[@as(usize, v.p.group)] and audible{ v } { m.stats.cuts = m.stats.cuts + 1 }
             end_voice{ &m, slot = h.slot }
             return
@@ -583,6 +593,76 @@ namespace mix {
         v.paused = paused
     }
 
+    // ---- sound modes (docs/design/audio.md, "Sound modes")
+
+    // Whether play group `group` is one of the bits of `rows` (NO_GROUP is in none).
+    fn in_rows { rows: u32, group: u8 } -> bool {
+        return group < 32 and (rows & (@as(u32, 1) << @as(u32, group))) != 0
+    }
+
+    // Stops (pauses) every sound playing now but those of the play groups in `keep` (bits), until
+    // release_world: what entering a pause or a menu screen does to the world's sounds. A sound
+    // started meanwhile plays, as the original's do.
+    // Returns how many it stopped.
+    fn hold_world { mut m: Mixer, keep: u32 } -> u32 {
+        mutex::lock{ mutex = &m.lock }
+        defer mutex::unlock{ mutex = &m.lock }
+        let mut held: u32 = 0
+        let mut i: usize = 0
+        while i < m.voices.len {
+            let v = &m.voices[i]
+            if v.active and v.feed == null and not in_rows{ rows = keep, group = v.p.play_group } {
+                // One being faded out ends now: held, it would never finish.
+                if v.fading {
+                    end_voice{ &m, slot = i }
+                } else {
+                    v.held = true
+                    held = held + 1
+                }
+            }
+            i = i + 1
+        }
+        return held
+    }
+
+    // Lets every sound hold_world stopped go on.
+    fn release_world { mut m: Mixer } {
+        mutex::lock{ mutex = &m.lock }
+        defer mutex::unlock{ mutex = &m.lock }
+        let mut i: usize = 0
+        while i < m.voices.len {
+            m.voices[i].held = false
+            i = i + 1
+        }
+    }
+
+    // Turns the sounds of the play groups in `rows` (bits; the ones playing and any started later)
+    // to `level` (0..1) over `seconds` (0: at once).
+    fn fade_rows { mut m: Mixer, rows: u32, level: f32, seconds: f32 } {
+        mutex::lock{ mutex = &m.lock }
+        defer mutex::unlock{ mutex = &m.lock }
+        m.fade_rows = rows
+        m.fade_target = if level < 0.0 { 0.0 } else if level > 1.0 { 1.0 } else { level }
+        if seconds <= 0.0 {
+            m.fade_level = m.fade_target
+            m.fade_rate = 0.0
+        } else {
+            let d = m.fade_target - m.fade_level
+            m.fade_rate = (if d < 0.0 { -d } else { d }) / (seconds * @as(f32, m.rate))
+        }
+    }
+
+    // The row fade's level after `frames` more output frames (the voices' gains follow it a block at a time).
+    fn advance_fade { mut m: Mixer, frames: usize } {
+        if m.fade_level == m.fade_target { return }
+        let step = m.fade_rate * @as(f32, frames)
+        if m.fade_level < m.fade_target {
+            m.fade_level = if m.fade_level + step >= m.fade_target or step <= 0.0 { m.fade_target } else { m.fade_level + step }
+        } else {
+            m.fade_level = if m.fade_level - step <= m.fade_target or step <= 0.0 { m.fade_target } else { m.fade_level - step }
+        }
+    }
+
     // A group's volume (swkotor.ini's 0..100, divided by 100) and whether it is paused.
     fn set_group_volume { mut m: Mixer, group: Group, volume: f32 } {
         mutex::lock{ mutex = &m.lock }
@@ -641,6 +721,7 @@ namespace mix {
                 k = k + 1
             }
             limit{ &m, frames = n, into = into[2 * done..2 * (done + n)] }
+            advance_fade{ &m, frames = n }
             mutex::unlock{ mutex = &m.lock }
             done = done + n
         }
@@ -692,7 +773,8 @@ namespace mix {
     fn target_gains { m: *Mixer, v: *Voice } -> Gains {
         // A 3D sound effect's level is squared with the player's volume in it (`squared`, docs/re/app.md "Voices").
         let gv = m.group_volume[@as(usize, v.p.group)]
-        let g = v.p.volume * (if v.p.squared { gv * gv } else { gv }) * m.master
+        let mut g = v.p.volume * (if v.p.squared { gv * gv } else { gv }) * m.master
+        if in_rows{ rows = m.fade_rows, group = v.p.play_group } { g = g * m.fade_level }
         let mut pan = v.p.pan
         let mut gain = g
         let mut mono = false
@@ -723,7 +805,7 @@ namespace mix {
 
     // Adds `frames` output frames of voice v into m.acc.
     fn mix_voice { mut m: Mixer, v: *mut Voice, frames: usize } {
-        if v.paused or m.group_paused[@as(usize, v.p.group)] { return }
+        if v.paused or v.held or m.group_paused[@as(usize, v.p.group)] { return }
         let target = target_gains{ m = &m, v }
         if v.fresh {
             v.gain_l = target.l

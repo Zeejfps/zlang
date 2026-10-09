@@ -49,6 +49,7 @@ namespace ambience {
         battle_clock: u64,              // the world clock (ms) when the creatures were last looked at
         ambient_off: bool,              // a script stopped the ambient bed (AmbientSoundStop)
         bias: f32,                      // the settings' 2D3D Bias (loudness)
+        mode: u8,                       // the sound mode applied (set_mode)
     }
 
     fn make { heap: *mut heap::Heap, m: *mut mix::Mixer } -> Ambience {
@@ -62,7 +63,7 @@ namespace ambience {
             rng = 12345, started = 0, listener = math::vec3::zero{},
             bg_off = false, battle = false, ambient_off = false,
             stinger = mix::Handle{ slot = 0, id = 0 }, stinger_bytes = slice::empty(u8){},
-            excited = list::new(Excited, heap::Heap){ realloc = heap::alloc, heap }, battle_clock = 0, bias = 1.5,
+            excited = list::new(Excited, heap::Heap){ realloc = heap::alloc, heap }, battle_clock = 0, bias = 1.5, mode = MODE_PLAY,
         }
     }
 
@@ -227,6 +228,35 @@ namespace ambience {
         a.music_wait = -1.0
         list::clear{ list = &a.placed }
         list::clear{ list = &a.excited }
+    }
+
+    // The sound modes (CExoSoundInternal::SetSoundMode 0x005d8560; docs/re/app.md, "Sound modes"):
+    // what the screen on top does to the world's sounds. In a pause (mode 2: the player's pause)
+    // every sound stops but the stingers', the music's, the ambient bed's and the GUI's (rows 1, 2,
+    // 4, 11); behind a menu screen (mode 4: the in-game menu, a store, the galaxy map, the party
+    // selection, the upgrade bench) the ambient bed stops too. Leaving the mode lets them go on.
+    // Mode 1 (fade_before_load) turns the ambient bed and the global one-shots (rows 4 and 21)
+    // down over 500 ms before a saved game loads in the game.
+    const MODE_PLAY: u8 = 0
+    const MODE_FADE: u8 = 1
+    const MODE_PAUSE: u8 = 2
+    const MODE_MENU: u8 = 4
+    const KEEP_PAUSE: u32 = (1 << ROW_STINGERS) | (1 << ROW_MUSIC) | (1 << ROW_AREA_AMBIENT) | (1 << ROW_GUI)
+    const KEEP_MENU: u32 = (1 << ROW_STINGERS) | (1 << ROW_MUSIC) | (1 << ROW_GUI)
+    const ROW_SINGLE_SHOT_GLOBAL: u32 = 21
+    const FADE_ROWS: u32 = (1 << ROW_AREA_AMBIENT) | (1 << ROW_SINGLE_SHOT_GLOBAL)
+    const FADE_SECONDS: f32 = 0.5
+
+    // Returns how many sounds it stopped.
+    fn set_mode { mut a: Ambience, mode: u8 } -> u32 {
+        if mode == a.mode { return 0 }
+        if a.mode == MODE_FADE { mix::fade_rows{ m = a.m, rows = FADE_ROWS, level = 1.0, seconds = 0.0 } }
+        if a.mode == MODE_PAUSE or a.mode == MODE_MENU { mix::release_world{ m = a.m } }
+        a.mode = mode
+        if mode == MODE_FADE { mix::fade_rows{ m = a.m, rows = FADE_ROWS, level = 0.0, seconds = FADE_SECONDS } }
+        if mode == MODE_PAUSE { return mix::hold_world{ m = a.m, keep = KEEP_PAUSE } }
+        if mode == MODE_MENU { return mix::hold_world{ m = a.m, keep = KEEP_MENU } }
+        return 0
     }
 
     // The area's music and ambient bed, and a player for each sound object.

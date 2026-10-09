@@ -352,6 +352,25 @@ Miles fails), the game plays on silently: it still makes the mixer and calls `mi
 scratch buffer for the frame's elapsed time instead of `audio::update`, so voices advance and end
 as they would and dialogue, lip sync and movies keep their clocks.
 
+### Sound modes
+
+The original keeps a stack of sound modes (re/app.md, "Voices": `SetSoundMode` 0x005d8560) whose top
+says what the world's sounds do; ours derives the top from the screen each frame
+(`ingame::sound_mode`) and applies it on a change (`ambience::set_mode`, logged with `--log sound` as
+`sound mode N: K sounds held`):
+
+| Mode | When | Ours |
+|---|---|---|
+| 0 | playing | everything plays |
+| 2 | the player's pause | `mix::hold_world` stops every sound playing but rows 1, 2, 4 and 11 (stingers, music, the ambient bed, the GUI) |
+| 4 | the in-game menu, a store, the galaxy map, the party selection, the upgrade bench (over a pause too) | the same but row 4: the ambient bed stops as well |
+| 1 | a saved game loading in the game (quick load, the Load Game screen) | `mix::fade_rows` turns rows 4 and 21 to 0 over 500 ms while the screen stands still (`fade_before_load`; only with a device), then the area stops and the level is 1 again |
+
+A held voice keeps its place and goes on when the mode ends (`mix::release_world`); a sound started
+during a mode plays, as the original's (its pause only stops what plays at the change). Modes 3
+(movies, saving: ours pauses the volume groups instead, `cine.ctx`) and 5/6 (the window losing focus)
+are not modelled.
+
 ## Checked
 
 ```
@@ -422,9 +441,6 @@ kotor/tools/ctxc run kotor/tools/sndplay -- FILE       # play one (or --wav / --
   re/app.md, "Voices".)
 - Whether Miles clipped or scaled a mix past full scale (ours limits it).
 - Which volume `prioritygroups.2da`'s distances override (they differ from the UTS's own).
-- The sound modes (re/app.md "Voices"): ours neither pauses the world's sounds in a store, the
-  galaxy map or a pause (modes 2 and 4), nor fades the ambient bed over the 500 ms
-  before a saved game loads (mode 1, rows 4 and 21).
 
 Settled (2026-10): GUI clicks play in row 11 `GUI` (priority, Volume, two at once, the 2D3D
 Bias's scale: `ambience::tune_gui`). `MaxPlaying` and `Interrupt` are enforced (play groups); `FadeTime` is loaded but
