@@ -5,8 +5,9 @@
 //
 // In the middle stands the character in 3D (lvl_view.ctx, the level-up panel's view): dressed as
 // equipped, posed and lit by alignment (charrec_light's red clouds on the dark side, blue on the
-// light), turned 10 degrees per 0.1 s while BTN_3DCHAR holds the left (one way) or right (the
-// other) mouse button, as the original's repeat button does. The effect icons next to the
+// light), turned 10 degrees per 0.1 s while BTN_3DCHAR holds the left (clockwise seen from above:
+// the face swings to the screen's left, as RotateModelLeft's -10 degrees do) or right (the other
+// way) mouse button, as the original's repeat button does. The effect icons next to the
 // alignment bar are the creature's ICON effects. The Scripts button opens the AI style panel
 // (scriptselect_panel.ctx) for the character shown.
 namespace character_panel {

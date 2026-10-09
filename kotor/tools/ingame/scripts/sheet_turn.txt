@@ -1,0 +1,9 @@
+# The character sheet's BTN_3DCHAR: a left press held 0.6 s turns the model (RotateModelLeft, -10 degrees
+# about +Z per step), then a right press held as long turns it back.
+#   EXE=... sh kotor/tools/items/run.sh sheet_turn uppercity kotor/tools/ingame/scripts/sheet_turn.txt 80 29:before 48:left 70:right
+10 ui menu character
+30 mouse move 490 480
+31 mouse down left
+49 mouse up left
+51 mouse down right
+69 mouse up right

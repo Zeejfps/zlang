@@ -2443,7 +2443,7 @@ formats, the labels and the range, med for the effect sum)
 | 0x006aee30 | `CSWGuiCharacter::UpdatePartyButtons` | BTN_CHANGE1/2 portraits | med |
 | 0x006af350 | `CSWGuiCharacter::OnChangeCharacter` | BTN_CHANGE1/2 | med |
 | 0x006af450 / 0x006af6d0 | `OnPreviousCharacter` / `OnNextCharacter` | BTN_CHARLEFT / BTN_CHARRIGHT | med |
-| 0x006aed90 / 0x006aede0 | `RotateModelLeft` / `RotateModelRight` | turn the 3D model by -10 / +10 degrees; bound to BTN_3DCHAR's events 0x16256 / 0x16257 (what raises those is not traced) | high |
+| 0x006aed90 / 0x006aede0 | `RotateModelLeft` / `RotateModelRight` | turn the 3D model by -10 / +10 degrees about +Z (left: clockwise seen from above, the face swings to the screen's left); BTN_3DCHAR's events 0x16256 / 0x16257 (left / right press, below) | high |
 | 0x006aed20 | `CSWGuiCharacter::SetModelRotation` | events 0x3b / 0x3c: the same turn, -10 degrees for 0x3b and +10 for 0x3c | high |
 | 0x006b0bb0 | `CSWGuiCharacter::StartLevelUp` | same test as event 0x27, refreshes the stats, then creates the level-up panel (`CSWGuiLevelUpMain`, 0x2560 bytes, ctor 0x006e8ef0) for the controlled character with the sheet's model object, and adds it with flags 3; returns 1 when opened | high |
 | 0x006b0cb0 | `CSWGuiCharacter::AutoLevelUp` | yes/no box (strref 36811 "...from level <CUSTOM0> to level <CUSTOM1>...", tokens = the leader's level and the highest level its XP reaches); yes (callback 0x006aec80) runs `CSWSCreatureStats::AutoLevelUp` on the leader's server stats | med |
@@ -2499,8 +2499,9 @@ dark-side textures, all below. The room is the black box every GUI scene has (gu
 When the creature or alignment changed, `UpdateStats` (tail of 0x006afda0): copies the first 15
 dwords of the viewed creature's appearance record (creature +0x21c: body variation, texture
 variation, armoured flag +0x14, appearance row +0x18, head ...; chargen-3d.md) into a local, sets
-its dword +0x10 to 0x7f000000 (meaning not traced), copies something from the viewed creature
-(its vtable slot +0x148, into the model's slot +0xec; not traced, perhaps the name), applies the
+its dword +0x10 to 0x7f000000, copies the viewed creature's portrait resref (its vtable slot +0x148,
+the getter the party bar uses) into the model's (slot +0xec, `0x0060d560`, the setter chargen's
+Accept uses; the sheet never shows the model's portrait), applies the
 record with `FUN_006134c0(model, record, 3, 1)`: mask 3 = body and head only, so **the creature is
 shown as dressed (its armour's body and texture) but without weapons** (bits 4 and 8 would build
 the hand items through `FUN_00697b00` / `FUN_00697bc0`); then `FUN_00698150(model appearance,
@@ -2512,6 +2513,14 @@ panel and alignment": `t3m4` and `hk47` pause instead of posing and take `camera
 `camerahookh`, `zaalbar` `camerahookz`; the name is a string at +0x18 of the object
 `FUN_0063d4b0` + slot +0x30 returns for the creature, by all appearances its tag). (high for the
 calls and the mask, med for the name being the tag)
+
+The record's dword +0x10 is an object id (0x7f000000 is the client's invalid object id, the value
+`CancelCreatureActions` and others reset ids to). Its only reader found is `FUN_006978a0`, which
+`FUN_006134c0` runs on the appearance: when the appearance's flag +0x68 is set it puts the opacity
+of the body's and head's models (creature slot +0x98, parts 0xff and 0xfe), of the object with that
+id and of the items in inventory slots 0x10 and 0x20 (the hands) back to 1.0 (`FUN_0043e150(model,
+1.0)`). Clearing it keeps the sheet's copy from reaching an object of the viewed creature's in the
+world. Nothing on screen depends on it. (high for the reader, med for "only")
 
 `FUN_00698150(appearance, alignment)` (also run by `FUN_006134c0` with the model's own stats and by
 `FUN_0060f780` for creatures in the world, see "Dark-side looks in the world" below) does nothing when the alignment is the one it last used
@@ -2542,7 +2551,12 @@ Turning: `BTN_3DCHAR` (+0x580c) is a repeat button (vtable 0x007533c8, see the o
 end): a left press sends 0x16256 (`RotateModelLeft`, -10 degrees) and a right press 0x16257
 (`RotateModelRight`, +10 degrees) at once, then again every +0x59d0 = 0.1 s while the button keeps the
 mouse (the constructor sets +0x59d0 / +0x59d4 to 0.2 / 0.5 and then both to 0.1). The turn is the
-model's own orientation, so it lasts until the model is rebuilt. Events 0x3b / 0x3c (the gamepad's
+model's own orientation, so it lasts until the model is rebuilt. The handler rotates the model's
+facing (model +0x30) by `Quaternion_FromEulerDegrees(-10, 0, 0)` (the first angle is about +Z, the
+quaternion (w, x, y, z) from `QuatFromAxisAngle` is the usual one) through `FUN_004a9bb0` (the usual
+q v q* rotation) and sets it (slot +0x88): -10 degrees about +Z is clockwise seen from above. The
+model starts facing (1, 0, 0) toward the camera, so **a left press turns the character to its own
+right: its face swings toward the screen's left**, and a right press the other way. (high) Events 0x3b / 0x3c (the gamepad's
 right stick) turn it too. `OnPanelAdded` (0x006b2220) resets the viewed index (+0x59f0 = -1) and two
 other fields, not +0x59e8, so reopening the sheet keeps the old model, turn and outfit unless the
 creature or the alignment changed. (high)

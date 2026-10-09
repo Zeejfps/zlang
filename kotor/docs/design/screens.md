@@ -118,7 +118,9 @@ chargen's pure helpers (`set_number`, `ability_tag`, the tag tables) are shared.
   `camerahookt` / `h` / `z`, the two droids loop `pause1`. A pose the model lacks loops `pause1`. The sheet
   draws the view with `gui::set_overlay_after` so the controls after `LBL_3DCHAR` in the file (alignment
   bar, level-up buttons) cover it, as the original's do, and turns it 10 degrees per 0.1 s while
-  `BTN_3DCHAR` holds the left or right mouse button. Not under a modal panel (the AI style panel): the
+  `BTN_3DCHAR` holds the left or right mouse button: the left turns the character to its own right (clockwise
+  seen from above, the face toward the screen's left) as the original's -10 degrees do, the right the other way
+  (`kotor/tools/ingame/scripts/sheet_turn.txt` from the `uppercity` checkpoint). Not under a modal panel (the AI style panel): the
   model is hidden while one is up.
 - The steps list: Attributes (only on a level whose class level is a multiple of 4), Skills, Feats (when
   featgain gives any), Powers (Force classes), Accept. A step opens when it is needed, not done, and every
