@@ -1916,7 +1916,10 @@ namespace gpu {
         if em.first + em.count > frame.particle_count { return }
         use_program{ &dev, program = dev.cur_particle.id }
         set_blend{ &dev, blend = em.blend }
-        set_depth{ &dev, test = true, write = writes_depth{ blend = em.blend } }
+        // A model's particles never write depth, punch-through ones included (0x0048f040 and the other
+        // drawers): one in front of another must not cut it off. Grass, which is not an emitter in the
+        // original, keeps its depth so its blades sort among themselves.
+        set_depth{ &dev, test = true, write = not em.effect and writes_depth{ blend = em.blend } }
         set_cull{ &dev, on = false }
         set_offset{ &dev, on = false }
         set_stencil{ &dev, on = false }

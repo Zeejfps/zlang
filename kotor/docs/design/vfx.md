@@ -295,9 +295,13 @@ the clashes (from the `bunk` checkpoint), each with at most 40 spark-yellow pixe
 - World emitters: particles live in their emitter's space, as the effects' do (the original keeps them in world
   space and carries them with the emitter only with `inherit`, 0x40, which 1,853 emitters have, mostly the bolts';
   the same for an emitter that does not move, which is nearly every room's and every still effect's; gravity and
-  bounces are the world's, above); a room's or placeable's Lightning emitter (`plc_endcorps`, `m45ac_bmap`) aims at its
-  reference child; the menus' and minigames' scenes give theirs no target, so they stay quiet; particles draw
-  with depth writes off except punch-through ones (the original: off for all);
+  bounces are the world's, above). Left so because the rules that move world-space particles are not all known:
+  `inherit_local` (0x100, the owner object's move) without `inherit` is on about 6,000 emitter nodes, 4,926 of them the rooms' `Single` sprites
+  (crowds, birds), and a `Single` sprite on a keyed node would stay where it was born unless something carries it,
+  which was not traced; doing it needs those worked out and a look at Kashyyyk's birds and Taris' crowds. A room's
+  or placeable's Lightning emitter (`plc_endcorps`, `m45ac_bmap`) aims at its reference child; the menus' and
+  minigames' scenes give theirs no target, so they stay quiet. A model's particles draw with depth writes off,
+  punch-through ones too, as the original's (grass, ours alone as an emitter, keeps them);
   only `animloop1` plays on a room, so emitters keyed in `animloop2`/`animloop3` are not animated.
 - Not done: footsteps, melee blood (the game has none), thrown grenades and Force
   projectiles in flight (above), the Jedi's blade colours by crystal (blades show the model's
