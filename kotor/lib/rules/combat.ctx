@@ -49,8 +49,9 @@
 //   here) is row = difficulty.
 // Decision: a combat feat the attacker does not have counts as none, everywhere (the exe clears it
 //   in the special-attack step, after the first attack roll has used it).
-// Decision: the combat feat applies to every attack of the round for to-hit, threat and damage;
-//   its side effects (self penalty, stun) belong to the first attack only (attack_index 0).
+// The combat feat applies to every attack of the round for to-hit, threat and damage, as the
+//   exe's loops resolve them all into the one attack record that carries it; its side effects
+//   (self penalty, stun) belong to the first attack only (attack_index 0; combat.md 3.1).
 // Decision: DAMAGE_REDUCTION power = the weapon's enhancement bonus 0..5 (the NWN meaning); 0
 //   unarmed. The exe passes an unread stack value there.
 // Decision: doors and placeables are targets with AttackSituation.target_object: defense 0, no

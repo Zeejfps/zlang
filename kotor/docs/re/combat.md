@@ -271,7 +271,14 @@ WeaponWield, `+0x09` WeaponType, `+0x0c` DamageFlags, `+0x18` ModelType, `+0x1a`
    is the byte `+0xc5` of the client creature's animation data, written by `0x00613710` from the
    hands' baseitems WeaponWield: both hands empty 8; right hand only: 1 → 1, 2 → 2, 3 → 3, 4 → 5,
    5 → 7, 6 → 9 (repeating blasters), else 0; both hands: the **left** item's WeaponWield 2 → 4,
-   4 → 6, else 0; left hand only 0. (high)
+   4 → 6, else 0; left hand only 0. (high) The ready pose (request 10001) goes through the client
+   object's animation table (`0x0069f650`, vtable slot 0xe0): with a full model (`+0xc6` 1) digits
+   1..9 give `g<d>r1` (92, 133, 174, 215, 223, 237, 245, 249; 9 the rifle's 245), digit 0 has no
+   case and returns 10001 itself, a row `animations.2da` lacks, so the name lookup (`0x0069e620`)
+   falls back to 10000's row, 6 `pause1`; a simple model's 10001 is `creadyr` (278). (high) The
+   feat in the record (step 6 below) stays for every attack the melee or ranged loop resolves into
+   it: they all use the one record (`GetAttack(+0x96c)`), and only the special-attack step, at
+   attack 0, clears it for an attacker without the feat. (high)
 5. **Start.** Not engageable: `StartCombatRound(target, bEngaged = 0, bMaster = 0)` on the attacker
    alone (every run of the action restarts the round; the dispatcher 0x3f keeps a second attack
    from being started in the same round). Engageable and master: `StartCombatRound(target, 1, 1)`

@@ -26,6 +26,7 @@ namespace fight {
     const ROW_CDIE: i32 = 274
     const ROW_CDEAD: i32 = 275
     const ROW_CREADY: i32 = 278
+    const ROW_PAUSE1: i32 = 6
 
     // One impact of a round: when it lands, on whom, what the rules decided (3.3).
     struct Impact {
@@ -703,20 +704,15 @@ namespace fight {
         return 0
     }
 
-    // The digit the ready pose is drawn from. Ours: where the client's digit is 0 for a creature that
-    // is not a simple model (a stun baton in the left hand, a left hand alone), which ready row the
-    // client then plays was not traced; it stands as with the right hand's own weapon (or bare hands).
-    fn pose_stance { w: *world::World, c: *obj::Creature } -> i32 {
+    // The ready pose's animations.2da row. The client's table (0x0069f650, a full model's case for
+    // 10001) maps digits 1..9 to g<d>r1 (the repeating blaster's 9 to the rifle's g7r1) and has no
+    // case for 0, so a humanoid with digit 0 (a stun baton in the left hand, a left hand alone) asks
+    // for row 10001, which animations.2da lacks; the name lookup (0x0069e620) then falls back to
+    // 10000's row, 6 pause1. A simple model's 10001 is creadyr (278).
+    fn ready_row_of { w: *world::World, c: *obj::Creature } -> i32 {
         let s = stance{ w, c }
-        if s != 0 or is_beast{ w, c } { return s }
-        let right = wield_of{ w, item = c.equipped[obj::SLOT_RIGHT_WEAPON] }
-        if right == 0 { return 8 }
-        if right == 1 { return 1 }
-        if right == 2 { return 2 }
-        if right == 3 { return 3 }
-        if right == 4 { return 5 }
-        if right == 6 { return 9 }
-        return 7
+        if s == 0 and not is_beast{ w, c } { return ROW_PAUSE1 }
+        return ready_row{ s }
     }
 
     // GetBothWieldMelee (0x004d2b70), one side: a right-hand weapon that is not ranged and whose WeaponWield
@@ -1852,7 +1848,7 @@ namespace fight {
     }
 
     fn play_ready { mut w: world::World, o: *mut obj::Object, c: *obj::Creature } {
-        let row = ready_row{ s = pose_stance{ w = &w, c } }
+        let row = ready_row_of{ w = &w, c }
         if row_of_animation{ id = o.animation } == row { return }
         world::set_animation{ o, id = animname::ROW_BASE + @as(u32, row), speed = 1.0 }
     }
