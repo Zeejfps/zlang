@@ -25,6 +25,12 @@ namespace ingame {
 
     // MainLoop's step for the offer taken last (0x0062f4a0): marked shown, the box with its first page.
     fn update_tutorial { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device } {
+        // A box something else took down (a conversation's interface, a module change) is over, and its pause.
+        if ui.tbox.panel != 0 and gui::find_panel{ g = &ui.gui, id = ui.tbox.panel } == null {
+            if ui.tbox.paused_it { clock::set_pause{ c = &w.clock, bit = clock::PAUSE_PLAYER, on = false } }
+            ui.tbox = no_tutorial_box{}
+            ui.hud.tut.open = false
+        }
         let id = ui.hud.tut.pending
         if id < 0 { return }
         ui.hud.tut.pending = -1
