@@ -49,8 +49,24 @@ namespace test_combat {
             _ = @fmt(&w.io, "clicktag {}: not shown\n", tag)
             return true
         }
+        if ci::eq{ a = cmd, b = "slotpick" } {
+            // Test setup: `ui slotpick K ID` selects the target slot K's choice whose id (a feat, a power) is ID,
+            // as its arrows would, so a click on BTN_TARGETK uses it.
+            let mut words = text::words{ s = args }
+            let k = @as(usize, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+            let id = @as(i32, text::scan_decimal{ s = text::next_word{ &words } ifnull "0" })
+            if k >= 3 { return true }
+            let l = &ui.hud.lists[k]
+            let mut e: usize = 0
+            while e < l.count {
+                if l.entries[e].id == id { l.selected = e }
+                e = e + 1
+            }
+            hud::refresh_slot{ h = &ui.hud, g = &ui.gui, &w, &dev, k }
+            return true
+        }
         if ci::eq{ a = cmd, b = "fight" } {
-            print_fight{ ui = &ui, &w }
+            print_fight{ &ui, &w }
             return true
         }
         if ci::eq{ a = cmd, b = "acts" } {
@@ -189,7 +205,7 @@ namespace test_combat {
         _ = @fmt(&w.io, "click {} {}\n", wx, wy)
     }
 
-    fn print_fight { ui: *ingame::Ingame, mut w: world::World } {
+    fn print_fight { mut ui: ingame::Ingame, mut w: world::World } {
         let leader = party::leader{ w = &w }
         let o = world::object{ w = &w, id = leader } ifnull { return }
         let c = obj::creature{ o } ifnull { return }
@@ -207,6 +223,17 @@ namespace test_combat {
             _ = @fmt(&w.io, " {}:{}", @as(u32, q[i].kind), actions::int_param{ a = &q[i], i = 2 })
             i = i + 1
         }
+        // The orders waiting on the scheduled list and the queue's icons the combat bar shows (LBL_QUEUE0..3).
+        let mut icons: usize = 0
+        let mut buf: [16]u8
+        let mut n: usize = 0
+        while n < 4 {
+            if gui::find_control{ g = &ui.gui, panel = ui.hud.panel, tag = hud::tag_n{ into = buf[..], prefix = "LBL_QUEUE", n } } is some{ value = qc } {
+                if qc.flags & gui::F_VISIBLE != 0 and ui.hud.combat { icons = icons + 1 }
+            }
+            n = n + 1
+        }
+        _ = @fmt(&w.io, " waiting {} icons {}", hud::pending_fights{ w = &w, leader }, icons)
         _ = @fmt(&w.io, " block")
         let mut k: usize = 0
         while k < 3 {

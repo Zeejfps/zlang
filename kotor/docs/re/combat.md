@@ -267,7 +267,11 @@ WeaponWield, `+0x09` WeaponType, `+0x0c` DamageFlags, `+0x18` ModelType, `+0x1a`
    family (8, 19, 81) rows 87/113/154/195; Flurry family (11, 53, 91) 88/114/155/196; Power
    Attack family (28, 17, 83) 87/115/156/197; Force Jump (101-103) 386/387/388 (`f<d>a4`, none
    for digit 1). A cutscene attack plays the forced animation it carries (node parameter 7).
-   (high for the table; the meaning of each stance digit is not traced to its writer)
+   A ranged attack takes its row from `0x00614110` instead (4.5, "Animations"). The stance digit
+   is the byte `+0xc5` of the client creature's animation data, written by `0x00613710` from the
+   hands' baseitems WeaponWield: both hands empty 8; right hand only: 1 → 1, 2 → 2, 3 → 3, 4 → 5,
+   5 → 7, 6 → 9 (repeating blasters), else 0; both hands: the **left** item's WeaponWield 2 → 4,
+   4 → 6, else 0; left hand only 0. (high)
 5. **Start.** Not engageable: `StartCombatRound(target, bEngaged = 0, bMaster = 0)` on the attacker
    alone (every run of the action restarts the round; the dispatcher 0x3f keeps a second attack
    from being started in the same round). Engageable and master: `StartCombatRound(target, 1, 1)`
@@ -763,6 +767,42 @@ not immune (`0x005a6a90`) and fails the save (`SavingThrowRoll` `0x005b92b0`, ty
 Rapid Shot effects come from `0x005ba8e0` (melee) and `0x005ba540` (ranged); damage bonuses from
 `GetSpecialAttackDamageBonus` `0x005a4fb0`. The feat descriptions (feat.2da DESCRIPTION: strrefs
 1133–1155, 1177, 1189, 1251–1253, 1261–1262) describe the same numbers. (high)
+
+The feat reaches the round in two places. `StartCombatRound` gets the action's feat (parameter 6) and
+counts the extra attack from it whatever the attacker holds; the attack record's AttackType, which
+everything else reads (to-hit, damage, threat, the special-attack step, the animation), is set
+afterwards only when the node is a feat attack (type 0xb) or a Force jump, `+0x8e0` is 0 and the
+right-hand slot (0x10) holds an item (`AIActionAttackObject`, after the `StartCombatRound` calls).
+So an unarmed Flurry makes two plain attacks. The defense penalty is applied to the attacker at once
+by the special-attack step (`ApplyEffect` on itself), as the round's first attack is resolved, so its
+3 s run from the start of the round; the stun goes into the record's on-impact list and lands with
+the blow. (high)
+
+**Animations.** The client picks the attack row from the record's AttackType and the stance digit
+(3.1 step 4). Melee (`0x00613da0`, any feat, a creature that is not a simple model; digits 1–4 only,
+other digits give row 0, which never happens since only a right-hand weapon carries the feat):
+
+| Feats | 1 stun baton | 2 one weapon | 3 two-handed / double | 4 two weapons |
+|---|---|---|---|---|
+| Critical Strike 8, 19, 81 | 87 `g1a1` | 113 `f2a1` | 154 `f3a1` | 195 `f4a1` |
+| Flurry 11, 91, 53 | 88 `g1a2` | 114 `f2a2` | 155 `f3a2` | 196 `f4a2` |
+| Power Attack 28, 17, 83 | 87 `g1a1` | 115 `f2a3` | 156 `f3a3` | 197 `f4a3` |
+| Force Jump 101–103 | — | 386 | 387 | 388 |
+
+Ranged (`0x00614110`, reached from `ResolveRangedAttack` through `0x005edcc0` / `0x005f33f0`, for
+every shot, with or without a feat; "simple" is a creature model):
+
+| Feats | simple | 5 pistol | 6 two pistols | 7 rifle | 9 repeating blaster |
+|---|---|---|---|---|---|
+| none | 288 `b0a1` | 217 `b5a1` | 231 `b6a1` | 239 `b7a1` | 352 `b9a1` |
+| Rapid Shot 30, 92, Multi Shot 26 | 289 `b0a2` | 218 `b5a2` | 232 `b6a2` | 240 `b7a2` | 353 `b9a2` |
+| Sniper Shot 31, 20, 77 | 351 `b0a3` | 219 `b5a3` | 233 `b6a3` | 241 `b7a3` | 354 `g9a3` |
+| Power Blast 29, 18, 82 | 361 `b0a4` | 362 `b5a4` | 363 `b6a4` | 364 `b7a4` | 365 `b9a4` |
+
+A plain shot is always `b<d>a1`. The rows are those of `animations.2da`; the shot times come from the
+row's `weapondischarge.2da` entry, so Rapid Shot's animation also spreads its two attacks over its
+own shots. The models have `b9a1`..`b9a4` and a `g9r1` ready pose, which has no `animations.2da` row.
+(high for both tables)
 
 ### 4.6 Deflecting blaster bolts
 

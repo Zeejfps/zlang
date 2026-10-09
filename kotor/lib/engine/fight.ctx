@@ -677,10 +677,12 @@ namespace fight {
         return (twoda::get_int{ t = w.tables.baseitems, row = @as(usize, it.base), column = "rangedweapon" } ifnull 0) != 0
     }
 
-    // The creature's combat stance (the digit of the animation names, models-usage.md; ours where
-    // the client's choice was not read, combat.md 12): 0 a creature model, 1 stun baton, 2 one
-    // melee weapon, 3 two-handed or double, 4 two melee weapons, 5 pistol, 6 two pistols, 7 rifle
-    // or heavy weapon, 8 bare hands.
+    // The creature's combat stance, the digit of the animation names (the client's 0x00613710, from
+    // the hands' baseitems WeaponWield): 0 a creature model, 1 stun baton, 2 one melee weapon, 3
+    // two-handed or double, 4 two melee weapons, 5 pistol, 6 two pistols, 7 rifle, 9 repeating
+    // blaster (WeaponWield 6), 8 bare hands. Ours: a left-hand item with an empty right hand, or a
+    // left hand other than a one-handed weapon or a pistol, keeps the right hand's digit (the client
+    // gives 0).
     fn stance { w: *world::World, c: *obj::Creature } -> i32 {
         if is_beast{ w, c } { return 0 }
         let right = wield_of{ w, item = c.equipped[obj::SLOT_RIGHT_WEAPON] }
@@ -690,15 +692,17 @@ namespace fight {
         if right == 2 { return if left == 2 or left == 1 { 4 } else { 2 } }
         if right == 3 { return 3 }
         if right == 4 { return if left == 4 { 6 } else { 5 } }
+        if right == 6 { return 9 }
         return 7
     }
 
-    fn is_ranged_stance { s: i32 } -> bool { return s >= 5 and s <= 7 }
+    fn is_ranged_stance { s: i32 } -> bool { return (s >= 5 and s <= 7) or s == 9 }
 
     // The ready stance of a stance (g<n>r1, creadyr).
     fn ready_row { s: i32 } -> i32 {
         if s == 0 { return ROW_CREADY }
-        let rows: [9]i32 = [278, 92, 133, 174, 215, 223, 237, 245, 249]
+        // Ours: animations.2da has no row for the repeating blaster's g9r1; it stands as with a rifle.
+        let rows: [10]i32 = [278, 92, 133, 174, 215, 223, 237, 245, 249, 245]
         return rows[@as(usize, s)]
     }
 
@@ -707,17 +711,50 @@ namespace fight {
     fn attack_row { mut w: world::World, s: i32, duel: bool, monster: bool, ranged_beast: bool, variant: i32 } -> i32 {
         let pick = world::random{ &w }
         if s == 0 {
-            if ranged_beast { return if pick % 2 == 0 { 288 } else { 289 } }
+            if ranged_beast { return ranged_row{ s, feat = 0 } }
             return if pick % 2 == 0 { 276 } else { 277 }
         }
         if s == 1 { return if pick % 2 == 0 { 87 } else { 88 } }
         if s == 2 { return if duel { 94 + variant } else if monster { 125 + @as(i32, pick % 2) } else if pick % 2 == 0 { 122 } else { 123 } }
         if s == 3 { return if duel { 135 + variant } else if monster { 166 + @as(i32, pick % 2) } else if pick % 2 == 0 { 163 } else { 164 } }
         if s == 4 { return if duel { 176 + variant } else if monster { 207 + @as(i32, pick % 2) } else if pick % 2 == 0 { 204 } else { 205 } }
-        if s == 5 { return if pick % 2 == 0 { 217 } else { 218 } }
-        if s == 6 { return if pick % 2 == 0 { 231 } else { 232 } }
-        if s == 7 { return if pick % 2 == 0 { 239 } else { 240 } }
+        if is_ranged_stance{ s } { return ranged_row{ s, feat = 0 } }
         return if pick % 2 == 0 { 247 } else { 248 }
+    }
+
+    // A shot's animation (the client's 0x00614110, by the attack record's combat feat and the
+    // stance): b<d>a1 plain, b<d>a2 the Rapid Shot line, b<d>a3 Sniper Shot, b<d>a4 Power Blast
+    // (b0.. for a creature model). A plain shot is always a1: a2 is Rapid Shot's.
+    fn ranged_row { s: i32, feat: i32 } -> i32 {
+        let k: usize = if feat == 26 or feat == 92 or feat == 30 { 1 } else if feat == 77 or feat == 20 or feat == 31 { 2 } else if feat == 82 or feat == 18 or feat == 29 { 3 } else { 0 }
+        let simple: [4]i32 = [288, 289, 351, 361]
+        let pistol: [4]i32 = [217, 218, 219, 362]
+        let pistols: [4]i32 = [231, 232, 233, 363]
+        let rifle: [4]i32 = [239, 240, 241, 364]
+        let repeater: [4]i32 = [352, 353, 354, 365]
+        if s == 5 { return pistol[k] }
+        if s == 6 { return pistols[k] }
+        if s == 7 { return rifle[k] }
+        if s == 9 { return repeater[k] }
+        return simple[k]
+    }
+
+    // A melee combat feat's attack animation (the client's 0x00613da0 with a feat, for a creature
+    // that is not a creature model): by stance 1..4, f<d>a1 for Critical Strike, f<d>a2 Flurry,
+    // f<d>a3 Power Attack (the stun baton's g1a1 / g1a2), f<d>a4 Force Jump (no stun-baton one);
+    // NO_ROW for none, where the plain attack plays.
+    fn melee_feat_row { s: i32, feat: i32 } -> i32 {
+        if s < 1 or s > 4 { return NO_ROW }
+        let i = @as(usize, s - 1)
+        let critical: [4]i32 = [87, 113, 154, 195]
+        let flurry: [4]i32 = [88, 114, 155, 196]
+        let power: [4]i32 = [87, 115, 156, 197]
+        let jump: [4]i32 = [NO_ROW, 386, 387, 388]
+        if feat == 81 or feat == 19 or feat == 8 { return critical[i] }
+        if feat == 53 or feat == 91 or feat == 11 { return flurry[i] }
+        if feat == 83 or feat == 17 or feat == 28 { return power[i] }
+        if feat == 103 or feat == 102 or feat == 101 { return jump[i] }
+        return NO_ROW
     }
 
     // The client picks a duel attack at random among five, never the one it picked last
@@ -1001,6 +1038,10 @@ namespace fight {
             if f.round.started { return actions::Status::running }
             if actions::int_param{ a, i = 1 } != 0 { return actions::Status::failed }
             if a.phase >= 40 { return actions::Status::failed }
+            // The order taken off the scheduled list (AddAttackActions' direct path) signals the
+            // attacker with itself before it walks up: in combat from now on, so the player's further
+            // clicks queue behind it rather than clear it.
+            if a.phase == 0 { enter_combat{ &w, id, other = id } }
             // Approach: a move in front of a copy of this action (actions.md 3.13).
             let mut copy = a.*
             copy.phase = a.phase + 1
@@ -1093,7 +1134,17 @@ namespace fight {
         let duel = engaged and not ranged and both_melee
         let monster = engaged and not ranged and ts == 0 and s >= 2 and s <= 4
         let variant = if duel and not forced.on { duel_variant{ &w, last = f.duel_last } } else { 0 }
-        let row = if forced.on { forced.animation } else { attack_row{ &w, s, duel, monster, ranged_beast = ranged and s == 0, variant } }
+        // A combat feat sets the attack record's AttackType only for an attacker with a weapon in its
+        // right hand (AIActionAttackObject, 3.1 step 6), and the client then plays the feat's own
+        // animation in place of the general, duel or monster one.
+        let attack_type = if feat > 0 and c.equipped[obj::SLOT_RIGHT_WEAPON] != obj::INVALID and rules::has_feat{ c = &f.c, feat } { feat } else { 0 }
+        let mut row = if forced.on { forced.animation } else { attack_row{ &w, s, duel, monster, ranged_beast = ranged and s == 0, variant } }
+        if not forced.on and attack_type > 0 {
+            if ranged { row = ranged_row{ s, feat = attack_type } } else if s != 0 {
+                let fr = melee_feat_row{ s, feat = attack_type }
+                if fr != NO_ROW { row = fr }
+            }
+        }
         if duel and not forced.on { f.duel_last = variant }
         if forced.on { f.ready_ms = CUTSCENE_READY_MS }
         f.round.anim_row = row
@@ -1232,8 +1283,28 @@ namespace fight {
                 imp.damage = res.damage
                 imp.stun_tried = res.stun_tried
                 imp.stun_save = res.stun_save
-                imp.nfx = res.effects.len
-                imp.fx = res.effects.items
+                // The special-attack step puts its penalty on the attacker at once (ApplyEffect in
+                // ResolveMeleeSpecialAttack 0x005ba8e0 / ResolveRangedSpecialAttack 0x005ba540), so
+                // its 3 s run from the round's start; only the target's effects (the stun) wait for
+                // the impact.
+                let mut kept = res.effects
+                kept.len = 0
+                let mut e: i32 = 0
+                while e < res.effects.len {
+                    let ce = res.effects.items[@as(usize, e)]
+                    e = e + 1
+                    if not ce.to_attacker {
+                        rules::combat_push_effect{ out = &kept, to_attacker = false, e = ce.effect }
+                        continue
+                    }
+                    _ = apply{ &w, target = id, e = ce.effect }
+                    if w.log.combat {
+                        world::prefix{ w = &w }
+                        _ = @fmt(&w.io, "  feat {} on {}: defense -{} for 3 s\n", res.roll.combat_feat, id, rules::combat_get_self_penalty{ feat = res.roll.combat_feat, ranged = res.roll.ranged })
+                    }
+                }
+                imp.nfx = kept.len
+                imp.fx = kept.items
                 // The target's reaction (3.3): damage on a hit, else a parry (melee) or a dodge. It
                 // is played only paired with an engaged attack, as the attack begins (below).
                 let column: []u8 = if res.hit { "damage" } else if ranged { "dodge" } else { "parry" }
@@ -1243,7 +1314,8 @@ namespace fight {
                 c.last_attack_result = res.roll.result
                 if w.log.combat {
                     world::prefix{ w = &w }
-                    _ = @fmt(&w.io, "  attack {}: d20 {} total {} vs {} result {} damage {} at {} ms\n", attack, res.roll.d20, res.roll.attack_total, res.roll.attack_total + res.roll.missed_by, res.roll.result, res.damage.total, times[k])
+                    _ = @fmt(&w.io, "  attack {}: d20 {} total {} vs {} result {} damage {} at {} ms feat {} threat {} special {} bonus {} stun {} {}\n", attack, res.roll.d20, res.roll.attack_total, res.roll.attack_total + res.roll.missed_by, res.roll.result, res.damage.total, times[k],
+                        res.roll.combat_feat, res.roll.threat_range, rules::combat_get_special_modifier{ feat = res.roll.combat_feat }, res.damage.special_bonus, res.stun_tried, res.stun_save.result)
                 }
             }
             f.round.impacts[k] = imp

@@ -436,9 +436,16 @@ namespace hud {
         let l = default_actions{ w = &w, id = w.target }
         if l.count == 0 { return false }
         note_door_action{ &h, w = &w, act = l.entries[0].act, target = w.target }
-        run_act{ &w, act = l.entries[0].act, target = w.target, item = l.entries[0].item, spell = l.entries[0].id, queue = false }
+        run_act{ &w, act = l.entries[0].act, target = w.target, item = l.entries[0].item, spell = l.entries[0].id, queue = adds_to_queue{ act = l.entries[0].act } }
         return true
     }
+
+    // Whether a default action goes behind the leader's waiting orders. The attack on a foe
+    // (DefaultActionAttack 0x00616800) clears nothing on the client and the server puts it on the
+    // scheduled list, in combat mode or not, so each second click or R adds one more attack (up to
+    // four waiting); the other default actions (open, talk, use, bash: DefaultActionBash 0x00683e90
+    // cancels the server's actions first) replace what the leader was doing.
+    fn adds_to_queue { act: Act } -> bool { return act == Act::attack }
 
     // The player's open (of a closed door), unlock or bash of a door opens a 5 s window in which an
     // auto-pause request waits a second before it is made (0x005f4100, from CSWCDoor's DefaultActionOpen,
@@ -525,7 +532,7 @@ namespace hud {
             if l.count > 0 {
                 gui::play_sound{ &g, n = 6 }
                 note_door_action{ &h, w = &w, act = l.entries[0].act, target = id }
-                run_act{ &w, act = l.entries[0].act, target = id, item = l.entries[0].item, spell = l.entries[0].id, queue = false }
+                run_act{ &w, act = l.entries[0].act, target = id, item = l.entries[0].item, spell = l.entries[0].id, queue = adds_to_queue{ act = l.entries[0].act } }
             }
         } else {
             w.target = id

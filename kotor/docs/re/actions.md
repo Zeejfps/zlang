@@ -1145,6 +1145,33 @@ ITEMCASTSPELL straight away. Their helpers (`AddAttackActions` `0x004fde40`, `Ad
 - *Direct*: the real action plus its approach steps are queued, at the head when the caller asks
   (as 0x3f does).
 
+**The player's attack orders and the queue** (high unless marked). Every attack the player gives
+reaches the server as the input message (6,2) with the feat (0 for a plain attack), and the server
+calls `AddAttackActions(target, feat, 1, bPassive 0, bClearFirst 0, front 0, direct 0)`
+(`0x005254c0`, case 2): the scheduled path, which never clears the scheduled list. So:
+
+- the scheduled list holds at most **four waiting orders**: `InsertScheduledAction` frees a fifth.
+  The order under way (popped by 0x3f and turned into a real ATTACKOBJECT, walking up or in its
+  round) is no longer on the list, so the leader can have one attack under way and four waiting;
+- out of the combat state (`+0x4e0` = 0) the server's `ClearAllActions(1)` empties the action queue
+  (an approach, a walk, the 0x3f node, which it adds again) but not the scheduled list. The first
+  0x3f run puts the leader in combat (the direct `AddAttackActions` signals it with itself), so from
+  then on each order only adds;
+- **a second click on a hostile target, or R** (`DefaultActionAttack` `0x00616800`: tutorials,
+  `SetCombatMode(1)`, the message) clears nothing on the client: each one adds an attack, in combat
+  mode or not, and a click on the creature already being attacked adds one more round on it. A
+  first click on another object only makes it the target (`OnWorldClick`, movement.md 7.4);
+- **the target block** (`UseAction` `0x00689610`, keys 1–3, the slot buttons): when the leader is
+  not in combat mode it first empties the leader's scheduled list (`0x0063d490` →
+  `ClearScheduledActions`) and so replaces; in combat mode it only adds. With Shift held
+  (`g_bAlternateActionsHeld`) `OnActionButton` (`0x0068b970`) first runs `ClearAllCombatActions`
+  (combat mode off, the server actions cancelled), so the choice replaces;
+- the input handler then stores the target in `+0x510` when it is not the current attempted attack
+  target `+0x50c`; only the end-of-round continuation (`0x005b6980`) clears it, when it schedules
+  that same target. `GetCanEngage` reads it for a target that is the leader (combat.md 3.1);
+- the bar (`UpdateCombatQueue`) shows the order under way and then the waiting ones, at most four
+  icons; Clear Combat Action drops the last waiting one.
+
 Entry types (byte at entry `+0x10`, [combat.md](combat.md) "Scheduled combat actions"): 1 attack
 and 0xb feat attack (feat at `+0x5c`; `0x004d38b0`; cutscene attacks `0x004d3810` are type 1, mark
 `+0x74` and carry animation `+0x78`, attack result `+0x7c` and damage `+0x80`), 6 / 7 equip /

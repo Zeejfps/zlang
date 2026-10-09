@@ -1,0 +1,26 @@
+20 ui heal
+21 ui sethp pc 400
+30 ui foe g_sithtroop01 6 -3
+31 cam toward g_sithtroop01
+32 ui sethp g_sithtroop01 400
+40 ui target g_sithtroop01
+42 ui clickon g_sithtroop01
+44 ui fight
+45 ui clickon g_sithtroop01
+47 ui fight
+48 ui clickon g_sithtroop01
+50 ui fight
+51 ui clickon g_sithtroop01
+53 ui fight
+54 ui clickon g_sithtroop01
+56 ui fight
+57 ui clickon g_sithtroop01
+59 ui fight
+60 ui clicktag BTN_CLEARALL
+63 ui fight
+64 ui clicktag BTN_TARGET0
+67 ui fight
+68 ui clicktag BTN_TARGET0
+70 ui fight
+71 ui key r
+73 ui fight

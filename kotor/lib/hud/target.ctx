@@ -492,7 +492,8 @@ namespace hud {
     //
     // `queue` adds the order behind the leader's others instead of replacing them: the slot keys and buttons
     // in combat mode queue, and Shift makes them replace (UseSelfAction 0x0068ad60, OnActionButton
-    // 0x0068b970); out of combat an order replaces what the leader was doing.
+    // 0x0068b970); out of combat mode a slot's order replaces what the leader was doing. A click on a
+    // foe and R always queue their attack (make_room_to_fight).
     //
     // The fighting choices (attack, a combat feat, a Force power, a grenade) put the leader in combat mode at
     // once, paused or not (their callbacks 0x00616900, 0x00617dd0, 0x00616200, 0x006167d0 / 0x00617e40 and
@@ -563,26 +564,71 @@ namespace hud {
         return leader_in_combat_mode{ w } and not h.alternate
     }
 
-    // The fighting orders waiting in the leader's queue (attacks and casts).
+    // The fighting orders waiting in the leader's queue (attacks and casts): the original's scheduled
+    // list (round +0x9b0). The order being carried out (an attack walking up, a cast under way: its
+    // phase is past 0) was taken off that list by the dispatcher 0x3f and is not counted.
     fn pending_fights { w: *world::World, leader: u32 } -> usize {
         let o = world::object{ w, id = leader } ifnull { return 0 }
         let q = list::items{ list = o.actions }
         let mut n: usize = 0
         let mut i: usize = 0
         while i < q.len {
-            if q[i].kind == actions::Kind::attack_object or q[i].kind == actions::Kind::cast_spell { n = n + 1 }
+            if is_waiting_fight{ a = &q[i] } { n = n + 1 }
             i = i + 1
         }
         return n
     }
 
-    // A fighting order (AddAttackActions' scheduled path, actions.md 3.13): one that replaces clears
-    // what the leader was doing; one that queues waits behind the round in progress and the orders
-    // before it, and is refused when four already wait. True when the order may be added.
+    fn is_waiting_fight { a: *actions::Action } -> bool {
+        return (a.kind == actions::Kind::attack_object or a.kind == actions::Kind::cast_spell) and a.phase == 0
+    }
+
+    // ClearAllActions(1) from AddAttackActions' scheduled path: the leader's actions go, the order
+    // under way among them, but the waiting fighting orders (the scheduled list) stay.
+    fn clear_but_waiting_fights { mut w: world::World, leader: u32 } {
+        let o = world::object{ w = &w, id = leader } ifnull { return }
+        if pending_fights{ w = &w, leader } == 0 {
+            actions::clear_for_player{ &w, id = leader }
+            return
+        }
+        if not o.commandable { return }
+        let q = list::items{ list = o.actions }
+        let mut keep: usize = 0
+        let mut i: usize = 0
+        while i < q.len {
+            let a = q[i]
+            i = i + 1
+            if is_waiting_fight{ a = &a } {
+                q[keep] = a
+                keep = keep + 1
+            } else {
+                actions::free_params{ &w, a }
+            }
+        }
+        o.actions.len = keep
+        if obj::creature{ o } is some{ value = c } {
+            if c.moving {
+                movement::stop{ &w, id = leader }
+                world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
+            }
+        }
+    }
+
+    // Room for a fighting order (AddAttackActions' scheduled path, actions.md 3.13). An order that
+    // replaces (the target block out of combat mode, or with Shift: UseAction empties the scheduled
+    // list first, 0x0063d490) clears what the leader was doing. Every order then goes on the
+    // scheduled list, which takes at most four waiting orders (InsertScheduledAction 0x004d3660
+    // drops a fifth); and while the leader is out of the combat state (+0x4e0) the server clears its
+    // actions but not that list. So a click on a foe (DefaultActionAttack 0x00616800), R and the
+    // block in combat mode each add one more attack. True when the order may be added.
     fn make_room_to_fight { mut w: world::World, leader: u32, queue: bool } -> bool {
-        if queue { return pending_fights{ w = &w, leader } < 4 }
-        actions::clear_for_player{ &w, id = leader }
-        return true
+        if not queue {
+            actions::clear_for_player{ &w, id = leader }
+            return true
+        }
+        let c = creature_of{ w = &w, id = leader } ifnull { return false }
+        if not c.in_combat { clear_but_waiting_fights{ &w, leader } }
+        return pending_fights{ w = &w, leader } < 4
     }
 
     // ---- the target block's attack slot

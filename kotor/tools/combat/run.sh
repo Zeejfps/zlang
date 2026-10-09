@@ -18,6 +18,7 @@
 #   provoke1  uppercity  600   a dark Jedi turned hostile with a buff on itself as its first order attacks once the buff is cast
 #   engage1   uppercity  620   paused after an enemy is sighted, the block's attack puts the leader in combat mode at once
 #                              (checked by engage.sh)
+#   queue1    uppercity  120   six clicks on a foe, Disengage, the block's slot twice and R: the queue (checked by queue.sh)
 export PATH=/g/Dev/msys64/mingw64/bin:$PATH
 cp=$1; name=$2; frames=$3; shift 3
 mkdir -p kotor/out/combat

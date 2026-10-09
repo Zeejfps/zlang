@@ -2,7 +2,7 @@
 // input script does not know (lib/ingame/script.ctx) come here. The player of end_m01aa carries
 // almost nothing, so these fill the leader's hands and bag to show a full panel.
 //
-//   FRAME ui giveitem RESREF [COUNT] [equip]   a UTI template into the leader's inventory (a stack
+//   FRAME ui giveitem RESREF [COUNT] [equip | left]   a UTI template into the leader's inventory (a stack
 //                                              of COUNT); `equip` puts it on in the first slot it fits
 //   FRAME ui stock                              a spread of weapons, armour, gear, medpacs and grenades
 //                                              (one blaster pistol and a suit of armour are put on)
@@ -32,16 +32,17 @@ namespace test_items {
             let name = text::next_word{ &words } ifnull { return true }
             let mut count: i32 = 1
             let mut equip = false
+            let mut left = false
             while true {
                 let word = text::next_word{ &words } ifnull { break }
-                if ci::eq{ a = word, b = "equip" } { equip = true } else { count = @as(i32, text::scan_decimal{ s = word }) }
+                if ci::eq{ a = word, b = "equip" } { equip = true } else if ci::eq{ a = word, b = "left" } { left = true } else { count = @as(i32, text::scan_decimal{ s = word }) }
             }
-            give{ &w, leader, name, count, equip }
+            give{ &w, leader, name, count, equip, left }
         } else if ci::eq{ a = cmd, b = "stock" } {
             let mut k: usize = 0
             while k < STOCK.len {
                 let stack: i32 = if k == 16 or k == 17 { 5 } else if k == 18 { 4 } else { 1 }
-                give{ &w, leader, name = STOCK[k], count = stack, equip = k == 0 or k == 8 }
+                give{ &w, leader, name = STOCK[k], count = stack, equip = k == 0 or k == 8, left = false }
                 k = k + 1
             }
         } else if ci::eq{ a = cmd, b = "nobag" } {
@@ -187,13 +188,18 @@ namespace test_items {
     }
 
     // One template into the leader's bag, and on when asked.
-    fn give { mut w: world::World, leader: u32, name: []u8, count: i32, equip: bool } {
+    fn give { mut w: world::World, leader: u32, name: []u8, count: i32, equip: bool, left: bool } {
         let id = rt_item::create_item{ &w, template = name, target = items::bag_holder{ w = &w, who = leader }, stack = count }
         if id == obj::INVALID {
             _ = @fmt(&w.io, "giveitem {}: nothing made\n", name)
             return
         }
         xfer::mark_new{ &w, item = id }
+        if left {
+            // `left`: into the left hand (a second weapon).
+            _ = items::equip{ &w, who = leader, item = id, index = obj::SLOT_LEFT_WEAPON }
+            return
+        }
         if not equip { return }
         let mask = items::equipable_slots{ w = &w, id }
         let mut index: usize = 0
