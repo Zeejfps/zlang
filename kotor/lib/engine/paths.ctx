@@ -1,10 +1,10 @@
-// Path planning for server-side moves (docs/re/movement.md 4.3-4.7), simplified: the straight
-// walk when it is clear; otherwise the area's PTH graph from the path point nearest the start
-// (reachable in a straight walk) to the one nearest the goal, searched with A* (ours: the
-// original's iterative-deepening depth-first search finds the same kind of route) over the edges that
-// no placeable stands on, then string pulling (skip route points while the straight walk past them is
-// clear). Without PTH points or a route, the farthest clear point along the straight line (the
-// original's fallback, 4.3 step 6).
+// Path planning for server-side moves (docs/re/movement.md 4.3-4.7): the straight walk when it is clear;
+// otherwise, in an area with a PTH graph, the original's path-point planner (CSWSArea::PlotPathPointRoute
+// 0x004c2200): the path points nearest the start and the goal (the nearest
+// in a straight walk, up to 64 tried), the graph searched depth first with a deepening cost bound, then string pulling (skip route
+// points while the straight walk past them is clear; ours, in place of the original's three straightening passes and
+// corner rounding). Without PTH points or a route, the farthest clear point along the straight line (the original's
+// fallback, 4.3 step 6).
 namespace paths {
     // Whether a creature can walk straight from `a` to `b` on the walkmesh.
     fn clear { w: *world::World, a: math::Vec3, b: math::Vec3 } -> bool {
@@ -25,6 +25,7 @@ namespace paths {
     }
 
     const NO_Z: f32 = -1000000.0
+    const FAR: f32 = 1000000000.0
 
     // Whether the graph edge between points `a` and `b` runs into an active placeable. The points' heights
     // (a floor lookup each) are found once per route, in `zs`.
@@ -76,13 +77,10 @@ namespace paths {
         return null
     }
 
-    // A route from `from` to `goal` into `out` (the points to walk to, `goal` last); false when
-    // even the fallback has nowhere to go. Scratch memory for the search comes from w.scratch.
-    //
-    // A goal nobody can walk up to (the middle of a closed door, a placeable) is replaced by the nearest
-    // point toward `from` that a path point reaches, up to 3 m back (the original's nearest safe position,
-    // movement.md 4.8); `adjusted` says so, and the route then ends at that point.
-    fn plan { mut w: world::World, from: math::Vec3, goal: math::Vec3, out: *mut list::List(math::Vec3, heap::Heap), adjusted: *mut bool } -> bool {
+    // A route for creature `id` from `from` to `goal` into `out` (the points to walk to, the goal last); false when even
+    // the fallback has nowhere to go. Scratch memory for the search comes from w.scratch. `adjusted` says the route ends
+    // at another point than the goal asked for (one nearer the start, when nobody can walk up to the goal).
+    fn plan { mut w: world::World, id: u32, from: math::Vec3, goal: math::Vec3, out: *mut list::List(math::Vec3, heap::Heap), adjusted: *mut bool } -> bool {
         adjusted.* = false
         list::clear{ list = out }
         if clear{ w = &w, a = from, b = goal } {
@@ -91,7 +89,7 @@ namespace paths {
         }
         let g = w.paths
         if g != null and g.points.len > 0 {
-            if route{ &w, g, from, goal_asked = goal, out, adjusted } { return true }
+            if route{ &w, id, g, from, goal_asked = goal, out, adjusted } { return true }
         }
         // The farthest clear point along the straight line, by bisection.
         let mut lo: f32 = 0.0
@@ -108,12 +106,15 @@ namespace paths {
         return true
     }
 
-    fn route { mut w: world::World, g: pth::Graph, from: math::Vec3, goal_asked: math::Vec3, out: *mut list::List(math::Vec3, heap::Heap), adjusted: *mut bool } -> bool {
+    fn route { mut w: world::World, id: u32, g: pth::Graph, from: math::Vec3, goal_asked: math::Vec3, out: *mut list::List(math::Vec3, heap::Heap), adjusted: *mut bool } -> bool {
+        let start = from
         let mut goal = goal_asked
-        let s = nearest_point{ w = &w, g, at = from, goal = false } ifnull {
+        let s = nearest_point{ w = &w, g, at = start, goal = false } ifnull {
             if w.log.actions { _ = @fmt(&w.io, "route: no clear path point near the start ({} points)\n", g.points.len) }
             return false
         }
+        // A goal nobody can walk up to (the middle of a closed door, a placeable) is replaced by the nearest point
+        // toward the start that a path point reaches, up to 3 m back (ours, for the original's nearest safe spot).
         let mut t_found = nearest_point{ w = &w, g, at = goal, goal = true }
         if t_found == null {
             let dx = from.x - goal.x
@@ -136,84 +137,27 @@ namespace paths {
             }
         }
         let t = t_found ifnull {
-            if w.log.actions { _ = @fmt(&w.io, "route: no clear path point near the goal {} {} {} from {} {} {} ({} points)\n", goal.x, goal.y, goal.z, from.x, from.y, from.z, g.points.len) }
+            if w.log.actions { _ = @fmt(&w.io, "route: no clear path point near the goal {} {} {} from {} {} {} ({} points)\n", goal.x, goal.y, goal.z, start.x, start.y, start.z, g.points.len) }
             return false
         }
-        let n = g.points.len
-        let cost = alloc::resize(f32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(f32){}, count = n } iferr { return false }
-        let prev = alloc::resize(i32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(i32){}, count = n } iferr { return false }
-        let done = alloc::resize(bool, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(bool){}, count = n } iferr { return false }
-        let zs = alloc::resize(f32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(f32){}, count = n } iferr { return false }
-        let mut i: usize = 0
-        while i < n {
-            cost[i] = 1000000000.0
-            prev[i] = -1
-            done[i] = false
-            zs[i] = NO_Z
-            i = i + 1
-        }
-        cost[@as(usize, s)] = 0.0
-        let gp = g.points[@as(usize, t)]
-        while true {
-            // The open point with the least cost plus the straight distance to the goal.
-            let mut best: i32 = -1
-            let mut best_f: f32 = 1000000000.0
-            i = 0
-            while i < n {
-                if not done[i] and cost[i] < 1000000000.0 {
-                    let p = g.points[i]
-                    let h = math::sqrtf{ x = (p.x - gp.x) * (p.x - gp.x) + (p.y - gp.y) * (p.y - gp.y) }
-                    if cost[i] + h < best_f {
-                        best_f = cost[i] + h
-                        best = @as(i32, i)
-                    }
-                }
-                i = i + 1
-            }
-            if best < 0 { return false }
-            let b = @as(usize, best)
-            if b == @as(usize, t) { break }
-            done[b] = true
-            let links = pth::links_of{ g, point = @as(u32, b) }
-            let bp = g.points[b]
-            let mut k: usize = 0
-            while k < links.len {
-                let to = @as(usize, links[k])
-                k = k + 1
-                if to >= n or done[to] { continue }
-                let q = g.points[to]
-                let c = cost[b] + math::sqrtf{ x = (q.x - bp.x) * (q.x - bp.x) + (q.y - bp.y) * (q.y - bp.y) }
-                if c < cost[to] {
-                    // The graph was authored without the placeables a script creates later (Calo Nord's
-                    // landspeeders across the camp road): an edge one stands on is no way through. Asked only
-                    // of an edge that would improve the route. A closed door does not count (it is opened on
-                    // arrival).
-                    if walkmap::placeable_near{ m = &w.walk, ax = bp.x, ay = bp.y, bx = q.x, by = q.y } {
-                        if meets_placeable{ w = &w, g, zs, a = b, b = to, near_z = from.z } { continue }
-                    }
-                    cost[to] = c
-                    prev[to] = @as(i32, b)
-                }
-            }
-        }
-        // The route from s to t, reversed into order.
-        let mut chain: list::List(u32, arena::Arena) = list::new(u32, arena::Arena){ realloc = arena::alloc, heap = w.scratch }
-        let mut at: i32 = @as(i32, t)
-        while at >= 0 {
-            list::push{ list = &chain, item = @as(u32, at) } iferr { return false }
-            at = prev[@as(usize, at)]
+        let mut chain = list::new(u32, arena::Arena){ realloc = arena::alloc, heap = w.scratch }
+        if s == t {
+            list::push{ list = &chain, item = s } iferr { return false }
+        } else if not search{ &w, id, g, s, t, d = movement::distance_2d{ a = start, b = goal }, near_z = start.z, chain = &chain } {
+            if w.log.actions { _ = @fmt(&w.io, "route: no way through the path points from {} to {}\n", s, t) }
+            return false
         }
         let ids = list::items{ list = chain }
         let mut raw = list::new(math::Vec3, arena::Arena){ realloc = arena::alloc, heap = w.scratch }
-        let mut j = ids.len
-        while j > 0 {
-            j = j - 1
-            list::push{ list = &raw, item = point_at{ w = &w, g, i = ids[j], near_z = from.z } } iferr { return false }
+        let mut j: usize = 0
+        while j < ids.len {
+            list::push{ list = &raw, item = point_at{ w = &w, g, i = ids[j], near_z = start.z } } iferr { return false }
+            j = j + 1
         }
         list::push{ list = &raw, item = goal } iferr { return false }
         // String pulling: from where we are, go to the farthest point the straight walk reaches.
         let pts = list::items{ list = raw }
-        let mut here = from
+        let mut here = start
         let mut next: usize = 0
         while next < pts.len {
             let mut far = pts.len - 1
@@ -223,5 +167,132 @@ namespace paths {
             next = far + 1
         }
         return true
+    }
+
+    // The graph search between the path points `s` and `t` (state 4, CSWSArea::PathPointSearch 0x004c0b30): depth first
+    // from s, each branch cut when its cost so far plus the straight distance to t passes the bound, or when the point
+    // was reached before at no more cost (the visited table, kept from pass to pass); the bound is d/2 + 10 in the
+    // first pass (d the start-to-goal distance) and grows by d/4 a pass. A pass that expands 4096 points ends the
+    // search (the original runs out of planner calls); so does one that cut no branch for the bound, which a bigger
+    // bound cannot help (ours: the original tries again until its 100 calls are used). The route goes to `chain`.
+    const EXPANSIONS: u32 = 4096
+    const PASSES: u32 = 1000
+
+    struct Search {
+        g: pth::Graph,
+        goal: u32,
+        best_g: []mut f32,      // the visited table: the cost a point was reached at
+        best_left: []mut f32,   // and the bound left there
+        zs: []mut f32,
+        near_z: f32,
+        expanded: u32,
+        overflow: bool,
+        cut: bool,
+        mover: u32,
+    }
+
+    fn search { mut w: world::World, id: u32, g: pth::Graph, s: u32, t: u32, d: f32, near_z: f32, chain: *mut list::List(u32, arena::Arena) } -> bool {
+        let n = g.points.len
+        let best_g = alloc::resize(f32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(f32){}, count = n } iferr { return false }
+        let best_left = alloc::resize(f32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(f32){}, count = n } iferr { return false }
+        let zs = alloc::resize(f32, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(f32){}, count = n } iferr { return false }
+        let mut i: usize = 0
+        while i < n {
+            best_g[i] = FAR
+            best_left[i] = -FAR
+            zs[i] = NO_Z
+            i = i + 1
+        }
+        let mut st = Search{ g, goal = t, best_g, best_left, zs, near_z, expanded = 0, overflow = false, cut = false, mover = id }
+        // Ours: a start and goal on the same spot would not grow the bound.
+        let grow = math::max{ a = d * 0.25, b = 0.5 }
+        let mut bound = d * 0.25 + 10.0
+        let mut pass: u32 = 0
+        while pass < PASSES {
+            pass = pass + 1
+            bound = bound + grow
+            st.expanded = 0
+            st.overflow = false
+            st.cut = false
+            list::clear{ list = chain }
+            if expand{ &w, &st, node = s, cost = 0.0, left = bound, chain } { return true }
+            if st.overflow or not st.cut { return false }
+        }
+        return false
+    }
+
+    fn expand { mut w: world::World, mut st: Search, node: u32, cost: f32, left: f32, chain: *mut list::List(u32, arena::Arena) } -> bool {
+        list::push{ list = chain, item = node } iferr { return false }
+        let depth = chain.len
+        if node == st.goal { return true }
+        let p = st.g.points[@as(usize, node)]
+        let q = st.g.points[@as(usize, st.goal)]
+        let h = math::sqrtf{ x = (p.x - q.x) * (p.x - q.x) + (p.y - q.y) * (p.y - q.y) }
+        let k = @as(usize, node)
+        if h > left or (st.best_g[k] < FAR and (st.best_g[k] < cost or left <= st.best_left[k])) {
+            if h > left { st.cut = true }
+            chain.len = depth - 1
+            return false
+        }
+        st.expanded = st.expanded + 1
+        if st.expanded >= EXPANSIONS { st.overflow = true }
+        // The successors (GetPathPointSuccessors 0x004bdb00): each link not crossed by a placeable's walkmesh, its
+        // cost the link's length, or the dog-leg round a creature standing on it; nearest to the goal first.
+        let links = pth::links_of{ g = st.g, point = node }
+        let mut to: [32]u32
+        let mut price: [32]f32
+        let mut near: [32]f32
+        let mut count: usize = 0
+        let mut j: usize = 0
+        while j < links.len and count < 32 {
+            let b = links[j]
+            j = j + 1
+            if b == node or @as(usize, b) >= st.g.points.len { continue }
+            let pb = st.g.points[@as(usize, b)]
+            if walkmap::placeable_near{ m = &w.walk, ax = p.x, ay = p.y, bx = pb.x, by = pb.y } {
+                if meets_placeable{ w = &w, g = st.g, zs = st.zs, a = k, b = @as(usize, b), near_z = st.near_z } { continue }
+            }
+            let c = link_cost{ w = &w, mover = st.mover, a = p, b = pb, z = st.near_z }
+            let hb = math::sqrtf{ x = (pb.x - q.x) * (pb.x - q.x) + (pb.y - q.y) * (pb.y - q.y) }
+            // Insertion by the distance to the goal.
+            let mut at = count
+            while at > 0 and near[at - 1] > hb {
+                to[at] = to[at - 1]
+                price[at] = price[at - 1]
+                near[at] = near[at - 1]
+                at = at - 1
+            }
+            to[at] = b
+            price[at] = c
+            near[at] = hb
+            count = count + 1
+        }
+        st.best_g[k] = cost
+        st.best_left[k] = left
+        j = 0
+        while j < count and not st.overflow {
+            if expand{ &w, &st, node = to[j], cost = cost + price[j], left = left - price[j], chain } { return true }
+            j = j + 1
+        }
+        chain.len = depth - 1
+        return false
+    }
+
+    // A link's cost: its length, or, when a creature's circle is across it, the length of the dog-leg past that creature
+    // (both PERSPACEs out from its centre, to the link's left).
+    fn link_cost { w: *world::World, mover: u32, a: pth::Point, b: pth::Point, z: f32 } -> f32 {
+        let dx = b.x - a.x
+        let dy = b.y - a.y
+        let len = math::sqrtf{ x = dx * dx + dy * dy }
+        let o = world::object{ w, id = mover } ifnull { return len }
+        let c = obj::creature{ o } ifnull { return len }
+        let hit = crowd::first_blocker{ w, o, c, from = math::Vec3{ x = a.x, y = a.y, z }, to = math::Vec3{ x = b.x, y = b.y, z }, skip = obj::INVALID, skip2 = obj::INVALID, pushable = false } ifnull { return len }
+        let other = world::object{ w, id = hit.id } ifnull { return len }
+        let oc = obj::creature{ o = other } ifnull { return len }
+        if len < 0.000001 { return len }
+        let off = oc.perspace + c.perspace
+        let vx = other.position.x - dy / len * off
+        let vy = other.position.y + dx / len * off
+        return math::sqrtf{ x = (vx - a.x) * (vx - a.x) + (vy - a.y) * (vy - a.y) } + math::sqrtf{ x = (b.x - vx) * (b.x - vx) + (b.y - vy) * (b.y - vy) }
     }
 }

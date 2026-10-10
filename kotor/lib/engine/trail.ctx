@@ -187,8 +187,8 @@ namespace trail {
             return true
         }
         let slot = slot_of{ w = &w, id }
-        let lead = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return paths::plan{ &w, from, goal, out, adjusted } }
-        if slot == 0 or w.party.trail.leader != lead.id or w.party.trail.count == 0 { return paths::plan{ &w, from, goal, out, adjusted } }
+        let lead = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return paths::plan{ &w, id, from, goal, out, adjusted } }
+        if slot == 0 or w.party.trail.leader != lead.id or w.party.trail.count == 0 { return paths::plan{ &w, id, from, goal, out, adjusted } }
         let m = mark{ w = &w, lead, back = SLOT_DISTANCE * @as(f32, slot) }
         // The trail's places older than B, newest first: the first one in a straight walk is where it joins.
         let mut i = m.index
@@ -202,7 +202,7 @@ namespace trail {
                 break
             }
         }
-        if join == RECORDS { return paths::plan{ &w, from, goal, out, adjusted } }
+        if join == RECORDS { return paths::plan{ &w, id, from, goal, out, adjusted } }
         i = join
         while i < m.index {
             list::push{ list = out, item = w.party.trail.places[at{ t = &w.party.trail, i }] } iferr { return false }

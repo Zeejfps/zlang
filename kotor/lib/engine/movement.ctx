@@ -158,7 +158,7 @@ namespace movement {
             c.path_goal = goal
             c.blocked_steps = 0
             let planned = if follower { trail::route{ &w, id, from = o.position, goal, out = &c.path, adjusted = &c.path_adjusted } }
-                else { paths::plan{ &w, from = o.position, goal, out = &c.path, adjusted = &c.path_adjusted } }
+                else { paths::plan{ &w, id, from = o.position, goal, out = &c.path, adjusted = &c.path_adjusted } }
             if not planned {
                 if w.log.actions {
                     world::prefix{ w = &w }
