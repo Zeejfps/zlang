@@ -53,6 +53,7 @@ namespace frontend {
         desktop: render::DisplayMode,
         usable_w: i32, usable_h: i32,
         render_w: i32, render_h: i32,
+        max_samples: i32, max_anisotropy: f32,  // the device's limits: the Advanced panel offers the steps within them
         rows: [192]render::DisplayMode, row_count: usize,      // the rows the resolution list shows
         sound_pending: bool,
         play_request: [24]u8, play_len: usize,      // a movie the player picked in the movie list
@@ -93,7 +94,7 @@ namespace frontend {
             display_pending = false, sound_pending = true,
             modes = [render::DisplayMode{ width = 0, height = 0, refresh = 0 }; 192], mode_count = 0,
             desktop = render::DisplayMode{ width = 1920, height = 1080, refresh = 60 }, usable_w = 1920, usable_h = 1080,
-            render_w = 1280, render_h = 720,
+            render_w = 1280, render_h = 720, max_samples = 8, max_anisotropy = 16.0,
             rows = [render::DisplayMode{ width = 0, height = 0, refresh = 0 }; 192], row_count = 0,
             play_request = [0; 24], play_len = 0, start_module = [0; 16], start_len = 0,
             saves_dir = [0; 300], saves_dir_len = 0,
@@ -186,6 +187,8 @@ namespace frontend {
         fe.depth = fe.depth - 1
         if top.screen == SCR_LOAD or top.screen == SCR_SAVE { release_shot{ &fe, &dev } }
         if (top.screen >= SCR_OPTIONS and top.screen <= SCR_MOUSE and top.screen != SCR_RESOLUTION) or top.screen == SCR_GRAPHICS_FX { persist{ &fe, &fs } }
+        let under = fe.stack[fe.depth - 1]
+        if under.screen == SCR_GRAPHICS { sync_graphics{ &fe, &g, p = under.panel } iferr {} }
         gui::play_sound{ &g, n = 5 }
     }
 
@@ -242,6 +245,9 @@ namespace frontend {
             try show_choice{ &g, p, tag = "BTN_ANTIALIAS", which = CH_AA, v = s.antialias }
             try show_choice{ &g, p, tag = "BTN_TEXQUAL", which = CH_TEX, v = s.texture_quality }
             try show_choice{ &g, p, tag = "BTN_ANISOTROPY", which = CH_AF, v = s.anisotropy }
+            // Greyed when the driver has no step but Off, as the original's (0x006e0520).
+            enable_choice{ &g, p, tag = "BTN_ANTIALIAS", on = choice_count{ fe = &fe, which = CH_AA } > 1 }
+            enable_choice{ &g, p, tag = "BTN_ANISOTROPY", on = choice_count{ fe = &fe, which = CH_AF } > 1 }
         } else if screen == SCR_GRAPHICS_FX {
             try bind_enhanced{ &fe, &g, p }
         } else if screen == SCR_RESOLUTION {
@@ -274,16 +280,61 @@ namespace frontend {
     const CH_EAX: u32 = 3
     const CH_DIFF: u32 = 4
 
-    // The names a button cycles through (left and right arrows).
-    fn choice_count { which: u32 } -> i32 {
-        if which == CH_AA or which == CH_AF { return 4 }
+    // The steps of the anti-aliasing and anisotropy buttons, the original's: Off, 2, 4, 6, 8 samples (0x006e0520) and
+    // Off, 2x, 4x, 8x, 16x taps (0x006e06d0).
+    fn aa_samples { step: i32 } -> i32 {
+        return if step <= 0 { 0 } else if step == 1 { 2 } else if step == 2 { 4 } else if step == 3 { 6 } else { 8 }
+    }
+
+    fn aniso_taps { step: i32 } -> i32 {
+        return if step <= 0 { 1 } else if step == 1 { 2 } else if step == 2 { 4 } else if step == 3 { 8 } else { 16 }
+    }
+
+    fn set_device_limits { mut fe: Front, max_samples: i32, max_anisotropy: f32 } {
+        fe.max_samples = max_samples
+        fe.max_anisotropy = max_anisotropy
+    }
+
+    // How many steps a button cycles through (left and right arrows). The anti-aliasing and anisotropy buttons offer
+    // only the steps the driver has, as the original's lists hold only those (0x006e05e0, 0x006e06d0).
+    fn choice_count { fe: *Front, which: u32 } -> i32 {
+        if which == CH_AA {
+            let mut n: i32 = 1
+            while n < 5 and aa_samples{ step = n } <= fe.max_samples { n = n + 1 }
+            return n
+        }
+        if which == CH_AF {
+            let mut n: i32 = 1
+            while n < 5 and @as(f32, aniso_taps{ step = n }) <= fe.max_anisotropy { n = n + 1 }
+            return n
+        }
         if which == CH_TEX or which == CH_DIFF { return 3 }
         return 2
     }
 
+    // A choice button and its arrows (the files name them BTN_XLEFT, BTN_XRIGHT, or BTN_X_RIGHT) enabled or greyed.
+    fn enable_choice { mut g: gui::Gui, p: u32, tag: []u8, on: bool } {
+        gui::set_enabled{ &g, panel = p, tag, enabled = on }
+        let sides: [4][]u8 = ["LEFT", "RIGHT", "_LEFT", "_RIGHT"]
+        let mut name: [40]u8
+        let mut i: usize = 0
+        while i < 4 {
+            let n = tag.len + sides[i].len
+            if n <= name.len {
+                slice::copy(u8){ dst = name[..tag.len], src = tag }
+                slice::copy(u8){ dst = name[tag.len..n], src = sides[i] }
+                gui::set_enabled{ &g, panel = p, tag = name[..n], enabled = on }
+            }
+            i = i + 1
+        }
+    }
+
     fn choice_text { which: u32, v: i32 } -> []u8 {
-        if which == CH_AA or which == CH_AF {
-            return if v == 1 { "2x" } else if v == 2 { "4x" } else if v == 3 { "8x" } else { "Off" }
+        if which == CH_AA {
+            return if v == 1 { "2x" } else if v == 2 { "4x" } else if v == 3 { "6x" } else if v >= 4 { "8x" } else { "Off" }
+        }
+        if which == CH_AF {
+            return if v == 1 { "2x" } else if v == 2 { "4x" } else if v == 3 { "8x" } else if v >= 4 { "16x" } else { "Off" }
         }
         if which == CH_TEX { return if v == 0 { "Low" } else if v == 1 { "Medium" } else { "High" } }
         if which == CH_DIFF { return if v == 0 { "Easy" } else if v == 1 { "Normal" } else { "Hard" } }
@@ -370,6 +421,8 @@ namespace frontend {
         try gui::set_text{ &g, panel = p, tag = "BTN_RESOLUTION", text = resolution_text{ &fe, into = buf[..] } }
         try gui::set_text{ &g, panel = p, tag = "BTN_DISPLAYMODE", text = window_mode_text{ mode = fe.settings.window_mode } }
         try gui::set_text{ &g, panel = p, tag = "BTN_UISCALE", text = ui_scale_text{ &fe, into = buf[..] } }
+        // Soft Shadows on the Advanced panel may have switched Shadows on.
+        gui::set_checked{ &g, panel = p, tag = "CB_SHADOWS", on = fe.settings.shadows }
     }
 
     // The Graphics panel has the original's controls and three of ours (a display mode and a UI scale button, an

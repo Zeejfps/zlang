@@ -14,8 +14,8 @@ namespace frontend {
         gamma: i32,                 // Brightness: 0..100, the brightness slider (57 leaves the picture as it is)
         shadows: bool, soft_shadows: bool, grass: bool, frame_buffer: bool,
         emitters: bool,             // Emitters: particle effects (in the original's strings, not on its panels)
-        anisotropy: i32,            // 0 off .. 3 (2x, 4x, 8x)
-        antialias: i32,             // 0 off .. 3 (2x, 4x, 8x samples)
+        anisotropy: i32,            // 0 off .. 4 (2x, 4x, 8x, 16x)
+        antialias: i32,             // 0 off .. 4 (2x, 4x, 6x, 8x samples)
         texture_quality: i32,       // 0 low .. 2 high
         gui_scale: f32,             // GUI Scale (ours): 0 fits the window (auto), 1 the original's pixel-for-pixel GUI, else a factor
         frame_limit: i32,           // Frame Limit (ours): frames per second at most, 0 none
@@ -55,7 +55,10 @@ namespace frontend {
         movies_seen: [64]bool,      // [Movies Shown]: rows of movies.2da the player has seen
     }
 
-    // The original's defaults (swkotor.ini as the install ships it).
+    // Our defaults, for a missing file or key. Mostly the original's, but the graphics differ on purpose
+    // (docs/mechanics/graphics.md, Decisions: a 1280x720 window, anisotropy 8x, V-Sync on, Soft Shadows off,
+    // Texture Quality High), where the original's own (0x0061da60, the Advanced panel's Default 0x0061d520) are
+    // full screen, anisotropy and V-Sync off, Soft Shadows on and Texture Quality Low.
     fn default_settings {} -> Settings {
         return Settings{
             width = 1280, height = 720, window_mode = 0, refresh = 0, vsync = true, gamma = 57,
@@ -118,8 +121,8 @@ namespace frontend {
             grass = get_bool{ data, section = g, key = "Grass", fallback = d.grass },
             frame_buffer = get_bool{ data, section = g, key = "Frame Buffer", fallback = get_bool{ data, section = g, key = "Frame Buffer Effects", fallback = d.frame_buffer } },
             emitters = get_bool{ data, section = g, key = "Emitters", fallback = d.emitters },
-            anisotropy = clamp_i{ v = get_int{ data, section = g, key = "Anisotropy", fallback = d.anisotropy }, lo = 0, hi = 3 },
-            antialias = clamp_i{ v = get_int{ data, section = g, key = "Anti Aliasing", fallback = d.antialias }, lo = 0, hi = 3 },
+            anisotropy = clamp_i{ v = get_int{ data, section = g, key = "Anisotropy", fallback = d.anisotropy }, lo = 0, hi = 4 },
+            antialias = clamp_i{ v = get_int{ data, section = g, key = "Anti Aliasing", fallback = d.antialias }, lo = 0, hi = 4 },
             texture_quality = clamp_i{ v = get_int{ data, section = g, key = "Texture Quality", fallback = d.texture_quality }, lo = 0, hi = 2 },
             gui_scale = get_float{ data, section = g, key = "GUI Scale", fallback = d.gui_scale },
             frame_limit = clamp_i{ v = get_int{ data, section = g, key = "Frame Limit", fallback = d.frame_limit }, lo = 0, hi = 1000 },

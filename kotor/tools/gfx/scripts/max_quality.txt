@@ -1,4 +1,4 @@
 # Every option at its most expensive, for the frame time at 4K.
-1 gfx aa 3
-1 gfx aniso 3
+1 gfx aa 4
+1 gfx aniso 4
 1 gfx softshadows 1

@@ -362,12 +362,12 @@ namespace frontend {
             else if slice::eq_bytes{ a = tag, b = "CB_TRIGGERS" } { s.pause_triggers = on }
         } else if screen == SCR_GRAPHICS {
             if slice::eq_bytes{ a = tag, b = "SLI_GAMMA" } { s.gamma = v; fe.display_pending = true }
-            else if slice::eq_bytes{ a = tag, b = "CB_SHADOWS" } { s.shadows = on; fe.display_pending = true }
+            else if slice::eq_bytes{ a = tag, b = "CB_SHADOWS" } { set_shadows{ s, on }; fe.display_pending = true }
             else if slice::eq_bytes{ a = tag, b = "CB_GRASS" } { s.grass = on; fe.display_pending = true }
             else if slice::eq_bytes{ a = tag, b = "CB_EMITTERS" } { s.emitters = on; fe.display_pending = true }
         } else if screen == SCR_GRAPHICS_ADV {
             if slice::eq_bytes{ a = tag, b = "CB_FRAMEBUFF" } { s.frame_buffer = on }
-            else if slice::eq_bytes{ a = tag, b = "CB_SOFTSHADOWS" } { s.soft_shadows = on }
+            else if slice::eq_bytes{ a = tag, b = "CB_SOFTSHADOWS" } { set_soft_shadows{ s, on } }
             else if slice::eq_bytes{ a = tag, b = "CB_VSYNC" } { s.vsync = on }
             fe.display_pending = true
         } else if screen == SCR_SOUND {
@@ -382,6 +382,19 @@ namespace frontend {
             if slice::eq_bytes{ a = tag, b = "SLI_MOUSESEN" } { s.mouse_sensitivity = v }
             else if slice::eq_bytes{ a = tag, b = "CB_REVBUTTONS" } { s.reverse_buttons = on }
         }
+    }
+
+    // The two shadow switches hang together as the original's setters keep them (0x0044ee20 / 0x0044f080, 0x0044ee50 /
+    // 0x0044ee60): Shadows off clears Soft Shadows, Soft Shadows on sets Shadows. The other panel shows it when it is
+    // next drawn (menu.ctx's sync_graphics, bind_screen).
+    fn set_shadows { mut s: Settings, on: bool } {
+        s.shadows = on
+        if not on { s.soft_shadows = false }
+    }
+
+    fn set_soft_shadows { mut s: Settings, on: bool } {
+        s.soft_shadows = on
+        if on { s.shadows = true }
     }
 
     // The arrows beside a choice button (difficulty, anti-aliasing, ...): the new value.
@@ -414,7 +427,7 @@ namespace frontend {
             s.difficulty = cycle{ v = s.difficulty, count = 3, step }
             try show_difficulty{ &g, p, d = s.difficulty }
         } else if slice::eq_bytes{ a = base, b = "BTN_ANTIALIAS_" } or slice::eq_bytes{ a = base, b = "BTN_ANTIALIAS" } {
-            s.antialias = cycle{ v = s.antialias, count = 4, step }
+            s.antialias = cycle{ v = s.antialias, count = choice_count{ fe = &fe, which = CH_AA }, step }
             try show_choice{ &g, p, tag = "BTN_ANTIALIAS", which = CH_AA, v = s.antialias }
             fe.display_pending = true
         } else if slice::eq_bytes{ a = base, b = "BTN_TEXQUAL" } {
@@ -422,7 +435,7 @@ namespace frontend {
             try show_choice{ &g, p, tag = "BTN_TEXQUAL", which = CH_TEX, v = s.texture_quality }
             fe.display_pending = true
         } else if slice::eq_bytes{ a = base, b = "BTN_ANISOTROPY" } {
-            s.anisotropy = cycle{ v = s.anisotropy, count = 4, step }
+            s.anisotropy = cycle{ v = s.anisotropy, count = choice_count{ fe = &fe, which = CH_AF }, step }
             try show_choice{ &g, p, tag = "BTN_ANISOTROPY", which = CH_AF, v = s.anisotropy }
             fe.display_pending = true
         } else if slice::eq_bytes{ a = base, b = "BTN_EAX" } {

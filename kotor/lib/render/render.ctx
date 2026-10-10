@@ -55,6 +55,8 @@ namespace render {
         device: []u8,           // the driver's name for the GPU
         max_texture_size: u32,
         dxt: bool,              // DXT1/DXT5 upload as they are (else decode to rgba8 first)
+        max_samples: u32,       // the most anti-aliasing samples the driver has (0 or 1: none)
+        max_anisotropy: f32,    // the most anisotropic filtering taps (0: none)
     }
 
     // A size and refresh rate (Hz, 0 unknown) the display can be set to.

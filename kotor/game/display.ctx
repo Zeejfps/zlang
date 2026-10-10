@@ -36,6 +36,8 @@ namespace display {
         minimized: bool,                    // the window is minimised: nothing is drawn, the loop sleeps
         inactive: bool,                     // the window lost the focus (the original's WM_ACTIVATEAPP): sound modes 5 / 6
         test_blur: f32,                     // `gfx blur N`: the speed blur held on for a picture of it
+        max_samples: i32,                   // the device's limits, for the Advanced panel's steps
+        max_anisotropy: f32,
     }
 
     fn make { hidden: bool, path: []u8 } -> Display {
@@ -49,6 +51,7 @@ namespace display {
             render = render::Size{ width = 1280, height = 720 },
             shown = render::Rect{ x = 0.0, y = 0.0, w = 1280.0, h = 720.0 },
             path = [0; 256], path_len = 0, frame_start = 0, live = frontend::default_settings{}, pending = false, minimized = false, inactive = false, test_blur = 0.0,
+            max_samples = 8, max_anisotropy = 16.0,
         }
         let n = if path.len < 256 { path.len } else { 256 }
         slice::copy(u8){ dst = d.path[..n], src = path[..n] }
@@ -56,8 +59,9 @@ namespace display {
         return d
     }
 
-    // Puts the original's defaults in the graphics options, leaving the rest of the settings: an offscreen run's pictures
-    // and logs then repeat whatever options file is lying about.
+    // Puts our defaults (frontend::default_settings; not the original's, see graphics.md's Decisions) in the graphics
+    // options, leaving the rest of the settings: an offscreen run's pictures and logs then repeat whatever options file
+    // is lying about.
     fn use_default_graphics { mut s: frontend::Settings } {
         let d = frontend::default_settings{}
         s.width = d.width
@@ -107,6 +111,7 @@ namespace display {
     // Tells a front end what the display offers, for its resolution list and its texts.
     fn tell { d: *Display, mut fe: frontend::Front } {
         frontend::set_display_info{ &fe, modes = d.modes[..d.mode_count], desktop = d.desktop, usable = d.usable, render_size = d.render }
+        frontend::set_device_limits{ &fe, max_samples = d.max_samples, max_anisotropy = d.max_anisotropy }
     }
 
     // ---- sizes
@@ -156,9 +161,10 @@ namespace display {
         return 2.0 - 1.77 * @as(f32, slider) / 100.0
     }
 
-    // Samples for the anti-aliasing option (0 off, then 2x, 4x, 8x) and taps for anisotropy (off, 2x, 4x, 8x).
-    fn samples_for { level: i32 } -> i32 { return if level <= 0 { 0 } else if level == 1 { 2 } else if level == 2 { 4 } else { 8 } }
-    fn taps_for { level: i32 } -> i32 { return if level <= 0 { 1 } else if level == 1 { 2 } else if level == 2 { 4 } else { 8 } }
+    // Samples for the anti-aliasing option (0 off, then 2x, 4x, 6x, 8x) and taps for anisotropy (off, 2x, 4x, 8x, 16x),
+    // the original's steps (0x006e0520, 0x006e06d0).
+    fn samples_for { level: i32 } -> i32 { return frontend::aa_samples{ step = level } }
+    fn taps_for { level: i32 } -> i32 { return frontend::aniso_taps{ step = level } }
 
     // The window's mode, size and refresh rate as the settings ask. A full-screen mode the display
     // refuses becomes a borderless window; a window larger than its display shrinks to fit it. The
@@ -210,6 +216,9 @@ namespace display {
     fn apply { mut d: Display, mut dev: gpu::Device, mut sdl: sdl::Sdl, mut s: frontend::Settings } -> u32 {
         let a = d.applied
         let first = not d.have
+        let info = gpu::describe{ dev }
+        d.max_samples = @as(i32, info.max_samples)
+        d.max_anisotropy = info.max_anisotropy
         let mut changed: u32 = 0
         let moved = s.width != a.width or s.height != a.height or s.window_mode != a.window_mode or s.refresh != a.refresh
         if first or moved {
@@ -297,7 +306,8 @@ namespace display {
     // ---- the script's words
 
     // `gfx KEY VALUE...` changes an option as the panels would, for tests and pictures; the change is
-    // applied at the end of the frame's input and written to the settings file. The keys: size W H,
+    // applied at the end of the frame's input, never written to the settings file (only a panel's closing
+    // writes it, menu.ctx's close_top). Shadows and Soft Shadows hang together as on the panels. The keys: size W H,
     // mode windowed|fullscreen|borderless, refresh, vsync, brightness, shadows, softshadows, grass,
     // emitters, framebuffer, aniso, aa, texture (levels as the panels' buttons count them, switches
     // 0 or 1) and scale (the interface scale, 0 for auto). The Enhanced Graphics panel's: original, bloom,
@@ -327,8 +337,8 @@ namespace display {
         else if ci::eq{ a = key, b = "refresh" } { s.refresh = n }
         else if ci::eq{ a = key, b = "vsync" } { s.vsync = on }
         else if ci::eq{ a = key, b = "brightness" } { s.gamma = n }
-        else if ci::eq{ a = key, b = "shadows" } { s.shadows = on }
-        else if ci::eq{ a = key, b = "softshadows" } { s.soft_shadows = on }
+        else if ci::eq{ a = key, b = "shadows" } { frontend::set_shadows{ s, on } }
+        else if ci::eq{ a = key, b = "softshadows" } { frontend::set_soft_shadows{ s, on } }
         else if ci::eq{ a = key, b = "grass" } { s.grass = on }
         else if ci::eq{ a = key, b = "emitters" } { s.emitters = on }
         else if ci::eq{ a = key, b = "framebuffer" } { s.frame_buffer = on }

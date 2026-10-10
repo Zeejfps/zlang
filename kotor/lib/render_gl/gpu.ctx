@@ -168,6 +168,8 @@ namespace gpu {
             device = gl::string{ &gl, name = gl::RENDERER },
             max_texture_size = @as(u32, gl::get_int{ &gl, pname = gl::MAX_TEXTURE_SIZE }),
             dxt = gl::has_extension{ &gl, name = "GL_EXT_texture_compression_s3tc" },
+            max_samples = if max_samples > 8 { 8 } else if max_samples > 0 { @as(u32, max_samples) } else { 0 },
+            max_anisotropy = if aniso { max_aniso } else { 0.0 },
         }
         let mut dev = Device{
             gl, win, config, info, debug_on, debug_log,
@@ -412,12 +414,12 @@ namespace gpu {
         return true
     }
 
-    // The sample count of anti-aliasing (0 off), rounded down to 2, 4 or 8 and to what the driver
+    // The sample count of anti-aliasing (0 off), rounded down to 2, 4, 6 or 8 and to what the driver
     // has. Returns the count in force. Drawing goes to multisampled buffers from the next frame.
     fn set_antialias { mut dev: Device, samples: i32 } -> i32 {
         let mut s = samples
         if s > dev.max_samples { s = dev.max_samples }
-        if s >= 8 { s = 8 } else if s >= 4 { s = 4 } else if s >= 2 { s = 2 } else { s = 0 }
+        if s >= 8 { s = 8 } else if s >= 6 { s = 6 } else if s >= 4 { s = 4 } else if s >= 2 { s = 2 } else { s = 0 }
         dev.samples = s
         free_ms{ gl = &dev.gl, ms = &dev.screen_ms }
         let mut i: usize = 0
