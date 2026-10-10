@@ -161,8 +161,8 @@ namespace doors {
         }
         // A container the party opens shows its contents (actions.md 3.5): OnOpen, not OnUsed. One
         // already open does nothing. The first pass sounds Opened and lifts the lid, and the panel waits
-        // for both (phase OPENING); one we left open when emptied (container::stays_open) shows its
-        // panel at once, without the sound.
+        // for the lid (phase OPENING; ours waits for no sound, container::begin_opening); one we left
+        // open when emptied (container::stays_open) shows its panel at once, without the sound.
         if p.has_inventory and not p.locked and (id == w.pc or id == w.player or party::is_member{ w = &w, id }) {
             if p.open { return actions::Status::done }
             if a.phase != OPENING and p.anim != container::ANIM_OPEN {
