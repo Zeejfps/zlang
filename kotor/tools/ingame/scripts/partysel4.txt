@@ -1,0 +1,20 @@
+# party selection as a script opens it (ShowPartySelectionGUI, from the uppercity checkpoint: Carth
+# is in the party; slots 0 and 1 made available). It starts with nothing picked; Escape is refused
+# with 42405, Done with nobody picked asks 38329 ("less than 3 characters") and its Cancel keeps the
+# screen up; Carth and Canderous picked, Done asks 38328, OK applies (expect at 32: Player, Carth,
+# Canderous). Then a screen with both places forced (Carth 2, Canderous 1) applies at Done without a
+# question (expect at 46: the same party).
+5 ui avail 0 1
+6 ui psel -1 -1
+10 ui key escape
+12 ui key return
+14 ui click 640 544
+18 ui key escape
+20 ui click 598 271
+22 ui click 507 271
+24 ui click 640 544
+28 ui key return
+32 ui party
+34 ui psel 2 1
+40 ui click 640 544
+46 ui party

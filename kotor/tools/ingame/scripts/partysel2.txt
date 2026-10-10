@@ -1,7 +1,7 @@
-# party selection, the other paths: an unavailable slot is refused, a member is put back, a short
-# party asks first (Carth leaves, Canderous joins), then Cancel keeps everything as it was
-3 ui join carth
-4 ui shove 1 -19 -138
+# party selection from the map, the other paths (from the uppercity checkpoint: Carth is in the
+# party): an unavailable slot is refused, Carth is put back and Canderous picked, Done applies at
+# once (expect at 30: Player, Canderous); then slot 0 is picked and Cancel puts every slot back and
+# applies, so the party is as it was (expect at 42: Player, Canderous)
 5 ui avail 0 1
 6 ui menu map
 8 ui click 450 536
@@ -10,7 +10,6 @@
 18 ui click 598 271
 20 ui click 507 271
 22 ui click 640 544
-26 ui key return
 30 ui party
 32 ui click 450 536
 36 ui click 416 271

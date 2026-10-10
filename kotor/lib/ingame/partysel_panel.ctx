@@ -11,7 +11,7 @@
 //   open_modal{ s, g, w, dev, force1, force2 }   put it on the screen (force1/2: an NPC slot that
 //                                                must stay in the party, -1 for none)
 //   update{ s, g, w, dev, dt }                   every frame: takes the panel's events from the GUI
-//   take_finished{ s } -> bool                   true once after it closed (Done or Cancel)
+//   take_finished{ s } -> bool                   true once after it closed (Done, or Back from the map)
 //
 // A slot is a row of the party table: `w.party.available`, `selectable`, the creature in `npcs`
 // once it exists in the area. Pressing Done adds the picked creatures to `w.party.members` and
@@ -31,17 +31,18 @@ namespace partysel_panel {
         panel: u32,
         selected: [9]bool,                  // slots picked (the party's companions on opening)
         forced: [9]bool,                    // slots a script says must be in the party
+        from_script: bool,                  // ShowPartySelectionGUI opened it (Done asks first, Back is refused)
         hilit: i32,                         // the slot under the pointer, -1 for none
         box: u32,                           // the message box on screen, 0 for none
         confirming: bool,                   // that box asks whether to apply the party
         finished: bool,                     // closed since the last take_finished
         exit_script: resref::ResRef,        // ShowPartySelectionGUI's script, run once the party was applied
-        applied: bool,                      // Done was pressed (not Back or Escape) since the last take_exit_script
+        applied: bool,                      // the party was applied (Done, or the map's Back) since the last take_exit_script
     }
 
     fn new {} -> State {
         return State{
-            opened = false, panel = 0, selected = [false; 9], forced = [false; 9], hilit = -1, box = 0,
+            opened = false, panel = 0, selected = [false; 9], forced = [false; 9], from_script = false, hilit = -1, box = 0,
             confirming = false, finished = false, exit_script = resref::empty{}, applied = false,
         }
     }
@@ -49,7 +50,7 @@ namespace partysel_panel {
     fn is_open { s: *State } -> bool { return s.opened }
 
     // The exit script ShowPartySelectionGUI named, once, after Done applied the party; null when
-    // there is none or the panel was left with Back.
+    // there is none or the panel was closed without applying (a script's screen cannot be cancelled).
     fn take_exit_script { mut s: State } -> ?resref::ResRef {
         if not s.applied { return null }
         s.applied = false
@@ -227,6 +228,7 @@ namespace partysel_panel {
         s.finished = false
         s.applied = false
         s.exit_script = exit_script
+        s.from_script = from_script
         let mut n: usize = 0
         while n < SLOTS {
             s.forced[n] = (force1 >= 0 and @as(usize, force1) == n) or (force2 >= 0 and @as(usize, force2) == n)
@@ -234,6 +236,12 @@ namespace partysel_panel {
             n = n + 1
         }
         fill{ &s, &g, &w, &dev }
+        // Back is coloured disabled when it cannot cancel (OnPanelAdded), yet still answers a click
+        // with the reason (cancel, below), so the control stays enabled.
+        if not can_cancel{ &s } {
+            let back = gui::find_control{ &g, panel = id, tag = "BTN_BACK" }
+            if back != null { back.text.color = gui::color_disabled{} }
+        }
         gui::set_focus{ &g, panel = id, tag = "BTN_DONE" }
         // OnPanelAdded (0x006beeb0) ends with Party_Selection's offer.
         _ = world::offer_plain_tutorial{ &w, id = world::TUT_PARTY_SELECTION }
@@ -291,7 +299,7 @@ namespace partysel_panel {
 
     fn panel_event { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, ev: gui::Event } {
         if ev.kind == gui::EventKind::cancel {
-            close{ &s, &g, &w }
+            cancel{ &s, &g, &w, &dev }
             return
         }
         let slot = slot_of_tag{ tag = ev.tag }
@@ -311,7 +319,7 @@ namespace partysel_panel {
         } else if slice::eq_bytes{ a = ev.tag, b = "BTN_DONE" } {
             done{ &s, &g, &w, &dev }
         } else if slice::eq_bytes{ a = ev.tag, b = "BTN_BACK" } {
-            close{ &s, &g, &w }
+            cancel{ &s, &g, &w, &dev }
         }
     }
 
@@ -336,10 +344,57 @@ namespace partysel_panel {
         show_counts{ &s, &g }
     }
 
-    // Done: the party applies at once. The original's party screen asks nothing (CSWGuiPartySelection
-    // has no confirmation: the strings "Are you sure this is the party configuration..." are in the
-    // string table but no code refers to them), so a free companion left out is the player's choice.
+    fn forced_count { s: *State } -> i32 {
+        let mut c: i32 = 0
+        let mut n: usize = 0
+        while n < SLOTS {
+            if s.forced[n] { c = c + 1 }
+            n = n + 1
+        }
+        return c
+    }
+
+    // Done (OnDone 0x006bf3b0): from the map the party applies at once. A script's screen applies at
+    // once only when nothing could be chosen (no slot the player can toggle, a forced one cannot be,
+    // or both places forced); otherwise it asks, "less than 3 characters" (38329) when two or more
+    // slots could be toggled and fewer than two are picked, else "is this the party you want"
+    // (38328), and applies on Yes (OnConfirmed 0x006bec90, box_event).
     fn done { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } {
+        if not s.from_script {
+            apply{ &s, &g, &w, &dev }
+            return
+        }
+        let mut toggleable: i32 = 0
+        let mut n: usize = 0
+        while n < SLOTS {
+            if slot_pickable{ w = &w, n } and not s.forced[n] { toggleable = toggleable + 1 }
+            n = n + 1
+        }
+        if toggleable == 0 or forced_count{ &s } >= 2 {
+            apply{ &s, &g, &w, &dev }
+            return
+        }
+        let few = toggleable >= 2 and picked_count{ &s } < 2
+        say{ &s, &g, &w, &dev, strref = if few { 38329 } else { 38328 }, ask = true }
+        if s.box != 0 { s.confirming = true }
+    }
+
+    // Back and Escape may leave only the map's screen without forced companions.
+    fn can_cancel { s: *State } -> bool { return not s.from_script and forced_count{ s } == 0 }
+
+    // Back or Escape (HandleInputEvent 0x28/0x2e): where it may, every slot goes back to "picked =
+    // was a member" and the party applies, unchanged; a script's screen, or one with forced
+    // companions, says "You cannot cancel from this screen" (42405) and stays up.
+    fn cancel { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } {
+        if not can_cancel{ &s } {
+            say{ &s, &g, &w, &dev, strref = 42405, ask = false }
+            return
+        }
+        let mut n: usize = 0
+        while n < SLOTS {
+            s.selected[n] = in_party{ w = &w, n }
+            n = n + 1
+        }
         apply{ &s, &g, &w, &dev }
     }
 

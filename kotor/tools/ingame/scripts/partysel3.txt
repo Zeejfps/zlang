@@ -1,6 +1,5 @@
-# Escape in party selection is Cancel: back to the map, party unchanged; then Escape closes the menu
-3 ui join carth
-4 ui shove 1 -19 -138
+# Escape in party selection from the map is Cancel: back to the map, party unchanged (from the uppercity
+# checkpoint: expect at 16 Player, Carth); then Escape closes the menu
 5 ui avail 0 1
 6 ui menu map
 8 ui click 450 536

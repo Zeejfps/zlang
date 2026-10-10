@@ -10,8 +10,10 @@
 //   FRAME ui shove I DX DY       moves party member I (0 is the leader) by (DX, DY) metres
 //   FRAME ui restrict N          the area's RestrictMode (non-zero refuses Party Selection)
 //   FRAME ui str N               prints dialog.tlk string N
+//   FRAME ui psel F1 F2          Party Selection as a script's ShowPartySelectionGUI opens it (no exit
+//                                script), F1 and F2 the forced slots (-1 for none)
 //
-// Party Selection itself is reached through the map: `ui menu map`, then a click on the button.
+// The map's Party Selection is reached through the map: `ui menu map`, then a click on the button.
 namespace test_map {
     fn run { mut ui: ingame::Ingame, mut w: world::World, mut dev: gpu::Device, cmd: []u8, args: []u8 } -> bool {
         let mut words = text::words{ s = args }
@@ -70,6 +72,13 @@ namespace test_map {
             let ao = world::object{ w = &w, id = w.area } ifnull { return true }
             let a = obj::area{ o = ao } ifnull { return true }
             a.restrict_mode = @trunc(u32, n)
+            return true
+        }
+        if ci::eq{ a = cmd, b = "psel" } {
+            ui.psel_force1 = @trunc(i32, text::scan_int{ s = text::next_word{ &words } ifnull "-1" } ifnull -1)
+            ui.psel_force2 = @trunc(i32, text::scan_int{ s = text::next_word{ &words } ifnull "-1" } ifnull -1)
+            ui.psel_exit = resref::empty{}
+            ui.psel_wait = true
             return true
         }
         if ci::eq{ a = cmd, b = "str" } {
