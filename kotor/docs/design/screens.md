@@ -191,6 +191,11 @@ K1 has no lab station: the data has no panel for one (a K2 feature).
   `create_item`) and puts the item back where it came from (`equip::equip_item`, else the bag); Cancel
   restores the item as it was (the first saber). An install in a typed slot that stops the wearer using
   the item asks 42489 and undoes itself on Cancel; a crystal never asks.
+- The item turns in 3D over `3D_MODEL` / `3D_MODEL_LS` (`ups_view.ctx`): the `upgitem_light` rig is a
+  gui3d scene with its camera on the item type's hook, the item a `preview3d::load_part` model hung on
+  the rig's `rotatehook` (turned by its "rotate" animation) or turned by the panel at 70 degrees a
+  second. It is made again when the item changes and drawn after the panels (`screens::draw_over`): the
+  panel is opaque there and nothing lies over the control.
 
 ## Galaxy map (`galaxymap`)
 
@@ -239,7 +244,7 @@ sword, and the galaxy map's Travel runs the script with the right planet.
 
 - Item property lines are ours from the data, not traced in the binary (`GetDescription` 0x0055f340 is
   not read; see "Item descriptions" in hud.md).
-- The bench's 3D models (`3D_MODEL`, `3D_MODEL_LS`) and the model of an item in the store.
+- The model of an item in the store.
 - Arrow keys on the galaxy map (previous and next planet), the tutorial pop-ups these screens raise.
 - Dying companions' levels and NPCs outside the area: `levelup::after_xp` only reaches the party in the area.
 - The level-up creature is not dressed in its armour; non-body appearances (droids, the large ones) show nothing.

@@ -94,6 +94,8 @@ namespace ups {
         // companions who are not in the area, made for the bench from their AVAILNPC file (or
         // blueprint) and kept again when it closes; OBJECT_INVALID for the others
         borrowed: [9]u32,
+        // the item as a turning 3D model (ups_view.ctx)
+        view: ?*mut View,
     }
 
     fn new {} -> State {
@@ -107,6 +109,7 @@ namespace ups {
         s.preview_up = [obj::INVALID; 25]
         s.preview_col = [obj::INVALID; 7]
         s.borrowed = [obj::INVALID; 9]
+        s.view = null
         return s
     }
 }

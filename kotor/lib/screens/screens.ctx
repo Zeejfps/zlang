@@ -80,6 +80,7 @@ namespace screens {
         store_panel::tick{ s = &s.store, &g, &w }
         galaxy::update{ s = &s.galaxy, &w, dt }
         lvl::update_view{ s = &s.level, dt }
+        ups::update_view{ s = &s.bench, dt }
         let mut i: usize = 0
         while i < events.len {
             let ev = events[i]
@@ -113,9 +114,11 @@ namespace screens {
     }
 
     // After the panels: views that must not hide behind a full-screen panel of their own (the
-    // level-up screen's creature, which sits in a hole of maincg).
+    // level-up screen's creature, which sits in a hole of maincg; the upgrade bench's item).
     fn draw_over { mut s: State, mut g: gui::Gui, mut frame: render::Frame, target: render::Size } {
         if not msgbox::is_open{ b = s.level.box } { lvl::draw_view{ s = &s.level, &g, &frame, target } }
+        // The bench's item: its panel is opaque where 3D_MODEL is, and nothing lies over it.
+        ups::draw_view{ s = &s.bench, &g, &frame, target }
     }
 
     fn open_request { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device, r: Request } {

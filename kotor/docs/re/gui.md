@@ -2956,9 +2956,18 @@ inventory's item with the slot's template tag (0 when there is none; `0x006c3d43
   move that undoes a ledgered one just drops it from its list) so `OnCancel` 0x006c61f0 can undo them: it restores the backup item, puts
   the +0x2f68 items back into the inventory, takes the +0x2f5c ones out again, calls `ReturnItem` and pops the panel. `OnAssemble`
   0x006c6190 calls `ReturnItem` and pops the panel.
-- **Render** 0x006c33a0: the item's 3D view turns by -70 degrees a second (`3D_MODEL_LS` for a lightsaber, else `3D_MODEL`; both scenes
-  load the `gui3D_room` rig `upgitem_light` in the constructor). `FUN_006c3630` puts the item in: the model by `GetModelResRef` (armour
-  through 0x006c3460), the camera on `camerahook`, the "rotate" animation, "powered" for powered bases, "neutral" for armour.
+- **Render** 0x006c33a0: the scene's object 1 (the item), when it has no controller (vtable +0x108(-1) is null: it does not hang on
+  a rig hook), turns by `Quaternion_FromEulerDegrees(-70 * dt, 0, 0)`; that function (0x004acac0) takes its first angle about Z
+  (the axis globals 0x007a1998 / 0x007a19a4 / 0x007a19b0 are X, Y, Z), so the item spins about its vertical axis at 70 degrees a
+  second, clockwise seen from above. `3D_MODEL_LS` for a lightsaber, else `3D_MODEL`; both scenes load the `gui3D_room` rig
+  `upgitem_light` in the constructor. `FUN_006c3630` puts the item in: the model by `GetModelResRef(base, variation, 'm')`
+  (`<itemclass>_<variation:03>`), for armour (category 4) 0x006c3460: appearance.2da row 0x89 = 137, column `model<L>` and texture
+  `TEX<L>` + the texture variation in two digits, L = 'A' + bodyvar - 1 (bodyvar clamped to 1..10). The camera goes on
+  `camerahook<ItemType>` (base item +0xac) with an `a` after it for ItemType 0 and base item 1 (stun baton) or ItemType 4 and base
+  item 20 (blaster carbine), plain `camerahook` when the rig lacks that node, at 22.73 degrees (0x41b5ced9). When the rig has
+  `rotatehook<same>` (only 3, 4, 4a, 5 and 0a: pistols, rifles, the carbine, repeaters, the stun baton) the item is attached there
+  and the rig plays "rotate"; otherwise the item stands at the scene's origin and Render turns it. The item plays "powered" when its
+  base item's +0x90 (`powereditem`, as read) is set, "neutral" for armour.
 
 #### CSWGuiPartySelection (partyselection.gui)
 

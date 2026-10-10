@@ -208,6 +208,7 @@ namespace ups {
         let back = s.item
         s.item = obj::INVALID
         s.original = obj::INVALID
+        drop_view{ &s, &dev }
         gui::close{ &g, id = s.bench }
         s.bench = 0
         if s.list != 0 {

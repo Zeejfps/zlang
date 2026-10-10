@@ -573,6 +573,7 @@ namespace ups {
     fn fill_bench { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ! {
         let p = s.bench
         assign_slots{ &s }
+        refresh_view{ &s, &g, &w, &dev }
         let ls = s.lightsaber
         let pick = s.choosing
         let layout_ls: [4][]u8 = ["LB_DESC_LS", "LBL_DESCBG_LS", "3D_MODEL_LS", "LBL_LSSLOTNAME"]

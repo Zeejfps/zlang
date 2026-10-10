@@ -41,10 +41,12 @@ expect equip_damage bunk equip_damage.txt     200 "LBL_ATKL.* text '5-16'" "LBL_
 expect equip_hide   bunk equip_hide.txt        80 "ctl: LB_ITEMS has no row like 'Jedi'" "ctl: LB_ITEMS in equip .* rows 3 "
 expect bench_empty  module:ebo_m12aa bench_empty.txt   200 "ctl: LBL_RANGED .* visible false" "ctl: BTN_RANGED in upgradesel .* enabled true" "ctl: no shown control BTN_RANGED"
 expect bench_ranged module:ebo_m12aa bench_ranged.txt  380 "assembled, upgrades 589824 (were 0)" "Scope x1" "Improved Energy Cell x1" \
-  "ctl: LB_ITEMS in upgradeitems .* centre 518 220 .* rows 3 " "^where [0-9]* k2 carth " "LBL_UPGRADE_COUNT .* text '2'" "LBL_UPGRADE_COUNT .* text '1'"
+  "ctl: LB_ITEMS in upgradeitems .* centre 518 220 .* rows 3 " "^where [0-9]* k2 carth " "LBL_UPGRADE_COUNT .* text '2'" "LBL_UPGRADE_COUNT .* text '1'" \
+  "item view w_Blstrrfl_005 on camerahook4 (rotatehook4), shown"
 expect bench_saber  module:ebo_m12aa bench_saber.txt   400 "assembled, upgrades 2 (were 0)" "Crystal, Blue x1" "tag g_w_lghtsbr02" \
-  "the saber is now g_w_lghtsbr02"
+  "the saber is now g_w_lghtsbr02" "item view w_Lghtsbr_002 on camerahook41 (turned by the panel), shown"
 expect bench_dual   module:ebo_m12aa bench_dual.txt    350 "Sanasiki's Blade assembled, upgrades 8192" "Prototype Vibroblade assembled, upgrades 16384"
-expect bench_armour module:ebo_m12aa bench_armour.txt  280 "assembled, upgrades 3145728 (were 0)" "worn 1: .* Eriadu Prototype Armor"
+expect bench_armour module:ebo_m12aa bench_armour.txt  280 "assembled, upgrades 3145728 (were 0)" "worn 1: .* Eriadu Prototype Armor" \
+  "item view PMBDM on camerahook32 (turned by the panel), shown"
 
 if [ "$fails" -eq 0 ]; then echo "all item checks passed"; else echo "$fails item checks failed"; exit 1; fi

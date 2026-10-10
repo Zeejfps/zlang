@@ -1,0 +1,244 @@
+// The item on the bench as a turning 3D model (docs/re/gui.md "Upgrade bench", CSWGuiUpgrade's
+// constructor, FUN_006c3630 and Render 0x006c33a0): the light rig `upgitem_light` is a GUI 3D
+// scene (lib/frontend/gui3d) with its camera on `camerahook<itemtype>` (an `a` after it for the
+// stun baton and the blaster carbine, plain `camerahook` when the rig has no such node), 22.70
+// degrees. When the rig has a `rotatehook` of the same name the item hangs from it and the rig's
+// `rotate` animation turns it; else the item stands at the rig's origin and the panel turns it
+// by -70 degrees a second about its vertical axis (Quaternion_FromEulerDegrees
+// 0x004acac0 takes its first angle about Z). A powered base item plays `powered`, armour
+// `neutral`. Armour is shown as the body of appearance row 137 its body variation picks, in its
+// texture. The view is drawn over 3D_MODEL_LS for a lightsaber and 3D_MODEL for the others.
+namespace ups {
+    const VIEW_MODELS_MEMORY: usize = 16777216
+    const VIEW_SCENE_MEMORY: usize = 4194304
+    const ITEM_FOV: f32 = 22.70
+    const TURN_DEGREES_PER_SECOND: f32 = -70.0
+    const ARMOUR_APPEARANCE: usize = 137
+
+    struct View {
+        heap: *mut heap::Heap,
+        mem: alloc::Bytes,
+        keep: *mut arena::Arena,                // the model cache's
+        models: *mut mdl_cache::Cache,
+        smem: alloc::Bytes,
+        arena: *mut arena::Arena,               // the rig scene's and the item's
+        rig: gui3d::Scene,
+        part: ?preview3d::Part,
+        hook: i32,                              // the rig's rotatehook node, -1: the panel turns the item
+        roll: f32,                              // radians the panel has turned it, about Z
+        item: u32,                              // the item it shows
+    }
+
+    // The names a view is made from.
+    struct ViewNames {
+        model: [24]u8,
+        model_len: usize,
+        texture: [24]u8,
+        texture_len: usize,
+        hook: [16]u8,                           // the digits and letter after camerahook / rotatehook
+        hook_len: usize,
+    }
+
+    fn view_tag { s: *State } -> []u8 { return if s.lightsaber { "3D_MODEL_LS" } else { "3D_MODEL" } }
+
+    // The model (and for armour the texture) of the item, and the suffix of its rig hooks.
+    fn names_of_item { s: *State, w: *world::World, item: u32, mut n: ViewNames } -> bool {
+        let io = world::object{ w, id = item } ifnull { return false }
+        let it = obj::item{ o = io } ifnull { return false }
+        let base = @as(usize, it.base)
+        let t = w.tables.baseitems
+        let itemtype = twoda::get_int{ t, row = base, column = "itemtype" } ifnull 0
+        // The item type in decimal, no zeros in front.
+        let mut d = if itemtype > 0 and itemtype < 100 { @as(u32, itemtype) } else { 0 }
+        n.hook_len = 0
+        if d >= 10 {
+            n.hook[0] = @trunc(u8, '0' + d / 10)
+            n.hook_len = 1
+            d = d % 10
+        }
+        n.hook[n.hook_len] = @trunc(u8, '0' + d)
+        n.hook_len = n.hook_len + 1
+        if (itemtype == 0 and base == 1) or (itemtype == 4 and base == 20) {
+            n.hook[n.hook_len] = 'a'
+            n.hook_len = n.hook_len + 1
+        }
+        n.model_len = 0
+        n.texture_len = 0
+        if s.category == CAT_ARMOUR {
+            // FUN_006c3460: appearance row 137, model<L> and tex<L> + two digits of the texture variation.
+            let bodyvar = twoda::get_string{ t, row = base, column = "bodyvar" } ifnull ""
+            let mut letter: u8 = 'a'
+            if bodyvar.len == 1 { letter = ascii::to_lower{ c = bodyvar[0] } }
+            else if it.body_variation >= 1 and it.body_variation <= 10 { letter = @trunc(u8, 'a' + it.body_variation - 1) }
+            let li = if letter >= 'a' and letter <= 'j' { @as(usize, letter - 'a') } else { 0 }
+            let at = w.tables.appearance
+            let model = twoda::get_string{ t = at, row = ARMOUR_APPEARANCE, column = visual::MODEL_COLUMNS[li] } ifnull ""
+            if model.len == 0 or model.len > n.model.len { return false }
+            preview3d::put_bytes{ into = n.model[..], at = &n.model_len, s = model }
+            let tex = twoda::get_string{ t = at, row = ARMOUR_APPEARANCE, column = visual::TEX_COLUMNS[li] } ifnull ""
+            let v = if it.texture_variation == 0 { 1 } else { it.texture_variation }
+            n.texture_len = lvl::put_numbered{ into = n.texture[..], base = tex, v = @as(u32, v) }
+            return true
+        }
+        // GetModelResRef: <itemclass>_<variation:03>, as the world's weapons (lib/scene/visual.ctx).
+        let class = twoda::get_string{ t, row = base, column = "itemclass" } ifnull ""
+        if class.len == 0 or class.len + 4 > n.model.len { return false }
+        preview3d::put_bytes{ into = n.model[..], at = &n.model_len, s = class }
+        let v = if it.model_variation == 0 { 1 } else { it.model_variation }
+        n.model[n.model_len] = '_'
+        n.model[n.model_len + 1] = @trunc(u8, '0' + (v / 100) % 10)
+        n.model[n.model_len + 2] = @trunc(u8, '0' + (v / 10) % 10)
+        n.model[n.model_len + 3] = @trunc(u8, '0' + v % 10)
+        n.model_len = n.model_len + 4
+        return true
+    }
+
+    // The view of the bench's item, made again when the item changed (a new colour crystal makes
+    // a new saber). Nothing when the item has no model.
+    fn refresh_view { mut s: State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } {
+        if s.view is some{ value = v } {
+            if v.item == s.item { return }
+        }
+        drop_view{ &s, &dev }
+        s.view = make_view{ s = &s, &g, &w, &dev }
+    }
+
+    fn drop_view { mut s: State, mut dev: gpu::Device } {
+        let v = s.view ifnull { return }
+        s.view = null
+        if v.part is some{ value = p } { mdl_render::release{ &dev, g = p.gpu } }
+        gui3d::free{ scene = &v.rig, &dev }
+        alloc::free(arena::Arena, heap::Heap){ realloc = heap::alloc, heap = v.heap, p = v.arena }
+        _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = v.smem, count = 0 }
+        alloc::free(mdl_cache::Cache, heap::Heap){ realloc = heap::alloc, heap = v.heap, p = v.models }
+        alloc::free(arena::Arena, heap::Heap){ realloc = heap::alloc, heap = v.heap, p = v.keep }
+        _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = v.heap, mem = v.mem, count = 0 }
+        alloc::free(View, heap::Heap){ realloc = heap::alloc, heap = v.heap, p = v }
+    }
+
+    fn make_view { s: *State, mut g: gui::Gui, mut w: world::World, mut dev: gpu::Device } -> ?*mut View {
+        let mut n: ViewNames
+        if not names_of_item{ s, w = &w, item = s.item, &n } { return null }
+        let heap = w.heap
+        let mem = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(u8){}, count = VIEW_MODELS_MEMORY } iferr { return null }
+        let keep = alloc::new(arena::Arena, heap::Heap){ realloc = heap::alloc, heap, value = arena::new{ buf = mem } } iferr { return null }
+        let models = alloc::new(mdl_cache::Cache, heap::Heap){ realloc = heap::alloc, heap, value = mdl_cache::new{ rm = w.rm.*, keep } } iferr { return null }
+        let smem = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = slice::empty(u8){}, count = VIEW_SCENE_MEMORY } iferr { return null }
+        let ar = alloc::new(arena::Arena, heap::Heap){ realloc = heap::alloc, heap, value = arena::new{ buf = smem } } iferr { return null }
+        let mut camera: [32]u8
+        let mut camera_len: usize = 0
+        let mut camera_node: []u8 = "camerahook"
+        let mut rotate: [32]u8
+        let mut rotate_len: usize = 0
+        let mut hook: i32 = -1
+        let rig_model = mdl_cache::get{ fs = &w.fs, cache = models, name = "upgitem_light" }
+        if rig_model is some{ value = rm } {
+            preview3d::put_bytes{ into = camera[..], at = &camera_len, s = "camerahook" }
+            preview3d::put_bytes{ into = camera[..], at = &camera_len, s = n.hook[..n.hook_len] }
+            if mdl::find_node{ model = rm, name = camera[..camera_len] } == null { camera_len = 10 }
+            camera_node = constant_hook{ name = camera[..camera_len] }
+            preview3d::put_bytes{ into = rotate[..], at = &rotate_len, s = "rotatehook" }
+            preview3d::put_bytes{ into = rotate[..], at = &rotate_len, s = n.hook[..n.hook_len] }
+            if mdl::find_node{ model = rm, name = rotate[..rotate_len] } is some{ value = at } { hook = @as(i32, at) }
+        }
+        let made = gui3d::load{
+            fs = &w.fs, &dev, heap = ar, rm = w.rm.*, models, mats = g.cache,
+            model = "upgitem_light", camera_node, fov_degrees = ITEM_FOV,
+            animation = if hook >= 0 { "rotate" } else { "" }, warm_up = 0.0,
+        }
+        let mut rig = made iferr err{ error } {
+            _ = @fmt(&w.io, "kotor: upgrade bench: item view: {}\n", error)
+            drop_parts{ heap, mem, keep, models, smem, ar }
+            return null
+        }
+        // The rig's backdrop plane fills the view; nothing is cleared under it.
+        rig.clear = null
+        let anim: []u8 = if s.category == CAT_ARMOUR { "neutral" } else if powered_item{ w = &w, item = s.item } { "powered" } else { "" }
+        let part = preview3d::load_part{
+            fs = &w.fs, &dev, heap = ar, rm = w.rm.*, models, mats = g.cache,
+            name = n.model[..n.model_len], body_texture = n.texture[..n.texture_len], animation = anim, parent = null,
+        } iferr err{ error } {
+            _ = @fmt(&w.io, "kotor: upgrade bench: item view: {}\n", error)
+            null
+        }
+        if w.log.actions {
+            let held: []u8 = if hook >= 0 { rotate[..rotate_len] } else { "turned by the panel" }
+            let shown: []u8 = if part != null { "shown" } else { "no model" }
+            _ = @fmt(&w.io, "upgrade bench: item view {} on {} ({}), {}\n", n.model[..n.model_len], camera[..camera_len], held, shown)
+        }
+        return alloc::new(View, heap::Heap){ realloc = heap::alloc, heap, value = View{
+            heap, mem, keep, models, smem, arena = ar, rig, part, hook, roll = 0.0, item = s.item,
+        } } iferr { null }
+    }
+
+    fn drop_parts { heap: *mut heap::Heap, mem: alloc::Bytes, keep: *mut arena::Arena, models: *mut mdl_cache::Cache, smem: alloc::Bytes, ar: *mut arena::Arena } {
+        alloc::free(arena::Arena, heap::Heap){ realloc = heap::alloc, heap, p = ar }
+        _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem = smem, count = 0 }
+        alloc::free(mdl_cache::Cache, heap::Heap){ realloc = heap::alloc, heap, p = models }
+        alloc::free(arena::Arena, heap::Heap){ realloc = heap::alloc, heap, p = keep }
+        _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap, mem, count = 0 }
+    }
+
+    // The rig's camera hooks, as constants: gui3d::load's errors carry the name it was given.
+    const CAMERA_HOOKS: [17][]u8 = [
+        "camerahook0", "camerahook0a", "camerahook1", "camerahook2", "camerahook3", "camerahook4", "camerahook4a",
+        "camerahook5", "camerahook31", "camerahook32", "camerahook33", "camerahook34", "camerahook35", "camerahook36",
+        "camerahook39", "camerahook40", "camerahook41",
+    ]
+
+    fn constant_hook { name: []u8 } -> []u8 {
+        let mut i: usize = 0
+        while i < CAMERA_HOOKS.len {
+            if slice::eq_bytes{ a = CAMERA_HOOKS[i], b = name } { return CAMERA_HOOKS[i] }
+            i = i + 1
+        }
+        return "camerahook"
+    }
+
+    // baseitems.2da powereditem (CSWBaseItem +0x90).
+    fn powered_item { w: *world::World, item: u32 } -> bool {
+        let io = world::object{ w, id = item } ifnull { return false }
+        let it = obj::item{ o = io } ifnull { return false }
+        return (twoda::get_int{ t = w.tables.baseitems, row = @as(usize, it.base), column = "powereditem" } ifnull 0) != 0
+    }
+
+    // Where the item is: on the rig's rotatehook, else at the origin turned by the panel.
+    fn item_transform { v: *View } -> math::Mat4 {
+        if v.hook >= 0 { return math::mat4::mul{ a = v.rig.instance, b = v.rig.pose.world[@as(usize, v.hook)] } }
+        return math::mat4::from_rotation_translation{
+            r = math::quat::from_axis_angle{ axis = math::Vec3{ x = 0.0, y = 0.0, z = 1.0 }, angle = v.roll },
+            t = math::vec3::zero{},
+        }
+    }
+
+    fn update_view { mut s: State, dt: f32 } {
+        if not s.open or s.mode != MODE_BENCH { return }
+        let v = s.view ifnull { return }
+        gui3d::update{ scene = &v.rig, dt }
+        if v.hook < 0 { v.roll = v.roll + math::radians{ degrees = TURN_DEGREES_PER_SECOND * dt } }
+        let at = item_transform{ v }
+        match &v.part {
+            some{ &value } => { preview3d::step_part{ part = &value, dt, transform = at } }
+            null => {}
+        }
+    }
+
+    // Between the backdrop and the panels, over 3D_MODEL or 3D_MODEL_LS while it is shown (the
+    // crystal list hides it).
+    fn draw_view { mut s: State, mut g: gui::Gui, mut frame: render::Frame, target: render::Size } {
+        if not s.open or s.mode != MODE_BENCH or s.bench == 0 or msgbox::is_open{ b = s.box } { return }
+        let v = s.view ifnull { return }
+        let tag = view_tag{ s = &s }
+        let c = gui::find_control{ &g, panel = s.bench, tag } ifnull { return }
+        if c.flags & gui::F_VISIBLE == 0 { return }
+        let r = gui::control_rect{ &g, panel = s.bench, tag } ifnull { return }
+        let sx = @as(f32, target.width) / @as(f32, g.ui_w)
+        let sy = @as(f32, target.height) / @as(f32, g.ui_h)
+        let vi = gui3d::add_to_frame{ scene = &v.rig, &frame, viewport = render::Rect{ x = r.x * sx, y = r.y * sy, w = r.w * sx, h = r.h * sy } } ifnull { return }
+        let p = v.part ifnull { return }
+        _ = mdl_render::add_draws{
+            &frame, view = vi, model = p.model, pose = p.pose, g = p.gpu, transform = item_transform{ v },
+            materials = p.materials, time = v.rig.time,
+        }
+    }
+}
