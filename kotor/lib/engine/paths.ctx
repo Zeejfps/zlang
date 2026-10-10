@@ -1,7 +1,7 @@
 // Path planning for server-side moves (docs/re/movement.md 4.3-4.7): the straight walk when it is clear;
 // otherwise, in an area with a PTH graph, the original's path-point planner (CSWSArea::PlotPathPointRoute
-// 0x004c2200): the path points nearest the start and the goal (the nearest
-// in a straight walk, up to 64 tried), the graph searched depth first with a deepening cost bound, then string pulling (skip route
+// 0x004c2200): the path points nearest the start and the goal found
+// in growing windows, the graph searched depth first with a deepening cost bound, then string pulling (skip route
 // points while the straight walk past them is clear; ours, in place of the original's three straightening passes and
 // corner rounding). Without PTH points or a route, the farthest clear point along the straight line (the original's
 // fallback, 4.3 step 6).
@@ -37,42 +37,55 @@ namespace paths {
         return walkmap::meets_placeable{ m = &w.walk, from = math::Vec3{ x = pa.x, y = pa.y, z = zs[a] }, to = math::Vec3{ x = pb.x, y = pb.y, z = zs[b] } }
     }
 
-    // The nearest path point whose straight walk from `at` is clear: the points in order of distance,
-    // up to LOOKED of them (the original looks in a square window of +-10 m that grows by 10 m up to 50
-    // times, FindNearestPathPoint 0x004bd770, so a creature in a walled-in ramp still finds the floor
-    // beyond the walls' end; trying only the nearest few found nothing there).
-    const LOOKED: usize = 64
+    // The path point nearest `at` that a straight walk from it reaches (CSWSArea::FindNearestPathPoint 0x004bd770): a
+    // square window of +-10 m round it, grown by 10 m at a time up to 50 times; in each, the nearest of the points that
+    // the smaller windows did not hold whose walk is clear wins. So a nearer point in a corner of the next window loses
+    // to one in this window. The original walks the points in their x order and stops at the window's right edge (every
+    // PTH in the game is sorted by x); here every point is looked at, with the same result.
+    const WINDOW: f32 = 10.0
+    const WINDOWS: u32 = 50
 
     fn nearest_point { mut w: world::World, g: pth::Graph, at: math::Vec3, goal: bool } -> ?u32 {
         let n = g.points.len
-        let skip = alloc::resize(bool, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(bool){}, count = n } iferr { return null }
-        let mut i: usize = 0
-        while i < n {
-            skip[i] = false
-            i = i + 1
-        }
-        let mut tried: usize = 0
-        while tried < LOOKED and tried < n {
-            let mut best: i32 = -1
-            let mut best_d: f32 = 1000000000.0
-            i = 0
+        let tried = alloc::resize(bool, arena::Arena){ realloc = arena::alloc, heap = w.scratch, mem = slice::empty(bool){}, count = n } iferr { return null }
+        let mut k: u32 = 0
+        while k < WINDOWS {
+            let half = WINDOW * @as(f32, k + 1)
+            // The previous window, less its last centimetre: its points were looked at already.
+            let inner = if k == 0 { -1.0 } else { WINDOW * @as(f32, k) - 0.01 }
+            let mut i: usize = 0
             while i < n {
                 let p = g.points[i]
                 let dx = p.x - at.x
                 let dy = p.y - at.y
-                let d = dx * dx + dy * dy
-                if not skip[i] and d < best_d {
-                    best = @as(i32, i)
-                    best_d = d
-                }
+                let outside = dx < -half or dx > half or dy < -half or dy > half
+                let seen = inner > 0.0 and dx > -inner and dx < inner and dy > -inner and dy < inner
+                tried[i] = outside or seen
                 i = i + 1
             }
-            if best < 0 { return null }
-            let b = @as(u32, best)
-            let p = point_at{ w = &w, g, i = b, near_z = at.z }
-            if (if goal { clear_from_goal{ w = &w, a = at, b = p } } else { clear{ w = &w, a = at, b = p } }) { return b }
-            skip[@as(usize, best)] = true
-            tried = tried + 1
+            // This window's points, nearest first, until one is in a clear walk.
+            while true {
+                let mut best: i32 = -1
+                let mut best_d: f32 = FAR
+                i = 0
+                while i < n {
+                    if not tried[i] {
+                        let p = g.points[i]
+                        let d = (p.x - at.x) * (p.x - at.x) + (p.y - at.y) * (p.y - at.y)
+                        if d < best_d {
+                            best = @as(i32, i)
+                            best_d = d
+                        }
+                    }
+                    i = i + 1
+                }
+                if best < 0 { break }
+                let b = @as(u32, best)
+                let p = point_at{ w = &w, g, i = b, near_z = at.z }
+                if (if goal { clear_from_goal{ w = &w, a = at, b = p } } else { clear{ w = &w, a = at, b = p } }) { return b }
+                tried[@as(usize, best)] = true
+            }
+            k = k + 1
         }
         return null
     }
