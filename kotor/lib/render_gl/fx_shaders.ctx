@@ -46,8 +46,9 @@ namespace glsl {
         \\uniform mat4 u_sun_mat[2];
         \\uniform vec4 u_sun_dir;
         \\uniform vec4 u_shadow_params;
-        \\uniform mat4 u_point_mat[18];
-        \\uniform vec4 u_point_pos[3];
+        \\uniform mat4 u_point_mat[30];
+        \\uniform vec4 u_point_pos[5];
+        \\uniform float u_point_weight[5];
         \\uniform int u_light_shadow[8];
         \\in vec3 v_world;
         \\in vec3 v_normal;
@@ -227,6 +228,7 @@ namespace glsl {
         \\                float dist = length(d);
         \\                float att = clamp(1.0 - dist / u_point_pos[k].w, 0.0, 1.0);
         \\                float w = min(att * 4.0, 1.0) * clamp(dot(ng, d / max(dist, 0.0001)) * 3.0, 0.0, 1.0);
+        \\                w *= u_point_weight[k];
         \\                if (w > 0.01) {
         \\                    dark += u_shadow_params.w * w * (1.0 - point_vis(k, ng));
         \\                }
@@ -243,7 +245,7 @@ namespace glsl {
         \\            float vis = 1.0;
         \\            int slot = u_light_shadow[i];
         \\            if (shadows && slot >= 0 && lambert * att > 0.0) {
-        \\                vis = slot == 0 ? (u_shadow_on.x == 1 ? sun_vis(1, ng) : 1.0) : point_vis(slot - 1, ng);
+        \\                vis = slot == 0 ? (u_shadow_on.x == 1 ? sun_vis(1, ng) : 1.0) : mix(1.0, point_vis(slot - 1, ng), u_point_weight[slot - 1]);
         \\            }
         \\            light += u_light_color[i].rgb * (att * att * lambert * vis);
         \\        }

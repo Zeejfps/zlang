@@ -136,8 +136,21 @@ Endar Spire's screens and lamps instead.
   Anchorhead, the Shadowlands, the ruins' exterior). `lib/scene/sun.ctx` finds it (not in interior areas, nor
   underground ones unless natural) and the view's sun travels from it to the camera's subject; dynamic shadows then
   fall the way the baked ones do. `scene::mark_sun` tells the backend which frame light it is.
-- **Point lights**: the shadow-casting frame lights (not the sun) that light the casters near the camera's subject
-  most (Σ over casters within 12 m of it of (1 − d/r)² × brightness, nearer casters more): 1 low, 3 soft.
+- **Point lights**: the shadow-casting frame lights (not the sun) that light this view's casters near the camera's
+  subject most (Σ over the casters of (1 − d/r)² × brightness, nearer casters more; a caster counts fully within
+  8.4 m of the subject and not at all past 12 m, and a light fully from 0.75 m above it, not below 0.25 m, so no
+  term is cut off at an edge): 1 low, 3 soft. Only the casters the maps draw are counted (`casts_into_map`, the
+  rule `draw_casters` uses). **The choice holds still**: it is kept from frame to frame by the lights' places, a
+  chosen light keeps its place unless another scores 1.5 times as much, and stays chosen at least 0.5 s; a light's
+  shadows fade in and out over 0.4 s of frame time (its weight scales its darkening of the rooms and its share of a
+  creature's light), so up to 5 lights have maps at once (the chosen and those fading out). A camera cut (the eye
+  2 m from the last frame's), a new area or time running back takes the new choice at once.
+- **No light near** (no sun, no chosen point light): an overhead map, the moving casters from above and a little to
+  one side (the direction the original look's volumes take then, `visual.ctx` `shadow_of`), at the indoor strength
+  0.6, fading in and out with the point lights. Decision: an enhanced view never switches to the original's volumes
+  while its Shadows level is Low or Soft. It used to, for the whole view, the frame no light qualified: the shadows
+  went from soft maps to hard, darker volumes from another direction in one frame and back (the "shadows flicker or
+  become hard" report: 4 such flips and 124 light pops in 80 s of the Endar Spire's bridge replay).
 - **Maps**: one depth atlas (2048² low, 4096² soft). Top half: the sun's two orthographic maps (a 48 m low / 64 m
   soft square around the point 0.5 × reach ahead of the camera, snapped to whole texels against shimmer), one with
   the moving casters only, one with the rooms too (alpha-tested and alpha-blended-with-depth surfaces cut by their
@@ -150,8 +163,8 @@ Endar Spire's screens and lamps instead.
   dim sun's shadows are fainter (× its brightness × 2, at most 1). Creatures and objects take the second sun map
   (a building or a tree shades them) and the point maps, each on the light it belongs to. Low: 9 bilinear compares.
   Soft: a 12-tap blocker search, then 16 compares over a penumbra that widens with the caster-to-receiver distance
-  (PCSS; a sun of about a degree, a 0.15 m lamp), rotated per pixel. Where no shadow map is drawn (Planar, or no
-  sun and no shadow-casting light near), the original's planar shadows are drawn instead.
+  (PCSS; a sun of about a degree, a 0.15 m lamp), rotated per pixel. With the Shadows level Planar the original's
+  stencil volumes are drawn instead (hard in an enhanced view: their Soft Shadows blur is the original look's).
 - **Cost** (RTX 4090, 1280x720 timer marks): the maps 0.2 ms on Tatooine's Anchorhead (sun), 0.19 / 0.33 ms in
   Taris's Upper City (1 / 3 lights); receiving is part of the opaque pass (+0.02-0.1 ms).
 - **Pictures**: `kotor/out/fx/t/tat_sm_cmp.png` (Anchorhead: planar, low, soft), `up_sm_cmp.png` (Upper City),

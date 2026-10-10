@@ -369,7 +369,7 @@ namespace gpu {
         bind_light_target{ &dev }
         dev.gl.viewport{ x = area.x, y = area.y, width = area.w, height = area.h }
         set_outputs{ &dev, n = 1 }
-        // The original's planar shadows where no shadow map is drawn (Shadows: Planar, or nothing casts near).
+        // The original's shadow volumes when the Shadows level is Planar (render_shadows draws maps otherwise).
         dev.shadow.volumes = not mapped and dev.shadows
         if not mapped { try draw_shadows{ &dev, frame, index } }
         try draw_transparent{ &dev, frame, index, frustum, eye = v.camera.eye }

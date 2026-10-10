@@ -10,12 +10,42 @@
 // point lights' maps, which hold no rooms. Creatures and objects take the second sun map, so a building or a tree
 // shades them, and the point lights' maps.
 namespace gpu {
-    const SHADOW_POINTS: usize = 3
+    // Point lights with a map at once: the chosen ones (1 low, 3 soft) and those still fading out (6 tiles each of
+    // the atlas's bottom half's 32).
+    const SHADOW_SLOTS: u32 = 5
     const SHADOW_NEAR: f32 = 0.05
     const SHADOW_FOCUS: f32 = 6.0
     // A point light's shadows reach past its light, to 1.6 times its radius, as the original's did (its shadows were
     // not cut off where its light ends): its map's far plane, fading out over the last third.
     const SHADOW_REACH: f32 = 1.6
+    // The choice of shadow lights holds still: a light's shadows fade in or out over SHADOW_FADE seconds, a chosen
+    // light keeps its place against another unless that one scores SHADOW_KEEP times as much, and stays chosen at
+    // least SHADOW_HOLD seconds.
+    const SHADOW_FADE: f32 = 0.4
+    const SHADOW_KEEP: f32 = 1.5
+    const SHADOW_HOLD: f32 = 0.5
+    const NO_LIGHT: u32 = 0xFFFFFFFF
+    const SCORED_CASTERS: usize = 256
+    // Where no light casts (no sun, no shadow-casting light near), the moving casters' shadows fall from overhead and
+    // a little to one side, as the original look's volumes do then (scene/visual.ctx, shadow_of), at this strength.
+    const INDOOR_STRENGTH: f32 = 0.6
+
+    fn fallback_dir {} -> math::Vec3 { return math::vec3::normalize{ v = math::Vec3{ x = 0.5, y = 0.35, z = -0.8 } } }
+
+    // A point light whose shadows are shown or fading, kept from view to view by where it is.
+    struct ShadowTrack {
+        at: math::Vec3,
+        radius: f32,
+        weight: f32,                        // how far its shadows have faded in, 0..1
+        chosen: bool,                       // fading in (or shown), else fading out
+        since: f32,                         // seconds since it was chosen
+        light: u32,                         // its frame light this view (NO_LIGHT: not in the frame)
+        score: f32,                         // this view's
+    }
+
+    fn no_track {} -> ShadowTrack {
+        return ShadowTrack{ at = math::vec3::zero{}, radius = 0.0, weight = 0.0, chosen = false, since = 0.0, light = NO_LIGHT, score = 0.0 }
+    }
 
     struct ShadowState {
         size: i32,                          // the atlas's side: 0 not made
@@ -33,12 +63,20 @@ namespace gpu {
         sun_strength: f32,
         sun_texel: f32,                     // metres per texel of the sun's maps
         sun_soft: f32,                      // penumbra width in atlas uv per unit of depth difference
-        points: u32,
-        point_light: [3]u32,                // their frame lights
-        point_pos: [3]math::Vec4,           // position, radius
-        point_mat: [18]math::Mat4,
+        points: u32,                        // point lights with a map this view
+        point_light: [5]u32,                // their frame lights (NO_LIGHT: fading out, gone from the frame)
+        point_pos: [5]math::Vec4,           // position, radius
+        point_weight: [5]f32,               // how far each has faded in
+        point_mat: [30]math::Mat4,
         point_strength: f32,
         volumes: bool,                      // the last enhanced view drew the original's volumes instead
+        // Kept from view to view:
+        track: [5]ShadowTrack,
+        fallback: f32,                      // the overhead map's weight (fading as the point lights do)
+        last_time: f32,                     // the last view's Frame.time
+        last_eye: math::Vec3,               // and its camera's eye
+        timed: bool,                        // last_time holds one
+        cut: bool,                          // this view's choice was taken at once (snap)
     }
 
     fn no_shadows {} -> ShadowState {
@@ -46,8 +84,9 @@ namespace gpu {
         return ShadowState{
             size = 0, atlas = 0, fbo = 0, sampler_cmp = 0, sampler_raw = 0, program = 0, loc = no_scene_program{},
             sun = false, sun_light = 0, sun_mat = [id; 2], sun_dir = math::vec3::zero{}, sun_strength = 0.0, sun_texel = 0.0, sun_soft = 0.0,
-            points = 0, point_light = [0; 3], point_pos = [math::Vec4{ x = 0.0, y = 0.0, z = 0.0, w = 1.0 }; 3], point_mat = [id; 18],
-            point_strength = 0.0, volumes = false,
+            points = 0, point_light = [0; 5], point_pos = [math::Vec4{ x = 0.0, y = 0.0, z = 0.0, w = 1.0 }; 5], point_weight = [0.0; 5],
+            point_mat = [id; 30], point_strength = 0.0, volumes = false,
+            track = [no_track{}; 5], fallback = 0.0, last_time = 0.0, last_eye = math::vec3::zero{}, timed = false, cut = false,
         }
     }
 
@@ -118,21 +157,43 @@ namespace gpu {
 
     // ---- a view's maps
 
-    // Picks the view's shadow lights and draws their maps. False when nothing casts (no sun, no shadow-casting light
-    // near): the view then keeps the original's planar shadows.
+    // Picks the view's shadow lights and draws their maps. False when the view keeps the original's volumes (the
+    // Shadows level is Planar). Otherwise the maps are all its shadows, whatever lights are near: the sun's, the point
+    // lights', and where no light casts an overhead one; a light's shadows fade in and out rather than switch.
     fn render_shadows { mut dev: Device, frame: *render::Frame, index: u32 } -> !bool {
         dev.shadow.sun = false
         dev.shadow.points = 0
         let e = dev.enhance
-        if e.shadows == 0 or not dev.shadows { return false }
+        if e.shadows == 0 or not dev.shadows {
+            dev.shadow.timed = false
+            return false
+        }
         let v = frame.views[index]
         let forward = math::Vec3{ x = -v.camera.view.m[2], y = -v.camera.view.m[6], z = -v.camera.view.m[10] }
         let soft = e.shadows >= 2
         let reach: f32 = if soft { 32.0 } else { 24.0 }
         let focus = math::vec3::add_scaled{ a = v.camera.eye, b = forward, s = reach * 0.5 }
         let near_focus = math::vec3::add_scaled{ a = v.camera.eye, b = forward, s = 3.0 }
-        pick_shadow_lights{ &dev, frame, at = near_focus, count = if soft { 3 } else { 1 }, sun_light = if v.sun.on { v.sun.light } else { 0 } }
-        if not v.sun.on and dev.shadow.points == 0 { return false }
+        // The fades run on the frame's time. The first view, or one after time ran back or jumped (another area, a
+        // load) or the camera cut away, takes its choice at once.
+        let s = dev.shadow
+        let snap = not s.timed or frame.time < s.last_time or frame.time > s.last_time + 1.0
+            or math::vec3::distance{ a = v.camera.eye, b = s.last_eye } > 2.0
+        let dt = if snap { 0.0 } else { frame.time - s.last_time }
+        dev.shadow.timed = true
+        dev.shadow.cut = snap
+        dev.shadow.last_time = frame.time
+        dev.shadow.last_eye = v.camera.eye
+        if snap {
+            dev.shadow.track = [no_track{}; 5]
+            dev.shadow.fallback = 0.0
+        }
+        let sun_light = if v.sun.on { v.sun.light } else { 0 }
+        let chosen = track_shadow_lights{ &dev, frame, index, at = near_focus, count = if soft { 3 } else { 1 }, sun_light, dt, snap }
+        dev.shadow.sun_light = sun_light
+        dev.shadow.fallback = fade_toward{ w = dev.shadow.fallback, on = not v.sun.on and not chosen, dt, snap }
+        dev.shadow.point_strength = if v.sun.on { v.sun.strength } else { INDOOR_STRENGTH }
+        if not v.sun.on and dev.shadow.points == 0 and dev.shadow.fallback <= 0.0 { return true }
         try ensure_shadow_atlas{ &dev, size = if soft { 4096 } else { 2048 } }
         let size = dev.shadow.size
         dev.gl.bind_framebuffer{ target = gl::FRAMEBUFFER, framebuffer = dev.shadow.fbo }
@@ -151,7 +212,14 @@ namespace gpu {
         use_program{ &dev, program = dev.shadow.program }
         let id = math::mat4::identity{}
         dev.gl.uniform_matrix4fv{ location = dev.shadow.loc.post, count = 1, transpose = gl::FALSE, value = &id.m[0] }
-        if v.sun.on { render_sun{ &dev, frame, index, v, focus, reach } }
+        if v.sun.on {
+            // A dim sun's shadows on the rooms are fainter: less of their baked light was its (the Star Map's ruins).
+            let lum = v.sun.color.x * 0.299 + v.sun.color.y * 0.587 + v.sun.color.z * 0.114
+            render_sun{ &dev, frame, index, toward = v.sun.direction, strength = v.sun.strength * math::min{ a = 1.0, b = lum * 2.0 }, focus, reach, maps = 2 }
+        } else if dev.shadow.fallback > 0.0 {
+            // Only the moving casters' map: no frame light is this one, so the creatures take none of it.
+            render_sun{ &dev, frame, index, toward = fallback_dir{}, strength = INDOOR_STRENGTH * dev.shadow.fallback, focus, reach, maps = 1 }
+        }
         let mut k: u32 = 0
         while k < dev.shadow.points {
             render_point{ &dev, frame, index, k }
@@ -159,60 +227,202 @@ namespace gpu {
         }
         set_offset{ &dev, on = false }
         dev.state = unknown_state{}
-        dev.shadow.point_strength = if v.sun.on { v.sun.strength } else { 0.6 }
         timer_mark{ &dev, name = "shadow maps" }
         return true
     }
 
-    // The shadow-casting lights (not the sun) brightest at `at`, above it, at most `count`.
-    fn pick_shadow_lights { mut dev: Device, frame: *render::Frame, at: math::Vec3, count: u32, sun_light: u32 } {
-        let mut score: [3]f32 = [0.0; 3]
-        let mut n: u32 = 0
+    // `w` a step of `dt` toward 1 (`on`) or 0, the whole way when `snap`.
+    fn fade_toward { w: f32, on: bool, dt: f32, snap: bool } -> f32 {
+        let target: f32 = if on { 1.0 } else { 0.0 }
+        if snap { return target }
+        let step = dt / SHADOW_FADE
+        return if on { math::min{ a = 1.0, b = w + step } } else { math::max{ a = 0.0, b = w - step } }
+    }
+
+    fn ramp { x: f32, from: f32, to: f32 } -> f32 { return math::clamp{ x = (x - from) / (to - from), lo = 0.0, hi = 1.0 } }
+
+    // Chooses the view's shadow-casting point lights (not the sun), at most `count`: those that light this view's
+    // casters near `at` most, above them (Σ (1 - d/r)² × brightness, nearer casters more, every term fading to
+    // nothing at its edge rather than cut off). A chosen light keeps its place unless another scores SHADOW_KEEP times
+    // as much, and stays at least SHADOW_HOLD seconds; lights come and go by fading (dev.shadow.track), and those
+    // with any weight left get a map (dev.shadow.points). True when one is chosen.
+    fn track_shadow_lights { mut dev: Device, frame: *render::Frame, index: u32, at: math::Vec3, count: u32, sun_light: u32, dt: f32, snap: bool } -> bool {
+        // The casters whose shadows would show: this view's, near `at`.
+        let mut near: [SCORED_CASTERS]math::Vec4
+        let mut n: usize = 0
+        let mut d: u32 = 0
+        while d < frame.draw_count and n < SCORED_CASTERS {
+            let draw = frame.draws[d]
+            d = d + 1
+            if draw.view != index or not casts_into_map{ draw, rooms = false } { continue }
+            let c = math::mat4::get_translation{ m = draw.transform }
+            let from_focus = math::vec3::distance{ a = c, b = at }
+            let near_w = ramp{ x = from_focus, from = SHADOW_FOCUS * 2.0, to = SHADOW_FOCUS * 1.4 }
+            if near_w <= 0.0 { continue }
+            near[n] = math::Vec4{ x = c.x, y = c.y, z = c.z, w = near_w / (1.0 + from_focus * 0.3) }
+            n = n + 1
+        }
+        let mut track = dev.shadow.track
+        let mut k: u32 = 0
+        while k < SHADOW_SLOTS {
+            track[k].light = NO_LIGHT
+            track[k].score = 0.0
+            k = k + 1
+        }
+        // Scored lights not yet tracked: the best `count` of them.
+        let mut fresh: [3]ShadowTrack = [no_track{}; 3]
+        let mut fresh_n: u32 = 0
         let mut l: u32 = 0
         while l < frame.light_count {
             let light = frame.lights[l]
             l = l + 1
             if not light.shadow or l == sun_light or light.radius >= 100.0 or light.radius <= 0.5 { continue }
-            // How much it lights the casters near the camera's subject (their shadows are what shows), nearer ones more.
             let lum = light.color.x * 0.299 + light.color.y * 0.587 + light.color.z * 0.114
             let mut s: f32 = 0.0
-            let mut d: u32 = 0
-            while d < frame.draw_count {
-                let draw = frame.draws[d]
-                d = d + 1
-                if not draw.casts { continue }
-                let c = math::mat4::get_translation{ m = draw.transform }
-                let from_focus = math::vec3::distance{ a = c, b = at }
-                if from_focus > SHADOW_FOCUS * 2.0 or light.position.z < c.z + 0.5 { continue }
-                let dist = math::vec3::distance{ a = light.position, b = c }
+            let mut i: usize = 0
+            while i < n {
+                let c = near[i]
+                i = i + 1
+                let above = ramp{ x = light.position.z - c.z, from = 0.25, to = 0.75 }
+                if above <= 0.0 { continue }
+                let dist = math::vec3::distance{ a = light.position, b = math::Vec3{ x = c.x, y = c.y, z = c.z } }
                 if dist >= light.radius { continue }
                 let f = 1.0 - dist / light.radius
-                s = s + f * f * lum / (1.0 + from_focus * 0.3)
+                s = s + f * f * lum * above * c.w
             }
             if s <= 0.0 { continue }
-            // Insert by score.
-            let mut k = if n < count { n } else { count }
-            while k > 0 and score[k - 1] < s {
-                if k < count {
-                    score[k] = score[k - 1]
-                    dev.shadow.point_light[k] = dev.shadow.point_light[k - 1]
+            let mut found = false
+            k = 0
+            while k < SHADOW_SLOTS {
+                if (track[k].chosen or track[k].weight > 0.0) and math::vec3::distance{ a = track[k].at, b = light.position } < 0.25 {
+                    track[k].light = l - 1
+                    track[k].score = s
+                    track[k].at = light.position
+                    track[k].radius = light.radius
+                    found = true
+                    break
                 }
-                k = k - 1
+                k = k + 1
             }
-            if k < count {
-                score[k] = s
-                dev.shadow.point_light[k] = l - 1
-                if n < count { n = n + 1 }
+            if found { continue }
+            // Insert by score.
+            let mut j = if fresh_n < count { fresh_n } else { count }
+            while j > 0 and fresh[j - 1].score < s {
+                if j < count { fresh[j] = fresh[j - 1] }
+                j = j - 1
+            }
+            if j < count {
+                fresh[j] = ShadowTrack{ at = light.position, radius = light.radius, weight = 0.0, chosen = false, since = 0.0, light = l - 1, score = s }
+                if fresh_n < count { fresh_n = fresh_n + 1 }
             }
         }
-        dev.shadow.points = n
-        dev.shadow.sun_light = sun_light
-        let mut i: u32 = 0
-        while i < n {
-            let light = frame.lights[dev.shadow.point_light[i]]
-            dev.shadow.point_pos[i] = math::Vec4{ x = light.position.x, y = light.position.y, z = light.position.z, w = light.radius * SHADOW_REACH }
-            i = i + 1
+        // The choice: the lights held, then the best by score, a chosen light's counting SHADOW_KEEP times.
+        let mut pick_track: [5]bool = [false; 5]
+        let mut pick_fresh: [3]bool = [false; 3]
+        let mut picked: u32 = 0
+        while picked < count {
+            let mut best: f32 = 0.0
+            let mut best_track: i32 = -1
+            let mut best_fresh: i32 = -1
+            k = 0
+            while k < SHADOW_SLOTS {
+                let t = track[k]
+                if not pick_track[k] and (t.chosen or t.weight > 0.0) {
+                    let held = t.chosen and t.since < SHADOW_HOLD
+                    let s = if held { 1000000000.0 + t.score } else if t.chosen { t.score * SHADOW_KEEP } else { t.score }
+                    if s > best {
+                        best = s
+                        best_track = @as(i32, k)
+                        best_fresh = -1
+                    }
+                }
+                k = k + 1
+            }
+            k = 0
+            while k < fresh_n {
+                if not pick_fresh[k] and fresh[k].score > best {
+                    best = fresh[k].score
+                    best_fresh = @as(i32, k)
+                    best_track = -1
+                }
+                k = k + 1
+            }
+            if best_track >= 0 {
+                pick_track[@as(u32, best_track)] = true
+            } else if best_fresh >= 0 {
+                pick_fresh[@as(u32, best_fresh)] = true
+            } else {
+                break
+            }
+            picked = picked + 1
         }
+        k = 0
+        while k < SHADOW_SLOTS {
+            if track[k].chosen and not pick_track[k] { track[k].chosen = false }
+            if not track[k].chosen and pick_track[k] {
+                track[k].chosen = true
+                track[k].since = 0.0
+            }
+            k = k + 1
+        }
+        // A newly chosen light takes a free slot, else the one fading out that has least left (it vanishes: rare).
+        k = 0
+        while k < fresh_n {
+            if pick_fresh[k] {
+                let mut slot: i32 = -1
+                let mut least: f32 = 2.0
+                let mut t: u32 = 0
+                while t < SHADOW_SLOTS {
+                    if not track[t].chosen and track[t].weight < least {
+                        least = track[t].weight
+                        slot = @as(i32, t)
+                    }
+                    t = t + 1
+                }
+                if slot >= 0 {
+                    let mut nt = fresh[k]
+                    nt.chosen = true
+                    track[@as(u32, slot)] = nt
+                }
+            }
+            k = k + 1
+        }
+        // The fades, and the maps of the lights with any weight.
+        let mut any = false
+        let mut p: u32 = 0
+        k = 0
+        while k < SHADOW_SLOTS {
+            let mut t = track[k]
+            t.weight = fade_toward{ w = t.weight, on = t.chosen, dt, snap }
+            t.since = t.since + dt
+            if t.chosen { any = true }
+            if t.weight > 0.0 {
+                dev.shadow.point_light[p] = t.light
+                dev.shadow.point_pos[p] = math::Vec4{ x = t.at.x, y = t.at.y, z = t.at.z, w = t.radius * SHADOW_REACH }
+                dev.shadow.point_weight[p] = t.weight
+                p = p + 1
+            } else if not t.chosen {
+                t = no_track{}
+            }
+            track[k] = t
+            k = k + 1
+        }
+        dev.shadow.track = track
+        dev.shadow.points = p
+        return any
+    }
+
+    // Whether a draw goes into a shadow map: one that says it casts (a creature's or a placeable's shown part), and with
+    // `rooms` the rooms' opaque and alpha-tested surfaces; neither half see-through nor glowing, nor a shell drawn
+    // inflated around another (the shadow volumes take the same parts: mdl_render's add_draws_look).
+    fn casts_into_map { draw: render::Draw, rooms: bool } -> bool {
+        let room = draw.kind == render::DrawKind::room
+        if not draw.casts and not (rooms and room) { return false }
+        let m = draw.material
+        if m.inflate != 0.0 or m.color.a < 0.5 or m.blend == render::Blend::additive { return false }
+        // A room's blended surfaces (glass, water) let the light through; a caster's part fading out casts until half gone.
+        if m.blend == render::Blend::alpha and not draw.casts { return false }
+        return true
     }
 
     // The matrix taking clip space to a tile of the atlas: x, y from -1..1 to the tile's uv rectangle, depth to 0..1.
@@ -229,10 +439,11 @@ namespace gpu {
 
     // The sun's two maps: an orthographic square of 2 `reach` around `focus`, seen along the sun, snapped to whole
     // texels so the shadows don't shimmer as the camera moves.
-    fn render_sun { mut dev: Device, frame: *render::Frame, index: u32, v: render::View, focus: math::Vec3, reach: f32 } {
+    // `maps` 1 draws only the first (the moving casters).
+    fn render_sun { mut dev: Device, frame: *render::Frame, index: u32, toward: math::Vec3, strength: f32, focus: math::Vec3, reach: f32, maps: u32 } {
         let size = dev.shadow.size
         let tile = size / 2
-        let dir = math::vec3::normalize{ v = v.sun.direction }
+        let dir = math::vec3::normalize{ v = toward }
         let up = if math::abs{ x = dir.z } > 0.95 { math::Vec3{ x = 1.0, y = 0.0, z = 0.0 } } else { math::Vec3{ x = 0.0, y = 0.0, z = 1.0 } }
         let rot = math::mat4::look_at{ eye = math::vec3::zero{}, at = dir, up }
         let c = math::mat4::transform_point{ m = rot, p = focus }
@@ -245,16 +456,14 @@ namespace gpu {
         let vp = math::mat4::mul{ a = proj, b = rot }
         dev.shadow.sun = true
         dev.shadow.sun_dir = dir
-        // A dim sun's shadows on the rooms are fainter: less of their baked light was its (the Star Map's ruins).
-        let lum = v.sun.color.x * 0.299 + v.sun.color.y * 0.587 + v.sun.color.z * 0.114
-        dev.shadow.sun_strength = v.sun.strength * math::min{ a = 1.0, b = lum * 2.0 }
+        dev.shadow.sun_strength = strength
         dev.shadow.sun_texel = texel
         // Half a degree of sun, widened: metres of penumbra per metre between caster and receiver, as atlas uv per
         // unit of depth (depth 0..1 spans depth_range metres; a square spans 2 reach metres and half the atlas).
         dev.shadow.sun_soft = 0.02 * depth_range / (2.0 * reach) * 0.5
         let frustum = math::frustum::from_matrix{ m = vp }
         let mut map: u32 = 0
-        while map < 2 {
+        while map < maps {
             let x0 = @as(i32, map) * tile
             dev.shadow.sun_mat[map] = math::mat4::mul{ a = tile_matrix{ x0 = @as(f32, map) * 0.5, y0 = 0.0, w = 0.5 }, b = vp }
             dev.gl.viewport{ x = x0, y = 0, width = tile, height = tile }
@@ -313,12 +522,7 @@ namespace gpu {
         while d < frame.draw_count {
             let draw = frame.draws[d]
             d = d + 1
-            if draw.view != index { continue }
-            let room = draw.kind == render::DrawKind::room
-            if not draw.casts and not (rooms and room) { continue }
-            let m = draw.material
-            if m.inflate != 0.0 or m.color.a < 0.5 { continue }
-            if m.blend == render::Blend::alpha or m.blend == render::Blend::additive { continue }
+            if draw.view != index or not casts_into_map{ draw, rooms } { continue }
             // Skinned draws have no bounds: their origin with a creature's size.
             let center = math::mat4::transform_point{ m = draw.transform, p = draw.center }
             let radius = if draw.radius > 0.0 { draw.radius * draw_scale{ m = draw.transform } } else { 3.0 }
@@ -392,16 +596,17 @@ namespace gpu {
         if s.points > 0 {
             dev.gl.uniform_matrix4fv{ location = loc.point_mat, count = @as(i32, s.points) * 6, transpose = gl::FALSE, value = &s.point_mat[0].m[0] }
             dev.gl.uniform4fv{ location = loc.point_pos, count = @as(i32, s.points), value = &s.point_pos[0].x }
+            dev.gl.uniform1fv{ location = loc.point_weight, count = @as(i32, s.points), value = &s.point_weight[0] }
         }
     }
 
     fn shadow_info { dev: Device } -> render::ShadowInfo {
         let s = dev.shadow
-        let mut info = render::ShadowInfo{ maps = s.sun or s.points > 0, volumes = s.volumes, sun = s.sun, fallback = 0.0, lights = s.points, light = [math::vec3::zero{}; 4], weight = [0.0; 4] }
+        let mut info = render::ShadowInfo{ maps = s.timed, volumes = s.volumes, cut = s.cut, sun = s.sun and s.fallback <= 0.0, fallback = if s.timed { s.fallback } else { 0.0 }, lights = s.points, light = [math::vec3::zero{}; 5], weight = [0.0; 5] }
         let mut k: u32 = 0
-        while k < s.points and k < 4 {
+        while k < s.points and k < 5 {
             info.light[k] = math::Vec3{ x = s.point_pos[k].x, y = s.point_pos[k].y, z = s.point_pos[k].z }
-            info.weight[k] = 1.0
+            info.weight[k] = s.point_weight[k]
             k = k + 1
         }
         return info
