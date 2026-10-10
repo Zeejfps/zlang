@@ -358,22 +358,30 @@ namespace actions {
         return Status::done
     }
 
+    // JUMPTOPOINT (actions.md 3.2, 0x0051d600): to the nearest safe spot within 20 m of the point (movement::safe_spot);
+    // none, and the jump fails where the creature stands.
     fn jump_to_point { mut w: world::World, id: u32, a: *mut Action } -> Status {
         let o = world::object{ w = &w, id } ifnull { return Status::failed }
         let to = vector_param{ a, i = 0 }
         movement::stop{ &w, id }
-        movement::place{ &w, id, at = to }
+        let spot = movement::safe_spot{ w = &w, id, at = to, radius = 20.0, need_line = true } ifnull { return Status::failed }
+        movement::place{ &w, id, at = spot }
         let facing = float_param{ a, i = 1 }
         if a.params[1] is float { world::set_orientation{ o, v = obj::direction_of{ degrees = facing } } }
         return Status::done
     }
 
+    // JUMPTOOBJECT (0x0051d110): to the nearest safe spot within 20 m of the object (param 1, bWalkStraightLineToPoint:
+    // that spot must be a straight walk from it); a door is jumped to from its nearer side. None, and the jump fails.
     fn jump_to_object { mut w: world::World, id: u32, a: *mut Action } -> Status {
         let target = world::object{ w = &w, id = object_param{ a, i = 0 } } ifnull { return Status::failed }
-        let at = target.position
+        let me = world::object{ w = &w, id } ifnull { return Status::failed }
+        let at = if target.kind == obj::Kind::door { doors::use_point{ w = &w, actor = me, target }.point } else { target.position }
         let facing = target.orientation
+        let line = if a.params[1] is int{ v } { v != 0 } else { true }
         movement::stop{ &w, id }
-        movement::place{ &w, id, at }
+        let spot = movement::safe_spot{ w = &w, id, at, radius = 20.0, need_line = line } ifnull { return Status::failed }
+        movement::place{ &w, id, at = spot }
         let o = world::object{ w = &w, id } ifnull { return Status::failed }
         world::set_orientation{ o, v = facing }
         return Status::done

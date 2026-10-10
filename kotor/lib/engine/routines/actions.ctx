@@ -140,9 +140,10 @@ namespace rt_act {
     // (Action)JumpToObject(object oToJumpTo, int bWalkStraightLineToPoint = TRUE)
     fn jump_to_object { mut w: world::World, mut vm: nwvm::Vm, argc: u8, routine: u16, queue: bool } -> ! {
         let target = try nwarg::object{ &vm, routine, argc, i = 0 }
-        if argc > 1 { _ = try nwarg::int{ &vm, routine, argc, i = 1 } }
+        let straight = if argc > 1 { try nwarg::int{ &vm, routine, argc, i = 1 } } else { 1 }
         let mut a = actions::make{ kind = actions::Kind::jump_to_object }
         a.params[0] = actions::Param::object{ id = target }
+        a.params[1] = actions::Param::int{ v = straight }
         let me = self_of{ vm = &vm }
         if queue { _ = actions::add{ &w, id = me, action = a, force = false } } else {
             actions::clear_all{ &w, id = me }

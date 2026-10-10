@@ -16,6 +16,66 @@ namespace movement {
         if o.kind == obj::Kind::creature { cross_volumes{ &w, id, from, to = p } }
     }
 
+    // Where creature `id` can stand at or near `at` (CSWSArea::FindNearestSafePosition 0x004be860, movement.md 4.8): the
+    // point itself (z from the floor) when it is safe; else square rings round it of half-size 1, 1 + PERSPACE, ... while
+    // below `radius` (so a radius of 1 or less tries the point alone), sampled every PERSPACE, the rows below and above
+    // first, then the columns at the sides; the first safe sample wins. With `need_line` the sample must also be a straight
+    // walk from the point (dropped when the point itself is off the floor or inside a placed walkmesh). Null when none is.
+    // Safe (IsPositionSafe 0x004be5e0): on the floor, outside every active door's and placeable's walkmesh, and clear of
+    // every other living creature by both CREPERSPACEs + 0.01 (ours: walls within PERSPACE are not tested, as no walk of
+    // ours tests them).
+    fn safe_spot { w: *world::World, id: u32, at: math::Vec3, radius: f32, need_line: bool } -> ?math::Vec3 {
+        let o = world::object{ w, id } ifnull { return null }
+        let c = obj::creature{ o } ifnull { return at }
+        let step = math::max{ a = c.perspace, b = 0.1 }
+        let mut start = at
+        let f = walkmap::floor{ m = &w.walk, x = at.x, y = at.y, z = at.z + 0.5 }
+        if f != null { start.z = f.z }
+        if f != null and spot_is_safe{ w, o, c, p = start } { return start }
+        let line = need_line and f != null and not walkmap::blocked{ m = &w.walk, x = start.x, y = start.y, z = start.z }
+        let mut r: f32 = 1.0
+        while r < radius {
+            let mut x = at.x - r
+            while x <= at.x + r {
+                if try_spot{ w, o, c, x, y = at.y - r, from = start, line } is some{ value = p } { return p }
+                if try_spot{ w, o, c, x, y = at.y + r, from = start, line } is some{ value = p } { return p }
+                x = x + step
+            }
+            let mut y = at.y - r + step
+            while y <= at.y + r - step {
+                if try_spot{ w, o, c, x = at.x - r, y, from = start, line } is some{ value = p } { return p }
+                if try_spot{ w, o, c, x = at.x + r, y, from = start, line } is some{ value = p } { return p }
+                y = y + step
+            }
+            r = r + step
+        }
+        return null
+    }
+
+    fn try_spot { w: *world::World, o: *obj::Object, c: *obj::Creature, x: f32, y: f32, from: math::Vec3, line: bool } -> ?math::Vec3 {
+        let f = walkmap::floor{ m = &w.walk, x, y, z = from.z + 0.5 } ifnull { return null }
+        let p = math::Vec3{ x, y, z = f.z }
+        if not spot_is_safe{ w, o, c, p } { return null }
+        if line and not paths::clear{ w, a = p, b = from } { return null }
+        return p
+    }
+
+    fn spot_is_safe { w: *world::World, o: *obj::Object, c: *obj::Creature, p: math::Vec3 } -> bool {
+        if walkmap::blocked{ m = &w.walk, x = p.x, y = p.y, z = p.z } { return false }
+        let all = list::items{ list = w.objects.all }
+        let mut i: usize = 0
+        while i < all.len {
+            let other = all[i]
+            i = i + 1
+            if other.id == o.id or other.destroyed or other.kind != obj::Kind::creature or other.area != o.area { continue }
+            let oc = obj::creature{ o = other } ifnull { continue }
+            if oc.dead { continue }
+            let dz = other.position.z - p.z
+            if distance_2d{ a = other.position, b = p } < c.creperspace + oc.creperspace + 0.01 and dz < 2.0 and dz > -2.0 { return false }
+        }
+        return true
+    }
+
     // Stops a creature's walk: path cleared, speed 0.
     fn stop { mut w: world::World, id: u32 } {
         let o = world::object{ w = &w, id } ifnull { return }
@@ -62,7 +122,11 @@ namespace movement {
                 world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
                 return actions::Status::failed
             }
-            place{ &w, id, at = goal }
+            // The jump (0x004edba0): JUMPTOOBJECT to the target (the nearest safe spot within 20 m), else JUMPTOPOINT with a
+            // 1 m search, which takes the point only if nobody stands there: else the creature stays and the move is over.
+            let spot = if target != obj::INVALID { safe_spot{ w = &w, id, at = goal, radius = 20.0, need_line = true } }
+                else { safe_spot{ w = &w, id, at = goal, radius = 1.0, need_line = true } }
+            if spot is some{ value = p } { place{ &w, id, at = p } }
             let back = world::object{ w = &w, id } ifnull { return actions::Status::done }
             world::set_animation{ o = back, id = obj::ANIM_STAND, speed = 1.0 }
             return actions::Status::done

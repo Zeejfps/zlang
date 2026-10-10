@@ -5,7 +5,8 @@
 //                              puts them on SDL's queue as the events they stand for
 //   FRAME ui menu NAME|N       open a menu: equip inventory character abilities messages journal map options
 //   FRAME ui close             close the open menu
-//   FRAME ui target TAG [N]    select the object with the tag (the Nth of several, counting from 0);  ui join TAG: it joins the party
+//   FRAME ui target TAG [N]    select the object with the tag (the Nth of several, counting from 0);  ui join TAG: it joins the party;
+//                              ui jump TAG: the leader jumps to it (JumpToObject)
 //   FRAME ui unlock TAG | ui global NAME N | ui gbool NAME 0|1 | ui goto TAG | ui where [PART]     test helpers: unlock a door or placeable;
 //                              set a number global; the leader walks to a tagged object; print objects by tag part
 //   FRAME ui hover             print the panels' places and the control under the pointer
@@ -307,6 +308,15 @@ namespace ingame {
             a.params[2] = actions::Param::float{ v = 1.0 }
             a.params[3] = actions::Param::object{ id = target }
             a.params[4] = actions::Param::float{ v = 0.0 }
+            _ = actions::add{ &w, id = w.pc, action = a, force = true }
+        } else if ci::eq{ a = cmd, b = "jump" } {
+            // Test helper: the leader jumps to the object with the tag, as a script's JumpToObject (the nearest safe spot).
+            let tag = text::next_word{ &words } ifnull { return }
+            let target = world::object_by_tag{ w = &w, tag, nth = 0 }
+            if target == obj::INVALID { return }
+            let mut a = actions::make{ kind = actions::Kind::jump_to_object }
+            a.params[0] = actions::Param::object{ id = target }
+            a.params[1] = actions::Param::int{ v = 1 }
             _ = actions::add{ &w, id = w.pc, action = a, force = true }
         } else if ci::eq{ a = cmd, b = "pos" } {
             // Test helper: where the leader is, its hit points, its action and whether a conversation runs.
