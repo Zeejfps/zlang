@@ -23,13 +23,14 @@ namespace ctl {
     struct Control {
         vx: f32,                    // velocity, m/s
         vy: f32,
+        moved_speed: f32,           // the speed the last frame moved at (the client creature's +0x3b0, SetMoveSpeed): 0 unless above 1 m/s
         min_turn: f32,              // degrees per second (camerastyle MinTurnRate, MaxTurnRate)
         max_turn: f32,
         last: u32,                  // the creature moved last frame: when the leader changes, the old one stops
         combat_movement: bool,      // the "Combat Movement" option: in combat mode the keys may break the leader's orders
     }
 
-    fn new {} -> Control { return Control{ vx = 0.0, vy = 0.0, min_turn = 150.0, max_turn = 1500.0, last = obj::INVALID, combat_movement = true } }
+    fn new {} -> Control { return Control{ vx = 0.0, vy = 0.0, moved_speed = 0.0, min_turn = 150.0, max_turn = 1500.0, last = obj::INVALID, combat_movement = true } }
 
     fn set_style { mut ctl: Control, t: twoda::Table, row: u32 } {
         ctl.min_turn = twoda::get_float{ t, row = @as(usize, row), column = "minturnrate" } ifnull 150.0
@@ -113,9 +114,11 @@ namespace ctl {
         let drive = twoda::get_float{ t = w.tables.appearance, row = @as(usize, shown), column = "drivemaxspeed" } ifnull 0.0
         let accl = twoda::get_float{ t = w.tables.appearance, row = @as(usize, shown), column = "driveaccl" } ifnull 50.0
         let vmax = if drive > 0.0 and drive * scale < rated { drive * scale } else { rated }
-        // Turning toward the desired heading, fast when slow (movement.md 1.2 step 5).
+        // Turning toward the desired heading, fast when slow (movement.md 1.2 step 5), only once the leader moved last
+        // frame (above 1 m/s): from standstill he first steps along his old facing while the velocity builds, then turns
+        // at up to MaxTurnRate.
         let speed = math::sqrtf{ x = ctl.vx * ctl.vx + ctl.vy * ctl.vy }
-        if has_input and speed > 0.1 {
+        if has_input and ctl.moved_speed > 0.1 {
             let want = math::atan2f{ y = uy, x = ux }
             let have = math::atan2f{ y = o2.orientation.y, x = o2.orientation.x }
             let mut delta = want - have
@@ -126,10 +129,6 @@ namespace ctl {
             let turn = math::clamp{ x = delta, lo = -max_step, hi = max_step }
             let heading = have + turn
             world::set_orientation{ o = o2, v = math::Vec3{ x = math::cosf{ x = heading }, y = math::sinf{ x = heading }, z = 0.0 } }
-        } else if has_input and speed <= 0.1 {
-            // From standstill the original starts the velocity first; face the input at once so
-            // the first step goes where the keys say (ours).
-            world::set_orientation{ o = o2, v = math::Vec3{ x = ux, y = uy, z = 0.0 } }
         }
         // Velocity: v approaches u * vmax with the time constant vmax / K (movement.md 1.2 step 6).
         if not has_input and math::abs{ x = ctl.vx } < 0.25 and math::abs{ x = ctl.vy } < 0.25 {
@@ -146,6 +145,7 @@ namespace ctl {
         }
         let v = math::sqrtf{ x = ctl.vx * ctl.vx + ctl.vy * ctl.vy }
         c2.speed = v
+        ctl.moved_speed = if v > 1.0 { v } else { 0.0 }
         if v > 1.0 {
             // Move along the facing by |v| dt (movement.md 1.2 step 7; any distance: the 0.033 m floor is only for a
             // debug speed of 5000 m/s or more), sliding along what blocks (MoveDirect). A failed move leaves the
