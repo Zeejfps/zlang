@@ -29,7 +29,7 @@ namespace movement {
 
     // MOVETOPOINT (actions.md 3.1): params 0 the point, 1 run (int), 2 range, 3 the target object
     // (the point follows it), 4 timeout seconds (0 none), 5 force (int: a script's ActionForceMoveTo*, whose timeout
-    // jumps to the goal; any other move gives up when its timeout runs out). The path comes from lib/engine/paths.ctx
+    // jumps to the goal; any other move gives up when its timeout runs out), 6 a follower's move (int: FOLLOWLEADER's). The path comes from lib/engine/paths.ctx
     // and is planned again when the goal moves 2 m or more (movement.md 3.2 step 12).
     fn move_to_point { mut w: world::World, id: u32, a: *mut actions::Action } -> actions::Status {
         let o = world::object{ w = &w, id } ifnull { return actions::Status::failed }
@@ -39,7 +39,7 @@ namespace movement {
         // A party member following the leader (FOLLOWLEADER, movement.md 6.2) goes to its formation point, which
         // moves with the leader's trail, and sets its own pace each frame: no acceleration ramp, no braking, and the
         // gait follows the pace. It is not done while the leader moves.
-        let follower = actions::int_param{ a, i = 5 } != 0 and target != obj::INVALID
+        let follower = actions::int_param{ a, i = 6 } != 0 and target != obj::INVALID
         let mut lead_speed: f32 = 0.0
         if target != obj::INVALID {
             let t = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }

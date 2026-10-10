@@ -432,8 +432,9 @@ namespace actions {
         move.params[1] = Param::int{ v = 1 }
         move.params[2] = Param::float{ v = dist }
         move.params[3] = Param::object{ id = target }
-        // FOLLOWLEADER sets its own pace and gait each frame (movement::follow_pace, movement.md 6.2).
-        if leader { move.params[5] = Param::int{ v = 1 } }
+        // FOLLOWLEADER sets its own pace and gait each frame (movement::follow_pace, movement.md 6.2): param 6 marks the
+        // move as a follower's (param 5 is a script's force flag).
+        if leader { move.params[6] = Param::int{ v = 1 } }
         add_front{ &w, id, action = move }
         return Status::done
     }
