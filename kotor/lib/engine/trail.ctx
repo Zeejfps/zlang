@@ -1,0 +1,212 @@
+// The leader's trail and the followers' formation places (docs/re/movement.md 6): the client party
+// table keeps the last 100 places the leader stood on (CSWCPartyTrail, RecordLeaderPosition 0x00636a30);
+// each follower's follow point B is on that trail at its own distance behind the leader, and its
+// formation point is B plus its formation offset turned by the leader's heading where he stood there.
+// A follower walks the trail to its place (UpdateFollowLeader 0x0051c360) and pathfinds only when
+// it cannot get onto the trail (MoveToFormationPoint, state 0).
+//
+//   trail::record{ &w }                         once a frame, before the creatures move
+//   trail::formation_point{ w = &w, id }        where member `id` stands, ?Vec3 (null: not a follower)
+//   trail::route{ &w, id, from, out = &path }   a follower's path to it, along the trail
+namespace trail {
+    const RECORDS: usize = 100
+    // A new record once the leader has gone this far from the last (the original merges closer ones,
+    // 0x00636a30).
+    const SPACING: f32 = 0.25
+    // A leader who moves farther in one frame was placed (a jump, a transition): the trail restarts.
+    const JUMP: f32 = 3.0
+    // Each follower's place on the trail is this much farther back than the one before it (client
+    // party +0x234, 1.5 for every formation; constructor 0x00636170).
+    const SLOT_DISTANCE: f32 = 1.5
+
+    struct Trail {
+        places: [100]math::Vec3,    // newest last; a ring from `first`
+        headings: [100]math::Vec3,  // the leader's facing at each place
+        first: usize,
+        count: usize,
+        leader: u32,
+        area: u32,
+    }
+
+    fn new {} -> Trail {
+        return Trail{ places = [math::vec3::zero{}; 100], headings = [math::vec3::zero{}; 100], first = 0, count = 0,
+            leader = obj::INVALID, area = obj::INVALID }
+    }
+
+    // The formation offsets of the two followers, x to the leader's right and y ahead of him, in metres
+    // (the client party's formation 0, set by its constructor 0x00636170 through 0x00634760: (1.5, -0.7) and
+    // (-1.5, 0.8)): with their trail distances, both stand 2.2 m behind the leader, 1.5 m to each side.
+    fn offset { slot: usize } -> math::Vec2 {
+        if slot == 1 { return math::Vec2{ x = 1.5, y = -0.7 } }
+        return math::Vec2{ x = -1.5, y = 0.8 }
+    }
+
+    fn at { t: *Trail, i: usize } -> usize { return (t.first + i) % RECORDS }
+
+    fn push { mut t: Trail, p: math::Vec3, heading: math::Vec3 } {
+        if t.count < RECORDS {
+            let k = at{ t = &t, i = t.count }
+            t.places[k] = p
+            t.headings[k] = heading
+            t.count = t.count + 1
+            return
+        }
+        t.places[t.first] = p
+        t.headings[t.first] = heading
+        t.first = (t.first + 1) % RECORDS
+    }
+
+    // A restarted trail (CSWCPartyTrail::Reset 0x00637890, 0x00637630): the places 3 m and 1.5 m behind
+    // the leader (when they are on the walkmesh and he can walk straight to them), then his own.
+    fn reset { mut w: world::World, lead: *obj::Object } {
+        let t = &w.party.trail
+        t.first = 0
+        t.count = 0
+        t.leader = lead.id
+        t.area = lead.area
+        let f = facing_of{ o = lead }
+        let mut k: i32 = 2
+        while k >= 1 {
+            let back = math::Vec3{ x = lead.position.x - f.x * SLOT_DISTANCE * @as(f32, k), y = lead.position.y - f.y * SLOT_DISTANCE * @as(f32, k), z = lead.position.z }
+            k = k - 1
+            let floor = walkmap::floor{ m = &w.walk, x = back.x, y = back.y, z = back.z + 0.5 } ifnull { continue }
+            let p = math::Vec3{ x = back.x, y = back.y, z = floor.z }
+            if not paths::clear{ w = &w, a = lead.position, b = p } { continue }
+            push{ t = &w.party.trail, p, heading = f }
+        }
+        push{ t = &w.party.trail, p = lead.position, heading = f }
+    }
+
+    fn facing_of { o: *obj::Object } -> math::Vec3 {
+        let f = math::Vec3{ x = o.orientation.x, y = o.orientation.y, z = 0.0 }
+        let n = math::sqrtf{ x = f.x * f.x + f.y * f.y }
+        if n < 0.0001 { return math::Vec3{ x = 0.0, y = 1.0, z = 0.0 } }
+        return math::Vec3{ x = f.x / n, y = f.y / n, z = 0.0 }
+    }
+
+    // The leader's place, recorded when he has moved (the original records after each of his steps);
+    // a new leader, another area or a jump restarts the trail.
+    fn record { mut w: world::World } {
+        let lead = world::object{ w = &w, id = party::leader{ w = &w } } ifnull {
+            w.party.trail.count = 0
+            w.party.trail.leader = obj::INVALID
+            return
+        }
+        let t = &w.party.trail
+        if t.count == 0 or t.leader != lead.id or t.area != lead.area {
+            reset{ &w, lead }
+            return
+        }
+        let last = t.places[at{ t, i = t.count - 1 }]
+        let d = movement::distance_2d{ a = last, b = lead.position }
+        if d > JUMP {
+            reset{ &w, lead }
+            return
+        }
+        if d < SPACING { return }
+        push{ t = &w.party.trail, p = lead.position, heading = facing_of{ o = lead } }
+    }
+
+    // Where a member is in the party (1, 2 for the followers; 0 for the leader or a non-member).
+    fn slot_of { w: *world::World, id: u32 } -> usize {
+        let mut i: usize = 1
+        while i < w.party.count {
+            if w.party.members[i] == id { return i }
+            i = i + 1
+        }
+        return 0
+    }
+
+    // A point on the trail `back` metres behind the leader (measured along it from his place), and the
+    // index of the record at its newer end; the oldest place when the trail is shorter.
+    struct Mark { p: math::Vec3, heading: math::Vec3, index: usize }
+
+    fn mark { w: *world::World, lead: *obj::Object, back: f32 } -> Mark {
+        let t = &w.party.trail
+        let mut here = lead.position
+        let mut heading = facing_of{ o = lead }
+        let mut left = back
+        let mut i = t.count
+        while i > 0 {
+            i = i - 1
+            let k = at{ t, i }
+            let p = t.places[k]
+            let d = movement::distance_2d{ a = here, b = p }
+            if d >= left and d > 0.0001 {
+                let s = left / d
+                return Mark{ p = math::Vec3{ x = here.x + (p.x - here.x) * s, y = here.y + (p.y - here.y) * s, z = here.z + (p.z - here.z) * s }, heading, index = i + 1 }
+            }
+            left = left - d
+            here = p
+            heading = t.headings[k]
+        }
+        return Mark{ p = here, heading, index = 0 }
+    }
+
+    // A follower's follow point B on the trail (the straggler rule's formation place, fight::update_party).
+    fn follow_point { w: *world::World, id: u32 } -> ?math::Vec3 {
+        let slot = slot_of{ w, id }
+        if slot == 0 { return null }
+        let lead = world::object{ w, id = party::leader{ w } } ifnull { return null }
+        if w.party.trail.leader != lead.id or w.party.trail.count == 0 { return lead.position }
+        return mark{ w, lead, back = SLOT_DISTANCE * @as(f32, slot) }.p
+    }
+
+    // Where a follower stands: its follow point plus its formation offset turned by the leader's
+    // heading there (MoveToFormationPoint 0x0051ac10); the follow point itself when that spot is off the
+    // walkmesh or cannot be walked to from it (the original looks for the nearest safe spot within 3 m).
+    fn formation_point { w: *world::World, id: u32 } -> ?math::Vec3 {
+        let slot = slot_of{ w, id }
+        if slot == 0 { return null }
+        let lead = world::object{ w, id = party::leader{ w } } ifnull { return null }
+        if w.party.trail.leader != lead.id or w.party.trail.count == 0 { return lead.position }
+        let m = mark{ w, lead, back = SLOT_DISTANCE * @as(f32, slot) }
+        let off = offset{ slot }
+        let h = m.heading
+        // The right of a heading (x, y) is (y, -x).
+        let x = m.p.x + h.y * off.x + h.x * off.y
+        let y = m.p.y - h.x * off.x + h.y * off.y
+        let floor = walkmap::floor{ m = &w.walk, x, y, z = m.p.z + 0.5 } ifnull { return m.p }
+        let f = math::Vec3{ x, y, z = floor.z }
+        if not paths::clear{ w, a = m.p, b = f } { return m.p }
+        return f
+    }
+
+    // A follower's way to its formation point (UpdateFollowLeader's states, movement.md 6.2): straight
+    // when it can walk there; else onto the trail at the place nearest its follow point that it can walk
+    // straight to, along the trail to the follow point and on to the formation point; else a planned path
+    // (state 0 pathfinds).
+    fn route { mut w: world::World, id: u32, from: math::Vec3, goal: math::Vec3, out: *mut list::List(math::Vec3, heap::Heap), adjusted: *mut bool } -> bool {
+        adjusted.* = false
+        list::clear{ list = out }
+        if paths::clear{ w = &w, a = from, b = goal } {
+            list::push{ list = out, item = goal } iferr { return false }
+            return true
+        }
+        let slot = slot_of{ w = &w, id }
+        let lead = world::object{ w = &w, id = party::leader{ w = &w } } ifnull { return paths::plan{ &w, from, goal, out, adjusted } }
+        if slot == 0 or w.party.trail.leader != lead.id or w.party.trail.count == 0 { return paths::plan{ &w, from, goal, out, adjusted } }
+        let m = mark{ w = &w, lead, back = SLOT_DISTANCE * @as(f32, slot) }
+        // The trail's places older than B, newest first: the first one in a straight walk is where it joins.
+        let mut i = m.index
+        let mut join: usize = RECORDS
+        while i > 0 {
+            i = i - 1
+            let p = w.party.trail.places[at{ t = &w.party.trail, i }]
+            if movement::distance_2d{ a = p, b = from } > 15.0 { continue }
+            if paths::clear{ w = &w, a = from, b = p } {
+                join = i
+                break
+            }
+        }
+        if join == RECORDS { return paths::plan{ &w, from, goal, out, adjusted } }
+        i = join
+        while i < m.index {
+            list::push{ list = out, item = w.party.trail.places[at{ t = &w.party.trail, i }] } iferr { return false }
+            i = i + 1
+        }
+        list::push{ list = out, item = m.p } iferr { return false }
+        if movement::distance_2d{ a = m.p, b = goal } > 0.01 { list::push{ list = out, item = goal } iferr { return false } }
+        return true
+    }
+}

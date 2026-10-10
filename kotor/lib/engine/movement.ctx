@@ -36,9 +36,18 @@ namespace movement {
         let c = obj::creature{ o } ifnull { return actions::Status::failed }
         let mut goal = actions::vector_param{ a, i = 0 }
         let target = actions::object_param{ a, i = 3 }
+        // A party member following the leader (FOLLOWLEADER, movement.md 6.2) goes to its formation point, which
+        // moves with the leader's trail, and sets its own pace each frame: no acceleration ramp, no braking, and the
+        // gait follows the pace. It is not done while the leader moves.
+        let follower = actions::int_param{ a, i = 5 } != 0 and target != obj::INVALID
+        let mut lead_speed: f32 = 0.0
         if target != obj::INVALID {
             let t = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
             goal = t.position
+            if follower {
+                if obj::creature{ o = t } is some{ value = lc } { lead_speed = lc.speed }
+                if trail::formation_point{ w = &w, id } is some{ value = f } { goal = f }
+            }
         }
         let run = actions::int_param{ a, i = 1 } != 0 and not stealth::walk_only{ c }
         let range = math::max{ a = actions::float_param{ a, i = 2 }, b = 0.1 }
@@ -58,7 +67,7 @@ namespace movement {
             world::set_animation{ o = back, id = obj::ANIM_STAND, speed = 1.0 }
             return actions::Status::done
         }
-        if distance_2d{ a = o.position, b = goal } <= range {
+        if distance_2d{ a = o.position, b = goal } <= range and not (follower and lead_speed > 0.1) {
             stop{ &w, id }
             world::set_animation{ o, id = obj::ANIM_STAND, speed = 1.0 }
             return actions::Status::done
@@ -74,7 +83,9 @@ namespace movement {
         if c.path.len == 0 or c.path_next >= c.path.len or distance_2d{ a = c.path_goal, b = goal } >= 2.0 {
             c.path_next = 0
             c.path_goal = goal
-            if not paths::plan{ &w, from = o.position, goal, out = &c.path, adjusted = &c.path_adjusted } {
+            let planned = if follower { trail::route{ &w, id, from = o.position, goal, out = &c.path, adjusted = &c.path_adjusted } }
+                else { paths::plan{ &w, from = o.position, goal, out = &c.path, adjusted = &c.path_adjusted } }
+            if not planned {
                 if w.log.actions {
                     world::prefix{ w = &w }
                     _ = @fmt(&w.io, "move {}: no route from {} {} to {} {} (try {})\n", id, o.position.x, o.position.y, goal.x, goal.y, a.phase + 1)
@@ -87,19 +98,16 @@ namespace movement {
                 }
                 return actions::Status::running
             }
+        } else if follower and not c.path_adjusted {
+            // The formation point drifts with the leader: the path's end goes with it until it has moved 2 m.
+            list::items{ list = c.path }[c.path.len - 1] = goal
         }
         c.moving = true
         let scale = fight::speed_scale{ o }
         let rate = (if run { c.run_rate } else { c.walk_rate }) * scale
-        // A party member following the leader (FOLLOWLEADER, movement.md 6.2) sets its own pace each frame:
-        // no acceleration ramp, no braking, and the gait follows the pace.
-        let follower = actions::int_param{ a, i = 5 } != 0 and target != obj::INVALID
         let mut pace = Pace{ speed = 0.0, base = 0.0 }
         let mut s: f32 = 0.0
         if follower {
-            let lead = world::object{ w = &w, id = target } ifnull { return actions::Status::failed }
-            let mut lead_speed: f32 = 0.0
-            if obj::creature{ o = lead } is some{ value = lc } { lead_speed = lc.speed }
             let to_go = math::max{ a = remaining{ from = o.position, path = list::items{ list = c.path }, next = c.path_next } - range, b = 0.0 }
             pace = follow_pace{ c, lead_speed, to_go, scale }
             if stealth::walk_only{ c } {

@@ -1352,6 +1352,18 @@ here. (med)
   (MoveDirect, path and forced-motion steps); `GetTrailPoint` `0x006350f0` hands out trail points;
   `0x00634cc0(n)` returns record n (heading at `+0xc`). (med for the table, low for individual
   fields)
+- **Formation offsets.** The client party's constructor (`0x00636170`) fills three formations at
+  `+0x1c8` (0x24 bytes each: the offsets of follower 1 and follower 2) and a float per formation at
+  `+0x234` (1.5 for all three), then selects formation 0 (`0x00634760`, which copies the pair into
+  entries 1 and 2's `+0x38` and the float into `+0x1c0`, and swaps the pair when the mirror flag
+  `+0x1c4` is set; `0x006346f0` negates both x and flips that flag). Formation 0: follower 1
+  (1.5, −0.7, 0), follower 2 (−1.5, 0.8, 0); formation 1: both 0; formation 2: (−2, 1.5, 0) and
+  (2, 4.5, 0). The offset is turned by the quaternion that takes (0, 1, 0) to the heading (y ahead,
+  x to the right; `0x006348c0`, `PlacePartyAroundLeader` `0x00565b00`). A restarted trail
+  (`CSWCPartyTrail::Reset` `0x00637890` → `0x00637630`) puts follower 1's follow point 1.5 m and
+  follower 2's 3.0 m behind the leader (nearest safe spots within 2 m) and records them, so with
+  formation 0 both followers stand 2.2 m behind the leader, 1.5 m to either side. Who calls
+  `0x00634760` with another formation, and when the mirror flips, was not traced. (med)
 - Each follower runs action **FOLLOWLEADER (0x3d)** (`AIActionFollowLeader` `0x00511130`): for a
   party member (`+0xa88`) with a follow record, alive, not dying, with a path state and able to
   move, that is not the player's creature (`GetPlayerCreatureId`, the controlled leader), it sets
@@ -1412,12 +1424,21 @@ here. (med)
    pace while the follower hurries at 1.2 x or 1.5 x. The cycle (3.6) follows this speed: walk below
    0.6 x the run rate, run above, the rate speed x cycle length / DriveAnim. (med)
 
-**Ours** (`movement::follow_pace`, `settle_follow_gait`; FOLLOWLEADER queues a MOVETOPOINT to the leader, range 2 m,
-flagged as a follower): d is the path still to walk to the leader less the 2 m, there is no trail or formation, and the
-rules above give the speed, the smoothed speed (kept in `follow_speed`, 0 whenever the follower stops), the cycle and its
-rate. The order to follow still comes from `ai::wake_follower` (leader over 4 m away, queue empty for a second), not
-from the first step the leader takes as in the original, so a follower starts a few metres behind where the original's
-would be and walks or runs in by the same rules.
+**Ours** (`lib/engine/trail.ctx`; `movement::follow_pace`, `settle_follow_gait`): the leader's place is recorded
+once a frame when he has gone 0.25 m from the last record (100 records; a new leader, another area or a jump of
+more than 3 m restarts the trail with the two seeded follow points, as `Reset`). Follower n's follow point B is on
+the trail 1.5 × n m behind the leader's place, its formation point B + formation 0's offset turned by the heading
+of the record there (B itself when that spot is off the walkmesh or not in a straight walk from B; the original
+looks for the nearest safe spot within 3 m). FOLLOWLEADER queues a MOVETOPOINT to the formation point (range 0.5,
+CHECKFORMATIONPOINT's) flagged as a follower; the move takes the formation point afresh every frame, is not done
+while the leader moves, and plans its way along the trail: straight when it can, else onto the trail at the
+record nearest B that it can walk straight to (within 15 m), along the records to B and on to the formation point,
+else a planned path (state 0). d is the path still to walk less the 0.5 m; the rules above give the speed, the
+smoothed speed (kept in `follow_speed`, 0 whenever the follower stops), the cycle and its rate. The follow state
+machine's states are not reproduced one by one, and the creature walks its path rather than moving halfway to
+C each frame. The order to follow still comes from `ai::wake_follower` (leader over 4 m away, queue empty for a
+second), not from the first step the leader takes as in the original, so a follower starts a few metres behind
+where the original's would be and walks or runs in by the same rules.
 
 There is **no teleport** of a far follower in this code: it pathfinds instead (state 0); the only
 direct placement is step 4's hop onto C, which stays within about a frame's walk. Script and

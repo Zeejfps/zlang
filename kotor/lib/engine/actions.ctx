@@ -390,15 +390,27 @@ namespace actions {
 
     // FOLLOW (actions.md 3.3, ActionForceFollowObject): params target, distance. Farther than the
     // distance: a move to it, a short wait, and this again in front; near: it stays, running,
-    // until the queue is cleared. FOLLOWLEADER does the same after the party leader at 2 m
-    // (ours: the original hands it to the locomotion code, movement.md 6).
+    // until the queue is cleared. FOLLOWLEADER does the same after the member's formation point on the
+    // leader's trail (trail.ctx), within FORMATION_RANGE, and its move goes on while the leader moves
+    // (ours: the original hands it to the locomotion code every frame, movement.md 6); a creature that is
+    // not one of the two followers goes to the leader, at 2 m.
+    // How near its formation point a follower stops (CHECKFORMATIONPOINT's range, MoveToFormationPoint 0x0051ac10).
+    const FORMATION_RANGE: f32 = 0.5
+
     fn follow { mut w: world::World, id: u32, a: *mut Action, leader: bool } -> Status {
         let o = world::object{ w = &w, id } ifnull { return Status::failed }
         let target = if leader { party::leader{ w = &w } } else { object_param{ a, i = 0 } }
         if target == id { return Status::running }
         let t = world::object{ w = &w, id = target } ifnull { return if leader { Status::running } else { Status::failed } }
-        let dist = if leader { 2.0 } else { math::max{ a = float_param{ a, i = 1 }, b = 1.0 } }
-        if movement::distance_2d{ a = o.position, b = t.position } <= dist + 0.5 { return Status::running }
+        let mut dist = if leader { 2.0 } else { math::max{ a = float_param{ a, i = 1 }, b = 1.0 } }
+        let mut goal = t.position
+        if leader {
+            if trail::formation_point{ w = &w, id } is some{ value = f } {
+                goal = f
+                dist = FORMATION_RANGE
+            }
+        }
+        if movement::distance_2d{ a = o.position, b = goal } <= dist + 0.5 { return Status::running }
         let copy = a.*
         a.params = [Param::none; 8]
         add_front{ &w, id, action = copy }
@@ -411,7 +423,7 @@ namespace actions {
         add_front{ &w, id, action = pause }
         let mut move = make{ kind = Kind::move_to_point }
         move.group = copy.group
-        move.params[0] = Param::vector{ v = t.position }
+        move.params[0] = Param::vector{ v = goal }
         move.params[1] = Param::int{ v = 1 }
         move.params[2] = Param::float{ v = dist }
         move.params[3] = Param::object{ id = target }

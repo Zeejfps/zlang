@@ -45,6 +45,8 @@ namespace party {
         // The tutorial pop-ups already shown (PT_TUT_WND_SHOWN, CGuiInGame +0xba8): bit n of byte n / 8 is
         // tutorial.2da row n, 43 rows. A new game starts with none.
         tutorial_shown: [6]u8,
+        // The leader's trail and the followers' places on it (trail.ctx; the client party table's, movement.md 6.1).
+        trail: trail::Trail,
     }
 
     const PLANETS: i32 = 16
@@ -69,7 +71,7 @@ namespace party {
             saved_slots = [-1; 3], saved_count = 0, saved_leader = -1,
             templates = [resref::empty{}; 12], xp_pool = 0, joining_xp = [0; 12],
             pazaak_cards = [2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], pazaak_deck = [-1; 10], pazaak_won = false, cost_mult = [1.0; 160],
-            planet_mask = 0, planet_selected = -1, controlled = -1, tutorial_shown = [0; 6],
+            planet_mask = 0, planet_selected = -1, controlled = -1, tutorial_shown = [0; 6], trail = trail::new{},
         }
     }
 
