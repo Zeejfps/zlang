@@ -60,8 +60,12 @@ label itself takes no pointer, so a tab lights and clicks over its button's rect
 
 **Events go to the owner, polled.** Controls have no handlers. An action puts an `Event` in a queue
 (`activate`, `cancel`, `hilight`, `unhilight`, `row_selected`, `row_activated`, `value_changed`,
-`text_accepted`, `right_click`, `scrolled`) with the panel id, the control's ID and TAG, and a
-value; the owner takes them once a frame and dispatches with `if`/`match` on tags. (ctxlang cannot
+`text_accepted`, `right_click`, `scrolled`, `dropped`) with the panel id, the control's ID and TAG, and a
+value; the owner takes them once a frame and dispatches with `if`/`match` on tags. A control made
+draggable (`set_draggable`, the pazaak hand cards) whose picture is set comes away once the
+pointer moves more than 12 pixels from the press: its picture (and a companion label) follows the
+pointer over every panel, the hover keeps following the pointer, and letting go sends `dropped`
+with the TAG of the control under the pointer (`target`) instead of `activate`. (ctxlang cannot
 store a function whose error set is inferred, so stored callbacks would need a table of
 non-failing wrappers; a poll loop is shorter.) Panels are identified by the `u32` `gui::open`
 returns.

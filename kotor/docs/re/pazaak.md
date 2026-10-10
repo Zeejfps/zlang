@@ -166,7 +166,19 @@ The card played carries the sign the best-up search chose.
   (0x1f9) or dragging it onto one of the player's table slots (`0x0067ef00`), only in state 3; a plain
   click does nothing (its handler `0x00680790` acts only when a pending mode `+0x86e4` is 1, play, or
   2, flip, set by two controls at `+0x6ff4`/`+0x71c8` that no `.gui` tag binds). Right-clicking a hand flip card (0x44) toggles its sign like its `BTN_FLIPn`
-  (`0x0067dcf0`).
+  (`0x0067dcf0`: the panel's active control must be a hand card holding a flip card, ids 12..17;
+  it plays click sound 0 and refreshes; no state check, and the refresh never disables the hand cards,
+  only tinted 0.67 grey outside state 3, so it works on either side's turn).
+  The drag is the card control's own (vtable `0x007531c0`, every card of both panels): a left press
+  stores the pointer (`0x0067d040`); a move with the left capture held, while the card has a fill
+  and has not yet been dragged, makes it the manager's dragged object (+0x54) once the pointer is
+  more than 12 pixels from the press in x or y (`0x0067d060`, which answers 0, so the hover keeps
+  following the pointer); the manager draws the dragged object after the modal panels, centred on
+  the pointer and not hilighted, with its number label moved as much (`0x0067cf00`); letting go
+  clears it and sends the card event 0x17feb instead of 0x27 (`0x0067d0d0`). Only the player's hand
+  cards handle 0x17feb (`0x0067ef00`, set by the constructor at `0x00681501`): in state 3, with the
+  hovered control one of `BTN_PLR0..8` (or the unbound play control `+0x6ff4`), the card is played
+  (`0x0067ede0`); over the unbound flip control `+0x71c8` it is flipped.
 
 ## The flow (the game panel's state machine, `0x00680030`)
 

@@ -167,6 +167,20 @@ namespace gui {
         }
     }
 
+    // A press on the control and a move of more than DRAG_SLOP pixels drags its picture: the
+    // picture follows the pointer, centred on it, drawn over every panel with the `with` control
+    // (a label, "" none) moved as much, until the button is let go, which sends `dropped` instead
+    // of `activate`. A control showing no picture (set_picture) stays put. The original's pazaak
+    // card control (0x0067d060 begins the drag, 0x0067cf00 draws it, 0x0067d0d0 ends it).
+    fn set_draggable { mut g: Gui, panel: u32, tag: []u8, on: bool, with: []u8 } {
+        let p = find_panel{ &g, id = panel } ifnull { return }
+        let i = find_by_tag{ p, tag }
+        if i < 0 { return }
+        let c = list::at{ list = p.controls, i = @as(usize, i) }
+        c.flags = if on { c.flags | F_DRAGGABLE } else { clear_bits{ f = c.flags, bits = F_DRAGGABLE } }
+        c.drag_with = if with.len > 0 { find_by_tag{ p, tag = with } } else { -1 }
+    }
+
     // CSWGuiControl::SetHilighted (vtable slot 16): the control draws its HILIGHT border, whatever the
     // pointer does; its text is left alone.
     fn set_hilighted { mut g: Gui, panel: u32, tag: []u8, on: bool } {
@@ -404,7 +418,8 @@ namespace gui {
         c.parent = -1
         c.x = x
         c.y = y
-        c.flags = clear_bits{ f = c.flags, bits = F_HILIGHT }
+        c.flags = clear_bits{ f = c.flags, bits = F_HILIGHT | F_DRAGGABLE }
+        c.drag_with = -1
         c.text.text = ""
         c.text.buf = slice::empty(u8){}
         c.text.strref = 0xFFFFFFFF

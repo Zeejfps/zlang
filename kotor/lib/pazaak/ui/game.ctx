@@ -11,6 +11,16 @@ namespace pazaak {
         s.setup = 0
         s.game = try gui::open{ &g, &fs, &dev, name = "pazaakgame", mode = gui::Mode::full_screen, modal = true }
         gui::set_backdrop{ &g, &fs, &dev, panel = s.game, kind = 2 }
+        // A hand card can be dragged onto the table (on_game_event), its number with it.
+        let mut t1: [24]u8 = [0; 24]
+        let mut t2: [24]u8 = [0; 24]
+        let mut i: usize = 0
+        while i < HAND_SIZE {
+            let b = tag_of{ into = t1[..], prefix = "BTN_PLRSIDE", a = i, b = 0, two = false }
+            let l = tag_of{ into = t2[..], prefix = "LBL_PLRSIDE", a = i, b = 0, two = false }
+            gui::set_draggable{ &g, panel = s.game, tag = b, on = true, with = l }
+            i = i + 1
+        }
         if s.params.player_name_len > 0 {
             set_label{ &g, panel = s.game, tag = "LBL_PLRNAME", text = s.params.player_name[..s.params.player_name_len] }
         }
@@ -74,7 +84,9 @@ namespace pazaak {
             let l = tag_of{ into = t2[..], prefix = "LBL_PLRSIDE", a = i, b = 0, two = false }
             let c = m.g.player.hand[i]
             show_card{ &s, &g, panel = p, button = b, label = l, c, hidden = false, hand = true, hide = true }
-            gui::set_enabled{ &g, panel = p, tag = b, enabled = can_play_card{ m, i } }
+            // Never disabled, as the original's: a right-click flips it whoever's turn it is, and
+            // play_card refuses it out of turn.
+            gui::set_enabled{ &g, panel = p, tag = b, enabled = is_card{ c } }
             let fb = tag_of{ into = t1[..], prefix = "BTN_FLIP", a = i, b = 0, two = false }
             let flips = is_flip_card{ c }
             gui::set_visible{ &g, panel = p, tag = fb, visible = flips }
@@ -116,6 +128,18 @@ namespace pazaak {
     fn on_game_event { mut s: Session, mut g: gui::Gui, mut fs: Fs, mut dev: gpu::Device, ev: gui::Event } -> ! {
         if ev.kind == gui::EventKind::cancel {
             try open_box{ &s, &g, &fs, &dev, strref = 42425, cancel = true, ask = Ask::quit_game }
+            return
+        }
+        if ev.kind == gui::EventKind::right_click {
+            // A right-click on a hand flip card flips it, as its BTN_FLIPn does (0x0067dcf0).
+            let k = tag_number{ tag = ev.tag, prefix = "BTN_PLRSIDE" }
+            if k >= 0 and flip_card{ m = &s.m, i = @as(usize, k) } { gui::play_sound{ &g, n = 0 } }
+            return
+        }
+        if ev.kind == gui::EventKind::dropped {
+            // A hand card let go over one of the player's table slots is played (0x0067ef00).
+            let k = tag_number{ tag = ev.tag, prefix = "BTN_PLRSIDE" }
+            if k >= 0 and tag_number{ tag = ev.target, prefix = "BTN_PLR" } >= 0 { _ = play_card{ m = &s.m, i = @as(usize, k) } }
             return
         }
         if ev.kind != gui::EventKind::activate { return }

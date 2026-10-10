@@ -218,6 +218,7 @@ namespace gui {
         c.tooltip_buf = slice::empty(u8){}
         c.max_chars = -1
         c.override_fill = no_img{}
+        c.drag_with = -1
         return c
     }
 

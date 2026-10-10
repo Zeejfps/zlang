@@ -28,6 +28,7 @@ namespace gui {
     const F_PULSE_TEXT: u32 = 64        // the text pulses (hilighted buttons, PULSING in the file)
     const F_FOCUS_ONLY: u32 = 128       // never takes the pointer's hover as focus
     const F_MENU_CHECK: u32 = 256       // an options panel's check box: a square bullet at the left, the text beside it (draw.ctx)
+    const F_DRAGGABLE: u32 = 512        // a press on it can drag its picture away (set_draggable; the pazaak cards)
 
     // ---- border fill styles (CSWGuiBorder::Draw; the .gui schema doc has 0 and 1 the other way round)
     const FILL_TILED: i32 = 0
@@ -161,6 +162,9 @@ namespace gui {
         cells: []mut Cell,
         cell_focus: i32,
         cell_art: CellArt,
+        // drawn along with a dragged control, moved as much: the original's card has its number
+        // label as a child, ours is a control of its own; -1 none
+        drag_with: i32,
     }
 
     // One cell of a cell row (the feats and Force powers panels' chain rows, cells.ctx): the owner's
@@ -219,6 +223,7 @@ namespace gui {
         scrolled,                       // a list scrolled (wheel, scroll bar)
         arrow,                          // an arrow key, to a panel that asked (set_key_events); `value` 0 up, 1 down, 2 left, 3 right
         cell_enter,                     // Enter on a panel with a shown list of cell rows, before the focused control has it; `row`, `user` the focused cell
+        dropped,                        // a dragged control was let go (0x17feb); `target` the control it was let go over
     }
 
     struct Event {
@@ -229,6 +234,7 @@ namespace gui {
         value: i32,
         row: i32,
         user: i64,
+        target: []u8,                   // dropped: the TAG of the same panel's control under the pointer, "" none
     }
 
     // A control named by panel id and index.
@@ -279,6 +285,8 @@ namespace gui {
         press_on_selected: bool,        // the press that began this capture landed on the already selected row
         capture_y: i32,                 // a scroll thumb drag: the pointer's y at the press
         capture_value: i32,             // ... and the list's scroll position then
+        press_x: i32, press_y: i32,     // where the last press was
+        drag: Ref,                      // the control being dragged (the manager's +0x54); panel 0 none
         cursor: u32,
         cursor_visible: bool,
         hidden: bool,                   // draws and takes nothing (a movie plays over everything)

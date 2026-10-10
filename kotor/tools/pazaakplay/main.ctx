@@ -15,6 +15,10 @@
 //   shot:NAME    one frame, saved as <out>/NAME.png
 //   wait:N       N frames of 1/30 s
 //   click:TAG    press and release on the control TAG of the top panel (or of the message box)
+//   rclick:TAG   the same with the right button
+//   down:TAG     move onto TAG and press the left button; move:TAG moves there holding it; up lets
+//                go where the pointer is (a drag: down:BTN_PLRSIDE0 move:BTN_PLR0 up)
+//   hand         print the player's hand (values, F a flip card) and how many cards are on the table
 //   pick:A,B,..  click available cards (ids 0..17) in the setup screen
 //   bot:N        up to N frames of a simple player (stands on 17, plays a card against a bust, OKs
 //                every message), stopping when the visit ends
@@ -184,6 +188,48 @@ fn run {
             }
         } else if slice::eq_bytes{ a = name, b = "click" } {
             try click{ &io, &fs, &dev, &frame, &g, &w, tag = arg }
+        } else if slice::eq_bytes{ a = name, b = "rclick" } or slice::eq_bytes{ a = name, b = "down" } or slice::eq_bytes{ a = name, b = "move" } {
+            let r = gui::control_rect{ &g, panel = top_panel{ w = w }, tag = arg }
+            if r == null {
+                _ = @fmt(&io, "no control {} on the top panel\n", arg)
+            } else {
+                let x = @as(i32, r.x + r.w / 2.0)
+                let y = @as(i32, r.y + r.h / 2.0)
+                let held: u32 = if slice::eq_bytes{ a = name, b = "move" } { 1 } else { 0 }
+                _ = gui::handle_event{ &g, ev = sdl::Event::mouse_motion{ x, y, dx = 0, dy = 0, buttons = held }, scale_x = 1.0, scale_y = 1.0 }
+                if slice::eq_bytes{ a = name, b = "rclick" } {
+                    _ = gui::handle_event{ &g, ev = sdl::Event::mouse_button{ down = true, button = sdl::BUTTON_RIGHT, clicks = 1, x, y }, scale_x = 1.0, scale_y = 1.0 }
+                    _ = gui::handle_event{ &g, ev = sdl::Event::mouse_button{ down = false, button = sdl::BUTTON_RIGHT, clicks = 1, x, y }, scale_x = 1.0, scale_y = 1.0 }
+                } else if slice::eq_bytes{ a = name, b = "down" } {
+                    _ = gui::handle_event{ &g, ev = sdl::Event::mouse_button{ down = true, button = sdl::BUTTON_LEFT, clicks = 1, x, y }, scale_x = 1.0, scale_y = 1.0 }
+                }
+            }
+            try one_frame{ &fs, &dev, &frame, &g, &w }
+        } else if slice::eq_bytes{ a = name, b = "up" } {
+            _ = gui::handle_event{ &g, ev = sdl::Event::mouse_button{ down = false, button = sdl::BUTTON_LEFT, clicks = 1, x = g.mouse_x, y = g.mouse_y }, scale_x = 1.0, scale_y = 1.0 }
+            try one_frame{ &fs, &dev, &frame, &g, &w }
+        } else if slice::eq_bytes{ a = name, b = "hand" } {
+            let side = w.s.m.g.player
+            let mut on: i32 = 0
+            let mut t: usize = 0
+            while t < 9 {
+                if pazaak::is_card{ c = side.table[t] } { on = on + 1 }
+                t = t + 1
+            }
+            _ = @fmt(&io, "hand:")
+            let mut h: usize = 0
+            while h < 4 {
+                let c = side.hand[h]
+                if not pazaak::is_card{ c } {
+                    _ = @fmt(&io, " -")
+                } else if pazaak::is_flip_card{ c } {
+                    _ = @fmt(&io, " {}F", pazaak::card_value{ c })
+                } else {
+                    _ = @fmt(&io, " {}", pazaak::card_value{ c })
+                }
+                h = h + 1
+            }
+            _ = @fmt(&io, " table {}\n", on)
         } else if slice::eq_bytes{ a = name, b = "pick" } {
             let mut at: usize = 0
             while at <= arg.len {

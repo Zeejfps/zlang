@@ -125,7 +125,8 @@ No match hung or broke a rule in over 160,000.
 - **One match per visit**, no rematch, as the original's calls end the visit.
 - **A hand card is played with one click** (the original wants a double-click or a drag; a click on
   the GUI's hover-focus model would be easy to misfire either way). The tutorial's confirmations
-  guard low totals as the original's do.
+  guard low totals as the original's do. Dragging a hand card onto one of the player's table slots
+  plays it too, and a right-click on a hand flip card flips it, as in the original.
 - **The player always starts a set**, as in the original; ties score nothing.
 - **A blocking visit** in the loop rather than a screen layered into the frame: the minigame
   takes the whole frame, the world is not ticked meanwhile, and a script's end script runs when it
@@ -137,7 +138,10 @@ No match hung or broke a rule in over 160,000.
 ### Open
 
 - Music during the game (the original switches the sound mode to 4; unexplored).
-- The card hover highlight (`lbl_cardhilite`), dragging a hand card onto the table, key shortcuts.
+- The card hover highlight (`lbl_cardhilite`), key shortcuts, dragging cards in the setup screen.
+- Dimming the hand cards outside the player's turn (the original tints them 0.67 grey; ours keeps
+  them enabled, as the original does, so a right-click flips one at any time, but draws them
+  undimmed).
 - Saving the cards and a rematch screen if the real game turns out to have one.
 
 ## Swoop racing and the turret: the plan

@@ -198,7 +198,7 @@ namespace ingame {
     // equipment's slot selection) and the menu stays.
     fn panel_escape { mut ui: Ingame, mut w: world::World, mut dev: gpu::Device } -> bool {
         if ui.menu == MENU_EQUIP and ui.menus.equip.selecting {
-            let ev = gui::Event{ kind = gui::EventKind::activate, panel = ui.menu_panel, control = -1, tag = "BTN_BACK", value = 0, row = 0, user = 0 }
+            let ev = gui::Event{ kind = gui::EventKind::activate, panel = ui.menu_panel, control = -1, tag = "BTN_BACK", value = 0, row = 0, user = 0, target = "" }
             return panel_event{ &ui, &w, &dev, n = ui.menu, panel = ui.menu_panel, ev }
         }
         return false

@@ -29,7 +29,18 @@ namespace gui {
             id = c.id
             tag = c.tag
         }
-        list::push{ list = &g.events, item = Event{ kind, panel = p.id, control = id, tag, value, row, user } } iferr {}
+        list::push{ list = &g.events, item = Event{ kind, panel = p.id, control = id, tag, value, row, user, target = "" } } iferr {}
+    }
+
+    // `dropped` for control `ci` let go over control `over` of the same panel (-1 none).
+    fn push_drop { mut g: Gui, p: *Panel, ci: i32, over: i32 } {
+        if g.events.len >= MAX_EVENTS {
+            g.dropped_events = g.dropped_events + 1
+            return
+        }
+        let c = list::at{ list = p.controls, i = @as(usize, ci) }
+        let target = if over >= 0 { list::at{ list = p.controls, i = @as(usize, over) }.tag } else { "" }
+        list::push{ list = &g.events, item = Event{ kind = EventKind::dropped, panel = p.id, control = c.id, tag = c.tag, value = 0, row = -1, user = 0, target } } iferr {}
     }
 
     // The events since the last call, oldest first; the slice is valid until the next call to
@@ -210,10 +221,15 @@ namespace gui {
     fn on_motion { mut g: Gui, x: i32, y: i32 } {
         g.mouse_x = x
         g.mouse_y = y
-        if g.capture.panel != 0 {
-            drag_capture{ &g, x, y }
-            return
+        if g.capture.panel != 0 and g.drag.panel == 0 {
+            begin_drag{ &g, x, y }
+            if g.drag.panel == 0 {
+                drag_capture{ &g, x, y }
+                return
+            }
         }
+        // A dragged control leaves the hover to whatever is under the pointer, as every other
+        // move does: the original's drag call answers 0, so the manager re-tests the hover.
         let h = hit_test{ &g, x, y }
         if h.panel != g.hover.panel or h.control != g.hover.control {
             let old = panel_of{ &g, r = g.hover }
@@ -344,6 +360,8 @@ namespace gui {
     fn on_press { mut g: Gui, x: i32, y: i32, button: i32 } -> bool {
         g.mouse_x = x
         g.mouse_y = y
+        g.press_x = x
+        g.press_y = y
         let h = hit_test{ &g, x, y }
         let m = top_modal{ &g }
         let p = panel_of{ &g, r = h } ifnull { return m != null }
@@ -384,6 +402,22 @@ namespace gui {
             }
         }
         return true
+    }
+
+    // How far the pointer must move from the press, in either axis, before a draggable control's
+    // picture comes away (0x0067d060: more than 12).
+    const DRAG_SLOP: i32 = 12
+
+    // The left button holds a draggable control that shows a picture: once the pointer is far
+    // enough from the press, it is dragged.
+    fn begin_drag { mut g: Gui, x: i32, y: i32 } {
+        if g.capture_button != 1 { return }
+        let p = panel_of{ &g, r = g.capture } ifnull { return }
+        let c = list::at{ list = p.controls, i = @as(usize, g.capture.control) }
+        if (c.flags & F_DRAGGABLE) == 0 or not c.override_fill.ok { return }
+        let dx = if x > g.press_x { x - g.press_x } else { g.press_x - x }
+        let dy = if y > g.press_y { y - g.press_y } else { g.press_y - y }
+        if dx > DRAG_SLOP or dy > DRAG_SLOP { g.drag = g.capture }
     }
 
     // Moves a captured slider or scroll thumb with the pointer.
@@ -446,8 +480,15 @@ namespace gui {
         let cap = g.capture
         g.capture = Ref{ panel = 0, control = -1 }
         g.capture_part = 0
+        let dragged = g.drag.panel == cap.panel and g.drag.control == cap.control
+        g.drag = Ref{ panel = 0, control = -1 }
         let p = panel_of{ &g, r = cap } ifnull { return true }
         let h = hit_test{ &g, x, y }
+        if dragged {
+            // Letting go of a drag sends the drop and nothing else (0x0067d0d0).
+            push_drop{ &g, p, ci = cap.control, over = if h.panel == cap.panel { h.control } else { -1 } }
+            return true
+        }
         let same = h.panel == cap.panel and h.control == cap.control
         if button == 3 {
             if same { push_event{ &g, kind = EventKind::right_click, p, ci = cap.control, value = 0, row = -1, user = 0 } }

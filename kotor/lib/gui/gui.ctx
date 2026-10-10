@@ -24,6 +24,7 @@ namespace gui {
             win_w = width, win_h = height, scale = 1.0, ui_w = width, ui_h = height, small_fonts = false,
             mouse_x = width / 2, mouse_y = height / 2, buttons = 0,
             hover = Ref{ panel = 0, control = -1 }, capture = Ref{ panel = 0, control = -1 }, capture_button = 0, capture_part = 0, press_on_selected = false, capture_y = 0, capture_value = 0,
+            press_x = 0, press_y = 0, drag = Ref{ panel = 0, control = -1 },
             cursor = 0, cursor_visible = true, hidden = false, cursors,
             time = 0.0, pulse_border = 1.0, pulse_list = 1.0, hover_time = -1.0, tooltip_delay = 1.0, tooltips = true, tooltip_key = false,
             tooltip_ref = Ref{ panel = 0, control = -1 }, key_repeat = 0.0,
@@ -226,6 +227,7 @@ namespace gui {
                     lost_hover = true
                 }
                 if g.capture.panel == p.id { g.capture = Ref{ panel = 0, control = -1 } }
+                if g.drag.panel == p.id { g.drag = Ref{ panel = 0, control = -1 } }
                 if g.tooltip_ref.panel == p.id { g.tooltip_ref = Ref{ panel = 0, control = -1 } }
                 destroy_panel{ &g, p }
                 let items = list::items{ list = g.panels }
@@ -361,6 +363,7 @@ namespace gui {
         draw_panels_under_views{ &g, &frame }
         if has_overlay{ &g } { return }
         let screen = rect_of{ x = 0, y = 0, w = g.ui_w, h = g.ui_h }
+        draw_drag{ &g, &frame, screen }
         draw_tooltip{ &g, &frame, screen }
         draw_cursor{ &g, &frame, screen }
     }
@@ -409,6 +412,7 @@ namespace gui {
             if p.shown and p.overlay_from >= 0 { draw_panel{ &g, &frame, p, screen, overlay = true } }
             i = i + 1
         }
+        draw_drag{ &g, &frame, screen }
         draw_tooltip{ &g, &frame, screen }
         draw_cursor{ &g, &frame, screen }
     }
@@ -456,6 +460,29 @@ namespace gui {
                 draw_control{ &g, &frame, p, c, alpha = p.alpha, clip }
             }
             i = i + 1
+        }
+    }
+
+    // The dragged control over every panel, centred on the pointer and not hilighted, with its
+    // drag_with control moved as much (0x0067cf00). The control itself stays drawn in its place.
+    fn draw_drag { mut g: Gui, mut frame: render::Frame, screen: render::Rect } {
+        let p = panel_of{ &g, r = g.drag } ifnull { return }
+        let c = list::at{ list = p.controls, i = @as(usize, g.drag.control) }
+        let dx = g.mouse_x - c.w / 2 - (p.sx + c.x)
+        let dy = g.mouse_y - c.h / 2 - (p.sy + c.y)
+        let mut ghost: Control = c.*
+        ghost.x = c.x + dx
+        ghost.y = c.y + dy
+        ghost.flags = clear_bits{ f = ghost.flags, bits = F_HILIGHT }
+        draw_control{ &g, &frame, p, c = &ghost, alpha = p.alpha, clip = screen }
+        if c.drag_with >= 0 and @as(usize, c.drag_with) < p.controls.len {
+            let w = list::at{ list = p.controls, i = @as(usize, c.drag_with) }
+            if (w.flags & F_VISIBLE) != 0 {
+                let mut label: Control = w.*
+                label.x = w.x + dx
+                label.y = w.y + dy
+                draw_control{ &g, &frame, p, c = &label, alpha = p.alpha, clip = screen }
+            }
         }
     }
 
