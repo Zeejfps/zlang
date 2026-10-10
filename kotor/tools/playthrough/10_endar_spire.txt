@@ -11,7 +11,9 @@
 # Lines must be in frame order. The frames are those of the 1/30 s headless run and shift if the engine's
 # timing of a cutscene or a voice changes: check the log's `dialog end` lines when a click misses.
 3 newgame
-4 ui replies 1 1 1 2 1 1 1 1 1 1 1 1 1 1 1 1 3 1 1 1 1 1 1 1 1 3 4 1 default 9
+# The ninth reply answers Trask's medpac tutorial ("How do I use a medpac?"), which he offers after the welding
+# droid's fight when the party took damage there.
+4 ui replies 1 1 1 2 1 1 1 1 1 1 1 1 1 1 1 1 1 3 1 1 1 1 1 1 1 1 3 4 1 default 9
 # The footlocker's panel comes up a third of a second after the use (ours, double-speed lid): used at 2930 so the
 # world pauses where the bot's route was tuned; its rows take nothing, Get Items (640 452) takes all.
 2930 use end_locker01

@@ -687,6 +687,28 @@ The rates actually used (`GetWalkRate` `0x004f1b20`, `GetRunRate` `0x004f1be0`),
 
 `+0xa08` is the movement speed multiplier that the speed effects change (rules.md). (high)
 
+**Who sets the row.** (high)
+
+- `ReadStatsFromGff` (`0x005afce0`) reads the BYTE `MovementRate` (default: the current row) and calls
+  `SetMovementRate` with it; only when that field is absent does it read the INT `WalkRate` (same default)
+  and call it again. A blueprint has only `WalkRate`; a save has both, `MovementRate` being the resolved
+  row that `SaveStats` (`0x005b1b90`) writes from stats `+0x194`. So row 7 is resolved once, when the
+  blueprint is read, and a saved creature keeps the row it had.
+- `CSWPartyTable::AddAvailableNPCByObject` (`0x00564300`, also reached from `AddAvailableNPCByTemplate`
+  `0x005645f0`) sets **row 0, PC_Movement**, before it writes `AVAILNPC<n>`: every companion walks at 3.2 m/s
+  and runs at 5.4, whatever its blueprint says (`p_carth001` names row 8, DM_Fast, which is never used
+  in the party). The player's own character is row 0 from character generation (`MovementRate` 0).
+- `0x004ed850` (the appearance-row reader, called by `PostProcess` with 0) sets row 7 only when its
+  argument is set (callers `0x004ee010`, `0x004ee150`: an appearance change, not traced); `0x005228d0`, a
+  player-to-server message handler, sets row 7 too (not traced, low).
+- `GetCreatureMovmentType` (routine 566, `0x0053efa0`) returns stats `+0x194`, the resolved row; 1 for a
+  non-creature.
+
+The data: 57 of the 1,942 distinct UTCs name a row other than 7: row 1 (Immobile) for 12 (the Leviathan
+bridge crew `kor37_bridge*`, victims, a stunt soldier), 3 (Slow) for Jawas and a few others, 4, 5 (gizka,
+the Manaan droids), 6 (`tar02_larrim`, `kas_fake`, `sta_45darthmalak`), 8 (`p_bastilla001`, `p_carth001`,
+`g_sithtroop002`), 9 (the krayt dragon).
+
 **Sizes.** `CSWSCreature::UpdatePathfindSizes` (`0x004ed6e0`) copies the appearance row
 (`+0xa60`) into the path state: (high)
 
@@ -1151,6 +1173,17 @@ tested with the walkmesh and every placed mesh.
   straight walk that gives 1 or −3 for the samples on the rows below and above the point but any
   result except 0 for those on the columns to its sides (asymmetric in the code; needs a runtime
   check). `bNeedLine` is dropped when the original point is not walkable or overlaps an object.
+  The rings in order: a ring of half-size r tries the row below (y − r) and the row above (y + r) at x = cx − r,
+  cx − r + PERSPACE, ... up to cx + r, then the columns x = cx − r and x = cx + r at y = cy − r + PERSPACE ...
+  cy + r − PERSPACE; r grows by PERSPACE. The first sample of the first ring is the corner (cx − 1, cy − 1).
+  (high, from `0x004be860`)
+- `CSWSArea::TestSegmentAgainstCreatures` (`0x004bc590`), as `IsPositionSafe` and the walk tests use it:
+  creatures from the area's x-sorted creature list (`+0x190`, window ±6 m beyond the segment's x range),
+  skipping the path state's owner (`+0x2c`), the move's target (`+0x30`), `+0x34`, dead creatures (vtable
+  `+0x94`) and dying ones (`GetIsDying`); with the push flag (its fifth argument) also the ones the owner
+  may push aside (`CanPushCreature`). A creature blocks when the segment passes within the owner's
+  CREPERSPACE (path state `+8`) + 0.01 + its own CREPERSPACE of its centre. (high for the skips and the
+  radius, med for the segment geometry)
   Radii used: 2.0 (planner ends), 1.0 (the client's direct control, point only), 0.5 (DRIVEDIRECT,
   point only), 3.0 (formation moves), 5.0 (pushing; also `AIUpdate`), 20.0 (JumpToPoint's default,
   see actions.md). (med)
@@ -1384,8 +1417,9 @@ here. (med)
    - Else, leader moving: L.
    - Else (leader standing): d under 3 cm: 0.6 x the run rate (`g_fFollowCloseRunFactor`, `0x007a22f4`);
      otherwise the follower's smoothed speed, at least 0.9 x the walk rate (so a follower that has to walk a
-     metre or two to a standing leader walks it at 0.9 x 1.2 x 1.7 = 1.84 m/s, and one that was running goes on at
-     its running pace and slows over the last metre).
+     metre or two to a standing leader moves at 0.9 x 1.2 x 3.2 = 3.46 m/s, a companion's walk rate being
+     PC_Movement's 3.2 (3.1), its cycle the walk's, as the smoothed speed is capped at 2.88, below 0.6 x 5.4; one
+     that was running goes on at its running pace and slows over the last metre).
    - The speed is `base` x 0.9 (d up to 1 m), x 1.2 (up to 15 m) or x 1.5 (beyond).
    There is no acceleration ramp and no braking (3.3 belongs to MOVETOPOINT): the speed applies from the first
    frame. In a steady chase the follower hovers about 1 m from its follow point, its speed flipping between 0.9 L and 1.2 L,

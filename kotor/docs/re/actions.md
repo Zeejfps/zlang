@@ -652,7 +652,8 @@ snapped to the walkmesh; if the straight walk there is blocked the distance is s
 21 times, giving up (no move) under 1 m. Below 30 % of the original length it is reset to the full
 length: the code computes a "turn" with two cross products that cancel out, so the direction never
 changes. The walk is never run. The script routine passes the creature's current position as home,
-so a random walker stays near where it was when the action was queued, until cleared. (high)
+so a random walker stays near where it was when the action was queued, until cleared. Only a clear walk
+test (1) counts: a line blocked by a creature (−3) is shortened too. (high)
 
 **DRIVEDIRECT (0x33, `0x0051e6a0`)**: keyboard/stick movement of the controlled character,
 queued by input minor 0x1d (`0x00523450`) after combat mode off and `ClearAllActions(TRUE)` (only
@@ -681,11 +682,16 @@ creature to that area (`0x004fa100`) and, for creatures with a client twin, push
 the facing, pushes CONTINUEPATH (4) in front (so it runs before WAITFORAREA), sets `+0xa18 = 1`,
 done. Ends the frame's loop. (high)
 
-**JUMPTOOBJECT (0x30, `0x0051d110`)**: the same towards an object (params object,
-bWalkStraightLineToPoint, passed as the walkable-search flag; radius fixed at 20 m). The spot is,
-for a door, a point on its approach side (`0x00589240`) moved by twice the path state's `+8` radius;
-for a waypoint, its position (and facing); otherwise the object's position; a creature outside any
-area is aimed at through its stored area and position (`+0x310`/`+0x314`), fail if none. (med)
+**JUMPTOOBJECT (0x30, `0x0051d110`)**, by the target's type (high for the types and the search, low for the
+facing, which the decompile garbles): a door (type 10) → the point `0x00589240` gives on its approach side,
+moved by twice the jumper's CREPERSPACE along the door's facing; a waypoint (12) → its position, and the
+jumper takes the waypoint's facing; anything else → its position. Then `FindNearestSafePosition` within
+20 m, `bNeedLine` = the routine's bWalkStraightLineToPoint (param 1); no safe spot → path reset, fail. For
+the party leader the party trail restarts at the spot. So a creature told to JumpToObject another lands
+beside it (the first ring's corner, about 1.4 m off), never inside it.
+
+A creature target outside any area is aimed at through its stored area and position
+(`+0x310`/`+0x314`), fail if none. (med)
 
 **WAITFORAREA (0x3c, `0x00511080`)**: fails for any creature but the player character (`+0x9d4`, the PC flag), runs (1) until
 the creature is in an area, then done. (high)
