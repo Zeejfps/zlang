@@ -99,8 +99,9 @@ does for the control under the pointer (`0x006dee40`, `0x006df390`): the string 
   and every resource are kept (the window is never remade). A minimised window is not drawn into and the loop rests.
   The game already pauses when focus is lost.
 - **The OS pointer** (as the original, `SetHardwareCursorHidden` `0x005e1740`, read by `0x005f1c20`, re/app.md): with
-  `EnableHardwareMouse` = 1, the default (written to our file) and the install's value, Windows draws the pointer with
-  the game's cursor pictures; only with 0 is Windows' cursor hidden and the game's drawn by the GUI. The original's
+  `EnableHardwareMouse` = 1 (the install's value and the original's default) Windows draws the pointer with the game's
+  cursor pictures; with 0 Windows' cursor is hidden and the game's is drawn by the GUI. Ours: our file defaults to 0
+  (the user's choice until the hardware cursor has been seen working in a real window); set 1 to use it. The original's
   hardware cursors are the executable's own cursor resources (`LoadCursorA` by the GUI's cursor id, the pressed look the
   next id); ours are made from the same `gui_mp_*u` / `d` pictures the GUI draws (an SDL colour cursor, read back from
   the texture at the size the GUI would draw it, its hot spot where the GUI's is: the default arrow's corner, the

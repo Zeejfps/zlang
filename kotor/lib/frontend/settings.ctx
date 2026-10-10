@@ -68,7 +68,7 @@ namespace frontend {
             width = 1280, height = 720, window_mode = 0, refresh = 0, vsync = true, gamma = 57,
             shadows = true, soft_shadows = false, grass = true, frame_buffer = true, emitters = true,
             anisotropy = 3, antialias = 0, texture_quality = 2, gui_scale = 0.0, frame_limit = 0,
-            allow_windowed = false, hardware_mouse = true,
+            allow_windowed = false, hardware_mouse = false,
             fx_original = false, fx_bloom = 2, fx_room_light = 1, fx_shadows = 2, fx_ao = 2, fx_lightmaps = 2, fx_dof = 2,
             fx_reflections = 2, fx_shafts = true, fx_fog = true, fx_grade = true, fx_edges = 1, fx_foliage = true,
             fx_tessellation = 0, fx_timing = false, fx_exposure = 1.0,
