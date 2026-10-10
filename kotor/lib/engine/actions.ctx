@@ -423,7 +423,13 @@ namespace actions {
                 dist = FORMATION_RANGE
             }
         }
-        if movement::distance_2d{ a = o.position, b = goal } <= dist + 0.5 { return Status::running }
+        // A follower steps as soon as the leader moves (UpdateFollowLeader walks it every frame he does, movement.md
+        // 6.2); while he stands it keeps still within half a metre of its range.
+        let mut slack: f32 = 0.5
+        if leader {
+            if obj::creature{ o = t } is some{ value = lc } { if lc.speed > 0.1 { slack = 0.0 } }
+        }
+        if movement::distance_2d{ a = o.position, b = goal } <= dist + slack { return Status::running }
         let copy = a.*
         a.params = [Param::none; 8]
         add_front{ &w, id, action = copy }

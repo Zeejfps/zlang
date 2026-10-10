@@ -196,9 +196,13 @@ namespace ingame {
         } else if ci::eq{ a = cmd, b = "say" } {
             hud::log_add{ log = &w.messages, text = text::rest{ words }, kind = hud::LOG_FEEDBACK }
         } else if ci::eq{ a = cmd, b = "join" } {
-            // The object joins the party (play will have the party lead's routines for this).
+            // The object joins the party and follows the leader (a companion's heartbeat script would queue the
+            // FOLLOWLEADER; a creature made a member this way has no such script).
             let tag = text::next_word{ &words } ifnull { return }
-            _ = party::add{ &w, id = world::object_by_tag{ w = &w, tag, nth = 0 } }
+            let joined = world::object_by_tag{ w = &w, tag, nth = 0 }
+            if party::add{ &w, id = joined } {
+                _ = actions::add{ &w, id = joined, action = actions::make{ kind = actions::Kind::follow_leader }, force = false }
+            }
         } else if ci::eq{ a = cmd, b = "unlock" } {
             // Test helper: opens the lock of a door or placeable (a path the story would open).
             let tag = text::next_word{ &words } ifnull { return }

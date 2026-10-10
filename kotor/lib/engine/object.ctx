@@ -224,7 +224,6 @@ namespace obj {
         path_goal: math::Vec3,                      // where the path was planned to
         path_adjusted: bool,                        // the path ends at the nearest reachable point of an unreachable goal
         // The creature a move is walking round (CPathfindInformation +0x244..+0x268, movement.md 4.9; lib/engine/crowd.ctx):
-        idle_since: u64,                            // world ms its action queue has been empty since (ai::wake_follower); 0: not idle
         avoided: u32,                               // the one it last made a detour for (+0x254)
         avoided_at: math::Vec3,                     // where that one stood then (+0x258)
         avoid_side: bool,                           // the side of the next detour (+0x244)
@@ -652,7 +651,7 @@ namespace obj {
             avoided = INVALID, avoided_at = math::vec3::zero{}, avoid_side = false, blocked_steps = 0, moving = false, in_combat = false, combat_attacked = false, combat_mode = false, dead = false,
             triggers = list::new(u32, heap::Heap){ realloc = heap::alloc, heap },
             perceived = list::new(Perceived, heap::Heap){ realloc = heap::alloc, heap },
-            sight_range = 0.0, hearing_range = 0.0, last_perception = 0, idle_since = 0,
+            sight_range = 0.0, hearing_range = 0.0, last_perception = 0,
             xp = 0, gold = 0, inv_cursor = 0, listening = false, listen_text = [[0; 32]; 4],
             listen_len = [0; 4], listen_number = [0; 4], listen_count = 0,
             destroyable = true, raiseable = true, selectable_dead = false,
