@@ -578,6 +578,13 @@ namespace render {
         }
     }
 
+    // The GUI's pointer picture in this frame (shown false: none). The quad that draws it is quads[quad]; a backend
+    // that hands the pointer to the operating system (gpu::set_os_pointer, the EnableHardwareMouse option) leaves
+    // that quad out and makes the OS cursor from `image` at width x height render pixels, hot spot hot_x, hot_y.
+    struct Pointer { shown: bool, image: Texture, quad: u32, width: f32, height: f32, hot_x: f32, hot_y: f32 }
+
+    fn no_pointer {} -> Pointer { return Pointer{ shown = false, image = Texture{ id = 0 }, quad = 0, width = 0.0, height = 0.0, hot_x = 0.0, hot_y = 0.0 } }
+
     // Everything one frame draws. Made once with make_frame, emptied by begin_frame, filled by
     // the add_* functions, and drawn by gpu::submit.
     struct Frame {
@@ -594,6 +601,7 @@ namespace render {
         tris: []mut Tri, tri_count: u32,
         quads: []mut Quad, quad_count: u32,
         ambients: []mut AmbientCube, ambient_count: u32,     // the light around dynamic draws (Draw.ambient)
+        pointer: Pointer,
         dropped: u32,               // items that didn't fit since begin_frame
     }
 
@@ -613,7 +621,7 @@ namespace render {
             tris = try alloc::resize(Tri, S){ realloc, &heap, mem = slice::empty(Tri){}, count = cap.tris }, tri_count = 0,
             quads = try alloc::resize(Quad, S){ realloc, &heap, mem = slice::empty(Quad){}, count = cap.quads }, quad_count = 0,
             ambients = try alloc::resize(AmbientCube, S){ realloc, &heap, mem = slice::empty(AmbientCube){}, count = cap.ambients }, ambient_count = 0,
-            dropped = 0,
+            pointer = no_pointer{}, dropped = 0,
         }
     }
 
@@ -632,6 +640,7 @@ namespace render {
         frame.tri_count = 0
         frame.quad_count = 0
         frame.ambient_count = 0
+        frame.pointer = no_pointer{}
         frame.dropped = 0
     }
 

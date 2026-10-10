@@ -36,6 +36,8 @@ namespace display {
         minimized: bool,                    // the window is minimised: nothing is drawn, the loop sleeps
         inactive: bool,                     // the window lost the focus (the original's WM_ACTIVATEAPP): sound modes 5 / 6
         test_blur: f32,                     // `gfx blur N`: the speed blur held on for a picture of it
+        alt_enter: bool,                    // Alt+Enter was let go: take_alt_enter acts on it
+        full_mode: i32,                     // the full-screen kind Alt+Enter goes back to (1 full screen, 2 borderless)
         max_samples: i32,                   // the device's limits, for the Advanced panel's steps
         max_anisotropy: f32,
     }
@@ -50,7 +52,7 @@ namespace display {
             window = render::Size{ width = 1280, height = 720 }, drawable = render::Size{ width = 1280, height = 720 },
             render = render::Size{ width = 1280, height = 720 },
             shown = render::Rect{ x = 0.0, y = 0.0, w = 1280.0, h = 720.0 },
-            path = [0; 256], path_len = 0, frame_start = 0, live = frontend::default_settings{}, pending = false, minimized = false, inactive = false, test_blur = 0.0,
+            path = [0; 256], path_len = 0, frame_start = 0, live = frontend::default_settings{}, pending = false, minimized = false, inactive = false, test_blur = 0.0, alt_enter = false, full_mode = 1,
             max_samples = 8, max_anisotropy = 16.0,
         }
         let n = if path.len < 256 { path.len } else { 256 }
@@ -253,9 +255,11 @@ namespace display {
         d.applied = s
         d.have = true
         measure{ &d, dev, &sdl }
-        // The game draws its own pointer, in every window mode: the OS's is hidden over the window from the start
-        // (the front end, the loading screens, a game) and put away again after a mode change.
-        if not d.hidden { sdl::hide_cursor{ &sdl } }
+        // The pointer (EnableHardwareMouse): with 1 the OS draws it with the GUI's pictures (gpu's pointer.ctx); with 0 the
+        // game draws its own, in every window mode, and the OS's is hidden over the window from the start (the front end,
+        // the loading screens, a game) and put away again after a mode change.
+        gpu::set_os_pointer{ &dev, on = s.hardware_mouse and not d.hidden }
+        if not d.hidden and not s.hardware_mouse { sdl::hide_cursor{ &sdl } }
         return changed
     }
 
@@ -265,11 +269,55 @@ namespace display {
     }
 
     // Remembers what the window is doing: minimised, it is not drawn into (a swap would return at once and the loop
-    // would spin), so `rest` sleeps instead. Called with every event.
-    fn note_event { mut d: Display, ev: sdl::Event } {
+    // would spin), so `rest` sleeps instead. Called with every event; true when the event is Alt+Enter's, which is
+    // nobody else's (Enter must not also press a button): it is let go of (key-up, as the original's 0x00401e90) and
+    // the loop's take_alt_enter acts on it.
+    fn note_event { mut d: Display, ev: sdl::Event } -> bool {
         if ev is minimized { d.minimized = true }
         if ev is restored { d.minimized = false }
         if ev is focus{ gained } { d.inactive = not gained }
+        if ev is key{ down, keycode, mods } {
+            if keycode == sdl::key::RETURN and (mods & sdl::KMOD_ALT) != 0 {
+                if not down { d.alt_enter = true }
+                return true
+            }
+        }
+        return false
+    }
+
+    // Alt+Enter (docs/mechanics/graphics.md, Display Mode). With AllowWindowedMode a full screen (either kind) becomes a
+    // window and a window the full-screen kind it last was; `d.live` takes the mode, `pending` is set for the loop to
+    // apply it, and the options file keeps it (its other keys as they are), so the panels and the file agree. Without
+    // the key the original only deactivates: a full screen is minimised (the lost focus then pauses, as alt-tab does);
+    // a window, which the original never is without the key, stays. True when the mode changed.
+    fn take_alt_enter { mut d: Display, mut dev: gpu::Device, mut sdl: sdl::Sdl, mut fs: Fs, heap: *mut heap::Heap, mut io: Io } -> bool {
+        if not d.alt_enter { return false }
+        d.alt_enter = false
+        let s = &d.live
+        if not s.allow_windowed {
+            let what: []u8 = if s.window_mode != 0 { "minimised" } else { "nothing (a window)" }
+            _ = @fmt(&io, "display: Alt+Enter without AllowWindowedMode: {}\n", what)
+            if s.window_mode != 0 { gpu::minimize_window{ &dev, &sdl } }
+            return false
+        }
+        let from = s.window_mode
+        if from == 0 { s.window_mode = d.full_mode } else {
+            d.full_mode = from
+            s.window_mode = 0
+        }
+        d.pending = true
+        _ = @fmt(&io, "display: Alt+Enter: {} to {}\n", mode_name{ mode = from }, mode_name{ mode = s.window_mode })
+        let path = d.path[..d.path_len]
+        if path.len > 0 {
+            let mut file = frontend::load_settings{ &fs, heap, path }
+            file.window_mode = s.window_mode
+            frontend::save_settings{ &fs, heap, path, s = file } iferr {}
+        }
+        return true
+    }
+
+    fn mode_name { mode: i32 } -> []u8 {
+        return if mode == 1 { "fullscreen" } else if mode == 2 { "borderless" } else { "windowed" }
     }
 
     // A frame of rest while the window is minimised.
@@ -279,8 +327,8 @@ namespace display {
 
     // One line for the log: what the window and the render are now.
     fn report { d: *Display, mut sdl: sdl::Sdl, mut io: Io } {
-        let kind: []u8 = if d.applied.window_mode == 1 { "fullscreen" } else if d.applied.window_mode == 2 { "borderless" } else { "windowed" }
-        let pointer: []u8 = if sdl::cursor_hidden{ &sdl } { "hidden" } else { "SHOWN" }
+        let kind = mode_name{ mode = d.applied.window_mode }
+        let pointer: []u8 = if d.applied.hardware_mouse and not d.hidden { "shown with the game's pictures (EnableHardwareMouse)" } else if sdl::cursor_hidden{ &sdl } { "hidden" } else { "SHOWN" }
         _ = @fmt(&io, "display: {} window {}x{}, drawable {}x{}, rendering {}x{}, desktop {}x{}@{}, {} modes, gui scale {}, OS pointer {}, shown {}x{} at {},{}\n", kind,
             d.window.width, d.window.height, d.drawable.width, d.drawable.height, d.render.width, d.render.height,
             d.desktop.width, d.desktop.height, d.desktop.refresh, d.mode_count, d.applied.gui_scale, pointer,

@@ -129,6 +129,7 @@ namespace gpu {
         dof: DofState,              // fx_dof.ctx
         ssr: SsrState,              // fx_ssr.ctx
         ofx: OrigFx,                // orig_fx.ctx: the original look's shadow volumes, glow and distortion
+        pointer: PointerState,      // pointer.ctx: the OS's pointer with the GUI's pictures (EnableHardwareMouse)
     }
 
     // ---- opening and closing
@@ -197,6 +198,7 @@ namespace gpu {
             enhance = render::original_look{}, scene_fx = no_scene_program{}, particle_fx = no_particle_program{},
             fxp = no_fx_programs{}, fxt = no_fx_targets{}, cur = no_scene_program{}, cur_particle = no_particle_program{},
             in_fx = false, timer = no_timer{}, atmos = no_atmos_programs{}, aa = no_aa_programs{}, shadow = no_shadows{}, scene_tess = no_scene_program{}, tess_level = -1, aos = no_ao{}, dof = no_dof{}, ssr = no_ssr{}, ofx = no_orig_fx{},
+            pointer = no_pointer_state{ pixels = try alloc::resize(u8, S){ realloc, &heap, mem = slice::empty(u8){}, count = POINTER_BYTES * 2 } },
         }
         clear_tables{ &dev }
         try make_programs{ &dev }
@@ -286,6 +288,7 @@ namespace gpu {
         free_shadows{ &dev }
         free_ao{ &dev }
         free_dof{ &dev }
+        free_pointers{ &dev, &sdl }
         free_ssr{ &dev }
         free_orig_fx{ &dev }
         dev.gl.delete_program{ program = dev.scene_tess.id }
@@ -1262,6 +1265,7 @@ namespace gpu {
             dev.state = unknown_state{}
         }
         sdl::swap{ &sdl, w = dev.win }
+        show_pointer{ &dev, &sdl, scale = if dev.screen.width > 0 { r.w / @as(f32, dev.screen.width) } else { 1.0 } }
     }
 
     // ---- state
@@ -1360,6 +1364,7 @@ namespace gpu {
         dev.cur = dev.scene
         dev.cur_particle = dev.particle
         dev.in_fx = false
+        dev.pointer.want = frame.pointer
         timer_begin{ &dev }
         dev.gl.front_face{ mode = gl::CCW }
         dev.gl.cull_face{ mode = gl::BACK }
@@ -2051,7 +2056,8 @@ namespace gpu {
                 f[8] = quad.color.r
                 f[9] = quad.color.g
                 f[10] = quad.color.b
-                f[11] = quad.color.a
+                // The pointer's quad is left out when the OS draws the pointer (pointer.ctx).
+                f[11] = if dev.pointer.os and frame.pointer.shown and i == frame.pointer.quad { 0.0 } else { quad.color.a }
                 f[12] = quad.angle
                 i = i + 1
             }

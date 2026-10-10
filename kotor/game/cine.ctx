@@ -152,7 +152,7 @@ namespace cine {
         let mut out = Polled{ skip = false, closed = false }
         while true {
             let polled = sdl::poll{ &sdl } ifnull { break }
-            display::note_event{ d = &disp, ev = polled }
+            if display::note_event{ d = &disp, ev = polled } { continue }
             if polled is resized {
                 if display::on_resized{ d = &disp, &dev, &sdl } {
                     ingame::set_gui_scale{ ui, scale = disp.applied.gui_scale }

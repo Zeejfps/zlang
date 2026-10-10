@@ -19,6 +19,8 @@ namespace frontend {
         texture_quality: i32,       // 0 low .. 2 high
         gui_scale: f32,             // GUI Scale (ours): 0 fits the window (auto), 1 the original's pixel-for-pixel GUI, else a factor
         frame_limit: i32,           // Frame Limit (ours): frames per second at most, 0 none
+        allow_windowed: bool,       // AllowWindowedMode: Alt+Enter switches between a window and full screen (else it minimises)
+        hardware_mouse: bool,       // EnableHardwareMouse: the OS draws the pointer, with the game's pictures (0: the game draws it)
         // [Enhanced Graphics] (ours: docs/design/enhanced-render.md). Levels 0 off, 1 low, 2 high.
         fx_original: bool,          // Original Look: every enhancement off, the original renderer's picture
         fx_bloom: i32,
@@ -66,6 +68,7 @@ namespace frontend {
             width = 1280, height = 720, window_mode = 0, refresh = 0, vsync = true, gamma = 57,
             shadows = true, soft_shadows = false, grass = true, frame_buffer = true, emitters = true,
             anisotropy = 3, antialias = 0, texture_quality = 2, gui_scale = 0.0, frame_limit = 0,
+            allow_windowed = false, hardware_mouse = true,
             fx_original = false, fx_bloom = 2, fx_room_light = 1, fx_shadows = 2, fx_ao = 2, fx_lightmaps = 2, fx_dof = 2,
             fx_reflections = 2, fx_shafts = true, fx_fog = true, fx_grade = true, fx_edges = 1, fx_foliage = true,
             fx_tessellation = 0, fx_timing = false, fx_exposure = 1.0,
@@ -128,6 +131,8 @@ namespace frontend {
             texture_quality = clamp_i{ v = get_int{ data, section = g, key = "Texture Quality", fallback = d.texture_quality }, lo = 0, hi = 2 },
             gui_scale = get_float{ data, section = g, key = "GUI Scale", fallback = d.gui_scale },
             frame_limit = clamp_i{ v = get_int{ data, section = g, key = "Frame Limit", fallback = d.frame_limit }, lo = 0, hi = 1000 },
+            allow_windowed = get_bool{ data, section = g, key = "AllowWindowedMode", fallback = d.allow_windowed },
+            hardware_mouse = get_bool{ data, section = g, key = "EnableHardwareMouse", fallback = d.hardware_mouse },
             fx_original = get_bool{ data, section = x, key = "Original Look", fallback = d.fx_original },
             fx_bloom = clamp_i{ v = get_int{ data, section = x, key = "Bloom", fallback = d.fx_bloom }, lo = 0, hi = 2 },
             fx_room_light = clamp_i{ v = get_int{ data, section = x, key = "Room Light", fallback = d.fx_room_light }, lo = 0, hi = 1 },
@@ -264,6 +269,8 @@ namespace frontend {
         try put_i{ &b, key = "Texture Quality", v = s.texture_quality }
         try @fmt(&b, "GUI Scale={}\n", s.gui_scale)
         try put_i{ &b, key = "Frame Limit", v = s.frame_limit }
+        try put_b{ &b, key = "AllowWindowedMode", v = s.allow_windowed }
+        try put_b{ &b, key = "EnableHardwareMouse", v = s.hardware_mouse }
         try @fmt(&b, "\n[Enhanced Graphics]\n")
         try put_b{ &b, key = "Original Look", v = s.fx_original }
         try put_i{ &b, key = "Bloom", v = s.fx_bloom }

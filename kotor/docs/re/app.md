@@ -297,7 +297,10 @@ Two paths, both ending in `CExoInput`:
 - Alt alone releases input and re-acquires it on release; Alt+F4 re-acquires and sends `WM_CLOSE`;
   F10 is swallowed; Alt+Enter (on key-up, 0x00401e90) toggles windowed/fullscreen through the
   pending mode change when `[Graphics Options] AllowWindowedMode` is set (0x007a3a30), otherwise
-  sends `WM_ACTIVATEAPP(0)` to the render window.
+  sends `WM_ACTIVATEAPP(0)` to the render window. 0x00401e90 first re-activates the app
+  (`CClientExoApp::SetActive(1, 0)`); with the key, pending becomes 1 (windowed) when the display's
+  slot 1 says full screen, else 2 (full screen); a caller passing 1 picks the mode itself (2 when
+  its second argument is 1). Without the key, the deactivation minimises a full-screen window (above).
 - Esc while a movie plays: skip-all (0x005f4a00 → `Skip(1, 0)`).
 - `WM_CANCELMODE` clears `g_bLookaboutHeld`; `WM_WINDOWPOSCHANGING`/`CHANGED` while a movie plays
   are posted to the movie window as 0x407/0x408.
@@ -326,7 +329,7 @@ its line at 0x007a3a4c.
 | 0x005df480 / 0x005df490 | `SetEventScale`, `SetEventRepeat` | scale/magnitude on an axis event (a button event is wrapped in a scaled one); repeat wait/rate entry on +0x138 (button events only) | med |
 | 0x005df600 | `ClearEvents` | empties the six class tables and sets the event count to 0 | med |
 | 0x005df540 / 0x005df510 | `SetAcquired`, `GetAcquired` | | med |
-| 0x005df5a0 → 0x005e1740 | `SetHardwareCursorHidden` | hides the Windows cursor (`ShowCursor(0)` until hidden; the GUI then draws a cursor model) or sets the cursor resource again; driven by `[Graphics Options] EnableHardwareMouse` (read by 0x005f1c20 with `TooltipDelay Sec`; hidden when 0) | med |
+| 0x005df5a0 → 0x005e1740 | `SetHardwareCursorHidden` | hides the Windows cursor (`ShowCursor(0)` until hidden; the GUI then draws a cursor model) or sets the cursor resource again; driven by `[Graphics Options] EnableHardwareMouse` (read by 0x005f1c20 with `TooltipDelay Sec`; hidden when 0), switched by 0x005f49b0 (which makes the GUI's cursor model, `CSWGuiManager::CreateCursorModel`, when hidden). The cursor in force (+0x398, -1 none: 1) is set by 0x005e0000 from `SetHoverObject` (0x006222f0) and 0x0061f980 (which also gives the GUI manager the same id, `SetMouseCursor`): `LoadCursorA` of that resource id, and with the button down the next even id (an odd id + 1), so the executable's cursor resources come in up / down pairs (an odd id and the next; not matched against the GUI's `gui_mp_*` ids here); `WM_SETCURSOR` sets it again (0x005e0930) | med |
 | 0x005df5d0 → 0x005e0960 | `SetMousePosition(x, y)` | `SetCursorPos` with bottom-up y, updates the mouse X/Y events and drops the next move message | med |
 | 0x005e3e80 | `CExoDirectInput::CExoDirectInput(hInstance, hWnd)` | `DirectInput8Create` (version 0x800, retry 0x300); keyboard device, keyboard data format, cooperative level non-exclusive + foreground, buffer of 256 events | high |
 | 0x005e3fa0 | `CExoDirectInput::CreateMouse` | mouse device on the render window, non-exclusive + background; created lazily by `GetMouseState` | high |

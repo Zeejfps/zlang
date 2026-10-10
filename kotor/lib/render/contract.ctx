@@ -20,6 +20,10 @@ namespace render_contract {
         let list_display_modes: fn{ mut sdl: sdl::Sdl, dev: gpu::Device, into: []mut render::DisplayMode } -> usize = gpu::list_display_modes
         let desktop_mode: fn{ mut sdl: sdl::Sdl, dev: gpu::Device } -> render::DisplayMode = gpu::desktop_mode
         let usable_size: fn{ mut sdl: sdl::Sdl, dev: gpu::Device } -> render::Size = gpu::usable_size
+        let minimize_window: fn{ mut dev: gpu::Device, mut sdl: sdl::Sdl } = gpu::minimize_window
+        // The OS draws the pointer from the frame's render::Pointer (EnableHardwareMouse).
+        let set_os_pointer: fn{ mut dev: gpu::Device, on: bool } = gpu::set_os_pointer
+        let os_pointer: fn{ dev: gpu::Device } -> bool = gpu::os_pointer
         let display_scale: fn{ mut sdl: sdl::Sdl, dev: gpu::Device } -> f32 = gpu::display_scale
         let window_mode: fn{ mut sdl: sdl::Sdl, dev: gpu::Device } -> render::WindowMode = gpu::window_mode
         let set_window_mode: fn{

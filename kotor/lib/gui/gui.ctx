@@ -505,6 +505,14 @@ namespace gui {
         let img = g.cursors[k].tex
         if not img.ok { return }
         let off = if g.cursor == CURSOR_DEFAULT { 0.0 } else { -img.w / 2.0 }
+        let at = frame.quad_count
         put_image{ &frame, img, x = @as(f32, g.mouse_x) + off, y = @as(f32, g.mouse_y) + off, w = img.w, h = img.h, color = white_color{}, angle = 0.0, clip = screen }
+        if frame.quad_count == at { return }
+        // The same picture for a backend that has the OS draw the pointer (EnableHardwareMouse), in render pixels.
+        let grid = grid_of{ g }
+        frame.pointer = render::Pointer{
+            shown = true, image = img.tex, quad = at, width = img.w * grid.sx, height = img.h * grid.sy,
+            hot_x = -off * grid.sx, hot_y = -off * grid.sy,
+        }
     }
 }

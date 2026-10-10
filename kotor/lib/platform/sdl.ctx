@@ -68,6 +68,7 @@ namespace sdl {
     extern fn SDL_GetWindowPosition { mut sdl: Sdl, window: *mut Window, x: ?*mut i32, y: ?*mut i32 }
     extern fn SDL_SetWindowMinimumSize { mut sdl: Sdl, window: *mut Window, w: i32, h: i32 }
     extern fn SDL_MaximizeWindow { mut sdl: Sdl, window: *mut Window }
+    extern fn SDL_MinimizeWindow { mut sdl: Sdl, window: *mut Window }
     extern fn SDL_RestoreWindow { mut sdl: Sdl, window: *mut Window }
     extern fn SDL_GetWindowDisplayIndex { mut sdl: Sdl, window: *mut Window } -> i32
     extern fn SDL_SetWindowDisplayMode { mut sdl: Sdl, window: *mut Window, mode: ?*DisplayMode } -> i32
@@ -129,6 +130,15 @@ namespace sdl {
     extern fn SDL_SetRelativeMouseMode { mut sdl: Sdl, enabled: i32 } -> i32
     extern fn SDL_GetRelativeMouseMode { mut sdl: Sdl } -> i32
     extern fn SDL_ShowCursor { mut sdl: Sdl, toggle: i32 } -> i32
+    // A cursor of the OS's from a picture: an RGBA surface over the caller's pixels, made into a colour cursor.
+    struct Surface {}                              // opaque: only ever behind a pointer
+    struct Cursor {}                               // opaque
+    const PIXELFORMAT_RGBA32: u32 = 0x16762004     // ABGR8888: the bytes R, G, B, A in memory on a little-endian machine
+    extern fn SDL_CreateRGBSurfaceWithFormatFrom { mut sdl: Sdl, pixels: *mut u8, width: i32, height: i32, depth: i32, pitch: i32, format: u32 } -> ?*mut Surface
+    extern fn SDL_FreeSurface { mut sdl: Sdl, surface: *mut Surface }
+    extern fn SDL_CreateColorCursor { mut sdl: Sdl, surface: *mut Surface, hot_x: i32, hot_y: i32 } -> ?*mut Cursor
+    extern fn SDL_SetCursor { mut sdl: Sdl, cursor: *mut Cursor }
+    extern fn SDL_FreeCursor { mut sdl: Sdl, cursor: *mut Cursor }
     extern fn SDL_StartTextInput { mut sdl: Sdl }
     extern fn SDL_StopTextInput { mut sdl: Sdl }
     extern fn SDL_IsTextInputActive { mut sdl: Sdl } -> i32
@@ -610,6 +620,17 @@ namespace sdl {
     // window of the app, in any mode, and holds it across mode switches, focus changes and minimising.
     fn hide_cursor { mut sdl: Sdl } { _ = SDL_ShowCursor{ &sdl, toggle = 0 } }
 
+    fn show_cursor { mut sdl: Sdl, on: bool } { _ = SDL_ShowCursor{ &sdl, toggle = if on { 1 } else { 0 } } }
+
+    // A colour cursor from `rgba` (width x height, top row first; SDL copies it), its hot spot at hot_x, hot_y;
+    // null when SDL can't make one.
+    fn make_cursor { mut sdl: Sdl, rgba: []mut u8, width: i32, height: i32, hot_x: i32, hot_y: i32 } -> ?*mut Cursor {
+        if width <= 0 or height <= 0 or rgba.len < @as(usize, width * height * 4) { return null }
+        let surface = SDL_CreateRGBSurfaceWithFormatFrom{ &sdl, pixels = rgba.ptr, width, height, depth = 32, pitch = width * 4, format = PIXELFORMAT_RGBA32 } ifnull { return null }
+        defer SDL_FreeSurface{ &sdl, surface }
+        return SDL_CreateColorCursor{ &sdl, surface, hot_x, hot_y }
+    }
+
     // SDL_ShowCursor(SDL_QUERY) is -1: the state without changing it (0 hidden, 1 shown).
     fn cursor_hidden { mut sdl: Sdl } -> bool { return SDL_ShowCursor{ &sdl, toggle = -1 } == 0 }
 
@@ -771,6 +792,7 @@ namespace sdl {
         const UP: i32 = 0x40000052
         const LSHIFT: i32 = 0x400000E1
         const LCTRL: i32 = 0x400000E0
+        const LALT: i32 = 0x400000E2
         const RCTRL: i32 = 0x400000E4
         const RSHIFT: i32 = 0x400000E5
         const CAPSLOCK: i32 = 0x40000039

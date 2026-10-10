@@ -27,7 +27,8 @@ namespace play {
         }
         let mut config = render::make_config{ title = "kotor", width = live.width, height = live.height, hidden = opts.headless }
         config.vsync = live.vsync
-        // The game draws its own pointer: Windows' stays hidden from the window's first moment (display::apply keeps it so).
+        // Windows' pointer is hidden from the window's first moment: display::apply keeps it so when the game draws its
+        // own (EnableHardwareMouse=0), and with 1 the first frame shown brings it back with the game's picture.
         if not opts.headless { sdl::hide_cursor{ &sdl } }
         let mut dev = try gpu::open(arena::Arena){ &sdl, realloc = arena::alloc, heap = &device_arena, config }
         defer gpu::close{ &dev, &sdl }
@@ -36,6 +37,8 @@ namespace play {
         disp.live = live
         if (first_change & display::CHANGED_TEXTURES) != 0 { mount_packs{ &w, quality = live.texture_quality } }
         if not opts.headless { display::report{ d = &disp, &sdl, io = &w.io } }
+        let pointer_by: []u8 = if live.hardware_mouse { "the OS draws the pointer with the game's pictures" } else { "the game draws its own pointer" }
+        _ = @fmt(&w.io, "display: EnableHardwareMouse={}: {}, AllowWindowedMode={}\n", if live.hardware_mouse { 1 } else { 0 }, pointer_by, if live.allow_windowed { 1 } else { 0 })
         let mut frame = try render::make_frame(arena::Arena){ realloc = arena::alloc, heap = &device_arena, cap = render::default_capacity{} }
         // Sound: a device when there is a window; headless, the mixer runs on without one (as the
         // original does with no sound device, audio.md), so sounds still start and end.
@@ -254,8 +257,9 @@ namespace play {
                     return 1
                 }
             }
-            // 1b. Graphics options changed by a scripted `gfx` word or in the options menu are made real before this frame is drawn.
+            // 1b. Graphics options changed by a scripted `gfx` word, Alt+Enter or in the options menu are made real before this frame is drawn.
             let mut reload_scene = false
+            _ = display::take_alt_enter{ d = &disp, &dev, &sdl, fs = &w.fs, heap = w.heap, io = &w.io }
             if disp.pending {
                 disp.pending = false
                 let mut s = disp.live
@@ -868,7 +872,7 @@ namespace play {
             }
             while true {
                 let polled = sdl::poll{ &sdl } ifnull { break }
-                display::note_event{ d = &disp, ev = polled }
+                if display::note_event{ d = &disp, ev = polled } { continue }
                 if polled is quit | close { done = true }
                 if polled is resized {
                     if display::on_resized{ d = &disp, &dev, &sdl } { front_resized{ &w, &dev, &g, &fe, &disp } }
@@ -876,6 +880,11 @@ namespace play {
                 }
                 let ev = display::map_event{ d = &disp, ev = polled }
                 _ = frontend::handle_event{ &fe, &g, ev, scale_x = 1.0, scale_y = 1.0 }
+            }
+            // Alt+Enter: the panels' settings take the new mode, applied just below.
+            if display::take_alt_enter{ d = &disp, &dev, &sdl, fs = &w.fs, heap = w.heap, io = &w.io } {
+                fe.settings.window_mode = disp.live.window_mode
+                fe.display_pending = true
             }
             speed::pace{ &sdl, opts, last, freq }
             let now = sdl::counter{ &sdl }
@@ -987,6 +996,7 @@ namespace play {
         if (changed & (display::CHANGED_SIZE | display::CHANGED_UI_SCALE)) != 0 { relayout_ui{ &w, &dev, ui, &dview, &disp } }
         if (changed & display::CHANGED_TEXTURES) != 0 { mount_packs{ &w, quality = disp.applied.texture_quality } }
         if ingame::options_front{ ui } is some{ value = fe } {
+            fe.settings.window_mode = disp.applied.window_mode     // Alt+Enter's, or the panel's own as corrected
             display::tell{ d = &disp, fe }
             frontend::refresh_display_texts{ fe, g = &ui.gui }
         }
@@ -1010,7 +1020,7 @@ namespace play {
     } {
         while true {
             let polled = sdl::poll{ &sdl } ifnull { break }
-            display::note_event{ d = &disp, ev = polled }
+            if display::note_event{ d = &disp, ev = polled } { continue }
             // The window changed shape: the device follows the drawable, the interface the device.
             if polled is resized {
                 if display::on_resized{ d = &disp, &dev, &sdl } { relayout_ui{ &w, &dev, ui, &dview, &disp } }

@@ -12,7 +12,7 @@
 //   FRAME ui move X Y | ui click X Y | ui key NAME | ui type TEXT      the older spellings of the above
 //
 // NAME is a letter or digit, up down left right space tab escape return backspace, f1..f12, ctrl,
-// shift, caps (modifier keys set the modifier bits of the keys after them).
+// shift, alt, caps (modifier keys set the modifier bits of the keys after them).
 namespace inject {
     // Where the scripted pointer is and what is held, as a person's mouse and keyboard remember.
     struct Inputs { x: i32, y: i32, buttons: u32, mods: u16 }
@@ -33,6 +33,7 @@ namespace inject {
         if ci::eq{ a = name, b = "right" } { return sdl::key::RIGHT }
         if ci::eq{ a = name, b = "ctrl" } { return sdl::key::LCTRL }
         if ci::eq{ a = name, b = "shift" } { return sdl::key::LSHIFT }
+        if ci::eq{ a = name, b = "alt" } { return sdl::key::LALT }
         if ci::eq{ a = name, b = "caps" } { return sdl::key::CAPSLOCK }
         if (name[0] == 'f' or name[0] == 'F') and name.len <= 3 {
             let n = @as(i32, text::scan_decimal{ s = name[1..] })
@@ -45,6 +46,7 @@ namespace inject {
     fn mod_of { code: i32 } -> u16 {
         if code == sdl::key::LSHIFT { return sdl::KMOD_LSHIFT }
         if code == sdl::key::LCTRL { return sdl::KMOD_LCTRL }
+        if code == sdl::key::LALT { return sdl::KMOD_LALT }
         return 0
     }
 
